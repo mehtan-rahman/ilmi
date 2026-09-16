@@ -1,0 +1,153 @@
+/* ilmi design tokens. Every visual decision keys off these; the tweaks panel
+   dials them live. Themes are a flat swap of bg / paper / fg on [data-theme];
+   mutes and hairlines are mixed from those plus the contrast and chrome knobs.
+   Consolidated from the prototype's styles.css base rules and its trailing
+   flattening block. No component rules live here. */
+
+:root {
+  /* type: Source Serif 4 for reading; IBM Plex Sans for chrome; IBM Plex Mono
+     for key hints and tabular numerals. Never Inter or system-ui. */
+  --serif: "Source Serif 4 Variable", "Source Serif 4", "Iowan Old Style", "Charter", Georgia, serif;
+  --sans: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "JetBrains Mono", monospace;
+
+  /* shell columns */
+  --side-w: 220px;
+  --insp-w: 280px;
+
+  /* paper, not sepia: bright neutral ground, near-black ink */
+  --bg: #f1f1f0;
+  --paper: #fdfdfc;
+  --fg: #1a1a1b;
+
+  /* knobs the tweaks panel sets directly */
+  --contrast: 1;       /* 0.6 (low) → 1.4 (high); scales the mutes */
+  --chrome: 1;         /* 0.3 (recessive) → 1.4 (visible); scales the hairlines */
+  --accent-h: 86;      /* gold. The one accent. */
+  --accent-c: 0.135;
+  --accent-l-light: 0.62;
+  --accent-l-dark: 0.80;
+
+  --reading-width: 600px;
+  --serif-weight: 420;
+  --serif-size: 18px;
+
+  /* density: 1 regular, <1 compact, >1 airy */
+  --rho: 1;
+  --row: calc(30px * var(--rho));
+  --gap-y: calc(10px * var(--rho));
+  --gap-x: 12px;
+
+  /* flat: hairlines over shadows, corners 0–2px */
+  --radius: 2px;
+  --shadow: none;
+
+  /* derived mutes: fg mixed into bg by stepped amounts, modulated by contrast */
+  --fg-1: var(--fg);
+  --fg-2: color-mix(in oklab, var(--fg) calc(72% * var(--contrast)), var(--bg));
+  --fg-3: color-mix(in oklab, var(--fg) calc(48% * var(--contrast)), var(--bg));
+  --fg-4: color-mix(in oklab, var(--fg) calc(28% * var(--contrast)), var(--bg));
+  --fg-5: color-mix(in oklab, var(--fg) calc(15% * var(--contrast)), var(--bg));
+
+  /* hairlines */
+  --line-1: color-mix(in oklab, var(--fg) calc(14% * var(--chrome)), transparent);
+  --line-2: color-mix(in oklab, var(--fg) calc(8% * var(--chrome)), transparent);
+  --line-3: color-mix(in oklab, var(--fg) calc(4% * var(--chrome)), transparent);
+
+  --accent: oklch(var(--accent-l-light) var(--accent-c) var(--accent-h));
+  --accent-soft: color-mix(in oklab, var(--accent) 18%, transparent);
+  --selection: color-mix(in oklab, var(--accent) 22%, transparent);
+
+  /* element types: reading / writing / card */
+  --el-read: oklch(0.55 0.07 250);
+  --el-write: oklch(0.52 0.07 150);
+  --el-card: var(--accent);
+}
+
+[data-theme="dark"] {
+  --bg: #161618;
+  --paper: #1d1d20;
+  --fg: #e6e6e3;
+  --accent: oklch(var(--accent-l-dark) var(--accent-c) var(--accent-h));
+  --el-read: oklch(0.75 0.08 250);
+  --el-write: oklch(0.74 0.08 150);
+}
+
+/* e-ink: grayscale only, solid hairlines, no depth, no motion. "Due" and
+   "active" read as inky weight, never hue. */
+[data-theme="eink"] {
+  --bg: #cfcfca;
+  --paper: #e4e4df;
+  --fg: #15150f;
+  --serif: "Literata Variable", "Literata", "Source Serif 4 Variable", Georgia, serif;
+  --accent: #1c1c17;
+  --accent-soft: color-mix(in oklab, var(--fg) 14%, transparent);
+  --selection: color-mix(in oklab, var(--fg) 20%, transparent);
+  --line-1: color-mix(in oklab, var(--fg) 48%, transparent);
+  --line-2: color-mix(in oklab, var(--fg) 30%, transparent);
+  --line-3: color-mix(in oklab, var(--fg) 16%, transparent);
+  --el-read: var(--fg-2);
+  --el-write: var(--fg-2);
+  --el-card: var(--fg-1);
+}
+[data-theme="eink"] * {
+  box-shadow: none !important;
+  transition-duration: 0.001s !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* base */
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--fg-1);
+  font-family: var(--sans);
+  font-size: 13.5px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: "ss01", "cv01";
+}
+#root { height: 100%; }
+::selection { background: var(--selection); }
+
+.shell {
+  display: grid;
+  height: 100vh;
+  grid-template-rows: 30px 1fr 22px;
+  grid-template-columns: var(--side-w) 1fr var(--insp-w);
+  grid-template-areas:
+    "top top top"
+    "side canvas insp"
+    "bot bot bot";
+}
+
+/* scrollbars: no track; the thumb is mixed from fg so it follows the theme */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+*:hover, *:focus-within {
+  scrollbar-color: color-mix(in oklab, var(--fg) 26%, transparent) transparent;
+}
+::-webkit-scrollbar { width: 11px; height: 11px; }
+::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: transparent;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+  border-radius: 8px;
+}
+:hover::-webkit-scrollbar-thumb {
+  background: color-mix(in oklab, var(--fg) 24%, transparent);
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in oklab, var(--fg) 44%, transparent);
+  background-clip: padding-box;
+}

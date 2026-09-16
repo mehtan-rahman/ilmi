@@ -35,17 +35,22 @@ Notes: `src/format/` is the only code that reads or writes vault files. Use
 `parse`/`serialize`/`meta`/`setField`; never string-edit a file. Unnumbered
 cloze blanks have no schedule key until the app numbers them (`nextGroup`).
 
-### [ ] 1. App scaffold — Vite + React + TypeScript + Tauri
-- Vite app in `src/app/`, `src/format/` untouched. Tauri v2 shell with the
-  filesystem and dialog plugins. Zustand store (or a reducer) for app state;
-  the filesystem stays the store of record.
-- Design tokens as CSS custom properties in one small file: paper / ink / gold,
-  IBM Plex Sans + Mono, Source Serif 4. Three themes (`light` / `dark` /
-  `eink`) on `data-theme`, consolidated from the prototype's `styles.css`
-  base rules plus its trailing override block. No components yet.
-- Done when: `npm run tauri dev` opens an empty window with the light theme
-  and a theme toggle works from the console. Committed, with a README section
-  on how to run.
+### [x] 1. App scaffold — Vite + React + TypeScript + Tauri
+Done 2026-09-16.
+Notes: Vite root is the repo root (`index.html` → `src/app/main.tsx`);
+`vite.config.ts` doubles as the vitest config, so import `defineConfig` from
+`vitest/config` there. Vite 8 has no esbuild; keep `minify` boolean. Tokens in
+`src/app/tokens.css` (gold baked in as the accent, `--radius: 2px`, no
+shadows; eink strips shadows/transitions globally). Fonts are bundled via
+`@fontsource`, no CDN. Store is `src/app/store.ts`; `window.ilmi.theme(name)`
+and `ilmi.cycleTheme()` are the console toggle until milestone 9. Rust was
+installed with rustup (minimal profile, `~/.cargo/bin`, not on the login
+`PATH`), so prefix `export PATH=$HOME/.cargo/bin:/opt/homebrew/bin:$PATH`.
+Tauri: `src-tauri/`, crate `ilmi`, plugins `fs` + `dialog` registered in
+`lib.rs` and granted in `capabilities/default.json` (`fs:default` only reads
+inside app dirs; milestone 2 needs `fs:allow-read-dir` etc. scoped to the
+picked vault, or a `fs:scope` entry). The Chrome extension was unreachable, so
+the console toggle was verified by the store test, not in the window.
 
 ### [ ] 2. Vault layer — open, walk, read, write, watch
 - `src/vault/`: open a directory; walk it into a tree per `FORMAT.md` §1
@@ -132,5 +137,9 @@ cloze blanks have no schedule key until the app numbers them (`nextGroup`).
 
 ## Notes for the next session
 
-Start at milestone 1. Rust and the Tauri CLI are probably not installed;
-check `cargo --version` first and install via rustup if missing.
+Start at milestone 2. Run `npm run tauri dev` once first to confirm the
+window still opens on this machine. The vault layer needs a Node-side test
+harness (temp dirs) and a Tauri-side adapter over `@tauri-apps/plugin-fs`;
+keep `src/vault/` pure over an `Fs` interface so the tests run in vitest
+without Tauri. Watching: `plugin-fs` has `watch`/`watchImmediate`; check the
+capability permissions before assuming they work.

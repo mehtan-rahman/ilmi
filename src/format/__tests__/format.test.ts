@@ -1,0 +1,272 @@
+// What the parser sees in specific files, and what the serializer promises.
+
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { describe, expect, it } from 'vitest';
+import {
+  parse, serialize, meta, setField, cardForm, cardFields, clozeParts, clozeGroups, nextGroup, mathSpanEnd,
+  type Card, type Paragraph, type Heading, type Raw,
+} from '../index.js';
+
+const read = (rel: string) => readFileSync(join(import.meta.dirname, 'corpus', rel), 'utf8');
+const cards = (text: string) => parse(text).doc.blocks.filter((b): b is Card => b.kind === 'card');
+const kinds = (text: string) => parse(text).doc.blocks.map((b) => b.kind);
+
+describe('front-matter', () => {
+  it('reads the known fields with defaults', () => {
+    const { doc } = parse(read('vault/papers/wozniak-1990.md'));
+    expect(meta(doc)).toEqual({
+      type: 'source', frozen: true, imported: '2026-04-18',
+      read: { due: '2026-06-01', ivl: 9, reps: 4, pos: 12, pri: 3 },
+    });
+    expect(meta(parse('just a note\n').doc)).toEqual({ type: 'source', frozen: false });
+  });
+
+  it('keeps unknown lines verbatim and degrades bad values with diagnostics', () => {
+    const { doc, diagnostics } = parse(read('mangled/frontmatter-ugly.md'));
+    const m = meta(doc);
+    expect(m.type).toBe('source');                    // bogus → default
+    expect(m.title).toBe('quoted: yes');
+    expect(m.frozen).toBe(true);                      // yes # comment
+    expect(m.imported).toBeUndefined();               // 2026-4-18 is not a day
+    expect(m.started).toBe('2026-05-22');
+    expect(m.read).toEqual({});                       // bare `read:` is enrolled with defaults; the nested map is ignored
+    expect(m.write).toEqual({ due: '2026-05-27', ivl: 2, pri: 1, done: false, extra: [['extra-key', '7']] });
+    expect(m.defaultCard).toBe('qa');
+    const out = serialize(doc);
+    for (const line of ['# a yaml comment', 'tags:', '  - reading', 'aliases: [one, two]', 'type: bogus',
+      'imported: 2026-4-18', 'read:', '  due: 2026-06-01', 'custom: anything goes', "title2: 'not a title'", ''])
+      expect(out.split('\n')).toContain(line);
+    expect(out).toContain('title: "quoted: yes"');
+    expect(out).toContain('frozen: true\n');
+    expect(out).toContain('write: due=2026-05-27 ivl=2 pri=1 done=false extra-key=7');
+    expect(out).toContain('\n---\n\nbody after');
+    const messages = diagnostics.map((d) => `${d.line}: ${d.message}`);
+    expect(messages).toContain('9: bad value for "type"');
+    expect(messages).toContain('12: nested values under "read" are ignored; use inline attributes');
+    expect(messages).toContain('15: unexpected token "wobble"');
+  });
+
+  it('later duplicate wins, once', () => {
+    const { doc, diagnostics } = parse(read('mangled/duplicates.md'));
+    expect(meta(doc)).toMatchObject({ type: 'draft', frozen: false, read: { due: '2026-02-02', pos: 3 } });
+    expect(serialize(doc).split('\n').slice(0, 8)).toEqual(['---', 'type: draft', 'frozen: false', 'read: due=2026-02-02 pos=3', 'write:', '  nested: under-write', 'imported: 2026-01-02', '---']);
+    expect(diagnostics.filter((d) => d.message.includes('twice')).length).toBe(4);
+    expect(diagnostics.filter((d) => d.message.includes('nested')).map((d) => d.line)).toEqual([8]);
+  });
+
+  it('quotes titles only when it must', () => {
+    expect(meta(parse(read('mangled/frontmatter-quotes.md')).doc).title).toBe("it's single-quoted");
+    const t = (s: string) => { const d = parse('x\n').doc; setField(d, 'title', s); return serialize(d).split('\n')[1]; };
+    expect(t('plain title')).toBe('title: plain title');
+    expect(t("it's fine")).toBe("title: it's fine");
+    expect(t('- looks like a list')).toBe('title: "- looks like a list"');
+    expect(t('a: b')).toBe('title: "a: b"');
+    expect(t(' padded')).toBe('title: " padded"');
+    expect(t('#tag')).toBe('title: "#tag"');
+    for (const s of ['plain', "it's", '- x', 'a: b', ' p ', '#t', '"q"', "'s'", 'x"y', '2026', 'ends:'])
+      expect(meta(parse(serialize((() => { const d = parse('').doc; setField(d, 'title', s); return d; })())).doc).title).toBe(s);
+  });
+
+  it('treats an unclosed --- as body', () => {
+    const { doc } = parse(read('mangled/frontmatter-unterminated.md'));
+    expect(doc.frontmatter).toBeUndefined();
+    expect(doc.blocks[0]).toEqual({ kind: 'raw', text: '---\ntype: deck\nfrozen: true' });
+    expect(doc.blocks.map((b) => b.kind)).toEqual(['raw', 'paragraph']);
+  });
+
+  it('setField keeps position, appends, removes, creates', () => {
+    const { doc } = parse('---\ntype: deck\nfoo: bar\nfrozen: true\n---\n\nx\n');
+    setField(doc, 'type', 'draft');
+    setField(doc, 'read', { due: '2026-01-01', pos: 2 });
+    setField(doc, 'frozen', null);
+    expect(serialize(doc)).toBe('---\ntype: draft\nfoo: bar\nread: due=2026-01-01 pos=2\n---\n\nx\n');
+    const bare = parse('x\n').doc;
+    setField(bare, 'write', { due: '2026-01-01', done: true });
+    expect(serialize(bare)).toBe('---\nwrite: due=2026-01-01 done=true\n---\n\nx\n');
+    setField(bare, 'write', null);
+    expect(serialize(bare)).toBe('x\n');
+  });
+});
+
+describe('cards', () => {
+  it('finds every card in the paper with its ids and schedules', () => {
+    const cs = cards(read('vault/papers/wozniak-1990.md'));
+    expect(cs.map((c) => c.id)).toEqual(['cw1-paths', 'cw2-min', 'cw2-retr', 'cw2-atom', 'cw2-integ', 'cw3-leech', 'cw3-prereq']);
+    expect(cs.map((c) => cardForm(c.text))).toEqual(['qa', 'cloze', 'cloze', 'qa', 'cloze', 'qa', 'qa']);
+    const min = cs[1]!;
+    expect(min.sched).toBeUndefined();
+    expect(min.blanks).toEqual({
+      1: { due: '2026-05-27', state: 'review', stability: 11.8, difficulty: 4.2, reps: 14, lapses: 2, ivl: 12, last: '2026-05-15T08:00:00Z', grade: 3 },
+      2: { due: '2026-06-01', state: 'review', stability: 3, difficulty: 5.1, reps: 2, lapses: 0, ivl: 3, last: '2026-05-29T08:00:00Z', grade: 3 },
+    });
+    expect(cs[4]!.sched).toBeUndefined();            // hand-written card, never reviewed
+    expect(cs[4]!.blanks).toBeUndefined();
+    expect(cs[5]!.sched).toMatchObject({ state: 'relearning', steps: 1, lapses: 4, grade: 1 });
+    expect(cardFields(cs[3]!.text)).toEqual({
+      form: 'qa',
+      front: 'why is bundling several facts on one card a false economy?',
+      back: 'a card with three facts has roughly the failure probability of three cards, but only one of them can be marked good',
+    });
+  });
+
+  it('attaches extract backrefs to prose', () => {
+    const { doc } = parse(read('vault/papers/wozniak-1990.md'));
+    const p = doc.blocks.find((b): b is Paragraph => b.kind === 'paragraph' && b.text.startsWith('Atomicity sounds easy'));
+    expect(p?.extracts).toEqual(['woz-ex1']);
+  });
+
+  it('recognizes every form and leaves prose alone', () => {
+    const text = read('mangled/forms.md');
+    const cs = cards(text);
+    expect(cs.map((c) => [c.id, cardForm(c.text)])).toEqual([
+      ['inline-qa', 'qa'], ['inline-bidir', 'bidir'], ['multi-qa', 'qa'], ['multi-bidir', 'bidir'],
+      ['own-line-id', 'qa'], ['second', 'qa'], ['cloze-wins', 'cloze'], ['empty-answer', 'cloze'],
+    ]);
+    expect(cardFields(cs[2]!.text)).toEqual({ form: 'qa', front: 'a question that wraps\nonto a second line', back: 'an answer that also\nwraps' });
+    expect(cardFields(cs[3]!.text)).toEqual({ form: 'bidir', left: 'Begriff', right: 'concept' });
+    expect(cs[4]!.text).toBe('a card whose second line\n\tis tab-indented, lazy, and stays in the card :: with an answer   ');
+    expect(serialize({ blocks: [cs[4]!] })).toBe('a card whose second line\n\tis tab-indented, lazy, and stays in the card :: with an answer   \n^own-line-id\n<!-- sr due=2026-01-01 -->\n');
+    expect(cs[5]!.text).toBe('a q :: a ^first');
+    const prose = parse(text).doc.blocks.filter((b): b is Paragraph => b.kind === 'paragraph').map((b) => b.text.split('\n')[0]);
+    expect(prose).toEqual([
+      'std::vector is prose because the separator has no spaces around it',
+      ':: empty front makes prose', 'empty back makes prose too ::', '?',
+      'a paragraph with an ^id-in-the-middle of a line and one at the end',
+    ]);
+    const h = parse(text).doc.blocks.find((b): b is Heading => b.kind === 'heading');
+    expect(h?.text).toBe('a heading keeps its ^literal');
+    expect(parse(text).doc.blocks.find((b): b is Paragraph => b.kind === 'paragraph' && b.id === 'prose-id')).toBeDefined();
+  });
+
+  it('serializes annotations in canonical order', () => {
+    const [c] = cards('x {{c2::b}} {{c1::a}} ^z\n<!-- extract e2 -->\n<!-- sr c2 due=2026-01-02 -->\n<!-- extract e1 -->\n<!--sr   c1   due=2026-01-01   -->\n<!-- sr   s=1.50 due=2026-01-03 -->\n');
+    expect(serialize({ blocks: [c!] })).toBe(
+      'x {{c2::b}} {{c1::a}} ^z\n<!-- sr due=2026-01-03 s=1.5 -->\n<!-- sr c1 due=2026-01-01 -->\n<!-- sr c2 due=2026-01-02 -->\n<!-- extract e2 -->\n<!-- extract e1 -->\n',
+    );
+  });
+
+  it('keeps unknown attributes and drops bad ones with diagnostics', () => {
+    const { doc, diagnostics } = parse(read('mangled/sr-attrs-bad.md'));
+    const cs = doc.blocks.filter((b): b is Card => b.kind === 'card');
+    expect(cs[0]!.sched).toEqual({ stability: 11.8, last: '2026-05-01T09:15:00Z', ivl: 1000, extra: [['custom', 'kept'], ['another', 'one']] });
+    expect(serialize(doc)).toContain('<!-- sr s=11.8 ivl=1000 last=2026-05-01T09:15:00Z custom=kept another=one -->');
+    expect(cs[1]!.sched).toEqual({ due: '2026-01-01' });
+    expect(cs[2]!.blanks).toEqual({ 1: { due: '2026-01-01' }, 2: { due: '2026-02-02' } });
+    expect(cs[3]!.sched).toEqual({});
+    expect(cs[3]!.extracts).toEqual(['spaced name with words']);
+    expect(meta(doc).read).toEqual({ pri: 1, extra: [['weird', 'ok']] });
+    expect(meta(doc).write).toEqual({ due: '2026-05-27T09:15:00Z' });
+    const messages = diagnostics.map((d) => d.message);
+    for (const m of ['bad value for "due": 2026-13-40', 'bad value for "st": Review', 'bad value for "s": abc', 'bad value for "g": 7',
+      'empty value for "steps"', 'bad attribute name ""', 'unexpected token "junk"', 'unexpected token "c3"', 'bad value for "done": maybe'])
+      expect(messages).toContain(m);
+  });
+
+  it('orphan annotations stay as raw text', () => {
+    const { doc, diagnostics } = parse(read('mangled/orphans.md'));
+    expect(doc.blocks.map((b) => b.kind)).toEqual([
+      'raw', 'heading', 'raw', 'raw', 'paragraph', 'raw', 'card', 'raw', 'card', 'raw', 'raw', 'raw', 'raw', 'paragraph', 'raw',
+    ]);
+    const drift = doc.blocks[6] as Card;
+    expect(drift.blanks).toBeUndefined();
+    const keeper = doc.blocks[8] as Card;
+    expect(keeper.blanks).toEqual({ 1: { due: '2026-02-02', state: 'review', stability: 9 } });
+    expect(keeper.extracts).toBeUndefined();          // the nameless line broke the chain; keep-me is an orphan too
+    expect((doc.blocks[7] as Raw).text).toBe('<!-- sr c1 due=2026-01-01 st=review s=9 -->');
+    expect((doc.blocks[10] as Raw).text).toBe('<!-- extract keep-me -->');
+    expect((doc.blocks[11] as Raw).text).toBe('<!-- SR:!2026-01-01,4,270 -->');
+    expect((doc.blocks[14] as Raw).text).toBe('<!-- sr unterminated');
+    expect(diagnostics.map((d) => d.line)).toEqual([1, 4, 5, 8, 12, 16, 17]);
+    expect(new Set(diagnostics.map((d) => d.message))).toEqual(new Set(['orphan sr line', 'orphan extract line']));
+  });
+
+  it('grading rewrites exactly one line', () => {
+    const text = read('vault/papers/wozniak-1990.md');
+    const { doc } = parse(text);
+    const c = doc.blocks.find((b): b is Card => b.kind === 'card' && b.id === 'cw2-min')!;
+    c.blanks![2] = { ...c.blanks![2]!, due: '2026-06-09', stability: 7.2, reps: 3, last: '2026-06-01T08:00:00Z' };
+    const before = text.split('\n'), after = serialize(doc).split('\n');
+    expect(after.length).toBe(before.length);
+    const changed = before.map((l, i) => (l === after[i] ? null : i)).filter((i) => i !== null);
+    expect(changed.length).toBe(1);
+    expect(after[changed[0]!]).toBe('<!-- sr c2 due=2026-06-09 st=review s=7.2 d=5.1 r=3 l=0 ivl=3 last=2026-06-01T08:00:00Z g=3 -->');
+  });
+});
+
+describe('cloze', () => {
+  it('splits blanks and numbers groups', () => {
+    expect(clozeParts('the {{c1::a}} and {{2::b}} and {{c}} end')).toEqual([
+      'the ', { n: 1, answer: 'a', raw: '{{c1::a}}' }, ' and ', { n: 2, answer: 'b', raw: '{{2::b}}' }, ' and ', { n: null, answer: 'c', raw: '{{c}}' }, ' end',
+    ]);
+    expect(clozeGroups('{{c3::x}} {{c1::y}} {{c3::z}} {{w}}')).toEqual([3, 1]);
+    expect(nextGroup('{{c1::a}} {{c3::b}}')).toBe(2);
+    expect(clozeParts('{{std::vector}}')).toEqual([{ n: null, answer: 'std::vector', raw: '{{std::vector}}' }]);
+    expect(clozeParts('{{}} {{ }} {{c1::}}')).toEqual(['{{}} {{ }} ', { n: 1, answer: '', raw: '{{c1::}}' }]);
+  });
+
+  it('is blind inside math', () => {
+    expect(mathSpanEnd('$x$', 0)).toBe(3);
+    expect(mathSpanEnd('$5 and $10', 0)).toBe(-1);
+    expect(mathSpanEnd('$ x$', 0)).toBe(-1);
+    expect(mathSpanEnd('$$a\nb$$', 0)).toBe(7);
+    expect(mathSpanEnd('$a\nb$', 0)).toBe(-1);
+    expect(clozeParts('{{c1::$x^{a^{b}}$}}')).toEqual([{ n: 1, answer: '$x^{a^{b}}$', raw: '{{c1::$x^{a^{b}}$}}' }]);
+    expect(clozeParts('$\\{\\{x\\}\\}$ and $$\\binom{n}{{k}}$$')).toEqual(['$\\{\\{x\\}\\}$ and $$\\binom{n}{{k}}$$']);
+    expect(clozeParts('nested {{c1::{{x}}}} braces')).toEqual(['nested ', { n: 1, answer: '{{x', raw: '{{c1::{{x}}' }, '}} braces']);
+    expect(clozeParts('{{c2::a} }} then {{c3::open')).toEqual([{ n: 2, answer: 'a} ', raw: '{{c2::a} }}' }, ' then {{c3::open']);
+  });
+
+  it('never sees cards in code, lists, quotes, tables, or headings', () => {
+    // the $$ block is one display-math span, so its {{c1::x_i}} is inside math and it stays prose
+    expect(kinds(read('mangled/code-and-math.md'))).toEqual(['raw', 'raw', 'card', 'card', 'card', 'paragraph', 'card', 'paragraph', 'raw']);
+    expect(kinds(read('mangled/lists-quotes-tables.md'))).toEqual(['raw', 'raw', 'raw', 'raw', 'raw', 'raw', 'raw', 'raw', 'raw', 'raw', 'raw', 'paragraph', 'raw']);
+    expect(cards(read('mangled/headings.md'))).toEqual([]);
+  });
+});
+
+describe('blocks', () => {
+  it('reads headings in both styles', () => {
+    const hs = parse(read('mangled/headings.md')).doc.blocks.filter((b): b is Heading => b.kind === 'heading');
+    expect(hs.map((h) => [h.level, h.text, h.setext ?? false])).toEqual([
+      [1, 'Setext one', true], [2, 'Setext two, which wraps\nonto a second line', true], [2, 'spaced   heading with closing hashes', false],
+      [1, '', false], [1, '', false], [1, 'heading with a {{c1::blank}} is not a card', false], [1, 'heading followed by an extract', false],
+      [2, 'single dash under text', true], [1, '##', false], [1, '#', false], [2, 'ends in a hash', false], [2, 'ends in hashes ##', false], [2, 'keeps#', false], [1, 'indented heading', false],
+    ]);
+    for (const t of ['##', '#', 'x #', 'x ##', 'x\t#', '#x', 'x#'])
+      expect((parse(serialize({ blocks: [{ kind: 'heading', level: 2, text: t }] })).doc.blocks[0] as Heading).text).toBe(t);
+    expect(serialize({ blocks: [{ kind: 'heading', level: 1, text: '##' }] })).toBe('# ## #\n');
+    const ps = parse(read('mangled/headings.md')).doc.blocks.filter((b): b is Paragraph => b.kind === 'paragraph').map((b) => b.text);
+    expect(ps).toEqual(['#TODO: no space after the hash, so this is a paragraph', '####### seven hashes is a paragraph']);
+    expect(serialize(parse('##   spaced   ###\n').doc)).toBe('## spaced\n');
+  });
+
+  it('normalizes whitespace between blocks and keeps it inside them', () => {
+    const text = read('mangled/whitespace.md');
+    const { doc } = parse(text);
+    expect(doc.blocks).toEqual([
+      { kind: 'paragraph', text: 'first paragraph' },
+      { kind: 'paragraph', text: 'second paragraph after junk blank lines\n    a lazily continued line with four spaces' },
+      { kind: 'raw', text: '    an indented code block\n    second line' },
+      { kind: 'paragraph', text: 'third paragraph with trailing spaces   \nand tabs\tinside' },
+    ]);
+    expect(serialize(doc)).toBe('first paragraph\n\nsecond paragraph after junk blank lines\n    a lazily continued line with four spaces\n\n    an indented code block\n    second line\n\nthird paragraph with trailing spaces   \nand tabs\tinside\n');
+  });
+
+  it('handles CRLF, BOM, and missing final newline', () => {
+    const { doc, diagnostics } = parse(read('mangled/crlf-bom-no-newline.md'));
+    expect(diagnostics).toEqual([]);
+    expect(meta(doc)).toEqual({ type: 'source', frozen: true });
+    expect(doc.blocks).toEqual([{ kind: 'heading', level: 1, text: 'crlf' }, { kind: 'card', text: 'a {{c1::card}}', id: 'crlf', sched: { due: '2026-01-01', state: 'new' } }]);
+    expect(serialize(doc)).toBe('---\ntype: source\nfrozen: true\n---\n\n# crlf\n\na {{c1::card}} ^crlf\n<!-- sr due=2026-01-01 st=new -->\n');
+    expect(serialize(parse(read('mangled/no-trailing-newline.md')).doc)).toBe('no newline at end :: of file ^eof\n');
+  });
+
+  it('handles the degenerate files', () => {
+    expect(parse('').doc).toEqual({ blocks: [] });
+    expect(serialize(parse('').doc)).toBe('');
+    expect(serialize(parse(read('mangled/only-blank-lines.md')).doc)).toBe('');
+    expect(serialize(parse(read('mangled/only-frontmatter.md')).doc)).toBe('---\ntype: deck\n---\n');
+    expect(serialize(parse(read('mangled/empty-frontmatter.md')).doc)).toBe('---\n---\n');
+  });
+});

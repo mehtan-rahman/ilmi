@@ -9,6 +9,10 @@ export const THEMES: readonly Theme[] = ['light', 'dark', 'eink'];
 export interface AppState {
   theme: Theme;
   density: number; // --rho: 1 regular, <1 compact, >1 airy
+  /** Absolute path of the open vault, or null before one is picked. */
+  vault: string | null;
+  /** Vault-relative document paths, tree order. Kept in step by `src/app/vault.ts`. */
+  files: string[];
   setTheme(theme: Theme): void;
   cycleTheme(): void;
   setDensity(rho: number): void;
@@ -17,6 +21,8 @@ export interface AppState {
 export const useApp = create<AppState>((set, get) => ({
   theme: 'light',
   density: 1,
+  vault: null,
+  files: [],
   setTheme: (theme) => set({ theme }),
   cycleTheme: () => {
     const i = THEMES.indexOf(get().theme);

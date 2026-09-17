@@ -57,7 +57,31 @@ inside app dirs; milestone 2 needs `fs:allow-read-dir` etc. scoped to the
 picked vault, or a `fs:scope` entry). The Chrome extension was unreachable, so
 the console toggle was verified by the store test, not in the window.
 
-### [ ] 2. Vault layer — open, walk, read, write, watch
+### [x] 2. Vault layer — open, walk, read, write, watch
+Done 2026-09-16.
+Notes: `src/vault/` is pure over an `Fs` interface (`fs.ts`); `node-fs.ts`
+backs the tests, `tauri-fs.ts` the app. `Vault.open(fs, root)` walks the tree
+(`walk.ts`: folders first, then docs, `name.md` + `name/` attached as the
+doc's children, dot-dirs skipped). Change a file with
+`vault.update(path, mutate)`: it clones the cached doc, applies `mutate`,
+stats, and if the stamp (mtime + size) moved it re-reads and re-applies, so
+an external edit and ours both land. `vault.write(path, doc)` is the
+whole-doc form and throws `VaultConflict` instead. Writes go to
+`name.md.ilmi-tmp` then rename. The watcher calls `vault.changed(paths)`;
+events are `tree` / `doc` / `gone` via `subscribe`. `loadState` / `saveState`
+merge into `.ilmi/state.json` (`folders`, `tab`). The app side is
+`src/app/vault.ts` (module singleton; the store only gets `vault` and
+`files`). Tauri: the dialog grants `vault/**` in the fs scope when a
+directory is picked (`recursive: true` matters), a Rust command `allow_vault`
+does the same for paths from elsewhere, `plugins.fs.requireLiteralLeadingDot`
+is off so that glob reaches `.ilmi/`, the fs plugin needs the `watch` cargo
+feature, and `capabilities/default.json` lists the `fs:allow-*` commands.
+Dev only: `ILMI_VAULT=/path npm run tauri dev` opens a vault at launch and
+logs its document list to the terminal through the log plugin; that is how
+this milestone was verified without a screenshot. Not verified in the
+window: watch events arriving through plugin-fs (they do in vitest through
+node's fs.watch). Not done: remembering the last vault across launches (needs
+a home outside the vault, and `allow_vault` on relaunch).
 - `src/vault/`: open a directory; walk it into a tree per `FORMAT.md` §1
   (folders, documents, `name.md` + `name/` children, dot-dirs ignored).
 - Read a document → `Doc` via `parse`; write via `serialize`, atomic
@@ -142,9 +166,10 @@ the console toggle was verified by the store test, not in the window.
 
 ## Notes for the next session
 
-Start at milestone 2. Run `npm run tauri dev` once first to confirm the
-window still opens on this machine. The vault layer needs a Node-side test
-harness (temp dirs) and a Tauri-side adapter over `@tauri-apps/plugin-fs`;
-keep `src/vault/` pure over an `Fs` interface so the tests run in vitest
-without Tauri. Watching: `plugin-fs` has `watch`/`watchImmediate`; check the
-capability permissions before assuming they work.
+Start at milestone 3, the scheduler. It is pure functions over
+`CardSchedule` / `ReadSchedule` / `WriteSchedule` from `src/format/` plus a
+queue query over a `Vault` (use `vault.documents()` and `vault.read`), so no
+Tauri and no UI. Add `ts-fsrs` as a dependency. Verify the one-line diff by
+going through `vault.update` on a temp copy of the corpus, as
+`src/vault/__tests__/vault.test.ts` does. The prototype's queue counts for
+2026-05-27 are in `spec/hashiyah/store.jsx` (`query`) and `data.jsx`.

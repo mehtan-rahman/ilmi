@@ -6,6 +6,92 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-09-16 — milestone 2: vault layer
+
+Commit: see `git log` — *vault: open, walk, read, write, watch over an Fs interface*.
+
+### Done
+
+- `src/vault/`: `Fs` interface (`fs.ts`), tree walker (`walk.ts`), `Vault`
+  (`vault.ts`) with `open`, `read`, `update`, `write`, `changed`, `watch`,
+  `subscribe`, `loadState`, `saveState`. Pure; no Tauri import.
+- Adapters: `node-fs.ts` (node:fs, tests) and `tauri-fs.ts`
+  (`@tauri-apps/plugin-fs`, app).
+- Conflict rule: `update(path, mutate)` re-reads and re-applies when the
+  file's mtime or size moved since it was read. Atomic writes via
+  `name.md.ilmi-tmp` + rename. Our own write is recorded with its new stamp,
+  so the watcher's echo of it is ignored.
+- App: `src/app/vault.ts` opens a vault (dialog, or `ILMI_VAULT` in dev),
+  watches it, and publishes `vault` + `files` to the store. `App.tsx` shows an
+  "Open vault" button, then a plain list of document paths. Component CSS
+  starts in `src/app/app.css`.
+- Tauri: `allow_vault` and `initial_vault` commands in `lib.rs`; fs plugin
+  `watch` feature; `fs:allow-*` permissions and `log:default` in the
+  capability; `plugins.fs.requireLiteralLeadingDot: false` in
+  `tauri.conf.json`. `@tauri-apps/plugin-log` added for dev logging.
+- 16 tests in `src/vault/__tests__/vault.test.ts` over a temp copy of the
+  corpus vault: tree shape, dot-dir and non-md skipping, diagnostics kept,
+  one-line diff for a schedule change, atomic write, concurrent edit keeps
+  both sides, whole-doc overwrite refused on conflict, own write not mistaken
+  for external, external change re-read and reported, appear/disappear
+  re-walks, real `fs.watch` delivery, state.json defaults and round-trip.
+
+### Verified
+
+- `npm test` green (95 tests), `npm run typecheck` clean, `npm run build` ok.
+- `ILMI_VAULT=<corpus vault> npm run tauri dev` opened the window and the
+  renderer logged all 11 document paths of the sample vault through the log
+  plugin, so `readDir`/`stat`/`watch` went through plugin-fs with the
+  widened scope. The vault watcher test was run five times without a flake.
+
+### Not verified
+
+- The window itself was not seen (no screenshot path in this sandbox); the
+  list is verified by the log line, the CSS by reading.
+- Watch events arriving from plugin-fs into `vault.changed` in the window.
+  The Node path is tested; the Tauri `watch` command registered and returned.
+- The "Open vault" dialog path was not clicked. It uses the same `openVault`
+  as the env-var path, plus the dialog's own scope grant.
+
+### Gotchas for later
+
+- `tauri-plugin-fs` needs `features = ["watch"]` or the `watch` command does
+  not exist ("Command watch not found" in the webview console).
+- The dialog's scope grant is `vault/**`, and on unix that glob skips
+  dot-paths unless `requireLiteralLeadingDot` is false in the plugin config
+  (not the capability).
+- React StrictMode runs the open effect twice in dev; `openVault` closes the
+  previous vault first, so it is harmless but shows as two log lines.
+- `ILMI_VAULT` is read only in debug builds (`cfg!(debug_assertions)`).
+
+### Handoff prompt
+
+Paste into a fresh session:
+
+```
+Read PLAN.md, FORMAT.md, BUILD-LOG.md, and spec/hashiyah/HANDOFF.md.
+
+Context: milestones 0-2 are done. src/format/ parses and serializes vault
+files (parse / serialize / meta / setField; never string-edit a file).
+src/vault/ opens, walks, reads, writes, and watches a vault over an Fs
+interface; change a file with vault.update(path, mutate), which re-reads and
+re-applies on conflict. Tests run in vitest over a temp copy of
+src/format/__tests__/corpus/vault. The app (src/app/) opens a vault and lists
+its documents; ILMI_VAULT=/path npm run tauri dev opens one at launch.
+
+Tooling: node is in /opt/homebrew/bin and cargo in ~/.cargo/bin; neither is
+on the tool-shell PATH. Prefix every command with
+export PATH=$HOME/.cargo/bin:/opt/homebrew/bin:$PATH
+npm test and npm run typecheck must be green before a commit.
+
+Do milestone 3 in PLAN.md (scheduler: ts-fsrs and the three loops) and only
+that one. Pure functions and unit tests, no UI. Stop at the milestone's
+"done when". Then tick it in PLAN.md, write notes for the next session under
+it, add an entry to BUILD-LOG.md with a fresh handoff prompt, and commit.
+```
+
+---
+
 ## 2026-09-16 — milestone 1: app scaffold
 
 Commit `0c47994` — *scaffold: Vite + React + TypeScript + Tauri, tokens, three themes*.

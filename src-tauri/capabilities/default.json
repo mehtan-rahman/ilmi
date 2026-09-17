@@ -1,11 +1,22 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "main window: filesystem and dialogs",
+  "description": "main window: the picked vault directory, dialogs, dev logging",
   "windows": ["main"],
   "permissions": [
     "core:default",
     "dialog:default",
-    "fs:default"
+    "log:default",
+    "fs:default",
+    "fs:allow-read-dir",
+    "fs:allow-read-text-file",
+    "fs:allow-write-text-file",
+    "fs:allow-rename",
+    "fs:allow-mkdir",
+    "fs:allow-remove",
+    "fs:allow-stat",
+    "fs:allow-exists",
+    "fs:allow-watch",
+    "fs:allow-unwatch"
   ]
 }

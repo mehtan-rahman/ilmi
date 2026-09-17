@@ -16,9 +16,12 @@ Requires node (Homebrew: `/opt/homebrew/bin`) and a Rust toolchain
 npm install
 npm run tauri dev      # desktop window; first Rust build takes a few minutes
 npm run dev            # renderer only, in a browser at http://localhost:1420
-npm test               # format round-trip tests
+npm test               # format round-trip and vault tests
 npm run typecheck
 ```
+
+In a dev build, `ILMI_VAULT=/path/to/vault npm run tauri dev` opens that vault
+at launch instead of asking for one.
 
 Theme toggle, until the tweaks panel exists, from the devtools console
 (right-click → Inspect Element in the window):
@@ -35,5 +38,6 @@ ilmi.density(0.8)
 index.html         Vite entry
 src/app/           renderer: React, Zustand store, tokens.css
 src/format/        parser and serializer, the only code that touches vault files
-src-tauri/         desktop shell (Tauri v2, fs + dialog plugins)
+src/vault/         open, walk, read, write, watch a vault; pure over an Fs interface
+src-tauri/         desktop shell (Tauri v2, fs + dialog + log plugins)
 ```

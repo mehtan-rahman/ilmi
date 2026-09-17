@@ -1,0 +1,29 @@
+/* Component rules. Tokens and themes stay in tokens.css. */
+
+.files {
+  grid-area: canvas;
+  overflow: auto;
+  padding: var(--gap-y) var(--gap-x);
+}
+.files ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-family: var(--mono);
+}
+.files li {
+  height: var(--row);
+  line-height: var(--row);
+  color: var(--fg-2);
+}
+.open {
+  font: inherit;
+  color: var(--fg-1);
+  background: var(--paper);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius);
+  padding: 0 var(--gap-x);
+  height: var(--row);
+  cursor: default;
+}
+.open:hover { border-color: var(--fg-4); }

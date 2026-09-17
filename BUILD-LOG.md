@@ -8,7 +8,7 @@ was verified, what was not, and the prompt to resume with.
 
 ## 2026-09-16 — milestone 2: vault layer
 
-Commit: see `git log` — *vault: open, walk, read, write, watch over an Fs interface*.
+Commit `3d32a17` — *vault: open, walk, read, write, watch over an Fs interface*.
 
 ### Done
 

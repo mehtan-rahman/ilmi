@@ -58,7 +58,7 @@ picked vault, or a `fs:scope` entry). The Chrome extension was unreachable, so
 the console toggle was verified by the store test, not in the window.
 
 ### [x] 2. Vault layer — open, walk, read, write, watch
-Done 2026-09-16.
+Done 2026-09-16, commit `3d32a17`.
 Notes: `src/vault/` is pure over an `Fs` interface (`fs.ts`); `node-fs.ts`
 backs the tests, `tauri-fs.ts` the app. `Vault.open(fs, root)` walks the tree
 (`walk.ts`: folders first, then docs, `name.md` + `name/` attached as the

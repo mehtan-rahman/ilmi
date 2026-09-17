@@ -1,14 +1,19 @@
 # ilmi — build plan
 
-Stateless build log. Each session: read this file, do the first unchecked
-milestone, stop at its *done when*, tick it, add notes, commit. Nothing else.
+Stateless build plan. Each session: read this file, do the first unchecked
+milestone, stop at its *done when*, tick it, add notes, log it, commit.
+Nothing else. `BUILD-LOG.md` is the session-by-session narrative and always
+carries the latest handoff prompt.
 
 ## Kickoff prompt (paste into a fresh session)
 
+The current handoff prompt is at the top of `BUILD-LOG.md`. The generic form:
+
 ```
-Read PLAN.md, FORMAT.md, and spec/hashiyah/HANDOFF.md. Do the first unchecked
-milestone in PLAN.md and only that one. Stop at its "done when". Then tick it,
-write notes for the next session under it, and commit.
+Read PLAN.md, FORMAT.md, BUILD-LOG.md, and spec/hashiyah/HANDOFF.md. Do the
+first unchecked milestone in PLAN.md and only that one. Stop at its "done
+when". Then tick it, write notes for the next session under it, add an entry
+to BUILD-LOG.md with a fresh handoff prompt, and commit.
 ```
 
 ## Ground rules
@@ -17,8 +22,8 @@ write notes for the next session under it, and commit.
   `spec/hashiyah/BUILD-PROMPT.md` wins on architecture. This file wins on order.
 - `FORMAT.md` is the contract for anything that touches disk. Change the
   format only with a corpus file and a test that shows why.
-- Tooling: node lives in `/opt/homebrew/bin`; prefix commands with
-  `export PATH=/opt/homebrew/bin:$PATH`. `npm test` must be green before a
+- Tooling: node lives in `/opt/homebrew/bin`, cargo in `~/.cargo/bin`; prefix commands with
+  `export PATH=$HOME/.cargo/bin:/opt/homebrew/bin:$PATH`. `npm test` must be green before a
   commit. `npm run typecheck` too.
 - One milestone per session, one commit per milestone (more is fine, fewer is
   not). Commit message names the milestone.

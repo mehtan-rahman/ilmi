@@ -98,7 +98,7 @@ a home outside the vault, and `allow_vault` on relaunch).
   vault's file names (plain list, no tree UI yet).
 
 ### [x] 3. Scheduler — ts-fsrs and the three loops
-Done 2026-09-21.
+Done 2026-09-21, commit `b5505bb`.
 Notes: `src/schedule/` is pure over the format's schedule types plus a queue
 query over a `Vault`; no Tauri, no UI. `grade(sched, 1–4, now)` wraps
 ts-fsrs 5 with default parameters: fuzz off, short-term learning steps on

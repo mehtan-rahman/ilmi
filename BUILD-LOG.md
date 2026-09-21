@@ -8,7 +8,7 @@ was verified, what was not, and the prompt to resume with.
 
 ## 2026-09-21 — milestone 3: scheduler
 
-Commit — *schedule: ts-fsrs grading, reading and writing loops, queue query*.
+Commit `b5505bb` — *schedule: ts-fsrs grading, reading and writing loops, queue query*.
 
 ### Done
 

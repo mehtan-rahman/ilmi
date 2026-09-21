@@ -6,6 +6,107 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-09-21 — milestone 3: scheduler
+
+Commit — *schedule: ts-fsrs grading, reading and writing loops, queue query*.
+
+### Done
+
+- `ts-fsrs` 5.4 added. `src/schedule/card.ts`: `toFsrs` / `fromFsrs` map a
+  `CardSchedule` onto a ts-fsrs `Card` per FORMAT.md §6.2; `grade` and
+  `preview` wrap `fsrs().next` / `.repeat` with default parameters (fuzz
+  off, learning steps on). Output rounded to two decimals; `last` is set to
+  `now` as a UTC instant; `due` is a day when `ivl` ≥ 1, else an instant.
+- `read.ts` and `write.ts`: the reading loop (`readOn`, `postpone`, done
+  drops `read`) and the writing loop (`workedOn`, `postpone`, `done` keeps
+  the line), plus `advanceRead` / `advanceWrite` over a `Doc`.
+- `queue.ts`: `docItems` / `queueItems` / `queue(vault, now, scope)`,
+  `counts`, `cardGroups`, `gradeItem` (id assignment, blank numbering, one
+  line rewritten), `numberBlank`, `newId`.
+- `dates.ts`: local-day arithmetic, UTC instants, `daysBetween` by UTC date.
+- 30 tests in `src/schedule/__tests__/schedule.test.ts`: date arithmetic,
+  the ts-fsrs mapping both ways, grading new / review / relearning cards,
+  determinism and unknown-attribute survival, both loops through the
+  document, cloze group keys and numbering, and over a temp copy of the
+  corpus: the counts for 2026-05-27, multi-blank expansion, fallback to the
+  bare line, sort order, reading progress, one-line diff on grade, one-line
+  diff on grading one blank of a multi-blank card, numbering an unnumbered
+  blank (text line + one new `sr c1` line), id assignment for an
+  unscheduled card, id collision avoidance, and locating a card by id after
+  the file shifted.
+
+### Verified
+
+- `npm test` green (125 tests), `npm run typecheck` clean, `npm run build`
+  ok.
+- Done-when 1: grading `cw1-paths` good on 2026-05-27 through `vault.update`
+  changes line 15 of `papers/wozniak-1990.md` and nothing else; the line is
+  `<!-- sr due=2026-07-11 st=review s=44.92 d=3.79 r=10 l=0 ivl=45
+  last=2026-05-27T12:00:00Z g=3 -->`.
+- Done-when 2: the queue for 2026-05-27 over the corpus is today 17 (13
+  cards, 3 reading, 1 writing), upcoming 13, cards 24, reading 4, writing 2.
+  The prototype's `data.jsx` gives today 16 (11 / 4 / 1) and upcoming 14.
+  The gap is entirely in the data, not the rules, and each difference was
+  checked by hand: the corpus numbers `cw2-min` as c1/c2 with c2 due
+  2026-06-01 (prototype: two lone blanks, both due), adds `cd-resurface`
+  (two new groups, due), adds the unscheduled `ein Wort ohne Karte` (new,
+  due), lacks `atomic-notes.md` (a due topic) and lacks
+  `commonplace-book-three.md` (two upcoming groups).
+
+### Not verified
+
+- Nothing in the window; this milestone has no UI.
+- ts-fsrs's learning steps in a live session: a card graded again is due
+  ten minutes later as an instant, and the queue treats an instant as due
+  when it is ≤ `now`. That is exercised in the test, not in use.
+- Time zones east of UTC+11 would shift the local day of the test `now`;
+  the tests are pinned to noon UTC, which covers this machine.
+
+### Decisions worth knowing
+
+- Postpone does not count as a pass (`reps` unchanged) for reading or
+  writing; the prototype bumped it. FORMAT.md defines reps as passes made.
+- A single-group cloze grades its `sr c1` line if the file has one, else the
+  bare line. A multi-group cloze always writes group lines; the bare line is
+  read as a fallback and left alone.
+- Card items carry `pri` 2 when due and 3 otherwise, copied from the
+  prototype so due cards and due topics interleave at the same rank.
+- `reading.*` / `writing.*` namespaces exist because both loops have
+  `postpone`.
+
+### Handoff prompt
+
+Paste into a fresh session:
+
+```
+Read PLAN.md, FORMAT.md, BUILD-LOG.md, and spec/hashiyah/HANDOFF.md.
+
+Context: milestones 0-3 are done. src/format/ parses and serializes vault
+files (parse / serialize / meta / setField; never string-edit a file).
+src/vault/ opens, walks, reads, writes, and watches a vault over an Fs
+interface; change a file with vault.update(path, mutate). src/schedule/
+grades cards with ts-fsrs, runs the reading and writing loops, and builds
+the queue (queue(vault, now, scope), gradeItem inside vault.update). Tests
+run in vitest over a temp copy of src/format/__tests__/corpus/vault. The
+app (src/app/) opens a vault and lists its documents; ILMI_VAULT=/path npm
+run tauri dev opens one at launch.
+
+Tooling: node is in /opt/homebrew/bin and cargo in ~/.cargo/bin; neither is
+on the tool-shell PATH. Prefix every command with
+export PATH=$HOME/.cargo/bin:/opt/homebrew/bin:$PATH
+npm test and npm run typecheck must be green before a commit.
+
+Do milestone 4 in PLAN.md (tree: sidebar and lenses) and only that one.
+Every tree operation goes through disk via the Fs interface and the Vault;
+test them in vitest over the temp corpus. Follow spec/hashiyah/tree.jsx and
+app.jsx for behavior and the brief's copy rules for every string. Stop at
+the milestone's "done when". Then tick it in PLAN.md, write notes for the
+next session under it, add an entry to BUILD-LOG.md with a fresh handoff
+prompt, and commit.
+```
+
+---
+
 ## 2026-09-16 — milestone 2: vault layer
 
 Commit `3d32a17` — *vault: open, walk, read, write, watch over an Fs interface*.

@@ -97,7 +97,40 @@ a home outside the vault, and `allow_vault` on relaunch).
 - Done when: the tests above pass, and the Tauri window lists the sample
   vault's file names (plain list, no tree UI yet).
 
-### [ ] 3. Scheduler — ts-fsrs and the three loops
+### [x] 3. Scheduler — ts-fsrs and the three loops
+Done 2026-09-21.
+Notes: `src/schedule/` is pure over the format's schedule types plus a queue
+query over a `Vault`; no Tauri, no UI. `grade(sched, 1–4, now)` wraps
+ts-fsrs 5 with default parameters: fuzz off, short-term learning steps on
+(again → 1 min, good on a new card → 10 min), so `due` is stored as an
+instant while `ivl` is 0 and as a local day once it is ≥ 1. `toFsrs` /
+`fromFsrs` are the mapping; `elapsed_days` is derived from `last` by UTC
+date, as ts-fsrs counts it; stability and difficulty are rounded to two
+decimals. Reading: `reading.readOn` (ivl × 1.6, `pos` only moves forward),
+`reading.postpone` (tomorrow); done drops the field. Writing:
+`writing.workedOn` (ivl × 1.5, clears `done`), `writing.postpone`,
+`writing.done` (keeps the line). `advanceRead` / `advanceWrite` are the
+doc-level forms through `setField`. One deviation from the prototype:
+postpone does not bump `reps`, because FORMAT.md defines reps as passes
+made. Queue: `queue(vault, now, scope)` reads every document through the
+cache; `queueItems(docs, now)` is the pure core. Items are `card` / `read`
+/ `write`, each with `dueAt` (a day is local midnight; no due means now)
+and `pri` (cards are 2 when due and 3 otherwise, as in the prototype;
+topics and drafts carry their own, default 2); sort is pri, then due, then
+document order. A cloze yields one item per group: `{ n }` for a numbered
+group, `{ blank: i }` for the i-th blank when it is unnumbered; a group's
+schedule is its `sr cN` line, else the bare line. `gradeItem(doc, item,
+grade, now)` runs inside `vault.update`: it assigns an id when the card
+has none (`newId`, injectable for tests), numbers an unnumbered blank on a
+multi-blank card (`numberBlank`, lowest unused N), and rewrites one line,
+the group's or the bare one. It finds the card by id, else by block index
+and text. `dayOf` / `addDays` are local-day, `instantOf` is UTC. Tests use
+`2026-05-27T12:00:00Z` so the local day is the same from UTC-12 to UTC+11.
+Counts for that day over the corpus: today 17 (13 cards, 3 reading, 1
+writing), upcoming 13; the prototype's own data gives 16 / 14 because the
+corpus differs from `data.jsx` in five places (listed in BUILD-LOG.md).
+Reading `total` counts every non-card block, headings included, matching
+the prototype's `pos`.
 - `src/schedule/`: `CardSchedule` ↔ ts-fsrs `Card`, `grade(card, rating,
   now)` → new `CardSchedule` rounded to two decimals. Reading: `readOn`,
   `postpone` (→ next day), `done` (drop `read`). Writing: `workedOn`,
@@ -166,10 +199,15 @@ a home outside the vault, and `allow_vault` on relaunch).
 
 ## Notes for the next session
 
-Start at milestone 3, the scheduler. It is pure functions over
-`CardSchedule` / `ReadSchedule` / `WriteSchedule` from `src/format/` plus a
-queue query over a `Vault` (use `vault.documents()` and `vault.read`), so no
-Tauri and no UI. Add `ts-fsrs` as a dependency. Verify the one-line diff by
-going through `vault.update` on a temp copy of the corpus, as
-`src/vault/__tests__/vault.test.ts` does. The prototype's queue counts for
-2026-05-27 are in `spec/hashiyah/store.jsx` (`query`) and `data.jsx`.
+Start at milestone 4, the tree. The sidebar reads `vault.tree` (`TreeNode`:
+`folder`, or `doc` with optional `children` for the sibling `name/`
+directory) and `meta(doc).type` gives the per-type icon and colour;
+`App.tsx` today only lists `vault.documents()`. The prototype's tree is
+`spec/hashiyah/tree.jsx` (`renderNode`, rename, drag, right-click menu) and
+the pane/tab model is in `app.jsx`. Create, rename, move, and delete need to
+go through `Fs` (`mkdir`, `rename`, `remove` exist; check `tauri-fs.ts` for
+renaming across directories and removing non-empty directories) and the
+`Vault` should re-walk afterwards and move `name/` together with `name.md`.
+Open folders persist in `.ilmi/state.json` (`folders` is already in
+`VaultState`). The queue is `queue(vault, now)` from `src/schedule/`; the
+tree does not need it yet. Ask before adding a screen not in the prototype.

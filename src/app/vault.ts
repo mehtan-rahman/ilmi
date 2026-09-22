@@ -8,7 +8,7 @@ import { open as pickDirectory } from '@tauri-apps/plugin-dialog';
 import { info } from '@tauri-apps/plugin-log';
 import { meta, setField, type Doc, type NodeType } from '../format/index.js';
 import { docItems, isDue } from '../schedule/index.js';
-import { Vault, childDirOf, dirOf, isDoc, rekey, type TreeNode, type VaultEvent, type VaultState } from '../vault/index.js';
+import { Vault, childDirOf, dirOf, isDoc, rekey, type ExtractSpec, type TreeNode, type VaultEvent, type VaultState } from '../vault/index.js';
 import { tauriFs } from '../vault/tauri-fs.js';
 import { activeTab, dropTabs, emptyPanes, openTab, retarget, type OpenOpts } from './panes.js';
 import { SIDE_DEFAULT, SIDE_MAX, SIDE_MIN, useApp, type DocInfo, type Sidebar } from './store.js';
@@ -169,8 +169,8 @@ export function openInitialVault(): Promise<void> {
     const vault = await openVault(path);
     const mode = await invoke<string | null>('dev_env', { name: 'ILMI_SMOKE' });
     if (mode) {
-      const { smoke, smokeReader } = await import('./smoke.js');
-      await (mode === 'reader' ? smokeReader(vault) : smoke(vault));
+      const { smoke, smokeReader, smokeCards } = await import('./smoke.js');
+      await (mode === 'reader' ? smokeReader(vault) : mode === 'cards' ? smokeCards(vault) : smoke(vault));
     }
   })();
   return initial;
@@ -237,6 +237,13 @@ export async function moveNode(path: string, dir: string): Promise<string> {
 
 export function removeNode(path: string): Promise<void> {
   return need().remove(path);
+}
+
+/** Carve a passage of `parent` into a child extract; the parent's row opens so the child is visible. */
+export async function extractNode(parent: string, spec: ExtractSpec): Promise<string> {
+  const path = await need().extract(parent, spec);
+  toggleOpen(parent, true);
+  return path;
 }
 
 /** Where a new sibling of `path` goes: a folder itself, else its directory. */

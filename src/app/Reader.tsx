@@ -10,14 +10,15 @@ import { EditorView, type NodeView } from 'prosemirror-view';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { cardFields, meta, serialize, setField, type Block, type Card, type Doc } from '../format/index.js';
 import {
-  blocksEqual, cardDue, cursorIndex, editMath, editorialRanges, fromDoc, makeState, markerKey, markerPos, mathSplit,
-  pickPos, proseIndices, schema, setReadPos, type Band,
+  blockAt, blocksEqual, cardDue, cursorIndex, editMath, editorialRanges, fromDoc, insertCard, makeState, markerKey, markerPos,
+  mathSplit, passage, pickPos, proseIndices, schema, setReadPos, type Band, type Passage,
 } from '../reader/index.js';
 import { dayOf, dayStart, whenToDate } from '../schedule/index.js';
 import { dirOf, nameOf, type Loaded, type Vault } from '../vault/index.js';
+import { Composer } from './Composer.js';
 import { titleOf } from './names.js';
 import { useApp, type DocInfo } from './store.js';
-import { currentVault } from './vault.js';
+import { currentVault, extractNode } from './vault.js';
 import 'katex/dist/katex.min.css';
 import 'prosemirror-gapcursor/style/gapcursor.css';
 import './reader.css';
@@ -79,6 +80,14 @@ class Writer {
     if (!pending) return;
     const blocks = pending();
     void this.update((doc) => { doc.blocks = blocks; });
+  }
+
+  /** Run `fn` once everything scheduled so far has been written. */
+  run<T>(fn: () => Promise<T>): Promise<T> {
+    this.flush();
+    const run = this.chain.then(fn);
+    this.chain = run.catch((e: unknown) => console.error(this.path, e));
+    return run;
   }
 
   /** Drop what has not been written yet: the file changed under us and wins. */
@@ -218,6 +227,28 @@ interface Rule {
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
+const inField = (t: EventTarget | null) => {
+  const el = t as HTMLElement | null;
+  const tag = el?.tagName?.toLowerCase();
+  return tag === 'input' || tag === 'textarea' || !!el?.isContentEditable;
+};
+
+/** The selection, as a passage plus where it ends and where it sits on screen. */
+interface Sel extends Passage {
+  end: number;
+  rect: DOMRect;
+}
+
+/** An open composer: what it starts with, the block its card goes after, and where it sits. */
+interface Compose {
+  seed: string;
+  index: number | null;
+  rect: DOMRect | null;
+}
+
+const sameSel = (a: Sel | null, b: Sel | null): boolean =>
+  a === b || (!!a && !!b && a.text === b.text && a.end === b.end && a.rect.top === b.rect.top && a.rect.left === b.rect.left && a.rect.bottom === b.rect.bottom);
+
 const words = (blocks: Block[]) =>
   blocks.reduce((n, b) => (b.kind === 'card' ? n : n + b.text.split(/\s+/).filter(Boolean).length), 0);
 
@@ -255,6 +286,17 @@ export function Reader({ id }: { id: string }) {
   const frozenRef = useRef(false);
   const dragRef = useRef(false);
   frozenRef.current = info?.frozen ?? false;
+  const [sel, setSel] = useState<Sel | null>(null);
+  const [composer, setComposer] = useState<Compose | null>(null);
+  const selRef = useRef<Sel | null>(null);
+  selRef.current = sel;
+  const composerRef = useRef<Compose | null>(null);
+  composerRef.current = composer;
+  // extracts come out of sources and extracts; drafts only make cards
+  const canExtract = info?.type === 'source' || info?.type === 'extract';
+  const canExtractRef = useRef(false);
+  canExtractRef.current = canExtract;
+  const actRef = useRef<(key: string) => boolean>(() => false);
 
   // ── the marker's geometry, from the blocks' boxes ──
   const measure = useCallback(() => {
@@ -313,9 +355,15 @@ export function Reader({ id }: { id: string }) {
             return true;
           },
           handleKeyDown(view, event) {
-            if (event.key !== 'Escape') return false;
-            view.dom.blur();
-            return true;
+            if (event.key === 'Escape') {
+              view.dom.blur();
+              return true;
+            }
+            if (!event.metaKey && !event.ctrlKey && !event.altKey && actRef.current(event.key)) {
+              event.preventDefault();
+              return true;
+            }
+            return false;
           },
           handleDOMEvents: {
             blur: () => { writer.flush(); return false; },
@@ -371,6 +419,76 @@ export function Reader({ id }: { id: string }) {
   useEffect(() => {
     viewRef.current?.setProps({ editable: () => !frozenRef.current });
   }, [info?.frozen]);
+
+  // ── the selection: a passage to extract or make a card from ──
+  // Read from the DOM, not the editor state, because a frozen document's
+  // surface is not editable and never focused, yet its text still selects.
+  useEffect(() => {
+    const capture = () => {
+      const view = viewRef.current;
+      if (!view || composerRef.current) return;
+      let next: Sel | null = null;
+      const s = window.getSelection();
+      if (s && s.rangeCount > 0 && !s.isCollapsed) {
+        const range = s.getRangeAt(0);
+        if (view.dom.contains(range.commonAncestorContainer)) {
+          try {
+            const a = view.posAtDOM(range.startContainer, range.startOffset);
+            const b = view.posAtDOM(range.endContainer, range.endOffset);
+            const p = passage(view.state.doc, Math.min(a, b), Math.max(a, b));
+            if (p.text) next = { ...p, end: Math.max(a, b), rect: range.getBoundingClientRect() };
+          } catch { /* not in the document */ }
+        }
+      }
+      setSel((cur) => (sameSel(cur, next) ? cur : next));
+    };
+    document.addEventListener('selectionchange', capture);
+    return () => document.removeEventListener('selectionchange', capture);
+  }, []);
+
+  const openComposer = () => {
+    const view = viewRef.current;
+    const s = selRef.current;
+    if (!view || !s) return;
+    setComposer({ seed: s.text, index: blockAt(view.state.doc, s.end), rect: s.rect });
+    setSel(null);
+  };
+
+  const doExtract = () => {
+    const s = selRef.current;
+    const writer = writerRef.current;
+    if (!s || !writer || !canExtractRef.current) return;
+    setSel(null);
+    window.getSelection()?.removeAllRanges();
+    writer.run(() => extractNode(id, { text: s.text, blocks: s.blocks })).catch(console.error);
+  };
+
+  actRef.current = (key) => {
+    if (!selRef.current || composerRef.current) return false;
+    if (key === 'e' && canExtractRef.current) { doExtract(); return true; }
+    if (key === 'm') { openComposer(); return true; }
+    return false;
+  };
+
+  // `e` and `m` when the surface is not focused (a frozen document)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey || inField(e.target)) return;
+      if (actRef.current(e.key)) e.preventDefault();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  const saveCard = (text: string, again: boolean) => {
+    const view = viewRef.current;
+    const c = composerRef.current;
+    const writer = writerRef.current;
+    if (!view || !c || !writer) return;
+    view.dispatch(insertCard(view.state, { kind: 'card', text }, c.index));
+    writer.flush();
+    setComposer(again ? { ...c, index: c.index === null ? null : c.index + 1 } : null);
+  };
 
   // the marker follows the text as it reflows
   useLayoutEffect(() => {
@@ -450,6 +568,26 @@ export function Reader({ id }: { id: string }) {
             </>
           )}
           <div className="doc-mount" ref={mountRef} />
+          {sel && !composer && (
+            <div className="sel-cue" style={{ top: sel.rect.bottom + 8, left: sel.rect.left }}>
+              {canExtract && (
+                <button type="button" className="cue-act" onMouseDown={(e) => { e.preventDefault(); doExtract(); }}>
+                  extract <span className="kbd">e</span>
+                </button>
+              )}
+              <button type="button" className="cue-act" onMouseDown={(e) => { e.preventDefault(); openComposer(); }}>
+                make a card <span className="kbd">m</span>
+              </button>
+            </div>
+          )}
+          {composer && (
+            <div
+              className="card-pop"
+              style={composer.rect ? { top: Math.min(composer.rect.bottom + 8, window.innerHeight - 280), left: Math.min(composer.rect.left, window.innerWidth - 440) } : undefined}
+            >
+              <Composer seed={composer.seed} onSave={saveCard} onClose={() => setComposer(null)} />
+            </div>
+          )}
         </div>
       </div>
     </div>

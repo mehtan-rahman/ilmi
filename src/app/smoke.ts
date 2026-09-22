@@ -4,6 +4,8 @@
 // scratch copy of a vault: it creates, renames, moves, and deletes files.
 // `ILMI_SMOKE=reader` opens a document in the reader instead, types into
 // a paragraph, moves the marker, and logs what reached the disk.
+// `ILMI_SMOKE=cards` selects a passage of a frozen source, presses `e`,
+// then selects again, presses `m`, fills the composer, and saves.
 
 import { info } from '@tauri-apps/plugin-log';
 import type { Vault } from '../vault/index.js';
@@ -81,6 +83,70 @@ export async function smokeReader(vault: Vault): Promise<void> {
     await sleep(1000);
     const moved = (await vault.read(WOZ, true)).text;
     log(`marker: ${moved.split('\n')[4]}; rule ${document.querySelector<HTMLElement>('.read-rule')?.style.height}; settled ${surface.querySelectorAll('.settled').length}`);
+  } catch (e) {
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+/** Select `text` inside the paragraph `p`, as a pointer would. */
+function select(p: HTMLElement, text: string): void {
+  const node = p.firstChild;
+  const at = node?.textContent?.indexOf(text) ?? -1;
+  if (!node || at < 0) throw new Error(`no "${text}" in the paragraph`);
+  const r = document.createRange();
+  r.setStart(node, at);
+  r.setEnd(node, at + text.length);
+  const sel = window.getSelection()!;
+  sel.removeAllRanges();
+  sel.addRange(r);
+}
+
+const press = (key: string, init: KeyboardEventInit = {}) =>
+  window.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...init }));
+
+export async function smokeCards(vault: Vault): Promise<void> {
+  const log = (s: string) => info(`smoke cards: ${s}`);
+  try {
+    const before = (await vault.read(WOZ)).text;
+    openNode(WOZ);
+    const surface = await until(() => document.querySelector<HTMLElement>('.draft-doc'));
+    await until(() => surface.querySelector('.card-span'));
+    await sleep(300);
+    const paras = () => Array.from(surface.querySelectorAll<HTMLElement>('p.dd-p'));
+
+    // extract: select part of the §4 paragraph, press e
+    const cram = paras().find((el) => el.textContent?.startsWith('Cramming'))!;
+    select(cram, 'Cramming is mass repetition compressed in time.');
+    const cue = await until(() => document.querySelector<HTMLElement>('.sel-cue'));
+    log(`cue: ${Array.from(cue.querySelectorAll('.cue-act')).map((b) => b.textContent).join(' | ')}`);
+    press('e');
+    const child = await until(() => vault.documents().find((d) => d.startsWith('papers/wozniak-1990/Cramming')));
+    await sleep(600);
+    const ex = await vault.read(child, true);
+    log(`extract ${child}; front-matter ${ex.text.split('\n').slice(0, 5).join(' / ')}; body ${ex.doc.blocks.length} block; diagnostics ${ex.diagnostics.length}`);
+    const parent = await vault.read(WOZ, true);
+    log(`parent: ${parent.text.split('\n').length - before.split('\n').length} lines added; backref ${parent.text.includes('<!-- extract Cramming is mass repetition compressed -->')}; read ${parent.text.split('\n')[4]}; extracted paragraphs ${surface.querySelectorAll('p.extracted').length}`);
+
+    // a card: select in the "Choosing well" paragraph, press m, fill, ⌘↵
+    await until(() => (document.querySelector('.sel-cue') ? null : true));
+    const choose = paras().find((el) => el.textContent?.startsWith('Choosing well'))!;
+    select(choose, 'Each successful recall pushes the curve out further than the last.');
+    await until(() => document.querySelector('.sel-cue'));
+    press('m');
+    const ta = await until(() => document.querySelector<HTMLTextAreaElement>('.composer textarea'));
+    log(`composer: seed "${ta.value}"; forms ${Array.from(document.querySelectorAll('.composer .type-toggle button')).map((b) => b.textContent).join(' ')}; able ${document.querySelector('.composer .act')?.getAttribute('data-able')}`);
+    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!;
+    setter.call(ta, 'Each successful recall pushes the curve {{out further}} than the last.');
+    ta.dispatchEvent(new Event('input', { bubbles: true }));
+    await sleep(100);
+    log(`preview blanks ${document.querySelectorAll('.composer .cloze-mark').length}; able ${document.querySelector('.composer .act')?.getAttribute('data-able')}`);
+    press('Enter', { metaKey: true });
+    await until(() => (document.querySelector('.composer') ? null : true));
+    await sleep(800);
+    const after = await vault.read(WOZ, true);
+    const lines = after.text.split('\n');
+    const at = lines.findIndex((l) => l.startsWith('Each successful recall pushes the curve {{out further}}'));
+    log(`card: line ${at + 1} (after "${lines[at - 2]?.slice(0, 30)}…"); cards ${after.doc.blocks.filter((b) => b.kind === 'card').length}; diagnostics ${after.diagnostics.length}; surface cards ${surface.querySelectorAll('.card-span').length}`);
   } catch (e) {
     log(`failed: ${e instanceof Error ? e.message : String(e)}`);
   }

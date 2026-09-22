@@ -62,7 +62,7 @@ export function Canvas() {
           >
             <TabBar pane={pane} index={pi} canClosePane={panes.panes.length > 1} />
             <div className="pane-body">
-              {tab && <Lens key={tab.key} id={tab.id} onOpen={onOpen} />}
+              {tab && <Lens key={tab.key} id={tab.id} active={pi === panes.active} onOpen={onOpen} />}
             </div>
           </div>
         );

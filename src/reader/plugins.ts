@@ -104,9 +104,12 @@ const marks = new Plugin<DecorationSet>({
 
 // ── frozen ───────────────────────────────────────────────────────
 
-/** A frozen document's prose is locked: transactions that change it are refused. */
+/** Set on a transaction that only adds or changes a card; cards stay editable when the prose is frozen. */
+export const cardsKey = new PluginKey('cards');
+
+/** A frozen document's prose is locked: transactions that change it are refused, unless they carry `cardsKey`. */
 export const frozenPlugin = (isFrozen: () => boolean): Plugin =>
-  new Plugin({ filterTransaction: (tr) => !tr.docChanged || !isFrozen() });
+  new Plugin({ filterTransaction: (tr) => !tr.docChanged || !isFrozen() || tr.getMeta(cardsKey) === true });
 
 // ── the reading marker ───────────────────────────────────────────
 

@@ -3,9 +3,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { meta, parse } from '../../format/index.js';
+import { meta, parse, setField } from '../../format/index.js';
 import { nodeFs } from '../node-fs.js';
-import { Vault, documents, type TreeNode, type VaultEvent } from '../index.js';
+import { Vault, documents, extractName, type TreeNode, type VaultEvent } from '../index.js';
 import { childDirOf, cleanName, nameOf, rekey, within } from '../paths.js';
 
 const CORPUS = fileURLToPath(new URL('../../format/__tests__/corpus/vault/', import.meta.url));
@@ -129,6 +129,79 @@ describe('create', () => {
     expect(path).toBe('papers/crick-1995/crick-ex1.md');
     expect(await readDisk(path)).toBe('---\ntype: extract\n---\n');
     expect(documents(vault.tree)).toContain(path);
+  });
+});
+
+describe('extract', () => {
+  it('names the child from the passage', () => {
+    expect(extractName('Atomicity sounds easy — and is, in fact, the hardest discipline.')).toBe('Atomicity sounds easy and is');
+    expect(extractName('one two')).toBe('one two');
+    expect(extractName('… — !')).toBe('untitled extract');
+    expect(extractName("it's a name/with: slashes")).toBe("it's a name with slashes");
+  });
+
+  it('carves a child with its own reading schedule, backrefs on the touched paragraphs, the marker past them', async () => {
+    const before = await vault.read(WOZ);
+    await vault.update(WOZ, (d) => { const r = meta(d).read!; setField(d, 'read', { ...r, pos: 2 }); });
+    const lowered = (await vault.read(WOZ)).text;
+    // blocks 4..6: the §2 heading and its two paragraphs
+    const text = 'twenty rules of formulating knowledge\n\nThe twenty rules are the residue\n\nAtomicity is the unglamorous one';
+    const child = await vault.extract(WOZ, { text, blocks: [4, 5, 6], today: '2026-05-27' });
+    expect(child).toBe('papers/wozniak-1990/twenty rules of formulating knowledge.md');
+    expect(await exists(child)).toBe(true);
+    const ex = parse(await readDisk(child));
+    expect(ex.diagnostics).toEqual([]);
+    expect(meta(ex.doc)).toMatchObject({ type: 'extract', imported: '2026-05-27', read: { due: '2026-05-27', ivl: 1, reps: 0, pos: 0, pri: 3 } });
+    expect(ex.doc.blocks).toEqual([
+      { kind: 'paragraph', text: 'twenty rules of formulating knowledge' },
+      { kind: 'paragraph', text: 'The twenty rules are the residue' },
+      { kind: 'paragraph', text: 'Atomicity is the unglamorous one' },
+    ]);
+    // the parent: one backref line under each paragraph, none under the heading, and the read line
+    const after = await readDisk(WOZ);
+    const la = lowered.split('\n');
+    const lb = after.split('\n');
+    expect(lb.length).toBe(la.length + 2);
+    const ref = '<!-- extract twenty rules of formulating knowledge -->';
+    expect(lb.filter((l) => l === ref)).toHaveLength(2);
+    const parent = parse(after).doc;
+    expect(parent.blocks[4]).toEqual(before.doc.blocks[4]);
+    expect(parent.blocks[5]).toEqual({ ...before.doc.blocks[5], extracts: [ref.slice(13, -4)] });
+    expect(parent.blocks[6]).toEqual({ ...before.doc.blocks[6], extracts: [ref.slice(13, -4)] });
+    expect(meta(parent).read).toEqual({ ...meta(before.doc).read, pos: 6 });
+    const rest = lb.filter((l) => l !== ref);
+    expect(rest.filter((l, i) => l !== la[i])).toEqual(['read: due=2026-06-01 ivl=9 reps=4 pos=6 pri=3']);
+    // the tree has it, under the parent, and said so
+    expect(documents(vault.tree)).toContain(child);
+    const node = find(vault.tree, WOZ);
+    expect(node?.kind === 'doc' && node.children?.some((c) => c.path === child)).toBe(true);
+    expect(treeEvents()).toBe(1);
+  });
+
+  it('never moves the marker back, tags a card too, and numbers a taken name', async () => {
+    const before = await vault.read(WOZ);
+    const first = await vault.extract(WOZ, { text: 'a card', blocks: [3], today: '2026-05-27' });
+    expect(first).toBe('papers/wozniak-1990/a card.md');
+    const second = await vault.extract(WOZ, { text: 'a card', blocks: [3], today: '2026-05-27' });
+    expect(second).toBe('papers/wozniak-1990/a card 2.md');
+    const parent = await vault.read(WOZ);
+    expect(parent.doc.blocks[3]).toEqual({ ...before.doc.blocks[3], extracts: ['a card', 'a card 2'] });
+    expect(meta(parent.doc).read?.pos).toBe(12);
+    // a parent not enrolled in reading: the child still is, with no priority, and the parent has no marker to move
+    const james = await vault.extract('books/james-pluralistic-ch4.md', { text: 'x y', blocks: [0], name: 'given', today: '2026-05-27' });
+    expect(james).toBe('books/james-pluralistic-ch4/given.md');
+    expect(meta((await vault.read(james)).doc).read).toEqual({ due: '2026-05-27', ivl: 1, reps: 0, pos: 0 });
+    expect(meta((await vault.read('books/james-pluralistic-ch4.md')).doc).read).toBeUndefined();
+  });
+
+  it('extracts from an extract, and refuses nothing or a missing parent', async () => {
+    const grandchild = await vault.extract(EX1, { text: 'Every bundle is a future failure', blocks: [0], today: '2026-05-27' });
+    expect(grandchild).toBe('papers/wozniak-1990/woz-ex1/Every bundle is a future.md');
+    expect(await isDir('papers/wozniak-1990/woz-ex1')).toBe(true);
+    expect((await vault.read(EX1)).doc.blocks[0]).toMatchObject({ extracts: ['Every bundle is a future'] });
+    await expect(vault.extract(WOZ, { text: '  ', blocks: [] })).rejects.toThrow('nothing to extract');
+    await expect(vault.extract('papers/none.md', { text: 'x', blocks: [] })).rejects.toThrow('no such document');
+    await expect(vault.extract('papers', { text: 'x', blocks: [] })).rejects.toThrow('no such document');
   });
 });
 

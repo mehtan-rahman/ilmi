@@ -6,6 +6,162 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-09-22 — milestone 6: extracts and card making
+
+Commit `TBD` — *cards: the selection cue, the composer, extracts carved
+into child files*.
+
+### Done
+
+- `src/reader/cards.ts`, pure: `cardText(spec)` (the paragraph a composed
+  card is written as, refused unless `parse` reads it back as exactly that
+  card; two-sided cards inline when both sides are one line, else around
+  `?` / `??`; blank-line runs folded), `passage(doc, from, to)` (the text
+  and child indices of the prose blocks a selection touches, cards and
+  raw skipped, math verbatim), `blockAt`, `insertCard`, `setCardText`.
+  `cardsKey` in `plugins.ts` marks a card-only transaction; the frozen
+  plugin lets it through, so cards are made and changed on frozen sources.
+- `Vault.extract(parent, { text, blocks, name?, today? })` and
+  `extractName` in `src/vault/vault.ts`: the child file under the parent's
+  children directory with `type: extract`, `imported`, and `read:
+  due=<today> ivl=1 reps=0 pos=0` plus the parent's `pri` when it has one;
+  a backref appended on each touched paragraph or card (none on headings
+  or raw blocks, where it would be an orphan); `read.pos` moved to just
+  past the last touched prose block, never back; then a re-walk and a
+  `tree` event. Names are the passage's first five words, numbered when
+  taken. `extractNode` in `src/app/vault.ts` wraps it and opens the
+  parent's row.
+- `src/app/Composer.tsx`: the prototype's MakeCard. `new card`, the three
+  forms with their ⌘1-3 numbers, `passage` / `question` / `answer` /
+  `term a` / `term b`, a preview of the blanks (`⌘B blank` until there is
+  one), `⌘↵ save · ⇧⌘↵ save, another · esc cancel`. It hands back the
+  card's text; the caller decides where it goes.
+- `Reader.tsx`: the selection is read from the DOM on `selectionchange`
+  and mapped through `posAtDOM` (a frozen surface is never focused, so the
+  editor's own selection does not follow it). A non-empty passage shows
+  the cue under the selection: `extract e` on sources and extracts, `make
+  a card m` everywhere. Keys go through ProseMirror's `handleKeyDown` when
+  the surface has focus and a window listener otherwise; both ignore
+  fields and modifiers. `m` opens the composer under the selection,
+  seeded with the passage; saving dispatches `insertCard` after the block
+  the selection ends in and flushes the `Writer`; `save, another` keeps
+  the composer and steps the anchor. `e` runs `extractNode` through the
+  new `Writer.run`, after anything pending; the parent's update comes back
+  as an external change and the editor rebuilds from the file, showing
+  the `extract` tag and the moved marker.
+- `Lenses.tsx`: the deck lens has a `+ card m` row that opens the same
+  composer in the flow (the deck's `default-card` picks the form) and
+  appends to the deck; `m` opens it in the active pane (`Canvas` now
+  passes `active` to each lens). The folder lens is unchanged.
+- CSS: the cue, the composer, `.card-pop`, `.kbd`, the deck row, all
+  flattened (hairlines, 2px, no shadow, the active form underlined).
+- Dev: `ILMI_SMOKE=cards` (`smoke.ts`) opens the frozen wozniak, selects
+  a sentence of §4, presses `e`, then selects in §1, presses `m`, fills the
+  composer with a blank, saves with ⌘↵, and logs what reached disk.
+- Tests: 5 new in `src/reader/__tests__/reader.test.ts` (every form's
+  text and refusals, the passage and anchor arithmetic, insertion on a
+  frozen state, changing a card's text in place, and the done-when end to
+  end) and 4 in `src/vault/__tests__/tree.test.ts` (naming, the carve
+  with one backref line per paragraph and one changed read line, marker
+  never moving back, a card tagged, a taken name numbered, a parent with
+  no `read`, an extract of an extract, refusals). 180 in all.
+
+### Verified
+
+- `npm test` green (180 tests), `npm run typecheck` clean, `npm run
+  build` ok.
+- Done-when, in vitest over the temp corpus: a q&a card composed from the
+  last paragraph of `wozniak-1990.md` and inserted after it adds two lines
+  and parses with no diagnostics; an extract of "Cramming is mass
+  repetition compressed in time." becomes
+  `papers/wozniak-1990/Cramming is mass repetition compressed.md`, parses
+  clean, sits under the parent in the tree, and the queue for 2026-05-27
+  holds a `read` item for it and a `card` item for the new card, due now.
+- Done-when, in the window (`ILMI_VAULT=<scratch copy> ILMI_SMOKE=cards
+  npm run tauri dev`): `cue: extract e | make a card m`; after `e`:
+  `extract papers/wozniak-1990/Cramming is mass repetition compressed.md;
+  front-matter --- / type: extract / imported: 2026-09-22 / read:
+  due=2026-09-22 ivl=1 reps=0 pos=0 pri=3 / ---; body 1 block;
+  diagnostics 0` and `parent: 1 lines added; backref true; read
+  pos=12 (already at the end); extracted paragraphs 2`; after `m`:
+  `composer: seed "Each successful recall pushes the curve out further
+  than the last."; forms cloze1 q&a2 bidir3; able 0`, then with a blank
+  typed `preview blanks 1; able 1`, and after ⌘↵ `card: line 14 (after
+  "Choosing well requires honesty…"); cards 8; diagnostics 0; surface
+  cards 8`. So the DOM selection, both keys, the vault op, the composer,
+  and the insert all work through the real webview and plugin-fs.
+
+### Not verified
+
+- The look of the cue and the composer; positions are the prototype's
+  arithmetic (`rect.bottom + 8`, clamped to the window), by reading.
+- ⌘B in the window (the smoke sets the text directly); `save, another`;
+  ⌘1-3; the deck's `+ card` row and its `m`. All by reading.
+- The cue while dragging a selection across a card or a chip.
+
+### Decisions worth knowing
+
+- No priority picker in the composer. FORMAT.md gives a card's `sr` line
+  no `pri`, and the queue ranks cards by due; a picker would write
+  nothing. Bring it back only with a format change.
+- A new card is written with no id and no `sr` line: new, due now, as the
+  format defines. The id arrives with the first grade (`gradeItem`).
+- Backrefs only on paragraphs and cards. A selection over a heading still
+  contributes its text to the extract and moves the marker past it.
+- Extracts come out of sources and extracts, not drafts (the prototype
+  removed extracts from writing). Cards can be made anywhere the reader
+  shows, and in decks.
+- `e` and `m` fire on a plain keypress with a selection, even on an
+  editable document, as in the prototype; typing over a selection with
+  those two letters is not possible there.
+- The card editor in the inspector is not built: the inspector is
+  milestone 9 and the brief says to ask before adding a panel.
+  `setCardText` is the model half, tested.
+
+### Handoff prompt
+
+Paste into a fresh session:
+
+```
+Read PLAN.md, FORMAT.md, BUILD-LOG.md, and spec/hashiyah/HANDOFF.md.
+
+Context: milestones 0-6 are done. src/format/ parses and serializes vault
+files (parse / serialize / meta / setField; never string-edit a file).
+src/vault/ opens, walks, reads, writes, watches, and reshapes a vault over
+an Fs interface; change a file with vault.update(path, mutate); tree ops
+are vault.createFolder / createDoc / rename / move / remove / extract; the
+vault emits a doc event for its own writes too. src/schedule/ grades cards
+with ts-fsrs, runs the reading and writing loops, and builds the queue.
+src/reader/ is the ProseMirror model of a document (schema, toDoc /
+fromDoc, plugins, marker helpers, cards.ts for composing and inserting
+cards) and src/app/Reader.tsx the editor over it, with the selection cue
+(e extracts, m opens src/app/Composer.tsx) and a Writer that debounces
+body writes through the vault. src/app/ also has the sidebar tree, panes
+and tabs (a tab is a path), and list lenses. Tests run in vitest over a
+temp copy of src/format/__tests__/corpus/vault. ILMI_VAULT=/path npm run
+tauri dev opens a vault at launch; ILMI_SMOKE=1 exercises the tree ops,
+ILMI_SMOKE=reader the reader, ILMI_SMOKE=cards extracts and cards, each
+logging results to the terminal.
+
+Tooling: node is in /opt/homebrew/bin and cargo in ~/.cargo/bin; neither is
+on the tool-shell PATH. Prefix every command with
+export PATH=$HOME/.cargo/bin:/opt/homebrew/bin:$PATH
+npm test and npm run typecheck must be green before a commit.
+
+Do milestone 7 in PLAN.md (import) and only that one. Intake takes a
+paste, a dropped text file, or a URL and lands a frozen source with
+imported: <today>, no read line, in the chosen folder; follow
+spec/hashiyah/ingest.jsx and the brief's copy rules for every string. A
+URL fetch needs the Tauri http plugin or a Rust command (the webview is
+CORS-bound); the vault side needs a createDoc that takes a body and
+fields, through serialize. Ask before adding anything the prototype does
+not show. Stop at the milestone's "done when". Then tick it in PLAN.md,
+write notes for the next session under it, add an entry to BUILD-LOG.md
+with a fresh handoff prompt, and commit.
+```
+
+---
+
 ## 2026-09-22 — milestone 5: reader
 
 Commit `b84ad6e` — *reader: ProseMirror over the document, KaTeX chips,

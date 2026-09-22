@@ -377,6 +377,23 @@
 .card-span .cs-a::before { content: "A "; font-family: var(--mono); font-size: 0.7em; color: var(--fg-4); letter-spacing: 0.08em; font-style: normal; }
 .card-span .cs-arrow { font-family: var(--mono); font-size: 0.8em; color: var(--fg-4); }
 .deck-view .card-span:first-of-type { border-top: 0; }
+.deck-view .deck-add {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin: 6px 0 18px;
+  padding: 2px 0;
+  background: transparent;
+  border: 0;
+  cursor: default;
+  color: var(--fg-3);
+  font-family: var(--sans);
+  font-size: 13px;
+  text-align: left;
+}
+.deck-view .deck-add:hover { color: var(--fg-1); }
 
 /* folder lens */
 .folder-view .fv-new {

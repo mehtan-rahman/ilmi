@@ -5,11 +5,12 @@ import { fileURLToPath } from 'node:url';
 import { NodeSelection, TextSelection } from 'prosemirror-state';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { meta, parse, serialize, type Block, type Card } from '../../format/index.js';
+import { queue } from '../../schedule/index.js';
 import { nodeFs } from '../../vault/node-fs.js';
 import { Vault } from '../../vault/index.js';
 import {
-  blocksEqual, cardDue, cursorIndex, editMath, editorialRanges, fromDoc, makeState, markerKey, markerPos, mathSplit,
-  pickPos, proseIndices, schema, setReadPos, textOf, toDoc,
+  blockAt, blocksEqual, cardDue, cardText, cursorIndex, editMath, editorialRanges, fromDoc, insertCard, makeState, markerKey,
+  markerPos, mathSplit, passage, pickPos, proseIndices, schema, setCardText, setReadPos, textOf, toDoc,
 } from '../index.js';
 
 const CORPUS = fileURLToPath(new URL('../../format/__tests__/corpus/vault/', import.meta.url));
@@ -260,5 +261,134 @@ describe('cards and marks', () => {
       { from: 31, to: 35, kind: 'tag' },
     ]);
     expect(editorialRanges('no marks')).toEqual([]);
+  });
+});
+
+describe('making cards', () => {
+  it('writes each form the way the format reads it back', () => {
+    expect(cardText({ form: 'cloze', text: ' the {{minimum}} principle ' })).toBe('the {{minimum}} principle');
+    expect(cardText({ form: 'cloze', text: 'no blank here' })).toBeNull();
+    expect(cardText({ form: 'cloze', text: 'empty {{  }} blank' })).toBeNull();
+    expect(cardText({ form: 'cloze', text: '# a {{b}}' })).toBeNull();
+    expect(cardText({ form: 'cloze', text: 'one {{a}}\n\n\ntwo' })).toBe('one {{a}}\ntwo');
+    expect(cardText({ form: 'qa', front: 'what is cramming?', back: 'mass repetition' })).toBe('what is cramming? :: mass repetition');
+    expect(cardText({ form: 'qa', front: 'q', back: 'a long\nanswer' })).toBe('q\n?\na long\nanswer');
+    expect(cardText({ form: 'qa', front: 'is a :: b a card?', back: 'yes' })).toBe('is a :: b a card?\n?\nyes');
+    expect(cardText({ form: 'qa', front: 'q', back: '  ' })).toBeNull();
+    expect(cardText({ form: 'bidir', left: 'der Vorsatz', right: 'resolution' })).toBe('der Vorsatz ::: resolution');
+    expect(cardText({ form: 'bidir', left: 'a', right: 'b\nc' })).toBe('a\n??\nb\nc');
+    expect(cardText({ form: 'bidir', left: '', right: 'b' })).toBeNull();
+    for (const t of ['the {{minimum}} principle', 'q\n?\na long\nanswer', 'der Vorsatz ::: resolution']) {
+      expect(parse(t).doc.blocks).toEqual([{ kind: 'card', text: t }]);
+    }
+  });
+
+  it('reads the passage a selection covers, cards skipped, math verbatim', () => {
+    const blocks: Block[] = [
+      { kind: 'heading', level: 2, text: 'the premise' },
+      { kind: 'paragraph', text: 'so $x^2$ here', id: 'p1' },
+      { kind: 'card', text: 'q :: a' },
+      { kind: 'paragraph', text: 'and after' },
+      { kind: 'paragraph', text: 'untouched' },
+    ];
+    const doc = toDoc(blocks);
+    const from = childStart(doc, 0) + 4;
+    const to = childStart(doc, 3) + 3;
+    expect(passage(doc, from, to)).toEqual({ text: 'premise\n\nso $x^2$ here\n\nand', blocks: [0, 1, 3] });
+    // ending exactly where a block starts does not touch it
+    expect(passage(doc, childStart(doc, 1), childStart(doc, 3))).toEqual({ text: 'so $x^2$ here', blocks: [1] });
+    expect(passage(doc, from, from)).toEqual({ text: '', blocks: [] });
+    expect(blockAt(doc, childStart(doc, 3) + 2)).toBe(3);
+    expect(blockAt(doc, childStart(doc, 3) - 1)).toBe(2);
+    expect(blockAt(doc, 0)).toBe(0);
+  });
+
+  it('inserts a card after a block on a frozen document and appends without an anchor', () => {
+    const state = makeState([{ kind: 'paragraph', text: 'a' }, { kind: 'paragraph', text: 'b' }], { frozen: () => true, pos: null });
+    const card: Card = { kind: 'card', text: 'q :: a' };
+    const after0 = state.apply(insertCard(state, card, 0));
+    expect(fromDoc(after0.doc)).toEqual([{ kind: 'paragraph', text: 'a' }, card, { kind: 'paragraph', text: 'b' }]);
+    const atEnd = state.apply(insertCard(state, card, null));
+    expect(fromDoc(atEnd.doc)).toEqual([{ kind: 'paragraph', text: 'a' }, { kind: 'paragraph', text: 'b' }, card]);
+    // prose is still refused
+    expect(state.apply(state.tr.insertText('X', 1)).doc.eq(state.doc)).toBe(true);
+  });
+
+  it('changes a card’s text in place, keeping its id and schedules', () => {
+    const card: Card = { kind: 'card', text: 'q :: a', id: 'c1', sched: { due: '2026-05-27', state: 'review' } };
+    const state = makeState([{ kind: 'paragraph', text: 'a' }, card], { frozen: () => true, pos: null });
+    const tr = setCardText(state, 1, 'q :: better');
+    expect(tr).not.toBeNull();
+    expect(fromDoc(state.apply(tr!).doc)[1]).toEqual({ ...card, text: 'q :: better' });
+    expect(setCardText(state, 0, 'x')).toBeNull();
+  });
+});
+
+describe('extracts and cards, end to end', () => {
+  let root: string;
+  let vault: Vault;
+  const NOW = new Date('2026-05-27T12:00:00Z');
+
+  beforeEach(async () => {
+    root = await fsp.mkdtemp(join(tmpdir(), 'ilmi-carve-'));
+    await fsp.cp(CORPUS, root, { recursive: true });
+    vault = await Vault.open(nodeFs, root);
+  });
+
+  afterEach(async () => {
+    vault.close();
+    await fsp.rm(root, { recursive: true, force: true });
+  });
+
+  it('both flows produce files that parse cleanly and appear in the tree and the queue', async () => {
+    const before = await vault.read(WOZ);
+    expect(meta(before.doc).frozen).toBe(true);
+    const state = makeState(before.doc.blocks, { frozen: () => true, pos: meta(before.doc).read?.pos ?? null });
+    // a card, composed from the last paragraph, inserted after it
+    const last = before.doc.blocks.length - 1;
+    const text = cardText({ form: 'qa', front: 'what does cramming solve?', back: 'an exam tomorrow morning, and nothing that lasts' });
+    expect(text).not.toBeNull();
+    const at = childStart(state.doc, last) + 5;
+    const next = state.apply(insertCard(state, { kind: 'card', text: text! }, blockAt(state.doc, at)));
+    const withCard = await vault.update(WOZ, (doc) => { doc.blocks = fromDoc(next.doc); });
+    expect(withCard.diagnostics).toEqual([]);
+    expect(withCard.text.split('\n').length).toBe(before.text.split('\n').length + 2);
+    expect(withCard.doc.blocks.at(-1)).toEqual({ kind: 'card', text });
+
+    // an extract, from a selection over the §4 paragraph
+    const doc = toDoc(withCard.doc.blocks);
+    const sel = passage(doc, childStart(doc, last), childStart(doc, last) + 'Cramming is mass repetition compressed in time.'.length);
+    expect(sel).toEqual({ text: 'Cramming is mass repetition compressed in time.', blocks: [last] });
+    const child = await vault.extract(WOZ, { ...sel, today: '2026-05-27' });
+    expect(child).toBe('papers/wozniak-1990/Cramming is mass repetition compressed.md');
+
+    // both files read back clean, from disk
+    for (const path of [WOZ, child]) {
+      const { doc: d, diagnostics } = parse(await fsp.readFile(join(root, path), 'utf8'));
+      expect(diagnostics, path).toEqual([]);
+      expect(serialize(d)).toBe((await vault.read(path, true)).text);
+    }
+    const parent = await vault.read(WOZ);
+    expect(parent.doc.blocks[last]).toEqual({
+      kind: 'paragraph',
+      text: before.doc.blocks[last]!.text,
+      extracts: ['Cramming is mass repetition compressed'],
+    });
+    expect(meta(parent.doc).read?.pos).toBe(12);
+    const ex = await vault.read(child);
+    expect(meta(ex.doc)).toMatchObject({ type: 'extract', imported: '2026-05-27', read: { due: '2026-05-27', ivl: 1, reps: 0, pos: 0, pri: 3 } });
+    expect(ex.doc.blocks).toEqual([{ kind: 'paragraph', text: sel.text }]);
+
+    // in the tree
+    expect(vault.documents()).toContain(child);
+    const node = vault.tree.find((n) => n.path === 'papers')!;
+    expect(node.kind).toBe('folder');
+    const woz = (node.kind === 'folder' ? node.children : []).find((n) => n.path === WOZ);
+    expect(woz?.kind === 'doc' && woz.children?.map((c) => c.path)).toEqual([child, 'papers/wozniak-1990/woz-ex1.md']);
+
+    // in the queue, today
+    const today = await queue(vault, NOW, 'today');
+    expect(today.some((i) => i.kind === 'read' && i.path === child)).toBe(true);
+    expect(today.some((i) => i.kind === 'card' && i.path === WOZ && i.text === text && i.due === undefined)).toBe(true);
   });
 });

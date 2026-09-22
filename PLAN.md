@@ -222,7 +222,46 @@ the inspector (milestone 6/9), a placeholder for an empty document.
   paragraph on disk; a frozen source refuses prose edits; the marker persists
   across reload.
 
-### [ ] 6. Extracts and card making
+### [x] 6. Extracts and card making
+Done 2026-09-22, commit `(see BUILD-LOG)`.
+Notes: `src/reader/cards.ts` is the pure side: `cardText(spec)` turns the
+composer's fields into the paragraph the format will read back as that
+card (checked with `parse` itself; two-sided cards go inline when both
+sides are one line, else around `?` / `??`; blank-line runs fold to one
+break), `passage(doc, from, to)` is what a selection covers (text of the
+prose blocks touched, cards and raw skipped, plus their child indices),
+`blockAt` the anchor, `insertCard` / `setCardText` the transactions. Both
+carry `cardsKey` meta, which the frozen plugin lets through: cards stay
+editable on a frozen source. A new card is written with no id and no
+`sr` line (new, due now; the id comes with the first grade). Extracts:
+`Vault.extract(parent, { text, blocks, name?, today? })` in
+`src/vault/vault.ts` makes `childDirOf(parent)/<name>.md` with `type:
+extract`, `imported`, and `read: due=today ivl=1 reps=0 pos=0` (`pri`
+copied from the parent's read line when it has one), appends the name to
+`extracts` on each touched paragraph or card (headings and raw get none:
+a backref there would be an orphan), and moves `read.pos` to just past
+the last touched prose block, never back. The name is the passage's first
+five words (`extractName`), numbered when taken. The app side is
+`extractNode` in `src/app/vault.ts`, which also opens the parent's row.
+Reader: the selection is read from the DOM on `selectionchange` and
+mapped with `posAtDOM`, because a frozen surface is never focused and the
+editor state does not follow its selection; the cue sits fixed under the
+selection with `extract e` (sources and extracts only) and `make a card
+m`; `e` and `m` are handled in ProseMirror's `handleKeyDown` when the
+surface is focused and by a window listener otherwise. The composer
+(`src/app/Composer.tsx`) is the prototype's MakeCard: cloze / q&a /
+bidir (⌘1-3), ⌘B wraps a blank, ⌘↵ saves, ⇧⌘↵ saves and stays, esc
+cancels; the card lands after the block the selection ends in through
+the editor, then the `Writer` flushes. An extract runs through
+`Writer.run` so it follows any pending body write, and the parent's own
+update comes back as an external change (editor rebuilt, history reset).
+Decks: a `+ card m` row opens the same composer in the flow and appends
+to the deck; `default-card` picks the form. Deviation: the prototype's
+priority picker is not in the composer, since FORMAT.md gives cards no
+priority. Not done: the card editor in the inspector (the inspector is
+milestone 9; `setCardText` is ready for it and tested). Dev:
+`ILMI_SMOKE=cards` selects in the frozen wozniak, presses `e`, then `m`,
+fills the composer, saves, and logs what reached disk.
 - Select a passage in a reading lens → `e` carves an extract: child file under
   the parent's directory with `type: extract`, its own `read`; parent gets
   `<!-- extract name -->` under the touched paragraphs; marker advances.
@@ -255,18 +294,21 @@ the inspector (milestone 6/9), a placeholder for an empty document.
 
 ## Notes for the next session
 
-Start at milestone 6, extracts and card making. The reader is
-`src/app/Reader.tsx` over `src/reader/`; selection is ProseMirror's
-(`view.state.selection`), and the paragraph a selection ends in is the
-anchor for an inserted card. Insert a card by dispatching a transaction
-that adds a `card` node (attrs `{ card }`) after that paragraph; `fromDoc`
-writes it as a block and the `Writer` gets it to disk. An extract is a
-`vault.createDoc`-shaped child under `childDirOf(parent)` with
-`type: extract` and its own `read`, plus `extracts` on the touched
-paragraphs (a paragraph attr; `fromDoc` writes the backref lines), then
-`setReadPos` past them. On a frozen document the surface is not editable
-but the selection still works, so `e` and `m` must be bound at the window
-level as the prototype does (`reader.jsx`, the `sel-cue` effect). The
-composer (`MakeCard`) and its copy are in `reader.jsx`; ⌘B wraps `{{ }}`.
-The card editor lives in the inspector, which does not exist until
-milestone 9; ask before adding a panel for it.
+Start at milestone 7, import. The prototype's intake is
+`spec/hashiyah/ingest.jsx` (paste, drop a text file, a URL; title and
+target folder) and `store.jsx`'s `ingestSource`; the sample it imports is
+there too. A source lands as `frozen: true` with `imported: <today>`, no
+`read` line (not enrolled), body as paragraphs. `Vault.createDoc` writes
+empty files today; give it, or a sibling `Vault.importDoc(dir, name,
+doc)`, a body and fields, going through `serialize` and `freeName` like
+the others. Readable text from HTML: the webview has `DOMParser`, so
+Readability-style extraction can run there, but a URL fetch from the
+webview is CORS-bound; use `@tauri-apps/plugin-http` or a Rust command
+for the request, granted in `capabilities/default.json`. A dropped file
+arrives through Tauri's drag-drop window event with a path; read it
+through the fs plugin after `allow_vault`-style scoping, or accept the
+file's text from a `<input type=file>`. The intake is a lens (a tab of
+its own in the prototype), not a dialog; ask before adding anything the
+prototype does not show. The card editor in the inspector is still
+pending for milestone 9; `setCardText` in `src/reader/cards.ts` is the
+model for it.

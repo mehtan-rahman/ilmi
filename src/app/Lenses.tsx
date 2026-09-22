@@ -1,27 +1,37 @@
 // Lenses: what a tab renders for a folder or a document. Folders and decks
 // are lists; sources, extracts, and drafts open in the reader.
 
-import { cardFields, type ClozePart } from '../format/index.js';
+import { useEffect, useState } from 'react';
+import { cardFields, meta, type ClozePart } from '../format/index.js';
 import type { TreeNode } from '../vault/index.js';
+import { Composer } from './Composer.js';
 import { GLYPH, contentsOf, findNode, kindOf, titleOf, type NodeKind } from './names.js';
 import type { OpenOpts } from './panes.js';
 import { Reader } from './Reader.js';
 import { useApp } from './store.js';
 import { useDoc } from './useDoc.js';
-import { createNode } from './vault.js';
+import { createNode, currentVault } from './vault.js';
 
 interface LensProps {
   id: string;
+  /** In the active pane: keys reach this lens. */
+  active: boolean;
   onOpen(path: string, opts: OpenOpts): void;
 }
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
-export function Lens({ id, onOpen }: LensProps) {
+const inField = (t: EventTarget | null) => {
+  const el = t as HTMLElement | null;
+  const tag = el?.tagName?.toLowerCase();
+  return tag === 'input' || tag === 'textarea' || !!el?.isContentEditable;
+};
+
+export function Lens({ id, active, onOpen }: LensProps) {
   const docs = useApp((s) => s.docs);
   const kind = kindOf(id, docs);
-  if (kind === 'folder') return <FolderLens id={id} onOpen={onOpen} />;
-  if (kind === 'deck') return <DeckLens id={id} />;
+  if (kind === 'folder') return <FolderLens id={id} active={active} onOpen={onOpen} />;
+  if (kind === 'deck') return <DeckLens id={id} active={active} />;
   return <DocLens id={id} />;
 }
 
@@ -77,13 +87,30 @@ function FolderLens({ id, onOpen }: LensProps) {
 
 // ── deck ─────────────────────────────────────────────────────────
 
-function DeckLens({ id }: { id: string }) {
+function DeckLens({ id, active }: { id: string; active: boolean }) {
   const docs = useApp((s) => s.docs);
   const root = useApp((s) => s.vault);
   const loaded = useDoc(id);
   const info = docs[id];
+  const [composer, setComposer] = useState(false);
+
+  // `m` opens the composer; a deck has no prose to select first
+  useEffect(() => {
+    if (!active || composer) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey || inField(e.target)) return;
+      if (e.key === 'm') { e.preventDefault(); setComposer(true); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [active, composer]);
+
   if (!loaded || !info) return <Gone />;
   const cards = loaded.doc.blocks.filter((b) => b.kind === 'card');
+  const save = (text: string, again: boolean) => {
+    currentVault()?.update(id, (doc) => { doc.blocks.push({ kind: 'card', text }); }).catch(console.error);
+    if (!again) setComposer(false);
+  };
   return (
     <div className="reader-wrap">
       <div className="reader deck-view">
@@ -92,7 +119,12 @@ function DeckLens({ id }: { id: string }) {
           <span className="right">{plural(cards.length, 'card')}{info.due ? ` · ${info.due} due` : ''}</span>
         </div>
         <h1>{titleOf(id, docs, root)}</h1>
-        {cards.length === 0 ? <div className="empty">no cards</div> : cards.map((b, i) => (
+        {composer ? (
+          <Composer seed="" form={meta(loaded.doc).defaultCard} onSave={save} onClose={() => setComposer(false)} />
+        ) : (
+          <button type="button" className="deck-add" onClick={() => setComposer(true)}>+ card <kbd className="kbd">m</kbd></button>
+        )}
+        {cards.length === 0 ? (!composer && <div className="empty">no cards</div>) : cards.map((b, i) => (
           <div key={b.kind === 'card' && b.id ? b.id : i} className="card-span">
             <CardText text={b.text} />
           </div>

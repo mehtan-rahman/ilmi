@@ -3,7 +3,7 @@
 // is a cache with a conflict rule: never overwrite a file whose stamp moved
 // since we read it.
 
-import { parse, serialize, setField, type Diagnostic, type Doc, type NodeType } from '../format/index.js';
+import { meta, parse, serialize, setField, type Diagnostic, type Doc, type NodeType, type ReadSchedule } from '../format/index.js';
 import { join, relative, sameStamp, type Fs, type Stamp } from './fs.js';
 import { baseOf, childDirOf, cleanName, dirOf, isDoc, joinRel, nameOf, rekey, within } from './paths.js';
 import { documents, isDocPath, isHidden, walk, type TreeNode } from './walk.js';
@@ -42,6 +42,26 @@ export const NEW_NAMES: Record<NodeType | 'folder', string> = {
   draft: 'untitled draft',
   extract: 'untitled extract',
 };
+
+/** What `Vault.extract` carves out of a document. */
+export interface ExtractSpec {
+  /** The passage, paragraphs separated by blank lines. */
+  text: string;
+  /**
+   * Indices into the parent's blocks the passage touches. Paragraphs and
+   * cards among them get a backref; the marker moves past the last one.
+   */
+  blocks: number[];
+  /** File name; by default the passage's first words. */
+  name?: string;
+  today?: string;
+}
+
+/** A file name from a passage: its first five words, punctuation dropped. */
+export function extractName(text: string): string {
+  const words = text.replace(/[^\p{L}\p{N}\s'-]/gu, ' ').trim().split(/\s+/).filter(Boolean);
+  return cleanName(words.slice(0, 5).join(' ')) ?? NEW_NAMES.extract;
+}
 
 const STATE_DIR = '.ilmi';
 
@@ -354,6 +374,54 @@ export class Vault {
         }
       }
       await this.rewalk();
+    });
+  }
+
+  /**
+   * Carve a passage of `parent` into a child extract (FORMAT.md §6.3): a new
+   * file in the parent's children directory with `type: extract` and its own
+   * reading schedule due today, a backref on each touched paragraph, and the
+   * parent's marker moved past the last touched block. Resolves to the
+   * child's path.
+   */
+  extract(parent: string, spec: ExtractSpec): Promise<string> {
+    return this.serial(async () => {
+      if (!isDoc(parent) || !(await this.fs.stat(this.abs(parent)))) throw new Error(`${parent}: no such document`);
+      const text = spec.text.trim();
+      if (!text) throw new Error('nothing to extract');
+      const clean = spec.name === undefined ? extractName(text) : cleanName(spec.name);
+      if (!clean) throw new Error(`"${spec.name}" is not a file name`);
+      const dir = childDirOf(parent);
+      await this.ensureDir(dir);
+      const name = await this.freeName(dir, clean);
+      const path = `${joinRel(dir, name)}.md`;
+      const today = spec.today ?? localDay(new Date());
+      const parentRead = meta((await this.read(parent)).doc).read;
+      const doc: Doc = {
+        blocks: text.split(/\n[ \t]*\n+/).map((t) => t.trim()).filter(Boolean).map((t) => ({ kind: 'paragraph', text: t })),
+      };
+      setField(doc, 'type', 'extract');
+      setField(doc, 'imported', today);
+      const read: ReadSchedule = { due: today, ivl: 1, reps: 0, pos: 0 };
+      if (parentRead?.pri !== undefined) read.pri = parentRead.pri;
+      setField(doc, 'read', read);
+      await this.commit(path, serialize(doc));
+      await this.update(parent, (d) => {
+        let last = -1;
+        let prose = 0;
+        d.blocks.forEach((b, i) => {
+          const isProse = b.kind !== 'card';
+          if (spec.blocks.includes(i)) {
+            if (b.kind === 'paragraph' || b.kind === 'card') b.extracts = [...(b.extracts ?? []).filter((n) => n !== name), name];
+            if (isProse) last = prose;
+          }
+          if (isProse) prose++;
+        });
+        const r = meta(d).read;
+        if (r && last >= 0) setField(d, 'read', { ...r, pos: Math.max(r.pos ?? 0, last + 1) });
+      });
+      await this.rewalk();
+      return path;
     });
   }
 

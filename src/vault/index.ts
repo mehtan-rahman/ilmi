@@ -5,4 +5,4 @@ export type { Fs, FsEntry, FsStat, Stamp } from './fs.js';
 export { join, relative, sameStamp } from './fs.js';
 export { walk, documents, isDocPath, isHidden, type TreeNode, type Folder, type DocNode } from './walk.js';
 export { dirOf, baseOf, joinRel, isDoc, childDirOf, nameOf, within, rekey, cleanName } from './paths.js';
-export { Vault, VaultConflict, NEW_NAMES, type Loaded, type VaultEvent, type VaultState } from './vault.js';
+export { Vault, VaultConflict, NEW_NAMES, extractName, type ExtractSpec, type Loaded, type VaultEvent, type VaultState } from './vault.js';

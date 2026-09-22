@@ -156,8 +156,10 @@ describe('write', () => {
     const written = await vault.update(WOZ, (doc) => {
       firstScheduledCard(doc.blocks).sched!.due = '2026-07-04';
     });
+    // the write itself is reported once; the watcher's echo of it is not
+    expect(events).toEqual([{ kind: 'doc', path: WOZ, loaded: written }]);
     await vault.changed([join(root, WOZ), join(root, `${WOZ}.ilmi-tmp`)]);
-    expect(events).toEqual([]);
+    expect(events).toHaveLength(1);
     expect(await vault.read(WOZ)).toBe(written);
   });
 });

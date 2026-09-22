@@ -1,0 +1,264 @@
+import { promises as fsp } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { NodeSelection, TextSelection } from 'prosemirror-state';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { meta, parse, serialize, type Block, type Card } from '../../format/index.js';
+import { nodeFs } from '../../vault/node-fs.js';
+import { Vault } from '../../vault/index.js';
+import {
+  blocksEqual, cardDue, cursorIndex, editMath, editorialRanges, fromDoc, makeState, markerKey, markerPos, mathSplit,
+  pickPos, proseIndices, schema, setReadPos, textOf, toDoc,
+} from '../index.js';
+
+const CORPUS = fileURLToPath(new URL('../../format/__tests__/corpus/vault/', import.meta.url));
+const WOZ = 'papers/wozniak-1990.md';
+
+const live = { frozen: () => false, pos: null };
+
+async function corpusFiles(dir: string): Promise<string[]> {
+  const out: string[] = [];
+  for (const e of await fsp.readdir(dir, { withFileTypes: true })) {
+    const p = join(dir, e.name);
+    if (e.isDirectory()) out.push(...(await corpusFiles(p)));
+    else if (e.name.endsWith('.md')) out.push(p);
+  }
+  return out;
+}
+
+/** Lines that differ between two texts of equal length, as [index, before, after]. */
+function lineDiff(a: string, b: string): [number, string, string][] {
+  const la = a.split('\n');
+  const lb = b.split('\n');
+  expect(lb.length).toBe(la.length);
+  const out: [number, string, string][] = [];
+  la.forEach((l, i) => { if (l !== lb[i]) out.push([i + 1, l, lb[i]!]); });
+  return out;
+}
+
+/** Position just inside the child `index` of the document. */
+const childStart = (doc: ReturnType<typeof toDoc>, index: number): number => {
+  let at = 0;
+  for (let i = 0; i < index; i++) at += doc.child(i).nodeSize;
+  return at + 1;
+};
+
+describe('blocks ↔ document', () => {
+  it('is a fixed point over the corpus', async () => {
+    for (const file of await corpusFiles(CORPUS)) {
+      const { doc } = parse(await fsp.readFile(file, 'utf8'));
+      const back = fromDoc(toDoc(doc.blocks));
+      expect(back, file).toEqual(doc.blocks);
+      expect(blocksEqual(back, doc.blocks)).toBe(true);
+    }
+  });
+
+  it('keeps math as chips and prose as text', () => {
+    expect(mathSplit('so $x^{a^{b}}$ and $$\\int f$$ here')).toEqual([
+      'so ', { math: '$x^{a^{b}}$' }, ' and ', { math: '$$\\int f$$' }, ' here',
+    ]);
+    expect(mathSplit('$5 and $10')).toEqual(['$5 and $10']);
+    const doc = toDoc([{ kind: 'paragraph', text: 'so $x$ here' }]);
+    const p = doc.child(0);
+    expect(p.childCount).toBe(3);
+    expect(p.child(1).type).toBe(schema.nodes.math);
+    expect(textOf(p)).toBe('so $x$ here');
+  });
+
+  it('gives an empty body one paragraph and drops empty prose on the way back', () => {
+    const doc = toDoc([]);
+    expect(doc.childCount).toBe(1);
+    expect(fromDoc(doc)).toEqual([]);
+    const withBlank = toDoc([{ kind: 'paragraph', text: 'a' }, { kind: 'paragraph', text: '   ' }, { kind: 'heading', level: 2, text: 'b' }]);
+    expect(fromDoc(withBlank)).toEqual([{ kind: 'paragraph', text: 'a' }, { kind: 'heading', level: 2, text: 'b' }]);
+  });
+
+  it('lets only the first half of a split paragraph keep the id', () => {
+    const state = makeState([{ kind: 'paragraph', text: 'one two', id: 'p1', extracts: ['ex'] }], live);
+    const tr = state.tr.split(1 + 3);
+    const blocks = fromDoc(state.apply(tr).doc);
+    expect(blocks).toEqual([
+      { kind: 'paragraph', text: 'one', id: 'p1', extracts: ['ex'] },
+      { kind: 'paragraph', text: ' two', extracts: ['ex'] },
+    ]);
+  });
+
+  it('passes cards and raw blocks through untouched', () => {
+    const blocks: Block[] = [
+      { kind: 'raw', text: '- a list\n- of things' },
+      { kind: 'card', text: 'a :: b', id: 'c1', sched: { due: '2026-05-27', state: 'review', extra: [['x', '1']] } },
+    ];
+    const doc = toDoc(blocks);
+    expect(doc.child(0).type).toBe(schema.nodes.raw);
+    expect(doc.child(1).type).toBe(schema.nodes.card);
+    const back = fromDoc(doc);
+    expect(back).toEqual(blocks);
+    expect(back[1]).not.toBe(blocks[1]);
+  });
+});
+
+describe('editing', () => {
+  let root: string;
+  let vault: Vault;
+
+  beforeEach(async () => {
+    root = await fsp.mkdtemp(join(tmpdir(), 'ilmi-reader-'));
+    await fsp.cp(CORPUS, root, { recursive: true });
+    vault = await Vault.open(nodeFs, root);
+  });
+
+  afterEach(async () => {
+    vault.close();
+    await fsp.rm(root, { recursive: true, force: true });
+  });
+
+  it('changes only the edited paragraph on disk', async () => {
+    const before = await vault.read(WOZ);
+    const state = makeState(before.doc.blocks, live);
+    const i = before.doc.blocks.findIndex((b) => b.kind === 'paragraph' && b.text.startsWith('Cramming is mass'));
+    expect(i).toBeGreaterThan(0);
+    const at = childStart(state.doc, i) + 'Cramming'.length;
+    const next = state.apply(state.tr.insertText(', they say,', at));
+    const written = await vault.update(WOZ, (doc) => { doc.blocks = fromDoc(next.doc); });
+    const diff = lineDiff(before.text, written.text);
+    expect(diff).toHaveLength(1);
+    expect(diff[0]![2]).toMatch(/^Cramming, they say, is mass repetition/);
+    expect(await fsp.readFile(join(root, WOZ), 'utf8')).toBe(written.text);
+    // and the file reads back as the same blocks the editor holds
+    expect(written.doc.blocks).toEqual(fromDoc(next.doc));
+  });
+
+  it('refuses prose edits on a frozen document', async () => {
+    const before = await vault.read(WOZ);
+    expect(meta(before.doc).frozen).toBe(true);
+    let frozen = true;
+    const state = makeState(before.doc.blocks, { frozen: () => frozen, pos: null });
+    const at = childStart(state.doc, 1) + 3;
+    const tr = state.tr.insertText('XX', at);
+    const refused = state.apply(tr);
+    expect(refused.doc.eq(state.doc)).toBe(true);
+    expect(fromDoc(refused.doc)).toEqual(before.doc.blocks);
+    // the marker still moves on a frozen document
+    const moved = state.apply(state.tr.setMeta(markerKey, 3));
+    expect(markerPos(moved)).toBe(3);
+    // thawed, the same edit lands
+    frozen = false;
+    expect(state.apply(state.tr.insertText('XX', at)).doc.eq(state.doc)).toBe(false);
+  });
+
+  it('turns a typed span into a chip once the caret leaves the block', () => {
+    const state = makeState([{ kind: 'paragraph', text: 'first' }, { kind: 'paragraph', text: 'so $x$ here' }], live);
+    // the chip from disk, turned back into text at the caret
+    const pos = childStart(state.doc, 1) + 3;
+    const withNode = state.apply(state.tr.setSelection(NodeSelection.create(state.doc, pos)));
+    let edited = withNode;
+    editMath(withNode, (tr) => { edited = withNode.apply(tr); });
+    expect(edited.doc.child(1).childCount).toBe(1);
+    expect(textOf(edited.doc.child(1))).toBe('so $x$ here');
+    // caret still in the block: stays literal
+    expect(edited.doc.child(1).child(0).isText).toBe(true);
+    // caret leaves: the chip re-forms
+    const left = edited.apply(edited.tr.setSelection(TextSelection.create(edited.doc, 1)));
+    expect(left.doc.child(1).childCount).toBe(3);
+    expect(left.doc.child(1).child(1).type).toBe(schema.nodes.math);
+    expect(fromDoc(left.doc)).toEqual(fromDoc(edited.doc));
+  });
+});
+
+describe('the marker', () => {
+  let root: string;
+  let vault: Vault;
+
+  beforeEach(async () => {
+    root = await fsp.mkdtemp(join(tmpdir(), 'ilmi-marker-'));
+    await fsp.cp(CORPUS, root, { recursive: true });
+    vault = await Vault.open(nodeFs, root);
+  });
+
+  afterEach(async () => {
+    vault.close();
+    await fsp.rm(root, { recursive: true, force: true });
+  });
+
+  it('counts prose blocks, cards skipped', () => {
+    const blocks: Block[] = [
+      { kind: 'heading', level: 2, text: 'h' },
+      { kind: 'paragraph', text: 'a' },
+      { kind: 'card', text: 'q :: a' },
+      { kind: 'paragraph', text: 'b' },
+    ];
+    expect(proseIndices(blocks)).toEqual([0, 1, 3]);
+    expect(proseIndices(toDoc(blocks))).toEqual([0, 1, 3]);
+    expect(cursorIndex([0, 1, 3], 0)).toBe(-1);
+    expect(cursorIndex([0, 1, 3], 2)).toBe(1);
+    expect(cursorIndex([0, 1, 3], 3)).toBe(3);
+    expect(cursorIndex([0, 1, 3], 9)).toBe(3);
+  });
+
+  it('snaps a pointer to the block it has reached', () => {
+    const bands = [{ top: 0, height: 40 }, { top: 50, height: 100 }, { top: 160, height: 10 }];
+    expect(pickPos(bands, -5)).toBe(1);
+    expect(pickPos(bands, 30)).toBe(1);
+    expect(pickPos(bands, 60)).toBe(1);
+    expect(pickPos(bands, 72)).toBe(2);
+    expect(pickPos(bands, 164)).toBe(2);
+    expect(pickPos(bands, 166)).toBe(3);
+    expect(pickPos([], 10)).toBe(0);
+  });
+
+  it('dims the blocks above the cursor block', () => {
+    const state = makeState([
+      { kind: 'heading', level: 2, text: 'h' },
+      { kind: 'paragraph', text: 'a' },
+      { kind: 'card', text: 'q :: a' },
+      { kind: 'paragraph', text: 'b' },
+    ], { frozen: () => false, pos: 3 });
+    const decos = markerKey.getState(state)!.decos.find();
+    expect(decos.map((d) => d.from)).toEqual([0, 3]);
+    expect(markerKey.getState(state.apply(state.tr.setMeta(markerKey, 1)))!.decos.find()).toHaveLength(0);
+  });
+
+  it('writes pos as one line and keeps it across a reopen', async () => {
+    const before = await vault.read(WOZ);
+    expect(meta(before.doc).read?.pos).toBe(12);
+    const written = await vault.update(WOZ, (doc) => setReadPos(doc, 5));
+    const diff = lineDiff(before.text, written.text);
+    expect(diff).toEqual([[5, 'read: due=2026-06-01 ivl=9 reps=4 pos=12 pri=3', 'read: due=2026-06-01 ivl=9 reps=4 pos=5 pri=3']]);
+    vault.close();
+    const again = await Vault.open(nodeFs, root);
+    expect(meta((await again.read(WOZ)).doc).read?.pos).toBe(5);
+    again.close();
+  });
+
+  it('clamps pos to the prose count and ignores unenrolled documents', () => {
+    const { doc } = parse('---\nread: pos=1\n---\n\na\n\nb\n');
+    setReadPos(doc, 99);
+    expect(meta(doc).read?.pos).toBe(2);
+    setReadPos(doc, -1);
+    expect(meta(doc).read?.pos).toBe(0);
+    const plain = parse('a\n').doc;
+    setReadPos(plain, 1);
+    expect(serialize(plain)).toBe('a\n');
+  });
+});
+
+describe('cards and marks', () => {
+  it('takes the earliest due over a card’s groups, new when any is unscheduled', () => {
+    const base: Card = { kind: 'card', text: '{{c1::a}} {{c2::b}}' };
+    expect(cardDue(base)).toBeUndefined();
+    expect(cardDue({ ...base, sched: { due: '2026-06-01' } })).toBe('2026-06-01');
+    expect(cardDue({ ...base, blanks: { 1: { due: '2026-06-01' }, 2: { due: '2026-05-27' } } })).toBe('2026-05-27');
+    expect(cardDue({ ...base, blanks: { 1: { due: '2026-06-01' }, 2: {} } })).toBeUndefined();
+    expect(cardDue({ ...base, sched: { due: '2026-05-20' }, blanks: { 1: { due: '2026-06-01' }, 2: {} } })).toBe('2026-05-20');
+  });
+
+  it('finds editorial marks and leaves the text alone', () => {
+    expect(editorialRanges('plain [a note] and #TODO: fix, #tag too')).toEqual([
+      { from: 6, to: 14, kind: 'note' },
+      { from: 19, to: 25, kind: 'tag' },
+      { from: 31, to: 35, kind: 'tag' },
+    ]);
+    expect(editorialRanges('no marks')).toEqual([]);
+  });
+});

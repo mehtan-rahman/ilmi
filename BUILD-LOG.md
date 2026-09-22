@@ -6,6 +6,153 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-09-22 — milestone 5: reader
+
+Commit: see the follow-up log commit — *reader: ProseMirror over the
+document, KaTeX chips, frozen sources, the read marker*.
+
+### Done
+
+- `prosemirror-{model,state,view,transform,keymap,commands,history,
+  inputrules,gapcursor}` and `katex` added; `jsdom` as a dev dependency
+  for one DOM-level test.
+- `src/reader/`, pure and tested without a window: `schema.ts` (doc of
+  paragraph / heading / card / raw, inline text and math; cards, raw
+  blocks, and math are atoms carrying their source in attrs), `convert.ts`
+  (`toDoc` / `fromDoc`, `mathSplit` by the format's `mathSpanEnd`,
+  `textOf`, `cardDue`), `marks.ts` (`editorialRanges`), `marker.ts`
+  (`proseIndices`, `cursorIndex`, `pickPos`, `setReadPos`), `plugins.ts`
+  (`makeState`: heading and math input rules, chips re-forming when the
+  caret leaves a block, editorial decorations, `frozenPlugin`, the marker
+  plugin with `settled` decorations, keys: undo / redo, Shift-Enter for a
+  line break inside a paragraph, Escape blurs in the view).
+- `src/app/Reader.tsx`: the lens for sources, extracts, and drafts. Meta
+  row: where the file sits (folders, and the parent for an extract), the
+  frozen / editable toggle (not on drafts), `N cards, M due` (drafts also
+  `N words`). The surface is one `EditorView` with `CardView` and
+  `MathView` node views; the `Writer` debounces body writes (500 ms),
+  serializes them, flushes on blur and unmount, and tells the vault's
+  report of its own write from an external change by the text it expected
+  (`claim`). External changes win: pending writes are dropped and the
+  editor rebuilds with the caret kept. After an own write, if nothing was
+  typed since and the file's blocks differ from the editor's (a typed
+  `::` line became a card, a `#` line a heading), the editor rebuilds from
+  the file. The read marker: gutter, rule, edge and knob as in the
+  prototype; pointer down or move sets `pos` in the editor state, pointer
+  up writes it. `src/app/reader.css` holds the rules.
+- `Vault.commit` now emits `doc` for the vault's own writes, so the store's
+  `DocInfo` (counts, frozen, read) and any other pane on the same file
+  follow an edit. The own-write test now expects that one event and still
+  none from the watcher's echo.
+- `DocLens` in `Lenses.tsx` is the `Reader`; the read-only page and its
+  CSS are gone.
+- Dev: `ILMI_SMOKE=reader` (`smoke.ts`) opens `papers/wozniak-1990.md`,
+  reports the rendered blocks and marker, types into a frozen paragraph,
+  thaws, types again, drags the marker, and logs what reached disk.
+  `main.tsx` forwards renderer errors and unhandled rejections to the log
+  plugin in dev.
+- Tests: 15 in `src/reader/__tests__/reader.test.ts` (fixed point over
+  every corpus file, math splitting, empty and split paragraphs, atoms
+  passed through, the one-line diff for a paragraph edit, the frozen
+  refusal, chip → text → chip round trip, marker arithmetic and snapping,
+  settled decorations, `pos` written as one line and read back after
+  reopening the vault, clamping) and 4 in
+  `src/app/__tests__/reader-view.test.ts` under jsdom (node views over the
+  corpus file, KaTeX output, editorial decorations, card forms, due labels).
+
+### Verified
+
+- `npm test` green (171 tests), `npm run typecheck` clean, `npm run build`
+  ok.
+- Done-when, in vitest: inserting text into the "Cramming is mass…"
+  paragraph of `wozniak-1990.md` through a ProseMirror transaction and
+  `vault.update` changes one line on disk; a state built with
+  `frozen: true` returns the same document for a text insertion, while the
+  marker still moves; `setReadPos(doc, 5)` changes only the `read:` line
+  and a fresh `Vault.open` reads `pos=5` back.
+- Done-when, in the window (`ILMI_VAULT=<scratch copy> ILMI_SMOKE=reader
+  npm run tauri dev`): `blocks 19, cards 7`, `rule 0px + 2038px`, `frozen
+  frozen; editable false`, `frozen refused: true`; after the toggle,
+  `typed: changed lines [3,56]` (line 3 is `frozen: false` from the toggle,
+  line 56 the paragraph); a pointer in the gutter beside the third
+  paragraph gave `read: due=2026-06-01 ivl=9 reps=4 pos=5 pri=3`, `rule
+  629px`, `settled 4`. So typing, the frozen refusal, the toggle, the
+  marker, and the writes all work through the real webview and plugin-fs.
+
+### Not verified
+
+- The look. No screenshot path in this sandbox; the CSS is by reading and
+  by the prototype's rules. Fonts, KaTeX metrics, and the marker's
+  alignment with the text were not seen.
+- The heading input rule and math input rule in the window (they run in
+  `handleTextInput`, which `execCommand` in the smoke does not exercise).
+  The chip round trip is covered at state level.
+- An external edit arriving while the reader is open: the branch is
+  tested through `claim` logic by reading, not by a test.
+- Undo across a rebuild: history is reset when the editor rebuilds from
+  the file.
+
+### Decisions worth knowing
+
+- `read.pos` is 1-based "blocks read": the rule reaches the bottom of the
+  pos-th prose block, and the blocks above that one are dimmed (the
+  prototype's cursor block stays undimmed as the place to resume). The
+  gutter never sets 0, as in the prototype; `pos=0` on disk shows the
+  knob at the top.
+- Empty paragraphs are dropped on write (a blank line is a separator); a
+  split paragraph keeps its id on the first half only.
+- An unscheduled card's state reads `new`, not the prototype's `today`.
+- Paragraph line breaks are `\n` in the text node under `white-space:
+  pre-wrap`, matching the format's verbatim rule; Shift-Enter inserts one.
+- The editor does not police what a line means: typing `a :: b` in a
+  paragraph is a paragraph until the file is written and read back as a
+  card, at which point the editor rebuilds from the file. The file wins.
+- Left out of this milestone, deliberately: the draft lens's done / reopen
+  row (milestone 8 has the writing actions), clicking a card to open it
+  (needs the inspector), a placeholder on an empty document.
+
+### Handoff prompt
+
+Paste into a fresh session:
+
+```
+Read PLAN.md, FORMAT.md, BUILD-LOG.md, and spec/hashiyah/HANDOFF.md.
+
+Context: milestones 0-5 are done. src/format/ parses and serializes vault
+files (parse / serialize / meta / setField; never string-edit a file).
+src/vault/ opens, walks, reads, writes, watches, and reshapes a vault over
+an Fs interface; change a file with vault.update(path, mutate); tree ops
+are vault.createFolder / createDoc / rename / move / remove; the vault
+emits a doc event for its own writes too. src/schedule/ grades cards with
+ts-fsrs, runs the reading and writing loops, and builds the queue.
+src/reader/ is the ProseMirror model of a document (schema, toDoc /
+fromDoc, plugins, marker helpers) and src/app/Reader.tsx the editor over
+it, with a Writer that debounces body writes through the vault. src/app/
+also has the sidebar tree, panes and tabs (a tab is a path), and list
+lenses. Tests run in vitest over a temp copy of
+src/format/__tests__/corpus/vault. ILMI_VAULT=/path npm run tauri dev
+opens a vault at launch; ILMI_SMOKE=1 exercises the tree ops and
+ILMI_SMOKE=reader the reader, logging results to the terminal.
+
+Tooling: node is in /opt/homebrew/bin and cargo in ~/.cargo/bin; neither is
+on the tool-shell PATH. Prefix every command with
+export PATH=$HOME/.cargo/bin:/opt/homebrew/bin:$PATH
+npm test and npm run typecheck must be green before a commit.
+
+Do milestone 6 in PLAN.md (extracts and card making) and only that one.
+Extracts are child files under the parent's directory with type: extract
+and their own read line, backrefs on the touched paragraphs, the marker
+moved past them; the composer inserts a card block after the selected
+paragraph. Follow spec/hashiyah/reader.jsx (MakeCard, the selection cue,
+e and m) and the brief's copy rules for every string. The inspector does
+not exist yet; ask before adding a panel for the card editor. Stop at the
+milestone's "done when". Then tick it in PLAN.md, write notes for the next
+session under it, add an entry to BUILD-LOG.md with a fresh handoff
+prompt, and commit.
+```
+
+---
+
 ## 2026-09-22 — milestone 4: tree, sidebar, lenses
 
 Commit `80648ae` — *tree: sidebar, tree operations over disk, panes and lenses*.

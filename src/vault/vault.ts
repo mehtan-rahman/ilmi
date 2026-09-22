@@ -146,6 +146,9 @@ export class Vault {
     const { doc, diagnostics } = parse(text);
     const loaded: Loaded = { path, text, doc, diagnostics, stamp };
     this.cache.set(path, loaded);
+    // our own write is a change too: a lens showing this file in another
+    // pane, and the sidebar's counts, follow it the same way as an external one
+    this.emit({ kind: 'doc', path, loaded });
     return loaded;
   }
 

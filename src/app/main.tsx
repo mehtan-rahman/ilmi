@@ -14,6 +14,14 @@ import { exposeConsole } from './store.js';
 
 exposeConsole();
 
+// dev: renderer errors reach the terminal, since the window's console may not
+if (import.meta.env.DEV) {
+  void import('@tauri-apps/plugin-log').then(({ error }) => {
+    window.addEventListener('error', (e) => void error(`renderer: ${e.message}`));
+    window.addEventListener('unhandledrejection', (e) => void error(`renderer: ${String(e.reason)}`));
+  });
+}
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <App />

@@ -1,0 +1,175 @@
+/* The reader: the one editable surface, cards and math in the flow, the
+   reading marker in the margin. Ported from the prototype's draft-doc and
+   doc-wrap rules with the flattening pass folded in. */
+
+.doc-wrap { position: relative; }
+.doc-wrap.reading { padding-left: 4px; }
+
+/* the surface */
+.draft-doc {
+  font-family: var(--serif);
+  outline: none;
+  position: relative;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  min-height: 4em;
+}
+.draft-doc .dd-p { margin: 0 0 1em; text-wrap: pretty; }
+.draft-doc .dd-h {
+  font-family: var(--sans);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin: 1.3em 0 0.5em;
+  line-height: 1.25;
+}
+.draft-doc .dd-h:first-child { margin-top: 0; }
+.draft-doc h1.dd-h { font-size: calc(var(--serif-size) * 1.4); }
+.draft-doc h2.dd-h { font-size: calc(var(--serif-size) * 1.14); }
+.draft-doc h3.dd-h { font-size: calc(var(--serif-size) * 1.0); }
+.draft-doc h4.dd-h, .draft-doc h5.dd-h, .draft-doc h6.dd-h { font-size: calc(var(--serif-size) * 0.92); color: var(--fg-2); }
+.draft-doc pre.raw {
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--fg-3);
+  white-space: pre-wrap;
+  margin: 0 0 1em;
+  cursor: default;
+}
+
+/* a paragraph an extract was carved from */
+.draft-doc p.extracted { color: var(--fg-3); }
+.draft-doc p.extracted::before {
+  content: "extract";
+  display: block;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--fg-4);
+  margin-bottom: 2px;
+}
+
+/* what the marker has passed */
+.draft-doc .settled { color: var(--fg-3); transition: color .3s; }
+
+/* selected atoms: a quiet fill, no outline */
+.draft-doc .ProseMirror-selectednode,
+.draft-doc .card-span.selected { outline: none; background: var(--line-3); }
+.draft-doc .math.selected { background: var(--accent-soft); }
+
+/* a card, in the flow */
+.draft-doc .card-span {
+  margin: 0;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line-2);
+  cursor: default;
+  user-select: none;
+}
+.draft-doc .card-span .cs-body {
+  font-size: calc(var(--serif-size) * 0.96);
+  line-height: 1.5;
+  color: var(--fg-2);
+}
+.draft-doc .card-span .cz {
+  background: var(--accent-soft);
+  border-radius: var(--radius);
+  padding: 0 4px;
+  border-bottom: 1px solid color-mix(in oklab, var(--accent) 40%, transparent);
+  color: var(--fg-1);
+}
+.draft-doc .card-span .cs-foot {
+  display: flex;
+  align-items: baseline;
+  margin-top: 4px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--fg-5);
+  letter-spacing: 0.02em;
+}
+.draft-doc .card-span .cs-state {
+  margin-left: auto;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--fg-4);
+}
+.draft-doc .card-span .cs-state[data-due="1"] { color: var(--accent); }
+
+/* math chips: atomic, the source kept on the node */
+.math { cursor: default; }
+.math.display { display: block; margin: 0.6em 0; text-align: center; }
+.math .katex { font-size: 1.02em; }
+.math .katex-display { margin: 0; }
+
+/* editorial marks, lit where they stand */
+.ed-mark { border-radius: var(--radius); }
+.ed-mark.note {
+  background: color-mix(in oklab, var(--accent) 15%, transparent);
+  padding: 0 3px;
+}
+.ed-mark.tag {
+  font-family: var(--mono);
+  font-size: 0.8em;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--el-write);
+}
+
+/* the frozen / editable toggle in the meta row */
+.reader .meta .frozen-tag {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  cursor: default;
+  font: inherit;
+  letter-spacing: 0.02em;
+  color: var(--fg-4);
+}
+.reader .meta .frozen-tag:hover { color: var(--fg-2); }
+
+/* ── the left-margin read marker: a rule spanning what you have read, down
+      to a draggable edge. Click or drag in the gutter to move it. ── */
+.doc-wrap .read-gutter {
+  position: absolute;
+  left: -26px;
+  top: 0;
+  bottom: 0;
+  width: 30px;
+  cursor: ns-resize;
+  z-index: 3;
+}
+.doc-wrap .read-rule {
+  position: absolute;
+  left: -18px;
+  width: 2px;
+  background: var(--accent);
+  border-radius: 1px;
+  opacity: 0.9;
+  pointer-events: none;
+  transition: top .18s ease, height .18s ease;
+  z-index: 2;
+}
+.doc-wrap .read-edge {
+  position: absolute;
+  left: -26px;
+  width: 22px;
+  height: 0;
+  border-top: 1px solid var(--accent);
+  opacity: 0.55;
+  pointer-events: none;
+  transition: top .18s ease;
+  z-index: 2;
+}
+.doc-wrap .read-edge .read-knob {
+  position: absolute;
+  left: -3px;
+  top: -3.5px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.doc-wrap .read-gutter:hover ~ .read-edge { opacity: 0.9; }
+[data-theme="eink"] .doc-wrap .read-rule,
+[data-theme="eink"] .doc-wrap .read-edge { opacity: 1; }

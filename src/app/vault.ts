@@ -167,9 +167,10 @@ export function openInitialVault(): Promise<void> {
     const path = await invoke<string | null>('dev_env', { name: 'ILMI_VAULT' });
     if (!path) return;
     const vault = await openVault(path);
-    if (await invoke<string | null>('dev_env', { name: 'ILMI_SMOKE' })) {
-      const { smoke } = await import('./smoke.js');
-      await smoke(vault);
+    const mode = await invoke<string | null>('dev_env', { name: 'ILMI_SMOKE' });
+    if (mode) {
+      const { smoke, smokeReader } = await import('./smoke.js');
+      await (mode === 'reader' ? smokeReader(vault) : smoke(vault));
     }
   })();
   return initial;

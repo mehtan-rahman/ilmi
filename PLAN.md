@@ -180,7 +180,36 @@ on this case-insensitive disk, so the component file is `Canvas.tsx`.
 - Done when: every tree operation round-trips through disk (rename moves the
   file and its children directory) and the tests for it pass.
 
-### [ ] 5. Reader — the unified document editor
+### [x] 5. Reader — the unified document editor
+Done 2026-09-22.
+Notes: `src/reader/` is the editor's model, pure and tested without a
+window: `schema.ts` (paragraph, heading, card, raw, text, math), `convert.ts`
+(`toDoc(blocks)` / `fromDoc(doc)`, a fixed point over the corpus; empty
+prose is dropped, a split paragraph keeps its id on the first half only,
+cards and raw blocks pass through as frozen attrs), `marks.ts` (editorial
+mark ranges), `marker.ts` (`pickPos`, `cursorIndex`, `setReadPos`),
+`plugins.ts` (`makeState(blocks, { frozen, pos })`: `# ` input rule, `$…$`
+input rule validated by `mathSpanEnd`, chips re-form when the caret leaves a
+block, editorial decorations, `frozenPlugin` filters doc-changing
+transactions, the marker plugin holds `pos` and dims settled blocks; set it
+with `tr.setMeta(markerKey, pos)`). The view is `src/app/Reader.tsx`:
+`Writer` debounces body writes 500 ms, serializes them, and records the
+text each write will produce so the vault's `doc` event for it is known as
+ours (`claim`); an unknown text is an external change and wins (pending
+writes dropped, editor rebuilt, caret kept). After our own write, if nothing
+was typed since and the file's blocks differ from the editor's (a line that
+became a card, a `#` line), the editor rebuilds from the file. Node views:
+`CardView` (form-rendered body, due label from `cardDue`, `.selected` on
+node selection) and `MathView` (KaTeX, `data-tex`); clicking a chip on an
+editable document turns it back into text (`editMath`). The gutter sets
+`pos` locally on every pointer move and writes it on pointer up through
+`setReadPos`. The frozen / editable toggle in the meta row writes `frozen`.
+Vault change: `commit` now emits `doc` for our own writes too, so the
+sidebar counts and a second pane follow an edit. Dev: `ILMI_SMOKE=reader`
+opens wozniak, types, toggles frozen, drags the marker, and logs what
+reached disk; `main.tsx` forwards renderer errors to the log plugin. Not
+done: the draft lens's done / reopen row (milestone 8), card click opening
+the inspector (milestone 6/9), a placeholder for an empty document.
 - ProseMirror document built from `Doc.blocks`; edits write back through
   `serialize`. Headings and paragraphs; cards as atomic inline widgets;
   raw blocks rendered read-only.
@@ -226,15 +255,18 @@ on this case-insensitive disk, so the component file is `Canvas.tsx`.
 
 ## Notes for the next session
 
-Start at milestone 5, the reader. Replace `DocLens` in `src/app/Lenses.tsx`
-(a read-only page over `Doc.blocks`) with a ProseMirror document; keep the
-`Lens` dispatch and `useDoc(path)` (`src/app/useDoc.ts`, follows `doc` and
-`gone` events). Edits go through `vault.update(path, mutate)` on the cached
-`Doc`, never through string edits; `Loaded.doc` is owned by the cache, so
-clone before mutating outside `update`. `DocInfo.frozen` says whether prose
-is locked; `read.pos` is the marker (block index, prose blocks only, as
-`ReadItem.pos` counts them in `src/schedule/queue.ts`). `docItems` gives the
-card items with block indices. The tree, panes, and tabs are done; a tab is
-a path and `kindOf(path, docs)` picks the lens. The app shell has no top or
-bottom strip yet (milestone 9). Ask before adding a screen not in the
-prototype.
+Start at milestone 6, extracts and card making. The reader is
+`src/app/Reader.tsx` over `src/reader/`; selection is ProseMirror's
+(`view.state.selection`), and the paragraph a selection ends in is the
+anchor for an inserted card. Insert a card by dispatching a transaction
+that adds a `card` node (attrs `{ card }`) after that paragraph; `fromDoc`
+writes it as a block and the `Writer` gets it to disk. An extract is a
+`vault.createDoc`-shaped child under `childDirOf(parent)` with
+`type: extract` and its own `read`, plus `extracts` on the touched
+paragraphs (a paragraph attr; `fromDoc` writes the backref lines), then
+`setReadPos` past them. On a frozen document the surface is not editable
+but the selection still works, so `e` and `m` must be bound at the window
+level as the prototype does (`reader.jsx`, the `sel-cue` effect). The
+composer (`MakeCard`) and its copy are in `reader.jsx`; ⌘B wraps `{{ }}`.
+The card editor lives in the inspector, which does not exist until
+milestone 9; ask before adding a panel for it.

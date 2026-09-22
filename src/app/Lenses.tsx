@@ -1,12 +1,11 @@
 // Lenses: what a tab renders for a folder or a document. Folders and decks
-// are lists. Sources, extracts, and drafts get a read-only page until the
-// reader (milestone 5) replaces it; nothing here edits a file.
+// are lists; sources, extracts, and drafts open in the reader.
 
-import type { ReactNode } from 'react';
-import { cardFields, type Block, type ClozePart } from '../format/index.js';
+import { cardFields, type ClozePart } from '../format/index.js';
 import type { TreeNode } from '../vault/index.js';
 import { GLYPH, contentsOf, findNode, kindOf, titleOf, type NodeKind } from './names.js';
 import type { OpenOpts } from './panes.js';
+import { Reader } from './Reader.js';
 import { useApp } from './store.js';
 import { useDoc } from './useDoc.js';
 import { createNode } from './vault.js';
@@ -106,40 +105,7 @@ function DeckLens({ id }: { id: string }) {
 // ── document ─────────────────────────────────────────────────────
 
 function DocLens({ id }: { id: string }) {
-  const docs = useApp((s) => s.docs);
-  const root = useApp((s) => s.vault);
-  const loaded = useDoc(id);
-  const info = docs[id];
-  if (!loaded || !info) return <Gone />;
-  const crumb = [info.type, info.frozen ? 'frozen' : null].filter(Boolean).join(' · ');
-  return (
-    <div className="reader-wrap">
-      <div className="reader doc-view">
-        <div className="meta">
-          <span className="crumb">{crumb}</span>
-          <span className="right">{info.cards ? `${plural(info.cards, 'card')}${info.due ? ` · ${info.due} due` : ''}` : ''}</span>
-        </div>
-        <h1>{titleOf(id, docs, root)}</h1>
-        {loaded.doc.blocks.map((b, i) => <BlockView key={i} block={b} />)}
-      </div>
-    </div>
-  );
-}
-
-function BlockView({ block }: { block: Block }): ReactNode {
-  switch (block.kind) {
-    case 'heading': {
-      const level = Math.min(6, Math.max(2, block.level + 1));
-      const Tag = `h${level}` as 'h2' | 'h3' | 'h4' | 'h5' | 'h6';
-      return <Tag>{block.text}</Tag>;
-    }
-    case 'paragraph':
-      return <p className={block.extracts?.length ? 'extracted' : undefined}>{block.text}</p>;
-    case 'card':
-      return <div className="card-span"><CardText text={block.text} /></div>;
-    case 'raw':
-      return <pre className="raw">{block.text}</pre>;
-  }
+  return <Reader key={id} id={id} />;
 }
 
 function CardText({ text }: { text: string }) {

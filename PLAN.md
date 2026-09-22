@@ -181,7 +181,7 @@ on this case-insensitive disk, so the component file is `Canvas.tsx`.
   file and its children directory) and the tests for it pass.
 
 ### [x] 5. Reader — the unified document editor
-Done 2026-09-22.
+Done 2026-09-22, commit `b84ad6e`.
 Notes: `src/reader/` is the editor's model, pure and tested without a
 window: `schema.ts` (paragraph, heading, card, raw, text, math), `convert.ts`
 (`toDoc(blocks)` / `fromDoc(doc)`, a fixed point over the corpus; empty

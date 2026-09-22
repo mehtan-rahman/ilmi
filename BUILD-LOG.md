@@ -8,8 +8,8 @@ was verified, what was not, and the prompt to resume with.
 
 ## 2026-09-22 — milestone 5: reader
 
-Commit: see the follow-up log commit — *reader: ProseMirror over the
-document, KaTeX chips, frozen sources, the read marker*.
+Commit `b84ad6e` — *reader: ProseMirror over the document, KaTeX chips,
+frozen sources, the read marker*.
 
 ### Done
 

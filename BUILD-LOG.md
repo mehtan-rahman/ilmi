@@ -6,6 +6,150 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-09-22 — milestone 4: tree, sidebar, lenses
+
+Commit `TBD` — *tree: sidebar, tree operations over disk, panes and lenses*.
+
+### Done
+
+- `src/vault/paths.ts`: vault-relative path arithmetic (`dirOf`, `nameOf`,
+  `childDirOf`, `rekey`, `within`, `cleanName`).
+- `Vault` gained `createFolder`, `createDoc`, `rename`, `move`, `remove`.
+  Each waits for pending watcher work, goes to disk through `Fs`, re-keys
+  the cache, re-walks, and emits `tree`; rename and move emit a new
+  `moved { from, to }` event, delete emits `gone` per cached document. A
+  document's `name/` directory travels with it. Renaming an extract
+  rewrites its parent's `<!-- extract -->` backrefs through `update`, one
+  line each. Names are taken when `name` or `name.md` exists, so a
+  document never adopts a stray folder as children and a folder never
+  becomes a document's children by accident. `NEW_NAMES` holds the default
+  names; free names get ` 2`, ` 3`. New drafts get `started` and
+  `write: due=<today> ivl=1 reps=0`. `VaultState.sidebar` added.
+- `src/app/panes.ts`: the prototype's pane and tab model as pure functions
+  (`openTab` with ⌘ / ⌘⇧ semantics, `closeTab`, `splitPane` up to three,
+  `closePane`, `retarget` after a move, `dropTabs` after a delete). A tab
+  is just a path; kind and title come from the store at render time.
+- `src/app/store.ts`: `tree`, `docs` (a `DocInfo` per document: type,
+  title, frozen, card and due counts, read and write schedules), `open`,
+  `sidebar`, `panes`. `src/app/vault.ts` mirrors vault events into it,
+  persists `folders` / `tab` / `sidebar` to `.ilmi/state.json` with a
+  300 ms debounce (open state is pruned against the tree on every `tree`
+  event, so a deleted folder does not linger in `folders`), and wraps the
+  ops (`createNode`, `renameNode` also updates `title` when the document
+  has one, `moveNode`, `removeNode`).
+- `Tree.tsx`: the sidebar tree after `tree.jsx`: chevrons, per-type glyph
+  and colour, count or state in the margin (`3 cards · 1 due`, `done`,
+  `due`), click opens, chevron folds, double-click or F2 renames inline,
+  drag moves beside a row or into a folder, right-click menu with new
+  source / folder / deck / draft, rename, move to… (every folder but the
+  node's own subtree and current parent), delete. `Canvas.tsx`: panes and
+  tab bars (⊟ splits, × closes, middle-click closes a tab). `Lenses.tsx`:
+  folder and deck lenses as lists with the prototype's `+ source` row and
+  card rows; source / extract / draft render as a read-only page until
+  milestone 5. `names.ts` and `useDoc.ts` are the shared helpers.
+- `App.tsx`: sidebar with drag-resize handle (drag under 80 px hides it,
+  drag out again shows it), ⌘⇧E toggles, ⌘W closes a tab, ⌘\ splits.
+- Tauri: `allow_vault` now also grants `vault/.ilmi` by name, because the
+  fs plugin's global scope matches with `require_literal_leading_dot` on
+  unix whatever the config says, so `vault/**` never reached `.ilmi/` and
+  `loadState` threw on the first launch. A macOS menu without Close
+  Window, so ⌘W reaches the webview. `initial_vault` became `dev_env`;
+  `ILMI_SMOKE=1` runs `src/app/smoke.ts`, which drives every tree op
+  through the real adapter and logs each result.
+- Tests: 21 in `src/vault/__tests__/tree.test.ts` (path helpers, create
+  with numbering and inside a document, draft and deck front-matter,
+  rename with children and cache re-keying, extract rename fixing the
+  parent's backref by one line, folder rename, refusals, move with
+  children, into a document, refusals, delete with `gone` events, no
+  double `tree` event from the watcher echo, sidebar state) and 6 in
+  `src/app/__tests__/panes.test.ts`.
+
+### Verified
+
+- `npm test` green (152 tests), `npm run typecheck` clean, `npm run build`
+  ok, `cargo check` ok.
+- Done-when, in vitest over the temp corpus: renaming `wozniak-1990` moves
+  `papers/wozniak-1990.md` and `papers/wozniak-1990/` together, the tree
+  and the cache follow, and the `moved` event carries both paths; renaming
+  `woz-ex1` changes exactly one line of the parent (`<!-- extract
+  woz-first -->`); folder rename, move with children, move into a
+  document's children directory, delete of a document with children, and
+  every refusal (own subtree, taken name, missing target, bad name) are
+  covered.
+- Done-when, in the window: `ILMI_VAULT=<scratch copy> ILMI_SMOKE=1 npm run
+  tauri dev` logged, through plugin-fs: `folder untitled folder`, `deck
+  untitled folder/untitled deck.md`, `renamed untitled folder/smoke
+  deck.md`, `moved papers/smoke deck.md`, `moved with children untitled
+  folder/wozniak-1990.md → untitled folder/wozniak-1990.md, untitled
+  folder/wozniak-1990/woz-ex1.md`, `moved back papers/wozniak-1990.md`,
+  `renamed extract papers/wozniak-1990/woz-first.md; parent has backref:
+  true`, `removed; tree unchanged: true`, `state: {"folders":["","papers"]}`.
+  So the Tauri adapter renames across directories, removes non-empty
+  directories, and writes `.ilmi/state.json`, which was the open question
+  from milestone 2.
+
+### Not verified
+
+- The window itself was not seen: no screenshot path in this sandbox and
+  the Chrome extension does not reach a Tauri webview. Layout and CSS are
+  by reading; the tree, tabs, menus, drag, and rename were not clicked.
+- The keyboard bindings and the macOS menu change in the window.
+- `Fs.watch` events for our own rename arriving through plugin-fs; in
+  vitest they do not produce a second `tree` event.
+
+### Decisions worth knowing
+
+- Delete is immediate and permanent, as in the prototype: no confirm, no
+  trash. Worth revisiting once there is an undo or a trash in the plan.
+- Rename edits the file name; a document with a `title` field gets the
+  same text as its title, so what the row shows and what you typed agree.
+- The tree shows folders and documents only. The prototype's card leaves
+  under sources and decks were left out (the milestone lists documents).
+- Saved queries, queue tabs, the top and bottom strips, and the inspector
+  wait for milestones 8 and 9; the shell grid is two columns for now.
+- `Panes.tsx` cannot live beside `panes.ts` on a case-insensitive disk
+  (tsc TS1149), hence `Canvas.tsx`.
+- `openInitialVault` runs once even though StrictMode mounts the effect
+  twice; two concurrent opens ran the smoke script twice and the runs
+  collided on names.
+
+### Handoff prompt
+
+Paste into a fresh session:
+
+```
+Read PLAN.md, FORMAT.md, BUILD-LOG.md, and spec/hashiyah/HANDOFF.md.
+
+Context: milestones 0-4 are done. src/format/ parses and serializes vault
+files (parse / serialize / meta / setField; never string-edit a file).
+src/vault/ opens, walks, reads, writes, watches, and reshapes a vault over
+an Fs interface; change a file with vault.update(path, mutate); tree ops
+are vault.createFolder / createDoc / rename / move / remove. src/schedule/
+grades cards with ts-fsrs, runs the reading and writing loops, and builds
+the queue. src/app/ has the sidebar tree, panes and tabs (a tab is a
+path), and list lenses; DocLens in src/app/Lenses.tsx is a read-only
+placeholder for the reader. Tests run in vitest over a temp copy of
+src/format/__tests__/corpus/vault. ILMI_VAULT=/path npm run tauri dev
+opens a vault at launch; add ILMI_SMOKE=1 to exercise the tree ops through
+Tauri and log results.
+
+Tooling: node is in /opt/homebrew/bin and cargo in ~/.cargo/bin; neither is
+on the tool-shell PATH. Prefix every command with
+export PATH=$HOME/.cargo/bin:/opt/homebrew/bin:$PATH
+npm test and npm run typecheck must be green before a commit.
+
+Do milestone 5 in PLAN.md (reader: the unified document editor) and only
+that one. ProseMirror over Doc.blocks, edits written back through
+vault.update and serialize, KaTeX for math, frozen sources lock prose, the
+left-margin read marker writes read.pos. Follow spec/hashiyah/reader.jsx
+for behavior and the brief's copy rules for every string. Stop at the
+milestone's "done when". Then tick it in PLAN.md, write notes for the next
+session under it, add an entry to BUILD-LOG.md with a fresh handoff prompt,
+and commit.
+```
+
+---
+
 ## 2026-09-21 — milestone 3: scheduler
 
 Commit `b5505bb` — *schedule: ts-fsrs grading, reading and writing loops, queue query*.

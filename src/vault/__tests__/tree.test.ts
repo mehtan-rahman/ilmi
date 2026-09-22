@@ -1,0 +1,265 @@
+import { promises as fsp } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { meta, parse } from '../../format/index.js';
+import { nodeFs } from '../node-fs.js';
+import { Vault, documents, type TreeNode, type VaultEvent } from '../index.js';
+import { childDirOf, cleanName, nameOf, rekey, within } from '../paths.js';
+
+const CORPUS = fileURLToPath(new URL('../../format/__tests__/corpus/vault/', import.meta.url));
+const WOZ = 'papers/wozniak-1990.md';
+const EX1 = 'papers/wozniak-1990/woz-ex1.md';
+
+let root: string;
+let vault: Vault;
+let events: VaultEvent[];
+
+beforeEach(async () => {
+  root = await fsp.mkdtemp(join(tmpdir(), 'ilmi-tree-'));
+  await fsp.cp(CORPUS, root, { recursive: true });
+  vault = await Vault.open(nodeFs, root);
+  events = [];
+  vault.subscribe((ev) => events.push(ev));
+});
+
+afterEach(async () => {
+  vault.close();
+  await fsp.rm(root, { recursive: true, force: true });
+});
+
+const exists = async (rel: string) => !!(await nodeFs.stat(join(root, rel)));
+const isDir = async (rel: string) => (await nodeFs.stat(join(root, rel)))?.isDir === true;
+const readDisk = (rel: string) => fsp.readFile(join(root, rel), 'utf8');
+
+function find(nodes: TreeNode[], path: string): TreeNode | undefined {
+  for (const n of nodes) {
+    if (n.path === path) return n;
+    const kids = n.kind === 'folder' ? n.children : n.children ?? [];
+    const hit = find(kids, path);
+    if (hit) return hit;
+  }
+  return undefined;
+}
+
+const treeEvents = () => events.filter((e) => e.kind === 'tree').length;
+
+describe('paths', () => {
+  it('re-keys a path under a moved document or folder', () => {
+    expect(rekey(WOZ, WOZ, 'books/woz.md')).toBe('books/woz.md');
+    expect(rekey(EX1, WOZ, 'books/woz.md')).toBe('books/woz/woz-ex1.md');
+    expect(rekey('papers/crick-1995.md', WOZ, 'books/woz.md')).toBeNull();
+    expect(rekey('papers/archive/sutton-2019.md', 'papers', 'old')).toBe('old/archive/sutton-2019.md');
+    expect(rekey('papers-2/x.md', 'papers', 'old')).toBeNull();
+  });
+
+  it('knows names, children directories, and containment', () => {
+    expect(nameOf(WOZ)).toBe('wozniak-1990');
+    expect(nameOf('papers')).toBe('papers');
+    expect(childDirOf(WOZ)).toBe('papers/wozniak-1990');
+    expect(within('papers/archive', 'papers')).toBe(true);
+    expect(within('papers', 'papers/archive')).toBe(false);
+    expect(within('anything', '')).toBe(true);
+  });
+
+  it('accepts plain names and refuses separators, hidden names, and extensions', () => {
+    expect(cleanName('  spaced composition ')).toBe('spaced composition');
+    expect(cleanName('german · A1')).toBe('german · A1');
+    for (const bad of ['', '   ', 'a/b', 'a\\b', '.ilmi', '..', 'x.md', 'a:b']) expect(cleanName(bad)).toBeNull();
+  });
+});
+
+describe('create', () => {
+  it('makes a folder at the root, then numbers the next one', async () => {
+    expect(await vault.createFolder('')).toBe('untitled folder');
+    expect(await vault.createFolder('')).toBe('untitled folder 2');
+    expect(await isDir('untitled folder')).toBe(true);
+    expect(await isDir('untitled folder 2')).toBe(true);
+    expect(find(vault.tree, 'untitled folder 2')?.kind).toBe('folder');
+    expect(treeEvents()).toBe(2);
+  });
+
+  it('makes a folder inside a folder, and inside a document by creating its children directory', async () => {
+    expect(await vault.createFolder('papers/archive', 'old')).toBe('papers/archive/old');
+    expect(await vault.createFolder('papers/crick-1995', 'notes')).toBe('papers/crick-1995/notes');
+    expect(await isDir('papers/crick-1995/notes')).toBe(true);
+    const crick = find(vault.tree, 'papers/crick-1995.md');
+    expect(crick?.kind === 'doc' && crick.children?.map((c) => c.path)).toEqual(['papers/crick-1995/notes']);
+  });
+
+  it('refuses a folder inside a missing directory or a bad name', async () => {
+    await expect(vault.createFolder('nowhere')).rejects.toThrow('no such folder');
+    await expect(vault.createFolder('', 'a/b')).rejects.toThrow('not a folder name');
+    await expect(vault.createFolder('', '.hidden')).rejects.toThrow();
+  });
+
+  it('writes a source with no front-matter, and a deck with its type', async () => {
+    const src = await vault.createDoc('papers', 'source');
+    expect(src).toBe('papers/untitled.md');
+    const text = await readDisk(src);
+    expect(text).toBe('');
+    const parsed = parse(text);
+    expect(parsed.diagnostics).toEqual([]);
+    expect(meta(parsed.doc).type).toBe('source');
+
+    const deck = await vault.createDoc('', 'deck');
+    expect(deck).toBe('untitled deck.md');
+    expect(await readDisk(deck)).toBe('---\ntype: deck\n---\n');
+    expect(find(vault.tree, deck)).toMatchObject({ kind: 'doc', name: 'untitled deck' });
+  });
+
+  it('starts a draft in spaced composition today', async () => {
+    const path = await vault.createDoc('essays', 'draft', undefined, '2026-05-27');
+    expect(path).toBe('essays/untitled draft.md');
+    expect(await readDisk(path)).toBe('---\ntype: draft\nstarted: 2026-05-27\nwrite: due=2026-05-27 ivl=1 reps=0\n---\n');
+    const { doc, diagnostics } = parse(await readDisk(path));
+    expect(diagnostics).toEqual([]);
+    expect(meta(doc).write).toEqual({ due: '2026-05-27', ivl: 1, reps: 0 });
+  });
+
+  it('numbers a document whose name is taken by a document or a folder', async () => {
+    expect(await vault.createDoc('', 'source', 'german')).toBe('german 2.md');
+    expect(await vault.createDoc('', 'source', 'papers')).toBe('papers 2.md');
+    expect(await vault.createFolder('', 'german')).toBe('german 3');
+  });
+
+  it('makes an extract inside a document by creating its children directory', async () => {
+    const path = await vault.createDoc('papers/crick-1995', 'extract', 'crick-ex1');
+    expect(path).toBe('papers/crick-1995/crick-ex1.md');
+    expect(await readDisk(path)).toBe('---\ntype: extract\n---\n');
+    expect(documents(vault.tree)).toContain(path);
+  });
+});
+
+describe('rename', () => {
+  it('moves a document and its children directory, and re-keys the cache', async () => {
+    const before = await vault.read(WOZ);
+    const ex = await vault.read(EX1);
+    const to = await vault.rename(WOZ, 'wozniak 1990 (rev)');
+    expect(to).toBe('papers/wozniak 1990 (rev).md');
+    expect(await exists(WOZ)).toBe(false);
+    expect(await exists('papers/wozniak-1990')).toBe(false);
+    expect(await exists(to)).toBe(true);
+    expect(await exists('papers/wozniak 1990 (rev)/woz-ex1.md')).toBe(true);
+    expect(await readDisk(to)).toBe(before.text);
+
+    const node = find(vault.tree, to);
+    expect(node?.kind === 'doc' && node.children?.map((c) => c.path)).toEqual(['papers/wozniak 1990 (rev)/woz-ex1.md']);
+    expect(find(vault.tree, WOZ)).toBeUndefined();
+
+    const after = await vault.read(to);
+    expect(after.doc).toBe(before.doc);
+    expect(after.path).toBe(to);
+    expect((await vault.read('papers/wozniak 1990 (rev)/woz-ex1.md')).doc).toBe(ex.doc);
+    expect(events).toContainEqual({ kind: 'moved', from: WOZ, to });
+    expect(treeEvents()).toBe(1);
+  });
+
+  it('renaming an extract points its parent backrefs at the new name, one line each', async () => {
+    const before = await readDisk(WOZ);
+    expect(before).toContain('<!-- extract woz-ex1 -->');
+    const to = await vault.rename(EX1, 'woz-first');
+    expect(to).toBe('papers/wozniak-1990/woz-first.md');
+    const after = await readDisk(WOZ);
+    const la = before.split('\n');
+    const lb = after.split('\n');
+    expect(lb.length).toBe(la.length);
+    const changed = la.flatMap((line, i) => (line === lb[i] ? [] : [i + 1]));
+    expect(changed.length).toBe(1);
+    expect(lb[changed[0]! - 1]).toBe('<!-- extract woz-first -->');
+    expect(after).not.toContain('woz-ex1');
+  });
+
+  it('renames a folder and everything under it follows', async () => {
+    const woz = await vault.read(WOZ);
+    expect(await vault.rename('papers', 'articles')).toBe('articles');
+    expect(await isDir('articles/archive')).toBe(true);
+    expect(await exists('papers')).toBe(false);
+    expect(documents(vault.tree)).toContain('articles/archive/sutton-2019.md');
+    expect(documents(vault.tree)).toContain('articles/wozniak-1990/woz-ex1.md');
+    expect((await vault.read('articles/wozniak-1990.md')).doc).toBe(woz.doc);
+    expect(events).toContainEqual({ kind: 'moved', from: 'papers', to: 'articles' });
+  });
+
+  it('is a no-op for the same name, and refuses a taken or bad name', async () => {
+    expect(await vault.rename(WOZ, 'wozniak-1990')).toBe(WOZ);
+    expect(treeEvents()).toBe(0);
+    await expect(vault.rename('papers/crick-1995.md', 'wozniak-1990')).rejects.toThrow('already exists');
+    await expect(vault.rename('papers/crick-1995.md', 'archive')).rejects.toThrow('already exists');
+    await expect(vault.rename('papers/archive', 'crick-1995')).rejects.toThrow('already exists');
+    await expect(vault.rename(WOZ, '')).rejects.toThrow('not a name');
+    await expect(vault.rename(WOZ, 'a/b')).rejects.toThrow('not a name');
+    expect(await exists('papers/crick-1995.md')).toBe(true);
+    expect(await exists('papers/archive')).toBe(true);
+  });
+});
+
+describe('move', () => {
+  it('moves a document with its children into a folder', async () => {
+    const to = await vault.move(WOZ, 'books');
+    expect(to).toBe('books/wozniak-1990.md');
+    expect(await exists('books/wozniak-1990/woz-ex1.md')).toBe(true);
+    expect(await exists('papers/wozniak-1990')).toBe(false);
+    expect(documents(vault.tree)).toContain('books/wozniak-1990/woz-ex1.md');
+    expect(events).toContainEqual({ kind: 'moved', from: WOZ, to });
+  });
+
+  it('moves a folder to the root and a document into a document', async () => {
+    expect(await vault.move('papers/archive', '')).toBe('archive');
+    expect(await isDir('archive')).toBe(true);
+    expect(documents(vault.tree)).toContain('archive/sutton-2019.md');
+
+    expect(await vault.move('german.md', 'papers/crick-1995')).toBe('papers/crick-1995/german.md');
+    const crick = find(vault.tree, 'papers/crick-1995.md');
+    expect(crick?.kind === 'doc' && crick.children?.map((c) => c.path)).toEqual(['papers/crick-1995/german.md']);
+  });
+
+  it('refuses its own subtree, a taken name, and a missing target; same place is a no-op', async () => {
+    await expect(vault.move('papers', 'papers/archive')).rejects.toThrow('into itself');
+    await expect(vault.move('papers', 'papers')).rejects.toThrow('into itself');
+    await expect(vault.move(WOZ, 'papers/wozniak-1990')).rejects.toThrow('into itself');
+    await expect(vault.move('papers', 'nowhere')).rejects.toThrow('no such folder');
+    await fsp.writeFile(join(root, 'books/crick-1995.md'), 'x\n');
+    await expect(vault.move('papers/crick-1995.md', 'books')).rejects.toThrow('already exists');
+    expect(await vault.move(WOZ, 'papers')).toBe(WOZ);
+    expect(treeEvents()).toBe(0);
+  });
+});
+
+describe('remove', () => {
+  it('deletes a document with its children directory and forgets them', async () => {
+    await vault.read(WOZ);
+    await vault.read(EX1);
+    await vault.remove(WOZ);
+    expect(await exists(WOZ)).toBe(false);
+    expect(await exists('papers/wozniak-1990')).toBe(false);
+    expect(documents(vault.tree)).not.toContain(WOZ);
+    expect(events.filter((e) => e.kind === 'gone').map((e) => e.kind === 'gone' && e.path).sort()).toEqual([WOZ, EX1]);
+    expect(treeEvents()).toBe(1);
+  });
+
+  it('deletes a folder', async () => {
+    await vault.remove('papers');
+    expect(await exists('papers')).toBe(false);
+    expect(vault.tree.map((n) => n.name)).toEqual(['books', 'essays', 'fleeting', 'german']);
+  });
+});
+
+describe('watch', () => {
+  it('does not report its own rename twice', async () => {
+    await vault.watch();
+    await vault.rename(WOZ, 'woz');
+    await new Promise((r) => setTimeout(r, 250));
+    await vault.changed([]);
+    expect(treeEvents()).toBe(1);
+  });
+});
+
+describe('state', () => {
+  it('keeps the sidebar next to the open folders', async () => {
+    await vault.saveState({ folders: ['papers'] });
+    await vault.saveState({ sidebar: { width: 260, hidden: false } });
+    expect(await vault.loadState()).toEqual({ folders: ['papers'], sidebar: { width: 260, hidden: false } });
+  });
+});

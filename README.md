@@ -21,7 +21,19 @@ npm run typecheck
 ```
 
 In a dev build, `ILMI_VAULT=/path/to/vault npm run tauri dev` opens that vault
-at launch instead of asking for one.
+at launch instead of asking for one. Add `ILMI_SMOKE=1` to run every tree
+operation against that vault through the Tauri fs adapter and log the results
+to the terminal; use a scratch copy, it creates and deletes files.
+
+## Keys
+
+```
+click            open a folder or document in the active tab
+⌘-click          open in a new tab      ⌘⇧-click   open in the next pane
+F2 / dbl-click   rename                 right-click  new, rename, move to, delete
+⌘W               close tab              ⌘\           split pane
+⌘⇧E              show or hide the sidebar (or drag its edge)
+```
 
 Theme toggle, until the tweaks panel exists, from the devtools console
 (right-click → Inspect Element in the window):
@@ -38,6 +50,7 @@ ilmi.density(0.8)
 index.html         Vite entry
 src/app/           renderer: React, Zustand store, tokens.css
 src/format/        parser and serializer, the only code that touches vault files
-src/vault/         open, walk, read, write, watch a vault; pure over an Fs interface
+src/vault/         open, walk, read, write, watch, and reshape a vault; pure over an Fs interface
+src/schedule/      ts-fsrs grading, the reading and writing loops, the queue query
 src-tauri/         desktop shell (Tauri v2, fs + dialog + log plugins)
 ```

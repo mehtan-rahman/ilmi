@@ -3,8 +3,9 @@
 // is a cache with a conflict rule: never overwrite a file whose stamp moved
 // since we read it.
 
-import { parse, serialize, type Diagnostic, type Doc } from '../format/index.js';
+import { parse, serialize, setField, type Diagnostic, type Doc, type NodeType } from '../format/index.js';
 import { join, relative, sameStamp, type Fs, type Stamp } from './fs.js';
+import { baseOf, childDirOf, cleanName, dirOf, isDoc, joinRel, nameOf, rekey, within } from './paths.js';
 import { documents, isDocPath, isHidden, walk, type TreeNode } from './walk.js';
 
 export interface Loaded {
@@ -19,17 +20,33 @@ export interface Loaded {
 export type VaultEvent =
   | { kind: 'tree'; tree: TreeNode[] }
   | { kind: 'doc'; path: string; loaded: Loaded }
-  | { kind: 'gone'; path: string };
+  | { kind: 'gone'; path: string }
+  /** A rename or move done through this vault; `from` and `to` are the node's paths, children followed. */
+  | { kind: 'moved'; from: string; to: string };
 
 /** View state in `.ilmi/state.json`. Optional, never required. */
 export interface VaultState {
-  /** Open folder paths in the sidebar. */
+  /** Open folder paths in the sidebar (a document with children counts as one). */
   folders?: string[];
   /** What was open last. */
   tab?: string;
+  /** Sidebar width in px, and whether it is hidden. */
+  sidebar?: { width?: number; hidden?: boolean };
 }
 
+/** Default file names for new nodes, by type. */
+export const NEW_NAMES: Record<NodeType | 'folder', string> = {
+  folder: 'untitled folder',
+  source: 'untitled',
+  deck: 'untitled deck',
+  draft: 'untitled draft',
+  extract: 'untitled extract',
+};
+
 const STATE_DIR = '.ilmi';
+
+const localDay = (d: Date): string =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const STATE_FILE = `${STATE_DIR}/state.json`;
 const TMP_SUFFIX = '.ilmi-tmp';
 const MAX_RETRIES = 4;
@@ -204,6 +221,168 @@ export class Vault {
         this.emit({ kind: 'tree', tree });
       }
     }
+  }
+
+
+  // --- tree ---------------------------------------------------------------
+  //
+  // Every operation goes to disk through `fs`, then re-walks the tree and
+  // re-keys the cache, so the UI only ever sees what the directory holds.
+  // Names are file names: a folder's, or a document's without `.md`.
+
+  /** Run `fn` after any pending watcher work, and let nothing interleave with it. */
+  private serial<T>(fn: () => Promise<T>): Promise<T> {
+    const run = this.pending.then(fn);
+    this.pending = run.then(() => {}, () => {});
+    return run;
+  }
+
+  /** True when `dir/name` or `dir/name.md` exists: both would collide with a doc or a folder of that name. */
+  private async taken(dir: string, name: string): Promise<boolean> {
+    return !!(await this.fs.stat(this.abs(joinRel(dir, name)))) || !!(await this.fs.stat(this.abs(joinRel(dir, `${name}.md`))));
+  }
+
+  /** `name`, else `name 2`, `name 3`, … the first free one in `dir`. */
+  private async freeName(dir: string, name: string): Promise<string> {
+    if (!(await this.taken(dir, name))) return name;
+    for (let n = 2; ; n++) {
+      const cand = `${name} ${n}`;
+      if (!(await this.taken(dir, cand))) return cand;
+    }
+  }
+
+  /** `dir` must be the root, an existing folder, or the children directory of an existing document (made on demand). */
+  private async ensureDir(dir: string): Promise<void> {
+    if (dir === '') return;
+    const st = await this.fs.stat(this.abs(dir));
+    if (st?.isDir) return;
+    if (st) throw new Error(`${dir}: not a folder`);
+    if (!(await this.fs.stat(this.abs(`${dir}.md`)))) throw new Error(`${dir}: no such folder`);
+    await this.fs.mkdir(this.abs(dir));
+  }
+
+  private async rewalk(): Promise<void> {
+    this.tree = await walk(this.fs, this.root);
+    this.emit({ kind: 'tree', tree: this.tree });
+  }
+
+  /** A new folder in `dir` (`''` for the root, or a document's children directory). Resolves to its path. */
+  createFolder(dir: string, name = NEW_NAMES.folder): Promise<string> {
+    return this.serial(async () => {
+      const clean = cleanName(name);
+      if (!clean) throw new Error(`"${name}" is not a folder name`);
+      await this.ensureDir(dir);
+      const path = joinRel(dir, await this.freeName(dir, clean));
+      await this.fs.mkdir(this.abs(path));
+      await this.rewalk();
+      return path;
+    });
+  }
+
+  /**
+   * A new document of `type` in `dir`. Sources get no front-matter at all;
+   * decks, drafts, and extracts get `type:`; a draft also starts today's
+   * writing schedule. Resolves to the document's path.
+   */
+  createDoc(dir: string, type: NodeType, name = NEW_NAMES[type], today?: string): Promise<string> {
+    return this.serial(async () => {
+      const clean = cleanName(name);
+      if (!clean) throw new Error(`"${name}" is not a file name`);
+      await this.ensureDir(dir);
+      const path = `${joinRel(dir, await this.freeName(dir, clean))}.md`;
+      const doc: Doc = { blocks: [] };
+      if (type !== 'source') setField(doc, 'type', type);
+      if (type === 'draft') {
+        const day = today ?? localDay(new Date());
+        setField(doc, 'started', day);
+        setField(doc, 'write', { due: day, ivl: 1, reps: 0 });
+      }
+      await this.commit(path, serialize(doc));
+      await this.rewalk();
+      return path;
+    });
+  }
+
+  /**
+   * Rename a folder or a document in place. A document's children directory
+   * moves with it, and if the document is an extract its parent's backrefs
+   * follow. Resolves to the new path; a no-op resolves to the old one.
+   */
+  rename(path: string, name: string): Promise<string> {
+    return this.serial(async () => {
+      const clean = cleanName(name);
+      if (!clean) throw new Error(`"${name}" is not a name`);
+      if (clean === nameOf(path)) return path;
+      const dir = dirOf(path);
+      const to = isDoc(path) ? `${joinRel(dir, clean)}.md` : joinRel(dir, clean);
+      await this.relocate(path, to);
+      if (isDoc(path)) await this.retargetBackrefs(dir, nameOf(path), clean);
+      await this.rewalk();
+      return to;
+    });
+  }
+
+  /**
+   * Move a folder or a document into `dir` (`''` for the root, a folder, or a
+   * document's children directory). Refuses a move into its own subtree or
+   * onto an existing name. Resolves to the new path.
+   */
+  move(path: string, dir: string): Promise<string> {
+    return this.serial(async () => {
+      if (dirOf(path) === dir) return path;
+      if (within(dir, childDirOf(path))) throw new Error(`cannot move ${path} into itself`);
+      await this.ensureDir(dir);
+      const to = joinRel(dir, baseOf(path));
+      await this.relocate(path, to);
+      await this.rewalk();
+      return to;
+    });
+  }
+
+  /** Delete a folder, or a document and its children directory. */
+  remove(path: string): Promise<void> {
+    return this.serial(async () => {
+      await this.fs.remove(this.abs(path));
+      if (isDoc(path)) await this.fs.remove(this.abs(childDirOf(path)));
+      for (const key of [...this.cache.keys()]) {
+        if (rekey(key, path, path) !== null) {
+          this.cache.delete(key);
+          this.emit({ kind: 'gone', path: key });
+        }
+      }
+      await this.rewalk();
+    });
+  }
+
+  /** Rename on disk (`from` → `to`, both vault-relative), children directory included, then re-key the cache. */
+  private async relocate(from: string, to: string): Promise<void> {
+    if (await this.taken(dirOf(to), nameOf(to))) throw new Error(`${nameOf(to)} already exists`);
+    await this.fs.rename(this.abs(from), this.abs(to));
+    if (isDoc(from)) {
+      const kids = await this.fs.stat(this.abs(childDirOf(from)));
+      if (kids?.isDir) await this.fs.rename(this.abs(childDirOf(from)), this.abs(childDirOf(to)));
+    }
+    for (const [key, loaded] of [...this.cache]) {
+      const next = rekey(key, from, to);
+      if (next === null) continue;
+      this.cache.delete(key);
+      this.cache.set(next, { ...loaded, path: next });
+    }
+    this.emit({ kind: 'moved', from, to });
+  }
+
+  /** If `dir` is a document's children directory, point that document's `<!-- extract old -->` lines at `next`. */
+  private async retargetBackrefs(dir: string, old: string, next: string): Promise<void> {
+    if (dir === '') return;
+    const parent = `${dir}.md`;
+    if (!(await this.fs.stat(this.abs(parent)))) return;
+    const cur = await this.read(parent);
+    if (!cur.doc.blocks.some((b) => 'extracts' in b && b.extracts?.includes(old))) return;
+    await this.update(parent, (doc) => {
+      for (const b of doc.blocks) {
+        if ('extracts' in b && b.extracts) b.extracts = b.extracts.map((n) => (n === old ? next : n));
+      }
+    });
   }
 
   // --- state --------------------------------------------------------------

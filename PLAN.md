@@ -143,7 +143,34 @@ the prototype's `pos`.
 - Done when: grading a card in the sample vault and serializing shows a
   one-line diff, and the queue for 2026-05-27 matches the prototype's counts.
 
-### [ ] 4. Tree — sidebar and lenses
+### [x] 4. Tree — sidebar and lenses
+Done 2026-09-22.
+Notes: tree operations are `Vault` methods over `Fs` (`createFolder`,
+`createDoc`, `rename`, `move`, `remove` in `src/vault/vault.ts`, path
+arithmetic in `paths.ts`); each runs after any pending watcher work, goes
+to disk, re-keys the cache, re-walks, and emits `tree` plus a new `moved`
+event (`gone` per cached doc on delete). A document's `name/` directory
+moves and renames with it; renaming an extract rewrites its parent's
+`<!-- extract -->` lines (one line each); a name is taken when either
+`name` or `name.md` exists, so a doc can never adopt a stray folder. New
+sources are empty files, decks get `type: deck`, drafts get `type`,
+`started`, and `write: due=<today> ivl=1 reps=0`. Deleting is immediate
+and permanent, as in the prototype, no confirm, no trash. App side:
+`src/app/vault.ts` mirrors the tree and a `DocInfo` per document (type,
+title, frozen, card and due counts, read/write) into the store; ops are
+`createNode` / `renameNode` (also sets `title` when the doc has one) /
+`moveNode` / `removeNode`; `open` folders, `sidebar` (width, hidden) and
+the active `tab` persist in `.ilmi/state.json`, debounced. Tabs hold only
+a path (`src/app/panes.ts`, pure, tested); kind and title are derived at
+render time, so renames and type edits never leave a tab stale. Lenses
+(`Lenses.tsx`): folder and deck are lists; source/extract/draft is a
+read-only page until milestone 5. Keys: F2 rename, ⌘W close tab, ⌘\
+split, ⌘⇧E toggle sidebar; dragging the sidebar handle under 80px hides
+it. Not in the tree: card leaves under documents (the prototype had them),
+the saved-queries section and queue tabs (milestone 8), the top and
+bottom strips and inspector (milestone 9; the shell grid is temporarily
+two columns in `app.css`). `Panes.tsx` could not exist beside `panes.ts`
+on this case-insensitive disk, so the component file is `Canvas.tsx`.
 - Sidebar tree over the vault: folders, documents (source / deck / draft /
   extract) with the prototype's icons and per-type colour. Create, rename,
   move (drag), delete for folders and documents. Right-click menu.
@@ -199,15 +226,15 @@ the prototype's `pos`.
 
 ## Notes for the next session
 
-Start at milestone 4, the tree. The sidebar reads `vault.tree` (`TreeNode`:
-`folder`, or `doc` with optional `children` for the sibling `name/`
-directory) and `meta(doc).type` gives the per-type icon and colour;
-`App.tsx` today only lists `vault.documents()`. The prototype's tree is
-`spec/hashiyah/tree.jsx` (`renderNode`, rename, drag, right-click menu) and
-the pane/tab model is in `app.jsx`. Create, rename, move, and delete need to
-go through `Fs` (`mkdir`, `rename`, `remove` exist; check `tauri-fs.ts` for
-renaming across directories and removing non-empty directories) and the
-`Vault` should re-walk afterwards and move `name/` together with `name.md`.
-Open folders persist in `.ilmi/state.json` (`folders` is already in
-`VaultState`). The queue is `queue(vault, now)` from `src/schedule/`; the
-tree does not need it yet. Ask before adding a screen not in the prototype.
+Start at milestone 5, the reader. Replace `DocLens` in `src/app/Lenses.tsx`
+(a read-only page over `Doc.blocks`) with a ProseMirror document; keep the
+`Lens` dispatch and `useDoc(path)` (`src/app/useDoc.ts`, follows `doc` and
+`gone` events). Edits go through `vault.update(path, mutate)` on the cached
+`Doc`, never through string edits; `Loaded.doc` is owned by the cache, so
+clone before mutating outside `update`. `DocInfo.frozen` says whether prose
+is locked; `read.pos` is the marker (block index, prose blocks only, as
+`ReadItem.pos` counts them in `src/schedule/queue.ts`). `docItems` gives the
+card items with block indices. The tree, panes, and tabs are done; a tab is
+a path and `kindOf(path, docs)` picks the lens. The app shell has no top or
+bottom strip yet (milestone 9). Ask before adding a screen not in the
+prototype.

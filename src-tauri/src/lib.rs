@@ -19,9 +19,17 @@ fn allow_vault(app: tauri::AppHandle, path: String) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
+/// A file dropped on the window, read as text. The fs scope covers only the
+/// vault; a drop is a gesture on one file, so that file is read here by
+/// path and nothing is added to the scope.
+#[tauri::command]
+fn read_dropped(path: String) -> Result<String, String> {
+    std::fs::read_to_string(&path).map_err(|e| e.to_string())
+}
+
 /// Dev only: an environment variable of the dev process, for
 /// `ILMI_VAULT=/path npm run tauri dev` (open that vault at launch) and
-/// `ILMI_SMOKE=1` (run the tree smoke script). Always `None` in release.
+/// `ILMI_SMOKE=…` (run a smoke script). Always `None` in release.
 #[tauri::command]
 fn dev_env(name: String) -> Option<String> {
     if cfg!(debug_assertions) && name.starts_with("ILMI_") {
@@ -36,7 +44,8 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![allow_vault, dev_env])
+        .plugin(tauri_plugin_http::init())
+        .invoke_handler(tauri::generate_handler![allow_vault, read_dropped, dev_env])
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(

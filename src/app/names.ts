@@ -7,22 +7,33 @@ import { baseOf, isDoc, nameOf, type TreeNode } from '../vault/index.js';
 import type { DocInfo } from './store.js';
 
 export type NodeKind = 'folder' | NodeType;
+/** What a tab can show: a node, or the intake. */
+export type TabKind = NodeKind | 'intake';
 
-export const GLYPH: Record<NodeKind, string> = {
+/** The intake tab's id. A colon is not a character a file name can hold, so it is never a vault path. */
+export const INTAKE = ':intake';
+
+export const GLYPH: Record<TabKind, string> = {
   folder: '/',
   source: '¶',
   extract: '↳',
   deck: '◫',
   draft: '✎',
+  intake: '＋',
 };
 
 export function kindOf(path: string, docs: Record<string, DocInfo>): NodeKind {
   return isDoc(path) ? docs[path]?.type ?? 'source' : 'folder';
 }
 
+export function tabKindOf(id: string, docs: Record<string, DocInfo>): TabKind {
+  return id === INTAKE ? 'intake' : kindOf(id, docs);
+}
+
 /** A document's `title`, else its file name; the root is the vault directory's name. */
 export function titleOf(path: string, docs: Record<string, DocInfo>, vaultRoot: string | null): string {
   if (path === '') return baseOf(vaultRoot ?? '') || 'vault';
+  if (path === INTAKE) return 'intake';
   return docs[path]?.title ?? nameOf(path);
 }
 

@@ -6,10 +6,12 @@
 // a paragraph, moves the marker, and logs what reached the disk.
 // `ILMI_SMOKE=cards` selects a passage of a frozen source, presses `e`,
 // then selects again, presses `m`, fills the composer, and saves.
+// `ILMI_SMOKE=intake` opens the intake, takes the sample, places it, and
+// then pastes an address to see the fetch land.
 
 import { info } from '@tauri-apps/plugin-log';
 import type { Vault } from '../vault/index.js';
-import { createNode, moveNode, openNode, removeNode, renameNode } from './vault.js';
+import { createNode, moveNode, openIntake, openNode, removeNode, renameNode } from './vault.js';
 
 const WOZ = 'papers/wozniak-1990.md';
 
@@ -176,6 +178,44 @@ export async function smoke(vault: Vault): Promise<void> {
     log(`removed; tree unchanged: ${vault.documents().join(', ') === before}`);
     await vault.saveState({ folders: ['', 'papers'] });
     log(`state: ${JSON.stringify(await vault.loadState())}`);
+  } catch (e) {
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+export async function smokeIntake(vault: Vault): Promise<void> {
+  const log = (s: string) => info(`smoke intake: ${s}`);
+  const q = <T extends Element>(sel: string) => document.querySelector<T>(sel);
+  try {
+    openIntake('papers');
+    const ta = await until(() => q<HTMLTextAreaElement>('.intake textarea'));
+    log(`open: tab "${q('.tabbar .tab[data-active="1"] .title')?.textContent}"; h1 "${q('.intake h1')?.textContent}"; hint "${q('.intake .paste-hint')?.textContent}"; focused ${document.activeElement === ta}`);
+    q<HTMLButtonElement>('.intake .paste-hint .link')!.click();
+    const detail = await until(() => q('.intake-detail'));
+    const active = detail.querySelector('.folder-pick button[data-active="1"]')?.textContent;
+    log(`sample: stats "${detail.querySelector('.stats')?.textContent}"; title "${q<HTMLInputElement>('.intake .field input')?.value}"; folders ${Array.from(detail.querySelectorAll('.folder-pick button')).map((b) => b.textContent).join(', ')}; chosen ${active}; buttons ${Array.from(detail.querySelectorAll('.place')).map((b) => b.textContent).join(' | ')}`);
+    q<HTMLButtonElement>('.intake .place.primary')!.click();
+    const path = await until(() => vault.documents().find((d) => d.startsWith('papers/Spaced repetition')));
+    await sleep(600);
+    const loaded = await vault.read(path, true);
+    const fm = loaded.text.split('\n').slice(0, 5).join(' / ');
+    log(`placed ${path}; front-matter ${fm}; blocks ${loaded.doc.blocks.length}; diagnostics ${loaded.diagnostics.length}`);
+    const h1 = await until(() => q('.doc-view h1'));
+    log(`reader: h1 "${h1.textContent}"; ${q('.frozen-tag')?.textContent}; paragraphs ${document.querySelectorAll('.draft-doc p.dd-p').length}; intake tabs left ${document.querySelectorAll('.tabbar .tab[data-t="intake"]').length}`);
+
+    // an address pasted into the empty field is fetched
+    openIntake('books');
+    const ta2 = await until(() => q<HTMLTextAreaElement>('.intake textarea'));
+    const dt = new DataTransfer();
+    dt.setData('text/plain', 'https://example.com/');
+    ta2.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt }));
+    log(`paste: hint "${q('.intake .paste-hint')?.textContent}"`);
+    const got = await until(() => {
+      if (ta2.value) return ta2.value;
+      const n = q('.intake .paste-hint .note')?.textContent;
+      return n && n !== 'fetching' ? n : null;
+    }, 30000);
+    log(`fetched: "${got.slice(0, 80).replace(/\n/g, ' ')}"; title "${q<HTMLInputElement>('.intake .field input')?.value ?? ''}"; chosen ${q('.folder-pick button[data-active="1"]')?.textContent}`);
   } catch (e) {
     log(`failed: ${e instanceof Error ? e.message : String(e)}`);
   }

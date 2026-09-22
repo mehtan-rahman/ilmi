@@ -5,7 +5,7 @@
 //
 //  · click            open the node as a lens; the chevron alone folds
 //  · dbl-click / F2   inline rename
-//  · right-click      new source / folder / deck / draft, rename, move to…, delete
+//  · right-click      new source / folder / deck / draft, add a source (the intake), rename, move to…, delete
 //  · drag             drop between rows to move beside them, or onto a folder to move inside
 
 import { Fragment, useEffect, useRef, useState, type DragEvent, type MouseEvent, type ReactNode } from 'react';
@@ -14,7 +14,7 @@ import { childDirOf, dirOf, within, type TreeNode } from '../vault/index.js';
 import { GLYPH, findNode, folderPaths, kindOf, metaOf, titleOf, type NodeKind } from './names.js';
 import type { OpenOpts } from './panes.js';
 import { useApp } from './store.js';
-import { containerOf, createNode, moveNode, removeNode, renameNode, toggleOpen } from './vault.js';
+import { containerOf, createNode, moveNode, openIntake, removeNode, renameNode, toggleOpen } from './vault.js';
 
 interface Props {
   /** Path of the node the active tab shows. */
@@ -217,6 +217,8 @@ export function Tree({ activeId, onOpen }: Props) {
   const menuNode = menu ? (menu.id === '' ? null : findNode(tree, menu.id)) : undefined;
   const menuKind: NodeKind = menu ? (menu.id === '' ? 'folder' : kindOf(menu.id, docs)) : 'folder';
   const into = menu ? containerOf(menu.id) : '';
+  // the intake places into a folder: the one under the menu, or the one holding the document
+  const intakeDir = menu ? (menuKind === 'folder' ? menu.id : dirOf(menu.id)) : '';
   const act = (fn: () => void) => (e: MouseEvent) => { e.stopPropagation(); fn(); setMenu(null); };
   const create = (kind: NodeKind) => {
     createNode(into, kind as NodeType | 'folder')
@@ -249,6 +251,10 @@ export function Tree({ activeId, onOpen }: Props) {
                   <span className="cg">{GLYPH[kind]}</span>{label}
                 </div>
               ))}
+              <div className="cd" />
+              <div className="ci" onClick={act(() => openIntake(intakeDir))}>
+                <span className="cg">{GLYPH.intake}</span>add a source
+              </div>
               {menu.id !== '' && (
                 <>
                   <div className="cd" />

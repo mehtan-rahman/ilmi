@@ -271,7 +271,54 @@ fills the composer, saves, and logs what reached disk.
 - Done when: both flows produce files that `parse` cleanly and appear in the
   tree and the queue.
 
-### [ ] 7. Import
+### [x] 7. Import
+Done 2026-09-22, commit `TBD`.
+Notes: `src/import/` is the pure side: `text.ts` (`cleanText`,
+`deriveTitle` = first line, `#`s stripped, 64 chars; `stats` = words,
+paragraphs, minutes at 220 wpm; `isUrl` = one `http(s)` address and
+nothing else; `titleFromFileName`) and `readable.ts` (`readable(html,
+url)` runs Readability over a `DOMParser` document and `textOf(root)`
+walks the article into the blocks FORMAT.md reads: `#` headings, `- ` /
+`1. ` lists with nesting, `> ` quotes, fenced `pre`, `|` table rows;
+`nav`, scripts, images, controls skipped; the whole body when Readability
+finds no article; `null` when there is no text). `Vault.importDoc(dir, {
+title, text, today? })` in `src/vault/vault.ts` lands the file: named
+`fileName(title)` (`paths.ts`: separators and controls to spaces, 80
+chars, `untitled` fallback) through `freeName`, the text read by `parse`
+exactly as a file on disk would be (so headings, cards, and front-matter
+in a dropped `.md` are what they would be there), then `frozen: true`,
+`imported: <today>`, `read` and `write` dropped, and `title` written as
+a field only when it differs from the file name or the text already had
+one. App side: the intake is a tab whose id is `INTAKE` (`':intake'` in
+`names.ts`, never a vault path); `tabKindOf` / `titleOf` / `GLYPH.intake`
+(`＋`) know it; `openIntake(dir)` in `src/app/vault.ts` sets
+`intakeDir` in the store and opens the one tab; `importNode` wraps
+`importDoc` and opens the folder. Entry point until the palette exists:
+`add a source` in the tree's right-click menu, placing into the folder
+under the menu (or the folder holding the document). `Intake.tsx`
+follows `ingest.jsx`: crumb, `Add a source`, the field (`paste text or a
+link`), hint `or drop a .txt / .md file` + `use a sample →`, then stats,
+`title`, `lives in` (every folder, root as the vault name), `place &
+open` / `place & leave it`. Copy trimmed per the brief: no lede, no
+button subtitles, no `unread` word; the hint line doubles as the one
+quiet note (`fetching`, `nothing readable at that link`, `not a text
+file`, `could not read that file`). A pasted address into an empty
+field is fetched through `@tauri-apps/plugin-http` (`fetch.ts`:
+`fetchReadable`, html → `readable`, plain text as is; `http:default`
+granted for `http(s)://**` in `capabilities/default.json`); a dropped
+file arrives through `getCurrentWebview().onDragDropEvent` with a path
+(the DOM drop carries no files under Tauri), counts only when the
+position is over this panel (`elementFromPoint`), and is read by the
+Rust command `read_dropped` (`.txt` / `.md` / `.markdown` / `.text` as
+is, `.html` through `readable`, anything else refused); dragged text
+still comes through the DOM `drop`. `place & open` replaces the intake
+tab with the source, as the prototype's `onOpen` did. `@mozilla/
+readability` and `tauri-plugin-http` were added. Not done: the bottom
+strip hint `⌘v paste` and the intake inspector (milestone 9), the
+palette command (milestone 9), PDFs (the prototype only ever read text).
+Dev: `ILMI_SMOKE=intake` takes the sample, places it, then pastes
+`https://example.com/` and logs what came back. Note `Intake.tsx` and
+`intake.ts` cannot coexist on this disk, hence `fetch.ts`.
 - Intake: paste, drop a text file, or a URL → readable text. Title, target
   folder. Lands as a frozen source, unread, not enrolled.
 - Done when: the prototype's intake sample imports and opens in the reader.
@@ -294,21 +341,20 @@ fills the composer, saves, and logs what reached disk.
 
 ## Notes for the next session
 
-Start at milestone 7, import. The prototype's intake is
-`spec/hashiyah/ingest.jsx` (paste, drop a text file, a URL; title and
-target folder) and `store.jsx`'s `ingestSource`; the sample it imports is
-there too. A source lands as `frozen: true` with `imported: <today>`, no
-`read` line (not enrolled), body as paragraphs. `Vault.createDoc` writes
-empty files today; give it, or a sibling `Vault.importDoc(dir, name,
-doc)`, a body and fields, going through `serialize` and `freeName` like
-the others. Readable text from HTML: the webview has `DOMParser`, so
-Readability-style extraction can run there, but a URL fetch from the
-webview is CORS-bound; use `@tauri-apps/plugin-http` or a Rust command
-for the request, granted in `capabilities/default.json`. A dropped file
-arrives through Tauri's drag-drop window event with a path; read it
-through the fs plugin after `allow_vault`-style scoping, or accept the
-file's text from a `<input type=file>`. The intake is a lens (a tab of
-its own in the prototype), not a dialog; ask before adding anything the
-prototype does not show. The card editor in the inspector is still
-pending for milestone 9; `setCardText` in `src/reader/cards.ts` is the
-model for it.
+Start at milestone 8, the queue and the review session. The prototype's
+queue is `views.jsx` (`Queue`, `SavedView`: today / upcoming / reading /
+writing / cards, `j k` to move, `⏎` to enter, `o` to open one, `p`
+postpone, `x` done) and the session is `recall.jsx` (`SessionShell`,
+`SessionBar` with `[` / `]`, `CardElement` reveal and grade 1-4,
+`ReadingSession` with the marker live, `WritingSession`); the sidebar's
+saved-queries section is in `chrome.jsx`. The model is ready:
+`queue(vault, now, scope)` and `gradeItem` in `src/schedule/queue.ts`
+(run inside `vault.update`), `advanceRead` / `advanceWrite` and the
+`reading.*` / `writing.*` loops, `counts`. A queue tab needs an id that
+is not a path, as the intake's `INTAKE` is; add such ids beside it in
+`names.ts` and teach `tabKindOf` / `titleOf` / `GLYPH` about them. The
+reading session can reuse `Reader.tsx` (it already has the marker, the
+cue, and the composer); the draft lens's done / reopen row belongs to
+this milestone too. Reading `total` counts every non-card block, as the
+prototype's `pos` does. The inspector, the strips, and the palette are
+milestone 9; ask before adding a panel.

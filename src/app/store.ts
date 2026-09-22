@@ -44,6 +44,8 @@ export interface AppState {
   open: Record<string, true>;
   sidebar: Sidebar;
   panes: Panes;
+  /** Where the intake places its next source: the folder it was opened from. */
+  intakeDir: string;
   setTheme(theme: Theme): void;
   cycleTheme(): void;
   setDensity(rho: number): void;
@@ -60,6 +62,7 @@ export const useApp = create<AppState>((set, get) => ({
   open: { '': true },
   sidebar: { width: SIDE_DEFAULT, hidden: false },
   panes: emptyPanes(),
+  intakeDir: '',
   setTheme: (theme) => set({ theme }),
   cycleTheme: () => {
     const i = THEMES.indexOf(get().theme);

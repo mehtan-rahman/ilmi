@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { meta, parse, setField } from '../../format/index.js';
 import { nodeFs } from '../node-fs.js';
 import { Vault, documents, extractName, type TreeNode, type VaultEvent } from '../index.js';
-import { childDirOf, cleanName, nameOf, rekey, within } from '../paths.js';
+import { childDirOf, cleanName, fileName, nameOf, rekey, within } from '../paths.js';
 
 const CORPUS = fileURLToPath(new URL('../../format/__tests__/corpus/vault/', import.meta.url));
 const WOZ = 'papers/wozniak-1990.md';
@@ -67,6 +67,15 @@ describe('paths', () => {
     expect(cleanName('  spaced composition ')).toBe('spaced composition');
     expect(cleanName('german · A1')).toBe('german · A1');
     for (const bad of ['', '   ', 'a/b', 'a\\b', '.ilmi', '..', 'x.md', 'a:b']) expect(cleanName(bad)).toBeNull();
+  });
+
+  it('makes a file name out of any title', () => {
+    expect(fileName('Spaced repetition and the economics of attention')).toBe('Spaced repetition and the economics of attention');
+    expect(fileName('Attention: a  study / part 2')).toBe('Attention a study part 2');
+    expect(fileName('  .hidden.md ')).toBe('hidden');
+    expect(fileName('')).toBe('untitled');
+    expect(fileName('..')).toBe('untitled');
+    expect(fileName('x'.repeat(100))).toHaveLength(80);
   });
 });
 
@@ -334,5 +343,57 @@ describe('state', () => {
     await vault.saveState({ folders: ['papers'] });
     await vault.saveState({ sidebar: { width: 260, hidden: false } });
     expect(await vault.loadState()).toEqual({ folders: ['papers'], sidebar: { width: 260, hidden: false } });
+  });
+});
+
+describe('import', () => {
+  const SAMPLE = `Spaced repetition and the economics of attention
+
+Every review you schedule is a small wager against forgetting. The wager has a cost — the minutes spent — and a payoff that compounds.
+
+## A heading in the text
+
+A good system spends your attention the way a careful gardener spends water: not evenly, but where the curve is about to cross the floor.`;
+
+  it('lands a frozen, unread source named after its title', async () => {
+    const path = await vault.importDoc('papers', { title: 'Spaced repetition and the economics of attention', text: SAMPLE, today: '2026-09-22' });
+    expect(path).toBe('papers/Spaced repetition and the economics of attention.md');
+    const text = await readDisk(path);
+    expect(text.split('\n').slice(0, 4)).toEqual(['---', 'frozen: true', 'imported: 2026-09-22', '---']);
+    const { doc, diagnostics } = parse(text);
+    expect(diagnostics).toEqual([]);
+    const m = meta(doc);
+    expect(m.type).toBe('source');
+    expect(m.frozen).toBe(true);
+    expect(m.title).toBeUndefined();
+    expect(m.read).toBeUndefined();
+    expect(m.write).toBeUndefined();
+    expect(doc.blocks.map((b) => b.kind)).toEqual(['paragraph', 'paragraph', 'heading', 'paragraph']);
+    expect(find(vault.tree, path)?.kind).toBe('doc');
+    expect(events.filter((e) => e.kind === 'tree')).toHaveLength(1);
+  });
+
+  it('writes the title as a field when the file name cannot carry it, and numbers a taken name', async () => {
+    const a = await vault.importDoc('', { title: 'Notes: part 1 / 2', text: 'body', today: '2026-09-22' });
+    expect(a).toBe('Notes part 1 2.md');
+    expect(meta(parse(await readDisk(a)).doc).title).toBe('Notes: part 1 / 2');
+    const b = await vault.importDoc('', { title: 'Notes part 1 2', text: 'body', today: '2026-09-22' });
+    expect(b).toBe('Notes part 1 2 2.md');
+    expect(meta(parse(await readDisk(b)).doc).title).toBe('Notes part 1 2');
+    const c = await vault.importDoc('', { title: '   ', text: 'body' });
+    expect(c).toBe('untitled.md');
+  });
+
+  it('keeps front-matter the text brought along, but not an enrolment', async () => {
+    const text = '---\ntags: [x]\nread: due=2026-01-01 ivl=3\ntitle: Old title\n---\n\nbody\n';
+    const path = await vault.importDoc('books', { title: 'Old title', text, today: '2026-09-22' });
+    const disk = await readDisk(path);
+    expect(disk).toBe('---\ntags: [x]\ntitle: Old title\nfrozen: true\nimported: 2026-09-22\n---\n\nbody\n');
+    expect(meta(parse(disk).doc).read).toBeUndefined();
+  });
+
+  it('refuses empty text and a missing folder', async () => {
+    await expect(vault.importDoc('papers', { title: 'x', text: '  \n ' })).rejects.toThrow('nothing to import');
+    await expect(vault.importDoc('nowhere', { title: 'x', text: 'body' })).rejects.toThrow('no such folder');
   });
 });

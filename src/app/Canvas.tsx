@@ -3,7 +3,7 @@
 // operations are in panes.ts.
 
 import { Lens } from './Lenses.js';
-import { GLYPH, kindOf, titleOf } from './names.js';
+import { GLYPH, tabKindOf, titleOf } from './names.js';
 import { activatePane, closePane, closeTab, selectTab, splitPane, type OpenOpts, type Pane } from './panes.js';
 import { useApp } from './store.js';
 import { openNode, rememberTab } from './vault.js';
@@ -22,7 +22,7 @@ function TabBar({ pane, index, canClosePane }: TabBarProps) {
   return (
     <div className="tabbar">
       {pane.tabs.map((tab, ti) => {
-        const kind = kindOf(tab.id, docs);
+        const kind = tabKindOf(tab.id, docs);
         return (
           <div
             key={tab.key}

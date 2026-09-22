@@ -5,7 +5,7 @@
 
 import { meta, parse, serialize, setField, type Diagnostic, type Doc, type NodeType, type ReadSchedule } from '../format/index.js';
 import { join, relative, sameStamp, type Fs, type Stamp } from './fs.js';
-import { baseOf, childDirOf, cleanName, dirOf, isDoc, joinRel, nameOf, rekey, within } from './paths.js';
+import { baseOf, childDirOf, cleanName, dirOf, fileName, isDoc, joinRel, nameOf, rekey, within } from './paths.js';
 import { documents, isDocPath, isHidden, walk, type TreeNode } from './walk.js';
 
 export interface Loaded {
@@ -61,6 +61,15 @@ export interface ExtractSpec {
 export function extractName(text: string): string {
   const words = text.replace(/[^\p{L}\p{N}\s'-]/gu, ' ').trim().split(/\s+/).filter(Boolean);
   return cleanName(words.slice(0, 5).join(' ')) ?? NEW_NAMES.extract;
+}
+
+/** What `Vault.importDoc` lands as a new source. */
+export interface ImportSpec {
+  /** Display name; also the file name, once it is one. */
+  title: string;
+  /** The body, as pasted, dropped, or fetched. */
+  text: string;
+  today?: string;
 }
 
 const STATE_DIR = '.ilmi';
@@ -320,6 +329,35 @@ export class Vault {
         setField(doc, 'started', day);
         setField(doc, 'write', { due: day, ivl: 1, reps: 0 });
       }
+      await this.commit(path, serialize(doc));
+      await this.rewalk();
+      return path;
+    });
+  }
+
+  /**
+   * A new source in `dir` from imported text: frozen, `imported` today, not
+   * enrolled (no `read` or `write`), the text read as a body the same way a
+   * file on disk is, so headings and cards in it are what they would be
+   * there. Front-matter in the text is kept, except the fields this sets.
+   * The file is named after the title; when the two differ (a numbered
+   * name, a character a file name cannot hold) the title is written as a
+   * field. Resolves to the document's path.
+   */
+  importDoc(dir: string, spec: ImportSpec): Promise<string> {
+    return this.serial(async () => {
+      const text = spec.text.trim();
+      if (!text) throw new Error('nothing to import');
+      const title = spec.title.trim() || NEW_NAMES.source;
+      await this.ensureDir(dir);
+      const name = await this.freeName(dir, fileName(title));
+      const path = `${joinRel(dir, name)}.md`;
+      const { doc } = parse(`${text}\n`);
+      setField(doc, 'frozen', true);
+      setField(doc, 'imported', spec.today ?? localDay(new Date()));
+      setField(doc, 'read', null);
+      setField(doc, 'write', null);
+      if (title !== name || meta(doc).title !== undefined) setField(doc, 'title', title);
       await this.commit(path, serialize(doc));
       await this.rewalk();
       return path;

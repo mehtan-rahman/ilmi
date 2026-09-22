@@ -1,11 +1,12 @@
-// Lenses: what a tab renders for a folder or a document. Folders and decks
-// are lists; sources, extracts, and drafts open in the reader.
+// Lenses: what a tab renders for a folder or a document, or the intake.
+// Folders and decks are lists; sources, extracts, and drafts open in the reader.
 
 import { useEffect, useState } from 'react';
 import { cardFields, meta, type ClozePart } from '../format/index.js';
 import type { TreeNode } from '../vault/index.js';
 import { Composer } from './Composer.js';
-import { GLYPH, contentsOf, findNode, kindOf, titleOf, type NodeKind } from './names.js';
+import { Intake } from './Intake.js';
+import { GLYPH, INTAKE, contentsOf, findNode, kindOf, titleOf, type NodeKind } from './names.js';
 import type { OpenOpts } from './panes.js';
 import { Reader } from './Reader.js';
 import { useApp } from './store.js';
@@ -29,6 +30,7 @@ const inField = (t: EventTarget | null) => {
 
 export function Lens({ id, active, onOpen }: LensProps) {
   const docs = useApp((s) => s.docs);
+  if (id === INTAKE) return <Intake active={active} onOpen={onOpen} />;
   const kind = kindOf(id, docs);
   if (kind === 'folder') return <FolderLens id={id} active={active} onOpen={onOpen} />;
   if (kind === 'deck') return <DeckLens id={id} active={active} />;

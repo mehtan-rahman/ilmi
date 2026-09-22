@@ -6,6 +6,163 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-09-22 — milestone 7: import
+
+Commit `TBD` — *import: the intake lens, readable text from a paste, a
+dropped file, or an address, landed frozen and unread*.
+
+### Done
+
+- `src/import/`, pure: `text.ts` (`cleanText`, `deriveTitle`, `stats`,
+  `isUrl`, `titleFromFileName`, the extension patterns) and `readable.ts`
+  (`readable(html, url)`: Readability over a `DOMParser` document, then
+  `textOf` walks the article into the blocks FORMAT.md reads: `#`
+  headings, nested `- ` / `1. ` lists, `> ` quotes, fenced code, `|`
+  table rows, chrome and images skipped; the whole body when there is
+  no article; `null` when there is no text).
+- `Vault.importDoc(dir, { title, text, today? })`: the text read by
+  `parse` as a file would be, `frozen: true`, `imported`, `read` and
+  `write` dropped, the file named by the new `fileName(title)` in
+  `paths.ts` through `freeName`, `title` written as a field only when the
+  file name cannot carry it (or the text brought one).
+- The intake tab: `INTAKE` (`':intake'`) in `names.ts`, with `tabKindOf`,
+  `titleOf`, and the `＋` glyph; `intakeDir` in the store; `openIntake`
+  and `importNode` in `src/app/vault.ts`; the tab is remembered in
+  `.ilmi/state.json` like any other. `add a source` in the tree's
+  right-click menu opens it, placing into the folder under the menu.
+- `src/app/Intake.tsx`, after `ingest.jsx`: the field, the hint with
+  `use a sample →`, stats, `title`, `lives in` (every folder, the root
+  by the vault's name), `place & open` (the source replaces the intake
+  tab) and `place & leave it` (the form clears and stays). A pasted
+  address into an empty field is fetched; a file dropped on the panel
+  is read by path; dragged text is taken as text. One quiet line under
+  the field carries `fetching` and the four failure notes.
+- `src/app/fetch.ts`: `fetchReadable` over `@tauri-apps/plugin-http`
+  (html through `readable`, plain text as is), `readDropped` over the
+  new Rust command `read_dropped` (text extensions as is, `.html`
+  through `readable`, others refused).
+- Tauri: `tauri-plugin-http` registered, `http:default` granted for
+  `http://**` and `https://**`; `read_dropped` reads one file by path
+  without widening the fs scope.
+- CSS for the intake in `app.css`, flattened as the rest: hairlines, 2px,
+  the chosen folder underlined, the drop veil a dashed hairline.
+- Dev: `ILMI_SMOKE=intake` opens the intake into `papers`, takes the
+  sample, places and opens it, then opens the intake into `books` and
+  pastes `https://example.com/`.
+- Tests: 8 in `src/import/__tests__/import.test.ts` (text helpers, the
+  walker's blocks read back by `parse` as heading / paragraph / raw with
+  no diagnostics, Readability picking the article and its title out of a
+  page with chrome, the fallback and the refusal) and 5 in
+  `src/vault/__tests__/tree.test.ts` (`fileName`, the landed file's
+  front-matter and blocks and the one `tree` event, a title the file
+  name cannot carry, a taken name numbered, front-matter kept minus the
+  enrolment, refusals). 193 in all.
+
+### Verified
+
+- `npm test` green (193 tests), `npm run typecheck` clean, `npm run
+  build` ok, `cargo check` ok.
+- Done-when, in the window (`ILMI_VAULT=<scratch copy> ILMI_SMOKE=intake
+  npm run tauri dev`): `open: tab "intake"; h1 "Add a source"; … focused
+  true`; after `use a sample`: `stats "136 words 4 paragraphs ~1 min";
+  title "Spaced repetition and the economics of attention"; folders
+  vault, books, essays, fleeting, papers, papers/archive; chosen papers`;
+  after `place & open`: `placed papers/Spaced repetition and the
+  economics of attention.md; front-matter --- / frozen: true / imported:
+  2026-09-22 / ---; blocks 4; diagnostics 0` and `reader: h1 "Spaced
+  repetition and the economics of attention"; frozen; paragraphs 4;
+  intake tabs left 0`. So the sample imports and opens in the reader,
+  frozen, with no read line.
+- The address path, in the window: a synthetic paste of
+  `https://example.com/` into the empty field logged `fetching`, then
+  `fetched: "This domain is for use in documentation examples…"; title
+  "Example Domain"; chosen books`. So the http plugin, its scope, and
+  Readability all run in the real webview.
+
+### Not verified
+
+- A real file drop. Tauri's drag-drop event and `read_dropped` are by
+  reading (the event's shape from `webview.d.ts`, the position mapped
+  through `devicePixelRatio` and `elementFromPoint`); no pointer in this
+  sandbox can drag a file onto the window. Dragged text through the DOM
+  `drop` likewise.
+- The look of the intake, by reading and by the prototype's rules.
+- Pages that refuse the plugin's default user agent, or that need a
+  charset other than UTF-8: `res.text()` decodes UTF-8 only.
+
+### Decisions worth knowing
+
+- Copy trimmed against the brief: the prototype's lede ("Paste text or a
+  link below…"), the button subtitles (`read now`, `save for later`),
+  and the `unread` word in the stats are gone; the placeholder is `paste
+  text or a link`, the hint `or drop a .txt / .md file`, the veil `drop
+  it here`. The h1 stays `Add a source`.
+- The text is read by `parse`, not split into paragraphs by hand, so a
+  dropped `.md` keeps its headings, cards, and front-matter; only
+  `frozen`, `imported`, `read`, and `write` are ours. The prototype
+  trimmed each paragraph; here the body is verbatim (FORMAT.md rule 1).
+- The first line stays in the body even when it is also the derived
+  title, as in the prototype; the title field is live from the text
+  until you type one.
+- Every folder is offered, not only the top level as in the prototype,
+  since a vault with `papers/archive` would otherwise need a move
+  afterwards. The root is offered too, by the vault's name.
+- A pasted address is fetched only into an empty field, and only on
+  paste (typing one does nothing), so an address inside pasted text is
+  just text.
+- No entry point in the prototype exists yet (the palette is milestone
+  9), so `add a source` sits in the tree's context menu for now.
+- Word count of the sample is 136, not the 174 first guessed; the test
+  pins the real number, computed as the prototype computed it.
+
+### Handoff prompt
+
+Paste into a fresh session:
+
+```
+Read PLAN.md, FORMAT.md, BUILD-LOG.md, and spec/hashiyah/HANDOFF.md.
+
+Context: milestones 0-7 are done. src/format/ parses and serializes vault
+files (parse / serialize / meta / setField; never string-edit a file).
+src/vault/ opens, walks, reads, writes, watches, and reshapes a vault over
+an Fs interface; change a file with vault.update(path, mutate); tree ops
+are vault.createFolder / createDoc / importDoc / rename / move / remove /
+extract; the vault emits a doc event for its own writes too.
+src/schedule/ grades cards with ts-fsrs (gradeItem inside vault.update),
+runs the reading and writing loops (advanceRead / advanceWrite), and
+builds the queue (queue(vault, now, scope), counts). src/reader/ is the
+ProseMirror model of a document and src/app/Reader.tsx the editor over
+it, with the read marker, the selection cue (e extracts, m opens the
+composer), and a Writer that debounces body writes. src/app/ also has
+the sidebar tree, panes and tabs (a tab is a path, or a special id like
+INTAKE in names.ts), list lenses, and the intake (Intake.tsx; src/import/
+is its pure side). Tests run in vitest over a temp copy of
+src/format/__tests__/corpus/vault. ILMI_VAULT=/path npm run tauri dev
+opens a vault at launch; ILMI_SMOKE=1 / reader / cards / intake exercise
+the tree ops, the reader, extracts and cards, and the intake, each
+logging results to the terminal.
+
+Tooling: node is in /opt/homebrew/bin and cargo in ~/.cargo/bin; neither is
+on the tool-shell PATH. Prefix every command with
+export PATH=$HOME/.cargo/bin:/opt/homebrew/bin:$PATH
+npm test and npm run typecheck must be green before a commit.
+
+Do milestone 8 in PLAN.md (queue and review session) and only that one.
+The queue view (today / upcoming / reading / writing / cards) and the
+session shell with [ / ] over it; cards reveal and grade again / hard /
+good / easy through gradeItem; reading has read on / postpone / done
+with the marker live; writing has worked on it / postpone / done;
+multi-blank clozes show the other blanks dimmed. Follow
+spec/hashiyah/views.jsx and recall.jsx and the brief's copy rules for
+every string. Queue tabs need ids that are not paths, like INTAKE. The
+inspector, the strips, and the palette are milestone 9; ask before
+adding a panel. Stop at the milestone's "done when". Then tick it in
+PLAN.md, write notes for the next session under it, add an entry to
+BUILD-LOG.md with a fresh handoff prompt, and commit.
+```
+
+---
+
 ## 2026-09-22 — milestone 6: extracts and card making
 
 Commit `fbc2386` — *cards: the selection cue, the composer, extracts carved

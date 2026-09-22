@@ -8,8 +8,9 @@ import { open as pickDirectory } from '@tauri-apps/plugin-dialog';
 import { info } from '@tauri-apps/plugin-log';
 import { meta, setField, type Doc, type NodeType } from '../format/index.js';
 import { docItems, isDue } from '../schedule/index.js';
-import { Vault, childDirOf, dirOf, isDoc, rekey, type ExtractSpec, type TreeNode, type VaultEvent, type VaultState } from '../vault/index.js';
+import { Vault, childDirOf, dirOf, isDoc, rekey, type ExtractSpec, type ImportSpec, type TreeNode, type VaultEvent, type VaultState } from '../vault/index.js';
 import { tauriFs } from '../vault/tauri-fs.js';
+import { INTAKE } from './names.js';
 import { activeTab, dropTabs, emptyPanes, openTab, retarget, type OpenOpts } from './panes.js';
 import { SIDE_DEFAULT, SIDE_MAX, SIDE_MIN, useApp, type DocInfo, type Sidebar } from './store.js';
 
@@ -136,7 +137,7 @@ export async function openVault(path: string): Promise<Vault> {
     hidden: state.sidebar?.hidden ?? false,
   };
   let panes = emptyPanes();
-  if (state.tab && (state.tab === '' || vault.documents().includes(state.tab) || (await vault.fs.stat(vault.abs(state.tab)))?.isDir)) {
+  if (state.tab && (state.tab === '' || state.tab === INTAKE || vault.documents().includes(state.tab) || (await vault.fs.stat(vault.abs(state.tab)))?.isDir)) {
     panes = openTab(panes, state.tab);
   }
   useApp.setState({ open, sidebar, panes, docs: {} });
@@ -169,8 +170,8 @@ export function openInitialVault(): Promise<void> {
     const vault = await openVault(path);
     const mode = await invoke<string | null>('dev_env', { name: 'ILMI_SMOKE' });
     if (mode) {
-      const { smoke, smokeReader, smokeCards } = await import('./smoke.js');
-      await (mode === 'reader' ? smokeReader(vault) : mode === 'cards' ? smokeCards(vault) : smoke(vault));
+      const { smoke, smokeReader, smokeCards, smokeIntake } = await import('./smoke.js');
+      await (mode === 'reader' ? smokeReader(vault) : mode === 'cards' ? smokeCards(vault) : mode === 'intake' ? smokeIntake(vault) : smoke(vault));
     }
   })();
   return initial;
@@ -183,6 +184,12 @@ export function openNode(path: string, opts: OpenOpts = {}): void {
   const panes = openTab(s.panes, path, opts);
   useApp.setState({ panes });
   queueSave({ tab: activeTab(panes)?.id ?? '' });
+}
+
+/** The intake, placing into `dir` (a folder path; `''` for the root). One tab, wherever it is. */
+export function openIntake(dir = '', opts: OpenOpts = {}): void {
+  useApp.setState({ intakeDir: dir });
+  openNode(INTAKE, opts);
 }
 
 export function rememberTab(): void {
@@ -237,6 +244,13 @@ export async function moveNode(path: string, dir: string): Promise<string> {
 
 export function removeNode(path: string): Promise<void> {
   return need().remove(path);
+}
+
+/** A frozen, unread source from imported text in `dir`; the folder opens so the new row is visible. Resolves to its path. */
+export async function importNode(dir: string, spec: ImportSpec): Promise<string> {
+  const path = await need().importDoc(dir, spec);
+  if (dir !== '' || !useApp.getState().open['']) toggleOpen(dir, true);
+  return path;
 }
 
 /** Carve a passage of `parent` into a child extract; the parent's row opens so the child is visible. */

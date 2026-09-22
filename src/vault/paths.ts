@@ -54,3 +54,21 @@ export function cleanName(name: string): string | null {
   if (!s || s === '.' || s === '..' || s.startsWith('.') || BAD_NAME.test(s) || s.endsWith('.md')) return null;
   return s;
 }
+
+/**
+ * A file name from free text, for an imported title: separators and control
+ * characters become spaces, runs of whitespace collapse, a leading dot and a
+ * `.md` tail go, and the rest is capped at 80 characters. `untitled` when
+ * nothing usable is left.
+ */
+export function fileName(text: string): string {
+  const s = text
+    .replace(/[/\\:\x00-\x1f]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/^\.+/, '')
+    .slice(0, 80)
+    .replace(/\.md$/i, '')
+    .trim();
+  return cleanName(s) ?? 'untitled';
+}

@@ -144,7 +144,7 @@ the prototype's `pos`.
   one-line diff, and the queue for 2026-05-27 matches the prototype's counts.
 
 ### [x] 4. Tree — sidebar and lenses
-Done 2026-09-22.
+Done 2026-09-22, commit `80648ae`.
 Notes: tree operations are `Vault` methods over `Fs` (`createFolder`,
 `createDoc`, `rename`, `move`, `remove` in `src/vault/vault.ts`, path
 arithmetic in `paths.ts`); each runs after any pending watcher work, goes

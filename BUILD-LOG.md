@@ -8,7 +8,7 @@ was verified, what was not, and the prompt to resume with.
 
 ## 2026-09-22 — milestone 4: tree, sidebar, lenses
 
-Commit `TBD` — *tree: sidebar, tree operations over disk, panes and lenses*.
+Commit `80648ae` — *tree: sidebar, tree operations over disk, panes and lenses*.
 
 ### Done
 

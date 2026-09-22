@@ -223,7 +223,7 @@ the inspector (milestone 6/9), a placeholder for an empty document.
   across reload.
 
 ### [x] 6. Extracts and card making
-Done 2026-09-22, commit `(see BUILD-LOG)`.
+Done 2026-09-22, commit `fbc2386`.
 Notes: `src/reader/cards.ts` is the pure side: `cardText(spec)` turns the
 composer's fields into the paragraph the format will read back as that
 card (checked with `parse` itself; two-sided cards go inline when both

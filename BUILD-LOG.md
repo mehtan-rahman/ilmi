@@ -8,7 +8,7 @@ was verified, what was not, and the prompt to resume with.
 
 ## 2026-09-22 — milestone 6: extracts and card making
 
-Commit `TBD` — *cards: the selection cue, the composer, extracts carved
+Commit `fbc2386` — *cards: the selection cue, the composer, extracts carved
 into child files*.
 
 ### Done

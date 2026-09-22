@@ -272,7 +272,7 @@ fills the composer, saves, and logs what reached disk.
   tree and the queue.
 
 ### [x] 7. Import
-Done 2026-09-22, commit `TBD`.
+Done 2026-09-22, commit `7d81c0d`.
 Notes: `src/import/` is the pure side: `text.ts` (`cleanText`,
 `deriveTitle` = first line, `#`s stripped, 64 chars; `stats` = words,
 paragraphs, minutes at 220 wpm; `isUrl` = one `http(s)` address and

@@ -8,7 +8,7 @@ was verified, what was not, and the prompt to resume with.
 
 ## 2026-09-22 — milestone 7: import
 
-Commit `TBD` — *import: the intake lens, readable text from a paste, a
+Commit `7d81c0d` — *import: the intake lens, readable text from a paste, a
 dropped file, or an address, landed frozen and unread*.
 
 ### Done

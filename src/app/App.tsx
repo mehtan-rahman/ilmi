@@ -1,5 +1,6 @@
 import { useCallback, useEffect } from 'react';
 import { Canvas } from './Canvas.js';
+import { SavedQueries } from './Queue.js';
 import { Tree } from './Tree.js';
 import { activeTab, closeTab, splitPane } from './panes.js';
 import { SIDE_MAX, SIDE_MIN, useApp } from './store.js';
@@ -90,6 +91,7 @@ export function App() {
         <div className="side">
           <h6>workspace</h6>
           <Tree activeId={activeTab(panes)?.id} onOpen={openNode} />
+          <SavedQueries activeId={activeTab(panes)?.id} />
         </div>
       )}
       <div className="side-resize" data-hidden={sidebar.hidden ? '1' : '0'} onMouseDown={startSideResize} />

@@ -6,7 +6,7 @@
 
 import {
   blanks, cardForm, clozeParts, meta, nextGroup,
-  type Block, type Card, type CardForm, type CardSchedule, type Doc, type ReadSchedule, type WriteSchedule,
+  type Card, type CardForm, type CardSchedule, type Doc, type ReadSchedule, type WriteSchedule,
 } from '../format/index.js';
 import type { Vault } from '../vault/index.js';
 import { grade, type Grade } from './card.js';
@@ -46,11 +46,15 @@ export interface ReadItem extends ItemBase {
   sched: ReadSchedule;
   pos: number;
   total: number;
+  /** Text of the next unread prose block, for a row to show. */
+  next?: string;
 }
 
 export interface WriteItem extends ItemBase {
   kind: 'write';
   sched: WriteSchedule;
+  /** Text of the first paragraph, for a row to show. */
+  lead?: string;
 }
 
 export type QueueItem = CardItem | ReadItem | WriteItem;
@@ -104,18 +108,24 @@ function cardItems(path: string, block: number, card: Card, section: string | un
 
 // ── documents ────────────────────────────────────────────────────
 
-const proseCount = (blocks: Block[]) => blocks.filter((b) => b.kind !== 'card').length;
-
 /** Every item one document contributes, in document order. */
 export function docItems(path: string, doc: Doc, now: Date): QueueItem[] {
   const out: QueueItem[] = [];
   const m = meta(doc);
+  const prose = doc.blocks.filter((b) => b.kind !== 'card');
   if (m.read) {
-    const total = proseCount(doc.blocks);
-    out.push({ kind: 'read', path, sched: m.read, pos: Math.min(m.read.pos ?? 0, total), total, ...withDue(m.read, now), pri: m.read.pri ?? 2 });
+    const total = prose.length;
+    const pos = Math.min(m.read.pos ?? 0, total);
+    const item: ReadItem = { kind: 'read', path, sched: m.read, pos, total, ...withDue(m.read, now), pri: m.read.pri ?? 2 };
+    const next = prose[Math.min(pos, total - 1)];
+    if (next && next.text.trim()) item.next = next.text;
+    out.push(item);
   }
   if (m.write && !m.write.done) {
-    out.push({ kind: 'write', path, sched: m.write, ...withDue(m.write, now), pri: m.write.pri ?? 2 });
+    const item: WriteItem = { kind: 'write', path, sched: m.write, ...withDue(m.write, now), pri: m.write.pri ?? 2 };
+    const lead = prose.find((b) => b.kind === 'paragraph' && b.text.trim()) ?? prose.find((b) => b.text.trim());
+    if (lead) item.lead = lead.text;
+    out.push(item);
   }
   let section: string | undefined;
   doc.blocks.forEach((b, i) => {
@@ -129,11 +139,24 @@ function byPriorityThenDue(a: QueueItem, b: QueueItem): number {
   return a.pri - b.pri || a.dueAt.getTime() - b.dueAt.getTime();
 }
 
+/** In place: priority, then due; a stable sort keeps document order after that. */
+export function sortQueue(items: QueueItem[]): QueueItem[] {
+  return items.sort(byPriorityThenDue);
+}
+
 /** All items over a set of documents, sorted. */
 export function queueItems(docs: Iterable<[string, Doc]>, now: Date): QueueItem[] {
   const out: QueueItem[] = [];
   for (const [path, doc] of docs) out.push(...docItems(path, doc, now));
-  return out.sort(byPriorityThenDue);
+  return sortQueue(out);
+}
+
+/** The same element: one card group, or one document's reading or writing. */
+export function sameItem(a: QueueItem, b: QueueItem): boolean {
+  if (a.kind !== b.kind || a.path !== b.path) return false;
+  if (a.kind !== 'card' || b.kind !== 'card') return true;
+  const same = a.id !== undefined && b.id !== undefined ? a.id === b.id : a.block === b.block && a.text === b.text;
+  return same && JSON.stringify(a.group ?? null) === JSON.stringify(b.group ?? null);
 }
 
 export function inScope(item: QueueItem, scope: Scope, now: Date): boolean {

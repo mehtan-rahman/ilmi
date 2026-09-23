@@ -13,9 +13,10 @@ import {
   blockAt, blocksEqual, cardDue, cursorIndex, editMath, editorialRanges, fromDoc, insertCard, makeState, markerKey, markerPos,
   mathSplit, passage, pickPos, proseIndices, schema, setReadPos, type Band, type Passage,
 } from '../reader/index.js';
-import { dayOf, dayStart, whenToDate } from '../schedule/index.js';
+import { advanceWrite, whenToDate } from '../schedule/index.js';
 import { dirOf, nameOf, type Loaded, type Vault } from '../vault/index.js';
 import { Composer } from './Composer.js';
+import { dueLabel } from './items.js';
 import { titleOf } from './names.js';
 import { useApp, type DocInfo } from './store.js';
 import { currentVault, extractNode } from './vault.js';
@@ -126,7 +127,7 @@ function markedHTML(text: string): string {
 }
 
 /** Text with math as chips and editorial marks lit, for the read-only parts. */
-function richHTML(text: string): string {
+export function richHTML(text: string): string {
   return mathSplit(text).map((p) => (typeof p === 'string' ? markedHTML(p) : mathHTML(p.math))).join('');
 }
 
@@ -141,17 +142,6 @@ export function cardHTML(card: Card): string {
     case 'bidir':
       return `<span>${richHTML(f.left)} <span class="cs-arrow">⇄</span> ${richHTML(f.right)}</span>`;
   }
-}
-
-/** When a card comes up, in the prototype's words. */
-export function dueLabel(due: string | undefined, now: Date): string {
-  if (due === undefined) return 'new';
-  const d = Math.round((dayStart(dayOf(whenToDate(due))).getTime() - dayStart(dayOf(now)).getTime()) / 86400000);
-  if (d < 0) return `overdue ${-d}d`;
-  if (d === 0) return 'today';
-  if (d === 1) return 'tomorrow';
-  if (d < 30) return `+${d}d`;
-  return `+${Math.round(d / 30)}mo`;
 }
 
 // ── node views ───────────────────────────────────────────────────
@@ -536,6 +526,17 @@ export function Reader({ id }: { id: string }) {
     void writerRef.current?.update((doc) => setField(doc, 'frozen', next));
   };
 
+  // a draft's row: where it is in spaced composition, and done / reopen
+  const w = info?.type === 'draft' ? info.write : undefined;
+  const writeState = w
+    ? w.done ? 'done' : `${w.reps ? `pass ${w.reps + 1}` : 'first pass'}, ${dueLabel(w.due, new Date())}`
+    : '';
+  const toggleDone = () => {
+    if (!w) return;
+    const action = w.done ? 'on' : 'done';
+    void writerRef.current?.update((doc) => { advanceWrite(doc, action, new Date()); });
+  };
+
   if (status === 'gone' || (status === 'ok' && !info)) {
     return <div className="reader-wrap"><div className="reader"><div className="empty">no longer in the vault</div></div></div>;
   }
@@ -559,6 +560,12 @@ export function Reader({ id }: { id: string }) {
           <span className="right">{right}</span>
         </div>
         <h1>{titleOf(id, docs, root)}</h1>
+        {w && (
+          <div className="draft-sched" data-done={w.done ? '1' : '0'}>
+            <span className="ds-state">{writeState}</span>
+            <button type="button" className="ds-toggle" onClick={toggleDone}>{w.done ? 'reopen' : 'done'}</button>
+          </div>
+        )}
         <div className={`doc-wrap${reading ? ' reading' : ''}`} ref={wrapRef}>
           {reading && <div className="read-gutter" onPointerDown={gutterDown} onPointerMove={gutterMove} onPointerUp={gutterUp} />}
           {reading && rule && (

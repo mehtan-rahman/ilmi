@@ -1,0 +1,202 @@
+/* The queue: a saved query as a list. Ported from the prototype's queue
+   rules with the flattening pass folded in: the enter row is a row, tags
+   are plain text, the per-kind colours come from the tokens. */
+
+.queue {
+  padding: 24px 28px 64px;
+  max-width: 880px;
+  margin: 0 auto;
+}
+.queue header { margin-bottom: 18px; }
+.queue h1 {
+  font-family: var(--serif);
+  font-weight: 420;
+  text-wrap: balance;
+  font-size: 22px;
+  letter-spacing: -0.01em;
+  margin: 0;
+  line-height: 1.1;
+}
+.queue h1 .day {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--fg-4);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin-left: 12px;
+  vertical-align: 0.25em;
+}
+.queue .summary {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--fg-4);
+  margin-top: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+}
+.queue .summary span { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.queue .summary b { color: var(--fg-2); font-weight: 500; }
+
+/* enter queue: a row, not a banner */
+.queue .enter-queue {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  margin: 16px 0 4px;
+  padding: 8px 0;
+  background: transparent;
+  border: 0;
+  border-top: 1px solid var(--line-1);
+  border-bottom: 1px solid var(--line-1);
+  border-radius: 0;
+  cursor: pointer;
+  text-align: left;
+}
+.queue .enter-queue .eq-main {
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--fg-1);
+  letter-spacing: 0.01em;
+}
+.queue .enter-queue:hover .eq-main { color: var(--accent); }
+.queue .enter-queue kbd {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--fg-4);
+}
+[data-theme="eink"] .queue .enter-queue:hover .eq-main,
+[data-theme="eink"] .queue .enter-queue kbd { color: var(--fg); }
+
+.queue .qlog {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.queue .qlog-line {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--fg-4);
+  letter-spacing: 0.02em;
+}
+
+/* the list */
+.qlist {
+  list-style: none;
+  padding: 0;
+  margin: 18px 0 0;
+  border-top: 1px solid var(--line-2);
+}
+.qlist li {
+  display: grid;
+  grid-template-columns: 14px 1fr auto auto;
+  align-items: baseline;
+  gap: 12px;
+  padding: calc(var(--gap-y) - 2px) 0;
+  border-bottom: 1px solid var(--line-3);
+  cursor: default;
+  position: relative;
+}
+@media (max-width: 720px) {
+  .qlist li {
+    grid-template-columns: 14px 1fr;
+    grid-template-areas: "mark body" ". pri";
+  }
+  .qlist li .mark { grid-area: mark; }
+  .qlist li .body { grid-area: body; }
+  .qlist li .pri { grid-area: pri; padding-top: 4px; }
+  .qlist li .due { display: none; }
+}
+.qlist li:hover { background: var(--line-3); }
+.qlist li[data-active="1"]::before {
+  content: "";
+  position: absolute;
+  left: -16px;
+  top: 50%;
+  width: 6px;
+  height: 1px;
+  background: var(--accent);
+}
+.qlist .mark {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--fg-4);
+  text-align: center;
+}
+.qlist .mark[data-el="read"] { color: var(--el-read); font-size: 12px; }
+.qlist .mark[data-el="write"] { color: var(--el-write); }
+.qlist .mark[data-el="card"] { color: var(--el-card); }
+.qlist .body {
+  font-family: var(--serif);
+  font-size: 14.5px;
+  line-height: 1.32;
+  color: var(--fg-1);
+  min-width: 0;
+}
+.qlist li[data-el="read"] .body,
+.qlist li[data-el="write"] .body { color: var(--fg-3); }
+.qlist .body .src {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--fg-4);
+  display: block;
+  margin-bottom: 2px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.qlist li[data-fresh="1"] .body .src::after {
+  content: "new";
+  margin-left: 8px;
+  color: var(--accent);
+  letter-spacing: 0.08em;
+}
+.qlist .body .kindtag {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--fg-4);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-right: 8px;
+}
+.qlist .body .kindtag[data-el="read"] { color: var(--el-read); }
+.qlist .body .kindtag[data-el="write"] { color: var(--el-write); }
+.qlist .body .kindtag[data-el="card"] { color: var(--el-card); }
+.qlist .body .cloze {
+  background: var(--fg-5);
+  border-radius: var(--radius);
+  padding: 0 6px;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+}
+.qlist .body .cs-arrow { font-family: var(--mono); font-size: 11px; color: var(--fg-4); }
+.qlist .read-snip { font-style: italic; color: var(--fg-3); }
+.qlist .read-snip .read-ell { color: var(--fg-5); font-style: normal; }
+.qlist .body .ref-line {
+  display: block;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--fg-5);
+  letter-spacing: 0.02em;
+  margin-top: 4px;
+}
+.qlist .pri {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--fg-3);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+}
+.qlist .pri b { color: var(--fg-2); font-weight: 500; }
+.qlist .due {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--fg-4);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  min-width: 70px;
+}
+.qlist .due .ivl { color: var(--fg-5); margin-top: 1px; }

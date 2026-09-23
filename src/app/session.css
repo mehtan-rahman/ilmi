@@ -1,0 +1,274 @@
+/* The session: a card centred in the pane with its grades under it; a
+   reading or writing element as the whole document with a control bar at
+   the foot. Ported from the prototype's recall and session-bar rules with
+   the flattening pass folded in: hairlines, 2px, no blur, no shadows. */
+
+.recall-wrap {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 36px 24px;
+  position: relative;
+}
+.recall-meta {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--fg-4);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  max-width: 520px;
+  width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.recall-meta .sess-count { flex-shrink: 0; }
+.recall-meta .el-tag[data-el="card"] { color: var(--el-card); }
+.recall-meta .meta-srclink {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  padding: 0;
+  text-transform: none;
+  letter-spacing: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.recall-meta .meta-srclink .ms-arrow { color: var(--fg-5); font-size: 9px; }
+.recall-meta .meta-srclink:hover,
+.recall-meta .meta-srclink:hover .ms-arrow { color: var(--accent); }
+
+/* ‹ › through the queue */
+.sess-nav { display: inline-flex; gap: 2px; margin-right: 4px; }
+.sess-nav .sn-btn {
+  appearance: none;
+  background: transparent;
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius);
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  color: var(--fg-3);
+  font-size: 12px;
+  line-height: 1;
+  padding: 0;
+}
+.sess-nav .sn-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.sess-nav .sn-btn:disabled { opacity: 0.32; cursor: default; }
+
+/* the card */
+.recall-wrap .card {
+  width: 100%;
+  max-width: 520px;
+  background: var(--paper);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius);
+  padding: 48px 44px 40px;
+  font-family: var(--serif);
+  font-size: 19px;
+  line-height: 1.5;
+  color: var(--fg-1);
+  text-align: left;
+  font-weight: 420;
+  white-space: pre-wrap;
+}
+.recall-wrap .card .cloze {
+  background: var(--fg-5);
+  border-radius: var(--radius);
+  padding: 0 8px;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  cursor: pointer;
+  transition: background .2s, color .2s;
+}
+.recall-wrap .card .cloze .katex { color: transparent; }
+.recall-wrap .card .cloze.revealed {
+  background: var(--accent-soft);
+  color: var(--fg-1);
+  -webkit-text-fill-color: var(--fg-1);
+}
+.recall-wrap .card .cloze.revealed .katex { color: inherit; }
+/* another group's blank: shown, so this one reads in place */
+.recall-wrap .card .cloze.ctx {
+  background: transparent;
+  color: var(--fg-2);
+  -webkit-text-fill-color: var(--fg-2);
+  padding: 0 1px;
+  cursor: default;
+  border-bottom: 1px solid var(--line-2);
+}
+.recall-wrap .card .cloze.ctx .katex { color: inherit; }
+.recall-wrap .card .qa-q { color: var(--fg-1); }
+.recall-wrap .card .qa-a {
+  color: var(--fg-2);
+  font-size: 19px;
+  margin-top: 19px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line-2);
+  font-style: italic;
+}
+.recall-wrap .card .qa-a.hint {
+  color: var(--fg-5);
+  font-style: normal;
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+.recall-wrap .card .bidir { display: flex; flex-direction: column; gap: 14px; }
+.recall-wrap .card .bidir > div { display: flex; gap: 10px; align-items: baseline; }
+.recall-wrap .card .bidir .bidir-arrow { align-items: center; color: var(--fg-4); font-family: var(--mono); font-size: 14px; }
+.recall-wrap .card .bidir .lbl {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--fg-4);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  min-width: 18px;
+}
+.recall-wrap .card .bidir-b {
+  cursor: pointer;
+  border-radius: var(--radius);
+  padding: 0 8px;
+  background: var(--fg-5);
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+}
+.recall-wrap .card .bidir-b .katex { color: transparent; }
+.recall-wrap .card .bidir-b.revealed {
+  background: transparent;
+  padding: 0;
+  color: var(--fg-1);
+  -webkit-text-fill-color: var(--fg-1);
+  cursor: auto;
+}
+.recall-wrap .card .bidir-b.revealed .katex { color: inherit; }
+
+/* a quiet schedule strip under the card */
+.recall-wrap .card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  max-width: 520px;
+  margin-top: 14px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--fg-4);
+}
+.recall-wrap .card-meta .cm-type { color: var(--fg-3); text-transform: uppercase; letter-spacing: 0.08em; }
+.recall-wrap .card-meta .cm-due[data-due="1"] { color: var(--accent); }
+
+/* the four grades */
+.grades {
+  display: flex;
+  gap: 1px;
+  margin-top: 28px;
+  width: 100%;
+  max-width: 520px;
+}
+.grades button {
+  flex: 1;
+  appearance: none;
+  border: 1px solid var(--line-1);
+  border-radius: 0;
+  background: transparent;
+  color: var(--fg-2);
+  font-family: var(--sans);
+  font-size: 12.5px;
+  padding: 16px 0 12px;
+  cursor: default;
+  text-align: center;
+  margin-left: -1px;
+}
+.grades button:first-child { margin-left: 0; border-top-left-radius: var(--radius); border-bottom-left-radius: var(--radius); }
+.grades button:last-child { border-top-right-radius: var(--radius); border-bottom-right-radius: var(--radius); }
+.grades button:hover { background: var(--line-3); color: var(--fg-1); }
+.grades[data-revealed="0"] button { opacity: 0.4; }
+.grades button .label { display: block; font-weight: 500; }
+.grades button .gap {
+  display: block;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--fg-4);
+  margin-top: 4px;
+  font-variant-numeric: tabular-nums;
+}
+.grades button kbd {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--fg-4);
+  margin-left: 4px;
+  vertical-align: 0.15em;
+}
+[data-theme="eink"] .grades button:active { background: var(--fg); color: var(--paper); }
+
+/* a reading or writing element: the document, then the bar at the foot */
+.doc-session { position: relative; min-height: 100%; }
+.session-bar {
+  position: sticky;
+  bottom: 14px;
+  z-index: 30;
+  width: 100%;
+  max-width: min(calc(var(--reading-width) + 40px), 100%);
+  margin: -56px auto 0;
+  padding: 0 12px;
+  pointer-events: none;
+}
+.session-bar .sb-inner {
+  pointer-events: auto;
+  background: var(--paper);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius);
+  padding: 9px 10px 10px;
+}
+.session-bar .sb-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  padding: 0 3px;
+}
+.session-bar .sb-count { font-family: var(--mono); font-size: 10px; color: var(--fg-4); }
+.session-bar .sb-kind { font-family: var(--mono); font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.08em; }
+.session-bar .sb-kind[data-el="read"] { color: var(--el-read); }
+.session-bar .sb-kind[data-el="write"] { color: var(--el-write); }
+.session-bar .sb-actions { display: flex; gap: 8px; }
+.session-bar .sb-actions button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex: 1;
+  padding: 9px 13px;
+  background: transparent;
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+.session-bar .sb-actions button:hover { border-color: var(--fg-4); }
+.session-bar .sb-actions button:first-child { border-color: color-mix(in oklab, var(--accent) 30%, transparent); }
+.session-bar .sb-actions button:first-child:hover { border-color: var(--accent); background: var(--accent-soft); }
+.session-bar .sb-actions .ra-l { font-family: var(--sans); font-size: 13px; color: var(--fg-1); }
+.session-bar .sb-actions button kbd {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius);
+  padding: 0 4px;
+  color: var(--fg-4);
+}

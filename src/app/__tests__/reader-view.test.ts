@@ -8,7 +8,8 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { parse, type Card } from '../../format/index.js';
 import { makeState } from '../../reader/index.js';
-import { cardHTML, dueLabel, nodeViews } from '../Reader.js';
+import { dueLabel } from '../items.js';
+import { cardHTML, nodeViews } from '../Reader.js';
 
 const WOZ = join(dirname(fileURLToPath(import.meta.url)), '../../format/__tests__/corpus/vault/papers/wozniak-1990.md');
 

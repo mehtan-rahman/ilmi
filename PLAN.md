@@ -323,7 +323,56 @@ Dev: `ILMI_SMOKE=intake` takes the sample, places it, then pastes
   folder. Lands as a frozen source, unread, not enrolled.
 - Done when: the prototype's intake sample imports and opens in the reader.
 
-### [ ] 8. Queue and review session
+### [x] 8. Queue and review session
+Done 2026-09-22, commit `TBD`.
+Notes: the queue lives in the store: `src/app/vault.ts` keeps every
+document's parsed form in a `bodies` map and publishes `queue` (all
+items, sorted, `queueItems` over the map) and `queueAt` on every publish,
+`doc`, and `gone` event; `refreshQueue()` rebuilds it for the present
+moment (a card in learning steps comes due by the minute) and the queue
+lens calls it when shown. `DocInfo` is now derived from the same items.
+`src/schedule/queue.ts` gained `sortQueue`, `sameItem` (one card group,
+or one document's reading or writing), `ReadItem.next` (the next unread
+prose block's text) and `WriteItem.lead` (the first paragraph), so a row
+can show its snippet without opening the file. Tab ids that are not
+paths: `INTAKE`, `SESSION` (`':session'`, one session at a time) and
+`queueId(scope)` (`':queue/today'` …) in `names.ts`, with `queueScope`,
+`tabKindOf` (`queue` / `session`), `titleOf` (`due today`, `upcoming`,
+`reading`, `writing`, `all cards`) and glyphs `≡` / `◆`; the session's
+tab title and glyph follow the element through `sessionEl` in the store.
+A saved query is restored from `.ilmi/state.json`; a session is not;
+nothing remembered opens `due today`. `src/app/items.ts` is the pure
+side of the views: `dueLabel` (moved out of `Reader.tsx`), `dayLabel`
+(`wed · 27 may`), `gapLabels` (what each grade would schedule, minutes
+in learning steps, else days, from `preview`), `sourceLabel` (title, and
+for a card ` — section` with the `§N — ` prefix dropped), `snippetOf`,
+`refLine` (`N% read`, `pass N`), `intervalLabel`, `isFresh` (the `new`
+tag), `ownBlank` (which blanks an item tests; the rest are context),
+`sessionItems` (today rotated to start at the element, or the element
+alone when it is not due), `summary`, `dueNow`. `Queue.tsx` (`Queue`,
+`SavedQueries` for the sidebar) and `Session.tsx` follow `views.jsx` and
+`recall.jsx`: `j k ⏎ o` in the queue, `[ ]` in the session, space and
+`1-4` on a card (a digit before reveal reveals), `⏎ p d` on a topic or a
+draft; the reading and writing elements render `Reader` plus a sticky
+`SessionBar`; `read on` passes the number of prose blocks scrolled past
+the top of the pane as `pos` (`readOn` only moves forward), so the
+marker is live and the pass remembers where you got to. Grading runs
+`gradeItem` inside `vault.update`; a card that had no id gets one, and
+later items of the same card in the session are patched with the new id
+and text. A session is `session: { seq, items }` in the store; opening
+one again bumps `seq` and the lens starts over. `log` (six lines, `read
+· read on`, `wrote · progress`, …) shows two under the header, as the
+prototype's `qlog` did. The draft lens got its `done` / `reopen` row
+(`draft-sched`, in `reader.css`); reopen is `worked on it`. CSS is in
+`queue.css` and `session.css`, flattened. Copy: empty states are one
+line (`nothing due`, `nothing ahead`, `nothing enrolled`, `no drafts`,
+`no cards`), the session ends on `done, N elements`. Not done: editing
+a card's text in the session (the prototype's contentEditable; the
+inspector's card editor is milestone 9), the prototype's `p` / `x` on
+queue rows (cards do not postpone), an `upcoming` row opening a
+one-element session is gradable early, as in the prototype. Dev:
+`ILMI_SMOKE=queue` opens the day, enters the queue, walks the whole
+session with the keys, and logs each element's write. Rust untouched.
 - Queue view (today / upcoming / reading / writing / cards). Session shell
   with prev/next (`[` / `]`). Cards: reveal, grade again/hard/good/easy.
   Reading: read on / postpone / done with the marker live. Writing: worked on
@@ -341,20 +390,29 @@ Dev: `ILMI_SMOKE=intake` takes the sample, places it, then pastes
 
 ## Notes for the next session
 
-Start at milestone 8, the queue and the review session. The prototype's
-queue is `views.jsx` (`Queue`, `SavedView`: today / upcoming / reading /
-writing / cards, `j k` to move, `⏎` to enter, `o` to open one, `p`
-postpone, `x` done) and the session is `recall.jsx` (`SessionShell`,
-`SessionBar` with `[` / `]`, `CardElement` reveal and grade 1-4,
-`ReadingSession` with the marker live, `WritingSession`); the sidebar's
-saved-queries section is in `chrome.jsx`. The model is ready:
-`queue(vault, now, scope)` and `gradeItem` in `src/schedule/queue.ts`
-(run inside `vault.update`), `advanceRead` / `advanceWrite` and the
-`reading.*` / `writing.*` loops, `counts`. A queue tab needs an id that
-is not a path, as the intake's `INTAKE` is; add such ids beside it in
-`names.ts` and teach `tabKindOf` / `titleOf` / `GLYPH` about them. The
-reading session can reuse `Reader.tsx` (it already has the marker, the
-cue, and the composer); the draft lens's done / reopen row belongs to
-this milestone too. Reading `total` counts every non-card block, as the
-prototype's `pos` does. The inspector, the strips, and the palette are
-milestone 9; ask before adding a panel.
+Start at milestone 9, chrome and polish, the last one. The prototype's
+shell is `chrome.jsx` (`TopStrip`: vault counts, the palette button, the
+date, the inspector toggle; `BottomStrip`: real key hints per active
+kind, `HINTS` there is the list; `Inspector` per node type, with the
+`CardEditor` that edits a card in place while it is under review;
+`TabBar`), `palette.jsx` (`⌘K`, fuzzy over nodes, queries, and
+commands; `fuzzy` is in `store.jsx`), `tweaks-panel.jsx` and the tweaks
+wiring at the top of `app.jsx` (theme / accent presets / density and the
+other sliders; only theme, accent, density are in the brief), and the
+global keyboard router in `app.jsx`. The shell grid in `tokens.css`
+already has `top` / `bot` / `insp` areas; `app.css` overrides it to two
+columns until the strips exist (remove that block). `--insp-w` is set
+to `0px` in `App.tsx`. The store keeps `theme` and `density` and
+`window.ilmi` is the console toggle; the tweaks panel replaces it and
+its settings need a home outside the vault (Tauri's app config dir, or
+`localStorage`). What is ready for the inspector: `DocInfo` per
+document, `useDoc` for a file, `setCardText` in `src/reader/cards.ts`
+(tested, unused) for the card editor, `sessionEl` and `session` in the
+store for what is under review, `refreshQueue` / `counts` for the top
+strip. The palette's commands: the saved queries (`queueId`), `add a
+source` (`openIntake`), split / close pane, theme, every document by
+title (`docs` + `titleOf`). Then the end-to-end pass: import → read →
+extract → card → review over a scratch vault (`ILMI_SMOKE=intake`,
+`cards`, `queue` cover the parts) and the copy pass: remove words.
+Ask before adding a screen, section, or setting the brief or the
+prototype does not have.

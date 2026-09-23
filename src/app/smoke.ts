@@ -8,9 +8,14 @@
 // then selects again, presses `m`, fills the composer, and saves.
 // `ILMI_SMOKE=intake` opens the intake, takes the sample, places it, and
 // then pastes an address to see the fetch land.
+// `ILMI_SMOKE=queue` opens the day's queue, enters it, and walks the whole
+// session with the keys (space and 3 on a card, ⏎ on a topic or a draft),
+// logging what each element wrote, until the queue is one quiet line.
 
 import { info } from '@tauri-apps/plugin-log';
 import type { Vault } from '../vault/index.js';
+import { queueId } from './names.js';
+import { useApp } from './store.js';
 import { createNode, moveNode, openIntake, openNode, removeNode, renameNode } from './vault.js';
 
 const WOZ = 'papers/wozniak-1990.md';
@@ -216,6 +221,66 @@ export async function smokeIntake(vault: Vault): Promise<void> {
       return n && n !== 'fetching' ? n : null;
     }, 30000);
     log(`fetched: "${got.slice(0, 80).replace(/\n/g, ' ')}"; title "${q<HTMLInputElement>('.intake .field input')?.value ?? ''}"; chosen ${q('.folder-pick button[data-active="1"]')?.textContent}`);
+  } catch (e) {
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+export async function smokeQueue(vault: Vault): Promise<void> {
+  const log = (s: string) => info(`smoke queue: ${s}`);
+  const q = <T extends Element>(sel: string) => document.querySelector<T>(sel);
+  const qa = (sel: string) => Array.from(document.querySelectorAll<HTMLElement>(sel));
+  try {
+    openNode(queueId('today'));
+    await until(() => q('.queue .qlist li'));
+    await sleep(300);
+    const rows = qa('.queue .qlist li');
+    log(`today: tab "${q('.tabbar .tab[data-active="1"] .title')?.textContent}"; h1 "${q('.queue h1')?.textContent}"; summary "${q('.queue .summary')?.textContent}"; rows ${rows.length}; saved queries ${qa('.queries .row').map((r) => `${r.querySelector('.name')?.textContent} ${r.querySelector('.meta')?.textContent}`).join(', ')}`);
+    log(`first rows: ${rows.slice(0, 3).map((r) => `[${r.dataset.el}] ${r.querySelector('.src')?.textContent} | ${r.querySelector('.due')?.textContent}`).join(' / ')}`);
+
+    // enter the queue
+    press('Enter');
+    await until(() => q('.recall-wrap, .doc-session'));
+    let steps = 0;
+    const seen: string[] = [];
+    for (;;) {
+      await sleep(250);
+      const done = q('.recall-wrap .empty.center');
+      if (done) { log(`end: "${done.textContent}"`); break; }
+      if (++steps > 40) throw new Error('did not finish');
+      const el = useApp.getState().sessionEl;
+      const item = useApp.getState().session?.items[steps - 1];
+      const path = item?.path ?? '?';
+      const before = (await vault.read(path)).text;
+      if (q('.recall-wrap .card')) {
+        const meta = q('.recall-meta')?.textContent;
+        const hidden = qa('.recall-wrap .card .cloze:not(.revealed):not(.ctx)').length;
+        const ctx = qa('.recall-wrap .card .cloze.ctx').length;
+        press(' ');
+        await sleep(50);
+        const shown = qa('.recall-wrap .card .cloze.revealed').length;
+        const gaps = qa('.grades .gap').map((g) => g.textContent).join(' ');
+        press('3');
+        await sleep(400);
+        const after = (await vault.read(path, true)).text;
+        seen.push(`card ${el?.label}: meta "${meta}"; blanks hidden ${hidden} ctx ${ctx} → revealed ${shown}; gaps ${gaps}; changed lines ${JSON.stringify(changedLines(before, after))}`);
+      } else {
+        await until(() => q('.doc-session .draft-doc'));
+        await sleep(200);
+        const bar = qa('.session-bar .sb-actions button').map((b) => b.textContent).join(' | ');
+        const kind = q('.session-bar .sb-kind')?.textContent;
+        const rule = q<HTMLElement>('.read-rule')?.style.height;
+        press('Enter');
+        await sleep(500);
+        const after = (await vault.read(path, true)).text;
+        seen.push(`${kind} ${el?.label}: bar ${bar}; rule ${rule ?? 'none'}; changed lines ${JSON.stringify(changedLines(before, after))}; line ${after.split('\n').find((l) => l.startsWith(kind === 'reading' ? 'read:' : 'write:'))}`);
+      }
+    }
+    for (const s of seen) log(s);
+    log(`session tab title now "${q('.tabbar .tab[data-active="1"] .title')?.textContent}"`);
+    openNode(queueId('today'));
+    await until(() => q('.queue .empty'));
+    log(`queue after: "${q('.queue .empty')?.textContent}"; log ${qa('.qlog-line').map((l) => l.textContent).join(' / ')}; saved queries ${qa('.queries .row').map((r) => `${r.querySelector('.name')?.textContent} ${r.querySelector('.meta')?.textContent}`).join(', ')}`);
   } catch (e) {
     log(`failed: ${e instanceof Error ? e.message : String(e)}`);
   }

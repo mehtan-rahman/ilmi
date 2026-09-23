@@ -7,10 +7,11 @@ import { invoke } from '@tauri-apps/api/core';
 import { open as pickDirectory } from '@tauri-apps/plugin-dialog';
 import { info } from '@tauri-apps/plugin-log';
 import { meta, setField, type Doc, type NodeType } from '../format/index.js';
-import { docItems, isDue } from '../schedule/index.js';
+import { docItems, isDue, sortQueue, type QueueItem } from '../schedule/index.js';
 import { Vault, childDirOf, dirOf, isDoc, rekey, type ExtractSpec, type ImportSpec, type TreeNode, type VaultEvent, type VaultState } from '../vault/index.js';
 import { tauriFs } from '../vault/tauri-fs.js';
-import { INTAKE } from './names.js';
+import { dueNow, sessionItems } from './items.js';
+import { INTAKE, SESSION, queueId, queueScope } from './names.js';
 import { activeTab, dropTabs, emptyPanes, openTab, retarget, type OpenOpts } from './panes.js';
 import { SIDE_DEFAULT, SIDE_MAX, SIDE_MIN, useApp, type DocInfo, type Sidebar } from './store.js';
 
@@ -20,12 +21,15 @@ export function currentVault(): Vault | null {
   return current;
 }
 
-// ── document info ────────────────────────────────────────────────
+// ── document info and the queue ──────────────────────────────────
 
-function infoOf(path: string, doc: Doc, now: Date): DocInfo {
+/** Every document's parsed form, by path, as last reported by the vault; the queue is built from it. */
+const bodies = new Map<string, Doc>();
+
+function infoOf(doc: Doc, items: QueueItem[], now: Date): DocInfo {
   const m = meta(doc);
   const due = new Set<number>();
-  for (const item of docItems(path, doc, now)) if (item.kind === 'card' && isDue(item, now)) due.add(item.block);
+  for (const item of items) if (item.kind === 'card' && isDue(item, now)) due.add(item.block);
   const out: DocInfo = {
     type: m.type,
     frozen: m.frozen,
@@ -38,17 +42,35 @@ function infoOf(path: string, doc: Doc, now: Date): DocInfo {
   return out;
 }
 
+/** The queue over every known document, at `now`. */
+function buildQueue(now: Date): QueueItem[] {
+  const out: QueueItem[] = [];
+  for (const [path, doc] of bodies) out.push(...docItems(path, doc, now));
+  return sortQueue(out);
+}
+
+/** Rebuild the queue for the present moment: a card in learning steps may have come due. */
+export function refreshQueue(): void {
+  const now = new Date();
+  useApp.setState({ queue: buildQueue(now), queueAt: now });
+}
+
 async function publishDocs(vault: Vault): Promise<void> {
   const now = new Date();
   const docs: Record<string, DocInfo> = {};
+  const seen = new Set<string>();
   for (const path of vault.documents()) {
     try {
-      docs[path] = infoOf(path, (await vault.read(path)).doc, now);
+      const doc = (await vault.read(path)).doc;
+      bodies.set(path, doc);
+      seen.add(path);
+      docs[path] = infoOf(doc, docItems(path, doc, now), now);
     } catch (e) {
       console.error(path, e);
     }
   }
-  if (current === vault) useApp.setState({ docs });
+  for (const path of [...bodies.keys()]) if (!seen.has(path)) bodies.delete(path);
+  if (current === vault) useApp.setState({ docs, queue: buildQueue(now), queueAt: now });
 }
 
 /** Publish the tree, and forget open state for anything no longer in it. */
@@ -101,13 +123,19 @@ function onEvent(vault: Vault, ev: VaultEvent): void {
       publishTree(vault);
       void publishDocs(vault);
       break;
-    case 'doc':
-      useApp.setState({ docs: { ...s.docs, [ev.path]: infoOf(ev.path, ev.loaded.doc, new Date()) } });
+    case 'doc': {
+      const now = new Date();
+      const items = docItems(ev.path, ev.loaded.doc, now);
+      bodies.set(ev.path, ev.loaded.doc);
+      useApp.setState({ docs: { ...s.docs, [ev.path]: infoOf(ev.loaded.doc, items, now) }, queue: buildQueue(now), queueAt: now });
       break;
+    }
     case 'gone': {
       const docs = { ...s.docs };
       delete docs[ev.path];
-      useApp.setState({ docs, panes: dropTabs(s.panes, ev.path) });
+      bodies.delete(ev.path);
+      const now = new Date();
+      useApp.setState({ docs, panes: dropTabs(s.panes, ev.path), queue: buildQueue(now), queueAt: now });
       break;
     }
     case 'moved': {
@@ -136,11 +164,16 @@ export async function openVault(path: string): Promise<Vault> {
     width: Math.min(SIDE_MAX, Math.max(SIDE_MIN, state.sidebar?.width ?? SIDE_DEFAULT)),
     hidden: state.sidebar?.hidden ?? false,
   };
+  // the last tab comes back, except a session; nothing remembered opens the day
   let panes = emptyPanes();
-  if (state.tab && (state.tab === '' || state.tab === INTAKE || vault.documents().includes(state.tab) || (await vault.fs.stat(vault.abs(state.tab)))?.isDir)) {
-    panes = openTab(panes, state.tab);
+  const tab = state.tab;
+  if (tab !== undefined && tab !== SESSION && (tab === '' || tab === INTAKE || queueScope(tab) || vault.documents().includes(tab) || (await vault.fs.stat(vault.abs(tab)))?.isDir)) {
+    panes = openTab(panes, tab);
+  } else {
+    panes = openTab(panes, queueId('today'));
   }
-  useApp.setState({ open, sidebar, panes, docs: {} });
+  bodies.clear();
+  useApp.setState({ open, sidebar, panes, docs: {}, queue: [], log: [], session: null, sessionEl: null });
   publishTree(vault);
   vault.subscribe((ev) => onEvent(vault, ev));
   await vault.watch();
@@ -170,8 +203,8 @@ export function openInitialVault(): Promise<void> {
     const vault = await openVault(path);
     const mode = await invoke<string | null>('dev_env', { name: 'ILMI_SMOKE' });
     if (mode) {
-      const { smoke, smokeReader, smokeCards, smokeIntake } = await import('./smoke.js');
-      await (mode === 'reader' ? smokeReader(vault) : mode === 'cards' ? smokeCards(vault) : mode === 'intake' ? smokeIntake(vault) : smoke(vault));
+      const { smoke, smokeReader, smokeCards, smokeIntake, smokeQueue } = await import('./smoke.js');
+      await (mode === 'reader' ? smokeReader(vault) : mode === 'cards' ? smokeCards(vault) : mode === 'intake' ? smokeIntake(vault) : mode === 'queue' ? smokeQueue(vault) : smoke(vault));
     }
   })();
   return initial;
@@ -190,6 +223,29 @@ export function openNode(path: string, opts: OpenOpts = {}): void {
 export function openIntake(dir = '', opts: OpenOpts = {}): void {
   useApp.setState({ intakeDir: dir });
   openNode(INTAKE, opts);
+}
+
+/**
+ * Start a session at `item`: today's queue rotated to begin there, or the
+ * item alone when it is not due. The one session tab opens, or comes to
+ * the front and starts over.
+ */
+export function openSession(item: QueueItem, opts: OpenOpts = {}): void {
+  const s = useApp.getState();
+  const items = sessionItems(dueNow(s.queue, new Date()), item);
+  useApp.setState({ session: { seq: (s.session?.seq ?? 0) + 1, items } });
+  openNode(SESSION, opts);
+}
+
+/** Enter the queue: a session over everything due, from the top. */
+export function startSession(opts: OpenOpts = {}): void {
+  const first = dueNow(useApp.getState().queue, new Date())[0];
+  if (first) openSession(first, opts);
+}
+
+/** One line for the queue's recent log, newest first, six kept. */
+export function note(line: string): void {
+  useApp.setState((s) => ({ log: [line, ...s.log].slice(0, 6) }));
 }
 
 export function rememberTab(): void {

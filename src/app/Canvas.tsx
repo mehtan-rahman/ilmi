@@ -3,6 +3,7 @@
 // operations are in panes.ts.
 
 import { Lens } from './Lenses.js';
+import { EL_GLYPH } from './items.js';
 import { GLYPH, tabKindOf, titleOf } from './names.js';
 import { activatePane, closePane, closeTab, selectTab, splitPane, type OpenOpts, type Pane } from './panes.js';
 import { useApp } from './store.js';
@@ -17,12 +18,16 @@ interface TabBarProps {
 function TabBar({ pane, index, canClosePane }: TabBarProps) {
   const docs = useApp((s) => s.docs);
   const root = useApp((s) => s.vault);
+  const sessionEl = useApp((s) => s.sessionEl);
   const setPanes = useApp((s) => s.setPanes);
   const after = () => rememberTab();
   return (
     <div className="tabbar">
       {pane.tabs.map((tab, ti) => {
         const kind = tabKindOf(tab.id, docs);
+        const session = kind === 'session' ? sessionEl : null;
+        const glyph = session ? EL_GLYPH[session.kind] : GLYPH[kind];
+        const title = session ? session.label : titleOf(tab.id, docs, root);
         return (
           <div
             key={tab.key}
@@ -32,8 +37,8 @@ function TabBar({ pane, index, canClosePane }: TabBarProps) {
             onClick={() => { setPanes((s) => selectTab(s, index, ti)); after(); }}
             onAuxClick={(e) => { if (e.button === 1) { setPanes((s) => closeTab(s, index, ti)); after(); } }}
           >
-            <span className="glyph" data-t={kind}>{GLYPH[kind]}</span>
-            <span className="title">{titleOf(tab.id, docs, root)}</span>
+            <span className="glyph" data-t={kind} data-el={session?.kind}>{glyph}</span>
+            <span className="title">{title}</span>
             <span className="close" onClick={(e) => { e.stopPropagation(); setPanes((s) => closeTab(s, index, ti)); after(); }}>×</span>
           </div>
         );

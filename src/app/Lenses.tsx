@@ -6,9 +6,11 @@ import { cardFields, meta, type ClozePart } from '../format/index.js';
 import type { TreeNode } from '../vault/index.js';
 import { Composer } from './Composer.js';
 import { Intake } from './Intake.js';
-import { GLYPH, INTAKE, contentsOf, findNode, kindOf, titleOf, type NodeKind } from './names.js';
+import { GLYPH, INTAKE, SESSION, contentsOf, findNode, kindOf, queueScope, titleOf, type NodeKind } from './names.js';
 import type { OpenOpts } from './panes.js';
+import { Queue } from './Queue.js';
 import { Reader } from './Reader.js';
+import { Session } from './Session.js';
 import { useApp } from './store.js';
 import { useDoc } from './useDoc.js';
 import { createNode, currentVault } from './vault.js';
@@ -31,6 +33,9 @@ const inField = (t: EventTarget | null) => {
 export function Lens({ id, active, onOpen }: LensProps) {
   const docs = useApp((s) => s.docs);
   if (id === INTAKE) return <Intake active={active} onOpen={onOpen} />;
+  if (id === SESSION) return <Session active={active} onOpen={onOpen} />;
+  const scope = queueScope(id);
+  if (scope) return <Queue scope={scope} active={active} />;
   const kind = kindOf(id, docs);
   if (kind === 'folder') return <FolderLens id={id} active={active} onOpen={onOpen} />;
   if (kind === 'deck') return <DeckLens id={id} active={active} />;

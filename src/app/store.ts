@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { NodeType, ReadSchedule, WriteSchedule } from '../format/index.js';
+import type { QueueItem } from '../schedule/index.js';
 import type { TreeNode } from '../vault/index.js';
 import { emptyPanes, type Panes } from './panes.js';
 
@@ -27,6 +28,15 @@ export interface Sidebar {
   hidden: boolean;
 }
 
+/** The kinds of element a session walks. */
+export type El = 'card' | 'read' | 'write';
+
+/** A review session: the elements, in order, and a number that changes each time one starts. */
+export interface Session {
+  seq: number;
+  items: QueueItem[];
+}
+
 export const SIDE_MIN = 160;
 export const SIDE_MAX = 440;
 export const SIDE_DEFAULT = 220;
@@ -46,6 +56,14 @@ export interface AppState {
   panes: Panes;
   /** Where the intake places its next source: the folder it was opened from. */
   intakeDir: string;
+  /** Every element over the vault, sorted, as of `queueAt`; the saved queries filter it. */
+  queue: QueueItem[];
+  queueAt: Date;
+  /** The last few things done in a session, newest first. */
+  log: string[];
+  session: Session | null;
+  /** What the session is on now, for its tab. */
+  sessionEl: { kind: El; label: string } | null;
   setTheme(theme: Theme): void;
   cycleTheme(): void;
   setDensity(rho: number): void;
@@ -63,6 +81,11 @@ export const useApp = create<AppState>((set, get) => ({
   sidebar: { width: SIDE_DEFAULT, hidden: false },
   panes: emptyPanes(),
   intakeDir: '',
+  queue: [],
+  queueAt: new Date(0),
+  log: [],
+  session: null,
+  sessionEl: null,
   setTheme: (theme) => set({ theme }),
   cycleTheme: () => {
     const i = THEMES.indexOf(get().theme);

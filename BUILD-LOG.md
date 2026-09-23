@@ -6,6 +6,159 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-09-22 — milestone 8: queue and review session
+
+Commit `TBD` — *queue: the saved queries, the session over them, cards
+graded, topics read on, drafts worked on, every result on disk*.
+
+### Done
+
+- The queue in the store: `src/app/vault.ts` keeps every document's
+  parsed form (`bodies`) and publishes `queue` (every item, sorted) and
+  `queueAt` on each publish, `doc`, and `gone` event; `refreshQueue()`
+  for the present moment; `DocInfo` derived from the same items.
+  `openSession(item)` (today rotated to start there, or the item alone),
+  `startSession()` (from the top), `note(line)` for the log.
+- `src/schedule/queue.ts`: `sortQueue`, `sameItem`, `ReadItem.next`,
+  `WriteItem.lead`.
+- `names.ts`: `SESSION`, `queueId` / `queueScope`, `SCOPES`,
+  `QUEUE_TITLE`, `tabKindOf` and `titleOf` for both, glyphs `≡` and `◆`.
+  A saved query is restored across launches; nothing remembered opens
+  `due today`.
+- `src/app/items.ts`, pure: `dueLabel` (from `Reader.tsx`), `dayLabel`,
+  `fmtDays`, `gapLabel` / `gapLabels` over `preview`, `sourceLabel`,
+  `firstWords`, `isFresh`, `kindTag`, `refLine`, `intervalLabel`,
+  `snippetOf`, `ownBlank`, `sessionItems`, `summary`, `dueNow`.
+- `src/app/Queue.tsx`: the five saved queries after `views.jsx` (header
+  with the day and the three counts, `enter queue ⏎`, two log lines,
+  rows with mark, kind tag, label, body, ref line, priority, due and
+  interval; `j k ⏎ o`; a row opens a session at that element, ⌘-click
+  and ⌘⇧-click as everywhere) and `SavedQueries` for the sidebar, with
+  live counts, opening in a new tab as the prototype did.
+- `src/app/Session.tsx` after `recall.jsx`: `[ ]` and ‹ › through the
+  elements; a card centred with its blanks covered (one blank of a
+  multi-group card, the others shown as context; a q&a's answer; a
+  bidir's second side), space reveals then grades good, `1-4` grade,
+  the four buttons carry what each grade would schedule, the meta strip
+  under the card (form, `blank N of M`, reviews, stability, due), the
+  source link opens the document; a topic renders `Reader` with the
+  marker live plus a sticky bar with `read on ⏎` / `postpone p` / `done
+  d`; a draft the same with `worked on it`. Grading runs `gradeItem`
+  inside `vault.update`; reading and writing run `advanceRead` /
+  `advanceWrite`; `read on` passes the prose blocks scrolled past the
+  top as `pos`. The session's tab title and glyph follow the element.
+  The end is one line: `done, N elements`; an empty day is `nothing
+  due`.
+- `Reader.tsx`: the draft row (`first pass, today` / `pass N, +3d` /
+  `done`, with `done` / `reopen`); `richHTML` exported for the card.
+- `queue.css`, `session.css`, the draft row in `reader.css`, `.empty
+  .center` and the second sidebar section in `app.css`; the prototype's
+  flattening folded in (enter queue is a row, tags are text, no blur).
+- Dev: `ILMI_SMOKE=queue`.
+- Tests: `src/app/__tests__/items.test.ts`, 10 tests: the ids and
+  titles, the labels, the grade gaps, which blanks an item tests, the
+  session's order, and a whole session over the sample vault through
+  the model (17 elements at 2026-05-27, each written, the day empties,
+  every touched file parses clean, a new card gets an id and a line)
+  plus the marker only moving forward. 203 in all.
+
+### Verified
+
+- `npm test` green (203), `npm run typecheck` clean, `npm run build` ok.
+- Done-when, in the window (`ILMI_VAULT=<scratch copy> ILMI_SMOKE=queue
+  npm run tauri dev`, today being 2026-09-22 so everything is due):
+  `today: tab "due today"; h1 "due today tue · 22 sep"; summary "4 to
+  read 2 to write 24 to review"; rows 30; saved queries due today 30,
+  upcoming 0, reading 4, writing 2, all cards 24`. Enter, then thirty
+  elements walked with the keys: every card logged `changed lines [n]`
+  (one line) or `[-1]` (a line added: a new card's id and `sr` line, a
+  numbered blank), e.g. `card wozniak-1990 — twenty rules … blanks
+  hidden 1 ctx 1 → revealed 1; gaps 10m 2mo 4mo 7mo; changed lines
+  [24]`; `writing spaced composition: … changed lines [5]; line write:
+  due=2026-09-25 ivl=3 reps=2 pri=2 done=false`; `reading crick-1995: …
+  rule 122.25px; changed lines [5]; line read: due=2026-09-25 ivl=3
+  reps=4 pos=2 pri=2`. `end: "done, 30 elements"`, then `queue after:
+  "nothing due"; log read · read on / wrote · progress; saved queries
+  due today 0, upcoming 30, reading 4, writing 2, all cards 24`. So a
+  full session writes every result to disk and the queue empties to one
+  quiet line.
+
+### Not verified
+
+- The look: the card, the grades, the sticky bar over the document, the
+  sidebar's second section, by reading and by the prototype's rules.
+- `read on` after a real scroll (the smoke never scrolls, so `pos` was
+  the marker's own).
+- Two panes showing a saved query and the session side by side, beyond
+  the model (one session tab; `sessionEl` is global).
+
+### Decisions worth knowing
+
+- One session at a time, one tab (`:session`); entering again starts it
+  over (`seq`). The prototype keyed a session tab by its element id.
+- Today is rotated to start at the element you clicked, as the
+  prototype did; an element from `upcoming` or `all cards` is a session
+  of one and can be graded early, as the prototype allowed.
+- The in-card text editing of the prototype (contentEditable on blur)
+  is not ported; the inspector's card editor is milestone 9 and
+  `setCardText` is waiting for it.
+- The log is kept (the prototype's `qlog`), in memory, two lines shown,
+  the prototype's words (`read · read on`, `wrote · progress`); no card
+  lines, as before.
+- Empty states are one line each, not the prototype's `EMPTY_COPY`
+  paragraphs, per the brief.
+- A card's interval column shows the scheduled `ivl` (days) rather than
+  the prototype's stability; nothing for a new card, which the due
+  column already calls `new`.
+- The grade buttons' gaps come from `preview`: minutes while a card is
+  in learning steps (`1m 6m 10m 8d` for a new card), days after.
+- `read on` remembers what has scrolled past the top of the pane, as
+  the prototype did, never moving the marker back.
+
+### Handoff prompt
+
+Paste into a fresh session:
+
+```
+Read PLAN.md, FORMAT.md, BUILD-LOG.md, and spec/hashiyah/HANDOFF.md.
+
+Context: milestones 0-8 are done. src/format/ parses and serializes vault
+files (parse / serialize / meta / setField; never string-edit a file).
+src/vault/ opens, walks, reads, writes, watches, and reshapes a vault over
+an Fs interface; change a file with vault.update(path, mutate). src/schedule/
+grades cards with ts-fsrs (gradeItem inside vault.update), runs the reading
+and writing loops (advanceRead / advanceWrite), and builds the queue.
+src/reader/ is the ProseMirror model and src/app/Reader.tsx the editor,
+with the marker, the selection cue (e extracts, m composes), the draft row.
+src/app/ has the sidebar tree and saved queries, panes and tabs (a tab is
+a path or a special id: INTAKE, SESSION, queueId(scope) in names.ts), the
+lenses, the intake, the queue (Queue.tsx) and the session (Session.tsx);
+items.ts is their pure side; the store (store.ts) mirrors the tree, docs,
+the queue, the session, theme and density. Tests run in vitest over a
+temp copy of src/format/__tests__/corpus/vault. ILMI_VAULT=/path npm run
+tauri dev opens a vault; ILMI_SMOKE=1 / reader / cards / intake / queue
+exercise the parts and log to the terminal.
+
+Tooling: node is in /opt/homebrew/bin and cargo in ~/.cargo/bin; neither is
+on the tool-shell PATH. Prefix every command with
+export PATH=$HOME/.cargo/bin:/opt/homebrew/bin:$PATH
+npm test and npm run typecheck must be green before a commit.
+
+Do milestone 9 in PLAN.md (chrome and polish) and only that one: the top
+strip, the bottom strip with real key hints, the inspector per node type
+(with the card editor over setCardText), the command palette, the global
+keyboard router, the tweaks panel (theme / accent / density, stored
+outside the vault), then the copy pass. Follow spec/hashiyah/chrome.jsx,
+palette.jsx, tweaks-panel.jsx and app.jsx, and the brief's copy and
+design rules for every string and surface. Stop at the milestone's "done
+when": a screenshot of each screen passes the brief's test and the whole
+loop (import → read → extract → card → review) runs end to end. Then tick
+it in PLAN.md, write notes under it, add an entry to BUILD-LOG.md, and
+commit.
+```
+
+---
+
 ## 2026-09-22 — milestone 7: import
 
 Commit `7d81c0d` — *import: the intake lens, readable text from a paste, a

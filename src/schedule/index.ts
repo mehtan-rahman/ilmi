@@ -8,6 +8,6 @@ export * as writing from './write.js';
 export { advanceRead, type ReadAction } from './read.js';
 export { advanceWrite, type WriteAction } from './write.js';
 export {
-  queue, queueItems, docItems, counts, inScope, isDue, cardGroups, gradeItem, numberBlank, newId,
+  queue, queueItems, sortQueue, sameItem, docItems, counts, inScope, isDue, cardGroups, gradeItem, numberBlank, newId,
   type QueueItem, type CardItem, type ReadItem, type WriteItem, type GroupKey, type Scope, type Counts, type GradeOptions,
 } from './queue.js';

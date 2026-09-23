@@ -7,11 +7,32 @@ import { baseOf, isDoc, nameOf, type TreeNode } from '../vault/index.js';
 import type { DocInfo } from './store.js';
 
 export type NodeKind = 'folder' | NodeType;
-/** What a tab can show: a node, or the intake. */
-export type TabKind = NodeKind | 'intake';
+/** What a tab can show: a node, the intake, a saved query, or the session. */
+export type TabKind = NodeKind | 'intake' | 'queue' | 'session';
 
-/** The intake tab's id. A colon is not a character a file name can hold, so it is never a vault path. */
+/** Every scope a saved query can have. */
+export type QueueScope = 'today' | 'upcoming' | 'reading' | 'writing' | 'cards';
+export const SCOPES: readonly QueueScope[] = ['today', 'upcoming', 'reading', 'writing', 'cards'];
+
+// Tab ids that are not vault paths. A colon is not a character a file name
+// can hold, so none of these can collide with one.
+/** The intake tab's id. */
 export const INTAKE = ':intake';
+/** The session tab's id: one session at a time. */
+export const SESSION = ':session';
+const QUEUE = ':queue/';
+
+export const queueId = (scope: QueueScope): string => QUEUE + scope;
+/** The scope of a saved-query tab id, or null for anything else. */
+export function queueScope(id: string): QueueScope | null {
+  if (!id.startsWith(QUEUE)) return null;
+  const s = id.slice(QUEUE.length) as QueueScope;
+  return SCOPES.includes(s) ? s : null;
+}
+
+export const QUEUE_TITLE: Record<QueueScope, string> = {
+  today: 'due today', upcoming: 'upcoming', reading: 'reading', writing: 'writing', cards: 'all cards',
+};
 
 export const GLYPH: Record<TabKind, string> = {
   folder: '/',
@@ -20,6 +41,8 @@ export const GLYPH: Record<TabKind, string> = {
   deck: '◫',
   draft: '✎',
   intake: '＋',
+  queue: '≡',
+  session: '◆',
 };
 
 export function kindOf(path: string, docs: Record<string, DocInfo>): NodeKind {
@@ -27,13 +50,19 @@ export function kindOf(path: string, docs: Record<string, DocInfo>): NodeKind {
 }
 
 export function tabKindOf(id: string, docs: Record<string, DocInfo>): TabKind {
-  return id === INTAKE ? 'intake' : kindOf(id, docs);
+  if (id === INTAKE) return 'intake';
+  if (id === SESSION) return 'session';
+  if (queueScope(id)) return 'queue';
+  return kindOf(id, docs);
 }
 
 /** A document's `title`, else its file name; the root is the vault directory's name. */
 export function titleOf(path: string, docs: Record<string, DocInfo>, vaultRoot: string | null): string {
   if (path === '') return baseOf(vaultRoot ?? '') || 'vault';
   if (path === INTAKE) return 'intake';
+  if (path === SESSION) return 'session';
+  const scope = queueScope(path);
+  if (scope) return QUEUE_TITLE[scope];
   return docs[path]?.title ?? nameOf(path);
 }
 

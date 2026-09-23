@@ -374,6 +374,32 @@
 .card-span .cs-a::before { content: "A "; font-family: var(--mono); font-size: 0.7em; color: var(--fg-4); letter-spacing: 0.08em; font-style: normal; }
 .card-span .cs-arrow { font-family: var(--mono); font-size: 0.8em; color: var(--fg-4); }
 .deck-view .card-span:first-of-type { border-top: 0; }
+.deck-view .card-span {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  column-gap: 12px;
+}
+.deck-view .card-span[data-menu="1"] { background: var(--line-3); }
+.deck-view .card-span .cs-del {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 0 4px;
+  margin: -2px -4px 0 0;
+  font-family: var(--mono);
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--fg-4);
+  cursor: default;
+  opacity: 0;
+  transition: opacity 80ms;
+}
+.deck-view .card-span:hover .cs-del,
+.deck-view .card-span .cs-del:focus-visible { opacity: 1; }
+.deck-view .card-span .cs-del:hover { color: oklch(0.52 0.16 28); }
+[data-theme="eink"] .deck-view .card-span .cs-del:hover { color: var(--fg-1); }
 .deck-view .deck-add {
   appearance: none;
   display: flex;

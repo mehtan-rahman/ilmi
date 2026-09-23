@@ -2,7 +2,7 @@
 // Folders and decks are lists; sources, extracts, and drafts open in the reader.
 
 import { useEffect, useState } from 'react';
-import { cardFields, meta, type ClozePart } from '../format/index.js';
+import { cardFields, meta, type Card, type ClozePart, type Doc } from '../format/index.js';
 import type { TreeNode } from '../vault/index.js';
 import { Composer } from './Composer.js';
 import { Intake } from './Intake.js';
@@ -13,7 +13,7 @@ import { Reader } from './Reader.js';
 import { Session } from './Session.js';
 import { useApp } from './store.js';
 import { useDoc } from './useDoc.js';
-import { createNode, currentVault } from './vault.js';
+import { createNode, currentVault, removeCard } from './vault.js';
 
 interface LensProps {
   id: string;
@@ -94,12 +94,42 @@ function FolderLens({ id, onOpen }: LensProps) {
 
 // ── deck ─────────────────────────────────────────────────────────
 
+/** A right-click on a card row: where, and which block (its id and text name it if the index goes stale). */
+interface CardMenu { x: number; y: number; index: number; id: string | undefined; text: string }
+
+/** The card blocks of a document, each with its index among the blocks. */
+function cardsOf(doc: Doc | undefined): [Card, number][] {
+  const out: [Card, number][] = [];
+  doc?.blocks.forEach((b, i) => { if (b.kind === 'card') out.push([b, i]); });
+  return out;
+}
+
 function DeckLens({ id, active }: { id: string; active: boolean }) {
   const docs = useApp((s) => s.docs);
   const root = useApp((s) => s.vault);
   const loaded = useDoc(id);
   const info = docs[id];
   const [composer, setComposer] = useState(false);
+  const [menu, setMenu] = useState<CardMenu | null>(null);
+  const cards = cardsOf(loaded?.doc);
+
+  const remove = (index: number, b: { id?: string | undefined; text: string }) => {
+    setMenu(null);
+    removeCard(id, index, b.id, b.text).catch(console.error);
+  };
+
+  // the menu closes on any outside press or escape
+  useEffect(() => {
+    if (!menu) return;
+    const close = () => setMenu(null);
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setMenu(null); };
+    window.addEventListener('mousedown', close);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('mousedown', close);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [menu]);
 
   // `m` opens the composer; a deck has no prose to select first
   useEffect(() => {
@@ -113,7 +143,6 @@ function DeckLens({ id, active }: { id: string; active: boolean }) {
   }, [active, composer]);
 
   if (!loaded || !info) return <Gone />;
-  const cards = loaded.doc.blocks.filter((b) => b.kind === 'card');
   const save = (text: string, again: boolean) => {
     currentVault()?.update(id, (doc) => { doc.blocks.push({ kind: 'card', text }); }).catch(console.error);
     if (!again) setComposer(false);
@@ -131,11 +160,29 @@ function DeckLens({ id, active }: { id: string; active: boolean }) {
         ) : (
           <button type="button" className="deck-add" onClick={() => setComposer(true)}>+ card <kbd className="kbd">m</kbd></button>
         )}
-        {cards.length === 0 ? (!composer && <div className="empty">no cards</div>) : cards.map((b, i) => (
-          <div key={b.kind === 'card' && b.id ? b.id : i} className="card-span">
+        {cards.length === 0 ? (!composer && <div className="empty">no cards</div>) : cards.map(([b, i]) => (
+          <div
+            key={b.id ?? i}
+            className="card-span"
+            data-menu={menu?.index === i ? '1' : '0'}
+            onContextMenu={(e) => { e.preventDefault(); setMenu({ x: e.clientX, y: e.clientY, index: i, id: b.id, text: b.text }); }}
+          >
             <CardText text={b.text} />
+            <button type="button" className="cs-del" title="delete card" aria-label="delete card" onClick={(e) => { e.stopPropagation(); void remove(i, b); }}>×</button>
           </div>
         ))}
+        {menu && (
+          <div
+            className="ctx-menu"
+            style={{ left: menu.x, top: menu.y }}
+            onMouseDown={(e) => e.stopPropagation()}
+            onContextMenu={(e) => e.preventDefault()}
+          >
+            <div className="ci danger" onClick={() => void remove(menu.index, menu)}>
+              <span className="cg">⌫</span>delete card
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

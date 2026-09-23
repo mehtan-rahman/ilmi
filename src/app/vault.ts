@@ -207,8 +207,8 @@ export function openInitialVault(): Promise<void> {
     const vault = await openVault(path);
     const mode = await invoke<string | null>('dev_env', { name: 'ILMI_SMOKE' });
     if (mode) {
-      const { smoke, smokeReader, smokeCards, smokeIntake, smokeQueue, smokeLoop, smokeShots } = await import('./smoke.js');
-      const run = { reader: smokeReader, cards: smokeCards, intake: smokeIntake, queue: smokeQueue, loop: smokeLoop, shots: smokeShots }[mode] ?? smoke;
+      const { smoke, smokeReader, smokeCards, smokeIntake, smokeQueue, smokeLoop, smokeShots, smokeDeck } = await import('./smoke.js');
+      const run = { reader: smokeReader, cards: smokeCards, intake: smokeIntake, queue: smokeQueue, loop: smokeLoop, shots: smokeShots, deck: smokeDeck }[mode] ?? smoke;
       await run(vault);
     }
   })();
@@ -311,6 +311,14 @@ export async function moveNode(path: string, dir: string): Promise<string> {
 
 export function removeNode(path: string): Promise<void> {
   return need().remove(path);
+}
+
+/** Delete one card from its document; the schedule goes with it. */
+export async function removeCard(path: string, index: number, id?: string, text?: string): Promise<void> {
+  await need().removeCard(path, index, id, text);
+  const sel = useApp.getState().selectedCard;
+  if (sel && sel.path === path && sel.index === index) useApp.setState({ selectedCard: null });
+  note('removed · card');
 }
 
 /** A frozen, unread source from imported text in `dir`; the folder opens so the new row is visible. Resolves to its path. */

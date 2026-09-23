@@ -15,6 +15,8 @@
 // it, extract a passage, make a card, find both in the queue, review them.
 // `ILMI_SMOKE=shots` walks every screen, pausing on each and logging
 // `shot: <name>` so a shell loop can take a screenshot of the window.
+// `ILMI_SMOKE=deck` opens the deck, deletes a card from its right-click
+// menu and another from the row's ×, and logs what left the disk.
 
 import { info } from '@tauri-apps/plugin-log';
 import type { Vault } from '../vault/index.js';
@@ -403,6 +405,56 @@ export async function smokeLoop(vault: Vault): Promise<void> {
       log('card element not reached');
     }
     log(`tweaks: theme ${useApp.getState().theme}, accent ${useApp.getState().accent}, density ${useApp.getState().density}; stored ${localStorage.getItem('ilmi.tweaks')}`);
+  } catch (e) {
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+export async function smokeDeck(vault: Vault): Promise<void> {
+  const log = (s: string) => info(`smoke deck: ${s}`);
+  const shot = async (name: string, ms = 1800) => { await sleep(600); log(`shot: ${name}`); await sleep(ms); };
+  const DECK = 'german.md';
+  try {
+    setInspector({ open: true });
+    const before = (await vault.read(DECK)).text;
+    openNode(DECK);
+    const view = await until(() => document.querySelector<HTMLElement>('.deck-view'));
+    // from the document, not `view`: the tab switch below unmounts the deck, and the palette mounts a new one
+    const rows = () => Array.from(document.querySelectorAll<HTMLElement>('.deck-view .card-span'));
+    await until(() => (rows().length ? true : null));
+    await sleep(300);
+    log(`rows ${rows().length}; header "${view.querySelector('.meta .right')?.textContent}"`);
+
+    // right-click the third row, look at the menu, take the shot, delete from it
+    const third = rows()[2]!;
+    const text = third.querySelector('.cs-body')?.textContent ?? '';
+    const r = third.getBoundingClientRect();
+    third.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: r.left + 80, clientY: r.top + r.height / 2 }));
+    const menu = await until(() => view.querySelector<HTMLElement>('.ctx-menu'));
+    log(`menu: ${Array.from(menu.querySelectorAll('.ci')).map((b) => b.textContent).join(' | ')}; row marked ${third.getAttribute('data-menu')}`);
+    // where the first row's × is, in viewport px, so a shell can park the pointer there for the shot
+    const del = rows()[0]!.querySelector<HTMLElement>('.cs-del')!.getBoundingClientRect();
+    log(`hover: ${Math.round(del.left + del.width / 2)} ${Math.round(del.top + del.height / 2)} of ${window.innerWidth}x${window.innerHeight}`);
+    // long: the webview's log lines reach the terminal some seconds late, and the shell shoots on the line
+    await shot('deck-menu', 10000);
+    menu.querySelector<HTMLElement>('.ci.danger')!.click();
+    await until(() => (rows().length === 6 ? true : null));
+    await sleep(500);
+    let after = await vault.read(DECK, true);
+    log(`menu delete: rows ${rows().length}; menu gone ${!view.querySelector('.ctx-menu')}; "${text.slice(0, 20)}" on disk ${after.text.includes(text.slice(0, 12))}; ^cv-gedacht on disk ${after.text.includes('cv-gedacht')}; lines ${before.split('\n').length} → ${after.text.split('\n').length}; cards ${after.doc.blocks.filter((b) => b.kind === 'card').length}; diagnostics ${after.diagnostics.length}`);
+    log(`inspector: ${document.querySelector('.insp .kv')?.textContent}; log "${useApp.getState().log[0]}"`);
+
+    // the × on the first row
+    const first = rows()[0]!;
+    const firstText = first.querySelector('.cs-body')?.textContent ?? '';
+    first.querySelector<HTMLElement>('.cs-del')!.click();
+    await until(() => (rows().length === 5 ? true : null));
+    await sleep(500);
+    after = await vault.read(DECK, true);
+    log(`× delete: rows ${rows().length}; "${firstText.slice(0, 20)}" on disk ${after.text.includes(firstText.slice(0, 12))}; first row now "${rows()[0]?.querySelector('.cs-body')?.textContent?.slice(0, 24)}"; header "${view.querySelector('.meta .right')?.textContent}"; front-matter intact ${after.text.startsWith('---\ntype: deck\ntitle: german · A1\ndefault-card: bidir\n---\n')}`);
+    await shot('deck-after');
+
+    log(`done; vault ${vault.root}`);
   } catch (e) {
     log(`failed: ${e instanceof Error ? e.message : String(e)}`);
   }

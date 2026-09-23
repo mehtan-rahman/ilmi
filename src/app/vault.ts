@@ -321,6 +321,12 @@ export async function removeCard(path: string, index: number, id?: string, text?
   note('removed · card');
 }
 
+/** Forget one card's schedule so it comes up as new again; the card and its selection stay. */
+export async function resetCard(path: string, index: number, id?: string, text?: string): Promise<void> {
+  await need().resetCard(path, index, id, text);
+  note('reset · card');
+}
+
 /** A frozen, unread source from imported text in `dir`; the folder opens so the new row is visible. Resolves to its path. */
 export async function importNode(dir: string, spec: ImportSpec): Promise<string> {
   const path = await need().importDoc(dir, spec);

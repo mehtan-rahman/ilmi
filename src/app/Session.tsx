@@ -113,7 +113,8 @@ function CardElement({ item, active, onGrade }: CardProps) {
   const card = liveCard(loaded?.doc.blocks, item);
   const text = card?.text ?? item.text;
   const f = cardFields(text);
-  const sched = item.group && 'n' in item.group && card?.blanks?.[item.group.n] ? card.blanks[item.group.n] : card?.sched ?? item.sched;
+  // the item's schedule stands in only until the document is loaded; a card reset since reads as new
+  const sched = !card ? item.sched : item.group && 'n' in item.group && card.blanks?.[item.group.n] ? card.blanks[item.group.n] : card.sched;
   const gaps = gapLabels(sched, now);
   const grade = (g: Grade) => { if (revealed) onGrade(g); else setRevealed(true); };
 

@@ -17,8 +17,8 @@
 // `shot: <name>` so a shell loop can take a screenshot of the window.
 // `ILMI_SMOKE=deck` opens the deck, deletes a card from its right-click
 // menu and another from the row's ×, walks the rows with j k, edits the
-// selected card from the inspector, deletes it with backspace, and logs
-// what left the disk.
+// selected card from the inspector, deletes it with backspace, resets one
+// from the inspector, and logs what left the disk.
 
 import { info } from '@tauri-apps/plugin-log';
 import type { Vault } from '../vault/index.js';
@@ -507,6 +507,23 @@ export async function smokeDeck(vault: Vault): Promise<void> {
     log(`escape: selected ${JSON.stringify(useApp.getState().selectedCard)}; selected rows ${selCount()}; inspector editor ${editor() ? 'still up' : 'gone'}`);
     after = await vault.read(DECK, true);
     await shot('deck-keys');
+
+    // select the first row (still scheduled), reset it from the inspector, and watch its sr line go
+    const schedBlock = () => Array.from(document.querySelectorAll<HTMLElement>('.insp .block')).find((b) => b.querySelector('h6')?.textContent === 'schedule');
+    const resetBtn = () => Array.from(document.querySelectorAll<HTMLButtonElement>('.insp .fr-toggle')).find((b) => b.textContent === 'reset');
+    const row = rows()[0]!;
+    const rowId = (await vault.read(DECK)).doc.blocks.find((b) => b.kind === 'card')?.id ?? '';
+    const srBefore = srCount(after.text);
+    row.click();
+    await until(() => (row.classList.contains('selected') ? true : null));
+    const btn = await until(resetBtn);
+    log(`selected: ${JSON.stringify(useApp.getState().selectedCard)}; schedule block "${schedBlock()?.textContent?.slice(0, 40)}"; sr line for ^${rowId} on disk "${srAfterId(after.text, rowId).slice(0, 24)}"`);
+    btn.click();
+    await until(() => (schedBlock()?.querySelector('.insp-line')?.textContent === 'new' ? true : null));
+    await sleep(500);
+    after = await vault.read(DECK, true);
+    log(`reset: schedule block "${schedBlock()?.textContent}"; reset button gone ${!resetBtn()}; sr lines ${srBefore} → ${srCount(after.text)}; line after ^${rowId} now "${srAfterId(after.text, rowId)}"; still selected ${rows()[0]?.classList.contains('selected')} ${JSON.stringify(useApp.getState().selectedCard)}; rows ${rows().length}; log "${useApp.getState().log[0]}"; diagnostics ${after.diagnostics.length}`);
+    await shot('deck-reset');
 
     log(`done; vault ${vault.root}`);
   } catch (e) {

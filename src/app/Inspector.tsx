@@ -13,7 +13,7 @@ import { INTAKE, QUEUE_TITLE, SCOPES, SESSION, findNode, queueScope, titleOf, ty
 import { activeTab } from './panes.js';
 import { useApp, type DocInfo } from './store.js';
 import { useDoc } from './useDoc.js';
-import { currentVault } from './vault.js';
+import { currentVault, resetCard } from './vault.js';
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 const words = (blocks: Block[]) => blocks.reduce((n, b) => (b.kind === 'card' ? n : n + b.text.split(/\s+/).filter(Boolean).length), 0);
@@ -234,8 +234,11 @@ function CardBlock({ path, index, doc, group, now }: { path: string; index: numb
   const b = doc.blocks[index];
   if (b?.kind !== 'card') return null;
   const sched = group && 'n' in group && b.blanks?.[group.n] ? b.blanks[group.n] : b.sched;
+  // a cloze card may carry only per-blank schedules; it is scheduled all the same
+  const scheduled = b.sched !== undefined || b.blanks !== undefined;
   const rows: [string, ReactNode][] = [['type', formLabel(b.text)], ['in', titleOf(path, docs, null)]];
   if (docs[path]?.frozen) rows.push(['source', 'frozen']);
+  const reset = () => { resetCard(path, index, b.id, b.text).catch(console.error); };
   return (
     <>
       <Block title="card">
@@ -252,7 +255,13 @@ function CardBlock({ path, index, doc, group, now }: { path: string; index: numb
             ['due', <>{dueLabel(sched.due, now)} {sched.due && <span className="dim">{sched.due}</span>}</>],
             ['last', sched.last ? sched.last.slice(0, 10) : 'never'],
           ]} />
-        ) : <p className="insp-line">new</p>}
+        ) : <p className="insp-line">{scheduled ? 'per blank' : 'new'}</p>}
+        {scheduled && (
+          <div className="frozen-row">
+            <span className="fr-state">scheduled</span>
+            <button type="button" className="fr-toggle" onClick={reset}>reset</button>
+          </div>
+        )}
       </Block>
     </>
   );

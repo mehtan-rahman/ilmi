@@ -380,7 +380,54 @@ session with the keys, and logs each element's write. Rust untouched.
 - Done when: a full session over the sample vault writes every result to disk
   and the queue empties to one quiet line.
 
-### [ ] 9. Chrome and polish
+### [x] 9. Chrome and polish
+Done 2026-09-22, commit `TBD`.
+Notes: the shell grid from `tokens.css` is in use (the two-column override
+in `app.css` is gone): `TopStrip.tsx` (vault name, the palette button `⌕
+⌘k`, `N due`, the day, the inspector toggle), `BottomStrip.tsx` (real key
+hints per surface from `hintsFor` in `chrome.ts`: the tab kind, the
+session's element, the query's scope, whether a source can start
+reading), `Inspector.tsx` (per kind: folder counts; source / extract with
+path, imported, length, cards, reading, the freeze toggle, extracts and
+cards lists; deck with the default-card toggle writing `default-card`;
+draft with the done / reopen row and its spaced-composition numbers; the
+intake's folder; a query's counts; the session's card with a card editor
+and its schedule, or its document), `Palette.tsx` (⌘K; `buildIndex` over
+saved queries, folders, documents by title, every card by `cardLabel`,
+and commands: enter queue, add a source, split / close pane, sidebar,
+inspector, next theme, tweaks; `fuzzy` ported from the prototype but a
+miss is `null`, since the prototype's `-1` plus its `≥ 0` filter dropped
+its own best matches), `Tweaks.tsx` (⌘, or the palette: theme, accent
+presets from the prototype, density; kept in `localStorage` under
+`ilmi.tweaks`, outside any vault; `App.tsx` sets `--accent-h/-c/-l-*`
+and `--rho`). Store: `accent`, `inspector` (width / open, persisted per
+vault in `.ilmi/state.json` like the sidebar), `paletteOpen`,
+`tweaksOpen`, `selectedCard`, and `sessionEl.item`. The card editor
+(`CardEditor` in `Inspector.tsx`) writes the block's text through
+`vault.update` 400 ms after a change when the text still reads as one
+card (`parse` + `cardForm`), and follows the file otherwise; the reader
+publishes a `NodeSelection` on a card as `selectedCard` (`handleClickOn`
+selects a card on frozen documents too), so the inspector edits the
+selected card in the reader and the card under review in the session.
+`setCardText` in `src/reader/cards.ts` stayed unused: the editor writes
+through the vault and the reader takes the change as external, which is
+correct for a card. Reading enrolment: `r` on a source or extract (or
+`start reading r` in its meta row) writes `read: due=today ivl=1 reps=0
+pos=0` (`enrolReading` in `src/app/vault.ts`); the prototype only
+mentioned `r` in an empty-state line. `Reader` takes `active` now. Global
+keys in `App.tsx`: ⌘K, ⌘\, ⌘W, ⌘⇧E, ⌘⇧I, ⌘, (the palette closes on esc
+from anywhere). Copy: the palette placeholder is `open or run`, the top
+strip carries one count, the card strip says `due today` / `+3d` but
+`overdue 2d` and `new` alone, empty lines are one line. Verified with
+screenshots for the first time: `ILMI_SMOKE=shots` walks every screen
+logging `shot: <name>` and a shell loop runs `screencapture` on each
+(macOS asked the terminal's host for screen-recording permission on the
+first shot; the dialog sat over later ones). `ILMI_SMOKE=loop` runs the
+whole loop in the window. Not done: the inspector for a selected card
+does not scroll the reader to it; the palette opens a card's document,
+not a one-card session; `window.ilmi` stays as a console convenience;
+the accent presets beyond gold are the prototype's, kept because the
+plan names accent as a tweak, though the brief calls gold the one accent.
 - Top strip, bottom strip with real key hints, inspector per node type,
   command palette, global keyboard router, tweaks panel (theme / accent /
   density). Copy pass: remove words.

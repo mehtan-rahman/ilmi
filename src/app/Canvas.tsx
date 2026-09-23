@@ -53,6 +53,7 @@ function TabBar({ pane, index, canClosePane }: TabBarProps) {
 export function Canvas() {
   const panes = useApp((s) => s.panes);
   const setPanes = useApp((s) => s.setPanes);
+  const covered = useApp((s) => s.paletteOpen);
   const onOpen = (path: string, opts: OpenOpts) => openNode(path, opts);
   return (
     <div className="canvas">
@@ -67,7 +68,7 @@ export function Canvas() {
           >
             <TabBar pane={pane} index={pi} canClosePane={panes.panes.length > 1} />
             <div className="pane-body">
-              {tab && <Lens key={tab.key} id={tab.id} active={pi === panes.active} onOpen={onOpen} />}
+              {tab && <Lens key={tab.key} id={tab.id} active={pi === panes.active && !covered} onOpen={onOpen} />}
             </div>
           </div>
         );

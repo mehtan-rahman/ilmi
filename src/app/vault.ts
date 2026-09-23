@@ -7,13 +7,13 @@ import { invoke } from '@tauri-apps/api/core';
 import { open as pickDirectory } from '@tauri-apps/plugin-dialog';
 import { info } from '@tauri-apps/plugin-log';
 import { meta, setField, type Doc, type NodeType } from '../format/index.js';
-import { docItems, isDue, sortQueue, type QueueItem } from '../schedule/index.js';
+import { dayOf, docItems, isDue, sortQueue, type QueueItem } from '../schedule/index.js';
 import { Vault, childDirOf, dirOf, isDoc, rekey, type ExtractSpec, type ImportSpec, type TreeNode, type VaultEvent, type VaultState } from '../vault/index.js';
 import { tauriFs } from '../vault/tauri-fs.js';
 import { dueNow, sessionItems } from './items.js';
 import { INTAKE, SESSION, queueId, queueScope } from './names.js';
 import { activeTab, dropTabs, emptyPanes, openTab, retarget, type OpenOpts } from './panes.js';
-import { SIDE_DEFAULT, SIDE_MAX, SIDE_MIN, useApp, type DocInfo, type Sidebar } from './store.js';
+import { INSP_DEFAULT, INSP_MAX, INSP_MIN, SIDE_DEFAULT, SIDE_MAX, SIDE_MIN, useApp, type DocInfo, type Inspector, type Sidebar } from './store.js';
 
 let current: Vault | null = null;
 
@@ -164,6 +164,10 @@ export async function openVault(path: string): Promise<Vault> {
     width: Math.min(SIDE_MAX, Math.max(SIDE_MIN, state.sidebar?.width ?? SIDE_DEFAULT)),
     hidden: state.sidebar?.hidden ?? false,
   };
+  const inspector: Inspector = {
+    width: Math.min(INSP_MAX, Math.max(INSP_MIN, state.inspector?.width ?? INSP_DEFAULT)),
+    open: state.inspector?.open ?? window.innerWidth > 1180,
+  };
   // the last tab comes back, except a session; nothing remembered opens the day
   let panes = emptyPanes();
   const tab = state.tab;
@@ -173,7 +177,7 @@ export async function openVault(path: string): Promise<Vault> {
     panes = openTab(panes, queueId('today'));
   }
   bodies.clear();
-  useApp.setState({ open, sidebar, panes, docs: {}, queue: [], log: [], session: null, sessionEl: null });
+  useApp.setState({ open, sidebar, inspector, panes, docs: {}, queue: [], log: [], session: null, sessionEl: null, selectedCard: null });
   publishTree(vault);
   vault.subscribe((ev) => onEvent(vault, ev));
   await vault.watch();
@@ -203,8 +207,9 @@ export function openInitialVault(): Promise<void> {
     const vault = await openVault(path);
     const mode = await invoke<string | null>('dev_env', { name: 'ILMI_SMOKE' });
     if (mode) {
-      const { smoke, smokeReader, smokeCards, smokeIntake, smokeQueue } = await import('./smoke.js');
-      await (mode === 'reader' ? smokeReader(vault) : mode === 'cards' ? smokeCards(vault) : mode === 'intake' ? smokeIntake(vault) : mode === 'queue' ? smokeQueue(vault) : smoke(vault));
+      const { smoke, smokeReader, smokeCards, smokeIntake, smokeQueue, smokeLoop, smokeShots } = await import('./smoke.js');
+      const run = { reader: smokeReader, cards: smokeCards, intake: smokeIntake, queue: smokeQueue, loop: smokeLoop, shots: smokeShots }[mode] ?? smoke;
+      await run(vault);
     }
   })();
   return initial;
@@ -267,6 +272,12 @@ export function setSidebar(patch: Partial<Sidebar>): void {
   queueSave({ sidebar });
 }
 
+export function setInspector(patch: Partial<Inspector>): void {
+  const inspector = { ...useApp.getState().inspector, ...patch };
+  useApp.setState({ inspector });
+  queueSave({ inspector });
+}
+
 // ── tree operations ──────────────────────────────────────────────
 
 function need(): Vault {
@@ -314,6 +325,13 @@ export async function extractNode(parent: string, spec: ExtractSpec): Promise<st
   const path = await need().extract(parent, spec);
   toggleOpen(parent, true);
   return path;
+}
+
+/** Enrol a source or extract in incremental reading: due today, from the top. A no-op when it already is. */
+export async function enrolReading(path: string): Promise<void> {
+  await need().update(path, (doc) => {
+    if (!meta(doc).read) setField(doc, 'read', { due: dayOf(new Date()), ivl: 1, reps: 0, pos: 0 });
+  });
 }
 
 /** Where a new sibling of `path` goes: a folder itself, else its directory. */

@@ -39,7 +39,7 @@ export function Lens({ id, active, onOpen }: LensProps) {
   const kind = kindOf(id, docs);
   if (kind === 'folder') return <FolderLens id={id} active={active} onOpen={onOpen} />;
   if (kind === 'deck') return <DeckLens id={id} active={active} />;
-  return <DocLens id={id} />;
+  return <Reader key={id} id={id} active={active} />;
 }
 
 // ── folder ───────────────────────────────────────────────────────
@@ -139,12 +139,6 @@ function DeckLens({ id, active }: { id: string; active: boolean }) {
       </div>
     </div>
   );
-}
-
-// ── document ─────────────────────────────────────────────────────
-
-function DocLens({ id }: { id: string }) {
-  return <Reader key={id} id={id} />;
 }
 
 function CardText({ text }: { text: string }) {

@@ -22,6 +22,12 @@ interface Props {
 
 const GRADE_WORD: Record<Grade, string> = { 1: 'again', 2: 'hard', 3: 'good', 4: 'easy' };
 
+/** `due today`, `due +3d`, but `overdue 2d` and `new` stand alone. */
+const dueWord = (due: string | undefined, now: Date): string => {
+  const l = dueLabel(due, now);
+  return l === 'new' || l.startsWith('overdue') ? l : `due ${l}`;
+};
+
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 const inField = (t: EventTarget | null) => {
@@ -166,7 +172,7 @@ function CardElement({ item, active, onGrade }: CardProps) {
         {groupNo !== null && <span>blank {groupNo} of {item.groups}</span>}
         <span>{plural(sched?.reps ?? 0, 'review')}</span>
         {sched?.stability !== undefined && <span>stability {Math.round(sched.stability)}d</span>}
-        <span className="cm-due" data-due={!sched?.due || item.dueAt <= now ? '1' : '0'}>due {dueLabel(sched?.due, now)}</span>
+        <span className="cm-due" data-due={!sched?.due || item.dueAt <= now ? '1' : '0'}>{dueWord(sched?.due, now)}</span>
       </div>
       <div className="grades" data-revealed={revealed ? '1' : '0'}>
         {GRADES.map((g) => (
@@ -218,7 +224,7 @@ function DocSession({ item, active, onAct, ...nav }: DocProps) {
 
   return (
     <div className="doc-session" ref={barRef}>
-      <Reader id={item.path} />
+      <Reader id={item.path} active={active} />
       <SessionBar kind={item.kind} {...nav}>
         <button type="button" onClick={on}><span className="ra-l">{reading ? 'read on' : 'worked on it'}</span><kbd>⏎</kbd></button>
         <button type="button" onClick={() => onAct('postpone')}><span className="ra-l">postpone</span><kbd>p</kbd></button>
@@ -243,7 +249,7 @@ export function Session({ active, onOpen }: Props) {
 
   // the tab follows the element
   useEffect(() => {
-    useApp.setState({ sessionEl: el ? { kind: el.kind, label: sourceLabel(el, docs) } : null });
+    useApp.setState({ sessionEl: el ? { kind: el.kind, label: sourceLabel(el, docs), item: el } : null });
   }, [el, docs]);
   useEffect(() => () => useApp.setState({ sessionEl: null }), []);
 

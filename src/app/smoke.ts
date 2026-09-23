@@ -11,12 +11,16 @@
 // `ILMI_SMOKE=queue` opens the day's queue, enters it, and walks the whole
 // session with the keys (space and 3 on a card, ⏎ on a topic or a draft),
 // logging what each element wrote, until the queue is one quiet line.
+// `ILMI_SMOKE=loop` runs the whole loop: import the sample, start reading
+// it, extract a passage, make a card, find both in the queue, review them.
+// `ILMI_SMOKE=shots` walks every screen, pausing on each and logging
+// `shot: <name>` so a shell loop can take a screenshot of the window.
 
 import { info } from '@tauri-apps/plugin-log';
 import type { Vault } from '../vault/index.js';
-import { queueId } from './names.js';
+import { SESSION, queueId } from './names.js';
 import { useApp } from './store.js';
-import { createNode, moveNode, openIntake, openNode, removeNode, renameNode } from './vault.js';
+import { createNode, moveNode, openIntake, openNode, removeNode, renameNode, setInspector } from './vault.js';
 
 const WOZ = 'papers/wozniak-1990.md';
 
@@ -281,6 +285,190 @@ export async function smokeQueue(vault: Vault): Promise<void> {
     openNode(queueId('today'));
     await until(() => q('.queue .empty'));
     log(`queue after: "${q('.queue .empty')?.textContent}"; log ${qa('.qlog-line').map((l) => l.textContent).join(' / ')}; saved queries ${qa('.queries .row').map((r) => `${r.querySelector('.name')?.textContent} ${r.querySelector('.meta')?.textContent}`).join(', ')}`);
+  } catch (e) {
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+export async function smokeLoop(vault: Vault): Promise<void> {
+  const log = (s: string) => info(`smoke loop: ${s}`);
+  const q = <T extends Element>(sel: string) => document.querySelector<T>(sel);
+  const qa = (sel: string) => Array.from(document.querySelectorAll<HTMLElement>(sel));
+  try {
+    // import
+    openIntake('papers');
+    await until(() => q<HTMLTextAreaElement>('.intake textarea'));
+    q<HTMLButtonElement>('.intake .paste-hint .link')!.click();
+    await until(() => q('.intake-detail'));
+    q<HTMLButtonElement>('.intake .place.primary')!.click();
+    const path = await until(() => vault.documents().find((d) => d.startsWith('papers/Spaced repetition')));
+    const surface = await until(() => q<HTMLElement>('.doc-view .draft-doc'));
+    await sleep(400);
+    log(`imported ${path}; frozen ${q('.frozen-tag')?.textContent}; enrol button "${q('.frozen-tag.enrol')?.textContent}"; bottom strip "${q('.bot')?.textContent}"; inspector "${qa('.insp .block h6').map((h) => h.textContent).join(', ')}"`);
+
+    // start reading
+    press('r');
+    await until(() => (q('.read-gutter') ? true : null));
+    await sleep(300);
+    const enrolled = (await vault.read(path, true)).text.split('\n').find((l) => l.startsWith('read:'));
+    log(`reading: ${enrolled}; rule ${q<HTMLElement>('.read-rule')?.style.height}; queries ${qa('.queries .row').map((r) => `${r.querySelector('.name')?.textContent} ${r.querySelector('.meta')?.textContent}`).join(', ')}`);
+
+    // extract the second paragraph's first sentence
+    const paras = () => Array.from(surface.querySelectorAll<HTMLElement>('p.dd-p'));
+    const p2 = paras().find((el) => el.textContent?.startsWith('The mistake'))!;
+    select(p2, 'The mistake most learners make is to treat the wager as free.');
+    await until(() => q('.sel-cue'));
+    press('e');
+    const child = await until(() => vault.documents().find((d) => d.startsWith('papers/Spaced repetition and the economics of attention/')));
+    await sleep(500);
+    log(`extract ${child}; read line ${(await vault.read(child, true)).text.split('\n').find((l) => l.startsWith('read:'))}; parent marker ${(await vault.read(path, true)).text.split('\n').find((l) => l.startsWith('read:'))}`);
+
+    // a card from the third paragraph
+    await until(() => (q('.sel-cue') ? null : true));
+    const p3 = paras().find((el) => el.textContent?.startsWith('A good system'))!;
+    select(p3, 'A good system spends your attention the way a careful gardener spends water');
+    await until(() => q('.sel-cue'));
+    press('m');
+    const ta = await until(() => q<HTMLTextAreaElement>('.composer textarea'));
+    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!;
+    setter.call(ta, 'A good system spends your attention the way a careful {{gardener}} spends water');
+    ta.dispatchEvent(new Event('input', { bubbles: true }));
+    await sleep(100);
+    press('Enter', { metaKey: true });
+    await until(() => (q('.composer') ? null : true));
+    await sleep(800);
+    const withCard = await vault.read(path, true);
+    log(`card: cards ${withCard.doc.blocks.filter((b) => b.kind === 'card').length}; diagnostics ${withCard.diagnostics.length}; inspector cards "${qa('.insp .insp-cards .cl-t').map((c) => c.textContent).join(' | ')}"`);
+
+    // select the card in the reader: the inspector edits it
+    const cardEl = surface.querySelector<HTMLElement>('.card-span')!;
+    const cr = cardEl.getBoundingClientRect();
+    const at = { bubbles: true, button: 0, clientX: cr.left + 20, clientY: cr.top + 12, view: window };
+    cardEl.dispatchEvent(new MouseEvent('mousedown', at));
+    cardEl.dispatchEvent(new MouseEvent('mouseup', at));
+    cardEl.dispatchEvent(new MouseEvent('click', at));
+    await sleep(200);
+    const ce = q<HTMLTextAreaElement>('.insp .ce-field');
+    log(`selected card: ${JSON.stringify(useApp.getState().selectedCard)}; editor "${ce?.value.slice(0, 40)}"; note ${q('.insp .ce-note')?.textContent}`);
+    if (ce) {
+      setter.call(ce, 'A good system spends your {{attention}} the way a careful {{gardener}} spends water');
+      ce.dispatchEvent(new Event('input', { bubbles: true }));
+      await sleep(900);
+      const edited = await vault.read(path, true);
+      log(`edited card: "${edited.doc.blocks.find((b) => b.kind === 'card')?.text.slice(0, 50)}"; surface blanks ${surface.querySelectorAll('.card-span .cz').length}`);
+    }
+
+    // the palette finds the new source
+    press('k', { metaKey: true });
+    const input = await until(() => q<HTMLInputElement>('.palette-input input'));
+    const iset = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
+    iset.call(input, 'spaced');
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    await sleep(100);
+    log(`palette: ${qa('.palette-row').slice(0, 4).map((r) => `[${r.dataset.t}] ${r.querySelector('.pt')?.textContent} · ${r.querySelector('.psub')?.textContent}`).join(' / ')}`);
+    press('Escape');
+    await until(() => (q('.palette-overlay') ? null : true));
+
+    // the queue has the extract and the card
+    openNode(queueId('today'));
+    await until(() => q('.queue .qlist li'));
+    await sleep(300);
+    const mine = qa('.queue .qlist li').filter((r) => r.textContent?.includes('Spaced repetition') || r.textContent?.includes('The mistake most'));
+    log(`queue: ${qa('.queue .qlist li').length} rows; ours ${mine.map((r) => `[${r.dataset.el}] ${r.querySelector('.src')?.textContent}`).join(' / ')}`);
+
+    // review ours: click the extract's row, read on; then the card
+    const exRow = mine.find((r) => r.dataset.el === 'read');
+    exRow?.click();
+    await until(() => q('.doc-session .draft-doc'));
+    await sleep(300);
+    log(`session: tab "${q('.tabbar .tab[data-active="1"] .title')?.textContent}"; bar ${qa('.session-bar .sb-actions button').map((b) => b.textContent).join(' | ')}; inspector "${qa('.insp .block h6').map((h) => h.textContent).join(', ')}"; strip "${q('.bot')?.textContent}"`);
+    press('Enter');
+    await sleep(600);
+    log(`read on: ${(await vault.read(child!, true)).text.split('\n').find((l) => l.startsWith('read:'))}`);
+    // step to our card: it is the next new card in today's order, so walk until the meta names our source
+    for (let i = 0; i < 40 && !q('.recall-meta')?.textContent?.includes('Spaced repetition'); i++) {
+      if (q('.recall-wrap .empty.center')) break;
+      press(']');
+      await sleep(80);
+    }
+    if (q('.recall-meta')?.textContent?.includes('Spaced repetition')) {
+      log(`card element: meta "${q('.recall-meta')?.textContent}"; inspector editor "${q<HTMLTextAreaElement>('.insp .ce-field')?.value.slice(0, 30)}"; strip "${q('.bot')?.textContent}"`);
+      press(' ');
+      await sleep(50);
+      press('3');
+      await sleep(600);
+      const graded = (await vault.read(path, true)).text.split('\n').find((l) => l.startsWith('<!-- sr'));
+      log(`graded: ${graded}`);
+    } else {
+      log('card element not reached');
+    }
+    log(`tweaks: theme ${useApp.getState().theme}, accent ${useApp.getState().accent}, density ${useApp.getState().density}; stored ${localStorage.getItem('ilmi.tweaks')}`);
+  } catch (e) {
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+export async function smokeShots(vault: Vault): Promise<void> {
+  const log = (s: string) => info(`smoke shots: ${s}`);
+  const q = <T extends Element>(sel: string) => document.querySelector<T>(sel);
+  const shot = async (name: string, ms = 1800) => { await sleep(600); log(`shot: ${name}`); await sleep(ms); };
+  try {
+    setInspector({ open: true });
+    openNode(queueId('today'));
+    await until(() => q('.queue'));
+    await shot('queue-today');
+    openNode(WOZ);
+    await until(() => q('.doc-view .draft-doc .card-span'));
+    await shot('reader-source');
+    const surface = q<HTMLElement>('.draft-doc')!;
+    const p = Array.from(surface.querySelectorAll<HTMLElement>('p.dd-p')).find((el) => el.textContent?.startsWith('Choosing well'))!;
+    select(p, 'Each successful recall pushes the curve out further than the last.');
+    await until(() => q('.sel-cue'));
+    await shot('reader-selection');
+    press('m');
+    await until(() => q('.composer'));
+    await shot('composer');
+    press('Escape');
+    window.getSelection()?.removeAllRanges();
+    openNode('essays/spaced-composition.md');
+    await until(() => q('.draft-sched'));
+    await shot('draft');
+    openNode('german.md');
+    await until(() => q('.deck-view'));
+    await shot('deck');
+    openIntake('papers');
+    await until(() => q('.intake'));
+    q<HTMLButtonElement>('.intake .paste-hint .link')!.click();
+    await until(() => q('.intake-detail'));
+    await shot('intake');
+    openNode(queueId('today'));
+    await until(() => q('.queue'));
+    press('Enter');
+    await until(() => q('.recall-wrap .card'));
+    await shot('session-card');
+    press(' ');
+    await shot('session-card-revealed');
+    // walk to a reading element
+    for (let i = 0; i < 40 && !q('.doc-session'); i++) { press(']'); await sleep(60); }
+    await until(() => q('.doc-session .draft-doc'));
+    await shot('session-reading');
+    press('k', { metaKey: true });
+    await until(() => q('.palette-overlay'));
+    await shot('palette');
+    press('Escape');
+    useApp.setState({ tweaksOpen: true });
+    await until(() => q('.tweaks'));
+    await shot('tweaks');
+    useApp.getState().setTheme('dark');
+    await shot('dark');
+    useApp.getState().setTheme('eink');
+    await shot('eink');
+    useApp.getState().setTheme('light');
+    useApp.setState({ tweaksOpen: false });
+    openNode('papers');
+    await until(() => q('.folder-view'));
+    await shot('folder');
+    log(`done; session tab ${SESSION} open: ${!!q('.tabbar .tab[data-t="session"]')}; vault ${vault.root}`);
   } catch (e) {
     log(`failed: ${e instanceof Error ? e.message : String(e)}`);
   }

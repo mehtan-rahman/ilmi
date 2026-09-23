@@ -6,6 +6,172 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-09-22 — milestone 9: chrome and polish
+
+Commit `TBD` — *chrome: the strips, the inspector with its card editor,
+the palette, the keyboard router, the tweaks, and the loop end to end*.
+
+### Done
+
+- The shell: `TopStrip.tsx`, `BottomStrip.tsx`, `Inspector.tsx` with an
+  `insp-resize` handle (drag past the edge closes it), the full grid from
+  `tokens.css` (the two-column override in `app.css` removed), `--insp-w`
+  live. The inspector's width and open state persist per vault in
+  `.ilmi/state.json` beside the sidebar's (`VaultState.inspector`).
+- `chrome.ts`, pure: `hintsFor` (the bottom strip's keys per surface),
+  `cardLabel` (first blank, question, or `a ⇄ b`), `fuzzy`, `buildIndex`,
+  `search`, `ENTRY_GLYPH`.
+- `Inspector.tsx` per kind, read from the vault through `useDoc`: folder
+  (items, by type), source / extract (of, path, imported, length, cards,
+  reading; freeze / thaw; extracts; cards), deck (cards, due; the
+  default-card toggle writes `default-card`; cards), draft (path, length,
+  cards; done / reopen; passes, interval, due; cards), intake (into),
+  a query (the five counts), the session (the card under review with a
+  `CardEditor` and its schedule: reviews, lapses, stability, difficulty,
+  due, last; or the topic's / draft's own inspector), a document with a
+  selected card (the card block above the document's).
+- The card editor writes the block's text through `vault.update` after
+  400 ms when the text still reads as one card, and notes `not a card`
+  otherwise. The reader publishes a card `NodeSelection` as
+  `selectedCard`, and now selects a card on click on frozen documents
+  too.
+- `Palette.tsx`: ⌘K over saved queries, folders, documents by title,
+  every card, and eight commands; ↑↓ / ⌃n ⌃p / ⏎ / esc (esc from
+  anywhere). `Tweaks.tsx`: ⌘, with theme, accent, density, in
+  `localStorage` (`ilmi.tweaks`); `App.tsx` maps them to CSS.
+- Reading enrolment: `r`, or `start reading r` in the meta row, on a
+  source or extract not yet enrolled (`enrolReading`); the bottom strip
+  offers it only then.
+- Global keys: ⌘K, ⌘\, ⌘W, ⌘⇧E, ⌘⇧I, ⌘,. `Reader` takes `active`; the
+  canvas passes `active` as false under the palette.
+- Store: `accent`, `inspector`, `paletteOpen`, `tweaksOpen`,
+  `selectedCard`, `sessionEl.item`; `setAccent`; density clamped to
+  0.6–1.6; the console `ilmi.*` still works.
+- Copy: `open or run` in the palette, `⌕ ⌘k` on its button, one count in
+  the top strip, `due today` / `overdue 2d` / `new` in the card strip.
+- README: the keys, the tweaks.
+- Dev: `ILMI_SMOKE=loop` (import → start reading → extract → card → edit
+  it in the inspector → palette → queue → session → grade) and
+  `ILMI_SMOKE=shots` (every screen, `shot: <name>` in the log for a
+  shell loop to `screencapture`).
+- Tests: `src/app/__tests__/chrome.test.ts`, 6 tests (hints, card names,
+  the index, the match, the search, the tweaks' bounds). 209 in all.
+
+### Verified
+
+- `npm test` green (209), `npm run typecheck` clean, `npm run build` ok.
+  Rust untouched.
+- The loop, in the window (`ILMI_VAULT=<scratch copy> ILMI_SMOKE=loop npm
+  run tauri dev`): `imported papers/Spaced repetition and the economics
+  of attention.md; frozen; enrol button "start reading r"; bottom strip
+  "e extract m card r start reading ⌘\ split pane"; inspector "source"`
+  → `r`: `read: due=2026-09-22 ivl=1 reps=0 pos=0` → `e`: `extract
+  papers/Spaced repetition …/The mistake most learners make.md; read
+  line read: due=2026-09-22 ivl=1 reps=0 pos=0; parent marker … pos=3`
+  → `m`: `cards 1; diagnostics 0; inspector cards "The mistake most
+  learners make | gardener"` → a click on the card: `selected card
+  {"path":…,"index":4}; editor "A good system spends your attention
+  the "; note cloze` → typed in the inspector: `edited card: "A good
+  system spends your {{attention}} the way a "; surface blanks 2` →
+  ⌘K `spaced`: `[draft] spaced composition · essays / [source] Spaced
+  repetition and the economics of attention · papers / [card] graded ·
+  spaced composition / [card] attention · Spaced repetition …` → the
+  day: `34 rows; ours [read] Spaced repetition … / [read] The mistake
+  most learners make / [card] cloze … / [card] cloze …` → a session
+  from our row: `bar read on ⏎ | postpone p | done d; inspector
+  "source, extracts, cards"; strip "⏎ read on p postpone d done e
+  extract m card [ ] prev / next"` → on to our card: `meta "‹› 6 / 34
+  cloze Spaced repetition …"; inspector editor "A good system spends
+  your {{at"; strip "space reveal 1 2 3 4 grade [ ] prev / next"` →
+  space, 3: `<!-- sr c1 due=2026-09-23T01:07:22Z st=learning s=2.31
+  d=2.12 r=1 l=0 steps=1 ivl=0 last=2026-09-23T00:57:22Z g=3 -->`. So
+  import → read → extract → card → review runs end to end, every step
+  on disk.
+- Screenshots, for the first time (`ILMI_SMOKE=shots` + `screencapture`
+  from the shell; the first shot made macOS ask the terminal's host app
+  for screen-recording permission, and that dialog sat over the middle
+  of the later shots, the chrome around it clear): the day's queue,
+  the reader with the marker and the inspector's source block, the
+  selection cue and the composer, the draft with its row, the deck with
+  the default-card toggle, the intake, a card under review with the
+  editor and schedule beside it, a writing element with the bar, the
+  palette, the tweaks panel, and the same screen in dark and e-ink.
+  Read against the brief: paper not sepia, one accent, hairlines,
+  2px, mono labels, serif reading, no fills doing decoration, every
+  string lowercase and short. They pass the "maintained for years"
+  test to my eye; the reader's word, not a pixel diff.
+
+### Not verified
+
+- Dragging the inspector's handle, the palette's scroll-into-view, the
+  tweaks' persistence across a relaunch (the write path is the same
+  `localStorage` call; no relaunch was done).
+- The card editor while the reader is mid-edit on the same document.
+- The look of the folder lens and the read-marker screenshot beside the
+  bar were not re-read after the dialog.
+
+### Decisions worth knowing
+
+- The prototype's `fuzzy` returned -1 for a miss and its palette kept
+  scores ≥ 0, which threw away its best matches (a full match scores
+  negative); ours returns null and keeps everything that matched.
+- The card editor edits through the vault, not through the reader's
+  `setCardText`: the reader treats the write as external and rebuilds,
+  which is right for a card (an atom) and needs no plumbing between the
+  panels. `setCardText` stays tested and unused.
+- `r` starts reading. The prototype never implemented it (one line of
+  empty-state copy mentioned it), but without it a source can only
+  reach the reading queue through its extracts, so it is here, and
+  offered in the strip and the meta row only while it applies.
+- The accent presets are the prototype's six, since the plan names
+  accent as a tweak; the brief calls gold the one accent, and gold is
+  the default.
+- The tweaks live in `localStorage`, the first state kept outside a
+  vault; a remembered last vault could live there too.
+- The top strip shows one number, `N due`, and the day; the
+  prototype's `N sources · N cards · N due` was a middot pileup.
+- The palette's card entries open the card's document; the prototype
+  opened a one-card browse session. Selecting the card there is a
+  later nicety.
+
+### Handoff prompt
+
+Paste into a fresh session:
+
+```
+Read PLAN.md, FORMAT.md, BUILD-LOG.md, and spec/hashiyah/HANDOFF.md.
+
+Context: every milestone (0-9) is done; the first real milestone from
+spec/hashiyah/BUILD-PROMPT.md ships. src/format/ parses and serializes
+vault files (parse / serialize / meta / setField; never string-edit a
+file). src/vault/ opens, walks, reads, writes, watches, and reshapes a
+vault over an Fs interface; change a file with vault.update(path,
+mutate). src/schedule/ grades cards with ts-fsrs, runs the reading and
+writing loops, and builds the queue. src/reader/ is the ProseMirror model
+and src/app/Reader.tsx the editor. src/app/ holds the shell: App.tsx
+(grid, global keys), TopStrip, BottomStrip (hints from chrome.ts),
+Tree + SavedQueries, Canvas (panes, tabs), Lenses (folder, deck, reader,
+intake, queue, session), Inspector (with the card editor), Palette,
+Tweaks; items.ts and chrome.ts are the pure sides; store.ts mirrors the
+vault and holds view state; vault.ts is the one open vault and every
+operation on it. Tests run in vitest over a temp copy of
+src/format/__tests__/corpus/vault. ILMI_VAULT=/path npm run tauri dev
+opens a vault; ILMI_SMOKE=1 / reader / cards / intake / queue / loop /
+shots exercise the parts and log to the terminal.
+
+Tooling: node is in /opt/homebrew/bin and cargo in ~/.cargo/bin; neither is
+on the tool-shell PATH. Prefix every command with
+export PATH=$HOME/.cargo/bin:/opt/homebrew/bin:$PATH
+npm test and npm run typecheck must be green before a commit.
+
+There is no unchecked milestone. Read "Notes for the next session" in
+PLAN.md for the known edges, then ask what to do next, or, if a task
+was given with this prompt, do that one thing, verify it in the window,
+log it in BUILD-LOG.md, and commit.
+```
+
+---
+
 ## 2026-09-22 — milestone 8: queue and review session
 
 Commit `fc62c94` — *queue: the saved queries, the session over them, cards

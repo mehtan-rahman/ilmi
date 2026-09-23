@@ -32,6 +32,8 @@ export interface VaultState {
   tab?: string;
   /** Sidebar width in px, and whether it is hidden. */
   sidebar?: { width?: number; hidden?: boolean };
+  /** Inspector width in px, and whether it is open. */
+  inspector?: { width?: number; open?: boolean };
 }
 
 /** Default file names for new nodes, by type. */

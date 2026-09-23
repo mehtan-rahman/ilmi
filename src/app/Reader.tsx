@@ -19,7 +19,7 @@ import { Composer } from './Composer.js';
 import { dueLabel } from './items.js';
 import { titleOf } from './names.js';
 import { useApp, type DocInfo } from './store.js';
-import { currentVault, extractNode } from './vault.js';
+import { currentVault, enrolReading, extractNode } from './vault.js';
 import 'katex/dist/katex.min.css';
 import 'prosemirror-gapcursor/style/gapcursor.css';
 import './reader.css';
@@ -262,7 +262,13 @@ function withSelectionOf(prev: EditorState | null, state: EditorState): EditorSt
   return state.apply(state.tr.setSelection(Selection.near(state.doc.resolve(head))));
 }
 
-export function Reader({ id }: { id: string }) {
+interface ReaderProps {
+  id: string;
+  /** In the active pane: keys that need no selection (`r`) reach this document. */
+  active?: boolean;
+}
+
+export function Reader({ id, active = true }: ReaderProps) {
   const docs = useApp((s) => s.docs);
   const root = useApp((s) => s.vault);
   const info = docs[id];
@@ -287,6 +293,20 @@ export function Reader({ id }: { id: string }) {
   const canExtractRef = useRef(false);
   canExtractRef.current = canExtract;
   const actRef = useRef<(key: string) => boolean>(() => false);
+  const activeRef = useRef(active);
+  activeRef.current = active;
+  const readingRef = useRef(false);
+  readingRef.current = !!info?.read;
+
+  /** The inspector edits the card node that is selected here. */
+  const publishSelection = (state: EditorState) => {
+    const sel = state.selection;
+    const idx = sel instanceof NodeSelection && sel.node.type === schema.nodes.card ? state.doc.resolve(sel.from).index() : null;
+    const cur = useApp.getState().selectedCard;
+    if (idx === null ? cur !== null && cur.path === id : cur?.path !== id || cur.index !== idx) {
+      useApp.setState({ selectedCard: idx === null ? null : { path: id, index: idx } });
+    }
+  };
 
   // ── the marker's geometry, from the blocks' boxes ──
   const measure = useCallback(() => {
@@ -336,9 +356,16 @@ export function Reader({ id }: { id: string }) {
               writer.schedule(() => fromDoc(this.state.doc));
             }
             if (tr.docChanged || tr.getMeta(markerKey) !== undefined) measure();
+            if (tr.selectionSet || tr.docChanged) publishSelection(next);
           },
           handleClickOn(view, _pos, node, nodePos, _event, direct) {
-            if (!direct || node.type !== schema.nodes.math || !view.editable) return false;
+            if (!direct) return false;
+            if (node.type === schema.nodes.card) {
+              // a card selects on any document, frozen too, so the inspector can edit it
+              view.dispatch(view.state.tr.setSelection(NodeSelection.create(view.state.doc, nodePos)));
+              return true;
+            }
+            if (node.type !== schema.nodes.math || !view.editable) return false;
             view.dispatch(view.state.tr.setSelection(NodeSelection.create(view.state.doc, nodePos)));
             editMath(view.state, view.dispatch);
             view.focus();
@@ -362,6 +389,7 @@ export function Reader({ id }: { id: string }) {
       }
       setBlocks(loaded.doc.blocks);
       measure();
+      if (viewRef.current) publishSelection(viewRef.current.state);
     };
 
     const onDoc = (loaded: Loaded) => {
@@ -402,6 +430,7 @@ export function Reader({ id }: { id: string }) {
       viewRef.current?.destroy();
       viewRef.current = null;
       writerRef.current = null;
+      if (useApp.getState().selectedCard?.path === id) useApp.setState({ selectedCard: null });
     };
   }, [id, measure]);
 
@@ -453,8 +482,12 @@ export function Reader({ id }: { id: string }) {
     writer.run(() => extractNode(id, { text: s.text, blocks: s.blocks })).catch(console.error);
   };
 
+  const startReading = () => { if (canExtractRef.current && !readingRef.current) enrolReading(id).catch(console.error); };
+
   actRef.current = (key) => {
-    if (!selRef.current || composerRef.current) return false;
+    if (composerRef.current) return false;
+    if (key === 'r' && activeRef.current && canExtractRef.current && !readingRef.current) { startReading(); return true; }
+    if (!selRef.current) return false;
     if (key === 'e' && canExtractRef.current) { doExtract(); return true; }
     if (key === 'm') { openComposer(); return true; }
     return false;
@@ -556,6 +589,9 @@ export function Reader({ id }: { id: string }) {
             <button type="button" className="frozen-tag" data-frozen={info.frozen ? '1' : '0'} onClick={toggleFrozen}>
               {info.frozen ? 'frozen' : 'editable'}
             </button>
+          )}
+          {info && canExtract && !reading && (
+            <button type="button" className="frozen-tag enrol" onClick={startReading}>start reading <span className="kbd">r</span></button>
           )}
           <span className="right">{right}</span>
         </div>

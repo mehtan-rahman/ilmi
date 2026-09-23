@@ -28,21 +28,22 @@ to the terminal; use a scratch copy, it creates and deletes files.
 ## Keys
 
 ```
+⌘K               palette: open anything by name, or run a command
 click            open a folder or document in the active tab
 ⌘-click          open in a new tab      ⌘⇧-click   open in the next pane
 F2 / dbl-click   rename                 right-click  new, rename, move to, delete
 ⌘W               close tab              ⌘\           split pane
-⌘⇧E              show or hide the sidebar (or drag its edge)
+⌘⇧E              sidebar                ⌘⇧I          inspector
+⌘,               tweaks: theme, accent, density (kept outside the vault)
+
+in a source      select, then e extract or m make a card; r start reading
+in the queue     j k move, ⏎ enter, o open one
+in a session     [ ] prev / next; space reveal, 1-4 grade; ⏎ read on or
+                 worked on it, p postpone, d done
 ```
 
-Theme toggle, until the tweaks panel exists, from the devtools console
-(right-click → Inspect Element in the window):
-
-```
-ilmi.theme('dark')     // 'light' | 'dark' | 'eink'
-ilmi.cycleTheme()
-ilmi.density(0.8)
-```
+The bottom strip shows the keys that work where you are. `ilmi.theme('dark')`
+and friends still work from the devtools console.
 
 ## Layout
 

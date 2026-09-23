@@ -2,13 +2,6 @@
    prototype's styles.css with its flattening pass folded in: hairlines, 2px
    corners, no shadows, no fills doing decoration. */
 
-/* Until the top and bottom strips exist (milestone 9) the shell is two
-   columns: the sidebar and the canvas. The inspector column is 0 wide. */
-.shell {
-  grid-template-rows: 1fr;
-  grid-template-areas: "side canvas insp";
-}
-
 /* ── before a vault is open ───────────────────────────────────── */
 .welcome {
   grid-area: canvas;
@@ -51,8 +44,8 @@
 
 .side-resize {
   position: absolute;
-  top: 0;
-  bottom: 0;
+  top: 30px;
+  bottom: 22px;
   left: var(--side-w);
   width: 10px;
   margin-left: -5px;

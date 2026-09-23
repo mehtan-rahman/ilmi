@@ -6,6 +6,223 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-09-23 — cards in a deck: select, delete, reset, move, and land on one
+
+Seven commits, one per feature, each green on typecheck and the suite:
+`a104658` *vault: card block operations: remove, reset, and move*,
+`87ceb38` *deck: delete a card from its row*, `b49115a` *deck: select a
+row; j k move, ⌫ deletes, escape lets go, the inspector edits it*,
+`a065dcb` *inspector: reset a card's schedule*, `ecd1a4e` *deck: move a
+card to another deck from the row's menu*, `94583df` *palette, queue:
+opening a card lands on it*, `9199392` *smoke: the deck run checks the
+selection carried through the deletes, then walks the keys*.
+
+The work was built by a nine-agent workflow (two foundations in
+parallel, three features in series, three review lenses, a fix pass, a
+window run), then split into the commits above from the final tree.
+
+### Done
+
+- `src/vault/vault.ts`: `resetCard(path, index, id?, text?)` drops a
+  card's `sched` and `blanks` and keeps text, id, and extracts;
+  `moveCard(from, index, to, id?, text?)` reads the card fresh from
+  disk, appends it to the destination (extracts dropped, id re-minted
+  only on collision), then removes it from the source, comparing the
+  card against the copy it wrote so a card that changed under the move
+  is left in both files (`VaultConflict`). Both run under `serial()`,
+  write the destination first, and emit the normal `doc` events. The
+  lookup shared with `removeCard` is one `cardIn(doc, path, index, id?,
+  text?)`: the block at the index when it is the same card, else by
+  id, else by text, so an id-less card is found after a row slides
+  into its slot. `freshId` / `usedIds` are private copies of the
+  schedule's, since vault cannot import schedule.
+- `src/app/vault.ts`: `resetCard` (notes `reset · card`), `moveCard`
+  (clears `selectedCard` when it pointed at the card, notes `moved ·
+  card`), `openCard(path, index, id?, opts)` (sets `reveal`, then
+  `openNode`). `removeCard` / `resetCard` / `moveCard` pass the card's
+  text through.
+- `src/app/store.ts`: transient `reveal: {path, index, id?} | null`,
+  reset on `openVault`.
+- `src/app/Lenses.tsx` `DeckLens`: click or right-click selects a row
+  (`selectedCard = {path, index}`, the row drawn like the reader's
+  selected card); `j` `k` / arrows move through the rows and scroll
+  the row into view; `⌫` / `Delete` removes the selected card and
+  selects the row that took its place (or the new last row, or
+  nothing); deleting or moving a row above the selection keeps the
+  same card selected; `Escape` clears it; `m` still opens the
+  composer. The right-click menu gained `→ move to… ▸` with the
+  tree's submenu (every other deck, sorted; omitted when there is
+  none), above `⌫ delete card`; its x is clamped to the window like
+  the tree's (`MENU_W` exported from `Tree.tsx`). A `reveal` for this
+  deck selects and centers the row once the doc is loaded
+  (`revealIndex` in `chrome.ts`: the index when the card with that id
+  is still there, else the card with the id, else -1) and clears it.
+  The selection clears on unmount and whenever the block at the index
+  stops being a card.
+- `src/app/Reader.tsx`: a `reveal` for this document dispatches a
+  `NodeSelection` on the card node (child index first, id fallback),
+  scrolls it to center, and clears `reveal`; `publishSelection` then
+  puts it in the inspector as before.
+- `src/app/Inspector.tsx` `CardBlock`: the schedule block ends in a
+  `scheduled · reset` row (the freeze row's look) whenever the card
+  has `sched` or `blanks`; after the reset the block reads `new`. A
+  cloze with only per-blank lines and no group now reads `per blank`
+  instead of `new`. The card editor's debounced write resolves its
+  target from the card it knew (id, or text when id-less), not the
+  bare index.
+- `src/app/Palette.tsx` / `chrome.ts`: card entries carry `{open,
+  index, id?}` and open through `openCard`; `src/app/Queue.tsx`: in
+  the `cards` scope, ⏎ / `o` / click open the card in its document
+  instead of a one-item session. `src/app/Session.tsx`: the card strip
+  falls back to the queue item's schedule only while the document is
+  not loaded, so a card reset mid-session reads `new`.
+- `src/app/Canvas.tsx`: lenses go quiet under the tweaks panel as
+  they do under the palette.
+- `hintsFor('deck')` is `j k move · ⌫ delete · m card · ⌘k palette`;
+  README Keys "in a deck" says so and names the × and the right-click
+  delete and move.
+- Dev: `ILMI_SMOKE=deck` deletes from the menu and from the ×, checks
+  the selection those left behind, then presses the keys: escape, j j
+  k, an edit typed into the inspector's editor, j and backspace, a ×
+  above the selection, escape again; then resets from the inspector,
+  moves a card to a deck it creates, and lands on a deck card from the
+  queue tab, on another with the deck already showing, and on a source
+  card, taking a shot at each step. Each key step reports the state it
+  saw on a timeout.
+- Tests: `vault.test.ts` (removeCard ×3 incl. an id-less card found by
+  text at a stale index; resetCard; moveCard ×6 incl. the fresh-read
+  and changed-under-move guards, id collision, extract backrefs);
+  `chrome.test.ts` (deck hints, the card target shape, `revealIndex`).
+  225 in all.
+
+### Verified
+
+- `npm run typecheck` clean, `npx vitest run` green (13 files, 225).
+- In the window (`ILMI_VAULT=<scratch copy> ILMI_SMOKE=deck npm run
+  tauri dev`, 17:41 UTC), every line as logged: `rows 7; header "7
+  cards · 7 due"` → `menu: ⌫delete card; row marked 1` → `menu delete:
+  rows 6; menu gone true; "das Gedächtnis ⇄ mem" on disk false;
+  ^cv-gedacht on disk false; lines 26 → 23; cards 6; diagnostics 0` →
+  `inspector: typebidiringerman · A1; log "removed · card"` → `× delete:
+  rows 5; "der Vorsatz ⇄ resolu" on disk false; first row now "die
+  Wiederholung ⇄ repet"; header "5 cards · 5 due"; front-matter intact
+  true` → `after the deletes: selected "vergessen ⇄ to forget" at
+  {"path":"german.md","index":1}, row 1; selected rows 1` (the
+  right-click selected the third row, the menu delete moved the
+  selection to the row that took its place, the × above left it on
+  that card) → `keys: j j k → selected {"path":"german.md","index":0}
+  "die Wiederholung ⇄ repet"; selected rows 1; inspector editor "die
+  Wiederholung ::: rep"; strip "j k move⌫ deletem card⌘k palette"` →
+  `inspector edit: row 0 "die Wiederholung ⇄ repetition; review;
+  edite"; on disk true; sr line kept true; still selected true;
+  diagnostics 0` → `backspace: rows 5 → 4; "vergessen ⇄ to forget" on
+  disk false; selected {"path":"german.md","index":1} "die Lücke ⇄
+  gap; blank" took its place; selected rows 1; log "removed · card"` →
+  `delete above: the selection stays on its card: "spaced repetition
+  is ver" → "spaced repetition is ver" at
+  {"path":"german.md","index":1}; rows 3` → `escape: selected null;
+  selected rows 0; inspector editor gone` → `selected:
+  {"path":"german.md","index":0}; schedule block
+  "schedulereviews9lapses4stability0.50 ddi"; sr line for ^cv-luecke
+  on disk "<!-- sr due=2026-05-25 s"` → `reset: schedule block
+  "schedulenew"; reset button gone true; sr lines 2 → 1; line after
+  ^cv-luecke now ""; still selected true {"path":"german.md","index":0};
+  rows 3; log "reset · card"; diagnostics 0` → `move: dest untitled
+  deck.md "untitled deck"; menu: →move to…▸ | ⌫delete card; selected
+  {"path":"german.md","index":1}` → `move: submenu: ◫untitled deck;
+  back "◂move to…"` → `move: rows 3 → 2; menu gone true; "spaced
+  repetition is" here false, there true; ^cv-cloze here false, there
+  true; sr line "<!-- sr due=2026-06-15 s" here false, there true; dest
+  cards 1, last block card; selected {"path":"german.md","index":1};
+  log "moved · card"; diagnostics 0 0` → `landed deck: tab "german ·
+  A1"; selected {"path":"german.md","index":1} = "ein Wort ohne Karte
+  ⇄ a " (…block 1 of 2 rows); inspector card "ein Wort ohne Karte :::
+  a word"; reveal null` → `landed again: selected
+  {"path":"german.md","index":0} = "die Lücke ⇄ gap; blank"; selected
+  rows 1; inspector card "die Lücke ::: gap; blank"` → `landed source:
+  tab "wozniak-1990"; selected
+  {"path":"papers/wozniak-1990.md","index":3} (wanted 3); node "what is
+  the framework’s " in view true; inspector card "what is the
+  framework’s pictur"; reveal null` → `done`.
+- Real keystrokes too: two `j` sent through System Events to the
+  window moved the selection and the inspector followed.
+- On disk afterwards: `german.md` is the front matter, `die Lücke :::
+  gap; blank ^cv-luecke` with no `sr` line under it, and `ein Wort ohne
+  Karte ::: a word without a card`; `untitled deck.md` is `type: deck`
+  plus the cloze with `^cv-cloze` and its full `sr` line, one blank
+  line between blocks, trailing newline.
+- Eight captures of the window, read one by one: the delete menu over
+  the selected row with the hover × on the first row and the
+  inspector's card block, editor, schedule numbers, and `scheduled ·
+  reset`; the deck after both deletes with the surviving selection;
+  the deck after the key walk with nothing selected and the deck block
+  back in the inspector; the reset card reading `new` in the schedule
+  block and in the deck's card list; the `◂ move to…` submenu listing
+  the new deck, drawn like the sidebar's; the deck after the move with
+  the next row selected and `untitled deck 1 · 1 due` in the tree; the
+  palette landing with one selected row; the reader with the q&a card
+  selected, centered, and in the inspector. The strip reads `j k move
+  · ⌫ delete · m card · ⌘k palette` in the deck. Nothing overlapped or
+  clipped.
+- Notes for the next run: `caffeinate -d -u -i` first, a sleeping
+  display freezes the webview and captures come back black; the app's
+  log lines reach the terminal about five seconds late, so a shot
+  pause is ten seconds; raising the window with System Events can
+  count as an outside press and close an open menu, which the smoke
+  now notices and reopens.
+
+### Not done / open
+
+- No DOM unit test drives the deck keys, the post-delete reselect, or
+  the landing; only `hintsFor`, `revealIndex`, the palette target
+  shape, and the vault ops are unit tested. The window smoke covers
+  the rest, keys included.
+- Move is mouse only; no key, no palette command.
+- A move whose source write fails after the destination write leaves
+  the card in both decks and surfaces only in `console.error`; the
+  wrapper does not say so in the log.
+- `reveal` is left set when the document is gone, or when another
+  pane's lens for the same path consumes it first.
+- `freshId` / `usedIds` are duplicated between `src/vault/vault.ts` and
+  `src/schedule/queue.ts`; moving them into `src/format` is a later
+  layering cleanup.
+- The reader's and the deck's `.card-span.selected` rules live in two
+  stylesheets.
+- The smoke leaves `untitled deck.md` in the scratch vault on purpose.
+
+### Decisions worth knowing
+
+- Delete and move write the destination or the removal in the order
+  that duplicates rather than loses on a crash, and the move refuses
+  to remove a source card that no longer matches what it copied.
+- The card lookup keys on identity (id, or text when there is none)
+  and uses the index only as the first guess, so a stale index from a
+  row that slid never removes a neighbour.
+- The deck menu omits `move to…` when there is no other deck, as the
+  tree omits items that do not apply, rather than disabling it.
+- Landing recenters the row or node (`block: 'center'`); the deck's
+  key navigation still scrolls `nearest`.
+
+### Handoff prompt
+
+Paste into a fresh session:
+
+```
+Read PLAN.md, FORMAT.md, BUILD-LOG.md, and spec/hashiyah/HANDOFF.md.
+
+Context: every milestone is done and the deck lens now selects,
+deletes, resets, and moves cards, and the palette lands on a card
+(BUILD-LOG 2026-09-23, commits a104658..9199392). Tooling: export
+PATH=$HOME/.cargo/bin:/opt/homebrew/bin:$PATH; npm test and npm run
+typecheck must be green before a commit; caffeinate -d -u -i, then
+ILMI_VAULT=<scratch copy> ILMI_SMOKE=deck npm run tauri dev exercises
+the deck end to end.
+
+Resume with: pick from "Not done / open" above or ask what to do next.
+```
+
+---
+
 ## 2026-09-23 — fsrs checked against ts-fsrs by simulation; full precision on disk
 
 Commit `c7d8fcb` — *schedule: store stability and difficulty at full precision;

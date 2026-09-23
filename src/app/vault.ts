@@ -177,7 +177,7 @@ export async function openVault(path: string): Promise<Vault> {
     panes = openTab(panes, queueId('today'));
   }
   bodies.clear();
-  useApp.setState({ open, sidebar, inspector, panes, docs: {}, queue: [], log: [], session: null, sessionEl: null, selectedCard: null });
+  useApp.setState({ open, sidebar, inspector, panes, docs: {}, queue: [], log: [], session: null, sessionEl: null, selectedCard: null, reveal: null });
   publishTree(vault);
   vault.subscribe((ev) => onEvent(vault, ev));
   await vault.watch();
@@ -222,6 +222,16 @@ export function openNode(path: string, opts: OpenOpts = {}): void {
   const panes = openTab(s.panes, path, opts);
   useApp.setState({ panes });
   queueSave({ tab: activeTab(panes)?.id ?? '' });
+}
+
+/**
+ * Open the document and land on one of its cards: the deck selects the row,
+ * the reader selects the node, and either scrolls to it. The lens clears
+ * `reveal` once it has, or when the card is not there any more.
+ */
+export function openCard(path: string, index: number, id?: string, opts: OpenOpts = {}): void {
+  useApp.setState({ reveal: id === undefined ? { path, index } : { path, index, id } });
+  openNode(path, opts);
 }
 
 /** The intake, placing into `dir` (a folder path; `''` for the root). One tab, wherever it is. */

@@ -255,6 +255,22 @@ function crumbOf(path: string, docs: Record<string, DocInfo>): string {
   return parts.join('  /  ');
 }
 
+/** Where the card at child `index` is, or the card with `id` when that one has moved; null when neither is there. */
+function cardPos(doc: PMNode, at: { index: number; id?: string }): number | null {
+  let byId: number | null = null;
+  let off = 0;
+  for (let i = 0; i < doc.childCount; i++) {
+    const node = doc.child(i);
+    const here = off;
+    off += node.nodeSize;
+    if (node.type !== schema.nodes.card) continue;
+    const id = (node.attrs.card as Card).id;
+    if (i === at.index && (at.id === undefined || id === at.id)) return here;
+    if (at.id !== undefined && id === at.id && byId === null) byId = here;
+  }
+  return byId;
+}
+
 /** Keep the caret where it was, as far as the new document allows. */
 function withSelectionOf(prev: EditorState | null, state: EditorState): EditorState {
   if (!prev) return state;
@@ -272,6 +288,7 @@ export function Reader({ id, active = true }: ReaderProps) {
   const docs = useApp((s) => s.docs);
   const root = useApp((s) => s.vault);
   const info = docs[id];
+  const reveal = useApp((s) => s.reveal);
   const [status, setStatus] = useState<'loading' | 'ok' | 'gone'>('loading');
   const [rule, setRule] = useState<Rule | null>(null);
   const [blocks, setBlocks] = useState<Block[]>([]);
@@ -438,6 +455,20 @@ export function Reader({ id, active = true }: ReaderProps) {
   useEffect(() => {
     viewRef.current?.setProps({ editable: () => !frozenRef.current });
   }, [info?.frozen]);
+
+  // a card opened from the palette or a query: once the document is built,
+  // its node is selected (the inspector follows) and scrolled to; a card
+  // that is gone is let go
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!reveal || reveal.path !== id || status !== 'ok' || !view) return;
+    const pos = cardPos(view.state.doc, reveal);
+    if (pos !== null) {
+      view.dispatch(view.state.tr.setSelection(NodeSelection.create(view.state.doc, pos)));
+      (view.nodeDOM(pos) as HTMLElement | null)?.scrollIntoView({ block: 'center' });
+    }
+    useApp.setState({ reveal: null });
+  }, [reveal, status, id]);
 
   // ── the selection: a passage to extract or make a card from ──
   // Read from the DOM, not the editor state, because a frozen document's

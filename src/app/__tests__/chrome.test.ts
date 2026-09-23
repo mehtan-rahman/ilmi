@@ -3,7 +3,9 @@
 
 import { describe, expect, it } from 'vitest';
 import type { TreeNode } from '../../vault/index.js';
-import { buildIndex, cardLabel, fuzzy, hintsFor, search } from '../chrome.js';
+import type { Block } from '../../format/index.js';
+import { buildIndex, cardLabel, fuzzy, hintsFor, revealIndex, search } from '../chrome.js';
+import { queueId } from '../names.js';
 import { ACCENTS, THEMES, useApp } from '../store.js';
 
 describe('key hints', () => {
@@ -47,15 +49,23 @@ describe('the palette', () => {
     'papers/wozniak-1990/woz-ex1.md': { type: 'extract' as const, frozen: false, cards: 0, due: 0 },
     'german.md': { type: 'deck' as const, frozen: false, cards: 7, due: 3, title: 'german · A1' },
   };
-  const cards = [{ path: 'german.md', index: 0, text: 'der Vorsatz ::: resolution' }];
+  const cards = [{ path: 'german.md', index: 3, id: 'cv-vorsatz', text: 'der Vorsatz ::: resolution' }, { path: 'papers/wozniak-1990.md', index: 5, text: 'what is memory? :: a forest' }];
   const index = buildIndex(tree, docs, cards, [{ id: 'split', title: 'split pane' }]);
 
   it('indexes queries, folders, documents by title, cards, and commands', () => {
-    expect(index.map((e) => e.tag)).toEqual(['query', 'query', 'query', 'query', 'query', 'folder', 'source', 'extract', 'deck', 'card', 'command']);
+    expect(index.map((e) => e.tag)).toEqual(['query', 'query', 'query', 'query', 'query', 'folder', 'source', 'extract', 'deck', 'card', 'card', 'command']);
     expect(index.find((e) => e.key === 'p:german.md')).toMatchObject({ title: 'german · A1', sub: 'deck', target: { open: 'german.md' } });
     expect(index.find((e) => e.tag === 'extract')).toMatchObject({ sub: 'wozniak-1990' });
-    expect(index.find((e) => e.tag === 'card')).toMatchObject({ title: 'der Vorsatz ⇄ resolution', sub: 'german · A1', target: { open: 'german.md' } });
+    expect(index.find((e) => e.tag === 'card')).toMatchObject({ title: 'der Vorsatz ⇄ resolution', sub: 'german · A1' });
     expect(index.find((e) => e.tag === 'command')).toMatchObject({ target: { command: 'split' } });
+  });
+
+  it('names a card by its document, block index, and id, so opening lands on it', () => {
+    expect(index.find((e) => e.key === 'c:german.md:3')!.target).toEqual({ open: 'german.md', index: 3, id: 'cv-vorsatz' });
+    expect(index.find((e) => e.key === 'c:papers/wozniak-1990.md:5')!.target).toEqual({ open: 'papers/wozniak-1990.md', index: 5 });
+    // documents and queries still open by path alone
+    expect(index.find((e) => e.key === 'p:german.md')!.target).toEqual({ open: 'german.md' });
+    expect(index.find((e) => e.key === 'q:today')!.target).toEqual({ open: queueId('today') });
   });
 
   it('matches in order, cheaper at word starts, and misses honestly', () => {
@@ -67,10 +77,31 @@ describe('the palette', () => {
 
   it('searches titles and where they live', () => {
     expect(search(index, '').length).toBe(index.length);
-    expect(search(index, 'woz').map((e) => e.key)).toEqual(['p:papers/wozniak-1990.md', 'p:papers/wozniak-1990/woz-ex1.md']);
+    // the source, its extract, and a card that lives in the source
+    expect(search(index, 'woz').map((e) => e.key)).toEqual(['p:papers/wozniak-1990.md', 'p:papers/wozniak-1990/woz-ex1.md', 'c:papers/wozniak-1990.md:5']);
     expect(search(index, 'split')[0]).toMatchObject({ tag: 'command' });
     expect(search(index, 'due')[0]).toMatchObject({ title: 'due today' });
     expect(search(index, 'qqq')).toEqual([]);
+  });
+});
+
+describe('landing on a card', () => {
+  const blocks: Block[] = [
+    { kind: 'paragraph', text: 'p' },
+    { kind: 'card', text: 'a ::: b', id: 'c-aaaaaa' },
+    { kind: 'card', text: 'c ::: d', id: 'c-bbbbbb' },
+    { kind: 'card', text: 'e ::: f' },
+  ];
+  it('takes the index while the card is still there, else follows the id, else gives up', () => {
+    expect(revealIndex(blocks, { index: 1, id: 'c-aaaaaa' })).toBe(1);
+    expect(revealIndex(blocks, { index: 3 })).toBe(3);
+    // the card slid down one after a delete above it
+    expect(revealIndex(blocks, { index: 1, id: 'c-bbbbbb' })).toBe(2);
+    expect(revealIndex(blocks, { index: 0, id: 'c-bbbbbb' })).toBe(2);
+    // a different card sits at the index and the named one is gone
+    expect(revealIndex(blocks, { index: 1, id: 'c-zzzzzz' })).toBe(-1);
+    expect(revealIndex(blocks, { index: 0 })).toBe(-1);
+    expect(revealIndex(blocks, { index: 9 })).toBe(-1);
   });
 });
 

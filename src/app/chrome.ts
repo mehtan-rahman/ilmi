@@ -2,7 +2,7 @@
 // a card is called in a list, the palette's index and its fuzzy match.
 // The components are TopStrip, BottomStrip, Inspector, Palette, Tweaks.
 
-import { cardFields, type CardForm } from '../format/index.js';
+import { cardFields, type Block, type CardForm } from '../format/index.js';
 import { nameOf, type TreeNode } from '../vault/index.js';
 import { FORM_LABEL } from './items.js';
 import { QUEUE_TITLE, SCOPES, queueId, type QueueScope, type TabKind } from './names.js';
@@ -109,8 +109,8 @@ export interface Entry {
   /** Where it lives, in small type. */
   sub: string;
   tag: EntryTag;
-  /** A vault path or special tab id to open, or a command id. */
-  target: { open: string } | { command: string };
+  /** A vault path or special tab id to open, a card in a document, or a command id. */
+  target: { open: string } | { open: string; index: number; id?: string } | { command: string };
 }
 
 export interface Command {
@@ -126,6 +126,7 @@ export const ENTRY_GLYPH: Record<EntryTag, string> = {
 export interface CardRef {
   path: string;
   index: number;
+  id?: string;
   text: string;
 }
 
@@ -147,7 +148,10 @@ export function buildIndex(tree: TreeNode[], docs: Record<string, DocInfo>, card
     }
   };
   visit(tree, '');
-  for (const c of cards) out.push({ key: `c:${c.path}:${c.index}`, title: cardLabel(c.text), sub: title(c.path), tag: 'card', target: { open: c.path } });
+  for (const c of cards) {
+    const target: Entry['target'] = c.id === undefined ? { open: c.path, index: c.index } : { open: c.path, index: c.index, id: c.id };
+    out.push({ key: `c:${c.path}:${c.index}`, title: cardLabel(c.text), sub: title(c.path), tag: 'card', target });
+  }
   for (const c of commands) out.push({ key: `x:${c.id}`, title: c.title, sub: '', tag: 'command', target: { command: c.id } });
   return out;
 }
@@ -161,4 +165,17 @@ export function search(index: Entry[], q: string): Entry[] {
     .sort((a, b) => a.score - b.score)
     .slice(0, 40)
     .map((r) => r.it);
+}
+
+// ── landing on a card ────────────────────────────────────────────
+
+/**
+ * Where a named card is now: its index when that card is still there, else
+ * wherever its id went, else -1. A document can change between the naming
+ * and the landing.
+ */
+export function revealIndex(blocks: Block[], at: { index: number; id?: string }): number {
+  const b = blocks[at.index];
+  if (b?.kind === 'card' && (at.id === undefined || b.id === at.id)) return at.index;
+  return at.id === undefined ? -1 : blocks.findIndex((x) => x.kind === 'card' && x.id === at.id);
 }

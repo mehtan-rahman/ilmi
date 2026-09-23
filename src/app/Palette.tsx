@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ENTRY_GLYPH, buildIndex, search, type CardRef, type Command, type Entry } from './chrome.js';
 import { activeTab, closePane, splitPane } from './panes.js';
 import { useApp } from './store.js';
-import { containerOf, currentVault, openIntake, openNode, setInspector, setSidebar, startSession } from './vault.js';
+import { containerOf, currentVault, openCard, openIntake, openNode, setInspector, setSidebar, startSession } from './vault.js';
 
 const COMMANDS: Command[] = [
   { id: 'enter', title: 'enter queue' },
@@ -43,7 +43,7 @@ function cardRefs(): CardRef[] {
     const k = `${i.path}:${i.block}`;
     if (seen.has(k)) continue;
     seen.add(k);
-    out.push({ path: i.path, index: i.block, text: i.text });
+    out.push(i.id === undefined ? { path: i.path, index: i.block, text: i.text } : { path: i.path, index: i.block, id: i.id, text: i.text });
   }
   return out;
 }
@@ -79,8 +79,11 @@ export function Palette() {
   const run = (it: Entry | undefined) => {
     if (!it) return;
     close();
-    if ('command' in it.target) runCommand(it.target.command);
-    else if (currentVault()) openNode(it.target.open);
+    const t = it.target;
+    if ('command' in t) runCommand(t.command);
+    else if (!currentVault()) return;
+    else if ('index' in t) openCard(t.open, t.index, t.id);
+    else openNode(t.open);
   };
 
   const onKey = (e: React.KeyboardEvent) => {

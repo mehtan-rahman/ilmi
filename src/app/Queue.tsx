@@ -10,7 +10,7 @@ import { EL_GLYPH, QUEUE_EMPTY, dayLabel, dueLabel, intervalLabel, isFresh, kind
 import { QUEUE_TITLE, SCOPES, queueId, type QueueScope } from './names.js';
 import type { OpenOpts } from './panes.js';
 import { useApp } from './store.js';
-import { openNode, openSession, refreshQueue, startSession } from './vault.js';
+import { openCard, openNode, openSession, refreshQueue, startSession } from './vault.js';
 import './queue.css';
 
 interface Props {
@@ -58,7 +58,11 @@ export function Queue({ scope, active }: Props) {
     if (cursor > items.length - 1) setCursor(Math.max(0, items.length - 1));
   }, [items.length, cursor]);
 
-  const open = (item: QueueItem, opts: OpenOpts = {}) => openSession(item, opts);
+  // the cards query opens the card where it lives; the other scopes review it
+  const open = (item: QueueItem, opts: OpenOpts = {}) => {
+    if (scope === 'cards' && item.kind === 'card') openCard(item.path, item.block, item.id, opts);
+    else openSession(item, opts);
+  };
 
   useEffect(() => {
     if (!active) return;

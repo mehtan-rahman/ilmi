@@ -19,10 +19,12 @@
 // menu and another from the row's ×, walks the rows with j k, edits the
 // selected card from the inspector, deletes it with backspace, resets one
 // from the inspector, moves one to a new deck through the menu's "move to…",
-// and logs what left the disk.
+// and logs what left the disk; then it opens a deck card and a source card
+// from the palette and logs that each landed selected.
 
 import { info } from '@tauri-apps/plugin-log';
 import type { Vault } from '../vault/index.js';
+import { cardLabel } from './chrome.js';
 import { GLYPH, SESSION, queueId, titleOf } from './names.js';
 import { useApp } from './store.js';
 import { createNode, moveNode, openIntake, openNode, removeNode, renameNode, setInspector } from './vault.js';
@@ -556,6 +558,50 @@ export async function smokeDeck(vault: Vault): Promise<void> {
     log(`move: rows ${rowsHere} → ${rows().length}; menu gone ${!view.querySelector('.ctx-menu')}; "${moverText.slice(0, 20)}" here ${after.text.includes(moverText.slice(0, 12))}, there ${there.text.includes(moverText.slice(0, 12))}; ^${moverId} here ${after.text.includes(`^${moverId}`)}, there ${there.text.includes(`^${moverId}`)}; sr line "${srLine.slice(0, 24)}" here ${after.text.includes(srLine)}, there ${there.text.includes(srLine)}; dest cards ${destCards.length}, last block ${there.doc.blocks[there.doc.blocks.length - 1]?.kind}; selected ${JSON.stringify(useApp.getState().selectedCard)}; log "${useApp.getState().log[0]}"; diagnostics ${after.diagnostics.length} ${there.diagnostics.length}`);
     await shot('deck-moved');
 
+    // from the palette to a card: the deck tab comes up with that row selected
+    const q = <T extends Element>(sel: string) => document.querySelector<T>(sel);
+    const tabTitle = () => q('.tabbar .tab[data-active="1"] .title')?.textContent;
+    const cardBlock = () => q<HTMLTextAreaElement>('.insp .ce-field')?.value.slice(0, 30);
+    const viaPalette = async (label: string) => {
+      press('k', { metaKey: true });
+      const input = await until(() => q<HTMLInputElement>('.palette-input input'));
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, label);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      await sleep(100);
+      const rowsNow = Array.from(document.querySelectorAll<HTMLElement>('.palette-row'));
+      const at = rowsNow.findIndex((r) => r.dataset.t === 'card' && r.querySelector('.pt')?.textContent === label);
+      log(`palette "${label}": ${rowsNow.length} rows, card at ${at}: ${rowsNow.slice(0, 3).map((r) => `[${r.dataset.t}] ${r.querySelector('.pt')?.textContent}`).join(' / ')}`);
+      const key = (k: string) => input.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));
+      for (let i = 0; i < at; i++) key('ArrowDown');
+      key('Enter');
+      await until(() => (q('.palette-overlay') ? null : true));
+    };
+    const deckCards = (await vault.read(DECK)).doc.blocks.filter((b) => b.kind === 'card');
+    const last = deckCards[deckCards.length - 1]!;
+    openNode(queueId('today'));
+    await until(() => q('.queue'));
+    await viaPalette(cardLabel(last.text));
+    const landed = await until(() => q<HTMLElement>('.deck-view .card-span.selected'));
+    await sleep(300);
+    log(`landed deck: tab "${tabTitle()}"; selected ${JSON.stringify(useApp.getState().selectedCard)} = "${landed.querySelector('.cs-body')?.textContent?.slice(0, 24)}" (wanted "${last.text.slice(0, 24)}", block ${deckCards.length - 1} of ${rows().length} rows); inspector card "${cardBlock()}"; reveal ${JSON.stringify(useApp.getState().reveal)}`);
+    // the deck is already showing: a second card lands without a remount
+    const first0 = deckCards[0]!;
+    await viaPalette(cardLabel(first0.text));
+    await until(() => (rows()[0]?.classList.contains('selected') ? true : null));
+    log(`landed again: selected ${JSON.stringify(useApp.getState().selectedCard)} = "${rows()[0]?.querySelector('.cs-body')?.textContent?.slice(0, 24)}" (wanted "${first0.text.slice(0, 24)}"); selected rows ${rows().filter((r) => r.classList.contains('selected')).length}; inspector card "${cardBlock()}"`);
+    await shot('palette-deck-card');
+
+    // a source card: the reader selects the node and the inspector shows it
+    const woz = (await vault.read(WOZ)).doc.blocks;
+    const wozIndex = woz.findIndex((b) => b.kind === 'card');
+    const wozCard = woz[wozIndex]!;
+    await viaPalette(cardLabel(wozCard.text));
+    const surface = await until(() => q<HTMLElement>('.doc-view .draft-doc'));
+    const node = await until(() => surface.querySelector<HTMLElement>('.card-span.selected'));
+    await sleep(300);
+    const nr = node.getBoundingClientRect();
+    log(`landed source: tab "${tabTitle()}"; selected ${JSON.stringify(useApp.getState().selectedCard)} (wanted ${wozIndex}); node "${node.querySelector('.cs-body')?.textContent?.slice(0, 24)}" in view ${nr.top >= 0 && nr.bottom <= window.innerHeight}; inspector card "${cardBlock()}"; reveal ${JSON.stringify(useApp.getState().reveal)}`);
+    await shot('palette-source-card');
     log(`done; vault ${vault.root}`);
   } catch (e) {
     log(`failed: ${e instanceof Error ? e.message : String(e)}`);

@@ -4,6 +4,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { cardFields, meta, type Card, type ClozePart, type Doc } from '../format/index.js';
 import type { TreeNode } from '../vault/index.js';
+import { revealIndex } from './chrome.js';
 import { Composer } from './Composer.js';
 import { Intake } from './Intake.js';
 import { GLYPH, INTAKE, SESSION, contentsOf, findNode, kindOf, queueScope, titleOf, type NodeKind } from './names.js';
@@ -116,6 +117,7 @@ function DeckLens({ id, active }: { id: string; active: boolean }) {
   const docs = useApp((s) => s.docs);
   const root = useApp((s) => s.vault);
   const selected = useApp((s) => s.selectedCard);
+  const reveal = useApp((s) => s.reveal);
   const loaded = useDoc(id);
   const info = docs[id];
   const [composer, setComposer] = useState(false);
@@ -145,6 +147,18 @@ function DeckLens({ id, active }: { id: string; active: boolean }) {
     byKey.current = false;
     rows.current.get(sel)?.scrollIntoView({ block: 'nearest' });
   }, [sel]);
+
+  // a card opened from the palette or a query: once the deck is loaded, its
+  // row is selected and brought into view; a card that is gone is let go
+  useEffect(() => {
+    if (!reveal || reveal.path !== id || !loaded) return;
+    const i = revealIndex(loaded.doc.blocks, reveal);
+    if (i >= 0) {
+      select(i);
+      rows.current.get(i)?.scrollIntoView({ block: 'center' });
+    }
+    useApp.setState({ reveal: null });
+  }, [reveal, loaded, id]);
 
   // `op` takes the card at `index` out of this deck; when it was the selected
   // one, the row that takes its place is selected next, and a selection below

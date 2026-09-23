@@ -84,6 +84,18 @@ export interface SelectedCard {
   index: number;
 }
 
+/**
+ * A card to land on once its document is showing: opened from the palette
+ * or a query. The lens for `path` selects it, scrolls to it, and clears
+ * this. Transient; never saved.
+ */
+export interface Reveal {
+  path: string;
+  /** The block index when it was named; `id` finds the card if that has moved. */
+  index: number;
+  id?: string;
+}
+
 export const INSP_MIN = 220;
 export const INSP_MAX = 520;
 export const INSP_DEFAULT = 280;
@@ -119,6 +131,7 @@ export interface AppState {
   paletteOpen: boolean;
   tweaksOpen: boolean;
   selectedCard: SelectedCard | null;
+  reveal: Reveal | null;
   /** Where the intake places its next source: the folder it was opened from. */
   intakeDir: string;
   /** Every element over the vault, sorted, as of `queueAt`; the saved queries filter it. */
@@ -153,6 +166,7 @@ export const useApp = create<AppState>((set, get) => ({
   paletteOpen: false,
   tweaksOpen: false,
   selectedCard: null,
+  reveal: null,
   intakeDir: '',
   queue: [],
   queueAt: new Date(0),

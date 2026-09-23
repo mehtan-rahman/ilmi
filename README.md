@@ -37,6 +37,8 @@ F2 / dbl-click   rename                 right-click  new, rename, move to, delet
 ⌘,               tweaks: theme, accent, density (kept outside the vault)
 
 in a source      select, then e extract or m make a card; r start reading
+in a deck        j k move, ⌫ delete the selected card, m make a card;
+                 × on a row, or right-click, also deletes one
 in a deck        m make a card; × on a row, or right-click, delete one
 in the queue     j k move, ⏎ enter, o open one
 in a session     [ ] prev / next; space reveal, 1-4 grade; ⏎ read on or

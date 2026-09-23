@@ -53,7 +53,7 @@ function TabBar({ pane, index, canClosePane }: TabBarProps) {
 export function Canvas() {
   const panes = useApp((s) => s.panes);
   const setPanes = useApp((s) => s.setPanes);
-  const covered = useApp((s) => s.paletteOpen);
+  const covered = useApp((s) => s.paletteOpen || s.tweaksOpen);
   const onOpen = (path: string, opts: OpenOpts) => openNode(path, opts);
   return (
     <div className="canvas">

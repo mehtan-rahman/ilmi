@@ -77,7 +77,7 @@ export interface Inspector {
   open: boolean;
 }
 
-/** A card node selected in a reader, for the inspector's card editor. */
+/** A card selected in a reader or a deck, for the inspector's card editor. */
 export interface SelectedCard {
   path: string;
   /** Child index in the document's blocks. */

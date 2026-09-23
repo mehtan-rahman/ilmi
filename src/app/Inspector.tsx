@@ -85,8 +85,11 @@ function CardEditor({ path, index, card }: { path: string; index: number; card: 
     timer.current = setTimeout(() => {
       timer.current = null;
       if (!readsAsCard(next)) return;
+      // the card as this render knew it, not whatever slid into its index since
+      const same = (b: Block) => b.kind === 'card' && (card.id !== undefined ? b.id === card.id : b.text === card.text);
       currentVault()?.update(path, (doc) => {
-        const b = doc.blocks[index];
+        const at = doc.blocks[index];
+        const b = at && same(at) ? at : card.id !== undefined ? doc.blocks.find(same) : undefined;
         if (b?.kind === 'card' && b.text !== next) b.text = next;
       }).catch(console.error);
     }, 400);

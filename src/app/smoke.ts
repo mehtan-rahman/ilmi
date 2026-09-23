@@ -16,7 +16,9 @@
 // `ILMI_SMOKE=shots` walks every screen, pausing on each and logging
 // `shot: <name>` so a shell loop can take a screenshot of the window.
 // `ILMI_SMOKE=deck` opens the deck, deletes a card from its right-click
-// menu and another from the row's ×, and logs what left the disk.
+// menu and another from the row's ×, walks the rows with j k, edits the
+// selected card from the inspector, deletes it with backspace, and logs
+// what left the disk.
 
 import { info } from '@tauri-apps/plugin-log';
 import type { Vault } from '../vault/index.js';
@@ -453,6 +455,58 @@ export async function smokeDeck(vault: Vault): Promise<void> {
     after = await vault.read(DECK, true);
     log(`× delete: rows ${rows().length}; "${firstText.slice(0, 20)}" on disk ${after.text.includes(firstText.slice(0, 12))}; first row now "${rows()[0]?.querySelector('.cs-body')?.textContent?.slice(0, 24)}"; header "${view.querySelector('.meta .right')?.textContent}"; front-matter intact ${after.text.startsWith('---\ntype: deck\ntitle: german · A1\ndefault-card: bidir\n---\n')}`);
     await shot('deck-after');
+
+    // the keys: j k walk the rows, the inspector edits the selected card,
+    // backspace deletes it and the row after takes its place, a delete above
+    // the selection leaves it on its card, escape lets go
+    const srCount = (t: string) => t.split('\n').filter((l) => l.startsWith('<!-- sr')).length;
+    const srAfterId = (t: string, id: string) => { const lines = t.split('\n'); return lines[lines.findIndex((l) => l.endsWith(`^${id}`)) + 1] ?? ''; };
+    const selText = () => document.querySelector('.deck-view .card-span.selected .cs-body')?.textContent?.slice(0, 24);
+    const selCount = () => rows().filter((r) => r.classList.contains('selected')).length;
+    const editor = () => document.querySelector<HTMLTextAreaElement>('.insp .ce-field');
+    press('j');
+    await until(() => (rows()[0]?.classList.contains('selected') ? true : null));
+    press('j');
+    await until(() => (rows()[1]?.classList.contains('selected') ? true : null));
+    press('k');
+    await until(() => (rows()[0]?.classList.contains('selected') ? true : null));
+    const ta = await until(editor);
+    log(`keys: j j k → selected ${JSON.stringify(useApp.getState().selectedCard)} "${selText()}"; selected rows ${selCount()}; inspector editor "${ta.value.slice(0, 24)}"; strip "${document.querySelector('.bot')?.textContent}"`);
+
+    const cardId0 = (await vault.read(DECK)).doc.blocks.find((b) => b.kind === 'card')?.id ?? '';
+    const edited = `${ta.value}; edited`;
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(ta, edited);
+    ta.dispatchEvent(new Event('input', { bubbles: true }));
+    await until(() => (rows()[0]?.querySelector('.cs-body')?.textContent?.includes('edited') ? true : null));
+    await sleep(300);
+    after = await vault.read(DECK, true);
+    log(`inspector edit: row 0 "${rows()[0]?.querySelector('.cs-body')?.textContent?.slice(0, 44)}"; on disk ${after.text.includes(edited)}; sr line kept ${srAfterId(after.text, cardId0).startsWith('<!-- sr')}; still selected ${rows()[0]?.classList.contains('selected')}; diagnostics ${after.diagnostics.length}`);
+
+    press('j');
+    await until(() => (rows()[1]?.classList.contains('selected') ? true : null));
+    const gone = selText() ?? '';
+    const goneCard = (await vault.read(DECK)).doc.blocks.filter((b) => b.kind === 'card')[1]!;
+    const n0 = rows().length;
+    press('Backspace');
+    await until(() => (rows().length === n0 - 1 ? true : null));
+    await sleep(400);
+    after = await vault.read(DECK, true);
+    log(`backspace: rows ${n0} → ${rows().length}; "${gone}" on disk ${after.text.includes(goneCard.text)}; selected ${JSON.stringify(useApp.getState().selectedCard)} "${selText()}" took its place; selected rows ${selCount()}; log "${useApp.getState().log[0]}"`);
+
+    rows()[2]!.click();
+    await until(() => (rows()[2]?.classList.contains('selected') ? true : null));
+    const kept = selText();
+    const n1 = rows().length;
+    rows()[0]!.querySelector<HTMLElement>('.cs-del')!.click();
+    await until(() => (rows().length === n1 - 1 ? true : null));
+    await sleep(300);
+    log(`delete above: the selection stays on its card: "${kept}" → "${selText()}" at ${JSON.stringify(useApp.getState().selectedCard)}; rows ${rows().length}`);
+
+    press('Escape');
+    await until(() => (useApp.getState().selectedCard === null ? true : null));
+    log(`escape: selected ${JSON.stringify(useApp.getState().selectedCard)}; selected rows ${selCount()}; inspector editor ${editor() ? 'still up' : 'gone'}`);
+    after = await vault.read(DECK, true);
+    await shot('deck-keys');
 
     log(`done; vault ${vault.root}`);
   } catch (e) {

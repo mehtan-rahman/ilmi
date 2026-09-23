@@ -382,6 +382,7 @@
   column-gap: 12px;
 }
 .deck-view .card-span[data-menu="1"] { background: var(--line-3); }
+.deck-view .card-span.selected { outline: none; background: var(--line-3); }
 .deck-view .card-span .cs-del {
   appearance: none;
   border: 0;

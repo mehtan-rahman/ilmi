@@ -16,6 +16,7 @@ describe('key hints', () => {
     expect(hintsFor({ kind: 'session', el: 'write', scope: null, canEnrol: false })[0]).toEqual(['⏎', 'worked on it']);
     expect(keys(hintsFor({ kind: 'source', el: null, scope: null, canEnrol: true }))).toContain('r');
     expect(keys(hintsFor({ kind: 'source', el: null, scope: null, canEnrol: false }))).not.toContain('r');
+    expect(keys(hintsFor({ kind: 'deck', el: null, scope: null, canEnrol: false }))).toEqual(['j k', '⌫', 'm', '⌘k']);
     expect(keys(hintsFor({ kind: 'intake', el: null, scope: null, canEnrol: false }))).toEqual(['⌘v']);
     expect(keys(hintsFor({ kind: undefined, el: null, scope: null, canEnrol: false }))).toEqual(['⌘k', '⌘\\']);
   });

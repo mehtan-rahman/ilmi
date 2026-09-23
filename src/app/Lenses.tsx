@@ -1,7 +1,7 @@
 // Lenses: what a tab renders for a folder or a document, or the intake.
 // Folders and decks are lists; sources, extracts, and drafts open in the reader.
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { cardFields, meta, type Card, type ClozePart, type Doc } from '../format/index.js';
 import type { TreeNode } from '../vault/index.js';
 import { Composer } from './Composer.js';
@@ -107,16 +107,57 @@ function cardsOf(doc: Doc | undefined): [Card, number][] {
 function DeckLens({ id, active }: { id: string; active: boolean }) {
   const docs = useApp((s) => s.docs);
   const root = useApp((s) => s.vault);
+  const selected = useApp((s) => s.selectedCard);
   const loaded = useDoc(id);
   const info = docs[id];
   const [composer, setComposer] = useState(false);
   const [menu, setMenu] = useState<CardMenu | null>(null);
-  const cards = cardsOf(loaded?.doc);
+  const rows = useRef(new Map<number, HTMLDivElement>());
+  const byKey = useRef(false);
+  const cards = useMemo(() => cardsOf(loaded?.doc), [loaded]);
 
-  const remove = (index: number, b: { id?: string | undefined; text: string }) => {
+  // the selected row, by block index, when the selection is this deck's;
+  // the inspector shows its editor and schedule
+  const sel = selected?.path === id ? selected.index : null;
+  const select = (index: number | null) => useApp.setState({ selectedCard: index === null ? null : { path: id, index } });
+
+  // the selection goes with the lens, or when the document changes so that
+  // the index no longer names a card; a rewrite that keeps a card there keeps it
+  useEffect(() => () => {
+    if (useApp.getState().selectedCard?.path === id) useApp.setState({ selectedCard: null });
+  }, [id]);
+  useEffect(() => {
+    const cur = useApp.getState().selectedCard;
+    if (cur?.path === id && loaded && loaded.doc.blocks[cur.index]?.kind !== 'card') useApp.setState({ selectedCard: null });
+  }, [loaded, id]);
+
+  // a row moved to by key comes into view
+  useEffect(() => {
+    if (!byKey.current || sel === null) return;
+    byKey.current = false;
+    rows.current.get(sel)?.scrollIntoView({ block: 'nearest' });
+  }, [sel]);
+
+  // `op` takes the card at `index` out of this deck; when it was the selected
+  // one, the row that takes its place is selected next, and a selection below
+  // it follows its card up one block
+  const takeOut = async (index: number, op: () => Promise<void>) => {
     setMenu(null);
-    removeCard(id, index, b.id, b.text).catch(console.error);
+    const pos = cards.findIndex(([, i]) => i === index);
+    const was = sel === index;
+    const below = sel !== null && sel > index;
+    try {
+      await op();
+      if (below) select(sel - 1);
+      if (!was) return;
+      const after = cardsOf((await currentVault()?.read(id))?.doc);
+      const row = after[Math.min(pos, after.length - 1)];
+      select(row ? row[1] : null);
+    } catch (e) {
+      console.error(e);
+    }
   };
+  const remove = (index: number, b: { id?: string | undefined; text: string }) => takeOut(index, () => removeCard(id, index, b.id, b.text));
 
   // the menu closes on any outside press or escape
   useEffect(() => {
@@ -131,16 +172,23 @@ function DeckLens({ id, active }: { id: string; active: boolean }) {
     };
   }, [menu]);
 
-  // `m` opens the composer; a deck has no prose to select first
+  // keys: j k move through the rows, backspace deletes the selected one,
+  // escape clears; `m` opens the composer, a deck has no prose to select first
   useEffect(() => {
     if (!active || composer) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey || inField(e.target)) return;
+      const at = sel === null ? -1 : cards.findIndex(([, i]) => i === sel);
+      const to = (pos: number) => { const row = cards[pos]; if (row) { byKey.current = true; select(row[1]); } };
       if (e.key === 'm') { e.preventDefault(); setComposer(true); }
+      else if (e.key === 'j' || e.key === 'ArrowDown') { e.preventDefault(); to(at < 0 ? 0 : Math.min(cards.length - 1, at + 1)); }
+      else if (e.key === 'k' || e.key === 'ArrowUp') { e.preventDefault(); to(at < 0 ? 0 : Math.max(0, at - 1)); }
+      else if ((e.key === 'Backspace' || e.key === 'Delete') && at >= 0) { e.preventDefault(); const [b, i] = cards[at]!; void remove(i, b); }
+      else if (e.key === 'Escape' && sel !== null && !menu) { e.preventDefault(); select(null); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [active, composer]);
+  }, [active, composer, cards, sel, menu]);
 
   if (!loaded || !info) return <Gone />;
   const save = (text: string, again: boolean) => {
@@ -163,9 +211,11 @@ function DeckLens({ id, active }: { id: string; active: boolean }) {
         {cards.length === 0 ? (!composer && <div className="empty">no cards</div>) : cards.map(([b, i]) => (
           <div
             key={b.id ?? i}
-            className="card-span"
+            ref={(el) => { if (el) rows.current.set(i, el); else rows.current.delete(i); }}
+            className={sel === i ? 'card-span selected' : 'card-span'}
             data-menu={menu?.index === i ? '1' : '0'}
-            onContextMenu={(e) => { e.preventDefault(); setMenu({ x: e.clientX, y: e.clientY, index: i, id: b.id, text: b.text }); }}
+            onClick={() => select(i)}
+            onContextMenu={(e) => { e.preventDefault(); select(i); setMenu({ x: e.clientX, y: e.clientY, index: i, id: b.id, text: b.text }); }}
           >
             <CardText text={b.text} />
             <button type="button" className="cs-del" title="delete card" aria-label="delete card" onClick={(e) => { e.stopPropagation(); void remove(i, b); }}>×</button>

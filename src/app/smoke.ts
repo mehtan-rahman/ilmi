@@ -18,11 +18,12 @@
 // `ILMI_SMOKE=deck` opens the deck, deletes a card from its right-click
 // menu and another from the row's ×, walks the rows with j k, edits the
 // selected card from the inspector, deletes it with backspace, resets one
-// from the inspector, and logs what left the disk.
+// from the inspector, moves one to a new deck through the menu's "move to…",
+// and logs what left the disk.
 
 import { info } from '@tauri-apps/plugin-log';
 import type { Vault } from '../vault/index.js';
-import { SESSION, queueId } from './names.js';
+import { GLYPH, SESSION, queueId, titleOf } from './names.js';
 import { useApp } from './store.js';
 import { createNode, moveNode, openIntake, openNode, removeNode, renameNode, setInspector } from './vault.js';
 
@@ -524,6 +525,36 @@ export async function smokeDeck(vault: Vault): Promise<void> {
     after = await vault.read(DECK, true);
     log(`reset: schedule block "${schedBlock()?.textContent}"; reset button gone ${!resetBtn()}; sr lines ${srBefore} → ${srCount(after.text)}; line after ^${rowId} now "${srAfterId(after.text, rowId)}"; still selected ${rows()[0]?.classList.contains('selected')} ${JSON.stringify(useApp.getState().selectedCard)}; rows ${rows().length}; log "${useApp.getState().log[0]}"; diagnostics ${after.diagnostics.length}`);
     await shot('deck-reset');
+
+    // a second deck, then the second row moved to it from the menu's "move to…"
+    const dest = await createNode('', 'deck');
+    await until(() => (useApp.getState().docs[dest]?.type === 'deck' ? true : null));
+    const destTitle = titleOf(dest, useApp.getState().docs, vault.root);
+    const rowsHere = rows().length;
+    const mover = rows()[1]!;
+    // the card's text as written, not the row's rendering: the row shows ⇄ where the file has :::
+    const moverCard = (await vault.read(DECK)).doc.blocks.filter((b) => b.kind === 'card')[1];
+    const moverText = moverCard?.text ?? '';
+    const moverId = moverCard?.id ?? '';
+    const srLine = srAfterId((await vault.read(DECK)).text, moverId);
+    const mr = mover.getBoundingClientRect();
+    mover.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: mr.left + 80, clientY: mr.top + mr.height / 2 }));
+    const menu2 = await until(() => view.querySelector<HTMLElement>('.ctx-menu'));
+    log(`move: dest ${dest} "${destTitle}"; menu: ${Array.from(menu2.querySelectorAll('.ci')).map((b) => b.textContent).join(' | ')}; selected ${JSON.stringify(useApp.getState().selectedCard)}`);
+    menu2.querySelector<HTMLElement>('.ci.has-sub')!.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+    const sub = await until(() => menu2.querySelector<HTMLElement>('.sub-scroll'));
+    const items = Array.from(sub.querySelectorAll<HTMLElement>('.ci'));
+    log(`move: submenu: ${items.map((b) => b.textContent).join(' | ')}; back "${menu2.querySelector('.ci.back')?.textContent}"`);
+    const pick = items.find((b) => b.textContent === `${GLYPH.deck}${destTitle}`) ?? items[0]!;
+    await shot('deck-move-menu');
+    pick.click();
+    await until(() => (rows().length === rowsHere - 1 ? true : null));
+    await sleep(500);
+    after = await vault.read(DECK, true);
+    const there = await vault.read(dest, true);
+    const destCards = there.doc.blocks.filter((b) => b.kind === 'card');
+    log(`move: rows ${rowsHere} → ${rows().length}; menu gone ${!view.querySelector('.ctx-menu')}; "${moverText.slice(0, 20)}" here ${after.text.includes(moverText.slice(0, 12))}, there ${there.text.includes(moverText.slice(0, 12))}; ^${moverId} here ${after.text.includes(`^${moverId}`)}, there ${there.text.includes(`^${moverId}`)}; sr line "${srLine.slice(0, 24)}" here ${after.text.includes(srLine)}, there ${there.text.includes(srLine)}; dest cards ${destCards.length}, last block ${there.doc.blocks[there.doc.blocks.length - 1]?.kind}; selected ${JSON.stringify(useApp.getState().selectedCard)}; log "${useApp.getState().log[0]}"; diagnostics ${after.diagnostics.length} ${there.diagnostics.length}`);
+    await shot('deck-moved');
 
     log(`done; vault ${vault.root}`);
   } catch (e) {

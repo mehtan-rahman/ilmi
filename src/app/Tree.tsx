@@ -34,7 +34,7 @@ const NEW_KINDS: [NodeKind, string][] = [
   ['draft', 'new draft'],
 ];
 
-const MENU_W = 190;
+export const MENU_W = 190;
 
 const clickOpts = (e: MouseEvent): OpenOpts => ({ cmdClick: e.metaKey || e.ctrlKey, shiftClick: e.shiftKey });
 const inField = (t: EventTarget | null) => {

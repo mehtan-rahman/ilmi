@@ -327,6 +327,14 @@ export async function resetCard(path: string, index: number, id?: string, text?:
   note('reset · card');
 }
 
+/** Move one card to another document; its schedule goes with it, and a selection on it clears. */
+export async function moveCard(from: string, index: number, to: string, id?: string, text?: string): Promise<void> {
+  await need().moveCard(from, index, to, id, text);
+  const sel = useApp.getState().selectedCard;
+  if (sel && sel.path === from && sel.index === index) useApp.setState({ selectedCard: null });
+  note('moved · card');
+}
+
 /** A frozen, unread source from imported text in `dir`; the folder opens so the new row is visible. Resolves to its path. */
 export async function importNode(dir: string, spec: ImportSpec): Promise<string> {
   const path = await need().importDoc(dir, spec);

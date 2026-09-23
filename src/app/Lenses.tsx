@@ -11,9 +11,10 @@ import type { OpenOpts } from './panes.js';
 import { Queue } from './Queue.js';
 import { Reader } from './Reader.js';
 import { Session } from './Session.js';
-import { useApp } from './store.js';
+import { useApp, type DocInfo } from './store.js';
+import { MENU_W } from './Tree.js';
 import { useDoc } from './useDoc.js';
-import { createNode, currentVault, removeCard } from './vault.js';
+import { createNode, currentVault, moveCard, removeCard } from './vault.js';
 
 interface LensProps {
   id: string;
@@ -94,8 +95,15 @@ function FolderLens({ id, onOpen }: LensProps) {
 
 // ── deck ─────────────────────────────────────────────────────────
 
-/** A right-click on a card row: where, and which block (its id and text name it if the index goes stale). */
-interface CardMenu { x: number; y: number; index: number; id: string | undefined; text: string }
+/** A right-click on a card row: where, which block (its id and text name it if the index goes stale), and whether the "move to…" list is showing. */
+interface CardMenu { x: number; y: number; index: number; id: string | undefined; text: string; sub: boolean }
+
+/** Every other deck a card could move to, by title. */
+function otherDecks(docs: Record<string, DocInfo>, self: string, root: string | null): string[] {
+  return Object.keys(docs)
+    .filter((p) => p !== self && docs[p]?.type === 'deck')
+    .sort((a, b) => titleOf(a, docs, root).localeCompare(titleOf(b, docs, root)));
+}
 
 /** The card blocks of a document, each with its index among the blocks. */
 function cardsOf(doc: Doc | undefined): [Card, number][] {
@@ -158,6 +166,9 @@ function DeckLens({ id, active }: { id: string; active: boolean }) {
     }
   };
   const remove = (index: number, b: { id?: string | undefined; text: string }) => takeOut(index, () => removeCard(id, index, b.id, b.text));
+  const move = (index: number, b: { id?: string | undefined; text: string }, to: string) => takeOut(index, () => moveCard(id, index, to, b.id, b.text));
+  const targets = menu ? otherDecks(docs, id, root) : [];
+  const showSub = (sub: boolean) => setMenu((m) => (m ? { ...m, sub } : m));
 
   // the menu closes on any outside press or escape
   useEffect(() => {
@@ -215,7 +226,7 @@ function DeckLens({ id, active }: { id: string; active: boolean }) {
             className={sel === i ? 'card-span selected' : 'card-span'}
             data-menu={menu?.index === i ? '1' : '0'}
             onClick={() => select(i)}
-            onContextMenu={(e) => { e.preventDefault(); select(i); setMenu({ x: e.clientX, y: e.clientY, index: i, id: b.id, text: b.text }); }}
+            onContextMenu={(e) => { e.preventDefault(); select(i); setMenu({ x: Math.min(e.clientX, window.innerWidth - MENU_W), y: e.clientY, index: i, id: b.id, text: b.text, sub: false }); }}
           >
             <CardText text={b.text} />
             <button type="button" className="cs-del" title="delete card" aria-label="delete card" onClick={(e) => { e.stopPropagation(); void remove(i, b); }}>×</button>
@@ -228,9 +239,35 @@ function DeckLens({ id, active }: { id: string; active: boolean }) {
             onMouseDown={(e) => e.stopPropagation()}
             onContextMenu={(e) => e.preventDefault()}
           >
-            <div className="ci danger" onClick={() => void remove(menu.index, menu)}>
-              <span className="cg">⌫</span>delete card
-            </div>
+            {!menu.sub ? (
+              <>
+                {targets.length > 0 && (
+                  <>
+                    <div className="ci has-sub" onMouseEnter={() => showSub(true)}>
+                      <span className="cg">→</span>move to…<span className="ck">▸</span>
+                    </div>
+                    <div className="cd" />
+                  </>
+                )}
+                <div className="ci danger" onClick={() => void remove(menu.index, menu)}>
+                  <span className="cg">⌫</span>delete card
+                </div>
+              </>
+            ) : (
+              <div className="sub-wrap" onMouseLeave={() => showSub(false)}>
+                <div className="ci back" onClick={(e) => { e.stopPropagation(); showSub(false); }}>
+                  <span className="cg">◂</span>move to…
+                </div>
+                <div className="cd" />
+                <div className="sub-scroll">
+                  {targets.map((p) => (
+                    <div key={p} className="ci" onClick={() => void move(menu.index, menu, p)}>
+                      <span className="cg">{GLYPH.deck}</span>{titleOf(p, docs, root)}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

@@ -8,7 +8,7 @@ was verified, what was not, and the prompt to resume with.
 
 ## 2026-09-23 — fsrs checked against ts-fsrs by simulation; full precision on disk
 
-Commit `TBD` — *schedule: store stability and difficulty at full precision;
+Commit `c7d8fcb` — *schedule: store stability and difficulty at full precision;
 a simulation holds every step to ts-fsrs*.
 
 ### Done

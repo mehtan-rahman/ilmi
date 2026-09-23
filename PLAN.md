@@ -381,7 +381,7 @@ session with the keys, and logs each element's write. Rust untouched.
   and the queue empties to one quiet line.
 
 ### [x] 9. Chrome and polish
-Done 2026-09-22, commit `TBD`.
+Done 2026-09-22, commit `2a99c0e`.
 Notes: the shell grid from `tokens.css` is in use (the two-column override
 in `app.css` is gone): `TopStrip.tsx` (vault name, the palette button `⌕
 ⌘k`, `N due`, the day, the inspector toggle), `BottomStrip.tsx` (real key

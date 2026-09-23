@@ -8,7 +8,7 @@ was verified, what was not, and the prompt to resume with.
 
 ## 2026-09-22 — milestone 9: chrome and polish
 
-Commit `TBD` — *chrome: the strips, the inspector with its card editor,
+Commit `2a99c0e` — *chrome: the strips, the inspector with its card editor,
 the palette, the keyboard router, the tweaks, and the loop end to end*.
 
 ### Done

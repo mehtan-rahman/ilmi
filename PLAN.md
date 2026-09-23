@@ -324,7 +324,7 @@ Dev: `ILMI_SMOKE=intake` takes the sample, places it, then pastes
 - Done when: the prototype's intake sample imports and opens in the reader.
 
 ### [x] 8. Queue and review session
-Done 2026-09-22, commit `TBD`.
+Done 2026-09-22, commit `fc62c94`.
 Notes: the queue lives in the store: `src/app/vault.ts` keeps every
 document's parsed form in a `bodies` map and publishes `queue` (all
 items, sorted, `queueItems` over the map) and `queueAt` on every publish,

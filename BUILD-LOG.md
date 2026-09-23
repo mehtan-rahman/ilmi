@@ -8,7 +8,7 @@ was verified, what was not, and the prompt to resume with.
 
 ## 2026-09-22 — milestone 8: queue and review session
 
-Commit `TBD` — *queue: the saved queries, the session over them, cards
+Commit `fc62c94` — *queue: the saved queries, the session over them, cards
 graded, topics read on, drafts worked on, every result on disk*.
 
 ### Done

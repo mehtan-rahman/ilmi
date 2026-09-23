@@ -107,8 +107,11 @@ the palette, the keyboard router, the tweaks, and the loop end to end*.
   tweaks' persistence across a relaunch (the write path is the same
   `localStorage` call; no relaunch was done).
 - The card editor while the reader is mid-edit on the same document.
-- The look of the folder lens and the read-marker screenshot beside the
-  bar were not re-read after the dialog.
+- (Closed 2026-09-23: with screen recording allowed, `ILMI_SMOKE=shots`
+  was run again and all fifteen captures came back clean; the reader,
+  the card under review, the writing element with its bar, the palette,
+  the composer, e-ink, the folder lens, and the draft were re-read and
+  hold up.)
 
 ### Decisions worth knowing
 

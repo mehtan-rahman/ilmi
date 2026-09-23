@@ -62,11 +62,14 @@ describe('grade', () => {
     expect('last_review' in toFsrs(undefined, NOW)).toBe(false);
   });
 
-  it('grades a review card good: one day-due line, two decimals, last set to now', () => {
-    expect(grade(review, 3, NOW)).toEqual({
-      due: '2026-07-11', state: 'review', stability: 44.92, difficulty: 3.79, reps: 10, lapses: 0, ivl: 45,
+  it('grades a review card good: one day-due line, full precision, last set to now', () => {
+    const next = grade(review, 3, NOW);
+    expect(next).toEqual({
+      due: '2026-07-11', state: 'review', stability: expect.closeTo(44.92, 2), difficulty: expect.closeTo(3.79, 2), reps: 10, lapses: 0, ivl: 45,
       last: '2026-05-27T12:00:00Z', grade: 3,
     });
+    // stored as written: the shortest decimal that reads back to the same number
+    expect(Number(String(next.stability))).toBe(next.stability);
   });
 
   it('grades a review card again: relearning, a lapse, due in minutes as an instant', () => {
@@ -77,7 +80,7 @@ describe('grade', () => {
 
   it('grades a new card through the learning steps', () => {
     const good = grade(undefined, 3, NOW);
-    expect(good).toMatchObject({ state: 'learning', steps: 1, ivl: 0, reps: 1, due: '2026-05-27T12:10:00Z', stability: 2.31, difficulty: 2.12 });
+    expect(good).toMatchObject({ state: 'learning', steps: 1, ivl: 0, reps: 1, due: '2026-05-27T12:10:00Z', stability: expect.closeTo(2.31, 2), difficulty: expect.closeTo(2.12, 2) });
     const easy = grade(undefined, 4, NOW);
     expect(easy).toMatchObject({ state: 'review', ivl: 8, due: addDays(TODAY, 8) });
     expect(easy.steps).toBeUndefined();
@@ -245,7 +248,7 @@ describe('queue over the sample vault', () => {
     expect(lb.length).toBe(la.length);
     const changed = la.flatMap((line, i) => (line === lb[i] ? [] : [i + 1]));
     expect(changed).toEqual([15]);
-    expect(lb[14]).toBe('<!-- sr due=2026-07-11 st=review s=44.92 d=3.79 r=10 l=0 ivl=45 last=2026-05-27T12:00:00Z g=3 -->');
+    expect(lb[14]).toMatch(/^<!-- sr due=2026-07-11 st=review s=44\.9\d* d=3\.79\d* r=10 l=0 ivl=45 last=2026-05-27T12:00:00Z g=3 -->$/);
   });
 
   it('grading one blank of a multi-blank cloze rewrites only its line', async () => {
@@ -274,7 +277,7 @@ describe('queue over the sample vault', () => {
     expect(lb.length).toBe(la.length + 1);
     expect(lb[11]).toBe('where there is no {{pleasure}} in the reading there is, reliably, no {{c1::learning}} either ^cmar-pleasure');
     expect(lb[12]).toBe(la[12]);
-    expect(lb[13]).toBe('<!-- sr c1 due=2026-06-29 st=review s=32.8 d=3.59 r=7 l=0 ivl=33 last=2026-05-27T12:00:00Z g=3 -->');
+    expect(lb[13]).toMatch(/^<!-- sr c1 due=2026-06-29 st=review s=32\.\d+ d=3\.5\d* r=7 l=0 ivl=33 last=2026-05-27T12:00:00Z g=3 -->$/);
     expect(lb.slice(14)).toEqual(la.slice(13));
     const all = await queue(vault, NOW);
     expect(cardItem(all, 'cmar-pleasure', { blank: 0 }).due).toBe('2026-06-12');

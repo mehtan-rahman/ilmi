@@ -320,8 +320,9 @@ Value types:
 - **instant** `YYYY-MM-DDTHH:MM:SSZ`, always UTC. `HH:MMZ` is read and
   normalized to include seconds.
 - **number** `-?\d+(\.\d+)?([eE][-+]?\d+)?`, written as JavaScript's shortest
-  round-trip decimal (`11.80` becomes `11.8`). The app rounds scheduler output
-  to two decimals before storing; the format does not care.
+  round-trip decimal (`11.80` becomes `11.8`). The app stores scheduler output
+  at that full precision, so a card read back is exactly the card ts-fsrs
+  computed; the format does not care.
 - **int** a number with no fractional part.
 - **bool** `true`/`false`, also read as `yes`/`no`/`1`/`0`.
 

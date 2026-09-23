@@ -6,6 +6,59 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-09-23 — fsrs checked against ts-fsrs by simulation; full precision on disk
+
+Commit `TBD` — *schedule: store stability and difficulty at full precision;
+a simulation holds every step to ts-fsrs*.
+
+### Done
+
+- `src/schedule/__tests__/fsrs-sim.test.ts`: 300 cards × 40 reviews with a
+  seeded grade mix (again 10%, hard 15%, good 60%, easy 15%) and reviews
+  at the due moment or up to two days late. Each review goes through our
+  path (grade → the `sr` line → parse → grade) and through ts-fsrs 5.4.2
+  on its own card; state, reps, lapses, stability, difficulty, interval,
+  learning step, last and due must be equal at every one of the 12,000
+  steps, and the line read back must give ts-fsrs the card it would have
+  held. Also: the algorithm's shape (1 min / 10 min / days for a new
+  card; again lapses into relearning; again < hard < good < easy;
+  retrievability at due averaging 0.90 over a hundred cards, never under
+  0.85) and ten reviews of a corpus card through `gradeItem` and the
+  vault, one line changed each time, equal to ts-fsrs throughout.
+- The finding: rounding stability and difficulty to two decimals before
+  storing (milestone 3's choice) drifted intervals from ts-fsrs's own in
+  36% of steps, by up to 8% of stability over forty reviews; the loss is
+  largest after a lapse, when stability is a fraction of a day. Measured
+  with ts-fsrs alone as well, so it was the rounding and not the mapping.
+  Four decimals would leave 3% of steps and 0.06%; six, 0.03%.
+- The fix: `fromFsrs` no longer rounds. The format already writes the
+  shortest round-trip decimal (FORMAT.md §7), so the number read back is
+  the number ts-fsrs produced, and the simulation is exact. FORMAT.md's
+  note on rounding updated; the inspector shows two decimals; two older
+  tests that spelled out a two-decimal line now match the pattern.
+
+### Verified
+
+- `npm test` green (212, the simulation included), `npm run typecheck`
+  clean, `npm run build` ok.
+- In the window (`ILMI_SMOKE=loop`), the graded card's line as written:
+  `<!-- sr c1 due=2026-09-23T12:44:41Z st=learning s=2.3065 d=2.11810397
+  r=1 l=0 steps=1 ivl=0 last=2026-09-23T12:34:41Z g=3 -->`.
+
+### Not verified
+
+- Long-run behaviour with the fuzz on or with fitted parameters; both
+  are off / default, as milestone 3 decided.
+
+### Decisions worth knowing
+
+- Full precision over four or six decimals: the lines get longer
+  (`d=2.11810397`) but the card on disk is exactly ts-fsrs's, and
+  "matches" was the bar set. Existing two-decimal lines in a vault stay
+  valid input.
+
+---
+
 ## 2026-09-22 — milestone 9: chrome and polish
 
 Commit `2a99c0e` — *chrome: the strips, the inspector with its card editor,

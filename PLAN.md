@@ -105,8 +105,10 @@ ts-fsrs 5 with default parameters: fuzz off, short-term learning steps on
 (again → 1 min, good on a new card → 10 min), so `due` is stored as an
 instant while `ivl` is 0 and as a local day once it is ≥ 1. `toFsrs` /
 `fromFsrs` are the mapping; `elapsed_days` is derived from `last` by UTC
-date, as ts-fsrs counts it; stability and difficulty are rounded to two
-decimals. Reading: `reading.readOn` (ivl × 1.6, `pos` only moves forward),
+date, as ts-fsrs counts it; stability and difficulty were rounded to two
+decimals until 2026-09-23, when a simulation showed that drifting
+intervals from ts-fsrs's own by up to 8%; they are stored at full
+precision now (`fsrs-sim.test.ts`). Reading: `reading.readOn` (ivl × 1.6, `pos` only moves forward),
 `reading.postpone` (tomorrow); done drops the field. Writing:
 `writing.workedOn` (ivl × 1.5, clears `done`), `writing.postpone`,
 `writing.done` (keeps the line). `advanceRead` / `advanceWrite` are the

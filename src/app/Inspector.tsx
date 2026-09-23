@@ -244,8 +244,8 @@ function CardBlock({ path, index, doc, group, now }: { path: string; index: numb
           <KV rows={[
             ['reviews', sched.reps ?? 0],
             ['lapses', sched.lapses ?? 0],
-            ['stability', sched.stability !== undefined ? `${sched.stability} d` : ''],
-            ['difficulty', sched.difficulty ?? ''],
+            ['stability', sched.stability !== undefined ? `${sched.stability.toFixed(2)} d` : ''],
+            ['difficulty', sched.difficulty !== undefined ? sched.difficulty.toFixed(2) : ''],
             ['due', <>{dueLabel(sched.due, now)} {sched.due && <span className="dim">{sched.due}</span>}</>],
             ['last', sched.last ? sched.last.slice(0, 10) : 'never'],
           ]} />

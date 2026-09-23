@@ -1,4 +1,4 @@
-import { promises as fsp } from 'node:fs';
+import { promises as fsp, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -9,6 +9,7 @@ import { Vault, VaultConflict, documents, walk, type TreeNode, type VaultEvent }
 
 const CORPUS = fileURLToPath(new URL('../../format/__tests__/corpus/vault/', import.meta.url));
 const WOZ = 'papers/wozniak-1990.md';
+const DECK = 'german.md';
 
 let root: string;
 let vault: Vault;
@@ -117,6 +118,178 @@ describe('write', () => {
       '<!-- sr due=2026-07-04 st=review s=22 d=3.8 r=9 l=0 ivl=22 last=2026-05-19T08:00:00Z g=3 -->',
     );
     expect(after.endsWith('\n')).toBe(true);
+  });
+
+  it('removes one card with its id and schedule, nothing else', async () => {
+    const before = (await readDisk(DECK)).split('\n');
+    const { doc } = await vault.read(DECK);
+    const n = doc.blocks.filter((b) => b.kind === 'card').length;
+    const i = doc.blocks.findIndex((b) => b.kind === 'card' && b.id === 'cv-gedacht');
+    const written = await vault.removeCard(DECK, i, 'cv-gedacht');
+    expect(written.doc.blocks.filter((b) => b.kind === 'card')).toHaveLength(n - 1);
+    expect(written.doc.blocks.some((b) => b.kind === 'card' && b.id === 'cv-gedacht')).toBe(false);
+    const after = await readDisk(DECK);
+    expect(after).not.toContain('cv-gedacht');
+    expect(after.split('\n')).toEqual(before.filter((l) => !l.includes('das Gedächtnis') && !l.includes('s=14 d=3.4')).filter((l, k, a) => !(l === '' && a[k - 1] === '')));
+  });
+
+  it('finds a moved card by id, and refuses a card that is not there', async () => {
+    await vault.removeCard(DECK, 0, 'cv-gedacht');
+    const { doc } = await vault.read(DECK);
+    expect(doc.blocks.some((b) => b.kind === 'card' && b.id === 'cv-gedacht')).toBe(false);
+    await expect(vault.removeCard(DECK, 0, 'cv-gedacht')).rejects.toThrow(/no such card/);
+    await expect(vault.removeCard(DECK, 999)).rejects.toThrow(/no such card/);
+  });
+
+  it('finds an id-less card by its text when another card slid into its index', async () => {
+    const text = 'ein Wort ohne Karte ::: a word without a card';
+    const { doc } = await vault.read(DECK);
+    const i = doc.blocks.findIndex((b) => b.kind === 'card' && b.text === text);
+    expect(doc.blocks[i]).toEqual({ kind: 'card', text });
+    // a card is added above it on disk before the vault hears of it
+    const disk = await readDisk(DECK);
+    await fsp.writeFile(join(root, DECK), disk.replace('vergessen ::: to forget ^', 'neu ::: new\n\nvergessen ::: to forget ^'));
+    await expect(vault.removeCard(DECK, i, undefined, 'nothing like it')).rejects.toThrow(/no such card/);
+    const written = await vault.removeCard(DECK, i, undefined, text);
+    expect(written.doc.blocks.some((b) => b.kind === 'card' && b.text === text)).toBe(false);
+    expect(written.doc.blocks.some((b) => b.kind === 'card' && b.id === 'cv-cloze')).toBe(true);
+    expect((await readDisk(DECK)).split('\n')).toEqual(disk.replace('vergessen ::: to forget ^', 'neu ::: new\n\nvergessen ::: to forget ^').split('\n').filter((l) => l !== text).slice(0, -1));
+  });
+
+  it('resets one card by dropping its sr line and nothing else', async () => {
+    const before = (await readDisk(DECK)).split('\n');
+    const { doc } = await vault.read(DECK);
+    const i = doc.blocks.findIndex((b) => b.kind === 'card' && b.id === 'cv-gedacht');
+    const written = await vault.resetCard(DECK, i, 'cv-gedacht');
+    const card = written.doc.blocks[i];
+    expect(card).toEqual({ kind: 'card', text: 'das Gedächtnis ::: memory', id: 'cv-gedacht' });
+    // line 14 is the card's schedule; every other line stays put
+    expect((await readDisk(DECK)).split('\n')).toEqual(before.filter((_, k) => k !== 13));
+    // a second reset changes nothing and still resolves
+    const again = await vault.resetCard(DECK, i, 'cv-gedacht');
+    expect(again.text).toBe(written.text);
+  });
+
+  it('resets a cloze card with per-blank schedules', async () => {
+    const before = (await readDisk(WOZ)).split('\n');
+    const { doc } = await vault.read(WOZ);
+    const i = doc.blocks.findIndex((b) => b.kind === 'card' && b.id === 'cw2-min');
+    expect(doc.blocks[i]).toHaveProperty('blanks');
+    const written = await vault.resetCard(WOZ, i, 'cw2-min');
+    const card = written.doc.blocks[i];
+    expect(card?.kind).toBe('card');
+    expect(card).not.toHaveProperty('sched');
+    expect(card).not.toHaveProperty('blanks');
+    expect(card).toHaveProperty('id', 'cw2-min');
+    // lines 24 and 25 are the c1 and c2 schedules
+    expect((await readDisk(WOZ)).split('\n')).toEqual(before.filter((_, k) => k !== 23 && k !== 24));
+  });
+
+  it('moves a card to the end of another document with its schedule', async () => {
+    const events: VaultEvent[] = [];
+    vault.subscribe((ev) => events.push(ev));
+    const srcBefore = (await readDisk(DECK)).split('\n');
+    const destBefore = (await readDisk(WOZ)).split('\n');
+    const { doc } = await vault.read(DECK);
+    const i = doc.blocks.findIndex((b) => b.kind === 'card' && b.id === 'cv-vergessen');
+    const card = doc.blocks[i];
+    const dest = await vault.moveCard(DECK, i, WOZ, 'cv-vergessen');
+    expect(dest.path).toBe(WOZ);
+    expect(dest.doc.blocks[dest.doc.blocks.length - 1]).toEqual(card);
+    // the card's two lines and the blank after them leave the source
+    expect((await readDisk(DECK)).split('\n')).toEqual(srcBefore.filter((_, k) => k < 15 || k > 17));
+    // and land after a blank line at the end of the destination
+    expect((await readDisk(WOZ)).split('\n')).toEqual([...destBefore.slice(0, -1), '', srcBefore[15], srcBefore[16], '']);
+    // destination first, then source, each through the normal event
+    expect(events.map((e) => e.kind === 'doc' && e.path)).toEqual([WOZ, DECK]);
+    expect(await vault.read(WOZ)).toBe(dest);
+  });
+
+  it('moves a card without its extract backrefs', async () => {
+    await vault.update(WOZ, (doc) => {
+      const card = firstScheduledCard(doc.blocks);
+      card.extracts = ['woz-ex1'];
+    });
+    const { doc } = await vault.read(WOZ);
+    const i = doc.blocks.findIndex((b) => b.kind === 'card' && b.id === 'cw1-paths');
+    expect(doc.blocks[i]).toHaveProperty('extracts', ['woz-ex1']);
+    const woz = (await readDisk(WOZ)).split('\n');
+    const k = woz.findIndex((l) => l.endsWith('^cw1-paths'));
+    expect(woz.slice(k + 1, k + 4).map((l) => l.slice(0, 12))).toEqual(['<!-- sr due=', '<!-- extract', '']);
+    const dest = await vault.moveCard(WOZ, i, DECK, 'cw1-paths');
+    const moved = dest.doc.blocks[dest.doc.blocks.length - 1];
+    expect(moved).toMatchObject({ kind: 'card', id: 'cw1-paths' });
+    expect(moved).toHaveProperty('sched');
+    expect(moved).not.toHaveProperty('extracts');
+    expect(dest.diagnostics).toEqual([]);
+    // the card, its schedule, its backref, and the blank after them leave the source
+    expect((await readDisk(WOZ)).split('\n')).toEqual(woz.filter((_, n) => n < k || n > k + 3));
+    // and the card and its schedule, without the backref, end the destination
+    expect((await readDisk(DECK)).split('\n').slice(-3)).toEqual([woz[k], woz[k + 1], '']);
+  });
+
+  it('moves the card as it is on disk, not as the cache last saw it', async () => {
+    const { doc } = await vault.read(DECK);
+    const i = doc.blocks.findIndex((b) => b.kind === 'card' && b.id === 'cv-vergessen');
+    // an edit the watcher has not delivered yet
+    const disk = await readDisk(DECK);
+    await fsp.writeFile(join(root, DECK), disk.replace('vergessen ::: to forget ^', 'vergessen ::: to forget; to leave behind ^'));
+    const dest = await vault.moveCard(DECK, i, WOZ, 'cv-vergessen');
+    expect(dest.doc.blocks[dest.doc.blocks.length - 1]).toMatchObject({ kind: 'card', text: 'vergessen ::: to forget; to leave behind', id: 'cv-vergessen' });
+    expect(await readDisk(WOZ)).toContain('vergessen ::: to forget; to leave behind ^cv-vergessen');
+    expect(await readDisk(DECK)).not.toContain('vergessen');
+  });
+
+  it('leaves a card that changed between the two writes in the source, so it is in both files', async () => {
+    const { doc } = await vault.read(DECK);
+    const i = doc.blocks.findIndex((b) => b.kind === 'card' && b.id === 'cv-vergessen');
+    const disk = await readDisk(DECK);
+    // the source changes the moment the destination is written
+    const off = vault.subscribe((ev) => {
+      if (ev.kind === 'doc' && ev.path === WOZ) writeFileSync(join(root, DECK), disk.replace('vergessen ::: to forget ^', 'vergessen ::: to forget; to leave behind ^'));
+    });
+    await expect(vault.moveCard(DECK, i, WOZ, 'cv-vergessen')).rejects.toBeInstanceOf(VaultConflict);
+    off();
+    expect(await readDisk(DECK)).toContain('vergessen ::: to forget; to leave behind ^cv-vergessen');
+    expect(await readDisk(WOZ)).toContain('vergessen ::: to forget ^cv-vergessen');
+  });
+
+  it('mints a fresh id when the destination already has one', async () => {
+    const stranger = { kind: 'card' as const, text: 'to forget ::: oublier', id: 'cv-vergessen', sched: { due: '2026-08-01' } };
+    await vault.update(WOZ, (doc) => {
+      doc.blocks.push(structuredClone(stranger));
+    });
+    const { doc } = await vault.read(DECK);
+    const i = doc.blocks.findIndex((b) => b.kind === 'card' && b.id === 'cv-vergessen');
+    const dest = await vault.moveCard(DECK, i, WOZ, 'cv-vergessen');
+    const blocks = dest.doc.blocks;
+    expect(blocks[blocks.length - 2]).toEqual(stranger);
+    const moved = blocks[blocks.length - 1];
+    expect(moved).toMatchObject({ kind: 'card', text: 'vergessen ::: to forget', sched: { due: '2026-06-02', stability: 6 } });
+    expect(moved?.kind === 'card' && moved.id).toMatch(/^c[a-z0-9]{6}$/);
+    expect(blocks.filter((b) => b.kind === 'card' && b.id === 'cv-vergessen')).toHaveLength(1);
+    expect(await readDisk(DECK)).not.toContain('cv-vergessen');
+    // on disk the fresh id sits on the paragraph line, the schedule directly under it, after the stranger
+    expect((await readDisk(WOZ)).split('\n').slice(-6)).toEqual([
+      'to forget ::: oublier ^cv-vergessen',
+      '<!-- sr due=2026-08-01 -->',
+      '',
+      `vergessen ::: to forget ^${moved?.kind === 'card' ? moved.id : ''}`,
+      '<!-- sr due=2026-06-02 st=review s=6 d=4 r=5 l=0 ivl=6 last=2026-05-27T07:30:00Z g=3 -->',
+      '',
+    ]);
+  });
+
+  it('refuses to move a card to a missing document, or onto its own', async () => {
+    const before = await readDisk(DECK);
+    const { doc } = await vault.read(DECK);
+    const i = doc.blocks.findIndex((b) => b.kind === 'card' && b.id === 'cv-vergessen');
+    await expect(vault.moveCard(DECK, i, 'papers/nope.md', 'cv-vergessen')).rejects.toThrow(/no such document/);
+    await expect(vault.moveCard(DECK, i, 'papers', 'cv-vergessen')).rejects.toThrow(/no such document/);
+    await expect(vault.moveCard(DECK, i, DECK, 'cv-vergessen')).rejects.toThrow(/onto/);
+    expect(await readDisk(DECK)).toBe(before);
+    await expect(vault.moveCard(DECK, 999, WOZ)).rejects.toThrow(/no such card/);
+    expect(await readDisk(WOZ)).not.toContain('cv-vergessen');
   });
 
   it('writes atomically and leaves no temp file', async () => {

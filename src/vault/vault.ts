@@ -3,7 +3,7 @@
 // is a cache with a conflict rule: never overwrite a file whose stamp moved
 // since we read it.
 
-import { meta, parse, serialize, setField, type Diagnostic, type Doc, type NodeType, type ReadSchedule } from '../format/index.js';
+import { meta, parse, serialize, setField, type Card, type Diagnostic, type Doc, type NodeType, type ReadSchedule } from '../format/index.js';
 import { join, relative, sameStamp, type Fs, type Stamp } from './fs.js';
 import { baseOf, childDirOf, cleanName, dirOf, fileName, isDoc, joinRel, nameOf, rekey, within } from './paths.js';
 import { documents, isDocPath, isHidden, walk, type TreeNode } from './walk.js';
@@ -75,12 +75,44 @@ export interface ImportSpec {
 }
 
 const STATE_DIR = '.ilmi';
-
-const localDay = (d: Date): string =>
-  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const STATE_FILE = `${STATE_DIR}/state.json`;
 const TMP_SUFFIX = '.ilmi-tmp';
 const MAX_RETRIES = 4;
+
+const localDay = (d: Date): string =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+// --- cards ------------------------------------------------------------------
+
+const ID_CHARS = 'abcdefghijklmnopqrstuvwxyz0123456789';
+
+/** A fresh block id, `c` and six random characters: the same shape the grader mints (schedule/queue.ts newId). */
+function freshId(): string {
+  let s = 'c';
+  for (let i = 0; i < 6; i++) s += ID_CHARS[Math.floor(Math.random() * ID_CHARS.length)];
+  return s;
+}
+
+/** Every `^id` a paragraph or card in `doc` carries. */
+function usedIds(doc: Doc): Set<string> {
+  const ids = new Set<string>();
+  for (const b of doc.blocks) if ((b.kind === 'card' || b.kind === 'paragraph') && b.id) ids.add(b.id);
+  return ids;
+}
+
+/**
+ * The card at `index`, where it was last seen; when it has moved, its id finds
+ * it, or its text when it has no id. A card at `index` that is not the one
+ * named does not count. Throws when no such card is in `doc`.
+ */
+function cardIn(doc: Doc, path: string, index: number, id?: string, text?: string): Card {
+  const same = (b: Card) => (id !== undefined ? b.id === id : text === undefined || b.text === text);
+  const at = doc.blocks[index];
+  if (at?.kind === 'card' && same(at)) return at;
+  const hit = id === undefined && text === undefined ? undefined : doc.blocks.find((b): b is Card => b.kind === 'card' && same(b));
+  if (!hit) throw new Error(`no such card in ${path}`);
+  return hit;
+}
 
 export class VaultConflict extends Error {
   constructor(public readonly path: string) {
@@ -399,6 +431,67 @@ export class Vault {
       await this.relocate(path, to);
       await this.rewalk();
       return to;
+    });
+  }
+
+  /**
+   * Drop one card block from a document: the paragraph, its `^id`, and its
+   * schedule lines. `index` is where the card was last seen; when it has moved,
+   * its id finds it, or its text when it has no id. Throws when no such card is there.
+   */
+  removeCard(path: string, index: number, id?: string, text?: string): Promise<Loaded> {
+    return this.update(path, (doc) => {
+      doc.blocks.splice(doc.blocks.indexOf(cardIn(doc, path, index, id, text)), 1);
+    });
+  }
+
+  /**
+   * Forget a card's schedule so it reads as new again: its bare `sr` line and
+   * its `sr cN` lines go; the text, id, and extract backrefs stay. Finds the
+   * card the way `removeCard` does. A card with no schedule is left as it is.
+   */
+  resetCard(path: string, index: number, id?: string, text?: string): Promise<Loaded> {
+    return this.update(path, (doc) => {
+      const card = cardIn(doc, path, index, id, text);
+      delete card.sched;
+      delete card.blanks;
+    });
+  }
+
+  /**
+   * Cut a card out of `from` and append it to `to`, another document in the
+   * vault. Text, id, and schedule travel with it; extract backrefs are dropped,
+   * they point into the source's children and go with the card as they do on
+   * delete. An id the destination already uses is replaced by a fresh one. The
+   * destination is written first, so a crash between the two writes duplicates
+   * the card rather than losing it; a card that changes under the move is
+   * likewise left in the source, with a `VaultConflict`. Resolves to the
+   * destination as written, the card its last block.
+   */
+  moveCard(from: string, index: number, to: string, id?: string, text?: string): Promise<Loaded> {
+    return this.serial(async () => {
+      if (from === to) throw new Error(`cannot move a card onto ${from}`);
+      if (!isDoc(to) || !(await this.fs.stat(this.abs(to)))) throw new Error(`${to}: no such document`);
+      // read fresh: the cache may trail an edit the watcher has not delivered yet
+      const card = structuredClone(cardIn((await this.read(from, true)).doc, from, index, id, text));
+      delete card.extracts;
+      const dest = await this.update(to, (doc) => {
+        const moved = structuredClone(card);
+        const taken = usedIds(doc);
+        if (moved.id !== undefined && taken.has(moved.id)) {
+          do moved.id = freshId(); while (taken.has(moved.id));
+        }
+        doc.blocks.push(moved);
+      });
+      await this.update(from, (doc) => {
+        const cur = cardIn(doc, from, index, id, text);
+        const seen = { ...cur };
+        delete seen.extracts;
+        // not the card that was copied: keep it, a duplicate is visible and a loss is not
+        if (JSON.stringify(seen) !== JSON.stringify(card)) throw new VaultConflict(from);
+        doc.blocks.splice(doc.blocks.indexOf(cur), 1);
+      });
+      return dest;
     });
   }
 

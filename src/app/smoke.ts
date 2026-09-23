@@ -442,7 +442,14 @@ export async function smokeDeck(vault: Vault): Promise<void> {
     log(`hover: ${Math.round(del.left + del.width / 2)} ${Math.round(del.top + del.height / 2)} of ${window.innerWidth}x${window.innerHeight}`);
     // long: the webview's log lines reach the terminal some seconds late, and the shell shoots on the line
     await shot('deck-menu', 10000);
-    menu.querySelector<HTMLElement>('.ci.danger')!.click();
+    // a press outside closes the menu, and the shell's focus games during the pause can count as one
+    let live = view.querySelector<HTMLElement>('.ctx-menu');
+    if (!live) {
+      log('menu closed during the pause (an outside press); opening it again');
+      third.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: r.left + 80, clientY: r.top + r.height / 2 }));
+      live = await until(() => view.querySelector<HTMLElement>('.ctx-menu'));
+    }
+    live.querySelector<HTMLElement>('.ci.danger')!.click();
     await until(() => (rows().length === 6 ? true : null));
     await sleep(500);
     let after = await vault.read(DECK, true);
@@ -467,13 +474,22 @@ export async function smokeDeck(vault: Vault): Promise<void> {
     const selText = () => document.querySelector('.deck-view .card-span.selected .cs-body')?.textContent?.slice(0, 24);
     const selCount = () => rows().filter((r) => r.classList.contains('selected')).length;
     const editor = () => document.querySelector<HTMLTextAreaElement>('.insp .ce-field');
+    const state = () => `selected ${JSON.stringify(useApp.getState().selectedCard)}; selected rows ${selCount()} of ${rows().length}; editor ${!!editor()}; palette ${useApp.getState().paletteOpen}; tweaks ${useApp.getState().tweaksOpen}; active pane ${useApp.getState().panes.active}`;
+    const waitFor = async <T,>(what: string, probe: () => T | null | undefined): Promise<T> => {
+      try { return await until(probe); } catch (e) { log(`${what}: ${e instanceof Error ? e.message : String(e)}; ${state()}`); throw e; }
+    };
+    // the right-click selected the third row, the menu delete moved the selection to the row that took
+    // its place, and the × delete above it left it on that card: it should be "vergessen" now
+    log(`after the deletes: selected "${selText()}" at ${JSON.stringify(useApp.getState().selectedCard)}, row ${rows().findIndex((r) => r.classList.contains('selected'))}; selected rows ${selCount()}`);
+    press('Escape');
+    await waitFor('escape clears', () => (useApp.getState().selectedCard === null ? true : null));
     press('j');
-    await until(() => (rows()[0]?.classList.contains('selected') ? true : null));
+    await waitFor('j selects row 0', () => (rows()[0]?.classList.contains('selected') ? true : null));
     press('j');
-    await until(() => (rows()[1]?.classList.contains('selected') ? true : null));
+    await waitFor('j selects row 1', () => (rows()[1]?.classList.contains('selected') ? true : null));
     press('k');
-    await until(() => (rows()[0]?.classList.contains('selected') ? true : null));
-    const ta = await until(editor);
+    await waitFor('k selects row 0', () => (rows()[0]?.classList.contains('selected') ? true : null));
+    const ta = await waitFor('inspector editor', editor);
     log(`keys: j j k → selected ${JSON.stringify(useApp.getState().selectedCard)} "${selText()}"; selected rows ${selCount()}; inspector editor "${ta.value.slice(0, 24)}"; strip "${document.querySelector('.bot')?.textContent}"`);
 
     const cardId0 = (await vault.read(DECK)).doc.blocks.find((b) => b.kind === 'card')?.id ?? '';

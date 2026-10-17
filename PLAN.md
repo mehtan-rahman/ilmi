@@ -567,7 +567,7 @@ always the next day.
   and `af` round-trips through the corpus.
 
 ### [x] 12. Overload — a budget for the day, and postponing the rest
-Done 2026-10-17, commit `PENDING`.
+Done 2026-10-17, commit `5eaa5f5`.
 Notes: the budget is `budget` in `.ilmi/state.json` (`VaultState.budget`,
 int ≥ 1; 0 or absent is no fold), read on `openVault` through
 `cleanBudget` in `src/app/items.ts` into the store's `budget`, written by

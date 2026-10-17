@@ -8,7 +8,7 @@ was verified, what was not, and the prompt to resume with.
 
 ## 2026-10-17 — milestone 12: overload, a budget for the day and postponing the rest
 
-Commit `PENDING` — *overload: a day budget in the vault's state, the fold in
+Commit `5eaa5f5` — *overload: a day budget in the vault's state, the fold in
 due today, postpone the rest over the reading and writing below it*.
 
 ### Done

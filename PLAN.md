@@ -454,7 +454,7 @@ with a corpus file and a test, ask before a screen or a setting not listed
 here. Cards keep FSRS throughout; nothing below changes how a grade lands.
 
 ### [x] 10. Priority — one scale, document level, the queue sorted by it
-Done 2026-10-17, commit `TBD`.
+Done 2026-10-17, commit `2849ca8`.
 Notes: `pri` is a front-matter field (FORMAT.md §3: int 0–100, default
 50) read by `meta` into `Meta.pri`; `docPri(m)` is the field or 50, and
 `PRI_MIN` / `PRI_MAX` / `PRI_DEFAULT` / `parsePri` are exported from

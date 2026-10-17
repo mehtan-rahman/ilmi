@@ -8,7 +8,7 @@ was verified, what was not, and the prompt to resume with.
 
 ## 2026-10-17 — milestone 10: priority, one scale at document level, the queue sorted by it
 
-Commit `TBD` — *priority: one 0–100 scale on the document, a card's own on
+Commit `2849ca8` — *priority: one 0–100 scale on the document, a card's own on
 its line, the queue sorted by it*.
 
 ### Done

@@ -27,8 +27,13 @@
 // `ILMI_SMOKE=growth` sets a source's growth factor from the inspector,
 // reads the preview, looks at a draft's, then postpones a topic from the
 // session, logging the one line each wrote.
+// `ILMI_SMOKE=overload` sets a day budget from the tweaks panel, reads the
+// fold in the day's queue and the top strip's count, finds the palette
+// command, postpones the rest from the row under the fold, and logs every
+// file that changed, what tomorrow's queue holds, and a session's length.
 
 import { info } from '@tauri-apps/plugin-log';
+import { queue } from '../schedule/index.js';
 import type { Vault } from '../vault/index.js';
 import { cardLabel } from './chrome.js';
 import { GLYPH, SESSION, queueId, titleOf } from './names.js';
@@ -862,3 +867,115 @@ export async function smokeGrowth(vault: Vault): Promise<void> {
     log(`failed: ${e instanceof Error ? e.message : String(e)}`);
   }
 }
+
+export async function smokeOverload(vault: Vault): Promise<void> {
+  const log = (s: string) => info(`smoke overload: ${s}`);
+  const shot = async (name: string, ms = 10000) => { await sleep(600); log(`shot: ${name}`); await sleep(ms); };
+  const q = <T extends Element>(sel: string) => document.querySelector<T>(sel);
+  const qa = (sel: string) => Array.from(document.querySelectorAll<HTMLElement>(sel));
+  const enter = async (el: HTMLInputElement, v: string) => {
+    el.focus();
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(el, v);
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    await sleep(50);
+    el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    el.blur();
+    await sleep(600);
+  };
+  const rows = () => qa('.queue .qlist li:not(.fold)');
+  const view = () => {
+    const above = rows().filter((r) => r.dataset.below === '0').length;
+    const below = rows().filter((r) => r.dataset.below === '1').length;
+    const fold = q('.queue .qlist li.fold');
+    return `rows ${above} above, ${below} below; fold "${fold?.textContent ?? 'none'}"; top strip "${q('.top .right span')?.textContent}"; budget ${useApp.getState().budget}`;
+  };
+  const changed = (a: string, b: string) => {
+    const la = a.split('\n');
+    const lb = b.split('\n');
+    if (la.length !== lb.length) return `lines ${la.length} → ${lb.length}`;
+    const at = la.flatMap((l, i) => (l === lb[i] ? [] : [i + 1]));
+    return at.map((n) => `${n}: "${la[n - 1]}" → "${lb[n - 1]}"`).join('; ');
+  };
+  try {
+    openNode(queueId('today'));
+    await until(() => q('.queue .qlist li'));
+    await sleep(300);
+    log(`no budget: ${view()}`);
+
+    // the tweaks panel sets the budget; the state file keeps it
+    useApp.setState({ tweaksOpen: true });
+    const field = await until(() => q<HTMLInputElement>('.tweaks .tw-num'));
+    log(`tweaks: budget field "${field.value}"`);
+    await enter(field, '5');
+    await sleep(600);
+    log(`budget 5: ${view()}; state.json ${JSON.stringify(await vault.loadState())}`);
+    await shot('overload-tweaks');
+    useApp.setState({ tweaksOpen: false });
+    await sleep(300);
+    const fold = await until(() => q('.queue .qlist li.fold'));
+    log(`queue: ${view()}; below ${rows().filter((r) => r.dataset.below === '1').map((r) => `[${r.dataset.el}] ${r.querySelector('.src')?.textContent}`).join(' / ')}`);
+    await shot('overload-queue');
+
+    // the palette offers the command while something sits below the fold
+    press('k', { metaKey: true });
+    const input = await until(() => q<HTMLInputElement>('.palette-input input'));
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'postpone');
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    await sleep(100);
+    log(`palette "postpone": ${qa('.palette-row').map((r) => `[${r.dataset.t}] ${r.querySelector('.pt')?.textContent}`).join(' / ')}`);
+    await shot('overload-palette');
+    press('Escape');
+    await until(() => (q('.palette-overlay') ? null : true));
+
+    // postpone the rest from the row: one line per topic below the fold, nothing else
+    const before = new Map<string, string>();
+    for (const path of vault.documents()) before.set(path, (await vault.read(path, true)).text);
+    const act = fold.querySelector<HTMLButtonElement>('.fold-act');
+    log(`row: "${act?.textContent}"`);
+    act?.click();
+    await until(() => useApp.getState().log[0]?.startsWith('postponed') ? true : null);
+    await sleep(800);
+    const touched: string[] = [];
+    for (const path of vault.documents()) {
+      const after = (await vault.read(path, true)).text;
+      if (after !== before.get(path)) touched.push(`${path} ${changed(before.get(path)!, after)}`);
+    }
+    log(`postponed: ${touched.length} files changed: ${touched.join(' || ')}; log "${useApp.getState().log[0]}"`);
+    await sleep(300);
+    log(`after: ${view()}; palette command ${qa('.palette-row').length ? 'open?' : 'closed'}`);
+    press('k', { metaKey: true });
+    const input2 = await until(() => q<HTMLInputElement>('.palette-input input'));
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input2, 'postpone');
+    input2.dispatchEvent(new Event('input', { bubbles: true }));
+    await sleep(100);
+    log(`palette "postpone" now: ${qa('.palette-row').map((r) => `[${r.dataset.t}] ${r.querySelector('.pt')?.textContent}`).join(' / ') || 'nothing'}`);
+    press('Escape');
+    await until(() => (q('.palette-overlay') ? null : true));
+    await shot('overload-after');
+
+    // tomorrow's queue, from the files as they are now
+    const tomorrow = new Date(Date.now() + 86400000);
+    const next = (await queue(vault, tomorrow, 'today'));
+    log(`tomorrow: ${next.length} due, ${next.filter((i) => i.kind !== 'card').length} topics; ${Math.max(0, next.length - 5)} below a budget of 5`);
+
+    // a session walks what is above the fold
+    press('Enter');
+    await until(() => q('.recall-wrap, .doc-session'));
+    await sleep(300);
+    log(`session: ${useApp.getState().session?.items.length} elements; count "${q('.sess-count, .sb-count')?.textContent}"`);
+    await shot('overload-session');
+
+    // no budget again: the fold goes
+    openNode(queueId('today'));
+    await until(() => q('.queue .qlist li'));
+    useApp.setState({ tweaksOpen: true });
+    await enter(await until(() => q<HTMLInputElement>('.tweaks .tw-num')), '');
+    useApp.setState({ tweaksOpen: false });
+    await sleep(600);
+    log(`cleared: ${view()}; state.json ${JSON.stringify(await vault.loadState())}`);
+    log('done');
+  } catch (e) {
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+

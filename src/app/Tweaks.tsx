@@ -1,16 +1,49 @@
-// The tweaks panel: theme, accent, density. ⌘, opens it; the values live in
-// the webview's storage, not in any vault. The brief's three knobs, and no
-// more.
+// The tweaks panel: theme, accent, density, and the day's budget. ⌘, opens
+// it. The first three live in the webview's storage, not in any vault; the
+// budget is the open vault's, in its `.ilmi/state.json`.
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { ACCENTS, DENSITY_MAX, DENSITY_MIN, THEMES, useApp, type Accent, type Theme } from './store.js';
+import { setBudget } from './vault.js';
 
 const THEME_LABEL: Record<Theme, string> = { light: 'light', dark: 'dark', eink: 'e-ink' };
+
+/** The budget as a number field: empty is none; commits on blur or ⏎, escape restores. */
+function BudgetField({ value }: { value: number }) {
+  const shown = value ? String(value) : '';
+  const [text, setText] = useState(shown);
+  useEffect(() => { setText(shown); }, [shown]);
+  const commit = () => {
+    const n = text.trim() === '' ? 0 : Math.floor(Number(text));
+    if (!Number.isFinite(n) || n < 0) { setText(shown); return; }
+    setBudget(n);
+    setText(n ? String(n) : '');
+  };
+  return (
+    <input
+      className="tw-num"
+      type="number"
+      inputMode="numeric"
+      min={0}
+      step={1}
+      value={text}
+      onChange={(e) => setText(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') { e.preventDefault(); commit(); e.currentTarget.blur(); }
+        else if (e.key === 'Escape') { e.preventDefault(); setText(shown); e.currentTarget.blur(); }
+        e.stopPropagation();
+      }}
+    />
+  );
+}
 
 export function Tweaks() {
   const theme = useApp((s) => s.theme);
   const accent = useApp((s) => s.accent);
   const density = useApp((s) => s.density);
+  const vault = useApp((s) => s.vault);
+  const budget = useApp((s) => s.budget);
   const close = () => useApp.setState({ tweaksOpen: false });
 
   useEffect(() => {
@@ -56,6 +89,12 @@ export function Tweaks() {
           onChange={(e) => useApp.getState().setDensity(Number(e.target.value))}
         />
       </div>
+      {vault !== null && (
+        <div className="tw-row">
+          <span className="tw-lbl">budget <span className="tw-val">a day</span></span>
+          <BudgetField value={budget} />
+        </div>
+      )}
     </div>
   );
 }

@@ -1,9 +1,9 @@
 // The top strip: the vault's name, the palette, what is due, the day, and
 // the inspector toggle. After the prototype's chrome.jsx, with its counts
-// trimmed to the one that matters.
+// trimmed to the one that matters: the day's work, above the fold.
 
 import { baseOf } from '../vault/index.js';
-import { dayLabel, dueNow } from './items.js';
+import { dayLabel, dueToday } from './items.js';
 import { useApp } from './store.js';
 import { setInspector } from './vault.js';
 
@@ -11,7 +11,8 @@ export function TopStrip() {
   const root = useApp((s) => s.vault);
   const queue = useApp((s) => s.queue);
   const inspector = useApp((s) => s.inspector);
-  const due = dueNow(queue, new Date()).length;
+  const budget = useApp((s) => s.budget);
+  const due = dueToday(queue, new Date(), budget).length;
   return (
     <div className="top">
       <div className="ws"><b>{baseOf(root ?? '') || 'vault'}</b></div>

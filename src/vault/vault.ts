@@ -34,6 +34,8 @@ export interface VaultState {
   sidebar?: { width?: number; hidden?: boolean };
   /** Inspector width in px, and whether it is open. */
   inspector?: { width?: number; open?: boolean };
+  /** How many elements a day holds; the queue folds there. 0 or absent is no fold. */
+  budget?: number;
 }
 
 /** Default file names for new nodes, by type. */

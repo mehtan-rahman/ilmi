@@ -84,6 +84,40 @@
   letter-spacing: 0.02em;
 }
 
+/* the fold: the day's budget ends here; what is below is dimmed */
+.qlist li.fold {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  padding: 6px 0;
+  border-top: 1px solid var(--line-1);
+  border-bottom: 0;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--fg-4);
+  letter-spacing: 0.04em;
+  cursor: default;
+}
+.qlist li.fold:hover { background: transparent; }
+.qlist li.fold .fold-n { font-variant-numeric: tabular-nums; }
+.qlist li.fold .fold-act {
+  appearance: none;
+  margin-left: auto;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  color: var(--fg-3);
+  cursor: pointer;
+}
+.qlist li.fold .fold-act:hover { color: var(--accent); }
+.qlist li.fold .fold-what { margin-left: 10px; color: var(--fg-5); }
+[data-theme="eink"] .qlist li.fold .fold-act:hover { color: var(--fg); }
+.qlist li[data-below="1"] .body,
+.qlist li[data-below="1"] .mark,
+.qlist li[data-below="1"] .pri,
+.qlist li[data-below="1"] .due { opacity: 0.55; }
+
 /* the list */
 .qlist {
   list-style: none;

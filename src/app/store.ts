@@ -139,6 +139,8 @@ export interface AppState {
   /** Every element over the vault, sorted, as of `queueAt`; the saved queries filter it. */
   queue: QueueItem[];
   queueAt: Date;
+  /** How many elements the day holds; the day's queue folds there. 0 is no fold. Per vault, in `.ilmi/state.json`. */
+  budget: number;
   /** The last few things done in a session, newest first. */
   log: string[];
   session: Session | null;
@@ -172,6 +174,7 @@ export const useApp = create<AppState>((set, get) => ({
   intakeDir: '',
   queue: [],
   queueAt: new Date(0),
+  budget: 0,
   log: [],
   session: null,
   sessionEl: null,

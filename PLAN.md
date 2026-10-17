@@ -566,7 +566,46 @@ always the next day.
   where the formula says, postpone never schedules earlier than tomorrow,
   and `af` round-trips through the corpus.
 
-### [ ] 12. Overload — a budget for the day, and postponing the rest
+### [x] 12. Overload — a budget for the day, and postponing the rest
+Done 2026-10-17, commit `PENDING`.
+Notes: the budget is `budget` in `.ilmi/state.json` (`VaultState.budget`,
+int ≥ 1; 0 or absent is no fold), read on `openVault` through
+`cleanBudget` in `src/app/items.ts` into the store's `budget`, written by
+`setBudget` in `src/app/vault.ts` through the same debounced `queueSave`
+as the sidebar; FORMAT.md is untouched, nothing in a vault file changed.
+`src/schedule/queue.ts`: `fold(items, n)` → `{ above, below }` over a
+sorted list (`n ≤ 0` is everything above); `overflow(items, now, budget)`
+takes any list, keeps what is due, sorts it, folds it, and returns the
+reading and writing below the fold with the highest `pri` number first
+(lowest priority); `postponeOverflow(vault, items, now, budget)` runs
+`advanceRead` / `advanceWrite` with `'postpone'` on each, one
+`vault.update` per file, and resolves to what it postponed. Cards are
+never in the overflow. `dueToday(items, now, budget)` in `items.ts` is
+`fold(dueNow(...), budget).above`: the top strip's count, `startSession`,
+and `openSession` use it, so a session walks the part above the fold and
+an element below it opened from a row is a one-element session (the
+existing "not in the day" rule). `Queue.tsx`: in `due today` the rows
+past the budget carry `data-below="1"` (dimmed) under a `li.fold`: a rule
+in `--line-1`, `N more` on the left, and, while a topic or draft sits
+below, the `postpone the rest` button on the right with `2 to read · 1 to
+write` beside it; the rows below stay visible so what the button touches
+is in view. `postponeRest()` in `src/app/vault.ts` notes `postponed · N
+elements`. Palette: the `postpone the rest` command is in the list only
+while `overflow` is non-empty (the command list is memoised on the queue
+and the budget). Tweaks: a `budget` row with a number field
+(`BudgetField`, commits on blur or ⏎, escape restores, empty is none),
+shown only while a vault is open. Dev: `ILMI_SMOKE=overload`. Tests: 245
+(`fold` and `overflow` over small docs; the corpus day at budget 5
+postpones its three reading topics, one `read:` line each, every other
+file byte-identical, tomorrow's queue has no topic; six topics at budget
+3 open within budget the next day with `4 → 5, 5 → 6, 6 → 7`; `dueToday`
+and `cleanBudget`; the state file round-trips `budget`). Not done: the
+sidebar's `due today` count and the query's inspector counts are the
+whole day, not what is above the fold (only the top strip was asked to
+fold); nothing marks the fold in the session itself; `j k` walk below
+the fold too, and `o` on a row below opens it alone; no key for
+`postpone the rest`; there is no end-of-day automation, the row and the
+command are the only triggers.
 SuperMemo's auto-postpone: when a day ends with material outstanding, the
 lowest-priority overflow is pushed forward by a factor so the next day
 starts clean. Cards are different under FSRS: lateness is folded into the
@@ -703,14 +742,15 @@ involved; the code is public.
 
 ## Notes for the next session
 
-Start at milestone 12, overload. It builds on 10 and 11 together: the
-sorted queue from `sortQueue` and `postpone(s, now, factor?)` from
-`src/schedule/read.ts` / `write.ts`. The budget is the one new setting and
-goes in `.ilmi/state.json` beside `folders` and `tab`, set from the tweaks
-panel; the fold is drawn in the `due today` query and the session walks
-what is above it; `postpone the rest` is a palette command and a row
-under the fold, running over reading and writing items below it, lowest
-priority first, never a card. 13 is optional and says so; 14 is the only
+Start at milestone 13, tasks, and read its last line first: it is
+optional, and dropping it is the likelier answer; if it is dropped, say
+so under it and move to 14. A task is a draft with no interval, so it
+rides the writing loop's shape: `type: task`, a `task` line with `due`
+and `done` (FORMAT.md §3, with a corpus file and a test), a `task` item
+kind in `src/schedule/queue.ts` sorted with the rest by `pri`, `d` and
+`p` in the session with no grades, and a `tasks` saved query. With the
+fold from 12 in place a task below the fold would be in `overflow` only
+if its kind is added there; decide that in the milestone. 14 is the only
 one that touches SuperMemo itself, and only its data files; 15 is a new
 lens and the biggest of the five, and asks for pdf.js to be added to the
 bundle, so check the bundle size and the `fs` scope for `.pdf` before

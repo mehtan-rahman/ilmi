@@ -10,5 +10,6 @@ export { advanceWrite, type WriteAction } from './write.js';
 export { grow, nextIntervals, postponed, POSTPONE_FACTOR } from './growth.js';
 export {
   queue, queueItems, sortQueue, sameItem, docItems, counts, inScope, isDue, cardGroups, gradeItem, numberBlank, newId,
-  type QueueItem, type CardItem, type ReadItem, type WriteItem, type GroupKey, type Scope, type Counts, type GradeOptions,
+  fold, overflow, postponeOverflow,
+  type QueueItem, type Fold, type CardItem, type ReadItem, type WriteItem, type GroupKey, type Scope, type Counts, type GradeOptions,
 } from './queue.js';

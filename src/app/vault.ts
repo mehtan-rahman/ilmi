@@ -7,10 +7,10 @@ import { invoke } from '@tauri-apps/api/core';
 import { open as pickDirectory } from '@tauri-apps/plugin-dialog';
 import { info } from '@tauri-apps/plugin-log';
 import { meta, setField, type Doc, type NodeType } from '../format/index.js';
-import { dayOf, docItems, isDue, sortQueue, type QueueItem } from '../schedule/index.js';
+import { dayOf, docItems, isDue, postponeOverflow, sortQueue, type QueueItem } from '../schedule/index.js';
 import { Vault, childDirOf, dirOf, isDoc, rekey, type ExtractSpec, type ImportSpec, type TreeNode, type VaultEvent, type VaultState } from '../vault/index.js';
 import { tauriFs } from '../vault/tauri-fs.js';
-import { dueNow, sessionItems } from './items.js';
+import { cleanBudget, dueToday, sessionItems } from './items.js';
 import { INTAKE, SESSION, queueId, queueScope } from './names.js';
 import { activeTab, dropTabs, emptyPanes, openTab, retarget, type OpenOpts } from './panes.js';
 import { INSP_DEFAULT, INSP_MAX, INSP_MIN, SIDE_DEFAULT, SIDE_MAX, SIDE_MIN, useApp, type DocInfo, type Inspector, type Sidebar } from './store.js';
@@ -178,7 +178,7 @@ export async function openVault(path: string): Promise<Vault> {
     panes = openTab(panes, queueId('today'));
   }
   bodies.clear();
-  useApp.setState({ open, sidebar, inspector, panes, docs: {}, queue: [], log: [], session: null, sessionEl: null, selectedCard: null, reveal: null });
+  useApp.setState({ open, sidebar, inspector, panes, docs: {}, queue: [], budget: cleanBudget(state.budget), log: [], session: null, sessionEl: null, selectedCard: null, reveal: null });
   publishTree(vault);
   vault.subscribe((ev) => onEvent(vault, ev));
   await vault.watch();
@@ -208,8 +208,8 @@ export function openInitialVault(): Promise<void> {
     const vault = await openVault(path);
     const mode = await invoke<string | null>('dev_env', { name: 'ILMI_SMOKE' });
     if (mode) {
-      const { smoke, smokeReader, smokeCards, smokeIntake, smokeQueue, smokeLoop, smokeShots, smokeDeck, smokePri, smokeGrowth } = await import('./smoke.js');
-      const run = { reader: smokeReader, cards: smokeCards, intake: smokeIntake, queue: smokeQueue, loop: smokeLoop, shots: smokeShots, deck: smokeDeck, pri: smokePri, growth: smokeGrowth }[mode] ?? smoke;
+      const { smoke, smokeReader, smokeCards, smokeIntake, smokeQueue, smokeLoop, smokeShots, smokeDeck, smokePri, smokeGrowth, smokeOverload } = await import('./smoke.js');
+      const run = { reader: smokeReader, cards: smokeCards, intake: smokeIntake, queue: smokeQueue, loop: smokeLoop, shots: smokeShots, deck: smokeDeck, pri: smokePri, growth: smokeGrowth, overload: smokeOverload }[mode] ?? smoke;
       await run(vault);
     }
   })();
@@ -248,15 +248,27 @@ export function openIntake(dir = '', opts: OpenOpts = {}): void {
  */
 export function openSession(item: QueueItem, opts: OpenOpts = {}): void {
   const s = useApp.getState();
-  const items = sessionItems(dueNow(s.queue, new Date()), item);
+  const items = sessionItems(dueToday(s.queue, new Date(), s.budget), item);
   useApp.setState({ session: { seq: (s.session?.seq ?? 0) + 1, items } });
   openNode(SESSION, opts);
 }
 
 /** Enter the queue: a session over everything due, from the top. */
 export function startSession(opts: OpenOpts = {}): void {
-  const first = dueNow(useApp.getState().queue, new Date())[0];
+  const s = useApp.getState();
+  const first = dueToday(s.queue, new Date(), s.budget)[0];
   if (first) openSession(first, opts);
+}
+
+/**
+ * Postpone every reading and writing element below today's fold, lowest
+ * priority first; one line per file, cards untouched. Resolves to how many.
+ */
+export async function postponeRest(): Promise<number> {
+  const s = useApp.getState();
+  const done = await postponeOverflow(need(), s.queue, new Date(), s.budget);
+  if (done.length) note(`postponed · ${done.length} element${done.length === 1 ? '' : 's'}`);
+  return done.length;
 }
 
 /** One line for the queue's recent log, newest first, six kept. */
@@ -287,6 +299,13 @@ export function setInspector(patch: Partial<Inspector>): void {
   const inspector = { ...useApp.getState().inspector, ...patch };
   useApp.setState({ inspector });
   queueSave({ inspector });
+}
+
+/** The day's budget, 0 for none; kept with the vault's other view state. */
+export function setBudget(n: number): void {
+  const budget = cleanBudget(n);
+  useApp.setState({ budget });
+  queueSave({ budget });
 }
 
 // ── tree operations ──────────────────────────────────────────────

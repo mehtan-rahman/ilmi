@@ -6,6 +6,139 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-10-17 — milestone 12: overload, a budget for the day and postponing the rest
+
+Commit `PENDING` — *overload: a day budget in the vault's state, the fold in
+due today, postpone the rest over the reading and writing below it*.
+
+### Done
+
+- `src/schedule/queue.ts`: `fold(items, n)` splits a sorted list into
+  `{ above, below }` (`n ≤ 0` is no fold); `overflow(items, now, budget)`
+  keeps what is due, sorts, folds, and returns the reading and writing
+  below the fold, highest `pri` number (lowest priority) first, never a
+  card; `postponeOverflow(vault, items, now, budget)` runs
+  `advanceRead` / `advanceWrite` with `'postpone'` on each through one
+  `vault.update` per file and resolves to what it postponed. Exported
+  through `src/schedule/index.ts` with the `Fold` type.
+- `src/vault/vault.ts`: `VaultState.budget` (int, 0 or absent is none)
+  beside `folders`, `tab`, `sidebar`, `inspector`. FORMAT.md untouched: no
+  vault file changes shape.
+- `src/app`: `budget` in the store; `cleanBudget` and `dueToday(items,
+  now, budget)` in `items.ts`; `setBudget` (debounced `queueSave`) and
+  `postponeRest()` (notes `postponed · N elements`) in `vault.ts`;
+  `openVault` reads the budget back; `startSession` and `openSession`
+  walk `dueToday`, so a session is the part above the fold. `TopStrip`
+  counts `dueToday`. `Queue.tsx`: in `due today`, rows past the budget
+  carry `data-below="1"` and sit dimmed under `li.fold`: a `--line-1`
+  rule, `N more` left, and while a topic or draft is below, the
+  `postpone the rest` button right with `2 to read · 1 to write` beside
+  it. `Palette.tsx`: the `postpone the rest` command, listed only while
+  `overflow` is non-empty. `Tweaks.tsx`: a `budget` row (`BudgetField`:
+  commits on blur or ⏎, escape restores, empty is none) while a vault is
+  open. `queue.css` / `chrome.css`: the fold and the number field.
+- README: the tweaks line names the budget; one sentence on the fold.
+  Dev: `ILMI_SMOKE=overload`.
+- Tests: 245 (schedule: `fold` over small docs, `overflow` ignoring cards
+  and the not-yet-due and taking an unsorted list, the corpus day at
+  budget 5 postponing its three reading topics with one `read:` line each
+  and every other file byte-identical, tomorrow's queue without them, six
+  topics at budget 3 opening within budget the next day with intervals
+  `4 → 5, 5 → 6, 6 → 7`; app: `dueToday` and `cleanBudget`; vault: the
+  state file round-trips `budget`).
+
+### Verified
+
+- `npm run typecheck` clean, `npx vitest run` green (13 files, 245).
+- In the window (`ILMI_VAULT=<scratch copy> ILMI_SMOKE=overload npm run
+  tauri dev`, 18:16 local, every corpus date past so all 30 elements are
+  due), as logged: no budget → `rows 30 above, 0 below; fold none; top
+  strip "30 due"` → the tweaks field, empty, set to 5 → `rows 5 above, 25
+  below; fold "25 more · postpone the rest · 4 to read · 1 to write"; top
+  strip "5 due"; state.json {"tab":":queue/today","budget":5}` → the
+  palette on `postpone` lists `[command] postpone the rest` → the row
+  clicked: `5 files changed`, each one line, each a `read:` or `write:`
+  line (`talk-incremental` `due=2026-05-30 ivl=3` → `due=2026-10-21
+  ivl=4`; `sutton-2019` `ivl=1` → `due=2026-10-19 ivl=2`; `crick-1995`
+  `ivl=2` → `due=2026-10-20 ivl=3`, `af=2` kept; `wozniak-1990` `ivl=9` →
+  `due=2026-10-28 ivl=11`; `woz-ex1` `ivl=1` → `due=2026-10-19 ivl=2`),
+  no card file touched, log `postponed · 5 elements` → `rows 5 above, 20
+  below; fold "20 more"`, the palette on `postpone` now `nothing` →
+  tomorrow's queue from the files: `25 due, 1 topics` (spaced-composition,
+  above the fold, untouched) → ⏎: `session: 5 elements; count "1 / 5"` →
+  the field cleared: `rows 25 above, 0 below; fold none; top strip "25
+  due"; state.json {"tab":":queue/today","budget":0}`.
+- Five captures read one by one: the day with the fold rule after five
+  rows, `25 more` at its left, `postpone the rest  4 to read · 1 to write`
+  at its right, the rows below dimmed, `5 due` in the top strip while the
+  sidebar and the inspector still say 30; the tweaks panel with `budget
+  · a day` and `5` in a mono field under the density slider; the palette
+  with the one command row; the queue after the click with `postponed ·
+  5 elements` in the log, `0 to read 1 to write 24 to review`, `20 more`
+  and no button; the session on `die Lücke` reading `1 / 5` with `5 due`
+  above. A system notification banner sat over the inspector's header
+  in the fourth capture; nothing of ours was under it. Capture loop as
+  before: ten-second pause after each `shot:` line, two-second shell
+  delay; port 1420 free afterwards.
+
+### Not done / open
+
+- The sidebar's `due today` count and the query's inspector counts are
+  the whole day (30), not what is above the fold (5); only the top strip
+  was asked to fold. Worth a look if the two numbers side by side read
+  as a bug.
+- Rows below the fold stay visible, dimmed, so what the button will
+  touch is in view; the plan's "`N more` under it" could also be read as
+  hiding them. `j k` walk the whole list and `o` on a row below opens it
+  as a one-element session.
+- No key for `postpone the rest`; nothing marks the fold inside a
+  session; no end-of-day automation, the row and the command are the
+  only triggers.
+- `Escape` in the budget field restores the field and, by stopping the
+  key, leaves the panel open; the panel's own `esc` still closes it from
+  anywhere else.
+- Not re-run in the window: a budget larger than the day (no fold drawn,
+  by the same branch the suite covers).
+
+### Decisions worth knowing
+
+- The budget is in `.ilmi/state.json`, not in the tweaks' `localStorage`,
+  because a day's size belongs to a vault, not to a webview; the tweaks
+  panel is only where it is set, so the row shows only with a vault open.
+- `overflow` takes the whole queue and does its own due filter and sort,
+  so the queue, the palette, and the postpone share one answer whatever
+  list they hold.
+- Lowest priority first is the highest `pri` number first; it only
+  orders the writes and the log, since each file is postponed on its own.
+- The command leaves the palette when nothing is below the fold rather
+  than sitting there doing nothing.
+- `dueToday` replaced `dueNow` in the session and the strip; `dueNow`
+  stays for the query, which shows the whole day with the fold drawn in.
+
+### Handoff prompt
+
+Paste into a fresh session:
+
+```
+Read PLAN.md, FORMAT.md, BUILD-LOG.md, and spec/hashiyah/HANDOFF.md. Do the
+first unchecked milestone in PLAN.md and only that one. Stop at its "done
+when". Then tick it, write notes for the next session under it, add an entry
+to BUILD-LOG.md with a fresh handoff prompt, and commit.
+
+Context: milestone 12 (overload) is done (BUILD-LOG 2026-10-17); the next
+is 13, tasks, which is optional and says dropping it is the likelier
+answer: decide first, and if it is dropped, say so under it and move to
+14 (the SuperMemo import, from the data files only). Tooling: export
+PATH=$HOME/.cargo/bin:/opt/homebrew/bin:$PATH; npm test and npm run
+typecheck must be green before a commit; caffeinate -d -u -i, then
+ILMI_VAULT=<scratch copy> ILMI_SMOKE=<mode> npm run tauri dev drives the
+window (overload is the newest mode; the smoke pauses ten seconds after
+each `shot:` line and the shell shoots two seconds after reading it;
+free port 1420 afterwards).
+```
+
+---
+
 ## 2026-10-17 — milestone 11: growth, a factor per document for reading and writing
 
 Commit `cafcd16` — *growth: an af factor on the read and write lines, postpone

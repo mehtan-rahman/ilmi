@@ -3,7 +3,7 @@
 // Pure; the model is src/schedule, the views are Queue.tsx and Session.tsx.
 
 import type { CardForm, CardSchedule } from '../format/index.js';
-import { dayOf, dayStart, isDue, preview, sameItem, whenToDate, type CardItem, type Grade, type QueueItem } from '../schedule/index.js';
+import { dayOf, dayStart, fold, isDue, preview, sameItem, whenToDate, type CardItem, type Grade, type QueueItem } from '../schedule/index.js';
 import { nameOf } from '../vault/index.js';
 import type { QueueScope } from './names.js';
 import type { DocInfo, El } from './store.js';
@@ -128,3 +128,11 @@ export function summary(items: QueueItem[]): { read: number; write: number; card
 }
 
 export const dueNow = (items: QueueItem[], now: Date): QueueItem[] => items.filter((i) => isDue(i, now));
+
+/** The day's work: what is due, above the fold. With no budget, everything due. */
+export const dueToday = (items: QueueItem[], now: Date, budget: number): QueueItem[] => fold(dueNow(items, now), budget).above;
+
+/** A budget as stored: a whole number of elements, 0 for none. */
+export function cleanBudget(n: unknown): number {
+  return typeof n === 'number' && Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+}

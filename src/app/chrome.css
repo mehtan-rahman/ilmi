@@ -446,3 +446,15 @@
 .tweaks .tw-seg button[data-active="1"] { color: var(--fg-1); background: var(--line-3); }
 .tweaks .tw-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
 .tweaks .tw-slider { width: 100%; accent-color: var(--accent); margin: 2px 0; }
+.tweaks .tw-num {
+  width: 72px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--fg-1);
+  background: transparent;
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius);
+  padding: 3px 6px;
+  outline: none;
+}
+.tweaks .tw-num:focus { border-color: var(--accent); }

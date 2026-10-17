@@ -403,8 +403,9 @@ describe('state', () => {
   it('merges and round-trips', async () => {
     await vault.saveState({ folders: ['papers'] });
     await vault.saveState({ tab: 'german.md' });
-    expect(await vault.loadState()).toEqual({ folders: ['papers'], tab: 'german.md' });
-    expect(JSON.parse(await readDisk('.ilmi/state.json'))).toEqual({ folders: ['papers'], tab: 'german.md' });
+    await vault.saveState({ budget: 12 });
+    expect(await vault.loadState()).toEqual({ folders: ['papers'], tab: 'german.md', budget: 12 });
+    expect(JSON.parse(await readDisk('.ilmi/state.json'))).toEqual({ folders: ['papers'], tab: 'german.md', budget: 12 });
     expect(names(await walk(nodeFs, root))).not.toContain('.ilmi/');
   });
 });

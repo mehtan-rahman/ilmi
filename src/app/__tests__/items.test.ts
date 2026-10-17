@@ -12,7 +12,7 @@ import { advanceRead, advanceWrite, gradeItem, queue, sameItem, type CardItem, t
 import { nodeFs } from '../../vault/node-fs.js';
 import { Vault } from '../../vault/index.js';
 import {
-  dayLabel, dueLabel, firstWords, gapLabels, intervalLabel, isFresh, kindTag, ownBlank, refLine, sessionItems, snippetOf, sourceLabel, summary,
+  cleanBudget, dayLabel, dueLabel, dueToday, firstWords, gapLabels, intervalLabel, isFresh, kindTag, ownBlank, refLine, sessionItems, snippetOf, sourceLabel, summary,
 } from '../items.js';
 import { INTAKE, SESSION, queueId, queueScope, tabKindOf, titleOf } from '../names.js';
 
@@ -111,6 +111,24 @@ describe('the session order', () => {
     expect(sameItem(card(), card({ block: 1 }))).toBe(false);
     expect(sameItem(card({ group: { n: 1 } }), card({ group: { n: 2 } }))).toBe(false);
     expect(sameItem(r, { ...r, kind: 'write' } as QueueItem)).toBe(false);
+  });
+
+  it('the day is what is due, above the fold; a session over budget starts within it', () => {
+    const later = card({ id: 'z', dueAt: new Date('2026-06-01') });
+    expect(dueToday([a, b, r, later], NOW, 0)).toEqual([a, b, r]);
+    expect(dueToday([a, b, r, later], NOW, 2)).toEqual([a, b]);
+    expect(sessionItems(dueToday([a, b, r], NOW, 2), b)).toEqual([b, a]);
+    expect(sessionItems(dueToday([a, b, r], NOW, 2), r)).toEqual([r]);
+  });
+
+  it('keeps a budget whole and never negative', () => {
+    expect(cleanBudget(12)).toBe(12);
+    expect(cleanBudget(7.9)).toBe(7);
+    expect(cleanBudget(0)).toBe(0);
+    expect(cleanBudget(-3)).toBe(0);
+    expect(cleanBudget(undefined)).toBe(0);
+    expect(cleanBudget('5')).toBe(0);
+    expect(cleanBudget(Number.NaN)).toBe(0);
   });
 });
 

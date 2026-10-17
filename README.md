@@ -34,7 +34,8 @@ click            open a folder or document in the active tab
 F2 / dbl-click   rename                 right-click  new, rename, move to, delete
 ⌘W               close tab              ⌘\           split pane
 ⌘⇧E              sidebar                ⌘⇧I          inspector
-⌘,               tweaks: theme, accent, density (kept outside the vault)
+⌘,               tweaks: theme, accent, density (kept outside the vault);
+                 the day's budget (kept in the vault's .ilmi)
 
 in a source      select, then e extract or m make a card; r start reading
 in a deck        j k move, ⌫ delete the selected card, m make a card;
@@ -47,8 +48,11 @@ in a session     [ ] prev / next; space reveal, 1-4 grade; ⏎ read on or
 The inspector sets a priority, 0 first and 100 last, on a document or on the
 selected card; what is due sorts by it. It also sets a topic's growth, the
 factor each pass multiplies the interval by (1.6 reading, 1.5 writing), and
-shows the next three intervals; postpone grows the interval by 1.2. The bottom strip shows the keys that
-work where you are. `ilmi.theme('dark')`
+shows the next three intervals; postpone grows the interval by 1.2. A budget
+folds the day at that many elements: the top strip counts what is above the
+fold, a session walks it, and `postpone the rest`, a row under the fold or a
+palette command, postpones the reading and writing below it; cards stay
+where they are. The bottom strip shows the keys that work where you are. `ilmi.theme('dark')`
 and friends still work from the devtools console.
 
 ## Layout

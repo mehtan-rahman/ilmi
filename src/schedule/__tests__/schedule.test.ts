@@ -7,8 +7,8 @@ import { meta, parse, serialize, setField, type Card, type CardSchedule } from '
 import { nodeFs } from '../../vault/node-fs.js';
 import { Vault } from '../../vault/index.js';
 import {
-  addDays, advanceRead, advanceWrite, cardGroups, counts, dayOf, daysBetween, fromFsrs, grade, gradeItem,
-  instantOf, nextIntervals, numberBlank, postponed, preview, queue, queueItems, reading, toFsrs, whenToDate, writing,
+  addDays, advanceRead, advanceWrite, cardGroups, counts, dayOf, daysBetween, fold, fromFsrs, grade, gradeItem,
+  instantOf, nextIntervals, numberBlank, overflow, postponeOverflow, postponed, preview, queue, queueItems, reading, toFsrs, whenToDate, writing,
   type CardItem, type QueueItem,
 } from '../index.js';
 
@@ -407,3 +407,113 @@ describe('queue over the sample vault', () => {
     await expect(vault.update(WOZ, (doc) => { gradeItem(doc, gone, 3, NOW); })).rejects.toThrow(/not found/);
   });
 });
+
+describe('the fold', () => {
+  let root: string;
+  let vault: Vault;
+
+  beforeEach(async () => {
+    root = await fsp.mkdtemp(join(tmpdir(), 'ilmi-fold-'));
+    await fsp.cp(CORPUS, root, { recursive: true });
+    vault = await Vault.open(nodeFs, root);
+  });
+
+  afterEach(async () => {
+    vault.close();
+    await fsp.rm(root, { recursive: true, force: true });
+  });
+
+  const readDisk = (rel: string) => fsp.readFile(join(root, rel), 'utf8');
+
+  const doc = (kind: 'read' | 'write', pri: number, ivl = 1) =>
+    parse(`---\npri: ${pri}\n${kind}: due=2026-05-27 ivl=${ivl} reps=1${kind === 'write' ? ' done=false' : ''}\n---\n\nprose\n`).doc;
+  const key = (i: QueueItem) => `${i.kind}:${i.kind === 'card' ? i.id ?? '?' : i.path}`;
+
+  it('splits a sorted day at the budget; no budget is no fold', () => {
+    const items = queueItems([['a.md', doc('read', 10)], ['b.md', doc('read', 20)], ['c.md', doc('write', 30)]], NOW);
+    expect(fold(items, 2).above.map(key)).toEqual(['read:a.md', 'read:b.md']);
+    expect(fold(items, 2).below.map(key)).toEqual(['write:c.md']);
+    expect(fold(items, 3)).toEqual({ above: items, below: [] });
+    expect(fold(items, 0)).toEqual({ above: items, below: [] });
+    expect(fold(items, -1)).toEqual({ above: items, below: [] });
+    expect(fold([], 2)).toEqual({ above: [], below: [] });
+  });
+
+  it('the overflow is the reading and writing below the fold, lowest priority first, never a card', () => {
+    const docs: [string, ReturnType<typeof parse>['doc']][] = [
+      ['a.md', doc('read', 10)], ['b.md', doc('write', 90)], ['c.md', doc('read', 60)],
+      ['d.md', parse('---\npri: 95\n---\n\nq :: a ^c1\n<!-- sr due=2026-05-27 -->\n').doc],
+      ['e.md', parse('---\npri: 70\nread: due=2026-06-01 ivl=3\n---\n\nprose\n').doc],
+    ];
+    const items = queueItems(docs, NOW);
+    expect(items.map(key)).toEqual(['read:a.md', 'read:c.md', 'write:b.md', 'card:c1', 'read:e.md']);
+    expect(overflow(items, NOW, 1).map(key)).toEqual(['write:b.md', 'read:c.md']);
+    expect(overflow(items, NOW, 3).map(key)).toEqual([]);
+    expect(overflow(items, NOW, 0)).toEqual([]);
+    // the whole queue can be handed in unsorted: what is not due is not overflow
+    expect(overflow([...items].reverse(), NOW, 1).map(key)).toEqual(['write:b.md', 'read:c.md']);
+  });
+
+  it('postponing the overflow of the corpus day rewrites one line per topic and touches no card', async () => {
+    const before = new Map<string, string>();
+    for (const path of vault.documents()) before.set(path, await readDisk(path));
+    const all = await queue(vault, NOW);
+    const today = all.filter((i) => i.dueAt <= NOW);
+    expect(today).toHaveLength(17);
+    // budget 5: one draft above the fold, the three reading topics below it, with nine cards
+    const rest = overflow(all, NOW, 5);
+    expect(rest.map((i) => `${i.kind}:${i.path}:${i.pri}`)).toEqual([
+      'read:papers/wozniak-1990/woz-ex1.md:80', 'read:papers/archive/sutton-2019.md:50', 'read:papers/crick-1995.md:50',
+    ]);
+    const done = await postponeOverflow(vault, all, NOW, 5);
+    expect(done).toEqual(rest);
+    for (const path of vault.documents()) {
+      const was = before.get(path)!.split('\n');
+      const now = (await readDisk(path)).split('\n');
+      const changed = was.flatMap((l, i) => (l === now[i] ? [] : [i + 1]));
+      if (!rest.some((i) => i.path === path)) {
+        expect(now, path).toEqual(was);
+      } else {
+        expect(changed, path).toHaveLength(1);
+        expect(was[changed[0]! - 1]).toMatch(/^read: /);
+        expect(now[changed[0]! - 1]).toMatch(/^read: /);
+      }
+    }
+    expect(await readDisk('papers/crick-1995.md')).toContain('\nread: due=2026-05-30 ivl=3 reps=3 pos=2 af=2\n');
+    expect(await readDisk('papers/archive/sutton-2019.md')).toContain('\nread: due=2026-05-29 ivl=2 reps=0 pos=0\n');
+    expect(await readDisk('papers/wozniak-1990/woz-ex1.md')).toContain('\nread: due=2026-05-29 ivl=2 reps=1 pos=0\n');
+    // tomorrow: the topics are gone, the cards below the fold are still there
+    const tomorrow = new Date(NOW.getTime() + 86400000);
+    const next = await queue(vault, tomorrow, 'today');
+    expect(next.filter((i) => i.kind === 'read')).toEqual([]);
+    expect(next).toHaveLength(17 - 3);
+    expect(overflow(await queue(vault, tomorrow), tomorrow, 5)).toEqual([]);
+  });
+
+  it('a day of topics over budget opens within budget the next day', async () => {
+    const root2 = await fsp.mkdtemp(join(tmpdir(), 'ilmi-fold2-'));
+    try {
+      const pris = [10, 20, 30, 40, 50, 60];
+      for (const p of pris) await fsp.writeFile(join(root2, `t${p}.md`), `---\npri: ${p}\n${p % 20 === 0 ? 'write' : 'read'}: due=2026-05-27 ivl=${p / 10} reps=1\n---\n\nprose\n`);
+      const v = await Vault.open(nodeFs, root2);
+      try {
+        const all = await queue(v, NOW);
+        expect(all.filter((i) => i.dueAt <= NOW)).toHaveLength(6);
+        const done = await postponeOverflow(v, all, NOW, 3);
+        expect(done.map((i) => i.pri)).toEqual([60, 50, 40]);
+        const tomorrow = new Date(NOW.getTime() + 86400000);
+        const next = await queue(v, tomorrow, 'today');
+        expect(next.map((i) => i.pri)).toEqual([10, 20, 30]);
+        // each interval grew by 1.2, at least a day: 4 → 5, 5 → 6, 6 → 7
+        expect(await fsp.readFile(join(root2, 't40.md'), 'utf8')).toContain('write: due=2026-06-01 ivl=5 reps=1\n');
+        expect(await fsp.readFile(join(root2, 't50.md'), 'utf8')).toContain('read: due=2026-06-02 ivl=6 reps=1\n');
+        expect(await fsp.readFile(join(root2, 't60.md'), 'utf8')).toContain('write: due=2026-06-03 ivl=7 reps=1\n');
+      } finally {
+        v.close();
+      }
+    } finally {
+      await fsp.rm(root2, { recursive: true, force: true });
+    }
+  });
+});
+

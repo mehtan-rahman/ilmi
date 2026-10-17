@@ -3,13 +3,15 @@
 // esc to close.
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { overflow } from '../schedule/index.js';
 import { ENTRY_GLYPH, buildIndex, search, type CardRef, type Command, type Entry } from './chrome.js';
 import { activeTab, closePane, splitPane } from './panes.js';
 import { useApp } from './store.js';
-import { containerOf, currentVault, openCard, openIntake, openNode, setInspector, setSidebar, startSession } from './vault.js';
+import { containerOf, currentVault, openCard, openIntake, openNode, postponeRest, setInspector, setSidebar, startSession } from './vault.js';
 
 const COMMANDS: Command[] = [
   { id: 'enter', title: 'enter queue' },
+  { id: 'postpone', title: 'postpone the rest' },
   { id: 'intake', title: 'add a source' },
   { id: 'split', title: 'split pane' },
   { id: 'close-pane', title: 'close pane' },
@@ -24,6 +26,7 @@ function runCommand(id: string): void {
   const tab = activeTab(s.panes)?.id;
   switch (id) {
     case 'enter': startSession(); break;
+    case 'postpone': void postponeRest().catch(console.error); break;
     case 'intake': openIntake(tab === undefined || tab.startsWith(':') ? '' : containerOf(tab)); break;
     case 'split': s.setPanes((p) => splitPane(p, p.active)); break;
     case 'close-pane': s.setPanes((p) => closePane(p, p.active)); break;
@@ -51,13 +54,17 @@ function cardRefs(): CardRef[] {
 export function Palette() {
   const tree = useApp((s) => s.tree);
   const docs = useApp((s) => s.docs);
+  const queue = useApp((s) => s.queue);
+  const budget = useApp((s) => s.budget);
   const [q, setQ] = useState('');
   const [sel, setSel] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const close = () => useApp.setState({ paletteOpen: false });
 
-  const index = useMemo(() => buildIndex(tree, docs, cardRefs(), COMMANDS), [tree, docs]);
+  // `postpone the rest` is offered only while something sits below the fold
+  const commands = useMemo(() => (overflow(queue, new Date(), budget).length ? COMMANDS : COMMANDS.filter((c) => c.id !== 'postpone')), [queue, budget]);
+  const index = useMemo(() => buildIndex(tree, docs, cardRefs(), commands), [tree, docs, commands]);
   const results = useMemo(() => search(index, q), [index, q]);
 
   useEffect(() => { inputRef.current?.focus(); }, []);

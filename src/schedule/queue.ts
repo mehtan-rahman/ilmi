@@ -13,6 +13,8 @@ import {
 import type { Vault } from '../vault/index.js';
 import { grade, type Grade } from './card.js';
 import { whenToDate } from './dates.js';
+import { advanceRead } from './read.js';
+import { advanceWrite } from './write.js';
 
 /** A numbered cloze group, or the index of an unnumbered blank in `blanks(text)` order. */
 export type GroupKey = { n: number } | { blank: number };
@@ -187,6 +189,47 @@ export async function queue(vault: Vault, now: Date, scope: Scope = 'all'): Prom
   const docs: [string, Doc][] = [];
   for (const path of vault.documents()) docs.push([path, (await vault.read(path)).doc]);
   return queueItems(docs, now).filter((i) => inScope(i, scope, now));
+}
+
+// ── the fold ─────────────────────────────────────────────────────
+
+export interface Fold { above: QueueItem[]; below: QueueItem[] }
+
+/**
+ * A day's sorted queue split at the budget: the first `n` items and the
+ * rest. A budget of 0 (or less) is no budget: everything is above.
+ */
+export function fold(items: QueueItem[], n: number): Fold {
+  if (n <= 0 || items.length <= n) return { above: items, below: [] };
+  return { above: items.slice(0, n), below: items.slice(n) };
+}
+
+/**
+ * The reading and writing due now that fall below the fold, lowest priority
+ * first. Cards are never here: FSRS folds their lateness into the next
+ * grade, so the app only orders them.
+ */
+export function overflow(items: QueueItem[], now: Date, budget: number): (ReadItem | WriteItem)[] {
+  const due = sortQueue(items.filter((i) => isDue(i, now)), now);
+  return fold(due, budget).below
+    .filter((i): i is ReadItem | WriteItem => i.kind !== 'card')
+    .sort((a, b) => b.pri - a.pri);
+}
+
+/**
+ * Postpone everything `overflow` names, one file at a time, each through
+ * `vault.update`, so each rewrites its own `read` or `write` line and
+ * nothing else. Resolves to what was postponed.
+ */
+export async function postponeOverflow(vault: Vault, items: QueueItem[], now: Date, budget: number): Promise<(ReadItem | WriteItem)[]> {
+  const rest = overflow(items, now, budget);
+  for (const item of rest) {
+    await vault.update(item.path, (doc) => {
+      if (item.kind === 'read') advanceRead(doc, 'postpone', now);
+      else advanceWrite(doc, 'postpone', now);
+    });
+  }
+  return rest;
 }
 
 export interface Counts { today: number; upcoming: number; cards: number; reading: number; writing: number }

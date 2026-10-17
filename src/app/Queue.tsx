@@ -1,16 +1,18 @@
 // The queue: a saved query over the vault, after the prototype's views.jsx.
 // `today` is the outstanding queue and enters a session; the other scopes
 // are lists that open one element at a time. `j` `k` move, `⏎` enters,
-// `o` opens the one under the cursor.
+// `o` opens the one under the cursor. A budget folds the day: the rows
+// above the fold are the day's work, the rest sit dimmed below a rule, and
+// `postpone the rest` pushes the reading and writing among them out.
 
-import { useEffect, useState, type MouseEvent } from 'react';
+import { Fragment, useEffect, useState, type MouseEvent } from 'react';
 import { PRI_DEFAULT, cardFields, clozeParts } from '../format/index.js';
-import { counts, inScope, type QueueItem } from '../schedule/index.js';
+import { counts, inScope, overflow, type QueueItem } from '../schedule/index.js';
 import { EL_GLYPH, QUEUE_EMPTY, dayLabel, dueLabel, intervalLabel, isFresh, kindTag, refLine, snippetOf, sourceLabel, summary } from './items.js';
 import { QUEUE_TITLE, SCOPES, queueId, type QueueScope } from './names.js';
 import type { OpenOpts } from './panes.js';
 import { useApp } from './store.js';
-import { openCard, openNode, openSession, refreshQueue, startSession } from './vault.js';
+import { openCard, openNode, openSession, postponeRest, refreshQueue, startSession } from './vault.js';
 import './queue.css';
 
 interface Props {
@@ -47,9 +49,17 @@ export function Queue({ scope, active }: Props) {
   const all = useApp((s) => s.queue);
   const docs = useApp((s) => s.docs);
   const log = useApp((s) => s.log);
+  const budget = useApp((s) => s.budget);
   const [cursor, setCursor] = useState(0);
   const now = new Date();
   const items = all.filter((i) => inScope(i, scope, now));
+  // the fold: where the day's budget ends, and what below it can be postponed
+  const foldAt = scope === 'today' && budget > 0 && items.length > budget ? budget : items.length;
+  const rest = foldAt < items.length ? overflow(all, now, budget) : [];
+  const restWord = [rest.filter((i) => i.kind === 'read').length, rest.filter((i) => i.kind === 'write').length]
+    .map((n, i) => (n ? `${n} to ${i ? 'write' : 'read'}` : ''))
+    .filter(Boolean)
+    .join(' · ');
 
   // a card in learning steps comes due by the minute; look again when shown
   useEffect(() => { if (active) refreshQueue(); }, [active, scope]);
@@ -112,12 +122,13 @@ export function Queue({ scope, active }: Props) {
           {items.map((item, i) => {
             const ref = refLine(item);
             const ivl = item.kind === 'card' ? intervalLabel(item) : '';
-            return (
+            const row = (
               <li
                 key={`${item.kind}:${item.path}:${item.kind === 'card' ? `${item.block}:${JSON.stringify(item.group ?? null)}` : ''}`}
                 data-active={i === cursor ? '1' : '0'}
                 data-el={item.kind}
                 data-fresh={isFresh(item) ? '1' : '0'}
+                data-below={i >= foldAt ? '1' : '0'}
                 onMouseEnter={() => setCursor(i)}
                 onClick={(e) => open(item, clickOpts(e))}
               >
@@ -136,6 +147,20 @@ export function Queue({ scope, active }: Props) {
                   {ivl && <div className="ivl">{ivl}</div>}
                 </span>
               </li>
+            );
+            if (i !== foldAt) return row;
+            return (
+              <Fragment key="fold">
+                <li className="fold" data-below="0">
+                  <span className="fold-n">{items.length - foldAt} more</span>
+                  {rest.length > 0 && (
+                    <button type="button" className="fold-act" onClick={() => void postponeRest().catch(console.error)}>
+                      postpone the rest<span className="fold-what">{restWord}</span>
+                    </button>
+                  )}
+                </li>
+                {row}
+              </Fragment>
             );
           })}
         </ol>

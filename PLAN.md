@@ -638,16 +638,80 @@ repetition history landing in Markdown.
   day matches its outstanding count, and a real collection, when one is at
   hand, imports with no unknown-record diagnostic.
 
+## Reading PDFs
+
+Import turns a PDF into Markdown and loses the PDF. Papers are read in
+their own layout, so the next lens keeps the file and reads it in place:
+the three loops over a PDF, with the Markdown beside it holding what came
+out. sioyek (github.com/ahrm/sioyek, GPLv3) is the behaviour reference:
+read its source for the ruler, highlights, portals, and smart jump, and
+reimplement; copy nothing, since its license is not ours and it renders
+through MuPDF, whose license is not ours either. No reverse engineering is
+involved; the code is public.
+
+### [ ] 15. PDF lens — read a PDF in place, extract and card from its pages
+- Renderer: pdf.js in the webview (Apache-2.0), bundled, no CDN, with its
+  text layer on, so a selection on a page is a DOM selection and `e` /
+  `m` work as they do in the reader. Pages render lazily; the worker runs
+  as pdf.js ships it. Not pdfium, not MuPDF: the first needs a text layer
+  built by hand, the second's license is AGPL.
+- FORMAT.md: a PDF is `name.pdf` beside `name.md`; the Markdown is the
+  document (`type: source`, `frozen`, `read`, `pri`, cards, extract
+  backrefs), the PDF is its pages. §1 lists the pairing beside `name/`. A
+  front-matter field `pdf: name.pdf` names the file, relative to the
+  document; the vault walk attaches a `.pdf` with the same stem as the
+  document's pages whether or not the field is there, and the field wins
+  when it differs. The reading marker on a PDF is `pos=<page>`, the page
+  the ruler is on; the same attribute, so nothing else changes. An
+  extract carved from a page carries `page=<n>` on its `read` line
+  (int ≥ 1) and its parent's backref stays `<!-- extract NAME -->`. A
+  card made from a page carries no anchor: it lives in the Markdown under
+  a heading `## p. <n>` the app adds once per page, the way the composer
+  anchors a card after a paragraph today. Corpus: one small PDF made for
+  the purpose (two pages, generated, no one's paper) and its Markdown,
+  with a test and a mangled `pdf:` pointing at a missing file.
+- The lens: a source whose pages exist opens as pages, with the Markdown's
+  cards and extracts in a rail to the right at their page, and a `text`
+  toggle in the meta row to read the Markdown instead. The left-margin
+  ruler marks the page as the marker marks a block today, drag sets it,
+  and `read on` records the page. Keys match the reader: `e` extract, `m`
+  card, `r` start reading, `/` search in the PDF, `g` go to page, `[` `]`
+  pages. Highlights are extracts: a passage extracted from a page is drawn
+  on it from the stored text when pdf.js finds it again, else only in the
+  rail. No annotations written into the PDF, ever.
+- Smart jump, from sioyek: `⏎` on a selected figure or citation reference
+  (`Figure 3`, `[12]`, `Smith et al.`) finds its target in the PDF's text
+  and shows it in a popover without leaving the page; `esc` closes it.
+  Study sioyek's rules for matching, write ours from scratch.
+- Import: a dropped or picked PDF lands as the pair (`name.pdf` copied,
+  `name.md` with front-matter and the extracted text as a fallback body
+  under a `## text` heading), not as text alone; the intake says `pages`
+  where it says words today. `textOf` for PDFs comes from pdf.js on the
+  renderer side, not from a Rust crate.
+- Session: a reading element whose source has pages opens the PDF lens at
+  its page; `⏎`, `p`, `d` as today. Cards from a PDF review as any card;
+  the inspector's `in` row names the page.
+- Done when: a PDF dropped on the intake opens as pages beside its
+  Markdown, `e` on a page selection writes one extract file with
+  `page=<n>` and one backref line, `m` writes one card under `## p. <n>`,
+  `read on` writes `pos=<page>`, the extract appears as a highlight on
+  reopening, and the corpus pair round-trips. Smart jump is a stretch
+  within the milestone: ship it only if the rest is done and verified.
+- Not in this milestone: PDF annotations written to the file, two-page
+  spreads, EPUB, scanned PDFs without a text layer (they open, nothing
+  can be selected, and the meta row says `no text`).
+
 ## Notes for the next session
 
-Start at milestone 11, growth. It is small: `af` on the `read` / `write`
-specs in `src/format/frontmatter.ts` (a `specNum`, but ≥ 1.1, so a range
-spec for numbers is needed beside `specIntRange`), FORMAT.md §3, the
-constants in `src/schedule/read.ts` / `write.ts` becoming the line's
-`af`, `postpone(r, now, factor?)` with the `max(round(ivl × factor), ivl
-+ 1)` rule, and a `growth` row in the inspector next to the `priority`
-row from milestone 10 (`PriField` is the shape to copy for a number
-field). The corpus's reading topics carry no `af`, so a test sets one and
-checks the landing. Milestone 12 builds on 10 and 11 together; 13 is
-optional and says so; 14 is the only one that touches SuperMemo itself,
-and only its data files.
+Start at milestone 12, overload. It builds on 10 and 11 together: the
+sorted queue from `sortQueue` and `postpone(s, now, factor?)` from
+`src/schedule/read.ts` / `write.ts`. The budget is the one new setting and
+goes in `.ilmi/state.json` beside `folders` and `tab`, set from the tweaks
+panel; the fold is drawn in the `due today` query and the session walks
+what is above it; `postpone the rest` is a palette command and a row
+under the fold, running over reading and writing items below it, lowest
+priority first, never a card. 13 is optional and says so; 14 is the only
+one that touches SuperMemo itself, and only its data files; 15 is a new
+lens and the biggest of the five, and asks for pdf.js to be added to the
+bundle, so check the bundle size and the `fs` scope for `.pdf` before
+starting it.

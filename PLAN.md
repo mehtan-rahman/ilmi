@@ -437,31 +437,146 @@ plan names accent as a tweak, though the brief calls gold the one accent.
   maintained this for years" test, and the whole loop (import → read →
   extract → card → review) runs end to end.
 
+## SuperMemo parity
+
+ilmi was built as a modern SuperMemo: the three loops over Markdown, with
+FSRS in place of SM-18. What it still lacks from SuperMemo is the handling
+of *too much*: a fine priority scale, the outstanding queue sorted by it,
+a growth factor per topic, and postponing the overflow. Wozniak documents
+all of that at supermemo.guru and help.supermemo.org. Implement it from the
+text, never from the binary: the SuperMemo license forbids reverse
+engineering, and a clean-room version is the only one that can be shared.
+The one place the binary matters is milestone 14, reading a collection's
+data files, and only where the community notes on the layout run out.
+
+Same rules as above: one milestone per session, a FORMAT.md change comes
+with a corpus file and a test, ask before a screen or a setting not listed
+here. Cards keep FSRS throughout; nothing below changes how a grade lands.
+
+### [ ] 10. Priority — one scale, document level, the queue sorted by it
+SuperMemo gives every element a priority percentile, 0% first, and sorts
+the outstanding queue by it. ilmi's `pri` is an int on the `read` /
+`write` line, default 2, and cards have none (they are 2 when due, 3
+otherwise).
+- FORMAT.md: a front-matter field `pri`, int 0–100, lower first, default
+  50, applying to the document's reading, writing, and every card in it.
+  `pri` on a `read` / `write` line is read as a fallback for that loop and
+  dropped on write (§8 normalization) once the field exists. A card may
+  carry `pri` on its bare `sr` line to override the document's; a group
+  line never carries one. Rewrite the corpus's `pri=1..3` onto the field
+  and the new scale (1 → 10, 2 → 50, 3 → 80), with a test showing the
+  queue order for 2026-05-27 is unchanged.
+- `src/schedule/queue.ts`: `pri` on every item from the document field,
+  the card override, else 50. Due items sort by `pri`, then due, then
+  document order; `upcoming` by due, then `pri`. The 2 / 3 card rule goes.
+- An extract takes the parent's priority at carving (today it copies the
+  read line's). A card made from a passage takes the document's.
+- Inspector: a `priority` row for source / extract / draft / deck and for
+  the selected card (a number field, 0–100, written through `setField` or
+  the card's own line). The prototype's priority picker returns to the
+  composer, since a card can carry one now.
+- Queue rows and the session strip show `p NN` only when it is not 50.
+- Done when: setting a priority in the inspector changes one line on
+  disk, the queue reorders live, and the corpus order test passes.
+
+### [ ] 11. Growth — a factor per document for reading and writing
+SuperMemo multiplies a topic's interval by its A-factor on every pass, and
+`postpone` multiplies it too rather than moving it to tomorrow. ilmi's
+growth is a constant: 1.6 for reading, 1.5 for writing, and postpone is
+always the next day.
+- FORMAT.md: `af` (number ≥ 1.1; default 1.6 on `read`, 1.5 on `write`)
+  on the `read` / `write` line, omitted when it is the default.
+- `src/schedule/read.ts` / `write.ts`: `readOn` / `workedOn` use the
+  line's `af`. `postpone(r, now, factor?)`: new interval
+  `max(round(ivl × factor), ivl + 1)` days from today, default factor
+  1.2, `reps` untouched. A session's `p` stays one keypress on the default.
+- Inspector: a `growth` row for sources, extracts, and drafts, with the
+  next three intervals previewed (`3d · 5d · 8d`) the way the draft's
+  spaced-composition numbers are shown today.
+- Done when: a pass over the corpus's reading topics with `af=2` lands
+  where the formula says, postpone never schedules earlier than tomorrow,
+  and `af` round-trips through the corpus.
+
+### [ ] 12. Overload — a budget for the day, and postponing the rest
+SuperMemo's auto-postpone: when a day ends with material outstanding, the
+lowest-priority overflow is pushed forward by a factor so the next day
+starts clean. Cards are different under FSRS: lateness is folded into the
+next grade, so the app never postpones a card, it only orders them.
+- `src/schedule/queue.ts`: `fold(items, n)` splits today's sorted queue
+  into the first `n` and the rest; `overflow(items, now)` is the reading
+  and writing items below the fold.
+- `budget` in `.ilmi/state.json` (int, 0 = none), set from the tweaks
+  panel; this is the one new setting. The `due today` query draws the fold
+  as a thin rule with `N more` under it, and a session walks the part
+  above the fold.
+- A palette command and a row under the fold, `postpone the rest`: runs
+  `postpone` (milestone 11) over every reading and writing item below the
+  fold, lowest priority first, and leaves cards where they are. No
+  special case for overdue cards; priority and due order them.
+- The top strip's count stays one number: items above the fold.
+- Done when: a vault with more due than the budget shows the fold,
+  `postpone the rest` rewrites one line per topic below it and touches no
+  card, and the next day's queue opens within budget.
+
+### [ ] 13. Tasks — the third element, ranked, never graded
+SuperMemo's tasklists rank to-dos and feed them into the same day. ilmi has
+drafts for writing; a task is the same shape with no interval: due,
+priority, done.
+- FORMAT.md: `type: task`; a `task` line with `due` and `done`. No `ivl`,
+  no `reps`; `pri` is the document field. The body is the task's text.
+- Queue: a `task` item kind, due ≤ today, sorted with the rest by
+  priority. Session: `d` done, `p` postpone to tomorrow; no grades, no
+  marker. Inspector: the done / reopen row and a due-day field.
+- Tree: a glyph and colour for tasks; `new task` in the right-click menu;
+  a `tasks` saved query beside `writing`.
+- Done when: a task made from the tree appears in `due today`, `d` writes
+  `done=true` and it leaves the queue, and the corpus has one.
+- If this starts to look like a second drafts lens, stop and ask; dropping
+  it is the likelier answer.
+
+### [ ] 14. Import — a SuperMemo collection into a vault
+One-shot, from the command line, not the app:
+`npm run import-sm -- <collection.kno> <vault-dir>`. The point is years of
+repetition history landing in Markdown.
+- Layout, to verify before any code: `<name>.kno` beside `<name>/`, with
+  `elements/` (one HTML file per element in numbered subfolders), `info/`
+  (`contents.dat` for the tree; `elementinfo.dat`, fixed-size records with
+  the per-element schedule and priority), `registry/`, and the repetition
+  history. Start from the community notes (supermemo.wiki,
+  help.supermemo.org, and any SuperMemo-to-Anki converters on GitHub).
+  Where those run out, point REA (`npx rea-agents setup`; Ghidra for the
+  native path; the executable is 32-bit Delphi, so recover classes and
+  strings with IDR or the Dhrake scripts first) at the executable with one
+  question per record: field offsets and types. Write each answer and its
+  evidence into `src/import/supermemo/LAYOUT.md`. Never copy pseudocode
+  into the importer; the layout notes are the only thing that crosses.
+- Mapping: tree folders → vault folders; a topic → a source (`frozen`,
+  `imported`, its HTML through `readable` + `textOf`); a topic's child
+  topics → extracts under `name/`; an item → a q&a card in its parent's
+  document (a cloze item carved from the parent's text → a cloze card
+  there); a child of an item lands in the nearest topic. Priority % →
+  `pri`, rounded. Topic schedule → `read: due ivl reps pos=0 af=<A-factor>`.
+  Item schedule → `sr`: when the repetition history is readable, replay it
+  through `grade` from the first repetition (`fsrs-sim.test.ts` shows the
+  shape); else seed `st=review ivl=<interval> last=<last rep> r=<reps>
+  s=<interval> d=5`. Tasklists → milestone 13 tasks.
+- `src/import/supermemo/` is pure over bytes and an `Fs`, tested against a
+  fixture collection under `__tests__/collection/`: small, made for the
+  purpose, nobody's real notes. The CLI is `scripts/import-sm.ts` under
+  node, writing through `Vault`.
+- Done when: the fixture imports into a scratch vault that `parse`s clean,
+  every element is findable in the tree, the queue for the fixture's last
+  day matches its outstanding count, and a real collection, when one is at
+  hand, imports with no unknown-record diagnostic.
+
 ## Notes for the next session
 
-Start at milestone 9, chrome and polish, the last one. The prototype's
-shell is `chrome.jsx` (`TopStrip`: vault counts, the palette button, the
-date, the inspector toggle; `BottomStrip`: real key hints per active
-kind, `HINTS` there is the list; `Inspector` per node type, with the
-`CardEditor` that edits a card in place while it is under review;
-`TabBar`), `palette.jsx` (`⌘K`, fuzzy over nodes, queries, and
-commands; `fuzzy` is in `store.jsx`), `tweaks-panel.jsx` and the tweaks
-wiring at the top of `app.jsx` (theme / accent presets / density and the
-other sliders; only theme, accent, density are in the brief), and the
-global keyboard router in `app.jsx`. The shell grid in `tokens.css`
-already has `top` / `bot` / `insp` areas; `app.css` overrides it to two
-columns until the strips exist (remove that block). `--insp-w` is set
-to `0px` in `App.tsx`. The store keeps `theme` and `density` and
-`window.ilmi` is the console toggle; the tweaks panel replaces it and
-its settings need a home outside the vault (Tauri's app config dir, or
-`localStorage`). What is ready for the inspector: `DocInfo` per
-document, `useDoc` for a file, `setCardText` in `src/reader/cards.ts`
-(tested, unused) for the card editor, `sessionEl` and `session` in the
-store for what is under review, `refreshQueue` / `counts` for the top
-strip. The palette's commands: the saved queries (`queueId`), `add a
-source` (`openIntake`), split / close pane, theme, every document by
-title (`docs` + `titleOf`). Then the end-to-end pass: import → read →
-extract → card → review over a scratch vault (`ILMI_SMOKE=intake`,
-`cards`, `queue` cover the parts) and the copy pass: remove words.
-Ask before adding a screen, section, or setting the brief or the
-prototype does not have.
+Start at milestone 10, priority. It is a format change first: the `pri`
+field in FORMAT.md §3 and §6.2, `src/format/frontmatter.ts` (the
+`specInt('pri', 'pri')` entries on the `read` / `write` specs become a
+fallback) and `model.ts`, the corpus rewritten onto the new scale, then
+`src/schedule/queue.ts` (`pri` at lines 98, 119, 125 and the sort at 139)
+and the inspector row. Milestones 11 and 12 build on it; 13 is optional
+and says so; 14 is the only one that touches SuperMemo itself, and only
+its data files. `BUILD-LOG.md`'s newest entry predates this section; the
+next entry's handoff prompt should name milestone 10.

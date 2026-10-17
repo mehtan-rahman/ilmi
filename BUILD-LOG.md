@@ -6,6 +6,91 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-10-17 — milestone 13: tasks, dropped
+
+Commit `PENDING` — *tasks: dropped, a task is a draft whose body is the
+to-do*.
+
+### Done
+
+- No code. Milestone 13 carried its own hedge ("if this starts to look
+  like a second drafts lens, stop and ask; dropping it is the likelier
+  answer"); with nobody to ask, the session judged it before writing
+  anything and dropped it. PLAN.md ticks it as `13. Tasks — dropped` with
+  the reasoning under it, so the kickoff rule moves to 14.
+- The judgment: the milestone describes a task as "the same shape [as a
+  draft] with no interval: due, priority, done". Every part of the asked
+  build already exists on the draft: a file whose body is the text, a
+  line with `due` and `done`, the document `pri` ranking it in the day
+  (the tasklist's actual function), a queue row, a session with `p` and
+  `d` and no grades or marker, done / reopen in the inspector, a glyph,
+  `new draft`, the `writing` query. The build would have removed `ivl` /
+  `reps` / `af` and the ⏎ pass and changed `p` from `postponed(ivl)` to
+  tomorrow, at the price of a fourth branch through the format
+  (`NodeType`, `Field`, the line specs, `setField`, `meta`, the round
+  trip), the queue (`QueueItem`, `Scope`, `inScope`, `counts`,
+  `overflow`, `summary`, `El`), the session, the inspector, the tree, the
+  folder lens, `metaOf`, the CSS, `createDoc`, and milestone 14's
+  importer. The prototype has no task node, and the ground rules say to
+  ask before adding a kind it lacks. That is a second drafts lens.
+- What a task is instead: a draft. The to-do is the body, `d` when done,
+  `p` when not today, a `tasks/` folder to group them in the tree. For
+  milestone 14, a tasklist is a folder of drafts, `write: due=<deadline,
+  else the import day> ivl=1 reps=0 done=false`, priority on `pri`.
+
+### Verified
+
+- `npm run typecheck` clean, `npx vitest run` green (13 files, 245),
+  unchanged from milestone 12. Nothing to run in the window; port 1420
+  free.
+
+### Not done / open
+
+- The one thing a to-do lacks as a draft is a due-day field on the
+  draft's inspector, so a date can be set without `p`. A row for a polish
+  pass, if wanted; not a type.
+- "To tomorrow" is not a draft action: a fresh draft's `p` is
+  `postponed(1)`, two days out, and ⏎ on it is `grow(1, 1.5)`, also two.
+  Accepted; the due-day field above would cover it.
+- Milestone 14's text still says "tasklists → milestone 13 tasks"; it was
+  left as written, and the note under 13 says what it now means.
+
+### Decisions worth knowing
+
+- Dropped rather than built-then-asked: the milestone named dropping as
+  the likelier answer, the gain was one function, and the cost would have
+  reached into 14.
+- Ticked `[x]` with "dropped" in the heading rather than left unchecked,
+  so the next session's "first unchecked milestone" is 14 without a
+  special case; the original bullets stay under the note as the record of
+  what was asked.
+
+### Handoff prompt
+
+Paste into a fresh session:
+
+```
+Read PLAN.md, FORMAT.md, BUILD-LOG.md, and spec/hashiyah/HANDOFF.md. Do the
+first unchecked milestone in PLAN.md and only that one. Stop at its "done
+when". Then tick it, write notes for the next session under it, add an entry
+to BUILD-LOG.md with a fresh handoff prompt, and commit.
+
+Context: milestone 13 (tasks) was dropped (BUILD-LOG 2026-10-17): a task
+is a draft, see the note under 13 in PLAN.md. The next is 14, the
+SuperMemo import: one-shot from the command line, from the data files
+only, with the layout verified and written into
+src/import/supermemo/LAYOUT.md before any importer code; its "tasklists →
+milestone 13 tasks" line now means a folder of drafts. Tooling: export
+PATH=$HOME/.cargo/bin:/opt/homebrew/bin:$PATH; npm test and npm run
+typecheck must be green before a commit; caffeinate -d -u -i, then
+ILMI_VAULT=<scratch copy> ILMI_SMOKE=<mode> npm run tauri dev drives the
+window (overload is the newest mode; the smoke pauses ten seconds after
+each `shot:` line and the shell shoots two seconds after reading it;
+free port 1420 afterwards).
+```
+
+---
+
 ## 2026-10-17 — milestone 12: overload, a budget for the day and postponing the rest
 
 Commit `5eaa5f5` — *overload: a day budget in the vault's state, the fold in

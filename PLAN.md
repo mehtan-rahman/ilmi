@@ -626,7 +626,31 @@ next grade, so the app never postpones a card, it only orders them.
   `postpone the rest` rewrites one line per topic below it and touches no
   card, and the next day's queue opens within budget.
 
-### [ ] 13. Tasks — the third element, ranked, never graded
+### [x] 13. Tasks — dropped
+Dropped 2026-10-17, commit `PENDING`.
+Notes: not built. The milestone's own description, "the same shape with
+no interval: due, priority, done", is the draft: a Markdown file whose
+body is the text, a `write` line with `due` and `done`, the document's
+`pri` ranking it against the day's reading and cards (which is what a
+SuperMemo tasklist is for), a queue row, a session with `p` and `d` and
+no grades or marker, the inspector's done / reopen row, a glyph, `new
+draft`, the `writing` query. A `type: task` would have removed `ivl` /
+`reps` / `af` and the ⏎ pass and changed one function (`p` to tomorrow
+instead of `postponed(ivl)`), at the price of a fourth branch through
+`NodeType`, `Field`, the line specs, `setField`, `meta`, `QueueItem`,
+`Scope`, `inScope`, `counts`, `overflow`, `summary`, `El`, `DocSession`,
+`DocInspector`, `NEW_KINDS`, the folder lens, `metaOf`, the CSS,
+`createDoc`, and then the importer in 14; the prototype has no task node,
+and the ground rules say to ask before adding a kind it lacks. A task is
+a draft: the to-do is its body, `d` when done, `p` when not today; a
+`tasks/` folder groups them in the tree, which is the model. What a to-do
+lacks as a draft is a due-day field on the draft's inspector, so a date
+can be set without `p` (a fresh draft's `p` lands at `postponed(1)`, two
+days out, not tomorrow); if wanted, that is a row in a polish pass, not a
+type. Milestone 14's "tasklists → milestone 13 tasks" becomes: a tasklist
+is a folder of drafts, each `write: due=<deadline, else the import day>
+ivl=1 reps=0 done=false`, its priority on `pri`. Nothing changed on disk,
+in FORMAT.md, or in the suite (13 files, 245).
 SuperMemo's tasklists rank to-dos and feed them into the same day. ilmi has
 drafts for writing; a task is the same shape with no interval: due,
 priority, done.

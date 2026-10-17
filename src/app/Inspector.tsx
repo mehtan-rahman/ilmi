@@ -1,10 +1,14 @@
 // The inspector: what the active tab is, read from the vault, and the few
 // things worth changing from the side: a source's freeze, a deck's default
-// card, a draft's done, and the text of the card under review or selected
-// in the reader. After the prototype's Inspector, with its prose removed.
+// card, a draft's done, a document's or a card's priority, and the text of
+// the card under review or selected in the reader. After the prototype's
+// Inspector, with its prose removed.
 
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { cardForm, meta, parse, setField, type Block, type Card, type CardForm, type Doc } from '../format/index.js';
+import {
+  PRI_DEFAULT, PRI_MAX, PRI_MIN, cardForm, docPri, meta, parse, parsePri, setField,
+  type Block, type Card, type CardForm, type CardSchedule, type Doc,
+} from '../format/index.js';
 import { advanceWrite, counts, type CardItem } from '../schedule/index.js';
 import { dirOf, isDoc, type TreeNode } from '../vault/index.js';
 import { cardLabel, formLabel } from './chrome.js';
@@ -36,6 +40,61 @@ function Block({ title, children }: { title: string; children?: ReactNode }) {
     </div>
   );
 }
+
+/**
+ * A priority, 0–100: a number field that commits on blur or ⏎, empty for
+ * none (the placeholder says what applies then). Escape puts back what was
+ * there. Nothing is written while typing.
+ */
+function PriField({ value, fallback, onCommit }: { value: number | undefined; fallback: number; onCommit(n: number | null): void }) {
+  const shown = value === undefined ? '' : String(value);
+  const [text, setText] = useState(shown);
+  useEffect(() => { setText(shown); }, [shown]);
+  const commit = () => {
+    const t = text.trim();
+    if (t === '') { if (value !== undefined) onCommit(null); return; }
+    const n = parsePri(t);
+    if (n === null) { setText(shown); return; }
+    if (n !== value) onCommit(n);
+  };
+  return (
+    <input
+      className="pri-field"
+      type="number"
+      inputMode="numeric"
+      min={PRI_MIN}
+      max={PRI_MAX}
+      step={1}
+      placeholder={String(fallback)}
+      value={text}
+      onChange={(e) => setText(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur(); }
+        else if (e.key === 'Escape') { e.preventDefault(); setText(shown); e.currentTarget.blur(); }
+      }}
+    />
+  );
+}
+
+/** The document's priority row: the field, written through `setField`; empty clears it. */
+function docPriRow(path: string, m: ReturnType<typeof meta>): [string, ReactNode] {
+  const write = (n: number | null) => currentVault()?.update(path, (d) => setField(d, 'pri', n)).catch(console.error);
+  // with no field, a `pri=` left on a read / write line is what the queue uses for that loop
+  const fallback = m.read?.pri ?? m.write?.pri ?? PRI_DEFAULT;
+  return ['priority', <PriField key={path} value={m.pri} fallback={fallback} onCommit={write} />];
+}
+
+/** The card as this render knew it: at its index, else by id. Not whatever slid into the index since. */
+function cardAt(doc: Doc, index: number, card: Card): Card | undefined {
+  const same = (b: Block) => b.kind === 'card' && (card.id !== undefined ? b.id === card.id : b.text === card.text);
+  const at = doc.blocks[index];
+  const b = at && same(at) ? at : card.id !== undefined ? doc.blocks.find(same) : undefined;
+  return b?.kind === 'card' ? b : undefined;
+}
+
+/** Anything the scheduler wrote; a line carrying only `pri` is not a schedule. */
+const hasSchedule = (s: CardSchedule | undefined): boolean => !!s && Object.keys(s).some((k) => k !== 'pri' && k !== 'extra');
 
 /** Cards of a document as a list, each with when it comes up. */
 function CardList({ title, doc, now }: { title: string; doc: Doc; now: Date }) {
@@ -85,12 +144,9 @@ function CardEditor({ path, index, card }: { path: string; index: number; card: 
     timer.current = setTimeout(() => {
       timer.current = null;
       if (!readsAsCard(next)) return;
-      // the card as this render knew it, not whatever slid into its index since
-      const same = (b: Block) => b.kind === 'card' && (card.id !== undefined ? b.id === card.id : b.text === card.text);
       currentVault()?.update(path, (doc) => {
-        const at = doc.blocks[index];
-        const b = at && same(at) ? at : card.id !== undefined ? doc.blocks.find(same) : undefined;
-        if (b?.kind === 'card' && b.text !== next) b.text = next;
+        const b = cardAt(doc, index, card);
+        if (b && b.text !== next) b.text = next;
       }).catch(console.error);
     }, 400);
   };
@@ -147,7 +203,7 @@ function DocInspector({ id, info, doc, now }: { id: string; info: DocInfo; doc: 
     return (
       <>
         <Block title="deck">
-          <KV rows={[['cards', cards], ['due', info.due]]} />
+          <KV rows={[['cards', cards], ['due', info.due], docPriRow(id, m)]} />
           <div className="frozen-row">
             <span className="fr-state">new cards</span>
             <div className="deck-default">
@@ -169,7 +225,7 @@ function DocInspector({ id, info, doc, now }: { id: string; info: DocInfo; doc: 
     return (
       <>
         <Block title="draft">
-          <KV rows={[['path', <span className="mono">{id}</span>], ['length', plural(words(doc.blocks), 'word')], ...(cards ? [cardsRow] : [])]} />
+          <KV rows={[['path', <span className="mono">{id}</span>], ['length', plural(words(doc.blocks), 'word')], ...(cards ? [cardsRow] : []), docPriRow(id, m)]} />
           {w && (
             <div className="frozen-row">
               <span className="fr-state">{state}</span>
@@ -198,6 +254,7 @@ function DocInspector({ id, info, doc, now }: { id: string; info: DocInfo; doc: 
   rows.push(['length', plural(words(doc.blocks), 'word')]);
   if (cards) rows.push(cardsRow);
   if (m.read) rows.push(['reading', `${m.read.pos ?? 0} of ${doc.blocks.filter((b) => b.kind !== 'card').length}, ${dueLabel(m.read.due, now)}`]);
+  rows.push(docPriRow(id, m));
   return (
     <>
       <Block title={info.type}>
@@ -233,11 +290,20 @@ function CardBlock({ path, index, doc, group, now }: { path: string; index: numb
   const docs = useApp((s) => s.docs);
   const b = doc.blocks[index];
   if (b?.kind !== 'card') return null;
-  const sched = group && 'n' in group && b.blanks?.[group.n] ? b.blanks[group.n] : b.sched;
+  const own = group && 'n' in group && b.blanks?.[group.n] ? b.blanks[group.n] : b.sched;
+  const sched = hasSchedule(own) ? own : undefined;
   // a cloze card may carry only per-blank schedules; it is scheduled all the same
-  const scheduled = b.sched !== undefined || b.blanks !== undefined;
+  const scheduled = hasSchedule(b.sched) || b.blanks !== undefined;
   const rows: [string, ReactNode][] = [['type', formLabel(b.text)], ['in', titleOf(path, docs, null)]];
   if (docs[path]?.frozen) rows.push(['source', 'frozen']);
+  // the card's own priority, on its bare line; empty means the document's
+  const setPri = (n: number | null) => currentVault()?.update(path, (d) => {
+    const c = cardAt(d, index, b);
+    if (!c) return;
+    if (n !== null) c.sched = { ...c.sched, pri: n };
+    else if (c.sched) { delete c.sched.pri; if (!Object.keys(c.sched).length) delete c.sched; }
+  }).catch(console.error);
+  rows.push(['priority', <PriField key={`${path}:${b.id ?? index}`} value={b.sched?.pri} fallback={docPri(meta(doc))} onCommit={setPri} />]);
   const reset = () => { resetCard(path, index, b.id, b.text).catch(console.error); };
   return (
     <>

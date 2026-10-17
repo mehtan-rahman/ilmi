@@ -1,7 +1,8 @@
 ---
 frozen: true
 imported: 2026-03-02
-read: due=2026-05-27 ivl=1 reps=0 pos=0 pri=2
+pri: 50
+read: due=2026-05-27 ivl=1 reps=0 pos=0
 ---
 
 ## opening — where humans got it wrong

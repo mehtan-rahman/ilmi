@@ -2,7 +2,8 @@
 type: source
 frozen: true
 imported: 2026-05-20
-read: due=2026-05-27 ivl=2 reps=3 pos=2 pri=2
+pri: 50
+read: due=2026-05-27 ivl=2 reps=3 pos=2
 ---
 
 ## intro — what consciousness is not

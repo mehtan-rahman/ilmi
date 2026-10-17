@@ -20,6 +20,7 @@ export const SR_SPECS: AttrSpec<CardSchedule>[] = [
   specInt('ivl', 'ivl'),
   specWhen('last', 'last'),
   specIntRange('g', 'grade', 1, 4),
+  specIntRange('pri', 'pri', 0, 100),
 ];
 
 // ── line classifiers ─────────────────────────────────────────────
@@ -219,6 +220,8 @@ function attach(prev: Block | undefined, adjacent: boolean, tag: string, rest: s
     if (prev.sched) warn('card has two schedules; later wins');
     prev.sched = sched;
   } else {
+    // a priority belongs to the card, on its bare line
+    if (sched.pri !== undefined) { warn(`"pri" on a group line is ignored`); delete sched.pri; }
     const blanks = prev.blanks ?? {};
     if (blanks[group]) warn(`group c${group} has two schedules; later wins`);
     blanks[group] = sched;

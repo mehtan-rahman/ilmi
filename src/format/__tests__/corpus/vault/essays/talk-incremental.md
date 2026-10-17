@@ -2,7 +2,8 @@
 type: draft
 title: talk · incremental everything
 started: 2026-05-25
-write: due=2026-05-30 ivl=3 reps=0 pri=3 done=false
+pri: 80
+write: due=2026-05-30 ivl=3 reps=0 done=false
 ---
 
 ## outline

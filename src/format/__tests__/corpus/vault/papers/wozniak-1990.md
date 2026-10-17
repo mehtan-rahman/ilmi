@@ -2,7 +2,8 @@
 type: source
 frozen: true
 imported: 2026-04-18
-read: due=2026-06-01 ivl=9 reps=4 pos=12 pri=3
+pri: 80
+read: due=2026-06-01 ivl=9 reps=4 pos=12
 ---
 
 ## §1 — the premise

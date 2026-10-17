@@ -44,7 +44,9 @@ in a session     [ ] prev / next; space reveal, 1-4 grade; ⏎ read on or
                  worked on it, p postpone, d done
 ```
 
-The bottom strip shows the keys that work where you are. `ilmi.theme('dark')`
+The inspector sets a priority, 0 first and 100 last, on a document or on the
+selected card; what is due sorts by it. The bottom strip shows the keys that
+work where you are. `ilmi.theme('dark')`
 and friends still work from the devtools console.
 
 ## Layout

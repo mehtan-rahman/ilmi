@@ -39,6 +39,7 @@ function infoOf(doc: Doc, items: QueueItem[], now: Date): DocInfo {
   if (m.title !== undefined) out.title = m.title;
   if (m.read) out.read = m.read;
   if (m.write) out.write = m.write;
+  if (m.pri !== undefined) out.pri = m.pri;
   return out;
 }
 
@@ -46,7 +47,7 @@ function infoOf(doc: Doc, items: QueueItem[], now: Date): DocInfo {
 function buildQueue(now: Date): QueueItem[] {
   const out: QueueItem[] = [];
   for (const [path, doc] of bodies) out.push(...docItems(path, doc, now));
-  return sortQueue(out);
+  return sortQueue(out, now);
 }
 
 /** Rebuild the queue for the present moment: a card in learning steps may have come due. */
@@ -207,8 +208,8 @@ export function openInitialVault(): Promise<void> {
     const vault = await openVault(path);
     const mode = await invoke<string | null>('dev_env', { name: 'ILMI_SMOKE' });
     if (mode) {
-      const { smoke, smokeReader, smokeCards, smokeIntake, smokeQueue, smokeLoop, smokeShots, smokeDeck } = await import('./smoke.js');
-      const run = { reader: smokeReader, cards: smokeCards, intake: smokeIntake, queue: smokeQueue, loop: smokeLoop, shots: smokeShots, deck: smokeDeck }[mode] ?? smoke;
+      const { smoke, smokeReader, smokeCards, smokeIntake, smokeQueue, smokeLoop, smokeShots, smokeDeck, smokePri } = await import('./smoke.js');
+      const run = { reader: smokeReader, cards: smokeCards, intake: smokeIntake, queue: smokeQueue, loop: smokeLoop, shots: smokeShots, deck: smokeDeck, pri: smokePri }[mode] ?? smoke;
       await run(vault);
     }
   })();

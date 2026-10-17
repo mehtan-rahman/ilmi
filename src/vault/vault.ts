@@ -3,7 +3,7 @@
 // is a cache with a conflict rule: never overwrite a file whose stamp moved
 // since we read it.
 
-import { meta, parse, serialize, setField, type Card, type Diagnostic, type Doc, type NodeType, type ReadSchedule } from '../format/index.js';
+import { meta, parse, serialize, setField, type Card, type Diagnostic, type Doc, type NodeType } from '../format/index.js';
 import { join, relative, sameStamp, type Fs, type Stamp } from './fs.js';
 import { baseOf, childDirOf, cleanName, dirOf, fileName, isDoc, joinRel, nameOf, rekey, within } from './paths.js';
 import { documents, isDocPath, isHidden, walk, type TreeNode } from './walk.js';
@@ -447,14 +447,17 @@ export class Vault {
 
   /**
    * Forget a card's schedule so it reads as new again: its bare `sr` line and
-   * its `sr cN` lines go; the text, id, and extract backrefs stay. Finds the
-   * card the way `removeCard` does. A card with no schedule is left as it is.
+   * its `sr cN` lines go; the text, id, extract backrefs, and its own priority
+   * stay. Finds the card the way `removeCard` does. A card with no schedule
+   * is left as it is.
    */
   resetCard(path: string, index: number, id?: string, text?: string): Promise<Loaded> {
     return this.update(path, (doc) => {
       const card = cardIn(doc, path, index, id, text);
+      const pri = card.sched?.pri;
       delete card.sched;
       delete card.blanks;
+      if (pri !== undefined) card.sched = { pri };
     });
   }
 
@@ -529,15 +532,16 @@ export class Vault {
       const name = await this.freeName(dir, clean);
       const path = `${joinRel(dir, name)}.md`;
       const today = spec.today ?? localDay(new Date());
-      const parentRead = meta((await this.read(parent)).doc).read;
+      const pm = meta((await this.read(parent)).doc);
       const doc: Doc = {
         blocks: text.split(/\n[ \t]*\n+/).map((t) => t.trim()).filter(Boolean).map((t) => ({ kind: 'paragraph', text: t })),
       };
       setField(doc, 'type', 'extract');
       setField(doc, 'imported', today);
-      const read: ReadSchedule = { due: today, ivl: 1, reps: 0, pos: 0 };
-      if (parentRead?.pri !== undefined) read.pri = parentRead.pri;
-      setField(doc, 'read', read);
+      // the extract starts at the parent's priority (a `pri=` left on the parent's read line counts)
+      const pri = pm.pri ?? pm.read?.pri;
+      if (pri !== undefined) setField(doc, 'pri', pri);
+      setField(doc, 'read', { due: today, ivl: 1, reps: 0, pos: 0 });
       await this.commit(path, serialize(doc));
       await this.update(parent, (d) => {
         let last = -1;

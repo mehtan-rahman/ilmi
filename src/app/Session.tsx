@@ -5,7 +5,7 @@
 // result is written to the file the element came from.
 
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
-import { cardFields, clozeParts, type Block, type Card } from '../format/index.js';
+import { PRI_DEFAULT, cardFields, clozeParts, type Block, type Card } from '../format/index.js';
 import { GRADES, advanceRead, advanceWrite, gradeItem, type CardItem, type Grade, type QueueItem, type ReadItem, type WriteItem } from '../schedule/index.js';
 import { EL_WORD, FORM_LABEL, dueLabel, gapLabels, ownBlank, sourceLabel } from './items.js';
 import type { OpenOpts } from './panes.js';
@@ -70,11 +70,12 @@ function Nav({ idx, total, onPrev, onNext }: NavProps) {
 
 interface BarProps extends NavProps {
   kind: El;
+  pri: number;
   children: ReactNode;
 }
 
 /** The control bar at the foot of a reading or writing element. */
-function SessionBar({ idx, total, kind, children, onPrev, onNext }: BarProps) {
+function SessionBar({ idx, total, kind, pri, children, onPrev, onNext }: BarProps) {
   return (
     <div className="session-bar">
       <div className="sb-inner">
@@ -82,6 +83,7 @@ function SessionBar({ idx, total, kind, children, onPrev, onNext }: BarProps) {
           <Nav idx={idx} total={total} onPrev={onPrev} onNext={onNext} />
           <span className="sb-count">{idx + 1} / {total}</span>
           <span className="sb-kind" data-el={kind}>{EL_WORD[kind]}</span>
+          {pri !== PRI_DEFAULT && <span className="sb-count">p {pri}</span>}
         </div>
         <div className="sb-actions">{children}</div>
       </div>
@@ -108,9 +110,12 @@ interface CardProps {
 
 function CardElement({ item, active, onGrade }: CardProps) {
   const loaded = useDoc(item.path);
+  const docPri = useApp((s) => s.docs[item.path]?.pri);
   const [revealed, setRevealed] = useState(false);
   const now = new Date();
   const card = liveCard(loaded?.doc.blocks, item);
+  // the card's own, else the document's, live: the inspector may change either mid-session
+  const pri = card ? card.sched?.pri ?? docPri ?? PRI_DEFAULT : item.pri;
   const text = card?.text ?? item.text;
   const f = cardFields(text);
   // the item's schedule stands in only until the document is loaded; a card reset since reads as new
@@ -173,6 +178,7 @@ function CardElement({ item, active, onGrade }: CardProps) {
         {groupNo !== null && <span>blank {groupNo} of {item.groups}</span>}
         <span>{plural(sched?.reps ?? 0, 'review')}</span>
         {sched?.stability !== undefined && <span>stability {Math.round(sched.stability)}d</span>}
+        {pri !== PRI_DEFAULT && <span>p {pri}</span>}
         <span className="cm-due" data-due={!sched?.due || item.dueAt <= now ? '1' : '0'}>{dueWord(sched?.due, now)}</span>
       </div>
       <div className="grades" data-revealed={revealed ? '1' : '0'}>
@@ -213,7 +219,9 @@ interface DocProps extends NavProps {
 
 function DocSession({ item, active, onAct, ...nav }: DocProps) {
   const barRef = useRef<HTMLDivElement>(null);
+  const info = useApp((s) => s.docs[item.path]);
   const reading = item.kind === 'read';
+  const pri = info ? info.pri ?? (reading ? info.read?.pri : info.write?.pri) ?? PRI_DEFAULT : item.pri;
   const on = () => onAct('on', reading && barRef.current ? blocksAbove(barRef.current) : undefined);
 
   useKeys(active, (key) => {
@@ -226,7 +234,7 @@ function DocSession({ item, active, onAct, ...nav }: DocProps) {
   return (
     <div className="doc-session" ref={barRef}>
       <Reader id={item.path} active={active} />
-      <SessionBar kind={item.kind} {...nav}>
+      <SessionBar kind={item.kind} pri={pri} {...nav}>
         <button type="button" onClick={on}><span className="ra-l">{reading ? 'read on' : 'worked on it'}</span><kbd>⏎</kbd></button>
         <button type="button" onClick={() => onAct('postpone')}><span className="ra-l">postpone</span><kbd>p</kbd></button>
         <button type="button" onClick={() => onAct('done')}><span className="ra-l">done</span><kbd>d</kbd></button>

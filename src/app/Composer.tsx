@@ -1,22 +1,27 @@
 // The card composer, after the prototype's MakeCard: one box with the three
-// forms, ⌘B for a blank, ⌘↵ to save. It hands back the card's text as the
-// format will read it; where the card goes is the caller's business.
+// forms, ⌘B for a blank, ⌘↵ to save, and the prototype's priority picker as
+// a number. It hands back the card's text as the format will read it, and
+// a priority only when it differs from the document's; where the card goes
+// is the caller's business.
 
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { clozeParts, type CardForm } from '../format/index.js';
+import { PRI_MAX, PRI_MIN, clozeParts, parsePri, type CardForm } from '../format/index.js';
 import { cardText, type CardSpec } from '../reader/index.js';
 
 interface Props {
   seed: string;
   form?: CardForm | undefined;
-  onSave(text: string, again: boolean): void;
+  /** The document's priority: what the card gets when the picker is left alone. */
+  pri: number;
+  onSave(text: string, again: boolean, pri?: number): void;
   onClose(): void;
 }
 
 const FORMS: [CardForm, string][] = [['cloze', 'cloze'], ['qa', 'q&a'], ['bidir', 'bidir']];
 
-export function Composer({ seed, form: initial, onSave, onClose }: Props) {
+export function Composer({ seed, form: initial, pri: docPri, onSave, onClose }: Props) {
   const [form, setForm] = useState<CardForm>(initial ?? 'cloze');
+  const [pri, setPri] = useState(String(docPri));
   const [text, setText] = useState(seed);
   const [front, setFront] = useState(seed);
   const [back, setBack] = useState('');
@@ -31,7 +36,9 @@ export function Composer({ seed, form: initial, onSave, onClose }: Props) {
 
   const save = (again: boolean) => {
     if (out === null) return;
-    onSave(out, again);
+    const own = parsePri(pri.trim());
+    // the priority stays across "save, another"
+    if (own !== null && own !== docPri) onSave(out, again, own); else onSave(out, again);
     if (again) {
       setText(''); setFront(''); setBack(''); setLeft(''); setRight('');
       ref.current?.focus();
@@ -101,6 +108,10 @@ export function Composer({ seed, form: initial, onSave, onClose }: Props) {
       )}
 
       <div className="ft">
+        <label className="pri-pick">
+          priority
+          <input type="number" inputMode="numeric" min={PRI_MIN} max={PRI_MAX} step={1} value={pri} onChange={(e) => setPri(e.target.value)} onBlur={() => { if (parsePri(pri.trim()) === null) setPri(String(docPri)); }} />
+        </label>
         <span className="grow" />
         <span className="act" data-able={out ? '1' : '0'} onClick={() => save(false)}><kbd>⌘↵</kbd> save</span>
         <span>·</span>

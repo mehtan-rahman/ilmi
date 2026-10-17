@@ -22,6 +22,8 @@ export interface CardSchedule {
   ivl?: number;
   last?: string;
   grade?: number;
+  /** The card's own priority, overriding the document's. Only on the bare line. */
+  pri?: number;
   extra?: Extra;
 }
 
@@ -31,6 +33,7 @@ export interface ReadSchedule {
   ivl?: number;
   reps?: number;
   pos?: number;
+  /** Read as a fallback when the document has no `pri` field; dropped once it has one. */
   pri?: number;
   extra?: Extra;
 }
@@ -40,6 +43,7 @@ export interface WriteSchedule {
   due?: string;
   ivl?: number;
   reps?: number;
+  /** As on `read`. */
   pri?: number;
   done?: boolean;
   extra?: Extra;
@@ -86,7 +90,8 @@ export type Field =
   | { key: 'started'; value: string }
   | { key: 'read'; value: ReadSchedule }
   | { key: 'write'; value: WriteSchedule }
-  | { key: 'default-card'; value: CardForm };
+  | { key: 'default-card'; value: CardForm }
+  | { key: 'pri'; value: number };
 
 export type FieldKey = Field['key'];
 
@@ -113,7 +118,7 @@ export interface Diagnostic {
 }
 
 export const FIELD_KEYS: readonly FieldKey[] = [
-  'type', 'title', 'frozen', 'imported', 'started', 'read', 'write', 'default-card',
+  'type', 'title', 'frozen', 'imported', 'started', 'read', 'write', 'default-card', 'pri',
 ];
 
 export function isField(e: FmEntry): e is Field {

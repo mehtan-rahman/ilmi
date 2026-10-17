@@ -1,11 +1,13 @@
 // The queue: a query over a vault for what is due. Cards (one item per cloze
 // group, everything else one item), reading topics (documents with `read:`),
-// and writing drafts (documents with `write:` not done). Sorted by priority,
-// then due, then document order. Nothing here is stored; `gradeItem` is the
-// one mutation, and it rewrites one schedule line.
+// and writing drafts (documents with `write:` not done). What is due sorts by
+// priority, then due, then document order, the way SuperMemo sorts its
+// outstanding queue; what is not due yet sorts by due, then priority. Nothing
+// here is stored; `gradeItem` is the one mutation, and it rewrites one
+// schedule line.
 
 import {
-  blanks, cardForm, clozeParts, meta, nextGroup,
+  PRI_DEFAULT, blanks, cardForm, clozeParts, meta, nextGroup,
   type Card, type CardForm, type CardSchedule, type Doc, type ReadSchedule, type WriteSchedule,
 } from '../format/index.js';
 import type { Vault } from '../vault/index.js';
@@ -20,7 +22,7 @@ interface ItemBase {
   /** The stored due, day or instant; absent means due now. */
   due?: string;
   dueAt: Date;
-  /** Lower comes first. Cards are 2 when due, 3 otherwise; topics and drafts carry their own. */
+  /** 0–100, lower first: the document's `pri` field, a card's own `pri`, else 50. */
   pri: number;
 }
 
@@ -86,16 +88,18 @@ function withDue(sched: { due?: string } | undefined, now: Date): { due?: string
   return sched?.due ? { due: sched.due, dueAt: whenToDate(sched.due) } : { dueAt: now };
 }
 
-function cardItems(path: string, block: number, card: Card, section: string | undefined, now: Date): CardItem[] {
+function cardItems(path: string, block: number, card: Card, section: string | undefined, docPri: number, now: Date): CardItem[] {
   const form = cardForm(card.text);
   if (!form) return [];
   const groups = form === 'cloze' ? cardGroups(card.text) : [];
+  // the card's own priority sits on its bare line, whichever group is up
+  const pri = card.sched?.pri ?? docPri;
   const one = (group: GroupKey | undefined): CardItem => {
     const sched = groupSchedule(card, group);
     const when = withDue(sched, now);
     const item: CardItem = {
       kind: 'card', path, block, form, text: card.text, groups: Math.max(groups.length, 1),
-      ...when, pri: when.dueAt <= now ? 2 : 3,
+      ...when, pri,
     };
     if (card.id !== undefined) item.id = card.id;
     if (section !== undefined) item.section = section;
@@ -113,16 +117,18 @@ export function docItems(path: string, doc: Doc, now: Date): QueueItem[] {
   const out: QueueItem[] = [];
   const m = meta(doc);
   const prose = doc.blocks.filter((b) => b.kind !== 'card');
+  // a `pri=` left on a read / write line stands in for that loop until the field exists
+  const docPri = m.pri ?? PRI_DEFAULT;
   if (m.read) {
     const total = prose.length;
     const pos = Math.min(m.read.pos ?? 0, total);
-    const item: ReadItem = { kind: 'read', path, sched: m.read, pos, total, ...withDue(m.read, now), pri: m.read.pri ?? 2 };
+    const item: ReadItem = { kind: 'read', path, sched: m.read, pos, total, ...withDue(m.read, now), pri: m.pri ?? m.read.pri ?? PRI_DEFAULT };
     const next = prose[Math.min(pos, total - 1)];
     if (next && next.text.trim()) item.next = next.text;
     out.push(item);
   }
   if (m.write && !m.write.done) {
-    const item: WriteItem = { kind: 'write', path, sched: m.write, ...withDue(m.write, now), pri: m.write.pri ?? 2 };
+    const item: WriteItem = { kind: 'write', path, sched: m.write, ...withDue(m.write, now), pri: m.pri ?? m.write.pri ?? PRI_DEFAULT };
     const lead = prose.find((b) => b.kind === 'paragraph' && b.text.trim()) ?? prose.find((b) => b.text.trim());
     if (lead) item.lead = lead.text;
     out.push(item);
@@ -130,25 +136,31 @@ export function docItems(path: string, doc: Doc, now: Date): QueueItem[] {
   let section: string | undefined;
   doc.blocks.forEach((b, i) => {
     if (b.kind === 'heading') section = b.text;
-    else if (b.kind === 'card') out.push(...cardItems(path, i, b, section, now));
+    else if (b.kind === 'card') out.push(...cardItems(path, i, b, section, docPri, now));
   });
   return out;
 }
 
-function byPriorityThenDue(a: QueueItem, b: QueueItem): number {
-  return a.pri - b.pri || a.dueAt.getTime() - b.dueAt.getTime();
-}
-
-/** In place: priority, then due; a stable sort keeps document order after that. */
-export function sortQueue(items: QueueItem[]): QueueItem[] {
-  return items.sort(byPriorityThenDue);
+/**
+ * In place. What is due comes first, by priority, then due; what is not due
+ * yet follows, by due, then priority. A stable sort keeps document order
+ * after that.
+ */
+export function sortQueue(items: QueueItem[], now: Date): QueueItem[] {
+  return items.sort((a, b) => {
+    const da = isDue(a, now);
+    const db = isDue(b, now);
+    if (da !== db) return da ? -1 : 1;
+    const due = a.dueAt.getTime() - b.dueAt.getTime();
+    return da ? a.pri - b.pri || due : due || a.pri - b.pri;
+  });
 }
 
 /** All items over a set of documents, sorted. */
 export function queueItems(docs: Iterable<[string, Doc]>, now: Date): QueueItem[] {
   const out: QueueItem[] = [];
   for (const [path, doc] of docs) out.push(...docItems(path, doc, now));
-  return sortQueue(out);
+  return sortQueue(out, now);
 }
 
 /** The same element: one card group, or one document's reading or writing. */

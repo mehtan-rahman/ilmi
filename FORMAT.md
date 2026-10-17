@@ -50,7 +50,8 @@ notes/
 type: source
 frozen: true
 imported: 2026-04-18
-read: due=2026-06-01 ivl=9 reps=4 pos=12 pri=3
+pri: 80
+read: due=2026-06-01 ivl=9 reps=4 pos=12
 ---
 
 ## §1 — the premise
@@ -99,15 +100,24 @@ dropped, with a diagnostic.
 | `read`         | attributes (§7)             |           | enrolled in incremental reading                                    |
 | `write`        | attributes (§7)             |           | enrolled in incremental writing                                    |
 | `default-card` | `cloze` `qa` `bidir`        |           | what the composer opens to, for decks                              |
+| `pri`          | int 0–100                   | `50`      | priority, lower first: the document's reading, writing, and every card in it |
 
 `read` attributes: `due` (day or instant), `ivl` (days between passes, int),
-`reps` (passes made, int), `pos` (prose blocks read, int), `pri` (int). `pos`
-counts prose blocks from the top of the body, skipping cards; hand-inserting a
-paragraph above the marker shifts it by one, which is the accepted trade for
-not tagging every paragraph with an id.
+`reps` (passes made, int), `pos` (prose blocks read, int), `pri` (int 0–100).
+`pos` counts prose blocks from the top of the body, skipping cards;
+hand-inserting a paragraph above the marker shifts it by one, which is the
+accepted trade for not tagging every paragraph with an id.
 
 `write` attributes: `due`, `ivl`, `reps`, `pri` as above, plus `done`
 (`true`/`false`). A done draft keeps its line so it can be reopened.
+
+**Priority** is one scale for everything, as in SuperMemo: `0` comes first,
+`100` last, `50` when nothing says otherwise. The `pri` field is the document's
+and applies to its reading, its writing, and every card in it. A `pri=` on the
+`read` or `write` line is older: it is read as a fallback for that loop while
+the document has no `pri` field, and dropped the first time the app writes a
+file that has one (§8). A card may carry its own `pri` on its bare `sr` line
+(§6.2), overriding the document's.
 
 A bare `read:` or `write:` with no attributes means enrolled with nothing
 recorded yet; the app fills it in on the first pass. YAML block-style nesting
@@ -264,9 +274,12 @@ is resolved later-wins with a diagnostic.
 | `ivl`   | int ≥ 0                | `scheduled_days`  | last interval                            |
 | `last`  | day or instant         | `last_review`     |                                          |
 | `g`     | int 1–4                |                   | last grade: again hard good easy         |
+| `pri`   | int 0–100              |                   | the card's own priority, over the document's (§3) |
 
 Every attribute is optional. A card with no `sr` line at all is a new card,
-due now. `elapsed_days` is not stored; the scheduler derives it from `last`.
+due now; so is a card whose bare line carries only `pri`. `pri` belongs to the
+card, so it sits on the bare line only: on an `sr cN` line it is dropped with
+a diagnostic. Grading rewrites the schedule and carries `pri` across. `elapsed_days` is not stored; the scheduler derives it from `last`.
 Unknown attributes are kept in order after the known ones. A known attribute
 with an unparsable value is dropped with a diagnostic; the rest of the line
 survives.
@@ -341,6 +354,8 @@ The first time the app writes a hand-made file, these change, and only these:
   order under the card. Duplicates collapsed.
 - Known front-matter fields → canonical `key: value`; trailing comments on
   them dropped; a blank line after the closing `---`.
+- A `pri=` on the `read` or `write` line → dropped, when the file has a `pri`
+  field (§3). Without the field it stays.
 - A body with no front-matter whose first block is a `---` thematic break, or
   whose first character is a stray U+FEFF, gets one leading blank line, so the
   file is not read back as front-matter or as a byte-order mark.

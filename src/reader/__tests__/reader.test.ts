@@ -225,7 +225,7 @@ describe('the marker', () => {
     expect(meta(before.doc).read?.pos).toBe(12);
     const written = await vault.update(WOZ, (doc) => setReadPos(doc, 5));
     const diff = lineDiff(before.text, written.text);
-    expect(diff).toEqual([[5, 'read: due=2026-06-01 ivl=9 reps=4 pos=12 pri=3', 'read: due=2026-06-01 ivl=9 reps=4 pos=5 pri=3']]);
+    expect(diff).toEqual([[6, 'read: due=2026-06-01 ivl=9 reps=4 pos=12', 'read: due=2026-06-01 ivl=9 reps=4 pos=5']]);
     vault.close();
     const again = await Vault.open(nodeFs, root);
     expect(meta((await again.read(WOZ)).doc).read?.pos).toBe(5);
@@ -376,7 +376,7 @@ describe('extracts and cards, end to end', () => {
     });
     expect(meta(parent.doc).read?.pos).toBe(12);
     const ex = await vault.read(child);
-    expect(meta(ex.doc)).toMatchObject({ type: 'extract', imported: '2026-05-27', read: { due: '2026-05-27', ivl: 1, reps: 0, pos: 0, pri: 3 } });
+    expect(meta(ex.doc)).toMatchObject({ type: 'extract', imported: '2026-05-27', pri: 80, read: { due: '2026-05-27', ivl: 1, reps: 0, pos: 0 } });
     expect(ex.doc.blocks).toEqual([{ kind: 'paragraph', text: sel.text }]);
 
     // in the tree

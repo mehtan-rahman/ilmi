@@ -160,7 +160,8 @@ describe('extract', () => {
     expect(await exists(child)).toBe(true);
     const ex = parse(await readDisk(child));
     expect(ex.diagnostics).toEqual([]);
-    expect(meta(ex.doc)).toMatchObject({ type: 'extract', imported: '2026-05-27', read: { due: '2026-05-27', ivl: 1, reps: 0, pos: 0, pri: 3 } });
+    expect(meta(ex.doc)).toMatchObject({ type: 'extract', imported: '2026-05-27', pri: 80, read: { due: '2026-05-27', ivl: 1, reps: 0, pos: 0 } });
+    expect(meta(ex.doc).read?.pri).toBeUndefined();
     expect(ex.doc.blocks).toEqual([
       { kind: 'paragraph', text: 'twenty rules of formulating knowledge' },
       { kind: 'paragraph', text: 'The twenty rules are the residue' },
@@ -179,7 +180,7 @@ describe('extract', () => {
     expect(parent.blocks[6]).toEqual({ ...before.doc.blocks[6], extracts: [ref.slice(13, -4)] });
     expect(meta(parent).read).toEqual({ ...meta(before.doc).read, pos: 6 });
     const rest = lb.filter((l) => l !== ref);
-    expect(rest.filter((l, i) => l !== la[i])).toEqual(['read: due=2026-06-01 ivl=9 reps=4 pos=6 pri=3']);
+    expect(rest.filter((l, i) => l !== la[i])).toEqual(['read: due=2026-06-01 ivl=9 reps=4 pos=6']);
     // the tree has it, under the parent, and said so
     expect(documents(vault.tree)).toContain(child);
     const node = find(vault.tree, WOZ);

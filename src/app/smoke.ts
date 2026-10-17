@@ -21,13 +21,16 @@
 // from the inspector, moves one to a new deck through the menu's "move to…",
 // and logs what left the disk; then it opens a deck card and a source card
 // from the palette and logs that each landed selected.
+// `ILMI_SMOKE=pri` sets a source's priority from the inspector, then a
+// card's, logging the one line each wrote and where the queue and the
+// session put them.
 
 import { info } from '@tauri-apps/plugin-log';
 import type { Vault } from '../vault/index.js';
 import { cardLabel } from './chrome.js';
 import { GLYPH, SESSION, queueId, titleOf } from './names.js';
 import { useApp } from './store.js';
-import { createNode, moveNode, openIntake, openNode, removeNode, renameNode, setInspector } from './vault.js';
+import { createNode, moveNode, openCard, openIntake, openNode, removeNode, renameNode, setInspector } from './vault.js';
 
 const WOZ = 'papers/wozniak-1990.md';
 
@@ -685,6 +688,96 @@ export async function smokeShots(vault: Vault): Promise<void> {
     await until(() => q('.folder-view'));
     await shot('folder');
     log(`done; session tab ${SESSION} open: ${!!q('.tabbar .tab[data-t="session"]')}; vault ${vault.root}`);
+  } catch (e) {
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+export async function smokePri(vault: Vault): Promise<void> {
+  const log = (s: string) => info(`smoke pri: ${s}`);
+  // long pauses: the log line reaches the terminal seconds late, and the shell shoots on the line
+  const shot = async (name: string, ms = 10000) => { await sleep(600); log(`shot: ${name}`); await sleep(ms); };
+  const q = <T extends Element>(sel: string) => document.querySelector<T>(sel);
+  const qa = (sel: string) => Array.from(document.querySelectorAll<HTMLElement>(sel));
+  const CRICK = 'papers/crick-1995.md';
+  /** Lines in `b` that are not in `a`, and the other way, for files whose length may differ. */
+  const diff = (a: string, b: string) => {
+    const la = a.split('\n');
+    const lb = b.split('\n');
+    return `-[${la.filter((l) => !lb.includes(l)).join(' | ')}] +[${lb.filter((l) => !la.includes(l)).join(' | ')}] lines ${la.length} → ${lb.length}`;
+  };
+  /** Type into a React-controlled number field and leave it, which commits. */
+  const enter = async (el: HTMLInputElement, v: string) => {
+    el.focus();
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(el, v);
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    await sleep(50);
+    el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    el.blur();
+    await sleep(600);
+  };
+  const rows = () => qa('.queue .qlist li').map((r) => `[${r.dataset.el}] ${r.querySelector('.src')?.textContent?.slice(0, 28)} ${r.querySelector('.pri')?.textContent || '-'}`);
+  try {
+    setInspector({ open: true });
+    openNode(queueId('today'));
+    await until(() => q('.queue .qlist li'));
+    await sleep(300);
+    log(`today before: ${rows().slice(0, 4).join(' / ')}; count ${q('.top .count, .topstrip .due')?.textContent ?? q('.top')?.textContent?.slice(0, 40)}`);
+
+    // the source: its priority row in the inspector
+    const before = (await vault.read(CRICK)).text;
+    openNode(CRICK);
+    await until(() => q('.draft-doc'));
+    const field = await until(() => q<HTMLInputElement>('.insp .kv .pri-field'));
+    log(`inspector: priority field "${field.value}" placeholder ${field.placeholder}; rows "${q('.insp .kv')?.textContent?.slice(0, 120)}"`);
+    await shot('pri-inspector');
+    await enter(field, '10');
+    let after = (await vault.read(CRICK, true)).text;
+    log(`source → 10: ${diff(before, after)}; field now "${q<HTMLInputElement>('.insp .kv .pri-field')?.value}"; diagnostics ${(await vault.read(CRICK)).diagnostics.length}`);
+    // and back to nothing: the line goes
+    await enter(q<HTMLInputElement>('.insp .kv .pri-field')!, '');
+    const cleared = (await vault.read(CRICK, true)).text;
+    log(`source → empty: ${diff(after, cleared)}; same as before ${cleared === before}`);
+    await enter(q<HTMLInputElement>('.insp .kv .pri-field')!, '10');
+    after = (await vault.read(CRICK, true)).text;
+
+    // the queue reordered: crick's reading is first now
+    openNode(queueId('today'));
+    await until(() => q('.queue .qlist li'));
+    await sleep(400);
+    log(`today after: ${rows().slice(0, 4).join(' / ')}`);
+    await shot('pri-queue');
+
+    // a card: land on it, the inspector shows the card's own row, empty, with the document's as the hint
+    const woz = (await vault.read(WOZ)).doc;
+    const idx = woz.blocks.findIndex((b) => b.kind === 'card' && b.id === 'cw1-paths');
+    const wozBefore = (await vault.read(WOZ)).text;
+    openCard(WOZ, idx, 'cw1-paths');
+    const cardField = await until(() => (q('.insp .block h6')?.textContent === 'card' ? q<HTMLInputElement>('.insp .kv .pri-field') : null));
+    log(`card: selected ${JSON.stringify(useApp.getState().selectedCard)}; field "${cardField.value}" placeholder ${cardField.placeholder}; schedule "${qa('.insp .block')[1]?.textContent?.slice(0, 60)}"`);
+    await enter(cardField, '5');
+    const wozAfter = (await vault.read(WOZ, true)).text;
+    log(`card → 5: changed lines ${JSON.stringify(changedLines(wozBefore, wozAfter))}; line "${wozAfter.split('\n').find((l) => l.includes('pri=5'))}"; diagnostics ${(await vault.read(WOZ)).diagnostics.length}`);
+    await shot('pri-card');
+
+    // the card leads the queue now, and the session says so
+    openNode(queueId('today'));
+    await until(() => q('.queue .qlist li'));
+    await sleep(400);
+    log(`today with the card: ${rows().slice(0, 3).join(' / ')}`);
+    press('Enter');
+    await until(() => q('.recall-wrap .card'));
+    await sleep(300);
+    log(`session: meta "${q('.card-meta')?.textContent}"; inspector card field "${q<HTMLInputElement>('.insp .kv .pri-field')?.value}"`);
+    await shot('pri-session');
+    // grading keeps the priority on the line
+    press(' ');
+    await sleep(100);
+    press('3');
+    await sleep(600);
+    const graded = (await vault.read(WOZ, true)).text;
+    log(`graded: line "${graded.split('\n').find((l) => l.includes('^cw1-paths') ? false : l.includes('pri=5'))}"; changed lines ${JSON.stringify(changedLines(wozAfter, graded))}`);
+    log('done');
   } catch (e) {
     log(`failed: ${e instanceof Error ? e.message : String(e)}`);
   }

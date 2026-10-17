@@ -92,6 +92,14 @@ describe('grade', () => {
     expect(grade(review, 3, NOW)).toEqual(grade(review, 3, NOW));
   });
 
+  it('carries the card\'s own priority through a grade and a preview', () => {
+    const own: CardSchedule = { ...review, pri: 10 };
+    expect(grade(own, 3, NOW).pri).toBe(10);
+    expect(grade({ pri: 0 }, 1, NOW)).toMatchObject({ state: 'learning', pri: 0 });
+    expect(preview(own, NOW)[4].pri).toBe(10);
+    expect('pri' in grade(review, 3, NOW)).toBe(false);
+  });
+
   it('previews all four grades', () => {
     const p = preview(review, NOW);
     expect(p[3]).toEqual(grade(review, 3, NOW));
@@ -203,8 +211,8 @@ describe('queue over the sample vault', () => {
     const all = await queue(vault, NOW);
     const c1 = cardItem(all, 'cw2-min', { n: 1 });
     const c2 = cardItem(all, 'cw2-min', { n: 2 });
-    expect(c1).toMatchObject({ groups: 2, due: '2026-05-27', pri: 2, section: '§2 — twenty rules of formulating knowledge' });
-    expect(c2).toMatchObject({ groups: 2, due: '2026-06-01', pri: 3 });
+    expect(c1).toMatchObject({ groups: 2, due: '2026-05-27', pri: 80, section: '§2 — twenty rules of formulating knowledge' });
+    expect(c2).toMatchObject({ groups: 2, due: '2026-06-01', pri: 80 });
     expect(c1.sched?.stability).toBe(11.8);
     expect(c2.sched?.stability).toBe(3);
     // unnumbered blanks fall back to the bare line
@@ -216,26 +224,57 @@ describe('queue over the sample vault', () => {
     expect(cardItem(all, 'cprag-rel', { n: 1 })).toMatchObject({ groups: 1, due: '2026-06-08' });
     // a card with no schedule is new, due now
     const bare = all.find((i): i is CardItem => i.kind === 'card' && i.path === 'german.md' && i.id === undefined);
-    expect(bare).toMatchObject({ form: 'bidir', dueAt: NOW, pri: 2 });
+    expect(bare).toMatchObject({ form: 'bidir', dueAt: NOW, pri: 50 });
     expect(bare?.sched).toBeUndefined();
     expect(bare?.due).toBeUndefined();
   });
 
-  it('sorts by priority, then due, then document order', async () => {
+  const key = (i: QueueItem) => `${i.kind}:${i.kind === 'card' ? `${i.id ?? '?'}${i.group ? `/${'n' in i.group ? `c${i.group.n}` : `b${i.group.blank}`}` : ''}` : i.path}`;
+
+  it('sorts what is due by priority, then due, then document order', async () => {
     const today = await queue(vault, NOW, 'today');
-    const key = (i: QueueItem) => `${i.kind}:${i.kind === 'card' ? i.id : i.path}`;
-    expect(today.slice(0, 3).map(key)).toEqual(['card:cw3-leech', 'card:cv-luecke', 'card:cw2-retr']);
+    // the corpus's old scale, 1 → 10, 2 → 50, 3 → 80, keeps the day's topics and drafts in their order
+    expect(today.filter((i) => i.kind !== 'card').map(key)).toEqual([
+      'write:essays/spaced-composition.md', 'read:papers/archive/sutton-2019.md', 'read:papers/crick-1995.md', 'read:papers/wozniak-1990/woz-ex1.md',
+    ]);
+    // cards sit with their document now: wozniak-1990's at 80, after everything at 50
+    expect(today.map(key)).toEqual([
+      'card:cv-luecke', 'card:cmar-drive', 'write:essays/spaced-composition.md', 'card:cd-resurface/c1', 'card:cd-resurface/c2',
+      'read:papers/archive/sutton-2019.md', 'read:papers/crick-1995.md', 'card:cck-ncc', 'card:cv-vorsatz', 'card:cv-wdh', 'card:?',
+      'card:cw3-leech', 'card:cw2-retr/b0', 'card:cw2-min/c1', 'read:papers/wozniak-1990/woz-ex1.md', 'card:cw2-integ/c1', 'card:cw2-integ/c2',
+    ]);
     const pris = today.map((i) => i.pri);
-    expect(pris).toEqual([...pris].sort());
-    expect(today.at(-1)).toMatchObject({ kind: 'read', path: 'papers/wozniak-1990/woz-ex1.md', pri: 3 });
-    const dues = today.filter((i) => i.pri === 2).map((i) => i.dueAt.getTime());
+    expect(pris).toEqual([...pris].sort((a, b) => a - b));
+    for (const p of [50, 80]) {
+      const dues = today.filter((i) => i.pri === p).map((i) => i.dueAt.getTime());
+      expect(dues).toEqual([...dues].sort((a, b) => a - b));
+    }
+  });
+
+  it('sorts what is not due yet by due, then priority, after everything due', async () => {
+    const all = await queue(vault, NOW);
+    const today = await queue(vault, NOW, 'today');
+    const upcoming = await queue(vault, NOW, 'upcoming');
+    expect(all.map(key)).toEqual([...today, ...upcoming].map(key));
+    expect(upcoming.slice(0, 3).map(key)).toEqual(['write:essays/talk-incremental.md', 'read:papers/wozniak-1990.md', 'card:cw2-min/c2']);
+    const dues = upcoming.map((i) => i.dueAt.getTime());
     expect(dues).toEqual([...dues].sort((a, b) => a - b));
+  });
+
+  it('a card\'s own priority overrides the document\'s; a line priority stands in for a missing field', () => {
+    const { doc } = parse('---\npri: 20\nread: due=2026-05-27 pri=1\n---\n\nq :: a\n\nq2 :: a2 ^c2\n<!-- sr pri=70 -->\n\n{{a}} {{b}} ^c3\n<!-- sr pri=5 -->\n<!-- sr c1 due=2026-05-27 -->\n');
+    const items = queueItems([['x.md', doc]], NOW);
+    expect(items.map((i) => [key(i), i.pri])).toEqual([
+      ['card:c3/b0', 5], ['card:c3/b1', 5], ['read:x.md', 20], ['card:?', 20], ['card:c2', 70],
+    ]);
+    const legacy = parse('---\nread: due=2026-05-27 pri=1\nwrite: due=2026-05-27\n---\n\nq :: a\n').doc;
+    expect(queueItems([['y.md', legacy]], NOW).map((i) => [i.kind, i.pri])).toEqual([['read', 1], ['write', 50], ['card', 50]]);
   });
 
   it('describes reading progress', async () => {
     const all = await queue(vault, NOW, 'reading');
-    expect(all.find((i) => i.path === 'papers/crick-1995.md')).toMatchObject({ pos: 2, total: 7, pri: 2 });
-    expect(all.find((i) => i.path === WOZ)).toMatchObject({ pos: 12, total: 12, pri: 3 });
+    expect(all.find((i) => i.path === 'papers/crick-1995.md')).toMatchObject({ pos: 2, total: 7, pri: 50 });
+    expect(all.find((i) => i.path === WOZ)).toMatchObject({ pos: 12, total: 12, pri: 80 });
   });
 
   it('grading a card changes one line on disk', async () => {
@@ -247,8 +286,8 @@ describe('queue over the sample vault', () => {
     const lb = after.split('\n');
     expect(lb.length).toBe(la.length);
     const changed = la.flatMap((line, i) => (line === lb[i] ? [] : [i + 1]));
-    expect(changed).toEqual([15]);
-    expect(lb[14]).toMatch(/^<!-- sr due=2026-07-11 st=review s=44\.9\d* d=3\.79\d* r=10 l=0 ivl=45 last=2026-05-27T12:00:00Z g=3 -->$/);
+    expect(changed).toEqual([16]);
+    expect(lb[15]).toMatch(/^<!-- sr due=2026-07-11 st=review s=44\.9\d* d=3\.79\d* r=10 l=0 ivl=45 last=2026-05-27T12:00:00Z g=3 -->$/);
   });
 
   it('grading one blank of a multi-blank cloze rewrites only its line', async () => {
@@ -259,9 +298,9 @@ describe('queue over the sample vault', () => {
     const la = before.split('\n');
     const lb = after.split('\n');
     const changed = la.flatMap((line, i) => (line === lb[i] ? [] : [i + 1]));
-    expect(changed).toEqual([24]);
-    expect(lb[23]).toMatch(/^<!-- sr c1 due=2026-05-27T12:10:00Z st=relearning s=[\d.]+ d=[\d.]+ r=15 l=3 ivl=0 last=2026-05-27T12:00:00Z g=1 -->$/);
-    expect(lb[24]).toBe(la[24]);
+    expect(changed).toEqual([25]);
+    expect(lb[24]).toMatch(/^<!-- sr c1 due=2026-05-27T12:10:00Z st=relearning s=[\d.]+ d=[\d.]+ r=15 l=3 ivl=0 last=2026-05-27T12:00:00Z g=1 -->$/);
+    expect(lb[25]).toBe(la[25]);
     const again = cardItem(await queue(vault, NOW), 'cw2-min', { n: 1 });
     expect(again.due).toBe('2026-05-27T12:10:00Z');
     expect(again.dueAt > NOW).toBe(true);

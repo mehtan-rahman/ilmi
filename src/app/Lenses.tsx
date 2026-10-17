@@ -2,7 +2,7 @@
 // Folders and decks are lists; sources, extracts, and drafts open in the reader.
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { cardFields, meta, type Card, type ClozePart, type Doc } from '../format/index.js';
+import { PRI_DEFAULT, cardFields, meta, type Card, type ClozePart, type Doc } from '../format/index.js';
 import type { TreeNode } from '../vault/index.js';
 import { revealIndex } from './chrome.js';
 import { Composer } from './Composer.js';
@@ -216,8 +216,8 @@ function DeckLens({ id, active }: { id: string; active: boolean }) {
   }, [active, composer, cards, sel, menu]);
 
   if (!loaded || !info) return <Gone />;
-  const save = (text: string, again: boolean) => {
-    currentVault()?.update(id, (doc) => { doc.blocks.push({ kind: 'card', text }); }).catch(console.error);
+  const save = (text: string, again: boolean, pri?: number) => {
+    currentVault()?.update(id, (doc) => { doc.blocks.push(pri === undefined ? { kind: 'card', text } : { kind: 'card', text, sched: { pri } }); }).catch(console.error);
     if (!again) setComposer(false);
   };
   return (
@@ -229,7 +229,7 @@ function DeckLens({ id, active }: { id: string; active: boolean }) {
         </div>
         <h1>{titleOf(id, docs, root)}</h1>
         {composer ? (
-          <Composer seed="" form={meta(loaded.doc).defaultCard} onSave={save} onClose={() => setComposer(false)} />
+          <Composer seed="" form={meta(loaded.doc).defaultCard} pri={info.pri ?? PRI_DEFAULT} onSave={save} onClose={() => setComposer(false)} />
         ) : (
           <button type="button" className="deck-add" onClick={() => setComposer(true)}>+ card <kbd className="kbd">m</kbd></button>
         )}

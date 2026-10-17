@@ -140,6 +140,23 @@
 .insp .kv dd { margin: 0; color: var(--fg-2); font-variant-numeric: tabular-nums; min-width: 0; overflow-wrap: anywhere; }
 .insp .kv .mono { font-family: var(--mono); font-size: 10.5px; }
 .insp .kv .dim { color: var(--fg-5); }
+.insp .kv .pri-field {
+  width: 40px;
+  appearance: textfield;
+  -moz-appearance: textfield;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--line-1);
+  border-radius: 0;
+  padding: 0 2px;
+  color: var(--fg-2);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  outline: none;
+}
+.insp .kv .pri-field::-webkit-inner-spin-button, .insp .kv .pri-field::-webkit-outer-spin-button { appearance: none; margin: 0; }
+.insp .kv .pri-field::placeholder { color: var(--fg-5); }
+.insp .kv .pri-field:focus { border-bottom-color: var(--accent); }
 .insp .insp-line {
   font-family: var(--serif);
   font-size: 13px;

@@ -8,7 +8,7 @@ import type { Node as PMNode } from 'prosemirror-model';
 import { NodeSelection, Selection, type EditorState, type Transaction } from 'prosemirror-state';
 import { EditorView, type NodeView } from 'prosemirror-view';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { cardFields, meta, serialize, setField, type Block, type Card, type Doc } from '../format/index.js';
+import { PRI_DEFAULT, cardFields, meta, serialize, setField, type Block, type Card, type Doc } from '../format/index.js';
 import {
   blockAt, blocksEqual, cardDue, cursorIndex, editMath, editorialRanges, fromDoc, insertCard, makeState, markerKey, markerPos,
   mathSplit, passage, pickPos, proseIndices, schema, setReadPos, type Band, type Passage,
@@ -534,12 +534,14 @@ export function Reader({ id, active = true }: ReaderProps) {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  const saveCard = (text: string, again: boolean) => {
+  const saveCard = (text: string, again: boolean, pri?: number) => {
     const view = viewRef.current;
     const c = composerRef.current;
     const writer = writerRef.current;
     if (!view || !c || !writer) return;
-    view.dispatch(insertCard(view.state, { kind: 'card', text }, c.index));
+    const card: Card = { kind: 'card', text };
+    if (pri !== undefined) card.sched = { pri };
+    view.dispatch(insertCard(view.state, card, c.index));
     writer.flush();
     setComposer(again ? { ...c, index: c.index === null ? null : c.index + 1 } : null);
   };
@@ -659,7 +661,7 @@ export function Reader({ id, active = true }: ReaderProps) {
               className="card-pop"
               style={composer.rect ? { top: Math.min(composer.rect.bottom + 8, window.innerHeight - 280), left: Math.min(composer.rect.left, window.innerWidth - 440) } : undefined}
             >
-              <Composer seed={composer.seed} onSave={saveCard} onClose={() => setComposer(null)} />
+              <Composer seed={composer.seed} pri={info?.pri ?? PRI_DEFAULT} onSave={saveCard} onClose={() => setComposer(null)} />
             </div>
           )}
         </div>

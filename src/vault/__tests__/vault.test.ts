@@ -113,8 +113,8 @@ describe('write', () => {
       firstScheduledCard(doc.blocks).sched!.due = '2026-07-04';
     });
     const after = await readDisk(WOZ);
-    expect(changedLines(before, after)).toEqual([15]);
-    expect(after.split('\n')[14]).toBe(
+    expect(changedLines(before, after)).toEqual([16]);
+    expect(after.split('\n')[15]).toBe(
       '<!-- sr due=2026-07-04 st=review s=22 d=3.8 r=9 l=0 ivl=22 last=2026-05-19T08:00:00Z g=3 -->',
     );
     expect(after.endsWith('\n')).toBe(true);
@@ -181,8 +181,18 @@ describe('write', () => {
     expect(card).not.toHaveProperty('sched');
     expect(card).not.toHaveProperty('blanks');
     expect(card).toHaveProperty('id', 'cw2-min');
-    // lines 24 and 25 are the c1 and c2 schedules
-    expect((await readDisk(WOZ)).split('\n')).toEqual(before.filter((_, k) => k !== 23 && k !== 24));
+    // lines 25 and 26 are the c1 and c2 schedules
+    expect((await readDisk(WOZ)).split('\n')).toEqual(before.filter((_, k) => k !== 24 && k !== 25));
+  });
+
+  it('keeps a card\'s own priority through a reset', async () => {
+    const { doc } = await vault.read(WOZ);
+    const i = doc.blocks.findIndex((b) => b.kind === 'card' && b.id === 'cw1-paths');
+    await vault.update(WOZ, (d) => { const c = d.blocks[i]; if (c?.kind === 'card') c.sched = { ...c.sched, pri: 20 }; });
+    expect(await readDisk(WOZ)).toContain(' g=3 pri=20 -->');
+    const written = await vault.resetCard(WOZ, i, 'cw1-paths');
+    expect(written.doc.blocks[i]).toEqual({ kind: 'card', text: expect.any(String), id: 'cw1-paths', sched: { pri: 20 } });
+    expect((await readDisk(WOZ)).split('\n')).toContain('<!-- sr pri=20 -->');
   });
 
   it('moves a card to the end of another document with its schedule', async () => {
@@ -313,7 +323,7 @@ describe('write', () => {
     const after = await readDisk(WOZ);
     expect(after).toContain('## §1 — the premise, revised');
     expect(after).toContain('<!-- sr due=2026-07-04 st=review');
-    expect(changedLines(edited, after)).toEqual([15]);
+    expect(changedLines(edited, after)).toEqual([16]);
   });
 
   it('refuses a whole-doc overwrite when the file moved', async () => {

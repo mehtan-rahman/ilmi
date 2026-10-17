@@ -2,8 +2,8 @@
 // FORMAT.md §3.
 
 import {
-  parseAttrs, formatAttrs, parseDay, parseBool, readAttrs, writeAttrs,
-  specWhen, specInt, specBool, type AttrSpec, type Warn,
+  parseAttrs, formatAttrs, parseDay, parseBool, parseInt_, readAttrs, writeAttrs,
+  specWhen, specInt, specIntRange, specBool, type AttrSpec, type Warn,
 } from './attrs.js';
 import {
   isField, type CardForm, type Diagnostic, type Doc, type Field, type FieldKey, type FmEntry,
@@ -13,12 +13,23 @@ import {
 const NODE_TYPES: readonly NodeType[] = ['source', 'deck', 'draft', 'extract'];
 const CARD_FORMS: readonly CardForm[] = ['cloze', 'qa', 'bidir'];
 
+/** Priority: 0–100, lower first. The `pri` field, the fallback on a `read` / `write` line, and a card's override. */
+export const PRI_MIN = 0;
+export const PRI_MAX = 100;
+export const PRI_DEFAULT = 50;
+
 export const READ_SPECS: AttrSpec<ReadSchedule>[] = [
-  specWhen('due', 'due'), specInt('ivl', 'ivl'), specInt('reps', 'reps'), specInt('pos', 'pos'), specInt('pri', 'pri'),
+  specWhen('due', 'due'), specInt('ivl', 'ivl'), specInt('reps', 'reps'), specInt('pos', 'pos'), specIntRange('pri', 'pri', PRI_MIN, PRI_MAX),
 ];
 export const WRITE_SPECS: AttrSpec<WriteSchedule>[] = [
-  specWhen('due', 'due'), specInt('ivl', 'ivl'), specInt('reps', 'reps'), specInt('pri', 'pri'), specBool('done', 'done'),
+  specWhen('due', 'due'), specInt('ivl', 'ivl'), specInt('reps', 'reps'), specIntRange('pri', 'pri', PRI_MIN, PRI_MAX), specBool('done', 'done'),
 ];
+
+/** `pri` as a number in range, or null. */
+export function parsePri(v: string): number | null {
+  const n = parseInt_(v);
+  return n !== null && n >= PRI_MIN && n <= PRI_MAX ? n : null;
+}
 
 const FIELD_LINE = /^([A-Za-z0-9_-]+):(?:[ \t]+(.*))?$/;
 
@@ -80,6 +91,10 @@ function parseValue(key: FieldKey, raw: string, warn: Warn): Field | null {
       return { key, value: readTyped(raw, READ_SPECS, warn) };
     case 'write':
       return { key, value: readTyped(raw, WRITE_SPECS, warn) };
+    case 'pri': {
+      const v = parsePri(stripComment(raw));
+      return v === null ? null : { key, value: v };
+    }
   }
 }
 
@@ -135,10 +150,24 @@ export function parseFrontmatter(lines: string[], firstLine: number, diags: Diag
       diags.push({ line: lineOf[i]!, message: `nested values under "${e.key}" are ignored; use inline attributes` });
     }
   });
+  // the `pri` field supersedes a `pri=` on the read / write lines, which only
+  // stands in while there is no field (§8: dropped on the first write)
+  if (hasPriField(entries)) for (const e of entries) if (isField(e)) withoutLinePri(e, entries);
   return { entries };
 }
 
-const KNOWN = new Set<string>(['type', 'title', 'frozen', 'imported', 'started', 'read', 'write', 'default-card']);
+const hasPriField = (entries: FmEntry[]) => entries.some((e) => isField(e) && e.key === 'pri');
+
+/** The field without a `pri` on a read / write line; in place when `into` is given, else a copy. */
+function withoutLinePri(f: Field, into?: FmEntry[]): Field {
+  if ((f.key !== 'read' && f.key !== 'write') || f.value.pri === undefined) return f;
+  const { pri: _, ...rest } = f.value;
+  const out = { key: f.key, value: rest } as Field;
+  if (into) into[into.indexOf(f)] = out;
+  return out;
+}
+
+const KNOWN = new Set<string>(['type', 'title', 'frozen', 'imported', 'started', 'read', 'write', 'default-card', 'pri']);
 function isKnown(k: string): k is FieldKey { return KNOWN.has(k); }
 
 // ── serialize ────────────────────────────────────────────────────
@@ -151,13 +180,16 @@ export function formatField(f: Field): string {
     case 'imported': case 'started': return `${f.key}: ${f.value}`;
     case 'read': return attrLine('read', formatAttrs(writeAttrs(f.value, READ_SPECS)));
     case 'write': return attrLine('write', formatAttrs(writeAttrs(f.value, WRITE_SPECS)));
+    case 'pri': return `pri: ${f.value}`;
   }
 }
 
 const attrLine = (key: string, attrs: string) => (attrs ? `${key}: ${attrs}` : `${key}:`);
 
 export function formatFrontmatter(fm: Frontmatter): string {
-  const lines = fm.entries.map((e) => (isField(e) ? formatField(e) : e.raw));
+  // a document that gained the field in memory writes its lines without the fallback
+  const drop = hasPriField(fm.entries);
+  const lines = fm.entries.map((e) => (isField(e) ? formatField(drop ? withoutLinePri(e) : e) : e.raw));
   return ['---', ...lines, '---'].join('\n');
 }
 
@@ -172,6 +204,8 @@ export interface Meta {
   read?: ReadSchedule;
   write?: WriteSchedule;
   defaultCard?: CardForm;
+  /** The `pri` field; absent means `PRI_DEFAULT`, unless a `read` / `write` line carries a fallback. */
+  pri?: number;
 }
 
 /** The document's front-matter as a plain object, defaults applied. */
@@ -188,9 +222,15 @@ export function meta(doc: Doc): Meta {
       case 'read': out.read = e.value; break;
       case 'write': out.write = e.value; break;
       case 'default-card': out.defaultCard = e.value; break;
+      case 'pri': out.pri = e.value; break;
     }
   }
   return out;
+}
+
+/** The priority that applies to a document's reading, writing, and cards: the field, else `PRI_DEFAULT`. */
+export function docPri(m: Meta): number {
+  return m.pri ?? PRI_DEFAULT;
 }
 
 type ValueOf<K extends FieldKey> = Extract<Field, { key: K }>['value'];
@@ -208,6 +248,8 @@ export function setField<K extends FieldKey>(doc: Doc, key: K, value: ValueOf<K>
   } else {
     const field = { key, value } as Field;
     if (at >= 0) fm.entries[at] = field; else fm.entries.push(field);
+    // the field supersedes a `pri=` on the read / write lines, for good
+    if (key === 'pri') for (const e of fm.entries) if (isField(e)) withoutLinePri(e, fm.entries);
   }
   if (fm.entries.length) doc.frontmatter = fm;
   else delete doc.frontmatter;

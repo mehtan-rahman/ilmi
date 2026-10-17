@@ -453,7 +453,46 @@ Same rules as above: one milestone per session, a FORMAT.md change comes
 with a corpus file and a test, ask before a screen or a setting not listed
 here. Cards keep FSRS throughout; nothing below changes how a grade lands.
 
-### [ ] 10. Priority — one scale, document level, the queue sorted by it
+### [x] 10. Priority — one scale, document level, the queue sorted by it
+Done 2026-10-17, commit `TBD`.
+Notes: `pri` is a front-matter field (FORMAT.md §3: int 0–100, default
+50) read by `meta` into `Meta.pri`; `docPri(m)` is the field or 50, and
+`PRI_MIN` / `PRI_MAX` / `PRI_DEFAULT` / `parsePri` are exported from
+`src/format`. A `pri=` on a `read` / `write` line is still parsed (now
+range-checked) and stands in for that loop when there is no field; the
+parser drops it from the line once the file has the field, `setField(doc,
+'pri', n)` drops it too, and `formatFrontmatter` formats a copy without
+it, so a doc that gained the field in memory writes clean and a parse →
+serialize → parse of a file with both is a fixed point. A card's own
+priority is `pri` on its bare `sr` line (`CardSchedule.pri`, last in
+`SR_SPECS`); on an `sr cN` line it is dropped with a diagnostic. `grade`
+and `preview` carry `pri` (and `extra`) across from the previous
+schedule (`fromFsrs(c, g, prev)`), and `Vault.resetCard` keeps it as a
+bare `<!-- sr pri=N -->`; the inspector's `hasSchedule` treats such a
+line as not scheduled, so the card still reads `new`. Queue
+(`src/schedule/queue.ts`): an item's `pri` is the card's own, else the
+document's, else 50 (a line fallback counts for its loop only);
+`sortQueue(items, now)` puts what is due first, by priority then due then
+document order, and what is not due yet after, by due then priority. The
+corpus's `pri=1..3` moved onto the field as 10 / 50 / 80; the order test
+pins the day's full order. **Deviation:** "the queue order for
+2026-05-27 is unchanged" held for the topics and drafts but not for the
+cards: the old 2 / 3 rule put every due card ahead of every pri-3 topic,
+and wozniak-1990's cards now sit with their document at 80, after
+everything at 50. The test says so. `Vault.extract` gives the child the
+parent's field (or the parent's line fallback) as a `pri` field, not a
+line attribute. App: `DocInfo.pri`; the inspector's `PriField` (a number
+input that commits on blur or ⏎, empty clears, escape restores) on the
+`priority` row for source / extract / draft / deck (`setField`) and for
+the selected or under-review card (the bare line, through `cardAt`, the
+lookup the card editor also uses now); the composer's `priority` number
+(default the document's; a differing value becomes `sched: { pri }` on
+the new card in the reader and in the deck); queue rows and the session's
+card strip and reading / writing bar show `p NN` only when it is not 50,
+live from the document. New corpus file `mangled/priority.md`. Dev:
+`ILMI_SMOKE=pri`. Not done: no palette command or key for priority; the
+inspector's field has no stepper or slider; `items.test.ts` fixtures
+still say `pri: 2` (harmless, it is a number).
 SuperMemo gives every element a priority percentile, 0% first, and sorts
 the outstanding queue by it. ilmi's `pri` is an int on the `read` /
 `write` line, default 2, and cards have none (they are 2 when due, 3
@@ -571,12 +610,14 @@ repetition history landing in Markdown.
 
 ## Notes for the next session
 
-Start at milestone 10, priority. It is a format change first: the `pri`
-field in FORMAT.md §3 and §6.2, `src/format/frontmatter.ts` (the
-`specInt('pri', 'pri')` entries on the `read` / `write` specs become a
-fallback) and `model.ts`, the corpus rewritten onto the new scale, then
-`src/schedule/queue.ts` (`pri` at lines 98, 119, 125 and the sort at 139)
-and the inspector row. Milestones 11 and 12 build on it; 13 is optional
-and says so; 14 is the only one that touches SuperMemo itself, and only
-its data files. `BUILD-LOG.md`'s newest entry predates this section; the
-next entry's handoff prompt should name milestone 10.
+Start at milestone 11, growth. It is small: `af` on the `read` / `write`
+specs in `src/format/frontmatter.ts` (a `specNum`, but ≥ 1.1, so a range
+spec for numbers is needed beside `specIntRange`), FORMAT.md §3, the
+constants in `src/schedule/read.ts` / `write.ts` becoming the line's
+`af`, `postpone(r, now, factor?)` with the `max(round(ivl × factor), ivl
++ 1)` rule, and a `growth` row in the inspector next to the `priority`
+row from milestone 10 (`PriField` is the shape to copy for a number
+field). The corpus's reading topics carry no `af`, so a test sets one and
+checks the landing. Milestone 12 builds on 10 and 11 together; 13 is
+optional and says so; 14 is the only one that touches SuperMemo itself,
+and only its data files.

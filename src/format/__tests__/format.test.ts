@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
-  parse, serialize, meta, setField, cardForm, cardFields, clozeParts, clozeGroups, nextGroup, mathSpanEnd,
+  parse, serialize, meta, setField, docPri, cardForm, cardFields, clozeParts, clozeGroups, nextGroup, mathSpanEnd,
   type Card, type Paragraph, type Heading, type Raw,
 } from '../index.js';
 
@@ -16,10 +16,46 @@ describe('front-matter', () => {
   it('reads the known fields with defaults', () => {
     const { doc } = parse(read('vault/papers/wozniak-1990.md'));
     expect(meta(doc)).toEqual({
-      type: 'source', frozen: true, imported: '2026-04-18',
-      read: { due: '2026-06-01', ivl: 9, reps: 4, pos: 12, pri: 3 },
+      type: 'source', frozen: true, imported: '2026-04-18', pri: 80,
+      read: { due: '2026-06-01', ivl: 9, reps: 4, pos: 12 },
     });
     expect(meta(parse('just a note\n').doc)).toEqual({ type: 'source', frozen: false });
+  });
+
+  it('priority: the field wins over a line, a card carries its own, a group line never does', () => {
+    const { doc, diagnostics } = parse(read('mangled/priority.md'));
+    const m = meta(doc);
+    expect(m.pri).toBe(30);
+    expect(docPri(m)).toBe(30);
+    expect(m.read).toEqual({ due: '2026-05-27', ivl: 2, reps: 1, pos: 0 });        // pri=2 superseded by the field
+    expect(m.write).toEqual({ due: '2026-05-27', done: false });                     // pri=200 is out of range
+    const cards = doc.blocks.filter((b): b is Card => b.kind === 'card');
+    expect(cards.map((c) => c.sched?.pri)).toEqual([10, 40, 0]);
+    expect(cards[1]?.blanks?.[1]).toEqual({ due: '2026-06-01', state: 'review', stability: 3, difficulty: 5, reps: 1, lapses: 0 });
+    const out = serialize(doc);
+    expect(out.split('\n').slice(0, 7)).toEqual([
+      '---', 'type: source', 'pri: high', 'pri: 30', 'read: due=2026-05-27 ivl=2 reps=1 pos=0', 'write: due=2026-05-27 done=false', '---',
+    ]);
+    expect(out).toContain('<!-- sr due=2026-05-27 st=review s=4 d=5 r=2 l=0 pri=10 -->');
+    expect(out).toContain('<!-- sr pri=40 -->\n<!-- sr c1 due=2026-06-01 st=review s=3 d=5 r=1 l=0 -->');
+    expect(out).toContain('<!-- sr pri=0 -->');
+    const messages = diagnostics.map((d) => `${d.line}: ${d.message}`);
+    expect(messages).toEqual([
+      '3: bad value for "pri"', '6: bad value for "pri": 200', '18: "pri" on a group line is ignored',
+    ]);
+    // without the field, the line's value stands and is written back
+    const legacy = parse('---\nread: due=2026-05-27 pri=2\n---\n\nx\n').doc;
+    expect(meta(legacy)).toMatchObject({ read: { due: '2026-05-27', pri: 2 } });
+    expect(meta(legacy).pri).toBeUndefined();
+    expect(docPri(meta(legacy))).toBe(50);
+    expect(serialize(legacy)).toContain('read: due=2026-05-27 pri=2\n');
+    // the field, once set, takes the line's value off on the next write
+    setField(legacy, 'pri', 10);
+    expect(serialize(legacy)).toBe('---\nread: due=2026-05-27\npri: 10\n---\n\nx\n');
+    setField(legacy, 'pri', null);
+    expect(serialize(legacy)).toBe('---\nread: due=2026-05-27\n---\n\nx\n');
+    for (const bad of ['pri: -1', 'pri: 101', 'pri: 1.5', 'pri:'])
+      expect(meta(parse(`---\n${bad}\n---\n\nx\n`).doc).pri).toBeUndefined();
   });
 
   it('keeps unknown lines verbatim and degrades bad values with diagnostics', () => {

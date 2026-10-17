@@ -6,6 +6,134 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-10-17 — milestone 10: priority, one scale at document level, the queue sorted by it
+
+Commit `TBD` — *priority: one 0–100 scale on the document, a card's own on
+its line, the queue sorted by it*.
+
+### Done
+
+- `FORMAT.md` §2, §3, §6.2, §8: a `pri` front-matter field (int 0–100,
+  lower first, default 50) for the document's reading, writing, and every
+  card in it; `pri` on a `read` / `write` line is read as a fallback for
+  that loop while there is no field and dropped on write once there is
+  one; a card's own `pri` on its bare `sr` line, never on a group line.
+- `src/format`: `model.ts` (`CardSchedule.pri`, the `pri` field, the
+  field key list), `frontmatter.ts` (`PRI_MIN` / `PRI_MAX` / `PRI_DEFAULT`,
+  `parsePri`, `Meta.pri`, `docPri`; `specIntRange` on the line specs; the
+  parser drops a line `pri` once the field exists, `setField(doc, 'pri',
+  n)` drops it too, and `formatFrontmatter` formats a copy without it, so
+  serialize stays pure and a file with both reaches the fixed point),
+  `parse.ts` (`pri` last in `SR_SPECS`; on an `sr cN` line it is dropped
+  with `"pri" on a group line is ignored`).
+- `src/schedule/card.ts`: `fromFsrs(c, grade, prev)` carries `pri` and
+  `extra` across a grade and a preview. `src/schedule/queue.ts`: an
+  item's `pri` is the card's own, else the document's field, else 50 (a
+  line fallback counts for its loop); `sortQueue(items, now)` puts what is
+  due first by priority, then due, then document order, and the rest
+  after by due, then priority. The 2 / 3 card rule is gone.
+- `src/vault/vault.ts`: `extract` gives the child the parent's field (or
+  the parent's line fallback) as a `pri` field; `resetCard` keeps a card's
+  own `pri` as a bare `<!-- sr pri=N -->`.
+- Corpus: `pri=1..3` on the six vault files moved onto the field as 10 /
+  50 / 80 (one line longer each, so the line-number expectations in
+  `schedule.test.ts`, `vault.test.ts`, `tree.test.ts`, `reader.test.ts`
+  moved by one); new `mangled/priority.md` with a bad field value, the
+  field over a line value, an out-of-range line value, a card override, a
+  group-line `pri`, and a bare line carrying only `pri`.
+- App: `DocInfo.pri`. Inspector: a `priority` row (`PriField`, a number
+  input that commits on blur or ⏎, empty clears, escape restores) for
+  source / extract / draft / deck through `setField`, and for the selected
+  or under-review card on its bare line through `cardAt`, the lookup the
+  card editor now shares; `hasSchedule` keeps a `pri`-only line from
+  reading as scheduled. Composer: the prototype's priority picker is back
+  as a `priority` number, default the document's; a differing value
+  becomes `sched: { pri }` on the new card, in the reader and in the deck.
+  Queue rows, the session's card strip, and the reading / writing bar
+  show `p NN` only when it is not 50, live from the document.
+- README: one sentence on priority. Dev: `ILMI_SMOKE=pri`.
+- Tests: 232 (format: the priority corpus file, `setField` with the
+  field, bad values; schedule: `pri` through grade and preview, the
+  card's override and the line fallback, the day's full order, the
+  due-then-upcoming bands; vault: a reset keeps `pri`; the extract tests
+  expect the field).
+
+### Verified
+
+- `npm run typecheck` clean, `npx vitest run` green (13 files, 232).
+- In the window (`ILMI_VAULT=<scratch copy of the corpus> ILMI_SMOKE=pri
+  npm run tauri dev`, 22:42 UTC), as logged: the inspector's priority
+  field reads `50` for crick-1995 → set to `10`: one line changed on
+  disk (`pri: 50` → `pri: 10`, 25 lines → 25) → cleared: the line is gone
+  (25 → 24) → `10` again → the day's queue reads `READ crick-1995 p 10`
+  first, its card `p 10` second, the rest with no `p` → landing on
+  wozniak-1990's `cw1-paths` from the palette, the card's field is empty
+  with `80` as the hint → set to `5`: line 16 alone changed, now ending
+  `g=3 pri=5` → the queue leads with that card, `p 5` → entering the
+  queue, the card strip reads `q&a · 9 reviews · stability 22d · p 5 ·
+  overdue 135d` and the inspector's card field reads `5` → space, 3: the
+  rewritten line keeps `pri=5`, still one line changed. Diagnostics 0
+  throughout.
+- Four captures read one by one: the crick reader with the `priority`
+  row in the inspector; the day's queue with `p 10` on crick's two rows
+  and nothing on the others; the wozniak reader on the selected card; the
+  session on that card with `p 5` in the strip and `priority 5` in the
+  inspector's card block. The first run's late captures also showed the
+  reading bar as `2 / 30 · READING · p 10`. A picture-in-picture window
+  on the desktop covered the inspector's value column in every capture;
+  the log lines carry the values.
+- Shot timing that works: the smoke pauses ten seconds after each `shot:`
+  line and the shell captures two seconds after reading it (the line
+  arrives about five seconds late); the first run's 1.8 s pause and 9 s
+  shell delay landed every capture on a later screen.
+
+### Not done / open
+
+- The plan's "queue order for 2026-05-27 is unchanged" held for topics
+  and drafts, not cards: the old rule put every due card at 2, ahead of
+  every pri-3 topic, and wozniak-1990's cards now sit with their document
+  at 80. The order test pins the new order and says so.
+- Committing a priority on a card selected in the reader drops the
+  reader's selection (the reader rebuilds its view on any external change
+  and republishes nothing), so the inspector falls back to the document;
+  the deck lens and the session keep the card. Prior behaviour, the card
+  editor does the same.
+- No palette command or key sets a priority; the field has no stepper.
+- `items.test.ts` fixtures still say `pri: 2`; harmless, it is a number.
+- A `pri` field on a deck applies to its cards, which is the only thing a
+  deck has; the row sits with `cards` and `due`.
+
+### Decisions worth knowing
+
+- The line fallback is dropped at parse time once the field exists, not
+  only at write time, so the in-memory document never carries two
+  answers and the round-trip fixed point holds for a file with both.
+- `pri` on a card is schedule-line data the scheduler does not own:
+  `fromFsrs` copies it from the previous schedule the way it copies
+  unknown attributes, and a reset keeps it.
+- The queue sorts in two bands, due then not due, rather than one
+  priority sort, so a low-priority card due next week never leads today.
+- `p NN` is shown only when it is not 50: the default says nothing.
+
+### Handoff prompt
+
+Paste into a fresh session:
+
+```
+Read PLAN.md, FORMAT.md, BUILD-LOG.md, and spec/hashiyah/HANDOFF.md. Do the
+first unchecked milestone in PLAN.md and only that one. Stop at its "done
+when". Then tick it, write notes for the next session under it, add an entry
+to BUILD-LOG.md with a fresh handoff prompt, and commit.
+
+Context: milestone 10 (priority) is done (BUILD-LOG 2026-10-17); the next
+is 11, growth. Tooling: export PATH=$HOME/.cargo/bin:/opt/homebrew/bin:$PATH;
+npm test and npm run typecheck must be green before a commit; caffeinate
+-d -u -i, then ILMI_VAULT=<scratch copy> ILMI_SMOKE=<mode> npm run tauri
+dev drives the window (pri is the newest mode; see "Shot timing" above).
+```
+
+---
+
 ## 2026-09-23 — cards in a deck: select, delete, reset, move, and land on one
 
 Seven commits, one per feature, each green on typecheck and the suite:

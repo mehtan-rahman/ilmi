@@ -344,6 +344,23 @@
   color: var(--fg-4);
 }
 .composer .ft .grow { flex: 1; }
+.composer .ft .pri-pick { display: flex; align-items: center; gap: 6px; }
+.composer .ft .pri-pick input {
+  width: 34px;
+  appearance: textfield;
+  -moz-appearance: textfield;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--line-1);
+  border-radius: 0;
+  padding: 0 2px;
+  color: var(--fg-2);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  outline: none;
+}
+.composer .ft .pri-pick input::-webkit-inner-spin-button, .composer .ft .pri-pick input::-webkit-outer-spin-button { appearance: none; margin: 0; }
+.composer .ft .pri-pick input:focus { border-bottom-color: var(--accent); }
 .composer .ft kbd { font-family: inherit; color: var(--fg-3); }
 .composer .ft .act { cursor: pointer; }
 .composer .ft .act[data-able="0"] { opacity: 0.45; cursor: default; }

@@ -65,6 +65,8 @@ export interface DocInfo {
   due: number;
   read?: ReadSchedule;
   write?: WriteSchedule;
+  /** The `pri` field; absent means the default. */
+  pri?: number;
 }
 
 export interface Sidebar {

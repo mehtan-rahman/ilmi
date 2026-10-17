@@ -4,7 +4,7 @@
 // `o` opens the one under the cursor.
 
 import { useEffect, useState, type MouseEvent } from 'react';
-import { cardFields, clozeParts } from '../format/index.js';
+import { PRI_DEFAULT, cardFields, clozeParts } from '../format/index.js';
 import { counts, inScope, type QueueItem } from '../schedule/index.js';
 import { EL_GLYPH, QUEUE_EMPTY, dayLabel, dueLabel, intervalLabel, isFresh, kindTag, refLine, snippetOf, sourceLabel, summary } from './items.js';
 import { QUEUE_TITLE, SCOPES, queueId, type QueueScope } from './names.js';
@@ -130,7 +130,7 @@ export function Queue({ scope, active }: Props) {
                   <Body item={item} />
                   {ref && <span className="ref-line">{ref}</span>}
                 </span>
-                <span className="pri"><b>p{item.pri}</b></span>
+                <span className="pri">{item.pri !== PRI_DEFAULT && <b>p {item.pri}</b>}</span>
                 <span className="due">
                   {dueLabel(item.due, now)}
                   {ivl && <div className="ivl">{ivl}</div>}

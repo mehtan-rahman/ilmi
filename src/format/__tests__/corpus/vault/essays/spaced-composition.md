@@ -2,7 +2,8 @@
 type: draft
 title: spaced composition
 started: 2026-05-22
-write: due=2026-05-27 ivl=2 reps=1 pri=2 done=false
+pri: 50
+write: due=2026-05-27 ivl=2 reps=1 done=false
 ---
 
 ## working title

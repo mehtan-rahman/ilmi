@@ -2,8 +2,8 @@
 // FORMAT.md §3.
 
 import {
-  parseAttrs, formatAttrs, parseDay, parseBool, parseInt_, readAttrs, writeAttrs,
-  specWhen, specInt, specIntRange, specBool, type AttrSpec, type Warn,
+  parseAttrs, formatAttrs, parseDay, parseBool, parseInt_, parseNumber, readAttrs, writeAttrs,
+  specWhen, specInt, specIntRange, specNumMin, specBool, type AttrSpec, type Warn,
 } from './attrs.js';
 import {
   isField, type CardForm, type Diagnostic, type Doc, type Field, type FieldKey, type FmEntry,
@@ -18,17 +18,35 @@ export const PRI_MIN = 0;
 export const PRI_MAX = 100;
 export const PRI_DEFAULT = 50;
 
+/** Growth: the factor an interval grows by on each pass. Written only when it is not the loop's default. */
+export const AF_MIN = 1.1;
+export const READ_AF = 1.6;
+export const WRITE_AF = 1.5;
+
 export const READ_SPECS: AttrSpec<ReadSchedule>[] = [
-  specWhen('due', 'due'), specInt('ivl', 'ivl'), specInt('reps', 'reps'), specInt('pos', 'pos'), specIntRange('pri', 'pri', PRI_MIN, PRI_MAX),
+  specWhen('due', 'due'), specInt('ivl', 'ivl'), specInt('reps', 'reps'), specInt('pos', 'pos'), specNumMin('af', 'af', AF_MIN), specIntRange('pri', 'pri', PRI_MIN, PRI_MAX),
 ];
 export const WRITE_SPECS: AttrSpec<WriteSchedule>[] = [
-  specWhen('due', 'due'), specInt('ivl', 'ivl'), specInt('reps', 'reps'), specIntRange('pri', 'pri', PRI_MIN, PRI_MAX), specBool('done', 'done'),
+  specWhen('due', 'due'), specInt('ivl', 'ivl'), specInt('reps', 'reps'), specNumMin('af', 'af', AF_MIN), specIntRange('pri', 'pri', PRI_MIN, PRI_MAX), specBool('done', 'done'),
 ];
 
 /** `pri` as a number in range, or null. */
 export function parsePri(v: string): number | null {
   const n = parseInt_(v);
   return n !== null && n >= PRI_MIN && n <= PRI_MAX ? n : null;
+}
+
+/** `af` as a number at or above `AF_MIN`, or null. */
+export function parseAf(v: string): number | null {
+  const n = parseNumber(v);
+  return n !== null && n >= AF_MIN ? n : null;
+}
+
+/** The schedule without an `af` that only says the default. In place when `into` is given, else a copy. */
+function withoutDefaultAf<T extends ReadSchedule | WriteSchedule>(s: T, def: number): T {
+  if (s.af !== def) return s;
+  const { af: _, ...rest } = s;
+  return rest as T;
 }
 
 const FIELD_LINE = /^([A-Za-z0-9_-]+):(?:[ \t]+(.*))?$/;
@@ -88,9 +106,9 @@ function parseValue(key: FieldKey, raw: string, warn: Warn): Field | null {
       return v === null ? null : { key, value: v };
     }
     case 'read':
-      return { key, value: readTyped(raw, READ_SPECS, warn) };
+      return { key, value: withoutDefaultAf(readTyped(raw, READ_SPECS, warn), READ_AF) };
     case 'write':
-      return { key, value: readTyped(raw, WRITE_SPECS, warn) };
+      return { key, value: withoutDefaultAf(readTyped(raw, WRITE_SPECS, warn), WRITE_AF) };
     case 'pri': {
       const v = parsePri(stripComment(raw));
       return v === null ? null : { key, value: v };
@@ -178,8 +196,8 @@ export function formatField(f: Field): string {
     case 'title': return `title: ${formatTitle(f.value)}`;
     case 'frozen': return `frozen: ${f.value ? 'true' : 'false'}`;
     case 'imported': case 'started': return `${f.key}: ${f.value}`;
-    case 'read': return attrLine('read', formatAttrs(writeAttrs(f.value, READ_SPECS)));
-    case 'write': return attrLine('write', formatAttrs(writeAttrs(f.value, WRITE_SPECS)));
+    case 'read': return attrLine('read', formatAttrs(writeAttrs(withoutDefaultAf(f.value, READ_AF), READ_SPECS)));
+    case 'write': return attrLine('write', formatAttrs(writeAttrs(withoutDefaultAf(f.value, WRITE_AF), WRITE_SPECS)));
     case 'pri': return `pri: ${f.value}`;
   }
 }
@@ -246,7 +264,9 @@ export function setField<K extends FieldKey>(doc: Doc, key: K, value: ValueOf<K>
   if (value === null) {
     if (at >= 0) fm.entries.splice(at, 1);
   } else {
-    const field = { key, value } as Field;
+    const field = (key === 'read' ? { key, value: withoutDefaultAf(value as ReadSchedule, READ_AF) }
+      : key === 'write' ? { key, value: withoutDefaultAf(value as WriteSchedule, WRITE_AF) }
+      : { key, value }) as Field;
     if (at >= 0) fm.entries[at] = field; else fm.entries.push(field);
     // the field supersedes a `pri=` on the read / write lines, for good
     if (key === 'pri') for (const e of fm.entries) if (isField(e)) withoutLinePri(e, fm.entries);

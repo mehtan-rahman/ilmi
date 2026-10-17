@@ -518,7 +518,37 @@ otherwise).
 - Done when: setting a priority in the inspector changes one line on
   disk, the queue reorders live, and the corpus order test passes.
 
-### [ ] 11. Growth — a factor per document for reading and writing
+### [x] 11. Growth — a factor per document for reading and writing
+Done 2026-10-17.
+Notes: `af` is an attribute on the `read` / `write` line (FORMAT.md §3:
+number ≥ 1.1, default 1.6 reading, 1.5 writing; `AF_MIN` / `READ_AF` /
+`WRITE_AF` / `parseAf` exported from `src/format`), ordered after `pos`
+on `read` and after `reps` on `write`, before `pri`. The default is
+dropped at parse time, by `setField`, and by `formatField`
+(`withoutDefaultAf`), so the in-memory doc never says 1.6 and the
+round-trip fixed point holds; below the floor it is dropped with `bad
+value for "af": 1`. `src/schedule/growth.ts` holds the arithmetic shared
+by both loops: `grow(ivl, af)` (`max(1, round(ivl × af))`),
+`nextIntervals(ivl, af, n = 3)`, `postponed(ivl, factor = 1.2)`
+(`max(round(ivl × f), ivl + 1)`), `POSTPONE_FACTOR`. `readOn` /
+`workedOn` use the line's `af`; `postpone(s, now, factor?)` writes the new
+`ivl` and `due`, leaves `reps`, and `advanceRead` / `advanceWrite` pass
+no factor, so `p` is one keypress. Corpus: crick-1995 carries `af=2`,
+talk-incremental `af=1.2`; new `mangled/growth.md` has the default
+written out and a value below the floor. Tests: the corpus's four reading
+topics with `af=2` land on `max(1, round(ivl × 2))` from today and the
+file says so; postpone over intervals 0–365 and factors 0.5–2 never
+lands before tomorrow. Inspector: `PriField` is now a thin wrapper over
+`NumField` (className, min, max, step, parse, `none`, a value that means
+empty so typing the default clears the field); `growthRow(path, key, s)`
+is the `af-field` plus `af-next`, the next three intervals as `3d · 5d ·
+8d` (`fmtDays`), shown for a source or extract only when enrolled, under
+`priority`, and for a draft in the `spaced composition` block between
+`interval` and `due`. Session: the postpone note reads `read · +3d`, not
+`tomorrow`. Dev: `ILMI_SMOKE=growth`. Not done: no growth row for an
+unenrolled source (there is no line to put it on; `r` enrols first);
+nothing shows `af` in the queue rows or the session bar; the preview
+starts from the stored `ivl`, not from how overdue the topic is.
 SuperMemo multiplies a topic's interval by its A-factor on every pass, and
 `postpone` multiplies it too rather than moving it to tomorrow. ilmi's
 growth is a constant: 1.6 for reading, 1.5 for writing, and postpone is

@@ -1,26 +1,27 @@
 // The reading loop: a source enrolled with `read:` comes back on a growing
 // interval until it is marked done. Never graded. Mirrors the prototype's
-// `readAdvance`: read on multiplies the interval by 1.6, postpone is tomorrow,
-// done drops the field.
+// `readAdvance`: read on multiplies the interval by the line's `af` (1.6
+// when absent), postpone multiplies it by a smaller factor, done drops the
+// field.
 
-import { meta, setField, type Doc, type ReadSchedule } from '../format/index.js';
+import { READ_AF, meta, setField, type Doc, type ReadSchedule } from '../format/index.js';
 import { addDays, dayOf } from './dates.js';
+import { grow, postponed } from './growth.js';
 
 export type ReadAction = 'on' | 'postpone' | 'done';
 
-const GROWTH = 1.6;
-
 /** One pass made; `pos` moves the marker forward, never back. */
 export function readOn(r: ReadSchedule, now: Date, pos?: number): ReadSchedule {
-  const ivl = Math.max(1, Math.round((r.ivl ?? 1) * GROWTH));
+  const ivl = grow(r.ivl, r.af ?? READ_AF);
   const out: ReadSchedule = { ...r, due: addDays(dayOf(now), ivl), ivl, reps: (r.reps ?? 0) + 1 };
   if (pos !== undefined) out.pos = Math.max(r.pos ?? 0, pos);
   return out;
 }
 
-/** Not now: back tomorrow. Not a pass. */
-export function postpone(r: ReadSchedule, now: Date): ReadSchedule {
-  return { ...r, due: addDays(dayOf(now), 1) };
+/** Not now: the interval grows by `factor` (1.2 by default), never less than a day, and the pass is not counted. */
+export function postpone(r: ReadSchedule, now: Date, factor?: number): ReadSchedule {
+  const ivl = postponed(r.ivl, factor);
+  return { ...r, due: addDays(dayOf(now), ivl), ivl };
 }
 
 /** Apply an action to a document's `read` field in place. Throws if it is not enrolled. */

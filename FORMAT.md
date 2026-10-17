@@ -103,13 +103,20 @@ dropped, with a diagnostic.
 | `pri`          | int 0–100                   | `50`      | priority, lower first: the document's reading, writing, and every card in it |
 
 `read` attributes: `due` (day or instant), `ivl` (days between passes, int),
-`reps` (passes made, int), `pos` (prose blocks read, int), `pri` (int 0–100).
+`reps` (passes made, int), `pos` (prose blocks read, int), `af` (growth,
+number ≥ 1.1, default 1.6), `pri` (int 0–100).
 `pos` counts prose blocks from the top of the body, skipping cards;
 hand-inserting a paragraph above the marker shifts it by one, which is the
 accepted trade for not tagging every paragraph with an id.
 
-`write` attributes: `due`, `ivl`, `reps`, `pri` as above, plus `done`
-(`true`/`false`). A done draft keeps its line so it can be reopened.
+`write` attributes: `due`, `ivl`, `reps`, `af` (default 1.5), `pri` as above,
+plus `done` (`true`/`false`). A done draft keeps its line so it can be
+reopened.
+
+**Growth** is SuperMemo's A-factor: each pass multiplies the interval by
+`af`, rounded, never below one day. `af` is written only when it is not the
+default; a value below 1.1 is dropped with a diagnostic, and the default
+value, if written by hand, goes on the first write (§8).
 
 **Priority** is one scale for everything, as in SuperMemo: `0` comes first,
 `100` last, `50` when nothing says otherwise. The `pri` field is the document's
@@ -356,6 +363,7 @@ The first time the app writes a hand-made file, these change, and only these:
   them dropped; a blank line after the closing `---`.
 - A `pri=` on the `read` or `write` line → dropped, when the file has a `pri`
   field (§3). Without the field it stays.
+- An `af=` on the `read` or `write` line equal to that loop's default → dropped.
 - A body with no front-matter whose first block is a `---` thematic break, or
   whose first character is a stray U+FEFF, gets one leading blank line, so the
   file is not read back as front-matter or as a byte-order mark.

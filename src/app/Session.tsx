@@ -6,7 +6,7 @@
 
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { PRI_DEFAULT, cardFields, clozeParts, type Block, type Card } from '../format/index.js';
-import { GRADES, advanceRead, advanceWrite, gradeItem, type CardItem, type Grade, type QueueItem, type ReadItem, type WriteItem } from '../schedule/index.js';
+import { GRADES, advanceRead, advanceWrite, gradeItem, postponed, type CardItem, type Grade, type QueueItem, type ReadItem, type WriteItem } from '../schedule/index.js';
 import { EL_WORD, FORM_LABEL, dueLabel, gapLabels, ownBlank, sourceLabel } from './items.js';
 import type { OpenOpts } from './panes.js';
 import { Reader, richHTML } from './Reader.js';
@@ -301,7 +301,7 @@ export function Session({ active, onOpen }: Props) {
       ? vault.update(item.path, (doc) => { advanceRead(doc, action, now, pos); })
       : vault.update(item.path, (doc) => { advanceWrite(doc, action, now); });
     run.catch(fail);
-    const word = action === 'postpone' ? 'tomorrow' : action === 'done' ? 'done' : item.kind === 'read' ? 'read on' : 'progress';
+    const word = action === 'postpone' ? `+${postponed(item.sched.ivl)}d` : action === 'done' ? 'done' : item.kind === 'read' ? 'read on' : 'progress';
     note(`${item.kind === 'read' ? 'read' : 'wrote'} · ${word}`);
     advance();
   };

@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
-  parse, serialize, meta, setField, docPri, cardForm, cardFields, clozeParts, clozeGroups, nextGroup, mathSpanEnd,
+  parse, serialize, meta, setField, docPri, parseAf, cardForm, cardFields, clozeParts, clozeGroups, nextGroup, mathSpanEnd,
   type Card, type Paragraph, type Heading, type Raw,
 } from '../index.js';
 
@@ -20,6 +20,29 @@ describe('front-matter', () => {
       read: { due: '2026-06-01', ivl: 9, reps: 4, pos: 12 },
     });
     expect(meta(parse('just a note\n').doc)).toEqual({ type: 'source', frozen: false });
+  });
+
+  it('growth: af is read, dropped when it is the default or below the floor, and written back otherwise', () => {
+    const { doc, diagnostics } = parse(read('mangled/growth.md'));
+    const m = meta(doc);
+    expect(m.read).toEqual({ due: '2026-05-27', ivl: 4, reps: 2, pos: 1 });          // af=1.6 is the default
+    expect(m.write).toEqual({ due: '2026-05-27', ivl: 2 });                           // af=1 is below the floor
+    expect(diagnostics.map((d) => `${d.line}: ${d.message}`)).toEqual(['4: bad value for "af": 1']);
+    expect(serialize(doc).split('\n').slice(0, 5)).toEqual([
+      '---', 'type: source', 'read: due=2026-05-27 ivl=4 reps=2 pos=1', 'write: due=2026-05-27 ivl=2', '---',
+    ]);
+    // the corpus carries one of each, in its place on the line
+    expect(meta(parse(read('vault/papers/crick-1995.md')).doc).read?.af).toBe(2);
+    expect(meta(parse(read('vault/essays/talk-incremental.md')).doc).write).toEqual({ due: '2026-05-30', ivl: 3, reps: 0, af: 1.2, done: false });
+    // the default set in memory is not written; the write loop has its own default
+    const d = parse('---\nread: ivl=2\nwrite: ivl=2\n---\n\nx\n').doc;
+    setField(d, 'read', { ivl: 2, af: 1.6 });
+    setField(d, 'write', { ivl: 2, af: 1.6 });
+    expect(meta(d).read?.af).toBeUndefined();
+    expect(serialize(d)).toBe('---\nread: ivl=2\nwrite: ivl=2 af=1.6\n---\n\nx\n');
+    setField(d, 'write', { ivl: 2, af: 1.5 });
+    expect(serialize(d)).toBe('---\nread: ivl=2\nwrite: ivl=2\n---\n\nx\n');
+    expect([parseAf('1.1'), parseAf('2'), parseAf('1.09'), parseAf('x'), parseAf('-2')]).toEqual([1.1, 2, null, null, null]);
   });
 
   it('priority: the field wins over a line, a card carries its own, a group line never does', () => {

@@ -3,12 +3,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { meta, parse, serialize, type Card, type CardSchedule } from '../../format/index.js';
+import { meta, parse, serialize, setField, type Card, type CardSchedule } from '../../format/index.js';
 import { nodeFs } from '../../vault/node-fs.js';
 import { Vault } from '../../vault/index.js';
 import {
   addDays, advanceRead, advanceWrite, cardGroups, counts, dayOf, daysBetween, fromFsrs, grade, gradeItem,
-  instantOf, numberBlank, preview, queue, queueItems, reading, toFsrs, whenToDate, writing,
+  instantOf, nextIntervals, numberBlank, postponed, preview, queue, queueItems, reading, toFsrs, whenToDate, writing,
   type CardItem, type QueueItem,
 } from '../index.js';
 
@@ -117,8 +117,57 @@ describe('reading', () => {
     expect(reading.readOn({}, NOW)).toEqual({ due: addDays(TODAY, 2), ivl: 2, reps: 1 });
   });
 
-  it('postpone: tomorrow, nothing else', () => {
-    expect(reading.postpone(r, NOW)).toEqual({ ...r, due: addDays(TODAY, 1) });
+  it('read on: the line\'s own factor', () => {
+    expect(reading.readOn({ ...r, af: 2 }, NOW)).toEqual({ due: addDays(TODAY, 18), ivl: 18, reps: 5, pos: 12, pri: 3, af: 2 });
+    expect(reading.readOn({ ivl: 1, af: 1.1 }, NOW)).toEqual({ due: addDays(TODAY, 1), ivl: 1, reps: 1, af: 1.1 });
+    expect(reading.readOn({ ivl: 5, af: 1.1 }, NOW).ivl).toBe(6);
+  });
+
+  it('postpone: the interval grows by 1.2, at least a day more, never a pass', () => {
+    expect(reading.postpone(r, NOW)).toEqual({ ...r, due: addDays(TODAY, 11), ivl: 11 });
+    expect(reading.postpone({ ivl: 1 }, NOW)).toEqual({ due: addDays(TODAY, 2), ivl: 2 });
+    expect(reading.postpone({}, NOW)).toEqual({ due: addDays(TODAY, 2), ivl: 2 });
+    expect(reading.postpone(r, NOW, 2)).toEqual({ ...r, due: addDays(TODAY, 18), ivl: 18 });
+    expect(reading.postpone({ ivl: 9 }, NOW, 1.0)).toEqual({ due: addDays(TODAY, 10), ivl: 10 });
+    // never earlier than tomorrow, whatever the interval and factor
+    for (const ivl of [0, 1, 2, 3, 7, 30, 365]) for (const f of [0.5, 1, 1.05, 1.2, 2]) {
+      expect(postponed(ivl, f)).toBeGreaterThanOrEqual(Math.max(1, ivl + 1));
+      expect(reading.postpone({ ivl }, NOW, f).due! > TODAY).toBe(true);
+    }
+  });
+
+  it('previews the next intervals', () => {
+    expect(nextIntervals(2, 1.6)).toEqual([3, 5, 8]);
+    expect(nextIntervals(undefined, 1.5)).toEqual([2, 3, 5]);
+    expect(nextIntervals(1, 1.1, 4)).toEqual([1, 1, 1, 1]);
+  });
+
+  it('a pass over the corpus\'s reading topics with af=2 lands where the formula says', async () => {
+    const root = await fsp.mkdtemp(join(tmpdir(), 'ilmi-af-'));
+    await fsp.cp(CORPUS, root, { recursive: true });
+    const vault = await Vault.open(nodeFs, root);
+    try {
+      const topics = (await queue(vault, NOW, 'reading')).map((i) => i.path).sort();
+      expect(topics).toEqual(['papers/archive/sutton-2019.md', 'papers/crick-1995.md', 'papers/wozniak-1990.md', 'papers/wozniak-1990/woz-ex1.md']);
+      for (const path of topics) {
+        const before = meta((await vault.read(path)).doc).read!;
+        const loaded = await vault.update(path, (doc) => {
+          const r = meta(doc).read!;
+          setField(doc, 'read', { ...r, af: 2 });
+          advanceRead(doc, 'on', NOW);
+        });
+        const after = meta(loaded.doc).read!;
+        const ivl = Math.max(1, Math.round((before.ivl ?? 1) * 2));
+        expect(after, path).toMatchObject({ ivl, due: addDays(TODAY, ivl), reps: (before.reps ?? 0) + 1, af: 2 });
+        expect((await fsp.readFile(join(root, path), 'utf8'))).toContain(`read: due=${addDays(TODAY, ivl)} ivl=${ivl} reps=${(before.reps ?? 0) + 1} pos=${before.pos ?? 0} af=2\n`);
+      }
+      // crick's factor is the corpus's own, and a postpone keeps it
+      const crick = await vault.update('papers/crick-1995.md', (doc) => { advanceRead(doc, 'postpone', NOW); });
+      expect(meta(crick.doc).read).toEqual({ due: addDays(TODAY, 5), ivl: 5, reps: 4, pos: 2, af: 2 });
+    } finally {
+      vault.close();
+      await fsp.rm(root, { recursive: true, force: true });
+    }
   });
 
   it('done drops the field from the document', () => {
@@ -145,8 +194,15 @@ describe('writing', () => {
     expect(writing.workedOn({ due: '2026-05-27', ivl: 3, done: true }, NOW)).toEqual({ due: addDays(TODAY, 5), ivl: 5, reps: 1, done: false });
   });
 
-  it('postpone: tomorrow; done: keeps the line', () => {
-    expect(writing.postpone(w, NOW)).toEqual({ ...w, due: addDays(TODAY, 1) });
+  it('worked on it: the line\'s own factor', () => {
+    expect(writing.workedOn({ ...w, af: 1.2 }, NOW)).toEqual({ due: addDays(TODAY, 2), ivl: 2, reps: 2, pri: 2, done: false, af: 1.2 });
+    expect(writing.workedOn({ ivl: 10, af: 3 }, NOW)).toMatchObject({ ivl: 30, due: addDays(TODAY, 30) });
+  });
+
+  it('postpone: the interval grows by 1.2, at least a day more; done: keeps the line', () => {
+    expect(writing.postpone(w, NOW)).toEqual({ ...w, due: addDays(TODAY, 3), ivl: 3 });
+    expect(writing.postpone({ ivl: 20 }, NOW)).toEqual({ due: addDays(TODAY, 24), ivl: 24 });
+    expect(writing.postpone({}, NOW, 1.5)).toEqual({ due: addDays(TODAY, 2), ivl: 2 });
     expect(writing.done(w)).toEqual({ ...w, done: true });
   });
 

@@ -208,8 +208,8 @@ export function openInitialVault(): Promise<void> {
     const vault = await openVault(path);
     const mode = await invoke<string | null>('dev_env', { name: 'ILMI_SMOKE' });
     if (mode) {
-      const { smoke, smokeReader, smokeCards, smokeIntake, smokeQueue, smokeLoop, smokeShots, smokeDeck, smokePri } = await import('./smoke.js');
-      const run = { reader: smokeReader, cards: smokeCards, intake: smokeIntake, queue: smokeQueue, loop: smokeLoop, shots: smokeShots, deck: smokeDeck, pri: smokePri }[mode] ?? smoke;
+      const { smoke, smokeReader, smokeCards, smokeIntake, smokeQueue, smokeLoop, smokeShots, smokeDeck, smokePri, smokeGrowth } = await import('./smoke.js');
+      const run = { reader: smokeReader, cards: smokeCards, intake: smokeIntake, queue: smokeQueue, loop: smokeLoop, shots: smokeShots, deck: smokeDeck, pri: smokePri, growth: smokeGrowth }[mode] ?? smoke;
       await run(vault);
     }
   })();

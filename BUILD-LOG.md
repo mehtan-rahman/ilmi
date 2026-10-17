@@ -6,6 +6,119 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-10-17 — milestone 11: growth, a factor per document for reading and writing
+
+Commit `PENDING` — *growth: an af factor on the read and write lines, postpone
+multiplies, the inspector previews the next intervals*.
+
+### Done
+
+- `FORMAT.md` §3, §8: `af` on the `read` / `write` line, a number ≥ 1.1,
+  default 1.6 on `read` and 1.5 on `write`, written only when it is not
+  the default; the default written by hand goes on the first write, a
+  value below the floor is dropped with a diagnostic.
+- `src/format`: `ReadSchedule.af` / `WriteSchedule.af`; `specNumMin` in
+  `attrs.ts`; `AF_MIN` / `READ_AF` / `WRITE_AF` / `parseAf` in
+  `frontmatter.ts`, the spec after `pos` (read) and `reps` (write);
+  `withoutDefaultAf` applied in the parser, in `setField`, and in
+  `formatField`, so the in-memory document never carries the default and
+  parse → serialize → parse stays a fixed point.
+- `src/schedule/growth.ts`: `grow`, `nextIntervals`, `postponed`,
+  `POSTPONE_FACTOR` (1.2). `read.ts` / `write.ts`: `readOn` / `workedOn`
+  take the line's `af`; `postpone(s, now, factor?)` sets `ivl` to
+  `max(round(ivl × factor), ivl + 1)` and `due` that many days from today,
+  `reps` untouched. Exported through `src/schedule/index.ts`.
+- Corpus: `af=2` on crick-1995's read line, `af=1.2` on
+  talk-incremental's write line (same line count, so no test line
+  numbers moved); new `mangled/growth.md`.
+- Inspector: `NumField` (the number field behind `PriField`, with `min`,
+  `max`, `step`, `parse`, and `none`), `growthRow` with the `af-field`
+  and the next three intervals dimmed beside it; on sources and extracts
+  under `priority` when enrolled, on drafts inside `spaced composition`.
+  `chrome.css`: the `af-field` shares the `pri-field` rules, `af-next`.
+- Session: the postpone note says how far, `wrote · +3d`.
+- README: one sentence on growth and postpone. Dev: `ILMI_SMOKE=growth`.
+- Tests: 239 (format: the growth corpus file, the corpus's two factors,
+  the default set in memory is not written, `parseAf`; schedule: read on
+  and worked on with the line's factor, postpone's arithmetic and its
+  floor over a grid of intervals and factors, `nextIntervals`, the
+  corpus's reading topics with `af=2` on disk, crick's postpone keeping
+  its factor).
+
+### Verified
+
+- `npm run typecheck` clean, `npx vitest run` green (13 files, 239).
+- In the window (`ILMI_VAULT=<scratch copy> ILMI_SMOKE=growth npm run
+  tauri dev`, 17:52 local), as logged: crick-1995's inspector reads
+  `growth 2`, placeholder 1.6, next `4d · 8d · 16d` → set to 3: one line
+  changed on disk (`af=2` → `af=3`, 25 lines → 25), next `6d · 18d · 54d`,
+  diagnostics 0 → cleared: `af` gone from the line, next `3d · 5d · 8d` →
+  `1.6` typed: file unchanged → `1` typed: file unchanged, field back to
+  empty → talk-incremental's `spaced composition` block reads `passes 0 ·
+  interval 3 d · growth 1.2 (4d · 5d · 6d) · due overdue 140d` → in the
+  session on spaced-composition (`ivl=2`, no `af`), `p` rewrote one line,
+  `due=2026-05-27 ivl=2` → `due=2026-10-20 ivl=3`, 30 lines → 30, the
+  note `wrote · +3d`.
+- Three captures read one by one: the crick reader with `growth 2` and
+  the dim preview under `priority`; the draft with the row inside
+  `spaced composition`; the writing session on spaced-composition with
+  the bar `worked on it ⏎ · postpone p · done d`. The desktop's
+  picture-in-picture window was gone this time; every value column was
+  visible. Capture loop as before: the smoke pauses ten seconds after
+  each `shot:` line, the shell shoots two seconds after reading it.
+
+### Not done / open
+
+- The first run of the field showed `1.6` after typing the default, since
+  nothing on disk changed and the field only follows the prop; fixed with
+  `none` on `NumField` (typing the value that means empty clears the
+  field), verified by the suite and typecheck, not re-run in the window.
+- No growth row on an unenrolled source: there is no line to carry `af`
+  until `r` enrols it.
+- The preview counts from the stored `ivl`, not from lateness; an
+  overdue topic's next interval is the same as an on-time one's.
+- Queue rows and the session bar do not show `af`; only the inspector.
+- The plan's "pass over the corpus's reading topics with `af=2`" is a
+  test that sets the factor on each topic in a scratch copy and reads the
+  line back; the corpus files themselves carry one factor each.
+
+### Decisions worth knowing
+
+- The default is dropped at parse time as well as at write time, the way
+  the line `pri` fallback is, so a hand-written `af=1.6` and an absent
+  `af` are the same document in memory and on disk after one write.
+- Postpone writes the new interval, not just the due day, so a topic
+  postponed twice keeps drifting out instead of snapping back to its old
+  interval on the next pass. The pass count stays, since nothing was read.
+- Growth lives in `src/schedule/growth.ts` rather than in each loop so
+  the inspector's preview and both loops share one rounding rule.
+- The key order puts `af` before `pri` on both lines: `pri` on the line
+  is a fallback the format is retiring, `af` is permanent.
+
+### Handoff prompt
+
+Paste into a fresh session:
+
+```
+Read PLAN.md, FORMAT.md, BUILD-LOG.md, and spec/hashiyah/HANDOFF.md. Do the
+first unchecked milestone in PLAN.md and only that one. Stop at its "done
+when". Then tick it, write notes for the next session under it, add an entry
+to BUILD-LOG.md with a fresh handoff prompt, and commit.
+
+Context: milestone 11 (growth) is done (BUILD-LOG 2026-10-17); the next
+is 12, overload: a day budget in .ilmi/state.json, the fold in the due
+today query, and "postpone the rest" over reading and writing items below
+it (postpone(s, now, factor?) from milestone 11 is the primitive; cards are
+never postponed). Tooling: export PATH=$HOME/.cargo/bin:/opt/homebrew/bin:$PATH;
+npm test and npm run typecheck must be green before a commit; caffeinate
+-d -u -i, then ILMI_VAULT=<scratch copy> ILMI_SMOKE=<mode> npm run tauri
+dev drives the window (growth is the newest mode; the smoke pauses ten
+seconds after each `shot:` line and the shell shoots two seconds after
+reading it).
+```
+
+---
+
 ## 2026-10-17 — milestone 10: priority, one scale at document level, the queue sorted by it
 
 Commit `2849ca8` — *priority: one 0–100 scale on the document, a card's own on

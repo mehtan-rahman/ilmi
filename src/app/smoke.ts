@@ -24,6 +24,9 @@
 // `ILMI_SMOKE=pri` sets a source's priority from the inspector, then a
 // card's, logging the one line each wrote and where the queue and the
 // session put them.
+// `ILMI_SMOKE=growth` sets a source's growth factor from the inspector,
+// reads the preview, looks at a draft's, then postpones a topic from the
+// session, logging the one line each wrote.
 
 import { info } from '@tauri-apps/plugin-log';
 import type { Vault } from '../vault/index.js';
@@ -777,6 +780,83 @@ export async function smokePri(vault: Vault): Promise<void> {
     await sleep(600);
     const graded = (await vault.read(WOZ, true)).text;
     log(`graded: line "${graded.split('\n').find((l) => l.includes('^cw1-paths') ? false : l.includes('pri=5'))}"; changed lines ${JSON.stringify(changedLines(wozAfter, graded))}`);
+    log('done');
+  } catch (e) {
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+export async function smokeGrowth(vault: Vault): Promise<void> {
+  const log = (s: string) => info(`smoke growth: ${s}`);
+  const shot = async (name: string, ms = 10000) => { await sleep(600); log(`shot: ${name}`); await sleep(ms); };
+  const q = <T extends Element>(sel: string) => document.querySelector<T>(sel);
+  const CRICK = 'papers/crick-1995.md';
+  const TALK = 'essays/talk-incremental.md';
+  const diff = (a: string, b: string) => {
+    const la = a.split('\n');
+    const lb = b.split('\n');
+    return `-[${la.filter((l) => !lb.includes(l)).join(' | ')}] +[${lb.filter((l) => !la.includes(l)).join(' | ')}] lines ${la.length} → ${lb.length}`;
+  };
+  const enter = async (el: HTMLInputElement, v: string) => {
+    el.focus();
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(el, v);
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    await sleep(50);
+    el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    el.blur();
+    await sleep(600);
+  };
+  const row = () => `growth "${q<HTMLInputElement>('.insp .kv .af-field')?.value}" placeholder ${q<HTMLInputElement>('.insp .kv .af-field')?.placeholder}; next "${q('.insp .kv .af-next')?.textContent}"`;
+  try {
+    setInspector({ open: true });
+    // the source: its growth row, the corpus's af=2, and the preview from ivl=2
+    let before = (await vault.read(CRICK)).text;
+    openNode(CRICK);
+    await until(() => q('.draft-doc'));
+    const field = await until(() => q<HTMLInputElement>('.insp .kv .af-field'));
+    log(`inspector: ${row()}`);
+    await shot('growth-inspector');
+    await enter(field, '3');
+    let after = (await vault.read(CRICK, true)).text;
+    log(`source → 3: ${diff(before, after)}; ${row()}; diagnostics ${(await vault.read(CRICK)).diagnostics.length}`);
+    await enter(q<HTMLInputElement>('.insp .kv .af-field')!, '');
+    before = after;
+    after = (await vault.read(CRICK, true)).text;
+    log(`source → empty: ${diff(before, after)}; ${row()}`);
+    await enter(q<HTMLInputElement>('.insp .kv .af-field')!, '1.6');
+    before = after;
+    after = (await vault.read(CRICK, true)).text;
+    log(`source → 1.6, the default: ${diff(before, after)}; same file ${before === after}; ${row()}`);
+    await enter(q<HTMLInputElement>('.insp .kv .af-field')!, '1');
+    before = after;
+    after = (await vault.read(CRICK, true)).text;
+    log(`source → 1, below the floor: ${diff(before, after)}; same file ${before === after}; ${row()}`);
+    await enter(q<HTMLInputElement>('.insp .kv .af-field')!, '2');
+
+    // the draft: the row sits with the spaced-composition numbers
+    openNode(TALK);
+    await until(() => q('.draft-doc'));
+    await until(() => q<HTMLInputElement>('.insp .kv .af-field'));
+    await sleep(200);
+    log(`draft: ${row()}; block "${Array.from(document.querySelectorAll('.insp .block'))[1]?.textContent?.slice(0, 80)}"`);
+    await shot('growth-draft');
+
+    // postpone from the session: the first topic of the day, one line
+    openNode(queueId('today'));
+    await until(() => q('.queue .qlist li'));
+    await sleep(300);
+    press('Enter');
+    await until(() => q('.recall-wrap'));
+    for (let i = 0; i < 20 && !q('.doc-session'); i++) { press(']'); await sleep(200); }
+    const el = useApp.getState().sessionEl?.item;
+    if (!el || el.kind === 'card') throw new Error('no topic in the session');
+    before = (await vault.read(el.path)).text;
+    log(`session on ${el.path}: ivl ${el.sched.ivl ?? 1} af ${el.sched.af ?? '-'}; bar "${q('.session-bar')?.textContent?.slice(0, 80)}"`);
+    await shot('growth-session');
+    press('p');
+    await sleep(800);
+    after = (await vault.read(el.path, true)).text;
+    log(`postponed: ${diff(before, after)}; log "${useApp.getState().log[0]}"`);
     log('done');
   } catch (e) {
     log(`failed: ${e instanceof Error ? e.message : String(e)}`);

@@ -113,6 +113,8 @@ export const specBool = <T>(key: string, prop: keyof T & string): AttrSpec<T> =>
   ({ key, prop, parse: parseBool, format: (x) => (x ? 'true' : 'false') });
 export const specEnum = <T>(key: string, prop: keyof T & string, values: readonly string[]): AttrSpec<T> =>
   ({ key, prop, parse: (v) => (values.includes(v) ? v : null), format: asStr });
+export const specNumMin = <T>(key: string, prop: keyof T & string, lo: number): AttrSpec<T> =>
+  ({ key, prop, parse: (v) => { const n = parseNumber(v); return n !== null && n >= lo ? n : null; }, format: (x) => formatNumber(x as number) });
 export const specIntRange = <T>(key: string, prop: keyof T & string, lo: number, hi: number): AttrSpec<T> =>
   ({ key, prop, parse: (v) => { const n = parseInt_(v); return n !== null && n >= lo && n <= hi ? n : null; }, format: asStr });
 

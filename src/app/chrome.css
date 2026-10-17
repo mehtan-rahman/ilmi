@@ -140,7 +140,7 @@
 .insp .kv dd { margin: 0; color: var(--fg-2); font-variant-numeric: tabular-nums; min-width: 0; overflow-wrap: anywhere; }
 .insp .kv .mono { font-family: var(--mono); font-size: 10.5px; }
 .insp .kv .dim { color: var(--fg-5); }
-.insp .kv .pri-field {
+.insp .kv .pri-field, .insp .kv .af-field {
   width: 40px;
   appearance: textfield;
   -moz-appearance: textfield;
@@ -154,9 +154,11 @@
   font-variant-numeric: tabular-nums;
   outline: none;
 }
-.insp .kv .pri-field::-webkit-inner-spin-button, .insp .kv .pri-field::-webkit-outer-spin-button { appearance: none; margin: 0; }
-.insp .kv .pri-field::placeholder { color: var(--fg-5); }
-.insp .kv .pri-field:focus { border-bottom-color: var(--accent); }
+.insp .kv .pri-field::-webkit-inner-spin-button, .insp .kv .pri-field::-webkit-outer-spin-button,
+.insp .kv .af-field::-webkit-inner-spin-button, .insp .kv .af-field::-webkit-outer-spin-button { appearance: none; margin: 0; }
+.insp .kv .pri-field::placeholder, .insp .kv .af-field::placeholder { color: var(--fg-5); }
+.insp .kv .pri-field:focus, .insp .kv .af-field:focus { border-bottom-color: var(--accent); }
+.insp .kv .af-next { margin-left: 8px; white-space: nowrap; }
 .insp .insp-line {
   font-family: var(--serif);
   font-size: 13px;

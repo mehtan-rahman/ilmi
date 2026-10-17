@@ -1,18 +1,18 @@
 // The inspector: what the active tab is, read from the vault, and the few
 // things worth changing from the side: a source's freeze, a deck's default
-// card, a draft's done, a document's or a card's priority, and the text of
-// the card under review or selected in the reader. After the prototype's
-// Inspector, with its prose removed.
+// card, a draft's done, a document's or a card's priority, a topic's growth,
+// and the text of the card under review or selected in the reader. After the
+// prototype's Inspector, with its prose removed.
 
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
-  PRI_DEFAULT, PRI_MAX, PRI_MIN, cardForm, docPri, meta, parse, parsePri, setField,
-  type Block, type Card, type CardForm, type CardSchedule, type Doc,
+  AF_MIN, PRI_DEFAULT, PRI_MAX, PRI_MIN, READ_AF, WRITE_AF, cardForm, docPri, meta, parse, parseAf, parsePri, setField,
+  type Block, type Card, type CardForm, type CardSchedule, type Doc, type ReadSchedule, type WriteSchedule,
 } from '../format/index.js';
-import { advanceWrite, counts, type CardItem } from '../schedule/index.js';
+import { advanceWrite, counts, nextIntervals, type CardItem } from '../schedule/index.js';
 import { dirOf, isDoc, type TreeNode } from '../vault/index.js';
 import { cardLabel, formLabel } from './chrome.js';
-import { FORM_LABEL, dueLabel } from './items.js';
+import { FORM_LABEL, dueLabel, fmtDays } from './items.js';
 import { INTAKE, QUEUE_TITLE, SCOPES, SESSION, findNode, queueScope, titleOf, type NodeKind } from './names.js';
 import { activeTab } from './panes.js';
 import { useApp, type DocInfo } from './store.js';
@@ -41,30 +41,45 @@ function Block({ title, children }: { title: string; children?: ReactNode }) {
   );
 }
 
+interface NumFieldProps {
+  className: string;
+  value: number | undefined;
+  /** What applies when the field is empty; shown as the placeholder. */
+  fallback: number;
+  min: number;
+  max?: number;
+  step: number;
+  /** The text as a number in range, or null. */
+  parse(t: string): number | null;
+  /** A value that means the same as empty, so the field clears when it is typed. */
+  none?: number;
+  onCommit(n: number | null): void;
+}
+
 /**
- * A priority, 0–100: a number field that commits on blur or ⏎, empty for
- * none (the placeholder says what applies then). Escape puts back what was
- * there. Nothing is written while typing.
+ * A number field that commits on blur or ⏎, empty for none (the placeholder
+ * says what applies then). Escape puts back what was there. Nothing is
+ * written while typing.
  */
-function PriField({ value, fallback, onCommit }: { value: number | undefined; fallback: number; onCommit(n: number | null): void }) {
+function NumField({ className, value, fallback, min, max, step, parse: parseNum, none, onCommit }: NumFieldProps) {
   const shown = value === undefined ? '' : String(value);
   const [text, setText] = useState(shown);
   useEffect(() => { setText(shown); }, [shown]);
   const commit = () => {
     const t = text.trim();
-    if (t === '') { if (value !== undefined) onCommit(null); return; }
-    const n = parsePri(t);
-    if (n === null) { setText(shown); return; }
+    const n = t === '' ? null : parseNum(t);
+    if (t !== '' && n === null) { setText(shown); return; }
+    if (n === null || n === none) { setText(''); if (value !== undefined) onCommit(null); return; }
     if (n !== value) onCommit(n);
   };
   return (
     <input
-      className="pri-field"
+      className={className}
       type="number"
-      inputMode="numeric"
-      min={PRI_MIN}
-      max={PRI_MAX}
-      step={1}
+      inputMode={step === 1 ? 'numeric' : 'decimal'}
+      min={min}
+      max={max}
+      step={step}
       placeholder={String(fallback)}
       value={text}
       onChange={(e) => setText(e.target.value)}
@@ -77,12 +92,40 @@ function PriField({ value, fallback, onCommit }: { value: number | undefined; fa
   );
 }
 
+/** A priority, 0–100. */
+function PriField({ value, fallback, onCommit }: { value: number | undefined; fallback: number; onCommit(n: number | null): void }) {
+  return <NumField className="pri-field" value={value} fallback={fallback} min={PRI_MIN} max={PRI_MAX} step={1} parse={parsePri} onCommit={onCommit} />;
+}
+
 /** The document's priority row: the field, written through `setField`; empty clears it. */
 function docPriRow(path: string, m: ReturnType<typeof meta>): [string, ReactNode] {
   const write = (n: number | null) => currentVault()?.update(path, (d) => setField(d, 'pri', n)).catch(console.error);
   // with no field, a `pri=` left on a read / write line is what the queue uses for that loop
   const fallback = m.read?.pri ?? m.write?.pri ?? PRI_DEFAULT;
   return ['priority', <PriField key={path} value={m.pri} fallback={fallback} onCommit={write} />];
+}
+
+/**
+ * A topic's growth row: the `af` on its `read` / `write` line (empty means
+ * the loop's default), and the next three intervals from where it stands.
+ * Written through `setField`; the default, or nothing, takes `af` off the line.
+ */
+function growthRow(path: string, key: 'read' | 'write', s: ReadSchedule | WriteSchedule): [string, ReactNode] {
+  const def = key === 'read' ? READ_AF : WRITE_AF;
+  const write = (n: number | null) => currentVault()?.update(path, (d) => {
+    const m = meta(d);
+    const cur = key === 'read' ? m.read : m.write;
+    if (!cur) return;
+    const { af: _, ...rest } = cur;
+    setField(d, key, n === null ? rest : { ...rest, af: n });
+  }).catch(console.error);
+  const preview = nextIntervals(s.ivl, s.af ?? def).map(fmtDays).join(' · ');
+  return ['growth', (
+    <>
+      <NumField className="af-field" value={s.af} fallback={def} min={AF_MIN} step={0.1} parse={parseAf} none={def} onCommit={write} />
+      <span className="dim af-next">{preview}</span>
+    </>
+  )];
 }
 
 /** The card as this render knew it: at its index, else by id. Not whatever slid into the index since. */
@@ -235,7 +278,7 @@ function DocInspector({ id, info, doc, now }: { id: string; info: DocInfo; doc: 
         </Block>
         {w && (
           <Block title="spaced composition">
-            <KV rows={[['passes', w.reps ?? 0], ['interval', `${w.ivl ?? 1} d`], [w.done ? 'state' : 'due', w.done ? 'done' : dueLabel(w.due, now)]]} />
+            <KV rows={[['passes', w.reps ?? 0], ['interval', `${w.ivl ?? 1} d`], growthRow(id, 'write', w), [w.done ? 'state' : 'due', w.done ? 'done' : dueLabel(w.due, now)]]} />
           </Block>
         )}
         <CardList title="cards" doc={doc} now={now} />
@@ -255,6 +298,7 @@ function DocInspector({ id, info, doc, now }: { id: string; info: DocInfo; doc: 
   if (cards) rows.push(cardsRow);
   if (m.read) rows.push(['reading', `${m.read.pos ?? 0} of ${doc.blocks.filter((b) => b.kind !== 'card').length}, ${dueLabel(m.read.due, now)}`]);
   rows.push(docPriRow(id, m));
+  if (m.read) rows.push(growthRow(id, 'read', m.read));
   return (
     <>
       <Block title={info.type}>

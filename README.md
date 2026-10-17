@@ -45,7 +45,9 @@ in a session     [ ] prev / next; space reveal, 1-4 grade; ⏎ read on or
 ```
 
 The inspector sets a priority, 0 first and 100 last, on a document or on the
-selected card; what is due sorts by it. The bottom strip shows the keys that
+selected card; what is due sorts by it. It also sets a topic's growth, the
+factor each pass multiplies the interval by (1.6 reading, 1.5 writing), and
+shows the next three intervals; postpone grows the interval by 1.2. The bottom strip shows the keys that
 work where you are. `ilmi.theme('dark')`
 and friends still work from the devtools console.
 

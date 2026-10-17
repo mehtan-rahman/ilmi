@@ -33,6 +33,8 @@ export interface ReadSchedule {
   ivl?: number;
   reps?: number;
   pos?: number;
+  /** Growth per pass, ≥ 1.1; absent means `READ_AF`. */
+  af?: number;
   /** Read as a fallback when the document has no `pri` field; dropped once it has one. */
   pri?: number;
   extra?: Extra;
@@ -43,6 +45,8 @@ export interface WriteSchedule {
   due?: string;
   ivl?: number;
   reps?: number;
+  /** Growth per pass, ≥ 1.1; absent means `WRITE_AF`. */
+  af?: number;
   /** As on `read`. */
   pri?: number;
   done?: boolean;

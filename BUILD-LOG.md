@@ -8,7 +8,7 @@ was verified, what was not, and the prompt to resume with.
 
 ## 2026-10-17 — milestone 11: growth, a factor per document for reading and writing
 
-Commit `PENDING` — *growth: an af factor on the read and write lines, postpone
+Commit `cafcd16` — *growth: an af factor on the read and write lines, postpone
 multiplies, the inspector previews the next intervals*.
 
 ### Done

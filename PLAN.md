@@ -519,7 +519,7 @@ otherwise).
   disk, the queue reorders live, and the corpus order test passes.
 
 ### [x] 11. Growth — a factor per document for reading and writing
-Done 2026-10-17.
+Done 2026-10-17, commit `cafcd16`.
 Notes: `af` is an attribute on the `read` / `write` line (FORMAT.md §3:
 number ≥ 1.1, default 1.6 reading, 1.5 writing; `AF_MIN` / `READ_AF` /
 `WRITE_AF` / `parseAf` exported from `src/format`), ordered after `pos`

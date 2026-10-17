@@ -667,7 +667,7 @@ priority, done.
   it is the likelier answer.
 
 ### [x] 14. Import — a SuperMemo collection into a vault
-Done 2026-10-17, commit `PENDING`.
+Done 2026-10-17, commit `e93bb46`.
 Notes: `src/import/supermemo/` is pure over bytes and an `SmFs` (`readDir`,
 `stat`, `readBytes`; `node-fs.ts` is the node one): `bytes.ts` (little-endian
 readers and writers, Borland real48, Delphi TDateTime: `tdDay` / `dayOfTd` /

@@ -8,7 +8,7 @@ was verified, what was not, and the prompt to resume with.
 
 ## 2026-10-17 — milestone 14: import, a SuperMemo collection into a vault
 
-Commit `PENDING` — *import: a SuperMemo collection into a vault, from its
+Commit `e93bb46` — *import: a SuperMemo collection into a vault, from its
 data files, by the layout notes*.
 
 ### Done

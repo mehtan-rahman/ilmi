@@ -8,7 +8,7 @@ was verified, what was not, and the prompt to resume with.
 
 ## 2026-10-17 — milestone 13: tasks, dropped
 
-Commit `PENDING` — *tasks: dropped, a task is a draft whose body is the
+Commit `010e8f0` — *tasks: dropped, a task is a draft whose body is the
 to-do*.
 
 ### Done

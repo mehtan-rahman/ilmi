@@ -627,7 +627,7 @@ next grade, so the app never postpones a card, it only orders them.
   card, and the next day's queue opens within budget.
 
 ### [x] 13. Tasks — dropped
-Dropped 2026-10-17, commit `PENDING`.
+Dropped 2026-10-17, commit `010e8f0`.
 Notes: not built. The milestone's own description, "the same shape with
 no interval: due, priority, done", is the draft: a Markdown file whose
 body is the text, a `write` line with `due` and `done`, the document's

@@ -666,7 +666,67 @@ priority, done.
 - If this starts to look like a second drafts lens, stop and ask; dropping
   it is the likelier answer.
 
-### [ ] 14. Import — a SuperMemo collection into a vault
+### [x] 14. Import — a SuperMemo collection into a vault
+Done 2026-10-17, commit `PENDING`.
+Notes: `src/import/supermemo/` is pure over bytes and an `SmFs` (`readDir`,
+`stat`, `readBytes`; `node-fs.ts` is the node one): `bytes.ts` (little-endian
+readers and writers, Borland real48, Delphi TDateTime: `tdDay` / `dayOfTd` /
+`tdWhen`), `records.ts` (the fixed-size records exactly as `LAYOUT.md`
+documents them and no further: `contents.dat` 37 B, `ElementInfo.dat` 118 B,
+`Text.mem` 30 B, `RepetitionHistory.dat` 39 B, the `compon.dat` group walked
+by each component's self-described size, `rtxText` with the trailer check,
+`decodeText` UTF-8 then windows-1252; a record that does not fit is an
+`ImportDiagnostic { file, message }`), `collection.ts`
+(`readCollection(fs, knoOrDir)` → `SmCollection`: the tree from element 1 by
+first child / next sibling with range, cycle, and parent checks; titles and
+texts through the Text registry and an `elements/` slot index built by one
+walk; dated history rows as `reps`; ranks from `priority.sub`; the day epoch
+as the mode of `floor(lastTouch) − lastRepDay` with its agreement),
+`docs.ts` (`priOf` = `round(100 × rank / (n − 1))`; `readOf` / `seedOf` when
+`interval ≥ 1 && lastRepDay ≥ 1`; `bodyOf` through `readable`, `plainOf`
+through `textOf`; `cardTextOf`: a literal `[...]` in the question →
+`{{c1::answer}}`, else `q :: a` inline or `q\n?\na`; an item missing a side
+stays prose with a diagnostic), `index.ts` (`importCollection(fs, path,
+vault, { today })` walks the tree order and places each element: a concept
+group or a text-less topic with children → `createFolder`; a topic → a
+source in the nearest folder or an extract under the nearest document; an
+item → a card `^smN` at the end of the nearest document, or in a `cards.md`
+deck made in the nearest folder; a task → a draft `write: due=<today> ivl=1
+reps=0 done=false` in the nearest folder; every file through `createDoc` +
+`write`, cards appended in one `update` per file at the end; `formatSummary`
+is the CLI's few lines). `scripts/import-sm.ts` runs under `tsx` (new dev
+dependency: node 26 strips types but neither maps `./x.js` to `x.ts` nor
+transforms `vault.ts`'s parameter properties), with jsdom's `DOMParser` as
+the global `readable` needs; `--today` fixes the import day. `LAYOUT.md`
+carries every fact with its source (SuperMemo's own help pages, SuperMemo
+Assistant's MIT structs, freememo's MIT-0 measurements, SuperMemo-Toolkit
+read for facts only, and the file sizes in the user's own backed-up SM18
+collection, which divide by 37 / 118 / 39 / 30 exactly) and every unknown as
+unknown; the decompilation repos on GitHub were not opened. **Deviation:**
+grades are not in any readable layout (freememo: "not recoverable"), so the
+replay through `grade` is not done; every scheduled item gets the
+milestone's seed `st=review s=<ivl> d=5 r=<dated rows> ivl=<ivl>
+last=<day>`, `r` only when a history file exists. Fixture:
+`__tests__/make-collection.ts` writes `__tests__/collection/` (`npm run
+fixture:sm`) from the documented layout: 16 elements over a root, two
+topic-folders, a concept group, a source with an extract, a cloze item under
+the extract, an item under an item, two items under a folder (the deck), a
+task, a deleted element, a template; 22 files; nobody's notes. The test
+holds the files on disk to the generator byte for byte, then imports them.
+Variants in memory: an unknown type byte, an unknown component kind, a
+registry trailer naming the wrong member, no history file. FORMAT.md
+untouched. Tests: 253 (+8). Not done: no real collection has been imported.
+The user's own "cognitive canopy" (SM18, 190 elements, 2024) is inside a
+Duplicati backup set in Box (`99 supermemo/`), and restoring its block
+volumes was refused by the permission rules this session ran under, so the
+"no unknown-record diagnostic on a real collection" clause is unverified;
+only the backup's file list (names and sizes) was read. Unknown in the
+layout and therefore never written: grades, lapses, the forgetting index,
+the element status, priority as a percentage (the rank is used), tasklist
+deadlines (`tasks/*.dat`, reported when non-empty), the `.kno` record, the
+cloze markup beyond the literal `[...]`, `repetitions.dat`'s epoch.
+Readability drops an `<h1>` that repeats the page title, as the intake does.
+No smoke mode; the CLI run is the verification.
 One-shot, from the command line, not the app:
 `npm run import-sm -- <collection.kno> <vault-dir>`. The point is years of
 repetition history landing in Markdown.

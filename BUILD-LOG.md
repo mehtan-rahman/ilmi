@@ -6,6 +6,143 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-10-17 — milestone 14: import, a SuperMemo collection into a vault
+
+Commit `PENDING` — *import: a SuperMemo collection into a vault, from its
+data files, by the layout notes*.
+
+### Done
+
+- `src/import/supermemo/LAYOUT.md`, written before any code: every file of
+  a collection, every record size and field offset the importer uses, each
+  with its source (SuperMemo's help on `super-memory.com`, the SuperMemo 2002
+  and SM16 FAQ pages, SuperMemo Assistant's MIT `SuperMemo17/Files` structs,
+  freememo's MIT-0 measured fields, SuperMemo-Toolkit's GPL file read for
+  facts only, a SuperMemo 20 directory listing, and the file list of the
+  user's own SM18 backup, whose sizes divide by 37 / 118 / 39 / 30 exactly),
+  and every unknown as unknown. `help.supermemo.org` and `supermemopedia`
+  answered 403 to every tool; `super-memory.com` carries the same help text.
+  The decompilation repos on GitHub (`sm18-re`, `sm20-re`) were not opened.
+- `src/import/supermemo/`: `bytes.ts`, `records.ts`, `collection.ts`,
+  `docs.ts`, `index.ts`, `node-fs.ts`, pure over bytes and an `SmFs`; see
+  the notes under milestone 14 in PLAN.md for what each holds. The tree
+  lands as folders, topics as sources (frozen, imported) and extracts under
+  their parent, items as q&a or cloze cards (`^smN`) at the end of the
+  nearest topic-document or in a `cards.md` deck under a folder, tasks as
+  drafts; `pri` from the rank in `priority.sub`; `read:` and the seeded
+  `sr` line from the interval, the last repetition day, the A-factor, and
+  the dated rows of the repetition history. A record, kind, type, or trailer
+  the notes do not cover is a diagnostic; nothing is written for it.
+- `scripts/import-sm.ts` and `npm run import-sm -- <collection.kno>
+  <vault-dir> [--today DAY]`, through `tsx` (new dev dependency) with jsdom's
+  `DOMParser` for `readable`; `npm run fixture:sm` regenerates the fixture.
+- Fixture `src/import/supermemo/__tests__/collection/`: 22 files written by
+  `make-collection.ts` from LAYOUT.md, 16 elements, nobody's notes.
+- README: the command and `src/import/` in the layout. FORMAT.md untouched.
+- Tests: 253 (+8: the primitives round-trip; the fixture on disk is the
+  generator's output byte for byte; the collection reads as the layout
+  says; the import's tree, five files verbatim, and every file parsing
+  clean; the queue for the fixture's last day; the variants with an unknown
+  type, an unknown component kind, a bad trailer, and no history; what is
+  not a collection).
+
+### Verified
+
+- `npm run typecheck` clean, `npx vitest run` green (14 files, 253).
+- `npm run import-sm -- src/import/supermemo/__tests__/collection/fixture.Kno
+  <scratch> --today 2024-02-05` prints `fixture → <scratch>`, `4 folders · 2
+  sources · 1 extract · 1 deck · 5 cards · 1 draft`, `1 deleted · 1 template
+  · 1 media component dropped`, no diagnostics; `Vault.open(nodeFs, dir)`
+  over the result lists `ideas/notes on reading.md`, `papers/german/cards.md`,
+  `papers/Wozniak 1990.md`, `papers/Wozniak 1990/spacing effect.md`,
+  `tasks/write the intro.md`, each with no parse diagnostics; the queue at
+  2024-02-05 noon holds the eight items the fixture makes due: the six
+  SuperMemo had outstanding (`Outstanding.sub`) and the two never-repeated
+  cards, in priority order 0 0 20 40 50 60 80 100. This is the test, and
+  the same run from the command line into the scratchpad.
+- The fixture exercises the documented layout, not a real collection: the
+  round trip proves the importer reads what the notes say a collection
+  holds, not that a collection holds it. Port 1420 free.
+
+### Not done / open
+
+- **A real collection has not been imported.** No SuperMemo executable or
+  Wine prefix is on this machine, and the only collection is the user's own
+  "cognitive canopy" (SM18, 190 elements, backed up 2024-02-05) inside a
+  Duplicati backup set at `~/Library/CloudStorage/Box-Box/99 supermemo/`
+  (plain zip volumes). Its file list was read; copying the block volumes
+  to restore it was refused by the permission rules this session ran under,
+  and the session did not try another way. So the done-when's "a real
+  collection, when one is at hand, imports with no unknown-record
+  diagnostic" is unverified. Next session, with the user's say-so: restore
+  `cognitive canopy.Kno` + `cognitive canopy/` from the newest `dlist` (the
+  block volumes are keyed by base64 SHA-256 in the `dindex` files), run the
+  CLI on it into the scratchpad, and read the diagnostics.
+- Grades are not in any readable layout (freememo: "not recoverable"), so
+  the plan's replay of the history through `grade` is not done; every
+  scheduled item is seeded `st=review s=<ivl> d=5`. If a grade offset in the
+  39-byte history record is ever established, `seedOf` is the one function
+  to replace.
+- Unknown and not written: lapses, the forgetting index, the element status
+  (a pending element with an interval would be enrolled), priority as a
+  percentage, tasklist deadlines (`tasks/*.dat` is reported when
+  non-empty), the `.kno` record, `repetitions.dat`'s epoch, SuperMemo's
+  cloze markup beyond the literal `[...]`, an extract's back-reference to its
+  parent and the reference block SuperMemo appends to topics (left as prose).
+- An item is question then answer in component order; images, sounds, and
+  video are dropped with a count. RTF components are read only when they
+  have a file slot or an `.rtx` text.
+- Readability drops an `<h1>` that repeats the page `<title>`, as the intake
+  does; the fixture's source therefore has no heading.
+- `scripts/` is outside `tsconfig`'s `include`, so `npm run typecheck` does
+  not cover the CLI (jsdom has no types installed); the test covers
+  everything under it but the argument parsing.
+
+### Decisions worth knowing
+
+- The layout notes are the only thing that crosses: the importer was written
+  from LAYOUT.md, the fixture generator from the same, and the test holds
+  the committed fixture to the generator byte for byte so the two cannot
+  drift. Facts from a GPL file (component headers, link types, the slot
+  rule) are cited as facts; no code or structure from it is used, and the
+  slot rule is not even computed (the `elements/` tree is walked instead).
+- Every file goes through `Vault.createDoc` + `Vault.write` and cards through
+  one `Vault.update` per document, so an imported file is one the app would
+  have written and parses with no diagnostics by construction.
+- A topic with children and no text is a folder; one with text is a
+  document whose child topics are extracts. Items under a folder get a
+  `cards.md` deck rather than a document with no prose.
+- A card takes its own `pri` line only when its rank differs from its
+  document's; an unranked card inherits the document's, as the format says.
+- `tsx` rather than node's own type stripping: node 26 neither maps `./x.js`
+  imports to `.ts` nor transforms the parameter properties in `vault.ts`.
+
+### Handoff prompt
+
+Paste into a fresh session:
+
+```
+Read PLAN.md, FORMAT.md, BUILD-LOG.md, and spec/hashiyah/HANDOFF.md. Do the
+first unchecked milestone in PLAN.md and only that one. Stop at its "done
+when". Then tick it, write notes for the next session under it, add an entry
+to BUILD-LOG.md with a fresh handoff prompt, and commit.
+
+Context: milestone 14 (the SuperMemo import) is done (BUILD-LOG 2026-10-17)
+against a fixture only; a real collection sits in a Duplicati backup under
+Box and importing it is an open item that needs the user's go-ahead, not
+part of the next milestone. The next is 15, the PDF lens over pdf.js with
+sioyek as the behaviour reference. Tooling: export
+PATH=$HOME/.cargo/bin:/opt/homebrew/bin:$PATH; npm test and npm run
+typecheck must be green before a commit; caffeinate -d -u -i, then
+ILMI_VAULT=<scratch copy> ILMI_SMOKE=<mode> npm run tauri dev drives the
+window (overload is the newest mode; the smoke pauses ten seconds after
+each `shot:` line and the shell shoots two seconds after reading it;
+free port 1420 afterwards). npm run import-sm -- <collection.kno>
+<vault-dir> is the import.
+```
+
+---
+
 ## 2026-10-17 — milestone 13: tasks, dropped
 
 Commit `010e8f0` — *tasks: dropped, a task is a draft whose body is the

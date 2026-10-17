@@ -18,7 +18,13 @@ npm run tauri dev      # desktop window; first Rust build takes a few minutes
 npm run dev            # renderer only, in a browser at http://localhost:1420
 npm test               # format round-trip and vault tests
 npm run typecheck
+npm run import-sm -- <collection.kno> <vault-dir>   # a SuperMemo collection, once
 ```
+
+The import reads a SuperMemo collection's data files (`src/import/supermemo/LAYOUT.md`
+says which bytes, and on whose word) and lands its tree as folders, topics as
+sources and extracts, items as cards, tasks as drafts, with their schedules
+and priorities; what the layout notes do not cover is printed, never written.
 
 In a dev build, `ILMI_VAULT=/path/to/vault npm run tauri dev` opens that vault
 at launch instead of asking for one. Add `ILMI_SMOKE=1` to run every tree
@@ -63,5 +69,7 @@ src/app/           renderer: React, Zustand store, tokens.css
 src/format/        parser and serializer, the only code that touches vault files
 src/vault/         open, walk, read, write, watch, and reshape a vault; pure over an Fs interface
 src/schedule/      ts-fsrs grading, the reading and writing loops, the queue query
+src/import/        text from a paste, a page, or a SuperMemo collection, on its way to a file
+scripts/           command-line tools, run with tsx
 src-tauri/         desktop shell (Tauri v2, fs + dialog + log plugins)
 ```

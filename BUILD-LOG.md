@@ -44,7 +44,8 @@ the merge touches those four by hand.
   `{{cN::…}}` (`insideMath`, `withBlank`).
 - Corpus: `vault/papers/maxwell.md`, `mangled/math-blanks.md`. Queue
   counts: upcoming 17 → 20, cards 26 → 29, today 17 unchanged.
-- README: a paragraph. Smoke: `ILMI_SMOKE=math`, written, not run.
+- README: a paragraph. Smoke: `ILMI_SMOKE=math`, written on the branch,
+  run after the merge (see *Window check* below).
 - Tests: 308 (+9).
 
 ### Verified
@@ -83,25 +84,44 @@ the merge touches those four by hand.
 - `clozeParts` kept its shape by flattening the segments, so the
   scheduler, the queue, `numberBlank`, and `ownBlank` did not change.
 
-### Handoff prompt
+### Window check (after the merge, `bfcc00d`)
 
-Paste into a fresh session (milestone 16's prompt below still applies
-for the Anki work; this one is for the merge and the owed check):
+Merged onto milestones 16 and 17 as `bfcc00d` (both sides had appended a
+smoke mode, a README paragraph, and a log entry; all kept). Suite 327,
+typecheck clean. Then `ILMI_VAULT=<scratch copy> ILMI_SMOKE=math npm run
+tauri dev`, one run, clean, port 1420 free after. As logged: the reader
+with 6 blocks, 2 cards, two chips with blanks (`data-blanks` 2 and 1,
+every blank revealed there, 3 and 1 boxes, display and inline, KaTeX, no
+fallback) and 2 prose formulas; the session over 3 blanks: each card
+hidden with `data-revealed 0`, one box per own blank (two for the align
+line, split at `&=`), no TeX in the face's HTML, the hint shown; revealed
+(the first by a click on the chip, the others by space) with the chip at
+`data-revealed 1`, the TeX kept, the answer face reading `x2`, `ϵ0 ρ`, and
+the curl line; `done, 3 elements`; three `sr` lines rewritten with `g=3`.
+Four captures read: the reader with the align block numbered (1)–(4), the
+right-hand side of (1) and the whole of (3) on the accent, `x²` boxed
+inline, the binomial plain; the session on blank 1 of 2 with a grey box
+the size of the fraction in place of (1)'s right-hand side, (2)–(4) plain,
+the answer face blurred; the revealed captures were partly covered by
+another window, the visible part showing the formula and the grades.
+
+### Handoff prompt
 
 ```
 Read PLAN.md, FORMAT.md, BUILD-LOG.md, and spec/hashiyah/HANDOFF.md.
-Milestone 18 (blanks inside math, BUILD-LOG 2026-10-18) was done on the
-branch worktree-agent-aa0c5ff44353b39cb and merged; its window check is
-still owed. Run it: copy src/format/__tests__/corpus/vault to a scratch
-directory, caffeinate -d -u -i in the background, free port 1420, then
-ILMI_VAULT=<copy> ILMI_SMOKE=math npm run tauri dev with the tail loop
-that screencaptures on `shot: <name>` (sleep 2 first) and kills the app
-on `done` / `failed`. Read the log: two chips in the reader with
-data-blanks 2 and 1 (every blank revealed there), the session's three
-cards with boxes hidden and the accent revealed, the first revealed by a
-click on the chip, the sr lines rewritten. Read the shots. Then record
-the result under milestone 18 in PLAN.md and in this entry, fix what the
-window shows, and commit. Suite 308 and typecheck must be green.
+Every milestone in PLAN.md is ticked (0–18; 13 dropped). There is no
+first unchecked milestone. Ask the user whether the next thing is the
+polish pass over the open items listed under "Notes for the next
+session" in PLAN.md, their own Anki export through the intake
+(`ILMI_SMOKE=anki ILMI_APKG=<path>` or a drop in the window), their
+SuperMemo collection through `npm run import-sm`, or something new; then
+write it into PLAN.md as a milestone with a "done when" before building.
+Tooling and verification are as the ground rules and the entries below
+describe. Suite 327 and typecheck must be green before a commit.
+```
+
+---
+
 ## 2026-10-18 — milestone 17: cards from Anki, a dropped `.apkg` lands as deck files with their progress
 
 Commit `cec823b` — *anki: a dropped .apkg read on the Rust side, each deck

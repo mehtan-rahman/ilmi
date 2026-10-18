@@ -1245,9 +1245,11 @@ walk lists `papers/maxwell`. `mangled/code-and-math.md`'s `$$` block
 with `{{c1::x_i}}` is a card now, on purpose. Dev: `ILMI_SMOKE=math`
 (reader chips, then a session over maxwell's three blanks, the first
 revealed by a click on the chip, each graded, shots `math-reader`,
-`math-N-hidden`, `math-N-revealed`), written and NOT run: the window
-and port 1420 belonged to milestone 17's session; the window check is
-owed. Tests: 308 (+9: the math rule's cases and the two corpus files in
+`math-N-hidden`, `math-N-revealed`), written on the branch and run after
+the merge (`bfcc00d`): reader chips `data-blanks` 2 and 1, the session's
+three cards boxed hidden and on the accent revealed, the first by a click
+on the chip, three `sr` lines rewritten; captures read (BUILD-LOG
+2026-10-18, milestone 18). Tests: 308 (+9: the math rule's cases and the two corpus files in
 `format.test.ts`, the round trips and mutations of both files, the
 maxwell formula hidden / revealed / as context, the reader and deck
 rendering and the answer face, the KaTeX fallback, and the composer's
@@ -1309,7 +1311,7 @@ port 1420 belong to the other session right now. Say so in the notes.
 
 ## Notes for the next session
 
-Milestones 0–17 are ticked; nothing is unchecked. What is left is a
+Milestones 0–18 are ticked; nothing is unchecked. What is left is a
 polish pass over the open items
 each milestone's notes record (10: no palette command or key for
 priority, no stepper; 11: no growth row before enrolment, the preview

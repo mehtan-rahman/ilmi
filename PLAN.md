@@ -1472,7 +1472,7 @@ vault; `plugins/ilmi.d.ts` is the typed API and `PLUGINS.md` at the repo
 root documents it and how to publish.
 
 ### [x] 20. Plugin runtime — the loader, the enable list, the `ilmi` handle, a settings section
-Done 2026-10-18; commit `TBD`.
+Done 2026-10-18; commit `91326a0`.
 Notes: `src/plugins/api.ts` is the typed handle (types only; `npm run
 plugins` copies it verbatim under a header to `plugins/ilmi.d.ts`, and a
 test holds the two equal). `src/plugins/runtime.ts` is the pure side:

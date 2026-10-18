@@ -8,7 +8,7 @@ was verified, what was not, and the prompt to resume with.
 
 ## 2026-10-18 — milestone 20: plugin runtime, the loader, the enable list, the `ilmi` handle, a settings section
 
-Commit `TBD` — *plugins: a runtime over `.ilmi/plugins/`, the typed `ilmi`
+Commit `91326a0` — *plugins: a runtime over `.ilmi/plugins/`, the typed `ilmi`
 handle (api 1), a tweaks section with a toggle, settings, and `add a
 plugin`, the sample plugin, esbuild build, PLUGINS.md*. Done on `main`
 beside milestone 23, which runs on a branch and will meet this in

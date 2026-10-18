@@ -2245,25 +2245,17 @@ the `*emphasis*` open item under 19 closed.
 
 ## Notes for the next session
 
-Milestones 0–24 are ticked (22–24 on branches, merged; 21's, 24's window
-checks are owed to the screen lock, recorded under them); 25 under
-*Clipping and rendering* is on a branch awaiting merge.
-After them, what is left is a polish pass
-over the open items
-each milestone's notes record (10: no palette command or key for
-priority, no stepper; 11: no growth row before enrolment, the preview
-ignores lateness; 12: the sidebar and inspector counts are the whole day
-while the strip folds, no key for `postpone the rest`; 13: a due-day field
-on the draft's inspector; 14: the user's real collection, with their
-say-so; 15: the list under it; the session card's faces are not editable
-in place; 16: the Anki row is fixed to its header, leftovers may read as
-headings or lists; 17: the user's own `.apkg` untried, media not copied,
-suspended cards import as ordinary ones; 19: the user's own book untried,
-emphasis shown with its asterisks, images not copied; 20: the folder
-picker, an OS drop, and the `replace` row unseen in the window; 21: no
-cue on a card face or in the deck lens, so no `look up` there, the first
-meaning always the card's back) and, with the user, whether the
-next thing is that pass, the
-margin-gloss text flow the ground rules keep out of the plan, or
-something new. The handoff prompt at the top of `BUILD-LOG.md` lists the
-items.
+Milestones 0–25 are ticked (13 dropped); nothing is unchecked. The window
+checks of 21, 24, and 25 are recorded in BUILD-LOG under their entries
+with the fixes they forced (a fetched page is never auto-read as cards and
+the comma rule wants a gloss for a back; the clipper percent-encodes image
+paths; an image with an empty alt is drawn; `[^1]` is not a note). What is
+left is a polish pass over the open items each milestone's notes record
+(21: the popover's height and anchor, one meaning per card, one clitic;
+24: `.html` drops on the old pass, images fetched after landing with no
+cap; 25: an inline image's alt shown beside it, the queue row's inline
+code not read in the window, emphasis across a math chip, no code
+colouring; 19: images and `linear="no"`; 17: media, suspended cards; 14:
+the user's real collection; 10–15: their lists), the plugin directory the
+user set aside ("can wait"), and, with the user, whatever is next. The
+handoff prompt at the top of `BUILD-LOG.md` says so.

@@ -2243,9 +2243,99 @@ emphasised passage, presses `e`, and logs the extract's text; the
 session faces of a card with inline code read right; screenshots read;
 the `*emphasis*` open item under 19 closed.
 
+## Live editing
+
+The reader draws Markdown and math as themselves (25) but still falls back
+to source when the caret arrives: inline markers are always visible while a
+document is editable, a math chip becomes its TeX when clicked, and a drawn
+list, quote, code block, or table shows its source while selected. The
+user: "is it possible to make markdown / latex stuff more wysiwyg like
+instead of de-rendering when you click?" — yes, in two steps, the format
+unchanged throughout: the file on disk stays the raw Markdown, reading and
+writing it stays a fixed point, and the selection keeps mapping back to the
+raw text exactly (the tests from 25 guard that), since extracts and cards
+are made from it.
+
+### [ ] 26. Live inline — markers only around the caret, math edited in place
+- Markers follow the caret, as Typora and Obsidian's live preview do: the
+  `*`, `**`, `` ` ``, `[`, `](href)`, `![`, `](src)` markers of an inline
+  range are shown (dimmed, as now) only while the selection touches that
+  range or sits just outside it, and hidden everywhere else, on editable
+  and frozen documents alike. The decoration set recomputes on selection
+  change for the paragraph that gained the caret and the one that lost
+  it, not the whole document. Typing a marker makes the range appear
+  as you close it; backspacing into a hidden marker reveals it first
+  (the caret lands after the marker, the markers show, the next backspace
+  deletes a character), so nothing is deleted blind. ⌘-click on a link
+  still opens it; a plain click puts the caret and shows that link's
+  markers.
+- Math stays rendered: clicking a chip (or ⏎ with the chip selected)
+  opens a small editor anchored under it, styled as the palette, holding
+  the TeX between the dollars, monospace, growing with its content; the
+  chip re-renders as you type (KaTeX with `throwOnError: false`, an error
+  shown quietly under the field, the chip left as it was until the TeX
+  parses); ⏎ or Escape or a click outside closes it and writes the text
+  once (one transaction, one disk write through the reader's existing
+  debounce); ⇧⏎ inserts a line break for display math. `$$` versus `$`
+  is kept as the span had it. Arrow keys at the field's ends leave the
+  editor and put the caret before or after the chip. A new formula is
+  typed as today (`$x$` in the text becomes a chip when closed); the
+  editor is for what is already a chip. The cloze blanks inside math
+  (18) are plain TeX in the field.
+- The session faces, deck lens, and queue rows keep hiding every marker
+  (nothing is edited there).
+
+Done when: `reader-view.test.ts` covers markers shown only for the range
+under the caret and hidden elsewhere, the caret moving between two
+emphasised spans, a backspace into a hidden marker revealing it without
+deleting, typing `*word*` lighting as it closes, the math editor opening
+on click with the span's TeX, re-rendering on input, writing once on ⏎
+and nothing on Escape, keeping `$$`, and the selection-to-source mapping
+unchanged over a paragraph with hidden markers; `ILMI_SMOKE=live` opens
+the markdown sampler thawed, moves the caret through the first paragraph
+logging which markers show, backspaces into a marker, opens maxwell's
+inline formula's editor, types into it, closes with ⏎, and logs the file's
+line; screenshots read.
+
+### [ ] 27. Live blocks — lists, quotes, and code edited as themselves
+- Fenced code: a real `code_block` node in the editor, the fence and its
+  language kept as node attributes, the body edited in place (monospace,
+  tab inserts two spaces, ⌘⏎ leaves the block); serialized back to the
+  exact fence it came from. Indented code stays raw.
+- Lists: a `list` node whose items are paragraphs, each item remembering
+  its own marker text (`- `, `* `, `+ `, `1. `, `1) `) and indentation,
+  so writing back reproduces the file byte for byte; ⏎ at the end of an
+  item makes the next with the same marker (numbers continue), ⏎ on an
+  empty item leaves the list, Tab and ⇧Tab indent and outdent by the
+  item's own indentation unit, backspace at an item's start joins it
+  into the one before. Task-list `[ ]` / `[x]` draws as a box that
+  toggles on click and writes the character. Inline Markdown inside an
+  item follows 26.
+- Block quotes: a `quote` node whose lines are paragraphs, the `> `
+  prefix kept per line; ⏎ continues the quote, ⏎ on an empty line leaves
+  it.
+- Tables and HTML blocks stay as they are in 25 (drawn, source on focus);
+  say so in the notes as the open item.
+- The parser is not changed: the format still stores these as `raw`
+  blocks. The editor's schema gains the nodes and a lossless pair of
+  functions, `rawToNode(text)` and `nodeToRaw(node)`, with the fixed
+  point `nodeToRaw(rawToNode(t)) === t` for every raw block in the corpus
+  and in the EPUB and clipped fixtures; a raw block the pair cannot round
+  trip stays a raw atom. Extracts and cards from a selection inside a
+  list item or quote line take the item's or line's text without its
+  marker.
+
+Done when: a corpus-wide round-trip test over every raw block through the
+pair; `reader-view.test.ts` covers typing in a code block, ⏎ / Tab / ⇧Tab
+/ backspace in a list, the task box, a quote continued and left, and an
+extract from a list item without its marker; `ILMI_SMOKE=blocks` edits
+the sampler's list, quote, and code block in place and logs the file's
+lines after each; screenshots read.
+
 ## Notes for the next session
 
-Milestones 0–25 are ticked (13 dropped); nothing is unchecked. The window
+Milestones 0–25 are ticked (13 dropped); 26 and 27 under *Live editing*
+are next, in order, both on main (they share the reader). The window
 checks of 21, 24, and 25 are recorded in BUILD-LOG under their entries
 with the fixes they forced (a fetched page is never auto-read as cards and
 the comma rule wants a gloss for a back; the clipper percent-encodes image

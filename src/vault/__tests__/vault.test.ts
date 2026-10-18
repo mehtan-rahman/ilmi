@@ -82,6 +82,7 @@ describe('walk', () => {
       'essays/talk-incremental.md',
       'fleeting/2026-05-26.md',
       'fleeting/2026-05-27.md',
+      'fleeting/markdown-sampler.md',
       'papers/archive/sutton-2019.md',
       'papers/crick-1995.md',
       'papers/maxwell.md',

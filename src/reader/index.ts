@@ -6,5 +6,7 @@ export { schema } from './schema.js';
 export { toDoc, fromDoc, textOf, inline, mathSplit, blocksEqual, cardDue, type MathPart } from './convert.js';
 export { editorialRanges, type MarkRange } from './marks.js';
 export { proseIndices, cursorIndex, pickPos, setReadPos, isProse, type Band } from './marker.js';
-export { makeState, markerKey, markerPos, cardsKey, editMath, frozenPlugin, type StateOptions } from './plugins.js';
+export { makeState, markerKey, markerPos, cardsKey, editMath, frozenPlugin, frozenKey, imagesKey, type StateOptions, type ImageLoader, type ImageState, type ImagesMeta } from './plugins.js';
+export { inlineRanges, markerRanges, flatRanges, imageOnly, literalSpans, type InlineRange, type InlineKind } from './inline.js';
+export { classifyRaw, splitBlocks, type RawShape, type Align } from './blocks.js';
 export { cardText, passage, blockAt, insertCard, setCardText, type CardSpec, type Passage } from './cards.js';

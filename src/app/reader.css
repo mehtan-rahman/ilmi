@@ -103,6 +103,107 @@
 /* a formula KaTeX refused, with blanks in it: its source, the blanks as text blanks */
 .math.blanks .tex { font-family: var(--mono); font-size: 0.9em; white-space: pre-wrap; }
 
+/* inline Markdown, drawn as itself over the raw text: the markers dimmed so
+   the caret still lands where the source says, hidden on a frozen document */
+.md-mark { color: var(--fg-5); }
+.md-mark.hidden { font-size: 0; }
+.md-em { font-style: italic; }
+.md-strong { font-weight: 640; }
+.md-code {
+  font-family: var(--mono);
+  font-size: 0.86em;
+  background: var(--line-3);
+  border-radius: var(--radius);
+  padding: 0 3px;
+}
+.md-code .md-mark { background: transparent; }
+.md-link {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklab, var(--accent) 55%, transparent);
+  text-underline-offset: 3px;
+}
+.md-link:hover { text-decoration-color: var(--accent); }
+.md-img { max-width: 100%; height: auto; vertical-align: middle; }
+.md-img-slot { display: none; }
+.md-alt.broken { font-family: var(--mono); font-size: 0.86em; color: var(--fg-3); }
+/* an image alone in a paragraph: the picture, its alt under it as a caption */
+.draft-doc p.dd-img { text-align: center; }
+.draft-doc p.dd-img .md-img {
+  display: block;
+  margin: 0 auto 6px;
+  max-height: 70vh;
+  width: auto;
+}
+.draft-doc p.dd-img .md-alt {
+  font-family: var(--sans);
+  font-size: 12.5px;
+  color: var(--fg-3);
+}
+.draft-doc p.dd-img.kept .md-alt,
+.draft-doc p.dd-img.broken .md-alt { font-family: var(--mono); }
+
+/* raw blocks drawn as what they are; the source shows while the block is selected */
+.draft-doc .raw.rendered { position: relative; margin: 0 0 1em; cursor: default; }
+.draft-doc .raw.rendered .raw-src {
+  display: none;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--fg-3);
+  white-space: pre-wrap;
+  margin: 0;
+}
+.draft-doc .raw.rendered.selected .raw-view { display: none; }
+.draft-doc .raw.rendered.selected .raw-src { display: block; }
+.draft-doc .raw.rendered.selected { background: transparent; }
+.draft-doc .raw-view ul, .draft-doc .raw-view ol { margin: 0; padding-left: 1.6em; }
+.draft-doc .raw-view li { margin: 0 0 0.25em; text-wrap: pretty; }
+.draft-doc .raw-view li > p { margin: 0 0 0.5em; }
+.draft-doc .raw-view li ul, .draft-doc .raw-view li ol { margin-top: 0.25em; }
+.draft-doc .raw-view blockquote {
+  margin: 0;
+  padding: 0 0 0 14px;
+  border-left: 2px solid var(--line-1);
+  color: var(--fg-2);
+}
+.draft-doc .raw-view blockquote p { margin: 0 0 0.6em; }
+.draft-doc .raw-view blockquote p:last-child { margin-bottom: 0; }
+.draft-doc .raw-view pre {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.55;
+  margin: 0;
+  padding: 10px 12px;
+  background: var(--line-3);
+  border-radius: var(--radius);
+  white-space: pre-wrap;
+  color: var(--fg-1);
+}
+.draft-doc .raw-view pre code { font: inherit; }
+.draft-doc .raw-view table {
+  border-collapse: collapse;
+  font-size: calc(var(--serif-size) * 0.9);
+  width: auto;
+  max-width: 100%;
+}
+.draft-doc .raw-view th, .draft-doc .raw-view td {
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--line-2);
+  vertical-align: top;
+}
+.draft-doc .raw-view th {
+  font-family: var(--sans);
+  font-size: 11.5px;
+  font-weight: 600;
+  text-align: left;
+  color: var(--fg-3);
+  border-bottom-color: var(--line-1);
+}
+.draft-doc .raw-view hr { border: 0; border-top: 1px solid var(--line-1); margin: 0.4em 0; }
+.draft-doc .raw-view h1, .draft-doc .raw-view h2, .draft-doc .raw-view h3,
+.draft-doc .raw-view h4, .draft-doc .raw-view h5, .draft-doc .raw-view h6 { font-family: var(--sans); font-weight: 600; margin: 0.4em 0; line-height: 1.25; }
+
 /* editorial marks, lit where they stand */
 .ed-mark { border-radius: var(--radius); }
 .ed-mark.note {

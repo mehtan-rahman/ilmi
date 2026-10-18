@@ -10,14 +10,16 @@ import { EditorView, type NodeView } from 'prosemirror-view';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { PRI_DEFAULT, cardFields, clozeSegments, meta, serialize, setField, type Blank, type Block, type Card, type Doc, type MathSeg } from '../format/index.js';
 import {
-  blockAt, blocksEqual, cardDue, cursorIndex, editMath, editorialRanges, fromDoc, insertCard, makeState, markerKey, markerPos,
-  mathSplit, passage, pickPos, proseIndices, schema, setReadPos, type Band, type Passage,
+  blockAt, blocksEqual, cardDue, classifyRaw, cursorIndex, editMath, editorialRanges, flatRanges, fromDoc, frozenKey, imagesKey, inlineRanges, insertCard,
+  literalSpans, makeState, markerKey, markerPos, markerRanges, mathSplit, passage, pickPos, proseIndices, schema, setReadPos, splitBlocks,
+  type Band, type InlineRange, type Passage, type RawShape,
 } from '../reader/index.js';
 import { advanceWrite, whenToDate } from '../schedule/index.js';
 import { dirOf, nameOf, type Loaded, type Vault } from '../vault/index.js';
 import { CueActions } from '../plugins/CueActions.js';
 import { publishSelection as publishPluginSelection, runBlockHooks, toPluginSelection, usePlugins, wantsBlocks, type PluginSelection } from '../plugins/index.js';
 import { Composer } from './Composer.js';
+import { imageLoader } from './images.js';
 import { dueLabel } from './items.js';
 import { titleOf } from './names.js';
 import { useApp, type DocInfo } from './store.js';
@@ -117,20 +119,100 @@ function mathHTML(raw: string): string {
   return `<span class="math${display ? ' display' : ''}" data-tex="${escapeHtml(raw)}">${inner}</span>`;
 }
 
-function markedHTML(text: string): string {
+const INLINE_CLASS: Record<InlineRange['kind'], string> = { em: 'md-em', strong: 'md-strong', code: 'md-code', link: 'md-link', image: 'md-alt' };
+
+/**
+ * One run of text with its inline Markdown drawn as itself and its
+ * editorial marks lit. The markers stay in the markup, hidden: the
+ * read-only parts have nothing to type into, so nothing to dim them for.
+ */
+function inlineHTML(text: string, ranges: InlineRange[], from: number, to: number, literal: { from: number; to: number }[]): string {
   let out = '';
-  let last = 0;
-  for (const r of editorialRanges(text)) {
-    out += escapeHtml(text.slice(last, r.from));
-    out += `<span class="ed-mark ${r.kind}">${escapeHtml(text.slice(r.from, r.to))}</span>`;
-    last = r.to;
+  let at = from;
+  const plain = (a: number, b: number) => {
+    if (b <= a) return '';
+    let s = '';
+    let last = a;
+    for (const r of editorialRanges(text.slice(a, b))) {
+      const rf = a + r.from;
+      const rt = a + r.to;
+      if (literal.some((l) => rf < l.to && l.from < rt)) continue;
+      s += escapeHtml(text.slice(last, rf)) + `<span class="ed-mark ${r.kind}">${escapeHtml(text.slice(rf, rt))}</span>`;
+      last = rt;
+    }
+    return s + escapeHtml(text.slice(last, b));
+  };
+  for (const r of ranges) {
+    out += plain(at, r.from);
+    const [open, close] = markerRanges(r);
+    const marker = (m: { from: number; to: number } | undefined) => (m ? `<span class="md-mark hidden">${escapeHtml(text.slice(m.from, m.to))}</span>` : '');
+    const inner = r.kind === 'code' || r.kind === 'image' ? escapeHtml(text.slice(r.inner.from, r.inner.to)) : inlineHTML(text, r.children, r.inner.from, r.inner.to, literal);
+    const attrs = r.kind === 'link' && r.href ? ` data-href="${escapeHtml(r.href)}"` : '';
+    out += `${marker(open)}<span class="${INLINE_CLASS[r.kind]}"${attrs}>${inner}</span>${marker(close)}`;
+    at = r.to;
   }
-  return out + escapeHtml(text.slice(last));
+  return out + plain(at, to);
 }
 
-/** Text with math as chips and editorial marks lit, for the read-only parts. */
+function markedHTML(text: string): string {
+  const ranges = inlineRanges(text);
+  return inlineHTML(text, ranges, 0, text.length, literalSpans(ranges));
+}
+
+/** Text with math as chips, inline Markdown as itself, and editorial marks lit, for the read-only parts. */
 export function richHTML(text: string): string {
   return mathSplit(text).map((p) => (typeof p === 'string' ? markedHTML(p) : mathHTML(p.math))).join('');
+}
+
+// ── raw blocks drawn as what they are ────────────────────────────
+
+const ALIGN_ATTR = (a: 'left' | 'center' | 'right' | null) => (a ? ` style="text-align:${a}"` : '');
+
+/**
+ * A run of text as blocks: a list, a quote, code, or a table by its shape, a
+ * heading, else a paragraph. In a `tight` list item (no blank line in it)
+ * the paragraphs stay bare, so the item reads on one line with any nested
+ * list under it.
+ */
+function blocksHTML(text: string, tight: boolean): string {
+  const bare = tight && !/\n[ \t]*\n/.test(text);
+  return splitBlocks(text).map((c) => {
+    const shape = classifyRaw(c);
+    if (shape.kind !== 'other') return shapeHTML(shape, c);
+    const h = /^ {0,3}(#{1,6})(?:[ \t]+(.*?))?[ \t]*$/s.exec(c);
+    if (h) return `<h${h[1]!.length}>${richHTML((h[2] ?? '').replace(/[ \t]+#+$/, '').trim())}</h${h[1]!.length}>`;
+    return bare ? richHTML(c) : `<p>${richHTML(c)}</p>`;
+  }).join('');
+}
+
+/** The element a raw block's shape stands for; `null` for a shape that stays as source. */
+function shapeHTML(shape: RawShape, text: string): string {
+  switch (shape.kind) {
+    case 'code':
+      return `<pre><code${shape.lang ? ` class="language-${escapeHtml(shape.lang)}"` : ''}>${escapeHtml(shape.code)}</code></pre>`;
+    case 'list': {
+      const tag = shape.ordered ? 'ol' : 'ul';
+      const start = shape.ordered && shape.start !== 1 ? ` start="${shape.start}"` : '';
+      return `<${tag}${start}>${shape.items.map((it) => `<li>${blocksHTML(it.text, true)}</li>`).join('')}</${tag}>`;
+    }
+    case 'quote':
+      return `<blockquote>${blocksHTML(shape.text, false)}</blockquote>`;
+    case 'table': {
+      const head = shape.head.map((h, i) => `<th${ALIGN_ATTR(shape.align[i] ?? null)}>${richHTML(h)}</th>`).join('');
+      const rows = shape.rows.map((r) => `<tr>${r.map((c, i) => `<td${ALIGN_ATTR(shape.align[i] ?? null)}>${richHTML(c)}</td>`).join('')}</tr>`).join('');
+      return `<table><thead><tr>${head}</tr></thead>${rows ? `<tbody>${rows}</tbody>` : ''}</table>`;
+    }
+    case 'rule':
+      return '<hr>';
+    case 'other':
+      return escapeHtml(text);
+  }
+}
+
+/** A raw block as its element, or null when it is one the reader keeps as mono source (an HTML block, a comment). */
+export function rawHTML(text: string): { kind: Exclude<RawShape['kind'], 'other'>; html: string } | null {
+  const shape = classifyRaw(text);
+  return shape.kind === 'other' ? null : { kind: shape.kind, html: shapeHTML(shape, text) };
 }
 
 // A formula holding blanks (FORMAT.md §5.1) is rendered by KaTeX once per
@@ -298,10 +380,59 @@ class MathView implements NodeView {
   ignoreMutation(): boolean { return true; }
 }
 
+/**
+ * A raw block: a list, a quote, code, a table, or a rule drawn as that
+ * element, with its source behind it for while the block is selected; any
+ * other raw text (an HTML block, a comment) as mono source, as before.
+ */
+class RawView implements NodeView {
+  dom: HTMLElement;
+  /** Drawn as an element, or kept as mono source; a change between the two makes a new view. */
+  private readonly drawn: boolean;
+
+  constructor(node: PMNode) {
+    const text = node.attrs.text as string;
+    this.drawn = rawHTML(text) !== null;
+    this.dom = document.createElement(this.drawn ? 'div' : 'pre');
+    this.dom.setAttribute('contenteditable', 'false');
+    this.render(node);
+  }
+
+  render(node: PMNode): void {
+    const text = node.attrs.text as string;
+    const selected = this.dom.classList.contains('selected') ? ' selected' : '';
+    const drawn = rawHTML(text);
+    if (!drawn) {
+      this.dom.className = `raw${selected}`;
+      this.dom.textContent = text;
+      return;
+    }
+    this.dom.className = `raw rendered${selected}`;
+    this.dom.dataset.kind = drawn.kind;
+    this.dom.innerHTML = `<div class="raw-view">${drawn.html}</div><pre class="raw-src">${escapeHtml(text)}</pre>`;
+  }
+
+  update(node: PMNode): boolean {
+    if (node.type !== schema.nodes.raw || (rawHTML(node.attrs.text as string) !== null) !== this.drawn) return false;
+    this.render(node);
+    return true;
+  }
+
+  selectNode(): void { this.dom.classList.add('selected'); }
+  deselectNode(): void { this.dom.classList.remove('selected'); }
+  ignoreMutation(): boolean { return true; }
+}
+
 export const nodeViews = {
   card: (node: PMNode) => new CardView(node),
   math: (node: PMNode) => new MathView(node),
+  raw: (node: PMNode) => new RawView(node),
 };
+
+/** Where a ⌘-click on a link goes: the webview hands an outside address to the system. */
+export function openLink(href: string): void {
+  window.open(href, '_blank', 'noopener');
+}
 
 // ── the component ────────────────────────────────────────────────
 
@@ -481,9 +612,11 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
     const writer = new Writer(vault, id);
     writerRef.current = writer;
     let live = true;
+    // the images the text names, from the vault as blob URLs, let go with the view
+    const images = imageLoader(vault, id, () => useApp.getState().remoteImages);
 
     const build = (loaded: Loaded) => {
-      const state = makeState(loaded.doc.blocks, { frozen: () => frozenRef.current, pos: meta(loaded.doc).read?.pos ?? null });
+      const state = makeState(loaded.doc.blocks, { frozen: () => frozenRef.current, pos: meta(loaded.doc).read?.pos ?? null, images: images.load });
       const view = viewRef.current;
       if (view) view.updateState(withSelectionOf(view.state, state));
       else {
@@ -514,6 +647,15 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
             view.dispatch(view.state.tr.setSelection(NodeSelection.create(view.state.doc, nodePos)));
             editMath(view.state, view.dispatch);
             view.focus();
+            return true;
+          },
+          handleClick(_view, _pos, event) {
+            // ⌘-click on a link opens it; a plain click puts the caret, as anywhere
+            if (!event.metaKey && !event.ctrlKey) return false;
+            const href = (event.target as HTMLElement | null)?.closest<HTMLElement>('.md-link')?.dataset.href;
+            if (!href) return false;
+            event.preventDefault();
+            openLink(href);
             return true;
           },
           handleKeyDown(view, event) {
@@ -576,14 +718,28 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
       viewRef.current?.destroy();
       viewRef.current = null;
       writerRef.current = null;
+      images.release();
       if (useApp.getState().selectedCard?.path === id) useApp.setState({ selectedCard: null });
     };
   }, [id, measure, hookBlocks]);
 
-  // frozen or thawed: the view re-reads `editable`
+  // frozen or thawed: the view re-reads `editable`, and the markers hide or show
   useEffect(() => {
-    viewRef.current?.setProps({ editable: () => !frozenRef.current });
+    const view = viewRef.current;
+    if (!view) return;
+    view.setProps({ editable: () => !frozenRef.current });
+    view.dispatch(view.state.tr.setMeta(frozenKey, frozenRef.current));
   }, [info?.frozen]);
+
+  // the remote-images tweak flipped: forget what was resolved and look again
+  const remoteImages = useApp((s) => s.remoteImages);
+  const remoteWas = useRef(remoteImages);
+  useEffect(() => {
+    if (remoteWas.current === remoteImages) return;
+    remoteWas.current = remoteImages;
+    const view = viewRef.current;
+    if (view) view.dispatch(view.state.tr.setMeta(imagesKey, 'reset'));
+  }, [remoteImages]);
 
   // a card opened from the palette or a query: once the document is built,
   // its node is selected (the inspector follows) and scrolled to; a card

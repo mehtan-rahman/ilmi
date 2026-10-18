@@ -63,6 +63,14 @@
 // plugin's folder, and adds it back from a zip (`ILMI_PLUGIN_ZIP=<path>`,
 // `plugins/dist/hello.zip` after `npm run plugins`) through the section's
 // hook.
+// `ILMI_SMOKE=render` opens the markdown sampler and reads what the reader
+// drew (emphasis, strong, code, the link, the markers hidden while frozen
+// and dimmed once thawed, the list, the quote, the code block, the table,
+// the two images from the vault), clicks a list to see its source, selects
+// an emphasised passage and presses `e` to log the extract's text, makes a
+// card with inline code with `m` and reads its session faces and queue
+// row, drops the fixture book and opens its first chapter, then turns
+// `show remote images` off from the tweaks panel.
 // `ILMI_SMOKE=welcome` runs before any vault opens: it seeds the recents
 // with the scratch vault (`ILMI_VAULT`) and a path that does not exist,
 // turns `reopen the last vault on start` off, reads the welcome's rows and
@@ -1831,6 +1839,138 @@ export async function smokeWelcome(scratch: string | null): Promise<void> {
     log('reloading');
     await sleep(300);
     location.reload();
+  } catch (e) {
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+export async function smokeRender(vault: Vault): Promise<void> {
+  const log = (s: string) => info(`smoke render: ${s}`);
+  const shot = async (name: string, ms = 10000) => { await sleep(600); log(`shot: ${name}`); await sleep(ms); };
+  const q = <T extends Element>(sel: string) => document.querySelector<T>(sel);
+  const qa = <T extends Element>(sel: string) => Array.from(document.querySelectorAll<T>(sel));
+  const SAMPLER = 'fleeting/markdown-sampler.md';
+  const n = (sel: string) => qa(sel).length;
+  /** What the reader drew on the surface showing now. */
+  const drawn = () => {
+    const imgs = qa<HTMLImageElement>('.draft-doc img.md-img').map((i) => `"${i.alt}" ${i.naturalWidth}x${i.naturalHeight} ${i.complete ? 'loaded' : 'loading'} ${i.src.slice(0, 5)}`);
+    const slots = qa<HTMLElement>('.draft-doc .md-img-slot').map((s) => s.dataset.state);
+    return `em ${n('.draft-doc .md-em')}, strong ${n('.draft-doc .md-strong')}, code ${n('.draft-doc .md-code')}, links [${qa<HTMLElement>('.draft-doc .md-link').map((l) => l.dataset.href).join(', ')}], markers ${n('.draft-doc .md-mark')} (hidden ${n('.draft-doc .md-mark.hidden')}); blocks drawn [${qa<HTMLElement>('.draft-doc .raw.rendered').map((r) => r.dataset.kind).join(', ')}], mono ${n('.draft-doc pre.raw')}; ul ${n('.draft-doc .raw-view ul')} li ${n('.draft-doc .raw-view li')}, ol ${n('.draft-doc .raw-view ol')}, quotes ${n('.draft-doc .raw-view blockquote')}, code "${q('.draft-doc .raw-view pre code')?.className ?? ''}", tables ${n('.draft-doc .raw-view table')} (th ${n('.draft-doc .raw-view th')}, td ${n('.draft-doc .raw-view td')}); figures ${n('.draft-doc p.dd-img')}; images [${imgs.join(' | ')}]; slots [${slots.join(', ')}]`;
+  };
+  const faceText = (sel: string) => q(sel)?.textContent?.replace(/\s+/g, ' ').trim().slice(0, 60) ?? '';
+  try {
+    setInspector({ open: true });
+
+    // the sampler, frozen: every form drawn, the markers hidden, the two images from the vault
+    openNode(SAMPLER);
+    const surface = await until(() => q<HTMLElement>('.doc-view .draft-doc'));
+    await until(() => (q('.draft-doc img.md-img[src^="blob:"]') ? true : null), 5000).catch(() => null);
+    await until(() => (qa<HTMLImageElement>('.draft-doc img.md-img').every((i) => i.complete) ? true : null), 5000).catch(() => null);
+    await sleep(400);
+    log(`sampler: blocks ${surface.children.length}; frozen ${q('.frozen-tag')?.textContent}; editable ${surface.contentEditable}; ${drawn()}`);
+    log(`first paragraph reads: "${surface.querySelector('p.dd-p')?.textContent}"`);
+    log(`markers hidden: ${qa<HTMLElement>('.draft-doc p .md-mark.hidden').slice(0, 3).map((m) => `"${m.textContent}" ${Math.round(m.getBoundingClientRect().width)}px wide`).join(', ')}`);
+    await shot('render-sampler');
+
+    // thawed: the markers show, dimmed
+    q<HTMLButtonElement>('.frozen-tag[data-frozen="1"]')!.click();
+    await until(() => (q('.frozen-tag[data-frozen="0"]') ? true : null));
+    await sleep(400);
+    const mark = q<HTMLElement>('.draft-doc p .md-mark');
+    log(`thawed: editable ${surface.contentEditable}; markers ${n('.draft-doc .md-mark')} (hidden ${n('.draft-doc .md-mark.hidden')}); first marker "${mark?.textContent}" ${mark ? Math.round(mark.getBoundingClientRect().width) : 0}px wide, colour ${mark ? getComputedStyle(mark).color : ''}`);
+    await shot('render-markers');
+    q<HTMLButtonElement>('.frozen-tag[data-frozen="0"]')!.click();
+    await until(() => (q('.frozen-tag[data-frozen="1"]') ? true : null));
+    await sleep(300);
+
+    // a drawn block's source while it is selected: click the list
+    const list = surface.querySelector<HTMLElement>('.raw.rendered[data-kind="list"]')!;
+    list.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, clientX: list.getBoundingClientRect().left + 10, clientY: list.getBoundingClientRect().top + 10 }));
+    list.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
+    await sleep(200);
+    log(`list clicked: selected ${list.classList.contains('selected')}; source shown ${list.querySelector('.raw-src') ? getComputedStyle(list.querySelector('.raw-src')!).display : 'none'}; view shown ${getComputedStyle(list.querySelector('.raw-view')!).display}`);
+    await shot('render-source');
+
+    // an emphasised passage, extracted: the markers travel with the text
+    const p = surface.querySelector<HTMLElement>('p.dd-p')!;
+    select(p, 'Plain prose with *emphasis*, **strong**, and `a code span`');
+    const cue = await until(() => q<HTMLElement>('.sel-cue'));
+    log(`cue: ${Array.from(cue.querySelectorAll('.cue-act')).map((b) => b.textContent).join(' | ')}; selection "${window.getSelection()?.toString()}"`);
+    const before = vault.documents();
+    press('e');
+    const extract = await until(() => vault.documents().find((d) => !before.includes(d)), 8000);
+    await sleep(500);
+    const ex = await vault.read(extract, true);
+    log(`extract ${extract}: body "${ex.doc.blocks.filter((b) => b.kind !== 'card').map((b) => b.text).join(' / ')}"; diagnostics ${ex.diagnostics.length}; parent marks extracted ${n('.draft-doc p.extracted')}`);
+
+    // a card with inline code, from `m`, then its session faces
+    await until(() => (q('.sel-cue') ? null : true));
+    const items = surface.querySelectorAll<HTMLElement>('.raw-view li');
+    const third = Array.from(items).find((li) => li.textContent?.includes('`code`'));
+    log(`list item with code reads "${third?.textContent}" drawn with ${third?.querySelectorAll('.md-code').length} code span`);
+    select(p, 'and `a code span`');
+    await until(() => q('.sel-cue'));
+    press('m');
+    const ta = await until(() => q<HTMLTextAreaElement>('.composer textarea'));
+    log(`composer seed: "${ta.value}"`);
+    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!;
+    setter.call(ta, 'inline code is written with {{backticks}}, as in `a code span`');
+    ta.dispatchEvent(new Event('input', { bubbles: true }));
+    await sleep(100);
+    press('Enter', { metaKey: true });
+    await until(() => (q('.composer') ? null : true));
+    await sleep(800);
+    const withCard = await vault.read(SAMPLER, true);
+    const card = surface.querySelector<HTMLElement>('.card-span');
+    log(`card: cards in file ${withCard.doc.blocks.filter((b) => b.kind === 'card').length}; diagnostics ${withCard.diagnostics.length}; drawn in the reader "${card?.querySelector('.cs-body')?.textContent}" with code ${card?.querySelectorAll('.md-code').length}, blanks ${card?.querySelectorAll('.cz').length}`);
+    const item = await until(() => useApp.getState().queue.find((i) => i.kind === 'card' && i.path === SAMPLER), 5000);
+    openSession(item);
+    await until(() => q('.recall-wrap .card'));
+    await sleep(400);
+    log(`face hidden: "${faceText('.face.front')}"; code spans ${n('.face.front .md-code')}, blanks ${n('.face.front .cloze')}, markers hidden ${n('.face.front .md-mark.hidden')} of ${n('.face.front .md-mark')}`);
+    await shot('render-face-hidden');
+    press(' ');
+    await sleep(400);
+    log(`face revealed: "${faceText('.face.front')}"; answer "${faceText('.face.back .face-body')}"`);
+    await shot('render-face-revealed');
+    openNode(queueId('today'));
+    await until(() => q('.queue'));
+    await sleep(300);
+    const row = qa<HTMLElement>('.qlist .row').find((r) => r.textContent?.includes('backticks') || r.querySelector('.md-code'));
+    log(`queue row: "${row?.querySelector('.body')?.textContent?.replace(/\s+/g, ' ').trim().slice(0, 80)}" with code ${row?.querySelectorAll('.md-code').length ?? 0}`);
+
+    // a chapter from the fixture book: emphasis, strong, the list, the quote
+    openIntake('');
+    await until(() => q<HTMLTextAreaElement>('.intake textarea'));
+    const { intakeHooks } = await import('./Intake.js');
+    const epub = (await invoke<string | null>('dev_env', { name: 'ILMI_EPUB' })) ?? vault.abs('three-chapters.epub');
+    await intakeHooks.ingestFile!(epub);
+    await until(() => q('.intake-detail'), 15000);
+    await sleep(300);
+    q<HTMLButtonElement>('.intake .place.primary')!.click();
+    const first = await until(() => vault.documents().find((d) => /^The Small Book( \d+)?\/01 /.test(d)), 10000);
+    await until(() => q<HTMLElement>('.doc-view .draft-doc'));
+    await sleep(600);
+    log(`chapter ${first}: ${drawn()}`);
+    log(`chapter first paragraph: "${q('.doc-view .draft-doc p.dd-p')?.textContent?.slice(0, 90)}"`);
+    await shot('render-chapter');
+
+    // the toggle: off, a remote image gives way to its alt; the vault's own stay
+    useApp.setState({ tweaksOpen: true });
+    const rowEl = await until(() => qa<HTMLElement>('.tweaks .tw-row').find((r) => r.querySelector('.tw-lbl')?.textContent === 'show remote images'));
+    log(`tweaks row: "${rowEl.querySelector('.tw-lbl')?.textContent}" ${Array.from(rowEl.querySelectorAll('button')).map((b) => `${b.textContent}${b.dataset.active === '1' ? '*' : ''}`).join(' ')}`);
+    await shot('render-tweaks');
+    (Array.from(rowEl.querySelectorAll<HTMLButtonElement>('button')).find((b) => b.textContent === 'off'))!.click();
+    await sleep(200);
+    log(`off: store ${useApp.getState().remoteImages}; stored ${localStorage.getItem('ilmi.tweaks')}`);
+    useApp.setState({ tweaksOpen: false });
+    openNode(SAMPLER);
+    await until(() => q<HTMLElement>('.doc-view .draft-doc'));
+    await until(() => (q('.draft-doc img.md-img[src^="blob:"]') ? true : null), 5000).catch(() => null);
+    await sleep(400);
+    log(`sampler with remote images off: ${drawn()}`);
+    useApp.getState().setRemoteImages(true);
+    log('done');
   } catch (e) {
     log(`failed: ${e instanceof Error ? e.message : String(e)}`);
   }

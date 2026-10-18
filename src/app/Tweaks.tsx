@@ -1,7 +1,8 @@
 // The tweaks panel: theme, accent, density, whether the last vault reopens
-// on start, the day's budget, and where clippings land. ⌘, opens it. The
-// first four live in the webview's storage, not in any vault; the budget
-// and the clippings folder are the open vault's, in its `.ilmi/state.json`.
+// on start, whether images from the web are shown, the day's budget, and
+// where clippings land. ⌘, opens it. The first five live in the webview's
+// storage, not in any vault; the budget and the clippings folder are the
+// open vault's, in its `.ilmi/state.json`.
 
 import { useEffect, useState } from 'react';
 import { PluginsSection } from '../plugins/PluginsSection.js';
@@ -66,6 +67,7 @@ export function Tweaks() {
   const accent = useApp((s) => s.accent);
   const density = useApp((s) => s.density);
   const reopen = useApp((s) => s.reopen);
+  const remoteImages = useApp((s) => s.remoteImages);
   const vault = useApp((s) => s.vault);
   const budget = useApp((s) => s.budget);
   const clipDir = useApp((s) => s.clipDir);
@@ -119,6 +121,13 @@ export function Tweaks() {
         <div className="tw-seg">
           <button type="button" data-active={reopen ? '1' : '0'} onClick={() => useApp.getState().setReopen(true)}>on</button>
           <button type="button" data-active={reopen ? '0' : '1'} onClick={() => useApp.getState().setReopen(false)}>off</button>
+        </div>
+      </div>
+      <div className="tw-row">
+        <span className="tw-lbl">show remote images</span>
+        <div className="tw-seg">
+          <button type="button" data-active={remoteImages ? '1' : '0'} onClick={() => useApp.getState().setRemoteImages(true)}>on</button>
+          <button type="button" data-active={remoteImages ? '0' : '1'} onClick={() => useApp.getState().setRemoteImages(false)}>off</button>
         </div>
       </div>
       {vault !== null && (

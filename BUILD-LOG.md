@@ -10,7 +10,9 @@ was verified, what was not, and the prompt to resume with.
 
 Done on the branch `worktree-agent-a6748a2448940aba8` (worktree
 `.claude/worktrees/agent-a6748a2448940aba8`) while milestone 21 ran on
-main; commit recorded in the entry below this line once made. The
+main; commit `ca68507` — *clipping: a pasted link read by Defuddle and
+landed as the clipper writes it, with url, author, and published fields,
+the images beside the file, and the address a link in the inspector*. The
 sessions are likely to share `PLAN.md`, `BUILD-LOG.md`, `README.md`,
 `package.json` / `package-lock.json`, `src/app/smoke.ts` (the header
 comment, `smokeClipping` before `smokePlugins`), `src/app/vault.ts` (the

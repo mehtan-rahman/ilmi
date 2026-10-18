@@ -1902,7 +1902,7 @@ for free, since they share the paths.
 ### [x] 24. Clipping — a pasted link lands as the clipper would write it
 Done 2026-10-18 on the branch `worktree-agent-a6748a2448940aba8` (worktree
 `.claude/worktrees/agent-a6748a2448940aba8`), beside milestone 21 on main;
-commit recorded in BUILD-LOG.md.
+commit `ca68507`.
 Notes: `src/import/page.ts` is the reduction. `clipPage(html, url)` parses
 the page with `DOMParser`, runs `new Defuddle(doc.cloneNode(true), { url,
 useAsync: false }).parse()` (defuddle 0.19.5, the core bundle, default

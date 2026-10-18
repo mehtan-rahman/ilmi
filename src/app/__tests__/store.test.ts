@@ -12,6 +12,13 @@ describe('app store', () => {
     expect(seen).toEqual(['light', 'dark', 'eink', 'light']);
   });
 
+  it('shows remote images until told otherwise, and remembers the choice', () => {
+    expect(useApp.getState().remoteImages).toBe(true);
+    useApp.getState().setRemoteImages(false);
+    expect(useApp.getState().remoteImages).toBe(false);
+    useApp.getState().setRemoteImages(true);
+  });
+
   it('sets a theme directly', () => {
     useApp.getState().setTheme('eink');
     expect(useApp.getState().theme).toBe('eink');

@@ -60,9 +60,9 @@ F2 / dbl-click   rename                 right-click  new, rename, move to, delet
 ⌘W               close tab              ⌘\           split pane
 ⌘⇧E              sidebar                ⌘⇧I          inspector
 ⌘,               tweaks: theme, accent, density, reopen the last vault on start,
-                 download images when clipping (kept outside the vault); the
-                 day's budget, where clippings go, and plugins (kept in the
-                 vault's .ilmi)
+                 download images when clipping, show remote images (kept
+                 outside the vault); the day's budget, where clippings go,
+                 and plugins (kept in the vault's .ilmi)
 
 on the welcome   ⏎ open the selected vault, j k move, o open vault, n new vault;
                  a folder dropped on it opens as a vault
@@ -127,6 +127,19 @@ the page's images are downloaded into the document's own folder,
 `name/img-01.png` …, and the links pointed at them; one that does not
 answer keeps its address. Anything the format would read as a card is
 escaped on the way in: `{{` is written `{ {`, a ` :: ` loses its spaces.
+
+The reader draws Markdown as Markdown without changing a byte of it:
+`*emphasis*`, `**strong**`, `` `code` ``, and `[text](href)` read as
+themselves in prose, in card faces, in the deck's rows, and in the queue,
+with the markers dimmed so the caret still lands where the source says, and
+hidden on a frozen document; ⌘-click on a link opens it, a plain click puts
+the caret. A list, a block quote, a fenced or indented code block, a table,
+or a rule is drawn as that element inside its block, and a click on it shows
+the source. An `![alt](src)` alone in a paragraph is the picture with its
+alt as the caption, read from the vault when the path is relative and from
+the web when it is an address and `show remote images` is on; one that
+cannot be had is its alt in mono. A passage selected over emphasis carries
+the markers into the extract or card made from it.
 
 A blank can sit inside a formula: `$y = {{c1::x^{2}}}$`, or a whole line of
 an `align` environment. Inside math only the numbered form is a blank and it

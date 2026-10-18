@@ -6,11 +6,12 @@
 // `postpone the rest` pushes the reading and writing among them out.
 
 import { Fragment, useEffect, useState, type MouseEvent } from 'react';
-import { PRI_DEFAULT, cardFields, clozeParts } from '../format/index.js';
+import { PRI_DEFAULT, cardFields } from '../format/index.js';
 import { counts, inScope, overflow, type QueueItem } from '../schedule/index.js';
 import { EL_GLYPH, QUEUE_EMPTY, dayLabel, dueLabel, intervalLabel, isFresh, kindTag, refLine, snippetOf, sourceLabel, summary } from './items.js';
 import { QUEUE_TITLE, SCOPES, queueId, type QueueScope } from './names.js';
 import type { OpenOpts } from './panes.js';
+import { clozeHTML, richHTML } from './Reader.js';
 import { useApp } from './store.js';
 import { openCard, openNode, openSession, postponeRest, refreshQueue, startSession } from './vault.js';
 import './queue.css';
@@ -36,13 +37,12 @@ function Body({ item }: { item: QueueItem }) {
     const s = snippetOf(item);
     return s ? <span className="read-snip">{s}<span className="read-ell"> …</span></span> : null;
   }
+  // the reader's rules: emphasis, code, and math read as themselves in the row too
   const f = cardFields(item.text);
-  if (!f) return <span>{item.text}</span>;
-  if (f.form === 'cloze') {
-    return <span>{clozeParts(item.text).map((p, i) => (typeof p === 'string' ? <span key={i}>{p}</span> : <span key={i} className="cloze">{p.answer}</span>))}</span>;
-  }
-  if (f.form === 'qa') return <span>{f.front}</span>;
-  return <span>{f.left} <span className="cs-arrow">⇄</span> {f.right}</span>;
+  if (!f) return <span dangerouslySetInnerHTML={{ __html: richHTML(item.text) }} />;
+  if (f.form === 'cloze') return <span dangerouslySetInnerHTML={{ __html: clozeHTML(item.text, () => 'hidden', () => 'cloze') }} />;
+  if (f.form === 'qa') return <span dangerouslySetInnerHTML={{ __html: richHTML(f.front) }} />;
+  return <span dangerouslySetInnerHTML={{ __html: `${richHTML(f.left)} <span class="cs-arrow">⇄</span> ${richHTML(f.right)}` }} />;
 }
 
 export function Queue({ scope, active }: Props) {

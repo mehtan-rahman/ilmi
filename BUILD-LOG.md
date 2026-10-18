@@ -6,6 +6,128 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-10-18 — milestone 25: rendering, the reader shows Markdown as Markdown
+
+Done on the branch `worktree-agent-a2df4fefff0acc940` (worktree
+`.claude/worktrees/agent-a2df4fefff0acc940`) while milestone 21 ran on
+main and 24 on another branch; commit `c574193` — *rendering: inline Markdown
+and raw blocks drawn as themselves in the reader, the faces, the rows;
+images from the vault and the web; a markdown sampler in the corpus*. The
+sessions are likely to share `PLAN.md`, `BUILD-LOG.md`, `README.md` (the
+`⌘,` line, a paragraph after the EPUB one), `src/app/smoke.ts` (the header
+comment, the function appended at the end), `src/app/vault.ts` (the one
+import line and the mode map in `openInitialVault`), `src/app/Tweaks.tsx`
+(the header comment, a row under `reopen the last vault on start`),
+`src/app/store.ts` (the `Tweaks` type and its load/save, `AppState`, the
+initial state, the setters), `src/vault/__tests__/vault.test.ts` (the
+document list), `src/app/Reader.tsx` (the imports, `richHTML` and what is
+around it, the node views, the editor effect, the frozen effect, a
+`handleClick` prop), `src/app/__tests__/reader-view.test.ts` (the imports
+and the `mount` helper), `src/app/Queue.tsx` (the imports, `Body`), and
+`src/app/reader.css` (a block before the editorial marks), so the merge
+touches those by hand. New files, no conflict: `src/reader/inline.ts`,
+`src/reader/blocks.ts`, `src/app/images.ts`,
+`src/format/__tests__/corpus/vault/fleeting/markdown-sampler.md` and
+`markdown-sampler/mark.png`. `src/app/CardText.tsx` is rewritten.
+
+### Done
+
+- `src/reader/inline.ts`: `inlineRanges` over raw text (emphasis, strong,
+  code, link, image; nested; flanking rules reduced), `markerRanges`,
+  `imageOnly`, `literalSpans`. `src/reader/blocks.ts`: `classifyRaw` (code
+  with its language, lists with nested lines, quotes, GFM tables with
+  alignment, rules), `splitBlocks`.
+- Plugins: the marks plugin decorates inline Markdown (`md-*` classes, the
+  markers `md-mark`, `hidden` when frozen, recomputed on `frozenKey`), and
+  an images plugin resolves `![alt](src)` through `StateOptions.images`
+  into widgets (`img.md-img`, `md-img-slot[data-state]`), the image-only
+  paragraph a `dd-img` figure with the alt as caption.
+- App: `images.ts` (vault files as blob URLs through `fs.readBytes`,
+  released on unmount; remote addresses behind the toggle); `Reader.tsx`
+  draws raw blocks as `ul`/`ol`/`blockquote`/`pre code.language-*`/
+  `table`/`hr` inside the atom with the source behind for while it is
+  selected, keeps HTML blocks and comments mono, opens a link on ⌘-click,
+  and `richHTML` applies the same inline rules to the deck's rows, the
+  queue's rows, and the session faces (`CardText`, `Queue`'s `Body`).
+- Tweaks: `show remote images`, default on, kept with the other tweaks.
+- Corpus: `fleeting/markdown-sampler.md` (frozen, no card, no `read:`)
+  and its PNG; the document-list test lists it; the queue counts stand.
+- README: the `⌘,` line, a paragraph on the rendering. Smoke:
+  `ILMI_SMOKE=render`, written on the branch, not run.
+- Tests: 420 (+21), 22 files.
+
+### Verified
+
+- `npm run typecheck` clean, `npx vitest run` green (22 files, 420):
+  every inline form and block form from the sampler checked in the DOM
+  (markers dimmed, hidden when frozen and back when thawed; the list a
+  `ul`, the code a `pre code.language-js`, the table a `table` with its
+  alignment, the image an `img` with the alt from a loader), a drawn
+  block's source while selected, a broken image as its alt in mono, a
+  remote one kept by the toggle, selection-to-source mapping over
+  `*very*` yielding the raw text with its markers, the EPUB fixture's
+  first chapter drawn, `richHTML` / `clozeHTML` / `cardHTML` with inline
+  code and emphasis, `imagePath`.
+- Not in the window: the window and port 1420 belonged to the other
+  session, and no Rust changed. `ILMI_SMOKE=render` and the screenshots
+  are owed, and with them the three things only a browser shows: the
+  hidden markers' width, a blob URL drawing in WKWebView, and whether
+  `window.open` hands a link to the system browser.
+
+### Not done / open
+
+- The window check (above).
+- ⌘-click on a link uses `window.open`; if the webview swallows it, 24's
+  `opener` plugin is the switch, in `openLink`.
+- Emphasis spanning a math chip is not found (ranges are per text node);
+  three mixed delimiters follow the simple rule; `[text]` without `(href)`
+  is a note as before; a task list's `[ ]` is text; a `language-*` class
+  is set and nothing colours code yet.
+- A drawn raw block is still not editable in place; the queue's reading
+  snippet and 19's `[figure: alt]` marks are untouched; copied text from
+  a face carries the hidden markers.
+
+### Decisions worth knowing
+
+- Decorations, not a schema change: the paragraph's text stays the source,
+  so the caret, the selection, `passage`, extracts, and cards are as they
+  were; the markers are dimmed by class and hidden with `font-size: 0`,
+  still in the DOM.
+- `richHTML` hides its markers outright: the deck's rows, the queue, and
+  the faces have no caret to keep honest.
+- Raw blocks stay atoms; what changed is the node view. An HTML block or a
+  comment is still mono, since drawing HTML from a file is a different
+  decision.
+- The images plugin never dispatches inside the view's construction (it
+  would re-enter `updateState`); loads land later, one dispatch each.
+- No dependency added: the inline parser and the block shapes are the
+  project's own, a few hundred lines, so the format's rules and the
+  reader's agree by construction.
+
+### Handoff prompt
+
+```
+Read PLAN.md, FORMAT.md, BUILD-LOG.md, and spec/hashiyah/HANDOFF.md.
+Milestones 0–20, 22, 23, and 25 are ticked (13 dropped; 22, 23, and 25
+were done on branches; 25's window check is still owed and is recorded
+under it). The first unchecked milestones are 21, "Dictionary", under
+"## Plugins", and 24, "Clipping", under "## Clipping and rendering"; one
+or both may be running on a branch (check `git worktree list`). Do only
+the first unchecked milestone no branch holds, stop at its "done when",
+tick it, write notes, add an entry here with a fresh handoff prompt, and
+commit. Once 25 is merged, run `ILMI_SMOKE=render` against a scratch copy
+of the corpus vault with `three-chapters.epub` in it, read its log and
+screenshots, and record the window check under 25. Tooling and
+verification are as the ground rules and the entries below describe;
+`export PATH=$HOME/.cargo/bin:/opt/homebrew/bin:$PATH` first. If port
+1420 is held by a run that is not yours, do not kill it: say so in your
+report and leave the window check owed. Suite 420 (22 files) on this
+branch, `cargo test` 12, and typecheck must be green before a commit.
+The user's own `.epub` and `.apkg` are still untried.
+```
+
+---
+
 ## 2026-10-18 — milestone 24: clipping, a pasted link lands as the clipper would write it
 
 Done on the branch `worktree-agent-a6748a2448940aba8` (worktree
@@ -109,7 +231,6 @@ likely to meet 21: `FORMAT.md`, `src/format/model.ts`,
   the format learning more date forms; the format keeps its two.
 - The jsdom selector limit is worked around in the test harness, not in
   `clipPage`: the webview never hits it, and `clipPage` stays plain.
-
 ### Handoff prompt
 
 ```

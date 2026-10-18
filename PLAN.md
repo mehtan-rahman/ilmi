@@ -1376,9 +1376,9 @@ notices `placed · N chapters in Book`, opens the first chapter. Smoke:
 `three-chapters.epub` in the vault); shots `epub-intake`, `epub-chapter`,
 `epub-reading`. Tests: 344 (+17 in `epub.test.ts`), `cargo test` 9 (+4).
 Open: the user's own book has not been tried (none provided; drop one on
-the intake, or `ILMI_SMOKE=epub ILMI_EPUB=<path>`); the reader shows
-`*emphasis*` with its asterisks, since nothing renders Markdown emphasis
-yet; a footnote reference's number lands glued to its word
+the intake, or `ILMI_SMOKE=epub ILMI_EPUB=<path>`); the reader showed
+`*emphasis*` with its asterisks until 25 drew it (closed there); a
+footnote reference's number lands glued to its word
 (`afternoon.1`) and the note's text stays as a paragraph where the `aside`
 was; images are counted and not copied (the format has no place for them
 beside a source); `linear="no"` spine items land like the rest; a
@@ -2139,7 +2139,74 @@ stop), reads the preview, places it, opens it, logs the first twenty
 lines and the images landed in `<stem>/`, and clicks the inspector's
 `url`; screenshots read.
 
-### [ ] 25. Rendering — the reader shows Markdown as Markdown
+### [x] 25. Rendering — the reader shows Markdown as Markdown
+Done 2026-10-18 on the branch `worktree-agent-a2df4fefff0acc940`; commit `c574193`.
+Notes: `src/reader/inline.ts` finds inline Markdown as ranges over the raw
+text (`inlineRanges`: em, strong, code, link, image, each with its `inner`
+span, `href`, and `children`; CommonMark's flanking rules reduced: an opener
+is followed by something that is not whitespace, a closer preceded by one,
+`_` neither opens nor closes inside a word; nested by recursion, so `*both
+**ways***` reads as the EPUB reduction writes it; a code span closes at the
+backtick run of the same length; `[text](href)` takes one level of nested
+brackets and a destination with no whitespace, parentheses balanced; `\`
+skips a character; `markerRanges`, `flatRanges`, `imageOnly`, `literalSpans`).
+`src/reader/blocks.ts` names a raw block's shape (`classifyRaw`: fenced or
+indented code with the info string's first word as `lang`, a list with its
+items' continuation and nested lines dedented by the content offset, a quote
+with its `>` off, a GFM table with its alignment row, a thematic rule, else
+`other`; `splitBlocks` splits a quote's or an item's text as the parser
+splits a body, a paragraph ending where a list, quote, fence, or heading
+begins). `src/reader/plugins.ts`: the `marks` plugin decorates the ranges
+(`md-em`, `md-strong`, `md-code`, `md-link[data-href]`, `md-alt`) and the
+markers (`md-mark`, plus `hidden` when `frozen()` says so; recomputed on a
+`frozenKey` meta, which the Reader dispatches when the field flips), and
+skips editorial marks inside code, links, and images; an `images` plugin
+holds `Map<src, ImageState>` (`{ url }`, `broken`, `hidden`, `pending`),
+fed by `StateOptions.images` (an `ImageLoader`) from its view part, which
+asks once per source and dispatches only when a load lands, never inside
+the view's construction; `imagesKey` meta sets one source or `'reset'`. An
+image is a widget before its source (`img.md-img` with the alt, its
+`onerror` marking the source broken; else `span.md-img-slot[data-state]`),
+an image-only paragraph a `dd-img` node decoration (`kept` when the toggle
+held it back, `broken` when it could not be had, the alt then in mono).
+App: `src/app/images.ts` (`imagePath` resolves against the document's
+folder, `/` from the root, percent escapes decoded, `..` out of the vault
+refused; `imageLoader` reads the vault file through `fs.readBytes` as a
+blob URL, every URL revoked when the reader unmounts; a remote address
+passes while `remoteImages` is on, else `hidden`). `Reader.tsx`: `richHTML`
+draws the same inline rules, its markers `md-mark hidden` since nothing is
+typed there; `rawHTML` / `RawView` draw a raw block as `div.raw.rendered
+[data-kind]` holding `.raw-view` and `.raw-src`, the source shown by CSS
+while the node is selected, an HTML block or a comment staying `pre.raw` as
+before; `handleClick` opens a `.md-link` on ⌘-click through `openLink`
+(`window.open`), a plain click puts the caret; `CardText` and the queue's
+`Body` go through `cardHTML` / `richHTML` / `clozeHTML`, so the deck's rows
+and the queue read the same way as the faces. Tweaks: `show remote images`
+(store `remoteImages`, default on, saved in `ilmi.tweaks`); a flip resets
+the image map and the loader looks again. CSS in `reader.css`: `.md-mark {
+color: var(--fg-5) }`, `.md-mark.hidden { font-size: 0 }`, the drawn blocks'
+rules under `.raw-view`. Corpus: `vault/fleeting/markdown-sampler.md`
+(frozen, imported, no card, no `read:`, every inline and block form) with
+`markdown-sampler/mark.png` (32×20, written once by a script); the walk
+lists the folder as the document's children, empty, as 24's image folders
+will be. Smoke: `ILMI_SMOKE=render` written, not run (the window and port
+1420 belonged to the other session). Tests: 420 (+18 in
+`reader-view.test.ts`, +1 `store.test.ts`, +1 roundtrip per corpus file ×2),
+22 files; typecheck clean.
+Open: the window check (the `render` smoke and its screenshots, the
+markers' width at 0, a blob URL in WKWebView, a list click selecting the
+atom); ⌘-click goes through `window.open`, and whether the webview hands
+that to the browser is for the window check (24 plans the `opener` plugin
+for the inspector's `url`; `openLink` is the one place to switch); emphasis
+that spans a math chip is not found, since ranges are per text node; an
+image in the line draws at its natural size; a task list's `[ ]` draws as
+text; `[text]` with no `(href)` still reads as a note, as before; a drawn
+block's source shows only while selected and is still not editable in
+place; a reading row's snippet in the queue (`snippetOf`) and the
+`[figure: alt]` marks of 19 are untouched; `richHTML` keeps the hidden
+markers in the DOM, so text copied from a face carries them; a code
+block's `language-*` class is set and nothing colours it yet; three mixed
+delimiters (`***a**b*`) follow the simple rule, not CommonMark's.
 The reader is a ProseMirror editor over the document's blocks, with math
 as atoms and editorial marks lit by decorations; raw blocks (lists,
 quotes, code, tables, headings of other levels) sit in the flow as mono

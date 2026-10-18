@@ -923,15 +923,133 @@ author only because the number is year-shaped.
   spreads, EPUB, scanned PDFs without a text layer (they open, nothing
   can be selected, and the meta row says `no text`).
 
+## Importing cards
+
+Cards made elsewhere should land in a vault as deck files, not be retyped.
+Two sources, in the user's words: "an anki deck or text import as well
+(copy paste some text and indicate what starts a question like "Q:" and
+what starts an answer like "A", quizlet has a similar feature)". Both go
+through the intake, which already takes text, a link, and a PDF: pasted
+or dropped text that reads as cards gets a delimiter row and lands as a
+deck; a dropped `.apkg` lands as one deck file per Anki deck. Everything
+written is the card syntax of FORMAT.md §5, so nothing in the format
+changes; what Anki has that the format lacks (hints, media, per-direction
+schedules) is dropped with a count in the summary, never guessed at.
+
+Same rules as above: one milestone per session, a FORMAT.md change comes
+with a corpus file and a test, ask before a screen or a setting not listed
+here. The user asked for both of these, so the intake growing a cards mode
+and taking `.apkg` is in scope; a new screen is not.
+
+### [ ] 16. Cards from text — paste or drop a list, choose the delimiters, land a deck
+The intake reads pasted or dropped text as cards when it can: a
+`src/import/cards.ts` module splits text by two delimiters, *between
+front and back* and *between cards*, and the intake shows a delimiter row
+when the split finds at least two cards.
+
+- Between front and back, in detection order: a `Q:`/`A:` prefix pair
+  (one line starting `Q:`/`Question:` then one starting `A:`/`Answer:`,
+  case-insensitive, the pair's text joined by a space), a tab, ` :: `,
+  ` - ` / ` – `, a comma; between cards: a blank line, a newline, a
+  semicolon. Detection picks the pair of delimiters that yields the most
+  cards with both sides non-empty and the fewest leftover lines; the
+  user can override either from the row (a set of small buttons, as the
+  deck's `default-card` row in the inspector, plus a `custom` field for
+  each). A line that splits into more than two cells keeps the first as
+  the front and joins the rest with ` / ` (Anki's extra fields).
+- Anki's text export is recognised by its `#separator:`, `#html:`,
+  `#tags column:`, `#deck column:`, `#notetype column:` header lines: the
+  separator is taken from the header, HTML is reduced to text through the
+  existing import pipeline (`src/import/readable.ts` / `text.ts`), the
+  tags, deck, and notetype columns are dropped. `{{c1::x}}` in a cell is a
+  cloze card and the cell is written whole; Anki's `{{c1::x::hint}}`
+  loses the hint (FORMAT.md §5.1), counted. `[sound:…]` and `<img>` are
+  dropped, counted.
+- Each card is written as `front :: back` (one direction) or
+  `front ::: back` when the row's *both directions* toggle is on; a card
+  whose front or back contains a newline is written in the multi-line
+  form with `?` / `??`. The deck lands as `type: deck`, no `default-card`,
+  the title from the intake's name field (default `cards`), in the chosen
+  folder, like a source. Lines that did not split are kept at the end of
+  the file as plain paragraphs under a `## not cards` heading, so nothing
+  pasted is lost, and the preview says how many.
+- The preview under the delimiter row shows the first three cards as the
+  deck lens would, the count (`N cards · M lines not cards`), and the
+  dropped-things count. `place & open` opens the deck lens.
+
+Done when: `cards.test.ts` covers each delimiter, the prefix pair across
+blank-separated and newline-separated input, auto-detection choosing the
+delimiters on a Quizlet-style tab export, an Anki text export with
+headers and HTML, a cloze cell, three-cell lines, and a text with no cards
+(the intake then behaves as before, no row); the written deck parses with
+no diagnostics and `cardForm` on every card paragraph; `ILMI_SMOKE=cards-text`
+pastes a `Q:`/`A:` list and a tab list, reads the row's choice, flips a
+delimiter, places both, and logs each file's lines; screenshots read.
+
+### [ ] 17. Cards from Anki — drop an `.apkg`, each deck lands as a deck file with its progress
+A `.apkg` is a zip holding an SQLite database (`collection.anki2`, or
+`collection.anki21b` compressed with zstd in newer exports) plus a `media`
+map. The webview cannot read SQLite, so the Rust side does:
+`read_anki_package(path)` in `src-tauri/src/anki.rs` (crates `zip`,
+`zstd`, `rusqlite` with `bundled`) unzips to a temp dir, opens the
+database, and returns JSON: the collection's creation epoch, decks (id,
+name), notetypes (id, name, field names, cloze flag, template count; from
+the `col.models` / `col.decks` JSON in old schemas or the `notetypes`,
+`fields`, `templates`, `decks` tables in schema 18), notes (id, notetype,
+fields, tags), and cards (note, ord, deck, type, queue, ivl, due, factor,
+reps, lapses). Media files are not extracted in this milestone.
+
+`src/import/anki.ts` maps that to vault files, after
+`src/import/supermemo/docs.ts`:
+
+- One deck file per Anki deck that has cards, `type: deck`; `Parent::Child`
+  becomes `Parent/Child.md` under the chosen folder, the deck's own name as
+  the title. Empty decks are skipped, counted.
+- A note on a one-template notetype → `front :: back` from its first two
+  fields (more fields joined with ` / `, as 16); a two-template notetype
+  whose second template is the reverse (`{{Back}}` on its front) →
+  `front ::: back`; a cloze notetype → the first field written whole, its
+  blanks kept, hints stripped and counted; anything else → first field
+  `::` the rest, counted under `other notetypes`. Field HTML goes through
+  the same reduction as 16. A note whose cells are empty after reduction
+  is dropped, counted.
+- Progress: a review card (type 2) seeds `<!-- sr … -->` as `seedOf` does
+  for SuperMemo: `due` from the creation epoch plus `due` days,
+  `state=review`, `stability=ivl`, `ivl`, `reps`, `lapses`, `last` = due
+  minus `ivl`, `difficulty` from the ease factor on a straight line
+  (2500 → 5, 1300 → 8, clamped to 1–10). New and learning cards get no
+  line. A cloze note's cards seed `<!-- sr cN -->` per group from each
+  card's `ord` + 1; a reversed note's two cards keep only the forward
+  card's schedule (one schedule per bidir card, FORMAT.md §5), the other
+  counted.
+- The intake takes `.apkg` from the picker and a drop (as `.pdf` in 15):
+  the preview lists the decks with their card counts and the dropped
+  counts; `place` writes the files and logs a summary line per deck.
+  `scripts/import-anki.ts` is not needed; the window is the way in.
+
+Done when: a `cargo test` in `anki.rs` builds a two-deck package in a
+temp dir with `rusqlite` (one basic note, one reversed note, one cloze
+note with two blanks, one empty deck; schema 11 is enough) and reads it
+back; `anki.test.ts` maps that package's JSON (saved as a fixture under
+`src/import/__tests__/anki/`) to files that parse with no diagnostics,
+with the seeded `sr` lines checked against the arithmetic above;
+`ILMI_SMOKE=anki` drops the fixture package, built into an `.apkg` by a
+small script (`npm run fixture:anki`, Node's `node:sqlite` or the Rust
+test writing it out), reads the preview, places it, opens a deck, and
+logs each file's lines; screenshots read; the user's own export tried
+when they provide one.
+
 ## Notes for the next session
 
-The plan is complete: every milestone above is ticked. What is left is a
-polish pass over the open items each milestone's notes record (10: no
-palette command or key for priority, no stepper; 11: no growth row before
-enrolment, the preview ignores lateness; 12: the sidebar and inspector
-counts are the whole day while the strip folds, no key for `postpone the
-rest`; 13: a due-day field on the draft's inspector; 14: the user's real
-collection, with their say-so; 15: the list under it) and, with the user,
-whether the next thing is that pass, the margin-gloss text flow the ground
-rules keep out of the plan, or something new. The handoff prompt at the
-top of `BUILD-LOG.md` lists the items.
+Milestones 0–15 are ticked; 16 and 17 under *Importing cards* are next,
+in order. After them, what is left is a polish pass over the open items
+each milestone's notes record (10: no palette command or key for
+priority, no stepper; 11: no growth row before enrolment, the preview
+ignores lateness; 12: the sidebar and inspector counts are the whole day
+while the strip folds, no key for `postpone the rest`; 13: a due-day field
+on the draft's inspector; 14: the user's real collection, with their
+say-so; 15: the list under it; the session card's faces are not editable
+in place) and, with the user, whether the next thing is that pass, the
+margin-gloss text flow the ground rules keep out of the plan, or
+something new. The handoff prompt at the top of `BUILD-LOG.md` lists the
+items.

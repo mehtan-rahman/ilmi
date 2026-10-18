@@ -8,9 +8,10 @@ import { SavedQueries } from './Queue.js';
 import { TopStrip } from './TopStrip.js';
 import { Tree } from './Tree.js';
 import { Tweaks } from './Tweaks.js';
+import { Welcome } from './Welcome.js';
 import { activeTab, closeTab, splitPane } from './panes.js';
 import { ACCENTS, INSP_MAX, INSP_MIN, SIDE_MAX, SIDE_MIN, useApp } from './store.js';
-import { openInitialVault, openNode, pickVault, rememberTab, setInspector, setSidebar } from './vault.js';
+import { openInitialVault, openNode, rememberTab, setInspector, setSidebar } from './vault.js';
 import './app.css';
 import './chrome.css';
 
@@ -52,6 +53,7 @@ export function App() {
   const panes = useApp((s) => s.panes);
   const paletteOpen = useApp((s) => s.paletteOpen);
   const tweaksOpen = useApp((s) => s.tweaksOpen);
+  const started = useApp((s) => s.started);
   const setPanes = useApp((s) => s.setPanes);
 
   // the tweaks, as CSS
@@ -89,7 +91,8 @@ export function App() {
       const k = e.key.toLowerCase();
       if (k === 'k') {
         e.preventDefault();
-        useApp.setState((s) => ({ paletteOpen: !s.paletteOpen }));
+        // the palette is the open vault's; the welcome has its own keys
+        if (useApp.getState().vault !== null) useApp.setState((s) => ({ paletteOpen: !s.paletteOpen }));
         return;
       }
       if (k === ',') {
@@ -117,14 +120,11 @@ export function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, [setPanes]);
 
+  // before a vault is open: the welcome, once the start decision is made (a reopening vault shows no welcome first)
   if (vault === null) {
     return (
       <div className="shell" style={{ '--side-w': '0px', '--insp-w': '0px' } as React.CSSProperties}>
-        <main className="welcome">
-          <button className="open" type="button" onClick={() => void pickVault().catch(console.error)}>
-            open vault
-          </button>
-        </main>
+        {started && <Welcome />}
         {tweaksOpen && <Tweaks />}
       </div>
     );

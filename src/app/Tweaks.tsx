@@ -1,7 +1,7 @@
-// The tweaks panel: theme, accent, density, the day's budget, and where
-// clippings land. ⌘, opens it. The first three live in the webview's
-// storage, not in any vault; the budget and the clippings folder are the
-// open vault's, in its `.ilmi/state.json`.
+// The tweaks panel: theme, accent, density, whether the last vault reopens
+// on start, the day's budget, and where clippings land. ⌘, opens it. The
+// first four live in the webview's storage, not in any vault; the budget
+// and the clippings folder are the open vault's, in its `.ilmi/state.json`.
 
 import { useEffect, useState } from 'react';
 import { PluginsSection } from '../plugins/PluginsSection.js';
@@ -65,6 +65,7 @@ export function Tweaks() {
   const theme = useApp((s) => s.theme);
   const accent = useApp((s) => s.accent);
   const density = useApp((s) => s.density);
+  const reopen = useApp((s) => s.reopen);
   const vault = useApp((s) => s.vault);
   const budget = useApp((s) => s.budget);
   const clipDir = useApp((s) => s.clipDir);
@@ -112,6 +113,13 @@ export function Tweaks() {
           value={density}
           onChange={(e) => useApp.getState().setDensity(Number(e.target.value))}
         />
+      </div>
+      <div className="tw-row">
+        <span className="tw-lbl">reopen the last vault on start</span>
+        <div className="tw-seg">
+          <button type="button" data-active={reopen ? '1' : '0'} onClick={() => useApp.getState().setReopen(true)}>on</button>
+          <button type="button" data-active={reopen ? '0' : '1'} onClick={() => useApp.getState().setReopen(false)}>off</button>
+        </div>
       </div>
       {vault !== null && (
         <div className="tw-row">

@@ -63,15 +63,25 @@
 // plugin's folder, and adds it back from a zip (`ILMI_PLUGIN_ZIP=<path>`,
 // `plugins/dist/hello.zip` after `npm run plugins`) through the section's
 // hook.
+// `ILMI_SMOKE=welcome` runs before any vault opens: it seeds the recents
+// with the scratch vault (`ILMI_VAULT`) and a path that does not exist,
+// turns `reopen the last vault on start` off, reads the welcome's rows and
+// the dimmed one, opens the scratch vault from its row, closes it from the
+// palette, names a new vault beside the scratch one and reads its
+// `start here.md`, switches back through the palette's `vaults` group,
+// turns the toggle on, and reloads the page; the second run (a
+// sessionStorage marker) only checks that the vault opened itself.
 
 import { invoke } from '@tauri-apps/api/core';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { info } from '@tauri-apps/plugin-log';
 import { queue } from '../schedule/index.js';
 import type { Vault } from '../vault/index.js';
 import { cardLabel } from './chrome.js';
 import { GLYPH, SESSION, queueId, titleOf } from './names.js';
+import { vaultName } from './recents.js';
 import { useApp } from './store.js';
-import { createNode, moveNode, openCard, openIntake, openNode, openSession, removeNode, renameNode, setInspector } from './vault.js';
+import { createNode, currentVault, moveNode, openCard, openIntake, openNode, openSession, removeNode, renameNode, setInspector, startFromRecents } from './vault.js';
 import { activeTab } from './panes.js';
 
 const WOZ = 'papers/wozniak-1990.md';
@@ -1698,6 +1708,129 @@ export async function smokePlugins(vault: Vault): Promise<void> {
     }
     useApp.setState({ tweaksOpen: false });
     log('done');
+  } catch (e) {
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+export async function smokeWelcome(scratch: string | null): Promise<void> {
+  const log = (s: string) => info(`smoke welcome: ${s}`);
+  const shot = async (name: string, ms = 10000) => { await sleep(600); log(`shot: ${name}`); await sleep(ms); };
+  const q = <T extends Element>(sel: string) => document.querySelector<T>(sel);
+  const qa = <T extends Element>(sel: string) => Array.from(document.querySelectorAll<T>(sel));
+  const MARK = 'ilmi.smoke.welcome';
+  const rows = () => qa<HTMLElement>('.welcome-row').map((r) => `${r.querySelector('.pt')?.textContent} · ${r.querySelector('.ptag')?.textContent}${r.dataset.gone === '1' ? ' (dimmed)' : ''}${r.dataset.sel === '1' ? ' ←' : ''}`).join(' | ');
+  const title = async () => { try { return await getCurrentWindow().title(); } catch { return '?'; } };
+  const type = (el: HTMLInputElement, text: string) => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(el, text);
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  };
+  const key = (el: Element | Window, k: string) => el.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));
+  const paletteRows = () => qa<HTMLElement>('.palette-row').map((r) => `[${r.dataset.t}] ${r.querySelector('.pt')?.textContent}`);
+  const viaPalette = async (text: string, pick: (r: HTMLElement) => boolean) => {
+    useApp.setState({ paletteOpen: true });
+    const input = await until(() => q<HTMLInputElement>('.palette-input input'));
+    type(input, text);
+    await sleep(150);
+    const list = qa<HTMLElement>('.palette-row');
+    const at = list.findIndex(pick);
+    log(`palette "${text}": ${list.length} rows, picked ${at}: ${paletteRows().slice(0, 4).join(' / ')}`);
+    for (let i = 0; i < at; i++) key(input, 'ArrowDown');
+    key(input, 'Enter');
+    await until(() => (q('.palette-overlay') ? null : true));
+  };
+  try {
+    if (!scratch) throw new Error('ILMI_VAULT names the scratch vault to seed the recents with');
+    if (sessionStorage.getItem(MARK)) {
+      // the second run: the toggle is on, the scratch vault is the newest; it should open itself
+      sessionStorage.removeItem(MARK);
+      await startFromRecents();
+      await sleep(800);
+      const s = useApp.getState();
+      log(`after reload: reopen ${s.reopen}; vault ${s.vault}; started ${s.started}; welcome shown ${!!q('.welcome')}; title "${await title()}"`);
+      log(s.vault === scratch ? 'the vault opened itself' : 'the vault did NOT open itself');
+      await shot('welcome-reopened');
+      log('done');
+      return;
+    }
+
+    // the first run: seed the recents, toggle off, then let the start decide
+    const gonePath = '/nowhere/gone-vault';
+    const s0 = useApp.getState();
+    s0.setReopen(false);
+    s0.setRecents([
+      { path: scratch, name: vaultName(scratch), opened: new Date().toISOString() },
+      { path: gonePath, name: 'gone-vault', opened: new Date(Date.now() - 3 * 86400000).toISOString() },
+    ]);
+    await startFromRecents();
+    await until(() => q('.welcome'));
+    await sleep(400);
+    log(`welcome: mark "${q('.welcome-mark')?.textContent}"; line "${q('.welcome-line')?.textContent}"; buttons ${qa('.welcome-acts button').map((b) => b.textContent).join(', ')}; foot "${q('.welcome .palette-foot')?.textContent}"`);
+    log(`rows: ${rows()}; gone ${JSON.stringify(useApp.getState().gone)}; title "${await title()}"`);
+    await shot('welcome');
+    key(window, 'j');
+    await sleep(100);
+    const forget = q('.welcome-row[data-gone="1"] .welcome-forget');
+    log(`after j: ${rows()}; forget ${forget ? getComputedStyle(forget).visibility : 'missing'}`);
+    key(window, 'k');
+    await sleep(100);
+
+    // ⏎ opens the top row
+    key(window, 'Enter');
+    await until(() => (useApp.getState().vault === scratch ? true : null), 10000);
+    await until(() => q('.tabbar'));
+    await sleep(600);
+    log(`opened from the row: vault ${useApp.getState().vault}; title "${await title()}"; recents ${useApp.getState().recents.map((r) => r.name).join(', ')}; stored ${localStorage.getItem('ilmi.recents')?.slice(0, 160)}`);
+    await shot('welcome-opened');
+
+    // close from the palette: back to the welcome, the title plain
+    await viaPalette('close vault', (r) => r.dataset.t === 'command' && r.querySelector('.pt')?.textContent === 'close vault');
+    await until(() => q('.welcome'));
+    await sleep(400);
+    log(`closed: vault ${useApp.getState().vault}; title "${await title()}"; rows: ${rows()}`);
+
+    // a new vault beside the scratch one: the picker cannot be faked, so the parent is set through the store
+    const parent = scratch.slice(0, scratch.lastIndexOf('/'));
+    const name = `welcome-smoke-${new Date().toISOString().slice(11, 19).replace(/:/g, '')}`;
+    useApp.setState({ newVaultIn: parent });
+    const field = await until(() => q<HTMLInputElement>('.welcome-name input'));
+    log(`naming in "${q('.welcome-name .psub')?.textContent}"; field focused ${document.activeElement === field}`);
+    type(field, 'a/b');
+    key(field, 'Enter');
+    await sleep(300);
+    log(`a bad name: "${q('.welcome-problem')?.textContent}"; still on the welcome ${!!q('.welcome')}`);
+    type(field, name);
+    await shot('welcome-naming', 4000);
+    key(field, 'Enter');
+    await until(() => (useApp.getState().vault === `${parent}/${name}` ? true : null), 15000);
+    await until(() => (useApp.getState().files.length ? true : null));
+    await sleep(800);
+    const nv = currentVault()!;
+    const starter = await nv.read('start here.md', true);
+    log(`new vault: ${nv.root}; files ${nv.documents().join(', ')}; title "${await title()}"; tab "${q('.tabbar .tab[data-active="1"] .title')?.textContent}"`);
+    log(`start here.md: ${starter.text.split('\n').filter(Boolean).slice(0, 6).map((l) => l.slice(0, 60)).join(' / ')}; blocks ${starter.doc.blocks.map((b) => b.kind).join(',')}; diagnostics ${starter.diagnostics.length}; queue ${useApp.getState().queue.map((i) => i.kind).join(',')}`);
+    await shot('welcome-new-vault');
+
+    // back to the scratch vault through the palette's vaults group
+    await viaPalette(vaultName(scratch), (r) => r.dataset.t === 'vault' && r.querySelector('.pt')?.textContent === vaultName(scratch));
+    await until(() => (useApp.getState().vault === scratch ? true : null), 10000);
+    await sleep(600);
+    log(`switched back: vault ${useApp.getState().vault}; title "${await title()}"; recents ${useApp.getState().recents.map((r) => r.name).join(', ')}`);
+
+    // the toggle on, from the tweaks panel; then the page reloads and the second run checks
+    useApp.setState({ tweaksOpen: true });
+    const row = await until(() => qa<HTMLElement>('.tweaks .tw-row').find((r) => r.querySelector('.tw-lbl')?.textContent?.startsWith('reopen')));
+    const buttons = Array.from(row.querySelectorAll<HTMLButtonElement>('button'));
+    log(`tweaks row "${row.querySelector('.tw-lbl')?.textContent}": ${buttons.map((b) => `${b.textContent}${b.dataset.active === '1' ? '*' : ''}`).join(' ')}`);
+    buttons.find((b) => b.textContent === 'on')?.click();
+    await sleep(200);
+    log(`toggle on: reopen ${useApp.getState().reopen}; stored ${localStorage.getItem('ilmi.tweaks')}`);
+    await shot('welcome-tweaks', 4000);
+    useApp.setState({ tweaksOpen: false });
+    sessionStorage.setItem(MARK, '1');
+    log('reloading');
+    await sleep(300);
+    location.reload();
   } catch (e) {
     log(`failed: ${e instanceof Error ? e.message : String(e)}`);
   }

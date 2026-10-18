@@ -1764,7 +1764,81 @@ The welcome is one button and the app forgets the vault when it quits.
 The user: "need to have some fleshed out opening menu & automatically
 open to last vault opened whenever the app starts".
 
-### [ ] 23. Opening — a welcome that remembers, the last vault reopened on start
+### [x] 23. Opening — a welcome that remembers, the last vault reopened on start
+Done 2026-10-18 on the branch `worktree-agent-a34f19b66a3b6da95` (worktree
+`.claude/worktrees/agent-a34f19b66a3b6da95`), beside milestone 20 on main;
+commit `f52d36e`.
+Notes: `src/app/recents.ts` is the pure side: `Recent { path, name,
+opened }` (`opened` an ISO instant), `RECENTS_MAX` 8, `addRecent(list,
+path, now)` (to the top, one per path, the oldest beyond eight dropped),
+`forgetRecent`, `cleanRecents(raw)` (what storage held: bad rows out,
+sorted newest first, capped), `vaultName(path)` (the directory's last
+segment), `openedLabel` (`opened today` / `yesterday` / `3d ago` / `2mo
+ago`, through `agoLabel` in `items.ts`, `dueLabel`'s words looking back),
+`GONE` (`not where it was`), and `decideStart(list, reopen, present)` →
+`reopen` the newest when the toggle is on and its folder is in `present`,
+else `welcome`. Store: `reopen` is a fourth tweak (`ilmi.tweaks`, default
+on, `setReopen`); `recents` is loaded and saved under `ilmi.recents` the
+same way (`setRecents`); `gone` holds the paths probed and not found;
+`started` is false until the start decision, so the welcome does not
+flash before a vault reopens itself; `newVaultIn` is the parent folder a
+new vault is being named in. `vault.ts`: `openVault` adds the path to the
+recents, drops it from `gone`, sets `started`, and sets the window title
+`<name> · ilmi` (`getCurrentWindow().setTitle`, `core:window:allow-set-
+title` added to the capability); `closeVault()` stops the watcher and
+resets the store to the welcome (title `ilmi`); `forgetVault(path)`;
+`pickVaultParent()` (the folder picker, then `newVaultIn`); `newVault(
+parent, name)` (`cleanName`, `allow_vault` on the parent, `already
+there` when the folder exists, `mkdir`, `openVault`, then `importDoc` of
+the starter and `read: due today` on it, opened); `probeVaults(paths)`
+(`allow_vault` then `stat` on each, since a remembered path is outside
+the fs scope until it is let in); `startFromRecents()` (probe, `gone`,
+decide, reopen or `started`); `openInitialVault` runs in release too
+now: dev `ILMI_SMOKE=welcome` runs its smoke before any vault opens,
+dev `ILMI_VAULT` opens that vault, else the recents decide.
+`src/app/starter.ts`: `STARTER_TITLE` (`start here`), `STARTER_TEXT`
+(three headings, four short paragraphs, one inline q&a card; parses
+with no diagnostics). `src/app/Welcome.tsx` replaces the block in
+`App.tsx`: the palette's panel in the canvas (`.welcome-panel`, the rows
+reuse `.palette-row` and the foot `.palette-foot`), the wordmark, the
+README's first sentence lowercased as one italic line, `open vault` and
+`new vault`, the name field (`<parent>/` dimmed, ⏎ creates, esc cancels,
+a refusal in small type beside it), the rows (name, path dimmed, `opened
+<when>` as the tag; a gone row dimmed with `not where it was` and a
+`forget` shown on hover or selection), ⏎ / j k / o / n, a Tauri drag-drop
+of a folder opened as a vault (the panel's hairline turns to the accent
+while over), and a row whose open fails joins `gone`. The palette:
+`open vault…`, `new vault…` (the parent picked first, then `closeVault`
+so the name is taken on the welcome), `close vault`; the other recent
+vaults as `vault` entries under `vaults` (`EntryTag` `vault`, glyph `⌂`,
+`buildIndex`'s fifth parameter, `target: { vault }` → `openVault`); ⌘K
+does nothing on the welcome. Tweaks: `reopen the last vault on start`
+as an on/off segment under density. README: the opening paragraph, the
+tweaks line, a welcome line in *Keys*, the smoke mode. Tests: 368 (+14
+in `welcome.test.ts`: add, de-duplicate, cap, remove, clean, the name,
+the `opened` words, `GONE`, the four start decisions, the starter clean
+with one q&a card and three headings, the palette's `vaults` entries).
+Dev: `ILMI_SMOKE=welcome` (written, **not run**: the window and port 1420
+belonged to the other session) seeds the recents with `ILMI_VAULT` and
+`/nowhere/gone-vault`, turns the toggle off, reads the rows and the
+dimmed one, j k, ⏎ on the top row, `close vault` from the palette,
+`newVaultIn` set through the store (the picker cannot be faked), a bad
+name refused, a `welcome-smoke-<hhmmss>` vault made beside the scratch
+one with `start here.md` read line by line, back through the palette's
+`vaults` group, the toggle on from the tweaks panel, a sessionStorage
+marker and `location.reload()`; the second run logs whether the vault
+opened itself; shots `welcome`, `welcome-opened`, `welcome-naming`,
+`welcome-new-vault`, `welcome-tweaks`, `welcome-reopened`. Not done:
+the window check (owed to the merge session; the capability change
+needs the Rust side rebuilt, which `npm run tauri dev` does); the
+starter vault made by the smoke is left on disk beside the scratch
+vault; a vault that reopens itself but whose `.ilmi` is unreadable
+falls to the welcome with its row dimmed, which reads as gone; `new
+vault…` from the palette closes the open vault before the name is
+typed, so esc there leaves the welcome up (the vault is one row away);
+the window title is not restored to `ilmi` if the app is quit while a
+vault is open (the OS sets it fresh next start); no key or command
+forgets a recent vault, only the hover button.
 - Recents: every vault opened is remembered outside any vault (the
   tweaks' localStorage pattern in `src/app/store.ts`: `{ path, name,
   opened }`, newest first, eight at most, de-duplicated by path). On
@@ -1807,10 +1881,118 @@ group, turns the toggle on, reloads the page (`location.reload()`, a
 `sessionStorage` phase marker so the second run of the smoke only
 checks) and logs that the vault opened itself; screenshots read.
 
+## Clipping and rendering
+
+Milestone 22 built a door (`ilmi://`) and the user then said what they
+meant: "I wanted a way to save web pages using the clipper, don't
+necessarily need a whole extension (e.g., could paste the link into ilmi
+and it uses the core engine of the clipper to dress it nicely)". The
+Obsidian Web Clipper's engine is Defuddle (github.com/kepano/defuddle,
+MIT, on npm), which takes a page's DOM and returns the article's content
+with the chrome removed plus its title, author, published date, site,
+and description, and can emit Markdown. ilmi's intake already fetches a
+pasted address and runs its own readability pass; Defuddle replaces that
+pass, and the result is written the way the clipper would write it.
+A page dressed that way then has emphasis, links, lists, quotes, code,
+tables, and images, which the reader today shows as asterisks and mono
+raw blocks, so the second milestone is the reader rendering Markdown as
+Markdown. Both apply to EPUB chapters (19) and to `ilmi://new?url=` (22)
+for free, since they share the paths.
+
+### [ ] 24. Clipping — a pasted link lands as the clipper would write it
+- `defuddle` as a dependency; the intake's address path (`fetchReadable`
+  in `src/app/fetch.ts` → `src/import/readable.ts`) runs Defuddle on the
+  fetched document (`new Defuddle(doc, { url, markdown: true })` or the
+  equivalent of the version installed; check its API and record it) and
+  takes `title`, `author`, `published`, `site`, `description`,
+  `wordCount`, and the content as Markdown. The old pass stays only as
+  the fallback when Defuddle returns nothing, counted in the preview.
+  Where Defuddle does not emit Markdown itself, the content HTML goes
+  through the same direct reduction 19 uses, extended with links
+  (`[text](href)`, absolute), inline `*emphasis*` / `**strong**` /
+  `` `code` ``, fenced code with its language, tables as GFM tables,
+  footnotes as `[^n]` with a `## notes` section at the end, and math
+  (MathML or `\(…\)` → `$…$` / `$$…$$`). Nothing the format treats as
+  a card syntax may be produced by accident: a ` :: ` in page text is
+  escaped to `::`-without-spaces or the line is reflowed, and `{{` is
+  written `{ {`, with a test for each.
+- FORMAT.md §3 gains three optional fields, with a corpus file
+  (`vault/fleeting/clipped-page.md`) and a round-trip test: `url` (the
+  page's address, quoted as `title` is), `author`, `published` (a day
+  or a UTC instant as `imported` allows). The intake writes them; the
+  inspector's source block shows `url` as a link that opens in the
+  browser (the shell plugin's `open`, or the `opener` plugin; the one
+  new permission), `author` and `published` as lines. `ilmi://new?url=`
+  writes the same fields.
+- Images: `<img>` in the content with an absolute `src` are downloaded
+  through the http plugin into the document's own folder (`<stem>/`,
+  where its extracts live; `img-01.png` …, the extension from the content
+  type) and referenced relatively, `![alt](<stem>/img-01.png)`; a
+  download that fails leaves the absolute URL in place. A Tweaks toggle
+  `download images when clipping`, default on. The walk already ignores
+  files that are not `.md` or `.pdf` in a document's folder; confirm and
+  say so.
+- The intake's preview for an address shows the site and title line,
+  author and published when present, `N words · ~M min`, the image count,
+  and `via defuddle` or `via the fallback`; the title field defaults to
+  the page's title. The sample address path in the smoke keeps working.
+
+Done when: `clip-page.test.ts` runs Defuddle on three saved HTML pages
+under `src/import/__tests__/pages/` (an article with author, date, a
+code block, a table, and two images; a page where the fallback is
+needed; a page with ` :: ` and `{{` in its prose) and checks the
+front-matter fields, the Markdown structure line for line, the escapes,
+and that the written file parses with no diagnostics and has no card;
+`format.test.ts` covers the three fields' round trip and the corpus
+file; `ILMI_SMOKE=clipping` pastes a real address (a stable page such as
+`https://en.wikipedia.org/wiki/Spaced_repetition`; offline → log and
+stop), reads the preview, places it, opens it, logs the first twenty
+lines and the images landed in `<stem>/`, and clicks the inspector's
+`url`; screenshots read.
+
+### [ ] 25. Rendering — the reader shows Markdown as Markdown
+The reader is a ProseMirror editor over the document's blocks, with math
+as atoms and editorial marks lit by decorations; raw blocks (lists,
+quotes, code, tables, headings of other levels) sit in the flow as mono
+atoms. The format does not change; what changes is what is drawn.
+- Inline, in paragraphs and card faces: `*emphasis*`, `**strong**`,
+  `` `code` ``, `[text](href)`, `![alt](src)` drawn as themselves by
+  decorations over the raw text, the markers dimmed (`var(--fg-5)`) so
+  the text stays editable and the caret lands where the source says;
+  on a frozen document the markers are hidden (width 0, still in the
+  DOM) since nothing is typed there. A link opens in the browser on
+  ⌘-click, plain click puts the caret. The same inline rules in
+  `richHTML` for the deck lens, the queue rows, and the session faces.
+- Blocks: a raw block that is a list, a block quote, a fenced or indented
+  code block, a table, or a heading is rendered as that element inside
+  its atom, with the source shown on focus (click into it) as now; an
+  image paragraph (`![alt](src)` alone) renders the image, from the vault
+  (relative path, read through the fs adapter as a blob URL, released on
+  unmount) or the web (absolute URL, only when a Tweaks toggle `show
+  remote images` is on, default on), with its alt as a caption, a broken
+  image as its alt in mono.
+- Extracts and cards from rendered text keep working: the selection maps
+  to the raw text as it does over math chips today, and an extract or a
+  card made from a passage with emphasis carries the markers in its
+  text. Clipped pages (24) and EPUB chapters (19) are the test material.
+
+Done when: `reader-view.test.ts` renders each inline form and each block
+form from a fixture document and checks the DOM (markers dimmed, hidden
+when frozen; the list a `ul`, the code a `pre` with the language class,
+the table a `table`, the image an `img` with the alt), and that
+selection-to-source mapping over an emphasised passage yields the raw
+text with its markers; `ILMI_SMOKE=render` opens the clipped corpus page
+and an EPUB chapter from the fixture, screenshots each, selects an
+emphasised passage, presses `e`, and logs the extract's text; the
+session faces of a card with inline code read right; screenshots read;
+the `*emphasis*` open item under 19 closed.
+
 ## Notes for the next session
 
-Milestones 0–20 and 22 are ticked; 21 (the dictionary plugin, the first
-written against the API) is next, then 23. After them, what is left is a polish pass
+Milestones 0–20, 22, and 23 are ticked (22 and 23 on branches, merged;
+23's window check is recorded under it); 21 under *Plugins* is next, then
+24–25 under *Clipping and rendering* (24 may run on a branch beside 21).
+After them, what is left is a polish pass
 over the open items
 each milestone's notes record (10: no palette command or key for
 priority, no stepper; 11: no growth row before enrolment, the preview

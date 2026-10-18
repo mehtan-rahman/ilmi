@@ -3,23 +3,123 @@
    corners, no shadows, no fills doing decoration. */
 
 /* ── before a vault is open ───────────────────────────────────── */
+/* The welcome is the palette's panel sitting in the canvas: the same
+   hairlines, rows, and foot (its row and foot rules are reused as is). */
 .welcome {
   grid-area: canvas;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
+  padding-top: 18vh;
 }
-.open {
-  font: inherit;
-  color: var(--fg-2);
+.welcome-panel {
+  width: min(560px, 92vw);
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
   background: var(--paper);
   border: 1px solid var(--line-1);
   border-radius: var(--radius);
-  padding: 0 var(--gap-x);
-  height: var(--row);
+  overflow: hidden;
+}
+.welcome[data-drag="1"] .welcome-panel { border-color: var(--accent); }
+.welcome-hd {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  padding: 14px 14px 12px;
+  border-bottom: 1px solid var(--line-2);
+}
+.welcome-mark {
+  font-family: var(--serif);
+  font-size: 22px;
+  font-weight: var(--serif-weight);
+  color: var(--fg-1);
+  letter-spacing: -0.01em;
+  flex-shrink: 0;
+}
+.welcome-line {
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 14px;
+  color: var(--fg-4);
+  line-height: 1.35;
+}
+.welcome-acts {
+  display: flex;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line-2);
+}
+.welcome-acts button {
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--fg-2);
+  background: transparent;
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius);
+  padding: 4px 10px;
   cursor: default;
 }
-.open:hover { border-color: var(--fg-4); color: var(--fg-1); }
+.welcome-acts button:hover { border-color: var(--fg-4); color: var(--fg-1); }
+.welcome-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line-2);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.welcome-name .psub {
+  color: var(--fg-4);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 45%;
+  flex-shrink: 1;
+}
+.welcome-name input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: 0;
+  outline: none;
+  color: var(--fg-1);
+  font-family: var(--mono);
+  font-size: 13px;
+}
+.welcome-name input::placeholder { color: var(--fg-5); }
+.welcome-name .welcome-problem { color: var(--fg-4); font-size: 10.5px; white-space: nowrap; }
+.welcome kbd {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--fg-4);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius);
+  padding: 1px 4px;
+}
+.welcome-list { overflow: auto; padding: 6px; }
+.welcome-row .pt { max-width: 40%; }
+.welcome-row[data-gone="1"] .pt,
+.welcome-row[data-gone="1"] .psub,
+.welcome-row[data-gone="1"] .pg { color: var(--fg-5); }
+.welcome-row .welcome-forget {
+  font: inherit;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--fg-3);
+  background: transparent;
+  border: 0;
+  padding: 0 2px;
+  cursor: default;
+  visibility: hidden;
+  flex-shrink: 0;
+}
+.welcome-row:hover .welcome-forget,
+.welcome-row[data-sel="1"] .welcome-forget { visibility: visible; }
+.welcome-row .welcome-forget:hover { color: var(--fg-1); }
+.welcome .palette-foot kbd { border: 0; padding: 0; font-size: 10px; }
 
 /* ── sidebar ──────────────────────────────────────────────────── */
 .side {

@@ -37,6 +37,16 @@ export function dueLabel(due: string | undefined, now: Date): string {
   return `+${Math.round(d / 30)}mo`;
 }
 
+/** How long ago a day or instant was, in the same words looking back: `today`, `yesterday`, `3d ago`, `2mo ago`. */
+export function agoLabel(when: string, now: Date): string {
+  const d = Math.round((dayStart(dayOf(now)).getTime() - dayStart(dayOf(whenToDate(when))).getTime()) / 86400000);
+  if (d <= 0) return 'today';
+  if (d === 1) return 'yesterday';
+  if (d < 30) return `${d}d ago`;
+  if (d < 365) return `${Math.round(d / 30)}mo ago`;
+  return `${Math.round(d / 365)}y ago`;
+}
+
 /** A span of days, short. */
 export function fmtDays(d: number): string {
   if (d < 60) return `${Math.round(d)}d`;

@@ -8,7 +8,7 @@ was verified, what was not, and the prompt to resume with.
 
 ## 2026-10-18 — milestone 16: cards from text, a list pasted on the intake lands as a deck
 
-Commit `PENDING` — *cards: a pasted or dropped list split by two
+Commit `b4724d2` — *cards: a pasted or dropped list split by two
 delimiters lands as a deck, an Anki text export read by its header*.
 
 ### Done

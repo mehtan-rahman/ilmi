@@ -942,7 +942,7 @@ here. The user asked for both of these, so the intake growing a cards mode
 and taking `.apkg` is in scope; a new screen is not.
 
 ### [x] 16. Cards from text — paste or drop a list, choose the delimiters, land a deck
-Done 2026-10-18, commit `PENDING`.
+Done 2026-10-18, commit `b4724d2`.
 Notes: `src/import/cards.ts` is the pure side, exported through
 `src/import/index.ts`. Delimiters: `SideDelim` is `'prefix' | 'tab' |
 'colons' | 'dash' | 'comma' | { custom }` (detection order, `SIDE_KINDS`,

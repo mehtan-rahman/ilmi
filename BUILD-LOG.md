@@ -6,6 +6,135 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-10-18 — milestone 24: clipping, a pasted link lands as the clipper would write it
+
+Done on the branch `worktree-agent-a6748a2448940aba8` (worktree
+`.claude/worktrees/agent-a6748a2448940aba8`) while milestone 21 ran on
+main; commit `ca68507` — *clipping: a pasted link read by Defuddle and
+landed as the clipper writes it, with url, author, and published fields,
+the images beside the file, and the address a link in the inspector*. The
+sessions are likely to share `PLAN.md`, `BUILD-LOG.md`, `README.md`,
+`package.json` / `package-lock.json`, `src/app/smoke.ts` (the header
+comment, `smokeClipping` before `smokePlugins`), `src/app/vault.ts` (the
+smoke import and dispatch line only), `src/app/store.ts` (the `Tweaks`
+type and its load/save, `clipImages` in `AppState`, the setter),
+`src/app/Tweaks.tsx` (the header comment, one hook, a row under the
+reopen row), `src/app/Inspector.tsx` (an import, four helpers after
+`words`, three rows after `imported`), `src-tauri/Cargo.toml` /
+`Cargo.lock`, `src-tauri/src/lib.rs` (one `.plugin` line), and
+`src-tauri/capabilities/default.json` (the description and one
+permission), so the merge touches those by hand. Also changed here, less
+likely to meet 21: `FORMAT.md`, `src/format/model.ts`,
+`src/format/frontmatter.ts`, `src/format/__tests__/format.test.ts`,
+`src/vault/vault.ts`, `src/vault/index.ts`,
+`src/vault/__tests__/vault.test.ts`, `src/import/index.ts`,
+`src/app/fetch.ts`, `src/app/Intake.tsx`, `src/app/clipper.ts`,
+`src/app/app.css`, `src/app/chrome.css`. New files, no conflict:
+`src/import/page.ts`, `src/app/clipping.ts`,
+`src/import/__tests__/clip-page.test.ts`,
+`src/import/__tests__/long-selectors.ts`,
+`src/import/__tests__/pages/{article,worksheet,syntax}.html`,
+`src/format/__tests__/corpus/vault/fleeting/clipped-page.md`.
+
+### Done
+
+- `src/import/page.ts`: `clipPage` (Defuddle 0.19.5, core bundle,
+  `new Defuddle(doc, { url, useAsync: false }).parse()`; its metadata,
+  its content HTML through the walker), `markdownOf` (links, emphasis,
+  code spans and fences with the language, GFM tables, lists, quotes,
+  MathML and `\(…\)` as `$…$`, images, footnotes under `## notes`),
+  `escapeProse` (`{ {`, the whitespace off a ` :: `, `\?`, ` \^id`,
+  `<!- -`), `normalizeWhen`; the fallback through Readability or the
+  whole body into the same walker.
+- Format: `url`, `author`, `published` (FORMAT.md §3, `model.ts`,
+  `frontmatter.ts`, `meta()`); the corpus file; §1 says a document's
+  folder may hold its images and the walk ignores them.
+- Vault: `ImportSpec.url/author/published` written by `importDoc`;
+  `attachImages` with an injected getter, `imageExt`.
+- App: `fetchReadable` returns the page's fields and images;
+  `fetchImage`; `clipping.ts` `importClipNode`; the intake's `.page-meta`
+  line, the image count and `via …` in the stats, the fields on place;
+  the inspector's `url` link (opener plugin), `author`, `published`;
+  the `download images when clipping` tweak; `ilmi://new?url=` writes
+  the same fields and lands the images, and keeps `url` when a selection
+  is the content (closing 22's open item).
+- Rust: `tauri-plugin-opener`, `opener:default`. npm: `defuddle`,
+  `@tauri-apps/plugin-opener`.
+- README: the clipping paragraph, the `ilmi://` paragraph, the tweaks
+  line, the layout line. Smoke: `ILMI_SMOKE=clipping`, written, not run.
+- Tests: vitest 415 (+16), 23 files; cargo 12.
+
+### Verified
+
+- `npm run typecheck` clean, `npx vitest run` green (23 files, 415),
+  `cargo test` green (12, the opener plugin compiled in), `vite build`
+  builds with Defuddle bundled.
+- The three fixture pages under jsdom (with the selector shim): the
+  article's chrome gone (nav, byline, related list, footer, the title
+  heading), every field read, the Markdown pinned line for line and
+  parsed with no diagnostics and no card; the worksheet falling back;
+  every card mark in the syntax page escaped.
+- Not in the window: the window and port 1420 belonged to the other
+  session. `ILMI_SMOKE=clipping` and its three shots are owed, after a
+  Rust rebuild (`npm run tauri dev` does it: the opener plugin is new).
+
+### Not done / open
+
+- The window check: the preview line, the place, the images landing in
+  `<stem>/`, the inspector's `url` opening the browser; whether the
+  opener's default scope opens an `http(s)` address from the webview
+  (the capability has `opener:default`; if the click does nothing, add
+  `opener:allow-open-url`).
+- A dropped `.html` file still goes through the old `readable()` pass.
+- Images are fetched one after another once the file has landed, with no
+  cap on count or size; the document shows with remote addresses until
+  then. `data:` images are dropped uncounted.
+- Defuddle's standardization takes the space before a `::`, so `std ::
+  vector` lands as `std:: vector`; a `figcaption` lands as a paragraph;
+  a form's labels leak into the whole-body fallback; callouts land as
+  paragraphs.
+
+### Decisions worth knowing
+
+- One walker for both passes rather than Defuddle's Markdown: the core
+  bundle has no converter, the full one would still need the escapes,
+  and a reduction of our own is what the tests can pin line for line.
+- The fallback keeps Readability as the finder but feeds the new walker,
+  so a fallback page gets links and emphasis too; the plan's "old pass"
+  is read as the finder, not the reduction.
+- The images are fetched through a getter the vault is handed
+  (`ImageGet`), so the landing is tested against `nodeFs` with no http
+  plugin, and the app passes the plugin's `fetch`.
+- `published` is normalized on the way in (`normalizeWhen`) rather than
+  the format learning more date forms; the format keeps its two.
+- The jsdom selector limit is worked around in the test harness, not in
+  `clipPage`: the webview never hits it, and `clipPage` stays plain.
+
+### Handoff prompt
+
+```
+Read PLAN.md, FORMAT.md, BUILD-LOG.md, and spec/hashiyah/HANDOFF.md.
+Milestones 0–20 and 22–24 are ticked (13 dropped). 24 (clipping) was
+done on the branch `worktree-agent-a6748a2448940aba8` beside 21 and its
+window check is owed: after the merge, rebuild the Rust side (the opener
+plugin is new), run `ILMI_VAULT=<scratch> ILMI_SMOKE=clipping npm run
+tauri dev` (online; `ILMI_URL=` for another page), read its log (the
+preview line, the twenty lines, the images in `<stem>/`, the inspector
+rows, the browser opening on the `url` click), take its three shots, and
+record them under its entry here. The first unchecked milestone is 21,
+"Dictionary", under "## Plugins" in PLAN.md, unless a branch holds it
+(`git worktree list`); after it, 25, "Rendering". Do only the first
+unchecked milestone no branch holds, stop at its "done when", tick it,
+write notes, add an entry here with a fresh handoff prompt, and commit.
+Tooling and verification are as the ground rules and the entries below
+describe; `export PATH=$HOME/.cargo/bin:/opt/homebrew/bin:$PATH` first.
+If port 1420 is held by a run that is not yours, do not kill it: say so
+in your report and leave the window check owed. Suite 415 (23 files),
+`cargo test` 12, and typecheck must be green before a commit.
+```
+
+---
+
 ## 2026-10-18 — milestone 21: dictionary, a word looked up from the selection and added to a vocab deck
 
 Commit `6ffabf5` — *dictionary: the first real plugin, `look up` on the cue

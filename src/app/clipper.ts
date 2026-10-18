@@ -4,15 +4,20 @@
 // import path (the page fetched and read the way a pasted address is), opens
 // it, and leaves a notice; an `open` link opens a document. A link for
 // another vault, or one that asks for nothing, is a notice, never a throw.
+// A `new` link with an address writes what the intake writes for a pasted
+// one: `url`, `author`, `published`, and the images beside the file; with a
+// selection as the content the address is still kept as `url`.
 
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { getCurrent, onOpenUrl } from '@tauri-apps/plugin-deep-link';
 import { cleanText } from '../import/index.js';
+import type { ImportSpec } from '../vault/index.js';
 import { type ClipNew, clipTitle, openCandidates, parseClipUri, vaultMatches } from './clip.js';
-import { fetchReadable } from './fetch.js';
+import { importClipNode } from './clipping.js';
+import { fetchReadable, type PageInfo } from './fetch.js';
 import { folderPaths } from './names.js';
 import { useApp } from './store.js';
-import { currentVault, importNode, note, openNode } from './vault.js';
+import { currentVault, note, openNode } from './vault.js';
 
 /** A link that came before any vault was open; it lands when one opens. */
 let pending: string | null = null;
@@ -30,11 +35,13 @@ async function ensureFolder(dir: string): Promise<string> {
 async function clipNew(a: ClipNew): Promise<void> {
   let text = a.content ?? '';
   let fetchedTitle = '';
+  let page: PageInfo | null = null;
   if (!text && a.url) {
     try {
       const r = await fetchReadable(a.url);
       text = r.text;
       fetchedTitle = r.title;
+      page = r.page ?? null;
     } catch {
       note('nothing readable at that link');
       return;
@@ -52,7 +59,11 @@ async function clipNew(a: ClipNew): Promise<void> {
   } catch {
     dir = '';
   }
-  const path = await importNode(dir, { title, text });
+  const spec: ImportSpec = { title, text };
+  if (a.url) spec.url = a.url;
+  if (page?.author) spec.author = page.author;
+  if (page?.published) spec.published = page.published;
+  const { path } = await importClipNode(dir, spec, page?.images ?? []);
   openNode(path);
   note(`clipped · ${title}`);
 }

@@ -31,11 +31,13 @@ export interface Tweaks {
   density: number;
   /** Reopen the last vault on start, without a click. */
   reopen: boolean;
+  /** Download a clipped page's images into the document's folder. */
+  clipImages: boolean;
 }
 export const DENSITY_MIN = 0.6;
 export const DENSITY_MAX = 1.6;
 const TWEAKS_KEY = 'ilmi.tweaks';
-const DEFAULT_TWEAKS: Tweaks = { theme: 'light', accent: 'gold', density: 1, reopen: true };
+const DEFAULT_TWEAKS: Tweaks = { theme: 'light', accent: 'gold', density: 1, reopen: true, clipImages: true };
 
 function loadTweaks(): Tweaks {
   try {
@@ -47,6 +49,7 @@ function loadTweaks(): Tweaks {
       accent: t.accent !== undefined && t.accent in ACCENTS ? t.accent : DEFAULT_TWEAKS.accent,
       density: typeof t.density === 'number' && t.density >= DENSITY_MIN && t.density <= DENSITY_MAX ? t.density : DEFAULT_TWEAKS.density,
       reopen: typeof t.reopen === 'boolean' ? t.reopen : DEFAULT_TWEAKS.reopen,
+      clipImages: typeof t.clipImages === 'boolean' ? t.clipImages : DEFAULT_TWEAKS.clipImages,
     };
   } catch {
     return DEFAULT_TWEAKS;
@@ -145,6 +148,8 @@ export interface AppState {
   density: number; // --rho: 1 regular, <1 compact, >1 airy
   /** Reopen the last vault on start. A tweak, kept with the others. */
   reopen: boolean;
+  /** Download a clipped page's images. A tweak, kept with the others. */
+  clipImages: boolean;
   /** The vaults opened before, newest first; in the webview's storage. */
   recents: Recent[];
   /** Recent vaults whose folder was not there when last looked for. */
@@ -187,6 +192,7 @@ export interface AppState {
   setAccent(accent: Accent): void;
   setDensity(rho: number): void;
   setReopen(on: boolean): void;
+  setClipImages(on: boolean): void;
   /** Replace the recents list; it is saved as the tweaks are. */
   setRecents(list: Recent[]): void;
   setPanes(next: Panes | ((cur: Panes) => Panes)): void;
@@ -199,6 +205,7 @@ export const useApp = create<AppState>((set, get) => ({
   accent: tweaks.accent,
   density: tweaks.density,
   reopen: tweaks.reopen,
+  clipImages: tweaks.clipImages,
   recents: loadRecents(),
   gone: [],
   started: false,
@@ -232,11 +239,12 @@ export const useApp = create<AppState>((set, get) => ({
   setAccent: (accent) => { set({ accent }); persist(get()); },
   setDensity: (density) => { set({ density: Math.min(DENSITY_MAX, Math.max(DENSITY_MIN, density)) }); persist(get()); },
   setReopen: (reopen) => { set({ reopen }); persist(get()); },
+  setClipImages: (clipImages) => { set({ clipImages }); persist(get()); },
   setRecents: (recents) => { set({ recents }); saveRecents(recents); },
   setPanes: (next) => set({ panes: typeof next === 'function' ? next(get().panes) : next }),
 }));
 
-const persist = (s: AppState) => saveTweaks({ theme: s.theme, accent: s.accent, density: s.density, reopen: s.reopen });
+const persist = (s: AppState) => saveTweaks({ theme: s.theme, accent: s.accent, density: s.density, reopen: s.reopen, clipImages: s.clipImages });
 
 declare global {
   interface Window {

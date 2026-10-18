@@ -737,6 +737,10 @@
 .intake .deck-row .dcount { font-family: var(--mono); font-size: 11px; color: var(--fg-3); letter-spacing: 0.02em; white-space: nowrap; }
 .intake .deck-row .num { font-family: var(--mono); font-size: 11px; color: var(--fg-4); letter-spacing: 0.02em; margin-right: 10px; }
 .intake .book-by { font-family: var(--mono); font-size: 11px; color: var(--fg-3); letter-spacing: 0.02em; padding: 0 0 10px; }
+/* a fetched page: its site and title, then who and when, over the count */
+.intake .page-meta { font-family: var(--mono); font-size: 11px; letter-spacing: 0.02em; padding: 0 0 10px; display: flex; flex-direction: column; gap: 3px; }
+.intake .page-site { color: var(--fg-2); }
+.intake .page-by { color: var(--fg-4); }
 .intake .cards-preview { margin-top: 16px; border-top: 1px solid var(--line-2); }
 .intake .cards-preview .card-span:last-child { border-bottom: 0; }
 .intake .cards-preview + .stats { margin-top: 4px; padding-top: 10px; border-top: 1px solid var(--line-2); }

@@ -159,6 +159,20 @@
 .insp .kv .pri-field::placeholder, .insp .kv .af-field::placeholder { color: var(--fg-5); }
 .insp .kv .pri-field:focus, .insp .kv .af-field:focus { border-bottom-color: var(--accent); }
 .insp .kv .af-next { margin-left: 8px; white-space: nowrap; }
+.insp .kv .insp-link {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--accent);
+  text-align: left;
+  cursor: default;
+  overflow-wrap: anywhere;
+}
+.insp .kv .insp-link:hover { text-decoration: underline; text-underline-offset: 2px; }
 .insp .insp-line {
   font-family: var(--serif);
   font-size: 13px;

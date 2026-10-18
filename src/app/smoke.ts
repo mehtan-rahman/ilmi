@@ -55,6 +55,12 @@
 // `open`, a foreign vault, and garbage, logging the file written, the tab,
 // and the notice each left; then sets `clippings go to` from the tweaks
 // panel and clips once more.
+// `ILMI_SMOKE=clipping` pastes a real address on the intake (`ILMI_URL=…`,
+// else the Wikipedia page on spaced repetition; offline it logs and stops),
+// reads the preview (site and title, author and date, the count with the
+// image count and `via …`), places it, logs the file's first twenty lines
+// and the images landed in its folder, opens it, and clicks the
+// inspector's `url`.
 // `ILMI_SMOKE=plugins` opens tweaks and reads the sample plugin's row, turns
 // it off and on, runs its command from the palette, selects a passage and
 // runs its verb from the cue, finds the `[hello]` it lights in a source and
@@ -1563,6 +1569,65 @@ export async function smokeClip(vault: Vault): Promise<void> {
     await handleUri(`ilmi://new?name=${enc('to the setting')}&content=${enc('lands in fleeting')}`);
     const p5 = await landed('fleeting/to the setting');
     log(`new to the setting: ${p5}; ${tab()}; ${notice()}`);
+    log('done');
+  } catch (e) {
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+export async function smokeClipping(vault: Vault): Promise<void> {
+  const log = (s: string) => info(`smoke clipping: ${s}`);
+  const shot = async (name: string, ms = 10000) => { await sleep(600); log(`shot: ${name}`); await sleep(ms); };
+  const q = <T extends Element>(sel: string) => document.querySelector<T>(sel);
+  const qa = (sel: string) => Array.from(document.querySelectorAll<HTMLElement>(sel));
+  try {
+    setInspector({ open: true });
+    openIntake('fleeting');
+    const ta = await until(() => q<HTMLTextAreaElement>('.intake textarea'));
+    const url = (await invoke<string | null>('dev_env', { name: 'ILMI_URL' })) ?? 'https://en.wikipedia.org/wiki/Spaced_repetition';
+    // the address pasted into the empty field, as a person would
+    const dt = new DataTransfer();
+    dt.setData('text/plain', url);
+    ta.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt }));
+    log(`pasted ${url}: hint "${q('.intake .paste-hint')?.textContent}"`);
+    const got = await until(() => {
+      if (ta.value) return ta.value;
+      const n = q('.intake .paste-hint .note')?.textContent;
+      return n && n !== 'fetching' ? n : null;
+    }, 45000);
+    if (!ta.value) { log(`nothing fetched: "${got}" (offline?); stopping`); return; }
+    await sleep(400);
+    log(`preview: meta "${q('.intake .page-meta')?.textContent}"; stats "${q('.intake-detail .stats')?.textContent}"; title "${q<HTMLInputElement>('.intake .field input')?.value}"; chosen ${q('.folder-pick button[data-active="1"]')?.textContent}; first lines "${ta.value.split('\n').slice(0, 3).join(' / ').slice(0, 240)}"`);
+    await shot('clipping-intake');
+    const before = vault.documents();
+    const remote = (ta.value.match(/!\[[^\]]*\]\(https?:/g) ?? []).length;
+    q<HTMLButtonElement>('.intake .place.primary')!.click();
+    const path = await until(() => vault.documents().find((d) => !before.includes(d)), 20000);
+    const folder = path.slice(0, -3);
+    // the images land after the file, one fetch each; wait for them, within reason
+    const t0 = Date.now();
+    let files: string[] = [];
+    while (Date.now() - t0 < 60000) {
+      files = (await vault.fs.readDir(vault.abs(folder)).catch(() => [])).map((f) => f.name).filter((n) => !n.endsWith('.ilmi-tmp')).sort();
+      const text = (await vault.read(path, true)).text;
+      const left = (text.match(/!\[[^\]]*\]\(https?:/g) ?? []).length;
+      if (remote === 0 || left + files.length >= remote) { if (left + files.length >= remote && left < remote) break; if (remote === 0) break; }
+      await sleep(1000);
+    }
+    await sleep(1500);
+    const loaded = await vault.read(path, true);
+    log(`placed ${path}: blocks ${loaded.doc.blocks.length}; diagnostics ${loaded.diagnostics.length}; cards ${loaded.doc.blocks.filter((b) => b.kind === 'card').length}; words ${loaded.text.split(/\s+/).length}`);
+    loaded.text.split('\n').slice(0, 20).forEach((l, i) => log(`  ${String(i + 1).padStart(2)}: ${l.slice(0, 160)}`));
+    log(`images: ${remote} in the page; landed in ${folder}/: ${files.join(', ') || 'none'}; relative links ${(loaded.text.match(/!\[[^\]]*\]\([^)h][^)]*\)/g) ?? []).length}; remote left ${(loaded.text.match(/!\[[^\]]*\]\(https?:/g) ?? []).length}; tweak ${useApp.getState().clipImages ? 'on' : 'off'}`);
+    const h1 = await until(() => q('.doc-view h1'));
+    await sleep(400);
+    log(`reader: h1 "${h1.textContent}"; ${q('.frozen-tag')?.textContent}; inspector ${qa('.insp .kv .kvr').map((r) => `${r.querySelector('dt')?.textContent}=${r.querySelector('dd')?.textContent?.slice(0, 80)}`).join(' | ')}`);
+    await shot('clipping-reader');
+    const link = await until(() => q<HTMLButtonElement>('.insp .insp-link'));
+    link.click();
+    await sleep(1500);
+    log(`clicked url "${link.textContent}" (title "${link.title}"); the browser should be showing it`);
+    await shot('clipping-inspector');
     log('done');
   } catch (e) {
     log(`failed: ${e instanceof Error ? e.message : String(e)}`);

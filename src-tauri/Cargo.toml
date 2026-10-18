@@ -29,3 +29,5 @@ rusqlite = { version = "0.40", features = ["bundled", "collation"] }
 quick-xml = "0.42"
 tauri-plugin-deep-link = "2"
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
+# the inspector's `url` row opens a clipped page in the browser
+tauri-plugin-opener = "2"

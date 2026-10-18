@@ -5,7 +5,11 @@
 //
 // A dropped file arrives through Tauri's drag-drop event with a path (the
 // webview's own drop event carries no files under Tauri); dragged text still
-// comes through the DOM. A pasted address is fetched through the http plugin.
+// comes through the DOM. A pasted address is fetched through the http plugin
+// and read as the clipper would write it (`src/import/page.ts`): the page's
+// site, author, and date show over the count, the title field takes the
+// page's title, and the file carries `url`, `author`, and `published`, with
+// the page's images downloaded beside it when the tweak says so.
 //
 // Text that reads as a list of cards (`src/import/cards.ts` finds at least
 // two) gets a delimiter row and lands as a deck instead; an Anki text export
@@ -24,7 +28,8 @@ import {
 } from '../import/index.js';
 import { NEW_NAMES } from '../vault/index.js';
 import { CardText } from './CardText.js';
-import { APKG_EXT, EPUB_EXT, PDF_EXT, fetchReadable, readAnkiPackage, readDropped, readDroppedPdf, readEpub } from './fetch.js';
+import { importClipNode } from './clipping.js';
+import { APKG_EXT, EPUB_EXT, PDF_EXT, fetchReadable, readAnkiPackage, readDropped, readDroppedPdf, readEpub, type PageInfo } from './fetch.js';
 import { folderPaths, titleOf } from './names.js';
 import type { OpenOpts } from './panes.js';
 import { pdfText } from './pdfjs.js';
@@ -80,6 +85,8 @@ export function Intake({ active, onOpen }: Props) {
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [pdf, setPdf] = useState<PendingPdf | null>(null);
+  /** What the fetched page said about itself, while its text is in the field. */
+  const [page, setPage] = useState<PageInfo | null>(null);
   /** An Anki package waiting on the intake: its decks, listed where the text would be. */
   const [anki, setAnki] = useState<Mapped | null>(null);
   /** A book waiting on the intake: its chapters, listed where the text would be. */
@@ -133,9 +140,10 @@ export function Intake({ active, onOpen }: Props) {
     setAsCards(null);
   };
 
-  const take = (body: string, name?: string, pages: PendingPdf | null = null) => {
+  const take = (body: string, name?: string, pages: PendingPdf | null = null, info: PageInfo | null = null) => {
     setRaw(cleanText(body));
     setPdf(pages);
+    setPage(info);
     setAnki(null);
     setBook(null);
     setNote('');
@@ -147,7 +155,7 @@ export function Intake({ active, onOpen }: Props) {
     setNote('fetching');
     try {
       const r = await fetchReadable(url.trim());
-      take(r.text, r.title);
+      take(r.text, r.title, null, r.page ?? null);
     } catch (e) {
       fail(e, 'nothing readable at that link');
     }
@@ -290,9 +298,12 @@ export function Intake({ active, onOpen }: Props) {
         ? await importDeckNode(chosen, { title, doc: deckDoc(deck.cards, deck.leftovers) })
         : pdf
           ? await importPdfNode(chosen, { title, bytes: pdf.bytes, text: raw })
-          : await importNode(chosen, { title, text: raw });
+          : page
+            ? (await importClipNode(chosen, { title, text: raw, url: page.url, author: page.author, published: page.published }, page.images)).path
+            : await importNode(chosen, { title, text: raw });
       setRaw('');
       setPdf(null);
+      setPage(null);
       setTitle('');
       setNote('');
       fresh();
@@ -345,7 +356,7 @@ export function Intake({ active, onOpen }: Props) {
             ref={taRef}
             value={raw}
             spellCheck={false}
-            onChange={(e) => { setRaw(e.target.value); if (!e.target.value.trim() && !pdf?.pages) setPdf(null); if (note) setNote(''); }}
+            onChange={(e) => { setRaw(e.target.value); if (!e.target.value.trim()) { if (!pdf?.pages) setPdf(null); setPage(null); } if (note) setNote(''); }}
             onPaste={onPaste}
             placeholder={pdf ? 'no text' : 'paste text or a link'}
           />
@@ -411,6 +422,12 @@ export function Intake({ active, onOpen }: Props) {
                 <button type="button" className="link" onClick={() => setAnki(null)}>not this →</button>
               </div>
             )}
+            {page && !deck && (
+              <div className="page-meta">
+                <div className="page-site">{page.site}{page.site && titleShown ? ' · ' : ''}{titleShown}</div>
+                {(page.author || page.published) && <div className="page-by">{[page.author, page.published.slice(0, 10)].filter(Boolean).join(' · ')}</div>}
+              </div>
+            )}
             {!deck && !anki && !book && (
               <div className="stats">
                 {pdf ? <span><b>{pdf.pages.toLocaleString()}</b> {pdf.pages === 1 ? 'page' : 'pages'}</span> : <span><b>{st.words.toLocaleString()}</b> words</span>}
@@ -420,6 +437,18 @@ export function Intake({ active, onOpen }: Props) {
                   <>
                     <span className="dot" />
                     <span>~{st.minutes} min</span>
+                  </>
+                )}
+                {page && page.images.length > 0 && (
+                  <>
+                    <span className="dot" />
+                    <span>{plural(page.images.length, 'image')}</span>
+                  </>
+                )}
+                {page && (
+                  <>
+                    <span className="dot" />
+                    <span>via {page.via === 'defuddle' ? 'defuddle' : 'the fallback'}</span>
                   </>
                 )}
                 {detected && <button type="button" className="link" onClick={() => setAsCards(true)}>as cards →</button>}

@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>The economics of attention - Field Notes</title>
+<meta property="og:site_name" content="Field Notes">
+<meta property="og:title" content="The economics of attention">
+<meta name="author" content="Jane Doe">
+<meta property="article:published_time" content="2024-03-01T10:00:00Z">
+<meta name="description" content="Every review is a small wager against forgetting.">
+<link rel="stylesheet" href="/site.css">
+</head>
+<body>
+<header class="site-header">
+  <a href="/" class="logo">Field Notes</a>
+  <nav><ul><li><a href="/archive">archive</a></li><li><a href="/about">about</a></li></ul></nav>
+</header>
+<main>
+<article>
+  <h1>The economics of attention</h1>
+  <p class="byline">By Jane Doe · 1 March 2024 · 4 min read</p>
+  <p>Every review you schedule is a <em>small wager</em> against forgetting. The wager has a cost, the minutes spent, and a payoff that <strong>compounds</strong>: each successful recall pushes the next due date further out, so a few well-timed reviews buy years of retention for the price of an afternoon.<sup id="fnref:1"><a href="#fn:1">1</a></sup></p>
+  <p>The mistake most learners make is to treat the wager as free. They review everything, constantly, and confuse the warm feeling of familiarity with the harder fact of retrieval. See <a href="/notes/retrieval">the note on retrieval</a> and the <a href="https://en.wikipedia.org/wiki/Spacing_effect">spacing effect</a>; the function is <code>schedule(card)</code>.</p>
+  <h2>A schedule in code</h2>
+  <pre><code class="language-python">def next_interval(ivl, af):
+    return max(1, round(ivl * af))</code></pre>
+  <h2>Grades</h2>
+  <table>
+    <thead><tr><th>grade</th><th>meaning</th><th>interval</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>again</td><td>1 d</td></tr>
+      <tr><td>3</td><td>good</td><td>ivl × af</td></tr>
+      <tr><td>4</td><td>easy</td><td>ivl × af × 1.3</td></tr>
+    </tbody>
+  </table>
+  <figure>
+    <img src="/img/forgetting-curve.png" alt="The forgetting curve" width="800" height="500">
+    <figcaption>The forgetting curve, redrawn.</figcaption>
+  </figure>
+  <p>A good system spends your attention the way a careful gardener spends water: not evenly, but where the curve is about to cross the floor. The retention after <span class="math">\(t\)</span> days is <span class="math">\(R = e^{-t/S}\)</span>.<sup id="fnref:2"><a href="#fn:2">2</a></sup></p>
+  <ul>
+    <li>review what is about to be forgotten</li>
+    <li>skip what is <em>safe</em>
+      <ul><li>and come back later</li></ul>
+    </li>
+  </ul>
+  <blockquote><p>Familiarity is cheap. Retrieval is the thing that lasts.</p></blockquote>
+  <p><img src="https://cdn.example.org/img/gardener.jpg" alt="A gardener watering" width="640" height="480"></p>
+  <div class="footnotes">
+    <ol>
+      <li id="fn:1"><p>The wager framing is from the SuperMemo literature. <a href="#fnref:1" class="footnote-backref">↩</a></p></li>
+      <li id="fn:2"><p>Ebbinghaus, 1885, with <em>S</em> the stability. <a href="#fnref:2" class="footnote-backref">↩</a></p></li>
+    </ol>
+  </div>
+</article>
+<aside class="related"><h3>Related</h3><ul><li><a href="/a">Another post</a></li><li><a href="/b">A third post</a></li></ul></aside>
+</main>
+<footer class="site-footer"><p>© 2024 Field Notes · <a href="/privacy">privacy</a></p></footer>
+<script src="/analytics.js"></script>
+</body>
+</html>

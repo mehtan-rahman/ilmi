@@ -541,7 +541,8 @@ export class Vault {
         await this.ensureDir(dir);
         await this.atomicWriteBytes(this.abs(joinRel(dir, file)), got.bytes);
       });
-      landed.set(src, `${stem}/${file}`);
+      // the path as Markdown reads it: no bare spaces in a destination, so each segment is percent-encoded
+      landed.set(src, `${stem.split('/').map(encodeURIComponent).join('/')}/${file}`);
     }
     if (landed.size) {
       await this.update(path, (doc) => {

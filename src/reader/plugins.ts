@@ -179,14 +179,15 @@ function inlineDecorations(text: string, base: number, hidden: boolean, known: M
   const mark = hidden ? 'md-mark hidden' : 'md-mark';
   for (const r of flatRanges(ranges)) {
     for (const m of markerRanges(r)) decos.push(Decoration.inline(base + m.from, base + m.to, { class: mark }));
+    // the picture is drawn whether or not the image has an alt
+    const state: ImageState | null = r.kind === 'image' ? known.get(r.href ?? '') ?? 'pending' : null;
+    if (state !== null) {
+      decos.push(Decoration.widget(base + r.from, imageWidget(r.href ?? '', text.slice(r.inner.from, r.inner.to), state), { side: -1, key: `img|${r.href}|${typeof state === 'object' ? state.url : state}` }));
+    }
     if (r.inner.to <= r.inner.from) continue;
     const attrs: Record<string, string> = { class: INNER_CLASS[r.kind] };
     if (r.kind === 'link' && r.href) attrs['data-href'] = r.href;
-    if (r.kind === 'image') {
-      const state = known.get(r.href ?? '') ?? 'pending';
-      if (state === 'broken') attrs.class += ' broken';
-      decos.push(Decoration.widget(base + r.from, imageWidget(r.href ?? '', text.slice(r.inner.from, r.inner.to), state), { side: -1, key: `img|${r.href}|${typeof state === 'object' ? state.url : state}`, ignoreSelection: true }));
-    }
+    if (state === 'broken') attrs.class += ' broken';
     decos.push(Decoration.inline(base + r.inner.from, base + r.inner.to, attrs));
   }
   return ranges;

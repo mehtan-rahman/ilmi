@@ -104,26 +104,49 @@ touches those by hand. New files, no conflict: `src/reader/inline.ts`,
   project's own, a few hundred lines, so the format's rules and the
   reader's agree by construction.
 
+### Window check (after the merge, `a5ae07d`)
+
+Three runs of `ILMI_SMOKE=render`; the third clean, port 1420 free after.
+The first two stopped on the smoke itself (a `select` helper that read
+only the paragraph's first text node, now split over decorated spans; a
+paragraph reference held across the extract that redrew it), both fixed
+in the smoke. As logged: the sampler with 2 em, 2 strong, 2 code spans,
+the link, 18 markers hidden at 0px while frozen and 8px on the dim colour
+once thawed; the list, list, quote, code (`language-js`), and table drawn
+(ul with 6 li, ol, blockquote, table 3×2), 0 mono blocks; both vault
+images loaded from blob URLs; the list clicked → selected, its source
+shown; an emphasised passage extracted with its markers in the extract's
+text; a card with inline code made from the composer, drawn in the reader
+and on the session's faces (markers hidden, the code span intact), the
+blank revealed; the fixture book's first chapter with em, strong, list,
+and quote drawn; `show remote images` turned off and stored. Captures
+read: the sampler page (emphasis, strong, code, link, the inline mark,
+both lists, the quote, the code block, the table). Not seen: the queue
+row's inline code (the smoke's row selector found nothing; the row itself
+was not read). Two things the first clipped page showed were fixed here:
+`![](…)` with an empty alt drew nothing (the widget was skipped with the
+empty inner span; now placed first) and `[^1]` lit as an editorial note
+(excluded from the mark rule); an inline image also shows its alt beside
+the picture, which reads doubled, left as an open item.
+
 ### Handoff prompt
 
 ```
 Read PLAN.md, FORMAT.md, BUILD-LOG.md, and spec/hashiyah/HANDOFF.md.
-Milestones 0–20, 22, 23, and 25 are ticked (13 dropped; 22, 23, and 25
-were done on branches; 25's window check is still owed and is recorded
-under it). The first unchecked milestones are 21, "Dictionary", under
-"## Plugins", and 24, "Clipping", under "## Clipping and rendering"; one
-or both may be running on a branch (check `git worktree list`). Do only
-the first unchecked milestone no branch holds, stop at its "done when",
-tick it, write notes, add an entry here with a fresh handoff prompt, and
-commit. Once 25 is merged, run `ILMI_SMOKE=render` against a scratch copy
-of the corpus vault with `three-chapters.epub` in it, read its log and
-screenshots, and record the window check under 25. Tooling and
-verification are as the ground rules and the entries below describe;
-`export PATH=$HOME/.cargo/bin:/opt/homebrew/bin:$PATH` first. If port
-1420 is held by a run that is not yours, do not kill it: say so in your
-report and leave the window check owed. Suite 420 (22 files) on this
-branch, `cargo test` 12, and typecheck must be green before a commit.
-The user's own `.epub` and `.apkg` are still untried.
+Every milestone in PLAN.md is ticked (0–25; 13 dropped). Milestones 21–25
+were done on main and on branches, merged, and their window checks are
+recorded under their entries here, with the fixes those checks forced.
+There is no first unchecked milestone. Ask the user whether the next
+thing is the polish pass over the open items listed under "Notes for the
+next session" in PLAN.md (the dictionary popover's height and anchor, an
+inline image's alt shown twice, the queue row's inline code unverified,
+`.html` drops still on the old pass, media for Anki and EPUB, the SM18
+collection and their own `.apkg` / `.epub` / web pages), the plugin
+directory they set aside, or something new; then write it into PLAN.md
+as a milestone with a "done when" before building. Tooling and
+verification are as the ground rules and the entries below describe. If
+port 1420 is held by a run that is not yours, do not kill it. Suite 460
+(25 files), `cargo test` 12, and typecheck must be green before a commit.
 ```
 
 ---
@@ -231,6 +254,33 @@ likely to meet 21: `FORMAT.md`, `src/format/model.ts`,
   the format learning more date forms; the format keeps its two.
 - The jsdom selector limit is worked around in the test harness, not in
   `clipPage`: the webview never hits it, and `clipPage` stays plain.
+### Window check (after the merge, `4c0cf0a`)
+
+Four runs of `ILMI_SMOKE=clipping` against Wikipedia's spaced repetition
+page, the Rust side rebuilt for the opener plugin. The first found a real
+bug: the fetched article was read as 53 cards by milestone 16's comma
+rule, the preview showed the card row in place of the page's metadata,
+and the page landed as a deck with no images. Fixed in two places: the
+intake never runs card detection over a fetched page unless the user asks
+with `as cards →`, and the comma and dash rule now also requires the back
+to read as a gloss (≤ 120 chars, no sentence inside, no link), with a test
+over four article lines and a vocabulary list. The second run placed the
+page right: `frozen`, `imported`, `url`, `author: Wikipedia`,
+`published: 2001-08-09T02:05:34Z`, 91 blocks, 0 cards, 0 diagnostics,
+four images landed as `img-01.png` … `img-04.gif` and the links rewritten
+to them, the inspector rows, the `url` click opening the browser. The
+reader capture showed the image lines as text, since the folder's name
+has a space and Markdown reads no bare space in a destination: the
+clipper now percent-encodes each path segment (`Spaced%20repetition/
+img-01.png`, decoded by the loader; the clip-page test updated). The
+fourth run, after the rendering fix for an empty alt, drew all four
+images from blob URLs, and the file with the space in its folder read
+back (10,904 bytes). Captures read: the intake preview with
+`Wikipedia · Spaced repetition`, the author and date line, `3,784 words ·
+91 paragraphs · ~17 min · 4 images · via defuddle`; the reader with the
+title, strong text, underlined links, and the inspector's `url`,
+`author`, `published`.
+
 ### Handoff prompt
 
 ```
@@ -349,6 +399,31 @@ and dispatch line).
   changing a plugin; the pure pieces are tested from the source.
 - `when` hides `look up` for selections over three words: the cue stays
   a passage's cue, and `d` on a passage keeps its meaning elsewhere.
+
+### Window check (after the merge, `fb3cdc6` on main)
+
+Two runs of `ILMI_SMOKE=dictionary` with the screen unlocked. The first
+reached the English step and timed out because the smoke pressed the
+cue's first plugin verb, the sample's `hello: count`, not `look up`; the
+smoke now picks the verb by name. The second was clean, port 1420 free
+after. As logged: the plugin's row off then on, `plugins.json` with both,
+the five settings, `data.json {"context":true}`; the cue over
+`الذِّكْرُ` reading `extract e | make a card m | hello: count | look up d`
+with the sentence as context; `d` → the popover, the cue gone, focus in
+the box; the live Wiktionary entry: headword `ذِكْر`, `arabic`, verb (to
+mention; to remember, to recall; to bear in mind …), verb (to remind, to
+point out), noun (verbal noun of ذَكَرَ; recollection, remembrance;
+reputation, renown …), noun, noun, verb; `add to deck` → notice `added to
+vocab`, `vocab.md` written as `type: deck` with `ذِكْر :: to mention` and
+the sentence on the second line, 0 diagnostics, the queue 37 → 38 with
+the card due today; `scaffolding` from the cue's verb → the English
+entry (noun: a temporary modular system of tubes …; verb), added as a
+second card, queue 39; the deck lens with two rows. Capture read: the
+popover over the sutton page with the headword top right, `arabic`, the
+numbered senses right-aligned. The popover sat at the top of the pane
+rather than under the word, since the entry is taller than the room
+below the selection; `add to deck` was below its fold, reached by `a`.
+Open item: cap the popover's height and anchor it to the word.
 
 ### Handoff prompt
 

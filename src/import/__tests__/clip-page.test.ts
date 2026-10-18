@@ -227,11 +227,11 @@ describe('landing', () => {
       return { bytes: new Uint8Array([1]), type: 'text/html; charset=utf-8' };
     });
     expect(asked).toEqual(r.images.map((i) => i.src));
-    expect(landed).toEqual(['The economics of attention/img-01.png']);
+    expect(landed).toEqual(['The%20economics%20of%20attention/img-01.png']); // percent-encoded, as Markdown reads a destination
     expect(new Uint8Array(await fsp.readFile(join(root, 'The economics of attention', 'img-01.png')))).toEqual(png);
     const after = await vault.read(path, true);
     expect(after.diagnostics).toEqual([]);
-    expect(after.text).toContain('![The forgetting curve](The economics of attention/img-01.png)');
+    expect(after.text).toContain('![The forgetting curve](The%20economics%20of%20attention/img-01.png)');
     expect(after.text).toContain('![A gardener watering](https://cdn.example.org/img/gardener.jpg)');
     // no `title` field: the file is named after the title, as any imported source
     expect(meta(after.doc)).toMatchObject({ frozen: true, url: r.url, author: 'Jane Doe', published: '2024-03-01T10:00:00Z' });

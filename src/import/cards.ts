@@ -145,10 +145,17 @@ function splitPrefix(lines: string[], blankEnds: boolean, dropped: Dropped): { f
   return { found, leftovers };
 }
 
-/** Prose does not become cards by its commas and dashes: a front from one of those is short and not a sentence. */
+/**
+ * Prose does not become cards by its commas and dashes: a front from one of
+ * those is short and not a sentence, and its back is a gloss, not a clause —
+ * short, no sentence inside it, no link. A clipped article has commas on
+ * every line; a vocabulary list has a word and a gloss.
+ */
 function plausible(d: SideDelim, f: Found): boolean {
   if (f.kind !== 'pair' || (d !== 'comma' && d !== 'dash')) return true;
-  return f.front.length <= 80 && !/[.!?] /.test(f.front) && !/\t| :: /.test(f.front) && !Q_LINE.test(f.front) && !A_LINE.test(f.front);
+  const front = f.front, back = f.back;
+  return front.length <= 80 && !/[.!?] /.test(front) && !/\t| :: /.test(front) && !Q_LINE.test(front) && !A_LINE.test(front)
+    && back.length <= 120 && !/[.!?] /.test(back) && !/\]\(|\[\^/.test(back);
 }
 
 /** Split `text` by the two delimiters. An Anki export is read by its header instead, whatever `d` says. */

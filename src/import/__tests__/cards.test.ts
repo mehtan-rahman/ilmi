@@ -157,6 +157,18 @@ describe('detection', () => {
     expect(detect('one line, with a comma').cards).toBe(1);
   });
 
+  it('does not read a clipped article as cards by its commas: the backs are clauses, not glosses', () => {
+    const article = [
+      'In the Leitner system, correctly answered cards are advanced to the next, less frequent box, while incorrectly answered cards return to the first box.',
+      'In 1989, C. J. Camp decided that using this technique with patients may increase their duration of remembering particular things.[^3]',
+      'Schacter, Rich, and Stampp in 1985 expanded the research to include people who have [amnesia](https://en.wikipedia.org/wiki/Amnesia) and other disorders.',
+      'Over the years, techniques and tests have been formed to better patients with memory difficulties.',
+    ].join('\n\n');
+    expect(detect(article).cards).toBeLessThan(2);
+    // a vocabulary list with the same delimiter still reads
+    expect(detect('der Vorsatz, resolution\ndie Lücke, gap\nvergessen, to forget').cards).toBe(3);
+  });
+
   it('does not read dashes and commas in sentences as cards', () => {
     const s = splitCards(PROSE, { side: 'dash', card: 'newline' });
     expect(s.found).toEqual([]);

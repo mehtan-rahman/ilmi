@@ -107,7 +107,8 @@ export function Intake({ active, onOpen }: Props) {
   const st = stats(text);
 
   // cards: detected over the text, the row's choice over that, an Anki header over both
-  const detected = useMemo(() => (text && !pdf && !anki && !book ? detect(text) : null), [text, pdf, anki, book]);
+  // a fetched page is prose by nature: detection runs over it only when the user asks for cards
+  const detected = useMemo(() => (text && !pdf && !anki && !book && (!page || asCards) ? detect(text) : null), [text, pdf, anki, book, page, asCards]);
   const cardsMode = !!detected && (asCards ?? detected.cards >= 2);
   const used: Delims | null = detected ? (detected.anki ? detected.delims : delims ?? detected.delims) : null;
   const split = useMemo(() => (cardsMode && used ? splitCards(text, used) : null), [cardsMode, used, text]);

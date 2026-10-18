@@ -8,7 +8,8 @@ export interface MarkRange {
   kind: 'note' | 'tag';
 }
 
-const MARK = /\[[^\]\n]*\]|#[A-Za-z][\w-]*:?/g;
+// `[^1]` is a footnote reference, not a note
+const MARK = /\[(?!\^)[^\]\n]*\]|#[A-Za-z][\w-]*:?/g;
 
 export function editorialRanges(text: string): MarkRange[] {
   const out: MarkRange[] = [];

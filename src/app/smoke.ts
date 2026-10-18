@@ -183,12 +183,24 @@ export async function smokeReader(vault: Vault): Promise<void> {
 
 /** Select `text` inside the paragraph `p`, as a pointer would. */
 function select(p: HTMLElement, text: string): void {
-  const node = p.firstChild;
-  const at = node?.textContent?.indexOf(text) ?? -1;
-  if (!node || at < 0) throw new Error(`no "${text}" in the paragraph`);
+  // the paragraph's text may be split over decorated spans: find the range across its text nodes
+  const walker = document.createTreeWalker(p, NodeFilter.SHOW_TEXT);
+  const nodes: Text[] = [];
+  for (let t = walker.nextNode(); t; t = walker.nextNode()) nodes.push(t as Text);
+  const whole = nodes.map((t) => t.data).join('');
+  const at = whole.indexOf(text);
+  if (at < 0) throw new Error(`no "${text}" in the paragraph`);
+  const locate = (offset: number): [Text, number] => {
+    let seen = 0;
+    for (const t of nodes) { if (offset <= seen + t.data.length) return [t, offset - seen]; seen += t.data.length; }
+    const last = nodes[nodes.length - 1]!;
+    return [last, last.data.length];
+  };
+  const [sn, so] = locate(at);
+  const [en, eo] = locate(at + text.length);
   const r = document.createRange();
-  r.setStart(node, at);
-  r.setEnd(node, at + text.length);
+  r.setStart(sn, so);
+  r.setEnd(en, eo);
   const sel = window.getSelection()!;
   sel.removeAllRanges();
   sel.addRange(r);
@@ -1630,6 +1642,11 @@ export async function smokeClipping(vault: Vault): Promise<void> {
     const h1 = await until(() => q('.doc-view h1'));
     await sleep(400);
     log(`reader: h1 "${h1.textContent}"; ${q('.frozen-tag')?.textContent}; inspector ${qa('.insp .kv .kvr').map((r) => `${r.querySelector('dt')?.textContent}=${r.querySelector('dd')?.textContent?.slice(0, 80)}`).join(' | ')}`);
+    await sleep(2000);
+    const slots = qa('.draft-doc .md-img-slot, .draft-doc img.md-img');
+    let bytes = -1;
+    try { bytes = (await vault.fs.readBytes(vault.abs('fleeting/Spaced repetition/img-01.png'))).length; } catch { bytes = -2; }
+    log(`images drawn: ${slots.map((e) => `${e.tagName.toLowerCase()}${e.getAttribute('data-state') ? `[${e.getAttribute('data-state')}]` : ''}${e.getAttribute('src') ? ` src=${e.getAttribute('src')?.slice(0, 40)}` : ''}`).join(' | ') || 'none'}; dd-img ${qa('.draft-doc .dd-img').map((e) => e.className).join(' | ') || 'none'}; img-01 bytes ${bytes}; text at top "${q('.draft-doc')?.textContent?.slice(0, 60)}"`);
     await shot('clipping-reader');
     const link = await until(() => q<HTMLButtonElement>('.insp .insp-link'));
     link.click();
@@ -1994,8 +2011,8 @@ export async function smokeDictionary(vault: Vault): Promise<void> {
     // an English word, from the cue's verb
     select(para, 'scaffolding');
     const cue2 = await until(() => q<HTMLElement>('.sel-cue'));
-    await until(() => cue2.querySelector('.cue-act.plug'));
-    cue2.querySelector<HTMLButtonElement>('.cue-act.plug')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+    const lookUp = await until(() => Array.from(cue2.querySelectorAll<HTMLButtonElement>('.cue-act.plug')).find((b) => b.textContent?.startsWith('look up')));
+    lookUp.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
     await until(() => q('.plug-pop .dict-pop'));
     await filled();
     await sleep(300);
@@ -2060,8 +2077,9 @@ export async function smokeRender(vault: Vault): Promise<void> {
 
     // a drawn block's source while it is selected: click the list
     const list = surface.querySelector<HTMLElement>('.raw.rendered[data-kind="list"]')!;
-    list.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, clientX: list.getBoundingClientRect().left + 10, clientY: list.getBoundingClientRect().top + 10 }));
-    list.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
+    const lb = list.getBoundingClientRect();
+    const target = list.querySelector<HTMLElement>('.raw-view li') ?? list;
+    for (const type of ['mousedown', 'mouseup', 'click']) target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, buttons: type === 'mousedown' ? 1 : 0, detail: 1, clientX: lb.left + 10, clientY: lb.top + 10, view: window }));
     await sleep(200);
     log(`list clicked: selected ${list.classList.contains('selected')}; source shown ${list.querySelector('.raw-src') ? getComputedStyle(list.querySelector('.raw-src')!).display : 'none'}; view shown ${getComputedStyle(list.querySelector('.raw-view')!).display}`);
     await shot('render-source');
@@ -2083,7 +2101,9 @@ export async function smokeRender(vault: Vault): Promise<void> {
     const items = surface.querySelectorAll<HTMLElement>('.raw-view li');
     const third = Array.from(items).find((li) => li.textContent?.includes('`code`'));
     log(`list item with code reads "${third?.textContent}" drawn with ${third?.querySelectorAll('.md-code').length} code span`);
-    select(p, 'and `a code span`');
+    // the extract redrew the paragraph: take the node as it is now
+    const p2 = surface.querySelector<HTMLElement>('p.dd-p')!;
+    select(p2, 'and `a code span`');
     await until(() => q('.sel-cue'));
     press('m');
     const ta = await until(() => q<HTMLTextAreaElement>('.composer textarea'));

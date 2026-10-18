@@ -1641,7 +1641,106 @@ plugin's folder and adds it back through `add a plugin` from a zip of
 file drop); screenshots read; `PLUGINS.md` and `plugins/ilmi.d.ts`
 written.
 
-### [ ] 21. Dictionary — look a word up from the selection, add it to a vocab deck
+### [x] 21. Dictionary — look a word up from the selection, add it to a vocab deck
+Done 2026-10-18; commit `TBD`.
+Notes: `plugins/dictionary/` (`plugin.json`, `main.ts`, `style.css`,
+`__tests__/`). `main.ts` exports the pure pieces and `activate`:
+`trimWord` (whitespace collapsed, punctuation and symbols off the edges;
+the Arabic comma included), `bare` (U+064B–U+0655, U+0670, and the tatweel
+stripped — the hamza and madda marks and the dagger alif beyond the
+brief's range, since classical texts carry them), `candidates` (the bare
+word; then each clitic of `و ف ب ك ل ال لل س` off the front in that
+order; then, after `و` or `ف`, the rest with one more clitic off, so
+`وَالْكِتَابُ` tries `والكتاب`, `الكتاب`, `كتاب`; a Latin word adds its
+lowercase, English Wiktionary's titles being case-sensitive; `ك` is a
+clitic too, so `كتاب` would try `تاب` next, but the word itself is asked
+for first), `vocalized` (the headword's vowels come from the selection —
+the REST definitions endpoint carries no headword line — less the clitic
+that came off, the shadda a sun letter took from the article, and the
+case ending: `الذِّكْرُ` → `ذِكْر`, `كِتَابٌ` → `كِتَاب`; the bare form
+when the text had no tashkeel), `languageFor` (the setting, else `ar` for
+Arabic script and `en` otherwise), `requestUrl` (`{word}` encoded as a
+path segment with spaces as `_`, `{lang}`), `htmlToText` (DOMParser,
+`&nbsp;` and whitespace folded), `wiktionarySection` (the response is an
+object keyed by language code with `other` for the rest; empty
+definitions dropped, `form-of-definition` marked as a pointer, the first
+`parsedExamples`/`examples` kept; the first section with entries when the
+asked-for one is missing, so a Persian word with the default still shows
+something, labeled), `stringsAt`/`entriesAt` (a JSON path for another
+dictionary: `a[].b`, `[]` for each element), `firstDefinition` (the first
+meaning that is not a pointer, else the first: `كتاب` gives `book`, not
+`verbal noun of كَتَبَ`), `cardText` (` :: ` and `{{` kept out of the
+sides; the context dropped when it is the definition), `lookup` (a 404
+moves on, another status throws `the dictionary answered N`, a non-JSON
+body throws). `activate`: five settings — `dictionary url` (placeholder
+the Wiktionary template), `definitions at` (placeholder `wiktionary`; a
+JSON path for another dictionary), `language` (`by script`), `deck`
+(`vocab`), `context on the back` (a toggle; `context: true` is written to
+`data.json` on the first activation so the toggle shows what the plugin
+does) — and the action `look up` (key `d`, shown for selections of three
+words or fewer). The popover: `.dict-pop` with `dir="auto"`, the word
+while the lookup runs with `…`, then the headword (the selection beside
+it when it differs), the language name, an entry per part of speech
+(`h3` label, an `ol` of definitions, pointers dimmed, the example under
+its definition), and `add to deck` with `a`; `nothing found for <word>`
+with `tried a · b · c` when more than one form was asked; `could not
+reach <host>` when the fetch rejects; the plugin never throws out of
+`run`, so it stays on. `a` or the button → `addCard(deck, text)`, notice
+`added to <deck name>`, the popover closes; the error's message as a
+notice when the write fails. Corpus: `papers/archive/sutton-2019.md` has
+a fourth paragraph with the sentence `الذِّكْرُ يَحْفَظُ العِلْمَ،
+وَالْكِتَابُ يَحْفَظُ الذِّكْرَ.` for the smoke (no card, no document
+added; the schedule counts stand); `scripts/plugins.ts` copies
+`CORPUS_COPY = ['hello', 'dictionary']` into the corpus vault and turns on
+`CORPUS_ON = ['hello']`, so the dictionary is there, off. Tests:
+`plugins/dictionary/__tests__/dictionary.test.ts` (20) with four real
+responses saved from the endpoint (`ذكر`, `كتاب`, `memory`, and the 404
+body for `الذكر`); vitest's include grew `plugins/**/*.test.ts` and
+tsconfig's `plugins`, so the plugins' TypeScript is typechecked now;
+`src/plugins/__tests__/memfs.ts` holds the in-memory fs, the corpus seed
+(the sample alone unless asked), `fakeBridge(answer)` with `fetched`, and
+the small helpers, shared by both plugin test files. Handle gaps found
+and fixed in `src/plugins/`, api still 1: `addCard` into a folder that
+is not there threw `words: no such folder` (the api doc promised
+`words/arabic.md`) — `ensureDoc` now makes the folders with
+`vault.folderIn`; keys pressed inside a popover or modal reached the
+app's window listeners (the session's `d` `p` ⏎, the reader's `e` `m`)
+— `surfaces.ts` stops bare keys at the box, the plugin's own listeners
+on it still run; a popover filled after it opened kept its first place
+and could run off the bottom — a `ResizeObserver` places it again; a
+verb run from its key left the cue up under the popover — `index.ts`
+has `onPluginAction(fn)`, which the reader and the PDF lens use to put
+the cue away as a click on the verb does. `PLUGINS.md`: the notes on
+`addCard`, `ui.popover`, and tests, and a section on the two shipped
+plugins; README one sentence. Tests: vitest 419 (+20), 23 files; cargo
+12.
+Window: `ILMI_SMOKE=dictionary` ran once (14:41 local) and got as far as
+tweaks: the rows `dictionary 0.1.0 off, hello on`, the toggle → `on`,
+`plugins.json ["hello","dictionary"]`, the five settings with their
+placeholders (`context on the back` showing `on`), `data.json
+{"context":true}`, the style on the page; the one capture showed the
+Mac's lock screen — the session was locked, so the window was covered
+and the webview's timers stalled there; the screen stayed locked for the
+twenty minutes waited, so the lookup, the popover, the add, and the deck
+were not seen in the window. The same steps run in jsdom
+(`dictionary.test.ts`, *in the app*) over the real responses. Owed: the
+window run from the cue onward with its captures (see BUILD-LOG). Also
+found: vite's watcher followed the other agent's worktree under
+`.claude/` and forced full reloads, so `vite.config.ts` ignores
+`**/.claude/**` now.
+Open: the session's card faces and the deck lens have no selection cue,
+so `look up` is not reachable there (the brief's "a card face" waits on
+a cue there); the REST definitions endpoint has no headword line, so a
+word selected without vowels gets a bare headword; the card takes the
+first meaning, there is no picking another from the popover; no check
+for a word already in the deck; the `other` section's entries are
+labeled with the language name Wiktionary gives; a custom dictionary's
+JSON path is tested on a synthetic response only; `language` fixes the
+Wiktionary section but does not change the Wiktionary site (`{lang}` in
+`dictionary url` does); only one clitic comes off, two after a
+conjunction, so `بِالْكِتَابِ` finds `الكتاب`'s page if there is one and
+otherwise nothing; the smoke's screenshot of the English popover and the
+deck are read but the e-ink and dark themes were not captured.
 `plugins/dictionary/`, the first real plugin and the proof of the API:
 the user reads classical Arabic and wants a word looked up and, when
 unknown, added to a deck without leaving the page.
@@ -1991,9 +2090,9 @@ the `*emphasis*` open item under 19 closed.
 
 ## Notes for the next session
 
-Milestones 0–20, 22, and 23 are ticked (22 and 23 on branches, merged;
-23's window check is recorded under it); 21 under *Plugins* is next, then
-24–25 under *Clipping and rendering* (24 may run on a branch beside 21).
+Milestones 0–23 are ticked (22 and 23 on branches, merged; 23's window
+check is recorded under it; 21 on main while 24 ran on a branch); 24–25
+under *Clipping and rendering* are next (24 may be waiting to merge).
 After them, what is left is a polish pass
 over the open items
 each milestone's notes record (10: no palette command or key for
@@ -2005,7 +2104,10 @@ say-so; 15: the list under it; the session card's faces are not editable
 in place; 16: the Anki row is fixed to its header, leftovers may read as
 headings or lists; 17: the user's own `.apkg` untried, media not copied,
 suspended cards import as ordinary ones; 19: the user's own book untried,
-emphasis shown with its asterisks, images not copied) and, with the user, whether the
+emphasis shown with its asterisks, images not copied; 20: the folder
+picker, an OS drop, and the `replace` row unseen in the window; 21: no
+cue on a card face or in the deck lens, so no `look up` there, the first
+meaning always the card's back) and, with the user, whether the
 next thing is that pass, the
 margin-gloss text flow the ground rules keep out of the plan, or
 something new. The handoff prompt at the top of `BUILD-LOG.md` lists the

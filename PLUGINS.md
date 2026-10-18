@@ -58,15 +58,18 @@ Notes on a few of them:
   already changed alone (the sample checks for its own class). The reader's
   surface is a ProseMirror editor: wrap text in spans, do not change it.
 - `addCard` creates the deck when it is missing (`type: deck`, named after
-  the file) and refuses text that is not a card by FORMAT.md §5.
+  the file), and the folders on the way to it, and refuses text that is not
+  a card by FORMAT.md §5.
 - `ui.settings` takes a builder that runs each time the section draws:
   `s.text(key, label, { placeholder? })`, `s.toggle(key, label)`,
   `s.choice(key, label, options)`, `s.note(text)`. Each control is bound to
   `key` in `data.json`; read values with `ilmi.store.get(key)`.
 - `ui.popover` and `ui.modal` take an element you built and style the box
-  as the palette; esc, a press outside, or `close()` ends it. Key handling
-  inside is yours (`el.addEventListener('keydown', …)`); the app's bare-key
-  commands stay quiet while a popover has focus.
+  as the palette; esc, a press outside, or `close()` ends it. The box has
+  focus when it opens, so listen on the `el` that comes back
+  (`pop.el.addEventListener('keydown', …)`); keys pressed inside stay inside
+  (the app's bare keys do not see them), and a popover whose content grows
+  after it opened is placed again so it stays on screen.
 - A command's `key` is `h`, `shift+h`, or `mod+shift+h`; an action's is a
   bare key. `e` and `m` belong to the cue and are refused. The app's own
   keys (`r`, `j`, `k`, `p`, `d`, `o`, `[`, `]`, space, the digits) are not
@@ -91,8 +94,30 @@ export function activate(ilmi: Ilmi) {
 `plugins/dist/<id>/main.js` (one file, dependencies included, so `require`
 is never needed and serves nothing at run time), copies `plugin.json` and
 `style.css` beside it, zips the folder flat as `plugins/dist/<id>.zip`, and
-regenerates `plugins/ilmi.d.ts` from `src/plugins/api.ts`. The sample,
-`plugins/hello/`, is also copied into the corpus vault for the tests.
+regenerates `plugins/ilmi.d.ts` from `src/plugins/api.ts`. The shipped
+plugins are also copied into the corpus vault for the tests (the sample on,
+the rest off), so run it after changing one. A plugin's own tests live
+beside it in `plugins/<id>/__tests__/` and run with `npx vitest run`; the
+helpers in `src/plugins/__tests__/memfs.ts` give them the corpus vault in an
+in-memory fs and a bridge that remembers its notices and fetches.
+
+## The ones here
+
+- `hello`: the sample, one of everything.
+- `dictionary`: `look up` on the selection cue (key `d`) normalizes the
+  word (Arabic: tashkeel and tatweel stripped, then the clitics `و` `ف` `ب`
+  `ك` `ل` `ال` `لل` `س` tried off the front, one at a time and in that
+  order, and a second one after a conjunction), asks Wiktionary's REST
+  definitions endpoint, and shows the entries of the word's language section
+  in a popover: the headword with the vowels the selection had, part of
+  speech, definitions, the first example. `add to deck` there (key `a`)
+  writes `<headword> :: <first definition>` to the deck in its settings
+  (`vocab` at the root by default, made when missing), with the sentence
+  around the word as a second line of the back while `context on the back`
+  is on. Another dictionary goes in `dictionary url` (`{word}` and `{lang}`
+  are filled) with `definitions at`, a JSON path to its definition strings
+  (`[].meanings[].definitions[].definition` reads dictionaryapi.dev);
+  `language` fixes the section (`ar`, `en`, …) instead of going by script.
 
 Outside the repo, any bundler that produces one CommonJS file does. Keep
 `id` to lowercase letters, digits, and hyphens; it is the folder's name.

@@ -11,7 +11,7 @@ export default defineConfig({
     port: 1420,
     strictPort: true,
     host: host || false,
-    watch: { ignored: ['**/src-tauri/**'] },
+    watch: { ignored: ['**/src-tauri/**', '**/.claude/**'] },
   },
   build: {
     outDir: 'dist',
@@ -20,6 +20,6 @@ export default defineConfig({
     sourcemap: !!process.env.TAURI_ENV_DEBUG,
   },
   test: {
-    include: ['src/**/*.test.ts'],
+    include: ['src/**/*.test.ts', 'plugins/**/*.test.ts'],
   },
 });

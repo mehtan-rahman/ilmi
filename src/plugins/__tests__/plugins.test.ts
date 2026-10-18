@@ -6,157 +6,16 @@
 // the others alone; turning a plugin off takes everything back; files
 // changing on disk reload it; a package installs.
 
-import { readdirSync, readFileSync, statSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { parse } from '../../format/index.js';
-import { Vault, type Fs, type FsEntry, type FsStat } from '../../vault/index.js';
 import type { Ilmi, Selection } from '../api.js';
 import { contextOf, keyMatches, parseKey } from '../context.js';
-import { API, PluginHost, cleanPluginPath, parseManifest, type Bridge } from '../runtime.js';
-import { showModal, showPopover } from '../surfaces.js';
-
-// jsdom gives `import.meta.url` an http scheme, so the paths come from the test's directory
-const CORPUS = join(import.meta.dirname, '../../format/__tests__/corpus/vault/');
-const REPO = join(import.meta.dirname, '../../../');
-const ROOT = '/v';
-
-// ── an in-memory fs ──────────────────────────────────────────────
-
-interface MemFs extends Fs {
-  files: Map<string, string | Uint8Array>;
-  dirs: Set<string>;
-}
-
-function memFs(): MemFs {
-  const files = new Map<string, string | Uint8Array>();
-  const dirs = new Set<string>();
-  const stamps = new Map<string, number>();
-  let clock = 1;
-  const parent = (p: string) => p.slice(0, p.lastIndexOf('/'));
-  const mkdirp = (p: string) => { for (let d = p; d && d !== '/'; d = parent(d)) dirs.add(d); };
-  const touch = (p: string) => stamps.set(p, clock++);
-  const size = (v: string | Uint8Array) => (typeof v === 'string' ? Buffer.byteLength(v) : v.length);
-  const fs: MemFs = {
-    files,
-    dirs,
-    async readDir(path): Promise<FsEntry[]> {
-      if (!dirs.has(path)) throw new Error(`${path}: no such directory`);
-      const out = new Map<string, FsEntry>();
-      const pre = `${path}/`;
-      for (const f of files.keys()) if (f.startsWith(pre) && !f.slice(pre.length).includes('/')) out.set(f, { name: f.slice(pre.length), isDir: false, isFile: true });
-      for (const d of dirs) if (d.startsWith(pre) && !d.slice(pre.length).includes('/')) out.set(d, { name: d.slice(pre.length), isDir: true, isFile: false });
-      return [...out.values()];
-    },
-    async stat(path): Promise<FsStat | null> {
-      const v = files.get(path);
-      if (v !== undefined) return { mtimeMs: stamps.get(path) ?? 0, size: size(v), isDir: false };
-      if (dirs.has(path)) return { mtimeMs: 0, size: 0, isDir: true };
-      return null;
-    },
-    async readText(path) {
-      const v = files.get(path);
-      if (v === undefined) throw new Error(`${path}: no such file`);
-      return typeof v === 'string' ? v : new TextDecoder().decode(v);
-    },
-    async writeText(path, text) {
-      if (!dirs.has(parent(path))) throw new Error(`${parent(path)}: no such directory`);
-      files.set(path, text);
-      touch(path);
-    },
-    async readBytes(path) {
-      const v = files.get(path);
-      if (v === undefined) throw new Error(`${path}: no such file`);
-      return typeof v === 'string' ? new TextEncoder().encode(v) : v;
-    },
-    async writeBytes(path, bytes) {
-      files.set(path, bytes);
-      touch(path);
-    },
-    async rename(from, to) {
-      const v = files.get(from);
-      if (v !== undefined) {
-        files.delete(from);
-        files.set(to, v);
-        touch(to);
-        return;
-      }
-      if (!dirs.has(from)) throw new Error(`${from}: no such file`);
-      for (const d of [...dirs]) if (d === from || d.startsWith(`${from}/`)) { dirs.delete(d); dirs.add(to + d.slice(from.length)); }
-      for (const [f, val] of [...files]) if (f.startsWith(`${from}/`)) { files.delete(f); files.set(to + f.slice(from.length), val); }
-    },
-    async mkdir(path) { mkdirp(path); },
-    async remove(path) {
-      files.delete(path);
-      for (const d of [...dirs]) if (d === path || d.startsWith(`${path}/`)) dirs.delete(d);
-      for (const f of [...files.keys()]) if (f.startsWith(`${path}/`)) files.delete(f);
-    },
-    async watch() { return () => {}; },
-  };
-  mkdirp(ROOT);
-  return fs;
-}
-
-/** The corpus vault, `.ilmi/plugins/` included, copied into the fs. */
-function seed(fs: MemFs): void {
-  const visit = (dir: string) => {
-    for (const name of readdirSync(dir)) {
-      const p = join(dir, name);
-      const rel = relative(CORPUS, p).split('\\').join('/');
-      if (statSync(p).isDirectory()) {
-        fs.dirs.add(`${ROOT}/${rel}`);
-        visit(p);
-      } else {
-        fs.files.set(`${ROOT}/${rel}`, readFileSync(p, 'utf8'));
-      }
-    }
-  };
-  visit(CORPUS);
-}
-
-/** Another plugin in the fs, as a folder; `code` is the bundle. */
-function addPlugin(fs: MemFs, id: string, code: string, manifest: Record<string, unknown> = {}): void {
-  const dir = `${ROOT}/.ilmi/plugins/${id}`;
-  fs.dirs.add(dir);
-  fs.files.set(`${dir}/plugin.json`, JSON.stringify({ id, name: id, version: '1.0.0', api: 1, ...manifest }));
-  fs.files.set(`${dir}/main.js`, code);
-}
-
-function enable(fs: MemFs, ids: string[]): void {
-  fs.files.set(`${ROOT}/.ilmi/plugins.json`, JSON.stringify(ids));
-}
-
-// ── a bridge that remembers ──────────────────────────────────────
-
-function fakeBridge() {
-  const notices: string[] = [];
-  const bridge: Bridge & { notices: string[]; opened: string[] } = {
-    notices,
-    opened: [],
-    version: '0.1.0',
-    notice: (t) => notices.push(t),
-    fetch: async () => new Response('ok'),
-    today: () => [{ kind: 'card', path: 'german.md', block: 3, text: 'x', due: '2026-10-18T12:00:00.000Z', pri: 50 }],
-    onQueue: () => () => {},
-    current: () => null,
-    activeLens: () => ({ path: 'german.md', kind: 'deck' }),
-    openLens: (p) => bridge.opened.push(p),
-    popover: showPopover,
-    modal: showModal,
-    addStyle: (id, css) => {
-      const el = document.createElement('style');
-      el.dataset.plugin = id;
-      el.textContent = css;
-      document.head.appendChild(el);
-      return () => el.remove();
-    },
-  };
-  return bridge;
-}
+import { API, PluginHost, cleanPluginPath, parseManifest } from '../runtime.js';
+import { REPO, ROOT, Vault, addPlugin, enable, fakeBridge, memFs, seed, sleep, type MemFs } from './memfs.js';
 
 const SEL: Selection = { text: 'three little words', path: 'papers/wozniak-1990.md', block: 2, rect: { top: 10, left: 10, bottom: 30, right: 200, width: 190, height: 20 }, context: 'three little words.' };
-
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** The handle a test plugin stashes on `globalThis`. */
 declare global {
@@ -305,6 +164,11 @@ describe('the handle', () => {
     expect(second.doc.blocks[1]).toEqual({ kind: 'card', text: 'قلم :: pen\nwith context', sched: { pri: 30 } });
     // into a folder that is there, and the deck already a deck
     expect(await ilmi.vault.addCard('german.md', 'der Tisch ::: table')).toBeGreaterThan(0);
+    // into folders that are not there yet: they are made on the way
+    expect(await ilmi.vault.addCard('words/arabic/nouns.md', 'قلم :: pen')).toBe(0);
+    expect(vault.documents()).toContain('words/arabic/nouns.md');
+    expect(vault.tree.map((n) => n.name)).toContain('words');
+    expect(parse(await ilmi.vault.read('words/arabic/nouns.md')).doc.blocks).toEqual([{ kind: 'card', text: 'قلم :: pen' }]);
     await expect(ilmi.vault.addCard('vocab.md', 'just prose')).rejects.toThrow('not a card');
     await expect(ilmi.vault.addCard('../out.md', 'a :: b')).rejects.toThrow('outside the vault');
   });

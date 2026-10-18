@@ -16,7 +16,7 @@ import {
 import { advanceWrite, whenToDate } from '../schedule/index.js';
 import { dirOf, nameOf, type Loaded, type Vault } from '../vault/index.js';
 import { CueActions } from '../plugins/CueActions.js';
-import { publishSelection as publishPluginSelection, runBlockHooks, toPluginSelection, usePlugins, wantsBlocks, type PluginSelection } from '../plugins/index.js';
+import { onPluginAction, publishSelection as publishPluginSelection, runBlockHooks, toPluginSelection, usePlugins, wantsBlocks, type PluginSelection } from '../plugins/index.js';
 import { Composer } from './Composer.js';
 import { dueLabel } from './items.js';
 import { titleOf } from './names.js';
@@ -637,6 +637,8 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
     publishPluginSelection(plugSel);
     return () => publishPluginSelection(null);
   }, [plugSel]);
+  // a plugin's verb run from its key puts the cue away, as a click on the verb does
+  useEffect(() => onPluginAction(() => setSel(null)), []);
 
   const openComposer = () => {
     const view = viewRef.current;

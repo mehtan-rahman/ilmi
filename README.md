@@ -26,7 +26,10 @@ npm run plugins        # build the plugins under plugins/ (esbuild) and refresh 
 ```
 
 Plugins live in a vault's `.ilmi/plugins/` and are turned on in tweaks; the
-API, how to write one, and how to package one are in `PLUGINS.md`.
+API, how to write one, and how to package one are in `PLUGINS.md`. The repo
+ships two under `plugins/`: the sample, and a dictionary that looks a selected
+word up (Wiktionary by default, Arabic clitics stripped on the way) and adds
+it to a vocab deck from the popover.
 
 The import reads a SuperMemo collection's data files (`src/import/supermemo/LAYOUT.md`
 says which bytes, and on whose word) and lands its tree as folders, topics as

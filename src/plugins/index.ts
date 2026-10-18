@@ -110,6 +110,7 @@ function onKey(e: KeyboardEvent): void {
     if (a) {
       e.preventDefault();
       host.runAction(a, sel);
+      for (const fn of actionListeners) fn();
       return;
     }
   }
@@ -121,6 +122,13 @@ function onKey(e: KeyboardEvent): void {
 }
 
 let keysOn = false;
+const actionListeners = new Set<() => void>();
+
+/** A lens hears when a plugin's verb ran from its key, to put its cue away as a click on the verb does. */
+export function onPluginAction(fn: () => void): () => void {
+  actionListeners.add(fn);
+  return () => { actionListeners.delete(fn); };
+}
 
 /** Start the runtime over `vault`: the enable list is read, what is on runs. Called by `openVault`. */
 export async function startPlugins(vault: Vault): Promise<PluginHost> {

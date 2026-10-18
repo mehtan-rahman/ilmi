@@ -326,8 +326,8 @@ export function openInitialVault(): Promise<void> {
       if (path) {
         const vault = await openVault(path);
         if (mode) {
-          const { smoke, smokeReader, smokeCards, smokeIntake, smokeQueue, smokeLoop, smokeShots, smokeDeck, smokePri, smokeGrowth, smokeOverload, smokePdf, smokeFaces, smokeCardsText, smokeAnki, smokeMath, smokeEpub, smokeClip, smokePlugins } = await import('./smoke.js');
-          const run = { reader: smokeReader, cards: smokeCards, intake: smokeIntake, queue: smokeQueue, loop: smokeLoop, shots: smokeShots, deck: smokeDeck, pri: smokePri, growth: smokeGrowth, overload: smokeOverload, pdf: smokePdf, faces: smokeFaces, 'cards-text': smokeCardsText, anki: smokeAnki, math: smokeMath, epub: smokeEpub, clip: smokeClip, plugins: smokePlugins }[mode] ?? smoke;
+          const { smoke, smokeReader, smokeCards, smokeIntake, smokeQueue, smokeLoop, smokeShots, smokeDeck, smokePri, smokeGrowth, smokeOverload, smokePdf, smokeFaces, smokeCardsText, smokeAnki, smokeMath, smokeEpub, smokeClip, smokePlugins, smokeDictionary } = await import('./smoke.js');
+          const run = { reader: smokeReader, cards: smokeCards, intake: smokeIntake, queue: smokeQueue, loop: smokeLoop, shots: smokeShots, deck: smokeDeck, pri: smokePri, growth: smokeGrowth, overload: smokeOverload, pdf: smokePdf, faces: smokeFaces, 'cards-text': smokeCardsText, anki: smokeAnki, math: smokeMath, epub: smokeEpub, clip: smokeClip, plugins: smokePlugins, dictionary: smokeDictionary }[mode] ?? smoke;
           await run(vault);
         }
         return;

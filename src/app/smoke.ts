@@ -63,6 +63,12 @@
 // plugin's folder, and adds it back from a zip (`ILMI_PLUGIN_ZIP=<path>`,
 // `plugins/dist/hello.zip` after `npm run plugins`) through the section's
 // hook.
+// `ILMI_SMOKE=dictionary` turns the dictionary plugin on from tweaks, opens
+// the sutton paper, selects the Arabic word in its margin line, presses `d`
+// and reads the popover the live Wiktionary lookup fills (the article
+// stripped on the way), adds the word with `a` and logs the deck file's
+// lines and the queue's count, looks an English word up from the cue's
+// verb and adds it too, then opens the deck.
 // `ILMI_SMOKE=welcome` runs before any vault opens: it seeds the recents
 // with the scratch vault (`ILMI_VAULT`) and a path that does not exist,
 // turns `reopen the last vault on start` off, reads the welcome's rows and
@@ -1831,6 +1837,110 @@ export async function smokeWelcome(scratch: string | null): Promise<void> {
     log('reloading');
     await sleep(300);
     location.reload();
+  } catch (e) {
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+export async function smokeDictionary(vault: Vault): Promise<void> {
+  const log = (s: string) => info(`smoke dictionary: ${s}`);
+  const shot = async (name: string, ms = 10000) => { await sleep(600); log(`shot: ${name}`); await sleep(ms); };
+  const q = <T extends Element>(sel: string) => document.querySelector<T>(sel);
+  const qa = <T extends Element>(sel: string) => Array.from(document.querySelectorAll<T>(sel));
+  const notice = () => useApp.getState().log[0] ?? '';
+  const noticed = (part: string, times = 1, ms = 8000) => until(() => (useApp.getState().log.filter((l) => l.includes(part)).length >= times ? true : null), ms);
+  const row = () => q<HTMLElement>('.tweaks .pl-row[data-id="dictionary"]');
+  const file = async (rel: string) => (await vault.fs.readText(vault.abs(rel))).replace(/\s+/g, '');
+  const popover = () => {
+    const pop = q<HTMLElement>('.plug-pop');
+    if (!pop) return 'no popover';
+    const entries = qa<HTMLElement>('.plug-pop .dict-entry').map((e) => `${e.querySelector('h3')?.textContent ?? '-'}: ${Array.from(e.querySelectorAll('li')).slice(0, 3).map((li) => li.firstChild?.textContent).join(' / ')} (${e.querySelectorAll('li').length})`);
+    return `headword "${q('.plug-pop .dict-word')?.textContent}"; from "${q('.plug-pop .dict-from')?.textContent ?? ''}"; language "${q('.plug-pop .dict-lang')?.textContent ?? ''}"; quiet "${q('.plug-pop .dict-quiet')?.textContent ?? ''}"; entries ${entries.join(' || ')}; button "${q('.plug-pop .dict-acts button')?.textContent ?? ''}"; box top ${pop.style.top} left ${pop.style.left} height ${pop.offsetHeight} of ${window.innerHeight}`;
+  };
+  const filled = () => until(() => (q('.plug-pop .dict-entry') || (q('.plug-pop .dict-quiet') && q('.plug-pop .dict-quiet')?.textContent !== '…') ? true : null), 20000);
+  const SUTTON = 'papers/archive/sutton-2019.md';
+  const { pluginHost } = await import('../plugins/index.js');
+  try {
+    const host = pluginHost();
+    if (!host) throw new Error('no plugin runtime');
+    log(`rows ${JSON.stringify(host.rows().map((r) => ({ id: r.id, version: r.version, enabled: r.enabled, state: r.state })))}`);
+
+    // on, from tweaks
+    useApp.setState({ tweaksOpen: true });
+    await until(row);
+    if (row()!.dataset.state !== 'on') row()!.querySelector<HTMLButtonElement>('.pl-head .pl-toggle')!.click();
+    await until(() => (row()?.dataset.state === 'on' ? true : null));
+    await until(() => (row()?.querySelector('.pl-set') ? true : null));
+    await sleep(400);
+    const settings = Array.from(row()!.querySelectorAll<HTMLElement>('.pl-set .tw-lbl')).map((l) => `${l.firstChild?.textContent} [${l.querySelector('input')?.placeholder ?? l.querySelector('button')?.textContent ?? ''}]`);
+    log(`on: head "${row()!.querySelector('.pl-head')?.textContent}"; plugins.json ${await file('.ilmi/plugins.json')}; settings ${settings.join(' | ')}; data.json ${await file('.ilmi/plugins/dictionary/data.json').catch(() => 'none')}; style ${!!document.head.querySelector('style[data-plugin="dictionary"]')}`);
+    await shot('dictionary-tweaks');
+    useApp.setState({ tweaksOpen: false });
+
+    // the Arabic word, selected in the reader; `d` looks it up
+    const queueBefore = useApp.getState().queue.length;
+    openNode(SUTTON);
+    const surface = await until(() => q<HTMLElement>('.doc-view .draft-doc'));
+    const para = await until(() => Array.from(surface.querySelectorAll<HTMLElement>('p.dd-p')).find((el) => el.textContent?.includes('الذِّكْرُ')));
+    await sleep(300);
+    para.scrollIntoView({ block: 'center' });
+    await sleep(300);
+    select(para, 'الذِّكْرُ');
+    const cue = await until(() => q<HTMLElement>('.sel-cue'));
+    await until(() => cue.querySelector('.cue-act.plug'));
+    const sel = host.currentSelection();
+    log(`cue: ${Array.from(cue.querySelectorAll('.cue-act')).map((b) => b.textContent).join(' | ')}; selection "${sel?.text}" in block ${sel?.block}; context "${sel?.context}"`);
+    await shot('dictionary-cue');
+    press('d');
+    const pop = await until(() => q<HTMLElement>('.plug-pop .dict-pop'));
+    log(`popover up: "${pop.querySelector('.dict-word')?.textContent}"; cue ${q('.sel-cue') ? 'still up' : 'gone'}; focus on ${document.activeElement?.className || document.activeElement?.tagName}`);
+    await filled();
+    await sleep(300);
+    log(`arabic: ${popover()}`);
+    if (!q('.plug-pop .dict-entry')) {
+      const quiet = q('.plug-pop .dict-quiet')?.textContent ?? '';
+      log(quiet.startsWith('could not reach') ? 'offline: the lookup did not reach the endpoint; stopping here' : `no entries: "${quiet}" ${q('.plug-pop .dict-tried')?.textContent ?? ''}`);
+      await shot('dictionary-popover');
+      log('failed: no entries');
+      return;
+    }
+    await shot('dictionary-popover');
+
+    // `a` adds it
+    q<HTMLElement>('.plug-pop')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', bubbles: true, cancelable: true }));
+    await noticed('added to vocab');
+    await until(() => (vault.documents().includes('vocab.md') ? true : null));
+    await sleep(600);
+    const deck = await vault.read('vocab.md', true);
+    log(`added: notice "${notice()}"; popover ${q('.plug-pop') ? 'still up' : 'gone'}; vocab.md ${deck.text.split('\n').length} lines: ${deck.text.split('\n').map((l) => JSON.stringify(l)).join(' ')}; blocks ${deck.doc.blocks.map((b) => b.kind).join(',')}; diagnostics ${deck.diagnostics.length}`);
+    await until(() => (useApp.getState().queue.length > queueBefore ? true : null), 4000).catch(() => null);
+    const queued = useApp.getState().queue;
+    log(`queue: ${queueBefore} before, ${queued.length} after; from the deck ${JSON.stringify(queued.filter((i) => i.path === 'vocab.md').map((i) => ({ kind: i.kind, block: i.kind === 'card' ? i.block : null, due: i.dueAt.toISOString().slice(0, 10), pri: i.pri })))}`);
+    await shot('dictionary-added');
+
+    // an English word, from the cue's verb
+    select(para, 'scaffolding');
+    const cue2 = await until(() => q<HTMLElement>('.sel-cue'));
+    await until(() => cue2.querySelector('.cue-act.plug'));
+    cue2.querySelector<HTMLButtonElement>('.cue-act.plug')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+    await until(() => q('.plug-pop .dict-pop'));
+    await filled();
+    await sleep(300);
+    log(`english: ${popover()}; cue ${q('.sel-cue') ? 'still up' : 'gone'}`);
+    await shot('dictionary-english');
+    q<HTMLButtonElement>('.plug-pop .dict-acts button')?.click();
+    await noticed('added to vocab', 2);
+    await sleep(600);
+    const deck2 = await vault.read('vocab.md', true);
+    log(`added again: notice "${notice()}"; vocab.md ${deck2.text.split('\n').length} lines; cards ${deck2.doc.blocks.filter((b) => b.kind === 'card').map((b) => JSON.stringify(b.text.split('\n')[0]?.slice(0, 90))).join(' ')}; diagnostics ${deck2.diagnostics.length}; queue ${useApp.getState().queue.length}`);
+
+    // the deck lens
+    openNode('vocab.md');
+    await until(() => q('.deck-view .card-span'));
+    await sleep(600);
+    log(`deck lens: ${qa<HTMLElement>('.deck-view .card-span').length} rows; first "${q('.deck-view .card-span')?.textContent?.trim().slice(0, 100)}"; tab "${q('.tabbar .tab[data-active="1"] .title')?.textContent}"`);
+    await shot('dictionary-deck');
+    log('done');
   } catch (e) {
     log(`failed: ${e instanceof Error ? e.message : String(e)}`);
   }

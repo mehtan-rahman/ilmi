@@ -14,7 +14,7 @@ import { pickPos, type Band } from '../reader/index.js';
 import { addToPage, childDirOf, pageOfBlock } from '../vault/index.js';
 import { cardLabel, revealIndex } from './chrome.js';
 import { CueActions } from '../plugins/CueActions.js';
-import { publishSelection, toPluginSelection, type PluginSelection } from '../plugins/index.js';
+import { onPluginAction, publishSelection, toPluginSelection, type PluginSelection } from '../plugins/index.js';
 import { Composer } from './Composer.js';
 import { EL_GLYPH } from './items.js';
 import { GLYPH, titleOf } from './names.js';
@@ -387,6 +387,7 @@ function Pages({ id, active, session, onText }: PagesProps) {
     publishSelection(plugSel);
     return () => publishSelection(null);
   }, [plugSel]);
+  useEffect(() => onPluginAction(() => setSel(null)), []);
 
   const doExtract = () => {
     const s = selRef.current;

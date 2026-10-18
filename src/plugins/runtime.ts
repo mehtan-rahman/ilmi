@@ -760,7 +760,10 @@ export class PluginHost {
       const rel = cleanPluginPath(path);
       if (!isDoc(rel)) throw new Error(`${rel}: not a document`);
       if (await vault.fs.stat(vault.abs(rel))) return rel;
-      return vault.createDoc(dirOf(rel), 'deck', nameOf(rel));
+      // the folders on the way are made too (`words/arabic.md` in a vault without `words/`)
+      let dir = '';
+      for (const seg of dirOf(rel).split('/').filter(Boolean)) dir = await vault.folderIn(dir, seg);
+      return vault.createDoc(dir, 'deck', nameOf(rel));
     };
 
     const vaultApi: A.VaultApi = {

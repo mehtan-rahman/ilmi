@@ -48,6 +48,10 @@ function surface(cls: string, el: HTMLElement, mount: (box: HTMLElement) => HTML
   const onDown = (e: MouseEvent) => {
     if (!box.contains(e.target as Node)) close();
   };
+  // keys pressed inside stay inside: the plugin's own listeners on the box still run, the app's bare keys do not
+  box.addEventListener('keydown', (e) => {
+    if (!e.metaKey && !e.ctrlKey) e.stopPropagation();
+  });
   // after this click settles, so the press that opened it does not close it
   setTimeout(() => {
     if (!open) return;
@@ -58,11 +62,19 @@ function surface(cls: string, el: HTMLElement, mount: (box: HTMLElement) => HTML
   return { el: box, close };
 }
 
-/** `el` under `rect`; the one before it closes. */
+/** `el` under `rect`; the one before it closes. Placed again as its content grows, so a box filled later stays on screen. */
 export function showPopover(rect: Rect, el: HTMLElement): Popover {
   openPopover?.close();
-  const pop = surface('plug-pop', el, (box) => { document.body.appendChild(box); return box; }, () => { if (openPopover === pop) openPopover = null; });
+  let ro: ResizeObserver | null = null;
+  const pop = surface('plug-pop', el, (box) => { document.body.appendChild(box); return box; }, () => {
+    ro?.disconnect();
+    if (openPopover === pop) openPopover = null;
+  });
   place(pop.el, rect);
+  if (typeof ResizeObserver !== 'undefined') {
+    ro = new ResizeObserver(() => place(pop.el, rect));
+    ro.observe(pop.el);
+  }
   openPopover = pop;
   return pop;
 }

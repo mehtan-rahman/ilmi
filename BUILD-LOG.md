@@ -6,6 +6,139 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-10-18 — milestone 21: dictionary, a word looked up from the selection and added to a vocab deck
+
+Commit `TBD` — *dictionary: the first real plugin, `look up` on the cue
+(d) through Wiktionary with Arabic clitics stripped, `add to deck` (a)
+from the popover, its tests over saved responses, and four handle gaps
+closed*. Done on `main` while milestone 24 ran on a branch; the files
+shared with it are likely `PLAN.md`, `BUILD-LOG.md`, `README.md` (the
+plugins paragraph), `src/app/smoke.ts` (the header comment and the
+function appended at the end), and `src/app/vault.ts` (the smoke import
+and dispatch line).
+
+### Done
+
+- `plugins/dictionary/`: `plugin.json`, `main.ts` (the pure pieces
+  exported — `trimWord`, `bare`, `candidates`, `vocalized`, `languageFor`,
+  `requestUrl`, `htmlToText`, `wiktionarySection`, `stringsAt`/`entriesAt`,
+  `firstDefinition`, `cardText`, `lookup` — and `activate` with the five
+  settings, the `look up` action on `d`, and the popover), `style.css`,
+  `__tests__/dictionary.test.ts` with four real responses from
+  `en.wiktionary.org/api/rest_v1/page/definition/<word>` (`ذكر`, `كتاب`,
+  `memory`, the 404 body for `الذكر`), fetched once with curl while
+  building.
+- Handle gaps, in `src/plugins/` (api stays 1): `addCard` makes the
+  folders on the way to a new deck (`runtime.ts`, `ensureDoc` via
+  `vault.folderIn`); keys inside a popover or modal stay inside
+  (`surfaces.ts`); a popover is placed again as it grows (`surfaces.ts`,
+  `ResizeObserver`); `onPluginAction` in `index.ts`, used by `Reader.tsx`
+  and `Pdf.tsx` to put the cue away when a verb runs from its key.
+- `scripts/plugins.ts`: `CORPUS_COPY` beside `CORPUS_ON`, so the corpus
+  vault carries `.ilmi/plugins/dictionary/` off; `vite.config.ts` runs
+  `plugins/**/*.test.ts`; `tsconfig.json` includes `plugins`;
+  `src/plugins/__tests__/memfs.ts` holds what the plugin tests share.
+- Corpus: `papers/archive/sutton-2019.md` gained one paragraph with an
+  Arabic sentence (`الذِّكْرُ يَحْفَظُ العِلْمَ، وَالْكِتَابُ يَحْفَظُ
+  الذِّكْرَ.`); no card or document added.
+- `PLUGINS.md` (the shipped plugins, the notes on `addCard`, `ui.popover`,
+  and tests), README (one sentence), the smoke `ILMI_SMOKE=dictionary`.
+- Tests: vitest 419 (+20), 23 files; cargo 12.
+
+### Verified
+
+- `npm run typecheck` clean, `npx vitest run` green (23 files, 419),
+  `cargo test` green (12).
+- In the window (`ILMI_VAULT=<scratch copy> ILMI_SMOKE=dictionary npm run
+  tauri dev`, one run, 14:41 local): the runtime listed `dictionary 0.1.0
+  off` beside `hello on`; the toggle turned it on, `plugins.json` became
+  `["hello","dictionary"]`, the row showed `dictionary 0.1.0 ilmi · reload
+  · on` and the five settings — `dictionary url` (placeholder the
+  Wiktionary template), `definitions at` (`wiktionary`), `language` (`by
+  script`), `deck` (`vocab`), `context on the back` (`on`) — with
+  `data.json {"context":true}` written and the plugin's style on the page.
+  The one capture (`dictionary-tweaks`) showed the Mac's lock screen: the
+  session was locked, so the window was covered, and the webview's timers
+  stalled under the lock — no line after the shot, and the run was cut at
+  the 12-minute cap. The screen stayed locked for the twenty minutes waited
+  afterwards, so **the lookup, the popover, the add, the queue count, and
+  the deck were not seen in the window**; they are exercised in jsdom over
+  the saved responses (`dictionary.test.ts`, *in the app*: the article
+  stripped, six entries for `ذكر`, `ذِكْر :: to mention` plus the sentence
+  in `vocab.md`, the notice, `words/english.md` for `memory`, nothing
+  found, offline). Owed to the next session: `ILMI_SMOKE=dictionary` with
+  the screen unlocked, its five captures read (`dictionary-tweaks`, `-cue`,
+  `-popover`, `-added`, `-english`, `-deck`).
+- Also found and fixed on the way: vite's watcher followed the other
+  agent's worktree under `.claude/` (a `tsconfig.json` change there forced
+  full reloads of the page), so `vite.config.ts` ignores `**/.claude/**`.
+
+### Not done / open
+
+- See the PLAN notes: no cue on a card face or in the deck lens, so no
+  `look up` there; the headword's vowels come from the selection, the
+  endpoint having none; the first meaning is the card's back, no picking;
+  no duplicate check; a custom dictionary's path tested on a synthetic
+  response only.
+
+### Decisions worth knowing
+
+- The headword's vowels are the selection's, not the entry's: the REST
+  definitions endpoint returns definitions only, and the `form-of`
+  mentions inside them name other lemmas, so the article and the case
+  ending come off the selected word instead (`الذِّكْرُ` → `ذِكْر`).
+- The card's back is the first *meaning*: Wiktionary lists `verbal noun of
+  …` and `plural of …` first for many Arabic nouns, and those are marked
+  `form-of-definition` in the HTML, so they are skipped for the card and
+  dimmed in the popover.
+- `context: true` is written to `data.json` on the first activation,
+  because a toggle reads the file and would otherwise show `off` while
+  the plugin behaved as on.
+- A plugin's own tests live beside it and run through the runtime over the
+  corpus copy of its *built* bundle, so `npm run plugins` is part of
+  changing a plugin; the pure pieces are tested from the source.
+- `when` hides `look up` for selections over three words: the cue stays
+  a passage's cue, and `d` on a passage keeps its meaning elsewhere.
+
+### Handoff prompt
+
+Paste into a fresh session:
+
+```
+Read PLAN.md, FORMAT.md, BUILD-LOG.md, and spec/hashiyah/HANDOFF.md.
+
+Context: milestones 0-23 are done. src/plugins/ is the plugin runtime
+(api.ts the typed handle, api 1, published as plugins/ilmi.d.ts;
+runtime.ts the loader; index.ts the app side; surfaces.ts the popover
+and modal). Two plugins ship under plugins/: hello (the sample) and
+dictionary (look up on the cue, add to deck from the popover); `npm run
+plugins` builds them with esbuild and copies them into the corpus vault
+(.ilmi/plugins/, hello on, dictionary off), and a plugin's tests live in
+plugins/<id>/__tests__/ over src/plugins/__tests__/memfs.ts. PLUGINS.md
+documents the API and the shipped plugins.
+
+Tooling: node is in /opt/homebrew/bin and cargo in ~/.cargo/bin; prefix
+every command with export PATH=$HOME/.cargo/bin:/opt/homebrew/bin:$PATH
+npx vitest run, npm run typecheck, and cargo test (in src-tauri) must be
+green before a commit. For the window, copy the corpus vault to a
+scratch directory, run `caffeinate -d -u -i` in the background, then
+ILMI_VAULT=<scratch> ILMI_SMOKE=<mode> npm run tauri dev in the
+background with a tail loop that screencaptures on `shot: <name>` and
+kills the app on `done` or `failed` (lsof -ti:1420 | xargs kill; pkill
+-f target/debug/ilmi). The log plugin's lines reach the file about 5 s
+late. Milestone 24 may be on a branch waiting to merge; it edits
+smoke.ts, vault.ts, the intake, and the build log.
+
+Do the first unchecked milestone in PLAN.md (24, clipping, under
+*Clipping and rendering*, unless it has been merged, then 25) and only
+that one. Follow the brief's copy rules for every string. Stop at the
+milestone's "done when". Then tick it, write notes for the next session
+under it, add an entry to BUILD-LOG.md with a fresh handoff prompt, and
+commit.
+```
+
+---
+
 ## 2026-10-18 — milestone 23: opening, a welcome that remembers and the last vault reopened on start
 
 Done on the branch `worktree-agent-a34f19b66a3b6da95` (worktree

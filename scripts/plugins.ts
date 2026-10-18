@@ -17,7 +17,8 @@ const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const SRC = join(ROOT, 'plugins');
 const DIST = join(SRC, 'dist');
 const CORPUS = join(ROOT, 'src/format/__tests__/corpus/vault/.ilmi');
-/** The plugins the corpus vault has on. */
+/** The plugins copied into the corpus vault, and the ones its `plugins.json` has on (the dictionary is there, off, for its smoke). */
+const CORPUS_COPY = ['hello', 'dictionary'];
 const CORPUS_ON = ['hello'];
 
 // ── a flat, stored zip: deterministic, no dependency ──────────────
@@ -123,7 +124,7 @@ for (const id of ids) {
   }
   writeFileSync(join(out, 'plugin.json'), files[0]![1]);
   writeFileSync(join(DIST, `${id}.zip`), zip(files));
-  if (CORPUS_ON.includes(id)) {
+  if (CORPUS_COPY.includes(id)) {
     const target = join(CORPUS, 'plugins', id);
     rmSync(target, { recursive: true, force: true });
     mkdirSync(target, { recursive: true });

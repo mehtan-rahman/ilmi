@@ -1,0 +1,9 @@
+{
+  "id": "dictionary",
+  "name": "dictionary",
+  "version": "0.1.0",
+  "api": 1,
+  "description": "look a word up from the selection and add it to a vocab deck",
+  "author": "ilmi",
+  "repo": "https://github.com/mehtan/ilmi"
+}

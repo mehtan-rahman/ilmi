@@ -27,3 +27,5 @@ zstd = "0.14"
 rusqlite = { version = "0.40", features = ["bundled", "collation"] }
 # the EPUB reader: the package, navigation, and NCX documents are XML
 quick-xml = "0.42"
+tauri-plugin-deep-link = "2"
+tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }

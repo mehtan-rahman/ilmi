@@ -1,6 +1,7 @@
 import { useCallback, useEffect } from 'react';
 import { BottomStrip } from './BottomStrip.js';
 import { Canvas } from './Canvas.js';
+import { listenForClips } from './clipper.js';
 import { Inspector } from './Inspector.js';
 import { Palette } from './Palette.js';
 import { SavedQueries } from './Queue.js';
@@ -67,6 +68,7 @@ export function App() {
 
   useEffect(() => {
     openInitialVault().catch((e: unknown) => console.error(e));
+    listenForClips();
   }, []);
 
   // the handles: drag to resize; drag to the edge to hide, out again to show

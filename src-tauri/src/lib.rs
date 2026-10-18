@@ -1,6 +1,7 @@
 mod anki;
 mod epub;
 
+use tauri::Manager;
 use tauri_plugin_fs::FsExt;
 
 #[cfg(target_os = "macos")]
@@ -70,11 +71,33 @@ fn dev_env(name: String) -> Option<String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // First, so a second launch (the OS opening an `ilmi://` link on
+        // Windows or Linux, where a link is an argument to a new process)
+        // hands its arguments to the running one and exits. The plugin's
+        // `deep-link` feature forwards the link to the deep-link plugin's
+        // event; this closure only brings the window to the front.
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            if let Some(w) = app.get_webview_window("main") {
+                let _ = w.unminimize();
+                let _ = w.set_focus();
+            }
+        }))
+        // `ilmi://`, the scheme in `tauri.conf.json`; the renderer listens
+        // for `deep-link://new-url` and `clipper.ts` does what the link asks.
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_http::init())
         .invoke_handler(tauri::generate_handler![allow_vault, read_dropped, read_dropped_bytes, read_anki_package, read_epub, dev_env])
         .setup(|app| {
+            // Windows and Linux learn the scheme at run time; macOS reads it
+            // from the bundle's Info.plist, which Tauri writes from the
+            // config, so a dev binary there may not own it.
+            #[cfg(any(windows, target_os = "linux"))]
+            {
+                use tauri_plugin_deep_link::DeepLinkExt;
+                app.deep_link().register_all()?;
+            }
             if cfg!(debug_assertions) {
                 app.handle().plugin(
                     tauri_plugin_log::Builder::default()

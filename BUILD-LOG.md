@@ -6,6 +6,80 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-10-18 — milestone 22: clipper, `ilmi://` opens a door the web clipper can use
+
+Done on the branch `worktree-agent-ad643755f471ccef6` (worktree
+`.claude/worktrees/agent-ad643755f471ccef6`) while milestones 19 and 20
+ran on main; commit `3a60270` — *clipper: ilmi://new and ilmi://open
+through the deep-link plugin, a second launch handed to the running window,
+clippings go to a folder set in tweaks*. The sessions are likely to share `PLAN.md`, `BUILD-LOG.md`, `README.md`,
+`src/app/smoke.ts`, `src/app/vault.ts` (the smoke dispatch line, the
+`openVault` state line, a setter), `src/app/Tweaks.tsx`, `src/app/store.ts`,
+`src/vault/vault.ts` (`VaultState`), `src/app/App.tsx` (the mount effect),
+`src/app/chrome.css`, `package.json` / `package-lock.json`,
+`src-tauri/Cargo.toml` / `Cargo.lock`, `src-tauri/src/lib.rs`,
+`src-tauri/tauri.conf.json`, and `src-tauri/capabilities/default.json`, so
+the merge touches those by hand.
+
+### Done
+
+- `src/app/clip.ts`: `parseClipUri` reads `ilmi://new?name=&content=&
+  folder=&url=&vault=` and `ilmi://open?path=&vault=` (also `file=`) into
+  an action, or a refusal whose reason is the notice; folders and paths
+  are cleaned so a link never climbs out of the vault; `vaultMatches`,
+  `clipTitle`, `openCandidates`, `cleanClipDir`.
+- `src/app/clipper.ts`: `handleUri(uri)`, the plain function; a `new` link
+  lands a frozen source through the intake's import path (`fetchReadable`
+  for an address, `importNode` for the file), opens it, notes `clipped ·
+  <title>`; `open` opens a document; a foreign vault, a missing path, and
+  garbage are notices; a link before any vault is open is held until one
+  is. `listenForClips()` wires `getCurrent` and `onOpenUrl` once.
+- The `clippings go to` setting: `clippings` in `.ilmi/state.json`,
+  `clipDir` in the store, `setClipDir` in `vault.ts`, a `select` row in
+  Tweaks under the budget row.
+- Rust: `tauri-plugin-single-instance` (with `deep-link`) first, then
+  `tauri-plugin-deep-link`; the `ilmi` scheme in `tauri.conf.json`;
+  `register_all` on Windows and Linux; `deep-link:default`,
+  `core:window:allow-set-focus`, `core:window:allow-unminimize`.
+- npm: `@tauri-apps/plugin-deep-link`. README: the paragraph, the
+  bookmarklet, the Obsidian Web Clipper statement, the macOS note; the
+  tweaks line in *Keys*; the shell line in *Layout*.
+- Smoke: `ILMI_SMOKE=clip`, written on the branch, not run.
+- Tests: 337 (+10), 19 files.
+
+### Verified
+
+- `npm run typecheck` clean, `npx vitest run` green (19 files, 337),
+  `vite build` builds, `cargo test` in `src-tauri` green (5) with the two
+  plugins compiled in.
+- Not in the window: the window and port 1420 belonged to the other
+  sessions. `ILMI_SMOKE=clip` and the shell's `open 'ilmi://new?name=t&
+  content=hi'` are owed.
+
+### Not done / open
+
+- The window check and the OS-level handoff. On macOS the scheme comes
+  from the bundle's Info.plist, which Tauri writes from the config, so the
+  dev binary may not own it; if `open 'ilmi://…'` lands nothing, `npm run
+  tauri build` and open the built app once, then try again.
+- A bookmarklet clip of a selection carries the page's address as `url=`
+  but the brief takes `content` *as* the text, so the address is not kept
+  in the file; a `url` front-matter field would be a FORMAT.md change.
+- A link held before a vault opens lands silently once one does.
+- Nothing Rust-side gained a unit test; the plugins are registration only.
+
+### Decisions worth knowing
+
+- The pure parse and the handler are two files (`clip.ts`, `clipper.ts`)
+  so `vault.ts` can import `cleanClipDir` without a cycle and the tests
+  need no Tauri.
+- The verb is read as the URL host or the first path segment, so the
+  three spellings a browser or shell may produce all work; the scheme and
+  verb are case-insensitive, the parameters are not.
+- A `folder=` that does not exist is made (Obsidian's `new` does the
+  same); the setting's folder too, since the user chose it.
+- The same link twice within two seconds is one link: a launch link can
+  arrive both as `getCurrent()` and as the event.
 ## 2026-10-18 — milestone 19: EPUB, a dropped book lands as a folder of chapter sources in reading order
 
 Commit `57bbc85` — *epub: a dropped book read on the Rust side, its
@@ -125,17 +199,20 @@ will meet both sides there).
 
 ```
 Read PLAN.md, FORMAT.md, BUILD-LOG.md, and spec/hashiyah/HANDOFF.md.
-Milestones 0–19 are ticked (13 dropped). The first unchecked milestone
-is 20, "Plugin runtime", under "## Plugins" in PLAN.md; a parallel
-session may already be on it in a worktree (check `git worktree list`
-and the branches), in which case take the first unchecked milestone that
-no branch holds, as the Plugins section allows for 22. Do only that one,
-stop at its "done when", tick it, write notes, add an entry here with a
-fresh handoff prompt, and commit. Tooling and verification are as the
-ground rules and the entries below describe; `export
-PATH=$HOME/.cargo/bin:/opt/homebrew/bin:$PATH` first. Suite 344 (19
-files), `cargo test` 9, and typecheck must be green before a commit.
-The user's own `.epub` and `.apkg` are still untried: `ILMI_SMOKE=epub
+Milestones 0–19 and 22 are ticked (13 dropped); 22 (clipper) was done
+on a branch and merged as a merge commit on main; its window check and
+the OS-level `open 'ilmi://…'` handoff are recorded under its entry when
+run. The first unchecked milestone is 20, "Plugin runtime", under
+"## Plugins" in PLAN.md; 23, "Opening", may be running beside it on a
+branch (check `git worktree list`). Do only the first unchecked
+milestone no branch holds, stop at its "done when", tick it, write
+notes, add an entry here with a fresh handoff prompt, and commit.
+Tooling and verification are as the ground rules and the entries below
+describe; `export PATH=$HOME/.cargo/bin:/opt/homebrew/bin:$PATH` first.
+If port 1420 is held by a run that is not yours, do not kill it: say so
+in your report and leave the window check owed. Suite 354 (20 files),
+`cargo test` 9, and typecheck must be green before a commit. The user's
+own `.epub` and `.apkg` are still untried: `ILMI_SMOKE=epub
 ILMI_EPUB=<path>` and `ILMI_SMOKE=anki ILMI_APKG=<path>` take them.
 ```
 

@@ -50,6 +50,11 @@
 // `three-chapters.epub` in the vault) on the intake, reads the preview,
 // places it, logs the tree and each chapter's first lines, and starts
 // reading the first chapter with `r`.
+// `ILMI_SMOKE=clip` hands `ilmi://` links to the clipper's handler as the
+// OS would: `new` with content, with a folder, with an address (fetched),
+// `open`, a foreign vault, and garbage, logging the file written, the tab,
+// and the notice each left; then sets `clippings go to` from the tweaks
+// panel and clips once more.
 
 import { invoke } from '@tauri-apps/api/core';
 import { info } from '@tauri-apps/plugin-log';
@@ -1451,6 +1456,88 @@ export async function smokeEpub(vault: Vault): Promise<void> {
     const enrolled = (await vault.read(first, true)).text.split('\n').find((l) => l.startsWith('read:'));
     log(`reading: ${enrolled}; rule ${q<HTMLElement>('.read-rule')?.style.height}; bottom strip "${q('.bot')?.textContent}"; queries ${qa('.queries .row').map((r) => `${r.querySelector('.name')?.textContent} ${r.querySelector('.meta')?.textContent}`).join(', ')}`);
     await shot('epub-reading');
+    log('done');
+  } catch (e) {
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+export async function smokeClip(vault: Vault): Promise<void> {
+  const log = (s: string) => info(`smoke clip: ${s}`);
+  const shot = async (name: string, ms = 10000) => { await sleep(600); log(`shot: ${name}`); await sleep(ms); };
+  const q = <T extends Element>(sel: string) => document.querySelector<T>(sel);
+  const enc = encodeURIComponent;
+  const tab = () => `tab "${q('.tabbar .tab[data-active="1"] .title')?.textContent}"`;
+  const notice = () => `notice "${useApp.getState().log[0] ?? ''}"`;
+  const fileLines = async (path: string) => { const l = await vault.read(path, true); return `${l.text.split('\n').join(' / ')}; blocks ${l.doc.blocks.map((b) => b.kind).join(',')}; diagnostics ${l.diagnostics.length}`; };
+  const landed = async (prefix: string) => {
+    const path = await until(() => vault.documents().find((d) => d.startsWith(prefix)), 10000);
+    await sleep(500);
+    return path;
+  };
+  try {
+    const { handleUri } = await import('./clipper.js');
+    const before = vault.documents();
+
+    // new with content: a frozen source at the root, opened, one notice
+    await handleUri(`ilmi://new?name=${enc('clip test')}&content=${enc('hello from the clipper\n\nsecond paragraph')}`);
+    const p1 = await landed('clip test');
+    log(`new with content: ${p1}; ${await fileLines(p1)}; ${tab()}; ${notice()}; h1 "${q('.doc-view h1')?.textContent}"; ${q('.frozen-tag')?.textContent}`);
+    await shot('clip-new');
+
+    // new with a folder that is not there yet: made along the way
+    await handleUri(`ilmi://new?folder=${enc('fleeting/web')}&content=${enc('in a new folder')}`);
+    const p2 = await landed('fleeting/web/');
+    log(`new with folder: ${p2}; ${await fileLines(p2)}; ${tab()}; ${notice()}; folder row ${!!Array.from(document.querySelectorAll('.tree .trow')).find((r) => r.textContent?.trim() === 'web')}`);
+
+    // new with an address: the intake's fetch path against a real page (nothing is mocked there)
+    await handleUri(`ilmi://new?url=${enc('https://example.com/')}`);
+    const p3 = await until(() => vault.documents().find((d) => !before.includes(d) && d !== p1 && d !== p2), 30000).catch(() => null);
+    if (p3) log(`new with url: ${p3}; ${(await fileLines(p3)).slice(0, 200)}; ${tab()}; ${notice()}`);
+    else log(`new with url: nothing landed; ${notice()} (offline?)`);
+
+    // open: with and without .md, and a path that is not there
+    await handleUri(`ilmi://open?path=${enc(WOZ)}`);
+    await until(() => q('.tabbar .tab[data-active="1"] .title')?.textContent?.includes('Spaced') || null);
+    await sleep(300);
+    log(`open: ${tab()}; ${notice()}`);
+    await handleUri(`ilmi://open?path=${enc('papers/maxwell')}`);
+    await sleep(500);
+    log(`open without .md: ${tab()}`);
+    await handleUri(`ilmi://open?path=${enc('papers/nothing-here')}`);
+    await sleep(200);
+    log(`open a missing path: ${notice()}; ${tab()}`);
+
+    // a link for another vault, one for this vault by name, and garbage: a notice each
+    const n = vault.documents().length;
+    await handleUri(`ilmi://new?vault=${enc('someone-else')}&content=hi`);
+    await sleep(200);
+    log(`foreign vault: ${notice()}`);
+    await handleUri(`ilmi://new?vault=${enc(vault.root.slice(vault.root.lastIndexOf('/') + 1))}&content=${enc('own vault by name')}&name=${enc('own vault')}`);
+    const p4 = await landed('own vault');
+    log(`own vault by name: ${p4}; ${notice()}`);
+    await handleUri('garbage');
+    await sleep(200);
+    log(`garbage: ${notice()}`);
+    await handleUri('ilmi://new');
+    await sleep(200);
+    log(`empty new: ${notice()}; documents ${vault.documents().length} (was ${n}; one more, the own-vault clip)`);
+    await shot('clip-notices');
+
+    // the setting: clippings go to a folder, then a link with no folder lands there
+    useApp.setState({ tweaksOpen: true });
+    const sel = await until(() => q<HTMLSelectElement>('.tweaks .tw-sel'));
+    log(`tweaks: options ${Array.from(sel.options).map((o) => o.textContent).join(' | ')}; chosen "${sel.selectedOptions[0]?.textContent}"`);
+    await shot('clip-tweaks');
+    const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set;
+    setter?.call(sel, 'fleeting');
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
+    await sleep(500);
+    log(`set: store "${useApp.getState().clipDir}"; state file ${JSON.stringify((await vault.loadState()).clippings)}`);
+    useApp.setState({ tweaksOpen: false });
+    await handleUri(`ilmi://new?name=${enc('to the setting')}&content=${enc('lands in fleeting')}`);
+    const p5 = await landed('fleeting/to the setting');
+    log(`new to the setting: ${p5}; ${tab()}; ${notice()}`);
     log('done');
   } catch (e) {
     log(`failed: ${e instanceof Error ? e.message : String(e)}`);

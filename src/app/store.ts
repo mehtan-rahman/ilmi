@@ -143,6 +143,8 @@ export interface AppState {
   queueAt: Date;
   /** How many elements the day holds; the day's queue folds there. 0 is no fold. Per vault, in `.ilmi/state.json`. */
   budget: number;
+  /** Where an `ilmi://new` link lands a clipping when it names no folder; `''` is the root. Per vault, in `.ilmi/state.json`. */
+  clipDir: string;
   /** The last few things done in a session, newest first. */
   log: string[];
   session: Session | null;
@@ -177,6 +179,7 @@ export const useApp = create<AppState>((set, get) => ({
   queue: [],
   queueAt: new Date(0),
   budget: 0,
+  clipDir: '',
   log: [],
   session: null,
   sessionEl: null,

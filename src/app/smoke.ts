@@ -31,6 +31,10 @@
 // fold in the day's queue and the top strip's count, finds the palette
 // command, postpones the rest from the row under the fold, and logs every
 // file that changed, what tomorrow's queue holds, and a session's length.
+// `ILMI_SMOKE=pdf` drops the corpus PDF on the intake, places it as the
+// pair, opens it as pages, selects on the text layer and presses `e` and
+// `m`, searches, goes to a page, reads the text instead, reads on from the
+// session, and reopens it to find the extract drawn as a highlight.
 
 import { info } from '@tauri-apps/plugin-log';
 import { queue } from '../schedule/index.js';
@@ -38,7 +42,7 @@ import type { Vault } from '../vault/index.js';
 import { cardLabel } from './chrome.js';
 import { GLYPH, SESSION, queueId, titleOf } from './names.js';
 import { useApp } from './store.js';
-import { createNode, moveNode, openCard, openIntake, openNode, removeNode, renameNode, setInspector } from './vault.js';
+import { createNode, moveNode, openCard, openIntake, openNode, openSession, removeNode, renameNode, setInspector } from './vault.js';
 
 const WOZ = 'papers/wozniak-1990.md';
 
@@ -979,3 +983,162 @@ export async function smokeOverload(vault: Vault): Promise<void> {
   }
 }
 
+
+export async function smokePdf(vault: Vault): Promise<void> {
+  const log = (s: string) => info(`smoke pdf: ${s}`);
+  const shot = async (name: string, ms = 10000) => { await sleep(600); log(`shot: ${name}`); await sleep(ms); };
+  const q = <T extends Element>(sel: string) => document.querySelector<T>(sel);
+  const qa = (sel: string) => Array.from(document.querySelectorAll<HTMLElement>(sel));
+  const lines = (text: string, from: string, n = 6) => { const ls = text.split('\n'); const i = ls.findIndex((l) => l.startsWith(from)); return i < 0 ? 'none' : ls.slice(i, i + n).join(' / '); };
+  const fm = (text: string) => text.split('\n').slice(0, text.split('\n').indexOf('---', 1) + 1).join(' / ');
+  const highlights = (kind: string) => (typeof CSS !== 'undefined' && CSS.highlights ? CSS.highlights.get(kind)?.size ?? 0 : 'no api');
+  /** Select the whole text of the first text-layer span on page `n` whose text holds `word`. */
+  const selectOn = (n: number, word: string) => {
+    const span = qa(`.pdf-page[data-page="${n}"] .textLayer span`).find((s) => s.textContent?.includes(word));
+    if (!span?.firstChild) throw new Error(`no "${word}" on page ${n}`);
+    const r = document.createRange();
+    r.selectNodeContents(span.firstChild);
+    const sel = window.getSelection()!;
+    sel.removeAllRanges();
+    sel.addRange(r);
+    return span.textContent ?? '';
+  };
+  try {
+    setInspector({ open: true });
+    // the intake: the corpus PDF dropped on it (through the dev hook; the OS drop cannot be faked)
+    openIntake('papers');
+    await until(() => q<HTMLTextAreaElement>('.intake textarea'));
+    log(`intake hint: "${q('.intake .paste-hint')?.textContent}"`);
+    const { intakeHooks } = await import('./Intake.js');
+    const { readDroppedPdf } = await import('./fetch.js');
+    try {
+      const r = await readDroppedPdf(vault.abs('papers/two-pages.pdf'));
+      log(`read: ${r.bytes.length} bytes, ${r.pages} pages, title "${r.title}", text ${r.text.length} chars`);
+    } catch (e) {
+      log(`read failed: ${e instanceof Error ? `${e.name}: ${e.message}` : String(e)}`);
+    }
+    await intakeHooks.ingestFile!(vault.abs('papers/two-pages.pdf'));
+    const detail = await until(() => q('.intake-detail') ?? (q('.intake .paste-hint .note')?.textContent && q('.intake .paste-hint .note')?.textContent !== 'reading' ? q('.intake .paste-hint') : null), 15000);
+    if (!detail.classList.contains('intake-detail')) throw new Error(`intake said "${detail.textContent}"`);
+    log(`dropped: stats "${detail.querySelector('.stats')?.textContent}"; title "${q<HTMLInputElement>('.intake .field input')?.value}"; text "${q<HTMLTextAreaElement>('.intake textarea')?.value.slice(0, 60).replace(/\n/g, ' ')}…"`);
+    await shot('pdf-intake');
+    q<HTMLButtonElement>('.intake .place.primary')!.click();
+    const path = await until(() => vault.documents().find((d) => d.startsWith('papers/two-pages') && d !== 'papers/two-pages.md' && !d.includes('/two-pages/')));
+    await sleep(400);
+    const pdfPath = useApp.getState().docs[path]?.pdf;
+    const landed = await vault.read(path, true);
+    log(`placed ${path}; pages ${pdfPath}; on disk ${(await vault.fs.stat(vault.abs(pdfPath ?? '')))?.size ?? '?'} bytes; front-matter ${fm(landed.text)}; body ${landed.doc.blocks.map((b) => b.kind).join(',')}; diagnostics ${landed.diagnostics.length}`);
+
+    // the lens: pages rendered, the text layer on, the meta row
+    await until(() => q('.pdf-view'));
+    await until(() => q('.pdf-page[data-page="1"] .textLayer span'), 15000);
+    await until(() => q('.pdf-page[data-page="2"] .textLayer span'), 15000);
+    await sleep(400);
+    log(`lens: pages ${qa('.pdf-page').length}, canvases ${qa('.pdf-page canvas').length}, text spans ${qa('.textLayer span').length}; meta "${q('.pdf-view .meta')?.textContent}"; strip "${q('.bot')?.textContent}"; inspector rows "${q('.insp .kv')?.textContent?.slice(0, 120)}"; rule ${q('.read-rule') ? 'yes' : 'none'}`);
+    await shot('pdf-pages');
+
+    // start reading: the ruler appears
+    press('r');
+    await until(() => q('.pdf-view .read-gutter'));
+    await sleep(400);
+    log(`reading: ${lines((await vault.read(path, true)).text, 'read:', 1)}; rule height ${q<HTMLElement>('.read-rule')?.style.height}`);
+
+    // extract: a line of page 1 selected on the text layer, e
+    const picked = selectOn(1, 'ruler');
+    const cue = await until(() => q('.sel-cue'));
+    log(`selected "${picked}" → cue "${cue.textContent}"`);
+    press('e');
+    const child = await until(() => vault.documents().find((d) => d.startsWith(`${path.slice(0, -3)}/`)));
+    await sleep(800);
+    const ex = await vault.read(child, true);
+    const parent = await vault.read(path, true);
+    log(`extract ${child}: ${fm(ex.text)}; body "${ex.doc.blocks[0]?.text}"; diagnostics ${ex.diagnostics.length}`);
+    log(`parent: ${lines(parent.text, '## p. 1')}; diagnostics ${parent.diagnostics.length}; highlights ${highlights('ilmi-extract')}; rail "${qa('.rail-page').map((r) => r.textContent).join(' | ')}"`);
+    await shot('pdf-extract');
+
+    // a card: a line of page 2 selected, m, a blank, ⌘↵
+    const line2 = selectOn(2, 'Spaced');
+    await until(() => q('.sel-cue'));
+    press('m');
+    const ta = await until(() => q<HTMLTextAreaElement>('.composer textarea'));
+    log(`composer seed "${ta.value}" (selected "${line2}")`);
+    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!;
+    setter.call(ta, 'Spaced practice beats {{massed}} practice, and the gap should grow');
+    ta.dispatchEvent(new Event('input', { bubbles: true }));
+    await sleep(100);
+    press('Enter', { metaKey: true });
+    await until(() => (q('.composer') ? null : true));
+    await sleep(800);
+    const withCard = await vault.read(path, true);
+    log(`card: ${lines(withCard.text, '## p. 2')}; cards ${withCard.doc.blocks.filter((b) => b.kind === 'card').length}; diagnostics ${withCard.diagnostics.length}; rail "${qa('.rail-page').map((r) => r.textContent).join(' | ')}"`);
+    // the rail's card row selects it; the inspector names the page
+    qa('.rail-item[data-t="card"]')[0]?.click();
+    await sleep(300);
+    log(`rail card: selected ${JSON.stringify(useApp.getState().selectedCard)}; inspector "${qa('.insp .block')[0]?.querySelector('.kv')?.textContent}"`);
+    await shot('pdf-card');
+
+    // search and go to page
+    press('/');
+    const findInput = await until(() => q<HTMLInputElement>('.pdf-bar input'));
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(findInput, 'written');
+    findInput.dispatchEvent(new Event('input', { bubbles: true }));
+    await sleep(50);
+    findInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    await sleep(600);
+    log(`search "written": bar "${q('.pdf-bar')?.textContent}"; hits highlighted ${highlights('ilmi-hit')}; page in view ${q<HTMLElement>('.pdf-view')?.dataset.page}`);
+    await shot('pdf-find');
+    press('Escape');
+    await sleep(100);
+    press('g');
+    const gotoInput = await until(() => q<HTMLInputElement>('.pdf-bar input[type="number"]'));
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(gotoInput, '1');
+    gotoInput.dispatchEvent(new Event('input', { bubbles: true }));
+    gotoInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    await sleep(500);
+    log(`go to 1: bar ${q('.pdf-bar') ? 'open' : 'closed'}; page in view ${q<HTMLElement>('.pdf-view')?.dataset.page}`);
+    press(']');
+    await sleep(500);
+    log(`]: page in view ${q<HTMLElement>('.pdf-view')?.dataset.page}`);
+
+    // the text toggle: the Markdown in the reader, and back
+    q<HTMLButtonElement>('.pdf-view .meta .frozen-tag')!.click();
+    await until(() => q('.draft-doc'));
+    await sleep(300);
+    log(`text: blocks ${q('.draft-doc')?.children.length}; meta "${q('.doc-view .meta')?.textContent}"`);
+    await shot('pdf-text');
+    qa('.doc-view .meta .frozen-tag').find((b) => b.textContent === 'pages')?.click();
+    await until(() => q('.pdf-view'));
+
+    // the session: the reading element opens as pages; read on records the page in view
+    openNode(queueId('today'));
+    await until(() => q('.queue .qlist li'));
+    await sleep(300);
+    // the corpus's own two-pages pair is due today as well and carries the same title, so the element is picked from the queue by path
+    const item = useApp.getState().queue.find((i) => i.kind === 'read' && i.path === path);
+    log(`queue: item ${item ? `${item.kind} ${item.path} due ${item.due}` : 'none'}; rows naming two-pages ${qa('.queue .qlist li').filter((r) => r.textContent?.includes('two-pages')).length}`);
+    if (!item) throw new Error('not in the queue');
+    const corpusBefore = (await vault.read('papers/two-pages.md', true)).text;
+    openSession(item);
+    await until(() => q('.doc-session .pdf-view'));
+    await until(() => q('.doc-session .pdf-page[data-page="2"] .textLayer span'), 15000);
+    await sleep(300);
+    q<HTMLElement>('.doc-session .pdf-page[data-page="2"]')?.scrollIntoView({ block: 'start' });
+    await sleep(500);
+    log(`session: bar "${q('.session-bar')?.textContent?.slice(0, 80)}"; page in view ${q<HTMLElement>('.pdf-view')?.dataset.page}; highlights ${highlights('ilmi-extract')}`);
+    await shot('pdf-session');
+    press('Enter');
+    await sleep(800);
+    log(`read on: ${lines((await vault.read(path, true)).text, 'read:', 1)}; log "${useApp.getState().log[0]}"; the corpus pair untouched ${(await vault.read('papers/two-pages.md', true)).text === corpusBefore}; session now on "${useApp.getState().sessionEl?.label}"`);
+
+    // reopened: the extract is a highlight again, the ruler on the page read to
+    openNode(path);
+    await until(() => q('.pdf-view:not(.doc-session .pdf-view)'));
+    await until(() => q('.pdf-page[data-page="1"] .textLayer span'), 15000);
+    await sleep(600);
+    log(`reopened: highlights ${highlights('ilmi-extract')}; rule height ${q<HTMLElement>('.read-rule')?.style.height}; rail "${qa('.rail-page').map((r) => r.textContent).join(' | ')}"; inspector rows "${q('.insp .kv')?.textContent?.slice(0, 160)}"`);
+    await shot('pdf-reopened');
+    log('done');
+  } catch (e) {
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}

@@ -9,6 +9,7 @@ import { PRI_DEFAULT, cardFields, clozeParts, type Block, type Card } from '../f
 import { GRADES, advanceRead, advanceWrite, gradeItem, postponed, type CardItem, type Grade, type QueueItem, type ReadItem, type WriteItem } from '../schedule/index.js';
 import { EL_WORD, FORM_LABEL, dueLabel, gapLabels, ownBlank, sourceLabel } from './items.js';
 import type { OpenOpts } from './panes.js';
+import { Pdf } from './Pdf.js';
 import { Reader, richHTML } from './Reader.js';
 import { useApp, type El } from './store.js';
 import { useDoc } from './useDoc.js';
@@ -209,6 +210,12 @@ function blocksAbove(from: HTMLElement): number | undefined {
   return n;
 }
 
+/** On a document with pages: the page in view, which the PDF lens keeps on its root. */
+function pageInView(from: HTMLElement): number | undefined {
+  const n = Number(from.querySelector<HTMLElement>('.pdf-view')?.dataset.page);
+  return n >= 1 ? n : undefined;
+}
+
 type DocAction = 'on' | 'postpone' | 'done';
 
 interface DocProps extends NavProps {
@@ -221,8 +228,9 @@ function DocSession({ item, active, onAct, ...nav }: DocProps) {
   const barRef = useRef<HTMLDivElement>(null);
   const info = useApp((s) => s.docs[item.path]);
   const reading = item.kind === 'read';
+  const pages = !!info?.pdf;
   const pri = info ? info.pri ?? (reading ? info.read?.pri : info.write?.pri) ?? PRI_DEFAULT : item.pri;
-  const on = () => onAct('on', reading && barRef.current ? blocksAbove(barRef.current) : undefined);
+  const on = () => onAct('on', reading && barRef.current ? (pages ? pageInView(barRef.current) : blocksAbove(barRef.current)) : undefined);
 
   useKeys(active, (key) => {
     if (key === 'Enter') { on(); return true; }
@@ -233,7 +241,7 @@ function DocSession({ item, active, onAct, ...nav }: DocProps) {
 
   return (
     <div className="doc-session" ref={barRef}>
-      <Reader id={item.path} active={active} />
+      {pages ? <Pdf id={item.path} active={active} session /> : <Reader id={item.path} active={active} />}
       <SessionBar kind={item.kind} pri={pri} {...nav}>
         <button type="button" onClick={on}><span className="ra-l">{reading ? 'read on' : 'worked on it'}</span><kbd>⏎</kbd></button>
         <button type="button" onClick={() => onAct('postpone')}><span className="ra-l">postpone</span><kbd>p</kbd></button>

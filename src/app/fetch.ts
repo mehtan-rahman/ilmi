@@ -6,6 +6,23 @@
 import { invoke } from '@tauri-apps/api/core';
 import { fetch } from '@tauri-apps/plugin-http';
 import { HTML_EXT, TEXT_EXT, cleanText, readable, titleFromFileName } from '../import/index.js';
+import { pdfText } from './pdfjs.js';
+
+export const PDF_EXT = /\.pdf$/i;
+
+export interface FetchedPdf extends Fetched {
+  bytes: Uint8Array;
+  pages: number;
+}
+
+/** A dropped or picked PDF: its bytes, and its text and page count through pdf.js; the title from its metadata, else its name. */
+export async function readDroppedPdf(path: string): Promise<FetchedPdf> {
+  const name = path.slice(path.lastIndexOf('/') + 1);
+  if (!PDF_EXT.test(name)) throw new Error('not a pdf');
+  const bytes = new Uint8Array(await invoke<ArrayBuffer>('read_dropped_bytes', { path }));
+  const r = await pdfText(bytes);
+  return { title: r.title || titleFromFileName(name.replace(PDF_EXT, '')), text: r.text, bytes, pages: r.pages };
+}
 
 export interface Fetched {
   /** The page's own title, or `''` for plain text. */

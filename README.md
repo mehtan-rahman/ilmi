@@ -19,6 +19,7 @@ npm run dev            # renderer only, in a browser at http://localhost:1420
 npm test               # format round-trip and vault tests
 npm run typecheck
 npm run import-sm -- <collection.kno> <vault-dir>   # a SuperMemo collection, once
+npm run fixture:pdf    # regenerate the corpus's two-page PDF
 ```
 
 The import reads a SuperMemo collection's data files (`src/import/supermemo/LAYOUT.md`
@@ -44,12 +45,21 @@ F2 / dbl-click   rename                 right-click  new, rename, move to, delet
                  the day's budget (kept in the vault's .ilmi)
 
 in a source      select, then e extract or m make a card; r start reading
+in a PDF         the same on a page; / search, g go to a page, [ ] pages;
+                 text in the meta row reads the Markdown instead
 in a deck        j k move, ⌫ delete the selected card, m make a card;
                  × on a row, or right-click, also deletes one; right-click moves it to another deck
 in the queue     j k move, ⏎ enter, o open one
 in a session     [ ] prev / next; space reveal, 1-4 grade; ⏎ read on or
                  worked on it, p postpone, d done
 ```
+
+A PDF dropped on the intake lands as a pair, `name.pdf` beside `name.md`: the
+Markdown is the document (schedule, priority, cards, extracts), the PDF its
+pages, read in place through pdf.js and never written. Cards and extracts made
+from a page sit under a `## p. <n>` heading in the Markdown and in a rail
+beside the page; an extract's passage is drawn on the page as a highlight
+when it is found there again. The ruler in the margin marks the page.
 
 The inspector sets a priority, 0 first and 100 last, on a document or on the
 selected card; what is due sorts by it. It also sets a topic's growth, the
@@ -70,6 +80,7 @@ src/format/        parser and serializer, the only code that touches vault files
 src/vault/         open, walk, read, write, watch, and reshape a vault; pure over an Fs interface
 src/schedule/      ts-fsrs grading, the reading and writing loops, the queue query
 src/import/        text from a paste, a page, or a SuperMemo collection, on its way to a file
+src/pdf/           the PDF lens's pure side: a page's text from pdf.js items, finding a passage again
 scripts/           command-line tools, run with tsx
 src-tauri/         desktop shell (Tauri v2, fs + dialog + log plugins)
 ```

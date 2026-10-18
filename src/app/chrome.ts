@@ -20,6 +20,8 @@ export interface HintContext {
   scope: QueueScope | null;
   /** A source or extract not yet enrolled in reading. */
   canEnrol: boolean;
+  /** A source open as pages: the PDF lens's own keys apply. */
+  pages?: boolean;
 }
 
 const PALETTE: Hint = ['⌘k', 'palette'];
@@ -38,6 +40,7 @@ export function hintsFor(c: HintContext): Hint[] {
       return [['space', 'reveal'], ['1 2 3 4', 'grade'], NAV];
     case 'source':
     case 'extract':
+      if (c.pages) return [['e', 'extract'], ['m', 'card'], ...(c.canEnrol ? [['r', 'start reading'] as Hint] : []), ['/', 'search'], ['g', 'page'], ['[ ]', 'pages']];
       return [['e', 'extract'], ['m', 'card'], ...(c.canEnrol ? [['r', 'start reading'] as Hint] : []), ['⌘\\', 'split pane']];
     case 'draft':
       return [['m', 'card'], ['esc', 'leave the text']];

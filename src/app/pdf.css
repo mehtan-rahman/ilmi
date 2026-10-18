@@ -1,0 +1,149 @@
+/* The PDF lens: pages in a column with the ruler in the margin, the
+   Markdown's cards and extracts in a rail to the right at their page. The
+   text layer rules are the few pdf.js needs to place its spans over the
+   canvas (after pdf_viewer.css, Apache-2.0), kept to what this lens uses. */
+
+.reader.pdf-view { max-width: min(calc(var(--reading-width) + 240px), 100%); }
+.pdf-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 200px;
+  column-gap: 24px;
+  align-items: start;
+}
+.pdf-pages { position: relative; min-height: 4em; }
+.pdf-pages .empty { margin: 0; }
+.pdf-page {
+  position: absolute;
+  left: 0;
+  background: #fff;
+  outline: 1px solid var(--line-2);
+  --scale-round-x: 1px;
+  --scale-round-y: 1px;
+}
+.pdf-page canvas { display: block; }
+[data-theme="dark"] .pdf-page { background: #e9e9e6; }
+[data-theme="dark"] .pdf-page canvas { filter: invert(0.92) hue-rotate(180deg); }
+[data-theme="eink"] .pdf-page canvas { filter: grayscale(1) contrast(1.1); }
+
+/* the text layer: transparent spans over the canvas, positioned by pdf.js */
+.textLayer {
+  position: absolute;
+  inset: 0;
+  overflow: clip;
+  opacity: 1;
+  line-height: 1;
+  text-align: initial;
+  letter-spacing: normal;
+  word-spacing: normal;
+  -webkit-text-size-adjust: none;
+  text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  caret-color: CanvasText;
+  z-index: 1;
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+}
+.textLayer :is(span, br) {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+  user-select: text;
+}
+.textLayer > :not(.markedContent),
+.textLayer .markedContent span:not(.markedContent) {
+  z-index: 1;
+  --font-height: 0;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  --scale-x: 1;
+  --rotate: 0deg;
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+}
+.textLayer .markedContent { display: contents; }
+.textLayer span[role="img"] { user-select: none; cursor: default; }
+.textLayer .endOfContent {
+  display: block;
+  position: absolute;
+  inset: 100% 0 0;
+  z-index: 0;
+  cursor: default;
+  user-select: none;
+}
+.textLayer ::selection { background: var(--selection); color: transparent; }
+
+/* highlights: an extract's passage found again; a search hit */
+::highlight(ilmi-extract) { background-color: color-mix(in oklab, var(--accent) 30%, transparent); }
+::highlight(ilmi-hit) { background-color: color-mix(in oklab, var(--el-read) 32%, transparent); }
+[data-theme="eink"] ::highlight(ilmi-extract) { background-color: color-mix(in oklab, var(--fg) 22%, transparent); }
+
+/* the rail: what the Markdown holds for each page, at the page's top */
+.pdf-rail { position: relative; min-height: 1px; }
+.pdf-rail .rail-page { position: absolute; left: 0; right: 0; }
+.pdf-rail h6 {
+  margin: 0 0 4px;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg-4);
+}
+.rail-item {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  padding: 5px 0;
+  border-top: 1px solid var(--line-3);
+  font-family: var(--serif);
+  font-size: calc(var(--serif-size) * 0.78);
+  line-height: 1.4;
+  color: var(--fg-2);
+  cursor: default;
+}
+.rail-item:hover { color: var(--fg-1); }
+.rail-item.selected { background: var(--line-3); }
+.rail-item .g { font-family: var(--mono); font-size: 10px; flex-shrink: 0; }
+.rail-item .g[data-el="card"] { color: var(--el-card); }
+.rail-item .g[data-el="read"] { color: var(--el-read); }
+.rail-item .t {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+
+/* search and go to page, above the pages, staying while they scroll */
+.pdf-bar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 6px 0;
+  margin: -8px 0 14px;
+  background: var(--paper);
+  border-bottom: 1px solid var(--line-2);
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--fg-3);
+}
+.pdf-bar .pb-k { color: var(--fg-4); }
+.pdf-bar input {
+  appearance: none;
+  font: inherit;
+  color: var(--fg-1);
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--line-1);
+  outline: none;
+  padding: 1px 0;
+  width: 200px;
+}
+.pdf-bar input:focus { border-bottom-color: var(--accent-soft); }
+.pdf-bar input[type="number"] { width: 64px; -moz-appearance: textfield; }
+.pdf-bar input::-webkit-outer-spin-button, .pdf-bar input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.pdf-bar .pb-n { color: var(--fg-4); }

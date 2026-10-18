@@ -82,6 +82,7 @@ export function kindTag(item: QueueItem): string {
 
 /** The small second line of a row, or nothing. */
 export function refLine(item: QueueItem): string {
+  if (item.kind === 'read' && item.page) return `p. ${item.page}`;
   if (item.kind === 'read' && item.total > 0 && item.pos > 0) return `${Math.round((item.pos / item.total) * 100)}% read`;
   if (item.kind === 'write' && item.sched.reps) return `pass ${item.sched.reps + 1}`;
   return '';

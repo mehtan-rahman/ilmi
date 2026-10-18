@@ -10,7 +10,7 @@ import {
   type Block, type Card, type CardForm, type CardSchedule, type Doc, type ReadSchedule, type WriteSchedule,
 } from '../format/index.js';
 import { advanceWrite, counts, nextIntervals, type CardItem } from '../schedule/index.js';
-import { dirOf, isDoc, type TreeNode } from '../vault/index.js';
+import { baseOf, dirOf, isDoc, pageOfBlock, type TreeNode } from '../vault/index.js';
 import { cardLabel, formLabel } from './chrome.js';
 import { FORM_LABEL, dueLabel, fmtDays } from './items.js';
 import { INTAKE, QUEUE_TITLE, SCOPES, SESSION, findNode, queueScope, titleOf, type NodeKind } from './names.js';
@@ -293,10 +293,12 @@ function DocInspector({ id, info, doc, now }: { id: string; info: DocInfo; doc: 
   const rows: [string, ReactNode][] = [];
   if (parent && docs[parent]) rows.push(['of', titleOf(parent, docs, null)]);
   rows.push(['path', <span className="mono">{id}</span>]);
+  if (info.pdf) rows.push(['pages', <span className="mono">{baseOf(info.pdf)}</span>]);
   if (m.imported) rows.push(['imported', m.imported]);
   rows.push(['length', plural(words(doc.blocks), 'word')]);
   if (cards) rows.push(cardsRow);
-  if (m.read) rows.push(['reading', `${m.read.pos ?? 0} of ${doc.blocks.filter((b) => b.kind !== 'card').length}, ${dueLabel(m.read.due, now)}`]);
+  if (m.read && info.pdf) rows.push(['reading', `${m.read.pos ? `p. ${m.read.pos}` : 'not started'}, ${dueLabel(m.read.due, now)}`]);
+  else if (m.read) rows.push(['reading', `${m.read.pos ?? 0} of ${doc.blocks.filter((b) => b.kind !== 'card').length}, ${dueLabel(m.read.due, now)}`]);
   rows.push(docPriRow(id, m));
   if (m.read) rows.push(growthRow(id, 'read', m.read));
   return (
@@ -338,7 +340,9 @@ function CardBlock({ path, index, doc, group, now }: { path: string; index: numb
   const sched = hasSchedule(own) ? own : undefined;
   // a cloze card may carry only per-blank schedules; it is scheduled all the same
   const scheduled = hasSchedule(b.sched) || b.blanks !== undefined;
-  const rows: [string, ReactNode][] = [['type', formLabel(b.text)], ['in', titleOf(path, docs, null)]];
+  // in a document with pages, the card's page is named with the document
+  const page = docs[path]?.pdf ? pageOfBlock(doc, index) : null;
+  const rows: [string, ReactNode][] = [['type', formLabel(b.text)], ['in', page === null ? titleOf(path, docs, null) : `${titleOf(path, docs, null)}, p. ${page}`]];
   if (docs[path]?.frozen) rows.push(['source', 'frozen']);
   // the card's own priority, on its bare line; empty means the document's
   const setPri = (n: number | null) => currentVault()?.update(path, (d) => {

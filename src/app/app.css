@@ -513,6 +513,7 @@
 }
 .intake .paste-hint .mono { color: var(--fg-4); }
 .intake .paste-hint .note { color: var(--fg-3); }
+.intake .paste-hint .link + .link { margin-left: 0; }
 .intake .paste-hint .link {
   appearance: none;
   border: 0;

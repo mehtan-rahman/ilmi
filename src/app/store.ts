@@ -67,6 +67,8 @@ export interface DocInfo {
   write?: WriteSchedule;
   /** The `pri` field; absent means the default. */
   pri?: number;
+  /** Vault-relative path of the document's pages, when it has a PDF beside it (or names one). */
+  pdf?: string;
 }
 
 export interface Sidebar {

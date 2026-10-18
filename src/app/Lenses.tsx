@@ -9,6 +9,7 @@ import { Composer } from './Composer.js';
 import { Intake } from './Intake.js';
 import { GLYPH, INTAKE, SESSION, contentsOf, findNode, kindOf, queueScope, titleOf, type NodeKind } from './names.js';
 import type { OpenOpts } from './panes.js';
+import { Pdf } from './Pdf.js';
 import { Queue } from './Queue.js';
 import { Reader } from './Reader.js';
 import { Session } from './Session.js';
@@ -41,6 +42,8 @@ export function Lens({ id, active, onOpen }: LensProps) {
   const kind = kindOf(id, docs);
   if (kind === 'folder') return <FolderLens id={id} active={active} onOpen={onOpen} />;
   if (kind === 'deck') return <DeckLens id={id} active={active} />;
+  // a source whose pages exist opens as pages
+  if (docs[id]?.pdf) return <Pdf key={id} id={id} active={active} />;
   return <Reader key={id} id={id} active={active} />;
 }
 

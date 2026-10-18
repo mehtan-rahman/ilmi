@@ -19,6 +19,7 @@ export function BottomStrip() {
     el: kind === 'session' ? sessionEl?.kind ?? 'card' : null,
     scope: id === undefined ? null : queueScope(id),
     canEnrol: !!info && (info.type === 'source' || info.type === 'extract') && !info.read,
+    pages: !!info?.pdf,
   });
   return (
     <div className="bot">

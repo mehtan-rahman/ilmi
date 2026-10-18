@@ -8,14 +8,28 @@
 // comes through the DOM. A pasted address is fetched through the http plugin.
 
 import { getCurrentWebview, type DragDropEvent } from '@tauri-apps/api/webview';
+import { open as pickFile } from '@tauri-apps/plugin-dialog';
 import { useEffect, useRef, useState, type ClipboardEvent, type DragEvent } from 'react';
-import { cleanText, deriveTitle, isUrl, stats } from '../import/index.js';
+import { cleanText, deriveTitle, isUrl, stats, titleFromFileName } from '../import/index.js';
 import { NEW_NAMES } from '../vault/index.js';
-import { fetchReadable, readDropped } from './fetch.js';
+import { PDF_EXT, fetchReadable, readDropped, readDroppedPdf } from './fetch.js';
 import { folderPaths, titleOf } from './names.js';
 import type { OpenOpts } from './panes.js';
+import { pdfText } from './pdfjs.js';
 import { useApp } from './store.js';
-import { importNode } from './vault.js';
+import { importNode, importPdfNode } from './vault.js';
+
+/** A PDF waiting on the intake: it lands as the pair, the text beside it as the fallback body. */
+interface PendingPdf {
+  bytes: Uint8Array;
+  pages: number;
+}
+
+/** Dev only: the smoke drops a file on the intake through here, since the OS drop cannot be faked. */
+export const intakeHooks: { ingestFile?: (path: string) => Promise<void> } = {};
+
+/** Extensions the picker offers: what a drop would take. */
+const PICK_EXT = ['txt', 'md', 'markdown', 'text', 'html', 'htm', 'pdf'];
 
 export const INTAKE_SAMPLE = `Spaced repetition and the economics of attention
 
@@ -44,6 +58,7 @@ export function Intake({ active, onOpen }: Props) {
   /** One quiet line under the field: what is happening, or what went wrong. */
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
+  const [pdf, setPdf] = useState<PendingPdf | null>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   // what the drop listener, subscribed once, needs to read at the time of the drop
@@ -53,7 +68,8 @@ export function Intake({ active, onOpen }: Props) {
   const folders = folderPaths(tree);
   const text = raw.trim();
   const st = stats(text);
-  const can = st.words > 0 && !busy;
+  // a PDF lands even without a text layer: it opens as pages, nothing to select
+  const can = (st.words > 0 || !!pdf) && !busy;
   const titleShown = title || deriveTitle(raw);
 
   // the folder follows where the intake was opened from, and stays a real one
@@ -67,8 +83,9 @@ export function Intake({ active, onOpen }: Props) {
     setNote(msg === 'not a text file' || msg === 'nothing readable' ? msg : fallback);
   };
 
-  const take = (body: string, name?: string) => {
+  const take = (body: string, name?: string, pages: PendingPdf | null = null) => {
     setRaw(cleanText(body));
+    setPdf(pages);
     setNote('');
     if (name && !titleRef.current) setTitle(name);
   };
@@ -91,12 +108,29 @@ export function Intake({ active, onOpen }: Props) {
 
   const ingestFile = async (path: string) => {
     try {
+      if (PDF_EXT.test(path)) {
+        setNote('reading');
+        const r = await readDroppedPdf(path);
+        take(r.text, r.title, { bytes: r.bytes, pages: r.pages });
+        return;
+      }
       const r = await readDropped(path);
       take(r.text, r.title);
     } catch (e) {
       fail(e, 'could not read that file');
     }
   };
+
+  const pick = async () => {
+    const path = await pickFile({ multiple: false, directory: false, filters: [{ name: 'text or pdf', extensions: PICK_EXT }] });
+    if (typeof path === 'string') await ingestFile(path);
+  };
+
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    intakeHooks.ingestFile = ingestFile;
+    return () => { delete intakeHooks.ingestFile; };
+  });
 
   // a pasted address into an empty field is fetched; pasted text is just text
   const onPaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
@@ -137,8 +171,13 @@ export function Intake({ active, onOpen }: Props) {
     const dt = e.dataTransfer;
     const file = dt.files[0];
     if (file) {
-      try { take(await file.text(), file.name.replace(/\.[^.]+$/, '')); }
-      catch { setNote('could not read that file'); }
+      try {
+        if (PDF_EXT.test(file.name)) {
+          const bytes = new Uint8Array(await file.arrayBuffer());
+          const r = await pdfText(bytes);
+          take(r.text, r.title || titleFromFileName(file.name.replace(PDF_EXT, '')), { bytes, pages: r.pages });
+        } else take(await file.text(), file.name.replace(/\.[^.]+$/, ''));
+      } catch { setNote('could not read that file'); }
       return;
     }
     const t = dt.getData('text/plain');
@@ -149,8 +188,12 @@ export function Intake({ active, onOpen }: Props) {
     if (!can) return;
     setBusy(true);
     try {
-      const path = await importNode(chosen, { title: (titleShown || NEW_NAMES.source).trim(), text: raw });
+      const title = (titleShown || NEW_NAMES.source).trim();
+      const path = pdf
+        ? await importPdfNode(chosen, { title, bytes: pdf.bytes, text: raw })
+        : await importNode(chosen, { title, text: raw });
       setRaw('');
+      setPdf(null);
       setTitle('');
       setNote('');
       if (open) onOpen(path, {});
@@ -180,30 +223,35 @@ export function Intake({ active, onOpen }: Props) {
             ref={taRef}
             value={raw}
             spellCheck={false}
-            onChange={(e) => { setRaw(e.target.value); if (note) setNote(''); }}
+            onChange={(e) => { setRaw(e.target.value); if (!e.target.value.trim() && !pdf?.pages) setPdf(null); if (note) setNote(''); }}
             onPaste={onPaste}
-            placeholder="paste text or a link"
+            placeholder={pdf ? 'no text' : 'paste text or a link'}
           />
-          {!raw && (
+          {!raw && !pdf && (
             <div className="paste-hint">
               {note ? (
                 <span className="note">{note}</span>
               ) : (
-                <span>or drop a <span className="mono">.txt</span> / <span className="mono">.md</span> file</span>
+                <span>or drop a <span className="mono">.txt</span> / <span className="mono">.md</span> / <span className="mono">.pdf</span> file</span>
               )}
+              <button type="button" className="link" onClick={() => void pick().catch((e: unknown) => fail(e, 'could not read that file'))}>pick a file →</button>
               <button type="button" className="link" onClick={() => ingestText(INTAKE_SAMPLE)}>use a sample →</button>
             </div>
           )}
         </div>
 
-        {st.words > 0 && (
+        {(st.words > 0 || pdf) && (
           <div className="intake-detail">
             <div className="stats">
-              <span><b>{st.words.toLocaleString()}</b> words</span>
+              {pdf ? <span><b>{pdf.pages.toLocaleString()}</b> {pdf.pages === 1 ? 'page' : 'pages'}</span> : <span><b>{st.words.toLocaleString()}</b> words</span>}
               <span className="dot" />
-              <span>{plural(st.paragraphs, 'paragraph')}</span>
-              <span className="dot" />
-              <span>~{st.minutes} min</span>
+              {pdf && st.words === 0 ? <span>no text</span> : pdf ? <span>{st.words.toLocaleString()} words</span> : <span>{plural(st.paragraphs, 'paragraph')}</span>}
+              {st.words > 0 && (
+                <>
+                  <span className="dot" />
+                  <span>~{st.minutes} min</span>
+                </>
+              )}
             </div>
 
             <label className="field">

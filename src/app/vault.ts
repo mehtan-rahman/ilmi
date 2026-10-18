@@ -8,7 +8,7 @@ import { open as pickDirectory } from '@tauri-apps/plugin-dialog';
 import { info } from '@tauri-apps/plugin-log';
 import { meta, setField, type Doc, type NodeType } from '../format/index.js';
 import { dayOf, docItems, isDue, postponeOverflow, sortQueue, type QueueItem } from '../schedule/index.js';
-import { Vault, childDirOf, dirOf, isDoc, rekey, type ExtractSpec, type ImportSpec, type TreeNode, type VaultEvent, type VaultState } from '../vault/index.js';
+import { Vault, childDirOf, dirOf, isDoc, rekey, type ExtractSpec, type ImportPdfSpec, type ImportSpec, type TreeNode, type VaultEvent, type VaultState } from '../vault/index.js';
 import { tauriFs } from '../vault/tauri-fs.js';
 import { cleanBudget, dueToday, sessionItems } from './items.js';
 import { INTAKE, SESSION, queueId, queueScope } from './names.js';
@@ -26,7 +26,7 @@ export function currentVault(): Vault | null {
 /** Every document's parsed form, by path, as last reported by the vault; the queue is built from it. */
 const bodies = new Map<string, Doc>();
 
-function infoOf(doc: Doc, items: QueueItem[], now: Date): DocInfo {
+function infoOf(doc: Doc, items: QueueItem[], now: Date, pdf: string | null): DocInfo {
   const m = meta(doc);
   const due = new Set<number>();
   for (const item of items) if (item.kind === 'card' && isDue(item, now)) due.add(item.block);
@@ -40,6 +40,7 @@ function infoOf(doc: Doc, items: QueueItem[], now: Date): DocInfo {
   if (m.read) out.read = m.read;
   if (m.write) out.write = m.write;
   if (m.pri !== undefined) out.pri = m.pri;
+  if (pdf !== null) out.pdf = pdf;
   return out;
 }
 
@@ -65,7 +66,7 @@ async function publishDocs(vault: Vault): Promise<void> {
       const doc = (await vault.read(path)).doc;
       bodies.set(path, doc);
       seen.add(path);
-      docs[path] = infoOf(doc, docItems(path, doc, now), now);
+      docs[path] = infoOf(doc, docItems(path, doc, now), now, await vault.pagesOf(path));
     } catch (e) {
       console.error(path, e);
     }
@@ -128,7 +129,15 @@ function onEvent(vault: Vault, ev: VaultEvent): void {
       const now = new Date();
       const items = docItems(ev.path, ev.loaded.doc, now);
       bodies.set(ev.path, ev.loaded.doc);
-      useApp.setState({ docs: { ...s.docs, [ev.path]: infoOf(ev.loaded.doc, items, now) }, queue: buildQueue(now), queueAt: now });
+      // the pages stay what they were until the vault has looked: a changed `pdf` field lands a moment later
+      useApp.setState({ docs: { ...s.docs, [ev.path]: infoOf(ev.loaded.doc, items, now, s.docs[ev.path]?.pdf ?? null) }, queue: buildQueue(now), queueAt: now });
+      void vault.pagesOf(ev.path).then((pdf) => {
+        const cur = useApp.getState().docs[ev.path];
+        if (current !== vault || !cur || (cur.pdf ?? null) === pdf) return;
+        const next = { ...cur };
+        if (pdf === null) delete next.pdf; else next.pdf = pdf;
+        useApp.setState((st) => ({ docs: { ...st.docs, [ev.path]: next } }));
+      });
       break;
     }
     case 'gone': {
@@ -208,8 +217,8 @@ export function openInitialVault(): Promise<void> {
     const vault = await openVault(path);
     const mode = await invoke<string | null>('dev_env', { name: 'ILMI_SMOKE' });
     if (mode) {
-      const { smoke, smokeReader, smokeCards, smokeIntake, smokeQueue, smokeLoop, smokeShots, smokeDeck, smokePri, smokeGrowth, smokeOverload } = await import('./smoke.js');
-      const run = { reader: smokeReader, cards: smokeCards, intake: smokeIntake, queue: smokeQueue, loop: smokeLoop, shots: smokeShots, deck: smokeDeck, pri: smokePri, growth: smokeGrowth, overload: smokeOverload }[mode] ?? smoke;
+      const { smoke, smokeReader, smokeCards, smokeIntake, smokeQueue, smokeLoop, smokeShots, smokeDeck, smokePri, smokeGrowth, smokeOverload, smokePdf } = await import('./smoke.js');
+      const run = { reader: smokeReader, cards: smokeCards, intake: smokeIntake, queue: smokeQueue, loop: smokeLoop, shots: smokeShots, deck: smokeDeck, pri: smokePri, growth: smokeGrowth, overload: smokeOverload, pdf: smokePdf }[mode] ?? smoke;
       await run(vault);
     }
   })();
@@ -368,6 +377,13 @@ export async function moveCard(from: string, index: number, to: string, id?: str
 /** A frozen, unread source from imported text in `dir`; the folder opens so the new row is visible. Resolves to its path. */
 export async function importNode(dir: string, spec: ImportSpec): Promise<string> {
   const path = await need().importDoc(dir, spec);
+  if (dir !== '' || !useApp.getState().open['']) toggleOpen(dir, true);
+  return path;
+}
+
+/** A frozen source with pages: the PDF copied beside its Markdown in `dir`; the folder opens. Resolves to the document's path. */
+export async function importPdfNode(dir: string, spec: ImportPdfSpec): Promise<string> {
+  const path = await need().importPdf(dir, spec);
   if (dir !== '' || !useApp.getState().open['']) toggleOpen(dir, true);
   return path;
 }

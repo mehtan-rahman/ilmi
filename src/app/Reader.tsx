@@ -243,7 +243,7 @@ const words = (blocks: Block[]) =>
   blocks.reduce((n, b) => (b.kind === 'card' ? n : n + b.text.split(/\s+/).filter(Boolean).length), 0);
 
 /** Where the document sits: its folders, and its parent when it is an extract. */
-function crumbOf(path: string, docs: Record<string, DocInfo>): string {
+export function crumbOf(path: string, docs: Record<string, DocInfo>): string {
   const dir = dirOf(path);
   if (!dir) return '';
   const parts: string[] = [];
@@ -282,9 +282,11 @@ interface ReaderProps {
   id: string;
   /** In the active pane: keys that need no selection (`r`) reach this document. */
   active?: boolean;
+  /** Set when this is the text of a document with pages: the meta row offers the pages back. */
+  onPages?: () => void;
 }
 
-export function Reader({ id, active = true }: ReaderProps) {
+export function Reader({ id, active = true, onPages }: ReaderProps) {
   const docs = useApp((s) => s.docs);
   const root = useApp((s) => s.vault);
   const info = docs[id];
@@ -618,6 +620,7 @@ export function Reader({ id, active = true }: ReaderProps) {
       <div className={`reader doc-view${reading ? ' reading' : ''}`}>
         <div className="meta">
           <span className="crumb">{crumbOf(id, docs)}</span>
+          {onPages && <button type="button" className="frozen-tag" onClick={onPages}>pages</button>}
           {info && info.type !== 'draft' && (
             <button type="button" className="frozen-tag" data-frozen={info.frozen ? '1' : '0'} onClick={toggleFrozen}>
               {info.frozen ? 'frozen' : 'editable'}

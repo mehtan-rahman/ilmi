@@ -27,6 +27,16 @@ fn read_dropped(path: String) -> Result<String, String> {
     std::fs::read_to_string(&path).map_err(|e| e.to_string())
 }
 
+/// The same for a PDF: its bytes, raw over the IPC, for pdf.js on the
+/// renderer side to read its text and for the vault to copy beside the
+/// document it becomes.
+#[tauri::command]
+fn read_dropped_bytes(path: String) -> Result<tauri::ipc::Response, String> {
+    std::fs::read(&path)
+        .map(tauri::ipc::Response::new)
+        .map_err(|e| e.to_string())
+}
+
 /// Dev only: an environment variable of the dev process, for
 /// `ILMI_VAULT=/path npm run tauri dev` (open that vault at launch) and
 /// `ILMI_SMOKE=…` (run a smoke script). Always `None` in release.
@@ -45,7 +55,7 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_http::init())
-        .invoke_handler(tauri::generate_handler![allow_vault, read_dropped, dev_env])
+        .invoke_handler(tauri::generate_handler![allow_vault, read_dropped, read_dropped_bytes, dev_env])
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(

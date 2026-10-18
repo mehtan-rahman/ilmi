@@ -8,7 +8,7 @@ was verified, what was not, and the prompt to resume with.
 
 ## 2026-10-18 — milestone 19: EPUB, a dropped book lands as a folder of chapter sources in reading order
 
-Commit `PENDING19` — *epub: a dropped book read on the Rust side, its
+Commit `57bbc85` — *epub: a dropped book read on the Rust side, its
 chapters landing as frozen sources in a folder, in reading order*. Done on
 `main` at `dc2067c` (the plan commit that added milestones 20–22 landed
 after this session started; a parallel session works on 20 in a worktree

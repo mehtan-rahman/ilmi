@@ -1320,7 +1320,7 @@ and the three loops run over them as over any source. Nothing in the
 format changes.
 
 ### [x] 19. EPUB — drop a book, its chapters land as sources in reading order
-Done 2026-10-18, commit `PENDING19`.
+Done 2026-10-18, commit `57bbc85`.
 Notes: `src-tauri/src/epub.rs` is the reader, `read_epub(path)` the
 command (registered in `lib.rs` beside `read_anki_package`; the path is
 read as a drop, nothing added to the fs scope). Crate: `quick-xml` 0.42

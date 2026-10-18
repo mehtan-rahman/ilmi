@@ -6,6 +6,28 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-10-18 — polish: the card as two faces
+
+The session card redrawn after SuperMemo's element window: the question
+fills the upper half of the pane, the answer the lower, each its own
+bordered face, the grades beneath. The answer face is blurred until
+revealed (space, or a click on it); on e-ink it is simply absent until
+then. A cloze's answer face holds the deleted text alone, its blank in
+the question filling in at the same moment; q&a and bidir put their two
+halves on the two faces. The card editor in the inspector is unchanged.
+
+Verified in the window with a new `ILMI_SMOKE=faces` mode, which walks
+the session to a card of each form and pauses hidden and revealed, then
+in the dark and e-ink themes: faces 261px each, filter `blur(9px)` hidden
+and `none` revealed, the hint gone on reveal, the cloze's blank shown and
+"graded" alone below; eight screenshots read. Suite 276, typecheck clean.
+
+Open: the faces' width is capped at 920px; editing a card in place from
+the faces, as SuperMemo allows, is not there, the inspector's one
+textarea still does that.
+
+---
+
 ## 2026-10-17 — milestone 15: the PDF lens, a PDF read in place with the three loops over it
 
 Three commits: `83a8a3f` — *pdf: the pairing in FORMAT.md, the pdf field

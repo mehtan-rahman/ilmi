@@ -31,6 +31,8 @@
 // fold in the day's queue and the top strip's count, finds the palette
 // command, postpones the rest from the row under the fold, and logs every
 // file that changed, what tomorrow's queue holds, and a session's length.
+// `ILMI_SMOKE=faces` enters the session and walks it to one card of each
+// form, pausing on the two faces hidden and revealed, then in the dark.
 // `ILMI_SMOKE=pdf` drops the corpus PDF on the intake, places it as the
 // pair, opens it as pages, selects on the text layer and presses `e` and
 // `m`, searches, goes to a page, reads the text instead, reads on from the
@@ -1168,6 +1170,57 @@ export async function smokePdf(vault: Vault): Promise<void> {
     log(`reopened: highlights ${highlights('ilmi-extract')}; rule height ${q<HTMLElement>('.read-rule')?.style.height}; rail "${qa('.rail-page').map((r) => r.textContent).join(' | ')}"; inspector rows "${q('.insp .kv')?.textContent?.slice(0, 160)}"`);
     await shot('pdf-reopened');
     log('done');
+  } catch (e) {
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+export async function smokeFaces(vault: Vault): Promise<void> {
+  const log = (s: string) => info(`smoke faces: ${s}`);
+  const shot = async (name: string, ms = 10000) => { await sleep(600); log(`shot: ${name}`); await sleep(ms); };
+  const q = <T extends Element>(sel: string) => document.querySelector<T>(sel);
+  const faceText = (sel: string) => q(sel)?.textContent?.replace(/\s+/g, ' ').trim().slice(0, 40) ?? '';
+  // walk forward until the card on screen has the face wanted
+  const walkTo = async (sel: string): Promise<boolean> => {
+    for (let i = 0; i < 60; i++) {
+      if (q(`.recall-wrap .card ${sel}`)) return true;
+      if (q('.recall-wrap .empty.center')) return false;
+      press(']');
+      await sleep(80);
+    }
+    return false;
+  };
+  try {
+    openNode(queueId('today'));
+    await until(() => q('.queue'));
+    press('Enter');
+    await until(() => q('.recall-wrap, .doc-session'));
+    for (const [form, sel] of [['qa', '.qa-q'], ['cloze', '.cloze-text'], ['bidir', '.bidir-a']] as const) {
+      if (!(await walkTo(sel))) { log(`${form}: none in the session`); continue; }
+      const card = q<HTMLElement>('.recall-wrap .card')!;
+      const front = card.querySelector<HTMLElement>('.face.front')!;
+      const back = card.querySelector<HTMLElement>('.face.back');
+      const h = (el: HTMLElement | null) => el ? Math.round(el.getBoundingClientRect().height) : 0;
+      log(`${form} hidden: faces ${card.dataset.faces}, revealed ${card.dataset.revealed}, front ${h(front)}px, back ${h(back)}px, filter "${back ? getComputedStyle(back.querySelector('.face-body')!).filter : ''}", hint ${!!q('.face-hint')}, front "${faceText('.face.front')}"`);
+      await shot(`${form}-hidden`);
+      press(' ');
+      await sleep(400);
+      log(`${form} revealed: revealed ${card.dataset.revealed}, filter "${back ? getComputedStyle(back.querySelector('.face-body')!).filter : ''}", hint ${!!q('.face-hint')}, back "${faceText('.face.back .face-body')}", blanks shown ${card.querySelectorAll('.cloze.revealed').length}`);
+      await shot(`${form}-revealed`);
+    }
+    // the next card, unrevealed, for the themes
+    press(']');
+    await sleep(300);
+    log(`themes on: ${q('.recall-wrap .card') ? `a card, revealed ${q<HTMLElement>('.recall-wrap .card')!.dataset.revealed}` : 'no card'}`);
+    useApp.getState().setTheme('dark');
+    await shot('dark');
+    useApp.getState().setTheme('eink');
+    await sleep(300); // the theme lands on the root in an effect
+    const body = q<HTMLElement>('.face.back .face-body');
+    log(`eink: visibility ${body ? getComputedStyle(body).visibility : 'none'}, filter "${body ? getComputedStyle(body).filter : ''}"`);
+    await shot('eink');
+    useApp.getState().setTheme('light');
+    log(`done; vault ${vault.root}`);
   } catch (e) {
     log(`failed: ${e instanceof Error ? e.message : String(e)}`);
   }

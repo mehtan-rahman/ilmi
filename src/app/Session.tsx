@@ -133,48 +133,53 @@ function CardElement({ item, active, onGrade }: CardProps) {
 
   if (loaded && !card) return <div className="empty center">no longer in the vault</div>;
 
-  let body: ReactNode;
-  if (!f) body = <span dangerouslySetInnerHTML={{ __html: richHTML(text) }} />;
+  // Two faces, SuperMemo's element window: the question above, the answer
+  // below. The answer face is blurred until revealed; a cloze's answer face
+  // holds the deleted text alone, its blank in the question filling in too.
+  let front: ReactNode;
+  let back: ReactNode = null;
+  if (!f) front = <span dangerouslySetInnerHTML={{ __html: richHTML(text) }} />;
   else if (f.form === 'cloze') {
     let index = -1;
-    body = (
+    const answers: string[] = [];
+    front = (
       <div className="cloze-text">
         {clozeParts(text).map((p, i) => {
           if (typeof p === 'string') return <span key={i} dangerouslySetInnerHTML={{ __html: richHTML(p) }} />;
           index++;
           const mine = ownBlank(item, p.n, index);
+          if (mine) answers.push(p.answer);
           const cls = `cloze${mine ? (revealed ? ' revealed' : '') : ' ctx'}`;
           return <span key={i} className={cls} onClick={() => { if (mine) setRevealed(true); }} dangerouslySetInnerHTML={{ __html: richHTML(p.answer) }} />;
         })}
       </div>
     );
+    back = (
+      <div className="cloze-answer">
+        {answers.map((a, i) => <span key={i} className="cz-a" dangerouslySetInnerHTML={{ __html: richHTML(a) }} />)}
+      </div>
+    );
   } else if (f.form === 'qa') {
-    body = (
-      <div>
-        <div className="qa-q" dangerouslySetInnerHTML={{ __html: richHTML(f.front) }} />
-        {revealed
-          ? <div className="qa-a" dangerouslySetInnerHTML={{ __html: richHTML(f.back) }} />
-          : <div className="qa-a hint" onClick={() => setRevealed(true)}>press <kbd className="kbd">space</kbd> to reveal</div>}
-      </div>
-    );
+    front = <div className="qa-q" dangerouslySetInnerHTML={{ __html: richHTML(f.front) }} />;
+    back = <div className="qa-a" dangerouslySetInnerHTML={{ __html: richHTML(f.back) }} />;
   } else {
-    body = (
-      <div className="bidir">
-        <div><span className="lbl">a</span><span dangerouslySetInnerHTML={{ __html: richHTML(f.left) }} /></div>
-        <div className="bidir-arrow"><span className="lbl"> </span>⇄</div>
-        <div>
-          <span className="lbl">b</span>
-          <span className={`bidir-b${revealed ? ' revealed' : ''}`} onClick={() => setRevealed(true)} dangerouslySetInnerHTML={{ __html: richHTML(f.right) }} />
-        </div>
-      </div>
-    );
+    front = <div className="bidir-a" dangerouslySetInnerHTML={{ __html: richHTML(f.left) }} />;
+    back = <div className="bidir-b" dangerouslySetInnerHTML={{ __html: richHTML(f.right) }} />;
   }
 
   const groupNo = item.group && item.groups > 1 ? ('n' in item.group ? item.group.n : item.group.blank + 1) : null;
 
   return (
     <>
-      <div className="card">{body}</div>
+      <div className="card" data-revealed={revealed ? '1' : '0'} data-faces={back ? '2' : '1'}>
+        <div className="face front">{front}</div>
+        {back && (
+          <div className="face back" onClick={() => setRevealed(true)}>
+            <div className="face-body">{back}</div>
+            {!revealed && <div className="face-hint">press <kbd className="kbd">space</kbd> to reveal</div>}
+          </div>
+        )}
+      </div>
       <div className="card-meta">
         <span className="cm-type">{f ? FORM_LABEL[f.form] : 'card'}</span>
         {groupNo !== null && <span>blank {groupNo} of {item.groups}</span>}

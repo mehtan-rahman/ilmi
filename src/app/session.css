@@ -1,15 +1,16 @@
 /* The session: a card centred in the pane with its grades under it; a
    reading or writing element as the whole document with a control bar at
    the foot. Ported from the prototype's recall and session-bar rules with
-   the flattening pass folded in: hairlines, 2px, no blur, no shadows. */
+   the flattening pass folded in: hairlines, 2px, no shadows; blur only on
+   the unrevealed answer. */
 
 .recall-wrap {
-  min-height: 100%;
+  --card-w: 920px;
+  height: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  padding: 36px 24px;
+  padding: 20px 24px 24px;
   position: relative;
 }
 .recall-meta {
@@ -18,11 +19,11 @@
   color: var(--fg-4);
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  margin-bottom: 20px;
+  margin-bottom: 14px;
   display: flex;
   align-items: center;
   gap: 14px;
-  max-width: 520px;
+  max-width: var(--card-w);
   width: 100%;
   white-space: nowrap;
   overflow: hidden;
@@ -68,14 +69,17 @@
 .sess-nav .sn-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
 .sess-nav .sn-btn:disabled { opacity: 0.32; cursor: default; }
 
-/* the card */
+/* the card: two faces, SuperMemo's element window. The question fills the
+   upper half of the pane, the answer the lower; the answer is blurred until
+   revealed. The one place blur is allowed: it hides the answer, not chrome. */
 .recall-wrap .card {
+  flex: 1 1 0;
+  min-height: 0;
   width: 100%;
-  max-width: 520px;
-  background: var(--paper);
-  border: 1px solid var(--line-1);
-  border-radius: var(--radius);
-  padding: 48px 44px 40px;
+  max-width: var(--card-w);
+  display: grid;
+  grid-template-rows: 1fr 1fr;
+  gap: 14px;
   font-family: var(--serif);
   font-size: 19px;
   line-height: 1.5;
@@ -84,6 +88,45 @@
   font-weight: 420;
   white-space: pre-wrap;
 }
+.recall-wrap .card[data-faces="1"] { grid-template-rows: 1fr; }
+.recall-wrap .card .face {
+  position: relative;
+  min-height: 0;
+  overflow: auto;
+  background: var(--paper);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius);
+  padding: 28px 32px;
+}
+.recall-wrap .card .face.back { cursor: pointer; }
+.recall-wrap .card[data-revealed="1"] .face.back { cursor: auto; }
+.recall-wrap .card .face.back .face-body {
+  transition: filter .25s, opacity .25s;
+}
+.recall-wrap .card[data-revealed="0"] .face.back .face-body {
+  filter: blur(9px);
+  opacity: 0.55;
+  user-select: none;
+  pointer-events: none;
+}
+/* e-ink has no soft edges: the answer is simply not there until revealed */
+[data-theme="eink"] .recall-wrap .card[data-revealed="0"] .face.back .face-body { filter: none; visibility: hidden; }
+.recall-wrap .card .face-hint {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  color: var(--fg-5);
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+.recall-wrap .card .face-hint .kbd { color: var(--fg-4); }
+
+/* a cloze: the blank stays hidden in the question until revealed */
 .recall-wrap .card .cloze {
   background: var(--fg-5);
   border-radius: var(--radius);
@@ -110,51 +153,15 @@
   border-bottom: 1px solid var(--line-2);
 }
 .recall-wrap .card .cloze.ctx .katex { color: inherit; }
-.recall-wrap .card .qa-q { color: var(--fg-1); }
-.recall-wrap .card .qa-a {
-  color: var(--fg-2);
-  font-size: 19px;
-  margin-top: 19px;
-  padding-top: 10px;
-  border-top: 1px solid var(--line-2);
-  font-style: italic;
-}
-.recall-wrap .card .qa-a.hint {
-  color: var(--fg-5);
-  font-style: normal;
-  font-family: var(--mono);
-  font-size: 12px;
-  letter-spacing: 0.06em;
-  cursor: pointer;
-}
-.recall-wrap .card .bidir { display: flex; flex-direction: column; gap: 14px; }
-.recall-wrap .card .bidir > div { display: flex; gap: 10px; align-items: baseline; }
-.recall-wrap .card .bidir .bidir-arrow { align-items: center; color: var(--fg-4); font-family: var(--mono); font-size: 14px; }
-.recall-wrap .card .bidir .lbl {
-  font-family: var(--mono);
-  font-size: 10.5px;
-  color: var(--fg-4);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  min-width: 18px;
-}
-.recall-wrap .card .bidir-b {
-  cursor: pointer;
+/* the answer face of a cloze: the deleted text alone, several joined */
+.recall-wrap .card .cloze-answer { display: flex; flex-wrap: wrap; gap: 6px 18px; }
+.recall-wrap .card .cloze-answer .cz-a {
+  background: var(--accent-soft);
   border-radius: var(--radius);
   padding: 0 8px;
-  background: var(--fg-5);
-  color: transparent;
-  -webkit-text-fill-color: transparent;
 }
-.recall-wrap .card .bidir-b .katex { color: transparent; }
-.recall-wrap .card .bidir-b.revealed {
-  background: transparent;
-  padding: 0;
-  color: var(--fg-1);
-  -webkit-text-fill-color: var(--fg-1);
-  cursor: auto;
-}
-.recall-wrap .card .bidir-b.revealed .katex { color: inherit; }
+.recall-wrap .card .qa-a,
+.recall-wrap .card .bidir-b { color: var(--fg-1); }
 
 /* a quiet schedule strip under the card */
 .recall-wrap .card-meta {
@@ -163,8 +170,9 @@
   align-items: center;
   gap: 14px;
   width: 100%;
-  max-width: 520px;
-  margin-top: 14px;
+  max-width: var(--card-w);
+  margin-top: 12px;
+  flex-shrink: 0;
   font-family: var(--mono);
   font-size: 10px;
   letter-spacing: 0.04em;
@@ -177,9 +185,10 @@
 .grades {
   display: flex;
   gap: 1px;
-  margin-top: 28px;
+  margin-top: 12px;
   width: 100%;
-  max-width: 520px;
+  max-width: var(--card-w);
+  flex-shrink: 0;
 }
 .grades button {
   flex: 1;
@@ -190,7 +199,7 @@
   color: var(--fg-2);
   font-family: var(--sans);
   font-size: 12.5px;
-  padding: 16px 0 12px;
+  padding: 12px 0 10px;
   cursor: default;
   text-align: center;
   margin-left: -1px;

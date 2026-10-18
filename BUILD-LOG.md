@@ -6,6 +6,102 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-10-18 — milestone 22: clipper, `ilmi://` opens a door the web clipper can use
+
+Done on the branch `worktree-agent-ad643755f471ccef6` (worktree
+`.claude/worktrees/agent-ad643755f471ccef6`) while milestones 19 and 20
+ran on main; commit hash recorded in the follow-up log commit. The
+sessions are likely to share `PLAN.md`, `BUILD-LOG.md`, `README.md`,
+`src/app/smoke.ts`, `src/app/vault.ts` (the smoke dispatch line, the
+`openVault` state line, a setter), `src/app/Tweaks.tsx`, `src/app/store.ts`,
+`src/vault/vault.ts` (`VaultState`), `src/app/App.tsx` (the mount effect),
+`src/app/chrome.css`, `package.json` / `package-lock.json`,
+`src-tauri/Cargo.toml` / `Cargo.lock`, `src-tauri/src/lib.rs`,
+`src-tauri/tauri.conf.json`, and `src-tauri/capabilities/default.json`, so
+the merge touches those by hand.
+
+### Done
+
+- `src/app/clip.ts`: `parseClipUri` reads `ilmi://new?name=&content=&
+  folder=&url=&vault=` and `ilmi://open?path=&vault=` (also `file=`) into
+  an action, or a refusal whose reason is the notice; folders and paths
+  are cleaned so a link never climbs out of the vault; `vaultMatches`,
+  `clipTitle`, `openCandidates`, `cleanClipDir`.
+- `src/app/clipper.ts`: `handleUri(uri)`, the plain function; a `new` link
+  lands a frozen source through the intake's import path (`fetchReadable`
+  for an address, `importNode` for the file), opens it, notes `clipped ·
+  <title>`; `open` opens a document; a foreign vault, a missing path, and
+  garbage are notices; a link before any vault is open is held until one
+  is. `listenForClips()` wires `getCurrent` and `onOpenUrl` once.
+- The `clippings go to` setting: `clippings` in `.ilmi/state.json`,
+  `clipDir` in the store, `setClipDir` in `vault.ts`, a `select` row in
+  Tweaks under the budget row.
+- Rust: `tauri-plugin-single-instance` (with `deep-link`) first, then
+  `tauri-plugin-deep-link`; the `ilmi` scheme in `tauri.conf.json`;
+  `register_all` on Windows and Linux; `deep-link:default`,
+  `core:window:allow-set-focus`, `core:window:allow-unminimize`.
+- npm: `@tauri-apps/plugin-deep-link`. README: the paragraph, the
+  bookmarklet, the Obsidian Web Clipper statement, the macOS note; the
+  tweaks line in *Keys*; the shell line in *Layout*.
+- Smoke: `ILMI_SMOKE=clip`, written on the branch, not run.
+- Tests: 337 (+10), 19 files.
+
+### Verified
+
+- `npm run typecheck` clean, `npx vitest run` green (19 files, 337),
+  `vite build` builds, `cargo test` in `src-tauri` green (5) with the two
+  plugins compiled in.
+- Not in the window: the window and port 1420 belonged to the other
+  sessions. `ILMI_SMOKE=clip` and the shell's `open 'ilmi://new?name=t&
+  content=hi'` are owed.
+
+### Not done / open
+
+- The window check and the OS-level handoff. On macOS the scheme comes
+  from the bundle's Info.plist, which Tauri writes from the config, so the
+  dev binary may not own it; if `open 'ilmi://…'` lands nothing, `npm run
+  tauri build` and open the built app once, then try again.
+- A bookmarklet clip of a selection carries the page's address as `url=`
+  but the brief takes `content` *as* the text, so the address is not kept
+  in the file; a `url` front-matter field would be a FORMAT.md change.
+- A link held before a vault opens lands silently once one does.
+- Nothing Rust-side gained a unit test; the plugins are registration only.
+
+### Decisions worth knowing
+
+- The pure parse and the handler are two files (`clip.ts`, `clipper.ts`)
+  so `vault.ts` can import `cleanClipDir` without a cycle and the tests
+  need no Tauri.
+- The verb is read as the URL host or the first path segment, so the
+  three spellings a browser or shell may produce all work; the scheme and
+  verb are case-insensitive, the parameters are not.
+- A `folder=` that does not exist is made (Obsidian's `new` does the
+  same); the setting's folder too, since the user chose it.
+- The same link twice within two seconds is one link: a launch link can
+  arrive both as `getCurrent()` and as the event.
+
+### Handoff prompt
+
+```
+Read PLAN.md, FORMAT.md, BUILD-LOG.md, and spec/hashiyah/HANDOFF.md.
+Milestone 22 (Clipper) was done on the branch
+`worktree-agent-ad643755f471ccef6` beside 19 and 20; merge it onto main
+by hand where the files above overlap (both sides append a smoke mode, a
+README paragraph, a log entry, a Tweaks row, a store field, a VaultState
+field, a plugin in lib.rs and Cargo.toml, a permission). After the merge,
+run its window check: `ILMI_VAULT=<scratch copy> ILMI_SMOKE=clip npm run
+tauri dev`, read the log and the three shots, then from a shell `open
+'ilmi://new?name=t&content=hi'` with the window up; on macOS the dev
+binary may not own the scheme, so if nothing arrives, say so and record
+that `npm run tauri build` and the built app is where the OS handoff can
+be checked. Then do the first unchecked milestone in PLAN.md, if any.
+Tooling and verification are as the ground rules and the entries below
+describe. Suite 337 (with 22 alone) and typecheck must be green before a
+commit.
+```
+
+---
+
 ## 2026-10-18 — milestone 18: blanks inside math, `{{cN::…}}` in a formula closed by the balanced `}}`
 
 Done on the branch `worktree-agent-aa0c5ff44353b39cb` (worktree

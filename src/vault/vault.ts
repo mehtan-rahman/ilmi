@@ -37,6 +37,8 @@ export interface VaultState {
   inspector?: { width?: number; open?: boolean };
   /** How many elements a day holds; the queue folds there. 0 or absent is no fold. */
   budget?: number;
+  /** The folder an `ilmi://new` link lands in when it names none; `''` or absent is the root. */
+  clippings?: string;
 }
 
 /** Default file names for new nodes, by type. */

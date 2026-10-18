@@ -1485,7 +1485,74 @@ adds the word, and logs the deck file's lines and the queue count;
 screenshots read; API gaps found while writing it fixed in `src/plugins/`
 and noted.
 
-### [ ] 22. Clipper — `ilmi://` opens a door the web clipper can use
+### [x] 22. Clipper — `ilmi://` opens a door the web clipper can use
+Done 2026-10-18 on the branch `worktree-agent-ad643755f471ccef6` (worktree
+`.claude/worktrees/agent-ad643755f471ccef6`), beside milestones 19 and 20
+on main; commit recorded in `BUILD-LOG.md`.
+Notes: `src/app/clip.ts` is the pure side: `parseClipUri(uri)` → a
+`ClipNew` (`name`, `content`, `folder`, `url`, `vault`, each only when
+given and non-blank), a `ClipOpen` (`path`, `vault`), or a `ClipRefusal`
+whose `reason` is the notice (`not an ilmi link`, `nothing to clip`, `not
+a web address`, `nothing to open`, `no such link: <verb>`). The verb is
+the URL's host, else its first path segment, so `ilmi://new`, `ilmi:new`,
+and `ilmi:///new` all read; `file=` is taken as `path=` (Obsidian's name);
+`folder` and `path` go through `cleanClipDir` (slashes at the ends, empty,
+`.` and `..` segments dropped, so a link never climbs out of the vault); a
+`url` that is not `http(s)` beside real content is dropped, alone it is
+the refusal. `vaultMatches(named, root)` accepts the vault directory's
+name or its whole path. `clipTitle` is the name, else the fetched title,
+else `deriveTitle(text)`, else the address's host, else `clipping`.
+`src/app/clipper.ts` is the handler: `handleUri(uri)`, a plain exported
+async function that never rejects. It notes a refusal; with no vault open
+it holds the link and lands it when one opens (a store subscription on
+`vault`); a foreign `vault=` is `that link is for the vault <name>`; `new`
+takes `content`, else `fetchReadable(url)` from `fetch.ts` (the intake's
+path, so a page is Readability's article and plain text is itself;
+failure is `nothing readable at that link`), `cleanText`, then
+`importNode(dir, { title, text })` (frozen, `imported` today, not
+enrolled, as any intake source), `openNode`, and `clipped · <title>`; the
+folder is the link's, else the store's `clipDir`, made along the way with
+`vault.folderIn` when missing (a failure there falls back to the root);
+`open` tries the path, then `path.md`, over `files` and the folders, else
+`nothing at <path>`; the window is focused after a landing
+(`core:window:allow-set-focus`). `listenForClips()` (called once from
+`App.tsx`'s mount effect, a module flag against StrictMode's double run)
+takes `getCurrent()` for a launch link and `onOpenUrl` for the rest, the
+same link twice within 2 s counted once. Setting: `clippings` in
+`.ilmi/state.json` (`VaultState.clippings`, a folder path, `''` or absent
+is the root), read on `openVault` through `cleanClipDir` into the store's
+`clipDir`, written by `setClipDir` through `queueSave`; Tweaks has a
+`clippings go to` row (`ClipDirPick`, a `select` over `folderPaths(tree)`,
+the root as the vault's name, `.tw-sel` styled as `.tw-num`), shown while
+a vault is open, under the budget row. Rust: `tauri-plugin-single-
+instance` 2.4 (`deep-link` feature) registered first, its closure
+unminimizing and focusing `main`; `tauri-plugin-deep-link` 2.4 next;
+`plugins.deep-link.desktop.schemes: ["ilmi"]` in `tauri.conf.json`;
+`register_all()` in `setup` under `cfg(any(windows, linux))`;
+`deep-link:default` and the two window permissions in
+`capabilities/default.json`. npm: `@tauri-apps/plugin-deep-link` 2.6;
+single-instance has no guest package. README: the paragraph, the
+bookmarklet, the Obsidian Web Clipper statement, the macOS note. Tests:
+337 (+10 in `clip.test.ts`: each form, the folder cleaning, the vault
+match, the verb spellings, garbage, the title order, the setting's
+cleaning). Dev: `ILMI_SMOKE=clip` (written, **not run**: the window and
+port 1420 belonged to the other sessions) hands the handler `new` with
+content, with a folder that does not exist, with `https://example.com/`
+(a real fetch, as the intake smoke; logs `offline?` if nothing lands),
+`open` with and without `.md` and on a missing path, a foreign vault, the
+own vault by name, `garbage`, an empty `new`, then sets `clippings go to`
+from the tweaks panel and clips once more; shots `clip-new`,
+`clip-notices`, `clip-tweaks`. Not done: the window check and the OS-level
+`open 'ilmi://new?name=t&content=hi'` handoff (owed to the merge session;
+on macOS a dev binary may not own the scheme, so if nothing arrives, `npm
+run tauri build` and the built app is where it can be checked); the
+address is not kept when `content` is given beside it (the brief says
+content *as* the text, so a bookmarklet clip of a selection carries no
+provenance; a `url` front-matter field would need FORMAT.md); a link that
+arrives before a vault is open lands silently once one opens, with no
+notice that it was held; `cargo test` stays at 5, nothing Rust-side has a
+unit to test; `core:window:allow-unminimize` is granted but only the Rust
+closure unminimizes.
 Obsidian's clipper hands the browser's page to the app through the
 `obsidian://new` URI. ilmi takes the same grammar under its own scheme,
 so a bookmarklet or a fork of the clipper lands a page without leaving the

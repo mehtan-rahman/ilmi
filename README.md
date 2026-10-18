@@ -43,7 +43,7 @@ F2 / dbl-click   rename                 right-click  new, rename, move to, delet
 ⌘W               close tab              ⌘\           split pane
 ⌘⇧E              sidebar                ⌘⇧I          inspector
 ⌘,               tweaks: theme, accent, density (kept outside the vault);
-                 the day's budget (kept in the vault's .ilmi)
+                 the day's budget and where clippings go (kept in the vault's .ilmi)
 
 in a source      select, then e extract or m make a card; r start reading
 in a PDF         the same on a page; / search, g go to a page, [ ] pages;
@@ -96,6 +96,26 @@ palette command, postpones the reading and writing below it; cards stay
 where they are. The bottom strip shows the keys that work where you are. `ilmi.theme('dark')`
 and friends still work from the devtools console.
 
+The app owns the `ilmi://` scheme, the same grammar as Obsidian's URI under
+its own name, so a browser can hand it a page: `ilmi://new?name=&content=&
+folder=&url=` lands a frozen source (the content as the text, else the page
+at the address fetched and read as the intake reads one; the name as the
+title, else the page's) in the folder named, else the one `clippings go to`
+in the tweaks panel (the vault root until set), opens it, and leaves a
+notice; `ilmi://open?path=` opens a document, `.md` or not. `vault=` must
+name the open vault when it is given; a link that asks for nothing is a
+notice. A bookmarklet clips the selection with the page's address:
+
+```
+javascript:location.href='ilmi://new?url='+encodeURIComponent(location.href)+'&content='+encodeURIComponent(getSelection().toString())
+```
+
+The Obsidian Web Clipper targets `obsidian://` only, so pointing it here
+needs its fork, or its clipboard mode and a paste on the intake. A second
+launch of the app hands its link to the running window. On macOS the scheme
+is registered by the app bundle, so `npm run tauri build` and open the built
+app once; a dev binary may not receive links from the OS.
+
 ## Layout
 
 ```
@@ -107,5 +127,5 @@ src/schedule/      ts-fsrs grading, the reading and writing loops, the queue que
 src/import/        text from a paste, a page, a list of cards, an Anki package, or a SuperMemo collection, on its way to a file
 src/pdf/           the PDF lens's pure side: a page's text from pdf.js items, finding a passage again
 scripts/           command-line tools, run with tsx
-src-tauri/         desktop shell (Tauri v2, fs + dialog + log plugins; anki.rs reads a package)
+src-tauri/         desktop shell (Tauri v2, fs + dialog + http + deep-link + single-instance + log plugins; anki.rs reads a package)
 ```

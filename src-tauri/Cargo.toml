@@ -25,3 +25,5 @@ tauri-plugin-http = "2"
 zip = { version = "9", default-features = false, features = ["deflate"] }
 zstd = "0.14"
 rusqlite = { version = "0.40", features = ["bundled", "collation"] }
+tauri-plugin-deep-link = "2"
+tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }

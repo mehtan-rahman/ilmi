@@ -1,10 +1,12 @@
-// The tweaks panel: theme, accent, density, and the day's budget. ⌘, opens
-// it. The first three live in the webview's storage, not in any vault; the
-// budget is the open vault's, in its `.ilmi/state.json`.
+// The tweaks panel: theme, accent, density, the day's budget, and where
+// clippings land. ⌘, opens it. The first three live in the webview's
+// storage, not in any vault; the budget and the clippings folder are the
+// open vault's, in its `.ilmi/state.json`.
 
 import { useEffect, useState } from 'react';
+import { folderPaths, titleOf } from './names.js';
 import { ACCENTS, DENSITY_MAX, DENSITY_MIN, THEMES, useApp, type Accent, type Theme } from './store.js';
-import { setBudget } from './vault.js';
+import { setBudget, setClipDir } from './vault.js';
 
 const THEME_LABEL: Record<Theme, string> = { light: 'light', dark: 'dark', eink: 'e-ink' };
 
@@ -38,12 +40,33 @@ function BudgetField({ value }: { value: number }) {
   );
 }
 
+/** The folder an `ilmi://new` link lands in: every folder of the vault, the root as the vault's name. A folder set but gone reads as the root. */
+function ClipDirPick({ value }: { value: string }) {
+  const tree = useApp((s) => s.tree);
+  const docs = useApp((s) => s.docs);
+  const vault = useApp((s) => s.vault);
+  const folders = folderPaths(tree);
+  return (
+    <select
+      className="tw-sel"
+      value={folders.includes(value) ? value : ''}
+      onChange={(e) => setClipDir(e.target.value)}
+      onKeyDown={(e) => e.stopPropagation()}
+    >
+      {folders.map((f) => (
+        <option key={f} value={f}>{f === '' ? titleOf('', docs, vault) : f}</option>
+      ))}
+    </select>
+  );
+}
+
 export function Tweaks() {
   const theme = useApp((s) => s.theme);
   const accent = useApp((s) => s.accent);
   const density = useApp((s) => s.density);
   const vault = useApp((s) => s.vault);
   const budget = useApp((s) => s.budget);
+  const clipDir = useApp((s) => s.clipDir);
   const close = () => useApp.setState({ tweaksOpen: false });
 
   useEffect(() => {
@@ -93,6 +116,12 @@ export function Tweaks() {
         <div className="tw-row">
           <span className="tw-lbl">budget <span className="tw-val">a day</span></span>
           <BudgetField value={budget} />
+        </div>
+      )}
+      {vault !== null && (
+        <div className="tw-row">
+          <span className="tw-lbl">clippings go to</span>
+          <ClipDirPick value={clipDir} />
         </div>
       )}
     </div>

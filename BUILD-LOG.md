@@ -11,7 +11,7 @@ was verified, what was not, and the prompt to resume with.
 Three commits: `83a8a3f` — *pdf: the pairing in FORMAT.md, the pdf field
 and the page attribute, the corpus pair, the vault's pages*; `11f628f` —
 *pdf: the lens over pdf.js, a PDF dropped on the intake lands as the pair,
-the session reads pages*; `PENDING` — *pdf: smart jump, ⏎ on a selected
+the session reads pages*; `a51fdbd` — *pdf: smart jump, ⏎ on a selected
 reference peeks at its target*. The plan is complete with this one.
 
 ### Done

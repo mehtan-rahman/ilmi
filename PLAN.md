@@ -774,7 +774,7 @@ involved; the code is public.
 
 ### [x] 15. PDF lens — read a PDF in place, extract and card from its pages
 Done 2026-10-17, commits `83a8a3f` (format and vault), `11f628f` (the
-lens), `PENDING` (smart jump).
+lens), `a51fdbd` (smart jump).
 Notes: FORMAT.md §1 and §3: `name.pdf` beside `name.md` is the document's
 pages, paired by stem; a `pdf` field (a file name relative to the document,
 plain or quoted like `title`; `Field`, `Meta.pdf`, `setField(doc, 'pdf',

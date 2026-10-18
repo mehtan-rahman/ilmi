@@ -100,6 +100,8 @@
 .math.display { display: block; margin: 0.6em 0; text-align: center; }
 .math .katex { font-size: 1.02em; }
 .math .katex-display { margin: 0; }
+/* a formula KaTeX refused, with blanks in it: its source, the blanks as text blanks */
+.math.blanks .tex { font-family: var(--mono); font-size: 0.9em; white-space: pre-wrap; }
 
 /* editorial marks, lit where they stand */
 .ed-mark { border-radius: var(--radius); }

@@ -258,15 +258,16 @@ describe('queue over the sample vault', () => {
 
   it('matches the counts for 2026-05-27', async () => {
     const all = await queue(vault, NOW);
-    // milestone 15's PDF pair adds, all after the day: its reading, its extract's reading, and a two-blank cloze
-    expect(counts(all, NOW)).toEqual({ today: 17, upcoming: 17, cards: 26, reading: 6, writing: 2 });
+    // milestone 15's PDF pair adds, all after the day: its reading, its extract's reading, and a two-blank cloze;
+    // milestone 18's maxwell adds three blanks inside math, all after the day too (upcoming 17 → 20, cards 26 → 29)
+    expect(counts(all, NOW)).toEqual({ today: 17, upcoming: 20, cards: 29, reading: 6, writing: 2 });
     const today = await queue(vault, NOW, 'today');
     expect(today.filter((i) => i.kind === 'card')).toHaveLength(13);
     expect(today.filter((i) => i.kind === 'read').map((i) => i.path)).toEqual([
       'papers/archive/sutton-2019.md', 'papers/crick-1995.md', 'papers/wozniak-1990/woz-ex1.md',
     ]);
     expect(today.filter((i) => i.kind === 'write').map((i) => i.path)).toEqual(['essays/spaced-composition.md']);
-    expect(await queue(vault, NOW, 'upcoming')).toHaveLength(17);
+    expect(await queue(vault, NOW, 'upcoming')).toHaveLength(20);
   });
 
   it('expands a multi-blank cloze into one item per group with its own schedule', async () => {

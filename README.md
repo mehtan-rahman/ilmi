@@ -70,6 +70,12 @@ read by its header, HTML reduced to text; its hints, sounds, and images are
 dropped and counted. Lines that did not split stay at the end of the file
 under `## not cards`.
 
+A blank can sit inside a formula: `$y = {{c1::x^{2}}}$`, or a whole line of
+an `align` environment. Inside math only the numbered form is a blank and it
+closes at the braces that balance, so `\binom{n}{{k}}` stays TeX. The formula
+is rendered once with the blank as a box, then with the answer on the accent;
+in the composer, `⌘B` on a selection inside a formula writes the numbered form.
+
 The inspector sets a priority, 0 first and 100 last, on a document or on the
 selected card; what is due sorts by it. It also sets a topic's growth, the
 factor each pass multiplies the interval by (1.6 reading, 1.5 writing), and

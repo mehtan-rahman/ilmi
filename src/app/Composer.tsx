@@ -5,7 +5,7 @@
 // is the caller's business.
 
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { PRI_MAX, PRI_MIN, clozeParts, parsePri, type CardForm } from '../format/index.js';
+import { PRI_MAX, PRI_MIN, clozeParts, mathSpanEnd, nextGroup, parsePri, type CardForm } from '../format/index.js';
 import { cardText, type CardSpec } from '../reader/index.js';
 
 interface Props {
@@ -18,6 +18,25 @@ interface Props {
 }
 
 const FORMS: [CardForm, string][] = [['cloze', 'cloze'], ['qa', 'q&a'], ['bidir', 'bidir']];
+
+/** Whether `[from, to]` sits inside a math span of `text`, its delimiters excluded. */
+export function insideMath(text: string, from: number, to: number): boolean {
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] !== '$') continue;
+    const e = mathSpanEnd(text, i);
+    if (e < 0) continue;
+    const d = text[i + 1] === '$' ? 2 : 1;
+    if (from >= i + d && to <= e - d) return true;
+    i = e - 1;
+  }
+  return false;
+}
+
+/** The text with `[from, to]` made a blank: inside a formula the numbered form, the only one that is a blank there (FORMAT.md §5.1). */
+export function withBlank(text: string, from: number, to: number): { text: string; open: string } {
+  const open = insideMath(text, from, to) ? `{{c${nextGroup(text)}::` : '{{';
+  return { text: `${text.slice(0, from)}${open}${text.slice(from, to)}}}${text.slice(to)}`, open };
+}
 
 export function Composer({ seed, form: initial, pri: docPri, onSave, onClose }: Props) {
   const [form, setForm] = useState<CardForm>(initial ?? 'cloze');
@@ -45,14 +64,15 @@ export function Composer({ seed, form: initial, pri: docPri, onSave, onClose }: 
     }
   };
 
-  // wrap the selection, or the caret, in {{ }}
+  // wrap the selection, or the caret, in {{ }}; inside a formula, in {{cN:: }}
   const wrapBlank = () => {
     const el = ref.current;
     if (!el || form !== 'cloze') return;
     const s = el.selectionStart ?? 0;
     const e = el.selectionEnd ?? s;
-    setText(`${text.slice(0, s)}{{${text.slice(s, e)}}}${text.slice(e)}`);
-    requestAnimationFrame(() => { el.focus(); el.setSelectionRange(s + 2, e + 2); });
+    const next = withBlank(text, s, e);
+    setText(next.text);
+    requestAnimationFrame(() => { el.focus(); el.setSelectionRange(s + next.open.length, e + next.open.length); });
   };
 
   useEffect(() => {

@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
-  parse, serialize, meta, setField, docPri, parseAf, cardForm, cardFields, clozeParts, clozeGroups, nextGroup, mathSpanEnd,
+  parse, serialize, meta, setField, docPri, parseAf, cardForm, cardFields, clozeParts, clozeSegments, blanks, clozeGroups, nextGroup, mathSpanEnd,
   type Card, type Paragraph, type Heading, type Raw,
 } from '../index.js';
 
@@ -292,21 +292,52 @@ describe('cloze', () => {
     expect(clozeParts('{{}} {{ }} {{c1::}}')).toEqual(['{{}} {{ }} ', { n: 1, answer: '', raw: '{{c1::}}' }]);
   });
 
-  it('is blind inside math', () => {
+  it('sees math spans, and outside them the first }} closes a blank', () => {
     expect(mathSpanEnd('$x$', 0)).toBe(3);
     expect(mathSpanEnd('$5 and $10', 0)).toBe(-1);
     expect(mathSpanEnd('$ x$', 0)).toBe(-1);
     expect(mathSpanEnd('$$a\nb$$', 0)).toBe(7);
     expect(mathSpanEnd('$a\nb$', 0)).toBe(-1);
     expect(clozeParts('{{c1::$x^{a^{b}}$}}')).toEqual([{ n: 1, answer: '$x^{a^{b}}$', raw: '{{c1::$x^{a^{b}}$}}' }]);
-    expect(clozeParts('$\\{\\{x\\}\\}$ and $$\\binom{n}{{k}}$$')).toEqual(['$\\{\\{x\\}\\}$ and $$\\binom{n}{{k}}$$']);
     expect(clozeParts('nested {{c1::{{x}}}} braces')).toEqual(['nested ', { n: 1, answer: '{{x', raw: '{{c1::{{x}}' }, '}} braces']);
     expect(clozeParts('{{c2::a} }} then {{c3::open')).toEqual([{ n: 2, answer: 'a} ', raw: '{{c2::a} }}' }, ' then {{c3::open']);
   });
 
+  it('inside math a numbered blank closes at the balanced }}; the unnumbered and the unbalanced stay TeX', () => {
+    // the balanced close: the answer keeps its own braces
+    expect(clozeParts('so $y = {{c1::x^{2}}}$ holds')).toEqual(['so $y = ', { n: 1, answer: 'x^{2}', raw: '{{c1::x^{2}}}', math: true }, '$ holds']);
+    expect(blanks('$$ {{c1::\\frac{a}{b}}} $$')).toEqual([{ n: 1, answer: '\\frac{a}{b}', raw: '{{c1::\\frac{a}{b}}}', math: true }]);
+    expect(blanks('${{2::\\{a\\}}}$')).toEqual([{ n: 2, answer: '\\{a\\}', raw: '{{2::\\{a\\}}}', math: true }]);
+    // the unnumbered form is TeX
+    expect(clozeParts('$\\{\\{x\\}\\}$ and $$\\binom{n}{{k}}$$ and $x^{{a}}$')).toEqual(['$\\{\\{x\\}\\}$ and $$\\binom{n}{{k}}$$ and $x^{{a}}$']);
+    // unbalanced: a brace too many, a close never reached, an answer that closes the math early
+    expect(clozeParts('$a = {{c1::\\frac{1}{2}}$ half')).toEqual(['$a = {{c1::\\frac{1}{2}}$ half']);
+    expect(clozeParts('$a {{c1::b$ and {{c2::c}}')).toEqual(['$a {{c1::b$ and ', { n: 2, answer: 'c', raw: '{{c2::c}}' }]);
+    expect(clozeParts('$E = {{c1::m$ c^2}}$')).toEqual(['$E = {{c1::m$ c^2}}$']);
+    // a blank spanning an align line, alignment mark and all
+    const align = '$$\\begin{align}\na &= {{c1::b}} \\\\\n{{c2::c &= d}}\n\\end{align}$$';
+    expect(cardForm(align)).toBe('cloze');
+    expect(blanks(align)).toEqual([{ n: 1, answer: 'b', raw: '{{c1::b}}', math: true }, { n: 2, answer: 'c &= d', raw: '{{c2::c &= d}}', math: true }]);
+    // segments: a formula holding blanks is one piece, a formula without is text
+    expect(clozeSegments('so $y = {{c1::x^{2}}}$ is $1/3$, {{c2::t}}')).toEqual([
+      'so ', { span: '$y = {{c1::x^{2}}}$', display: false, parts: ['y = ', { n: 1, answer: 'x^{2}', raw: '{{c1::x^{2}}}', math: true }] }, ' is $1/3$, ', { n: 2, answer: 't', raw: '{{c2::t}}' },
+    ]);
+    // the corpus files
+    const mx = parse(read('vault/papers/maxwell.md'));
+    expect(mx.diagnostics).toEqual([]);
+    expect(mx.doc.blocks.map((b) => b.kind)).toEqual(['heading', 'paragraph', 'card', 'card', 'paragraph', 'paragraph']);
+    expect(cards(read('vault/papers/maxwell.md')).map((c) => [c.id, blanks(c.text).map((b) => `c${b.n}: ${b.answer}`), Object.keys(c.blanks ?? {})])).toEqual([
+      ['cmx-field', ['c1: \\frac{\\rho}{\\epsilon_0}', 'c2: \\nabla \\times \\mathbf{E} &= -\\frac{\\partial \\mathbf{B}}{\\partial t}'], ['1', '2']],
+      ['cmx-area', ['c1: x^{2}'], ['1']],
+    ]);
+    const mb = parse(read('mangled/math-blanks.md'));
+    expect(mb.diagnostics).toEqual([]);
+    expect(mb.doc.blocks.map((b) => b.kind)).toEqual(['paragraph', 'paragraph', 'paragraph', 'paragraph', 'card']);
+  });
+
   it('never sees cards in code, lists, quotes, tables, or headings', () => {
-    // the $$ block is one display-math span, so its {{c1::x_i}} is inside math and it stays prose
-    expect(kinds(read('mangled/code-and-math.md'))).toEqual(['raw', 'raw', 'card', 'card', 'card', 'paragraph', 'card', 'paragraph', 'raw']);
+    // the $$ block is one display-math span; since milestone 18 its numbered {{c1::x_i}} is a blank, so it is a card
+    expect(kinds(read('mangled/code-and-math.md'))).toEqual(['raw', 'raw', 'card', 'card', 'card', 'card', 'card', 'paragraph', 'raw']);
     expect(kinds(read('mangled/lists-quotes-tables.md'))).toEqual(['raw', 'raw', 'raw', 'raw', 'raw', 'raw', 'raw', 'raw', 'raw', 'raw', 'raw', 'paragraph', 'raw']);
     expect(cards(read('mangled/headings.md'))).toEqual([]);
   });

@@ -1115,6 +1115,132 @@ test writing it out), reads the preview, places it, opens a deck, and
 logs each file's lines; screenshots read; the user's own export tried
 when they provide one.
 
+## Blanks inside math
+
+Math is opaque to blank scanning (§5.1), so a formula can be an answer but
+nothing inside a formula can be one, and a line of an `align` environment
+cannot be a blank. The user asked for exactly that: "if i cloze a line in
+align environment or something". The rule below keeps every existing
+formula meaning what it did: `{{` is legitimate TeX (`\binom{n}{{k}}`,
+`x^{{a}}`), but `{{c1::` never is.
+
+### [x] 18. Blanks inside math — `{{cN::…}}` inside a formula is a blank, closed by the balanced `}}`
+Done 2026-10-18 on the branch `worktree-agent-aa0c5ff44353b39cb`, commit
+`(recorded by the follow-up commit)`, beside milestone 17's session on main.
+Notes: `src/format/cloze.ts` carries the rule in `clozeSegments(text)`
+(new, exported with `MathSeg` / `CardSeg`): a math span found by
+`mathSpanEnd` is scanned inside for the numbered form only (`MATH_OPEN`,
+`{{c?N::`), closed by `mathBlank` at the `}}` that balances the braces
+opened since `::` (a backslash skips the brace after it); a `}` at depth
+zero not followed by `}`, or no close before the formula ends, leaves the
+`{{` as TeX. A formula with at least one blank is a `MathSeg { span,
+display, parts }`; one without stays inside the surrounding string, so
+`richHTML` renders it as before. `clozeParts` is now the flattening of
+the segments (the delimiters and TeX become string runs around the
+blanks), so `blanks`, `cardGroups`, `numberBlank`, and `ownBlank`'s
+indices are untouched; a blank found inside math carries `math: true`.
+`mathSpanEnd` is unchanged, which is what makes "an answer that closes
+the math early" literal: `$E = {{c1::m$ c^2}}$` is the span `$E =
+{{c1::m$` with no close inside it. FORMAT.md §5.1 and §11 say all this.
+Rendering (`src/app/Reader.tsx`): `mathBlanksHTML(seg, stateOf, cls)`
+renders the formula once per state through KaTeX with `throwOnError`
+on and `output: 'html'` (no MathML annotation, so the source is not in
+the HTML); a hidden blank is `\colorbox{…}{$\phantom{answer}$}`, a
+revealed one `\colorbox{…}{$answer$}` (`\displaystyle` inside a `$$`
+span), another group's blank plain. KaTeX takes a colour, not a class,
+and `trust` stays off, so two sentinel hexes go in and come out as
+`var(--fg-5)` / `var(--accent-soft)` in the emitted `style`. An answer
+is boxed piece by piece between its top-level `&` and `\\`
+(`alignPieces`), so a blank spanning an `align` line keeps its alignment
+mark outside the box, which KaTeX would otherwise refuse. The chip is
+`.math.blanks` with `data-blanks` (this card's blanks in it) and
+`data-revealed`; `data-tex` is on it only while nothing is hidden. TeX
+KaTeX refuses falls back to the source in `<code class="tex">` with the
+blanks as text blanks. `clozeHTML(text, stateOf, cls)` renders a whole
+cloze card (text blanks as spans of `cls(state)`, formulas through
+`mathBlanksHTML`), `answerHTML(blank, display)` a blank's answer alone
+(TeX as math, an align line through `aligned`); `cardHTML` uses
+`clozeHTML` with every blank revealed and `.cz`, so the reader and the
+deck lens show a formula's blanks on the accent. The session's cloze
+front is one `clozeHTML` string now (`.cloze` / `.cloze.revealed` /
+`.cloze.ctx` for text, the chip for math) with one click handler: a
+click on an own text blank or on a chip with own blanks reveals; the
+answer face lists own answers through `answerHTML`. Composer: `⌘B` on a
+selection inside a formula in the textarea writes `{{cN::…}}` with the
+lowest unused N (`insideMath` / `withBlank`, exported for the test).
+Corpus: `vault/papers/maxwell.md` (an `align` block with `c1` as a
+right-hand side and `c2` as a whole line, `{{c1::x^{2}}}` inline, a
+`\binom{n}{{k}}` block that stays prose), `mangled/math-blanks.md` (a
+brace too many, `{{k}}` and `x^{{a}}` in math, an answer closing the
+math early, an unbalanced blank in a `$$` block, and the same shapes
+outside math as cards). Queue counts: upcoming 17 → 20, cards 26 → 29,
+today 17 unchanged (maxwell's three blanks are due in June); the vault
+walk lists `papers/maxwell`. `mangled/code-and-math.md`'s `$$` block
+with `{{c1::x_i}}` is a card now, on purpose. Dev: `ILMI_SMOKE=math`
+(reader chips, then a session over maxwell's three blanks, the first
+revealed by a click on the chip, each graded, shots `math-reader`,
+`math-N-hidden`, `math-N-revealed`), written and NOT run: the window
+and port 1420 belonged to milestone 17's session; the window check is
+owed. Tests: 308 (+9: the math rule's cases and the two corpus files in
+`format.test.ts`, the round trips and mutations of both files, the
+maxwell formula hidden / revealed / as context, the reader and deck
+rendering and the answer face, the KaTeX fallback, and the composer's
+numbered form in `reader-view.test.ts`). Not done / open: `m` on a
+selection inside a math chip is not mapped into the TeX; the chip is an
+atom whose `leafText` is its source, so the composer is seeded with the
+formula and the blank is then made with `⌘B` in the textarea (how
+`posAtDOM` lands inside KaTeX output is unverified without the window).
+The phantom's glyphs remain in the DOM with `color:transparent`, as a
+text blank's answer does; only the TeX source and the MathML are kept
+out of the HTML. Queue rows, the composer preview, and `CardText` show
+a math blank as text (the `$` and TeX literal around a boxed answer).
+The box is KaTeX's `\colorbox` padding, a little tighter than the text
+blank's. A formula rendered in a hidden state and again revealed is two
+KaTeX runs, fine for one card. The e-ink theme's `--fg-5` box is what
+the text blank gets too.
+- FORMAT.md §5.1: inside `$…$` or `$$…$$`, the numbered form `{{cN::…}}`
+  (also `{{N::…}}`) opens a blank; the unnumbered `{{x}}` stays literal.
+  The blank closes at the `}}` that balances the braces opened since
+  `::`, not the first `}}`, so `{{c1::x^{2}}}` has the answer `x^{2}` and
+  `{{c1::\frac{a}{b}}}` the answer `\frac{a}{b}`; an unbalanced blank is
+  literal. Outside math nothing changes. §11's note about the `$$` block
+  is rewritten. The parser's `mathSpanEnd` / `clozeParts` / `blanks` in
+  `src/format/cloze.ts` carry the rule, and `ClozePart` records that a
+  blank sits inside math (`math: true`) so renderers can tell.
+- Rendering (`richHTML` / `mathHTML` in `src/app/Reader.tsx` and whatever
+  the deck lens, composer preview, and session faces use): a formula with
+  blanks is rendered by KaTeX once per state. Hidden, each of this card's
+  blanks becomes a box the width of the answer, `\boxed{\phantom{…}}` or
+  `\colorbox` over a phantom of the answer; revealed, the answer is
+  shown highlighted (`\colorbox` with the accent-soft colour, or a
+  `\class`-free equivalent — KaTeX's `trust` stays off); another group's
+  blank in the same formula is shown plain, as `.cloze.ctx` is. The
+  session's blank count and `.cloze` / `.cloze.revealed` / `.cloze.ctx`
+  classes keep working for text blanks; math blanks live inside the
+  `.math` chip, so add `data-blanks` on the chip for the smoke to read.
+  Clicking the chip reveals, as clicking a text blank does.
+- Composer: making a cloze from a selection inside a formula (the `m` key
+  on a selected `\rho / \epsilon_0`) writes `{{cN::…}}` around it in place;
+  if the composer cannot see inside the math chip's TeX, record that as an
+  open item rather than forcing it.
+- Corpus: `vault/papers/maxwell.md` (a frozen source with a `$$\begin{align}
+  … \end{align}$$` paragraph holding two numbered blanks on two lines, one
+  inline-math paragraph with `{{c1::x^{2}}}`, and one `$$` block with a
+  literal `\binom{n}{{k}}` that stays prose) and `mangled/math-blanks.md`
+  (an unbalanced blank, an unnumbered blank inside math, a blank whose
+  answer closes the math early). Queue counts in `schedule.test.ts` move
+  accordingly; say by how much in the notes.
+
+Done when: `format.test.ts` covers the balanced close, the unnumbered
+literal, the unbalanced literal, a blank spanning an `align` line, and the
+round trip of both corpus files with no diagnostics; `reader-view.test.ts`
+renders the maxwell formula hidden (a box, no answer text in the HTML),
+revealed (the answer text present), and with the other group as context;
+`npm run typecheck` and the suite green. The window check (a smoke mode
+`ILMI_SMOKE=math` that opens maxwell, enters the session on its cards,
+shoots hidden and revealed) is written but NOT run by you: the window and
+port 1420 belong to the other session right now. Say so in the notes.
+
 ## Notes for the next session
 
 Milestones 0–16 are ticked; 17 under *Importing cards* is next. After it,

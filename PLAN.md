@@ -1443,77 +1443,103 @@ tried when they provide one.
 The user: "I think we're at a point where adding plugins could be
 reasonable … built in dictionary lookup that can also add words I don't
 know to a vocab deck … or Obsidian web clipper support. I want to model
-off of Obsidian's own plugin ecosystem / support." So: Obsidian's shape
-wherever the concept exists in ilmi, so a plugin author who knows one
-knows the other; ilmi's own seams where it does not (the selection cue,
-decks, the loops). Plugins are off until the user turns one on, run with
-the app's access to the vault and the network and nothing else (the fs
-scope is the vault; there is no Node), and a plugin's error never takes
-the app down. The API is small and versioned; everything a plugin can do,
-the app does through the same functions.
+off of Obsidian's own plugin ecosystem / support" and then: "the plugin
+design shouldn't map onto Obsidian, I meant just by being able to support
+a plugin ecosystem". So: the *ecosystem* is Obsidian's — a folder of
+plugins in the vault, on and off from settings, installed from inside the
+app, a developer kit; a community directory with install and update from
+an index is the user's "can wait", so for now a plugin is added from a
+file — and the
+*API* is ilmi's own, named for ilmi's things: the vault and its documents,
+the three loops, the queue and the session, the lenses, the selection
+cue, the palette, the inspector. Nothing is borrowed for familiarity's
+sake. Plugins are off until the user turns one on, run with the app's
+access to the vault and the network and nothing else (the fs scope is the
+vault; there is no Node), and a plugin's error never takes the app down.
+The API is small and versioned; everything a plugin can do, the app does
+through the same functions.
 
-Layout, as Obsidian's: `<vault>/.ilmi/plugins/<id>/manifest.json`
-(`id`, `name`, `version`, `minAppVersion`, `description`, `author`),
-`main.js` (one CommonJS bundle whose `module.exports` is a class extending
-`Plugin`; `require('ilmi')` is the API), optional `styles.css`, `data.json`
-for its settings; `<vault>/.ilmi/plugins.json` is the list of enabled ids.
-`.ilmi/` is not a document and never appears in the tree. Sample plugins
-live in the repo under `plugins/<id>/` as plain ES modules plus a tiny
-build (`npm run plugins`) so they can be tested with vitest and copied
-into a vault; `PLUGINS.md` at the repo root documents the API.
+Layout: `<vault>/.ilmi/plugins/<id>/plugin.json` (`id`, `name`,
+`version`, `api` — the API version it was written against — `description`,
+`author`, `repo`), `main.js` (one CommonJS bundle; `module.exports.activate
+(ilmi)` is called with the app handle and may return a function to run on
+deactivate), optional `style.css`, `data.json` for its settings;
+`<vault>/.ilmi/plugins.json` is the list of enabled ids. `.ilmi/` is not a
+document and never appears in the tree. The repo carries the plugins it
+ships under `plugins/<id>/` as plain ES modules with a tiny build (`npm
+run plugins`, esbuild) so they are tested with vitest and copied into a
+vault; `plugins/ilmi.d.ts` is the typed API and `PLUGINS.md` at the repo
+root documents it and how to publish.
 
-### [ ] 20. Plugin runtime — the loader, the enable list, the `ilmi` module, a settings section
+### [ ] 20. Plugin runtime — the loader, the enable list, the `ilmi` handle, a settings section
 - Loader (`src/plugins/`): read `plugins.json`, for each enabled id read
-  `manifest.json` and `main.js` through the vault's fs, run the bundle
-  with a `require` that serves `'ilmi'` only (CSP is null in
-  `tauri.conf.json`, so `new Function` is available; say so in the notes
-  if it changes), instantiate, call `onload`; `onunload` and the removal
-  of everything it registered when it is turned off, the vault closes, or
-  its files change on disk (hot reload, with a notice). A throw anywhere
-  in a plugin is caught, logged, shown as a notice naming the plugin, and
-  disables that plugin for the session.
-- The `ilmi` module, v1 (`src/plugins/api.ts`, typed, the types published
-  as `plugins/ilmi.d.ts` for authors): `Plugin` (`app`, `manifest`,
-  `onload`, `onunload`, `addCommand({ id, name, hotkeys?, callback })` →
-  the palette and the key map, `registerSelectionAction({ id, name, key?,
-  when?, run(sel) })` → a verb on the selection cue after `extract` and
-  `card`, with `sel` = `{ text, path, block, rect }`,
-  `registerMarkdownPostProcessor(fn(el, ctx))` → runs over each rendered
-  block in the reader and the faces, `registerEvent`, `registerInterval`,
-  `addSettingTab(tab)`, `loadData` / `saveData`); `app.vault` (`read`,
-  `modify`, `create`, `delete`, `rename`, `getFiles`, `on('create' |
-  'modify' | 'delete' | 'rename')`, and ilmi's own `addCard(deckPath,
-  text, opts?)`, which appends a card paragraph to a deck, creating the
-  deck when missing, through the format module so the file stays valid);
-  `app.workspace` (`getActiveFile`, `openFile`, `getSelection`,
-  `on('file-open' | 'selection')`); `Notice(text)` → the app's notices;
-  `Popover(anchorRect, el)` and `Modal` → one quiet surface each, styled
-  as the palette; `Setting(containerEl)` with `setName`, `setDesc`,
-  `addText`, `addToggle`, `addDropdown`; `requestUrl({ url, method?,
-  headers?, body? })` through the http plugin, no CORS; `format` (parse,
-  serialize, cardForm) re-exported. `apiVersion` is exported and
-  `minAppVersion` is checked.
+  `plugin.json` and `main.js` through the vault's fs, run the bundle with
+  a `require` that serves nothing (plugins bundle their dependencies),
+  call `activate(ilmi)` with a handle scoped to that plugin; everything it
+  registers through the handle is collected and removed on deactivate —
+  when it is turned off, the vault closes, or its files change on disk
+  (hot reload, with a notice). The `api` field is checked against
+  `ilmi.api`. A throw anywhere in a plugin is caught, logged, shown as a
+  notice naming the plugin, and deactivates that plugin for the session.
+- The handle, API v1 (`src/plugins/api.ts`, typed, published as
+  `plugins/ilmi.d.ts`):
+  `ilmi.commands.add({ id, name, key?, run })` → the palette and the key
+  map; `ilmi.selection.addAction({ id, name, key?, when?, run(sel) })` →
+  a verb on the selection cue after `extract` and `card`, `sel` = `{ text,
+  path, block, rect, context }` (the sentence or line around it);
+  `ilmi.render.onBlock(fn(el, { path, block, where }))` → after each block
+  is drawn in the reader, the deck lens, and the card faces;
+  `ilmi.vault` → files (`read`, `write`, `create`, `remove`, `rename`,
+  `list`, `watch(fn)`) and documents (`doc(path)` parsed, `update(path,
+  fn(doc))` through the format module, `addCard(deck, text, { sched? })`
+  appending a card paragraph to a deck and creating the deck when
+  missing, `addSource(folder, { title, text })` landing a frozen source);
+  `ilmi.queue.today()` and `ilmi.queue.on('change', fn)`;
+  `ilmi.session.current()` and `ilmi.session.on('grade' | 'read-on' |
+  'worked-on', fn)`; `ilmi.lens.active()` (`{ path, kind }`),
+  `ilmi.lens.open(path)`, `ilmi.lens.on('open' | 'selection', fn)`;
+  `ilmi.ui.notice(text)`, `ilmi.ui.popover(rect, el)`, `ilmi.ui.modal(el)`
+  (one quiet surface each, styled as the palette), `ilmi.ui.settings(fn
+  (s))` with `s.text`, `s.toggle`, `s.choice`, `s.note` rendered under the
+  plugin's row in Tweaks; `ilmi.net.fetch(url, init?)` through the http
+  plugin, no CORS; `ilmi.store.load()` / `save(data)` → `data.json`;
+  `ilmi.format` (parse, serialize, cardForm, cardFields); `ilmi.version`
+  and `ilmi.api`. Every registration returns a disposer; the handle's
+  `onDeactivate(fn)` takes more.
 - Tweaks grows a `plugins` section (the one new section this allows):
   each plugin found under `.ilmi/plugins/` as a row with its name,
-  version, author, a toggle, and `settings` when it added a tab; the tab
-  renders inline under the row. A line under the heading: `a plugin runs
-  with the app's access to this vault and the network`.
+  version, author, a toggle, and its settings inline when it has any;
+  under the heading, `a plugin runs with the app's access to this vault
+  and the network`; a `reload` link per row for authors; and `add a
+  plugin`, which opens the picker for a folder or a `.zip` holding
+  `plugin.json` and `main.js` (and `style.css`), copies it into
+  `.ilmi/plugins/<id>/` under the manifest's id (a zip read through the
+  Rust side as 17 reads a package; refused with a notice when the
+  manifest is missing or the id is taken, with `replace` offered when
+  the versions differ), and turns it on. A folder or zip dropped on the
+  section does the same. `PLUGINS.md` says how to package one: the
+  three files, zipped flat.
 - Sample: `plugins/hello/` (a command `hello: say hi` → a notice, a
-  selection action `hello: count` → a notice with the word count, a
-  post-processor that lights `[hello]` in prose, one text setting). The
-  build (`esbuild`, dev dependency, `npm run plugins`) writes
-  `plugins/dist/<id>/{manifest.json,main.js}`; the corpus vault gets
+  selection action `hello: count` → a notice with the word count, an
+  `onBlock` that lights `[hello]` in prose, one text setting, one
+  `session.on('grade')` that notices the grade). `npm run plugins` writes
+  `plugins/dist/<id>/{plugin.json,main.js}`; the corpus vault gets
   `.ilmi/plugins/hello/` from it and `.ilmi/plugins.json` with `hello` on.
 
 Done when: `plugins.test.ts` loads the sample from the corpus with a fake
-fs and checks the command, the action, the post-processor, settings
+fs and checks the command, the action, the block hook, settings
 round-trip, `addCard` creating a deck that parses with no diagnostics,
-a throwing plugin disabled with a notice and the others untouched, and
-unload removing everything; the walk ignores `.ilmi/`; `ILMI_SMOKE=plugins`
+the grade event, a throwing plugin deactivated with a notice and the
+others untouched, an `api` mismatch refused with a notice, and deactivate
+removing everything; the walk ignores `.ilmi/`; `ILMI_SMOKE=plugins`
 opens Tweaks, reads the row, turns hello off and on, runs the command from
 the palette, selects a passage and runs the action from the cue, finds the
-lit `[hello]`, edits the setting, touches `main.js` on disk and sees the
-reload notice; screenshots read; `PLUGINS.md` written.
+lit `[hello]`, edits the setting, grades a card and sees the plugin's
+notice, touches `main.js` on disk and sees the reload notice, removes the
+plugin's folder and adds it back through `add a plugin` from a zip of
+`plugins/dist/hello/` (the smoke drops it through a hook, as the intake's
+file drop); screenshots read; `PLUGINS.md` and `plugins/ilmi.d.ts`
+written.
 
 ### [ ] 21. Dictionary — look a word up from the selection, add it to a vocab deck
 `plugins/dictionary/`, the first real plugin and the proof of the API:
@@ -1528,15 +1554,16 @@ unknown, added to a deck without leaving the page.
   the entry for the setting's language section, English Wiktionary by
   default, which covers Arabic well); the definitions, part of speech, and
   the headword with its vowels when the entry has them are shown in a
-  `Popover` under the selection. No result: `nothing found for <word>`,
+  popover under the selection. No result: `nothing found for <word>`,
   with the forms tried. Any dictionary with a URL template and a JSON
-  path can be set instead (settings: `dictionary url`, `language`, `deck`).
+  path can be set instead (settings: `dictionary url`, `language`, `deck`,
+  `context`).
 - `add to deck` in the popover (key `a` while it is open): writes
   `<headword> :: <first definition>` to the deck in settings (default
   `vocab.md` at the vault root, created when missing) through
-  `app.vault.addCard`, with the sentence the word sat in as a second
-  line of the back when `context` is on; the card is then in the queue
-  as any new card. A notice names the deck.
+  `ilmi.vault.addCard`, with `sel.context` as a second line of the back
+  when `context` is on; the card is then in the queue as any new card. A
+  notice names the deck.
 - Works wherever the selection cue works: a source, an EPUB chapter, the
   PDF lens text layer, a card face.
 
@@ -1545,12 +1572,11 @@ order, the request URL, the response mapping on a saved Wiktionary
 response for an Arabic word and for an English one, the card text, and
 the deck created on first add; `ILMI_SMOKE=dictionary` turns the plugin
 on in the corpus, selects an Arabic word in a corpus source that gets one
-line of Arabic for this (a `mangled/`-free addition to an existing paper,
-noted in the corpus), runs `look up` against the live endpoint (the intake
-smoke already fetches; if offline, log that and stop), reads the popover,
-adds the word, and logs the deck file's lines and the queue count;
-screenshots read; API gaps found while writing it fixed in `src/plugins/`
-and noted.
+line of Arabic for this (an addition to an existing paper, noted in the
+corpus), runs `look up` against the live endpoint (the intake smoke
+already fetches; if offline, log that and stop), reads the popover, adds
+the word, and logs the deck file's lines and the queue count; screenshots
+read; API gaps found while writing it fixed in `src/plugins/` and noted.
 
 ### [x] 22. Clipper — `ilmi://` opens a door the web clipper can use
 Done 2026-10-18 on the branch `worktree-agent-ad643755f471ccef6` (worktree
@@ -1651,6 +1677,55 @@ window run also `open 'ilmi://new?name=t&content=hi'` from the shell: on
 macOS a dev binary may not own the scheme, so if nothing arrives, say so
 and record that the built app (`npm run tauri build`) is where the OS
 handoff can be checked; screenshots read.
+
+## Opening
+
+The welcome is one button and the app forgets the vault when it quits.
+The user: "need to have some fleshed out opening menu & automatically
+open to last vault opened whenever the app starts".
+
+### [ ] 23. Opening — a welcome that remembers, the last vault reopened on start
+- Recents: every vault opened is remembered outside any vault (the
+  tweaks' localStorage pattern in `src/app/store.ts`: `{ path, name,
+  opened }`, newest first, eight at most, de-duplicated by path). On
+  start the newest is reopened without a click when the Tweaks toggle
+  `reopen the last vault on start` is on (default on; the row sits with
+  the theme rows) and its folder is still there; otherwise the welcome
+  shows, and a vault whose folder is gone stays in the list dimmed with
+  `not where it was` and a `forget` on hover. `ILMI_VAULT` in dev still
+  wins over both.
+- The welcome (`src/app/Welcome.tsx`, replacing the block in `App.tsx`):
+  the wordmark `ilmi` and one quiet line of what it is, taken from the
+  README's first sentence; `open vault` (the folder picker, as now) and
+  `new vault` (a picker for the parent folder, then a name in a field on
+  the welcome itself, no dialog; the folder is created with a starter
+  `start here.md`, a frozen source of a few paragraphs on the three
+  loops with one q&a card, so the first queue is not empty; the starter
+  text lives in `src/app/starter.ts` and parses with no diagnostics);
+  the recents as rows (name, the path dimmed, `opened <when>` in the
+  words the queue uses), ⏎ opening the top one, `j` `k` moving, `o` and
+  `n` for the buttons, a folder dropped on the welcome opened as a
+  vault. Styled as the palette: hairlines, the mono labels, nothing new.
+- While a vault is open: palette commands `open vault…`, `new vault…`,
+  `close vault` (back to the welcome; the clipper's held-link path
+  already covers a link arriving there), and the recents listed under a
+  `vaults` group in the palette so switching is two keys. The window
+  title reads `<vault name> · ilmi`.
+
+Done when: `welcome.test.ts` covers the recents list (add, de-duplicate,
+cap, remove, newest first, the `opened` words), the start decision
+(toggle on and folder present → reopen; off → welcome; present but gone
+→ welcome with the row dimmed), and the starter parsing clean with one
+card; `ILMI_SMOKE=welcome` seeds the recents with the scratch vault and
+a path that does not exist, starts with the toggle off (the smoke
+dispatch runs before any vault opens in this mode; `openInitialVault`
+grows that branch), reads the rows and the dimmed one, opens the scratch
+vault from the row, closes it from the palette, creates a new vault in a
+scratch directory through a hook (the picker cannot be faked) and reads
+`start here.md`'s lines, switches back through the palette's `vaults`
+group, turns the toggle on, reloads the page (`location.reload()`, a
+`sessionStorage` phase marker so the second run of the smoke only
+checks) and logs that the vault opened itself; screenshots read.
 
 ## Notes for the next session
 

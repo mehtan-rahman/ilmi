@@ -1126,7 +1126,7 @@ formula meaning what it did: `{{` is legitimate TeX (`\binom{n}{{k}}`,
 
 ### [x] 18. Blanks inside math — `{{cN::…}}` inside a formula is a blank, closed by the balanced `}}`
 Done 2026-10-18 on the branch `worktree-agent-aa0c5ff44353b39cb`, commit
-`(recorded by the follow-up commit)`, beside milestone 17's session on main.
+`5716742`, beside milestone 17's session on main.
 Notes: `src/format/cloze.ts` carries the rule in `clozeSegments(text)`
 (new, exported with `MathSeg` / `CardSeg`): a math span found by
 `mathSpanEnd` is scanned inside for the numbered form only (`MATH_OPEN`,

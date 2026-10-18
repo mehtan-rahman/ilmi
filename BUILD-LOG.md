@@ -10,9 +10,8 @@ was verified, what was not, and the prompt to resume with.
 
 Done on the branch `worktree-agent-aa0c5ff44353b39cb` (worktree
 `.claude/worktrees/agent-aa0c5ff44353b39cb`) while milestone 17 ran on
-main; commit `(recorded by the follow-up commit)` — *math: a numbered
-blank inside a formula, closed by the balanced braces, rendered by KaTeX
-once per state*. The two sessions share `PLAN.md`, `BUILD-LOG.md`,
+main; commit `5716742` — *math: a numbered blank inside a formula, closed
+by the balanced braces, rendered by KaTeX once per state*. The two sessions share `PLAN.md`, `BUILD-LOG.md`,
 `src/app/smoke.ts`, and `src/app/vault.ts` (the smoke dispatch line), so
 the merge touches those four by hand.
 

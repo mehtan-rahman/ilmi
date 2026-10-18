@@ -17,6 +17,7 @@ export const PAGES: string[][] = [
     'A selection on a page is a selection of text, so an extract or a card',
     'can be carved from it the way it is carved from a paragraph.',
     'The ruler in the margin marks the page you are on.',
+    'Figure 1 shows the margin, and [1] names the method.',
   ],
   [
     'The second page',
@@ -24,6 +25,9 @@ export const PAGES: string[][] = [
     'with each pass.',
     'A card made here lands under a heading that names the page.',
     'Nothing is ever written into this file.',
+    'Figure 1. A ruler drawn in the margin of a page.',
+    'References',
+    '[1] Nobody. A paper that does not exist. 2026.',
   ],
 ];
 

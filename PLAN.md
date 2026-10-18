@@ -772,7 +772,106 @@ reimplement; copy nothing, since its license is not ours and it renders
 through MuPDF, whose license is not ours either. No reverse engineering is
 involved; the code is public.
 
-### [ ] 15. PDF lens — read a PDF in place, extract and card from its pages
+### [x] 15. PDF lens — read a PDF in place, extract and card from its pages
+Done 2026-10-17, commits `83a8a3f` (format and vault), `11f628f` (the
+lens), `PENDING` (smart jump).
+Notes: FORMAT.md §1 and §3: `name.pdf` beside `name.md` is the document's
+pages, paired by stem; a `pdf` field (a file name relative to the document,
+plain or quoted like `title`; `Field`, `Meta.pdf`, `setField(doc, 'pdf',
+…)`) names another and wins when its file exists; `page` (int ≥ 1,
+`specIntMin`, after `pos` on the `read` line) sits on an extract carved
+from a page; `pos` on a document with pages is the page the ruler is on.
+What came out of a page sits under `## p. <n>` (`src/vault/pages.ts`:
+`pageHeading`, `pageOf`, `pageOfBlock`, `pageSection`, `addToPage`, the
+heading added once per page in page order, else at the end). Corpus:
+`vault/papers/two-pages.pdf` is written by `corpus/make-pdf.ts` (`npm run
+fixture:pdf`; Helvetica text operators, no dates, 1603 bytes; `pdf.test.ts`
+holds the file to the generator byte for byte and reads the words back
+through `pdfjs-dist/legacy`), with `two-pages.md` (`pdf:`, a `## p. 1`
+paragraph carrying a backref, a two-blank cloze under `## p. 2`), its
+extract `two-pages/the ruler in the margin.md` (`page=1`), and
+`mangled/pdf-missing.md`; the queue counts in `schedule.test.ts` moved
+(upcoming 13 → 17, cards 24 → 26, reading 4 → 6; the day's 17 unchanged)
+and `vault.test.ts` lists the pair. Vault: `Fs.readBytes` / `writeBytes`;
+`DocNode.pdf` from the walk (`isPdfPath`); `Vault.pagesOf(path)` (the
+field's file when it exists and stays inside the vault, else the sibling);
+`importPdf(dir, { title, bytes, text })` lands the pair (`pdf: name.pdf`,
+the text under `## text`, nothing when there is none); `extract` with
+`page` writes `page=<n>` on the child and the passage as a paragraph with
+the backref under `## p. <n>` in the parent, the marker untouched; rename
+and move carry the `.pdf` (a field naming the old stem follows), remove
+deletes it, `taken` counts `name.pdf` so a new document never adopts a
+stray one, and a `.pdf` appearing beside a document rewalks the tree.
+`src/pdf/` is the lens's pure side: `text.ts` (`linesOf` / `pageText` /
+`documentText`: pdf.js items → lines by `hasEOL`, paragraphs by a gap over
+1.4 lines or a type-size change, hyphens mended), `find.ts` (`findText` /
+`findAll` / `countIn`: a passage found in a text layer's nodes with every
+whitespace character dropped, mapped back to node offsets), `jump.ts`
+(`refOf` / `jumpTarget` / `bibliographyStart`). App: `src/app/pdfjs.ts`
+(pdfjs-dist 6.4.299, the worker through Vite's `?url`, a
+`ReadableStream[Symbol.asyncIterator]` shim WebKit lacks and
+`getTextContent` needs, `loadPdf` copies the bytes since the worker takes
+them, `pageBits`, `pdfText` for the intake); `src/app/Pdf.tsx` (`Pdf` wraps
+`Pages` and the `Reader` with its new `onPages` prop behind a `text` /
+`pages` toggle; pages sized from each page's viewport at a scale that fits
+the column, drawn through an `IntersectionObserver` 900px ahead with
+canvas + `TextLayer` (`--total-scale-factor`, `--scale-round-x/y` on the
+page), the rail at `tops[n]` with the Markdown's cards by `pageOfBlock`
+and the children with `read.page`, the ruler's `pickPos` over the page
+bands writing `pos`, the selection read from the DOM as in the reader, `e`
+→ `extractNode` with `page`, `m` → the composer → `addToPage`, `/` search
+over cached page texts with `countIn` and a sticky `.pdf-bar`, `g` go to
+page, `[` `]` outside a session, highlights through the CSS Custom
+Highlight API (`ilmi-extract`, `ilmi-hit`, one registry merged over every
+open lens, nothing drawn where the API is missing), `data-page` on the
+root for the session's `read on`, `reveal` landing on a card's page);
+`pdf.css` holds the few text-layer rules pdf.js needs (after
+pdf_viewer.css, Apache-2.0) and inverts the canvas in the dark theme.
+Intake: a dropped or picked (`pick a file →`, the dialog plugin) `.pdf`
+goes through the Rust command `read_dropped_bytes` (`tauri::ipc::Response`)
+and `pdfText`, the stats say `N pages · M words · ~min` (`no text` for a
+scan, which still places), the title is the PDF's metadata title else the
+file name, and `place` runs `importPdfNode`; `intakeHooks.ingestFile` is
+the dev hook the smoke drops through. Session: `DocSession` renders `Pdf`
+for a document with pages and `read on` passes the page in view; the
+session's keys defer to a key the lens took (`defaultPrevented`). Queue:
+`ReadItem.page` and `p. N` as the row's ref line; `pos` is not clamped to
+the prose count on a document with pages. Inspector: a `pages` row, the
+`reading` row as `p. N`, the card's `in` row as `title, p. N`. Bottom
+strip: `pages` in the hint context. Capabilities: `fs:allow-read-file`,
+`fs:allow-write-file`. **Smart jump** shipped: `⏎` on a selection that
+`refOf` reads as a figure or table reference (`Figure 3`, `Fig. 3.2`,
+`Table 4`), a bracketed citation (`[12]`, `[12, 13]`), an author (`Smith
+et al.`, `Smith and Jones (2019)`, `Smith 2019`), or an equation (`(3)`,
+`Eq. 3`) finds its target over the pages' lines (`jumpTarget`: a caption
+opens with a word sharing three leading letters with the type and the
+number, one with a period or colon after the number outranks a bare
+mention, the nearest page wins; a citation or an author is looked for from
+the last page with a references heading, else the last fifth, as a line
+opening with `[12]` / `12.` / the surname and holding the year when one was
+given; an equation is a line ending in `(3)`), and `.pdf-peek` shows a
+150px band of the target page around the line under the selection, with
+`p. N` and the line's text, `esc` closing it and a click going there.
+These rules are ours, written from sioyek's behaviour (its
+`find_reference_with_string`, `find_equation_with_string`,
+`find_generic_with_string`, `index_references` / `index_equations` /
+`index_generic`, `get_page_bib_candidates`, `type_name_similarity_score`),
+read and not copied. Dev: `ILMI_SMOKE=pdf`. Tests: 276 (+23: the pdf field
+and `page`, the corpus PDF's bytes and words, `pagesOf`, the stray PDF,
+the page extract, `importPdf`, rename / move / remove carrying the file,
+the arriving PDF, the page sections, the text layer finder, a page's text
+from items, `refOf` and `jumpTarget`). Bundle: `pdf.worker.min` 1.26 MB
+as its own asset, the main chunk 1.40 MB (gzip 423 kB), pdf.js in it; not
+split. Not done: pdf.js's standard fonts and CMaps are not bundled
+(`useSystemFonts` draws the standard 14 with system fonts; a PDF needing a
+CMap draws without it); a page once drawn stays drawn, nothing is let go
+on a long PDF; the lens does not reload when the `.pdf` file itself
+changes; an extract's `page` goes with its `read` line when `d` drops it,
+so a done extract leaves the rail; `[` `]` page inside a session (they
+are the session's prev / next there); the queue's snippet for a PDF is the
+Markdown's first prose block; no two-page spread, no zoom, no rotation; the
+peek's render is a fresh draw of the whole page; `Smith 2019` is read as an
+author only because the number is year-shaped.
 - Renderer: pdf.js in the webview (Apache-2.0), bundled, no CDN, with its
   text layer on, so a selection on a page is a DOM selection and `e` /
   `m` work as they do in the reader. Pages render lazily; the worker runs
@@ -826,16 +925,13 @@ involved; the code is public.
 
 ## Notes for the next session
 
-Start at milestone 13, tasks, and read its last line first: it is
-optional, and dropping it is the likelier answer; if it is dropped, say
-so under it and move to 14. A task is a draft with no interval, so it
-rides the writing loop's shape: `type: task`, a `task` line with `due`
-and `done` (FORMAT.md §3, with a corpus file and a test), a `task` item
-kind in `src/schedule/queue.ts` sorted with the rest by `pri`, `d` and
-`p` in the session with no grades, and a `tasks` saved query. With the
-fold from 12 in place a task below the fold would be in `overflow` only
-if its kind is added there; decide that in the milestone. 14 is the only
-one that touches SuperMemo itself, and only its data files; 15 is a new
-lens and the biggest of the five, and asks for pdf.js to be added to the
-bundle, so check the bundle size and the `fs` scope for `.pdf` before
-starting it.
+The plan is complete: every milestone above is ticked. What is left is a
+polish pass over the open items each milestone's notes record (10: no
+palette command or key for priority, no stepper; 11: no growth row before
+enrolment, the preview ignores lateness; 12: the sidebar and inspector
+counts are the whole day while the strip folds, no key for `postpone the
+rest`; 13: a due-day field on the draft's inspector; 14: the user's real
+collection, with their say-so; 15: the list under it) and, with the user,
+whether the next thing is that pass, the margin-gloss text flow the ground
+rules keep out of the plan, or something new. The handoff prompt at the
+top of `BUILD-LOG.md` lists the items.

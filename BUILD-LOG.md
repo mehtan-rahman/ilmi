@@ -6,6 +6,211 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-10-17 — milestone 15: the PDF lens, a PDF read in place with the three loops over it
+
+Three commits: `83a8a3f` — *pdf: the pairing in FORMAT.md, the pdf field
+and the page attribute, the corpus pair, the vault's pages*; `11f628f` —
+*pdf: the lens over pdf.js, a PDF dropped on the intake lands as the pair,
+the session reads pages*; `PENDING` — *pdf: smart jump, ⏎ on a selected
+reference peeks at its target*. The plan is complete with this one.
+
+### Done
+
+- `FORMAT.md` §1, §3, §10: `name.pdf` beside `name.md` is the document's
+  pages, paired by stem; a `pdf` field names the file relative to the
+  document and wins when its file exists; `page` (int ≥ 1) on an extract's
+  `read` line; `pos` on a document with pages is the page the ruler is on;
+  what came out of a page sits under `## p. <n>`, a heading the app adds
+  once per page; a `pdf` naming a missing file is kept and the document
+  reads as text; nothing is ever written into a PDF.
+- `src/format`: the `pdf` field (plain or quoted like `title`), `page`
+  through `specIntMin`, `Meta.pdf`. Corpus: `vault/papers/two-pages.pdf`
+  from `corpus/make-pdf.ts` (`npm run fixture:pdf`; two US-letter pages of
+  Helvetica set with text operators, 1603 bytes, no dates, nobody's paper:
+  a title and a few lines each, a `Figure 1` reference and a `[1]` citation
+  on page 1, the caption, a `References` line, and the entry on page 2),
+  `two-pages.md` (`pdf:`, a `## p. 1` paragraph with its backref, a
+  two-blank cloze under `## p. 2`), `two-pages/the ruler in the margin.md`
+  (`page=1`), `mangled/pdf-missing.md`. `pdf.test.ts` holds the file on
+  disk to the generator byte for byte and reads the words back through
+  `pdfjs-dist/legacy` in node.
+- `src/vault`: `Fs.readBytes` / `writeBytes` (node and Tauri); the walk
+  attaches `DocNode.pdf` by stem; `pagesOf`, `importPdf`, `extract` with
+  `page` (the child's line, the passage as a paragraph with the backref
+  under `## p. <n>` in the parent, the marker untouched), rename and move
+  carrying the `.pdf` and a field that named the old stem, remove deleting
+  it, `taken` counting `name.pdf`, a `.pdf` change rewalking the tree;
+  `pages.ts` (`pageHeading`, `pageOf`, `pageOfBlock`, `pageSection`,
+  `addToPage`).
+- `src/pdf`: `text.ts` (a page's lines and paragraphs from pdf.js items),
+  `find.ts` (a passage found in a text layer with whitespace ignored),
+  `jump.ts` (`refOf`, `jumpTarget`, `bibliographyStart`, `stemShared`).
+- `src/app`: `pdfjs.ts` (pdfjs-dist 6.4.299 pinned, the worker through
+  Vite's `?url`, a `ReadableStream` async-iterator shim for WebKit),
+  `Pdf.tsx` and `pdf.css` (the lens: pages rendered lazily with the text
+  layer on, the rail, the `text` / `pages` toggle, the ruler, `e` `m` `r`
+  `/` `g` `[` `]` `⏎`, highlights through the CSS Custom Highlight API, the
+  peek), the intake's `.pdf` drop and `pick a file →` through the Rust
+  command `read_dropped_bytes` and `pdfText`, `pages` in its stats,
+  `importPdfNode`; `Lenses` routing a document with pages to the lens;
+  `Session` rendering it for a reading element and passing the page in view
+  to `read on`, its keys deferring to one the lens took; the inspector's
+  `pages` row, `reading` as `p. N`, a card's `in` as `title, p. N`;
+  `ReadItem.page` and `p. N` on queue rows; the bottom strip's `pages`
+  hints; `fs:allow-read-file` / `fs:allow-write-file`. README: the keys, a
+  paragraph on the pair, `src/pdf/` in the layout, `fixture:pdf`.
+- Tests: 276 (+23). The corpus counts pinned in `schedule.test.ts` moved
+  deliberately: upcoming 13 → 17, cards 24 → 26, reading 4 → 6, the day's
+  17 unchanged (every new due is after 2026-05-27, so the order tests held);
+  `vault.test.ts` lists the pair and its extract; the `af=2` pass test
+  allows `page=` on the line. Smoke: `ILMI_SMOKE=pdf`.
+
+### Verified
+
+- `npm run typecheck` clean, `npx vitest run` green (16 files, 276).
+  `npx vite build` passes: `pdf.worker.min` 1.26 MB as its own asset, the
+  main chunk 1.40 MB (gzip 423 kB), pdf.js in it.
+- In the window (`ILMI_VAULT=<scratch copy> ILMI_SMOKE=pdf npm run tauri
+  dev`, 19:40 local, seven runs in all, the last clean), as logged: the
+  corpus PDF dropped on the intake (through `intakeHooks.ingestFile`, since
+  the OS drop cannot be faked) → `read: 1603 bytes, 2 pages, title
+  "two-pages", text 613 chars`; stats `2 pages · 121 words · ~1 min` →
+  `place & open` → `papers/two-pages 2.md` + `papers/two-pages 2.pdf`
+  (1603 bytes on disk), front-matter `frozen: true / imported / pdf:
+  two-pages 2.pdf / title: two-pages`, body `heading, paragraph ×4`, 0
+  diagnostics → the lens: `pages 2, canvases 2, text spans 14`, meta
+  `papers · text · start reading r · 2 pages`, strip `e extract · m card ·
+  ⏎ jump · r start reading · / search · g page · [ ] pages`, inspector
+  `pages two-pages 2.pdf` → `r`: `read: due=2026-10-17 ivl=1 reps=0 pos=0`,
+  rule height 0 → a line of page 1 selected on the text layer, cue `extract
+  e · make a card m`, `e` → `papers/two-pages 2/The ruler in the margin.md`
+  with `read: due=2026-10-17 ivl=1 reps=0 pos=0 page=1`, the parent gained
+  `## p. 1`, the paragraph, and `<!-- extract The ruler in the margin -->`,
+  0 diagnostics, `highlights 1`, rail `p. 1 ↳ The ruler in the margin` → a
+  line of page 2 selected, `m`, composer seeded with it, a blank typed, ⌘↵
+  → `## p. 2` + `Spaced practice beats {{massed}} practice, …`, 1 card, 0
+  diagnostics, rail `p. 2 ◆ massed`; the rail's card row selects it and the
+  inspector reads `in two-pages, p. 2` → `/` `written` ⏎: bar `p. 2, 1 /
+  1`, 1 hit highlighted, page 2 in view → `g` 1: page 1; `]`: page 2 →
+  `Figure 1` selected on page 1, ⏎: peek `p. 2 · Figure 1. A ruler drawn in
+  the margin of a page. · esc`, a 960×293 canvas, still on page 1; `[1]`, ⏎:
+  peek `p. 2 · [1] Nobody. A paper that does not exist. 2026.`; ⏎ on prose:
+  no peek → `text`: the reader with 9 blocks, meta `papers · pages ·
+  frozen · 1 card, 1 due`, and back → the session on the new element
+  (picked from the queue by path, since the corpus pair has the same title
+  and is due too): bar `1 / 37 READING · read on ⏎ · postpone p · done d`,
+  page 2 scrolled into view, `highlights 1`, ⏎ → `read: due=2026-10-19
+  ivl=2 reps=1 pos=2`, log `read · read on`, the corpus pair untouched, the
+  session moved on to the extract → reopened: `highlights 1`, rule height
+  1289px (both pages), rail with both rows, inspector `reading p. 2, +2d`.
+- Nine captures read one by one: the intake with `2 pages · 121 words · ~1
+  min`, the title, and `place & open`; the pages with the page's text
+  drawn, the meta row `papers text start reading r · 2 pages`, the `pages`
+  row in the inspector; the extract's line in gold on page 1, the rail `P.
+  1 — The ruler in the margin`, the child in the tree, the extract in the
+  inspector; the card's block in the inspector with `in two-pages, p. 2`
+  and the editor; the find bar `/ written · p. 2, 1 / 1` over page 2 with
+  the hit in blue and the rail `P. 2 ◆ massed`; the peek under the
+  `Figure 1` selection on page 1: its header `p. 2 · Figure 1. A ruler drawn
+  in … · esc` over a band of page 2 showing the caption, `References`, and
+  the `[1]` entry, the extract's line still gold above; the text view with `## text`, `p.
+  1` with its `EXTRACT` paragraph, `p. 2` with the cloze; the session on
+  page 2 with the bar `1 / 37 READING`; the reopened lens with the rule
+  down the whole margin and the highlight back. A macOS "can't connect to
+  iCloud" dialog sat over the middle of the window in every capture;
+  nothing of ours was under it that the log does not cover. Capture loop
+  as before (ten-second pause after each `shot:`, two-second shell delay).
+  Port 1420 free afterwards.
+
+### Not done / open
+
+- pdf.js's standard fonts and CMaps are not bundled: `useSystemFonts`
+  draws the standard 14 fonts with the system's; a PDF needing a CMap
+  (CJK, some symbol fonts) draws without it. ~2.4 MB of assets if wanted.
+- A page once drawn stays drawn; a long PDF holds every canvas it has
+  scrolled past. Letting far pages go is the obvious next step.
+- The lens does not reload when the `.pdf` file itself changes on disk;
+  the tree does (a `.pdf` change rewalks), the open lens does not.
+- `d` on an extract from a page drops its `read` line and with it `page`,
+  so a done extract leaves the rail and loses its highlight. The format
+  puts `page` on the `read` line as the plan said; a field of its own would
+  keep it.
+- `[` `]` page only outside a session; inside one they stay the session's
+  prev / next, as the bottom strip says.
+- The queue row's snippet for a PDF is the Markdown's first prose block
+  (the `## text` fallback's first paragraph), not the page's text.
+- No zoom, rotation, or two-page spread; the page fits the column.
+- The peek draws the whole target page afresh each time; the main chunk
+  carries pdf.js (1.4 MB) rather than loading it on first use.
+- Smart jump's author rule reads `Smith 2019` as a name and a year only
+  because the number is year-shaped; `Table 2019` would be read the same.
+  The `is_dot_index_end_of_a_reference` and `remove_et_al` parts of sioyek
+  were not reached in reading; the citation rules are ours alone.
+- `scripts/` is still outside `tsconfig`'s `include`, as in 14.
+
+### Decisions worth knowing
+
+- The parent of a page extract keeps the passage as a paragraph under the
+  page heading, the way the text reader's parent keeps the passage in
+  place: the backref needs a paragraph to hang on, and "the Markdown
+  holding what came out" is the point of the pair.
+- `pagesOf` trusts the field only when its file exists and stays inside
+  the vault; otherwise the stem's file, so a bad field degrades to the
+  pairing rather than to nothing.
+- Highlights are the CSS Custom Highlight API over the text layer's nodes,
+  not drawn boxes: a webview without it shows the rail and nothing else,
+  and nothing is positioned by hand.
+- The intake needed no new screen: a PDF is another thing dropped on it,
+  and the stats row changes one word.
+- The smoke drops through a dev-only hook on the intake, since Tauri's OS
+  drag-drop event cannot be synthesised from the page.
+- Smart jump was built last, after the rest was verified, as the plan
+  asked, and verified in the same run.
+
+### Handoff prompt
+
+Paste into a fresh session:
+
+```
+Read PLAN.md, FORMAT.md, BUILD-LOG.md, and spec/hashiyah/HANDOFF.md. The
+plan is complete: every milestone in PLAN.md is ticked (15, the PDF lens,
+was the last; BUILD-LOG 2026-10-17). Do not start a new milestone on your
+own; agree the next step with the user. The candidates: a polish pass over
+the open items the sessions left, or whatever the user names.
+
+Open items worth a polish pass, by milestone:
+- 10 priority: no palette command or key sets a priority; the inspector's
+  field has no stepper; committing a priority on a card selected in the
+  reader drops the reader's selection; items.test.ts fixtures still say
+  `pri: 2`.
+- 11 growth: no growth row before a source is enrolled; the preview counts
+  from the stored interval, not from lateness; queue rows and the session
+  bar do not show `af`.
+- 12 overload: the sidebar's `due today` count and the query's inspector
+  counts are the whole day while the top strip folds; rows below the fold
+  stay visible and `j k` / `o` reach them; no key for `postpone the rest`;
+  nothing marks the fold inside a session; no end-of-day automation;
+  Escape in the budget field leaves the tweaks panel open.
+- 13 tasks (dropped): a due-day field on the draft's inspector, so a date
+  can be set without `p`; a fresh draft's `p` lands two days out.
+- 14 import: the user's real SM18 collection (in a Duplicati backup under
+  Box) has not been imported and needs their go-ahead; grades are seeded,
+  not replayed; scripts/ is outside tsconfig's include.
+- 15 PDF: standard fonts and CMaps not bundled; drawn pages never let go;
+  the lens does not reload a changed .pdf; a done extract loses its page;
+  `[ ]` page only outside a session; the queue snippet for a PDF is the
+  Markdown's first block; no zoom or spread; pdf.js in the main chunk.
+
+Tooling: export PATH=$HOME/.cargo/bin:/opt/homebrew/bin:$PATH; npm test and
+npm run typecheck must be green before a commit; caffeinate -d -u -i, then
+ILMI_VAULT=<scratch copy> ILMI_SMOKE=<mode> npm run tauri dev drives the
+window (pdf is the newest mode; the smoke pauses ten seconds after each
+`shot:` line and the shell shoots two seconds after reading it; free port
+1420 afterwards). npm run fixture:pdf regenerates the corpus PDF.
+```
+
+---
+
 ## 2026-10-17 — milestone 14: import, a SuperMemo collection into a vault
 
 Commit `e93bb46` — *import: a SuperMemo collection into a vault, from its

@@ -42,7 +42,8 @@ function useKeys(active: boolean, handle: (key: string, e: KeyboardEvent) => boo
   useEffect(() => {
     if (!active) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.metaKey || e.ctrlKey || e.altKey || inField(e.target)) return;
+      // the lens under the element may have taken the key (⏎ on a reference in a PDF)
+      if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented || inField(e.target)) return;
       if (handle(e.key, e)) e.preventDefault();
     };
     window.addEventListener('keydown', onKey);

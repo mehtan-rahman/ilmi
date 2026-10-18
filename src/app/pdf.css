@@ -147,3 +147,27 @@
 .pdf-bar input[type="number"] { width: 64px; -moz-appearance: textfield; }
 .pdf-bar input::-webkit-outer-spin-button, .pdf-bar input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 .pdf-bar .pb-n { color: var(--fg-4); }
+
+/* smart jump: the target of a selected reference, peeked at under the selection */
+.pdf-peek {
+  position: fixed;
+  z-index: 35;
+  background: var(--paper);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius);
+  padding: 6px;
+  cursor: pointer;
+}
+.pdf-peek .pk-hd {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0 2px 6px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--fg-3);
+  max-width: 480px;
+}
+.pdf-peek .pk-t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-4); }
+.pdf-peek canvas { display: block; background: #fff; outline: 1px solid var(--line-2); }
+[data-theme="dark"] .pdf-peek canvas { filter: invert(0.92) hue-rotate(180deg); }

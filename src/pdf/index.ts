@@ -4,3 +4,4 @@
 
 export { findAll, findText, countIn, type Found, type TextPos } from './find.js';
 export { linesOf, pageText, documentText, wordCount, type TextBit } from './text.js';
+export { refOf, jumpTarget, bibliographyStart, stemShared, type Ref, type Target } from './jump.js';

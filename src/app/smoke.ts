@@ -992,16 +992,21 @@ export async function smokePdf(vault: Vault): Promise<void> {
   const lines = (text: string, from: string, n = 6) => { const ls = text.split('\n'); const i = ls.findIndex((l) => l.startsWith(from)); return i < 0 ? 'none' : ls.slice(i, i + n).join(' / '); };
   const fm = (text: string) => text.split('\n').slice(0, text.split('\n').indexOf('---', 1) + 1).join(' / ');
   const highlights = (kind: string) => (typeof CSS !== 'undefined' && CSS.highlights ? CSS.highlights.get(kind)?.size ?? 0 : 'no api');
-  /** Select the whole text of the first text-layer span on page `n` whose text holds `word`. */
-  const selectOn = (n: number, word: string) => {
+  /** Select the first text-layer span on page `n` whose text holds `word`: the whole span, or just `part` of it. */
+  const selectOn = (n: number, word: string, part?: string) => {
     const span = qa(`.pdf-page[data-page="${n}"] .textLayer span`).find((s) => s.textContent?.includes(word));
     if (!span?.firstChild) throw new Error(`no "${word}" on page ${n}`);
     const r = document.createRange();
-    r.selectNodeContents(span.firstChild);
+    if (part === undefined) r.selectNodeContents(span.firstChild);
+    else {
+      const at = span.textContent!.indexOf(part);
+      r.setStart(span.firstChild, at);
+      r.setEnd(span.firstChild, at + part.length);
+    }
     const sel = window.getSelection()!;
     sel.removeAllRanges();
     sel.addRange(r);
-    return span.textContent ?? '';
+    return part ?? span.textContent ?? '';
   };
   try {
     setInspector({ open: true });
@@ -1099,6 +1104,31 @@ export async function smokePdf(vault: Vault): Promise<void> {
     press(']');
     await sleep(500);
     log(`]: page in view ${q<HTMLElement>('.pdf-view')?.dataset.page}`);
+
+    // smart jump: a figure reference and a citation on page 1, ⏎, the peek names the page of the caption and the entry
+    q<HTMLElement>('.pdf-page[data-page="1"]')?.scrollIntoView({ block: 'start' });
+    await sleep(400);
+    for (const [word, part] of [['Figure 1 shows', 'Figure 1'], ['names the method', '[1]']] as const) {
+      selectOn(1, word, part);
+      // the lens reads the selection on `selectionchange`, a task later; the cue from the last selection is still up
+      await sleep(300);
+      await until(() => (q('.sel-cue') && useApp.getState() ? true : null));
+      press('Enter');
+      const peek = await until(() => q('.pdf-peek canvas[width]'), 8000);
+      await sleep(300);
+      log(`jump "${part}": peek "${q('.pdf-peek .pk-hd')?.textContent}"; canvas ${peek.getAttribute('width')}×${peek.getAttribute('height')}; still on page ${q<HTMLElement>('.pdf-view')?.dataset.page}`);
+      if (part === 'Figure 1') await shot('pdf-jump');
+      press('Escape');
+      await until(() => (q('.pdf-peek') ? null : true));
+    }
+    // a selection that is no reference: ⏎ does nothing here
+    selectOn(1, 'ruler');
+    await sleep(300);
+    press('Enter');
+    await sleep(400);
+    log(`⏎ on prose: peek ${q('.pdf-peek') ? 'open' : 'none'}`);
+    window.getSelection()?.removeAllRanges();
+    await until(() => (q('.sel-cue') ? null : true));
 
     // the text toggle: the Markdown in the reader, and back
     q<HTMLButtonElement>('.pdf-view .meta .frozen-tag')!.click();

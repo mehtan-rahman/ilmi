@@ -9,7 +9,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { PRI_DEFAULT, meta, setField, type Card, type Doc } from '../format/index.js';
-import { countIn, findAll, findText, type Found } from '../pdf/index.js';
+import { countIn, findAll, findText, jumpTarget, linesOf, refOf, type Found } from '../pdf/index.js';
 import { pickPos, type Band } from '../reader/index.js';
 import { addToPage, childDirOf, pageOfBlock } from '../vault/index.js';
 import { cardLabel, revealIndex } from './chrome.js';
@@ -52,6 +52,20 @@ interface Compose {
 }
 
 interface Size { w: number; h: number }
+
+/** Smart jump's answer: the page a reference points to, shown in a peek without leaving the page. */
+interface Peek {
+  page: number;
+  /** The target line's baseline and type size, in PDF units. */
+  y: number;
+  height: number;
+  text: string;
+  rect: DOMRect;
+}
+
+/** How much of the target page the peek shows, css px at the page's scale. */
+const PEEK_H = 150;
+const PEEK_W = 480;
 
 interface Find {
   q: string;
@@ -138,6 +152,9 @@ function Pages({ id, active, session, onText }: PagesProps) {
   const [find, setFind] = useState<Find | null>(null);
   const [goto, setGoto] = useState(false);
   const [extracts, setExtracts] = useState<PageExtract[]>([]);
+  const [peek, setPeek] = useState<Peek | null>(null);
+  const peekCanvas = useRef<HTMLCanvasElement>(null);
+  const lines = useRef(new Map<number, ReturnType<typeof linesOf>>());
   const wrapRef = useRef<HTMLDivElement>(null);
   const pagesRef = useRef<HTMLDivElement>(null);
   const findRef = useRef<HTMLInputElement>(null);
@@ -166,6 +183,7 @@ function Pages({ id, active, session, onText }: PagesProps) {
     let task: ReturnType<typeof loadPdf> | null = null;
     rendered.current.clear();
     texts.current.clear();
+    lines.current.clear();
     (async () => {
       const bytes = await vault.fs.readBytes(vault.abs(rel));
       if (!live) return;
@@ -414,6 +432,54 @@ function Pages({ id, active, session, onText }: PagesProps) {
     if (hit) scrollTo(hit.page);
   };
 
+  // ── smart jump: ⏎ on a selected reference peeks at its target ──
+  const pageLines = async (n: number) => {
+    let l = lines.current.get(n);
+    if (!l && pdf) {
+      l = linesOf(await pageBits(await pdf.getPage(n)));
+      lines.current.set(n, l);
+    }
+    return l ?? [];
+  };
+  const doJump = async () => {
+    const s = selRef.current;
+    if (!s || !pdf) return;
+    const ref = refOf(s.text);
+    if (!ref) return;
+    const all: string[][] = [];
+    for (let n = 1; n <= pdf.numPages; n++) all.push((await pageLines(n)).map((l) => l.text));
+    const hit = jumpTarget(all, ref, s.page);
+    if (!hit) { setPeek(null); return; }
+    const line = (await pageLines(hit.page))[hit.line];
+    if (!line) return;
+    setPeek({ page: hit.page, y: line.y, height: line.height, text: line.text, rect: s.rect });
+  };
+  useEffect(() => {
+    const canvas = peekCanvas.current;
+    if (!peek || !pdf || !canvas) return;
+    let live = true;
+    (async () => {
+      const page = await pdf.getPage(peek.page);
+      const vp = page.getViewport({ scale });
+      const dpr = window.devicePixelRatio || 1;
+      const full = document.createElement('canvas');
+      full.width = Math.floor(vp.width * dpr);
+      full.height = Math.floor(vp.height * dpr);
+      await page.render({ canvas: full, viewport: vp, transform: [dpr, 0, 0, dpr, 0, 0] }).promise;
+      if (!live) return;
+      // the line's top in css px, with a little of the page above it
+      const top = Math.max(0, Math.min(vp.height - PEEK_H, vp.height - (peek.y + peek.height) * scale - 24));
+      const w = Math.min(PEEK_W, vp.width);
+      const h = PEEK_H * (w / vp.width);
+      canvas.width = Math.floor(w * dpr);
+      canvas.height = Math.floor(h * dpr);
+      canvas.style.width = `${w}px`;
+      canvas.style.height = `${h}px`;
+      canvas.getContext('2d')?.drawImage(full, 0, top * dpr, vp.width * dpr, PEEK_H * dpr, 0, 0, w * dpr, h * dpr);
+    })().catch(console.error);
+    return () => { live = false; };
+  }, [peek, pdf, scale]);
+
   useEffect(() => { if (find) findRef.current?.focus(); }, [find !== null]);
   useEffect(() => { if (goto) gotoRef.current?.focus(); }, [goto]);
 
@@ -422,8 +488,8 @@ function Pages({ id, active, session, onText }: PagesProps) {
     const onKey = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (e.key === 'Escape') {
-        if (composerRef.current || findRefState.current || goto) {
-          setComposer(null); setFind(null); setGoto(false);
+        if (composerRef.current || findRefState.current || goto || peek) {
+          setComposer(null); setFind(null); setGoto(false); setPeek(null);
           e.preventDefault();
         }
         return;
@@ -432,6 +498,8 @@ function Pages({ id, active, session, onText }: PagesProps) {
       if (selRef.current) {
         if (e.key === 'e' && canExtract) { e.preventDefault(); doExtract(); return; }
         if (e.key === 'm') { e.preventDefault(); openComposer(); return; }
+        // a reference under the selection: its target in a peek; in a session, ⏎ on anything else is still read on
+        if (e.key === 'Enter' && refOf(selRef.current.text)) { e.preventDefault(); void doJump(); return; }
       }
       if (!active) return;
       if (e.key === 'r' && canExtract && !reading) { e.preventDefault(); startReading(); }
@@ -601,6 +669,16 @@ function Pages({ id, active, session, onText }: PagesProps) {
               <button type="button" className="cue-act" onMouseDown={(e) => { e.preventDefault(); openComposer(); }}>
                 make a card <span className="kbd">m</span>
               </button>
+            </div>
+          )}
+          {peek && (
+            <div
+              className="pdf-peek"
+              style={{ top: Math.max(60, Math.min(peek.rect.bottom + 8, window.innerHeight - 220)), left: Math.max(8, Math.min(peek.rect.left, window.innerWidth - PEEK_W - 40)) }}
+              onClick={() => { scrollTo(peek.page); setPeek(null); }}
+            >
+              <div className="pk-hd"><span>p. {peek.page}</span><span className="pk-t">{peek.text}</span><span className="kbd">esc</span></div>
+              <canvas ref={peekCanvas} />
             </div>
           )}
           {composer && (

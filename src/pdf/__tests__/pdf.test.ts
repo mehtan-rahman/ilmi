@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { countIn, documentText, findAll, findText, linesOf, pageText, wordCount, type TextBit } from '../index.js';
+import { bibliographyStart, countIn, documentText, findAll, findText, jumpTarget, linesOf, pageText, refOf, stemShared, wordCount, type TextBit } from '../index.js';
 
 const bit = (str: string, y: number, height = 12, eol = true): TextBit => ({ str, eol, y, height });
 
@@ -56,5 +56,49 @@ describe('a page\'s text from pdf.js items', () => {
     expect(documentText(['a', '  ', 'b\n\nc'])).toBe('a\n\nb\n\nc');
     expect(wordCount('')).toBe(0);
     expect(wordCount(' one  two\nthree ')).toBe(3);
+  });
+});
+
+describe('smart jump', () => {
+  const pages: string[][] = [
+    ['Two pages', 'Figure 1 shows the margin, and [1] names the method; see also (2) and Smith et al.', 'The ruler in the margin marks the page you are on.'],
+    ['The second page', 'Figure 1. A ruler drawn in the margin of a page.', 'x = y + z (2)', 'References', '[1] Nobody. A paper that does not exist. 2026.', '[2] Smith, J. and Jones, K. Another that does not. 2019.'],
+  ];
+
+  it('reads a selection as a reference, or not', () => {
+    expect(refOf('Figure 1')).toEqual({ kind: 'figure', type: 'Figure', n: '1' });
+    expect(refOf('Fig. 3.2,')).toEqual({ kind: 'figure', type: 'Fig', n: '3.2' });
+    expect(refOf('Table 4')).toEqual({ kind: 'figure', type: 'Table', n: '4' });
+    expect(refOf('[12]')).toEqual({ kind: 'cite', key: '12' });
+    expect(refOf('[12, 13]')).toEqual({ kind: 'cite', key: '12' });
+    expect(refOf('(3)')).toEqual({ kind: 'equation', n: '3' });
+    expect(refOf('Eq. 3')).toEqual({ kind: 'equation', n: '3' });
+    expect(refOf('Smith et al.')).toEqual({ kind: 'author', name: 'Smith' });
+    expect(refOf('Smith and Jones (2019)')).toEqual({ kind: 'author', name: 'Smith', year: '2019' });
+    expect(refOf('Smith 2019')).toEqual({ kind: 'author', name: 'Smith', year: '2019' });
+    for (const s of ['the ruler in the margin', '', 'a', '12', 'see Figure 1 for', 'in the margin.']) expect(refOf(s)).toBeNull();
+  });
+
+  it('finds captions, bibliography entries, and equations', () => {
+    expect(jumpTarget(pages, refOf('Figure 1')!, 1)).toEqual({ page: 2, line: 1 });
+    expect(jumpTarget(pages, refOf('Fig. 1')!, 1)).toEqual({ page: 2, line: 1 });
+    expect(jumpTarget(pages, refOf('Figure 2')!, 1)).toBeNull();
+    expect(jumpTarget(pages, refOf('[1]')!, 1)).toEqual({ page: 2, line: 4 });
+    expect(jumpTarget(pages, refOf('[2]')!, 1)).toEqual({ page: 2, line: 5 });
+    expect(jumpTarget(pages, refOf('[3]')!, 1)).toBeNull();
+    expect(jumpTarget(pages, refOf('Smith et al.')!, 1)).toEqual({ page: 2, line: 5 });
+    expect(jumpTarget(pages, refOf('Smith (2019)')!, 1)).toEqual({ page: 2, line: 5 });
+    expect(jumpTarget(pages, refOf('Smith (2020)')!, 1)).toBeNull();
+    expect(jumpTarget(pages, refOf('(2)')!, 1)).toEqual({ page: 2, line: 2 });
+    expect(bibliographyStart(pages)).toBe(2);
+    expect(bibliographyStart([['a'], ['b'], ['c'], ['d'], ['e']])).toBe(4);
+    expect(stemShared('Fig', 'Figure')).toBe(3);
+    expect(stemShared('Table', 'Figure')).toBe(0);
+  });
+
+  it('prefers the nearest page, and a caption with a period over a bare mention', () => {
+    const many: string[][] = [['Figure 2 in passing'], ['Figure 2. The real caption.'], ['Figure 2. A second caption, further off.'], ['Figure 2 again']];
+    expect(jumpTarget(many, refOf('Figure 2')!, 4)).toEqual({ page: 3, line: 0 });
+    expect(jumpTarget(many, refOf('Figure 2')!, 1)).toEqual({ page: 2, line: 0 });
   });
 });

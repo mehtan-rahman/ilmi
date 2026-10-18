@@ -1642,7 +1642,7 @@ file drop); screenshots read; `PLUGINS.md` and `plugins/ilmi.d.ts`
 written.
 
 ### [x] 21. Dictionary — look a word up from the selection, add it to a vocab deck
-Done 2026-10-18; commit `TBD`.
+Done 2026-10-18; commit `6ffabf5`.
 Notes: `plugins/dictionary/` (`plugin.json`, `main.ts`, `style.css`,
 `__tests__/`). `main.ts` exports the pure pieces and `activate`:
 `trimWord` (whitespace collapsed, punctuation and symbols off the edges;

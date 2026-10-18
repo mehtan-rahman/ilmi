@@ -8,7 +8,7 @@ was verified, what was not, and the prompt to resume with.
 
 ## 2026-10-18 — milestone 21: dictionary, a word looked up from the selection and added to a vocab deck
 
-Commit `TBD` — *dictionary: the first real plugin, `look up` on the cue
+Commit `6ffabf5` — *dictionary: the first real plugin, `look up` on the cue
 (d) through Wiktionary with Arabic clitics stripped, `add to deck` (a)
 from the popover, its tests over saved responses, and four handle gaps
 closed*. Done on `main` while milestone 24 ran on a branch; the files

@@ -1471,7 +1471,107 @@ run plugins`, esbuild) so they are tested with vitest and copied into a
 vault; `plugins/ilmi.d.ts` is the typed API and `PLUGINS.md` at the repo
 root documents it and how to publish.
 
-### [ ] 20. Plugin runtime — the loader, the enable list, the `ilmi` handle, a settings section
+### [x] 20. Plugin runtime — the loader, the enable list, the `ilmi` handle, a settings section
+Done 2026-10-18; commit `TBD`.
+Notes: `src/plugins/api.ts` is the typed handle (types only; `npm run
+plugins` copies it verbatim under a header to `plugins/ilmi.d.ts`, and a
+test holds the two equal). `src/plugins/runtime.ts` is the pure side:
+`PluginHost(vault, bridge)` with `start()` (reads `.ilmi/plugins.json`,
+scans `.ilmi/plugins/*/plugin.json`, activates what is on, subscribes to
+the vault), `stop()`, `rows()`, `setEnabled`, `reload`, `install(files, {
+replace })`, `pluginCommands()` / `runCommand(id)` (ids are
+`plugin:<id>:<command>`; the palette's `runCommand` default case hands
+unknown ids there), `actionsFor(sel)` / `runAction`, `commandByKey` /
+`actionByKey`, `runBlockHooks(el, ctx)` (once per element per hook until
+the element's text changes), `setSelection` / `currentSelection`, `emit`
+(`grade`, `read-on`, `worked-on`, `lens.open`, `lens.selection`, `queue`),
+`settingsOf` / `settingValue` / `setSetting`, `subscribe` + `version` for
+the UI. The bundle runs through `new Function('module', 'exports',
+'require', code)`; `require` throws `plugins bundle their dependencies`.
+CSP is `null` in `tauri.conf.json`, confirmed in the window: the smoke
+logs `csp none; new Function runs`. Every plugin callback goes through
+`guard`: a throw or a rejection calls `fail` → teardown, state `failed`,
+notice `<name>: <message>`; the others stand. `api` ≠ 1 → state
+`refused`, notice `<name> was written for api N, this is api 1`. A folder
+whose manifest is unreadable or whose id is not the folder's name is a
+`broken` row with the reason. Hot reload: `Vault.apply` now emits `{
+kind: 'hidden', paths }` for dot-directory paths instead of dropping them
+(the one change in `src/vault/vault.ts`; `vault.test.ts` asserts it); the
+host debounces 400 ms per plugin, compares manifest/main/style texts with
+what it loaded, and reloads with `reloaded · <name>`; a folder gone is
+`removed · <name>` and the row goes; `plugins.json` edited by hand is
+reconciled; `data.json` edited by hand reaches `store.on('change')`. Its
+own writes are ignored for 2.5 s by path. `install` writes `plugin.json`,
+`main.js`, `style.css`, `data.json` by name, refuses `no plugin.json in
+that` / `no main.js in that` / a bad manifest, `<name> <v> is already
+here` for the same id and version, and returns `{ status: 'replace' }`
+when versions differ; the section shows `<name> <have> is here, this is
+<incoming>` with `replace` / `keep`. `src/plugins/index.ts` is the app
+side: the one host over the open vault (`startPlugins` after
+`publishDocs` in `openVault`, `stopPlugins` before the old vault closes),
+the `Bridge` (notices → `note`, `fetch` → plugin-http, `today` →
+`dueToday`, `current` → `sessionEl.item`, `activeLens` → the active tab
+through `tabKindOf`, popover/modal → `surfaces.ts`, `addStyle`), one
+window keydown for plugin keys (an action's while a selection is up, else
+a command's; silent in fields and while a plugin surface has focus; `e`
+and `m` are refused at `addAction`), `toPluginSelection` (the sentence
+around the selection through `context.ts`'s `contextOf`; the PDF lens
+passes the text-layer line), `publishSelection`, `runBlockHooks`,
+`emitGrade` / `emitDocAction`, `pluginCommands` / `runPluginCommand`,
+`readPluginPackage` (a `.zip` through the Rust `read_plugin_zip`, a
+folder through `allow_vault` + `tauriFs`), `addPluginFromPath`, and the
+dev hook `pluginHooks.addFromPath`. `APP_VERSION = '0.1.0'` is a constant
+there (tauri.conf has the same). `surfaces.ts`: `.plug-pop` under the
+rect (flipped above when it would not fit), `.plug-overlay > .plug-modal`,
+esc / outside press / `close()`, one of each; `plugins.css` styles them as
+the palette, plus the tweaks section. `CueActions.tsx` renders the verbs
+after `extract` and `card` in the reader's and the PDF lens's cue (both
+build a `plugSel` memo and publish it in an effect). The reader runs the
+hooks in a `requestAnimationFrame` after each build and each document
+change, over `view.nodeDOM(off)` per top-level node, with ProseMirror's
+`domObserver` (an internal) stopped around the walk so the observer does
+not mark the block dirty and redraw it; the cleanup frees the frame slot
+(StrictMode's double mount had left it set, which is why the first three
+window runs never lit anything). The deck lens runs them over its row
+refs; the session's `CardElement` over its two `.face`s. `Session.tsx`
+emits `grade` after the write with the card as written, and `read-on` /
+`worked-on` on an `on` action. Tweaks grows `PluginsSection.tsx`:
+`plugins`, the one note line, a row per plugin (`name version author`,
+`reload` while on, the `on`/`off` toggle), the error line, the settings
+inline while running (text commits on blur/⏎, toggle, choice as a
+`select`, note), the `replace` offer, `add a plugin` (zip picker) and
+`from a folder` (directory picker), a Tauri drop on the section. Rust:
+`src-tauri/src/plugin.rs`, `read_plugin_zip(path)` → `{ files: [{ name,
+text }] }`, one leading folder stripped, `__MACOSX/` and `.DS_Store`
+skipped, `not a zip` / `no plugin.json in the zip`; 3 tests. Repo:
+`plugins/hello/` (`main.ts`, `plugin.json`, `style.css`),
+`scripts/plugins.ts` (esbuild to cjs, a hand-rolled stored zip so
+`plugins/dist/<id>.zip` is byte-stable, the corpus copy for `CORPUS_ON =
+['hello']`), `plugins/dist/` gitignored, esbuild 0.28 as a dev
+dependency, `PLUGINS.md`, README lines. Tests: vitest 385 (+31 in
+`src/plugins/__tests__/plugins.test.ts` under jsdom over an in-memory fs
+seeded from the corpus; `vault.test.ts`'s two `mkdir('.ilmi')` calls are
+recursive now that the corpus carries it), 21 files; cargo 12 (+3).
+Window: `ILMI_SMOKE=plugins` with `ILMI_PLUGIN_ZIP=plugins/dist/hello.zip`,
+every step as intended on the fourth run; seven captures read; see
+BUILD-LOG 2026-10-18, milestone 20.
+Open: the `from a folder` picker, an OS drop on the section, and the
+`replace` offer row were not seen in the window (the runtime paths are
+tested); no plugin opens a popover or modal yet, so those are jsdom-only
+until 21; `lens.on('open')`, `queue.on('change')`, `read-on` /
+`worked-on` are wired but not exercised in the window; the PDF lens's cue
+verb is the same component but was not clicked there; a failed plugin
+stays in `plugins.json` (off and on, or `reload`, tries it again); a
+plugin's DOM changes to a block stay until ProseMirror redraws that block
+(turning the plugin off does not unlight); `lens.active()` reports
+`source` for a document shown as pages; the `greeting` row's label and
+field were jammed in the captures and got a gap afterwards, not
+re-captured; `onBlock` on the reader skips when no plugin has a hook, so
+a hook added later lights only after the next build or change (the
+`plugins.version` effect covers turning on). For 21: `sel.context` is the
+sentence; `ui.popover` returns the box, key handling inside is the
+plugin's; `addCard` makes the deck with `type: deck` and no title;
+`net.fetch` is the http plugin's `Response`.
 - Loader (`src/plugins/`): read `plugins.json`, for each enabled id read
   `plugin.json` and `main.js` through the vault's fs, run the bundle with
   a `require` that serves nothing (plugins bundle their dependencies),
@@ -1709,8 +1809,8 @@ checks) and logs that the vault opened itself; screenshots read.
 
 ## Notes for the next session
 
-Milestones 0–19 are ticked; 20–22 under *Plugins* are next, in order (22
-may run beside 20 on a branch). After them, what is left is a polish pass
+Milestones 0–20 and 22 are ticked; 21 (the dictionary plugin, the first
+written against the API) is next, then 23. After them, what is left is a polish pass
 over the open items
 each milestone's notes record (10: no palette command or key for
 priority, no stepper; 11: no growth row before enrolment, the preview

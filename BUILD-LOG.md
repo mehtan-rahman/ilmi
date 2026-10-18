@@ -6,6 +6,151 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-10-18 — milestone 20: plugin runtime, the loader, the enable list, the `ilmi` handle, a settings section
+
+Commit `TBD` — *plugins: a runtime over `.ilmi/plugins/`, the typed `ilmi`
+handle (api 1), a tweaks section with a toggle, settings, and `add a
+plugin`, the sample plugin, esbuild build, PLUGINS.md*. Done on `main`
+beside milestone 23, which runs on a branch and will meet this in
+`App.tsx` (untouched here), `store.ts` (untouched), `Tweaks.tsx` (one
+import and one `<PluginsSection />` line), `Palette.tsx` (one import, a
+`usePlugins()` line, the `commands` memo, the `default:` case),
+`vault.ts` (the import, `stopPlugins()` and `startPlugins(vault)` in
+`openVault`, the `plugins` smoke entry), and `smoke.ts` (a header
+paragraph and `smokePlugins` at the end).
+
+### Done
+
+- `src/plugins/`: `api.ts` (the typed handle, published as
+  `plugins/ilmi.d.ts`), `runtime.ts` (`PluginHost`: enable list, scan,
+  activate through `new Function` with a `require` that throws, guard,
+  fail, teardown, hot reload from the vault's new `hidden` event,
+  `install`, settings bound to `data.json`), `context.ts` (the sentence
+  around a selection; key specs), `surfaces.ts` (popover and modal as
+  plain DOM), `index.ts` (the app's bridge, the key map, what the lenses
+  hand over), `CueActions.tsx`, `PluginsSection.tsx`, `plugins.css`.
+- The lenses: the reader and the PDF lens publish their selection and
+  show the plugins' verbs on the cue; the reader, the deck lens, and the
+  session's card faces run the block hooks; the session emits `grade`,
+  `read-on`, `worked-on`.
+- `src/vault/vault.ts`: `apply` emits `{ kind: 'hidden', paths }` for
+  dot-directory paths instead of dropping them.
+- Rust: `plugin.rs`, `read_plugin_zip`; 3 tests.
+- `plugins/hello/` (the sample), `scripts/plugins.ts` (`npm run plugins`:
+  esbuild, a stored zip, the corpus copy, `ilmi.d.ts`), esbuild as a dev
+  dependency, `plugins/dist/` ignored, the corpus vault's
+  `.ilmi/plugins/hello/` and `.ilmi/plugins.json`.
+- `PLUGINS.md`; README lines (layout, keys, the script).
+- Tests: vitest 385 (+31), 21 files; cargo 12 (+3).
+
+### Verified
+
+- `npm run typecheck` clean, `npx vitest run` green (21 files, 385),
+  `cargo test` green (12).
+- In the window (`ILMI_VAULT=<scratch copy> ILMI_SMOKE=plugins
+  ILMI_PLUGIN_ZIP=<repo>/plugins/dist/hello.zip npm run tauri dev`, four
+  runs, the fourth clean, 14:12 local): `csp none; new Function runs`;
+  the row `hello 0.1.0 ilmi · reload · on` under `plugins` and its note;
+  off → `plugins.json []`, 0 commands, the style gone; on → back;
+  `hello: say hi` found in the palette as a `command` and run → notice
+  `hi`; the cue on a wozniak sentence `extract e | make a card m | hello:
+  count` → notice `7 words`; a new source with `[hello]` twice → 2 lit
+  spans in the reader (background the soft accent) and one in a deck's
+  q&a row; the `greeting` field (placeholder `hi`) set to `salaam` →
+  `data.json {"greeting":"salaam"}` and the command's notice `salaam`;
+  a card graded `3` in the session → notice `hello saw a 3`; `main.js`
+  touched on disk → `reloaded · hello`, the setting kept; the folder
+  removed → `removed · hello`, 0 rows, 0 commands, the style gone; the
+  zip through the section's hook → `added · hello`, the row on, the three
+  files, `plugins.json ["hello"]`, the command back; the same zip again →
+  `hello 0.1.0 is already here`.
+- Seven captures read: tweaks with the section (heading, note, the row
+  with `reload` and `on`, `greeting` with placeholder `hi`, `add a
+  plugin · from a folder`); the palette filtered to `hello: say hi`
+  tagged COMMAND; the cue under the highlighted sentence in §4 with the
+  three verbs; `hello test` with both `[hello]` in soft accent boxes;
+  the deck lens with `say [hello]` lit in the q&a row and tweaks showing
+  `greeting salaam`; the session on the card after the grade; tweaks
+  after the zip re-add with the row `on` and the field empty again. No
+  capture was covered.
+- The first three runs stopped at the lit `[hello]`: the reader's
+  animation frame was cancelled by StrictMode's double mount and the
+  slot never freed, so the walk never ran; run two also added the
+  observer pause, which the hand-run diagnostics in run three showed to
+  be needed as well (a hook's span was redrawn away without it).
+
+### Not done / open
+
+- See the PLAN notes: the folder picker, an OS drop, and the `replace`
+  row unseen in the window; popover and modal exercised in jsdom only
+  until a plugin opens one (21 will); some events wired but not
+  exercised in the window; a plugin's DOM change outlives its
+  deactivation until the block redraws; the `greeting` row's gap added
+  after the captures.
+
+### Decisions worth knowing
+
+- Settings are bound to keys of `data.json` and read by the plugin with
+  `store.get`, instead of each control carrying its own value and
+  handler: the dictionary reads its four settings at use time, not at
+  registration.
+- `onBlock` runs once per element per hook until the element's text
+  changes, so a hook may see an element it already changed after a
+  reload; the sample skips text inside its own class.
+- Plugin surfaces are plain DOM, not React, so the runtime's tests open
+  them in jsdom and a plugin's own element is appended as it is.
+- A failed plugin stays in `plugins.json`: the failure is this session's,
+  and the next launch tries again.
+- The host's own file writes are ignored by path for 2.5 s rather than
+  by content, since the fs adapter's stamps are not readable before the
+  watcher's echo.
+
+### Handoff prompt
+
+Paste into a fresh session:
+
+```
+Read PLAN.md, FORMAT.md, BUILD-LOG.md, and spec/hashiyah/HANDOFF.md.
+
+Context: milestones 0-20 and 22 are done. src/plugins/ is the plugin
+runtime: api.ts is the typed `ilmi` handle (api 1; copied to
+plugins/ilmi.d.ts by `npm run plugins`), runtime.ts the loader, index.ts
+the app side. A plugin lives in plugins/<id>/ as TypeScript against
+../ilmi.js, is built by `npm run plugins` (esbuild → plugins/dist/<id>/
+and <id>.zip), and the ones in CORPUS_ON (scripts/plugins.ts) are copied
+into the corpus vault's .ilmi/plugins/ with .ilmi/plugins.json. The
+sample, plugins/hello/, shows every API: a command, a selection action
+(sel.text, sel.context is the sentence around it, sel.rect), a block
+hook, a settings builder bound to data.json (read with store.get), and
+session.on('grade'). ui.popover(rect, el) returns the box styled as the
+palette; key handling inside it is the plugin's. net.fetch goes through
+the http plugin, no CORS. vault.addCard(deck, text) creates the deck
+when missing. PLUGINS.md documents all of it.
+
+Tooling: node is in /opt/homebrew/bin and cargo in ~/.cargo/bin; prefix
+every command with export PATH=$HOME/.cargo/bin:/opt/homebrew/bin:$PATH
+npx vitest run, npm run typecheck, and cargo test (in src-tauri) must be
+green before a commit. For the window, copy the corpus vault to a
+scratch directory, run `caffeinate -d -u -i` in the background, then
+ILMI_VAULT=<scratch> ILMI_SMOKE=<mode> npm run tauri dev in the
+background with a tail loop that screencaptures on `shot: <name>` and
+kills the app on `done` or `failed` (lsof -ti:1420 | xargs kill; pkill
+-f target/debug/ilmi). The log plugin's lines reach the file about 5 s
+late. Milestone 23 may be running on a branch beside you; it edits
+App.tsx, store.ts, Tweaks.tsx, Palette.tsx, vault.ts, smoke.ts.
+
+Do milestone 21 in PLAN.md (the dictionary plugin) and only that one:
+plugins/dictionary/, written against the API, with its tests in
+src/plugins/__tests__/dictionary.test.ts or beside the plugin as the
+plan says; add it to CORPUS_ON only if the smoke needs it on in the
+corpus. Fix API gaps in src/plugins/ as you find them and note each.
+Follow the brief's copy rules for every string. Stop at the milestone's
+"done when". Then tick it, write notes for the next session under it,
+add an entry to BUILD-LOG.md with a fresh handoff prompt, and commit.
+```
+
+---
+
 ## 2026-10-18 — milestone 22: clipper, `ilmi://` opens a door the web clipper can use
 
 Done on the branch `worktree-agent-ad643755f471ccef6` (worktree

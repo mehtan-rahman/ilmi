@@ -15,7 +15,8 @@
     "fixture:sm": "tsx src/import/supermemo/__tests__/make-collection.ts",
     "fixture:pdf": "tsx src/format/__tests__/corpus/make-pdf.ts",
     "fixture:anki": "cd src-tauri && ILMI_ANKI_FIXTURE=../src/import/__tests__/anki cargo test anki::tests::reads_the_two_deck_package",
-    "fixture:epub": "cd src-tauri && ILMI_EPUB_FIXTURE=../src/import/__tests__/epub cargo test epub::tests::reads_the_three_chapter_book"
+    "fixture:epub": "cd src-tauri && ILMI_EPUB_FIXTURE=../src/import/__tests__/epub cargo test epub::tests::reads_the_three_chapter_book",
+    "plugins": "tsx scripts/plugins.ts"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.11.4",
@@ -23,6 +24,7 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.1",
+    "esbuild": "^0.28.2",
     "jsdom": "^30.1.1",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",

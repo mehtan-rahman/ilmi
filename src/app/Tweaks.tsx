@@ -4,6 +4,7 @@
 // open vault's, in its `.ilmi/state.json`.
 
 import { useEffect, useState } from 'react';
+import { PluginsSection } from '../plugins/PluginsSection.js';
 import { folderPaths, titleOf } from './names.js';
 import { ACCENTS, DENSITY_MAX, DENSITY_MIN, THEMES, useApp, type Accent, type Theme } from './store.js';
 import { setBudget, setClipDir } from './vault.js';
@@ -124,6 +125,7 @@ export function Tweaks() {
           <ClipDirPick value={clipDir} />
         </div>
       )}
+      {vault !== null && <PluginsSection />}
     </div>
   );
 }

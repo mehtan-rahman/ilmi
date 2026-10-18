@@ -3,6 +3,7 @@
 // esc to close.
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { pluginCommands, runPluginCommand, usePlugins } from '../plugins/index.js';
 import { overflow } from '../schedule/index.js';
 import { ENTRY_GLYPH, buildIndex, search, type CardRef, type Command, type Entry } from './chrome.js';
 import { activeTab, closePane, splitPane } from './panes.js';
@@ -34,6 +35,7 @@ function runCommand(id: string): void {
     case 'inspector': setInspector({ open: !s.inspector.open }); break;
     case 'theme': s.cycleTheme(); break;
     case 'tweaks': useApp.setState({ tweaksOpen: true }); break;
+    default: runPluginCommand(id);
   }
 }
 
@@ -56,6 +58,7 @@ export function Palette() {
   const docs = useApp((s) => s.docs);
   const queue = useApp((s) => s.queue);
   const budget = useApp((s) => s.budget);
+  const plugins = usePlugins();
   const [q, setQ] = useState('');
   const [sel, setSel] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -63,7 +66,8 @@ export function Palette() {
   const close = () => useApp.setState({ paletteOpen: false });
 
   // `postpone the rest` is offered only while something sits below the fold
-  const commands = useMemo(() => (overflow(queue, new Date(), budget).length ? COMMANDS : COMMANDS.filter((c) => c.id !== 'postpone')), [queue, budget]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const commands = useMemo(() => [...(overflow(queue, new Date(), budget).length ? COMMANDS : COMMANDS.filter((c) => c.id !== 'postpone')), ...pluginCommands()], [queue, budget, plugins?.version]);
   const index = useMemo(() => buildIndex(tree, docs, cardRefs(), commands), [tree, docs, commands]);
   const results = useMemo(() => search(index, q), [index, q]);
 

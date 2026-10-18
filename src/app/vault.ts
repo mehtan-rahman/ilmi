@@ -11,6 +11,7 @@ import type { Chapter, MappedDeck } from '../import/index.js';
 import { dayOf, docItems, isDue, postponeOverflow, sortQueue, type QueueItem } from '../schedule/index.js';
 import { Vault, childDirOf, dirOf, fileName, isDoc, rekey, type ExtractSpec, type ImportDeckSpec, type ImportPdfSpec, type ImportSpec, type TreeNode, type VaultEvent, type VaultState } from '../vault/index.js';
 import { tauriFs } from '../vault/tauri-fs.js';
+import { startPlugins, stopPlugins } from '../plugins/index.js';
 import { cleanClipDir } from './clip.js';
 import { cleanBudget, dueToday, sessionItems } from './items.js';
 import { INTAKE, SESSION, queueId, queueScope } from './names.js';
@@ -163,6 +164,7 @@ function onEvent(vault: Vault, ev: VaultEvent): void {
 
 /** Open the directory at `path`, watch it, and publish its tree. */
 export async function openVault(path: string): Promise<Vault> {
+  stopPlugins();
   current?.close();
   // The dialog widens the fs scope to what it picked; a path from anywhere
   // else (env var, a remembered vault later) is widened here.
@@ -194,6 +196,8 @@ export async function openVault(path: string): Promise<Vault> {
   vault.subscribe((ev) => onEvent(vault, ev));
   await vault.watch();
   await publishDocs(vault);
+  // the plugins the vault has on; a failure there is theirs, not the vault's
+  await startPlugins(vault).catch((e: unknown) => console.error('plugins', e));
   if (import.meta.env.DEV) void info(`vault ${path}: ${vault.documents().join(', ')}`);
   return vault;
 }
@@ -219,8 +223,8 @@ export function openInitialVault(): Promise<void> {
     const vault = await openVault(path);
     const mode = await invoke<string | null>('dev_env', { name: 'ILMI_SMOKE' });
     if (mode) {
-      const { smoke, smokeReader, smokeCards, smokeIntake, smokeQueue, smokeLoop, smokeShots, smokeDeck, smokePri, smokeGrowth, smokeOverload, smokePdf, smokeFaces, smokeCardsText, smokeAnki, smokeMath, smokeEpub, smokeClip } = await import('./smoke.js');
-      const run = { reader: smokeReader, cards: smokeCards, intake: smokeIntake, queue: smokeQueue, loop: smokeLoop, shots: smokeShots, deck: smokeDeck, pri: smokePri, growth: smokeGrowth, overload: smokeOverload, pdf: smokePdf, faces: smokeFaces, 'cards-text': smokeCardsText, anki: smokeAnki, math: smokeMath, epub: smokeEpub, clip: smokeClip }[mode] ?? smoke;
+      const { smoke, smokeReader, smokeCards, smokeIntake, smokeQueue, smokeLoop, smokeShots, smokeDeck, smokePri, smokeGrowth, smokeOverload, smokePdf, smokeFaces, smokeCardsText, smokeAnki, smokeMath, smokeEpub, smokeClip, smokePlugins } = await import('./smoke.js');
+      const run = { reader: smokeReader, cards: smokeCards, intake: smokeIntake, queue: smokeQueue, loop: smokeLoop, shots: smokeShots, deck: smokeDeck, pri: smokePri, growth: smokeGrowth, overload: smokeOverload, pdf: smokePdf, faces: smokeFaces, 'cards-text': smokeCardsText, anki: smokeAnki, math: smokeMath, epub: smokeEpub, clip: smokeClip, plugins: smokePlugins }[mode] ?? smoke;
       await run(vault);
     }
   })();

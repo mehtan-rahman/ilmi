@@ -22,7 +22,11 @@ npm run import-sm -- <collection.kno> <vault-dir>   # a SuperMemo collection, on
 npm run fixture:pdf    # regenerate the corpus's two-page PDF
 npm run fixture:anki   # regenerate the two-deck Anki package and its JSON (cargo)
 npm run fixture:epub   # regenerate the three-chapter EPUB and its JSON (cargo)
+npm run plugins        # build the plugins under plugins/ (esbuild) and refresh plugins/ilmi.d.ts
 ```
+
+Plugins live in a vault's `.ilmi/plugins/` and are turned on in tweaks; the
+API, how to write one, and how to package one are in `PLUGINS.md`.
 
 The import reads a SuperMemo collection's data files (`src/import/supermemo/LAYOUT.md`
 says which bytes, and on whose word) and lands its tree as folders, topics as
@@ -44,7 +48,7 @@ F2 / dbl-click   rename                 right-click  new, rename, move to, delet
 ⌘W               close tab              ⌘\           split pane
 ⌘⇧E              sidebar                ⌘⇧I          inspector
 ⌘,               tweaks: theme, accent, density (kept outside the vault);
-                 the day's budget and where clippings go (kept in the vault's .ilmi)
+                 the day's budget, where clippings go, and plugins (kept in the vault's .ilmi)
 
 in a source      select, then e extract or m make a card; r start reading
 in a PDF         the same on a page; / search, g go to a page, [ ] pages;
@@ -138,6 +142,8 @@ src/vault/         open, walk, read, write, watch, and reshape a vault; pure ove
 src/schedule/      ts-fsrs grading, the reading and writing loops, the queue query
 src/import/        text from a paste, a page, a list of cards, an Anki package, a book in EPUB, or a SuperMemo collection, on its way to a file
 src/pdf/           the PDF lens's pure side: a page's text from pdf.js items, finding a passage again
+src/plugins/       the plugin runtime (api.ts is the typed handle, runtime.ts the loader) and its tweaks section
+plugins/           the plugins the repo ships, built by `npm run plugins`; ilmi.d.ts is the API; see PLUGINS.md
 scripts/           command-line tools, run with tsx
-src-tauri/         desktop shell (Tauri v2, fs + dialog + http + deep-link + single-instance + log plugins; anki.rs reads a package, epub.rs a book)
+src-tauri/         desktop shell (Tauri v2, fs + dialog + http + deep-link + single-instance + log plugins; anki.rs reads a package, epub.rs a book, plugin.rs a plugin zip)
 ```

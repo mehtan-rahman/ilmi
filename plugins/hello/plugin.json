@@ -1,0 +1,9 @@
+{
+  "id": "hello",
+  "name": "hello",
+  "version": "0.1.0",
+  "api": 1,
+  "description": "the sample plugin: a command, a selection action, a block hook, a setting, and an ear on the session",
+  "author": "ilmi",
+  "repo": "https://github.com/mehtan/ilmi"
+}

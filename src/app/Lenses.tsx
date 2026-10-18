@@ -15,6 +15,7 @@ import { Queue } from './Queue.js';
 import { Reader } from './Reader.js';
 import { Session } from './Session.js';
 import { useApp, type DocInfo } from './store.js';
+import { runBlockHooks, usePlugins } from '../plugins/index.js';
 import { MENU_W } from './Tree.js';
 import { useDoc } from './useDoc.js';
 import { createNode, currentVault, moveCard, removeCard } from './vault.js';
@@ -129,6 +130,12 @@ function DeckLens({ id, active }: { id: string; active: boolean }) {
   const rows = useRef(new Map<number, HTMLDivElement>());
   const byKey = useRef(false);
   const cards = useMemo(() => cardsOf(loaded?.doc), [loaded]);
+  const plugins = usePlugins();
+
+  // the rows, drawn: every plugin's block hook sees each
+  useEffect(() => {
+    for (const [i, el] of rows.current) runBlockHooks(el, { path: id, block: i, where: 'deck' });
+  }, [cards, id, plugins?.version]);
 
   // the selected row, by block index, when the selection is this deck's;
   // the inspector shows its editor and schedule

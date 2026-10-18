@@ -1,0 +1,6 @@
+/* the sample plugin's one rule: a lit [hello] in prose */
+.hello-lit {
+  background: var(--accent-soft);
+  outline: 1px solid color-mix(in oklab, var(--accent) 45%, transparent);
+  border-radius: var(--radius);
+}

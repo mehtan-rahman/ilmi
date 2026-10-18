@@ -1,5 +1,6 @@
 mod anki;
 mod epub;
+mod plugin;
 
 use tauri::Manager;
 use tauri_plugin_fs::FsExt;
@@ -56,6 +57,14 @@ fn read_epub(path: String) -> Result<epub::Epub, String> {
     epub::read_book(std::path::Path::new(&path))
 }
 
+/// A dropped or picked plugin package (`plugin.rs`): the files of a `.zip`
+/// as text, for the renderer to check and land under `.ilmi/plugins/<id>/`.
+/// Read by path, as a drop, outside the scope.
+#[tauri::command]
+fn read_plugin_zip(path: String) -> Result<plugin::PluginZip, String> {
+    plugin::read_zip(std::path::Path::new(&path))
+}
+
 /// Dev only: an environment variable of the dev process, for
 /// `ILMI_VAULT=/path npm run tauri dev` (open that vault at launch) and
 /// `ILMI_SMOKE=…` (run a smoke script). Always `None` in release.
@@ -88,7 +97,7 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_http::init())
-        .invoke_handler(tauri::generate_handler![allow_vault, read_dropped, read_dropped_bytes, read_anki_package, read_epub, dev_env])
+        .invoke_handler(tauri::generate_handler![allow_vault, read_dropped, read_dropped_bytes, read_anki_package, read_epub, read_plugin_zip, dev_env])
         .setup(|app| {
             // Windows and Linux learn the scheme at run time; macOS reads it
             // from the bundle's Info.plist, which Tauri writes from the

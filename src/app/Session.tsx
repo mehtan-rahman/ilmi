@@ -5,6 +5,7 @@
 // result is written to the file the element came from.
 
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
+import { emitDocAction, emitGrade, runBlockHooks, usePlugins } from '../plugins/index.js';
 import { PRI_DEFAULT, blanks, cardFields, clozeSegments, type Block, type Card } from '../format/index.js';
 import { GRADES, advanceRead, advanceWrite, gradeItem, postponed, type CardItem, type Grade, type QueueItem, type ReadItem, type WriteItem } from '../schedule/index.js';
 import { EL_WORD, FORM_LABEL, dueLabel, gapLabels, ownBlank, sourceLabel } from './items.js';
@@ -114,6 +115,8 @@ function CardElement({ item, active, onGrade }: CardProps) {
   const loaded = useDoc(item.path);
   const docPri = useApp((s) => s.docs[item.path]?.pri);
   const [revealed, setRevealed] = useState(false);
+  const plugins = usePlugins();
+  const cardRef = useRef<HTMLDivElement>(null);
   const now = new Date();
   const card = liveCard(loaded?.doc.blocks, item);
   // the card's own, else the document's, live: the inspector may change either mid-session
@@ -130,6 +133,13 @@ function CardElement({ item, active, onGrade }: CardProps) {
     if (key >= '1' && key <= '4') { grade(Number(key) as Grade); return true; }
     return false;
   }, [revealed, item]);
+
+  // the faces, drawn: every plugin's block hook sees each
+  useEffect(() => {
+    const el = cardRef.current;
+    if (!el) return;
+    for (const face of el.querySelectorAll<HTMLElement>('.face')) runBlockHooks(face, { path: item.path, block: item.block, where: 'face' });
+  });
 
   if (loaded && !card) return <div className="empty center">no longer in the vault</div>;
 
@@ -177,7 +187,7 @@ function CardElement({ item, active, onGrade }: CardProps) {
 
   return (
     <>
-      <div className="card" data-revealed={revealed ? '1' : '0'} data-faces={back ? '2' : '1'}>
+      <div className="card" ref={cardRef} data-revealed={revealed ? '1' : '0'} data-faces={back ? '2' : '1'} data-plugins={plugins?.version ?? 0}>
         <div className="face front">{front}</div>
         {back && (
           <div className="face back" onClick={() => setRevealed(true)}>
@@ -302,6 +312,7 @@ export function Session({ active, onOpen }: Props) {
       // a card that had no id has one now, and a blank it numbered is numbered:
       // later items of the same card in this session follow
       const at = loaded.doc.blocks[item.block];
+      emitGrade(item, g, at?.kind === 'card' ? at : null);
       if (at?.kind !== 'card' || item.id !== undefined) return;
       useApp.setState((s) => (s.session ? {
         session: {
@@ -321,6 +332,7 @@ export function Session({ active, onOpen }: Props) {
       ? vault.update(item.path, (doc) => { advanceRead(doc, action, now, pos); })
       : vault.update(item.path, (doc) => { advanceWrite(doc, action, now); });
     run.catch(fail);
+    if (action === 'on') emitDocAction(item);
     const word = action === 'postpone' ? `+${postponed(item.sched.ivl)}d` : action === 'done' ? 'done' : item.kind === 'read' ? 'read on' : 'progress';
     note(`${item.kind === 'read' ? 'read' : 'wrote'} · ${word}`);
     advance();

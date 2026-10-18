@@ -23,7 +23,9 @@ export type VaultEvent =
   | { kind: 'doc'; path: string; loaded: Loaded }
   | { kind: 'gone'; path: string }
   /** A rename or move done through this vault; `from` and `to` are the node's paths, children followed. */
-  | { kind: 'moved'; from: string; to: string };
+  | { kind: 'moved'; from: string; to: string }
+  /** Paths under a dot-directory (`.ilmi/…`) that changed on disk, vault-relative: not documents, but the plugin runtime follows its own files this way. */
+  | { kind: 'hidden'; paths: string[] };
 
 /** View state in `.ilmi/state.json`. Optional, never required. */
 export interface VaultState {
@@ -323,9 +325,14 @@ export class Vault {
 
   private async apply(paths: string[]): Promise<void> {
     let rewalk = false;
+    const hidden: string[] = [];
     for (const p of new Set(paths)) {
       const rel = p.startsWith('/') ? relative(this.root, p) : p;
-      if (rel === null || rel === '' || isHidden(rel) || rel.endsWith(TMP_SUFFIX)) continue;
+      if (rel === null || rel === '' || rel.endsWith(TMP_SUFFIX)) continue;
+      if (isHidden(rel)) {
+        hidden.push(rel);
+        continue;
+      }
       const st = await this.fs.stat(this.abs(rel));
       if (isDocPath(rel)) {
         const hit = this.cache.get(rel);
@@ -355,6 +362,7 @@ export class Vault {
         this.emit({ kind: 'tree', tree });
       }
     }
+    if (hidden.length) this.emit({ kind: 'hidden', paths: hidden });
   }
 
 

@@ -55,6 +55,14 @@
 // `open`, a foreign vault, and garbage, logging the file written, the tab,
 // and the notice each left; then sets `clippings go to` from the tweaks
 // panel and clips once more.
+// `ILMI_SMOKE=plugins` opens tweaks and reads the sample plugin's row, turns
+// it off and on, runs its command from the palette, selects a passage and
+// runs its verb from the cue, finds the `[hello]` it lights in a source and
+// in a deck, edits its setting, grades a card and reads the plugin's
+// notice, touches `main.js` on disk for the reload notice, removes the
+// plugin's folder, and adds it back from a zip (`ILMI_PLUGIN_ZIP=<path>`,
+// `plugins/dist/hello.zip` after `npm run plugins`) through the section's
+// hook.
 
 import { invoke } from '@tauri-apps/api/core';
 import { info } from '@tauri-apps/plugin-log';
@@ -1539,6 +1547,156 @@ export async function smokeClip(vault: Vault): Promise<void> {
     await handleUri(`ilmi://new?name=${enc('to the setting')}&content=${enc('lands in fleeting')}`);
     const p5 = await landed('fleeting/to the setting');
     log(`new to the setting: ${p5}; ${tab()}; ${notice()}`);
+    log('done');
+  } catch (e) {
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+export async function smokePlugins(vault: Vault): Promise<void> {
+  const log = (s: string) => info(`smoke plugins: ${s}`);
+  const shot = async (name: string, ms = 10000) => { await sleep(600); log(`shot: ${name}`); await sleep(ms); };
+  const q = <T extends Element>(sel: string) => document.querySelector<T>(sel);
+  const qa = <T extends Element>(sel: string) => Array.from(document.querySelectorAll<T>(sel));
+  const notice = () => useApp.getState().log[0] ?? '';
+  const noticed = (part: string, ms = 6000) => until(() => (useApp.getState().log.some((l) => l.includes(part)) ? true : null), ms);
+  const row = () => q<HTMLElement>('.tweaks .pl-row[data-id="hello"]');
+  const rowText = () => { const r = row(); return r ? `state ${r.dataset.state}; head "${r.querySelector('.pl-head')?.textContent}"; error "${r.querySelector('.pl-err')?.textContent ?? ''}"; settings ${r.querySelectorAll('.pl-set .tw-lbl').length}` : 'no row'; };
+  const enabledFile = async () => (await vault.fs.readText(vault.abs('.ilmi/plugins.json'))).replace(/\s+/g, '');
+  const setText = (el: HTMLInputElement | HTMLTextAreaElement, v: string) => {
+    const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+    Object.getOwnPropertyDescriptor(proto, 'value')!.set!.call(el, v);
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  };
+  const { pluginHost, pluginHooks } = await import('../plugins/index.js');
+  try {
+    const host = pluginHost();
+    if (!host) throw new Error('no plugin runtime');
+    log(`csp ${document.querySelector('meta[http-equiv="Content-Security-Policy"]') ? 'set' : 'none'}; new Function ${typeof new Function('return 1')() === 'number' ? 'runs' : 'blocked'}`);
+    log(`rows ${JSON.stringify(host.rows().map((r) => ({ id: r.id, version: r.version, enabled: r.enabled, state: r.state })))}; commands ${host.pluginCommands().map((c) => c.title).join(', ')}; style ${!!document.head.querySelector('style[data-plugin="hello"]')}`);
+
+    // tweaks: the row, off and on
+    useApp.setState({ tweaksOpen: true });
+    await until(row);
+    log(`tweaks: heading "${q('.tweaks .tw-plugins .tw-lbl')?.textContent}"; note "${q('.tweaks .tw-plugins .pl-note')?.textContent}"; row ${rowText()}; add "${qa('.tweaks .pl-add .pl-link').map((b) => b.textContent).join(' | ')}"`);
+    await shot('plugins-tweaks');
+    row()!.querySelector<HTMLButtonElement>('.pl-head .pl-toggle')!.click();
+    await until(() => (row()?.dataset.state === 'off' ? true : null));
+    await sleep(300);
+    log(`off: ${rowText()}; plugins.json ${await enabledFile()}; commands ${host.pluginCommands().length}; style ${!!document.head.querySelector('style[data-plugin="hello"]')}`);
+    row()!.querySelector<HTMLButtonElement>('.pl-head .pl-toggle')!.click();
+    await until(() => (row()?.dataset.state === 'on' ? true : null));
+    await sleep(300);
+    log(`on: ${rowText()}; plugins.json ${await enabledFile()}; commands ${host.pluginCommands().length}`);
+    useApp.setState({ tweaksOpen: false });
+
+    // the command, from the palette
+    useApp.setState({ paletteOpen: true });
+    const input = await until(() => q<HTMLInputElement>('.palette-input input'));
+    setText(input, 'say hi');
+    const hit = await until(() => qa<HTMLElement>('.palette-row').find((r) => r.querySelector('.pt')?.textContent === 'hello: say hi'));
+    log(`palette: "${hit.querySelector('.pt')?.textContent}" tag ${hit.querySelector('.ptag')?.textContent}; rows ${qa('.palette-row').length}`);
+    await shot('plugins-palette');
+    hit.click();
+    await noticed('hi');
+    log(`command ran: notice "${notice()}"; palette ${q('.palette-panel') ? 'open' : 'closed'}`);
+
+    // the action, from the cue
+    openNode(WOZ);
+    const surface = await until(() => q<HTMLElement>('.doc-view .draft-doc'));
+    await until(() => surface.querySelector('.card-span'));
+    await sleep(300);
+    const cram = Array.from(surface.querySelectorAll<HTMLElement>('p.dd-p')).find((el) => el.textContent?.startsWith('Cramming'))!;
+    cram.scrollIntoView({ block: 'center' });
+    await sleep(300);
+    select(cram, 'Cramming is mass repetition compressed in time.');
+    const cue = await until(() => q<HTMLElement>('.sel-cue'));
+    await until(() => cue.querySelector('.cue-act.plug'));
+    log(`cue: ${Array.from(cue.querySelectorAll('.cue-act')).map((b) => b.textContent).join(' | ')}`);
+    await shot('plugins-cue');
+    cue.querySelector<HTMLButtonElement>('.cue-act.plug')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+    await noticed('words');
+    log(`action ran: notice "${notice()}"; cue ${q('.sel-cue') ? 'still up' : 'gone'}`);
+    window.getSelection()?.removeAllRanges();
+
+    // the block hook: a source and a deck with [hello] in them
+    const src = await vault.createDoc('', 'source', 'hello test');
+    await vault.update(src, (doc) => { doc.blocks.push({ kind: 'paragraph', text: 'Say [hello] to the margin, and [hello] once more.' }, { kind: 'paragraph', text: 'A plain paragraph.' }); });
+    openNode(src);
+    const s1 = await until(() => { const s2 = q<HTMLElement>('.doc-view .draft-doc'); return s2 && s2.textContent?.includes('[hello]') ? s2 : null; });
+    await sleep(800);
+    log(`reader: children ${s1.children.length}; p "${s1.querySelector('p.dd-p')?.textContent}"; marks ${s1.querySelectorAll('.ed-mark').length}; frozen ${q('.frozen-tag')?.textContent}`);
+    const lit = await until(() => { const s2 = q<HTMLElement>('.doc-view .draft-doc'); return s2 && s2.querySelectorAll('.hello-lit').length === 2 ? s2 : null; });
+    const litEl = lit.querySelector<HTMLElement>('.hello-lit')!;
+    log(`reader: lit ${lit.querySelectorAll('.hello-lit').length}; text "${litEl.textContent}"; background ${getComputedStyle(litEl).backgroundColor}; paragraph "${litEl.closest('p')?.textContent}"; file ${(await vault.read(src, true)).text.split('\n').length} lines`);
+    await shot('plugins-lit');
+    const deck = await vault.createDoc('', 'deck', 'hello deck');
+    await vault.update(deck, (doc) => { doc.blocks.push({ kind: 'card', text: 'say [hello] :: a greeting' }); });
+    openNode(deck);
+    const deckLit = await until(() => q<HTMLElement>('.deck-view .card-span .hello-lit'));
+    log(`deck: lit "${deckLit.textContent}" in row "${deckLit.closest('.card-span')?.textContent?.trim()}"`);
+
+    // the setting
+    useApp.setState({ tweaksOpen: true });
+    const field = await until(() => row()?.querySelector<HTMLInputElement>('.pl-set .pl-text'));
+    log(`setting: label "${field.closest('.tw-lbl')?.textContent}"; placeholder "${field.placeholder}"; value "${field.value}"`);
+    setText(field, 'salaam');
+    field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    await until(() => (host.settingValue('hello', 'greeting') === 'salaam' ? true : null));
+    await sleep(300);
+    log(`set: data.json ${(await vault.fs.readText(vault.abs('.ilmi/plugins/hello/data.json'))).replace(/\s+/g, '')}`);
+    await shot('plugins-setting');
+    useApp.setState({ tweaksOpen: false });
+    host.runCommand('plugin:hello:say-hi');
+    await noticed('salaam');
+    log(`command with the setting: notice "${notice()}"`);
+
+    // a grade in the session
+    const item = useApp.getState().queue.find((i) => i.kind === 'card' && i.dueAt <= new Date());
+    if (!item) throw new Error('no due card');
+    openSession(item);
+    await until(() => q('.recall-wrap .card'));
+    await sleep(400);
+    press(' ');
+    await sleep(300);
+    press('3');
+    await noticed('hello saw a 3');
+    log(`graded: notices ${JSON.stringify(useApp.getState().log.slice(0, 2))}; session on ${useApp.getState().sessionEl?.kind}`);
+    await shot('plugins-session');
+
+    // the files on disk: a touch reloads, a removed folder drops the row
+    const mainAbs = vault.abs('.ilmi/plugins/hello/main.js');
+    const main = await vault.fs.readText(mainAbs);
+    await vault.fs.writeText(mainAbs, `${main}\n// touched by the smoke\n`);
+    await noticed('reloaded · hello', 8000);
+    await sleep(300);
+    log(`touched main.js: notice "${notice()}"; state ${host.rows()[0]?.state}; commands ${host.pluginCommands().length}; setting kept ${host.settingValue('hello', 'greeting')}`);
+    await vault.fs.remove(vault.abs('.ilmi/plugins/hello'));
+    await noticed('removed · hello', 8000);
+    await sleep(300);
+    log(`removed folder: notice "${notice()}"; rows ${host.rows().length}; commands ${host.pluginCommands().length}; style ${!!document.head.querySelector('style[data-plugin="hello"]')}`);
+
+    // add a plugin, from the zip, through the section's hook
+    useApp.setState({ tweaksOpen: true });
+    await until(() => (pluginHooks.addFromPath ? true : null));
+    log(`tweaks after removal: rows ${qa('.tweaks .pl-row').length}`);
+    const zip = await invoke<string | null>('dev_env', { name: 'ILMI_PLUGIN_ZIP' });
+    if (!zip) {
+      log('no ILMI_PLUGIN_ZIP: the add step is skipped');
+    } else {
+      await pluginHooks.addFromPath!(zip);
+      await noticed('added · hello', 8000);
+      await until(() => (row()?.dataset.state === 'on' ? true : null));
+      await sleep(300);
+      const files = (await vault.fs.readDir(vault.abs('.ilmi/plugins/hello'))).map((e) => e.name).sort();
+      log(`added from zip: notice "${notice()}"; ${rowText()}; files ${files.join(', ')}; plugins.json ${await enabledFile()}; commands ${host.pluginCommands().map((c) => c.title).join(', ')}`);
+      await shot('plugins-added');
+      // the same zip again: already here
+      await pluginHooks.addFromPath!(zip);
+      await noticed('is already here');
+      log(`same zip again: notice "${notice()}"`);
+    }
+    useApp.setState({ tweaksOpen: false });
     log('done');
   } catch (e) {
     log(`failed: ${e instanceof Error ? e.message : String(e)}`);

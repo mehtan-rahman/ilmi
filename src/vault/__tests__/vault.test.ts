@@ -65,7 +65,7 @@ describe('walk', () => {
   it('ignores dot-directories and non-markdown files', async () => {
     await fsp.mkdir(join(root, '.obsidian'));
     await fsp.writeFile(join(root, '.obsidian/workspace.md'), 'x\n');
-    await fsp.mkdir(join(root, '.ilmi'));
+    await fsp.mkdir(join(root, '.ilmi'), { recursive: true });
     await fsp.writeFile(join(root, '.ilmi/state.json'), '{}\n');
     await fsp.writeFile(join(root, 'notes.txt'), 'x\n');
     await fsp.writeFile(join(root, 'papers/figure.png'), '');
@@ -380,11 +380,12 @@ describe('external changes', () => {
     expect(vault.documents()).not.toContain('german.md');
   });
 
-  it('ignores dot-directories, temp files, and paths outside the vault', async () => {
+  it('reports dot-directory paths as hidden, and ignores temp files and paths outside the vault', async () => {
     const events: VaultEvent[] = [];
     vault.subscribe((ev) => events.push(ev));
     await vault.changed([join(root, '.ilmi/state.json'), join(root, 'x.md.ilmi-tmp'), '/elsewhere/y.md']);
-    expect(events).toEqual([]);
+    expect(events).toEqual([{ kind: 'hidden', paths: ['.ilmi/state.json'] }]);
+    expect(vault.documents()).not.toContain('.ilmi/state.json');
   });
 
   it('shows up through the real watcher', async () => {
@@ -403,7 +404,7 @@ describe('external changes', () => {
 describe('state', () => {
   it('is empty when absent or malformed', async () => {
     expect(await vault.loadState()).toEqual({});
-    await fsp.mkdir(join(root, '.ilmi'));
+    await fsp.mkdir(join(root, '.ilmi'), { recursive: true });
     await fsp.writeFile(join(root, '.ilmi/state.json'), '{not json');
     expect(await vault.loadState()).toEqual({});
   });

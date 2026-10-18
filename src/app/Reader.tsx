@@ -7,7 +7,7 @@ import katex from 'katex';
 import type { Node as PMNode } from 'prosemirror-model';
 import { NodeSelection, Selection, type EditorState, type Transaction } from 'prosemirror-state';
 import { EditorView, type NodeView } from 'prosemirror-view';
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { PRI_DEFAULT, cardFields, clozeSegments, meta, serialize, setField, type Blank, type Block, type Card, type Doc, type MathSeg } from '../format/index.js';
 import {
   blockAt, blocksEqual, cardDue, cursorIndex, editMath, editorialRanges, fromDoc, insertCard, makeState, markerKey, markerPos,
@@ -15,6 +15,8 @@ import {
 } from '../reader/index.js';
 import { advanceWrite, whenToDate } from '../schedule/index.js';
 import { dirOf, nameOf, type Loaded, type Vault } from '../vault/index.js';
+import { CueActions } from '../plugins/CueActions.js';
+import { publishSelection as publishPluginSelection, runBlockHooks, toPluginSelection, usePlugins, wantsBlocks, type PluginSelection } from '../plugins/index.js';
 import { Composer } from './Composer.js';
 import { dueLabel } from './items.js';
 import { titleOf } from './names.js';
@@ -420,6 +422,36 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
     }
   };
 
+  // ── the plugins' block hooks, after the surface is drawn ──
+  const plugins = usePlugins();
+  const hookFrame = useRef<number | null>(null);
+  const hookBlocks = useCallback(() => {
+    if (hookFrame.current !== null) return;
+    hookFrame.current = requestAnimationFrame(() => {
+      hookFrame.current = null;
+      const view = viewRef.current;
+      if (!view || !wantsBlocks()) return;
+      // a hook's change to a block's DOM must not reach ProseMirror's observer,
+      // which would mark the block dirty and draw it again without the change
+      const observer = (view as unknown as { domObserver?: { stop(): void; start(): void } }).domObserver;
+      observer?.stop();
+      try {
+        view.state.doc.forEach((_node, off, i) => {
+          const el = view.nodeDOM(off) as HTMLElement | null;
+          if (el) runBlockHooks(el, { path: id, block: i, where: 'reader' });
+        });
+      } finally {
+        observer?.start();
+      }
+    });
+  }, [id]);
+  useEffect(() => { hookBlocks(); }, [plugins?.version, hookBlocks]);
+  useEffect(() => () => {
+    // StrictMode mounts twice: the frame is cancelled and the slot freed, so the next build schedules a new one
+    if (hookFrame.current !== null) cancelAnimationFrame(hookFrame.current);
+    hookFrame.current = null;
+  }, []);
+
   // ── the marker's geometry, from the blocks' boxes ──
   const measure = useCallback(() => {
     const view = viewRef.current;
@@ -468,6 +500,7 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
               writer.schedule(() => fromDoc(this.state.doc));
             }
             if (tr.docChanged || tr.getMeta(markerKey) !== undefined) measure();
+            if (tr.docChanged) hookBlocks();
             if (tr.selectionSet || tr.docChanged) publishSelection(next);
           },
           handleClickOn(view, _pos, node, nodePos, _event, direct) {
@@ -501,6 +534,7 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
       }
       setBlocks(loaded.doc.blocks);
       measure();
+      hookBlocks();
       if (viewRef.current) publishSelection(viewRef.current.state);
     };
 
@@ -544,7 +578,7 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
       writerRef.current = null;
       if (useApp.getState().selectedCard?.path === id) useApp.setState({ selectedCard: null });
     };
-  }, [id, measure]);
+  }, [id, measure, hookBlocks]);
 
   // frozen or thawed: the view re-reads `editable`
   useEffect(() => {
@@ -590,6 +624,19 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
     document.addEventListener('selectionchange', capture);
     return () => document.removeEventListener('selectionchange', capture);
   }, []);
+
+  // the selection as plugins see it: the block it ends in gives the sentence around it
+  const plugSel = useMemo((): PluginSelection | null => {
+    const view = viewRef.current;
+    if (!sel || !view || composer) return null;
+    const block = blockAt(view.state.doc, sel.end);
+    const node = view.state.doc.maybeChild(block);
+    return toPluginSelection({ path: id, text: sel.text, rect: sel.rect, block, blockText: node?.textContent ?? '' });
+  }, [sel, composer, id]);
+  useEffect(() => {
+    publishPluginSelection(plugSel);
+    return () => publishPluginSelection(null);
+  }, [plugSel]);
 
   const openComposer = () => {
     const view = viewRef.current;
@@ -750,6 +797,7 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
               <button type="button" className="cue-act" onMouseDown={(e) => { e.preventDefault(); openComposer(); }}>
                 make a card <span className="kbd">m</span>
               </button>
+              {plugSel && <CueActions sel={plugSel} onRun={() => setSel(null)} />}
             </div>
           )}
           {composer && (

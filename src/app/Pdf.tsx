@@ -13,6 +13,8 @@ import { countIn, findAll, findText, jumpTarget, linesOf, refOf, type Found } fr
 import { pickPos, type Band } from '../reader/index.js';
 import { addToPage, childDirOf, pageOfBlock } from '../vault/index.js';
 import { cardLabel, revealIndex } from './chrome.js';
+import { CueActions } from '../plugins/CueActions.js';
+import { publishSelection, toPluginSelection, type PluginSelection } from '../plugins/index.js';
 import { Composer } from './Composer.js';
 import { EL_GLYPH } from './items.js';
 import { GLYPH, titleOf } from './names.js';
@@ -38,11 +40,12 @@ const inField = (t: EventTarget | null) => {
   return tag === 'input' || tag === 'textarea' || !!el?.isContentEditable;
 };
 
-/** The selection on a page: its text, the page, and where it sits on screen. */
+/** The selection on a page: its text, the page, where it sits on screen, and the text-layer line it starts in. */
 interface Sel {
   text: string;
   page: number;
   rect: DOMRect;
+  line: string;
 }
 
 interface Compose {
@@ -369,7 +372,7 @@ function Pages({ id, active, session, onText }: PagesProps) {
         const pageEl = start?.closest<HTMLElement>('.pdf-page');
         if (pageEl && pages.contains(pageEl)) {
           const text = s.toString().replace(/\s+/g, ' ').trim();
-          if (text) next = { text, page: Number(pageEl.dataset.page), rect: range.getBoundingClientRect() };
+          if (text) next = { text, page: Number(pageEl.dataset.page), rect: range.getBoundingClientRect(), line: range.startContainer.parentElement?.textContent ?? '' };
         }
       }
       setSel((cur) => (cur === next || (cur && next && cur.text === next.text && cur.page === next.page && cur.rect.top === next.rect.top) ? cur : next));
@@ -377,6 +380,13 @@ function Pages({ id, active, session, onText }: PagesProps) {
     document.addEventListener('selectionchange', capture);
     return () => document.removeEventListener('selectionchange', capture);
   }, []);
+
+  // the selection as plugins see it: the text-layer line gives the context
+  const plugSel = useMemo((): PluginSelection | null => (sel && !composer ? toPluginSelection({ path: id, text: sel.text, rect: sel.rect, block: null, blockText: sel.line, page: sel.page }) : null), [sel, composer, id]);
+  useEffect(() => {
+    publishSelection(plugSel);
+    return () => publishSelection(null);
+  }, [plugSel]);
 
   const doExtract = () => {
     const s = selRef.current;
@@ -669,6 +679,7 @@ function Pages({ id, active, session, onText }: PagesProps) {
               <button type="button" className="cue-act" onMouseDown={(e) => { e.preventDefault(); openComposer(); }}>
                 make a card <span className="kbd">m</span>
               </button>
+              {plugSel && <CueActions sel={plugSel} onRun={() => setSel(null)} />}
             </div>
           )}
           {peek && (

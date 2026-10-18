@@ -1628,32 +1628,12 @@ single-instance has no guest package. README: the paragraph, the
 bookmarklet, the Obsidian Web Clipper statement, the macOS note. Tests:
 337 (+10 in `clip.test.ts`: each form, the folder cleaning, the vault
 match, the verb spellings, garbage, the title order, the setting's
-cleaning). Dev: `ILMI_SMOKE=clip` (written, **not run**: the window and
-port 1420 belonged to the other sessions) hands the handler `new` with
-content, with a folder that does not exist, with `https://example.com/`
-(a real fetch, as the intake smoke; logs `offline?` if nothing lands),
-`open` with and without `.md` and on a missing path, a foreign vault, the
-own vault by name, `garbage`, an empty `new`, then sets `clippings go to`
-from the tweaks panel and clips once more; shots `clip-new`,
-`clip-notices`, `clip-tweaks`. Not done: the window check and the OS-level
-`open 'ilmi://new?name=t&content=hi'` handoff (owed to the merge session;
-on macOS a dev binary may not own the scheme, so if nothing arrives, `npm
-run tauri build` and the built app is where it can be checked); the
-address is not kept when `content` is given beside it (the brief says
-content *as* the text, so a bookmarklet clip of a selection carries no
-provenance; a `url` front-matter field would need FORMAT.md); a link that
-arrives before a vault is open lands silently once one opens, with no
-notice that it was held; `cargo test` stays at 5, nothing Rust-side has a
-unit to test; `core:window:allow-unminimize` is granted but only the Rust
-closure unminimizes.
-Obsidian's clipper hands the browser's page to the app through the
-`obsidian://new` URI. ilmi takes the same grammar under its own scheme,
-so a bookmarklet or a fork of the clipper lands a page without leaving the
-browser. This is app-level, not a plugin: a plugin cannot register a URI
-scheme.
-- `tauri-plugin-deep-link` with `ilmi://` (and `tauri-plugin-single-
-  instance`, so a second launch hands the URI to the running window and
-  the window comes to front). `ilmi://new?name=&content=&folder=&url=` →
+cleaning). Dev: `ILMI_SMOKE=clip`, written on the branch and run after the merge
+(`94262db`): every step as intended on the second run, the first
+having been doubled by Vite's one-time dependency reload; the OS
+handoff from the shell is refused for the dev binary (macOS registers
+the scheme from the bundle), so the built app is where it is checked;
+see BUILD-LOG 2026-10-18, milestone 22. `ilmi://new?name=&content=&folder=&url=` →
   a frozen source: `content` as the text, else `url` fetched through the
   intake's existing readability path, `name` as the title (else the
   page's), in `folder` (else the Tweaks setting `clippings go to`, default

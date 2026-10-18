@@ -44,7 +44,8 @@ the merge touches those by hand.
 - npm: `@tauri-apps/plugin-deep-link`. README: the paragraph, the
   bookmarklet, the Obsidian Web Clipper statement, the macOS note; the
   tweaks line in *Keys*; the shell line in *Layout*.
-- Smoke: `ILMI_SMOKE=clip`, written on the branch, not run.
+- Smoke: `ILMI_SMOKE=clip`, written on the branch, run after the merge
+  (see *Window check* below).
 - Tests: 337 (+10), 19 files.
 
 ### Verified
@@ -55,6 +56,31 @@ the merge touches those by hand.
 - Not in the window: the window and port 1420 belonged to the other
   sessions. `ILMI_SMOKE=clip` and the shell's `open 'ilmi://new?name=t&
   content=hi'` are owed.
+
+### Window check (after the merge, `94262db`)
+
+Two runs. The first ran the smoke twice: Vite reloaded the page once to
+pre-bundle the newly installed deep-link package, so a second `clip test`
+landed as `clip test 2.md` and the `open` step then timed out waiting on
+a title the wozniak file does not have. The smoke now waits on the active
+tab's id. The second run was clean, port 1420 free after: `new` with
+content → `clip test.md` (frozen, imported, two paragraphs, 0
+diagnostics, the tab and h1 `clip test`, notice `clipped · clip test`);
+with a folder → `fleeting/web/in a new folder.md`, the folder made; with
+`url=https://example.com/` → `Example Domain.md` with the page's text;
+`open` with the path → the wozniak tab, without `.md` → maxwell, a
+missing path → `nothing at papers/nothing-here`; a foreign vault → `that
+link is for the vault someone-else`; the own vault by name → `own
+vault.md`; `garbage` → `not an ilmi link`; an empty `new` → `nothing to
+clip`; Tweaks `clippings go to` listing the folders, set to `fleeting`,
+and the next link landing in `fleeting/to the setting.md`. Three
+captures read: the clipped source open with the tree row; the notices
+run's end with `own vault` open; Tweaks with the `clippings go to` row
+under the budget row. The OS handoff from the shell, `open 'ilmi://new?
+…'` with the dev window up, was refused by macOS (`kLSApplicationNotFound
+Err`: no application claims the scheme): the dev binary is not a bundle,
+so the scheme is registered only when the built app (`npm run tauri
+build`) has been launched once. Owed: that build and launch.
 
 ### Not done / open
 

@@ -64,6 +64,7 @@ import { cardLabel } from './chrome.js';
 import { GLYPH, SESSION, queueId, titleOf } from './names.js';
 import { useApp } from './store.js';
 import { createNode, moveNode, openCard, openIntake, openNode, openSession, removeNode, renameNode, setInspector } from './vault.js';
+import { activeTab } from './panes.js';
 
 const WOZ = 'papers/wozniak-1990.md';
 
@@ -1498,7 +1499,7 @@ export async function smokeClip(vault: Vault): Promise<void> {
 
     // open: with and without .md, and a path that is not there
     await handleUri(`ilmi://open?path=${enc(WOZ)}`);
-    await until(() => q('.tabbar .tab[data-active="1"] .title')?.textContent?.includes('Spaced') || null);
+    await until(() => (activeTab(useApp.getState().panes)?.id === WOZ ? true : null));
     await sleep(300);
     log(`open: ${tab()}; ${notice()}`);
     await handleUri(`ilmi://open?path=${enc('papers/maxwell')}`);

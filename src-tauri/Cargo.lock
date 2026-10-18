@@ -1701,6 +1701,7 @@ name = "ilmi"
 version = "0.1.0"
 dependencies = [
  "log",
+ "quick-xml",
  "rusqlite",
  "serde",
  "serde_json",

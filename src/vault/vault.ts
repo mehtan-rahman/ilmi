@@ -76,8 +76,10 @@ export function extractName(text: string): string {
 
 /** What `Vault.importDoc` lands as a new source. */
 export interface ImportSpec {
-  /** Display name; also the file name, once it is one. */
+  /** Display name; also the file name, once it is one, unless `name` says otherwise. */
   title: string;
+  /** The file name when it is not the title's: a chapter's `NN title`. */
+  name?: string;
   /** The body, as pasted, dropped, or fetched. */
   text: string;
   today?: string;
@@ -456,8 +458,8 @@ export class Vault {
    * file on disk is, so headings and cards in it are what they would be
    * there. Front-matter in the text is kept, except the fields this sets.
    * The file is named after the title; when the two differ (a numbered
-   * name, a character a file name cannot hold) the title is written as a
-   * field. Resolves to the document's path.
+   * name, a character a file name cannot hold, a `name` of its own) the
+   * title is written as a field. Resolves to the document's path.
    */
   importDoc(dir: string, spec: ImportSpec): Promise<string> {
     return this.serial(async () => {
@@ -465,7 +467,7 @@ export class Vault {
       if (!text) throw new Error('nothing to import');
       const title = spec.title.trim() || NEW_NAMES.source;
       await this.ensureDir(dir);
-      const name = await this.freeName(dir, fileName(title));
+      const name = await this.freeName(dir, fileName(spec.name ?? title));
       const path = `${joinRel(dir, name)}.md`;
       const { doc } = parse(`${text}\n`);
       setField(doc, 'frozen', true);

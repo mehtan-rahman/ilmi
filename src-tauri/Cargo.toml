@@ -25,3 +25,5 @@ tauri-plugin-http = "2"
 zip = { version = "9", default-features = false, features = ["deflate"] }
 zstd = "0.14"
 rusqlite = { version = "0.40", features = ["bundled", "collation"] }
+# the EPUB reader: the package, navigation, and NCX documents are XML
+quick-xml = "0.42"

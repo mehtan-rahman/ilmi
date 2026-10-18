@@ -46,6 +46,10 @@
 // `ILMI_SMOKE=math` opens maxwell, reads its formula chips in the reader,
 // then enters a session over its three blanks inside math and logs each
 // hidden and revealed (the first by a click on the chip), grading as it goes.
+// `ILMI_SMOKE=epub` drops the fixture book (`ILMI_EPUB=<path>`, else
+// `three-chapters.epub` in the vault) on the intake, reads the preview,
+// places it, logs the tree and each chapter's first lines, and starts
+// reading the first chapter with `r`.
 
 import { invoke } from '@tauri-apps/api/core';
 import { info } from '@tauri-apps/plugin-log';
@@ -1403,6 +1407,50 @@ export async function smokeMath(vault: Vault): Promise<void> {
     }
     await sleep(600);
     log(`after: ${squash(q('.recall-wrap .empty')?.textContent)}; sr lines ${(await vault.read(MX, true)).text.split('\n').filter((l) => l.startsWith('<!-- sr')).join(' / ')}`);
+    log('done');
+  } catch (e) {
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+export async function smokeEpub(vault: Vault): Promise<void> {
+  const log = (s: string) => info(`smoke epub: ${s}`);
+  const shot = async (name: string, ms = 10000) => { await sleep(600); log(`shot: ${name}`); await sleep(ms); };
+  const q = <T extends Element>(sel: string) => document.querySelector<T>(sel);
+  const qa = (sel: string) => Array.from(document.querySelectorAll<HTMLElement>(sel));
+  const firstLines = async (path: string) => { const l = await vault.read(path, true); return `${l.text.split('\n').slice(0, 7).join(' / ')}; blocks ${l.doc.blocks.map((b) => b.kind).join(',')}; diagnostics ${l.diagnostics.length}`; };
+  try {
+    setInspector({ open: true });
+    openIntake('');
+    await until(() => q<HTMLTextAreaElement>('.intake textarea'));
+    log(`intake hint: "${q('.intake .paste-hint')?.textContent}"`);
+    const { intakeHooks } = await import('./Intake.js');
+    const epub = (await invoke<string | null>('dev_env', { name: 'ILMI_EPUB' })) ?? vault.abs('three-chapters.epub');
+    await intakeHooks.ingestFile!(epub);
+    const detail = await until(() => q('.intake-detail') ?? (q('.intake .paste-hint .note')?.textContent && q('.intake .paste-hint .note')?.textContent !== 'reading' ? q('.intake .paste-hint') : null), 15000);
+    if (!detail.classList.contains('intake-detail')) throw new Error(`intake said "${detail.textContent}"`);
+    await sleep(300);
+    log(`dropped ${epub.slice(epub.lastIndexOf('/') + 1)}: h1 "${q('.intake h1')?.textContent}"; by "${q('.book-by')?.textContent}"; chapters ${qa('.book-list .deck-row').map((r) => `${r.querySelector('.dname')?.textContent} (${r.querySelector('.dcount')?.textContent})`).join(' | ')}; count "${q('.intake-detail .stats')?.textContent}"; title "${q<HTMLInputElement>('.intake .field input')?.value}"; textarea ${q('.intake textarea') ? 'shown' : 'none'}`);
+    await shot('epub-intake');
+    q<HTMLButtonElement>('.intake .place.primary')!.click();
+    const first = await until(() => vault.documents().find((d) => /^The Small Book\/01 /.test(d)), 10000);
+    await until(() => (vault.documents().filter((d) => d.startsWith('The Small Book/')).length >= 3 ? true : null), 10000);
+    await sleep(500);
+    const chapters = vault.documents().filter((d) => d.startsWith('The Small Book/')).sort();
+    log(`placed ${chapters.length} files: ${chapters.join(' | ')}`);
+    for (const c of chapters) log(`${c}: ${await firstLines(c)}`);
+    log(`notices: ${useApp.getState().log.slice(0, 1).join(' | ')}; intake ${q('.intake .book-list') ? 'still lists the book' : 'cleared'}`);
+    const surface = await until(() => q<HTMLElement>('.doc-view .draft-doc'));
+    await sleep(400);
+    log(`reader: crumb "${q('.doc-view .crumb')?.textContent}"; blocks ${surface.children.length}; marks ${surface.querySelectorAll('.ed-mark').length}; frozen ${q('.frozen-tag')?.textContent}; enrol "${q('.frozen-tag.enrol')?.textContent}"; first block "${surface.firstElementChild?.textContent?.slice(0, 60)}"`);
+    log(`tree rows: ${qa('.tree .trow').map((r) => r.textContent?.trim()).filter((t) => t && /Small Book|One|Two|Three/.test(t)).join(' | ')}`);
+    await shot('epub-chapter');
+    press('r');
+    await until(() => (q('.read-gutter') ? true : null));
+    await sleep(600);
+    const enrolled = (await vault.read(first, true)).text.split('\n').find((l) => l.startsWith('read:'));
+    log(`reading: ${enrolled}; rule ${q<HTMLElement>('.read-rule')?.style.height}; bottom strip "${q('.bot')?.textContent}"; queries ${qa('.queries .row').map((r) => `${r.querySelector('.name')?.textContent} ${r.querySelector('.meta')?.textContent}`).join(', ')}`);
+    await shot('epub-reading');
     log('done');
   } catch (e) {
     log(`failed: ${e instanceof Error ? e.message : String(e)}`);

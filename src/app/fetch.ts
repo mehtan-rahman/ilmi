@@ -5,11 +5,18 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { fetch } from '@tauri-apps/plugin-http';
-import { HTML_EXT, TEXT_EXT, cleanText, readable, titleFromFileName, type AnkiPackage } from '../import/index.js';
+import { HTML_EXT, TEXT_EXT, cleanText, readable, titleFromFileName, type AnkiPackage, type Epub } from '../import/index.js';
 import { pdfText } from './pdfjs.js';
 
 export const PDF_EXT = /\.pdf$/i;
 export const APKG_EXT = /\.apkg$/i;
+export const EPUB_EXT = /\.epub$/i;
+
+/** A dropped or picked book in EPUB, read on the Rust side: its metadata and the spine's XHTML in reading order. */
+export async function readEpub(path: string): Promise<Epub> {
+  if (!EPUB_EXT.test(path)) throw new Error('not a book');
+  return invoke<Epub>('read_epub', { path });
+}
 
 /** A dropped or picked Anki package, read on the Rust side (the webview cannot open SQLite): its decks, notetypes, notes, and cards as plain data. */
 export async function readAnkiPackage(path: string): Promise<AnkiPackage> {

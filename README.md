@@ -21,6 +21,7 @@ npm run typecheck
 npm run import-sm -- <collection.kno> <vault-dir>   # a SuperMemo collection, once
 npm run fixture:pdf    # regenerate the corpus's two-page PDF
 npm run fixture:anki   # regenerate the two-deck Anki package and its JSON (cargo)
+npm run fixture:epub   # regenerate the three-chapter EPUB and its JSON (cargo)
 ```
 
 The import reads a SuperMemo collection's data files (`src/import/supermemo/LAYOUT.md`
@@ -80,6 +81,17 @@ card's progress seeds the card's `sr` line (due, interval, reps, lapses, a
 difficulty from the ease). Hints, sounds, images, a reversed note's second
 schedule, and empty notes are dropped and counted; media is not copied.
 
+A book in EPUB dropped on the intake is read on the Rust side too
+(`src-tauri/src/epub.rs`: the container, the package file, the navigation
+document or the NCX) and listed chapter by chapter; `place` makes a folder
+named for the book and writes one frozen source per spine item in reading
+order, `NN title.md`, the title from the table of contents, else the
+chapter's first heading. Headings, emphasis, lists, and quotes are kept,
+links become their text; the cover and other pages under thirty words, the
+images (a `[figure: alt]` mark stands where one with alt text was), and
+footnote back-references are dropped and counted. Nothing is scheduled;
+`r` on a chapter starts reading it.
+
 A blank can sit inside a formula: `$y = {{c1::x^{2}}}$`, or a whole line of
 an `align` environment. Inside math only the numbered form is a blank and it
 closes at the braces that balance, so `\binom{n}{{k}}` stays TeX. The formula
@@ -104,8 +116,8 @@ src/app/           renderer: React, Zustand store, tokens.css
 src/format/        parser and serializer, the only code that touches vault files
 src/vault/         open, walk, read, write, watch, and reshape a vault; pure over an Fs interface
 src/schedule/      ts-fsrs grading, the reading and writing loops, the queue query
-src/import/        text from a paste, a page, a list of cards, an Anki package, or a SuperMemo collection, on its way to a file
+src/import/        text from a paste, a page, a list of cards, an Anki package, a book in EPUB, or a SuperMemo collection, on its way to a file
 src/pdf/           the PDF lens's pure side: a page's text from pdf.js items, finding a passage again
 scripts/           command-line tools, run with tsx
-src-tauri/         desktop shell (Tauri v2, fs + dialog + log plugins; anki.rs reads a package)
+src-tauri/         desktop shell (Tauri v2, fs + dialog + log plugins; anki.rs reads a package, epub.rs a book)
 ```

@@ -1,6 +1,7 @@
 // Import: text from a paste, a dropped file, or a fetched page, on its way to
 // becoming a frozen source; a list of cards or an Anki package, on its way to
-// a deck. Pure; see `Vault.importDoc` and `Vault.importDeck` for the files.
+// a deck; a book in EPUB, on its way to a folder of sources. Pure; see
+// `Vault.importDoc` and `Vault.importDeck` for the files.
 
 export { cleanText, deriveTitle, titleFromFileName, stats, isUrl, TEXT_EXT, HTML_EXT, type Stats } from './text.js';
 export { readable, textOf, type Readable } from './readable.js';
@@ -13,3 +14,7 @@ export {
   mapPackage, cardOf, kindOf, seedOf as ankiSeedOf, creationDay, difficultyOf, deckLabel,
   type AnkiPackage, type AnkiDeck, type AnkiNotetype, type AnkiNote, type AnkiCard, type AnkiDropped, type Mapped, type MappedDeck, type NotetypeKind,
 } from './anki.js';
+export {
+  mapBook, reduceChapter, withoutTitleHeading, position, readingLabel, noBookDropped, MIN_WORDS,
+  type Epub, type EpubItem, type Chapter, type BookDropped, type MappedBook, type Reduced,
+} from './epub.js';

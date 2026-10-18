@@ -1319,7 +1319,74 @@ chapters land as sources in a folder named for the book, in reading order,
 and the three loops run over them as over any source. Nothing in the
 format changes.
 
-### [ ] 19. EPUB — drop a book, its chapters land as sources in reading order
+### [x] 19. EPUB — drop a book, its chapters land as sources in reading order
+Done 2026-10-18, commit `PENDING19`.
+Notes: `src-tauri/src/epub.rs` is the reader, `read_epub(path)` the
+command (registered in `lib.rs` beside `read_anki_package`; the path is
+read as a drop, nothing added to the fs scope). Crate: `quick-xml` 0.42
+(already in the lock through Tauri), read leniently with `check_end_names`
+off and `allow_unmatched_ends` on; a document that stops parsing yields
+what came before the error; entities come as `GeneralRef` events and are
+resolved by hand (character references, the XML five, and the HTML dozen
+a nav document tends to carry; anything else is nothing). The container's
+`rootfile` (the OEBPS one preferred), the OPF's `dc:title` (first),
+`dc:creator` (all), `dc:language`, `manifest/item` (`id`, `href`,
+`media-type`, `properties`), `spine/itemref` (`idref`, in order) and
+`spine@toc`. Titles: the `properties="nav"` item's `<nav epub:type="toc">`
+links, else (or when it names nothing) the NCX from `spine@toc` or the
+`application/x-dtbncx+xml` item, its `navPoint`s' `navLabel/text` +
+`content@src`; hrefs resolve against the document's directory (`resolve`:
+fragment and query off, percent-escapes decoded, `.`/`..` folded), the
+first entry per path wins. Spine items that are not XHTML (`media-type`
+`application/xhtml…` / `text/html`) or that name no entry are left out
+silently. JSON: `Epub { title, creators, language, items: { href, html,
+title: string | null, nav: bool }[], images: href[] }`. Fixture: `npm run
+fixture:epub` runs `reads_the_three_chapter_book` with `ILMI_EPUB_FIXTURE`
+set, writing `src/import/__tests__/epub/three-chapters.epub` + `.json`
+(byte-stable: `mimetype` first and stored, every entry dated 2026-01-01).
+`src/import/epub.ts`: `reduceChapter(html, dropped)` parses the XHTML with
+`DOMParser` as HTML and tidies the DOM before the intake's own `textOf`
+(the direct path; `readable()` is not used): back-reference anchors out
+(`epub:type` `backlink`, `role=doc-backlink`, or a `#` link whose text is
+only return glyphs), `img`/`svg` out with a `<p>[figure: alt]</p>` where
+one had alt text (an svg's `<title>`), `em`/`i` → `*…*`, `strong`/`b` →
+`**…**` innermost first with the surrounding whitespace kept outside the
+marks; it also returns the first heading's text. `withoutTitleHeading`
+drops the first heading block (within the first three blocks) when it
+reads as the title, comparing with case, punctuation, and spacing set
+aside. `mapBook(epub)` → `MappedBook { title, creators, chapters: {
+n, name, title, text, words }, words, minutes, dropped: { images,
+figures, short } }`: nav items skipped silently, items under `MIN_WORDS`
+(30) skipped and counted as `short`, the title from the toc, else the
+heading, else `chapter NN`; `name` = `fileName('NN title')` with `NN`
+padded to the count's width, two at least (`position`). `readingLabel`
+says `~N min` under an hour, else `~H h` to the half hour. Vault:
+`ImportSpec.name` (the file name when not the title's), so `importDoc`
+writes `title:` as a field. App: `importBookNode(dir, { title, chapters })`
+makes the folder with `createFolder` (a free name, so a second copy lands
+beside the first as `Book 2`) and one `importDoc` per chapter; both
+folders open. `readEpub` / `EPUB_EXT` in `fetch.ts`. Intake: `.epub` by
+drop or the picker; the paste field gives way to `.book-list` (the
+creators in a mono line, then rows `NN  title` / `N words`), the count
+line `N chapters · M words · ~H h · K short pages skipped · N images
+dropped` with `not this →`, the title field defaulting to `dc:title`
+(`book` when none), h1 `Add a book`; `place & open` writes the folder,
+notices `placed · N chapters in Book`, opens the first chapter. Smoke:
+`ILMI_SMOKE=epub`, `ILMI_EPUB=<path>` names the book (else
+`three-chapters.epub` in the vault); shots `epub-intake`, `epub-chapter`,
+`epub-reading`. Tests: 344 (+17 in `epub.test.ts`), `cargo test` 9 (+4).
+Open: the user's own book has not been tried (none provided; drop one on
+the intake, or `ILMI_SMOKE=epub ILMI_EPUB=<path>`); the reader shows
+`*emphasis*` with its asterisks, since nothing renders Markdown emphasis
+yet; a footnote reference's number lands glued to its word
+(`afternoon.1`) and the note's text stays as a paragraph where the `aside`
+was; images are counted and not copied (the format has no place for them
+beside a source); `linear="no"` spine items land like the rest; a
+chapter number set as its own paragraph before the heading stays as a
+one-line paragraph; the chapter list is not capped, a long book scrolls
+the intake; `dc:language` is read and unused; two toc entries into one
+file keep only the first, the second's anchor is not split into an
+extract.
 An `.epub` is a zip: `META-INF/container.xml` names the OPF package file,
 whose `<manifest>` lists the files and whose `<spine>` gives the reading
 order of XHTML items; chapter titles come from the navigation document
@@ -1520,9 +1587,9 @@ handoff can be checked; screenshots read.
 
 ## Notes for the next session
 
-Milestones 0–18 are ticked; 19 under *Books*, then 20–22 under *Plugins*,
-are next, in order (22 may run beside 20 on a branch). After them, what is
-left is a polish pass over the open items
+Milestones 0–19 are ticked; 20–22 under *Plugins* are next, in order (22
+may run beside 20 on a branch). After them, what is left is a polish pass
+over the open items
 each milestone's notes record (10: no palette command or key for
 priority, no stepper; 11: no growth row before enrolment, the preview
 ignores lateness; 12: the sidebar and inspector counts are the whole day
@@ -1531,7 +1598,8 @@ on the draft's inspector; 14: the user's real collection, with their
 say-so; 15: the list under it; the session card's faces are not editable
 in place; 16: the Anki row is fixed to its header, leftovers may read as
 headings or lists; 17: the user's own `.apkg` untried, media not copied,
-suspended cards import as ordinary ones) and, with the user, whether the
+suspended cards import as ordinary ones; 19: the user's own book untried,
+emphasis shown with its asterisks, images not copied) and, with the user, whether the
 next thing is that pass, the
 margin-gloss text flow the ground rules keep out of the plan, or
 something new. The handoff prompt at the top of `BUILD-LOG.md` lists the

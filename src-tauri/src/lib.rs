@@ -1,4 +1,5 @@
 mod anki;
+mod epub;
 
 use tauri_plugin_fs::FsExt;
 
@@ -46,6 +47,14 @@ fn read_anki_package(path: String) -> Result<anki::AnkiPackage, String> {
     anki::read_package(std::path::Path::new(&path))
 }
 
+/// A dropped or picked book in EPUB, read as plain data (`epub.rs`): its
+/// metadata and the spine's XHTML in reading order; the renderer maps it to
+/// a folder of sources. Read by path, as a drop, outside the scope.
+#[tauri::command]
+fn read_epub(path: String) -> Result<epub::Epub, String> {
+    epub::read_book(std::path::Path::new(&path))
+}
+
 /// Dev only: an environment variable of the dev process, for
 /// `ILMI_VAULT=/path npm run tauri dev` (open that vault at launch) and
 /// `ILMI_SMOKE=…` (run a smoke script). Always `None` in release.
@@ -64,7 +73,7 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_http::init())
-        .invoke_handler(tauri::generate_handler![allow_vault, read_dropped, read_dropped_bytes, read_anki_package, dev_env])
+        .invoke_handler(tauri::generate_handler![allow_vault, read_dropped, read_dropped_bytes, read_anki_package, read_epub, dev_env])
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(

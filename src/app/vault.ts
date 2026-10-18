@@ -7,9 +7,9 @@ import { invoke } from '@tauri-apps/api/core';
 import { open as pickDirectory } from '@tauri-apps/plugin-dialog';
 import { info } from '@tauri-apps/plugin-log';
 import { meta, setField, type Doc, type NodeType } from '../format/index.js';
-import type { MappedDeck } from '../import/index.js';
+import type { Chapter, MappedDeck } from '../import/index.js';
 import { dayOf, docItems, isDue, postponeOverflow, sortQueue, type QueueItem } from '../schedule/index.js';
-import { Vault, childDirOf, dirOf, isDoc, rekey, type ExtractSpec, type ImportDeckSpec, type ImportPdfSpec, type ImportSpec, type TreeNode, type VaultEvent, type VaultState } from '../vault/index.js';
+import { Vault, childDirOf, dirOf, fileName, isDoc, rekey, type ExtractSpec, type ImportDeckSpec, type ImportPdfSpec, type ImportSpec, type TreeNode, type VaultEvent, type VaultState } from '../vault/index.js';
 import { tauriFs } from '../vault/tauri-fs.js';
 import { cleanBudget, dueToday, sessionItems } from './items.js';
 import { INTAKE, SESSION, queueId, queueScope } from './names.js';
@@ -218,8 +218,8 @@ export function openInitialVault(): Promise<void> {
     const vault = await openVault(path);
     const mode = await invoke<string | null>('dev_env', { name: 'ILMI_SMOKE' });
     if (mode) {
-      const { smoke, smokeReader, smokeCards, smokeIntake, smokeQueue, smokeLoop, smokeShots, smokeDeck, smokePri, smokeGrowth, smokeOverload, smokePdf, smokeFaces, smokeCardsText, smokeAnki, smokeMath } = await import('./smoke.js');
-      const run = { reader: smokeReader, cards: smokeCards, intake: smokeIntake, queue: smokeQueue, loop: smokeLoop, shots: smokeShots, deck: smokeDeck, pri: smokePri, growth: smokeGrowth, overload: smokeOverload, pdf: smokePdf, faces: smokeFaces, 'cards-text': smokeCardsText, anki: smokeAnki, math: smokeMath }[mode] ?? smoke;
+      const { smoke, smokeReader, smokeCards, smokeIntake, smokeQueue, smokeLoop, smokeShots, smokeDeck, smokePri, smokeGrowth, smokeOverload, smokePdf, smokeFaces, smokeCardsText, smokeAnki, smokeMath, smokeEpub } = await import('./smoke.js');
+      const run = { reader: smokeReader, cards: smokeCards, intake: smokeIntake, queue: smokeQueue, loop: smokeLoop, shots: smokeShots, deck: smokeDeck, pri: smokePri, growth: smokeGrowth, overload: smokeOverload, pdf: smokePdf, faces: smokeFaces, 'cards-text': smokeCardsText, anki: smokeAnki, math: smokeMath, epub: smokeEpub }[mode] ?? smoke;
       await run(vault);
     }
   })();
@@ -411,6 +411,22 @@ export async function importAnkiNode(dir: string, decks: MappedDeck[]): Promise<
   }
   if (dir !== '' || !useApp.getState().open['']) toggleOpen(dir, true);
   return paths;
+}
+
+/**
+ * A book's chapters as frozen sources in a new folder named for it under
+ * `dir`, one file per chapter in reading order (`NN title.md`, the title as
+ * a field); the folder and the one above it open. Resolves to the folder
+ * and the documents' paths.
+ */
+export async function importBookNode(dir: string, book: { title: string; chapters: Chapter[] }): Promise<{ folder: string; paths: string[] }> {
+  const vault = need();
+  const folder = await vault.createFolder(dir, fileName(book.title));
+  const paths: string[] = [];
+  for (const c of book.chapters) paths.push(await vault.importDoc(folder, { title: c.title, name: c.name, text: c.text }));
+  if (dir !== '' || !useApp.getState().open['']) toggleOpen(dir, true);
+  toggleOpen(folder, true);
+  return { folder, paths };
 }
 
 /** Carve a passage of `parent` into a child extract; the parent's row opens so the child is visible. */

@@ -1,0 +1,43 @@
+{
+  "title": "The Small Book",
+  "creators": [
+    "A. Author"
+  ],
+  "language": "en",
+  "items": [
+    {
+      "href": "cover.xhtml",
+      "html": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<html xmlns=\"http://www.w3.org/1999/xhtml\">\n<head><title>Cover</title></head>\n<body><p>The Small Book, a cover.</p></body>\n</html>\n",
+      "title": null,
+      "nav": false
+    },
+    {
+      "href": "nav.xhtml",
+      "html": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE html>\n<html xmlns=\"http://www.w3.org/1999/xhtml\" xmlns:epub=\"http://www.idpf.org/2007/ops\">\n<head><title>Contents</title></head>\n<body>\n  <nav epub:type=\"toc\" id=\"toc\">\n    <h1>Contents</h1>\n    <ol>\n      <li><a href=\"ch1.xhtml\">One: the premise</a></li>\n      <li><a href=\"ch3.xhtml#start\">Three: <span>the close</span></a></li>\n    </ol>\n  </nav>\n  <nav epub:type=\"landmarks\" hidden=\"\">\n    <ol><li><a epub:type=\"cover\" href=\"cover.xhtml\">Cover</a></li></ol>\n  </nav>\n</body>\n</html>\n",
+      "title": null,
+      "nav": true
+    },
+    {
+      "href": "ch1.xhtml",
+      "html": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<html xmlns=\"http://www.w3.org/1999/xhtml\" xmlns:epub=\"http://www.idpf.org/2007/ops\">\n<head><title>One</title><link rel=\"stylesheet\" href=\"style.css\"/></head>\n<body>\n  <section epub:type=\"chapter\">\n    <h1>One: the premise</h1>\n    <p>Every review is a <em>small wager</em> against forgetting. The wager has a cost, the minutes spent, and a payoff that compounds: each recall pushes the next due date further out, so a few well-timed reviews buy years of retention for the price of an afternoon.<sup><a epub:type=\"noteref\" href=\"#fn1\" id=\"fnref1\">1</a></sup></p>\n    <p>The <strong>minimum information principle</strong> says the same thing from the other side; see <a href=\"ch3.xhtml\">the close</a>.</p>\n    <ul>\n      <li>cost: the minutes</li>\n      <li>payoff: the years</li>\n    </ul>\n    <blockquote><p>Familiarity is cheap. Retrieval is the thing that lasts.</p></blockquote>\n    <aside epub:type=\"footnote\" id=\"fn1\"><p>A note on the wager, for the curious. <a epub:type=\"backlink\" href=\"#fnref1\">&#8617;</a></p></aside>\n  </section>\n</body>\n</html>\n",
+      "title": "One: the premise",
+      "nav": false
+    },
+    {
+      "href": "ch2.xhtml",
+      "html": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<html xmlns=\"http://www.w3.org/1999/xhtml\">\n<head><title>Two</title></head>\n<body>\n  <h2>Two: the middle</h2>\n  <p>A good system spends your attention the way a careful gardener spends water: not evenly, but where the curve is about to cross the floor. Most learners review everything, constantly, and confuse the warm feeling of familiarity with the harder fact of retrieval.</p>\n  <figure>\n    <img src=\"images/map.png\" alt=\"A map of the valley\"/>\n    <figcaption>The valley, surveyed.</figcaption>\n  </figure>\n  <p>What follows is the middle of the argument, which is where most books lose their readers and most readers lose their place.</p>\n</body>\n</html>\n",
+      "title": null,
+      "nav": false
+    },
+    {
+      "href": "ch3.xhtml",
+      "html": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<html xmlns=\"http://www.w3.org/1999/xhtml\">\n<head><title>Three</title></head>\n<body>\n  <h1 id=\"start\">Three: the close</h1>\n  <p>Atomicity sounds easy and is in fact the hardest discipline in the practice. A card that asks two things teaches neither; a card that asks one thing, in the fewest words that still make sense, is remembered for years.</p>\n  <p><img src=\"images/orn.png\"/></p>\n  <p>So the book closes where it opened: with the wager, now priced.</p>\n  <h3>A last word</h3>\n  <p>Read on.</p>\n</body>\n</html>\n",
+      "title": "Three: the close",
+      "nav": false
+    }
+  ],
+  "images": [
+    "images/map.png",
+    "images/orn.png"
+  ]
+}

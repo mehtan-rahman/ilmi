@@ -6,6 +6,141 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-10-18 — milestone 19: EPUB, a dropped book lands as a folder of chapter sources in reading order
+
+Commit `PENDING19` — *epub: a dropped book read on the Rust side, its
+chapters landing as frozen sources in a folder, in reading order*. Done on
+`main` at `dc2067c` (the plan commit that added milestones 20–22 landed
+after this session started; a parallel session works on 20 in a worktree
+and touches `Cargo.toml`, `lib.rs`, and `package.json` too, so the merge
+will meet both sides there).
+
+### Done
+
+- `src-tauri/src/epub.rs` and the `read_epub` command: the zip opened
+  with `zip`, `META-INF/container.xml` → the OPF (`quick-xml` 0.42, read
+  leniently; entities resolved by hand), its metadata, manifest, and
+  spine; the toc from the `nav` item's `<nav epub:type="toc">`, else the
+  NCX; hrefs resolved against each document's directory, fragments off,
+  percent-escapes decoded; the spine's XHTML items in order with their
+  toc title and a `nav` flag; images listed by href.
+- `src/import/epub.ts`: `reduceChapter` (the DOM tidied, then the intake's
+  own `textOf`: back-references out, `[figure: alt]` where an image with
+  alt text stood, `*em*` / `**strong**`), `withoutTitleHeading`,
+  `mapBook` (nav skipped, pages under 30 words skipped and counted, the
+  title from the toc, else the first heading, else `chapter NN`; `NN
+  title` names padded to the count's width), `readingLabel`.
+- `ImportSpec.name`; `importBookNode` (a new folder by `createFolder`,
+  one `importDoc` per chapter); `readEpub` / `EPUB_EXT`.
+- The intake takes `.epub` from a drop and the picker: h1 `Add a book`,
+  the creators and the chapter rows where the text would be, the count
+  line (`3 chapters · 217 words · ~1 min · 1 short page skipped · 2
+  images dropped`) with `not this →`, the title field defaulting to
+  `dc:title`; `place & open` writes the folder, one notice, opens the
+  first chapter. The hint names `.epub`.
+- Fixture: `npm run fixture:epub` (byte-stable). README: a paragraph, the
+  script, the layout lines. Smoke: `ILMI_SMOKE=epub` with
+  `ILMI_EPUB=<path>`.
+- Tests: vitest 344 (+17 in `epub.test.ts`: the fixture's shape, the
+  reduction's cases, the title-heading drop, the three chapters line for
+  line and parsed with no diagnostics, the wide numbering, the skips,
+  the reading label, and the folder written into a scratch vault);
+  `cargo test` 9 (+4: the three-chapter book built and read back, an
+  EPUB 2 with an NCX and a percent-escaped href, refusals, path
+  resolution).
+
+### Verified
+
+- `npm run typecheck` clean, `npx vitest run` green (19 files, 344),
+  `cargo test` green (9), no warnings.
+- In the window (`ILMI_VAULT=<scratch copy> ILMI_SMOKE=epub
+  ILMI_EPUB=<repo>/src/import/__tests__/epub/three-chapters.epub npm run
+  tauri dev`, 13:33 local, two runs, both clean), as logged: the book
+  dropped through `intakeHooks.ingestFile` → h1 `Add a book`, `A.
+  Author`, rows `01 One: the premise (86 words)`, `02 Two: the middle (74
+  words)`, `03 Three: the close (57 words)`, the count line `3 chapters ·
+  217 words · ~1 min · 1 short page skipped · 2 images dropped · not this
+  →`, the title field `The Small Book`, no textarea → `place & open` →
+  `The Small Book/01 One the premise.md`, `02 Two the middle.md`, `03
+  Three the close.md`, each `frozen: true`, `imported: 2026-10-18`,
+  `title: "…"`, 0 diagnostics (blocks `paragraph, paragraph, raw, raw,
+  paragraph`; `paragraph ×4` with the figure mark; `paragraph, paragraph,
+  heading, paragraph`); the notice `placed · 3 chapters in The Small
+  Book`; the intake cleared; the reader on the first chapter with crumb
+  `The Small Book`, 5 blocks, `frozen`, `start reading r`; tree rows `The
+  Small Book 3` and the three `¶` chapters; `r` → `read: due=2026-10-18
+  ivl=1 reps=0 pos=0`, the queries at `due today 38` (one more) and
+  `reading 7`; `done`; port 1420 free after.
+- Captures read (first run): the intake with `Add a book`, the author in
+  mono under it, the three chapter rows in serif with the grey numbers at
+  the left and `N words` in mono at the right, the count line with `not
+  this →` on the accent, the title field, `lives in`, the two place
+  buttons; the reader on `One: the premise` with the chapter's paragraphs
+  in serif (the asterisks of `*small wager*` and `**minimum information
+  principle**` visible, `afternoon.1` glued), the list and the quote as
+  mono raw blocks, the footnote paragraph, the tree with `The Small Book
+  3` open over the three chapters, the inspector with the path,
+  `imported`, `86 words`, `priority 50`, `frozen THAW`; its top-right
+  corner was covered by a notification from another application. The
+  reading capture of the first run was covered by another application's
+  window; the second run's two later captures were mostly covered too,
+  the visible part of the inspector showing `reading 0 of 5, today`,
+  `growth 1.6 · 2d · 3d · 5d`, and `38 due` in the strip after `r`.
+- Before the run, port 1420 and an ilmi window belonged to a `npm run
+  tauri dev` started from this directory at 13:18 with no smoke mode, not
+  this session's; after a wait of eight minutes it was stopped to free
+  the port, as the ground rules ask. The dev log's `Error Found version
+  mismatched Tauri packages` (`tauri-plugin-http` 2.7.0 against
+  `@tauri-apps/plugin-http` 2.6.1) predates this work; `Cargo.lock`
+  changed by the one `quick-xml` line.
+
+### Not done / open
+
+- The user's own book: none provided. Drop one on the intake, or run
+  `ILMI_SMOKE=epub ILMI_EPUB=<path>`.
+- The reader shows `*emphasis*` with its asterisks; nothing renders
+  Markdown emphasis yet. The plan asked for emphasis kept, and the format
+  calls it literal text the app renders as it sees fit, so the rendering
+  is a polish item, not a format change.
+- A footnote reference's number lands glued to its word (`afternoon.1`);
+  the note's text stays as a paragraph where the `aside` was.
+- Images are counted, not copied; `linear="no"` items land like the rest;
+  the chapter list is not capped; `dc:language` is read and unused.
+
+### Decisions worth knowing
+
+- `quick-xml` over a hand-rolled scanner: it was already in the lock
+  through Tauri, and an EPUB's XML is real XML. Read leniently all the
+  same, since nav documents carry HTML entities XML does not define.
+- The DOM is tidied before `textOf` rather than `textOf` growing options:
+  the walker stays the one the pages and the Anki fields use, and the
+  book's rules (figures, back-references, emphasis) live in `epub.ts`.
+- `createFolder` for the book, not `folderIn`: a second import of the
+  same book should not interleave its chapters with the first's.
+- The heading is dropped only when it reads as the title with case,
+  punctuation, and spacing set aside; `Chapter 1: The premise` under a
+  toc entry `Chapter 1` is kept, since the body would lose words.
+
+### Handoff prompt
+
+```
+Read PLAN.md, FORMAT.md, BUILD-LOG.md, and spec/hashiyah/HANDOFF.md.
+Milestones 0–19 are ticked (13 dropped). The first unchecked milestone
+is 20, "Plugin runtime", under "## Plugins" in PLAN.md; a parallel
+session may already be on it in a worktree (check `git worktree list`
+and the branches), in which case take the first unchecked milestone that
+no branch holds, as the Plugins section allows for 22. Do only that one,
+stop at its "done when", tick it, write notes, add an entry here with a
+fresh handoff prompt, and commit. Tooling and verification are as the
+ground rules and the entries below describe; `export
+PATH=$HOME/.cargo/bin:/opt/homebrew/bin:$PATH` first. Suite 344 (19
+files), `cargo test` 9, and typecheck must be green before a commit.
+The user's own `.epub` and `.apkg` are still untried: `ILMI_SMOKE=epub
+ILMI_EPUB=<path>` and `ILMI_SMOKE=anki ILMI_APKG=<path>` take them.
+```
+
+---
+
 ## 2026-10-18 — milestone 18: blanks inside math, `{{cN::…}}` in a formula closed by the balanced `}}`
 
 Done on the branch `worktree-agent-aa0c5ff44353b39cb` (worktree

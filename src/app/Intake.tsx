@@ -11,23 +11,25 @@
 // two) gets a delimiter row and lands as a deck instead; an Anki text export
 // is read by its header. A dropped `.apkg` is read on the Rust side and its
 // decks listed; each lands as a deck file with its progress
-// (`src/import/anki.ts`).
+// (`src/import/anki.ts`). A dropped `.epub` is read there too and its
+// chapters listed; they land as sources in a folder named for the book
+// (`src/import/epub.ts`).
 
 import { getCurrentWebview, type DragDropEvent } from '@tauri-apps/api/webview';
 import { open as pickFile } from '@tauri-apps/plugin-dialog';
 import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent } from 'react';
 import {
   CARD_KINDS, CARD_LABEL, SIDE_KINDS, SIDE_LABEL, cleanText, deckDoc, deckLabel, deriveTitle, detect, droppedLabel, isUrl, leftoverLines,
-  mapPackage, splitCards, stats, titleFromFileName, toCards, type CardDelim, type Delims, type Mapped, type SideDelim,
+  mapBook, mapPackage, position, readingLabel, splitCards, stats, titleFromFileName, toCards, type CardDelim, type Delims, type Mapped, type MappedBook, type SideDelim,
 } from '../import/index.js';
 import { NEW_NAMES } from '../vault/index.js';
 import { CardText } from './CardText.js';
-import { APKG_EXT, PDF_EXT, fetchReadable, readAnkiPackage, readDropped, readDroppedPdf } from './fetch.js';
+import { APKG_EXT, EPUB_EXT, PDF_EXT, fetchReadable, readAnkiPackage, readDropped, readDroppedPdf, readEpub } from './fetch.js';
 import { folderPaths, titleOf } from './names.js';
 import type { OpenOpts } from './panes.js';
 import { pdfText } from './pdfjs.js';
 import { useApp } from './store.js';
-import { importAnkiNode, importDeckNode, importNode, importPdfNode, note as notice } from './vault.js';
+import { importAnkiNode, importBookNode, importDeckNode, importNode, importPdfNode, note as notice } from './vault.js';
 
 /** A PDF waiting on the intake: it lands as the pair, the text beside it as the fallback body. */
 interface PendingPdf {
@@ -39,10 +41,13 @@ interface PendingPdf {
 export const intakeHooks: { ingestFile?: (path: string) => Promise<void> } = {};
 
 /** Extensions the picker offers: what a drop would take. */
-const PICK_EXT = ['txt', 'md', 'markdown', 'text', 'csv', 'tsv', 'html', 'htm', 'pdf', 'apkg'];
+const PICK_EXT = ['txt', 'md', 'markdown', 'text', 'csv', 'tsv', 'html', 'htm', 'pdf', 'apkg', 'epub'];
 
 /** The default name of a deck landed from text. */
 const DECK_NAME = 'cards';
+
+/** The default name of a book whose package has no title. */
+const BOOK_NAME = 'book';
 
 /** How an Anki header's separator is named in the row. */
 const SEP_NAME: Record<string, string> = { '\t': 'tab', ',': 'comma', ';': 'semicolon', ' ': 'space', '|': 'pipe', ':': 'colon' };
@@ -77,6 +82,8 @@ export function Intake({ active, onOpen }: Props) {
   const [pdf, setPdf] = useState<PendingPdf | null>(null);
   /** An Anki package waiting on the intake: its decks, listed where the text would be. */
   const [anki, setAnki] = useState<Mapped | null>(null);
+  /** A book waiting on the intake: its chapters, listed where the text would be. */
+  const [book, setBook] = useState<MappedBook | null>(null);
   /** The delimiters the user chose over the detected ones; `null` follows detection. */
   const [delims, setDelims] = useState<Delims | null>(null);
   const [both, setBoth] = useState(false);
@@ -93,7 +100,7 @@ export function Intake({ active, onOpen }: Props) {
   const st = stats(text);
 
   // cards: detected over the text, the row's choice over that, an Anki header over both
-  const detected = useMemo(() => (text && !pdf && !anki ? detect(text) : null), [text, pdf, anki]);
+  const detected = useMemo(() => (text && !pdf && !anki && !book ? detect(text) : null), [text, pdf, anki, book]);
   const cardsMode = !!detected && (asCards ?? detected.cards >= 2);
   const used: Delims | null = detected ? (detected.anki ? detected.delims : delims ?? detected.delims) : null;
   const split = useMemo(() => (cardsMode && used ? splitCards(text, used) : null), [cardsMode, used, text]);
@@ -103,8 +110,8 @@ export function Intake({ active, onOpen }: Props) {
   const ankiCards = anki ? anki.decks.reduce((n, d) => n + d.cards, 0) : 0;
 
   // a PDF lands even without a text layer: it opens as pages, nothing to select
-  const can = (anki ? anki.decks.length > 0 : deck ? deck.cards.length > 0 : st.words > 0 || !!pdf) && !busy;
-  const titleShown = title || (cardsMode ? DECK_NAME : deriveTitle(raw));
+  const can = (book ? book.chapters.length > 0 : anki ? anki.decks.length > 0 : deck ? deck.cards.length > 0 : st.words > 0 || !!pdf) && !busy;
+  const titleShown = title || (book ? book.title || BOOK_NAME : cardsMode ? DECK_NAME : deriveTitle(raw));
   const setSide = (side: SideDelim) => { if (used) setDelims({ ...used, side }); };
   const setCard = (card: CardDelim) => { if (used) setDelims({ ...used, card }); };
   const customOf = (d: SideDelim | CardDelim) => (typeof d === 'object' ? d.custom : '');
@@ -117,7 +124,7 @@ export function Intake({ active, onOpen }: Props) {
 
   const fail = (e: unknown, fallback: string) => {
     const msg = e instanceof Error ? e.message : String(e);
-    setNote(msg === 'not a text file' || msg === 'nothing readable' || msg === 'no cards in that package' ? msg : fallback);
+    setNote(msg === 'not a text file' || msg === 'nothing readable' || msg === 'no cards in that package' || msg === 'no chapters in that book' ? msg : fallback);
   };
 
   const fresh = () => {
@@ -130,6 +137,7 @@ export function Intake({ active, onOpen }: Props) {
     setRaw(cleanText(body));
     setPdf(pages);
     setAnki(null);
+    setBook(null);
     setNote('');
     fresh();
     if (name && !titleRef.current) setTitle(name);
@@ -159,7 +167,20 @@ export function Intake({ active, onOpen }: Props) {
         if (!m.decks.length) throw new Error('no cards in that package');
         setRaw('');
         setPdf(null);
+        setBook(null);
         setAnki(m);
+        setNote('');
+        fresh();
+        return;
+      }
+      if (EPUB_EXT.test(path)) {
+        setNote('reading');
+        const b = mapBook(await readEpub(path));
+        if (!b.chapters.length) throw new Error('no chapters in that book');
+        setRaw('');
+        setPdf(null);
+        setAnki(null);
+        setBook(b);
         setNote('');
         fresh();
         return;
@@ -178,7 +199,7 @@ export function Intake({ active, onOpen }: Props) {
   };
 
   const pick = async () => {
-    const path = await pickFile({ multiple: false, directory: false, filters: [{ name: 'text, pdf, or anki', extensions: PICK_EXT }] });
+    const path = await pickFile({ multiple: false, directory: false, filters: [{ name: 'text, pdf, anki, or epub', extensions: PICK_EXT }] });
     if (typeof path === 'string') await ingestFile(path);
   };
 
@@ -227,8 +248,8 @@ export function Intake({ active, onOpen }: Props) {
     const dt = e.dataTransfer;
     const file = dt.files[0];
     if (file) {
-      // a package needs the Rust side; outside Tauri the drop arrives here with no path
-      if (APKG_EXT.test(file.name)) { setNote('could not read that file'); return; }
+      // a package or a book needs the Rust side; outside Tauri the drop arrives here with no path
+      if (APKG_EXT.test(file.name) || EPUB_EXT.test(file.name)) { setNote('could not read that file'); return; }
       try {
         if (PDF_EXT.test(file.name)) {
           const bytes = new Uint8Array(await file.arrayBuffer());
@@ -246,6 +267,16 @@ export function Intake({ active, onOpen }: Props) {
     if (!can) return;
     setBusy(true);
     try {
+      if (book) {
+        const name = (titleShown || BOOK_NAME).trim();
+        const { paths } = await importBookNode(chosen, { title: name, chapters: book.chapters });
+        notice(`placed · ${plural(book.chapters.length, 'chapter')} in ${name}`);
+        setBook(null);
+        setTitle('');
+        setNote('');
+        if (open && paths[0]) onOpen(paths[0], {});
+        return;
+      }
       if (anki) {
         const paths = await importAnkiNode(chosen, anki.decks);
         for (const d of anki.decks) notice(`placed · ${plural(d.cards, 'card')} in ${d.title}`);
@@ -285,9 +316,21 @@ export function Intake({ active, onOpen }: Props) {
         <div className="meta">
           <span className="crumb">intake</span>
         </div>
-        <h1>{anki ? (anki.decks.length === 1 ? 'Add a deck' : 'Add decks') : cardsMode ? 'Add a deck' : 'Add a source'}</h1>
+        <h1>{book ? 'Add a book' : anki ? (anki.decks.length === 1 ? 'Add a deck' : 'Add decks') : cardsMode ? 'Add a deck' : 'Add a source'}</h1>
 
-        {anki ? (
+        {book ? (
+          <div className="book-list">
+            {book.creators.length > 0 && <div className="book-by">{book.creators.join(', ')}</div>}
+            <div className="deck-list">
+              {book.chapters.map((c) => (
+                <div key={c.name} className="deck-row">
+                  <span className="dname"><span className="num">{position(c.n, book.chapters.length)}</span>{c.title}</span>
+                  <span className="dcount">{plural(c.words, 'word')}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : anki ? (
           <div className="deck-list">
             {anki.decks.map((d) => (
               <div key={d.name} className="deck-row">
@@ -311,7 +354,7 @@ export function Intake({ active, onOpen }: Props) {
               {note ? (
                 <span className="note">{note}</span>
               ) : (
-                <span>or drop a <span className="mono">.txt</span> / <span className="mono">.md</span> / <span className="mono">.pdf</span> / <span className="mono">.apkg</span> file</span>
+                <span>or drop a <span className="mono">.txt</span> / <span className="mono">.md</span> / <span className="mono">.pdf</span> / <span className="mono">.apkg</span> / <span className="mono">.epub</span> file</span>
               )}
               <button type="button" className="link" onClick={() => void pick().catch((e: unknown) => fail(e, 'could not read that file'))}>pick a file →</button>
               <button type="button" className="link" onClick={() => ingestText(INTAKE_SAMPLE)}>use a sample →</button>
@@ -320,8 +363,30 @@ export function Intake({ active, onOpen }: Props) {
         </div>
         )}
 
-        {(st.words > 0 || pdf || anki) && (
+        {(st.words > 0 || pdf || anki || book) && (
           <div className="intake-detail">
+            {book && (
+              <div className="stats">
+                <span><b>{book.chapters.length.toLocaleString()}</b> {book.chapters.length === 1 ? 'chapter' : 'chapters'}</span>
+                <span className="dot" />
+                <span>{book.words.toLocaleString()} words</span>
+                <span className="dot" />
+                <span>{readingLabel(book.minutes)}</span>
+                {book.dropped.short > 0 && (
+                  <>
+                    <span className="dot" />
+                    <span>{plural(book.dropped.short, 'short page')} skipped</span>
+                  </>
+                )}
+                {book.dropped.images > 0 && (
+                  <>
+                    <span className="dot" />
+                    <span>{plural(book.dropped.images, 'image')} dropped</span>
+                  </>
+                )}
+                <button type="button" className="link" onClick={() => setBook(null)}>not this →</button>
+              </div>
+            )}
             {anki && (
               <div className="stats">
                 <span><b>{ankiCards.toLocaleString()}</b> {ankiCards === 1 ? 'card' : 'cards'} in {plural(anki.decks.length, 'deck')}</span>
@@ -346,7 +411,7 @@ export function Intake({ active, onOpen }: Props) {
                 <button type="button" className="link" onClick={() => setAnki(null)}>not this →</button>
               </div>
             )}
-            {!deck && !anki && (
+            {!deck && !anki && !book && (
               <div className="stats">
                 {pdf ? <span><b>{pdf.pages.toLocaleString()}</b> {pdf.pages === 1 ? 'page' : 'pages'}</span> : <span><b>{st.words.toLocaleString()}</b> words</span>}
                 <span className="dot" />

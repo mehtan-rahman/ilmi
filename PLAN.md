@@ -30,7 +30,8 @@ to BUILD-LOG.md with a fresh handoff prompt, and commit.
 - Ask before adding a screen, section, or setting not in the brief or the
   prototype. Copy rules from the brief apply to every string in the UI.
 - Not in any milestone below: margin-gloss text flow, mobile, collaboration,
-  plugins, AI features.
+  AI features. Plugins were on this list until 2026-10-18, when the user
+  asked for them; the *Plugins* section below is the rule for them.
 
 ## Milestones
 
@@ -1370,9 +1371,157 @@ preview, places it, opens the first chapter, presses `r`, and logs the
 tree and each file's first lines; screenshots read; the user's own book
 tried when they provide one.
 
+## Plugins
+
+The user: "I think we're at a point where adding plugins could be
+reasonable … built in dictionary lookup that can also add words I don't
+know to a vocab deck … or Obsidian web clipper support. I want to model
+off of Obsidian's own plugin ecosystem / support." So: Obsidian's shape
+wherever the concept exists in ilmi, so a plugin author who knows one
+knows the other; ilmi's own seams where it does not (the selection cue,
+decks, the loops). Plugins are off until the user turns one on, run with
+the app's access to the vault and the network and nothing else (the fs
+scope is the vault; there is no Node), and a plugin's error never takes
+the app down. The API is small and versioned; everything a plugin can do,
+the app does through the same functions.
+
+Layout, as Obsidian's: `<vault>/.ilmi/plugins/<id>/manifest.json`
+(`id`, `name`, `version`, `minAppVersion`, `description`, `author`),
+`main.js` (one CommonJS bundle whose `module.exports` is a class extending
+`Plugin`; `require('ilmi')` is the API), optional `styles.css`, `data.json`
+for its settings; `<vault>/.ilmi/plugins.json` is the list of enabled ids.
+`.ilmi/` is not a document and never appears in the tree. Sample plugins
+live in the repo under `plugins/<id>/` as plain ES modules plus a tiny
+build (`npm run plugins`) so they can be tested with vitest and copied
+into a vault; `PLUGINS.md` at the repo root documents the API.
+
+### [ ] 20. Plugin runtime — the loader, the enable list, the `ilmi` module, a settings section
+- Loader (`src/plugins/`): read `plugins.json`, for each enabled id read
+  `manifest.json` and `main.js` through the vault's fs, run the bundle
+  with a `require` that serves `'ilmi'` only (CSP is null in
+  `tauri.conf.json`, so `new Function` is available; say so in the notes
+  if it changes), instantiate, call `onload`; `onunload` and the removal
+  of everything it registered when it is turned off, the vault closes, or
+  its files change on disk (hot reload, with a notice). A throw anywhere
+  in a plugin is caught, logged, shown as a notice naming the plugin, and
+  disables that plugin for the session.
+- The `ilmi` module, v1 (`src/plugins/api.ts`, typed, the types published
+  as `plugins/ilmi.d.ts` for authors): `Plugin` (`app`, `manifest`,
+  `onload`, `onunload`, `addCommand({ id, name, hotkeys?, callback })` →
+  the palette and the key map, `registerSelectionAction({ id, name, key?,
+  when?, run(sel) })` → a verb on the selection cue after `extract` and
+  `card`, with `sel` = `{ text, path, block, rect }`,
+  `registerMarkdownPostProcessor(fn(el, ctx))` → runs over each rendered
+  block in the reader and the faces, `registerEvent`, `registerInterval`,
+  `addSettingTab(tab)`, `loadData` / `saveData`); `app.vault` (`read`,
+  `modify`, `create`, `delete`, `rename`, `getFiles`, `on('create' |
+  'modify' | 'delete' | 'rename')`, and ilmi's own `addCard(deckPath,
+  text, opts?)`, which appends a card paragraph to a deck, creating the
+  deck when missing, through the format module so the file stays valid);
+  `app.workspace` (`getActiveFile`, `openFile`, `getSelection`,
+  `on('file-open' | 'selection')`); `Notice(text)` → the app's notices;
+  `Popover(anchorRect, el)` and `Modal` → one quiet surface each, styled
+  as the palette; `Setting(containerEl)` with `setName`, `setDesc`,
+  `addText`, `addToggle`, `addDropdown`; `requestUrl({ url, method?,
+  headers?, body? })` through the http plugin, no CORS; `format` (parse,
+  serialize, cardForm) re-exported. `apiVersion` is exported and
+  `minAppVersion` is checked.
+- Tweaks grows a `plugins` section (the one new section this allows):
+  each plugin found under `.ilmi/plugins/` as a row with its name,
+  version, author, a toggle, and `settings` when it added a tab; the tab
+  renders inline under the row. A line under the heading: `a plugin runs
+  with the app's access to this vault and the network`.
+- Sample: `plugins/hello/` (a command `hello: say hi` → a notice, a
+  selection action `hello: count` → a notice with the word count, a
+  post-processor that lights `[hello]` in prose, one text setting). The
+  build (`esbuild`, dev dependency, `npm run plugins`) writes
+  `plugins/dist/<id>/{manifest.json,main.js}`; the corpus vault gets
+  `.ilmi/plugins/hello/` from it and `.ilmi/plugins.json` with `hello` on.
+
+Done when: `plugins.test.ts` loads the sample from the corpus with a fake
+fs and checks the command, the action, the post-processor, settings
+round-trip, `addCard` creating a deck that parses with no diagnostics,
+a throwing plugin disabled with a notice and the others untouched, and
+unload removing everything; the walk ignores `.ilmi/`; `ILMI_SMOKE=plugins`
+opens Tweaks, reads the row, turns hello off and on, runs the command from
+the palette, selects a passage and runs the action from the cue, finds the
+lit `[hello]`, edits the setting, touches `main.js` on disk and sees the
+reload notice; screenshots read; `PLUGINS.md` written.
+
+### [ ] 21. Dictionary — look a word up from the selection, add it to a vocab deck
+`plugins/dictionary/`, the first real plugin and the proof of the API:
+the user reads classical Arabic and wants a word looked up and, when
+unknown, added to a deck without leaving the page.
+- Selection action `look up` (key `d`): the selected word is normalized
+  (Arabic: the tashkeel U+064B–U+0652 and tatweel stripped; then the
+  word as is, then with one of the clitics `و` `ف` `ب` `ك` `ل` `ال` `لل`
+  `س` removed, tried in order until something comes back) and looked up
+  through Wiktionary's REST definitions endpoint
+  (`https://<lang>.wiktionary.org/api/rest_v1/page/definition/<word>`,
+  the entry for the setting's language section, English Wiktionary by
+  default, which covers Arabic well); the definitions, part of speech, and
+  the headword with its vowels when the entry has them are shown in a
+  `Popover` under the selection. No result: `nothing found for <word>`,
+  with the forms tried. Any dictionary with a URL template and a JSON
+  path can be set instead (settings: `dictionary url`, `language`, `deck`).
+- `add to deck` in the popover (key `a` while it is open): writes
+  `<headword> :: <first definition>` to the deck in settings (default
+  `vocab.md` at the vault root, created when missing) through
+  `app.vault.addCard`, with the sentence the word sat in as a second
+  line of the back when `context` is on; the card is then in the queue
+  as any new card. A notice names the deck.
+- Works wherever the selection cue works: a source, an EPUB chapter, the
+  PDF lens text layer, a card face.
+
+Done when: `dictionary.test.ts` covers the normalization and clitic
+order, the request URL, the response mapping on a saved Wiktionary
+response for an Arabic word and for an English one, the card text, and
+the deck created on first add; `ILMI_SMOKE=dictionary` turns the plugin
+on in the corpus, selects an Arabic word in a corpus source that gets one
+line of Arabic for this (a `mangled/`-free addition to an existing paper,
+noted in the corpus), runs `look up` against the live endpoint (the intake
+smoke already fetches; if offline, log that and stop), reads the popover,
+adds the word, and logs the deck file's lines and the queue count;
+screenshots read; API gaps found while writing it fixed in `src/plugins/`
+and noted.
+
+### [ ] 22. Clipper — `ilmi://` opens a door the web clipper can use
+Obsidian's clipper hands the browser's page to the app through the
+`obsidian://new` URI. ilmi takes the same grammar under its own scheme,
+so a bookmarklet or a fork of the clipper lands a page without leaving the
+browser. This is app-level, not a plugin: a plugin cannot register a URI
+scheme.
+- `tauri-plugin-deep-link` with `ilmi://` (and `tauri-plugin-single-
+  instance`, so a second launch hands the URI to the running window and
+  the window comes to front). `ilmi://new?name=&content=&folder=&url=` →
+  a frozen source: `content` as the text, else `url` fetched through the
+  intake's existing readability path, `name` as the title (else the
+  page's), in `folder` (else the Tweaks setting `clippings go to`, default
+  the vault root), then the document opened and a notice. `ilmi://open?
+  path=` opens a document. `vault=` is accepted and ignored when it names
+  the open vault, refused with a notice otherwise. A bad URI is a notice,
+  never a crash.
+- README: the bookmarklet (`javascript:location.href='ilmi://new?url='+
+  encodeURIComponent(location.href)+'&content='+encodeURIComponent(
+  getSelection().toString())`) and a plain statement that the Obsidian
+  Web Clipper targets `obsidian://` only, so pointing it here needs its
+  fork or its clipboard mode plus a paste on the intake.
+
+Done when: `clip.test.ts` parses each form (`new` with content, with url,
+with folder, `open`, a foreign `vault`, garbage) into the action or the
+refusal; the handler is a plain function the smoke can call with a URI,
+and `ILMI_SMOKE=clip` calls it with `new?content=…`, `new?url=` (the
+intake's sample address path, if the fetch is mocked there, else a real
+page), and `open?path=`, logging the file written and the tab; in the
+window run also `open 'ilmi://new?name=t&content=hi'` from the shell: on
+macOS a dev binary may not own the scheme, so if nothing arrives, say so
+and record that the built app (`npm run tauri build`) is where the OS
+handoff can be checked; screenshots read.
+
 ## Notes for the next session
 
-Milestones 0–18 are ticked; 19 under *Books* is next. After it, what is
+Milestones 0–18 are ticked; 19 under *Books*, then 20–22 under *Plugins*,
+are next, in order (22 may run beside 20 on a branch). After them, what is
 left is a polish pass over the open items
 each milestone's notes record (10: no palette command or key for
 priority, no stepper; 11: no growth row before enrolment, the preview

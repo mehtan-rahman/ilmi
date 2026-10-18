@@ -1733,7 +1733,8 @@ cleaning). Dev: `ILMI_SMOKE=clip`, written on the branch and run after the merge
 having been doubled by Vite's one-time dependency reload; the OS
 handoff from the shell is refused for the dev binary (macOS registers
 the scheme from the bundle), so the built app is where it is checked;
-see BUILD-LOG 2026-10-18, milestone 22. `ilmi://new?name=&content=&folder=&url=` →
+see BUILD-LOG 2026-10-18, milestone 22.
+- `ilmi://new?name=&content=&folder=&url=` →
   a frozen source: `content` as the text, else `url` fetched through the
   intake's existing readability path, `name` as the title (else the
   page's), in `folder` (else the Tweaks setting `clippings go to`, default
@@ -1818,8 +1819,9 @@ tweaks line, a welcome line in *Keys*, the smoke mode. Tests: 368 (+14
 in `welcome.test.ts`: add, de-duplicate, cap, remove, clean, the name,
 the `opened` words, `GONE`, the four start decisions, the starter clean
 with one q&a card and three headings, the palette's `vaults` entries).
-Dev: `ILMI_SMOKE=welcome` (written, **not run**: the window and port 1420
-belonged to the other session) seeds the recents with `ILMI_VAULT` and
+Dev: `ILMI_SMOKE=welcome`, written on the branch and run after the merge
+(`f4e419f`): every step as intended in one run, the vault reopening
+itself after the reload; see BUILD-LOG 2026-10-18, milestone 23 seeds the recents with `ILMI_VAULT` and
 `/nowhere/gone-vault`, turns the toggle off, reads the rows and the
 dimmed one, j k, ⏎ on the top row, `close vault` from the palette,
 `newVaultIn` set through the store (the picker cannot be faked), a bad

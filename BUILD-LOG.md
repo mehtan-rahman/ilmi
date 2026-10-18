@@ -50,7 +50,8 @@ touches those by hand. New files, no conflict: `src/app/Welcome.tsx`,
   `vaults`. Tweaks: `reopen the last vault on start`. Title
   `<name> · ilmi`; `core:window:allow-set-title`.
 - README: the opening paragraph, the tweaks line, the welcome keys, the
-  smoke mode. Smoke: `ILMI_SMOKE=welcome`, written on the branch, not run.
+  smoke mode. Smoke: `ILMI_SMOKE=welcome`, written on the branch, run
+  after the merge (see *Window check* below).
 - Tests: 368 (+14), 21 files.
 
 ### Verified
@@ -61,6 +62,30 @@ touches those by hand. New files, no conflict: `src/app/Welcome.tsx`,
   session, and cargo was not run here. `ILMI_SMOKE=welcome` and the
   screenshots are owed; the capability change means the Rust side must
   be rebuilt first (`npm run tauri dev` does).
+
+### Window check (after the merge, `f4e419f`)
+
+One run, clean, port 1420 free after; the Rust side rebuilt by `tauri
+dev` for the title capability. As logged: the welcome with the mark
+`ilmi`, the README's line, `open vault` / `new vault`, the foot `↵ open ·
+j k move · o open vault · n new vault`; rows `welcome-vault · opened
+today` and `gone-vault · not where it was` dimmed; `j` moving the mark
+and showing `forget`; ⏎ opening the vault, title `welcome-vault · ilmi`,
+the recents stored; the palette's `close vault` → the welcome again;
+`new vault` naming in the scratch directory, a bad name refused on the
+welcome, then `welcome-smoke-191906` made with `start here.md` (frozen,
+imported, enrolled for reading, eight blocks, one card, 0 diagnostics,
+queue `read, card`), opened on its first tab; the palette's `vaults`
+row switching back; the Tweaks row `reopen the last vault on start`
+turned on and stored; `location.reload()`; after the reload the vault
+opened itself with no welcome shown. Six captures taken, two read in
+full: the welcome panel centred, palette-styled, with the mark and line,
+the two buttons, the two rows (the gone one dimmed with `NOT WHERE IT
+WAS`), and the keys foot; the new vault open on `start here` with the
+window title `welcome-smoke-191906 · ilmi`, the three headings, the q&a
+card, and `1 card · 1 due` in the tree. One thing seen for milestone 25:
+the starter's `` `e` `` and `` `m` `` show their backticks, since inline
+code is not yet rendered.
 
 ### Not done / open
 
@@ -95,22 +120,19 @@ touches those by hand. New files, no conflict: `src/app/Welcome.tsx`,
 
 ```
 Read PLAN.md, FORMAT.md, BUILD-LOG.md, and spec/hashiyah/HANDOFF.md.
-Milestones 0–19, 22, and 23 are ticked (13 dropped). 22 and 23 were
-done on branches; 23 (opening) is on `worktree-agent-a34f19b66a3b6da95`
-and its window check is owed: after the merge, rebuild the Rust side
-(the capability file gained `core:window:allow-set-title`), run
-`ILMI_VAULT=<scratch> ILMI_SMOKE=welcome npm run tauri dev`, read both
-halves of its log (the second after its own reload), take its shots,
-and record them under its entry here. The first unchecked milestone is
-20, "Plugin runtime", under "## Plugins" in PLAN.md, unless a branch
-holds it (`git worktree list`). Do only the first unchecked milestone
-no branch holds, stop at its "done when", tick it, write notes, add an
-entry here with a fresh handoff prompt, and commit. Tooling and
-verification are as the ground rules and the entries below describe;
-`export PATH=$HOME/.cargo/bin:/opt/homebrew/bin:$PATH` first. If port
-1420 is held by a run that is not yours, do not kill it: say so in your
-report and leave the window check owed. Suite 368 (21 files), `cargo
-test` 9, and typecheck must be green before a commit.
+Milestones 0–20, 22, and 23 are ticked (13 dropped; 22 and 23 were done
+on branches and merged, their window checks recorded under them). The
+first unchecked milestone is 21, "Dictionary", under "## Plugins" in
+PLAN.md; 24, "Clipping", may be running beside it on a branch (check
+`git worktree list`), and 25 follows 24. Do only the first unchecked
+milestone no branch holds, stop at its "done when", tick it, write
+notes, add an entry here with a fresh handoff prompt, and commit.
+Tooling and verification are as the ground rules and the entries below
+describe; `export PATH=$HOME/.cargo/bin:/opt/homebrew/bin:$PATH` first.
+If port 1420 is held by a run that is not yours, do not kill it: say so
+in your report and leave the window check owed. Suite 399 (22 files),
+`cargo test` 12, and typecheck must be green before a commit. The user's
+own `.epub` and `.apkg` are still untried.
 ```
 
 ---

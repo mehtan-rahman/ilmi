@@ -8,7 +8,7 @@ was verified, what was not, and the prompt to resume with.
 
 ## 2026-10-18 — milestone 17: cards from Anki, a dropped `.apkg` lands as deck files with their progress
 
-Commit `TBD17` — *anki: a dropped .apkg read on the Rust side, each deck
+Commit `cec823b` — *anki: a dropped .apkg read on the Rust side, each deck
 landing as a deck file with its review cards' progress seeded*.
 
 ### Done

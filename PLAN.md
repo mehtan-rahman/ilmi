@@ -1063,7 +1063,7 @@ pastes a `Q:`/`A:` list and a tab list, reads the row's choice, flips a
 delimiter, places both, and logs each file's lines; screenshots read.
 
 ### [x] 17. Cards from Anki — drop an `.apkg`, each deck lands as a deck file with its progress
-Done 2026-10-18, commit `TBD17`.
+Done 2026-10-18, commit `cec823b`.
 Notes: `src-tauri/src/anki.rs` is the reader, `read_anki_package(path)`
 the command (registered in `lib.rs` beside `read_dropped_bytes`; the path
 is read as a drop, nothing added to the fs scope). Crates: `zip` 9 with

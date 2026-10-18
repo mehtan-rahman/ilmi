@@ -293,7 +293,7 @@ export async function smokeIntake(vault: Vault): Promise<void> {
     openIntake('papers');
     const ta = await until(() => q<HTMLTextAreaElement>('.intake textarea'));
     log(`open: tab "${q('.tabbar .tab[data-active="1"] .title')?.textContent}"; h1 "${q('.intake h1')?.textContent}"; hint "${q('.intake .paste-hint')?.textContent}"; focused ${document.activeElement === ta}`);
-    q<HTMLButtonElement>('.intake .paste-hint .link')!.click();
+    Array.from(document.querySelectorAll<HTMLButtonElement>('.intake .paste-hint .link')).find((b) => b.textContent?.includes('sample'))!.click();
     const detail = await until(() => q('.intake-detail'));
     const active = detail.querySelector('.folder-pick button[data-active="1"]')?.textContent;
     log(`sample: stats "${detail.querySelector('.stats')?.textContent}"; title "${q<HTMLInputElement>('.intake .field input')?.value}"; folders ${Array.from(detail.querySelectorAll('.folder-pick button')).map((b) => b.textContent).join(', ')}; chosen ${active}; buttons ${Array.from(detail.querySelectorAll('.place')).map((b) => b.textContent).join(' | ')}`);
@@ -392,7 +392,7 @@ export async function smokeLoop(vault: Vault): Promise<void> {
     // import
     openIntake('papers');
     await until(() => q<HTMLTextAreaElement>('.intake textarea'));
-    q<HTMLButtonElement>('.intake .paste-hint .link')!.click();
+    Array.from(document.querySelectorAll<HTMLButtonElement>('.intake .paste-hint .link')).find((b) => b.textContent?.includes('sample'))!.click();
     await until(() => q('.intake-detail'));
     q<HTMLButtonElement>('.intake .place.primary')!.click();
     const path = await until(() => vault.documents().find((d) => d.startsWith('papers/Spaced repetition')));
@@ -714,7 +714,8 @@ export async function smokeDeck(vault: Vault): Promise<void> {
 export async function smokeShots(vault: Vault): Promise<void> {
   const log = (s: string) => info(`smoke shots: ${s}`);
   const q = <T extends Element>(sel: string) => document.querySelector<T>(sel);
-  const shot = async (name: string, ms = 1800) => { await sleep(600); log(`shot: ${name}`); await sleep(ms); };
+  // the log line reaches the terminal about 5 s late; the pause gives the capture its screen
+  const shot = async (name: string, ms = 10000) => { await sleep(600); log(`shot: ${name}`); await sleep(ms); };
   try {
     setInspector({ open: true });
     openNode(queueId('today'));
@@ -741,7 +742,8 @@ export async function smokeShots(vault: Vault): Promise<void> {
     await shot('deck');
     openIntake('papers');
     await until(() => q('.intake'));
-    q<HTMLButtonElement>('.intake .paste-hint .link')!.click();
+    // the hint's first link now picks a file (a native dialog); the sample is the one named so
+    Array.from(document.querySelectorAll<HTMLButtonElement>('.intake .paste-hint .link')).find((b) => b.textContent?.includes('sample'))!.click();
     await until(() => q('.intake-detail'));
     await shot('intake');
     openNode(queueId('today'));

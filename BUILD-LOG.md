@@ -10,7 +10,7 @@ was verified, what was not, and the prompt to resume with.
 
 Done on the branch `worktree-agent-a34f19b66a3b6da95` (worktree
 `.claude/worktrees/agent-a34f19b66a3b6da95`) while milestone 20 ran on
-main; commit `PENDING23` — *opening: a welcome with the vaults opened
+main; commit `f52d36e` — *opening: a welcome with the vaults opened
 before, the newest reopened on start, a new vault with a starter, vault
 commands in the palette*. The sessions are likely to share `PLAN.md`,
 `BUILD-LOG.md`, `README.md`, `src/app/smoke.ts` (the header comment, the

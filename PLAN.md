@@ -1687,7 +1687,7 @@ open to last vault opened whenever the app starts".
 ### [x] 23. Opening — a welcome that remembers, the last vault reopened on start
 Done 2026-10-18 on the branch `worktree-agent-a34f19b66a3b6da95` (worktree
 `.claude/worktrees/agent-a34f19b66a3b6da95`), beside milestone 20 on main;
-commit `PENDING23`.
+commit `f52d36e`.
 Notes: `src/app/recents.ts` is the pure side: `Recent { path, name,
 opened }` (`opened` an ISO instant), `RECENTS_MAX` 8, `addRecent(list,
 path, now)` (to the top, one per path, the oldest beyond eight dropped),

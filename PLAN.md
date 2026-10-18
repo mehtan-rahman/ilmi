@@ -1309,10 +1309,71 @@ revealed (the answer text present), and with the other group as context;
 shoots hidden and revealed) is written but NOT run by you: the window and
 port 1420 belong to the other session right now. Say so in the notes.
 
+## Books
+
+A PDF is read in its own layout (15); a book in EPUB is reflowable text,
+so it wants the ordinary reader, not a lens. The user asked for "EPUB
+incremental reading"; the cheap and right path is import: the book's
+chapters land as sources in a folder named for the book, in reading order,
+and the three loops run over them as over any source. Nothing in the
+format changes.
+
+### [ ] 19. EPUB — drop a book, its chapters land as sources in reading order
+An `.epub` is a zip: `META-INF/container.xml` names the OPF package file,
+whose `<manifest>` lists the files and whose `<spine>` gives the reading
+order of XHTML items; chapter titles come from the navigation document
+(`nav.xhtml`, the `<nav epub:type="toc">`) in EPUB 3 or `toc.ncx` in
+EPUB 2, `<dc:title>` / `<dc:creator>` from the OPF metadata. The Rust side
+reads it, as 17 reads a package: `read_epub(path)` in
+`src-tauri/src/epub.rs` (the `zip` crate already present) returns JSON:
+title, creators, language, and the spine items in order, each with its
+href, its XHTML as a string, and the toc title that points at it (or at
+an anchor inside it) when one does. Images are listed by href, not
+extracted.
+
+`src/import/epub.ts` maps that to vault files:
+
+- One folder named for the book (the intake's title field, defaulting to
+  `<dc:title>`), under the chosen folder; one source per spine item,
+  `NN title.md` with `NN` the two-digit position so the tree reads in
+  order, the title from the toc, else the item's first heading, else
+  `chapter NN`. Each is `type: source`, `imported: <today>`, `title:`,
+  and its XHTML reduced to Markdown by the existing HTML path in
+  `src/import/` (headings, paragraphs, emphasis, lists, block quotes
+  kept; the chapter's own `<h1>` dropped when it equals the title; links
+  reduced to their text, footnote back-references dropped). Use the
+  direct HTML-to-Markdown reduction, not the readability pass meant for
+  web pages, so nothing in a chapter is judged boilerplate.
+- Spine items with fewer than 30 words after reduction (cover, title
+  page, copyright) are skipped and counted; a nav document in the spine
+  is skipped. Images are dropped and counted, with a `[figure]` marker
+  where one stood when it had `alt` text (`[figure: <alt>]`), nothing
+  otherwise.
+- The intake takes `.epub` from the picker and a drop (as `.apkg` in 17):
+  the preview shows the title and author, `N chapters · M words · ~H h`
+  on the reading-time line the intake already draws, and the dropped
+  counts; `place & open` writes the folder and opens the first chapter.
+  Chapters are not enrolled in reading; `r` on one starts it, as on any
+  source.
+
+Done when: a `cargo test` in `epub.rs` builds a three-chapter EPUB 3 in a
+temp dir (OPF, nav with two of the three titled, a cover item of five
+words, one image reference with `alt`) and reads it back, and writes it
+to `src/import/__tests__/epub/three-chapters.epub` plus `.json` when
+`ILMI_EPUB_FIXTURE` is set (`npm run fixture:epub`, as `fixture:anki`);
+`epub.test.ts` maps the fixture's JSON to files that parse with no
+diagnostics, checked line for line, with the cover skipped, the untitled
+chapter named from its heading, the figure marker in place, and the
+folder's names in order; an EPUB 2 package with `toc.ncx` is covered by
+a second small Rust case; `ILMI_SMOKE=epub` drops the fixture, reads the
+preview, places it, opens the first chapter, presses `r`, and logs the
+tree and each file's first lines; screenshots read; the user's own book
+tried when they provide one.
+
 ## Notes for the next session
 
-Milestones 0–18 are ticked; nothing is unchecked. What is left is a
-polish pass over the open items
+Milestones 0–18 are ticked; 19 under *Books* is next. After it, what is
+left is a polish pass over the open items
 each milestone's notes record (10: no palette command or key for
 priority, no stepper; 11: no growth row before enrolment, the preview
 ignores lateness; 12: the sidebar and inspector counts are the whole day

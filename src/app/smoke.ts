@@ -37,6 +37,9 @@
 // pair, opens it as pages, selects on the text layer and presses `e` and
 // `m`, searches, goes to a page, reads the text instead, reads on from the
 // session, and reopens it to find the extract drawn as a highlight.
+// `ILMI_SMOKE=cards-text` pastes a `Q:`/`A:` list and a tab list on the
+// intake, reads the delimiter row's choice, flips a delimiter, places both
+// as decks, and logs each file's lines; then pastes prose to see no row.
 
 import { info } from '@tauri-apps/plugin-log';
 import { queue } from '../schedule/index.js';
@@ -1221,6 +1224,86 @@ export async function smokeFaces(vault: Vault): Promise<void> {
     await shot('eink');
     useApp.getState().setTheme('light');
     log(`done; vault ${vault.root}`);
+  } catch (e) {
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+export async function smokeCardsText(vault: Vault): Promise<void> {
+  const log = (s: string) => info(`smoke cards-text: ${s}`);
+  const shot = async (name: string, ms = 10000) => { await sleep(600); log(`shot: ${name}`); await sleep(ms); };
+  const q = <T extends Element>(sel: string) => document.querySelector<T>(sel);
+  const qa = (sel: string) => Array.from(document.querySelectorAll<HTMLElement>(sel));
+  /** Type `text` into a React-controlled field: the native setter, then an input event. */
+  const type = (el: HTMLTextAreaElement | HTMLInputElement, text: string) => {
+    const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+    Object.getOwnPropertyDescriptor(proto, 'value')!.set!.call(el, text);
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  };
+  const choice = () => qa('.delim-row .field').map((f) => `${f.querySelector('.flbl')?.textContent}: ${f.querySelector('.delim-note')?.textContent ?? Array.from(f.querySelectorAll('button[data-active="1"]')).map((b) => b.textContent).join(' ')}`).join('; ');
+  const preview = () => qa('.cards-preview .card-span').map((r) => r.textContent).join(' | ');
+  const count = () => q('.cards-preview + .stats, .delim-row ~ .stats')?.textContent ?? '';
+  const fileLines = async (path: string) => { const l = await vault.read(path, true); return `${l.text.split('\n').join(' / ')}; blocks ${l.doc.blocks.map((b) => b.kind).join(',')}; diagnostics ${l.diagnostics.length}`; };
+  const QA = 'Q: what is the capital of France?\nA: Paris\n\nQ: and of Spain?\nA: Madrid\n\nQuestion: what does FSRS stand for\nAnswer: free spaced repetition scheduler';
+  const TAB = 'der Vorsatz\tresolution, intention\ndie Gelassenheit\tcomposure, serenity\nder Zufall\tchance, coincidence\ndie Sehnsucht\tlonging';
+  try {
+    setInspector({ open: true });
+    openIntake('');
+    const ta = await until(() => q<HTMLTextAreaElement>('.intake textarea'));
+    type(ta, QA);
+    await until(() => q('.delim-row'));
+    await sleep(300);
+    log(`qa pasted: h1 "${q('.intake h1')?.textContent}"; row ${choice()}; preview ${preview()}; count "${count()}"; title "${q<HTMLInputElement>('.intake .field input:not(.custom)')?.value}"`);
+    await shot('cards-qa');
+    // flip the delimiter between cards to newline: the same three cards
+    const newline = qa('.delim-pick button').find((b) => b.textContent === 'newline');
+    newline!.click();
+    await sleep(200);
+    log(`flipped to newline: row ${choice()}; count "${count()}"`);
+    // a wrong one: tab finds nothing, and the place buttons go quiet
+    qa('.delim-pick button').find((b) => b.textContent === 'tab')!.click();
+    await sleep(200);
+    log(`flipped to tab: count "${count()}"; place disabled ${q<HTMLButtonElement>('.intake .place.primary')?.disabled}`);
+    qa('.delim-pick button').find((b) => b.textContent === 'Q: A:')!.click();
+    qa('.delim-pick button').find((b) => b.textContent === 'both directions')!.click();
+    await sleep(200);
+    log(`both directions: preview ${preview()}`);
+    await shot('cards-qa-both');
+    q<HTMLButtonElement>('.intake .place.primary')!.click();
+    const deck1 = await until(() => vault.documents().find((d) => /^cards( \d+)?\.md$/.test(d)));
+    await sleep(500);
+    log(`placed ${deck1}: ${await fileLines(deck1)}`);
+    await until(() => q('.deck-view'));
+    await sleep(300);
+    log(`deck lens: h1 "${q('.deck-view h1')?.textContent}"; meta "${q('.deck-view .meta')?.textContent}"; rows ${qa('.deck-view .card-span').length}; inspector "${q('.insp .kv')?.textContent?.slice(0, 80)}"`);
+    await shot('cards-deck');
+
+    // the tab list, with a name
+    openIntake('');
+    const ta2 = await until(() => q<HTMLTextAreaElement>('.intake textarea'));
+    type(ta2, TAB);
+    await until(() => q('.delim-row'));
+    await sleep(300);
+    log(`tab pasted: row ${choice()}; preview ${preview()}; count "${count()}"`);
+    type(q<HTMLInputElement>('.intake .field input:not(.custom)')!, 'german nouns');
+    await sleep(200);
+    await shot('cards-tab');
+    qa('.intake .place').find((b) => b.textContent?.startsWith('place & leave'))!.click();
+    const deck2 = await until(() => vault.documents().find((d) => d.startsWith('german nouns')));
+    await sleep(500);
+    log(`placed ${deck2}: ${await fileLines(deck2)}; intake cleared ${!q<HTMLTextAreaElement>('.intake textarea')?.value}`);
+
+    // prose: no row, the intake as before
+    const { INTAKE_SAMPLE } = await import('./Intake.js');
+    type(q<HTMLTextAreaElement>('.intake textarea')!, INTAKE_SAMPLE);
+    await until(() => q('.intake-detail'));
+    await sleep(300);
+    log(`prose pasted: row ${q('.delim-row') ? 'shown' : 'none'}; stats "${q('.intake .stats')?.textContent}"; h1 "${q('.intake h1')?.textContent}"`);
+    q<HTMLButtonElement>('.intake .stats .link')!.click();
+    await sleep(300);
+    log(`as cards: row ${choice()}; count "${count()}"; place disabled ${q<HTMLButtonElement>('.intake .place.primary')?.disabled}`);
+    await shot('cards-prose');
+    log('done');
   } catch (e) {
     log(`failed: ${e instanceof Error ? e.message : String(e)}`);
   }

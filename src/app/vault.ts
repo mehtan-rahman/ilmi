@@ -8,7 +8,7 @@ import { open as pickDirectory } from '@tauri-apps/plugin-dialog';
 import { info } from '@tauri-apps/plugin-log';
 import { meta, setField, type Doc, type NodeType } from '../format/index.js';
 import { dayOf, docItems, isDue, postponeOverflow, sortQueue, type QueueItem } from '../schedule/index.js';
-import { Vault, childDirOf, dirOf, isDoc, rekey, type ExtractSpec, type ImportPdfSpec, type ImportSpec, type TreeNode, type VaultEvent, type VaultState } from '../vault/index.js';
+import { Vault, childDirOf, dirOf, isDoc, rekey, type ExtractSpec, type ImportDeckSpec, type ImportPdfSpec, type ImportSpec, type TreeNode, type VaultEvent, type VaultState } from '../vault/index.js';
 import { tauriFs } from '../vault/tauri-fs.js';
 import { cleanBudget, dueToday, sessionItems } from './items.js';
 import { INTAKE, SESSION, queueId, queueScope } from './names.js';
@@ -217,8 +217,8 @@ export function openInitialVault(): Promise<void> {
     const vault = await openVault(path);
     const mode = await invoke<string | null>('dev_env', { name: 'ILMI_SMOKE' });
     if (mode) {
-      const { smoke, smokeReader, smokeCards, smokeIntake, smokeQueue, smokeLoop, smokeShots, smokeDeck, smokePri, smokeGrowth, smokeOverload, smokePdf, smokeFaces } = await import('./smoke.js');
-      const run = { reader: smokeReader, cards: smokeCards, intake: smokeIntake, queue: smokeQueue, loop: smokeLoop, shots: smokeShots, deck: smokeDeck, pri: smokePri, growth: smokeGrowth, overload: smokeOverload, pdf: smokePdf, faces: smokeFaces }[mode] ?? smoke;
+      const { smoke, smokeReader, smokeCards, smokeIntake, smokeQueue, smokeLoop, smokeShots, smokeDeck, smokePri, smokeGrowth, smokeOverload, smokePdf, smokeFaces, smokeCardsText } = await import('./smoke.js');
+      const run = { reader: smokeReader, cards: smokeCards, intake: smokeIntake, queue: smokeQueue, loop: smokeLoop, shots: smokeShots, deck: smokeDeck, pri: smokePri, growth: smokeGrowth, overload: smokeOverload, pdf: smokePdf, faces: smokeFaces, 'cards-text': smokeCardsText }[mode] ?? smoke;
       await run(vault);
     }
   })();
@@ -384,6 +384,13 @@ export async function importNode(dir: string, spec: ImportSpec): Promise<string>
 /** A frozen source with pages: the PDF copied beside its Markdown in `dir`; the folder opens. Resolves to the document's path. */
 export async function importPdfNode(dir: string, spec: ImportPdfSpec): Promise<string> {
   const path = await need().importPdf(dir, spec);
+  if (dir !== '' || !useApp.getState().open['']) toggleOpen(dir, true);
+  return path;
+}
+
+/** A deck from imported cards in `dir`; the folder opens so the new row is visible. Resolves to its path. */
+export async function importDeckNode(dir: string, spec: ImportDeckSpec): Promise<string> {
+  const path = await need().importDeck(dir, spec);
   if (dir !== '' || !useApp.getState().open['']) toggleOpen(dir, true);
   return path;
 }

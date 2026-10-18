@@ -941,7 +941,83 @@ with a corpus file and a test, ask before a screen or a setting not listed
 here. The user asked for both of these, so the intake growing a cards mode
 and taking `.apkg` is in scope; a new screen is not.
 
-### [ ] 16. Cards from text — paste or drop a list, choose the delimiters, land a deck
+### [x] 16. Cards from text — paste or drop a list, choose the delimiters, land a deck
+Done 2026-10-18, commit `PENDING`.
+Notes: `src/import/cards.ts` is the pure side, exported through
+`src/import/index.ts`. Delimiters: `SideDelim` is `'prefix' | 'tab' |
+'colons' | 'dash' | 'comma' | { custom }` (detection order, `SIDE_KINDS`,
+labels `SIDE_LABEL`: `Q: A:`, `tab`, `::`, `–`, `,`), `CardDelim` is
+`'blank' | 'newline' | 'semicolon' | { custom }` (`CARD_KINDS`,
+`CARD_LABEL`); `Delims = { side, card }`. `chunksOf(text, card)` splits
+into cards (blank: `\n(?:[ \t]*\n)+`; trailing whitespace per line and
+outer newlines trimmed, blank chunks dropped); `splitCards(text, delims)`
+returns `Split { found: Found[], leftovers, dropped, anki }` where `Found`
+is a `pair` (front, back) or a `cloze` (the first cell written whole,
+filled cells beside it counted under `dropped.extra`); more than two cells
+→ the rest joined ` / `, empty cells dropped first. The prefix pair is
+line-driven (`splitPrefix`): a card runs from a `Q:` / `Question:` line to
+the next, `A:` / `Answer:` opens the back, continuation lines join their
+side with a space, a blank line ends a card except under `newline`, `;`
+is a line break under `semicolon`; a Q without an A is a leftover
+verbatim. `::` and the dash need whitespace on both sides and a non-space
+beyond (` ::: ` is not ` :: `); the dash takes `-` `–` `—`. The weak
+delimiters, comma and dash, are guarded by `plausible`: a front over 80
+characters, holding `. ` / `! ` / `? `, a tab, ` :: `, or a `Q:` / `A:`
+prefix is prose, so the intake sample and a `Q:`/`A:` list with commas
+find no comma cards. `detect(text)` → `Detected { delims, cards, anki }`:
+every side × card pair, most cards, then fewest `leftoverLines`, then
+order; a text without a blank line tries `newline` before `blank` so a
+tie names the delimiter that is there. An Anki text export
+(`ankiHeader`: leading `#key:value` lines with `#separator:` or `#html:`
+present; `tab` `comma` `semicolon` `space` `pipe` `colon` or a literal;
+`#guid/notetype/deck/tags column:N` → `skip`) is read by `records` (a
+CSV reader for Anki's `"…"` quoting, `""` inside, newlines kept) with the
+skipped columns out and each cell through `reduceCell(cell, html,
+dropped)`: `[sound:…]` and `<img>` out and counted, `{{c1::x::hint}}` →
+`{{c1::x}}` counted, HTML through `textOf` (the intake's walker) when the
+header says `html:true`, lines trimmed and blank ones dropped, space runs
+collapsed; whatever the row says, an Anki text is split by its header, and
+the row shows `from an anki export, fields split by tab` with only the
+direction toggle live. Writing: `cardText(front, back, both)` → `front ::
+back` / `front ::: back`, or the `?` / `??` form when a side has a line
+break, and the `?` form is also the fallback when the inline form would
+not read back as the same card (a front holding ` :: `); `null` when
+neither form does (a side holding a blank), and `toCards(split, both)`
+makes that pair a leftover. `deckDoc(cards, leftovers)` builds the body
+as text and parses it, `type: deck` set, leftovers as paragraphs under
+`## not cards`; a leftover that begins with `#` or `- ` reads as what it
+is (a heading, a list) — plain paragraphs by intent, not enforced.
+`droppedLabel` → `1 hint, 2 sounds dropped`. Vault:
+`Vault.importDeck(dir, { title, doc, today })` (`ImportDeckSpec`) names
+the file after the title through `fileName` + `freeName`, sets
+`imported` and `title` when it differs, as `importDoc`; `importDeckNode`
+in `src/app/vault.ts`. Intake: `detect` runs over the text (`useMemo`),
+`cardsMode = asCards ?? detected.cards >= 2`; the delimiter row (`sides`
+/ `cards` / `write`; `.delim-pick` buttons styled as the inspector's
+`default-card` row, a `custom` input per row that sets `{ custom }` and
+reverts to the detected one when emptied; `one direction` / `both
+directions`), the preview (`.cards-preview`, the first three cards as
+`.card-span` rows through `CardText`, moved to `src/app/CardText.tsx`
+from `Lenses.tsx`), the count line (`N cards · M lines not cards · K …
+dropped`) with `as a source →` at its end, and in the ordinary stats row
+`as cards →` to summon the row when detection found fewer than two; the
+h1 reads `Add a deck`; the title defaults to `cards`; `place` calls
+`importDeckNode` and opens the deck lens. `.csv` / `.tsv` join
+`TEXT_EXT` and the picker. Smoke: `ILMI_SMOKE=cards-text`. Tests: 299
+(+23 in `cards.test.ts`: each delimiter, chunking, three cells, the
+prefix pair over blank- and newline-separated input and continuation
+lines, detection on both lists, a Quizlet tab export, the tie rule, prose,
+the comma/dash guard, the Anki header, quoted records, the Anki export
+with HTML and dropped things and its written forms, `reduceCell`, cloze
+cells, the writer and its refusals, the deck with `## not cards` checked
+through `parse` and `cardForm`, and `importDeck` into a scratch vault).
+Open: the Anki row's delimiters cannot be overridden (the header is
+trusted); `#columns:` field names are read past, not used; a leftover
+holding ` :: ` in prefix mode writes as a card under `## not cards`;
+`extra` fields beside a cloze are dropped, Anki's "Back Extra" among them;
+no undo of `as a source →` once placed (the text is a source then);
+detection runs 15 splits on every keystroke, fine for a paste, untested
+on a very long text; the preview shows cards only, not the leftovers.
 The intake reads pasted or dropped text as cards when it can: a
 `src/import/cards.ts` module splits text by two delimiters, *between
 front and back* and *between cards*, and the intake shows a delimiter row
@@ -1041,15 +1117,16 @@ when they provide one.
 
 ## Notes for the next session
 
-Milestones 0–15 are ticked; 16 and 17 under *Importing cards* are next,
-in order. After them, what is left is a polish pass over the open items
+Milestones 0–16 are ticked; 17 under *Importing cards* is next. After it,
+what is left is a polish pass over the open items
 each milestone's notes record (10: no palette command or key for
 priority, no stepper; 11: no growth row before enrolment, the preview
 ignores lateness; 12: the sidebar and inspector counts are the whole day
 while the strip folds, no key for `postpone the rest`; 13: a due-day field
 on the draft's inspector; 14: the user's real collection, with their
 say-so; 15: the list under it; the session card's faces are not editable
-in place) and, with the user, whether the next thing is that pass, the
+in place; 16: the Anki row is fixed to its header, leftovers may read as
+headings or lists) and, with the user, whether the next thing is that pass, the
 margin-gloss text flow the ground rules keep out of the plan, or
 something new. The handoff prompt at the top of `BUILD-LOG.md` lists the
 items.

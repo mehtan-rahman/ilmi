@@ -6,6 +6,145 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-10-18 — milestone 16: cards from text, a list pasted on the intake lands as a deck
+
+Commit `PENDING` — *cards: a pasted or dropped list split by two
+delimiters lands as a deck, an Anki text export read by its header*.
+
+### Done
+
+- `src/import/cards.ts`, exported through `src/import/index.ts`: the two
+  delimiters (`SideDelim`: the `Q:`/`A:` prefix pair, a tab, ` :: `, a
+  dash, a comma, or a custom string; `CardDelim`: a blank line, a newline,
+  a semicolon, or a custom string), `chunksOf`, `splitCards` → `Split`
+  (`Found` pairs and clozes, leftovers verbatim, `Dropped` counts, the Anki
+  header when there is one), `detect` (every pair, most cards, fewest
+  leftover lines, then order; a text without blank lines tries `newline`
+  first), `ankiHeader` / `records` / `reduceCell` for Anki's export (the
+  separator from the header, the guid / notetype / deck / tags columns out,
+  quoted cells read, HTML through the intake's `textOf`, `[sound:…]`,
+  `<img>`, and cloze hints dropped and counted), `cardText` (`::` / `:::`,
+  the `?` / `??` form for a line break or when the inline form would not
+  read back as itself), `toCards`, `deckDoc` (built as text, parsed,
+  `type: deck`, leftovers under `## not cards`), `droppedLabel`. A guard
+  keeps commas and dashes in sentences from reading as cards (a front over
+  80 characters, with sentence punctuation, a tab, ` :: `, or a `Q:`
+  prefix is prose).
+- `Vault.importDeck(dir, { title, doc, today })` and `importDeckNode`:
+  named after the title through `fileName` / `freeName`, `imported` set,
+  `title` written when it differs, as `importDoc`.
+- The intake: `detect` over the text; at two cards or more the h1 reads
+  `Add a deck`, the stats row gives way to the delimiter row (`sides` /
+  `cards` / `write`, small mono buttons as the inspector's `default-card`
+  row, a `custom` field per row, `one direction` / `both directions`), the
+  first three cards as `.card-span` rows through `CardText` (now
+  `src/app/CardText.tsx`, shared with the deck lens), the count line
+  (`N cards · M lines not cards · … dropped`) with `as a source →`; the
+  ordinary stats row carries `as cards →` to summon the row when detection
+  found fewer. An Anki export shows `from an anki export, fields split by
+  tab` in place of the two delimiter rows. The title defaults to `cards`;
+  `place & open` opens the deck lens. `.csv` / `.tsv` join the text
+  extensions and the picker.
+- README: a paragraph on the cards mode. Smoke: `ILMI_SMOKE=cards-text`.
+- Tests: 299 (+23 in `src/import/__tests__/cards.test.ts`).
+
+### Verified
+
+- `npm run typecheck` clean, `npx vitest run` green (17 files, 299).
+- In the window (`ILMI_VAULT=<scratch copy> ILMI_SMOKE=cards-text npm run
+  tauri dev`, 11:46 local, one run, clean), as logged: the `Q:`/`A:` list
+  typed into the intake → h1 `Add a deck`, the row `sides: Q: A:; cards:
+  blank line; write: one direction`, the preview's three rows, the count
+  `3 cards`, the title `cards` → `newline` clicked: the same three cards →
+  `tab` clicked: `0 cards · 6 lines not cards`, `place & open` disabled →
+  back to `Q: A:`, `both directions`: the preview's rows with `⇄` →
+  `place & open` → `cards.md`: `type: deck`, `imported: 2026-10-18`, three
+  `:::` paragraphs, blocks `card,card,card`, 0 diagnostics → the deck lens:
+  h1 `cards`, meta `3 cards · 3 due`, three rows, the inspector's deck
+  block → the intake again, the tab list typed: the row `tab` / `newline`,
+  three `Q`/`A` preview rows, `4 cards`; the title typed `german nouns`,
+  `place & leave it` → `german nouns.md` with four `::` paragraphs, 0
+  diagnostics, the intake cleared → the sample prose typed: no row, stats
+  `136 words · 4 paragraphs · ~1 min` with `as cards →`, h1 `Add a source`
+  → `as cards →`: the row with `tab` / `newline`, `0 cards · 4 lines not
+  cards`, place disabled.
+- Five captures read: the intake with the `Q:`/`A:` list, the three rows
+  `SIDES Q: A: tab :: – , custom`, `CARDS blank line newline ; custom`,
+  `WRITE one direction both directions`, the chosen ones underlined, and
+  the preview's `Q` / `A` rows beneath; the same with `newline` and `both
+  directions` underlined, the preview's `⇄` rows, `3 cards` with `as a
+  source →` at the right, `TITLE cards`; the deck lens `cards` with its
+  three `⇄` rows, `3 cards · 3 due`, the inspector's `new cards CLOZE Q&A
+  BIDIR` and the three cards marked `NEW`, `cards 3 · 3 due` in the tree;
+  the tab list with `tab` and `newline` underlined and `Q der Vorsatz / A
+  resolution, intention` rows; the prose after `as cards →`: the row,
+  `0 cards · 4 lines not cards`, `as a source →`, the title and folder
+  rows, both place buttons greyed, `german nouns 4 · 4 due` in the tree.
+  One spacing fix after the captures (the count line sat tight under the
+  `write` row when there is no preview). Port 1420 free afterwards.
+
+### Not done / open
+
+- An Anki export's delimiters cannot be overridden; the header is trusted
+  and the row shows a line in place of the buttons. `#columns:` field
+  names are read past, not used.
+- Non-empty cells beside a cloze cell are dropped and counted as `extra
+  field`; Anki's "Back Extra" among them.
+- Leftovers are paragraphs by intent, not by force: one that begins with
+  `#` or `- ` reads back as a heading or a list, and one that holds ` :: `
+  under the prefix pair reads back as a card under `## not cards`.
+- Detection runs fifteen splits on every keystroke; fine for a paste,
+  untried on a very long text.
+- The preview shows the first three cards only, not the leftovers; the
+  count says how many.
+- `as a source →` is a say-so for the current text only; once placed, a
+  source is a source.
+
+### Decisions worth knowing
+
+- The weak delimiters (comma, dash) are guarded rather than ranked lower,
+  since the plan's rule is "most cards": without the guard the intake
+  sample's commas out-counted everything, and a `Q:`/`A:` list whose
+  lines hold commas out-counted the prefix pair.
+- The deck is built as text and parsed, not assembled from blocks, so what
+  the preview and the tests see is what the file reads back as.
+- `cardText` tries the `?` form before giving up: a front holding ` :: `
+  is a fine multi-line card, and only a side with a blank in it (which
+  the cloze rule would take) is refused and kept as a leftover.
+- The row sits where the stats row was, and the stats row returns with a
+  link to it, so the intake grows no section when the text is prose.
+
+### Handoff prompt
+
+Paste into a fresh session:
+
+```
+Read PLAN.md, FORMAT.md, BUILD-LOG.md, and spec/hashiyah/HANDOFF.md.
+Milestones 0–16 are ticked (16, cards from text, BUILD-LOG 2026-10-18).
+Do milestone 17 in PLAN.md (cards from Anki: a dropped .apkg, read on the
+Rust side with rusqlite, each deck landing as a deck file with its
+progress) and only that one. Reuse src/import/cards.ts: reduceCell for
+field HTML, hints, sounds, and images; cardText for `front :: back` /
+`:::` / the `?` forms; deckDoc and Vault.importDeck for the files. Follow
+src/import/supermemo/docs.ts (seedOf) for the seeded `sr` lines and the
+intake's .pdf path (src/app/Intake.tsx, fetch.ts, read_dropped_bytes in
+src-tauri/src/lib.rs) for the drop. Copy rules of
+spec/hashiyah/BUILD-PROMPT.md for every string. Stop at the milestone's
+"done when". Then tick it, write notes for the next session under it, add
+an entry to BUILD-LOG.md with a fresh handoff prompt, and commit.
+
+Tooling: export PATH=$HOME/.cargo/bin:/opt/homebrew/bin:$PATH before every
+command. npx vitest run (299 tests, 17 files) and npm run typecheck must be
+green before a commit; cargo test in src-tauri too once anki.rs exists.
+Window checks: copy src/format/__tests__/corpus/vault to a scratch
+directory, run caffeinate -d -u -i in the background, then ILMI_VAULT=<copy>
+ILMI_SMOKE=<mode> npm run tauri dev with a tail loop that screencaptures
+on `shot: <name>` (sleep 2 first) and kills the app on `done` / `failed`;
+free port 1420 before and after; do not edit src/ while it runs.
+```
+
+---
+
 ## 2026-10-18 — polish: the card as two faces
 
 The session card redrawn after SuperMemo's element window: the question

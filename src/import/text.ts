@@ -15,7 +15,7 @@ export function deriveTitle(text: string): string {
 /** A dropped file's name without its extension. */
 export function titleFromFileName(name: string): string {
   const base = name.slice(name.lastIndexOf('/') + 1);
-  return base.replace(/\.(txt|md|markdown|text|rtf|html?)$/i, '');
+  return base.replace(/\.(txt|md|markdown|text|rtf|html?|csv|tsv)$/i, '');
 }
 
 export interface Stats {
@@ -38,5 +38,5 @@ export function isUrl(text: string): boolean {
 }
 
 /** Extensions the intake reads from a dropped file. */
-export const TEXT_EXT = /\.(txt|md|markdown|text)$/i;
+export const TEXT_EXT = /\.(txt|md|markdown|text|csv|tsv)$/i;
 export const HTML_EXT = /\.html?$/i;

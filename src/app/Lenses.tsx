@@ -2,9 +2,10 @@
 // Folders and decks are lists; sources, extracts, and drafts open in the reader.
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { PRI_DEFAULT, cardFields, meta, type Card, type ClozePart, type Doc } from '../format/index.js';
+import { PRI_DEFAULT, meta, type Card, type Doc } from '../format/index.js';
 import type { TreeNode } from '../vault/index.js';
 import { revealIndex } from './chrome.js';
+import { CardText } from './CardText.js';
 import { Composer } from './Composer.js';
 import { Intake } from './Intake.js';
 import { GLYPH, INTAKE, SESSION, contentsOf, findNode, kindOf, queueScope, titleOf, type NodeKind } from './names.js';
@@ -290,18 +291,6 @@ function DeckLens({ id, active }: { id: string; active: boolean }) {
       </div>
     </div>
   );
-}
-
-function CardText({ text }: { text: string }) {
-  const f = cardFields(text);
-  if (!f) return <span>{text}</span>;
-  if (f.form === 'cloze') return <span className="cs-body">{f.parts.map((p, i) => <Part key={i} part={p} />)}</span>;
-  if (f.form === 'qa') return <span className="cs-body"><span className="cs-q">{f.front}</span><span className="cs-a">{f.back}</span></span>;
-  return <span className="cs-body">{f.left} <span className="cs-arrow">⇄</span> {f.right}</span>;
-}
-
-function Part({ part }: { part: ClozePart }) {
-  return typeof part === 'string' ? <>{part}</> : <span className="cz">{part.answer}</span>;
 }
 
 function Gone() {

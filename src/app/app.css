@@ -578,6 +578,59 @@
 .intake .folder-pick button:first-child { padding-left: 0; }
 .intake .folder-pick button:hover { color: var(--fg-2); }
 .intake .folder-pick button[data-active="1"] { color: var(--fg-1); text-decoration: underline; text-underline-offset: 3px; }
+.intake .stats .link {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  cursor: default;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--accent);
+  letter-spacing: 0.02em;
+  margin-left: auto;
+  padding: 0;
+}
+/* cards from text: the delimiter row, then the first rows of the deck */
+.intake .delim-row { margin-top: 4px; }
+.intake .delim-row .field { margin-top: 12px; }
+.intake .delim-pick { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 0; }
+.intake .delim-pick button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--fg-4);
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 0 8px;
+  cursor: default;
+  letter-spacing: 0.02em;
+  line-height: 22px;
+  white-space: pre;
+}
+.intake .delim-pick button:first-child { padding-left: 0; }
+.intake .delim-pick button:hover { color: var(--fg-2); }
+.intake .delim-pick button[data-active="1"] { color: var(--fg-1); text-decoration: underline; text-underline-offset: 3px; }
+.intake .delim-pick .custom {
+  width: 7ch;
+  margin-left: 8px;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--line-2);
+  border-radius: 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--fg-1);
+  letter-spacing: 0.02em;
+  outline: none;
+  padding: 2px 0;
+}
+.intake .delim-pick .custom::placeholder { color: var(--fg-5); }
+.intake .delim-pick .custom:focus, .intake .delim-pick .custom[data-active="1"] { border-bottom-color: var(--accent-soft); }
+.intake .delim-note { font-family: var(--mono); font-size: 11px; color: var(--fg-3); letter-spacing: 0.02em; }
+.intake .cards-preview { margin-top: 16px; border-top: 1px solid var(--line-2); }
+.intake .cards-preview .card-span:last-child { border-bottom: 0; }
+.intake .cards-preview + .stats { margin-top: 4px; padding-top: 10px; border-top: 1px solid var(--line-2); }
+.intake .delim-row + .stats { margin-top: 16px; }
 .intake .place-row { display: flex; gap: 10px; margin-top: 22px; flex-wrap: wrap; }
 .intake .place {
   appearance: none;

@@ -6,18 +6,26 @@
 // A dropped file arrives through Tauri's drag-drop event with a path (the
 // webview's own drop event carries no files under Tauri); dragged text still
 // comes through the DOM. A pasted address is fetched through the http plugin.
+//
+// Text that reads as a list of cards (`src/import/cards.ts` finds at least
+// two) gets a delimiter row and lands as a deck instead; an Anki text export
+// is read by its header.
 
 import { getCurrentWebview, type DragDropEvent } from '@tauri-apps/api/webview';
 import { open as pickFile } from '@tauri-apps/plugin-dialog';
-import { useEffect, useRef, useState, type ClipboardEvent, type DragEvent } from 'react';
-import { cleanText, deriveTitle, isUrl, stats, titleFromFileName } from '../import/index.js';
+import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent } from 'react';
+import {
+  CARD_KINDS, CARD_LABEL, SIDE_KINDS, SIDE_LABEL, cleanText, deckDoc, deriveTitle, detect, droppedLabel, isUrl, leftoverLines,
+  splitCards, stats, titleFromFileName, toCards, type CardDelim, type Delims, type SideDelim,
+} from '../import/index.js';
 import { NEW_NAMES } from '../vault/index.js';
+import { CardText } from './CardText.js';
 import { PDF_EXT, fetchReadable, readDropped, readDroppedPdf } from './fetch.js';
 import { folderPaths, titleOf } from './names.js';
 import type { OpenOpts } from './panes.js';
 import { pdfText } from './pdfjs.js';
 import { useApp } from './store.js';
-import { importNode, importPdfNode } from './vault.js';
+import { importDeckNode, importNode, importPdfNode } from './vault.js';
 
 /** A PDF waiting on the intake: it lands as the pair, the text beside it as the fallback body. */
 interface PendingPdf {
@@ -29,7 +37,13 @@ interface PendingPdf {
 export const intakeHooks: { ingestFile?: (path: string) => Promise<void> } = {};
 
 /** Extensions the picker offers: what a drop would take. */
-const PICK_EXT = ['txt', 'md', 'markdown', 'text', 'html', 'htm', 'pdf'];
+const PICK_EXT = ['txt', 'md', 'markdown', 'text', 'csv', 'tsv', 'html', 'htm', 'pdf'];
+
+/** The default name of a deck landed from text. */
+const DECK_NAME = 'cards';
+
+/** How an Anki header's separator is named in the row. */
+const SEP_NAME: Record<string, string> = { '\t': 'tab', ',': 'comma', ';': 'semicolon', ' ': 'space', '|': 'pipe', ':': 'colon' };
 
 export const INTAKE_SAMPLE = `Spaced repetition and the economics of attention
 
@@ -59,6 +73,11 @@ export function Intake({ active, onOpen }: Props) {
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [pdf, setPdf] = useState<PendingPdf | null>(null);
+  /** The delimiters the user chose over the detected ones; `null` follows detection. */
+  const [delims, setDelims] = useState<Delims | null>(null);
+  const [both, setBoth] = useState(false);
+  /** The user's say on whether the text is cards; `null` leaves it to detection. */
+  const [asCards, setAsCards] = useState<boolean | null>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   // what the drop listener, subscribed once, needs to read at the time of the drop
@@ -68,9 +87,21 @@ export function Intake({ active, onOpen }: Props) {
   const folders = folderPaths(tree);
   const text = raw.trim();
   const st = stats(text);
+
+  // cards: detected over the text, the row's choice over that, an Anki header over both
+  const detected = useMemo(() => (text && !pdf ? detect(text) : null), [text, pdf]);
+  const cardsMode = !!detected && (asCards ?? detected.cards >= 2);
+  const used: Delims | null = detected ? (detected.anki ? detected.delims : delims ?? detected.delims) : null;
+  const split = useMemo(() => (cardsMode && used ? splitCards(text, used) : null), [cardsMode, used, text]);
+  const deck = useMemo(() => (split ? toCards(split, both) : null), [split, both]);
+  const dropped = split ? droppedLabel(split.dropped) : '';
+
   // a PDF lands even without a text layer: it opens as pages, nothing to select
-  const can = (st.words > 0 || !!pdf) && !busy;
-  const titleShown = title || deriveTitle(raw);
+  const can = (deck ? deck.cards.length > 0 : st.words > 0 || !!pdf) && !busy;
+  const titleShown = title || (cardsMode ? DECK_NAME : deriveTitle(raw));
+  const setSide = (side: SideDelim) => { if (used) setDelims({ ...used, side }); };
+  const setCard = (card: CardDelim) => { if (used) setDelims({ ...used, card }); };
+  const customOf = (d: SideDelim | CardDelim) => (typeof d === 'object' ? d.custom : '');
 
   // the folder follows where the intake was opened from, and stays a real one
   useEffect(() => { setFolder(intakeDir); }, [intakeDir]);
@@ -83,10 +114,17 @@ export function Intake({ active, onOpen }: Props) {
     setNote(msg === 'not a text file' || msg === 'nothing readable' ? msg : fallback);
   };
 
+  const fresh = () => {
+    setDelims(null);
+    setBoth(false);
+    setAsCards(null);
+  };
+
   const take = (body: string, name?: string, pages: PendingPdf | null = null) => {
     setRaw(cleanText(body));
     setPdf(pages);
     setNote('');
+    fresh();
     if (name && !titleRef.current) setTitle(name);
   };
 
@@ -188,14 +226,17 @@ export function Intake({ active, onOpen }: Props) {
     if (!can) return;
     setBusy(true);
     try {
-      const title = (titleShown || NEW_NAMES.source).trim();
-      const path = pdf
-        ? await importPdfNode(chosen, { title, bytes: pdf.bytes, text: raw })
-        : await importNode(chosen, { title, text: raw });
+      const title = (titleShown || (deck ? DECK_NAME : NEW_NAMES.source)).trim();
+      const path = deck
+        ? await importDeckNode(chosen, { title, doc: deckDoc(deck.cards, deck.leftovers) })
+        : pdf
+          ? await importPdfNode(chosen, { title, bytes: pdf.bytes, text: raw })
+          : await importNode(chosen, { title, text: raw });
       setRaw('');
       setPdf(null);
       setTitle('');
       setNote('');
+      fresh();
       if (open) onOpen(path, {});
     } catch (e) {
       fail(e, 'could not write the file');
@@ -216,7 +257,7 @@ export function Intake({ active, onOpen }: Props) {
         <div className="meta">
           <span className="crumb">intake</span>
         </div>
-        <h1>Add a source</h1>
+        <h1>{cardsMode ? 'Add a deck' : 'Add a source'}</h1>
 
         <div className="paste-field">
           <textarea
@@ -242,17 +283,99 @@ export function Intake({ active, onOpen }: Props) {
 
         {(st.words > 0 || pdf) && (
           <div className="intake-detail">
-            <div className="stats">
-              {pdf ? <span><b>{pdf.pages.toLocaleString()}</b> {pdf.pages === 1 ? 'page' : 'pages'}</span> : <span><b>{st.words.toLocaleString()}</b> words</span>}
-              <span className="dot" />
-              {pdf && st.words === 0 ? <span>no text</span> : pdf ? <span>{st.words.toLocaleString()} words</span> : <span>{plural(st.paragraphs, 'paragraph')}</span>}
-              {st.words > 0 && (
-                <>
-                  <span className="dot" />
-                  <span>~{st.minutes} min</span>
-                </>
-              )}
-            </div>
+            {!deck && (
+              <div className="stats">
+                {pdf ? <span><b>{pdf.pages.toLocaleString()}</b> {pdf.pages === 1 ? 'page' : 'pages'}</span> : <span><b>{st.words.toLocaleString()}</b> words</span>}
+                <span className="dot" />
+                {pdf && st.words === 0 ? <span>no text</span> : pdf ? <span>{st.words.toLocaleString()} words</span> : <span>{plural(st.paragraphs, 'paragraph')}</span>}
+                {st.words > 0 && (
+                  <>
+                    <span className="dot" />
+                    <span>~{st.minutes} min</span>
+                  </>
+                )}
+                {detected && <button type="button" className="link" onClick={() => setAsCards(true)}>as cards →</button>}
+              </div>
+            )}
+
+            {deck && split && used && (
+              <>
+                <div className="delim-row">
+                  {split.anki ? (
+                    <div className="field">
+                      <span className="flbl">from</span>
+                      <span className="delim-note">an anki export, fields split by {SEP_NAME[split.anki.separator] ?? split.anki.separator}</span>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="field">
+                        <span className="flbl">sides</span>
+                        <div className="delim-pick">
+                          {SIDE_KINDS.map((k) => (
+                            <button key={k} type="button" data-active={used.side === k ? '1' : '0'} onClick={() => setSide(k)}>{SIDE_LABEL[k]}</button>
+                          ))}
+                          <input
+                            className="custom"
+                            value={customOf(used.side)}
+                            placeholder="custom"
+                            spellCheck={false}
+                            data-active={typeof used.side === 'object' ? '1' : '0'}
+                            onChange={(e) => (e.target.value ? setSide({ custom: e.target.value }) : setDelims(delims && detected ? { ...delims, side: detected.delims.side } : null))}
+                          />
+                        </div>
+                      </div>
+                      <div className="field">
+                        <span className="flbl">cards</span>
+                        <div className="delim-pick">
+                          {CARD_KINDS.map((k) => (
+                            <button key={k} type="button" data-active={used.card === k ? '1' : '0'} onClick={() => setCard(k)}>{CARD_LABEL[k]}</button>
+                          ))}
+                          <input
+                            className="custom"
+                            value={customOf(used.card)}
+                            placeholder="custom"
+                            spellCheck={false}
+                            data-active={typeof used.card === 'object' ? '1' : '0'}
+                            onChange={(e) => (e.target.value ? setCard({ custom: e.target.value }) : setDelims(delims && detected ? { ...delims, card: detected.delims.card } : null))}
+                          />
+                        </div>
+                      </div>
+                    </>
+                  )}
+                  <div className="field">
+                    <span className="flbl">write</span>
+                    <div className="delim-pick">
+                      <button type="button" data-active={both ? '0' : '1'} onClick={() => setBoth(false)}>one direction</button>
+                      <button type="button" data-active={both ? '1' : '0'} onClick={() => setBoth(true)}>both directions</button>
+                    </div>
+                  </div>
+                </div>
+
+                {deck.cards.length > 0 && (
+                  <div className="cards-preview">
+                    {deck.cards.slice(0, 3).map((c, i) => (
+                      <div key={i} className="card-span"><CardText text={c.text} /></div>
+                    ))}
+                  </div>
+                )}
+                <div className="stats">
+                  <span><b>{deck.cards.length.toLocaleString()}</b> {deck.cards.length === 1 ? 'card' : 'cards'}</span>
+                  {deck.leftovers.length > 0 && (
+                    <>
+                      <span className="dot" />
+                      <span>{plural(leftoverLines(deck.leftovers), 'line')} not cards</span>
+                    </>
+                  )}
+                  {dropped && (
+                    <>
+                      <span className="dot" />
+                      <span>{dropped}</span>
+                    </>
+                  )}
+                  <button type="button" className="link" onClick={() => setAsCards(false)}>as a source →</button>
+                </div>
+              </>
+            )}
 
             <label className="field">
               <span className="flbl">title</span>

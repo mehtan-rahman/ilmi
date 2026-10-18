@@ -61,6 +61,15 @@ from a page sit under a `## p. <n>` heading in the Markdown and in a rail
 beside the page; an extract's passage is drawn on the page as a highlight
 when it is found there again. The ruler in the margin marks the page.
 
+Text pasted or dropped on the intake that reads as a list of cards lands as a
+deck: a row chooses what separates front from back (`Q:`/`A:` lines, a tab,
+` :: `, a dash, a comma, or anything typed) and what separates cards (a blank
+line, a newline, a semicolon, or anything typed), detected from the text and
+changed with a click; `both directions` writes `:::`. An Anki text export is
+read by its header, HTML reduced to text; its hints, sounds, and images are
+dropped and counted. Lines that did not split stay at the end of the file
+under `## not cards`.
+
 The inspector sets a priority, 0 first and 100 last, on a document or on the
 selected card; what is due sorts by it. It also sets a topic's growth, the
 factor each pass multiplies the interval by (1.6 reading, 1.5 writing), and
@@ -79,7 +88,7 @@ src/app/           renderer: React, Zustand store, tokens.css
 src/format/        parser and serializer, the only code that touches vault files
 src/vault/         open, walk, read, write, watch, and reshape a vault; pure over an Fs interface
 src/schedule/      ts-fsrs grading, the reading and writing loops, the queue query
-src/import/        text from a paste, a page, or a SuperMemo collection, on its way to a file
+src/import/        text from a paste, a page, a list of cards, or a SuperMemo collection, on its way to a file
 src/pdf/           the PDF lens's pure side: a page's text from pdf.js items, finding a passage again
 scripts/           command-line tools, run with tsx
 src-tauri/         desktop shell (Tauri v2, fs + dialog + log plugins)

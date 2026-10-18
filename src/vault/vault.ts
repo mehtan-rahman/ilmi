@@ -83,6 +83,14 @@ export interface ImportSpec {
   today?: string;
 }
 
+/** What `Vault.importDeck` lands as a new deck. */
+export interface ImportDeckSpec {
+  title: string;
+  /** The deck as built (`type: deck`, the cards, what did not split); `imported` and `title` are set here. */
+  doc: Doc;
+  today?: string;
+}
+
 /** What `Vault.importPdf` lands as a new pair. */
 export interface ImportPdfSpec {
   title: string;
@@ -479,6 +487,28 @@ export class Vault {
       setField(doc, 'write', null);
       if (title !== name || meta(doc).title !== undefined) setField(doc, 'title', title);
       await this.atomicWriteBytes(this.abs(pdf), spec.bytes);
+      await this.commit(path, serialize(doc));
+      await this.rewalk();
+      return path;
+    });
+  }
+
+  /**
+   * A new deck in `dir` from imported cards: `imported` today, named after
+   * the title, the title written as a field when the two differ, as
+   * `importDoc` does. Resolves to the document's path.
+   */
+  importDeck(dir: string, spec: ImportDeckSpec): Promise<string> {
+    return this.serial(async () => {
+      if (!spec.doc.blocks.length) throw new Error('nothing to import');
+      const title = spec.title.trim() || NEW_NAMES.deck;
+      await this.ensureDir(dir);
+      const name = await this.freeName(dir, fileName(title));
+      const path = `${joinRel(dir, name)}.md`;
+      const doc = spec.doc;
+      setField(doc, 'type', 'deck');
+      setField(doc, 'imported', spec.today ?? localDay(new Date()));
+      if (title !== name || meta(doc).title !== undefined) setField(doc, 'title', title);
       await this.commit(path, serialize(doc));
       await this.rewalk();
       return path;

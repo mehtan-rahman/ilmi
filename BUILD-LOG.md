@@ -6,6 +6,102 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-10-18 — milestone 18: blanks inside math, `{{cN::…}}` in a formula closed by the balanced `}}`
+
+Done on the branch `worktree-agent-aa0c5ff44353b39cb` (worktree
+`.claude/worktrees/agent-aa0c5ff44353b39cb`) while milestone 17 ran on
+main; commit `5716742` — *math: a numbered blank inside a formula, closed
+by the balanced braces, rendered by KaTeX once per state*. The two sessions share `PLAN.md`, `BUILD-LOG.md`,
+`src/app/smoke.ts`, and `src/app/vault.ts` (the smoke dispatch line), so
+the merge touches those four by hand.
+
+### Done
+
+- FORMAT.md §5.1: inside `$…$` / `$$…$$` only the numbered form opens a
+  blank, closed at the `}}` that balances the braces opened since `::`;
+  the unnumbered `{{x}}`, a blank whose braces never balance, and one
+  whose answer closes the formula early are TeX. §11's note on the `$$`
+  block rewritten.
+- `src/format/cloze.ts`: `clozeSegments` (new; `MathSeg` / `CardSeg`
+  exported) finds blanks inside math spans; `clozeParts` is its
+  flattening, so every caller of `blanks` and the group indices are
+  unchanged; a blank inside math carries `math: true`. `mathSpanEnd` is
+  untouched.
+- `src/app/Reader.tsx`: `mathBlanksHTML` renders a formula with blanks
+  once per state through KaTeX (`throwOnError`, `output: 'html'`): hidden
+  as `\colorbox` over a `\phantom` of the answer, revealed as `\colorbox`
+  over the answer, another group's blank plain; sentinel colours become
+  `var(--fg-5)` / `var(--accent-soft)`; an answer is boxed between its
+  top-level `&` and `\\` so an `align` line works. The chip carries
+  `data-blanks` and `data-revealed`, and `data-tex` only while nothing is
+  hidden. `clozeHTML` renders a cloze card, `answerHTML` an answer alone;
+  `cardHTML` shows a formula's blanks on the accent in the reader and the
+  deck. A refused formula falls back to its source as text.
+- `src/app/Session.tsx`: the cloze front is one `clozeHTML` string with
+  one click handler; a click on a chip holding this card's blanks
+  reveals; the answer face renders a math answer as math.
+- `src/app/Composer.tsx`: `⌘B` on a selection inside a formula writes
+  `{{cN::…}}` (`insideMath`, `withBlank`).
+- Corpus: `vault/papers/maxwell.md`, `mangled/math-blanks.md`. Queue
+  counts: upcoming 17 → 20, cards 26 → 29, today 17 unchanged.
+- README: a paragraph. Smoke: `ILMI_SMOKE=math`, written, not run.
+- Tests: 308 (+9).
+
+### Verified
+
+- `npm run typecheck` clean, `npx vitest run` green (17 files, 308),
+  `vite build` builds.
+- Not in the window: the window and port 1420 belonged to milestone 17's
+  session. `ILMI_SMOKE=math` opens maxwell, logs the two chips, walks a
+  session over its three blanks (the first revealed by a click on the
+  chip, the others by space), grades each, and logs the `sr` lines;
+  shots `math-reader`, `math-1-hidden` … `math-3-revealed`. Owed.
+
+### Not done / open
+
+- `m` on a selection inside a math chip is not mapped into the TeX: the
+  chip is an atom whose `leafText` is its source, so the composer gets the
+  formula and `⌘B` in the textarea makes the blank. How `posAtDOM` lands
+  inside KaTeX output is unverified without the window.
+- The phantom's glyphs stay in the DOM with `color:transparent`, as a text
+  blank's answer does; the TeX source and the MathML are kept out.
+- Queue rows, the composer preview, and `CardText` show a math blank as
+  text, the `$` and TeX literal around it.
+- The box is KaTeX's `\colorbox` padding, tighter than the text blank's.
+- `mangled/code-and-math.md`'s `$$` block with `{{c1::x_i}}` reads as a
+  card now, on purpose.
+
+### Decisions worth knowing
+
+- The balanced close only inside math. Outside, the first `}}` still
+  closes, as §5.1 always said; changing that would move answers in
+  existing files.
+- One KaTeX run per state rather than a text overlay: an `align` block's
+  layout is KaTeX's, and a box placed by CSS over a rendered line would
+  not follow it. The sentinel-colour swap is the `trust`-free way to a
+  theme colour.
+- `clozeParts` kept its shape by flattening the segments, so the
+  scheduler, the queue, `numberBlank`, and `ownBlank` did not change.
+
+### Handoff prompt
+
+Paste into a fresh session (milestone 16's prompt below still applies
+for the Anki work; this one is for the merge and the owed check):
+
+```
+Read PLAN.md, FORMAT.md, BUILD-LOG.md, and spec/hashiyah/HANDOFF.md.
+Milestone 18 (blanks inside math, BUILD-LOG 2026-10-18) was done on the
+branch worktree-agent-aa0c5ff44353b39cb and merged; its window check is
+still owed. Run it: copy src/format/__tests__/corpus/vault to a scratch
+directory, caffeinate -d -u -i in the background, free port 1420, then
+ILMI_VAULT=<copy> ILMI_SMOKE=math npm run tauri dev with the tail loop
+that screencaptures on `shot: <name>` (sleep 2 first) and kills the app
+on `done` / `failed`. Read the log: two chips in the reader with
+data-blanks 2 and 1 (every blank revealed there), the session's three
+cards with boxes hidden and the accent revealed, the first revealed by a
+click on the chip, the sr lines rewritten. Read the shots. Then record
+the result under milestone 18 in PLAN.md and in this entry, fix what the
+window shows, and commit. Suite 308 and typecheck must be green.
 ## 2026-10-18 — milestone 17: cards from Anki, a dropped `.apkg` lands as deck files with their progress
 
 Commit `cec823b` — *anki: a dropped .apkg read on the Rust side, each deck

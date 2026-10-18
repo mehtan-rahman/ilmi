@@ -36,11 +36,25 @@ export interface Blank {
   answer: string;
   /** The whole `{{…}}` as written. */
   raw: string;
+  /** Set when the blank sits inside a math span: the answer is TeX. */
+  math?: true;
 }
 
 export type ClozePart = string | Blank;
 
+/** A math span holding at least one blank: the span as written, and its inner TeX runs and blanks. */
+export interface MathSeg {
+  span: string;
+  display: boolean;
+  parts: ClozePart[];
+}
+
+/** A card's text as renderers want it: text, blanks in text, and formulas that hold blanks. */
+export type CardSeg = string | Blank | MathSeg;
+
 const GROUP = /^c?(\d+)::([\s\S]*)$/;
+/** Inside math only the numbered form opens a blank; `{{` alone is TeX (`\binom{n}{{k}}`). */
+const MATH_OPEN = /\{\{c?(\d+)::/y;
 
 /** Find the `}}` that closes a blank opened at `open`, skipping math. */
 function blankEnd(text: string, open: number): number {
@@ -56,26 +70,81 @@ function blankEnd(text: string, open: number): number {
   return -1;
 }
 
-/** Split text into literal runs and blanks. */
-export function clozeParts(text: string): ClozePart[] {
-  const parts: ClozePart[] = [];
+/**
+ * A numbered blank opened at `open` inside math, closed by the `}}` that
+ * balances the braces opened since `::` (so `{{c1::x^{2}}}` ends at the
+ * last two). Null when the form is not numbered or nothing balances before
+ * `limit`, the end of the formula.
+ */
+function mathBlank(text: string, open: number, limit: number): { n: number; start: number; close: number } | null {
+  MATH_OPEN.lastIndex = open;
+  const m = MATH_OPEN.exec(text);
+  if (!m || m.index !== open) return null;
+  const start = open + m[0].length;
+  let depth = 0;
+  for (let j = start; j < limit; j++) {
+    const c = text[j];
+    if (c === '\\') { j++; continue; }
+    if (c === '{') depth++;
+    else if (c === '}') {
+      if (depth > 0) depth--;
+      else return text[j + 1] === '}' && j + 1 < limit ? { n: Number(m[1]), start, close: j } : null;
+    }
+  }
+  return null;
+}
+
+/** Split text into literal runs, blanks, and formulas holding blanks. */
+export function clozeSegments(text: string): CardSeg[] {
+  const segs: CardSeg[] = [];
   let lit = '';
+  const flush = () => { if (lit) { segs.push(lit); lit = ''; } };
   let i = 0;
   while (i < text.length) {
     const c = text[i];
     if (c === '$') {
       const e = mathSpanEnd(text, i);
-      if (e > 0) { lit += text.slice(i, e); i = e; continue; }
+      if (e > 0) {
+        const display = text[i + 1] === '$';
+        const d = display ? 2 : 1;
+        const limit = e - d;
+        const inner: ClozePart[] = [];
+        let tex = '';
+        let j = i + d;
+        while (j < limit) {
+          if (text[j] === '{' && text[j + 1] === '{') {
+            const b = mathBlank(text, j, limit);
+            if (b) {
+              const answer = text.slice(b.start, b.close);
+              if (answer.trim()) {
+                if (tex) { inner.push(tex); tex = ''; }
+                inner.push({ n: b.n, answer, raw: text.slice(j, b.close + 2), math: true });
+                j = b.close + 2;
+                continue;
+              }
+            }
+          }
+          tex += text[j];
+          j++;
+        }
+        if (tex) inner.push(tex);
+        if (inner.some((p) => typeof p !== 'string')) {
+          flush();
+          segs.push({ span: text.slice(i, e), display, parts: inner });
+        } else lit += text.slice(i, e);
+        i = e;
+        continue;
+      }
     }
     if (c === '{' && text[i + 1] === '{') {
       const close = blankEnd(text, i);
       if (close > 0) {
         const inner = text.slice(i + 2, close);
         if (inner.trim()) {
-          if (lit) { parts.push(lit); lit = ''; }
+          flush();
           const m = GROUP.exec(inner);
-          parts.push(m ? { n: Number(m[1]), answer: m[2]!, raw: text.slice(i, close + 2) }
-                       : { n: null, answer: inner, raw: text.slice(i, close + 2) });
+          segs.push(m ? { n: Number(m[1]), answer: m[2]!, raw: text.slice(i, close + 2) }
+                      : { n: null, answer: inner, raw: text.slice(i, close + 2) });
           i = close + 2;
           continue;
         }
@@ -83,6 +152,26 @@ export function clozeParts(text: string): ClozePart[] {
     }
     lit += c;
     i++;
+  }
+  flush();
+  return segs;
+}
+
+/** Split text into literal runs and blanks; a formula's delimiters and TeX are literal runs around its blanks. */
+export function clozeParts(text: string): ClozePart[] {
+  const parts: ClozePart[] = [];
+  let lit = '';
+  const add = (p: ClozePart) => {
+    if (typeof p === 'string') { lit += p; return; }
+    if (lit) { parts.push(lit); lit = ''; }
+    parts.push(p);
+  };
+  for (const seg of clozeSegments(text)) {
+    if (typeof seg === 'string' || !('span' in seg)) { add(seg); continue; }
+    const d = seg.display ? 2 : 1;
+    add(seg.span.slice(0, d));
+    for (const p of seg.parts) add(p);
+    add(seg.span.slice(-d));
   }
   if (lit) parts.push(lit);
   return parts;

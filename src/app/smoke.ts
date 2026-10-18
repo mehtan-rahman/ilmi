@@ -43,6 +43,9 @@
 // `ILMI_SMOKE=anki` drops the fixture package (`ILMI_APKG=<path>`, else
 // `two-decks.apkg` in the vault) on the intake, reads the deck list, places
 // it, logs each deck file's lines, and opens both decks.
+// `ILMI_SMOKE=math` opens maxwell, reads its formula chips in the reader,
+// then enters a session over its three blanks inside math and logs each
+// hidden and revealed (the first by a click on the chip), grading as it goes.
 
 import { invoke } from '@tauri-apps/api/core';
 import { info } from '@tauri-apps/plugin-log';
@@ -1353,6 +1356,53 @@ export async function smokeAnki(vault: Vault): Promise<void> {
     await sleep(300);
     log(`deck lens (science): ${lens()}`);
     await shot('anki-science');
+    log('done');
+  } catch (e) {
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+export async function smokeMath(vault: Vault): Promise<void> {
+  const log = (s: string) => info(`smoke math: ${s}`);
+  const shot = async (name: string, ms = 10000) => { await sleep(600); log(`shot: ${name}`); await sleep(ms); };
+  const q = <T extends Element>(sel: string) => document.querySelector<T>(sel);
+  const MX = 'papers/maxwell.md';
+  const chipInfo = (chip: HTMLElement | null) => (chip
+    ? `blanks ${chip.dataset.blanks}, revealed ${chip.dataset.revealed}, boxes ${chip.querySelectorAll('.colorbox').length}, tex ${chip.dataset.tex ? 'kept' : 'none'}, display ${chip.classList.contains('display')}, katex ${!!chip.querySelector('.katex')}, fallback ${!!chip.querySelector('.tex')}`
+    : 'none');
+  const squash = (s: string | null | undefined) => (s ?? '').replace(/\s+/g, ' ').trim();
+  try {
+    // the reader: two cards with formulas, their blanks on the accent; the binomial stays prose
+    openNode(MX);
+    const surface = await until(() => q<HTMLElement>('.draft-doc'));
+    await until(() => surface.querySelector('.math.blanks'));
+    await sleep(300);
+    const chips = Array.from(surface.querySelectorAll<HTMLElement>('.card-span .math.blanks'));
+    log(`reader: blocks ${surface.children.length}, cards ${surface.querySelectorAll('.card-span').length}, chips with blanks ${chips.length}: ${chips.map(chipInfo).join(' | ')}; prose math ${surface.querySelectorAll('.math:not(.blanks)').length}`);
+    await shot('math-reader');
+
+    // a session over the file's blanks, in queue order
+    const items = useApp.getState().queue.filter((i) => i.kind === 'card' && i.path === MX);
+    log(`session over ${items.length} blanks`);
+    useApp.setState((s) => ({ session: { seq: (s.session?.seq ?? 0) + 1, items } }));
+    openNode(SESSION);
+    for (let i = 0; i < items.length; i++) {
+      await sleep(300);
+      const card = await until(() => q<HTMLElement>('.recall-wrap .card[data-revealed="0"]'));
+      await sleep(300);
+      const chip = card.querySelector<HTMLElement>('.face.front .math.blanks');
+      const html = card.querySelector('.face.front')!.innerHTML;
+      log(`card ${i + 1} hidden: ${squash(q('.card-meta')?.textContent)}; chip ${chipInfo(chip)}; tex in html ${html.includes('{{c') || html.includes('\\frac') || html.includes('x^{2}')}; ctx blanks ${card.querySelectorAll('.cloze.ctx').length}; hint ${!!q('.face-hint')}`);
+      await shot(`math-${i + 1}-hidden`);
+      if (i === 0 && chip) chip.click(); else press(' ');
+      await sleep(400);
+      log(`card ${i + 1} revealed by ${i === 0 ? 'a click on the chip' : 'space'}: revealed ${card.dataset.revealed}; chip ${chipInfo(card.querySelector('.face.front .math.blanks'))}; answer face "${squash(q('.face.back .face-body')?.textContent).slice(0, 60)}", math answers ${card.querySelectorAll('.cloze-answer .math').length}, hint ${!!q('.face-hint')}`);
+      await shot(`math-${i + 1}-revealed`);
+      press('3');
+      await sleep(400);
+    }
+    await sleep(600);
+    log(`after: ${squash(q('.recall-wrap .empty')?.textContent)}; sr lines ${(await vault.read(MX, true)).text.split('\n').filter((l) => l.startsWith('<!-- sr')).join(' / ')}`);
     log('done');
   } catch (e) {
     log(`failed: ${e instanceof Error ? e.message : String(e)}`);

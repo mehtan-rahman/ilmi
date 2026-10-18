@@ -153,8 +153,12 @@
   border-bottom: 1px solid var(--line-2);
 }
 .recall-wrap .card .cloze.ctx .katex { color: inherit; }
+/* a formula holding this card's blanks: KaTeX draws the box; a click on the chip reveals */
+.recall-wrap .card .math.blanks[data-revealed="0"]:not([data-blanks="0"]) { cursor: pointer; }
+.recall-wrap .card .cloze-text .math.display { margin: 0.4em 0; }
 /* the answer face of a cloze: the deleted text alone, several joined */
 .recall-wrap .card .cloze-answer { display: flex; flex-wrap: wrap; gap: 6px 18px; }
+.recall-wrap .card .cloze-answer .cz-a .katex { font-size: 1.05em; }
 .recall-wrap .card .cloze-answer .cz-a {
   background: var(--accent-soft);
   border-radius: var(--radius);

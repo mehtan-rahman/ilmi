@@ -242,9 +242,18 @@ code block is literal text.
   digits are the group number and the rest is the answer. Otherwise the whole
   inner text is the answer (so `{{std::vector}}` is an unnumbered blank whose
   answer is `std::vector`).
-- Math is opaque to blank scanning. Neither `{{` nor `}}` inside `$…$` or
-  `$$…$$` opens or closes a blank, whether the math sits in prose or inside an
-  answer. `{{c1::$x^{a^{b}}$}}` is one blank whose answer is `$x^{a^{b}}$`.
+- Math is a span of its own to blank scanning. Inside `$…$` or `$$…$$` only
+  the numbered form opens a blank: `{{cN::` or `{{N::`. The unnumbered `{{x}}`
+  is TeX (`\binom{n}{{k}}`, `x^{{a}}`), since `{{` is legitimate there and
+  `{{c1::` never is. A blank inside math closes at the `}}` that balances the
+  braces opened since `::`, not the first one, so `{{c1::x^{2}}}` has the
+  answer `x^{2}` and `{{c1::\frac{a}{b}}}` the answer `\frac{a}{b}`; a
+  backslash escapes the brace after it. A blank whose braces never balance
+  before the formula ends, or whose answer closes the formula early
+  (`$E = {{c1::m$ c^2}}$`), is TeX, not a blank. The answer is TeX too, so a
+  blank can span a line of an `align` environment, alignment mark and all.
+  Math inside an answer outside math is opaque as before:
+  `{{c1::$x^{a^{b}}$}}` is one blank whose answer is `$x^{a^{b}}$`.
   Math delimiters follow Pandoc: an opening `$` is followed by a non-space, a
   closing `$` is preceded by a non-space and not followed by a digit, inline
   math does not span lines. `$5 and $10` is not math.
@@ -414,8 +423,10 @@ fixes the file. That is intended.
 
 ## 11. Corner cases worth knowing
 
-- A `$$` display-math block on its own lines is one math span, so a `{{…}}`
-  inside it is not a blank and the paragraph is prose.
+- A `$$` display-math block on its own lines is one math span. A numbered
+  `{{cN::…}}` inside it is a blank (§5.1) and the paragraph is a cloze card,
+  rendered as one formula; an unnumbered `{{…}}` inside it is TeX and the
+  paragraph is prose.
 - A tab or four spaces at the start of a block is indented code (raw). The
   same indentation on a paragraph's second line is lazy continuation and stays
   in the paragraph.

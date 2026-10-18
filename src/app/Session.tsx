@@ -5,12 +5,12 @@
 // result is written to the file the element came from.
 
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
-import { PRI_DEFAULT, cardFields, clozeParts, type Block, type Card } from '../format/index.js';
+import { PRI_DEFAULT, blanks, cardFields, clozeSegments, type Block, type Card } from '../format/index.js';
 import { GRADES, advanceRead, advanceWrite, gradeItem, postponed, type CardItem, type Grade, type QueueItem, type ReadItem, type WriteItem } from '../schedule/index.js';
 import { EL_WORD, FORM_LABEL, dueLabel, gapLabels, ownBlank, sourceLabel } from './items.js';
 import type { OpenOpts } from './panes.js';
 import { Pdf } from './Pdf.js';
-import { Reader, richHTML } from './Reader.js';
+import { Reader, answerHTML, clozeHTML, richHTML } from './Reader.js';
 import { useApp, type El } from './store.js';
 import { useDoc } from './useDoc.js';
 import { currentVault, note } from './vault.js';
@@ -140,23 +140,29 @@ function CardElement({ item, active, onGrade }: CardProps) {
   let back: ReactNode = null;
   if (!f) front = <span dangerouslySetInnerHTML={{ __html: richHTML(text) }} />;
   else if (f.form === 'cloze') {
-    let index = -1;
-    const answers: string[] = [];
-    front = (
-      <div className="cloze-text">
-        {clozeParts(text).map((p, i) => {
-          if (typeof p === 'string') return <span key={i} dangerouslySetInnerHTML={{ __html: richHTML(p) }} />;
-          index++;
-          const mine = ownBlank(item, p.n, index);
-          if (mine) answers.push(p.answer);
-          const cls = `cloze${mine ? (revealed ? ' revealed' : '') : ' ctx'}`;
-          return <span key={i} className={cls} onClick={() => { if (mine) setRevealed(true); }} dangerouslySetInnerHTML={{ __html: richHTML(p.answer) }} />;
-        })}
-      </div>
+    // which blanks this item tests, in `blanks(text)` order; the rest are context
+    const mine = blanks(text).map((b, i) => ownBlank(item, b.n, i));
+    const html = clozeHTML(
+      text,
+      (_, i) => (mine[i] ? (revealed ? 'revealed' : 'hidden') : 'plain'),
+      (s) => (s === 'hidden' ? 'cloze' : s === 'revealed' ? 'cloze revealed' : 'cloze ctx'),
     );
+    // the deleted text alone, a formula's as math
+    const answers: string[] = [];
+    let k = 0;
+    for (const seg of clozeSegments(text)) {
+      if (typeof seg === 'string') continue;
+      if ('span' in seg) { for (const p of seg.parts) if (typeof p !== 'string' && mine[k++]) answers.push(answerHTML(p, seg.display)); }
+      else if (mine[k++]) answers.push(answerHTML(seg));
+    }
+    // a click on one of this card's blanks, in text or in a formula, reveals
+    const onFront = (e: MouseEvent<HTMLElement>) => {
+      if ((e.target as HTMLElement).closest('.cloze:not(.ctx), .math.blanks:not([data-blanks="0"])')) setRevealed(true);
+    };
+    front = <div className="cloze-text" onClick={onFront} dangerouslySetInnerHTML={{ __html: html }} />;
     back = (
       <div className="cloze-answer">
-        {answers.map((a, i) => <span key={i} className="cz-a" dangerouslySetInnerHTML={{ __html: richHTML(a) }} />)}
+        {answers.map((a, i) => <span key={i} className="cz-a" dangerouslySetInnerHTML={{ __html: a }} />)}
       </div>
     );
   } else if (f.form === 'qa') {

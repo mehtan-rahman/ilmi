@@ -8,7 +8,7 @@ import type { Node as PMNode } from 'prosemirror-model';
 import { NodeSelection, Selection, type EditorState, type Transaction } from 'prosemirror-state';
 import { EditorView, type NodeView } from 'prosemirror-view';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { PRI_DEFAULT, cardFields, meta, serialize, setField, type Block, type Card, type Doc } from '../format/index.js';
+import { PRI_DEFAULT, cardFields, clozeSegments, meta, serialize, setField, type Blank, type Block, type Card, type Doc, type MathSeg } from '../format/index.js';
 import {
   blockAt, blocksEqual, cardDue, cursorIndex, editMath, editorialRanges, fromDoc, insertCard, makeState, markerKey, markerPos,
   mathSplit, passage, pickPos, proseIndices, schema, setReadPos, type Band, type Passage,
@@ -131,12 +131,105 @@ export function richHTML(text: string): string {
   return mathSplit(text).map((p) => (typeof p === 'string' ? markedHTML(p) : mathHTML(p.math))).join('');
 }
 
+// A formula holding blanks (FORMAT.md §5.1) is rendered by KaTeX once per
+// state: a hidden blank is a box over a phantom of its answer, a revealed
+// one its answer on the accent, another group's blank plain. KaTeX takes a
+// colour, not a class, and `trust` stays off, so two sentinel colours go in
+// and the theme's variables come out.
+
+export type BlankState = 'hidden' | 'revealed' | 'plain';
+
+const HIDE = '#010203';
+const SHOW = '#040506';
+
+/** An answer split at its top-level `&` and `\\`, the separators kept at the odd indices. */
+function alignPieces(tex: string): string[] {
+  const out: string[] = [];
+  let depth = 0;
+  let cur = '';
+  for (let j = 0; j < tex.length; j++) {
+    const c = tex[j]!;
+    if (c === '\\') {
+      if (tex[j + 1] === '\\' && depth === 0) { out.push(cur, '\\\\'); cur = ''; j++; continue; }
+      cur += c + (tex[j + 1] ?? '');
+      j++;
+      continue;
+    }
+    if (c === '{') depth++;
+    else if (c === '}') depth--;
+    if (c === '&' && depth === 0) { out.push(cur, '&'); cur = ''; continue; }
+    cur += c;
+  }
+  out.push(cur);
+  return out;
+}
+
+/** The answer boxed, piece by piece so an alignment mark stays outside the box. */
+function boxed(answer: string, state: 'hidden' | 'revealed', display: boolean): string {
+  return alignPieces(answer).map((p, i) => {
+    if (i % 2 === 1 || !p.trim()) return p;
+    const inner = state === 'hidden' ? `\\phantom{${p}}` : p;
+    return `\\colorbox{${state === 'hidden' ? HIDE : SHOW}}{$${display ? '\\displaystyle ' : ''}${inner}$}`;
+  }).join('');
+}
+
+/**
+ * A formula holding blanks, rendered once with each blank in its state. The
+ * chip says how many blanks are the card's own (`data-blanks`) and whether
+ * they all show (`data-revealed`); its source is kept only while nothing is
+ * hidden. TeX that KaTeX refuses falls back to the source as text, its
+ * blanks as text blanks of `cls(state)`.
+ */
+export function mathBlanksHTML(seg: MathSeg, stateOf: (b: Blank) => BlankState, cls: (s: BlankState) => string): string {
+  const states: BlankState[] = [];
+  const tex = seg.parts.map((p) => {
+    if (typeof p === 'string') return p;
+    const s = stateOf(p);
+    states.push(s);
+    return s === 'plain' ? p.answer : boxed(p.answer, s, seg.display);
+  }).join('');
+  const own = states.filter((s) => s !== 'plain');
+  const hidden = own.includes('hidden');
+  const attrs = `class="math${seg.display ? ' display' : ''} blanks" data-blanks="${own.length}" data-revealed="${own.length && !hidden ? '1' : '0'}"${hidden ? '' : ` data-tex="${escapeHtml(seg.span)}"`}`;
+  try {
+    const html = katex.renderToString(tex, { throwOnError: true, displayMode: seg.display, output: 'html' });
+    return `<span ${attrs}>${html.split(HIDE).join('var(--fg-5)').split(SHOW).join('var(--accent-soft)')}</span>`;
+  } catch {
+    let k = 0;
+    const body = seg.parts.map((p) => (typeof p === 'string' ? escapeHtml(p) : `<span class="${cls(states[k++]!)}">${escapeHtml(p.answer)}</span>`)).join('');
+    return `<span ${attrs}><code class="tex">${body}</code></span>`;
+  }
+}
+
+/** A cloze card's text: blanks in text as spans of `cls(state)`, formulas holding blanks through KaTeX. */
+export function clozeHTML(text: string, stateOf: (b: Blank, index: number) => BlankState, cls: (s: BlankState) => string): string {
+  let index = -1;
+  return clozeSegments(text).map((seg) => {
+    if (typeof seg === 'string') return richHTML(seg);
+    if ('span' in seg) return mathBlanksHTML(seg, (b) => stateOf(b, ++index), cls);
+    return `<span class="${cls(stateOf(seg, ++index))}">${richHTML(seg.answer)}</span>`;
+  }).join('');
+}
+
+/** A blank's answer on its own: TeX as math, an align line through `aligned`. */
+export function answerHTML(b: Blank, display = false): string {
+  if (!b.math) return richHTML(b.answer);
+  const tex = /&|\\\\/.test(b.answer) ? `\\begin{aligned}${b.answer}\\end{aligned}` : b.answer;
+  let inner: string;
+  try {
+    inner = katex.renderToString(`${display ? '\\displaystyle ' : ''}${tex}`, { throwOnError: false, output: 'html' });
+  } catch {
+    inner = escapeHtml(b.answer);
+  }
+  return `<span class="math">${inner}</span>`;
+}
+
 export function cardHTML(card: Card): string {
   const f = cardFields(card.text);
   if (!f) return richHTML(card.text);
   switch (f.form) {
     case 'cloze':
-      return f.parts.map((p) => (typeof p === 'string' ? richHTML(p) : `<span class="cz">${richHTML(p.answer)}</span>`)).join('');
+      return clozeHTML(card.text, () => 'revealed', () => 'cz');
     case 'qa':
       return `<span class="cs-q">${richHTML(f.front)}</span><span class="cs-a">${richHTML(f.back)}</span>`;
     case 'bidir':

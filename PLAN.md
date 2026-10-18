@@ -1953,7 +1953,7 @@ lines and the images landed in `<stem>/`, and clicks the inspector's
 `url`; screenshots read.
 
 ### [x] 25. Rendering — the reader shows Markdown as Markdown
-Done 2026-10-18 on the branch `worktree-agent-a2df4fefff0acc940`; commit `TBD`.
+Done 2026-10-18 on the branch `worktree-agent-a2df4fefff0acc940`; commit `c574193`.
 Notes: `src/reader/inline.ts` finds inline Markdown as ranges over the raw
 text (`inlineRanges`: em, strong, code, link, image, each with its `inner`
 span, `href`, and `children`; CommonMark's flanking rules reduced: an opener

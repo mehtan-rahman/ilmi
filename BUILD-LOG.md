@@ -10,7 +10,7 @@ was verified, what was not, and the prompt to resume with.
 
 Done on the branch `worktree-agent-a2df4fefff0acc940` (worktree
 `.claude/worktrees/agent-a2df4fefff0acc940`) while milestone 21 ran on
-main and 24 on another branch; commit `TBD` — *rendering: inline Markdown
+main and 24 on another branch; commit `c574193` — *rendering: inline Markdown
 and raw blocks drawn as themselves in the reader, the faces, the rows;
 images from the vault and the web; a markdown sampler in the corpus*. The
 sessions are likely to share `PLAN.md`, `BUILD-LOG.md`, `README.md` (the

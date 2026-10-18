@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "main window: the picked vault directory, dialogs, page fetches for the intake, ilmi:// links, dev logging",
+  "description": "main window: the picked vault directory, dialogs, page fetches for the intake, ilmi:// links, a clipped page's address opened in the browser, dev logging",
   "windows": ["main"],
   "permissions": [
     "core:default",
@@ -10,6 +10,7 @@
     "core:window:allow-unminimize",
     "dialog:default",
     "deep-link:default",
+    "opener:default",
     "log:default",
     "fs:default",
     "fs:allow-read-dir",

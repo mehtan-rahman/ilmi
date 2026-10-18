@@ -56,9 +56,10 @@ click            open a folder or document in the active tab
 F2 / dbl-click   rename                 right-click  new, rename, move to, delete
 ⌘W               close tab              ⌘\           split pane
 ⌘⇧E              sidebar                ⌘⇧I          inspector
-⌘,               tweaks: theme, accent, density, reopen the last vault on start
-                 (kept outside the vault); the day's budget, where clippings
-                 go, and plugins (kept in the vault's .ilmi)
+⌘,               tweaks: theme, accent, density, reopen the last vault on start,
+                 download images when clipping (kept outside the vault); the
+                 day's budget, where clippings go, and plugins (kept in the
+                 vault's .ilmi)
 
 on the welcome   ⏎ open the selected vault, j k move, o open vault, n new vault;
                  a folder dropped on it opens as a vault
@@ -109,6 +110,21 @@ images (a `[figure: alt]` mark stands where one with alt text was), and
 footnote back-references are dropped and counted. Nothing is scheduled;
 `r` on a chapter starts reading it.
 
+An address pasted on the intake is fetched and read as the Obsidian Web
+Clipper reads a page: Defuddle finds the article and what the page says
+about itself, and the article lands as Markdown with its links, emphasis,
+inline code, fenced code with its language, tables, footnotes under
+`## notes`, math as `$…$`, and images. The preview shows the site and the
+title, the author and the date, the count with the image count, and `via
+defuddle` or `via the fallback` (Readability, else the whole page, when
+Defuddle finds nothing). The file carries `url`, `author`, and `published`;
+the inspector shows them, the address as a link that opens in the browser.
+With `download images when clipping` on in the tweaks (it is by default)
+the page's images are downloaded into the document's own folder,
+`name/img-01.png` …, and the links pointed at them; one that does not
+answer keeps its address. Anything the format would read as a card is
+escaped on the way in: `{{` is written `{ {`, a ` :: ` loses its spaces.
+
 A blank can sit inside a formula: `$y = {{c1::x^{2}}}$`, or a whole line of
 an `align` environment. Inside math only the numbered form is a blank and it
 closes at the braces that balance, so `\binom{n}{{k}}` stays TeX. The formula
@@ -128,7 +144,8 @@ and friends still work from the devtools console.
 The app owns the `ilmi://` scheme, the same grammar as Obsidian's URI under
 its own name, so a browser can hand it a page: `ilmi://new?name=&content=&
 folder=&url=` lands a frozen source (the content as the text, else the page
-at the address fetched and read as the intake reads one; the name as the
+at the address fetched and read as the intake reads one, with the same
+`url`, `author`, and `published` fields and its images; the name as the
 title, else the page's) in the folder named, else the one `clippings go to`
 in the tweaks panel (the vault root until set), opens it, and leaves a
 notice; `ilmi://open?path=` opens a document, `.md` or not. `vault=` must
@@ -158,5 +175,5 @@ src/pdf/           the PDF lens's pure side: a page's text from pdf.js items, fi
 src/plugins/       the plugin runtime (api.ts is the typed handle, runtime.ts the loader) and its tweaks section
 plugins/           the plugins the repo ships, built by `npm run plugins`; ilmi.d.ts is the API; see PLUGINS.md
 scripts/           command-line tools, run with tsx
-src-tauri/         desktop shell (Tauri v2, fs + dialog + http + deep-link + single-instance + log plugins; anki.rs reads a package, epub.rs a book, plugin.rs a plugin zip)
+src-tauri/         desktop shell (Tauri v2, fs + dialog + http + deep-link + single-instance + opener + log plugins; anki.rs reads a package, epub.rs a book, plugin.rs a plugin zip)
 ```

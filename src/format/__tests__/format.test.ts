@@ -162,6 +162,29 @@ describe('front-matter', () => {
     expect(doc.blocks.map((b) => b.kind)).toEqual(['raw', 'paragraph']);
   });
 
+  it('clippings: url, author, and published round-trip; the first two quoted as a title is, the third a day or an instant', () => {
+    const { doc, diagnostics } = parse(read('vault/fleeting/clipped-page.md'));
+    expect(diagnostics).toEqual([]);
+    expect(meta(doc)).toMatchObject({ url: 'https://example.org/notes/spaced-repetition', author: 'Jane Doe', published: '2026-05-20' });
+    expect(doc.blocks.some((b) => b.kind === 'card')).toBe(false);
+    const d = parse('x\n').doc;
+    setField(d, 'url', 'https://example.org/a?b=1#c');
+    setField(d, 'author', 'Doe, Jane: editor');
+    setField(d, 'published', '2026-05-20T09:15:00Z');
+    expect(serialize(d).split('\n').slice(0, 5)).toEqual(['---', 'url: https://example.org/a?b=1#c', 'author: "Doe, Jane: editor"', 'published: 2026-05-20T09:15:00Z', '---']);
+    expect(meta(parse(serialize(d)).doc)).toMatchObject({ url: 'https://example.org/a?b=1#c', author: 'Doe, Jane: editor', published: '2026-05-20T09:15:00Z' });
+    setField(d, 'url', null);
+    setField(d, 'author', null);
+    setField(d, 'published', null);
+    expect(serialize(d)).toBe('x\n');
+    // an instant without seconds is read and written with them; bad values stay as raw lines with a diagnostic
+    expect(meta(parse('---\npublished: 2026-05-20T09:15Z\n---\n\nx\n').doc).published).toBe('2026-05-20T09:15:00Z');
+    const bad = parse('---\npublished: yesterday\nurl:\nauthor: "bad \\q"\n---\n\nx\n');
+    expect(bad.diagnostics.map((x) => `${x.line}: ${x.message}`)).toEqual(['2: bad value for "published"', '3: "url" needs a value', '4: bad quoted title', '4: bad value for "author"']);
+    expect(meta(bad.doc)).not.toHaveProperty('published');
+    expect(serialize(bad.doc)).toBe('---\npublished: yesterday\nurl:\nauthor: "bad \\q"\n---\n\nx\n');
+  });
+
   it('setField keeps position, appends, removes, creates', () => {
     const { doc } = parse('---\ntype: deck\nfoo: bar\nfrozen: true\n---\n\nx\n');
     setField(doc, 'type', 'draft');

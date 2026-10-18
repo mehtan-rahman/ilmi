@@ -5,6 +5,7 @@
 
 export { cleanText, deriveTitle, titleFromFileName, stats, isUrl, TEXT_EXT, HTML_EXT, type Stats } from './text.js';
 export { readable, textOf, type Readable } from './readable.js';
+export { clipPage, markdownOf, escapeProse, normalizeWhen, type Clipped, type ClipImage } from './page.js';
 export {
   detect, splitCards, toCards, deckDoc, cardText, reduceCell, ankiHeader, records, chunksOf, droppedLabel, leftoverLines, noDropped,
   SIDE_KINDS, CARD_KINDS, SIDE_LABEL, CARD_LABEL, NOT_CARDS,

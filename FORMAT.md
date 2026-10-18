@@ -45,6 +45,9 @@ notes/
   stem whether or not the document names the file; a `pdf` field (§3) that
   names another file wins. A `.pdf` with no `.md` beside it is ignored like
   any other file.
+- Any other file in a document's children directory is ignored by the walk.
+  A clipped page's images land there (`name/img-01.png` …, §3 `url`) and the
+  document refers to them relatively, `![alt](name/img-01.png)`.
 - A document's display name is its filename without `.md`, unless front-matter
   sets `title`.
 - Folder open/closed state, window layout, and other view state live in
@@ -109,6 +112,9 @@ dropped, with a diagnostic.
 | `default-card` | `cloze` `qa` `bidir`        |           | what the composer opens to, for decks                              |
 | `pri`          | int 0–100                   | `50`      | priority, lower first: the document's reading, writing, and every card in it |
 | `pdf`          | file name                   | `name.pdf` beside the document, when it exists | the document's pages, relative to the document (§1) |
+| `url`          | string                      |           | the page a clipping came from                                      |
+| `author`       | string                      |           | who wrote it                                                       |
+| `published`    | day or instant              |           | when it was published                                              |
 
 `read` attributes: `due` (day or instant), `ivl` (days between passes, int),
 `reps` (passes made, int), `pos` (prose blocks read, int), `page` (int ≥ 1),
@@ -131,6 +137,12 @@ child carries `page=<n>` on its `read` line. The heading is ordinary
 Markdown; the format gives it no meaning beyond the convention, and a
 hand-written `## p. 3` is the same heading. A `pdf` that names a missing
 file is kept and the document reads as text.
+
+**Clippings.** A page that came in by its address carries `url`, and
+`author` and `published` when the page said. `url` and `author` are written
+plain or quoted like `title`; `published` is a day or a UTC instant, as the
+attributes' value types (§7) have them. Nothing else reads them: they are
+what the inspector shows and what a reader of the file wants to know.
 
 `write` attributes: `due`, `ivl`, `reps`, `af` (default 1.5), `pri` as above,
 plus `done` (`true`/`false`). A done draft keeps its line so it can be
@@ -417,7 +429,8 @@ fixes the file. That is intended.
 - Cloze hints.
 - Per-direction schedules on bidirectional cards.
 - Prose block ids for the reading marker (would make `pos` edit-stable).
-- Attachments and images (they are just Markdown; the app renders them).
+- Attachments and images beyond a clipping's downloads (§1): they are just
+  Markdown; the app renders them.
 - Anything written into a PDF: highlights are the extracts' stored text,
   found again on the page; annotations stay in the Markdown.
 

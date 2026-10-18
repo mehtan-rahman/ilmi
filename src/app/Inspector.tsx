@@ -2,8 +2,10 @@
 // things worth changing from the side: a source's freeze, a deck's default
 // card, a draft's done, a document's or a card's priority, a topic's growth,
 // and the text of the card under review or selected in the reader. After the
-// prototype's Inspector, with its prose removed.
+// prototype's Inspector, with its prose removed. A clipped page's address is
+// a link that opens in the browser (the opener plugin).
 
+import { openUrl } from '@tauri-apps/plugin-opener';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   AF_MIN, PRI_DEFAULT, PRI_MAX, PRI_MIN, READ_AF, WRITE_AF, cardForm, docPri, meta, parse, parseAf, parsePri, setField,
@@ -21,6 +23,19 @@ import { currentVault, resetCard } from './vault.js';
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 const words = (blocks: Block[]) => blocks.reduce((n, b) => (b.kind === 'card' ? n : n + b.text.split(/\s+/).filter(Boolean).length), 0);
+
+/** An address as the row shows it: without its scheme and a leading `www.`. */
+export const urlLabel = (url: string) => url.replace(/^https?:\/\/(www\.)?/i, '').replace(/\/$/, '');
+
+/** Open a clipped page's address in the browser; outside Tauri, in a new tab. */
+export function openInBrowser(url: string): void {
+  openUrl(url).catch(() => { window.open(url, '_blank', 'noopener'); });
+}
+
+/** The `url` row: the address as a link. */
+function UrlLink({ url }: { url: string }) {
+  return <button type="button" className="insp-link" title={url} onClick={() => openInBrowser(url)}>{urlLabel(url)}</button>;
+}
 
 function KV({ rows }: { rows: [string, ReactNode][] }) {
   return (
@@ -295,6 +310,9 @@ function DocInspector({ id, info, doc, now }: { id: string; info: DocInfo; doc: 
   rows.push(['path', <span className="mono">{id}</span>]);
   if (info.pdf) rows.push(['pages', <span className="mono">{baseOf(info.pdf)}</span>]);
   if (m.imported) rows.push(['imported', m.imported]);
+  if (m.url) rows.push(['url', <UrlLink key="url" url={m.url} />]);
+  if (m.author) rows.push(['author', m.author]);
+  if (m.published) rows.push(['published', m.published.slice(0, 10)]);
   rows.push(['length', plural(words(doc.blocks), 'word')]);
   if (cards) rows.push(cardsRow);
   if (m.read && info.pdf) rows.push(['reading', `${m.read.pos ? `p. ${m.read.pos}` : 'not started'}, ${dueLabel(m.read.due, now)}`]);

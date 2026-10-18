@@ -2,7 +2,7 @@
 // FORMAT.md §3.
 
 import {
-  parseAttrs, formatAttrs, parseDay, parseBool, parseInt_, parseNumber, readAttrs, writeAttrs,
+  parseAttrs, formatAttrs, parseDay, parseWhen, parseBool, parseInt_, parseNumber, readAttrs, writeAttrs,
   specWhen, specInt, specIntMin, specIntRange, specNumMin, specBool, type AttrSpec, type Warn,
 } from './attrs.js';
 import {
@@ -113,10 +113,16 @@ function parseValue(key: FieldKey, raw: string, warn: Warn): Field | null {
       const v = parsePri(stripComment(raw));
       return v === null ? null : { key, value: v };
     }
-    case 'pdf': {
-      // a file name relative to the document, quoted like a title when it must be
+    case 'pdf':
+    case 'url':
+    case 'author': {
+      // a file name relative to the document, a page's address, a name: quoted like a title when it must be
       const v = parseTitle(raw.trim(), warn);
       return v === null || !v.trim() ? null : { key, value: v };
+    }
+    case 'published': {
+      const v = parseWhen(stripComment(raw));
+      return v === null ? null : { key, value: v };
     }
   }
 }
@@ -190,7 +196,7 @@ function withoutLinePri(f: Field, into?: FmEntry[]): Field {
   return out;
 }
 
-const KNOWN = new Set<string>(['type', 'title', 'frozen', 'imported', 'started', 'read', 'write', 'default-card', 'pri', 'pdf']);
+const KNOWN = new Set<string>(['type', 'title', 'frozen', 'imported', 'started', 'read', 'write', 'default-card', 'pri', 'pdf', 'url', 'author', 'published']);
 function isKnown(k: string): k is FieldKey { return KNOWN.has(k); }
 
 // ── serialize ────────────────────────────────────────────────────
@@ -204,7 +210,8 @@ export function formatField(f: Field): string {
     case 'read': return attrLine('read', formatAttrs(writeAttrs(withoutDefaultAf(f.value, READ_AF), READ_SPECS)));
     case 'write': return attrLine('write', formatAttrs(writeAttrs(withoutDefaultAf(f.value, WRITE_AF), WRITE_SPECS)));
     case 'pri': return `pri: ${f.value}`;
-    case 'pdf': return `pdf: ${formatTitle(f.value)}`;
+    case 'pdf': case 'url': case 'author': return `${f.key}: ${formatTitle(f.value)}`;
+    case 'published': return `published: ${f.value}`;
   }
 }
 
@@ -232,6 +239,10 @@ export interface Meta {
   pri?: number;
   /** The `pdf` field: the document's pages, a file relative to the document. */
   pdf?: string;
+  /** A clipped page's address, who wrote it, and when it was published (a day or a UTC instant). */
+  url?: string;
+  author?: string;
+  published?: string;
 }
 
 /** The document's front-matter as a plain object, defaults applied. */
@@ -250,6 +261,9 @@ export function meta(doc: Doc): Meta {
       case 'default-card': out.defaultCard = e.value; break;
       case 'pri': out.pri = e.value; break;
       case 'pdf': out.pdf = e.value; break;
+      case 'url': out.url = e.value; break;
+      case 'author': out.author = e.value; break;
+      case 'published': out.published = e.value; break;
     }
   }
   return out;

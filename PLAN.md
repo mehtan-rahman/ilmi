@@ -1899,7 +1899,95 @@ raw blocks, so the second milestone is the reader rendering Markdown as
 Markdown. Both apply to EPUB chapters (19) and to `ilmi://new?url=` (22)
 for free, since they share the paths.
 
-### [ ] 24. Clipping — a pasted link lands as the clipper would write it
+### [x] 24. Clipping — a pasted link lands as the clipper would write it
+Done 2026-10-18 on the branch `worktree-agent-a6748a2448940aba8` (worktree
+`.claude/worktrees/agent-a6748a2448940aba8`), beside milestone 21 on main;
+commit recorded in BUILD-LOG.md.
+Notes: `src/import/page.ts` is the reduction. `clipPage(html, url)` parses
+the page with `DOMParser`, runs `new Defuddle(doc.cloneNode(true), { url,
+useAsync: false }).parse()` (defuddle 0.19.5, the core bundle, default
+export; synchronous; `content` is HTML, and `title`, `author`, `published`,
+`site`, `domain`, `description`, `wordCount` come back even when the content
+is empty), and reduces the content with `markdownOf(root, base)`, the
+walker in the same file: `textOf`'s structure with inline marks (`*em*`,
+`**strong**`, `` `code` `` fenced past any run of backticks inside,
+`~~del~~`, `"q"`), links as `[text](absolute)` with `(` `)` percent-encoded
+and a link into the page itself left as its text, images as `![alt](src)`
+(absolute `http(s)` only, each listed once in `images`; `data:` dropped),
+fenced code with the language from `language-*` / `lang-*` / `data-lang`,
+GFM tables (first row the header, rows padded, `|` escaped), lists from
+`start`, quotes of blocks, MathML to `$tex$` / `$$tex$$` from `data-latex`
+or an annotation, `\(…\)` / `\[…\]` to the same, footnotes as `[^n]`
+numbered by first reference (a `sup` link or a marked anchor into the page
+at an id reading `fn` / `footnote` / `note` / `cite_note`, also when
+Defuddle has resolved the link against the page) with the list (`#footnotes`,
+`.footnotes`, `.references`, or an `ol` whose items carry such ids) taken out
+of the flow and written as `## notes` + `[^n]: text` paragraphs at the end,
+back-references dropped. `escapeProse` runs on every paragraph: `{{` → `{ {`,
+a ` :: ` / ` ::: ` (whitespace on both sides, as `cardForm` reads it) loses
+the whitespace, a line that is only `?` / `??` becomes `\?`, a trailing
+` ^id` becomes ` \^id`, `<!--` becomes `<!- -`. Defuddle's Markdown was not
+used: it needs the full bundle and would still need the escapes, so one
+walker serves both passes. The fallback (`via: 'fallback'`) runs when the
+reduced content has no words: Readability's article, else the whole body,
+through the same walker, so it is the old pass's finder with the new
+reduction; `title` is Defuddle's, else the page's. `published` goes through
+`normalizeWhen`: `parseWhen` as is, else `Date` → a day when the string had
+no clock, else a UTC instant without milliseconds. `words` is `stats()` over
+the Markdown, not Defuddle's `wordCount`. Under jsdom 30, Defuddle's removal
+selectors exceed the selector engine's 2048-character limit and it falls
+back to the whole body, so `src/import/__tests__/long-selectors.ts`
+(`allowLongSelectors()`, test-side only) splits an over-long list at its
+top-level commas; the webview has no such limit. Format: `url`, `author`,
+`published` in `model.ts` (`Field`, `FIELD_KEYS`) and `frontmatter.ts`
+(`url` and `author` read and written as `title` is, `published` through
+`parseWhen`; `Meta` and `meta()` carry them); FORMAT.md §1 (the children
+directory's other files), §3 (three rows and a *Clippings* paragraph), §10;
+corpus `vault/fleeting/clipped-page.md` (the vault's document list in
+`vault.test.ts` gained it). `ImportSpec` gained `url`, `author`,
+`published`, set by `importDoc` when given; `Vault.attachImages(path, srcs,
+get)` downloads each address through the injected `get` (`ImageGet`: bytes
+and content type, or null), writes `name/img-NN.<ext>` (`imageExt` from the
+content type: png jpg gif webp avif svg bmp tiff; anything else, an empty
+answer, or a throw leaves the address in place), then one `update` that
+rewrites `](src)` to `](name/img-NN.ext)` in every block, and a rewalk; the
+walk ignores the files (only `.md` and `.pdf` are read, confirmed in
+`walk.ts` and the test: `documents()` unchanged, the node's `children: []`).
+App: `fetch.ts` `fetchReadable` returns `page: PageInfo` (the clip without
+`title` / `text`) for HTML and `fetchImage` (the http plugin, `arrayBuffer`)
+is the `ImageGet`; `src/app/clipping.ts` `importClipNode(dir, spec, images)`
+is `importNode` then `attachImages` while the `clipImages` tweak is on
+(`download images when clipping`, default on, in `store.ts` `Tweaks` and
+`setClipImages`, a row under the reopen row in `Tweaks.tsx`). The intake
+keeps the fetched `page` beside the text (cleared when the field empties or
+another thing lands), shows `.page-meta` (site · title; author · date) over
+the count, adds `N images` and `via defuddle` / `via the fallback` to the
+stats, and places through `importClipNode` with the three fields; the title
+field takes the page's title as before. The inspector's source block gains
+`url` (a `.insp-link` button showing the address without scheme and `www.`,
+`openUrl` from `@tauri-apps/plugin-opener`, `window.open` outside Tauri),
+`author`, and `published` (the day) after `imported`. `clipper.ts` writes
+the same: `url` kept even when the selection is the content, `author` and
+`published` from the fetched page, images through `importClipNode`. Rust:
+`tauri-plugin-opener` 2 in `Cargo.toml`, `.plugin(tauri_plugin_opener::
+init())`, `opener:default` in the capability (its scope allows `http(s)`);
+npm `@tauri-apps/plugin-opener` 2.7.2, `defuddle` 0.19.5. README: the
+clipping paragraph, the `ilmi://` paragraph, the tweaks line, the layout
+line. Tests: 415 (+16: `clip-page.test.ts` over the three pages under
+`src/import/__tests__/pages/`, `escapeProse`, `markdownOf`, `normalizeWhen`,
+the landing into a scratch vault with a fake getter; `format.test.ts` the
+three fields). Dev: `ILMI_SMOKE=clipping` (`ILMI_URL=` for another page),
+written on the branch and not run; the Rust side changed, so the window
+needs a rebuild first. Open: the smoke and its three shots; a dropped
+`.html` file still goes through `readable()` (Readability + `textOf`), not
+the clipper's path; Defuddle's own standardization takes the space before a
+`::` (`std :: vector` → `std:: vector`), which the escape then leaves since
+it is no longer a separator; a `figcaption` lands as a plain paragraph, not
+a caption; in the whole-body fallback a form's label text leaks in; no cap
+on the count or size of images downloaded, and they are fetched one after
+another after the file has landed, so the document shows with its remote
+addresses for a moment; `data:` images are dropped without a count; the
+callouts Defuddle standardizes land as paragraphs, not quotes.
 - `defuddle` as a dependency; the intake's address path (`fetchReadable`
   in `src/app/fetch.ts` → `src/import/readable.ts`) runs Defuddle on the
   fetched document (`new Defuddle(doc, { url, markdown: true })` or the
@@ -1989,9 +2077,10 @@ the `*emphasis*` open item under 19 closed.
 
 ## Notes for the next session
 
-Milestones 0–20, 22, and 23 are ticked (22 and 23 on branches, merged;
-23's window check is recorded under it); 21 under *Plugins* is next, then
-24–25 under *Clipping and rendering* (24 may run on a branch beside 21).
+Milestones 0–20 and 22–24 are ticked (22–24 on branches; 22 and 23
+merged with their window checks recorded under them, 24's window check
+owed); 21 under *Plugins* is next, then 25 under *Clipping and
+rendering*.
 After them, what is left is a polish pass
 over the open items
 each milestone's notes record (10: no palette command or key for

@@ -86,7 +86,24 @@ export interface ImportSpec {
   name?: string;
   /** The body, as pasted, dropped, or fetched. */
   text: string;
+  /** A clipped page's address, author, and published date (FORMAT.md §3); each written when given. */
+  url?: string;
+  author?: string;
+  published?: string;
   today?: string;
+}
+
+/** What `Vault.attachImages` is given for one address: the bytes and the content type, or null when the fetch failed. */
+export type ImageGet = (url: string) => Promise<{ bytes: Uint8Array; type: string } | null>;
+
+/** The file extension for an image content type; null when it is not an image this keeps. */
+export function imageExt(type: string): string | null {
+  const t = type.split(';')[0]!.trim().toLowerCase();
+  const ext: Record<string, string> = {
+    'image/png': 'png', 'image/jpeg': 'jpg', 'image/jpg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp',
+    'image/avif': 'avif', 'image/svg+xml': 'svg', 'image/bmp': 'bmp', 'image/tiff': 'tiff',
+  };
+  return ext[t] ?? null;
 }
 
 /** What `Vault.importDeck` lands as a new deck. */
@@ -484,11 +501,57 @@ export class Vault {
       setField(doc, 'imported', spec.today ?? localDay(new Date()));
       setField(doc, 'read', null);
       setField(doc, 'write', null);
+      if (spec.url?.trim()) setField(doc, 'url', spec.url.trim());
+      if (spec.author?.trim()) setField(doc, 'author', spec.author.trim());
+      if (spec.published?.trim()) setField(doc, 'published', spec.published.trim());
       if (title !== name || meta(doc).title !== undefined) setField(doc, 'title', title);
       await this.commit(path, serialize(doc));
       await this.rewalk();
       return path;
     });
+  }
+
+  /**
+   * The images a clipped document refers to, downloaded into its own
+   * folder (`name/img-01.png` …, where its extracts live; the extension
+   * from the content type) and its `![alt](src)` links pointed at them,
+   * relative to the document. `get` fetches one address; one that fails,
+   * or answers with something that is not an image, leaves its absolute
+   * address in place. One write of the document at the end, none when
+   * nothing landed. Resolves to the files landed, vault-relative.
+   */
+  async attachImages(path: string, srcs: string[], get: ImageGet): Promise<string[]> {
+    if (!isDoc(path) || !(await this.fs.stat(this.abs(path)))) throw new Error(`${path}: no such document`);
+    const dir = childDirOf(path);
+    const stem = baseOf(dir);
+    const landed = new Map<string, string>();
+    let n = 0;
+    for (const src of [...new Set(srcs)]) {
+      let got: Awaited<ReturnType<ImageGet>>;
+      try {
+        got = await get(src);
+      } catch {
+        got = null;
+      }
+      const ext = got && got.bytes.length ? imageExt(got.type) : null;
+      if (!got || !ext) continue;
+      n++;
+      const file = `img-${String(n).padStart(2, '0')}.${ext}`;
+      await this.serial(async () => {
+        await this.ensureDir(dir);
+        await this.atomicWriteBytes(this.abs(joinRel(dir, file)), got.bytes);
+      });
+      landed.set(src, `${stem}/${file}`);
+    }
+    if (landed.size) {
+      await this.update(path, (doc) => {
+        for (const b of doc.blocks) {
+          for (const [src, rel] of landed) b.text = b.text.split(`](${src})`).join(`](${rel})`);
+        }
+      });
+      await this.rewalk();
+    }
+    return [...landed.values()].map((rel) => joinRel(dirOf(path), rel));
   }
 
   /**

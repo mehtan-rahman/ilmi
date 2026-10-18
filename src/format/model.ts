@@ -99,7 +99,13 @@ export type Field =
   | { key: 'default-card'; value: CardForm }
   | { key: 'pri'; value: number }
   /** The document's pages: a PDF file, relative to the document. */
-  | { key: 'pdf'; value: string };
+  | { key: 'pdf'; value: string }
+  /** A clipped page's address. */
+  | { key: 'url'; value: string }
+  /** Who wrote the clipped page. */
+  | { key: 'author'; value: string }
+  /** When the clipped page was published: a day or a UTC instant. */
+  | { key: 'published'; value: string };
 
 export type FieldKey = Field['key'];
 
@@ -126,7 +132,7 @@ export interface Diagnostic {
 }
 
 export const FIELD_KEYS: readonly FieldKey[] = [
-  'type', 'title', 'frozen', 'imported', 'started', 'read', 'write', 'default-card', 'pri', 'pdf',
+  'type', 'title', 'frozen', 'imported', 'started', 'read', 'write', 'default-card', 'pri', 'pdf', 'url', 'author', 'published',
 ];
 
 export function isField(e: FmEntry): e is Field {

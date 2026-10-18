@@ -5,7 +5,8 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { fetch } from '@tauri-apps/plugin-http';
-import { HTML_EXT, TEXT_EXT, cleanText, readable, titleFromFileName, type AnkiPackage, type Epub } from '../import/index.js';
+import { HTML_EXT, TEXT_EXT, cleanText, clipPage, readable, titleFromFileName, type AnkiPackage, type Clipped, type Epub } from '../import/index.js';
+import type { ImageGet } from '../vault/index.js';
 import { pdfText } from './pdfjs.js';
 
 export const PDF_EXT = /\.pdf$/i;
@@ -38,15 +39,20 @@ export async function readDroppedPdf(path: string): Promise<FetchedPdf> {
   return { title: r.title || titleFromFileName(name.replace(PDF_EXT, '')), text: r.text, bytes, pages: r.pages };
 }
 
+/** What a page said about itself, beside its text: the clipper's fields, the images in the text, and which pass found the article. */
+export type PageInfo = Omit<Clipped, 'title' | 'text'>;
+
 export interface Fetched {
   /** The page's own title, or `''` for plain text. */
   title: string;
   text: string;
+  /** Present when the address answered with a page. */
+  page?: PageInfo;
 }
 
 const looksLikeHtml = (s: string) => /^\s*(<!doctype\s+html|<html|<head|<body)/i.test(s);
 
-/** The readable text at `url`: an article's for a page, the body itself for plain text. */
+/** The readable text at `url`: a page as the clipper would write it (`clipPage`), the body itself for plain text. */
 export async function fetchReadable(url: string): Promise<Fetched> {
   const res = await fetch(url, {
     headers: { accept: 'text/html, text/plain;q=0.9, text/markdown;q=0.9, */*;q=0.5' },
@@ -56,14 +62,22 @@ export async function fetchReadable(url: string): Promise<Fetched> {
   const type = res.headers.get('content-type') ?? '';
   const body = await res.text();
   if (/html/i.test(type) || (!/text\/(plain|markdown)/i.test(type) && looksLikeHtml(body))) {
-    const r = readable(body, res.url || url);
+    const r = clipPage(body, res.url || url);
     if (!r) throw new Error('nothing readable');
-    return r;
+    const { title, text, ...page } = r;
+    return { title, text, page };
   }
   const text = cleanText(body);
   if (!text) throw new Error('nothing readable');
   return { title: '', text };
 }
+
+/** One image for `Vault.attachImages`: its bytes and content type through the http plugin; null when the address does not answer. */
+export const fetchImage: ImageGet = async (url) => {
+  const res = await fetch(url, { headers: { accept: 'image/*, */*;q=0.5' }, connectTimeout: 20000 });
+  if (!res.ok) return null;
+  return { bytes: new Uint8Array(await res.arrayBuffer()), type: res.headers.get('content-type') ?? '' };
+};
 
 /** A dropped file: `.txt` / `.md` as they are, `.html` as its readable text. Others are refused. */
 export async function readDropped(path: string): Promise<Fetched> {

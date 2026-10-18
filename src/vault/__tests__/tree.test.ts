@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { meta, parse, setField } from '../../format/index.js';
 import { nodeFs } from '../node-fs.js';
-import { Vault, documents, extractName, type TreeNode, type VaultEvent } from '../index.js';
+import { Vault, addToPage, documents, extractName, pageOf, pageOfBlock, pageSection, type TreeNode, type VaultEvent } from '../index.js';
 import { childDirOf, cleanName, fileName, nameOf, rekey, within } from '../paths.js';
 
 const CORPUS = fileURLToPath(new URL('../../format/__tests__/corpus/vault/', import.meta.url));
@@ -396,5 +396,113 @@ A good system spends your attention the way a careful gardener spends water: not
   it('refuses empty text and a missing folder', async () => {
     await expect(vault.importDoc('papers', { title: 'x', text: '  \n ' })).rejects.toThrow('nothing to import');
     await expect(vault.importDoc('nowhere', { title: 'x', text: 'body' })).rejects.toThrow('no such folder');
+  });
+});
+
+describe('pages', () => {
+  const PAIR = 'papers/two-pages.md';
+  const PDF = 'papers/two-pages.pdf';
+  const bytes = () => fsp.readFile(join(root, PDF));
+
+  it('finds a document\'s pages by stem, by its field, and not at all', async () => {
+    expect(await vault.pagesOf(PAIR)).toBe(PDF);
+    expect(await vault.pagesOf(WOZ)).toBeNull();
+    expect(await vault.pagesOf('papers')).toBeNull();
+    // the field wins when it names a file that exists; a missing one falls back to the stem
+    await fsp.copyFile(join(root, PDF), join(root, 'papers/other.pdf'));
+    await vault.update(PAIR, (d) => setField(d, 'pdf', 'other.pdf'));
+    expect(await vault.pagesOf(PAIR)).toBe('papers/other.pdf');
+    await vault.update(PAIR, (d) => setField(d, 'pdf', 'nowhere.pdf'));
+    expect(await vault.pagesOf(PAIR)).toBe(PDF);
+    await vault.update(PAIR, (d) => setField(d, 'pdf', '../../etc/passwd'));
+    expect(await vault.pagesOf(PAIR)).toBe(PDF);
+    // a field on a document with nothing beside it, naming a file that is there
+    await vault.update(WOZ, (d) => setField(d, 'pdf', 'other.pdf'));
+    expect(await vault.pagesOf(WOZ)).toBe('papers/other.pdf');
+  });
+
+  it('a new document never adopts a stray PDF', async () => {
+    await fsp.copyFile(join(root, PDF), join(root, 'papers/stray.pdf'));
+    expect(await vault.createDoc('papers', 'source', 'stray')).toBe('papers/stray 2.md');
+  });
+
+  it('carves an extract from a page: page on the child, the passage and its backref under the page heading in the parent', async () => {
+    const before = (await vault.read(PAIR)).text;
+    const child = await vault.extract(PAIR, { text: 'Nothing is ever written into this file.', blocks: [], page: 2, today: '2026-05-27' });
+    expect(child).toBe('papers/two-pages/Nothing is ever written into.md');
+    expect(await readDisk(child)).toBe('---\ntype: extract\nimported: 2026-05-27\npri: 50\nread: due=2026-05-27 ivl=1 reps=0 pos=0 page=2\n---\n\nNothing is ever written into this file.\n');
+    const after = (await vault.read(PAIR)).text;
+    // the parent's `## p. 2` section grew by the paragraph and its backref; the marker stayed
+    expect(after.split('\n').length).toBe(before.split('\n').length + 3);
+    expect(after).toContain('with each pass ^ctp-spaced\n<!-- sr c1');
+    expect(after).toContain('g=4 -->\n\nNothing is ever written into this file.\n<!-- extract Nothing is ever written into -->\n');
+    expect(meta((await vault.read(PAIR)).doc).read?.pos).toBe(1);
+    // a page with no heading yet gets one, in page order
+    await vault.extract(PAIR, { text: 'a passage from page four', blocks: [], page: 4, today: '2026-05-27' });
+    await vault.extract(PAIR, { text: 'a passage from page three', blocks: [], page: 3, today: '2026-05-27' });
+    const headings = (await vault.read(PAIR)).doc.blocks.filter((b) => b.kind === 'heading').map((b) => b.text);
+    expect(headings).toEqual(['p. 1', 'p. 2', 'p. 3', 'p. 4']);
+    expect((await vault.read(PAIR)).diagnostics).toEqual([]);
+  });
+
+  it('imports a PDF as the pair: the file copied, the document naming it, the text under a heading', async () => {
+    const data = new Uint8Array(await bytes());
+    const path = await vault.importPdf('books', { title: 'A dropped paper', bytes: data, text: 'Two pages\n\nThe first line.\n\nThe second.', today: '2026-09-22' });
+    expect(path).toBe('books/A dropped paper.md');
+    expect(await readDisk(path)).toBe('---\nfrozen: true\nimported: 2026-09-22\npdf: A dropped paper.pdf\n---\n\n## text\n\nTwo pages\n\nThe first line.\n\nThe second.\n');
+    expect(Buffer.from(await fsp.readFile(join(root, 'books/A dropped paper.pdf'))).equals(Buffer.from(data))).toBe(true);
+    expect(await vault.pagesOf(path)).toBe('books/A dropped paper.pdf');
+    expect(find(vault.tree, path)).toMatchObject({ kind: 'doc', pdf: 'books/A dropped paper.pdf' });
+    // no text: no body; a taken name is numbered for both files; nothing to copy is refused
+    const scan = await vault.importPdf('books', { title: 'A dropped paper', bytes: data, text: '  ', today: '2026-09-22' });
+    expect(scan).toBe('books/A dropped paper 2.md');
+    expect(await readDisk(scan)).toBe('---\nfrozen: true\nimported: 2026-09-22\npdf: A dropped paper 2.pdf\ntitle: A dropped paper\n---\n');
+    expect(await exists('books/A dropped paper 2.pdf')).toBe(true);
+    await expect(vault.importPdf('books', { title: 'x', bytes: new Uint8Array(), text: '' })).rejects.toThrow('nothing to import');
+  });
+
+  it('renames and removes the pages with the document', async () => {
+    const to = await vault.rename(PAIR, 'two pages (rev)');
+    expect(to).toBe('papers/two pages (rev).md');
+    expect(await exists(PDF)).toBe(false);
+    expect(await exists('papers/two pages (rev).pdf')).toBe(true);
+    expect(await exists('papers/two pages (rev)/the ruler in the margin.md')).toBe(true);
+    // the field named the old stem, so it follows; one line changed
+    expect(meta((await vault.read(to)).doc).pdf).toBe('two pages (rev).pdf');
+    expect(await vault.pagesOf(to)).toBe('papers/two pages (rev).pdf');
+    const moved = await vault.move(to, 'books');
+    expect(await exists('books/two pages (rev).pdf')).toBe(true);
+    expect(await vault.pagesOf(moved)).toBe('books/two pages (rev).pdf');
+    await vault.remove(moved);
+    expect(await exists('books/two pages (rev).pdf')).toBe(false);
+    expect(await exists('books/two pages (rev)')).toBe(false);
+  });
+
+  it('a PDF arriving beside a document attaches it on the next walk', async () => {
+    expect(find(vault.tree, 'papers/crick-1995.md')).not.toHaveProperty('pdf');
+    await fsp.copyFile(join(root, PDF), join(root, 'papers/crick-1995.pdf'));
+    await vault.changed(['papers/crick-1995.pdf']);
+    expect(find(vault.tree, 'papers/crick-1995.md')).toMatchObject({ pdf: 'papers/crick-1995.pdf' });
+    expect(await vault.pagesOf('papers/crick-1995.md')).toBe('papers/crick-1995.pdf');
+  });
+});
+
+describe('page sections', () => {
+  it('knows which page a block sits under, and where a block lands on a page', () => {
+    const { doc } = parse('intro\n\n## p. 2\n\ntwo\n\n### sub\n\ndeeper\n\n## notes\n\nloose\n\n## p. 5\n\nfive\n');
+    expect(doc.blocks.map((_, i) => pageOfBlock(doc, i))).toEqual([null, 2, 2, 2, 2, null, null, 5, 5]);
+    expect(pageOf(doc.blocks[1])).toBe(2);
+    expect(pageOf(doc.blocks[5])).toBeNull();
+    expect(pageOf({ kind: 'heading', level: 1, text: 'p. 2' })).toBeNull();
+    expect(pageSection(doc, 2)).toEqual([1, 5]);
+    expect(pageSection(doc, 5)).toEqual([7, 9]);
+    expect(pageSection(doc, 3)).toBeNull();
+    // onto an existing page: at the end of its section; onto a new one: a heading in page order, else at the end
+    expect(addToPage(doc, 2, { kind: 'paragraph', text: 'more two' })).toBe(5);
+    expect(addToPage(doc, 3, { kind: 'paragraph', text: 'three' })).toBe(9);
+    expect(addToPage(doc, 9, { kind: 'paragraph', text: 'nine' })).toBe(13);
+    expect(doc.blocks.map((b) => (b.kind === 'heading' ? `#${b.text}` : b.text))).toEqual([
+      'intro', '#p. 2', 'two', '#sub', 'deeper', 'more two', '#notes', 'loose', '#p. 3', 'three', '#p. 5', 'five', '#p. 9', 'nine',
+    ]);
   });
 });

@@ -27,6 +27,7 @@ notes/
     wozniak-1990/            its children (extracts carved from it)
       woz-ex1.md
     crick-1995.md
+    crick-1995.pdf           its pages, read in place (§3 `pdf`)
   german.md                  a deck (type: deck in front-matter)
   essays/
     spaced-composition.md    a draft (type: draft)
@@ -38,6 +39,12 @@ notes/
   `.obsidian`).
 - `name.md` next to a directory `name/` means the directory holds that
   document's children. Today the only children are extracts.
+- `name.pdf` next to `name.md` is that document's pages. The Markdown is
+  the document: its type, schedule, priority, cards, and extract backrefs
+  live there; the PDF is read in place and never written. The pairing is by
+  stem whether or not the document names the file; a `pdf` field (§3) that
+  names another file wins. A `.pdf` with no `.md` beside it is ignored like
+  any other file.
 - A document's display name is its filename without `.md`, unless front-matter
   sets `title`.
 - Folder open/closed state, window layout, and other view state live in
@@ -101,13 +108,29 @@ dropped, with a diagnostic.
 | `write`        | attributes (§7)             |           | enrolled in incremental writing                                    |
 | `default-card` | `cloze` `qa` `bidir`        |           | what the composer opens to, for decks                              |
 | `pri`          | int 0–100                   | `50`      | priority, lower first: the document's reading, writing, and every card in it |
+| `pdf`          | file name                   | `name.pdf` beside the document, when it exists | the document's pages, relative to the document (§1) |
 
 `read` attributes: `due` (day or instant), `ivl` (days between passes, int),
-`reps` (passes made, int), `pos` (prose blocks read, int), `af` (growth,
-number ≥ 1.1, default 1.6), `pri` (int 0–100).
+`reps` (passes made, int), `pos` (prose blocks read, int), `page` (int ≥ 1),
+`af` (growth, number ≥ 1.1, default 1.6), `pri` (int 0–100).
 `pos` counts prose blocks from the top of the body, skipping cards;
 hand-inserting a paragraph above the marker shifts it by one, which is the
-accepted trade for not tagging every paragraph with an id.
+accepted trade for not tagging every paragraph with an id. On a document
+with pages, `pos` is the page the ruler is on instead, counted from 1; the
+same attribute, so nothing else changes. `page` sits on an extract carved
+from a page of its parent's PDF and names that page; it means nothing on
+any other line and is kept as written.
+
+**Pages.** `pdf` names a file relative to the document, written plain or
+quoted like `title`. A document with pages keeps what came out of them in
+its body under one heading per page, `## p. <n>`, which the app adds the
+first time something lands on that page: a card made from the page goes
+under it, and an extract carved from the page leaves the passage there as a
+paragraph carrying the `<!-- extract NAME -->` backref (§6.3), while the
+child carries `page=<n>` on its `read` line. The heading is ordinary
+Markdown; the format gives it no meaning beyond the convention, and a
+hand-written `## p. 3` is the same heading. A `pdf` that names a missing
+file is kept and the document reads as text.
 
 `write` attributes: `due`, `ivl`, `reps`, `af` (default 1.5), `pri` as above,
 plus `done` (`true`/`false`). A done draft keeps its line so it can be
@@ -386,6 +409,8 @@ fixes the file. That is intended.
 - Per-direction schedules on bidirectional cards.
 - Prose block ids for the reading marker (would make `pos` edit-stable).
 - Attachments and images (they are just Markdown; the app renders them).
+- Anything written into a PDF: highlights are the extracts' stored text,
+  found again on the page; annotations stay in the Markdown.
 
 ## 11. Corner cases worth knowing
 

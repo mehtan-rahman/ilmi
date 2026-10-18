@@ -81,6 +81,34 @@ describe('front-matter', () => {
       expect(meta(parse(`---\n${bad}\n---\n\nx\n`).doc).pri).toBeUndefined();
   });
 
+  it('pages: the pdf field names the file, page sits on an extract\'s read line, and bad values degrade', () => {
+    const { doc } = parse(read('vault/papers/two-pages.md'));
+    expect(meta(doc)).toEqual({
+      type: 'source', frozen: true, imported: '2026-05-25', pri: 50, pdf: 'two-pages.pdf',
+      read: { due: '2026-06-10', ivl: 3, reps: 2, pos: 1 },
+    });
+    expect(doc.blocks.map((b) => b.kind)).toEqual(['heading', 'paragraph', 'heading', 'card']);
+    expect(doc.blocks.filter((b): b is Heading => b.kind === 'heading').map((b) => b.text)).toEqual(['p. 1', 'p. 2']);
+    expect((doc.blocks[1] as Paragraph).extracts).toEqual(['the ruler in the margin']);
+    const child = parse(read('vault/papers/two-pages/the ruler in the margin.md'));
+    expect(meta(child.doc).read).toEqual({ due: '2026-06-11', ivl: 2, reps: 1, pos: 0, page: 1 });
+    // the mangled one: an empty field is a raw line, page=0 is dropped, the missing file is not the parser's business
+    const bad = parse(read('mangled/pdf-missing.md'));
+    expect(meta(bad.doc).pdf).toBe('nowhere.pdf');
+    expect(meta(bad.doc).read).toEqual({ due: '2026-05-27', pos: 3 });
+    expect(bad.diagnostics.map((d) => `${d.line}: ${d.message}`)).toEqual(['3: "pdf" needs a value', '5: bad value for "page": 0']);
+    expect(serialize(bad.doc).split('\n').slice(0, 6)).toEqual(['---', 'type: source', 'pdf:', 'pdf: nowhere.pdf', 'read: due=2026-05-27 pos=3', '---']);
+    // written plain, quoted when it must be, and set and cleared like any field
+    const d = parse('x\n').doc;
+    setField(d, 'pdf', 'paper.pdf');
+    expect(serialize(d)).toBe('---\npdf: paper.pdf\n---\n\nx\n');
+    setField(d, 'pdf', 'a: b.pdf');
+    expect(meta(parse(serialize(d)).doc).pdf).toBe('a: b.pdf');
+    setField(d, 'pdf', null);
+    expect(serialize(d)).toBe('x\n');
+    expect(meta(parse('---\npdf: "quoted name.pdf"\n---\n\nx\n').doc).pdf).toBe('quoted name.pdf');
+  });
+
   it('keeps unknown lines verbatim and degrades bad values with diagnostics', () => {
     const { doc, diagnostics } = parse(read('mangled/frontmatter-ugly.md'));
     const m = meta(doc);

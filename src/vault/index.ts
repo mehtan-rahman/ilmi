@@ -3,6 +3,7 @@
 
 export type { Fs, FsEntry, FsStat, Stamp } from './fs.js';
 export { join, relative, sameStamp } from './fs.js';
-export { walk, documents, isDocPath, isHidden, type TreeNode, type Folder, type DocNode } from './walk.js';
-export { dirOf, baseOf, joinRel, isDoc, childDirOf, nameOf, within, rekey, cleanName, fileName } from './paths.js';
-export { Vault, VaultConflict, NEW_NAMES, extractName, type ExtractSpec, type ImportSpec, type Loaded, type VaultEvent, type VaultState } from './vault.js';
+export { walk, documents, isDocPath, isPdfPath, isHidden, type TreeNode, type Folder, type DocNode } from './walk.js';
+export { dirOf, baseOf, joinRel, isDoc, childDirOf, pdfOf, nameOf, within, rekey, cleanName, fileName } from './paths.js';
+export { pageHeading, pageOf, pageOfBlock, pageSection, addToPage } from './pages.js';
+export { Vault, VaultConflict, NEW_NAMES, extractName, type ExtractSpec, type ImportSpec, type ImportPdfSpec, type Loaded, type VaultEvent, type VaultState } from './vault.js';

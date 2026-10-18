@@ -3,7 +3,7 @@
 
 import {
   parseAttrs, formatAttrs, parseDay, parseBool, parseInt_, parseNumber, readAttrs, writeAttrs,
-  specWhen, specInt, specIntRange, specNumMin, specBool, type AttrSpec, type Warn,
+  specWhen, specInt, specIntMin, specIntRange, specNumMin, specBool, type AttrSpec, type Warn,
 } from './attrs.js';
 import {
   isField, type CardForm, type Diagnostic, type Doc, type Field, type FieldKey, type FmEntry,
@@ -24,7 +24,7 @@ export const READ_AF = 1.6;
 export const WRITE_AF = 1.5;
 
 export const READ_SPECS: AttrSpec<ReadSchedule>[] = [
-  specWhen('due', 'due'), specInt('ivl', 'ivl'), specInt('reps', 'reps'), specInt('pos', 'pos'), specNumMin('af', 'af', AF_MIN), specIntRange('pri', 'pri', PRI_MIN, PRI_MAX),
+  specWhen('due', 'due'), specInt('ivl', 'ivl'), specInt('reps', 'reps'), specInt('pos', 'pos'), specIntMin('page', 'page', 1), specNumMin('af', 'af', AF_MIN), specIntRange('pri', 'pri', PRI_MIN, PRI_MAX),
 ];
 export const WRITE_SPECS: AttrSpec<WriteSchedule>[] = [
   specWhen('due', 'due'), specInt('ivl', 'ivl'), specInt('reps', 'reps'), specNumMin('af', 'af', AF_MIN), specIntRange('pri', 'pri', PRI_MIN, PRI_MAX), specBool('done', 'done'),
@@ -113,6 +113,11 @@ function parseValue(key: FieldKey, raw: string, warn: Warn): Field | null {
       const v = parsePri(stripComment(raw));
       return v === null ? null : { key, value: v };
     }
+    case 'pdf': {
+      // a file name relative to the document, quoted like a title when it must be
+      const v = parseTitle(raw.trim(), warn);
+      return v === null || !v.trim() ? null : { key, value: v };
+    }
   }
 }
 
@@ -185,7 +190,7 @@ function withoutLinePri(f: Field, into?: FmEntry[]): Field {
   return out;
 }
 
-const KNOWN = new Set<string>(['type', 'title', 'frozen', 'imported', 'started', 'read', 'write', 'default-card', 'pri']);
+const KNOWN = new Set<string>(['type', 'title', 'frozen', 'imported', 'started', 'read', 'write', 'default-card', 'pri', 'pdf']);
 function isKnown(k: string): k is FieldKey { return KNOWN.has(k); }
 
 // ── serialize ────────────────────────────────────────────────────
@@ -199,6 +204,7 @@ export function formatField(f: Field): string {
     case 'read': return attrLine('read', formatAttrs(writeAttrs(withoutDefaultAf(f.value, READ_AF), READ_SPECS)));
     case 'write': return attrLine('write', formatAttrs(writeAttrs(withoutDefaultAf(f.value, WRITE_AF), WRITE_SPECS)));
     case 'pri': return `pri: ${f.value}`;
+    case 'pdf': return `pdf: ${formatTitle(f.value)}`;
   }
 }
 
@@ -224,6 +230,8 @@ export interface Meta {
   defaultCard?: CardForm;
   /** The `pri` field; absent means `PRI_DEFAULT`, unless a `read` / `write` line carries a fallback. */
   pri?: number;
+  /** The `pdf` field: the document's pages, a file relative to the document. */
+  pdf?: string;
 }
 
 /** The document's front-matter as a plain object, defaults applied. */
@@ -241,6 +249,7 @@ export function meta(doc: Doc): Meta {
       case 'write': out.write = e.value; break;
       case 'default-card': out.defaultCard = e.value; break;
       case 'pri': out.pri = e.value; break;
+      case 'pdf': out.pdf = e.value; break;
     }
   }
   return out;

@@ -3,7 +3,7 @@
 // nothing here needs a base directory.
 
 import {
-  exists, mkdir, readDir, readTextFile, remove, rename, stat, watch, writeTextFile,
+  exists, mkdir, readDir, readFile, readTextFile, remove, rename, stat, watch, writeFile, writeTextFile,
 } from '@tauri-apps/plugin-fs';
 import type { Fs } from './fs.js';
 
@@ -25,6 +25,8 @@ export const tauriFs: Fs = {
   },
   readText: (path) => readTextFile(path),
   writeText: (path, text) => writeTextFile(path, text),
+  readBytes: (path) => readFile(path),
+  writeBytes: (path, bytes) => writeFile(path, bytes),
   rename: (from, to) => rename(from, to),
   mkdir: async (path) => {
     if (!(await exists(path))) await mkdir(path, { recursive: true });

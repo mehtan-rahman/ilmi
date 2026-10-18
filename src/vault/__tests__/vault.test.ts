@@ -51,7 +51,12 @@ describe('walk', () => {
     const papers = vault.tree.find((n) => n.name === 'papers');
     expect(papers?.kind).toBe('folder');
     if (papers?.kind !== 'folder') return;
-    expect(names(papers.children)).toEqual(['archive/', 'crick-1995', 'wozniak-1990']);
+    expect(names(papers.children)).toEqual(['archive/', 'crick-1995', 'two-pages', 'wozniak-1990']);
+    // the PDF beside two-pages.md is its pages, attached by stem; the file itself is not a document
+    const pair = papers.children.find((n) => n.name === 'two-pages');
+    expect(pair).toMatchObject({ kind: 'doc', path: 'papers/two-pages.md', pdf: 'papers/two-pages.pdf' });
+    expect(pair?.kind === 'doc' && pair.children && names(pair.children)).toEqual(['the ruler in the margin']);
+    expect(vault.documents()).not.toContain('papers/two-pages.pdf');
     const woz = papers.children.find((n) => n.name === 'wozniak-1990');
     expect(woz).toMatchObject({ kind: 'doc', path: WOZ });
     expect(woz?.kind === 'doc' && woz.children && names(woz.children)).toEqual(['woz-ex1']);
@@ -79,6 +84,8 @@ describe('walk', () => {
       'fleeting/2026-05-27.md',
       'papers/archive/sutton-2019.md',
       'papers/crick-1995.md',
+      'papers/two-pages.md',
+      'papers/two-pages/the ruler in the margin.md',
       'papers/wozniak-1990.md',
       'papers/wozniak-1990/woz-ex1.md',
       'german.md',

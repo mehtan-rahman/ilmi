@@ -25,6 +25,10 @@ export interface Fs {
   readText(path: string): Promise<string>;
   /** Creates or truncates. Not atomic; the vault writes a temp file and renames. */
   writeText(path: string, text: string): Promise<void>;
+  /** The whole file as bytes: a document's pages. */
+  readBytes(path: string): Promise<Uint8Array>;
+  /** Creates or truncates, like `writeText`. */
+  writeBytes(path: string, bytes: Uint8Array): Promise<void>;
   /** Replaces the destination if it exists. */
   rename(from: string, to: string): Promise<void>;
   /** Recursive; succeeds if the directory exists. */

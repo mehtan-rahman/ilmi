@@ -5,8 +5,9 @@
 
 import { meta, parse, serialize, setField, type Card, type Diagnostic, type Doc, type NodeType } from '../format/index.js';
 import { join, relative, sameStamp, type Fs, type Stamp } from './fs.js';
-import { baseOf, childDirOf, cleanName, dirOf, fileName, isDoc, joinRel, nameOf, rekey, within } from './paths.js';
-import { documents, isDocPath, isHidden, walk, type TreeNode } from './walk.js';
+import { addToPage } from './pages.js';
+import { baseOf, childDirOf, cleanName, dirOf, fileName, isDoc, joinRel, nameOf, pdfOf, rekey, within } from './paths.js';
+import { documents, isDocPath, isHidden, isPdfPath, walk, type DocNode, type TreeNode } from './walk.js';
 
 export interface Loaded {
   path: string;
@@ -58,6 +59,12 @@ export interface ExtractSpec {
   blocks: number[];
   /** File name; by default the passage's first words. */
   name?: string;
+  /**
+   * The page of the parent's PDF the passage came from. The child carries it
+   * on its `read` line, and the passage lands under `## p. <n>` in the parent
+   * as the paragraph the backref hangs on; `blocks` is not used.
+   */
+  page?: number;
   today?: string;
 }
 
@@ -72,6 +79,16 @@ export interface ImportSpec {
   /** Display name; also the file name, once it is one. */
   title: string;
   /** The body, as pasted, dropped, or fetched. */
+  text: string;
+  today?: string;
+}
+
+/** What `Vault.importPdf` lands as a new pair. */
+export interface ImportPdfSpec {
+  title: string;
+  /** The PDF itself, copied beside the document. */
+  bytes: Uint8Array;
+  /** Its text, page after page, as the fallback body; may be empty for a scan. */
   text: string;
   today?: string;
 }
@@ -148,6 +165,34 @@ export class Vault {
     return documents(this.tree);
   }
 
+  /** The tree node of a document, when it is in the tree. */
+  private node(path: string): DocNode | undefined {
+    const visit = (nodes: TreeNode[]): DocNode | undefined => {
+      for (const n of nodes) {
+        if (n.kind === 'doc' && n.path === path) return n;
+        const hit = n.kind === 'folder' ? visit(n.children) : n.children ? visit(n.children) : undefined;
+        if (hit) return hit;
+      }
+      return undefined;
+    };
+    return visit(this.tree);
+  }
+
+  /**
+   * Where a document's pages are: the file its `pdf` field names, relative to
+   * it, when that exists; else `name.pdf` beside it, when that exists; else
+   * null. Vault-relative.
+   */
+  async pagesOf(path: string): Promise<string | null> {
+    if (!isDoc(path)) return null;
+    const named = meta((await this.read(path)).doc).pdf;
+    if (named !== undefined) {
+      const rel = joinRel(dirOf(path), named).split('/').filter((s) => s && s !== '.').join('/');
+      if (!rel.split('/').includes('..') && (await this.fs.stat(this.abs(rel)))?.isDir === false) return rel;
+    }
+    return this.node(path)?.pdf ?? null;
+  }
+
   subscribe(fn: (ev: VaultEvent) => void): () => void {
     this.listeners.add(fn);
     return () => this.listeners.delete(fn);
@@ -218,9 +263,17 @@ export class Vault {
   }
 
   /** Temp file next to the target, then rename, so a reader never sees a half-written file. */
-  private async atomicWrite(abs: string, text: string): Promise<void> {
+  private atomicWrite(abs: string, text: string): Promise<void> {
+    return this.viaTmp(abs, (tmp) => this.fs.writeText(tmp, text));
+  }
+
+  private atomicWriteBytes(abs: string, bytes: Uint8Array): Promise<void> {
+    return this.viaTmp(abs, (tmp) => this.fs.writeBytes(tmp, bytes));
+  }
+
+  private async viaTmp(abs: string, write: (tmp: string) => Promise<void>): Promise<void> {
     const tmp = `${abs}${TMP_SUFFIX}`;
-    await this.fs.writeText(tmp, text);
+    await write(tmp);
     try {
       await this.fs.rename(tmp, abs);
     } catch (e) {
@@ -278,7 +331,8 @@ export class Vault {
           const loaded = await this.read(rel, true);
           this.emit({ kind: 'doc', path: rel, loaded });
         }
-      } else if (!st || st.isDir) {
+      } else if (!st || st.isDir || isPdfPath(rel)) {
+        // a PDF that came or went is a document's pages coming or going
         rewalk = true;
       }
     }
@@ -305,9 +359,10 @@ export class Vault {
     return run;
   }
 
-  /** True when `dir/name` or `dir/name.md` exists: both would collide with a doc or a folder of that name. */
+  /** True when `dir/name`, `dir/name.md`, or `dir/name.pdf` exists: each would collide with, or be adopted by, a node of that name. */
   private async taken(dir: string, name: string): Promise<boolean> {
-    return !!(await this.fs.stat(this.abs(joinRel(dir, name)))) || !!(await this.fs.stat(this.abs(joinRel(dir, `${name}.md`))));
+    for (const ext of ['', '.md', '.pdf']) if (await this.fs.stat(this.abs(joinRel(dir, name + ext)))) return true;
+    return false;
   }
 
   /** `name`, else `name 2`, `name 3`, … the first free one in `dir`. */
@@ -401,9 +456,40 @@ export class Vault {
   }
 
   /**
+   * A new source with pages in `dir`: the PDF copied to `name.pdf`, and
+   * `name.md` beside it, frozen, `imported` today, `pdf: name.pdf`, with the
+   * extracted text as the body under a `## text` heading (nothing when the
+   * PDF has no text). The title is written as a field when it differs from
+   * the name, as `importDoc` does. Resolves to the document's path.
+   */
+  importPdf(dir: string, spec: ImportPdfSpec): Promise<string> {
+    return this.serial(async () => {
+      if (!spec.bytes.length) throw new Error('nothing to import');
+      const title = spec.title.trim() || NEW_NAMES.source;
+      await this.ensureDir(dir);
+      const name = await this.freeName(dir, fileName(title));
+      const path = `${joinRel(dir, name)}.md`;
+      const pdf = `${joinRel(dir, name)}.pdf`;
+      const text = spec.text.trim();
+      const { doc } = parse(text ? `## text\n\n${text}\n` : '');
+      setField(doc, 'frozen', true);
+      setField(doc, 'imported', spec.today ?? localDay(new Date()));
+      setField(doc, 'pdf', `${name}.pdf`);
+      setField(doc, 'read', null);
+      setField(doc, 'write', null);
+      if (title !== name || meta(doc).title !== undefined) setField(doc, 'title', title);
+      await this.atomicWriteBytes(this.abs(pdf), spec.bytes);
+      await this.commit(path, serialize(doc));
+      await this.rewalk();
+      return path;
+    });
+  }
+
+  /**
    * Rename a folder or a document in place. A document's children directory
-   * moves with it, and if the document is an extract its parent's backrefs
-   * follow. Resolves to the new path; a no-op resolves to the old one.
+   * and its pages move with it (a `pdf` field naming the old stem follows),
+   * and if the document is an extract its parent's backrefs follow. Resolves
+   * to the new path; a no-op resolves to the old one.
    */
   rename(path: string, name: string): Promise<string> {
     return this.serial(async () => {
@@ -412,8 +498,13 @@ export class Vault {
       if (clean === nameOf(path)) return path;
       const dir = dirOf(path);
       const to = isDoc(path) ? `${joinRel(dir, clean)}.md` : joinRel(dir, clean);
-      await this.relocate(path, to);
-      if (isDoc(path)) await this.retargetBackrefs(dir, nameOf(path), clean);
+      const pagesMoved = await this.relocate(path, to);
+      if (isDoc(path)) {
+        await this.retargetBackrefs(dir, nameOf(path), clean);
+        if (pagesMoved && meta((await this.read(to)).doc).pdf === `${nameOf(path)}.pdf`) {
+          await this.update(to, (doc) => setField(doc, 'pdf', `${clean}.pdf`));
+        }
+      }
       await this.rewalk();
       return to;
     });
@@ -500,11 +591,14 @@ export class Vault {
     });
   }
 
-  /** Delete a folder, or a document and its children directory. */
+  /** Delete a folder, or a document with its children directory and its pages. */
   remove(path: string): Promise<void> {
     return this.serial(async () => {
       await this.fs.remove(this.abs(path));
-      if (isDoc(path)) await this.fs.remove(this.abs(childDirOf(path)));
+      if (isDoc(path)) {
+        await this.fs.remove(this.abs(childDirOf(path)));
+        await this.fs.remove(this.abs(pdfOf(path)));
+      }
       for (const key of [...this.cache.keys()]) {
         if (rekey(key, path, path) !== null) {
           this.cache.delete(key);
@@ -519,8 +613,10 @@ export class Vault {
    * Carve a passage of `parent` into a child extract (FORMAT.md §6.3): a new
    * file in the parent's children directory with `type: extract` and its own
    * reading schedule due today, a backref on each touched paragraph, and the
-   * parent's marker moved past the last touched block. Resolves to the
-   * child's path.
+   * parent's marker moved past the last touched block. From a page
+   * (`spec.page`), the child's line carries `page=<n>`, the passage lands as
+   * a paragraph under `## p. <n>` in the parent with the backref on it, and
+   * the marker stays where it is. Resolves to the child's path.
    */
   extract(parent: string, spec: ExtractSpec): Promise<string> {
     return this.serial(async () => {
@@ -543,9 +639,13 @@ export class Vault {
       // the extract starts at the parent's priority (a `pri=` left on the parent's read line counts)
       const pri = pm.pri ?? pm.read?.pri;
       if (pri !== undefined) setField(doc, 'pri', pri);
-      setField(doc, 'read', { due: today, ivl: 1, reps: 0, pos: 0 });
+      setField(doc, 'read', spec.page === undefined ? { due: today, ivl: 1, reps: 0, pos: 0 } : { due: today, ivl: 1, reps: 0, pos: 0, page: spec.page });
       await this.commit(path, serialize(doc));
       await this.update(parent, (d) => {
+        if (spec.page !== undefined) {
+          addToPage(d, spec.page, { kind: 'paragraph', text: text.replace(/\n[ \t]*\n+/g, '\n'), extracts: [name] });
+          return;
+        }
         let last = -1;
         let prose = 0;
         d.blocks.forEach((b, i) => {
@@ -564,13 +664,22 @@ export class Vault {
     });
   }
 
-  /** Rename on disk (`from` → `to`, both vault-relative), children directory included, then re-key the cache. */
-  private async relocate(from: string, to: string): Promise<void> {
+  /**
+   * Rename on disk (`from` → `to`, both vault-relative), children directory
+   * and pages included, then re-key the cache. Resolves to whether pages moved.
+   */
+  private async relocate(from: string, to: string): Promise<boolean> {
     if (await this.taken(dirOf(to), nameOf(to))) throw new Error(`${nameOf(to)} already exists`);
     await this.fs.rename(this.abs(from), this.abs(to));
+    let pages = false;
     if (isDoc(from)) {
       const kids = await this.fs.stat(this.abs(childDirOf(from)));
       if (kids?.isDir) await this.fs.rename(this.abs(childDirOf(from)), this.abs(childDirOf(to)));
+      const pdf = await this.fs.stat(this.abs(pdfOf(from)));
+      if (pdf && !pdf.isDir) {
+        await this.fs.rename(this.abs(pdfOf(from)), this.abs(pdfOf(to)));
+        pages = true;
+      }
     }
     for (const [key, loaded] of [...this.cache]) {
       const next = rekey(key, from, to);
@@ -579,6 +688,7 @@ export class Vault {
       this.cache.set(next, { ...loaded, path: next });
     }
     this.emit({ kind: 'moved', from, to });
+    return pages;
   }
 
   /** If `dir` is a document's children directory, point that document's `<!-- extract old -->` lines at `next`. */

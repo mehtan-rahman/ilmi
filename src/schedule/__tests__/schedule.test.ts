@@ -148,7 +148,11 @@ describe('reading', () => {
     const vault = await Vault.open(nodeFs, root);
     try {
       const topics = (await queue(vault, NOW, 'reading')).map((i) => i.path).sort();
-      expect(topics).toEqual(['papers/archive/sutton-2019.md', 'papers/crick-1995.md', 'papers/wozniak-1990.md', 'papers/wozniak-1990/woz-ex1.md']);
+      // milestone 15 added the PDF pair and its extract to the corpus
+      expect(topics).toEqual([
+        'papers/archive/sutton-2019.md', 'papers/crick-1995.md', 'papers/two-pages.md', 'papers/two-pages/the ruler in the margin.md',
+        'papers/wozniak-1990.md', 'papers/wozniak-1990/woz-ex1.md',
+      ]);
       for (const path of topics) {
         const before = meta((await vault.read(path)).doc).read!;
         const loaded = await vault.update(path, (doc) => {
@@ -159,7 +163,8 @@ describe('reading', () => {
         const after = meta(loaded.doc).read!;
         const ivl = Math.max(1, Math.round((before.ivl ?? 1) * 2));
         expect(after, path).toMatchObject({ ivl, due: addDays(TODAY, ivl), reps: (before.reps ?? 0) + 1, af: 2 });
-        expect((await fsp.readFile(join(root, path), 'utf8'))).toContain(`read: due=${addDays(TODAY, ivl)} ivl=${ivl} reps=${(before.reps ?? 0) + 1} pos=${before.pos ?? 0} af=2\n`);
+        const page = before.page === undefined ? '' : ` page=${before.page}`;
+        expect((await fsp.readFile(join(root, path), 'utf8'))).toContain(`read: due=${addDays(TODAY, ivl)} ivl=${ivl} reps=${(before.reps ?? 0) + 1} pos=${before.pos ?? 0}${page} af=2\n`);
       }
       // crick's factor is the corpus's own, and a postpone keeps it
       const crick = await vault.update('papers/crick-1995.md', (doc) => { advanceRead(doc, 'postpone', NOW); });
@@ -253,14 +258,15 @@ describe('queue over the sample vault', () => {
 
   it('matches the counts for 2026-05-27', async () => {
     const all = await queue(vault, NOW);
-    expect(counts(all, NOW)).toEqual({ today: 17, upcoming: 13, cards: 24, reading: 4, writing: 2 });
+    // milestone 15's PDF pair adds, all after the day: its reading, its extract's reading, and a two-blank cloze
+    expect(counts(all, NOW)).toEqual({ today: 17, upcoming: 17, cards: 26, reading: 6, writing: 2 });
     const today = await queue(vault, NOW, 'today');
     expect(today.filter((i) => i.kind === 'card')).toHaveLength(13);
     expect(today.filter((i) => i.kind === 'read').map((i) => i.path)).toEqual([
       'papers/archive/sutton-2019.md', 'papers/crick-1995.md', 'papers/wozniak-1990/woz-ex1.md',
     ]);
     expect(today.filter((i) => i.kind === 'write').map((i) => i.path)).toEqual(['essays/spaced-composition.md']);
-    expect(await queue(vault, NOW, 'upcoming')).toHaveLength(13);
+    expect(await queue(vault, NOW, 'upcoming')).toHaveLength(17);
   });
 
   it('expands a multi-blank cloze into one item per group with its own schedule', async () => {

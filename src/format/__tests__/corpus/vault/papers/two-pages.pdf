@@ -1,0 +1,56 @@
+%PDF-1.4
+%‚„œ”
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [5 0 R 7 0 R] /Count 2 /MediaBox [0 0 612 792] >>
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>
+endobj
+4 0 obj
+<< /Length 347 >>
+stream
+BT /F1 20 Tf 72 700 Td (Two pages) Tj ET
+BT /F1 12 Tf 16 TL 72 660 Td
+(The lens opens a PDF beside its Markdown and reads it in place.) Tj
+T* (A selection on a page is a selection of text, so an extract or a card) Tj
+T* (can be carved from it the way it is carved from a paragraph.) Tj
+T* (The ruler in the margin marks the page you are on.) Tj
+ET
+endstream
+endobj
+5 0 obj
+<< /Type /Page /Parent 2 0 R /Contents 4 0 R /Resources << /Font << /F1 3 0 R >> >> >>
+endobj
+6 0 obj
+<< /Length 286 >>
+stream
+BT /F1 20 Tf 72 700 Td (The second page) Tj ET
+BT /F1 12 Tf 16 TL 72 660 Td
+(Spaced practice beats massed practice, and the gap should grow) Tj
+T* (with each pass.) Tj
+T* (A card made here lands under a heading that names the page.) Tj
+T* (Nothing is ever written into this file.) Tj
+ET
+endstream
+endobj
+7 0 obj
+<< /Type /Page /Parent 2 0 R /Contents 6 0 R /Resources << /Font << /F1 3 0 R >> >> >>
+endobj
+xref
+0 8
+0000000000 65535 f 
+0000000015 00000 n 
+0000000064 00000 n 
+0000000151 00000 n 
+0000000248 00000 n 
+0000000646 00000 n 
+0000000748 00000 n 
+0000001085 00000 n 
+trailer
+<< /Size 8 /Root 1 0 R >>
+startxref
+1187
+%%EOF

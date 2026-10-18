@@ -1,0 +1,75 @@
+// Writes the corpus's PDF, `vault/papers/two-pages.pdf`: two US-letter pages
+// of Helvetica text, nobody's paper, made here so it can be regenerated and
+// so the test can hold the file on disk to these bytes. The text is written
+// with text operators and a standard Type1 font, so pdf.js (and any reader)
+// gets a real text layer out of it. No dates, no ids: the bytes never change.
+//
+//   npm run fixture:pdf
+
+import { writeFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
+/** The lines of each page, in reading order; the first line of each is set larger. */
+export const PAGES: string[][] = [
+  [
+    'Two pages',
+    'The lens opens a PDF beside its Markdown and reads it in place.',
+    'A selection on a page is a selection of text, so an extract or a card',
+    'can be carved from it the way it is carved from a paragraph.',
+    'The ruler in the margin marks the page you are on.',
+  ],
+  [
+    'The second page',
+    'Spaced practice beats massed practice, and the gap should grow',
+    'with each pass.',
+    'A card made here lands under a heading that names the page.',
+    'Nothing is ever written into this file.',
+  ],
+];
+
+const esc = (s: string) => s.replace(/[\\()]/g, (c) => `\\${c}`);
+
+/** One page's content stream: the first line at 20pt, the rest at 12pt with a 16pt leading. */
+function content(lines: string[]): string {
+  const [title, ...rest] = lines;
+  const out = [`BT /F1 20 Tf 72 700 Td (${esc(title ?? '')}) Tj ET`, 'BT /F1 12 Tf 16 TL 72 660 Td'];
+  rest.forEach((l, i) => out.push(`${i ? 'T* ' : ''}(${esc(l)}) Tj`));
+  out.push('ET');
+  return out.join('\n');
+}
+
+/** The whole file, as bytes. Latin-1: the text above is ASCII. */
+export function makePdf(pages: string[][] = PAGES): Uint8Array {
+  const objects: string[] = [];
+  const add = (body: string) => { objects.push(body); return objects.length; };
+  const catalog = add('');
+  const tree = add('');
+  const font = add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>');
+  const kids: number[] = [];
+  for (const lines of pages) {
+    const stream = content(lines);
+    const contents = add(`<< /Length ${Buffer.byteLength(stream, 'latin1')} >>\nstream\n${stream}\nendstream`);
+    kids.push(add(`<< /Type /Page /Parent ${tree} 0 R /Contents ${contents} 0 R /Resources << /Font << /F1 ${font} 0 R >> >> >>`));
+  }
+  objects[catalog - 1] = `<< /Type /Catalog /Pages ${tree} 0 R >>`;
+  objects[tree - 1] = `<< /Type /Pages /Kids [${kids.map((k) => `${k} 0 R`).join(' ')}] /Count ${kids.length} /MediaBox [0 0 612 792] >>`;
+
+  let out = '%PDF-1.4\n%\xe2\xe3\xcf\xd3\n';
+  const offsets: number[] = [];
+  objects.forEach((body, i) => {
+    offsets.push(Buffer.byteLength(out, 'latin1'));
+    out += `${i + 1} 0 obj\n${body}\nendobj\n`;
+  });
+  const xref = Buffer.byteLength(out, 'latin1');
+  out += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  for (const o of offsets) out += `${String(o).padStart(10, '0')} 00000 n \n`;
+  out += `trailer\n<< /Size ${objects.length + 1} /Root ${catalog} 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return new Uint8Array(Buffer.from(out, 'latin1'));
+}
+
+export const PDF_PATH = fileURLToPath(new URL('./vault/papers/two-pages.pdf', import.meta.url));
+
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  writeFileSync(PDF_PATH, makePdf());
+  console.log(`${PDF_PATH}: ${makePdf().length} bytes, ${PAGES.length} pages`);
+}

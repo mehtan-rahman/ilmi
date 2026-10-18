@@ -33,6 +33,8 @@ export interface ReadSchedule {
   ivl?: number;
   reps?: number;
   pos?: number;
+  /** On an extract carved from a page of its parent's PDF: that page, from 1. */
+  page?: number;
   /** Growth per pass, ≥ 1.1; absent means `READ_AF`. */
   af?: number;
   /** Read as a fallback when the document has no `pri` field; dropped once it has one. */
@@ -95,7 +97,9 @@ export type Field =
   | { key: 'read'; value: ReadSchedule }
   | { key: 'write'; value: WriteSchedule }
   | { key: 'default-card'; value: CardForm }
-  | { key: 'pri'; value: number };
+  | { key: 'pri'; value: number }
+  /** The document's pages: a PDF file, relative to the document. */
+  | { key: 'pdf'; value: string };
 
 export type FieldKey = Field['key'];
 
@@ -122,7 +126,7 @@ export interface Diagnostic {
 }
 
 export const FIELD_KEYS: readonly FieldKey[] = [
-  'type', 'title', 'frozen', 'imported', 'started', 'read', 'write', 'default-card', 'pri',
+  'type', 'title', 'frozen', 'imported', 'started', 'read', 'write', 'default-card', 'pri', 'pdf',
 ];
 
 export function isField(e: FmEntry): e is Field {

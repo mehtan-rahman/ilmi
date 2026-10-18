@@ -25,6 +25,11 @@ export function childDirOf(path: string): string {
   return isDoc(path) ? path.slice(0, -3) : path;
 }
 
+/** `papers/crick-1995.md` → `papers/crick-1995.pdf`: where a document's pages sit by default. */
+export function pdfOf(path: string): string {
+  return `${childDirOf(path)}.pdf`;
+}
+
 /** Display name: the file name without `.md`. */
 export function nameOf(path: string): string {
   const base = baseOf(path);

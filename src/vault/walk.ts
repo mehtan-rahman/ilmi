@@ -19,6 +19,8 @@ export interface DocNode {
   path: string;
   /** Contents of the sibling `name/` directory, when there is one. */
   children?: TreeNode[];
+  /** Vault-relative path of the sibling `name.pdf`, the document's pages, when there is one. */
+  pdf?: string;
 }
 
 export type TreeNode = Folder | DocNode;
@@ -34,6 +36,11 @@ export function isDocPath(path: string): boolean {
   return path.endsWith('.md');
 }
 
+/** A file that can be a document's pages. */
+export function isPdfPath(path: string): boolean {
+  return /\.pdf$/i.test(path);
+}
+
 /** True when any segment of a vault-relative path starts with `.`. */
 export function isHidden(rel: string): boolean {
   return rel.split('/').some((s) => s.startsWith('.'));
@@ -43,6 +50,7 @@ export function isHidden(rel: string): boolean {
 export async function walk(fs: Fs, root: string, rel = ''): Promise<TreeNode[]> {
   const entries = await fs.readDir(join(root, rel));
   const dirs = new Map<string, string>();
+  const pdfs = new Map<string, string>();
   const docs: DocNode[] = [];
   for (const e of entries) {
     const path = rel ? `${rel}/${e.name}` : e.name;
@@ -50,6 +58,8 @@ export async function walk(fs: Fs, root: string, rel = ''): Promise<TreeNode[]> 
       if (!e.name.startsWith('.')) dirs.set(e.name, path);
     } else if (e.isFile && isDocPath(e.name)) {
       docs.push({ kind: 'doc', name: e.name.slice(0, -3), path });
+    } else if (e.isFile && isPdfPath(e.name)) {
+      pdfs.set(e.name.slice(0, -4), path);
     }
   }
   const out: TreeNode[] = [];
@@ -59,6 +69,9 @@ export async function walk(fs: Fs, root: string, rel = ''): Promise<TreeNode[]> 
       dirs.delete(d.name);
       d.children = await walk(fs, root, childDir);
     }
+    // `name.pdf` beside `name.md` is the document's pages (FORMAT.md §1)
+    const pdf = pdfs.get(d.name);
+    if (pdf !== undefined) d.pdf = pdf;
     out.push(d);
   }
   for (const [name, path] of dirs) {

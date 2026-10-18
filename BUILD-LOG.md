@@ -6,6 +6,115 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-10-18 — milestone 23: opening, a welcome that remembers and the last vault reopened on start
+
+Done on the branch `worktree-agent-a34f19b66a3b6da95` (worktree
+`.claude/worktrees/agent-a34f19b66a3b6da95`) while milestone 20 ran on
+main; commit `PENDING23` — *opening: a welcome with the vaults opened
+before, the newest reopened on start, a new vault with a starter, vault
+commands in the palette*. The sessions are likely to share `PLAN.md`,
+`BUILD-LOG.md`, `README.md`, `src/app/smoke.ts` (the header comment, the
+import line, the function appended at the end), `src/app/vault.ts` (the
+import lines, the end of `openVault`, everything between it and the view
+section, `openInitialVault` rewritten), `src/app/store.ts` (the `Tweaks`
+type and its load/save, the `AppState` fields and the initial state, the
+setters), `src/app/Tweaks.tsx` (the header comment, a row under density),
+`src/app/Palette.tsx` (the import line, `COMMANDS`, `runCommand`, the
+hooks, `run`), `src/app/App.tsx` (the imports, the ⌘K branch, the
+`vault === null` branch), `src/app/chrome.ts` (`EntryTag`, `Entry.target`,
+`ENTRY_GLYPH`, `buildIndex`), `src/app/app.css` (the welcome block at the
+top), `src/app/items.ts` (`agoLabel` after `dueLabel`), and
+`src-tauri/capabilities/default.json` (one permission line), so the merge
+touches those by hand. New files, no conflict: `src/app/Welcome.tsx`,
+`src/app/recents.ts`, `src/app/starter.ts`,
+`src/app/__tests__/welcome.test.ts`.
+
+### Done
+
+- `src/app/recents.ts`: `Recent`, `addRecent`, `forgetRecent`,
+  `cleanRecents`, `vaultName`, `openedLabel`, `GONE`, `decideStart`.
+  `agoLabel` in `items.ts`: `dueLabel`'s words looking back.
+- Store: the `reopen` tweak (default on), the `recents` list under
+  `ilmi.recents` with the tweaks' load/save pattern, `gone`, `started`,
+  `newVaultIn`.
+- `vault.ts`: `openVault` remembers the vault and sets the window title;
+  `closeVault`, `forgetVault`, `pickVaultParent`, `newVault` (the folder,
+  `start here.md` from `starter.ts`, enrolled for reading, opened),
+  `probeVaults`, `startFromRecents`; `openInitialVault` runs in release
+  and dispatches `ILMI_SMOKE=welcome` before any vault opens.
+- `Welcome.tsx` replaces the one button: the palette's panel, the
+  wordmark and the README's first sentence, two buttons, the name field,
+  the rows with `opened <when>` or `not where it was` and `forget`, the
+  keys, a dropped folder.
+- Palette: `open vault…`, `new vault…`, `close vault`; recents under
+  `vaults`. Tweaks: `reopen the last vault on start`. Title
+  `<name> · ilmi`; `core:window:allow-set-title`.
+- README: the opening paragraph, the tweaks line, the welcome keys, the
+  smoke mode. Smoke: `ILMI_SMOKE=welcome`, written on the branch, not run.
+- Tests: 368 (+14), 21 files.
+
+### Verified
+
+- `npm run typecheck` clean, `npx vitest run` green (21 files, 368),
+  `vite build` builds.
+- Not in the window: the window and port 1420 belonged to the other
+  session, and cargo was not run here. `ILMI_SMOKE=welcome` and the
+  screenshots are owed; the capability change means the Rust side must
+  be rebuilt first (`npm run tauri dev` does).
+
+### Not done / open
+
+- The window check: the welcome's look at the three themes, the drop of
+  a folder (a Tauri event, not faked), the picker flows (`o`, `n`), and
+  the reload half of the smoke.
+- The smoke leaves its `welcome-smoke-<hhmmss>` vault on disk beside the
+  scratch vault.
+- `new vault…` from the palette closes the open vault before the name is
+  typed; esc on the field then leaves the welcome up.
+- A reopen that fails for any reason (an unreadable `.ilmi`, not only a
+  missing folder) dims the row as gone.
+- No key or palette command forgets a recent; only the hover button.
+
+### Decisions worth knowing
+
+- The recents are probed on start by `allow_vault` then `stat`, because a
+  remembered path is outside the fs scope until it is let in; eight
+  `allow_vault` calls at most, for directories the user chose before.
+- Only the newest vault is a candidate to reopen: with the newest gone
+  the welcome shows rather than the next one opening unasked.
+- The starter is written through `importDoc` (frozen, `imported` today)
+  and then enrolled for reading, so the first queue holds a reading
+  element and a new card.
+- `started` gates the welcome so a vault reopening itself shows no
+  welcome first; in the smoke the welcome appears only after
+  `startFromRecents` decides.
+- ⌘K does nothing on the welcome: the palette is the open vault's, and
+  the welcome has its own keys.
+
+### Handoff prompt
+
+```
+Read PLAN.md, FORMAT.md, BUILD-LOG.md, and spec/hashiyah/HANDOFF.md.
+Milestones 0–19, 22, and 23 are ticked (13 dropped). 22 and 23 were
+done on branches; 23 (opening) is on `worktree-agent-a34f19b66a3b6da95`
+and its window check is owed: after the merge, rebuild the Rust side
+(the capability file gained `core:window:allow-set-title`), run
+`ILMI_VAULT=<scratch> ILMI_SMOKE=welcome npm run tauri dev`, read both
+halves of its log (the second after its own reload), take its shots,
+and record them under its entry here. The first unchecked milestone is
+20, "Plugin runtime", under "## Plugins" in PLAN.md, unless a branch
+holds it (`git worktree list`). Do only the first unchecked milestone
+no branch holds, stop at its "done when", tick it, write notes, add an
+entry here with a fresh handoff prompt, and commit. Tooling and
+verification are as the ground rules and the entries below describe;
+`export PATH=$HOME/.cargo/bin:/opt/homebrew/bin:$PATH` first. If port
+1420 is held by a run that is not yours, do not kill it: say so in your
+report and leave the window check owed. Suite 368 (21 files), `cargo
+test` 9, and typecheck must be green before a commit.
+```
+
+---
+
 ## 2026-10-18 — milestone 22: clipper, `ilmi://` opens a door the web clipper can use
 
 Done on the branch `worktree-agent-ad643755f471ccef6` (worktree

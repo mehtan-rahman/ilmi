@@ -4,17 +4,20 @@
 // through its events; nothing edits the store's tree directly.
 
 import { invoke } from '@tauri-apps/api/core';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { open as pickDirectory } from '@tauri-apps/plugin-dialog';
 import { info } from '@tauri-apps/plugin-log';
 import { meta, setField, type Doc, type NodeType } from '../format/index.js';
 import type { Chapter, MappedDeck } from '../import/index.js';
 import { dayOf, docItems, isDue, postponeOverflow, sortQueue, type QueueItem } from '../schedule/index.js';
-import { Vault, childDirOf, dirOf, fileName, isDoc, rekey, type ExtractSpec, type ImportDeckSpec, type ImportPdfSpec, type ImportSpec, type TreeNode, type VaultEvent, type VaultState } from '../vault/index.js';
+import { Vault, childDirOf, cleanName, dirOf, fileName, isDoc, rekey, type ExtractSpec, type ImportDeckSpec, type ImportPdfSpec, type ImportSpec, type TreeNode, type VaultEvent, type VaultState } from '../vault/index.js';
 import { tauriFs } from '../vault/tauri-fs.js';
 import { cleanClipDir } from './clip.js';
 import { cleanBudget, dueToday, sessionItems } from './items.js';
 import { INTAKE, SESSION, queueId, queueScope } from './names.js';
 import { activeTab, dropTabs, emptyPanes, openTab, retarget, type OpenOpts } from './panes.js';
+import { addRecent, decideStart, forgetRecent, vaultName } from './recents.js';
+import { STARTER_TEXT, STARTER_TITLE } from './starter.js';
 import { INSP_DEFAULT, INSP_MAX, INSP_MIN, SIDE_DEFAULT, SIDE_MAX, SIDE_MIN, useApp, type DocInfo, type Inspector, type Sidebar } from './store.js';
 
 let current: Vault | null = null;
@@ -189,7 +192,13 @@ export async function openVault(path: string): Promise<Vault> {
     panes = openTab(panes, queueId('today'));
   }
   bodies.clear();
-  useApp.setState({ open, sidebar, inspector, panes, docs: {}, queue: [], budget: cleanBudget(state.budget), clipDir: cleanClipDir(state.clippings), log: [], session: null, sessionEl: null, selectedCard: null, reveal: null });
+  const s0 = useApp.getState();
+  useApp.setState({
+    open, sidebar, inspector, panes, docs: {}, queue: [], budget: cleanBudget(state.budget), clipDir: cleanClipDir(state.clippings), log: [], session: null, sessionEl: null, selectedCard: null, reveal: null,
+    started: true, newVaultIn: null, gone: s0.gone.filter((p) => p !== path),
+  });
+  s0.setRecents(addRecent(s0.recents, path, new Date()));
+  setWindowTitle(vaultName(path));
   publishTree(vault);
   vault.subscribe((ev) => onEvent(vault, ev));
   await vault.watch();
@@ -198,31 +207,129 @@ export async function openVault(path: string): Promise<Vault> {
   return vault;
 }
 
+/** Back to the welcome: the watcher stops, the store forgets the vault's data; the recents keep it. */
+export function closeVault(): void {
+  current?.close();
+  current = null;
+  bodies.clear();
+  if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; savePatch = {}; }
+  useApp.setState({ vault: null, files: [], tree: [], docs: {}, open: { '': true }, panes: emptyPanes(), queue: [], log: [], session: null, sessionEl: null, selectedCard: null, reveal: null, paletteOpen: false, intakeDir: '' });
+  setWindowTitle(null);
+}
+
+/** Drop one vault from the recents; nothing on disk changes. */
+export function forgetVault(path: string): void {
+  const s = useApp.getState();
+  s.setRecents(forgetRecent(s.recents, path));
+  useApp.setState({ gone: s.gone.filter((p) => p !== path) });
+}
+
+/** `<name> · ilmi` while a vault is open, `ilmi` otherwise. Nothing to set outside Tauri. */
+function setWindowTitle(name: string | null): void {
+  try {
+    getCurrentWindow().setTitle(name ? `${name} · ilmi` : 'ilmi').catch(() => { /* not under Tauri */ });
+  } catch { /* not under Tauri */ }
+}
+
 /** Ask for a directory, then open it. Resolves to null if the dialog was dismissed. */
 export async function pickVault(): Promise<Vault | null> {
   const dir = await pickDirectory({ directory: true, recursive: true, multiple: false });
   return dir ? openVault(dir) : null;
 }
 
+/** Ask for the folder a new vault goes in; the welcome then takes its name. Resolves to the folder, or null if dismissed. */
+export async function pickVaultParent(): Promise<string | null> {
+  const dir = await pickDirectory({ directory: true, recursive: true, multiple: false });
+  if (dir) useApp.setState({ newVaultIn: dir });
+  return dir;
+}
+
+/**
+ * A new vault: the folder `name` in `parent`, with `start here.md` in it (a
+ * frozen source on the three loops with one card, enrolled for reading), then
+ * opened. Rejects with `already there` when the folder exists.
+ */
+export async function newVault(parent: string, name: string): Promise<Vault> {
+  const clean = cleanName(name);
+  if (!clean) throw new Error('not a folder name');
+  const root = parent.replace(/\/+$/, '');
+  const path = `${root}/${clean}`;
+  await invoke('allow_vault', { path: root });
+  if (await tauriFs.stat(path)) throw new Error('already there');
+  await tauriFs.mkdir(path);
+  const vault = await openVault(path);
+  const doc = await vault.importDoc('', { title: STARTER_TITLE, text: STARTER_TEXT });
+  await vault.update(doc, (d) => setField(d, 'read', { due: dayOf(new Date()), ivl: 1, reps: 0, pos: 0 }));
+  openNode(doc);
+  return vault;
+}
+
+/** Which of `paths` are directories now. Each is let into the fs scope first; they were vaults once. */
+async function probeVaults(paths: string[]): Promise<Set<string>> {
+  const present = new Set<string>();
+  for (const p of paths) {
+    try {
+      await invoke('allow_vault', { path: p });
+      if ((await tauriFs.stat(p))?.isDir) present.add(p);
+    } catch (e) {
+      console.error(p, e);
+    }
+  }
+  return present;
+}
+
+/**
+ * The start decision: the folders of the remembered vaults looked for, the
+ * missing ones marked, and the newest reopened when the toggle is on and it
+ * is there; otherwise the welcome shows.
+ */
+export async function startFromRecents(): Promise<void> {
+  const s = useApp.getState();
+  const present = await probeVaults(s.recents.map((r) => r.path));
+  useApp.setState({ gone: s.recents.map((r) => r.path).filter((p) => !present.has(p)) });
+  const start = decideStart(s.recents, s.reopen, present);
+  if (start.kind === 'reopen') {
+    try {
+      await openVault(start.path);
+      return;
+    } catch (e) {
+      console.error(start.path, e);
+      useApp.setState((st) => ({ gone: [...st.gone, start.path] }));
+    }
+  }
+  useApp.setState({ started: true });
+}
+
 let initial: Promise<void> | null = null;
 
 /**
- * Dev only: `ILMI_VAULT=/path npm run tauri dev` opens that vault at launch;
- * `ILMI_SMOKE=1` then runs `smoke.ts`. Runs once, however many times React's
- * StrictMode mounts the effect.
+ * What opens at launch. In dev, `ILMI_VAULT=/path npm run tauri dev` opens
+ * that vault and `ILMI_SMOKE=…` then runs `smoke.ts`; `ILMI_SMOKE=welcome`
+ * runs its smoke before any vault opens, with `ILMI_VAULT` as the vault it
+ * seeds. Otherwise the recents decide (`startFromRecents`). Runs once,
+ * however many times React's StrictMode mounts the effect.
  */
 export function openInitialVault(): Promise<void> {
-  if (!import.meta.env.DEV) return Promise.resolve();
   initial ??= (async () => {
-    const path = await invoke<string | null>('dev_env', { name: 'ILMI_VAULT' });
-    if (!path) return;
-    const vault = await openVault(path);
-    const mode = await invoke<string | null>('dev_env', { name: 'ILMI_SMOKE' });
-    if (mode) {
-      const { smoke, smokeReader, smokeCards, smokeIntake, smokeQueue, smokeLoop, smokeShots, smokeDeck, smokePri, smokeGrowth, smokeOverload, smokePdf, smokeFaces, smokeCardsText, smokeAnki, smokeMath, smokeEpub, smokeClip } = await import('./smoke.js');
-      const run = { reader: smokeReader, cards: smokeCards, intake: smokeIntake, queue: smokeQueue, loop: smokeLoop, shots: smokeShots, deck: smokeDeck, pri: smokePri, growth: smokeGrowth, overload: smokeOverload, pdf: smokePdf, faces: smokeFaces, 'cards-text': smokeCardsText, anki: smokeAnki, math: smokeMath, epub: smokeEpub, clip: smokeClip }[mode] ?? smoke;
-      await run(vault);
+    if (import.meta.env.DEV) {
+      const path = await invoke<string | null>('dev_env', { name: 'ILMI_VAULT' });
+      const mode = await invoke<string | null>('dev_env', { name: 'ILMI_SMOKE' });
+      if (mode === 'welcome') {
+        const { smokeWelcome } = await import('./smoke.js');
+        await smokeWelcome(path);
+        return;
+      }
+      if (path) {
+        const vault = await openVault(path);
+        if (mode) {
+          const { smoke, smokeReader, smokeCards, smokeIntake, smokeQueue, smokeLoop, smokeShots, smokeDeck, smokePri, smokeGrowth, smokeOverload, smokePdf, smokeFaces, smokeCardsText, smokeAnki, smokeMath, smokeEpub, smokeClip } = await import('./smoke.js');
+          const run = { reader: smokeReader, cards: smokeCards, intake: smokeIntake, queue: smokeQueue, loop: smokeLoop, shots: smokeShots, deck: smokeDeck, pri: smokePri, growth: smokeGrowth, overload: smokeOverload, pdf: smokePdf, faces: smokeFaces, 'cards-text': smokeCardsText, anki: smokeAnki, math: smokeMath, epub: smokeEpub, clip: smokeClip }[mode] ?? smoke;
+          await run(vault);
+        }
+        return;
+      }
     }
+    await startFromRecents();
   })();
   return initial;
 }

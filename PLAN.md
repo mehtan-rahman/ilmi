@@ -1684,7 +1684,81 @@ The welcome is one button and the app forgets the vault when it quits.
 The user: "need to have some fleshed out opening menu & automatically
 open to last vault opened whenever the app starts".
 
-### [ ] 23. Opening — a welcome that remembers, the last vault reopened on start
+### [x] 23. Opening — a welcome that remembers, the last vault reopened on start
+Done 2026-10-18 on the branch `worktree-agent-a34f19b66a3b6da95` (worktree
+`.claude/worktrees/agent-a34f19b66a3b6da95`), beside milestone 20 on main;
+commit `PENDING23`.
+Notes: `src/app/recents.ts` is the pure side: `Recent { path, name,
+opened }` (`opened` an ISO instant), `RECENTS_MAX` 8, `addRecent(list,
+path, now)` (to the top, one per path, the oldest beyond eight dropped),
+`forgetRecent`, `cleanRecents(raw)` (what storage held: bad rows out,
+sorted newest first, capped), `vaultName(path)` (the directory's last
+segment), `openedLabel` (`opened today` / `yesterday` / `3d ago` / `2mo
+ago`, through `agoLabel` in `items.ts`, `dueLabel`'s words looking back),
+`GONE` (`not where it was`), and `decideStart(list, reopen, present)` →
+`reopen` the newest when the toggle is on and its folder is in `present`,
+else `welcome`. Store: `reopen` is a fourth tweak (`ilmi.tweaks`, default
+on, `setReopen`); `recents` is loaded and saved under `ilmi.recents` the
+same way (`setRecents`); `gone` holds the paths probed and not found;
+`started` is false until the start decision, so the welcome does not
+flash before a vault reopens itself; `newVaultIn` is the parent folder a
+new vault is being named in. `vault.ts`: `openVault` adds the path to the
+recents, drops it from `gone`, sets `started`, and sets the window title
+`<name> · ilmi` (`getCurrentWindow().setTitle`, `core:window:allow-set-
+title` added to the capability); `closeVault()` stops the watcher and
+resets the store to the welcome (title `ilmi`); `forgetVault(path)`;
+`pickVaultParent()` (the folder picker, then `newVaultIn`); `newVault(
+parent, name)` (`cleanName`, `allow_vault` on the parent, `already
+there` when the folder exists, `mkdir`, `openVault`, then `importDoc` of
+the starter and `read: due today` on it, opened); `probeVaults(paths)`
+(`allow_vault` then `stat` on each, since a remembered path is outside
+the fs scope until it is let in); `startFromRecents()` (probe, `gone`,
+decide, reopen or `started`); `openInitialVault` runs in release too
+now: dev `ILMI_SMOKE=welcome` runs its smoke before any vault opens,
+dev `ILMI_VAULT` opens that vault, else the recents decide.
+`src/app/starter.ts`: `STARTER_TITLE` (`start here`), `STARTER_TEXT`
+(three headings, four short paragraphs, one inline q&a card; parses
+with no diagnostics). `src/app/Welcome.tsx` replaces the block in
+`App.tsx`: the palette's panel in the canvas (`.welcome-panel`, the rows
+reuse `.palette-row` and the foot `.palette-foot`), the wordmark, the
+README's first sentence lowercased as one italic line, `open vault` and
+`new vault`, the name field (`<parent>/` dimmed, ⏎ creates, esc cancels,
+a refusal in small type beside it), the rows (name, path dimmed, `opened
+<when>` as the tag; a gone row dimmed with `not where it was` and a
+`forget` shown on hover or selection), ⏎ / j k / o / n, a Tauri drag-drop
+of a folder opened as a vault (the panel's hairline turns to the accent
+while over), and a row whose open fails joins `gone`. The palette:
+`open vault…`, `new vault…` (the parent picked first, then `closeVault`
+so the name is taken on the welcome), `close vault`; the other recent
+vaults as `vault` entries under `vaults` (`EntryTag` `vault`, glyph `⌂`,
+`buildIndex`'s fifth parameter, `target: { vault }` → `openVault`); ⌘K
+does nothing on the welcome. Tweaks: `reopen the last vault on start`
+as an on/off segment under density. README: the opening paragraph, the
+tweaks line, a welcome line in *Keys*, the smoke mode. Tests: 368 (+14
+in `welcome.test.ts`: add, de-duplicate, cap, remove, clean, the name,
+the `opened` words, `GONE`, the four start decisions, the starter clean
+with one q&a card and three headings, the palette's `vaults` entries).
+Dev: `ILMI_SMOKE=welcome` (written, **not run**: the window and port 1420
+belonged to the other session) seeds the recents with `ILMI_VAULT` and
+`/nowhere/gone-vault`, turns the toggle off, reads the rows and the
+dimmed one, j k, ⏎ on the top row, `close vault` from the palette,
+`newVaultIn` set through the store (the picker cannot be faked), a bad
+name refused, a `welcome-smoke-<hhmmss>` vault made beside the scratch
+one with `start here.md` read line by line, back through the palette's
+`vaults` group, the toggle on from the tweaks panel, a sessionStorage
+marker and `location.reload()`; the second run logs whether the vault
+opened itself; shots `welcome`, `welcome-opened`, `welcome-naming`,
+`welcome-new-vault`, `welcome-tweaks`, `welcome-reopened`. Not done:
+the window check (owed to the merge session; the capability change
+needs the Rust side rebuilt, which `npm run tauri dev` does); the
+starter vault made by the smoke is left on disk beside the scratch
+vault; a vault that reopens itself but whose `.ilmi` is unreadable
+falls to the welcome with its row dimmed, which reads as gone; `new
+vault…` from the palette closes the open vault before the name is
+typed, so esc there leaves the welcome up (the vault is one row away);
+the window title is not restored to `ilmi` if the app is quit while a
+vault is open (the OS sets it fresh next start); no key or command
+forgets a recent vault, only the hover button.
 - Recents: every vault opened is remembered outside any vault (the
   tweaks' localStorage pattern in `src/app/store.ts`: `{ path, name,
   opened }`, newest first, eight at most, de-duplicated by path). On
@@ -1729,8 +1803,9 @@ checks) and logs that the vault opened itself; screenshots read.
 
 ## Notes for the next session
 
-Milestones 0–19 are ticked; 20–22 under *Plugins* are next, in order (22
-may run beside 20 on a branch). After them, what is left is a polish pass
+Milestones 0–19, 22, and 23 are ticked (22 and 23 on branches; 23's
+window check is owed); 20–21 under *Plugins* are next, in order. After
+them, what is left is a polish pass
 over the open items
 each milestone's notes record (10: no palette command or key for
 priority, no stepper; 11: no growth row before enrolment, the preview

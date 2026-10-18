@@ -3,6 +3,7 @@ import type { NodeType, ReadSchedule, WriteSchedule } from '../format/index.js';
 import type { QueueItem } from '../schedule/index.js';
 import type { TreeNode } from '../vault/index.js';
 import { emptyPanes, type Panes } from './panes.js';
+import { cleanRecents, type Recent } from './recents.js';
 
 // App state that is not on disk, plus a read-only mirror of what is. The
 // vault (src/app/vault.ts) is the store of record for the tree and the
@@ -28,11 +29,13 @@ export interface Tweaks {
   theme: Theme;
   accent: Accent;
   density: number;
+  /** Reopen the last vault on start, without a click. */
+  reopen: boolean;
 }
 export const DENSITY_MIN = 0.6;
 export const DENSITY_MAX = 1.6;
 const TWEAKS_KEY = 'ilmi.tweaks';
-const DEFAULT_TWEAKS: Tweaks = { theme: 'light', accent: 'gold', density: 1 };
+const DEFAULT_TWEAKS: Tweaks = { theme: 'light', accent: 'gold', density: 1, reopen: true };
 
 function loadTweaks(): Tweaks {
   try {
@@ -43,6 +46,7 @@ function loadTweaks(): Tweaks {
       theme: THEMES.includes(t.theme as Theme) ? (t.theme as Theme) : DEFAULT_TWEAKS.theme,
       accent: t.accent !== undefined && t.accent in ACCENTS ? t.accent : DEFAULT_TWEAKS.accent,
       density: typeof t.density === 'number' && t.density >= DENSITY_MIN && t.density <= DENSITY_MAX ? t.density : DEFAULT_TWEAKS.density,
+      reopen: typeof t.reopen === 'boolean' ? t.reopen : DEFAULT_TWEAKS.reopen,
     };
   } catch {
     return DEFAULT_TWEAKS;
@@ -53,6 +57,24 @@ function saveTweaks(t: Tweaks): void {
   try {
     globalThis.localStorage?.setItem(TWEAKS_KEY, JSON.stringify(t));
   } catch { /* private window, or no storage: the session keeps them */ }
+}
+
+// The vaults opened before, the same way: outside any vault, in the webview's storage.
+const RECENTS_KEY = 'ilmi.recents';
+
+function loadRecents(): Recent[] {
+  try {
+    const raw = globalThis.localStorage?.getItem(RECENTS_KEY);
+    return raw ? cleanRecents(JSON.parse(raw)) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveRecents(list: Recent[]): void {
+  try {
+    globalThis.localStorage?.setItem(RECENTS_KEY, JSON.stringify(list));
+  } catch { /* as the tweaks: the session keeps them */ }
 }
 
 /** What the sidebar and the lenses need to know about a document without opening it. */
@@ -121,6 +143,16 @@ export interface AppState {
   theme: Theme;
   accent: Accent;
   density: number; // --rho: 1 regular, <1 compact, >1 airy
+  /** Reopen the last vault on start. A tweak, kept with the others. */
+  reopen: boolean;
+  /** The vaults opened before, newest first; in the webview's storage. */
+  recents: Recent[];
+  /** Recent vaults whose folder was not there when last looked for. */
+  gone: string[];
+  /** False until the start decision is made, so the welcome does not flash before a vault reopens itself. */
+  started: boolean;
+  /** The parent folder a new vault is being named in, on the welcome; null when it is not. */
+  newVaultIn: string | null;
   /** Absolute path of the open vault, or null before one is picked. */
   vault: string | null;
   /** Vault-relative document paths, tree order. */
@@ -154,6 +186,9 @@ export interface AppState {
   cycleTheme(): void;
   setAccent(accent: Accent): void;
   setDensity(rho: number): void;
+  setReopen(on: boolean): void;
+  /** Replace the recents list; it is saved as the tweaks are. */
+  setRecents(list: Recent[]): void;
   setPanes(next: Panes | ((cur: Panes) => Panes)): void;
 }
 
@@ -163,6 +198,11 @@ export const useApp = create<AppState>((set, get) => ({
   theme: tweaks.theme,
   accent: tweaks.accent,
   density: tweaks.density,
+  reopen: tweaks.reopen,
+  recents: loadRecents(),
+  gone: [],
+  started: false,
+  newVaultIn: null,
   vault: null,
   files: [],
   tree: [],
@@ -191,10 +231,12 @@ export const useApp = create<AppState>((set, get) => ({
   },
   setAccent: (accent) => { set({ accent }); persist(get()); },
   setDensity: (density) => { set({ density: Math.min(DENSITY_MAX, Math.max(DENSITY_MIN, density)) }); persist(get()); },
+  setReopen: (reopen) => { set({ reopen }); persist(get()); },
+  setRecents: (recents) => { set({ recents }); saveRecents(recents); },
   setPanes: (next) => set({ panes: typeof next === 'function' ? next(get().panes) : next }),
 }));
 
-const persist = (s: AppState) => saveTweaks({ theme: s.theme, accent: s.accent, density: s.density });
+const persist = (s: AppState) => saveTweaks({ theme: s.theme, accent: s.accent, density: s.density, reopen: s.reopen });
 
 declare global {
   interface Window {

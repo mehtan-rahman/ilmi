@@ -29,10 +29,19 @@ says which bytes, and on whose word) and lands its tree as folders, topics as
 sources and extracts, items as cards, tasks as drafts, with their schedules
 and priorities; what the layout notes do not cover is printed, never written.
 
+The app opens on the vault it had open last; the welcome (the wordmark, `open
+vault`, `new vault`, and the vaults opened before as rows) shows when there is
+none, when that folder is not where it was, or when `reopen the last vault on
+start` is off in the tweaks. A new vault starts with `start here.md`, one short
+source with a card in it. While a vault is open the palette has `open vault…`,
+`new vault…`, `close vault`, and the other recent vaults under `vaults`.
+
 In a dev build, `ILMI_VAULT=/path/to/vault npm run tauri dev` opens that vault
 at launch instead of asking for one. Add `ILMI_SMOKE=1` to run every tree
 operation against that vault through the Tauri fs adapter and log the results
 to the terminal; use a scratch copy, it creates and deletes files.
+`ILMI_SMOKE=welcome` runs before any vault opens and walks the welcome instead,
+seeding its rows with `ILMI_VAULT`.
 
 ## Keys
 
@@ -43,8 +52,12 @@ click            open a folder or document in the active tab
 F2 / dbl-click   rename                 right-click  new, rename, move to, delete
 ⌘W               close tab              ⌘\           split pane
 ⌘⇧E              sidebar                ⌘⇧I          inspector
-⌘,               tweaks: theme, accent, density (kept outside the vault);
-                 the day's budget and where clippings go (kept in the vault's .ilmi)
+⌘,               tweaks: theme, accent, density, reopen the last vault on start
+                 (kept outside the vault); the day's budget and where clippings
+                 go (kept in the vault's .ilmi)
+
+on the welcome   ⏎ open the selected vault, j k move, o open vault, n new vault;
+                 a folder dropped on it opens as a vault
 
 in a source      select, then e extract or m make a card; r start reading
 in a PDF         the same on a page; / search, g go to a page, [ ] pages;

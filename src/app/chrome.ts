@@ -104,7 +104,7 @@ export function fuzzy(query: string, text: string): number | null {
   return qi === query.length ? score - run * 0.2 : null;
 }
 
-export type EntryTag = 'query' | 'folder' | 'source' | 'extract' | 'deck' | 'draft' | 'card' | 'command';
+export type EntryTag = 'query' | 'folder' | 'source' | 'extract' | 'deck' | 'draft' | 'card' | 'command' | 'vault';
 
 export interface Entry {
   key: string;
@@ -112,8 +112,8 @@ export interface Entry {
   /** Where it lives, in small type. */
   sub: string;
   tag: EntryTag;
-  /** A vault path or special tab id to open, a card in a document, or a command id. */
-  target: { open: string } | { open: string; index: number; id?: string } | { command: string };
+  /** A vault path or special tab id to open, a card in a document, a command id, or another vault to switch to. */
+  target: { open: string } | { open: string; index: number; id?: string } | { command: string } | { vault: string };
 }
 
 export interface Command {
@@ -121,8 +121,14 @@ export interface Command {
   title: string;
 }
 
+/** Another vault the palette can switch to: a recent one, by its directory. */
+export interface VaultRef {
+  path: string;
+  name: string;
+}
+
 export const ENTRY_GLYPH: Record<EntryTag, string> = {
-  query: '≡', folder: '/', source: '¶', extract: '↳', deck: '◫', draft: '✎', card: '◆', command: '›',
+  query: '≡', folder: '/', source: '¶', extract: '↳', deck: '◫', draft: '✎', card: '◆', command: '›', vault: '⌂',
 };
 
 /** A card the palette can name, from any document's blocks. */
@@ -133,8 +139,8 @@ export interface CardRef {
   text: string;
 }
 
-/** Everything the palette can open: saved queries, folders, documents, cards, commands. */
-export function buildIndex(tree: TreeNode[], docs: Record<string, DocInfo>, cards: CardRef[], commands: Command[]): Entry[] {
+/** Everything the palette can open: saved queries, folders, documents, cards, commands, and the other vaults under `vaults`. */
+export function buildIndex(tree: TreeNode[], docs: Record<string, DocInfo>, cards: CardRef[], commands: Command[], vaults: VaultRef[] = []): Entry[] {
   const out: Entry[] = [];
   for (const scope of SCOPES) out.push({ key: `q:${scope}`, title: QUEUE_TITLE[scope], sub: 'saved query', tag: 'query', target: { open: queueId(scope) } });
   const title = (path: string) => docs[path]?.title ?? nameOf(path);
@@ -156,6 +162,7 @@ export function buildIndex(tree: TreeNode[], docs: Record<string, DocInfo>, card
     out.push({ key: `c:${c.path}:${c.index}`, title: cardLabel(c.text), sub: title(c.path), tag: 'card', target });
   }
   for (const c of commands) out.push({ key: `x:${c.id}`, title: c.title, sub: '', tag: 'command', target: { command: c.id } });
+  for (const v of vaults) out.push({ key: `v:${v.path}`, title: v.name, sub: 'vaults', tag: 'vault', target: { vault: v.path } });
   return out;
 }
 

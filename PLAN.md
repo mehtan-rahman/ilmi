@@ -1488,7 +1488,7 @@ and noted.
 ### [x] 22. Clipper — `ilmi://` opens a door the web clipper can use
 Done 2026-10-18 on the branch `worktree-agent-ad643755f471ccef6` (worktree
 `.claude/worktrees/agent-ad643755f471ccef6`), beside milestones 19 and 20
-on main; commit recorded in `BUILD-LOG.md`.
+on main; commit `3a60270`.
 Notes: `src/app/clip.ts` is the pure side: `parseClipUri(uri)` → a
 `ClipNew` (`name`, `content`, `folder`, `url`, `vault`, each only when
 given and non-blank), a `ClipOpen` (`path`, `vault`), or a `ClipRefusal`

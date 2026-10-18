@@ -10,8 +10,9 @@ was verified, what was not, and the prompt to resume with.
 
 Done on the branch `worktree-agent-ad643755f471ccef6` (worktree
 `.claude/worktrees/agent-ad643755f471ccef6`) while milestones 19 and 20
-ran on main; commit hash recorded in the follow-up log commit. The
-sessions are likely to share `PLAN.md`, `BUILD-LOG.md`, `README.md`,
+ran on main; commit `3a60270` — *clipper: ilmi://new and ilmi://open
+through the deep-link plugin, a second launch handed to the running window,
+clippings go to a folder set in tweaks*. The sessions are likely to share `PLAN.md`, `BUILD-LOG.md`, `README.md`,
 `src/app/smoke.ts`, `src/app/vault.ts` (the smoke dispatch line, the
 `openVault` state line, a setter), `src/app/Tweaks.tsx`, `src/app/store.ts`,
 `src/vault/vault.ts` (`VaultState`), `src/app/App.tsx` (the mount effect),

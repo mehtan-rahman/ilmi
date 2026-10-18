@@ -410,6 +410,22 @@ export class Vault {
     });
   }
 
+  /** The folder `name` in `dir`, made when it is not there (an import's `Parent::Child`). Resolves to its path. */
+  folderIn(dir: string, name: string): Promise<string> {
+    return this.serial(async () => {
+      const clean = cleanName(name);
+      if (!clean) throw new Error(`"${name}" is not a folder name`);
+      await this.ensureDir(dir);
+      const path = joinRel(dir, clean);
+      const st = await this.fs.stat(this.abs(path));
+      if (st?.isDir) return path;
+      if (st) throw new Error(`${path}: not a folder`);
+      await this.fs.mkdir(this.abs(path));
+      await this.rewalk();
+      return path;
+    });
+  }
+
   /**
    * A new document of `type` in `dir`. Sources get no front-matter at all;
    * decks, drafts, and extracts get `type:`; a draft also starts today's

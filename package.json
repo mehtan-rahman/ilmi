@@ -13,7 +13,8 @@
     "typecheck": "tsc --noEmit",
     "import-sm": "tsx scripts/import-sm.ts",
     "fixture:sm": "tsx src/import/supermemo/__tests__/make-collection.ts",
-    "fixture:pdf": "tsx src/format/__tests__/corpus/make-pdf.ts"
+    "fixture:pdf": "tsx src/format/__tests__/corpus/make-pdf.ts",
+    "fixture:anki": "cd src-tauri && ILMI_ANKI_FIXTURE=../src/import/__tests__/anki cargo test anki::tests::reads_the_two_deck_package"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.11.4",

@@ -40,7 +40,11 @@
 // `ILMI_SMOKE=cards-text` pastes a `Q:`/`A:` list and a tab list on the
 // intake, reads the delimiter row's choice, flips a delimiter, places both
 // as decks, and logs each file's lines; then pastes prose to see no row.
+// `ILMI_SMOKE=anki` drops the fixture package (`ILMI_APKG=<path>`, else
+// `two-decks.apkg` in the vault) on the intake, reads the deck list, places
+// it, logs each deck file's lines, and opens both decks.
 
+import { invoke } from '@tauri-apps/api/core';
 import { info } from '@tauri-apps/plugin-log';
 import { queue } from '../schedule/index.js';
 import type { Vault } from '../vault/index.js';
@@ -1303,6 +1307,52 @@ export async function smokeCardsText(vault: Vault): Promise<void> {
     await sleep(300);
     log(`as cards: row ${choice()}; count "${count()}"; place disabled ${q<HTMLButtonElement>('.intake .place.primary')?.disabled}`);
     await shot('cards-prose');
+    log('done');
+  } catch (e) {
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+export async function smokeAnki(vault: Vault): Promise<void> {
+  const log = (s: string) => info(`smoke anki: ${s}`);
+  const shot = async (name: string, ms = 10000) => { await sleep(600); log(`shot: ${name}`); await sleep(ms); };
+  const q = <T extends Element>(sel: string) => document.querySelector<T>(sel);
+  const qa = (sel: string) => Array.from(document.querySelectorAll<HTMLElement>(sel));
+  const fileLines = async (path: string) => { const l = await vault.read(path, true); return `${l.text.split('\n').join(' / ')}; blocks ${l.doc.blocks.map((b) => b.kind).join(',')}; diagnostics ${l.diagnostics.length}`; };
+  const lens = () => `h1 "${q('.deck-view h1')?.textContent}"; meta "${q('.deck-view .meta')?.textContent}"; rows ${qa('.deck-view .card-span').map((r) => r.textContent).join(' | ')}; inspector "${q('.insp .kv')?.textContent?.slice(0, 120)}"`;
+  try {
+    setInspector({ open: true });
+    openIntake('');
+    await until(() => q<HTMLTextAreaElement>('.intake textarea'));
+    log(`intake hint: "${q('.intake .paste-hint')?.textContent}"`);
+    const { intakeHooks } = await import('./Intake.js');
+    const apkg = (await invoke<string | null>('dev_env', { name: 'ILMI_APKG' })) ?? vault.abs('two-decks.apkg');
+    await intakeHooks.ingestFile!(apkg);
+    const detail = await until(() => q('.intake-detail') ?? (q('.intake .paste-hint .note')?.textContent && q('.intake .paste-hint .note')?.textContent !== 'reading' ? q('.intake .paste-hint') : null), 15000);
+    if (!detail.classList.contains('intake-detail')) throw new Error(`intake said "${detail.textContent}"`);
+    await sleep(300);
+    log(`dropped ${apkg.slice(apkg.lastIndexOf('/') + 1)}: h1 "${q('.intake h1')?.textContent}"; decks ${qa('.deck-list .deck-row').map((r) => `${r.querySelector('.dname')?.textContent} (${r.querySelector('.dcount')?.textContent})`).join(' | ')}; count "${q('.intake-detail .stats')?.textContent}"; title field ${q('.intake .field input') ? 'shown' : 'none'}; textarea ${q('.intake textarea') ? 'shown' : 'none'}`);
+    await shot('anki-intake');
+    q<HTMLButtonElement>('.intake .place.primary')!.click();
+    const german = await until(() => vault.documents().find((d) => d.startsWith('Languages/German')), 10000);
+    const science = await until(() => vault.documents().find((d) => d.startsWith('Science')), 10000);
+    await sleep(500);
+    log(`placed ${german}: ${await fileLines(german)}`);
+    log(`placed ${science}: ${await fileLines(science)}`);
+    log(`notices: ${useApp.getState().log.slice(0, 2).join(' | ')}; intake ${q('.intake .deck-list') ? 'still lists decks' : 'cleared'}`);
+    await until(() => q('.deck-view'));
+    await sleep(300);
+    log(`deck lens (opened): ${lens()}`);
+    log(`tree rows: ${qa('.tree .trow').map((r) => r.textContent?.trim()).filter((t) => t && /Languages|German|Science/.test(t)).join(' | ')}`);
+    await shot('anki-german');
+    openNode(science);
+    await until(() => q('.deck-view h1')?.textContent === 'Science');
+    await sleep(300);
+    // the first row selected: the inspector reads the cloze's seeded schedule
+    qa('.deck-view .card-span')[0]?.click();
+    await sleep(300);
+    log(`deck lens (science): ${lens()}`);
+    await shot('anki-science');
     log('done');
   } catch (e) {
     log(`failed: ${e instanceof Error ? e.message : String(e)}`);

@@ -5,10 +5,17 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { fetch } from '@tauri-apps/plugin-http';
-import { HTML_EXT, TEXT_EXT, cleanText, readable, titleFromFileName } from '../import/index.js';
+import { HTML_EXT, TEXT_EXT, cleanText, readable, titleFromFileName, type AnkiPackage } from '../import/index.js';
 import { pdfText } from './pdfjs.js';
 
 export const PDF_EXT = /\.pdf$/i;
+export const APKG_EXT = /\.apkg$/i;
+
+/** A dropped or picked Anki package, read on the Rust side (the webview cannot open SQLite): its decks, notetypes, notes, and cards as plain data. */
+export async function readAnkiPackage(path: string): Promise<AnkiPackage> {
+  if (!APKG_EXT.test(path)) throw new Error('not an anki package');
+  return invoke<AnkiPackage>('read_anki_package', { path });
+}
 
 export interface FetchedPdf extends Fetched {
   bytes: Uint8Array;

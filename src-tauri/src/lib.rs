@@ -1,3 +1,5 @@
+mod anki;
+
 use tauri_plugin_fs::FsExt;
 
 #[cfg(target_os = "macos")]
@@ -37,6 +39,13 @@ fn read_dropped_bytes(path: String) -> Result<tauri::ipc::Response, String> {
         .map_err(|e| e.to_string())
 }
 
+/// A dropped or picked Anki package, read as plain data (`anki.rs`); the
+/// renderer maps it to deck files. Read by path, as a drop, outside the scope.
+#[tauri::command]
+fn read_anki_package(path: String) -> Result<anki::AnkiPackage, String> {
+    anki::read_package(std::path::Path::new(&path))
+}
+
 /// Dev only: an environment variable of the dev process, for
 /// `ILMI_VAULT=/path npm run tauri dev` (open that vault at launch) and
 /// `ILMI_SMOKE=…` (run a smoke script). Always `None` in release.
@@ -55,7 +64,7 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_http::init())
-        .invoke_handler(tauri::generate_handler![allow_vault, read_dropped, read_dropped_bytes, dev_env])
+        .invoke_handler(tauri::generate_handler![allow_vault, read_dropped, read_dropped_bytes, read_anki_package, dev_env])
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(

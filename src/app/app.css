@@ -627,6 +627,14 @@
 .intake .delim-pick .custom::placeholder { color: var(--fg-5); }
 .intake .delim-pick .custom:focus, .intake .delim-pick .custom[data-active="1"] { border-bottom-color: var(--accent-soft); }
 .intake .delim-note { font-family: var(--mono); font-size: 11px; color: var(--fg-3); letter-spacing: 0.02em; }
+.intake .deck-list { border-top: 1px solid var(--line-2); }
+.intake .deck-row {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 16px;
+  padding: 9px 0; border-bottom: 1px solid var(--line-2);
+  font-family: var(--serif); font-size: 15.5px; color: var(--fg-1);
+}
+.intake .deck-row:last-child { border-bottom: 0; }
+.intake .deck-row .dcount { font-family: var(--mono); font-size: 11px; color: var(--fg-3); letter-spacing: 0.02em; white-space: nowrap; }
 .intake .cards-preview { margin-top: 16px; border-top: 1px solid var(--line-2); }
 .intake .cards-preview .card-span:last-child { border-bottom: 0; }
 .intake .cards-preview + .stats { margin-top: 4px; padding-top: 10px; border-top: 1px solid var(--line-2); }

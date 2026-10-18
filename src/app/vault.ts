@@ -7,6 +7,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { open as pickDirectory } from '@tauri-apps/plugin-dialog';
 import { info } from '@tauri-apps/plugin-log';
 import { meta, setField, type Doc, type NodeType } from '../format/index.js';
+import type { MappedDeck } from '../import/index.js';
 import { dayOf, docItems, isDue, postponeOverflow, sortQueue, type QueueItem } from '../schedule/index.js';
 import { Vault, childDirOf, dirOf, isDoc, rekey, type ExtractSpec, type ImportDeckSpec, type ImportPdfSpec, type ImportSpec, type TreeNode, type VaultEvent, type VaultState } from '../vault/index.js';
 import { tauriFs } from '../vault/tauri-fs.js';
@@ -217,8 +218,8 @@ export function openInitialVault(): Promise<void> {
     const vault = await openVault(path);
     const mode = await invoke<string | null>('dev_env', { name: 'ILMI_SMOKE' });
     if (mode) {
-      const { smoke, smokeReader, smokeCards, smokeIntake, smokeQueue, smokeLoop, smokeShots, smokeDeck, smokePri, smokeGrowth, smokeOverload, smokePdf, smokeFaces, smokeCardsText } = await import('./smoke.js');
-      const run = { reader: smokeReader, cards: smokeCards, intake: smokeIntake, queue: smokeQueue, loop: smokeLoop, shots: smokeShots, deck: smokeDeck, pri: smokePri, growth: smokeGrowth, overload: smokeOverload, pdf: smokePdf, faces: smokeFaces, 'cards-text': smokeCardsText }[mode] ?? smoke;
+      const { smoke, smokeReader, smokeCards, smokeIntake, smokeQueue, smokeLoop, smokeShots, smokeDeck, smokePri, smokeGrowth, smokeOverload, smokePdf, smokeFaces, smokeCardsText, smokeAnki } = await import('./smoke.js');
+      const run = { reader: smokeReader, cards: smokeCards, intake: smokeIntake, queue: smokeQueue, loop: smokeLoop, shots: smokeShots, deck: smokeDeck, pri: smokePri, growth: smokeGrowth, overload: smokeOverload, pdf: smokePdf, faces: smokeFaces, 'cards-text': smokeCardsText, anki: smokeAnki }[mode] ?? smoke;
       await run(vault);
     }
   })();
@@ -393,6 +394,23 @@ export async function importDeckNode(dir: string, spec: ImportDeckSpec): Promise
   const path = await need().importDeck(dir, spec);
   if (dir !== '' || !useApp.getState().open['']) toggleOpen(dir, true);
   return path;
+}
+
+/**
+ * The decks of an Anki package as deck files in `dir`: `Parent::Child` lands
+ * as `Parent/Child.md`, the folders made as needed; the folder opens.
+ * Resolves to the documents' paths, in the decks' order.
+ */
+export async function importAnkiNode(dir: string, decks: MappedDeck[]): Promise<string[]> {
+  const vault = need();
+  const paths: string[] = [];
+  for (const d of decks) {
+    let at = dir;
+    for (const seg of d.dir) at = await vault.folderIn(at, seg);
+    paths.push(await vault.importDeck(at, { title: d.title, doc: d.doc }));
+  }
+  if (dir !== '' || !useApp.getState().open['']) toggleOpen(dir, true);
+  return paths;
 }
 
 /** Carve a passage of `parent` into a child extract; the parent's row opens so the child is visible. */

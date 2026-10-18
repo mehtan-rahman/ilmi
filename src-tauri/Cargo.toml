@@ -21,3 +21,7 @@ tauri-plugin-log = "2"
 tauri-plugin-fs = { version = "2", features = ["watch"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-http = "2"
+# the Anki package reader: a zip holding an SQLite database, zstd-compressed in newer exports
+zip = { version = "9", default-features = false, features = ["deflate"] }
+zstd = "0.14"
+rusqlite = { version = "0.40", features = ["bundled", "collation"] }

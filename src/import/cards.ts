@@ -6,7 +6,7 @@
 // HTML reduction (`reduceCell`), the card writer (`cardText`), and the deck
 // writer (`deckDoc`).
 
-import { blanks, cardFields, parse, setField, type Card, type Doc } from '../format/index.js';
+import { blanks, cardFields, formatBlock, parse, setField, type Card, type Doc } from '../format/index.js';
 import { textOf } from './readable.js';
 import { cleanText } from './text.js';
 
@@ -313,25 +313,27 @@ export function toCards(split: Split, both: boolean): { cards: Card[]; leftovers
 export const NOT_CARDS = 'not cards';
 
 /**
- * A deck: `type: deck`, the cards as paragraphs, then what did not split
- * under `## not cards`, so nothing pasted is lost. Built as text and parsed,
- * so the blocks are what the file will read back as.
+ * A deck: `type: deck`, the cards as paragraphs (a card's schedule lines
+ * with it, when it has any), then what did not split under `## not cards`,
+ * so nothing pasted is lost. Built as text and parsed, so the blocks are
+ * what the file will read back as.
  */
 export function deckDoc(cards: Card[], leftovers: string[]): Doc {
-  const parts = cards.map((c) => c.text);
+  const parts = cards.map((c) => formatBlock(c));
   if (leftovers.length) parts.push(`## ${NOT_CARDS}`, ...leftovers.map((l) => cleanText(l)).filter(Boolean));
   const { doc } = parse(parts.length ? `${parts.join('\n\n')}\n` : '');
   setField(doc, 'type', 'deck');
   return doc;
 }
 
-/** The dropped counts as one quiet phrase, or `''`. */
-export function droppedLabel(d: Dropped): string {
+/** The dropped counts as one quiet phrase, or `''`; `more` adds counts of its own as `[n, one, many?]`. */
+export function droppedLabel(d: Dropped, more: [number, string, string?][] = []): string {
   const parts: string[] = [];
   const add = (n: number, one: string, many = `${one}s`) => { if (n) parts.push(`${n} ${n === 1 ? one : many}`); };
   add(d.hints, 'hint');
   add(d.sounds, 'sound');
   add(d.images, 'image');
   add(d.extra, 'extra field');
+  for (const [n, one, many] of more) add(n, one, many);
   return parts.length ? `${parts.join(', ')} dropped` : '';
 }

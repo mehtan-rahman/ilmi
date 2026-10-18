@@ -6,6 +6,160 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-10-18 — milestone 17: cards from Anki, a dropped `.apkg` lands as deck files with their progress
+
+Commit `TBD17` — *anki: a dropped .apkg read on the Rust side, each deck
+landing as a deck file with its review cards' progress seeded*.
+
+### Done
+
+- `src-tauri/src/anki.rs` and the `read_anki_package` command: the zip
+  opened with `zip` (deflate only), the newest collection taken
+  (`collection.anki21b` through `zstd`, else `.anki21`, else `.anki2`),
+  written to a temporary file and opened read-only with `rusqlite`
+  (`bundled`, `collation`; a `unicase` collation registered so Anki's
+  schema 18 tables load). Schema 11 is read from the `col` row's JSON,
+  schema 18 from `notetypes` / `fields` / `templates` / `decks`, a
+  template's question format out of its protobuf `config` blob by a
+  schemaless field scanner. Cards come back with their home deck and
+  original due when they sit in a filtered deck. The `media` entry is
+  classified (`json` / `zstd` / `other` / `none`), not read.
+- `src/import/anki.ts`: `creationDay`, `difficultyOf` (2500 → 5, 1300 → 8,
+  clamped), `seedOf` for review cards (the SuperMemo seed's shape:
+  `due`, `st=review`, `s=ivl`, `d`, `r`, `l`, `ivl`, `last = due − ivl`),
+  `kindOf` (basic / reversed / cloze / other), `cardOf` (fields through
+  `reduceCell`; a cloze written whole with `sr cN` per group, or the bare
+  line for one group; a pair `::`, or `:::` when the reversed note has
+  its reverse card, the forward schedule kept, the rest counted; `null`
+  when nothing survives), `mapPackage` → decks in name order with
+  `Parent::Child` as `Parent/Child.md`, empty decks, other notetypes, and
+  the dropped counts. `deckDoc` formats cards with `formatBlock` so the
+  schedules ride along; `droppedLabel` takes extra counts.
+- `Vault.folderIn`, `importAnkiNode`, `readAnkiPackage` / `APKG_EXT`.
+- The intake takes `.apkg` from a drop and the picker: the paste field
+  gives way to the deck list (`Languages / German` · `2 cards, 2
+  scheduled`), the count line (`4 cards in 2 decks · 1 empty deck skipped
+  · 1 hint, 1 sound, 1 image, 1 schedule, 1 empty note dropped`) with
+  `not this →`, no title field; `place & open` writes every deck, a notice
+  per deck, and opens the first. The hint names `.apkg`.
+- Fixture: `npm run fixture:anki` (the Rust test with `ILMI_ANKI_FIXTURE`
+  set writes `src/import/__tests__/anki/two-decks.apkg` and
+  `two-decks.json`; byte-stable). README: a paragraph, the script, the
+  layout lines. Smoke: `ILMI_SMOKE=anki` with `ILMI_APKG=<path>`.
+- Tests: vitest 318 (+19 in `anki.test.ts`: the fixture, the creation day,
+  the difficulty line, the seed and its line, no line for new / learning /
+  relearning, the four notetype kinds, each card shape, the single-group
+  bare line, the other-notetype path, HTML / sound / image reduction, the
+  multi-line form, the refusals, the whole package to two documents
+  checked line for line and parsed with no diagnostics, the empty and
+  missing-note cases, and `folderIn` + `importDeck` into a scratch vault);
+  `cargo test` 5 (the two-deck package built and read back, the
+  compressed collection preferred over the stub, a schema 18 database with
+  a filtered-deck card, refusals, the protobuf scanner).
+
+### Verified
+
+- `npm run typecheck` clean, `npx vitest run` green (18 files, 318),
+  `cargo test` green (5), no warnings.
+- In the window (`ILMI_VAULT=<scratch copy> ILMI_SMOKE=anki
+  ILMI_APKG=<repo>/src/import/__tests__/anki/two-decks.apkg npm run tauri
+  dev`, 12:33 local, one run, clean), as logged: the package dropped
+  through `intakeHooks.ingestFile` → h1 `Add decks`, rows `Languages /
+  German (2 cards, 2 scheduled)` and `Science (2 cards, 1 scheduled)`,
+  the count line `4 cards in 2 decks · 1 empty deck skipped · 1 hint, 1
+  sound, 1 image, 1 schedule, 1 empty note dropped · not this →`, no
+  title field, no textarea → `place & open` → `Languages/German.md`:
+  `type: deck`, `imported: 2026-10-18`, `What is the capital of France?
+  :: Paris` + `<!-- sr due=2026-07-20 st=review s=30 d=5 r=7 l=1 ivl=30
+  last=2026-06-20 -->`, `der Vorsatz ::: resolution; intention` + `<!-- sr
+  due=2026-05-31 st=review s=45 d=6 r=9 l=0 ivl=45 last=2026-04-16 -->`,
+  0 diagnostics; `Science.md`: the cloze with `<!-- sr c1 due=2026-04-11
+  st=review s=10 d=8 r=3 l=2 ivl=10 last=2026-04-01 -->` and `Which planet
+  is nearest the sun? :: Mercury` bare, 0 diagnostics; notices `placed · 2
+  cards in German`, `placed · 2 cards in Science`; the intake cleared; the
+  deck lens `German`, `2 cards · 2 due`, two rows; tree rows `Languages 1`
+  and `Science 2 · 2 due`; the Science lens with the cloze row selected,
+  inspector `type cloze · in Science`.
+- Three captures read: the intake with `Add decks`, the two deck rows in
+  serif with their mono counts at the right, the count line (wrapped to a
+  second line for the dropped phrase, `not this →` in gold at the right),
+  `LIVES IN vault …`, both place buttons; the German deck lens with the
+  `Q What is the capital of France? / A Paris` row and the `der Vorsatz ⇄
+  resolution; intention` row, `2 cards · 2 due`, the inspector's cards
+  list reading `OVERDUE 90D` and `OVERDUE 140D`, `Languages 1` and
+  `Science 2 · 2 due` in the tree; the Science lens with the cloze's two
+  blanks underlined in gold and the row selected, the inspector's card
+  editor showing `{{c1::mitochondrion}}` … `{{c2::powerhouse}}`,
+  `schedule per blank`, the cards list `mitochondrion OVERDUE 190D` and
+  `Which planet is nearest the sun? NEW`. One CSS fix after the captures
+  (the deck list's last row drew a rule right above the detail's).
+  Port 1420 free afterwards.
+
+### Not done / open
+
+- The user's own export was not tried; none was provided. The "done when"
+  clause stays open for them: drop a real `.apkg` on the intake and read
+  the deck list and the dropped counts before placing.
+- Media is not copied; `[sound:…]` and `<img>` are counted and dropped.
+  The `media` form is read and carried in the mapping but not shown.
+- Suspended and buried cards (`queue` < 0) import as ordinary cards; the
+  format has no suspension. Relearning cards (type 3) get no line.
+- Tags are read on the Rust side and dropped silently in the mapping.
+- A note whose cards sit in two decks makes one card per deck.
+- No per-deck pick on the intake; it is all the decks or `not this →`.
+- The count line wraps when many things were dropped.
+
+### Decisions worth knowing
+
+- The fixture is written by the Rust test rather than a `node:sqlite`
+  script: the package builder already lived in the test, and the JSON the
+  TypeScript tests read is then exactly what the command returns.
+- A reversed notetype writes `:::` only when the note has its reverse
+  card, so Anki's "Basic (optional reversed card)" without the reverse
+  lands one-directional, as Anki has it.
+- A single-group cloze's schedule goes on the bare line, FORMAT.md §6.2;
+  only a multi-group cloze gets `sr cN` lines.
+- `crt` is read at noon rather than midnight so the collection's first
+  day does not slip by one across time zones.
+- The paste field gives way to the deck list rather than sitting empty
+  above it; the intake grows no section.
+
+### Handoff prompt
+
+Paste into a fresh session:
+
+```
+Read PLAN.md, FORMAT.md, BUILD-LOG.md, and spec/hashiyah/HANDOFF.md.
+Milestones 0–17 are all ticked (17, cards from Anki, BUILD-LOG
+2026-10-18); PLAN.md has no unchecked milestone. Do not start a new
+feature. With the user, decide what comes next: a polish pass over the
+open items the milestone notes record (10: no palette command or key for
+priority, no stepper; 11: no growth row before enrolment, the preview
+ignores lateness; 12: the sidebar and inspector counts are the whole day
+while the strip folds, no key for `postpone the rest`; 13: a due-day
+field on the draft's inspector; 14: the user's real SuperMemo collection,
+with their say-so; 15: the extracts list under a PDF, editing a card from
+the session's faces; 16: the Anki text row fixed to its header; 17: the
+user's own .apkg untried, media not copied, suspended cards import as
+ordinary ones), the margin-gloss text flow the ground rules keep out of
+the plan, or something new. If the user drops a real .apkg, read it with
+ILMI_SMOKE=anki ILMI_APKG=<path> or in the window and report the deck list
+and the dropped counts. Add any new milestone to PLAN.md before building
+it. Copy rules of spec/hashiyah/BUILD-PROMPT.md for every string.
+
+Tooling: export PATH=$HOME/.cargo/bin:/opt/homebrew/bin:$PATH before every
+command. npx vitest run (318 tests, 18 files), npm run typecheck, and
+cargo test in src-tauri (5) must be green before a commit. Window checks:
+copy src/format/__tests__/corpus/vault to a scratch directory, run
+caffeinate -d -u -i in the background, then ILMI_VAULT=<copy>
+ILMI_SMOKE=<mode> npm run tauri dev with a tail loop that screencaptures
+on `shot: <name>` (sleep 2 first) and kills the app on `done` / `failed`;
+free port 1420 before and after; do not edit src/ or src-tauri/ while it
+runs.
+```
+
+---
+
 ## 2026-10-18 — milestone 16: cards from text, a list pasted on the intake lands as a deck
 
 Commit `b4724d2` — *cards: a pasted or dropped list split by two

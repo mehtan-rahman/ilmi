@@ -1062,7 +1062,73 @@ no diagnostics and `cardForm` on every card paragraph; `ILMI_SMOKE=cards-text`
 pastes a `Q:`/`A:` list and a tab list, reads the row's choice, flips a
 delimiter, places both, and logs each file's lines; screenshots read.
 
-### [ ] 17. Cards from Anki — drop an `.apkg`, each deck lands as a deck file with its progress
+### [x] 17. Cards from Anki — drop an `.apkg`, each deck lands as a deck file with its progress
+Done 2026-10-18, commit `TBD17`.
+Notes: `src-tauri/src/anki.rs` is the reader, `read_anki_package(path)`
+the command (registered in `lib.rs` beside `read_dropped_bytes`; the path
+is read as a drop, nothing added to the fs scope). Crates: `zip` 9 with
+only `deflate`, `zstd` 0.14, `rusqlite` 0.40 with `bundled` and
+`collation` (Anki's name columns are `collate unicase`, a collation Anki
+registers itself; the reader registers a lowercase one so a schema 18
+database loads). The collection is taken in the order `collection.anki21b`
+(zstd, schema 18) → `collection.anki21` → `collection.anki2` (schema 11),
+written to a temporary file (`TempFile`, removed on drop) and opened
+read-only. Schema 11 reads `col.crt`, `col.models`, `col.decks`; schema 18
+reads `notetypes`, `fields`, `templates` (the question format is field 1
+of the protobuf `config` blob, read by a schemaless scanner,
+`proto_string`), and `decks` (U+001F in names → `::`). Notes split `flds`
+on U+001F; cards come back with their home deck and original due when
+they sit in a filtered deck (`odid` / `odue`). The `media` entry is only
+classified (`json`, `zstd`, `other`, `none`). JSON shape: `AnkiPackage {
+crt, schema, media, decks, notetypes { id, name, fields, cloze, templates
+{ name, front } }, notes { id, notetype, fields, tags }, cards { id, note,
+ord, deck, type, queue, ivl, due, factor, reps, lapses } }`, camelCase.
+Fixture: `npm run fixture:anki` runs the Rust test
+`reads_the_two_deck_package` with `ILMI_ANKI_FIXTURE` set, which copies
+the package it built to `src/import/__tests__/anki/two-decks.apkg` and
+writes what it read as `two-decks.json`; both are byte-stable across runs
+(zip entries dated 2026-01-01, SQLite vacuumed). The Rust route was taken
+over a `node:sqlite` script because the builder already lived in the test.
+`src/import/anki.ts`: `creationDay(crt)` reads the epoch at noon so the
+day holds in any zone within twelve hours; `difficultyOf(factor)` = 5 +
+(2500 − factor) × 0.0025, clamped 1–10, one decimal; `seedOf(card, day0)`
+for type 2 only (`due` = day0 + due days, `last` = due − ivl, `s` = `ivl`,
+`r`, `l`); `kindOf(notetype)`: cloze by flag, basic = one template,
+reversed = two with the second's front showing field 2 and not field 1
+(filters like `{{text:Back}}` allowed), else other; `cardOf(note,
+notetype, cards, day0, dropped)`: fields through `reduceCell(f, true,
+dropped)`; a cloze written whole (a single group's schedule on the bare
+line, else `sr cN` per group from `ord + 1`, a card for a group the text
+lacks counted under `schedules`), extra cells counted under `extra`; a
+pair from the non-empty cells, `:::` only when the notetype is reversed
+*and* the note has its `ord 1` card, the lowest card's schedule kept and
+the other review cards counted under `schedules`; `null` (counted under
+`notes`) when fewer than two cells survive or `cardText` refuses.
+`mapPackage(pkg)` → `Mapped { decks: MappedDeck { name, dir, title, doc,
+cards, scheduled }, empty, other, dropped: AnkiDropped, media }`, decks
+in name order, `Parent::Child` → `dir ['Parent']` (through `fileName`) and
+`title 'Child'`; a deck with no card after mapping counts as `empty`.
+`deckDoc` now formats each card with `formatBlock`, so schedules ride
+along; `droppedLabel(d, more)` takes extra `[n, one, many?]` counts.
+Vault: `folderIn(dir, name)` (the folder, made when missing; a document's
+name gives its children directory). App: `importAnkiNode(dir, decks)` →
+paths; `readAnkiPackage` and `APKG_EXT` in `fetch.ts`. Intake: `.apkg` by
+drop or the picker; the paste field gives way to `.deck-list` rows (`Parent
+/ Child`, `N cards, M scheduled`), the count line (`N cards in M decks ·
+K empty decks skipped · N from other notetypes · … dropped`) with `not
+this →`, no title field, `lives in` and the place buttons; h1 `Add decks`
+(or `Add a deck`); `place` writes each deck, a notice `placed · N cards in
+Deck` per deck, `place & open` opens the first. Smoke: `ILMI_SMOKE=anki`,
+`ILMI_APKG=<path>` names the package (else `two-decks.apkg` in the
+vault). Tests: 318 (+19 in `anki.test.ts`), `cargo test` 5. Open: the
+user's own export has not been tried (none provided); media is not
+copied, only `[sound:…]` / `<img>` counted; suspended and buried cards
+(`queue` < 0) import as ordinary cards, the format has no suspension;
+relearning cards (type 3) get no line, as learning cards; `tags` are read
+and dropped silently; a note's cards split across decks make one card per
+deck; the deck list and the count line are read-only, no per-deck pick;
+the count line wraps to two lines at the default width when many things
+were dropped; the dropped `media` form is in the mapping but not shown.
 A `.apkg` is a zip holding an SQLite database (`collection.anki2`, or
 `collection.anki21b` compressed with zstd in newer exports) plus a `media`
 map. The webview cannot read SQLite, so the Rust side does:
@@ -1117,8 +1183,8 @@ when they provide one.
 
 ## Notes for the next session
 
-Milestones 0–16 are ticked; 17 under *Importing cards* is next. After it,
-what is left is a polish pass over the open items
+Milestones 0–17 are ticked; nothing is unchecked. What is left is a
+polish pass over the open items
 each milestone's notes record (10: no palette command or key for
 priority, no stepper; 11: no growth row before enrolment, the preview
 ignores lateness; 12: the sidebar and inspector counts are the whole day
@@ -1126,7 +1192,9 @@ while the strip folds, no key for `postpone the rest`; 13: a due-day field
 on the draft's inspector; 14: the user's real collection, with their
 say-so; 15: the list under it; the session card's faces are not editable
 in place; 16: the Anki row is fixed to its header, leftovers may read as
-headings or lists) and, with the user, whether the next thing is that pass, the
+headings or lists; 17: the user's own `.apkg` untried, media not copied,
+suspended cards import as ordinary ones) and, with the user, whether the
+next thing is that pass, the
 margin-gloss text flow the ground rules keep out of the plan, or
 something new. The handoff prompt at the top of `BUILD-LOG.md` lists the
 items.

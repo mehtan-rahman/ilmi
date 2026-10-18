@@ -20,6 +20,7 @@ npm test               # format round-trip and vault tests
 npm run typecheck
 npm run import-sm -- <collection.kno> <vault-dir>   # a SuperMemo collection, once
 npm run fixture:pdf    # regenerate the corpus's two-page PDF
+npm run fixture:anki   # regenerate the two-deck Anki package and its JSON (cargo)
 ```
 
 The import reads a SuperMemo collection's data files (`src/import/supermemo/LAYOUT.md`
@@ -70,6 +71,15 @@ read by its header, HTML reduced to text; its hints, sounds, and images are
 dropped and counted. Lines that did not split stay at the end of the file
 under `## not cards`.
 
+An Anki package (`.apkg`) dropped on the intake is read on the Rust side
+(`src-tauri/src/anki.rs`: the zip, the SQLite collection, zstd when it is
+compressed) and listed deck by deck; `place` writes one deck file per Anki
+deck, `Parent::Child` as `Parent/Child.md`. A basic note is `front :: back`,
+a reversed note `:::`, a cloze note its text with the blanks kept; a review
+card's progress seeds the card's `sr` line (due, interval, reps, lapses, a
+difficulty from the ease). Hints, sounds, images, a reversed note's second
+schedule, and empty notes are dropped and counted; media is not copied.
+
 The inspector sets a priority, 0 first and 100 last, on a document or on the
 selected card; what is due sorts by it. It also sets a topic's growth, the
 factor each pass multiplies the interval by (1.6 reading, 1.5 writing), and
@@ -88,8 +98,8 @@ src/app/           renderer: React, Zustand store, tokens.css
 src/format/        parser and serializer, the only code that touches vault files
 src/vault/         open, walk, read, write, watch, and reshape a vault; pure over an Fs interface
 src/schedule/      ts-fsrs grading, the reading and writing loops, the queue query
-src/import/        text from a paste, a page, a list of cards, or a SuperMemo collection, on its way to a file
+src/import/        text from a paste, a page, a list of cards, an Anki package, or a SuperMemo collection, on its way to a file
 src/pdf/           the PDF lens's pure side: a page's text from pdf.js items, finding a passage again
 scripts/           command-line tools, run with tsx
-src-tauri/         desktop shell (Tauri v2, fs + dialog + log plugins)
+src-tauri/         desktop shell (Tauri v2, fs + dialog + log plugins; anki.rs reads a package)
 ```

@@ -2367,7 +2367,7 @@ inline formula's editor, types into it, closes with ⏎, and logs the file's
 line; screenshots read.
 
 ### [x] 27. Live blocks — lists, quotes, and code edited as themselves
-Done 2026-10-18 on main; commit `TBD`.
+Done 2026-10-18 on main; commit `05d9ead`.
 Notes: `src/reader/schema.ts` gains `code_block` (`content: 'text*'`,
 `code: true`, attrs `fence` and `close`, the fence lines verbatim, `close`
 null when the fence never closed; `pre.dd-code[data-lang] > code.

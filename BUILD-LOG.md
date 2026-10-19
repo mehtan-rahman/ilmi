@@ -8,7 +8,7 @@ was verified, what was not, and the prompt to resume with.
 
 ## 2026-10-18 — milestone 27: live blocks, lists, quotes, and code edited as themselves
 
-Done on main; commit `TBD` — *live blocks: fenced code, lists, and quotes
+Done on main; commit `05d9ead` — *live blocks: fenced code, lists, and quotes
 edited as themselves through a lossless pair, the fence, the markers, and
 the `> ` kept as attributes; the blocks smoke*. Files: `src/reader/
 schema.ts` (`code_block`, `list` / `list_item`, `quote` / `quote_line`,

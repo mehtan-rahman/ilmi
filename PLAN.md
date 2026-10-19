@@ -2464,6 +2464,73 @@ extract from a list item without its marker; `ILMI_SMOKE=blocks` edits
 the sampler's list, quote, and code block in place and logs the file's
 lines after each; screenshots read.
 
+## From use
+
+The user ran the app on their own collection and came back with three
+things, all about the chrome rather than the loops. The queue row names
+its document by its title, and generated titles read as what they are:
+"in the queue, right after the item type, can you just put the path of the
+item instead of the title or something? Looks too claudism otherwise."
+The tree's context menu "is hard to use (e.g., I can't just right-click
+somewhere on the tree to add something or whatever, has to be on an item,
+etc.); just hovering over move to is kinda awkward too, it should only
+pull up on next context menu if clicked and not hover." And there is no
+way, once a vault is open, to open another or make one: "need something
+(I imagine File → Open) for collection management, like if I wanted to
+open a collection or make a new one." The format does not change.
+
+### [ ] 28. From use — the path in the queue, a context menu that works anywhere, a File menu
+- The queue row's source line shows the item's vault-relative path after
+  the kind tag, not its title: `sources/attention.md` becomes
+  `sources/attention`, the `.md` dropped, the folders kept with `/`, in
+  mono at the size the line has now; a card's section still follows
+  after the dash as it does today. `sourceLabel` in `src/app/items.ts`
+  is the one place; the deck lens, the session's source line, and the
+  inspector keep the title (the title is the document's name there; the
+  queue is a list of files). A Tweaks toggle `queue shows titles`
+  (default off) brings the old line back.
+- The tree's context menu opens on a right-click anywhere in the sidebar:
+  the empty space under the rows and the headings hit `.side`, not
+  `.tree` (`src/app/Tree.tsx` handles only its own box, and the box ends
+  at the last row), so the handler moves up to the sidebar (or the tree
+  fills the sidebar's height; either, with the reason in the notes) and
+  opens the root menu there, with the new-item entries landing at the
+  root and `add a source` into the root. Right-click on a row keeps its
+  menu. Escape closes the menu; a click anywhere outside closes it (check
+  that it does today; make it so if not); the menu stays inside the
+  window at the bottom edge as it does at the right.
+- `move to…` opens its list on a click, not on hover, in the tree and in
+  the deck lens (`src/app/Lenses.tsx` has the same pattern); the list
+  closes with the menu, and its `◂ move to…` row steps back. Nothing
+  opens on `mouseenter` any more.
+- A File menu in the native menu bar (`src-tauri/src/lib.rs` builds the
+  macOS menu; the File submenu goes between `ilmi` and `Edit`, and on
+  Windows and Linux the same submenu is added to the default menu):
+  `New Collection…` (⌘⇧N), `Open Collection…` (⌘O), `Open Recent` as a
+  submenu of the recents by name (rebuilt when the recents change, or,
+  if the menu cannot be rebuilt cheaply, a single `Open Recent…` that
+  opens the palette on the vaults), a separator, `Close Collection`
+  (⌘⇧W; ⌘W stays the tab). The Rust side forwards every item's id to the
+  webview as one event; `src/app/chrome.ts` (or a new `src/app/menu.ts`)
+  listens once and dispatches: Open → the folder picker then `openVault`;
+  New → the parent picker then the welcome's name field (`newVaultIn`),
+  the open vault closed first with its tabs; Close → `closeVault` to the
+  welcome; Recent → `openVault(path)`. The same four as palette commands
+  (`open collection`, `new collection`, `close collection`, and the
+  recents the palette already indexes), so there is a path without the
+  native menu and one the smoke can drive.
+
+Done when: `items.test.ts` (or the queue test) covers the path label with
+and without the toggle and a card's section after it; `tree.test.ts`
+covers the menu opening from the sidebar's empty space, `move to…` not
+opening on hover and opening on click, and Escape closing it; a
+`menu.test.ts` covers the dispatch from an event id to the handler with
+the pickers stubbed; `ILMI_SMOKE=use` opens the queue, logs the first
+three rows' source lines, right-clicks the sidebar's empty space and
+logs the menu's entries, clicks `move to…` and logs the list, runs the
+palette's `close collection` and logs the welcome, then reopens the vault
+from the recents and logs the tree; screenshots read.
+
 ## Notes for the next session
 
 Milestones 0–27 are ticked (13 dropped); nothing is unchecked. The window

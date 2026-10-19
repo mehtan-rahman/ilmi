@@ -2366,7 +2366,70 @@ logging which markers show, backspaces into a marker, opens maxwell's
 inline formula's editor, types into it, closes with ⏎, and logs the file's
 line; screenshots read.
 
-### [ ] 27. Live blocks — lists, quotes, and code edited as themselves
+### [x] 27. Live blocks — lists, quotes, and code edited as themselves
+Done 2026-10-18 on main; commit `TBD`.
+Notes: `src/reader/schema.ts` gains `code_block` (`content: 'text*'`,
+`code: true`, attrs `fence` and `close`, the fence lines verbatim, `close`
+null when the fence never closed; `pre.dd-code[data-lang] > code.
+language-*`), `list` (`list_item+`, `div.dd-list`) with `list_item`
+(`inline*`, attrs `indent`, `marker` as written with the whitespace after
+it, `task` the box's character or null; the list is flat, nesting read
+from `indent`), and `quote` (`quote_line+`, `blockquote.dd-quote`) with
+`quote_line` (`inline*`, attr `prefix`, `''` on a lazy line).
+`src/reader/raw.ts`: `rawToNode(text)` reads a fence, a quote, or a list
+(every item line an item of its own, nested or not; a continuation line
+at the item's content column, in spaces) and hands the node back only
+when `nodeToRaw(node) === text`, so a block the pair cannot round trip
+stays a raw atom (a table, a rule, HTML, a comment, indented code, a
+fence with nothing between its lines, a lazy or tab-indented
+continuation); `itemLines`, `markerNumber`, `numbered`, `nextMarker`.
+`convert.ts` goes through the pair both ways. `plugins.ts`:
+`continueBlock` (⏎ splits an item or a line, the new one with
+`nextMarker` and an unticked box, or the same `> `; a lazy line takes the
+nearest prefix before it; `renumber` moves the ordered items after it on
+where they had fallen behind), `leaveBlock` (⏎ on an empty item or line:
+a paragraph after the block when last, before it when first, between the
+halves otherwise, the text going with it), `joinBlock` (Backspace at the
+start: the box first, then a join into the item before, the first item
+leaving as a paragraph), `indentBlock` / `outdentBlock` (Tab / ⇧Tab by
+the item's own marker width, every item the selection touches; Tab in
+code is two spaces), `toggleTask`, `taskRule` (`[ ] ` or `[x] ` typed at
+an item's start becomes its box), `Mod-Enter: exitCode`; `isCode` skips a
+code block in `markDecorations`, `redrawMarkers`, `rangesAround`,
+`imagesIn`, and `reformMath`. `cards.ts`: `passage` walks `nodesBetween`,
+so an item's or a line's text is taken without its marker and `blocks`
+are the document's child indices. `Reader.tsx`: `ListItemView`
+(`div.dd-li[data-marker]` with `--indent`, `span.li-mark` showing `•` or
+the number as written, `span.li-task[data-checked]` ticked on mousedown
+through `toggleTask` while the view is editable, `div.li-text` as the
+contentDOM); `RawView` keeps the rest. CSS in `reader.css`: `.dd-code`
+with the language in its corner, `.dd-li` a flex row set in by `--indent
+× 0.6em`, `.li-task` a box filled on the accent with a check, `.dd-quote`
+the left rule. README: the rendering paragraph. Smoke: `ILMI_SMOKE=blocks`
+written and run (see BUILD-LOG), `render`'s list click moved to the
+table. Tests: 493 (+16 in `src/reader/__tests__/raw.test.ts`, new, the
+corpus, the book, and the pages through the pair; +6 in
+`reader-view.test.ts`; four of 25's cases changed on purpose, since a
+list, a quote, and a code block are no longer atoms: the `ul li` and
+`blockquote p` queries read `.dd-li .li-text` and `.dd-ql`, the atoms
+list is `['table']`, the source-on-select case uses the table;
+`reader.test.ts`'s pass-through case takes a table and checks the three
+live nodes), 26 files; typecheck clean; cargo 12.
+Open: the window's look is unseen (the smoke ran to `done` with every
+write right, but the screen was locked for the first capture and another
+window covered ilmi for the rest): the bullets' column against the text,
+the ordered numbers, the task box and its tick, the quote's rule, the
+code label, the indent step; tables and HTML blocks stay as in 25 (drawn,
+source on focus); a block nested inside an item or a quote (a fence, a
+heading, `> - item`) is text on that line; a quote's wrapped paragraph
+reads as lines, not one paragraph; a fence with nothing between its lines
+stays raw, and a code block is never made in place (type the fence and
+the file re-reads it); ordered items are renumbered only on ⏎, and `1. 1.
+1.` becomes `1. 2. 3.` then; Tab indents by the item's own marker width,
+not the item before's content column; a Shift-⏎ line in an item is a
+continuation line in the file, a blank one splits the block on re-read;
+no colouring in code; Backspace at the start of a code block joins it
+into the paragraph before, as a heading does.
 - Fenced code: a real `code_block` node in the editor, the fence and its
   language kept as node attributes, the body edited in place (monospace,
   tab inserts two spaces, ⌘⏎ leaves the block); serialized back to the
@@ -2403,23 +2466,27 @@ lines after each; screenshots read.
 
 ## Notes for the next session
 
-Milestones 0–26 are ticked (13 dropped); 27 under *Live editing* is next,
-on main (it shares the reader with 26). The window checks of 21, 24, and
-25 are recorded in BUILD-LOG under their entries with the fixes they
-forced (a fetched page is never auto-read as cards and the comma rule
-wants a gloss for a back; the clipper percent-encodes image paths; an
-image with an empty alt is drawn; `[^1]` is not a note). 26's window
-check is owed: port 1420 and the window belonged to another run for the
-whole session, so `ILMI_SMOKE=live` is written and unrun; run it first
-when the window is yours (the loop 25's entry describes), read the
-screenshots, fix what it shows, and record it under 26's entry. What is
-left after 27 is a polish pass over the open items each milestone's notes
-record (26: the editor's place near the right edge, undo not reopening
-it; 21: the popover's height and anchor, one meaning per card, one
-clitic; 24: `.html` drops on the old pass, images fetched after landing
-with no cap; 25: an inline image's alt shown beside it, the queue row's
-inline code not read in the window, emphasis across a math chip, no code
-colouring; 19: images and `linear="no"`; 17: media, suspended cards; 14:
-the user's real collection; 10–15: their lists), the plugin directory the
-user set aside ("can wait"), and, with the user, whatever is next. The
-handoff prompt at the top of `BUILD-LOG.md` says so.
+Milestones 0–27 are ticked (13 dropped); nothing is unchecked. The window
+checks of 21, 24, 25, and 26 are recorded in BUILD-LOG under their entries
+with the fixes they forced (a fetched page is never auto-read as cards and
+the comma rule wants a gloss for a back; the clipper percent-encodes image
+paths; an image with an empty alt is drawn; `[^1]` is not a note; the
+live smoke waits for maxwell's own surface). 27's look is owed:
+`ILMI_SMOKE=blocks` ran to `done` and every write was right, but the
+screen was locked for the first capture and another window covered ilmi
+for the rest, so the drawn list, task box, quote, and code block are
+unseen; run it first when the window and the screen are yours (the loop
+25's entry describes), read the captures, fix what they show, and record
+it under 27's entry. What is left is a polish pass over the open items
+each milestone's notes record (27: nested blocks inside an item, a
+quote's wrapped paragraph as lines, no code block made in place, Tab by
+the item's own width; 26: the editor's place near the right edge, undo
+not reopening it; 21: the popover's height and anchor, one meaning per
+card, one clitic; 24: `.html` drops on the old pass, images fetched after
+landing with no cap; 25: tables and HTML blocks still atoms, an inline
+image's alt shown beside it, the queue row's inline code not read in the
+window, emphasis across a math chip, no code colouring; 19: images and
+`linear="no"`; 17: media, suspended cards; 14: the user's real
+collection; 10–15: their lists), the plugin directory the user set aside
+("can wait"), and, with the user, whatever is next. The handoff prompt at
+the top of `BUILD-LOG.md` says so.

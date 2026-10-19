@@ -1,8 +1,9 @@
 // The reader: one document as one continuous surface. Prose is editable
-// ProseMirror, cards and raw blocks sit in the flow as atoms, math renders
-// as KaTeX chips edited in a field under the chip, and the reading marker
-// runs down the left margin. Every change goes through the vault as blocks;
-// nothing here string-edits a file.
+// ProseMirror, cards sit in the flow as atoms, fenced code, lists, and
+// quotes are edited as themselves (a table or an HTML block stays a drawn
+// atom), math renders as KaTeX chips edited in a field under the chip, and
+// the reading marker runs down the left margin. Every change goes through
+// the vault as blocks; nothing here string-edits a file.
 
 import katex from 'katex';
 import type { Node as PMNode } from 'prosemirror-model';
@@ -11,8 +12,8 @@ import { EditorView, type Decoration, type NodeView } from 'prosemirror-view';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { PRI_DEFAULT, cardFields, clozeSegments, mathSpanEnd, meta, serialize, setField, type Blank, type Block, type Card, type Doc, type MathSeg } from '../format/index.js';
 import {
-  blockAt, blocksEqual, cardDue, classifyRaw, cursorIndex, editorialRanges, flatRanges, fromDoc, frozenKey, imagesKey, inlineRanges, insertCard, isMathEdit,
-  literalSpans, makeState, markerKey, markerPos, markerRanges, mathEditKey, mathSplit, passage, pickPos, proseIndices, schema, setReadPos, splitBlocks,
+  blockAt, blocksEqual, cardDue, classifyRaw, cursorIndex, editorialRanges, flatRanges, fromDoc, frozenKey, imagesKey, indentWidth, inlineRanges, insertCard, isMathEdit,
+  literalSpans, makeState, markerKey, markerNumber, markerPos, markerRanges, mathEditKey, mathSplit, passage, pickPos, proseIndices, schema, setReadPos, splitBlocks, toggleTask,
   type Band, type InlineRange, type Passage, type RawShape,
 } from '../reader/index.js';
 import { advanceWrite, whenToDate } from '../schedule/index.js';
@@ -545,9 +546,73 @@ class MathView implements NodeView {
 }
 
 /**
- * A raw block: a list, a quote, code, a table, or a rule drawn as that
- * element, with its source behind it for while the block is selected; any
- * other raw text (an HTML block, a comment) as mono source, as before.
+ * A list item: its marker drawn beside the text (a bullet, or the number
+ * as written), a task's box before it, ticked or cleared on a click, the
+ * text itself editable. The indentation sets how far in the item sits.
+ */
+class ListItemView implements NodeView {
+  dom: HTMLElement;
+  contentDOM: HTMLElement;
+  private readonly mark: HTMLElement;
+  private box: HTMLElement | null = null;
+
+  constructor(node: PMNode, private readonly view: EditorView, private readonly getPos: () => number | undefined) {
+    this.dom = document.createElement('div');
+    this.mark = document.createElement('span');
+    this.mark.setAttribute('contenteditable', 'false');
+    this.contentDOM = document.createElement('div');
+    this.contentDOM.className = 'li-text';
+    this.dom.append(this.mark, this.contentDOM);
+    this.render(node);
+  }
+
+  private render(node: PMNode): void {
+    const marker = node.attrs.marker as string;
+    const task = node.attrs.task as string | null;
+    const n = markerNumber(marker);
+    this.dom.className = 'dd-li';
+    this.dom.dataset.marker = marker.trim();
+    this.dom.style.setProperty('--indent', String(indentWidth(node.attrs.indent as string)));
+    this.mark.className = `li-mark${n === null ? '' : ' num'}`;
+    this.mark.textContent = n === null ? '•' : marker.trim();
+    if (task === null) {
+      this.box?.remove();
+      this.box = null;
+      return;
+    }
+    if (!this.box) {
+      this.box = document.createElement('span');
+      this.box.className = 'li-task';
+      this.box.setAttribute('role', 'checkbox');
+      this.box.setAttribute('contenteditable', 'false');
+      this.box.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        const pos = this.getPos();
+        if (pos !== undefined && this.view.editable) toggleTask(this.view.state, this.view.dispatch.bind(this.view), pos);
+      });
+      this.mark.after(this.box);
+    }
+    this.box.dataset.checked = task === ' ' ? '0' : '1';
+    this.box.setAttribute('aria-checked', task === ' ' ? 'false' : 'true');
+  }
+
+  update(node: PMNode): boolean {
+    if (node.type !== schema.nodes.list_item) return false;
+    this.render(node);
+    return true;
+  }
+
+  stopEvent(e: Event): boolean { return !!this.box && this.box.contains(e.target as Node); }
+  ignoreMutation(m: MutationRecord | { type: 'selection'; target: Node }): boolean {
+    return m.type !== 'selection' && !this.contentDOM.contains(m.target);
+  }
+}
+
+/**
+ * A raw block: a table or a rule drawn as that element, with its source
+ * behind it for while the block is selected (a list, a quote, or code the
+ * pair could not read stays here too); any other raw text (an HTML block,
+ * a comment) as mono source, as before.
  */
 class RawView implements NodeView {
   dom: HTMLElement;
@@ -591,6 +656,7 @@ export const nodeViews = {
   card: (node: PMNode) => new CardView(node),
   math: (node: PMNode, view: EditorView, getPos: () => number | undefined, decorations: readonly Decoration[]) => new MathView(node, view, getPos, decorations),
   raw: (node: PMNode) => new RawView(node),
+  list_item: (node: PMNode, view: EditorView, getPos: () => number | undefined) => new ListItemView(node, view, getPos),
 };
 
 /** Where a ⌘-click on a link goes: the webview hands an outside address to the system. */

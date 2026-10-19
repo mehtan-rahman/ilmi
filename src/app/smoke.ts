@@ -91,6 +91,11 @@
 // binomial chip, types into the editor (a good formula, a broken one, the
 // good one again), closes with ⏎, reopens to see Escape write nothing and an
 // arrow step out, and logs the file's lines after each write.
+// `ILMI_SMOKE=blocks` opens the markdown sampler thawed and edits its blocks
+// in place: ⏎ at the end of the bullet list's last item and typing, Tab and
+// ⇧Tab, a task box typed and clicked, ⏎ on an empty item to leave; ⏎ at the
+// end of the quote and typing, ⏎ twice to leave; ⏎, Tab, and typing in the
+// code block, ⌘⏎ to step out; the file's lines logged after each write.
 // `ILMI_SMOKE=welcome` runs before any vault opens: it seeds the recents
 // with the scratch vault (`ILMI_VAULT`) and a path that does not exist,
 // turns `reopen the last vault on start` off, reads the welcome's rows and
@@ -2075,7 +2080,7 @@ export async function smokeRender(vault: Vault): Promise<void> {
   const drawn = () => {
     const imgs = qa<HTMLImageElement>('.draft-doc img.md-img').map((i) => `"${i.alt}" ${i.naturalWidth}x${i.naturalHeight} ${i.complete ? 'loaded' : 'loading'} ${i.src.slice(0, 5)}`);
     const slots = qa<HTMLElement>('.draft-doc .md-img-slot').map((s) => s.dataset.state);
-    return `em ${n('.draft-doc .md-em')}, strong ${n('.draft-doc .md-strong')}, code ${n('.draft-doc .md-code')}, links [${qa<HTMLElement>('.draft-doc .md-link').map((l) => l.dataset.href).join(', ')}], markers ${n('.draft-doc .md-mark')} (hidden ${n('.draft-doc .md-mark.hidden')}); blocks drawn [${qa<HTMLElement>('.draft-doc .raw.rendered').map((r) => r.dataset.kind).join(', ')}], mono ${n('.draft-doc pre.raw')}; ul ${n('.draft-doc .raw-view ul')} li ${n('.draft-doc .raw-view li')}, ol ${n('.draft-doc .raw-view ol')}, quotes ${n('.draft-doc .raw-view blockquote')}, code "${q('.draft-doc .raw-view pre code')?.className ?? ''}", tables ${n('.draft-doc .raw-view table')} (th ${n('.draft-doc .raw-view th')}, td ${n('.draft-doc .raw-view td')}); figures ${n('.draft-doc p.dd-img')}; images [${imgs.join(' | ')}]; slots [${slots.join(', ')}]`;
+    return `em ${n('.draft-doc .md-em')}, strong ${n('.draft-doc .md-strong')}, code ${n('.draft-doc .md-code')}, links [${qa<HTMLElement>('.draft-doc .md-link').map((l) => l.dataset.href).join(', ')}], markers ${n('.draft-doc .md-mark')} (hidden ${n('.draft-doc .md-mark.hidden')}); atoms drawn [${qa<HTMLElement>('.draft-doc .raw.rendered').map((r) => r.dataset.kind).join(', ')}], mono ${n('.draft-doc pre.raw')}; lists ${n('.draft-doc .dd-list')} items ${n('.draft-doc .dd-li')}, quotes ${n('.draft-doc .dd-quote')} lines ${n('.draft-doc .dd-ql')}, code "${q('.draft-doc .dd-code code')?.className ?? ''}", tables ${n('.draft-doc .raw-view table')} (th ${n('.draft-doc .raw-view th')}, td ${n('.draft-doc .raw-view td')}); figures ${n('.draft-doc p.dd-img')}; images [${imgs.join(' | ')}]; slots [${slots.join(', ')}]`;
   };
   const faceText = (sel: string) => q(sel)?.textContent?.replace(/\s+/g, ' ').trim().slice(0, 60) ?? '';
   try {
@@ -2103,13 +2108,13 @@ export async function smokeRender(vault: Vault): Promise<void> {
     await until(() => (q('.frozen-tag[data-frozen="1"]') ? true : null));
     await sleep(300);
 
-    // a drawn block's source while it is selected: click the list
-    const list = surface.querySelector<HTMLElement>('.raw.rendered[data-kind="list"]')!;
+    // a drawn atom's source while it is selected: click the table (a list is edited in place since 27)
+    const list = surface.querySelector<HTMLElement>('.raw.rendered[data-kind="table"]')!;
     const lb = list.getBoundingClientRect();
-    const target = list.querySelector<HTMLElement>('.raw-view li') ?? list;
+    const target = list.querySelector<HTMLElement>('.raw-view td') ?? list;
     for (const type of ['mousedown', 'mouseup', 'click']) target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, buttons: type === 'mousedown' ? 1 : 0, detail: 1, clientX: lb.left + 10, clientY: lb.top + 10, view: window }));
     await sleep(200);
-    log(`list clicked: selected ${list.classList.contains('selected')}; source shown ${list.querySelector('.raw-src') ? getComputedStyle(list.querySelector('.raw-src')!).display : 'none'}; view shown ${getComputedStyle(list.querySelector('.raw-view')!).display}`);
+    log(`table clicked: selected ${list.classList.contains('selected')}; source shown ${list.querySelector('.raw-src') ? getComputedStyle(list.querySelector('.raw-src')!).display : 'none'}; view shown ${getComputedStyle(list.querySelector('.raw-view')!).display}`);
     await shot('render-source');
 
     // an emphasised passage, extracted: the markers travel with the text
@@ -2126,7 +2131,7 @@ export async function smokeRender(vault: Vault): Promise<void> {
 
     // a card with inline code, from `m`, then its session faces
     await until(() => (q('.sel-cue') ? null : true));
-    const items = surface.querySelectorAll<HTMLElement>('.raw-view li');
+    const items = surface.querySelectorAll<HTMLElement>('.dd-li');
     const third = Array.from(items).find((li) => li.textContent?.includes('`code`'));
     log(`list item with code reads "${third?.textContent}" drawn with ${third?.querySelectorAll('.md-code').length} code span`);
     // the extract redrew the paragraph: take the node as it is now
@@ -2333,6 +2338,130 @@ export async function smokeLive(vault: Vault): Promise<void> {
     await sleep(300);
     const sel = window.getSelection();
     log(`arrow right at the end: editor ${q('.math-edit') ? 'still open' : 'closed'}; focus on surface ${document.activeElement === mx}; caret after the chip ${!!sel && sel.isCollapsed && sel.anchorNode !== null && sel.anchorNode.compareDocumentPosition(chip2) === Node.DOCUMENT_POSITION_PRECEDING}`);
+    log('done');
+  } catch (e) {
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+export async function smokeBlocks(vault: Vault): Promise<void> {
+  const log = (s: string) => info(`smoke blocks: ${s}`);
+  const shot = async (name: string, ms = 10000) => { await sleep(600); log(`shot: ${name}`); await sleep(ms); };
+  const q = <T extends Element>(sel: string) => document.querySelector<T>(sel);
+  const qa = <T extends Element>(sel: string) => Array.from(document.querySelectorAll<T>(sel));
+  const SAMPLER = 'fleeting/markdown-sampler.md';
+  const keydown = (el: Element, key: string, init: KeyboardEventInit = {}) => {
+    const ev = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...init });
+    el.dispatchEvent(ev);
+    return ev.defaultPrevented;
+  };
+  const type = (s: string) => document.execCommand('insertText', false, s);
+  /** `n` lines of the file from the one holding `from`, numbered. */
+  const lines = (text: string, from: string, n: number) => {
+    const ls = text.split('\n');
+    const i = ls.findIndex((l) => l.includes(from));
+    return ls.slice(i, i + n).map((l, k) => `${i + 1 + k}: ${JSON.stringify(l)}`).join('  ');
+  };
+  const file = async () => (await vault.read(SAMPLER, true)).text;
+  /** The block the caret sits in, by `sel`; the anchor is the block itself when it is empty. */
+  const caretIn = (sel: string) => {
+    const n = document.getSelection()?.anchorNode;
+    return (n instanceof Element ? n : n?.parentElement)?.closest<HTMLElement>(sel) ?? null;
+  };
+  const items = () => Array.from(q<HTMLElement>('.draft-doc .dd-list')?.querySelectorAll<HTMLElement>('.dd-li') ?? []);
+  const markers = () => `[${items().map((li) => `${li.querySelector('.li-mark')?.textContent}@${li.style.getPropertyValue('--indent')}${li.querySelector('.li-task') ? `☐${li.querySelector<HTMLElement>('.li-task')?.dataset.checked}` : ''}`).join(' ')}]`;
+  try {
+    openNode(SAMPLER);
+    const surface = await until(() => q<HTMLElement>('.doc-view .draft-doc'));
+    await sleep(400);
+    log(`sampler: blocks ${surface.children.length}; lists ${qa('.draft-doc .dd-list').length}, items ${markers()}; quote lines ${qa('.draft-doc .dd-ql').length}; code lang "${q<HTMLElement>('.draft-doc .dd-code')?.dataset.lang}" class "${q('.draft-doc .dd-code code')?.className}"; atoms [${qa<HTMLElement>('.draft-doc .raw.rendered').map((r) => r.dataset.kind).join(', ')}]`);
+    q<HTMLButtonElement>('.frozen-tag[data-frozen="1"]')!.click();
+    await until(() => (q('.frozen-tag[data-frozen="0"]') ? true : null));
+    await sleep(300);
+    surface.focus();
+
+    // the bullet list: ⏎ at the end of the third item, typing, Tab, ⇧Tab
+    caret(items()[2]!.querySelector<HTMLElement>('.li-text')!, 'with `code`', 11);
+    await sleep(200);
+    const took = keydown(surface, 'Enter');
+    await sleep(200);
+    type('a fourth, typed live');
+    await sleep(900);
+    log(`⏎ (taken ${took}) then typing: items ${markers()}; file ${lines(await file(), '- the first point', 5)}`);
+    keydown(surface, 'Tab');
+    await sleep(900);
+    log(`tab: items ${markers()}; file ${lines(await file(), '- the first point', 5)}`);
+    await shot('blocks-list');
+    keydown(surface, 'Tab', { shiftKey: true });
+    await sleep(900);
+    log(`⇧tab: items ${markers()}; file ${lines(await file(), '- the first point', 5)}`);
+
+    // a task: `[ ] ` typed at the start of a new item becomes its box; a click ticks it
+    keydown(surface, 'Enter');
+    await sleep(200);
+    type('[ ] ');
+    await sleep(300);
+    type('a task');
+    await sleep(900);
+    log(`typed "[ ] a task": items ${markers()}; file ${lines(await file(), '- the first point', 6)}`);
+    const box = items()[4]?.querySelector<HTMLElement>('.li-task');
+    if (box) {
+      const br = box.getBoundingClientRect();
+      box.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0, buttons: 1, clientX: br.left + 4, clientY: br.top + 4, view: window }));
+      await sleep(900);
+      log(`box clicked: ${box.dataset.checked}; file ${lines(await file(), '- the first point', 6)}`);
+    } else log('no box drawn');
+    await shot('blocks-task');
+    // ⏎ at the end of the task, then ⏎ on the empty item: out of the list
+    caret(items()[4]!.querySelector<HTMLElement>('.li-text')!, 'a task', 6);
+    await sleep(200);
+    keydown(surface, 'Enter');
+    await sleep(200);
+    log(`⏎ after the task: items ${markers()}`);
+    keydown(surface, 'Enter');
+    await sleep(200);
+    type('After the list.');
+    await sleep(900);
+    log(`⏎ on the empty item then typing: items ${markers()}; caret in ${caretIn('p, .dd-li')?.className}; file ${lines(await file(), '- [x] a task', 3)}`);
+
+    // the quote: ⏎ at the end of the second line, typing, ⏎ twice to leave
+    const ql = qa<HTMLElement>('.draft-doc .dd-ql');
+    caret(ql[1]!, 'second line.', 12);
+    await sleep(200);
+    keydown(surface, 'Enter');
+    await sleep(200);
+    type('A third line, typed live.');
+    await sleep(900);
+    log(`quote ⏎ then typing: lines ${qa('.draft-doc .dd-ql').length}; file ${lines(await file(), '> A quotation', 3)}`);
+    await shot('blocks-quote');
+    keydown(surface, 'Enter');
+    await sleep(100);
+    keydown(surface, 'Enter');
+    await sleep(200);
+    type('After the quote.');
+    await sleep(900);
+    log(`⏎ ⏎ then typing: lines ${qa('.draft-doc .dd-ql').length}; file ${lines(await file(), '> A quotation', 5)}`);
+
+    // the code block: ⏎ a newline, Tab two spaces, typing, ⌘⏎ out
+    const code = q<HTMLElement>('.draft-doc .dd-code code')!;
+    caret(code, 'now);', 5);
+    await sleep(200);
+    keydown(surface, 'Enter');
+    await sleep(100);
+    keydown(surface, 'Tab');
+    await sleep(100);
+    type('return *due*;');
+    await sleep(900);
+    log(`code ⏎ tab typing: text "${code.textContent?.replace(/\n/g, '⏎')}"; drawn inside ${code.querySelectorAll('.md-mark, .md-em, .math').length}; file ${lines(await file(), '```js', 4)}`);
+    await shot('blocks-code');
+    const out = keydown(surface, 'Enter', { metaKey: true });
+    await sleep(200);
+    type('After the code.');
+    await sleep(900);
+    log(`⌘⏎ (taken ${out}) then typing: caret in ${caretIn('p, pre')?.className}; file ${lines(await file(), '```js', 6)}`);
+
+    const final = await vault.read(SAMPLER, true);
+    log(`file: ${final.doc.blocks.length} blocks, raw ${final.doc.blocks.filter((b) => b.kind === 'raw').length}, diagnostics ${final.diagnostics.length}; reader blocks ${surface.children.length}`);
     log('done');
   } catch (e) {
     log(`failed: ${e instanceof Error ? e.message : String(e)}`);

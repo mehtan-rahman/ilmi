@@ -1,17 +1,19 @@
 // Editor behaviour: `# ` makes a heading, a finished `$…$` becomes a chip,
 // chips re-form when the caret leaves a block, a chip's editor opens on ⏎,
 // editorial marks and inline Markdown are decorated (the markers shown only
-// around the caret, a backspace into a hidden one revealing it first),
-// images are drawn as widgets over their source, a frozen document refuses
+// around the caret, a backspace into a hidden one revealing it first; a
+// code block is left alone), images are drawn as widgets over their source,
+// lists and quotes continue on ⏎ and are left from an empty item or line,
+// Tab indents an item (two spaces in code), a frozen document refuses
 // changes, and the marker's settled blocks are dimmed. All state-level; the
 // view adds node views on top.
 
-import { baseKeymap } from 'prosemirror-commands';
+import { baseKeymap, chainCommands, exitCode } from 'prosemirror-commands';
 import { gapCursor } from 'prosemirror-gapcursor';
 import { history, redo, undo } from 'prosemirror-history';
 import { InputRule, inputRules, textblockTypeInputRule } from 'prosemirror-inputrules';
 import { keymap } from 'prosemirror-keymap';
-import type { Node as PMNode } from 'prosemirror-model';
+import type { Node as PMNode, NodeType, ResolvedPos } from 'prosemirror-model';
 import { EditorState, NodeSelection, Plugin, PluginKey, Selection, TextSelection, type Command, type Transaction } from 'prosemirror-state';
 import { Decoration, DecorationSet } from 'prosemirror-view';
 import { mathSpanEnd, type Block } from '../format/index.js';
@@ -19,7 +21,11 @@ import { mathSplit, toDoc } from './convert.js';
 import { flatRanges, imageOnly, inlineRanges, literalSpans, markerRanges, type InlineRange } from './inline.js';
 import { editorialRanges } from './marks.js';
 import { cursorIndex, proseIndices } from './marker.js';
+import { markerNumber, nextMarker, numbered } from './raw.js';
 import { schema } from './schema.js';
+
+/** A code block's text is code: no chips, no markers, no marks. */
+const isCode = (node: PMNode): boolean => node.type.spec.code === true;
 
 // ── input rules ──────────────────────────────────────────────────
 
@@ -34,8 +40,16 @@ function mathRule(re: RegExp): InputRule {
   });
 }
 
+/** `[ ] ` or `[x] ` typed at the start of a list item becomes its box. */
+const taskRule = new InputRule(/^\[([ xX])\] $/, (state, match, start, end) => {
+  const $start = state.doc.resolve(start);
+  const item = $start.parent;
+  if (item.type !== schema.nodes.list_item || $start.parentOffset !== 0 || item.attrs.task !== null) return null;
+  return state.tr.delete(start, end).setNodeMarkup($start.before(), undefined, { ...item.attrs, task: match[1] });
+});
+
 const rules = inputRules({
-  rules: [headingRule, mathRule(/\$\$[^$]+\$\$$/), mathRule(/(?<!\$)\$[^$\n]+\$$/)],
+  rules: [headingRule, taskRule, mathRule(/\$\$[^$]+\$\$$/), mathRule(/(?<!\$)\$[^$\n]+\$$/)],
 });
 
 // ── math re-forms when the caret leaves a block ──────────────────
@@ -45,6 +59,7 @@ function reformMath(tr: Transaction, state: EditorState): boolean {
   const { from, to } = state.selection;
   const edits: { from: number; to: number; raw: string }[] = [];
   state.doc.descendants((node, pos) => {
+    if (isCode(node)) return false;
     if (!node.isTextblock) return true;
     if (pos <= to && pos + node.nodeSize >= from) return false;
     node.forEach((child, off) => {
@@ -129,6 +144,7 @@ export type ImagesMeta = { src: string; state: ImageState } | 'reset';
 function imagesIn(doc: PMNode): { src: string; alt: string }[] {
   const out: { src: string; alt: string }[] = [];
   doc.descendants((node) => {
+    if (isCode(node)) return false;
     if (!node.isText || !node.text) return true;
     for (const r of flatRanges(inlineRanges(node.text))) {
       if (r.kind === 'image' && r.href) out.push({ src: r.href, alt: node.text.slice(r.inner.from, r.inner.to) });
@@ -270,6 +286,7 @@ function inlineDecorations(text: string, base: number, known: Map<string, ImageS
 function markDecorations(doc: PMNode, known: Map<string, ImageState>, shown: Shown): DecorationSet {
   const decos: Decoration[] = [];
   doc.descendants((node, pos) => {
+    if (isCode(node)) return false;
     if (node.isTextblock) {
       // an image alone in a paragraph: the paragraph is a figure, its alt the caption
       const only = node.childCount === 1 && node.firstChild?.isText ? imageOnly(node.firstChild.text ?? '') : null;
@@ -306,7 +323,7 @@ function touched(state: EditorState): number[] {
 function redrawMarkers(set: DecorationSet, doc: PMNode, blocks: Iterable<number>, shown: Shown): DecorationSet {
   for (const pos of blocks) {
     const node = doc.nodeAt(pos);
-    if (!node) continue;
+    if (!node || isCode(node)) continue;
     set = set.remove(set.find(pos, pos + node.nodeSize, (spec) => spec.marker === true));
     const decos: Decoration[] = [];
     node.forEach((child, off) => {
@@ -321,6 +338,7 @@ function redrawMarkers(set: DecorationSet, doc: PMNode, blocks: Iterable<number>
 function rangesAround(sel: Selection): Edge[] {
   if (!sel.empty || !(sel instanceof TextSelection)) return [];
   const $from = sel.$from;
+  if (isCode($from.parent)) return [];
   const out: Edge[] = [];
   $from.parent.forEach((child, off) => {
     if (!child.isText || !child.text) return;
@@ -431,6 +449,185 @@ const marker = new Plugin<{ pos: number | null; decos: DecorationSet }>({
 
 export const markerPos = (state: EditorState): number | null => markerKey.getState(state)?.pos ?? null;
 
+// ── lists and quotes edited as themselves ────────────────────────
+
+const { list_item, quote_line, paragraph } = schema.nodes as Record<'list_item' | 'quote_line' | 'paragraph', NodeType>;
+
+/** Is the collapsed caret, or a selection within one block, inside a list item or a quote line? */
+function lineBlock(sel: Selection): { node: PMNode; $from: ResolvedPos } | null {
+  if (!(sel instanceof TextSelection) || !sel.$from.sameParent(sel.$to)) return null;
+  const node = sel.$from.parent;
+  return node.type === list_item || node.type === quote_line ? { node, $from: sel.$from } : null;
+}
+
+/**
+ * Ordered items after `pos` in the list at `listPos` numbered on from the
+ * one before them at the same indentation, where they had fallen behind:
+ * `1. 2. [3.] 3.` reads `1. 2. 3. 4.` once the third is put in.
+ */
+function renumber(tr: Transaction, listPos: number): void {
+  const list = tr.doc.nodeAt(listPos);
+  if (!list) return;
+  const last = new Map<string, number>();
+  const edits: { pos: number; attrs: Record<string, unknown> }[] = [];
+  list.forEach((item, off) => {
+    const marker = item.attrs.marker as string;
+    const n = markerNumber(marker);
+    if (n === null) return;
+    const indent = item.attrs.indent as string;
+    const prev = last.get(indent);
+    const next = prev !== undefined && n <= prev ? prev + 1 : n;
+    if (next !== n) edits.push({ pos: listPos + 1 + off, attrs: { ...item.attrs, marker: numbered(marker, next) } });
+    last.set(indent, next);
+  });
+  for (const e of edits) tr.setNodeMarkup(e.pos, undefined, e.attrs);
+}
+
+/** The prefix a new quote line takes: the line's own, or the nearest one before it when the line was lazy. */
+function quotePrefix($from: ResolvedPos): string {
+  const own = $from.parent.attrs.prefix as string;
+  if (own) return own;
+  const quote = $from.node(-1);
+  for (let i = $from.index(-1) - 1; i >= 0; i--) {
+    const p = quote.child(i).attrs.prefix as string;
+    if (p) return p;
+  }
+  return '> ';
+}
+
+/**
+ * ⏎ in a list item or a quote line continues it: the text after the caret
+ * goes to a new item with the next marker (a bullet as it is, a number one
+ * up, a task box unchecked) or a new line with the same prefix. On an empty
+ * item or line, ⏎ leaves instead (`leaveBlock`).
+ */
+export const continueBlock: Command = (state, dispatch) => {
+  const at = lineBlock(state.selection);
+  if (!at) return false;
+  const { node, $from } = at;
+  if (node.content.size === 0) return leaveBlock(state, dispatch);
+  if (!dispatch) return true;
+  const tr = state.tr.deleteSelection();
+  const attrs = node.type === list_item
+    ? { indent: node.attrs.indent, marker: nextMarker(node.attrs.marker as string), task: node.attrs.task === null ? null : ' ' }
+    : { prefix: quotePrefix($from) };
+  tr.split(tr.mapping.map($from.pos), 1, [{ type: node.type, attrs }]);
+  if (node.type === list_item) renumber(tr, $from.before(-1));
+  dispatch(tr.scrollIntoView());
+  return true;
+};
+
+/**
+ * Leave a list or a quote from the item or line the caret is in: the item
+ * becomes a paragraph after the block when it is last, before it when
+ * first, and between the two halves otherwise. The item's text goes with
+ * it; its marker does not.
+ */
+export const leaveBlock: Command = (state, dispatch) => {
+  const at = lineBlock(state.selection);
+  if (!at) return false;
+  const { node, $from } = at;
+  if (!dispatch) return true;
+  const block = $from.node(-1);
+  const blockPos = $from.before(-1);
+  const itemPos = $from.before();
+  const index = $from.index(-1);
+  const para = paragraph.create(null, node.content);
+  const tr = state.tr;
+  let caret: number;
+  if (block.childCount === 1) {
+    tr.replaceWith(blockPos, blockPos + block.nodeSize, para);
+    caret = blockPos + 1;
+  } else if (index === 0) {
+    tr.delete(itemPos, itemPos + node.nodeSize).insert(blockPos, para);
+    caret = blockPos + 1;
+  } else if (index === block.childCount - 1) {
+    tr.delete(itemPos, itemPos + node.nodeSize);
+    const after = blockPos + block.nodeSize - node.nodeSize;
+    tr.insert(after, para);
+    caret = after + 1;
+  } else {
+    tr.delete(itemPos, itemPos + node.nodeSize).split(itemPos).insert(itemPos + 1, para);
+    caret = itemPos + 2;
+  }
+  dispatch(tr.setSelection(TextSelection.create(tr.doc, caret + $from.parentOffset)).scrollIntoView());
+  return true;
+};
+
+/**
+ * Backspace at the start of an item or a line: a task box goes first, then
+ * the item joins the one before it, and the first item of all becomes a
+ * paragraph before the block.
+ */
+export const joinBlock: Command = (state, dispatch) => {
+  const sel = state.selection;
+  if (!sel.empty) return false;
+  const at = lineBlock(sel);
+  if (!at || at.$from.parentOffset !== 0) return false;
+  const { node, $from } = at;
+  if (node.attrs.task !== null && node.attrs.task !== undefined) {
+    dispatch?.(state.tr.setNodeMarkup($from.before(), undefined, { ...node.attrs, task: null }));
+    return true;
+  }
+  if ($from.index(-1) === 0) return leaveBlock(state, dispatch);
+  dispatch?.(state.tr.join($from.before()).scrollIntoView());
+  return true;
+};
+
+/** The list items a selection touches, by position. */
+function itemsIn(state: EditorState): number[] {
+  const out: number[] = [];
+  state.doc.nodesBetween(state.selection.from, state.selection.to, (node, pos) => {
+    if (node.type === list_item) { out.push(pos); return false; }
+    return !node.isTextblock;
+  });
+  return out;
+}
+
+/** Tab: two spaces in code; an item moved in by its own marker's width (`- ` two, `1. ` three). */
+export const indentBlock: Command = (state, dispatch) => {
+  if (isCode(state.selection.$from.parent) && state.selection.$from.sameParent(state.selection.$to)) {
+    dispatch?.(state.tr.insertText('  ').scrollIntoView());
+    return true;
+  }
+  const items = itemsIn(state);
+  if (!items.length) return false;
+  if (dispatch) {
+    const tr = state.tr;
+    for (const pos of items) {
+      const item = state.doc.nodeAt(pos)!;
+      tr.setNodeMarkup(pos, undefined, { ...item.attrs, indent: (item.attrs.indent as string) + ' '.repeat((item.attrs.marker as string).length) });
+    }
+    dispatch(tr);
+  }
+  return true;
+};
+
+/** ⇧Tab: an item moved out by its own marker's width, as far as its indentation goes. */
+export const outdentBlock: Command = (state, dispatch) => {
+  const items = itemsIn(state);
+  if (!items.length) return false;
+  if (dispatch) {
+    const tr = state.tr;
+    for (const pos of items) {
+      const item = state.doc.nodeAt(pos)!;
+      const indent = item.attrs.indent as string;
+      if (!indent) continue;
+      tr.setNodeMarkup(pos, undefined, { ...item.attrs, indent: indent.slice(Math.min(indent.length, (item.attrs.marker as string).length)) });
+    }
+    if (tr.docChanged) dispatch(tr);
+  }
+  return true;
+};
+
+/** The task box at the item at `pos` ticked or cleared; false when the item has none. */
+export function toggleTask(state: EditorState, dispatch: ((tr: Transaction) => void) | undefined, pos: number): boolean {
+  const item = state.doc.nodeAt(pos);
+  if (!item || item.type !== list_item || item.attrs.task === null) return false;
+  dispatch?.(state.tr.setNodeMarkup(pos, undefined, { ...item.attrs, task: item.attrs.task === ' ' ? 'x' : ' ' }));
+  return true;
+}
+
 // ── keys ─────────────────────────────────────────────────────────
 
 const lineBreak: Command = (state, dispatch) => {
@@ -445,9 +642,12 @@ const keys = keymap({
   'Shift-Mod-z': redo,
   'Mod-y': redo,
   'Shift-Enter': lineBreak,
-  Enter: openMath,
-  Backspace: revealBackward,
+  Enter: chainCommands(openMath, continueBlock),
+  'Mod-Enter': exitCode,
+  Backspace: chainCommands(revealBackward, joinBlock),
   Delete: revealForward,
+  Tab: indentBlock,
+  'Shift-Tab': outdentBlock,
 });
 
 // ── state ────────────────────────────────────────────────────────

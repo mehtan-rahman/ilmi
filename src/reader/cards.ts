@@ -59,27 +59,33 @@ export function cardText(spec: CardSpec): string | null {
 // ── the selected passage ─────────────────────────────────────────
 
 export interface Passage {
-  /** The selected text, one paragraph per block touched, blank lines between. */
+  /** The selected text, one paragraph per textblock touched (a list item, a quote line), blank lines between. */
   text: string;
-  /** Child indices of the textblocks the selection touches, in order. */
+  /** Child indices (of the document) of the blocks the selection touches, in order. */
   blocks: number[];
 }
 
-/** What a selection from `from` to `to` covers: text of the prose blocks it touches, cards and raw blocks skipped. */
+/**
+ * What a selection from `from` to `to` covers: the text of the textblocks
+ * it touches, cards and raw atoms skipped. An item's or a line's text is
+ * taken without its marker, which is an attribute, not text.
+ */
 export function passage(doc: PMNode, from: number, to: number): Passage {
   const parts: string[] = [];
   const blocks: number[] = [];
-  doc.forEach((node, off, i) => {
-    if (!node.isTextblock) return;
-    const start = off + 1;
-    const end = off + node.nodeSize - 1;
+  doc.nodesBetween(from, to, (node, pos) => {
+    if (!node.isTextblock) return true;
+    const start = pos + 1;
+    const end = pos + node.nodeSize - 1;
     const a = Math.max(from, start);
     const b = Math.min(to, end);
-    if (a >= b) return;
+    if (a >= b) return false;
     const text = node.textBetween(a - start, b - start).trim();
-    if (!text) return;
+    if (!text) return false;
     parts.push(text);
-    blocks.push(i);
+    const i = doc.resolve(pos).index(0);
+    if (blocks[blocks.length - 1] !== i) blocks.push(i);
+    return false;
   });
   return { text: parts.join('\n\n'), blocks };
 }

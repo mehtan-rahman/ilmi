@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { blanks, parse, type Blank, type Block, type Card } from '../../format/index.js';
 import { mapBook, type Epub } from '../../import/epub.js';
-import { classifyRaw, frozenKey, imageOnly, inlineRanges, makeState, mathEditKey, passage, revealBackward, schema, splitBlocks, type ImageLoader } from '../../reader/index.js';
+import { classifyRaw, fromDoc, frozenKey, imageOnly, inlineRanges, makeState, mathEditKey, passage, revealBackward, schema, splitBlocks, toDoc, type ImageLoader } from '../../reader/index.js';
 import { insideMath, withBlank } from '../Composer.js';
 import { imagePath, isRemote, mimeOf } from '../images.js';
 import { dueLabel } from '../items.js';
@@ -76,9 +76,9 @@ describe('the surface', () => {
     expect(view.dom.querySelector('.ed-mark.note')?.textContent).toBe('[a note]');
     expect(view.dom.querySelector('.ed-mark.tag')?.textContent).toBe('#TODO:');
     expect(view.dom.querySelector('.card-span .cs-state')?.textContent).toMatch(/^overdue \d+d$/);
-    // a raw list is drawn as a list, its source behind it
-    expect(view.dom.querySelector('.raw.rendered ul li')?.textContent).toBe('a list');
-    expect(view.dom.querySelector('.raw.rendered .raw-src')?.textContent).toBe('- a list');
+    // a raw list is a list of its own, the marker drawn beside the text
+    expect(view.dom.querySelector('.dd-list .dd-li .li-text')?.textContent).toBe('a list');
+    expect(view.dom.querySelector('.dd-list .dd-li .li-mark')?.textContent).toBe('•');
     expect(view.dom.textContent).toContain('so ');
     view.destroy();
   });
@@ -235,30 +235,38 @@ describe('markdown drawn as markdown', () => {
     view.destroy();
   });
 
-  it('draws each block form inside its atom: the list a ul, the code a pre with the language, the table a table, the image an img', async () => {
+  it('draws each block form: the list as items beside their markers, the code a pre with the language, the quote its lines, the table an atom, the image an img', async () => {
     const blocks = await sampler();
     const view = mount(blocks, true, loader(await dataUrl()));
     await tick();
     const dom = view.dom;
     expect(dom.children).toHaveLength(blocks.length);
     expect(dom.querySelector('h2.dd-h')?.textContent).toBe('a sampler of markdown');
+    // only the table is still an atom
     const atoms = Array.from(dom.querySelectorAll<HTMLElement>('.raw.rendered'));
-    expect(atoms.map((a) => a.dataset.kind)).toEqual(['list', 'list', 'quote', 'code', 'table']);
+    expect(atoms.map((a) => a.dataset.kind)).toEqual(['table']);
     for (const a of atoms) expect(a.getAttribute('contenteditable')).toBe('false');
-    const ul = dom.querySelector('.raw-view ul')!;
-    expect(Array.from(ul.querySelectorAll('li')).map((li) => li.textContent)).toEqual(['the first point', 'the second, with *emphasis*', 'the third, with `code`']);
-    expect(ul.querySelector('li .md-em')?.textContent).toBe('emphasis');
-    expect(ul.querySelector('li .md-code')?.textContent).toBe('code');
-    const ol = dom.querySelector('.raw-view ol')!;
-    expect(ol.getAttribute('start')).toBeNull();
-    expect(Array.from(ol.querySelectorAll('li')).map((li) => li.textContent)).toEqual(['one', 'two', 'three']);
-    const quote = dom.querySelector('.raw-view blockquote')!;
+    const lists = Array.from(dom.querySelectorAll<HTMLElement>('.dd-list'));
+    expect(lists).toHaveLength(2);
+    const items = (l: HTMLElement) => Array.from(l.querySelectorAll<HTMLElement>('.dd-li'));
+    expect(items(lists[0]!).map((li) => li.querySelector('.li-text')?.textContent)).toEqual(['the first point', 'the second, with *emphasis*', 'the third, with `code`']);
+    expect(items(lists[0]!).map((li) => li.querySelector('.li-mark')?.textContent)).toEqual(['•', '•', '•']);
+    expect(items(lists[0]!).map((li) => li.dataset.marker)).toEqual(['-', '-', '-']);
+    expect(lists[0]!.querySelector('.dd-li .md-em')?.textContent).toBe('emphasis');
+    expect(lists[0]!.querySelector('.dd-li .md-code')?.textContent).toBe('code');
+    // an item's markers are hidden with the caret elsewhere, as a paragraph's are
+    expect(lists[0]!.querySelectorAll('.md-mark')).toHaveLength(4);
+    expect(lists[0]!.querySelectorAll('.md-mark.hidden')).toHaveLength(4);
+    expect(items(lists[1]!).map((li) => li.querySelector('.li-mark')?.textContent)).toEqual(['1.', '2.', '3.']);
+    expect(items(lists[1]!).map((li) => li.querySelector('.li-text')?.textContent)).toEqual(['one', 'two', 'three']);
+    const quote = dom.querySelector('blockquote.dd-quote')!;
     expect(quote.querySelector('.md-strong')?.textContent).toBe('weight');
-    expect(quote.querySelectorAll('p')).toHaveLength(1);
-    expect(quote.textContent).toBe('A quotation set apart, with **weight** in it.\nIt runs to a second line.');
-    const code = dom.querySelector('.raw-view pre code')!;
-    expect(code.className).toBe('language-js');
+    expect(Array.from(quote.querySelectorAll('.dd-ql')).map((l) => l.textContent)).toEqual(['A quotation set apart, with **weight** in it.', 'It runs to a second line.']);
+    const code = dom.querySelector<HTMLElement>('pre.dd-code')!;
+    expect(code.dataset.lang).toBe('js');
+    expect(code.querySelector('code')?.className).toBe('language-js');
     expect(code.textContent).toBe('const due = schedule(card, now);');
+    expect(code.querySelectorAll('.md-mark, .math, .ed-mark')).toHaveLength(0);
     const table = dom.querySelector('.raw-view table')!;
     expect(Array.from(table.querySelectorAll('th')).map((th) => [th.textContent, th.getAttribute('style')])).toEqual([
       ['form', 'text-align:left'], ['marker', 'text-align:center'], ['note', 'text-align:right'],
@@ -266,9 +274,8 @@ describe('markdown drawn as markdown', () => {
     expect(Array.from(table.querySelectorAll('tbody tr')).map((tr) => Array.from(tr.querySelectorAll('td')).map((td) => td.textContent))).toEqual([
       ['cloze', 'braces', 'a blank'], ['question', 'a double colon', 'two sides'],
     ]);
-    // every drawn block keeps its source behind it
-    const raws = blocks.filter((b) => b.kind === 'raw');
-    for (const [i, a] of atoms.entries()) expect(a.querySelector('.raw-src')?.textContent).toBe(textOf(raws[i]));
+    // the drawn atom keeps its source behind it
+    expect(atoms[0]!.querySelector('.raw-src')?.textContent).toBe(textOf(blocks.filter((b) => b.kind === 'raw')[4]));
     // the image paragraph: the picture, the alt as its caption
     const fig = dom.querySelector<HTMLElement>('p.dd-img')!;
     expect(fig).not.toBeNull();
@@ -309,15 +316,16 @@ describe('markdown drawn as markdown', () => {
     view.destroy();
   });
 
-  it('shows a drawn block\'s source while it is selected', async () => {
+  it('shows a drawn atom\'s source while it is selected', async () => {
     const view = mount(await sampler(), false);
-    const list = view.dom.querySelector<HTMLElement>('.raw.rendered[data-kind="list"]')!;
-    expect(list.classList.contains('selected')).toBe(false);
+    const table = view.dom.querySelector<HTMLElement>('.raw.rendered[data-kind="table"]')!;
+    expect(table.classList.contains('selected')).toBe(false);
     let pos = 0;
-    for (let i = 0; i < 2; i++) pos += view.state.doc.child(i).nodeSize;
+    for (let i = 0; i < 6; i++) pos += view.state.doc.child(i).nodeSize;
+    expect(view.state.doc.child(6).type).toBe(schema.nodes.raw);
     view.dispatch(view.state.tr.setSelection(NodeSelection.create(view.state.doc, pos)));
-    expect(list.classList.contains('selected')).toBe(true);
-    expect(list.querySelector('.raw-src')?.textContent).toBe('- the first point\n- the second, with *emphasis*\n- the third, with `code`');
+    expect(table.classList.contains('selected')).toBe(true);
+    expect(table.querySelector('.raw-src')?.textContent).toBe('| form | marker | note |\n|:-----|:------:|-----:|\n| cloze | braces | a blank |\n| question | a double colon | two sides |');
     view.destroy();
   });
 
@@ -390,8 +398,8 @@ describe('markdown drawn as markdown', () => {
     expect(view.dom.querySelector('.md-em')?.textContent).toBe('small wager');
     expect(view.dom.querySelector('.md-strong')?.textContent).toBe('minimum information principle');
     expect(view.dom.querySelectorAll('.md-mark.hidden')).toHaveLength(4);
-    expect(Array.from(view.dom.querySelectorAll('.raw-view ul li')).map((li) => li.textContent)).toEqual(['cost: the minutes', 'payoff: the years']);
-    expect(view.dom.querySelector('.raw-view blockquote')?.textContent).toBe('Familiarity is cheap. Retrieval is the thing that lasts.');
+    expect(Array.from(view.dom.querySelectorAll('.dd-li .li-text')).map((li) => li.textContent)).toEqual(['cost: the minutes', 'payoff: the years']);
+    expect(view.dom.querySelector('blockquote.dd-quote')?.textContent).toBe('Familiarity is cheap. Retrieval is the thing that lasts.');
     view.destroy();
   });
 });
@@ -634,6 +642,238 @@ describe('a formula edited in place', () => {
     view.destroy();
     again.view.destroy();
     frozen.view.destroy();
+  });
+});
+
+describe('live blocks', () => {
+  const sampler = async () => parse(await fsp.readFile(SAMPLER, 'utf8')).doc.blocks;
+  /** The position before the document's child `i`. */
+  const startOf = (view: EditorView, i: number) => { let pos = 0; for (let k = 0; k < i; k++) pos += view.state.doc.child(k).nodeSize; return pos; };
+  /** The position before item (or line) `j` of the block at child `i`. */
+  const itemPos = (view: EditorView, i: number, j: number) => { const block = view.state.doc.child(i); let pos = startOf(view, i) + 1; for (let k = 0; k < j; k++) pos += block.child(k).nodeSize; return pos; };
+  const itemStart = (view: EditorView, i: number, j: number) => itemPos(view, i, j) + 1;
+  const itemEnd = (view: EditorView, i: number, j: number) => itemPos(view, i, j) + view.state.doc.child(i).child(j).nodeSize - 1;
+  /** The raw text child `i` writes back as. */
+  const raw = (view: EditorView, i: number) => (fromDoc(view.state.doc)[i] as { text: string }).text;
+  const mod = /Mac/.test(navigator.platform) ? { metaKey: true } : { ctrlKey: true };
+
+  it('a code block is typed into in place: ⏎ a newline, Tab two spaces, nothing drawn, ⌘⏎ out; the fence as it was', async () => {
+    const view = mount(await sampler());
+    const code = view.dom.querySelector<HTMLElement>('pre.dd-code')!;
+    const i = 5;
+    expect(view.state.doc.child(i).type).toBe(schema.nodes.code_block);
+    const line = 'const due = schedule(card, now);';
+    caretAt(view, startOf(view, i) + 1 + line.length);
+    expect(key(view.dom, 'Enter')).toBe(true);
+    view.dispatch(view.state.tr.insertText('return due;'));
+    expect(code.textContent).toBe(`${line}\nreturn due;`);
+    expect(raw(view, i)).toBe(`\`\`\`js\n${line}\nreturn due;\n\`\`\``);
+    caretAt(view, startOf(view, i) + 1 + line.length + 1);
+    expect(key(view.dom, 'Tab')).toBe(true);
+    expect(raw(view, i)).toBe(`\`\`\`js\n${line}\n  return due;\n\`\`\``);
+    // what is typed there is code: no marker, no chip, no mark, no heading
+    view.dispatch(view.state.tr.insertText('*a* $b$ [c] '));
+    expect(code.querySelectorAll('.md-mark, .md-em, .math, .ed-mark')).toHaveLength(0);
+    caretAt(view, startOf(view, i) + 1);
+    view.dispatch(view.state.tr.insertText('# '));
+    expect(view.state.doc.child(i).type).toBe(schema.nodes.code_block);
+    expect(raw(view, i)).toBe(`\`\`\`js\n# ${line}\n  *a* $b$ [c] return due;\n\`\`\``);
+    // ⌘⏎ leaves: a paragraph after the block, the caret in it
+    expect(key(view.dom, 'Enter', mod)).toBe(true);
+    expect(view.state.doc.child(i + 1).type).toBe(schema.nodes.paragraph);
+    expect(view.state.selection.$from.parent).toBe(view.state.doc.child(i + 1));
+    // the file still reads the block as one fenced code block
+    expect(parse(`${raw(view, i)}\n`).doc.blocks).toEqual([{ kind: 'raw', text: raw(view, i) }]);
+    view.destroy();
+  });
+
+  it('⏎ at the end of an item makes the next with the numbers on, in the middle splits it, on an empty item leaves the list', async () => {
+    const view = mount(await sampler());
+    const i = 3;
+    const list = view.dom.querySelectorAll<HTMLElement>('.dd-list')[1]!;
+    const marks = () => Array.from(list.querySelectorAll('.li-mark')).map((m) => m.textContent);
+    expect(raw(view, i)).toBe('1. one\n2. two\n3. three');
+    caretAt(view, itemEnd(view, i, 2));
+    expect(key(view.dom, 'Enter')).toBe(true);
+    expect(marks()).toEqual(['1.', '2.', '3.', '4.']);
+    expect(raw(view, i)).toBe('1. one\n2. two\n3. three\n4. ');
+    expect(view.state.selection.from).toBe(itemStart(view, i, 3));
+    view.dispatch(view.state.tr.insertText('four'));
+    expect(raw(view, i)).toBe('1. one\n2. two\n3. three\n4. four');
+    // in the middle of an item: the text after the caret goes to the new one, the ones after it are numbered on
+    caretAt(view, itemStart(view, i, 1) + 1);
+    key(view.dom, 'Enter');
+    expect(raw(view, i)).toBe('1. one\n2. t\n3. wo\n4. three\n5. four');
+    expect(marks()).toEqual(['1.', '2.', '3.', '4.', '5.']);
+    // an empty last item: ⏎ leaves, a paragraph after the list with the caret in it
+    caretAt(view, itemEnd(view, i, 4));
+    key(view.dom, 'Enter');
+    expect(raw(view, i)).toBe('1. one\n2. t\n3. wo\n4. three\n5. four\n6. ');
+    key(view.dom, 'Enter');
+    expect(raw(view, i)).toBe('1. one\n2. t\n3. wo\n4. three\n5. four');
+    expect(view.state.doc.child(i + 1).type).toBe(schema.nodes.paragraph);
+    expect(view.state.selection.$from.parent).toBe(view.state.doc.child(i + 1));
+    view.dispatch(view.state.tr.insertText('after'));
+    expect(fromDoc(view.state.doc)[i + 1]).toEqual({ kind: 'paragraph', text: 'after' });
+    // a bullet list continues with its own bullet
+    caretAt(view, itemEnd(view, 2, 2));
+    key(view.dom, 'Enter');
+    view.dispatch(view.state.tr.insertText('a fourth'));
+    expect(raw(view, 2)).toBe('- the first point\n- the second, with *emphasis*\n- the third, with `code`\n- a fourth');
+    // the item's markers follow the caret as a paragraph's do
+    caretAt(view, itemStart(view, 2, 1) + 'the second, with *e'.length);
+    expect(shown(view.dom.querySelectorAll('.dd-list')[0]!)).toEqual(['*', '*']);
+    view.destroy();
+  });
+
+  it('a task box draws, toggles on a click and writes the character; a backspace at the start takes the box, then joins the item into the one before', () => {
+    const view = mount([{ kind: 'raw', text: '- [ ] milk\n- [x] bread\n- eggs' }]);
+    const boxes = () => Array.from(view.dom.querySelectorAll<HTMLElement>('.li-task')).map((b) => b.dataset.checked);
+    const click = (box: Element) => box.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+    expect(boxes()).toEqual(['0', '1']);
+    expect(view.dom.querySelector('.dd-li .li-text')?.textContent).toBe('milk');
+    click(view.dom.querySelector('.li-task')!);
+    expect(boxes()).toEqual(['1', '1']);
+    expect(raw(view, 0)).toBe('- [x] milk\n- [x] bread\n- eggs');
+    click(view.dom.querySelectorAll('.li-task')[1]!);
+    expect(raw(view, 0)).toBe('- [x] milk\n- [ ] bread\n- eggs');
+    // ⏎ at the end of a task item: the next has an empty box
+    caretAt(view, itemEnd(view, 0, 0));
+    key(view.dom, 'Enter');
+    expect(raw(view, 0)).toBe('- [x] milk\n- [ ] \n- [ ] bread\n- eggs');
+    expect(boxes()).toEqual(['1', '0', '0']);
+    // backspace at its start: the box goes, then the item joins the one before
+    expect(key(view.dom, 'Backspace')).toBe(true);
+    expect(raw(view, 0)).toBe('- [x] milk\n- \n- [ ] bread\n- eggs');
+    expect(key(view.dom, 'Backspace')).toBe(true);
+    expect(raw(view, 0)).toBe('- [x] milk\n- [ ] bread\n- eggs');
+    expect(view.state.selection.from).toBe(itemEnd(view, 0, 0));
+    // backspace at the start of the second item joins its text onto the first
+    caretAt(view, itemStart(view, 0, 1));
+    key(view.dom, 'Backspace');
+    key(view.dom, 'Backspace');
+    expect(raw(view, 0)).toBe('- [x] milkbread\n- eggs');
+    // the first item of all: its box, then the item becomes a paragraph before the list
+    caretAt(view, itemStart(view, 0, 0));
+    key(view.dom, 'Backspace');
+    expect(raw(view, 0)).toBe('- milkbread\n- eggs');
+    key(view.dom, 'Backspace');
+    expect(fromDoc(view.state.doc)).toEqual([{ kind: 'paragraph', text: 'milkbread' }, { kind: 'raw', text: '- eggs' }]);
+    expect(view.state.selection.from).toBe(1);
+    // a frozen document's box stays as it is
+    const frozen = mount([{ kind: 'raw', text: '- [ ] a' }], true);
+    click(frozen.dom.querySelector('.li-task')!);
+    expect(raw(frozen, 0)).toBe('- [ ] a');
+    // `[ ] ` typed at the start of an item becomes its box; elsewhere it is text
+    const typed = mount([{ kind: 'raw', text: '- a\n- b' }]);
+    const typeAt = (pos: number, text: string) => {
+      typed.dispatch(typed.state.tr.insertText(text.slice(0, -1), pos));
+      const at = pos + text.length - 1;
+      const last = text.slice(-1);
+      // the last character as typed: the input rules see it first, the browser puts it in otherwise
+      const handled = typed.someProp('handleTextInput', (f) => f(typed, at, at, last, () => typed.state.tr.insertText(last, at)));
+      if (!handled) typed.dispatch(typed.state.tr.insertText(last, at));
+    };
+    typeAt(itemStart(typed, 0, 1), '[x] ');
+    expect(raw(typed, 0)).toBe('- a\n- [x] b');
+    expect(typed.dom.querySelector<HTMLElement>('.li-task')?.dataset.checked).toBe('1');
+    typeAt(itemEnd(typed, 0, 0), ' [ ] ');
+    expect(raw(typed, 0)).toBe('- a [ ] \n- [x] b');
+    view.destroy();
+    frozen.destroy();
+    typed.destroy();
+  });
+
+  it('Tab moves an item in by its own marker\'s width and ⇧Tab back out, the markers kept, two at once over a selection', () => {
+    const view = mount([{ kind: 'raw', text: '- a\n- b\n1. c' }]);
+    const items = () => Array.from(view.dom.querySelectorAll<HTMLElement>('.dd-li'));
+    caretAt(view, itemStart(view, 0, 1));
+    expect(key(view.dom, 'Tab')).toBe(true);
+    expect(raw(view, 0)).toBe('- a\n  - b\n1. c');
+    expect(items()[1]!.style.getPropertyValue('--indent')).toBe('2');
+    caretAt(view, itemStart(view, 0, 2));
+    key(view.dom, 'Tab');
+    key(view.dom, 'Tab');
+    expect(raw(view, 0)).toBe('- a\n  - b\n      1. c');
+    expect(items()[2]!.style.getPropertyValue('--indent')).toBe('6');
+    expect(key(view.dom, 'Tab', { shiftKey: true })).toBe(true);
+    expect(raw(view, 0)).toBe('- a\n  - b\n   1. c');
+    key(view.dom, 'Tab', { shiftKey: true });
+    // nothing left to take: still handled, nothing changes
+    expect(key(view.dom, 'Tab', { shiftKey: true })).toBe(true);
+    expect(raw(view, 0)).toBe('- a\n  - b\n1. c');
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, itemStart(view, 0, 0), itemEnd(view, 0, 1))));
+    key(view.dom, 'Tab');
+    expect(raw(view, 0)).toBe('  - a\n    - b\n1. c');
+    // in a paragraph, Tab is not taken
+    const p = mount([{ kind: 'paragraph', text: 'plain' }]);
+    caretAt(p, 1);
+    expect(key(p.dom, 'Tab')).toBe(false);
+    // the list the file reads back is the one the editor holds
+    const text = raw(view, 0);
+    expect(fromDoc(toDoc(parse(`${text}\n`).doc.blocks))).toEqual([{ kind: 'raw', text }]);
+    view.destroy();
+    p.destroy();
+  });
+
+  it('⏎ continues a quote with the same prefix, ⏎ on an empty line leaves it, a backspace at the first line\'s start steps out with the text', async () => {
+    const view = mount(await sampler());
+    const i = 4;
+    const first = 'A quotation set apart, with **weight** in it.';
+    expect(raw(view, i)).toBe(`> ${first}\n> It runs to a second line.`);
+    caretAt(view, itemEnd(view, i, 1));
+    expect(key(view.dom, 'Enter')).toBe(true);
+    expect(view.dom.querySelectorAll('.dd-ql')).toHaveLength(3);
+    expect(raw(view, i)).toBe(`> ${first}\n> It runs to a second line.\n> `);
+    view.dispatch(view.state.tr.insertText('A third.'));
+    key(view.dom, 'Enter');
+    key(view.dom, 'Enter');
+    expect(raw(view, i)).toBe(`> ${first}\n> It runs to a second line.\n> A third.`);
+    expect(view.state.doc.child(i + 1).type).toBe(schema.nodes.paragraph);
+    expect(view.state.selection.$from.parent).toBe(view.state.doc.child(i + 1));
+    // the quote's markers follow the caret
+    caretAt(view, itemStart(view, i, 0) + 'A quotation set apart, with **w'.length);
+    expect(shown(view.dom.querySelector('.dd-quote')!)).toEqual(['**', '**']);
+    // backspace at the start of the first line: a paragraph before the quote, the text intact
+    caretAt(view, itemStart(view, i, 0));
+    expect(key(view.dom, 'Backspace')).toBe(true);
+    expect(fromDoc(view.state.doc).slice(i, i + 2)).toEqual([{ kind: 'paragraph', text: first }, { kind: 'raw', text: '> It runs to a second line.\n> A third.' }]);
+    // an empty line in the middle: ⏎ splits the quote around a paragraph; a lazy line continues with the prefix before it
+    const q = mount([{ kind: 'raw', text: '> a\n>\n> b\nlazy' }]);
+    caretAt(q, itemEnd(q, 0, 3));
+    key(q.dom, 'Enter');
+    expect(raw(q, 0)).toBe('> a\n>\n> b\nlazy\n> ');
+    key(q.dom, 'Backspace');
+    caretAt(q, itemStart(q, 0, 1));
+    key(q.dom, 'Enter');
+    expect(q.state.doc.childCount).toBe(3);
+    expect(q.state.doc.child(1).type).toBe(schema.nodes.paragraph);
+    expect(fromDoc(q.state.doc)).toEqual([{ kind: 'raw', text: '> a' }, { kind: 'raw', text: '> b\nlazy' }]);
+    view.destroy();
+    q.destroy();
+  });
+
+  it('an extract from a list item or a quote line takes the text without its marker; across items, one paragraph each', async () => {
+    const view = mount(await sampler(), true);
+    const i = 2;
+    // as the reader reads a selection: a DOM range over the item's text, mapped back
+    const a = view.domAtPos(itemStart(view, i, 1));
+    const b = view.domAtPos(itemEnd(view, i, 1));
+    const range = document.createRange();
+    range.setStart(a.node, a.offset);
+    range.setEnd(b.node, b.offset);
+    expect(range.toString()).toBe('the second, with *emphasis*');
+    const start = view.posAtDOM(range.startContainer, range.startOffset);
+    const end = view.posAtDOM(range.endContainer, range.endOffset);
+    expect(passage(view.state.doc, start, end)).toEqual({ text: 'the second, with *emphasis*', blocks: [2] });
+    expect(passage(view.state.doc, itemStart(view, i, 0) + 4, itemEnd(view, i, 2))).toEqual({ text: 'first point\n\nthe second, with *emphasis*\n\nthe third, with `code`', blocks: [2] });
+    // from the paragraph before into the list: both, in order
+    const p = (view.state.doc.child(1).textContent);
+    expect(passage(view.state.doc, startOf(view, 1) + 1 + p.indexOf('set in'), itemEnd(view, i, 0))).toEqual({ text: 'set in the line.\n\nthe first point', blocks: [1, 2] });
+    expect(passage(view.state.doc, itemStart(view, 4, 1), itemEnd(view, 4, 1))).toEqual({ text: 'It runs to a second line.', blocks: [4] });
+    // the code block's text, as it is
+    expect(passage(view.state.doc, startOf(view, 5) + 1, startOf(view, 5) + 1 + 9)).toEqual({ text: 'const due', blocks: [5] });
+    view.destroy();
   });
 });
 

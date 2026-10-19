@@ -193,6 +193,74 @@
 .draft-doc p.dd-img.kept .md-alt,
 .draft-doc p.dd-img.broken .md-alt { font-family: var(--mono); }
 
+/* fenced code, lists, and quotes edited as themselves: the fence lines, the
+   markers, and the `> ` are attributes, drawn beside the text, not in it */
+.draft-doc .dd-code {
+  position: relative;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.55;
+  margin: 0 0 1em;
+  padding: 10px 12px;
+  background: var(--line-3);
+  border-radius: var(--radius);
+  white-space: pre-wrap;
+  color: var(--fg-1);
+}
+.draft-doc .dd-code code { font: inherit; }
+.draft-doc .dd-code:not([data-lang=""])::after {
+  content: attr(data-lang);
+  position: absolute;
+  top: 6px;
+  right: 10px;
+  font-family: var(--sans);
+  font-size: 10.5px;
+  color: var(--fg-4);
+  pointer-events: none;
+}
+.draft-doc .dd-list { margin: 0 0 1em; }
+.draft-doc .dd-li {
+  display: flex;
+  align-items: baseline;
+  margin: 0 0 0.25em calc(var(--indent, 0) * 0.6em);
+  text-wrap: pretty;
+}
+.draft-doc .li-mark {
+  flex: none;
+  min-width: 1.2em;
+  padding-right: 0.5em;
+  text-align: right;
+  color: var(--fg-3);
+  user-select: none;
+}
+.draft-doc .li-mark.num { font-variant-numeric: tabular-nums; }
+.draft-doc .li-task {
+  flex: none;
+  align-self: center;
+  width: 0.8em;
+  height: 0.8em;
+  margin-right: 0.5em;
+  border: 1px solid var(--fg-4);
+  border-radius: 2px;
+  cursor: pointer;
+  user-select: none;
+}
+.draft-doc .li-task[data-checked="1"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M2 5.2l2 2 4-4.4' fill='none' stroke='white' stroke-width='1.6'/%3E%3C/svg%3E");
+  background-size: 100% 100%;
+}
+.draft-doc .li-task[data-checked="1"] ~ .li-text { color: var(--fg-3); }
+.draft-doc .li-text { flex: 1; min-width: 0; }
+.draft-doc .dd-quote {
+  margin: 0 0 1em;
+  padding: 0 0 0 14px;
+  border-left: 2px solid var(--line-1);
+  color: var(--fg-2);
+}
+.draft-doc .dd-ql { margin: 0; }
+
 /* raw blocks drawn as what they are; the source shows while the block is selected */
 .draft-doc .raw.rendered { position: relative; margin: 0 0 1em; cursor: default; }
 .draft-doc .raw.rendered .raw-src {

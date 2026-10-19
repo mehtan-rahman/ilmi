@@ -4,6 +4,7 @@
 
 import { Fragment, type Node as PMNode } from 'prosemirror-model';
 import { mathSpanEnd, type Block, type Card, type Heading, type Paragraph } from '../format/index.js';
+import { nodeToRaw, rawToNode } from './raw.js';
 import { schema } from './schema.js';
 
 export type MathPart = string | { math: string };
@@ -49,7 +50,8 @@ function blockNode(b: Block): PMNode {
     case 'card':
       return schema.nodes.card!.create({ card: structuredClone(b) });
     case 'raw':
-      return schema.nodes.raw!.create({ text: b.text });
+      // code, a list, or a quote is edited as itself; anything else stays an atom
+      return rawToNode(b.text) ?? schema.nodes.raw!.create({ text: b.text });
   }
 }
 
@@ -110,6 +112,11 @@ export function fromDoc(doc: PMNode): Block[] {
       }
       case 'raw':
         out.push({ kind: 'raw', text: node.attrs.text as string });
+        return;
+      case 'code_block':
+      case 'list':
+      case 'quote':
+        out.push({ kind: 'raw', text: nodeToRaw(node) });
         return;
     }
   });

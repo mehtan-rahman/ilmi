@@ -6,6 +6,165 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-10-18 — milestone 27: live blocks, lists, quotes, and code edited as themselves
+
+Done on main; commit `TBD` — *live blocks: fenced code, lists, and quotes
+edited as themselves through a lossless pair, the fence, the markers, and
+the `> ` kept as attributes; the blocks smoke*. Files: `src/reader/
+schema.ts` (`code_block`, `list` / `list_item`, `quote` / `quote_line`,
+`langOf`, `indentWidth`), `src/reader/raw.ts` (new: `rawToNode`,
+`nodeToRaw`, `isRawNode`, `itemLines`, the marker helpers),
+`src/reader/convert.ts` (through the pair both ways), `src/reader/
+plugins.ts` (`continueBlock`, `leaveBlock`, `joinBlock`, `indentBlock`,
+`outdentBlock`, `toggleTask`, `taskRule`, `Mod-Enter`, `isCode`),
+`src/reader/cards.ts` (`passage` over nested textblocks), `src/reader/
+index.ts`, `src/app/Reader.tsx` (`ListItemView`), `src/app/reader.css`,
+`src/app/smoke.ts` (`smokeBlocks`; `render`'s list click moved to the
+table), `src/app/vault.ts` (the dispatch line), `README.md`,
+`src/reader/__tests__/raw.test.ts` (new), `src/app/__tests__/reader-view.
+test.ts`, `src/reader/__tests__/reader.test.ts`.
+
+### Done
+
+- A fenced code block is a `code_block` node: the lines between the
+  fences are its text, edited in mono in place, ⏎ a newline, Tab two
+  spaces, ⌘⏎ out to a paragraph after it; the opening fence line (with
+  its info string) and the closing line are attributes and are written
+  back as they were, a fence that never closed staying open. Nothing is
+  drawn inside it: no markers, no chips, no marks, no heading rule.
+  Indented code stays raw.
+- A list is a `list` of `list_item` textblocks, flat, every item line an
+  item with its own indentation and marker (`- `, `* `, `+ `, `1. `, `1)
+  `, with the whitespace after it as written) and a task box character
+  when it starts with `[ ] ` or `[x] `; nesting is read from the
+  indentation and drawn as such. ⏎ at the end of an item makes the next
+  with the same bullet or the number one up (the items after it moved on
+  where they had fallen behind), in the middle splits it, on an empty
+  item leaves the list to a paragraph; Tab and ⇧Tab move the items the
+  selection touches in and out by the item's own marker width; Backspace
+  at an item's start takes its box, then joins it into the item before,
+  the first item of all becoming a paragraph before the list. The task
+  box is drawn beside the marker, ticks on a click, and writes `[x]` or
+  `[ ]`; `[ ] ` typed at an item's start becomes a box. Inline Markdown
+  and math in an item follow 26 and 25.
+- A quote is a `quote` of `quote_line` textblocks, the `> ` kept per line
+  (`''` on a lazy line); ⏎ continues it with the same prefix, ⏎ on an
+  empty line leaves it, Backspace at the first line's start steps out
+  with the text.
+- `rawToNode` is lossless by construction: it hands a node back only when
+  `nodeToRaw` returns the text byte for byte, so a table, a rule, an HTML
+  block, a comment, indented code, an empty fence, or a list with a lazy
+  continuation stays a raw atom drawn as in 25. The format is unchanged.
+- An extract or a card from a selection inside an item or a line takes
+  the text without its marker; across items, one paragraph each.
+- README: the rendering paragraph. Smoke: `ILMI_SMOKE=blocks`.
+- Tests: 493 (+22), 26 files; cargo 12.
+
+### Verified
+
+- `npm run typecheck` clean, `npx vitest run` green (26 files, 493),
+  `cargo test` 12: every raw block in the corpus (vault and mangled), in
+  the fixture book's chapters, and in the clipped pages through the pair
+  and back byte for byte, or kept as an atom, and through `toDoc` /
+  `fromDoc`; the shapes read (a fence with its info string and close, an
+  unterminated one, tilde and longer fences, an indented fence, items
+  with indentation, marker, box, and continuation lines, a lazy or
+  tab-indented continuation refused, a quote line by line); typing in a
+  code block with ⏎, Tab, nothing drawn, `# ` not a heading, ⌘⏎ out, the
+  fence as it was and the file reading one block; ⏎ at the end of an
+  ordered item (`4. `), in the middle (`2. t` / `3. wo`, the rest moved
+  on), on an empty item (out to a paragraph), a bullet list continuing
+  with its bullet, an item's markers following the caret; the task box
+  drawn, toggled from a mousedown and written, an unticked box after ⏎,
+  Backspace taking the box then joining, the first item leaving as a
+  paragraph, a frozen box staying, `[x] ` typed at the start becoming a
+  box and `[ ] ` elsewhere staying text; Tab and ⇧Tab by the marker's
+  width (2 for `- `, 3 for `1. `), down to none, two items at once, Tab
+  in a paragraph not taken, the written list read back the same; the
+  quote continued and left, its markers following the caret, the first
+  line stepping out, an empty middle line splitting the quote, a lazy
+  line continuing with the prefix before it; the passage over an item
+  without its marker, across three items, from a paragraph into the
+  list, a quote line, a code block's text.
+- In the window, `ILMI_SMOKE=blocks` on a scratch copy of the corpus
+  vault, one run to `done`: the sampler opened with two lists of `•@0`
+  items, two quote lines, the code block `js` / `language-js`, the table
+  the only atom; thawed, ⏎ at the end of the third item taken and `a
+  fourth, typed live` written as line 13 (`- a fourth, typed live`), Tab
+  → `  - a fourth, typed live` with the item at indent 2, ⇧Tab back; ⏎
+  then `[ ] ` typed → a box drawn (`☐0`), `a task` → `- [ ] a task`, the
+  box clicked → `☐1` and `- [x] a task` in the file; ⏎ after it → a new
+  item with an empty box, ⏎ again → out of the list, `After the list.` a
+  paragraph two lines under `- [x] a task`; the quote: ⏎ at the end of
+  the second line and typing → three lines, `> A third line, typed
+  live.` in the file, ⏎ ⏎ → out, `After the quote.` a paragraph after a
+  blank; the code block: ⏎, Tab, `return *due*;` → `  return *due*;` as
+  line 30 between the fences, nothing drawn inside, ⌘⏎ taken → `After
+  the code.` after the closing fence; the file at the end 12 blocks, 5
+  raw, no diagnostics, the reader showing 12. The captures were not of
+  ilmi: the first shows the Mac's lock screen (the webview's timers
+  stalled about two hours there and resumed on unlock), the other three
+  another application's window covering ilmi, a sliver of the inspector
+  and the code block's `js` label behind it. The Mac was in use, so the
+  smoke was not run again over it.
+
+### Not done / open
+
+- The look in the window (the captures above): the bullets' column, the
+  numbers, the task box and its tick, the quote's rule, the code label,
+  the indent step. Run `ILMI_SMOKE=blocks` first next session when the
+  window and the screen are free.
+- Tables and HTML blocks stay as in 25: drawn, source on focus, not
+  edited in place.
+- A block nested inside an item or a quote (a fence, a heading, `> -
+  item`) is text on that line; a quote's wrapped paragraph reads as
+  lines; a fence with nothing between its lines stays raw; no code block
+  is made in place (type the fence and the file re-reads it); ordered
+  items are renumbered only on ⏎, and `1. 1. 1.` becomes `1. 2. 3.`
+  then; Tab indents by the item's own marker width; a Shift-⏎ line in an
+  item is a continuation line, a blank one splits the block on re-read;
+  no colouring in code; Backspace at a code block's start joins it into
+  the paragraph before, as a heading does.
+
+### Decisions worth knowing
+
+- The list is flat: every item line is an item with its own `indent`,
+  nesting is a matter of drawing. A tree would have had to be rebuilt on
+  every Tab and kept lossless against indentation the file already has;
+  the flat model makes Tab an attribute change and the write-back a line
+  per item.
+- Losslessness is enforced, not trusted: `rawToNode` verifies itself
+  through `nodeToRaw` and returns null otherwise, so the fixed point the
+  "done when" asks for holds for any raw block, not only the corpus's.
+  The corpus-wide test then checks the shapes and that enough convert.
+- Markers, fences, and `> ` are attributes, so the caret never lands in
+  them and `passage` takes an item's text without its marker for free;
+  the inline marker rule of 26 applies to items and lines unchanged, and
+  a code block is skipped by one `isCode` check in five places.
+- Enter on an empty item leaves to a paragraph in the right place (after,
+  before, or between the halves) rather than lifting through ProseMirror's
+  list commands, which are not installed and would not keep the attrs.
+
+### Handoff prompt
+
+```
+Read PLAN.md, FORMAT.md, BUILD-LOG.md, and spec/hashiyah/HANDOFF.md.
+Milestones 0–27 are ticked (13 dropped); nothing is unchecked. First,
+when the window, port 1420, and the screen are yours, run 27's window
+check: `ILMI_SMOKE=blocks` on a scratch copy of the corpus vault (the
+loop milestone 25's entry describes), read the captures, fix what they
+show, and record it under 27's entry here. Then the polish pass over the
+open items the milestones' notes record, in PLAN.md's "Notes for the next
+session", or whatever the user adds as the next section. Tooling and
+verification are as the ground rules and the entries below describe;
+`export PATH=$HOME/.cargo/bin:/opt/homebrew/bin:$PATH` first. If port
+1420 is held by a run that is not yours, do not kill it: say so in your
+report and leave the window check owed. Suite 493 (26 files), `cargo
+test` 12, and typecheck must be green before a commit.
+```
+
+---
+
 ## 2026-10-18 — milestone 26: live inline, markers around the caret, math edited in place
 
 Done on main; commit `9c21047` — *live inline: markers shown only around the

@@ -139,9 +139,15 @@ click puts the caret. A formula stays rendered: a click on the chip (or ⏎
 with it selected) opens a small field under it holding the TeX, the chip
 redrawn as you type and the error shown quietly when KaTeX refuses; ⏎ or a
 click outside writes it once, Escape leaves it as it was, an arrow at the
-field's end steps out past the chip. A list, a block quote, a fenced or indented code block, a table,
-or a rule is drawn as that element inside its block, and a click on it shows
-the source. An `![alt](src)` alone in a paragraph is the picture with its
+field's end steps out past the chip. A list, a block quote, and a fenced
+code block are edited as themselves: the bullets, numbers, and `> ` sit
+beside the text as what the file says, ⏎ continues an item or a line (the
+numbers on, a task box unticked) and leaves from an empty one, Tab and ⇧Tab
+move an item in and out, a task's box ticks on a click, and a code block
+takes ⏎ as a newline, Tab as two spaces, and ⌘⏎ to step out, its fence
+written back as it was. A table, a rule, or indented code is drawn as that
+element inside its block, and a click on it shows the source. An
+`![alt](src)` alone in a paragraph is the picture with its
 alt as the caption, read from the vault when the path is relative and from
 the web when it is an address and `show remote images` is on; one that
 cannot be had is its alt in mono. A passage selected over emphasis carries

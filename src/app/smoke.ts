@@ -83,6 +83,14 @@
 // card with inline code with `m` and reads its session faces and queue
 // row, drops the fixture book and opens its first chapter, then turns
 // `show remote images` off from the tweaks panel.
+// `ILMI_SMOKE=live` opens the markdown sampler thawed, walks a caret through
+// its first paragraph logging which markers show at each stop, backspaces
+// into a hidden marker to see it revealed with nothing deleted, deletes and
+// retypes the closing `*` to see the span light as it closes, types a new
+// `*span*` at the end of the last paragraph, then thaws maxwell, clicks its
+// binomial chip, types into the editor (a good formula, a broken one, the
+// good one again), closes with ⏎, reopens to see Escape write nothing and an
+// arrow step out, and logs the file's lines after each write.
 // `ILMI_SMOKE=welcome` runs before any vault opens: it seeds the recents
 // with the scratch vault (`ILMI_VAULT`) and a path that does not exist,
 // turns `reopen the last vault on start` off, reads the welcome's rows and
@@ -181,8 +189,8 @@ export async function smokeReader(vault: Vault): Promise<void> {
   }
 }
 
-/** Select `text` inside the paragraph `p`, as a pointer would. */
-function select(p: HTMLElement, text: string): void {
+/** A DOM range over `text` inside the paragraph `p`, or collapsed at `offset` into it when one is given. */
+function rangeIn(p: HTMLElement, text: string, offset?: number): Range {
   // the paragraph's text may be split over decorated spans: find the range across its text nodes
   const walker = document.createTreeWalker(p, NodeFilter.SHOW_TEXT);
   const nodes: Text[] = [];
@@ -190,20 +198,38 @@ function select(p: HTMLElement, text: string): void {
   const whole = nodes.map((t) => t.data).join('');
   const at = whole.indexOf(text);
   if (at < 0) throw new Error(`no "${text}" in the paragraph`);
-  const locate = (offset: number): [Text, number] => {
+  const locate = (off: number): [Text, number] => {
     let seen = 0;
-    for (const t of nodes) { if (offset <= seen + t.data.length) return [t, offset - seen]; seen += t.data.length; }
+    for (const t of nodes) { if (off <= seen + t.data.length) return [t, off - seen]; seen += t.data.length; }
     const last = nodes[nodes.length - 1]!;
     return [last, last.data.length];
   };
-  const [sn, so] = locate(at);
-  const [en, eo] = locate(at + text.length);
   const r = document.createRange();
-  r.setStart(sn, so);
-  r.setEnd(en, eo);
+  if (offset === undefined) {
+    const [sn, so] = locate(at);
+    const [en, eo] = locate(at + text.length);
+    r.setStart(sn, so);
+    r.setEnd(en, eo);
+  } else {
+    const [n, o] = locate(at + offset);
+    r.setStart(n, o);
+    r.collapse(true);
+  }
+  return r;
+}
+
+/** Select `text` inside the paragraph `p`, as a pointer would. */
+function select(p: HTMLElement, text: string): void {
   const sel = window.getSelection()!;
   sel.removeAllRanges();
-  sel.addRange(r);
+  sel.addRange(rangeIn(p, text));
+}
+
+/** Put the caret `offset` characters into `text` inside the paragraph `p`. */
+function caret(p: HTMLElement, text: string, offset: number): void {
+  const sel = window.getSelection()!;
+  sel.removeAllRanges();
+  sel.addRange(rangeIn(p, text, offset));
 }
 
 const press = (key: string, init: KeyboardEventInit = {}) =>
@@ -2167,6 +2193,143 @@ export async function smokeRender(vault: Vault): Promise<void> {
     await sleep(400);
     log(`sampler with remote images off: ${drawn()}`);
     useApp.getState().setRemoteImages(true);
+    log('done');
+  } catch (e) {
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+export async function smokeLive(vault: Vault): Promise<void> {
+  const log = (s: string) => info(`smoke live: ${s}`);
+  const shot = async (name: string, ms = 10000) => { await sleep(600); log(`shot: ${name}`); await sleep(ms); };
+  const q = <T extends Element>(sel: string) => document.querySelector<T>(sel);
+  const qa = <T extends Element>(sel: string) => Array.from(document.querySelectorAll<T>(sel));
+  const SAMPLER = 'fleeting/markdown-sampler.md';
+  const MX = 'papers/maxwell.md';
+  /** The markers showing in the prose paragraphs, in order. */
+  const shown = () => qa<HTMLElement>('.doc-view .draft-doc p.dd-p .md-mark:not(.hidden)').map((m) => `"${m.textContent}"`).join(' ') || 'none';
+  const hidden = () => qa('.doc-view .draft-doc p.dd-p .md-mark.hidden').length;
+  const keydown = (el: Element, key: string, init: KeyboardEventInit = {}) => {
+    const ev = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...init });
+    el.dispatchEvent(ev);
+    return ev.defaultPrevented;
+  };
+  const setValue = (ta: HTMLTextAreaElement, value: string) => {
+    ta.value = value;
+    ta.dispatchEvent(new Event('input', { bubbles: true }));
+  };
+  const line = (text: string, needle: string) => { const i = text.split('\n').findIndex((l) => l.includes(needle)); return `${i + 1}: ${text.split('\n')[i]}`; };
+  try {
+    // the sampler, thawed: every marker hidden until the caret arrives
+    openNode(SAMPLER);
+    const surface = await until(() => q<HTMLElement>('.doc-view .draft-doc'));
+    await sleep(400);
+    log(`frozen: markers ${qa('.draft-doc p.dd-p .md-mark').length}, hidden ${hidden()}, shown ${shown()}`);
+    q<HTMLButtonElement>('.frozen-tag[data-frozen="1"]')!.click();
+    await until(() => (q('.frozen-tag[data-frozen="0"]') ? true : null));
+    await sleep(300);
+    log(`thawed, caret elsewhere: editable ${surface.contentEditable}; hidden ${hidden()}, shown ${shown()}`);
+    const p = () => surface.querySelector<HTMLElement>('p.dd-p')!;
+    surface.focus();
+    const stops: [string, number][] = [['Plain prose', 0], ['emphasis', 3], ['strong', 2], ['a code span', 1], ['link to the spec', 4], ['a small mark', 2], ['set in the line', 3]];
+    for (const [text, off] of stops) {
+      caret(p(), text, off);
+      await sleep(200);
+      const m = q<HTMLElement>('.draft-doc p.dd-p .md-mark:not(.hidden)');
+      log(`caret in "${text}"+${off}: shown ${shown()}${m ? ` (first ${Math.round(m.getBoundingClientRect().width)}px wide)` : ''}; hidden ${hidden()}`);
+      if (text === 'strong') await shot('live-markers');
+    }
+
+    // a backspace into the hidden closing `*`: revealed, nothing deleted; the next one is the browser's
+    const before = p().textContent ?? '';
+    caret(p(), '*emphasis*', 10);
+    await sleep(200);
+    log(`caret after *emphasis*: shown ${shown()}`);
+    const took = keydown(surface, 'Backspace');
+    await sleep(200);
+    log(`backspace: taken ${took}; shown ${shown()}; text unchanged ${p().textContent === before}`);
+    await shot('live-backspace');
+    const again = keydown(surface, 'Backspace');
+    log(`second backspace: taken ${again} (the browser's to make)`);
+    document.execCommand('delete');
+    await sleep(900);
+    const broken = (await vault.read(SAMPLER, true)).text;
+    log(`deleted: paragraph "${p().textContent?.slice(0, 40)}"; em spans ${p().querySelectorAll('.md-em').length}; file ${line(broken, 'Plain prose')}`);
+    // typed back: the span lights as it closes
+    document.execCommand('insertText', false, '*');
+    await sleep(300);
+    log(`retyped *: shown ${shown()}; em spans ${p().querySelectorAll('.md-em').length}`);
+    await sleep(700);
+    log(`file ${line((await vault.read(SAMPLER, true)).text, 'Plain prose')}`);
+
+    // a new span at the end of the last paragraph
+    const last = Array.from(surface.querySelectorAll<HTMLElement>('p.dd-p')).pop()!;
+    caret(last, 'on the page.', 12);
+    await sleep(200);
+    document.execCommand('insertText', false, ' *live');
+    await sleep(200);
+    log(`typed " *live": markers ${last.querySelectorAll('.md-mark').length}; shown ${shown()}`);
+    document.execCommand('insertText', false, '*');
+    await sleep(300);
+    log(`typed the closing *: shown ${shown()}; em "${last.querySelector('.md-em')?.textContent}"`);
+    await shot('live-typed');
+    document.execCommand('insertText', false, ' ');
+    await sleep(900);
+    log(`typed a space: shown ${shown()}; file ${line((await vault.read(SAMPLER, true)).text, 'closing paragraph')}`);
+
+    // maxwell: the binomial chip edited in place
+    openNode(MX);
+    const mx = await until(() => q<HTMLElement>('.doc-view .draft-doc'));
+    await until(() => mx.querySelector('p.dd-p .math'));
+    await sleep(300);
+    q<HTMLButtonElement>('.frozen-tag[data-frozen="1"]')!.click();
+    await until(() => (q('.frozen-tag[data-frozen="0"]') ? true : null));
+    await sleep(300);
+    const chip = mx.querySelector<HTMLElement>('p.dd-p .math')!;
+    log(`maxwell: prose chips ${mx.querySelectorAll('p.dd-p .math').length}; the chip ${chip.classList.contains('display') ? 'display' : 'inline'}, tex "${chip.dataset.tex?.replace(/\n/g, '⏎')}"`);
+    const cb = chip.getBoundingClientRect();
+    const target = chip.querySelector<HTMLElement>('.katex') ?? chip;
+    for (const type of ['mousedown', 'mouseup', 'click']) target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, buttons: type === 'mousedown' ? 1 : 0, detail: 1, clientX: cb.left + cb.width / 2, clientY: cb.top + cb.height / 2, view: window }));
+    const field = await until(() => q<HTMLTextAreaElement>('.math .math-edit textarea'));
+    await sleep(200);
+    const er = field.closest<HTMLElement>('.math-edit')!.getBoundingClientRect();
+    log(`editor open: value "${field.value.replace(/\n/g, '⏎')}", focused ${document.activeElement === field}, ${Math.round(er.width)}x${Math.round(er.height)} at ${Math.round(er.left)},${Math.round(er.top)} (chip bottom ${Math.round(cb.bottom)}); chip editing ${chip.classList.contains('editing')}`);
+    await shot('live-math-editor');
+    const good = field.value.replace('\\frac{n!}{k!\\,(n-k)!}', '\\frac{n!}{k!\\,(n-k)!} + 1');
+    setValue(field, good);
+    await sleep(200);
+    log(`typed "+ 1": chip shows +1 ${(chip.querySelector('.katex')?.textContent ?? '').includes('+1')}; err "${chip.querySelector('.err')?.textContent}"; tex still "${chip.dataset.tex?.includes('+ 1') ? 'new' : 'old'}"`);
+    setValue(field, '\\binom{n}{{k}} = \\frac{n!');
+    await sleep(200);
+    log(`broken: err "${chip.querySelector('.err')?.textContent}"; chip still shows +1 ${(chip.querySelector('.katex')?.textContent ?? '').includes('+1')}`);
+    await shot('live-math-error');
+    setValue(field, good);
+    await sleep(100);
+    const was = (await vault.read(MX, true)).text;
+    keydown(field, 'Enter');
+    await sleep(1200);
+    const after = (await vault.read(MX, true)).text;
+    log(`⏎: editor ${q('.math-edit') ? 'still open' : 'closed'}; focus on surface ${document.activeElement === mx}; changed lines ${JSON.stringify(changedLines(was, after))}; ${line(after, 'binom')}; chip tex "${mx.querySelector<HTMLElement>('p.dd-p .math')?.dataset.tex?.replace(/\n/g, '⏎')}"`);
+    await shot('live-math-closed');
+
+    // Escape writes nothing; an arrow at the field's end steps out
+    const chip2 = mx.querySelector<HTMLElement>('p.dd-p .math')!;
+    const cb2 = chip2.getBoundingClientRect();
+    const target2 = chip2.querySelector<HTMLElement>('.katex') ?? chip2;
+    for (const type of ['mousedown', 'mouseup', 'click']) target2.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, buttons: type === 'mousedown' ? 1 : 0, detail: 1, clientX: cb2.left + cb2.width / 2, clientY: cb2.top + cb2.height / 2, view: window }));
+    const field2 = await until(() => q<HTMLTextAreaElement>('.math .math-edit textarea'));
+    setValue(field2, 'x');
+    await sleep(200);
+    keydown(field2, 'Escape');
+    await sleep(900);
+    log(`escape: editor ${q('.math-edit') ? 'still open' : 'closed'}; file unchanged ${(await vault.read(MX, true)).text === after}; chip tex "${mx.querySelector<HTMLElement>('p.dd-p .math')?.dataset.tex?.includes('+ 1') ? 'kept' : 'lost'}"`);
+    for (const type of ['mousedown', 'mouseup', 'click']) target2.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, buttons: type === 'mousedown' ? 1 : 0, detail: 1, clientX: cb2.left + cb2.width / 2, clientY: cb2.top + cb2.height / 2, view: window }));
+    const field3 = await until(() => q<HTMLTextAreaElement>('.math .math-edit textarea'));
+    field3.setSelectionRange(field3.value.length, field3.value.length);
+    keydown(field3, 'ArrowRight');
+    await sleep(300);
+    const sel = window.getSelection();
+    log(`arrow right at the end: editor ${q('.math-edit') ? 'still open' : 'closed'}; focus on surface ${document.activeElement === mx}; caret after the chip ${!!sel && sel.isCollapsed && sel.anchorNode !== null && sel.anchorNode.compareDocumentPosition(chip2) === Node.DOCUMENT_POSITION_PRECEDING}`);
     log('done');
   } catch (e) {
     log(`failed: ${e instanceof Error ? e.message : String(e)}`);

@@ -1,20 +1,21 @@
 // @vitest-environment jsdom
 // The reader's DOM: node views over a real EditorView, without the window;
-// Markdown drawn as Markdown over the sampler and an EPUB chapter.
+// Markdown drawn as Markdown over the sampler and an EPUB chapter, the
+// markers following the caret, a formula edited under its chip.
 
-import { NodeSelection } from 'prosemirror-state';
-import { EditorView } from 'prosemirror-view';
+import { NodeSelection, TextSelection } from 'prosemirror-state';
+import { EditorView, type DirectEditorProps } from 'prosemirror-view';
 import { promises as fsp } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { blanks, parse, type Blank, type Block, type Card } from '../../format/index.js';
 import { mapBook, type Epub } from '../../import/epub.js';
-import { classifyRaw, frozenKey, imageOnly, inlineRanges, makeState, passage, splitBlocks, type ImageLoader } from '../../reader/index.js';
+import { classifyRaw, frozenKey, imageOnly, inlineRanges, makeState, mathEditKey, passage, revealBackward, schema, splitBlocks, type ImageLoader } from '../../reader/index.js';
 import { insideMath, withBlank } from '../Composer.js';
 import { imagePath, isRemote, mimeOf } from '../images.js';
 import { dueLabel } from '../items.js';
-import { answerHTML, cardHTML, clozeHTML, nodeViews, rawHTML, richHTML, type BlankState } from '../Reader.js';
+import { answerHTML, cardHTML, clozeHTML, handleClickOn, nodeViews, rawHTML, richHTML, type BlankState } from '../Reader.js';
 
 const CORPUS = join(dirname(fileURLToPath(import.meta.url)), '../../format/__tests__/corpus/vault/papers');
 const WOZ = join(CORPUS, 'wozniak-1990.md');
@@ -23,12 +24,23 @@ const SAMPLER = join(CORPUS, '../fleeting/markdown-sampler.md');
 const MARK = join(CORPUS, '../fleeting/markdown-sampler/mark.png');
 const EPUB = join(dirname(fileURLToPath(import.meta.url)), '../../import/__tests__/epub/three-chapters.json');
 
-function mount(blocks: Block[], frozen = false, images?: ImageLoader): EditorView {
+function mount(blocks: Block[], frozen = false, images?: ImageLoader, props: Partial<DirectEditorProps> = {}): EditorView {
   const state = makeState(blocks, { frozen: () => frozen, pos: 3, ...(images ? { images } : {}) });
   return new EditorView(document.body.appendChild(document.createElement('div')), {
-    state, nodeViews, editable: () => !frozen, attributes: { class: 'draft-doc' },
+    state, nodeViews, editable: () => !frozen, attributes: { class: 'draft-doc' }, handleClickOn, ...props,
   });
 }
+
+/** Put a collapsed caret at `pos`. */
+const caretAt = (view: EditorView, pos: number) => view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, pos)));
+/** The markers showing in `el`, in order. */
+const shown = (el: Element) => Array.from(el.querySelectorAll('.md-mark:not(.hidden)')).map((m) => m.textContent);
+/** A key pressed on `el`; true when something took it. */
+const key = (el: Element, key: string, init: KeyboardEventInit = {}) => {
+  const ev = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...init });
+  el.dispatchEvent(ev);
+  return ev.defaultPrevented;
+};
 
 /** Lets the image loads land. */
 const tick = () => new Promise((r) => setTimeout(r, 0));
@@ -209,10 +221,10 @@ describe('markdown drawn as markdown', () => {
     const link = p.querySelector<HTMLElement>('.md-link')!;
     expect(link.textContent).toBe('link to the spec');
     expect(link.dataset.href).toBe('https://commonmark.org/');
-    // ten markers: two each for emphasis, strong, and code, the brackets of the link and of the image
+    // ten markers: two each for emphasis, strong, and code, the brackets of the link and of the image; all hidden with the caret elsewhere
     const marks = Array.from(p.querySelectorAll('.md-mark')).map((m) => m.textContent);
     expect(marks).toEqual(['*', '*', '**', '**', '`', '`', '[', '](https://commonmark.org/)', '![', '](markdown-sampler/mark.png)']);
-    expect(p.querySelectorAll('.md-mark.hidden')).toHaveLength(0);
+    expect(p.querySelectorAll('.md-mark.hidden')).toHaveLength(10);
     // the source is what the paragraph says, character for character
     expect(p.textContent).toBe(textOf(blocks[1]));
     // an image in the line: its alt lit, the picture drawn before it
@@ -268,7 +280,7 @@ describe('markdown drawn as markdown', () => {
     view.destroy();
   });
 
-  it('hides the markers on a frozen document and shows them again when it thaws', async () => {
+  it('hides every marker with the caret elsewhere, frozen or thawed, and shows a range\'s around the caret on both', async () => {
     let frozen = true;
     const blocks = await sampler();
     const state = makeState(blocks, { frozen: () => frozen, pos: null });
@@ -277,11 +289,23 @@ describe('markdown drawn as markdown', () => {
     const marks = () => Array.from(view.dom.querySelectorAll('p.dd-p .md-mark'));
     expect(marks().length).toBe(12);
     expect(marks().every((m) => m.classList.contains('hidden'))).toBe(true);
-    expect(view.dom.querySelector('p.dd-p')?.textContent).toBe(textOf(blocks[1]));
+    const p = view.dom.querySelector<HTMLElement>('p.dd-p')!;
+    expect(p.textContent).toBe(textOf(blocks[1]));
+    // thawed, the caret still in the heading: nothing changes
     frozen = false;
     view.dispatch(view.state.tr.setMeta(frozenKey, false));
     expect(marks().length).toBe(12);
-    expect(marks().some((m) => m.classList.contains('hidden'))).toBe(false);
+    expect(marks().every((m) => m.classList.contains('hidden'))).toBe(true);
+    // the caret inside `**strong**`: that pair shows, the rest stay hidden
+    const text = textOf(blocks[1]);
+    const pStart = 1 + view.state.doc.child(0).nodeSize;
+    caretAt(view, pStart + 1 + text.indexOf('strong') + 2);
+    expect(shown(p)).toEqual(['**', '**']);
+    expect(p.querySelectorAll('.md-mark.hidden')).toHaveLength(8);
+    // frozen again with the caret there: the same
+    frozen = true;
+    view.dispatch(view.state.tr.setMeta(frozenKey, true));
+    expect(shown(p)).toEqual(['**', '**']);
     view.destroy();
   });
 
@@ -332,11 +356,13 @@ describe('markdown drawn as markdown', () => {
     view.destroy();
   });
 
-  it('maps a selection over an emphasised passage back to the source with its markers', () => {
+  it('maps a selection over an emphasised passage back to the source with its markers, hidden as they are', () => {
     const text = 'this is *very* important, and `code` too';
     const view = mount([{ kind: 'paragraph', text }], true);
     const p = view.dom.querySelector('p')!;
     expect(p.querySelector('.md-em')?.textContent).toBe('very');
+    expect(p.querySelectorAll('.md-mark.hidden')).toHaveLength(4);
+    expect(shown(p)).toEqual([]);
     // the DOM range from "is" through " important", across the decorated spans, as the reader reads a selection
     const from = text.indexOf('is *');
     const to = text.indexOf(' important') + ' important'.length;
@@ -367,6 +393,247 @@ describe('markdown drawn as markdown', () => {
     expect(Array.from(view.dom.querySelectorAll('.raw-view ul li')).map((li) => li.textContent)).toEqual(['cost: the minutes', 'payoff: the years']);
     expect(view.dom.querySelector('.raw-view blockquote')?.textContent).toBe('Familiarity is cheap. Retrieval is the thing that lasts.');
     view.destroy();
+  });
+});
+
+describe('markers around the caret', () => {
+  const text = 'one *em* and **st** and [l](h) end';
+  const at = (needle: string, off = 0) => 1 + text.indexOf(needle) + off;
+
+  it('shows only the range under the caret, and moves between two emphasised spans with it', () => {
+    const view = mount([{ kind: 'paragraph', text }]);
+    const p = view.dom.querySelector('p')!;
+    expect(shown(p)).toEqual([]);
+    caretAt(view, at('em', 1));
+    expect(shown(p)).toEqual(['*', '*']);
+    expect(p.textContent).toBe(text);
+    caretAt(view, at('st', 1));
+    expect(shown(p)).toEqual(['**', '**']);
+    caretAt(view, at('l](h)'));
+    expect(shown(p)).toEqual(['[', '](h)']);
+    caretAt(view, at('and'));
+    expect(shown(p)).toEqual([]);
+    // a selection across both spans shows both pairs
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, at('em'), at('st', 1))));
+    expect(shown(p)).toEqual(['*', '*', '**', '**']);
+    // moved to the edge just after a span, not typed there: still rendered
+    caretAt(view, at('* and', 1));
+    expect(shown(p)).toEqual([]);
+    view.destroy();
+  });
+
+  it('redraws the paragraph that lost the caret and the one that gained it', () => {
+    const view = mount([{ kind: 'paragraph', text: 'a *b* c' }, { kind: 'paragraph', text: 'd **e** f' }]);
+    const [p1, p2] = Array.from(view.dom.querySelectorAll('p'));
+    caretAt(view, 1 + 3);
+    expect(shown(p1!)).toEqual(['*', '*']);
+    expect(shown(p2!)).toEqual([]);
+    const second = 1 + view.state.doc.child(0).nodeSize;
+    caretAt(view, second + 1 + 4);
+    expect(shown(p1!)).toEqual([]);
+    expect(shown(p2!)).toEqual(['**', '**']);
+    view.destroy();
+  });
+
+  it('a backspace into a hidden marker reveals it without deleting; a forward delete likewise', () => {
+    const view = mount([{ kind: 'paragraph', text: 'so *em* x' }]);
+    const p = view.dom.querySelector('p')!;
+    caretAt(view, 1 + 'so *em*'.length);
+    expect(shown(p)).toEqual([]);
+    expect(key(view.dom, 'Backspace')).toBe(true);
+    expect(p.textContent).toBe('so *em* x');
+    expect(shown(p)).toEqual(['*', '*']);
+    expect(view.state.selection.from).toBe(1 + 'so *em*'.length);
+    // revealed, the next backspace is the browser's: a visible character goes
+    expect(revealBackward(view.state)).toBe(false);
+    expect(key(view.dom, 'Backspace')).toBe(false);
+    // from the other side
+    caretAt(view, 1 + 'so '.length);
+    expect(shown(p)).toEqual([]);
+    expect(key(view.dom, 'Delete')).toBe(true);
+    expect(shown(p)).toEqual(['*', '*']);
+    expect(p.textContent).toBe('so *em* x');
+    // moving away lets the edge go
+    caretAt(view, 1);
+    expect(shown(p)).toEqual([]);
+    view.destroy();
+  });
+
+  it('typing `*word*` lights as it closes, and settles once the caret moves on', () => {
+    const view = mount([{ kind: 'paragraph', text: 'say ' }]);
+    const p = view.dom.querySelector('p')!;
+    caretAt(view, 1 + 4);
+    for (const ch of '*word') view.dispatch(view.state.tr.insertText(ch));
+    expect(p.querySelectorAll('.md-mark')).toHaveLength(0);
+    view.dispatch(view.state.tr.insertText('*'));
+    expect(shown(p)).toEqual(['*', '*']);
+    expect(p.querySelector('.md-em')?.textContent).toBe('word');
+    view.dispatch(view.state.tr.insertText(' '));
+    expect(shown(p)).toEqual([]);
+    expect(p.textContent).toBe('say *word* ');
+    view.destroy();
+  });
+});
+
+describe('a formula edited in place', () => {
+  /** A view that counts the transactions that changed the document. */
+  function counting(blocks: Block[], frozen = false): { view: EditorView; writes: () => number } {
+    let n = 0;
+    const view = mount(blocks, frozen, undefined, {
+      dispatchTransaction(this: EditorView, tr) {
+        if (tr.docChanged) n++;
+        this.updateState(this.state.apply(tr));
+      },
+    });
+    return { view, writes: () => n };
+  }
+  const click = (view: EditorView, pos: number) => handleClickOn(view, pos, view.state.doc.nodeAt(pos)!, pos, new MouseEvent('mouseup'), true);
+  const field = (view: EditorView) => view.dom.querySelector<HTMLTextAreaElement>('.math .math-edit textarea');
+  const type = (f: HTMLTextAreaElement, value: string) => { f.value = value; f.dispatchEvent(new Event('input', { bubbles: true })); };
+  const raw = (view: EditorView, pos: number) => view.state.doc.nodeAt(pos)?.attrs.raw;
+
+  it('opens on a click with the TeX between the dollars, re-renders as you type, writes once on ⏎', () => {
+    const { view, writes } = counting([{ kind: 'paragraph', text: 'so $y = x^{2}$ here' }]);
+    const pos = 1 + 3;
+    expect(field(view)).toBeNull();
+    expect(click(view, pos)).toBe(true);
+    const chip = view.dom.querySelector<HTMLElement>('.math')!;
+    expect(chip.classList.contains('editing')).toBe(true);
+    expect(mathEditKey.getState(view.state)).toBe(pos);
+    const f = field(view)!;
+    expect(f.value).toBe('y = x^{2}');
+    expect(document.activeElement).toBe(f);
+    // typed: the chip shows the new TeX, the source stays the node's until it is written
+    type(f, 'y = x^{3}');
+    expect(chip.querySelector('.katex')?.textContent).toContain('3');
+    expect(chip.querySelector('.katex')?.textContent).not.toContain('2');
+    expect(chip.dataset.tex).toBe('$y = x^{2}$');
+    expect(chip.querySelector('.err')?.textContent).toBe('');
+    expect(writes()).toBe(0);
+    // ⏎: one transaction, the chip as written, the caret after it
+    expect(key(f, 'Enter')).toBe(true);
+    expect(field(view)).toBeNull();
+    expect(writes()).toBe(1);
+    expect(raw(view, pos)).toBe('$y = x^{3}$');
+    expect(chip.dataset.tex).toBe('$y = x^{3}$');
+    expect(chip.classList.contains('editing')).toBe(false);
+    expect(mathEditKey.getState(view.state)).toBeNull();
+    expect(view.state.selection).toBeInstanceOf(TextSelection);
+    expect(view.state.selection.from).toBe(pos + 1);
+    expect(view.state.doc.child(0).textContent).toBe('so $y = x^{3}$ here');
+    view.destroy();
+  });
+
+  it('writes nothing on Escape and puts the chip back as it was', () => {
+    const { view, writes } = counting([{ kind: 'paragraph', text: 'so $y = x^{2}$ here' }]);
+    const pos = 4;
+    click(view, pos);
+    const chip = view.dom.querySelector<HTMLElement>('.math')!;
+    type(field(view)!, 'z');
+    expect(chip.querySelector('.katex')?.textContent).toContain('z');
+    expect(key(field(view)!, 'Escape')).toBe(true);
+    expect(field(view)).toBeNull();
+    expect(writes()).toBe(0);
+    expect(raw(view, pos)).toBe('$y = x^{2}$');
+    expect(chip.querySelector('.katex')?.textContent).not.toContain('z');
+    expect(chip.querySelector('.katex')?.textContent).toContain('2');
+    expect(mathEditKey.getState(view.state)).toBeNull();
+    view.destroy();
+  });
+
+  it('says what KaTeX refused under the field and leaves the chip until the TeX parses', () => {
+    const { view } = counting([{ kind: 'paragraph', text: 'so $y = x^{2}$ here' }]);
+    click(view, 4);
+    const chip = view.dom.querySelector<HTMLElement>('.math')!;
+    const before = chip.querySelector('.katex')!.outerHTML;
+    const f = field(view)!;
+    type(f, '\\frac{1');
+    const err = chip.querySelector('.math-edit .err')!;
+    expect(err.textContent).toBe("Unexpected end of input in a macro argument, expected '}' at end of input");
+    expect(chip.querySelector('.katex')!.outerHTML).toBe(before);
+    type(f, '\\frac{1}{2}');
+    expect(err.textContent).toBe('');
+    expect(chip.querySelector('.katex .frac-line')).not.toBeNull();
+    view.destroy();
+  });
+
+  it('opens on ⏎ with the chip selected, keeps `$$`, and breaks a line with ⇧⏎ only in display math', () => {
+    const { view, writes } = counting([{ kind: 'paragraph', text: 'so $a$ and $$b = c$$' }]);
+    const inlinePos = 4;
+    const displayPos = 1 + 'so '.length + 1 + ' and '.length;
+    expect(view.state.doc.nodeAt(displayPos)?.type).toBe(schema.nodes.math);
+    view.dispatch(view.state.tr.setSelection(NodeSelection.create(view.state.doc, displayPos)));
+    expect(key(view.dom, 'Enter')).toBe(true);
+    const f = field(view)!;
+    expect(f.value).toBe('b = c');
+    expect(f.closest('.math')?.classList.contains('display')).toBe(true);
+    // ⇧⏎ is the field's own in display math
+    expect(key(f, 'Enter', { shiftKey: true })).toBe(false);
+    type(f, 'b = c \\\\\\\\ d = e');
+    key(f, 'Enter');
+    expect(raw(view, displayPos)).toBe('$$b = c \\\\\\\\ d = e$$');
+    expect(writes()).toBe(1);
+    // the inline chip refuses the break: its span cannot hold one
+    click(view, inlinePos);
+    expect(key(field(view)!, 'Enter', { shiftKey: true })).toBe(true);
+    key(field(view)!, 'Escape');
+    view.destroy();
+  });
+
+  it('leaves to the side an arrow at the field\'s end points to, and writes on a click outside', () => {
+    const { view, writes } = counting([{ kind: 'paragraph', text: 'so $y$ here' }]);
+    const pos = 4;
+    click(view, pos);
+    let f = field(view)!;
+    f.setSelectionRange(0, 0);
+    expect(key(f, 'ArrowLeft')).toBe(true);
+    expect(field(view)).toBeNull();
+    expect(view.state.selection.from).toBe(pos);
+    expect(writes()).toBe(0);
+    click(view, pos);
+    f = field(view)!;
+    f.setSelectionRange(1, 1);
+    key(f, 'ArrowRight');
+    expect(view.state.selection.from).toBe(pos + 1);
+    // in the middle, the arrows are the field's own
+    click(view, pos);
+    f = field(view)!;
+    type(f, 'yz');
+    f.setSelectionRange(1, 1);
+    expect(key(f, 'ArrowLeft')).toBe(false);
+    expect(field(view)).not.toBeNull();
+    // a press elsewhere writes
+    document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    expect(field(view)).toBeNull();
+    expect(raw(view, pos)).toBe('$yz$');
+    expect(writes()).toBe(1);
+    view.destroy();
+  });
+
+  it('an empty field removes the chip, a span the format cannot read becomes text, a frozen document opens nothing', () => {
+    const { view, writes } = counting([{ kind: 'paragraph', text: 'so $y$ here' }]);
+    const pos = 4;
+    click(view, pos);
+    type(field(view)!, ' a');
+    key(field(view)!, 'Enter');
+    expect(view.state.doc.child(0).childCount).toBe(1);
+    expect(view.dom.querySelector('p')?.textContent).toBe('so $ a$ here');
+    expect(view.state.selection.from).toBe(pos + '$ a$'.length);
+    const blocks: Block[] = [{ kind: 'paragraph', text: 'so $y$ here' }];
+    const again = counting(blocks);
+    click(again.view, pos);
+    type(field(again.view)!, '   ');
+    key(field(again.view)!, 'Enter');
+    expect(again.view.dom.querySelector('p')?.textContent).toBe('so  here');
+    expect(again.view.state.selection.from).toBe(pos);
+    expect(again.writes()).toBe(1);
+    expect(writes()).toBe(1);
+    const frozen = counting(blocks, true);
+    expect(click(frozen.view, pos)).toBe(false);
+    expect(field(frozen.view)).toBeNull();
+    view.destroy();
+    again.view.destroy();
+    frozen.view.destroy();
   });
 });
 

@@ -9,8 +9,8 @@ import { queue } from '../../schedule/index.js';
 import { nodeFs } from '../../vault/node-fs.js';
 import { Vault } from '../../vault/index.js';
 import {
-  blockAt, blocksEqual, cardDue, cardText, cursorIndex, editMath, editorialRanges, fromDoc, insertCard, makeState, markerKey,
-  markerPos, mathSplit, passage, pickPos, proseIndices, schema, setCardText, setReadPos, textOf, toDoc,
+  blockAt, blocksEqual, cardDue, cardText, cursorIndex, editorialRanges, fromDoc, insertCard, makeState, markerKey,
+  markerPos, mathEditKey, mathSplit, openMath, passage, pickPos, proseIndices, schema, setCardText, setReadPos, textOf, toDoc,
 } from '../index.js';
 
 const CORPUS = fileURLToPath(new URL('../../format/__tests__/corpus/vault/', import.meta.url));
@@ -150,20 +150,39 @@ describe('editing', () => {
 
   it('turns a typed span into a chip once the caret leaves the block', () => {
     const state = makeState([{ kind: 'paragraph', text: 'first' }, { kind: 'paragraph', text: 'so $x$ here' }], live);
-    // the chip from disk, turned back into text at the caret
+    // the chip from disk, replaced by its source with the caret in the block: stays literal
     const pos = childStart(state.doc, 1) + 3;
-    const withNode = state.apply(state.tr.setSelection(NodeSelection.create(state.doc, pos)));
-    let edited = withNode;
-    editMath(withNode, (tr) => { edited = withNode.apply(tr); });
+    const tr = state.tr.replaceWith(pos, pos + 1, schema.text('$x$'));
+    const edited = state.apply(tr.setSelection(TextSelection.create(tr.doc, pos + 3)));
     expect(edited.doc.child(1).childCount).toBe(1);
     expect(textOf(edited.doc.child(1))).toBe('so $x$ here');
-    // caret still in the block: stays literal
     expect(edited.doc.child(1).child(0).isText).toBe(true);
     // caret leaves: the chip re-forms
     const left = edited.apply(edited.tr.setSelection(TextSelection.create(edited.doc, 1)));
     expect(left.doc.child(1).childCount).toBe(3);
     expect(left.doc.child(1).child(1).type).toBe(schema.nodes.math);
     expect(fromDoc(left.doc)).toEqual(fromDoc(edited.doc));
+  });
+
+  it('opens a selected chip for editing and follows it through changes before it', () => {
+    const state = makeState([{ kind: 'paragraph', text: 'first' }, { kind: 'paragraph', text: 'so $x$ here' }], live);
+    const pos = childStart(state.doc, 1) + 3;
+    expect(mathEditKey.getState(state)).toBeNull();
+    // nothing selected: not a chip
+    expect(openMath(state, undefined)).toBe(false);
+    const withNode = state.apply(state.tr.setSelection(NodeSelection.create(state.doc, pos)));
+    let opened = withNode;
+    expect(openMath(withNode, (tr) => { opened = withNode.apply(tr); })).toBe(true);
+    expect(mathEditKey.getState(opened)).toBe(pos);
+    // text typed before it moves the chip; the position follows
+    const shifted = opened.apply(opened.tr.insertText('ab', 1));
+    expect(mathEditKey.getState(shifted)).toBe(pos + 2);
+    expect(shifted.doc.nodeAt(pos + 2)?.type).toBe(schema.nodes.math);
+    // the chip gone, nothing is being edited
+    const gone = shifted.apply(shifted.tr.delete(pos + 2, pos + 3));
+    expect(mathEditKey.getState(gone)).toBeNull();
+    // closed by hand
+    expect(mathEditKey.getState(opened.apply(opened.tr.setMeta(mathEditKey, null)))).toBeNull();
   });
 });
 

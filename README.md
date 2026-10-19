@@ -48,7 +48,8 @@ at launch instead of asking for one. Add `ILMI_SMOKE=1` to run every tree
 operation against that vault through the Tauri fs adapter and log the results
 to the terminal; use a scratch copy, it creates and deletes files.
 `ILMI_SMOKE=welcome` runs before any vault opens and walks the welcome instead,
-seeding its rows with `ILMI_VAULT`.
+seeding its rows with `ILMI_VAULT`; the other modes are listed at the top of
+`src/app/smoke.ts`.
 
 ## Keys
 
@@ -130,10 +131,15 @@ escaped on the way in: `{{` is written `{ {`, a ` :: ` loses its spaces.
 
 The reader draws Markdown as Markdown without changing a byte of it:
 `*emphasis*`, `**strong**`, `` `code` ``, and `[text](href)` read as
-themselves in prose, in card faces, in the deck's rows, and in the queue,
-with the markers dimmed so the caret still lands where the source says, and
-hidden on a frozen document; ⌘-click on a link opens it, a plain click puts
-the caret. A list, a block quote, a fenced or indented code block, a table,
+themselves in prose, in card faces, in the deck's rows, and in the queue.
+The markers follow the caret: they show, dimmed, only around the span the
+caret is in or has just typed closed, and a backspace into a hidden one
+reveals it before anything is deleted; ⌘-click on a link opens it, a plain
+click puts the caret. A formula stays rendered: a click on the chip (or ⏎
+with it selected) opens a small field under it holding the TeX, the chip
+redrawn as you type and the error shown quietly when KaTeX refuses; ⏎ or a
+click outside writes it once, Escape leaves it as it was, an arrow at the
+field's end steps out past the chip. A list, a block quote, a fenced or indented code block, a table,
 or a rule is drawn as that element inside its block, and a click on it shows
 the source. An `![alt](src)` alone in a paragraph is the picture with its
 alt as the caption, read from the vault when the path is relative and from

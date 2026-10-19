@@ -96,15 +96,65 @@
 .draft-doc .card-span .cs-state[data-due="1"] { color: var(--accent); }
 
 /* math chips: atomic, the source kept on the node */
-.math { cursor: default; }
+.math { cursor: default; position: relative; }
 .math.display { display: block; margin: 0.6em 0; text-align: center; }
 .math .katex { font-size: 1.02em; }
 .math .katex-display { margin: 0; }
 /* a formula KaTeX refused, with blanks in it: its source, the blanks as text blanks */
 .math.blanks .tex { font-family: var(--mono); font-size: 0.9em; white-space: pre-wrap; }
 
+/* a chip's editor, under it, set as the palette: the TeX between the dollars
+   in a mono field that grows with its content, what KaTeX refused under it */
+.draft-doc .math.editing { background: var(--accent-soft); }
+.math-edit {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 35;
+  display: flex;
+  flex-direction: column;
+  width: min(440px, 86vw);
+  background: var(--paper);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius);
+  font-family: var(--mono);
+  text-align: left;
+  white-space: normal;
+  cursor: text;
+}
+.math.display .math-edit { left: 50%; transform: translateX(-50%); }
+.math-edit .field {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  background: transparent;
+  border: 0;
+  outline: none;
+  resize: none;
+  overflow: hidden;
+  min-height: 36px;
+  padding: 8px 10px;
+  color: var(--fg-1);
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.5;
+  letter-spacing: 0.01em;
+  white-space: pre-wrap;
+}
+.math-edit .err { display: none; }
+.math-edit .err:not(:empty) {
+  display: block;
+  padding: 5px 10px 6px;
+  border-top: 1px solid var(--line-2);
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--fg-4);
+}
+
 /* inline Markdown, drawn as itself over the raw text: the markers dimmed so
-   the caret still lands where the source says, hidden on a frozen document */
+   the caret still lands where the source says, and shown only around the
+   caret (the range under it, the one just typed closed, the one a backspace
+   revealed); hidden everywhere else, on editable and frozen documents alike */
 .md-mark { color: var(--fg-5); }
 .md-mark.hidden { font-size: 0; }
 .md-em { font-style: italic; }

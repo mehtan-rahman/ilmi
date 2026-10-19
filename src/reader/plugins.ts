@@ -1,9 +1,10 @@
 // Editor behaviour: `# ` makes a heading, a finished `$…$` becomes a chip,
-// chips re-form when the caret leaves a block, editorial marks and inline
-// Markdown are decorated (the markers dimmed, hidden when frozen), images
-// are drawn as widgets over their source, a frozen document refuses
-// changes, and the marker's settled blocks are dimmed. All state-level;
-// the view adds node views on top.
+// chips re-form when the caret leaves a block, a chip's editor opens on ⏎,
+// editorial marks and inline Markdown are decorated (the markers shown only
+// around the caret, a backspace into a hidden one revealing it first),
+// images are drawn as widgets over their source, a frozen document refuses
+// changes, and the marker's settled blocks are dimmed. All state-level; the
+// view adds node views on top.
 
 import { baseKeymap } from 'prosemirror-commands';
 import { gapCursor } from 'prosemirror-gapcursor';
@@ -11,7 +12,7 @@ import { history, redo, undo } from 'prosemirror-history';
 import { InputRule, inputRules, textblockTypeInputRule } from 'prosemirror-inputrules';
 import { keymap } from 'prosemirror-keymap';
 import type { Node as PMNode } from 'prosemirror-model';
-import { EditorState, Plugin, PluginKey, TextSelection, type Command, type Transaction } from 'prosemirror-state';
+import { EditorState, NodeSelection, Plugin, PluginKey, Selection, TextSelection, type Command, type Transaction } from 'prosemirror-state';
 import { Decoration, DecorationSet } from 'prosemirror-view';
 import { mathSpanEnd, type Block } from '../format/index.js';
 import { mathSplit, toDoc } from './convert.js';
@@ -69,15 +70,45 @@ const mathReform = new Plugin({
   },
 });
 
-/** Turn the chip at `pos` back into its source and put the caret after it. */
-export const editMath: Command = (state, dispatch) => {
-  const { node, from } = state.selection as { node?: PMNode; from: number };
-  if (!node || node.type !== schema.nodes.math) return false;
-  const raw = node.attrs.raw as string;
-  if (dispatch) {
-    const tr = state.tr.replaceWith(from, from + 1, schema.text(raw));
-    dispatch(tr.setSelection(TextSelection.create(tr.doc, from + raw.length)));
-  }
+// ── a formula edited in place ────────────────────────────────────
+
+/**
+ * The position of the chip whose editor is open, or null. `tr.setMeta(
+ * mathEditKey, pos | null)` opens or closes it; the plugin marks the chip
+ * with a node decoration whose spec says `mathEdit`, and the chip's node
+ * view draws the editor when it sees it. A doc change moves the position
+ * along; the chip gone, the editor is closed.
+ */
+export const mathEditKey = new PluginKey<number | null>('mathEdit');
+
+const mathEdit = new Plugin<number | null>({
+  key: mathEditKey,
+  state: {
+    init: () => null,
+    apply(tr, cur) {
+      const meta = tr.getMeta(mathEditKey) as number | null | undefined;
+      if (meta !== undefined) return meta;
+      if (cur === null || !tr.docChanged) return cur;
+      const mapped = tr.mapping.mapResult(cur);
+      return !mapped.deleted && tr.doc.nodeAt(mapped.pos)?.type === schema.nodes.math ? mapped.pos : null;
+    },
+  },
+  props: {
+    decorations(state): DecorationSet | null {
+      const pos = mathEditKey.getState(state);
+      return pos === null || pos === undefined ? null : DecorationSet.create(state.doc, [Decoration.node(pos, pos + 1, {}, { mathEdit: true })]);
+    },
+  },
+});
+
+/** Is the chip these decorations were handed to the one being edited? */
+export const isMathEdit = (decorations: readonly Decoration[]): boolean => decorations.some((d) => d.spec.mathEdit === true);
+
+/** ⏎ with a chip selected opens its editor. */
+export const openMath: Command = (state, dispatch) => {
+  const sel = state.selection;
+  if (!(sel instanceof NodeSelection) || sel.node.type !== schema.nodes.math) return false;
+  dispatch?.(state.tr.setMeta(mathEditKey, sel.from));
   return true;
 };
 
@@ -168,17 +199,60 @@ function imageWidget(src: string, alt: string, state: ImageState): (view: { disp
 
 // ── editorial marks and inline Markdown ──────────────────────────
 
-/** Set on a transaction when the document froze or thawed, so the markers hide or show. */
+/** Set on a transaction when the document froze or thawed; the decorations are drawn again. */
 export const frozenKey = new PluginKey('frozen');
+
+/** A range, by absolute positions, whose markers stay shown while the caret sits at one of its edges. */
+export interface Edge {
+  from: number;
+  to: number;
+}
+
+/** The edge kept, with the caret position that earned it: the range just typed closed, or the one a backspace revealed. */
+interface Kept extends Edge {
+  at: number;
+}
+
+/**
+ * `tr.setMeta(revealKey, edge)`: show the markers of the range at `edge`
+ * though the caret only touches it, as a backspace into a hidden marker
+ * does; `null` lets go of the edge kept.
+ */
+export const revealKey = new PluginKey('reveal');
 
 const INNER_CLASS: Record<InlineRange['kind'], string> = { em: 'md-em', strong: 'md-strong', code: 'md-code', link: 'md-link', image: 'md-alt' };
 
+/** The spec every marker decoration carries, so a block's markers can be found and replaced on their own. */
+const MARKER = { marker: true };
+
+/** Whether the markers of the range at `from`..`to` show. */
+type Shown = (from: number, to: number) => boolean;
+
+/**
+ * Markers follow the caret: a range's show while the selection overlaps it
+ * (the caret inside it, or a selection across it), and while a collapsed
+ * caret sits at the edge the plugin keeps, the range just typed closed or
+ * the one a backspace revealed. Everywhere else they are hidden, on
+ * editable and frozen documents alike.
+ */
+function shownBy(sel: Selection, kept: Kept | null): Shown {
+  return (from, to) => (sel.from < to && sel.to > from) || (kept !== null && kept.from === from && kept.to === to && sel.empty && sel.from === kept.at);
+}
+
+/** The marker decorations of the ranges of one text node at `base`. */
+function markerDecorations(flat: InlineRange[], base: number, shown: Shown, decos: Decoration[]): void {
+  for (const r of flat) {
+    const cls = shown(base + r.from, base + r.to) ? 'md-mark' : 'md-mark hidden';
+    for (const m of markerRanges(r)) decos.push(Decoration.inline(base + m.from, base + m.to, { class: cls }, MARKER));
+  }
+}
+
 /** Decorations for the inline Markdown of one text node at `base`, nested ranges included. */
-function inlineDecorations(text: string, base: number, hidden: boolean, known: Map<string, ImageState>, decos: Decoration[]): InlineRange[] {
+function inlineDecorations(text: string, base: number, known: Map<string, ImageState>, shown: Shown, decos: Decoration[]): InlineRange[] {
   const ranges = inlineRanges(text);
-  const mark = hidden ? 'md-mark hidden' : 'md-mark';
-  for (const r of flatRanges(ranges)) {
-    for (const m of markerRanges(r)) decos.push(Decoration.inline(base + m.from, base + m.to, { class: mark }));
+  const flat = flatRanges(ranges);
+  markerDecorations(flat, base, shown, decos);
+  for (const r of flat) {
     // the picture is drawn whether or not the image has an alt
     const state: ImageState | null = r.kind === 'image' ? known.get(r.href ?? '') ?? 'pending' : null;
     if (state !== null) {
@@ -193,7 +267,7 @@ function inlineDecorations(text: string, base: number, hidden: boolean, known: M
   return ranges;
 }
 
-function markDecorations(doc: PMNode, hidden: boolean, known: Map<string, ImageState>): DecorationSet {
+function markDecorations(doc: PMNode, known: Map<string, ImageState>, shown: Shown): DecorationSet {
   const decos: Decoration[] = [];
   doc.descendants((node, pos) => {
     if (node.isTextblock) {
@@ -206,7 +280,7 @@ function markDecorations(doc: PMNode, hidden: boolean, known: Map<string, ImageS
       return true;
     }
     if (!node.isText || !node.text) return true;
-    const ranges = inlineDecorations(node.text, pos, hidden, known, decos);
+    const ranges = inlineDecorations(node.text, pos, known, shown, decos);
     const literal = literalSpans(ranges);
     for (const r of editorialRanges(node.text)) {
       if (literal.some((l) => r.from < l.to && l.from < r.to)) continue;
@@ -217,18 +291,105 @@ function markDecorations(doc: PMNode, hidden: boolean, known: Map<string, ImageS
   return DecorationSet.create(doc, decos);
 }
 
-const marksKey = new PluginKey<DecorationSet>('marks');
-const marks = (isFrozen: () => boolean) =>
-  new Plugin<DecorationSet>({
-    key: marksKey,
-    state: {
-      init: (_c, state) => markDecorations(state.doc, isFrozen(), imagesKey.getState(state) ?? new Map()),
-      apply: (tr, set, _old, state) => (tr.docChanged || tr.getMeta(frozenKey) !== undefined || tr.getMeta(imagesKey) !== undefined
-        ? markDecorations(tr.doc, isFrozen(), imagesKey.getState(state) ?? new Map())
-        : set.map(tr.mapping, tr.doc)),
-    },
-    props: { decorations: (state): DecorationSet | null => marksKey.getState(state) ?? null },
+/** Every textblock the selection touches, by position. */
+function touched(state: EditorState): number[] {
+  const out: number[] = [];
+  state.doc.nodesBetween(state.selection.from, state.selection.to, (node, pos) => {
+    if (!node.isTextblock) return true;
+    out.push(pos);
+    return false;
   });
+  return out;
+}
+
+/** The markers of the blocks at `blocks` drawn again for `shown`; the rest of the set stands. */
+function redrawMarkers(set: DecorationSet, doc: PMNode, blocks: Iterable<number>, shown: Shown): DecorationSet {
+  for (const pos of blocks) {
+    const node = doc.nodeAt(pos);
+    if (!node) continue;
+    set = set.remove(set.find(pos, pos + node.nodeSize, (spec) => spec.marker === true));
+    const decos: Decoration[] = [];
+    node.forEach((child, off) => {
+      if (child.isText && child.text) markerDecorations(flatRanges(inlineRanges(child.text)), pos + 1 + off, shown, decos);
+    });
+    set = set.add(doc, decos);
+  }
+  return set;
+}
+
+/** The ranges of the textblock around a collapsed caret, with their absolute positions. */
+function rangesAround(sel: Selection): Edge[] {
+  if (!sel.empty || !(sel instanceof TextSelection)) return [];
+  const $from = sel.$from;
+  const out: Edge[] = [];
+  $from.parent.forEach((child, off) => {
+    if (!child.isText || !child.text) return;
+    const base = $from.start() + off;
+    for (const r of flatRanges(inlineRanges(child.text))) out.push({ from: base + r.from, to: base + r.to });
+  });
+  return out;
+}
+
+/** The range that ends where a collapsed caret sits: the one just typed closed, or just backspaced up to. */
+function closedAt(sel: Selection): Kept | null {
+  const e = rangesAround(sel).find((r) => r.to === sel.from);
+  return e ? { ...e, at: sel.from } : null;
+}
+
+interface MarksState {
+  set: DecorationSet;
+  edge: Kept | null;
+}
+
+const marksKey = new PluginKey<MarksState>('marks');
+const marks = new Plugin<MarksState>({
+  key: marksKey,
+  state: {
+    init: (_c, state) => ({ set: markDecorations(state.doc, imagesKey.getState(state) ?? new Map(), shownBy(state.selection, null)), edge: null }),
+    apply(tr, cur, old, state) {
+      const known = imagesKey.getState(state) ?? new Map<string, ImageState>();
+      const sel = state.selection;
+      const meta = tr.getMeta(revealKey) as Edge | null | undefined;
+      const asked = meta === undefined ? undefined : meta === null ? null : { ...meta, at: sel.from };
+      if (tr.docChanged) {
+        const edge = asked !== undefined ? asked : closedAt(sel);
+        return { set: markDecorations(tr.doc, known, shownBy(sel, edge)), edge };
+      }
+      let edge = asked !== undefined ? asked : cur.edge;
+      if (edge && !(sel.empty && sel.from === edge.at)) edge = null;
+      if (tr.getMeta(frozenKey) !== undefined || tr.getMeta(imagesKey) !== undefined) {
+        return { set: markDecorations(tr.doc, known, shownBy(sel, edge)), edge };
+      }
+      const moved = tr.selectionSet && !old.selection.eq(sel);
+      if (!moved && edge === cur.edge) return cur;
+      // only the blocks that lost the caret and the ones that gained it are drawn again
+      const blocks = new Set([...touched(old), ...touched(state)]);
+      return { set: redrawMarkers(cur.set, tr.doc, blocks, shownBy(sel, edge)), edge };
+    },
+  },
+  props: { decorations: (state): DecorationSet | null => marksKey.getState(state)?.set ?? null },
+});
+
+/**
+ * A backspace (`dir` -1) or a forward delete (1) that would take a hidden
+ * marker reveals it instead: the caret stays, the markers show, and the
+ * next press deletes a character the user can see.
+ */
+function revealMarker(dir: -1 | 1): Command {
+  return (state, dispatch) => {
+    const sel = state.selection;
+    if (!sel.empty) return false;
+    const cur = marksKey.getState(state);
+    const shown = shownBy(sel, cur?.edge ?? null);
+    const edge = rangesAround(sel).find((e) => (dir < 0 ? e.to === sel.from : e.from === sel.from) && !shown(e.from, e.to));
+    if (!edge) return false;
+    dispatch?.(state.tr.setMeta(revealKey, edge));
+    return true;
+  };
+}
+
+export const revealBackward = revealMarker(-1);
+export const revealForward = revealMarker(1);
 
 // ── frozen ───────────────────────────────────────────────────────
 
@@ -284,6 +445,9 @@ const keys = keymap({
   'Shift-Mod-z': redo,
   'Mod-y': redo,
   'Shift-Enter': lineBreak,
+  Enter: openMath,
+  Backspace: revealBackward,
+  Delete: revealForward,
 });
 
 // ── state ────────────────────────────────────────────────────────
@@ -300,7 +464,7 @@ export function makeState(blocks: Block[], opts: StateOptions): EditorState {
   const state = EditorState.create({
     doc: toDoc(blocks),
     // images before marks: the marks read the images' state as it is after the same transaction
-    plugins: [frozenPlugin(opts.frozen), rules, keys, keymap(baseKeymap), history(), gapCursor(), mathReform, images(opts.images), marks(opts.frozen), marker],
+    plugins: [frozenPlugin(opts.frozen), rules, keys, keymap(baseKeymap), history(), gapCursor(), mathReform, mathEdit, images(opts.images), marks, marker],
   });
   return opts.pos === null ? state : state.apply(state.tr.setMeta(markerKey, opts.pos));
 }

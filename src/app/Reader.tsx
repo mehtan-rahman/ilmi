@@ -1,17 +1,18 @@
 // The reader: one document as one continuous surface. Prose is editable
 // ProseMirror, cards and raw blocks sit in the flow as atoms, math renders
-// as KaTeX chips, and the reading marker runs down the left margin. Every
-// change goes through the vault as blocks; nothing here string-edits a file.
+// as KaTeX chips edited in a field under the chip, and the reading marker
+// runs down the left margin. Every change goes through the vault as blocks;
+// nothing here string-edits a file.
 
 import katex from 'katex';
 import type { Node as PMNode } from 'prosemirror-model';
-import { NodeSelection, Selection, type EditorState, type Transaction } from 'prosemirror-state';
-import { EditorView, type NodeView } from 'prosemirror-view';
+import { NodeSelection, Selection, TextSelection, type EditorState, type Transaction } from 'prosemirror-state';
+import { EditorView, type Decoration, type NodeView } from 'prosemirror-view';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { PRI_DEFAULT, cardFields, clozeSegments, meta, serialize, setField, type Blank, type Block, type Card, type Doc, type MathSeg } from '../format/index.js';
+import { PRI_DEFAULT, cardFields, clozeSegments, mathSpanEnd, meta, serialize, setField, type Blank, type Block, type Card, type Doc, type MathSeg } from '../format/index.js';
 import {
-  blockAt, blocksEqual, cardDue, classifyRaw, cursorIndex, editMath, editorialRanges, flatRanges, fromDoc, frozenKey, imagesKey, inlineRanges, insertCard,
-  literalSpans, makeState, markerKey, markerPos, markerRanges, mathSplit, passage, pickPos, proseIndices, schema, setReadPos, splitBlocks,
+  blockAt, blocksEqual, cardDue, classifyRaw, cursorIndex, editorialRanges, flatRanges, fromDoc, frozenKey, imagesKey, inlineRanges, insertCard, isMathEdit,
+  literalSpans, makeState, markerKey, markerPos, markerRanges, mathEditKey, mathSplit, passage, pickPos, proseIndices, schema, setReadPos, splitBlocks,
   type Band, type InlineRange, type Passage, type RawShape,
 } from '../reader/index.js';
 import { advanceWrite, whenToDate } from '../schedule/index.js';
@@ -354,30 +355,193 @@ class CardView implements NodeView {
   ignoreMutation(): boolean { return true; }
 }
 
+/** KaTeX's message without its prefix and the echo of the source after the position. */
+function texError(e: unknown): string {
+  const msg = e instanceof Error ? e.message : String(e);
+  return msg.replace(/^KaTeX parse error: /, '').replace(/(at (?:position \d+|end of input)):[\s\S]*$/, '$1');
+}
+
+/**
+ * A formula chip: KaTeX over its source. Its editor opens under it when the
+ * `mathEdit` plugin says so (a click, or ⏎ with the chip selected): the TeX
+ * between the dollars in a mono field that grows with its content, the chip
+ * drawn again on every keystroke that parses and the error under the field
+ * when one does not. ⏎ or a click outside writes the text once, Escape puts
+ * the chip back as it was, an arrow at the field's end leaves to the side it
+ * points to; ⇧⏎ breaks a line in display math. `$$` stays `$$`.
+ */
 class MathView implements NodeView {
   dom: HTMLElement;
+  private node: PMNode;
+  private editor: HTMLElement | null = null;
+  private field: HTMLTextAreaElement | null = null;
+  private err: HTMLElement | null = null;
+  /** A press outside the chip and its editor closes the editor and writes. */
+  private readonly outside = (e: MouseEvent) => {
+    if (this.editor && !this.dom.contains(e.target as Node)) this.close(true, null);
+  };
 
-  constructor(node: PMNode) {
-    const tmp = document.createElement('div');
-    tmp.innerHTML = mathHTML(node.attrs.raw as string);
-    this.dom = tmp.firstElementChild as HTMLElement;
+  constructor(node: PMNode, private readonly view: EditorView, private readonly getPos: () => number | undefined, decorations: readonly Decoration[]) {
+    this.node = node;
+    this.dom = document.createElement('span');
     this.dom.setAttribute('contenteditable', 'false');
+    this.draw(node.attrs.raw as string);
+    if (isMathEdit(decorations)) this.open();
   }
 
-  update(node: PMNode): boolean {
-    if (node.type !== schema.nodes.math) return false;
+  /** The chip as its source says, the editor (if open) kept as the last child. */
+  private draw(raw: string): void {
     const tmp = document.createElement('div');
-    tmp.innerHTML = mathHTML(node.attrs.raw as string);
+    tmp.innerHTML = mathHTML(raw);
     const next = tmp.firstElementChild as HTMLElement;
-    this.dom.className = next.className;
+    this.dom.className = `${next.className}${this.dom.classList.contains('selected') ? ' selected' : ''}${this.editor ? ' editing' : ''}`;
     this.dom.dataset.tex = next.dataset.tex ?? '';
-    this.dom.innerHTML = next.innerHTML;
+    this.body(Array.from(next.childNodes));
+  }
+
+  /** Replace what the chip shows, leaving the editor in place. */
+  private body(nodes: ChildNode[]): void {
+    for (const child of Array.from(this.dom.childNodes)) if (child !== this.editor) child.remove();
+    this.dom.prepend(...nodes);
+  }
+
+  private get display(): boolean {
+    return (this.node.attrs.raw as string).startsWith('$$');
+  }
+
+  /** The chip drawn from `tex` as typed; TeX that does not parse leaves the chip and says why under the field. */
+  private preview(tex: string): void {
+    if (!this.err) return;
+    try {
+      const html = katex.renderToString(tex, { throwOnError: true, displayMode: this.display });
+      const tmp = document.createElement('div');
+      tmp.innerHTML = html;
+      this.body(Array.from(tmp.childNodes));
+      this.err.textContent = '';
+    } catch (e) {
+      this.err.textContent = texError(e);
+    }
+  }
+
+  private grow(): void {
+    const f = this.field;
+    if (!f) return;
+    f.style.height = 'auto';
+    if (f.scrollHeight > 0) f.style.height = `${f.scrollHeight}px`;
+  }
+
+  /** Keep the editor inside the surface's width. */
+  private place(): void {
+    const ed = this.editor;
+    if (!ed) return;
+    ed.style.marginLeft = '';
+    const r = ed.getBoundingClientRect();
+    const s = this.view.dom.getBoundingClientRect();
+    if (r.width === 0) return;
+    if (r.right > s.right) ed.style.marginLeft = `${s.right - r.right}px`;
+    else if (r.left < s.left) ed.style.marginLeft = `${s.left - r.left}px`;
+  }
+
+  open(): void {
+    if (this.editor || !this.view.editable) return;
+    const raw = this.node.attrs.raw as string;
+    const editor = document.createElement('span');
+    editor.className = 'math-edit';
+    editor.setAttribute('contenteditable', 'false');
+    const field = document.createElement('textarea');
+    field.className = 'field';
+    field.rows = 1;
+    field.spellcheck = false;
+    field.setAttribute('aria-label', 'formula');
+    field.value = this.display ? raw.slice(2, -2) : raw.slice(1, -1);
+    const err = document.createElement('span');
+    err.className = 'err';
+    editor.append(field, err);
+    this.dom.append(editor);
+    this.dom.classList.add('editing');
+    this.editor = editor;
+    this.field = field;
+    this.err = err;
+    field.addEventListener('input', () => { this.grow(); this.preview(field.value); });
+    field.addEventListener('keydown', (e) => this.key(e));
+    document.addEventListener('mousedown', this.outside, true);
+    this.grow();
+    this.place();
+    field.focus();
+    field.setSelectionRange(field.value.length, field.value.length);
+  }
+
+  private key(e: KeyboardEvent): void {
+    const f = this.field;
+    if (!f) return;
+    const atStart = f.selectionStart === 0 && f.selectionEnd === 0;
+    const atEnd = f.selectionStart === f.value.length && f.selectionEnd === f.value.length;
+    let handled = true;
+    if (e.key === 'Enter' && e.shiftKey) handled = !this.display; // a line break only where the span can hold one
+    else if (e.key === 'Enter') this.close(true, 'after');
+    else if (e.key === 'Escape') this.close(false, null);
+    else if ((e.key === 'ArrowLeft' || e.key === 'ArrowUp') && atStart) this.close(true, 'before');
+    else if ((e.key === 'ArrowRight' || e.key === 'ArrowDown') && atEnd) this.close(true, 'after');
+    else handled = false;
+    if (handled) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  }
+
+  /** Take the editor down without a transaction; the chip back as its source says. */
+  private teardown(): string {
+    const tex = this.field?.value ?? '';
+    this.editor?.remove();
+    this.editor = null;
+    this.field = null;
+    this.err = null;
+    this.dom.classList.remove('editing');
+    document.removeEventListener('mousedown', this.outside, true);
+    return tex;
+  }
+
+  /**
+   * Close the editor. With `commit`, the text is written in one transaction:
+   * a span the format reads as math keeps the chip, an empty one removes it,
+   * one it cannot read becomes plain text. The caret goes `before` or
+   * `after` the chip when asked, and the surface takes the focus back.
+   */
+  private close(commit: boolean, caret: 'before' | 'after' | null): void {
+    if (!this.editor) return;
+    const tex = this.teardown();
+    const was = this.node.attrs.raw as string;
+    const raw = was.startsWith('$$') ? `$$${tex}$$` : `$${tex}$`;
+    const pos = this.getPos();
+    if (pos === undefined) return;
+    const { view } = this;
+    const tr = view.state.tr.setMeta(mathEditKey, null);
+    let end = pos + 1;
+    if (commit && raw !== was) {
+      if (!tex.trim()) { tr.delete(pos, pos + 1); end = pos; }
+      else if (mathSpanEnd(raw, 0) === raw.length) tr.setNodeMarkup(pos, undefined, { raw });
+      else { tr.replaceWith(pos, pos + 1, schema.text(raw)); end = pos + raw.length; }
+    } else this.draw(was);
+    if (caret) tr.setSelection(TextSelection.create(tr.doc, caret === 'before' ? pos : end));
+    view.dispatch(tr);
+    if (caret) view.focus();
+  }
+
+  update(node: PMNode, decorations: readonly Decoration[]): boolean {
+    if (node.type !== schema.nodes.math) return false;
+    const changed = node.attrs.raw !== this.node.attrs.raw;
+    this.node = node;
+    if (changed) this.draw(node.attrs.raw as string);
+    if (isMathEdit(decorations)) this.open();
+    else if (this.editor) { this.teardown(); this.draw(node.attrs.raw as string); }
     return true;
   }
 
   selectNode(): void { this.dom.classList.add('selected'); }
   deselectNode(): void { this.dom.classList.remove('selected'); }
+  stopEvent(e: Event): boolean { return !!this.editor && this.editor.contains(e.target as Node); }
   ignoreMutation(): boolean { return true; }
+  destroy(): void { document.removeEventListener('mousedown', this.outside, true); }
 }
 
 /**
@@ -425,13 +589,35 @@ class RawView implements NodeView {
 
 export const nodeViews = {
   card: (node: PMNode) => new CardView(node),
-  math: (node: PMNode) => new MathView(node),
+  math: (node: PMNode, view: EditorView, getPos: () => number | undefined, decorations: readonly Decoration[]) => new MathView(node, view, getPos, decorations),
   raw: (node: PMNode) => new RawView(node),
 };
 
 /** Where a ⌘-click on a link goes: the webview hands an outside address to the system. */
 export function openLink(href: string): void {
   window.open(href, '_blank', 'noopener');
+}
+
+/** A click on a card selects it on any document, frozen too, so the inspector can edit it; a click on a chip selects it and opens its editor. */
+export function handleClickOn(view: EditorView, _pos: number, node: PMNode, nodePos: number, _event: MouseEvent, direct: boolean): boolean {
+  if (!direct) return false;
+  if (node.type === schema.nodes.card) {
+    view.dispatch(view.state.tr.setSelection(NodeSelection.create(view.state.doc, nodePos)));
+    return true;
+  }
+  if (node.type !== schema.nodes.math || !view.editable) return false;
+  view.dispatch(view.state.tr.setSelection(NodeSelection.create(view.state.doc, nodePos)).setMeta(mathEditKey, nodePos));
+  return true;
+}
+
+/** ⌘-click on a link opens it; a plain click puts the caret, as anywhere. */
+export function handleClick(_view: EditorView, _pos: number, event: MouseEvent): boolean {
+  if (!event.metaKey && !event.ctrlKey) return false;
+  const href = (event.target as HTMLElement | null)?.closest<HTMLElement>('.md-link')?.dataset.href;
+  if (!href) return false;
+  event.preventDefault();
+  openLink(href);
+  return true;
 }
 
 // ── the component ────────────────────────────────────────────────
@@ -636,28 +822,8 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
             if (tr.docChanged) hookBlocks();
             if (tr.selectionSet || tr.docChanged) publishSelection(next);
           },
-          handleClickOn(view, _pos, node, nodePos, _event, direct) {
-            if (!direct) return false;
-            if (node.type === schema.nodes.card) {
-              // a card selects on any document, frozen too, so the inspector can edit it
-              view.dispatch(view.state.tr.setSelection(NodeSelection.create(view.state.doc, nodePos)));
-              return true;
-            }
-            if (node.type !== schema.nodes.math || !view.editable) return false;
-            view.dispatch(view.state.tr.setSelection(NodeSelection.create(view.state.doc, nodePos)));
-            editMath(view.state, view.dispatch);
-            view.focus();
-            return true;
-          },
-          handleClick(_view, _pos, event) {
-            // ⌘-click on a link opens it; a plain click puts the caret, as anywhere
-            if (!event.metaKey && !event.ctrlKey) return false;
-            const href = (event.target as HTMLElement | null)?.closest<HTMLElement>('.md-link')?.dataset.href;
-            if (!href) return false;
-            event.preventDefault();
-            openLink(href);
-            return true;
-          },
+          handleClickOn,
+          handleClick,
           handleKeyDown(view, event) {
             if (event.key === 'Escape') {
               view.dom.blur();
@@ -723,7 +889,7 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
     };
   }, [id, measure, hookBlocks]);
 
-  // frozen or thawed: the view re-reads `editable`, and the markers hide or show
+  // frozen or thawed: the view re-reads `editable`, and the decorations are drawn again
   useEffect(() => {
     const view = viewRef.current;
     if (!view) return;

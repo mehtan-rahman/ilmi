@@ -2256,7 +2256,76 @@ writing it stays a fixed point, and the selection keeps mapping back to the
 raw text exactly (the tests from 25 guard that), since extracts and cards
 are made from it.
 
-### [ ] 26. Live inline — markers only around the caret, math edited in place
+### [x] 26. Live inline — markers only around the caret, math edited in place
+Done 2026-10-18 on main; commit `TBD`.
+Notes: `src/reader/plugins.ts`: the `marks` plugin's state is `{ set,
+edge }`. A range's markers (`md-mark`, spec `{ marker: true }`) show while
+the selection overlaps it (`sel.from < to && sel.to > from`) or while a
+collapsed caret sits at the edge the plugin keeps (`Kept`: the range
+ending at the caret after a doc change, `closedAt`, so `*word*` lights as
+its `*` is typed; or the one a `revealKey` meta names, with the caret
+position that earned it), and are `md-mark hidden` otherwise, frozen or
+thawed alike. A selection-only transaction redraws only the markers of
+the textblocks the old and the new selection touch (`touched`,
+`redrawMarkers`: `set.find(pos, end, spec.marker)` removed, the block's
+markers added again); a doc change or a `frozenKey` / `imagesKey` meta
+redraws everything as 25 did. `revealBackward` / `revealForward`
+(Backspace / Delete in `keys`, ahead of `baseKeymap`): a collapsed caret
+right after (before) a range whose markers are hidden sets the edge
+instead of deleting; once shown, the command declines and the browser
+deletes. A `mathEdit` plugin holds the position of the chip being edited
+(`mathEditKey` meta opens or closes it; mapped through doc changes, null
+when the chip is gone) and marks it with a node decoration whose spec is
+`{ mathEdit: true }`; `openMath` (⏎ in `keys`) opens the node-selected
+chip; `editMath` is gone, a click no longer turns a chip into text.
+`Reader.tsx`: `MathView(node, view, getPos, decorations)` opens its
+editor when `isMathEdit(decorations)`: `span.math-edit` appended inside
+the chip (`contenteditable=false`, absolute under it, `stopEvent` keeps
+ProseMirror out of it) holding `textarea.field` (the TeX between the
+dollars, mono, grown to `scrollHeight` on input) and `span.err`; each
+input previews through KaTeX with `throwOnError: true`, the chip's
+children replaced on success (`data-tex` stays the node's until written),
+the message under the field on failure (`KaTeX parse error: ` and the
+echoed source stripped); ⏎ commits, Escape restores the chip (meta null,
+no doc change), ←/↑ at the start and →/↓ at the end commit and put a
+`TextSelection` before or after the chip, a `mousedown` outside (document,
+capture) commits without moving the caret; ⇧⏎ is the field's own in `$$`
+and refused in `$…$`, which cannot hold a break. `close` dispatches one
+transaction: `setNodeMarkup` when `mathSpanEnd` reads the new span,
+`delete` when the field is blank, `replaceWith(schema.text(raw))` when
+the format would not read it as math (a leading space, say); `$$` stays
+`$$`. `handleClickOn` and `handleClick` are exported functions now (the
+test mounts with them); a click on a chip dispatches the node selection
+with the `mathEditKey` meta. CSS in `reader.css`: `.math { position:
+relative }`, `.math.editing` on the accent, `.math-edit` set as the
+palette (paper, hairline, radius, mono 13px), centred under a display
+chip. README: the rendering paragraph. Smoke: `ILMI_SMOKE=live` written
+(`rangeIn` / `caret` helpers beside `select`), not run: port 1420 and the
+window belonged to a run that was not this session's (a two-hour-old
+`target/debug/ilmi` with its vite), left alone as the ground rules say.
+Tests: 471 (+11 in `reader-view.test.ts`, +1 in `reader.test.ts`, the two
+frozen-marker cases rewritten for the new rule), 25 files; typecheck
+clean; cargo 12.
+Open: the window check (the `live` smoke and its screenshots; a real
+click's focus landing in the field; the editor's width and its place
+under an inline chip near the right edge, `place()` shifting it by
+margin; `execCommand('insertText')` reaching ProseMirror as typing).
+The kickoff's "maxwell's inline formula" is a card's (`^cmx-area`), not
+prose, so the smoke edits the binomial display chip, the only chip in
+maxwell's prose. Escape writes nothing (the plan's bullet had it writing,
+its "done when" did not; the "done when" was followed). An empty field
+removes the chip; a frozen document opens no editor (a click there only
+selects the chip). A caret put at a range's edge by a move keeps the
+markers hidden (Typora's rule), so a click right after `*em*` and then
+Backspace reveals first. Undo after ⏎ restores the chip's text in one
+step but does not reopen the editor; a rebuild of the view (the file
+changed under us) drops an open editor's unwritten TeX. A range that
+straddles a math chip is still not found (per text node, as in 25).
+Milestone 27's list, quote, and code nodes get the marker rule for free
+while their items are textblocks of text nodes (`touched` walks
+`isTextblock`, `rangesAround` the caret's parent, `redrawMarkers` a
+block's text children); a code block should skip the rule, which means
+a check on the node type in `markDecorations` and `redrawMarkers`.
 - Markers follow the caret, as Typora and Obsidian's live preview do: the
   `*`, `**`, `` ` ``, `[`, `](href)`, `![`, `](src)` markers of an inline
   range are shown (dimmed, as now) only while the selection touches that
@@ -2334,17 +2403,22 @@ lines after each; screenshots read.
 
 ## Notes for the next session
 
-Milestones 0–25 are ticked (13 dropped); 26 and 27 under *Live editing*
-are next, in order, both on main (they share the reader). The window
-checks of 21, 24, and 25 are recorded in BUILD-LOG under their entries
-with the fixes they forced (a fetched page is never auto-read as cards and
-the comma rule wants a gloss for a back; the clipper percent-encodes image
-paths; an image with an empty alt is drawn; `[^1]` is not a note). What is
-left is a polish pass over the open items each milestone's notes record
-(21: the popover's height and anchor, one meaning per card, one clitic;
-24: `.html` drops on the old pass, images fetched after landing with no
-cap; 25: an inline image's alt shown beside it, the queue row's inline
-code not read in the window, emphasis across a math chip, no code
+Milestones 0–26 are ticked (13 dropped); 27 under *Live editing* is next,
+on main (it shares the reader with 26). The window checks of 21, 24, and
+25 are recorded in BUILD-LOG under their entries with the fixes they
+forced (a fetched page is never auto-read as cards and the comma rule
+wants a gloss for a back; the clipper percent-encodes image paths; an
+image with an empty alt is drawn; `[^1]` is not a note). 26's window
+check is owed: port 1420 and the window belonged to another run for the
+whole session, so `ILMI_SMOKE=live` is written and unrun; run it first
+when the window is yours (the loop 25's entry describes), read the
+screenshots, fix what it shows, and record it under 26's entry. What is
+left after 27 is a polish pass over the open items each milestone's notes
+record (26: the editor's place near the right edge, undo not reopening
+it; 21: the popover's height and anchor, one meaning per card, one
+clitic; 24: `.html` drops on the old pass, images fetched after landing
+with no cap; 25: an inline image's alt shown beside it, the queue row's
+inline code not read in the window, emphasis across a math chip, no code
 colouring; 19: images and `linear="no"`; 17: media, suspended cards; 14:
 the user's real collection; 10–15: their lists), the plugin directory the
 user set aside ("can wait"), and, with the user, whatever is next. The

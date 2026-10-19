@@ -6,6 +6,130 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-10-18 — milestone 26: live inline, markers around the caret, math edited in place
+
+Done on main; commit `TBD` — *live inline: markers shown only around the
+caret and revealed before a backspace takes them, a formula edited in a
+field under its chip*. Files: `src/reader/plugins.ts` (the marks plugin
+redone over `{ set, edge }`, `mathEdit`, `openMath`, `revealBackward` /
+`revealForward`, `editMath` removed), `src/reader/index.ts`,
+`src/app/Reader.tsx` (`MathView` with its editor, `handleClickOn` /
+`handleClick` as exported functions), `src/app/reader.css`,
+`src/app/smoke.ts` (`rangeIn` / `caret`, `smokeLive`), `src/app/vault.ts`
+(the dispatch line), `README.md`, `src/app/__tests__/reader-view.test.ts`,
+`src/reader/__tests__/reader.test.ts`.
+
+### Done
+
+- Markers follow the caret: a range's `*`, `**`, `` ` ``, `[`, `](href)`,
+  `![`, `](src)` show (dimmed, as before) only while the selection
+  overlaps the range or a collapsed caret sits at an edge the plugin
+  keeps — the range just typed closed, or the one a backspace revealed —
+  and are hidden everywhere else, on editable and frozen documents alike.
+  A selection change redraws the markers of the paragraphs that lost and
+  gained the caret, not the document. Backspace (and forward delete) into
+  a hidden marker reveals it without deleting; the next press is the
+  browser's. Typing `*word*` lights as the closing `*` lands.
+- Math stays rendered: a click on a chip, or ⏎ with it selected, opens a
+  field under it set as the palette, holding the TeX between the dollars,
+  mono, growing with its content; the chip is redrawn on every keystroke
+  that parses, KaTeX's message sits quietly under the field when one does
+  not and the chip stays as it was; ⏎ or a click outside writes the text
+  in one transaction (one write through the reader's debounce), Escape
+  puts the chip back and writes nothing, ⇧⏎ breaks a line in `$$` only,
+  an arrow at the field's end leaves to that side of the chip. `$$` is
+  kept as the span had it; an empty field removes the chip; a span the
+  format would not read as math becomes plain text. Blanks inside math
+  are plain TeX in the field. The faces, the deck, and the queue still
+  hide every marker.
+- README: the rendering paragraph says so. Smoke: `ILMI_SMOKE=live`.
+- Tests: 471 (+11), 25 files; cargo 12.
+
+### Verified
+
+- `npm run typecheck` clean, `npx vitest run` green (25 files, 471),
+  `cargo test` 12: markers shown only for the range under the caret and
+  hidden elsewhere (the sampler's ten, two pairs at a time), the caret
+  moving between two emphasised spans and between two paragraphs, a
+  selection across two spans showing both, a caret moved to a span's
+  edge keeping it rendered, Backspace and Delete into a hidden marker
+  revealing it with the text unchanged and declining once shown, typing
+  `*word*` lighting as it closes and settling after a space, every marker
+  hidden on a frozen document and still hidden when thawed with the caret
+  elsewhere, the selection-to-source mapping over hidden markers still
+  yielding `is *very* important`; the editor opening from the click
+  handler with the span's TeX and taking the focus, re-rendering on input
+  with `data-tex` unchanged until ⏎, one doc-changing transaction on ⏎ and
+  the caret after the chip, none on Escape with the chip restored, the
+  KaTeX message under the field with the chip untouched until the TeX
+  parses, ⏎ on a selected chip opening it, `$$` kept with a `\\` line
+  break, ⇧⏎ refused in `$…$`, ←/→ at the field's ends leaving before or
+  after, a mousedown outside writing, an empty field removing the chip, a
+  leading space making text, a frozen document opening nothing; the
+  state-level chip-editing position following an insert before it and
+  clearing when the chip goes.
+- Not in the window: port 1420 was held for the whole session by a run
+  that was not this one (a `target/debug/ilmi` two hours old, with its
+  vite), left alone as the ground rules say; the single-instance door
+  would have handed a second launch to that window anyway. `ILMI_SMOKE=
+  live` and its screenshots are owed, with what only a browser shows: a
+  real click's focus landing in the field, the editor's width and place
+  under an inline chip near the right edge, `execCommand('insertText')`
+  reaching ProseMirror as typing.
+
+### Not done / open
+
+- The window check (above).
+- The kickoff's "maxwell's inline formula" is a card's (`^cmx-area`), not
+  prose; the smoke edits the binomial display chip, the only chip in
+  maxwell's prose.
+- Undo after ⏎ restores the chip's text in one step but the editor does
+  not reopen; a rebuild of the view (the file changed under us) drops an
+  open editor's unwritten TeX; a range straddling a math chip is still
+  not found (per text node, as in 25).
+- For 27: list, quote, and code nodes get the marker rule while their
+  items are textblocks of text nodes; a code block should skip it (a node
+  type check in `markDecorations` and `redrawMarkers`).
+
+### Decisions worth knowing
+
+- Typora's rule, not Obsidian's: a caret put at a span's edge by a move
+  keeps it rendered; only a span the caret just typed closed, or one a
+  backspace asked for, shows its markers from the edge. That is what
+  makes "backspace reveals first" a real step rather than a side effect,
+  and the plugin keeps the edge with the caret position that earned it so
+  a jump to the other edge does not keep it.
+- Escape writes nothing: the plan's bullet had it writing, its "done
+  when" did not; the "done when" was followed.
+- The editor lives in the node view but is driven by plugin state (a
+  position and a node decoration), so a click, ⏎, and the tests all open
+  it the same way and a doc change moves it along; the view never
+  dispatches from inside `update`.
+- Marker decorations carry a spec so a block's can be found and replaced
+  on their own; everything else in the set stands across a selection
+  change.
+
+### Handoff prompt
+
+```
+Read PLAN.md, FORMAT.md, BUILD-LOG.md, and spec/hashiyah/HANDOFF.md. The
+first unchecked milestone is 27, "Live blocks", under "Live editing" in
+PLAN.md; do that one and only that one, on main, and stop at its "done
+when". First, if the window is yours (port 1420 free, no
+`target/debug/ilmi` running), run milestone 26's owed window check: copy
+the corpus vault to a scratch directory, run `ILMI_SMOKE=live` with the
+screenshot loop 25's entry describes, read the screenshots, fix what it
+shows, and record it under 26's entry here. Then 27: its schema nodes and
+the `rawToNode` / `nodeToRaw` pair, with 26's marker rule applied per
+text range inside them (see 26's notes for the two places a code block
+should skip it). Tooling and verification are as the ground rules and
+the entries below describe. If port 1420 is held by a run that is not
+yours, do not kill it. Suite 471 (25 files), `cargo test` 12, and
+typecheck must be green before a commit.
+```
+
+---
+
 ## 2026-10-18 — milestone 25: rendering, the reader shows Markdown as Markdown
 
 Done on the branch `worktree-agent-a2df4fefff0acc940` (worktree

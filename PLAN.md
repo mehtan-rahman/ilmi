@@ -2257,7 +2257,7 @@ raw text exactly (the tests from 25 guard that), since extracts and cards
 are made from it.
 
 ### [x] 26. Live inline — markers only around the caret, math edited in place
-Done 2026-10-18 on main; commit `TBD`.
+Done 2026-10-18 on main; commit `9c21047`.
 Notes: `src/reader/plugins.ts`: the `marks` plugin's state is `{ set,
 edge }`. A range's markers (`md-mark`, spec `{ marker: true }`) show while
 the selection overlaps it (`sel.from < to && sel.to > from`) or while a

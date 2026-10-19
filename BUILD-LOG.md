@@ -8,7 +8,7 @@ was verified, what was not, and the prompt to resume with.
 
 ## 2026-10-18 — milestone 26: live inline, markers around the caret, math edited in place
 
-Done on main; commit `TBD` — *live inline: markers shown only around the
+Done on main; commit `9c21047` — *live inline: markers shown only around the
 caret and revealed before a backspace takes them, a formula edited in a
 field under its chip*. Files: `src/reader/plugins.ts` (the marks plugin
 redone over `{ set, edge }`, `mathEdit`, `openMath`, `revealBackward` /

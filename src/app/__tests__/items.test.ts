@@ -12,7 +12,7 @@ import { advanceRead, advanceWrite, gradeItem, queue, sameItem, type CardItem, t
 import { nodeFs } from '../../vault/node-fs.js';
 import { Vault } from '../../vault/index.js';
 import {
-  cleanBudget, dayLabel, dueLabel, dueToday, firstWords, gapLabels, intervalLabel, isFresh, kindTag, ownBlank, refLine, sessionItems, snippetOf, sourceLabel, summary,
+  cleanBudget, dayLabel, dueLabel, dueToday, firstWords, gapLabels, intervalLabel, isFresh, kindTag, ownBlank, pathLabel, refLine, sessionItems, snippetOf, sourceLabel, summary,
 } from '../items.js';
 import { INTAKE, SESSION, queueId, queueScope, tabKindOf, titleOf } from '../names.js';
 
@@ -50,6 +50,16 @@ describe('labels', () => {
     expect(sourceLabel(card({ path: 'papers/wozniak-1990.md', section: '§2 — twenty rules' }), docs)).toBe('wozniak-1990 — twenty rules');
     expect(sourceLabel(card({ path: 'papers/wozniak-1990.md' }), docs)).toBe('wozniak-1990');
     expect(sourceLabel(card({ path: 'x.md' }), { 'x.md': { type: 'deck', frozen: false, cards: 0, due: 0, title: 'german · A1' } })).toBe('german · A1');
+    // the queue names the file: its path without `.md`, the folders kept, the title left aside
+    expect(pathLabel('sources/attention.md')).toBe('sources/attention');
+    expect(pathLabel('a/b/c.md')).toBe('a/b/c');
+    expect(pathLabel('notes.markdown')).toBe('notes.markdown');
+    const titled = { 'sources/attention.md': { type: 'source' as const, frozen: true, cards: 0, due: 0, title: 'Attention Is All You Need' } };
+    expect(sourceLabel({ kind: 'read', path: 'sources/attention.md', sched: {}, pos: 0, total: 3, dueAt: NOW, pri: 2 }, titled, 'path')).toBe('sources/attention');
+    expect(sourceLabel({ kind: 'read', path: 'sources/attention.md', sched: {}, pos: 0, total: 3, dueAt: NOW, pri: 2 }, titled, 'title')).toBe('Attention Is All You Need');
+    expect(sourceLabel({ kind: 'read', path: 'sources/attention.md', sched: {}, pos: 0, total: 3, dueAt: NOW, pri: 2 }, titled)).toBe('Attention Is All You Need');
+    expect(sourceLabel(card({ path: 'papers/wozniak-1990.md', section: '§2 — twenty rules' }), docs, 'path')).toBe('papers/wozniak-1990 — twenty rules');
+    expect(sourceLabel(card({ path: 'papers/wozniak-1990.md' }), docs, 'path')).toBe('papers/wozniak-1990');
     expect(kindTag(card({ form: 'qa' }))).toBe('q&a');
     expect(kindTag({ kind: 'read', path: 'a.md', sched: {}, pos: 0, total: 3, dueAt: NOW, pri: 2 })).toBe('read');
     expect(isFresh(card())).toBe(true);

@@ -3,6 +3,7 @@ import { BottomStrip } from './BottomStrip.js';
 import { Canvas } from './Canvas.js';
 import { listenForClips } from './clipper.js';
 import { Inspector } from './Inspector.js';
+import { listenForMenu } from './menu.js';
 import { Palette } from './Palette.js';
 import { SavedQueries } from './Queue.js';
 import { TopStrip } from './TopStrip.js';
@@ -71,6 +72,7 @@ export function App() {
   useEffect(() => {
     openInitialVault().catch((e: unknown) => console.error(e));
     listenForClips();
+    listenForMenu();
   }, []);
 
   // the handles: drag to resize; drag to the edge to hide, out again to show
@@ -104,7 +106,8 @@ export function App() {
       if (e.key === '\\') {
         e.preventDefault();
         setPanes((s) => splitPane(s, s.active));
-      } else if (k === 'w') {
+      } else if (k === 'w' && !e.shiftKey) {
+        // ⌘⇧W is the File menu's Close Collection
         e.preventDefault();
         setPanes((s) => closeTab(s, s.active, s.panes[s.active]?.active ?? 0));
         rememberTab();

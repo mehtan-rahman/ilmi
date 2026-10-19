@@ -6,6 +6,168 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-10-19 — milestone 28: from use, the path in the queue, a context menu that works anywhere, a File menu
+
+Done on main; commit `TBD` — *from use: the queue row names its file by its
+path, the sidebar's menu opens anywhere in it and `move to…` on a click, a
+File menu with the collection commands and Open Recent; the use smoke*.
+Files: `src/app/items.ts` (`pathLabel`, `sourceLabel`'s `by`), `src/app/
+Queue.tsx`, `src/app/queue.css`, `src/app/store.ts` (`queueTitles`),
+`src/app/Tweaks.tsx`, `src/app/Tree.tsx` (the sidebar listener,
+`placeMenu`, the click), `src/app/Lenses.tsx`, `src/app/menu.ts` (new),
+`src/app/App.tsx`, `src/app/Palette.tsx`, `src-tauri/src/lib.rs` (the
+File menu, the `menu` event, `set_recent_vaults`), `src/app/smoke.ts`
+(`smokeUse`; the deck and welcome smokes), `src/app/vault.ts` (the
+dispatch line), `README.md`, `src/app/__tests__/items.test.ts`,
+`src/app/__tests__/tree.test.ts` (new), `src/app/__tests__/menu.test.ts`
+(new).
+
+### Done
+
+- The queue row's source line is the kind tag and then the item's
+  vault-relative path without its `.md`, the folders kept
+  (`sources/attention`), in the line's mono at its size, read as written
+  (the uppercase the line had is turned off for the path; the tag and
+  `new` keep their caps); a card's section still follows after the dash.
+  `sourceLabel(item, docs, by)` is the one place, `by` defaulting to
+  `title`, so the session's source line, its tab, and the inspector keep
+  the document's name. A tweak, `queue shows titles` (default off, kept
+  with the other tweaks in the webview's storage), brings the old line
+  back.
+- The sidebar's context menu opens from a right-click anywhere in the
+  sidebar: the `workspace` heading, the empty space under the rows, the
+  saved queries. The tree's box ends at its last row, so `Tree.tsx` puts
+  a native `contextmenu` listener on the nearest `.side` (its own box
+  when there is none) that ignores a `.trow` and the menu itself and
+  opens the root's menu, new items landing at the root and `add a
+  source` into it; a row's own menu is unchanged. Escape and an outside
+  press already closed it (kept, tested); the menu now also stays inside
+  the window at the bottom edge (`placeMenu`, a layout effect on the menu
+  state in the tree and the deck lens), as `MENU_W` keeps it at the
+  right.
+- `move to…` opens its list on a click in the tree and in the deck lens;
+  nothing opens on `mouseenter` any more, and the pointer leaving the
+  list no longer closes it (`onMouseLeave` on `.sub-wrap` gone): the list
+  closes with the menu, on a choice, or from `◂ move to…`.
+- A File menu in the native menu bar between `ilmi` and Edit: `New
+  Collection…` ⌘⇧N, `Open Collection…` ⌘O, `Open Recent` (a submenu of
+  the recents by name, newest first, rebuilt from the renderer whenever
+  the recents change through the `set_recent_vaults` command; disabled
+  when empty), a separator, `Close Collection` ⌘⇧W (⌘W stays the tab;
+  `App.tsx`'s ⌘W now ignores shift). On Windows and Linux the same File
+  (with a separator and Quit after) heads File, Edit, Window, set there
+  too. Every item's id reaches the webview as one `menu` event
+  (`Builder::on_menu_event` + `Emitter::emit`); `src/app/menu.ts`
+  listens once (`listenForMenu`, from `App` beside `listenForClips`,
+  guarded outside Tauri) and `runMenu(id, fx)` dispatches: Open → the
+  folder picker then the vault; New → the parent picker, then the open
+  vault closed with its tabs and the welcome's name field (a dismissed
+  picker leaves the vault open); Close → the welcome; `recent:<path>` →
+  `openVault(path)`. `menuAction(id)` is the pure half. The palette's
+  three commands (`open collection…`, `new collection…`, `close
+  collection`) carry the menu's ids and go through `runMenu`, and the
+  recents are already its `vaults` group, so every item has a path
+  without the native menu.
+- README: the menu and its keys, the sidebar right-click, the tweak, the
+  queue row. Smoke: `ILMI_SMOKE=use` written; the deck smoke clicks `move
+  to…`; the welcome smoke runs `close collection`.
+- Tests: 506 (+13), 28 files (+2); cargo 12, no warnings.
+
+### Verified
+
+- `npm run typecheck` clean, `npx vitest run` green (28 files, 506),
+  `cd src-tauri && cargo check` clean with no warnings and `cargo test`
+  12: the path label with and without `.md`, by path and by title and by
+  default, a card's section after either; in jsdom with a real React root
+  under a `.side` as `App.tsx` lays it out, the root's menu from the
+  sidebar's empty space (`defaultPrevented`, the five entries, the x kept)
+  and from the heading, a row's own with rename / `move to…` / delete and
+  one menu at a time, `move to…` not opening on `mouseover` or
+  `mouseenter` and opening on a click with the folders listed, the list
+  surviving `mouseleave` and `mouseout`, `◂ move to…` back, Escape closing
+  it with the list open, an outside mousedown closing it and one inside
+  not, the right edge (`MENU_W`) and the bottom edge (a stubbed rect,
+  the top moved up); the menu ids (`new`, `open`, `close`,
+  `recent:<path>` with a colon in the path, the empties and strangers
+  null) and the dispatch with the pickers stubbed (Open → `pickVault`;
+  New → `pickVaultParent` then `closeVault`, nothing more when
+  dismissed; Close; Recent → `openVault(path)`; a stranger does
+  nothing), the recents as rows.
+- `cargo check` compiles the menu: `MenuItemBuilder::with_id(...).
+  accelerator(...)`, `SubmenuBuilder::with_id(...).enabled(false)`,
+  `MenuBuilder::new(app).item(&app_menu).items(&[&file, &edit,
+  &window])`, `Builder::on_menu_event`, `AppHandle::menu()` →
+  `Menu::get("file")` → `Submenu::get("recent")` → `items` / `remove` /
+  `append` / `set_enabled` (Tauri runs each on the main thread).
+
+### Not verified
+
+- Nothing in the window: port 1420 was held by the user's own `npm run
+  tauri dev` for the whole session, so `ILMI_SMOKE=use` was written and
+  not run. Unseen: the path line at 10px mono beside the uppercase tag;
+  the real menu bar with its four items and shortcuts; Open Recent
+  filling in at launch and after a vault opens (the command runs against
+  `app.menu()`, which is set in `setup` before the webview's first
+  `invoke`, so it should be there); ⌘⇧N / ⌘O / ⌘⇧W taken by the menu and
+  not by the webview; the sidebar's right-click with the real layout
+  (the listener is on `.side`, which the test reproduces); the menu
+  shifted at the real bottom edge. The Windows and Linux branch (`quit`
+  after a separator, no app menu) is written under `cfg` and not
+  compiled here.
+
+### Not done / open
+
+- One word for it: the menu and the palette say collection (the user's
+  word, the spec's), the welcome, its foot, the README, and every other
+  string say vault. The user's to choose; then a sweep.
+- Open Recent lists every recent including the open vault (the palette's
+  `vaults` group leaves the open one out); choosing the open one closes
+  and reopens it.
+- A right-click on a saved query row opens the root's menu (it is in the
+  sidebar and is not a tree row); harmless, possibly surprising.
+- On Windows and Linux a menu bar now shows where there was none.
+
+### Decisions worth knowing
+
+- The handler moved up, not the tree down: the saved queries sit under
+  the tree, and a tree filling the sidebar's height would have pinned
+  them to the bottom. A native listener on the nearest `.side` keeps
+  `App.tsx` untouched and lets a test mount the tree under a bare
+  `.side`.
+- Open Recent is dynamic rather than one `Open Recent…` item: Tauri's
+  `Submenu::items` / `remove` / `append` are cheap and main-threaded, and
+  the recents are already a store field, so one subscription keeps the
+  submenu in step. If it misbehaves in the window, the fallback is the
+  single item opening the palette on `vaults`.
+- The palette's commands carry the menu's ids (`open`, `new`, `close`)
+  and call `runMenu`, so there is one dispatch and the smoke can drive
+  the menu's path (`runMenu('recent:<path>')`) without the native menu.
+
+### Handoff prompt
+
+```
+Read PLAN.md, FORMAT.md, BUILD-LOG.md, and spec/hashiyah/HANDOFF.md.
+Every milestone in PLAN.md is ticked (0–28; 13 dropped). There is no
+first unchecked milestone. If the window is yours (port 1420 free, the
+screen unlocked), run `ILMI_SMOKE=use` on a scratch copy of the corpus
+vault and read its captures by eye: the queue's path line, the sidebar
+menu from the empty space, `move to…` on a click, the welcome after
+`close collection`, the tree back; then try the File menu by hand (the
+four items, ⌘⇧N ⌘O ⌘⇧W, Open Recent filling in). Run `ILMI_SMOKE=blocks`
+too; 27's look is still unseen. Fix what they show and record it under
+28's and 27's entries. Then ask the user what is next: one word (vault or
+collection) across the welcome, the menu, and the palette, the polish
+list under "Notes for the next session" in PLAN.md, the plugin directory
+they set aside, tables edited in place, or something new, and write it
+into PLAN.md as a milestone with a "done when" before building. Tooling
+and verification are as the ground rules and the entries below describe.
+If port 1420 is held by a run that is not yours, do not kill it. Suite
+506 (28 files), `cargo test` 12, and typecheck must be green before a
+commit.
+```
+
+---
+
 ## 2026-10-18 — milestone 27: live blocks, lists, quotes, and code edited as themselves
 
 Done on main; commit `05d9ead` — *live blocks: fenced code, lists, and quotes

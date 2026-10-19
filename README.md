@@ -40,8 +40,11 @@ The app opens on the vault it had open last; the welcome (the wordmark, `open
 vault`, `new vault`, and the vaults opened before as rows) shows when there is
 none, when that folder is not where it was, or when `reopen the last vault on
 start` is off in the tweaks. A new vault starts with `start here.md`, one short
-source with a card in it. While a vault is open the palette has `open vault…`,
-`new vault…`, `close vault`, and the other recent vaults under `vaults`.
+source with a card in it. While a vault is open the File menu has `New
+Collection…` (⌘⇧N), `Open Collection…` (⌘O), `Open Recent` (the vaults opened
+before, by name), and `Close Collection` (⌘⇧W), and the palette has the same
+as `open collection…`, `new collection…`, `close collection`, and the other
+recent vaults under `vaults`.
 
 In a dev build, `ILMI_VAULT=/path/to/vault npm run tauri dev` opens that vault
 at launch instead of asking for one. Add `ILMI_SMOKE=1` to run every tree
@@ -57,13 +60,16 @@ seeding its rows with `ILMI_VAULT`; the other modes are listed at the top of
 ⌘K               palette: open anything by name, or run a command
 click            open a folder or document in the active tab
 ⌘-click          open in a new tab      ⌘⇧-click   open in the next pane
-F2 / dbl-click   rename                 right-click  new, rename, move to, delete
+F2 / dbl-click   rename                 right-click  new, rename, move to, delete;
+                                                     anywhere else in the sidebar, new at the root
+⌘⇧N              new collection         ⌘O           open collection
+⌘⇧W              close collection
 ⌘W               close tab              ⌘\           split pane
 ⌘⇧E              sidebar                ⌘⇧I          inspector
 ⌘,               tweaks: theme, accent, density, reopen the last vault on start,
-                 download images when clipping, show remote images (kept
-                 outside the vault); the day's budget, where clippings go,
-                 and plugins (kept in the vault's .ilmi)
+                 download images when clipping, show remote images, queue
+                 shows titles (kept outside the vault); the day's budget,
+                 where clippings go, and plugins (kept in the vault's .ilmi)
 
 on the welcome   ⏎ open the selected vault, j k move, o open vault, n new vault;
                  a folder dropped on it opens as a vault
@@ -73,7 +79,8 @@ in a PDF         the same on a page; / search, g go to a page, [ ] pages;
                  text in the meta row reads the Markdown instead
 in a deck        j k move, ⌫ delete the selected card, m make a card;
                  × on a row, or right-click, also deletes one; right-click moves it to another deck
-in the queue     j k move, ⏎ enter, o open one
+in the queue     j k move, ⏎ enter, o open one; a row names its file by its
+                 path (`queue shows titles` in the tweaks brings the title back)
 in a session     [ ] prev / next; space reveal, 1-4 grade; ⏎ read on or
                  worked on it, p postpone, d done
 ```

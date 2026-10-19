@@ -35,11 +35,13 @@ export interface Tweaks {
   clipImages: boolean;
   /** Draw images the text names by an absolute address; off, their alt stands in. */
   remoteImages: boolean;
+  /** The queue row names its document by its title; off, by its path. */
+  queueTitles: boolean;
 }
 export const DENSITY_MIN = 0.6;
 export const DENSITY_MAX = 1.6;
 const TWEAKS_KEY = 'ilmi.tweaks';
-const DEFAULT_TWEAKS: Tweaks = { theme: 'light', accent: 'gold', density: 1, reopen: true, clipImages: true, remoteImages: true };
+const DEFAULT_TWEAKS: Tweaks = { theme: 'light', accent: 'gold', density: 1, reopen: true, clipImages: true, remoteImages: true, queueTitles: false };
 
 function loadTweaks(): Tweaks {
   try {
@@ -53,6 +55,7 @@ function loadTweaks(): Tweaks {
       reopen: typeof t.reopen === 'boolean' ? t.reopen : DEFAULT_TWEAKS.reopen,
       clipImages: typeof t.clipImages === 'boolean' ? t.clipImages : DEFAULT_TWEAKS.clipImages,
       remoteImages: typeof t.remoteImages === 'boolean' ? t.remoteImages : DEFAULT_TWEAKS.remoteImages,
+      queueTitles: typeof t.queueTitles === 'boolean' ? t.queueTitles : DEFAULT_TWEAKS.queueTitles,
     };
   } catch {
     return DEFAULT_TWEAKS;
@@ -155,6 +158,8 @@ export interface AppState {
   clipImages: boolean;
   /** Show images from the web in the reader. A tweak, kept with the others. */
   remoteImages: boolean;
+  /** The queue row shows the document's title rather than its path. A tweak, kept with the others. */
+  queueTitles: boolean;
   /** The vaults opened before, newest first; in the webview's storage. */
   recents: Recent[];
   /** Recent vaults whose folder was not there when last looked for. */
@@ -199,6 +204,7 @@ export interface AppState {
   setReopen(on: boolean): void;
   setClipImages(on: boolean): void;
   setRemoteImages(on: boolean): void;
+  setQueueTitles(on: boolean): void;
   /** Replace the recents list; it is saved as the tweaks are. */
   setRecents(list: Recent[]): void;
   setPanes(next: Panes | ((cur: Panes) => Panes)): void;
@@ -213,6 +219,7 @@ export const useApp = create<AppState>((set, get) => ({
   reopen: tweaks.reopen,
   clipImages: tweaks.clipImages,
   remoteImages: tweaks.remoteImages,
+  queueTitles: tweaks.queueTitles,
   recents: loadRecents(),
   gone: [],
   started: false,
@@ -248,11 +255,12 @@ export const useApp = create<AppState>((set, get) => ({
   setReopen: (reopen) => { set({ reopen }); persist(get()); },
   setClipImages: (clipImages) => { set({ clipImages }); persist(get()); },
   setRemoteImages: (remoteImages) => { set({ remoteImages }); persist(get()); },
+  setQueueTitles: (queueTitles) => { set({ queueTitles }); persist(get()); },
   setRecents: (recents) => { set({ recents }); saveRecents(recents); },
   setPanes: (next) => set({ panes: typeof next === 'function' ? next(get().panes) : next }),
 }));
 
-const persist = (s: AppState) => saveTweaks({ theme: s.theme, accent: s.accent, density: s.density, reopen: s.reopen, clipImages: s.clipImages, remoteImages: s.remoteImages });
+const persist = (s: AppState) => saveTweaks({ theme: s.theme, accent: s.accent, density: s.density, reopen: s.reopen, clipImages: s.clipImages, remoteImages: s.remoteImages, queueTitles: s.queueTitles });
 
 declare global {
   interface Window {

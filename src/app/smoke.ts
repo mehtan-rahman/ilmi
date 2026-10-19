@@ -96,6 +96,14 @@
 // ⇧Tab, a task box typed and clicked, ⏎ on an empty item to leave; ⏎ at the
 // end of the quote and typing, ⏎ twice to leave; ⏎, Tab, and typing in the
 // code block, ⌘⏎ to step out; the file's lines logged after each write.
+// `ILMI_SMOKE=use` opens the day's queue and logs its first three rows'
+// source lines (the path after the kind tag), turns `queue shows titles` on
+// from the tweaks panel and logs them again, right-clicks the sidebar's
+// empty space and logs the root menu's entries, right-clicks a row, hovers
+// `move to…` (nothing opens), clicks it and logs the list, steps back with
+// `◂ move to…`, closes with Escape, runs the palette's `close collection`
+// and logs the welcome, then reopens the vault through the menu's dispatch
+// (`recent:<path>`, as File → Open Recent sends it) and logs the tree.
 // `ILMI_SMOKE=welcome` runs before any vault opens: it seeds the recents
 // with the scratch vault (`ILMI_VAULT`) and a path that does not exist,
 // turns `reopen the last vault on start` off, reads the welcome's rows and
@@ -114,6 +122,7 @@ import { cardLabel } from './chrome.js';
 import { GLYPH, SESSION, queueId, titleOf } from './names.js';
 import { vaultName } from './recents.js';
 import { useApp } from './store.js';
+import { runMenu } from './menu.js';
 import { createNode, currentVault, moveNode, openCard, openIntake, openNode, openSession, removeNode, renameNode, setInspector, startFromRecents } from './vault.js';
 import { activeTab } from './panes.js';
 
@@ -677,7 +686,7 @@ export async function smokeDeck(vault: Vault): Promise<void> {
     mover.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: mr.left + 80, clientY: mr.top + mr.height / 2 }));
     const menu2 = await until(() => view.querySelector<HTMLElement>('.ctx-menu'));
     log(`move: dest ${dest} "${destTitle}"; menu: ${Array.from(menu2.querySelectorAll('.ci')).map((b) => b.textContent).join(' | ')}; selected ${JSON.stringify(useApp.getState().selectedCard)}`);
-    menu2.querySelector<HTMLElement>('.ci.has-sub')!.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+    menu2.querySelector<HTMLElement>('.ci.has-sub')!.click();
     const sub = await until(() => menu2.querySelector<HTMLElement>('.sub-scroll'));
     const items = Array.from(sub.querySelectorAll<HTMLElement>('.ci'));
     log(`move: submenu: ${items.map((b) => b.textContent).join(' | ')}; back "${menu2.querySelector('.ci.back')?.textContent}"`);
@@ -1913,7 +1922,7 @@ export async function smokeWelcome(scratch: string | null): Promise<void> {
     await shot('welcome-opened');
 
     // close from the palette: back to the welcome, the title plain
-    await viaPalette('close vault', (r) => r.dataset.t === 'command' && r.querySelector('.pt')?.textContent === 'close vault');
+    await viaPalette('close collection', (r) => r.dataset.t === 'command' && r.querySelector('.pt')?.textContent === 'close collection');
     await until(() => q('.welcome'));
     await sleep(400);
     log(`closed: vault ${useApp.getState().vault}; title "${await title()}"; rows: ${rows()}`);
@@ -2462,6 +2471,137 @@ export async function smokeBlocks(vault: Vault): Promise<void> {
 
     const final = await vault.read(SAMPLER, true);
     log(`file: ${final.doc.blocks.length} blocks, raw ${final.doc.blocks.filter((b) => b.kind === 'raw').length}, diagnostics ${final.diagnostics.length}; reader blocks ${surface.children.length}`);
+    log('done');
+  } catch (e) {
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+export async function smokeUse(vault: Vault): Promise<void> {
+  const log = (s: string) => info(`smoke use: ${s}`);
+  const shot = async (name: string, ms = 10000) => { await sleep(600); log(`shot: ${name}`); await sleep(ms); };
+  const q = <T extends Element>(sel: string) => document.querySelector<T>(sel);
+  const qa = <T extends Element>(sel: string) => Array.from(document.querySelectorAll<T>(sel));
+  const key = (el: Element | Window, k: string) => el.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));
+  const type = (el: HTMLInputElement, text: string) => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(el, text);
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  };
+  const contextmenu = (el: Element, x: number, y: number) => el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: x, clientY: y }));
+  /** The first three rows' source lines: the kind tag, then the label, with the line's caps as drawn. */
+  const srcLines = () => qa<HTMLElement>('.qlist li[data-el] .src').slice(0, 3).map((s) => `[${s.querySelector('.kindtag')?.textContent}] "${Array.from(s.childNodes).filter((n) => n.nodeType === Node.TEXT_NODE).map((n) => n.textContent).join('')}" (${getComputedStyle(s).textTransform}, ${getComputedStyle(s).fontFamily.split(',')[0]}, by ${s.dataset.by})`).join(' | ');
+  const entries = () => qa<HTMLElement>('.ctx-menu .ci').map((e) => e.textContent).join(' | ');
+  const menuBox = () => { const m = q<HTMLElement>('.ctx-menu'); if (!m) return 'none'; const r = m.getBoundingClientRect(); return `at ${Math.round(r.left)},${Math.round(r.top)} ${Math.round(r.width)}×${Math.round(r.height)}, bottom ${Math.round(r.bottom)} of ${window.innerHeight}`; };
+  const treeRows = () => qa<HTMLElement>('.edit-tree .trow').map((r) => `${r.dataset.kind}:${r.querySelector('.name')?.textContent}`).join(', ');
+  const tweakRow = async (label: string) => until(() => qa<HTMLElement>('.tweaks .tw-row').find((r) => r.querySelector('.tw-lbl')?.textContent?.startsWith(label)));
+  const viaPalette = async (text: string, pick: (r: HTMLElement) => boolean) => {
+    useApp.setState({ paletteOpen: true });
+    const input = await until(() => q<HTMLInputElement>('.palette-input input'));
+    type(input, text);
+    await sleep(150);
+    const list = qa<HTMLElement>('.palette-row');
+    const at = list.findIndex(pick);
+    log(`palette "${text}": ${list.length} rows, picked ${at}: ${list.slice(0, 4).map((r) => `[${r.dataset.t}] ${r.querySelector('.pt')?.textContent}`).join(' / ')}`);
+    for (let i = 0; i < at; i++) key(input, 'ArrowDown');
+    key(input, 'Enter');
+    await until(() => (q('.palette-overlay') ? null : true));
+  };
+  try {
+    // the queue: the path after the kind tag, mono, as written
+    openNode(queueId('today'));
+    await until(() => q('.qlist li[data-el]'));
+    await sleep(400);
+    log(`queue rows ${qa('.qlist li[data-el]').length}; titles ${useApp.getState().queueTitles}; ${srcLines()}`);
+    await shot('use-queue-paths');
+    useApp.setState({ tweaksOpen: true });
+    const row = await tweakRow('queue shows titles');
+    const buttons = Array.from(row.querySelectorAll<HTMLButtonElement>('button'));
+    log(`tweaks row "${row.querySelector('.tw-lbl')?.textContent}": ${buttons.map((b) => `${b.textContent}${b.dataset.active === '1' ? '*' : ''}`).join(' ')}`);
+    buttons.find((b) => b.textContent === 'on')?.click();
+    await sleep(300);
+    log(`titles on: ${useApp.getState().queueTitles}; stored ${localStorage.getItem('ilmi.tweaks')?.includes('"queueTitles":true')}; ${srcLines()}`);
+    await shot('use-queue-titles', 6000);
+    buttons.find((b) => b.textContent === 'off')?.click();
+    await sleep(300);
+    useApp.setState({ tweaksOpen: false });
+    log(`titles off: ${srcLines()}`);
+
+    // the sidebar's empty space: the root's menu
+    const side = await until(() => q<HTMLElement>('.side'));
+    const last = qa<HTMLElement>('.side .tree .row').pop()!;
+    const sr = side.getBoundingClientRect();
+    const lr = last.getBoundingClientRect();
+    const y = Math.min(sr.bottom - 12, lr.bottom + 40);
+    const hit = document.elementFromPoint(sr.left + 30, y);
+    contextmenu(hit ?? side, sr.left + 30, y);
+    await until(() => q('.ctx-menu'));
+    await sleep(200);
+    log(`right-click on the sidebar at ${Math.round(sr.left + 30)},${Math.round(y)} (hit ${hit?.className || hit?.tagName}, below the last row by ${Math.round(y - lr.bottom)}): menu ${menuBox()}; entries ${entries()}`);
+    await shot('use-sidebar-menu');
+    key(window, 'Escape');
+    await sleep(100);
+    log(`escape: menu ${menuBox()}`);
+    // a heading too
+    const h6 = q<HTMLElement>('.side h6')!;
+    const hr = h6.getBoundingClientRect();
+    contextmenu(h6, hr.left + 10, hr.top + 6);
+    await until(() => q('.ctx-menu'));
+    log(`right-click on the heading: entries ${entries()}`);
+    document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    await sleep(100);
+    log(`outside press: menu ${menuBox()}`);
+
+    // a row's menu: move to… on a click, not on hover
+    const target = qa<HTMLElement>('.edit-tree .trow').find((r) => r.dataset.kind !== 'folder')!;
+    const tr = target.getBoundingClientRect();
+    contextmenu(target, tr.left + 60, tr.top + tr.height / 2);
+    const menu = await until(() => q<HTMLElement>('.ctx-menu'));
+    log(`right-click on "${target.querySelector('.name')?.textContent}": entries ${entries()}`);
+    const hasSub = menu.querySelector<HTMLElement>('.ci.has-sub')!;
+    hasSub.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+    hasSub.dispatchEvent(new MouseEvent('mouseenter'));
+    await sleep(250);
+    log(`hover over move to…: list ${q('.ctx-menu .sub-scroll') ? 'OPEN' : 'closed'}; entries ${entries()}`);
+    hasSub.click();
+    await until(() => q('.ctx-menu .sub-scroll'));
+    await sleep(100);
+    log(`click on move to…: list ${qa('.ctx-menu .sub-scroll .ci').map((e) => e.textContent).join(' | ')}; back "${q('.ctx-menu .ci.back')?.textContent}"; menu ${menuBox()}`);
+    await shot('use-move-to');
+    q<HTMLElement>('.ctx-menu .sub-wrap')!.dispatchEvent(new MouseEvent('mouseleave'));
+    await sleep(150);
+    log(`pointer out of the list: list ${q('.ctx-menu .sub-scroll') ? 'still open' : 'CLOSED'}`);
+    q<HTMLElement>('.ctx-menu .ci.back')!.click();
+    await sleep(100);
+    log(`◂ move to…: list ${q('.ctx-menu .sub-scroll') ? 'open' : 'closed'}; entries ${entries()}`);
+    key(window, 'Escape');
+    await sleep(100);
+    log(`escape: menu ${menuBox()}`);
+
+    // the menu near the bottom edge, from the sidebar's lowest point
+    contextmenu(side, sr.left + 30, window.innerHeight - 8);
+    await until(() => q('.ctx-menu'));
+    await sleep(100);
+    log(`right-click at the bottom edge (y ${window.innerHeight - 8}): menu ${menuBox()}`);
+    await shot('use-menu-bottom', 6000);
+    key(window, 'Escape');
+
+    // close from the palette: the welcome
+    const here = vault.root;
+    await viaPalette('close collection', (r) => r.dataset.t === 'command' && r.querySelector('.pt')?.textContent === 'close collection');
+    await until(() => q('.welcome'));
+    await sleep(400);
+    log(`closed: vault ${useApp.getState().vault}; welcome ${!!q('.welcome')}; rows ${qa('.welcome-row .pt').map((r) => r.textContent).join(', ')}; tabs ${qa('.tabbar .tab').length}`);
+    await shot('use-welcome');
+
+    // back through the menu's own path, as File → Open Recent sends it
+    const recent = useApp.getState().recents.find((r) => r.path === here);
+    log(`recents: ${useApp.getState().recents.map((r) => r.name).join(', ')}; reopening ${recent?.name} via recent:<path>`);
+    const action = await runMenu(`recent:${here}`);
+    await until(() => (useApp.getState().vault === here ? true : null), 10000);
+    await until(() => q('.edit-tree .trow'));
+    await sleep(600);
+    log(`reopened: action ${JSON.stringify(action)}; vault ${useApp.getState().vault}; tree ${treeRows()}; tab "${q('.tabbar .tab[data-active="1"] .title')?.textContent}"`);
+    await shot('use-reopened');
     log('done');
   } catch (e) {
     log(`failed: ${e instanceof Error ? e.message : String(e)}`);

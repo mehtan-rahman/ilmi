@@ -67,11 +67,18 @@ export function gapLabels(sched: CardSchedule | undefined, now: Date): Record<Gr
   return { 1: gapLabel(p[1], now), 2: gapLabel(p[2], now), 3: gapLabel(p[3], now), 4: gapLabel(p[4], now) };
 }
 
-/** The document, and for a card the section it sits in: `wozniak-1990 — the premise`. */
-export function sourceLabel(item: QueueItem, docs: Record<string, DocInfo>): string {
-  const title = docs[item.path]?.title ?? nameOf(item.path);
-  if (item.kind !== 'card' || !item.section) return title;
-  return `${title} — ${item.section.replace(/^§\d+\s*—\s*/, '')}`;
+/** The vault-relative path without its `.md`, the folders kept: `papers/wozniak-1990`. */
+export const pathLabel = (path: string): string => path.replace(/\.md$/, '');
+
+/**
+ * The document, and for a card the section it sits in: `wozniak-1990 — the
+ * premise`. By `title` (the session, the inspector, the deck) the document's
+ * name; by `path` (the queue, a list of files) its path without `.md`.
+ */
+export function sourceLabel(item: QueueItem, docs: Record<string, DocInfo>, by: 'title' | 'path' = 'title'): string {
+  const name = by === 'path' ? pathLabel(item.path) : docs[item.path]?.title ?? nameOf(item.path);
+  if (item.kind !== 'card' || !item.section) return name;
+  return `${name} — ${item.section.replace(/^§\d+\s*—\s*/, '')}`;
 }
 
 /** The first `n` words of a text, one line. */

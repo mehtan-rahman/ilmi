@@ -1,7 +1,8 @@
 // The tweaks panel: theme, accent, density, whether the last vault reopens
 // on start, whether a clipped page's images are downloaded, whether images
-// from the web are shown, the day's budget, and where clippings land. ⌘,
-// opens it. The first six live in the webview's storage, not in any vault;
+// from the web are shown, whether the queue names documents by title, the
+// day's budget, and where clippings land. ⌘, opens it. The first seven live
+// in the webview's storage, not in any vault;
 // the budget and the clippings folder are the open vault's, in its
 // `.ilmi/state.json`.
 
@@ -70,6 +71,7 @@ export function Tweaks() {
   const reopen = useApp((s) => s.reopen);
   const clipImages = useApp((s) => s.clipImages);
   const remoteImages = useApp((s) => s.remoteImages);
+  const queueTitles = useApp((s) => s.queueTitles);
   const vault = useApp((s) => s.vault);
   const budget = useApp((s) => s.budget);
   const clipDir = useApp((s) => s.clipDir);
@@ -137,6 +139,13 @@ export function Tweaks() {
         <div className="tw-seg">
           <button type="button" data-active={remoteImages ? '1' : '0'} onClick={() => useApp.getState().setRemoteImages(true)}>on</button>
           <button type="button" data-active={remoteImages ? '0' : '1'} onClick={() => useApp.getState().setRemoteImages(false)}>off</button>
+        </div>
+      </div>
+      <div className="tw-row">
+        <span className="tw-lbl">queue shows titles</span>
+        <div className="tw-seg">
+          <button type="button" data-active={queueTitles ? '1' : '0'} onClick={() => useApp.getState().setQueueTitles(true)}>on</button>
+          <button type="button" data-active={queueTitles ? '0' : '1'} onClick={() => useApp.getState().setQueueTitles(false)}>off</button>
         </div>
       </div>
       {vault !== null && (

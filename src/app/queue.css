@@ -182,6 +182,8 @@
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
+/* the path reads as written: the kind tag and `new` keep their caps */
+.qlist .body .src[data-by="path"] { text-transform: none; letter-spacing: 0; }
 .qlist li[data-fresh="1"] .body .src::after {
   content: "new";
   margin-left: 8px;

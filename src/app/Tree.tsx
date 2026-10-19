@@ -5,10 +5,11 @@
 //
 //  · click            open the node as a lens; the chevron alone folds
 //  · dbl-click / F2   inline rename
-//  · right-click      new source / folder / deck / draft, add a source (the intake), rename, move to…, delete
+//  · right-click      new source / folder / deck / draft, add a source (the intake), rename, move to…, delete;
+//                     anywhere else in the sidebar, the root's menu (new items land at the root)
 //  · drag             drop between rows to move beside them, or onto a folder to move inside
 
-import { Fragment, useEffect, useRef, useState, type DragEvent, type MouseEvent, type ReactNode } from 'react';
+import { Fragment, useEffect, useLayoutEffect, useRef, useState, type DragEvent, type MouseEvent, type ReactNode } from 'react';
 import type { NodeType } from '../format/index.js';
 import { childDirOf, dirOf, within, type TreeNode } from '../vault/index.js';
 import { GLYPH, findNode, folderPaths, kindOf, metaOf, titleOf, type NodeKind } from './names.js';
@@ -36,6 +37,13 @@ const NEW_KINDS: [NodeKind, string][] = [
 
 export const MENU_W = 190;
 
+/** Keep a context menu inside the window at the bottom edge, as `MENU_W` keeps it at the right. */
+export function placeMenu(el: HTMLElement | null): void {
+  if (!el) return;
+  const r = el.getBoundingClientRect();
+  if (r.bottom > window.innerHeight) el.style.top = `${Math.max(0, window.innerHeight - r.height - 6)}px`;
+}
+
 const clickOpts = (e: MouseEvent): OpenOpts => ({ cmdClick: e.metaKey || e.ctrlKey, shiftClick: e.shiftKey });
 const inField = (t: EventTarget | null) => {
   const tag = (t as HTMLElement | null)?.tagName?.toLowerCase();
@@ -53,6 +61,8 @@ export function Tree({ activeId, onOpen }: Props) {
   const [over, setOver] = useState<Over | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const editRef = useRef<HTMLInputElement>(null);
+  const boxRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const now = new Date();
 
   const title = (path: string) => titleOf(path, docs, root);
@@ -108,6 +118,25 @@ export function Tree({ activeId, onOpen }: Props) {
     e.stopPropagation();
     setMenu({ id, x: Math.min(e.clientX, window.innerWidth - MENU_W), y: e.clientY, sub: false });
   };
+
+  // The sidebar's empty space and headings are outside this box (the box
+  // ends at the last row), so the root's menu is opened from a listener on
+  // the sidebar itself; a row's own menu is React's, and this one lets it be.
+  useEffect(() => {
+    const side = boxRef.current?.closest<HTMLElement>('.side') ?? boxRef.current;
+    if (!side) return;
+    const onMenu = (e: globalThis.MouseEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t?.closest('.trow, .ctx-menu')) return;
+      e.preventDefault();
+      setMenu({ id: '', x: Math.min(e.clientX, window.innerWidth - MENU_W), y: e.clientY, sub: false });
+    };
+    side.addEventListener('contextmenu', onMenu);
+    return () => side.removeEventListener('contextmenu', onMenu);
+  }, []);
+
+  // the menu stays inside the window at the bottom edge, with the list open or not
+  useLayoutEffect(() => { placeMenu(menuRef.current); }, [menu]);
 
   // ── drag + drop ──────────────────────────────────────────────
   const onDragStart = (e: DragEvent, id: string) => {
@@ -230,16 +259,14 @@ export function Tree({ activeId, onOpen }: Props) {
     : [];
 
   return (
-    <div
-      className="tree edit-tree"
-      onContextMenu={(e) => { if ((e.target as HTMLElement).closest('.trow')) return; openMenu(e, ''); }}
-    >
+    <div className="tree edit-tree" ref={boxRef}>
       {rootRow}
       {open[''] && tree.map((n) => renderNode(n, 1))}
 
       {menu && (menu.id === '' || menuNode) && (
         <div
           className="ctx-menu"
+          ref={menuRef}
           style={{ left: menu.x, top: menu.y }}
           onMouseDown={(e) => e.stopPropagation()}
           onContextMenu={(e) => e.preventDefault()}
@@ -261,7 +288,7 @@ export function Tree({ activeId, onOpen }: Props) {
                   <div className="ci" onClick={act(() => beginRename(menu.id))}>
                     <span className="cg">✎</span>rename<span className="ck">F2</span>
                   </div>
-                  <div className="ci has-sub" onMouseEnter={() => setMenu((m) => (m ? { ...m, sub: true } : m))}>
+                  <div className="ci has-sub" onClick={(e) => { e.stopPropagation(); setMenu((m) => (m ? { ...m, sub: true } : m)); }}>
                     <span className="cg">→</span>move to…<span className="ck">▸</span>
                   </div>
                   <div className="cd" />
@@ -272,7 +299,7 @@ export function Tree({ activeId, onOpen }: Props) {
               )}
             </>
           ) : (
-            <div className="sub-wrap" onMouseLeave={() => setMenu((m) => (m ? { ...m, sub: false } : m))}>
+            <div className="sub-wrap">
               <div className="ci back" onClick={(e) => { e.stopPropagation(); setMenu((m) => (m ? { ...m, sub: false } : m)); }}>
                 <span className="cg">◂</span>move to…
               </div>

@@ -8,7 +8,8 @@ import { overflow } from '../schedule/index.js';
 import { ENTRY_GLYPH, buildIndex, search, type CardRef, type Command, type Entry } from './chrome.js';
 import { activeTab, closePane, splitPane } from './panes.js';
 import { useApp } from './store.js';
-import { closeVault, containerOf, currentVault, openCard, openIntake, openNode, openVault, pickVault, pickVaultParent, postponeRest, setInspector, setSidebar, startSession } from './vault.js';
+import { MENU_ID, runMenu } from './menu.js';
+import { containerOf, currentVault, openCard, openIntake, openNode, openVault, postponeRest, setInspector, setSidebar, startSession } from './vault.js';
 
 const COMMANDS: Command[] = [
   { id: 'enter', title: 'enter queue' },
@@ -20,9 +21,10 @@ const COMMANDS: Command[] = [
   { id: 'inspector', title: 'inspector' },
   { id: 'theme', title: 'next theme' },
   { id: 'tweaks', title: 'tweaks' },
-  { id: 'open-vault', title: 'open vault…' },
-  { id: 'new-vault', title: 'new vault…' },
-  { id: 'close-vault', title: 'close vault' },
+  // the File menu's three, by the same ids, so there is a path without the native menu
+  { id: MENU_ID.open, title: 'open collection…' },
+  { id: MENU_ID.new, title: 'new collection…' },
+  { id: MENU_ID.close, title: 'close collection' },
 ];
 
 function runCommand(id: string): void {
@@ -38,10 +40,9 @@ function runCommand(id: string): void {
     case 'inspector': setInspector({ open: !s.inspector.open }); break;
     case 'theme': s.cycleTheme(); break;
     case 'tweaks': useApp.setState({ tweaksOpen: true }); break;
-    case 'open-vault': void pickVault().catch(console.error); break;
-    // the parent is picked first, so a dismissed dialog leaves the vault open; the name is then taken on the welcome
-    case 'new-vault': void pickVaultParent().then((dir) => { if (dir) closeVault(); }).catch(console.error); break;
-    case 'close-vault': closeVault(); break;
+    case MENU_ID.open:
+    case MENU_ID.new:
+    case MENU_ID.close: void runMenu(id).catch(console.error); break;
     default: runPluginCommand(id);
   }
 }

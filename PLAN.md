@@ -2479,7 +2479,66 @@ way, once a vault is open, to open another or make one: "need something
 (I imagine File → Open) for collection management, like if I wanted to
 open a collection or make a new one." The format does not change.
 
-### [ ] 28. From use — the path in the queue, a context menu that works anywhere, a File menu
+### [x] 28. From use — the path in the queue, a context menu that works anywhere, a File menu
+Done 2026-10-19 on main; commit `TBD`.
+Notes: `src/app/items.ts`: `pathLabel(path)` (the `.md` dropped, the folders
+kept) and `sourceLabel(item, docs, by = 'title')`, `by: 'path'` for the
+queue; the session's line and the inspector keep the title. `Queue.tsx`
+reads the `queueTitles` tweak (`store.ts`, default off, persisted with the
+others; `Tweaks.tsx` row `queue shows titles`) and sets `data-by` on the
+`.src` span; `queue.css` turns the uppercase off for the path so it reads
+as written, the kind tag and `new` keeping their caps. The sidebar menu:
+`Tree.tsx` no longer handles its own box's `onContextMenu`; a native
+`contextmenu` listener on the nearest `.side` (or the box itself when
+there is none, as in a test) opens the root's menu for any target that is
+not a `.trow` or inside `.ctx-menu`, so the headings, the saved queries,
+and the empty space all work; a row's menu is still React's on the row.
+Chosen over the tree filling the sidebar's height because the saved
+queries sit under the tree and would have been pushed to the bottom.
+Escape and an outside mousedown already closed the menu; `placeMenu(el)`
+(exported beside `MENU_W`) shifts a menu up when its bottom passes the
+window's, run from a `useLayoutEffect` on the menu state in `Tree.tsx` and
+`Lenses.tsx`. `move to…` opens on a click (`onMouseEnter` gone in both,
+`onMouseLeave` on `.sub-wrap` gone too, so the list stays until `◂ move
+to…`, a choice, Escape, or an outside press). The File menu: `src-tauri/
+src/lib.rs` builds File (`New Collection…` ⌘⇧N, `Open Collection…` ⌘O,
+`Open Recent` submenu, a separator, `Close Collection` ⌘⇧W; on Windows and
+Linux a separator and Quit follow, and the whole bar, File, Edit, Window,
+is now set there too, where there was no menu before) between the app
+menu and Edit; `Builder::on_menu_event` emits every item's id as the
+`menu` event; the command `set_recent_vaults(items)` empties the Open
+Recent submenu (ids `file` and `recent`) and appends one item per recent
+(`recent:<path>`, the name as text), disabling it when there are none.
+`src/app/menu.ts` (new): `menuAction(id)` (pure), `runMenu(id, fx)` with
+the pickers and the vault injectable (Open → `pickVault`; New →
+`pickVaultParent` then `closeVault` when a folder was picked, the welcome
+then taking the name; Close → `closeVault`; Recent → `openVault`),
+`recentRows`, `syncRecentMenu`, and `listenForMenu()` (once, from `App`
+beside `listenForClips`; `listen<string>('menu')` guarded for outside
+Tauri; the recents re-sent on every change through a store subscription).
+`Palette.tsx`'s three commands are `open collection…`, `new collection…`,
+`close collection` by the menu's ids and go through `runMenu`. `App.tsx`:
+⌘W ignores shift so ⌘⇧W is the menu's. README: the menu, the keys, the
+tweak, the queue row. Smoke: `ILMI_SMOKE=use` written (`smokeUse`; the
+deck smoke clicks `move to…` now; the welcome smoke runs `close
+collection`). Tests: 506 (+13: `items.test.ts` the path label with and
+without the title and a card's section; `tree.test.ts`, new, the root
+menu from the sidebar's space and heading, a row's own, `move to…` on a
+click and not on `mouseover`/`mouseenter`, the list surviving
+`mouseleave`, `◂ move to…`, Escape, an outside press, the right and
+bottom edges; `menu.test.ts`, new, the ids and the dispatch with stubs),
+28 files; typecheck clean; cargo 12, no warnings.
+Open: the window check (`ILMI_SMOKE=use`) is owed, port 1420 was held by
+the user's own run for the whole session: the path line's look at 10px
+mono beside the uppercase tag, the native menu's items and their
+shortcuts on the real menu bar, Open Recent filling in after launch and
+after a vault opens, and ⌘⇧W reaching the menu rather than the webview
+are all unseen; the welcome and its foot still say `open vault` / `new
+vault` while the menu and the palette say collection (the README and
+every other string say vault: one word is owed, the user's); the Open
+Recent submenu lists every recent including the open vault; Windows and
+Linux now show a menu bar where there was none, uncompiled here; a
+right-click on a saved query row opens the root's menu.
 - The queue row's source line shows the item's vault-relative path after
   the kind tag, not its title: `sources/attention.md` becomes
   `sources/attention`, the `.md` dropped, the folders kept with `/`, in
@@ -2533,27 +2592,30 @@ from the recents and logs the tree; screenshots read.
 
 ## Notes for the next session
 
-Milestones 0–27 are ticked (13 dropped); nothing is unchecked. The window
-checks of 21, 24, 25, and 26 are recorded in BUILD-LOG under their entries
-with the fixes they forced (a fetched page is never auto-read as cards and
-the comma rule wants a gloss for a back; the clipper percent-encodes image
-paths; an image with an empty alt is drawn; `[^1]` is not a note; the
-live smoke waits for maxwell's own surface). 27's look is owed:
-`ILMI_SMOKE=blocks` ran to `done` and every write was right, but the
-screen was locked for the first capture and another window covered ilmi
-for the rest, so the drawn list, task box, quote, and code block are
-unseen; run it first when the window and the screen are yours (the loop
-25's entry describes), read the captures, fix what they show, and record
-it under 27's entry. What is left is a polish pass over the open items
-each milestone's notes record (27: nested blocks inside an item, a
-quote's wrapped paragraph as lines, no code block made in place, Tab by
-the item's own width; 26: the editor's place near the right edge, undo
-not reopening it; 21: the popover's height and anchor, one meaning per
-card, one clitic; 24: `.html` drops on the old pass, images fetched after
-landing with no cap; 25: tables and HTML blocks still atoms, an inline
-image's alt shown beside it, the queue row's inline code not read in the
-window, emphasis across a math chip, no code colouring; 19: images and
-`linear="no"`; 17: media, suspended cards; 14: the user's real
-collection; 10–15: their lists), the plugin directory the user set aside
-("can wait"), and, with the user, whatever is next. The handoff prompt at
-the top of `BUILD-LOG.md` says so.
+Milestones 0–28 are ticked (13 dropped); nothing is unchecked. The window
+checks of 21, 24, 25, 26, and 27 are recorded in BUILD-LOG under their
+entries with the fixes they forced (a fetched page is never auto-read as
+cards and the comma rule wants a gloss for a back; the clipper
+percent-encodes image paths; an image with an empty alt is drawn; `[^1]` is
+not a note; the live smoke waits for maxwell's own surface). 28's window
+check is owed: port 1420 was the user's for the whole session, so
+`ILMI_SMOKE=use` was written and not run; run it first when the window is
+yours (the loop 25's entry describes), read the captures (the queue's path
+line, the sidebar menu from the empty space, `move to…` on a click, the
+welcome after `close collection`, the tree back), try the real File menu
+by hand (the four items, ⌘⇧N ⌘O ⌘⇧W, Open Recent filling in), fix what they
+show, and record it under 28's entry. 27's look (the drawn list, task box,
+quote, and code block) is still unseen by eye for the same reason. What is
+left is a polish pass over the open items each milestone's notes record
+(28: one word, vault or collection, for the welcome, the menu, and the
+palette; 27: nested blocks inside an item, a quote's wrapped paragraph as
+lines, no code block made in place, Tab by the item's own width; 26: the
+editor's place near the right edge, undo not reopening it; 21: the
+popover's height and anchor, one meaning per card, one clitic; 24: `.html`
+drops on the old pass, images fetched after landing with no cap; 25:
+tables and HTML blocks still atoms, an inline image's alt shown beside it,
+the queue row's inline code not read in the window, emphasis across a
+math chip, no code colouring; 19: images and `linear="no"`; 17: media,
+suspended cards; 14: the user's real collection; 10–15: their lists), the
+plugin directory the user set aside ("can wait"), and, with the user,
+whatever is next. The handoff prompt at the top of `BUILD-LOG.md` says so.

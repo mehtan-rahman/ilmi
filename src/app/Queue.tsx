@@ -50,6 +50,8 @@ export function Queue({ scope, active }: Props) {
   const docs = useApp((s) => s.docs);
   const log = useApp((s) => s.log);
   const budget = useApp((s) => s.budget);
+  // the row names its file by its path; the tweak brings the title back
+  const by = useApp((s) => (s.queueTitles ? 'title' : 'path'));
   const [cursor, setCursor] = useState(0);
   const now = new Date();
   const items = all.filter((i) => inScope(i, scope, now));
@@ -134,9 +136,9 @@ export function Queue({ scope, active }: Props) {
               >
                 <span className="mark" data-el={item.kind}>{EL_GLYPH[item.kind]}</span>
                 <span className="body">
-                  <span className="src">
+                  <span className="src" data-by={by}>
                     <span className="kindtag" data-el={item.kind}>{kindTag(item)}</span>
-                    {sourceLabel(item, docs)}
+                    {sourceLabel(item, docs, by)}
                   </span>
                   <Body item={item} />
                   {ref && <span className="ref-line">{ref}</span>}

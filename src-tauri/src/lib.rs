@@ -2,11 +2,18 @@ mod anki;
 mod epub;
 mod plugin;
 
-use tauri::Manager;
+use tauri::menu::{MenuBuilder, MenuItemBuilder, MenuItemKind, SubmenuBuilder};
+use tauri::{Emitter, Manager};
 use tauri_plugin_fs::FsExt;
 
-#[cfg(target_os = "macos")]
-use tauri::menu::{MenuBuilder, SubmenuBuilder};
+/// The ids of the File menu's items, as the renderer receives them on the
+/// `menu` event (`src/app/menu.ts` dispatches on them). A recent vault's
+/// item is `recent:<path>`.
+const MENU_FILE: &str = "file";
+const MENU_RECENT: &str = "recent";
+const MENU_NEW: &str = "new";
+const MENU_OPEN: &str = "open";
+const MENU_CLOSE: &str = "close";
 
 /// Widen the fs scope to a vault directory. The dialog plugin does this for a
 /// picked directory; this covers paths that arrive any other way. The
@@ -77,6 +84,34 @@ fn dev_env(name: String) -> Option<String> {
     }
 }
 
+/// One vault the renderer remembers, for the Open Recent submenu.
+#[derive(serde::Deserialize)]
+struct RecentVault {
+    path: String,
+    name: String,
+}
+
+/// Rebuild File → Open Recent from the renderer's recents (newest first): the
+/// submenu's items are replaced, one per vault with its name as the text and
+/// `recent:<path>` as the id, and the submenu is disabled when there are
+/// none. Tauri runs every menu mutation on the main thread.
+#[tauri::command]
+fn set_recent_vaults(app: tauri::AppHandle, items: Vec<RecentVault>) -> Result<(), String> {
+    let Some(menu) = app.menu() else { return Ok(()) };
+    let Some(MenuItemKind::Submenu(file)) = menu.get(MENU_FILE) else { return Ok(()) };
+    let Some(MenuItemKind::Submenu(recent)) = file.get(MENU_RECENT) else { return Ok(()) };
+    for old in recent.items().map_err(|e| e.to_string())? {
+        recent.remove(&old).map_err(|e| e.to_string())?;
+    }
+    for r in &items {
+        let item = MenuItemBuilder::with_id(format!("{MENU_RECENT}:{}", r.path), &r.name)
+            .build(&app)
+            .map_err(|e| e.to_string())?;
+        recent.append(&item).map_err(|e| e.to_string())?;
+    }
+    recent.set_enabled(!items.is_empty()).map_err(|e| e.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -98,7 +133,12 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![allow_vault, read_dropped, read_dropped_bytes, read_anki_package, read_epub, read_plugin_zip, dev_env])
+        .invoke_handler(tauri::generate_handler![allow_vault, read_dropped, read_dropped_bytes, read_anki_package, read_epub, read_plugin_zip, dev_env, set_recent_vaults])
+        // Every item of the File menu reaches the renderer as one `menu`
+        // event carrying the item's id; `src/app/menu.ts` does the rest.
+        .on_menu_event(|app, event| {
+            let _ = app.emit("menu", event.id().0.clone());
+        })
         .setup(|app| {
             // Windows and Linux learn the scheme at run time; macOS reads it
             // from the bundle's Info.plist, which Tauri writes from the
@@ -115,21 +155,35 @@ pub fn run() {
                         .build(),
                 )?;
             }
-            // The default macOS menu binds ⌘W to Close Window; the app uses
-            // ⌘W to close a tab, so the menu is built without that item.
-            #[cfg(target_os = "macos")]
+            // The menu bar. The default macOS menu binds ⌘W to Close Window;
+            // the app uses ⌘W to close a tab, so the menu is built here
+            // without that item. File holds the collection commands; its
+            // Open Recent submenu is filled by `set_recent_vaults` from the
+            // renderer's recents and rebuilt when they change. The app menu
+            // is macOS only; Windows and Linux get File, Edit, and Window
+            // with Quit at the end of File.
             {
-                let app_menu = SubmenuBuilder::new(app, "ilmi")
-                    .about(None)
-                    .separator()
-                    .services()
-                    .separator()
-                    .hide()
-                    .hide_others()
-                    .show_all()
-                    .separator()
-                    .quit()
+                let new_item = MenuItemBuilder::with_id(MENU_NEW, "New Collection…")
+                    .accelerator("CmdOrCtrl+Shift+N")
+                    .build(app)?;
+                let open_item = MenuItemBuilder::with_id(MENU_OPEN, "Open Collection…")
+                    .accelerator("CmdOrCtrl+O")
+                    .build(app)?;
+                let recent = SubmenuBuilder::with_id(app, MENU_RECENT, "Open Recent")
+                    .enabled(false)
                     .build()?;
+                let close_item = MenuItemBuilder::with_id(MENU_CLOSE, "Close Collection")
+                    .accelerator("CmdOrCtrl+Shift+W")
+                    .build(app)?;
+                let file = SubmenuBuilder::with_id(app, MENU_FILE, "File")
+                    .item(&new_item)
+                    .item(&open_item)
+                    .item(&recent)
+                    .separator()
+                    .item(&close_item);
+                #[cfg(not(target_os = "macos"))]
+                let file = file.separator().quit();
+                let file = file.build()?;
                 let edit = SubmenuBuilder::new(app, "Edit")
                     .undo()
                     .redo()
@@ -144,9 +198,22 @@ pub fn run() {
                     .maximize()
                     .fullscreen()
                     .build()?;
-                let menu = MenuBuilder::new(app)
-                    .items(&[&app_menu, &edit, &window])
-                    .build()?;
+                let bar = MenuBuilder::new(app);
+                #[cfg(target_os = "macos")]
+                let bar = bar.item(
+                    &SubmenuBuilder::new(app, "ilmi")
+                        .about(None)
+                        .separator()
+                        .services()
+                        .separator()
+                        .hide()
+                        .hide_others()
+                        .show_all()
+                        .separator()
+                        .quit()
+                        .build()?,
+                );
+                let menu = bar.items(&[&file, &edit, &window]).build()?;
                 app.set_menu(menu)?;
             }
             Ok(())

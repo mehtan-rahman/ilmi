@@ -1,7 +1,7 @@
 // Lenses: what a tab renders for a folder or a document, or the intake.
 // Folders and decks are lists; sources, extracts, and drafts open in the reader.
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { PRI_DEFAULT, meta, type Card, type Doc } from '../format/index.js';
 import type { TreeNode } from '../vault/index.js';
 import { revealIndex } from './chrome.js';
@@ -16,7 +16,7 @@ import { Reader } from './Reader.js';
 import { Session } from './Session.js';
 import { useApp, type DocInfo } from './store.js';
 import { runBlockHooks, usePlugins } from '../plugins/index.js';
-import { MENU_W } from './Tree.js';
+import { MENU_W, placeMenu } from './Tree.js';
 import { useDoc } from './useDoc.js';
 import { createNode, currentVault, moveCard, removeCard } from './vault.js';
 
@@ -194,6 +194,8 @@ function DeckLens({ id, active }: { id: string; active: boolean }) {
   const move = (index: number, b: { id?: string | undefined; text: string }, to: string) => takeOut(index, () => moveCard(id, index, to, b.id, b.text));
   const targets = menu ? otherDecks(docs, id, root) : [];
   const showSub = (sub: boolean) => setMenu((m) => (m ? { ...m, sub } : m));
+  const menuRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => { placeMenu(menuRef.current); }, [menu]);
 
   // the menu closes on any outside press or escape
   useEffect(() => {
@@ -260,6 +262,7 @@ function DeckLens({ id, active }: { id: string; active: boolean }) {
         {menu && (
           <div
             className="ctx-menu"
+            ref={menuRef}
             style={{ left: menu.x, top: menu.y }}
             onMouseDown={(e) => e.stopPropagation()}
             onContextMenu={(e) => e.preventDefault()}
@@ -268,7 +271,7 @@ function DeckLens({ id, active }: { id: string; active: boolean }) {
               <>
                 {targets.length > 0 && (
                   <>
-                    <div className="ci has-sub" onMouseEnter={() => showSub(true)}>
+                    <div className="ci has-sub" onClick={(e) => { e.stopPropagation(); showSub(true); }}>
                       <span className="cg">→</span>move to…<span className="ck">▸</span>
                     </div>
                     <div className="cd" />
@@ -279,7 +282,7 @@ function DeckLens({ id, active }: { id: string; active: boolean }) {
                 </div>
               </>
             ) : (
-              <div className="sub-wrap" onMouseLeave={() => showSub(false)}>
+              <div className="sub-wrap">
                 <div className="ci back" onClick={(e) => { e.stopPropagation(); showSub(false); }}>
                   <span className="cg">◂</span>move to…
                 </div>

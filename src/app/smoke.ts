@@ -2279,14 +2279,17 @@ export async function smokeLive(vault: Vault): Promise<void> {
 
     // maxwell: the binomial chip edited in place
     openNode(MX);
-    const mx = await until(() => q<HTMLElement>('.doc-view .draft-doc'));
-    await until(() => mx.querySelector('p.dd-p .math'));
+    // the sampler's surface is still up until maxwell's replaces it: wait for the tab, then for a chip
+    await until(() => (activeTab(useApp.getState().panes)?.id === MX ? true : null));
+    const mx = await until(() => { const el = q<HTMLElement>('.doc-view .draft-doc'); return el?.querySelector('.math') ? el : null; }, 10000);
     await sleep(300);
-    q<HTMLButtonElement>('.frozen-tag[data-frozen="1"]')!.click();
-    await until(() => (q('.frozen-tag[data-frozen="0"]') ? true : null));
+    log(`maxwell open: blocks ${mx.children.length}, chips ${mx.querySelectorAll('.math').length} (${Array.from(mx.querySelectorAll<HTMLElement>('.math')).map((c) => `${c.parentElement?.tagName.toLowerCase()}.${c.parentElement?.className.split(' ')[0]}${c.closest('.card-span') ? '/card' : ''}`).join(' ')}); frozen tag ${q('.frozen-tag')?.getAttribute('data-frozen')}`);
+    const frozenTag = q<HTMLButtonElement>('.frozen-tag[data-frozen="1"]');
+    if (frozenTag) { frozenTag.click(); await until(() => (q('.frozen-tag[data-frozen="0"]') ? true : null)); }
     await sleep(300);
-    const chip = mx.querySelector<HTMLElement>('p.dd-p .math')!;
-    log(`maxwell: prose chips ${mx.querySelectorAll('p.dd-p .math').length}; the chip ${chip.classList.contains('display') ? 'display' : 'inline'}, tex "${chip.dataset.tex?.replace(/\n/g, '⏎')}"`);
+    const prose = Array.from(mx.querySelectorAll<HTMLElement>('.math')).filter((c) => !c.closest('.card-span') && !c.classList.contains('blanks'));
+    const chip = prose[0] ?? mx.querySelector<HTMLElement>('.math')!;
+    log(`maxwell: prose chips ${prose.length}; the chip ${chip.classList.contains('display') ? 'display' : 'inline'}, tex "${chip.dataset.tex?.replace(/\n/g, '⏎')}"`);
     const cb = chip.getBoundingClientRect();
     const target = chip.querySelector<HTMLElement>('.katex') ?? chip;
     for (const type of ['mousedown', 'mouseup', 'click']) target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, buttons: type === 'mousedown' ? 1 : 0, detail: 1, clientX: cb.left + cb.width / 2, clientY: cb.top + cb.height / 2, view: window }));

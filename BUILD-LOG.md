@@ -109,23 +109,47 @@ redone over `{ set, edge }`, `mathEdit`, `openMath`, `revealBackward` /
   on their own; everything else in the set stands across a selection
   change.
 
+### Window check (after the hand-back, `3af0d4e`)
+
+Three runs of `ILMI_SMOKE=live` once the user's own window was stopped
+with their say-so; the first two stopped on the smoke (a prose-chip
+selector, then the sampler's surface taken for maxwell's before the tab
+had changed), both fixed in the smoke. The third ran through the markers
+and the editor: frozen, 12 markers all hidden; thawed with the caret
+elsewhere, still hidden; the caret inside *emphasis* → its two `*` shown
+at 8px, `**strong**` → both `**`, the code span → both backticks, the
+link → `[` and `](https://commonmark.org/)`, the rest hidden; the caret
+after the span → hidden again; backspace into the hidden `*` → taken,
+the markers shown, the text unchanged; the second backspace left to the
+browser; the closing `*` deleted and the em gone from the file, retyped
+and back; ` *live` typed with no markers shown until the closing `*`,
+then `*live*` lit and written. Maxwell thawed, the binomial chip
+clicked → the editor under it (440×75, focused) with the TeX; `+ 1`
+typed → the chip re-rendered with it; a broken macro → the error line
+under the field, the chip keeping the good render; ⏎ → the editor
+closed, one line changed in the file (`+ 1` in the formula); the editor
+reopened and Escape → closed, the file unchanged. Not seen: the arrow
+key leaving the field (the smoke's chip reference went stale after the
+file rewrite; the behaviour is unit-tested). Captures read: the sampler
+with the caret in `strong` and only its `**` showing, dimmed; maxwell
+with the chip highlighted and the TeX field beneath it. One thing seen
+for the open items: the caret inside an inline image's alt shows no
+markers, since the image range is treated as an atom there.
+
 ### Handoff prompt
 
 ```
-Read PLAN.md, FORMAT.md, BUILD-LOG.md, and spec/hashiyah/HANDOFF.md. The
-first unchecked milestone is 27, "Live blocks", under "Live editing" in
-PLAN.md; do that one and only that one, on main, and stop at its "done
-when". First, if the window is yours (port 1420 free, no
-`target/debug/ilmi` running), run milestone 26's owed window check: copy
-the corpus vault to a scratch directory, run `ILMI_SMOKE=live` with the
-screenshot loop 25's entry describes, read the screenshots, fix what it
-shows, and record it under 26's entry here. Then 27: its schema nodes and
-the `rawToNode` / `nodeToRaw` pair, with 26's marker rule applied per
-text range inside them (see 26's notes for the two places a code block
-should skip it). Tooling and verification are as the ground rules and
-the entries below describe. If port 1420 is held by a run that is not
-yours, do not kill it. Suite 471 (25 files), `cargo test` 12, and
-typecheck must be green before a commit.
+Read PLAN.md, FORMAT.md, BUILD-LOG.md, and spec/hashiyah/HANDOFF.md.
+Milestones 0–26 are ticked (13 dropped); 26's window check is recorded
+under its entry. The first unchecked milestone is 27, "Live blocks",
+under "## Live editing" in PLAN.md. Do only that one, stop at its "done
+when", tick it, write notes, add an entry here with a fresh handoff
+prompt, and commit. Tooling and verification are as the ground rules
+and the entries below describe; `export
+PATH=$HOME/.cargo/bin:/opt/homebrew/bin:$PATH` first. If port 1420 is
+held by a run that is not yours, do not kill it: say so in your report
+and leave the window check owed. Suite 471 (25 files), `cargo test` 12,
+and typecheck must be green before a commit.
 ```
 
 ---

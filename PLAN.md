@@ -2300,7 +2300,7 @@ with the `mathEditKey` meta. CSS in `reader.css`: `.math { position:
 relative }`, `.math.editing` on the accent, `.math-edit` set as the
 palette (paper, hairline, radius, mono 13px), centred under a display
 chip. README: the rendering paragraph. Smoke: `ILMI_SMOKE=live` written
-(`rangeIn` / `caret` helpers beside `select`), not run: port 1420 and the
+(`rangeIn` / `caret` helpers beside `select`), run after the hand-back, see BUILD-LOG: port 1420 and the
 window belonged to a run that was not this session's (a two-hour-old
 `target/debug/ilmi` with its vite), left alone as the ground rules say.
 Tests: 471 (+11 in `reader-view.test.ts`, +1 in `reader.test.ts`, the two
@@ -2313,7 +2313,7 @@ margin; `execCommand('insertText')` reaching ProseMirror as typing).
 The kickoff's "maxwell's inline formula" is a card's (`^cmx-area`), not
 prose, so the smoke edits the binomial display chip, the only chip in
 maxwell's prose. Escape writes nothing (the plan's bullet had it writing,
-its "done when" did not; the "done when" was followed). An empty field
+its "done when" did not; the "done when" was follrun after the hand-back, see BUILD-LOG). An empty field
 removes the chip; a frozen document opens no editor (a click there only
 selects the chip). A caret put at a range's edge by a move keeps the
 markers hidden (Typora's rule), so a click right after `*em*` and then

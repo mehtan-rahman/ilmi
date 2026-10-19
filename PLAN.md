@@ -2480,7 +2480,7 @@ way, once a vault is open, to open another or make one: "need something
 open a collection or make a new one." The format does not change.
 
 ### [x] 28. From use — the path in the queue, a context menu that works anywhere, a File menu
-Done 2026-10-19 on main; commit `TBD`.
+Done 2026-10-19 on main; commit `74243da`.
 Notes: `src/app/items.ts`: `pathLabel(path)` (the `.md` dropped, the folders
 kept) and `sourceLabel(item, docs, by = 'title')`, `by: 'path'` for the
 queue; the session's line and the inspector keep the title. `Queue.tsx`

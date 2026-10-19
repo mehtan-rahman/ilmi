@@ -8,7 +8,7 @@ was verified, what was not, and the prompt to resume with.
 
 ## 2026-10-19 — milestone 28: from use, the path in the queue, a context menu that works anywhere, a File menu
 
-Done on main; commit `TBD` — *from use: the queue row names its file by its
+Done on main; commit `74243da` — *from use: the queue row names its file by its
 path, the sidebar's menu opens anywhere in it and `move to…` on a click, a
 File menu with the collection commands and Open Recent; the use smoke*.
 Files: `src/app/items.ts` (`pathLabel`, `sourceLabel`'s `by`), `src/app/

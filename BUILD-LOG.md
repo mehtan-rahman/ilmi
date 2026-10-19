@@ -145,22 +145,36 @@ test.ts`, `src/reader/__tests__/reader.test.ts`.
   before, or between the halves) rather than lifting through ProseMirror's
   list commands, which are not installed and would not keep the attrs.
 
+### Window check, second run (after the hand-back, `af9a9db`)
+
+`ILMI_SMOKE=blocks` run once more by the parent session with the screen
+unlocked and the port free: clean to `done`, every write as the first
+run had it (the bullet list continued, indented, outdented, the task box
+typed and ticked, the list left; the quote continued and left; the code
+block typed into with ⏎ and Tab, nothing drawn inside, ⌘⏎ out; 12
+blocks, 5 raw, 0 diagnostics). The four captures were again covered by
+another application's window the user was working in, with only the
+inspector and a sliver of the page visible, so the look of the drawn
+blocks (bullet column, numbers, task box and tick, quote rule, code
+label, indent step) is still unseen by eye and stays an open item for a
+moment when the window can be left in front.
+
 ### Handoff prompt
 
 ```
 Read PLAN.md, FORMAT.md, BUILD-LOG.md, and spec/hashiyah/HANDOFF.md.
-Milestones 0–27 are ticked (13 dropped); nothing is unchecked. First,
-when the window, port 1420, and the screen are yours, run 27's window
-check: `ILMI_SMOKE=blocks` on a scratch copy of the corpus vault (the
-loop milestone 25's entry describes), read the captures, fix what they
-show, and record it under 27's entry here. Then the polish pass over the
-open items the milestones' notes record, in PLAN.md's "Notes for the next
-session", or whatever the user adds as the next section. Tooling and
-verification are as the ground rules and the entries below describe;
-`export PATH=$HOME/.cargo/bin:/opt/homebrew/bin:$PATH` first. If port
-1420 is held by a run that is not yours, do not kill it: say so in your
-report and leave the window check owed. Suite 493 (26 files), `cargo
-test` 12, and typecheck must be green before a commit.
+Every milestone in PLAN.md is ticked (0–27; 13 dropped). There is no
+first unchecked milestone. If the window is yours and the screen is
+unlocked, run `ILMI_SMOKE=blocks` on a scratch copy of the corpus vault
+and read its captures by eye: the look of the live list, task box,
+quote, and code block is the one check still unseen. Then ask the user
+what is next: the polish list under "Notes for the next session" in
+PLAN.md, the plugin directory they set aside, tables edited in place, or
+something new, and write it into PLAN.md as a milestone with a "done
+when" before building. Tooling and verification are as the ground rules
+and the entries below describe. If port 1420 is held by a run that is
+not yours, do not kill it. Suite 493 (26 files), `cargo test` 12, and
+typecheck must be green before a commit.
 ```
 
 ---

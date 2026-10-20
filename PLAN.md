@@ -2590,6 +2590,70 @@ logs the menu's entries, clicks `move to…` and logs the list, runs the
 palette's `close collection` and logs the welcome, then reopens the vault
 from the recents and logs the tree; screenshots read.
 
+### [ ] 29. One menu everywhere, and a file lands where you drop it
+The user, after 28: "context menu in a folder should be the same as in the
+tree", and "adding epub or pdf / source can be a lil smoother UI/UX wise.
+rn it works but isn't that intuitive compared to how I might expect
+RemNote / Obsidian to feel." Today the folder lens has no context menu
+(only `+ source` / `+ deck` / `+ draft` / `+ folder` buttons), and adding a
+file takes three steps: open the intake tab (right-click → `add a source`
+or the palette), drop or pick there, then press place. In Obsidian a file
+dragged from Finder onto the file tree lands in the folder under the
+pointer, and that is the feel wanted.
+
+- One context menu. The tree's menu (`src/app/Tree.tsx`: new source /
+  folder / deck / draft, add a source, rename, move to…, delete, `move
+  to…` opened on a click, placed inside the window) moves into a shared
+  component (`src/app/NodeMenu.tsx` or the like) used by the tree and the
+  folder lens. In the folder lens a right-click on a row opens that row's
+  menu, a right-click on the empty space opens the folder's own menu (new
+  items land in the folder shown), and rename there is inline in the row
+  as in the tree. The lens's `+` buttons stay; `+ source` opens the add
+  flow below for that folder instead of making an empty source (an empty
+  source stays on the menu as `new source`).
+- Drop a file anywhere and it lands. The window takes an OS file drop
+  everywhere, not only on the intake tab: onto a tree row or a folder-lens
+  row it lands in that folder (a document row: its folder), the row lit as
+  a drop target while dragging, as the tree's own drags are; onto the
+  reader, the queue, or anywhere else it lands in the folder of the active
+  tab (the root when none). Several files at once land one after another.
+  What needs no choice lands straight away with the defaults the intake
+  already uses, then opens: a `.pdf`, an `.epub` (its chapters in a folder
+  named for the book), a `.md` / `.txt`, an `.apkg` with one deck. A
+  notice says what landed and where (`placed · Ibn Khaldun, Muqaddimah ·
+  12 chapters in books/`) with `undo` (removes what was written) and
+  `open`. Only what needs a choice goes to the intake, pre-filled: text
+  that reads as cards (the delimiter row), an `.apkg` with several decks.
+  The intake's own drop keeps working.
+- Import from the menu. The File menu (28) gains `Import…` (⌘⇧O): the
+  native picker over the extensions the intake takes, several files
+  allowed, landing in the active tab's folder exactly as a drop does; the
+  same as a palette command `import…`, and as `import a file…` on the
+  context menu (into that folder). `add a source` on the menu stays for
+  pasting text or an address.
+- Paste a link anywhere. ⌘V with an `http(s)` address on the clipboard and
+  no text field or editor focused clips it (24's path) into the active
+  tab's folder and opens it, with the same notice; with the focus in an
+  editor nothing changes.
+- A `+` in the sidebar's header, beside the vault name, opens a small menu:
+  new source / deck / draft / folder, import a file…, add from text or a
+  link (the intake). Everything lands in the root unless a folder row is
+  selected, then in it.
+
+Done when: `node-menu.test.ts` covers the shared menu in the tree and the
+folder lens (row menu, empty-space menu, the folder lens's new item
+landing in its folder, inline rename there); `drop.test.ts` covers the
+target folder for a drop on a tree row, a folder row, a document row, and
+elsewhere with and without an active tab, and the land-or-ask decision
+per kind (pdf, epub, md, txt, apkg with one and with two decks, text that
+reads as cards) with the writers stubbed; the undo of a landed epub
+removes its folder; `ILMI_SMOKE=land` drops a PDF and the fixture EPUB
+through the dev hook onto a folder row and onto the reader, runs
+`import…` with the picker stubbed, pastes an address with nothing
+focused (offline → log and skip), right-clicks a folder-lens row and its
+empty space and logs both menus, and logs the tree after each; screenshots
+read.
+
 ## Notes for the next session
 
 Milestones 0–28 are ticked (13 dropped); nothing is unchecked. The window

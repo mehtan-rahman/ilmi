@@ -8,7 +8,7 @@ was verified, what was not, and the prompt to resume with.
 
 ## 2026-10-20 — milestone 29: one menu everywhere, and a file lands where you drop it
 
-Done on main; commit `HASH29` — *one menu everywhere, and a file lands where
+Done on main; commit `461918b` — *one menu everywhere, and a file lands where
 you drop it: the shared node menu in the tree and the folder lens, the
 window's one drop router landing files in the folder under the pointer with
 an undoable notice, File → Import…, a pasted link clipped, the sidebar's +;

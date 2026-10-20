@@ -2591,7 +2591,7 @@ palette's `close collection` and logs the welcome, then reopens the vault
 from the recents and logs the tree; screenshots read.
 
 ### [x] 29. One menu everywhere, and a file lands where you drop it
-Done 2026-10-20 on main; commit `HASH29`.
+Done 2026-10-20 on main; commit `461918b`.
 Notes: `src/app/NodeMenu.tsx` (new) is the one node menu: `MENU_W`,
 `placeMenu` (moved here, re-exported from `Tree.tsx`), `MenuAt`,
 `menuAt(e, id, plus)`, and `NodeMenu` (new source / folder / deck /

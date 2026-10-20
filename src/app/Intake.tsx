@@ -4,8 +4,11 @@
 // unread. Nothing is scheduled; it waits until you open it.
 //
 // A dropped file arrives through Tauri's drag-drop event with a path (the
-// webview's own drop event carries no files under Tauri); dragged text still
-// comes through the DOM. A pasted address is fetched through the http plugin
+// webview's own drop event carries no files under Tauri), routed here by
+// `land.ts` when the pointer is over this panel; dragged text still comes
+// through the DOM. A file dropped elsewhere that needs a choice (text that
+// reads as cards, a package with several decks) waits in `intakeFiles` and
+// is read in once the intake is empty. A pasted address is fetched through the http plugin
 // and read as the clipper would write it (`src/import/page.ts`): the page's
 // site, author, and date show over the count, the title field takes the
 // page's title, and the file carries `url`, `author`, and `published`, with
@@ -19,7 +22,7 @@
 // chapters listed; they land as sources in a folder named for the book
 // (`src/import/epub.ts`).
 
-import { getCurrentWebview, type DragDropEvent } from '@tauri-apps/api/webview';
+import type { DragDropEvent } from '@tauri-apps/api/webview';
 import { open as pickFile } from '@tauri-apps/plugin-dialog';
 import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent } from 'react';
 import {
@@ -30,6 +33,7 @@ import { NEW_NAMES } from '../vault/index.js';
 import { CardText } from './CardText.js';
 import { importClipNode } from './clipping.js';
 import { APKG_EXT, EPUB_EXT, PDF_EXT, fetchReadable, readAnkiPackage, readDropped, readDroppedPdf, readEpub, type PageInfo } from './fetch.js';
+import { PICK_EXT, dropRoutes } from './land.js';
 import { folderPaths, titleOf } from './names.js';
 import type { OpenOpts } from './panes.js';
 import { pdfText } from './pdfjs.js';
@@ -44,9 +48,6 @@ interface PendingPdf {
 
 /** Dev only: the smoke drops a file on the intake through here, since the OS drop cannot be faked. */
 export const intakeHooks: { ingestFile?: (path: string) => Promise<void> } = {};
-
-/** Extensions the picker offers: what a drop would take. */
-const PICK_EXT = ['txt', 'md', 'markdown', 'text', 'csv', 'tsv', 'html', 'htm', 'pdf', 'apkg', 'epub'];
 
 /** The default name of a deck landed from text. */
 const DECK_NAME = 'cards';
@@ -228,28 +229,40 @@ export function Intake({ active, onOpen }: Props) {
     }
   };
 
-  // drops: files through Tauri (with a position, so only a drop on this panel counts), text through the DOM
+  // drops: files through the window's one drag-drop router (`land.ts`), which hands this panel
+  // every event with whether the pointer is over it; only a drop here is the intake's.
+  // Several files: the first is read here, the rest wait their turn.
   useEffect(() => {
-    let off: (() => void) | null = null;
-    let gone = false;
-    const here = (pos: { x: number; y: number }) => {
-      const k = window.devicePixelRatio || 1;
-      const el = document.elementFromPoint(pos.x / k, pos.y / k);
-      return !!el && !!wrapRef.current?.contains(el);
+    const route = {
+      wrap: () => wrapRef.current,
+      on: (ev: DragDropEvent, here: boolean) => {
+        if (ev.type === 'leave') setDrag(false);
+        else if (ev.type === 'drop') {
+          setDrag(false);
+          if (!here) return;
+          const [first, ...rest] = ev.paths;
+          if (rest.length) useApp.setState((s) => ({ intakeFiles: [...s.intakeFiles, ...rest] }));
+          if (first) void ingestFile(first);
+        } else setDrag(here);
+      },
     };
-    const on = (ev: DragDropEvent) => {
-      if (ev.type === 'leave') setDrag(false);
-      else if (ev.type === 'drop') {
-        setDrag(false);
-        if (ev.paths[0] && here(ev.position)) void ingestFile(ev.paths[0]);
-      } else setDrag(here(ev.position));
-    };
-    getCurrentWebview().onDragDropEvent((e) => on(e.payload)).then(
-      (fn) => { if (gone) fn(); else off = fn; },
-      () => { /* not under Tauri: the DOM handlers below still take dragged text */ },
-    );
-    return () => { gone = true; off?.(); };
+    dropRoutes.intake = route;
+    return () => { if (dropRoutes.intake === route) delete dropRoutes.intake; };
   }, []);
+
+  // a file dropped or picked elsewhere that needs a choice (cards, several decks) waits here
+  // until the intake is empty, then is read in as if dropped on it
+  const waiting = useApp((s) => s.intakeFiles);
+  const pulling = useRef(false);
+  const [pulled, setPulled] = useState(0);
+  const empty = !raw.trim() && !pdf && !anki && !book && !busy && note !== 'reading' && note !== 'fetching';
+  useEffect(() => {
+    if (!empty || !waiting.length || pulling.current) return;
+    const [next, ...rest] = waiting;
+    pulling.current = true;
+    useApp.setState({ intakeFiles: rest });
+    void (next ? ingestFile(next) : Promise.resolve()).finally(() => { pulling.current = false; setPulled((n) => n + 1); });
+  }, [empty, waiting, pulled]);
 
   const onDrop = async (e: DragEvent) => {
     e.preventDefault();

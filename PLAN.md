@@ -2590,7 +2590,86 @@ logs the menu's entries, clicks `move to…` and logs the list, runs the
 palette's `close collection` and logs the welcome, then reopens the vault
 from the recents and logs the tree; screenshots read.
 
-### [ ] 29. One menu everywhere, and a file lands where you drop it
+### [x] 29. One menu everywhere, and a file lands where you drop it
+Done 2026-10-20 on main; commit `HASH29`.
+Notes: `src/app/NodeMenu.tsx` (new) is the one node menu: `MENU_W`,
+`placeMenu` (moved here, re-exported from `Tree.tsx`), `MenuAt`,
+`menuAt(e, id, plus)`, and `NodeMenu` (new source / folder / deck /
+draft, `import a file…`, `add a source`, then for a node rename, `move
+to…` on a click, delete; Escape and an outside press close it; the `+`
+variant orders the documents first and says `add from text or a link`).
+`Tree.tsx` and the folder lens (`FolderLens` in `Lenses.tsx`) both render
+it; the lens opens a row's menu from the row and the folder's own (the
+menu its row has in the tree, rename and delete included; the root's for
+`''`) from anywhere else in the lens, renames inline in the row
+(`.fv-rename`), and starts the rename of what it makes. `+ source` opens
+the intake for that folder; the menu's `new source` still makes an empty
+one. The `+` sits on the sidebar's root row, beside the vault's name
+(the header's `workspace` is a heading, the root row is the name), and
+opens the menu for the selected folder row, else the root. `src/app/
+land.ts` (new) is the landing: pure `fileKind`, `decide(kind, {decks,
+cards}) → 'land' | 'ask'` (an `.apkg` with one deck and text under two
+cards land; HTML is prose), `dropTarget(hit, tab)`, `hitAt(el)` (the
+nearest `[data-path]`, a folder by `data-kind`), `newFolders(written,
+dir, before)`; `landFile(path, dir, fx)` / `clipLink(url, dir, fx)` over
+an injectable `LandFx` (readers and the vault's writers); `landFiles`
+(one after another, each opened, a notice each, the asks queued in the
+store's `intakeFiles` and the intake opened for the folder); `undoLanded`
+(the new folders whole, then the files outside them through `removeNode`,
+which takes a document's pages and children too); `notify` / `undoNotice`
+/ `dismissNotice` with the undo held per notice in the module; `activeDir`;
+`importFiles(dir, pick)`; the router `routeDrop` / `listenForDrops` (the
+one `onDragDropEvent` subscriber, from `App`: no vault → `dropRoutes.
+welcome`; over the intake's panel → `dropRoutes.intake`, which hears
+every event with `here` so its veil follows; else the row under the
+pointer is lit through the store's `fileOver` and a drop with paths
+lands) and `dropAt(paths, x, y)` for the smoke; `onPaste` /
+`listenForPaste` (a document `paste` listener; ignored in an input,
+textarea, select, contenteditable, `.ProseMirror`, with the palette open,
+or with no vault). `Notice.tsx` (new) draws the store's `notice` inside
+`.shell` over the bottom strip's right end (`undo`, `open`, `×`; gone
+after 12 s); every line is also logged to the queue's `log`. `Intake.tsx`
+registers its route instead of subscribing, queues a multi-file drop's
+rest, and reads `intakeFiles` in one at a time once it is empty;
+`Welcome.tsx` registers its route. Rows carry `data-path` (tree and folder
+lens). File → `Import…` ⌘⇧O (`src-tauri/src/lib.rs`, id `import`, between
+Open Recent and Close Collection, separators either side); `menu.ts`
+`MENU_ID.import`, `{ kind: 'import' }`, `MenuFx.importFiles`; the palette's
+`import…`. README: the drop, Import…, ⌘V, the `+`, the shared menu. Smoke:
+`ILMI_SMOKE=land` written (`smokeLand`). Tests: 539 (+33: `drop.test.ts`,
+new, the target for a folder row, the root row, a document row, and
+elsewhere with a document, folder, queue, intake, or no tab; `hitAt`;
+the decision per kind and each kind's landing with the writers stubbed
+(pdf, epub in a folder named for the book, md and txt of prose, txt and
+md that read as cards asking, apkg with one deck landing and two asking,
+the refusals); `newFolders`; the epub's undo removing its folder whole
+and a pdf's its document; several files with an ask queued for the
+intake and the notice's undo; the router to the welcome, to the intake,
+and the lit row cleared on leave; the paste ignored in an editor and with
+no vault, taken with nothing focused into the active tab's folder, and
+offline a notice with nothing written. `node-menu.test.ts`, new: a row's
+menu the same in the tree and the folder lens, the lens's empty space
+opening the folder's own and a new deck landing in the folder renamed in
+its row, the root lens's menu, rename inline from the row's menu, a
+subfolder row sending import / intake / new into it, `+ source` opening
+the intake, the rows' `data-path` and the lit row, the sidebar's `+` for
+the root, a selected folder, and back to the root for a selected
+document. `menu.test.ts` the `import` id and dispatch; `tree.test.ts`
+the new entry), 30 files; typecheck clean; cargo 12, no warnings.
+Open: the window check (`ILMI_SMOKE=land`) is owed, port 1420 was the
+user's for the whole session: the real OS drop's position (physical
+pixels over `devicePixelRatio`, as the intake did) and the lit row while
+dragging from the Finder; whether a tree row's own HTML drag still works
+beside the router (it ignores a drop with no paths); whether WebKit fires
+`paste` on the body with nothing focused under ⌘V (if not, the Edit
+menu's Paste or a ⌘V keydown with a clipboard read is the fallback); the
+notice's place over the bottom strip; `Import…` and ⌘⇧O on the real menu
+bar. Several files dropped open one after another and the notice's undo
+takes back only the last; a second asking file waits until the intake is
+empty, unannounced. A document row's folder can be a document's children
+directory (`a/` beside `a.md`), where the file lands as its child. The
+intake's own `pick a file →` still reads one file into the intake rather
+than landing it.
 The user, after 28: "context menu in a folder should be the same as in the
 tree", and "adding epub or pdf / source can be a lil smoother UI/UX wise.
 rn it works but isn't that intuitive compared to how I might expect
@@ -2656,30 +2735,39 @@ read.
 
 ## Notes for the next session
 
-Milestones 0–28 are ticked (13 dropped); nothing is unchecked. The window
+Milestones 0–29 are ticked (13 dropped); nothing is unchecked. The window
 checks of 21, 24, 25, 26, and 27 are recorded in BUILD-LOG under their
 entries with the fixes they forced (a fetched page is never auto-read as
 cards and the comma rule wants a gloss for a back; the clipper
 percent-encodes image paths; an image with an empty alt is drawn; `[^1]` is
-not a note; the live smoke waits for maxwell's own surface). 28's window
-check is owed: port 1420 was the user's for the whole session, so
-`ILMI_SMOKE=use` was written and not run; run it first when the window is
-yours (the loop 25's entry describes), read the captures (the queue's path
-line, the sidebar menu from the empty space, `move to…` on a click, the
-welcome after `close collection`, the tree back), try the real File menu
-by hand (the four items, ⌘⇧N ⌘O ⌘⇧W, Open Recent filling in), fix what they
-show, and record it under 28's entry. 27's look (the drawn list, task box,
-quote, and code block) is still unseen by eye for the same reason. What is
-left is a polish pass over the open items each milestone's notes record
-(28: one word, vault or collection, for the welcome, the menu, and the
-palette; 27: nested blocks inside an item, a quote's wrapped paragraph as
-lines, no code block made in place, Tab by the item's own width; 26: the
-editor's place near the right edge, undo not reopening it; 21: the
-popover's height and anchor, one meaning per card, one clitic; 24: `.html`
-drops on the old pass, images fetched after landing with no cap; 25:
-tables and HTML blocks still atoms, an inline image's alt shown beside it,
-the queue row's inline code not read in the window, emphasis across a
-math chip, no code colouring; 19: images and `linear="no"`; 17: media,
-suspended cards; 14: the user's real collection; 10–15: their lists), the
-plugin directory the user set aside ("can wait"), and, with the user,
-whatever is next. The handoff prompt at the top of `BUILD-LOG.md` says so.
+not a note; the live smoke waits for maxwell's own surface). The window
+checks of 27, 28, and 29 are owed: port 1420 was the user's for both
+sessions, so `ILMI_SMOKE=blocks`, `ILMI_SMOKE=use`, and `ILMI_SMOKE=land`
+were written and not run (27's was run without its look read by eye). Run
+them first when the window is yours (the loop 25's entry describes; `land`
+wants `three-chapters.epub` copied into the scratch vault as `epub` does),
+read the captures (29: the PDF on the essays row, the book on the reader
+and its undo, the import, the paste, the folder lens's two menus, the
+sidebar's `+`; 28: the queue's path line, the sidebar menu from the empty
+space, `move to…` on a click, the welcome after `close collection`, the
+tree back; 27: the drawn list, task box, quote, and code block), then by
+hand drag a PDF and an EPUB from the Finder onto a sidebar folder, a
+folder-lens row, and the reader, watch the row light, press ⌘V with a
+link on the clipboard and nothing focused, and try the File menu (the five
+items, ⌘⇧N ⌘O ⌘⇧O ⌘⇧W, Open Recent filling in); fix what they show, and
+record it under each entry. What is left is a polish pass over the open
+items each milestone's notes record (29: the notice's undo covers only the
+last of several files, a second asking file waits unannounced, the
+intake's own pick does not land, the paste with nothing focused unproven
+in WebKit; 28: one word, vault or collection, for the welcome, the menu,
+and the palette; 27: nested blocks inside an item, a quote's wrapped
+paragraph as lines, no code block made in place, Tab by the item's own
+width; 26: the editor's place near the right edge, undo not reopening it;
+21: the popover's height and anchor, one meaning per card, one clitic; 24:
+`.html` drops on the old pass, images fetched after landing with no cap;
+25: tables and HTML blocks still atoms, an inline image's alt shown beside it, the queue row's inline code
+not read in the window, emphasis across a math chip, no code colouring;
+19: images and `linear="no"`; 17: media, suspended cards; 14: the user's
+real collection; 10–15: their lists), the plugin directory the user set
+aside ("can wait"), and, with the user, whatever is next. The handoff
+prompt at the top of `BUILD-LOG.md` says so.

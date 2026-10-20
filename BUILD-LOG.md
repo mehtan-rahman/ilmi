@@ -6,6 +6,170 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-10-20 — milestone 29: one menu everywhere, and a file lands where you drop it
+
+Done on main; commit `HASH29` — *one menu everywhere, and a file lands where
+you drop it: the shared node menu in the tree and the folder lens, the
+window's one drop router landing files in the folder under the pointer with
+an undoable notice, File → Import…, a pasted link clipped, the sidebar's +;
+the land smoke*. Files: `src/app/NodeMenu.tsx` (new), `src/app/land.ts`
+(new), `src/app/Notice.tsx` (new), `src/app/Tree.tsx`, `src/app/Lenses.tsx`
+(`FolderLens`), `src/app/Intake.tsx`, `src/app/Welcome.tsx`, `src/app/
+App.tsx`, `src/app/menu.ts`, `src/app/Palette.tsx`, `src/app/store.ts`
+(`notice`, `fileOver`, `intakeFiles`), `src/app/vault.ts` (the resets, the
+dispatch line), `src/app/app.css`, `src-tauri/src/lib.rs` (`Import…`),
+`src/app/smoke.ts` (`smokeLand`), `README.md`, `src/app/__tests__/
+drop.test.ts` (new), `src/app/__tests__/node-menu.test.ts` (new),
+`src/app/__tests__/menu.test.ts`, `src/app/__tests__/tree.test.ts`.
+
+### Done
+
+- One context menu. `NodeMenu.tsx` holds what the tree's menu was (new
+  source / folder / deck / draft, `add a source`, rename, `move to…` on a
+  click, delete, Escape and an outside press, `MENU_W` and `placeMenu`)
+  plus `import a file…`; the tree and the folder lens both render it. In
+  the folder lens a right-click on a row opens that row's menu, anywhere
+  else in the lens the folder's own (the one its row has in the tree; the
+  root's for the vault's lens), new items land in the folder shown and are
+  renamed inline in their row, and `rename` is inline there too. The
+  lens's `+` buttons stay; `+ source` opens the intake for the folder, and
+  the menu's `new source` still makes an empty source.
+- A file lands where you drop it. `land.ts` keeps the window's one
+  `onDragDropEvent` subscriber (`listenForDrops`, from `App`) and routes
+  each event: while no vault is open, to the welcome; over the intake's
+  panel, to the intake (which hears every event with whether it is
+  `here`, so its veil follows the pointer); anywhere else the row under
+  the pointer (`[data-path]`, on the tree's and the folder lens's rows) is
+  lit through the store's `fileOver`, and a drop lands in `dropTarget(hit,
+  active tab)`: a folder row's folder, a document row's folder, else the
+  active tab's folder (a folder tab, a document's folder), the root for
+  the queue, the intake, a session, or no tab. Several files land one
+  after another. `decide(kind, parsed)` lands a PDF (the pair), an EPUB
+  (its chapters in a folder named for the book), a `.md` / `.txt` that
+  reads as under two cards, an HTML file (prose), and an `.apkg` with one
+  deck, each with the intake's defaults, then opens it; text that reads as
+  cards and a package with several decks are queued in `intakeFiles` and
+  the intake opens for the folder, reading them in one at a time once it
+  is empty. A notice (`Notice.tsx`, over the bottom strip's right end)
+  says what landed and where (`placed · The Small Book · 3 chapters in
+  papers/`) with `undo` and `open`; undo removes the folders the landing
+  made (`newFolders`: the topmost folder per file that was not there
+  before) whole and the other files through `removeNode` (a document's
+  pages and children go with it), and logs `undone · …`. Every notice is
+  also a line in the queue's log. The intake's own drop works as before.
+- Import. File → `Import…` (⌘⇧O, id `import`) between Open Recent and
+  Close Collection; `runMenu('import')` → `importFiles()`: the native
+  picker over the intake's extensions, several files allowed, landing in
+  the active tab's folder as a drop does. The palette has `import…`, and
+  the menu `import a file…` into its folder.
+- Paste a link. A document `paste` listener: with a vault open, the
+  palette shut, and the target and the focus outside any input, textarea,
+  select, contenteditable, or `.ProseMirror`, an `http(s)` address is
+  clipped (24's path, `importClipNode` with the page's fields and images)
+  into the active tab's folder and opened, with the notice (`clipped · …`);
+  offline it is a notice (`nothing readable at that link`) and nothing is
+  written. Text that is not an address is let be.
+- The sidebar's `+`, on the root row beside the vault's name: the same
+  menu ordered new source / deck / draft / folder, `import a file…`, `add
+  from text or a link`, into the selected folder row, else the root.
+- README: the drop, Import… ⌘⇧O, ⌘V, the `+`, the shared menu. Smoke:
+  `ILMI_SMOKE=land` written.
+- Tests: 539 (+33), 30 files (+2); cargo 12, no warnings.
+
+### Verified
+
+- `npm run typecheck` clean, `npx vitest run` green (30 files, 539),
+  `cd src-tauri && cargo check` clean with no warnings and `cargo test`
+  12. In jsdom with real React roots: a row's menu the same in the tree
+  and the folder lens; the lens's empty space opening the folder's own
+  menu, `new deck` there calling the vault for that folder and the new
+  row showing its rename field with the name selected; the root lens's
+  menu without rename or delete; rename from the row's menu inline in the
+  lens, ⏎ committing it; a subfolder row's `import a file…`, `add a
+  source`, and `new source` all aimed at that subfolder; `+ source`
+  opening the intake; the rows' `data-path`s and the row lit by
+  `fileOver`; the sidebar's `+` for the root, a selected folder, and the
+  root again with a document selected. With the readers and writers
+  stubbed: the target for a folder row, the root row, a document row, and
+  elsewhere (a document tab, a folder tab, the root, the queue, the
+  intake, no tab); `hitAt` over tree and lens rows; land or ask per kind
+  (pdf, epub, md, txt, html, apkg with one and two decks, text with 0, 1,
+  2 cards); each landing's write and line; refusals in the intake's words;
+  the epub's undo removing its folder alone and a pdf's its document;
+  three files with one asking (two landed and opened, the ask queued and
+  the intake open for the folder, the last notice's undo, the log); a
+  file that cannot be read noticed while the next lands; the router to
+  the welcome with no vault, to the intake over its panel with no row
+  lit, and the lit row cleared on leave; the paste ignored in an editor
+  and with no vault, taken on the body into the open document's folder
+  and opened, offline a notice and nothing written. The menu: the
+  `import` id and its dispatch. `cargo check` compiles the new item.
+
+### Not verified
+
+- Nothing in the window: port 1420 was held by the user's own `npm run
+  tauri dev` for the whole session, so `ILMI_SMOKE=land` was written and
+  not run. Unseen: a real Finder drag (Tauri's position in physical
+  pixels, divided by `devicePixelRatio` as the intake always did), the row
+  lighting as the pointer moves, a tree row's own HTML drag beside the
+  router (a drop with no paths lands nothing), the notice's look and place,
+  `Import…` / ⌘⇧O on the real menu bar and the multi-select picker, and
+  whether WebKit fires `paste` on the body for ⌘V with nothing focused (it
+  does in Chromium; if WKWebView does not, a ⌘V keydown with a clipboard
+  read is the fallback).
+
+### Not done / open
+
+- Several files: each opens in turn and each has a notice, but only the
+  last notice's undo is held. A second asking file waits for the intake to
+  empty, with no line saying so.
+- A document row's folder can be a document's children directory (`a/`
+  beside `a.md`); a file dropped on such a row lands as that document's
+  child.
+- The intake's own `pick a file →` reads one file into the intake as
+  before rather than landing it.
+- The folder lens's empty-space menu has the folder's rename, `move to…`,
+  and delete (it is the folder's own menu); deleting the folder shown
+  leaves the lens on `no longer in the vault`.
+
+### Decisions worth knowing
+
+- One subscriber, routes registered: the welcome and the intake register a
+  handler in `dropRoutes` instead of subscribing, so a drop is handled
+  once and the order is the router's (welcome, then intake, then rows).
+- The `+` is on the root row, which is the vault's name; the sidebar's
+  `workspace` heading stays a heading, and the `+` lives in `Tree` beside
+  the selection it reads.
+- `+ source` opens the intake rather than the picker: the intake takes a
+  paste, a link, a drop, or a pick, so it is the whole add flow for a
+  folder; `import a file…` is the picker.
+
+### Handoff prompt
+
+```
+Read PLAN.md, FORMAT.md, BUILD-LOG.md, and spec/hashiyah/HANDOFF.md.
+Every milestone in PLAN.md is ticked (0–29; 13 dropped). There is no
+first unchecked milestone. If the window is yours (port 1420 free, the
+screen unlocked), run `ILMI_SMOKE=land`, `ILMI_SMOKE=use`, and
+`ILMI_SMOKE=blocks` on scratch copies of the corpus vault (copy
+`src/import/__tests__/epub/three-chapters.epub` into it for `land`) and
+read their captures by eye; then by hand drag a PDF and an EPUB from the
+Finder onto a sidebar folder, a folder-lens row, and the reader, watch the
+row light, try `undo` and `open` on the notice, press ⌘V with a link on
+the clipboard and nothing focused, and try the File menu (the five items,
+⌘⇧N ⌘O ⌘⇧O ⌘⇧W, Open Recent filling in). Fix what they show and record it
+under 29's, 28's, and 27's entries. Then ask the user what is next: one
+word (vault or collection), the polish list under "Notes for the next
+session" in PLAN.md, the plugin directory they set aside, or something
+new, and write it into PLAN.md as a milestone with a "done when" before
+building. Tooling and verification are as the ground rules and the entries
+below describe. If port 1420 is held by a run that is not yours, do not
+kill it. Suite 539 (30 files), `cargo test` 12, and typecheck must be
+green before a commit.
+```
+
+---
+
 ## 2026-10-19 — milestone 28: from use, the path in the queue, a context menu that works anywhere, a File menu
 
 Done on main; commit `74243da` — *from use: the queue row names its file by its

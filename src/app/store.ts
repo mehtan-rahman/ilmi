@@ -148,6 +148,15 @@ export const SIDE_MIN = 160;
 export const SIDE_MAX = 440;
 export const SIDE_DEFAULT = 220;
 
+/** A notice over the canvas. `seq` tells one from the next; `undo` says one is held for it (`src/app/land.ts`). */
+export interface Notice {
+  seq: number;
+  line: string;
+  /** The document `open` opens, or null for none. */
+  open: string | null;
+  undo: boolean;
+}
+
 export interface AppState {
   theme: Theme;
   accent: Accent;
@@ -194,6 +203,12 @@ export interface AppState {
   clipDir: string;
   /** The last few things done in a session, newest first. */
   log: string[];
+  /** The one notice over the canvas: what just landed, with `undo` and `open`; null when there is none. */
+  notice: Notice | null;
+  /** The row an OS file drag is over (a tree or folder-lens row, by path), lit as a drop target; null when none. */
+  fileOver: string | null;
+  /** Dropped or picked files that need a choice, waiting on the intake, oldest first. */
+  intakeFiles: string[];
   session: Session | null;
   /** What the session is on now, for its tab and the inspector. */
   sessionEl: { kind: El; label: string; item: QueueItem } | null;
@@ -242,6 +257,9 @@ export const useApp = create<AppState>((set, get) => ({
   budget: 0,
   clipDir: '',
   log: [],
+  notice: null,
+  fileOver: null,
+  intakeFiles: [],
   session: null,
   sessionEl: null,
   setTheme: (theme) => { set({ theme }); persist(get()); },

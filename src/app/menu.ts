@@ -6,20 +6,22 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { importFiles } from './land.js';
 import type { Recent } from './recents.js';
 import { useApp } from './store.js';
 import { closeVault, openVault, pickVault, pickVaultParent } from './vault.js';
 
 /** The ids the Rust side gives the File menu's items; a recent vault is `recent:<path>`. */
-export const MENU_ID = { new: 'new', open: 'open', close: 'close', recent: 'recent' } as const;
+export const MENU_ID = { new: 'new', open: 'open', close: 'close', recent: 'recent', import: 'import' } as const;
 
-export type MenuAction = { kind: 'new' } | { kind: 'open' } | { kind: 'close' } | { kind: 'recent'; path: string } | null;
+export type MenuAction = { kind: 'new' } | { kind: 'open' } | { kind: 'close' } | { kind: 'import' } | { kind: 'recent'; path: string } | null;
 
 /** What a menu item's id asks for; null for an id that is not the File menu's. */
 export function menuAction(id: string): MenuAction {
   if (id === MENU_ID.new) return { kind: 'new' };
   if (id === MENU_ID.open) return { kind: 'open' };
   if (id === MENU_ID.close) return { kind: 'close' };
+  if (id === MENU_ID.import) return { kind: 'import' };
   const prefix = `${MENU_ID.recent}:`;
   if (id.startsWith(prefix) && id.length > prefix.length) return { kind: 'recent', path: id.slice(prefix.length) };
   return null;
@@ -31,15 +33,18 @@ export interface MenuFx {
   pickVaultParent(): Promise<string | null>;
   closeVault(): void;
   openVault(path: string): Promise<unknown>;
+  /** File → Import…: the picker, each file landing in the active tab's folder (`land.ts`). */
+  importFiles(): Promise<unknown>;
 }
 
-const real: MenuFx = { pickVault, pickVaultParent, closeVault, openVault };
+const real: MenuFx = { pickVault, pickVaultParent, closeVault, openVault, importFiles: () => importFiles() };
 
 /**
  * Do what one item asks. Open: the folder picker, then the vault. New: the
  * parent picker first, so a dismissed dialog leaves the vault open; then the
  * open vault closes with its tabs and the welcome takes the name. Close: to
- * the welcome. Recent: that vault. Resolves to the action taken, or null.
+ * the welcome. Recent: that vault. Import: the file picker, the files
+ * landing as a drop does. Resolves to the action taken, or null.
  */
 export async function runMenu(id: string, fx: MenuFx = real): Promise<MenuAction> {
   const a = menuAction(id);
@@ -49,6 +54,7 @@ export async function runMenu(id: string, fx: MenuFx = real): Promise<MenuAction
     case 'new': { const dir = await fx.pickVaultParent(); if (dir) fx.closeVault(); break; }
     case 'close': fx.closeVault(); break;
     case 'recent': await fx.openVault(a.path); break;
+    case 'import': await fx.importFiles(); break;
   }
   return a;
 }

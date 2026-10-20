@@ -3,7 +3,9 @@ import { BottomStrip } from './BottomStrip.js';
 import { Canvas } from './Canvas.js';
 import { listenForClips } from './clipper.js';
 import { Inspector } from './Inspector.js';
+import { listenForDrops, listenForPaste } from './land.js';
 import { listenForMenu } from './menu.js';
+import { Notice } from './Notice.js';
 import { Palette } from './Palette.js';
 import { SavedQueries } from './Queue.js';
 import { TopStrip } from './TopStrip.js';
@@ -73,6 +75,8 @@ export function App() {
     openInitialVault().catch((e: unknown) => console.error(e));
     listenForClips();
     listenForMenu();
+    listenForDrops();
+    listenForPaste();
   }, []);
 
   // the handles: drag to resize; drag to the edge to hide, out again to show
@@ -152,6 +156,7 @@ export function App() {
         {inspector.open && <Inspector />}
         {inspector.open && <div className="insp-resize" onMouseDown={startInspResize} />}
         <BottomStrip />
+        <Notice />
       </div>
       {paletteOpen && <Palette />}
       {tweaksOpen && <Tweaks />}

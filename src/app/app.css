@@ -778,3 +778,62 @@
   letter-spacing: 0.1em;
   color: var(--accent);
 }
+
+/* ── a notice: what landed, with undo and open (Notice.tsx) ────── */
+.notice {
+  position: fixed;
+  z-index: 70;
+  right: calc(var(--insp-w, 0px) + 16px);
+  bottom: 32px;
+  max-width: min(560px, calc(100vw - 32px));
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 7px 10px 7px 12px;
+  background: var(--paper);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.02em;
+  color: var(--fg-3);
+}
+.notice .nl { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.notice .na {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  cursor: default;
+  font: inherit;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+.notice .na:hover { color: var(--fg-1); }
+.notice .nx { color: var(--fg-4); }
+
+/* the `+` beside the vault's name in the sidebar */
+.tree .row .side-add {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--fg-4);
+  width: 14px;
+  text-align: center;
+  flex-shrink: 0;
+  border-radius: var(--radius);
+}
+.tree .row .side-add:hover { color: var(--accent); background: var(--line-2); }
+
+/* the folder lens: a row lit under an OS file drag, a row renamed in place */
+.folder-view .fv-row.drop-into { background: var(--accent-soft); }
+.folder-view .fv-row .fv-rename {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg);
+  border: 1px solid var(--accent-soft);
+  border-radius: var(--radius);
+  color: var(--fg-1);
+  font-family: var(--sans);
+  font-size: 13.5px;
+  padding: 0 4px;
+}

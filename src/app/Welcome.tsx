@@ -4,9 +4,10 @@
 // folder dropped on it opens as a vault. A new vault is named here, in a
 // field, once its parent folder is picked.
 
-import { getCurrentWebview, type DragDropEvent } from '@tauri-apps/api/webview';
+import type { DragDropEvent } from '@tauri-apps/api/webview';
 import { useEffect, useRef, useState } from 'react';
 import { ENTRY_GLYPH } from './chrome.js';
+import { dropRoutes } from './land.js';
 import { GONE, openedLabel } from './recents.js';
 import { useApp } from './store.js';
 import { forgetVault, newVault, openVault, pickVault, pickVaultParent } from './vault.js';
@@ -71,9 +72,8 @@ export function Welcome() {
   }, [recents, sel]);
 
   // a folder dropped anywhere on the window: the whole window is the welcome
+  // (the window's one drag-drop router, `land.ts`, hands it every event while no vault is open)
   useEffect(() => {
-    let off: (() => void) | null = null;
-    let done = false;
     const on = (ev: DragDropEvent) => {
       if (ev.type === 'leave') setDrag(false);
       else if (ev.type === 'drop') {
@@ -82,11 +82,8 @@ export function Welcome() {
         if (p) open(p.replace(/\/+$/, ''));
       } else setDrag(true);
     };
-    getCurrentWebview().onDragDropEvent((e) => on(e.payload)).then(
-      (fn) => { if (done) fn(); else off = fn; },
-      () => { /* not under Tauri */ },
-    );
-    return () => { done = true; off?.(); };
+    dropRoutes.welcome = on;
+    return () => { if (dropRoutes.welcome === on) delete dropRoutes.welcome; };
   }, []);
 
   return (

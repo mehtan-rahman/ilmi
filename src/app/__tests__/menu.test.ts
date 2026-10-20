@@ -12,6 +12,7 @@ function fx(dir: string | null = '/home/me') {
     pickVaultParent: async () => { calls.push('pickVaultParent'); return dir; },
     closeVault: () => { calls.push('closeVault'); },
     openVault: async (path) => { calls.push(`openVault ${path}`); return null; },
+    importFiles: async () => { calls.push('importFiles'); return []; },
   };
   return { f, calls };
 }
@@ -21,13 +22,14 @@ describe('the menu ids', () => {
     expect(menuAction('new')).toEqual({ kind: 'new' });
     expect(menuAction('open')).toEqual({ kind: 'open' });
     expect(menuAction('close')).toEqual({ kind: 'close' });
+    expect(menuAction('import')).toEqual({ kind: 'import' });
     expect(menuAction('recent:/home/me/notes')).toEqual({ kind: 'recent', path: '/home/me/notes' });
     expect(menuAction('recent:/with:colon/x')).toEqual({ kind: 'recent', path: '/with:colon/x' });
     expect(menuAction('recent:')).toBeNull();
     expect(menuAction('recent')).toBeNull();
     expect(menuAction('')).toBeNull();
     expect(menuAction('quit')).toBeNull();
-    expect(MENU_ID).toEqual({ new: 'new', open: 'open', close: 'close', recent: 'recent' });
+    expect(MENU_ID).toEqual({ new: 'new', open: 'open', close: 'close', recent: 'recent', import: 'import' });
   });
 });
 
@@ -60,6 +62,12 @@ describe('the dispatch', () => {
     const { f, calls } = fx();
     expect(await runMenu('recent:/home/me/notes', f)).toEqual({ kind: 'recent', path: '/home/me/notes' });
     expect(calls).toEqual(['openVault /home/me/notes']);
+  });
+
+  it('Import… runs the file picker, the files landing as a drop does', async () => {
+    const { f, calls } = fx();
+    expect(await runMenu('import', f)).toEqual({ kind: 'import' });
+    expect(calls).toEqual(['importFiles']);
   });
 
   it('an id that is not the File menu\'s does nothing', async () => {

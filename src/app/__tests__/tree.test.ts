@@ -59,17 +59,17 @@ describe('the sidebar menu', () => {
     act(() => { side.dispatchEvent(ev); });
     expect(ev.defaultPrevented).toBe(true);
     expect(menu()).not.toBeNull();
-    expect(entries()).toEqual(['new source', 'new folder', 'new deck', 'new draft', 'add a source']);
+    expect(entries()).toEqual(['new source', 'new folder', 'new deck', 'new draft', 'import a file…', 'add a source']);
     expect(menu()!.style.left).toBe('40px');
     key('Escape');
     expect(menu()).toBeNull();
     mouse(side.querySelector('h6')!, 'contextmenu', { clientX: 10, clientY: 10 });
-    expect(entries()).toEqual(['new source', 'new folder', 'new deck', 'new draft', 'add a source']);
+    expect(entries()).toEqual(['new source', 'new folder', 'new deck', 'new draft', 'import a file…', 'add a source']);
   });
 
   it('keeps a row\'s own menu, with rename, move to…, and delete', () => {
     mouse(row('papers/wozniak-1990.md'), 'contextmenu', { clientX: 60, clientY: 80 });
-    expect(entries()).toEqual(['new source', 'new folder', 'new deck', 'new draft', 'add a source', 'rename', 'move to…', 'delete source']);
+    expect(entries()).toEqual(['new source', 'new folder', 'new deck', 'new draft', 'import a file…', 'add a source', 'rename', 'move to…', 'delete source']);
     expect(side.querySelectorAll('.ctx-menu')).toHaveLength(1);
   });
 

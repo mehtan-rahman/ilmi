@@ -14,6 +14,7 @@ const MENU_RECENT: &str = "recent";
 const MENU_NEW: &str = "new";
 const MENU_OPEN: &str = "open";
 const MENU_CLOSE: &str = "close";
+const MENU_IMPORT: &str = "import";
 
 /// Widen the fs scope to a vault directory. The dialog plugin does this for a
 /// picked directory; this covers paths that arrive any other way. The
@@ -157,7 +158,8 @@ pub fn run() {
             }
             // The menu bar. The default macOS menu binds ⌘W to Close Window;
             // the app uses ⌘W to close a tab, so the menu is built here
-            // without that item. File holds the collection commands; its
+            // without that item. File holds the collection commands and
+            // Import… (the picker; the files land as a drop does); its
             // Open Recent submenu is filled by `set_recent_vaults` from the
             // renderer's recents and rebuilt when they change. The app menu
             // is macOS only; Windows and Linux get File, Edit, and Window
@@ -172,6 +174,9 @@ pub fn run() {
                 let recent = SubmenuBuilder::with_id(app, MENU_RECENT, "Open Recent")
                     .enabled(false)
                     .build()?;
+                let import_item = MenuItemBuilder::with_id(MENU_IMPORT, "Import…")
+                    .accelerator("CmdOrCtrl+Shift+O")
+                    .build(app)?;
                 let close_item = MenuItemBuilder::with_id(MENU_CLOSE, "Close Collection")
                     .accelerator("CmdOrCtrl+Shift+W")
                     .build(app)?;
@@ -179,6 +184,8 @@ pub fn run() {
                     .item(&new_item)
                     .item(&open_item)
                     .item(&recent)
+                    .separator()
+                    .item(&import_item)
                     .separator()
                     .item(&close_item);
                 #[cfg(not(target_os = "macos"))]

@@ -16,9 +16,9 @@ import { Reader } from './Reader.js';
 import { Session } from './Session.js';
 import { useApp, type DocInfo } from './store.js';
 import { runBlockHooks, usePlugins } from '../plugins/index.js';
-import { MENU_W, placeMenu } from './Tree.js';
+import { MENU_W, NodeMenu, menuAt, placeMenu, type MenuAt } from './NodeMenu.js';
 import { useDoc } from './useDoc.js';
-import { createNode, currentVault, moveCard, removeCard } from './vault.js';
+import { createNode, currentVault, moveCard, openIntake, removeCard, renameNode } from './vault.js';
 
 interface LensProps {
   id: string;
@@ -62,30 +62,82 @@ function FolderLens({ id, onOpen }: LensProps) {
   const tree = useApp((s) => s.tree);
   const docs = useApp((s) => s.docs);
   const root = useApp((s) => s.vault);
+  const fileOver = useApp((s) => s.fileOver);
+  const [menu, setMenu] = useState<MenuAt | null>(null);
+  const [editing, setEditing] = useState<{ id: string; value: string } | null>(null);
+  const editRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (editing && editRef.current) {
+      editRef.current.focus();
+      editRef.current.select();
+    }
+  }, [editing?.id]);
   const node = id === '' ? undefined : findNode(tree, id);
   if (id !== '' && node?.kind !== 'folder') return <Gone />;
   const children: TreeNode[] = node?.kind === 'folder' ? node.children : tree;
+  const title = (path: string) => titleOf(path, docs, root);
+  const beginRename = (path: string) => { if (path !== '') setEditing({ id: path, value: title(path) }); };
+  const commitRename = () => {
+    if (!editing) return;
+    const { id: at, value } = editing;
+    setEditing(null);
+    if (value.trim() && value.trim() !== title(at)) renameNode(at, value).catch(console.error);
+  };
+  // `+ source` opens the intake for this folder (paste, a link, a drop, a pick); `new source` on the menu makes an empty one
+  const add = (kind: NodeKind) => {
+    if (kind === 'source') openIntake(id);
+    else void createNode(id, kind).then(beginRename).catch(console.error);
+  };
   return (
-    <div className="reader-wrap">
+    <div
+      className="reader-wrap"
+      // the empty space: the folder's own menu, new items landing in it
+      onContextMenu={(e) => { e.preventDefault(); setMenu(menuAt(e, id)); }}
+    >
       <div className="reader folder-view">
         <div className="meta">
           <span className="crumb">folder</span>
           <span className="right">{children.length ? plural(children.length, 'item') : ''}</span>
         </div>
-        <h1>{titleOf(id, docs, root)}</h1>
+        <h1>{title(id)}</h1>
         <div className="fv-new">
           {NEW.map(([kind, label]) => (
-            <button key={kind} type="button" onClick={() => void createNode(id, kind).catch(console.error)}>{label}</button>
+            <button key={kind} type="button" onClick={() => add(kind)}>{label}</button>
           ))}
         </div>
         {children.length > 0 ? (
           <ul className="fv-contents">
             {children.map((n) => {
               const kind: NodeKind = n.kind === 'folder' ? 'folder' : kindOf(n.path, docs);
+              const editingThis = editing?.id === n.path;
               return (
-                <li key={n.path} className="fv-row" onClick={(e) => onOpen(n.path, { cmdClick: e.metaKey || e.ctrlKey, shiftClick: e.shiftKey })}>
+                <li
+                  key={n.path}
+                  className={`fv-row${fileOver === n.path ? ' drop-into' : ''}`}
+                  data-path={n.path}
+                  data-kind={kind}
+                  onClick={(e) => { if (!editingThis) onOpen(n.path, { cmdClick: e.metaKey || e.ctrlKey, shiftClick: e.shiftKey }); }}
+                  onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setMenu(menuAt(e, n.path)); }}
+                >
                   <span className="fv-g" data-t={kind}>{GLYPH[kind]}</span>
-                  <span className="fv-name">{titleOf(n.path, docs, root)}</span>
+                  {editingThis ? (
+                    <input
+                      className="rename fv-rename"
+                      ref={editRef}
+                      value={editing.value}
+                      spellCheck={false}
+                      onChange={(e) => setEditing({ id: n.path, value: e.target.value })}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      onClick={(e) => e.stopPropagation()}
+                      onBlur={commitRename}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') { e.preventDefault(); commitRename(); }
+                        else if (e.key === 'Escape') { e.preventDefault(); setEditing(null); }
+                      }}
+                    />
+                  ) : (
+                    <span className="fv-name">{title(n.path)}</span>
+                  )}
                   <span className="fv-meta">{contentsOf(n, docs[n.path])}</span>
                 </li>
               );
@@ -95,6 +147,7 @@ function FolderLens({ id, onOpen }: LensProps) {
           <div className="empty">empty</div>
         )}
       </div>
+      {menu && <NodeMenu at={menu} set={setMenu} onCreated={beginRename} onRename={beginRename} />}
     </div>
   );
 }

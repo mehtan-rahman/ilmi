@@ -21,10 +21,11 @@ const COMMANDS: Command[] = [
   { id: 'inspector', title: 'inspector' },
   { id: 'theme', title: 'next theme' },
   { id: 'tweaks', title: 'tweaks' },
-  // the File menu's three, by the same ids, so there is a path without the native menu
+  // the File menu's four, by the same ids, so there is a path without the native menu
   { id: MENU_ID.open, title: 'open collection…' },
   { id: MENU_ID.new, title: 'new collection…' },
   { id: MENU_ID.close, title: 'close collection' },
+  { id: MENU_ID.import, title: 'import…' },
 ];
 
 function runCommand(id: string): void {
@@ -42,7 +43,8 @@ function runCommand(id: string): void {
     case 'tweaks': useApp.setState({ tweaksOpen: true }); break;
     case MENU_ID.open:
     case MENU_ID.new:
-    case MENU_ID.close: void runMenu(id).catch(console.error); break;
+    case MENU_ID.close:
+    case MENU_ID.import: void runMenu(id).catch(console.error); break;
     default: runPluginCommand(id);
   }
 }

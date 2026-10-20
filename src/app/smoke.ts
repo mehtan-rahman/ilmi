@@ -104,6 +104,13 @@
 // `◂ move to…`, closes with Escape, runs the palette's `close collection`
 // and logs the welcome, then reopens the vault through the menu's dispatch
 // (`recent:<path>`, as File → Open Recent sends it) and logs the tree.
+// `ILMI_SMOKE=land` drops the corpus PDF on a folder row and the fixture
+// book (`ILMI_EPUB=<path>`, else `three-chapters.epub` in the vault) on the
+// reader through the drop router (`dropAt`), undoes the book from the
+// notice, runs `import…` with the picker stubbed, pastes an address
+// (`ILMI_URL`, else the Wikipedia page; offline it logs and skips) with
+// nothing focused, right-clicks a folder-lens row and its empty space, and
+// opens the sidebar's `+`, logging the tree, the tab, and the notice after each.
 // `ILMI_SMOKE=welcome` runs before any vault opens: it seeds the recents
 // with the scratch vault (`ILMI_VAULT`) and a path that does not exist,
 // turns `reopen the last vault on start` off, reads the welcome's rows and
@@ -2602,6 +2609,127 @@ export async function smokeUse(vault: Vault): Promise<void> {
     await sleep(600);
     log(`reopened: action ${JSON.stringify(action)}; vault ${useApp.getState().vault}; tree ${treeRows()}; tab "${q('.tabbar .tab[data-active="1"] .title')?.textContent}"`);
     await shot('use-reopened');
+    log('done');
+  } catch (e) {
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+export async function smokeLand(vault: Vault): Promise<void> {
+  const log = (s: string) => info(`smoke land: ${s}`);
+  const shot = async (name: string, ms = 10000) => { await sleep(600); log(`shot: ${name}`); await sleep(ms); };
+  const q = <T extends Element>(sel: string) => document.querySelector<T>(sel);
+  const qa = <T extends Element>(sel: string) => Array.from(document.querySelectorAll<T>(sel));
+  const key = (el: Element | Window, k: string) => el.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));
+  const contextmenu = (el: Element, x: number, y: number) => el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: x, clientY: y }));
+  const entries = () => qa<HTMLElement>('.ctx-menu .ci').map((e) => e.textContent).join(' | ');
+  const docsNow = () => vault.documents().length;
+  const tree = () => vault.tree.map((n) => (n.kind === 'folder' ? `${n.name}/{${n.children.map((c) => c.name).join(', ')}}` : n.name)).join(' ');
+  const notice = () => { const n = q<HTMLElement>('.notice'); return n ? `"${n.querySelector('.nl')?.textContent}" [${qa<HTMLElement>('.notice .na').map((b) => b.textContent).join(' ')}]` : 'none'; };
+  const center = (el: Element) => { const r = el.getBoundingClientRect(); return [Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2)] as const; };
+  const tab = () => activeTab(useApp.getState().panes)?.id;
+  try {
+    const { dropAt, importFiles, onPaste } = await import('./land.js');
+    const pdf = vault.abs('papers/two-pages.pdf');
+    const epub = (await invoke<string | null>('dev_env', { name: 'ILMI_EPUB' })) ?? vault.abs('three-chapters.epub');
+    log(`start: ${docsNow()} documents; tree ${tree()}`);
+
+    // a PDF dropped on a folder row: it lands there, opens, and the notice says so
+    openNode(queueId('today'));
+    const essays = await until(() => qa<HTMLElement>('.edit-tree .trow').find((r) => r.dataset.path === 'essays'));
+    const [ex, ey] = center(essays);
+    const n0 = docsNow();
+    const landed = await dropAt([pdf], ex, ey);
+    await until(() => (docsNow() > n0 ? true : null), 10000);
+    await sleep(600);
+    log(`pdf on the essays row at ${ex},${ey}: landed ${landed?.map((l) => `${l.line} → ${l.open}`).join('; ')}; tab ${tab()}; notice ${notice()}; pages ${useApp.getState().docs[landed?.[0]?.open ?? '']?.pdf ?? 'none'}`);
+    log(`tree: ${tree()}`);
+    await shot('land-pdf-row');
+
+    // the fixture book dropped on the reader: it lands in the folder of the open document
+    openNode(WOZ);
+    const reader = await until(() => q<HTMLElement>('.pane[data-active="1"] .reader-wrap'));
+    await sleep(400);
+    const [rx, ry] = center(reader);
+    const n1 = docsNow();
+    const book = await dropAt([epub], rx, ry);
+    await until(() => (docsNow() >= n1 + 3 ? true : null), 15000);
+    await sleep(800);
+    log(`epub on the reader (tab ${WOZ}) at ${rx},${ry}: landed ${book?.map((l) => `${l.line} → ${l.open}; folders ${l.folders.join(', ')}`).join('; ')}; tab ${tab()}; notice ${notice()}`);
+    log(`tree: ${tree()}; papers: ${vault.documents().filter((d) => d.startsWith('papers/')).join(', ')}`);
+    await shot('land-epub-reader');
+
+    // undo from the notice: the book's folder goes
+    q<HTMLButtonElement>('.notice .na')?.click();
+    await until(() => (docsNow() <= n1 ? true : null), 10000);
+    await sleep(500);
+    log(`undo: ${docsNow()} documents; notice ${notice()}; log "${useApp.getState().log[0]}"; book folder ${vault.documents().some((d) => d.includes('Small Book')) ? 'STILL THERE' : 'gone'}`);
+
+    // Import… with the picker stubbed: the book again, into the active tab's folder
+    openNode('essays');
+    await until(() => q('.folder-view'));
+    const n2 = docsNow();
+    const imported = await importFiles(undefined, async () => [epub]);
+    await until(() => (docsNow() >= n2 + 3 ? true : null), 15000);
+    await sleep(600);
+    log(`import… (picker stubbed, tab essays): ${imported.map((l) => `${l.line} → ${l.open}`).join('; ')}; notice ${notice()}`);
+    log(`tree: ${tree()}`);
+    await shot('land-import');
+
+    // a pasted address with nothing focused
+    openNode('essays');
+    await until(() => q('.folder-view'));
+    (document.activeElement as HTMLElement | null)?.blur?.();
+    const url = (await invoke<string | null>('dev_env', { name: 'ILMI_URL' })) ?? 'https://en.wikipedia.org/wiki/Spaced_repetition';
+    let ev: ClipboardEvent;
+    try {
+      const dt = new DataTransfer();
+      dt.setData('text/plain', url);
+      ev = new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true });
+    } catch {
+      ev = new Event('paste', { bubbles: true, cancelable: true }) as ClipboardEvent;
+      Object.defineProperty(ev, 'clipboardData', { value: { getData: () => url } });
+    }
+    const n3 = docsNow();
+    const pasted = onPaste(ev);
+    log(`paste ${url} on ${document.activeElement?.tagName}: ${pasted ? 'taken' : 'LEFT ALONE'}; prevented ${ev.defaultPrevented}`);
+    const clip = pasted ? await pasted : null;
+    if (clip) {
+      await until(() => (docsNow() > n3 ? true : null), 10000);
+      await sleep(600);
+      log(`clipped: ${clip.line} → ${clip.open}; tab ${tab()}; notice ${notice()}`);
+      log(`tree: ${tree()}`);
+      await shot('land-paste');
+    } else log(`offline or unreadable: notice ${notice()}; skipped`);
+
+    // the folder lens: a row's menu and its empty space's
+    openNode('papers');
+    await until(() => q('.folder-view .fv-row'));
+    await sleep(400);
+    const row = qa<HTMLElement>('.folder-view .fv-row').find((r) => r.dataset.kind !== 'folder') ?? q<HTMLElement>('.folder-view .fv-row')!;
+    const [fx, fy] = center(row);
+    contextmenu(row, fx, fy);
+    await until(() => q('.ctx-menu'));
+    log(`folder lens row "${row.dataset.path}": ${entries()}`);
+    await shot('land-lens-row-menu', 6000);
+    key(window, 'Escape');
+    await sleep(100);
+    const view = q<HTMLElement>('.folder-view')!;
+    const vr = view.getBoundingClientRect();
+    const below = Math.min(window.innerHeight - 60, vr.bottom - 20);
+    contextmenu(view, vr.left + 40, below);
+    await until(() => q('.ctx-menu'));
+    log(`folder lens empty space at y ${Math.round(below)}: ${entries()}`);
+    await shot('land-lens-space-menu', 6000);
+    key(window, 'Escape');
+
+    // the sidebar's +
+    q<HTMLElement>('.edit-tree .trow[data-path=""] .side-add')?.click();
+    await until(() => q('.ctx-menu'));
+    log(`sidebar +: ${entries()}`);
+    await shot('land-plus', 6000);
+    key(window, 'Escape');
+    log(`end: ${docsNow()} documents; tree ${tree()}`);
     log('done');
   } catch (e) {
     log(`failed: ${e instanceof Error ? e.message : String(e)}`);

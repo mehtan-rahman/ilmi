@@ -42,9 +42,20 @@ none, when that folder is not where it was, or when `reopen the last vault on
 start` is off in the tweaks. A new vault starts with `start here.md`, one short
 source with a card in it. While a vault is open the File menu has `New
 Collection…` (⌘⇧N), `Open Collection…` (⌘O), `Open Recent` (the vaults opened
-before, by name), and `Close Collection` (⌘⇧W), and the palette has the same
-as `open collection…`, `new collection…`, `close collection`, and the other
-recent vaults under `vaults`.
+before, by name), `Import…` (⌘⇧O), and `Close Collection` (⌘⇧W), and the
+palette has the same as `open collection…`, `new collection…`, `import…`,
+`close collection`, and the other recent vaults under `vaults`.
+
+A file dragged from the Finder lands where it is dropped: on a folder row in
+the sidebar or the folder lens, in that folder (a document row: its folder);
+anywhere else, in the folder of the active tab (the root when there is none).
+A PDF, a book, a `.md` / `.txt` of prose, and an Anki package with one deck
+land straight away with the intake's defaults and open; a notice says what
+landed and where, with `undo` and `open`. Text that reads as cards and a
+package with several decks open the intake with the file in it, for the
+choices. `Import…` and the menus' `import a file…` take the picker the same
+way, and an address pasted (⌘V) with no field or editor focused is clipped
+into the active tab's folder and opened.
 
 In a dev build, `ILMI_VAULT=/path/to/vault npm run tauri dev` opens that vault
 at launch instead of asking for one. Add `ILMI_SMOKE=1` to run every tree
@@ -60,10 +71,13 @@ seeding its rows with `ILMI_VAULT`; the other modes are listed at the top of
 ⌘K               palette: open anything by name, or run a command
 click            open a folder or document in the active tab
 ⌘-click          open in a new tab      ⌘⇧-click   open in the next pane
-F2 / dbl-click   rename                 right-click  new, rename, move to, delete;
-                                                     anywhere else in the sidebar, new at the root
+F2 / dbl-click   rename                 right-click  new, import, rename, move to, delete,
+                                                     the same in the sidebar and the folder lens;
+                                                     anywhere else there, the folder's own
++                beside the vault's name: new, import, or add, into the selected folder
 ⌘⇧N              new collection         ⌘O           open collection
-⌘⇧W              close collection
+⌘⇧O              import…                ⌘⇧W          close collection
+⌘V               an address, with nothing focused: clipped into the active tab's folder
 ⌘W               close tab              ⌘\           split pane
 ⌘⇧E              sidebar                ⌘⇧I          inspector
 ⌘,               tweaks: theme, accent, density, reopen the last vault on start,

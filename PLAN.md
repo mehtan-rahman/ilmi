@@ -2741,26 +2741,15 @@ entries with the fixes they forced (a fetched page is never auto-read as
 cards and the comma rule wants a gloss for a back; the clipper
 percent-encodes image paths; an image with an empty alt is drawn; `[^1]` is
 not a note; the live smoke waits for maxwell's own surface). The window
-checks of 27, 28, and 29 are owed: port 1420 was the user's for both
-sessions, so `ILMI_SMOKE=blocks`, `ILMI_SMOKE=use`, and `ILMI_SMOKE=land`
-were written and not run (27's was run without its look read by eye). Run
-them first when the window is yours (the loop 25's entry describes; `land`
-wants `three-chapters.epub` copied into the scratch vault as `epub` does),
-read the captures (29: the PDF on the essays row, the book on the reader
-and its undo, the import, the paste, the folder lens's two menus, the
-sidebar's `+`; 28: the queue's path line, the sidebar menu from the empty
-space, `move to…` on a click, the welcome after `close collection`, the
-tree back; 27: the drawn list, task box, quote, and code block), then by
-hand drag a PDF and an EPUB from the Finder onto a sidebar folder, a
-folder-lens row, and the reader, watch the row light, press ⌘V with a
-link on the clipboard and nothing focused, and try the File menu (the five
-items, ⌘⇧N ⌘O ⌘⇧O ⌘⇧W, Open Recent filling in); fix what they show, and
-record it under each entry. What is left is a polish pass over the open
+checks of 27, 28, and 29 ran on 2026-10-28 and are recorded in BUILD-LOG's
+top entry; the on-screen word is "collection" (the user's choice; the code
+keeps `vault`), and Open Recent leaves out the open collection. Only a
+person can still check a real Finder drag, ⌘V with nothing focused, and the
+File menu by hand. What is left is a polish pass over the open
 items each milestone's notes record (29: the notice's undo covers only the
 last of several files, a second asking file waits unannounced, the
 intake's own pick does not land, the paste with nothing focused unproven
-in WebKit; 28: one word, vault or collection, for the welcome, the menu,
-and the palette; 27: nested blocks inside an item, a quote's wrapped
+in WebKit; 27: nested blocks inside an item, a quote's wrapped
 paragraph as lines, no code block made in place, Tab by the item's own
 width; 26: the editor's place near the right edge, undo not reopening it;
 21: the popover's height and anchor, one meaning per card, one clitic; 24:

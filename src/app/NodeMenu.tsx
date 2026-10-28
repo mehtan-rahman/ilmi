@@ -1,6 +1,6 @@
 // The one context menu for a node, shared by the sidebar's tree and the
 // folder lens: new source / folder / deck / draft (into the folder, or the
-// document's folder), import a file…, add a source (the intake), and for a
+// document's folder), import a file…, add from text or a link (the intake), and for a
 // node rename, move to… (a list opened on a click), and delete. The `+` in
 // the sidebar's root row opens the same menu without the node's half.
 // Escape and a press outside close it; it stays inside the window at the
@@ -36,15 +36,8 @@ export interface MenuAt {
 export const menuAt = (e: { clientX: number; clientY: number }, id: string, plus = false): MenuAt =>
   ({ id, x: Math.min(e.clientX, window.innerWidth - MENU_W), y: e.clientY, sub: false, ...(plus ? { plus } : {}) });
 
+/** One order for every menu (right-click and the sidebar's `+`): the documents first, the folder last. */
 const NEW_KINDS: [NodeKind, string][] = [
-  ['source', 'new source'],
-  ['folder', 'new folder'],
-  ['deck', 'new deck'],
-  ['draft', 'new draft'],
-];
-
-/** The `+` menu's order: the documents first, the folder last. */
-const PLUS_KINDS: [NodeKind, string][] = [
   ['source', 'new source'],
   ['deck', 'new deck'],
   ['draft', 'new draft'],
@@ -103,7 +96,7 @@ export function NodeMenu({ at, set, onCreated, onRename }: Props) {
     >
       {!at.sub ? (
         <>
-          {(at.plus ? PLUS_KINDS : NEW_KINDS).map(([k, label]) => (
+          {NEW_KINDS.map(([k, label]) => (
             <div key={k} className="ci" onClick={act(() => create(k))}>
               <span className="cg">{GLYPH[k]}</span>{label}
             </div>
@@ -113,7 +106,7 @@ export function NodeMenu({ at, set, onCreated, onRename }: Props) {
             <span className="cg">↧</span>import a file…
           </div>
           <div className="ci" onClick={act(() => openIntake(dir))}>
-            <span className="cg">{GLYPH.intake}</span>{at.plus ? 'add from text or a link' : 'add a source'}
+            <span className="cg">{GLYPH.intake}</span>add from text or a link
           </div>
           {node && (
             <>

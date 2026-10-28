@@ -62,8 +62,8 @@ const flush = async () => { await act(async () => { await new Promise((r) => set
 const entries = () => Array.from(document.querySelectorAll<HTMLElement>('.ctx-menu .ci')).map((e) => e.textContent?.replace(/^./, '').replace(/F2$|▸$/, '') ?? '');
 const fire = (el: Element, type: string, init: MouseEventInit = {}) => { act(() => { el.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, ...init })); }); };
 const click = (label: string) => fire(Array.from(document.querySelectorAll<HTMLElement>('.ctx-menu .ci')).find((e) => e.textContent?.includes(label))!, 'click');
-const ROW = ['new source', 'new folder', 'new deck', 'new draft', 'import a file…', 'add a source', 'rename', 'move to…', 'delete source'];
-const FOLDER = ['new source', 'new folder', 'new deck', 'new draft', 'import a file…', 'add a source'];
+const ROW = ['new source', 'new deck', 'new draft', 'new folder', 'import a file…', 'add from text or a link', 'rename', 'move to…', 'delete source'];
+const FOLDER = ['new source', 'new deck', 'new draft', 'new folder', 'import a file…', 'add from text or a link'];
 
 beforeEach(() => {
   calls.length = 0;
@@ -137,7 +137,7 @@ describe('one menu, in the tree and the folder lens', () => {
     expect(entries()).toEqual([...FOLDER, 'rename', 'move to…', 'delete folder']);
     click('import a file…');
     open();
-    click('add a source');
+    click('add from text or a link');
     open();
     click('new source');
     await flush();

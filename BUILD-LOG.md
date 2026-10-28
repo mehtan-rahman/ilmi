@@ -6,6 +6,88 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-10-28 — the window checks of 27, 28, and 29; collection, not vault; one menu order
+
+Done on main after 29, with the user's answers to 28's two questions:
+"collection, not vault" and Open Recent "should leave out a vault that's
+already opened". Commits: `62ed44b` (every on-screen "vault" is
+"collection": the welcome's buttons and keys, the root row's tag, the top
+strip's fallback, "no longer in the collection", the Tweaks line, the
+palette's group, the clipper's note; the code's names, the plugin API's
+`ilmi.vault`, and the link parameter `vault=` are unchanged so plugins and
+saved links keep working; `recentRows(recents, open)` leaves the open
+collection out and the menu is rebuilt when the open collection changes,
+with a test) and the commit carrying this entry (the right-click menu and
+the sidebar's `+` share one order, source, deck, draft, folder, and one
+label for the intake, `add from text or a link`, also the palette's).
+
+### Window checks
+
+The user's own dev run had held port 1420; it was free this time. The
+capture loop now takes the ilmi window by its window id
+(`screencapture -l`, the id from a CoreGraphics listing of the process's
+windows titled `… · ilmi`), so the captures show ilmi even while the
+user's own windows are in front, and the loop polls the log instead of
+piping `tail -F` (the old pipe never ended after `done`).
+
+- `ILMI_SMOKE=use` (28): `done`. The queue's first rows read `BIDIR
+  german`, `Q&A essays/marginalia — on slow reading`, `WRITE
+  essays/spaced-composition`, `READ papers/crick-1995`, in mono, lower
+  case, by eye; the tweak flips them to titles and back. The sidebar's
+  empty space (40 px under the last row) and the heading both open the
+  root menu; Escape and an outside press close it; a hover over `move to…`
+  opens nothing and a click lists the folders; the pointer leaving keeps
+  it; `◂ move to…` steps back; a right-click at y 780 places the menu with
+  its bottom at 782 of 788. `close collection` leaves the welcome with the
+  recents; `recent:<path>` reopens with the tree. Only the first capture
+  showed ilmi (the user's windows were in front); the log carries the rest.
+- `ILMI_SMOKE=land` (29): `done`, every capture read. The PDF on the
+  essays row landed as `essays/two-pages.md` with its `.pdf` and opened;
+  the EPUB on the reader landed as `papers/The Small Book/` (three
+  chapters) and opened its first, the notice reading `placed · The Small
+  Book · 3 chapters in papers/  undo  open  ×` at the reader's bottom
+  right; undo took the folder away; `import…` with the picker stubbed
+  landed the book in `essays/`; a pasted Wikipedia address with nothing
+  focused was clipped (3,784 words) into `essays/`; the folder lens's row
+  menu and its empty-space menu (`delete folder`, the folder's own) are
+  the tree's; the sidebar's `+` opens under the root row.
+- `ILMI_SMOKE=blocks` (27): `done`, captures read: the bullets, the
+  ticked task box in the accent with its text dimmed, the numbered list,
+  the quote's rule with three lines, the code block in mono with its `js`
+  tag, "After the list." / "After the quote." paragraphs where ⏎ ⏎ and
+  ⌘⏎ left the blocks. 27's owed look is closed.
+
+### Not verified
+
+- A real Finder drag (the OS drop and the row light): a drag cannot be
+  faked from a script; the smoke drives the router through its dev hook.
+- ⌘V from the keyboard with nothing focused: the smoke dispatches a paste
+  event; whether WebKit fires one for a real ⌘V with no focused field is
+  unproven.
+- The File menu clicked by hand and its shortcuts; Open Recent's rows
+  without the open collection (the test covers the rows).
+
+### Handoff prompt
+
+```
+Read PLAN.md, FORMAT.md, BUILD-LOG.md, and spec/hashiyah/HANDOFF.md.
+Every milestone in PLAN.md is ticked (0–29; 13 dropped) and the window
+checks through 29 are recorded. What only a person can check: a Finder
+drag onto a sidebar folder, a folder-lens row, and the reader; ⌘V with a
+link and nothing focused (if WebKit sends no paste event, add a ⌘V key
+handler that reads the clipboard); the File menu by hand. Then ask the
+user what is next: the polish list under "Notes for the next session" in
+PLAN.md, the plugin directory they set aside, or something new, and write
+it into PLAN.md as a milestone with a "done when" before building. The
+on-screen word is "collection" (the user's choice); the code keeps
+`vault`. Window captures: `screencapture -l <id>` of the ilmi window, so
+the user's windows in front do not matter. If port 1420 is held by a run
+that is not yours, do not kill it. Suite 540 (30 files), `cargo test` 12,
+and typecheck must be green before a commit.
+```
+
+---
+
 ## 2026-10-20 — milestone 29: one menu everywhere, and a file lands where you drop it
 
 Done on main; commit `461918b` — *one menu everywhere, and a file lands where

@@ -14,7 +14,7 @@ import { containerOf, currentVault, openCard, openIntake, openNode, openVault, p
 const COMMANDS: Command[] = [
   { id: 'enter', title: 'enter queue' },
   { id: 'postpone', title: 'postpone the rest' },
-  { id: 'intake', title: 'add a source' },
+  { id: 'intake', title: 'add from text or a link' },
   { id: 'split', title: 'split pane' },
   { id: 'close-pane', title: 'close pane' },
   { id: 'sidebar', title: 'sidebar' },

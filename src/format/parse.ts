@@ -4,7 +4,7 @@
 // syntax, the annotations it owns, known front-matter keys) and keeps
 // everything else verbatim as raw blocks or raw lines.
 
-import { parseAttrs, readAttrs, specWhen, specNum, specInt, specEnum, specIntRange, type AttrSpec, type Warn } from './attrs.js';
+import { parseAttrs, parseBool, readAttrs, specWhen, specNum, specInt, specEnum, specIntRange, type AttrSpec, type Warn } from './attrs.js';
 import { cardForm } from './cloze.js';
 import { parseFrontmatter } from './frontmatter.js';
 import type { Block, Card, CardSchedule, Diagnostic, Doc, Heading, Paragraph, SrState } from './model.js';
@@ -21,6 +21,8 @@ export const SR_SPECS: AttrSpec<CardSchedule>[] = [
   specWhen('last', 'last'),
   specIntRange('g', 'grade', 1, 4),
   specIntRange('pri', 'pri', 0, 100),
+  // `sus=1` suspends; read as a bool, written only when true (a `sus=0` is dropped on the next write)
+  { key: 'sus', prop: 'suspended', parse: (v) => parseBool(v), format: () => '1' },
 ];
 
 // ── line classifiers ─────────────────────────────────────────────
@@ -216,6 +218,8 @@ function attach(prev: Block | undefined, adjacent: boolean, tag: string, rest: s
     else warn(`unexpected token "${b}"`);
   }
   const sched = readAttrs(attrs.pairs, SR_SPECS, warn);
+  // `sus=0` says what absence says
+  if ((sched.suspended as boolean | undefined) === false) delete sched.suspended;
   if (group === undefined) {
     if (prev.sched) warn('card has two schedules; later wins');
     prev.sched = sched;

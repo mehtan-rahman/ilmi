@@ -9,10 +9,13 @@ import { ENTRY_GLYPH, buildIndex, search, type CardRef, type Command, type Entry
 import { activeTab, closePane, splitPane } from './panes.js';
 import { useApp } from './store.js';
 import { MENU_ID, runMenu } from './menu.js';
+import { hasCards, studyDeck } from './deckOps.js';
+import { folderPaths } from './names.js';
 import { containerOf, currentVault, openCard, openIntake, openNode, openVault, postponeRest, setInspector, setSidebar, startSession } from './vault.js';
 
 const COMMANDS: Command[] = [
   { id: 'enter', title: 'enter queue' },
+  { id: 'study', title: 'study…' },
   { id: 'postpone', title: 'postpone the rest' },
   { id: 'intake', title: 'add from text or a link' },
   { id: 'split', title: 'split pane' },
@@ -73,6 +76,8 @@ export function Palette() {
   const vault = useApp((s) => s.vault);
   const [q, setQ] = useState('');
   const [sel, setSel] = useState(0);
+  // `study…` turns the list into the things that can be studied: a deck, a folder, a document with cards under it
+  const [studying, setStudying] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const close = () => useApp.setState({ paletteOpen: false });
@@ -83,7 +88,17 @@ export function Palette() {
   // the other vaults opened before, under `vaults`, so switching is two keys
   const vaults = useMemo(() => recents.filter((r) => r.path !== vault).map((r) => ({ path: r.path, name: r.name })), [recents, vault]);
   const index = useMemo(() => buildIndex(tree, docs, cardRefs(), commands, vaults), [tree, docs, commands, vaults]);
-  const results = useMemo(() => search(index, q), [index, q]);
+  const studyIndex = useMemo((): Entry[] => {
+    if (!studying) return [];
+    const out: Entry[] = [];
+    const add = (path: string, tag: Entry['tag'], title: string) => {
+      if (hasCards(path)) out.push({ key: `s:${path}`, title, sub: 'study', tag, target: { command: `study:${path}` } });
+    };
+    for (const f of folderPaths(tree)) add(f, 'folder', f === '' ? 'the whole collection' : f);
+    for (const [path, info] of Object.entries(docs)) add(path, info.type, info.title ?? path.replace(/\.md$/, ''));
+    return out;
+  }, [studying, tree, docs]);
+  const results = useMemo(() => search(studying ? studyIndex : index, q), [studying, studyIndex, index, q]);
 
   useEffect(() => { inputRef.current?.focus(); }, []);
   // esc closes from anywhere, not only from the field
@@ -92,7 +107,7 @@ export function Palette() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
-  useEffect(() => { setSel(0); }, [q]);
+  useEffect(() => { setSel(0); }, [q, studying]);
   useEffect(() => {
     const list = listRef.current;
     const el = list?.querySelector<HTMLElement>('[data-sel="1"]');
@@ -103,8 +118,10 @@ export function Palette() {
 
   const run = (it: Entry | undefined) => {
     if (!it) return;
-    close();
     const t = it.target;
+    if ('command' in t && t.command === 'study') { setStudying(true); setQ(''); inputRef.current?.focus(); return; }
+    if ('command' in t && t.command.startsWith('study:')) { close(); studyDeck(t.command.slice(6)); return; }
+    close();
     if ('command' in t) runCommand(t.command);
     else if ('vault' in t) void openVault(t.vault).catch(console.error);
     else if (!currentVault()) return;
@@ -123,7 +140,7 @@ export function Palette() {
       <div className="palette-panel" onMouseDown={(e) => e.stopPropagation()}>
         <div className="palette-input">
           <span className="g">⌕</span>
-          <input ref={inputRef} value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={onKey} placeholder="open or run" spellCheck={false} />
+          <input ref={inputRef} value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={onKey} placeholder={studying ? 'study…' : 'open or run'} spellCheck={false} />
           <kbd>esc</kbd>
         </div>
         <div className="palette-list" ref={listRef}>

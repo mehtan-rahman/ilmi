@@ -37,9 +37,9 @@ export function toFsrs(s: CardSchedule | undefined, now: Date): FsrsCard {
 /**
  * Back to the format. `due` is a day once the card is scheduled a day or more
  * out, an instant while it is in learning steps measured in minutes. What is
- * not the scheduler's (`pri`, unknown attributes) is carried over from `prev`.
+ * not the scheduler's (`pri`, `sus`, unknown attributes) is carried over from `prev`.
  */
-export function fromFsrs(c: FsrsCard, grade: Grade, prev?: Pick<CardSchedule, 'pri' | 'extra'>): CardSchedule {
+export function fromFsrs(c: FsrsCard, grade: Grade, prev?: Pick<CardSchedule, 'pri' | 'suspended' | 'extra'>): CardSchedule {
   const out: CardSchedule = {
     due: c.scheduled_days >= 1 ? dayOf(c.due) : instantOf(c.due),
     state: STATES[c.state] ?? 'new',
@@ -53,6 +53,7 @@ export function fromFsrs(c: FsrsCard, grade: Grade, prev?: Pick<CardSchedule, 'p
   if (c.last_review) out.last = instantOf(c.last_review);
   out.grade = grade;
   if (prev?.pri !== undefined) out.pri = prev.pri;
+  if (prev?.suspended) out.suspended = true;
   if (prev?.extra?.length) out.extra = prev.extra;
   return out;
 }

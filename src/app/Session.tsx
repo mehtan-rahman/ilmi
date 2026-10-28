@@ -14,7 +14,8 @@ import { Pdf } from './Pdf.js';
 import { Reader, answerHTML, clozeHTML, richHTML } from './Reader.js';
 import { useApp, type El } from './store.js';
 import { useDoc } from './useDoc.js';
-import { currentVault, note } from './vault.js';
+import { studyHeader } from './study.js';
+import { currentVault, note, openNode } from './vault.js';
 import './session.css';
 
 interface Props {
@@ -292,6 +293,12 @@ export function Session({ active, onOpen }: Props) {
   }, [el, docs]);
   useEffect(() => () => useApp.setState({ sessionEl: null }), []);
 
+  // a session over one deck ends where it began: back on the deck's lens
+  const deck = session?.deck;
+  useEffect(() => {
+    if (deck && total > 0 && idx >= total) openNode(deck.id);
+  }, [deck, idx, total]);
+
   const goPrev = () => setIdx((i) => Math.max(0, i - 1));
   const goNext = () => setIdx((i) => Math.min(total - 1, i + 1));
   const advance = () => setIdx((i) => i + 1);
@@ -356,7 +363,9 @@ export function Session({ active, onOpen }: Props) {
     <div className="recall-wrap">
       <div className="recall-meta">
         <Nav idx={idx} total={total} onPrev={goPrev} onNext={goNext} />
-        <span className="sess-count">{idx + 1} / {total}</span>
+        {deck
+          ? <span className="sess-count sess-deck">{studyHeader(deck.title, total - idx)}</span>
+          : <span className="sess-count">{idx + 1} / {total}</span>}
         <span className="el-tag" data-el="card">{FORM_LABEL[el.form]}</span>
         <button type="button" className="meta-srclink" onClick={openSource}>{sourceLabel(el, docs)} <span className="ms-arrow">↗</span></button>
       </div>

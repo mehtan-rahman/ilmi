@@ -2899,7 +2899,71 @@ only in the reader over the deck's file. "Deck" below means any document
 with cards (a deck file, a source with cards in it, a tab from 31), and a
 folder or a document with children means every card under it.
 
-### [ ] 32. Decks — a browser, cards edited in place, and studying one deck
+### [x] 32. Decks — a browser, cards edited in place, and studying one deck
+Done 2026-10-28 on branch worktree-agent-aedb6add9558a8a41; commit `HASH`.
+Notes: FORMAT §6.2 gains `sus` (bool, written `sus=1`, `sus=0` dropped on
+the first write, §8): on the bare line the whole card, on an `sr cN` line
+that blank alone; the schedule is kept. `isSuspended(card, group)` in
+`src/schedule/queue.ts`; `cardItems` leaves suspended groups out, so the
+queue, every session, the counts, and `DocInfo.due` lose them; `fromFsrs`
+carries `sus` like `pri`. Corpus: `problem-set-1.md` gains a suspended
+q&a (`la-eigvec`) and a two-blank cloze with `c2` suspended (`la-rank`);
+the schedule counts follow (upcoming 22 → 23, cards 31 → 32). The model
+is pure: `src/app/deck.ts` (rows per card, the soonest unsuspended blank's
+schedule shown for a multi-blank cloze; `fold` for the search, NFKD with
+every combining mark and the tatweel stripped, so Arabic without marks
+finds the voweled word and a voweled search the bare one; `faceText`;
+`filterRows`: every search word in either face, any chip within a kind,
+both kinds; `sortRows`; `clickSelect` / `selectAll`; `docsUnder` the lens's
+documents in tree order; `docTargets`; `applyBulk`, one `update` per file,
+a move writing the destination first; `restore`; `bulkLine`),
+`src/app/cardEdit.ts` (faces, `switchForm`, `planEdit`, `applyEdit`,
+`insertCard`, `withPri`), `src/app/study.ts` (`studyItems`). The writes
+and the session are `src/app/deckOps.ts` (`bulkCards` with its notice and
+undo, `saveCardEdit`, `newCardAt`, `studyDeck`, `hasCards`). The view is
+`src/app/DeckBrowser.tsx` (`DeckBrowser`, `CardEditor`, `FaceField`: a
+one-paragraph ProseMirror state from `makeState` with the reader's node
+views, so a face edits with 26's inline rules and math chips; ⌘B makes a
+blank in a cloze) and `src/app/deck.css`. `DeckLens` in `Lenses.tsx` is
+now the browser under the deck's title; `FolderLens` gains `items · cards`
+(local, not remembered), the cards side being the browser over everything
+under it, a children directory's owner first; the root's lens is the
+whole collection. Choices made: `both ways` is the chip's word, the row's
+tag stays the queue's `bidir`; `created` sorts newest first by position
+(a card carries no date; new cards are written at the end); `difficulty`
+and `lapses` sort high first, `last reviewed` most recent first, `due`
+and `interval` low first; state chips leave suspended cards out of
+new/learning/review/due; `reset` asks with a second click (`reset 3 cards
+to new?`) and keeps the card's `pri` and `sus`; `set priority` is a number
+field in the bar, empty meaning the document's; the q&a front of a cloze
+shows the first blank as `[…]` and the other blanks filled in; with no
+bare line, a form change that leaves no numbered blank makes the lowest
+group line the bare one (a one-blank Anki cloze keeps its history), and
+the rest are dropped, asking (`drops the schedule of blank 2 (3
+reviews)`, ⌘⏎ again to save) when any has reviews; a press outside the
+editor saves, or lets go when the faces are no card; ⇧⌘⏎ saves and opens a
+new card after it; single deletes (⌫, ×, the row menu) are `removeCard`
+as before, without an undo, several selected go through the bulk delete
+with one. Cram (`include not due`): the reviewed cards in the queue's order
+(due first, then by due), new cards last; FSRS takes an early review in
+stride (elapsed days from `last`, stability grown less), the test grades
+one a fortnight early. The session's store gains `deck` (`{ id, title }`):
+its header reads `german · A1 · 5 left` and its end opens the deck's lens
+again (the session tab is replaced). The node menu shows `study` on
+anything with cards under it; the palette's `study…` lists every folder
+and document with cards (`the whole collection` for the root). The
+filter chips and sort are remembered per lens id in `.ilmi/state.json`
+under `decks` (`setDeckView`), re-keyed on a move. The deck hints add ⏎
+edit and / search. Smoke: `ILMI_SMOKE=decks` (`smokeDecks`). Tests: 611
+(+41 over 570 with the `sus` format test: `deck-browser.test.ts` 21,
+`card-edit.test.ts` 12, `study.test.ts` 8), 33 files; typecheck clean;
+cargo 12. Open: the window run (`ILMI_SMOKE=decks`) is owed; `has flag`
+waits for flags; a real typing check of the face fields in WebKit (the
+smoke types with `execCommand('insertText')`); the editor's place near the
+bottom of a long list; a filter that hides the cursor's row leaves the
+inspector on it; the folder lens's `items · cards` is not remembered;
+`study` on a lens with nothing due says so in a notice rather than
+offering the cram.
 - Browser. The deck lens gains a bar over the list: a search field (`/`
   focuses it; text in either face, a cloze's answers included, case and
   accent folded so Arabic without its vowel marks finds the voweled

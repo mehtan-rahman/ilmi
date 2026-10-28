@@ -88,6 +88,16 @@ function groupSchedule(card: Card, group: GroupKey | undefined): CardSchedule | 
   return card.sched;
 }
 
+/**
+ * Whether a group (or the whole card, with no group) is suspended: `sus=1`
+ * on the card's bare line suspends every group, on a group's line that
+ * group alone (FORMAT.md §6.2).
+ */
+export function isSuspended(card: Card, group?: GroupKey): boolean {
+  if (card.sched?.suspended) return true;
+  return !!(group && 'n' in group && card.blanks?.[group.n]?.suspended);
+}
+
 function withDue(sched: { due?: string } | undefined, now: Date): { due?: string; dueAt: Date } {
   return sched?.due ? { due: sched.due, dueAt: whenToDate(sched.due) } : { dueAt: now };
 }
@@ -111,7 +121,8 @@ function cardItems(path: string, block: number, card: Card, section: string | un
     if (group) item.group = group;
     return item;
   };
-  return groups.length ? groups.map(one) : [one(undefined)];
+  // a suspended card, or blank, keeps its schedule and leaves the queue, the session, and the counts
+  return (groups.length ? groups : [undefined]).filter((g) => !isSuspended(card, g)).map(one);
 }
 
 // ── documents ────────────────────────────────────────────────────

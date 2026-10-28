@@ -45,6 +45,29 @@ describe('front-matter', () => {
     expect([parseAf('1.1'), parseAf('2'), parseAf('1.09'), parseAf('x'), parseAf('-2')]).toEqual([1.1, 2, null, null, null]);
   });
 
+  it('suspended: `sus=1` on a bare line and on a group line, kept with the schedule; `sus=0` dropped', () => {
+    const bare = parse('a :: b ^x\n<!-- sr due=2026-05-27 st=review r=2 pri=10 sus=1 -->\n');
+    expect(bare.diagnostics).toEqual([]);
+    expect(bare.doc.blocks[0]).toEqual({ kind: 'card', text: 'a :: b', id: 'x', sched: { due: '2026-05-27', state: 'review', reps: 2, pri: 10, suspended: true } });
+    expect(serialize(bare.doc)).toBe('a :: b ^x\n<!-- sr due=2026-05-27 st=review r=2 pri=10 sus=1 -->\n');
+    // any order is read, the canonical order written; `sus=true` is read as 1
+    expect(serialize(parse('a :: b\n<!-- sr sus=true due=2026-05-27 -->\n').doc)).toBe('a :: b\n<!-- sr due=2026-05-27 sus=1 -->\n');
+    const group = parse('{{c1::x}} and {{c2::y}}\n<!-- sr c1 due=2026-06-01 -->\n<!-- sr c2 due=2026-06-02 sus=1 -->\n');
+    expect(group.diagnostics).toEqual([]);
+    const card = group.doc.blocks[0] as Card;
+    expect(card.blanks).toEqual({ 1: { due: '2026-06-01' }, 2: { due: '2026-06-02', suspended: true } });
+    expect(serialize(group.doc)).toBe('{{c1::x}} and {{c2::y}}\n<!-- sr c1 due=2026-06-01 -->\n<!-- sr c2 due=2026-06-02 sus=1 -->\n');
+    const off = parse('a :: b\n<!-- sr due=2026-05-27 sus=0 -->\n');
+    expect((off.doc.blocks[0] as Card).sched).toEqual({ due: '2026-05-27' });
+    expect(serialize(off.doc)).toBe('a :: b\n<!-- sr due=2026-05-27 -->\n');
+    expect(parse('a :: b\n<!-- sr sus=maybe -->\n').diagnostics.map((d) => d.message)).toEqual(['bad value for "sus": maybe']);
+    // the corpus: a suspended q&a and a cloze with one blank suspended
+    const ps = parse(read('vault/courses/linear-algebra/problem-set-1.md')).doc.blocks.filter((b): b is Card => b.kind === 'card');
+    expect(ps.find((c) => c.id === 'la-eigvec')?.sched?.suspended).toBe(true);
+    const rank = ps.find((c) => c.id === 'la-rank')!;
+    expect([rank.sched, rank.blanks?.[1]?.suspended, rank.blanks?.[2]?.suspended]).toEqual([undefined, undefined, true]);
+  });
+
   it('priority: the field wins over a line, a card carries its own, a group line never does', () => {
     const { doc, diagnostics } = parse(read('mangled/priority.md'));
     const m = meta(doc);

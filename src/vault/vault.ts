@@ -44,6 +44,8 @@ export interface VaultState {
   budget?: number;
   /** The folder an `ilmi://new` link lands in when it names none; `''` or absent is the root. */
   clippings?: string;
+  /** The deck browser's filter chips and sort, per deck (a lens id: a document, a folder, `''` the root). */
+  decks?: Record<string, unknown>;
 }
 
 /** Default file names for new nodes, by type. */

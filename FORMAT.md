@@ -346,11 +346,19 @@ is resolved later-wins with a diagnostic.
 | `last`  | day or instant         | `last_review`     |                                          |
 | `g`     | int 1–4                |                   | last grade: again hard good easy         |
 | `pri`   | int 0–100              |                   | the card's own priority, over the document's (§3) |
+| `sus`   | bool, written `1`      |                   | suspended: out of the queue, the session, and the counts |
 
 Every attribute is optional. A card with no `sr` line at all is a new card,
 due now; so is a card whose bare line carries only `pri`. `pri` belongs to the
 card, so it sits on the bare line only: on an `sr cN` line it is dropped with
-a diagnostic. Grading rewrites the schedule and carries `pri` across. `elapsed_days` is not stored; the scheduler derives it from `last`.
+a diagnostic. Grading rewrites the schedule and carries `pri` across.
+`sus=1` suspends: on the bare line the whole card, on an `sr cN` line that
+group alone. A suspended card or group keeps every other attribute and is
+left out of the queue, any session, and the queue's counts until the app
+removes the attribute (unsuspend); it is still listed where its document's
+cards are. `sus` is read as a bool and written only as `sus=1`; a `sus=0`
+says what absence says and is dropped on the first write (§8). A card with
+only `sus=1` on its bare line is a new card, suspended. `elapsed_days` is not stored; the scheduler derives it from `last`.
 Unknown attributes are kept in order after the known ones. A known attribute
 with an unparsable value is dropped with a diagnostic; the rest of the line
 survives.
@@ -430,6 +438,7 @@ The first time the app writes a hand-made file, these change, and only these:
 - A `pri=` on the `read` or `write` line → dropped, when the file has a `pri`
   field (§3). Without the field it stays.
 - An `af=` on the `read` or `write` line equal to that loop's default → dropped.
+- A `sus=0` (or `sus=false`) on an `sr` line → dropped; `sus=true` → `sus=1`.
 - A body with no front-matter whose first block is a `---` thematic break, or
   whose first character is a stray U+FEFF, gets one leading blank line, so the
   file is not read back as front-matter or as a byte-order mark.

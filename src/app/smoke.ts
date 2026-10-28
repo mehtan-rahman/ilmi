@@ -2864,3 +2864,133 @@ export async function smokeNest(vault: Vault): Promise<void> {
     log(`failed: ${e instanceof Error ? e.message : String(e)}`);
   }
 }
+
+// `ILMI_SMOKE=decks` opens the german deck and works its browser: searches
+// `wieder` (and `Lucke` without its umlaut), filters to due, sorts by
+// interval, ⇧-clicks three rows and suspends them from the bar (undoes it
+// from the notice and suspends again), opens a row with ⏎ and types onto
+// its back, switches another row to cloze and saves it by a click outside,
+// studies the deck with two grades (the session's header counting down),
+// and logs the file's lines after each.
+export async function smokeDecks(vault: Vault): Promise<void> {
+  const log = (s: string) => info(`smoke decks: ${s}`);
+  const shot = async (name: string, ms = 6000) => { await sleep(600); log(`shot: ${name}`); await sleep(ms); };
+  const DECK = 'german.md';
+  const q = <T extends Element>(sel: string) => document.querySelector<T>(sel);
+  const qa = <T extends Element>(sel: string) => Array.from(document.querySelectorAll<T>(sel));
+  const rows = () => qa<HTMLElement>('.deck-view .deck-row');
+  const shown = () => rows().map((r) => `${r.querySelector('.dr-front')?.textContent?.slice(0, 18)}[${r.querySelector('.dr-due')?.textContent}${r.querySelector('.dr-ivl') ? ` ${r.querySelector('.dr-ivl')?.textContent}` : ''}]`).join(' | ');
+  const count = () => q('.deck-bar .db-count')?.textContent ?? '';
+  const lines = async () => (await vault.read(DECK, true)).text.split('\n').filter((l) => l.trim()).slice(5).join(' ⏎ ');
+  const setInput = (el: HTMLInputElement, value: string) => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(el, value);
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  };
+  const key = (k: string, init: KeyboardEventInit = {}) => window.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true, ...init }));
+  const click = (el: Element, init: MouseEventInit = {}) => el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, ...init }));
+  const chip = (name: string) => q<HTMLElement>(`.deck-bar .chip[data-chip="${name}"]`)!;
+  const act = (name: string) => q<HTMLElement>(`.deck-bar .db-actions button[data-act="${name}"]`);
+  const suspended = () => rows().filter((r) => r.dataset.suspended === '1').length;
+  try {
+    openNode(DECK);
+    await until(() => (rows().length ? true : null));
+    await sleep(400);
+    log(`start: ${count()} rows; ${shown()}`);
+    log(`lines: ${await lines()}`);
+    await shot('decks-start');
+
+    const search = q<HTMLInputElement>('.deck-bar .db-search')!;
+    key('/');
+    log(`/ focuses the search: ${document.activeElement === search}`);
+    setInput(search, 'wieder');
+    await sleep(300);
+    log(`search "wieder": ${count()}; ${shown()}`);
+    setInput(search, 'Lucke');
+    await sleep(300);
+    log(`search "Lucke": ${count()}; ${shown()}`);
+    setInput(search, '');
+    search.blur();
+    click(chip('due'));
+    await sleep(300);
+    log(`filter due: ${count()}; ${shown()}`);
+    await shot('decks-due');
+    const sort = q<HTMLSelectElement>('.deck-bar .db-sort')!;
+    sort.value = 'interval';
+    sort.dispatchEvent(new Event('change', { bubbles: true }));
+    await sleep(300);
+    log(`sort interval (due): ${count()}; ${shown()}`);
+    click(chip('due'));
+    await sleep(300);
+    log(`sort interval (all): ${count()}; ${shown()}; remembered ${JSON.stringify(useApp.getState().deckViews[DECK])}`);
+    await shot('decks-interval');
+    sort.value = 'order';
+    sort.dispatchEvent(new Event('change', { bubbles: true }));
+    await sleep(300);
+
+    // three rows: a click, then a ⇧-click two below
+    click(rows()[0]!);
+    click(rows()[2]!, { shiftKey: true });
+    await until(() => act('suspend'));
+    log(`selected: "${q('.deck-bar .db-sel')?.textContent}"; actions ${qa('.deck-bar .db-actions button').map((b) => b.textContent).join(', ')}`);
+    await shot('decks-selected');
+    act('suspend')!.click();
+    await until(() => (suspended() === 3 ? true : null), 8000);
+    log(`suspended: ${shown()}; notice "${useApp.getState().notice?.line}"; lines: ${await lines()}`);
+    q<HTMLElement>('.notice .na')?.click();
+    await until(() => (suspended() === 0 ? true : null), 8000);
+    log(`undone: ${shown()}; lines: ${await lines()}`);
+    click(rows()[0]!);
+    click(rows()[2]!, { shiftKey: true });
+    (await until(() => act('suspend'))).click();
+    await until(() => (suspended() === 3 ? true : null), 8000);
+    log(`suspended again; german in the queue ${useApp.getState().queue.filter((i) => i.path === DECK).length}`);
+    await shot('decks-suspended');
+
+    // ⏎ on the fourth row: type onto its back, ⌘⏎ saves
+    click(rows()[3]!);
+    key('Enter');
+    const back = await until(() => q<HTMLElement>('.deck-edit .face.back .face-field'));
+    await shot('decks-editor', 4000);
+    back.focus();
+    const sel = window.getSelection()!;
+    sel.selectAllChildren(back);
+    sel.collapseToEnd();
+    document.execCommand('insertText', false, '; to lose');
+    await sleep(200);
+    back.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', metaKey: true, bubbles: true, cancelable: true }));
+    await until(() => (!q('.deck-edit') ? true : null), 5000);
+    await sleep(600);
+    log(`edited back: lines: ${await lines()}`);
+
+    // the fifth row to cloze from the editor's switch, saved by a press outside
+    click(rows()[4]!);
+    key('Enter');
+    await until(() => q('.deck-edit'));
+    qa<HTMLElement>('.deck-edit .type-toggle button').find((b) => b.textContent?.startsWith('cloze'))?.click();
+    await sleep(300);
+    log(`switched to cloze: front "${q('.deck-edit .face.front')?.textContent}"`);
+    q<HTMLElement>('.deck-view h1')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+    await until(() => (!q('.deck-edit') ? true : null), 5000);
+    await sleep(600);
+    log(`to cloze: lines: ${await lines()}`);
+    await shot('decks-edited');
+
+    // study the deck: two grades, the header counting down
+    q<HTMLElement>('.deck-study .ds-study')!.click();
+    await until(() => q('.recall-meta .sess-deck'));
+    log(`study: "${q('.recall-meta .sess-deck')?.textContent}"; items ${useApp.getState().session?.items.length}`);
+    await shot('decks-study', 4000);
+    for (let i = 0; i < 2; i++) {
+      const before = q('.recall-meta .sess-deck')?.textContent;
+      key(' ');
+      await sleep(250);
+      key('3');
+      await until(() => (q('.recall-meta .sess-deck')?.textContent !== before ? true : null), 5000);
+      await sleep(400);
+      log(`grade ${i + 1}: header "${q('.recall-meta .sess-deck')?.textContent ?? 'ended'}"; tab ${activeTab(useApp.getState().panes)?.id}; lines: ${await lines()}`);
+    }
+    log('done');
+  } catch (e) {
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}

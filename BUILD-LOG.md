@@ -8,7 +8,7 @@ was verified, what was not, and the prompt to resume with.
 
 ## 2026-10-28 — milestone 30: nesting, anything under anything, in an order you choose
 
-Done on main; commit `HASH30` — *nesting: anything under anything, in an
+Done on main; commit `9ff9791` — *nesting: anything under anything, in an
 order you choose*. Files: `src/vault/order.ts` (new), `src/vault/vault.ts`
 (`order`, `setOrder`, `place`, the order followed by rename / move / remove,
 `dropIfEmpty`, the named PDF carried), `src/vault/paths.ts` (`rekey` maps a

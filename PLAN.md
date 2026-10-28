@@ -2750,7 +2750,7 @@ Tabs are children files, not sections of one file, so a tab is a whole
 document: its own cards, schedule, priority, extracts, and its own tabs.
 
 ### [x] 30. Nesting — anything under anything, in an order you choose
-Done 2026-10-28 on main; commit `HASH30`.
+Done 2026-10-28 on main; commit `9ff9791`.
 Notes: `src/vault/order.ts` (new, pure) is the order: `Order` (`{ "<dir>":
 ["name.md", "sub/"] }`), `ORDER_FILE` (`.ilmi/order.json`), `entryOf`,
 `ordered(nodes, list)` (listed first, the rest in the walk's order),

@@ -2854,7 +2854,7 @@ and logs the tree and `.ilmi/order.json` after each; captures read (by
 window id, see the 2026-10-28 entry).
 
 ### [x] 31. Tabs — a document's children as tabs beside the page
-Done 2026-10-28 on main; commit `HASH31`.
+Done 2026-10-28 on main; commit `a6e97d9`.
 Notes: `tabs: true` is a front-matter field (FORMAT §3, a **Tabs**
 paragraph; `tabs: false` written only by hand; a bad value a raw line);
 the corpus course `courses/linear-algebra.md` carries it. `src/app/tabs.ts`

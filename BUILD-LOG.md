@@ -8,7 +8,7 @@ was verified, what was not, and the prompt to resume with.
 
 ## 2026-10-28 — milestone 31: tabs, a document's children as tabs beside the page
 
-Done on main; commit `HASH31` — *tabs: a document's children as tabs beside
+Done on main; commit `a6e97d9` — *tabs: a document's children as tabs beside
 the page*. Files: `src/app/tabs.ts` (new), `src/app/Rail.tsx` (new),
 `src/app/__tests__/tabs.test.ts` (new), `src/format/model.ts` and
 `frontmatter.ts` (`tabs`), `src/app/Lenses.tsx` (`Lens` wraps a notebook's

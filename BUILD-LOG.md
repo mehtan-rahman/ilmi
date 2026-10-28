@@ -82,6 +82,23 @@ tests.
   `.cs-body`, `.selected`, j k, ⌫, the row menu, and the inspector's
   editor, all of which the new rows keep; it was not rerun either.
 
+### Window check (after the merge)
+
+Merged into main by hand on 2026-10-28 (`0ed9a56`; conflicts in the store,
+the vault state, the dispatch, the node menu's imports, the lens imports,
+and the two appended smokes, every one kept on both sides). `ILMI_SMOKE=
+decks` ran to `done` twice, captures read by window id. The search found
+`die Wiederholung` and `spaced repetition` for "wieder" and `die Lücke` for
+"Lucke"; the interval sort was remembered in `.ilmi/state.json`; three
+rows suspended showed dimmed with `suspended`, the file's lines carried
+`sus=1`, undo took them back, and the top strip's count fell from 40 to
+37; the editor opened in the list with the two faces and the form switch;
+a back was edited and a card switched to cloze (`vergessen {{c1::to
+forget}}`); `study` opened `german · A1 · 4 left` and counted down with two
+grades. The captures showed two faults, fixed in `deck.css`: `include not
+due` wrapped to two lines (now `nowrap`), and the cursor's accent bar
+clipped the row's form tag (the tag column is 52 px with 8 px inside).
+
 ### Handoff prompt
 
 ```

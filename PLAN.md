@@ -3069,7 +3069,7 @@ file's lines after each; captures read.
 
 Milestones 0–32 are ticked (13 dropped); 32 (decks) was built on a branch
 beside 31 and merged by hand on 2026-10-28; its window check
-(`ILMI_SMOKE=decks`) is owed until BUILD-LOG's 32 entry records it. 31's window check (`ILMI_SMOKE=tabs`) is in BUILD-LOG's top
+(`ILMI_SMOKE=decks`) is recorded under BUILD-LOG's 32 entry. 31's window check (`ILMI_SMOKE=tabs`) is in BUILD-LOG's top
 entry, 30's (`ILMI_SMOKE=nest`) in the one under it. The window
 checks of 21, 24, 25, 26, and 27 are recorded in BUILD-LOG under their
 entries with the fixes they forced (a fetched page is never auto-read as

@@ -28,7 +28,7 @@
 .deck-study .ds-study:hover { border-color: var(--accent); }
 .deck-study .ds-study[data-able="0"] { opacity: 0.45; }
 .deck-study .ds-n { font-family: var(--mono); font-size: 10.5px; color: var(--fg-4); margin-left: 4px; }
-.deck-study .ds-cram { display: flex; align-items: center; gap: 5px; }
+.deck-study .ds-cram { display: flex; align-items: center; gap: 5px; white-space: nowrap; }
 .deck-study .deck-add { width: auto; margin: 0; }
 
 .deck-bar {
@@ -124,10 +124,10 @@
 
 /* a row: form tag, front, back dimmed, its path; due and interval on the right */
 .deck-view .card-span.deck-row {
-  grid-template-columns: 44px minmax(0, 1fr) auto auto;
+  grid-template-columns: 52px minmax(0, 1fr) auto auto;
   user-select: none;
 }
-.deck-row .dr-form { font-family: var(--mono); font-size: 10px; color: var(--fg-4); letter-spacing: 0.04em; padding-top: 3px; }
+.deck-row .dr-form { padding-left: 8px; font-family: var(--mono); font-size: 10px; color: var(--fg-4); letter-spacing: 0.04em; padding-top: 3px; }
 .deck-row .dr-faces { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .deck-row .dr-front { color: var(--fg-1); }
 .deck-row .dr-back { color: var(--fg-4); }

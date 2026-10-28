@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import type { NodeType, ReadSchedule, WriteSchedule } from '../format/index.js';
 import type { QueueItem } from '../schedule/index.js';
 import type { Order, TreeNode } from '../vault/index.js';
+import type { DeckView } from './deck.js';
 import { emptyPanes, type Panes } from './panes.js';
 import { cleanRecents, type Recent } from './recents.js';
 
@@ -144,6 +145,8 @@ export type El = 'card' | 'read' | 'write';
 export interface Session {
   seq: number;
   items: QueueItem[];
+  /** Studying one deck (`study`): the lens it came from and its title; the header names it and the end goes back to it. */
+  deck?: { id: string; title: string };
 }
 
 export const SIDE_MIN = 160;
@@ -215,6 +218,8 @@ export interface AppState {
   order: Order;
   /** Notebooks (documents with `tabs: true`) whose tab rail is folded to a strip, by path. Per vault, in `.ilmi/state.json`. */
   railFolded: Record<string, true>;
+  /** The deck browser's chips and sort, per lens id (`.ilmi/state.json`'s `decks`). */
+  deckViews: Record<string, DeckView>;
   session: Session | null;
   /** What the session is on now, for its tab and the inspector. */
   sessionEl: { kind: El; label: string; item: QueueItem } | null;
@@ -268,6 +273,7 @@ export const useApp = create<AppState>((set, get) => ({
   intakeFiles: [],
   order: {},
   railFolded: {},
+  deckViews: {},
   session: null,
   sessionEl: null,
   setTheme: (theme) => { set({ theme }); persist(get()); },

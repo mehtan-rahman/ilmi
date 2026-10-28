@@ -24,6 +24,8 @@ export interface CardSchedule {
   grade?: number;
   /** The card's own priority, overriding the document's. Only on the bare line. */
   pri?: number;
+  /** `sus=1`: left out of the queue, the session, and the counts; the schedule is kept. */
+  suspended?: true;
   extra?: Extra;
 }
 

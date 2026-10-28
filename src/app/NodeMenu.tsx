@@ -3,7 +3,8 @@
 // the document, its children directory made on demand), import a file…, add
 // from text or a link (the intake), `sort by name` when the directory has an
 // order of its own, and for a node rename, move to… (a list of folders and
-// documents opened on a click), and delete (asking first when there is
+// documents opened on a click), `study` on anything with cards under it
+// (a session over them, deckOps.ts), and delete (asking first when there is
 // something under it). A document's menu has `show as tabs` / `show as
 // tree` (its `tabs` field, `tabs.ts`), and on a tab rail's row `add subtab`. The `+` in the sidebar's root row opens the same menu
 // without the node's half.
@@ -13,6 +14,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type Dispatch, type MouseEvent, type SetStateAction } from 'react';
 import type { NodeType } from '../format/index.js';
 import { childDirOf, isDoc } from '../vault/index.js';
+import { hasCards, studyDeck } from './deckOps.js';
 import { importFiles } from './land.js';
 import { GLYPH, descendants, findNode, kindOf, moveTargets, titleOf, type NodeKind } from './names.js';
 import { useApp } from './store.js';
@@ -131,6 +133,11 @@ export function NodeMenu({ at, set, onCreated, onRename, onSubtab }: Props) {
           <div className="ci" onClick={act(() => openIntake(dir))}>
             <span className="cg">{GLYPH.intake}</span>add from text or a link
           </div>
+          {!at.plus && hasCards(at.id) && (
+            <div className="ci" data-act="study" onClick={act(() => { studyDeck(at.id); })}>
+              <span className="cg">{GLYPH.session}</span>study
+            </div>
+          )}
           {order[dir] && (
             <>
               <div className="cd" />

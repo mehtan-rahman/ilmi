@@ -6,6 +6,99 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-10-28 — milestone 32: decks, a browser, cards edited in place, and studying one deck
+
+Done on branch `worktree-agent-aedb6add9558a8a41` (built beside 31 on
+main, to be merged by hand); commit `e83b596` — *decks: a browser, cards
+edited in place, and studying one deck*. Files: `FORMAT.md` §6.2 and §8
+(`sus`), `src/format/model.ts`, `src/format/parse.ts`, `src/schedule/queue.ts`
+(`isSuspended`), `src/schedule/card.ts`, `src/schedule/index.ts`,
+`src/vault/vault.ts` (`VaultState.decks`), `src/app/deck.ts`,
+`src/app/cardEdit.ts`, `src/app/study.ts`, `src/app/deckOps.ts`,
+`src/app/DeckBrowser.tsx`, `src/app/deck.css` (all new),
+`src/app/Lenses.tsx` (`DeckLens` is the browser; `FolderLens` gains
+`items · cards`), `src/app/Session.tsx` (the deck's header, the end back on
+the deck), `src/app/store.ts` (`Session.deck`, `deckViews`),
+`src/app/vault.ts` (`docsOf`, `setDeckView`, the views loaded and
+re-keyed, the `decks` dispatch), `src/app/NodeMenu.tsx` (`study`),
+`src/app/Palette.tsx` (`study…`), `src/app/chrome.ts` (deck hints),
+`src/app/smoke.ts` (`smokeDecks`), the corpus `problem-set-1.md`, and the
+tests.
+
+### Done
+
+- Suspended: `sus=1` on a bare line suspends the card, on an `sr cN` line
+  that blank; the schedule stays; the queue, sessions, and counts leave it
+  out; the browser shows it dimmed with `suspended` for its due.
+- Browser: a search over both faces (a cloze's answers in place, case and
+  accents folded, Arabic marks and the tatweel ignored; `/` focuses it),
+  form chips (q&a, cloze, both ways), state chips (new, learning, review,
+  due, suspended), seven sorts, the count `4 of 7`; rows with the form tag,
+  the front, the back dimmed, the file's path when there is more than one
+  file, and the due and interval on the right. The deck lens lists a deck
+  and everything under it; a folder's (or a children directory's) lens
+  has `items · cards`, the root's being the whole collection. Chips and
+  sort are remembered per lens in `.ilmi/state.json` (`decks`).
+- Selection: click, ⇧-click a range, ⌘-click toggles, ⌘A all shown; the
+  bar shows `N selected` and move to… (every document, nested), delete,
+  suspend / unsuspend, reset (asks), set priority, study these. Each is
+  one write per file, with a notice whose undo puts every file back.
+- Edit in place: ⏎ or a double-click opens the row as two faces (one for
+  a cloze) in the session's look, smaller, each a live ProseMirror field
+  with the reader's inline rules and math chips; the form switch (q&a,
+  both ways, cloze, ⌘1–3) and the priority. ⌘⏎ or a press outside saves
+  one write (id and bare line kept, dropped group lines asking when they
+  carry reviews), Escape cancels; `m` and `+ card` open a new one after
+  the cursor's row.
+- Study: `study` on the lens (with `include not due`), `study` on the node
+  menu of anything with cards under it, `study…` in the palette, `study
+  these` from a selection; the session's header names the deck and counts
+  down, its end opens the deck again.
+
+### Verified
+
+- `npx vitest run`: 611 tests, 33 files (570 with the `sus` format test;
+  `deck-browser.test.ts` 21, `card-edit.test.ts` 12, `study.test.ts` 8).
+  `npm run typecheck` clean. `cargo test` 12. In this worktree
+  `node_modules` is a link to the main checkout's, which Vite's file
+  allow-list refuses for the pdf.js worker URL; the suite was run with an
+  untracked config that adds the main checkout to `server.fs.allow`
+  (`vitest.local.config.ts`, not committed). On main, `npm test` as usual.
+
+### Not verified — the window run is owed
+
+- `ILMI_SMOKE=decks` was written but not run: port 1420 was in use by the
+  other milestone's runs and the user's, and this session was told not to
+  open the window. It searches the german deck (`wieder`, `Lucke`),
+  filters to due, sorts by interval, ⇧-clicks three rows and suspends
+  them (undoes from the notice, suspends again), types onto a row's back
+  with ⏎ and ⌘⏎, switches another row to cloze and saves by a press
+  outside, studies the deck with two grades, and logs the file's lines
+  after each. Captures are owed with it.
+- Typing into the face fields under WebKit (jsdom covers the fields' DOM,
+  the keys, the switch, and the save; the smoke types with
+  `execCommand('insertText')`); the sticky bar and the editor's look.
+- The old `ILMI_SMOKE=deck` (16) drives the deck lens by `.card-span`,
+  `.cs-body`, `.selected`, j k, ⌫, the row menu, and the inspector's
+  editor, all of which the new rows keep; it was not rerun either.
+
+### Handoff prompt
+
+```
+Read PLAN.md, FORMAT.md, BUILD-LOG.md, and spec/hashiyah/HANDOFF.md.
+Milestones 0–32 are ticked (13 dropped); 31 ran on main and 32 on a
+branch, merged by hand on 2026-10-28. Run ILMI_SMOKE=decks and
+ILMI_SMOKE=tabs in the window if not yet recorded under these entries
+(port 1420 free, never kill a run that is not yours; capture with
+screencapture -l <window id>; if the window is hidden the webview's timers
+stop, so keep it in front or touch a CSS file every 2 s), read the
+captures, fix what they show, and record it here. Then ask the user what
+is next. Suite, `cargo test` 12, and typecheck must be green before a
+commit.
+```
+
+---
+
 ## 2026-10-28 — milestone 31: tabs, a document's children as tabs beside the page
 
 Done on main; commit `a6e97d9` — *tabs: a document's children as tabs beside

@@ -46,6 +46,8 @@ export interface VaultState {
   clippings?: string;
   /** Notebooks (documents with `tabs: true`) whose tab rail is folded to a strip. */
   rails?: string[];
+  /** The deck browser's filter chips and sort, per deck (a lens id: a document, a folder, `''` the root). */
+  decks?: Record<string, unknown>;
 }
 
 /** Default file names for new nodes, by type. */

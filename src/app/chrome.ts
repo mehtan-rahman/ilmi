@@ -46,7 +46,7 @@ export function hintsFor(c: HintContext): Hint[] {
     case 'draft':
       return [['m', 'card'], ['esc', 'leave the text']];
     case 'deck':
-      return [['j k', 'move'], ['⌫', 'delete'], ['m', 'card'], PALETTE];
+      return [['j k', 'move'], ['⏎', 'edit'], ['/', 'search'], ['⌫', 'delete'], ['m', 'card'], PALETTE];
     case 'intake':
       return [['⌘v', 'paste']];
     case 'folder':

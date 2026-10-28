@@ -2900,7 +2900,7 @@ with cards (a deck file, a source with cards in it, a tab from 31), and a
 folder or a document with children means every card under it.
 
 ### [x] 32. Decks — a browser, cards edited in place, and studying one deck
-Done 2026-10-28 on branch worktree-agent-aedb6add9558a8a41; commit `HASH`.
+Done 2026-10-28 on branch worktree-agent-aedb6add9558a8a41; commit `e83b596`.
 Notes: FORMAT §6.2 gains `sus` (bool, written `sus=1`, `sus=0` dropped on
 the first write, §8): on the bare line the whole card, on an `sr cN` line
 that blank alone; the schedule is kept. `isSuspended(card, group)` in

@@ -9,7 +9,7 @@ was verified, what was not, and the prompt to resume with.
 ## 2026-10-28 — milestone 32: decks, a browser, cards edited in place, and studying one deck
 
 Done on branch `worktree-agent-aedb6add9558a8a41` (built beside 31 on
-main, to be merged by hand); commit `HASH` — *decks: a browser, cards
+main, to be merged by hand); commit `e83b596` — *decks: a browser, cards
 edited in place, and studying one deck*. Files: `FORMAT.md` §6.2 and §8
 (`sus`), `src/format/model.ts`, `src/format/parse.ts`, `src/schedule/queue.ts`
 (`isSuspended`), `src/schedule/card.ts`, `src/schedule/index.ts`,

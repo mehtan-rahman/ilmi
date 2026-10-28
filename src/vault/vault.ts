@@ -5,6 +5,7 @@
 
 import { meta, parse, serialize, setField, type Card, type Diagnostic, type Doc, type NodeType } from '../format/index.js';
 import { join, relative, sameStamp, type Fs, type Stamp } from './fs.js';
+import { ORDER_FILE, childrenAt, cleanOrder, entryOf, followMove, forget, ordered, placeEntry, pruneOrder, type Order } from './order.js';
 import { addToPage } from './pages.js';
 import { baseOf, childDirOf, cleanName, dirOf, fileName, isDoc, joinRel, nameOf, pdfOf, rekey, within } from './paths.js';
 import { documents, isDocPath, isHidden, isPdfPath, walk, type DocNode, type TreeNode } from './walk.js';
@@ -25,7 +26,9 @@ export type VaultEvent =
   /** A rename or move done through this vault; `from` and `to` are the node's paths, children followed. */
   | { kind: 'moved'; from: string; to: string }
   /** Paths under a dot-directory (`.ilmi/…`) that changed on disk, vault-relative: not documents, but the plugin runtime follows its own files this way. */
-  | { kind: 'hidden'; paths: string[] };
+  | { kind: 'hidden'; paths: string[] }
+  /** The order of the directories (`.ilmi/order.json`) changed, through this vault or on disk. */
+  | { kind: 'order'; order: Order };
 
 /** View state in `.ilmi/state.json`. Optional, never required. */
 export interface VaultState {
@@ -172,6 +175,8 @@ export class VaultConflict extends Error {
 
 export class Vault {
   tree: TreeNode[] = [];
+  /** The order chosen for each directory, as `.ilmi/order.json` holds it (`order.ts`). */
+  order: Order = {};
   private cache = new Map<string, Loaded>();
   private listeners = new Set<(ev: VaultEvent) => void>();
   private pending: Promise<void> = Promise.resolve();
@@ -185,6 +190,7 @@ export class Vault {
     if (!st.isDir) throw new Error(`${root}: not a directory`);
     const v = new Vault(fs, root);
     v.tree = await walk(fs, root);
+    v.order = await v.loadOrder();
     return v;
   }
 
@@ -377,6 +383,13 @@ export class Vault {
       if (JSON.stringify(tree) !== JSON.stringify(this.tree)) {
         this.tree = tree;
         this.emit({ kind: 'tree', tree });
+      }
+    }
+    if (hidden.includes(ORDER_FILE)) {
+      const order = await this.loadOrder();
+      if (JSON.stringify(order) !== JSON.stringify(this.order)) {
+        this.order = order;
+        this.emit({ kind: 'order', order });
       }
     }
     if (hidden.length) this.emit({ kind: 'hidden', paths: hidden });
@@ -628,14 +641,18 @@ export class Vault {
         }
       }
       await this.rewalk();
+      await this.writeOrder(followMove(this.order, path, to));
       return to;
     });
   }
 
   /**
    * Move a folder or a document into `dir` (`''` for the root, a folder, or a
-   * document's children directory). Refuses a move into its own subtree or
-   * onto an existing name. Resolves to the new path.
+   * document's children directory, made on demand). A document's children
+   * directory and its pages go with it, and a sibling file its `pdf` field
+   * names. A children directory the move leaves empty is removed. Refuses a
+   * move into its own subtree or onto an existing name. Resolves to the new
+   * path.
    */
   move(path: string, dir: string): Promise<string> {
     return this.serial(async () => {
@@ -643,10 +660,80 @@ export class Vault {
       if (within(dir, childDirOf(path))) throw new Error(`cannot move ${path} into itself`);
       await this.ensureDir(dir);
       const to = joinRel(dir, baseOf(path));
+      // a `pdf` field naming a sibling that is not the stem's pages: it goes along, so the name still resolves
+      const named = isDoc(path) ? meta((await this.read(path)).doc).pdf : undefined;
       await this.relocate(path, to);
+      if (named !== undefined && !named.includes('/') && named !== baseOf(pdfOf(path))) {
+        const from = joinRel(dirOf(path), named);
+        const dest = joinRel(dir, named);
+        if ((await this.fs.stat(this.abs(from)))?.isDir === false && !(await this.fs.stat(this.abs(dest)))) await this.fs.rename(this.abs(from), this.abs(dest));
+      }
+      await this.dropIfEmpty(dirOf(path));
       await this.rewalk();
+      await this.writeOrder(followMove(this.order, path, to));
       return to;
     });
+  }
+
+  /**
+   * A drop on the row of `target`: `into` moves `path` inside it (a folder,
+   * or a document's children directory, made on demand); `before` / `after`
+   * move it to `target`'s directory and write that directory's order with it
+   * beside `target`, every other entry in the order shown now. Resolves to
+   * the node's new path.
+   */
+  async place(path: string, target: string, mode: 'into' | 'before' | 'after'): Promise<string> {
+    if (mode === 'into') return this.move(path, childDirOf(target));
+    if (path === target) return path;
+    const dir = dirOf(target);
+    const to = await this.move(path, dir);
+    const shown = ordered(childrenAt(this.tree, dir) ?? [], this.order[dir]).map((n) => entryOf(n.path));
+    await this.setOrder(dir, placeEntry(shown, entryOf(to), entryOf(target), mode));
+    return to;
+  }
+
+  /** `dir`, when it is a document's children directory with nothing left in it, removed. A plain folder stays, empty or not. */
+  private async dropIfEmpty(dir: string): Promise<void> {
+    if (dir === '' || !(await this.fs.stat(this.abs(`${dir}.md`)))) return;
+    const st = await this.fs.stat(this.abs(dir));
+    if (!st?.isDir) return;
+    const entries = await this.fs.readDir(this.abs(dir));
+    if (entries.every((e) => e.name.startsWith('.'))) await this.fs.remove(this.abs(dir));
+  }
+
+  /**
+   * Set the order of directory `dir` (`order.ts`): `names` its entries in
+   * order, or null for none (sort by name). The file is written with every
+   * stale name dropped.
+   */
+  setOrder(dir: string, names: string[] | null): Promise<Order> {
+    return this.serial(async () => {
+      const next = { ...this.order };
+      if (names && names.length) next[dir] = [...new Set(names)];
+      else delete next[dir];
+      await this.writeOrder(next);
+      return this.order;
+    });
+  }
+
+  async loadOrder(): Promise<Order> {
+    const abs = this.abs(ORDER_FILE);
+    if (!(await this.fs.stat(abs))) return {};
+    try {
+      return cleanOrder(JSON.parse(await this.fs.readText(abs)));
+    } catch {
+      return {};
+    }
+  }
+
+  /** Write `next`, pruned against the tree, when it differs from what is held (stale names held count as a difference); an order never set writes nothing. */
+  private async writeOrder(next: Order): Promise<void> {
+    const pruned = pruneOrder(next, this.tree);
+    if (JSON.stringify(pruned) === JSON.stringify(this.order)) return;
+    this.order = pruned;
+    await this.fs.mkdir(this.abs(STATE_DIR));
+    await this.atomicWrite(this.abs(ORDER_FILE), `${JSON.stringify(pruned, null, 2)}\n`);
+    this.emit({ kind: 'order', order: pruned });
   }
 
   /**
@@ -727,7 +814,9 @@ export class Vault {
           this.emit({ kind: 'gone', path: key });
         }
       }
+      await this.dropIfEmpty(dirOf(path));
       await this.rewalk();
+      await this.writeOrder(forget(this.order, path));
     });
   }
 

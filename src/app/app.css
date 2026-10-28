@@ -826,6 +826,22 @@
 
 /* the folder lens: a row lit under an OS file drag, a row renamed in place */
 .folder-view .fv-row.drop-into { background: var(--accent-soft); }
+.folder-view .fv-row.drop-before,
+.folder-view .fv-row.drop-after { position: relative; }
+.folder-view .fv-row.drop-before::after,
+.folder-view .fv-row.drop-after::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--accent);
+  pointer-events: none;
+}
+.folder-view .fv-row.drop-before::after { top: -1px; }
+.folder-view .fv-row.drop-after::after { bottom: -1px; }
+/* a delete that asks: the item says how much is under it, a second click confirms */
+.ctx-menu .ci.danger.asking { color: oklch(0.52 0.16 28); font-weight: 600; }
 .folder-view .fv-row .fv-rename {
   flex: 1;
   min-width: 0;

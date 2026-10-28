@@ -52,6 +52,8 @@ describe('paths', () => {
     expect(rekey('papers/crick-1995.md', WOZ, 'books/woz.md')).toBeNull();
     expect(rekey('papers/archive/sutton-2019.md', 'papers', 'old')).toBe('old/archive/sutton-2019.md');
     expect(rekey('papers-2/x.md', 'papers', 'old')).toBeNull();
+    // a document's children directory is re-keyed with it: a tab on its folder lens, its order
+    expect(rekey('papers/wozniak-1990', WOZ, 'books/woz.md')).toBe('books/woz');
   });
 
   it('knows names, children directories, and containment', () => {
@@ -325,7 +327,7 @@ describe('remove', () => {
   it('deletes a folder', async () => {
     await vault.remove('papers');
     expect(await exists('papers')).toBe(false);
-    expect(vault.tree.map((n) => n.name)).toEqual(['books', 'essays', 'fleeting', 'german']);
+    expect(vault.tree.map((n) => n.name)).toEqual(['books', 'courses', 'essays', 'fleeting', 'german']);
   });
 });
 

@@ -3,9 +3,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { meta, type Card } from '../../format/index.js';
+import { meta, setField, type Card } from '../../format/index.js';
 import { nodeFs } from '../node-fs.js';
-import { Vault, VaultConflict, documents, walk, type TreeNode, type VaultEvent } from '../index.js';
+import { Vault, VaultConflict, childrenAt, cleanOrder, directories, documents, entryOf, followMove, forget, ordered, placeEntry, pruneOrder, walk, type TreeNode, type VaultEvent } from '../index.js';
 
 const CORPUS = fileURLToPath(new URL('../../format/__tests__/corpus/vault/', import.meta.url));
 const WOZ = 'papers/wozniak-1990.md';
@@ -47,7 +47,7 @@ function names(nodes: TreeNode[]): string[] {
 
 describe('walk', () => {
   it('builds the tree FORMAT.md §1 describes', async () => {
-    expect(names(vault.tree)).toEqual(['books/', 'essays/', 'fleeting/', 'papers/', 'german']);
+    expect(names(vault.tree)).toEqual(['books/', 'courses/', 'essays/', 'fleeting/', 'papers/', 'german']);
     const papers = vault.tree.find((n) => n.name === 'papers');
     expect(papers?.kind).toBe('folder');
     if (papers?.kind !== 'folder') return;
@@ -70,13 +70,17 @@ describe('walk', () => {
     await fsp.writeFile(join(root, 'notes.txt'), 'x\n');
     await fsp.writeFile(join(root, 'papers/figure.png'), '');
     const tree = await walk(nodeFs, root);
-    expect(names(tree)).toEqual(['books/', 'essays/', 'fleeting/', 'papers/', 'german']);
+    expect(names(tree)).toEqual(['books/', 'courses/', 'essays/', 'fleeting/', 'papers/', 'german']);
     expect(documents(tree)).not.toContain('notes.txt');
   });
 
   it('lists every document in tree order', () => {
     expect(vault.documents()).toEqual([
       'books/james-pluralistic-ch4.md',
+      'courses/linear-algebra.md',
+      'courses/linear-algebra/unit-2/eigenvalues.md',
+      'courses/linear-algebra/problem-set-1.md',
+      'courses/linear-algebra/vectors.md',
       'essays/marginalia.md',
       'essays/spaced-composition.md',
       'essays/talk-incremental.md',
@@ -418,5 +422,206 @@ describe('state', () => {
     expect(await vault.loadState()).toEqual({ folders: ['papers'], tab: 'german.md', budget: 12 });
     expect(JSON.parse(await readDisk('.ilmi/state.json'))).toEqual({ folders: ['papers'], tab: 'german.md', budget: 12 });
     expect(names(await walk(nodeFs, root))).not.toContain('.ilmi/');
+  });
+});
+
+// ── milestone 30: anything under anything, in an order you choose ──
+
+const COURSE = 'courses/linear-algebra.md';
+const onDisk = async (rel: string) => !!(await nodeFs.stat(join(root, rel)));
+const dirOnDisk = async (rel: string) => (await nodeFs.stat(join(root, rel)))?.isDir === true;
+
+function nodeAt(nodes: TreeNode[], path: string): TreeNode | undefined {
+  for (const n of nodes) {
+    if (n.path === path) return n;
+    const hit = nodeAt(n.kind === 'folder' ? n.children : n.children ?? [], path);
+    if (hit) return hit;
+  }
+  return undefined;
+}
+
+const kidsOf = (path: string): string[] => {
+  const n = nodeAt(vault.tree, path);
+  return names(n?.kind === 'folder' ? n.children : n?.children ?? []);
+};
+
+describe('nesting', () => {
+  it('walks a document whose children are a deck, a draft, and a folder', async () => {
+    expect(kidsOf(COURSE)).toEqual(['unit-2/', 'problem-set-1', 'vectors']);
+    expect(kidsOf('courses/linear-algebra/unit-2')).toEqual(['eigenvalues']);
+    expect(meta((await vault.read('courses/linear-algebra/problem-set-1.md')).doc).type).toBe('deck');
+    expect(meta((await vault.read('courses/linear-algebra/vectors.md')).doc).type).toBe('draft');
+    expect(meta((await vault.read(COURSE)).doc).title).toBe('linear algebra');
+    expect(vault.documents().filter((d) => d.startsWith('courses/'))).toEqual([
+      COURSE,
+      'courses/linear-algebra/unit-2/eigenvalues.md',
+      'courses/linear-algebra/problem-set-1.md',
+      'courses/linear-algebra/vectors.md',
+    ]);
+  });
+
+  it('moves a deck into a source, its children directory made on demand', async () => {
+    const SRC = 'books/james-pluralistic-ch4.md';
+    expect(await onDisk('books/james-pluralistic-ch4')).toBe(false);
+    const to = await vault.move(DECK, 'books/james-pluralistic-ch4');
+    expect(to).toBe('books/james-pluralistic-ch4/german.md');
+    expect(await dirOnDisk('books/james-pluralistic-ch4')).toBe(true);
+    expect(kidsOf(SRC)).toEqual(['german']);
+    expect(meta((await vault.read(to)).doc).type).toBe('deck');
+    // place `into` a row is the same move
+    expect(await vault.place('papers/archive', 'essays/spaced-composition.md', 'into')).toBe('essays/spaced-composition/archive');
+    expect(kidsOf('essays/spaced-composition.md')).toEqual(['archive/']);
+    expect(kidsOf('essays/spaced-composition/archive')).toEqual(['sutton-2019']);
+  });
+
+  it('carries a document\'s children directory and its PDF, and a sibling its pdf field names', async () => {
+    const to = await vault.move('papers/two-pages.md', 'courses/linear-algebra');
+    expect(to).toBe('courses/linear-algebra/two-pages.md');
+    expect(await onDisk('courses/linear-algebra/two-pages.pdf')).toBe(true);
+    expect(await onDisk('courses/linear-algebra/two-pages/the ruler in the margin.md')).toBe(true);
+    expect(await onDisk('papers/two-pages.pdf')).toBe(false);
+    expect(await onDisk('papers/two-pages')).toBe(false);
+    expect(await vault.pagesOf(to)).toBe('courses/linear-algebra/two-pages.pdf');
+    // a field naming a file that is not the stem's: it goes along too
+    await fsp.writeFile(join(root, 'papers/scan.pdf'), '%PDF-1.4\n');
+    await vault.update('papers/crick-1995.md', (d) => setField(d, 'pdf', 'scan.pdf'));
+    const crick = await vault.move('papers/crick-1995.md', 'essays');
+    expect(await onDisk('essays/scan.pdf')).toBe(true);
+    expect(await onDisk('papers/scan.pdf')).toBe(false);
+    expect(await vault.pagesOf(crick)).toBe('essays/scan.pdf');
+  });
+
+  it('removes a children directory a move leaves empty, and keeps an empty folder', async () => {
+    await vault.move('papers/wozniak-1990/woz-ex1.md', '');
+    expect(await onDisk('papers/wozniak-1990')).toBe(false);
+    expect(nodeAt(vault.tree, WOZ)).toMatchObject({ kind: 'doc' });
+    expect((nodeAt(vault.tree, WOZ) as { children?: unknown }).children).toBeUndefined();
+    // the extract's backref in the parent is unchanged by where its file sits
+    expect((await readDisk(WOZ)).includes('<!-- extract woz-ex1 -->')).toBe(true);
+    await vault.move('papers/archive/sutton-2019.md', '');
+    expect(await dirOnDisk('papers/archive')).toBe(true);
+    // a children directory whose last child is deleted goes too; a plain folder emptied the same way stays
+    await vault.remove('papers/two-pages/the ruler in the margin.md');
+    expect(await onDisk('papers/two-pages')).toBe(false);
+    expect(await onDisk('papers/two-pages.pdf')).toBe(true);
+    await vault.remove('courses/linear-algebra/unit-2/eigenvalues.md');
+    expect(await dirOnDisk('courses/linear-algebra/unit-2')).toBe(true);
+  });
+
+  it('refuses to move a document into its own children', async () => {
+    await expect(vault.move(COURSE, 'courses/linear-algebra/unit-2')).rejects.toThrow(/into itself/);
+    await expect(vault.move(COURSE, 'courses/linear-algebra')).rejects.toThrow(/into itself/);
+  });
+});
+
+describe('order', () => {
+  const orderOnDisk = async () => JSON.parse(await readDisk('.ilmi/order.json')) as Record<string, string[]>;
+  const shown = (dir: string) => names(ordered(childrenAt(vault.tree, dir) ?? [], vault.order[dir]));
+
+  it('has none until one is set, and lists by the walk', async () => {
+    expect(vault.order).toEqual({});
+    expect(await onDisk('.ilmi/order.json')).toBe(false);
+    expect(shown('courses/linear-algebra')).toEqual(['unit-2/', 'problem-set-1', 'vectors']);
+  });
+
+  it('writes a directory\'s order, names not listed following in the walk\'s order', async () => {
+    await vault.setOrder('courses/linear-algebra', ['vectors.md', 'problem-set-1.md']);
+    expect(await orderOnDisk()).toEqual({ 'courses/linear-algebra': ['vectors.md', 'problem-set-1.md'] });
+    expect(shown('courses/linear-algebra')).toEqual(['vectors', 'problem-set-1', 'unit-2/']);
+    // a new child arrives unlisted and follows
+    await vault.createDoc('courses/linear-algebra', 'draft', 'a first unit');
+    expect(shown('courses/linear-algebra')).toEqual(['vectors', 'problem-set-1', 'unit-2/', 'a first unit']);
+    // reopened, it is read back
+    const again = await Vault.open(nodeFs, root);
+    expect(again.order).toEqual({ 'courses/linear-algebra': ['vectors.md', 'problem-set-1.md'] });
+  });
+
+  it('places before and after a row, writing the whole order', async () => {
+    const events: VaultEvent[] = [];
+    vault.subscribe((e) => events.push(e));
+    await vault.place('courses/linear-algebra/vectors.md', 'courses/linear-algebra/unit-2', 'before');
+    expect(shown('courses/linear-algebra')).toEqual(['vectors', 'unit-2/', 'problem-set-1']);
+    await vault.place('courses/linear-algebra/unit-2', 'courses/linear-algebra/problem-set-1.md', 'after');
+    expect(shown('courses/linear-algebra')).toEqual(['vectors', 'problem-set-1', 'unit-2/']);
+    expect(await orderOnDisk()).toEqual({ 'courses/linear-algebra': ['vectors.md', 'problem-set-1.md', 'unit-2/'] });
+    expect(events.filter((e) => e.kind === 'order')).toHaveLength(2);
+    // from another directory: moved there and placed
+    const to = await vault.place(DECK, 'courses/linear-algebra/problem-set-1.md', 'before');
+    expect(to).toBe('courses/linear-algebra/german.md');
+    expect(shown('courses/linear-algebra')).toEqual(['vectors', 'german', 'problem-set-1', 'unit-2/']);
+  });
+
+  it('drops listed names that no longer exist on the next write', async () => {
+    await fsp.mkdir(join(root, '.ilmi'), { recursive: true });
+    await fsp.writeFile(join(root, '.ilmi/order.json'), JSON.stringify({ 'courses/linear-algebra': ['gone.md', 'vectors.md'], 'no/such/dir': ['x.md'], '': ['papers/', 'nothing/'] }));
+    vault = await Vault.open(nodeFs, root);
+    // read as it is: the stale names wait for a write
+    expect(vault.order['no/such/dir']).toEqual(['x.md']);
+    expect(shown('courses/linear-algebra')).toEqual(['vectors', 'unit-2/', 'problem-set-1']);
+    await vault.setOrder('essays', ['talk-incremental.md']);
+    expect(await orderOnDisk()).toEqual({ 'courses/linear-algebra': ['vectors.md'], '': ['papers/'], essays: ['talk-incremental.md'] });
+  });
+
+  it('follows a rename in place, the parent\'s rename re-keying its children\'s order', async () => {
+    await vault.setOrder('courses/linear-algebra', ['vectors.md', 'unit-2/', 'problem-set-1.md']);
+    await vault.setOrder('courses', ['linear-algebra.md']);
+    await vault.rename('courses/linear-algebra/vectors.md', 'unit 1');
+    expect(vault.order['courses/linear-algebra']).toEqual(['unit 1.md', 'unit-2/', 'problem-set-1.md']);
+    await vault.rename(COURSE, 'linear algebra I');
+    expect(await orderOnDisk()).toEqual({
+      'courses/linear algebra I': ['unit 1.md', 'unit-2/', 'problem-set-1.md'],
+      courses: ['linear algebra I.md'],
+    });
+    expect(shown('courses/linear algebra I')).toEqual(['unit 1', 'unit-2/', 'problem-set-1']);
+    // a folder's rename follows too, and a move out of a directory leaves its list
+    await vault.rename('courses/linear algebra I/unit-2', 'unit 2');
+    expect(vault.order['courses/linear algebra I']).toEqual(['unit 1.md', 'unit 2/', 'problem-set-1.md']);
+    await vault.move('courses/linear algebra I/unit 1.md', '');
+    expect(vault.order['courses/linear algebra I']).toEqual(['unit 2/', 'problem-set-1.md']);
+    // sort by name: the order gone
+    await vault.setOrder('courses/linear algebra I', null);
+    expect(await orderOnDisk()).toEqual({ courses: ['linear algebra I.md'] });
+  });
+
+  it('forgets a deleted node, and follows the file edited by hand', async () => {
+    await vault.setOrder('courses/linear-algebra', ['vectors.md', 'unit-2/']);
+    await vault.remove('courses/linear-algebra/vectors.md');
+    expect(vault.order['courses/linear-algebra']).toEqual(['unit-2/']);
+    const events: VaultEvent[] = [];
+    vault.subscribe((e) => events.push(e));
+    await fsp.writeFile(join(root, '.ilmi/order.json'), JSON.stringify({ '': ['german.md'] }));
+    await vault.changed([join(root, '.ilmi/order.json')]);
+    expect(vault.order).toEqual({ '': ['german.md'] });
+    expect(events.find((e) => e.kind === 'order')).toEqual({ kind: 'order', order: { '': ['german.md'] } });
+    expect(names(ordered(vault.tree, vault.order[''])).slice(0, 2)).toEqual(['german', 'books/']);
+  });
+});
+
+describe('order, pure', () => {
+  const T: TreeNode[] = [
+    { kind: 'folder', name: 'a', path: 'a', children: [] },
+    { kind: 'doc', name: 'b', path: 'b.md', children: [{ kind: 'doc', name: 'c', path: 'b/c.md' }] },
+    { kind: 'doc', name: 'd', path: 'd.md' },
+  ];
+
+  it('names entries, orders, prunes, and places', () => {
+    expect(entryOf('x/y.md')).toBe('y.md');
+    expect(entryOf('x/y')).toBe('y/');
+    expect(names(ordered(T, ['d.md', 'gone.md', 'a/']))).toEqual(['d', 'a/', 'b']);
+    expect(names(ordered(T, undefined))).toEqual(['a/', 'b', 'd']);
+    expect([...directories(T).keys()]).toEqual(['', 'a', 'b']);
+    expect(pruneOrder({ '': ['d.md', 'x.md'], b: ['c.md'], zz: ['q.md'], a: ['none.md'] }, T)).toEqual({ '': ['d.md'], b: ['c.md'] });
+    expect(placeEntry(['a/', 'b.md', 'd.md'], 'd.md', 'a/', 'before')).toEqual(['d.md', 'a/', 'b.md']);
+    expect(placeEntry(['a/', 'b.md', 'd.md'], 'a/', 'b.md', 'after')).toEqual(['b.md', 'a/', 'd.md']);
+    expect(placeEntry(['a/'], 'n.md', 'missing.md', 'after')).toEqual(['a/', 'n.md']);
+    expect(cleanOrder({ a: ['x.md', 'x.md', 3, ''], b: 'no', c: [] })).toEqual({ a: ['x.md'] });
+    expect(cleanOrder([1])).toEqual({});
+  });
+
+  it('follows a move and forgets a removal', () => {
+    const o = { '': ['b.md', 'a/'], b: ['c.md'], 'b/c': ['e.md'] };
+    expect(followMove(o, 'b.md', 'z.md')).toEqual({ '': ['z.md', 'a/'], z: ['c.md'], 'z/c': ['e.md'] });
+    expect(followMove(o, 'b.md', 'a/b.md')).toEqual({ '': ['a/'], 'a/b': ['c.md'], 'a/b/c': ['e.md'] });
+    expect(forget(o, 'b.md')).toEqual({ '': ['a/'] });
   });
 });

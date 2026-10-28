@@ -1,9 +1,9 @@
 // Lenses: what a tab renders for a folder or a document, or the intake.
 // Folders and decks are lists; sources, extracts, and drafts open in the reader.
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import { PRI_DEFAULT, meta, type Card, type Doc } from '../format/index.js';
-import type { TreeNode } from '../vault/index.js';
+import { childDirOf, childrenAt, ordered, within, type TreeNode } from '../vault/index.js';
 import { revealIndex } from './chrome.js';
 import { CardText } from './CardText.js';
 import { Composer } from './Composer.js';
@@ -16,9 +16,9 @@ import { Reader } from './Reader.js';
 import { Session } from './Session.js';
 import { useApp, type DocInfo } from './store.js';
 import { runBlockHooks, usePlugins } from '../plugins/index.js';
-import { MENU_W, NodeMenu, menuAt, placeMenu, type MenuAt } from './NodeMenu.js';
+import { MENU_W, NodeMenu, dropMode, menuAt, placeMenu, type DropMode, type MenuAt } from './NodeMenu.js';
 import { useDoc } from './useDoc.js';
-import { createNode, currentVault, moveCard, openIntake, removeCard, renameNode } from './vault.js';
+import { createNode, currentVault, moveCard, openIntake, placeNode, removeCard, renameNode } from './vault.js';
 
 interface LensProps {
   id: string;
@@ -58,12 +58,20 @@ const NEW: [NodeKind, string][] = [
   ['folder', '+ folder'],
 ];
 
+/**
+ * A folder, or a document's children (`id` its children directory): its
+ * rows in the directory's order, each with the node's menu and the tree's
+ * drags (the middle of a row inside it, its thirds before and after).
+ */
 function FolderLens({ id, onOpen }: LensProps) {
   const tree = useApp((s) => s.tree);
   const docs = useApp((s) => s.docs);
   const root = useApp((s) => s.vault);
+  const order = useApp((s) => s.order);
   const fileOver = useApp((s) => s.fileOver);
   const [menu, setMenu] = useState<MenuAt | null>(null);
+  const [drag, setDrag] = useState<string | null>(null);
+  const [over, setOver] = useState<{ id: string; mode: DropMode } | null>(null);
   const [editing, setEditing] = useState<{ id: string; value: string } | null>(null);
   const editRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
@@ -72,9 +80,19 @@ function FolderLens({ id, onOpen }: LensProps) {
       editRef.current.select();
     }
   }, [editing?.id]);
-  const node = id === '' ? undefined : findNode(tree, id);
-  if (id !== '' && node?.kind !== 'folder') return <Gone />;
-  const children: TreeNode[] = node?.kind === 'folder' ? node.children : tree;
+  const found = childrenAt(tree, id);
+  if (!found) return <Gone />;
+  // a document's children: the document's own menu is this lens's, as its row's is in the tree
+  const owner = id !== '' && findNode(tree, `${id}.md`)?.kind === 'doc' ? `${id}.md` : id;
+  const children: TreeNode[] = ordered(found, order[id]);
+  const onDragOverRow = (e: DragEvent, at: string) => {
+    if (drag === null || drag === at || within(at, childDirOf(drag))) return;
+    e.preventDefault();
+    const r = e.currentTarget.getBoundingClientRect();
+    const mode = dropMode(e.clientY - r.top, r.height);
+    if (!over || over.id !== at || over.mode !== mode) setOver({ id: at, mode });
+  };
+  const endDrag = () => { setDrag(null); setOver(null); };
   const title = (path: string) => titleOf(path, docs, root);
   const beginRename = (path: string) => { if (path !== '') setEditing({ id: path, value: title(path) }); };
   const commitRename = () => {
@@ -92,11 +110,11 @@ function FolderLens({ id, onOpen }: LensProps) {
     <div
       className="reader-wrap"
       // the empty space: the folder's own menu, new items landing in it
-      onContextMenu={(e) => { e.preventDefault(); setMenu(menuAt(e, id)); }}
+      onContextMenu={(e) => { e.preventDefault(); setMenu(menuAt(e, owner)); }}
     >
       <div className="reader folder-view">
         <div className="meta">
-          <span className="crumb">folder</span>
+          <span className="crumb">{owner === id ? 'folder' : `inside ${kindOf(owner, docs)}`}</span>
           <span className="right">{children.length ? plural(children.length, 'item') : ''}</span>
         </div>
         <h1>{title(id)}</h1>
@@ -113,9 +131,15 @@ function FolderLens({ id, onOpen }: LensProps) {
               return (
                 <li
                   key={n.path}
-                  className={`fv-row${fileOver === n.path ? ' drop-into' : ''}`}
+                  className={`fv-row${over?.id === n.path ? ` drop-${over.mode}` : fileOver === n.path ? ' drop-into' : ''}`}
                   data-path={n.path}
                   data-kind={kind}
+                  draggable={!editingThis}
+                  onDragStart={(e) => { setDrag(n.path); e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', n.path); } catch { /* not every host allows it */ } }}
+                  onDragOver={(e) => onDragOverRow(e, n.path)}
+                  onDragLeave={() => { if (over?.id === n.path) setOver(null); }}
+                  onDrop={(e) => { e.preventDefault(); e.stopPropagation(); if (drag !== null && over) placeNode(drag, over.id, over.mode).catch(console.error); endDrag(); }}
+                  onDragEnd={endDrag}
                   onClick={(e) => { if (!editingThis) onOpen(n.path, { cmdClick: e.metaKey || e.ctrlKey, shiftClick: e.shiftKey }); }}
                   onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setMenu(menuAt(e, n.path)); }}
                 >

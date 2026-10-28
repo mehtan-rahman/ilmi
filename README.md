@@ -57,6 +57,16 @@ choices. `Import…` and the menus' `import a file…` take the picker the same
 way, and an address pasted (⌘V) with no field or editor focused is clipped
 into the active tab's folder and opened.
 
+Anything nests under anything. Drag a row onto the middle of another row and
+it goes inside it: a folder, or a document, whose children directory
+(`name/` beside `name.md`) is made on demand; drop on a row's top or bottom
+third and it goes before or after it, and that order is kept in
+`.ilmi/order.json` (`sort by name` on the menu forgets it). The menu's `new …`
+on a document makes the new item inside it, `move to…` lists documents as
+well as folders, and a document's children open as a folder lens from its
+inspector's `children` line or ⌥-click on its chevron. Deleting a document
+with children asks first.
+
 In a dev build, `ILMI_VAULT=/path/to/vault npm run tauri dev` opens that vault
 at launch instead of asking for one. Add `ILMI_SMOKE=1` to run every tree
 operation against that vault through the Tauri fs adapter and log the results

@@ -6,10 +6,22 @@
 
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TreeNode } from '../../vault/index.js';
+import { moveTargets } from '../names.js';
 import { useApp } from '../store.js';
 import { Tree } from '../Tree.js';
+
+const calls: string[] = [];
+
+vi.mock('../vault.js', async (orig) => {
+  const real = await orig<typeof import('../vault.js')>();
+  return {
+    ...real,
+    placeNode: vi.fn(async (path: string, target: string, mode: string) => { calls.push(`place ${path} ${mode} ${target}`); return path; }),
+    moveNode: vi.fn(async (path: string, dir: string) => { calls.push(`move ${path} → ${dir}`); return path; }),
+  };
+});
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -42,6 +54,7 @@ const key = (k: string) => { act(() => { window.dispatchEvent(new KeyboardEvent(
 const row = (path: string) => Array.from(side.querySelectorAll<HTMLElement>('.trow')).find((r) => r.querySelector('.name')?.textContent === path.split('/').pop()?.replace(/\.md$/, ''))!;
 
 beforeEach(() => {
+  calls.length = 0;
   useApp.setState({ vault: '/v', tree: TREE, docs: { 'papers/wozniak-1990.md': { type: 'source', frozen: true, cards: 0, due: 0 }, 'notes.md': { type: 'draft', frozen: false, cards: 0, due: 0 } }, open: { '': true, papers: true } });
   mount();
 });
@@ -83,7 +96,7 @@ describe('the sidebar menu', () => {
     mouse(hasSub(), 'click');
     expect(sub()).not.toBeNull();
     expect(menu()).not.toBeNull();
-    expect(Array.from(sub()!.querySelectorAll('.ci')).map((e) => e.textContent)).toEqual(['/papers', '/sources']);
+    expect(Array.from(sub()!.querySelectorAll('.ci')).map((e) => e.textContent)).toEqual(['/papers', '¶wozniak-1990', '/sources']);
     // the pointer leaving the list does not close it
     mouse(side.querySelector('.ctx-menu .sub-wrap')!, 'mouseleave', { bubbles: false });
     mouse(side.querySelector('.ctx-menu .sub-wrap')!, 'mouseout');
@@ -126,5 +139,105 @@ describe('the sidebar menu', () => {
       Object.defineProperty(window, 'innerWidth', { value: was.w, configurable: true });
       Object.defineProperty(window, 'innerHeight', { value: was.h, configurable: true });
     }
+  });
+});
+
+// ── milestone 30: a drop on any row, and move to… over documents ──
+
+describe('nesting in the tree', () => {
+  /** jsdom lays nothing out: every row is 24 px tall from the top of the window. */
+  const laidOut = <T,>(fn: () => T): T => {
+    const was = HTMLElement.prototype.getBoundingClientRect;
+    HTMLElement.prototype.getBoundingClientRect = function () {
+      return { top: 0, bottom: 24, height: 24, left: 0, right: 200, width: 200, x: 0, y: 0, toJSON: () => ({}) } as DOMRect;
+    };
+    try { return fn(); } finally { HTMLElement.prototype.getBoundingClientRect = was; }
+  };
+  const dt = () => ({ effectAllowed: '', dropEffect: '', setData: () => {}, getData: () => '', types: [] as string[] });
+  const dragEv = (type: string, y = 0) => {
+    const ev = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: 20, clientY: y });
+    Object.defineProperty(ev, 'dataTransfer', { value: dt() });
+    return ev;
+  };
+  const dropOn = (from: HTMLElement, to: HTMLElement, y: number) => laidOut(() => {
+    act(() => { from.dispatchEvent(dragEv('dragstart')); });
+    const over = dragEv('dragover', y);
+    act(() => { to.dispatchEvent(over); });
+    const cls = to.className;
+    act(() => { to.dispatchEvent(dragEv('drop', y)); });
+    act(() => { from.dispatchEvent(dragEv('dragend')); });
+    return { prevented: over.defaultPrevented, cls };
+  });
+
+  it('a drop on the middle of a document row goes into it, its thirds before and after', () => {
+    const notes = row('notes.md');
+    const woz = row('papers/wozniak-1990.md');
+    expect(dropOn(notes, woz, 12)).toEqual({ prevented: true, cls: expect.stringContaining('drop-into') });
+    expect(dropOn(notes, woz, 3).cls).toContain('drop-before');
+    expect(dropOn(notes, woz, 21).cls).toContain('drop-after');
+    // a folder row the same, and the root row only takes into
+    dropOn(woz, row('sources'), 12);
+    dropOn(woz, side.querySelector<HTMLElement>('.trow[data-path=""]')!, 2);
+    expect(calls).toEqual([
+      'place notes.md into papers/wozniak-1990.md',
+      'place notes.md before papers/wozniak-1990.md',
+      'place notes.md after papers/wozniak-1990.md',
+      'place papers/wozniak-1990.md into sources',
+      'place papers/wozniak-1990.md into ',
+    ]);
+  });
+
+  it('takes no drop of a node onto itself or into its own subtree', () => {
+    const papers = row('papers');
+    expect(dropOn(papers, row('papers/wozniak-1990.md'), 12).prevented).toBe(false);
+    expect(dropOn(papers, papers, 12).prevented).toBe(false);
+    expect(calls).toEqual([]);
+  });
+
+  it('draws a document\'s children in the order chosen, a folder\'s too', () => {
+    act(() => {
+      useApp.setState({
+        tree: [{ kind: 'doc', name: 'course', path: 'course.md', children: [
+          { kind: 'folder', name: 'unit 2', path: 'course/unit 2', children: [] },
+          { kind: 'doc', name: 'set 1', path: 'course/set 1.md' },
+          { kind: 'doc', name: 'unit 1', path: 'course/unit 1.md' },
+        ] }, ...TREE],
+        open: { '': true, 'course.md': true },
+        order: { course: ['unit 1.md', 'unit 2/'], '': ['notes.md'] },
+      });
+    });
+    const paths = Array.from(side.querySelectorAll<HTMLElement>('.trow')).map((r) => r.dataset.path);
+    expect(paths).toEqual(['', 'notes.md', 'course.md', 'course/unit 1.md', 'course/unit 2', 'course/set 1.md', 'papers', 'sources']);
+  });
+
+  it('move to… lists documents as well as folders, nested and indented, leaving out the node and what is under it', () => {
+    const tree: TreeNode[] = [
+      { kind: 'doc', name: 'course', path: 'course.md', children: [
+        { kind: 'doc', name: 'unit 1', path: 'course/unit 1.md', children: [{ kind: 'doc', name: 'ex', path: 'course/unit 1/ex.md' }] },
+        { kind: 'folder', name: 'sets', path: 'course/sets', children: [] },
+      ] },
+      ...TREE,
+    ];
+    const at = (id: string) => moveTargets(tree, id).map((t) => `${'  '.repeat(t.depth)}${t.path || '/'} → ${t.dir || '/'}`);
+    expect(at('notes.md')).toEqual([
+      '  course.md → course',
+      '    course/unit 1.md → course/unit 1',
+      '      course/unit 1/ex.md → course/unit 1/ex',
+      '    course/sets → course/sets',
+      '  papers → papers',
+      '    papers/wozniak-1990.md → papers/wozniak-1990',
+      '  sources → sources',
+    ]);
+    // the course itself and its subtree are left out, and the root, where it is already
+    expect(at('course.md')).toEqual(['  papers → papers', '    papers/wozniak-1990.md → papers/wozniak-1990', '  sources → sources', '  notes.md → notes']);
+    // the place it is in already is left out: unit 1 is in the course
+    expect(at('course/unit 1.md').map((s) => s.trim())).toEqual(['/ → /', 'course/sets → course/sets', 'papers → papers', 'papers/wozniak-1990.md → papers/wozniak-1990', 'sources → sources', 'notes.md → notes']);
+    // in the menu: indented by depth, a click moving into the document's children directory
+    mouse(row('notes.md'), 'contextmenu', { clientX: 60, clientY: 120 });
+    mouse(side.querySelector('.ctx-menu .ci.has-sub')!, 'click');
+    const items = Array.from(side.querySelectorAll<HTMLElement>('.ctx-menu .sub-scroll .ci'));
+    expect(items.map((e) => [e.textContent, e.style.paddingLeft])).toEqual([['/papers', '22px'], ['¶wozniak-1990', '34px'], ['/sources', '22px']]);
+    mouse(items[1]!, 'click');
+    expect(calls).toEqual(['move notes.md → papers/wozniak-1990']);
   });
 });

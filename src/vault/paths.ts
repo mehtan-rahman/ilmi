@@ -41,11 +41,12 @@ export function within(path: string, dir: string): boolean {
   return dir === '' || path === dir || path.startsWith(`${dir}/`);
 }
 
-/** Re-key a path under a moved node, or `null` if it is not under it. */
+/** Re-key a path under a moved node (a document's children directory included), or `null` if it is not under it. */
 export function rekey(path: string, from: string, to: string): string | null {
   if (path === from) return to;
   const fromDir = childDirOf(from);
   const toDir = childDirOf(to);
+  if (path === fromDir) return toDir;
   if (path.startsWith(`${fromDir}/`)) return `${toDir}/${path.slice(fromDir.length + 1)}`;
   return null;
 }

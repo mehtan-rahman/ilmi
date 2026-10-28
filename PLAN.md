@@ -2749,7 +2749,71 @@ Google Docs draws a document's tabs and subtabs in a rail beside the page.
 Tabs are children files, not sections of one file, so a tab is a whole
 document: its own cards, schedule, priority, extracts, and its own tabs.
 
-### [ ] 30. Nesting — anything under anything, in an order you choose
+### [x] 30. Nesting — anything under anything, in an order you choose
+Done 2026-10-28 on main; commit `HASH30`.
+Notes: `src/vault/order.ts` (new, pure) is the order: `Order` (`{ "<dir>":
+["name.md", "sub/"] }`), `ORDER_FILE` (`.ilmi/order.json`), `entryOf`,
+`ordered(nodes, list)` (listed first, the rest in the walk's order),
+`directories` / `childrenAt(tree, dir)` (the root, each folder, each
+document with children by its children directory), `cleanOrder`,
+`pruneOrder` (stale names and directories dropped), `followMove` (a rename
+in place, a move out of the old list, the moved node's own directories
+re-keyed), `forget`, `placeEntry`. `Vault` holds `order` (read at open,
+reread when the watcher reports the file), `setOrder(dir, names | null)`,
+`place(path, target, 'into' | 'before' | 'after')` (into: a move to
+`childDirOf(target)`; before/after: a move to the target's directory and
+that directory's whole list written with it beside the target), and a
+`{ kind: 'order' }` event; `rename`, `move`, and `remove` write the order
+they change, pruned (nothing is written while no order was ever set).
+`move` also carries a sibling file the `pdf` field names (the stem's PDF
+and the children directory already went along) and `dropIfEmpty` removes a
+document's children directory a move or a delete leaves empty (a plain
+folder stays). `rekey` now maps a document's children directory itself, so
+a tab on a children lens and its order follow a rename. App: the store's
+`order`; `placeNode`, `sortByName`, `openDir` (the row holding a
+directory, a document's own row for its children) in `src/app/vault.ts`;
+`dropMode` (thirds; the root row only into) in `NodeMenu.tsx`, used by the
+tree and the folder lens, both of which draw `ordered` lists and take the
+same drags. The menu's `new …`, `import a file…`, and the intake go into
+`childDirOf(id)` (inside a document); `move to…` is `moveTargets` (names.ts:
+the root, folders, and documents, depth first in order, indented 12 px a
+level, the node, its subtree, and its present directory left out); `sort
+by name` shows only when the directory has an order; delete on a node with
+something under it turns into `delete with N inside?` and takes a second
+click. `FolderLens` takes a document's children directory as its id (its
+title the document's, crumb `inside <kind>`, its empty space the
+document's own menu); it is opened from the inspector's new `children`
+line (every document type) or ⌥-click on a document's chevron. `titleOf`
+names a children directory for its document. The plugin API's watch skips
+`order` events. FORMAT §1 and §6.3 say a children directory holds any
+node, the order file, and that a backref is not rewritten by a move.
+Corpus: `courses/linear-algebra.md` with a deck (two cards due in
+September), a draft (not enrolled), and `unit-2/eigenvalues.md`; the
+corpus counts in `schedule.test.ts` (upcoming 20 → 22, cards 29 → 31),
+`vault.test.ts`, `tree.test.ts`, `plugins.test.ts` follow. README: the
+nesting paragraph. Smoke: `ILMI_SMOKE=nest` (`smokeNest`). Tests: 569
+(+29 over 540: the new corpus files' round trips; `vault.test.ts`
+nesting (the course's children of every kind, a deck into a source with
+its directory made, a folder into a draft through `place`, a document
+with children and a PDF moved and its pages found, a named sibling PDF
+carried, the empty children directory removed and an empty folder kept,
+no move into its own children) and order (none until set, unknown names
+after, reopen, before/after writing the whole list, stale names dropped on
+the next write, a rename followed in place and the parent's rename
+re-keying, a move out, sort by name, a delete, the file edited by hand)
+and the pure functions; `tree.test.ts` (app) into/before/after on a
+document row, a folder row, the root, no drop into its own subtree, the
+order drawn, `move to…` listing documents indented; `node-menu.test.ts`
+new items inside a document, the children lens, sort by name, the delete
+that asks; the `rekey` line), 30 files; typecheck clean; cargo 12.
+Open: a real pointer drag in the window (the smoke dispatches the drag
+events on the rows; WebKit's own drag image and the thirds under a real
+pointer are not seen); the folder lens has no drop on its empty space
+(only on rows) and no `into` the folder shown; ⌥-click on the chevron is
+the only way from the tree to a children lens; a move of an extract out
+of its parent leaves the backref pointing at nothing, as FORMAT says; an
+order is kept for the root of a children directory only while it has
+children (an emptied one is removed with its directory).
 - FORMAT §1: a document's children directory holds any node, documents of
   every type and folders, not only extracts; say so, and that an extract's
   backref (§6.3) is unchanged by where its file sits. The corpus gains a
@@ -2826,7 +2890,10 @@ rail and the file tree after each; captures read.
 
 ## Notes for the next session
 
-Milestones 0–29 are ticked (13 dropped); nothing is unchecked. The window
+Milestones 0–30 are ticked (13 dropped); 31 (tabs: a document's children
+as a rail beside the page, built on 30's children directories, order, and
+`place`) is next; 30's window check (`ILMI_SMOKE=nest`) ran on 2026-10-28
+and is in BUILD-LOG's top entry. The window
 checks of 21, 24, 25, 26, and 27 are recorded in BUILD-LOG under their
 entries with the fixes they forced (a fetched page is never auto-read as
 cards and the comma rule wants a gloss for a back; the clipper

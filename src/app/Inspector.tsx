@@ -12,14 +12,14 @@ import {
   type Block, type Card, type CardForm, type CardSchedule, type Doc, type ReadSchedule, type WriteSchedule,
 } from '../format/index.js';
 import { advanceWrite, counts, nextIntervals, type CardItem } from '../schedule/index.js';
-import { baseOf, dirOf, isDoc, pageOfBlock, type TreeNode } from '../vault/index.js';
+import { baseOf, childDirOf, childrenAt, dirOf, isDoc, pageOfBlock, type TreeNode } from '../vault/index.js';
 import { cardLabel, formLabel } from './chrome.js';
 import { FORM_LABEL, dueLabel, fmtDays } from './items.js';
 import { INTAKE, QUEUE_TITLE, SCOPES, SESSION, findNode, queueScope, titleOf, type NodeKind } from './names.js';
 import { activeTab } from './panes.js';
 import { useApp, type DocInfo } from './store.js';
 import { useDoc } from './useDoc.js';
-import { currentVault, resetCard } from './vault.js';
+import { currentVault, openNode, resetCard } from './vault.js';
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 const words = (blocks: Block[]) => blocks.reduce((n, b) => (b.kind === 'card' ? n : n + b.text.split(/\s+/).filter(Boolean).length), 0);
@@ -232,9 +232,9 @@ function Gone({ kind }: { kind: string }) {
 function FolderInspector({ id }: { id: string }) {
   const tree = useApp((s) => s.tree);
   const docs = useApp((s) => s.docs);
-  const node = id === '' ? undefined : findNode(tree, id);
-  const children: TreeNode[] = id === '' ? tree : node?.kind === 'folder' ? node.children : [];
-  if (id !== '' && node?.kind !== 'folder') return <Gone kind="folder" />;
+  const found = childrenAt(tree, id);
+  if (!found) return <Gone kind="folder" />;
+  const children: TreeNode[] = found;
   const by: Record<string, number> = {};
   for (const c of children) {
     const k: NodeKind = c.kind === 'folder' ? 'folder' : docs[c.path]?.type ?? 'source';
@@ -243,6 +243,14 @@ function FolderInspector({ id }: { id: string }) {
   const rows: [string, ReactNode][] = [['items', children.length]];
   for (const [k, n] of Object.entries(by)) rows.push([`${k}s`, n]);
   return <Block title="folder"><KV rows={rows} /></Block>;
+}
+
+/** The `children` line of a document that has any: how many, a click opening them as a folder lens. */
+function childrenRow(id: string, tree: TreeNode[]): [string, ReactNode][] {
+  const node = findNode(tree, id);
+  const n = node?.kind === 'doc' ? node.children?.length ?? 0 : 0;
+  if (!n) return [];
+  return [['children', <button key="children" type="button" className="insp-link" onClick={() => openNode(childDirOf(id))}>{plural(n, 'item')}</button>]];
 }
 
 function toggleField(path: string, key: 'frozen', value: boolean) {
@@ -261,7 +269,7 @@ function DocInspector({ id, info, doc, now }: { id: string; info: DocInfo; doc: 
     return (
       <>
         <Block title="deck">
-          <KV rows={[['cards', cards], ['due', info.due], docPriRow(id, m)]} />
+          <KV rows={[['cards', cards], ['due', info.due], docPriRow(id, m), ...childrenRow(id, tree)]} />
           <div className="frozen-row">
             <span className="fr-state">new cards</span>
             <div className="deck-default">
@@ -283,7 +291,7 @@ function DocInspector({ id, info, doc, now }: { id: string; info: DocInfo; doc: 
     return (
       <>
         <Block title="draft">
-          <KV rows={[['path', <span className="mono">{id}</span>], ['length', plural(words(doc.blocks), 'word')], ...(cards ? [cardsRow] : []), docPriRow(id, m)]} />
+          <KV rows={[['path', <span className="mono">{id}</span>], ['length', plural(words(doc.blocks), 'word')], ...(cards ? [cardsRow] : []), docPriRow(id, m), ...childrenRow(id, tree)]} />
           {w && (
             <div className="frozen-row">
               <span className="fr-state">{state}</span>
@@ -319,6 +327,7 @@ function DocInspector({ id, info, doc, now }: { id: string; info: DocInfo; doc: 
   else if (m.read) rows.push(['reading', `${m.read.pos ?? 0} of ${doc.blocks.filter((b) => b.kind !== 'card').length}, ${dueLabel(m.read.due, now)}`]);
   rows.push(docPriRow(id, m));
   if (m.read) rows.push(growthRow(id, 'read', m.read));
+  rows.push(...childrenRow(id, tree));
   return (
     <>
       <Block title={info.type}>

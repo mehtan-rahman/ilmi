@@ -111,6 +111,13 @@
 // (`ILMI_URL`, else the Wikipedia page; offline it logs and skips) with
 // nothing focused, right-clicks a folder-lens row and its empty space, and
 // opens the sidebar's `+`, logging the tree, the tab, and the notice after each.
+// `ILMI_SMOKE=nest` drags rows in the sidebar as a pointer would (dragstart,
+// dragover at a third of the row, drop): the deck `german` into the middle of
+// a source, the folder `papers/archive` into a draft, then the course's three
+// children reordered by their top thirds; opens the course's children as a
+// folder lens and the course's inspector `children` line, renames the course
+// inline from its row, lists `move to…` for a deck, and asks to delete the
+// course, logging the rows and `.ilmi/order.json` after each.
 // `ILMI_SMOKE=welcome` runs before any vault opens: it seeds the recents
 // with the scratch vault (`ILMI_VAULT`) and a path that does not exist,
 // turns `reopen the last vault on start` off, reads the welcome's rows and
@@ -130,7 +137,7 @@ import { GLYPH, SESSION, queueId, titleOf } from './names.js';
 import { vaultName } from './recents.js';
 import { useApp } from './store.js';
 import { runMenu } from './menu.js';
-import { createNode, currentVault, moveNode, openCard, openIntake, openNode, openSession, removeNode, renameNode, setInspector, startFromRecents } from './vault.js';
+import { createNode, currentVault, moveNode, toggleOpen, openCard, openIntake, openNode, openSession, removeNode, renameNode, setInspector, startFromRecents } from './vault.js';
 import { activeTab } from './panes.js';
 
 const WOZ = 'papers/wozniak-1990.md';
@@ -2730,6 +2737,128 @@ export async function smokeLand(vault: Vault): Promise<void> {
     await shot('land-plus', 6000);
     key(window, 'Escape');
     log(`end: ${docsNow()} documents; tree ${tree()}`);
+    log('done');
+  } catch (e) {
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+export async function smokeNest(vault: Vault): Promise<void> {
+  const log = (s: string) => info(`smoke nest: ${s}`);
+  const shot = async (name: string, ms = 8000) => { await sleep(600); log(`shot: ${name}`); await sleep(ms); };
+  const q = <T extends Element>(sel: string) => document.querySelector<T>(sel);
+  const qa = <T extends Element>(sel: string) => Array.from(document.querySelectorAll<T>(sel));
+  const COURSE = 'courses/linear-algebra.md';
+  const trow = (path: string) => q<HTMLElement>(`.edit-tree .trow[data-path="${CSS.escape(path)}"]`);
+  const depth = (el: HTMLElement) => Math.round((parseFloat(el.style.paddingLeft || '6') - 6) / 13);
+  // the sidebar's rows as drawn, indented by depth, under the given prefixes
+  const rows = (...prefixes: string[]) => qa<HTMLElement>('.edit-tree .trow')
+    .filter((r) => prefixes.some((p) => (r.dataset.path ?? '').startsWith(p)))
+    .map((r) => `${'  '.repeat(Math.max(0, depth(r) - 1))}${r.querySelector('.glyph')?.textContent ?? ''}${r.querySelector('.name')?.textContent ?? ''}`)
+    .join(' | ');
+  const orderFile = async () => ((await vault.fs.stat(vault.abs('.ilmi/order.json'))) ? (await vault.fs.readText(vault.abs('.ilmi/order.json'))).replace(/\s+/g, ' ').trim() : 'none');
+  const entries = () => qa<HTMLElement>('.ctx-menu .ci').map((e) => `${e.style.paddingLeft ? `[${e.style.paddingLeft}]` : ''}${e.textContent}`).join(' | ');
+  const key = (k: string) => window.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));
+  const has = (path: string) => (vault.documents().includes(path) ? true : null);
+  const dragEv = (type: string, dt: DataTransfer, x = 0, y = 0) => new DragEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, dataTransfer: dt });
+  /** A pointer's drag from one row to a third of another: top, middle, or bottom. */
+  const drag = async (from: string, to: string, where: 'top' | 'mid' | 'bottom') => {
+    const a = await until(() => trow(from));
+    const b = await until(() => trow(to));
+    const dt = new DataTransfer();
+    a.dispatchEvent(dragEv('dragstart', dt));
+    await sleep(80);
+    const r = b.getBoundingClientRect();
+    const y = r.top + r.height * (where === 'top' ? 0.15 : where === 'mid' ? 0.5 : 0.85);
+    b.dispatchEvent(dragEv('dragenter', dt, r.left + 30, y));
+    const over = dragEv('dragover', dt, r.left + 30, y);
+    b.dispatchEvent(over);
+    await sleep(120);
+    const lit = b.className.match(/drop-\w+/)?.[0] ?? 'none';
+    b.dispatchEvent(dragEv('drop', dt, r.left + 30, y));
+    a.dispatchEvent(dragEv('dragend', dt));
+    return `${from} → ${where} of ${to}: accepted ${over.defaultPrevented}, lit ${lit}`;
+  };
+  try {
+    setInspector({ open: true });
+    for (const f of ['books', 'essays', 'courses', COURSE, 'papers']) toggleOpen(f, true);
+    openNode(queueId('today'));
+    await until(() => trow(COURSE));
+    await sleep(500);
+    log(`start: ${rows('books', 'essays', 'courses', 'german', 'papers/archive')}; order ${await orderFile()}`);
+    await shot('nest-start');
+
+    // a deck into the middle of a source: the source's children directory made, its row opening
+    log(await drag('german.md', 'books/james-pluralistic-ch4.md', 'mid'));
+    await until(() => has('books/james-pluralistic-ch4/german.md'), 8000);
+    await sleep(500);
+    log(`deck into source: ${rows('books', 'german')}; on disk ${(await vault.fs.stat(vault.abs('books/james-pluralistic-ch4')))?.isDir ? 'books/james-pluralistic-ch4/ made' : 'NO DIRECTORY'}; order ${await orderFile()}`);
+    await shot('nest-deck-into-source');
+
+    // a folder into the middle of a draft
+    log(await drag('papers/archive', 'essays/spaced-composition.md', 'mid'));
+    await until(() => has('essays/spaced-composition/archive/sutton-2019.md'), 8000);
+    await sleep(500);
+    log(`folder into draft: ${rows('essays', 'papers/archive')}; papers now ${vault.documents().filter((d) => d.startsWith('papers/')).length} documents; order ${await orderFile()}`);
+    await shot('nest-folder-into-draft');
+
+    // the course's three children reordered by their top thirds
+    log(await drag('courses/linear-algebra/vectors.md', 'courses/linear-algebra/unit-2', 'top'));
+    await until(() => (vault.order['courses/linear-algebra'] ? true : null), 8000);
+    await sleep(500);
+    log(`reorder 1: ${rows('courses')}; order ${await orderFile()}`);
+    log(await drag('courses/linear-algebra/problem-set-1.md', 'courses/linear-algebra/unit-2', 'top'));
+    await until(() => (vault.order['courses/linear-algebra']?.[1] === 'problem-set-1.md' ? true : null), 8000);
+    await sleep(500);
+    log(`reorder 2: ${rows('courses')}; order ${await orderFile()}`);
+    await shot('nest-reorder');
+
+    // the course's children as a folder lens, in the same order; the course's own inspector line
+    openNode('courses/linear-algebra');
+    await until(() => q('.folder-view .fv-row'));
+    await sleep(400);
+    log(`children lens: "${q('.folder-view h1')?.textContent}" (${q('.folder-view .crumb')?.textContent}): ${qa<HTMLElement>('.folder-view .fv-row').map((r) => r.querySelector('.fv-name')?.textContent).join(', ')}`);
+    await shot('nest-children-lens');
+    openNode(COURSE);
+    await sleep(800);
+    const kv = qa<HTMLElement>('.kvr').find((r) => r.querySelector('dt')?.textContent === 'children');
+    log(`course inspector children line: ${kv ? kv.querySelector('dd')?.textContent : 'NONE (inspector closed?)'}`);
+
+    // rename the course inline from its row: its children and their order follow
+    const crow = await until(() => trow(COURSE));
+    crow.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true }));
+    const input = await until(() => q<HTMLInputElement>('.edit-tree input.rename'));
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'linear algebra I');
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    await until(() => has('courses/linear algebra I.md'), 8000);
+    await sleep(600);
+    log(`renamed: ${rows('courses')}; children on disk ${vault.documents().filter((d) => d.startsWith('courses/linear algebra I/')).join(', ')}; tab ${activeTab(useApp.getState().panes)?.id}; order ${await orderFile()}`);
+    await shot('nest-renamed');
+
+    // move to… for a deck: folders and documents, indented by depth
+    const deck = await until(() => trow('books/james-pluralistic-ch4/german.md'));
+    const dr = deck.getBoundingClientRect();
+    deck.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: dr.left + 40, clientY: dr.top + 8 }));
+    await until(() => q('.ctx-menu'));
+    q<HTMLElement>('.ctx-menu .ci.has-sub')?.click();
+    await until(() => q('.ctx-menu .sub-scroll'));
+    log(`move to… for german: ${entries()}`);
+    await shot('nest-move-to', 6000);
+    key('Escape');
+    await sleep(100);
+
+    // delete asks first for a document with children
+    const course = await until(() => trow('courses/linear algebra I.md'));
+    const cr = course.getBoundingClientRect();
+    course.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: cr.left + 40, clientY: cr.top + 8 }));
+    await until(() => q('.ctx-menu'));
+    qa<HTMLElement>('.ctx-menu .ci.danger')[0]?.click();
+    await sleep(200);
+    log(`delete on the course: "${q('.ctx-menu .ci.danger')?.textContent ?? 'menu closed'}"; course still there ${vault.documents().includes('courses/linear algebra I.md')}`);
+    await shot('nest-delete-asks', 6000);
+    key('Escape');
+    log(`end: ${rows('books', 'essays', 'courses')}; order ${await orderFile()}`);
     log('done');
   } catch (e) {
     log(`failed: ${e instanceof Error ? e.message : String(e)}`);

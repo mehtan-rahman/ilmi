@@ -3,7 +3,7 @@
 
 import type { NodeType } from '../format/index.js';
 import { whenToDate } from '../schedule/index.js';
-import { baseOf, isDoc, nameOf, type TreeNode } from '../vault/index.js';
+import { baseOf, childDirOf, dirOf, isDoc, nameOf, ordered, within, type Order, type TreeNode } from '../vault/index.js';
 import type { DocInfo } from './store.js';
 
 export type NodeKind = 'folder' | NodeType;
@@ -56,13 +56,14 @@ export function tabKindOf(id: string, docs: Record<string, DocInfo>): TabKind {
   return kindOf(id, docs);
 }
 
-/** A document's `title`, else its file name; the root is the vault directory's name. */
+/** A document's `title`, else its file name; the root is the vault directory's name; a document's children directory is named for the document. */
 export function titleOf(path: string, docs: Record<string, DocInfo>, vaultRoot: string | null): string {
   if (path === '') return baseOf(vaultRoot ?? '') || 'collection';
   if (path === INTAKE) return 'intake';
   if (path === SESSION) return 'session';
   const scope = queueScope(path);
   if (scope) return QUEUE_TITLE[scope];
+  if (!isDoc(path) && docs[`${path}.md`]) return docs[`${path}.md`]?.title ?? nameOf(path);
   return docs[path]?.title ?? nameOf(path);
 }
 
@@ -91,6 +92,46 @@ export function folderPaths(nodes: TreeNode[]): string[] {
   };
   visit(nodes);
   return out;
+}
+
+/** A place `move to…` offers: a folder or a document (`path`, `''` the root), the directory a move there lands in, and how deep it sits. */
+export interface MoveTarget {
+  path: string;
+  dir: string;
+  depth: number;
+}
+
+/**
+ * Everywhere `id` can move to, depth first in the tree's order (`order`
+ * applied): the root, every folder, every document (into its children
+ * directory); `id` itself, what is under it, and the directory it is in
+ * already left out.
+ */
+export function moveTargets(nodes: TreeNode[], id: string, order: Order = {}): MoveTarget[] {
+  const out: MoveTarget[] = [];
+  const own = childDirOf(id);
+  const add = (path: string, dir: string, depth: number) => {
+    if (path === id || (id !== '' && within(path, own)) || dir === dirOf(id)) return;
+    out.push({ path, dir, depth });
+  };
+  add('', '', 0);
+  const visit = (list: TreeNode[], dir: string, depth: number) => {
+    for (const n of ordered(list, order[dir])) {
+      // a node's own subtree is no place to move it to
+      if (n.path === id) continue;
+      const kids = n.kind === 'folder' ? n.children : n.children;
+      add(n.path, childDirOf(n.path), depth);
+      if (kids) visit(kids, childDirOf(n.path), depth + 1);
+    }
+  };
+  visit(nodes, '', 1);
+  return out;
+}
+
+/** How many nodes are under `node`, all the way down. */
+export function descendants(node: TreeNode): number {
+  const kids = node.kind === 'folder' ? node.children : node.children ?? [];
+  return kids.reduce((n, k) => n + 1 + descendants(k), 0);
 }
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;

@@ -6,6 +6,109 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-10-28 — milestone 30: nesting, anything under anything, in an order you choose
+
+Done on main; commit `HASH30` — *nesting: anything under anything, in an
+order you choose*. Files: `src/vault/order.ts` (new), `src/vault/vault.ts`
+(`order`, `setOrder`, `place`, the order followed by rename / move / remove,
+`dropIfEmpty`, the named PDF carried), `src/vault/paths.ts` (`rekey` maps a
+children directory), `src/vault/index.ts`, `src/app/vault.ts` (`placeNode`,
+`sortByName`, `openDir`, the `order` event, the `nest` dispatch),
+`src/app/store.ts` (`order`), `src/app/names.ts` (`moveTargets`,
+`descendants`, `titleOf` for a children directory), `src/app/NodeMenu.tsx`,
+`src/app/Tree.tsx`, `src/app/Lenses.tsx` (`FolderLens`),
+`src/app/Inspector.tsx` (the `children` line), `src/app/app.css`,
+`src/plugins/runtime.ts`, `src/app/smoke.ts` (`smokeNest`), `FORMAT.md`
+§1 and §6.3, `README.md`, the corpus `courses/linear-algebra.md` with
+`linear-algebra/` (a deck, a draft, `unit-2/eigenvalues.md`), and the tests.
+
+### Done
+
+- A document's children directory holds anything. FORMAT §1 says so (any
+  node, to any depth; a move or rename takes the children directory and the
+  pages along) and §6.3 that a backref is not rewritten by a move. The
+  corpus course has a deck, a draft, and a folder among its children.
+- The tree: the middle third of any row is `into` (a folder, or a document,
+  its children directory made on demand and its row opening), the top and
+  bottom thirds before and after; the root row only into. The folder lens's
+  rows take the same drags. `move to…` lists the root, folders, and
+  documents, indented by depth, without the node, its subtree, or where it
+  already is. The menu's `new …`, `import a file…`, and the intake on a
+  document row land inside the document. A document's children open as a
+  folder lens (the inspector's `children` line, or ⌥-click on the chevron),
+  whose empty space has the document's own menu. Deleting a node with
+  something under it asks (`delete with 4 inside?`, a second click).
+  Moving a document carries its children, its stem PDF (it did already),
+  and a sibling its `pdf` field names (new); a children directory left
+  empty by a move or delete is removed, a plain folder is not.
+- Order: `.ilmi/order.json`, `{ "<dir>": ["name.md", "sub/"] }`. A
+  before/after drop writes the directory's whole list as shown; names not
+  listed follow in the walk's order; stale names are dropped on the next
+  write; renames, moves, and deletes through the app update it, a parent's
+  rename re-keying its children's list; a hand edit of the file is picked
+  up by the watcher. `sort by name` (shown when a directory has an order)
+  clears it. The tree and the folder lens draw by it; the palette, the
+  queue, and the session do not read it.
+
+### Verified
+
+- `npx vitest run`: 569 tests, 30 files (540 before; the new corpus files'
+  round trips, the nesting and order tests in `vault.test.ts`, the drag and
+  `move to…` tests in `tree.test.ts`, the inside-a-document tests in
+  `node-menu.test.ts`). `npm run typecheck` clean. `cargo test` 12.
+
+### Window check
+
+Port 1420 was free. `ILMI_SMOKE=nest` (`mode-run.sh nest`): `done`, every
+capture read and each shows the ilmi window.
+
+- `german` dragged to the middle of `james-pluralistic-ch4`: accepted, lit
+  `drop-into`; `books/james-pluralistic-ch4/` made and the deck drawn
+  under the source, the queue's rows now reading
+  `books/james-pluralistic-ch4/german`.
+- `papers/archive` into `spaced composition`: drawn under the draft with
+  its chevron; the queue reads `essays/spaced-composition/archive/sutton-2019`.
+- The course's three children reordered by top-third drops (`drop-before`
+  lit): `unit-2/, problem set 1, vectors` → `vectors, unit-2, problem set
+  1` → `vectors, problem set 1, unit-2`, the file reading
+  `{ "courses/linear-algebra": ["vectors.md", "problem-set-1.md", "unit-2/"] }`.
+- The children lens: `linear algebra`, crumb `inside source`, the rows in
+  the same order; the course's inspector shows `children 3 items`.
+- The course renamed inline to `linear algebra I`: its children moved on
+  disk, the tab followed, the file re-keyed to `courses/linear algebra I`.
+- `move to…` for the deck: the collection, folders, and documents nested
+  by depth (10 / 22 / 34 / 46 / 58 px). Delete on the course reads
+  `delete with 4 inside?` in red and nothing was deleted.
+
+### Not verified
+
+- A real pointer drag: the smoke dispatches dragstart / dragover / drop on
+  the rows; WebKit's own drag with a mouse, its drag image, and the thirds
+  under a real pointer are for a person.
+- The folder lens takes drops on its rows only, not on its empty space.
+
+### Handoff prompt
+
+```
+Read PLAN.md, FORMAT.md, BUILD-LOG.md, and spec/hashiyah/HANDOFF.md.
+Milestones 0–30 are ticked (13 dropped). Do milestone 31, "Tabs — a
+document's children as tabs beside the page", and only that: a `tabs: true`
+front-matter field (FORMAT §3, round-trip test, the corpus course
+`courses/linear-algebra.md` from 30), the tab rail on the left of the
+reader in 30's order (`.ilmi/order.json`, `src/vault/order.ts`,
+`Vault.place` for reorder and nest, `childrenAt` for a document's
+children), subtabs folded by a chevron, `+ tab`, the node menu on rail
+rows, `show as tabs` / `show as tree`, the queue and palette landing on a
+tab, ⌘⌥↑ / ⌘⌥↓, and `ILMI_SMOKE=tabs`. Stop at its "done when", tick it,
+write notes under it, add an entry here with a fresh handoff prompt, and
+commit. Window captures: `screencapture -l <id>` of the ilmi window (see
+the 2026-10-28 entries). If port 1420 is held by a run that is not yours,
+do not kill it. Suite 569 (30 files), `cargo test` 12, and typecheck must
+be green before a commit.
+```
+
+---
+
 ## 2026-10-28 — the window checks of 27, 28, and 29; collection, not vault; one menu order
 
 Done on main after 29, with the user's answers to 28's two questions:

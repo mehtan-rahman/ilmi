@@ -31,14 +31,26 @@ notes/
   german.md                  a deck (type: deck in front-matter)
   essays/
     spaced-composition.md    a draft (type: draft)
+  courses/
+    linear-algebra.md        a document whose children are anything:
+    linear-algebra/
+      problem-set-1.md       a deck,
+      vectors.md             a draft,
+      unit-2/                and a folder
+        eigenvalues.md
   .ilmi/                     app-private state, never required
+    order.json               the order chosen for a directory's children
 ```
 
 - A directory is a folder. A `.md` file is a document. Anything else is ignored.
 - Directories whose name starts with `.` are ignored (`.ilmi`, `.git`,
   `.obsidian`).
 - `name.md` next to a directory `name/` means the directory holds that
-  document's children. Today the only children are extracts.
+  document's children. A children directory holds any node: documents of
+  every type (sources, extracts, decks, drafts) and folders, to any depth,
+  each walked as it would be anywhere else. Moving or renaming a document
+  takes its children directory and its pages with it. An extract's backref
+  (§6.3) is unchanged by where its file sits.
 - `name.pdf` next to `name.md` is that document's pages. The Markdown is
   the document: its type, schedule, priority, cards, and extract backrefs
   live there; the PDF is read in place and never written. The pairing is by
@@ -52,6 +64,14 @@ notes/
   sets `title`.
 - Folder open/closed state, window layout, and other view state live in
   `.ilmi/`, not in the files. Reading position does live in the file (§3).
+- The order of a directory's children is view state too, in
+  `.ilmi/order.json`: `{ "<dir>": ["name.md", "sub/", …] }`, where `<dir>`
+  is vault-relative (`""` the root, `courses/linear-algebra` a document's
+  children directory), a document is listed by its file name and a folder by
+  its name and a slash. Names not listed follow the listed ones in the
+  default order (folders first, then documents, by name); listed names that
+  no longer exist are ignored and dropped the next time the file is written.
+  Without the file every directory is in the default order.
 
 ## 2. File shape
 
@@ -350,7 +370,9 @@ The parent side of an extract. `NAME` is the child's filename without `.md`,
 inside the parent's child directory. One name per line; several extracts from
 one paragraph make several lines. The child carries `type: extract` and its
 own `read` schedule in front-matter; nothing else links the two. A backref
-whose child no longer exists is kept and rendered as nothing. Duplicates are
+whose child no longer exists is kept and rendered as nothing; so is one whose
+child was moved out of the children directory: the line is not rewritten by
+a move, only by a rename of the child in place. Duplicates are
 collapsed with a diagnostic. An `extract` line after a heading or raw block is
 an orphan, as in §6.2. Extract lines may follow prose paragraphs or cards.
 

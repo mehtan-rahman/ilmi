@@ -160,6 +160,9 @@ function onEvent(vault: Vault, ev: VaultEvent): void {
       useApp.setState({ docs, open: rekeyOpen(s.open, ev.from, ev.to), panes: retarget(s.panes, ev.from, ev.to) });
       break;
     }
+    case 'order':
+      useApp.setState({ order: ev.order });
+      break;
   }
 }
 
@@ -197,7 +200,7 @@ export async function openVault(path: string): Promise<Vault> {
   const s0 = useApp.getState();
   useApp.setState({
     open, sidebar, inspector, panes, docs: {}, queue: [], budget: cleanBudget(state.budget), clipDir: cleanClipDir(state.clippings), log: [], session: null, sessionEl: null, selectedCard: null, reveal: null,
-    started: true, newVaultIn: null, gone: s0.gone.filter((p) => p !== path), notice: null, fileOver: null, intakeFiles: [],
+    started: true, newVaultIn: null, gone: s0.gone.filter((p) => p !== path), notice: null, fileOver: null, intakeFiles: [], order: vault.order,
   });
   s0.setRecents(addRecent(s0.recents, path, new Date()));
   setWindowTitle(vaultName(path));
@@ -217,7 +220,7 @@ export function closeVault(): void {
   current = null;
   bodies.clear();
   if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; savePatch = {}; }
-  useApp.setState({ vault: null, files: [], tree: [], docs: {}, open: { '': true }, panes: emptyPanes(), queue: [], log: [], session: null, sessionEl: null, selectedCard: null, reveal: null, paletteOpen: false, intakeDir: '', notice: null, fileOver: null, intakeFiles: [] });
+  useApp.setState({ vault: null, files: [], tree: [], docs: {}, open: { '': true }, panes: emptyPanes(), queue: [], log: [], session: null, sessionEl: null, selectedCard: null, reveal: null, paletteOpen: false, intakeDir: '', notice: null, fileOver: null, intakeFiles: [], order: {} });
   setWindowTitle(null);
 }
 
@@ -326,8 +329,8 @@ export function openInitialVault(): Promise<void> {
       if (path) {
         const vault = await openVault(path);
         if (mode) {
-          const { smoke, smokeReader, smokeCards, smokeIntake, smokeQueue, smokeLoop, smokeShots, smokeDeck, smokePri, smokeGrowth, smokeOverload, smokePdf, smokeFaces, smokeCardsText, smokeAnki, smokeMath, smokeEpub, smokeClip, smokeClipping, smokePlugins, smokeDictionary, smokeRender, smokeLive, smokeBlocks, smokeUse, smokeLand } = await import('./smoke.js');
-          const run = { reader: smokeReader, cards: smokeCards, intake: smokeIntake, queue: smokeQueue, loop: smokeLoop, shots: smokeShots, deck: smokeDeck, pri: smokePri, growth: smokeGrowth, overload: smokeOverload, pdf: smokePdf, faces: smokeFaces, 'cards-text': smokeCardsText, anki: smokeAnki, math: smokeMath, epub: smokeEpub, clip: smokeClip, clipping: smokeClipping, plugins: smokePlugins, dictionary: smokeDictionary, render: smokeRender, live: smokeLive, blocks: smokeBlocks, use: smokeUse, land: smokeLand }[mode] ?? smoke;
+          const { smoke, smokeReader, smokeCards, smokeIntake, smokeQueue, smokeLoop, smokeShots, smokeDeck, smokePri, smokeGrowth, smokeOverload, smokePdf, smokeFaces, smokeCardsText, smokeAnki, smokeMath, smokeEpub, smokeClip, smokeClipping, smokePlugins, smokeDictionary, smokeRender, smokeLive, smokeBlocks, smokeUse, smokeLand, smokeNest } = await import('./smoke.js');
+          const run = { reader: smokeReader, cards: smokeCards, intake: smokeIntake, queue: smokeQueue, loop: smokeLoop, shots: smokeShots, deck: smokeDeck, pri: smokePri, growth: smokeGrowth, overload: smokeOverload, pdf: smokePdf, faces: smokeFaces, 'cards-text': smokeCardsText, anki: smokeAnki, math: smokeMath, epub: smokeEpub, clip: smokeClip, clipping: smokeClipping, plugins: smokePlugins, dictionary: smokeDictionary, render: smokeRender, live: smokeLive, blocks: smokeBlocks, use: smokeUse, land: smokeLand, nest: smokeNest }[mode] ?? smoke;
           await run(vault);
         }
         return;
@@ -448,7 +451,7 @@ function need(): Vault {
 export async function createNode(dir: string, type: NodeType | 'folder'): Promise<string> {
   const vault = need();
   const path = type === 'folder' ? await vault.createFolder(dir) : await vault.createDoc(dir, type);
-  if (dir !== '' || !useApp.getState().open['']) toggleOpen(dir, true);
+  openDir(dir);
   return path;
 }
 
@@ -462,10 +465,38 @@ export async function renameNode(path: string, name: string): Promise<string> {
   return to;
 }
 
+/**
+ * The row that shows directory `dir`, opened so a new or moved node in it is
+ * visible: a folder's own row, or the document whose children directory it is.
+ */
+export function openDir(dir: string): void {
+  const s = useApp.getState();
+  if (dir === '' && s.open['']) return;
+  toggleOpen(dir !== '' && s.files.includes(`${dir}.md`) ? `${dir}.md` : dir, true);
+}
+
+/** Move into `dir`: the root, a folder, or a document's children directory (made on demand); the row holding it opens. */
 export async function moveNode(path: string, dir: string): Promise<string> {
   const to = await need().move(path, dir);
-  if (to !== path) toggleOpen(dir, true);
+  if (to !== path) openDir(dir);
   return to;
+}
+
+/**
+ * A drop on the row of `target`: `into` moves `path` inside it (a folder, or
+ * a document's children); `before` / `after` move it to `target`'s directory
+ * and write that directory's order with it beside `target`. Resolves to the
+ * node's new path.
+ */
+export async function placeNode(path: string, target: string, mode: 'into' | 'before' | 'after'): Promise<string> {
+  const to = await need().place(path, target, mode);
+  if (to !== path) openDir(dirOf(to));
+  return to;
+}
+
+/** Forget the order chosen for directory `dir`: its children list by name again. */
+export async function sortByName(dir: string): Promise<void> {
+  await need().setOrder(dir, null);
 }
 
 export function removeNode(path: string): Promise<void> {
@@ -497,21 +528,21 @@ export async function moveCard(from: string, index: number, to: string, id?: str
 /** A frozen, unread source from imported text in `dir`; the folder opens so the new row is visible. Resolves to its path. */
 export async function importNode(dir: string, spec: ImportSpec): Promise<string> {
   const path = await need().importDoc(dir, spec);
-  if (dir !== '' || !useApp.getState().open['']) toggleOpen(dir, true);
+  openDir(dir);
   return path;
 }
 
 /** A frozen source with pages: the PDF copied beside its Markdown in `dir`; the folder opens. Resolves to the document's path. */
 export async function importPdfNode(dir: string, spec: ImportPdfSpec): Promise<string> {
   const path = await need().importPdf(dir, spec);
-  if (dir !== '' || !useApp.getState().open['']) toggleOpen(dir, true);
+  openDir(dir);
   return path;
 }
 
 /** A deck from imported cards in `dir`; the folder opens so the new row is visible. Resolves to its path. */
 export async function importDeckNode(dir: string, spec: ImportDeckSpec): Promise<string> {
   const path = await need().importDeck(dir, spec);
-  if (dir !== '' || !useApp.getState().open['']) toggleOpen(dir, true);
+  openDir(dir);
   return path;
 }
 
@@ -528,7 +559,7 @@ export async function importAnkiNode(dir: string, decks: MappedDeck[]): Promise<
     for (const seg of d.dir) at = await vault.folderIn(at, seg);
     paths.push(await vault.importDeck(at, { title: d.title, doc: d.doc }));
   }
-  if (dir !== '' || !useApp.getState().open['']) toggleOpen(dir, true);
+  openDir(dir);
   return paths;
 }
 
@@ -543,7 +574,7 @@ export async function importBookNode(dir: string, book: { title: string; chapter
   const folder = await vault.createFolder(dir, fileName(book.title));
   const paths: string[] = [];
   for (const c of book.chapters) paths.push(await vault.importDoc(folder, { title: c.title, name: c.name, text: c.text }));
-  if (dir !== '' || !useApp.getState().open['']) toggleOpen(dir, true);
+  openDir(dir);
   toggleOpen(folder, true);
   return { folder, paths };
 }

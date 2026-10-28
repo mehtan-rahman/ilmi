@@ -1,18 +1,21 @@
 // The one context menu for a node, shared by the sidebar's tree and the
-// folder lens: new source / folder / deck / draft (into the folder, or the
-// document's folder), import a file…, add from text or a link (the intake), and for a
-// node rename, move to… (a list opened on a click), and delete. The `+` in
-// the sidebar's root row opens the same menu without the node's half.
+// folder lens: new source / folder / deck / draft (into the folder, or into
+// the document, its children directory made on demand), import a file…, add
+// from text or a link (the intake), `sort by name` when the directory has an
+// order of its own, and for a node rename, move to… (a list of folders and
+// documents opened on a click), and delete (asking first when there is
+// something under it). The `+` in the sidebar's root row opens the same menu
+// without the node's half.
 // Escape and a press outside close it; it stays inside the window at the
 // right (`MENU_W`) and the bottom (`placeMenu`).
 
-import { useEffect, useLayoutEffect, useRef, type Dispatch, type MouseEvent, type SetStateAction } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type Dispatch, type MouseEvent, type SetStateAction } from 'react';
 import type { NodeType } from '../format/index.js';
-import { childDirOf, dirOf, within } from '../vault/index.js';
+import { childDirOf } from '../vault/index.js';
 import { importFiles } from './land.js';
-import { GLYPH, findNode, folderPaths, kindOf, titleOf, type NodeKind } from './names.js';
+import { GLYPH, descendants, findNode, kindOf, moveTargets, titleOf, type NodeKind } from './names.js';
 import { useApp } from './store.js';
-import { containerOf, createNode, moveNode, openIntake, removeNode } from './vault.js';
+import { createNode, moveNode, openIntake, removeNode, sortByName } from './vault.js';
 
 export const MENU_W = 190;
 
@@ -30,6 +33,13 @@ export interface MenuAt {
   y: number;
   sub: boolean;
   plus?: boolean;
+}
+
+/** Where a drag over a row lands: the middle third inside it, the top and bottom thirds before and after it; the root row only takes `into`. */
+export type DropMode = 'before' | 'after' | 'into';
+export function dropMode(y: number, height: number, root = false): DropMode {
+  if (root) return 'into';
+  return y < height / 3 ? 'before' : y > (height * 2) / 3 ? 'after' : 'into';
 }
 
 /** A menu for `id` at the pointer, kept off the right edge. */
@@ -57,6 +67,8 @@ export function NodeMenu({ at, set, onCreated, onRename }: Props) {
   const tree = useApp((s) => s.tree);
   const docs = useApp((s) => s.docs);
   const root = useApp((s) => s.vault);
+  const order = useApp((s) => s.order);
+  const [asking, setAsking] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const fail = (e: unknown) => console.error(e);
 
@@ -75,16 +87,24 @@ export function NodeMenu({ at, set, onCreated, onRename }: Props) {
   // the menu stays inside the window at the bottom edge, with the list open or not
   useLayoutEffect(() => { placeMenu(ref.current); }, [at]);
 
-  if (at.id !== '' && !findNode(tree, at.id)) return null;
+  const found = at.id === '' ? undefined : findNode(tree, at.id);
+  if (at.id !== '' && !found) return null;
   const kind: NodeKind = at.id === '' ? 'folder' : kindOf(at.id, docs);
-  // new items, imports, and the intake land in the folder, or the one holding the document
-  const into = containerOf(at.id);
-  const dir = kind === 'folder' ? at.id : dirOf(at.id);
+  // new items, imports, and the intake land in the folder, or inside the document (its children directory)
+  const dir = childDirOf(at.id);
   const act = (fn: () => void) => (e: MouseEvent) => { e.stopPropagation(); fn(); set(null); };
-  const create = (k: NodeKind) => { createNode(into, k as NodeType | 'folder').then(onCreated).catch(fail); };
+  const create = (k: NodeKind) => { createNode(dir, k as NodeType | 'folder').then(onCreated).catch(fail); };
   const sub = (on: boolean) => (e: MouseEvent) => { e.stopPropagation(); set((m) => (m ? { ...m, sub: on } : m)); };
-  const targets = folderPaths(tree).filter((f) => f !== at.id && f !== dirOf(at.id) && !within(f, childDirOf(at.id)));
+  const targets = moveTargets(tree, at.id, order);
   const node = at.id !== '' && !at.plus;
+  const under = found ? descendants(found) : 0;
+  // a node with something under it asks before it goes, and says how much
+  const del = (e: MouseEvent) => {
+    e.stopPropagation();
+    if (under > 0 && !asking) { setAsking(true); return; }
+    removeNode(at.id).catch(fail);
+    set(null);
+  };
 
   return (
     <div
@@ -108,6 +128,14 @@ export function NodeMenu({ at, set, onCreated, onRename }: Props) {
           <div className="ci" onClick={act(() => openIntake(dir))}>
             <span className="cg">{GLYPH.intake}</span>add from text or a link
           </div>
+          {order[dir] && (
+            <>
+              <div className="cd" />
+              <div className="ci" onClick={act(() => { sortByName(dir).catch(fail); })}>
+                <span className="cg">↕</span>sort by name
+              </div>
+            </>
+          )}
           {node && (
             <>
               <div className="cd" />
@@ -118,8 +146,8 @@ export function NodeMenu({ at, set, onCreated, onRename }: Props) {
                 <span className="cg">→</span>move to…<span className="ck">▸</span>
               </div>
               <div className="cd" />
-              <div className="ci danger" onClick={act(() => { removeNode(at.id).catch(fail); })}>
-                <span className="cg">⌫</span>delete {kind}
+              <div className={`ci danger${asking ? ' asking' : ''}`} onClick={del}>
+                <span className="cg">⌫</span>{asking ? `delete with ${under} inside?` : `delete ${kind}`}
               </div>
             </>
           )}
@@ -131,11 +159,14 @@ export function NodeMenu({ at, set, onCreated, onRename }: Props) {
           </div>
           <div className="cd" />
           <div className="sub-scroll">
-            {targets.map((f) => (
-              <div key={f} className="ci" onClick={act(() => { moveNode(at.id, f).catch(fail); })}>
-                <span className="cg">/</span>{titleOf(f, docs, root)}
-              </div>
-            ))}
+            {targets.map((t) => {
+              const k: NodeKind = t.path === '' ? 'folder' : kindOf(t.path, docs);
+              return (
+                <div key={t.path} className="ci" data-path={t.path} style={{ paddingLeft: 10 + t.depth * 12 }} onClick={act(() => { moveNode(at.id, t.dir).catch(fail); })}>
+                  <span className="cg">{GLYPH[k]}</span>{titleOf(t.path, docs, root)}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

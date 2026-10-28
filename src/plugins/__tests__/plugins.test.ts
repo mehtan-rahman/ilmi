@@ -58,7 +58,7 @@ describe('the sample, from the corpus', () => {
     expect(host.rows()).toEqual([expect.objectContaining({ id: 'hello', name: 'hello', version: '0.1.0', author: 'ilmi', enabled: true, state: 'on', hasSettings: true })]);
     expect(document.head.querySelector('style[data-plugin="hello"]')?.textContent).toContain('.hello-lit');
     expect(vault.documents().some((d) => d.startsWith('.ilmi'))).toBe(false);
-    expect(vault.tree.map((n) => n.name)).toEqual(['books', 'essays', 'fleeting', 'papers', 'german']);
+    expect(vault.tree.map((n) => n.name)).toEqual(['books', 'courses', 'essays', 'fleeting', 'papers', 'german']);
   });
 
   it('adds a command the palette lists and runs', () => {

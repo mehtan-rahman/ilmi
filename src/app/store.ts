@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import type { NodeType, ReadSchedule, WriteSchedule } from '../format/index.js';
 import type { QueueItem } from '../schedule/index.js';
-import type { TreeNode } from '../vault/index.js';
+import type { Order, TreeNode } from '../vault/index.js';
 import { emptyPanes, type Panes } from './panes.js';
 import { cleanRecents, type Recent } from './recents.js';
 
@@ -209,6 +209,8 @@ export interface AppState {
   fileOver: string | null;
   /** Dropped or picked files that need a choice, waiting on the intake, oldest first. */
   intakeFiles: string[];
+  /** The order chosen for each directory (`.ilmi/order.json`, `vault/order.ts`); the tree and the folder lens list by it. */
+  order: Order;
   session: Session | null;
   /** What the session is on now, for its tab and the inspector. */
   sessionEl: { kind: El; label: string; item: QueueItem } | null;
@@ -260,6 +262,7 @@ export const useApp = create<AppState>((set, get) => ({
   notice: null,
   fileOver: null,
   intakeFiles: [],
+  order: {},
   session: null,
   sessionEl: null,
   setTheme: (theme) => { set({ theme }); persist(get()); },

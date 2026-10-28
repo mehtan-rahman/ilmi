@@ -8,16 +8,19 @@
 //  · right-click      the node's menu (`NodeMenu.tsx`, shared with the folder lens);
 //                     anywhere else in the sidebar, the root's menu (new items land at the root)
 //  · +                beside the vault's name: the same menu for the selected folder, else the root
-//  · drag             drop between rows to move beside them, or onto a folder to move inside;
-//                     a file from the OS lands in the row's folder (`land.ts`), the row lit meanwhile
+//  · drag             the middle of any row moves inside it (a document's children directory
+//                     made on demand), its top and bottom thirds place before and after it,
+//                     the directory's order written (`.ilmi/order.json`); a file from the OS
+//                     lands in the row's folder (`land.ts`), the row lit meanwhile
+//  · ⌥-click ▸        on a document with children: its children in a folder lens
 
 import { Fragment, useEffect, useRef, useState, type DragEvent, type MouseEvent, type ReactNode } from 'react';
-import { childDirOf, dirOf, within, type TreeNode } from '../vault/index.js';
+import { childDirOf, ordered, within, type TreeNode } from '../vault/index.js';
 import { GLYPH, findNode, kindOf, metaOf, titleOf, type NodeKind } from './names.js';
-import { NodeMenu, menuAt, type MenuAt } from './NodeMenu.js';
+import { NodeMenu, dropMode, menuAt, type DropMode, type MenuAt } from './NodeMenu.js';
 import type { OpenOpts } from './panes.js';
 import { useApp } from './store.js';
-import { moveNode, renameNode, toggleOpen } from './vault.js';
+import { placeNode, renameNode, toggleOpen } from './vault.js';
 
 export { MENU_W, placeMenu } from './NodeMenu.js';
 
@@ -28,7 +31,6 @@ interface Props {
 }
 
 interface Editing { id: string; value: string }
-type DropMode = 'before' | 'after' | 'into';
 interface Over { id: string; mode: DropMode }
 
 const clickOpts = (e: MouseEvent): OpenOpts => ({ cmdClick: e.metaKey || e.ctrlKey, shiftClick: e.shiftKey });
@@ -41,6 +43,7 @@ export function Tree({ activeId, onOpen }: Props) {
   const tree = useApp((s) => s.tree);
   const docs = useApp((s) => s.docs);
   const open = useApp((s) => s.open);
+  const order = useApp((s) => s.order);
   const root = useApp((s) => s.vault);
   const [editing, setEditing] = useState<Editing | null>(null);
   const [menu, setMenu] = useState<MenuAt | null>(null);
@@ -115,21 +118,17 @@ export function Tree({ activeId, onOpen }: Props) {
     e.dataTransfer.effectAllowed = 'move';
     try { e.dataTransfer.setData('text/plain', id); } catch { /* not every host allows it */ }
   };
-  const onDragOverRow = (e: DragEvent, id: string, folder: boolean) => {
-    if (drag === null || drag === id || within(id, childDirOf(drag))) return;
+  const onDragOverRow = (e: DragEvent, id: string) => {
+    if (drag === null || drag === id || (drag !== '' && within(id, childDirOf(drag)))) return;
     e.preventDefault();
     const r = e.currentTarget.getBoundingClientRect();
-    const y = e.clientY - r.top;
-    let mode: DropMode;
-    if (id === '') mode = 'into';
-    else if (folder) mode = y < r.height * 0.32 ? 'before' : y > r.height * 0.68 ? 'after' : 'into';
-    else mode = y < r.height * 0.5 ? 'before' : 'after';
+    const mode: DropMode = dropMode(e.clientY - r.top, r.height, id === '');
     if (!over || over.id !== id || over.mode !== mode) setOver({ id, mode });
   };
   const onDropRow = (e: DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (drag !== null && over) moveNode(drag, over.mode === 'into' ? over.id : dirOf(over.id)).catch(fail);
+    if (drag !== null && over) placeNode(drag, over.id, over.mode).catch(fail);
     setDrag(null);
     setOver(null);
   };
@@ -152,7 +151,7 @@ export function Tree({ activeId, onOpen }: Props) {
         data-active={activeId === id ? '1' : '0'}
         draggable={id !== '' && !editingThis}
         onDragStart={(e) => onDragStart(e, id)}
-        onDragOver={(e) => onDragOverRow(e, id, kind === 'folder')}
+        onDragOver={(e) => onDragOverRow(e, id)}
         onDragLeave={() => { if (over?.id === id) setOver(null); }}
         onDrop={onDropRow}
         onDragEnd={endDrag}
@@ -193,8 +192,17 @@ export function Tree({ activeId, onOpen }: Props) {
     );
   };
 
+  // ⌥ on a document's chevron opens its children as a folder lens
   const chevron = (id: string, has: boolean) => (
-    <span className="chev" onClick={(e) => { e.stopPropagation(); if (has) toggleOpen(id); }}>
+    <span
+      className="chev"
+      title={has && id.endsWith('.md') ? '⌥-click: open the children as a folder' : undefined}
+      onClick={(e) => {
+        e.stopPropagation();
+        if (has && e.altKey && id.endsWith('.md')) onOpen(childDirOf(id), clickOpts(e));
+        else if (has) toggleOpen(id);
+      }}
+    >
       {has ? (open[id] ? '▾' : '▸') : ''}
     </span>
   );
@@ -215,7 +223,7 @@ export function Tree({ activeId, onOpen }: Props) {
     return (
       <Fragment key={id}>
         {row(id, depth, kind, chevron(id, has), meta, due, onClick)}
-        {shown && kids.map((k) => renderNode(k, depth + 1))}
+        {shown && ordered(kids, order[childDirOf(id)]).map((k) => renderNode(k, depth + 1))}
       </Fragment>
     );
   };
@@ -228,7 +236,7 @@ export function Tree({ activeId, onOpen }: Props) {
   return (
     <div className="tree edit-tree" ref={boxRef}>
       {rootRow}
-      {open[''] && tree.map((n) => renderNode(n, 1))}
+      {open[''] && ordered(tree, order['']).map((n) => renderNode(n, 1))}
 
       {menu && <NodeMenu at={menu} set={setMenu} onCreated={(path) => setEditing({ id: path, value: title(path) })} onRename={beginRename} />}
     </div>

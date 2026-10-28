@@ -21,13 +21,18 @@ vi.mock('../vault.js', async (orig) => {
       calls.push(`create ${dir}|${type}`);
       const path = type === 'folder' ? `${dir ? `${dir}/` : ''}new folder` : `${dir ? `${dir}/` : ''}new ${type}.md`;
       const node: TreeNode = type === 'folder' ? { kind: 'folder', name: 'new folder', path, children: [] } : { kind: 'doc', name: `new ${type}.md`, path };
-      const add = (nodes: TreeNode[]): TreeNode[] => (dir === '' ? [...nodes, node] : nodes.map((n) => (n.kind === 'folder' && n.path === dir ? { ...n, children: [...n.children, node] } : n.kind === 'folder' ? { ...n, children: add(n.children) } : n)));
+      const add = (nodes: TreeNode[]): TreeNode[] => (dir === '' ? [...nodes, node] : nodes.map((n) => (
+        n.kind === 'folder' && n.path === dir ? { ...n, children: [...n.children, node] }
+          : n.kind === 'doc' && n.path === `${dir}.md` ? { ...n, children: [...(n.children ?? []), node] }
+            : n.kind === 'folder' ? { ...n, children: add(n.children) } : n.children ? { ...n, children: add(n.children) } : n)));
       useApp.setState((s) => ({ tree: add(s.tree), docs: type === 'folder' ? s.docs : { ...s.docs, [path]: { type: type as 'deck', frozen: false, cards: 0, due: 0 } } }));
       return path;
     }),
     renameNode: vi.fn(async (path: string, name: string) => { calls.push(`rename ${path}|${name}`); return path; }),
     removeNode: vi.fn(async (path: string) => { calls.push(`remove ${path}`); }),
     openIntake: vi.fn((dir: string) => { calls.push(`intake ${dir}`); }),
+    sortByName: vi.fn(async (dir: string) => { calls.push(`sort ${dir}`); }),
+    openNode: vi.fn((path: string) => { calls.push(`open ${path}`); }),
   };
 });
 
@@ -178,5 +183,84 @@ describe('the sidebar\'s +', () => {
     fire(plus(), 'click');
     click('add from text or a link');
     expect(calls).toEqual(['import ', 'create sources|deck', 'intake ']);
+  });
+});
+
+// ── milestone 30: inside a document ──
+
+describe('inside a document', () => {
+  const NESTED: TreeNode[] = [
+    { kind: 'folder', name: 'papers', path: 'papers', children: [
+      { kind: 'doc', name: 'wozniak-1990', path: 'papers/wozniak-1990.md', children: [
+        { kind: 'doc', name: 'woz-ex1', path: 'papers/wozniak-1990/woz-ex1.md' },
+        { kind: 'folder', name: 'figures', path: 'papers/wozniak-1990/figures', children: [{ kind: 'doc', name: 'fig', path: 'papers/wozniak-1990/figures/fig.md' }] },
+      ] },
+    ] },
+    { kind: 'doc', name: 'notes', path: 'notes.md' },
+  ];
+  beforeEach(() => {
+    useApp.setState({
+      tree: NESTED,
+      docs: { 'papers/wozniak-1990.md': { type: 'source', frozen: true, cards: 0, due: 0, title: 'Wozniak 1990' }, 'papers/wozniak-1990/woz-ex1.md': { type: 'extract', frozen: false, cards: 0, due: 0 }, 'papers/wozniak-1990/figures/fig.md': { type: 'source', frozen: false, cards: 0, due: 0 }, 'notes.md': { type: 'draft', frozen: false, cards: 0, due: 0 } },
+      open: { '': true, papers: true },
+      order: {},
+    });
+  });
+  const trow = (path: string) => Array.from(host.querySelectorAll<HTMLElement>('.trow')).find((r) => r.dataset.path === path)!;
+
+  it('a document row\'s menu makes new items, imports, and the intake inside the document', async () => {
+    mount(createElement(Tree, { activeId: undefined, onOpen: () => {} }));
+    const open = () => fire(trow('papers/wozniak-1990.md'), 'contextmenu', { clientX: 50, clientY: 50 });
+    open();
+    click('new deck');
+    open();
+    click('import a file…');
+    open();
+    click('add from text or a link');
+    await flush();
+    expect(calls).toEqual(['create papers/wozniak-1990|deck', 'import papers/wozniak-1990', 'intake papers/wozniak-1990']);
+  });
+
+  it('a document\'s children open as a folder lens: its rows, the document\'s own menu in the empty space, a new item landing inside', async () => {
+    mount(createElement(Lens, { id: 'papers/wozniak-1990', active: true, onOpen: () => {} }), 'pane-body');
+    expect(host.querySelector('.folder-view h1')?.textContent).toBe('Wozniak 1990');
+    expect(host.querySelector('.folder-view .crumb')?.textContent).toBe('inside source');
+    expect(Array.from(host.querySelectorAll<HTMLElement>('.fv-row')).map((r) => r.dataset.path)).toEqual(['papers/wozniak-1990/woz-ex1.md', 'papers/wozniak-1990/figures']);
+    fire(host.querySelector('.folder-view')!, 'contextmenu', { clientX: 300, clientY: 500 });
+    expect(entries()).toEqual(['new source', 'new deck', 'new draft', 'new folder', 'import a file…', 'add from text or a link', 'rename', 'move to…', 'delete source']);
+    click('new draft');
+    await flush();
+    expect(calls).toEqual(['create papers/wozniak-1990|draft']);
+    expect(host.querySelector<HTMLInputElement>('.fv-row[data-path="papers/wozniak-1990/new draft.md"] input.fv-rename')).not.toBeNull();
+  });
+
+  it('lists in the order chosen, and offers sort by name only then', async () => {
+    act(() => { useApp.setState({ order: { 'papers/wozniak-1990': ['figures/', 'woz-ex1.md'] } }); });
+    mount(createElement(Lens, { id: 'papers/wozniak-1990', active: true, onOpen: () => {} }), 'pane-body');
+    expect(Array.from(host.querySelectorAll<HTMLElement>('.fv-row')).map((r) => r.dataset.path)).toEqual(['papers/wozniak-1990/figures', 'papers/wozniak-1990/woz-ex1.md']);
+    fire(host.querySelector('.folder-view')!, 'contextmenu', { clientX: 300, clientY: 500 });
+    expect(entries()).toContain('sort by name');
+    click('sort by name');
+    await flush();
+    expect(calls).toEqual(['sort papers/wozniak-1990']);
+    // a folder with no order of its own has no such entry
+    fire(host.querySelector('.fv-row[data-path="papers/wozniak-1990/figures"]')!, 'contextmenu', { clientX: 300, clientY: 100 });
+    expect(entries()).not.toContain('sort by name');
+  });
+
+  it('deleting a document with children asks first and says how many; one without goes at once', async () => {
+    mount(createElement(Tree, { activeId: undefined, onOpen: () => {} }));
+    fire(trow('papers/wozniak-1990.md'), 'contextmenu', { clientX: 50, clientY: 50 });
+    click('delete source');
+    expect(host.querySelector('.ctx-menu')).not.toBeNull();
+    expect(entries()).toContain('delete with 3 inside?');
+    expect(calls).toEqual([]);
+    click('delete with 3 inside?');
+    await flush();
+    expect(host.querySelector('.ctx-menu')).toBeNull();
+    fire(trow('notes.md'), 'contextmenu', { clientX: 50, clientY: 50 });
+    click('delete draft');
+    await flush();
+    expect(calls).toEqual(['remove papers/wozniak-1990.md', 'remove notes.md']);
   });
 });

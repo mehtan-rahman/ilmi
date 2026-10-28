@@ -814,7 +814,7 @@ export class PluginHost {
       },
       rename: (path, name) => vault.rename(cleanPluginPath(path), name),
       watch: (fn) => keep(vault.subscribe((ev) => {
-        if (ev.kind === 'hidden') return;
+        if (ev.kind === 'hidden' || ev.kind === 'order') return;
         const out: A.VaultEvent = ev.kind === 'tree' ? { kind: 'tree' } : ev.kind === 'moved' ? { kind: 'moved', from: ev.from, to: ev.to } : { kind: ev.kind, path: ev.path };
         this.guard(id, fn)(out);
       })),

@@ -58,7 +58,7 @@ export function tabKindOf(id: string, docs: Record<string, DocInfo>): TabKind {
 
 /** A document's `title`, else its file name; the root is the vault directory's name. */
 export function titleOf(path: string, docs: Record<string, DocInfo>, vaultRoot: string | null): string {
-  if (path === '') return baseOf(vaultRoot ?? '') || 'vault';
+  if (path === '') return baseOf(vaultRoot ?? '') || 'collection';
   if (path === INTAKE) return 'intake';
   if (path === SESSION) return 'session';
   const scope = queueScope(path);

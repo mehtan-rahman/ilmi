@@ -94,8 +94,8 @@ export function Welcome() {
           <span className="welcome-line">{LINE}</span>
         </div>
         <div className="welcome-acts">
-          <button type="button" onClick={() => void pickVault().catch(console.error)}>open vault</button>
-          <button type="button" onClick={() => void pickVaultParent().catch(console.error)}>new vault</button>
+          <button type="button" onClick={() => void pickVault().catch(console.error)}>open collection</button>
+          <button type="button" onClick={() => void pickVaultParent().catch(console.error)}>new collection</button>
         </div>
         {parent !== null && (
           <div className="welcome-name">
@@ -148,8 +148,8 @@ export function Welcome() {
               <span><kbd>j k</kbd> move</span><span className="dot" />
             </>
           )}
-          <span><kbd>o</kbd> open vault</span><span className="dot" />
-          <span><kbd>n</kbd> new vault</span>
+          <span><kbd>o</kbd> open collection</span><span className="dot" />
+          <span><kbd>n</kbd> new collection</span>
         </div>
       </div>
     </main>

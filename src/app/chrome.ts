@@ -162,7 +162,7 @@ export function buildIndex(tree: TreeNode[], docs: Record<string, DocInfo>, card
     out.push({ key: `c:${c.path}:${c.index}`, title: cardLabel(c.text), sub: title(c.path), tag: 'card', target });
   }
   for (const c of commands) out.push({ key: `x:${c.id}`, title: c.title, sub: '', tag: 'command', target: { command: c.id } });
-  for (const v of vaults) out.push({ key: `v:${v.path}`, title: v.name, sub: 'vaults', tag: 'vault', target: { vault: v.path } });
+  for (const v of vaults) out.push({ key: `v:${v.path}`, title: v.name, sub: 'collections', tag: 'vault', target: { vault: v.path } });
   return out;
 }
 

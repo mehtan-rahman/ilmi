@@ -60,12 +60,14 @@ export async function runMenu(id: string, fx: MenuFx = real): Promise<MenuAction
 }
 
 /** The Open Recent submenu's rows, newest first, as the Rust side takes them. */
-export const recentRows = (recents: Recent[]): { path: string; name: string }[] => recents.map((r) => ({ path: r.path, name: r.name }));
+/** Open Recent's rows: every recent collection but the one open now. */
+export const recentRows = (recents: Recent[], open: string | null = null): { path: string; name: string }[] =>
+  recents.filter((r) => r.path !== open).map((r) => ({ path: r.path, name: r.name }));
 
 /** Rebuild File → Open Recent from the recents. Nothing to rebuild outside Tauri. */
-export function syncRecentMenu(recents: Recent[]): void {
+export function syncRecentMenu(recents: Recent[], open: string | null = useApp.getState().vault): void {
   try {
-    invoke('set_recent_vaults', { items: recentRows(recents) }).catch(() => { /* not under Tauri */ });
+    invoke('set_recent_vaults', { items: recentRows(recents, open) }).catch(() => { /* not under Tauri */ });
   } catch { /* not under Tauri */ }
 }
 
@@ -82,6 +84,6 @@ export function listenForMenu(): void {
   try {
     listen<string>('menu', (e) => { void runMenu(e.payload).catch(console.error); }).catch(() => { /* not under Tauri */ });
   } catch { /* not under Tauri */ }
-  syncRecentMenu(useApp.getState().recents);
-  useApp.subscribe((s, prev) => { if (s.recents !== prev.recents) syncRecentMenu(s.recents); });
+  syncRecentMenu(useApp.getState().recents, useApp.getState().vault);
+  useApp.subscribe((s, prev) => { if (s.recents !== prev.recents || s.vault !== prev.vault) syncRecentMenu(s.recents, s.vault); });
 }

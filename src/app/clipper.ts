@@ -102,7 +102,7 @@ export async function handleUri(uri: string): Promise<void> {
     return;
   }
   if (a.vault !== undefined && !vaultMatches(a.vault, vault.root)) {
-    note(`that link is for the vault ${a.vault}`);
+    note(`that link is for the collection ${a.vault}`);
     return;
   }
   try {

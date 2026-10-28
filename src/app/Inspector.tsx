@@ -226,7 +226,7 @@ function CardEditor({ path, index, card }: { path: string; index: number; card: 
 // ── per kind ─────────────────────────────────────────────────────
 
 function Gone({ kind }: { kind: string }) {
-  return <Block title={kind}><p className="insp-line">no longer in the vault</p></Block>;
+  return <Block title={kind}><p className="insp-line">no longer in the collection</p></Block>;
 }
 
 function FolderInspector({ id }: { id: string }) {

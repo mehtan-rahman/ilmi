@@ -220,7 +220,7 @@ export function Tree({ activeId, onOpen }: Props) {
     );
   };
 
-  const rootRow = row('', 0, 'folder', chevron('', tree.length > 0), 'vault', false, (e) => {
+  const rootRow = row('', 0, 'folder', chevron('', tree.length > 0), 'collection', false, (e) => {
     toggleOpen('', true);
     onOpen('', clickOpts(e));
   });

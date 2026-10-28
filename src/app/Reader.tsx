@@ -1136,7 +1136,7 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
   };
 
   if (status === 'gone' || (status === 'ok' && !info)) {
-    return <div className="reader-wrap"><div className="reader"><div className="empty">no longer in the vault</div></div></div>;
+    return <div className="reader-wrap"><div className="reader"><div className="empty">no longer in the collection</div></div></div>;
   }
 
   const reading = !!info?.read;

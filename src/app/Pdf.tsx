@@ -564,7 +564,7 @@ function Pages({ id, active, session, onText }: PagesProps) {
   useEffect(() => () => { if (useApp.getState().selectedCard?.path === id) useApp.setState({ selectedCard: null }); }, [id]);
 
   if (status === 'gone' || (status === 'ok' && !info)) {
-    return <div className="reader-wrap"><div className="reader"><div className="empty">no longer in the vault</div></div></div>;
+    return <div className="reader-wrap"><div className="reader"><div className="empty">no longer in the collection</div></div></div>;
   }
 
   const cards = info?.cards ?? 0;

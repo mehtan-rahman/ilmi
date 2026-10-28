@@ -84,4 +84,12 @@ describe('the dispatch', () => {
     ])).toEqual([{ path: '/home/me/papers', name: 'papers' }, { path: '/home/me/notes', name: 'notes' }]);
     expect(recentRows([])).toEqual([]);
   });
+
+  it('leaves the open collection out of Open Recent', () => {
+    const list = [
+      { path: '/home/me/papers', name: 'papers', opened: '2026-10-18T13:00:00.000Z' },
+      { path: '/home/me/notes', name: 'notes', opened: '2026-10-18T12:00:00.000Z' },
+    ];
+    expect(recentRows(list, '/home/me/papers')).toEqual([{ path: '/home/me/notes', name: 'notes' }]);
+  });
 });

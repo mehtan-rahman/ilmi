@@ -121,7 +121,7 @@ export function Tweaks() {
         />
       </div>
       <div className="tw-row">
-        <span className="tw-lbl">reopen the last vault on start</span>
+        <span className="tw-lbl">reopen the last collection on start</span>
         <div className="tw-seg">
           <button type="button" data-active={reopen ? '1' : '0'} onClick={() => useApp.getState().setReopen(true)}>on</button>
           <button type="button" data-active={reopen ? '0' : '1'} onClick={() => useApp.getState().setReopen(false)}>off</button>

@@ -357,5 +357,5 @@ function DeckLens({ id, active }: { id: string; active: boolean }) {
 }
 
 function Gone() {
-  return <div className="reader-wrap"><div className="reader"><div className="empty">no longer in the vault</div></div></div>;
+  return <div className="reader-wrap"><div className="reader"><div className="empty">no longer in the collection</div></div></div>;
 }

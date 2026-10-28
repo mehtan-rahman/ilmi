@@ -141,7 +141,7 @@ function CardElement({ item, active, onGrade }: CardProps) {
     for (const face of el.querySelectorAll<HTMLElement>('.face')) runBlockHooks(face, { path: item.path, block: item.block, where: 'face' });
   });
 
-  if (loaded && !card) return <div className="empty center">no longer in the vault</div>;
+  if (loaded && !card) return <div className="empty center">no longer in the collection</div>;
 
   // Two faces, SuperMemo's element window: the question above, the answer
   // below. The answer face is blurred until revealed; a cloze's answer face

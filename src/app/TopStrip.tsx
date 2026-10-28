@@ -15,7 +15,7 @@ export function TopStrip() {
   const due = dueToday(queue, new Date(), budget).length;
   return (
     <div className="top">
-      <div className="ws"><b>{baseOf(root ?? '') || 'vault'}</b></div>
+      <div className="ws"><b>{baseOf(root ?? '') || 'collection'}</b></div>
       <button type="button" className="palette" onClick={() => useApp.setState({ paletteOpen: true })}>
         <span className="g">⌕</span>
         <kbd>⌘k</kbd>

@@ -115,10 +115,10 @@ describe('the starter', () => {
 });
 
 describe('the palette and the other vaults', () => {
-  it('lists recents under vaults, after the commands, with their own glyph', () => {
+  it('lists recents under collections, after the commands, with their own glyph', () => {
     const index = buildIndex([], {}, [], [{ id: 'close-vault', title: 'close vault' }], [{ path: '/home/me/notes', name: 'notes' }]);
     const v = index.find((e) => e.tag === 'vault');
-    expect(v).toEqual({ key: 'v:/home/me/notes', title: 'notes', sub: 'vaults', tag: 'vault', target: { vault: '/home/me/notes' } });
+    expect(v).toEqual({ key: 'v:/home/me/notes', title: 'notes', sub: 'collections', tag: 'vault', target: { vault: '/home/me/notes' } });
     expect(index.indexOf(v!)).toBeGreaterThan(index.findIndex((e) => e.tag === 'command'));
     expect(ENTRY_GLYPH.vault).toBeTruthy();
   });

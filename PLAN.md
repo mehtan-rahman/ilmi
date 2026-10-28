@@ -2733,6 +2733,97 @@ focused (offline → log and skip), right-clicks a folder-lens row and its
 empty space and logs both menus, and logs the tree after each; screenshots
 read.
 
+## Structure
+
+The user, 2026-10-28: "Everything should also be nestable (like I can
+throw anything under anything in the tree). Additionally, it'd be nice if
+there was something similar to document tabs that Google Docs has but in
+the things here (e.g., if I was taking notes for a semester-long course I
+can have different tabs for different units or whatever)." The format
+already gives every document a children directory (`name.md` beside
+`name/`, FORMAT §1) and the walk already reads it, but only extracts land
+there, the tree only drops *into* folders, and the order of a directory is
+alphabetical. 30 opens the children directory to everything and gives a
+directory an order of its own; 31 draws a document's children as tabs, as
+Google Docs draws a document's tabs and subtabs in a rail beside the page.
+Tabs are children files, not sections of one file, so a tab is a whole
+document: its own cards, schedule, priority, extracts, and its own tabs.
+
+### [ ] 30. Nesting — anything under anything, in an order you choose
+- FORMAT §1: a document's children directory holds any node, documents of
+  every type and folders, not only extracts; say so, and that an extract's
+  backref (§6.3) is unchanged by where its file sits. The corpus gains a
+  document with a deck, a draft, and a folder among its children
+  (`vault/courses/linear-algebra.md` with `linear-algebra/`), and the
+  round-trip and walk tests cover it.
+- The tree: a drop on the middle of any row goes *into* it (a document's
+  children directory created on demand, its row gaining a chevron and
+  opening); the top and bottom thirds place before and after, as folders
+  do now, for every row. `move to…` lists documents as well as folders
+  (nested, indented by depth, the node itself and its own descendants
+  left out). The node menu's `new …` entries on a document row create
+  inside that document (today they land beside it); the folder lens of a
+  document's children (opened from a document's row chevron area or the
+  inspector's `children` line) works as a folder's does. Moving or
+  renaming a document carries its children directory and its PDF (check
+  that it does today; make it so if not), deleting a document asks first
+  when it has children and says how many. A children directory left empty
+  by a move is removed.
+- Order: each directory may have an order, kept in `.ilmi/order.json` as
+  `{ "<dir>": ["name.md", "sub/", …] }` (view state, per FORMAT §1's rule
+  that view state lives in `.ilmi/`). Names not listed follow in today's
+  order; listed names that no longer exist are dropped on the next write;
+  renames and moves through the app update it. A before/after drop in the
+  tree writes the order (today it only moves to the directory); the folder
+  lens lists in the same order and takes the same drags. `sort by name`
+  on a folder's or document's menu clears its order. The palette's index,
+  the queue, and the session are unaffected.
+
+Done when: `walk.test.ts` / `vault.test.ts` cover a document's children of
+every kind, a move into a document creating its directory, the move of a
+document with children and a PDF, the empty directory removed, and the
+order file (write, unknown names after, stale names dropped, rename
+followed); `tree.test.ts` covers into/before/after on a document row and
+`move to…` listing documents; `ILMI_SMOKE=nest` drags a deck into a
+source, a folder into a draft, reorders three rows, renames the parent,
+and logs the tree and `.ilmi/order.json` after each; captures read (by
+window id, see the 2026-10-28 entry).
+
+### [ ] 31. Tabs — a document's children as tabs beside the page
+- A document whose front-matter says `tabs: true` (FORMAT §3, a new
+  optional field, round-trip test, corpus file: the linear-algebra
+  document from 30) opens with a tab rail on the left of the reader, as
+  Google Docs' "document tabs" panel: the document itself first (its own
+  title, the "overview"), then its children in their order (30), each a
+  row with its glyph and title, subtabs (a child's own children)
+  indented under it and folded by a chevron. A click shows that child in
+  the same pane, the rail kept; the pane's tab strip keeps one tab for
+  the whole notebook, its label the parent's title and the open tab's
+  (`linear algebra › unit 2`). The rail folds to a strip with ⌘⇧[ or its
+  own handle, remembered per document in `.ilmi/`. Every lens works in
+  the rail's page: a source, a draft, a deck, a PDF, a folder.
+- Making and arranging tabs: `+ tab` at the rail's foot makes a new
+  draft child (named `untitled`, renamed inline); its menu (`+` beside
+  `+ tab`) offers source, deck, draft, and `import a file…` landing in
+  the children directory (29's landing); the rail's rows take the node
+  menu (rename, move to…, delete, `add subtab`) and drag to reorder or
+  nest (30's order and into). `show as tabs` / `show as tree` on any
+  document's menu sets or clears `tabs`; a document with tabs still shows
+  its children in the sidebar tree (folded by default).
+- The queue and the session name a tab's item by its path as now
+  (`courses/linear-algebra/unit-2`); opening one from the queue opens the
+  notebook on that tab. ⌘⌥↑ / ⌘⌥↓ step to the previous and next tab;
+  the palette indexes tabs under their notebook.
+
+Done when: `format.test.ts` covers `tabs` and the corpus file;
+`tabs.test.ts` covers the rail (order, subtabs folded and open, a click
+showing the child with the rail kept, the pane label, `+ tab` creating a
+draft child in order, a drag reorder writing the order, opening a tab's
+item from the queue landing on that tab, the step keys); `ILMI_SMOKE=tabs`
+turns the corpus course into tabs, adds two tabs and a subtab, reorders
+them, opens a deck tab and a source tab, folds the rail, and logs the
+rail and the file tree after each; captures read.
+
 ## Notes for the next session
 
 Milestones 0–29 are ticked (13 dropped); nothing is unchecked. The window

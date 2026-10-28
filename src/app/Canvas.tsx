@@ -4,9 +4,10 @@
 
 import { Lens } from './Lenses.js';
 import { EL_GLYPH } from './items.js';
-import { GLYPH, tabKindOf, titleOf } from './names.js';
+import { GLYPH, tabKindOf } from './names.js';
 import { activatePane, closePane, closeTab, selectTab, splitPane, type OpenOpts, type Pane } from './panes.js';
 import { useApp } from './store.js';
+import { notebookOf, tabLabel } from './tabs.js';
 import { openNode, rememberTab } from './vault.js';
 
 interface TabBarProps {
@@ -24,16 +25,19 @@ function TabBar({ pane, index, canClosePane }: TabBarProps) {
   return (
     <div className="tabbar">
       {pane.tabs.map((tab, ti) => {
-        const kind = tabKindOf(tab.id, docs);
+        // a notebook's page is one tab for the whole notebook: its glyph, `notebook › page`
+        const nb = notebookOf(tab.id, docs);
+        const kind = tabKindOf(nb ?? tab.id, docs);
         const session = kind === 'session' ? sessionEl : null;
         const glyph = session ? EL_GLYPH[session.kind] : GLYPH[kind];
-        const title = session ? session.label : titleOf(tab.id, docs, root);
+        const title = session ? session.label : tabLabel(tab.id, docs, root);
         return (
           <div
             key={tab.key}
             className="tab"
             data-active={ti === pane.active ? '1' : '0'}
             data-t={kind}
+            data-nb={nb && nb !== tab.id ? '1' : undefined}
             onClick={() => { setPanes((s) => selectTab(s, index, ti)); after(); }}
             onAuxClick={(e) => { if (e.button === 1) { setPanes((s) => closeTab(s, index, ti)); after(); } }}
           >

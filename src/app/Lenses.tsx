@@ -12,11 +12,13 @@ import { GLYPH, INTAKE, SESSION, contentsOf, findNode, kindOf, queueScope, title
 import type { OpenOpts } from './panes.js';
 import { Pdf } from './Pdf.js';
 import { Queue } from './Queue.js';
+import { Notebook } from './Rail.js';
 import { Reader } from './Reader.js';
 import { Session } from './Session.js';
 import { useApp, type DocInfo } from './store.js';
 import { runBlockHooks, usePlugins } from '../plugins/index.js';
 import { MENU_W, NodeMenu, dropMode, menuAt, placeMenu, type DropMode, type MenuAt } from './NodeMenu.js';
+import { notebookOf } from './tabs.js';
 import { useDoc } from './useDoc.js';
 import { createNode, currentVault, moveCard, openIntake, placeNode, removeCard, renameNode } from './vault.js';
 
@@ -41,6 +43,15 @@ export function Lens({ id, active, onOpen }: LensProps) {
   if (id === SESSION) return <Session active={active} onOpen={onOpen} />;
   const scope = queueScope(id);
   if (scope) return <Queue scope={scope} active={active} />;
+  // a notebook's page: its tab rail beside it (`Rail.tsx`)
+  const nb = notebookOf(id, docs);
+  if (nb) return <Notebook nb={nb} page={id} active={active} onOpen={onOpen}><PageLens id={id} active={active} onOpen={onOpen} /></Notebook>;
+  return <PageLens id={id} active={active} onOpen={onOpen} />;
+}
+
+/** A node's own lens: a folder, a deck, pages, or the reader. */
+function PageLens({ id, active, onOpen }: LensProps) {
+  const docs = useApp((s) => s.docs);
   const kind = kindOf(id, docs);
   if (kind === 'folder') return <FolderLens id={id} active={active} onOpen={onOpen} />;
   if (kind === 'deck') return <DeckLens id={id} active={active} />;

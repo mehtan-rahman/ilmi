@@ -67,7 +67,7 @@ const flush = async () => { await act(async () => { await new Promise((r) => set
 const entries = () => Array.from(document.querySelectorAll<HTMLElement>('.ctx-menu .ci')).map((e) => e.textContent?.replace(/^./, '').replace(/F2$|▸$/, '') ?? '');
 const fire = (el: Element, type: string, init: MouseEventInit = {}) => { act(() => { el.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, ...init })); }); };
 const click = (label: string) => fire(Array.from(document.querySelectorAll<HTMLElement>('.ctx-menu .ci')).find((e) => e.textContent?.includes(label))!, 'click');
-const ROW = ['new source', 'new deck', 'new draft', 'new folder', 'import a file…', 'add from text or a link', 'rename', 'move to…', 'delete source'];
+const ROW = ['new source', 'new deck', 'new draft', 'new folder', 'import a file…', 'add from text or a link', 'show as tabs', 'rename', 'move to…', 'delete source'];
 const FOLDER = ['new source', 'new deck', 'new draft', 'new folder', 'import a file…', 'add from text or a link'];
 
 beforeEach(() => {
@@ -227,7 +227,7 @@ describe('inside a document', () => {
     expect(host.querySelector('.folder-view .crumb')?.textContent).toBe('inside source');
     expect(Array.from(host.querySelectorAll<HTMLElement>('.fv-row')).map((r) => r.dataset.path)).toEqual(['papers/wozniak-1990/woz-ex1.md', 'papers/wozniak-1990/figures']);
     fire(host.querySelector('.folder-view')!, 'contextmenu', { clientX: 300, clientY: 500 });
-    expect(entries()).toEqual(['new source', 'new deck', 'new draft', 'new folder', 'import a file…', 'add from text or a link', 'rename', 'move to…', 'delete source']);
+    expect(entries()).toEqual(['new source', 'new deck', 'new draft', 'new folder', 'import a file…', 'add from text or a link', 'show as tabs', 'rename', 'move to…', 'delete source']);
     click('new draft');
     await flush();
     expect(calls).toEqual(['create papers/wozniak-1990|draft']);

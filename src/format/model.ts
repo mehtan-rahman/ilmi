@@ -105,7 +105,9 @@ export type Field =
   /** Who wrote the clipped page. */
   | { key: 'author'; value: string }
   /** When the clipped page was published: a day or a UTC instant. */
-  | { key: 'published'; value: string };
+  | { key: 'published'; value: string }
+  /** The document's children shown as tabs in a rail beside its page. */
+  | { key: 'tabs'; value: boolean };
 
 export type FieldKey = Field['key'];
 
@@ -132,7 +134,7 @@ export interface Diagnostic {
 }
 
 export const FIELD_KEYS: readonly FieldKey[] = [
-  'type', 'title', 'frozen', 'imported', 'started', 'read', 'write', 'default-card', 'pri', 'pdf', 'url', 'author', 'published',
+  'type', 'title', 'frozen', 'imported', 'started', 'read', 'write', 'default-card', 'pri', 'pdf', 'url', 'author', 'published', 'tabs',
 ];
 
 export function isField(e: FmEntry): e is Field {

@@ -67,6 +67,17 @@ well as folders, and a document's children open as a folder lens from its
 inspector's `children` line or ⌥-click on its chevron. Deleting a document
 with children asks first.
 
+A document can show its children as tabs, as Google Docs does: `show as
+tabs` on its menu (it writes `tabs: true` in its front-matter) draws a rail
+on the left of its page with the document first and its children in their
+order, a child's own children as subtabs under a chevron. A click shows that
+tab in the same pane; the pane's tab reads `linear algebra › unit 2`. `+ tab`
+makes a draft, `+` beside it a source, a deck, or an imported file; a row's
+menu has `add subtab`, and rows drag to reorder or nest. ⌘⌥↑ / ⌘⌥↓ step
+through the tabs and ⌘⇧[ folds the rail. Each tab is a whole document in
+its own file, so the queue, the palette, and a session reach it by its path
+and open the notebook on it.
+
 In a dev build, `ILMI_VAULT=/path/to/vault npm run tauri dev` opens that vault
 at launch instead of asking for one. Add `ILMI_SMOKE=1` to run every tree
 operation against that vault through the Tauri fs adapter and log the results

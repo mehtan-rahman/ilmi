@@ -6,6 +6,7 @@ import { hintsFor } from './chrome.js';
 import { queueScope, tabKindOf } from './names.js';
 import { activeTab } from './panes.js';
 import { useApp } from './store.js';
+import { notebookOf } from './tabs.js';
 
 export function BottomStrip() {
   const panes = useApp((s) => s.panes);
@@ -14,13 +15,15 @@ export function BottomStrip() {
   const id = activeTab(panes)?.id;
   const kind = id === undefined ? undefined : tabKindOf(id, docs);
   const info = id === undefined ? undefined : docs[id];
-  const hints = hintsFor({
+  const base = hintsFor({
     kind,
     el: kind === 'session' ? sessionEl?.kind ?? 'card' : null,
     scope: id === undefined ? null : queueScope(id),
     canEnrol: !!info && (info.type === 'source' || info.type === 'extract') && !info.read,
     pages: !!info?.pdf,
   });
+  // a notebook's page: the step keys, ahead of the page's own
+  const hints = id !== undefined && notebookOf(id, docs) ? [['⌘⌥↑↓', 'tabs'] as const, ...base] : base;
   return (
     <div className="bot">
       {hints.map(([keys, what], i) => (

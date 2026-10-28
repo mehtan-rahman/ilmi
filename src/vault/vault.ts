@@ -44,6 +44,8 @@ export interface VaultState {
   budget?: number;
   /** The folder an `ilmi://new` link lands in when it names none; `''` or absent is the root. */
   clippings?: string;
+  /** Notebooks (documents with `tabs: true`) whose tab rail is folded to a strip. */
+  rails?: string[];
 }
 
 /** Default file names for new nodes, by type. */

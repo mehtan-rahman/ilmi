@@ -81,6 +81,25 @@ describe('front-matter', () => {
       expect(meta(parse(`---\n${bad}\n---\n\nx\n`).doc).pri).toBeUndefined();
   });
 
+  it('tabs: the course reads as tabs, the field round-trips, clears, and a bad value degrades', () => {
+    const text = read('vault/courses/linear-algebra.md');
+    const { doc, diagnostics } = parse(text);
+    expect(diagnostics).toEqual([]);
+    expect(meta(doc)).toEqual({ type: 'source', frozen: false, title: 'linear algebra', tabs: true });
+    expect(serialize(doc)).toBe(text);
+    setField(doc, 'tabs', null);
+    expect(serialize(doc).split('\n').slice(0, 3)).toEqual(['---', 'title: linear algebra', '---']);
+    expect(meta(doc).tabs).toBeUndefined();
+    setField(doc, 'tabs', true);
+    expect(serialize(doc).split('\n').slice(0, 4)).toEqual(['---', 'title: linear algebra', 'tabs: true', '---']);
+    expect(meta(parse('---\ntabs: false # by hand\n---\n\nx\n').doc).tabs).toBe(false);
+    expect(serialize(parse('---\ntabs: false # by hand\n---\n\nx\n').doc)).toBe('---\ntabs: false\n---\n\nx\n');
+    const bad = parse('---\ntabs: some\n---\n\nx\n');
+    expect(meta(bad.doc).tabs).toBeUndefined();
+    expect(bad.diagnostics).toHaveLength(1);
+    expect(serialize(bad.doc)).toBe('---\ntabs: some\n---\n\nx\n');
+  });
+
   it('pages: the pdf field names the file, page sits on an extract\'s read line, and bad values degrade', () => {
     const { doc } = parse(read('vault/papers/two-pages.md'));
     expect(meta(doc)).toEqual({

@@ -46,8 +46,13 @@ export function activeTab(s: Panes): Tab | undefined {
   return pane?.tabs[pane.active];
 }
 
-/** Open `id`: focus it where it is already open, else replace the active tab, or add one per `opts`. */
-export function openTab(s: Panes, id: string, opts: OpenOpts = {}): Panes {
+/**
+ * Open `id`: focus it where it is already open, else replace the active tab,
+ * or add one per `opts`. `same` names the tabs that are one tab with `id`
+ * (the pages of one notebook, `tabs.ts`): the first of them, the active
+ * pane's first, shows `id` in place, its key kept.
+ */
+export function openTab(s: Panes, id: string, opts: OpenOpts = {}, same?: (tabId: string) => boolean): Panes {
   const next = clone(s);
   for (let pi = 0; pi < next.panes.length; pi++) {
     const ti = next.panes[pi]!.tabs.findIndex((t) => t.id === id);
@@ -55,6 +60,19 @@ export function openTab(s: Panes, id: string, opts: OpenOpts = {}): Panes {
       next.panes[pi]!.active = ti;
       next.active = pi;
       return next;
+    }
+  }
+  if (same) {
+    const order = [next.active, ...next.panes.map((_, i) => i).filter((i) => i !== next.active)];
+    for (const pi of order) {
+      const p = next.panes[pi]!;
+      const ti = p.tabs.findIndex((t) => same(t.id));
+      if (ti >= 0) {
+        p.tabs[ti] = { ...p.tabs[ti]!, id };
+        p.active = ti;
+        next.active = pi;
+        return next;
+      }
     }
   }
   if (opts.cmdClick && opts.shiftClick) {

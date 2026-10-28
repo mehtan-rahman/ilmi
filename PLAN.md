@@ -2853,7 +2853,48 @@ source, a folder into a draft, reorders three rows, renames the parent,
 and logs the tree and `.ilmi/order.json` after each; captures read (by
 window id, see the 2026-10-28 entry).
 
-### [ ] 31. Tabs — a document's children as tabs beside the page
+### [x] 31. Tabs — a document's children as tabs beside the page
+Done 2026-10-28 on main; commit `HASH31`.
+Notes: `tabs: true` is a front-matter field (FORMAT §3, a **Tabs**
+paragraph; `tabs: false` written only by hand; a bad value a raw line);
+the corpus course `courses/linear-algebra.md` carries it. `src/app/tabs.ts`
+(new, pure but for `addTab`) is the model: `notebookOf(path, docs)` (the
+outermost document at or above `path` with `tabs`; a children directory
+as 30's folder lens is not a page), `notebookPages` (the step order, depth
+first, subtabs counted), `railRows(tree, nb, order, open)`, `tabAncestors`,
+`stepPage`, `tabLabel` (`linear algebra › unit-2`), `notebookTrail` (the
+palette's sub), and `addTab(vault, dir, type, name)` (a document last in
+the directory's order, the whole list written). A pane tab on a notebook
+holds the path of the page it shows; `openTab` takes a `same` predicate
+and `openNode` passes "same notebook", so a page opened from anywhere (the
+tree, the queue, a card from the palette, a session's source) shows in the
+notebook's existing tab with its key kept, and the last tab reopens on
+its page. `Lens` wraps a notebook's page in `Notebook` (`src/app/Rail.tsx`,
+new) around `PageLens` (the old dispatch); the page sits in its own
+`.pane-body.nb-page` (so the PDF lens and the session find their scroller),
+keyed by the page. The rail: overview row, tabs in 30's order, subtabs
+under a chevron (local state; the tabs above the page shown open by
+themselves), click, double-click rename, the node menu with `add subtab`,
+drags through `placeNode` (overview only `into`), `+ tab` (a draft named
+`untitled`, renamed in place) and `+` (source, deck, draft, import a
+file…). ⌘⌥↑/↓ step, ⌘⇧[ or «/» fold; the fold is `railFolded` in the
+store and `rails` in `.ilmi/state.json`, re-keyed on a rename. The node
+menu on any document has `show as tabs` / `show as tree` (`setTabs`). A
+deleted page's tab goes back to its notebook's overview (`pagesToNotebook`
+in the `gone` handler). The bottom strip shows `⌘⌥↑↓ tabs` on a notebook's
+page. The sidebar tree is unchanged: a notebook's children are rows there,
+folded unless opened. Smoke `ILMI_SMOKE=tabs` (`smokeTabs`). Tests: 587
+(+18 over 569: `format.test.ts` 1, the field and the corpus file; `tabs.test.ts` 17:
+the notebook of a page, the label, the rail's order with subtabs folded
+and open, the step order, the palette's trail, one pane tab per notebook,
+and in the canvas a click keeping the rail, the chevron, a page from the
+queue landing on its tab, the step keys, the fold, `+ tab` and `+`, the
+row menu, drags; `addTab` over a real vault), 31 files; typecheck clean;
+cargo 12. Open: a real pointer drag on the rail (the smoke dispatches the drag events, as 30's did); the wider pane tab for a notebook's label (340 px, after the window showed `linear algebra › problem…` cut at 220) is not seen in the window; ⌘⇧[ and ⌘⌥↑↓ were dispatched as events, not typed (the File menu binds neither, but a real keypress through WebKit is unseen); a folder tab deleted leaves its pane on
+"no longer in the collection" (only a document's `gone` sends the tab
+back); subtab open state is not remembered; the rail takes no drag from
+the sidebar tree or an OS file onto a row as `into` (an OS file on a rail
+row lands beside it, as 29's rule for a document row).
 - A document whose front-matter says `tabs: true` (FORMAT §3, a new
   optional field, round-trip test, corpus file: the linear-algebra
   document from 30) opens with a tab rail on the left of the reader, as
@@ -2962,10 +3003,11 @@ file's lines after each; captures read.
 
 ## Notes for the next session
 
-Milestones 0–30 are ticked (13 dropped); 31 (tabs: a document's children
-as a rail beside the page, built on 30's children directories, order, and
-`place`) is next; 30's window check (`ILMI_SMOKE=nest`) ran on 2026-10-28
-and is in BUILD-LOG's top entry. The window
+Milestones 0–31 are ticked (13 dropped); 32 (decks: a browser, cards
+edited in place, studying one deck) is being built on a branch in a
+separate worktree and will be merged by hand; nothing else is next until
+it lands. 31's window check (`ILMI_SMOKE=tabs`) is in BUILD-LOG's top
+entry, 30's (`ILMI_SMOKE=nest`) in the one under it. The window
 checks of 21, 24, 25, 26, and 27 are recorded in BUILD-LOG under their
 entries with the fixes they forced (a fetched page is never auto-read as
 cards and the comma rule wants a gloss for a back; the clipper

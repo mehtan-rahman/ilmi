@@ -100,6 +100,8 @@ export interface DocInfo {
   pri?: number;
   /** Vault-relative path of the document's pages, when it has a PDF beside it (or names one). */
   pdf?: string;
+  /** `tabs: true`: its children are tabs in a rail beside its page (`tabs.ts`). */
+  tabs?: true;
 }
 
 export interface Sidebar {
@@ -211,6 +213,8 @@ export interface AppState {
   intakeFiles: string[];
   /** The order chosen for each directory (`.ilmi/order.json`, `vault/order.ts`); the tree and the folder lens list by it. */
   order: Order;
+  /** Notebooks (documents with `tabs: true`) whose tab rail is folded to a strip, by path. Per vault, in `.ilmi/state.json`. */
+  railFolded: Record<string, true>;
   session: Session | null;
   /** What the session is on now, for its tab and the inspector. */
   sessionEl: { kind: El; label: string; item: QueueItem } | null;
@@ -263,6 +267,7 @@ export const useApp = create<AppState>((set, get) => ({
   fileOver: null,
   intakeFiles: [],
   order: {},
+  railFolded: {},
   session: null,
   sessionEl: null,
   setTheme: (theme) => { set({ theme }); persist(get()); },

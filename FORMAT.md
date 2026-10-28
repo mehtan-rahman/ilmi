@@ -135,6 +135,7 @@ dropped, with a diagnostic.
 | `url`          | string                      |           | the page a clipping came from                                      |
 | `author`       | string                      |           | who wrote it                                                       |
 | `published`    | day or instant              |           | when it was published                                              |
+| `tabs`         | `true` `false`              | `false`   | the document's children are tabs in a rail beside its page         |
 
 `read` attributes: `due` (day or instant), `ivl` (days between passes, int),
 `reps` (passes made, int), `pos` (prose blocks read, int), `page` (int ≥ 1),
@@ -189,6 +190,13 @@ are kept verbatim, ignored, and reported.
 A known key whose value does not parse (`frozen: maybe`, `type:` with nothing
 after it) is kept as a raw line with a diagnostic, and the field takes its
 default.
+
+**Tabs.** `tabs: true` asks the app to draw the document's children (§1,
+its children directory, in its order) as tabs beside its page, the
+document itself first and a child's own children as subtabs under it. A
+tab is a whole document or folder in its own file; nothing about the
+children changes with the field, and without it they are the same nodes in
+the tree. `tabs: false` is the default and is written only when set by hand.
 
 **title** is written plain when it can be and as a double-quoted JSON string
 otherwise (when it starts with a YAML-significant character, contains `: ` or

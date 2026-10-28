@@ -7,6 +7,7 @@ import { nameOf, type TreeNode } from '../vault/index.js';
 import { FORM_LABEL } from './items.js';
 import { QUEUE_TITLE, SCOPES, queueId, type QueueScope, type TabKind } from './names.js';
 import type { DocInfo, El } from './store.js';
+import { notebookTrail } from './tabs.js';
 
 // ── key hints ────────────────────────────────────────────────────
 
@@ -147,11 +148,12 @@ export function buildIndex(tree: TreeNode[], docs: Record<string, DocInfo>, card
   const visit = (nodes: TreeNode[], parent: string) => {
     for (const n of nodes) {
       if (n.kind === 'folder') {
-        out.push({ key: `p:${n.path}`, title: n.name, sub: parent || 'folder', tag: 'folder', target: { open: n.path } });
+        out.push({ key: `p:${n.path}`, title: n.name, sub: notebookTrail(tree, n.path, docs, null) ?? (parent || 'folder'), tag: 'folder', target: { open: n.path } });
         visit(n.children, n.name);
       } else {
         const tag = docs[n.path]?.type ?? 'source';
-        out.push({ key: `p:${n.path}`, title: title(n.path), sub: parent || tag, tag, target: { open: n.path } });
+        // a tab is indexed under its notebook: `linear algebra › unit-2`
+        out.push({ key: `p:${n.path}`, title: title(n.path), sub: notebookTrail(tree, n.path, docs, null) ?? (parent || tag), tag, target: { open: n.path } });
         if (n.children) visit(n.children, title(n.path));
       }
     }

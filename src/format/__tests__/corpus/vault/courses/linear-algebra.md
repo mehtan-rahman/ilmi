@@ -1,5 +1,6 @@
 ---
 title: linear algebra
+tabs: true
 ---
 
 ## the course

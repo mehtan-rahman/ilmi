@@ -4,18 +4,19 @@
 // from text or a link (the intake), `sort by name` when the directory has an
 // order of its own, and for a node rename, move to… (a list of folders and
 // documents opened on a click), and delete (asking first when there is
-// something under it). The `+` in the sidebar's root row opens the same menu
+// something under it). A document's menu has `show as tabs` / `show as
+// tree` (its `tabs` field, `tabs.ts`), and on a tab rail's row `add subtab`. The `+` in the sidebar's root row opens the same menu
 // without the node's half.
 // Escape and a press outside close it; it stays inside the window at the
 // right (`MENU_W`) and the bottom (`placeMenu`).
 
 import { useEffect, useLayoutEffect, useRef, useState, type Dispatch, type MouseEvent, type SetStateAction } from 'react';
 import type { NodeType } from '../format/index.js';
-import { childDirOf } from '../vault/index.js';
+import { childDirOf, isDoc } from '../vault/index.js';
 import { importFiles } from './land.js';
 import { GLYPH, descendants, findNode, kindOf, moveTargets, titleOf, type NodeKind } from './names.js';
 import { useApp } from './store.js';
-import { createNode, moveNode, openIntake, removeNode, sortByName } from './vault.js';
+import { createNode, moveNode, openIntake, removeNode, setTabs, sortByName } from './vault.js';
 
 export const MENU_W = 190;
 
@@ -61,9 +62,11 @@ interface Props {
   onCreated(path: string): void;
   /** `rename` was chosen: the host starts its inline rename. */
   onRename(id: string): void;
+  /** On a tab rail's row (`Rail.tsx`): `add subtab` shows, and makes one under the row. */
+  onSubtab?(id: string): void;
 }
 
-export function NodeMenu({ at, set, onCreated, onRename }: Props) {
+export function NodeMenu({ at, set, onCreated, onRename, onSubtab }: Props) {
   const tree = useApp((s) => s.tree);
   const docs = useApp((s) => s.docs);
   const root = useApp((s) => s.vault);
@@ -133,6 +136,27 @@ export function NodeMenu({ at, set, onCreated, onRename }: Props) {
               <div className="cd" />
               <div className="ci" onClick={act(() => { sortByName(dir).catch(fail); })}>
                 <span className="cg">↕</span>sort by name
+              </div>
+            </>
+          )}
+          {node && isDoc(at.id) && (
+            <>
+              <div className="cd" />
+              {onSubtab && (
+                <div className="ci" onClick={act(() => onSubtab(at.id))}>
+                  <span className="cg">+</span>add subtab
+                </div>
+              )}
+              <div className="ci" onClick={act(() => { setTabs(at.id, !docs[at.id]?.tabs).catch(fail); })}>
+                <span className="cg">{docs[at.id]?.tabs ? '⋮' : '⊞'}</span>{docs[at.id]?.tabs ? 'show as tree' : 'show as tabs'}
+              </div>
+            </>
+          )}
+          {node && !isDoc(at.id) && onSubtab && (
+            <>
+              <div className="cd" />
+              <div className="ci" onClick={act(() => onSubtab(at.id))}>
+                <span className="cg">+</span>add subtab
               </div>
             </>
           )}

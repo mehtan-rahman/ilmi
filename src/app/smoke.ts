@@ -118,6 +118,8 @@
 // folder lens and the course's inspector `children` line, renames the course
 // inline from its row, lists `move to…` for a deck, and asks to delete the
 // course, logging the rows and `.ilmi/order.json` after each.
+// `ILMI_SMOKE=tabs` (`smokeTabs`): the course as a notebook, its tab rail
+// made, arranged, read, stepped, and folded (see the function).
 // `ILMI_SMOKE=welcome` runs before any vault opens: it seeds the recents
 // with the scratch vault (`ILMI_VAULT`) and a path that does not exist,
 // turns `reopen the last vault on start` off, reads the welcome's rows and
@@ -2859,6 +2861,170 @@ export async function smokeNest(vault: Vault): Promise<void> {
     await shot('nest-delete-asks', 6000);
     key('Escape');
     log(`end: ${rows('books', 'essays', 'courses')}; order ${await orderFile()}`);
+    log('done');
+  } catch (e) {
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+/**
+ * `ILMI_SMOKE=tabs`: the corpus course as a notebook. Shows it as a tree and
+ * back as tabs from its sidebar row's menu, adds two tabs (`+ tab`, a draft,
+ * and a deck from the rail's `+`, each renamed in place) and a subtab
+ * (`add subtab` on a row's menu), reorders the rail by drags on its rows'
+ * thirds, opens a deck tab and a source tab (a subtab under the folder
+ * tab), steps with ⌘⌥↑, and folds the rail with ⌘⇧[; logs the rail, the
+ * pane tab, and the file tree after each.
+ */
+export async function smokeTabs(vault: Vault): Promise<void> {
+  const log = (s: string) => info(`smoke tabs: ${s}`);
+  const shot = async (name: string, ms = 8000) => { await sleep(600); log(`shot: ${name}`); await sleep(ms); };
+  const q = <T extends Element>(sel: string) => document.querySelector<T>(sel);
+  const qa = <T extends Element>(sel: string) => Array.from(document.querySelectorAll<T>(sel));
+  const COURSE = 'courses/linear-algebra.md';
+  const KIDS = 'courses/linear-algebra';
+  const rrow = (path: string) => q<HTMLElement>(`.tab-rail .rail-row[data-path="${CSS.escape(path)}"]`);
+  const trow = (path: string) => q<HTMLElement>(`.edit-tree .trow[data-path="${CSS.escape(path)}"]`);
+  const rail = () => {
+    const nav = q<HTMLElement>('.tab-rail');
+    if (!nav) return 'NO RAIL';
+    if (nav.classList.contains('folded')) return `folded strip (${nav.querySelector('.rail-count')?.textContent} tabs)`;
+    return qa<HTMLElement>('.tab-rail .rail-row').map((r) => {
+      const depth = Math.round((parseFloat(r.style.paddingLeft || '6') - 6) / 14);
+      return `${'  '.repeat(depth)}${r.dataset.active === '1' ? '*' : ''}${r.querySelector('.chev')?.textContent ?? ''}${r.querySelector('.glyph')?.textContent ?? ''}${r.querySelector('.name')?.textContent ?? ''}`;
+    }).join(' | ');
+  };
+  const paneTab = () => qa<HTMLElement>('.pane[data-active="1"] .tabbar .tab').map((t) => `${t.dataset.active === '1' ? '*' : ''}${t.querySelector('.glyph')?.textContent}${t.querySelector('.title')?.textContent}`).join(' | ');
+  const files = () => vault.documents().filter((d) => d.startsWith(`${KIDS}/`)).map((d) => d.slice(KIDS.length + 1)).join(', ');
+  const orderFile = async () => ((await vault.fs.stat(vault.abs('.ilmi/order.json'))) ? (await vault.fs.readText(vault.abs('.ilmi/order.json'))).replace(/\s+/g, ' ').trim() : 'none');
+  const field = async () => ((await vault.fs.readText(vault.abs(COURSE))).split('\n').slice(0, 4).join(' / '));
+  const has = (path: string) => (vault.documents().includes(path) ? true : null);
+  const page = () => activeTab(useApp.getState().panes)?.id ?? '';
+  const state = () => `${rail()} ‖ pane ${paneTab()} ‖ page ${page()}`;
+  const menuAtRow = async (el: HTMLElement) => {
+    const r = el.getBoundingClientRect();
+    el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: r.left + 30, clientY: r.top + 8 }));
+    await until(() => q('.ctx-menu'));
+  };
+  const pick = async (label: string) => {
+    const it = await until(() => qa<HTMLElement>('.ctx-menu .ci').find((e) => e.textContent?.slice(1).replace(/F2$|▸$/, '') === label));
+    it.click();
+  };
+  const renameTo = async (name: string) => {
+    const input = await until(() => q<HTMLInputElement>('.tab-rail input.rename'), 8000);
+    await sleep(200);
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, name);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+  };
+  const dragEv = (type: string, dt: DataTransfer, x = 0, y = 0) => new DragEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, dataTransfer: dt });
+  const drag = async (from: string, to: string, where: 'top' | 'mid' | 'bottom') => {
+    const a = await until(() => rrow(from));
+    const b = await until(() => rrow(to));
+    const dt = new DataTransfer();
+    a.dispatchEvent(dragEv('dragstart', dt));
+    await sleep(80);
+    const r = b.getBoundingClientRect();
+    const y = r.top + r.height * (where === 'top' ? 0.15 : where === 'mid' ? 0.5 : 0.85);
+    b.dispatchEvent(dragEv('dragenter', dt, r.left + 30, y));
+    const over = dragEv('dragover', dt, r.left + 30, y);
+    b.dispatchEvent(over);
+    await sleep(120);
+    const lit = b.className.match(/drop-\w+/)?.[0] ?? 'none';
+    b.dispatchEvent(dragEv('drop', dt, r.left + 30, y));
+    a.dispatchEvent(dragEv('dragend', dt));
+    return `${from.slice(KIDS.length + 1)} → ${where} of ${to.slice(KIDS.length + 1)}: accepted ${over.defaultPrevented}, lit ${lit}`;
+  };
+  const chord = (init: KeyboardEventInit) => window.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, metaKey: true, ...init }));
+  try {
+    setInspector({ open: false });
+    for (const f of ['courses']) toggleOpen(f, true);
+    openNode(COURSE);
+    await until(() => rrow(COURSE), 8000);
+    await sleep(600);
+    log(`start: ${state()}; field ${await field()}; files ${files()}`);
+
+    // show as tree, then show as tabs, from the course's row in the sidebar
+    await menuAtRow(await until(() => trow(COURSE)));
+    await pick('show as tree');
+    await until(() => (q('.tab-rail') ? null : true), 8000);
+    await sleep(500);
+    log(`show as tree: ${state()}; field ${await field()}; sidebar row chevron ${trow(COURSE)?.querySelector('.chev')?.textContent}`);
+    await shot('tabs-as-tree', 6000);
+    await menuAtRow(await until(() => trow(COURSE)));
+    await pick('show as tabs');
+    await until(() => rrow(COURSE), 8000);
+    await sleep(500);
+    log(`show as tabs: ${state()}; field ${await field()}`);
+    await shot('tabs-on');
+
+    // two tabs: + tab (a draft, untitled, renamed in place), and a deck from +
+    q<HTMLElement>('.tab-rail .rail-add')!.click();
+    await until(() => has(`${KIDS}/untitled.md`), 8000);
+    log(`+ tab made untitled.md: page ${page()}; renaming ${q('.tab-rail input.rename') ? 'open' : 'not open'}`);
+    await renameTo('unit 1 notes');
+    await until(() => has(`${KIDS}/unit 1 notes.md`), 8000);
+    await sleep(500);
+    log(`+ tab: ${state()}; files ${files()}; order ${await orderFile()}`);
+    q<HTMLElement>('.tab-rail .rail-more')!.click();
+    await until(() => q('.rail-menu'));
+    log(`+ menu: ${qa<HTMLElement>('.rail-menu .ci').map((e) => e.textContent).join(' | ')}`);
+    qa<HTMLElement>('.rail-menu .ci').find((e) => e.textContent?.endsWith('deck'))!.click();
+    await renameTo('unit 1 cards');
+    await until(() => has(`${KIDS}/unit 1 cards.md`), 8000);
+    await sleep(500);
+    log(`+ deck: ${state()}; files ${files()}; order ${await orderFile()}`);
+    await shot('tabs-added');
+
+    // a subtab under unit 1 notes
+    await menuAtRow(await until(() => rrow(`${KIDS}/unit 1 notes.md`)));
+    log(`row menu: ${qa<HTMLElement>('.ctx-menu .ci').map((e) => e.textContent?.slice(1)).join(' | ')}`);
+    await pick('add subtab');
+    await renameTo('week 1');
+    await until(() => has(`${KIDS}/unit 1 notes/week 1.md`), 8000);
+    await sleep(500);
+    log(`subtab: ${state()}; files ${files()}; order ${await orderFile()}`);
+    await shot('tabs-subtab');
+
+    // reorder: unit 1 notes to the top (above unit-2, the first tab), unit 1 cards after it
+    log(await drag(`${KIDS}/unit 1 notes.md`, `${KIDS}/unit-2`, 'top'));
+    await until(() => (vault.order[KIDS]?.[0] === 'unit 1 notes.md' ? true : null), 8000);
+    await sleep(400);
+    log(await drag(`${KIDS}/unit 1 cards.md`, `${KIDS}/unit 1 notes.md`, 'bottom'));
+    await until(() => (vault.order[KIDS]?.[1] === 'unit 1 cards.md' ? true : null), 8000);
+    await sleep(500);
+    log(`reordered: ${state()}; order ${await orderFile()}`);
+    await shot('tabs-reordered');
+
+    // a deck tab, then a source tab (a subtab under the folder tab)
+    (await until(() => rrow(`${KIDS}/problem-set-1.md`))).click();
+    await until(() => q('.nb-page .deck-view'), 8000);
+    await sleep(600);
+    log(`deck tab: ${state()}; lens "${q('.nb-page .deck-view h1')?.textContent}" ${qa('.nb-page .deck-view .card-span').length} cards; pane tabs ${qa('.pane[data-active="1"] .tabbar .tab').length}`);
+    await shot('tabs-deck');
+    (await until(() => rrow(`${KIDS}/unit-2`))).querySelector<HTMLElement>('.chev')!.click();
+    (await until(() => rrow(`${KIDS}/unit-2/eigenvalues.md`))).click();
+    await until(() => (page() === `${KIDS}/unit-2/eigenvalues.md` ? true : null), 8000);
+    await sleep(1200);
+    log(`source tab: ${state()}; lens ${q('.nb-page .reader')?.className ?? 'none'}: "${q('.nb-page .reader h1')?.textContent ?? ''}"; bottom ${q('.bot')?.textContent}`);
+    await shot('tabs-source');
+
+    // step back and forward through the pages
+    chord({ key: 'ArrowUp', altKey: true });
+    await sleep(500);
+    const up = page();
+    chord({ key: 'ArrowDown', altKey: true });
+    await sleep(500);
+    log(`⌘⌥↑ → ${up}; ⌘⌥↓ → ${page()}`);
+
+    // fold the rail
+    chord({ key: '{', code: 'BracketLeft', shiftKey: true });
+    await until(() => q('.tab-rail.folded'), 4000);
+    await sleep(900);
+    const st = (await vault.fs.stat(vault.abs('.ilmi/state.json'))) ? JSON.parse(await vault.fs.readText(vault.abs('.ilmi/state.json'))) as { rails?: string[] } : {};
+    log(`folded: ${state()}; state.json rails ${JSON.stringify(st.rails ?? null)}`);
+    await shot('tabs-folded');
+    log(`end: files ${files()}; order ${await orderFile()}; field ${await field()}`);
     log('done');
   } catch (e) {
     log(`failed: ${e instanceof Error ? e.message : String(e)}`);

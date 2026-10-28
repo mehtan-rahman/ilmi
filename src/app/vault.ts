@@ -16,9 +16,10 @@ import { startPlugins, stopPlugins } from '../plugins/index.js';
 import { cleanClipDir } from './clip.js';
 import { cleanBudget, dueToday, sessionItems } from './items.js';
 import { INTAKE, SESSION, queueId, queueScope } from './names.js';
-import { activeTab, dropTabs, emptyPanes, openTab, retarget, type OpenOpts } from './panes.js';
+import { activeTab, dropTabs, emptyPanes, openTab, retarget, type OpenOpts, type Panes } from './panes.js';
 import { addRecent, decideStart, forgetRecent, vaultName } from './recents.js';
 import { STARTER_TEXT, STARTER_TITLE } from './starter.js';
+import { addTab, notebookOf } from './tabs.js';
 import { INSP_DEFAULT, INSP_MAX, INSP_MIN, SIDE_DEFAULT, SIDE_MAX, SIDE_MIN, useApp, type DocInfo, type Inspector, type Sidebar } from './store.js';
 
 let current: Vault | null = null;
@@ -47,6 +48,7 @@ function infoOf(doc: Doc, items: QueueItem[], now: Date, pdf: string | null): Do
   if (m.write) out.write = m.write;
   if (m.pri !== undefined) out.pri = m.pri;
   if (pdf !== null) out.pdf = pdf;
+  if (m.tabs) out.tabs = true;
   return out;
 }
 
@@ -123,6 +125,22 @@ const rekeyOpen = (open: Record<string, true>, from: string, to: string): Record
   return out;
 };
 
+/** A notebook's page deleted under a tab that shows it: the tab goes back to the notebook's overview, when the notebook is still there. */
+function pagesToNotebook(panes: Panes, gone: string, docs: Record<string, DocInfo>): Panes {
+  let touched = false;
+  const next = panes.panes.map((p) => ({
+    ...p,
+    tabs: p.tabs.map((t) => {
+      if (rekey(t.id, gone, gone) === null) return t;
+      const nb = notebookOf(t.id, docs);
+      if (!nb || rekey(nb, gone, gone) !== null) return t;
+      touched = true;
+      return { ...t, id: nb };
+    }),
+  }));
+  return touched ? { ...panes, panes: next } : panes;
+}
+
 function onEvent(vault: Vault, ev: VaultEvent): void {
   if (current !== vault) return;
   const s = useApp.getState();
@@ -151,13 +169,15 @@ function onEvent(vault: Vault, ev: VaultEvent): void {
       delete docs[ev.path];
       bodies.delete(ev.path);
       const now = new Date();
-      useApp.setState({ docs, panes: dropTabs(s.panes, ev.path), queue: buildQueue(now), queueAt: now });
+      useApp.setState({ docs, panes: dropTabs(pagesToNotebook(s.panes, ev.path, s.docs), ev.path), queue: buildQueue(now), queueAt: now });
       break;
     }
     case 'moved': {
       const docs: Record<string, DocInfo> = {};
       for (const [k, v] of Object.entries(s.docs)) docs[rekey(k, ev.from, ev.to) ?? k] = v;
-      useApp.setState({ docs, open: rekeyOpen(s.open, ev.from, ev.to), panes: retarget(s.panes, ev.from, ev.to) });
+      const railFolded = rekeyOpen(s.railFolded, ev.from, ev.to);
+      useApp.setState({ docs, open: rekeyOpen(s.open, ev.from, ev.to), panes: retarget(s.panes, ev.from, ev.to), railFolded });
+      if (Object.keys(s.railFolded).some((k) => rekey(k, ev.from, ev.to) !== null)) queueSave({ rails: Object.keys(railFolded) });
       break;
     }
     case 'order':
@@ -180,6 +200,8 @@ export async function openVault(path: string): Promise<Vault> {
   const state = await vault.loadState();
   const open: Record<string, true> = { '': true };
   for (const f of state.folders ?? []) open[f] = true;
+  const railFolded: Record<string, true> = {};
+  for (const f of Array.isArray(state.rails) ? state.rails : []) if (typeof f === 'string') railFolded[f] = true;
   const sidebar: Sidebar = {
     width: Math.min(SIDE_MAX, Math.max(SIDE_MIN, state.sidebar?.width ?? SIDE_DEFAULT)),
     hidden: state.sidebar?.hidden ?? false,
@@ -200,7 +222,7 @@ export async function openVault(path: string): Promise<Vault> {
   const s0 = useApp.getState();
   useApp.setState({
     open, sidebar, inspector, panes, docs: {}, queue: [], budget: cleanBudget(state.budget), clipDir: cleanClipDir(state.clippings), log: [], session: null, sessionEl: null, selectedCard: null, reveal: null,
-    started: true, newVaultIn: null, gone: s0.gone.filter((p) => p !== path), notice: null, fileOver: null, intakeFiles: [], order: vault.order,
+    started: true, newVaultIn: null, gone: s0.gone.filter((p) => p !== path), notice: null, fileOver: null, intakeFiles: [], order: vault.order, railFolded,
   });
   s0.setRecents(addRecent(s0.recents, path, new Date()));
   setWindowTitle(vaultName(path));
@@ -220,7 +242,7 @@ export function closeVault(): void {
   current = null;
   bodies.clear();
   if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; savePatch = {}; }
-  useApp.setState({ vault: null, files: [], tree: [], docs: {}, open: { '': true }, panes: emptyPanes(), queue: [], log: [], session: null, sessionEl: null, selectedCard: null, reveal: null, paletteOpen: false, intakeDir: '', notice: null, fileOver: null, intakeFiles: [], order: {} });
+  useApp.setState({ vault: null, files: [], tree: [], docs: {}, open: { '': true }, panes: emptyPanes(), queue: [], log: [], session: null, sessionEl: null, selectedCard: null, reveal: null, paletteOpen: false, intakeDir: '', notice: null, fileOver: null, intakeFiles: [], order: {}, railFolded: {} });
   setWindowTitle(null);
 }
 
@@ -329,8 +351,8 @@ export function openInitialVault(): Promise<void> {
       if (path) {
         const vault = await openVault(path);
         if (mode) {
-          const { smoke, smokeReader, smokeCards, smokeIntake, smokeQueue, smokeLoop, smokeShots, smokeDeck, smokePri, smokeGrowth, smokeOverload, smokePdf, smokeFaces, smokeCardsText, smokeAnki, smokeMath, smokeEpub, smokeClip, smokeClipping, smokePlugins, smokeDictionary, smokeRender, smokeLive, smokeBlocks, smokeUse, smokeLand, smokeNest } = await import('./smoke.js');
-          const run = { reader: smokeReader, cards: smokeCards, intake: smokeIntake, queue: smokeQueue, loop: smokeLoop, shots: smokeShots, deck: smokeDeck, pri: smokePri, growth: smokeGrowth, overload: smokeOverload, pdf: smokePdf, faces: smokeFaces, 'cards-text': smokeCardsText, anki: smokeAnki, math: smokeMath, epub: smokeEpub, clip: smokeClip, clipping: smokeClipping, plugins: smokePlugins, dictionary: smokeDictionary, render: smokeRender, live: smokeLive, blocks: smokeBlocks, use: smokeUse, land: smokeLand, nest: smokeNest }[mode] ?? smoke;
+          const { smoke, smokeReader, smokeCards, smokeIntake, smokeQueue, smokeLoop, smokeShots, smokeDeck, smokePri, smokeGrowth, smokeOverload, smokePdf, smokeFaces, smokeCardsText, smokeAnki, smokeMath, smokeEpub, smokeClip, smokeClipping, smokePlugins, smokeDictionary, smokeRender, smokeLive, smokeBlocks, smokeUse, smokeLand, smokeNest, smokeTabs } = await import('./smoke.js');
+          const run = { reader: smokeReader, cards: smokeCards, intake: smokeIntake, queue: smokeQueue, loop: smokeLoop, shots: smokeShots, deck: smokeDeck, pri: smokePri, growth: smokeGrowth, overload: smokeOverload, pdf: smokePdf, faces: smokeFaces, 'cards-text': smokeCardsText, anki: smokeAnki, math: smokeMath, epub: smokeEpub, clip: smokeClip, clipping: smokeClipping, plugins: smokePlugins, dictionary: smokeDictionary, render: smokeRender, live: smokeLive, blocks: smokeBlocks, use: smokeUse, land: smokeLand, nest: smokeNest, tabs: smokeTabs }[mode] ?? smoke;
           await run(vault);
         }
         return;
@@ -343,9 +365,11 @@ export function openInitialVault(): Promise<void> {
 
 // ── view ─────────────────────────────────────────────────────────
 
+/** Open `path` in a tab; a notebook's page (`tabs.ts`) shows in the tab its notebook already has, the rail kept. */
 export function openNode(path: string, opts: OpenOpts = {}): void {
   const s = useApp.getState();
-  const panes = openTab(s.panes, path, opts);
+  const nb = notebookOf(path, s.docs);
+  const panes = openTab(s.panes, path, opts, nb ? (id) => notebookOf(id, s.docs) === nb : undefined);
   useApp.setState({ panes });
   queueSave({ tab: activeTab(panes)?.id ?? '' });
 }
@@ -426,6 +450,15 @@ export function setInspector(patch: Partial<Inspector>): void {
   queueSave({ inspector });
 }
 
+/** Fold notebook `nb`'s tab rail to a strip, or open it; remembered per document in `.ilmi/state.json`. */
+export function setRailFolded(nb: string, folded: boolean): void {
+  const railFolded = { ...useApp.getState().railFolded };
+  if (folded) railFolded[nb] = true;
+  else delete railFolded[nb];
+  useApp.setState({ railFolded });
+  queueSave({ rails: Object.keys(railFolded) });
+}
+
 /** The day's budget, 0 for none; kept with the vault's other view state. */
 export function setBudget(n: number): void {
   const budget = cleanBudget(n);
@@ -453,6 +486,22 @@ export async function createNode(dir: string, type: NodeType | 'folder'): Promis
   const path = type === 'folder' ? await vault.createFolder(dir) : await vault.createDoc(dir, type);
   openDir(dir);
   return path;
+}
+
+/**
+ * A new tab in `dir` (a notebook's or a tab's children directory, made on
+ * demand): a document of `type`, last in the directory's order, opened in
+ * the notebook. Resolves to its path.
+ */
+export async function createTab(dir: string, type: NodeType, name?: string): Promise<string> {
+  const path = await addTab(need(), dir, type, name);
+  openNode(path);
+  return path;
+}
+
+/** `show as tabs` / `show as tree`: set or clear the document's `tabs` field. */
+export async function setTabs(path: string, on: boolean): Promise<void> {
+  await need().update(path, (doc) => setField(doc, 'tabs', on ? true : null));
 }
 
 /** Rename the file; a document that carries a `title` gets the same name there. */

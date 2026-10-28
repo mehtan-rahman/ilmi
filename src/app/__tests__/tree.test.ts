@@ -82,7 +82,7 @@ describe('the sidebar menu', () => {
 
   it('keeps a row\'s own menu, with rename, move to…, and delete', () => {
     mouse(row('papers/wozniak-1990.md'), 'contextmenu', { clientX: 60, clientY: 80 });
-    expect(entries()).toEqual(['new source', 'new deck', 'new draft', 'new folder', 'import a file…', 'add from text or a link', 'rename', 'move to…', 'delete source']);
+    expect(entries()).toEqual(['new source', 'new deck', 'new draft', 'new folder', 'import a file…', 'add from text or a link', 'show as tabs', 'rename', 'move to…', 'delete source']);
     expect(side.querySelectorAll('.ctx-menu')).toHaveLength(1);
   });
 

@@ -6,6 +6,114 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-10-28 — milestone 31: tabs, a document's children as tabs beside the page
+
+Done on main; commit `HASH31` — *tabs: a document's children as tabs beside
+the page*. Files: `src/app/tabs.ts` (new), `src/app/Rail.tsx` (new),
+`src/app/__tests__/tabs.test.ts` (new), `src/format/model.ts` and
+`frontmatter.ts` (`tabs`), `src/app/Lenses.tsx` (`Lens` wraps a notebook's
+page, `PageLens` the old dispatch), `src/app/Canvas.tsx` (the pane label),
+`src/app/panes.ts` (`openTab`'s `same`), `src/app/vault.ts` (`openNode` per
+notebook, `createTab`, `setTabs`, `setRailFolded`, `rails` in state,
+`pagesToNotebook`, the `tabs` dispatch), `src/app/store.ts` (`tabs` on
+`DocInfo`, `railFolded`), `src/vault/vault.ts` (`rails` in `VaultState`),
+`src/app/NodeMenu.tsx` (`show as tabs` / `show as tree`, `add subtab`),
+`src/app/chrome.ts` (the palette's trail), `src/app/BottomStrip.tsx`,
+`src/app/app.css`, `src/app/smoke.ts` (`smokeTabs`), `FORMAT.md` §3,
+`README.md`, the corpus course (`tabs: true`), and the tests.
+
+### Done
+
+- `tabs: true` (FORMAT §3, with a **Tabs** paragraph): the course in the
+  corpus carries it; it round-trips, clears, and a bad value is a raw line.
+- A notebook is the outermost document at or above a page with the field.
+  A pane tab on it holds the page shown, so anything that opens a path
+  (the tree, the queue, a card from the palette, a session's source, the
+  last tab on reopen) lands in the notebook on that tab, in the tab the
+  notebook already has, its key kept: one pane tab per notebook, labelled
+  `linear algebra › problem set 1` and drawn with the notebook's glyph.
+- The rail (`Rail.tsx`): the notebook first, its children in 30's order,
+  subtabs under a chevron (the tabs above the page shown open by
+  themselves), click to show, double-click to rename, the node menu with
+  `add subtab`, drags through `placeNode` (thirds before and after, the
+  middle into, the overview only into), `+ tab` (a draft named `untitled`,
+  last in the order, renamed in place) and `+` (source, deck, draft,
+  import a file…). ⌘⌥↑ / ⌘⌥↓ step through every page, subtabs counted;
+  ⌘⇧[ or `«` / `»` fold it to a strip, per notebook, in `.ilmi/state.json`
+  as `rails`. Every lens works in the page: reader, deck, PDF, folder.
+- `show as tabs` / `show as tree` on any document's menu. The sidebar
+  tree is unchanged (a notebook's children stay rows there, folded until
+  opened). The palette indexes a tab under its notebook
+  (`linear algebra › unit-2`). A page deleted under its tab sends the tab
+  back to the overview. The bottom strip names `⌘⌥↑↓ tabs`.
+
+### Verified
+
+- `npx vitest run`: 587 tests, 31 files (569 before; `format.test.ts` +1,
+  `tabs.test.ts` 17). `npm run typecheck` clean. `cargo test` 12. The
+  menu lists in `tree.test.ts` and `node-menu.test.ts` gained `show as tabs`.
+
+### Window check
+
+Port 1420 was free. `ILMI_SMOKE=tabs` (`mode-run.sh tabs`). The first two
+runs stalled: the ilmi window was hidden and WebKit suspended its timers
+(captures blank, the smoke resuming minutes later only when a Vite HMR
+push woke it, its `until` deadlines then expired). A third run with a CSS
+file touched every 2 s (HMR keeping the page awake;
+`scratchpad/nudge.sh`) went through and showed a wrong expectation in the
+smoke (the fresh vault's first tab is `unit-2`, not `vectors`); fixed, the
+fourth run ended `done`, and every capture shows the ilmi window.
+
+- Start and `show as tabs`: the rail beside the course's page, `TABS` and
+  `«` at its head, `linear algebra` lit with the accent bar, then `unit-2`
+  (▸), `problem set 1`, `unit 1 · vectors`; `+ tab` and `+` at its foot;
+  the bottom strip `⌘⌥↑↓ tabs · e extract · m card …`. `show as tree`: the
+  plain reader, `tabs:` gone from the file, back on the second click.
+- `+ tab` → `untitled.md` made, open, its row renamed in place to
+  `unit 1 notes`; `+` listed `source | deck | draft | import a file…` and
+  made `unit 1 cards`, its deck lens (`no cards`) in the page; each last
+  in `.ilmi/order.json`.
+- `add subtab` (in the row menu after `add from text or a link`, beside
+  `show as tabs`) → `unit 1 notes/week 1.md`, indented under its parent's
+  ▾, the pane tab `linear algebra › week 1`, the page's crumb
+  `courses / linear algebra / unit 1 notes`.
+- Drags: `unit 1 notes` to the top of `unit-2` (lit `drop-before`), `unit
+  1 cards` to the bottom of `unit 1 notes` (`drop-after`); the order
+  `["unit 1 notes.md", "unit 1 cards.md", "unit-2/", "problem-set-1.md",
+  "vectors.md"]`, the subtab carried with its parent.
+- The deck tab: `problem set 1`'s deck lens with its two cards and `2 due`,
+  one pane tab. The source tab: `unit-2` opened, `eigenvalues` in the
+  reader under it. ⌘⌥↑ → `unit-2`, ⌘⌥↓ → back to `eigenvalues`.
+- ⌘⇧[: the rail a strip with `»` and `7`, the page widening into it;
+  `state.json` `rails: ["courses/linear-algebra.md"]`.
+- Fixed from the captures: the pane tab cut the label at 220 px
+  (`linear algebra › problem…`); a notebook's tab now has 340 px.
+
+### Not verified
+
+- The 340 px pane tab (CSS after the run). A real pointer drag on the rail,
+  and ⌘⇧[ / ⌘⌥↑↓ typed rather than dispatched.
+- A folder tab deleted leaves its pane on "no longer in the collection"
+  (only a document's `gone` sends the tab back); subtab folds are not kept.
+
+### Handoff prompt
+
+```
+Read PLAN.md, FORMAT.md, BUILD-LOG.md, and spec/hashiyah/HANDOFF.md.
+Milestones 0–31 are ticked (13 dropped). Milestone 32, "Decks — a browser,
+cards edited in place, and studying one deck", is being built on a branch
+in a separate worktree; merge it by hand when it lands (smoke.ts and the
+vault.ts dispatch both gained a mode, PLAN and BUILD-LOG an entry each;
+keep both, count the ``` fences), run its `ILMI_SMOKE=decks` and 31's
+`ILMI_SMOKE=tabs` in the window after the merge, and tick 32. If the
+window is hidden the webview's timers stop: keep it in front, or touch a
+CSS file every 2 s while the smoke runs. If port 1420 is held by a run
+that is not yours, do not kill it. Suite 587 (31 files) before 32's
+tests, `cargo test` 12, and typecheck must be green before a commit.
+```
+
+---
+
 ## 2026-10-28 — milestone 30: nesting, anything under anything, in an order you choose
 
 Done on main; commit `9ff9791` — *nesting: anything under anything, in an

@@ -96,7 +96,8 @@ function parseValue(key: FieldKey, raw: string, warn: Warn): Field | null {
       const v = parseTitle(raw.trim(), warn);
       return v === null ? null : { key, value: v };
     }
-    case 'frozen': {
+    case 'frozen':
+    case 'tabs': {
       const v = parseBool(stripComment(raw));
       return v === null ? null : { key, value: v };
     }
@@ -196,7 +197,7 @@ function withoutLinePri(f: Field, into?: FmEntry[]): Field {
   return out;
 }
 
-const KNOWN = new Set<string>(['type', 'title', 'frozen', 'imported', 'started', 'read', 'write', 'default-card', 'pri', 'pdf', 'url', 'author', 'published']);
+const KNOWN = new Set<string>(['type', 'title', 'frozen', 'imported', 'started', 'read', 'write', 'default-card', 'pri', 'pdf', 'url', 'author', 'published', 'tabs']);
 function isKnown(k: string): k is FieldKey { return KNOWN.has(k); }
 
 // ── serialize ────────────────────────────────────────────────────
@@ -212,6 +213,7 @@ export function formatField(f: Field): string {
     case 'pri': return `pri: ${f.value}`;
     case 'pdf': case 'url': case 'author': return `${f.key}: ${formatTitle(f.value)}`;
     case 'published': return `published: ${f.value}`;
+    case 'tabs': return `tabs: ${f.value ? 'true' : 'false'}`;
   }
 }
 
@@ -243,6 +245,8 @@ export interface Meta {
   url?: string;
   author?: string;
   published?: string;
+  /** `tabs: true`: the document's children are tabs in a rail beside its page. */
+  tabs?: boolean;
 }
 
 /** The document's front-matter as a plain object, defaults applied. */
@@ -264,6 +268,7 @@ export function meta(doc: Doc): Meta {
       case 'url': out.url = e.value; break;
       case 'author': out.author = e.value; break;
       case 'published': out.published = e.value; break;
+      case 'tabs': out.tabs = e.value; break;
     }
   }
   return out;

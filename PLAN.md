@@ -2888,6 +2888,78 @@ turns the corpus course into tabs, adds two tabs and a subtab, reorders
 them, opens a deck tab and a source tab, folds the rail, and logs the
 rail and the file tree after each; captures read.
 
+## Decks
+
+The user, 2026-10-28: "I think decks need some richer features." Asked
+which first, they chose three: a card browser, editing cards in place,
+and studying one deck. Per-deck stats and options wait. Today the deck lens
+(`DeckLens` in `src/app/Lenses.tsx`) lists a deck's cards with `+ card`
+(m), delete (⌫ or ×), `move to…` another deck, and j/k; a card is edited
+only in the reader over the deck's file. "Deck" below means any document
+with cards (a deck file, a source with cards in it, a tab from 31), and a
+folder or a document with children means every card under it.
+
+### [ ] 32. Decks — a browser, cards edited in place, and studying one deck
+- Browser. The deck lens gains a bar over the list: a search field (`/`
+  focuses it; text in either face, a cloze's answers included, case and
+  accent folded so Arabic without its vowel marks finds the voweled
+  word), filter chips (form: q&a / cloze / both ways; state: new /
+  learning / review / due / suspended; `has flag` once flags exist below),
+  a sort (deck order, due, interval, difficulty, lapses, last reviewed,
+  created), and the count `12 of 340`. Each row shows its form tag, the
+  front, the back dimmed, and on the right its due and interval (the
+  queue's labels). The deck lens of a folder or of a document with
+  children (30) lists every card under it, each row with its file's path
+  in mono (28's label), so the browser doubles as a whole-collection
+  browser from the root's lens. The filter and sort are remembered per
+  deck in `.ilmi/`.
+- Selection. Click selects, ⇧-click a range, ⌘-click toggles, ⌘A all
+  shown; with a selection the bar shows `N selected` and the actions:
+  move to… (any deck or document, 30's nested list), delete, suspend /
+  unsuspend, reset (the schedule back to new; asks), set priority, and
+  `study these`. Every action is one write per file and undoable from
+  its notice (29's notice).
+- Suspended. FORMAT §6.2 gains `sus=1` on a card's bare `sr` line (or a
+  group's line for one blank): the card keeps its schedule and is left
+  out of the queue, the session, and the counts until unsuspended. A
+  round-trip test and a corpus card. The deck row shows it dimmed with
+  `suspended` in place of its due.
+- Edit in place. ⏎ or a double-click on a row opens it as an editor in
+  the list (the session's two-face look from 16, smaller): the front and
+  the back as live-rendered fields (26's inline rules and math chips), a
+  form switch (q&a ⇄ both ways ⇄ cloze: q&a to cloze turns the back into
+  `{{c1::…}}` after the front; cloze to q&a takes the first blank's answer
+  as the back and the text with the blank as the front; both ways is the
+  q&a with `:::`), and the card's priority. ⌘⏎ or a click outside saves
+  (one write: the card's lines, its `sr` line and id kept), Escape
+  cancels. A schedule survives every edit; a form change keeps the bare
+  line and drops group lines that no longer exist, asking first when
+  they carry reviews. `m` makes a new card as the composer does, now in
+  the same editor at the cursor's place.
+- Study this deck. A `study` button on the deck lens (and `study` on the
+  node menu of any deck, folder, or document with cards; and `study…` in
+  the palette) opens a session over the cards under it that are due, in
+  the queue's order, with the session's look and grades. A toggle beside
+  it, `include not due`, crams: every unsuspended card under it, new
+  ones last, graded as usual (FSRS takes an early review in stride; say
+  so in the notes). `study these` from a selection does the same over
+  the selection. The session's header names the deck and counts down;
+  the end returns to the deck lens.
+
+Done when: `format.test.ts` covers `sus` on a bare and a group line and
+the corpus card; `deck-browser.test.ts` covers the search (both faces, a
+cloze's answer, Arabic with and without marks), each filter, each sort,
+the folder lens listing cards under it with paths, selection by click /
+⇧ / ⌘ / ⌘A, and each bulk action's writes with one write per file;
+`card-edit.test.ts` covers an edit of each face, the three form switches
+with their schedule rules, the cancel, and a new card at the cursor;
+`study.test.ts` covers the session over a deck, a folder, a selection,
+with and without `include not due`, suspended cards left out;
+`ILMI_SMOKE=decks` searches the german deck, filters to due, sorts by
+interval, selects three and suspends them, edits one card's back and
+switches another to cloze, studies the deck with two grades, and logs the
+file's lines after each; captures read.
+
 ## Notes for the next session
 
 Milestones 0–30 are ticked (13 dropped); 31 (tabs: a document's children

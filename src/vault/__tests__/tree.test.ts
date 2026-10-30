@@ -148,10 +148,17 @@ describe('create', () => {
 
 describe('extract', () => {
   it('names the child from the passage', () => {
-    expect(extractName('Atomicity sounds easy — and is, in fact, the hardest discipline.')).toBe('Atomicity sounds easy and is');
+    // 40: the first clause's words, lower case, at most six, never ending on a small word
+    expect(extractName('Atomicity sounds easy — and is, in fact, the hardest discipline.')).toBe('atomicity sounds easy');
     expect(extractName('one two')).toBe('one two');
     expect(extractName('… — !')).toBe('untitled extract');
-    expect(extractName("it's a name/with: slashes")).toBe("it's a name with slashes");
+    expect(extractName("it's a name/with: slashes")).toBe("it's a name");
+    expect(extractName('Typed from the green notebook, pp. 1–19. Lindgren follows the standard order.')).toBe('typed from the green notebook');
+    expect(extractName('The problem: we know the spectrum of some $H^0$ exactly,')).toBe('the problem');
+    expect(extractName('When the **perturbation** is small compared with the level spacing we expand')).toBe('when the perturbation is small compared');
+    expect(extractName('The second-order energy shift of the ground state is always negative')).toBe('the second-order energy shift');
+    expect(extractName('$E = mc^2$, a famous one')).toBe('a famous one');
+    expect(extractName('كَانَ وَأَخَوَاتُهَا تَرْفَعُ الْمُبْتَدَأَ وَتَنْصِبُ الْخَبَرَ')).toBe('كَانَ وَأَخَوَاتُهَا تَرْفَعُ الْمُبْتَدَأَ وَتَنْصِبُ الْخَبَرَ');
   });
 
   it('carves a child with its own reading schedule, backrefs on the touched paragraphs, the marker past them', async () => {
@@ -213,18 +220,18 @@ describe('extract', () => {
     const note = 'fleeting/office-hours.md';
     const before = await readDisk(note);
     const child = await vault.extract(note, { text: 'Start from the symmetry, not the algebra.', blocks: [1], today: '2026-05-27' });
-    expect(child).toBe('fleeting/office-hours/Start from the symmetry not.md');
+    expect(child).toBe('fleeting/office-hours/start from the symmetry.md');
     const after = await readDisk(note);
     // the backref is the only change: the read line keeps no pos
     expect(after.split('\n').find((l) => l.startsWith('read:'))).toBe('read: due=2026-06-02 ivl=4 reps=1');
-    expect(after.replace('\n<!-- extract Start from the symmetry not -->', '')).toBe(before);
+    expect(after.replace('\n<!-- extract start from the symmetry -->', '')).toBe(before);
   });
 
   it('extracts from an extract, and refuses nothing or a missing parent', async () => {
     const grandchild = await vault.extract(EX1, { text: 'Every bundle is a future failure', blocks: [0], today: '2026-05-27' });
-    expect(grandchild).toBe('papers/wozniak-1990/woz-ex1/Every bundle is a future.md');
+    expect(grandchild).toBe('papers/wozniak-1990/woz-ex1/every bundle is a future failure.md');
     expect(await isDir('papers/wozniak-1990/woz-ex1')).toBe(true);
-    expect((await vault.read(EX1)).doc.blocks[0]).toMatchObject({ extracts: ['Every bundle is a future'] });
+    expect((await vault.read(EX1)).doc.blocks[0]).toMatchObject({ extracts: ['every bundle is a future failure'] });
     await expect(vault.extract(WOZ, { text: '  ', blocks: [] })).rejects.toThrow('nothing to extract');
     await expect(vault.extract('papers/none.md', { text: 'x', blocks: [] })).rejects.toThrow('no such document');
     await expect(vault.extract('papers', { text: 'x', blocks: [] })).rejects.toThrow('no such document');
@@ -445,13 +452,13 @@ describe('pages', () => {
   it('carves an extract from a page: page on the child, the passage and its backref under the page heading in the parent', async () => {
     const before = (await vault.read(PAIR)).text;
     const child = await vault.extract(PAIR, { text: 'Nothing is ever written into this file.', blocks: [], page: 2, today: '2026-05-27' });
-    expect(child).toBe('papers/two-pages/Nothing is ever written into.md');
+    expect(child).toBe('papers/two-pages/nothing is ever written into.md');
     expect(await readDisk(child)).toBe('---\ntype: extract\nimported: 2026-05-27\npri: 50\nread: due=2026-05-27 ivl=1 reps=0 pos=0 page=2\n---\n\nNothing is ever written into this file.\n');
     const after = (await vault.read(PAIR)).text;
     // the parent's `## p. 2` section grew by the paragraph and its backref; the marker stayed
     expect(after.split('\n').length).toBe(before.split('\n').length + 3);
     expect(after).toContain('with each pass ^ctp-spaced\n<!-- sr c1');
-    expect(after).toContain('g=4 -->\n\nNothing is ever written into this file.\n<!-- extract Nothing is ever written into -->\n');
+    expect(after).toContain('g=4 -->\n\nNothing is ever written into this file.\n<!-- extract nothing is ever written into -->\n');
     expect(meta((await vault.read(PAIR)).doc).read?.pos).toBe(1);
     // a page with no heading yet gets one, in page order
     await vault.extract(PAIR, { text: 'a passage from page four', blocks: [], page: 4, today: '2026-05-27' });

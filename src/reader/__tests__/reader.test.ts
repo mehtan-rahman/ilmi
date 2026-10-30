@@ -383,7 +383,7 @@ describe('extracts and cards, end to end', () => {
     const sel = passage(doc, childStart(doc, last), childStart(doc, last) + 'Cramming is mass repetition compressed in time.'.length);
     expect(sel).toEqual({ text: 'Cramming is mass repetition compressed in time.', blocks: [last] });
     const child = await vault.extract(WOZ, { ...sel, today: '2026-05-27' });
-    expect(child).toBe('papers/wozniak-1990/Cramming is mass repetition compressed.md');
+    expect(child).toBe('papers/wozniak-1990/cramming is mass repetition compressed.md');
 
     // both files read back clean, from disk
     for (const path of [WOZ, child]) {
@@ -395,7 +395,7 @@ describe('extracts and cards, end to end', () => {
     expect(parent.doc.blocks[last]).toEqual({
       kind: 'paragraph',
       text: before.doc.blocks[last]!.text,
-      extracts: ['Cramming is mass repetition compressed'],
+      extracts: ['cramming is mass repetition compressed'],
     });
     expect(meta(parent.doc).read?.pos).toBe(12);
     const ex = await vault.read(child);

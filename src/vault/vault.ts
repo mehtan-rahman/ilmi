@@ -92,10 +92,37 @@ export interface ExtractSpec {
   today?: string;
 }
 
-/** A file name from a passage: its first five words, punctuation dropped. */
+/** Words a title does not end on. */
+const TAIL_WORDS = new Set(['a', 'an', 'the', 'of', 'and', 'or', 'to', 'in', 'on', 'at', 'for', 'with', 'by', 'from', 'as', 'is', 'are', 'was', 'that', 'this', 'but', 'so', 'if', 'we', 'it']);
+
+/**
+ * A file name from a passage, as a person would title it (milestone 40):
+ * its first few meaningful words, lower case, up to six, stopping at the
+ * end of the first clause once there are two; Markdown, a card's markup,
+ * formulas, links' addresses and punctuation dropped; never ending on a
+ * small word (`the`, `of`, `and`…). `Typed from the green notebook, pp.
+ * 1–19.` → `typed from the green notebook`. The folder's free name is
+ * found by the caller.
+ */
 export function extractName(text: string): string {
-  const words = text.replace(/[^\p{L}\p{N}\s'-]/gu, ' ').trim().split(/\s+/).filter(Boolean);
-  return cleanName(words.slice(0, 5).join(' ')) ?? NEW_NAMES.extract;
+  const flat = text
+    .replace(/\$\$[\s\S]*?\$\$|\$[^$\n]*\$/g, ' ')
+    .replace(/\{\{c\d+::([^}]*?)(?:::[^}]*)?\}\}/g, '$1')
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/`[^`]*`/g, ' ')
+    .replace(/[*_~#>/\\|]+/g, ' ')
+    .replace(/\s+(?:::|:::)\s+[\s\S]*$/, '');
+  const words: string[] = [];
+  for (const raw of flat.split(/\s+/)) {
+    if (!raw) continue;
+    const w = raw.replace(/[^\p{L}\p{M}\p{N}'’-]/gu, '').replace(/^['’-]+|['’-]+$/g, '');
+    if (w) words.push(w.toLocaleLowerCase());
+    // a clause ends here: a title of two words or more stops with it
+    if (words.length >= 2 && /[.,;:!?—–)]$|^[—–]$/.test(raw)) break;
+    if (words.length >= 6) break;
+  }
+  while (words.length > 1 && TAIL_WORDS.has(words[words.length - 1]!)) words.pop();
+  return cleanName(words.join(' ')) ?? NEW_NAMES.extract;
 }
 
 /** What `Vault.importDoc` lands as a new source. */

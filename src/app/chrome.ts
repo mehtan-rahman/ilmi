@@ -4,7 +4,7 @@
 
 import { cardFields, type Block, type CardForm } from '../format/index.js';
 import { nameOf, type TreeNode } from '../vault/index.js';
-import { plainMath } from './chromeText.js';
+import { hasMath, plainMath } from './chromeText.js';
 import { FORM_LABEL } from './items.js';
 import { GLYPH, QUEUE_TITLE, slugName, SCOPES, queueId, type QueueScope, type TabKind } from './names.js';
 import type { DocInfo, El } from './store.js';
@@ -143,6 +143,8 @@ export interface Entry {
   /** Where it lives, in small type. */
   sub: string;
   tag: EntryTag;
+  /** The row's name with its formulas as `$…$`, drawn by KaTeX (a card's whole name, cut by the row's width); `title` stays what search reads. */
+  math?: string;
   /** A vault path or special tab id to open, a card in a document, a command id, or another vault to switch to. */
   target: { open: string } | { open: string; index: number; id?: string } | { command: string } | { vault: string };
 }
@@ -192,7 +194,8 @@ export function buildIndex(tree: TreeNode[], docs: Record<string, DocInfo>, card
   visit(tree, '');
   for (const c of cards) {
     const target: Entry['target'] = c.id === undefined ? { open: c.path, index: c.index } : { open: c.path, index: c.index, id: c.id };
-    out.push({ key: `c:${c.path}:${c.index}`, title: cardLabel(c.text), sub: title(c.path), tag: 'card', target });
+    const name = cardName(c.text);
+    out.push({ key: `c:${c.path}:${c.index}`, title: cardLabel(c.text), ...(hasMath(name) ? { math: name } : {}), sub: title(c.path), tag: 'card', target });
   }
   for (const c of commands) out.push({ key: `x:${c.id}`, title: c.title, sub: '', tag: 'command', target: { command: c.id } });
   for (const v of vaults) out.push({ key: `v:${v.path}`, title: v.name, sub: 'collections', tag: 'vault', target: { vault: v.path } });

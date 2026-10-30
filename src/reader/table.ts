@@ -120,8 +120,12 @@ export const cellDown: Command = (state, dispatch) => {
   return true;
 };
 
-/** ⇧⏎ in a cell: nothing, a pipe table's cell is one line. */
-export const cellBreak: Command = (state) => cellAt(state) !== null;
+/** ⇧⏎ in a cell: a line break, which the pipe table writes as `<br>` (its cells are one line each). */
+export const cellBreak: Command = (state, dispatch) => {
+  if (cellAt(state) === null) return false;
+  dispatch?.(state.tr.insertText('\n').scrollIntoView());
+  return true;
+};
 
 /** A row of empty cells put in at index `row` of the table at `tablePos`; the caret in it, in column `col`. */
 export function addRow(tablePos: number, row: number, col = 0): Command {

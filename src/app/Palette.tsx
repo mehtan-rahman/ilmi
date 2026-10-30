@@ -11,6 +11,7 @@ import { useApp } from './store.js';
 import { MENU_ID, runMenu } from './menu.js';
 import { hasCards, studyDeck } from './deckOps.js';
 import { folderPaths } from './names.js';
+import { MathText } from './MathText.js';
 import { containerOf, currentVault, openCard, openIntake, openNode, openVault, postponeRest, setSidebar, startSession, toggleInspector } from './vault.js';
 
 const COMMANDS: Command[] = [
@@ -148,8 +149,8 @@ export function Palette() {
           {results.map((it, i) => (
             <div key={it.key} className="palette-row" data-sel={i === sel ? '1' : '0'} data-t={it.tag} onMouseEnter={() => setSel(i)} onClick={() => run(it)}>
               <span className="pg" data-t={it.tag}>{ENTRY_GLYPH[it.tag]}</span>
-              <span className="pt" dir="auto">{it.title}</span>
-              <span className="psub" dir="auto">{it.sub}</span>
+              <MathText className="pt" dir="auto" text={it.math ?? it.title} />
+              <MathText className="psub" dir="auto" text={it.sub} />
               <span className="ptag">{it.tag}</span>
             </div>
           ))}

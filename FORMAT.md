@@ -138,6 +138,7 @@ dropped, with a diagnostic.
 | `author`       | string                      |           | who wrote it                                                       |
 | `published`    | day or instant              |           | when it was published                                              |
 | `tabs`         | `true` `false`              | `false`   | the document's children are tabs in a rail beside its page         |
+| `pages`        | `n` or `n-m`                |           | which pages of its PDF the document is, numbered as the PDF numbers them |
 
 **Type.** A `note` is the person's own writing: editable, cards anywhere in
 it, no schedule unless asked. A `source` is what someone else wrote, read
@@ -175,6 +176,25 @@ child carries `page=<n>` on its `read` line. The heading is ordinary
 Markdown; the format gives it no meaning beyond the convention, and a
 hand-written `## p. 3` is the same heading. A `pdf` that names a missing
 file is kept and the document reads as text.
+
+**A page range.** `pages: 12-40` (or `pages: 12`, one page; an en dash is
+read too) says the document is only those pages of its PDF: a chapter of a
+book, whose pages are another document's file. It is how a PDF with chapters
+in its outline lands as a notebook: the book's document `name.md` with
+`name.pdf` beside it and `tabs: true`, and a document per chapter in its
+children directory, each with `pdf: ../name.pdf` and its `pages`. The file
+is never cut or copied; every chapter reads the one PDF. The numbers are the
+PDF's own, from 1, so `pos`, an extract's `page=`, and `## p. <n>` on a
+chapter all count as the book counts; a range past the file's last page is
+cut to it. Both ends are whole numbers from 1 and the first is not after
+the last; anything else is kept as a raw line with a diagnostic, and the
+document is all its pages. `pages` means nothing on a document with no PDF.
+A `pdf` path may climb (`..`) as long as it stays inside the vault; one that
+leaves it is not followed. Chosen over a page-range attribute on the `pdf`
+value (`pdf: book.pdf#12-40`) because a file name may hold `#`, and over a
+sidecar list of chapters in the book's own front-matter because each chapter
+is a document of its own, with its own reading schedule, cards and
+extracts, and should say what it is in its own file.
 
 **Clippings.** A page that came in by its address carries `url`, and
 `author` and `published` when the page said. `url` and `author` are written

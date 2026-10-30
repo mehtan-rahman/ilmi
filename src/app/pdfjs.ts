@@ -4,7 +4,7 @@
 
 import * as pdfjs from 'pdfjs-dist';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
-import { documentText, pageText, type TextBit } from '../pdf/index.js';
+import { chapterRanges, documentText, outlineEntries, pageText, type OutlinePdf, type TextBit } from '../pdf/index.js';
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
 
@@ -51,6 +51,8 @@ export interface PdfText {
   text: string;
   /** The document's own title, when its metadata has one. */
   title: string;
+  /** A book's chapters, from its outline: each one's pages and their text; empty when the outline gives fewer than two. */
+  chapters: { title: string; first: number; last: number; text: string }[];
 }
 
 /** What the intake shows for a PDF, and the fallback body it lands with. */
@@ -65,7 +67,9 @@ export async function pdfText(bytes: Uint8Array): Promise<PdfText> {
       const info = (await pdf.getMetadata()).info as { Title?: unknown };
       if (typeof info.Title === 'string') title = info.Title.trim();
     } catch { /* no metadata: the file name serves */ }
-    return { pages: pdf.numPages, text: documentText(pages), title };
+    const chapters = chapterRanges(await outlineEntries(pdf as unknown as OutlinePdf), pdf.numPages)
+      .map((c) => ({ ...c, text: documentText(pages.slice(c.first - 1, c.last)) }));
+    return { pages: pdf.numPages, text: documentText(pages), title, chapters };
   } finally {
     await task.destroy();
   }

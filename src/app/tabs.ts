@@ -160,6 +160,29 @@ export interface OutlineEntry {
 /** A heading's text as the outline shows it: emphasis and code markers off, math kept. */
 const plainHeading = (s: string): string => s.replace(/\*\*|__|`/g, '').replace(/(^|\s)[*_](\S[^*_]*\S|\S)[*_](?=\s|$)/g, '$1$2').replace(/\s+/g, ' ').trim();
 
+/** Each heading's fold key, by its index among the page's headings: the level and text, a repeat numbered, as `fold.ts` keys them. */
+export function headingKeys(blocks: readonly Block[]): string[] {
+  const seen = new Map<string, number>();
+  const out: string[] = [];
+  for (const b of blocks) {
+    if (b.kind !== 'heading') continue;
+    const base = `${b.level} ${b.text.trim()}`;
+    const n = (seen.get(base) ?? 0) + 1;
+    seen.set(base, n);
+    out.push(n === 1 ? base : `${base} (${n})`);
+  }
+  return out;
+}
+
+/** The headings folded in the reader (milestone 46: the outline marks them), by index among the page's headings. */
+export function foldedHeadings(blocks: readonly Block[], keys: readonly string[] | undefined): Set<number> {
+  const out = new Set<number>();
+  if (!keys?.length) return out;
+  const want = new Set(keys);
+  headingKeys(blocks).forEach((k, i) => { if (want.has(k)) out.add(i); });
+  return out;
+}
+
 /** The headings a page's outline lists: levels 1 to 3, in order, each with its index among all the page's headings. */
 export function outline(blocks: readonly Block[]): OutlineEntry[] {
   const out: OutlineEntry[] = [];

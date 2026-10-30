@@ -78,3 +78,25 @@ export function fileName(text: string): string {
     .trim();
   return cleanName(s) ?? 'untitled';
 }
+
+/** A vault-relative path with its `.` and `..` segments resolved; null when it climbs out of the vault. */
+export function normRel(path: string): string | null {
+  const out: string[] = [];
+  for (const seg of path.split('/')) {
+    if (!seg || seg === '.') continue;
+    if (seg === '..') {
+      if (!out.length) return null;
+      out.pop();
+    } else out.push(seg);
+  }
+  return out.join('/');
+}
+
+/** `target` relative to the directory `dir` (both vault-relative): `../book.pdf` from `book` to `book.pdf`. */
+export function relFrom(dir: string, target: string): string {
+  const a = dir ? dir.split('/') : [];
+  const b = target.split('/');
+  let k = 0;
+  while (k < a.length && k < b.length - 1 && a[k] === b[k]) k++;
+  return [...Array.from({ length: a.length - k }, () => '..'), ...b.slice(k)].join('/');
+}

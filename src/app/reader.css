@@ -100,8 +100,13 @@
    (kept so a caret can sit after an inline atom) would draw an empty line
    under the block, a gap twice the paragraph rhythm (milestone 40) */
 .draft-doc .math.display ~ br.ProseMirror-trailingBreak { display: none; }
+/* WebKit and Chrome get a separator image too, before the break, after a
+   non-editable atom: an inline box of its own, so a line of the paragraph's
+   height still stood under the formula (milestone 46) */
+.draft-doc .math.display ~ img.ProseMirror-separator { display: none; }
 .draft-doc .math.display:last-child,
-.draft-doc .math.display:has(~ br.ProseMirror-trailingBreak) { margin-bottom: 0; }
+.draft-doc .math.display:has(~ br.ProseMirror-trailingBreak),
+.draft-doc .math.display:has(~ img.ProseMirror-separator) { margin-bottom: 0; }
 .math .katex { font-size: 1.02em; }
 /* The reader hangs punctuation (`hanging-punctuation` on .reader); inside a
    formula WebKit would hang a closing `)` or `⟩` too, so the chip's box came
@@ -393,6 +398,12 @@
 }
 .draft-doc .li-task[data-checked="1"] ~ .li-text { color: var(--fg-3); }
 .draft-doc .li-text { flex: 1; min-width: 0; }
+/* a heading inside a list item (milestone 46): set as a heading, its chevron
+   in the margin before the marker, folding the items under it */
+.draft-doc .dd-li.li-h { position: relative; }
+.draft-doc .dd-li.li-h .li-text { font-family: var(--sans); font-weight: 600; letter-spacing: -0.01em; color: var(--fg-1); }
+.draft-doc .dd-li.li-h[data-level="1"] .li-text, .draft-doc .dd-li.li-h[data-level="2"] .li-text { font-size: 1.05em; }
+.draft-doc .dd-li.li-h:hover .fold-chev { opacity: 1; }
 .draft-doc .dd-quote {
   margin: 0 0 1em;
   padding: 0;

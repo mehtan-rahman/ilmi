@@ -10,9 +10,9 @@ import type { Node as PMNode } from 'prosemirror-model';
 import { NodeSelection, Selection, TextSelection, type EditorState, type Transaction } from 'prosemirror-state';
 import { EditorView, type Decoration, type NodeView } from 'prosemirror-view';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { PRI_DEFAULT, cardFields, clozeSegments, mathSpanEnd, meta, serialize, setField, type Blank, type Block, type Card, type Doc, type MathSeg } from '../format/index.js';
+import { PRI_DEFAULT, cardFields, clozeSegments, formatBody, mathSpanEnd, meta, parse, serialize, setField, type Blank, type Block, type Card, type Doc, type MathSeg } from '../format/index.js';
 import {
-  blockAt, blocksEqual, cardDue, classifyRaw, editorialRanges, flatRanges, fromDoc, frozenKey, imagesKey, indentWidth, inlineRanges, insertCard, isMathEdit,
+  blockAt, blocksEqual, cardDue, cardsKey, cellLines, classifyRaw, insertCardItem, editorialRanges, flatRanges, fromDoc, frozenKey, imagesKey, indentWidth, inlineRanges, insertCard, isMathEdit,
   linkTarget, literalSpans, makeState, markerKey, markerNumber, markerPos, markerRanges, mathEditKey, mathSplit, passage, pickPos, pressed, schema, setLink,
   setReadPos, splitBlocks, atomFind, markFinds, toggleInline, toggleTask, type Band, type InlineRange, type InlineToggle, type LinkTarget, type Passage, type RawShape,
   askImageKey, closeAtMatch, dirAttr, strongDir, withBases, type Dir, findKey, insertImages, pickSlash, replaceAll, replaceMatch, slashContext, slashItems, slashKey, htmlPasteImages,
@@ -218,8 +218,10 @@ function shapeHTML(shape: RawShape, text: string): string {
       return `<blockquote${dirAttr(shape.text)}>${blocksHTML(shape.text, false)}</blockquote>`;
     case 'table': {
       // a cell with no letters in it (a number) reads the table's way
-      const head = shape.head.map((h, i) => `<th${ALIGN_ATTR(shape.align[i] ?? null)}${dirAttr(h)}>${richHTML(h)}</th>`).join('');
-      const rows = shape.rows.map((r) => `<tr>${r.map((c, i) => `<td${ALIGN_ATTR(shape.align[i] ?? null)}${dirAttr(c)}>${richHTML(c)}</td>`).join('')}</tr>`).join('');
+      // a `<br>` in a cell is a line break there, as the editor holds it
+      const cell = (c: string) => cellLines(c).split('\n').map((l) => richHTML(l)).join('<br>');
+      const head = shape.head.map((h, i) => `<th${ALIGN_ATTR(shape.align[i] ?? null)}${dirAttr(h)}>${cell(h)}</th>`).join('');
+      const rows = shape.rows.map((r) => `<tr>${r.map((c, i) => `<td${ALIGN_ATTR(shape.align[i] ?? null)}${dirAttr(c)}>${cell(c)}</td>`).join('')}</tr>`).join('');
       return `<table><thead><tr>${head}</tr></thead>${rows ? `<tbody>${rows}</tbody>` : ''}</table>`;
     }
     case 'rule':
@@ -346,6 +348,24 @@ export function answerHTML(b: Blank, display = false): string {
   return `<span class="math">${inner}</span>`;
 }
 
+/**
+ * A face's text with its lines kept (a derivation's steps under its `?`):
+ * each line drawn on its own, broken where the text breaks outside a
+ * formula, so a display formula over several lines stays one formula.
+ */
+export function linesHTML(text: string): string {
+  const lines: string[] = [];
+  let cur = '';
+  for (const part of mathSplit(text)) {
+    if (typeof part !== 'string') { cur += part.math; continue; }
+    const bits = part.split('\n');
+    cur += bits[0];
+    for (const b of bits.slice(1)) { lines.push(cur); cur = b; }
+  }
+  lines.push(cur);
+  return lines.map((l) => richHTML(l)).join('<br>');
+}
+
 export function cardHTML(card: Card): string {
   const f = cardFields(card.text);
   if (!f) return richHTML(card.text);
@@ -353,7 +373,7 @@ export function cardHTML(card: Card): string {
     case 'cloze':
       return clozeHTML(card.text, () => 'revealed', () => 'cz');
     case 'qa':
-      return `<span class="cs-q"${dirAttr(f.front)}>${richHTML(f.front)}</span><span class="cs-a"${dirAttr(f.back)}>${richHTML(f.back)}</span>`;
+      return `<span class="cs-q"${dirAttr(f.front)}>${linesHTML(f.front)}</span><span class="cs-a"${dirAttr(f.back)}>${linesHTML(f.back)}</span>`;
     case 'bidir':
       // each face isolated its own way, the arrow between them
       return `<span><bdi${dirAttr(f.left)}>${richHTML(f.left)}</bdi> <span class="cs-arrow">⇄</span> <bdi${dirAttr(f.right)}>${richHTML(f.right)}</bdi></span>`;
@@ -369,7 +389,7 @@ export function cardHTML(card: Card): string {
  * changed between two decorations.
  */
 function ownClasses(dom: HTMLElement, own: string): void {
-  const kept = Array.from(dom.classList).filter((c) => c === 'selected' || c === 'landed' || c.startsWith('find-') || c.startsWith('fold-'));
+  const kept = Array.from(dom.classList).filter((c) => c === 'selected' || c === 'landed' || c === 'li-h' || c.startsWith('find-') || c.startsWith('fold-'));
   dom.className = [own, ...kept].join(' ');
 }
 
@@ -635,7 +655,10 @@ class ListItemView implements NodeView {
     const marker = node.attrs.marker as string;
     const task = node.attrs.task as string | null;
     const n = markerNumber(marker);
-    this.dom.className = 'dd-li';
+    // a heading in the item (`- ## …`) is drawn as one and folds its children (fold.ts): the classes its decoration gave are kept
+    ownClasses(this.dom, 'dd-li');
+    const h = /^(#{1,6})[ \t]/.exec(node.textContent);
+    if (h) this.dom.dataset.level = String(h[1]!.length); else delete this.dom.dataset.level;
     this.dom.dataset.marker = marker.trim();
     this.dom.style.setProperty('--indent', String(indentWidth(node.attrs.indent as string)));
     this.mark.className = `li-mark${n === null ? '' : ' num'}`;
@@ -1028,6 +1051,20 @@ interface Compose {
   seed: string;
   index: number | null;
   rect: DOMRect | null;
+  /** Made from a selection inside a list: the item (or card item) the card goes after, as the next item. */
+  item?: number | null;
+}
+
+/** Where a selection ending at `end` sits in a list: the position inside its item, or null when it is not in one. */
+function listItemAt(doc: PMNode, end: number): number | null {
+  const $e = doc.resolve(Math.min(end, doc.content.size));
+  return $e.depth === 2 && $e.parent.type === schema.nodes.list_item ? end : null;
+}
+
+/** Does the file, written from `doc`, read `made` back as a card item one more time than the file from `before` does? */
+function readsAsItem(before: PMNode, doc: PMNode, made: Card): boolean {
+  const count = (d: PMNode) => parse(formatBody(fromDoc(d))).doc.blocks.filter((b) => b.kind === 'card' && b.item === made.item && b.text === made.text).length;
+  return count(doc) === count(before) + 1;
 }
 
 const sameSel = (a: Sel | null, b: Sel | null): boolean =>
@@ -1457,7 +1494,7 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
     const view = viewRef.current;
     const s = selRef.current;
     if (!view || !s) return;
-    setComposer({ seed: s.text, index: blockAt(view.state.doc, s.end), rect: s.rect });
+    setComposer({ seed: s.text, index: blockAt(view.state.doc, s.end), rect: s.rect, item: listItemAt(view.state.doc, s.end) });
     setSel(null);
   };
 
@@ -1630,9 +1667,18 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
     if (!view || !c || !writer) return;
     const card: Card = { kind: 'card', text };
     if (pri !== undefined) card.sched = { pri };
+    // made inside a list: the next item after the one it came from, when the file reads it back as one
+    const inList = c.item != null ? insertCardItem(view.state, c.item, card) : null;
+    const made = inList ? (inList.tr.doc.nodeAt(inList.pos)?.attrs.card as Card | undefined) : undefined;
+    if (inList && made && readsAsItem(view.state.doc, inList.tr.doc, made)) {
+      view.dispatch(inList.tr.setMeta(cardsKey, true));
+      writer.flush();
+      setComposer(again ? { ...c, index: null, item: inList.pos } : null);
+      return;
+    }
     view.dispatch(insertCard(view.state, card, c.index));
     writer.flush();
-    setComposer(again ? { ...c, index: c.index === null ? null : c.index + 1 } : null);
+    setComposer(again ? { ...c, index: c.index === null ? null : c.index + 1, item: null } : null);
   };
 
   // the marker follows the text as it reflows
@@ -1791,7 +1837,7 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
           <Crumbs path={id} />
           <TabsToggle path={id} />
           <StudyButton path={id} />
-          {onPages && <button type="button" className="frozen-tag" onClick={onPages}>pages</button>}
+          {onPages && <button type="button" className="frozen-tag text-toggle" data-on="1" title="read the pages" onClick={onPages}>text</button>}
           {info && canExtract && !enrolled && (
             <button type="button" className="frozen-tag enrol" onClick={startReading}>{isNote ? 'revisit' : 'start reading'} <span className="kbd">r</span></button>
           )}

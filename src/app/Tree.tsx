@@ -28,6 +28,7 @@ import { childDirOf } from '../vault/index.js';
 import { geometry } from './dnd.js';
 import { rowDrag, rowMark, useDrag, type Surface } from './drag.js';
 import { GLYPH, descendants, findNode, kindOf, rowCounts, titleOf, type NodeKind } from './names.js';
+import { MathText } from './MathText.js';
 import { NodeMenu, menuAt, type MenuAt } from './NodeMenu.js';
 import type { OpenOpts } from './panes.js';
 import { useApp } from './store.js';
@@ -293,7 +294,7 @@ export function Tree({ activeId, onOpen }: Props) {
             }}
           />
         ) : (
-          <span className="name" dir="auto">{title(id)}</span>
+          <MathText className="name" dir="auto" text={title(id)} />
         )}
         {asked > 0 && <span className="asking">delete with {asked} inside? ⌘⌫</span>}
         {!asked && counts.due > 0 && <span className="due">{counts.due}</span>}

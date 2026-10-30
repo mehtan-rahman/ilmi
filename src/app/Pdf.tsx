@@ -21,6 +21,8 @@ import { GLYPH, titleOf } from './names.js';
 import { TextLayer, loadPdf, pageBits, type PDFDocumentProxy } from './pdfjs.js';
 import { Crumbs } from './Crumbs.js';
 import { Reader } from './Reader.js';
+import { StudyButton } from './StudyButton.js';
+import { TabsToggle } from './TabsToggle.js';
 import { useApp, type DocInfo } from './store.js';
 import { useDoc } from './useDoc.js';
 import { currentVault, enrolReading, extractNode, openNode } from './vault.js';
@@ -152,6 +154,8 @@ function Pages({ id, active, session, onText }: PagesProps) {
   const [sel, setSel] = useState<Sel | null>(null);
   const [composer, setComposer] = useState<Compose | null>(null);
   const [current, setCurrent] = useState(1);
+  /** The pages before the document's own (FORMAT.md §3 `pages`): a chapter of a book is its pages of the book's PDF, numbered as the book numbers them. */
+  const [base, setBase] = useState(0);
   const [pos, setPos] = useState<number | null>(null);
   const [find, setFind] = useState<Find | null>(null);
   const [goto, setGoto] = useState(false);
@@ -179,6 +183,7 @@ function Pages({ id, active, session, onText }: PagesProps) {
   const readPos = info?.read?.pos ?? 0;
 
   // ── the file, through the vault's fs ──
+  const range = info?.pages;
   useEffect(() => {
     const vault = currentVault();
     const rel = info?.pdf;
@@ -196,13 +201,17 @@ function Pages({ id, active, session, onText }: PagesProps) {
       if (!live) return;
       const out: Size[] = [];
       let hasText = false;
-      for (let n = 1; n <= doc.numPages; n++) {
+      // only the document's own pages when it names a range; a range past the file's end is cut to it
+      const lo = Math.max(1, Math.min(range?.first ?? 1, doc.numPages));
+      const hi = Math.max(lo, Math.min(range?.last ?? doc.numPages, doc.numPages));
+      for (let n = lo; n <= hi; n++) {
         const page = await doc.getPage(n);
         const v = page.getViewport({ scale: 1 });
         out.push({ w: v.width, h: v.height });
-        if (n <= PROBE && !hasText) hasText = (await pageBits(page)).some((b) => b.str.trim() !== '');
+        if (n < lo + PROBE && !hasText) hasText = (await pageBits(page)).some((b) => b.str.trim() !== '');
       }
       if (!live) return;
+      setBase(lo - 1);
       setPdf(doc);
       setSizes(out);
       setTextless(!hasText);
@@ -215,7 +224,8 @@ function Pages({ id, active, session, onText }: PagesProps) {
       setSizes([]);
       setStatus('loading');
     };
-  }, [id, info?.pdf]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, info?.pdf, range?.first, range?.last]);
 
   // the pages column's width sets the scale: a page fits it
   useLayoutEffect(() => {
@@ -289,17 +299,19 @@ function Pages({ id, active, session, onText }: PagesProps) {
     if (!scroller || !pages) return;
     const onScroll = () => {
       const top = scroller.getBoundingClientRect().top + 70;
-      let n = 1;
+      let n = base + 1;
       for (const [k, el] of pageEls.current) if (el.getBoundingClientRect().top <= top) n = Math.max(n, k);
       setCurrent(n);
     };
     onScroll();
     scroller.addEventListener('scroll', onScroll, { passive: true });
     return () => scroller.removeEventListener('scroll', onScroll);
-  }, [status, sizes]);
+  }, [status, sizes, base]);
 
+  const first = base + 1;
+  const last = base + sizes.length;
   const scrollTo = (n: number) => {
-    const el = pageEls.current.get(Math.max(1, Math.min(sizes.length, n)));
+    const el = pageEls.current.get(Math.max(first, Math.min(last, n)));
     el?.scrollIntoView({ block: 'start' });
   };
 
@@ -427,7 +439,7 @@ function Pages({ id, active, session, onText }: PagesProps) {
     }
     if (!pdf || !q.trim()) { setFind(q ? { q, pages: [], at: 0 } : null); return; }
     const pages: Find['pages'] = [];
-    for (let n = 1; n <= pdf.numPages; n++) {
+    for (let n = first; n <= last; n++) {
       let text = texts.current.get(n);
       if (text === undefined) {
         text = (await pageBits(await pdf.getPage(n))).map((b) => b.str).join(' ');
@@ -527,11 +539,13 @@ function Pages({ id, active, session, onText }: PagesProps) {
   const shownPos = pos ?? readPos;
   const setFromY = (clientY: number) => {
     const bands: Band[] = [];
-    for (let n = 1; n <= sizes.length; n++) {
+    for (let n = first; n <= last; n++) {
       const r = pageEls.current.get(n)?.getBoundingClientRect();
       if (r) bands.push({ top: r.top, height: r.height });
     }
-    setPos(pickPos(bands, clientY));
+    // the page as the book numbers it
+    const k = pickPos(bands, clientY);
+    setPos(k ? base + k : 0);
   };
   const gutterDown = (e: React.PointerEvent<HTMLDivElement>) => {
     dragRef.current = true;
@@ -568,25 +582,31 @@ function Pages({ id, active, session, onText }: PagesProps) {
     return <div className="reader-wrap"><div className="reader"><div className="empty">no longer in the collection</div></div></div>;
   }
 
+  // the top row as the reader's: one short token, what is due, else the cards; the rest in its tooltip
   const cards = info?.cards ?? 0;
   const due = info?.due ?? 0;
-  const right = [
-    status === 'ok' ? (textless ? `${plural(sizes.length, 'page')}, no text` : plural(sizes.length, 'page')) : '',
-    cards ? `${plural(cards, 'card')}${due ? `, ${due} due` : ''}` : '',
-  ].filter(Boolean).join(', ');
-  const ruleHeight = shownPos >= 1 && sizes.length ? (tops.at[Math.min(shownPos, sizes.length)] ?? 0) + (sizes[Math.min(shownPos, sizes.length) - 1]?.h ?? 0) * scale : 0;
-  const pagesWithRail = new Set([...cardsByPage.keys(), ...extractsByPage.keys()].filter((p) => p >= 1 && p <= sizes.length));
+  const counts = cards ? `${plural(cards, 'card')}${due ? `, ${due} due` : ''}` : '';
+  const right = due ? `${due} due` : cards ? plural(cards, 'card') : '';
+  const span = !sizes.length ? '' : !base && !range ? plural(sizes.length, 'page') : first === last ? `p. ${first}` : `pp. ${first}–${last}`;
+  const rightTip = [status === 'ok' ? span : '', textless ? 'no text' : '', counts].filter(Boolean).join(', ');
+  // a scan with nothing to count says it has no text, as the intake did
+  const shown = right || (textless && status === 'ok' ? 'no text' : '');
+  const local = Math.max(0, Math.min(shownPos - base, sizes.length));
+  const ruleHeight = shownPos >= 1 && local >= 1 ? (tops.at[local] ?? 0) + (sizes[local - 1]?.h ?? 0) * scale : 0;
+  const pagesWithRail = new Set([...cardsByPage.keys(), ...extractsByPage.keys()].filter((p) => p >= first && p <= last));
 
   return (
     <div className="reader-wrap">
       <div className={`reader doc-view pdf-view${reading ? ' reading' : ''}`} data-page={current}>
         <div className="meta">
           <Crumbs path={id} />
-          <button type="button" className="frozen-tag" onClick={onText}>text</button>
+          <TabsToggle path={id} />
+          <StudyButton path={id} />
+          <button type="button" className="frozen-tag text-toggle" data-on="0" title="read the text" onClick={onText}>text</button>
           {info && canExtract && !reading && (
             <button type="button" className="frozen-tag enrol" onClick={startReading}>start reading <span className="kbd">r</span></button>
           )}
-          <span className="right">{right}</span>
+          {shown && <span className="right" title={rightTip}>{shown}</span>}
         </div>
         <h1>{titleOf(id, docs, root)}</h1>
         {(find || goto) && (
@@ -612,9 +632,9 @@ function Pages({ id, active, session, onText }: PagesProps) {
                 <input
                   ref={gotoRef}
                   type="number"
-                  min={1}
-                  max={sizes.length || 1}
-                  placeholder={`1–${sizes.length}`}
+                  min={first}
+                  max={last || 1}
+                  placeholder={`${first}–${last}`}
                   onKeyDown={(e) => {
                     if (e.key !== 'Enter') return;
                     e.preventDefault();
@@ -640,17 +660,17 @@ function Pages({ id, active, session, onText }: PagesProps) {
             {status === 'loading' && <div className="empty">opening</div>}
             {sizes.map((s, i) => (
               <div
-                key={i + 1}
+                key={base + i + 1}
                 className="pdf-page"
-                data-page={i + 1}
-                ref={(el) => { if (el) pageEls.current.set(i + 1, el); else pageEls.current.delete(i + 1); }}
+                data-page={base + i + 1}
+                ref={(el) => { if (el) pageEls.current.set(base + i + 1, el); else pageEls.current.delete(base + i + 1); }}
                 style={{ width: s.w * scale, height: s.h * scale, top: tops.at[i + 1] }}
               />
             ))}
           </div>
           <div className="pdf-rail">
             {[...pagesWithRail].sort((a, b) => a - b).map((p) => (
-              <div key={p} className="rail-page" style={{ top: tops.at[p] }}>
+              <div key={p} className="rail-page" style={{ top: tops.at[p - base] }}>
                 <h6>p. {p}</h6>
                 {(extractsByPage.get(p) ?? []).map((e) => (
                   <div key={e.path} className="rail-item" data-t="extract" onClick={(ev) => openNode(e.path, { cmdClick: ev.metaKey || ev.ctrlKey, shiftClick: ev.shiftKey })}>

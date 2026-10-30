@@ -120,7 +120,15 @@ export type Field =
   /** When the clipped page was published: a day or a UTC instant. */
   | { key: 'published'; value: string }
   /** The document's children shown as tabs in a rail beside its page. */
-  | { key: 'tabs'; value: boolean };
+  | { key: 'tabs'; value: boolean }
+  /** Which pages of its PDF the document is: a chapter of a book whose pages are another document's file. */
+  | { key: 'pages'; value: PageRange };
+
+/** A run of a PDF's pages, counted from 1, both ends in it. */
+export interface PageRange {
+  first: number;
+  last: number;
+}
 
 export type FieldKey = Field['key'];
 
@@ -147,7 +155,7 @@ export interface Diagnostic {
 }
 
 export const FIELD_KEYS: readonly FieldKey[] = [
-  'type', 'title', 'frozen', 'imported', 'started', 'read', 'write', 'default-card', 'pri', 'pdf', 'url', 'author', 'published', 'tabs',
+  'type', 'title', 'frozen', 'imported', 'started', 'read', 'write', 'default-card', 'pri', 'pdf', 'url', 'author', 'published', 'tabs', 'pages',
 ];
 
 export function isField(e: FmEntry): e is Field {

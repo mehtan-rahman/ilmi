@@ -28,6 +28,8 @@ export async function readAnkiPackage(path: string): Promise<AnkiPackage> {
 export interface FetchedPdf extends Fetched {
   bytes: Uint8Array;
   pages: number;
+  /** A book's chapters from its outline (milestone 46): it lands as a notebook, a chapter per tab. */
+  chapters?: { title: string; first: number; last: number; text: string }[];
 }
 
 /** A dropped or picked PDF: its bytes, and its text and page count through pdf.js; the title from its metadata, else its name. */
@@ -36,7 +38,7 @@ export async function readDroppedPdf(path: string): Promise<FetchedPdf> {
   if (!PDF_EXT.test(name)) throw new Error('not a pdf');
   const bytes = new Uint8Array(await invoke<ArrayBuffer>('read_dropped_bytes', { path }));
   const r = await pdfText(bytes);
-  return { title: r.title || titleFromFileName(name.replace(PDF_EXT, '')), text: r.text, bytes, pages: r.pages };
+  return { title: r.title || titleFromFileName(name.replace(PDF_EXT, '')), text: r.text, bytes, pages: r.pages, chapters: r.chapters };
 }
 
 /** What a page said about itself, beside its text: the clipper's fields, the images in the text, and which pass found the article. */

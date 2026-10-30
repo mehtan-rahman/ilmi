@@ -5,7 +5,7 @@
 // byte for byte, so a block the pair cannot round trip stays a raw atom.
 
 import type { Node as PMNode } from 'prosemirror-model';
-import { readTable, writeTable, type Align, type TableBlock } from './blocks.js';
+import { cellLines, readTable, writeTable, type Align, type TableBlock } from './blocks.js';
 import { inline, textOf } from './convert.js';
 import { schema } from './schema.js';
 
@@ -79,7 +79,8 @@ function listNode(lines: string[]): PMNode | null {
 function tableNode(text: string): PMNode | null {
   const t = readTable(text);
   if (!t) return null;
-  const rows = [t.head, ...t.rows].map((r) => schema.nodes.table_row!.create(null, r.map((c, i) => schema.nodes.table_cell!.create({ align: t.align[i] ?? null }, inline(c)))));
+  // a `<br>` in a cell is a line break in it (⇧⏎ makes one)
+  const rows = [t.head, ...t.rows].map((r) => schema.nodes.table_row!.create(null, r.map((c, i) => schema.nodes.table_cell!.create({ align: t.align[i] ?? null }, inline(cellLines(c))))));
   return schema.nodes.table!.create({ src: text }, rows);
 }
 
@@ -90,7 +91,7 @@ export function tableOf(node: PMNode): TableBlock {
   node.forEach((row, _o, r) => {
     const cs: string[] = [];
     row.forEach((cell) => {
-      cs.push(textOf(cell).replace(/[ \t]*\n[ \t]*/g, ' ').trim());
+      cs.push(textOf(cell).trim().replace(/[ \t]*\n[ \t]*/g, '\n'));
       if (r === 0) align.push((cell.attrs.align as Align) ?? null);
     });
     rows.push(cs);
@@ -141,7 +142,8 @@ export function nodeToRaw(node: PMNode): string {
       const src = node.attrs.src as string | null;
       if (src !== null) {
         const was = readTable(src);
-        if (was && JSON.stringify(was) === JSON.stringify(t)) return src;
+        const lines = (r: string[]) => r.map(cellLines);
+        if (was && JSON.stringify({ ...was, head: lines(was.head), rows: was.rows.map(lines) }) === JSON.stringify(t)) return src;
       }
       return writeTable(t);
     }

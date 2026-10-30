@@ -199,8 +199,14 @@ export function splitBlocks(text: string): string[] {
 /** A raw block's text as a pipe table, or null when it is not one (it must begin with a pipe). */
 export const readTable = (text: string): TableBlock | null => tabled(text.split('\n'));
 
-/** A cell's text as the file writes it: one line, trimmed, its pipes escaped. */
-const cellText = (s: string): string => s.replace(/[ \t]*\n[ \t]*/g, ' ').trim().replace(/\|/g, '\\|');
+/** A line break inside a cell as GFM writes one: `<br>` (`<br/>`, `<br />` read too). */
+export const CELL_BR = /<br[ \t]*\/?>/gi;
+
+/** A cell's text with its `<br>`s as line breaks: how the editor holds it. */
+export const cellLines = (s: string): string => s.replace(CELL_BR, '\n');
+
+/** A cell's text as the file writes it: one line, trimmed, a line break as `<br>`, its pipes escaped. */
+const cellText = (s: string): string => s.trim().replace(/[ \t]*\n[ \t]*/g, '<br>').replace(/\|/g, '\\|');
 
 const DELIM: Record<string, string> = { left: ':---', center: ':---:', right: '---:' };
 

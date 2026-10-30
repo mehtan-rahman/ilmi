@@ -197,6 +197,8 @@
 }
 .insp .insp-outline li[data-level="1"] { color: var(--fg-2); }
 .insp .insp-outline li:hover { color: var(--fg-1); }
+/* a heading folded in the page: the `…` its folded line ends with in the reader */
+.insp .insp-outline .fold-mark, .tab-rail .rail-row .fold-mark { margin-inline-start: 4px; color: var(--fg-4); flex-shrink: 0; }
 .insp .insp-cards li {
   display: grid;
   grid-template-columns: 1fr auto;

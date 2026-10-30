@@ -358,3 +358,15 @@ describe('the sample, parsed for the checks above', () => {
     expect(bodyRepeatsTitle(metaOf(doc).title!, doc.blocks)).toBe(true);
   });
 });
+
+describe('a blank inside a formula, named', () => {
+  it('reads as math in a rich row and as characters in a plain one (40, window run 1)', async () => {
+    const { cardLabel, cardName } = await import('../chrome.js');
+    const text = "$$E_n^{1} = {{c1::\\langle n^0 | H' | n^0 \\rangle}}$$ ^qm1-e1";
+    expect(cardName(text)).toBe("$\\langle n^0 | H' | n^0 \\rangle$");
+    expect(cardLabel(text)).toBe("⟨ n^0 | H' | n^0 ⟩");
+    expect(inlineMathHTML(cardName(text))).toContain('class="katex"');
+    expect(cardLabel('the {{c1::rank}} of $A$')).toBe('rank');
+    expect(cardLabel('what is $\\lambda$? :: a parameter')).toBe('what is λ?');
+  });
+});

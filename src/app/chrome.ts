@@ -4,6 +4,7 @@
 
 import { cardFields, type Block, type CardForm } from '../format/index.js';
 import { nameOf, type TreeNode } from '../vault/index.js';
+import { plainMath } from './chromeText.js';
 import { FORM_LABEL } from './items.js';
 import { GLYPH, QUEUE_TITLE, slugName, SCOPES, queueId, type QueueScope, type TabKind } from './names.js';
 import type { DocInfo, El } from './store.js';
@@ -72,22 +73,35 @@ export function hintsFor(c: HintContext): Hint[] {
 
 const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 
-/** The first blank's answer, a question, or `a ⇄ b`; the text when it is not a card. */
-export function cardLabel(text: string, max = 46): string {
+/**
+ * A card's name as written: the first blank's answer, a question, or `a ⇄
+ * b`; the text when it is not a card. A blank inside a formula (milestone
+ * 18) is TeX, so its answer comes back wrapped as `$…$`, to be drawn as math
+ * or read as plain text like any other formula in the name (40's window
+ * run: `\langle n^0 | H' | n^0 \rangle` showed raw in the inspector).
+ */
+function rawCardLabel(text: string): string {
   const f = cardFields(text);
   const flat = (s: string) => s.replace(/\s+/g, ' ').trim();
-  if (!f) return clip(flat(text), max) || 'card';
+  const answerOf = (b: { answer: string; math?: true }) => (b.math ? (flat(b.answer) ? `$${flat(b.answer)}$` : '') : b.answer);
+  if (!f) return flat(text) || 'card';
   if (f.form === 'cloze') {
     const first = f.parts.find((p) => typeof p !== 'string');
-    if (first && typeof first !== 'string' && first.answer.trim()) return clip(flat(first.answer), max);
-    return clip(flat(f.parts.map((p) => (typeof p === 'string' ? p : p.answer)).join('')), max) || 'cloze';
+    if (first && typeof first !== 'string' && first.answer.trim()) return flat(answerOf(first));
+    return flat(f.parts.map((p) => (typeof p === 'string' ? p : p.answer)).join('')) || 'cloze';
   }
-  if (f.form === 'qa') return clip(flat(f.front), max + 4) || 'q&a';
-  return clip(`${flat(f.left)} ⇄ ${flat(f.right)}`, max);
+  if (f.form === 'qa') return flat(f.front) || 'q&a';
+  return `${flat(f.left)} ⇄ ${flat(f.right)}`;
 }
 
-/** The same name whole, for a row that cuts it by its width (its formulas drawn, never cut in half). */
-export const cardName = (text: string): string => cardLabel(text, Infinity);
+/** A card's name as plain text, its formulas read as characters (`⟨n^0 | H' | n^0⟩`), cut at `max`: the palette, the PDF lens's list. */
+export function cardLabel(text: string, max = 46): string {
+  const f = cardFields(text);
+  return clip(plainMath(rawCardLabel(text)), f?.form === 'qa' ? max + 4 : max);
+}
+
+/** The name whole with its formulas as `$…$`, for a row that draws them (`MathText`) and cuts by its width. */
+export const cardName = (text: string): string => rawCardLabel(text);
 
 export const formOf = (text: string): CardForm | null => cardFields(text)?.form ?? null;
 export const formLabel = (text: string): string => { const f = formOf(text); return f ? FORM_LABEL[f] : 'card'; };

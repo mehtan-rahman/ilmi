@@ -66,6 +66,11 @@ tree all open 15 ms. Paint and the Tauri fs are not measured here.
   (`ok:` lines; the first miss `failed: …`), then captures every screen
   in light, dark and e-ink.
 
+- Window run 1 (`5aecdb9`): failed at "no raw TeX in the inspector": a
+  blank inside display math was named by its TeX answer. Card names now
+  wrap a math blank as `$…$` (drawn in the inspector, plain in the palette
+  and the PDF list); the check logs its hit. Rerun owed.
+
 ### Handoff prompt
 
 ```

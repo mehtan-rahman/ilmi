@@ -3250,7 +3250,9 @@ export async function smokeTour(vault: Vault): Promise<void> {
   };
   const noRawTex = (where: string, el: Element | null) => {
     const t = plain(el);
-    must(!/\$[^\s$]/.test(t) && !/\\(frac|langle|rangle|hbar)\b/.test(t), `no raw TeX in ${where}${el ? '' : ' (not drawn)'}`);
+    const hit = /\$[^\s$]|\\[A-Za-z]+/.exec(t);
+    if (hit) log(`raw TeX in ${where}: ${t.slice(Math.max(0, hit.index - 20), hit.index + 20)}`);
+    must(!hit, `no raw TeX in ${where}${el ? '' : ' (not drawn)'}`);
   };
   const PT = 'courses/fall-2026/phys-412-quantum-ii/nondegenerate-perturbation-theory.md';
   const CH3 = 'library/lindqvist-statistical-physics/ch-3-the-canonical-ensemble.md';

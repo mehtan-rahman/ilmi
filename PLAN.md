@@ -4278,6 +4278,16 @@ one-line cloze and a q&a in the session, the deck's and a note's
 inspector with no raw `$`), `perf.test.ts` (6); changed on purpose:
 extract names in `tree.test.ts` and `reader.test.ts`, the day, the folder
 lens's `under …`, the session path's tooltip, the landing notices.
+Window run 1 (`5aecdb9`, the coordinator's): passed through the top row,
+then `failed: no raw TeX in the inspector`: a cloze whose blank sits inside
+display math (`$$E_n^{1} = {{c1::\langle n^0 | H' | n^0 \rangle}}$$`) was
+named by its blank's answer, which is TeX without dollars. The card's name
+(`rawCardLabel` in chrome.ts) now wraps a math blank's answer as `$…$`:
+`cardName` keeps it for rows that draw formulas (the inspector), and
+`cardLabel` reads it as plain text (`⟨ n^0 | H' | n^0 ⟩`) for the palette
+and the PDF lens's list, cut after. The deck and queue rows draw the card
+itself (math blanks in KaTeX already). The tour's `noRawTex` logs its hit
+(`raw TeX in <where>: …`) and catches any `\command`. Rerun owed.
 Left for later: the PDF lens's top row keeps its `frozen`/`pages` words;
 the tree and palette rows do not draw formulas (no sample name has one);
 a reading snippet cut by `firstWords` may split a formula (then shown as

@@ -15,7 +15,7 @@ import {
   blockAt, blocksEqual, cardDue, classifyRaw, cursorIndex, editorialRanges, flatRanges, fromDoc, frozenKey, imagesKey, indentWidth, inlineRanges, insertCard, isMathEdit,
   linkTarget, literalSpans, makeState, markerKey, markerNumber, markerPos, markerRanges, mathEditKey, mathSplit, passage, pickPos, pressed, proseIndices, schema, setLink,
   setReadPos, splitBlocks, atomFind, markFinds, toggleInline, toggleTask, type Band, type InlineRange, type InlineToggle, type LinkTarget, type Passage, type RawShape,
-  askImageKey, closeAtMatch, findKey, insertImages, pickSlash, replaceAll, replaceMatch, slashContext, slashItems, slashKey, htmlPasteImages,
+  askImageKey, closeAtMatch, dirAttr, strongDir, withBases, type Dir, findKey, insertImages, pickSlash, replaceAll, replaceMatch, slashContext, slashItems, slashKey, htmlPasteImages,
   type FindMeta, type FindState, type SlashItem, type SlashState,
 } from '../reader/index.js';
 import { advanceWrite, whenToDate } from '../schedule/index.js';
@@ -123,7 +123,8 @@ function mathHTML(raw: string): string {
   } catch {
     inner = escapeHtml(raw);
   }
-  return `<span class="math${display ? ' display' : ''}" data-tex="${escapeHtml(raw)}">${inner}</span>`;
+  // a formula reads left to right on its own, in an Arabic sentence too
+  return `<span class="math${display ? ' display' : ''}" dir="ltr" data-tex="${escapeHtml(raw)}">${inner}</span>`;
 }
 
 const INLINE_CLASS: Record<InlineRange['kind'], string> = { em: 'md-em', strong: 'md-strong', strike: 'md-strike', code: 'md-code', link: 'md-link', image: 'md-alt' };
@@ -154,7 +155,7 @@ function inlineHTML(text: string, ranges: InlineRange[], from: number, to: numbe
     const [open, close] = markerRanges(r);
     const marker = (m: { from: number; to: number } | undefined) => (m ? `<span class="md-mark hidden">${escapeHtml(text.slice(m.from, m.to))}</span>` : '');
     const inner = r.kind === 'code' || r.kind === 'image' ? escapeHtml(text.slice(r.inner.from, r.inner.to)) : inlineHTML(text, r.children, r.inner.from, r.inner.to, literal);
-    const attrs = r.kind === 'link' && r.href ? ` data-href="${escapeHtml(r.href)}"` : '';
+    const attrs = r.kind === 'link' && r.href ? ` data-href="${escapeHtml(r.href)}"` : r.kind === 'code' ? ' dir="ltr"' : '';
     out += `${marker(open)}<span class="${INLINE_CLASS[r.kind]}"${attrs}>${inner}</span>${marker(close)}`;
     at = r.to;
   }
@@ -187,8 +188,8 @@ function blocksHTML(text: string, tight: boolean): string {
     const shape = classifyRaw(c);
     if (shape.kind !== 'other') return shapeHTML(shape, c);
     const h = /^ {0,3}(#{1,6})(?:[ \t]+(.*?))?[ \t]*$/s.exec(c);
-    if (h) return `<h${h[1]!.length}>${richHTML((h[2] ?? '').replace(/[ \t]+#+$/, '').trim())}</h${h[1]!.length}>`;
-    return bare ? richHTML(c) : `<p>${richHTML(c)}</p>`;
+    if (h) return `<h${h[1]!.length}${dirAttr(h[2] ?? '')}>${richHTML((h[2] ?? '').replace(/[ \t]+#+$/, '').trim())}</h${h[1]!.length}>`;
+    return bare ? richHTML(c) : `<p${dirAttr(c)}>${richHTML(c)}</p>`;
   }).join('');
 }
 
@@ -200,13 +201,15 @@ function shapeHTML(shape: RawShape, text: string): string {
     case 'list': {
       const tag = shape.ordered ? 'ol' : 'ul';
       const start = shape.ordered && shape.start !== 1 ? ` start="${shape.start}"` : '';
-      return `<${tag}${start}>${shape.items.map((it) => `<li>${blocksHTML(it.text, true)}</li>`).join('')}</${tag}>`;
+      // the list reads its first item's way; each item its own
+      return `<${tag}${start}${dirAttr(shape.items[0]?.text ?? '')}>${shape.items.map((it) => `<li${dirAttr(it.text)}>${blocksHTML(it.text, true)}</li>`).join('')}</${tag}>`;
     }
     case 'quote':
-      return `<blockquote>${blocksHTML(shape.text, false)}</blockquote>`;
+      return `<blockquote${dirAttr(shape.text)}>${blocksHTML(shape.text, false)}</blockquote>`;
     case 'table': {
-      const head = shape.head.map((h, i) => `<th${ALIGN_ATTR(shape.align[i] ?? null)}>${richHTML(h)}</th>`).join('');
-      const rows = shape.rows.map((r) => `<tr>${r.map((c, i) => `<td${ALIGN_ATTR(shape.align[i] ?? null)}>${richHTML(c)}</td>`).join('')}</tr>`).join('');
+      // a cell with no letters in it (a number) reads the table's way
+      const head = shape.head.map((h, i) => `<th${ALIGN_ATTR(shape.align[i] ?? null)}${dirAttr(h)}>${richHTML(h)}</th>`).join('');
+      const rows = shape.rows.map((r) => `<tr>${r.map((c, i) => `<td${ALIGN_ATTR(shape.align[i] ?? null)}${dirAttr(c)}>${richHTML(c)}</td>`).join('')}</tr>`).join('');
       return `<table><thead><tr>${head}</tr></thead>${rows ? `<tbody>${rows}</tbody>` : ''}</table>`;
     }
     case 'rule':
@@ -295,11 +298,29 @@ export function mathBlanksHTML(seg: MathSeg, stateOf: (b: Blank) => BlankState, 
 /** A cloze card's text: blanks in text as spans of `cls(state)`, formulas holding blanks through KaTeX. */
 export function clozeHTML(text: string, stateOf: (b: Blank, index: number) => BlankState, cls: (s: BlankState) => string): string {
   let index = -1;
-  return clozeSegments(text).map((seg) => {
+  return withBases(clozeSegments(text)).map((seg) => {
     if (typeof seg === 'string') return richHTML(seg);
     if ('span' in seg) return mathBlanksHTML(seg, (b) => stateOf(b, ++index), cls);
-    return `<span class="${cls(stateOf(seg, ++index))}">${richHTML(seg.answer)}</span>`;
+    const state = stateOf(seg, ++index);
+    if (seg.base === undefined) return `<span class="${cls(state)}">${richHTML(seg.answer)}</span>`;
+    // a case ending: the blank is its letter, the mark shown only once revealed
+    return `<span class="${cls(state)} on-letter">${escapeHtml(seg.base)}${state === 'hidden' ? '' : escapeHtml(seg.answer)}</span>`;
   }).join('');
+}
+
+/** A face's `dir` for React: its first strong character's way, undefined (inherit) when it has none. */
+export const faceDir = (text: string): Dir | undefined => strongDir(text) ?? undefined;
+
+/** A blank's answer as the answer face shows it: a case ending on its letter, else the answer alone. */
+export function blankAnswers(text: string, keep: (index: number) => boolean): string[] {
+  const out: string[] = [];
+  let k = 0;
+  for (const seg of withBases(clozeSegments(text))) {
+    if (typeof seg === 'string') continue;
+    if ('span' in seg) { for (const p of seg.parts) if (typeof p !== 'string' && keep(k++)) out.push(answerHTML(p, seg.display)); }
+    else if (keep(k++)) out.push(seg.base === undefined ? answerHTML(seg) : `<span class="on-letter">${escapeHtml(seg.base + seg.answer)}</span>`);
+  }
+  return out;
 }
 
 /** A blank's answer on its own: TeX as math, an align line through `aligned`. */
@@ -322,9 +343,10 @@ export function cardHTML(card: Card): string {
     case 'cloze':
       return clozeHTML(card.text, () => 'revealed', () => 'cz');
     case 'qa':
-      return `<span class="cs-q">${richHTML(f.front)}</span><span class="cs-a">${richHTML(f.back)}</span>`;
+      return `<span class="cs-q"${dirAttr(f.front)}>${richHTML(f.front)}</span><span class="cs-a"${dirAttr(f.back)}>${richHTML(f.back)}</span>`;
     case 'bidir':
-      return `<span>${richHTML(f.left)} <span class="cs-arrow">⇄</span> ${richHTML(f.right)}</span>`;
+      // each face isolated its own way, the arrow between them
+      return `<span><bdi${dirAttr(f.left)}>${richHTML(f.left)}</bdi> <span class="cs-arrow">⇄</span> <bdi${dirAttr(f.right)}>${richHTML(f.right)}</bdi></span>`;
   }
 }
 
@@ -403,6 +425,7 @@ class MathView implements NodeView {
     this.node = node;
     this.dom = document.createElement('span');
     this.dom.setAttribute('contenteditable', 'false');
+    this.dom.dir = 'ltr';
     this.draw(node.attrs.raw as string);
     if (isMathEdit(decorations)) this.open();
   }

@@ -31,6 +31,14 @@ ships two under `plugins/`: the sample, and a dictionary that looks a selected
 word up (Wiktionary by default, Arabic clitics stripped on the way) and adds
 it to a vocab deck from the popover.
 
+Arabic and English share a page: each block reads the way its first letter
+does (a block with no letter, a formula or a number, reads like the one
+before it), formulas and inline code stay left to right inside an Arabic
+sentence, and Arabic is set in Noto Naskh Arabic (IBM Plex Sans Arabic in the
+chrome), bundled, with lines tall enough for the ḥarakāt. Nothing about
+direction is written to the files. A cloze whose answer is only a case
+ending (`غَائِبَات{{c1::ٍ}}`) shows its blank on the letter it sits on.
+
 The import reads a SuperMemo collection's data files (`src/import/supermemo/LAYOUT.md`
 says which bytes, and on whose word) and lands its tree as folders, topics as
 sources and extracts, items as cards, tasks as drafts, with their schedules

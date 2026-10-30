@@ -1069,3 +1069,18 @@ body.resizing, body.resizing * { cursor: col-resize !important; user-select: non
 
 /* the `tabs` toggle in the reader's top row (TabsToggle.tsx): lit while the children are tabs */
 .reader .meta .tabs-toggle[data-on="1"] { color: var(--accent); }
+
+/* Arabic names in one-line rows: `dir="auto"` orders each name its own way,
+   the row stays left-aligned with its neighbours, and the clip a cut-off
+   name needs is given room above and below (padding taken back by the
+   margin), so a voweled name's ḥarakāt are never cut. */
+.tree .row .name, .tab-rail .rail-row .name, .folder-view .fv-row .fv-name, .tabbar .tab .title, .palette-row .pt, .palette-row .psub {
+  text-align: left;
+  padding-block: 4px;
+  margin-block: -4px;
+}
+/* a field that may hold both: each line of a textarea reads its own way */
+textarea[dir="auto"] { unicode-bidi: plaintext; }
+.card-span .cs-a[dir="rtl"] { font-style: normal; }
+.card-span [dir="rtl"], .card-span[dir="rtl"] { letter-spacing: 0; }
+.deck-row .dr-faces [dir="rtl"] { line-height: 1.8; }

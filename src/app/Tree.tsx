@@ -280,6 +280,7 @@ export function Tree({ activeId, onOpen }: Props) {
         {editingThis ? (
           <input
             className="rename"
+            dir="auto"
             ref={editRef}
             value={editing.value}
             onChange={(e) => setEditing({ id, value: e.target.value })}
@@ -292,7 +293,7 @@ export function Tree({ activeId, onOpen }: Props) {
             }}
           />
         ) : (
-          <span className="name">{title(id)}</span>
+          <span className="name" dir="auto">{title(id)}</span>
         )}
         {asked > 0 && <span className="asking">delete with {asked} inside? ⌘⌫</span>}
         {!asked && counts.due > 0 && <span className="due">{counts.due}</span>}

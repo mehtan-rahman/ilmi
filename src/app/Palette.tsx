@@ -140,7 +140,7 @@ export function Palette() {
       <div className="palette-panel" onMouseDown={(e) => e.stopPropagation()}>
         <div className="palette-input">
           <span className="g">⌕</span>
-          <input ref={inputRef} value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={onKey} placeholder={studying ? 'study…' : 'open or run'} spellCheck={false} />
+          <input dir="auto" ref={inputRef} value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={onKey} placeholder={studying ? 'study…' : 'open or run'} spellCheck={false} />
           <kbd>esc</kbd>
         </div>
         <div className="palette-list" ref={listRef}>
@@ -148,8 +148,8 @@ export function Palette() {
           {results.map((it, i) => (
             <div key={it.key} className="palette-row" data-sel={i === sel ? '1' : '0'} data-t={it.tag} onMouseEnter={() => setSel(i)} onClick={() => run(it)}>
               <span className="pg" data-t={it.tag}>{ENTRY_GLYPH[it.tag]}</span>
-              <span className="pt">{it.title}</span>
-              <span className="psub">{it.sub}</span>
+              <span className="pt" dir="auto">{it.title}</span>
+              <span className="psub" dir="auto">{it.sub}</span>
               <span className="ptag">{it.tag}</span>
             </div>
           ))}

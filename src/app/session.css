@@ -84,7 +84,7 @@
   font-size: 19px;
   line-height: 1.5;
   color: var(--fg-1);
-  text-align: left;
+  text-align: start;
   font-weight: 420;
   white-space: pre-wrap;
 }
@@ -285,3 +285,16 @@
   padding: 0 4px;
   color: var(--fg-4);
 }
+
+/* an Arabic face: taller lines for the ḥarakāt, upright, no letter-spacing */
+.recall-wrap .card [dir="rtl"] { line-height: 1.9; letter-spacing: 0; font-synthesis: weight; }
+/* a case ending's blank sits on its letter: the letter shows, lit, the
+   mark it is missing hidden until revealed */
+.recall-wrap .card .cloze.on-letter {
+  color: var(--fg-1);
+  -webkit-text-fill-color: var(--fg-1);
+  background: transparent;
+  border-bottom: 2px solid var(--fg-4);
+}
+.recall-wrap .card .cloze.on-letter.revealed { background: var(--accent-soft); border-bottom-color: var(--accent); }
+.recall-wrap .card .cloze-answer .cz-a .on-letter { padding: 0; }

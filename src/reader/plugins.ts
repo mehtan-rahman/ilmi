@@ -30,6 +30,7 @@ import { schema } from './schema.js';
 import { findPlugin } from './find.js';
 import { clipboardText, pasteMarkdown } from './insert.js';
 import { slashPlugin } from './slash.js';
+import { markupSpans, strongDir, type Dir } from './direction.js';
 import { htmlMarkdown } from '../import/paste.js';
 
 /** A code block's text is code: no chips, no markers, no marks. */
@@ -285,6 +286,8 @@ function inlineDecorations(text: string, base: number, known: Map<string, ImageS
     if (r.inner.to <= r.inner.from) continue;
     const attrs: Record<string, string> = { class: INNER_CLASS[r.kind] };
     if (r.kind === 'link' && r.href) attrs['data-href'] = r.href;
+    // code reads left to right on its own inside a right-to-left line
+    if (r.kind === 'code') attrs.dir = 'ltr';
     if (state === 'broken') attrs.class += ' broken';
     decos.push(Decoration.inline(base + r.inner.from, base + r.inner.to, attrs));
   }
@@ -457,6 +460,73 @@ const marker = new Plugin<{ pos: number | null; decos: DecorationSet }>({
 
 export const markerPos = (state: EditorState): number | null => markerKey.getState(state)?.pos ?? null;
 
+// ── direction ────────────────────────────────────────────────────
+
+/** A block's own direction, null when it has no strong character; `'iso'` for one set left to right on its own (code, an HTML block). */
+function ownDir(node: PMNode): Dir | null | 'iso' {
+  if (isCode(node)) return 'iso';
+  if (node.type === schema.nodes.card) return strongDir((node.attrs.card as { text: string }).text);
+  if (node.type === schema.nodes.raw) {
+    const text = node.attrs.text as string;
+    // fenced code the pair could not read, an HTML block, a comment
+    return /^\s*(?:```|~~~|<)/.test(text) ? 'iso' : strongDir(text);
+  }
+  return strongDir(node.textContent);
+}
+
+/**
+ * Every block's direction as a node decoration (`dir`), by the rule in
+ * direction.ts: its first strong character, else the block before it's.
+ * A list or a quote takes its first item's or line's; each item and line
+ * has its own. Card markup and `^id` in a textblock are isolated left to
+ * right so they read in order in an Arabic line.
+ */
+export function directionDecorations(doc: PMNode): DecorationSet {
+  const decos: Decoration[] = [];
+  let cur: Dir = 'ltr';
+  const take = (node: PMNode): Dir => {
+    const own = ownDir(node);
+    if (own === 'iso') return 'ltr';
+    cur = own ?? cur;
+    return cur;
+  };
+  const markup = (node: PMNode, pos: number) => {
+    if (isCode(node)) return;
+    node.forEach((child, off) => {
+      if (!child.isText || !child.text) return;
+      for (const s of markupSpans(child.text)) decos.push(Decoration.inline(pos + 1 + off + s.from, pos + 1 + off + s.to, { class: 'bidi-iso', dir: 'ltr' }));
+    });
+  };
+  doc.forEach((node, pos) => {
+    if (node.type === schema.nodes.list || node.type === schema.nodes.quote) {
+      let first: Dir | null = null;
+      node.forEach((child, off) => {
+        const at = pos + 1 + off;
+        const d = take(child);
+        first ??= d;
+        decos.push(Decoration.node(at, at + child.nodeSize, { dir: d }));
+        markup(child, at);
+      });
+      decos.push(Decoration.node(pos, pos + node.nodeSize, { dir: first ?? cur }));
+      return;
+    }
+    decos.push(Decoration.node(pos, pos + node.nodeSize, { dir: take(node) }));
+    if (node.isTextblock) markup(node, pos);
+  });
+  return DecorationSet.create(doc, decos);
+}
+
+export const directionKey = new PluginKey<DecorationSet>('direction');
+
+const direction = new Plugin<DecorationSet>({
+  key: directionKey,
+  state: {
+    init: (_c, state) => directionDecorations(state.doc),
+    apply: (tr, cur) => (tr.docChanged ? directionDecorations(tr.doc) : cur),
+  },
+  props: { decorations: (state): DecorationSet | null => directionKey.getState(state) ?? null },
+});
+
 // ── keys ─────────────────────────────────────────────────────────
 
 const lineBreak: Command = (state, dispatch) => {
@@ -560,7 +630,7 @@ export function makeState(blocks: Block[], opts: StateOptions): EditorState {
   const state = EditorState.create({
     doc: toDoc(blocks),
     // images before marks: the marks read the images' state as it is after the same transaction
-    plugins: [frozenPlugin(opts.frozen), slashPlugin({ openMath: (tr, pos) => tr.setMeta(mathEditKey, pos) }), findPlugin, rules, enterRules, formatKeys, keys, keymap(baseKeymap), history(), gapCursor(), mathReform, mathEdit, images(opts.images), marks, marker],
+    plugins: [frozenPlugin(opts.frozen), slashPlugin({ openMath: (tr, pos) => tr.setMeta(mathEditKey, pos) }), findPlugin, rules, enterRules, formatKeys, keys, keymap(baseKeymap), history(), gapCursor(), mathReform, mathEdit, images(opts.images), marks, marker, direction],
   });
   return opts.pos === null ? state : state.apply(state.tr.setMeta(markerKey, opts.pos));
 }

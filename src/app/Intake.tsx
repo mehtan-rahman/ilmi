@@ -376,6 +376,7 @@ export function Intake({ active, onOpen }: Props) {
         <div className="paste-field">
           <textarea
             ref={taRef}
+            dir="auto"
             value={raw}
             spellCheck={false}
             onChange={(e) => { setRaw(e.target.value); if (!e.target.value.trim()) { if (!pdf?.pages) setPdf(null); setPage(null); setFromFile(false); } if (note) setNote(''); }}
@@ -559,7 +560,7 @@ export function Intake({ active, onOpen }: Props) {
             {!anki && (
               <label className="field">
                 <span className="flbl">title</span>
-                <input value={titleShown} onChange={(e) => setTitle(e.target.value)} spellCheck={false} />
+                <input dir="auto" value={titleShown} onChange={(e) => setTitle(e.target.value)} spellCheck={false} />
               </label>
             )}
 

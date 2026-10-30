@@ -86,9 +86,9 @@ describe('the surface', () => {
   it('shows a card in its form', () => {
     const cloze: Card = { kind: 'card', text: 'a {{c1::b}} c' };
     expect(cardHTML(cloze)).toBe('a <span class="cz">b</span> c');
-    expect(cardHTML({ kind: 'card', text: 'q :: a' })).toBe('<span class="cs-q">q</span><span class="cs-a">a</span>');
-    expect(cardHTML({ kind: 'card', text: 'l ::: r' })).toBe('<span>l <span class="cs-arrow">⇄</span> r</span>');
-    expect(cardHTML({ kind: 'card', text: '<b> :: &' })).toBe('<span class="cs-q">&lt;b&gt;</span><span class="cs-a">&amp;</span>');
+    expect(cardHTML({ kind: 'card', text: 'q :: a' })).toBe('<span class="cs-q" dir="ltr">q</span><span class="cs-a" dir="ltr">a</span>');
+    expect(cardHTML({ kind: 'card', text: 'l ::: r' })).toBe('<span><bdi dir="ltr">l</bdi> <span class="cs-arrow">⇄</span> <bdi dir="ltr">r</bdi></span>');
+    expect(cardHTML({ kind: 'card', text: '<b> :: &' })).toBe('<span class="cs-q" dir="ltr">&lt;b&gt;</span><span class="cs-a">&amp;</span>');
   });
 
   it('labels when a card comes up', () => {
@@ -948,9 +948,9 @@ describe('raw block shapes', () => {
   });
 
   it('renders the nested list, the quote\'s paragraphs, and leaves html as source', () => {
-    expect(rawHTML('- a\n  - nested\n- b')!.html).toBe('<ul><li>a<ul><li>nested</li></ul></li><li>b</li></ul>');
-    expect(rawHTML('> # head\n>\n> body *em*')!.html).toBe('<blockquote><h1>head</h1><p>body <span class="md-mark hidden">*</span><span class="md-em">em</span><span class="md-mark hidden">*</span></p></blockquote>');
-    expect(rawHTML('- a\n\n  two paragraphs')!.html).toBe('<ul><li><p>a</p><p>two paragraphs</p></li></ul>');
+    expect(rawHTML('- a\n  - nested\n- b')!.html).toBe('<ul dir="ltr"><li dir="ltr">a<ul dir="ltr"><li dir="ltr">nested</li></ul></li><li dir="ltr">b</li></ul>');
+    expect(rawHTML('> # head\n>\n> body *em*')!.html).toBe('<blockquote dir="ltr"><h1 dir="ltr">head</h1><p dir="ltr">body <span class="md-mark hidden">*</span><span class="md-em">em</span><span class="md-mark hidden">*</span></p></blockquote>');
+    expect(rawHTML('- a\n\n  two paragraphs')!.html).toBe('<ul dir="ltr"><li dir="ltr"><p dir="ltr">a</p><p dir="ltr">two paragraphs</p></li></ul>');
     expect(rawHTML('```\n<b>&</b>\n```')!.html).toBe('<pre><code>&lt;b&gt;&amp;&lt;/b&gt;</code></pre>');
     expect(rawHTML('<div>x</div>')).toBeNull();
   });
@@ -958,12 +958,12 @@ describe('raw block shapes', () => {
 
 describe('the read-only text: rows and faces', () => {
   it('draws inline markdown in richHTML, the markers kept but hidden', () => {
-    expect(richHTML('a *b* and `c`')).toBe('a <span class="md-mark hidden">*</span><span class="md-em">b</span><span class="md-mark hidden">*</span> and <span class="md-mark hidden">`</span><span class="md-code">c</span><span class="md-mark hidden">`</span>');
+    expect(richHTML('a *b* and `c`')).toBe('a <span class="md-mark hidden">*</span><span class="md-em">b</span><span class="md-mark hidden">*</span> and <span class="md-mark hidden">`</span><span class="md-code" dir="ltr">c</span><span class="md-mark hidden">`</span>');
     expect(richHTML('[t](https://x.y/?a=1&b=2)')).toBe('<span class="md-mark hidden">[</span><span class="md-link" data-href="https://x.y/?a=1&amp;b=2">t</span><span class="md-mark hidden">](https://x.y/?a=1&amp;b=2)</span>');
     // a note inside a link or a code span is not a note; a tag inside code is not a tag
-    expect(richHTML('[a](b) [n] `#x:` #y:')).toBe('<span class="md-mark hidden">[</span><span class="md-link" data-href="b">a</span><span class="md-mark hidden">](b)</span> <span class="ed-mark note">[n]</span> <span class="md-mark hidden">`</span><span class="md-code">#x:</span><span class="md-mark hidden">`</span> <span class="ed-mark tag">#y:</span>');
+    expect(richHTML('[a](b) [n] `#x:` #y:')).toBe('<span class="md-mark hidden">[</span><span class="md-link" data-href="b">a</span><span class="md-mark hidden">](b)</span> <span class="ed-mark note">[n]</span> <span class="md-mark hidden">`</span><span class="md-code" dir="ltr">#x:</span><span class="md-mark hidden">`</span> <span class="ed-mark tag">#y:</span>');
     // math still chips, emphasis around it still reads
-    expect(richHTML('so *x* is $y$')).toContain('<span class="math" data-tex="$y$">');
+    expect(richHTML('so *x* is $y$')).toContain('<span class="math" dir="ltr" data-tex="$y$">');
     expect(richHTML('so *x* is $y$')).toContain('<span class="md-em">x</span>');
   });
 
@@ -971,8 +971,8 @@ describe('the read-only text: rows and faces', () => {
     const text = 'the {{c1::answer}} is `code`, and *so*';
     const cls = (s: BlankState) => (s === 'hidden' ? 'cloze' : s === 'revealed' ? 'cloze revealed' : 'cloze ctx');
     const hidden = clozeHTML(text, () => 'hidden', cls);
-    expect(hidden).toBe('the <span class="cloze">answer</span> is <span class="md-mark hidden">`</span><span class="md-code">code</span><span class="md-mark hidden">`</span>, and <span class="md-mark hidden">*</span><span class="md-em">so</span><span class="md-mark hidden">*</span>');
-    expect(cardHTML({ kind: 'card', text: '**bold** question :: `a` answer' })).toBe('<span class="cs-q"><span class="md-mark hidden">**</span><span class="md-strong">bold</span><span class="md-mark hidden">**</span> question</span><span class="cs-a"><span class="md-mark hidden">`</span><span class="md-code">a</span><span class="md-mark hidden">`</span> answer</span>');
+    expect(hidden).toBe('the <span class="cloze">answer</span> is <span class="md-mark hidden">`</span><span class="md-code" dir="ltr">code</span><span class="md-mark hidden">`</span>, and <span class="md-mark hidden">*</span><span class="md-em">so</span><span class="md-mark hidden">*</span>');
+    expect(cardHTML({ kind: 'card', text: '**bold** question :: `a` answer' })).toBe('<span class="cs-q" dir="ltr"><span class="md-mark hidden">**</span><span class="md-strong">bold</span><span class="md-mark hidden">**</span> question</span><span class="cs-a" dir="ltr"><span class="md-mark hidden">`</span><span class="md-code" dir="ltr">a</span><span class="md-mark hidden">`</span> answer</span>');
     // the answer face of a blank holding emphasis
     expect(answerHTML({ n: 1, answer: '*em*', raw: '{{c1::*em*}}' })).toBe('<span class="md-mark hidden">*</span><span class="md-em">em</span><span class="md-mark hidden">*</span>');
   });

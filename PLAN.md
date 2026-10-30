@@ -3340,6 +3340,11 @@ returned on the first change it saw since its last check, which was the
 earlier write of `$$ $$` (flushed when the field took focus); the
 commit's own write lands 500 ms after ⏎. Each check now waits, up to 5 s,
 for the file to say what it expects.
+Second rerun: all steps to the toolbar, which never showed. The cue's
+measure had moved into a `requestAnimationFrame`, and WKWebView holds
+frames back while its window is covered (the first run, before that
+change, drew it); it is a `setTimeout(0)` now, which still runs after
+the editor's own `selectionchange` handling.
 Left for later: the toolbar shows for keyboard selections too (the
 research would wait for a mouse selection to end); ⌘K with a bare caret
 does not insert `[](…)`; a paragraph with a soft line break made a

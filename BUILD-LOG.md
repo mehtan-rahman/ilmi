@@ -86,6 +86,9 @@ window rerun is owed.
 Rerun: all steps passed to `$$ written`, which read the earlier `$$ $$`
 write; the smoke's checks now wait for the expected lines (the editor
 writes the formula, a new reader-view test shows). 744 tests.
+Second rerun: the toolbar never showed; its measure waited for an
+animation frame, which WKWebView holds back in a covered window. A
+zero-delay timer now.
 
 ### Handoff prompt
 

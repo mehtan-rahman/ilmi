@@ -1073,16 +1073,18 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
       }
       setSel((cur) => (sameSel(cur, next) ? cur : next));
     };
-    // measured a frame later: the markers the selection reveals have moved the text by then
-    let frame: number | null = null;
+    // measured once the editor has handled the same event (its listener comes after this one, and
+    // redraws the markers the selection reveals, which move the text). A timer, not a frame: WebKit
+    // holds animation frames back in a window that is covered or not on screen.
+    let timer: ReturnType<typeof setTimeout> | null = null;
     const later = () => {
-      if (frame !== null) cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(() => { frame = null; capture(); });
+      if (timer !== null) clearTimeout(timer);
+      timer = setTimeout(() => { timer = null; capture(); }, 0);
     };
     document.addEventListener('selectionchange', later);
     return () => {
       document.removeEventListener('selectionchange', later);
-      if (frame !== null) cancelAnimationFrame(frame);
+      if (timer !== null) clearTimeout(timer);
     };
   }, []);
 

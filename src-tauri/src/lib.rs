@@ -15,6 +15,11 @@ const MENU_NEW: &str = "new";
 const MENU_OPEN: &str = "open";
 const MENU_CLOSE: &str = "close";
 const MENU_IMPORT: &str = "import";
+/// Edit › Paste and Match Style (⌘⇧V, macOS): the webview's own
+/// `pasteAsPlainText:`, whose paste event carries only the clipboard's plain
+/// text. Handled here, not in the renderer: a page cannot start a paste.
+#[cfg(target_os = "macos")]
+const MENU_PASTE_PLAIN: &str = "paste-plain";
 
 /// Widen the fs scope to a vault directory. The dialog plugin does this for a
 /// picked directory; this covers paths that arrive any other way. The
@@ -113,6 +118,30 @@ fn set_recent_vaults(app: tauri::AppHandle, items: Vec<RecentVault>) -> Result<(
     recent.set_enabled(!items.is_empty()).map_err(|e| e.to_string())
 }
 
+/// ⌘⇧V: the main webview pastes the clipboard as plain text, as Safari's
+/// Paste and Match Style does (WebKit fires a `paste` event holding only
+/// `text/plain`, which the reader lands as Markdown).
+#[cfg(target_os = "macos")]
+fn paste_plain(app: &tauri::AppHandle) {
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.with_webview(|wv| {
+            let view = wv.inner() as *mut objc2::runtime::AnyObject;
+            if view.is_null() {
+                return;
+            }
+            // SAFETY: `inner()` is the window's live WKWebView, messaged on the main thread;
+            // the action is sent only when the view answers to it, and its sender may be nil.
+            unsafe {
+                let sel = objc2::sel!(pasteAsPlainText:);
+                let answers: bool = objc2::msg_send![view, respondsToSelector: sel];
+                if answers {
+                    let _: () = objc2::msg_send![view, pasteAsPlainText: std::ptr::null_mut::<objc2::runtime::AnyObject>()];
+                }
+            }
+        });
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -138,6 +167,11 @@ pub fn run() {
         // Every item of the File menu reaches the renderer as one `menu`
         // event carrying the item's id; `src/app/menu.ts` does the rest.
         .on_menu_event(|app, event| {
+            #[cfg(target_os = "macos")]
+            if event.id().0 == MENU_PASTE_PLAIN {
+                paste_plain(app);
+                return;
+            }
             let _ = app.emit("menu", event.id().0.clone());
         })
         .setup(|app| {
@@ -197,9 +231,14 @@ pub fn run() {
                     .separator()
                     .cut()
                     .copy()
-                    .paste()
-                    .select_all()
-                    .build()?;
+                    .paste();
+                #[cfg(target_os = "macos")]
+                let edit = edit.item(
+                    &MenuItemBuilder::with_id(MENU_PASTE_PLAIN, "Paste and Match Style")
+                        .accelerator("CmdOrCtrl+Shift+V")
+                        .build(app)?,
+                );
+                let edit = edit.select_all().build()?;
                 let window = SubmenuBuilder::new(app, "Window")
                     .minimize()
                     .maximize()

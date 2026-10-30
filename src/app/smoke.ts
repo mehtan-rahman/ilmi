@@ -132,6 +132,11 @@
 // the formatting keys, the block rules, lists moved and indented with their
 // children, ⌘K and a pasted address, and the selection toolbar (see the
 // function).
+// `ILMI_SMOKE=insert` (`smokeInsert`) over a copy of `samples/double-major`:
+// the slash menu's every row on a note, a web fragment and a plain paste,
+// an image pasted, dropped, and picked beside the note, and find walking
+// every unvoweled match in the voweled kāna note, then replace (see the
+// function).
 // `ILMI_SMOKE=welcome` runs before any vault opens: it seeds the recents
 // with the scratch vault (`ILMI_VAULT`) and a path that does not exist,
 // turns `reopen the last vault on start` off, reads the welcome's rows and
@@ -4088,6 +4093,415 @@ export async function smokeTree(vault: Vault): Promise<void> {
     useApp.getState().setTheme('eink');
     await shot('tree-eink', 2500);
     useApp.getState().setTheme('light');
+    log(`done; vault ${vault.root}`);
+  } catch (e) {
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+// `ILMI_SMOKE=insert` over a copy of `samples/double-major` (ILMI_VAULT):
+// milestone 35's "done when". On `fleeting/2026-10-30.md`, below its last
+// paragraph, it types `/` and a query for every row of the slash menu
+// (headings, the lists, a quote, code, a display formula, a rule, a table,
+// an image from a stubbed picker), checking the lit row before ⏎ and the
+// file's lines after; one row picked with ↓, one with the pointer, Esc
+// leaving the `/`; then the three card forms, each read back as a card.
+// Then a web fragment pasted (a heading, emphasis, a link, nested and
+// numbered lists) and checked line by line, the same paste after ⌘⇧V as
+// plain text, an image pasted from the clipboard and one dropped through
+// the window's drop router, each a file `img-NN.png` beside the note and
+// linked there. Then find: ⌘F on the voweled kāna note, `كان` typed with no
+// vowels, the count checked against the file's own text, ⏎ walked over
+// every match (each lit match folds to the word; the count wraps), ⇧⏎ and
+// ⌘G, Esc; ⌥⌘F on the note replaces one word and then every match of
+// another; on a frozen source the bar has no replace row. Every step
+// asserts; a mismatch ends the run with `failed:`. `shot:` lines mark the
+// screens worth a capture.
+export async function smokeInsert(vault: Vault): Promise<void> {
+  const log = (s: string) => info(`smoke insert: ${s}`);
+  const q = <T extends Element>(sel: string, root: ParentNode = document) => root.querySelector<T>(sel);
+  const qa = <T extends Element>(sel: string, root: ParentNode = document) => Array.from(root.querySelectorAll<T>(sel));
+  const shot = async (name: string, ms = 2600) => { await sleep(600); log(`shot: ${name}`); await sleep(ms); };
+  const { dropAt } = await import('./land.js');
+  const { imagePicker } = await import('./pageImages.js');
+  const { findIn, foldText } = await import('../reader/index.js');
+  const NOTE = 'fleeting/2026-10-30.md';
+  const KANA = 'courses/fall-2026/arab-401-advanced-grammar/kana-and-its-sisters.md';
+  const SOURCE = 'library/lindqvist-statistical-physics/ch-3-the-canonical-ensemble.md';
+  const ANCHOR = 'can I move a card without retyping it?]';
+  const text = (path = NOTE) => vault.fs.readText(vault.abs(path));
+  const fail = (msg: string): never => { throw new Error(msg); };
+  /** The note's lines after the anchor paragraph: what the smoke typed. */
+  const region = (t: string) => {
+    const lines = t.split('\n');
+    const i = lines.findIndex((l) => l.includes(ANCHOR));
+    return lines.slice(i + 1).filter((l, k, all) => l || (k > 0 && all[k - 1])).join(' ⏎ ');
+  };
+  const waitFor = async (ok: (t: string) => boolean, path = NOTE, ms = 5000) => {
+    const t0 = Date.now();
+    let t = await text(path);
+    while (!ok(t) && Date.now() - t0 < ms) {
+      await sleep(100);
+      t = await text(path);
+    }
+    return t;
+  };
+  /** The file holds `lines`, one after another; the run fails when it does not. */
+  const expectLines = async (label: string, lines: string[], path = NOTE) => {
+    const has = (t: string) => { const all = t.split('\n'); return all.some((_, i) => lines.every((l, k) => all[i + k] === l)); };
+    const t = await waitFor(has, path);
+    const ok = has(t);
+    log(`${label}: ${ok ? 'ok' : 'MISMATCH'}; ${path === NOTE ? region(t).slice(-400) : lines.join(' ⏎ ')}`);
+    if (!ok) fail(`${label}: expected the lines ${JSON.stringify(lines)}`);
+  };
+  const expect = (label: string, ok: boolean, detail: string) => {
+    log(`${label}: ${ok ? 'ok' : 'MISMATCH'}; ${detail}`);
+    if (!ok) fail(`${label}: ${detail}`);
+  };
+  const open = async (path: string) => {
+    openNode(path);
+    await until(() => (activeTab(useApp.getState().panes)?.id === path ? q('.pane-body .doc-view .draft-doc') : null), 10000);
+    await sleep(500);
+  };
+  const surface = () => q<HTMLElement>('.pane-body .doc-view .draft-doc')!;
+  const BLOCKS = 'p.dd-p, .dd-h, .dd-li .li-text, .dd-ql, pre.dd-code code';
+  /** The last textblock showing `needle`: what the smoke typed sits below the note's own text. */
+  const block = (needle: string) => qa<HTMLElement>(BLOCKS, surface()).filter((p) => p.textContent?.includes(needle)).pop();
+  const atEnd = async (needle: string) => {
+    const b = await until(() => block(needle));
+    surface().focus();
+    caret(b, needle, needle.length);
+    await sleep(80);
+  };
+  const caretIn = () => {
+    const n = document.getSelection()?.anchorNode ?? null;
+    const el = (n?.nodeType === 1 ? (n as HTMLElement) : n?.parentElement)?.closest<HTMLElement>(`${BLOCKS}`);
+    if (!el) return { kind: 'nothing', text: '' };
+    const kind = el.matches('p.dd-p') ? 'paragraph' : el.matches('.dd-h') ? `heading ${el.tagName.toLowerCase()}` : el.matches('.li-text') ? 'item' : el.matches('.dd-ql') ? 'quote' : 'code';
+    return { kind, text: el.textContent ?? '' };
+  };
+  const fresh = (label: string) => {
+    const c = caretIn();
+    expect(`${label}: a fresh paragraph`, c.kind === 'paragraph' && c.text === '', `caret in a ${c.kind} "${c.text.slice(0, 40)}"`);
+  };
+  const MOD = { metaKey: true };
+  const key = async (k: string, init: KeyboardEventInit = {}, target: EventTarget = surface()) => {
+    const ev = new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true, ...init });
+    target.dispatchEvent(ev);
+    await sleep(80);
+    return ev.defaultPrevented;
+  };
+  const type = async (str: string) => {
+    for (const ch of str) {
+      document.execCommand('insertText', false, ch);
+      await sleep(30);
+    }
+    await sleep(80);
+  };
+  const enter = () => key('Enter', { code: 'Enter' });
+  const menu = () => q<HTMLElement>('.pane-body .slash-menu');
+  const lit = () => q<HTMLElement>('.pane-body .slash-menu .sm-row.on')?.dataset.id ?? '(none)';
+  /** `/query` typed; the menu must be open with `id` lit. */
+  const slash = async (query: string, id: string) => {
+    await type(`/${query}`);
+    const m = await until(() => menu(), 2000).catch(() => null);
+    expect(`/${query}`, !!m && lit() === id, m ? `rows ${qa<HTMLElement>('.sm-row', m).map((r) => r.dataset.id).join(' ')}; lit ${lit()}` : 'no menu');
+  };
+  /** A paste event as the clipboard would send it. */
+  const paste = (data: Record<string, string>, files: File[] = []) => {
+    const dt = new DataTransfer();
+    for (const [type, value] of Object.entries(data)) dt.setData(type, value);
+    for (const f of files) dt.items.add(f);
+    surface().dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+  };
+  const PNG = Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAABgAAAAQCAIAAACDRijCAAAAGklEQVR42mM4scCGKohh1KBRg0YNGjWIMgQAWtJ2H9RWthQAAAAASUVORK5CYII='), (c) => c.charCodeAt(0));
+  const IMG_DIR = 'fleeting/2026-10-30';
+  const imgBytes = async (n: number) => {
+    try { return (await vault.fs.readBytes(vault.abs(`${IMG_DIR}/img-${String(n).padStart(2, '0')}.png`))).length; } catch { return -1; }
+  };
+  try {
+    for (const p of ['fleeting', 'courses', 'courses/fall-2026', 'library', 'library/lindqvist-statistical-physics']) toggleOpen(p, true);
+    await open(NOTE);
+    const first = await text();
+    expect('the note', !region(first), `kind ${useApp.getState().docs[NOTE]?.type}, editable ${surface().isContentEditable}; nothing after the last paragraph yet (a fresh copy of the sample)`);
+
+    // ── the slash menu, every block kind ──
+    await atEnd(ANCHOR);
+    await enter();
+    fresh('after the anchor');
+    await slash('', 'h1');
+    await shot('insert-menu');
+    // the `/` taken back: the menu goes with it
+    document.execCommand('delete');
+    await sleep(150);
+    expect('the `/` deleted', !menu(), menu() ? 'menu still open' : 'menu gone');
+    await slash('h2', 'h2');
+    await enter();
+    expect('/h2 picked', caretIn().kind === 'heading h2' && !menu(), `caret in a ${caretIn().kind}; menu ${menu() ? 'open' : 'closed'}`);
+    await type('plan for Monday');
+    await expectLines('/h2', ['## plan for Monday']);
+    await enter();
+    fresh('under the heading');
+    await slash('bul', 'bullet');
+    await enter();
+    await type('wave packets');
+    await enter();
+    await type('wave functions');
+    await expectLines('/bullet', ['- wave packets', '- wave functions']);
+    await enter();
+    await enter();
+    fresh('after the bullets');
+    await slash('num', 'ordered');
+    await enter();
+    await type('normalize');
+    await enter();
+    await type('expand');
+    await expectLines('/numbered', ['1. normalize', '2. expand']);
+    await enter();
+    await enter();
+    fresh('after the numbers');
+    // ↓ from the lit row to the next: `task` is lit by `ta`, then `table` one down
+    await slash('ta', 'task');
+    await key('ArrowDown', { code: 'ArrowDown' });
+    expect('↓ moves the lit row', lit() === 'table', `lit ${lit()}`);
+    await key('ArrowUp', { code: 'ArrowUp' });
+    await enter();
+    await type('read Sakurai 5.2');
+    await expectLines('/task', ['- [ ] read Sakurai 5.2']);
+    await enter();
+    await enter();
+    fresh('after the task');
+    await slash('quo', 'quote');
+    await enter();
+    await type('the series is asymptotic, not convergent');
+    await expectLines('/quote', ['> the series is asymptotic, not convergent']);
+    await enter();
+    await enter();
+    fresh('after the quote');
+    await slash('code', 'code');
+    await enter();
+    expect('/code', caretIn().kind === 'code', `caret in a ${caretIn().kind}`);
+    await type('E = hbar * omega');
+    await key('Enter', { code: 'Enter', ...MOD });
+    await expectLines('/code typed', ['```', 'E = hbar * omega', '```']);
+    fresh('out of the code');
+    await slash('math', 'math');
+    await enter();
+    const field = await until(() => q<HTMLTextAreaElement>('.pane-body .math-edit textarea'), 3000).catch(() => null);
+    expect('/math opens the formula', !!field && field.value === '', field ? `editor open, "${field.value}"` : 'no editor');
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(field, 'Z = \\sum_n e^{-\\beta E_n}');
+    field!.dispatchEvent(new Event('input', { bubbles: true }));
+    field!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    await expectLines('/math written', ['$$Z = \\sum_n e^{-\\beta E_n}$$']);
+    await sleep(300);
+    // the caret after the chip: a new paragraph below it
+    const chip = qa<HTMLElement>('.pane-body .draft-doc p.dd-p').filter((p) => p.querySelector('.math')).pop();
+    if (chip) {
+      surface().focus();
+      const r = document.createRange();
+      r.selectNodeContents(chip);
+      r.collapse(false);
+      const sel = window.getSelection()!;
+      sel.removeAllRanges();
+      sel.addRange(r);
+      await sleep(80);
+    }
+    await enter();
+    fresh('after the formula');
+    // a row picked by the pointer
+    await type('/div');
+    const row = await until(() => q<HTMLElement>('.pane-body .slash-menu .sm-row[data-id="rule"]'), 2000).catch(() => null);
+    expect('/div shows divider', !!row, row ? row.textContent ?? '' : 'no row');
+    row!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+    await sleep(150);
+    await expectLines('/divider (clicked)', ['$$Z = \\sum_n e^{-\\beta E_n}$$', '', '---']);
+    fresh('after the rule');
+    await slash('table', 'table');
+    await enter();
+    await expectLines('/table', ['|  |  |', '| --- | --- |', '|  |  |']);
+    fresh('after the table');
+    // an image from the picker (stubbed with a file outside the notes)
+    const pickPath = vault.abs('.ilmi/smoke-pick.png');
+    await vault.fs.mkdir(vault.abs('.ilmi'));
+    await vault.fs.writeBytes(pickPath, PNG);
+    const realPick = imagePicker.pick;
+    imagePicker.pick = async () => [pickPath];
+    await slash('image', 'image');
+    await enter();
+    await expectLines('/image (picked)', ['![](2026-10-30/img-01.png)']);
+    imagePicker.pick = realPick;
+    expect('img-01 beside the note', (await imgBytes(1)) === PNG.length, `${IMG_DIR}/img-01.png ${await imgBytes(1)} bytes`);
+    await shot('insert-blocks');
+    // Esc leaves the `/` as typed
+    await sleep(300);
+    fresh('after the image');
+    await slash('', 'h1');
+    await key('Escape', { code: 'Escape' });
+    expect('Esc', !menu() && caretIn().text === '/', `menu ${menu() ? 'open' : 'closed'}; the line "${caretIn().text}"`);
+    document.execCommand('delete');
+    await sleep(100);
+
+    // ── the card forms ──
+    await type('the plural of kitāb is ');
+    await slash('cloze', 'cloze');
+    await enter();
+    await type('kutub');
+    await expectLines('/cloze', ['the plural of kitāb is {{c1::kutub}}']);
+    await until(() => qa('.pane-body .card-span').find((c) => c.textContent?.includes('kutub')), 5000).catch(() => fail('the cloze never became a card'));
+    await atEnd('wave functions');
+    await enter();
+    await enter();
+    fresh('for the q&a');
+    await type('the ism of kāna is ');
+    await slash('q&a', 'qa');
+    await enter();
+    await type('marfuu');
+    await expectLines('/q&a', ['the ism of kāna is :: marfuu']);
+    await until(() => qa('.pane-body .card-span').find((c) => c.textContent?.includes('marfuu')), 5000).catch(() => fail('the q&a never became a card'));
+    await atEnd('wave functions');
+    await enter();
+    await enter();
+    fresh('for both ways');
+    await type('qalam ');
+    await slash('both', 'both');
+    await enter();
+    await type('pen');
+    await expectLines('/both ways', ['qalam ::: pen']);
+    await until(() => qa('.pane-body .card-span').find((c) => c.textContent?.includes('qalam')), 5000).catch(() => fail('both ways never became a card'));
+    const t1 = await text();
+    const cards = (await vault.read(NOTE, true)).doc.blocks.filter((b) => b.kind === 'card').map((b) => b.text);
+    expect('three cards', ['{{c1::kutub}}', ':: marfuu', '::: pen'].every((n) => cards.some((c) => c.includes(n))), `cards in the note: ${cards.map((c) => c.slice(0, 40)).join(' | ')}; ${t1.split('\n').length} lines`);
+    await shot('insert-cards');
+
+    // ── paste: a web fragment as Markdown, then plain ──
+    const FRAGMENT = '<meta charset="utf-8"><h2>The canonical ensemble</h2><p>A system in contact with a <em>heat bath</em> at fixed <strong>T</strong>; see <a href="https://en.wikipedia.org/wiki/Canonical_ensemble">the article</a>.</p><ul><li>fixed <code>N</code> and <code>V</code></li><li>the energy fluctuates<ul><li>relatively as one over root N</li></ul></li></ul><ol><li>write Z</li><li>take its log</li></ol>';
+    await atEnd('plan for Monday');
+    await enter();
+    fresh('for the paste');
+    paste({ 'text/html': FRAGMENT, 'text/plain': 'The canonical ensemble' });
+    await expectLines('pasted fragment', [
+      '## The canonical ensemble', '',
+      'A system in contact with a *heat bath* at fixed **T**; see [the article](https://en.wikipedia.org/wiki/Canonical_ensemble).', '',
+      '- fixed `N` and `V`', '- the energy fluctuates', '  - relatively as one over root N', '',
+      '1. write Z', '2. take its log',
+    ]);
+    await shot('insert-paste');
+    await atEnd('take its log');
+    await enter();
+    await enter();
+    fresh('for the plain paste');
+    await key('V', { code: 'KeyV', shiftKey: true, ...MOD });
+    paste({ 'text/html': '<p>see <a href="https://example.org/">this page</a> <b>now</b></p>', 'text/plain': 'see this page now' });
+    await expectLines('⌘⇧V plain', ['see this page now']);
+
+    // ── an image pasted, an image dropped ──
+    await atEnd('see this page now');
+    await enter();
+    fresh('for the pasted image');
+    let pasted = true;
+    try { paste({}, [new File([PNG], 'Screenshot.png', { type: 'image/png' })]); } catch (e) { pasted = false; log(`paste with a file: ${e instanceof Error ? e.message : String(e)}`); }
+    expect('a paste with a file', pasted, 'sent');
+    await expectLines('pasted image', ['![](2026-10-30/img-02.png)']);
+    expect('img-02 beside the note', (await imgBytes(2)) === PNG.length, `${IMG_DIR}/img-02.png ${await imgBytes(2)} bytes`);
+    const dropPath = vault.abs('.ilmi/smoke-drop.png');
+    await vault.fs.writeBytes(dropPath, PNG);
+    const target = await until(() => block('see this page now'));
+    const tr = target.getBoundingClientRect();
+    await dropAt([dropPath], tr.right - 4, tr.top + tr.height / 2);
+    await expectLines('dropped image', ['see this page now', '', '![](2026-10-30/img-03.png)']);
+    expect('img-03 beside the note', (await imgBytes(3)) === PNG.length, `${IMG_DIR}/img-03.png ${await imgBytes(3)} bytes`);
+    const tree = useApp.getState().docs;
+    expect('no document landed for the drop', !Object.keys(tree).some((k) => /smoke-drop/.test(k)), `${Object.keys(tree).length} documents`);
+    await shot('insert-images');
+
+    // ── find: every unvoweled match in the voweled kāna note ──
+    await open(KANA);
+    const WORD = 'كان';
+    const kanaBefore = await text(KANA);
+    const blocks = (await vault.read(KANA, true)).doc.blocks;
+    const want = blocks.reduce((n, b) => n + findIn(b.text.replace(/\$[^$]*\$/g, ''), WORD).length, 0);
+    window.getSelection()?.removeAllRanges();
+    (document.activeElement as HTMLElement | null)?.blur();
+    expect('⌘F taken', await key('f', { code: 'KeyF', ...MOD }, window), 'the page took it');
+    const input = await until(() => q<HTMLInputElement>('.pane-body .find-bar .fb-q'), 2000).catch(() => null);
+    await sleep(200);
+    expect('the find bar', !!input && document.activeElement === input, input ? `focused ${document.activeElement === input}` : 'no bar');
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, WORD);
+    input!.dispatchEvent(new Event('input', { bubbles: true }));
+    await sleep(300);
+    const count = () => q<HTMLElement>('.pane-body .find-bar .fb-n')?.textContent ?? '';
+    expect('count', count() === `1/${want}`, `"${count()}", the file has ${want} unvoweled in the text outside formulas; lit ${qa('.pane-body .find-hit, .pane-body .find-in').length}`);
+    await shot('insert-find');
+    const steps: string[] = [];
+    let bad = 0;
+    for (let i = 1; i <= want; i++) {
+      // a match drawn over several spans (a mark's edge inside it) reads as all of them
+      const parts = qa<HTMLElement>('.pane-body .find-current');
+      const cur = parts[0];
+      const t = parts.map((el) => el.textContent ?? '').join('');
+      const ok = !!cur && (cur.classList.contains('find-in') ? foldText(t).includes(WORD) : foldText(t) === WORD);
+      if (!ok) bad++;
+      steps.push(`${count()}${ok ? '' : ` NOT "${t.slice(0, 20)}"`}`);
+      if (i === 3) await shot('insert-find-step');
+      input!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+      await sleep(120);
+    }
+    expect('⏎ walks every match', bad === 0 && count() === `1/${want}`, `${steps.join(' ')}; then ${count()}`);
+    input!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', shiftKey: true, bubbles: true, cancelable: true }));
+    await sleep(120);
+    expect('⇧⏎', count() === `${want}/${want}`, count());
+    await key('g', { code: 'KeyG', ...MOD }, input!);
+    expect('⌘G', count() === `1/${want}`, count());
+    const voweled = 'كَانَ';
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, voweled);
+    input!.dispatchEvent(new Event('input', { bubbles: true }));
+    await sleep(300);
+    expect('the voweled word finds the same', count() === `1/${want}`, count());
+    input!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    await sleep(200);
+    expect('Esc closes the bar', !q('.pane-body .find-bar'), q('.pane-body .find-bar') ? 'still open' : 'closed');
+    await sleep(700);
+    expect('the file untouched', (await text(KANA)) === kanaBefore, 'no write');
+
+    // ── replace, on the note ──
+    await open(NOTE);
+    window.getSelection()?.removeAllRanges();
+    (document.activeElement as HTMLElement | null)?.blur();
+    await key('f', { code: 'KeyF', altKey: true, ...MOD }, window);
+    const fq = await until(() => q<HTMLInputElement>('.pane-body .find-bar .fb-q'), 2000);
+    const fr = await until(() => q<HTMLInputElement>('.pane-body .find-bar .fb-r'), 2000).catch(() => null);
+    expect('⌥⌘F replace row', !!fr, fr ? 'shown' : 'none');
+    const set = (el: HTMLInputElement, v: string) => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(el, v);
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+    set(fq, 'Wednesday');
+    await sleep(200);
+    set(fr!, 'Thursday');
+    await sleep(200);
+    await shot('insert-replace');
+    fr!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    await expectLines('replace one', ['Friday. QM II PS7 due Monday; Arabic composition draft due Thursday.']);
+    set(fq, 'wave');
+    await sleep(200);
+    set(fr!, 'matter wave');
+    await sleep(200);
+    q<HTMLElement>('.pane-body .find-bar .fb-b:last-of-type')?.click();
+    await expectLines('replace all', ['- matter wave packets', '- matter wave functions']);
+    fq.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    await sleep(200);
+
+    // ── a frozen source: find, no replace ──
+    await open(SOURCE);
+    (document.activeElement as HTMLElement | null)?.blur();
+    await key('f', { code: 'KeyF', altKey: true, ...MOD }, window);
+    await until(() => q('.pane-body .find-bar .fb-q'), 2000);
+    expect('frozen: no replace row', !q('.pane-body .find-bar .fb-r'), `editable ${surface().isContentEditable}`);
+    q<HTMLInputElement>('.pane-body .find-bar .fb-q')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+
+    await open(NOTE);
+    const final = await text();
+    log(`file: ${final.split('\n').length} lines; the typed part: ${region(final)}`);
     log(`done; vault ${vault.root}`);
   } catch (e) {
     log(`failed: ${e instanceof Error ? e.message : String(e)}`);

@@ -15,6 +15,8 @@ import {
   blockAt, blocksEqual, cardDue, classifyRaw, cursorIndex, editorialRanges, flatRanges, fromDoc, frozenKey, imagesKey, indentWidth, inlineRanges, insertCard, isMathEdit,
   linkTarget, literalSpans, makeState, markerKey, markerNumber, markerPos, markerRanges, mathEditKey, mathSplit, passage, pickPos, pressed, proseIndices, schema, setLink,
   setReadPos, splitBlocks, toggleInline, toggleTask, type Band, type InlineRange, type InlineToggle, type LinkTarget, type Passage, type RawShape,
+  askImageKey, closeAtMatch, findKey, insertImages, pickSlash, replaceAll, replaceMatch, slashContext, slashItems, slashKey, htmlPasteImages,
+  type FindMeta, type FindState, type SlashItem, type SlashState,
 } from '../reader/index.js';
 import { advanceWrite, whenToDate } from '../schedule/index.js';
 import { dirOf, nameOf, type Loaded, type Vault } from '../vault/index.js';
@@ -22,6 +24,7 @@ import { CueActions } from '../plugins/CueActions.js';
 import { onPluginAction, publishSelection as publishPluginSelection, runBlockHooks, toPluginSelection, usePlugins, wantsBlocks, type PluginSelection } from '../plugins/index.js';
 import { Composer } from './Composer.js';
 import { imageLoader } from './images.js';
+import { imagePicker, pageDrops, readImagePath, type ImageFile } from './pageImages.js';
 import { dueLabel } from './items.js';
 import { titleOf } from './names.js';
 import { useApp, type DocInfo } from './store.js';
@@ -750,6 +753,35 @@ export function selectionBox(range: Range): DOMRect {
   return new DOMRect(first.left, top, right - first.left, bottom - top);
 }
 
+/** The slash menu as drawn: its state, its rows, and where its `/` is on screen. */
+interface SlashUi {
+  state: SlashState;
+  items: SlashItem[];
+  at: { left: number; top: number; bottom: number };
+}
+
+/** The find bar's replace row: shown or not, and what replaces. */
+interface FindUi {
+  replace: boolean;
+  with: string;
+}
+
+/** The image files on a clipboard. */
+function pastedImages(data: DataTransfer | null): File[] {
+  if (!data) return [];
+  const out: File[] = [];
+  for (const item of Array.from(data.items ?? [])) {
+    if (item.kind !== 'file' || !item.type.startsWith('image/')) continue;
+    const f = item.getAsFile();
+    if (f) out.push(f);
+  }
+  if (!out.length) for (const f of Array.from(data.files ?? [])) if (f.type.startsWith('image/')) out.push(f);
+  return out;
+}
+
+/** How tall the slash menu may grow; nearer the bottom than this it opens above its `/`. */
+const SLASH_ROOM = 320;
+
 /** Room the toolbar wants above a selection; nearer the top it sits below. */
 const CUE_ROOM = 56;
 
@@ -834,6 +866,13 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
   const [sel, setSel] = useState<Sel | null>(null);
   const [composer, setComposer] = useState<Compose | null>(null);
   const [link, setLinkField] = useState<LinkField | null>(null);
+  const [slash, setSlash] = useState<SlashUi | null>(null);
+  const [find, setFind] = useState<FindState | null>(null);
+  const [findUi, setFindUi] = useState<FindUi>({ replace: false, with: '' });
+  const findRef = useRef<HTMLInputElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const landRef = useRef<(files: ImageFile[], at?: { x: number; y: number }) => void>(() => {});
+  const askImageRef = useRef<() => void>(() => {});
   const openLinkRef = useRef<(target: LinkTarget) => void>(() => {});
   const selRef = useRef<Sel | null>(null);
   selRef.current = sel;
@@ -912,6 +951,29 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
     setRule({ top: fr.top - wr.top, height: Math.max(0, br.bottom - fr.top) });
   }, []);
 
+  // ── the slash menu and the find bar follow their plugins' state ──
+  const followSlash = (view: EditorView, state: EditorState) => {
+    const s = slashKey.getState(state) ?? null;
+    if (!s) { setSlash((cur) => (cur ? null : cur)); return; }
+    const items = slashItems(s.query, slashContext(state));
+    let at = { left: 0, top: 0, bottom: 0 };
+    try { const c = view.coordsAtPos(s.from); at = { left: c.left, top: c.top, bottom: c.bottom }; } catch { /* not drawn yet */ }
+    setSlash({ state: s, items, at });
+  };
+  const findWas = useRef<FindState | null>(null);
+  const followFind = (view: EditorView, state: EditorState) => {
+    const f = findKey.getState(state);
+    const next = f?.open ? f : null;
+    const cur = findWas.current;
+    if (cur === next) return;
+    findWas.current = next;
+    setFind(next);
+    if (next && next.index >= 0 && (cur?.index !== next.index || cur?.query !== next.query)) {
+      // the current match brought into view once it is drawn (a timer: WebKit holds frames back in a covered window)
+      setTimeout(() => view.dom.querySelector('.find-current')?.scrollIntoView({ block: 'center' }), 0);
+    }
+  };
+
   // ── the editor over the file, following the vault ──
   useEffect(() => {
     const vault = currentVault();
@@ -927,8 +989,15 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
       const m = meta(loaded.doc);
       const state = makeState(loaded.doc.blocks, { frozen: () => frozenRef.current, pos: m.type === 'note' ? null : m.read?.pos ?? null, images: images.load });
       const view = viewRef.current;
-      if (view) view.updateState(withSelectionOf(view.state, state));
-      else {
+      if (view) {
+        // an open find bar stays open over the new text
+        const was = findKey.getState(view.state);
+        let next = withSelectionOf(view.state, state);
+        if (was?.open) next = next.apply(next.tr.setMeta(findKey, { query: was.query, from: next.selection.from } satisfies FindMeta));
+        view.updateState(next);
+        followSlash(view, next);
+        followFind(view, next);
+      } else {
         viewRef.current = new EditorView(mount, {
           state,
           nodeViews,
@@ -944,10 +1013,15 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
             if (tr.docChanged || tr.getMeta(markerKey) !== undefined) measure();
             if (tr.docChanged) hookBlocks();
             if (tr.selectionSet || tr.docChanged) publishSelection(next);
+            followSlash(this, next);
+            followFind(this, next);
+            if (tr.getMeta(askImageKey)) askImageRef.current();
           },
           handleClickOn,
           handleClick,
           handleKeyDown(view, event) {
+            // the slash menu's own Esc leaves the `/`; the plugin has it
+            if (event.key === 'Escape' && slashKey.getState(view.state)) return false;
             if (event.key === 'Escape') {
               view.dom.blur();
               return true;
@@ -966,9 +1040,31 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
             }
             return false;
           },
+          handlePaste(view, event) {
+            // images on the clipboard (and no text beside them but their own address) land beside the note
+            const files = pastedImages(event.clipboardData);
+            if (!files.length || !view.editable || !htmlPasteImages(event.clipboardData?.getData('text/html') ?? '', event.clipboardData?.getData('text/plain') ?? '')) return false;
+            event.preventDefault();
+            void Promise.all(files.map(async (f) => ({ bytes: new Uint8Array(await f.arrayBuffer()), type: f.type, name: f.name }))).then((got) => landRef.current(got));
+            return true;
+          },
+          handleDrop(view, event, _slice, moved) {
+            if (moved || !view.editable) return false;
+            const files = Array.from(event.dataTransfer?.files ?? []).filter((f) => f.type.startsWith('image/'));
+            if (!files.length) return false;
+            event.preventDefault();
+            const at = { x: event.clientX, y: event.clientY };
+            void Promise.all(files.map(async (f) => ({ bytes: new Uint8Array(await f.arrayBuffer()), type: f.type, name: f.name }))).then((got) => landRef.current(got, at));
+            return true;
+          },
           handleDOMEvents: {
             blur: () => { writer.flush(); return false; },
           },
+        });
+        // an image dropped from the Finder over this page comes through the window's drop router
+        const dom = viewRef.current.dom;
+        pageDrops.set(dom, (paths, x, y) => {
+          void Promise.all(paths.map(readImagePath)).then((got) => landRef.current(got, { x, y }), (e: unknown) => console.error(e));
         });
       }
       setBlocks(loaded.doc.blocks);
@@ -1003,6 +1099,7 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
       if (ev.kind === 'doc' && ev.path === id) onDoc(ev.loaded);
       else if (ev.kind === 'gone' && ev.path === id) {
         writer.cancel();
+        if (viewRef.current) pageDrops.delete(viewRef.current.dom);
         viewRef.current?.destroy();
         viewRef.current = null;
         setStatus('gone');
@@ -1012,6 +1109,7 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
       live = false;
       off();
       writer.flush();
+      if (viewRef.current) pageDrops.delete(viewRef.current.dom);
       viewRef.current?.destroy();
       viewRef.current = null;
       writerRef.current = null;
@@ -1152,6 +1250,85 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
     view.focus();
   };
 
+  // ── images put in: pasted, dropped, or picked from the slash menu ──
+  landRef.current = (files, at) => {
+    const vault = currentVault();
+    const view = viewRef.current;
+    if (!vault || !view || !view.editable || !files.length) return;
+    void (async () => {
+      const srcs: string[] = [];
+      for (const f of files) {
+        try { srcs.push(await vault.addImage(id, f.bytes, f.type, f.name)); } catch (e) { console.error(e); }
+      }
+      const v = viewRef.current;
+      if (!srcs.length || !v) return;
+      let state = v.state;
+      if (at) {
+        const hit = v.posAtCoords({ left: at.x, top: at.y });
+        if (hit) state = state.apply(state.tr.setSelection(Selection.near(state.doc.resolve(hit.pos))));
+      }
+      const tr = insertImages(state, srcs);
+      // the drop's caret and the images in one step, onto the state the view holds
+      const out = v.state.tr;
+      if (at) out.setSelection(Selection.fromJSON(out.doc, state.selection.toJSON()));
+      for (const step of tr.steps) out.step(step);
+      out.setSelection(Selection.fromJSON(out.doc, tr.selection.toJSON()));
+      v.dispatch(out.scrollIntoView());
+      v.focus();
+    })();
+  };
+  askImageRef.current = () => {
+    void imagePicker.pick().then(
+      (paths) => Promise.all(paths.map(readImagePath)).then((got) => landRef.current(got)),
+      (e: unknown) => console.error(e),
+    );
+  };
+  const pickRow = (item: SlashItem) => {
+    const view = viewRef.current;
+    if (!view) return;
+    pickSlash(item, { openMath: (tr, pos) => tr.setMeta(mathEditKey, pos) })(view.state, view.dispatch);
+    view.focus();
+  };
+
+  const findMeta = (meta: FindMeta) => {
+    const view = viewRef.current;
+    if (view) view.dispatch(view.state.tr.setMeta(findKey, meta));
+  };
+  const openFind = (replace: boolean) => {
+    const view = viewRef.current;
+    if (!view) return;
+    const cur = findKey.getState(view.state);
+    // a selection within a line seeds the field, as a browser's find does
+    const { from, to, $from } = view.state.selection;
+    const seed = from < to && $from.sameParent(view.state.doc.resolve(to)) ? view.state.doc.textBetween(from, to) : null;
+    if (!cur?.open || seed) findMeta({ query: seed ?? cur?.query ?? '', from });
+    setFindUi((u) => ({ ...u, replace: replace && view.editable ? true : u.replace && view.editable }));
+    setTimeout(() => { findRef.current?.focus(); findRef.current?.select(); }, 0);
+  };
+  const closeFind = () => {
+    const view = viewRef.current;
+    if (!view) return;
+    if (view.editable) {
+      view.dispatch(closeAtMatch(view.state));
+      view.focus();
+    } else findMeta('close');
+    setFindUi((u) => ({ ...u, replace: false }));
+  };
+  const replaceOne = () => {
+    const view = viewRef.current;
+    if (!view?.editable) return;
+    const tr = replaceMatch(view.state, findUi.with);
+    if (tr) view.dispatch(tr);
+  };
+  const replaceEvery = () => {
+    const view = viewRef.current;
+    if (!view?.editable) return;
+    const r = replaceAll(view.state, findUi.with);
+    if (r) view.dispatch(r.tr);
+  };
+  const findRefs = useRef({ openFind, closeFind });
+  findRefs.current = { openFind, closeFind };
+
   const startReading = () => { if (canExtractRef.current && !readingRef.current) enrolReading(id).catch(console.error); };
 
   actRef.current = (action) => {
@@ -1171,6 +1348,22 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
   // a focused surface has them through `handleKeyDown`
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // ⌘F find, ⌥⌘F replace, ⌘G / ⇧⌘G the next and the one before: in the active page, from the page or its bar or nothing focused
+      const t = e.target as Node | null;
+      const mine = !inField(e.target) || (!!t && !!rootRef.current?.contains(t));
+      if (activeRef.current && mine && viewRef.current) {
+        if (pressed(e, { code: 'KeyF', mod: true }) || pressed(e, { code: 'KeyF', mod: true, alt: true })) {
+          e.preventDefault();
+          findRefs.current.openFind(e.altKey);
+          return;
+        }
+        const g = pressed(e, { code: 'KeyG', mod: true }) ? 1 : pressed(e, { code: 'KeyG', mod: true, shift: true }) ? -1 : 0;
+        if (g && findKey.getState(viewRef.current.state)?.open) {
+          e.preventDefault();
+          viewRef.current.dispatch(viewRef.current.state.tr.setMeta(findKey, { step: g } satisfies FindMeta));
+          return;
+        }
+      }
       if (inField(e.target)) return;
       const action = readerAction(e, false);
       if (action && actRef.current(action)) e.preventDefault();
@@ -1287,8 +1480,45 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
   const right = info?.type === 'draft' ? [plural(words(blocks), 'word'), counts].filter(Boolean).join(', ') : counts;
 
   return (
-    <div className="reader-wrap">
+    <div className="reader-wrap" ref={rootRef}>
       <div className={`reader doc-view${reading ? ' reading' : ''}`}>
+        {find && (
+          <div className="find-bar">
+            <input
+              ref={findRef}
+              className="fb-q"
+              aria-label="find"
+              placeholder="find"
+              spellCheck={false}
+              value={find.query}
+              onChange={(e) => findMeta({ query: e.target.value, from: viewRef.current?.state.selection.from ?? 0 })}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') { e.preventDefault(); findMeta({ step: e.shiftKey ? -1 : 1 }); }
+                else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeFind(); }
+              }}
+            />
+            <span className="fb-n">{find.matches.length ? `${find.index + 1}/${find.matches.length}` : find.query.trim() ? 'none' : ''}</span>
+            {findUi.replace && !frozen && (
+              <>
+                <input
+                  className="fb-r"
+                  aria-label="replace with"
+                  placeholder="replace with"
+                  spellCheck={false}
+                  value={findUi.with}
+                  onChange={(e) => setFindUi({ ...findUi, with: e.target.value })}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') { e.preventDefault(); if (e.metaKey || e.ctrlKey) replaceEvery(); else replaceOne(); }
+                    else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeFind(); }
+                  }}
+                />
+                <button type="button" className="fb-b" onClick={replaceOne} title="⏎">replace</button>
+                <button type="button" className="fb-b" onClick={replaceEvery} title="⌘⏎">all</button>
+              </>
+            )}
+            <span className="fb-keys"><span className="kbd">⏎</span> <span className="kbd">⇧⏎</span> <span className="kbd">esc</span></span>
+          </div>
+        )}
         <div className="meta">
           <Crumbs path={id} />
           {onPages && <button type="button" className="frozen-tag" onClick={onPages}>pages</button>}
@@ -1363,6 +1593,30 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
                 onBlur={() => setLinkField(null)}
               />
               <span className="kbd">⏎</span>
+            </div>
+          )}
+          {slash && slash.items.length > 0 && (
+            <div
+              className="slash-menu"
+              role="listbox"
+              data-place={slash.at.bottom + SLASH_ROOM > window.innerHeight && slash.at.top > SLASH_ROOM ? 'above' : 'below'}
+              style={slash.at.bottom + SLASH_ROOM > window.innerHeight && slash.at.top > SLASH_ROOM ? { top: slash.at.top - 4, left: slash.at.left } : { top: slash.at.bottom + 4, left: slash.at.left }}
+            >
+              {slash.items.map((it, i) => (
+                <div
+                  key={it.id}
+                  role="option"
+                  aria-selected={i === slash.state.index}
+                  className={`sm-row${i === slash.state.index ? ' on' : ''}`}
+                  data-id={it.id}
+                  ref={i === slash.state.index ? (el) => el?.scrollIntoView({ block: 'nearest' }) : undefined}
+                  onMouseDown={(e) => { e.preventDefault(); pickRow(it); }}
+                >
+                  <span className="sm-label">{it.label}</span>
+                  <span className="sm-md">{it.md}</span>
+                  <span className="sm-key">{it.key ?? ''}</span>
+                </div>
+              ))}
             </div>
           )}
           {composer && (

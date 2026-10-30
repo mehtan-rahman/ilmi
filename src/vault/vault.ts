@@ -584,6 +584,29 @@ export class Vault {
   }
 
   /**
+   * An image pasted or dropped into a page, written into the document's own
+   * folder as the next `img-NN.<ext>` there (§1; the extension from the
+   * content type, else from `name`). Resolves to the path as the document's
+   * Markdown refers to it, relative to the document and percent-encoded by
+   * segment, the way `attachImages` writes it.
+   */
+  async addImage(path: string, bytes: Uint8Array, type: string, name = ''): Promise<string> {
+    if (!isDoc(path) || !(await this.fs.stat(this.abs(path)))) throw new Error(`${path}: no such document`);
+    const ext = imageExt(type) ?? (/\.(png|jpe?g|gif|webp|avif|svg|bmp|tiff?)$/i.exec(name)?.[1]?.toLowerCase() ?? null);
+    if (!ext || !bytes.length) throw new Error('not an image');
+    const dir = childDirOf(path);
+    const file = await this.serial(async () => {
+      await this.ensureDir(dir);
+      const used = (await this.fs.readDir(this.abs(dir))).map((e) => /^img-(\d+)\./.exec(e.name)?.[1]).filter((n): n is string => !!n).map(Number);
+      const f = `img-${String(Math.max(0, ...used) + 1).padStart(2, '0')}.${ext === 'jpeg' ? 'jpg' : ext}`;
+      await this.atomicWriteBytes(this.abs(joinRel(dir, f)), bytes);
+      return f;
+    });
+    await this.rewalk();
+    return `${baseOf(dir).split('/').map(encodeURIComponent).join('/')}/${file}`;
+  }
+
+  /**
    * A new source with pages in `dir`: the PDF copied to `name.pdf`, and
    * `name.md` beside it, `type: source`, frozen, `imported` today, `pdf: name.pdf`, with the
    * extracted text as the body under a `## text` heading (nothing when the

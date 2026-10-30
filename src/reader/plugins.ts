@@ -27,6 +27,10 @@ import { cursorIndex, proseIndices } from './marker.js';
 import { blockRules, displayMathRule, enterRules, fenceRule, pasteLink, pressed, setHeading, toggleInline, toggleList, toggleQuote, undoRule, type KeySpec } from './commands.js';
 import { continueBlock, indentBlock, joinBlock, joinIntoList, moveItem, outdentBlock, toggleTasks } from './lists.js';
 import { schema } from './schema.js';
+import { findPlugin } from './find.js';
+import { clipboardText, pasteMarkdown } from './insert.js';
+import { slashPlugin } from './slash.js';
+import { htmlMarkdown } from '../import/paste.js';
 
 /** A code block's text is code: no chips, no markers, no marks. */
 const isCode = (node: PMNode): boolean => node.type.spec.code === true;
@@ -497,10 +501,32 @@ export const FORMAT_KEYS: { key: KeySpec; run: Command }[] = [
   { key: { code: 'ArrowDown', alt: true, shift: true }, run: moveItem(1) },
 ];
 
+/** When ⌘⇧V was last pressed on a page: the paste it brings is the clipboard's plain text, its HTML set aside. */
+const plainAt = new WeakMap<object, number>();
+const PLAIN_KEY: KeySpec = { code: 'KeyV', mod: true, shift: true };
+
+/**
+ * A paste, as Markdown: an address over a selection links it; HTML is
+ * reduced to the Markdown it stands for (unless ⌘⇧V asked for the plain
+ * text, or the HTML is a copy from a page here, whose plain text is its
+ * Markdown already); the result goes in as the blocks the file would read.
+ */
+export function pasteInto(state: EditorState, data: { html: string; text: string; plain: boolean }): Transaction | null {
+  if (data.text) {
+    const tr = pasteLink(state, data.text);
+    if (tr) return tr.scrollIntoView();
+  }
+  const html = data.plain || data.html.includes('data-pm-slice') ? '' : data.html;
+  const md = (html && htmlMarkdown(html)) || data.text;
+  return md ? pasteMarkdown(state, md) : null;
+}
+
 const formatKeys = new Plugin({
   props: {
+    clipboardTextSerializer: (slice) => clipboardText(slice),
     handleKeyDown(view, event) {
       if (!view.editable) return false;
+      if (pressed(event, PLAIN_KEY)) { plainAt.set(view, Date.now()); return false; }
       const hit = FORMAT_KEYS.find((k) => pressed(event, k.key));
       if (!hit) return false;
       // ⌥⇧↑/↓ outside a list is the system's: extend the selection by a paragraph
@@ -508,11 +534,13 @@ const formatKeys = new Plugin({
       return took || !hit.key.code.startsWith('Arrow');
     },
     handlePaste(view, event) {
-      const text = event.clipboardData?.getData('text/plain');
-      if (!text || !view.editable) return false;
-      const tr = pasteLink(view.state, text);
+      const data = event.clipboardData;
+      if (!data || !view.editable) return false;
+      const plain = Date.now() - (plainAt.get(view) ?? 0) < 1500;
+      plainAt.delete(view);
+      const tr = pasteInto(view.state, { html: data.getData('text/html'), text: data.getData('text/plain'), plain });
       if (!tr) return false;
-      view.dispatch(tr.scrollIntoView());
+      view.dispatch(tr);
       return true;
     },
   },
@@ -532,7 +560,7 @@ export function makeState(blocks: Block[], opts: StateOptions): EditorState {
   const state = EditorState.create({
     doc: toDoc(blocks),
     // images before marks: the marks read the images' state as it is after the same transaction
-    plugins: [frozenPlugin(opts.frozen), rules, enterRules, formatKeys, keys, keymap(baseKeymap), history(), gapCursor(), mathReform, mathEdit, images(opts.images), marks, marker],
+    plugins: [frozenPlugin(opts.frozen), slashPlugin({ openMath: (tr, pos) => tr.setMeta(mathEditKey, pos) }), findPlugin, rules, enterRules, formatKeys, keys, keymap(baseKeymap), history(), gapCursor(), mathReform, mathEdit, images(opts.images), marks, marker],
   });
   return opts.pos === null ? state : state.apply(state.tr.setMeta(markerKey, opts.pos));
 }

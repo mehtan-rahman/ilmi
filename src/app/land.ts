@@ -26,6 +26,7 @@ import { NEW_NAMES, dirOf, isDoc, within, type ImportPdfSpec, type ImportSpec, t
 import { importClipNode } from './clipping.js';
 import { APKG_EXT, EPUB_EXT, PDF_EXT, fetchReadable, readAnkiPackage, readDropped, readDroppedPdf, readEpub, type Fetched, type FetchedPdf } from './fetch.js';
 import { folderPaths } from './names.js';
+import { pageDropAt } from './pageImages.js';
 import { activeTab } from './panes.js';
 import { useApp } from './store.js';
 import { currentVault, importAnkiNode, importBookNode, importNode, importPdfNode, note, openIntake, openNode, removeNode } from './vault.js';
@@ -337,6 +338,14 @@ export function routeDrop(ev: DragDropEvent): Promise<Landed[]> | void {
   const here = !!el && !!intake?.wrap()?.contains(el);
   intake?.on(ev, here);
   if (ev.type === 'leave' || here) { over(null); return; }
+  // images over an editable page go into the page, beside the note, not into the folder as documents
+  const page = ev.type === 'drop' ? pageDropAt(el, ev.paths) : null;
+  if (page && ev.type === 'drop') {
+    over(null);
+    const k = window.devicePixelRatio || 1;
+    page(ev.paths, ev.position.x / k, ev.position.y / k);
+    return;
+  }
   const hit = hitAt(el);
   if (ev.type !== 'drop') { over(hit?.path ?? null); return; }
   over(null);

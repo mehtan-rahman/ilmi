@@ -37,9 +37,9 @@ describe('the reader\'s keys', () => {
 
   it('the strip names the keys the page has: letters when frozen, ⌘⇧ when editable', () => {
     const keys = (c: Parameters<typeof hintsFor>[0]) => hintsFor(c).map(([k, w]) => `${k} ${w}`);
-    expect(keys({ kind: 'note', el: null, scope: null, canEnrol: true })).toEqual(['⌘⇧E extract', '⌘⇧M card', 'r revisit', '⌘\\ split pane']);
-    expect(keys({ kind: 'source', el: null, scope: null, canEnrol: true, frozen: true })).toEqual(['e extract', 'm card', 'r start reading', '⌘\\ split pane']);
-    expect(keys({ kind: 'draft', el: null, scope: null, canEnrol: false })).toEqual(['⌘⇧M card', 'esc leave the text']);
+    expect(keys({ kind: 'note', el: null, scope: null, canEnrol: true })).toEqual(['⌘⇧E extract', '⌘⇧M card', 'r revisit', '⌘F find', '⌘\\ split pane']);
+    expect(keys({ kind: 'source', el: null, scope: null, canEnrol: true, frozen: true })).toEqual(['e extract', 'm card', 'r start reading', '⌘F find', '⌘\\ split pane']);
+    expect(keys({ kind: 'draft', el: null, scope: null, canEnrol: false })).toEqual(['⌘⇧M card', '⌘F find', 'esc leave the text']);
     expect(keys({ kind: 'session', el: 'read', scope: null, canEnrol: false, note: true })).toEqual(['⏎ went over it', 'p postpone', 'd done', '⌘⇧E extract', '⌘⇧M card', '[ ] prev / next']);
     expect(keys({ kind: 'session', el: 'read', scope: null, canEnrol: false, frozen: true })[3]).toBe('e extract');
   });

@@ -121,7 +121,14 @@ in a note        ⌘B bold, ⌘I italic, ⌘E code, ⌘⇧X strike, ⌘K link (o
                  selection; with none it is the palette), ⌘1–⌘6 heading, ⌘0
                  paragraph, ⌘⇧8 bullets, ⌘⇧7 numbers, ⌘⇧9 tasks, ⌘⇧. quote; in
                  a list Tab ⇧Tab ⌥⇧↑ ⌥⇧↓ move an item with its children, ⌘⏎
-                 ticks a task; with a selection ⌘⇧E extract, ⌘⇧M make a card
+                 ticks a task; with a selection ⌘⇧E extract, ⌘⇧M make a card;
+                 / at a block's start or after a space: insert (a heading,
+                 a list, a quote, code, a formula, a rule, a table, an image,
+                 a cloze, q&a, both ways), ↑↓ ⏎, esc keeps the /; ⌘⇧V paste
+                 as plain text; an image pasted or dropped lands beside the
+                 note as img-NN
+in any page      ⌘F find (case, accents, and Arabic vowel marks folded), ⏎ ⇧⏎
+                 or ⌘G ⌘⇧G the next and the one before; ⌥⌘F replace
 in a PDF         the same on a page; / search, g go to a page, [ ] pages;
                  text in the meta row reads the Markdown instead
 in a deck        j k move, ⌫ delete the selected card, m make a card;

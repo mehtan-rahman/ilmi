@@ -54,10 +54,10 @@ export function hintsFor(c: HintContext): Hint[] {
     case 'extract': {
       const enrol: Hint[] = c.canEnrol ? [['r', c.kind === 'note' ? 'revisit' : 'start reading']] : [];
       if (c.pages) return [['e', 'extract'], ['m', 'card'], ['⏎', 'jump'], ...enrol, ['/', 'search'], ['g', 'page'], ['[ ]', 'pages']];
-      return [...selKeys(c.frozen), ...enrol, ['⌘\\', 'split pane']];
+      return [...selKeys(c.frozen), ...enrol, ['⌘F', 'find'], ['⌘\\', 'split pane']];
     }
     case 'draft':
-      return [...selKeys(c.frozen, false), ['esc', 'leave the text']];
+      return [...selKeys(c.frozen, false), ['⌘F', 'find'], ['esc', 'leave the text']];
     case 'deck':
       return [['j k', 'move'], ['⏎', 'edit'], ['/', 'search'], ['⌫', 'delete'], ['m', 'card'], PALETTE];
     case 'intake':

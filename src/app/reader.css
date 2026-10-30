@@ -88,7 +88,7 @@
   letter-spacing: 0.02em;
 }
 .draft-doc .card-span .cs-state {
-  margin-left: auto;
+  margin-inline-start: auto;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--fg-4);
@@ -228,14 +228,15 @@
 .draft-doc .dd-li {
   display: flex;
   align-items: baseline;
-  margin: 0 0 0.25em calc(var(--indent, 0) * 0.6em);
+  margin: 0 0 0.25em;
+  margin-inline-start: calc(var(--indent, 0) * 0.6em);
   text-wrap: pretty;
 }
 .draft-doc .li-mark {
   flex: none;
   min-width: 1.2em;
-  padding-right: 0.5em;
-  text-align: right;
+  padding-inline-end: 0.5em;
+  text-align: end;
   color: var(--fg-3);
   user-select: none;
 }
@@ -245,7 +246,7 @@
   align-self: center;
   width: 0.8em;
   height: 0.8em;
-  margin-right: 0.5em;
+  margin-inline-end: 0.5em;
   border: 1px solid var(--fg-4);
   border-radius: 2px;
   cursor: pointer;
@@ -261,8 +262,9 @@
 .draft-doc .li-text { flex: 1; min-width: 0; }
 .draft-doc .dd-quote {
   margin: 0 0 1em;
-  padding: 0 0 0 14px;
-  border-left: 2px solid var(--line-1);
+  padding: 0;
+  padding-inline-start: 14px;
+  border-inline-start: 2px solid var(--line-1);
   color: var(--fg-2);
 }
 .draft-doc .dd-ql { margin: 0; }
@@ -281,14 +283,15 @@
 .draft-doc .raw.rendered.selected .raw-view { display: none; }
 .draft-doc .raw.rendered.selected .raw-src { display: block; }
 .draft-doc .raw.rendered.selected { background: transparent; }
-.draft-doc .raw-view ul, .draft-doc .raw-view ol { margin: 0; padding-left: 1.6em; }
+.draft-doc .raw-view ul, .draft-doc .raw-view ol { margin: 0; padding-inline-start: 1.6em; }
 .draft-doc .raw-view li { margin: 0 0 0.25em; text-wrap: pretty; }
 .draft-doc .raw-view li > p { margin: 0 0 0.5em; }
 .draft-doc .raw-view li ul, .draft-doc .raw-view li ol { margin-top: 0.25em; }
 .draft-doc .raw-view blockquote {
   margin: 0;
-  padding: 0 0 0 14px;
-  border-left: 2px solid var(--line-1);
+  padding: 0;
+  padding-inline-start: 14px;
+  border-inline-start: 2px solid var(--line-1);
   color: var(--fg-2);
 }
 .draft-doc .raw-view blockquote p { margin: 0 0 0.6em; }
@@ -320,7 +323,7 @@
   font-family: var(--sans);
   font-size: 11.5px;
   font-weight: 600;
-  text-align: left;
+  text-align: start;
   color: var(--fg-3);
   border-bottom-color: var(--line-1);
 }
@@ -715,3 +718,26 @@
 .find-in { outline: 1px dashed var(--line-1); outline-offset: 2px; }
 .find-in.find-current { outline: 1px solid var(--accent); }
 mark.find-hit { color: inherit; padding: 0; }
+
+/* ── Arabic beside English: each block reads its own way (`dir`, from its
+      first strong character; direction.ts), its start side where its
+      markers, bars and chips go. A right-to-left block is set taller, so
+      stacked ḥarakāt above and below a line never touch the next; Arabic
+      has no letter-spacing (it breaks the joins) and no slant (Naskh has no
+      italic, and a synthesised one is wrong): emphasis there is weight. ── */
+.draft-doc [dir="rtl"] { line-height: 1.85; letter-spacing: 0; font-synthesis: weight; }
+.draft-doc .dd-h[dir="rtl"] { line-height: 1.6; }
+.draft-doc .card-span[dir="rtl"] .cs-body { line-height: 1.85; }
+.draft-doc [dir="rtl"] .md-em { font-style: normal; font-weight: 560; }
+.card-span .cs-a[dir="rtl"] { font-style: normal; }
+/* math, inline code, and card markup read left to right on their own, so a
+   formula inside an Arabic sentence keeps its order and does not drag the
+   punctuation around it */
+.math, .math .katex, .md-code, .bidi-iso, .draft-doc pre.raw, .draft-doc .dd-code { unicode-bidi: isolate; direction: ltr; }
+.bidi-iso { color: var(--fg-4); }
+/* a highlight behind voweled text reaches the marks */
+.draft-doc [dir="rtl"] .ed-mark.note,
+.draft-doc [dir="rtl"] .md-code { padding-block: 0.12em; }
+/* a case ending's blank: its letter, the mark only once revealed; no inline
+   padding, so the letter keeps its joins to its neighbours */
+.cz.on-letter, .cloze.on-letter { padding-inline: 0 !important; }

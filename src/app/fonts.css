@@ -1,0 +1,46 @@
+/* The Arabic faces, bundled from @fontsource and cut to their Arabic files:
+   Noto Naskh Arabic (variable, 400–700) behind the reading serif, IBM Plex
+   Sans Arabic behind Plex Sans in the chrome. Each face covers only the
+   Arabic ranges, so Latin text never reaches it and the browser fetches a
+   file only when a page holds Arabic. Naskh is set a little larger than
+   the serif it falls back from (`size-adjust`), so a voweled word sits at
+   the Latin text's size; Plex Sans Arabic is drawn to Plex's metrics
+   already. Declared here, not through the packages' CSS, so the Latin,
+   math and symbol files they also carry stay out of the bundle. */
+
+@font-face {
+  font-family: "Ilmi Naskh";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400 700;
+  size-adjust: 112%;
+  src: url("@fontsource-variable/noto-naskh-arabic/files/noto-naskh-arabic-arabic-wght-normal.woff2") format("woff2");
+  unicode-range: U+0600-06FF, U+0750-077F, U+0870-088E, U+0890-0891, U+0897-08E1, U+08E3-08FF, U+200C-200E, U+2010-2011, U+204F, U+2E41, U+FB50-FDFF, U+FE70-FE74, U+FE76-FEFC;
+}
+
+@font-face {
+  font-family: "Ilmi Plex Arabic";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url("@fontsource/ibm-plex-sans-arabic/files/ibm-plex-sans-arabic-arabic-400-normal.woff2") format("woff2");
+  unicode-range: U+0600-06FF, U+0750-077F, U+0870-088E, U+0890-0891, U+0897-08E1, U+08E3-08FF, U+200C-200E, U+FB50-FDFF, U+FE70-FE74, U+FE76-FEFC;
+}
+
+@font-face {
+  font-family: "Ilmi Plex Arabic";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 500;
+  src: url("@fontsource/ibm-plex-sans-arabic/files/ibm-plex-sans-arabic-arabic-500-normal.woff2") format("woff2");
+  unicode-range: U+0600-06FF, U+0750-077F, U+0870-088E, U+0890-0891, U+0897-08E1, U+08E3-08FF, U+200C-200E, U+FB50-FDFF, U+FE70-FE74, U+FE76-FEFC;
+}
+
+@font-face {
+  font-family: "Ilmi Plex Arabic";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 600;
+  src: url("@fontsource/ibm-plex-sans-arabic/files/ibm-plex-sans-arabic-arabic-600-normal.woff2") format("woff2");
+  unicode-range: U+0600-06FF, U+0750-077F, U+0870-088E, U+0890-0891, U+0897-08E1, U+08E3-08FF, U+200C-200E, U+FB50-FDFF, U+FE70-FE74, U+FE76-FEFC;
+}

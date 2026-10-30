@@ -154,6 +154,7 @@ function FolderLens({ id, active, onOpen }: LensProps) {
                   {editingThis ? (
                     <input
                       className="rename fv-rename"
+                      dir="auto"
                       ref={editRef}
                       value={editing.value}
                       spellCheck={false}
@@ -167,7 +168,7 @@ function FolderLens({ id, active, onOpen }: LensProps) {
                       }}
                     />
                   ) : (
-                    <span className="fv-name">{title(n.path)}</span>
+                    <span className="fv-name" dir="auto">{title(n.path)}</span>
                   )}
                   <span className="fv-meta">{contentsOf(n, docs[n.path])}</span>
                 </li>

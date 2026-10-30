@@ -323,6 +323,7 @@ export function Notebook({ nb, page, active, onOpen, children }: Props) {
         {editingThis ? (
           <input
             className="rename"
+            dir="auto"
             ref={editRef}
             value={editing.value}
             spellCheck={false}
@@ -336,7 +337,7 @@ export function Notebook({ nb, page, active, onOpen, children }: Props) {
             }}
           />
         ) : (
-          <span className="name">{title(r.path)}</span>
+          <span className="name" dir="auto">{title(r.path)}</span>
         )}
         {asked > 0 && <span className="asking">delete with {asked} inside? ⌘⌫</span>}
         {!r.overview && !editingThis && !asked && (
@@ -363,7 +364,7 @@ export function Notebook({ nb, page, active, onOpen, children }: Props) {
         title={h.text}
         onClick={() => scrollTo(h.index)}
       >
-        <span className="name">{h.text}</span>
+        <span className="name" dir="auto">{h.text}</span>
       </div>
     ));
   };

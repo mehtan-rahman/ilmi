@@ -148,6 +148,10 @@
 // reviewed with its heading path and its sr line under the item, go to
 // source landing on it, and study from the reader's top row (see the
 // function).
+// `ILMI_SMOKE=arabic` (`smokeArabic`) over a copy of `samples/double-major`:
+// the grammar note, the prose passage, formulas in Arabic sentences, the
+// vocab deck, and a session on Arabic cards, light and dark: directions,
+// isolation, no clipped mark, the Arabic faces loaded; every step asserted.
 // `ILMI_SMOKE=welcome` runs before any vault opens: it seeds the recents
 // with the scratch vault (`ILMI_VAULT`) and a path that does not exist,
 // turns `reopen the last vault on start` off, reads the welcome's rows and
@@ -5059,6 +5063,330 @@ export async function smokeListCards(vault: Vault): Promise<void> {
     ourCard()?.scrollIntoView({ block: 'center' });
     await shot('listcards-dark');
     useApp.getState().setTheme('light');
+    log(`done; vault ${vault.root}`);
+  } catch (e) {
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+// `ILMI_SMOKE=arabic` (`smokeArabic`) over a copy of `samples/double-major`:
+// 36's "done when". The grammar note, the classical prose reader's passage,
+// a note with formulas inside Arabic sentences, the vocab deck, and a
+// session on an Arabic card and a case-ending cloze, each in light and
+// dark: every block's computed direction against the rule, an RTL block's
+// text against its right edge, a formula an LTR isolate that keeps its
+// order and its punctuation, the marks never cut by a clip (the clip box's
+// scrollHeight against its clientHeight, and each voweled run's ink,
+// measured on a canvas in the font it is drawn in, inside the box), no
+// letter-spacing on Arabic, the Arabic faces loaded (`document.fonts`), and
+// the fields that take Arabic `dir="auto"`. Every step asserts (`ok: …`);
+// the first mismatch is `failed: …`.
+export async function smokeArabic(vault: Vault): Promise<void> {
+  const log = (s: string) => info(`smoke arabic: ${s}`);
+  const shot = async (name: string, ms = 2500) => { await sleep(600); log(`shot: ${name}`); await sleep(ms); };
+  const q = <T extends Element>(sel: string, root: ParentNode = document) => root.querySelector<T>(sel);
+  const qa = <T extends Element>(sel: string, root: ParentNode = document) => Array.from(root.querySelectorAll<T>(sel));
+  const { strongDir } = await import('../reader/index.js');
+  const must = (ok: unknown, what: string) => { if (!ok) throw new Error(what); log(`ok: ${what}`); };
+  const poll = async <T,>(probe: () => T | null | undefined | false | Promise<T | null | undefined | false>, what: string, ms = 8000): Promise<T> => {
+    const t0 = Date.now();
+    for (;;) {
+      const v = await probe();
+      if (v) { log(`ok: ${what}`); return v; }
+      if (Date.now() - t0 > ms) throw new Error(`${what} (waited ${ms} ms)`);
+      await sleep(100);
+    }
+  };
+  const GRAMMAR = 'courses/fall-2026/arab-401-advanced-grammar/conditional-sentences.md';
+  const KANA = 'courses/fall-2026/arab-401-advanced-grammar/kana-and-its-sisters.md';
+  const PASSAGE = 'library/classical-prose-reader/12-the-grammarian-and-the-bedouin.md';
+  const VOCAB = 'arabic/vocabulary.md';
+  const MATH = 'fleeting/arabic-with-formulas.md';
+  const MARKS = /[\u064B-\u065F\u0670]/;
+  const ARABIC = /[\u0600-\u06FF]/;
+  const surface = () => q<HTMLElement>('.pane-body .doc-view .draft-doc');
+  const open = async (path: string, ready: string) => {
+    openNode(path);
+    await poll(() => (activeTab(useApp.getState().panes)?.id === path ? q(ready) : null), `${path} is open`, 12000);
+    await sleep(600);
+  };
+  const dirOf = (el: Element) => getComputedStyle(el).direction;
+  const short = (el: Element) => (el.textContent ?? '').trim().slice(0, 28);
+
+  /** Every block of the page: its `dir` set, its computed direction the same, and the rule's answer for its own text when it has a letter. */
+  const checkBlocks = (label: string) => {
+    const s = surface()!;
+    const kids = Array.from(s.children) as HTMLElement[];
+    const wrong: string[] = [];
+    let rtl = 0;
+    for (const el of kids) {
+      const d = el.getAttribute('dir');
+      if (d !== 'ltr' && d !== 'rtl') { wrong.push(`no dir on "${short(el)}"`); continue; }
+      if (dirOf(el) !== d) wrong.push(`"${short(el)}" computed ${dirOf(el)}, dir ${d}`);
+      // a paragraph or heading: its own first letter decides when it has one
+      if (el.matches('p.dd-p, .dd-h')) {
+        const bare = el.cloneNode(true) as HTMLElement;
+        for (const m of Array.from(bare.querySelectorAll('.math'))) m.remove();
+        const own = strongDir(bare.textContent ?? '');
+        if (own && own !== d) wrong.push(`"${short(el)}" should be ${own}`);
+      }
+      if (d === 'rtl') {
+        rtl++;
+        const cs = getComputedStyle(el);
+        if (cs.letterSpacing !== 'normal' && parseFloat(cs.letterSpacing) !== 0) wrong.push(`"${short(el)}" letter-spacing ${cs.letterSpacing}`);
+        const lh = parseFloat(cs.lineHeight);
+        if (el.matches('p.dd-p') && !(lh >= parseFloat(cs.fontSize) * 1.8)) wrong.push(`"${short(el)}" line-height ${cs.lineHeight} at ${cs.fontSize}`);
+      }
+    }
+    for (const li of qa<HTMLElement>('.dd-li', s)) if (dirOf(li) !== li.getAttribute('dir')) wrong.push(`item "${short(li)}" computed ${dirOf(li)}`);
+    must(wrong.length === 0, `${label}: ${kids.length} blocks, ${rtl} right to left, each computed as its dir${wrong.length ? `; ${wrong.slice(0, 4).join('; ')}` : ''}`);
+    return { rtl, all: kids.length };
+  };
+
+  /** An RTL paragraph's first line ends at its right edge, and an LTR one starts at its left. */
+  const checkAnchored = (label: string, el: HTMLElement) => {
+    const r = document.createRange();
+    r.selectNodeContents(el);
+    const first = Array.from(r.getClientRects()).sort((a, b) => a.top - b.top)[0];
+    const box = el.getBoundingClientRect();
+    if (!first) throw new Error(`${label}: no text drawn`);
+    const d = dirOf(el);
+    const gap = d === 'rtl' ? box.right - Math.max(...Array.from(r.getClientRects()).filter((x) => Math.abs(x.top - first.top) < 2).map((x) => x.right)) : first.left - box.left;
+    must(gap < 3, `${label}: "${short(el)}" (${d}) sits at its ${d === 'rtl' ? 'right' : 'left'} edge (${gap.toFixed(1)} px)`);
+  };
+
+  /** The canvas font for an element, as it is drawn. */
+  const fontOf = (el: Element) => {
+    const cs = getComputedStyle(el);
+    return `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+  };
+  const ctx = document.createElement('canvas').getContext('2d')!;
+
+  /**
+   * No voweled text cut by a clip: for each text run with ḥarakāt under
+   * `root`, the nearest ancestor that clips (overflow other than visible)
+   * and is a row, not a scrolling pane: its scrollHeight within its
+   * clientHeight, and each line's ink (the run measured in its own font)
+   * inside its padding box.
+   */
+  const checkClips = (label: string, root: Element) => {
+    const cut: string[] = [];
+    let runs = 0;
+    let boxed = 0;
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      const t = n.textContent ?? '';
+      if (!MARKS.test(t)) continue;
+      const el = n.parentElement;
+      if (!el || el.closest('.katex')) continue;
+      runs++;
+      let clip: HTMLElement | null = null;
+      for (let a: HTMLElement | null = el; a && a !== document.body; a = a.parentElement) {
+        const cs = getComputedStyle(a);
+        if (cs.overflowX === 'visible' && cs.overflowY === 'visible') continue;
+        // a pane or a face that scrolls is not a row's clip; its content moves, it is not cut
+        const lh = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.2;
+        if (a.clientHeight > lh * 4 || cs.overflowY === 'auto' || cs.overflowY === 'scroll') break;
+        clip = a;
+        break;
+      }
+      if (!clip) continue;
+      boxed++;
+      if (clip.scrollHeight > clip.clientHeight + 1) cut.push(`"${t.trim().slice(0, 16)}" in .${clip.className.split(' ')[0]}: scrollHeight ${clip.scrollHeight} > ${clip.clientHeight}`);
+      ctx.font = fontOf(el);
+      const m = ctx.measureText(t.trim());
+      const cr = clip.getBoundingClientRect();
+      const top = cr.top + clip.clientTop;
+      const bottom = top + clip.clientHeight;
+      const range = document.createRange();
+      range.selectNodeContents(n);
+      for (const line of Array.from(range.getClientRects())) {
+        const fa = m.fontBoundingBoxAscent || m.actualBoundingBoxAscent;
+        const fd = m.fontBoundingBoxDescent || m.actualBoundingBoxDescent;
+        const base = line.top + (line.height - (fa + fd)) / 2 + fa;
+        const inkTop = base - m.actualBoundingBoxAscent;
+        const inkBottom = base + m.actualBoundingBoxDescent;
+        if (inkTop < top - 0.5 || inkBottom > bottom + 0.5) cut.push(`"${t.trim().slice(0, 16)}" in .${clip.className.split(' ')[0]}: ink ${inkTop.toFixed(1)}–${inkBottom.toFixed(1)}, box ${top.toFixed(1)}–${bottom.toFixed(1)}`);
+      }
+    }
+    must(cut.length === 0, `${label}: ${runs} voweled runs, ${boxed} in a clipping row, none cut${cut.length ? `; ${cut.slice(0, 4).join('; ')}` : ''}`);
+  };
+
+  const themed = async (label: string, check: () => void | Promise<void>) => {
+    useApp.getState().setTheme('light');
+    await sleep(400);
+    await check();
+    await shot(`arabic-${label}`);
+    useApp.getState().setTheme('dark');
+    await sleep(400);
+    await check();
+    await shot(`arabic-${label}-dark`);
+    useApp.getState().setTheme('light');
+  };
+
+  try {
+    setInspector({ open: false });
+
+    // ── the faces: bundled, loaded, in the stacks ──
+    {
+      await document.fonts.load('18px "Ilmi Naskh"', 'كَانَ');
+      await document.fonts.load('13px "Ilmi Plex Arabic"', 'كَانَ');
+      const faces = Array.from(document.fonts as unknown as Iterable<FontFace>);
+      const loaded = (fam: string) => faces.some((f) => f.family.replace(/"/g, '') === fam && f.status === 'loaded');
+      must(loaded('Ilmi Naskh') && document.fonts.check('18px "Ilmi Naskh"', 'كَانَ'), 'Noto Naskh Arabic is loaded from the bundle');
+      must(loaded('Ilmi Plex Arabic') && document.fonts.check('13px "Ilmi Plex Arabic"', 'كَانَ'), 'IBM Plex Sans Arabic is loaded from the bundle');
+      const css = getComputedStyle(document.documentElement);
+      must(css.getPropertyValue('--serif').includes('Ilmi Naskh') && css.getPropertyValue('--sans').includes('Ilmi Plex Arabic'), 'both are in the reading and chrome stacks');
+      // the face is the one drawing: a voweled word measures differently in it than in the system's Arabic
+      ctx.font = '18px "Ilmi Naskh"';
+      const ours = ctx.measureText('وَاللّٰهِ مَا أَدْرِي').width;
+      ctx.font = '18px "Geeza Pro", serif';
+      const system = ctx.measureText('وَاللّٰهِ مَا أَدْرِي').width;
+      must(Math.abs(ours - system) > 0.5, `Naskh draws the text (${ours.toFixed(1)} px against the system's ${system.toFixed(1)} px)`);
+    }
+
+    // ── the grammar note ──
+    await open(GRAMMAR, '.pane-body .doc-view .draft-doc');
+    await themed('grammar', () => {
+      const { rtl } = checkBlocks('the grammar note');
+      must(rtl >= 3, 'the grammar note has its Arabic examples right to left');
+      const ex = qa<HTMLElement>('p.dd-p', surface()!).find((p) => p.textContent?.startsWith('إِنْ تَدْرُسْ'));
+      must(ex && dirOf(ex) === 'rtl', 'إِنْ تَدْرُسْ تَنْجَحْ reads right to left');
+      checkAnchored('the example', ex!);
+      const en = qa<HTMLElement>('p.dd-p', surface()!).find((p) => p.textContent?.startsWith('A conditional sentence'));
+      must(en && dirOf(en) === 'ltr', 'the English paragraph around it left to right');
+      checkAnchored('the English', en!);
+      must(getComputedStyle(ex!).fontFamily.includes('Ilmi Naskh'), 'the example is set in the serif stack with Naskh');
+      checkClips('the grammar note', surface()!);
+    });
+
+    // the find field takes Arabic its own way
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', code: 'KeyF', metaKey: true, bubbles: true, cancelable: true }));
+    const fb = await poll(() => q<HTMLInputElement>('.find-bar input.fb-q'), 'find opens', 4000);
+    must(fb.dir === 'auto', 'the find field is dir="auto"');
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(fb, 'كان');
+    fb.dispatchEvent(new Event('input', { bubbles: true }));
+    await sleep(300);
+    must(dirOf(fb) === 'rtl' || fb.matches(':dir(rtl)'), 'Arabic typed into it reads right to left');
+    await shot('arabic-find');
+    fb.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    await sleep(200);
+
+    // ── the classical prose reader ──
+    await open(PASSAGE, '.pane-body .doc-view .draft-doc');
+    await themed('passage', () => {
+      const { rtl } = checkBlocks('the prose passage');
+      must(rtl >= 5, 'the passage reads right to left');
+      const story = qa<HTMLElement>('p.dd-p', surface()!).find((p) => p.textContent?.startsWith('قِيلَ'));
+      must(story && dirOf(story) === 'rtl', 'its first paragraph is right to left');
+      checkAnchored('the passage', story!);
+      const item = qa<HTMLElement>('.dd-li', surface()!).find((li) => ARABIC.test((li.textContent ?? '').trim()[0] ?? ''));
+      must(item && dirOf(item) === 'rtl', 'a glossary item that starts in Arabic is right to left');
+      const mark = q<HTMLElement>('.li-mark', item!)!.getBoundingClientRect();
+      const text = q<HTMLElement>('.li-text', item!)!.getBoundingClientRect();
+      must(mark.left >= text.right - 1, 'its bullet sits on its right, the start side');
+      checkClips('the prose passage', surface()!);
+    });
+
+    // ── formulas inside Arabic sentences ──
+    await vault.fs.writeText(vault.abs(MATH), '# formulas in Arabic\n\nإِذَا كَانَ $x^2 = 4$ فَإِنَّ $x = \\pm 2$، وَهٰذَا وَاضِحٌ.\n\nالطَّاقَةُ تُسَاوِي $E = mc^2$ (مُعَادَلَةُ أَيْنِشْتَايْن)، وَ`c` سُرْعَةُ الضَّوْءِ.\n\n$$\\int_0^1 x\\,dx = \\tfrac12$$\n\nand back to English: $a + b$ is a sum.\n');
+    await poll(() => useApp.getState().docs[MATH], 'the note with formulas is in the collection', 10000);
+    await open(MATH, '.pane-body .doc-view .draft-doc .math');
+    await themed('formulas', () => {
+      checkBlocks('the formulas note');
+      const p = qa<HTMLElement>('p.dd-p', surface()!).find((e) => e.textContent?.startsWith('إِذَا كَانَ'))!;
+      must(dirOf(p) === 'rtl', 'the sentence with formulas is right to left');
+      const chips = qa<HTMLElement>('.math', p);
+      must(chips.length === 2, 'its two formulas are chips');
+      for (const c of chips) {
+        const cs = getComputedStyle(c);
+        must(cs.direction === 'ltr' && cs.unicodeBidi === 'isolate', `"${c.dataset.tex}" is an LTR isolate (${cs.direction}, ${cs.unicodeBidi})`);
+        const parts = qa<HTMLElement>('.katex-html .mord, .katex-html .mrel', c);
+        const first = parts[0]!.getBoundingClientRect();
+        const last = parts[parts.length - 1]!.getBoundingClientRect();
+        must(first.left < last.left, `"${c.dataset.tex}" reads left to right inside: ${parts[0]!.textContent} before ${parts[parts.length - 1]!.textContent}`);
+      }
+      const [a, b] = chips.map((c) => c.getBoundingClientRect());
+      if (Math.abs(a!.top - b!.top) < 4) must(a!.left > b!.right, 'the first formula is to the right of the second, the sentence\'s order');
+      // the comma after the second formula stays after it (to its left), not dragged to the line's end
+      const walker = document.createTreeWalker(p, NodeFilter.SHOW_TEXT);
+      let comma: DOMRect | null = null;
+      for (let n = walker.nextNode(); n && !comma; n = walker.nextNode()) {
+        const i = (n.textContent ?? '').indexOf('،');
+        if (i < 0 || (n.parentElement?.closest('.math'))) continue;
+        const r = document.createRange();
+        r.setStart(n, i);
+        r.setEnd(n, i + 1);
+        comma = r.getBoundingClientRect();
+      }
+      must(comma && Math.abs(comma.top - b!.top) < 8 ? comma.right <= b!.left + 2 : !!comma, 'the comma after it sits just after it, on its left');
+      const p2 = qa<HTMLElement>('p.dd-p', surface()!).find((e) => e.textContent?.startsWith('الطَّاقَةُ'))!;
+      const code = q<HTMLElement>('.md-code', p2);
+      must(code && getComputedStyle(code).direction === 'ltr', 'inline code in an Arabic sentence is left to right');
+      const display = q<HTMLElement>('.math.display', surface()!);
+      must(display && getComputedStyle(display).direction === 'ltr', 'display math is left to right, centred');
+      const en = qa<HTMLElement>('p.dd-p', surface()!).find((e) => e.textContent?.startsWith('and back'))!;
+      must(dirOf(en) === 'ltr', 'the English after it is left to right again');
+      checkClips('the formulas note', surface()!);
+    });
+
+    // ── the vocab deck ──
+    await open(VOCAB, '.deck-view .deck-row');
+    await themed('vocab', () => {
+      const rows = qa<HTMLElement>('.deck-view .deck-row');
+      const fronts = rows.map((r) => q<HTMLElement>('.dr-front', r)!).filter(Boolean);
+      const rtl = fronts.filter((f) => dirOf(f) === 'rtl');
+      must(rtl.length >= fronts.length * 0.9, `the deck's fronts are right to left (${rtl.length} of ${fronts.length})`);
+      const back = q<HTMLElement>('.dr-back', rows[0]!);
+      must(back && dirOf(back) === 'ltr', 'a back in English is left to right');
+      checkClips('the vocab deck', q('.deck-view')!);
+    });
+    const search = q<HTMLInputElement>('.deck-view .db-search');
+    must(search?.dir === 'auto', 'the deck search is dir="auto"');
+
+    // ── a session on Arabic cards ──
+    const vocabItem = await poll(() => useApp.getState().queue.find((i) => i.kind === 'card' && i.path === VOCAB), 'a vocab card in the queue', 10000);
+    openSession(vocabItem);
+    await poll(() => q('.recall-wrap .card .face.front'), 'the session shows the vocab card', 10000);
+    await sleep(500);
+    await themed('session-vocab', () => {
+      const front = q<HTMLElement>('.recall-wrap .card .face.front > [dir]');
+      must(front && dirOf(front) === 'rtl', `the word's face is right to left ("${short(front!)}")`);
+      checkClips('the vocab card', q('.recall-wrap .card')!);
+    });
+    press(' ');
+    await poll(() => q('.recall-wrap .card[data-revealed="1"]'), 'revealed', 4000);
+    await shot('arabic-session-vocab-revealed');
+
+    const kanaItem = await poll(() => useApp.getState().queue.find((i) => i.kind === 'card' && i.path === KANA && i.text.includes('غَائِبَات{{c1::')), 'the case-ending card in the queue', 10000);
+    openSession(kanaItem);
+    const blank = await poll(() => q<HTMLElement>('.recall-wrap .card .cloze.on-letter'), 'the case-ending blank sits on its letter', 10000);
+    await sleep(400);
+    await themed('session-case-ending', () => {
+      const b = q<HTMLElement>('.recall-wrap .card .cloze.on-letter')!;
+      must(b.textContent === 'ت', `hidden, it shows the bare letter ("${b.textContent}")`);
+      const fill = getComputedStyle(b).webkitTextFillColor || getComputedStyle(b).color;
+      must(!/rgba\(0, 0, 0, 0\)|transparent/.test(fill), `the letter is visible (${fill})`);
+      must(b.getBoundingClientRect().width > 2, 'the blank is not an empty chip');
+      must(dirOf(q('.recall-wrap .card .cloze-text')!) === 'rtl', 'the sentence is right to left');
+      checkClips('the case-ending card', q('.recall-wrap .card')!);
+    });
+    void blank;
+    press(' ');
+    await poll(() => q<HTMLElement>('.recall-wrap .card .cloze.on-letter.revealed')?.textContent === 'تٍ', 'revealed, the letter takes its kasratān', 4000);
+    must(q('.recall-wrap .card .cloze-answer .on-letter')?.textContent === 'تٍ', 'the answer face shows the letter with the mark');
+    await shot('arabic-session-case-ending-revealed');
+    useApp.getState().setTheme('dark');
+    await sleep(400);
+    checkClips('the revealed case ending, dark', q('.recall-wrap .card')!);
+    await shot('arabic-session-case-ending-revealed-dark');
+    useApp.getState().setTheme('light');
+
+    // the fields that take Arabic
+    press('k', { metaKey: true });
+    const pal = await poll(() => q<HTMLInputElement>('.palette-input input'), 'the palette opens', 4000);
+    must(pal.dir === 'auto', 'the palette field is dir="auto"');
+    press('Escape');
     log(`done; vault ${vault.root}`);
   } catch (e) {
     log(`failed: ${e instanceof Error ? e.message : String(e)}`);

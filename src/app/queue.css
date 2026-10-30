@@ -236,3 +236,12 @@
   min-width: 70px;
 }
 .qlist .due .ivl { color: var(--fg-5); margin-top: 1px; }
+/* an Arabic row: taller for the marks, upright; a case ending's blank shows its letter */
+.qlist .body [dir="rtl"] { line-height: 1.75; letter-spacing: 0; font-synthesis: weight; }
+.qlist .read-snip[dir="rtl"] { font-style: normal; }
+.qlist .body .cloze.on-letter {
+  color: inherit;
+  -webkit-text-fill-color: currentColor;
+  background: transparent;
+  border-bottom: 2px solid var(--fg-4);
+}

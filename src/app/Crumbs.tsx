@@ -30,7 +30,7 @@ export function Crumbs({ path }: { path: string }) {
   return (
     <span className="crumb crumbs">
       {trail.map((c) => (
-        <a key={c.path} className="cr" href="#" data-path={c.path} onClick={go(c.path)}>{c.label}</a>
+        <a key={c.path} className="cr" href="#" data-path={c.path} onClick={go(c.path)}><bdi>{c.label}</bdi></a>
       ))}
     </span>
   );

@@ -7,9 +7,9 @@
 :root {
   /* type: Source Serif 4 for reading; IBM Plex Sans for chrome; IBM Plex Mono
      for key hints and tabular numerals. Never Inter or system-ui. */
-  --serif: "Source Serif 4 Variable", "Source Serif 4", "Iowan Old Style", "Charter", Georgia, serif;
-  --sans: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
-  --mono: "IBM Plex Mono", ui-monospace, "JetBrains Mono", monospace;
+  --serif: "Source Serif 4 Variable", "Source Serif 4", "Ilmi Naskh", "Iowan Old Style", "Charter", Georgia, serif;
+  --sans: "IBM Plex Sans", "Ilmi Plex Arabic", system-ui, -apple-system, sans-serif;
+  --mono: "IBM Plex Mono", "Ilmi Plex Arabic", ui-monospace, "JetBrains Mono", monospace;
 
   /* shell columns */
   --side-w: 220px;
@@ -79,7 +79,7 @@
   --bg: #cfcfca;
   --paper: #e4e4df;
   --fg: #15150f;
-  --serif: "Literata Variable", "Literata", "Source Serif 4 Variable", Georgia, serif;
+  --serif: "Literata Variable", "Literata", "Ilmi Naskh", "Source Serif 4 Variable", Georgia, serif;
   --accent: #1c1c17;
   --accent-soft: color-mix(in oklab, var(--fg) 14%, transparent);
   --selection: color-mix(in oklab, var(--fg) 20%, transparent);

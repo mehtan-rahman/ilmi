@@ -7,12 +7,12 @@
 
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { emitDocAction, emitGrade, runBlockHooks, usePlugins } from '../plugins/index.js';
-import { PRI_DEFAULT, blanks, cardFields, clozeSegments, type Block, type Card } from '../format/index.js';
+import { PRI_DEFAULT, blanks, cardFields, type Block, type Card } from '../format/index.js';
 import { GRADES, advanceRead, advanceWrite, gradeItem, postponed, type CardItem, type Grade, type QueueItem, type ReadItem, type WriteItem } from '../schedule/index.js';
 import { EL_WORD, FORM_LABEL, dueLabel, gapLabels, ownBlank, sourceLabel, trailParts } from './items.js';
 import type { OpenOpts } from './panes.js';
 import { Pdf } from './Pdf.js';
-import { Reader, answerHTML, clozeHTML, richHTML } from './Reader.js';
+import { Reader, blankAnswers, clozeHTML, faceDir, richHTML } from './Reader.js';
 import { useApp, type El } from './store.js';
 import { useDoc } from './useDoc.js';
 import { studyHeader } from './study.js';
@@ -153,7 +153,7 @@ function CardElement({ item, active, onGrade }: CardProps) {
   // holds the deleted text alone, its blank in the question filling in too.
   let front: ReactNode;
   let back: ReactNode = null;
-  if (!f) front = <span dangerouslySetInnerHTML={{ __html: richHTML(text) }} />;
+  if (!f) front = <div dir={faceDir(text)} dangerouslySetInnerHTML={{ __html: richHTML(text) }} />;
   else if (f.form === 'cloze') {
     // which blanks this item tests, in `blanks(text)` order; the rest are context
     const mine = blanks(text).map((b, i) => ownBlank(item, b.n, i));
@@ -162,30 +162,24 @@ function CardElement({ item, active, onGrade }: CardProps) {
       (_, i) => (mine[i] ? (revealed ? 'revealed' : 'hidden') : 'plain'),
       (s) => (s === 'hidden' ? 'cloze' : s === 'revealed' ? 'cloze revealed' : 'cloze ctx'),
     );
-    // the deleted text alone, a formula's as math
-    const answers: string[] = [];
-    let k = 0;
-    for (const seg of clozeSegments(text)) {
-      if (typeof seg === 'string') continue;
-      if ('span' in seg) { for (const p of seg.parts) if (typeof p !== 'string' && mine[k++]) answers.push(answerHTML(p, seg.display)); }
-      else if (mine[k++]) answers.push(answerHTML(seg));
-    }
+    // the deleted text alone, a formula's as math, a case ending on its letter
+    const answers = blankAnswers(text, (k) => !!mine[k]);
     // a click on one of this card's blanks, in text or in a formula, reveals
     const onFront = (e: MouseEvent<HTMLElement>) => {
       if ((e.target as HTMLElement).closest('.cloze:not(.ctx), .math.blanks:not([data-blanks="0"])')) setRevealed(true);
     };
-    front = <div className="cloze-text" onClick={onFront} dangerouslySetInnerHTML={{ __html: html }} />;
+    front = <div className="cloze-text" dir={faceDir(text)} onClick={onFront} dangerouslySetInnerHTML={{ __html: html }} />;
     back = (
-      <div className="cloze-answer">
+      <div className="cloze-answer" dir={faceDir(text)}>
         {answers.map((a, i) => <span key={i} className="cz-a" dangerouslySetInnerHTML={{ __html: a }} />)}
       </div>
     );
   } else if (f.form === 'qa') {
-    front = <div className="qa-q" dangerouslySetInnerHTML={{ __html: richHTML(f.front) }} />;
-    back = <div className="qa-a" dangerouslySetInnerHTML={{ __html: richHTML(f.back) }} />;
+    front = <div className="qa-q" dir={faceDir(f.front)} dangerouslySetInnerHTML={{ __html: richHTML(f.front) }} />;
+    back = <div className="qa-a" dir={faceDir(f.back)} dangerouslySetInnerHTML={{ __html: richHTML(f.back) }} />;
   } else {
-    front = <div className="bidir-a" dangerouslySetInnerHTML={{ __html: richHTML(f.left) }} />;
-    back = <div className="bidir-b" dangerouslySetInnerHTML={{ __html: richHTML(f.right) }} />;
+    front = <div className="bidir-a" dir={faceDir(f.left)} dangerouslySetInnerHTML={{ __html: richHTML(f.left) }} />;
+    back = <div className="bidir-b" dir={faceDir(f.right)} dangerouslySetInnerHTML={{ __html: richHTML(f.right) }} />;
   }
 
   const groupNo = item.group && item.groups > 1 ? ('n' in item.group ? item.group.n : item.group.blank + 1) : null;
@@ -385,7 +379,7 @@ export function Session({ active, onOpen }: Props) {
           : <span className="sess-count">{idx + 1} / {total}</span>}
         <span className="el-tag" data-el="card">{FORM_LABEL[el.form]}</span>
         <button type="button" className="meta-srclink card-trail" onClick={openSource} title="go to source  o">
-          {trail.map((t, i) => <span key={i} className={i ? 'ct-h' : 'ct-doc'}>{t}</span>)}
+          {trail.map((t, i) => <bdi key={i} className={i ? 'ct-h' : 'ct-doc'}>{t}</bdi>)}
           <span className="ms-arrow">↗</span>
         </button>
       </div>

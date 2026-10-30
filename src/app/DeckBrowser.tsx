@@ -8,8 +8,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { EditorView } from 'prosemirror-view';
 import type { Node as PMNode } from 'prosemirror-model';
-import { PRI_DEFAULT, PRI_MAX, PRI_MIN, cardFields, clozeSegments, meta, parsePri, type Card, type CardForm } from '../format/index.js';
-import { makeState, textOf } from '../reader/index.js';
+import { PRI_DEFAULT, PRI_MAX, PRI_MIN, cardFields, meta, parsePri, type Card, type CardForm } from '../format/index.js';
+import { makeState, textOf, type Dir } from '../reader/index.js';
 import { runBlockHooks, usePlugins } from '../plugins/index.js';
 import { revealIndex } from './chrome.js';
 import { asks, facesOf, facesText, planEdit, switchForm, type Faces } from './cardEdit.js';
@@ -21,7 +21,7 @@ import { bulkCards, newCardAt, saveCardEdit, studyDeck } from './deckOps.js';
 import { FORM_LABEL, dueLabel, fmtDays, pathLabel } from './items.js';
 import { MENU_W, placeMenu } from './NodeMenu.js';
 import { GLYPH, kindOf, titleOf } from './names.js';
-import { answerHTML, clozeHTML, handleClickOn, nodeViews, richHTML } from './Reader.js';
+import { blankAnswers, clozeHTML, faceDir, handleClickOn, nodeViews, richHTML } from './Reader.js';
 import { useApp } from './store.js';
 import { docsOf, removeCard, setDeckView } from './vault.js';
 import './session.css';
@@ -38,18 +38,13 @@ const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 const refOf = (r: DeckRow): CardRef => (r.id === undefined ? { path: r.path, block: r.block, text: r.text } : { path: r.path, block: r.block, id: r.id, text: r.text });
 
 /** A row's two faces as HTML: a cloze's text with its blanks lit, and its answers as the back. */
-function facesHTML(text: string): { front: string; back: string } {
+function facesHTML(text: string): { front: string; back: string; frontDir?: Dir | undefined; backDir?: Dir | undefined } {
   const f = cardFields(text);
-  if (!f) return { front: richHTML(text), back: '' };
-  if (f.form === 'qa') return { front: richHTML(f.front), back: richHTML(f.back) };
-  if (f.form === 'bidir') return { front: richHTML(f.left), back: richHTML(f.right) };
-  const answers: string[] = [];
-  for (const seg of clozeSegments(text)) {
-    if (typeof seg === 'string') continue;
-    if ('span' in seg) { for (const p of seg.parts) if (typeof p !== 'string') answers.push(answerHTML(p, seg.display)); }
-    else answers.push(answerHTML(seg));
-  }
-  return { front: clozeHTML(text, () => 'revealed', () => 'cz'), back: answers.join(' · ') };
+  if (!f) return { front: richHTML(text), back: '', frontDir: faceDir(text) };
+  if (f.form === 'qa') return { front: richHTML(f.front), back: richHTML(f.back), frontDir: faceDir(f.front), backDir: faceDir(f.back) };
+  if (f.form === 'bidir') return { front: richHTML(f.left), back: richHTML(f.right), frontDir: faceDir(f.left), backDir: faceDir(f.right) };
+  const answers = blankAnswers(text, () => true);
+  return { front: clozeHTML(text, () => 'revealed', () => 'cz'), back: answers.join(' · '), frontDir: faceDir(text), backDir: faceDir(text) };
 }
 
 // ── one face, live ───────────────────────────────────────────────
@@ -460,6 +455,7 @@ export function DeckBrowser({ home, active }: BrowserProps) {
           <input
             ref={search}
             className="db-search"
+            dir="auto"
             value={q}
             placeholder="search both faces"
             spellCheck={false}
@@ -559,8 +555,8 @@ export function DeckBrowser({ home, active }: BrowserProps) {
             >
               <span className="dr-form">{FORM_LABEL[r.form]}</span>
               <span className="cs-body dr-faces">
-                <span className="dr-front" dangerouslySetInnerHTML={{ __html: f.front }} />
-                {f.back && <span className="dr-back" dangerouslySetInnerHTML={{ __html: f.back }} />}
+                <span className="dr-front" dir={f.frontDir} dangerouslySetInnerHTML={{ __html: f.front }} />
+                {f.back && <span className="dr-back" dir={f.backDir} dangerouslySetInnerHTML={{ __html: f.back }} />}
                 {multi && <span className="dr-path">{pathLabel(r.path)}</span>}
               </span>
               <span className="dr-when">

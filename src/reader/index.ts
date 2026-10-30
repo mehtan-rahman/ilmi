@@ -8,7 +8,7 @@ export { toDoc, fromDoc, textOf, inline, mathSplit, blocksEqual, cardDue, type M
 export { editorialRanges, type MarkRange } from './marks.js';
 export { proseIndices, cursorIndex, pickPos, setReadPos, isProse, type Band } from './marker.js';
 export {
-  makeState, markerKey, markerPos, cardsKey, frozenPlugin, frozenKey, imagesKey, mathEditKey, isMathEdit, openMath, revealKey, revealBackward, revealForward,
+  makeState, directionDecorations, directionKey, markerKey, markerPos, cardsKey, frozenPlugin, frozenKey, imagesKey, mathEditKey, isMathEdit, openMath, revealKey, revealBackward, revealForward,
   FORMAT_KEYS, pasteInto, type Edge, type StateOptions, type ImageLoader, type ImageState, type ImagesMeta,
 } from './plugins.js';
 export {
@@ -25,3 +25,4 @@ export { cardText, passage, blockAt, insertCard, setCardText, type CardSpec, typ
 export { SLASH_ITEMS, slashItems, slashContext, slashKey, slashPlugin, pickSlash, litItem, opensAt, askImageKey, TABLE_SKELETON, type SlashItem, type SlashState, type SlashMeta, type SlashContext } from './slash.js';
 export { findKey, findPlugin, findMatches, findIn, foldText, foldMap, currentMatch, replaceMatch, replaceAll, closeAtMatch, atomFind, markFinds, type AtomFind, type FindState, type FindMeta, type Match } from './find.js';
 export { insertBlocks, insertImages, imageParagraph, caretInto, markdownBlocks, pasteMarkdown, clipboardText, htmlPasteImages } from './insert.js';
+export { strongDir, textDir, blockDirs, dirAttr, charDir, isolatedSpans, markupSpans, marksOnly, baseSplit, withBases, type Dir, type Span, type BasedSeg, type BasedBlank } from './direction.js';

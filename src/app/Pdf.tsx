@@ -596,6 +596,7 @@ function Pages({ id, active, session, onText }: PagesProps) {
                 <span className="pb-k">/</span>
                 <input
                   ref={findRef}
+                  dir="auto"
                   value={find.q}
                   spellCheck={false}
                   placeholder="search"

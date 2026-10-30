@@ -11,7 +11,8 @@ import { counts, inScope, overflow, type QueueItem } from '../schedule/index.js'
 import { EL_GLYPH, QUEUE_EMPTY, dayLabel, dueLabel, intervalLabel, isFresh, kindTag, refLine, snippetOf, sourceLabel, summary } from './items.js';
 import { QUEUE_TITLE, SCOPES, queueId, type QueueScope } from './names.js';
 import type { OpenOpts } from './panes.js';
-import { clozeHTML, richHTML } from './Reader.js';
+import { clozeHTML, faceDir, richHTML } from './Reader.js';
+import { dirAttr } from '../reader/index.js';
 import { useApp } from './store.js';
 import { openCard, openNode, openSession, postponeRest, refreshQueue, startSession } from './vault.js';
 import './queue.css';
@@ -35,14 +36,14 @@ const clickOpts = (e: MouseEvent): OpenOpts => ({ cmdClick: e.metaKey || e.ctrlK
 function Body({ item }: { item: QueueItem }) {
   if (item.kind !== 'card') {
     const s = snippetOf(item);
-    return s ? <span className="read-snip">{s}<span className="read-ell"> …</span></span> : null;
+    return s ? <span className="read-snip" dir={faceDir(s)}>{s}<span className="read-ell"> …</span></span> : null;
   }
   // the reader's rules: emphasis, code, and math read as themselves in the row too
   const f = cardFields(item.text);
-  if (!f) return <span dangerouslySetInnerHTML={{ __html: richHTML(item.text) }} />;
-  if (f.form === 'cloze') return <span dangerouslySetInnerHTML={{ __html: clozeHTML(item.text, () => 'hidden', () => 'cloze') }} />;
-  if (f.form === 'qa') return <span dangerouslySetInnerHTML={{ __html: richHTML(f.front) }} />;
-  return <span dangerouslySetInnerHTML={{ __html: `${richHTML(f.left)} <span class="cs-arrow">⇄</span> ${richHTML(f.right)}` }} />;
+  if (!f) return <span dir={faceDir(item.text)} dangerouslySetInnerHTML={{ __html: richHTML(item.text) }} />;
+  if (f.form === 'cloze') return <span dir={faceDir(item.text)} dangerouslySetInnerHTML={{ __html: clozeHTML(item.text, () => 'hidden', () => 'cloze') }} />;
+  if (f.form === 'qa') return <span dir={faceDir(f.front)} dangerouslySetInnerHTML={{ __html: richHTML(f.front) }} />;
+  return <span dir={faceDir(f.left)} dangerouslySetInnerHTML={{ __html: `<bdi${dirAttr(f.left)}>${richHTML(f.left)}</bdi> <span class="cs-arrow">⇄</span> <bdi${dirAttr(f.right)}>${richHTML(f.right)}</bdi>` }} />;
 }
 
 export function Queue({ scope, active }: Props) {
@@ -138,7 +139,7 @@ export function Queue({ scope, active }: Props) {
                 <span className="body">
                   <span className="src" data-by={by}>
                     <span className="kindtag" data-el={item.kind}>{kindTag(item)}</span>
-                    {sourceLabel(item, docs, by)}
+                    <bdi>{sourceLabel(item, docs, by)}</bdi>
                   </span>
                   <Body item={item} />
                   {ref && <span className="ref-line">{ref}</span>}

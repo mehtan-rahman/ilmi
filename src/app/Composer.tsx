@@ -110,20 +110,20 @@ export function Composer({ seed, form: initial, pri: docPri, onSave, onClose }: 
 
       {form === 'cloze' && (
         <>
-          <textarea ref={ref} value={text} onChange={(e) => setText(e.target.value)} placeholder="passage" />
+          <textarea dir="auto" ref={ref} value={text} onChange={(e) => setText(e.target.value)} placeholder="passage" />
           <div className="preview"><span className="preview-tag">preview</span>{preview}</div>
         </>
       )}
       {form === 'qa' && (
         <div className="qa-fields">
-          <textarea ref={ref} value={front} onChange={(e) => setFront(e.target.value)} placeholder="question" />
-          <textarea value={back} onChange={(e) => setBack(e.target.value)} placeholder="answer" />
+          <textarea dir="auto" ref={ref} value={front} onChange={(e) => setFront(e.target.value)} placeholder="question" />
+          <textarea dir="auto" value={back} onChange={(e) => setBack(e.target.value)} placeholder="answer" />
         </div>
       )}
       {form === 'bidir' && (
         <div className="qa-fields">
-          <input ref={ref} value={left} onChange={(e) => setLeft(e.target.value)} placeholder="term a" />
-          <input value={right} onChange={(e) => setRight(e.target.value)} placeholder="term b" />
+          <input dir="auto" ref={ref} value={left} onChange={(e) => setLeft(e.target.value)} placeholder="term a" />
+          <input dir="auto" value={right} onChange={(e) => setRight(e.target.value)} placeholder="term b" />
         </div>
       )}
 

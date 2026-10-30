@@ -213,6 +213,7 @@ function CardEditor({ path, index, card }: { path: string; index: number; card: 
     <div className="card-editor">
       <textarea
         className="ce-field ce-area"
+        dir="auto"
         value={text}
         spellCheck
         onChange={(e) => { setText(e.target.value); write(e.target.value); }}

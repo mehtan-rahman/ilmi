@@ -9,9 +9,16 @@ export { editorialRanges, type MarkRange } from './marks.js';
 export { proseIndices, cursorIndex, pickPos, setReadPos, isProse, type Band } from './marker.js';
 export {
   makeState, markerKey, markerPos, cardsKey, frozenPlugin, frozenKey, imagesKey, mathEditKey, isMathEdit, openMath, revealKey, revealBackward, revealForward,
-  continueBlock, leaveBlock, joinBlock, indentBlock, outdentBlock, toggleTask,
-  type Edge, type StateOptions, type ImageLoader, type ImageState, type ImagesMeta,
+  FORMAT_KEYS, type Edge, type StateOptions, type ImageLoader, type ImageState, type ImagesMeta,
 } from './plugins.js';
+export {
+  continueBlock, leaveBlock, joinBlock, joinIntoList, indentBlock, outdentBlock, moveItem, toggleTask, toggleTasks, renumberList,
+  subtreeEnd, prevSibling, nextSibling, parentItem,
+} from './lists.js';
+export {
+  toggleInline, setHeading, toggleList, toggleQuote, linkTarget, setLink, pasteLink, fenceRule, displayMathRule, flatText, pressed,
+  type InlineToggle, type ListKind, type LinkTarget, type KeySpec,
+} from './commands.js';
 export { inlineRanges, markerRanges, flatRanges, imageOnly, literalSpans, type InlineRange, type InlineKind } from './inline.js';
 export { classifyRaw, splitBlocks, type RawShape, type Align } from './blocks.js';
 export { cardText, passage, blockAt, insertCard, setCardText, type CardSpec, type Passage } from './cards.js';

@@ -726,7 +726,7 @@ describe('live blocks', () => {
     view.destroy();
   });
 
-  it('a task box draws, toggles on a click and writes the character; a backspace at the start takes the box, then joins the item into the one before', () => {
+  it('a task box draws, toggles on a click and writes the character; a backspace at the start takes the box, then makes the item a paragraph, then puts it back', () => {
     const view = mount([{ kind: 'raw', text: '- [ ] milk\n- [x] bread\n- eggs' }]);
     const boxes = () => Array.from(view.dom.querySelectorAll<HTMLElement>('.li-task')).map((b) => b.dataset.checked);
     const click = (box: Element) => box.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
@@ -742,15 +742,20 @@ describe('live blocks', () => {
     key(view.dom, 'Enter');
     expect(raw(view, 0)).toBe('- [x] milk\n- [ ] \n- [ ] bread\n- eggs');
     expect(boxes()).toEqual(['1', '0', '0']);
-    // backspace at its start: the box goes, then the item joins the one before
+    // backspace at its start: the box goes, then the item is a paragraph between the halves, then it goes back on the item above
     expect(key(view.dom, 'Backspace')).toBe(true);
     expect(raw(view, 0)).toBe('- [x] milk\n- \n- [ ] bread\n- eggs');
     expect(key(view.dom, 'Backspace')).toBe(true);
+    expect(view.state.doc.child(1).type).toBe(schema.nodes.paragraph);
+    expect(fromDoc(view.state.doc)).toEqual([{ kind: 'raw', text: '- [x] milk' }, { kind: 'raw', text: '- [ ] bread\n- eggs' }]);
+    expect(key(view.dom, 'Backspace')).toBe(true);
     expect(raw(view, 0)).toBe('- [x] milk\n- [ ] bread\n- eggs');
     expect(view.state.selection.from).toBe(itemEnd(view, 0, 0));
-    // backspace at the start of the second item joins its text onto the first
+    // backspace twice at the start of the second item: its box, then a paragraph; a third puts its text on the first
     caretAt(view, itemStart(view, 0, 1));
     key(view.dom, 'Backspace');
+    key(view.dom, 'Backspace');
+    expect(fromDoc(view.state.doc)).toEqual([{ kind: 'raw', text: '- [x] milk' }, { kind: 'paragraph', text: 'bread' }, { kind: 'raw', text: '- eggs' }]);
     key(view.dom, 'Backspace');
     expect(raw(view, 0)).toBe('- [x] milkbread\n- eggs');
     // the first item of all: its box, then the item becomes a paragraph before the list
@@ -784,7 +789,7 @@ describe('live blocks', () => {
     typed.destroy();
   });
 
-  it('Tab moves an item in by its own marker\'s width and ⇧Tab back out, the markers kept, two at once over a selection', () => {
+  it('Tab moves an item under the sibling before it, at that sibling\'s text column, and ⇧Tab back out; an item with no sibling before it stays', () => {
     const view = mount([{ kind: 'raw', text: '- a\n- b\n1. c' }]);
     const items = () => Array.from(view.dom.querySelectorAll<HTMLElement>('.dd-li'));
     caretAt(view, itemStart(view, 0, 1));
@@ -793,18 +798,23 @@ describe('live blocks', () => {
     expect(items()[1]!.style.getPropertyValue('--indent')).toBe('2');
     caretAt(view, itemStart(view, 0, 2));
     key(view.dom, 'Tab');
+    expect(raw(view, 0)).toBe('- a\n  - b\n  1. c');
     key(view.dom, 'Tab');
-    expect(raw(view, 0)).toBe('- a\n  - b\n      1. c');
-    expect(items()[2]!.style.getPropertyValue('--indent')).toBe('6');
+    expect(raw(view, 0)).toBe('- a\n  - b\n    1. c');
+    expect(items()[2]!.style.getPropertyValue('--indent')).toBe('4');
+    // no sibling before it at its depth now: still taken, nothing changes
+    expect(key(view.dom, 'Tab')).toBe(true);
+    expect(raw(view, 0)).toBe('- a\n  - b\n    1. c');
     expect(key(view.dom, 'Tab', { shiftKey: true })).toBe(true);
-    expect(raw(view, 0)).toBe('- a\n  - b\n   1. c');
+    expect(raw(view, 0)).toBe('- a\n  - b\n  1. c');
     key(view.dom, 'Tab', { shiftKey: true });
     // nothing left to take: still handled, nothing changes
     expect(key(view.dom, 'Tab', { shiftKey: true })).toBe(true);
     expect(raw(view, 0)).toBe('- a\n  - b\n1. c');
+    // the first item has no sibling before it: a selection from it indents nothing
     view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, itemStart(view, 0, 0), itemEnd(view, 0, 1))));
     key(view.dom, 'Tab');
-    expect(raw(view, 0)).toBe('  - a\n    - b\n1. c');
+    expect(raw(view, 0)).toBe('- a\n  - b\n1. c');
     // in a paragraph, Tab is not taken
     const p = mount([{ kind: 'paragraph', text: 'plain' }]);
     caretAt(p, 1);

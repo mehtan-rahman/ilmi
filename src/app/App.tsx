@@ -97,6 +97,8 @@ export function App() {
       if (!(e.metaKey || e.ctrlKey)) return;
       const k = e.key.toLowerCase();
       if (k === 'k') {
+        // ⌘K over a selection in an editable page is the link field (the reader took it)
+        if (e.defaultPrevented) return;
         e.preventDefault();
         // the palette is the open vault's; the welcome has its own keys
         if (useApp.getState().vault !== null) useApp.setState((s) => ({ paletteOpen: !s.paletteOpen }));

@@ -1,4 +1,4 @@
-// Inline Markdown in prose: `*emphasis*`, `**strong**`, `` `code` ``,
+// Inline Markdown in prose: `*emphasis*`, `**strong**`, `~~struck~~`, `` `code` ``,
 // `[text](href)`, and `![alt](src)`, found as ranges over the raw text so
 // the reader can draw them as themselves without changing a character. The
 // format leaves them literal (FORMAT.md §4); this only says where they are.
@@ -6,7 +6,7 @@
 // that is not whitespace, a closer is preceded by one, and `_` does not
 // open or close inside a word.
 
-export type InlineKind = 'em' | 'strong' | 'code' | 'link' | 'image';
+export type InlineKind = 'em' | 'strong' | 'strike' | 'code' | 'link' | 'image';
 
 export interface InlineRange {
   /** The whole construct, markers included. */
@@ -141,6 +141,20 @@ function parseSeq(text: string, start: number, end: number, closer?: Closer): Se
       const r = bracketed(text, i, end);
       if (r) { ranges.push(r); i = r.to; continue; }
       i++;
+      continue;
+    }
+    if (c === '~' && text[i + 1] === '~') {
+      // GFM's strikethrough: two tildes each side, flanking as emphasis
+      const n = runLength(text, i, c);
+      if (n === 2 && opens(text, i, n, c)) {
+        const inner = parseSeq(text, i + 2, end, { ch: c, n: 2 });
+        if (inner.at < end) {
+          ranges.push({ from: i, to: inner.at + 2, kind: 'strike', inner: { from: i + 2, to: inner.at }, children: inner.ranges });
+          i = inner.at + 2;
+          continue;
+        }
+      }
+      i += n;
       continue;
     }
     if (c === '*' || c === '_') {

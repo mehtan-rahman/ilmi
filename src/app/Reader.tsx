@@ -13,8 +13,8 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { PRI_DEFAULT, cardFields, clozeSegments, mathSpanEnd, meta, serialize, setField, type Blank, type Block, type Card, type Doc, type MathSeg } from '../format/index.js';
 import {
   blockAt, blocksEqual, cardDue, classifyRaw, cursorIndex, editorialRanges, flatRanges, fromDoc, frozenKey, imagesKey, indentWidth, inlineRanges, insertCard, isMathEdit,
-  literalSpans, makeState, markerKey, markerNumber, markerPos, markerRanges, mathEditKey, mathSplit, passage, pickPos, proseIndices, schema, setReadPos, splitBlocks, toggleTask,
-  type Band, type InlineRange, type Passage, type RawShape,
+  linkTarget, literalSpans, makeState, markerKey, markerNumber, markerPos, markerRanges, mathEditKey, mathSplit, passage, pickPos, pressed, proseIndices, schema, setLink,
+  setReadPos, splitBlocks, toggleInline, toggleTask, type Band, type InlineRange, type InlineToggle, type LinkTarget, type Passage, type RawShape,
 } from '../reader/index.js';
 import { advanceWrite, whenToDate } from '../schedule/index.js';
 import { dirOf, nameOf, type Loaded, type Vault } from '../vault/index.js';
@@ -121,7 +121,7 @@ function mathHTML(raw: string): string {
   return `<span class="math${display ? ' display' : ''}" data-tex="${escapeHtml(raw)}">${inner}</span>`;
 }
 
-const INLINE_CLASS: Record<InlineRange['kind'], string> = { em: 'md-em', strong: 'md-strong', code: 'md-code', link: 'md-link', image: 'md-alt' };
+const INLINE_CLASS: Record<InlineRange['kind'], string> = { em: 'md-em', strong: 'md-strong', strike: 'md-strike', code: 'md-code', link: 'md-link', image: 'md-alt' };
 
 /**
  * One run of text with its inline Markdown drawn as itself and its
@@ -454,7 +454,9 @@ class MathView implements NodeView {
     field.rows = 1;
     field.spellcheck = false;
     field.setAttribute('aria-label', 'formula');
-    field.value = this.display ? raw.slice(2, -2) : raw.slice(1, -1);
+    const tex = this.display ? raw.slice(2, -2) : raw.slice(1, -1);
+    // a blank formula (`$$` then ⏎) opens empty
+    field.value = tex.trim() ? tex : '';
     const err = document.createElement('span');
     err.className = 'err';
     editor.append(field, err);
@@ -512,13 +514,15 @@ class MathView implements NodeView {
     if (!this.editor) return;
     const tex = this.teardown();
     const was = this.node.attrs.raw as string;
+    // a blank formula left with Escape goes, as one left empty does
+    if (!commit && !(was.startsWith('$$') ? was.slice(2, -2) : was.slice(1, -1)).trim()) commit = true;
     const raw = was.startsWith('$$') ? `$$${tex}$$` : `$${tex}$`;
     const pos = this.getPos();
     if (pos === undefined) return;
     const { view } = this;
     const tr = view.state.tr.setMeta(mathEditKey, null);
     let end = pos + 1;
-    if (commit && raw !== was) {
+    if (commit && (raw !== was || !tex.trim())) {
       if (!tex.trim()) { tr.delete(pos, pos + 1); end = pos; }
       else if (mathSpanEnd(raw, 0) === raw.length) tr.setNodeMarkup(pos, undefined, { raw });
       else { tr.replaceWith(pos, pos + 1, schema.text(raw)); end = pos + raw.length; }
@@ -719,6 +723,19 @@ export function readerAction(e: Keys, editing: boolean): ReaderAction | null {
   return e.key === 'e' ? 'extract' : e.key === 'm' ? 'card' : e.key === 'r' ? 'enrol' : null;
 }
 
+/** The link field: what it acts on, the address as typed, where it sits. */
+interface LinkField {
+  target: LinkTarget;
+  value: string;
+  at: { left: number; top: number; bottom: number };
+}
+
+/** The toolbar's formatting buttons: letters, each with its key in the tooltip. */
+const FORMATS: [InlineToggle, string, string][] = [['strong', 'b', '⌘B'], ['em', 'i', '⌘I'], ['code', 'code', '⌘E']];
+
+/** Room the toolbar wants above a selection; nearer the top it sits below. */
+const CUE_ROOM = 56;
+
 /** The selection, as a passage plus where it ends and where it sits on screen. */
 interface Sel extends Passage {
   end: number;
@@ -799,6 +816,8 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
   frozenRef.current = info?.frozen ?? false;
   const [sel, setSel] = useState<Sel | null>(null);
   const [composer, setComposer] = useState<Compose | null>(null);
+  const [link, setLinkField] = useState<LinkField | null>(null);
+  const openLinkRef = useRef<(target: LinkTarget) => void>(() => {});
   const selRef = useRef<Sel | null>(null);
   selRef.current = sel;
   const composerRef = useRef<Compose | null>(null);
@@ -915,6 +934,12 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
             if (event.key === 'Escape') {
               view.dom.blur();
               return true;
+            }
+            // ⌘K over a selection or in a link: the address field; with a bare caret it is the palette's
+            if (view.editable && pressed(event, { code: 'KeyK', mod: true })) {
+              const target = linkTarget(view.state);
+              if (target) { openLinkRef.current(target); return true; }
+              return false;
             }
             // the surface has focus: bare letters type unless the page is frozen
             const action = readerAction(event, view.editable);
@@ -1066,6 +1091,37 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
     setSel(null);
     window.getSelection()?.removeAllRanges();
     writer.run(() => extractNode(id, { text: s.text, blocks: s.blocks })).catch(console.error);
+  };
+
+  // ── formatting from the toolbar, and the link field ──
+  const format = (kind: InlineToggle) => {
+    const view = viewRef.current;
+    if (!view || !view.editable) return;
+    toggleInline(kind)(view.state, view.dispatch);
+    view.focus();
+  };
+  openLinkRef.current = (target) => {
+    const view = viewRef.current;
+    if (!view) return;
+    const c = view.coordsAtPos(target.from);
+    setSel(null);
+    setLinkField({ target, value: target.href ?? '', at: { left: c.left, top: c.top, bottom: c.bottom } });
+  };
+  const linkFromCue = () => {
+    const view = viewRef.current;
+    const target = view ? linkTarget(view.state) : null;
+    if (target) openLinkRef.current(target);
+  };
+  const closeLink = (write: boolean) => {
+    const view = viewRef.current;
+    const l = link;
+    setLinkField(null);
+    if (!view || !l) return;
+    if (write) {
+      const tr = setLink(view.state, l.target, l.value);
+      if (tr) view.dispatch(tr.scrollIntoView());
+    }
+    view.focus();
   };
 
   const startReading = () => { if (canExtractRef.current && !readingRef.current) enrolReading(id).catch(console.error); };
@@ -1241,17 +1297,44 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
             </>
           )}
           <div className="doc-mount" ref={mountRef} />
-          {sel && !composer && (
-            <div className="sel-cue" style={{ top: sel.rect.bottom + 8, left: sel.rect.left }}>
+          {sel && !composer && !link && (
+            <div className="sel-cue" data-place={sel.rect.top < CUE_ROOM ? 'below' : 'above'} style={{ top: sel.rect.top < CUE_ROOM ? sel.rect.bottom + 8 : sel.rect.top - 8, left: sel.rect.left }}>
+              {!frozen && (
+                <>
+                  {FORMATS.map(([kind, label, keys]) => (
+                    <button key={kind} type="button" className="cue-fmt" data-fmt={kind} title={keys} onMouseDown={(e) => { e.preventDefault(); format(kind); }}>{label}</button>
+                  ))}
+                  <button type="button" className="cue-fmt" data-fmt="link" title="⌘K" onMouseDown={(e) => { e.preventDefault(); linkFromCue(); }}>link</button>
+                  <span className="cue-sep" />
+                </>
+              )}
+              <button type="button" className="cue-act" onMouseDown={(e) => { e.preventDefault(); openComposer(); }}>
+                card <span className="kbd">{frozen ? 'm' : '⌘⇧M'}</span>
+              </button>
               {canExtract && (
                 <button type="button" className="cue-act" onMouseDown={(e) => { e.preventDefault(); doExtract(); }}>
                   extract <span className="kbd">{frozen ? 'e' : '⌘⇧E'}</span>
                 </button>
               )}
-              <button type="button" className="cue-act" onMouseDown={(e) => { e.preventDefault(); openComposer(); }}>
-                make a card <span className="kbd">{frozen ? 'm' : '⌘⇧M'}</span>
-              </button>
               {plugSel && <CueActions sel={plugSel} onRun={() => setSel(null)} />}
+            </div>
+          )}
+          {link && (
+            <div className="link-pop" style={{ top: link.at.bottom + 6, left: link.at.left }}>
+              <input
+                className="field"
+                aria-label="address"
+                placeholder="address"
+                autoFocus
+                value={link.value}
+                onChange={(e) => setLinkField({ ...link, value: e.target.value })}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') { e.preventDefault(); closeLink(true); }
+                  else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeLink(false); }
+                }}
+                onBlur={() => setLinkField(null)}
+              />
+              <span className="kbd">⏎</span>
             </div>
           )}
           {composer && (

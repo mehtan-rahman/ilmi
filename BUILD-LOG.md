@@ -6,6 +6,89 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-10-30 — milestone 34: editing like an editor, keys, rules, lists
+
+Done on main; commit `COMMIT` — *editing: formatting keys that write
+Markdown, block rules as typed, lists moved with their children, a
+toolbar over the selection*. Files: `src/reader/lists.ts` and
+`src/reader/commands.ts` (new), `src/reader/plugins.ts` (the list
+commands moved out; `formatKeys`, the Enter and Backspace chains),
+`src/reader/inline.ts` (`~~strike~~`), `src/reader/index.ts`,
+`src/app/Reader.tsx` (the toolbar, the link field, ⌘K, a blank formula's
+editor), `src/app/App.tsx` (⌘K yields to the reader), `src/app/reader.css`,
+`src/app/smoke.ts` (`smokeEditing`), `src/app/vault.ts` (the `editing`
+dispatch), `README.md`, and the tests (`editing.test.ts` new, two cases of
+`reader-view.test.ts` changed on purpose).
+
+### Done
+
+- Formatting keys, matched on `event.code` (an Arabic layout presses the
+  same keys): ⌘B ⌘I ⌘E ⌘⇧X put `**` `*` a backtick `~~` around the
+  selection and take them out again; ⌘K opens an address field over a
+  selection or in a link (with a bare caret it stays the palette's), and a
+  URL pasted over a selection links it; ⌘1–⌘6 and ⌘0; ⌘⇧7 ⌘⇧8 ⌘⇧9 lists
+  on and off; ⌘⇧. a quote on and off.
+- Block rules as typed: `- ` `* ` `1. ` `[ ] ` `> ` at a paragraph's
+  start, `---`, a fence line then ⏎ (an empty code block), `$$` then ⏎ (a
+  display formula with its editor open). Backspace right after any of
+  them puts the typed text back.
+- Lists as structure: Tab/⇧Tab move an item with its children (under the
+  sibling before it, at its text column); ⏎ on an empty item outdents,
+  then leaves; Backspace at an item's start makes it a paragraph (and the
+  next Backspace puts it back); ⌥⇧↑/↓ move the item with its children,
+  numbers following; ⌘⏎ ticks a task.
+- The selection cue is a toolbar above the selection: `b` `i` `code`
+  `link`, then `card ⌘⇧M` and `extract ⌘⇧E`; on a frozen page only the
+  last two.
+- Collisions: only ⌘K (the palette) among the app's keys, the native
+  menu, and macOS's; see 34's notes for the full check.
+
+### Verified
+
+- `npx vitest run`: 742 tests, 37 files (718 before; `editing.test.ts`
+  24). `npm run typecheck` clean. `cargo test` 12.
+
+### Not verified — the window run is owed
+
+- The screen was locked; nothing ran in the Tauri window.
+  `ILMI_SMOKE=editing` (new) drives the "done when" over a copy of the
+  sample, in `fleeting/2026-10-29.md`: below its last paragraph it types
+  a heading (⌘2, ⌘0, ⌘2), a list by `- ` nested by Tab, moves an item with
+  its children (⌥⇧↓, ⌥⇧↑), ⇧Tab/Tab one with its child, ⏎ on empty items
+  (outdent, leave), Backspace at an item's start and ⌘Z, a task by `[ ] `
+  (⌘⏎, its box), a numbered list by `1. ` with an item moved, a quote by
+  `> ` (⌘⇧. off and on), `---`, `* ` taken back by Backspace, a fence and
+  ⏎, `$$` and ⏎ with the formula written; then over the note's own words
+  ⌘B ⌘I ⌘E ⌘⇧X (⌘B again, off), ⌘3 ⌘0, ⌘⇧8 ⌘⇧7 ⌘⇧9 ⌘⇧. on and off, ⌘K's
+  field, ⌘K with a bare caret (the palette), a pasted address; the
+  toolbar's buttons and place over a selection, its `b`, gone when the
+  selection collapses; and the toolbar on a frozen source. The file's
+  typed lines are logged after each step; `shot:` at editing-list,
+  -moved, -blocks, -math, -link, -toolbar, -frozen-toolbar.
+- Typing goes through `execCommand('insertText')` a character at a time;
+  whether WebKit hands each one to the input rules as typing does, the
+  synthetic ClipboardEvent's `clipboardData`, and the toolbar's look (the
+  letters, the hairline, its place above a selection near the top) are
+  for the window.
+
+### Handoff prompt
+
+```
+Read PLAN.md (ground rules, Refinement, 33's and 34's notes), FORMAT.md,
+and the top BUILD-LOG.md entry. First run ILMI_SMOKE=notes and then
+ILMI_SMOKE=editing, each with ILMI_VAULT on a fresh copy of
+samples/double-major (port 1420 free, never kill a run that is not
+yours; capture with screencapture -l <window id> 2 s after each `shot:`
+line), read the captures, fix what they show, and record it under 33's
+and 34's entries. Then do milestone 35 (insert, paste, find) and only
+that one; stop at its "done when". 38 (the tree) is on a branch beside
+it: leave Tree.tsx, NodeMenu.tsx, Rail.tsx and the tree's CSS alone.
+Suite, typecheck, and `cargo test` green before each commit; tick it,
+write notes, add an entry here with a fresh handoff prompt, and commit.
+```
+
+---
+
 ## 2026-10-30 — milestone 33: notes, what you write is a note, what you read is a source
 
 Done on main; commit `8dceb49` — *notes: what you write is a note, what

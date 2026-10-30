@@ -3203,7 +3203,118 @@ five words are the only words on screen for the kinds, a note can be
 revisited from the top, selecting a word in a note and typing `e` types
 `e`, and the sample collection migrated parses clean.
 
-### [ ] 34. Editing like an editor — keys, rules, lists
+### [x] 34. Editing like an editor — keys, rules, lists
+Done 2026-10-30 on main; commit `COMMIT`. The window check is pending:
+run `ILMI_SMOKE=editing` with `ILMI_VAULT` on a copy of
+`samples/double-major` and read its `shot:` captures (the screen was
+locked this session, so nothing was run in the window).
+Notes: three modules. `src/reader/lists.ts` holds the list and quote
+commands moved out of `plugins.ts` (`continueBlock`, `leaveBlock`,
+`joinBlock`, `indentBlock`, `outdentBlock`, `toggleTask`) and the new
+ones: the tree read from a flat list's indentation (`subtreeEnd`,
+`prevSibling`, `nextSibling`, `parentItem`: an item's children are the
+items after it set in further), `moveItem(±1)`, `toggleTasks`,
+`joinIntoList`, `renumberList`, `joinLists`. `src/reader/commands.ts`
+holds the Markdown-writing commands (`toggleInline`, `setHeading`,
+`toggleList`, `toggleQuote`, `linkTarget`/`setLink`/`pasteLink`), the
+block rules (`blockRules`, `fenceRule`, `displayMathRule`, the
+`enterRules` plugin, `undoRule`), and `pressed` (a key by `event.code`).
+`plugins.ts` wires them: `formatKeys` (a plugin whose `handleKeyDown`
+walks `FORMAT_KEYS`, and whose `handlePaste` links a pasted address)
+before the keymap; Enter is `openMath, fenceRule, displayMathRule,
+continueBlock`; Backspace `undoRule, revealBackward, joinBlock,
+joinIntoList`; ⌘⏎ `toggleTasks, exitCode`. Choices made here:
+- **Keys are matched on `event.code`**, so ⌘B is the key where B is under
+  an Arabic layout too, and ⌘⇧8 is `Digit8` whatever `key` says (`*`).
+  Off a Mac, ⌘ is ⌃. Every formatting key is taken whenever the page is
+  editable, even when nothing changes (in code, say), so WebKit never
+  applies its own bold or italic to the contenteditable.
+- **Markers, not marks.** ⌘B wraps the selection's words (its outer
+  spaces left out) in `**` and keeps them selected; inside a range of the
+  kind (or with the selection on it) it takes the markers out; a bare
+  caret outside any gets an empty pair to type into. Across blocks each
+  block's part is wrapped, and the markers go only when every part was
+  wrapped. A code span takes a backtick run one longer than any inside.
+  `~~strike~~` is now an inline kind (`inline.ts`, drawn `md-strike`) so
+  ⌘⇧X shows what it wrote.
+- **⌘K** collides with the palette (App.tsx). Notion's rule: with a
+  selection in an editable page, or the caret in a link, ⌘K opens the
+  address field (`.link-pop`, under the text: ⏎ writes, Esc leaves; an
+  empty address unlinks, spaces become `%20`); with a bare caret elsewhere
+  the reader leaves it and the palette opens. App's ⌘K now skips an event
+  the reader took (`defaultPrevented`). A URL pasted over a selection
+  links it; a bare paste is untouched (35 does paste).
+- **⌘1–⌘6 / ⌘0**: the same level again goes back to a paragraph; a list
+  item or quote line leaves its block first. A paragraph with an `^id` or
+  extracts stays a paragraph (it would lose them), for headings, lists,
+  and quotes alike. Setext is kept only for levels 1–2.
+- **⌘⇧8/7/9** over paragraphs make one list, one item each; over items
+  they change the kind, or turn them back into paragraphs when they are
+  all of it (the list split around them, the rest keeping their numbers).
+  **⌘⇧.** makes a quote (a line per line, a `>` line between paragraphs)
+  and takes a quote back to paragraphs (a run of lines one paragraph).
+- **Block rules** fire only at the start of a top-level paragraph: `- `
+  `* ` `+ ` `1. ` `1) ` `[ ] ` `[x] ` `> `, `---` (on the third dash,
+  alone in the paragraph: a rule and a paragraph after it), and on ⏎ a
+  fence line alone (an empty code block written as `` ```py⏎⏎``` ``, its
+  closing fence the opening run) and `$$` alone (a `$$ $$` chip with its
+  editor open; the field opens empty, and a blank formula left by Esc or
+  empty is removed). A new list joins a list of its kind right before or
+  after it; a numbered list beside a bulleted one is left separate, as
+  CommonMark reads it. Backspace right after any rule (the `#` heading
+  and the task box too) puts the typed text back, the caret after it:
+  the ⏎ rules keep their transform where `undoInputRule` finds it (a
+  plugin with `isInputRules`). A paragraph typed back as `- x` is written
+  so and the file reads it as a list again; that is the file's right.
+- **Lists as structure.** Tab puts each selected item, with its children,
+  under the sibling before it at that sibling's text column (`- ` two,
+  `10. ` four), not by the item's own marker width as in 27; an item with
+  no sibling before it stays, the key still taken. ⇧Tab moves it out to
+  its parent's column. ⏎ on an empty item set in outdents it, at the top
+  leaves the list. Backspace at an item's start takes the box, then makes
+  the item a paragraph where it stood (the list split; 27 joined it into
+  the item above), and Backspace at the start of a paragraph right after a
+  list puts its text on the last item (and joins a list after it), so
+  the two presses undo each other. ⌥⇧↑/↓ trade the item and its children
+  with the sibling before or after it; numbers follow (`renumberList`:
+  each ordered item one past its sibling, the first of a run keeping its
+  own, an item arriving first under a new parent starting at 1). ⌥⇧↑/↓
+  are macOS's extend-by-paragraph; they are taken only inside a list item.
+  ⌘⏎ ticks the boxes the selection touches (clears them when all were
+  ticked); outside a task it is code's exit as before.
+- **The toolbar** is the selection cue, moved above the selection (below
+  it when the selection is within 56px of the window's top): on an
+  editable page `b` `i` `code` `link` (letters, their keys in the
+  tooltip), a hairline, then `card ⌘⇧M` and `extract ⌘⇧E` (the order the
+  plan names; "make a card" is now `card`); on a frozen page only the last
+  two with `m` / `e`. Plugin verbs follow as before.
+- **Collisions checked**: App.tsx (⌘K palette, ⌘, ⌘\ ⌘W ⌃⌘S ⌘⇧I), the
+  reader (⌘⇧E ⌘⇧M), Composer and the deck browser (⌘B ⌘1–3 ⌘⏎, inside
+  their own fields, which the editor never sees), Rail (⌘⌥↑↓ ⌘⇧[), the
+  queue and session (bare letters), Palette (⌃N ⌃P), the native menu
+  (⌘⇧N ⌘O ⌘⇧O ⌘⇧W, the Edit items, ⌘M minimize, ⌃⌘F, ⌘H): only ⌘K
+  collided. macOS: ⌘E is the system's "use selection for find", which
+  ilmi has no find for yet (35's ⌘F/⌘G will not need it); ⌘0 is not
+  zoom in Tauri (zoom hotkeys are off). 38's tree keys (⌥⌘↑↓ ⌥⌘←→) are
+  scoped to the focused tree and do not meet these.
+- Smoke: `ILMI_SMOKE=editing` (`smokeEditing`) types below the last
+  paragraph of `fleeting/2026-10-29.md` and works its own words (see the
+  function's comment for the walk); `shot:` at editing-list, -moved,
+  -blocks, -math, -link, -toolbar, -frozen-toolbar.
+- Tests: `src/reader/__tests__/editing.test.ts` (24, ProseMirror states
+  and a jsdom view: each key, each rule and its undo, lists moved and
+  indented with children, ⌘⏎, ⌘K's target and write, the pasted address,
+  keys by `code` under an Arabic `key`, a frozen page taking none, and
+  every result written, read back, and equal). Two of 27's cases in
+  `reader-view.test.ts` changed on purpose (Backspace at an item's start,
+  Tab's column).
+Left for later: the toolbar shows for keyboard selections too (the
+research would wait for a mouse selection to end); ⌘K with a bare caret
+does not insert `[](…)`; a paragraph with a soft line break made a
+heading keeps the break (the file then reads two blocks); a pasted
+address with no selection is pasted as text; ⌥⇧↑/↓ moves list items
+only, not paragraphs or blocks; the bottom strip does not list the
+formatting keys (the toolbar's tooltips and the README do).
 Today the keymap is undo, redo, Enter, Tab, Backspace (plugins.ts:640),
 and only the `#` heading rule exists; lists, quotes and code appear only
 after a re-read. Table stakes from Obsidian Live Preview, Typora, Bear:
@@ -3390,11 +3501,15 @@ file.
 
 ## Notes for the next session
 
-Milestone 33 (notes and sources, the reader's keys, F2) is done on main;
-its window check is owed: `ILMI_VAULT=<a copy of samples/double-major>
-ILMI_SMOKE=notes`, captures read and recorded under BUILD-LOG's 33 entry.
-Next is 34 (editing like an editor), on main; 38 → 39 can start on a
-branch. The sidebar toggle is ⌃⌘S now (⌘⇧E is extract).
+Milestones 33 (notes and sources, the reader's keys, F2) and 34 (the
+formatting keys, block rules, lists moved with their children, the
+selection toolbar) are done on main; both window checks are owed:
+`ILMI_VAULT=<a copy of samples/double-major> ILMI_SMOKE=notes` and
+`ILMI_SMOKE=editing`, captures read and recorded under their BUILD-LOG
+entries. Next on main is 35 (insert, paste, find); 38 (the tree) is being
+built on a branch beside it. The sidebar toggle is ⌃⌘S (⌘⇧E is extract);
+⌘K over a selection in an editable page is the link field, elsewhere the
+palette.
 
 Milestones 0–32 are ticked (13 dropped); 32 (decks) was built on a branch
 beside 31 and merged by hand on 2026-10-28; its window check

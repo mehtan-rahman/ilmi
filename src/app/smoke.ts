@@ -125,6 +125,10 @@
 // revisited from the top and from a heading, `e` typed over a selection in
 // a note, ⌘⇧E and ⌘⇧M there, bare `e` in a frozen source, F2 only in the
 // tree, and an import landing as a source (see the function).
+// `ILMI_SMOKE=editing` (`smokeEditing`) over a copy of `samples/double-major`:
+// the formatting keys, the block rules, lists moved and indented with their
+// children, ⌘K and a pasted address, and the selection toolbar (see the
+// function).
 // `ILMI_SMOKE=welcome` runs before any vault opens: it seeds the recents
 // with the scratch vault (`ILMI_VAULT`) and a path that does not exist,
 // turns `reopen the last vault on start` off, reads the welcome's rows and
@@ -3400,6 +3404,324 @@ export async function smokeNotes(vault: Vault): Promise<void> {
     await sleep(600);
     log(`imported ${imported}: ${await head(imported, 5)}; kind ${useApp.getState().docs[imported]?.type}`);
     log(`pasted ${pasted}: ${await head(pasted, 3)}; kind ${useApp.getState().docs[pasted]?.type}`);
+    log(`done; vault ${vault.root}`);
+  } catch (e) {
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+// `ILMI_SMOKE=editing` over a copy of `samples/double-major` (ILMI_VAULT):
+// milestone 34's "done when", in the note `fleeting/2026-10-29.md`. Below
+// its last paragraph the smoke types a heading set with ⌘2 (⌘0 and back),
+// a list by `- ` with items nested by Tab, moves an item with its children
+// by ⌥⇧↓/↑, outdents and indents one with its child, ⏎ on an empty item
+// (outdent, then leave), Backspace at an item's start (a paragraph) and ⌘Z,
+// a task by `[ ] ` ticked by ⌘⏎ and its box, a numbered list by `1. ` with
+// an item moved and renumbered, a quote by `> ` toggled by ⌘⇧., a rule by
+// `---`, `* ` taken back by Backspace, a code block by a fence and ⏎, and
+// a display formula by `$$` ⏎; then over the note's own words ⌘B ⌘I ⌘E
+// ⌘⇧X (and ⌘B again, off), ⌘3 and ⌘0, ⌘⇧8 ⌘⇧7 ⌘⇧9 ⌘⇧. on and off, ⌘K's
+// field and a pasted address; and the toolbar over a selection (its
+// buttons, above the selection, `b` from it, gone when the selection is),
+// and on a frozen source (card and extract only). After each step the
+// file's affected lines are logged (` ⏎ ` between lines), and `shot:`
+// lines mark the screens worth seeing.
+export async function smokeEditing(vault: Vault): Promise<void> {
+  const log = (s: string) => info(`smoke editing: ${s}`);
+  const q = <T extends Element>(sel: string, root: ParentNode = document) => root.querySelector<T>(sel);
+  const qa = <T extends Element>(sel: string, root: ParentNode = document) => Array.from(root.querySelectorAll<T>(sel));
+  const shot = async (name: string, ms = 2600) => { await sleep(600); log(`shot: ${name}`); await sleep(ms); };
+  const NOTE = 'fleeting/2026-10-29.md';
+  const SOURCE = 'library/lindqvist-statistical-physics/ch-3-the-canonical-ensemble.md';
+  const ANCHOR = 'Back has too much on it.';
+  const text = () => vault.fs.readText(vault.abs(NOTE));
+  let last = '';
+  /** The file once the reader's write has landed (or a little while has passed). */
+  const settled = async () => {
+    for (let i = 0; i < 30; i++) {
+      await sleep(100);
+      const t = await text();
+      if (t !== last) { await sleep(150); last = await text(); return last; }
+    }
+    return last;
+  };
+  /** The note's lines from the anchor paragraph on: what the smoke typed. */
+  const region = (t: string) => {
+    const lines = t.split('\n');
+    const i = lines.findIndex((l) => l.includes(ANCHOR));
+    return lines.slice(i + 1).filter((l, k, all) => l || (k > 0 && all[k - 1])).join(' ⏎ ');
+  };
+  const lineWith = (t: string, needle: string) => t.split('\n').find((l) => l.includes(needle)) ?? '(none)';
+  const step = async (label: string) => log(`${label}: ${region(await settled())}`);
+  const stepLine = async (label: string, needle: string) => log(`${label}: ${lineWith(await settled(), needle)}`);
+  const open = async (path: string) => {
+    openNode(path);
+    await until(() => (activeTab(useApp.getState().panes)?.id === path ? q('.pane-body .doc-view .draft-doc') : null), 10000);
+    await sleep(500);
+  };
+  const surface = () => q<HTMLElement>('.pane-body .doc-view .draft-doc')!;
+  /** The textblock showing `needle`: a paragraph, a heading, an item's text, a quote line, code. */
+  const block = (needle: string) => qa<HTMLElement>('p.dd-p, .dd-h, .dd-li .li-text, .dd-ql, pre.dd-code code', surface()).find((p) => p.textContent?.includes(needle));
+  const at = async (needle: string, offset = 0) => {
+    const b = await until(() => block(needle));
+    surface().focus();
+    caret(b, needle, offset);
+    await sleep(80);
+  };
+  const atEnd = async (needle: string) => at(needle, needle.length);
+  /** `needle` selected inside the textblock that shows `context`. */
+  const pickIn = async (context: string, needle: string) => {
+    const b = await until(() => block(context));
+    surface().focus();
+    select(b, needle);
+    await sleep(120);
+  };
+  const MOD = { metaKey: true };
+  /** A key pressed on the focused page; true when the page took it. */
+  const key = async (k: string, init: KeyboardEventInit = {}) => {
+    const ev = new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true, ...init });
+    surface().dispatchEvent(ev);
+    await sleep(80);
+    return ev.defaultPrevented;
+  };
+  /** Typed as the keyboard would, a character at a time, so the rules see each one. */
+  const type = async (s: string) => {
+    for (const ch of s) {
+      document.execCommand('insertText', false, ch);
+      await sleep(30);
+    }
+    await sleep(60);
+  };
+  const enter = () => key('Enter', { code: 'Enter' });
+  try {
+    for (const p of ['fleeting', 'library', 'library/lindqvist-statistical-physics']) toggleOpen(p, true);
+    await open(NOTE);
+    last = await text();
+    log(`note ${NOTE}: kind ${useApp.getState().docs[NOTE]?.type}, editable ${surface().isContentEditable}; last lines "${region(last) || '(nothing after the anchor)'}"`);
+
+    // a heading: typed, ⌘2, ⌘0 back to a paragraph, ⌘2 again
+    await atEnd(ANCHOR);
+    await enter();
+    await type('Notes for Friday');
+    log(`⌘2 taken ${await key('2', { code: 'Digit2', ...MOD })}`);
+    await step('⌘2');
+    await key('0', { code: 'Digit0', ...MOD });
+    await step('⌘0');
+    await key('2', { code: 'Digit2', ...MOD });
+    await step('⌘2 again');
+
+    // a list by `- `, nested by Tab
+    await atEnd('Notes for Friday');
+    await enter();
+    await type('- ');
+    log(`after "- ": caret in ${document.getSelection()?.anchorNode?.parentElement?.closest('.dd-li') ? 'an item' : 'something else'}`);
+    await type('adiabatic invariants');
+    await enter();
+    await type('the action J');
+    await key('Tab', { code: 'Tab' });
+    await enter();
+    await type('area of the ellipse');
+    await key('Tab', { code: 'Tab' });
+    await enter();
+    await key('Tab', { code: 'Tab', shiftKey: true });
+    await key('Tab', { code: 'Tab', shiftKey: true });
+    await type('the golden rule');
+    await enter();
+    await type('Fermi constant');
+    await step('list typed');
+    await shot('editing-list');
+
+    // moved with its children
+    await at('adiabatic invariants', 3);
+    log(`⌥⇧↓ taken ${await key('ArrowDown', { code: 'ArrowDown', altKey: true, shiftKey: true })}`);
+    await step('⌥⇧↓ adiabatic invariants');
+    await shot('editing-moved');
+    await key('ArrowUp', { code: 'ArrowUp', altKey: true, shiftKey: true });
+    await step('⌥⇧↑ back');
+
+    // outdented and indented with its child
+    await at('the action J', 2);
+    await key('Tab', { code: 'Tab', shiftKey: true });
+    await step('⇧Tab the action J (with its child)');
+    await key('Tab', { code: 'Tab' });
+    await step('Tab the action J back');
+
+    // ⏎ on an empty item: set in, it comes out; at the top, it leaves
+    await atEnd('Fermi constant');
+    await enter();
+    await key('Tab', { code: 'Tab' });
+    await step('⏎ then Tab after Fermi constant');
+    await enter();
+    await step('⏎ on the empty nested item');
+    await enter();
+    await step('⏎ on the empty item');
+    log(`caret in ${document.getSelection()?.anchorNode?.parentElement?.closest('p.dd-p') ? 'a paragraph' : 'something else'}`);
+
+    // Backspace at an item's start: a paragraph; ⌘Z puts it back
+    await at('Fermi constant', 0);
+    await key('Backspace', { code: 'Backspace' });
+    await step('Backspace at the start of Fermi constant');
+    await key('z', { code: 'KeyZ', ...MOD });
+    await step('⌘Z');
+
+    // a task by `[ ] `, ticked by ⌘⏎, cleared by its box
+    await atEnd('Fermi constant');
+    await enter();
+    await enter();
+    await type('[ ] ');
+    await type('ask Okonkwo about the shadow');
+    await step('[ ] typed');
+    await key('Enter', { code: 'Enter', ...MOD });
+    await step('⌘⏎');
+    const box = await until(() => block('ask Okonkwo')?.closest('.dd-li')?.querySelector<HTMLElement>('.li-task'));
+    box.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+    await step('the box clicked');
+
+    // numbered by `1. `, an item moved and the numbers following
+    await atEnd('ask Okonkwo about the shadow');
+    await enter();
+    await enter();
+    await type('1. ');
+    await type('first');
+    await enter();
+    await type('second');
+    await enter();
+    await type('third');
+    await step('1. typed');
+    await at('third', 1);
+    await key('ArrowUp', { code: 'ArrowUp', altKey: true, shiftKey: true });
+    await step('⌥⇧↑ third');
+
+    // a quote by `> `, off and on by ⌘⇧.
+    await atEnd('second');
+    await enter();
+    await enter();
+    await type('> ');
+    await type('the classical shadow of this');
+    await step('> typed');
+    await key('>', { code: 'Period', shiftKey: true, ...MOD });
+    await step('⌘⇧. off');
+    await key('>', { code: 'Period', shiftKey: true, ...MOD });
+    await step('⌘⇧. on');
+
+    // a rule by `---`; `* ` taken back by Backspace
+    await atEnd('the classical shadow of this');
+    await enter();
+    await enter();
+    await type('---');
+    await step('--- typed');
+    await type('* ');
+    const listed = !!document.getSelection()?.anchorNode?.parentElement?.closest('.dd-li');
+    await key('Backspace', { code: 'Backspace' });
+    const back = block('* ')?.tagName.toLowerCase() ?? '(none)';
+    log(`"* " made an item ${listed}; Backspace: the text back in a ${back}`);
+    document.execCommand('delete');
+    document.execCommand('delete');
+    await sleep(100);
+
+    // code by a fence and ⏎; ⌘⏎ leaves it
+    await type('```py');
+    await enter();
+    log(`fence ⏎: caret in ${document.getSelection()?.anchorNode?.parentElement?.closest('pre.dd-code') ? 'code' : 'something else'}`);
+    await type('E = hbar * omega');
+    await key('Enter', { code: 'Enter', ...MOD });
+    await step('``` ⏎ and code typed');
+    await shot('editing-blocks');
+
+    // display math by `$$` ⏎: the formula's editor opens
+    await type('$$');
+    await enter();
+    const field = await until(() => q<HTMLTextAreaElement>('.pane-body .math-edit textarea'), 3000).catch(() => null);
+    log(`$$ ⏎: editor ${field ? `open, "${field.value}"` : 'not open'}`);
+    if (field) {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(field, 'E_n = \\hbar\\omega(n + \\tfrac12)');
+      field.dispatchEvent(new Event('input', { bubbles: true }));
+      await shot('editing-math');
+      field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    }
+    await step('$$ written');
+
+    // the formatting keys over the note's own words
+    await pickIn('it was due', 'Skipped');
+    log(`⌘B taken ${await key('b', { code: 'KeyB', ...MOD })}`);
+    await stepLine('⌘B Skipped', 'the 301 re-read');
+    await pickIn('it was due', 'today');
+    await key('i', { code: 'KeyI', ...MOD });
+    await stepLine('⌘I today', 'the 301 re-read');
+    await pickIn('it was due', '301');
+    await key('e', { code: 'KeyE', ...MOD });
+    await stepLine('⌘E 301', 'the 301 re-read');
+    await pickIn('it was due', 'Tomorrow.');
+    await key('x', { code: 'KeyX', shiftKey: true, ...MOD });
+    await stepLine('⌘⇧X Tomorrow.', 'the 301 re-read');
+    await pickIn('it was due', 'Skipped');
+    await key('b', { code: 'KeyB', ...MOD });
+    await stepLine('⌘B Skipped again (off)', 'the 301 re-read');
+    await at('it was due', 2);
+    await key('3', { code: 'Digit3', ...MOD });
+    await stepLine('⌘3', 'the 301 re-read');
+    await key('0', { code: 'Digit0', ...MOD });
+    await stepLine('⌘0', 'the 301 re-read');
+    for (const [code, name] of [['Digit8', '⌘⇧8'], ['Digit7', '⌘⇧7'], ['Digit9', '⌘⇧9'], ['Period', '⌘⇧.']] as const) {
+      await at('it was due', 2);
+      await key(code === 'Period' ? '>' : '*', { code, shiftKey: true, ...MOD });
+      await stepLine(`${name} on`, 'the 301 re-read');
+      await at('it was due', 2);
+      await key(code === 'Period' ? '>' : '*', { code, shiftKey: true, ...MOD });
+      await stepLine(`${name} off`, 'the 301 re-read');
+    }
+
+    // ⌘K: the address field over a selection; a pasted address over another
+    await pickIn('mostly', 'Ibn Sīnā');
+    log(`⌘K taken ${await key('k', { code: 'KeyK', ...MOD })}; palette ${useApp.getState().paletteOpen ? 'open' : 'closed'}`);
+    const addr = await until(() => q<HTMLInputElement>('.link-pop .field'), 3000).catch(() => null);
+    log(`link field: ${addr ? 'open' : 'not open'}`);
+    if (addr) {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(addr, 'https://plato.stanford.edu/entries/ibn-sina-natural/');
+      addr.dispatchEvent(new Event('input', { bubbles: true }));
+      await shot('editing-link');
+      addr.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    }
+    await stepLine('⌘K link', 'Ibn Sīnā');
+    await at('adiabatic theorem today', 2);
+    log(`⌘K with a bare caret: taken ${await key('k', { code: 'KeyK', ...MOD })}`);
+    await sleep(300);
+    log(`palette ${useApp.getState().paletteOpen ? 'open' : 'closed'}`);
+    if (useApp.getState().paletteOpen) useApp.setState({ paletteOpen: false });
+    await pickIn('adiabatic theorem today', 'adiabatic theorem');
+    try {
+      const dt = new DataTransfer();
+      dt.setData('text/plain', 'https://en.wikipedia.org/wiki/Adiabatic_theorem');
+      surface().dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+    } catch (e) {
+      log(`paste: ${e instanceof Error ? e.message : String(e)}`);
+    }
+    await stepLine('pasted address', 'adiabatic theorem');
+
+    // the toolbar: over a selection, above it; `b` from it; gone with the selection
+    await pickIn('canonical-transformation', 'the canonical-transformation section');
+    const cue = await until(() => q<HTMLElement>('.pane-body .sel-cue'), 3000).catch(() => null);
+    const range = window.getSelection()?.rangeCount ? window.getSelection()!.getRangeAt(0).getBoundingClientRect() : null;
+    log(`toolbar: ${cue ? qa<HTMLElement>('button', cue).map((b) => b.textContent?.trim()).join(' | ') : 'none'}; place ${cue?.dataset.place}; its bottom ${cue ? Math.round(cue.getBoundingClientRect().bottom) : '-'} vs the selection's top ${range ? Math.round(range.top) : '-'}`);
+    await shot('editing-toolbar');
+    q<HTMLElement>('.pane-body .sel-cue .cue-fmt[data-fmt="strong"]')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+    await stepLine('toolbar b', 'canonical-transformation');
+    window.getSelection()?.collapseToEnd();
+    await sleep(300);
+    log(`selection collapsed: toolbar ${q('.pane-body .sel-cue') ? 'still there' : 'gone'}`);
+
+    // a frozen source: the toolbar is card and extract only
+    await open(SOURCE);
+    const sp = await until(() => qa<HTMLElement>('p.dd-p', surface()).find((p) => (p.textContent?.length ?? 0) > 80));
+    select(sp, sp.textContent!.split(/\s+/).slice(0, 4).join(' '));
+    const fcue = await until(() => q<HTMLElement>('.pane-body .sel-cue'), 3000).catch(() => null);
+    log(`frozen source toolbar: ${fcue ? qa<HTMLElement>('button', fcue).map((b) => b.textContent?.trim()).join(' | ') : 'none'}; editable ${surface().isContentEditable}`);
+    await shot('editing-frozen-toolbar');
+    window.getSelection()?.removeAllRanges();
+
+    await open(NOTE);
+    const final = await text();
+    log(`file: ${final.split('\n').length} lines; the typed part: ${region(final)}`);
     log(`done; vault ${vault.root}`);
   } catch (e) {
     log(`failed: ${e instanceof Error ? e.message : String(e)}`);

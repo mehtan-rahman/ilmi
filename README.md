@@ -100,7 +100,7 @@ F2 / dbl-click   rename                 right-click  new, import, rename, move t
 ⌘⇧O              import…                ⌘⇧W          close collection
 ⌘V               an address, with nothing focused: clipped into the active tab's folder
 ⌘W               close tab              ⌘\           split pane
-⌘⇧E              sidebar                ⌘⇧I          inspector
+⌃⌘S              sidebar                ⌘⇧I          inspector
 ⌘,               tweaks: theme, accent, density, reopen the last vault on start,
                  download images when clipping, show remote images, queue
                  shows titles (kept outside the vault); the day's budget,
@@ -110,6 +110,11 @@ on the welcome   ⏎ open the selected vault, j k move, o open vault, n new vaul
                  a folder dropped on it opens as a vault
 
 in a source      select, then e extract or m make a card; r start reading
+in a note        ⌘B bold, ⌘I italic, ⌘E code, ⌘⇧X strike, ⌘K link (over a
+                 selection; with none it is the palette), ⌘1–⌘6 heading, ⌘0
+                 paragraph, ⌘⇧8 bullets, ⌘⇧7 numbers, ⌘⇧9 tasks, ⌘⇧. quote; in
+                 a list Tab ⇧Tab ⌥⇧↑ ⌥⇧↓ move an item with its children, ⌘⏎
+                 ticks a task; with a selection ⌘⇧E extract, ⌘⇧M make a card
 in a PDF         the same on a page; / search, g go to a page, [ ] pages;
                  text in the meta row reads the Markdown instead
 in a deck        j k move, ⌫ delete the selected card, m make a card;
@@ -184,10 +189,17 @@ click outside writes it once, Escape leaves it as it was, an arrow at the
 field's end steps out past the chip. A list, a block quote, and a fenced
 code block are edited as themselves: the bullets, numbers, and `> ` sit
 beside the text as what the file says, ⏎ continues an item or a line (the
-numbers on, a task box unticked) and leaves from an empty one, Tab and ⇧Tab
-move an item in and out, a task's box ticks on a click, and a code block
+numbers on, a task box unticked), outdents an empty one and then leaves,
+Tab and ⇧Tab move an item in and out with its children (under the item
+before it, at its text's column), ⌥⇧↑ and ⌥⇧↓ move it among its siblings,
+a task's box ticks on a click or ⌘⏎, and a code block
 takes ⏎ as a newline, Tab as two spaces, and ⌘⏎ to step out, its fence
-written back as it was. A table, a rule, or indented code is drawn as that
+written back as it was. They are made as they are typed: `- `, `* `,
+`1. `, `[ ] `, `> ` at a paragraph's start, `---` alone, a fence line or
+`$$` and then ⏎; a Backspace right after puts the typed text back. The
+formatting keys write the markers (`**`, `*`, a backtick, `~~`, `[…](…)`)
+and take them out again, and a selection shows a small bar above it with
+b, i, code, link, card, and extract. A table, a rule, or indented code is drawn as that
 element inside its block, and a click on it shows the source. An
 `![alt](src)` alone in a paragraph is the picture with its
 alt as the caption, read from the vault when the path is relative and from

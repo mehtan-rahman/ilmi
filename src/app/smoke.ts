@@ -4825,7 +4825,11 @@ export async function smokeTabs2(vault: Vault): Promise<void> {
 
     // ── a row's hover `+` and `···` ──
     {
-      const wkb = rrow(WKB)!;
+      // the dragged tab was the open page (`+ add tab` opened it), and the pane follows its document out of the
+      // notebook, so the rail goes with it (window run 2 found the rail gone here); back to the course
+      log(`after the drag out: page ${page()}, rail ${q('.tab-rail') ? 'drawn' : 'gone'}`);
+      openNode(QM);
+      const wkb = await poll(() => rrow(WKB), 'quantum II\'s rail again, wkb in it', 8000);
       wkb.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
       await sleep(150);
       q<HTMLElement>('.row-acts .add', wkb)!.click();
@@ -4835,7 +4839,7 @@ export async function smokeTabs2(vault: Vault): Promise<void> {
       const field = await poll(() => q<HTMLInputElement>('.tab-rail input.rename'), 'named in place');
       field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
       await sleep(200);
-      q<HTMLElement>('.row-acts .more', rrow(made)!)!.click();
+      q<HTMLElement>('.row-acts .more', await poll(() => rrow(made), 'its row'))!.click();
       await poll(() => q('.ctx-menu'), 'the `···` menu');
       must(JSON.stringify(entries()) === JSON.stringify(['add subtab', 'rename', 'duplicate', 'move to…', 'delete']), `its entries: ${entries().join(' | ')}`);
       await shot('tabs2-row-more');

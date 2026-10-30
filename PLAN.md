@@ -3908,6 +3908,11 @@ had made it the page. Heading rows now carry `data-of` (the row whose
 outline they are); the smoke waits for the page to be the tab and for only
 its headings, and a test switches from the overview to a tab. 839 tests;
 the rerun is owed.
+Window run 2 (`74eefea`): passed to the drag from the rail into the sidebar,
+then the next step found no wkb row. The app was right: the dragged tab was
+the open page, and a pane follows its document, here out of the notebook,
+so the rail went with it. The smoke now logs that and reopens the course
+before the hover menus. Rerun owed.
 Today tabs are reachable only from `show as tabs` in a right-click menu,
 the rail is a second full tree beside the sidebar's, extracts appear as
 subtabs (a chapter with 40 extracts has 40 tabs), `+ tab` makes a draft

@@ -62,7 +62,10 @@ the tests (`tabs-refined.test.ts`, `remove.test.ts` new).
 - Window run 1 (`854659c`): passed to the outline, then failed reading the
   overview's headings before the click had made the tab the page (a smoke
   race; the rail was right). Heading rows carry `data-of`; the smoke waits
-  for the page and that tab's headings only; a new test. 839 tests; rerun owed.
+  for the page and that tab's headings only; a new test. 839 tests.
+- Window run 2 (`74eefea`): passed to the rail → sidebar drag, then no wkb row:
+  the dragged tab was the open page and the pane followed it out of the
+  notebook (the app is right). The smoke reopens the course there. Rerun owed.
 
 ### Handoff prompt
 

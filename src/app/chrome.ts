@@ -5,7 +5,7 @@
 import { cardFields, type Block, type CardForm } from '../format/index.js';
 import { nameOf, type TreeNode } from '../vault/index.js';
 import { FORM_LABEL } from './items.js';
-import { QUEUE_TITLE, SCOPES, queueId, type QueueScope, type TabKind } from './names.js';
+import { GLYPH, QUEUE_TITLE, slugName, SCOPES, queueId, type QueueScope, type TabKind } from './names.js';
 import type { DocInfo, El } from './store.js';
 import { notebookTrail } from './tabs.js';
 
@@ -142,7 +142,8 @@ export interface VaultRef {
 }
 
 export const ENTRY_GLYPH: Record<EntryTag, string> = {
-  query: '≡', folder: '/', note: '¶', source: '“', extract: '↳', deck: '◫', draft: '✎', card: '◆', command: '›', vault: '⌂',
+  // the kinds' marks are the tree's (`GLYPH`), so the palette and the sidebar agree
+  query: '≡', folder: GLYPH.folder, note: GLYPH.note, source: GLYPH.source, extract: GLYPH.extract, deck: GLYPH.deck, draft: GLYPH.draft, card: '◆', command: '›', vault: '⌂',
 };
 
 /** A card the palette can name, from any document's blocks. */
@@ -157,7 +158,7 @@ export interface CardRef {
 export function buildIndex(tree: TreeNode[], docs: Record<string, DocInfo>, cards: CardRef[], commands: Command[], vaults: VaultRef[] = []): Entry[] {
   const out: Entry[] = [];
   for (const scope of SCOPES) out.push({ key: `q:${scope}`, title: QUEUE_TITLE[scope], sub: 'saved query', tag: 'query', target: { open: queueId(scope) } });
-  const title = (path: string) => docs[path]?.title ?? nameOf(path);
+  const title = (path: string) => docs[path]?.title ?? slugName(nameOf(path));
   const visit = (nodes: TreeNode[], parent: string) => {
     for (const n of nodes) {
       if (n.kind === 'folder') {

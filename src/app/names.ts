@@ -34,13 +34,22 @@ export const QUEUE_TITLE: Record<QueueScope, string> = {
   today: 'due today', upcoming: 'upcoming', reading: 'reading', writing: 'writing', cards: 'all cards',
 };
 
+/**
+ * One mark per kind, all in the bundled IBM Plex Mono (its Latin subset, so
+ * every one is drawn in the same face and weight at 13px, none left to a
+ * system fallback): a folder is a path's `/`; a note your own paragraphs
+ * `¶`; a source someone else's words `“`; an extract a section carried out
+ * of one `§`; a deck a front equal to its back `=`; a draft writing still
+ * rough `~`. A folder's name is also set apart by weight, not by its mark
+ * alone (`app.css`).
+ */
 export const GLYPH: Record<TabKind, string> = {
   folder: '/',
   note: '¶',
   source: '“',
-  extract: '↳',
-  deck: '◫',
-  draft: '✎',
+  extract: '§',
+  deck: '=',
+  draft: '~',
   intake: '＋',
   queue: '≡',
   session: '◆',
@@ -64,8 +73,18 @@ export function titleOf(path: string, docs: Record<string, DocInfo>, vaultRoot: 
   if (path === SESSION) return 'session';
   const scope = queueScope(path);
   if (scope) return QUEUE_TITLE[scope];
-  if (!isDoc(path) && docs[`${path}.md`]) return docs[`${path}.md`]?.title ?? nameOf(path);
-  return docs[path]?.title ?? nameOf(path);
+  if (!isDoc(path) && docs[`${path}.md`]) return docs[`${path}.md`]?.title ?? slugName(nameOf(path));
+  return docs[path]?.title ?? slugName(nameOf(path));
+}
+
+/**
+ * A file name as a name: a slug's hyphens and underscores read as spaces
+ * (`unit-2` → `unit 2`, `ch-3_the-canonical-ensemble` → `ch 3 the canonical
+ * ensemble`), except between two digits (`2026-10-30` stays a date). Only
+ * for showing; the file keeps its name.
+ */
+export function slugName(name: string): string {
+  return name.replace(/[-_]+/g, (run, at: number, all: string) => (/\d/.test(all[at - 1] ?? '') && /\d/.test(all[at + run.length] ?? '') ? run : ' ')).replace(/\s{2,}/g, ' ').trim() || name;
 }
 
 export function findNode(nodes: TreeNode[], path: string): TreeNode | undefined {
@@ -136,6 +155,28 @@ export function descendants(node: TreeNode): number {
 }
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+/**
+ * What a tree row shows at its end: one number, how much is due in the
+ * document (its cards due, and one for a reading or writing pass due
+ * today), 0 when nothing is (drawn as nothing); and the full counts, for
+ * the row's tooltip.
+ */
+export function rowCounts(node: TreeNode, info: DocInfo | undefined, now: Date): { due: number; full: string } {
+  if (node.kind === 'folder') return { due: 0, full: node.children.length ? plural(node.children.length, 'item') : 'empty' };
+  if (!info) return { due: 0, full: '' };
+  const parts: string[] = [];
+  if (info.cards || info.type === 'deck') parts.push(`${plural(info.cards, 'card')}${info.due ? `, ${info.due} due` : ''}`);
+  const read = !!info.read && (!info.read.due || whenToDate(info.read.due) <= now);
+  const w = info.write;
+  const write = !!w && !w.done && (!w.due || whenToDate(w.due) <= now);
+  if (read) parts.push(info.type === 'note' ? 'revisit due' : 'reading due');
+  if (write) parts.push('writing due');
+  else if (w?.done) parts.push('done');
+  const kids = node.children?.length ?? 0;
+  if (kids) parts.push(plural(kids, 'item'));
+  return { due: info.due + (read ? 1 : 0) + (write ? 1 : 0), full: parts.join('; ') };
+}
 
 /** The quiet note at the end of a row: counts, or a state word. */
 export function metaOf(node: TreeNode, info: DocInfo | undefined, now: Date): string {

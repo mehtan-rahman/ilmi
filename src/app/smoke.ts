@@ -120,6 +120,9 @@
 // course, logging the rows and `.ilmi/order.json` after each.
 // `ILMI_SMOKE=tabs` (`smokeTabs`): the course as a notebook, its tab rail
 // made, arranged, read, stepped, and folded (see the function).
+// `ILMI_SMOKE=tree` (`smokeTree`) over a copy of `samples/double-major`:
+// the tree refined, drags at every zone logged against where they landed,
+// the keys, the reveal, the hover menus, a hoist (see the function).
 // `ILMI_SMOKE=notes` (`smokeNotes`) over a copy of `samples/double-major`:
 // a typeless file opens as a note, the five kind words in the menus, a note
 // revisited from the top and from a heading, `e` typed over a selection in
@@ -3781,6 +3784,310 @@ export async function smokeEditing(vault: Vault): Promise<void> {
     await open(NOTE);
     const final = await text();
     log(`file: ${final.split('\n').length} lines; the typed part: ${region(final)}`);
+    log(`done; vault ${vault.root}`);
+  } catch (e) {
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+// `ILMI_SMOKE=tree` over a copy of `samples/double-major` (ILMI_VAULT):
+// milestone 38's "done when". Drags rows of the sidebar with synthetic
+// DragEvents at a row's top, middle (with and without a rest), and bottom,
+// on an open parent's bottom (its first child), and below a last child at
+// three pointer depths, then on a folded row (the spring) cancelled with
+// Esc, a refused drop, the edge scroll, a new empty folder's placeholder,
+// the tab rail, the folder lens, and across them; for each it logs what was
+// drawn (the mark, its row, the depth its line is indented to), what the
+// drop was, and where the node landed (its path, its directory's order
+// from `.ilmi/order.json`, and whether that is where the mark said). Then
+// the keys (↑↓→←, type-ahead, ⏎, F2 and Esc, ⌥⌘ moves, ⌘⌫ asking), the
+// open note revealed in a folded tree, the hover `+` and `···` menus, a
+// hoist and its crumb, the breadcrumbs, and every row at the default width
+// checked for a name cut short by its count. `shot:` lines mark the screens.
+export async function smokeTree(vault: Vault): Promise<void> {
+  const log = (s: string) => info(`smoke tree: ${s}`);
+  const shot = async (name: string, ms = 3000) => { await sleep(500); log(`shot: ${name}`); await sleep(ms); };
+  const q = <T extends Element>(sel: string, root: ParentNode = document) => root.querySelector<T>(sel);
+  const qa = <T extends Element>(sel: string, root: ParentNode = document) => Array.from(root.querySelectorAll<T>(sel));
+  const { useDrag } = await import('./drag.js');
+  const { childDirOf, childrenAt, dirOf, baseOf, entryOf, ordered } = await import('../vault/index.js');
+  const { setSidebar } = await import('./vault.js');
+  const { SIDE_DEFAULT } = await import('./store.js');
+  const trow = (path: string) => q<HTMLElement>(`.edit-tree .trow[data-path="${CSS.escape(path)}"]:not(.placeholder)`);
+  const rrow = (path: string) => q<HTMLElement>(`.tab-rail .rail-row[data-path="${CSS.escape(path)}"]`);
+  const lrow = (path: string) => q<HTMLElement>(`.folder-view .fv-row[data-path="${CSS.escape(path)}"]`);
+  const box = () => q<HTMLElement>('.edit-tree')!;
+  const rowsOf = (prefix: string) => qa<HTMLElement>('.edit-tree .trow')
+    .filter((r) => (r.dataset.path ?? '').startsWith(prefix))
+    .map((r) => `${'  '.repeat(Math.max(0, Math.round((parseFloat(r.style.paddingLeft || '6') - 6) / 13) - 1))}${r.classList.contains('placeholder') ? '(empty)' : `${r.querySelector('.glyph')?.textContent ?? ''}${r.querySelector('.name')?.textContent ?? ''}`}${r.dataset.selected === '1' ? ' [sel]' : ''}${r.dataset.active === '1' ? ' [open]' : ''}`)
+    .join(' | ');
+  const dirList = (dir: string) => ordered(childrenAt(vault.tree, dir) ?? [], vault.order[dir]).map((n) => entryOf(n.path));
+  const orderOf = async (dir: string) => {
+    const abs = vault.abs('.ilmi/order.json');
+    if (!(await vault.fs.stat(abs))) return 'no order.json';
+    const all = JSON.parse(await vault.fs.readText(abs)) as Record<string, string[]>;
+    return `order.json["${dir}"] = ${JSON.stringify(all[dir] ?? null)}`;
+  };
+  // the mark drawn now: on which row, which kind, the depth its line is indented to (the surface's pad and indent)
+  const mark = () => {
+    const el = q<HTMLElement>('.trow[class*="drop-"], .rail-row[class*="drop-"], .fv-row[class*="drop-"], .fv-empty[class*="drop-"]');
+    if (!el) return 'nothing drawn';
+    const kind = el.className.match(/drop-(top|bottom|into)/)?.[1] ?? '?';
+    const x = parseFloat(el.style.getPropertyValue('--drop-x') || 'NaN');
+    const [pad, ind] = el.classList.contains('rail-row') ? [6, 14] : el.classList.contains('fv-row') ? [0, 1] : [6, 13];
+    const depth = Number.isFinite(x) ? ` at depth ${Math.round((x - pad) / ind)}` : '';
+    return `${kind === 'into' ? 'box around' : `line ${kind === 'top' ? 'above' : 'below'}`} ${el.dataset.path || '/'}${depth}`;
+  };
+  const dragEv = (type: string, dt: DataTransfer, x: number, y: number) => new DragEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, dataTransfer: dt });
+  type Where = 'top' | 'mid' | 'bottom';
+  /**
+   * A drag as a pointer would make it: dragstart on `from`, dragenter and
+   * dragover on `to` at its top (12%), middle, or bottom (88%), `x` px from
+   * its left (else near its right end), resting first when asked; logs the
+   * mark and the drop, then drops (or presses Esc) and checks the landing.
+   */
+  const drag = async (name: string, from: HTMLElement | null, to: HTMLElement | null, where: Where, opts: { x?: number; rest?: number; shot?: string; esc?: boolean } = {}) => {
+    if (!from || !to) { log(`${name}: a row is missing (${from ? '' : 'from '}${to ? '' : 'to'})`); return; }
+    const moving = from.dataset.path ?? '';
+    const dt = new DataTransfer();
+    from.dispatchEvent(dragEv('dragstart', dt, 0, 0));
+    await sleep(60);
+    const r = to.getBoundingClientRect();
+    const y = r.top + r.height * (where === 'top' ? 0.12 : where === 'mid' ? 0.5 : 0.88);
+    const x = r.left + (opts.x ?? r.width - 40);
+    to.dispatchEvent(dragEv('dragenter', dt, x, y));
+    const over = dragEv('dragover', dt, x, y);
+    to.dispatchEvent(over);
+    if (opts.rest) {
+      for (let t = 0; t < opts.rest; t += 100) { await sleep(100); to.dispatchEvent(dragEv('dragover', dt, x, y)); }
+    }
+    await sleep(120);
+    const d = useDrag.getState().drop;
+    log(`${name}: ${moving} over the ${where} of ${to.dataset.path}${opts.x !== undefined ? ` (x ${opts.x})` : ''}${opts.rest ? ` resting ${opts.rest} ms` : ''}: accepted ${over.defaultPrevented}, drawn ${mark()}, drop ${d ? `${d.mode} ${d.target}` : 'none (refused)'}`);
+    if (opts.shot) await shot(opts.shot, 2500);
+    if (opts.esc) {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+      await sleep(80);
+      log(`${name}: Esc, drawn ${mark()}`);
+    }
+    to.dispatchEvent(dragEv('drop', dt, x, y));
+    from.dispatchEvent(dragEv('dragend', dt, x, y));
+    if (!d || opts.esc) {
+      await sleep(600);
+      log(`${name}: nothing moved: ${vault.documents().includes(moving) || !moving.endsWith('.md') ? 'yes' : 'NO'}`);
+      return;
+    }
+    const dir = d.mode === 'into' ? childDirOf(d.target) : dirOf(d.target);
+    const landed = `${dir ? `${dir}/` : ''}${baseOf(moving)}`;
+    try { await until(() => (dirList(dir).includes(entryOf(landed)) && (d.mode === 'into' || vault.order[dir]) ? true : null), 8000); } catch { /* logged below */ }
+    await sleep(400);
+    const list = dirList(dir);
+    const i = list.indexOf(entryOf(landed));
+    const asDrawn = i >= 0 && (d.mode === 'into' || (d.mode === 'before' ? list[i + 1] === entryOf(d.target) : list[i - 1] === entryOf(d.target)));
+    log(`${name}: landed ${landed} (${i + 1} of ${list.length} in ${dir || '/'}: ${list.join(', ')}); ${await orderOf(dir)}; where the mark said: ${asDrawn ? 'yes' : 'NO'}`);
+  };
+  const press = (key: string, init: KeyboardEventInit = {}) => {
+    const ev = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...init });
+    box().dispatchEvent(ev);
+    return ev.defaultPrevented;
+  };
+  const selectedRow = () => q<HTMLElement>('.edit-tree .trow[data-selected="1"]')?.dataset.path ?? 'none';
+  const entries = () => qa<HTMLElement>('.ctx-menu .ci').map((e) => e.textContent).join(' | ');
+  const F26 = 'courses/fall-2026';
+  const QM = `${F26}/phys-412-quantum-ii.md`;
+  const QMK = `${F26}/phys-412-quantum-ii`;
+  const SM = `${F26}/phys-415-stat-mech`;
+  const GRAMMAR = `${F26}/arab-401-advanced-grammar.md`;
+  try {
+    setSidebar({ width: SIDE_DEFAULT, hidden: false });
+    for (const p of ['', 'courses', F26, QM, `${QMK}/problem-sets`, GRAMMAR, `${SM}.md`, 'fleeting', 'physics', 'arabic']) toggleOpen(p, true);
+    openNode(queueId('today'));
+    await until(() => trow(`${QMK}/problem-sets/ps-7.md`));
+    await sleep(600);
+    log(`glyphs: ${(['folder', 'note', 'source', 'extract', 'deck', 'draft'] as const).map((k) => `${k} ${GLYPH[k]}`).join(', ')}`);
+    log(`start: ${rowsOf('fleeting')} || ${rowsOf('physics')} || ${rowsOf('arabic')}`);
+    await shot('tree-start');
+
+    // ── drags in the tree ──
+    await drag('top', trow('fleeting/2026-10-27.md'), trow('fleeting/2026-10-30.md'), 'top', { shot: 'tree-drag-top' });
+    await drag('bottom', trow('fleeting/idea-for-honors-thesis.md'), trow('fleeting/2026-10-30.md'), 'bottom');
+    // the middle of a bare document, no rest: a reorder, never a nest by accident
+    await drag('middle, no rest', trow('arabic/roots.md'), trow('arabic/vocabulary.md'), 'mid', { shot: 'tree-drag-mid-no-rest' });
+    // the middle of a bare document after a rest: into it, its children directory made
+    await drag('middle, rested', trow('fleeting/2026-10-29.md'), trow('fleeting/idea-for-honors-thesis.md'), 'mid', { rest: 600, shot: 'tree-drag-into-rested' });
+    await drag('middle of a folder', trow('fleeting/clipped-why-perturbation-series-diverge.md'), trow('physics'), 'mid');
+    // an open parent's bottom quarter: its first child
+    await drag('open parent bottom', trow('arabic/roots.md'), trow(GRAMMAR), 'bottom', { shot: 'tree-drag-first-child' });
+    // below the last child of problem sets, at three depths: ps-7 sits at depth 5, problem sets at 4, the course at 3
+    const depthX = (d: number) => 6 + d * 13 + 4;
+    await drag('below last, depth 5', trow('physics/constants-and-orders-of-magnitude.md'), trow(`${QMK}/problem-sets/ps-7.md`), 'bottom', { x: depthX(5) + 30, shot: 'tree-drag-below-last-5' });
+    await drag('below last, depth 4', trow('physics/derivation-drills.md'), trow(`${QMK}/problem-sets/constants-and-orders-of-magnitude.md`), 'bottom', { x: depthX(4), shot: 'tree-drag-below-last-4' });
+    await drag('below last, depth 3', trow('arabic/vocabulary.md'), trow(`${QMK}/derivation-drills.md`), 'bottom', { x: depthX(3), shot: 'tree-drag-below-last-3' });
+    log(`after the drags: ${rowsOf(QMK)} || ${rowsOf(F26).split(' | ').filter((r) => !r.startsWith('    ')).join(' | ')}`);
+    // refused: a folder into its own subtree
+    await drag('refused', trow(F26), trow(QM), 'mid', { shot: 'tree-drag-refused' });
+    // a folded row opens after a rest; Esc cancels and the drop does nothing
+    const book = 'library/classical-prose-reader.md';
+    toggleOpen('library', true);
+    toggleOpen(book, false);
+    await until(() => trow(book));
+    await drag('spring, then Esc', trow('fleeting/2026-10-30.md'), trow(book), 'mid', { rest: 700, esc: true, shot: 'tree-drag-spring' });
+    log(`spring: ${book} open ${useApp.getState().open[book] ? 'yes' : 'NO'}`);
+    // the edge scroll: a dragover near the sidebar's bottom edge scrolls it
+    {
+      const side = q<HTMLElement>('.side')!;
+      side.scrollTop = 0;
+      const sb = side.getBoundingClientRect();
+      const low = qa<HTMLElement>('.edit-tree .trow').reverse().find((r) => { const rr = r.getBoundingClientRect(); return rr.bottom <= sb.bottom && rr.bottom > sb.bottom - 40; });
+      const dt = new DataTransfer();
+      trow('fleeting/2026-10-30.md')?.dispatchEvent(dragEv('dragstart', dt, 0, 0));
+      for (let k = 0; k < 6 && low; k++) { low.dispatchEvent(dragEv('dragover', dt, sb.left + 60, sb.bottom - 4)); await sleep(40); }
+      log(`edge scroll: the sidebar scrolled from 0 to ${side.scrollTop} (${low ? `over ${low.dataset.path}` : 'no row at the edge'})`);
+      trow('fleeting/2026-10-30.md')?.dispatchEvent(dragEv('dragend', dt, 0, 0));
+      side.scrollTop = 0;
+    }
+    // an empty folder: one quiet row, taking a drop into the folder
+    const empty = await createNode('', 'folder');
+    toggleOpen(empty, true);
+    await until(() => q(`.edit-tree .trow.placeholder[data-path="${CSS.escape(empty)}"]`));
+    log(`empty folder ${empty}: ${rowsOf(empty)}`);
+    await drag('placeholder', trow('fleeting/2026-10-30.md'), q<HTMLElement>(`.edit-tree .trow.placeholder[data-path="${CSS.escape(empty)}"]`), 'mid', { shot: 'tree-drag-placeholder' });
+
+    // ── the rail and the folder lens, and across ──
+    openNode(QM);
+    await until(() => rrow(`${QMK}/variational-method.md`), 10000);
+    await sleep(600);
+    const rail = () => qa<HTMLElement>('.tab-rail .rail-row').map((r) => r.querySelector('.name')?.textContent).join(' | ');
+    log(`rail: ${rail()}`);
+    await drag('rail top', rrow(`${QMK}/variational-method.md`), rrow(`${QMK}/nondegenerate-perturbation-theory.md`), 'top', { shot: 'tree-rail-drag' });
+    await drag('tree → rail', trow(`${empty}/2026-10-30.md`), rrow(`${QMK}/wkb-approximation.md`), 'bottom');
+    await sleep(400);
+    log(`rail after: ${rail()}`);
+    await drag('rail → tree', rrow(`${QMK}/2026-10-30.md`), trow('fleeting/2026-10-27.md'), 'top');
+    openNode(SM);
+    await until(() => lrow(`${SM}/canonical-ensemble.md`), 10000);
+    await sleep(500);
+    await drag('lens top', lrow(`${SM}/derivations.md`), lrow(`${SM}/canonical-ensemble.md`), 'top', { shot: 'tree-lens-drag' });
+    await drag('tree → lens', trow('fleeting/2026-10-27.md'), lrow(`${SM}/microcanonical-ensemble.md`), 'bottom');
+    await drag('lens → tree', lrow(`${SM}/2026-10-27.md`), trow('fleeting/2026-10-30.md'), 'top');
+
+    // ── the keys ──
+    trow('fleeting')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    box().focus();
+    await sleep(100);
+    const step = async (label: string, key: string, init: KeyboardEventInit = {}) => {
+      const taken = press(key, init);
+      await sleep(250);
+      log(`key ${label}: taken ${taken}, selected ${selectedRow()}`);
+    };
+    await step('↓', 'ArrowDown');
+    await step('↓', 'ArrowDown');
+    await step('↑', 'ArrowUp');
+    await step('←', 'ArrowLeft');
+    await step('←', 'ArrowLeft');
+    log(`fleeting open: ${useApp.getState().open['fleeting'] ? 'yes' : 'no'}`);
+    await step('→', 'ArrowRight');
+    await step('→', 'ArrowRight');
+    await sleep(800);
+    await step('i (type-ahead)', 'i');
+    await step('⏎', 'Enter');
+    log(`after ⏎ the tab is ${activeTab(useApp.getState().panes)?.id}`);
+    // F2 in the page is not the tree's; in the tree, pressed right after the row's press (as 33's smoke does), it renames that row
+    (document.activeElement as HTMLElement | null)?.blur?.();
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'F2', bubbles: true, cancelable: true }));
+    await sleep(200);
+    log(`F2 with the tree unfocused: rename ${q('.edit-tree input.rename') ? 'OPEN' : 'not open'}`);
+    const picked = selectedRow();
+    trow(picked)?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    box().focus();
+    press('F2');
+    await sleep(200);
+    const input = q<HTMLInputElement>('.edit-tree input.rename');
+    log(`F2 in the tree: rename field ${input ? `"${input.value}" on ${input.closest<HTMLElement>('.trow')?.dataset.path}` : 'NOT OPEN'} (selected ${picked})`);
+    input?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    await sleep(200);
+    log(`Esc: field ${q('.edit-tree input.rename') ? 'still open' : 'gone'}, focus in the tree ${document.activeElement === box() ? 'yes' : 'no'}`);
+    await shot('tree-keys');
+    const moved = selectedRow();
+    await step('⌥⌘↑', 'ArrowUp', { metaKey: true, altKey: true });
+    await sleep(500);
+    log(`⌥⌘↑: fleeting ${dirList('fleeting').join(', ')}; ${await orderOf('fleeting')}`);
+    await step('⌥⌘→', 'ArrowRight', { metaKey: true, altKey: true });
+    await sleep(700);
+    log(`⌥⌘→: ${rowsOf('fleeting')}`);
+    await step('⌥⌘←', 'ArrowLeft', { metaKey: true, altKey: true });
+    await sleep(700);
+    log(`⌥⌘←: ${rowsOf('fleeting')}; ${moved} back at ${selectedRow()}`);
+    await shot('tree-keys-moved');
+    // ⌘⌫ on a row with something under it asks, in the row; any other key lets it go
+    trow('fleeting/idea-for-honors-thesis.md')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    box().focus();
+    await step('⌘⌫', 'Backspace', { metaKey: true });
+    log(`⌘⌫: "${q('.edit-tree .asking')?.textContent ?? 'nothing asked'}"; still there ${vault.documents().includes('fleeting/idea-for-honors-thesis.md')}`);
+    await shot('tree-delete-asks');
+    await step('↓ (lets it go)', 'ArrowDown');
+    log(`asked still: ${q('.edit-tree .asking') ? 'yes' : 'no'}`);
+
+    // ── the open note revealed in a folded tree ──
+    useApp.setState({ open: { '': true } });
+    await sleep(300);
+    const KANA = `${F26}/arab-401-advanced-grammar/kana-and-its-sisters.md`;
+    openNode(KANA);
+    await until(() => trow(KANA), 8000);
+    await sleep(500);
+    const sideBox = q<HTMLElement>('.side')!.getBoundingClientRect();
+    const kr = trow(KANA)!.getBoundingClientRect();
+    log(`reveal: open rows ${Object.keys(useApp.getState().open).map((p) => p || '/').join(', ')}; ${KANA} active ${trow(KANA)?.dataset.active === '1'}, in view ${kr.top >= sideBox.top && kr.bottom <= sideBox.bottom}`);
+    const crumbs = qa<HTMLElement>('.pane-body .crumbs .cr');
+    log(`breadcrumbs: ${crumbs.length ? crumbs.map((c) => `${c.textContent} → ${c.dataset.path}`).join(' / ') : 'none (the reader still draws the text crumb)'}`);
+    await shot('tree-reveal');
+
+    // ── hover affordances ──
+    const f26 = trow(F26)!;
+    // the selected row shows them too, as hover would (a pointer's hover cannot be dispatched)
+    f26.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    await sleep(150);
+    log(`row acts on ${F26}: ${qa('.row-acts .ra', f26).map((e) => e.textContent).join(' ')}`);
+    q<HTMLElement>('.row-acts .add', f26)?.click();
+    await until(() => q('.ctx-menu'));
+    log(`+ menu: ${entries()}`);
+    await shot('tree-row-plus');
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await sleep(150);
+    q<HTMLElement>('.row-acts .more', f26)?.click();
+    await until(() => q('.ctx-menu'));
+    log(`··· menu: ${entries()}`);
+    await shot('tree-row-more');
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await sleep(150);
+
+    // ── hoist ──
+    for (const p of [F26, QM]) toggleOpen(p, true);
+    await until(() => trow(QM));
+    trow(QM)!.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, altKey: true }));
+    await sleep(400);
+    log(`hoisted: crumb ${qa<HTMLElement>('.hoist-crumb .hc').map((c) => c.textContent).join(' / ')}; rows ${rowsOf(QMK)}`);
+    await shot('tree-hoist');
+    qa<HTMLElement>('.hoist-crumb .hc')[0]?.click();
+    await sleep(300);
+    log(`unhoisted: ${q('.hoist-crumb') ? 'STILL HOISTED' : 'the whole tree'}`);
+
+    // ── every row at the default width: a name never cut short by its count ──
+    const all: Record<string, true> = { '': true };
+    const visit = (nodes: typeof vault.tree) => { for (const n of nodes) { const kids = n.kind === 'folder' ? n.children : n.children ?? []; if (kids.length) { all[n.path] = true; visit(kids); } } };
+    visit(vault.tree);
+    useApp.setState({ open: all });
+    await sleep(800);
+    const rows = qa<HTMLElement>('.edit-tree .trow:not(.placeholder)');
+    const cut = rows.filter((r) => { const n = q<HTMLElement>('.name', r); return !!n && n.scrollWidth > n.clientWidth + 1; });
+    const byCount = cut.filter((r) => { const n = q<HTMLElement>('.name', r)!; const due = q<HTMLElement>('.due', r); return !!due && n.scrollWidth <= n.clientWidth + due.getBoundingClientRect().width + 6; });
+    log(`width ${q<HTMLElement>('.side')!.getBoundingClientRect().width}px: ${rows.length} rows, ${rows.filter((r) => q('.due', r)).length} with a due number; ${cut.length} names cut by the width (${cut.slice(0, 8).map((r) => r.querySelector('.name')?.textContent).join('; ')}${cut.length > 8 ? '; …' : ''}); cut by their count: ${byCount.length ? byCount.map((r) => r.dataset.path).join(', ') : 'none'}`);
+    await shot('tree-all-open', 3500);
+    useApp.getState().setTheme('dark');
+    await shot('tree-dark', 2500);
+    useApp.getState().setTheme('eink');
+    await shot('tree-eink', 2500);
+    useApp.getState().setTheme('light');
     log(`done; vault ${vault.root}`);
   } catch (e) {
     log(`failed: ${e instanceof Error ? e.message : String(e)}`);

@@ -3442,7 +3442,142 @@ came from.
 and their lines rewritten in place; the session shows the heading path;
 go to source lands on the card.
 
-### [ ] 38. The tree, refined
+### [x] 38. The tree, refined
+Done 2026-10-30 on branch `worktree-agent-a13978a57b82cc981`, commit `ccb8e4c`.
+The window check is pending: run `ILMI_SMOKE=tree` with `ILMI_VAULT` on a
+copy of `samples/double-major` and read its `shot:` captures (the screen
+was locked and this was a worktree; nothing ran in the window).
+Notes: three new pure modules and one shared one.
+- **`src/app/dnd.ts`** (pure) is the drop geometry: `zoneAt` (25 / 50 /
+  25), `geometry(rows, floor)` (from a drawn list of `{path, depth, nest}`:
+  each row's `firstChild` when open, `intoBelow` when its only child is the
+  placeholder, and `tail`, the row and each ancestor it is the last thing
+  drawn under), `dropAt(geom, pointer, dragged, rested)` → `{target, mode,
+  row, draw, depth}` in `Vault.place`'s terms (an open parent's bottom is
+  `before` its first child; below a last child `x` picks `after` the
+  ancestor `depth - floor((x - pad) / indent)` levels out, clamped to the
+  tail; no `x` keeps the row's depth), `refused`, `edgeScroll`, `sameDrop`.
+  `nest`: `now` (a folder, a document with children), `dwell` (a bare
+  document: `into` only after `INTO_DWELL` = 400 ms resting on its middle;
+  until then the middle splits before/after at the half; this is "a
+  reorder never nests by accident"), `only` (the root row, a hoisted top,
+  a rail's overview, a placeholder), `never` (unused today).
+- **`src/app/drag.ts`** is the one drag, for 39 to build on: `useDrag`
+  (zustand, `{dragging, drop}`), `beginDrag` / `endDrag` / `cancelDrag`,
+  `rowDrag(geom, surface, {draggable, folded})` → a row's props
+  (`data-drop-row`, `draggable`, the five handlers), and `rowMark(state,
+  key, path, surface)` → `drop-top` / `drop-bottom` (with `--drop-x`, the
+  line's indent) / `drop-into`, and `dragging` (0.4 opacity). A `Surface`
+  is `{pad, indent, scroller, spring, landed}`: the tree 6 / 13 / `.side`,
+  the rail 6 / 14 / `.rail-rows` (spring and a drop into a tab open it),
+  the folder lens 0 / 1 / `.pane-body`. Dragleave keeps the mark when the
+  pointer goes into the row's own text or onto another row (no flicker);
+  Esc during a drag (a capture listener on the window) cancels: the mark
+  goes and the drop does nothing. The spring opens a folded row after
+  `SPRING_MS` = 500 ms; the edge band is 40 px. Drops go through
+  `placeNode`, so `Tree.tsx`, `Rail.tsx`, and `FolderLens` (Lenses.tsx)
+  take each other's rows. `NodeMenu`'s `dropMode` (thirds) is gone.
+- **`src/app/treeModel.ts`** (pure): `treeRows(tree, open, order, hoist)`
+  (the flat drawn list: `parent`, `has`, `open`, a placeholder row keyed
+  `path\u0000empty` under an open empty folder or document), `nestOf`,
+  `revealRows`, `treeKey(rows, focus, e)` → `focus` / `fold` / `activate`
+  / `rename` / `delete` / `move` / `type`, `typeahead` (marks and a
+  transliteration's ʿ ʾ folded; quick letters are one word, a run of one
+  letter steps), `keyPlace` (up: before the sibling above; down: after the
+  one below; out: after the parent, never beside the root or out of a
+  hoist; in: into the sibling above).
+- **Keys** (the tree box has focus; handled keys stop there, so the
+  reader's bare letters and the rail's ⌘⌥↑↓ never see them): ↑↓ Home End,
+  → opens / first child, ← closes / parent, ⏎ opens (a folder also
+  unfolds), F2 renames, ⌘⌫ deletes (with something under it the row says
+  `delete with N inside? ⌘⌫` and a second ⌘⌫ deletes; any other key lets
+  it go), ⌥⌘↑↓ ⌥⌘← → move, a letter jumps. ⌥⌘ arrows, not ⌥⇧ or ⌘[ ]:
+  the milestone named them, nothing in the app or the native menu binds
+  them, and ⌘⌥↑↓ on a notebook's page stays the rail's step (the tree
+  stops the event when it has focus).
+- **F2** (the window run of 33's smoke on main reported "F2 in the tree:
+  rename not open"): the tree's key handler read the selection from the
+  last render, so a key sent right after the press that selected a row
+  (as the smoke does) fell back to the active tab's node, whose row was
+  folded away, and the field was never drawn. The selection is now also
+  kept in a ref set on the press, and a rename of a folded row opens the
+  rows above it first. F2 still renames only when the tree box has focus
+  (its own `onKeyDown`). Tested (`tree-refined.test.ts`: the press and F2
+  in one act, which fails on the old code; F2 from the window not taken;
+  F2 on the open document's folded row) and in `ILMI_SMOKE=tree`.
+- **Shown**: the selected row has a hairline inset (darker while the tree
+  has focus) and `aria-selected`; the open document is revealed when the
+  tab changes (its rows above opened, scrolled into view with `nearest`,
+  the selection and focus untouched); indent guides are 1 px spans at
+  each ancestor level (`.guide`); the tree is `role=tree`, rows
+  `treeitem` with `aria-level` / `aria-expanded`. The counts left the row:
+  one accent number (`rowCounts` in names.ts: cards due, plus one for a
+  reading or writing pass due) only when nonzero, the full counts (`120
+  cards, 14 due; revisit due; 3 items`) in the row's `title`; the name's
+  gradient mask is now `text-overflow: ellipsis` (the brief bans
+  gradients). An empty folder now has a chevron, and open it shows `empty`.
+- **Glyphs**: folder `/`, note `¶`, source `“`, extract `§`, deck `=`,
+  draft `~`. Chosen because every one is in the bundled IBM Plex Mono's
+  Latin subset (fontsource ships subsets: ↳ ◫ ✎ were drawn by a system
+  fallback, each in another face and weight), so the six read as one set
+  at 13px (the tree's glyph is 13px now). The meanings: a path's slash;
+  the pilcrow for your own paragraphs; an opening quote for someone else's
+  words; the section sign for a passage carried out of a source; a deck's
+  front equal to its back; a tilde for writing still rough. Folders are
+  also set apart by type: their names at weight 500 in the darker ink.
+  `tree-model.test.ts` reads the font's `cmap` and checks all six are in
+  it. The palette's `ENTRY_GLYPH` takes them from `GLYPH`. The queue's
+  element marks (`EL_GLYPH`: ▤ ✎ ◆) are another set and were left.
+- **Slugs**: `slugName` (names.ts) in `titleOf` and the palette: `-` and
+  `_` read as spaces except between digits (`2026-10-30` stays). The
+  rename field starts from the shown name, so an edit renames the file to
+  it; an untouched one changes nothing.
+- **Hover**: `+` (the `+` menu for the row, new items inside it) and `···`
+  (the row's menu) at the end of a hovered or selected row; the due number
+  hides under them on hover.
+- **Hoist**: ⌥-click a row with something under it; the tree's top row is
+  that node (`only` into, always open), with a crumb above (`coll /
+  courses / quantum II`, each a link, the collection unhoists). Kept in
+  the tree's state, not saved. The ⌥-click on a document's chevron still
+  opens its children as a folder lens.
+- **Breadcrumbs**: `src/app/Crumbs.tsx` (`crumbTrail`, `Crumbs`): each
+  level a link opening that row (a document's children by the document).
+  The PDF lens uses it. **Reader.tsx was not touched** (the editor track
+  owns it on main): after the merge, line ~1209's `<span
+  className="crumb">{crumbOf(id, docs)}</span>` becomes `<Crumbs path={id}
+  />` (import from `./Crumbs.js`); the CSS (`.crumbs .cr`) is in.
+- Tests: 767 (+49 over 718): `dnd.test.ts` 15, `tree-model.test.ts` 17
+  (with the glyph check), `tree-refined.test.ts` 17 (F2, the keys and that
+  they stay in the tree, the reveal, the due number and tooltip, the hover
+  menus, the placeholder drop, the hoist, the indented line below a last
+  child at two x's, an open parent's first child, a refused drop and no
+  flicker, the spring and Esc, a drag from the tree to a folder lens row
+  and back, the breadcrumbs); `tree.test.ts` and `tabs.test.ts` moved to
+  quarters, the rest to slug names. Typecheck clean; cargo 12. In this
+  worktree `npx vitest run` needs `server.fs.allow` for the symlinked
+  `node_modules` (a scratch config); on main it runs as is.
+- Smoke: `ILMI_SMOKE=tree` (`smokeTree`): drags at top, bottom, middle
+  without and with a rest, a folder's middle, an open parent's bottom,
+  below a last child at depths 5, 4, 3, a refused one, a spring then Esc,
+  the edge scroll, a new folder's placeholder, the rail, the folder lens,
+  tree → rail, rail → tree, tree → lens, lens → tree; each logs the mark
+  (`line below … at depth 4`), the drop, the landing (path, the
+  directory's list, its `order.json` entry) and `where the mark said:
+  yes/NO`; then the keys, the reveal, the breadcrumbs, the row menus, a
+  hoist, every row at 220 px (`cut by their count: none` is the done
+  when), and the tree in dark and e-ink. Shots: tree-start, -drag-top,
+  -drag-mid-no-rest, -drag-into-rested, -drag-first-child,
+  -drag-below-last-5/-4/-3, -drag-refused, -drag-spring,
+  -drag-placeholder, -rail-drag, -lens-drag, -keys, -keys-moved,
+  -delete-asks, -reveal, -row-plus, -row-more, -hoist, -all-open, -dark,
+  -eink.
+Open: no real pointer drag has been seen (the drop's geometry under
+WebKit's own drag image, the dragleave relatedTarget there, Esc during a
+native drag, which WebKit may swallow and cancel itself); the cursor's
+"no" relies on not calling preventDefault (dropEffect `none`); hover is
+pure CSS and unseen; multi-select, a keyboard `move to…` picker, and the
+menu key are not here; the hoist is not remembered; the folder lens has
+no keys; an open dragged row is not folded while dragged.
 From the survey (Atlassian's pragmatic-drag-and-drop, VS Code, Obsidian,
 the WAI-ARIA tree) and the audit (Tree.tsx, NodeMenu.tsx, app.css:228):
 - **One drag model** for the tree, the tab rail, and the folder lens (one
@@ -3540,13 +3675,17 @@ file.
 
 Milestones 33 (notes and sources, the reader's keys, F2) and 34 (the
 formatting keys, block rules, lists moved with their children, the
-selection toolbar) are done on main; both window checks are owed:
-`ILMI_VAULT=<a copy of samples/double-major> ILMI_SMOKE=notes` and
-`ILMI_SMOKE=editing`, captures read and recorded under their BUILD-LOG
-entries. Next on main is 35 (insert, paste, find); 38 (the tree) is being
-built on a branch beside it. The sidebar toggle is ⌃⌘S (⌘⇧E is extract);
-⌘K over a selection in an editable page is the link field, elsewhere the
-palette.
+selection toolbar) are done on main, their window checks run on
+2026-10-30 (`ILMI_SMOKE=notes`, `ILMI_SMOKE=editing`, on a copy of
+samples/double-major) and recorded under their BUILD-LOG entries.
+Milestone 38 (the tree, refined) was built on branch
+`worktree-agent-a13978a57b82cc981` and merged by hand; its window check
+is `ILMI_SMOKE=tree`, and the reader's crumb becomes `<Crumbs path={id}
+/>` (38's notes). Next: 35 (insert, paste, find) on main, and 39 (tabs,
+on `drag.ts`, `dnd.ts`, `treeModel.ts`) beside it. The sidebar toggle is
+⌃⌘S (⌘⇧E is extract); ⌘K over a selection in an editable page is the
+link field, elsewhere the palette. Findings from the window runs not yet
+taken are listed under 40.
 
 Milestones 0–32 are ticked (13 dropped); 32 (decks) was built on a branch
 beside 31 and merged by hand on 2026-10-28; its window check

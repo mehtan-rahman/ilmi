@@ -19,7 +19,8 @@ import { Composer } from './Composer.js';
 import { EL_GLYPH } from './items.js';
 import { GLYPH, titleOf } from './names.js';
 import { TextLayer, loadPdf, pageBits, type PDFDocumentProxy } from './pdfjs.js';
-import { Reader, crumbOf } from './Reader.js';
+import { Crumbs } from './Crumbs.js';
+import { Reader } from './Reader.js';
 import { useApp, type DocInfo } from './store.js';
 import { useDoc } from './useDoc.js';
 import { currentVault, enrolReading, extractNode, openNode } from './vault.js';
@@ -580,7 +581,7 @@ function Pages({ id, active, session, onText }: PagesProps) {
     <div className="reader-wrap">
       <div className={`reader doc-view pdf-view${reading ? ' reading' : ''}`} data-page={current}>
         <div className="meta">
-          <span className="crumb">{crumbOf(id, docs)}</span>
+          <Crumbs path={id} />
           <button type="button" className="frozen-tag" onClick={onText}>text</button>
           {info && canExtract && !reading && (
             <button type="button" className="frozen-tag enrol" onClick={startReading}>start reading <span className="kbd">r</span></button>

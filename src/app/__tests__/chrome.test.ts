@@ -55,7 +55,7 @@ describe('the palette', () => {
   it('indexes queries, folders, documents by title, cards, and commands', () => {
     expect(index.map((e) => e.tag)).toEqual(['query', 'query', 'query', 'query', 'query', 'folder', 'source', 'extract', 'deck', 'card', 'card', 'command']);
     expect(index.find((e) => e.key === 'p:german.md')).toMatchObject({ title: 'german · A1', sub: 'deck', target: { open: 'german.md' } });
-    expect(index.find((e) => e.tag === 'extract')).toMatchObject({ sub: 'wozniak-1990' });
+    expect(index.find((e) => e.tag === 'extract')).toMatchObject({ sub: 'wozniak 1990' });
     expect(index.find((e) => e.tag === 'card')).toMatchObject({ title: 'der Vorsatz ⇄ resolution', sub: 'german · A1' });
     expect(index.find((e) => e.tag === 'command')).toMatchObject({ target: { command: 'split' } });
   });

@@ -29,6 +29,7 @@ import { currentVault, enrolReading, extractNode } from './vault.js';
 import 'katex/dist/katex.min.css';
 import 'prosemirror-gapcursor/style/gapcursor.css';
 import './reader.css';
+import { Crumbs } from './Crumbs.js';
 
 /** How long after the last keystroke the file is written. */
 const WRITE_DELAY = 500;
@@ -1289,7 +1290,7 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
     <div className="reader-wrap">
       <div className={`reader doc-view${reading ? ' reading' : ''}`}>
         <div className="meta">
-          <span className="crumb">{crumbOf(id, docs)}</span>
+          <Crumbs path={id} />
           {onPages && <button type="button" className="frozen-tag" onClick={onPages}>pages</button>}
           {info && info.type !== 'draft' && (
             <button type="button" className="frozen-tag" data-frozen={info.frozen ? '1' : '0'} onClick={toggleFrozen}>

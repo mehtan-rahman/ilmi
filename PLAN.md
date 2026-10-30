@@ -3333,6 +3333,13 @@ app's CSS and fonts: chip box = glyphs, no comma alone on a line from 300
 to 830px but where the formula itself breaks. (7) the formatting steps
 logged "(none)" because the tracked needle contained `301`, which ⌘E
 split; they track `it was due` and assert the exact line.
+Rerun 2026-10-30: every step passed up to `$$ written`, which read `$$ $$`.
+Not the editor: a test now types into a fresh `$$` block's field and ⏎
+writes it (and Esc takes a blank one away). The smoke's `settled()`
+returned on the first change it saw since its last check, which was the
+earlier write of `$$ $$` (flushed when the field took focus); the
+commit's own write lands 500 ms after ⏎. Each check now waits, up to 5 s,
+for the file to say what it expects.
 Left for later: the toolbar shows for keyboard selections too (the
 research would wait for a mouse selection to end); ⌘K with a bare caret
 does not insert `[](…)`; a paragraph with a soft line break made a

@@ -1013,3 +1013,26 @@ describe('the toolbar\'s place', () => {
     expect([box.left, box.top, box.bottom]).toEqual([300, 542, 600]);
   });
 });
+
+describe('a formula started by `$$` ⏎', () => {
+  it('opens its editor empty, and what is typed there is written on ⏎', () => {
+    const view = mount([{ kind: 'paragraph', text: '$$' }]);
+    caretAt(view, 3);
+    expect(key(view.dom, 'Enter')).toBe(true);
+    const field = view.dom.querySelector<HTMLTextAreaElement>('.math-edit textarea');
+    expect(field?.value).toBe('');
+    field!.value = 'E_n = \\hbar\\omega(n + \\tfrac12)';
+    field!.dispatchEvent(new Event('input', { bubbles: true }));
+    field!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    expect(fromDoc(view.state.doc)).toEqual([{ kind: 'paragraph', text: '$$E_n = \\hbar\\omega(n + \\tfrac12)$$' }]);
+    expect(view.dom.querySelector('.math-edit')).toBeNull();
+    // Escape on a fresh one takes it away
+    const other = mount([{ kind: 'paragraph', text: '$$' }]);
+    caretAt(other, 3);
+    key(other.dom, 'Enter');
+    other.dom.querySelector<HTMLTextAreaElement>('.math-edit textarea')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    expect(fromDoc(other.state.doc)).toEqual([]);
+    view.destroy();
+    other.destroy();
+  });
+});

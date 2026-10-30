@@ -3436,15 +3436,6 @@ export async function smokeEditing(vault: Vault): Promise<void> {
   const ANCHOR = 'Back has too much on it.';
   const text = () => vault.fs.readText(vault.abs(NOTE));
   let last = '';
-  /** The file once the reader's write has landed (or a little while has passed). */
-  const settled = async () => {
-    for (let i = 0; i < 25; i++) {
-      await sleep(100);
-      const t = await text();
-      if (t !== last) { await sleep(150); last = await text(); return last; }
-    }
-    return last;
-  };
   /** The note's lines from the anchor paragraph on: what the smoke typed. */
   const region = (t: string) => {
     const lines = t.split('\n');
@@ -3452,19 +3443,36 @@ export async function smokeEditing(vault: Vault): Promise<void> {
     return lines.slice(i + 1).filter((l, k, all) => l || (k > 0 && all[k - 1])).join(' ⏎ ');
   };
   const fail = (msg: string): never => { throw new Error(msg); };
+  /**
+   * Wait for the file to say what `ok` wants: the reader writes 500 ms after
+   * the last change (or on blur), and an earlier write of the same file can
+   * land first, so the first change seen is not always the one asked for.
+   */
+  const waitFor = async (ok: (t: string) => boolean, ms = 5000) => {
+    const t0 = Date.now();
+    let t = await text();
+    while (!ok(t) && Date.now() - t0 < ms) {
+      await sleep(100);
+      t = await text();
+    }
+    last = t;
+    return t;
+  };
   /** The file holds `lines`, one after another; logged, and the run fails when it does not. */
   const expectLines = async (label: string, lines: string[]) => {
-    const t = await settled();
-    const all = t.split('\n');
-    const ok = all.some((_, i) => lines.every((l, k) => all[i + k] === l));
+    const has = (t: string) => { const all = t.split('\n'); return all.some((_, i) => lines.every((l, k) => all[i + k] === l)); };
+    const t = await waitFor(has);
+    const ok = has(t);
     log(`${label}: ${ok ? 'ok' : 'MISMATCH'}; ${region(t)}`);
     if (!ok) fail(`${label}: expected the lines ${JSON.stringify(lines)}`);
   };
   /** The line holding `needle`, which must equal `want` (or contain it, with `part`). */
   const expectLine = async (label: string, needle: string, want: string, part = false) => {
-    const t = await settled();
-    const line = t.split('\n').find((l) => l.includes(needle)) ?? '(none)';
-    const ok = part ? line.includes(want) : line === want;
+    const lineOf = (t: string) => t.split('\n').find((l) => l.includes(needle)) ?? '(none)';
+    const good = (line: string) => (part ? line.includes(want) : line === want);
+    const t = await waitFor((x) => good(lineOf(x)));
+    const line = lineOf(t);
+    const ok = good(line);
     log(`${label}: ${ok ? 'ok' : 'MISMATCH'}; ${line}`);
     if (!ok) fail(`${label}: expected ${JSON.stringify(want)}, the file has ${JSON.stringify(line)}`);
   };

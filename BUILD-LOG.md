@@ -83,6 +83,9 @@ comma after them (`hanging-punctuation` hung KaTeX's closing brackets;
 `.math .katex { hanging-punctuation: none }`, checked in an offscreen
 WKWebView), and the formatting steps' "(none)" lines. 743 tests; the
 window rerun is owed.
+Rerun: all steps passed to `$$ written`, which read the earlier `$$ $$`
+write; the smoke's checks now wait for the expected lines (the editor
+writes the formula, a new reader-view test shows). 744 tests.
 
 ### Handoff prompt
 

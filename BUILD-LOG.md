@@ -67,6 +67,15 @@ the tests (`tabs-refined.test.ts`, `remove.test.ts` new).
   the dragged tab was the open page and the pane followed it out of the
   notebook (the app is right). The smoke reopens the course there. Rerun owed.
 
+Window run 3 (2026-10-30, on main after the merge): `ILMI_SMOKE=tabs2`
+ran to `done`, every step asserted: a still rest nests in the tree and
+the rail, a delete comes back by the notice's undo with its order, a level
+is 10 px and the sidebar's edge resizes and is kept, the top row's toggle
+writes and drops `tabs: true`, no extract is a tab (`§ 2 extracts` opens
+their folder), the open tab's headings scroll the page, `+ add tab` makes
+a plain note, F2 and ⌥⌘←→↑ in the rail, drags rail → rail → sidebar, the
+row's `+` and `···`, ⌃⌘T folds, the rail's edge resizes and is kept.
+
 ### Handoff prompt
 
 ```

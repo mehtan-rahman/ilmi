@@ -6,6 +6,7 @@ default-card: bidir
 
 der Vorsatz ::: resolution; intention ^cv-vorsatz
 <!-- sr due=2026-05-27 st=review s=3 d=5 r=4 l=1 ivl=3 last=2026-05-24T07:30:00Z g=2 -->
+<!-- sr r due=2026-05-29 st=review s=2.4 d=6.1 r=2 l=0 ivl=3 last=2026-05-26T07:30:00Z g=3 -->
 
 die Wiederholung ::: repetition; review ^cv-wdh
 <!-- sr due=2026-05-27 st=review s=8 d=3.6 r=6 l=0 ivl=8 last=2026-05-19T07:30:00Z g=3 -->

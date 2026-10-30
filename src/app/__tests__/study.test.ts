@@ -37,19 +37,23 @@ afterEach(async () => {
 
 const loaded = async (paths: string[]): Promise<[string, Doc][]> => Promise.all(paths.map(async (p) => [p, (await vault.read(p, true)).doc] as [string, Doc]));
 const under = (id: string) => docsUnder(vault.tree, id, vault.order, vault.documents());
-const key = (i: CardItem) => `${i.id ?? i.text.slice(0, 12)}${i.group && 'n' in i.group ? `/c${i.group.n}` : ''}`;
+const key = (i: CardItem) => `${i.id ?? i.text.slice(0, 12)}${i.group && 'n' in i.group ? `/c${i.group.n}` : ''}${i.dir === 'r' ? '/r' : ''}`;
 
 describe('a deck', () => {
   it('due only: the cards due now, in the queue order', async () => {
     const items = studyItems(await loaded(under(DECK)), NOW);
-    // the queue's order: what is due by priority, then due
-    expect(items.map(key)).toEqual(['cv-luecke', 'cv-vorsatz', 'cv-wdh', 'ein Wort ohn']);
+    // the queue's order: what is due by priority, then due; a both-ways card's reverse when its forward is not up today
+    expect(items.map(key)).toEqual(['cv-luecke', 'cv-vorsatz', 'cv-wdh', 'cv-gedacht/r', 'ein Wort ohn']);
     expect(items.every((i) => i.kind === 'card')).toBe(true);
   });
 
   it('include not due: every card, the new ones last', async () => {
     const items = studyItems(await loaded(under(DECK)), NOW, { cram: true });
-    expect(items.map(key)).toEqual(['cv-luecke', 'cv-vorsatz', 'cv-wdh', 'cv-vergessen', 'cv-gedacht', 'cv-cloze', 'ein Wort ohn']);
+    // both directions, asked for: the buried ones too, at the next day's start
+    expect(items.map(key)).toEqual([
+      'cv-luecke', 'cv-vorsatz', 'cv-wdh', 'cv-vorsatz/r', 'cv-vergessen', 'cv-gedacht', 'cv-cloze',
+      'cv-wdh/r', 'cv-gedacht/r', 'cv-vergessen/r', 'cv-luecke/r', 'ein Wort ohn', 'ein Wort ohn/r',
+    ]);
   });
 
   it('suspended cards are left out, due or not', async () => {
@@ -57,7 +61,8 @@ describe('a deck', () => {
     await applyBulk(vault, rows, { kind: 'suspend' });
     const docs = await loaded(under(DECK));
     expect(studyItems(docs, NOW).map(key)).toEqual(['cv-luecke', 'cv-wdh', 'ein Wort ohn']);
-    expect(studyItems(docs, NOW, { cram: true }).map(key)).toEqual(['cv-luecke', 'cv-wdh', 'cv-vergessen', 'cv-cloze', 'ein Wort ohn']);
+    // a suspended both-ways card (`sus=1` on its bare line) is out both ways
+    expect(studyItems(docs, NOW, { cram: true }).map(key)).toEqual(['cv-luecke', 'cv-wdh', 'cv-vergessen', 'cv-cloze', 'cv-wdh/r', 'cv-vergessen/r', 'cv-luecke/r', 'ein Wort ohn', 'ein Wort ohn/r']);
   });
 
   it('an early review in a cram is graded as usual', async () => {
@@ -73,13 +78,14 @@ describe('a deck', () => {
 describe('a folder', () => {
   it('every card under it; one blank suspended leaves the other in', async () => {
     const docs = await loaded(under('courses'));
-    expect(studyItems(docs, NOW)).toEqual([]);
-    expect(studyItems(docs, NOW, { cram: true }).map(key)).toEqual(['la-span', 'la-indep/c1', 'la-rank/c1']);
+    // la-span's forward is due in September, its reverse never reviewed: new, due now
+    expect(studyItems(docs, NOW).map(key)).toEqual(['la-span/r']);
+    expect(studyItems(docs, NOW, { cram: true }).map(key)).toEqual(['la-span', 'la-indep/c1', 'la-rank/c1', 'la-span/r']);
     const sept = new Date('2026-09-20T12:00:00');
     expect(studyItems(docs, sept).map(key)).toEqual(['la-span', 'la-indep/c1']);
     // the whole collection from the root
     const all = studyItems(await loaded(under('')), NOW);
-    expect(all.length).toBe(13);
+    expect(all.length).toBe(15);
     expect(new Set(all.map((i) => i.path)).size).toBeGreaterThan(2);
   });
 });
@@ -89,8 +95,8 @@ describe('a selection', () => {
     const docs = await loaded(under(''));
     const rows = deckRows(docs, NOW).filter((r) => ['cv-wdh', 'cv-gedacht', 'la-span'].includes(r.id ?? ''));
     const only = new Set(rows.map((r) => r.key));
-    expect(studyItems(docs, NOW, { only }).map(key)).toEqual(['cv-wdh']);
-    expect(studyItems(docs, NOW, { only, cram: true }).map(key)).toEqual(['cv-wdh', 'cv-gedacht', 'la-span']);
+    expect(studyItems(docs, NOW, { only }).map(key)).toEqual(['cv-wdh', 'la-span/r', 'cv-gedacht/r']);
+    expect(studyItems(docs, NOW, { only, cram: true }).map(key)).toEqual(['cv-wdh', 'cv-gedacht', 'la-span', 'la-span/r', 'cv-wdh/r', 'cv-gedacht/r']);
   });
 });
 
@@ -124,12 +130,12 @@ describe('studyDeck', () => {
 
   it('opens the session over the deck, named, counting down', () => {
     const n = studyDeck(DECK, { cram: true });
-    expect(n).toBe(7);
+    expect(n).toBe(13);
     const s = useApp.getState().session!;
     expect(s.deck).toEqual({ id: DECK, title: 'german · A1' });
-    expect(s.items).toHaveLength(7);
+    expect(s.items).toHaveLength(13);
     expect(opened).toEqual([SESSION]);
-    expect(studyHeader(s.deck!.title, s.items.length - 2)).toBe('german · A1 · 5 left');
+    expect(studyHeader(s.deck!.title, s.items.length - 8)).toBe('german · A1 · 5 left');
   });
 
   it('with nothing due, a notice and no session', () => {

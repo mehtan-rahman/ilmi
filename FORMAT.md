@@ -285,8 +285,10 @@ the recall has no scaffolding to attach to — every review re-encodes
 the fact instead of retrieving it ^cw3-leech
 ```
 
-A bidirectional card is one card with one schedule. Per-direction schedules are
-a possible later extension (`<!-- sr fwd … -->`).
+A bidirectional card ("both ways") is one card tested in two directions, each
+scheduled apart: its bare `sr` line is front to back (left side asked, right
+side answered), an `sr r` line back to front (§6.2). The two directions of one
+card are siblings: the app shows one of them a day, not both, unless asked.
 
 **Steps.** In a paragraph that has a `?` or `??` line, the item lines after
 it (`1.`, `2)`, `- `, at any number) no longer end the paragraph: they are
@@ -407,7 +409,7 @@ attachment on purpose: if someone deletes a card's text and leaves its
 schedule, the orphan must not glue itself to the card above.
 
 Canonical order under a card: the `^id` on the last text line, then bare `sr`,
-then `sr cN` ascending, then `extract` lines. Any order is read. A line that is
+then `sr r`, then `sr cN` ascending, then `extract` lines. Any order is read. A line that is
 not an annotation (another comment, junk) ends the run: annotations after it
 are orphans.
 
@@ -427,12 +429,14 @@ queue, and extract backrefs refer to a card.
 ```
 <!-- sr due=2026-05-27 st=review s=11.8 d=4.2 r=14 l=2 ivl=12 last=2026-05-15T09:15:00Z g=3 -->
 <!-- sr c2 due=2026-06-01 st=new -->
+<!-- sr r due=2026-06-03 st=review s=4.1 d=6 r=3 l=1 ivl=4 last=2026-05-30T08:00:00Z g=3 -->
 ```
 
-`sr` then an optional group key `cN` (also read as `N`), then attributes (§7).
-A comment without a group key is the card's own schedule; with one, it is the
-schedule of that cloze group. A card has at most one of each; a duplicate key
-is resolved later-wins with a diagnostic.
+`sr` then an optional key, then attributes (§7). The key is a group key `cN`
+(also read as `N`) or the direction key `r`. A comment without a key is the
+card's own schedule; with a group key, the schedule of that cloze group; with
+`r`, the schedule of a both-ways card's back-to-front direction. A card has at
+most one of each; a duplicate key is resolved later-wins with a diagnostic.
 
 | attr    | type                   | ts-fsrs field     | note                                     |
 | ------- | ---------------------- | ----------------- | ---------------------------------------- |
@@ -464,7 +468,30 @@ Unknown attributes are kept in order after the known ones. A known attribute
 with an unparsable value is dropped with a diagnostic; the rest of the line
 survives.
 
-A single-group cloze, a q&a, and a bidirectional card use the bare form. A
+**Both ways.** A bidirectional card's bare line is its front-to-back
+direction and the card's own line; `sr r` is back to front, with its own
+state, `pri`, and `sus`. `f` is read as a key that says the bare line
+(`sr f` is `sr`) and written bare (§8). A card with no `sr r` line has a
+reverse that is new and due now, whatever its bare line holds: a bare line
+written before directions were scheduled apart (one line per both-ways card)
+keeps its history as the forward, and nothing is copied to the reverse, since
+the app showed only the front-to-back side then and the reverse was never
+reviewed. `pri` on the `r` line is the reverse's own, over the card's (the
+bare line's), over the document's. `sus=1` on the bare line suspends the card,
+both directions; on the `r` line the reverse alone. An `sr r` line on a card
+that is not both ways is kept, with a diagnostic, and means nothing until the
+card is both ways again. `r` with a group key on one line takes the first
+and drops the other with a diagnostic.
+
+**Siblings.** The two directions are not shown on the same day: when both
+are due, the one due first (the forward on a tie) is shown and the other is
+buried until the next day; once one has been reviewed today, the other is
+buried until the next day. Burying is the queue's, derived from `due` and
+`last`; nothing is written, so grading one direction rewrites its line alone.
+A session asked to include what is not due (cram) shows both.
+
+A single-group cloze and a q&a use the bare form; a bidirectional card the bare
+form and, once its reverse has been graded, an `sr r` line. A
 multi-group cloze uses one `sr cN` line per group; a bare line on such a card
 is allowed and kept, and the app may treat it as a fallback for groups without
 their own line. Reviewing one blank rewrites one line.
@@ -541,6 +568,7 @@ The first time the app writes a hand-made file, these change, and only these:
   field (§3). Without the field it stays.
 - An `af=` on the `read` or `write` line equal to that loop's default → dropped.
 - A `sus=0` (or `sus=false`) on an `sr` line → dropped; `sus=true` → `sus=1`.
+- `sr f` → `sr` (the bare line is the forward).
 - A body with no front-matter whose first block is a `---` thematic break, or
   whose first character is a stray U+FEFF, gets one leading blank line, so the
   file is not read back as front-matter or as a byte-order mark.
@@ -561,7 +589,6 @@ fixes the file. That is intended.
 - Cards inside tables or block quotes.
 - RemNote's `>>>`, a card whose back is its child items.
 - Cloze hints.
-- Per-direction schedules on bidirectional cards.
 - Prose block ids for the reading marker (would make `pos` edit-stable).
 - Attachments and images beyond a clipping's downloads (§1): they are just
   Markdown; the app renders them.

@@ -159,7 +159,7 @@ describe('a session over the sample vault', () => {
 
   it('writes every result to disk and leaves nothing due', async () => {
     const before = await queue(vault, NOW, 'today');
-    expect(before).toHaveLength(17);
+    expect(before).toHaveLength(19);
     const touched = new Set<string>();
     let ids = 0;
     for (const item of before) {

@@ -9,7 +9,7 @@
 // group's line becomes the bare one, so a one-blank cloze from Anki turned
 // into a q&a keeps its history.
 
-import { blanks, cardFields, clozeGroups, clozeParts, type Card, type CardForm, type CardSchedule, type Doc } from '../format/index.js';
+import { blanks, cardFields, cardForm, clozeGroups, clozeParts, type Card, type CardForm, type CardSchedule, type Doc } from '../format/index.js';
 import { cardText } from '../reader/index.js';
 import { findCard, type CardRef } from './deck.js';
 
@@ -62,10 +62,12 @@ export function switchForm(f: Faces, to: CardForm): Faces {
   return { form: to, front, back: first ?? '' };
 }
 
-/** A group line that an edit would drop: its number, and how many reviews it carries. */
+/** A group line that an edit would drop: its number, and how many reviews it carries; or a both-ways card's reverse (`n` 0). */
 export interface Dropped {
   n: number;
   reps: number;
+  /** The `sr r` line: the card is no longer both ways. */
+  reverse?: true;
 }
 
 export interface Plan {
@@ -101,7 +103,13 @@ export function planEdit(card: Card, text: string): Plan {
   }
   if (Object.keys(kept).length) next.blanks = kept;
   else delete next.blanks;
-  return { card: next, dropped: gone.map(([n, s]) => ({ n, reps: s.reps ?? 0 })) };
+  const dropped: Dropped[] = gone.map(([n, s]) => ({ n, reps: s.reps ?? 0 }));
+  // a card no longer both ways has no reverse: its `sr r` line goes, asking first when it was reviewed
+  if (card.reverse && cardForm(text) !== 'bidir') {
+    dropped.push({ n: 0, reps: card.reverse.reps ?? 0, reverse: true });
+    delete next.reverse;
+  }
+  return { card: next, dropped };
 }
 
 /** True when the plan would drop a schedule that has been reviewed: ask first. */

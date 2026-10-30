@@ -163,7 +163,7 @@ function CardList({ title, doc, now }: { title: string; doc: Doc; now: Date }) {
   const cards = doc.blocks.filter((b): b is Card => b.kind === 'card');
   if (!cards.length) return null;
   const due = (c: Card): string | undefined => {
-    const dues = c.blanks ? Object.values(c.blanks).map((b) => b.due ?? c.sched?.due) : [c.sched?.due];
+    const dues = c.blanks ? Object.values(c.blanks).map((b) => b.due ?? c.sched?.due) : cardForm(c.text) === 'bidir' ? [c.sched?.due, c.reverse?.due] : [c.sched?.due];
     return dues.some((d) => d === undefined) ? undefined : [...(dues as string[])].sort()[0];
   };
   return (
@@ -390,14 +390,32 @@ function DocInspector({ id, info, doc, now }: { id: string; info: DocInfo; doc: 
 }
 
 /** A card's block: its form, where it is, its schedule, and the editor. */
-function CardBlock({ path, index, doc, group, now }: { path: string; index: number; doc: Doc; group: CardItem['group'] | undefined; now: Date }) {
+/** One schedule's numbers, or one quiet word. */
+function SchedKV({ sched, none, now }: { sched: CardSchedule | undefined; none: string; now: Date }) {
+  if (!sched) return <p className="insp-line">{none}</p>;
+  return (
+    <KV rows={[
+      ['reviews', sched.reps ?? 0],
+      ['lapses', sched.lapses ?? 0],
+      ['stability', sched.stability !== undefined ? `${sched.stability.toFixed(2)} d` : ''],
+      ['difficulty', sched.difficulty !== undefined ? sched.difficulty.toFixed(2) : ''],
+      ['due', <>{dueLabel(sched.due, now)} {sched.due && <span className="dim">{sched.due}</span>}</>],
+      ['last', sched.last ? sched.last.slice(0, 10) : 'never'],
+    ]} />
+  );
+}
+
+function CardBlock({ path, index, doc, group, dir, now }: { path: string; index: number; doc: Doc; group: CardItem['group'] | undefined; dir?: CardItem['dir']; now: Date }) {
   const docs = useApp((s) => s.docs);
   const b = doc.blocks[index];
   if (b?.kind !== 'card') return null;
   const own = group && 'n' in group && b.blanks?.[group.n] ? b.blanks[group.n] : b.sched;
   const sched = hasSchedule(own) ? own : undefined;
+  // both ways: each direction's own schedule, the one this item asks first
+  const both = cardForm(b.text) === 'bidir';
+  const reverse = hasSchedule(b.reverse) ? b.reverse : undefined;
   // a cloze card may carry only per-blank schedules; it is scheduled all the same
-  const scheduled = hasSchedule(b.sched) || b.blanks !== undefined;
+  const scheduled = hasSchedule(b.sched) || b.blanks !== undefined || (both && reverse !== undefined);
   // in a document with pages, the card's page is named with the document
   const page = docs[path]?.pdf ? pageOfBlock(doc, index) : null;
   const rows: [string, ReactNode][] = [['type', formLabel(b.text)], ['in', page === null ? titleOf(path, docs, null) : `${titleOf(path, docs, null)}, p. ${page}`]];
@@ -417,24 +435,19 @@ function CardBlock({ path, index, doc, group, now }: { path: string; index: numb
         <KV rows={rows} />
         <CardEditor key={`${path}:${index}`} path={path} index={index} card={b} />
       </Block>
-      <Block title="schedule">
-        {sched ? (
-          <KV rows={[
-            ['reviews', sched.reps ?? 0],
-            ['lapses', sched.lapses ?? 0],
-            ['stability', sched.stability !== undefined ? `${sched.stability.toFixed(2)} d` : ''],
-            ['difficulty', sched.difficulty !== undefined ? sched.difficulty.toFixed(2) : ''],
-            ['due', <>{dueLabel(sched.due, now)} {sched.due && <span className="dim">{sched.due}</span>}</>],
-            ['last', sched.last ? sched.last.slice(0, 10) : 'never'],
-          ]} />
-        ) : <p className="insp-line">{scheduled ? 'per blank' : 'new'}</p>}
-        {scheduled && (
-          <div className="frozen-row">
-            <span className="fr-state">scheduled</span>
-            <button type="button" className="fr-toggle" onClick={reset}>reset</button>
-          </div>
-        )}
-      </Block>
+      {(both ? (dir === 'r' ? ['r', 'f'] as const : ['f', 'r'] as const) : [null]).map((d, k, all) => (
+        <Block key={d ?? 'one'} title={d === null ? 'schedule' : d === 'f' ? 'front to back' : 'back to front'}>
+          {d === null
+            ? <SchedKV sched={sched} none={scheduled ? 'per blank' : 'new'} now={now} />
+            : <SchedKV sched={d === 'f' ? sched : reverse} none={d === 'r' && b.reverse?.suspended ? 'new, suspended' : 'new'} now={now} />}
+          {scheduled && k === all.length - 1 && (
+            <div className="frozen-row">
+              <span className="fr-state">scheduled</span>
+              <button type="button" className="fr-toggle" onClick={reset}>reset</button>
+            </div>
+          )}
+        </Block>
+      ))}
     </>
   );
 }
@@ -484,7 +497,7 @@ export function Inspector() {
     const cur = sessionEl?.item;
     if (!cur) body = <Block title="session"><p className="insp-line">{plural(session?.items.length ?? 0, 'element')}</p></Block>;
     else if (cur.kind === 'card') {
-      body = <WithDoc id={cur.path} render={(doc) => { const i = cardIndex(doc, cur); return i < 0 ? <Gone kind="card" /> : <CardBlock path={cur.path} index={i} doc={doc} group={cur.group} now={now} />; }} />;
+      body = <WithDoc id={cur.path} render={(doc) => { const i = cardIndex(doc, cur); return i < 0 ? <Gone kind="card" /> : <CardBlock path={cur.path} index={i} doc={doc} group={cur.group} {...(cur.dir ? { dir: cur.dir } : {})} now={now} />; }} />;
     } else {
       body = <WithDoc id={cur.path} render={(doc, info) => <DocInspector id={cur.path} info={info} doc={doc} now={now} />} />;
     }

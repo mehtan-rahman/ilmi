@@ -8,7 +8,7 @@
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { emitDocAction, emitGrade, runBlockHooks, usePlugins } from '../plugins/index.js';
 import { PRI_DEFAULT, blanks, cardFields, type Block, type Card } from '../format/index.js';
-import { GRADES, advanceRead, advanceWrite, gradeItem, postponed, type CardItem, type Grade, type QueueItem, type ReadItem, type WriteItem } from '../schedule/index.js';
+import { GRADES, advanceRead, advanceWrite, dirPri, gradeItem, postponed, scheduleOf, type CardItem, type Grade, type QueueItem, type ReadItem, type WriteItem } from '../schedule/index.js';
 import { EL_WORD, FORM_LABEL, dueLabel, gapLabels, ownBlank, sourceLabel, trailParts } from './items.js';
 import type { OpenOpts } from './panes.js';
 import { Pdf } from './Pdf.js';
@@ -127,11 +127,11 @@ function CardElement({ item, active, onGrade }: CardProps) {
   const now = new Date();
   const card = liveCard(loaded?.doc.blocks, item);
   // the card's own, else the document's, live: the inspector may change either mid-session
-  const pri = card ? card.sched?.pri ?? docPri ?? PRI_DEFAULT : item.pri;
+  const pri = card ? dirPri(card, item.dir, docPri ?? PRI_DEFAULT) : item.pri;
   const text = card?.text ?? item.text;
   const f = cardFields(text);
   // the item's schedule stands in only until the document is loaded; a card reset since reads as new
-  const sched = !card ? item.sched : item.group && 'n' in item.group && card.blanks?.[item.group.n] ? card.blanks[item.group.n] : card.sched;
+  const sched = !card ? item.sched : scheduleOf(card, item.group, item.dir);
   const gaps = gapLabels(sched, now);
   const grade = (g: Grade) => { if (revealed) onGrade(g); else setRevealed(true); };
 
@@ -174,8 +174,10 @@ function CardElement({ item, active, onGrade }: CardProps) {
     front = <div className="qa-q" dir={faceDir(f.front)} dangerouslySetInnerHTML={{ __html: richHTML(f.front) }} />;
     back = <div className="qa-a" dir={faceDir(f.back)} dangerouslySetInnerHTML={{ __html: richHTML(f.back) }} />;
   } else {
-    front = <div className="bidir-a" dir={faceDir(f.left)} dangerouslySetInnerHTML={{ __html: richHTML(f.left) }} />;
-    back = <div className="bidir-b" dir={faceDir(f.right)} dangerouslySetInnerHTML={{ __html: richHTML(f.right) }} />;
+    // both ways: the reverse asks the right side and answers with the left
+    const [ask, answer] = item.dir === 'r' ? [f.right, f.left] : [f.left, f.right];
+    front = <div className="bidir-a" data-dir={item.dir ?? 'f'} dir={faceDir(ask)} dangerouslySetInnerHTML={{ __html: richHTML(ask) }} />;
+    back = <div className="bidir-b" dir={faceDir(answer)} dangerouslySetInnerHTML={{ __html: richHTML(answer) }} />;
   }
 
   const groupNo = item.group && item.groups > 1 ? ('n' in item.group ? item.group.n : item.group.blank + 1) : null;
@@ -192,6 +194,7 @@ function CardElement({ item, active, onGrade }: CardProps) {
       <div className="card-meta">
         <span className="cm-type">{f ? FORM_LABEL[f.form] : 'card'}</span>
         {groupNo !== null && <span>blank {groupNo} of {item.groups}</span>}
+        {item.dir === 'r' && <span className="cm-dir">back to front</span>}
         <span>{plural(sched?.reps ?? 0, 'review')}</span>
         {sched?.stability !== undefined && <span>stability {Math.round(sched.stability)}d</span>}
         {pri !== PRI_DEFAULT && <span>p {pri}</span>}

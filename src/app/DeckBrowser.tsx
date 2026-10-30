@@ -156,7 +156,7 @@ export function CardEditor({ card, initial, pri: initialPri, onSave, onCancel }:
   const save = (again: boolean, sure = false) => {
     if (text === null) return;
     if (plan && asks(plan) && !sure && asking === null) {
-      const lost = plan.dropped.filter((d) => d.reps > 0).map((d) => `blank ${d.n} (${plural(d.reps, 'review')})`).join(', ');
+      const lost = plan.dropped.filter((d) => d.reps > 0).map((d) => `${d.reverse ? 'the reverse' : `blank ${d.n}`} (${plural(d.reps, 'review')})`).join(', ');
       setAsking(`drops the schedule of ${lost}`);
       return;
     }
@@ -599,9 +599,19 @@ export function DeckBrowser({ home, active }: BrowserProps) {
                 {f.back && <span className="dr-back" dir={f.backDir} dangerouslySetInnerHTML={{ __html: f.back }} />}
                 {multi && <span className="dr-path">{pathLabel(r.path)}</span>}
               </span>
-              <span className="dr-when" title={ivl && !r.suspended ? `interval ${ivl}` : undefined}>
-                <span className="dr-due" data-due={r.isDue ? '1' : '0'}>{when}</span>
-              </span>
+              {r.reverse && !r.suspended ? (
+                // both ways: each direction's due on a line of its own, front to back first
+                <span className="dr-when" data-dirs="2">
+                  <span className="dr-due" data-dir="f" data-due={r.sched?.due === undefined || r.dueAt <= now ? '1' : '0'} title={ivl ? `front to back, interval ${ivl}` : 'front to back'}>→ {when}</span>
+                  <span className="dr-due" data-dir="r" data-due={r.reverse.isDue ? '1' : '0'} title={r.reverse.sched?.ivl && r.reverse.sched.ivl >= 1 ? `back to front, interval ${fmtDays(r.reverse.sched.ivl)}` : 'back to front'}>
+                    ← {r.reverse.suspended ? 'suspended' : dueWhen(r.reverse.sched?.due, now)}
+                  </span>
+                </span>
+              ) : (
+                <span className="dr-when" title={ivl && !r.suspended ? `interval ${ivl}` : undefined}>
+                  <span className="dr-due" data-due={r.isDue ? '1' : '0'}>{when}</span>
+                </span>
+              )}
               <button type="button" className="cs-del" title="delete card" aria-label="delete card" onClick={(e) => { e.stopPropagation(); removeOne(r); }}>×</button>
             </div>
             {editingNew && newAfterKey === r.key && newEditor(editingNew)}

@@ -127,6 +127,28 @@ describe('the form switch', () => {
     expect(c.sched).toMatchObject({ state: 'relearning', lapses: 4, steps: 1 });
   });
 
+  it('both ways to q&a drops the reverse line, asking when it was reviewed; q&a to both ways starts the reverse new', async () => {
+    const ref = await refTo(DECK, 'cv-vorsatz');
+    const card = await cardIn(DECK, 'cv-vorsatz');
+    expect(card.reverse?.reps).toBe(2);
+    const plan = planEdit(card, 'der Vorsatz :: resolution; intention');
+    expect(plan.dropped).toEqual([{ n: 0, reps: 2, reverse: true }]);
+    expect(asks(plan)).toBe(true);
+    expect(plan.card.reverse).toBeUndefined();
+    expect(plan.card.sched).toEqual(card.sched);
+    // an edit that stays both ways keeps both lines
+    expect(planEdit(card, 'der Vorsatz ::: resolution').card.reverse).toEqual(card.reverse);
+    const before = await readDisk(DECK);
+    await vault.update(DECK, (d) => { applyEdit(d, ref, 'der Vorsatz :: resolution; intention', null, 50); });
+    const after = await readDisk(DECK);
+    expect(after.split('\n').length).toBe(before.split('\n').length - 1);
+    expect(after).not.toContain('<!-- sr r ');
+    // and back: the forward's line as it was, no reverse line until the reverse is graded
+    await vault.update(DECK, (d) => { applyEdit(d, ref, 'der Vorsatz ::: resolution; intention', null, 50); });
+    const back = await cardIn(DECK, 'cv-vorsatz');
+    expect([back.sched, back.reverse]).toEqual([card.sched, undefined]);
+  });
+
   it('q&a to cloze: the back as {{c1::…}} after the front, the bare line kept', async () => {
     const cloze = switchForm({ form: 'qa', front: 'the capital of France is', back: 'Paris' }, 'cloze');
     expect(cloze).toEqual({ form: 'cloze', front: 'the capital of France is {{c1::Paris}}', back: '' });

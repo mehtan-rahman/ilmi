@@ -179,8 +179,8 @@ describe('write', () => {
     const written = await vault.resetCard(DECK, i, 'cv-gedacht');
     const card = written.doc.blocks[i];
     expect(card).toEqual({ kind: 'card', text: 'das Gedächtnis ::: memory', id: 'cv-gedacht' });
-    // line 14 is the card's schedule; every other line stays put
-    expect((await readDisk(DECK)).split('\n')).toEqual(before.filter((_, k) => k !== 13));
+    // line 15 is the card's schedule; every other line stays put
+    expect((await readDisk(DECK)).split('\n')).toEqual(before.filter((_, k) => k !== 14));
     // a second reset changes nothing and still resolves
     const again = await vault.resetCard(DECK, i, 'cv-gedacht');
     expect(again.text).toBe(written.text);
@@ -223,9 +223,9 @@ describe('write', () => {
     expect(dest.path).toBe(WOZ);
     expect(dest.doc.blocks[dest.doc.blocks.length - 1]).toEqual(card);
     // the card's two lines and the blank after them leave the source
-    expect((await readDisk(DECK)).split('\n')).toEqual(srcBefore.filter((_, k) => k < 15 || k > 17));
+    expect((await readDisk(DECK)).split('\n')).toEqual(srcBefore.filter((_, k) => k < 16 || k > 18));
     // and land after a blank line at the end of the destination
-    expect((await readDisk(WOZ)).split('\n')).toEqual([...destBefore.slice(0, -1), '', srcBefore[15], srcBefore[16], '']);
+    expect((await readDisk(WOZ)).split('\n')).toEqual([...destBefore.slice(0, -1), '', srcBefore[16], srcBefore[17], '']);
     // destination first, then source, each through the normal event
     expect(events.map((e) => e.kind === 'doc' && e.path)).toEqual([WOZ, DECK]);
     expect(await vault.read(WOZ)).toBe(dest);

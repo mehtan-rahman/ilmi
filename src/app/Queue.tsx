@@ -46,7 +46,9 @@ function Body({ item }: { item: QueueItem }) {
   if (!f) return <span dir={faceDir(item.text)} dangerouslySetInnerHTML={{ __html: richHTML(item.text) }} />;
   if (f.form === 'cloze') return <span dir={faceDir(item.text)} dangerouslySetInnerHTML={{ __html: clozeHTML(item.text, () => 'hidden', () => 'cloze') }} />;
   if (f.form === 'qa') return <span dir={faceDir(f.front)} dangerouslySetInnerHTML={{ __html: richHTML(f.front) }} />;
-  return <span dir={faceDir(f.left)} dangerouslySetInnerHTML={{ __html: `<bdi${dirAttr(f.left)}>${richHTML(f.left)}</bdi> <span class="cs-arrow">⇄</span> <bdi${dirAttr(f.right)}>${richHTML(f.right)}</bdi>` }} />;
+  // both ways: the side this item asks first, the arrow pointing to the answer
+  const [ask, answer] = item.dir === 'r' ? [f.right, f.left] : [f.left, f.right];
+  return <span dir={faceDir(ask)} data-dir={item.dir ?? 'f'} dangerouslySetInnerHTML={{ __html: `<bdi${dirAttr(ask)}>${richHTML(ask)}</bdi> <span class="cs-arrow">→</span> <bdi${dirAttr(answer)}>${richHTML(answer)}</bdi>` }} />;
 }
 
 /**
@@ -148,7 +150,7 @@ export function Queue({ scope, active }: Props) {
             const ivl = item.kind === 'card' ? intervalLabel(item) : '';
             const row = (
               <li
-                key={`${item.kind}:${item.path}:${item.kind === 'card' ? `${item.block}:${JSON.stringify(item.group ?? null)}` : ''}`}
+                key={`${item.kind}:${item.path}:${item.kind === 'card' ? `${item.block}:${JSON.stringify(item.group ?? null)}:${item.dir ?? ''}` : ''}`}
                 data-active={i === cursor ? '1' : '0'}
                 data-el={item.kind}
                 data-fresh={isFresh(item) ? '1' : '0'}
@@ -166,7 +168,7 @@ export function Queue({ scope, active }: Props) {
                   {ref && <span className="ref-line">{ref}</span>}
                 </span>
                 <span className="pri">{item.pri !== PRI_DEFAULT && <b>p {item.pri}</b>}</span>
-                <span className="due" title={ivl ? `interval ${ivl}` : undefined}>{dueWhen(item.due, now)}</span>
+                <span className="due" title={ivl ? `interval ${ivl}` : undefined}>{item.kind === 'card' && item.buried ? 'tomorrow' : dueWhen(item.due, now)}</span>
               </li>
             );
             if (i !== foldAt) return row;

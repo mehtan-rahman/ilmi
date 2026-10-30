@@ -92,7 +92,7 @@ describe('cardOf', () => {
     expect(r).toEqual({ card: { kind: 'card', text: 'a :: b / c' }, other: false });
   });
 
-  it('writes a reversed note as ::: only when its reverse card is there, keeping the forward schedule', () => {
+  it('writes a reversed note as ::: only when its reverse card is there, each card\'s schedule on its direction\'s line', () => {
     const nt = notetype({ templates: [{ name: 'Card 1', front: '{{Front}}' }, { name: 'Card 2', front: '{{Back}}' }] });
     const d = fresh();
     const fwd = review({ ord: 0, due: 150, ivl: 45, factor: 2100, reps: 9 });
@@ -101,7 +101,10 @@ describe('cardOf', () => {
     expect(r!.card.text).toBe('der Vorsatz ::: resolution; intention');
     expect(r!.card.sched).toEqual(seedOf(fwd, DAY0));
     expect(r!.card.sched?.difficulty).toBe(6);
-    expect(d.schedules).toBe(1);
+    // the reverse card's progress lands on `sr r`, nothing dropped
+    expect(r!.card.reverse).toEqual(seedOf(back, DAY0));
+    expect(r!.card.reverse?.difficulty).toBe(8);
+    expect(d.schedules).toBe(0);
     // the optional reverse not made: one direction, nothing dropped
     const d2 = fresh();
     const one = cardOf(note(['x', 'y']), nt, [fwd], DAY0, d2);
@@ -109,8 +112,9 @@ describe('cardOf', () => {
     expect(d2.schedules).toBe(0);
     // a reverse card that is new drops no schedule
     const d3 = fresh();
-    cardOf(note(['x', 'y']), nt, [fwd, card({ ord: 1 })], DAY0, d3);
+    const newBack = cardOf(note(['x', 'y']), nt, [fwd, card({ ord: 1 })], DAY0, d3);
     expect(d3.schedules).toBe(0);
+    expect(newBack!.card.reverse).toBeUndefined();
   });
 
   it('writes a cloze note whole, hints out, extra fields counted, one sr cN line per group', () => {
@@ -181,22 +185,25 @@ describe('mapPackage', () => {
   });
 
   it('counts what was dropped', () => {
-    expect(m.dropped).toEqual({ hints: 1, sounds: 1, images: 1, extra: 0, schedules: 1, notes: 1 });
-    expect(droppedLabel(m.dropped, [[m.dropped.schedules, 'schedule'], [m.dropped.notes, 'empty note']])).toBe('1 hint, 1 sound, 1 image, 1 schedule, 1 empty note dropped');
+    // the reversed note's second card lands on `sr r` since 44: no schedule dropped
+    expect(m.dropped).toEqual({ hints: 1, sounds: 1, images: 1, extra: 0, schedules: 0, notes: 1 });
+    expect(droppedLabel(m.dropped, [[m.dropped.schedules, 'schedule'], [m.dropped.notes, 'empty note']])).toBe('1 hint, 1 sound, 1 image, 1 empty note dropped');
   });
 
-  it('writes the German deck with both schedules checked against the arithmetic', () => {
+  it('writes the German deck with its schedules checked against the arithmetic, the reverse on sr r', () => {
     const doc = m.decks[0]!.doc;
     expect(meta(doc).type).toBe('deck');
     const text = serialize(doc);
     const due1 = addDays(DAY0, 200);
     const due2 = addDays(DAY0, 150);
+    const due3 = addDays(DAY0, 160);
     expect(text).toBe([
       '---', 'type: deck', '---', '',
       'What is the capital of France? :: Paris',
       `<!-- sr due=${due1} st=review s=30 d=5 r=7 l=1 ivl=30 last=${addDays(due1, -30)} -->`, '',
       'der Vorsatz ::: resolution; intention',
-      `<!-- sr due=${due2} st=review s=45 d=6 r=9 l=0 ivl=45 last=${addDays(due2, -45)} -->`, '',
+      `<!-- sr due=${due2} st=review s=45 d=6 r=9 l=0 ivl=45 last=${addDays(due2, -45)} -->`,
+      `<!-- sr r due=${due3} st=review s=20 d=8 r=4 l=3 ivl=20 last=${addDays(due3, -20)} -->`, '',
     ].join('\n'));
     const back = parse(text);
     expect(back.diagnostics).toEqual([]);

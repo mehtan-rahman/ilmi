@@ -5875,3 +5875,169 @@ export async function smokeRest(vault: Vault): Promise<void> {
     log(`failed: ${e instanceof Error ? e.message : String(e)}`);
   }
 }
+
+// `ILMI_SMOKE=bothways` over a fresh copy of `samples/double-major`
+// (ILMI_VAULT): milestone 44, a both-ways card asked in two directions, each
+// on its own `sr` line. Asserts (each an `ok: …` line, the first miss
+// `failed: …`): in the vocab deck a card whose forward is due shows its
+// reverse buried till tomorrow, and a card whose forward is not due has its
+// reverse (never reviewed, so new) due today: both directions due apart;
+// the queue and the deck browser draw each direction; a session asks the
+// reverse back to front; grading the reverse writes an `sr r` line under the
+// card and leaves the bare line byte for byte; grading a forward rewrites
+// its bare line alone and buries its sibling the same day; a migrated card's
+// history (its reviews and lapses) is kept as the forward's; the inspector
+// shows both schedules. Files are polled up to 5 s; the theme is set first.
+export async function smokeBothWays(vault: Vault): Promise<void> {
+  type Card = import('../format/index.js').Card;
+  const log = (s: string) => info(`smoke bothways: ${s}`);
+  const shot = async (name: string, ms = 2500) => { await sleep(800); log(`shot: ${name}`); await sleep(ms); };
+  const q = <T extends Element>(sel: string, root: ParentNode = document) => root.querySelector<T>(sel);
+  const qa = <T extends Element>(sel: string, root: ParentNode = document) => Array.from(root.querySelectorAll<T>(sel));
+  const must = (ok: unknown, what: string) => { if (!ok) throw new Error(what); log(`ok: ${what}`); };
+  const poll = async <T,>(probe: () => T | null | undefined | false | Promise<T | null | undefined | false>, what: string, ms = 5000): Promise<T> => {
+    const t0 = Date.now();
+    for (;;) {
+      const v = await probe();
+      if (v) { log(`ok: ${what}`); return v; }
+      if (Date.now() - t0 > ms) throw new Error(`${what} (waited ${ms} ms)`);
+      await sleep(100);
+    }
+  };
+  const key = (k: string) => window.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));
+  const click = (el: Element) => el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+  const { parse, cardFields, cardForm } = await import('../format/index.js');
+  const { addDays, dayOf, isDue } = await import('../schedule/index.js');
+  const { refreshQueue } = await import('./vault.js');
+  const { studyDeck } = await import('./deckOps.js');
+  const VOCAB = 'arabic/vocabulary.md';
+  const text = () => vault.fs.readText(vault.abs(VOCAB));
+  const fileLines = async () => (await text()).split('\n');
+  const now = new Date();
+  const today = dayOf(now);
+  try {
+    useApp.getState().setTheme('light');
+    setInspector({ open: true });
+
+    // ── the deck as the sample has it: one bare line per both-ways card ──
+    const orig = await fileLines();
+    const doc = parse(orig.join('\n')).doc;
+    const bidir = doc.blocks.map((b, i) => ({ b, i })).filter((x): x is { b: Card; i: number } => x.b.kind === 'card' && cardForm(x.b.text) === 'bidir');
+    must(bidir.length > 100 && bidir.every((x) => !x.b.reverse), `the vocab deck's ${bidir.length} both-ways cards each have one bare line, no reverse line`);
+    const dueDay = (c: Card) => c.sched?.due?.slice(0, 10) ?? '';
+    const A = bidir.find((x) => x.b.sched?.reps && !x.b.sched.suspended && dueDay(x.b) <= today && dueDay(x.b) !== '');
+    const B = bidir.find((x) => x.b.sched?.reps && !x.b.sched.suspended && dueDay(x.b) > addDays(today, 1));
+    must(A && B, `a card due today forward (${A?.b.id}, due ${A && dueDay(A.b)}) and one not due till later (${B?.b.id}, due ${B && dueDay(B.b)})`);
+    const lineOf = (lines: string[], id: string) => lines.findIndex((l) => l.endsWith(` ^${id}`));
+    const aAt = lineOf(orig, A!.b.id!);
+    const bAt = lineOf(orig, B!.b.id!);
+    const aBare = orig[aAt + 1]!;
+    const bBare = orig[bAt + 1]!;
+    must(aBare.startsWith('<!-- sr due=') && bBare.startsWith('<!-- sr due=') && orig[aAt + 2] === '' && orig[bAt + 2] === '', `each card's one line sits under it (${A!.b.id} line ${aAt + 2}, ${B!.b.id} line ${bAt + 2})`);
+
+    // ── the queue: both directions, due apart ──
+    refreshQueue();
+    const cardsOf = () => useApp.getState().queue.filter((i): i is CardItem => i.kind === 'card' && i.path === VOCAB);
+    const item = (id: string, dir: 'f' | 'r') => cardsOf().find((i) => i.id === id && i.dir === dir);
+    await poll(() => { refreshQueue(); return item(A!.b.id!, 'r') && item(B!.b.id!, 'r'); }, 'the queue holds a reverse item for each both-ways card', 10000);
+    const t = new Date();
+    const aF = item(A!.b.id!, 'f')!;
+    const aR = item(A!.b.id!, 'r')!;
+    const bF = item(B!.b.id!, 'f')!;
+    const bR = item(B!.b.id!, 'r')!;
+    must(isDue(aF, t) && !isDue(aR, t) && aR.buried && dayOf(aR.dueAt) === addDays(today, 1), `${A!.b.id}: the forward due today, its reverse buried till tomorrow`);
+    must(!isDue(bF, t) && isDue(bR, t) && !bR.buried && bR.sched === undefined, `${B!.b.id}: the forward due ${dueDay(B!.b)}, its reverse new and due today`);
+    const dueF = cardsOf().filter((i) => i.dir === 'f' && isDue(i, t)).length;
+    const dueR = cardsOf().filter((i) => i.dir === 'r' && isDue(i, t)).length;
+    const buried = cardsOf().filter((i) => i.buried).length;
+    must(dueF > 0 && dueR > 0, `the vocab deck has both directions due separately: ${dueF} front to back, ${dueR} back to front, ${buried} held till tomorrow`);
+    must(cardsOf().every((i) => !(isDue(i, t) && cardsOf().some((j) => j !== i && j.id === i.id && j.id !== undefined && isDue(j, t)))), 'no card is due both ways on one day');
+
+    openNode(queueId('today'));
+    const qrow = await poll(() => qa<HTMLElement>('.qlist li').find((li) => q(`[data-dir="r"]`, li)), 'the queue draws a reverse row', 8000);
+    must(q('.cs-arrow', qrow)?.textContent === '→' && q('.kindtag', qrow)?.textContent === 'both ways', 'a reverse row reads its asked side first, an arrow to the answer, tagged both ways');
+    qrow.scrollIntoView({ block: 'center' });
+    await shot('bothways-queue');
+
+    // ── the deck browser: a both-ways row shows each direction's due ──
+    openNode(VOCAB);
+    const rowOf = (i: number) => q<HTMLElement>(`.deck-view .deck-row[data-block="${i}"]`);
+    await poll(() => rowOf(A!.i) && rowOf(B!.i), 'the deck lens lists both cards', 10000);
+    const dues = (i: number) => qa<HTMLElement>('.dr-when[data-dirs="2"] .dr-due', rowOf(i)!).map((d) => `${d.dataset.dir}:${d.dataset.due}:${d.textContent}`);
+    log(`${A!.b.id} row: ${dues(A!.i).join(' | ')}; ${B!.b.id} row: ${dues(B!.i).join(' | ')}`);
+    must(dues(A!.i).length === 2 && dues(A!.i)[0]!.startsWith('f:1:→') && dues(A!.i)[1] === 'r:1:← new', `${A!.b.id}'s row: the forward due, the reverse new`);
+    must(dues(B!.i).length === 2 && dues(B!.i)[0]!.startsWith('f:0:→ in') && dues(B!.i)[1] === 'r:1:← new', `${B!.b.id}'s row: the forward ahead, the reverse new`);
+    rowOf(B!.i)!.scrollIntoView({ block: 'center' });
+    await shot('bothways-deck');
+
+    // ── a session over the two: the reverse asked back to front ──
+    const n = studyDeck(VOCAB, { only: new Set([`${VOCAB}#${A!.i}`, `${VOCAB}#${B!.i}`]) });
+    const items = useApp.getState().session?.items ?? [];
+    must(n === 2 && items.every((i) => i.kind === 'card') && items.map((i) => (i as CardItem).dir).sort().join() === 'f,r', `the session holds ${A!.b.id} forward and ${B!.b.id} reverse (${n} items)`);
+    const faces = cardFields(B!.b.text);
+    for (let k = 0; k < 2; k++) {
+      const it = useApp.getState().session!.items[k] as CardItem;
+      const front = await poll(() => q<HTMLElement>('.recall-wrap .card .bidir-a'), `card ${k + 1} is drawn`, 8000);
+      if (it.dir === 'r') {
+        const squash = (x: string) => x.replace(/\s+/g, '').slice(0, 16);
+        must(front.dataset.dir === 'r' && faces?.form === 'bidir' && squash(front.textContent ?? '') === squash(faces.right), `the reverse asks the right side ("${front.textContent?.slice(0, 30)}")`);
+        must(q('.card-meta .cm-dir')?.textContent === 'back to front', 'the session says back to front');
+        await shot('bothways-session-reverse');
+      } else {
+        must(front.dataset.dir === 'f', 'the forward asks the left side');
+      }
+      key(' ');
+      await sleep(300);
+      if (it.dir === 'r') await shot('bothways-session-revealed', 1500);
+      key('3');
+      if (it.dir === 'r') {
+        // the reverse: a new `sr r` line under the bare one, the bare line byte for byte
+        const after = await poll(async () => { const l = await fileLines(); const at = lineOf(l, B!.b.id!); return l[at + 2]?.startsWith('<!-- sr r ') ? l : null; }, `grading ${B!.b.id}'s reverse writes an sr r line under its bare line`);
+        const at = lineOf(after, B!.b.id!);
+        log(`${B!.b.id}: ${after[at + 1]} ⏎ ${after[at + 2]}`);
+        must(after[at + 1] === bBare, 'its bare line, the forward, is untouched');
+        must(/ r=1 l=0 /.test(after[at + 2]!) && after[at + 3] === '', 'the reverse line holds one review');
+        must(after.length === orig.length + 1, 'one line more in the file, nothing else');
+      } else {
+        const after = await poll(async () => { const l = await fileLines(); const at = lineOf(l, A!.b.id!); return l[at + 1] !== aBare ? l : null; }, `grading ${A!.b.id}'s forward rewrites its bare line`);
+        const at = lineOf(after, A!.b.id!);
+        log(`${A!.b.id}: was ${aBare} ⏎ now ${after[at + 1]}`);
+        must(after[at + 2] === '', 'and writes no reverse line: the other direction\'s line (none yet) is left alone');
+        const reps = Number(/ r=(\d+)/.exec(aBare)?.[1]);
+        const lapses = / l=(\d+)/.exec(aBare)?.[1];
+        must(after[at + 1]!.includes(` r=${reps + 1} `) && after[at + 1]!.includes(` l=${lapses} `), `the migrated card keeps its history: ${reps} reviews before, ${reps + 1} now, lapses ${lapses}`);
+      }
+      await sleep(600);
+    }
+
+    // ── siblings: graded today, the other direction waits for tomorrow ──
+    refreshQueue();
+    await sleep(300);
+    const t2 = new Date();
+    const aR2 = item(A!.b.id!, 'r');
+    must(aR2 && aR2.buried && !isDue(aR2, t2) && dayOf(aR2.dueAt) === addDays(today, 1), `${A!.b.id}'s reverse, its sibling reviewed today, is buried till tomorrow`);
+    const bF2 = item(B!.b.id!, 'f');
+    must(bF2 && bF2.sched?.reps === B!.b.sched!.reps && bF2.sched?.due === B!.b.sched!.due, `${B!.b.id}'s forward keeps its schedule (${bF2?.sched?.reps} reviews, due ${bF2?.sched?.due})`);
+
+    // ── the deck row and the inspector after ──
+    openNode(VOCAB);
+    await poll(() => rowOf(B!.i), 'the deck lens again', 10000);
+    await poll(() => !dues(B!.i)[1]?.endsWith('new'), `${B!.b.id}'s row shows its reverse scheduled (${dues(B!.i).join(' | ')})`);
+    click(rowOf(B!.i)!);
+    const heads = await poll(() => { const h = qa('.insp h6').map((e) => e.textContent); return h.includes('front to back') && h.includes('back to front') ? h : null; }, 'the inspector shows a schedule per direction');
+    log(`inspector blocks: ${heads.join(', ')}`);
+    const block = (title: string) => qa<HTMLElement>('.insp .block').find((b) => q('h6', b)?.textContent === title);
+    const reviews = (title: string) => qa<HTMLElement>('.kv > *', block(title) ?? document.createElement('div')).map((e) => e.textContent ?? '');
+    log(`front to back: ${reviews('front to back').join(' ')}; back to front: ${reviews('back to front').join(' ')}`);
+    must((block('front to back')?.textContent ?? '').includes(`reviews${B!.b.sched!.reps}lapses`), `front to back holds the migrated history (${B!.b.sched!.reps} reviews)`);
+    must((block('back to front')?.textContent ?? '').includes('reviews1lapses'), 'back to front holds its one review');
+    rowOf(B!.i)!.scrollIntoView({ block: 'center' });
+    await shot('bothways-deck-after');
+    useApp.getState().setTheme('dark');
+    await shot('bothways-deck-dark');
+    useApp.getState().setTheme('light');
+    log(`done; vault ${vault.root}`);
+  } catch (e) {
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}

@@ -277,14 +277,16 @@ describe('queue over the sample vault', () => {
     // milestone 30's course adds a problem set of two cards due in September (upcoming 20 → 22, cards 29 → 31)
     // milestone 32 adds a suspended q&a (left out) and a two-blank cloze with one blank suspended (upcoming 22 → 23, cards 31 → 32)
     // milestone 33 adds a note revisited, after the day (upcoming 23 → 24, reading 6 → 7)
-    expect(counts(all, NOW)).toEqual({ today: 17, upcoming: 24, cards: 32, reading: 7, writing: 2 });
+    // milestone 44 asks each of the eight both-ways cards both ways: eight reverse items, two due today (a forward
+    // not due yet, a reverse new), five buried till tomorrow beside a forward due or reviewed today (today 17 → 19, upcoming 24 → 30, cards 32 → 40)
+    expect(counts(all, NOW)).toEqual({ today: 19, upcoming: 30, cards: 40, reading: 7, writing: 2 });
     const today = await queue(vault, NOW, 'today');
-    expect(today.filter((i) => i.kind === 'card')).toHaveLength(13);
+    expect(today.filter((i) => i.kind === 'card')).toHaveLength(15);
     expect(today.filter((i) => i.kind === 'read').map((i) => i.path)).toEqual([
       'papers/archive/sutton-2019.md', 'papers/crick-1995.md', 'papers/wozniak-1990/woz-ex1.md',
     ]);
     expect(today.filter((i) => i.kind === 'write').map((i) => i.path)).toEqual(['essays/spaced-composition.md']);
-    expect(await queue(vault, NOW, 'upcoming')).toHaveLength(24);
+    expect(await queue(vault, NOW, 'upcoming')).toHaveLength(30);
   });
 
   it('expands a multi-blank cloze into one item per group with its own schedule', async () => {
@@ -309,7 +311,7 @@ describe('queue over the sample vault', () => {
     expect(bare?.due).toBeUndefined();
   });
 
-  const key = (i: QueueItem) => `${i.kind}:${i.kind === 'card' ? `${i.id ?? '?'}${i.group ? `/${'n' in i.group ? `c${i.group.n}` : `b${i.group.blank}`}` : ''}` : i.path}`;
+  const key = (i: QueueItem) => `${i.kind}:${i.kind === 'card' ? `${i.id ?? '?'}${i.group ? `/${'n' in i.group ? `c${i.group.n}` : `b${i.group.blank}`}` : ''}${i.dir === 'r' ? '/r' : ''}` : i.path}`;
 
   it('sorts what is due by priority, then due, then document order', async () => {
     const today = await queue(vault, NOW, 'today');
@@ -320,7 +322,7 @@ describe('queue over the sample vault', () => {
     // cards sit with their document now: wozniak-1990's at 80, after everything at 50
     expect(today.map(key)).toEqual([
       'card:cv-luecke', 'card:cmar-drive', 'write:essays/spaced-composition.md', 'card:cd-resurface/c1', 'card:cd-resurface/c2',
-      'read:papers/archive/sutton-2019.md', 'read:papers/crick-1995.md', 'card:cck-ncc', 'card:cv-vorsatz', 'card:cv-wdh', 'card:?',
+      'read:papers/archive/sutton-2019.md', 'read:papers/crick-1995.md', 'card:cck-ncc', 'card:cv-vorsatz', 'card:cv-wdh', 'card:la-span/r', 'card:cv-gedacht/r', 'card:?',
       'card:cw3-leech', 'card:cw2-retr/b0', 'card:cw2-min/c1', 'read:papers/wozniak-1990/woz-ex1.md', 'card:cw2-integ/c1', 'card:cw2-integ/c2',
     ]);
     const pris = today.map((i) => i.pri);
@@ -336,7 +338,11 @@ describe('queue over the sample vault', () => {
     const today = await queue(vault, NOW, 'today');
     const upcoming = await queue(vault, NOW, 'upcoming');
     expect(all.map(key)).toEqual([...today, ...upcoming].map(key));
-    expect(upcoming.slice(0, 3).map(key)).toEqual(['write:essays/talk-incremental.md', 'read:papers/wozniak-1990.md', 'card:cw2-min/c2']);
+    // the reverses buried beside a forward shown today come up at the next day's start
+    expect(upcoming.slice(0, 3).map(key)).toEqual(['card:cck-ncc/r', 'card:cv-wdh/r', 'card:cv-vergessen/r']);
+    expect(upcoming.filter((i) => i.kind === 'card' && i.buried).map(key)).toEqual([
+      'card:cck-ncc/r', 'card:cv-wdh/r', 'card:cv-vergessen/r', 'card:cv-luecke/r', 'card:?/r',
+    ]);
     const dues = upcoming.map((i) => i.dueAt.getTime());
     expect(dues).toEqual([...dues].sort((a, b) => a - b));
   });
@@ -483,7 +489,7 @@ describe('the fold', () => {
     for (const path of vault.documents()) before.set(path, await readDisk(path));
     const all = await queue(vault, NOW);
     const today = all.filter((i) => i.dueAt <= NOW);
-    expect(today).toHaveLength(17);
+    expect(today).toHaveLength(19);
     // budget 5: one draft above the fold, the three reading topics below it, with nine cards
     const rest = overflow(all, NOW, 5);
     expect(rest.map((i) => `${i.kind}:${i.path}:${i.pri}`)).toEqual([
@@ -510,7 +516,8 @@ describe('the fold', () => {
     const tomorrow = new Date(NOW.getTime() + 86400000);
     const next = await queue(vault, tomorrow, 'today');
     expect(next.filter((i) => i.kind === 'read')).toEqual([]);
-    expect(next).toHaveLength(17 - 3);
+    // less the three topics; and the reverse of a card whose forward was reviewed on the day comes up
+    expect(next).toHaveLength(19 - 3 + 1);
     expect(overflow(await queue(vault, tomorrow), tomorrow, 5)).toEqual([]);
   });
 

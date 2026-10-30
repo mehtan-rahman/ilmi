@@ -12,12 +12,15 @@ import {
 } from '../format/index.js';
 import type { Vault } from '../vault/index.js';
 import { grade, type Grade } from './card.js';
-import { whenToDate } from './dates.js';
+import { addDays, dayOf, dayStart, whenToDate } from './dates.js';
 import { advanceRead } from './read.js';
 import { advanceWrite } from './write.js';
 
 /** A numbered cloze group, or the index of an unnumbered blank in `blanks(text)` order. */
 export type GroupKey = { n: number } | { blank: number };
+
+/** A both-ways card's direction: `f` front to back (its bare line), `r` back to front (its `sr r` line). FORMAT.md §6.2. */
+export type Dir = 'f' | 'r';
 
 interface ItemBase {
   path: string;
@@ -45,6 +48,14 @@ export interface CardItem extends ItemBase {
   group?: GroupKey;
   /** How many groups the card has; more than one means this item is one blank of several. */
   groups: number;
+  /** On a both-ways card: the direction this item asks. */
+  dir?: Dir;
+  /**
+   * Its sibling (the other direction) is shown today, or was reviewed today:
+   * held back until the next day (`dueAt` is then the next day's start).
+   * Nothing on disk says so (FORMAT.md §6.2, siblings).
+   */
+  buried?: true;
 }
 
 export interface ReadItem extends ItemBase {
@@ -86,20 +97,62 @@ export function cardGroups(text: string): GroupKey[] {
   return out;
 }
 
-/** The schedule that applies to a group: its own line, else the card's bare line. */
-function groupSchedule(card: Card, group: GroupKey | undefined): CardSchedule | undefined {
+/**
+ * The schedule that applies to a group: its own line, else the card's bare
+ * line; to a both-ways card's reverse its `sr r` line alone (absent: new).
+ */
+export function scheduleOf(card: Card, group: GroupKey | undefined, dir?: Dir): CardSchedule | undefined {
+  if (dir === 'r') return card.reverse;
   if (group && 'n' in group && card.blanks?.[group.n]) return card.blanks[group.n];
   return card.sched;
 }
 
 /**
  * Whether a group (or the whole card, with no group) is suspended: `sus=1`
- * on the card's bare line suspends every group, on a group's line that
- * group alone (FORMAT.md §6.2).
+ * on the card's bare line suspends every group and both directions, on a
+ * group's line that group alone, on the `sr r` line the reverse alone
+ * (FORMAT.md §6.2).
  */
-export function isSuspended(card: Card, group?: GroupKey): boolean {
+export function isSuspended(card: Card, group?: GroupKey, dir?: Dir): boolean {
   if (card.sched?.suspended) return true;
+  if (dir === 'r') return !!card.reverse?.suspended;
   return !!(group && 'n' in group && card.blanks?.[group.n]?.suspended);
+}
+
+/** The directions a card is asked in: both for a both-ways card, else none. */
+export const cardDirs = (form: CardForm | null): Dir[] => (form === 'bidir' ? ['f', 'r'] : []);
+
+/** The priority a direction is studied at: the reverse's own, else the card's (its bare line), else the document's. */
+export function dirPri(card: Card, dir: Dir | undefined, docPri: number): number {
+  return (dir === 'r' ? card.reverse?.pri : undefined) ?? card.sched?.pri ?? docPri;
+}
+
+/** Was this schedule last graded on `now`'s local day? */
+const seenToday = (s: CardSchedule | undefined, now: Date): boolean =>
+  !!s?.last && dayOf(whenToDate(s.last)) === dayOf(now);
+
+/**
+ * The two directions of one both-ways card, siblings: not both on one day.
+ * When both are due, the one due first (the forward on a tie) stays and the
+ * other is buried until the next day; when one was reviewed today, the
+ * other is buried. In place.
+ */
+export function burySiblings(pair: CardItem[], now: Date): void {
+  const due = pair.filter((i) => i.dueAt <= now);
+  if (!due.length) return;
+  const tomorrow = dayStart(addDays(dayOf(now), 1));
+  const bury = (i: CardItem) => { i.buried = true; i.dueAt = tomorrow; };
+  const [f, r] = [pair.find((i) => i.dir === 'f'), pair.find((i) => i.dir === 'r')];
+  if (!f || !r) return;
+  const fSeen = seenToday(f.sched, now);
+  const rSeen = seenToday(r.sched, now);
+  if (fSeen !== rSeen) {
+    const other = fSeen ? r : f;
+    if (other.dueAt <= now) bury(other);
+    return;
+  }
+  if (fSeen) return;              // both reviewed today: asked for, nothing held back
+  if (due.length === 2) bury(r.dueAt < f.dueAt ? f : r);
 }
 
 function withDue(sched: { due?: string } | undefined, now: Date): { due?: string; dueAt: Date } {
@@ -111,23 +164,30 @@ function cardItems(path: string, block: number, card: Card, trail: readonly stri
   const form = cardForm(card.text);
   if (!form) return [];
   const groups = form === 'cloze' ? cardGroups(card.text) : [];
-  // the card's own priority sits on its bare line, whichever group is up
-  const pri = card.sched?.pri ?? docPri;
-  const one = (group: GroupKey | undefined): CardItem => {
-    const sched = groupSchedule(card, group);
+  const one = (group: GroupKey | undefined, dir?: Dir): CardItem => {
+    const sched = scheduleOf(card, group, dir);
     const when = withDue(sched, now);
     const item: CardItem = {
       kind: 'card', path, block, form, text: card.text, groups: Math.max(groups.length, 1),
-      ...when, pri,
+      // the card's own priority sits on its bare line, whichever group is up; a reverse may carry its own
+      ...when, pri: dirPri(card, dir, docPri),
     };
     if (card.id !== undefined) item.id = card.id;
     if (section !== undefined) { item.section = section; item.trail = [...trail]; }
     if (sched) item.sched = sched;
     if (group) item.group = group;
+    if (dir) item.dir = dir;
     return item;
   };
+  // a both-ways card is two items, one per direction, siblings
+  const dirs = cardDirs(form);
+  if (dirs.length) {
+    const pair = dirs.map((d) => one(undefined, d));
+    burySiblings(pair, now);
+    return pair.filter((i) => !isSuspended(card, undefined, i.dir));
+  }
   // a suspended card, or blank, keeps its schedule and leaves the queue, the session, and the counts
-  return (groups.length ? groups : [undefined]).filter((g) => !isSuspended(card, g)).map(one);
+  return (groups.length ? groups : [undefined]).filter((g) => !isSuspended(card, g)).map((g) => one(g));
 }
 
 // ── documents ────────────────────────────────────────────────────
@@ -195,7 +255,7 @@ export function sameItem(a: QueueItem, b: QueueItem): boolean {
   if (a.kind !== b.kind || a.path !== b.path) return false;
   if (a.kind !== 'card' || b.kind !== 'card') return true;
   const same = a.id !== undefined && b.id !== undefined ? a.id === b.id : a.block === b.block && a.text === b.text;
-  return same && JSON.stringify(a.group ?? null) === JSON.stringify(b.group ?? null);
+  return same && JSON.stringify(a.group ?? null) === JSON.stringify(b.group ?? null) && (a.dir ?? 'f') === (b.dir ?? 'f');
 }
 
 export function inScope(item: QueueItem, scope: Scope, now: Date): boolean {
@@ -325,6 +385,12 @@ export function gradeItem(doc: Doc, item: CardItem, rating: Grade, now: Date, op
     const n = nextGroup(card.text);
     card.text = numberBlank(card.text, group.blank, n);
     group = { n };
+  }
+  // a both-ways card's reverse rewrites its `sr r` line, and only that one
+  if (item.dir === 'r') {
+    const next = grade(card.reverse, rating, now);
+    card.reverse = next;
+    return next;
   }
   const own = group && 'n' in group && (item.groups > 1 || card.blanks?.[group.n] !== undefined) ? group.n : null;
   const next = grade(own === null ? card.sched : card.blanks?.[own] ?? card.sched, rating, now);

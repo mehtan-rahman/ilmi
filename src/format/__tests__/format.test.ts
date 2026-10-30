@@ -87,6 +87,52 @@ describe('front-matter', () => {
     expect([rank.sched, rank.blanks?.[1]?.suspended, rank.blanks?.[2]?.suspended]).toEqual([undefined, undefined, true]);
   });
 
+  it('both ways: `sr r` is the reverse, beside the bare forward; read in any order, written bare then r', () => {
+    const one = parse('a ::: b ^x\n<!-- sr due=2026-05-27 st=review r=4 -->\n<!-- sr r due=2026-05-29 st=review r=1 pri=20 sus=1 -->\n');
+    expect(one.diagnostics).toEqual([]);
+    expect(one.doc.blocks[0]).toEqual({
+      kind: 'card', text: 'a ::: b', id: 'x',
+      sched: { due: '2026-05-27', state: 'review', reps: 4 },
+      reverse: { due: '2026-05-29', state: 'review', reps: 1, pri: 20, suspended: true },
+    });
+    expect(serialize(one.doc)).toBe('a ::: b ^x\n<!-- sr due=2026-05-27 st=review r=4 -->\n<!-- sr r due=2026-05-29 st=review r=1 pri=20 sus=1 -->\n');
+    // a single bare line, as every both-ways card had before, is the forward alone: nothing for the reverse
+    const old = parse('a ::: b ^x\n<!-- sr due=2026-05-27 st=review s=11 r=9 l=1 -->\n');
+    expect((old.doc.blocks[0] as Card).reverse).toBeUndefined();
+    expect(serialize(old.doc)).toBe('a ::: b ^x\n<!-- sr due=2026-05-27 st=review s=11 r=9 l=1 -->\n');
+
+    const { doc, diagnostics } = parse(read('mangled/both-ways.md'));
+    const cards = doc.blocks.filter((b): b is Card => b.kind === 'card');
+    expect(cards.map((c) => [c.sched?.due ?? null, c.reverse?.due ?? null])).toEqual([
+      ['2026-06-01', '2026-06-02'],      // the r line before the bare one
+      ['2026-06-04', null],              // `sr f` is the bare line
+      [null, '2026-06-09'],              // later wins
+      [null, '2026-06-01'],              // on a q&a: kept, said
+      [null, '2026-06-03'],              // `r c2`: r, c2 dropped
+      [null, '2026-06-06'],              // beside a cloze's groups
+      ['2026-06-01', null],              // the reverse suspended alone (no due)
+      [null, '2026-06-07'],              // a multi-line both-ways card
+    ]);
+    expect(cards[2]!.reverse).toEqual({ due: '2026-06-09', pri: 20 });
+    expect(cards[5]!.blanks).toEqual({ 1: { due: '2026-06-05' } });
+    expect(cards[6]!.reverse).toEqual({ suspended: true });
+    expect(diagnostics.map((d) => d.message)).toEqual([
+      'card has two reverse schedules; later wins',
+      'a reverse schedule on a card that is not both ways',
+      'unexpected token "c2"',
+      'a reverse schedule on a card that is not both ways',
+    ]);
+    const out = serialize(doc);
+    expect(out).toContain('the reverse before the bare line ::: read in any order ^bw-order\n<!-- sr due=2026-06-01 st=review s=9 r=5 -->\n<!-- sr r due=2026-06-02 st=review s=5 r=3 -->\n');
+    expect(out).toContain('the forward said aloud ::: f is the bare line ^bw-f\n<!-- sr due=2026-06-04 st=review s=4 r=2 -->\n');
+    expect(out).toContain('a cloze {{c1::keeps}} its groups\n<!-- sr r due=2026-06-06 -->\n<!-- sr c1 due=2026-06-05 -->\n');
+    // the corpus: a german card reviewed both ways
+    const de = parse(read('vault/german.md')).doc.blocks.filter((b): b is Card => b.kind === 'card');
+    const v = de.find((c) => c.id === 'cv-vorsatz')!;
+    expect([v.sched?.reps, v.reverse?.reps, v.reverse?.due]).toEqual([4, 2, '2026-05-29']);
+    expect(de.filter((c) => c.reverse).length).toBe(1);
+  });
+
   it('priority: the field wins over a line, a card carries its own, a group line never does', () => {
     const { doc, diagnostics } = parse(read('mangled/priority.md'));
     const m = meta(doc);

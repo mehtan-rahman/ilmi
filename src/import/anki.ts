@@ -145,8 +145,9 @@ export function kindOf(nt: AnkiNotetype): NotetypeKind {
  * The card a note becomes, with its cards' progress: a cloze from the first
  * field written whole, `sr cN` per group (the bare line when there is one
  * group); a pair from the first field and the rest, `:::` on a reversed
- * note that has its reverse card, the lowest card's schedule kept and the
- * others counted. `null` when the note makes no card.
+ * note that has its reverse card, the forward card's schedule on the bare
+ * line and the reverse card's on `sr r` (FORMAT.md §6.2), any other
+ * card's counted. `null` when the note makes no card.
  */
 export function cardOf(note: AnkiNote, nt: AnkiNotetype, cards: AnkiCard[], day0: string, dropped: AnkiDropped): { card: Card; other: boolean } | null {
   const cells = note.fields.map((f) => reduceCell(f, true, dropped));
@@ -177,13 +178,17 @@ export function cardOf(note: AnkiNote, nt: AnkiNotetype, cards: AnkiCard[], day0
   const [first, ...rest] = sorted;
   const s = first ? seedOf(first, day0) : null;
   if (s) card.sched = s;
-  dropped.schedules += rest.filter((c) => c.type === 2).length;
+  // both ways: the reverse card's progress lands on the card's `sr r` line
+  const back = both && first?.ord === 0 ? rest.find((c) => c.ord === 1) : undefined;
+  const r = back ? seedOf(back, day0) : null;
+  if (r) card.reverse = r;
+  dropped.schedules += rest.filter((c) => c !== back && c.type === 2).length;
   return { card, other: kind === 'other' };
 }
 
 // ── the package ──────────────────────────────────────────────────
 
-const hasProgress = (c: Card): boolean => !!c.sched || !!c.blanks;
+const hasProgress = (c: Card): boolean => !!c.sched || !!c.reverse || !!c.blanks;
 
 /** Every deck with cards as a deck document, in name order; what was dropped, counted. */
 export function mapPackage(pkg: AnkiPackage): Mapped {

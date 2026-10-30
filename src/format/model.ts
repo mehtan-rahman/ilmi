@@ -78,6 +78,11 @@ export interface Card {
   id?: string;
   /** The bare `<!-- sr -->` line. */
   sched?: CardSchedule;
+  /**
+   * `<!-- sr r -->`: a both-ways card's back-to-front direction, scheduled
+   * apart from the front-to-back one, which is the bare line (FORMAT.md §6.2).
+   */
+  reverse?: CardSchedule;
   /** `<!-- sr cN -->` lines, keyed by group number. */
   blanks?: Record<number, CardSchedule>;
   extracts?: string[];

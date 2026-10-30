@@ -306,24 +306,31 @@ function attach(prev: Block | undefined, adjacent: boolean, tag: string, rest: s
   // sr
   if (prev.kind !== 'card') return orphan();
   const attrs = parseAttrs(rest, warn);
-  let group: number | undefined;
+  // the key: none (the card's own line, and a both-ways card's front to back), `f` (the same, said), `r`, or `cN`
+  let key: number | 'r' | 'f' | undefined;
   for (const b of attrs.bare) {
     const m = GROUP_KEY.exec(b);
-    if (m && group === undefined) group = Number(m[1]);
+    const k = m ? Number(m[1]) : b === 'r' || b === 'f' ? b : null;
+    if (k !== null && key === undefined) key = k;
     else warn(`unexpected token "${b}"`);
   }
   const sched = readAttrs(attrs.pairs, SR_SPECS, warn);
   // `sus=0` says what absence says
   if ((sched.suspended as boolean | undefined) === false) delete sched.suspended;
-  if (group === undefined) {
+  if (key === undefined || key === 'f') {
     if (prev.sched) warn('card has two schedules; later wins');
     prev.sched = sched;
+  } else if (key === 'r') {
+    // kept on any card, so a form changed by hand loses nothing; it means something on a both-ways card alone
+    if (cardForm(prev.text) !== 'bidir') warn('a reverse schedule on a card that is not both ways');
+    if (prev.reverse) warn('card has two reverse schedules; later wins');
+    prev.reverse = sched;
   } else {
     // a priority belongs to the card, on its bare line
     if (sched.pri !== undefined) { warn(`"pri" on a group line is ignored`); delete sched.pri; }
     const blanks = prev.blanks ?? {};
-    if (blanks[group]) warn(`group c${group} has two schedules; later wins`);
-    blanks[group] = sched;
+    if (blanks[key]) warn(`group c${key} has two schedules; later wins`);
+    blanks[key] = sched;
     prev.blanks = blanks;
   }
   return true;

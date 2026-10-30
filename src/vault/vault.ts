@@ -826,8 +826,8 @@ export class Vault {
   }
 
   /**
-   * Forget a card's schedule so it reads as new again: its bare `sr` line and
-   * its `sr cN` lines go; the text, id, extract backrefs, and its own priority
+   * Forget a card's schedule so it reads as new again: its bare `sr` line,
+   * its `sr r` line, and its `sr cN` lines go; the text, id, extract backrefs, and its own priority
    * stay. Finds the card the way `removeCard` does. A card with no schedule
    * is left as it is.
    */
@@ -835,9 +835,12 @@ export class Vault {
     return this.update(path, (doc) => {
       const card = cardIn(doc, path, index, id, text);
       const pri = card.sched?.pri;
+      const rPri = card.reverse?.pri;
       delete card.sched;
+      delete card.reverse;
       delete card.blanks;
       if (pri !== undefined) card.sched = { pri };
+      if (rPri !== undefined) card.reverse = { pri: rPri };
     });
   }
 

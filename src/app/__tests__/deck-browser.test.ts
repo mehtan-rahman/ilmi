@@ -16,7 +16,7 @@ import { parse, type Card, type Doc } from '../../format/index.js';
 import { nodeFs } from '../../vault/node-fs.js';
 import { Vault } from '../../vault/index.js';
 import {
-  DEFAULT_VIEW, NO_SELECTION, applyBulk, bulkLine, clickSelect, cleanView, countLabel, deckRows, docTargets, docsUnder, faceText,
+  DEFAULT_VIEW, NO_SELECTION, applyBulk, bulkLine, changeCard, clickSelect, cleanView, countLabel, deckRows, docTargets, docsUnder, faceText,
   filterRows, fold, restore, selectAll, selectedRows, sortRows, type DeckRow, type DeckView,
 } from '../deck.js';
 import { useApp, type DocInfo } from '../store.js';
@@ -35,12 +35,37 @@ const view = (patch: Partial<DeckView> = {}): DeckView => ({ ...DEFAULT_VIEW, ..
 const german = () => deckRows([[DECK, docOf(DECK)]], NOW);
 
 describe('rows', () => {
+  it('a both-ways row carries each direction: the forward as the row, the reverse beside it', () => {
+    const rows = german();
+    const v = rows.find((r) => r.id === 'cv-vorsatz')!;
+    expect([v.sched?.due, v.reverse?.sched?.due, v.reverse?.isDue, v.reverse?.suspended]).toEqual(['2026-05-27', '2026-05-29', false, false]);
+    const g = rows.find((r) => r.id === 'cv-gedacht')!;
+    // a card from before directions were apart: its history the forward's, its reverse new
+    expect([g.sched?.reps, g.reverse?.sched, g.reverse?.isDue, g.isDue]).toEqual([7, undefined, true, true]);
+    expect(rows.find((r) => r.id === 'cv-cloze')?.reverse).toBeUndefined();
+    const one = deckRows([['x.md', parse('a ::: b\n<!-- sr due=2026-06-01 -->\n<!-- sr r due=2026-06-02 sus=1 -->\n').doc]], NOW)[0]!;
+    expect([one.isDue, one.suspended, one.reverse?.suspended, one.reverse?.isDue]).toEqual([false, false, true, false]);
+  });
+
+  it('suspend, unsuspend and reset reach both directions; reset keeps each one\'s priority', () => {
+    const { doc } = parse('a ::: b\n<!-- sr due=2026-06-01 st=review r=3 pri=20 -->\n<!-- sr r due=2026-06-02 st=review r=2 pri=10 sus=1 -->\n');
+    const card = doc.blocks[0] as Card;
+    changeCard(card, { kind: 'unsuspend' });
+    expect(card.reverse).toEqual({ due: '2026-06-02', state: 'review', reps: 2, pri: 10 });
+    changeCard(card, { kind: 'reset' });
+    expect([card.sched, card.reverse]).toEqual([{ pri: 20 }, { pri: 10 }]);
+    changeCard(card, { kind: 'suspend' });
+    expect(card.sched).toEqual({ pri: 20, suspended: true });
+  });
+
+
   it('one row per card, with its form, state, due, and suspension', () => {
     const rows = german();
     expect(names(rows)).toEqual(['cv-vorsatz', 'cv-wdh', 'cv-gedacht', 'cv-vergessen', 'cv-luecke', 'cv-cloze', 'ein Wort ohn']);
     expect(rows.map((r) => r.form)).toEqual(['bidir', 'bidir', 'bidir', 'bidir', 'bidir', 'cloze', 'bidir']);
     expect(rows.map((r) => r.state)).toEqual(['review', 'review', 'review', 'review', 'learning', 'review', 'new']);
-    expect(rows.filter((r) => r.isDue).map(name)).toEqual(['cv-vorsatz', 'cv-wdh', 'cv-luecke', 'ein Wort ohn']);
+    // a row is due when either direction is: a both-ways card's reverse with no line of its own is new, due now
+    expect(rows.filter((r) => r.isDue).map(name)).toEqual(['cv-vorsatz', 'cv-wdh', 'cv-gedacht', 'cv-vergessen', 'cv-luecke', 'ein Wort ohn']);
     const ps = deckRows([[PSET, docOf(PSET)]], SEPT);
     // the q&a suspended whole; the cloze with one of two blanks suspended is not, and shows its other blank's schedule
     expect(ps.map((r) => [name(r), r.suspended])).toEqual([['la-span', false], ['la-indep', false], ['la-eigvec', true], ['la-rank', false]]);
@@ -100,7 +125,7 @@ describe('chips', () => {
     expect(names(filterRows(rows, '', view({ states: ['new'] })))).toEqual(['ein Wort ohn']);
     expect(names(filterRows(rows, '', view({ states: ['learning'] })))).toEqual(['cv-luecke']);
     expect(names(filterRows(rows, '', view({ states: ['review'] })))).toEqual(['cv-vorsatz', 'cv-wdh', 'cv-gedacht', 'cv-vergessen', 'cv-cloze']);
-    expect(names(filterRows(rows, '', view({ states: ['due'] })))).toEqual(['cv-vorsatz', 'cv-wdh', 'cv-luecke', 'ein Wort ohn']);
+    expect(names(filterRows(rows, '', view({ states: ['due'] })))).toEqual(['cv-vorsatz', 'cv-wdh', 'cv-gedacht', 'cv-vergessen', 'cv-luecke', 'ein Wort ohn']);
     expect(filterRows(rows, '', view({ states: ['suspended'] }))).toEqual([]);
     const ps = deckRows([[PSET, docOf(PSET)]], SEPT);
     expect(names(filterRows(ps, '', view({ states: ['suspended'] })))).toEqual(['la-eigvec']);
@@ -112,7 +137,7 @@ describe('chips', () => {
 
   it('the count and the remembered view', () => {
     const rows = german();
-    expect(countLabel(filterRows(rows, '', view({ states: ['due'] })).length, rows.length)).toBe('4 of 7');
+    expect(countLabel(filterRows(rows, '', view({ states: ['due'] })).length, rows.length)).toBe('6 of 7');
     expect(countLabel(7, 7)).toBe('7');
     expect(cleanView({ forms: ['qa', 'nope'], states: ['due', 1], sort: 'interval' })).toEqual({ forms: ['qa'], states: ['due'], sort: 'interval' });
     expect(cleanView('junk')).toEqual(DEFAULT_VIEW);
@@ -124,7 +149,8 @@ describe('sorts', () => {
     const rows = german();
     const by = (s: DeckView['sort']) => names(sortRows(rows, s));
     expect(by('order')).toEqual(['cv-vorsatz', 'cv-wdh', 'cv-gedacht', 'cv-vergessen', 'cv-luecke', 'cv-cloze', 'ein Wort ohn']);
-    expect(by('due')).toEqual(['cv-luecke', 'cv-vorsatz', 'cv-wdh', 'ein Wort ohn', 'cv-vergessen', 'cv-gedacht', 'cv-cloze']);
+    // a both-ways row by the sooner of its directions: an unreviewed reverse is due now
+    expect(by('due')).toEqual(['cv-luecke', 'cv-vorsatz', 'cv-wdh', 'cv-gedacht', 'cv-vergessen', 'ein Wort ohn', 'cv-cloze']);
     expect(by('interval')).toEqual(['cv-luecke', 'ein Wort ohn', 'cv-vorsatz', 'cv-vergessen', 'cv-wdh', 'cv-gedacht', 'cv-cloze']);
     expect(by('difficulty')).toEqual(['cv-luecke', 'cv-vorsatz', 'cv-vergessen', 'cv-wdh', 'cv-gedacht', 'cv-cloze', 'ein Wort ohn']);
     expect(by('lapses')).toEqual(['cv-luecke', 'cv-vorsatz', 'cv-wdh', 'cv-gedacht', 'cv-vergessen', 'cv-cloze', 'ein Wort ohn']);

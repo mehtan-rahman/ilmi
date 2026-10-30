@@ -3,7 +3,7 @@
 // them. Prose text is verbatim in both directions, math chips included.
 
 import { Fragment, type Node as PMNode } from 'prosemirror-model';
-import { mathSpanEnd, type Block, type Card, type Heading, type Paragraph, type Raw } from '../format/index.js';
+import { cardForm, mathSpanEnd, type Block, type Card, type Heading, type Paragraph, type Raw } from '../format/index.js';
 import { nodeToRaw, rawToNode } from './raw.js';
 import { schema } from './schema.js';
 
@@ -144,6 +144,8 @@ export function cardDue(card: Card): string | undefined {
     for (const n of groups) dues.push(card.blanks![Number(n)]!.due ?? card.sched?.due);
   } else {
     dues.push(card.sched?.due);
+    // a both-ways card's reverse is new, so due now, until it has a line of its own
+    if (cardForm(card.text) === 'bidir') dues.push(card.reverse?.due);
   }
   if (dues.some((d) => d === undefined)) return undefined;
   return (dues as string[]).sort()[0];

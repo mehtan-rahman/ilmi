@@ -45,6 +45,12 @@ export interface DeckRow extends CardRef {
   pri: number;
   /** Front and back, folded, for the search. */
   hay: string;
+  /**
+   * A both-ways card's back-to-front direction, beside the row's own
+   * (`sched` and `dueAt` are then the forward's, `isDue` either's): its
+   * `sr r` line, when it is due, and whether it alone is suspended.
+   */
+  reverse?: { sched?: CardSchedule; dueAt: Date; isDue: boolean; suspended: boolean };
 }
 
 /** Case and accents folded, so `Lucke` finds `Lücke` and Arabic without its vowel marks finds the voweled word. */
@@ -88,6 +94,14 @@ export function docRows(path: string, doc: Doc, now: Date, from = 0): DeckRow[] 
     };
     if (b.id !== undefined) row.id = b.id;
     if (sched) row.sched = sched;
+    if (f.form === 'bidir') {
+      const rs = isSuspended(b, undefined, 'r');
+      const rDue = dueOf(b.reverse, now);
+      row.reverse = { dueAt: rDue, isDue: !rs && rDue <= now, suspended: rs };
+      if (b.reverse) row.reverse.sched = b.reverse;
+      // the row is due when either direction is
+      row.isDue = row.isDue || row.reverse.isDue;
+    }
     out.push(row);
   });
   return out;
@@ -186,7 +200,8 @@ export function sortRows(rows: DeckRow[], sort: DeckSort): DeckRow[] {
     const s = r.sched;
     switch (sort) {
       case 'order': return r.pos;
-      case 'due': return r.dueAt.getTime();
+      // a both-ways row by the sooner of its two directions
+      case 'due': return r.reverse && !r.reverse.suspended ? Math.min(r.dueAt.getTime(), r.reverse.dueAt.getTime()) : r.dueAt.getTime();
       case 'interval': return s?.ivl ?? 0;
       case 'difficulty': return s?.difficulty !== undefined ? -s.difficulty : never;
       case 'lapses': return -(s?.lapses ?? 0);
@@ -269,6 +284,7 @@ export interface Snapshot {
 
 function tidy(card: Card): void {
   if (card.sched && !Object.keys(card.sched).length) delete card.sched;
+  if (card.reverse && !Object.keys(card.reverse).length) delete card.reverse;
   if (card.blanks && !Object.keys(card.blanks).length) delete card.blanks;
 }
 
@@ -280,15 +296,20 @@ export function changeCard(card: Card, action: BulkAction): void {
       break;
     case 'unsuspend':
       if (card.sched) delete card.sched.suspended;
+      if (card.reverse) delete card.reverse.suspended;
       for (const s of Object.values(card.blanks ?? {})) delete s.suspended;
       break;
     case 'reset': {
-      // the schedule goes; what is the card's and not the scheduler's stays
-      const pri = card.sched?.pri;
-      const sus = card.sched?.suspended;
+      // the schedule goes, both directions'; what is the card's and not the scheduler's stays
+      const keep = (s: CardSchedule | undefined): CardSchedule | undefined =>
+        s?.pri !== undefined || s?.suspended ? { ...(s.pri !== undefined ? { pri: s.pri } : {}), ...(s.suspended ? { suspended: true as const } : {}) } : undefined;
+      const bare = keep(card.sched);
+      const rev = keep(card.reverse);
       delete card.sched;
+      delete card.reverse;
       delete card.blanks;
-      if (pri !== undefined || sus) card.sched = { ...(pri !== undefined ? { pri } : {}), ...(sus ? { suspended: true as const } : {}) };
+      if (bare) card.sched = bare;
+      if (rev) card.reverse = rev;
       break;
     }
     case 'pri':

@@ -45,7 +45,7 @@ export interface CardSchedule {
   grade?: number;
   pri?: number;
 }
-export interface Card { kind: 'card'; text: string; id?: string; sched?: CardSchedule; blanks?: Record<number, CardSchedule>; extracts?: string[] }
+export interface Card { kind: 'card'; text: string; id?: string; sched?: CardSchedule; /** A both-ways card's back-to-front schedule, its `sr r` line. */ reverse?: CardSchedule; blanks?: Record<number, CardSchedule>; extracts?: string[] }
 export interface Raw { kind: 'raw'; text: string }
 export type Block = Heading | Paragraph | Card | Raw;
 

@@ -5,8 +5,9 @@ import { formatFrontmatter } from './frontmatter.js';
 import type { Block, Card, CardSchedule, Doc } from './model.js';
 import { SR_SPECS } from './parse.js';
 
-export function formatSchedule(s: CardSchedule, group?: number): string {
-  const head = group === undefined ? 'sr' : `sr c${group}`;
+/** One `sr` line: bare, a cloze group's (`sr cN`), or a both-ways card's reverse (`sr r`). */
+export function formatSchedule(s: CardSchedule, group?: number | 'r'): string {
+  const head = group === undefined ? 'sr' : group === 'r' ? 'sr r' : `sr c${group}`;
   const attrs = formatAttrs(writeAttrs(s, SR_SPECS));
   return `<!-- ${head}${attrs ? ' ' + attrs : ''} -->`;
 }
@@ -21,6 +22,7 @@ function withId(text: string, id: string | undefined): string {
 function cardLines(c: Card): string[] {
   const out = [withId(c.text, c.id)];
   if (c.sched) out.push(formatSchedule(c.sched));
+  if (c.reverse) out.push(formatSchedule(c.reverse, 'r'));
   for (const n of Object.keys(c.blanks ?? {}).map(Number).sort((a, b) => a - b)) {
     out.push(formatSchedule(c.blanks![n]!, n));
   }

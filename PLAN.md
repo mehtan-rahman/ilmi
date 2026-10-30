@@ -3376,7 +3376,153 @@ sample (the smoke drives them and logs the file after each), lists move
 and indent with their children, and the toolbar appears over a
 selection and is gone when it is.
 
-### [ ] 35. Insert, paste, find
+### [x] 35. Insert, paste, find
+Done 2026-10-30, commit `89d881d`. The window check is pending: run
+`ILMI_SMOKE=insert` with `ILMI_VAULT` on a copy of `samples/double-major`
+and read its `shot:` captures (insert-menu, -blocks, -cards, -paste,
+-images, -find, -find-step, -replace); nothing was run in the window this
+session.
+Notes: three reader modules. `src/reader/slash.ts`: the menu's rows
+(`SLASH_ITEMS`: id, label, Markdown, key, aliases, where offered), the
+filter (`slashItems`: label prefix, alias or word prefix, contains, then
+the letters in order; the menu's order among equals), `slashContext`
+(paragraph, heading, item, quote, other), the plugin (`slashKey` state
+`{ from, query, index }`, opened from `handleTextInput` when `/` is typed
+where `opensAt` allows: a prose textblock, at its start or after
+whitespace, not in a code span or code; followed through every
+transaction: closed when its `/` is gone, the caret leaves the query, the
+query passes 24 characters or holds a newline, or a space follows a query
+nothing answers; ↑↓ move and wrap, ⏎ or Tab pick, Esc closes keeping the
+`/`, blur closes), and `pickSlash` (the `/query` deleted, then the row's
+work, in one transaction after `closeHistory`, so one ⌘Z puts the typed
+text back). `src/reader/insert.ts`: `insertBlocks` (in place of an empty
+paragraph, before or after one at its edges, between its halves when the
+caret is inside it, after the top-level block otherwise), `insertImages`,
+`markdownBlocks` / `pasteMarkdown` (the format's own `parse`, a blank line
+first so a pasted `---` is never front-matter; a single plain paragraph is
+typed in at the caret, other blocks go in as a slice open at a paragraph
+end; in code the text as it is), `clipboardText` (the copy's plain text is
+the Markdown the blocks are written as, so a copy pastes back as the same
+blocks; inside one block, its text), `htmlPasteImages`.
+`src/reader/find.ts`: `foldMap` / `findIn` (the deck search's fold, NFKD,
+`\p{M}` and the tatweel dropped, lower case, taken a character at a time
+so a match maps back; a match takes the marks after its last letter),
+`findMatches` (textblocks by `flatText`, chips not searched; a card or a
+drawn atom counted once per match and marked whole), the plugin
+(`findKey` `{ query, matches, index, open }`, found again near the
+current match on every doc change), `replaceMatch`, `replaceAll` (one
+transaction), `closeAtMatch`. `src/import/paste.ts` `htmlMarkdown`.
+Choices made here:
+- **Paste reduces HTML with the clipper's walker (`markdownOf`), not
+  `reduceChapter`.** The plan named the EPUB reducer; it writes a link as
+  its text and drops images, and the "done when" wants the link. The
+  walker keeps headings, lists (nested, numbered from `start`), emphasis,
+  strike, links, inline and fenced code, tables, MathML as `$…$`, images
+  by address, and escapes what would read as a card (`{{`, ` :: `).
+  Before it: Google Docs' `<b id="docs-internal-guid…">` unwrapped, bold,
+  italic and line-through said in `style` made `strong` / `em` / `del`,
+  Word's `o:p` dropped. Plain text pasted is Markdown by the format's
+  reading (a `- ` line pasted is a list), as the file would read it.
+- **A copy from a page here** carries ProseMirror's HTML (`data-pm-slice`),
+  which our schema cannot parse; the paste takes the plain text instead,
+  which `clipboardTextSerializer` writes as Markdown (a card with its
+  schedule lines, a list with its markers, `$…$` as typed). A cut card
+  pasted elsewhere keeps its schedule; a copied one doubles it, its `^id`
+  dropped from the second (`fromDoc`).
+- **⌘⇧V** is Edit › Paste and Match Style in the native menu (macOS only;
+  lib.rs, `objc2` as a macOS dependency, already in the lock through
+  tauri): it sends the WKWebView `pasteAsPlainText:` (checked with
+  `respondsToSelector:` first), whose paste event carries only
+  `text/plain`. A page cannot start a paste itself. The reader also notes
+  a ⌘⇧V keydown and treats the paste that follows within 1.5 s as plain
+  (the smoke's path, and Windows/Linux, where the webview pastes plain on
+  Ctrl+Shift+V by itself and no menu item is added).
+- **Images**: `Vault.addImage(path, bytes, type, name)` writes the next
+  `img-NN.<ext>` in the document's own folder (numbered past the highest
+  `img-NN` there, whatever its extension; the extension from the content
+  type, else an image name's), and returns the link relative to the
+  document, percent-encoded by segment as `attachImages` writes it. The
+  reader puts each in as a paragraph of its own (a figure, empty alt) at
+  the caret, an empty paragraph after it to go on in. A paste lands its
+  files when its text says nothing else (no text, an address, or HTML that
+  is only images; a fragment with a picture in it pastes as Markdown, the
+  picture by address). A Finder drop reaches the window's one drop router
+  (`land.ts`) as paths; over an editable page's surface with only image
+  paths it goes to that page (`pageImages.ts` `pageDrops`, registered by
+  each Reader) at the pointer, not into the folder as documents. A DOM
+  drop with image files (no Tauri) does the same through `handleDrop`.
+  The slash menu's `image` row opens the dialog plugin's picker
+  (`imagePicker`, stubbed by the smoke). A frozen page takes none.
+- **The rows and where they act.** Headings run `setHeading`, lists
+  `toggleList`, quote `toggleQuote` (34's commands, run on the document
+  as it stands after the `/query` is gone): on an empty paragraph they
+  make an empty block to type into. Code is an empty `` ``` `` block,
+  math block a `$$ $$` chip with its editor open (blank and left, it goes,
+  as in 34), divider `---`, table a two-column skeleton (`|  |  |`, the
+  delimiter row, one empty row), each followed by a paragraph to go on
+  in. Card rows only in a top-level paragraph: cloze puts `{{cN::}}` at
+  the caret, N the paragraph's next free group (`nextGroup`), the caret
+  inside; q&a and both ways make the paragraph the front (trailing space
+  trimmed) and put ` :: ` / ` ::: ` and the caret after it for the back;
+  on an empty paragraph the separator waits after the caret. The file
+  reads it as a card once the back is typed, and the reader turns it into
+  the card atom when the write comes back, as typing `::` does. Keys on
+  the rows: ⌘1–⌘3, ⌘⇧8, ⌘⇧7, ⌘⇧9, ⌘⇧.; the others have none.
+- **Find**: ⌘F opens the bar at the page's top (sticky in the pane, the
+  PDF lens's bar's look), seeded with a selection inside one line; the
+  count `3/17` (`none` when nothing matches); ⏎ / ⇧⏎ in the field, ⌘G /
+  ⇧⌘G anywhere in the page; Esc closes and, on an editable page, leaves
+  the caret after the match. ⌥⌘F adds the replace row (`replace` ⏎, `all`
+  ⌘⏎), never on a frozen page. Matches are decorations (`find-hit`, the
+  current `find-current`, an atom `find-in`); the current one is scrolled
+  to by a timer, not a frame. The selection is not moved while stepping,
+  so the toolbar does not come up. A rebuild of the view (the file changed)
+  keeps the bar open over the new text.
+- **Keys checked**: ⌘F, ⌥⌘F, ⌘G, ⇧⌘G and ⌘⇧V were free in App.tsx
+  (⌘K ⌘, ⌘\ ⌘W ⌃⌘S ⌘⇧I), chrome.ts, Palette (⌃N ⌃P), Rail (⌘⌥↑↓ ⌘⇧[),
+  the tree (⌥⌘ arrows, scoped to the focused tree), the reader (⌘⇧E ⌘⇧M,
+  34's formatting keys), and the native menu (⌘⇧N ⌘O ⌘⇧O ⌘⇧W, the Edit
+  items, ⌘M, ⌃⌘F full screen, ⌘H). The find keys are a window listener
+  in the active pane's reader, taken when the event comes from the page,
+  its bar, or nothing focused, never from another field. Bare `/` is the
+  deck browser's and the PDF lens's search; in the reader's text it types
+  and opens the menu. While the menu is open ↑↓ ⏎ Tab Esc are its; the
+  reader's Esc-to-blur yields to it. macOS: ⌘G is the system's find-next
+  only with a Find menu, which ilmi has none of; the system's Paste and
+  Match Style is ⌥⇧⌘V, ours ⌘⇧V (Notion's and Bear's).
+- The bottom strip lists `⌘F find` on notes, sources, extracts, drafts.
+- Smoke: `ILMI_SMOKE=insert` (`smokeInsert`): every slash row on
+  `fleeting/2026-10-30.md` below its last paragraph (the lit row asserted
+  before ⏎, ↓ once, a row by the pointer, Esc keeping the `/`), the three
+  card forms each read back as a card atom, a web fragment pasted and
+  checked line by line, the same after ⌘⇧V as plain text, an image from
+  the stubbed picker, a pasted one, and one dropped through `dropAt`
+  (img-01..03 beside the note, their bytes checked), find over the kāna
+  note (`كان` unvoweled: the count against the file's text, ⏎ over every
+  match each lit match folding to the word, ⇧⏎, ⌘G, the voweled word the
+  same count, Esc, the file unwritten), replace one and all on the note,
+  and no replace row on a frozen source.
+- Tests: `src/reader/__tests__/insert.test.ts` (19: the menu's opening
+  rules, filter, ↑↓, every block row and the card forms written and read
+  back, an insert row splitting a paragraph, one ⌘Z, the image meta; the
+  fragment's Markdown, Google Docs, ⌘⇧V and a copy from here as plain,
+  paste in a paragraph and in code, a copy's Markdown and its paste back,
+  a paste event through the page; `addImage`'s numbering, extension and
+  encoded link; find's fold, every match walked and wrapped with cards
+  and tables counted, replace one and all, and the sample's kāna note
+  counted against its own text). `notes.test.ts`'s strip case gains
+  `⌘F find`.
+Left for later: a table is put in as a drawn atom and its cells are edited
+in the file until 41 makes tables editable; the slash menu is not offered
+inside a formula's field or the composer; an inline formula has no row
+(type `$…$`); find does not search inside formulas, and replace leaves a
+card's and a table's matches alone (counted, not replaced); no case,
+word, or regex toggles; Arabic letter variants (ى/ي, ة/ه) are not
+folded, only marks (and hamza seats, which NFKD takes apart); the folder made for a
+note's images gives it `children: []` in the walk (no documents), so its
+row stays bare, as a clipped page's does; images dropped from a browser come as whatever Tauri hands the router (a
+file path or nothing); the pasted image's alt is empty; drag within the
+page of an image is ProseMirror's own.
 - **Slash menu**: `/` at a block's start or after a space opens a list
   filtered as you type (↑↓ ⏎, Esc leaves the `/`): heading 1–3, bullet,
   numbered, task, quote, code, math block, divider, table, image, and the
@@ -3673,6 +3819,11 @@ file.
 
 ## Notes for the next session
 
+Milestone 35 (insert, paste, find: the slash menu, HTML pasted as
+Markdown, ⌘⇧V, images beside the note, find with ḥarakāt folded, replace)
+is done on main, commit `89d881d`; its window check is owed:
+`ILMI_SMOKE=insert` on a copy of samples/double-major (35's notes list the
+captures). Next on the editor track: 36 (Arabic beside English).
 Milestones 33 (notes and sources, the reader's keys, F2) and 34 (the
 formatting keys, block rules, lists moved with their children, the
 selection toolbar) are done on main, their window checks run on
@@ -3681,8 +3832,8 @@ samples/double-major) and recorded under their BUILD-LOG entries.
 Milestone 38 (the tree, refined) was built on branch
 `worktree-agent-a13978a57b82cc981` and merged by hand; its window check
 is `ILMI_SMOKE=tree`, and the reader's crumb becomes `<Crumbs path={id}
-/>` (38's notes). Next: 35 (insert, paste, find) on main, and 39 (tabs,
-on `drag.ts`, `dnd.ts`, `treeModel.ts`) beside it. The sidebar toggle is
+/>` (38's notes). 39 (tabs, on `drag.ts`, `dnd.ts`, `treeModel.ts`) is
+being built beside the editor track. The sidebar toggle is
 ⌃⌘S (⌘⇧E is extract); ⌘K over a selection in an editable page is the
 link field, elsewhere the palette. Findings from the window runs not yet
 taken are listed under 40.

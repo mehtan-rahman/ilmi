@@ -6,6 +6,77 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-10-30 — milestone 35: insert, paste, find
+
+Done on main; commit `89d881d` — *insert, paste, find: a slash menu for
+every block and the card forms, HTML pasted as Markdown, images beside
+the note, find with marks folded*. Files: `src/reader/slash.ts`,
+`src/reader/insert.ts`, `src/reader/find.ts`, `src/import/paste.ts`,
+`src/app/pageImages.ts` (new); `src/reader/plugins.ts` (the menu and find
+plugins, the paste and copy as Markdown), `src/app/Reader.tsx` (the menu,
+the find bar, images pasted, dropped, picked), `src/vault/vault.ts`
+(`addImage`), `src/app/land.ts` (a Finder drop of images over a page goes
+to the page), `src-tauri/src/lib.rs` and `Cargo.toml` (Edit › Paste and
+Match Style, ⌘⇧V, macOS), `src/app/chrome.ts` (`⌘F find` in the strip),
+`src/app/reader.css`, `src/app/smoke.ts` (`smokeInsert`),
+`src/app/vault.ts` (the `insert` dispatch), README, and the tests
+(`insert.test.ts` new; `notes.test.ts`'s strip case).
+
+### Done
+
+- `/` at a block's start or after a space opens the insert menu, filtered
+  as typed, ↑↓ ⏎ Tab, Esc keeping the `/`: heading 1–3, bullet,
+  numbered, task, quote, code, math block, divider, table, image, cloze,
+  q&a, both ways, each row with its Markdown and its key; one ⌘Z after a
+  pick puts the typed text back.
+- Paste: HTML through the clipper's walker as Markdown (headings, lists,
+  emphasis, links, code, tables, math; Google Docs' and Word's markup made
+  plain), plain text read as Markdown by the format's parser, a copy from
+  a page here written and read back as its Markdown; ⌘⇧V plain (a native
+  menu item sending the webview `pasteAsPlainText:`).
+- An image pasted, dropped from the Finder, or picked from the menu lands
+  as the next `img-NN` in the document's folder and is linked there.
+- ⌘F find at the page's top with `n/m`, ⏎ ⇧⏎ ⌘G ⇧⌘G, Esc; case, accents,
+  ḥarakāt and the tatweel folded; cards and tables counted; ⌥⌘F replace and
+  replace all on editable pages.
+- Keys checked against App, chrome, Palette, Rail, the tree, the reader,
+  and the native menu; all free (35's notes).
+
+### Verified
+
+- `npx vitest run`: 812 tests, 41 files (793 before; `insert.test.ts` 19).
+  `npm run typecheck` clean. `cargo test` 12; `cargo build` with the new
+  menu item and `objc2`.
+
+### Not verified — the window run is owed
+
+- Nothing ran in the window this session. `ILMI_SMOKE=insert` (new)
+  drives the "done when" over a copy of the sample and asserts each step
+  (a mismatch logs `failed:`); its captures: insert-menu, -blocks,
+  -cards, -paste, -images, -find, -find-step, -replace.
+- By hand: the real ⌘⇧V from the menu (the smoke sends the keydown and a
+  synthetic paste); a real screenshot pasted (WebKit's clipboard files);
+  a real Finder drag onto a page; the image picker; the menu's place near
+  the window's bottom (it opens above its `/` there).
+
+### Handoff prompt
+
+```
+Read PLAN.md (ground rules, Refinement, 35's notes), FORMAT.md, and the
+top BUILD-LOG.md entry. Run ILMI_SMOKE=insert with ILMI_VAULT on a copy of
+samples/double-major (port 1420 free, never kill a run that is not yours;
+capture with screencapture -l <window id> 2 s after each `shot:` line),
+read the captures and the `ok`/`MISMATCH` lines, fix what they show, and
+record it under 35. Then do milestone 36 (Arabic beside English:
+direction per block, isolated math and code, bundled Arabic faces,
+logical CSS, a case-ending cloze on its letter), and only that one; stop
+at its "done when". Suite, typecheck, and `cargo test` green before each
+commit; tick it, write notes, add an entry here with a fresh handoff
+prompt, and commit.
+```
+
+---
+
 ## 2026-10-30 — milestone 38: the tree, refined
 
 Done on branch `worktree-agent-a13978a57b82cc981` (beside 34 on main, to be

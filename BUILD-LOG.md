@@ -6,6 +6,80 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-10-30 — milestone 41: the editor's rest — outline, folding, code, tables
+
+Done on main; commit `c1a7a60` — *the editor's rest (milestone 41): an
+outline in the inspector beside the rail's, headings folded by a chevron
+and kept in state.json, code coloured by a bundled highlighter with a
+language picker on the fence, tables edited as tables and written back as
+the normalized pipe table*. New: `src/reader/fold.ts`, `highlight.ts`,
+`table.ts`, `src/app/headings.ts`, `popMenu.ts`, two test files. Changed:
+the schema (table nodes), `raw.ts` / `blocks.ts` (the table pair,
+`readTable` / `writeTable`), `plugins.ts` (keys, the code plugin, cell
+directions, paste in a cell), `slash.ts`, `insert.ts`, `Reader.tsx`
+(`CodeView`, `TableView`, the folds kept, the marker over a fold, the
+heading jump), `Inspector.tsx` (the outline), `Rail.tsx` (its click
+through the jump), the store and `state.json` (`folds`), the CSS and
+tokens, `smoke.ts` (`smokeRest`; `insert` and `render` adjusted), and
+highlight.js 11.11.1 in package.json. Also, by the coordinator's word,
+`smokeArabic`'s passage check is `rtl >= 4` (the glossary is LTR since
+`d0adb50`).
+
+### Done
+
+- An outline of the page's headings in the inspector whenever the tab
+  rail is not showing them; the rail's and the inspector's click both go
+  through one jump that opens folds and scrolls.
+- Headings fold by a chevron in the margin; folded, a quiet `…` (with the
+  cards it holds) after the heading opens it; kept per document by
+  heading key in `.ilmi/state.json`, never in the file. A press on a
+  folded heading in the gutter reads its whole section; the rule ends at
+  the folded heading; the caret, a landed card, or a find match arriving
+  inside opens the fold.
+- Code coloured in eleven languages, themed for light, dark and e-ink
+  (grey and weight); the language picked from the fence's corner, written
+  on the fence. +67 kB minified / +22 kB gzip for the highlighter.
+- Tables edited in place: cells with the live inline rules, Tab/⇧Tab, ⏎
+  down and out, ⌘⏎ a row, rows and columns at the edges and from the cell's
+  menu, delete, align; written back as the pipe table, untouched tables
+  byte for byte, changed ones normalized (only edited lines change on the
+  sample's tables); Arabic cells right to left; find and replace reach
+  cells.
+
+### Verified
+
+- `npx vitest run`: 919 tests, 50 files (894 before; `rest.test.ts` 16,
+  `rest-view.test.ts` 9). `npm run typecheck` clean. `cargo test` 12.
+  `vite build` clean.
+
+### Not verified — the window run is owed
+
+- Nothing ran in the Tauri window. `ILMI_SMOKE=rest` drives the "done
+  when" over a copy of the sample, asserting each step and polling the
+  files: the outline scrolling from the rail and the inspector, lecture 9
+  folded, untouched on disk, kept in `state.json` and after a reopen, a
+  folded section of the Lindqvist chapter read by one press, a code note
+  coloured (light, dark, e-ink) and a plain block given `bash`, the
+  verb-forms table typed, tabbed, ⏎'d, a row and a column added and
+  removed. Captures are listed in 41's notes.
+
+### Handoff prompt
+
+```
+Read PLAN.md (ground rules, Refinement, 41's notes and the notes for the
+next session), FORMAT.md, spec/hashiyah/BUILD-PROMPT.md, and the top
+BUILD-LOG.md entries. If the user has not yet, run ILMI_SMOKE=rest with
+ILMI_VAULT on a fresh copy of samples/double-major (port 1420 free, never
+kill a run that is not yours; capture 2 s after each `shot:` line), read
+the captures, fix what they show, and record it under 41. Then do
+milestone 40 (a pass over everything, on a full collection) and only
+that one; stop at its "done when". Suite, typecheck, and `cargo test`
+green before each commit; tick it, write notes, add an entry here with a
+fresh handoff prompt, and commit.
+```
+
+---
+
 ## 2026-10-30 — milestone 36: Arabic beside English
 
 Done on branch `worktree-agent-a52202991c6a668ce` (to be merged by hand);

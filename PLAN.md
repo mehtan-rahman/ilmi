@@ -4182,7 +4182,125 @@ changed and what was measured, before and after.
 all three themes, and the measurements are recorded with nothing a
 person would feel as slow.
 
-### [ ] 41. The editor's rest — outline, folding, code, tables
+### [x] 41. The editor's rest — outline, folding, code, tables
+Done 2026-10-30, commit `c1a7a60`. The window check is pending: run
+`ILMI_SMOKE=rest` with `ILMI_VAULT` on a fresh copy of
+`samples/double-major` and read its `ok:` lines and `shot:` captures
+(rest-outline-rail, -outline-inspector, -folded, -folded-source, -code,
+-code-dark, -code-eink, -code-picker, -table-edit, -table-row,
+-table-menu, -table-column, -table-dark); the first miss is `failed: …`.
+Nothing was run in the window this session.
+Notes:
+- **Outline.** One list of headings: 39's `outline(blocks)` (tabs.ts,
+  levels 1–3). The rail keeps its rows under the active tab; the
+  inspector draws an `outline` block (notes, sources, extracts, drafts;
+  not PDFs or decks) whenever the rail is not showing them (not a
+  notebook page, or the notebook's rail folded). A click goes through
+  `goToHeading(path, index)` (`src/app/headings.ts`, new): each Reader
+  registers how to show its nth heading (`registerHeadings`), the active
+  pane's first; it opens any fold the heading is inside, then scrolls it
+  to the top. The rail's click uses it too, its old querySelector kept as
+  the fallback. The `from…` picker of a revisited note uses the same path.
+- **Folding** (`src/reader/fold.ts`, new): a top-level heading's section
+  runs to the next heading of its level or above. A widget at the
+  heading's start draws the chevron in the margin (`.fold-chev`, shown on
+  hover, always while folded; 46 px out on a page with the read marker, so
+  it clears the gutter); hidden blocks get a `fold-hidden` node decoration
+  (`display: none`), the heading `fold-head` and, after its text, a quiet
+  `…` (`… 3 cards` when cards are under it; its title the block count) that
+  opens it on a press. All glyphs are drawn by CSS from attributes, so a
+  heading's or a cell's `textContent` stays its text. State: the folded
+  headings' positions, mapped through edits (typing in a folded heading
+  keeps it folded; deleting it lets the fold go). Kept by key in
+  `.ilmi/state.json` `folds: { path: [key] }` (`setFolds`, store `folds`,
+  rekeyed on a move), the key `level text` with a repeat numbered
+  (`2 one (2)`); `makeState({ folds })` restores them when the page is
+  built or rebuilt. Never written to the Markdown.
+  **The read marker and cards in a folded section:** a hidden block takes
+  its folded heading's band in the gutter, so one press on a folded
+  heading reads through the whole section (pos past its last block); a
+  marker that stops inside a folded section draws its rule to the folded
+  heading's bottom (`measure` walks back to the last drawn block). Cards
+  hidden in a fold are counted on the folded line; the caret, a node
+  selection (go to source, the palette's card, the inspector), or find's
+  current match arriving inside a folded section opens it
+  (`appendTransaction`), so nothing lands unseen. Folds are view state for
+  the reader only; the queue and the session are unchanged.
+- **Code** (`src/reader/highlight.ts`, new): highlight.js 11.11.1's core
+  (pinned) with python, julia, matlab, c, cpp, rust, javascript, typescript,
+  bash, latex, json, plus the aliases `jl`, `octave`, `c++` (and the
+  grammars' own: `py`, `js`, `ts`, `sh`, `tex`, `rs`, `h`…). Its HTML is
+  read back into runs over the code's text (`tokensOfHtml`) and drawn as
+  inline decorations by a `code` plugin (cached per language and text, so
+  an edit re-colours only its block); the text stays the text and find's
+  decorations sit beside them. A code block drawn read-only (in a list
+  item, a quote, the queue) gets the same spans (`codeHTML`). Themes:
+  `--code-keyword/-string/-number/-comment/-title/-type/-meta` in
+  tokens.css, muted low-chroma hues in light and dark, grey and weight
+  only in e-ink (keywords and titles 600). The language picker: `CodeView`
+  (Reader.tsx) names the fence's word in the corner (`plain` on hover when
+  none); a press on an editable page opens a menu of the eleven and
+  `plain`, which rewrites the fence's first info word (`withLang`, the rest
+  of the info string kept, `setCodeLang`). The menus are `popMenu.ts`
+  (new): plain DOM in the context menu's look, closed by a pick, Esc, or a
+  press elsewhere.
+  **Size:** the highlighter as bundled is 67.2 kB minified, 22.4 kB gzip;
+  the app's JS went from 1953.5 to 2035.8 kB (+82.2 kB, +4.2 %; gzip 580.1
+  → 607.0 kB) with the rest of the milestone, the CSS +6.9 kB, `dist`
+  6020 → 6112 KiB.
+- **Tables** (schema `table` > `table_row` > `table_cell`, cells `inline*`
+  and isolating, the column's alignment on each cell): `rawToNode` reads a
+  pipe table (`readTable`, blocks.ts) and keeps the text as `src`;
+  `nodeToRaw` gives `src` back while the cells and alignment read the same,
+  else `writeTable`: `| a | b |`, the delimiter `---` / `:---` / `---:` /
+  `:---:`, every row as wide as the header, no padding (the sample's own
+  style, so an edit changes only its line), a cell one line, trimmed, `|`
+  escaped as `\|`; `readTable(writeTable(t))` is `t` for every table of the
+  sample and the corpus (a test). Keys (`src/reader/table.ts`, new): Tab the
+  next cell with its text selected, from the last cell a new row; ⇧Tab
+  back; ⏎ the cell below, from the last row out to the paragraph after (made
+  when there is none); ⌘⏎ a row under the caret's; ⇧⏎ nothing; a paste is
+  one line. `TableView` (Reader.tsx): `+` strips at the bottom and end
+  edges on hover add a row and a column; the caret's cell is lit
+  (`tb-cur`) with a `···` widget opening its menu: row above / below,
+  column before / after, align left / center / right (the lit one clears
+  it), delete row, delete column (the header deleted, the row under it is
+  the header; the last row or column takes the table, a paragraph in its
+  place). The header is the first row, drawn in Plex. Direction: the
+  table by 36's rule, each cell with a letter its own, a cell with none the
+  table's. Find (35) needs no view help now: cells are text, matches are
+  inline decorations, and replace reaches cells too; the views keep
+  decoration classes (`ownClasses` keeps `fold-*` as well). The slash
+  menu's `table` puts the caret in the first header cell. A copy of rows
+  is a table. Frozen pages draw no controls.
+- Tests: 919 (+25 over 894): `src/reader/__tests__/rest.test.ts` 16 (every
+  table of the sample and corpus through the pair and normalized, the
+  verb-forms edit one line, a hand-written table normalized with its
+  alignment and an escaped pipe, Tab/⇧Tab/⏎/⌘⏎, rows and columns added,
+  aligned, deleted, cell directions, paste; the HTML runs, the eleven
+  languages and aliases, decorations only in code, the fence rewritten;
+  sections and keys, a fold by decoration only and restored by key,
+  mapped through edits, opened by the caret, a card selected, find),
+  `src/app/__tests__/rest-view.test.ts` 9 (jsdom: the chevron and the
+  folded line, a card's class kept through redraws, the picker writing the
+  fence and none when frozen, the table's cells and dirs, the edge
+  controls, the cell's menu, the outline jump). Changed on purpose: 25's
+  and 27's `reader-view` cases (no atom left in the sampler; the source on
+  select shown with a rule), 35's find cases (a table's matches are inline,
+  replace writes into cells), `raw.test`'s and `reader.test`'s table-as-atom
+  expectations. Older smokes adjusted: `insert` steps out of the new table
+  with ⏎⏎, `render` logs the table drawn as itself. Typecheck clean; cargo
+  12.
+Open: nothing ran in the window (the chevron's place against the gutter
+and in an RTL heading, the hover strips' reach, the menus' placement, the
+colours in all three themes, Tab's selection in WebKit, the table wider
+than the page: it wraps its cells, no horizontal scroll); headings inside
+list items or quotes do not fold; ⇧⏎ in a cell does nothing (a `<br>` is
+not written); a multi-cell selection's delete is ProseMirror's own; a
+column's alignment in an RTL table is the file's (`left` stays left); the
+outline does not show which headings are folded; code has no line numbers
+and the picker offers only the bundled languages (another word typed on
+the fence stays, uncoloured).
 - An outline of the page's headings (in the inspector, or the rail's
   heading list when tabs are on), a click scrolls; headings fold by a
   chevron in the margin, folds kept in state.
@@ -4195,6 +4313,12 @@ Wikilinks and backlinks are not here; ask the user after this one.
 file.
 
 ## Notes for the next session
+
+41 (the editor's rest: outline, folding, code, tables) is done on main,
+commit `c1a7a60`; its window check is owed (`ILMI_SMOKE=rest`, ILMI_VAULT
+on a fresh copy of samples/double-major). Next by the user's order: 40,
+a pass over everything on the full collection, which should now also read
+41's captures. Wikilinks and backlinks: ask the user (41's line).
 
 Refinement (33–41), 2026-10-30. Done on main: 33 (notes and sources),
 34 (keys, rules, lists, the toolbar), 35 (insert, paste, find), 37 (cards

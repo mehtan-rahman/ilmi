@@ -4301,6 +4301,15 @@ column's alignment in an RTL table is the file's (`left` stays left); the
 outline does not show which headings are folded; code has no line numbers
 and the picker offers only the bundled languages (another word typed on
 the fence stays, uncoloured).
+Window run 1 (`21f5763`, run by the coordinator): passed through the
+outline (rail and inspector), the fold, `state.json`, the reopen, and the
+press reading through 3.7's folded section (pos 62), then `failed: the
+rule ends under the folded heading (4611 vs 7187)`. The smoke's: it read
+the rule's box the moment it was drawn, while its top and height were
+still easing (`transition: .18s`) from the old position. It now polls up to
+3 s for the rule to come to rest under the heading; the reader also
+measures again on a timer after a fold changes, in case the layout lags
+the transaction (`d8925f9`). Rerun owed.
 - An outline of the page's headings (in the inspector, or the rail's
   heading list when tabs are on), a click scrolls; headings fold by a
   chevron in the margin, folds kept in state.

@@ -62,6 +62,10 @@ highlight.js 11.11.1 in package.json. Also, by the coordinator's word,
   coloured (light, dark, e-ink) and a plain block given `bash`, the
   verb-forms table typed, tabbed, ⏎'d, a row and a column added and
   removed. Captures are listed in 41's notes.
+- Window run 1 (`21f5763`, the coordinator's): all passed up to the read
+  rule's check over a folded section, which measured the rule mid-ease
+  (4611 vs 7187). The smoke now waits for the rule to rest; the reader
+  re-measures on a timer after a fold (`d8925f9`). Rerun owed.
 
 ### Handoff prompt
 

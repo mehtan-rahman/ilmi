@@ -3094,7 +3094,7 @@ Order: 33 first (it touches every label). Then two tracks: the editor
 after both.
 
 ### [x] 33. Notes — what you write is a note, what you read is a source
-Done 2026-10-30 on main; commit `HASH33`. The window check is pending:
+Done 2026-10-30 on main; commit `8dceb49`. The window check is pending:
 run `ILMI_SMOKE=notes` with `ILMI_VAULT` on a copy of
 `samples/double-major` and read its `shot:` captures (the screen was
 locked this session, so nothing was run in the window).

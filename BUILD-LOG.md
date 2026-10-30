@@ -8,7 +8,7 @@ was verified, what was not, and the prompt to resume with.
 
 ## 2026-10-30 — milestone 33: notes, what you write is a note, what you read is a source
 
-Done on main; commit `HASH33` — *notes: what you write is a note, what
+Done on main; commit `8dceb49` — *notes: what you write is a note, what
 you read is a source; bare letters type in editable text, ⌘⇧E and ⌘⇧M
 carve and card*. Files: `FORMAT.md` §1 and §3, `src/format/model.ts`,
 `src/format/frontmatter.ts` (`note`, the default, the `imported` rule),

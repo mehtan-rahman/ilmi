@@ -9,7 +9,7 @@ was verified, what was not, and the prompt to resume with.
 ## 2026-10-30 — milestone 38: the tree, refined
 
 Done on branch `worktree-agent-a13978a57b82cc981` (beside 34 on main, to be
-merged by hand); commit `HASH` — *tree: one drag for the tree, the rail
+merged by hand); commit `ccb8e4c` — *tree: one drag for the tree, the rail
 and the folder lens; the tree from the keyboard; the open note revealed;
 a due number, quiet marks, hover menus, a hoist*. Files: `src/app/dnd.ts`,
 `src/app/drag.ts`, `src/app/treeModel.ts`, `src/app/Crumbs.tsx` (new),

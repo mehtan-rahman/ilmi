@@ -3295,7 +3295,7 @@ and their lines rewritten in place; the session shows the heading path;
 go to source lands on the card.
 
 ### [x] 38. The tree, refined
-Done 2026-10-30 on branch `worktree-agent-a13978a57b82cc981`, commit `HASH`.
+Done 2026-10-30 on branch `worktree-agent-a13978a57b82cc981`, commit `ccb8e4c`.
 The window check is pending: run `ILMI_SMOKE=tree` with `ILMI_VAULT` on a
 copy of `samples/double-major` and read its `shot:` captures (the screen
 was locked and this was a worktree; nothing ran in the window).

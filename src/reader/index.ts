@@ -22,7 +22,7 @@ export {
 export { inlineRanges, markerRanges, flatRanges, imageOnly, literalSpans, type InlineRange, type InlineKind } from './inline.js';
 export { classifyRaw, splitBlocks, readTable, writeTable, type RawShape, type Align, type TableBlock } from './blocks.js';
 export { CODE_LANGS, codeLang, codeTokens, codeHTML, tokensOfHtml, withLang, setCodeLang, type CodeToken } from './highlight.js';
-export { foldKey, foldPlugin, foldedKeys, foldsHiding, isFoldedAway, sections, type FoldMeta, type FoldState, type Section } from './fold.js';
+export { foldKey, foldPlugin, foldedKeys, foldsHiding, isFoldedAway, ruleEndIndex, sections, type FoldMeta, type FoldState, type Section } from './fold.js';
 export { cellAt, cellStart, nextCell, prevCell, cellDown, cellBreak, rowBelow, addRow, addColumn, deleteRow, deleteColumn, alignColumn, tableKey, tablePlugin, type CellAt } from './table.js';
 export { cardText, passage, blockAt, insertCard, setCardText, type CardSpec, type Passage } from './cards.js';
 export { SLASH_ITEMS, slashItems, slashContext, slashKey, slashPlugin, pickSlash, litItem, opensAt, askImageKey, TABLE_SKELETON, type SlashItem, type SlashState, type SlashMeta, type SlashContext } from './slash.js';

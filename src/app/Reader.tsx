@@ -12,12 +12,12 @@ import { EditorView, type Decoration, type NodeView } from 'prosemirror-view';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { PRI_DEFAULT, cardFields, clozeSegments, mathSpanEnd, meta, serialize, setField, type Blank, type Block, type Card, type Doc, type MathSeg } from '../format/index.js';
 import {
-  blockAt, blocksEqual, cardDue, classifyRaw, cursorIndex, editorialRanges, flatRanges, fromDoc, frozenKey, imagesKey, indentWidth, inlineRanges, insertCard, isMathEdit,
-  linkTarget, literalSpans, makeState, markerKey, markerNumber, markerPos, markerRanges, mathEditKey, mathSplit, passage, pickPos, pressed, proseIndices, schema, setLink,
+  blockAt, blocksEqual, cardDue, classifyRaw, editorialRanges, flatRanges, fromDoc, frozenKey, imagesKey, indentWidth, inlineRanges, insertCard, isMathEdit,
+  linkTarget, literalSpans, makeState, markerKey, markerNumber, markerPos, markerRanges, mathEditKey, mathSplit, passage, pickPos, pressed, schema, setLink,
   setReadPos, splitBlocks, atomFind, markFinds, toggleInline, toggleTask, type Band, type InlineRange, type InlineToggle, type LinkTarget, type Passage, type RawShape,
   askImageKey, closeAtMatch, dirAttr, strongDir, withBases, type Dir, findKey, insertImages, pickSlash, replaceAll, replaceMatch, slashContext, slashItems, slashKey, htmlPasteImages,
   type FindMeta, type FindState, type SlashItem, type SlashState,
-  CODE_LANGS, addColumn, addRow, alignColumn, codeHTML, codeLang, deleteColumn, deleteRow, foldKey, foldedKeys, foldsHiding, langOf, setCodeLang, type Align, type FoldMeta,
+  CODE_LANGS, addColumn, addRow, alignColumn, codeHTML, codeLang, deleteColumn, deleteRow, foldKey, foldedKeys, foldsHiding, ruleEndIndex, langOf, setCodeLang, type Align, type FoldMeta,
 } from '../reader/index.js';
 import { advanceWrite, whenToDate } from '../schedule/index.js';
 import { dirOf, nameOf, type Loaded, type Vault } from '../vault/index.js';
@@ -1147,19 +1147,14 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
     const doc = view.state.doc;
     const first = view.nodeDOM(0) as HTMLElement | null;
     if (!first) { setRule(null); return; }
-    const idx = cursorIndex(proseIndices(doc), pos);
     const wr = wrap.getBoundingClientRect();
     const fr = first.getBoundingClientRect();
+    // the pos-th prose block, or, inside a folded section, the folded heading above it (fold.ts)
+    const idx = ruleEndIndex(view.state, pos);
     if (idx < 0) { setRule({ top: fr.top - wr.top, height: 0 }); return; }
-    const starts: number[] = [];
     let at = 0;
-    for (let i = 0; i <= idx; i++) { starts.push(at); at += doc.child(i).nodeSize; }
-    // a block inside a folded section is not drawn: the rule ends under the folded heading
-    let boundary: HTMLElement | null = null;
-    for (let i = idx; i >= 0 && !boundary; i--) {
-      const el = view.nodeDOM(starts[i]!) as HTMLElement | null;
-      if (el && !el.classList.contains('fold-hidden')) boundary = el;
-    }
+    for (let i = 0; i < idx; i++) at += doc.child(i).nodeSize;
+    const boundary = view.nodeDOM(at) as HTMLElement | null;
     if (!boundary) { setRule(null); return; }
     const br = boundary.getBoundingClientRect();
     setRule({ top: fr.top - wr.top, height: Math.max(0, br.bottom - fr.top) });

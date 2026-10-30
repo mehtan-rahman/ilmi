@@ -5593,17 +5593,26 @@ export async function smokeRest(vault: Vault): Promise<void> {
     const h37 = heading('3.7')!;
     down(q<HTMLElement>('.fold-chev', h37)!);
     await poll(() => heading('3.7')?.classList.contains('fold-head'), '3.7 two-level systems folds in the frozen source');
-    const g = q<HTMLElement>('.read-gutter')!;
+    const g = q<HTMLElement>('.read-gutter', surface().closest('.doc-wrap')!)!;
     const hr = heading('3.7')!.getBoundingClientRect();
     const opts = { bubbles: true, clientY: hr.bottom - 2, pointerId: 1 };
     g.dispatchEvent(new PointerEvent('pointerdown', opts));
     g.dispatchEvent(new PointerEvent('pointerup', opts));
     await poll(async () => meta((await vault.read(SOURCE, true)).doc).read?.pos === want, `a press on the folded heading reads through its section (pos ${want})`);
-    const rule = await poll(() => q<HTMLElement>('.read-rule'), 'the rule is drawn');
-    // the rule's top and height ease (.18 s): read it once it has come to rest, not mid-move
+    // this page's own rule: its wrap is the surface's
+    const wrap = surface().closest<HTMLElement>('.doc-wrap')!;
+    const rule = await poll(() => q<HTMLElement>('.read-rule', wrap), 'the rule is drawn');
+    // what is drawn, in the wrap's frame: where the rule's style says it ends (a covered window may hold its ease back, so not its painted box), the block it ends at, the folded heading
+    const wtop = () => wrap.getBoundingClientRect().top;
+    const ruleEnd = () => parseFloat(rule.style.top) + parseFloat(rule.style.height);
+    const rel = (el: Element) => { const r = el.getBoundingClientRect(); return { top: Math.round(r.top - wtop()), bottom: Math.round(r.bottom - wtop()) }; };
+    const kids = Array.from(surface().children) as HTMLElement[];
+    const at = kids.map((el, i) => ({ el, i })).filter(({ el }) => el.getClientRects().length && Math.abs(rel(el).bottom - ruleEnd()) < 4).pop();
+    log(`rule: pos ${meta((await vault.read(SOURCE, true)).doc).read?.pos}; style ends at ${Math.round(ruleEnd())} (painted ${rel(rule).bottom}); ends at block ${at ? `${at.i} "${(at.el.textContent ?? '').slice(0, 40)}" ${JSON.stringify(rel(at.el))}` : '(none)'}; folded heading ${JSON.stringify(rel(heading('3.7')!))}; rules in the page ${qa('.read-rule').length}, readers ${qa('.doc-wrap').length}`);
+    await shot('rest-folded-rule');
     let gap = Infinity;
     await poll(() => {
-      gap = Math.abs(rule.getBoundingClientRect().bottom - heading('3.7')!.getBoundingClientRect().bottom);
+      gap = Math.abs(ruleEnd() - rel(heading('3.7')!).bottom);
       return gap < 4;
     }, 'the rule ends under the folded heading', 3000).catch((e: unknown) => { throw new Error(`${e instanceof Error ? e.message : String(e)}; off by ${gap.toFixed(0)} px`); });
     await shot('rest-folded-source');

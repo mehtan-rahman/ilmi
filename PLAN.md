@@ -4310,6 +4310,19 @@ still easing (`transition: .18s`) from the old position. It now polls up to
 3 s for the rule to come to rest under the heading; the reader also
 measures again on a timer after a fold changes, in case the layout lags
 the transaction (`d8925f9`). Rerun owed.
+Window run 2 (`3f4839a`): the rule still read 2575 px short of the folded
+heading after 3 s. Its painted box is not its measure: in a covered
+window WebKit advances no CSS transition, so the rule's box stayed where
+the old pos had put it while its style already said the new end. The
+smoke now compares the rule's style (top + height, in the doc-wrap's
+frame) with the heading's box in the same frame, scopes the gutter and the
+rule to this page's wrap, and logs before the check: pos, where the style
+ends and where it is painted, the block it ends at (index, text,
+top/bottom), the folded heading's top/bottom, and how many rules and
+readers the window holds, with `shot: rest-folded-rule`. The reader's
+measure now takes its end block from the state (`ruleEndIndex` in fold.ts:
+the pos-th prose block walked back past folded-away blocks) rather than
+the DOM's classes, with a test over the sample's 3.7 fold. Rerun owed.
 - An outline of the page's headings (in the inspector, or the rail's
   heading list when tabs are on), a click scrolls; headings fold by a
   chevron in the margin, folds kept in state.

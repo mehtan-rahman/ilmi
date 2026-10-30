@@ -83,6 +83,28 @@ export function foldsHiding(state: EditorState, pos: number): Section[] {
   return sections(state.doc).filter((s) => set.has(s.pos) && pos >= s.from && pos < s.to);
 }
 
+/**
+ * The child index of the block the read rule is drawn down to for `read.pos`
+ * = `pos` (the pos-th prose block, cards skipped, as `cursorIndex` counts),
+ * walked back past any block a fold hides: a marker inside a folded section
+ * ends under its folded heading. -1 when nothing is read.
+ */
+export function ruleEndIndex(state: EditorState, pos: number): number {
+  const doc = state.doc;
+  let n = 0;
+  let idx = -1;
+  doc.forEach((node, _o, i) => { if (node.type !== schema.nodes.card && n < pos) { n++; idx = i; } });
+  if (idx < 0) return -1;
+  const f = foldKey.getState(state);
+  if (!f?.folded.length) return idx;
+  const hidden = sections(doc).filter((s) => f.folded.includes(s.pos));
+  let at = 0;
+  const starts: number[] = [];
+  doc.forEach((node) => { starts.push(at); at += node.nodeSize; });
+  while (idx > 0 && hidden.some((s) => starts[idx]! >= s.from && starts[idx]! < s.to)) idx--;
+  return idx;
+}
+
 /** Is the top-level block at `pos` hidden by a fold? */
 export const isFoldedAway = (state: EditorState, pos: number): boolean => foldsHiding(state, pos).length > 0;
 

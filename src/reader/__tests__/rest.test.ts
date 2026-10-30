@@ -12,7 +12,7 @@ import { describe, expect, it } from 'vitest';
 import { parse, serialize } from '../../format/index.js';
 import {
   addColumn, addRow, alignColumn, cellAt, cellDown, codeDecorations, codeLang, codeTokens, deleteColumn, deleteRow, directionDecorations, findKey, flatText, foldKey,
-  foldedKeys, foldsHiding, fromDoc, makeState, nextCell, nodeToRaw, pasteInto, prevCell, rawToNode, readTable, rowBelow, schema, sections, setCodeLang, tableOf,
+  foldedKeys, foldsHiding, ruleEndIndex, fromDoc, makeState, nextCell, nodeToRaw, pasteInto, prevCell, rawToNode, readTable, rowBelow, schema, sections, setCodeLang, tableOf,
   toDoc, tokensOfHtml, withLang, writeTable, type FoldMeta,
 } from '../index.js';
 
@@ -295,5 +295,26 @@ describe('headings folded', () => {
     expect(foldsHiding(s, at(s, 'C.')).map((f) => f.key)).toEqual(['2 two']);
     s = s.apply(s.tr.setMeta(findKey, { query: 'C.', from: 0 }));
     expect(foldedKeys(s)).toEqual([]);
+  });
+
+  it('the read rule ends at the pos-th prose block, or under the folded heading when that block is folded away', () => {
+    // children: 0 notes, 1 Intro, 2 one, 3 A, 4 card, 5 one deeper, 6 B, 7 two, 8 C, 9 one(2), 10 D
+    let s = ed(NOTES);
+    expect(ruleEndIndex(s, 0)).toBe(-1);
+    // pos 6: notes, Intro, one, A, one deeper, B (the card skipped)
+    expect(ruleEndIndex(s, 6)).toBe(6);
+    s = s.apply(s.tr.setMeta(foldKey, { keys: ['2 one'] } satisfies FoldMeta));
+    expect(ruleEndIndex(s, 6)).toBe(2);
+    expect(ruleEndIndex(s, 7)).toBe(7);
+    // the sample's source: 3.7 folded, the marker through its section ends at the heading
+    const file = readFileSync(join(SAMPLE, 'library/lindqvist-statistical-physics/ch-3-the-canonical-ensemble.md'), 'utf8');
+    const blocks = parse(file).doc.blocks;
+    const hi = blocks.findIndex((b) => b.kind === 'heading' && b.text.startsWith('3.7'));
+    let end = blocks.length;
+    for (let i = hi + 1; i < blocks.length; i++) { const b = blocks[i]!; if (b.kind === 'heading' && b.level <= 2) { end = i; break; } }
+    const pos = blocks.slice(0, end).filter((b) => b.kind !== 'card').length;
+    let src = makeState(blocks, { frozen: () => true, pos });
+    src = src.apply(src.tr.setMeta(foldKey, { toggle: sections(src.doc).find((x) => x.key.startsWith('2 3.7'))!.pos } satisfies FoldMeta));
+    expect(ruleEndIndex(src, pos)).toBe(hi);
   });
 });

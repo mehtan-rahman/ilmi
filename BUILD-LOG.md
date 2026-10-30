@@ -66,6 +66,11 @@ highlight.js 11.11.1 in package.json. Also, by the coordinator's word,
   rule's check over a folded section, which measured the rule mid-ease
   (4611 vs 7187). The smoke now waits for the rule to rest; the reader
   re-measures on a timer after a fold (`d8925f9`). Rerun owed.
+- Window run 2 (`3f4839a`): still 2575 px off. The rule's painted box is
+  frozen by a covered window's held-back transition; the smoke now checks
+  the rule's style in the wrap's frame and logs what is drawn (and a
+  shot) before the check; the reader's end block comes from the state
+  (`ruleEndIndex`), tested on the sample. Rerun owed.
 
 ### Handoff prompt
 

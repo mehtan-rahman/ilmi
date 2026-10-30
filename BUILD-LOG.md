@@ -64,6 +64,28 @@ HTML with its `dir`s).
   the lock was written with `--package-lock-only` and the packages
   unpacked from `npm pack`. Run `npm install` on main after the merge.
 
+### Window check 2026-10-30
+
+Window check 2026-10-30: fonts load, Naskh draws, voweled runs not
+clipped, the find field RTL; failed at "a glossary item that starts in
+Arabic is right to left" (the smoke read the item's text from its bullet,
+`•`, so found none), and the captures showed the rule wrong for this
+user: in the grammar note `إِنْ تَدْرُسْ تَنْجَحْ, in tadrus tanjaḥ, …` was
+RTL, its English right to left, the period at the far left. Rule changed
+to majority script: a block is RTL when its right-to-left letters
+outnumber its others (strong letters only; formulas, code, card markup,
+`^id`, comments, addresses skipped as before); a tie goes to the first
+letter; no letter inherits. One change in `strongDir` reaches every
+caller (editor plugin, raw lists and tables, card faces, session, deck,
+queue); `dir="auto"` fields untouched. A raw list's `<li>`s each get the
+rule, an item with no letter inheriting the item before. Tests:
+`direction.test.ts` (majority, ties, marks not counted, the sample's
+glossary all LTR), `arabic.test.ts` (the glossed example and glossary
+LTR, the verse RTL, vocab cards LTR with their faces RTL/LTR, raw list
+items). `smokeArabic` updated (glossary LTR, verse RTL, the glossed
+example LTR with its Arabic run in order, an all-Arabic list item RTL);
+the window re-run is owed.
+
 ### Handoff prompt
 
 ```

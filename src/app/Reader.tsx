@@ -203,8 +203,12 @@ function shapeHTML(shape: RawShape, text: string): string {
     case 'list': {
       const tag = shape.ordered ? 'ol' : 'ul';
       const start = shape.ordered && shape.start !== 1 ? ` start="${shape.start}"` : '';
-      // the list reads its first item's way; each item its own
-      return `<${tag}${start}${dirAttr(shape.items[0]?.text ?? '')}>${shape.items.map((it) => `<li${dirAttr(it.text)}>${blocksHTML(it.text, true)}</li>`).join('')}</${tag}>`;
+      // each item its own way by the rule, one with no letter the item before's;
+      // the list reads its first decided item's way
+      let cur: Dir | null = null;
+      const dirs = shape.items.map((it) => (cur = strongDir(it.text) ?? cur));
+      const attr = (d: Dir | null) => (d ? ` dir="${d}"` : '');
+      return `<${tag}${start}${attr(dirs.find((d) => d) ?? null)}>${shape.items.map((it, i) => `<li${attr(dirs[i] ?? null)}>${blocksHTML(it.text, true)}</li>`).join('')}</${tag}>`;
     }
     case 'quote':
       return `<blockquote${dirAttr(shape.text)}>${blocksHTML(shape.text, false)}</blockquote>`;
@@ -310,7 +314,7 @@ export function clozeHTML(text: string, stateOf: (b: Blank, index: number) => Bl
   }).join('');
 }
 
-/** A face's `dir` for React: its first strong character's way, undefined (inherit) when it has none. */
+/** A face's `dir` for React: its majority script's way (`strongDir`), undefined (inherit) when it has no letter. */
 export const faceDir = (text: string): Dir | undefined => strongDir(text) ?? undefined;
 
 /** A blank's answer as the answer face shows it: a case ending on its letter, else the answer alone. */

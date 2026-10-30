@@ -1,9 +1,14 @@
-// Which way a block reads. Obsidian's rule: a block takes the direction of
-// its first strong character (a letter); a block with none (empty, digits,
-// a formula alone) takes the direction of the block before it, so a new
-// line typed after Arabic stays right to left. What is isolated left to
-// right (math, inline code, a link's address, card markup and `^id`)
-// never decides it. A decoration, never written to the file.
+// Which way a block reads. A block is right to left when its letters of a
+// right-to-left script (Arabic) outnumber its others (Latin); on a tie its
+// first strong character (a letter) decides. So a bilingual line that opens
+// with an Arabic word and goes on in English (a glossary item, a glossed
+// example, a vocab card) reads left to right, its Arabic run kept in order
+// by the bidi algorithm, and a line that is mostly Arabic reads right to
+// left. A block with no letters (empty, digits, a formula alone) takes the
+// direction of the block before it, so a new line typed after Arabic stays
+// right to left. What is isolated left to right (math, inline code, a
+// link's address, card markup and `^id`) is never counted. Marks (the
+// ḥarakāt) are not letters. A decoration, never written to the file.
 //
 // Pure: strings in, directions and ranges out. The editor's plugin
 // (plugins.ts) and the read-only drawings (Reader.tsx, Session, the deck
@@ -58,7 +63,7 @@ export function isolatedSpans(text: string): Span[] {
  * Card markup and anchors that must read in order inside a right-to-left
  * line: a blank's `{{c1::` and its `}}`, a ` :: ` or ` ::: ` between faces,
  * and a trailing ` ^id`. Isolated left to right when drawn; skipped by the
- * direction rule (`c1` is not the sentence's first letter).
+ * direction rule (`c1` is not counted among the sentence's letters).
  */
 export function markupSpans(text: string): Span[] {
   const out: Span[] = [];
@@ -90,24 +95,33 @@ const COMMENT = /<!--[\s\S]*?-->/g;
 const URL = /\b(?:https?|ilmi|file):\/\/\S+/g;
 
 /**
- * The direction of `text`'s first strong character, outside what is
- * isolated (`isolatedSpans`, `markupSpans`, comments, bare addresses);
- * null when it has none.
+ * The direction of `text` by its majority script: right to left when its
+ * right-to-left letters outnumber its left-to-right ones, the first
+ * strong character's on a tie, outside what is isolated (`isolatedSpans`,
+ * `markupSpans`, comments, bare addresses); null when it has no letter.
  */
 export function strongDir(text: string): Dir | null {
   const skip = [...isolatedSpans(text), ...markupSpans(text)];
   for (const re of [COMMENT, URL]) for (const m of text.matchAll(re)) skip.push({ from: m.index, to: m.index + m[0].length });
   skip.sort((a, b) => a.from - b.from);
+  let first: Dir | null = null;
+  let rtl = 0;
+  let ltr = 0;
   for (let i = 0; i < text.length;) {
     const end = within(skip, i);
     if (end >= 0) { i = end; continue; }
     const cp = text.codePointAt(i)!;
     const ch = String.fromCodePoint(cp);
     const d = charDir(ch);
-    if (d) return d;
+    if (d) {
+      first ??= d;
+      if (d === 'rtl') rtl++;
+      else ltr++;
+    }
     i += ch.length;
   }
-  return null;
+  if (rtl === ltr) return first;
+  return rtl > ltr ? 'rtl' : 'ltr';
 }
 
 /** `text`'s direction, `fallback` when it has no strong character. */
@@ -115,7 +129,7 @@ export const textDir = (text: string, fallback: Dir = 'ltr'): Dir => strongDir(t
 
 /**
  * The direction of each block in order. A string is a block's text: its
- * first strong character decides, and with none it takes the block before
+ * majority script decides (`strongDir`), and with no letter it takes the block before
  * it (`start` for the first). `null` is a block set left to right on its
  * own (fenced code, an HTML block): `ltr`, and the blocks after it inherit
  * past it as if it were not there.

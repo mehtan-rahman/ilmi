@@ -1,6 +1,7 @@
-// The direction rule (direction.ts): a block's first strong character, a
-// neutral block inheriting the one before it, math, code and card markup
-// isolated and never deciding; and the blank that is only a case ending.
+// The direction rule (direction.ts): a block's majority script, the first
+// strong character on a tie, a neutral block inheriting the one before it,
+// math, code and card markup isolated and never counted; and the blank that
+// is only a case ending.
 
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -13,7 +14,7 @@ import {
 const SAMPLE = join(import.meta.dirname, '../../../samples/double-major');
 const read = (p: string) => readFileSync(join(SAMPLE, p), 'utf8');
 
-describe('the first strong character', () => {
+describe('the majority script', () => {
   it('reads a letter of either script, and nothing else', () => {
     expect(charDir('ك')).toBe('rtl');
     expect(charDir('ـ')).toBe('rtl'); // the tatweel is a letter of the script
@@ -26,14 +27,28 @@ describe('the first strong character', () => {
     expect(charDir(' ')).toBeNull();
   });
 
-  it('is the first letter, whichever script comes first', () => {
+  it('is the script with more letters, whichever comes first', () => {
     expect(strongDir('كَانَ وَأَخَوَاتُهَا')).toBe('rtl');
     expect(strongDir('kāna and its sisters: كان')).toBe('ltr');
-    expect(strongDir('إِنْ تَدْرُسْ تَنْجَحْ, in tadrus tanjaḥ')).toBe('rtl');
+    // a glossed example and a glossary item open in Arabic and read in English
+    expect(strongDir('إِنْ تَدْرُسْ تَنْجَحْ, "if you study, you\'ll succeed", in tadrus tanjaḥ.')).toBe('ltr');
+    expect(strongDir('نَحْوِيّ *naḥwī* — grammarian (nisba of نَحْو, grammar)')).toBe('ltr');
+    // mostly Arabic with a word of English in it
+    expect(strongDir('قَالَ النَّحْوِيُّ: «فَمَا لَكَ لَا تَقُولُ» (the five nouns)')).toBe('rtl');
     expect(strongDir('3. «كَيْفَ تَقُولُ؟»')).toBe('rtl');
+    // marks are not letters: four Arabic letters, three Latin
+    expect(strongDir('كَتَبَتْ abc')).toBe('rtl');
+    expect(strongDir('كتب abcd')).toBe('ltr');
     expect(strongDir('')).toBeNull();
     expect(strongDir('12, 34 — (5)')).toBeNull();
     expect(strongDir('ًٌٍ')).toBeNull();
+  });
+
+  it('on a tie, the first letter decides', () => {
+    expect(strongDir('كتب abc')).toBe('rtl');
+    expect(strongDir('abc كتب')).toBe('ltr');
+    expect(strongDir('بَيْت :: house')).toBe('ltr'); // 3 against 5
+    expect(strongDir('بَيْتٌ كَبِير :: big home')).toBe('rtl'); // 7 against 7, Arabic first
   });
 
   it('skips math, code, a link address, card markup, an anchor, a comment, a bare address', () => {
@@ -43,6 +58,9 @@ describe('the first strong character', () => {
     expect(strongDir('[النَّحْو](https://example.org/grammar)')).toBe('rtl');
     expect(strongDir('{{c1::كَانَ}} تَرْفَعُ')).toBe('rtl');
     expect(strongDir('{{c2::fiʿl al-šarṭ}} and')).toBe('ltr');
+    // the markup's `c1` is not counted: three Arabic letters against none
+    expect(strongDir('{{c1::كَانَ}}')).toBe('rtl');
+    expect(strongDir('كتب `const x = foo(bar)` [هنا](https://example.org/a-long-english-path) $\\alpha + beta$')).toBe('rtl');
     expect(strongDir('1 ^nh-hal-def')).toBeNull();
     expect(strongDir('<!-- sr c1 st=new --> كَرَمٌ')).toBe('rtl');
     expect(strongDir('https://example.org ثُمَّ')).toBe('rtl');
@@ -100,10 +118,24 @@ describe('the editor decorates every block', () => {
   };
 
   it('paragraphs, a list by its first item, a neutral item inheriting, code left to right', () => {
-    const got = dirs('the rule\n\nكَانَ وَأَخَوَاتُهَا\n\n- رَاكِبًا\n- 2\n- riding\n\n```\nx = 1\n```\n\n$$a+b$$\n');
+    const got = dirs('the rule\n\nكَانَ وَأَخَوَاتُهَا\n\n- رَاكِبًا\n- 2\n- riding\n- رَاكِبٌ *rākib* — riding, a rider\n\n```\nx = 1\n```\n\n$$a+b$$\n');
     expect(got.map((g) => `${g.node}:${g.dir}`)).toEqual([
-      'paragraph:ltr', 'paragraph:rtl', 'list:rtl', 'list_item:rtl', 'list_item:rtl', 'list_item:ltr', 'code_block:ltr', 'paragraph:ltr',
+      'paragraph:ltr', 'paragraph:rtl', 'list:rtl', 'list_item:rtl', 'list_item:rtl', 'list_item:ltr', 'list_item:ltr', 'code_block:ltr', 'paragraph:ltr',
     ]);
+  });
+
+  it('the sample glossary: each item mostly English, so left to right', () => {
+    const doc = toDoc(parse(read('library/classical-prose-reader/12-the-grammarian-and-the-bedouin.md')).doc.blocks);
+    const set = directionDecorations(doc);
+    const items: string[] = [];
+    doc.descendants((node, pos) => {
+      if (node.type.name !== 'list_item' || !/^\p{Script=Arabic}/u.test(node.textContent)) return true;
+      const d = set.find(pos, pos + node.nodeSize).find((x) => x.from === pos && x.to === pos + node.nodeSize);
+      items.push((d as unknown as { type: { attrs: { dir?: string } } } | undefined)?.type.attrs.dir ?? 'none');
+      return false;
+    });
+    expect(items.length).toBeGreaterThan(15);
+    expect(new Set(items)).toEqual(new Set(['ltr']));
   });
 
   it('a card by its text, markup aside; the display formula after it inherits', () => {
@@ -123,7 +155,9 @@ describe('the editor decorates every block', () => {
       });
       return dir;
     };
-    expect(of('إِنْ تَدْرُسْ تَنْجَحْ')).toBe('rtl');
+    // glossed in English, so left to right; the verse alone right to left
+    expect(of('إِنْ تَدْرُسْ تَنْجَحْ')).toBe('ltr');
+    expect(of('اسْمِيَّةٌ طَلَبِيَّةٌ')).toBe('rtl');
     expect(of('A conditional sentence')).toBe('ltr');
     expect(of('the three parts')).toBe('ltr');
     // every top-level block got one

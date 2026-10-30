@@ -150,8 +150,9 @@
 // function).
 // `ILMI_SMOKE=arabic` (`smokeArabic`) over a copy of `samples/double-major`:
 // the grammar note, the prose passage, formulas in Arabic sentences, the
-// vocab deck, and a session on Arabic cards, light and dark: directions,
-// isolation, no clipped mark, the Arabic faces loaded; every step asserted.
+// vocab deck, and a session on Arabic cards, light and dark: directions by
+// majority script (a glossed line LTR, an all-Arabic one RTL), isolation,
+// no clipped mark, the Arabic faces loaded; every step asserted.
 // `ILMI_SMOKE=welcome` runs before any vault opens: it seeds the recents
 // with the scratch vault (`ILMI_VAULT`) and a path that does not exist,
 // turns `reopen the last vault on start` off, reads the welcome's rows and
@@ -5073,7 +5074,9 @@ export async function smokeListCards(vault: Vault): Promise<void> {
 // 36's "done when". The grammar note, the classical prose reader's passage,
 // a note with formulas inside Arabic sentences, the vocab deck, and a
 // session on an Arabic card and a case-ending cloze, each in light and
-// dark: every block's computed direction against the rule, an RTL block's
+// dark: every block's and list item's computed direction against the rule
+// (its majority script), a glossed example that opens in Arabic left to
+// right with its Arabic run kept in order, an RTL block's
 // text against its right edge, a formula an LTR isolate that keeps its
 // order and its punctuation, the marks never cut by a clip (the clip box's
 // scrollHeight against its clientHeight, and each voweled run's ink,
@@ -5112,6 +5115,35 @@ export async function smokeArabic(vault: Vault): Promise<void> {
   };
   const dirOf = (el: Element) => getComputedStyle(el).direction;
   const short = (el: Element) => (el.textContent ?? '').trim().slice(0, 28);
+  /** A list item's own text: past its bullet, without its formulas. */
+  const itemText = (li: Element) => {
+    const bare = (li.querySelector(':scope > .li-text') ?? li).cloneNode(true) as HTMLElement;
+    for (const m of Array.from(bare.querySelectorAll('.math, ul, ol, .dd-list'))) m.remove();
+    return (bare.textContent ?? '').trim();
+  };
+  /** Every list item of the page, an editable one (`.dd-li`) or one drawn from a raw block (`li`). */
+  const items = () => [...qa<HTMLElement>('.dd-li', surface()!), ...qa<HTMLElement>('.raw-view li', surface()!)];
+  /** The box of the first occurrence of `sub` in `root`'s text, in one text node. */
+  const boxOf = (root: Element, sub: string): DOMRect | null => {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      const i = (n.textContent ?? '').indexOf(sub);
+      if (i < 0) continue;
+      const r = document.createRange();
+      r.setStart(n, i);
+      r.setEnd(n, i + sub.length);
+      return r.getBoundingClientRect();
+    }
+    return null;
+  };
+  /** A list item's bullet on its start side: the left for LTR, the right for RTL (an editable item only). */
+  const checkBullet = (li: HTMLElement) => {
+    const mark = q<HTMLElement>('.li-mark', li)?.getBoundingClientRect();
+    const text = q<HTMLElement>('.li-text', li)?.getBoundingClientRect();
+    if (!mark || !text) return;
+    const rtl = dirOf(li) === 'rtl';
+    must(rtl ? mark.left >= text.right - 1 : mark.right <= text.left + 1, `"${short(li)}": its bullet sits on its ${rtl ? 'right' : 'left'}, the start side`);
+  };
 
   /** Every block of the page: its `dir` set, its computed direction the same, and the rule's answer for its own text when it has a letter. */
   const checkBlocks = (label: string) => {
@@ -5123,7 +5155,7 @@ export async function smokeArabic(vault: Vault): Promise<void> {
       const d = el.getAttribute('dir');
       if (d !== 'ltr' && d !== 'rtl') { wrong.push(`no dir on "${short(el)}"`); continue; }
       if (dirOf(el) !== d) wrong.push(`"${short(el)}" computed ${dirOf(el)}, dir ${d}`);
-      // a paragraph or heading: its own first letter decides when it has one
+      // a paragraph or heading: its own letters decide when it has any
       if (el.matches('p.dd-p, .dd-h')) {
         const bare = el.cloneNode(true) as HTMLElement;
         for (const m of Array.from(bare.querySelectorAll('.math'))) m.remove();
@@ -5138,7 +5170,16 @@ export async function smokeArabic(vault: Vault): Promise<void> {
         if (el.matches('p.dd-p') && !(lh >= parseFloat(cs.fontSize) * 1.8)) wrong.push(`"${short(el)}" line-height ${cs.lineHeight} at ${cs.fontSize}`);
       }
     }
-    for (const li of qa<HTMLElement>('.dd-li', s)) if (dirOf(li) !== li.getAttribute('dir')) wrong.push(`item "${short(li)}" computed ${dirOf(li)}`);
+    for (const li of qa<HTMLElement>('.dd-li', s)) {
+      if (dirOf(li) !== li.getAttribute('dir')) wrong.push(`item "${short(li)}" computed ${dirOf(li)}`);
+      const own = strongDir(itemText(li));
+      if (own && own !== li.getAttribute('dir')) wrong.push(`item "${short(li)}" should be ${own}`);
+    }
+    // a list kept as a raw block (drawn read-only): each item its own way too
+    for (const li of qa<HTMLElement>('.raw-view li', s)) {
+      const own = strongDir(itemText(li));
+      if (own && dirOf(li) !== own) wrong.push(`raw item "${short(li)}" computed ${dirOf(li)}, should be ${own}`);
+    }
     must(wrong.length === 0, `${label}: ${kids.length} blocks, ${rtl} right to left, each computed as its dir${wrong.length ? `; ${wrong.slice(0, 4).join('; ')}` : ''}`);
     return { rtl, all: kids.length };
   };
@@ -5249,10 +5290,26 @@ export async function smokeArabic(vault: Vault): Promise<void> {
     await open(GRAMMAR, '.pane-body .doc-view .draft-doc');
     await themed('grammar', () => {
       const { rtl } = checkBlocks('the grammar note');
-      must(rtl >= 3, 'the grammar note has its Arabic examples right to left');
+      must(rtl >= 1, 'the grammar note has its Arabic verse right to left');
+      const verse = qa<HTMLElement>('p.dd-p', surface()!).find((p) => p.textContent?.startsWith('اسْمِيَّةٌ'));
+      must(verse && dirOf(verse) === 'rtl', 'the verse, all Arabic, reads right to left');
+      checkAnchored('the verse', verse!);
+      // opens in Arabic, goes on in English: left to right, the Arabic a run of its own in its order
       const ex = qa<HTMLElement>('p.dd-p', surface()!).find((p) => p.textContent?.startsWith('إِنْ تَدْرُسْ'));
-      must(ex && dirOf(ex) === 'rtl', 'إِنْ تَدْرُسْ تَنْجَحْ reads right to left');
+      must(ex && dirOf(ex) === 'ltr', 'إِنْ تَدْرُسْ تَنْجَحْ, glossed in English, reads left to right');
       checkAnchored('the example', ex!);
+      {
+        const first = boxOf(ex!, 'إِنْ')!;
+        const last = boxOf(ex!, 'تَنْجَحْ')!;
+        const after = boxOf(ex!, 'in tadrus')!;
+        const sameLine = Math.abs(first.top - after.top) < 4;
+        must(first.left > last.left, `the Arabic run reads right to left inside: إِنْ (${first.left.toFixed(0)}) right of تَنْجَحْ (${last.left.toFixed(0)})`);
+        must(!sameLine || first.right <= after.left + 1, `the Arabic run comes first, on the left, then "in tadrus" (${first.right.toFixed(0)} ≤ ${after.left.toFixed(0)})`);
+        const ex0 = ex!.getBoundingClientRect();
+        must(!sameLine || last.left - ex0.left < 3, `the run starts at the line's left edge (${(last.left - ex0.left).toFixed(1)} px)`);
+        const period = boxOf(ex!, '".')!;
+        must(period.right > after.right || period.top > after.top + 2, 'the closing period is at the end, on the right, not dragged to the far left');
+      }
       const en = qa<HTMLElement>('p.dd-p', surface()!).find((p) => p.textContent?.startsWith('A conditional sentence'));
       must(en && dirOf(en) === 'ltr', 'the English paragraph around it left to right');
       checkAnchored('the English', en!);
@@ -5280,16 +5337,18 @@ export async function smokeArabic(vault: Vault): Promise<void> {
       const story = qa<HTMLElement>('p.dd-p', surface()!).find((p) => p.textContent?.startsWith('قِيلَ'));
       must(story && dirOf(story) === 'rtl', 'its first paragraph is right to left');
       checkAnchored('the passage', story!);
-      const item = qa<HTMLElement>('.dd-li', surface()!).find((li) => ARABIC.test((li.textContent ?? '').trim()[0] ?? ''));
-      must(item && dirOf(item) === 'rtl', 'a glossary item that starts in Arabic is right to left');
-      const mark = q<HTMLElement>('.li-mark', item!)!.getBoundingClientRect();
-      const text = q<HTMLElement>('.li-text', item!)!.getBoundingClientRect();
-      must(mark.left >= text.right - 1, 'its bullet sits on its right, the start side');
+      // the glossary opens each item in Arabic and glosses it in English: mostly English, so left to right
+      const gloss = items().filter((li) => ARABIC.test(itemText(li)[0] ?? ''));
+      must(gloss.length >= 15, `the glossary's items are found (${gloss.length} open in Arabic)`);
+      const rtlGloss = gloss.filter((li) => dirOf(li) !== 'ltr');
+      must(rtlGloss.length === 0, `each glossary item, mostly English, is left to right${rtlGloss.length ? `; not "${short(rtlGloss[0]!)}"` : ''}`);
+      checkBullet(gloss[0]!);
+      checkAnchored('a glossary item', (q<HTMLElement>('.li-text', gloss[0]!) ?? gloss[0]!));
       checkClips('the prose passage', surface()!);
     });
 
     // ── formulas inside Arabic sentences ──
-    await vault.fs.writeText(vault.abs(MATH), '# formulas in Arabic\n\nإِذَا كَانَ $x^2 = 4$ فَإِنَّ $x = \\pm 2$، وَهٰذَا وَاضِحٌ.\n\nالطَّاقَةُ تُسَاوِي $E = mc^2$ (مُعَادَلَةُ أَيْنِشْتَايْن)، وَ`c` سُرْعَةُ الضَّوْءِ.\n\n$$\\int_0^1 x\\,dx = \\tfrac12$$\n\nand back to English: $a + b$ is a sum.\n');
+    await vault.fs.writeText(vault.abs(MATH), '# formulas in Arabic\n\nإِذَا كَانَ $x^2 = 4$ فَإِنَّ $x = \\pm 2$، وَهٰذَا وَاضِحٌ.\n\nالطَّاقَةُ تُسَاوِي $E = mc^2$ (مُعَادَلَةُ أَيْنِشْتَايْن)، وَ`c` سُرْعَةُ الضَّوْءِ.\n\n$$\\int_0^1 x\\,dx = \\tfrac12$$\n\nand back to English: $a + b$ is a sum.\n\n- كِتَابٌ جَدِيدٌ عَلَى المَكْتَبِ\n- 42\n- كِتَاب *kitāb* — a book, anything written\n');
     await poll(() => useApp.getState().docs[MATH], 'the note with formulas is in the collection', 10000);
     await open(MATH, '.pane-body .doc-view .draft-doc .math');
     await themed('formulas', () => {
@@ -5327,6 +5386,14 @@ export async function smokeArabic(vault: Vault): Promise<void> {
       must(display && getComputedStyle(display).direction === 'ltr', 'display math is left to right, centred');
       const en = qa<HTMLElement>('p.dd-p', surface()!).find((e) => e.textContent?.startsWith('and back'))!;
       must(dirOf(en) === 'ltr', 'the English after it is left to right again');
+      // a list: an all-Arabic item right to left, one with no letter after it the same, a glossed one left to right
+      const li = items().filter((e) => /^(?:كِتَاب|42)/.test(itemText(e)));
+      must(li.length === 3, `the list's three items are found (${li.length})`);
+      must(dirOf(li[0]!) === 'rtl', `the all-Arabic item is right to left ("${short(li[0]!)}")`);
+      checkBullet(li[0]!);
+      must(dirOf(li[1]!) === 'rtl', 'the item with only a number takes the item before\'s way');
+      must(dirOf(li[2]!) === 'ltr', `the glossed item is left to right ("${short(li[2]!)}")`);
+      checkBullet(li[2]!);
       checkClips('the formulas note', surface()!);
     });
 

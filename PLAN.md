@@ -3568,6 +3568,30 @@ Done 2026-10-30 on branch `worktree-agent-a52202991c6a668ce`, commit
 -revealed, each with a `-dark` twin where the smoke takes one); every step
 is an `ok: …` line and the first mismatch is `failed: …`. Nothing was run
 in the window this session.
+Window check 2026-10-30: fonts load, Naskh draws, voweled runs are not
+clipped, the find field is RTL; it failed at "a glossary item that starts
+in Arabic is right to left", and the captures showed the first-letter
+rule itself wrong for a bilingual student: `إِنْ تَدْرُسْ تَنْجَحْ, in
+tadrus tanjaḥ, "if you study, you'll succeed".` was drawn RTL, its English
+running right to left with the period at the far left. Rule changed to
+majority script: `strongDir` counts the strong letters outside what is
+isolated (the same skips as below) and a block is RTL when its
+right-to-left letters outnumber its others (Latin); on a tie the first
+letter decides; no letter, it inherits as before. So a glossary item, a
+glossed example or a vocab card that opens with an Arabic word and goes
+on in English is LTR, its Arabic run kept in order by the bidi algorithm,
+and an all-Arabic line is RTL; a both-ways card's faces are still each
+their own way (`<bdi>`). Every caller goes through `strongDir`, so the
+editor plugin, raw lists and tables, card faces, the session, the deck
+browser and the queue all changed with it (`dir="auto"` fields left as
+they are); each block is now read through, not stopped at its first
+letter. A raw (read-only drawn) list's items each get the rule, an item
+with no letter the item before's, the list its first decided item's.
+`smokeArabic` now expects the glossary items LTR (found by their text
+past the bullet, editable or raw), the verse RTL, the glossed example LTR
+with its Arabic run reading right to left at the line's left start, and
+an all-Arabic list item RTL beside a glossed one LTR. To re-run in the
+window: `ILMI_SMOKE=arabic`.
 Notes: the rule is `src/reader/direction.ts` (pure, no DOM):
 `strongDir(text)` is the first letter's direction (`\p{L}`; right to
 left for the scripts with `scx` Arabic, Hebrew, Syriac, Thaana, N'Ko,

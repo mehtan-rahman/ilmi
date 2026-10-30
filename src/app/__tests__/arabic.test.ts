@@ -29,36 +29,41 @@ const blockEl = (view: EditorView, prefix: string): HTMLElement => {
 };
 
 describe('the sample in the reader', () => {
-  it('the grammar note: examples right to left, prose left to right, every block decided', () => {
+  it('the grammar note: glossed examples and prose left to right, the Arabic verse right to left, every block decided', () => {
     const view = mount(blocksOf('courses/fall-2026/arab-401-advanced-grammar/conditional-sentences.md'));
-    expect(blockEl(view, 'إِنْ تَدْرُسْ تَنْجَحْ').dir).toBe('rtl');
+    // opens in Arabic, mostly English: left to right, its Arabic run a run of its own
+    expect(blockEl(view, 'إِنْ تَدْرُسْ تَنْجَحْ').dir).toBe('ltr');
     expect(blockEl(view, 'A conditional sentence').dir).toBe('ltr');
-    expect(blockEl(view, 'مَنْ يَجْتَهِدْ').dir).toBe('rtl');
+    expect(blockEl(view, 'مَنْ يَجْتَهِدْ').dir).toBe('ltr');
+    expect(blockEl(view, 'اسْمِيَّةٌ طَلَبِيَّةٌ').dir).toBe('rtl');
     for (const el of Array.from(view.dom.children)) expect(['ltr', 'rtl'], el.outerHTML.slice(0, 80)).toContain((el as HTMLElement).dir);
     view.destroy();
   });
 
-  it('the prose passage: the passage right to left, its glossary items each their own way', () => {
+  it('the prose passage: the passage right to left, its glossary (mostly English) left to right', () => {
     const view = mount(blocksOf('library/classical-prose-reader/12-the-grammarian-and-the-bedouin.md'));
     expect(blockEl(view, 'Passage 12').dir).toBe('ltr');
     expect(blockEl(view, 'قِيلَ: خَرَجَ').dir).toBe('rtl');
     expect(blockEl(view, 'Level: Part II').dir).toBe('ltr');
     const items = Array.from(view.dom.querySelectorAll<HTMLElement>('.dd-li'));
     expect(items.length).toBeGreaterThan(5);
-    expect(items[0]!.dir).toBe('rtl');
-    expect(items[0]!.closest<HTMLElement>('.dd-list')!.dir).toBe('rtl');
+    expect(items[0]!.textContent).toContain('نَحْوِيّ');
+    expect(items[0]!.dir).toBe('ltr');
+    expect(items[0]!.closest<HTMLElement>('.dd-list')!.dir).toBe('ltr');
     view.destroy();
   });
 
-  it('the vocab deck: each card by its word', () => {
+  it('the vocab deck: each card by its majority script, each face its own way', () => {
     const view = mount(blocksOf('arabic/vocabulary.md'));
     const cards = Array.from(view.dom.querySelectorAll<HTMLElement>('.card-span'));
     expect(cards.length).toBeGreaterThan(20);
-    expect(cards[0]!.dir).toBe('rtl');
-    expect(cards.filter((c) => c.dir === 'rtl').length).toBeGreaterThan(cards.length * 0.9);
+    // كَرَمٌ ::: generosity, nobility of character (k-r-m): mostly English
+    expect(cards[0]!.dir).toBe('ltr');
     // a both-ways card: each face isolated its own way around the arrow
     const faces = cards[0]!.querySelectorAll('bdi');
     expect(Array.from(faces).map((f) => f.getAttribute('dir'))).toEqual(['rtl', 'ltr']);
+    const fronts = cards.map((c) => c.querySelector('bdi')).filter((f): f is HTMLElement => f !== null);
+    expect(fronts.filter((f) => f.getAttribute('dir') === 'rtl').length).toBeGreaterThan(fronts.length * 0.9);
     view.destroy();
   });
 
@@ -84,9 +89,11 @@ describe('the sample in the reader', () => {
 
 describe('the read-only drawings', () => {
   it('a raw list and a table carry each item\'s and cell\'s way', () => {
-    expect(rawHTML('- نَحْوِيّ — grammarian\n- 2\n- word')!.html).toBe(
-      '<ul dir="rtl"><li dir="rtl">نَحْوِيّ — grammarian</li><li>2</li><li dir="ltr">word</li></ul>',
+    expect(rawHTML('- نَحْوِيّ — grammarian\n- كِتَابٌ\n- 2\n- word')!.html).toBe(
+      '<ul dir="ltr"><li dir="ltr">نَحْوِيّ — grammarian</li><li dir="rtl">كِتَابٌ</li><li dir="rtl">2</li><li dir="ltr">word</li></ul>',
     );
+    // an item with no letter first takes no way of its own; the list the first decided item's
+    expect(rawHTML('- 1\n- كِتَابٌ')!.html).toBe('<ul dir="rtl"><li>1</li><li dir="rtl">كِتَابٌ</li></ul>');
     const t = rawHTML('| tool | meaning |\n| --- | --- |\n| مَنْ | whoever |')!.html;
     expect(t).toContain('<td dir="rtl">مَنْ</td>');
     expect(t).toContain('<th dir="ltr">tool</th>');

@@ -3160,3 +3160,58 @@ export async function smokeDecks(vault: Vault): Promise<void> {
     log(`failed: ${e instanceof Error ? e.message : String(e)}`);
   }
 }
+
+// `ILMI_SMOKE=tour` over `samples/double-major` (ILMI_VAULT): the screens a
+// heavy collection shows, one capture each, for a look over the whole app.
+export async function smokeTour(vault: Vault): Promise<void> {
+  const log = (s: string) => info(`smoke tour: ${s}`);
+  const q = <T extends Element>(sel: string) => document.querySelector<T>(sel);
+  const shot = async (name: string, ms = 9000) => { await sleep(1500); log(`shot: ${name}`); await sleep(ms); };
+  const scrollTo = (text: string) => {
+    const el = Array.from(document.querySelectorAll<HTMLElement>('.doc-view .draft-doc > *')).find((e) => e.textContent?.includes(text));
+    el?.scrollIntoView({ block: 'start' });
+  };
+  const open = async (path: string) => { openNode(path); await until(() => q('.doc-view .draft-doc, .deck-view, .folder-view, .pdf-view'), 10000); };
+  try {
+    for (const p of ['courses', 'courses/fall-2026', 'courses/fall-2026/phys-412-quantum-ii', 'library', 'library/lindqvist-statistical-physics', 'arabic']) toggleOpen(p, true);
+    openNode(queueId('today'));
+    await until(() => q('.queue'));
+    await shot('queue');
+    await open('courses/fall-2026/phys-412-quantum-ii/nondegenerate-perturbation-theory.md');
+    await shot('note-physics-top');
+    scrollTo('second order');
+    await shot('note-physics-mid');
+    await open('courses/fall-2026/phys-412-quantum-ii.md');
+    await shot('notebook');
+    await open('courses/fall-2026/arab-401-advanced-grammar/kana-and-its-sisters.md');
+    await shot('note-arabic');
+    scrollTo('خبر');
+    await shot('note-arabic-mid');
+    await open('library/lindqvist-statistical-physics/ch-3-the-canonical-ensemble.md');
+    await shot('textbook');
+    await open('library/classical-prose-reader/11-the-judge-and-the-two-litigants.md');
+    await shot('reader-arabic');
+    await open('arabic/vocabulary.md');
+    await shot('vocab-deck');
+    await open('courses/fall-2026/arab-455-abbasid-poetry/term-paper.md');
+    await shot('draft');
+    await open('courses/fall-2026');
+    await shot('folder');
+    openNode(queueId('today'));
+    await until(() => q('.queue'));
+    press('Enter');
+    await until(() => q('.recall-wrap .card, .doc-session'), 10000);
+    await shot('session-1');
+    press(' ');
+    await shot('session-1-shown');
+    for (let i = 0; i < 6; i++) { press(']'); await sleep(150); }
+    await shot('session-2');
+    useApp.getState().setTheme('dark');
+    await open('courses/fall-2026/phys-415-stat-mech/canonical-ensemble.md');
+    await shot('dark-note');
+    useApp.getState().setTheme('light');
+    log(`done; vault ${vault.root}`);
+  } catch (e) {
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}

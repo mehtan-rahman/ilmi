@@ -1,0 +1,19 @@
+{
+  "": ["courses/", "library/", "arabic/", "physics/", "fleeting/"],
+  "courses": ["fall-2026/", "spring-2026/", "fall-2025/"],
+  "courses/fall-2026": ["phys-412-quantum-ii.md", "phys-415-stat-mech.md", "arab-401-advanced-grammar.md", "arab-455-abbasid-poetry.md"],
+  "courses/fall-2026/phys-412-quantum-ii": ["nondegenerate-perturbation-theory.md", "degenerate-perturbation-theory.md", "variational-method.md", "wkb-approximation.md", "time-dependent-perturbation-theory.md", "problem-sets/"],
+  "courses/fall-2026/phys-412-quantum-ii/problem-sets": ["ps-5.md", "ps-6.md", "midterm-1-review.md", "ps-7.md"],
+  "courses/fall-2026/phys-415-stat-mech": ["microcanonical-ensemble.md", "canonical-ensemble.md", "grand-canonical-and-quantum-gases.md", "derivations.md"],
+  "courses/fall-2026/arab-401-advanced-grammar": ["kana-and-its-sisters.md", "inna-and-its-sisters.md", "hal-and-tamyiz.md", "mafuul-mutlaq.md", "conditional-sentences.md", "irab-drills.md"],
+  "courses/fall-2026/arab-455-abbasid-poetry": ["the-qasida-and-its-parts.md", "prosody-basics.md", "abu-nuwas-and-the-muhdathun.md", "al-mutanabbi.md", "clipped-on-translating-the-qasida.md", "term-paper.md"],
+  "courses/fall-2026/arab-455-abbasid-poetry/term-paper": ["outline-v1.md", "reading-notes.md"],
+  "courses/spring-2026/arab-302-morphology": ["verb-forms.md", "weak-verbs.md", "masdar-and-derived-nouns.md"],
+  "courses/fall-2025/phys-301-classical-mechanics": ["lagrangian-mechanics.md", "hamiltonian-mechanics.md", "central-forces-and-orbits.md"],
+  "library": ["lindqvist-statistical-physics.md", "classical-prose-reader.md"],
+  "library/lindqvist-statistical-physics": ["ch-2-microstates-and-entropy.md", "ch-3-the-canonical-ensemble.md", "ch-4-ideal-quantum-gases.md"],
+  "library/lindqvist-statistical-physics/ch-2-microstates-and-entropy": ["sharpness-of-multiplicity.md", "why-n-factorial.md"],
+  "library/lindqvist-statistical-physics/ch-3-the-canonical-ensemble": ["why-boltzmann-factor.md", "equipartition-fails-quantum.md", "schottky-peak.md"],
+  "physics": ["derivation-drills.md", "constants-and-orders-of-magnitude.md"],
+  "fleeting": ["2026-10-30.md", "2026-10-29.md", "2026-10-27.md", "clipped-why-perturbation-series-diverge.md", "idea-for-honors-thesis.md"]
+}

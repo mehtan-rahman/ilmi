@@ -3065,6 +3065,262 @@ interval, selects three and suspends them, edits one card's back and
 switches another to cloze, studies the deck with two grades, and logs the
 file's lines after each; captures read.
 
+## Refinement
+
+The user, 2026-10-30: "The tabs feature still seems a little bit hard to
+use … with nesting, there needs to be better UI/UX there as well. I think a
+lot of cleanup is needed, overall, to make this feel like an actual refined
+product. The markdown text editor also feels quite primitive … The
+nomenclature between source/draft is also confusing … consider how an
+actually mature [collection] would look like. Use a 3rd year arabic &
+physics double major as an example … perhaps someone takes written notes
+in class writes them up here later, then incremental flow is just making
+cards / spaced repetition material from those. Or alternatively, someone is
+going through a textbook and makes the SR material from there … Need to
+keep the incremental workflow flexible."
+
+That collection is `samples/double-major/` (74 files, ~91k words, 755
+cards, 133 due on 2026-10-30; `ILMI_VAULT=…/samples/double-major
+ILMI_SMOKE=tour` walks its screens). Every milestone below is judged on it:
+its window check runs over a copy of it, not only the corpus. Two reports
+feed this section and are summarized in each milestone: a survey of
+Obsidian, Typora, Bear, Notion, RemNote, SuperMemo, Google Docs tabs and
+tree libraries, with an audit of our editor, tree and rail; and the
+friction the sample's author hit writing a real student's collection with
+today's kinds. Copy rules (BUILD-PROMPT) hold for every new string.
+
+Order: 33 first (it touches every label). Then two tracks: the editor
+(34 → 35 → 36 → 37) on main, structure (38 → 39) on a branch. 40 and 41
+after both.
+
+### [ ] 33. Notes — what you write is a note, what you read is a source
+Today a file with no `type` is a `source`, so typed-up lecture notes sit in
+the same kind and lens as a frozen textbook chapter, and notes still being
+typed had to be `draft` with `write:` to come back, which puts
+transcription in the essay queue. The names, settled with the survey
+(Obsidian and Readwise say *note*; RemNote and Readwise say *source*;
+SuperMemo's *extract*; Anki's *deck*):
+- **note**: your own writing. Editable, cards anywhere in it, no schedule
+  unless asked. `type: note`, and the default for a file with no `type`
+  (a plain Markdown folder opened in ilmi is notes). New, `+ tab`, and
+  paste-as-text make notes.
+- **source**: what someone else wrote, read incrementally: imports, PDFs,
+  EPUB chapters, clippings. Every importer writes `type: source`
+  explicitly, so old imported files keep reading as sources.
+- **extract**, **draft** (incremental writing, resurfaces until done),
+  **deck** unchanged.
+- A note can be **revisited**: `revisit` (the reader's top row and the
+  menu) enrols it in the reading loop the way `start reading` enrols a
+  source, but a pass over a note starts at the top or at a heading the
+  user picks, not at a remembered `pos` (edits shift `pos`, the sample's
+  author found). On a note, the read line keeps `due`/`ivl`/`reps`/`af`
+  and has no `pos`; FORMAT §3 says so.
+FORMAT §3: `note` in the `type` row, the default changed, a corpus file
+(`fleeting/` gains a typeless note and a `type: note` with `read:`), the
+default-change test. The menus, the "+" list, the palette, the queue's
+row tags (`NOTE`/`READ`/`WRITE`/card forms), the inspector, glyphs, and
+the tree's kind tags all use the five words. `samples/double-major` is
+migrated: typed-up lecture notes become notes (those enrolled in writing
+only because they were unfinished lose `write:`), textbook and reader
+chapters stay sources. A test parses every file in `samples/` with no
+diagnostics and the round-trip fixed point.
+Also here, because it is the worst thing in the editor today: bare `e`,
+`m`, `r` fire only where the text is not being edited (a frozen page, or
+the surface not focused). In editable text, with a selection: ⌘⇧E
+extract, ⌘⇧M card (the selection cue shows these keys instead of the
+bare ones; no ⌥-letter keys, which are dead keys on a Mac keyboard).
+Typing over a selection types. F2 renames a tree row only when the tree
+has focus.
+*Done when:* a typeless file opens as a note, imports land as sources, the
+five words are the only words on screen for the kinds, a note can be
+revisited from the top, selecting a word in a note and typing `e` types
+`e`, and the sample collection migrated parses clean.
+
+### [ ] 34. Editing like an editor — keys, rules, lists
+Today the keymap is undo, redo, Enter, Tab, Backspace (plugins.ts:640),
+and only the `#` heading rule exists; lists, quotes and code appear only
+after a re-read. Table stakes from Obsidian Live Preview, Typora, Bear:
+- **Formatting keys** that write the Markdown markers: ⌘B bold, ⌘I
+  italic, ⌘E inline code, ⌘⇧X strike, ⌘K link (a small field for the
+  address; pasting a URL over a selection links it), ⌘1–⌘6 heading
+  level, ⌘0 paragraph, ⌘⇧7 numbered list, ⌘⇧8 bullet list, ⌘⇧9 task
+  list, ⌘⇧. quote. Toggling off removes the markers.
+- **Block input rules**, live: `- ` `* ` `1. ` `[ ] ` `> ` ```` ``` ```` +
+  language + ⏎, `---`, `$$` ⏎. Backspace right after a rule fires undoes
+  it to the typed text.
+- **Lists**: Tab/⇧Tab indent and outdent the item with its children; ⏎
+  on an empty item outdents, then leaves the list; Backspace at an item's
+  start makes it a paragraph; ⌥⇧↑/↓ moves the item with its children;
+  a task's box toggles by click and ⌘⏎.
+- **Selection toolbar**: on a selection in an editable page, a small bar
+  above it: bold, italic, code, link, then `card ⌘⇧M` and `extract ⌘⇧E`
+  (in a frozen page, only the last two, as the cue is today). Quiet,
+  hairline, no icons that need learning: letters and the existing glyphs.
+*Done when:* each key and rule works in the window on a note in the
+sample (the smoke drives them and logs the file after each), lists move
+and indent with their children, and the toolbar appears over a
+selection and is gone when it is.
+
+### [ ] 35. Insert, paste, find
+- **Slash menu**: `/` at a block's start or after a space opens a list
+  filtered as you type (↑↓ ⏎, Esc leaves the `/`): heading 1–3, bullet,
+  numbered, task, quote, code, math block, divider, table, image, and the
+  three card forms (cloze, q&a, both ways) that wrap the current
+  paragraph. Each row shows its Markdown and its key.
+- **Paste**: HTML → Markdown (reuse the EPUB importer's reducer,
+  `reduceChapter`, src/import/epub.ts), ⌘⇧V plain; an image pasted or
+  dropped into a page lands in the document's children directory as
+  `img-NN.png` (§1) and is linked there.
+- **Find in page**: ⌘F a field at the page's top with match count, ⏎/⇧⏎,
+  ⌘G; ⌥⌘F replace (editable pages only). Matching folds marks the way the
+  deck search does (Arabic ḥarakāt, accents).
+*Done when:* the slash menu inserts every block kind and the card forms
+on a sample note, a pasted web fragment (lists, emphasis, a link, a
+heading) lands as the right Markdown, a pasted image is a file beside the
+note, and find walks every match of an unvoweled Arabic word in a voweled
+page.
+
+### [ ] 36. Arabic beside English — direction, type, marks
+The double major writes Arabic with ḥarakāt between English sentences and
+math. Today there is no `dir` anywhere, the layout is left-anchored
+(reader.css:222–259), and no Arabic face is in the stacks (tokens.css).
+- Each block's direction from its first strong character (Obsidian's
+  rule): a block with none (empty, digits, math only) takes the previous
+  block's. A decoration, never written to the file. Lists, quotes, card
+  faces, the queue's rows, tree names, the deck browser, and the session
+  get `dir="auto"` or the same rule.
+- Inline math and code are isolated LTR (`unicode-bidi: isolate`), so a
+  formula in an Arabic sentence keeps its order; card markers (`::`,
+  `{{…}}`) and `^id` stay readable in an RTL line.
+- Arabic faces bundled through @fontsource (no CDN): a Naskh for prose
+  (Noto Naskh Arabic or Amiri) and IBM Plex Sans Arabic for chrome; RTL
+  blocks a little taller (≈1.85) so marks are not clipped; no
+  letter-spacing on Arabic; no overflow clipping that cuts ḥarakāt.
+- Logical CSS (`margin-inline-start`, `padding-inline-…`) in the reader,
+  the read marker and the card chips follow the block's start side.
+- A cloze whose answer is only combining marks (a case ending) shows its
+  blank on the letter it sits on, not as an empty chip.
+*Done when:* the sample's grammar notes, the classical prose reader, and
+the vocab deck read right in the window in light and dark, a formula
+inside an Arabic sentence stays in order, and a voweled word never shows
+a clipped mark.
+
+### [ ] 37. Cards where notes put them, and review in their place
+The class-notes workflow (RemNote's benchmark): cards are made while
+typing, in whatever shape the notes have, and review shows where a card
+came from.
+- **Cards in list items** (FORMAT §5): a list item whose text is a card
+  is a card; its `sr` line sits under the item, indented as the item's
+  continuation. Today `- term :: def` is silently not a card (the sample's
+  author hit this). Corpus file and round-trip tests for bullets, numbered
+  items, nested items, and a cloze inside an item.
+- Card backs may hold step lines (`1.`, `- `) for derivations, as the
+  continuation of the card's paragraph or item (§5), if the parser can
+  take it without ambiguity; otherwise say why in the notes.
+- **Review in context**: the session shows the card's heading path
+  (`stat mech › canonical ensemble › the partition function`) above it,
+  and `go to source` opens the document scrolled to the card with the card
+  marked, not at the top (Session.tsx:369).
+- **Study from anywhere**: `study` in the reader's top row of any note or
+  source with cards, and on the rail's rows (32's `studyDeck`).
+*Done when:* bullet cards in a sample note are in the queue, reviewed,
+and their lines rewritten in place; the session shows the heading path;
+go to source lands on the card.
+
+### [ ] 38. The tree, refined
+From the survey (Atlassian's pragmatic-drag-and-drop, VS Code, Obsidian,
+the WAI-ARIA tree) and the audit (Tree.tsx, NodeMenu.tsx, app.css:228):
+- **One drag model** for the tree, the tab rail, and the folder lens (one
+  module, used by all three; drags cross between them): a row's top and
+  bottom quarters place before/after, the middle half nests; an open
+  parent has no "after" zone (it means first child); below a last child,
+  the pointer's horizontal position picks how far out it lands. Before/after
+  draw a line indented to the landing depth with a small ring at its
+  start; nesting draws a hairline box around the target; a refused drop
+  shows nothing and the cursor says no. No flicker crossing a row's text.
+  During a drag: a folded row opens after 500 ms of hover, the tree
+  scrolls at its edges, Esc cancels.
+- **Keyboard**: ↑↓ move, → opens / goes to first child, ← closes / goes
+  to parent, ⏎ opens, F2 renames, ⌘⌫ deletes (asking as today), ⌥⌘↑↓
+  moves the row among its siblings, ⌥⌘←→ outdents/nests it, typing a
+  letter jumps to the next name starting with it.
+- **What's shown**: the selected row drawn (it decides where `+` creates);
+  the open document revealed and highlighted in the tree; indent guides
+  (hairline) under an open parent; a name is never truncated for its
+  counts: one due number, right-aligned, shown only when something is
+  due, the full counts in the row's tooltip; folders and documents told
+  apart by type, not by `/`, `¶`, `◫`, `✎` alone (pick one quiet set with
+  the user's five kinds, tested at 13px). Slugs show as names (`unit-2` →
+  `unit 2` only when there is no `title`; never rename the file).
+- **Row affordances**: on hover, `+` (the new menu, placed inside) and
+  `⋯` (the row's menu) at the row's end; an empty folder or document
+  shows one quiet placeholder row that takes drops.
+- **Breadcrumbs** in the reader are links; ⌥-click a tree row hoists it
+  (the tree shows only that subtree, a crumb to go back).
+*Done when:* in the sample, every drag of the smoke lands where its line
+or box said, a reorder never nests by accident, the tree is fully
+usable from the keyboard, the open note is revealed, and no name is
+truncated by its counts at the default width.
+
+### [ ] 39. Tabs, refined
+Today tabs are reachable only from `show as tabs` in a right-click menu,
+the rail is a second full tree beside the sidebar's, extracts appear as
+subtabs (a chapter with 40 extracts has 40 tabs), `+ tab` makes a draft
+with a writing schedule, rows have no keyboard path, and ⌘⇧[ (macOS's
+previous-tab key) folds the rail. Google Docs' document tabs are the
+model:
+- **Turning it on**: a `tabs` toggle in the reader's top row of any
+  document with children (and in the menu as today). An EPUB import and
+  a multi-chapter PDF land as a notebook, chapters as tabs.
+- **The rail**: narrow (≈200px, resizable by its edge, width remembered),
+  the document first, then its children; subtabs indented under a
+  chevron, three levels at most; extracts never tabs (a tab's extracts are
+  one folded `n extracts` line under it, opening the folder lens of them);
+  the active tab's headings listed under it, indented, a click scrolls to
+  the heading (Docs does this).
+- **Rows**: a click opens; hover shows `⋯` (add subtab, rename, duplicate,
+  move to…, delete) and `+` places a new note after it; drag reorders and
+  nests with 38's model, and drags cross to the sidebar tree.
+- `+ add tab` at the rail's top makes a note, named in place.
+- Keyboard: the rail is focusable, ↑↓ ⏎ F2 as in the tree; ⌘⌥↑↓ steps tabs
+  from the page; the fold key moves off ⌘⇧[ (pick one that collides with
+  nothing in macOS or the app; say which in the notes).
+- In the sidebar a notebook's row stays a document with its children
+  under it (both views are the same files); the tab open in the pane is
+  revealed in both.
+*Done when:* on the sample's courses, tabs turn on from the top row, the
+rail shows units without extracts, the active tab's headings navigate,
+a tab is added, renamed, nested and moved by drag and by keyboard, and a
+drag from the rail into the sidebar lands.
+
+### [ ] 40. A pass over everything, on a full collection
+With 33–39 in, run `ILMI_SMOKE=tour` over the sample and read every
+capture in light, dark, and e-ink as the BUILD-PROMPT's test asks ("it
+should read as a piece of software someone maintained for years for
+their own use"). Fix what the captures show: copy that narrates or piles
+up middots, uppercase tags, mono where prose belongs, spacing and
+alignment, empty states, the queue's identical rows for a multi-blank
+cloze (one row per card, blanks counted), stale or misleading counts.
+Measure with the sample: open time of the collection, opening a 4,000-word
+note, typing latency in it, the queue's build, and the deck browser over
+755 cards; fix anything over 100 ms that a person feels. List what was
+changed and what was measured, before and after.
+*Done when:* every capture of the tour passes the BUILD-PROMPT's test in
+all three themes, and the measurements are recorded with nothing a
+person would feel as slow.
+
+### [ ] 41. The editor's rest — outline, folding, code, tables
+- An outline of the page's headings (in the inspector, or the rail's
+  heading list when tabs are on), a click scrolls; headings fold by a
+  chevron in the margin, folds kept in state.
+- Code blocks coloured by language (a small highlighter, bundled, themed
+  in the three themes; a language picker on the fence).
+- Tables edited as tables: cells in place, Tab between cells, a row or
+  column added at the edges; written back as the pipe table.
+Wikilinks and backlinks are not here; ask the user after this one.
+*Done when:* each works in the window on the sample and round-trips the
+file.
+
 ## Notes for the next session
 
 Milestones 0–32 are ticked (13 dropped); 32 (decks) was built on a branch

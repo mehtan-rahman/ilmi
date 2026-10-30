@@ -61,6 +61,22 @@ row takes drops), `NodeMenu.tsx` (`dropMode` gone), `names.ts` (`GLYPH`,
 - After merging: the reader's crumb to `<Crumbs path={id} />` (one line in
   Reader.tsx, left alone here for the editor track).
 
+### Window check (after the merge, 2026-10-30)
+
+`ILMI_SMOKE=tree` on a copy of samples/double-major ran to `done`, 23
+captures read. Every before/after drag landed where its line said; a
+folder's middle nests; an open parent's bottom is its first child; below a
+last child the pointer's x picked depths 5, 4, 3; a refused drop draws
+nothing and moves nothing; Esc cancels a sprung drag; the sidebar
+scrolls at its edge; drags cross tree → rail → tree and tree → lens →
+tree; ↑↓←→, type-ahead, ⏎, F2 (only with the tree focused), ⌥⌘↑ and
+⌥⌘←→ move rows; reveal opens the rows to the active note; hoist and
+back. Found, for 39: (1) resting 600 ms on a bare document's middle still
+drew the line below and dropped after it, not into it ("middle, rested");
+(2) ⌘⌫ on a note with nothing under it deletes at once with no undo;
+(3) at the default sidebar width names four levels deep are cut
+("variational met…", 56 of 84 rows) by the indent, not the counts.
+
 ### Handoff prompt
 
 ```
@@ -164,6 +180,17 @@ Second rerun: the toolbar never showed; its measure waited for an
 animation frame, which WKWebView holds back in a covered window. A
 zero-delay timer now.
 
+### Window check (2026-10-30)
+
+`ILMI_SMOKE=editing` on a copy of samples/double-major: the first run
+found the smoke typing rules mid-paragraph, `---` turned into an em dash
+by macOS smart dashes, the toolbar measured against an empty line rect,
+and the space after a formula painted over (WebKit hanging the formula's
+closing bracket); all fixed (`11c129b`, `00866cc`, `6f558ee`), and the
+fourth run ran to `done` with every step asserted. Captures read: lists
+with nesting, a task box, renumbered items, a quote, a divider, a code
+block, a display formula, and the toolbar above its selection.
+
 ### Handoff prompt
 
 ```
@@ -254,6 +281,17 @@ tests (`notes.test.ts`, `samples.test.ts` new).
   `execCommand('insertText')` only after the keydown was not taken; a real
   keypress is for a person.
 - ⌃⌘S under the native menu (no item binds it; the webview should get it).
+
+### Window check (2026-10-30)
+
+`ILMI_SMOKE=notes` on a copy of samples/double-major ran to `done`: a
+typeless file opens as a note, revisit writes a read line with no `pos`
+and the session says `went over it`, `e` over a selection in a note types
+`e`, ⌘⇧E extracts and ⌘⇧M opens the composer, bare keys work on a frozen
+source, imports land as sources and pasted text as a note. F2 in the tree
+did not open the rename (fixed in 38). Left for 40: an extract carved
+from a note is named by its first word ("Typed"); queue paths are slugs
+that wrap; raw LaTeX in the inspector's card list and the `from…` list.
 
 ### Handoff prompt
 

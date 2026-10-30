@@ -6,6 +6,63 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-10-30 — milestone 46: the open items
+
+Done on branch `worktree-agent-aaccbffc71e980574` (a worktree beside main,
+where 44 is in progress), commit `18c414a`. Nothing touched 44's ground (the
+`sr` lines, the scheduler, the session, the deck browser). New:
+`src/pdf/chapters.ts` (a book's chapters from its outline),
+`src/pdf/fixture.ts` (a book PDF with an outline, for the tests and the
+smoke), the corpus file `mangled/pdf-pages.md`, five test files.
+
+### Done
+
+- Tab, ⇧Tab, ⌥⇧↑↓ move a card item in its list like any item (the list's
+  pieces and card items read as one run and rebuilt after the move), and
+  an item takes the card items under it along.
+- ⏎ on the plain item before a card item makes the next item in the same
+  list (it already did in jsdom; the smoke checks WebKit).
+- A derivation card's steps drawn as lines in the reader's card view.
+- A card made from a selection in a list lands as the next item after
+  the item and its children.
+- A PDF with chapters in its outline lands as a notebook: the book's pair
+  with `tabs: true`, a chapter per tab, each `pdf: ../book.pdf` and
+  `pages: a-b` (FORMAT §3, the one format change, with its corpus file and
+  tests); the lens shows only a chapter's pages, numbered as the book
+  numbers them; a rename or a move keeps the paths resolving.
+- The gap under display math: WebKit's `img.ProseMirror-separator` after a
+  non-editable formula made a line box; hidden.
+- The PDF lens's top row as the reader's: no `N pages` word, a `text`
+  toggle lit in the text mode (no `pages` word there), one count token.
+- Formulas drawn in the tree's names and the palette's rows.
+- A heading in a list item folds its children; ⇧⏎ in a table cell is a
+  line break written `<br>`, read back the same.
+- The rail's and the inspector's outline mark folded headings with `…`.
+
+### Verified
+
+- `npx vitest run` (scratch worktree config): 984 tests, 57 files (948
+  before). `npm run typecheck` clean. `cargo test` 12. `vite build` clean.
+
+### Not verified — the window run is owed
+
+- Nothing ran in the Tauri window. `ILMI_SMOKE=open` (ILMI_VAULT on a fresh
+  copy of samples/double-major) sets light, asserts each item (`ok:`; the
+  first miss `failed: …`), writes its own book PDF into `.ilmi/` and drops
+  it on the intake, and logs `shot:` at each screen worth seeing.
+
+### Handoff prompt
+
+```
+Read PLAN.md (ground rules, the Studying section and 46's notes),
+FORMAT.md §3 (`pages`), and this entry. Merge branch
+worktree-agent-aaccbffc71e980574 into main beside 44 (FORMAT.md §3's table
+and frontmatter.ts are where 42/43 also add keys: keep every key). Run
+ILMI_SMOKE=open over a fresh copy of samples/double-major from a clean
+checkout, read its ok: lines and shot: captures, fix what fails, and
+record the run under this entry. Then the next unchecked milestone.
+```
+
 ## 2026-10-30 — milestone 40: a pass over everything, on a full collection
 
 Done on main; commits `960efd4` (the pass: top row, room rule, formulas in

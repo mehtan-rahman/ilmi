@@ -39,7 +39,7 @@ describe('names', () => {
 
 describe('labels', () => {
   it('names the day and the due', () => {
-    expect(dayLabel(new Date(2026, 4, 27, 12))).toBe('wed · 27 may');
+    expect(dayLabel(new Date(2026, 4, 27, 12))).toBe('wed 27 may');
     expect(dueLabel(undefined, NOW)).toBe('new');
     expect(dueLabel('2026-05-27', NOW)).toBe('today');
     expect(dueLabel('2026-05-25', NOW)).toBe('overdue 2d');

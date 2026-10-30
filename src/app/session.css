@@ -17,7 +17,6 @@
   font-family: var(--mono);
   font-size: 10.5px;
   color: var(--fg-4);
-  text-transform: uppercase;
   letter-spacing: 0.08em;
   margin-bottom: 14px;
   display: flex;
@@ -69,17 +68,23 @@
 .sess-nav .sn-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
 .sess-nav .sn-btn:disabled { opacity: 0.32; cursor: default; }
 
-/* the card: two faces, SuperMemo's element window. The question fills the
-   upper half of the pane, the answer the lower; the answer is blurred until
-   revealed. The one place blur is allowed: it hides the answer, not chrome. */
+/* the card: sized to what it holds, the question and, once revealed, the
+   answer under a hairline; a short card is a short box (a floor so a
+   one-line cloze still reads as a card), a long one scrolls inside. No
+   blur, no shadow: before the reveal the answer is simply not there, one
+   quiet line in its place. */
 .recall-wrap .card {
-  flex: 1 1 0;
+  flex: 0 1 auto;
   min-height: 0;
+  max-height: 100%;
+  overflow: auto;
   width: 100%;
   max-width: var(--card-w);
-  display: grid;
-  grid-template-rows: 1fr 1fr;
-  gap: 14px;
+  display: flex;
+  flex-direction: column;
+  background: var(--paper);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius);
   font-family: var(--serif);
   font-size: 19px;
   line-height: 1.5;
@@ -88,43 +93,30 @@
   font-weight: 420;
   white-space: pre-wrap;
 }
-.recall-wrap .card[data-faces="1"] { grid-template-rows: 1fr; }
 .recall-wrap .card .face {
   position: relative;
-  min-height: 0;
-  overflow: auto;
-  background: var(--paper);
-  border: 1px solid var(--line-1);
-  border-radius: var(--radius);
-  padding: 28px 32px;
+  padding: 22px 28px;
 }
-.recall-wrap .card .face.back { cursor: pointer; }
-.recall-wrap .card[data-revealed="1"] .face.back { cursor: auto; }
-.recall-wrap .card .face.back .face-body {
-  transition: filter .25s, opacity .25s;
-}
-.recall-wrap .card[data-revealed="0"] .face.back .face-body {
-  filter: blur(9px);
-  opacity: 0.55;
-  user-select: none;
-  pointer-events: none;
-}
-/* e-ink has no soft edges: the answer is simply not there until revealed */
-[data-theme="eink"] .recall-wrap .card[data-revealed="0"] .face.back .face-body { filter: none; visibility: hidden; }
+.recall-wrap .card .face.front { min-height: 88px; display: flex; flex-direction: column; justify-content: center; }
+.recall-wrap .card .face.back { border-top: 1px solid var(--line-2); }
 .recall-wrap .card .face-hint {
-  position: absolute;
-  inset: 0;
+  appearance: none;
+  background: transparent;
+  border: 0;
+  border-top: 1px solid var(--line-3);
+  padding: 7px 28px 8px;
+  text-align: start;
+  cursor: pointer;
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 5px;
+  gap: 6px;
   color: var(--fg-5);
   font-family: var(--mono);
-  font-size: 12px;
-  letter-spacing: 0.06em;
+  font-size: 10.5px;
   white-space: nowrap;
 }
 .recall-wrap .card .face-hint .kbd { color: var(--fg-4); }
+.recall-wrap .card .face-hint:hover, .recall-wrap .card .face-hint:hover .kbd { color: var(--accent); }
 
 /* a cloze: the blank stays hidden in the question until revealed */
 .recall-wrap .card .cloze {
@@ -156,14 +148,6 @@
 /* a formula holding this card's blanks: KaTeX draws the box; a click on the chip reveals */
 .recall-wrap .card .math.blanks[data-revealed="0"]:not([data-blanks="0"]) { cursor: pointer; }
 .recall-wrap .card .cloze-text .math.display { margin: 0.4em 0; }
-/* the answer face of a cloze: the deleted text alone, several joined */
-.recall-wrap .card .cloze-answer { display: flex; flex-wrap: wrap; gap: 6px 18px; }
-.recall-wrap .card .cloze-answer .cz-a .katex { font-size: 1.05em; }
-.recall-wrap .card .cloze-answer .cz-a {
-  background: var(--accent-soft);
-  border-radius: var(--radius);
-  padding: 0 8px;
-}
 .recall-wrap .card .qa-a,
 .recall-wrap .card .bidir-b { color: var(--fg-1); }
 
@@ -182,7 +166,7 @@
   letter-spacing: 0.04em;
   color: var(--fg-4);
 }
-.recall-wrap .card-meta .cm-type { color: var(--fg-3); text-transform: uppercase; letter-spacing: 0.08em; }
+.recall-wrap .card-meta .cm-type { color: var(--fg-3); letter-spacing: 0.08em; }
 .recall-wrap .card-meta .cm-due[data-due="1"] { color: var(--accent); }
 
 /* the four grades */
@@ -257,7 +241,7 @@
   padding: 0 3px;
 }
 .session-bar .sb-count { font-family: var(--mono); font-size: 10px; color: var(--fg-4); }
-.session-bar .sb-kind { font-family: var(--mono); font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.08em; }
+.session-bar .sb-kind { font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.08em; }
 .session-bar .sb-kind[data-el="read"] { color: var(--el-read); }
 .session-bar .sb-kind[data-el="write"] { color: var(--el-write); }
 .session-bar .sb-actions { display: flex; gap: 8px; }

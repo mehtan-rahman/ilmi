@@ -9,6 +9,24 @@ import { activatePane, closePane, closeTab, selectTab, splitPane, type OpenOpts,
 import { useApp } from './store.js';
 import { notebookOf, tabLabel } from './tabs.js';
 import { openNode, rememberTab } from './vault.js';
+import { plainMath } from './chromeText.js';
+
+/**
+ * A tab's title in the sans, one line. A notebook's page (`notebook ›
+ * page`) gives way in the middle: the notebook's name shrinks first, the
+ * page keeps what room there is; the whole title is the tooltip.
+ */
+function TabTitle({ title }: { title: string }) {
+  const at = title.indexOf(' › ');
+  if (at < 0) return <span className="title" title={title}><span className="tt-page">{title}</span></span>;
+  return (
+    <span className="title split" title={title}>
+      <span className="tt-nb">{title.slice(0, at)}</span>
+      <span className="tt-sep">{' › '}</span>
+      <span className="tt-page">{title.slice(at + 3)}</span>
+    </span>
+  );
+}
 
 interface TabBarProps {
   pane: Pane;
@@ -42,7 +60,7 @@ function TabBar({ pane, index, canClosePane }: TabBarProps) {
             onAuxClick={(e) => { if (e.button === 1) { setPanes((s) => closeTab(s, index, ti)); after(); } }}
           >
             <span className="glyph" data-t={kind} data-el={session?.kind}>{glyph}</span>
-            <span className="title">{title}</span>
+            <TabTitle title={plainMath(title)} />
             <span className="close" onClick={(e) => { e.stopPropagation(); setPanes((s) => closeTab(s, index, ti)); after(); }}>×</span>
           </div>
         );

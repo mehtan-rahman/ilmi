@@ -42,6 +42,8 @@ import type { OpenOpts } from './panes.js';
 import { deleteNode } from './remove.js';
 import { useApp } from './store.js';
 import { goToHeading } from './headings.js';
+import { plainMath } from './chromeText.js';
+import { MathText } from './MathText.js';
 import { RAIL_INDENT, RAIL_PAD, TAB_DEPTH, notebookPages, outline, railKeyPlace, railPad, railRows, stepPage, tabAncestors, type RailRow } from './tabs.js';
 import { treeKey, typeahead } from './treeModel.js';
 import { useDoc } from './useDoc.js';
@@ -364,10 +366,10 @@ export function Notebook({ nb, page, active, onOpen, children }: Props) {
         style={{ paddingLeft: railPad(r.depth) + 22 + (h.level - top) * RAIL_INDENT }}
         data-heading={h.index}
         data-level={h.level}
-        title={h.text}
+        title={plainMath(h.text)}
         onClick={() => scrollTo(h.index)}
       >
-        <span className="name" dir="auto">{h.text}</span>
+        <MathText className="name" dir="auto" text={h.text} title={false} />
       </div>
     ));
   };

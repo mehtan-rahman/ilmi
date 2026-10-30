@@ -385,7 +385,7 @@
 }
 .ctx-menu .ci.danger { color: color-mix(in oklab, var(--fg-2) 80%, oklch(0.55 0.13 28)); }
 .ctx-menu .ci.danger:hover { background: color-mix(in oklab, oklch(0.6 0.16 28) 14%, transparent); color: oklch(0.52 0.16 28); }
-.ctx-menu .ci.back { color: var(--fg-4); font-family: var(--mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.06em; }
+.ctx-menu .ci.back { color: var(--fg-4); font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.06em; }
 .ctx-menu .cd { height: 1px; background: var(--line-2); margin: 4px 6px; }
 /* a node view's small menu (a table cell's, a code block's language): the context menu's rows, the current one ticked */
 .pop-menu { min-width: 148px; }
@@ -437,12 +437,16 @@
   border-radius: 0;
   cursor: default;
   letter-spacing: 0.02em;
-  max-width: 220px;
+  max-width: 260px;
   min-width: 0;
   position: relative;
 }
 .tabbar .tab .glyph { color: var(--fg-5); font-size: 11px; flex-shrink: 0; }
-.tabbar .tab .title { color: var(--fg-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tabbar .tab .title { display: flex; min-width: 0; color: var(--fg-3); font-family: var(--sans); font-size: 12px; letter-spacing: 0; white-space: nowrap; }
+.tabbar .tab .title > span { overflow: hidden; text-overflow: ellipsis; }
+.tabbar .tab .title .tt-nb { flex: 0 100 auto; min-width: 2em; }
+.tabbar .tab .title .tt-sep { flex-shrink: 0; white-space: pre; color: var(--fg-5); }
+.tabbar .tab .title .tt-page { flex: 0 1 auto; min-width: 3em; }
 .tabbar .tab[data-active="1"] { background: var(--paper); }
 .tabbar .tab[data-active="1"] .title { color: var(--fg-1); }
 .tabbar .tab[data-active="1"]::after {
@@ -515,11 +519,17 @@
   color: var(--fg-4);
   margin-bottom: 26px;
   display: flex;
-  gap: 14px;
+  align-items: baseline;
+  gap: 12px;
+  /* one line, always: the crumb gives way, the actions and the count keep their words */
+  white-space: nowrap;
+  min-width: 0;
 }
-.reader .meta .crumb { color: var(--fg-3); }
-/* the crumb's levels are links: quiet until pointed at */
-.reader .meta .crumbs .cr { color: inherit; text-decoration: none; cursor: default; }
+.reader .meta > * { flex-shrink: 0; }
+.reader .meta .crumb { color: var(--fg-3); flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; display: flex; }
+/* the crumb's levels are links: quiet until pointed at; a long one is cut, the nearest last */
+.reader .meta .crumbs .cr { color: inherit; text-decoration: none; cursor: default; min-width: 0; overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; }
+.reader .meta .crumbs .cr:last-child { flex-shrink: 0.5; }
 .reader .meta .crumbs .cr:hover { color: var(--accent); }
 .reader .meta .crumbs .cr + .cr::before { content: "/"; margin: 0 0.55em; color: var(--fg-5); }
 .reader .meta .right { margin-left: auto; }
@@ -675,6 +685,7 @@
   color: var(--fg-4);
   flex-shrink: 0;
 }
+.folder-view .fv-row .fv-meta .fv-due { margin-left: 10px; color: var(--accent); }
 
 /* ── intake ───────────────────────────────────────────────────── */
 .intake-wrap { min-height: 100%; box-sizing: border-box; }
@@ -739,7 +750,6 @@
 .intake .field .flbl {
   font-family: var(--mono);
   font-size: 10px;
-  text-transform: uppercase;
   letter-spacing: 0.07em;
   color: var(--fg-4);
   width: 60px;
@@ -871,7 +881,6 @@
 .intake-wrap .drop-veil span {
   font-family: var(--mono);
   font-size: 12px;
-  text-transform: uppercase;
   letter-spacing: 0.1em;
   color: var(--accent);
 }
@@ -1088,3 +1097,8 @@ textarea[dir="auto"] { unicode-bidi: plaintext; }
 .card-span .cs-a[dir="rtl"] { font-style: normal; }
 .card-span [dir="rtl"], .card-span[dir="rtl"] { letter-spacing: 0; }
 .deck-row .dr-faces [dir="rtl"] { line-height: 1.8; }
+
+/* a formula in a line of chrome (an outline row, a card's name, a crumb, a
+   queue row's path): KaTeX at the line's own size, never a block */
+.chrome-math .katex { font-size: 1em; white-space: nowrap; }
+.chrome-math .katex-display { margin: 0; display: inline; }

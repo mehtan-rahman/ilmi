@@ -16,14 +16,15 @@ export const QUEUE_EMPTY: Record<QueueScope, string> = {
   today: 'nothing due', upcoming: 'nothing ahead', reading: 'nothing enrolled', writing: 'no drafts', cards: 'no cards',
 };
 
-export const FORM_LABEL: Record<CardForm, string> = { cloze: 'cloze', qa: 'q&a', bidir: 'bidir' };
+/** The forms in the user's words, everywhere they are named. */
+export const FORM_LABEL: Record<CardForm, string> = { cloze: 'cloze', qa: 'q&a', bidir: 'both ways' };
 
 const DAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
 
-/** The day, as the prototype wrote it: `wed · 27 may`. */
+/** The day: `wed 27 may` (no middot since 40: one date, not a pile of qualifiers). */
 export function dayLabel(now: Date): string {
-  return `${DAYS[now.getDay()]} · ${now.getDate()} ${MONTHS[now.getMonth()]}`;
+  return `${DAYS[now.getDay()]} ${now.getDate()} ${MONTHS[now.getMonth()]}`;
 }
 
 /** When something comes up, in the prototype's words. */
@@ -35,6 +36,11 @@ export function dueLabel(due: string | undefined, now: Date): string {
   if (d === 1) return 'tomorrow';
   if (d < 30) return `+${d}d`;
   return `+${Math.round(d / 30)}mo`;
+}
+
+/** The same, read as words where it stands alone in a row: `in 5mo`, `in 13d`, `overdue 3d`, `today`. */
+export function dueWhen(due: string | undefined, now: Date): string {
+  return dueLabel(due, now).replace(/^\+/, 'in ');
 }
 
 /** How long ago a day or instant was, in the same words looking back: `today`, `yesterday`, `3d ago`, `2mo ago`. */

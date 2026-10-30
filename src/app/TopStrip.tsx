@@ -5,12 +5,14 @@
 import { baseOf } from '../vault/index.js';
 import { dayLabel, dueToday } from './items.js';
 import { useApp } from './store.js';
-import { setInspector } from './vault.js';
+import { toggleInspector } from './vault.js';
+import { inspectorShown } from './layout.js';
 
 export function TopStrip() {
   const root = useApp((s) => s.vault);
   const queue = useApp((s) => s.queue);
-  const inspector = useApp((s) => s.inspector);
+  // drawn or not by the room rule (`layout.ts`); App draws this strip again on a resize
+  const shown = useApp((s) => inspectorShown(s, window.innerWidth));
   const budget = useApp((s) => s.budget);
   const due = dueToday(queue, new Date(), budget).length;
   return (
@@ -24,7 +26,7 @@ export function TopStrip() {
         <span data-due={due ? '1' : '0'}>{due} due</span>
         <span>{dayLabel(new Date())}</span>
       </div>
-      <button type="button" className="insp-toggle" data-on={inspector.open ? '1' : '0'} aria-pressed={inspector.open} onClick={() => setInspector({ open: !inspector.open })}>
+      <button type="button" className="insp-toggle" data-on={shown ? '1' : '0'} aria-pressed={shown} title="inspector ⌘⇧I" onClick={toggleInspector}>
         <span className="panel-ico" />
       </button>
     </div>

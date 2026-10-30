@@ -11,11 +11,13 @@ import {
   AF_MIN, PRI_DEFAULT, PRI_MAX, PRI_MIN, READ_AF, WRITE_AF, cardForm, docPri, meta, parse, parseAf, parsePri, setField,
   type Block, type Card, type CardForm, type CardSchedule, type Doc, type ReadSchedule, type WriteSchedule,
 } from '../format/index.js';
-import { advanceWrite, counts, nextIntervals, type CardItem } from '../schedule/index.js';
+import { advanceWrite, inScope, nextIntervals, type CardItem } from '../schedule/index.js';
 import { baseOf, childDirOf, childrenAt, dirOf, isDoc, pageOfBlock, type TreeNode } from '../vault/index.js';
-import { cardLabel, formLabel } from './chrome.js';
-import { FORM_LABEL, dueLabel, fmtDays } from './items.js';
-import { INTAKE, QUEUE_TITLE, SCOPES, SESSION, findNode, queueScope, titleOf, type NodeKind } from './names.js';
+import { cardName, formLabel } from './chrome.js';
+import { breakdown, countsUnder, dueItems, plainMath } from './chromeText.js';
+import { MathText } from './MathText.js';
+import { FORM_LABEL, dueLabel, dueWhen, fmtDays } from './items.js';
+import { INTAKE, QUEUE_TITLE, SESSION, findNode, queueScope, titleOf } from './names.js';
 import { activeTab } from './panes.js';
 import { useApp, type DocInfo } from './store.js';
 import { useDoc } from './useDoc.js';
@@ -136,7 +138,7 @@ function growthRow(path: string, key: 'read' | 'write', s: ReadSchedule | WriteS
     const { af: _, ...rest } = cur;
     setField(d, key, n === null ? rest : { ...rest, af: n });
   }).catch(console.error);
-  const preview = nextIntervals(s.ivl, s.af ?? def).map(fmtDays).join(' · ');
+  const preview = nextIntervals(s.ivl, s.af ?? def).map(fmtDays).join(', ');
   return ['growth', (
     <>
       <NumField className="af-field" value={s.af} fallback={def} min={AF_MIN} step={0.1} parse={parseAf} none={def} onCommit={write} />
@@ -172,8 +174,8 @@ function CardList({ title, doc, now }: { title: string; doc: Doc; now: Date }) {
           const isDueNow = d === undefined || new Date(d.length === 10 ? `${d}T00:00` : d) <= now;
           return (
             <li key={c.id ?? i} data-due={isDueNow ? '1' : '0'}>
-              <span className="cl-t">{cardLabel(c.text)}</span>
-              <span className="cl-due">{dueLabel(d, now)}</span>
+              <MathText className="cl-t" text={cardName(c.text)} dir="auto" />
+              <span className="cl-due">{dueWhen(d, now)}</span>
             </li>
           );
         })}
@@ -245,8 +247,8 @@ function Outline({ id, doc }: { id: string; doc: Doc }) {
     <Block title="outline">
       <ul className="insp-outline">
         {heads.map((h) => (
-          <li key={h.index} data-heading={h.index} data-level={h.level} style={{ paddingInlineStart: (h.level - top) * 12 }} title={h.text} onClick={() => goToHeading(id, h.index)}>
-            <span className="io-t" dir="auto">{h.text}</span>
+          <li key={h.index} data-heading={h.index} data-level={h.level} style={{ paddingInlineStart: (h.level - top) * 12 }} title={plainMath(h.text)} onClick={() => goToHeading(id, h.index)}>
+            <MathText className="io-t" dir="auto" text={h.text} title={false} />
           </li>
         ))}
       </ul>
@@ -264,13 +266,11 @@ function FolderInspector({ id }: { id: string }) {
   const found = childrenAt(tree, id);
   if (!found) return <Gone kind="folder" />;
   const children: TreeNode[] = found;
-  const by: Record<string, number> = {};
-  for (const c of children) {
-    const k: NodeKind = c.kind === 'folder' ? 'folder' : docs[c.path]?.type ?? 'note';
-    by[k] = (by[k] ?? 0) + 1;
-  }
+  // what is under it, all the way down: the cards and what is due among them
+  const under = children.reduce((c, n) => { const k = countsUnder(n, docs); return { cards: c.cards + k.cards, due: c.due + k.due }; }, { cards: 0, due: 0 });
   const rows: [string, ReactNode][] = [['items', children.length]];
-  for (const [k, n] of Object.entries(by)) rows.push([`${k}s`, n]);
+  if (under.cards) rows.push(['cards', under.cards]);
+  if (under.due) rows.push(['due', under.due]);
   return <Block title="folder"><KV rows={rows} /></Block>;
 }
 
@@ -308,7 +308,6 @@ function DocInspector({ id, info, doc, now }: { id: string; info: DocInfo; doc: 
             </div>
           </div>
         </Block>
-        <CardList title="cards" doc={doc} now={now} />
       </>
     );
   }
@@ -365,7 +364,7 @@ function DocInspector({ id, info, doc, now }: { id: string; info: DocInfo; doc: 
         <KV rows={rows} />
         <div className="frozen-row">
           <span className="fr-state">{info.frozen ? 'frozen' : 'editable'}</span>
-          <button type="button" className="fr-toggle" onClick={() => toggleField(id, 'frozen', !info.frozen)}>{info.frozen ? 'thaw' : 'freeze'}</button>
+          <button type="button" className="fr-toggle" data-frozen={info.frozen ? '1' : '0'} onClick={() => toggleField(id, 'frozen', !info.frozen)}>{info.frozen ? 'thaw' : 'freeze'}</button>
         </div>
       </Block>
       {!info.pdf && <Outline id={id} doc={doc} />}
@@ -377,8 +376,8 @@ function DocInspector({ id, info, doc, now }: { id: string; info: DocInfo; doc: 
               const due = r ? (!r.due || new Date(r.due.length === 10 ? `${r.due}T00:00` : r.due) <= now) : false;
               return (
                 <li key={ex.path} data-due={due ? '1' : '0'}>
-                  <span className="cl-t">{titleOf(ex.path, docs, null)}</span>
-                  <span className="cl-due">{r ? dueLabel(r.due, now) : ''}</span>
+                  <MathText className="cl-t" dir="auto" text={titleOf(ex.path, docs, null)} />
+                  <span className="cl-due">{r ? dueWhen(r.due, now) : ''}</span>
                 </li>
               );
             })}
@@ -470,8 +469,17 @@ export function Inspector() {
   if (id === undefined) body = null;
   else if (id === INTAKE) body = <Block title="intake"><KV rows={[['into', titleOf(intakeDir, docs, root)]]} /></Block>;
   else if (queueScope(id)) {
-    const c = counts(queue, now);
-    body = <Block title={QUEUE_TITLE[queueScope(id)!]}><KV rows={SCOPES.map((s) => [QUEUE_TITLE[s], c[s]])} /></Block>;
+    // the sidebar has each query's count; here, what is due now in this one, by course
+    const scope = queueScope(id)!;
+    const name = (g: string) => titleOf(g, docs, root);
+    const rows = breakdown(dueItems(queue.filter((i) => inScope(i, scope, now)), now), docs, name);
+    body = rows.length ? (
+      <Block title="due now">
+        <ul className="insp-cards insp-groups">
+          {rows.map(([g, n]) => <li key={g} data-path={g}><span className="cl-t" dir="auto">{name(g)}</span><span className="cl-due">{n}</span></li>)}
+        </ul>
+      </Block>
+    ) : null;
   } else if (id === SESSION) {
     const cur = sessionEl?.item;
     if (!cur) body = <Block title="session"><p className="insp-line">{plural(session?.items.length ?? 0, 'element')}</p></Block>;

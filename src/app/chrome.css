@@ -217,7 +217,6 @@
 .insp .insp-cards .cl-due {
   font-family: var(--mono);
   font-size: 9.5px;
-  text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--fg-4);
 }
@@ -234,7 +233,6 @@
   font-family: var(--mono);
   font-size: 10px;
   color: var(--fg-3);
-  text-transform: uppercase;
   letter-spacing: 0.06em;
 }
 .insp .frozen-row .fr-toggle:hover { border-color: var(--accent-soft); color: var(--fg-1); }
@@ -248,7 +246,6 @@
   font-size: 10px;
   padding: 0 8px;
   cursor: default;
-  text-transform: uppercase;
   letter-spacing: 0.04em;
 }
 .insp .deck-default button:last-child { padding-right: 0; }
@@ -270,7 +267,7 @@
 }
 .insp .ce-area { field-sizing: content; min-height: 46px; max-height: 40vh; }
 .insp .ce-field:focus { border-color: var(--accent-soft); }
-.insp .ce-note { font-family: var(--mono); font-size: 9.5px; color: var(--fg-5); letter-spacing: 0.04em; text-transform: uppercase; }
+.insp .ce-note { font-family: var(--mono); font-size: 9.5px; color: var(--fg-5); letter-spacing: 0.04em; }
 .insp .ce-note[data-ok="0"] { color: var(--accent); }
 
 .insp-resize {
@@ -389,7 +386,6 @@
 .palette-row .ptag {
   font-family: var(--mono);
   font-size: 9.5px;
-  text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--fg-5);
   flex-shrink: 0;
@@ -433,7 +429,6 @@
   justify-content: space-between;
   font-family: var(--mono);
   font-size: 10.5px;
-  text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--fg-3);
 }

@@ -11,7 +11,7 @@ import { useApp } from './store.js';
 import { MENU_ID, runMenu } from './menu.js';
 import { hasCards, studyDeck } from './deckOps.js';
 import { folderPaths } from './names.js';
-import { containerOf, currentVault, openCard, openIntake, openNode, openVault, postponeRest, setInspector, setSidebar, startSession } from './vault.js';
+import { containerOf, currentVault, openCard, openIntake, openNode, openVault, postponeRest, setSidebar, startSession, toggleInspector } from './vault.js';
 
 const COMMANDS: Command[] = [
   { id: 'enter', title: 'enter queue' },
@@ -41,7 +41,7 @@ function runCommand(id: string): void {
     case 'split': s.setPanes((p) => splitPane(p, p.active)); break;
     case 'close-pane': s.setPanes((p) => closePane(p, p.active)); break;
     case 'sidebar': setSidebar({ hidden: !s.sidebar.hidden }); break;
-    case 'inspector': setInspector({ open: !s.inspector.open }); break;
+    case 'inspector': toggleInspector(); break;
     case 'theme': s.cycleTheme(); break;
     case 'tweaks': useApp.setState({ tweaksOpen: true }); break;
     case MENU_ID.open:

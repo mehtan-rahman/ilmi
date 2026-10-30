@@ -177,7 +177,7 @@ export async function landFile(path: string, dir: string, fx: LandFx = realFx): 
       const r = await fx.readPdf(path);
       const title = r.title.trim() || NEW_NAMES.source;
       const doc = await fx.importPdf(dir, { title, bytes: r.bytes, text: r.text });
-      return done(`${title} · ${plural(r.pages, 'page')}`, [doc], doc);
+      return done(`${title}, ${plural(r.pages, 'page')}`, [doc], doc);
     }
     case 'epub': {
       const b = await fx.readBook(path);
@@ -185,7 +185,7 @@ export async function landFile(path: string, dir: string, fx: LandFx = realFx): 
       const title = (b.title || BOOK_NAME).trim();
       // a notebook: the book's document with its chapters as tabs
       const { book, paths } = await fx.importBook(dir, { title, chapters: b.chapters });
-      return done(`${title} · ${plural(b.chapters.length, 'chapter')}`, [book, ...paths], paths[0]!);
+      return done(`${title}, ${plural(b.chapters.length, 'chapter')}`, [book, ...paths], paths[0]!);
     }
     case 'apkg': {
       const m = await fx.readAnki(path);
@@ -193,7 +193,7 @@ export async function landFile(path: string, dir: string, fx: LandFx = realFx): 
       if (decide(kind, { decks: m.decks.length }) === 'ask') return { kind: 'ask', path };
       const paths = await fx.importAnki(dir, m.decks);
       const d = m.decks[0]!;
-      return done(`${d.title} · ${plural(d.cards, 'card')}`, paths, paths[0]!);
+      return done(`${d.title}, ${plural(d.cards, 'card')}`, paths, paths[0]!);
     }
     case 'text':
     case 'html': {
@@ -201,7 +201,7 @@ export async function landFile(path: string, dir: string, fx: LandFx = realFx): 
       if (decide(kind, { cards: kind === 'text' ? detect(r.text).cards : 0 }) === 'ask') return { kind: 'ask', path };
       const title = (r.title || deriveTitle(r.text) || NEW_NAMES.source).trim();
       const doc = await fx.importText(dir, { title, text: r.text });
-      return done(`${title} · ${plural(stats(r.text).words, 'word')}`, [doc], doc);
+      return done(`${title}, ${plural(stats(r.text).words, 'word')}`, [doc], doc);
     }
     default:
       throw new Error('not a file ilmi reads');
@@ -222,7 +222,7 @@ export async function clipLink(url: string, dir: string, fx: LandFx = realFx): P
   const path = r.page
     ? (await fx.importClip(dir, { title, text: r.text, url: r.page.url, author: r.page.author, published: r.page.published }, r.page.images)).path
     : await fx.importText(dir, { title, text: r.text });
-  return { line: `clipped · ${title} · ${plural(stats(r.text).words, 'word')} ${whereLabel(dir)}`, open: path, written: [path], folders: newFolders([path], dir, before) };
+  return { line: `clipped · ${title}, ${plural(stats(r.text).words, 'word')} ${whereLabel(dir)}`, open: path, written: [path], folders: newFolders([path], dir, before) };
 }
 
 // ── the notice ───────────────────────────────────────────────────

@@ -37,6 +37,7 @@ import 'prosemirror-gapcursor/style/gapcursor.css';
 import './reader.css';
 import './incontext.css';
 import { Crumbs } from './Crumbs.js';
+import { bodyRepeatsTitle, plainMath } from './chromeText.js';
 import { TabsToggle } from './TabsToggle.js';
 import { StudyButton } from './StudyButton.js';
 
@@ -1714,10 +1715,6 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
   // the outline's click (the rail's, the inspector's) comes here
   useEffect(() => registerHeadings(id, (i) => fromHeadingRef.current(i), () => activeRef.current), [id]);
 
-  const toggleFrozen = () => {
-    const next = !frozenRef.current;
-    void writerRef.current?.update((doc) => setField(doc, 'frozen', next));
-  };
 
   // a draft's row: where it is in spaced composition, and done / reopen
   const w = info?.type === 'draft' ? info.write : undefined;
@@ -1740,12 +1737,17 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
   const frozen = info?.frozen ?? false;
   const cards = info?.cards ?? 0;
   const due = info?.due ?? 0;
+  // one short token: what is due, the whole count in the tooltip (a draft adds its length there)
   const counts = cards ? `${plural(cards, 'card')}${due ? `, ${due} due` : ''}` : '';
-  const right = info?.type === 'draft' ? [plural(words(blocks), 'word'), counts].filter(Boolean).join(', ') : counts;
+  const right = due ? `${due} due` : cards ? plural(cards, 'card') : '';
+  const rightTip = info?.type === 'draft' ? [plural(words(blocks), 'word'), counts].filter(Boolean).join(', ') : counts;
+  const title = titleOf(id, docs, root);
+  // a body that opens with its own title as a heading (an imported chapter) is not titled twice
+  const titled = !bodyRepeatsTitle(title, blocks);
 
   return (
     <div className="reader-wrap" ref={rootRef}>
-      <div className={`reader doc-view${reading ? ' reading' : ''}`}>
+      <div className={`reader doc-view${reading ? ' reading' : ''}`} data-frozen={frozen ? '1' : '0'}>
         {find && (
           <div className="find-bar">
             <input
@@ -1790,11 +1792,6 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
           <TabsToggle path={id} />
           <StudyButton path={id} />
           {onPages && <button type="button" className="frozen-tag" onClick={onPages}>pages</button>}
-          {info && info.type !== 'draft' && (
-            <button type="button" className="frozen-tag" data-frozen={info.frozen ? '1' : '0'} onClick={toggleFrozen}>
-              {info.frozen ? 'frozen' : 'editable'}
-            </button>
-          )}
           {info && canExtract && !enrolled && (
             <button type="button" className="frozen-tag enrol" onClick={startReading}>{isNote ? 'revisit' : 'start reading'} <span className="kbd">r</span></button>
           )}
@@ -1802,12 +1799,12 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
             <select className="frozen-tag from-heading" value="" onChange={(e) => fromHeading(Number(e.target.value))} title="start the pass at a heading">
               <option value="" disabled>from…</option>
               <option value={-1}>the top</option>
-              {headings.map((h) => <option key={h.index} value={h.index}>{'\u2002'.repeat(Math.max(0, h.level - 1))}{h.text}</option>)}
+              {headings.map((h) => <option key={h.index} value={h.index}>{'\u2002'.repeat(Math.max(0, h.level - 1))}{plainMath(h.text)}</option>)}
             </select>
           )}
-          <span className="right">{right}</span>
+          {right && <span className="right" title={rightTip}>{right}</span>}
         </div>
-        <h1>{titleOf(id, docs, root)}</h1>
+        {titled && <h1>{title}</h1>}
         {w && (
           <div className="draft-sched" data-done={w.done ? '1' : '0'}>
             <span className="ds-state">{writeState}</span>

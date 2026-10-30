@@ -192,6 +192,8 @@ export interface AppState {
   open: Record<string, true>;
   sidebar: Sidebar;
   inspector: Inspector;
+  /** The inspector asked for (⌘⇧I, the toggle) while the window has no room for it: shown anyway (`layout.ts`). Not saved. */
+  inspForced: boolean;
   panes: Panes;
   paletteOpen: boolean;
   tweaksOpen: boolean;
@@ -270,6 +272,7 @@ export const useApp = create<AppState>((set, get) => ({
   open: { '': true },
   sidebar: { width: SIDE_DEFAULT, hidden: false },
   inspector: { width: INSP_DEFAULT, open: true },
+  inspForced: false,
   panes: emptyPanes(),
   paletteOpen: false,
   tweaksOpen: false,

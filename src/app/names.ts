@@ -184,7 +184,7 @@ export function metaOf(node: TreeNode, info: DocInfo | undefined, now: Date): st
   if (!info) return '';
   switch (info.type) {
     case 'deck':
-      return info.due ? `${info.cards} · ${info.due} due` : String(info.cards);
+      return info.due ? `${info.due} due` : String(info.cards);
     case 'draft': {
       const w = info.write;
       if (!w) return 'draft';
@@ -192,7 +192,7 @@ export function metaOf(node: TreeNode, info: DocInfo | undefined, now: Date): st
       return !w.due || whenToDate(w.due) <= now ? 'due' : 'draft';
     }
     default:
-      return info.cards ? `${plural(info.cards, 'card')}${info.due ? ` · ${info.due} due` : ''}` : '';
+      return info.due ? `${info.due} due` : info.cards ? plural(info.cards, 'card') : '';
   }
 }
 

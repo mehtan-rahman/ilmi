@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { BottomStrip } from './BottomStrip.js';
 import { Canvas } from './Canvas.js';
 import { listenForClips } from './clipper.js';
@@ -14,7 +14,8 @@ import { Tweaks } from './Tweaks.js';
 import { Welcome } from './Welcome.js';
 import { activeTab, closeTab, splitPane } from './panes.js';
 import { ACCENTS, INSP_MAX, INSP_MIN, SIDE_MAX, SIDE_MIN, useApp } from './store.js';
-import { openInitialVault, openNode, rememberTab, setInspector, setSidebar } from './vault.js';
+import { openInitialVault, openNode, rememberTab, setInspector, setSidebar, toggleInspector } from './vault.js';
+import { inspectorShown } from './layout.js';
 import './app.css';
 import './chrome.css';
 
@@ -58,6 +59,17 @@ export function App() {
   const tweaksOpen = useApp((s) => s.tweaksOpen);
   const started = useApp((s) => s.started);
   const setPanes = useApp((s) => s.setPanes);
+  const inspForced = useApp((s) => s.inspForced);
+  const docs = useApp((s) => s.docs);
+  const railFolded = useApp((s) => s.railFolded);
+  const railWidth = useApp((s) => s.railWidth);
+  // the window's width, for the room rule (`layout.ts`): the inspector yields before the page's measure does
+  const [win, setWin] = useState(() => window.innerWidth);
+  useEffect(() => {
+    const onResize = () => setWin(window.innerWidth);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
 
   // the tweaks, as CSS
   useEffect(() => {
@@ -123,7 +135,7 @@ export function App() {
         setSidebar({ hidden: !useApp.getState().sidebar.hidden });
       } else if (e.shiftKey && k === 'i') {
         e.preventDefault();
-        setInspector({ open: !useApp.getState().inspector.open });
+        toggleInspector();
       }
     };
     window.addEventListener('keydown', onKey);
@@ -141,7 +153,8 @@ export function App() {
   }
 
   const sideW = sidebar.hidden ? 0 : sidebar.width;
-  const inspW = inspector.open ? inspector.width : 0;
+  const inspOn = inspectorShown({ sidebar, inspector, inspForced, panes, docs, railFolded, railWidth }, win);
+  const inspW = inspOn ? inspector.width : 0;
   const active = activeTab(panes)?.id;
   return (
     <>
@@ -156,8 +169,8 @@ export function App() {
         )}
         <div className="side-resize" data-hidden={sidebar.hidden ? '1' : '0'} onMouseDown={startSideResize} />
         <Canvas />
-        {inspector.open && <Inspector />}
-        {inspector.open && <div className="insp-resize" onMouseDown={startInspResize} />}
+        {inspOn && <Inspector />}
+        {inspOn && <div className="insp-resize" onMouseDown={startInspResize} />}
         <BottomStrip />
         <Notice />
       </div>

@@ -18,7 +18,7 @@ import {
   findCard, selectAll, selectedRows, sortRows, type BulkAction, type CardRef, type DeckRow, type DeckSort, type DeckView, type Selection, type StateChip,
 } from './deck.js';
 import { bulkCards, newCardAt, saveCardEdit, studyDeck } from './deckOps.js';
-import { FORM_LABEL, dueLabel, fmtDays, pathLabel } from './items.js';
+import { FORM_LABEL, dueWhen, fmtDays, pathLabel } from './items.js';
 import { MENU_W, placeMenu } from './NodeMenu.js';
 import { GLYPH, kindOf, titleOf } from './names.js';
 import { blankAnswers, clozeHTML, faceDir, handleClickOn, nodeViews, richHTML } from './Reader.js';
@@ -37,14 +37,34 @@ const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 const refOf = (r: DeckRow): CardRef => (r.id === undefined ? { path: r.path, block: r.block, text: r.text } : { path: r.path, block: r.block, id: r.id, text: r.text });
 
-/** A row's two faces as HTML: a cloze's text with its blanks lit, and its answers as the back. */
-function facesHTML(text: string): { front: string; back: string; frontDir?: Dir | undefined; backDir?: Dir | undefined } {
+/** Rows drawn at first, and added per timer tick after. */
+const ROW_CHUNK = 200;
+
+type RowFaces = { front: string; back: string; frontDir?: Dir | undefined; backDir?: Dir | undefined };
+
+/** A row's two faces as HTML: a cloze's text with its blanks lit in place (its answers are not repeated as a back). */
+function drawFaces(text: string): RowFaces {
   const f = cardFields(text);
   if (!f) return { front: richHTML(text), back: '', frontDir: faceDir(text) };
   if (f.form === 'qa') return { front: richHTML(f.front), back: richHTML(f.back), frontDir: faceDir(f.front), backDir: faceDir(f.back) };
   if (f.form === 'bidir') return { front: richHTML(f.left), back: richHTML(f.right), frontDir: faceDir(f.left), backDir: faceDir(f.right) };
-  const answers = blankAnswers(text, () => true);
-  return { front: clozeHTML(text, () => 'revealed', () => 'cz'), back: answers.join(' · '), frontDir: faceDir(text), backDir: faceDir(text) };
+  return { front: clozeHTML(text, () => 'revealed', () => 'cz'), back: '', frontDir: faceDir(text) };
+}
+
+/**
+ * The faces by text, drawn once: a click or a key redraws every row, and
+ * KaTeX over 750 rows each time was most of the deck browser's cost
+ * (milestone 40: a click over the whole collection 99 ms before).
+ */
+const facesCache = new Map<string, RowFaces>();
+function facesHTML(text: string): RowFaces {
+  let f = facesCache.get(text);
+  if (!f) {
+    if (facesCache.size > 5000) facesCache.clear();
+    f = drawFaces(text);
+    facesCache.set(text, f);
+  }
+  return f;
 }
 
 // ── one face, live ───────────────────────────────────────────────
@@ -265,9 +285,26 @@ export function DeckBrowser({ home, active }: BrowserProps) {
   const rows = useMemo(() => deckRows(bodies, now), [bodies, now]);
   const shown = useMemo(() => sortRows(filterRows(rows, q, view), view.sort), [rows, q, view]);
   const keys = useMemo(() => shown.map((r) => r.key), [shown]);
+  // rows drawn in chunks on timers (never frames: a covered window holds them back), so a lens over
+  // the whole collection opens at once and fills in; the cursor's row is always among those drawn
+  const [limit, setLimit] = useState(ROW_CHUNK);
+  useEffect(() => { setLimit(ROW_CHUNK); }, [home, q, view]);
+  useEffect(() => {
+    if (limit >= shown.length) return;
+    const t = setTimeout(() => setLimit((l) => l + ROW_CHUNK), 0);
+    return () => clearTimeout(t);
+  }, [limit, shown.length]);
   const multi = paths.length > 1;
   const chosen = selectedRows(sel, shown);
   const cursorKey = cursor && paths.includes(cursor.path) ? `${cursor.path}#${cursor.index}` : null;
+  const drawnTo = Math.max(limit, cursorKey === null ? 0 : keys.indexOf(cursorKey) + 1);
+  // a revealed row not drawn yet when it was selected: scrolled to once it is
+  const pendingReveal = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    const k = pendingReveal.current;
+    const el = k === null ? undefined : rowEls.current.get(k);
+    if (el) { pendingReveal.current = null; el.scrollIntoView({ block: 'center' }); }
+  });
   const homeDoc = home.endsWith('.md') ? home : files.includes(`${home}.md`) ? `${home}.md` : null;
 
   const setView = (patch: Partial<DeckView>) => setDeckView(home, { ...view, ...patch });
@@ -306,7 +343,9 @@ export function DeckBrowser({ home, active }: BrowserProps) {
       const key = `${reveal.path}#${i}`;
       useApp.setState({ selectedCard: { path: reveal.path, index: i } });
       setSel({ keys: [key], anchor: key });
-      rowEls.current.get(key)?.scrollIntoView({ block: 'center' });
+      const el = rowEls.current.get(key);
+      if (el) el.scrollIntoView({ block: 'center' });
+      else pendingReveal.current = key;
     }
     useApp.setState({ reveal: null });
   }, [reveal, bodies, paths]);
@@ -527,10 +566,11 @@ export function DeckBrowser({ home, active }: BrowserProps) {
       {editingNew && newAfterKey === null && newEditor(editingNew)}
       {rows.length === 0 && !editingNew && <div className="empty">no cards</div>}
       {rows.length > 0 && shown.length === 0 && <div className="empty">nothing matches</div>}
-      {shown.map((r) => {
+      {shown.slice(0, drawnTo).map((r) => {
         if (editingKey === r.key) return <div key={r.key}>{editorFor(r)}</div>;
         const f = facesHTML(r.text);
         const ivl = r.sched?.ivl && r.sched.ivl >= 1 ? fmtDays(r.sched.ivl) : '';
+        const when = r.suspended ? 'suspended' : dueWhen(r.sched?.due, now);
         const isSel = sel.keys.includes(r.key);
         return (
           <div key={r.key}>
@@ -559,9 +599,8 @@ export function DeckBrowser({ home, active }: BrowserProps) {
                 {f.back && <span className="dr-back" dir={f.backDir} dangerouslySetInnerHTML={{ __html: f.back }} />}
                 {multi && <span className="dr-path">{pathLabel(r.path)}</span>}
               </span>
-              <span className="dr-when">
-                <span className="dr-due" data-due={r.isDue ? '1' : '0'}>{r.suspended ? 'suspended' : dueLabel(r.sched?.due, now)}</span>
-                {ivl && !r.suspended && <span className="dr-ivl">{ivl}</span>}
+              <span className="dr-when" title={ivl && !r.suspended ? `interval ${ivl}` : undefined}>
+                <span className="dr-due" data-due={r.isDue ? '1' : '0'}>{when}</span>
               </span>
               <button type="button" className="cs-del" title="delete card" aria-label="delete card" onClick={(e) => { e.stopPropagation(); removeOne(r); }}>×</button>
             </div>

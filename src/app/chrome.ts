@@ -73,18 +73,21 @@ export function hintsFor(c: HintContext): Hint[] {
 const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 
 /** The first blank's answer, a question, or `a ⇄ b`; the text when it is not a card. */
-export function cardLabel(text: string): string {
+export function cardLabel(text: string, max = 46): string {
   const f = cardFields(text);
   const flat = (s: string) => s.replace(/\s+/g, ' ').trim();
-  if (!f) return clip(flat(text), 46) || 'card';
+  if (!f) return clip(flat(text), max) || 'card';
   if (f.form === 'cloze') {
     const first = f.parts.find((p) => typeof p !== 'string');
-    if (first && typeof first !== 'string' && first.answer.trim()) return clip(flat(first.answer), 46);
-    return clip(flat(f.parts.map((p) => (typeof p === 'string' ? p : p.answer)).join('')), 46) || 'cloze';
+    if (first && typeof first !== 'string' && first.answer.trim()) return clip(flat(first.answer), max);
+    return clip(flat(f.parts.map((p) => (typeof p === 'string' ? p : p.answer)).join('')), max) || 'cloze';
   }
-  if (f.form === 'qa') return clip(flat(f.front), 50) || 'q&a';
-  return clip(`${flat(f.left)} ⇄ ${flat(f.right)}`, 46);
+  if (f.form === 'qa') return clip(flat(f.front), max + 4) || 'q&a';
+  return clip(`${flat(f.left)} ⇄ ${flat(f.right)}`, max);
 }
+
+/** The same name whole, for a row that cuts it by its width (its formulas drawn, never cut in half). */
+export const cardName = (text: string): string => cardLabel(text, Infinity);
 
 export const formOf = (text: string): CardForm | null => cardFields(text)?.form ?? null;
 export const formLabel = (text: string): string => { const f = formOf(text); return f ? FORM_LABEL[f] : 'card'; };

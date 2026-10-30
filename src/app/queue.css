@@ -21,7 +21,6 @@
   font-family: var(--mono);
   font-size: 11px;
   color: var(--fg-4);
-  text-transform: uppercase;
   letter-spacing: 0.1em;
   margin-left: 12px;
   vertical-align: 0.25em;
@@ -174,33 +173,38 @@
 .qlist li[data-el="read"] .body,
 .qlist li[data-el="write"] .body { color: var(--fg-3); }
 .qlist .body .src {
-  font-family: var(--mono);
-  font-size: 10px;
+  font-family: var(--sans);
+  font-size: 11px;
   color: var(--fg-4);
-  display: block;
+  display: flex;
+  align-items: baseline;
+  min-width: 0;
+  white-space: nowrap;
   margin-bottom: 2px;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
 }
-/* the path reads as written: the kind tag and `new` keep their caps */
-.qlist .body .src[data-by="path"] { text-transform: none; letter-spacing: 0; }
 .qlist li[data-fresh="1"] .body .src::after {
   content: "new";
+  flex-shrink: 0;
   margin-left: 8px;
+  font-family: var(--mono);
+  font-size: 10px;
   color: var(--accent);
-  letter-spacing: 0.08em;
 }
+/* the kind: a small lowercase word, as every other label */
 .qlist .body .kindtag {
+  flex-shrink: 0;
   font-family: var(--mono);
   font-size: 10px;
   color: var(--fg-4);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
   margin-right: 8px;
 }
-.qlist .body .kindtag[data-el="read"] { color: var(--el-read); }
-.qlist .body .kindtag[data-el="write"] { color: var(--el-write); }
-.qlist .body .kindtag[data-el="card"] { color: var(--el-card); }
+/* the path of titles on one line: the parent gives way first, then the heading, then the document */
+.qlist .qpath { display: flex; align-items: baseline; min-width: 0; overflow: hidden; }
+.qlist .qpath > bdi { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qlist .qpath .qp-parent { flex: 0 100 auto; min-width: 2.5em; }
+.qlist .qpath .qp-doc { flex: 0 1 auto; color: var(--fg-3); }
+.qlist .qpath .qp-sec { flex: 0 10 auto; min-width: 3em; }
+.qlist .qpath .qp-sep { flex-shrink: 0; white-space: pre; color: var(--fg-5); }
 .qlist .body .cloze {
   background: var(--fg-5);
   border-radius: var(--radius);

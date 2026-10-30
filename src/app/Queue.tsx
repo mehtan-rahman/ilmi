@@ -8,7 +8,10 @@
 import { Fragment, useEffect, useState, type MouseEvent } from 'react';
 import { PRI_DEFAULT, cardFields } from '../format/index.js';
 import { counts, inScope, overflow, type QueueItem } from '../schedule/index.js';
-import { EL_GLYPH, QUEUE_EMPTY, dayLabel, dueLabel, intervalLabel, isFresh, kindTag, refLine, snippetOf, sourceLabel, summary } from './items.js';
+import { EL_GLYPH, QUEUE_EMPTY, dayLabel, dueWhen, intervalLabel, isFresh, kindTag, refLine, snippetOf, summary } from './items.js';
+import { pathParts, plainMath } from './chromeText.js';
+import { MathText } from './MathText.js';
+import type { DocInfo } from './store.js';
 import { QUEUE_TITLE, SCOPES, queueId, type QueueScope } from './names.js';
 import type { OpenOpts } from './panes.js';
 import { clozeHTML, faceDir, richHTML } from './Reader.js';
@@ -36,7 +39,7 @@ const clickOpts = (e: MouseEvent): OpenOpts => ({ cmdClick: e.metaKey || e.ctrlK
 function Body({ item }: { item: QueueItem }) {
   if (item.kind !== 'card') {
     const s = snippetOf(item);
-    return s ? <span className="read-snip" dir={faceDir(s)}>{s}<span className="read-ell"> …</span></span> : null;
+    return s ? <span className="read-snip" dir={faceDir(s)}><MathText text={s} title={false} /><span className="read-ell"> …</span></span> : null;
   }
   // the reader's rules: emphasis, code, and math read as themselves in the row too
   const f = cardFields(item.text);
@@ -44,6 +47,24 @@ function Body({ item }: { item: QueueItem }) {
   if (f.form === 'cloze') return <span dir={faceDir(item.text)} dangerouslySetInnerHTML={{ __html: clozeHTML(item.text, () => 'hidden', () => 'cloze') }} />;
   if (f.form === 'qa') return <span dir={faceDir(f.front)} dangerouslySetInnerHTML={{ __html: richHTML(f.front) }} />;
   return <span dir={faceDir(f.left)} dangerouslySetInnerHTML={{ __html: `<bdi${dirAttr(f.left)}>${richHTML(f.left)}</bdi> <span class="cs-arrow">⇄</span> <bdi${dirAttr(f.right)}>${richHTML(f.right)}</bdi>` }} />;
+}
+
+/**
+ * Where a row's element lives, one line: its parent's short title (the
+ * course, the book, else the folder), the document, a card's heading, `›`
+ * between. The parent gives way first, then the heading, then the
+ * document; the whole path is the tooltip. By title (the tweak), no parent.
+ */
+export function QueuePath({ item, docs, by }: { item: QueueItem; docs: Record<string, DocInfo>; by: 'title' | 'path' }) {
+  const p = pathParts(item, docs);
+  const parts = [by === 'path' ? p.parent : undefined, p.doc, p.section].filter((x): x is string => !!x);
+  return (
+    <span className="qpath" title={plainMath(parts.join(' › '))}>
+      {by === 'path' && p.parent && <><bdi className="qp-parent">{p.parent}</bdi><span className="qp-sep">{' › '}</span></>}
+      <bdi className="qp-doc"><MathText text={p.doc} /></bdi>
+      {p.section && <><span className="qp-sep">{' › '}</span><bdi className="qp-sec"><MathText text={p.section} /></bdi></>}
+    </span>
+  );
 }
 
 export function Queue({ scope, active }: Props) {
@@ -139,16 +160,13 @@ export function Queue({ scope, active }: Props) {
                 <span className="body">
                   <span className="src" data-by={by}>
                     <span className="kindtag" data-el={item.kind}>{kindTag(item)}</span>
-                    <bdi>{sourceLabel(item, docs, by)}</bdi>
+                    <QueuePath item={item} docs={docs} by={by} />
                   </span>
                   <Body item={item} />
                   {ref && <span className="ref-line">{ref}</span>}
                 </span>
                 <span className="pri">{item.pri !== PRI_DEFAULT && <b>p {item.pri}</b>}</span>
-                <span className="due">
-                  {dueLabel(item.due, now)}
-                  {ivl && <div className="ivl">{ivl}</div>}
-                </span>
+                <span className="due" title={ivl ? `interval ${ivl}` : undefined}>{dueWhen(item.due, now)}</span>
               </li>
             );
             if (i !== foldAt) return row;

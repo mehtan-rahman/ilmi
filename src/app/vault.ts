@@ -17,6 +17,7 @@ import { cleanClipDir } from './clip.js';
 import { cleanViews, type DeckView } from './deck.js';
 import { cleanBudget, dueToday, sessionItems } from './items.js';
 import { INTAKE, SESSION, queueId, queueScope } from './names.js';
+import { inspectorShown } from './layout.js';
 import { activeTab, dropTabs, emptyPanes, openTab, retarget, type OpenOpts, type Panes } from './panes.js';
 import { addRecent, decideStart, forgetRecent, vaultName } from './recents.js';
 import { STARTER_TEXT, STARTER_TITLE } from './starter.js';
@@ -360,6 +361,8 @@ export function openInitialVault(): Promise<void> {
         if (mode) {
           const { smoke, smokeReader, smokeCards, smokeIntake, smokeQueue, smokeLoop, smokeShots, smokeDeck, smokePri, smokeGrowth, smokeOverload, smokePdf, smokeFaces, smokeCardsText, smokeAnki, smokeMath, smokeEpub, smokeClip, smokeClipping, smokePlugins, smokeDictionary, smokeRender, smokeLive, smokeBlocks, smokeUse, smokeLand, smokeNest, smokeTabs, smokeDecks, smokeTour, smokeNotes, smokeEditing, smokeTree, smokeInsert, smokeTabs2, smokeListCards, smokeArabic, smokeRest } = await import('./smoke.js');
           const run = { reader: smokeReader, cards: smokeCards, intake: smokeIntake, queue: smokeQueue, loop: smokeLoop, shots: smokeShots, deck: smokeDeck, pri: smokePri, growth: smokeGrowth, overload: smokeOverload, pdf: smokePdf, faces: smokeFaces, 'cards-text': smokeCardsText, anki: smokeAnki, math: smokeMath, epub: smokeEpub, clip: smokeClip, clipping: smokeClipping, plugins: smokePlugins, dictionary: smokeDictionary, render: smokeRender, live: smokeLive, blocks: smokeBlocks, use: smokeUse, land: smokeLand, nest: smokeNest, tabs: smokeTabs, decks: smokeDecks, tour: smokeTour, notes: smokeNotes, editing: smokeEditing, tree: smokeTree, insert: smokeInsert, tabs2: smokeTabs2, listcards: smokeListCards, arabic: smokeArabic, rest: smokeRest }[mode] ?? smoke;
+          // the smokes before 40 expect the inspector wherever they open it: the room rule is the tour's to check
+          if (mode !== 'tour') useApp.setState({ inspForced: true });
           await run(vault);
         }
         return;
@@ -455,6 +458,22 @@ export function setInspector(patch: Partial<Inspector>): void {
   const inspector = { ...useApp.getState().inspector, ...patch };
   useApp.setState({ inspector });
   queueSave({ inspector });
+}
+
+/**
+ * ⌘⇧I, the top strip's toggle, the palette: hide the inspector when it is
+ * drawn, else show it, past the room rule (`layout.ts`) when the window is
+ * narrow; closed, it is closed in the saved state too.
+ */
+export function toggleInspector(): void {
+  const s = useApp.getState();
+  if (inspectorShown(s, window.innerWidth)) {
+    useApp.setState({ inspForced: false });
+    setInspector({ open: false });
+  } else {
+    useApp.setState({ inspForced: true });
+    setInspector({ open: true });
+  }
 }
 
 /** The tab rail's width, dragged by its edge; one for every notebook, remembered in `.ilmi/state.json`. */

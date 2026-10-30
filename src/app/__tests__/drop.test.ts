@@ -97,7 +97,7 @@ describe('land or ask', () => {
   it('a pdf lands as the pair, its pages counted', async () => {
     const { fx, calls } = stubs();
     const r = await landFile('/Downloads/two-pages.pdf', 'papers', fx);
-    expect(r).toEqual({ kind: 'landed', landed: { line: 'placed · Two Pages · 2 pages in papers/', open: 'papers/Two Pages.md', written: ['papers/Two Pages.md'], folders: [] } });
+    expect(r).toEqual({ kind: 'landed', landed: { line: 'placed · Two Pages, 2 pages in papers/', open: 'papers/Two Pages.md', written: ['papers/Two Pages.md'], folders: [] } });
     expect(calls).toEqual(['pdf papers|Two Pages|4']);
   });
 
@@ -105,7 +105,7 @@ describe('land or ask', () => {
     const { fx, calls } = stubs({ chapters: 12 });
     const r = await landFile('/Downloads/muqaddimah.epub', 'books', fx);
     if (r.kind !== 'landed') throw new Error('asked');
-    expect(r.landed.line).toBe('placed · Muqaddimah · 12 chapters in books/');
+    expect(r.landed.line).toBe('placed · Muqaddimah, 12 chapters in books/');
     expect(r.landed.open).toBe('books/Muqaddimah/01 Chapter 1.md');
     expect(r.landed.written).toHaveLength(13);
     expect(r.landed.written[0]).toBe('books/Muqaddimah.md');
@@ -117,7 +117,7 @@ describe('land or ask', () => {
     const { fx, calls } = stubs();
     const md = await landFile('/notes/attention.md', '', fx);
     const txt = await landFile('/notes/plain.txt', 'papers', fx);
-    expect(md.kind === 'landed' && md.landed.line).toBe('placed · attention · 12 words in the root');
+    expect(md.kind === 'landed' && md.landed.line).toBe('placed · attention, 12 words in the root');
     expect(txt.kind === 'landed' && txt.landed.open).toBe('papers/plain.md');
     expect(calls).toEqual(['text |attention', 'text papers|plain']);
   });
@@ -132,7 +132,7 @@ describe('land or ask', () => {
   it('an apkg with one deck lands; with two it asks', async () => {
     const one = stubs({ decks: 1 });
     const r = await landFile('/x/one.apkg', 'papers', one.fx);
-    expect(r.kind === 'landed' && r.landed.line).toBe('placed · Deck 1 · 3 cards in papers/');
+    expect(r.kind === 'landed' && r.landed.line).toBe('placed · Deck 1, 3 cards in papers/');
     expect(one.calls).toEqual(['anki papers|Deck 1']);
     const two = stubs({ decks: 2 });
     expect(await landFile('/x/two.apkg', 'papers', two.fx)).toEqual({ kind: 'ask', path: '/x/two.apkg' });
@@ -185,12 +185,12 @@ describe('several files, the notice, and the intake', () => {
     expect(st.intakeFiles).toEqual(['/x/cards.txt']);
     expect(st.intakeDir).toBe('papers');
     expect(activeTab(st.panes)?.id).toBe(INTAKE);
-    expect(st.notice).toMatchObject({ line: 'placed · Muqaddimah · 3 chapters in papers/', open: 'papers/Muqaddimah/01 Chapter 1.md', undo: true });
-    expect(st.log.slice(0, 2)).toEqual(['placed · Muqaddimah · 3 chapters in papers/', 'placed · Two Pages · 2 pages in papers/']);
+    expect(st.notice).toMatchObject({ line: 'placed · Muqaddimah, 3 chapters in papers/', open: 'papers/Muqaddimah/01 Chapter 1.md', undo: true });
+    expect(st.log.slice(0, 2)).toEqual(['placed · Muqaddimah, 3 chapters in papers/', 'placed · Two Pages, 2 pages in papers/']);
     await undoNotice();
     expect(s.removed).toEqual(['papers/Muqaddimah', 'papers/Muqaddimah.md']);
     expect(useApp.getState().notice).toBeNull();
-    expect(useApp.getState().log[0]).toBe('undone · Muqaddimah · 3 chapters in papers/');
+    expect(useApp.getState().log[0]).toBe('undone · Muqaddimah, 3 chapters in papers/');
   });
 
   it('a file it cannot read is a notice, and the rest still land', async () => {
@@ -268,7 +268,7 @@ describe('paste a link', () => {
   it('clips an address into the given folder as the clipper would', async () => {
     const { fx, calls } = stubs();
     const l = await clipLink('https://example.org/a', 'papers', fx);
-    expect(l).toEqual({ line: 'clipped · A Page · 3 words in papers/', open: 'papers/A Page.md', written: ['papers/A Page.md'], folders: [] });
+    expect(l).toEqual({ line: 'clipped · A Page, 3 words in papers/', open: 'papers/A Page.md', written: ['papers/A Page.md'], folders: [] });
     expect(calls).toEqual(['clip papers|A Page|https://example.org/a']);
   });
 
@@ -294,7 +294,7 @@ describe('paste a link', () => {
     expect(useApp.getState().notice?.line).toBe('fetching · https://example.org/a');
     expect((await p)?.open).toBe('papers/A Page.md');
     expect(calls).toEqual(['clip papers|A Page|https://example.org/a']);
-    expect(useApp.getState().notice).toMatchObject({ line: 'clipped · A Page · 3 words in papers/', open: 'papers/A Page.md', undo: true });
+    expect(useApp.getState().notice).toMatchObject({ line: 'clipped · A Page, 3 words in papers/', open: 'papers/A Page.md', undo: true });
     expect(activeTab(useApp.getState().panes)?.id).toBe('papers/A Page.md');
   });
 

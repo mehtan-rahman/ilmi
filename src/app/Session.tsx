@@ -12,7 +12,9 @@ import { GRADES, advanceRead, advanceWrite, gradeItem, postponed, type CardItem,
 import { EL_WORD, FORM_LABEL, dueLabel, gapLabels, ownBlank, sourceLabel, trailParts } from './items.js';
 import type { OpenOpts } from './panes.js';
 import { Pdf } from './Pdf.js';
-import { Reader, blankAnswers, clozeHTML, faceDir, richHTML } from './Reader.js';
+import { MathText } from './MathText.js';
+import { plainMath } from './chromeText.js';
+import { Reader, clozeHTML, faceDir, richHTML } from './Reader.js';
 import { useApp, type El } from './store.js';
 import { useDoc } from './useDoc.js';
 import { studyHeader } from './study.js';
@@ -148,9 +150,10 @@ function CardElement({ item, active, onGrade }: CardProps) {
 
   if (loaded && !card) return <div className="empty center">no longer in the collection</div>;
 
-  // Two faces, SuperMemo's element window: the question above, the answer
-  // below. The answer face is blurred until revealed; a cloze's answer face
-  // holds the deleted text alone, its blank in the question filling in too.
+  // The card sized to what it holds: the question, then on reveal the
+  // answer under a hairline (before it, one quiet line). A cloze is
+  // answered in place: its blank fills in the sentence, nothing repeated
+  // below it.
   let front: ReactNode;
   let back: ReactNode = null;
   if (!f) front = <div dir={faceDir(text)} dangerouslySetInnerHTML={{ __html: richHTML(text) }} />;
@@ -162,18 +165,11 @@ function CardElement({ item, active, onGrade }: CardProps) {
       (_, i) => (mine[i] ? (revealed ? 'revealed' : 'hidden') : 'plain'),
       (s) => (s === 'hidden' ? 'cloze' : s === 'revealed' ? 'cloze revealed' : 'cloze ctx'),
     );
-    // the deleted text alone, a formula's as math, a case ending on its letter
-    const answers = blankAnswers(text, (k) => !!mine[k]);
     // a click on one of this card's blanks, in text or in a formula, reveals
     const onFront = (e: MouseEvent<HTMLElement>) => {
       if ((e.target as HTMLElement).closest('.cloze:not(.ctx), .math.blanks:not([data-blanks="0"])')) setRevealed(true);
     };
     front = <div className="cloze-text" dir={faceDir(text)} onClick={onFront} dangerouslySetInnerHTML={{ __html: html }} />;
-    back = (
-      <div className="cloze-answer" dir={faceDir(text)}>
-        {answers.map((a, i) => <span key={i} className="cz-a" dangerouslySetInnerHTML={{ __html: a }} />)}
-      </div>
-    );
   } else if (f.form === 'qa') {
     front = <div className="qa-q" dir={faceDir(f.front)} dangerouslySetInnerHTML={{ __html: richHTML(f.front) }} />;
     back = <div className="qa-a" dir={faceDir(f.back)} dangerouslySetInnerHTML={{ __html: richHTML(f.back) }} />;
@@ -188,11 +184,9 @@ function CardElement({ item, active, onGrade }: CardProps) {
     <>
       <div className="card" ref={cardRef} data-revealed={revealed ? '1' : '0'} data-faces={back ? '2' : '1'} data-plugins={plugins?.version ?? 0}>
         <div className="face front">{front}</div>
-        {back && (
-          <div className="face back" onClick={() => setRevealed(true)}>
-            <div className="face-body">{back}</div>
-            {!revealed && <div className="face-hint">press <kbd className="kbd">space</kbd> to reveal</div>}
-          </div>
+        {back && revealed && <div className="face back"><div className="face-body">{back}</div></div>}
+        {!revealed && (
+          <button type="button" className="face-hint" onClick={() => setRevealed(true)}><kbd className="kbd">space</kbd> reveal</button>
         )}
       </div>
       <div className="card-meta">
@@ -289,7 +283,7 @@ export function Session({ active, onOpen }: Props) {
 
   // the tab follows the element
   useEffect(() => {
-    useApp.setState({ sessionEl: el ? { kind: el.kind, label: sourceLabel(el, docs), item: el } : null });
+    useApp.setState({ sessionEl: el ? { kind: el.kind, label: plainMath(sourceLabel(el, docs)), item: el } : null });
   }, [el, docs]);
   useEffect(() => () => useApp.setState({ sessionEl: null }), []);
 
@@ -378,8 +372,8 @@ export function Session({ active, onOpen }: Props) {
           ? <span className="sess-count sess-deck">{studyHeader(deck.title, total - idx)}</span>
           : <span className="sess-count">{idx + 1} / {total}</span>}
         <span className="el-tag" data-el="card">{FORM_LABEL[el.form]}</span>
-        <button type="button" className="meta-srclink card-trail" onClick={openSource} title="go to source  o">
-          {trail.map((t, i) => <bdi key={i} className={i ? 'ct-h' : 'ct-doc'}>{t}</bdi>)}
+        <button type="button" className="meta-srclink card-trail" onClick={openSource} title={`${plainMath(trail.join(' › '))}  o`}>
+          {trail.map((t, i) => <bdi key={i} className={i ? 'ct-h' : 'ct-doc'}><MathText text={t} title={false} /></bdi>)}
           <span className="ms-arrow">↗</span>
         </button>
       </div>

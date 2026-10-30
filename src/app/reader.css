@@ -44,7 +44,6 @@
   display: block;
   font-family: var(--mono);
   font-size: 9.5px;
-  text-transform: uppercase;
   letter-spacing: 0.07em;
   color: var(--fg-4);
   margin-bottom: 2px;
@@ -89,7 +88,6 @@
 }
 .draft-doc .card-span .cs-state {
   margin-inline-start: auto;
-  text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--fg-4);
 }
@@ -98,6 +96,12 @@
 /* math chips: atomic, the source kept on the node */
 .math { cursor: default; position: relative; }
 .math.display { display: block; margin: 0.6em 0; text-align: center; }
+/* a paragraph that ends in a display formula: ProseMirror's trailing break
+   (kept so a caret can sit after an inline atom) would draw an empty line
+   under the block, a gap twice the paragraph rhythm (milestone 40) */
+.draft-doc .math.display ~ br.ProseMirror-trailingBreak { display: none; }
+.draft-doc .math.display:last-child,
+.draft-doc .math.display:has(~ br.ProseMirror-trailingBreak) { margin-bottom: 0; }
 .math .katex { font-size: 1.02em; }
 /* The reader hangs punctuation (`hanging-punctuation` on .reader); inside a
    formula WebKit would hang a closing `)` or `⟩` too, so the chip's box came
@@ -487,7 +491,7 @@
 }
 .reader .meta .frozen-tag:hover { color: var(--fg-2); }
 /* a revisited note: where the pass starts, a heading or the top */
-.reader .meta .from-heading { max-width: 220px; text-overflow: ellipsis; }
+.reader .meta .from-heading { max-width: 64px; text-overflow: ellipsis; }
 .reader .meta .from-heading option { color: var(--fg-1); background: var(--bg); }
 
 /* ── a draft's row: its place in spaced composition, done / reopen ── */
@@ -517,7 +521,6 @@
   font-family: var(--mono);
   font-size: 10px;
   letter-spacing: 0.05em;
-  text-transform: uppercase;
   color: var(--fg-3);
 }
 .draft-sched .ds-toggle:hover { border-color: var(--accent); color: var(--accent); }
@@ -668,7 +671,6 @@
   font-family: var(--mono);
   font-size: 10.5px;
   color: var(--fg-4);
-  text-transform: uppercase;
   letter-spacing: 0.06em;
 }
 .composer .type-toggle { display: flex; margin-left: auto; }
@@ -681,7 +683,6 @@
   font-size: 10.5px;
   padding: 0 8px;
   cursor: default;
-  text-transform: uppercase;
   letter-spacing: 0.06em;
 }
 .composer .type-toggle button[data-active="1"] { color: var(--fg-1); text-decoration: underline; text-underline-offset: 3px; }
@@ -722,7 +723,6 @@
   font-family: var(--mono);
   font-size: 9.5px;
   color: var(--fg-5);
-  text-transform: uppercase;
   letter-spacing: 0.08em;
 }
 .composer .preview .hint { color: var(--fg-5); }

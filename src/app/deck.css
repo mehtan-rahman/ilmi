@@ -124,11 +124,13 @@
 
 /* a row: form tag, front, back dimmed, its path; due and interval on the right */
 .deck-view .card-span.deck-row {
-  grid-template-columns: 52px minmax(0, 1fr) auto auto;
+  grid-template-columns: 72px minmax(0, 1fr) auto auto;
   user-select: none;
 }
 .deck-row .dr-form { padding-left: 8px; font-family: var(--mono); font-size: 10px; color: var(--fg-4); letter-spacing: 0.04em; padding-top: 3px; }
-.deck-row .dr-faces { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+/* front over back, both from the row's start: each face keeps its own direction inside its own box */
+.deck-row .dr-faces { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; }
+.deck-row .dr-faces > span { max-width: 100%; text-align: start; }
 .deck-row .dr-front { color: var(--fg-1); }
 .deck-row .dr-back { color: var(--fg-4); }
 .deck-row .dr-path { font-family: var(--mono); font-size: 10px; color: var(--fg-5); }

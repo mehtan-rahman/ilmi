@@ -17,7 +17,7 @@ interface Props {
   onClose(): void;
 }
 
-const FORMS: [CardForm, string][] = [['cloze', 'cloze'], ['qa', 'q&a'], ['bidir', 'bidir']];
+const FORMS: [CardForm, string][] = [['cloze', 'cloze'], ['qa', 'q&a'], ['bidir', 'both ways']];
 
 /** Whether `[from, to]` sits inside a math span of `text`, its delimiters excluded. */
 export function insideMath(text: string, from: number, to: number): boolean {

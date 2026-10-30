@@ -227,7 +227,7 @@ describe('inside a document', () => {
   it('a document\'s children open as a folder lens: its rows, the document\'s own menu in the empty space, a new item landing inside', async () => {
     mount(createElement(Lens, { id: 'papers/wozniak-1990', active: true, onOpen: () => {} }), 'pane-body');
     expect(host.querySelector('.folder-view h1')?.textContent).toBe('Wozniak 1990');
-    expect(host.querySelector('.folder-view .crumb')?.textContent).toBe('inside source');
+    expect(host.querySelector('.folder-view .crumb')?.textContent).toBe('under Wozniak 1990');
     expect(Array.from(host.querySelectorAll<HTMLElement>('.fv-row')).map((r) => r.dataset.path)).toEqual(['papers/wozniak-1990/woz-ex1.md', 'papers/wozniak-1990/figures']);
     fire(host.querySelector('.folder-view')!, 'contextmenu', { clientX: 300, clientY: 500 });
     expect(entries()).toEqual(['new note', 'new source', 'new deck', 'new draft', 'new folder', 'import a file…', 'add from text or a link', 'show as tabs', 'rename', 'duplicate', 'move to…', 'delete source']);

@@ -8,14 +8,15 @@ import { rowDrag, rowMark, useDrag, type Surface } from './drag.js';
 import { nestOf } from './treeModel.js';
 import { DeckBrowser } from './DeckBrowser.js';
 import { Intake } from './Intake.js';
-import { GLYPH, INTAKE, SESSION, contentsOf, findNode, kindOf, queueScope, titleOf, type NodeKind } from './names.js';
+import { GLYPH, INTAKE, SESSION, findNode, kindOf, queueScope, titleOf, type NodeKind } from './names.js';
+import { countWords, countsUnder } from './chromeText.js';
 import type { OpenOpts } from './panes.js';
 import { Pdf } from './Pdf.js';
 import { Queue } from './Queue.js';
 import { Notebook } from './Rail.js';
 import { Reader } from './Reader.js';
 import { Session } from './Session.js';
-import { useApp } from './store.js';
+import { useApp, type DocInfo } from './store.js';
 import { NodeMenu, menuAt, type MenuAt } from './NodeMenu.js';
 import { createNode, openIntake, renameNode } from './vault.js';
 import { notebookOf } from './tabs.js';
@@ -119,7 +120,7 @@ function FolderLens({ id, active, onOpen }: LensProps) {
     >
       <div className={`reader folder-view${cards ? ' deck-view' : ''}`}>
         <div className="meta">
-          <span className="crumb">{owner === id ? 'folder' : `inside ${kindOf(owner, docs)}`}</span>
+          <span className="crumb">{folderLabel(owner, id, children, docs, root)}</span>
           <span className="right">{children.length ? plural(children.length, 'item') : ''}</span>
         </div>
         <h1>{title(id)}</h1>
@@ -170,7 +171,7 @@ function FolderLens({ id, active, onOpen }: LensProps) {
                   ) : (
                     <span className="fv-name" dir="auto">{title(n.path)}</span>
                   )}
-                  <span className="fv-meta">{contentsOf(n, docs[n.path])}</span>
+                  <RowCounts node={n} />
                 </li>
               );
             })}
@@ -189,6 +190,25 @@ function FolderLens({ id, active, onOpen }: LensProps) {
   );
 }
 
+/**
+ * The folder lens's top line in plain words: `folder`, or for a document's
+ * children `extracts of <title>` when they are all extracts, else
+ * `under <title>`.
+ */
+export function folderLabel(owner: string, id: string, children: readonly TreeNode[], docs: Record<string, DocInfo>, root: string | null): string {
+  if (owner === id) return 'folder';
+  const all = children.length > 0 && children.every((c) => c.kind === 'doc' && docs[c.path]?.type === 'extract');
+  return `${all ? 'extracts of' : 'under'} ${titleOf(owner, docs, root)}`;
+}
+
+/** A row's counts: the cards under it, all the way down, and how many are due; nothing when there are none. */
+function RowCounts({ node }: { node: TreeNode }) {
+  const docs = useApp((s) => s.docs);
+  const w = countWords(countsUnder(node, docs));
+  if (!w.cards) return <span className="fv-meta" />;
+  return <span className="fv-meta">{w.cards}{w.due && <span className="fv-due">{w.due}</span>}</span>;
+}
+
 // ── deck ─────────────────────────────────────────────────────────
 
 /** A deck, or any document opened as its cards: the browser over it and everything under it. */
@@ -202,7 +222,7 @@ function DeckLens({ id, active }: { id: string; active: boolean }) {
       <div className="reader deck-view">
         <div className="meta">
           <span className="crumb">{info.type}</span>
-          <span className="right">{plural(info.cards, 'card')}{info.due ? ` · ${info.due} due` : ''}</span>
+          <span className="right" title={`${plural(info.cards, 'card')}${info.due ? `, ${info.due} due` : ''}`}>{info.due ? `${info.due} due` : plural(info.cards, 'card')}</span>
         </div>
         <h1>{titleOf(id, docs, root)}</h1>
         <DeckBrowser home={id} active={active} />

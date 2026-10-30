@@ -62,7 +62,8 @@ describe('the session\'s line above a card', () => {
     mount(createElement(Session, { active: true, onOpen: (p: string) => { calls.push(`open ${p}`); } }));
     const trail = host.querySelector('.recall-meta .card-trail')!;
     expect(Array.from(trail.querySelectorAll('.ct-doc, .ct-h')).map((s) => s.textContent)).toEqual(['stat mech', 'canonical ensemble']);
-    expect(trail.getAttribute('title')).toBe('go to source  o');
+    // the whole path is the tooltip (40), with the key
+    expect(trail.getAttribute('title')).toBe('stat mech › canonical ensemble  o');
   });
 
   it('o goes to the source with the card named, so the reader lands on it; a click does the same', () => {

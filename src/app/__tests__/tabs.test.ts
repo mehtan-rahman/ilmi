@@ -92,7 +92,7 @@ describe('the notebook a page is in', () => {
 
   it('labels the pane tab `notebook › page`, the notebook alone by its title', () => {
     expect(tabLabel(NB, DOCS, '/v')).toBe('linear algebra');
-    expect(tabLabel(UNIT, DOCS, '/v')).toBe('linear algebra › unit-2');
+    expect(tabLabel(UNIT, DOCS, '/v')).toBe('linear algebra › unit 2');
     expect(tabLabel(PSET, DOCS, '/v')).toBe('linear algebra › problem set 1');
     expect(tabLabel('german.md', DOCS, '/v')).toBe('german');
   });
@@ -121,10 +121,10 @@ describe('the rail', () => {
   });
 
   it('indexes a tab in the palette under its notebook', () => {
-    expect(notebookTrail(TREE, EIGEN, DOCS, null)).toBe('linear algebra › unit-2');
+    expect(notebookTrail(TREE, EIGEN, DOCS, null)).toBe('linear algebra › unit 2');
     expect(notebookTrail(TREE, NB, DOCS, null)).toBeNull();
     const index = buildIndex(TREE, DOCS, [], []);
-    expect(index.find((e) => e.key === `p:${EIGEN}`)).toMatchObject({ sub: 'linear algebra › unit-2', target: { open: EIGEN } });
+    expect(index.find((e) => e.key === `p:${EIGEN}`)).toMatchObject({ sub: 'linear algebra › unit 2', target: { open: EIGEN } });
     expect(index.find((e) => e.key === `p:${PSET}`)).toMatchObject({ sub: 'linear algebra' });
     expect(index.find((e) => e.key === 'p:german.md')).toMatchObject({ sub: 'deck' });
   });
@@ -177,7 +177,7 @@ describe('the rail in the canvas', () => {
 
   it('draws the notebook and its tabs in their order beside the page, one pane tab labelled by it', () => {
     expect(rail()).not.toBeNull();
-    expect(railNames()).toEqual(['*linear algebra', 'vectors', 'problem set 1', 'unit-2']);
+    expect(railNames()).toEqual(['*linear algebra', 'vectors', 'problem set 1', 'unit 2']);
     expect(rowOf(UNIT).querySelector('.chev')!.textContent).toBe('▸');
     expect(tabTitles()).toEqual(['linear algebra']);
   });
@@ -187,7 +187,7 @@ describe('the rail in the canvas', () => {
     mouse(rowOf(PSET), 'click');
     expect(page()).toBe(PSET);
     expect(rail()).toBe(before);
-    expect(railNames()).toEqual(['linear algebra', 'vectors', '*problem set 1', 'unit-2']);
+    expect(railNames()).toEqual(['linear algebra', 'vectors', '*problem set 1', 'unit 2']);
     expect(tabTitles()).toEqual(['linear algebra › problem set 1']);
     expect(useApp.getState().panes.panes[0]!.tabs).toHaveLength(1);
     // the deck tab's own lens is in the page
@@ -196,12 +196,12 @@ describe('the rail in the canvas', () => {
 
   it('opens and folds a subtab by its chevron, and opens the tabs above a page shown from elsewhere', () => {
     mouse(rowOf(UNIT).querySelector('.chev')!, 'click');
-    expect(railNames()).toEqual(['*linear algebra', 'vectors', 'problem set 1', 'unit-2', 'eigenvalues']);
+    expect(railNames()).toEqual(['*linear algebra', 'vectors', 'problem set 1', 'unit 2', 'eigenvalues']);
     expect(rowOf(EIGEN).style.paddingLeft).toBe('20px');
     mouse(rowOf(UNIT).querySelector('.chev')!, 'click');
-    expect(railNames()).toEqual(['*linear algebra', 'vectors', 'problem set 1', 'unit-2']);
+    expect(railNames()).toEqual(['*linear algebra', 'vectors', 'problem set 1', 'unit 2']);
     act(() => { openNode(EIGEN); });
-    expect(railNames()).toEqual(['linear algebra', 'vectors', 'problem set 1', 'unit-2', '*eigenvalues']);
+    expect(railNames()).toEqual(['linear algebra', 'vectors', 'problem set 1', 'unit 2', '*eigenvalues']);
   });
 
   it('a page opened from the queue lands on its tab in the notebook already open', () => {
@@ -215,7 +215,7 @@ describe('the rail in the canvas', () => {
     act(() => { useApp.setState({ panes: openTab(emptyPanes(), 'german.md') }); });
     act(() => { openNode(VECTORS); });
     expect(tabTitles()).toEqual(['linear algebra › vectors']);
-    expect(railNames()).toEqual(['linear algebra', '*vectors', 'problem set 1', 'unit-2']);
+    expect(railNames()).toEqual(['linear algebra', '*vectors', 'problem set 1', 'unit 2']);
   });
 
   it('⌘⌥↓ and ⌘⌥↑ step to the next and previous tab, subtabs counted', () => {
@@ -266,7 +266,7 @@ describe('the rail in the canvas', () => {
     expect(entries()).toContain('show as tree');
   });
 
-  it('a drag on a row\'s thirds reorders, on its middle nests; the overview takes only into', () => {
+  it('a drag on a row\'s quarters reorders, on its middle nests; the overview takes only into', () => {
     const drag = (from: string, to: string, y: number) => {
       const target = rowOf(to);
       target.getBoundingClientRect = () => ({ top: 0, height: 30, bottom: 30, left: 0, right: 100, width: 100, x: 0, y: 0, toJSON() {} });

@@ -58,10 +58,17 @@ way, and an address pasted (⌘V) with no field or editor focused is clipped
 into the active tab's folder and opened.
 
 Anything nests under anything. Drag a row onto the middle of another row and
-it goes inside it: a folder, or a document, whose children directory
-(`name/` beside `name.md`) is made on demand; drop on a row's top or bottom
-third and it goes before or after it, and that order is kept in
-`.ilmi/order.json` (`sort by name` on the menu forgets it). The menu's `new …`
+it goes inside it: a folder at once, a document (whose children directory,
+`name/` beside `name.md`, is made on demand) once the pointer rests there;
+drop on a row's top or bottom quarter and it goes before or after it, and
+that order is kept in `.ilmi/order.json` (`sort by name` on the menu forgets
+it). A line indented to where the row will land, or a box around the row it
+goes into, shows the drop before it happens; below the last row of a group,
+moving the pointer left lands it further out. The same drag works in the tab
+rail and the folder lens, and between them and the tree. With the tree
+focused: ↑↓ → ← ⏎, F2 renames, ⌘⌫ deletes, ⌥⌘↑↓ moves a row among its
+siblings, ⌥⌘← → outdents and nests it, a letter jumps to a name. ⌥-click a
+row to hoist it. The menu's `new …`
 on a document makes the new item inside it, `move to…` lists documents as
 well as folders, and a document's children open as a folder lens from its
 inspector's `children` line or ⌥-click on its chevron. Deleting a document

@@ -6,6 +6,80 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-10-30 — milestone 38: the tree, refined
+
+Done on branch `worktree-agent-a13978a57b82cc981` (beside 34 on main, to be
+merged by hand); commit `HASH` — *tree: one drag for the tree, the rail
+and the folder lens; the tree from the keyboard; the open note revealed;
+a due number, quiet marks, hover menus, a hoist*. Files: `src/app/dnd.ts`,
+`src/app/drag.ts`, `src/app/treeModel.ts`, `src/app/Crumbs.tsx` (new),
+`Tree.tsx` (rewritten over the flat rows), `Rail.tsx` (only switched to
+the shared drag), `Lenses.tsx` (`FolderLens` on the shared drag, its empty
+row takes drops), `NodeMenu.tsx` (`dropMode` gone), `names.ts` (`GLYPH`,
+`slugName`, `rowCounts`), `chrome.ts` (the palette's marks and names),
+`Pdf.tsx` (breadcrumbs), `app.css`, `smoke.ts` (`smokeTree`), `vault.ts`
+(the `tree` dispatch), README, and the tests (`dnd.test.ts`,
+`tree-model.test.ts`, `tree-refined.test.ts` new).
+
+### Done
+
+- One drag model in one module for the tree, the tab rail, and the folder
+  lens, crossing between them: quarters before / after, the middle half
+  nests (a bare document only after a 400 ms rest, so a reorder never
+  nests by accident), an open parent's bottom is its first child, below a
+  last child the pointer's x picks how far out; a line indented to the
+  landing depth with a ring at its start, a hairline box for into,
+  nothing for a refused drop; no flicker over a row's text; a folded row
+  opens after 500 ms; the scroller scrolls at its edges; Esc cancels.
+- The keyboard: ↑↓ Home End → ← ⏎ F2 ⌘⌫ (asking in the row when
+  something is under it), ⌥⌘↑↓ ⌥⌘← →, type-ahead.
+- F2 fixed (the coordinator's report from 33's window run: "F2 in the
+  tree: rename not open"): the key read a stale selection; see 38's notes.
+- The selected row drawn; the open document revealed; indent guides; one
+  due number with the counts in the tooltip; the name's gradient mask gone
+  for an ellipsis; slugs as names; the six marks `/ ¶ “ § = ~` all in the
+  bundled Plex Mono (why in 38's notes); folder names by weight; hover
+  `+` and `···`; an empty folder's `empty` row; ⌥-click hoist with a crumb;
+  breadcrumbs as links in the PDF lens (the reader's after the merge).
+
+### Verified
+
+- `npx vitest run`: 767 tests, 39 files (718 before). `npm run
+  typecheck` clean. `cargo test` 12. (In this worktree vitest needs
+  `server.fs.allow` for the symlinked `node_modules`, a scratch config;
+  on main it runs as is.)
+
+### Not verified — the window run is owed
+
+- The screen was locked and this is a worktree; nothing ran in the
+  window. `ILMI_SMOKE=tree` (new) drives the "done when" over a copy of
+  the sample; read its `where the mark said: yes/NO` lines, `cut by their
+  count: none`, the reveal line, the F2 lines, and the captures (listed
+  in 38's notes).
+- A real pointer drag (WebKit's drag image, relatedTarget on dragleave,
+  Esc in a native drag), hover, and the cursor's "no".
+- After merging: the reader's crumb to `<Crumbs path={id} />` (one line in
+  Reader.tsx, left alone here for the editor track).
+
+### Handoff prompt
+
+```
+Read PLAN.md (ground rules, Refinement, 38's notes), FORMAT.md §1, and the
+top BUILD-LOG.md entry. Merge branch worktree-agent-a13978a57b82cc981 into
+main if it is not yet (swap the reader's crumb for <Crumbs path={id} />).
+Run ILMI_SMOKE=tree with ILMI_VAULT on a copy of samples/double-major
+(port 1420 free, never kill a run that is not yours; capture with
+screencapture -l <window id> 2 s after each `shot:` line), read the
+captures, fix what they show, and record it under 38's entry. Then do
+milestone 39 (tabs, refined), building its rail drags and keys on
+src/app/drag.ts, dnd.ts and treeModel.ts, and only that one; stop at its
+"done when". Suite, typecheck, and `cargo test` green before each commit;
+tick it, write notes, add an entry here with a fresh handoff prompt, and
+commit.
+```
+
+---
+
 ## 2026-10-30 — milestone 33: notes, what you write is a note, what you read is a source
 
 Done on main; commit `8dceb49` — *notes: what you write is a note, what

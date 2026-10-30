@@ -124,7 +124,7 @@ describe('one menu, in the tree and the folder lens', () => {
     fire(host.querySelector('.fv-row[data-path="papers/wozniak-1990.md"]')!, 'contextmenu', { clientX: 300, clientY: 120 });
     click('rename');
     const input = host.querySelector<HTMLInputElement>('.fv-row[data-path="papers/wozniak-1990.md"] input.fv-rename')!;
-    expect(input.value).toBe('wozniak-1990');
+    expect(input.value).toBe('wozniak 1990');
     act(() => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'Wozniak 1990');
       input.dispatchEvent(new Event('input', { bubbles: true }));

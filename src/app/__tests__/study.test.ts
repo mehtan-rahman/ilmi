@@ -137,7 +137,7 @@ describe('studyDeck', () => {
     const course = 'courses/linear-algebra/unit-2';
     expect(studyDeck(course)).toBe(0);
     expect(useApp.getState().session).toBeNull();
-    expect(useApp.getState().notice?.line).toBe('nothing due · unit-2');
+    expect(useApp.getState().notice?.line).toBe('nothing due · unit 2');
     expect(opened).toEqual([]);
   });
 });

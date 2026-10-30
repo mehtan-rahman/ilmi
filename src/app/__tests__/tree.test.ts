@@ -51,7 +51,7 @@ const mouse = (el: Element | Window, type: string, init: MouseEventInit = {}) =>
   act(() => { el.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, ...init })); });
 };
 const key = (k: string) => { act(() => { window.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true })); }); };
-const row = (path: string) => Array.from(side.querySelectorAll<HTMLElement>('.trow')).find((r) => r.querySelector('.name')?.textContent === path.split('/').pop()?.replace(/\.md$/, ''))!;
+const row = (path: string) => side.querySelector<HTMLElement>(`.trow[data-path="${path}"]:not(.placeholder)`)!;
 
 beforeEach(() => {
   calls.length = 0;
@@ -66,7 +66,8 @@ afterEach(() => {
 
 describe('the sidebar menu', () => {
   it('opens the root\'s menu from the sidebar\'s empty space and its heading, new items landing at the root', () => {
-    expect(side.querySelectorAll('.trow')).toHaveLength(5);
+    // the root, papers and its source, sources, notes
+    expect(side.querySelectorAll('.trow:not(.placeholder)')).toHaveLength(5);
     expect(menu()).toBeNull();
     const ev = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 40, clientY: 300 });
     act(() => { side.dispatchEvent(ev); });
@@ -96,7 +97,7 @@ describe('the sidebar menu', () => {
     mouse(hasSub(), 'click');
     expect(sub()).not.toBeNull();
     expect(menu()).not.toBeNull();
-    expect(Array.from(sub()!.querySelectorAll('.ci')).map((e) => e.textContent)).toEqual(['/papers', '“wozniak-1990', '/sources']);
+    expect(Array.from(sub()!.querySelectorAll('.ci')).map((e) => e.textContent)).toEqual(['/papers', '“wozniak 1990', '/sources']);
     // the pointer leaving the list does not close it
     mouse(side.querySelector('.ctx-menu .sub-wrap')!, 'mouseleave', { bubbles: false });
     mouse(side.querySelector('.ctx-menu .sub-wrap')!, 'mouseout');
@@ -155,26 +156,35 @@ describe('nesting in the tree', () => {
   };
   const dt = () => ({ effectAllowed: '', dropEffect: '', setData: () => {}, getData: () => '', types: [] as string[] });
   const dragEv = (type: string, y = 0) => {
-    const ev = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: 20, clientY: y });
+    const ev = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: 100, clientY: y });
     Object.defineProperty(ev, 'dataTransfer', { value: dt() });
     return ev;
   };
-  const dropOn = (from: HTMLElement, to: HTMLElement, y: number) => laidOut(() => {
+  /** A drag from one row onto another at `y`; `rest` holds the pointer there first (the rest before `into` on a bare document). */
+  const dropOn = (from: HTMLElement, to: HTMLElement, y: number, rest = false) => laidOut(() => {
     act(() => { from.dispatchEvent(dragEv('dragstart')); });
+    const t0 = Date.now();
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(t0);
     const over = dragEv('dragover', y);
     act(() => { to.dispatchEvent(over); });
+    if (rest) {
+      clock.mockReturnValue(t0 + 450);
+      act(() => { to.dispatchEvent(dragEv('dragover', y)); });
+    }
+    clock.mockRestore();
     const cls = to.className;
     act(() => { to.dispatchEvent(dragEv('drop', y)); });
     act(() => { from.dispatchEvent(dragEv('dragend')); });
     return { prevented: over.defaultPrevented, cls };
   });
 
-  it('a drop on the middle of a document row goes into it, its thirds before and after', () => {
+  it('a drop resting on the middle of a document row goes into it, its quarters before and after', () => {
     const notes = row('notes.md');
     const woz = row('papers/wozniak-1990.md');
-    expect(dropOn(notes, woz, 12)).toEqual({ prevented: true, cls: expect.stringContaining('drop-into') });
-    expect(dropOn(notes, woz, 3).cls).toContain('drop-before');
-    expect(dropOn(notes, woz, 21).cls).toContain('drop-after');
+    expect(dropOn(notes, woz, 12, true)).toEqual({ prevented: true, cls: expect.stringContaining('drop-into') });
+    expect(dropOn(notes, woz, 3).cls).toContain('drop-top');
+    // wozniak is the last under papers: its bottom quarter, the pointer at its own indent, lands after it
+    expect(dropOn(notes, woz, 21).cls).toContain('drop-bottom');
     // a folder row the same, and the root row only takes into
     dropOn(woz, row('sources'), 12);
     dropOn(woz, side.querySelector<HTMLElement>('.trow[data-path=""]')!, 2);
@@ -236,7 +246,7 @@ describe('nesting in the tree', () => {
     mouse(row('notes.md'), 'contextmenu', { clientX: 60, clientY: 120 });
     mouse(side.querySelector('.ctx-menu .ci.has-sub')!, 'click');
     const items = Array.from(side.querySelectorAll<HTMLElement>('.ctx-menu .sub-scroll .ci'));
-    expect(items.map((e) => [e.textContent, e.style.paddingLeft])).toEqual([['/papers', '22px'], ['“wozniak-1990', '34px'], ['/sources', '22px']]);
+    expect(items.map((e) => [e.textContent, e.style.paddingLeft])).toEqual([['/papers', '22px'], ['“wozniak 1990', '34px'], ['/sources', '22px']]);
     mouse(items[1]!, 'click');
     expect(calls).toEqual(['move notes.md → papers/wozniak-1990']);
   });

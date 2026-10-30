@@ -11,19 +11,23 @@
 //  · + tab           a new note, `untitled`, last, renamed in place; `+`
 //                    beside it: note, source, deck, draft, import a file…
 //  · right-click     the node's menu (`NodeMenu.tsx`), with `add subtab`
-//  · drag            the middle of a row nests inside it, its thirds place
-//                    before and after (30's `place`); the overview takes into
+//  · drag            the one drag model (`drag.ts`, `dnd.ts`), shared with the
+//                    sidebar's tree and the folder lens, so a row crosses between
+//                    them: 25 / 50 / 25, a line indented to where it lands; the
+//                    overview takes only into
 
-import { useEffect, useLayoutEffect, useRef, useState, type DragEvent, type MouseEvent, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import type { NodeType } from '../format/index.js';
-import { childDirOf, within } from '../vault/index.js';
+import { childDirOf } from '../vault/index.js';
+import { geometry, type FlatRow } from './dnd.js';
+import { rowDrag, rowMark, useDrag, type Surface } from './drag.js';
 import { importFiles } from './land.js';
 import { GLYPH, findNode, kindOf, titleOf, type NodeKind } from './names.js';
-import { NodeMenu, dropMode, menuAt, placeMenu, type DropMode, type MenuAt } from './NodeMenu.js';
+import { NodeMenu, menuAt, placeMenu, type MenuAt } from './NodeMenu.js';
 import type { OpenOpts } from './panes.js';
 import { useApp } from './store.js';
 import { notebookPages, railRows, stepPage, tabAncestors } from './tabs.js';
-import { createTab, placeNode, renameNode, setRailFolded } from './vault.js';
+import { createTab, renameNode, setRailFolded } from './vault.js';
 
 interface Props {
   /** The notebook's path. */
@@ -49,8 +53,7 @@ export function Notebook({ nb, page, active, onOpen, children }: Props) {
   const [menu, setMenu] = useState<MenuAt | null>(null);
   const [plus, setPlus] = useState<{ x: number; y: number } | null>(null);
   const [editing, setEditing] = useState<{ id: string; value: string } | null>(null);
-  const [drag, setDrag] = useState<string | null>(null);
-  const [over, setOver] = useState<{ id: string; mode: DropMode } | null>(null);
+  const drag = useDrag();
   const editRef = useRef<HTMLInputElement>(null);
   const plusRef = useRef<HTMLDivElement>(null);
   const fail = (e: unknown) => console.error(e);
@@ -114,27 +117,23 @@ export function Notebook({ nb, page, active, onOpen, children }: Props) {
     add(childDirOf(id), 'note', 'untitled');
   };
 
-  const onDragOverRow = (e: DragEvent, id: string, overview: boolean) => {
-    if (drag === null || drag === id || within(id, childDirOf(drag))) return;
-    e.preventDefault();
-    const r = e.currentTarget.getBoundingClientRect();
-    const mode = dropMode(e.clientY - r.top, r.height, overview);
-    if (!over || over.id !== id || over.mode !== mode) setOver({ id, mode });
-  };
-  const endDrag = () => { setDrag(null); setOver(null); };
-  const onDrop = (e: DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (drag !== null && over) {
-      if (over.mode === 'into' && over.id !== nb) setOpen((o) => ({ ...o, [over.id]: true }));
-      placeNode(drag, over.id, over.mode).catch(fail);
-    }
-    endDrag();
-  };
+  // the shared drag (`drag.ts`): a rested folded tab opens, a drop into a tab opens it
+  const surf: Surface = useMemo(() => ({
+    pad: 6,
+    indent: 14,
+    scroller: '.rail-rows',
+    spring: (p: string) => setOpen((o) => ({ ...o, [p]: true })),
+    landed: (d) => { if (d.mode === 'into' && d.target !== nb) setOpen((o) => ({ ...o, [d.target]: true })); },
+  }), [nb]);
+  const rows = useMemo(() => railRows(tree, nb, order, open), [tree, nb, order, open]);
+  const kindAt = (path: string): NodeKind => (findNode(tree, path)?.kind === 'folder' ? 'folder' : kindOf(path, docs));
+  const geoms = useMemo(() => geometry(rows.map((r): FlatRow => ({
+    path: r.path,
+    depth: r.depth,
+    nest: r.overview ? 'only' : r.has || findNode(tree, r.path)?.kind === 'folder' ? 'now' : 'dwell',
+  })), 0), [rows, tree]);
 
   if (!findNode(tree, nb)) return <>{children}</>;
-  const rows = railRows(tree, nb, order, open);
-  const kindAt = (path: string): NodeKind => (findNode(tree, path)?.kind === 'folder' ? 'folder' : kindOf(path, docs));
 
   return (
     <div className="notebook" data-folded={folded ? '1' : '0'}>
@@ -150,23 +149,19 @@ export function Notebook({ nb, page, active, onOpen, children }: Props) {
             <button type="button" className="rail-fold" title="fold the tabs ⌘⇧[" onClick={() => setRailFolded(nb, true)}>«</button>
           </div>
           <div className="rail-rows">
-            {rows.map((r) => {
+            {rows.map((r, i) => {
               const kind = kindAt(r.path);
               const editingThis = editing?.id === r.path;
+              const m = rowMark(drag, r.path, r.path, surf);
               return (
                 <div
                   key={r.path}
-                  className={`rail-row${r.overview ? ' overview' : ''}${over?.id === r.path ? ` drop-${over.mode}` : ''}`}
-                  style={{ paddingLeft: 6 + r.depth * 14 }}
+                  className={`rail-row${r.overview ? ' overview' : ''}${m.className ? ` ${m.className}` : ''}`}
+                  style={{ paddingLeft: 6 + r.depth * 14, ...m.style }}
                   data-path={r.path}
                   data-kind={kind}
                   data-active={r.path === page ? '1' : '0'}
-                  draggable={!r.overview && !editingThis}
-                  onDragStart={(e) => { setDrag(r.path); e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', r.path); } catch { /* not every host allows it */ } }}
-                  onDragOver={(e) => onDragOverRow(e, r.path, r.overview)}
-                  onDragLeave={() => { if (over?.id === r.path) setOver(null); }}
-                  onDrop={onDrop}
-                  onDragEnd={endDrag}
+                  {...rowDrag(geoms[i]!, surf, { draggable: !r.overview && !editingThis, folded: r.has && !open[r.path] })}
                   onClick={(e: MouseEvent) => { if (!editingThis) onOpen(r.path, { cmdClick: e.metaKey || e.ctrlKey, shiftClick: e.shiftKey }); }}
                   onDoubleClick={(e) => { e.stopPropagation(); if (!r.overview) beginRename(r.path); }}
                   onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setMenu(menuAt(e, r.path)); }}

@@ -176,9 +176,72 @@
   border-radius: var(--radius);
   cursor: default;
   line-height: 1.55;
+  position: relative;
 }
 .tree .row:hover { background: var(--line-3); }
 .tree .row[data-active="1"] { background: var(--line-2); color: var(--fg-1); }
+/* the selected row: where `+` makes things and where the keys start */
+.tree .row[data-selected="1"] { box-shadow: inset 0 0 0 1px var(--line-2); }
+.edit-tree:focus-within .row[data-selected="1"] { box-shadow: inset 0 0 0 1px var(--fg-4); }
+/* a folder's name set apart by weight, not by its mark alone */
+.tree .row[data-kind="folder"] > .name { color: var(--fg-1); font-weight: 500; }
+/* hairline indent guides under an open parent */
+.tree .row .guide {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--line-3);
+  pointer-events: none;
+}
+.tree .row.placeholder { color: var(--fg-5); font-size: 11.5px; }
+.tree .row.placeholder:hover { background: none; }
+/* one number at the end, only when something is due; the full counts are the row's tooltip */
+.tree .row .due {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+  margin-left: 4px;
+}
+.tree .row .asking {
+  font-family: var(--sans);
+  font-size: 11px;
+  color: oklch(0.52 0.16 28);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+[data-theme="eink"] .tree .row .asking { color: var(--fg-1); font-weight: 600; }
+/* on hover: `+` (new, inside the row) and `···` (the row's menu) at the end */
+.tree .row .row-acts { display: none; gap: 2px; flex-shrink: 0; margin-left: 2px; }
+.tree .row:hover .row-acts,
+.tree .row[data-selected="1"] .row-acts { display: flex; }
+.tree .row:hover .due { display: none; }
+.tree .row .ra {
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 16px;
+  min-width: 16px;
+  text-align: center;
+  color: var(--fg-4);
+  border-radius: var(--radius);
+}
+.tree .row .ra:hover { color: var(--accent); background: var(--line-2); }
+.tree .row .ra.more { letter-spacing: -0.12em; padding-right: 0.12em; }
+/* hoisted: the way back out */
+.tree .hoist-crumb {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 4px;
+  padding: 0 8px 4px 6px;
+  font-size: 11px;
+  color: var(--fg-4);
+}
+.tree .hoist-crumb .hc { cursor: default; }
+.tree .hoist-crumb .hc:not(.here):hover { color: var(--accent); }
+.tree .hoist-crumb .hc + .hc::before { content: "/"; margin-right: 4px; color: var(--fg-5); }
+.tree .hoist-crumb .hc.here { color: var(--fg-2); }
 .tree .row[draggable="true"]:active { cursor: grabbing; }
 .tree .row .chev {
   width: 10px;
@@ -191,8 +254,10 @@
 .tree .row .glyph {
   font-family: var(--mono);
   color: var(--fg-4);
-  font-size: 11px;
+  font-size: 13px;
+  line-height: 1;
   width: 12px;
+  text-align: center;
   flex-shrink: 0;
 }
 .edit-tree:focus { outline: none; }
@@ -208,8 +273,7 @@
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
-  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 16px), transparent);
-  mask-image: linear-gradient(90deg, #000 calc(100% - 16px), transparent);
+  text-overflow: ellipsis;
 }
 .tree .row .meta {
   font-family: var(--mono);
@@ -224,22 +288,45 @@
 }
 .tree .row .meta[data-due="1"] { color: var(--accent); }
 
-/* drop marks: a full-width rule between rows, a soft fill on a folder */
-.tree .row.drop-before,
-.tree .row.drop-after { position: relative; }
-.tree .row.drop-before::after,
-.tree .row.drop-after::after {
+/* drop marks, the same on the tree, the tab rail, and the folder lens (drag.ts):
+   a line indented to where the node lands (`--drop-x`) with a small ring at its
+   start, a hairline box around the row it goes into; a refused drop shows nothing */
+.trow.drop-top::after, .trow.drop-bottom::after,
+.rail-row.drop-top::after, .rail-row.drop-bottom::after,
+.fv-row.drop-top::after, .fv-row.drop-bottom::after {
   content: "";
   position: absolute;
-  left: 0;
+  left: calc(var(--drop-x, 0px) + 6px);
   right: 0;
   height: 2px;
   background: var(--accent);
   pointer-events: none;
+  z-index: 2;
 }
-.tree .row.drop-before::after { top: -1px; }
-.tree .row.drop-after::after { bottom: -1px; }
-.tree .row.drop-into { background: var(--accent-soft); }
+.trow.drop-top::before, .trow.drop-bottom::before,
+.rail-row.drop-top::before, .rail-row.drop-bottom::before,
+.fv-row.drop-top::before, .fv-row.drop-bottom::before {
+  content: "";
+  position: absolute;
+  left: var(--drop-x, 0px);
+  width: 6px;
+  height: 6px;
+  box-sizing: border-box;
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  background: var(--bg);
+  pointer-events: none;
+  z-index: 2;
+}
+.trow.drop-top::after, .rail-row.drop-top::after, .fv-row.drop-top::after { top: -1px; }
+.trow.drop-bottom::after, .rail-row.drop-bottom::after, .fv-row.drop-bottom::after { bottom: -1px; }
+.trow.drop-top::before, .rail-row.drop-top::before, .fv-row.drop-top::before { top: -3px; }
+.trow.drop-bottom::before, .rail-row.drop-bottom::before, .fv-row.drop-bottom::before { bottom: -3px; top: auto; }
+.trow.drop-into, .rail-row.drop-into, .fv-row.drop-into, .fv-empty.drop-into {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+.trow.dragging, .rail-row.dragging, .fv-row.dragging { opacity: 0.4; }
 
 .tree .rename {
   flex: 1;
@@ -427,6 +514,10 @@
   gap: 14px;
 }
 .reader .meta .crumb { color: var(--fg-3); }
+/* the crumb's levels are links: quiet until pointed at */
+.reader .meta .crumbs .cr { color: inherit; text-decoration: none; cursor: default; }
+.reader .meta .crumbs .cr:hover { color: var(--accent); }
+.reader .meta .crumbs .cr + .cr::before { content: "/"; margin: 0 0.55em; color: var(--fg-5); }
 .reader .meta .right { margin-left: auto; }
 .reader h1 {
   font-family: var(--serif);
@@ -826,22 +917,8 @@
 }
 .tree .row .side-add:hover { color: var(--accent); background: var(--line-2); }
 
-/* the folder lens: a row lit under an OS file drag, a row renamed in place */
-.folder-view .fv-row.drop-into { background: var(--accent-soft); }
-.folder-view .fv-row.drop-before,
-.folder-view .fv-row.drop-after { position: relative; }
-.folder-view .fv-row.drop-before::after,
-.folder-view .fv-row.drop-after::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: var(--accent);
-  pointer-events: none;
-}
-.folder-view .fv-row.drop-before::after { top: -1px; }
-.folder-view .fv-row.drop-after::after { bottom: -1px; }
+/* the folder lens: a row renamed in place (its drop marks are the tree's) */
+.folder-view .fv-row { position: relative; }
 /* a delete that asks: the item says how much is under it, a second click confirms */
 .ctx-menu .ci.danger.asking { color: oklch(0.52 0.16 28); font-weight: 600; }
 .folder-view .fv-row .fv-rename {
@@ -926,6 +1003,11 @@
   width: 2px;
   background: var(--accent);
 }
+/* a drop mark on the active row: its ring takes the stripe's place while it shows */
+.tab-rail .rail-row[data-active="1"].drop-top::before,
+.tab-rail .rail-row[data-active="1"].drop-bottom::before { left: var(--drop-x, 0px); width: 6px; height: 6px; background: var(--bg); }
+.tab-rail .rail-row[data-active="1"].drop-top::before { top: -3px; bottom: auto; }
+.tab-rail .rail-row[data-active="1"].drop-bottom::before { top: auto; bottom: -3px; }
 .tab-rail .rail-row.overview { font-weight: 500; margin-bottom: 4px; }
 .tab-rail .rail-row.overview + .rail-row { margin-top: 2px; }
 .tab-rail .rail-row .chev { width: 10px; flex-shrink: 0; font-family: var(--mono); font-size: 9px; color: var(--fg-4); }
@@ -934,18 +1016,6 @@
 .tab-rail .rail-row .glyph[data-t="extract"] { color: var(--el-read); }
 .tab-rail .rail-row .glyph[data-t="folder"] { color: var(--fg-4); }
 .tab-rail .rail-row .name { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.tab-rail .rail-row.drop-into { background: var(--accent-soft); }
-.tab-rail .rail-row.drop-before::after,
-.tab-rail .rail-row.drop-after::after {
-  content: "";
-  position: absolute;
-  left: 0; right: 0;
-  height: 2px;
-  background: var(--accent);
-  pointer-events: none;
-}
-.tab-rail .rail-row.drop-before::after { top: -1px; }
-.tab-rail .rail-row.drop-after::after { bottom: -1px; }
 .tab-rail .rename {
   flex: 1;
   min-width: 0;

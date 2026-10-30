@@ -39,13 +39,6 @@ export interface MenuAt {
   plus?: boolean;
 }
 
-/** Where a drag over a row lands: the middle third inside it, the top and bottom thirds before and after it; the root row only takes `into`. */
-export type DropMode = 'before' | 'after' | 'into';
-export function dropMode(y: number, height: number, root = false): DropMode {
-  if (root) return 'into';
-  return y < height / 3 ? 'before' : y > (height * 2) / 3 ? 'after' : 'into';
-}
-
 /** A menu for `id` at the pointer, kept off the right edge. */
 export const menuAt = (e: { clientX: number; clientY: number }, id: string, plus = false): MenuAt =>
   ({ id, x: Math.min(e.clientX, window.innerWidth - MENU_W), y: e.clientY, sub: false, ...(plus ? { plus } : {}) });

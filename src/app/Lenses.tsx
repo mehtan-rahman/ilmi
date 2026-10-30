@@ -1,8 +1,11 @@
 // Lenses: what a tab renders for a folder or a document, or the intake.
 // Folders and decks are lists; notes, sources, extracts, and drafts open in the reader.
 
-import { useEffect, useRef, useState, type DragEvent } from 'react';
-import { childDirOf, childrenAt, ordered, within, type TreeNode } from '../vault/index.js';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { childrenAt, ordered, type TreeNode } from '../vault/index.js';
+import { geometry, type FlatRow } from './dnd.js';
+import { rowDrag, rowMark, useDrag, type Surface } from './drag.js';
+import { nestOf } from './treeModel.js';
 import { DeckBrowser } from './DeckBrowser.js';
 import { Intake } from './Intake.js';
 import { GLYPH, INTAKE, SESSION, contentsOf, findNode, kindOf, queueScope, titleOf, type NodeKind } from './names.js';
@@ -13,8 +16,8 @@ import { Notebook } from './Rail.js';
 import { Reader } from './Reader.js';
 import { Session } from './Session.js';
 import { useApp } from './store.js';
-import { NodeMenu, dropMode, menuAt, type DropMode, type MenuAt } from './NodeMenu.js';
-import { createNode, openIntake, placeNode, renameNode } from './vault.js';
+import { NodeMenu, menuAt, type MenuAt } from './NodeMenu.js';
+import { createNode, openIntake, renameNode } from './vault.js';
 import { notebookOf } from './tabs.js';
 
 interface LensProps {
@@ -59,10 +62,14 @@ const NEW: [NodeKind, string][] = [
   ['folder', '+ folder'],
 ];
 
+/** The folder lens's rows for the shared drag (`drag.ts`): one level, no indent. */
+const LENS: Surface = { pad: 0, indent: 1, scroller: '.pane-body' };
+
 /**
  * A folder, or a document's children (`id` its children directory): its
- * rows in the directory's order, each with the node's menu and the tree's
- * drags (the middle of a row inside it, its thirds before and after).
+ * rows in the directory's order, each with the node's menu and the drag the
+ * tree and the tab rail share (`drag.ts`), so a row dragged from the
+ * sidebar lands here and back; empty, one quiet row takes the drop.
  */
 function FolderLens({ id, active, onOpen }: LensProps) {
   const tree = useApp((s) => s.tree);
@@ -71,8 +78,7 @@ function FolderLens({ id, active, onOpen }: LensProps) {
   const order = useApp((s) => s.order);
   const fileOver = useApp((s) => s.fileOver);
   const [menu, setMenu] = useState<MenuAt | null>(null);
-  const [drag, setDrag] = useState<string | null>(null);
-  const [over, setOver] = useState<{ id: string; mode: DropMode } | null>(null);
+  const drag = useDrag();
   const [editing, setEditing] = useState<{ id: string; value: string } | null>(null);
   // the folder's items, or every card under it in the deck browser
   const [cards, setCards] = useState(false);
@@ -84,18 +90,14 @@ function FolderLens({ id, active, onOpen }: LensProps) {
     }
   }, [editing?.id]);
   const found = childrenAt(tree, id);
-  if (!found) return <Gone />;
   // a document's children: the document's own menu is this lens's, as its row's is in the tree
   const owner = id !== '' && findNode(tree, `${id}.md`)?.kind === 'doc' ? `${id}.md` : id;
-  const children: TreeNode[] = ordered(found, order[id]);
-  const onDragOverRow = (e: DragEvent, at: string) => {
-    if (drag === null || drag === at || within(at, childDirOf(drag))) return;
-    e.preventDefault();
-    const r = e.currentTarget.getBoundingClientRect();
-    const mode = dropMode(e.clientY - r.top, r.height);
-    if (!over || over.id !== at || over.mode !== mode) setOver({ id: at, mode });
-  };
-  const endDrag = () => { setDrag(null); setOver(null); };
+  const children: TreeNode[] = useMemo(() => ordered(found ?? [], order[id]), [found, order, id]);
+  // one level: each row before, into (a bare document after a rest), or after; empty, the placeholder into the folder
+  const geoms = useMemo(() => geometry(children.length
+    ? children.map((n): FlatRow => ({ path: n.path, depth: 0, nest: nestOf(n) }))
+    : [{ path: owner, key: `${owner}\u0000empty`, depth: 0, nest: 'only', placeholder: true }], 0), [children, owner]);
+  if (!found) return <Gone />;
   const title = (path: string) => titleOf(path, docs, root);
   const beginRename = (path: string) => { if (path !== '') setEditing({ id: path, value: title(path) }); };
   const commitRename = () => {
@@ -133,21 +135,18 @@ function FolderLens({ id, active, onOpen }: LensProps) {
         </div>
         {children.length > 0 ? (
           <ul className="fv-contents">
-            {children.map((n) => {
+            {children.map((n, i) => {
               const kind: NodeKind = n.kind === 'folder' ? 'folder' : kindOf(n.path, docs);
               const editingThis = editing?.id === n.path;
+              const m = rowMark(drag, n.path, n.path, LENS);
               return (
                 <li
                   key={n.path}
-                  className={`fv-row${over?.id === n.path ? ` drop-${over.mode}` : fileOver === n.path ? ' drop-into' : ''}`}
+                  className={`fv-row${m.className ? ` ${m.className}` : fileOver === n.path ? ' drop-into' : ''}`}
+                  style={m.style}
                   data-path={n.path}
                   data-kind={kind}
-                  draggable={!editingThis}
-                  onDragStart={(e) => { setDrag(n.path); e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', n.path); } catch { /* not every host allows it */ } }}
-                  onDragOver={(e) => onDragOverRow(e, n.path)}
-                  onDragLeave={() => { if (over?.id === n.path) setOver(null); }}
-                  onDrop={(e) => { e.preventDefault(); e.stopPropagation(); if (drag !== null && over) placeNode(drag, over.id, over.mode).catch(console.error); endDrag(); }}
-                  onDragEnd={endDrag}
+                  {...rowDrag(geoms[i]!, LENS, { draggable: !editingThis })}
                   onClick={(e) => { if (!editingThis) onOpen(n.path, { cmdClick: e.metaKey || e.ctrlKey, shiftClick: e.shiftKey }); }}
                   onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setMenu(menuAt(e, n.path)); }}
                 >
@@ -176,7 +175,11 @@ function FolderLens({ id, active, onOpen }: LensProps) {
             })}
           </ul>
         ) : (
-          <div className="empty">empty</div>
+          <div
+            className={`empty fv-empty ${rowMark(drag, `${owner}\u0000empty`, owner, LENS).className}`}
+            data-path={owner}
+            {...rowDrag(geoms[0]!, LENS, { draggable: false })}
+          >empty</div>
         )}
         </>}
       </div>

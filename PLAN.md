@@ -3584,7 +3584,89 @@ the vocab deck read right in the window in light and dark, a formula
 inside an Arabic sentence stays in order, and a voweled word never shows
 a clipped mark.
 
-### [ ] 37. Cards where notes put them, and review in their place
+### [x] 37. Cards where notes put them, and review in their place
+Done 2026-10-30, commit `fe4c5c2`. The window check is pending: run
+`ILMI_SMOKE=listcards` with `ILMI_VAULT` on a fresh copy of
+`samples/double-major` and read its captures (listcards-items, -typed,
+-queue, -session, -revealed, -source, -toprow, -study, -rail-menu, -dark);
+nothing was run in the window this session.
+Notes: the format change is FORMAT §5.2, with its corpus file
+`mangled/list-cards.md` and `src/format/__tests__/list-cards.test.ts`.
+The rules, decided here:
+- **Which item.** A first line of spaces, a marker (`-` `*` `+`, or 1–9
+  digits and `.` or `)`), one to four spaces, then text. The prefix is
+  `Card.item`, kept as written; `text` is the rest. Five spaces or more
+  after the marker (code in the item), a tab after the marker or in the
+  indentation, and a task item (`[ ] ` / `[x] `) are never cards.
+- **Its lines.** Continuation lines are those set in to the content
+  column (the prefix's width) in spaces; that many spaces come off each.
+  The text ends at an annotation, at another item (a nested one too:
+  children are items of their own), or at a line that ends a paragraph. A
+  lazy line (not set in, not ending a paragraph) makes the item no card,
+  since it could not be written back as it was.
+- **Annotations** are read at any indentation and written at the content
+  column (§8). One under an item that is no card is an orphan, kept as the
+  list's text with a diagnostic: so a card whose `::` is deleted by hand
+  degrades to a list item and its schedule line, never eats prose.
+- **Fences** in an item run to their closing fence; nothing inside is a
+  card.
+- **The list around it** stays raw in pieces; every block after a list's
+  first carries `joined` (`Raw.joined`, `Card.joined`), and the serializer
+  writes it with one newline. A join the edits around it broke (the list's
+  start deleted, a paragraph now before it) is written with a blank line
+  (`joins()` in serialize.ts walks the run as the parser would), so a card
+  item is never glued to prose and a `2.` never becomes a paragraph's lazy
+  line. A card moved to another document (`moveCard`, the deck's bulk
+  move) loses `item` and `joined`; a card made after a card item in the
+  deck browser (`insertCard`) is the next item, a number one up.
+- **Steps (§5).** In a paragraph with a `?` or `??` line, item lines after
+  it are the back, verbatim; the same inside a card item, for items set in
+  to its column. Unambiguous because a paragraph ending in a dangling `?`
+  was no card before, and before the separator an item still ends the
+  paragraph as in CommonMark. The session draws the steps as lines (its
+  faces are `pre-wrap`); the reader's card atom runs them on one line.
+- `pos` counts a split list's raw pieces as prose blocks of their own (they
+  are blocks); a source whose list gained a card item above its marker
+  shifts by one, as an inserted paragraph does. Said in §5.2.
+- The clipper's list items go through `escapeProse` as its paragraphs do
+  (`page.ts`); the EPUB/readable walker escapes neither, as before.
+The editor: `raw`, `list`, `quote`, `code_block` gain a `joined` attr
+(schema.ts) that `toDoc` / `fromDoc` carry; card items are the card atom
+as in a paragraph, its `CardView` drawing `span.li-mark` (• or the number)
+and `div.cs-item` set in by `--indent` (`.card-span.in-item`, in the new
+`src/app/incontext.css`, kept apart from reader.css for 36's merge). ⏎'s
+renumbering goes on past card items and the joined pieces after them
+(lists.ts `renumber`). A copy is `formatBody` (the joins kept). Typing
+`- term :: def` is list text to the editor; the file read back makes it a
+card item, as typing `::` in a paragraph does. Review in context:
+`CardItem.trail` (the headings over the card, by level, outermost first;
+`section` is its last); `trailParts` / `trailLabel` (items.ts): the
+document's name, then the headings, a top heading that only repeats the
+name left out, `§n — ` taken off. The session's top line is that trail
+(`button.meta-srclink.card-trail`, `›` between, `↗`); a click or `o`
+sets `reveal` and opens the document; the reader selects the card,
+scrolls it to the middle, and marks it `landed` for 2.4 s (a fill on
+`--accent-soft`; `ownClasses` keeps it through a redraw). `o go to
+source` is in the session's hints. Study: `StudyButton.tsx` (after
+`TabsToggle` in the top row) on any non-deck document with cards in it or
+under it, `studyDeck(path)`; the rail's `···` gains `study` (after `add
+subtab`) on a tab with cards. Sample: the Poisson-bracket cards in
+`hamiltonian-mechanics.md` (one a cloze) and lecture 11's
+`sm-ZN-identical` in `canonical-ensemble.md` (with a nested plain child)
+are bullets now; the three list "cards" in `lagrangian-mechanics.md` are
+cards (758 cards, was 755) and its bracket note says so; the samples test
+lists every card item. Tests: 866 (+23 over 843: `list-cards.test.ts`
+in format 11 and in app 7, `in-context.test.ts` 3, the samples' card
+items 1, the clipper's list 1; the tab menu's study added to a case;
+three changed on purpose: the lists corpus file's kinds, the session
+hints, the fence attrs), 46 files (+3); typecheck clean; cargo 12.
+Left for later: RemNote's `>>>` (children as the back); Tab / ⇧Tab / ⌥⇧↑↓
+do not move a card item (it is an atom); ⏎ on the last plain item before
+a card item and a paragraph made between pieces split the list in two
+(written with a blank line, so the file reads two lists); the reader's
+card atom shows step lines run together; a card made from a selection in
+a list goes after the list as a paragraph card; a show-the-paragraph-above
+toggle in the session was not added (not asked).
 The class-notes workflow (RemNote's benchmark): cards are made while
 typing, in whatever shape the notes have, and review shows where a card
 came from.
@@ -3972,6 +4054,16 @@ Wikilinks and backlinks are not here; ask the user after this one.
 file.
 
 ## Notes for the next session
+
+Milestone 37 (cards in list items, FORMAT §5.2 and §5's steps; the
+session's heading path, go to source landing on the card, `study` in the
+reader's top row and on a tab's `···`) is done on main, commit `fe4c5c2`;
+its window check is owed: `ILMI_SMOKE=listcards` on a fresh copy of
+samples/double-major (37's notes list the captures). 36 (Arabic beside
+English) is being built in a worktree; its merge meets 37's only in
+Reader.tsx (the card view's item branch, the `StudyButton` line after
+`TabsToggle`, the `incontext.css` import) and in Session.tsx's top line;
+37 kept its CSS in `src/app/incontext.css`. With 36 in, next is 40.
 
 Milestone 35 (insert, paste, find: the slash menu, HTML pasted as
 Markdown, ⌘⇧V, images beside the note, find with ḥarakāt folded, replace)

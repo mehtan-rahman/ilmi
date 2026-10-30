@@ -6,6 +6,79 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-10-30 — milestone 37: cards where notes put them, and review in their place
+
+Done on main (beside 36 in a worktree); commit `fe4c5c2` — *cards where
+notes put them: a list item whose text is a card is a card, its sr line
+under the item; review shows the heading path, go to source lands on the
+card, study from the reader's top row*. Files: FORMAT.md (§4, §5 steps,
+§5.2, §6, §8, §10), `src/format/model.ts` (`Card.item`, `joined` on cards
+and raws), `parse.ts` (`listBlocks`, `itemCard`, the steps rule),
+`serialize.ts` (`formatBody`, `joins`), `src/reader/schema.ts` and
+`convert.ts` (the `joined` attr), `lists.ts` (renumbering past card items),
+`insert.ts` (a copy keeps the joins), `src/app/Reader.tsx` (the card item's
+view, the landed mark, the `StudyButton`), `Session.tsx` (the trail, `o`),
+`items.ts` (`trailParts`), `src/schedule/queue.ts` (`trail`),
+`StudyButton.tsx` and `incontext.css` (new), `NodeMenu.tsx` (the tab's
+`study`), `cardEdit.ts`, `deck.ts`, `src/vault/vault.ts` (a moved card
+loses its item), `src/import/page.ts` (list items defused), `chrome.ts`,
+`smoke.ts` (`smokeListCards`), `vault.ts` (its dispatch), README, the
+sample's three notes, and the tests.
+
+### Done
+
+- `- term :: def`, `1. the {{c1::x}} factor`, nested items, `?` items are
+  cards; the sr line is written under the item at its content column; the
+  rest of the list stays raw, in pieces written back as one list. A lazy
+  line, a task, five spaces, a fence, a tab: raw. An sr line under a plain
+  item is an orphan with a diagnostic. The rules are in FORMAT §5.2 and
+  37's notes.
+- Steps: after a `?` line, a list is the back (paragraph or item).
+- The reader draws a card item beside its bullet or number; typing one in
+  a list makes a card once the write is read back; ⏎ renumbers past it.
+- The session's top line: `canonical ensemble & partition functions ›
+  lecture 9 — $Z$ does everything (Wed 9/23) ↗`; `o` or a click opens the
+  note scrolled to the card, selected and marked.
+- `study` in the reader's top row of a note or source with cards, and on
+  a tab's `···` in the rail.
+- The sample: four Poisson-bracket cards and one stat-mech card are
+  bullets; the three list cards in the Lagrangian notes count now (758).
+
+### Verified
+
+- `npx vitest run`: 866 tests, 46 files (843 before). `npm run typecheck`
+  clean. `cargo test` 12. Every corpus file and every sample file is a
+  fixed point; the samples test lists the card items.
+
+### Not verified — the window run is owed
+
+- Nothing ran in the Tauri window. `ILMI_SMOKE=listcards` (new) drives
+  the "done when" over a copy of the sample and asserts each step (`ok:`;
+  the first miss is `failed:`): the stat-mech note's card items drawn, a
+  bullet card typed after lecture 9 and read back as one, its queue row,
+  the session's heading path, the grade's sr line under the item, `o`
+  landing on the card (scrolled, selected, `landed`), `study` in the top
+  row and on the tab's menu, then dark. Captures listed in 37's notes.
+- The look of a card item beside the list in light, dark, and e-ink; the
+  landed fill's fade in WebKit.
+
+### Handoff prompt
+
+```
+Read PLAN.md (ground rules, Refinement, 36's and 37's notes), FORMAT.md
+§4–§6 and §8, and the top BUILD-LOG.md entries. Run ILMI_SMOKE=listcards
+with ILMI_VAULT on a fresh copy of samples/double-major (port 1420 free,
+never kill a run that is not yours; capture with screencapture -l <window
+id> 2 s after each `shot:` line), read the captures, fix what they show,
+and record it under 37's entry. Merge milestone 36's worktree branch into
+main if it is not yet (it meets 37 in Reader.tsx's card view and top row
+and in Session.tsx's top line; 37's CSS is apart in incontext.css). With
+33–39 in, do milestone 40 (a pass over everything, on a full collection)
+and only that one; stop at its "done when". Suite, typecheck, and `cargo
+test` green before each commit; tick it, write notes, add an entry here
+with a fresh handoff prompt, and commit.
+```
+
 ## 2026-10-30 — milestone 39: tabs, refined
 
 Done on branch `worktree-agent-afea09d94a7eddc9d` (beside 35 on main, to be

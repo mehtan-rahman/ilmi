@@ -83,8 +83,8 @@ describe('the notebook a page is in', () => {
     expect(notebookOf(VECTORS, DOCS)).toBe(NB);
     expect(notebookOf(UNIT, DOCS)).toBe(NB);
     expect(notebookOf(EIGEN, DOCS)).toBe(NB);
-    // the children directory as a folder lens is not a page, nor is anything outside
-    expect(notebookOf(KIDS, DOCS)).toBeNull();
+    // the notebook's own children directory as a folder lens is a page of it (its `n extracts` row opens it, 39); nothing outside is
+    expect(notebookOf(KIDS, DOCS)).toBe(NB);
     expect(notebookOf('german.md', DOCS)).toBeNull();
     expect(notebookOf(VECTORS, { ...DOCS, [NB]: info('source') })).toBeNull();
     expect(notebookOf(EIGEN, { ...DOCS, [`${KIDS}/unit-2.md`]: info('source', { tabs: true }) })).toBe(NB);
@@ -100,12 +100,12 @@ describe('the notebook a page is in', () => {
 
 describe('the rail', () => {
   it('lists the notebook first, then its tabs in their order, subtabs folded until opened', () => {
-    const rows = (open: Record<string, true>) => railRows(TREE, NB, ORDER, open).map((r) => `${'  '.repeat(r.depth)}${r.overview ? 'overview' : r.path.slice(KIDS.length + 1)}${r.has ? (open[r.path] ? ' ▾' : ' ▸') : ''}`);
+    const rows = (open: Record<string, true>) => railRows(TREE, NB, ORDER, open).map((r) => `${'  '.repeat(Math.max(0, r.depth - 1))}${r.overview ? 'overview' : r.path.slice(KIDS.length + 1)}${r.has && !r.overview ? (open[r.path] ? ' ▾' : ' ▸') : ''}`);
     expect(rows({})).toEqual(['overview', 'vectors.md', 'problem-set-1.md', 'unit-2 ▸']);
     expect(rows({ [UNIT]: true })).toEqual(['overview', 'vectors.md', 'problem-set-1.md', 'unit-2 ▾', '  unit-2/eigenvalues.md']);
     // without an order, the walk's: folders first, then by name
     expect(railRows(TREE, NB, {}, {}).map((r) => r.path)).toEqual([NB, UNIT, PSET, VECTORS]);
-    expect(railRows(TREE, NB, ORDER, {})[0]).toMatchObject({ overview: true, depth: 0 });
+    expect(railRows(TREE, NB, ORDER, {})[0]).toMatchObject({ overview: true, depth: 0, nest: 'only' });
   });
 
   it('steps through every page, subtabs included, and opens the tabs above a page', () => {
@@ -197,7 +197,7 @@ describe('the rail in the canvas', () => {
   it('opens and folds a subtab by its chevron, and opens the tabs above a page shown from elsewhere', () => {
     mouse(rowOf(UNIT).querySelector('.chev')!, 'click');
     expect(railNames()).toEqual(['*linear algebra', 'vectors', 'problem set 1', 'unit 2', 'eigenvalues']);
-    expect(rowOf(EIGEN).style.paddingLeft).toBe('20px');
+    expect(rowOf(EIGEN).style.paddingLeft).toBe('18px');
     mouse(rowOf(UNIT).querySelector('.chev')!, 'click');
     expect(railNames()).toEqual(['*linear algebra', 'vectors', 'problem set 1', 'unit 2']);
     act(() => { openNode(EIGEN); });
@@ -233,8 +233,10 @@ describe('the rail in the canvas', () => {
     expect(page()).toBe(UNIT);
   });
 
-  it('⌘⇧[ and the handle fold the rail to a strip and back, per notebook', () => {
+  it('⌃⌘T (not ⌘⇧[, macOS\'s previous tab) and the handle fold the rail to a strip and back, per notebook', () => {
     key({ key: '{', code: 'BracketLeft', metaKey: true, shiftKey: true });
+    expect(useApp.getState().railFolded).toEqual({});
+    key({ key: 't', code: 'KeyT', metaKey: true, ctrlKey: true });
     expect(useApp.getState().railFolded).toEqual({ [NB]: true });
     expect(rail()!.classList.contains('folded')).toBe(true);
     expect(host.querySelectorAll('.rail-row')).toHaveLength(0);

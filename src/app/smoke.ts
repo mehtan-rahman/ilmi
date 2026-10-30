@@ -132,6 +132,12 @@
 // the formatting keys, the block rules, lists moved and indented with their
 // children, ⌘K and a pasted address, and the selection toolbar (see the
 // function).
+// `ILMI_SMOKE=tabs2` (`smokeTabs2`) over a copy of `samples/double-major`:
+// 38's three window findings (a still rest nests, a delete's undo, the
+// indent and the sidebar's edge), then tabs refined: the top row's toggle, no
+// extracts as tabs, the outline, a tab added, renamed, nested and moved by
+// keys and drags, a drag into the sidebar, the hover menus, ⌃⌘T, the rail's
+// edge; every step asserted (see the function).
 // `ILMI_SMOKE=welcome` runs before any vault opens: it seeds the recents
 // with the scratch vault (`ILMI_VAULT`) and a path that does not exist,
 // turns `reopen the last vault on start` off, reads the welcome's rows and
@@ -2764,7 +2770,7 @@ export async function smokeNest(vault: Vault): Promise<void> {
   const qa = <T extends Element>(sel: string) => Array.from(document.querySelectorAll<T>(sel));
   const COURSE = 'courses/linear-algebra.md';
   const trow = (path: string) => q<HTMLElement>(`.edit-tree .trow[data-path="${CSS.escape(path)}"]`);
-  const depth = (el: HTMLElement) => Math.round((parseFloat(el.style.paddingLeft || '6') - 6) / 13);
+  const depth = (el: HTMLElement) => Math.round((parseFloat(el.style.paddingLeft || '6') - 6) / 10);
   // the sidebar's rows as drawn, indented by depth, under the given prefixes
   const rows = (...prefixes: string[]) => qa<HTMLElement>('.edit-tree .trow')
     .filter((r) => prefixes.some((p) => (r.dataset.path ?? '').startsWith(p)))
@@ -2885,7 +2891,7 @@ export async function smokeNest(vault: Vault): Promise<void> {
  * and a deck from the rail's `+`, each renamed in place) and a subtab
  * (`add subtab` on a row's menu), reorders the rail by drags on its rows'
  * thirds, opens a deck tab and a source tab (a subtab under the folder
- * tab), steps with ⌘⌥↑, and folds the rail with ⌘⇧[; logs the rail, the
+ * tab), steps with ⌘⌥↑, and folds the rail with ⌃⌘T; logs the rail, the
  * pane tab, and the file tree after each.
  */
 export async function smokeTabs(vault: Vault): Promise<void> {
@@ -2902,7 +2908,7 @@ export async function smokeTabs(vault: Vault): Promise<void> {
     if (!nav) return 'NO RAIL';
     if (nav.classList.contains('folded')) return `folded strip (${nav.querySelector('.rail-count')?.textContent} tabs)`;
     return qa<HTMLElement>('.tab-rail .rail-row').map((r) => {
-      const depth = Math.round((parseFloat(r.style.paddingLeft || '6') - 6) / 14);
+      const depth = Math.round((parseFloat(r.style.paddingLeft || '6') - 6) / 12);
       return `${'  '.repeat(depth)}${r.dataset.active === '1' ? '*' : ''}${r.querySelector('.chev')?.textContent ?? ''}${r.querySelector('.glyph')?.textContent ?? ''}${r.querySelector('.name')?.textContent ?? ''}`;
     }).join(' | ');
   };
@@ -3030,7 +3036,7 @@ export async function smokeTabs(vault: Vault): Promise<void> {
     log(`⌘⌥↑ → ${up}; ⌘⌥↓ → ${page()}`);
 
     // fold the rail
-    chord({ key: '{', code: 'BracketLeft', shiftKey: true });
+    chord({ key: 't', code: 'KeyT', ctrlKey: true });
     await until(() => q('.tab-rail.folded'), 4000);
     await sleep(900);
     const st = (await vault.fs.stat(vault.abs('.ilmi/state.json'))) ? JSON.parse(await vault.fs.readText(vault.abs('.ilmi/state.json'))) as { rails?: string[] } : {};
@@ -3819,7 +3825,7 @@ export async function smokeTree(vault: Vault): Promise<void> {
   const box = () => q<HTMLElement>('.edit-tree')!;
   const rowsOf = (prefix: string) => qa<HTMLElement>('.edit-tree .trow')
     .filter((r) => (r.dataset.path ?? '').startsWith(prefix))
-    .map((r) => `${'  '.repeat(Math.max(0, Math.round((parseFloat(r.style.paddingLeft || '6') - 6) / 13) - 1))}${r.classList.contains('placeholder') ? '(empty)' : `${r.querySelector('.glyph')?.textContent ?? ''}${r.querySelector('.name')?.textContent ?? ''}`}${r.dataset.selected === '1' ? ' [sel]' : ''}${r.dataset.active === '1' ? ' [open]' : ''}`)
+    .map((r) => `${'  '.repeat(Math.max(0, Math.round((parseFloat(r.style.paddingLeft || '6') - 6) / 10) - 1))}${r.classList.contains('placeholder') ? '(empty)' : `${r.querySelector('.glyph')?.textContent ?? ''}${r.querySelector('.name')?.textContent ?? ''}`}${r.dataset.selected === '1' ? ' [sel]' : ''}${r.dataset.active === '1' ? ' [open]' : ''}`)
     .join(' | ');
   const dirList = (dir: string) => ordered(childrenAt(vault.tree, dir) ?? [], vault.order[dir]).map((n) => entryOf(n.path));
   const orderOf = async (dir: string) => {
@@ -3834,7 +3840,7 @@ export async function smokeTree(vault: Vault): Promise<void> {
     if (!el) return 'nothing drawn';
     const kind = el.className.match(/drop-(top|bottom|into)/)?.[1] ?? '?';
     const x = parseFloat(el.style.getPropertyValue('--drop-x') || 'NaN');
-    const [pad, ind] = el.classList.contains('rail-row') ? [6, 14] : el.classList.contains('fv-row') ? [0, 1] : [6, 13];
+    const [pad, ind] = el.classList.contains('rail-row') ? [-6, 12] : el.classList.contains('fv-row') ? [0, 1] : [6, 10];
     const depth = Number.isFinite(x) ? ` at depth ${Math.round((x - pad) / ind)}` : '';
     return `${kind === 'into' ? 'box around' : `line ${kind === 'top' ? 'above' : 'below'}`} ${el.dataset.path || '/'}${depth}`;
   };
@@ -3850,6 +3856,9 @@ export async function smokeTree(vault: Vault): Promise<void> {
     if (!from || !to) { log(`${name}: a row is missing (${from ? '' : 'from '}${to ? '' : 'to'})`); return; }
     const moving = from.dataset.path ?? '';
     const dt = new DataTransfer();
+    // the target in the middle of its scroller, so the edge scroll does not move it under the pointer during a rest (39)
+    to.scrollIntoView({ block: 'center' });
+    await sleep(100);
     from.dispatchEvent(dragEv('dragstart', dt, 0, 0));
     await sleep(60);
     const r = to.getBoundingClientRect();
@@ -4087,6 +4096,360 @@ export async function smokeTree(vault: Vault): Promise<void> {
     await shot('tree-dark', 2500);
     useApp.getState().setTheme('eink');
     await shot('tree-eink', 2500);
+    useApp.getState().setTheme('light');
+    log(`done; vault ${vault.root}`);
+  } catch (e) {
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+/**
+ * `ILMI_SMOKE=tabs2` over a copy of `samples/double-major` (milestone 39):
+ * first the three things 38's window check found (a still pointer resting on
+ * a bare note's middle nests it; ⌘⌫ leaves a notice whose undo brings the
+ * note back in its place; four levels down a name is no longer cut by the
+ * indent, and the sidebar's edge drags its width), then the "done when":
+ * tabs turned on from a course's top row, a notebook's rail with no
+ * extracts in it (a tab's are one `n extracts` row opening their folder), the
+ * active tab's headings scrolling the page, a tab added from `+ add tab`,
+ * renamed by F2, nested and moved by ⌥⌘ arrows and by drags, a drag from the
+ * rail into the sidebar, the open tab revealed in both, the row's hover `+`
+ * and `···`, the fold key ⌃⌘T, and the rail's edge. Every step is asserted;
+ * a mismatch logs `failed: …` and stops.
+ */
+export async function smokeTabs2(vault: Vault): Promise<void> {
+  const log = (s: string) => info(`smoke tabs2: ${s}`);
+  const shot = async (name: string, ms = 2500) => { await sleep(500); log(`shot: ${name}`); await sleep(ms); };
+  const q = <T extends Element>(sel: string, root: ParentNode = document) => root.querySelector<T>(sel);
+  const qa = <T extends Element>(sel: string, root: ParentNode = document) => Array.from(root.querySelectorAll<T>(sel));
+  const { useDrag } = await import('./drag.js');
+  const { childDirOf, childrenAt, entryOf, ordered } = await import('../vault/index.js');
+  const { setSidebar } = await import('./vault.js');
+  const { SIDE_DEFAULT } = await import('./store.js');
+  const { TREE_INDENT, TREE_PAD } = await import('./treeModel.js');
+  const must = (ok: unknown, what: string) => { if (!ok) throw new Error(what); log(`ok: ${what}`); };
+  const poll = async <T,>(probe: () => T | null | undefined | false | Promise<T | null | undefined | false>, what: string, ms = 5000): Promise<T> => {
+    const t0 = Date.now();
+    for (;;) {
+      const v = await probe();
+      if (v) { log(`ok: ${what}`); return v; }
+      if (Date.now() - t0 > ms) throw new Error(`${what} (waited ${ms} ms)`);
+      await sleep(100);
+    }
+  };
+  const esc = (p: string) => CSS.escape(p);
+  const trow = (path: string) => q<HTMLElement>(`.edit-tree .trow[data-path="${esc(path)}"]:not(.placeholder)`);
+  const rrow = (path: string) => q<HTMLElement>(`.tab-rail .rail-row[data-path="${esc(path)}"]:not(.heading)`);
+  const rbox = () => q<HTMLElement>('.tab-rail .rail-rows');
+  const tbox = () => q<HTMLElement>('.edit-tree')!;
+  const page = () => activeTab(useApp.getState().panes)?.id ?? '';
+  const exists = async (path: string) => !!(await vault.fs.stat(vault.abs(path)));
+  const text = async (path: string) => ((await exists(path)) ? vault.fs.readText(vault.abs(path)) : '');
+  const orderOn = async (dir: string): Promise<string[] | null> => {
+    const t = await text('.ilmi/order.json');
+    return t ? ((JSON.parse(t) as Record<string, string[]>)[dir] ?? null) : null;
+  };
+  const listed = (dir: string) => ordered(childrenAt(vault.tree, dir) ?? [], vault.order[dir]).map((n) => entryOf(n.path));
+  const rail = () => {
+    const nav = q<HTMLElement>('.tab-rail');
+    if (!nav) return 'no rail';
+    if (nav.classList.contains('folded')) return 'folded';
+    return qa<HTMLElement>('.tab-rail .rail-row').map((r) => `${r.classList.contains('heading') ? '# ' : ''}${r.dataset.active === '1' ? '*' : ''}${r.querySelector('.chev')?.textContent ?? ''}${r.querySelector('.glyph')?.textContent ?? ''}${r.querySelector('.name')?.textContent ?? ''}`).join(' | ');
+  };
+  const dragEv = (type: string, dt: DataTransfer, x: number, y: number) => new DragEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, dataTransfer: dt });
+  /**
+   * A drag as a pointer makes it: dragstart on `from`, one dragover on `to`
+   * at its top (12%), middle, or bottom (88%), then (with `rest`) that long
+   * with no more dragovers, as a still pointer sends none; the mark is read,
+   * then the drop. Both rows are scrolled to the middle of their scrollers
+   * first, so the edge scroll does not move them under the pointer.
+   */
+  const drag = async (name: string, from: HTMLElement | null, to: HTMLElement | null, where: 'top' | 'mid' | 'bottom', rest = 0) => {
+    if (!from || !to) throw new Error(`${name}: a row is missing (${from ? '' : 'from '}${to ? '' : 'to'})`);
+    to.scrollIntoView({ block: 'center' });
+    await sleep(150);
+    const dt = new DataTransfer();
+    from.dispatchEvent(dragEv('dragstart', dt, 0, 0));
+    await sleep(60);
+    const r = to.getBoundingClientRect();
+    const y = r.top + r.height * (where === 'top' ? 0.12 : where === 'mid' ? 0.5 : 0.88);
+    const x = r.right - 40;
+    to.dispatchEvent(dragEv('dragenter', dt, x, y));
+    to.dispatchEvent(dragEv('dragover', dt, x, y));
+    await sleep(rest || 120);
+    const d = useDrag.getState().drop;
+    const drawn = to.className.match(/drop-(top|bottom|into)/)?.[1] ?? 'nothing';
+    log(`${name}: ${from.dataset.path} over the ${where} of ${to.dataset.path}${rest ? `, still for ${rest} ms` : ''}: drawn ${drawn}, drop ${d ? `${d.mode} ${d.target}` : 'none'}`);
+    to.dispatchEvent(dragEv('drop', dt, x, y));
+    from.dispatchEvent(dragEv('dragend', dt, x, y));
+    return { drop: d, drawn };
+  };
+  const pressOn = (el: HTMLElement, key: string, init: KeyboardEventInit = {}) => {
+    const ev = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...init });
+    el.dispatchEvent(ev);
+    return ev.defaultPrevented;
+  };
+  const typeName = async (name: string) => {
+    const input = await poll(() => q<HTMLInputElement>('.tab-rail input.rename'), 'the rename field is open', 8000);
+    await sleep(150);
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, name);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+  };
+  const entries = () => qa<HTMLElement>('.ctx-menu .ci').map((e) => e.textContent?.slice(1).replace(/F2$|▸$/, '') ?? '');
+
+  const F26 = 'courses/fall-2026';
+  const QM = `${F26}/phys-412-quantum-ii.md`;
+  const QMK = `${F26}/phys-412-quantum-ii`;
+  const VAR = `${QMK}/variational-method.md`;
+  const WKB = `${QMK}/wkb-approximation.md`;
+  const ABB = `${F26}/arab-455-abbasid-poetry.md`;
+  const ABBK = `${F26}/arab-455-abbasid-poetry`;
+  const CLIP = `${ABBK}/clipped-on-translating-the-qasida.md`;
+  const MORPH = 'courses/spring-2026/arab-302-morphology.md';
+  try {
+    setInspector({ open: false });
+    setSidebar({ width: SIDE_DEFAULT, hidden: false });
+    for (const p of ['', 'courses', F26, 'fleeting']) toggleOpen(p, true);
+    openNode(queueId('today'));
+    await poll(() => trow('fleeting/2026-10-30.md'), 'the sidebar is drawn', 10000);
+    await sleep(500);
+
+    // ── 38's window check, 1: a still pointer resting on a bare note's middle nests it ──
+    {
+      const moving = 'fleeting/2026-10-29.md';
+      const host = 'fleeting/idea-for-honors-thesis.md';
+      const r = await drag('rest to nest (tree)', trow(moving), trow(host), 'mid', 650);
+      must(r.drop?.mode === 'into' && r.drop.target === host && r.drawn === 'into', `after 650 ms still on the middle of ${host}: a box around it and into (drew ${r.drawn}, ${r.drop?.mode ?? 'none'})`);
+      await poll(() => exists(`${childDirOf(host)}/2026-10-29.md`), `${moving} landed inside ${host}`);
+      await shot('tabs2-rest-nests');
+    }
+
+    // ── 38's window check, 2: ⌘⌫ on a note with nothing under it leaves a notice with undo ──
+    {
+      const gone = 'fleeting/2026-10-27.md';
+      const before = listed('fleeting');
+      trow(gone)!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+      tbox().focus();
+      await sleep(150);
+      must(pressOn(tbox(), 'Backspace', { metaKey: true }), '⌘⌫ taken by the tree');
+      await poll(async () => !(await exists(gone)), `${gone} deleted`);
+      const line = await poll(() => q<HTMLElement>('.notice .nl')?.textContent, 'a notice');
+      must(line.startsWith('deleted · '), `the notice says "${line}"`);
+      const undo = qa<HTMLButtonElement>('.notice .na').find((b) => b.textContent === 'undo');
+      must(undo, 'the notice has undo');
+      await shot('tabs2-delete-notice');
+      undo!.click();
+      await poll(() => exists(gone), `${gone} back on disk`);
+      await poll(() => (JSON.stringify(listed('fleeting')) === JSON.stringify(before) ? true : null), `back in its place: ${before.join(', ')}`);
+      const ord = await orderOn('fleeting');
+      must(!ord || ord.indexOf(entryOf(gone)) === before.indexOf(entryOf(gone)), `order.json["fleeting"] has it where it was (${JSON.stringify(ord)})`);
+    }
+
+    // ── 38's window check, 3: names four levels down not cut by the indent; the sidebar's edge ──
+    {
+      const all: Record<string, true> = { '': true };
+      const visit = (nodes: typeof vault.tree) => { for (const n of nodes) { const kids = n.kind === 'folder' ? n.children : n.children ?? []; if (kids.length) { all[n.path] = true; visit(kids); } } };
+      visit(vault.tree);
+      useApp.setState({ open: all });
+      await sleep(800);
+      const rows = qa<HTMLElement>('.edit-tree .trow:not(.placeholder)');
+      const cut = rows.filter((r) => { const n = q<HTMLElement>('.name', r); return !!n && n.scrollWidth > n.clientWidth + 1; });
+      const deep = rows.filter((r) => parseInt(r.getAttribute('aria-level') ?? '0', 10) >= 5);
+      const deepCut = deep.filter((r) => cut.includes(r));
+      log(`width ${q<HTMLElement>('.side')!.getBoundingClientRect().width}px: ${rows.length} rows, ${cut.length} cut (${cut.slice(0, 6).map((r) => r.querySelector('.name')?.textContent).join('; ')}); four levels down ${deep.length}, cut ${deepCut.length}`);
+      const vm = trow(VAR);
+      must(vm && !cut.includes(vm), `"${vm?.querySelector('.name')?.textContent}" four levels down is not cut`);
+      const ps7 = trow(`${QMK}/problem-sets/ps-7.md`);
+      must(ps7?.style.paddingLeft === `${TREE_PAD + 5 * TREE_INDENT}px`, `a level is ${TREE_INDENT} px (ps-7 at ${ps7?.style.paddingLeft})`);
+      await shot('tabs2-indent', 3000);
+      const edge = q<HTMLElement>('.side-resize')!;
+      edge.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, clientX: SIDE_DEFAULT }));
+      window.dispatchEvent(new MouseEvent('mousemove', { clientX: 300 }));
+      window.dispatchEvent(new MouseEvent('mouseup', {}));
+      must(useApp.getState().sidebar.width === 300, 'the sidebar\'s edge dragged it to 300 px');
+      await poll(async () => ((await vault.loadState()).sidebar?.width === 300 ? true : null), 'state.json keeps the sidebar at 300 px');
+      setSidebar({ width: SIDE_DEFAULT });
+      useApp.setState({ open: { '': true, courses: true, [F26]: true, fleeting: true } });
+      await sleep(300);
+    }
+
+    // ── tabs turned on from a course's top row ──
+    {
+      openNode(MORPH);
+      const t = await poll(() => q<HTMLButtonElement>('.nb-page .reader .meta .tabs-toggle, .pane-body .reader .meta .tabs-toggle'), 'the `tabs` toggle in the top row of arab 302', 8000);
+      must(t.dataset.on === '0' && !q('.tab-rail'), 'off, and no rail');
+      await shot('tabs2-toggle-off');
+      t.click();
+      await poll(async () => (await text(MORPH)).includes('\ntabs: true\n'), 'the toggle wrote `tabs: true`');
+      await poll(() => rrow(MORPH), 'the rail is drawn beside the page', 8000);
+      log(`rail: ${rail()}`);
+      must(q<HTMLElement>('.tabs-toggle')?.dataset.on === '1', 'the toggle is lit');
+      await shot('tabs2-toggle-on');
+      q<HTMLButtonElement>('.tabs-toggle')!.click();
+      await poll(async () => !(await text(MORPH)).includes('tabs: true'), 'off again: the field gone');
+      await poll(() => !q('.tab-rail'), 'and the rail');
+      q<HTMLButtonElement>('.tabs-toggle')!.click();
+      await poll(async () => (await text(MORPH)).includes('tabs: true'), 'on again');
+    }
+
+    // ── extracts are never tabs ──
+    {
+      openNode(ABB);
+      await poll(() => rrow(CLIP), 'abbasid poetry\'s rail', 8000);
+      log(`rail: ${rail()}`);
+      must(!qa('.tab-rail .rail-row[data-kind="extract"]').length, 'no extract is a tab');
+      rrow(CLIP)!.querySelector<HTMLElement>('.chev')!.click();
+      const ex = await poll(() => rrow(childDirOf(CLIP)), 'the clipping\'s `n extracts` row');
+      must(ex.textContent?.includes('2 extracts'), `it reads "${ex.textContent}"`);
+      must(!qa('.tab-rail .rail-row[data-kind="extract"]').length, 'still no extract as a tab, open');
+      await shot('tabs2-extracts-row');
+      ex.click();
+      await poll(() => page() === childDirOf(CLIP) && q('.tab-rail') && q('.folder-view'), 'it opens their folder, the rail kept', 8000);
+      await shot('tabs2-extracts-folder');
+    }
+
+    // ── the active tab's headings navigate ──
+    {
+      openNode(QM);
+      await poll(() => rrow(VAR), 'quantum II\'s rail', 8000);
+      rrow(VAR)!.click();
+      const heads = await poll(() => { const h = qa<HTMLElement>('.tab-rail .rail-row.heading'); return h.length >= 5 ? h : null; }, 'the variational method\'s headings under its tab', 8000);
+      log(`outline: ${heads.map((h) => `${'  '.repeat(Number(h.dataset.level) - 2)}${h.textContent}`).join(' | ')}`);
+      const helium = heads.find((h) => h.textContent === 'helium ground state');
+      must(helium, 'the outline lists `helium ground state`');
+      helium!.click();
+      await poll(() => {
+        const scroller = q<HTMLElement>('.nb-page');
+        const target = qa<HTMLElement>('.nb-page .dd-h').find((h) => h.textContent === 'helium ground state');
+        if (!scroller || !target) return null;
+        const dy = target.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+        // at the top of the page, or as near it as the page's end lets it come
+        const atEnd = scroller.scrollTop > 0 && scroller.scrollTop >= scroller.scrollHeight - scroller.clientHeight - 2;
+        return (dy > -8 && dy < 120) || (atEnd && dy >= 0 && dy < scroller.clientHeight) ? true : null;
+      }, 'a click on it scrolled the page to it');
+      await shot('tabs2-outline');
+      // both views reveal the open tab
+      await poll(() => trow(VAR)?.dataset.active === '1', 'the sidebar reveals the open tab');
+      must(rrow(VAR)?.dataset.active === '1', 'and the rail');
+      // a click on the active tab hides the outline, another shows it
+      rrow(VAR)!.click();
+      await poll(() => !q('.tab-rail .rail-row.heading'), 'a click on the active tab hides its outline');
+      rrow(VAR)!.click();
+      await poll(() => q('.tab-rail .rail-row.heading'), 'another shows it');
+    }
+
+    // ── a tab added, renamed, nested and moved by keyboard ──
+    let tab = `${QMK}/lecture 15 notes.md`;
+    {
+      q<HTMLButtonElement>('.tab-rail .rail-head .rail-add')!.click();
+      await typeName('lecture 15 notes');
+      await poll(() => exists(tab), `\`+ add tab\` made ${tab}`);
+      await poll(async () => ((await orderOn(QMK))?.at(-1) === entryOf(tab) ? true : null), 'last in order.json');
+      const head = await text(tab);
+      must(!/^type:/m.test(head) && !/^write:/m.test(head), 'a note: no type, no writing schedule');
+      await poll(() => rrow(tab), 'its row');
+      rrow(tab)!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+      rbox()!.focus();
+      await sleep(150);
+      must(pressOn(rbox()!, 'F2'), 'F2 taken by the rail');
+      await typeName('lecture 15');
+      tab = `${QMK}/lecture 15.md`;
+      await poll(() => exists(tab), 'F2 renamed it to lecture 15');
+      await shot('tabs2-added');
+      await sleep(300);
+      rbox()!.focus();
+      must(pressOn(rbox()!, 'ArrowRight', { metaKey: true, altKey: true }), '⌥⌘→ taken by the rail');
+      const nested = `${QMK}/problem-sets/lecture 15.md`;
+      await poll(() => exists(nested), `⌥⌘→ nested it into the tab above: ${nested}`);
+      await poll(() => rrow(nested), 'shown under problem sets');
+      await shot('tabs2-key-nested');
+      rbox()!.focus();
+      pressOn(rbox()!, 'ArrowLeft', { metaKey: true, altKey: true });
+      await poll(() => exists(tab), '⌥⌘← brought it out, after problem sets');
+      await poll(async () => { const o = await orderOn(QMK); return o && o.indexOf(entryOf(tab)) === o.indexOf('problem-sets/') + 1 ? true : null; }, 'right after problem sets in order.json');
+      const pg = page();
+      rbox()!.focus();
+      must(pressOn(rbox()!, 'ArrowUp', { metaKey: true, altKey: true }), '⌥⌘↑ taken by the rail');
+      await poll(async () => { const o = await orderOn(QMK); return o && o.indexOf(entryOf(tab)) === o.indexOf('problem-sets/') - 1 ? true : null; }, '⌥⌘↑ moved it before problem sets');
+      must(page() === pg, 'and did not step the page');
+      log(`rail: ${rail()}`);
+      await shot('tabs2-key-moved');
+    }
+
+    // ── nested and moved by drag; a drag from the rail into the sidebar ──
+    {
+      const r1 = await drag('nest (rail)', rrow(tab), rrow(VAR), 'mid', 650);
+      must(r1.drop?.mode === 'into' && r1.drop.target === VAR, 'a rest on the variational method\'s middle: into it');
+      const under = `${childDirOf(VAR)}/lecture 15.md`;
+      await poll(() => exists(under), `landed as its subtab: ${under}`);
+      await poll(() => rrow(under), 'drawn under it, the tab opened');
+      await shot('tabs2-drag-nested');
+      const r2 = await drag('move (rail)', rrow(under), rrow(WKB), 'top');
+      must(r2.drop?.mode === 'before' && r2.drop.target === WKB && r2.drawn === 'top', 'the top of wkb: a line above it');
+      await poll(() => exists(tab), `back as a tab: ${tab}`);
+      await poll(async () => { const o = await orderOn(QMK); return o && o.indexOf(entryOf(tab)) === o.indexOf(entryOf(WKB)) - 1 ? true : null; }, 'right before wkb in order.json');
+      await shot('tabs2-drag-moved');
+      toggleOpen('fleeting', true);
+      await poll(() => trow('fleeting/2026-10-30.md'), 'the sidebar\'s fleeting notes');
+      const r3 = await drag('rail → sidebar', rrow(tab), trow('fleeting/2026-10-30.md'), 'top');
+      must(r3.drop?.mode === 'before' && r3.drop.target === 'fleeting/2026-10-30.md', 'the sidebar row took it: a line above it');
+      const landed = 'fleeting/lecture 15.md';
+      await poll(() => exists(landed), `landed in the sidebar's folder: ${landed}`);
+      await poll(async () => { const o = await orderOn('fleeting'); return o && o.indexOf(entryOf(landed)) === o.indexOf('2026-10-30.md') - 1 ? true : null; }, 'right before 2026-10-30 in order.json');
+      await poll(() => !rrow(tab), 'and gone from the rail');
+      await shot('tabs2-rail-to-sidebar');
+    }
+
+    // ── a row's hover `+` and `···` ──
+    {
+      const wkb = rrow(WKB)!;
+      wkb.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+      await sleep(150);
+      q<HTMLElement>('.row-acts .add', wkb)!.click();
+      const made = `${QMK}/untitled.md`;
+      await poll(() => exists(made), `\`+\` made ${made}`);
+      await poll(async () => { const o = await orderOn(QMK); return o && o.indexOf(entryOf(made)) === o.indexOf(entryOf(WKB)) + 1 ? true : null; }, 'right after wkb');
+      const field = await poll(() => q<HTMLInputElement>('.tab-rail input.rename'), 'named in place');
+      field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+      await sleep(200);
+      q<HTMLElement>('.row-acts .more', rrow(made)!)!.click();
+      await poll(() => q('.ctx-menu'), 'the `···` menu');
+      must(JSON.stringify(entries()) === JSON.stringify(['add subtab', 'rename', 'duplicate', 'move to…', 'delete']), `its entries: ${entries().join(' | ')}`);
+      await shot('tabs2-row-more');
+      qa<HTMLElement>('.ctx-menu .ci').find((e) => e.dataset.act === 'delete')!.click();
+      await poll(async () => !(await exists(made)), 'delete from the menu');
+      await poll(() => qa<HTMLButtonElement>('.notice .na').some((b) => b.textContent === 'undo'), 'with the notice\'s undo');
+    }
+
+    // ── the fold key and the rail's edge ──
+    {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: '{', code: 'BracketLeft', metaKey: true, shiftKey: true, bubbles: true, cancelable: true }));
+      await sleep(200);
+      must(!q('.tab-rail.folded'), '⌘⇧[ no longer folds the rail');
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 't', code: 'KeyT', metaKey: true, ctrlKey: true, bubbles: true, cancelable: true }));
+      await poll(() => q('.tab-rail.folded'), '⌃⌘T folds it');
+      await shot('tabs2-folded');
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 't', code: 'KeyT', metaKey: true, ctrlKey: true, bubbles: true, cancelable: true }));
+      await poll(() => rrow(QM), '⌃⌘T opens it');
+      const nav = q<HTMLElement>('.tab-rail')!;
+      const w0 = nav.getBoundingClientRect().width;
+      must(Math.abs(w0 - useApp.getState().railWidth) <= 1, `the rail is ${Math.round(w0)} px`);
+      const edge = q<HTMLElement>('.tab-rail .rail-resize')!;
+      const x0 = nav.getBoundingClientRect().right;
+      edge.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, clientX: x0 }));
+      window.dispatchEvent(new PointerEvent('pointermove', { clientX: x0 + 60 }));
+      window.dispatchEvent(new PointerEvent('pointerup', {}));
+      const want = useApp.getState().railWidth;
+      must(Math.abs(want - (w0 + 60)) <= 1, `its edge dragged it to ${want} px`);
+      await poll(async () => ((await vault.loadState()).railWidth === want ? true : null), 'state.json keeps the width');
+      await shot('tabs2-wider');
+    }
+
+    useApp.getState().setTheme('dark');
+    await shot('tabs2-dark');
+    useApp.getState().setTheme('eink');
+    await shot('tabs2-eink');
     useApp.getState().setTheme('light');
     log(`done; vault ${vault.root}`);
   } catch (e) {

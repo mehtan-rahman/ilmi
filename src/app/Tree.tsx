@@ -31,8 +31,9 @@ import { GLYPH, descendants, findNode, kindOf, rowCounts, titleOf, type NodeKind
 import { NodeMenu, menuAt, type MenuAt } from './NodeMenu.js';
 import type { OpenOpts } from './panes.js';
 import { useApp } from './store.js';
-import { keyPlace, revealRows, treeKey, treeRows, typeahead, type TreeRow } from './treeModel.js';
-import { placeNode, removeNode, renameNode, toggleOpen } from './vault.js';
+import { TREE_INDENT, TREE_PAD, keyPlace, revealRows, treeKey, treeRows, typeahead, type TreeRow } from './treeModel.js';
+import { deleteNode } from './remove.js';
+import { placeNode, renameNode, toggleOpen } from './vault.js';
 
 export { MENU_W, placeMenu } from './NodeMenu.js';
 
@@ -44,9 +45,9 @@ interface Props {
 
 interface Editing { id: string; value: string }
 
-/** The tree's indent: 6 px to depth 0, 13 a level (the smokes read depth back from it). */
-const PAD = 6;
-const INDENT = 13;
+/** The tree's indent (`treeModel.ts`; the smokes read depth back from it). */
+const PAD = TREE_PAD;
+const INDENT = TREE_INDENT;
 const SURF: Surface = { pad: PAD, indent: INDENT, scroller: '.side', spring: (p) => toggleOpen(p, true) };
 
 const clickOpts = (e: MouseEvent): OpenOpts => ({ cmdClick: e.metaKey || e.ctrlKey, shiftClick: e.shiftKey });
@@ -131,7 +132,7 @@ export function Tree({ activeId, onOpen }: Props) {
     const i = real.findIndex((r) => r.path === id);
     const next = real.slice(i + 1).find((r) => !r.path.startsWith(`${childDirOf(id)}/`)) ?? real[i - 1];
     setSelected(next?.path ?? null);
-    removeNode(id).catch(fail);
+    deleteNode(id).catch(fail);
   };
 
   // the tree's keys, while it has focus (`treeModel.ts`); in the page they are the page's

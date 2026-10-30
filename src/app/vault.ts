@@ -10,7 +10,7 @@ import { info } from '@tauri-apps/plugin-log';
 import { meta, setField, type Doc, type NodeType } from '../format/index.js';
 import type { Chapter, MappedDeck } from '../import/index.js';
 import { dayOf, docItems, isDue, postponeOverflow, sortQueue, type QueueItem } from '../schedule/index.js';
-import { Vault, childDirOf, cleanName, dirOf, fileName, isDoc, rekey, type ExtractSpec, type ImportDeckSpec, type ImportPdfSpec, type ImportSpec, type TreeNode, type VaultEvent, type VaultState } from '../vault/index.js';
+import { Vault, childDirOf, childrenAt, cleanName, dirOf, entryOf, fileName, isDoc, ordered, placeEntry, rekey, type ExtractSpec, type ImportDeckSpec, type ImportPdfSpec, type ImportSpec, type TreeNode, type VaultEvent, type VaultState } from '../vault/index.js';
 import { tauriFs } from '../vault/tauri-fs.js';
 import { startPlugins, stopPlugins } from '../plugins/index.js';
 import { cleanClipDir } from './clip.js';
@@ -20,7 +20,7 @@ import { INTAKE, SESSION, queueId, queueScope } from './names.js';
 import { activeTab, dropTabs, emptyPanes, openTab, retarget, type OpenOpts, type Panes } from './panes.js';
 import { addRecent, decideStart, forgetRecent, vaultName } from './recents.js';
 import { STARTER_TEXT, STARTER_TITLE } from './starter.js';
-import { addTab, notebookOf } from './tabs.js';
+import { RAIL_DEFAULT, addTab, clampRail, notebookOf } from './tabs.js';
 import { INSP_DEFAULT, INSP_MAX, INSP_MIN, SIDE_DEFAULT, SIDE_MAX, SIDE_MIN, useApp, type DocInfo, type Inspector, type Sidebar } from './store.js';
 
 let current: Vault | null = null;
@@ -225,7 +225,7 @@ export async function openVault(path: string): Promise<Vault> {
   const s0 = useApp.getState();
   useApp.setState({
     open, sidebar, inspector, panes, docs: {}, queue: [], budget: cleanBudget(state.budget), clipDir: cleanClipDir(state.clippings), log: [], session: null, sessionEl: null, selectedCard: null, reveal: null,
-    started: true, newVaultIn: null, gone: s0.gone.filter((p) => p !== path), notice: null, fileOver: null, intakeFiles: [], order: vault.order, railFolded, deckViews: cleanViews(state.decks),
+    started: true, newVaultIn: null, gone: s0.gone.filter((p) => p !== path), notice: null, fileOver: null, intakeFiles: [], order: vault.order, railFolded, railWidth: clampRail(state.railWidth ?? RAIL_DEFAULT), deckViews: cleanViews(state.decks),
   });
   s0.setRecents(addRecent(s0.recents, path, new Date()));
   setWindowTitle(vaultName(path));
@@ -354,8 +354,8 @@ export function openInitialVault(): Promise<void> {
       if (path) {
         const vault = await openVault(path);
         if (mode) {
-          const { smoke, smokeReader, smokeCards, smokeIntake, smokeQueue, smokeLoop, smokeShots, smokeDeck, smokePri, smokeGrowth, smokeOverload, smokePdf, smokeFaces, smokeCardsText, smokeAnki, smokeMath, smokeEpub, smokeClip, smokeClipping, smokePlugins, smokeDictionary, smokeRender, smokeLive, smokeBlocks, smokeUse, smokeLand, smokeNest, smokeTabs, smokeDecks, smokeTour, smokeNotes, smokeEditing, smokeTree } = await import('./smoke.js');
-          const run = { reader: smokeReader, cards: smokeCards, intake: smokeIntake, queue: smokeQueue, loop: smokeLoop, shots: smokeShots, deck: smokeDeck, pri: smokePri, growth: smokeGrowth, overload: smokeOverload, pdf: smokePdf, faces: smokeFaces, 'cards-text': smokeCardsText, anki: smokeAnki, math: smokeMath, epub: smokeEpub, clip: smokeClip, clipping: smokeClipping, plugins: smokePlugins, dictionary: smokeDictionary, render: smokeRender, live: smokeLive, blocks: smokeBlocks, use: smokeUse, land: smokeLand, nest: smokeNest, tabs: smokeTabs, decks: smokeDecks, tour: smokeTour, notes: smokeNotes, editing: smokeEditing, tree: smokeTree }[mode] ?? smoke;
+          const { smoke, smokeReader, smokeCards, smokeIntake, smokeQueue, smokeLoop, smokeShots, smokeDeck, smokePri, smokeGrowth, smokeOverload, smokePdf, smokeFaces, smokeCardsText, smokeAnki, smokeMath, smokeEpub, smokeClip, smokeClipping, smokePlugins, smokeDictionary, smokeRender, smokeLive, smokeBlocks, smokeUse, smokeLand, smokeNest, smokeTabs, smokeDecks, smokeTour, smokeNotes, smokeEditing, smokeTree, smokeTabs2 } = await import('./smoke.js');
+          const run = { reader: smokeReader, cards: smokeCards, intake: smokeIntake, queue: smokeQueue, loop: smokeLoop, shots: smokeShots, deck: smokeDeck, pri: smokePri, growth: smokeGrowth, overload: smokeOverload, pdf: smokePdf, faces: smokeFaces, 'cards-text': smokeCardsText, anki: smokeAnki, math: smokeMath, epub: smokeEpub, clip: smokeClip, clipping: smokeClipping, plugins: smokePlugins, dictionary: smokeDictionary, render: smokeRender, live: smokeLive, blocks: smokeBlocks, use: smokeUse, land: smokeLand, nest: smokeNest, tabs: smokeTabs, decks: smokeDecks, tour: smokeTour, notes: smokeNotes, editing: smokeEditing, tree: smokeTree, tabs2: smokeTabs2 }[mode] ?? smoke;
           await run(vault);
         }
         return;
@@ -451,6 +451,14 @@ export function setInspector(patch: Partial<Inspector>): void {
   const inspector = { ...useApp.getState().inspector, ...patch };
   useApp.setState({ inspector });
   queueSave({ inspector });
+}
+
+/** The tab rail's width, dragged by its edge; one for every notebook, remembered in `.ilmi/state.json`. */
+export function setRailWidth(w: number): void {
+  const railWidth = clampRail(w);
+  if (railWidth === useApp.getState().railWidth) return;
+  useApp.setState({ railWidth });
+  queueSave({ railWidth });
 }
 
 /** Fold notebook `nb`'s tab rail to a strip, or open it; remembered per document in `.ilmi/state.json`. */
@@ -568,8 +576,25 @@ export async function sortByName(dir: string): Promise<void> {
   await need().setOrder(dir, null);
 }
 
-export function removeNode(path: string): Promise<void> {
-  return need().remove(path);
+/** Delete without a notice (a landing's undo); a person's delete is `deleteNode` (`remove.ts`), with one. */
+export async function removeNode(path: string): Promise<void> {
+  await need().remove(path);
+}
+
+/** `duplicate`: a copy beside the node, right after it (`Vault.duplicate`). Resolves to the copy's path. */
+export async function duplicateNode(path: string): Promise<string> {
+  return need().duplicate(path);
+}
+
+/** A new note right after `path` in its directory (a tab rail row's `+`). Resolves to its path. */
+export async function noteAfter(path: string): Promise<string> {
+  const vault = need();
+  const dir = dirOf(path);
+  const to = await vault.createDoc(dir, 'note', 'untitled');
+  const shown = ordered(childrenAt(vault.tree, dir) ?? [], vault.order[dir]).map((n) => entryOf(n.path));
+  await vault.setOrder(dir, placeEntry(shown, entryOf(to), entryOf(path), 'after'));
+  openNode(to);
+  return to;
 }
 
 /** Delete one card from its document; the schedule goes with it. */
@@ -633,19 +658,25 @@ export async function importAnkiNode(dir: string, decks: MappedDeck[]): Promise<
 }
 
 /**
- * A book's chapters as frozen sources in a new folder named for it under
- * `dir`, one file per chapter in reading order (`NN title.md`, the title as
- * a field); the folder and the one above it open. Resolves to the folder
- * and the documents' paths.
+ * A book as a notebook (milestone 39): a frozen source named for it under
+ * `dir` with `tabs: true`, its body the chapters' titles, and its chapters
+ * as frozen sources in its children directory, one file per chapter in
+ * reading order (`NN title.md`, the title as a field), so they are its
+ * tabs; the book's row opens. Resolves to the book's document (`folder`,
+ * the directory its chapters are in, for the landing's undo) and the
+ * chapters' paths.
  */
-export async function importBookNode(dir: string, book: { title: string; chapters: Chapter[] }): Promise<{ folder: string; paths: string[] }> {
+export async function importBookNode(dir: string, book: { title: string; chapters: Chapter[] }): Promise<{ book: string; folder: string; paths: string[] }> {
   const vault = need();
-  const folder = await vault.createFolder(dir, fileName(book.title));
+  const contents = book.chapters.map((c, i) => `${i + 1}. ${c.title.replace(/\s+/g, ' ').trim() || c.name}`).join('\n');
+  const nb = await vault.importDoc(dir, { title: book.title, text: contents });
+  await vault.update(nb, (doc) => setField(doc, 'tabs', true));
+  const folder = childDirOf(nb);
   const paths: string[] = [];
   for (const c of book.chapters) paths.push(await vault.importDoc(folder, { title: c.title, name: c.name, text: c.text }));
   openDir(dir);
-  toggleOpen(folder, true);
-  return { folder, paths };
+  toggleOpen(nb, true);
+  return { book: nb, folder, paths };
 }
 
 /** Carve a passage of `parent` into a child extract; the parent's row opens so the child is visible. */

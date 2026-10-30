@@ -126,3 +126,28 @@ export function placeEntry(current: string[], entry: string, target: string, mod
   list.splice(mode === 'before' ? at : at + 1, 0, entry);
   return list;
 }
+
+/**
+ * The order after `path`, deleted when `was` was the order, comes back: its
+ * directory's list gets its entry again where it stood (after the nearest
+ * entry above it that is still listed, else before the first below it),
+ * and the orders of its own directories come back as they were. Only an
+ * entry that was listed is put back.
+ */
+export function restoreOrder(order: Order, was: Order, path: string): Order {
+  const out: Order = { ...order };
+  const own = childDirOf(path);
+  for (const [dir, list] of Object.entries(was)) if (own !== '' && within(dir, own)) out[dir] = list;
+  const dir = dirOf(path);
+  const old = was[dir];
+  const entry = entryOf(path);
+  const at = old ? old.indexOf(entry) : -1;
+  if (!old || at < 0) return out;
+  const cur = (out[dir] ?? []).filter((e) => e !== entry);
+  const above = old.slice(0, at).reverse().find((e) => cur.includes(e));
+  const below = old.slice(at + 1).find((e) => cur.includes(e));
+  const i = above !== undefined ? cur.indexOf(above) + 1 : below !== undefined ? cur.indexOf(below) : cur.length;
+  cur.splice(i, 0, entry);
+  out[dir] = cur;
+  return out;
+}

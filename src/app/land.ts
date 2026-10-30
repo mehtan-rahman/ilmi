@@ -133,7 +133,7 @@ export interface LandFx {
   fetchPage(url: string): Promise<Fetched>;
   importText(dir: string, spec: ImportSpec): Promise<string>;
   importPdf(dir: string, spec: ImportPdfSpec): Promise<string>;
-  importBook(dir: string, book: { title: string; chapters: Chapter[] }): Promise<{ folder: string; paths: string[] }>;
+  importBook(dir: string, book: { title: string; chapters: Chapter[] }): Promise<{ book: string; folder: string; paths: string[] }>;
   importAnki(dir: string, decks: MappedDeck[]): Promise<string[]>;
   importClip(dir: string, spec: ImportSpec, images: ClipImage[]): Promise<{ path: string }>;
   /** The vault's folders now, for `newFolders`. */
@@ -182,8 +182,9 @@ export async function landFile(path: string, dir: string, fx: LandFx = realFx): 
       const b = await fx.readBook(path);
       if (!b.chapters.length) throw new Error('no chapters in that book');
       const title = (b.title || BOOK_NAME).trim();
-      const { paths } = await fx.importBook(dir, { title, chapters: b.chapters });
-      return done(`${title} · ${plural(b.chapters.length, 'chapter')}`, paths, paths[0]!);
+      // a notebook: the book's document with its chapters as tabs
+      const { book, paths } = await fx.importBook(dir, { title, chapters: b.chapters });
+      return done(`${title} · ${plural(b.chapters.length, 'chapter')}`, [book, ...paths], paths[0]!);
     }
     case 'apkg': {
       const m = await fx.readAnki(path);

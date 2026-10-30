@@ -30,6 +30,7 @@ import 'katex/dist/katex.min.css';
 import 'prosemirror-gapcursor/style/gapcursor.css';
 import './reader.css';
 import { Crumbs } from './Crumbs.js';
+import { TabsToggle } from './TabsToggle.js';
 
 /** How long after the last keystroke the file is written. */
 const WRITE_DELAY = 500;
@@ -1291,6 +1292,7 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
       <div className={`reader doc-view${reading ? ' reading' : ''}`}>
         <div className="meta">
           <Crumbs path={id} />
+          <TabsToggle path={id} />
           {onPages && <button type="button" className="frozen-tag" onClick={onPages}>pages</button>}
           {info && info.type !== 'draft' && (
             <button type="button" className="frozen-tag" data-frozen={info.frozen ? '1' : '0'} onClick={toggleFrozen}>

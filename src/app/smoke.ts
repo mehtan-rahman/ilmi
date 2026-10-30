@@ -143,6 +143,11 @@
 // extracts as tabs, the outline, a tab added, renamed, nested and moved by
 // keys and drags, a drag into the sidebar, the hover menus, ⌃⌘T, the rail's
 // edge; every step asserted (see the function).
+// `ILMI_SMOKE=listcards` (`smokeListCards`) over a copy of
+// `samples/double-major`: a bullet card typed in a note, found in the queue,
+// reviewed with its heading path and its sr line under the item, go to
+// source landing on it, and study from the reader's top row (see the
+// function).
 // `ILMI_SMOKE=welcome` runs before any vault opens: it seeds the recents
 // with the scratch vault (`ILMI_VAULT`) and a path that does not exist,
 // turns `reopen the last vault on start` off, reads the welcome's rows and
@@ -155,7 +160,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { info } from '@tauri-apps/plugin-log';
-import { queue } from '../schedule/index.js';
+import { queue, type CardItem } from '../schedule/index.js';
 import type { Vault } from '../vault/index.js';
 import { cardLabel } from './chrome.js';
 import { GLYPH, SESSION, queueId, titleOf } from './names.js';
@@ -4876,6 +4881,183 @@ export async function smokeTabs2(vault: Vault): Promise<void> {
     await shot('tabs2-dark');
     useApp.getState().setTheme('eink');
     await shot('tabs2-eink');
+    useApp.getState().setTheme('light');
+    log(`done; vault ${vault.root}`);
+  } catch (e) {
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+/**
+ * `ILMI_SMOKE=listcards` over a copy of `samples/double-major` (milestone
+ * 37): the stat-mech note's card items drawn as items; a bullet card typed
+ * after lecture 9's last paragraph (`- ` makes the list, the card's text
+ * after it) and read back from the file as a card item; found in the queue;
+ * reviewed in a session whose line above the card is the document and the
+ * heading over it, the grade's `sr` line written under the item at its
+ * content column; `o` (go to source) opening the note scrolled to the card
+ * and marking it; `study` in the reader's top row and on the note's tab in
+ * the notebook's rail. Every step asserted (`ok: …`; the first miss ends
+ * the run with `failed: …`); `shot: <name>` where a capture is worth reading.
+ */
+export async function smokeListCards(vault: Vault): Promise<void> {
+  const log = (s: string) => info(`smoke listcards: ${s}`);
+  const shot = async (name: string, ms = 2500) => { await sleep(600); log(`shot: ${name}`); await sleep(ms); };
+  const q = <T extends Element>(sel: string, root: ParentNode = document) => root.querySelector<T>(sel);
+  const qa = <T extends Element>(sel: string, root: ParentNode = document) => Array.from(root.querySelectorAll<T>(sel));
+  const must = (ok: unknown, what: string) => { if (!ok) throw new Error(what); log(`ok: ${what}`); };
+  const poll = async <T,>(probe: () => T | null | undefined | false | Promise<T | null | undefined | false>, what: string, ms = 5000): Promise<T> => {
+    const t0 = Date.now();
+    for (;;) {
+      const v = await probe();
+      if (v) { log(`ok: ${what}`); return v; }
+      if (Date.now() - t0 > ms) throw new Error(`${what} (waited ${ms} ms)`);
+      await sleep(100);
+    }
+  };
+  const COURSE = 'courses/fall-2026/phys-415-stat-mech';
+  const NOTE = `${COURSE}/canonical-ensemble.md`;
+  const TITLE = 'canonical ensemble & partition functions';
+  const SECTION = 'lecture 9 — $Z$ does everything (Wed 9/23)';
+  const ANCHOR = 'positive. OK.';
+  const FRONT = 'what the heat capacity measures, canonically';
+  const CARD = `${FRONT} :: the size of the energy fluctuations`;
+  const text = () => vault.fs.readText(vault.abs(NOTE));
+  const lines = async () => (await text()).split('\n');
+  const surface = () => q<HTMLElement>('.pane-body .doc-view .draft-doc');
+  const scroller = () => surface()?.closest<HTMLElement>('.pane-body') ?? null;
+  const BLOCKS = 'p.dd-p, .dd-h, .dd-li .li-text, .dd-ql';
+  const block = (needle: string) => qa<HTMLElement>(BLOCKS, surface() ?? document).filter((p) => p.textContent?.includes(needle)).pop();
+  const ourCard = () => qa<HTMLElement>('.card-span.in-item', surface() ?? document).find((c) => c.textContent?.includes(FRONT));
+  const caretKind = () => {
+    const n = document.getSelection()?.anchorNode ?? null;
+    const el = (n?.nodeType === 1 ? (n as HTMLElement) : n?.parentElement)?.closest<HTMLElement>(BLOCKS);
+    return !el ? 'nothing' : el.matches('p.dd-p') ? `paragraph "${el.textContent ?? ''}"` : el.matches('.li-text') ? `item "${el.textContent ?? ''}"` : 'other';
+  };
+  const keyOn = (el: HTMLElement | Window, k: string, init: KeyboardEventInit = {}) => {
+    const ev = new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true, ...init });
+    el.dispatchEvent(ev);
+    return ev.defaultPrevented;
+  };
+  const type = async (s: string) => {
+    for (const ch of s) {
+      document.execCommand('insertText', false, ch);
+      await sleep(30);
+    }
+    await sleep(80);
+  };
+  const open = async (path: string) => {
+    openNode(path);
+    await poll(() => (activeTab(useApp.getState().panes)?.id === path ? surface() : null), `${path} open in the reader`, 10000);
+    await sleep(500);
+  };
+  try {
+    for (const p of ['courses', 'courses/fall-2026', COURSE]) toggleOpen(p, true);
+    await open(NOTE);
+    const t0 = await text();
+    must(!t0.includes(FRONT), 'a fresh copy of the sample: the card is not in the note yet');
+    must(surface()!.isContentEditable, 'the note is editable');
+
+    // ── the note's own card items: lecture 11's list ──
+    const zn = await poll(() => qa<HTMLElement>('.card-span.in-item', surface()!).find((c) => c.textContent?.includes('dilute gas')), 'lecture 11\'s partition-function card is drawn as a list item');
+    must(zn.querySelector('.li-mark')?.textContent === '•', `with its bullet (${zn.querySelector('.li-mark')?.textContent ?? 'none'})`);
+    must(zn.previousElementSibling?.matches('.dd-list') && zn.nextElementSibling?.matches('.dd-list'), 'the list goes on around it: an item before, the nested caveat after');
+    zn.scrollIntoView({ block: 'center' });
+    await shot('listcards-items');
+
+    // ── a bullet card typed after lecture 9's last paragraph ──
+    const anchor = await poll(() => block(ANCHOR), 'lecture 9\'s last paragraph');
+    anchor.scrollIntoView({ block: 'center' });
+    surface()!.focus();
+    caret(anchor, ANCHOR, ANCHOR.length);
+    await sleep(100);
+    keyOn(surface()!, 'Enter', { code: 'Enter' });
+    await sleep(120);
+    must(caretKind() === 'paragraph ""', `⏎ makes a fresh paragraph (caret in ${caretKind()})`);
+    await type('- ');
+    must(caretKind() === 'item ""', `\`- \` makes a list item (caret in ${caretKind()})`);
+    await type(CARD);
+    surface()!.blur();
+    const written = await poll(async () => (await lines()).find((l) => l === `- ${CARD}`), `the file has the item line "- ${CARD}"`);
+    const all = await lines();
+    const at = all.indexOf(written);
+    must(all[at - 1] === '' && all[at - 2]!.endsWith(ANCHOR), 'under the anchor paragraph, a blank line between');
+    const typed = await poll(() => ourCard(), 'the reader reads it back as a card item (the file is right)');
+    must(typed.querySelector('.li-mark')?.textContent === '•' && typed.querySelector('.cs-q')?.textContent === FRONT, 'drawn as the item it is: the bullet, the front, the back');
+    typed.scrollIntoView({ block: 'center' });
+    await shot('listcards-typed');
+
+    // ── the queue ──
+    const item = await poll(() => useApp.getState().queue.find((i): i is CardItem => i.kind === 'card' && i.path === NOTE && i.text === CARD), 'the queue has it');
+    must(JSON.stringify(item.trail) === JSON.stringify([SECTION]), `under its heading (${JSON.stringify(item.trail)})`);
+    openNode(queueId('today'));
+    const row = await poll(() => qa<HTMLElement>('.qlist li[data-el="card"]').find((r) => r.textContent?.includes(FRONT)), 'today\'s queue shows its row', 8000);
+    must(row.dataset.fresh === '1', 'a new card');
+    row.scrollIntoView({ block: 'center' });
+    await shot('listcards-queue');
+
+    // ── reviewed in a session: the heading path above it, the sr line under the item ──
+    openSession(item);
+    const trail = await poll(() => q<HTMLElement>('.recall-wrap .card-trail'), 'the session shows the card', 8000);
+    const want = `${TITLE} › ${SECTION}`;
+    const got = qa<HTMLElement>('.ct-doc, .ct-h', trail).map((s) => s.textContent).join(' › ');
+    must(got === want, `the line above the card is "${got}"`);
+    must(q('.recall-wrap .card .qa-q')?.textContent === FRONT, 'its front');
+    await shot('listcards-session');
+    keyOn(window, ' ');
+    await poll(() => q('.recall-wrap .card[data-revealed="1"]'), 'space reveals the back');
+    await shot('listcards-revealed', 1500);
+    keyOn(window, '3');
+    const graded = await poll(async () => {
+      const ls = await lines();
+      const k = ls.findIndex((l) => l.startsWith(`- ${CARD} ^`));
+      return k >= 0 && /^ {2}<!-- sr due=\S+ st=\S+ .*-->$/.test(ls[k + 1] ?? '') ? [ls[k]!, ls[k + 1]!] : null;
+    }, 'good: the card line gains its id and the sr line is written under the item, at its content column');
+    log(`the lines: ${graded.join(' ⏎ ')}`);
+    const after = await lines();
+    must(after.length === all.length + 1, `one line more in the file (${all.length} → ${after.length})`);
+
+    // ── go to source: back to the card, `o` ──
+    keyOn(window, '[');
+    await poll(() => q<HTMLElement>('.recall-wrap .card .qa-q')?.textContent === FRONT, 'back on the card with [');
+    keyOn(window, 'o');
+    await poll(() => (activeTab(useApp.getState().panes)?.id === NOTE ? surface() : null), 'o opens the note', 8000);
+    const landed = await poll(() => { const c = ourCard(); return c?.classList.contains('selected') ? c : null; }, 'the card is selected in the page');
+    must(landed.classList.contains('landed'), 'and marked where it landed');
+    const sc = scroller()!;
+    const r = landed.getBoundingClientRect();
+    const v = sc.getBoundingClientRect();
+    must(sc.scrollTop > 400, `the page is scrolled down (${Math.round(sc.scrollTop)} px), not at the top`);
+    must(r.top >= v.top && r.bottom <= v.bottom, `the card is in view (${Math.round(r.top - v.top)} px from the pane's top of ${Math.round(v.height)})`);
+    await shot('listcards-source', 1500);
+
+    // ── study from the reader's top row, and from the note's tab ──
+    const study = await poll(() => q<HTMLButtonElement>('.doc-view .meta .study-btn'), 'the top row has study');
+    must(study.textContent?.trim() === 'study', `labelled "${study.textContent?.trim() ?? ''}"`);
+    await shot('listcards-toprow', 1200);
+    study.click();
+    const head = await poll(() => q<HTMLElement>('.recall-wrap .sess-deck'), 'study opens a session over the note', 8000);
+    must(new RegExp(`^${TITLE.replace(/[.*+?^${}()|[\]\\&]/g, '\\$&')} · \\d+ left$`).test(head.textContent ?? ''), `its header: "${head.textContent ?? ''}"`);
+    const s = useApp.getState().session;
+    must(s?.deck?.id === NOTE && s.items.every((i) => i.path === NOTE), `${s?.items.length ?? 0} cards, all the note's`);
+    await shot('listcards-study');
+    const tabRow = q<HTMLElement>(`.tab-rail .rail-row[data-path="${CSS.escape(NOTE)}"]`);
+    if (tabRow) {
+      await open(NOTE);
+      const row2 = await poll(() => q<HTMLElement>(`.tab-rail .rail-row[data-path="${CSS.escape(NOTE)}"]`), 'the note\'s tab in the notebook\'s rail');
+      q<HTMLElement>('.row-acts .more', row2)!.click();
+      await poll(() => q('.ctx-menu .ci[data-act="study"]'), 'its `···` menu has study');
+      await shot('listcards-rail-menu', 1500);
+      document.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+      keyOn(window, 'Escape');
+    } else {
+      log('the note opened without the notebook\'s rail; the rail\'s study is covered by the tests');
+    }
+
+    useApp.getState().setTheme('dark');
+    await open(NOTE);
+    ourCard()?.scrollIntoView({ block: 'center' });
+    await shot('listcards-dark');
     useApp.getState().setTheme('light');
     log(`done; vault ${vault.root}`);
   } catch (e) {

@@ -81,11 +81,22 @@ export interface Card {
   /** `<!-- sr cN -->` lines, keyed by group number. */
   blanks?: Record<number, CardSchedule>;
   extracts?: string[];
+  /**
+   * A card that is a list item (FORMAT.md §5.2): the item's first-line
+   * prefix as written, its indentation, marker, and the spaces after it
+   * (`- `, `  1. `). `text` is the item's text without it, continuation
+   * lines without the content column's spaces.
+   */
+  item?: string;
+  /** Written directly under the block before, no blank line: a piece of the same list (§5.2). */
+  joined?: true;
 }
 
 export interface Raw {
   kind: 'raw';
   text: string;
+  /** As on `Card`: the rest of a list a card item split, written directly under it. */
+  joined?: true;
 }
 
 export type Block = Heading | Paragraph | Card | Raw;

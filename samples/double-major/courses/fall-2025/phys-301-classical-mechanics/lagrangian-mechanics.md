@@ -18,7 +18,7 @@ The $q$'s don't have to be lengths. Angles, normal-mode amplitudes, anything tha
 - holonomic :: constraint is f(q,t) = 0
 - scleronomic :: no explicit t
 
-[the three above were my first "cards" — they're in a list so they were never cards. found out week 3 when they never showed up in the queue. kept them as a reminder; the real ones are on the course page and below.]
+[the three above were my first cards, a list typed in week 1. the rest of these notes keep a card per paragraph, which is the habit I fell into.]
 
 Kinds of constraint, Lindgren's taxonomy:
 

@@ -81,6 +81,25 @@ export function sourceLabel(item: QueueItem, docs: Record<string, DocInfo>, by: 
   return `${name} — ${item.section.replace(/^§\d+\s*—\s*/, '')}`;
 }
 
+const same = (a: string, b: string) => a.trim().toLocaleLowerCase() === b.trim().toLocaleLowerCase();
+
+/**
+ * Where a card sits, for the session's line above it: the document's name,
+ * then the headings over the card, outermost first, `›` between
+ * (`stat mech › canonical ensemble › the partition function`). A top
+ * heading that only repeats the name is left out, and so is an empty one.
+ */
+export function trailParts(item: CardItem, docs: Record<string, DocInfo>): string[] {
+  const name = docs[item.path]?.title ?? nameOf(item.path);
+  const heads = (item.trail ?? (item.section ? [item.section] : []))
+    .map((h) => h.replace(/^§\d+\s*—\s*/, '').trim())
+    .filter(Boolean);
+  if (heads.length && same(heads[0]!, name)) heads.shift();
+  return [name, ...heads];
+}
+
+export const trailLabel = (item: CardItem, docs: Record<string, DocInfo>): string => trailParts(item, docs).join(' › ');
+
 /** The first `n` words of a text, one line. */
 export function firstWords(text: string, n: number): string {
   const words = text.replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);

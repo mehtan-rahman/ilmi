@@ -32,8 +32,10 @@ import { currentVault, enrolReading, extractNode } from './vault.js';
 import 'katex/dist/katex.min.css';
 import 'prosemirror-gapcursor/style/gapcursor.css';
 import './reader.css';
+import './incontext.css';
 import { Crumbs } from './Crumbs.js';
 import { TabsToggle } from './TabsToggle.js';
+import { StudyButton } from './StudyButton.js';
 
 /** How long after the last keystroke the file is written. */
 const WRITE_DELAY = 500;
@@ -337,7 +339,7 @@ export function cardHTML(card: Card): string {
  * changed between two decorations.
  */
 function ownClasses(dom: HTMLElement, own: string): void {
-  const kept = Array.from(dom.classList).filter((c) => c === 'selected' || c.startsWith('find-'));
+  const kept = Array.from(dom.classList).filter((c) => c === 'selected' || c === 'landed' || c.startsWith('find-'));
   dom.className = [own, ...kept].join(' ');
 }
 
@@ -355,10 +357,21 @@ class CardView implements NodeView {
     const now = new Date();
     const due = cardDue(card);
     const isDue = due === undefined || whenToDate(due) <= now;
-    ownClasses(this.dom, `card-span${isDue ? ' due' : ''}`);
-    this.dom.innerHTML =
+    const inner =
       `<div class="cs-body">${cardHTML(card)}</div>` +
       `<div class="cs-foot"><span class="cs-state" data-due="${isDue ? '1' : '0'}">${escapeHtml(dueLabel(due, now))}</span></div>`;
+    if (card.item === undefined) {
+      ownClasses(this.dom, `card-span${isDue ? ' due' : ''}`);
+      this.dom.style.removeProperty('--indent');
+      this.dom.innerHTML = inner;
+    } else {
+      // a list item (FORMAT.md §5.2): its marker in the list's column, set in as the item is
+      const m = /^( *)(\S+)/.exec(card.item)!;
+      const n = markerNumber(`${m[2]} `);
+      ownClasses(this.dom, `card-span in-item${isDue ? ' due' : ''}`);
+      this.dom.style.setProperty('--indent', String(indentWidth(m[1]!)));
+      this.dom.innerHTML = `<span class="li-mark${n === null ? '' : ' num'}">${n === null ? '•' : escapeHtml(m[2]!)}</span><div class="cs-item">${inner}</div>`;
+    }
     markFinds(this.dom.querySelector('.cs-body')!, atomFind(decorations));
   }
 
@@ -1161,7 +1174,13 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
     const pos = cardPos(view.state.doc, reveal);
     if (pos !== null) {
       view.dispatch(view.state.tr.setSelection(NodeSelection.create(view.state.doc, pos)));
-      (view.nodeDOM(pos) as HTMLElement | null)?.scrollIntoView({ block: 'center' });
+      const dom = view.nodeDOM(pos) as HTMLElement | null;
+      dom?.scrollIntoView({ block: 'center' });
+      // marked where it landed (go to source, the palette): a quiet fill that fades, the selection kept
+      if (dom) {
+        dom.classList.add('landed');
+        setTimeout(() => dom.classList.remove('landed'), 2400);
+      }
     }
     useApp.setState({ reveal: null });
   }, [reveal, status, id]);
@@ -1540,6 +1559,7 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
         <div className="meta">
           <Crumbs path={id} />
           <TabsToggle path={id} />
+          <StudyButton path={id} />
           {onPages && <button type="button" className="frozen-tag" onClick={onPages}>pages</button>}
           {info && info.type !== 'draft' && (
             <button type="button" className="frozen-tag" data-frozen={info.frozen ? '1' : '0'} onClick={toggleFrozen}>

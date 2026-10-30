@@ -48,7 +48,8 @@ export const schema = new Schema({
       atom: true,
       selectable: true,
       draggable: false,
-      attrs: { text: {} },
+      /** `joined`: a piece of a list a card item split, written directly under the block before (FORMAT.md §5.2). */
+      attrs: { text: {}, joined: { default: false } },
       leafText: (n) => n.attrs.text as string,
       toDOM(n) { return ['pre', { class: 'raw', contenteditable: 'false' }, n.attrs.text as string]; },
     },
@@ -60,7 +61,7 @@ export const schema = new Schema({
       code: true,
       defining: true,
       /** `fence`: the opening line verbatim; `close`: the closing line verbatim, null when the fence never closed. */
-      attrs: { fence: {}, close: { default: null } },
+      attrs: { fence: {}, close: { default: null }, joined: { default: false } },
       toDOM(n) {
         const lang = langOf(n.attrs.fence as string);
         return ['pre', { class: 'dd-code', 'data-lang': lang }, ['code', { class: lang ? `language-${lang}` : null }, 0]];
@@ -70,6 +71,8 @@ export const schema = new Schema({
     list: {
       group: 'block',
       content: 'list_item+',
+      /** As on `raw`: the rest of a list after a card item, written directly under it. */
+      attrs: { joined: { default: false } },
       toDOM() { return ['div', { class: 'dd-list' }, 0]; },
     },
     list_item: {
@@ -87,6 +90,7 @@ export const schema = new Schema({
     quote: {
       group: 'block',
       content: 'quote_line+',
+      attrs: { joined: { default: false } },
       toDOM() { return ['blockquote', { class: 'dd-quote' }, 0]; },
     },
     quote_line: {

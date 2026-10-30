@@ -132,17 +132,14 @@ $$\{L_i, L_j\} = \epsilon_{ijk}L_k.$$
 
 Consequence via Poisson's theorem: if $L_x$ and $L_y$ are conserved, so is $L_z$. And $\{L^2, L_i\} = 0$. Same algebra as $[\hat L_i,\hat L_j] = i\hbar\epsilon_{ijk}\hat L_k$, and that's no accident: Dirac's rule $\{f,g\} \to \frac{1}{i\hbar}[\hat f,\hat g]$. [2026] Okonkwo said this rule fails in general (Groenewold–van Hove: no consistent quantization of all polynomials), works for the ones we care about.
 
-time evolution of a phase-space function $f(q,p,t)$ in Poisson-bracket form :: $\dfrac{df}{dt} = \{f,H\} + \dfrac{\partial f}{\partial t}$ ^cm-pb-evol
-<!-- sr due=2027-01-08 st=review s=168 d=3.3 r=11 l=0 ivl=168 last=2026-07-24T08:02:00Z g=3 -->
-
-$\{L_i, L_j\} = {{c1::\epsilon_{ijk}L_k}}$ ^cm-pb-L
-<!-- sr due=2026-12-25 st=review s=128 d=4.4 r=10 l=1 ivl=128 last=2026-08-19T09:20:00Z g=3 -->
-
-with the convention $\{f,g\} = \sum(\partial_q f\,\partial_p g - \partial_p f\,\partial_q g)$, what is $\{x, L_z\}$? :: $-y$ (in general $\{x_i, L_j\} = \epsilon_{ijk}x_k$) ^cm-pb-xL
-<!-- sr due=2026-10-27 st=review s=21 d=8.1 r=13 l=4 ivl=21 last=2026-10-06T19:55:00Z g=3 -->
-
-state Poisson's theorem and say how it's proved :: if $f$ and $g$ are constants of the motion (no explicit $t$), so is $\{f,g\}$; Jacobi identity with $H$ as the third function ^cm-poisson-thm
-<!-- sr due=2026-11-10 st=review s=143 d=3.9 r=9 l=0 ivl=143 last=2026-06-20T07:36:00Z g=3 -->
+- time evolution of a phase-space function $f(q,p,t)$ in Poisson-bracket form :: $\dfrac{df}{dt} = \{f,H\} + \dfrac{\partial f}{\partial t}$ ^cm-pb-evol
+  <!-- sr due=2027-01-08 st=review s=168 d=3.3 r=11 l=0 ivl=168 last=2026-07-24T08:02:00Z g=3 -->
+- $\{L_i, L_j\} = {{c1::\epsilon_{ijk}L_k}}$ ^cm-pb-L
+  <!-- sr due=2026-12-25 st=review s=128 d=4.4 r=10 l=1 ivl=128 last=2026-08-19T09:20:00Z g=3 -->
+- with the convention $\{f,g\} = \sum(\partial_q f\,\partial_p g - \partial_p f\,\partial_q g)$, what is $\{x, L_z\}$? :: $-y$ (in general $\{x_i, L_j\} = \epsilon_{ijk}x_k$) ^cm-pb-xL
+  <!-- sr due=2026-10-27 st=review s=21 d=8.1 r=13 l=4 ivl=21 last=2026-10-06T19:55:00Z g=3 -->
+- state Poisson's theorem and say how it's proved :: if $f$ and $g$ are constants of the motion (no explicit $t$), so is $\{f,g\}$; Jacobi identity with $H$ as the third function ^cm-poisson-thm
+  <!-- sr due=2026-11-10 st=review s=143 d=3.9 r=9 l=0 ivl=143 last=2026-06-20T07:36:00Z g=3 -->
 
 ## canonical transformations
 

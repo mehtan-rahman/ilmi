@@ -343,6 +343,9 @@ export async function applyBulk(store: CardStore, refs: readonly CardRef[], acti
       const taken = usedIds(doc);
       for (const c of moving) {
         const card = structuredClone(c);
+        // a list item lands as a card of its own at the end (FORMAT.md §5.2)
+        delete card.item;
+        delete card.joined;
         if (card.id !== undefined && taken.has(card.id)) { do card.id = newId(); while (taken.has(card.id)); }
         if (card.id !== undefined) taken.add(card.id);
         doc.blocks.push(card);

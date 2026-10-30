@@ -135,10 +135,12 @@ $$
 Z_{\text{total}} = Z_1 Z_2
 $$
 
-$N$ distinguishable identical-looking things (atoms on lattice sites in a solid — distinguishable by position): $Z = Z_1^N$. $N$ indistinguishable particles in a gas, dilute: $Z = Z_1^N/N!$ (same caveat as microcanonical — only when multiple occupancy is negligible).
+$N$ of them:
 
-partition function of $N$ identical, non-interacting particles in a dilute gas :: $Z = Z_1^N / N!$ ^sm-ZN-identical
-<!-- sr due=2026-11-06 st=review s=15.5 d=3.2 r=4 l=0 ivl=16 last=2026-10-21T08:18:00Z g=3 -->
+- distinguishable identical-looking things (atoms on lattice sites in a solid, told apart by position): $Z = Z_1^N$
+- partition function of $N$ identical, non-interacting particles in a dilute gas :: $Z = Z_1^N / N!$ ^sm-ZN-identical
+  <!-- sr due=2026-11-06 st=review s=15.5 d=3.2 r=4 l=0 ivl=16 last=2026-10-21T08:18:00Z g=3 -->
+  - same caveat as microcanonical: only when multiple occupancy is negligible
 
 One atom in a box, translational part. $Z_1 = \sum e^{-\beta p^2/2m}$ over box states, replaced by an integral with the $h^3$ rule:
 

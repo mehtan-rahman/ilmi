@@ -235,15 +235,18 @@ that is empty or whitespace-only. The parser recognizes four kinds:
 - **paragraph** — consecutive non-blank lines that do not start another block.
   Text is stored verbatim, including internal line breaks and leading or
   trailing spaces on lines (trailing double-space is a Markdown hard break).
-- **card** — a paragraph whose text has card syntax (§5). Same verbatim rule.
-- **raw** — anything else, verbatim: fenced code, indented code, lists, block
-  quotes, tables, thematic breaks, HTML blocks, comments that are not ours. A
-  raw block ends at a blank line, except fenced code, which ends at its closing
-  fence, and multi-line comments, which end at `-->`.
+- **card** — a paragraph whose text has card syntax (§5), or a list item
+  whose text has it (§5.2). Same verbatim rule.
+- **raw** — anything else, verbatim: fenced code, indented code, lists (but
+  their card items, §5.2), block quotes, tables, thematic breaks, HTML blocks,
+  comments that are not ours. A raw block ends at a blank line, except fenced
+  code, which ends at its closing fence, and multi-line comments, which end
+  at `-->`.
 
 A paragraph is interrupted (ended without a blank line) by an ATX heading, a
 fence, a comment line, a thematic break, a block quote, a bullet item, or a
-`1.`/`1)` item, matching CommonMark.
+`1.`/`1)` item, matching CommonMark; except that after a line that is
+exactly `?` or `??`, item lines are the card's back (§5, *steps*).
 
 Blank lines between blocks are not stored; the serializer writes exactly one.
 Whitespace inside a block is verbatim. A file the app has written round-trips
@@ -285,8 +288,23 @@ the fact instead of retrieving it ^cw3-leech
 A bidirectional card is one card with one schedule. Per-direction schedules are
 a possible later extension (`<!-- sr fwd … -->`).
 
-Cards live only in paragraphs. `{{c1::x}}` inside a list item, a table, or a
-code block is literal text.
+**Steps.** In a paragraph that has a `?` or `??` line, the item lines after
+it (`1.`, `2)`, `- `, at any number) no longer end the paragraph: they are
+the back, as written, so a derivation's steps sit under its question. Before
+the separator an item line still ends the paragraph, as in CommonMark. A
+paragraph with no text after its separator is no card (the line needs text
+on both sides), which is why the rule takes nothing from prose: `?` alone on
+a line followed by a list was a dangling `?` before.
+
+```
+derive ⟨E⟩ for the two-level system
+?
+1. $\langle E \rangle = -\partial_\beta \ln Z$
+2. $= \epsilon / (e^{\beta\epsilon} + 1)$
+```
+
+Cards live in paragraphs and in list items (§5.2). `{{c1::x}}` inside a
+table, a block quote, a heading, or a code block is literal text.
 
 ### 5.1 Cloze blanks
 
@@ -327,10 +345,64 @@ code block is literal text.
 - Anki-style hints (`{{c1::answer::hint}}`) are not recognized; the answer
   would be `answer::hint`. A later extension.
 
+### 5.2 Cards in list items
+
+A list item whose own text is a card (by the detection above) is a card,
+so class notes can hold cards where they were typed:
+
+```
+- dof :: 3N − k
+- holonomic :: constraint is $f(q,t) = 0$ ^cm-holo
+  <!-- sr due=2026-11-01 st=review s=4 d=5 r=2 l=0 ivl=4 -->
+- not a card, just an item
+  - nested :: a card under it
+1. Kepler's second law: equal {{c1::areas}} in equal {{c2::times}}
+   <!-- sr c1 due=2026-11-04 -->
+```
+
+- **The item.** Its first line is spaces (any number; a nested item is set
+  in), a marker (`-`, `*`, `+`, or 1–9 digits and `.` or `)`), one to four
+  spaces, then text. That prefix is kept as written (`item` in the model)
+  and the card's text is the rest. A marker followed by five spaces or
+  more starts code inside the item, a tab after the marker or in the
+  indentation is not read, and a task item (`- [ ] `, `- [x] `) is never a
+  card: each stays raw.
+- **Its lines.** The lines after the first that are set in to the item's
+  content column (the prefix's width), in spaces, continue its text, that
+  many spaces taken off each. The text ends at an annotation line, at
+  another item (a nested one too: children are items of their own, not the
+  card's), or at a line that would end a paragraph (a heading, a fence, a
+  quote, a comment, a rule). After a `?` or `??` line, items set in to the
+  content column are the back's steps, as in a paragraph (§5).
+- **A lazy line** (a following line that is not set in and would not end a
+  paragraph, which CommonMark reads as the item's text) makes the item no
+  card: its text could not be written back as it was. The item stays raw
+  with the rest of the list.
+- **Annotations** (`^id`, `sr`, `extract`, §6) follow the card item as they
+  follow a paragraph card: the `^id` at the end of its last line, the
+  comment lines directly under it. They are read at any indentation and
+  written at the content column, so a renderer keeps them inside the item.
+  An annotation line under an item that is no card is an orphan: kept, as
+  text of the list, with a diagnostic.
+- **Fences.** A fence inside a list item runs to its closing fence and
+  nothing inside it is a card, even a line that looks like an item.
+- **The list around it.** What is not a card in the list stays raw,
+  verbatim, in pieces between the card items; each piece and each card
+  after the list's first block is *joined* (`joined` in the model): the
+  serializer writes it directly under the block before, no blank line, so
+  the list is written back as one. A join the edits around it have broken
+  (the list's first item deleted, a paragraph now before it) is written
+  with a blank line instead, so a card item is never glued to prose.
+- `pos` (§3) counts the raw pieces of a list a card item splits as prose
+  blocks of their own, since they are blocks; a list that gained a card
+  item above a source's marker shifts it by one, as an inserted paragraph
+  does.
+
 ## 6. Annotations
 
 Annotations are the lines the app owns. They sit directly under the paragraph
-they belong to, one per line, no blank line between. A blank line breaks the
+they belong to, one per line, no blank line between; under a card item, set
+in to the item's content column (§5.2). A blank line breaks the
 attachment on purpose: if someone deletes a card's text and leaves its
 schedule, the orphan must not glue itself to the card above.
 
@@ -461,7 +533,8 @@ The first time the app writes a hand-made file, these change, and only these:
   without it the text would be read as the closing sequence.
 - `^id` on its own line → ` ^id` on the last text line.
 - Annotation comments → canonical spacing, key order, value formatting, and
-  order under the card. Duplicates collapsed.
+  order under the card. Duplicates collapsed. Under a card item they are
+  set in to its content column (§5.2), whatever indentation they had.
 - Known front-matter fields → canonical `key: value`; trailing comments on
   them dropped; a blank line after the closing `---`.
 - A `pri=` on the `read` or `write` line → dropped, when the file has a `pri`
@@ -485,7 +558,8 @@ fixes the file. That is intended.
 
 ## 10. Out of scope, for now
 
-- Cards inside list items or tables.
+- Cards inside tables or block quotes.
+- RemNote's `>>>`, a card whose back is its child items.
 - Cloze hints.
 - Per-direction schedules on bidirectional cards.
 - Prose block ids for the reading marker (would make `pos` edit-stable).

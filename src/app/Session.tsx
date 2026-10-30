@@ -9,7 +9,7 @@ import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 're
 import { emitDocAction, emitGrade, runBlockHooks, usePlugins } from '../plugins/index.js';
 import { PRI_DEFAULT, blanks, cardFields, clozeSegments, type Block, type Card } from '../format/index.js';
 import { GRADES, advanceRead, advanceWrite, gradeItem, postponed, type CardItem, type Grade, type QueueItem, type ReadItem, type WriteItem } from '../schedule/index.js';
-import { EL_WORD, FORM_LABEL, dueLabel, gapLabels, ownBlank, sourceLabel } from './items.js';
+import { EL_WORD, FORM_LABEL, dueLabel, gapLabels, ownBlank, sourceLabel, trailParts } from './items.js';
 import type { OpenOpts } from './panes.js';
 import { Pdf } from './Pdf.js';
 import { Reader, answerHTML, clozeHTML, richHTML } from './Reader.js';
@@ -18,6 +18,7 @@ import { useDoc } from './useDoc.js';
 import { studyHeader } from './study.js';
 import { currentVault, note, openNode } from './vault.js';
 import './session.css';
+import './incontext.css';
 
 interface Props {
   active: boolean;
@@ -308,11 +309,19 @@ export function Session({ active, onOpen }: Props) {
   const goNext = () => setIdx((i) => Math.min(total - 1, i + 1));
   const advance = () => setIdx((i) => i + 1);
 
+  // go to source: the card's document, scrolled to the card and the card marked (the reader's `reveal`)
+  const goToSource = (opts: OpenOpts = {}) => {
+    if (el?.kind !== 'card') return;
+    useApp.setState({ reveal: el.id === undefined ? { path: el.path, index: el.block } : { path: el.path, index: el.block, id: el.id } });
+    onOpen(el.path, opts);
+  };
+
   useKeys(active, (key) => {
     if (key === '[') { goPrev(); return true; }
     if (key === ']') { goNext(); return true; }
+    if (key === 'o' && el?.kind === 'card') { goToSource(); return true; }
     return false;
-  }, [total]);
+  }, [total, el]);
 
   const fail = (e: unknown) => console.error(e);
 
@@ -364,7 +373,9 @@ export function Session({ active, onOpen }: Props) {
     return <DocSession key={key} item={el} active={active} idx={idx} total={total} onPrev={goPrev} onNext={goNext} onAct={(a, pos) => onDoc(el, a, pos)} />;
   }
 
-  const openSource = (e: MouseEvent) => onOpen(el.path, { cmdClick: e.metaKey || e.ctrlKey, shiftClick: e.shiftKey });
+  const openSource = (e: MouseEvent) => goToSource({ cmdClick: e.metaKey || e.ctrlKey, shiftClick: e.shiftKey });
+  // where the card sits: the document, then the headings over it
+  const trail = trailParts(el, docs);
   return (
     <div className="recall-wrap">
       <div className="recall-meta">
@@ -373,7 +384,10 @@ export function Session({ active, onOpen }: Props) {
           ? <span className="sess-count sess-deck">{studyHeader(deck.title, total - idx)}</span>
           : <span className="sess-count">{idx + 1} / {total}</span>}
         <span className="el-tag" data-el="card">{FORM_LABEL[el.form]}</span>
-        <button type="button" className="meta-srclink" onClick={openSource}>{sourceLabel(el, docs)} <span className="ms-arrow">↗</span></button>
+        <button type="button" className="meta-srclink card-trail" onClick={openSource} title="go to source  o">
+          {trail.map((t, i) => <span key={i} className={i ? 'ct-h' : 'ct-doc'}>{t}</span>)}
+          <span className="ms-arrow">↗</span>
+        </button>
       </div>
       <CardElement key={key} item={el} active={active} onGrade={(g) => onGrade(el, g)} />
     </div>

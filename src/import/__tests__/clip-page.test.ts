@@ -121,6 +121,12 @@ describe('clipPage', () => {
     expect(doc.blocks.map((b) => b.kind)).toEqual(['paragraph', 'paragraph', 'paragraph', 'paragraph']);
     for (const b of doc.blocks) expect(cardForm(b.text)).toBeNull();
   });
+
+  it('a list item is defused as a paragraph is, since a card item is a card (FORMAT.md §5.2)', () => {
+    const out = md('<ul><li>front :: back</li><li>a {{c1::blank}}<ul><li>nested ::: both</li></ul></li></ul><ol><li>one :: two</li></ol>');
+    expect(out).toBe('- front::back\n- a { {c1::blank}}\n  - nested:::both\n\n1. one::two');
+    expect(parse(`${out}\n`).doc.blocks.map((b) => b.kind)).toEqual(['raw', 'raw']);
+  });
 });
 
 describe('escapeProse', () => {

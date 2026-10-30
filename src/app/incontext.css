@@ -1,0 +1,33 @@
+/* Milestone 37: cards where notes put them, and review in their place.
+   Kept apart from reader.css and session.css on purpose. */
+
+/* a card that is a list item: the item's marker in the list's column, set in as the item is */
+.draft-doc .card-span.in-item {
+  display: flex;
+  align-items: baseline;
+  margin: 0 0 0.25em calc(var(--indent, 0) * 0.6em);
+  padding: 0;
+  border-bottom: 0;
+}
+.draft-doc .card-span.in-item .cs-item {
+  flex: 1;
+  min-width: 0;
+  padding: 2px 0 6px;
+  border-bottom: 1px solid var(--line-2);
+}
+.draft-doc .card-span.in-item .cs-body { font-size: inherit; }
+/* the list goes on around it: no gap between a piece of the list and a card item */
+.draft-doc .dd-list:has(+ .card-span.in-item) { margin-bottom: 0.25em; }
+.draft-doc .card-span.in-item:not(:has(+ .card-span.in-item, + .dd-list, + .raw)) { margin-bottom: 1em; }
+
+/* where go to source landed: a quiet fill that fades */
+.draft-doc .card-span.landed { background: var(--accent-soft); }
+.draft-doc .card-span { transition: background 1.2s ease-out; }
+
+/* the session's line above a card: the document, then the headings over it */
+.recall-meta .card-trail .ct-h::before { content: '›'; margin: 0 0.45em; color: var(--fg-5); }
+.recall-meta .card-trail .ct-doc { color: var(--fg-2); }
+.recall-meta .card-trail .ms-arrow { margin-left: 0.4em; }
+
+/* study, in the reader's top row */
+.doc-view .meta .study-btn .kbd { margin-left: 4px; }

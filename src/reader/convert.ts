@@ -3,7 +3,7 @@
 // them. Prose text is verbatim in both directions, math chips included.
 
 import { Fragment, type Node as PMNode } from 'prosemirror-model';
-import { mathSpanEnd, type Block, type Card, type Heading, type Paragraph } from '../format/index.js';
+import { mathSpanEnd, type Block, type Card, type Heading, type Paragraph, type Raw } from '../format/index.js';
 import { nodeToRaw, rawToNode } from './raw.js';
 import { schema } from './schema.js';
 
@@ -49,9 +49,12 @@ function blockNode(b: Block): PMNode {
       return schema.nodes.paragraph!.create({ id: b.id ?? null, extracts: b.extracts ? [...b.extracts] : null }, inline(b.text));
     case 'card':
       return schema.nodes.card!.create({ card: structuredClone(b) });
-    case 'raw':
+    case 'raw': {
       // code, a list, or a quote is edited as itself; anything else stays an atom
-      return rawToNode(b.text) ?? schema.nodes.raw!.create({ text: b.text });
+      const node = rawToNode(b.text) ?? schema.nodes.raw!.create({ text: b.text });
+      // the rest of a list a card item split keeps its place directly under it (FORMAT.md §5.2)
+      return b.joined ? node.type.create({ ...node.attrs, joined: true }, node.content) : node;
+    }
   }
 }
 
@@ -111,13 +114,14 @@ export function fromDoc(doc: PMNode): Block[] {
         return;
       }
       case 'raw':
-        out.push({ kind: 'raw', text: node.attrs.text as string });
-        return;
       case 'code_block':
       case 'list':
-      case 'quote':
-        out.push({ kind: 'raw', text: nodeToRaw(node) });
+      case 'quote': {
+        const raw: Raw = { kind: 'raw', text: node.type.name === 'raw' ? node.attrs.text as string : nodeToRaw(node) };
+        if (node.attrs.joined === true) raw.joined = true;
+        out.push(raw);
         return;
+      }
     }
   });
   return out;

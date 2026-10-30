@@ -831,6 +831,9 @@ export class Vault {
       delete card.extracts;
       const dest = await this.update(to, (doc) => {
         const moved = structuredClone(card);
+        // a list item lands as a card of its own at the end (FORMAT.md §5.2)
+        delete moved.item;
+        delete moved.joined;
         const taken = usedIds(doc);
         if (moved.id !== undefined && taken.has(moved.id)) {
           do moved.id = freshId(); while (taken.has(moved.id));

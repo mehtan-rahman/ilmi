@@ -139,6 +139,11 @@ export function insertCard(doc: Doc, after: CardRef | null, text: string, pri?: 
   const card: Card = pri === undefined ? { kind: 'card', text } : { kind: 'card', text, sched: { pri } };
   const at = after ? findCard(doc, after) : null;
   const i = at ? doc.blocks.indexOf(at) + 1 : doc.blocks.length;
+  // after a card that is a list item, the new one is the next item, a bullet's marker kept, a number one up (FORMAT.md §5.2)
+  if (at?.item !== undefined) {
+    card.item = at.item.replace(/^( *)(\d{1,9})([.)])/, (_, sp: string, n: string, d: string) => `${sp}${Number(n) + 1}${d}`);
+    card.joined = true;
+  }
   doc.blocks.splice(i, 0, card);
   return i;
 }

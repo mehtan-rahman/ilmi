@@ -419,10 +419,17 @@ describe('cloze', () => {
     expect(mb.doc.blocks.map((b) => b.kind)).toEqual(['paragraph', 'paragraph', 'paragraph', 'paragraph', 'card']);
   });
 
-  it('never sees cards in code, lists, quotes, tables, or headings', () => {
+  it('never sees cards in code, quotes, tables, or headings', () => {
     // the $$ block is one display-math span; since milestone 18 its numbered {{c1::x_i}} is a blank, so it is a card
     expect(kinds(read('mangled/code-and-math.md'))).toEqual(['raw', 'raw', 'card', 'card', 'card', 'card', 'card', 'paragraph', 'raw']);
-    expect(kinds(read('mangled/lists-quotes-tables.md'))).toEqual(['raw', 'raw', 'raw', 'raw', 'raw', 'raw', 'raw', 'raw', 'raw', 'raw', 'raw', 'paragraph', 'raw']);
+    // since milestone 37 a list item whose text is a card is one (§5.2): the first item here is a cloze,
+    // and the sr line under the second, plain, item is an orphan kept as the list's text
+    const lqt = parse(read('mangled/lists-quotes-tables.md'));
+    expect(lqt.doc.blocks.map((b) => b.kind)).toEqual(['card', 'raw', 'raw', 'raw', 'raw', 'raw', 'raw', 'raw', 'raw', 'raw', 'raw', 'raw', 'paragraph', 'raw']);
+    expect(lqt.doc.blocks[1]).toEqual({ kind: 'raw', text: '- and a second item\n<!-- sr due=2026-01-01 -->', joined: true });
+    expect(lqt.diagnostics).toEqual([{ line: 3, message: 'orphan sr line' }]);
+    // the table's, the quote's, and the HTML block's blanks stay text
+    expect(cards(read('mangled/lists-quotes-tables.md')).map((c) => c.text)).toEqual(['a list item with {{c1::a blank}} is literal']);
     expect(cards(read('mangled/headings.md'))).toEqual([]);
   });
 });

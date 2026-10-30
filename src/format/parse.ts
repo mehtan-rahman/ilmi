@@ -7,7 +7,7 @@
 import { parseAttrs, parseBool, readAttrs, specWhen, specNum, specInt, specEnum, specIntRange, type AttrSpec, type Warn } from './attrs.js';
 import { cardForm } from './cloze.js';
 import { parseFrontmatter } from './frontmatter.js';
-import type { Block, Card, CardSchedule, Diagnostic, Doc, Heading, Paragraph, SrState } from './model.js';
+import type { Block, Card, CardSchedule, Diagnostic, Doc, Heading, Paragraph, Raw, SrState } from './model.js';
 
 export const SR_SPECS: AttrSpec<CardSchedule>[] = [
   specWhen('due', 'due'),
@@ -46,6 +46,14 @@ const SETEXT_2 = /^ {0,3}-+[ \t]*$/;
 const ID_TAIL = /^(.*?)[ \t]+\^([A-Za-z0-9_-]+)[ \t]*$/s;
 const ID_ALONE = /^\^([A-Za-z0-9_-]+)[ \t]*$/;
 const GROUP_KEY = /^c?(\d+)$/;
+/** Any item line, nested or not: where one item ends and the next begins. */
+const ITEM_START = /^ *(?:[-*+]|\d{1,9}[.)])(?:[ \t]|$)/;
+/** An item line that can be a card (§5.2): spaces, a marker, one to four spaces, then text. */
+const ITEM_CARD = /^( *(?:[-*+]|\d{1,9}[.)]) {1,4})(\S.*)$/s;
+const TASK = /^\[[ xX]\][ \t]/;
+/** The multi-line q&a and bidirectional separators. */
+const isSep = (l: string) => l.trim() === '?' || l.trim() === '??';
+const FENCE_IN = /^ *(`{3,}|~{3,})/;
 
 const isBlank = (l: string) => BLANK.test(l);
 
@@ -142,11 +150,12 @@ export function parse(input: string): ParseResult {
       continue;
     }
 
-    // other raw blocks: to the next blank line
+    // other raw blocks: to the next blank line; a list's card items are cut out of it (§5.2)
     if (startsRaw(line)) {
       let j = i;
       while (j + 1 < lines.length && !isBlank(lines[j + 1]!)) j++;
-      blocks.push({ kind: 'raw', text: lines.slice(i, j + 1).join('\n') });
+      if ((BULLET.test(line) || ORDERED.test(line)) && !THEMATIC.test(line)) blocks.push(...listBlocks(lines.slice(i, j + 1), i + 1, diagnostics));
+      else blocks.push({ kind: 'raw', text: lines.slice(i, j + 1).join('\n') });
       lastEnd = j;
       i = j + 1;
       continue;
@@ -155,13 +164,16 @@ export function parse(input: string): ParseResult {
     // paragraph (or setext heading, or card)
     let j = i;
     let setext: 1 | 2 | 0 = 0;
+    // after a `?` or `??` line, list lines are the card's back: steps of a derivation (§5)
+    let sep = false;
     while (j + 1 < lines.length) {
       const next = lines[j + 1]!;
       if (isBlank(next)) break;
       if (SETEXT_1.test(next)) { setext = 1; break; }
       if (SETEXT_2.test(next)) { setext = 2; break; }
-      if (interrupts(next)) break;
+      if (interrupts(next) && !(sep && (BULLET.test(next) || ORDERED.test(next)) && !THEMATIC.test(next))) break;
       j++;
+      if (isSep(next)) sep = true;
     }
     const body = lines.slice(i, j + 1);
     if (setext) {
@@ -176,6 +188,89 @@ export function parse(input: string): ParseResult {
   }
 
   return { doc, diagnostics };
+}
+
+/**
+ * A list's lines (one raw run, to the next blank line) as blocks: each item
+ * whose own text is a card becomes a card block carrying its prefix, its
+ * annotation lines read under it; every other line stays raw, verbatim,
+ * in pieces between the cards. Every block after the first is `joined`, so
+ * the list is written back as one. FORMAT.md §5.2.
+ */
+function listBlocks(run: string[], firstLine: number, diags: Diagnostic[]): Block[] {
+  const out: Block[] = [];
+  let raw: string[] = [];
+  const push = (b: Raw | Card) => { if (out.length) b.joined = true; out.push(b); };
+  const flush = () => { if (raw.length) { push({ kind: 'raw', text: raw.join('\n') }); raw = []; } };
+  let fence: RegExp | null = null;
+  let k = 0;
+  while (k < run.length) {
+    const line = run[k]!;
+    // a fence inside an item is code to its closing fence: nothing in it is a card
+    if (fence) {
+      if (fence.test(line)) fence = null;
+      raw.push(line);
+      k++;
+      continue;
+    }
+    const got = itemCard(run, k);
+    if (got) {
+      flush();
+      push(got.card);
+      k = got.end;
+      // its annotations, at any indentation, written back at its content column
+      while (k < run.length) {
+        const ann = ANNOTATION.exec(run[k]!);
+        if (!ann) break;
+        if (!attach(got.card, true, ann[1]!, ann[2] ?? '', firstLine + k, diags)) { raw.push(run[k]!); k++; break; }
+        k++;
+      }
+      continue;
+    }
+    const ann = ANNOTATION.exec(line);
+    // an annotation under an item that is no card: kept as text, said so
+    if (ann) diags.push({ line: firstLine + k, message: `orphan ${ann[1]!} line` });
+    const f = FENCE_IN.exec(line);
+    if (f) fence = new RegExp(`^ *${f[1]![0]}{${f[1]!.length},}[ \\t]*$`);
+    raw.push(line);
+    k++;
+  }
+  flush();
+  return out;
+}
+
+/**
+ * The card item starting at `run[k]`, and the line after its text; null
+ * when the item is no card. Its text is the first line after the prefix
+ * and the lines after it set in to the content column, in spaces; it ends
+ * at an annotation, at another item (a nested one included, except after a
+ * `?` or `??` line, where items are the back's steps), or at a line that
+ * would end a paragraph. A lazy line (not set in, not ending a paragraph)
+ * makes the item no card: its text could not be put back as written.
+ */
+function itemCard(run: string[], k: number): { card: Card; end: number } | null {
+  const m = ITEM_CARD.exec(run[k]!);
+  if (!m || TASK.test(m[2]!)) return null;
+  const prefix = m[1]!;
+  const pad = ' '.repeat(prefix.length);
+  const body = [m[2]!];
+  let sep = false;
+  let e = k + 1;
+  for (; e < run.length; e++) {
+    const line = run[e]!;
+    if (ANNOTATION.test(line) || !line.startsWith(pad)) break;
+    const rest = line.slice(pad.length);
+    if (!sep && (ITEM_START.test(line) || interrupts(rest))) break;
+    if (sep && interrupts(rest) && !ITEM_START.test(rest)) break;
+    body.push(rest);
+    if (isSep(rest)) sep = true;
+  }
+  const next = run[e];
+  if (next !== undefined && !ANNOTATION.test(next) && !ITEM_START.test(next) && !interrupts(next.startsWith(pad) ? next.slice(pad.length) : next)) return null;
+  const block = paragraphOrCard(body);
+  if (block.kind !== 'card') return null;
+  block.item = prefix;
+  return { card: block, end: e };
 }
 
 /** Strip a trailing `^id`, then decide prose vs card. */

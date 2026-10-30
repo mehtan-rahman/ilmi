@@ -13,7 +13,7 @@ describe('key hints', () => {
     const keys = (h: ReturnType<typeof hintsFor>) => h.map(([k]) => k);
     expect(keys(hintsFor({ kind: 'queue', el: null, scope: 'today', canEnrol: false }))).toEqual(['⏎', 'j k', 'o', '⌘k']);
     expect(keys(hintsFor({ kind: 'queue', el: null, scope: 'cards', canEnrol: false }))).toEqual(['⏎', 'j k', '⌘k']);
-    expect(keys(hintsFor({ kind: 'session', el: 'card', scope: null, canEnrol: false }))).toEqual(['space', '1 2 3 4', '[ ]']);
+    expect(keys(hintsFor({ kind: 'session', el: 'card', scope: null, canEnrol: false }))).toEqual(['space', '1 2 3 4', 'o', '[ ]']);
     expect(hintsFor({ kind: 'session', el: 'read', scope: null, canEnrol: false })[0]).toEqual(['⏎', 'read on']);
     expect(hintsFor({ kind: 'session', el: 'write', scope: null, canEnrol: false })[0]).toEqual(['⏎', 'worked on it']);
     expect(keys(hintsFor({ kind: 'source', el: null, scope: null, canEnrol: true }))).toContain('r');

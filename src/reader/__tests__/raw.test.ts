@@ -80,16 +80,16 @@ describe('raw blocks through the pair', () => {
   it('reads a fence with its info string and close, an unterminated one to the end, a tilde or longer fence', () => {
     const n = rawToNode('```js title\nlet a;\n\nlet b;\n```')!;
     expect(n.type).toBe(schema.nodes.code_block);
-    expect(n.attrs).toEqual({ fence: '```js title', close: '```' });
+    expect(n.attrs).toEqual({ fence: '```js title', close: '```', joined: false });
     expect(n.textContent).toBe('let a;\n\nlet b;');
     const open = rawToNode('~~~\nno close\n')!;
-    expect(open.attrs).toEqual({ fence: '~~~', close: null });
+    expect(open.attrs).toEqual({ fence: '~~~', close: null, joined: false });
     expect(open.textContent).toBe('no close\n');
     expect(nodeToRaw(open)).toBe('~~~\nno close\n');
     // one empty line between the fences is kept as one
     expect(nodeToRaw(rawToNode('```\n\n```')!)).toBe('```\n\n```');
     expect(rawToNode('````md\n```\ninner\n```\n````')!.textContent).toBe('```\ninner\n```');
-    expect(rawToNode('  ```\n  x\n  ```')!.attrs).toEqual({ fence: '  ```', close: '  ```' });
+    expect(rawToNode('  ```\n  x\n  ```')!.attrs).toEqual({ fence: '  ```', close: '  ```', joined: false });
     // a backtick in a backtick fence's info string is not a fence
     expect(rawToNode('``` a`b\nx\n```')).toBeNull();
   });

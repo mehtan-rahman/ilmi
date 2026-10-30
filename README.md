@@ -235,6 +235,16 @@ closes at the braces that balance, so `\binom{n}{{k}}` stays TeX. The formula
 is rendered once with the blank as a box, then with the answer on the accent;
 in the composer, `⌘B` on a selection inside a formula writes the numbered form.
 
+A list item can be a card, as a line of class notes is: `- dof :: 3N − k`,
+`1. the {{c1::Boltzmann}} factor`, nested or not. It is drawn as the card
+it is beside its bullet, and a review writes its `sr` line under the item,
+set in to the item's text. After a line that is only `?`, a numbered or
+bulleted list is the back: the steps of a derivation. In a session the line
+above a card names its document and the headings over it, and `o` (or a
+click on that line) opens the document scrolled to the card, marked.
+`study` in the top row of a note or source with cards, and on a tab's
+`···`, studies what is due in it.
+
 The inspector sets a priority, 0 first and 100 last, on a document or on the
 selected card; what is due sorts by it. It also sets a topic's growth, the
 factor each pass multiplies the interval by (1.6 reading, 1.5 writing), and

@@ -37,6 +37,8 @@ export interface CardItem extends ItemBase {
   text: string;
   /** Nearest heading above the card. */
   section?: string;
+  /** The headings the card sits under, outermost first: `section` is the last. */
+  trail?: string[];
   /** The schedule that applies to this item; absent for a new card. */
   sched?: CardSchedule;
   /** Present on cloze cards. */
@@ -104,7 +106,8 @@ function withDue(sched: { due?: string } | undefined, now: Date): { due?: string
   return sched?.due ? { due: sched.due, dueAt: whenToDate(sched.due) } : { dueAt: now };
 }
 
-function cardItems(path: string, block: number, card: Card, section: string | undefined, docPri: number, now: Date): CardItem[] {
+function cardItems(path: string, block: number, card: Card, trail: readonly string[], docPri: number, now: Date): CardItem[] {
+  const section = trail[trail.length - 1];
   const form = cardForm(card.text);
   if (!form) return [];
   const groups = form === 'cloze' ? cardGroups(card.text) : [];
@@ -118,7 +121,7 @@ function cardItems(path: string, block: number, card: Card, section: string | un
       ...when, pri,
     };
     if (card.id !== undefined) item.id = card.id;
-    if (section !== undefined) item.section = section;
+    if (section !== undefined) { item.section = section; item.trail = [...trail]; }
     if (sched) item.sched = sched;
     if (group) item.group = group;
     return item;
@@ -154,10 +157,13 @@ export function docItems(path: string, doc: Doc, now: Date): QueueItem[] {
     if (lead) item.lead = lead.text;
     out.push(item);
   }
-  let section: string | undefined;
+  // the headings over each card, by level: a heading closes every one at its level or deeper
+  const open: { level: number; text: string }[] = [];
   doc.blocks.forEach((b, i) => {
-    if (b.kind === 'heading') section = b.text;
-    else if (b.kind === 'card') out.push(...cardItems(path, i, b, section, docPri, now));
+    if (b.kind === 'heading') {
+      while (open.length && open[open.length - 1]!.level >= b.level) open.pop();
+      open.push({ level: b.level, text: b.text });
+    } else if (b.kind === 'card') out.push(...cardItems(path, i, b, open.map((h) => h.text), docPri, now));
   });
   return out;
 }

@@ -338,6 +338,11 @@ describe('the rail in the canvas', () => {
     mouse(rowOf(WKB).querySelector('.row-acts .more')!, 'click');
     const entries = Array.from(host.querySelectorAll<HTMLElement>('.ctx-menu .ci')).map((e) => e.textContent?.replace(/^./, '').replace(/F2$|▸$/, ''));
     expect(entries).toEqual(['add subtab', 'rename', 'duplicate', 'move to…', 'delete']);
+    // a tab with cards in it can be studied from its menu (milestone 37)
+    act(() => { useApp.setState((st) => ({ docs: { ...st.docs, [VAR]: info('note', { cards: 3, due: 1 }) } })); });
+    mouse(rowOf(VAR).querySelector('.row-acts .more')!, 'click');
+    const withCards = Array.from(host.querySelectorAll<HTMLElement>('.ctx-menu .ci')).map((e) => e.textContent?.replace(/^./, '').replace(/F2$|▸$/, ''));
+    expect(withCards).toEqual(['add subtab', 'study', 'rename', 'duplicate', 'move to…', 'delete']);
   });
 
   it('`+ add tab` is at the top and makes a note; the rail\'s edge drags its width, kept in the store', () => {

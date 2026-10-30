@@ -48,7 +48,7 @@ export function hintsFor(c: HintContext): Hint[] {
     case 'session':
       if (c.el === 'read') return [['⏎', c.note ? 'went over it' : 'read on'], ['p', 'postpone'], ['d', 'done'], ...selKeys(c.frozen || c.pages), NAV];
       if (c.el === 'write') return [['⏎', 'worked on it'], ['p', 'postpone'], ['d', 'done'], ...selKeys(c.frozen, false), NAV];
-      return [['space', 'reveal'], ['1 2 3 4', 'grade'], NAV];
+      return [['space', 'reveal'], ['1 2 3 4', 'grade'], ['o', 'go to source'], NAV];
     case 'note':
     case 'source':
     case 'extract': {

@@ -10,6 +10,7 @@
 
 import { Fragment, type Node as PMNode, type NodeType, type ResolvedPos } from 'prosemirror-model';
 import { Selection, TextSelection, type Command, type EditorState, type Transaction } from 'prosemirror-state';
+import type { Card } from '../format/index.js';
 import { markerNumber, nextMarker, numbered } from './raw.js';
 import { indentWidth, schema } from './schema.js';
 
@@ -101,18 +102,41 @@ function renumber(tr: Transaction, listPos: number): void {
   if (!l) return;
   const last = new Map<string, number>();
   const edits: { pos: number; attrs: Record<string, unknown> }[] = [];
-  l.forEach((item, off) => {
+  const step = (indent: string, n: number): number => {
+    const prev = last.get(indent);
+    const next = prev !== undefined && n <= prev ? prev + 1 : n;
+    last.set(indent, next);
+    return next;
+  };
+  const items = (node: PMNode, at: number) => node.forEach((item, off) => {
     const marker = item.attrs.marker as string;
     const n = markerNumber(marker);
     if (n === null) return;
-    const indent = item.attrs.indent as string;
-    const prev = last.get(indent);
-    const next = prev !== undefined && n <= prev ? prev + 1 : n;
-    if (next !== n) edits.push({ pos: listPos + 1 + off, attrs: { ...item.attrs, marker: numbered(marker, next) } });
-    last.set(indent, next);
+    const next = step(item.attrs.indent as string, n);
+    if (next !== n) edits.push({ pos: at + 1 + off, attrs: { ...item.attrs, marker: numbered(marker, next) } });
   });
+  items(l, listPos);
+  // the list goes on past a card item and the pieces joined after it (FORMAT.md §5.2): their numbers follow too
+  for (let pos = listPos + l.nodeSize; pos < tr.doc.content.size;) {
+    const node = tr.doc.nodeAt(pos);
+    if (!node) break;
+    if (node.type === list && node.attrs.joined === true) items(node, pos);
+    else if (node.type === schema.nodes.card && (node.attrs.card as Card).joined && (node.attrs.card as Card).item !== undefined) {
+      const card = node.attrs.card as Card;
+      const m = ITEM_NUMBER.exec(card.item!);
+      if (m) {
+        const n = Number.parseInt(m[2]!, 10);
+        const next = step(m[1]!, n);
+        if (next !== n) edits.push({ pos, attrs: { card: { ...structuredClone(card), item: `${m[1]}${next}${m[3]}` } } });
+      }
+    } else break;
+    pos += node.nodeSize;
+  }
   for (const e of edits) tr.setNodeMarkup(e.pos, undefined, e.attrs);
 }
+
+/** A card item's numbered prefix: indentation, number, and the rest (`.` or `)` and the spaces). */
+const ITEM_NUMBER = /^( *)(\d{1,9})([.)] +)$/;
 
 /** The items a selection touches, by index into their list, with the list; null when the selection is not inside one list. */
 function selectedItems(state: EditorState): { list: PMNode; listPos: number; from: number; to: number } | null {

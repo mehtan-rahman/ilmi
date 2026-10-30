@@ -222,7 +222,8 @@ function listLines(list: Element, depth: number, w: Walk): string[] {
   for (const li of Array.from(list.children)) {
     if (li.tagName.toLowerCase() !== 'li') continue;
     n++;
-    const text = collapse(inlineOf(li, w));
+    // an item is read for cards as a paragraph is (FORMAT.md §5.2), so its text is defused the same way
+    const text = escapeProse(collapse(inlineOf(li, w)));
     if (text) lines.push(`${'  '.repeat(depth)}${ordered ? `${n}.` : '-'} ${text}`);
     for (const sub of Array.from(li.children)) {
       if (LIST.has(sub.tagName.toLowerCase())) lines.push(...listLines(sub, depth + 1, w));

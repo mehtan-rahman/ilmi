@@ -8,7 +8,7 @@
 
 import { Fragment, Slice, type Node as PMNode, type NodeType } from 'prosemirror-model';
 import { Selection, TextSelection, type EditorState, type Transaction } from 'prosemirror-state';
-import { formatBlock, parse, type Block } from '../format/index.js';
+import { formatBody, parse, type Block } from '../format/index.js';
 import { fromDoc, toDoc } from './convert.js';
 import { htmlMarkdown } from '../import/paste.js';
 import { schema } from './schema.js';
@@ -123,7 +123,7 @@ export function clipboardText(slice: Slice): string {
   } catch {
     return slice.content.textBetween(0, slice.content.size, '\n\n', (n) => n.type.spec.leafText?.(n) ?? '');
   }
-  return fromDoc(doc).map(formatBlock).join('\n\n');
+  return formatBody(fromDoc(doc));
 }
 
 /** A textblock's text as written: chips as their source. */

@@ -39,6 +39,18 @@ describe('samples', () => {
     });
   }
 
+  it('the double major\'s class notes hold cards in list items (milestone 37)', () => {
+    const items: string[] = [];
+    for (const f of files.filter((x) => x.name.startsWith('double-major/courses/'))) {
+      for (const b of parse(f.text).doc.blocks) if (b.kind === 'card' && b.item !== undefined) items.push(b.id ?? b.text);
+    }
+    expect(items).toEqual([
+      'cm-pb-evol', 'cm-pb-L', 'cm-pb-xL', 'cm-poisson-thm',
+      'dof :: 3N − k', 'holonomic :: constraint is f(q,t) = 0', 'scleronomic :: no explicit t',
+      'sm-ZN-identical',
+    ]);
+  });
+
   it('the double major\'s collection is migrated to notes and sources', () => {
     const types: Record<string, string[]> = {};
     for (const f of files.filter((x) => x.name.startsWith('double-major/'))) {

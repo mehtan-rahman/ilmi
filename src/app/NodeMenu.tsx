@@ -127,6 +127,11 @@ export function NodeMenu({ at, set, onCreated, onRename, onSubtab }: Props) {
               <span className="cg">+</span>add subtab
             </div>
           )}
+          {hasCards(at.id) && (
+            <div className="ci" data-act="study" onClick={act(() => { studyDeck(at.id); })}>
+              <span className="cg">{GLYPH.session}</span>study
+            </div>
+          )}
           <div className="ci" data-act="rename" onClick={act(() => onRename(at.id))}>
             <span className="cg">✎</span>rename<span className="ck">F2</span>
           </div>

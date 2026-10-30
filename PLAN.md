@@ -4484,6 +4484,121 @@ Wikilinks and backlinks are not here; the user skipped them (2026-10-30).
 *Done when:* each works in the window on the sample and round-trips the
 file.
 
+## Studying
+
+The user, 2026-10-30, choosing from a list drawn from the sample
+collection's friction: per-deck stats and options, exam dates, both
+directions scheduled apart, duplicate facts, and the open items "seem
+useful"; vocabulary that remembers its sentence (root, pattern, plural,
+a link back to the passage) "i'd wanna see a demo first", so it waits for
+a demo. Wikilinks and backlinks are skipped. Every milestone here is
+judged on `samples/double-major` and checked in the window from a clean
+checkout. The brief's bans hold: no stat cards, sparkline dashboards,
+streaks or badges; numbers are set as type, in tables and lines.
+
+Order: 44 → 43 → 42 → 45 on main; 46 on a branch beside them.
+
+### [ ] 42. A deck's numbers and its options
+- **Numbers**, on a deck, a folder, a notebook, or the collection (the
+  lens's `items · cards` gains `numbers`): reviews per day for the last
+  weeks and the next weeks' forecast as a quiet typographic table or a
+  single hairline bar row (no dashboard); true retention (passed / due
+  reviews) by week and by card age; the cards failed most (leeches: lapses
+  ≥ a threshold), each opening its card in place; the spread of stability
+  and difficulty as one line each; time per review when known.
+- **A review log**, because the `sr` line keeps only the latest state:
+  `.ilmi/reviews/<yyyy-mm>.jsonl`, one line per grade (card key, time,
+  grade, elapsed, interval before and after), append-only, app-private
+  (FORMAT §1: `.ilmi` is never required; numbers that need history say
+  "since <first logged day>" and degrade without it). Anki imports bring
+  their revlog into it when the `.apkg` has one.
+- **Options**, per deck or notebook or folder (on the document's
+  front-matter: a deck file or a notebook; FORMAT §3 gains the keys with a
+  corpus file and tests), inherited by everything under it unless set
+  lower: new cards per day, reviews per day cap (optional), desired
+  retention (FSRS's request retention, default 0.9), a leech threshold
+  and what a leech does (suspend or tag). The queue honours them; the
+  inspector shows them where they apply and where they come from.
+*Done when:* the sample's vocab deck and a course notebook show their
+numbers in the window from a seeded review log (the sample gains a
+realistic `.ilmi/reviews/` for its history), options set on a notebook
+change the day's queue for its cards and are inherited, and a leech is
+suspended at the threshold.
+
+### [ ] 43. Exam dates
+- `exam: <day>` (and an optional second, `exam: 2026-12-14 final`, more
+  than one allowed) on a course notebook or any document; everything under
+  it (cards, sources, extracts, notes revisited) is studied toward it.
+- **Cards**: a review due after the exam is brought before it (FSRS's
+  next interval capped so the card is seen in the last days before the
+  exam, spread so the last week isn't a wall); new cards under it are
+  introduced early enough to be reviewed a few times; after the exam the
+  cap lifts and intervals grow as before.
+- **Reading**: a source or extract under it with reading left is paced so
+  it is finished a few days before the exam (its next pass brought
+  forward, and passes spaced evenly over the time left); the queue says so
+  quietly ("for the midterm").
+- The inspector and the notebook's top row show the next exam and what is
+  left before it (cards not yet stable past it, reading left); the queue
+  can be filtered to one exam.
+- FORMAT §3: `exam`, corpus file, tests; the scheduler change has tests
+  that walk days.
+*Done when:* the sample's quantum notebook with a midterm three weeks out
+pulls its cards and its textbook reading before the date in the window,
+and the cap lifts the day after.
+
+### [ ] 44. Both ways, scheduled apart
+- A both-ways card gets two schedules, one per direction: FORMAT §6.2 the
+  `sr` line gains a direction key the way a cloze has blank keys (`sr f`
+  front→back, `sr r` back→front, or a form that reads well; decide and
+  state it), each with its own state, priority and suspension.
+- An existing both-ways card with one bare line keeps it as the forward
+  schedule; the reverse starts as new (or copies the forward's state —
+  pick, say why); no history is lost; the round trip holds.
+- The queue, session, deck browser (a both-ways row shows both
+  directions' due), numbers, Anki import (a reverse card's progress lands
+  on `r`), and the card editor (switching forms) follow.
+- Siblings: the two directions of one card are not shown the same day
+  unless asked (bury the second until tomorrow), as Anki does.
+*Done when:* the sample's vocab deck has both directions due separately
+in the window, grading one leaves the other's line alone, and a
+migrated card keeps its history.
+
+### [ ] 45. The same fact twice
+- Find cards that test the same fact across the collection (the sample has
+  nine such pairs in stat mech alone: notes, textbook extract, drill
+  deck): text folded (case, accents, Arabic marks, math normalized),
+  compared on both faces, ranked; precise enough that the list is worth
+  reading (test it on the sample's known pairs).
+- A `similar` view (the deck browser's chip, and a line on a card in the
+  inspector: "also in …"), showing pairs side by side with their
+  schedules.
+- Per pair: **merge** (keep one card where it is, carry the stronger
+  schedule, remove the other with the notice's undo), **link** (keep
+  both; one is shown and the other buried the same day, and grading one
+  counts for the other: FORMAT gains a link attribute on the `sr` line,
+  decide it), or **not the same** (remembered in `.ilmi/`, never shown
+  again).
+*Done when:* the sample's stat-mech pairs are found with few false
+positives, one is merged and one linked in the window, and a linked
+pair is never both in one day's queue.
+
+### [ ] 46. The open items
+From the notes of 37, 39, 40, 41:
+- Tab, ⇧Tab and ⌥⇧↑↓ move a card item in a list like any item.
+- ⏎ on a plain item just before a card item doesn't split the list.
+- Step lines of a card's back drawn as lines in the reader's card view.
+- A card made from a selection inside a list goes into the list as an item.
+- A multi-chapter PDF as a notebook, chapters as tabs (FORMAT: a page
+  range on a document whose pages are another file's, decide it).
+- The gap under display math brought to a paragraph's.
+- The PDF lens's top row as the reader's (no `frozen`/`pages` words).
+- Math rendered in tree and palette rows.
+- Headings inside list items fold; ⇧⏎ in a table cell is a line break
+  (`<br>`), round-tripped.
+- The outline marks folded headings.
+*Done when:* each works in the window on the sample.
+
 ## Notes for the next session
 
 Refinement (33–41) is complete, 2026-10-30, every milestone's window check
@@ -4498,7 +4613,7 @@ items are in each milestone's notes (40: the gap under display math, the
 PDF lens's top row, math in tree and palette rows; 41: headings in list
 items don't fold, ⇧⏎ in a cell; 39: a multi-chapter PDF as a notebook;
 37: `>>>` children as a back, Tab on a card item). Wikilinks and backlinks: skipped (the user, 2026-10-30: "I personally
-don't find them that useful"). Next: ask the user.
+don't find them that useful"). Next: the Studying section (42–46).
 
 Milestones 0–32 are ticked (13 dropped); 32 (decks) was built on a branch
 beside 31 and merged by hand on 2026-10-28; its window check

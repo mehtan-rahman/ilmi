@@ -6,6 +6,71 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-10-30 — milestone 44: both ways, scheduled apart
+
+Done on main; commit `08938a6`. New: `src/schedule/__tests__/both-ways.test.ts`,
+`src/format/__tests__/corpus/mangled/both-ways.md`. Changed: the format
+(`Card.reverse`, `sr r`), the queue (`dir`, `buried`, `burySiblings`,
+`scheduleOf`, `dirPri`), the session, the queue's rows, the deck rows and
+their bulk actions, the inspector, the card editor, the Anki mapping,
+`resetCard`, `cardDue`, FORMAT §5, §6, §6.2, §8, §10.
+
+### Decided
+
+- **Format:** the bare line is front to back, `sr r` back to front. No
+  migration is written: every existing one-line both-ways card stays
+  valid, its history its forward's.
+- **The reverse starts new**, due now, not a copy of the forward: the
+  session never showed the right side, so nothing was ever reviewed that
+  way. The sample's vocab deck has 110 new reverses due on 2026-10-30
+  (beside 53 forwards; 55 more buried). They sort after the day's reviews
+  at one priority; 42's new cards per day will meter them.
+- **Siblings:** one direction a day; the second (the later due, the reverse
+  on a tie, or the one whose sibling was graded today) is buried till the
+  next day's start. Derived, never written. A cram shows both.
+- **Suspension:** `sus=1` on the bare line holds both directions (as on a
+  cloze), on the `r` line the reverse alone.
+
+### Verified
+
+- `npx vitest run`: 960 tests, 53 files (948 before). `npm run typecheck`
+  clean. `cargo test` 12. `vite build` clean. The corpus and samples/
+  hold the fixed point.
+
+### Not verified: the window run is owed
+
+- Nothing ran in the Tauri window. `ILMI_SMOKE=bothways` (ILMI_VAULT on a
+  fresh copy of samples/double-major) sets light, then asserts: the vocab
+  deck's cards have one line each; a card due forward has its reverse
+  buried till tomorrow and a card not due forward has its reverse new and
+  due today; both directions due in the deck, no card due both ways in a
+  day; the queue's reverse row; the deck rows' `→`/`←` dues; a session over
+  the two asks the reverse back to front; grading the reverse adds an
+  `sr r` line under an untouched bare line, grading the forward rewrites
+  its line alone with its reviews counted on (history kept); the forward's
+  sibling buried the same day; the inspector's two schedules. Captures:
+  `bothways-queue`, `-deck`, `-session-reverse`, `-session-revealed`,
+  `-deck-after`, `-deck-dark`.
+
+### Handoff prompt
+
+```
+Read PLAN.md (ground rules, the Studying section, 44's notes and the notes
+for the next session), FORMAT.md, spec/hashiyah/BUILD-PROMPT.md, and the top
+BUILD-LOG.md entries. If the user has not yet, run ILMI_SMOKE=bothways with
+ILMI_VAULT on a fresh copy of samples/double-major (from a clean checkout
+of main; port 1420 free; capture 2 s after each `shot:` line), read the
+captures, fix what they show, and record it under 44. Then do milestone
+43 (exam dates) and only that: FORMAT §3 `exam` with a corpus file and
+tests, the scheduler's cap with tests that walk days, the reading paced to
+the date, the inspector and the notebook's top row, and an
+ILMI_SMOKE=exams mode over a copy of samples/double-major. Stop at its
+"Done when"; tick it, write notes, log it, commit. Milestone 46 runs on a
+branch beside it: stay out of its areas.
+```
+
+---
+
 ## 2026-10-30 — milestone 40: a pass over everything, on a full collection
 
 Done on main; commits `960efd4` (the pass: top row, room rule, formulas in

@@ -4547,7 +4547,56 @@ suspended at the threshold.
 pulls its cards and its textbook reading before the date in the window,
 and the cap lifts the day after.
 
-### [ ] 44. Both ways, scheduled apart
+### [x] 44. Both ways, scheduled apart
+Done 2026-10-30, commit `08938a6`.
+Notes: the format: the bare `sr` line of a both-ways card is front to back
+(and the card's own line), `<!-- sr r … -->` back to front, written after
+the bare line and before any `sr cN` (FORMAT §5, §6, §6.2; `sr f` is read
+as the bare line and written bare, §8). The `r` line has its own state,
+`pri` (over the card's bare-line `pri`, over the document's) and `sus`
+(the reverse alone; `sus=1` on the bare line still suspends the card, both
+ways, as on a cloze). An `sr r` line on a card that is not both ways is
+kept with a diagnostic. Model: `Card.reverse`. Migration: none written; a
+card's one bare line stays valid as its forward with its whole history,
+and a card with no `r` line has a reverse that is new, due now. Not a copy
+of the forward's state: the session only ever showed the left side, so the
+reverse was never reviewed and a copied stability (the vocab deck's run to
+160 days) would hide a harder skill for months. The cost: the sample's
+vocab deck on 2026-10-30 has 53 forwards and 110 new reverses due (55
+buried); new cards sort after the day's reviews at one priority, so they
+sit at the end of the day and below the budget's fold, and 42's new cards
+per day will meter them. Siblings (`burySiblings` in `src/schedule/queue.ts`):
+both due, the one due first stays (the forward on a tie) and the other is
+buried; one graded today (its `last` on today's local day), the other is
+buried; both graded today (a cram), neither. A buried item has `buried`
+and `dueAt` at the next day's start; nothing is written, so grading one
+direction rewrites its own line alone (the reverse's first grade adds the
+`sr r` line). A cram (`include not due`) shows both. Queue:
+`CardItem.dir` (`f`/`r`) on both-ways items, `scheduleOf(card, group,
+dir)`, `isSuspended(card, group, dir)`, `dirPri`, `cardDirs`; `sameItem`
+compares the direction; `gradeItem` writes `card.reverse` for `r`. The
+queue's row reads the asked side first with `→` to the answer (`⇄` stays
+in the reader and in card names) and `tomorrow` for a buried item; the
+session asks the right side on a reverse and says `back to front`; the
+deck row of a both-ways card shows `→ <forward due>` over `← <reverse
+due>` (a row is due when either is; the due sort takes the sooner);
+the inspector shows `front to back` and `back to front` blocks, the
+item's direction first. Card editor: both ways → q&a or cloze drops the
+`r` line, asking when it was reviewed (`drops the schedule of the reverse
+(2 reviews)`); q&a → both ways starts the reverse new. Suspend, unsuspend
+and reset reach both lines; a reset keeps each line's `pri`. Anki: a
+reversed note's `ord 1` review card lands on `sr r` (the fixture's
+`schedules` dropped count 1 → 0). Corpus: `german.md`'s `cv-vorsatz`
+gains an `r` line; `mangled/both-ways.md` (order, `sr f`, two `r` lines,
+`r` on a q&a, `r c2`, beside a cloze, the reverse suspended alone, a
+multi-line card). Tests: 960 (+12: `both-ways.test.ts` 6 walking days,
+the format's, the deck rows', the editor's); the corpus counts moved
+(today 17 → 19, upcoming 24 → 30, cards 32 → 40). cargo 12. Smoke:
+`ILMI_SMOKE=bothways` over a fresh copy of samples/double-major; the
+window check is owed. Open: numbers (42) do not exist yet, so nothing
+there follows; a both-ways card edited into q&a in the reader (not the
+deck's editor) keeps its `r` line with the diagnostic, unasked; burying
+is per day, not "until asked" by a setting (none was added).
 - A both-ways card gets two schedules, one per direction: FORMAT §6.2 the
   `sr` line gains a direction key the way a cloze has blank keys (`sr f`
   front→back, `sr r` back→front, or a form that reads well; decide and
@@ -4600,6 +4649,12 @@ From the notes of 37, 39, 40, 41:
 *Done when:* each works in the window on the sample.
 
 ## Notes for the next session
+
+Studying: 44 (both ways) done 2026-10-30, its window check owed
+(`ILMI_SMOKE=bothways`, ILMI_VAULT on a fresh copy of samples/double-major).
+Next on main: 43 (exam dates), then 42, then 45; 46 runs on a branch.
+Unreviewed reverses come up as new cards (110 in the vocab deck on
+2026-10-30), which 42's new cards per day should meter.
 
 Refinement (33–41) is complete, 2026-10-30, every milestone's window check
 run and recorded under its BUILD-LOG entry (33 `notes`, 34 `editing`, 35

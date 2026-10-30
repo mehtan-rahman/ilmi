@@ -4496,7 +4496,7 @@ judged on `samples/double-major` and checked in the window from a clean
 checkout. The brief's bans hold: no stat cards, sparkline dashboards,
 streaks or badges; numbers are set as type, in tables and lines.
 
-Order: 44 → 43 → 42 → 45 on main; 46 on a branch beside them.
+Order: 44 → 42 → 43 → 45 on main (42 before 43: 44 adds 110 new reverses to the vocab deck, and 42's new-cards-per-day meters them); 46 on a branch beside them.
 
 ### [ ] 42. A deck's numbers and its options
 - **Numbers**, on a deck, a folder, a notebook, or the collection (the

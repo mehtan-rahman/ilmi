@@ -52,6 +52,18 @@ their bulk actions, the inspector, the card editor, the Anki mapping,
   `bothways-queue`, `-deck`, `-session-reverse`, `-session-revealed`,
   `-deck-after`, `-deck-dark`.
 
+### Window check (2026-10-30, at `a6307f4`, from a clean checkout)
+
+`ILMI_SMOKE=bothways` on a fresh copy of samples/double-major ran to
+`done`, every step asserted: the vocab deck's 167 both-ways cards keep one
+bare line each; the queue has 55 forwards and 110 new reverses due, 55
+held till tomorrow, no card due both ways in one day; grading a forward
+rewrites only its bare line (history 8 → 9 reviews); grading a reverse
+writes one `sr r` line under the bare one and nothing else; the sibling is
+buried till tomorrow; the deck rows and the inspector show one schedule
+per direction. The 110 new reverses are why 42 (new cards per day) goes
+next, before 43.
+
 ### Handoff prompt
 
 ```

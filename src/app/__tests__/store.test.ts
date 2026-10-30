@@ -1,7 +1,17 @@
+// @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
 import { THEMES, useApp } from '../store.js';
 
 describe('app store', () => {
+  it('puts the theme on the page as it is set, not after a render (a covered window throttles React\'s timers)', () => {
+    const was = useApp.getState().theme;
+    for (const t of ['dark', 'eink', 'light', 'eink'] as const) {
+      useApp.getState().setTheme(t);
+      expect(document.documentElement.getAttribute('data-theme')).toBe(t);
+    }
+    useApp.getState().setTheme(was);
+  });
+
   it('cycles through the three themes and back', () => {
     useApp.getState().setTheme('light');
     const seen = [useApp.getState().theme];

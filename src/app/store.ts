@@ -242,6 +242,15 @@ export interface AppState {
 
 const tweaks = loadTweaks();
 
+/**
+ * The theme on the page at once, not only from App's effect: a covered
+ * WebKit window throttles the timers React's effects wait on, and the page
+ * kept the theme before last for a while (41's window run 3).
+ */
+function showTheme(theme: Theme): void {
+  if (typeof document !== 'undefined') document.documentElement.setAttribute('data-theme', theme);
+}
+
 export const useApp = create<AppState>((set, get) => ({
   theme: tweaks.theme,
   accent: tweaks.accent,
@@ -282,10 +291,12 @@ export const useApp = create<AppState>((set, get) => ({
   folds: {},
   session: null,
   sessionEl: null,
-  setTheme: (theme) => { set({ theme }); persist(get()); },
+  setTheme: (theme) => { set({ theme }); showTheme(theme); persist(get()); },
   cycleTheme: () => {
     const i = THEMES.indexOf(get().theme);
-    set({ theme: THEMES[(i + 1) % THEMES.length] ?? 'light' });
+    const theme = THEMES[(i + 1) % THEMES.length] ?? 'light';
+    set({ theme });
+    showTheme(theme);
     persist(get());
   },
   setAccent: (accent) => { set({ accent }); persist(get()); },

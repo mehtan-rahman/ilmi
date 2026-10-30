@@ -5644,18 +5644,34 @@ export async function smokeRest(vault: Vault): Promise<void> {
     must(colourOf(kw) !== plainColour && colourOf(q('.hljs-comment', py)!) !== plainColour, `light: keyword ${colourOf(kw)}, comment ${colourOf(q('.hljs-comment', py)!)}, text ${plainColour}`);
     py.scrollIntoView({ block: 'center' });
     await shot('rest-code');
-    useApp.getState().setTheme('dark');
-    await sleep(400);
-    must(colourOf(kw) !== colourOf(py.querySelector('code')!), `dark: keyword ${colourOf(kw)}`);
+    /** The theme switched, and the page drawing it, before anything is read. */
+    const theme = async (t: 'light' | 'dark' | 'eink') => {
+      useApp.getState().setTheme(t);
+      await poll(() => document.documentElement.dataset.theme === t, `the page is in ${t}`, 3000);
+      await sleep(300);
+    };
+    const grey = (c: string) => {
+      const rgb = /rgba?\(([\d.]+),? ([\d.]+),? ([\d.]+)/.exec(c);
+      if (rgb) return Math.max(+rgb[1]!, +rgb[2]!, +rgb[3]!) - Math.min(+rgb[1]!, +rgb[2]!, +rgb[3]!) <= 8;
+      // oklab / oklch: the e-ink paper's own faint warmth (#cfcfca, chroma ≈ 0.008) and no more; the code hues are 0.05 and up
+      const lab = /oklab\(([-\d.]+) ([-\d.]+) ([-\d.]+)/.exec(c);
+      if (lab) return Math.hypot(+lab[2]!, +lab[3]!) < 0.02;
+      const lch = /oklch\(([-\d.]+) ([-\d.]+)/.exec(c);
+      return !!lch && +lch[2]! < 0.02;
+    };
+    const einkOk = (from: string) => {
+      must([kw, q('.hljs-string', py)!, q('.hljs-comment', py)!].every((el) => grey(colourOf(el))), `e-ink after ${from}: grey only (${colourOf(kw)}, ${colourOf(q('.hljs-string', py)!)}, ${colourOf(q('.hljs-comment', py)!)})`);
+      must(Number(getComputedStyle(kw).fontWeight) >= 600, `e-ink after ${from}: a keyword by its weight`);
+    };
+    await theme('eink');
+    einkOk('light');
+    await theme('dark');
+    must(colourOf(kw) !== colourOf(py.querySelector('code')!) && !grey(colourOf(kw)), `dark: keyword ${colourOf(kw)}`);
     await shot('rest-code-dark');
-    useApp.getState().setTheme('eink');
-    await sleep(400);
-    const grey = (c: string) => { const m = /rgba?\(([\d.]+), ([\d.]+), ([\d.]+)/.exec(c); return !!m && Math.max(+m[1]!, +m[2]!, +m[3]!) - Math.min(+m[1]!, +m[2]!, +m[3]!) <= 6; };
-    must([kw, q('.hljs-string', py)!, q('.hljs-comment', py)!].every((el) => grey(colourOf(el))), `e-ink: grey only (${colourOf(kw)}, ${colourOf(q('.hljs-string', py)!)})`);
-    must(Number(getComputedStyle(kw).fontWeight) >= 600, 'e-ink: a keyword by its weight');
+    await theme('eink');
+    einkOk('dark');
     await shot('rest-code-eink');
-    useApp.getState().setTheme('light');
-    await sleep(300);
+    await theme('light');
     // the language picker on the plain block
     const plain = blocksOf()[2]!;
     plain.scrollIntoView({ block: 'center' });

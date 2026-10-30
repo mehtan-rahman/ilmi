@@ -71,6 +71,11 @@ highlight.js 11.11.1 in package.json. Also, by the coordinator's word,
   the rule's style in the wrap's frame and logs what is drawn (and a
   shot) before the check; the reader's end block comes from the state
   (`ruleEndIndex`), tested on the sample. Rerun owed.
+- Window run 3 (`b313750`): the rule right; e-ink code kept the dark hues
+  because the page was still in dark (`data-theme` waited on App's
+  effect, held back in a covered window). `setTheme` sets it at once now;
+  the smoke waits for it and checks e-ink after light and after dark.
+  Rerun owed.
 
 ### Handoff prompt
 

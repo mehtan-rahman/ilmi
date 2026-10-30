@@ -4323,6 +4323,19 @@ readers the window holds, with `shot: rest-folded-rule`. The reader's
 measure now takes its end block from the state (`ruleEndIndex` in fold.ts:
 the pos-th prose block walked back past folded-away blocks) rather than
 the DOM's classes, with a test over the sample's 3.7 fold. Rerun owed.
+Window run 3 (`b313750`): the rule right (style ends at 6996, the folded
+heading's bottom 6996; painted 6659, the held-back ease). Code coloured in
+light and dark, then `failed: e-ink: grey only` with the dark theme's
+hues. The tokens were right (`[data-theme="eink"]` comes after the dark
+block and sets every `--code-*` to a grey); the page was still in dark:
+`data-theme` was set only by App's effect, and a covered WebKit window
+throttles the timers React's effects wait on, so 400 ms after `setTheme`
+the page held the theme before. `setTheme` and `cycleTheme` now put
+`data-theme` on the page at once (store.ts `showTheme`; App's effect still
+does it too), with a test; the smoke waits for `data-theme` before reading
+a colour, checks e-ink after light and after dark, and reads oklab/oklch
+colours by their chroma (under 0.02, the e-ink paper's own warmth). Rerun
+owed.
 - An outline of the page's headings (in the inspector, or the rail's
   heading list when tabs are on), a click scrolls; headings fold by a
   chevron in the margin, folds kept in state.

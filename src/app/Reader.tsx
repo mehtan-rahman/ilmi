@@ -14,7 +14,7 @@ import { PRI_DEFAULT, cardFields, clozeSegments, mathSpanEnd, meta, serialize, s
 import {
   blockAt, blocksEqual, cardDue, classifyRaw, cursorIndex, editorialRanges, flatRanges, fromDoc, frozenKey, imagesKey, indentWidth, inlineRanges, insertCard, isMathEdit,
   linkTarget, literalSpans, makeState, markerKey, markerNumber, markerPos, markerRanges, mathEditKey, mathSplit, passage, pickPos, pressed, proseIndices, schema, setLink,
-  setReadPos, splitBlocks, toggleInline, toggleTask, type Band, type InlineRange, type InlineToggle, type LinkTarget, type Passage, type RawShape,
+  setReadPos, splitBlocks, atomFind, markFinds, toggleInline, toggleTask, type Band, type InlineRange, type InlineToggle, type LinkTarget, type Passage, type RawShape,
   askImageKey, closeAtMatch, findKey, insertImages, pickSlash, replaceAll, replaceMatch, slashContext, slashItems, slashKey, htmlPasteImages,
   type FindMeta, type FindState, type SlashItem, type SlashState,
 } from '../reader/index.js';
@@ -329,29 +329,41 @@ export function cardHTML(card: Card): string {
 
 // ── node views ───────────────────────────────────────────────────
 
+/**
+ * A view's own classes set, the ones ProseMirror put there from a
+ * decoration (`find-in`, `find-current`) and the selection kept: a redraw
+ * must not take them off, since ProseMirror only adds and removes what
+ * changed between two decorations.
+ */
+function ownClasses(dom: HTMLElement, own: string): void {
+  const kept = Array.from(dom.classList).filter((c) => c === 'selected' || c.startsWith('find-'));
+  dom.className = [own, ...kept].join(' ');
+}
+
 class CardView implements NodeView {
   dom: HTMLElement;
 
-  constructor(node: PMNode) {
+  constructor(node: PMNode, decorations: readonly Decoration[] = []) {
     this.dom = document.createElement('div');
     this.dom.setAttribute('contenteditable', 'false');
-    this.render(node);
+    this.render(node, decorations);
   }
 
-  render(node: PMNode): void {
+  render(node: PMNode, decorations: readonly Decoration[]): void {
     const card = node.attrs.card as Card;
     const now = new Date();
     const due = cardDue(card);
     const isDue = due === undefined || whenToDate(due) <= now;
-    this.dom.className = `card-span${isDue ? ' due' : ''}`;
+    ownClasses(this.dom, `card-span${isDue ? ' due' : ''}`);
     this.dom.innerHTML =
       `<div class="cs-body">${cardHTML(card)}</div>` +
       `<div class="cs-foot"><span class="cs-state" data-due="${isDue ? '1' : '0'}">${escapeHtml(dueLabel(due, now))}</span></div>`;
+    markFinds(this.dom.querySelector('.cs-body')!, atomFind(decorations));
   }
 
-  update(node: PMNode): boolean {
+  update(node: PMNode, decorations: readonly Decoration[]): boolean {
     if (node.type !== schema.nodes.card) return false;
-    this.render(node);
+    this.render(node, decorations);
     return true;
   }
 
@@ -627,31 +639,33 @@ class RawView implements NodeView {
   /** Drawn as an element, or kept as mono source; a change between the two makes a new view. */
   private readonly drawn: boolean;
 
-  constructor(node: PMNode) {
+  constructor(node: PMNode, decorations: readonly Decoration[] = []) {
     const text = node.attrs.text as string;
     this.drawn = rawHTML(text) !== null;
     this.dom = document.createElement(this.drawn ? 'div' : 'pre');
     this.dom.setAttribute('contenteditable', 'false');
-    this.render(node);
+    this.render(node, decorations);
   }
 
-  render(node: PMNode): void {
+  render(node: PMNode, decorations: readonly Decoration[]): void {
     const text = node.attrs.text as string;
-    const selected = this.dom.classList.contains('selected') ? ' selected' : '';
     const drawn = rawHTML(text);
     if (!drawn) {
-      this.dom.className = `raw${selected}`;
+      ownClasses(this.dom, 'raw');
       this.dom.textContent = text;
+      markFinds(this.dom, atomFind(decorations));
       return;
     }
-    this.dom.className = `raw rendered${selected}`;
+    ownClasses(this.dom, 'raw rendered');
     this.dom.dataset.kind = drawn.kind;
     this.dom.innerHTML = `<div class="raw-view">${drawn.html}</div><pre class="raw-src">${escapeHtml(text)}</pre>`;
+    // the drawn table's cells are lit; the source shown on select is left as written
+    markFinds(this.dom.querySelector('.raw-view')!, atomFind(decorations));
   }
 
-  update(node: PMNode): boolean {
+  update(node: PMNode, decorations: readonly Decoration[]): boolean {
     if (node.type !== schema.nodes.raw || (rawHTML(node.attrs.text as string) !== null) !== this.drawn) return false;
-    this.render(node);
+    this.render(node, decorations);
     return true;
   }
 
@@ -661,9 +675,9 @@ class RawView implements NodeView {
 }
 
 export const nodeViews = {
-  card: (node: PMNode) => new CardView(node),
+  card: (node: PMNode, _view: EditorView, _getPos: () => number | undefined, decorations: readonly Decoration[]) => new CardView(node, decorations),
   math: (node: PMNode, view: EditorView, getPos: () => number | undefined, decorations: readonly Decoration[]) => new MathView(node, view, getPos, decorations),
-  raw: (node: PMNode) => new RawView(node),
+  raw: (node: PMNode, _view: EditorView, _getPos: () => number | undefined, decorations: readonly Decoration[]) => new RawView(node, decorations),
   list_item: (node: PMNode, view: EditorView, getPos: () => number | undefined) => new ListItemView(node, view, getPos),
 };
 
@@ -970,7 +984,8 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
     setFind(next);
     if (next && next.index >= 0 && (cur?.index !== next.index || cur?.query !== next.query)) {
       // the current match brought into view once it is drawn (a timer: WebKit holds frames back in a covered window)
-      setTimeout(() => view.dom.querySelector('.find-current')?.scrollIntoView({ block: 'center' }), 0);
+      // the innermost current: a lit cell inside a table rather than the table
+      setTimeout(() => { const all = view.dom.querySelectorAll('.find-current'); all[all.length - 1]?.scrollIntoView({ block: 'center' }); }, 0);
     }
   };
 
@@ -1487,6 +1502,7 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
             <input
               ref={findRef}
               className="fb-q"
+              dir="auto"
               aria-label="find"
               placeholder="find"
               spellCheck={false}
@@ -1502,6 +1518,7 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
               <>
                 <input
                   className="fb-r"
+                  dir="auto"
                   aria-label="replace with"
                   placeholder="replace with"
                   spellCheck={false}

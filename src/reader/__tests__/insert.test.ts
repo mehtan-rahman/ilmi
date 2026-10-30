@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Slice } from 'prosemirror-model';
 import { EditorState, TextSelection } from 'prosemirror-state';
-import { EditorView } from 'prosemirror-view';
+import { EditorView, type DecorationSet } from 'prosemirror-view';
 import { describe, expect, it } from 'vitest';
 import { parse, serialize, type Block } from '../../format/index.js';
 import { htmlMarkdown } from '../../import/paste.js';
@@ -18,7 +18,7 @@ import { nodeFs } from '../../vault/node-fs.js';
 import { Vault } from '../../vault/vault.js';
 import { undo } from 'prosemirror-history';
 import {
-  SLASH_ITEMS, TABLE_SKELETON, askImageKey, clipboardText, currentMatch, findIn, findKey, findMatches, flatText, foldText, fromDoc, htmlPasteImages,
+  SLASH_ITEMS, TABLE_SKELETON, askImageKey, clipboardText, atomFind, currentMatch, findIn, findKey, findPlugin, markFinds, findMatches, flatText, foldText, fromDoc, htmlPasteImages,
   insertImages, makeState, mathEditKey, opensAt, pasteInto, pickSlash, replaceAll, replaceMatch, slashItems, slashKey, toDoc, type FindMeta,
 } from '../index.js';
 
@@ -352,6 +352,27 @@ describe('find in the page', () => {
     s = s.apply(replaceAll(s, 'ليس')!.tr);
     expect(md(s).split('\n')[0]).toBe('صار here, ليس there');
     expect(findKey.getState(s)!.matches.every((m) => m.atom)).toBe(true);
+  });
+
+  it('every match is lit: its own span, or a mark in what a table or a card draws, the atom ringed and naming its indices', () => {
+    let s = ed('كان one\n\n| a |\n| --- |\n| كَانَ and كان |\n\nq :: كَانَ');
+    s = step(s, { query: 'كان', from: 0 });
+    s = step(s, { index: 2 });
+    const view = new EditorView(document.body.appendChild(document.createElement('div')), { state: s });
+    const lit = new Set(Array.from(view.dom.querySelectorAll<HTMLElement>('[data-find]')).flatMap((el) => el.dataset.find!.split(' ')));
+    expect(lit.size).toBe(4);
+    const atoms = view.dom.querySelectorAll('.find-in');
+    expect(atoms.length).toBe(2);
+    expect(atoms[0]!.classList.contains('find-current')).toBe(true);
+    view.destroy();
+    // a view drawing the atom lights the matches it finds there
+    const table = s.doc.child(0).nodeSize;
+    const decos = (findPlugin.props.decorations!.call(findPlugin, s) as DecorationSet).find(table, table + s.doc.child(1).nodeSize);
+    const root = document.createElement('div');
+    root.innerHTML = '<table><tr><td>كَانَ and كان</td></tr></table>';
+    markFinds(root, atomFind(decos));
+    const marks = Array.from(root.querySelectorAll<HTMLElement>('mark.find-hit'));
+    expect(marks.map((m) => [m.textContent, m.dataset.find, m.classList.contains('find-current')])).toEqual([['كَانَ', '1', false], ['كان', '2', true]]);
   });
 
   it('every كان in the sample\'s kāna note, unvoweled, is found', () => {

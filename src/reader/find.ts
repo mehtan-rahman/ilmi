@@ -130,17 +130,68 @@ export const findPlugin = new Plugin<FindState>({
       const f = findKey.getState(state);
       if (!f?.open || !f.matches.length) return null;
       const decos: Decoration[] = [];
-      const atoms = new Map<number, Decoration>();
+      // an atom's matches, by where it starts: it is marked whole, and its view lights each match it can find in what it draws
+      const atoms = new Map<number, { to: number; indices: number[] }>();
       f.matches.forEach((m, i) => {
-        const cls = i === f.index ? 'find-hit find-current' : 'find-hit';
-        if (!m.atom) { decos.push(Decoration.inline(m.from, m.to, { class: cls })); return; }
-        // an atom holding several matches is drawn once, as current when one of them is
-        if (!atoms.has(m.from) || i === f.index) atoms.set(m.from, Decoration.node(m.from, m.to, { class: cls.replace('find-hit', 'find-in') }));
+        if (m.atom) {
+          const a = atoms.get(m.from) ?? { to: m.to, indices: [] };
+          a.indices.push(i);
+          atoms.set(m.from, a);
+          return;
+        }
+        decos.push(Decoration.inline(m.from, m.to, { class: i === f.index ? 'find-hit find-current' : 'find-hit', 'data-find': String(i) }));
       });
-      return DecorationSet.create(state.doc, [...decos, ...atoms.values()]);
+      for (const [from, a] of atoms) {
+        const current = a.indices.includes(f.index);
+        decos.push(Decoration.node(from, a.to, { class: current ? 'find-in find-current' : 'find-in', 'data-find': a.indices.join(' ') }, { find: { query: f.query, indices: a.indices, current: f.index } satisfies AtomFind }));
+      }
+      return DecorationSet.create(state.doc, decos);
     },
   },
 });
+
+/** What an atom's view is told of the matches inside it: the query, their indices, the current one. */
+export interface AtomFind {
+  query: string;
+  indices: number[];
+  current: number;
+}
+
+/** The find decoration among an atom's decorations, if any. */
+export const atomFind = (decorations: readonly Decoration[]): AtomFind | null =>
+  (decorations.find((d) => d.spec.find)?.spec.find as AtomFind | undefined) ?? null;
+
+/**
+ * Light the matches an atom's view can find in what it draws: each text
+ * node under `root` searched, a match wrapped in `mark.find-hit` with its
+ * index (the atom's indices in order), the current one `find-current`.
+ * A match the drawing splits or hides stays lit only by the atom's mark.
+ */
+export function markFinds(root: Element, find: AtomFind | null): void {
+  if (!find) return;
+  const doc = root.ownerDocument;
+  const walker = doc.createTreeWalker(root, 4 /* NodeFilter.SHOW_TEXT */);
+  const texts: Text[] = [];
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) texts.push(n as Text);
+  let k = 0;
+  for (const t of texts) {
+    if (k >= find.indices.length) return;
+    const ms = findIn(t.data, find.query);
+    for (const m of [...ms].reverse()) {
+      // indices are taken in order, so the matches of this node are numbered before the walk goes on
+      const idx = find.indices[k + ms.indexOf(m)];
+      if (idx === undefined) continue;
+      const range = doc.createRange();
+      range.setStart(t, m.from);
+      range.setEnd(t, m.to);
+      const mark = doc.createElement('mark');
+      mark.className = idx === find.current ? 'find-hit find-current' : 'find-hit';
+      mark.dataset.find = String(idx);
+      range.surroundContents(mark);
+    }
+    k += ms.length;
+  }
+}
 
 /** The current match, or null. */
 export const currentMatch = (state: EditorState): Match | null => {

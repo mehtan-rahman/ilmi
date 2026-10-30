@@ -23,5 +23,5 @@ export { inlineRanges, markerRanges, flatRanges, imageOnly, literalSpans, type I
 export { classifyRaw, splitBlocks, type RawShape, type Align } from './blocks.js';
 export { cardText, passage, blockAt, insertCard, setCardText, type CardSpec, type Passage } from './cards.js';
 export { SLASH_ITEMS, slashItems, slashContext, slashKey, slashPlugin, pickSlash, litItem, opensAt, askImageKey, TABLE_SKELETON, type SlashItem, type SlashState, type SlashMeta, type SlashContext } from './slash.js';
-export { findKey, findPlugin, findMatches, findIn, foldText, foldMap, currentMatch, replaceMatch, replaceAll, closeAtMatch, type FindState, type FindMeta, type Match } from './find.js';
+export { findKey, findPlugin, findMatches, findIn, foldText, foldMap, currentMatch, replaceMatch, replaceAll, closeAtMatch, atomFind, markFinds, type AtomFind, type FindState, type FindMeta, type Match } from './find.js';
 export { insertBlocks, insertImages, imageParagraph, caretInto, markdownBlocks, pasteMarkdown, clipboardText, htmlPasteImages } from './insert.js';

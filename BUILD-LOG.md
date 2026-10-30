@@ -59,6 +59,17 @@ Match Style, ⌘⇧V, macOS), `src/app/chrome.ts` (`⌘F find` in the strip),
   a real Finder drag onto a page; the image picker; the menu's place near
   the window's bottom (it opens above its `/` there).
 
+### Window check (2026-10-30, by the coordinator)
+
+`ILMI_SMOKE=insert`: every step passed through the find count (`1/34`);
+`⏎ walks every match` failed: matches in tables and cards counted but
+were not drawn (29 lit of 34). The atoms' views dropped the decoration's
+classes on redraw; they keep them now, and light each match inside what
+they draw (`mark.find-hit` in a cell or on a card's face, the current
+one ringed, the atom ringed too); the smoke checks every match's index is
+lit and the current one is visible. The find fields are `dir="auto"`.
+Rerun owed (tests 813).
+
 ### Handoff prompt
 
 ```

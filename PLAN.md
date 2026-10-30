@@ -3512,6 +3512,24 @@ Choices made here:
   and tables counted, replace one and all, and the sample's kāna note
   counted against its own text). `notes.test.ts`'s strip case gains
   `⌘F find`.
+Window check 2026-10-30 (`ILMI_SMOKE=insert`, run by the coordinator):
+every step passed through the count (`1/34`), then `⏎ walks every match`
+failed: matches inside tables and cards were counted but not drawn (29
+lit of 34), and stepping onto one showed nothing. Cause: the card's and
+the table's views reset `className` on every redraw, and ProseMirror only
+adds the classes that changed between two decorations, so `find-in` was
+lost once `find-current` came. Fixed: the views keep the decoration's
+classes (`ownClasses`); an atom's node decoration names the indices of its
+matches (`data-find`) and hands its view the query (`atomFind`), and the
+view lights each match it can find in what it draws (`markFinds`: a
+`mark.find-hit` in a table's cell or a card's face, the current one
+`find-current`), the atom ringed as well, so nothing is a silent step;
+the scroll goes to the innermost current mark. Every inline hit carries
+its index too, so the smoke checks that every index is lit (`lit == count`)
+and that the current match is its own span, its mark, or, where the
+drawing hides it, its ringed atom holding the word, and in view. The find
+and replace fields are `dir="auto"` (Arabic typed there read reversed).
+Rerun owed.
 Left for later: a table is put in as a drawn atom and its cells are edited
 in the file until 41 makes tables editable; the slash menu is not offered
 inside a formula's field or the composer; an inline formula has no row

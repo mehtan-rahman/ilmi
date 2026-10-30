@@ -714,3 +714,4 @@
 .find-hit.find-current { background: var(--selection); outline: 1px solid var(--accent); }
 .find-in { outline: 1px dashed var(--line-1); outline-offset: 2px; }
 .find-in.find-current { outline: 1px solid var(--accent); }
+mark.find-hit { color: inherit; padding: 0; }

@@ -4430,18 +4430,24 @@ export async function smokeInsert(vault: Vault): Promise<void> {
     input!.dispatchEvent(new Event('input', { bubbles: true }));
     await sleep(300);
     const count = () => q<HTMLElement>('.pane-body .find-bar .fb-n')?.textContent ?? '';
-    expect('count', count() === `1/${want}`, `"${count()}", the file has ${want} unvoweled in the text outside formulas; lit ${qa('.pane-body .find-hit, .pane-body .find-in').length}`);
+    // every match is lit: by its own span, by a mark in a table's cell or a card, or (where the drawing hides it) by its atom's ring; each names its index
+    const litIndices = () => new Set(qa<HTMLElement>('.pane-body .draft-doc [data-find]').flatMap((el) => (el.dataset.find ?? '').split(' ').filter(Boolean)));
+    expect('count', count() === `1/${want}`, `"${count()}", the file has ${want} unvoweled in the text outside formulas`);
+    expect('every match lit', litIndices().size === want, `lit ${litIndices().size} of ${want}; marks inside tables and cards ${qa('.pane-body mark.find-hit').length}`);
     await shot('insert-find');
     const steps: string[] = [];
     let bad = 0;
     for (let i = 1; i <= want; i++) {
-      // a match drawn over several spans (a mark's edge inside it) reads as all of them
-      const parts = qa<HTMLElement>('.pane-body .find-current');
-      const cur = parts[0];
-      const t = parts.map((el) => el.textContent ?? '').join('');
-      const ok = !!cur && (cur.classList.contains('find-in') ? foldText(t).includes(WORD) : foldText(t) === WORD);
+      // the current match: its own span(s) or its mark in a cell; else its atom, ringed, holding the word; and in view
+      const all = qa<HTMLElement>('.pane-body .find-current');
+      const inner = all.filter((el) => !el.classList.contains('find-in'));
+      const atom = all.find((el) => el.classList.contains('find-in'));
+      const t = inner.length ? inner.map((el) => el.textContent ?? '').join('') : atom?.textContent ?? '';
+      const shown = (inner[inner.length - 1] ?? atom)?.getBoundingClientRect();
+      const inView = !!shown && shown.bottom > 0 && shown.top < window.innerHeight;
+      const ok = (inner.length ? foldText(t) === WORD : !!atom && foldText(t).includes(WORD)) && inView;
       if (!ok) bad++;
-      steps.push(`${count()}${ok ? '' : ` NOT "${t.slice(0, 20)}"`}`);
+      steps.push(`${count()}${inner.length ? '' : atom ? '(atom)' : ''}${ok ? '' : ` NOT "${t.slice(0, 20)}"${inView ? '' : ' out of view'}`}`);
       if (i === 3) await shot('insert-find-step');
       input!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
       await sleep(120);

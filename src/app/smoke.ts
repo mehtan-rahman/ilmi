@@ -176,7 +176,7 @@ import { GLYPH, SESSION, queueId, titleOf } from './names.js';
 import { vaultName } from './recents.js';
 import { useApp } from './store.js';
 import { runMenu } from './menu.js';
-import { createNode, currentVault, importNode, moveNode, toggleOpen, openCard, openIntake, openNode, openSession, removeNode, renameNode, setInspector, startFromRecents } from './vault.js';
+import { createNode, currentVault, importNode, moveNode, toggleOpen, openCard, openIntake, openNode, openSession, removeNode, renameNode, setInspector, setSidebar, startFromRecents } from './vault.js';
 import { activeTab } from './panes.js';
 
 const WOZ = 'papers/wozniak-1990.md';
@@ -191,6 +191,22 @@ async function until<T>(probe: () => T | null | undefined, ms = 5000): Promise<T
     if (Date.now() - t0 > ms) throw new Error('timed out');
     await sleep(50);
   }
+}
+
+/**
+ * Freeze or thaw the open page through the inspector's toggle (40 took the
+ * word off the reader's top row), the inspector shown for it; resolves once
+ * the page says so (`data-frozen` on `.doc-view`).
+ */
+async function setFrozenUi(want: boolean): Promise<void> {
+  const page = () => document.querySelector<HTMLElement>('.doc-view');
+  const is = () => page()?.dataset.frozen === (want ? '1' : '0');
+  if (is()) return;
+  useApp.setState({ inspForced: true });
+  setInspector({ open: true });
+  const btn = await until(() => document.querySelector<HTMLElement>('.insp .fr-toggle[data-frozen]'));
+  btn.click();
+  await until(() => (is() ? true : null));
 }
 
 /** Lines that differ, for two texts with the same number of lines. */
@@ -211,7 +227,7 @@ export async function smokeReader(vault: Vault): Promise<void> {
     await sleep(300);
     log(`blocks ${surface.children.length}, cards ${surface.querySelectorAll('.card-span').length}, math ${surface.querySelectorAll('.math').length}, marks ${surface.querySelectorAll('.ed-mark').length}`);
     const rule = document.querySelector<HTMLElement>('.read-rule');
-    log(`rule ${rule ? `${rule.style.top} + ${rule.style.height}` : 'none'}; frozen ${document.querySelector('.frozen-tag')?.textContent}; editable ${surface.contentEditable}`);
+    log(`rule ${rule ? `${rule.style.top} + ${rule.style.height}` : 'none'}; frozen ${(document.querySelector<HTMLElement>('.doc-view')?.dataset.frozen === '1' ? 'frozen' : 'editable')}; editable ${surface.contentEditable}`);
 
     // frozen: the surface refuses text
     const p = Array.from(surface.querySelectorAll<HTMLElement>('p.dd-p')).find((el) => el.textContent?.startsWith('Cramming'));
@@ -231,8 +247,7 @@ export async function smokeReader(vault: Vault): Promise<void> {
     log(`frozen refused: ${(await vault.read(WOZ, true)).text === before}`);
 
     // thaw, then the same keystroke lands as one changed line
-    (document.querySelector<HTMLElement>('.frozen-tag'))?.click();
-    await until(() => (document.querySelector('.frozen-tag')?.textContent === 'editable' ? true : null));
+    await setFrozenUi(false);
     await sleep(200);
     place();
     document.execCommand('insertText', false, ', they say,');
@@ -397,7 +412,7 @@ export async function smokeIntake(vault: Vault): Promise<void> {
     const fm = loaded.text.split('\n').slice(0, 5).join(' / ');
     log(`placed ${path}; front-matter ${fm}; blocks ${loaded.doc.blocks.length}; diagnostics ${loaded.diagnostics.length}`);
     const h1 = await until(() => q('.doc-view h1'));
-    log(`reader: h1 "${h1.textContent}"; ${q('.frozen-tag')?.textContent}; paragraphs ${document.querySelectorAll('.draft-doc p.dd-p').length}; intake tabs left ${document.querySelectorAll('.tabbar .tab[data-t="intake"]').length}`);
+    log(`reader: h1 "${h1.textContent}"; ${(document.querySelector<HTMLElement>('.doc-view')?.dataset.frozen === '1' ? 'frozen' : 'editable')}; paragraphs ${document.querySelectorAll('.draft-doc p.dd-p').length}; intake tabs left ${document.querySelectorAll('.tabbar .tab[data-t="intake"]').length}`);
 
     // an address pasted into the empty field is fetched
     openIntake('books');
@@ -491,7 +506,7 @@ export async function smokeLoop(vault: Vault): Promise<void> {
     const path = await until(() => vault.documents().find((d) => d.startsWith('papers/Spaced repetition')));
     const surface = await until(() => q<HTMLElement>('.doc-view .draft-doc'));
     await sleep(400);
-    log(`imported ${path}; frozen ${q('.frozen-tag')?.textContent}; enrol button "${q('.frozen-tag.enrol')?.textContent}"; bottom strip "${q('.bot')?.textContent}"; inspector "${qa('.insp .block h6').map((h) => h.textContent).join(', ')}"`);
+    log(`imported ${path}; frozen ${(document.querySelector<HTMLElement>('.doc-view')?.dataset.frozen === '1' ? 'frozen' : 'editable')}; enrol button "${q('.frozen-tag.enrol')?.textContent}"; bottom strip "${q('.bot')?.textContent}"; inspector "${qa('.insp .block h6').map((h) => h.textContent).join(', ')}"`);
 
     // start reading
     press('r');
@@ -1593,7 +1608,7 @@ export async function smokeEpub(vault: Vault): Promise<void> {
     log(`notices: ${useApp.getState().log.slice(0, 1).join(' | ')}; intake ${q('.intake .book-list') ? 'still lists the book' : 'cleared'}`);
     const surface = await until(() => q<HTMLElement>('.doc-view .draft-doc'));
     await sleep(400);
-    log(`reader: crumb "${q('.doc-view .crumb')?.textContent}"; blocks ${surface.children.length}; marks ${surface.querySelectorAll('.ed-mark').length}; frozen ${q('.frozen-tag')?.textContent}; enrol "${q('.frozen-tag.enrol')?.textContent}"; first block "${surface.firstElementChild?.textContent?.slice(0, 60)}"`);
+    log(`reader: crumb "${q('.doc-view .crumb')?.textContent}"; blocks ${surface.children.length}; marks ${surface.querySelectorAll('.ed-mark').length}; frozen ${(document.querySelector<HTMLElement>('.doc-view')?.dataset.frozen === '1' ? 'frozen' : 'editable')}; enrol "${q('.frozen-tag.enrol')?.textContent}"; first block "${surface.firstElementChild?.textContent?.slice(0, 60)}"`);
     log(`tree rows: ${qa('.tree .trow').map((r) => r.textContent?.trim()).filter((t) => t && /Small Book|One|Two|Three/.test(t)).join(' | ')}`);
     await shot('epub-chapter');
     press('r');
@@ -1628,7 +1643,7 @@ export async function smokeClip(vault: Vault): Promise<void> {
     // new with content: a frozen source at the root, opened, one notice
     await handleUri(`ilmi://new?name=${enc('clip test')}&content=${enc('hello from the clipper\n\nsecond paragraph')}`);
     const p1 = await landed('clip test');
-    log(`new with content: ${p1}; ${await fileLines(p1)}; ${tab()}; ${notice()}; h1 "${q('.doc-view h1')?.textContent}"; ${q('.frozen-tag')?.textContent}`);
+    log(`new with content: ${p1}; ${await fileLines(p1)}; ${tab()}; ${notice()}; h1 "${q('.doc-view h1')?.textContent}"; ${(document.querySelector<HTMLElement>('.doc-view')?.dataset.frozen === '1' ? 'frozen' : 'editable')}`);
     await shot('clip-new');
 
     // new with a folder that is not there yet: made along the way
@@ -1736,7 +1751,7 @@ export async function smokeClipping(vault: Vault): Promise<void> {
     log(`images: ${remote} in the page; landed in ${folder}/: ${files.join(', ') || 'none'}; relative links ${(loaded.text.match(/!\[[^\]]*\]\([^)h][^)]*\)/g) ?? []).length}; remote left ${(loaded.text.match(/!\[[^\]]*\]\(https?:/g) ?? []).length}; tweak ${useApp.getState().clipImages ? 'on' : 'off'}`);
     const h1 = await until(() => q('.doc-view h1'));
     await sleep(400);
-    log(`reader: h1 "${h1.textContent}"; ${q('.frozen-tag')?.textContent}; inspector ${qa('.insp .kv .kvr').map((r) => `${r.querySelector('dt')?.textContent}=${r.querySelector('dd')?.textContent?.slice(0, 80)}`).join(' | ')}`);
+    log(`reader: h1 "${h1.textContent}"; ${(document.querySelector<HTMLElement>('.doc-view')?.dataset.frozen === '1' ? 'frozen' : 'editable')}; inspector ${qa('.insp .kv .kvr').map((r) => `${r.querySelector('dt')?.textContent}=${r.querySelector('dd')?.textContent?.slice(0, 80)}`).join(' | ')}`);
     await sleep(2000);
     const slots = qa('.draft-doc .md-img-slot, .draft-doc img.md-img');
     let bytes = -1;
@@ -1826,7 +1841,7 @@ export async function smokePlugins(vault: Vault): Promise<void> {
     openNode(src);
     const s1 = await until(() => { const s2 = q<HTMLElement>('.doc-view .draft-doc'); return s2 && s2.textContent?.includes('[hello]') ? s2 : null; });
     await sleep(800);
-    log(`reader: children ${s1.children.length}; p "${s1.querySelector('p.dd-p')?.textContent}"; marks ${s1.querySelectorAll('.ed-mark').length}; frozen ${q('.frozen-tag')?.textContent}`);
+    log(`reader: children ${s1.children.length}; p "${s1.querySelector('p.dd-p')?.textContent}"; marks ${s1.querySelectorAll('.ed-mark').length}; frozen ${(document.querySelector<HTMLElement>('.doc-view')?.dataset.frozen === '1' ? 'frozen' : 'editable')}`);
     const lit = await until(() => { const s2 = q<HTMLElement>('.doc-view .draft-doc'); return s2 && s2.querySelectorAll('.hello-lit').length === 2 ? s2 : null; });
     const litEl = lit.querySelector<HTMLElement>('.hello-lit')!;
     log(`reader: lit ${lit.querySelectorAll('.hello-lit').length}; text "${litEl.textContent}"; background ${getComputedStyle(litEl).backgroundColor}; paragraph "${litEl.closest('p')?.textContent}"; file ${(await vault.read(src, true)).text.split('\n').length} lines`);
@@ -2154,20 +2169,18 @@ export async function smokeRender(vault: Vault): Promise<void> {
     await until(() => (q('.draft-doc img.md-img[src^="blob:"]') ? true : null), 5000).catch(() => null);
     await until(() => (qa<HTMLImageElement>('.draft-doc img.md-img').every((i) => i.complete) ? true : null), 5000).catch(() => null);
     await sleep(400);
-    log(`sampler: blocks ${surface.children.length}; frozen ${q('.frozen-tag')?.textContent}; editable ${surface.contentEditable}; ${drawn()}`);
+    log(`sampler: blocks ${surface.children.length}; frozen ${(document.querySelector<HTMLElement>('.doc-view')?.dataset.frozen === '1' ? 'frozen' : 'editable')}; editable ${surface.contentEditable}; ${drawn()}`);
     log(`first paragraph reads: "${surface.querySelector('p.dd-p')?.textContent}"`);
     log(`markers hidden: ${qa<HTMLElement>('.draft-doc p .md-mark.hidden').slice(0, 3).map((m) => `"${m.textContent}" ${Math.round(m.getBoundingClientRect().width)}px wide`).join(', ')}`);
     await shot('render-sampler');
 
     // thawed: the markers show, dimmed
-    q<HTMLButtonElement>('.frozen-tag[data-frozen="1"]')!.click();
-    await until(() => (q('.frozen-tag[data-frozen="0"]') ? true : null));
+    await setFrozenUi(false);
     await sleep(400);
     const mark = q<HTMLElement>('.draft-doc p .md-mark');
     log(`thawed: editable ${surface.contentEditable}; markers ${n('.draft-doc .md-mark')} (hidden ${n('.draft-doc .md-mark.hidden')}); first marker "${mark?.textContent}" ${mark ? Math.round(mark.getBoundingClientRect().width) : 0}px wide, colour ${mark ? getComputedStyle(mark).color : ''}`);
     await shot('render-markers');
-    q<HTMLButtonElement>('.frozen-tag[data-frozen="0"]')!.click();
-    await until(() => (q('.frozen-tag[data-frozen="1"]') ? true : null));
+    await setFrozenUi(true);
     await sleep(300);
 
     // a drawn atom's source while it is selected: the table is edited in place since 41, so this logs `none`
@@ -2292,8 +2305,7 @@ export async function smokeLive(vault: Vault): Promise<void> {
     const surface = await until(() => q<HTMLElement>('.doc-view .draft-doc'));
     await sleep(400);
     log(`frozen: markers ${qa('.draft-doc p.dd-p .md-mark').length}, hidden ${hidden()}, shown ${shown()}`);
-    q<HTMLButtonElement>('.frozen-tag[data-frozen="1"]')!.click();
-    await until(() => (q('.frozen-tag[data-frozen="0"]') ? true : null));
+    await setFrozenUi(false);
     await sleep(300);
     log(`thawed, caret elsewhere: editable ${surface.contentEditable}; hidden ${hidden()}, shown ${shown()}`);
     const p = () => surface.querySelector<HTMLElement>('p.dd-p')!;
@@ -2350,9 +2362,8 @@ export async function smokeLive(vault: Vault): Promise<void> {
     await until(() => (activeTab(useApp.getState().panes)?.id === MX ? true : null));
     const mx = await until(() => { const el = q<HTMLElement>('.doc-view .draft-doc'); return el?.querySelector('.math') ? el : null; }, 10000);
     await sleep(300);
-    log(`maxwell open: blocks ${mx.children.length}, chips ${mx.querySelectorAll('.math').length} (${Array.from(mx.querySelectorAll<HTMLElement>('.math')).map((c) => `${c.parentElement?.tagName.toLowerCase()}.${c.parentElement?.className.split(' ')[0]}${c.closest('.card-span') ? '/card' : ''}`).join(' ')}); frozen tag ${q('.frozen-tag')?.getAttribute('data-frozen')}`);
-    const frozenTag = q<HTMLButtonElement>('.frozen-tag[data-frozen="1"]');
-    if (frozenTag) { frozenTag.click(); await until(() => (q('.frozen-tag[data-frozen="0"]') ? true : null)); }
+    log(`maxwell open: blocks ${mx.children.length}, chips ${mx.querySelectorAll('.math').length} (${Array.from(mx.querySelectorAll<HTMLElement>('.math')).map((c) => `${c.parentElement?.tagName.toLowerCase()}.${c.parentElement?.className.split(' ')[0]}${c.closest('.card-span') ? '/card' : ''}`).join(' ')}); frozen ${q<HTMLElement>('.doc-view')?.dataset.frozen}`);
+    await setFrozenUi(false);
     await sleep(300);
     const prose = Array.from(mx.querySelectorAll<HTMLElement>('.math')).filter((c) => !c.closest('.card-span') && !c.classList.contains('blanks'));
     const chip = prose[0] ?? mx.querySelector<HTMLElement>('.math')!;
@@ -2437,8 +2448,7 @@ export async function smokeBlocks(vault: Vault): Promise<void> {
     const surface = await until(() => q<HTMLElement>('.doc-view .draft-doc'));
     await sleep(400);
     log(`sampler: blocks ${surface.children.length}; lists ${qa('.draft-doc .dd-list').length}, items ${markers()}; quote lines ${qa('.draft-doc .dd-ql').length}; code lang "${q<HTMLElement>('.draft-doc .dd-code')?.dataset.lang}" class "${q('.draft-doc .dd-code code')?.className}"; atoms [${qa<HTMLElement>('.draft-doc .raw.rendered').map((r) => r.dataset.kind).join(', ')}]`);
-    q<HTMLButtonElement>('.frozen-tag[data-frozen="1"]')!.click();
-    await until(() => (q('.frozen-tag[data-frozen="0"]') ? true : null));
+    await setFrozenUi(false);
     await sleep(300);
     surface.focus();
 
@@ -3199,57 +3209,166 @@ export async function smokeDecks(vault: Vault): Promise<void> {
 }
 
 // `ILMI_SMOKE=tour` over `samples/double-major` (ILMI_VAULT): the screens a
-// heavy collection shows, one capture each, for a look over the whole app.
+// heavy collection shows, one capture each in light, dark and e-ink, for a
+// look over the whole app; and milestone 40's fixes asserted where they can
+// be (each an `ok: …` line, the first miss `failed: …`): the reader's top row
+// one line with the sidebar, the rail and the inspector all open; no raw
+// `$` outside KaTeX in the inspector, the outline, the rail's headings, the
+// session's path; the queue's paths titles, not slugs; the Lindqvist
+// chapter titled once; display math without the empty line under it; the
+// session card short for a one-line cloze, answered in place; the deck's
+// due read as words; a course's row counting what is under it. Assertions
+// read computed styles and layout, never painted frames (a covered WebKit
+// window holds frames and transitions back); the theme is set at the start
+// (the tweaks persist across runs).
 export async function smokeTour(vault: Vault): Promise<void> {
   const log = (s: string) => info(`smoke tour: ${s}`);
   const q = <T extends Element>(sel: string) => document.querySelector<T>(sel);
-  const shot = async (name: string, ms = 9000) => { await sleep(1500); log(`shot: ${name}`); await sleep(ms); };
+  const qa = <T extends Element>(sel: string) => Array.from(document.querySelectorAll<T>(sel));
+  const shot = async (name: string, ms = 3500) => { await sleep(1200); log(`shot: ${name}`); await sleep(ms); };
+  const must = (ok: boolean, what: string) => { if (!ok) throw new Error(what); log(`ok: ${what}`); };
+  const poll = async (probe: () => boolean, what: string, ms = 5000) => {
+    try { await until(() => (probe() ? true : null), ms); } catch { throw new Error(what); }
+    log(`ok: ${what}`);
+  };
   const scrollTo = (text: string) => {
     const el = Array.from(document.querySelectorAll<HTMLElement>('.doc-view .draft-doc > *')).find((e) => e.textContent?.includes(text));
     el?.scrollIntoView({ block: 'start' });
   };
-  const open = async (path: string) => { openNode(path); await until(() => q('.doc-view .draft-doc, .deck-view, .folder-view, .pdf-view'), 10000); };
+  const open = async (path: string) => {
+    openNode(path);
+    await until(() => (activeTab(useApp.getState().panes)?.id === path ? q('.pane-body .doc-view .draft-doc, .pane-body .deck-view, .pane-body .folder-view, .pane-body .pdf-view') : null), 10000);
+    await sleep(400);
+  };
+  /** Text under `el` outside KaTeX's markup. */
+  const plain = (el: Element | null): string => {
+    if (!el) return '';
+    const out: string[] = [];
+    const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    for (let n = walk.nextNode(); n; n = walk.nextNode()) if (!n.parentElement?.closest('.katex')) out.push(n.textContent ?? '');
+    return out.join('');
+  };
+  const noRawTex = (where: string, el: Element | null) => {
+    const t = plain(el);
+    must(!/\$[^\s$]/.test(t) && !/\\(frac|langle|rangle|hbar)\b/.test(t), `no raw TeX in ${where}${el ? '' : ' (not drawn)'}`);
+  };
+  const PT = 'courses/fall-2026/phys-412-quantum-ii/nondegenerate-perturbation-theory.md';
+  const CH3 = 'library/lindqvist-statistical-physics/ch-3-the-canonical-ensemble.md';
+  const QM = 'courses/fall-2026/phys-412-quantum-ii.md';
   try {
+    useApp.getState().setTheme('light');
+    await poll(() => document.documentElement.dataset.theme === 'light', 'the page starts light');
+    setSidebar({ hidden: false });
+    useApp.setState({ railFolded: {} });
     for (const p of ['courses', 'courses/fall-2026', 'courses/fall-2026/phys-412-quantum-ii', 'library', 'library/lindqvist-statistical-physics', 'arabic']) toggleOpen(p, true);
+
+    // ── the fixes, asserted once (light) ──
+    // the queue: paths of titles, kinds as lowercase words
     openNode(queueId('today'));
-    await until(() => q('.queue'));
-    await shot('queue');
-    await open('courses/fall-2026/phys-412-quantum-ii/nondegenerate-perturbation-theory.md');
-    await shot('note-physics-top');
-    scrollTo('second order');
-    await shot('note-physics-mid');
-    await open('courses/fall-2026/phys-412-quantum-ii.md');
-    await shot('notebook');
-    await open('courses/fall-2026/arab-401-advanced-grammar/kana-and-its-sisters.md');
-    await shot('note-arabic');
-    scrollTo('خبر');
-    await shot('note-arabic-mid');
-    await open('library/lindqvist-statistical-physics/ch-3-the-canonical-ensemble.md');
-    await shot('textbook');
-    await open('library/classical-prose-reader/11-the-judge-and-the-two-litigants.md');
-    await shot('reader-arabic');
+    await until(() => q('.queue .qlist li'));
+    const paths = qa<HTMLElement>('.qlist .qpath').map((e) => e.textContent ?? '');
+    log(`queue paths: ${paths.slice(0, 5).join(' | ')}`);
+    must(paths.length > 0 && paths.every((t) => !/\b[a-z0-9]+(?:-[a-z0-9]+)+\//.test(t) && !/\.md\b/.test(t)), 'queue paths are titles, not slugs');
+    must(qa<HTMLElement>('.qlist .src').every((e) => e.getBoundingClientRect().height < 24), 'each queue path is one line');
+    const tags = [...new Set(qa('.qlist .kindtag').map((t) => t.textContent ?? ''))];
+    must(tags.every((t) => t === t.toLowerCase() && t !== 'bidir') && getComputedStyle(q('.qlist .kindtag')!).textTransform === 'none', `kinds lowercase (${tags.join(', ')})`);
+    useApp.setState({ inspForced: true });
+    setInspector({ open: true });
+    await sleep(300);
+    must(!q('.insp .kv') || !/upcoming/.test(q('.insp')?.textContent ?? ''), "the queue's inspector does not repeat the saved queries");
+    log(`queue inspector: ${(q('.insp')?.textContent ?? '').replace(/\s+/g, ' ').slice(0, 160)}`);
+
+    // the reader's top row on a notebook page with the sidebar, the rail and the inspector open
+    await open(PT);
+    await until(() => q('.tab-rail'));
+    const meta = q<HTMLElement>('.pane-body .doc-view .meta')!;
+    const lh = parseFloat(getComputedStyle(meta).fontSize) * 1.9;
+    log(`top row: "${meta.textContent}" ${Math.round(meta.getBoundingClientRect().height)}px (a line ${Math.round(lh)}px); page ${Math.round(q<HTMLElement>('.pane-body .doc-view')!.getBoundingClientRect().width)}px; window ${window.innerWidth}px`);
+    must(getComputedStyle(meta).whiteSpace === 'nowrap' && meta.getBoundingClientRect().height <= lh, 'the top row is one line');
+    must(!/\beditable\b|\bfrozen\b/.test(meta.textContent ?? ''), 'no editable/frozen word in the top row');
+    must(/^\d+ (due|cards?)$/.test(q('.pane-body .doc-view .meta .right')?.textContent ?? ''), 'the count is one short token');
+    noRawTex('the inspector', q('.insp'));
+    noRawTex('the rail', q('.tab-rail'));
+    // display math: no empty line under it
+    const br = q<HTMLElement>('.pane-body .draft-doc .math.display ~ br.ProseMirror-trailingBreak');
+    must(!br || getComputedStyle(br).display === 'none', 'no trailing break under display math');
+    await shot('fix-top-row');
+    // the rail folded: the outline is the inspector's
+    useApp.setState({ railFolded: { [QM]: true } });
+    await sleep(400);
+    noRawTex('the outline', q('.insp-outline'));
+    useApp.setState({ railFolded: {}, inspForced: false });
+
+    // the Lindqvist chapter, titled once
+    await open(CH3);
+    await sleep(300);
+    must(!q('.pane-body .doc-view > h1') && /Chapter 3/.test(q('.pane-body .draft-doc')?.textContent ?? ''), 'the chapter is titled once');
+
+    // the deck's rows: the due as words, the interval in the tooltip
     await open('arabic/vocabulary.md');
-    await shot('vocab-deck');
-    await open('courses/fall-2026/arab-455-abbasid-poetry/term-paper.md');
-    await shot('draft');
+    const dues = qa('.deck-row .dr-due').map((e) => e.textContent ?? '');
+    must(dues.length > 100 && dues.every((d) => !d.startsWith('+')), 'deck dues read as words');
+    must(!q('.insp .insp-cards'), "the deck's inspector has no card list");
+
+    // a course counts what is under it
     await open('courses/fall-2026');
-    await shot('folder');
+    const qmRow = q(`.fv-row[data-path="${QM}"] .fv-meta`)?.textContent ?? '';
+    log(`fall 2026 rows: ${qa<HTMLElement>('.fv-row').map((r) => `${r.querySelector('.fv-name')?.textContent} [${r.querySelector('.fv-meta')?.textContent}]`).join(' | ')}`);
+    must(Number(/(\d+) cards/.exec(qmRow)?.[1] ?? 0) > 20, `quantum II counts the cards under it (${qmRow})`);
+
+    // the session: a one-line cloze is a short card, answered in place
     openNode(queueId('today'));
     await until(() => q('.queue'));
     press('Enter');
     await until(() => q('.recall-wrap .card, .doc-session'), 10000);
-    await shot('session-1');
-    press(' ');
-    await shot('session-1-shown');
-    for (let i = 0; i < 6; i++) { press(']'); await sleep(150); }
-    await shot('session-2');
-    useApp.getState().setTheme('dark');
-    await open('courses/fall-2026/phys-415-stat-mech/canonical-ensemble.md');
-    await shot('dark-note');
+    let found = false;
+    for (let i = 0; i < 80 && !found; i++) {
+      const t = q('.recall-wrap .card .cloze-text');
+      if (t && (t.textContent ?? '').length < 90 && !t.querySelector('.math') && t.getBoundingClientRect().height < 60) found = true;
+      else { press(']'); await sleep(120); }
+    }
+    if (found) {
+      const card = q<HTMLElement>('.recall-wrap .card')!;
+      log(`one-line cloze: card ${Math.round(card.getBoundingClientRect().height)}px "${card.textContent?.slice(0, 80)}"`);
+      must(card.getBoundingClientRect().height < 220, 'a one-line cloze is a short card');
+      noRawTex("the session's path", q('.recall-meta .card-trail'));
+      await shot('fix-session-cloze');
+      press(' ');
+      await poll(() => !!q('.recall-wrap .card .cloze.revealed'), 'the cloze is revealed in place');
+      must(!q('.recall-wrap .card .face.back') && !q('.recall-wrap .card .cloze-answer'), 'no second box repeating the answer');
+      await shot('fix-session-cloze-revealed');
+    } else log('no one-line cloze in the first 80 of the session');
+
+    // ── every screen, in each theme ──
+    const screens: [string, () => Promise<void>][] = [
+      ['queue', async () => { openNode(queueId('today')); await until(() => q('.queue')); }],
+      ['note-physics-top', () => open(PT)],
+      ['note-physics-mid', async () => { await open(PT); scrollTo('second order'); }],
+      ['notebook', () => open(QM)],
+      ['note-arabic', () => open('courses/fall-2026/arab-401-advanced-grammar/kana-and-its-sisters.md')],
+      ['note-arabic-mid', async () => { await open('courses/fall-2026/arab-401-advanced-grammar/kana-and-its-sisters.md'); scrollTo('خبر'); }],
+      ['textbook', () => open(CH3)],
+      ['reader-arabic', () => open('library/classical-prose-reader/11-the-judge-and-the-two-litigants.md')],
+      ['vocab-deck', () => open('arabic/vocabulary.md')],
+      ['draft', () => open('courses/fall-2026/arab-455-abbasid-poetry/term-paper.md')],
+      ['folder', () => open('courses/fall-2026')],
+      ['session-1', async () => { openNode(queueId('today')); await until(() => q('.queue')); press('Enter'); await until(() => q('.recall-wrap .card, .doc-session'), 10000); }],
+      ['session-1-shown', async () => { press(' '); await sleep(200); }],
+      ['session-2', async () => { for (let i = 0; i < 6; i++) { press(']'); await sleep(150); } }],
+    ];
+    for (const theme of ['light', 'dark', 'eink'] as const) {
+      useApp.getState().setTheme(theme);
+      await poll(() => document.documentElement.dataset.theme === theme, `the page is in ${theme}`);
+      for (const [name, go] of screens) {
+        await go();
+        await shot(theme === 'light' ? name : `${name}-${theme}`);
+      }
+    }
     useApp.getState().setTheme('light');
     log(`done; vault ${vault.root}`);
   } catch (e) {
     log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+    useApp.getState().setTheme('light');
   }
 }
 
@@ -5448,7 +5567,8 @@ export async function smokeArabic(vault: Vault): Promise<void> {
     void blank;
     press(' ');
     await poll(() => q<HTMLElement>('.recall-wrap .card .cloze.on-letter.revealed')?.textContent === 'تٍ', 'revealed, the letter takes its kasratān', 4000);
-    must(q('.recall-wrap .card .cloze-answer .on-letter')?.textContent === 'تٍ', 'the answer face shows the letter with the mark');
+    // 40: a cloze is answered in place, no second face repeating it
+    must(!q('.recall-wrap .card .cloze-answer') && !q('.recall-wrap .card .face.back'), 'no answer face under the sentence');
     await shot('arabic-session-case-ending-revealed');
     useApp.getState().setTheme('dark');
     await sleep(400);

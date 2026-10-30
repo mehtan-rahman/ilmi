@@ -268,6 +268,19 @@ describe('block rules, as typed', () => {
     expect(t.view.state.selection.$from.parent.type).toBe(schema.nodes.paragraph);
     t.type('after');
     expect(md(t.view.state)).toBe('before\n\n---\n\nafter');
+    // macOS's smart dashes turn `--` into an em (or en) dash as it is typed: a dash after one still makes the rule
+    for (const typed of ['—-', '–-', '-—']) {
+      const d = typer('x');
+      d.view.dispatch(d.view.state.tr.delete(1, 2));
+      d.type(typed);
+      expect(fromDoc(d.view.state.doc), typed).toEqual([{ kind: 'raw', text: '---' }]);
+      d.view.destroy();
+    }
+    // and an em dash in a sentence is only a dash
+    const e = typer('so', 'so', 2);
+    e.type(' —-');
+    expect(fromDoc(e.view.state.doc)).toEqual([{ kind: 'paragraph', text: 'so —-' }]);
+    e.view.destroy();
     const u = typer('x');
     u.view.dispatch(u.view.state.tr.delete(1, 2));
     u.type('---');

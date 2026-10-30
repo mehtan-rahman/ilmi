@@ -3308,6 +3308,31 @@ joinIntoList`; ⌘⏎ `toggleTasks, exitCode`. Choices made here:
   every result written, read back, and equal). Two of 27's cases in
   `reader-view.test.ts` changed on purpose (Backspace at an item's start,
   Tab's column).
+Window check 2026-10-30 (`ILMI_SMOKE=editing`, run by the coordinator):
+the formatting keys, ⌘K, `[ ] `, numbered lists and ⌥⇧↑↓, the quote
+toggle, Backspace-to-paragraph and ⌘Z worked. Fixed after it: (1) macOS's
+smart dashes turn `--` into `—` as it is typed in WebKit, so `---` never
+fired; the rule now also takes `—-`, `–-`, `-—` alone in a paragraph.
+(2–4) the fence, `$$`, `* `, and ⇧Tab "failures" were the smoke's: its
+`block()` took the first textblock holding a needle, and the note's first
+paragraph also holds "the classical shadow of this" and (in KaTeX's
+MathML) "the action J", so the caret went there; it now takes the last,
+checks the caret is in a fresh empty paragraph before each rule, and
+asserts every step's lines (a mismatch ends the run with `failed:`).
+(5) the toolbar was 8px above the selection, as meant; the 509 the smoke
+logged was the range's bounding box, which takes in an empty rect at the
+end of the line above. The cue and the smoke now measure the selection by
+its client rects (`selectionBox`), a frame after the selection changes
+(the markers it reveals move the text). (6) a formula's chip was narrower
+than its glyphs: `.reader` sets `hanging-punctuation: first allow-end
+last`, and WebKit hung a formula's own closing `)` or `⟩` inside KaTeX's
+boxes, so the space or comma after the chip was painted over and a comma
+could wrap alone (the file text was always intact). `.math .katex {
+hanging-punctuation: none }`; checked in an offscreen WKWebView with the
+app's CSS and fonts: chip box = glyphs, no comma alone on a line from 300
+to 830px but where the formula itself breaks. (7) the formatting steps
+logged "(none)" because the tracked needle contained `301`, which ⌘E
+split; they track `it was due` and assert the exact line.
 Left for later: the toolbar shows for keyboard selections too (the
 research would wait for a mouse selection to end); ⌘K with a bare caret
 does not insert `[](…)`; a paragraph with a soft line break made a

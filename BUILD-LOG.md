@@ -71,6 +71,19 @@ dispatch), `README.md`, and the tests (`editing.test.ts` new, two cases of
   letters, the hairline, its place above a selection near the top) are
   for the window.
 
+### Window check 2026-10-30
+
+`ILMI_SMOKE=editing` run by the coordinator: keys, ⌘K, tasks, numbers
+and moves, the quote toggle, Backspace and ⌘Z worked. Fixed after it:
+`---` under macOS's smart dashes (`—-` counts), the smoke's caret landing
+in the note's first paragraph (it now takes the last match, checks a
+fresh paragraph before each rule, and asserts every step), the toolbar's
+measure (client rects, a frame later), formulas painted over the space or
+comma after them (`hanging-punctuation` hung KaTeX's closing brackets;
+`.math .katex { hanging-punctuation: none }`, checked in an offscreen
+WKWebView), and the formatting steps' "(none)" lines. 743 tests; the
+window rerun is owed.
+
 ### Handoff prompt
 
 ```

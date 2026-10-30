@@ -733,6 +733,22 @@ interface LinkField {
 /** The toolbar's formatting buttons: letters, each with its key in the tooltip. */
 const FORMATS: [InlineToggle, string, string][] = [['strong', 'b', '⌘B'], ['em', 'i', '⌘I'], ['code', 'code', '⌘E']];
 
+/**
+ * Where a selection sits: from its first line's top to its last line's
+ * bottom, starting where its first line starts. `getBoundingClientRect`
+ * on the range can take in a line box the selection only touches (an
+ * empty rect at a text node's end), which put the toolbar over the text.
+ */
+export function selectionBox(range: Range): DOMRect {
+  const rects = Array.from(range.getClientRects()).filter((r) => r.width > 0 && r.height > 0);
+  if (!rects.length) return range.getBoundingClientRect();
+  const top = Math.min(...rects.map((r) => r.top));
+  const bottom = Math.max(...rects.map((r) => r.bottom));
+  const first = rects.find((r) => r.top === top) ?? rects[0]!;
+  const right = Math.max(...rects.map((r) => r.right));
+  return new DOMRect(first.left, top, right - first.left, bottom - top);
+}
+
 /** Room the toolbar wants above a selection; nearer the top it sits below. */
 const CUE_ROOM = 56;
 
@@ -1051,14 +1067,23 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
             const a = view.posAtDOM(range.startContainer, range.startOffset);
             const b = view.posAtDOM(range.endContainer, range.endOffset);
             const p = passage(view.state.doc, Math.min(a, b), Math.max(a, b));
-            if (p.text) next = { ...p, end: Math.max(a, b), rect: range.getBoundingClientRect() };
+            if (p.text) next = { ...p, end: Math.max(a, b), rect: selectionBox(range) };
           } catch { /* not in the document */ }
         }
       }
       setSel((cur) => (sameSel(cur, next) ? cur : next));
     };
-    document.addEventListener('selectionchange', capture);
-    return () => document.removeEventListener('selectionchange', capture);
+    // measured a frame later: the markers the selection reveals have moved the text by then
+    let frame: number | null = null;
+    const later = () => {
+      if (frame !== null) cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => { frame = null; capture(); });
+    };
+    document.addEventListener('selectionchange', later);
+    return () => {
+      document.removeEventListener('selectionchange', later);
+      if (frame !== null) cancelAnimationFrame(frame);
+    };
   }, []);
 
   // the selection as plugins see it: the block it ends in gives the sentence around it

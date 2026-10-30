@@ -99,6 +99,11 @@
 .math { cursor: default; position: relative; }
 .math.display { display: block; margin: 0.6em 0; text-align: center; }
 .math .katex { font-size: 1.02em; }
+/* The reader hangs punctuation (`hanging-punctuation` on .reader); inside a
+   formula WebKit would hang a closing `)` or `⟩` too, so the chip's box came
+   out narrower than its glyphs: the space or comma after it was painted over
+   and a comma could wrap alone. Formulas never hang. */
+.math .katex { hanging-punctuation: none; }
 .math .katex-display { margin: 0; }
 /* a formula KaTeX refused, with blanks in it: its source, the blanks as text blanks */
 .math.blanks .tex { font-family: var(--mono); font-size: 0.9em; white-space: pre-wrap; }

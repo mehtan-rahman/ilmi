@@ -460,8 +460,12 @@ const quoteRule = new InputRule(/^> $/, (state, _m, start, end) => {
   return tr.setSelection(TextSelection.create(tr.doc, p.pos + 2));
 });
 
-/** `---` alone in a paragraph: a rule, and a paragraph after it to go on in. */
-const ruleRule = new InputRule(/^---$/, (state, _m, start, end) => {
+/**
+ * `---` alone in a paragraph: a rule, and a paragraph after it to go on in.
+ * macOS's smart dashes (on in WebKit by default) turn the first two into an
+ * em or en dash as they are typed, so a dash after one of those counts too.
+ */
+const ruleRule = new InputRule(/^(?:---|[—–]-|-[—–])$/, (state, _m, start, end) => {
   const p = ruleParagraph(state, start);
   if (!p || p.node.content.size !== end - start) return null;
   const tr = state.tr.replaceWith(p.pos, p.pos + p.node.nodeSize, [raw.create({ text: '---' }), paragraph.create()]);

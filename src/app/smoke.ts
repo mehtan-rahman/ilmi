@@ -3438,7 +3438,7 @@ export async function smokeEditing(vault: Vault): Promise<void> {
   let last = '';
   /** The file once the reader's write has landed (or a little while has passed). */
   const settled = async () => {
-    for (let i = 0; i < 30; i++) {
+    for (let i = 0; i < 25; i++) {
       await sleep(100);
       const t = await text();
       if (t !== last) { await sleep(150); last = await text(); return last; }
@@ -3451,17 +3451,36 @@ export async function smokeEditing(vault: Vault): Promise<void> {
     const i = lines.findIndex((l) => l.includes(ANCHOR));
     return lines.slice(i + 1).filter((l, k, all) => l || (k > 0 && all[k - 1])).join(' ⏎ ');
   };
-  const lineWith = (t: string, needle: string) => t.split('\n').find((l) => l.includes(needle)) ?? '(none)';
-  const step = async (label: string) => log(`${label}: ${region(await settled())}`);
-  const stepLine = async (label: string, needle: string) => log(`${label}: ${lineWith(await settled(), needle)}`);
+  const fail = (msg: string): never => { throw new Error(msg); };
+  /** The file holds `lines`, one after another; logged, and the run fails when it does not. */
+  const expectLines = async (label: string, lines: string[]) => {
+    const t = await settled();
+    const all = t.split('\n');
+    const ok = all.some((_, i) => lines.every((l, k) => all[i + k] === l));
+    log(`${label}: ${ok ? 'ok' : 'MISMATCH'}; ${region(t)}`);
+    if (!ok) fail(`${label}: expected the lines ${JSON.stringify(lines)}`);
+  };
+  /** The line holding `needle`, which must equal `want` (or contain it, with `part`). */
+  const expectLine = async (label: string, needle: string, want: string, part = false) => {
+    const t = await settled();
+    const line = t.split('\n').find((l) => l.includes(needle)) ?? '(none)';
+    const ok = part ? line.includes(want) : line === want;
+    log(`${label}: ${ok ? 'ok' : 'MISMATCH'}; ${line}`);
+    if (!ok) fail(`${label}: expected ${JSON.stringify(want)}, the file has ${JSON.stringify(line)}`);
+  };
+  const expect = (label: string, ok: boolean, detail: string) => {
+    log(`${label}: ${ok ? 'ok' : 'MISMATCH'}; ${detail}`);
+    if (!ok) fail(`${label}: ${detail}`);
+  };
   const open = async (path: string) => {
     openNode(path);
     await until(() => (activeTab(useApp.getState().panes)?.id === path ? q('.pane-body .doc-view .draft-doc') : null), 10000);
     await sleep(500);
   };
   const surface = () => q<HTMLElement>('.pane-body .doc-view .draft-doc')!;
-  /** The textblock showing `needle`: a paragraph, a heading, an item's text, a quote line, code. */
-  const block = (needle: string) => qa<HTMLElement>('p.dd-p, .dd-h, .dd-li .li-text, .dd-ql, pre.dd-code code', surface()).find((p) => p.textContent?.includes(needle));
+  const BLOCKS = 'p.dd-p, .dd-h, .dd-li .li-text, .dd-ql, pre.dd-code code';
+  /** The last textblock showing `needle` (what the smoke typed sits below the note's own text): a paragraph, a heading, an item, a quote line, code. */
+  const block = (needle: string) => qa<HTMLElement>(BLOCKS, surface()).filter((p) => p.textContent?.includes(needle)).pop();
   const at = async (needle: string, offset = 0) => {
     const b = await until(() => block(needle));
     surface().focus();
@@ -3475,6 +3494,19 @@ export async function smokeEditing(vault: Vault): Promise<void> {
     surface().focus();
     select(b, needle);
     await sleep(120);
+  };
+  /** Where the caret is: the closest textblock, by its kind, and its text. */
+  const caretIn = () => {
+    const n = document.getSelection()?.anchorNode ?? null;
+    const el = (n?.nodeType === 1 ? (n as HTMLElement) : n?.parentElement)?.closest<HTMLElement>(`${BLOCKS}, .math-edit`);
+    if (!el) return { kind: 'nothing', text: '' };
+    const kind = el.matches('p.dd-p') ? 'paragraph' : el.matches('.dd-h') ? 'heading' : el.matches('.li-text') ? 'item' : el.matches('.dd-ql') ? 'quote' : el.matches('code') ? 'code' : 'formula';
+    return { kind, text: el.textContent ?? '' };
+  };
+  /** The caret is in an empty paragraph of its own: a rule typed there starts a block. */
+  const fresh = (label: string) => {
+    const c = caretIn();
+    expect(`${label}: a fresh paragraph`, c.kind === 'paragraph' && c.text === '', `caret in a ${c.kind} "${c.text.slice(0, 40)}"`);
   };
   const MOD = { metaKey: true };
   /** A key pressed on the focused page; true when the page took it. */
@@ -3493,201 +3525,214 @@ export async function smokeEditing(vault: Vault): Promise<void> {
     await sleep(60);
   };
   const enter = () => key('Enter', { code: 'Enter' });
+  const tab = (shift = false) => key('Tab', { code: 'Tab', shiftKey: shift });
   try {
     for (const p of ['fleeting', 'library', 'library/lindqvist-statistical-physics']) toggleOpen(p, true);
     await open(NOTE);
     last = await text();
-    log(`note ${NOTE}: kind ${useApp.getState().docs[NOTE]?.type}, editable ${surface().isContentEditable}; last lines "${region(last) || '(nothing after the anchor)'}"`);
+    expect('the note', !region(last), `kind ${useApp.getState().docs[NOTE]?.type}, editable ${surface().isContentEditable}; nothing after "${ANCHOR}" yet (a fresh copy of the sample)`);
 
     // a heading: typed, ⌘2, ⌘0 back to a paragraph, ⌘2 again
     await atEnd(ANCHOR);
     await enter();
+    fresh('after the anchor');
     await type('Notes for Friday');
-    log(`⌘2 taken ${await key('2', { code: 'Digit2', ...MOD })}`);
-    await step('⌘2');
+    expect('⌘2 taken', await key('2', { code: 'Digit2', ...MOD }), 'the page took it');
+    await expectLines('⌘2', ['## Notes for Friday']);
     await key('0', { code: 'Digit0', ...MOD });
-    await step('⌘0');
+    await expectLines('⌘0', ['Notes for Friday']);
     await key('2', { code: 'Digit2', ...MOD });
-    await step('⌘2 again');
+    await expectLines('⌘2 again', ['## Notes for Friday']);
 
     // a list by `- `, nested by Tab
     await atEnd('Notes for Friday');
     await enter();
+    fresh('under the heading');
     await type('- ');
-    log(`after "- ": caret in ${document.getSelection()?.anchorNode?.parentElement?.closest('.dd-li') ? 'an item' : 'something else'}`);
+    expect('"- " makes an item', caretIn().kind === 'item', `caret in a ${caretIn().kind}`);
     await type('adiabatic invariants');
     await enter();
     await type('the action J');
-    await key('Tab', { code: 'Tab' });
+    await tab();
     await enter();
     await type('area of the ellipse');
-    await key('Tab', { code: 'Tab' });
+    await tab();
     await enter();
-    await key('Tab', { code: 'Tab', shiftKey: true });
-    await key('Tab', { code: 'Tab', shiftKey: true });
+    await tab(true);
+    await tab(true);
     await type('the golden rule');
     await enter();
     await type('Fermi constant');
-    await step('list typed');
+    const TREE = ['- adiabatic invariants', '  - the action J', '    - area of the ellipse', '- the golden rule', '- Fermi constant'];
+    await expectLines('list typed', TREE);
     await shot('editing-list');
 
     // moved with its children
     await at('adiabatic invariants', 3);
-    log(`⌥⇧↓ taken ${await key('ArrowDown', { code: 'ArrowDown', altKey: true, shiftKey: true })}`);
-    await step('⌥⇧↓ adiabatic invariants');
+    expect('⌥⇧↓ taken', await key('ArrowDown', { code: 'ArrowDown', altKey: true, shiftKey: true }), 'the page took it');
+    await expectLines('⌥⇧↓ adiabatic invariants (with its children)', ['- the golden rule', '- adiabatic invariants', '  - the action J', '    - area of the ellipse', '- Fermi constant']);
     await shot('editing-moved');
     await key('ArrowUp', { code: 'ArrowUp', altKey: true, shiftKey: true });
-    await step('⌥⇧↑ back');
+    await expectLines('⌥⇧↑ back', TREE);
 
     // outdented and indented with its child
     await at('the action J', 2);
-    await key('Tab', { code: 'Tab', shiftKey: true });
-    await step('⇧Tab the action J (with its child)');
-    await key('Tab', { code: 'Tab' });
-    await step('Tab the action J back');
+    expect('caret in the item', caretIn().kind === 'item', `caret in a ${caretIn().kind} "${caretIn().text}"`);
+    await tab(true);
+    await expectLines('⇧Tab the action J (with its child)', ['- adiabatic invariants', '- the action J', '  - area of the ellipse', '- the golden rule']);
+    await tab();
+    await expectLines('Tab the action J back', TREE);
 
     // ⏎ on an empty item: set in, it comes out; at the top, it leaves
     await atEnd('Fermi constant');
     await enter();
-    await key('Tab', { code: 'Tab' });
-    await step('⏎ then Tab after Fermi constant');
+    await tab();
+    await expectLines('⏎ then Tab after Fermi constant', ['- Fermi constant', '  - ']);
     await enter();
-    await step('⏎ on the empty nested item');
+    await expectLines('⏎ on the empty nested item', ['- Fermi constant', '- ']);
     await enter();
-    await step('⏎ on the empty item');
-    log(`caret in ${document.getSelection()?.anchorNode?.parentElement?.closest('p.dd-p') ? 'a paragraph' : 'something else'}`);
+    await expectLines('⏎ on the empty item', ['- Fermi constant', '']);
+    fresh('⏎ on the empty item');
 
     // Backspace at an item's start: a paragraph; ⌘Z puts it back
     await at('Fermi constant', 0);
     await key('Backspace', { code: 'Backspace' });
-    await step('Backspace at the start of Fermi constant');
+    await expectLines('Backspace at the start of Fermi constant', ['- the golden rule', '', 'Fermi constant']);
     await key('z', { code: 'KeyZ', ...MOD });
-    await step('⌘Z');
+    await expectLines('⌘Z', ['- the golden rule', '- Fermi constant']);
 
     // a task by `[ ] `, ticked by ⌘⏎, cleared by its box
     await atEnd('Fermi constant');
     await enter();
     await enter();
+    fresh('after the list');
     await type('[ ] ');
     await type('ask Okonkwo about the shadow');
-    await step('[ ] typed');
+    await expectLines('[ ] typed', ['- [ ] ask Okonkwo about the shadow']);
     await key('Enter', { code: 'Enter', ...MOD });
-    await step('⌘⏎');
+    await expectLines('⌘⏎', ['- [x] ask Okonkwo about the shadow']);
     const box = await until(() => block('ask Okonkwo')?.closest('.dd-li')?.querySelector<HTMLElement>('.li-task'));
     box.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
-    await step('the box clicked');
+    await expectLines('the box clicked', ['- [ ] ask Okonkwo about the shadow']);
 
     // numbered by `1. `, an item moved and the numbers following
     await atEnd('ask Okonkwo about the shadow');
     await enter();
     await enter();
+    fresh('after the task');
     await type('1. ');
     await type('first');
     await enter();
     await type('second');
     await enter();
     await type('third');
-    await step('1. typed');
+    await expectLines('1. typed', ['1. first', '2. second', '3. third']);
     await at('third', 1);
     await key('ArrowUp', { code: 'ArrowUp', altKey: true, shiftKey: true });
-    await step('⌥⇧↑ third');
+    await expectLines('⌥⇧↑ third', ['1. first', '2. third', '3. second']);
 
     // a quote by `> `, off and on by ⌘⇧.
     await atEnd('second');
     await enter();
     await enter();
+    fresh('after the numbers');
     await type('> ');
     await type('the classical shadow of this');
-    await step('> typed');
+    await expectLines('> typed', ['> the classical shadow of this']);
     await key('>', { code: 'Period', shiftKey: true, ...MOD });
-    await step('⌘⇧. off');
+    await expectLines('⌘⇧. off', ['the classical shadow of this']);
     await key('>', { code: 'Period', shiftKey: true, ...MOD });
-    await step('⌘⇧. on');
+    await expectLines('⌘⇧. on', ['> the classical shadow of this']);
 
-    // a rule by `---`; `* ` taken back by Backspace
+    // a rule by `---` (WebKit's smart dashes may turn the first two into an em dash; the rule takes either)
     await atEnd('the classical shadow of this');
     await enter();
     await enter();
+    fresh('after the quote');
     await type('---');
-    await step('--- typed');
+    await expectLines('--- typed', ['> the classical shadow of this', '', '---']);
+    fresh('after the rule');
+
+    // `* ` makes an item; Backspace takes it back to the typed text
     await type('* ');
-    const listed = !!document.getSelection()?.anchorNode?.parentElement?.closest('.dd-li');
+    expect('"* " makes an item', caretIn().kind === 'item', `caret in a ${caretIn().kind}`);
     await key('Backspace', { code: 'Backspace' });
-    const back = block('* ')?.tagName.toLowerCase() ?? '(none)';
-    log(`"* " made an item ${listed}; Backspace: the text back in a ${back}`);
+    const back = caretIn();
+    expect('Backspace after "* "', back.kind === 'paragraph' && back.text === '* ', `caret in a ${back.kind} "${back.text}"`);
     document.execCommand('delete');
     document.execCommand('delete');
-    await sleep(100);
+    await sleep(150);
+    fresh('"* " deleted');
 
     // code by a fence and ⏎; ⌘⏎ leaves it
     await type('```py');
     await enter();
-    log(`fence ⏎: caret in ${document.getSelection()?.anchorNode?.parentElement?.closest('pre.dd-code') ? 'code' : 'something else'}`);
+    expect('fence ⏎', caretIn().kind === 'code', `caret in a ${caretIn().kind}`);
     await type('E = hbar * omega');
     await key('Enter', { code: 'Enter', ...MOD });
-    await step('``` ⏎ and code typed');
+    await expectLines('``` ⏎ and code typed', ['```py', 'E = hbar * omega', '```']);
+    fresh('⌘⏎ out of the code');
     await shot('editing-blocks');
 
     // display math by `$$` ⏎: the formula's editor opens
     await type('$$');
     await enter();
     const field = await until(() => q<HTMLTextAreaElement>('.pane-body .math-edit textarea'), 3000).catch(() => null);
-    log(`$$ ⏎: editor ${field ? `open, "${field.value}"` : 'not open'}`);
-    if (field) {
-      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(field, 'E_n = \\hbar\\omega(n + \\tfrac12)');
-      field.dispatchEvent(new Event('input', { bubbles: true }));
-      await shot('editing-math');
-      field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
-    }
-    await step('$$ written');
+    expect('$$ ⏎', !!field && field.value === '', field ? `editor open, "${field.value}"` : 'no editor');
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(field, 'E_n = \\hbar\\omega(n + \\tfrac12)');
+    field!.dispatchEvent(new Event('input', { bubbles: true }));
+    await shot('editing-math');
+    field!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    await expectLines('$$ written', ['$$E_n = \\hbar\\omega(n + \\tfrac12)$$']);
 
-    // the formatting keys over the note's own words
-    await pickIn('it was due', 'Skipped');
-    log(`⌘B taken ${await key('b', { code: 'KeyB', ...MOD })}`);
-    await stepLine('⌘B Skipped', 'the 301 re-read');
-    await pickIn('it was due', 'today');
+    // the formatting keys over the note's own words (the paragraph is tracked by "it was due", which the markers never split)
+    const DUE = 'it was due';
+    await pickIn(DUE, 'Skipped');
+    expect('⌘B taken', await key('b', { code: 'KeyB', ...MOD }), 'the page took it');
+    await expectLine('⌘B Skipped', DUE, '**Skipped** the 301 re-read today, it was due. Tomorrow.');
+    await pickIn(DUE, 'today');
     await key('i', { code: 'KeyI', ...MOD });
-    await stepLine('⌘I today', 'the 301 re-read');
-    await pickIn('it was due', '301');
+    await expectLine('⌘I today', DUE, '**Skipped** the 301 re-read *today*, it was due. Tomorrow.');
+    await pickIn(DUE, '301');
     await key('e', { code: 'KeyE', ...MOD });
-    await stepLine('⌘E 301', 'the 301 re-read');
-    await pickIn('it was due', 'Tomorrow.');
+    await expectLine('⌘E 301', DUE, '**Skipped** the `301` re-read *today*, it was due. Tomorrow.');
+    await pickIn(DUE, 'Tomorrow.');
     await key('x', { code: 'KeyX', shiftKey: true, ...MOD });
-    await stepLine('⌘⇧X Tomorrow.', 'the 301 re-read');
-    await pickIn('it was due', 'Skipped');
+    await expectLine('⌘⇧X Tomorrow.', DUE, '**Skipped** the `301` re-read *today*, it was due. ~~Tomorrow.~~');
+    await pickIn(DUE, 'Skipped');
     await key('b', { code: 'KeyB', ...MOD });
-    await stepLine('⌘B Skipped again (off)', 'the 301 re-read');
-    await at('it was due', 2);
+    const L = 'Skipped the `301` re-read *today*, it was due. ~~Tomorrow.~~';
+    await expectLine('⌘B Skipped again (off)', DUE, L);
+    await at(DUE, 2);
     await key('3', { code: 'Digit3', ...MOD });
-    await stepLine('⌘3', 'the 301 re-read');
+    await expectLine('⌘3', DUE, `### ${L}`);
     await key('0', { code: 'Digit0', ...MOD });
-    await stepLine('⌘0', 'the 301 re-read');
-    for (const [code, name] of [['Digit8', '⌘⇧8'], ['Digit7', '⌘⇧7'], ['Digit9', '⌘⇧9'], ['Period', '⌘⇧.']] as const) {
-      await at('it was due', 2);
+    await expectLine('⌘0', DUE, L);
+    for (const [code, name, on] of [['Digit8', '⌘⇧8', '- '], ['Digit7', '⌘⇧7', '1. '], ['Digit9', '⌘⇧9', '- [ ] '], ['Period', '⌘⇧.', '> ']] as const) {
+      await at(DUE, 2);
       await key(code === 'Period' ? '>' : '*', { code, shiftKey: true, ...MOD });
-      await stepLine(`${name} on`, 'the 301 re-read');
-      await at('it was due', 2);
+      await expectLine(`${name} on`, DUE, on + L);
+      await at(DUE, 2);
       await key(code === 'Period' ? '>' : '*', { code, shiftKey: true, ...MOD });
-      await stepLine(`${name} off`, 'the 301 re-read');
+      await expectLine(`${name} off`, DUE, L);
     }
 
-    // ⌘K: the address field over a selection; a pasted address over another
+    // ⌘K: the address field over a selection; with a bare caret, the palette; a pasted address over another selection
     await pickIn('mostly', 'Ibn Sīnā');
-    log(`⌘K taken ${await key('k', { code: 'KeyK', ...MOD })}; palette ${useApp.getState().paletteOpen ? 'open' : 'closed'}`);
+    expect('⌘K taken', await key('k', { code: 'KeyK', ...MOD }), `palette ${useApp.getState().paletteOpen ? 'open' : 'closed'}`);
     const addr = await until(() => q<HTMLInputElement>('.link-pop .field'), 3000).catch(() => null);
-    log(`link field: ${addr ? 'open' : 'not open'}`);
-    if (addr) {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(addr, 'https://plato.stanford.edu/entries/ibn-sina-natural/');
-      addr.dispatchEvent(new Event('input', { bubbles: true }));
-      await shot('editing-link');
-      addr.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
-    }
-    await stepLine('⌘K link', 'Ibn Sīnā');
+    expect('link field', !!addr, addr ? 'open' : 'not open');
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(addr, 'https://plato.stanford.edu/entries/ibn-sina-natural/');
+    addr!.dispatchEvent(new Event('input', { bubbles: true }));
+    await shot('editing-link');
+    addr!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    await expectLine('⌘K link', 'mostly', '[Ibn Sīnā](https://plato.stanford.edu/entries/ibn-sina-natural/)', true);
     await at('adiabatic theorem today', 2);
-    log(`⌘K with a bare caret: taken ${await key('k', { code: 'KeyK', ...MOD })}`);
+    const bare = await key('k', { code: 'KeyK', ...MOD });
     await sleep(300);
-    log(`palette ${useApp.getState().paletteOpen ? 'open' : 'closed'}`);
-    if (useApp.getState().paletteOpen) useApp.setState({ paletteOpen: false });
+    expect('⌘K with a bare caret', !q('.link-pop') && useApp.getState().paletteOpen, `taken by the page ${bare}; palette ${useApp.getState().paletteOpen ? 'open' : 'closed'}`);
+    useApp.setState({ paletteOpen: false });
+    await sleep(200);
     await pickIn('adiabatic theorem today', 'adiabatic theorem');
     try {
       const dt = new DataTransfer();
@@ -3696,26 +3741,32 @@ export async function smokeEditing(vault: Vault): Promise<void> {
     } catch (e) {
       log(`paste: ${e instanceof Error ? e.message : String(e)}`);
     }
-    await stepLine('pasted address', 'adiabatic theorem');
+    await expectLine('pasted address', 'Okonkwo', '[adiabatic theorem](https://en.wikipedia.org/wiki/Adiabatic_theorem) today', true);
 
-    // the toolbar: over a selection, above it; `b` from it; gone with the selection
+    // the toolbar: over a selection, wholly above its first line; `b` from it; gone with the selection
     await pickIn('canonical-transformation', 'the canonical-transformation section');
     const cue = await until(() => q<HTMLElement>('.pane-body .sel-cue'), 3000).catch(() => null);
-    const range = window.getSelection()?.rangeCount ? window.getSelection()!.getRangeAt(0).getBoundingClientRect() : null;
-    log(`toolbar: ${cue ? qa<HTMLElement>('button', cue).map((b) => b.textContent?.trim()).join(' | ') : 'none'}; place ${cue?.dataset.place}; its bottom ${cue ? Math.round(cue.getBoundingClientRect().bottom) : '-'} vs the selection's top ${range ? Math.round(range.top) : '-'}`);
+    await sleep(200);
+    const rects = window.getSelection()?.rangeCount ? Array.from(window.getSelection()!.getRangeAt(0).getClientRects()).filter((r) => r.width > 0) : [];
+    const selTop = Math.min(...rects.map((r) => r.top));
+    const selBottom = Math.max(...rects.map((r) => r.bottom));
+    const cr = cue?.getBoundingClientRect();
+    const clear = !!cr && (cue!.dataset.place === 'above' ? cr.bottom <= selTop - 2 : cr.top >= selBottom + 2);
+    expect('toolbar', !!cue && clear, `${cue ? qa<HTMLElement>('button', cue).map((b) => b.textContent?.trim()).join(' | ') : 'none'}; place ${cue?.dataset.place}; its top ${cr ? Math.round(cr.top) : '-'}, bottom ${cr ? Math.round(cr.bottom) : '-'}; the selection ${Math.round(selTop)}–${Math.round(selBottom)}`);
     await shot('editing-toolbar');
     q<HTMLElement>('.pane-body .sel-cue .cue-fmt[data-fmt="strong"]')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
-    await stepLine('toolbar b', 'canonical-transformation');
+    await expectLine('toolbar b', 'canonical-transformation', '**the canonical-transformation section**', true);
     window.getSelection()?.collapseToEnd();
-    await sleep(300);
-    log(`selection collapsed: toolbar ${q('.pane-body .sel-cue') ? 'still there' : 'gone'}`);
+    await sleep(400);
+    expect('selection collapsed', !q('.pane-body .sel-cue'), q('.pane-body .sel-cue') ? 'toolbar still there' : 'toolbar gone');
 
     // a frozen source: the toolbar is card and extract only
     await open(SOURCE);
     const sp = await until(() => qa<HTMLElement>('p.dd-p', surface()).find((p) => (p.textContent?.length ?? 0) > 80));
     select(sp, sp.textContent!.split(/\s+/).slice(0, 4).join(' '));
     const fcue = await until(() => q<HTMLElement>('.pane-body .sel-cue'), 3000).catch(() => null);
-    log(`frozen source toolbar: ${fcue ? qa<HTMLElement>('button', fcue).map((b) => b.textContent?.trim()).join(' | ') : 'none'}; editable ${surface().isContentEditable}`);
+    const fb = fcue ? qa<HTMLElement>('button', fcue).map((b) => b.textContent?.trim()).join(' | ') : 'none';
+    expect('frozen source toolbar', fb === 'card m | extract e', `${fb}; editable ${surface().isContentEditable}`);
     await shot('editing-frozen-toolbar');
     window.getSelection()?.removeAllRanges();
 

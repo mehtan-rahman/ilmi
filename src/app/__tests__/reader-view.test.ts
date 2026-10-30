@@ -15,7 +15,7 @@ import { classifyRaw, fromDoc, frozenKey, imageOnly, inlineRanges, makeState, ma
 import { insideMath, withBlank } from '../Composer.js';
 import { imagePath, isRemote, mimeOf } from '../images.js';
 import { dueLabel } from '../items.js';
-import { answerHTML, cardHTML, clozeHTML, handleClickOn, nodeViews, rawHTML, richHTML, type BlankState } from '../Reader.js';
+import { answerHTML, cardHTML, clozeHTML, handleClickOn, nodeViews, rawHTML, richHTML, selectionBox, type BlankState } from '../Reader.js';
 
 const CORPUS = join(dirname(fileURLToPath(import.meta.url)), '../../format/__tests__/corpus/vault/papers');
 const WOZ = join(CORPUS, 'wozniak-1990.md');
@@ -998,5 +998,18 @@ describe('image sources', () => {
     expect(mimeOf('a.jpg')).toBe('image/jpeg');
     expect(mimeOf('a.svg')).toBe('image/svg+xml');
     expect(mimeOf('a.bin')).toBe('application/octet-stream');
+  });
+});
+
+describe('the toolbar\'s place', () => {
+  it('takes the selection from its first line\'s top to its last line\'s bottom, leaving out the empty rect of a line it only touches', () => {
+    const r = (left: number, top: number, width: number, height: number) => new DOMRect(left, top, width, height);
+    const range = {
+      // an empty rect at the end of the line above, then two lines of text
+      getClientRects: () => [r(700, 509, 0, 29), r(300, 542, 400, 29), r(100, 571, 200, 29)],
+      getBoundingClientRect: () => r(100, 509, 600, 91),
+    } as unknown as Range;
+    const box = selectionBox(range);
+    expect([box.left, box.top, box.bottom]).toEqual([300, 542, 600]);
   });
 });

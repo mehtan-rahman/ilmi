@@ -1,6 +1,6 @@
 ---
 title: the qaṣīda and its parts
-read: due=2026-11-09 ivl=24 reps=2 pos=0
+read: due=2026-11-09 ivl=24 reps=2
 sessions: 2026-09-03, 2026-09-10
 ---
 

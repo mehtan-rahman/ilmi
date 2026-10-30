@@ -2,6 +2,7 @@
 title: "Lindqvist — Statistical Physics: A First Course"
 author: H. Lindqvist
 course: PHYS 415
+type: source
 ---
 
 ## the book

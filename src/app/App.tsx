@@ -90,7 +90,8 @@ export function App() {
     else setInspector({ open: true, width: Math.min(INSP_MAX, Math.max(INSP_MIN, w)) });
   }), []);
 
-  // the global keys: ⌘K palette, ⌘\ split, ⌘W close tab, ⌘⇧E sidebar, ⌘⇧I inspector, ⌘, tweaks
+  // the global keys: ⌘K palette, ⌘\ split, ⌘W close tab, ⌃⌘S sidebar (macOS's own; ⌘⇧E is the
+  // reader's extract), ⌘⇧I inspector, ⌘, tweaks
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!(e.metaKey || e.ctrlKey)) return;
@@ -115,7 +116,7 @@ export function App() {
         e.preventDefault();
         setPanes((s) => closeTab(s, s.active, s.panes[s.active]?.active ?? 0));
         rememberTab();
-      } else if (e.shiftKey && k === 'e') {
+      } else if (e.metaKey && e.ctrlKey && !e.shiftKey && k === 's') {
         e.preventDefault();
         setSidebar({ hidden: !useApp.getState().sidebar.hidden });
       } else if (e.shiftKey && k === 'i') {

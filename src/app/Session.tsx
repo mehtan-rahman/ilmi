@@ -1,7 +1,8 @@
 // The session: the outstanding queue walked one element at a time, after the
 // prototype's recall.jsx. A card is revealed and graded; a reading topic
 // opens whole in the reader with the marker live and is read on, postponed,
-// or done; a draft opens whole and is worked on, postponed, or done. Every
+// or done; a note revisited opens whole from the top, with no marker; a
+// draft opens whole and is worked on, postponed, or done. Every
 // result is written to the file the element came from.
 
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
@@ -74,19 +75,21 @@ function Nav({ idx, total, onPrev, onNext }: NavProps) {
 
 interface BarProps extends NavProps {
   kind: El;
+  /** A note revisited: named so, not `reading`. */
+  note?: boolean;
   pri: number;
   children: ReactNode;
 }
 
 /** The control bar at the foot of a reading or writing element. */
-function SessionBar({ idx, total, kind, pri, children, onPrev, onNext }: BarProps) {
+function SessionBar({ idx, total, kind, note, pri, children, onPrev, onNext }: BarProps) {
   return (
     <div className="session-bar">
       <div className="sb-inner">
         <div className="sb-meta">
           <Nav idx={idx} total={total} onPrev={onPrev} onNext={onNext} />
           <span className="sb-count">{idx + 1} / {total}</span>
-          <span className="sb-kind" data-el={kind}>{EL_WORD[kind]}</span>
+          <span className="sb-kind" data-el={kind}>{note ? 'note' : EL_WORD[kind]}</span>
           {pri !== PRI_DEFAULT && <span className="sb-count">p {pri}</span>}
         </div>
         <div className="sb-actions">{children}</div>
@@ -252,8 +255,10 @@ function DocSession({ item, active, onAct, ...nav }: DocProps) {
   const info = useApp((s) => s.docs[item.path]);
   const reading = item.kind === 'read';
   const pages = !!info?.pdf;
+  // a note's pass keeps no place (FORMAT.md §3)
+  const note = item.kind === 'read' && !!item.note;
   const pri = info ? info.pri ?? (reading ? info.read?.pri : info.write?.pri) ?? PRI_DEFAULT : item.pri;
-  const on = () => onAct('on', reading && barRef.current ? (pages ? pageInView(barRef.current) : blocksAbove(barRef.current)) : undefined);
+  const on = () => onAct('on', reading && !note && barRef.current ? (pages ? pageInView(barRef.current) : blocksAbove(barRef.current)) : undefined);
 
   useKeys(active, (key) => {
     if (key === 'Enter') { on(); return true; }
@@ -265,8 +270,8 @@ function DocSession({ item, active, onAct, ...nav }: DocProps) {
   return (
     <div className="doc-session" ref={barRef}>
       {pages ? <Pdf id={item.path} active={active} session /> : <Reader id={item.path} active={active} />}
-      <SessionBar kind={item.kind} pri={pri} {...nav}>
-        <button type="button" onClick={on}><span className="ra-l">{reading ? 'read on' : 'worked on it'}</span><kbd>⏎</kbd></button>
+      <SessionBar kind={item.kind} note={note} pri={pri} {...nav}>
+        <button type="button" onClick={on}><span className="ra-l">{note ? 'went over it' : reading ? 'read on' : 'worked on it'}</span><kbd>⏎</kbd></button>
         <button type="button" onClick={() => onAct('postpone')}><span className="ra-l">postpone</span><kbd>p</kbd></button>
         <button type="button" onClick={() => onAct('done')}><span className="ra-l">done</span><kbd>d</kbd></button>
       </SessionBar>
@@ -340,8 +345,9 @@ export function Session({ active, onOpen }: Props) {
       : vault.update(item.path, (doc) => { advanceWrite(doc, action, now); });
     run.catch(fail);
     if (action === 'on') emitDocAction(item);
-    const word = action === 'postpone' ? `+${postponed(item.sched.ivl)}d` : action === 'done' ? 'done' : item.kind === 'read' ? 'read on' : 'progress';
-    note(`${item.kind === 'read' ? 'read' : 'wrote'} · ${word}`);
+    const revisit = item.kind === 'read' && !!item.note;
+    const word = action === 'postpone' ? `+${postponed(item.sched.ivl)}d` : action === 'done' ? 'done' : revisit ? 'went over it' : item.kind === 'read' ? 'read on' : 'progress';
+    note(`${revisit ? 'revisit' : item.kind === 'read' ? 'read' : 'wrote'} · ${word}`);
     advance();
   };
 

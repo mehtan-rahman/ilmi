@@ -6,6 +6,95 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-10-30 — milestone 33: notes, what you write is a note, what you read is a source
+
+Done on main; commit `HASH33` — *notes: what you write is a note, what
+you read is a source; bare letters type in editable text, ⌘⇧E and ⌘⇧M
+carve and card*. Files: `FORMAT.md` §1 and §3, `src/format/model.ts`,
+`src/format/frontmatter.ts` (`note`, the default, the `imported` rule),
+`src/schedule/read.ts` and `queue.ts` (a note's pass keeps no `pos`; the
+read item's `note`), `src/vault/vault.ts` (`createDoc`, `importDoc` with
+`note`, `importPdf`, `extract`), `src/import/supermemo/docs.ts` and its
+`LAYOUT.md`, `src/plugins/api.ts` (and `plugins/ilmi.d.ts`),
+`src/plugins/runtime.ts`, `src/app/Reader.tsx` (`readerAction`, `revisit`,
+`from…`, the cue's keys), `Session.tsx`, `Tree.tsx` (F2), `App.tsx` (⌃⌘S),
+`chrome.ts`, `BottomStrip.tsx`, `items.ts`, `names.ts`, `NodeMenu.tsx`,
+`Lenses.tsx`, `Rail.tsx`, `Inspector.tsx`, `Intake.tsx`, `vault.ts`
+(`enrolReading`, the `notes` dispatch), `smoke.ts` (`smokeNotes`), the CSS,
+two corpus files, 11 migrated files in `samples/double-major`, and the
+tests (`notes.test.ts`, `samples.test.ts` new).
+
+### Done
+
+- Five kinds: note (the default for a file with no `type`), source,
+  extract, draft, deck. A typeless file with `imported` stays a source, so
+  files imported before today read as they did. Importers write `type:
+  source`; new, `+ tab`, `add subtab`, and text pasted into the intake make
+  notes. The menus, the `+` lists, the palette, the inspector, the tree's
+  glyphs (note `¶`, source `“`), and the queue's tags (`note`, `read`,
+  `write`, the card forms) use the five words.
+- Revisit: `revisit` in a note's top row (`r`) and its node menu writes
+  `read: due=… ivl=1 reps=0`, no `pos`. A pass opens at the top; the top
+  row's `from…` scrolls to a heading, writing nothing. No marker on a note;
+  the session's bar says `note` and `went over it`; a pass, a postpone, an
+  extract never write `pos` on a note.
+- Keys: bare `e` `m` `r` only where the text is not being edited; in
+  editable text ⌘⇧E extracts and ⌘⇧M opens the composer over the
+  selection, and letters typed over a selection type. The cue and the
+  bottom strip show ⌘⇧E / ⌘⇧M on an editable page, `e` / `m` on a frozen
+  one. ⌘⇧E was the sidebar's toggle; that is ⌃⌘S now. Nothing in the
+  native menu binds either key. F2 renames a tree row only while the tree
+  has focus.
+- The sample migrated (34 notes, 11 sources, 17 extracts, 10 decks, 2
+  drafts); the sample author's verifier reports `problems 0`.
+
+### Verified
+
+- `npx vitest run`: 718 tests, 36 files (629 before; `samples.test.ts` 76,
+  `notes.test.ts` 5, the format default-change test, the note's pass in
+  `schedule.test.ts`, the extract from a revisited note, F2 in
+  `tree.test.ts`). `npm run typecheck` clean. `cargo test` 12.
+- `npx tsx <scratchpad>/verify.mts samples/double-major -v`: 74 files, no
+  problems, byte-canonical.
+
+### Not verified — the window run is owed
+
+- The screen was locked; nothing ran in the Tauri window. `ILMI_SMOKE=
+  notes` (new) drives the "done when" over a copy of the sample: opens
+  `fleeting/2026-10-30.md` and logs its kind, lens, glyph, top row, and
+  strip; logs the sidebar's `+` and a folder lens's buttons; revisits the
+  time-dependent PT note from its top row, picks `Fermi's golden rule` in
+  `from…`, finds its `note` row in the queue, opens the session (bar,
+  actions, no marker) and goes over it (the read line after); selects
+  `rough` in the note, presses `e` on the surface and logs that the key
+  was not taken and the word became `e`; bare `m`/`r` not taken; ⌘⇧E
+  carves an extract (child and backref logged), ⌘⇧M opens the composer
+  and saves a cloze; bare `e` in the frozen ch. 3 still extracts; F2 in
+  the page does nothing and in the focused tree opens the rename; an
+  import lands `type: source`, a paste a note. `shot:` lines at
+  notes-typeless, -new-menu, -revisit-heading, -queue, -revisit-session,
+  -cue, -extracted, -composer, -frozen-cue.
+- Typing over a selection in WebKit: the smoke types with
+  `execCommand('insertText')` only after the keydown was not taken; a real
+  keypress is for a person.
+- ⌃⌘S under the native menu (no item binds it; the webview should get it).
+
+### Handoff prompt
+
+```
+Read PLAN.md (ground rules, Refinement, 33's notes), FORMAT.md, and the
+top BUILD-LOG.md entry. First run ILMI_SMOKE=notes with ILMI_VAULT on a
+copy of samples/double-major (port 1420 free, never kill a run that is
+not yours; capture with screencapture -l <window id> 2 s after each
+`shot:` line), read the captures, fix what they show, and record it under
+33's entry. Then do milestone 34 (editing like an editor: keys, rules,
+lists) and only that one; stop at its "done when". Suite, typecheck, and
+`cargo test` green before each commit; tick it, write notes, add an entry
+here with a fresh handoff prompt, and commit.
+```
+
+---
+
 ## 2026-10-28 — milestone 32: decks, a browser, cards edited in place, and studying one deck
 
 Done on branch `worktree-agent-aedb6add9558a8a41` (built beside 31 on

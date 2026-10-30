@@ -54,6 +54,8 @@ export interface ReadItem extends ItemBase {
   next?: string;
   /** On a document with pages: the page the ruler is on (`pos`), when it is on one. */
   page?: number;
+  /** A note revisited: no marker, each pass from the top. */
+  note?: true;
 }
 
 export interface WriteItem extends ItemBase {
@@ -136,12 +138,14 @@ export function docItems(path: string, doc: Doc, now: Date): QueueItem[] {
   const docPri = m.pri ?? PRI_DEFAULT;
   if (m.read) {
     const total = prose.length;
-    // on a document with pages, `pos` is a page and is not held to the prose count
-    const pos = m.pdf !== undefined ? m.read.pos ?? 0 : Math.min(m.read.pos ?? 0, total);
+    // on a document with pages, `pos` is a page and is not held to the prose count; a note has none
+    const note = m.type === 'note';
+    const pos = note ? 0 : m.pdf !== undefined ? m.read.pos ?? 0 : Math.min(m.read.pos ?? 0, total);
     const item: ReadItem = { kind: 'read', path, sched: m.read, pos, total, ...withDue(m.read, now), pri: m.pri ?? m.read.pri ?? PRI_DEFAULT };
     const next = prose[Math.min(pos, total - 1)];
     if (next && next.text.trim()) item.next = next.text;
     if (m.pdf !== undefined && pos > 0) item.page = pos;
+    if (note) item.note = true;
     out.push(item);
   }
   if (m.write && !m.write.done) {

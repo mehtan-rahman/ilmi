@@ -1,7 +1,9 @@
 // The intake: how a raw article, a text file, or a page enters the vault and
 // becomes a source. After the prototype's ingest.jsx: no upload chrome. You
 // paste or drop, name it, choose where it lives, and it lands frozen and
-// unread. Nothing is scheduled; it waits until you open it.
+// unread. Nothing is scheduled; it waits until you open it. Text pasted or
+// typed into the field (no file, no page behind it) lands as a note instead:
+// editable, no `type`.
 //
 // A dropped file arrives through Tauri's drag-drop event with a path (the
 // webview's own drop event carries no files under Tauri), routed here by
@@ -88,6 +90,8 @@ export function Intake({ active, onOpen }: Props) {
   const [pdf, setPdf] = useState<PendingPdf | null>(null);
   /** What the fetched page said about itself, while its text is in the field. */
   const [page, setPage] = useState<PageInfo | null>(null);
+  /** The text in the field came from a file: it is imported, a source. */
+  const [fromFile, setFromFile] = useState(false);
   /** An Anki package waiting on the intake: its decks, listed where the text would be. */
   const [anki, setAnki] = useState<Mapped | null>(null);
   /** A book waiting on the intake: its chapters, listed where the text would be. */
@@ -120,6 +124,8 @@ export function Intake({ active, onOpen }: Props) {
 
   // a PDF lands even without a text layer: it opens as pages, nothing to select
   const can = (book ? book.chapters.length > 0 : anki ? anki.decks.length > 0 : deck ? deck.cards.length > 0 : st.words > 0 || !!pdf) && !busy;
+  // pasted or typed text is the user's own: a note
+  const asNote = !fromFile && !pdf && !page && !book && !anki;
   const titleShown = title || (book ? book.title || BOOK_NAME : cardsMode ? DECK_NAME : deriveTitle(raw));
   const setSide = (side: SideDelim) => { if (used) setDelims({ ...used, side }); };
   const setCard = (card: CardDelim) => { if (used) setDelims({ ...used, card }); };
@@ -142,8 +148,9 @@ export function Intake({ active, onOpen }: Props) {
     setAsCards(null);
   };
 
-  const take = (body: string, name?: string, pages: PendingPdf | null = null, info: PageInfo | null = null) => {
+  const take = (body: string, name?: string, pages: PendingPdf | null = null, info: PageInfo | null = null, file = false) => {
     setRaw(cleanText(body));
+    setFromFile(file || !!pages);
     setPdf(pages);
     setPage(info);
     setAnki(null);
@@ -198,11 +205,11 @@ export function Intake({ active, onOpen }: Props) {
       if (PDF_EXT.test(path)) {
         setNote('reading');
         const r = await readDroppedPdf(path);
-        take(r.text, r.title, { bytes: r.bytes, pages: r.pages });
+        take(r.text, r.title, { bytes: r.bytes, pages: r.pages }, null, true);
         return;
       }
       const r = await readDropped(path);
-      take(r.text, r.title);
+      take(r.text, r.title, null, null, true);
     } catch (e) {
       fail(e, 'could not read that file');
     }
@@ -277,7 +284,7 @@ export function Intake({ active, onOpen }: Props) {
           const bytes = new Uint8Array(await file.arrayBuffer());
           const r = await pdfText(bytes);
           take(r.text, r.title || titleFromFileName(file.name.replace(PDF_EXT, '')), { bytes, pages: r.pages });
-        } else take(await file.text(), file.name.replace(/\.[^.]+$/, ''));
+        } else take(await file.text(), file.name.replace(/\.[^.]+$/, ''), null, null, true);
       } catch { setNote('could not read that file'); }
       return;
     }
@@ -314,10 +321,11 @@ export function Intake({ active, onOpen }: Props) {
           ? await importPdfNode(chosen, { title, bytes: pdf.bytes, text: raw })
           : page
             ? (await importClipNode(chosen, { title, text: raw, url: page.url, author: page.author, published: page.published }, page.images)).path
-            : await importNode(chosen, { title, text: raw });
+            : await importNode(chosen, { title, text: raw, note: asNote });
       setRaw('');
       setPdf(null);
       setPage(null);
+      setFromFile(false);
       setTitle('');
       setNote('');
       fresh();
@@ -341,7 +349,7 @@ export function Intake({ active, onOpen }: Props) {
         <div className="meta">
           <span className="crumb">intake</span>
         </div>
-        <h1>{book ? 'Add a book' : anki ? (anki.decks.length === 1 ? 'Add a deck' : 'Add decks') : cardsMode ? 'Add a deck' : 'Add a source'}</h1>
+        <h1>{book ? 'Add a book' : anki ? (anki.decks.length === 1 ? 'Add a deck' : 'Add decks') : cardsMode ? 'Add a deck' : asNote && text ? 'Add a note' : 'Add a source'}</h1>
 
         {book ? (
           <div className="book-list">
@@ -370,7 +378,7 @@ export function Intake({ active, onOpen }: Props) {
             ref={taRef}
             value={raw}
             spellCheck={false}
-            onChange={(e) => { setRaw(e.target.value); if (!e.target.value.trim()) { if (!pdf?.pages) setPdf(null); setPage(null); } if (note) setNote(''); }}
+            onChange={(e) => { setRaw(e.target.value); if (!e.target.value.trim()) { if (!pdf?.pages) setPdf(null); setPage(null); setFromFile(false); } if (note) setNote(''); }}
             onPaste={onPaste}
             placeholder={pdf ? 'no text' : 'paste text or a link'}
           />
@@ -543,7 +551,7 @@ export function Intake({ active, onOpen }: Props) {
                       <span>{dropped}</span>
                     </>
                   )}
-                  <button type="button" className="link" onClick={() => setAsCards(false)}>as a source →</button>
+                  <button type="button" className="link" onClick={() => setAsCards(false)}>{asNote ? 'as a note' : 'as a source'} →</button>
                 </div>
               </>
             )}

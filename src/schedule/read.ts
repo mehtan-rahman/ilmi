@@ -2,7 +2,8 @@
 // interval until it is marked done. Never graded. Mirrors the prototype's
 // `readAdvance`: read on multiplies the interval by the line's `af` (1.6
 // when absent), postpone multiplies it by a smaller factor, done drops the
-// field.
+// field. A note's pass (a revisit) keeps no `pos`: it starts over at the
+// top, or at a heading, each time, since the note's own edits would move it.
 
 import { READ_AF, meta, setField, type Doc, type ReadSchedule } from '../format/index.js';
 import { addDays, dayOf } from './dates.js';
@@ -24,11 +25,14 @@ export function postpone(r: ReadSchedule, now: Date, factor?: number): ReadSched
   return { ...r, due: addDays(dayOf(now), ivl), ivl };
 }
 
-/** Apply an action to a document's `read` field in place. Throws if it is not enrolled. */
+/** Apply an action to a document's `read` field in place. Throws if it is not enrolled. On a note, `pos` is never kept. */
 export function advanceRead(doc: Doc, action: ReadAction, now: Date, pos?: number): ReadSchedule | null {
-  const r = meta(doc).read;
-  if (!r) throw new Error('not enrolled in reading');
-  const next = action === 'done' ? null : action === 'on' ? readOn(r, now, pos) : postpone(r, now);
+  const m = meta(doc);
+  if (!m.read) throw new Error('not enrolled in reading');
+  const note = m.type === 'note';
+  let r = m.read;
+  if (note && r.pos !== undefined) { const { pos: _, ...rest } = r; r = rest; }
+  const next = action === 'done' ? null : action === 'on' ? readOn(r, now, note ? undefined : pos) : postpone(r, now);
   setField(doc, 'read', next);
   return next;
 }

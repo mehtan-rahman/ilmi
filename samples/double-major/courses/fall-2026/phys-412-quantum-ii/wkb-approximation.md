@@ -1,8 +1,5 @@
 ---
-type: draft
 title: WKB approximation
-started: 2026-10-26
-write: due=2026-10-30 ivl=2 reps=2
 lectures: 2026-10-23, 10-26
 ---
 

@@ -701,6 +701,24 @@ const inField = (t: EventTarget | null) => {
   return tag === 'input' || tag === 'textarea' || !!el?.isContentEditable;
 };
 
+/** What a key asks of the reader: carve the selection out, make a card of it, or enrol the document. */
+export type ReaderAction = 'extract' | 'card' | 'enrol';
+
+type Keys = Pick<KeyboardEvent, 'key' | 'metaKey' | 'ctrlKey' | 'altKey' | 'shiftKey'>;
+
+/**
+ * The reader's keys. Bare `e`, `m`, `r` act only where the text is not
+ * being edited (a frozen page, or the surface not focused); in editable
+ * text they type. ⌘⇧E and ⌘⇧M act anywhere (with a selection, which the
+ * caller checks). No ⌥-letter keys: on a Mac keyboard they are dead keys.
+ */
+export function readerAction(e: Keys, editing: boolean): ReaderAction | null {
+  const k = e.key.toLowerCase();
+  if ((e.metaKey || e.ctrlKey) && e.shiftKey && !e.altKey) return k === 'e' ? 'extract' : k === 'm' ? 'card' : null;
+  if (editing || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return null;
+  return e.key === 'e' ? 'extract' : e.key === 'm' ? 'card' : e.key === 'r' ? 'enrol' : null;
+}
+
 /** The selection, as a passage plus where it ends and where it sits on screen. */
 interface Sel extends Passage {
   end: number;
@@ -785,11 +803,13 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
   selRef.current = sel;
   const composerRef = useRef<Compose | null>(null);
   composerRef.current = composer;
-  // extracts come out of sources and extracts; drafts only make cards
-  const canExtract = info?.type === 'source' || info?.type === 'extract';
+  // extracts come out of notes, sources, and extracts; drafts only make cards
+  const canExtract = info?.type === 'note' || info?.type === 'source' || info?.type === 'extract';
   const canExtractRef = useRef(false);
   canExtractRef.current = canExtract;
-  const actRef = useRef<(key: string) => boolean>(() => false);
+  // a note revisited has no marker: each pass starts at the top, or at a heading picked here
+  const isNote = info?.type === 'note';
+  const actRef = useRef<(action: ReaderAction) => boolean>(() => false);
   const activeRef = useRef(active);
   activeRef.current = active;
   const readingRef = useRef(false);
@@ -868,7 +888,8 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
     const images = imageLoader(vault, id, () => useApp.getState().remoteImages);
 
     const build = (loaded: Loaded) => {
-      const state = makeState(loaded.doc.blocks, { frozen: () => frozenRef.current, pos: meta(loaded.doc).read?.pos ?? null, images: images.load });
+      const m = meta(loaded.doc);
+      const state = makeState(loaded.doc.blocks, { frozen: () => frozenRef.current, pos: m.type === 'note' ? null : m.read?.pos ?? null, images: images.load });
       const view = viewRef.current;
       if (view) view.updateState(withSelectionOf(view.state, state));
       else {
@@ -895,7 +916,9 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
               view.dom.blur();
               return true;
             }
-            if (!event.metaKey && !event.ctrlKey && !event.altKey && actRef.current(event.key)) {
+            // the surface has focus: bare letters type unless the page is frozen
+            const action = readerAction(event, view.editable);
+            if (action && actRef.current(action)) {
               event.preventDefault();
               return true;
             }
@@ -1047,20 +1070,26 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
 
   const startReading = () => { if (canExtractRef.current && !readingRef.current) enrolReading(id).catch(console.error); };
 
-  actRef.current = (key) => {
+  actRef.current = (action) => {
     if (composerRef.current) return false;
-    if (key === 'r' && activeRef.current && canExtractRef.current && !readingRef.current) { startReading(); return true; }
+    if (action === 'enrol') {
+      if (!activeRef.current || !canExtractRef.current || readingRef.current) return false;
+      startReading();
+      return true;
+    }
     if (!selRef.current) return false;
-    if (key === 'e' && canExtractRef.current) { doExtract(); return true; }
-    if (key === 'm') { openComposer(); return true; }
+    if (action === 'extract' && canExtractRef.current) { doExtract(); return true; }
+    if (action === 'card') { openComposer(); return true; }
     return false;
   };
 
-  // `e` and `m` when the surface is not focused (a frozen document)
+  // the keys when the surface is not focused (a frozen document, or the page not clicked into);
+  // a focused surface has them through `handleKeyDown`
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.metaKey || e.ctrlKey || e.altKey || inField(e.target)) return;
-      if (actRef.current(e.key)) e.preventDefault();
+      if (inField(e.target)) return;
+      const action = readerAction(e, false);
+      if (action && actRef.current(action)) e.preventDefault();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -1119,6 +1148,31 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
     if (pos !== null) void writerRef.current?.update((doc) => setReadPos(doc, pos));
   };
 
+  // a revisited note's pass: from the top, or from a heading the user picks; nothing is written
+  const headings = useMemo(() => {
+    // `index` counts headings of every level, as the surface has them
+    const out: { index: number; level: number; text: string }[] = [];
+    let n = 0;
+    for (const b of blocks) {
+      if (b.kind !== 'heading') continue;
+      if (b.level <= 3) out.push({ index: n, level: b.level, text: b.text });
+      n++;
+    }
+    return out;
+  }, [blocks]);
+  const fromHeading = (index: number) => {
+    const view = viewRef.current;
+    if (!view) return;
+    if (index < 0) { wrapRef.current?.closest('.pane-body, .nb-page')?.scrollTo({ top: 0 }); return; }
+    let n = 0;
+    let at: number | null = null;
+    view.state.doc.forEach((node, off) => {
+      if (node.type !== schema.nodes.heading) return;
+      if (n++ === index && at === null) at = off;
+    });
+    if (at !== null) (view.nodeDOM(at) as HTMLElement | null)?.scrollIntoView({ block: 'start' });
+  };
+
   const toggleFrozen = () => {
     const next = !frozenRef.current;
     void writerRef.current?.update((doc) => setField(doc, 'frozen', next));
@@ -1139,7 +1193,10 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
     return <div className="reader-wrap"><div className="reader"><div className="empty">no longer in the collection</div></div></div>;
   }
 
-  const reading = !!info?.read;
+  // the marker is a source's or an extract's; a revisited note is read from the top or a heading
+  const enrolled = !!info?.read;
+  const reading = enrolled && !isNote;
+  const frozen = info?.frozen ?? false;
   const cards = info?.cards ?? 0;
   const due = info?.due ?? 0;
   const counts = cards ? `${plural(cards, 'card')}${due ? `, ${due} due` : ''}` : '';
@@ -1156,8 +1213,15 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
               {info.frozen ? 'frozen' : 'editable'}
             </button>
           )}
-          {info && canExtract && !reading && (
-            <button type="button" className="frozen-tag enrol" onClick={startReading}>start reading <span className="kbd">r</span></button>
+          {info && canExtract && !enrolled && (
+            <button type="button" className="frozen-tag enrol" onClick={startReading}>{isNote ? 'revisit' : 'start reading'} <span className="kbd">r</span></button>
+          )}
+          {isNote && enrolled && headings.length > 0 && (
+            <select className="frozen-tag from-heading" value="" onChange={(e) => fromHeading(Number(e.target.value))} title="start the pass at a heading">
+              <option value="" disabled>from…</option>
+              <option value={-1}>the top</option>
+              {headings.map((h) => <option key={h.index} value={h.index}>{'\u2002'.repeat(Math.max(0, h.level - 1))}{h.text}</option>)}
+            </select>
           )}
           <span className="right">{right}</span>
         </div>
@@ -1181,11 +1245,11 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
             <div className="sel-cue" style={{ top: sel.rect.bottom + 8, left: sel.rect.left }}>
               {canExtract && (
                 <button type="button" className="cue-act" onMouseDown={(e) => { e.preventDefault(); doExtract(); }}>
-                  extract <span className="kbd">e</span>
+                  extract <span className="kbd">{frozen ? 'e' : '⌘⇧E'}</span>
                 </button>
               )}
               <button type="button" className="cue-act" onMouseDown={(e) => { e.preventDefault(); openComposer(); }}>
-                make a card <span className="kbd">m</span>
+                make a card <span className="kbd">{frozen ? 'm' : '⌘⇧M'}</span>
               </button>
               {plugSel && <CueActions sel={plugSel} onRun={() => setSel(null)} />}
             </div>

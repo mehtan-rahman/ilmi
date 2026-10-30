@@ -19,14 +19,24 @@ export interface HintContext {
   el: El | null;
   /** The saved query's scope, when the tab is one. */
   scope: QueueScope | null;
-  /** A source or extract not yet enrolled in reading. */
+  /** A note, source, or extract not yet enrolled in reading. */
   canEnrol: boolean;
   /** A source open as pages: the PDF lens's own keys apply. */
   pages?: boolean;
+  /** The document's prose is locked: bare `e` and `m` act, since nothing is typed there. */
+  frozen?: boolean;
+  /** The document (or the session's element) is a note. */
+  note?: boolean;
 }
 
 const PALETTE: Hint = ['⌘k', 'palette'];
 const NAV: Hint = ['[ ]', 'prev / next'];
+
+/** Extract and card: bare letters in a frozen page, ⌘⇧ in editable text, where the letters type. */
+const selKeys = (frozen: boolean | undefined, extract = true): Hint[] => [
+  ...(extract ? [[frozen ? 'e' : '⌘⇧E', 'extract'] as Hint] : []),
+  [frozen ? 'm' : '⌘⇧M', 'card'],
+];
 
 /** Only keys that are bound on that surface. */
 export function hintsFor(c: HintContext): Hint[] {
@@ -36,15 +46,18 @@ export function hintsFor(c: HintContext): Hint[] {
         ? [['⏎', 'enter queue'], ['j k', 'move'], ['o', 'open one'], PALETTE]
         : [['⏎', 'open'], ['j k', 'move'], PALETTE];
     case 'session':
-      if (c.el === 'read') return [['⏎', 'read on'], ['p', 'postpone'], ['d', 'done'], ['e', 'extract'], ['m', 'card'], NAV];
-      if (c.el === 'write') return [['⏎', 'worked on it'], ['p', 'postpone'], ['d', 'done'], ['m', 'card'], NAV];
+      if (c.el === 'read') return [['⏎', c.note ? 'went over it' : 'read on'], ['p', 'postpone'], ['d', 'done'], ...selKeys(c.frozen || c.pages), NAV];
+      if (c.el === 'write') return [['⏎', 'worked on it'], ['p', 'postpone'], ['d', 'done'], ...selKeys(c.frozen, false), NAV];
       return [['space', 'reveal'], ['1 2 3 4', 'grade'], NAV];
+    case 'note':
     case 'source':
-    case 'extract':
-      if (c.pages) return [['e', 'extract'], ['m', 'card'], ['⏎', 'jump'], ...(c.canEnrol ? [['r', 'start reading'] as Hint] : []), ['/', 'search'], ['g', 'page'], ['[ ]', 'pages']];
-      return [['e', 'extract'], ['m', 'card'], ...(c.canEnrol ? [['r', 'start reading'] as Hint] : []), ['⌘\\', 'split pane']];
+    case 'extract': {
+      const enrol: Hint[] = c.canEnrol ? [['r', c.kind === 'note' ? 'revisit' : 'start reading']] : [];
+      if (c.pages) return [['e', 'extract'], ['m', 'card'], ['⏎', 'jump'], ...enrol, ['/', 'search'], ['g', 'page'], ['[ ]', 'pages']];
+      return [...selKeys(c.frozen), ...enrol, ['⌘\\', 'split pane']];
+    }
     case 'draft':
-      return [['m', 'card'], ['esc', 'leave the text']];
+      return [...selKeys(c.frozen, false), ['esc', 'leave the text']];
     case 'deck':
       return [['j k', 'move'], ['⏎', 'edit'], ['/', 'search'], ['⌫', 'delete'], ['m', 'card'], PALETTE];
     case 'intake':
@@ -105,7 +118,7 @@ export function fuzzy(query: string, text: string): number | null {
   return qi === query.length ? score - run * 0.2 : null;
 }
 
-export type EntryTag = 'query' | 'folder' | 'source' | 'extract' | 'deck' | 'draft' | 'card' | 'command' | 'vault';
+export type EntryTag = 'query' | 'folder' | 'note' | 'source' | 'extract' | 'deck' | 'draft' | 'card' | 'command' | 'vault';
 
 export interface Entry {
   key: string;
@@ -129,7 +142,7 @@ export interface VaultRef {
 }
 
 export const ENTRY_GLYPH: Record<EntryTag, string> = {
-  query: '≡', folder: '/', source: '¶', extract: '↳', deck: '◫', draft: '✎', card: '◆', command: '›', vault: '⌂',
+  query: '≡', folder: '/', note: '¶', source: '“', extract: '↳', deck: '◫', draft: '✎', card: '◆', command: '›', vault: '⌂',
 };
 
 /** A card the palette can name, from any document's blocks. */
@@ -151,7 +164,7 @@ export function buildIndex(tree: TreeNode[], docs: Record<string, DocInfo>, card
         out.push({ key: `p:${n.path}`, title: n.name, sub: notebookTrail(tree, n.path, docs, null) ?? (parent || 'folder'), tag: 'folder', target: { open: n.path } });
         visit(n.children, n.name);
       } else {
-        const tag = docs[n.path]?.type ?? 'source';
+        const tag = docs[n.path]?.type ?? 'note';
         // a tab is indexed under its notebook: `linear algebra › unit-2`
         out.push({ key: `p:${n.path}`, title: title(n.path), sub: notebookTrail(tree, n.path, docs, null) ?? (parent || tag), tag, target: { open: n.path } });
         if (n.children) visit(n.children, title(n.path));

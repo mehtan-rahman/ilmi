@@ -216,8 +216,8 @@ describe('landing', () => {
     const path = await vault.importDoc('', { title: r.title, text: r.text, url: r.url, author: r.author, published: r.published, today: '2026-10-18' });
     expect(path).toBe('The economics of attention.md');
     const before = (await vault.read(path)).text;
-    expect(before.split('\n').slice(0, 7)).toEqual([
-      '---', 'frozen: true', 'imported: 2026-10-18', 'url: https://fieldnotes.example.org/posts/economics-of-attention', 'author: Jane Doe', 'published: 2024-03-01T10:00:00Z', '---',
+    expect(before.split('\n').slice(0, 8)).toEqual([
+      '---', 'type: source', 'frozen: true', 'imported: 2026-10-18', 'url: https://fieldnotes.example.org/posts/economics-of-attention', 'author: Jane Doe', 'published: 2024-03-01T10:00:00Z', '---',
     ]);
     const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0, 0, 0, 0]);
     const asked: string[] = [];

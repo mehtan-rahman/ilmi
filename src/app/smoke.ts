@@ -120,6 +120,11 @@
 // course, logging the rows and `.ilmi/order.json` after each.
 // `ILMI_SMOKE=tabs` (`smokeTabs`): the course as a notebook, its tab rail
 // made, arranged, read, stepped, and folded (see the function).
+// `ILMI_SMOKE=notes` (`smokeNotes`) over a copy of `samples/double-major`:
+// a typeless file opens as a note, the five kind words in the menus, a note
+// revisited from the top and from a heading, `e` typed over a selection in
+// a note, ⌘⇧E and ⌘⇧M there, bare `e` in a frozen source, F2 only in the
+// tree, and an import landing as a source (see the function).
 // `ILMI_SMOKE=welcome` runs before any vault opens: it seeds the recents
 // with the scratch vault (`ILMI_VAULT`) and a path that does not exist,
 // turns `reopen the last vault on start` off, reads the welcome's rows and
@@ -139,7 +144,7 @@ import { GLYPH, SESSION, queueId, titleOf } from './names.js';
 import { vaultName } from './recents.js';
 import { useApp } from './store.js';
 import { runMenu } from './menu.js';
-import { createNode, currentVault, moveNode, toggleOpen, openCard, openIntake, openNode, openSession, removeNode, renameNode, setInspector, startFromRecents } from './vault.js';
+import { createNode, currentVault, importNode, moveNode, toggleOpen, openCard, openIntake, openNode, openSession, removeNode, renameNode, setInspector, startFromRecents } from './vault.js';
 import { activeTab } from './panes.js';
 
 const WOZ = 'papers/wozniak-1990.md';
@@ -2958,7 +2963,7 @@ export async function smokeTabs(vault: Vault): Promise<void> {
     log(`show as tabs: ${state()}; field ${await field()}`);
     await shot('tabs-on');
 
-    // two tabs: + tab (a draft, untitled, renamed in place), and a deck from +
+    // two tabs: + tab (a note, untitled, renamed in place), and a deck from +
     q<HTMLElement>('.tab-rail .rail-add')!.click();
     await until(() => has(`${KIDS}/untitled.md`), 8000);
     log(`+ tab made untitled.md: page ${page()}; renaming ${q('.tab-rail input.rename') ? 'open' : 'not open'}`);
@@ -3210,6 +3215,191 @@ export async function smokeTour(vault: Vault): Promise<void> {
     await open('courses/fall-2026/phys-415-stat-mech/canonical-ensemble.md');
     await shot('dark-note');
     useApp.getState().setTheme('light');
+    log(`done; vault ${vault.root}`);
+  } catch (e) {
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+// `ILMI_SMOKE=notes` over a copy of `samples/double-major` (ILMI_VAULT):
+// milestone 33's "done when". A typeless file opens as a note (its kind,
+// lens, glyph, and the top row logged); the sidebar's `+` and a folder
+// lens's buttons name the five kinds; a note not yet enrolled is revisited
+// from its top row, a pass is started at a heading, and the session takes
+// it from the top (the bar's words, no marker) and writes a read line with
+// no `pos`; in that note a word is selected and `e` pressed: the key is
+// not taken and typing replaces the word; ⌘⇧E carves an extract and ⌘⇧M
+// opens the composer, saved as a card; bare `e` still extracts from a
+// frozen source; F2 renames only with the tree focused; an imported text
+// lands `type: source`, a pasted one as a note. Each file's lines are
+// logged after each step, and `shot:` lines mark the screens worth seeing.
+export async function smokeNotes(vault: Vault): Promise<void> {
+  const log = (s: string) => info(`smoke notes: ${s}`);
+  const q = <T extends Element>(sel: string, root: ParentNode = document) => root.querySelector<T>(sel);
+  const qa = <T extends Element>(sel: string, root: ParentNode = document) => Array.from(root.querySelectorAll<T>(sel));
+  const shot = async (name: string, ms = 2600) => { await sleep(600); log(`shot: ${name}`); await sleep(ms); };
+  const TYPELESS = 'fleeting/2026-10-30.md';
+  const NOTE = 'courses/fall-2026/phys-412-quantum-ii/time-dependent-perturbation-theory.md';
+  const SOURCE = 'library/lindqvist-statistical-physics/ch-3-the-canonical-ensemble.md';
+  const head = async (path: string, n = 6) => (await vault.fs.readText(vault.abs(path))).split('\n').slice(0, n).join(' / ');
+  const lineWith = async (path: string, text: string) => (await vault.fs.readText(vault.abs(path))).split('\n').find((l) => l.includes(text)) ?? '(none)';
+  const open = async (path: string) => {
+    openNode(path);
+    await until(() => (activeTab(useApp.getState().panes)?.id === path ? q('.pane-body .doc-view .draft-doc, .pane-body .folder-view') : null), 10000);
+    await sleep(500);
+  };
+  const surface = () => q<HTMLElement>('.pane-body .doc-view .draft-doc')!;
+  const para = (text: string) => qa<HTMLElement>('p.dd-p', surface()).find((p) => p.textContent?.includes(text));
+  const topRow = () => qa<HTMLElement>('.pane-body .doc-view .meta > *').map((e) => e.textContent?.trim()).filter(Boolean).join(' | ');
+  const strip = () => q('.bot')?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
+  const cue = () => qa<HTMLElement>('.sel-cue .cue-act').map((b) => b.textContent?.trim()).join(' | ');
+  const keyOn = (el: Element, init: KeyboardEventInit) => {
+    const ev = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init });
+    el.dispatchEvent(ev);
+    return ev.defaultPrevented;
+  };
+  const childrenOf = (path: string) => vault.documents().filter((d) => d.startsWith(`${path.replace(/\.md$/, '')}/`));
+  try {
+    setInspector({ open: true });
+    for (const p of ['courses', 'courses/fall-2026', 'courses/fall-2026/phys-412-quantum-ii', 'fleeting', 'library', 'library/lindqvist-statistical-physics']) toggleOpen(p, true);
+
+    // a typeless file opens as a note
+    await open(TYPELESS);
+    const row = q<HTMLElement>(`.edit-tree .trow[data-path="${TYPELESS}"]`);
+    log(`typeless ${TYPELESS}: first line "${await head(TYPELESS, 1)}"; kind ${useApp.getState().docs[TYPELESS]?.type}; lens ${q('.pane-body .doc-view') ? 'reader' : 'other'}, editable ${surface().isContentEditable}; tree row ${row?.dataset.kind} ${row?.querySelector('.glyph')?.textContent}; top row ${topRow()}; inspector "${q('.block h6')?.textContent ?? ''}"; strip ${strip()}`);
+    await shot('notes-typeless');
+
+    // the five words: the sidebar's +, a folder lens's buttons, the tree's kinds
+    q<HTMLElement>('.edit-tree .side-add')!.click();
+    await until(() => q('.ctx-menu'));
+    log(`sidebar +: ${qa<HTMLElement>('.ctx-menu .ci').map((e) => e.textContent).join(' | ')}`);
+    await shot('notes-new-menu');
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await open('courses/fall-2026/phys-412-quantum-ii');
+    log(`folder lens: ${qa<HTMLElement>('.pane-body .folder-view button').map((b) => b.textContent).filter((t) => t?.startsWith('+')).join(' | ')}`);
+    const kinds: Record<string, string> = {};
+    for (const r of qa<HTMLElement>('.edit-tree .trow')) if (r.dataset.kind) kinds[r.dataset.kind] = r.querySelector('.glyph')?.textContent ?? '';
+    log(`tree kinds: ${Object.entries(kinds).map(([k, g]) => `${g} ${k}`).join(', ')}`);
+
+    // revisit a note from the top row; a pass from a heading; the session takes it from the top
+    await open(NOTE);
+    log(`note before: ${await head(NOTE, 4)}; top row ${topRow()}; strip ${strip()}`);
+    const enrol = await until(() => qa<HTMLElement>('.pane-body .doc-view .meta .enrol').find((b) => b.textContent?.startsWith('revisit')));
+    enrol.click();
+    for (let i = 0; i < 60 && !(await lineWith(NOTE, 'read:')).startsWith('read:'); i++) await sleep(100);
+    await sleep(400);
+    log(`revisited: ${await lineWith(NOTE, 'read:')}; marker ${q('.pane-body .read-rule') ? 'drawn' : 'none'}; top row ${topRow()}`);
+    const from = await until(() => q<HTMLSelectElement>('.pane-body .from-heading'));
+    log(`from…: ${qa<HTMLOptionElement>('option', from).map((o) => o.textContent?.trim()).join(' | ')}`);
+    const golden = qa<HTMLOptionElement>('option', from).find((o) => o.textContent?.includes('golden rule'))!;
+    Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')!.set!.call(from, golden.value);
+    from.dispatchEvent(new Event('change', { bubbles: true }));
+    await sleep(500);
+    const h = qa<HTMLElement>('h2', surface()).find((e) => e.textContent?.includes('golden rule'));
+    const pane = q<HTMLElement>('.pane-body')!;
+    log(`from "golden rule": heading at ${Math.round((h?.getBoundingClientRect().top ?? 0) - pane.getBoundingClientRect().top)}px from the pane's top; select back to "${from.selectedOptions[0]?.textContent}"; file ${await lineWith(NOTE, 'read:')}`);
+    await shot('notes-revisit-heading');
+    const item = await until(() => useApp.getState().queue.find((i) => i.kind === 'read' && i.path === NOTE), 8000);
+    log(`queue row: kind ${item.kind}, note ${item.kind === 'read' && item.note}, next "${item.kind === 'read' ? item.next?.slice(0, 40) : ''}"`);
+    openNode(queueId('today'));
+    const qrow = await until(() => qa<HTMLElement>('.queue .kindtag').find((t) => t.parentElement?.textContent?.includes('time-dependent')), 6000).catch(() => null);
+    log(`queue tag: ${qrow?.textContent ?? '(row not found)'}; tags on screen ${[...new Set(qa<HTMLElement>('.queue .kindtag').map((t) => t.textContent))].join(', ')}`);
+    await shot('notes-queue');
+    openSession(item);
+    await until(() => q('.doc-session'), 8000);
+    await sleep(800);
+    log(`session: bar "${q('.session-bar .sb-kind')?.textContent}"; actions ${qa<HTMLElement>('.session-bar .sb-actions button').map((b) => b.textContent).join(' | ')}; marker ${q('.doc-session .read-rule') ? 'drawn' : 'none'}; scrolled ${Math.round(q<HTMLElement>('.doc-session')?.closest('.pane-body')?.scrollTop ?? -1)}; strip ${strip()}`);
+    await shot('notes-revisit-session');
+    (document.activeElement as HTMLElement | null)?.blur?.();
+    press('Enter');
+    for (let i = 0; i < 60 && (await lineWith(NOTE, 'read:')).includes('reps=0'); i++) await sleep(100);
+    log(`went over it: ${await lineWith(NOTE, 'read:')}; notice "${useApp.getState().notice?.line ?? ''}"`);
+
+    // a word selected in the note and `e` typed: the key is not taken, the word is replaced
+    await open(NOTE);
+    const first = await until(() => para('Typed same evening'));
+    surface().focus();
+    select(first, 'rough');
+    await until(() => q('.sel-cue'));
+    log(`selection cue in a note: ${cue()}; strip ${strip()}`);
+    await shot('notes-cue');
+    const takenE = keyOn(surface(), { key: 'e', code: 'KeyE' });
+    if (!takenE) document.execCommand('insertText', false, 'e');
+    await sleep(1500);
+    log(`typed e over "rough": key taken ${takenE}; extracts ${childrenOf(NOTE).length}; line ${(await lineWith(NOTE, 'Typed same evening')).slice(0, 60)}`);
+    for (const k of ['m', 'r']) {
+      const p = await until(() => para('Typed same evening'));
+      surface().focus();
+      select(p, 'Typed');
+      await until(() => q('.sel-cue'));
+      const taken = keyOn(surface(), { key: k, code: `Key${k.toUpperCase()}` });
+      log(`bare ${k} over a selection in the note: taken ${taken}; composer ${q('.composer') ? 'open' : 'closed'}`);
+    }
+    window.getSelection()?.removeAllRanges();
+
+    // ⌘⇧E in editable text: an extract
+    const amp = await until(() => para('So the amplitude is the Fourier component'));
+    surface().focus();
+    select(amp, 'So the amplitude is the Fourier component of the perturbation at the transition frequency.');
+    await until(() => q('.sel-cue'));
+    const before = childrenOf(NOTE).length;
+    const takenX = keyOn(surface(), { key: 'E', code: 'KeyE', metaKey: true, shiftKey: true });
+    const child = await until(() => (childrenOf(NOTE).length > before ? childrenOf(NOTE).find((d) => d.includes('So the amplitude')) ?? childrenOf(NOTE)[0] : null), 8000);
+    await sleep(800);
+    log(`⌘⇧E: taken ${takenX}; extract ${child}: ${await head(child, 6)}; parent backref ${(await lineWith(NOTE, '<!-- extract')).trim()}; sidebar ${useApp.getState().sidebar.hidden ? 'hidden' : 'shown'}`);
+    await shot('notes-extracted');
+
+    // ⌘⇧M in editable text: the composer, saved as a card
+    const gold = await until(() => qa<HTMLElement>('p.dd-p', surface()).find((p) => p.textContent?.includes('Valid while')));
+    surface().focus();
+    select(gold, 'Valid while');
+    await until(() => q('.sel-cue'));
+    const takenM = keyOn(surface(), { key: 'M', code: 'KeyM', metaKey: true, shiftKey: true });
+    const ta = await until(() => q<HTMLTextAreaElement>('.composer textarea'), 5000);
+    log(`⌘⇧M: taken ${takenM}; composer seed "${ta.value}"`);
+    await shot('notes-composer');
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(ta, 'first-order time-dependent PT is {{c1::valid while the amplitude stays small}}');
+    ta.dispatchEvent(new Event('input', { bubbles: true }));
+    await sleep(150);
+    press('Enter', { metaKey: true });
+    await until(() => (q('.composer') ? null : true), 5000);
+    await sleep(1000);
+    log(`card saved: ${await lineWith(NOTE, 'valid while the amplitude')}`);
+
+    // a frozen source: bare e still extracts, and the cue says so
+    await open(SOURCE);
+    const sp = await until(() => qa<HTMLElement>('p.dd-p', surface()).find((p) => (p.textContent?.length ?? 0) > 80 && !p.classList.contains('extracted')));
+    const words = sp.textContent!.split(/\s+/).slice(0, 6).join(' ');
+    select(sp, words);
+    await until(() => q('.sel-cue'));
+    log(`frozen source: editable ${surface().isContentEditable}; cue ${cue()}; strip ${strip()}`);
+    await shot('notes-frozen-cue');
+    const srcBefore = childrenOf(SOURCE).length;
+    press('e');
+    await until(() => (childrenOf(SOURCE).length > srcBefore ? true : null), 8000).catch(() => null);
+    log(`bare e in the frozen source: extracts ${srcBefore} → ${childrenOf(SOURCE).length}`);
+
+    // F2: not in the page, only in the tree
+    (document.activeElement as HTMLElement | null)?.blur?.();
+    surface().focus();
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'F2', bubbles: true, cancelable: true }));
+    surface().dispatchEvent(new KeyboardEvent('keydown', { key: 'F2', bubbles: true, cancelable: true }));
+    await sleep(300);
+    log(`F2 in the page: rename ${q('.edit-tree input.rename') ? 'open' : 'not open'}`);
+    const treeRow = q<HTMLElement>(`.edit-tree .trow[data-path="${TYPELESS}"]`)!;
+    treeRow.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    q<HTMLElement>('.edit-tree')!.focus();
+    q<HTMLElement>('.edit-tree')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'F2', bubbles: true, cancelable: true }));
+    const input = await until(() => q<HTMLInputElement>('.edit-tree input.rename'), 3000).catch(() => null);
+    log(`F2 in the tree: rename ${input ? `open on "${input.value}"` : 'not open'}`);
+    input?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+
+    // imports land as sources; pasted text as a note
+    const imported = await importNode('fleeting', { title: 'smoke import', text: 'What someone else wrote, dropped in as a file.' });
+    const pasted = await importNode('fleeting', { title: 'smoke paste', text: 'What I typed into the intake myself.', note: true });
+    await sleep(600);
+    log(`imported ${imported}: ${await head(imported, 5)}; kind ${useApp.getState().docs[imported]?.type}`);
+    log(`pasted ${pasted}: ${await head(pasted, 3)}; kind ${useApp.getState().docs[pasted]?.type}`);
     log(`done; vault ${vault.root}`);
   } catch (e) {
     log(`failed: ${e instanceof Error ? e.message : String(e)}`);

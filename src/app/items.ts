@@ -92,8 +92,9 @@ export function isFresh(item: QueueItem): boolean {
   return item.kind === 'card' ? !item.sched || !item.sched.reps : !item.sched.reps;
 }
 
-/** The tag before the label in a row: `read`, `write`, or the card's form. */
+/** The tag before the label in a row: `note` (a note revisited), `read`, `write`, or the card's form. */
 export function kindTag(item: QueueItem): string {
+  if (item.kind === 'read' && item.note) return 'note';
   return item.kind === 'card' ? FORM_LABEL[item.form] : item.kind;
 }
 

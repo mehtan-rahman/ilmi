@@ -105,14 +105,17 @@ describe('create', () => {
     await expect(vault.createFolder('', '.hidden')).rejects.toThrow();
   });
 
-  it('writes a source with no front-matter, and a deck with its type', async () => {
-    const src = await vault.createDoc('papers', 'source');
-    expect(src).toBe('papers/untitled.md');
-    const text = await readDisk(src);
+  it('writes a note with no front-matter, and a source and a deck with their types', async () => {
+    const note = await vault.createDoc('papers', 'note');
+    expect(note).toBe('papers/untitled.md');
+    const text = await readDisk(note);
     expect(text).toBe('');
     const parsed = parse(text);
     expect(parsed.diagnostics).toEqual([]);
-    expect(meta(parsed.doc).type).toBe('source');
+    expect(meta(parsed.doc).type).toBe('note');
+    const src = await vault.createDoc('papers', 'source');
+    expect(src).toBe('papers/untitled 2.md');
+    expect(await readDisk(src)).toBe('---\ntype: source\n---\n');
 
     const deck = await vault.createDoc('', 'deck');
     expect(deck).toBe('untitled deck.md');
@@ -204,6 +207,17 @@ describe('extract', () => {
     expect(james).toBe('books/james-pluralistic-ch4/given.md');
     expect(meta((await vault.read(james)).doc).read).toEqual({ due: '2026-05-27', ivl: 1, reps: 0, pos: 0 });
     expect(meta((await vault.read('books/james-pluralistic-ch4.md')).doc).read).toBeUndefined();
+  });
+
+  it('extracts from a note revisited without giving it a marker', async () => {
+    const note = 'fleeting/office-hours.md';
+    const before = await readDisk(note);
+    const child = await vault.extract(note, { text: 'Start from the symmetry, not the algebra.', blocks: [1], today: '2026-05-27' });
+    expect(child).toBe('fleeting/office-hours/Start from the symmetry not.md');
+    const after = await readDisk(note);
+    // the backref is the only change: the read line keeps no pos
+    expect(after.split('\n').find((l) => l.startsWith('read:'))).toBe('read: due=2026-06-02 ivl=4 reps=1');
+    expect(after.replace('\n<!-- extract Start from the symmetry not -->', '')).toBe(before);
   });
 
   it('extracts from an extract, and refuses nothing or a missing parent', async () => {
@@ -362,7 +376,7 @@ A good system spends your attention the way a careful gardener spends water: not
     const path = await vault.importDoc('papers', { title: 'Spaced repetition and the economics of attention', text: SAMPLE, today: '2026-09-22' });
     expect(path).toBe('papers/Spaced repetition and the economics of attention.md');
     const text = await readDisk(path);
-    expect(text.split('\n').slice(0, 4)).toEqual(['---', 'frozen: true', 'imported: 2026-09-22', '---']);
+    expect(text.split('\n').slice(0, 5)).toEqual(['---', 'type: source', 'frozen: true', 'imported: 2026-09-22', '---']);
     const { doc, diagnostics } = parse(text);
     expect(diagnostics).toEqual([]);
     const m = meta(doc);
@@ -391,7 +405,7 @@ A good system spends your attention the way a careful gardener spends water: not
     const text = '---\ntags: [x]\nread: due=2026-01-01 ivl=3\ntitle: Old title\n---\n\nbody\n';
     const path = await vault.importDoc('books', { title: 'Old title', text, today: '2026-09-22' });
     const disk = await readDisk(path);
-    expect(disk).toBe('---\ntags: [x]\ntitle: Old title\nfrozen: true\nimported: 2026-09-22\n---\n\nbody\n');
+    expect(disk).toBe('---\ntags: [x]\ntitle: Old title\ntype: source\nfrozen: true\nimported: 2026-09-22\n---\n\nbody\n');
     expect(meta(parse(disk).doc).read).toBeUndefined();
   });
 
@@ -451,14 +465,14 @@ describe('pages', () => {
     const data = new Uint8Array(await bytes());
     const path = await vault.importPdf('books', { title: 'A dropped paper', bytes: data, text: 'Two pages\n\nThe first line.\n\nThe second.', today: '2026-09-22' });
     expect(path).toBe('books/A dropped paper.md');
-    expect(await readDisk(path)).toBe('---\nfrozen: true\nimported: 2026-09-22\npdf: A dropped paper.pdf\n---\n\n## text\n\nTwo pages\n\nThe first line.\n\nThe second.\n');
+    expect(await readDisk(path)).toBe('---\ntype: source\nfrozen: true\nimported: 2026-09-22\npdf: A dropped paper.pdf\n---\n\n## text\n\nTwo pages\n\nThe first line.\n\nThe second.\n');
     expect(Buffer.from(await fsp.readFile(join(root, 'books/A dropped paper.pdf'))).equals(Buffer.from(data))).toBe(true);
     expect(await vault.pagesOf(path)).toBe('books/A dropped paper.pdf');
     expect(find(vault.tree, path)).toMatchObject({ kind: 'doc', pdf: 'books/A dropped paper.pdf' });
     // no text: no body; a taken name is numbered for both files; nothing to copy is refused
     const scan = await vault.importPdf('books', { title: 'A dropped paper', bytes: data, text: '  ', today: '2026-09-22' });
     expect(scan).toBe('books/A dropped paper 2.md');
-    expect(await readDisk(scan)).toBe('---\nfrozen: true\nimported: 2026-09-22\npdf: A dropped paper 2.pdf\ntitle: A dropped paper\n---\n');
+    expect(await readDisk(scan)).toBe('---\ntype: source\nfrozen: true\nimported: 2026-09-22\npdf: A dropped paper 2.pdf\ntitle: A dropped paper\n---\n');
     expect(await exists('books/A dropped paper 2.pdf')).toBe(true);
     await expect(vault.importPdf('books', { title: 'x', bytes: new Uint8Array(), text: '' })).rejects.toThrow('nothing to import');
   });

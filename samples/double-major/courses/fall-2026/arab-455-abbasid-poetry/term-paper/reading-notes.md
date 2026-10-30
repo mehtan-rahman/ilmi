@@ -1,8 +1,5 @@
 ---
-type: draft
 title: reading notes for the paper
-started: 2026-10-05
-write: due=2026-11-02 ivl=4 reps=3
 ---
 
 Notes on secondary reading for the term paper, one section per item, newest at the bottom. Page refs are to the library copies. Quotation marks = exact words, otherwise paraphrase. Cards only for things I need in the presentation without notes.

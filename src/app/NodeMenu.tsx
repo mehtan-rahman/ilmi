@@ -1,10 +1,11 @@
 // The one context menu for a node, shared by the sidebar's tree and the
-// folder lens: new source / folder / deck / draft (into the folder, or into
+// folder lens: new note / source / deck / draft / folder (into the folder, or into
 // the document, its children directory made on demand), import a file…, add
 // from text or a link (the intake), `sort by name` when the directory has an
 // order of its own, and for a node rename, move to… (a list of folders and
 // documents opened on a click), `study` on anything with cards under it
-// (a session over them, deckOps.ts), and delete (asking first when there is
+// (a session over them, deckOps.ts), `revisit` on a note not yet enrolled
+// (its reading line, no marker), and delete (asking first when there is
 // something under it). A document's menu has `show as tabs` / `show as
 // tree` (its `tabs` field, `tabs.ts`), and on a tab rail's row `add subtab`. The `+` in the sidebar's root row opens the same menu
 // without the node's half.
@@ -18,7 +19,7 @@ import { hasCards, studyDeck } from './deckOps.js';
 import { importFiles } from './land.js';
 import { GLYPH, descendants, findNode, kindOf, moveTargets, titleOf, type NodeKind } from './names.js';
 import { useApp } from './store.js';
-import { createNode, moveNode, openIntake, removeNode, setTabs, sortByName } from './vault.js';
+import { createNode, enrolReading, moveNode, openIntake, removeNode, setTabs, sortByName } from './vault.js';
 
 export const MENU_W = 190;
 
@@ -49,8 +50,9 @@ export function dropMode(y: number, height: number, root = false): DropMode {
 export const menuAt = (e: { clientX: number; clientY: number }, id: string, plus = false): MenuAt =>
   ({ id, x: Math.min(e.clientX, window.innerWidth - MENU_W), y: e.clientY, sub: false, ...(plus ? { plus } : {}) });
 
-/** One order for every menu (right-click and the sidebar's `+`): the documents first, the folder last. */
+/** One order for every menu (right-click and the sidebar's `+`): a note first, the other documents, the folder last. */
 const NEW_KINDS: [NodeKind, string][] = [
+  ['note', 'new note'],
   ['source', 'new source'],
   ['deck', 'new deck'],
   ['draft', 'new draft'],
@@ -133,6 +135,11 @@ export function NodeMenu({ at, set, onCreated, onRename, onSubtab }: Props) {
           <div className="ci" onClick={act(() => openIntake(dir))}>
             <span className="cg">{GLYPH.intake}</span>add from text or a link
           </div>
+          {node && kind === 'note' && !docs[at.id]?.read && (
+            <div className="ci" data-act="revisit" onClick={act(() => { enrolReading(at.id).catch(fail); })}>
+              <span className="cg">▤</span>revisit
+            </div>
+          )}
           {!at.plus && hasCards(at.id) && (
             <div className="ci" data-act="study" onClick={act(() => { studyDeck(at.id); })}>
               <span className="cg">{GLYPH.session}</span>study

@@ -416,7 +416,7 @@ as prose).
 | --- | --- | --- |
 | element 1 | §3 | the vault root |
 | concept group; topic with children and no body text | §4 type byte, §5 | a folder |
-| topic with body text | §4, §5, §6, §7 | a source: `frozen: true`, `imported`, `title` when it differs from the file name; a child of a topic-document is an extract under `name/`, with `type: extract` |
+| topic with body text | §4, §5, §6, §7 | a source: `type: source`, `frozen: true`, `imported`, `title` when it differs from the file name; a child of a topic-document is an extract under `name/`, with `type: extract` |
 | item | §4 | a q&a card at the end of the nearest topic-document above it (a child of an item lands in the nearest topic); under a folder with no topic above it, a `cards.md` deck in that folder |
 | item whose question holds `[...]` | §11 | a cloze card, `{{c1::answer}}` in place of every `[...]` |
 | task | §4, §10 | a draft in the nearest folder: `type: draft`, `started`, `write: due=<import day> ivl=1 reps=0 done=false` |

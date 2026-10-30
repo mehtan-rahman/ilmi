@@ -1,8 +1,5 @@
 ---
-type: draft
 title: conditional sentences
-started: 2026-10-28
-write: due=2026-10-30 ivl=2 reps=1
 lectures: 2026-10-28, 2026-10-30
 ---
 

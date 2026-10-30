@@ -1,7 +1,7 @@
 ---
 title: nondegenerate perturbation theory
 lectures: 2026-08-31, 09-02, 09-04, 09-09, 09-11
-read: due=2026-11-04 ivl=14 reps=2 pos=0
+read: due=2026-11-04 ivl=14 reps=2
 ---
 
 ## setup

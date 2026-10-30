@@ -8,8 +8,8 @@
 //  · click           shows that page in the same pane, the rail kept
 //  · ⌘⌥↑ / ⌘⌥↓       the page before / after, subtabs counted
 //  · ⌘⇧[ or «        folds the rail to a strip, » opens it; per notebook
-//  · + tab           a new draft, `untitled`, last, renamed in place; `+`
-//                    beside it: source, deck, draft, import a file…
+//  · + tab           a new note, `untitled`, last, renamed in place; `+`
+//                    beside it: note, source, deck, draft, import a file…
 //  · right-click     the node's menu (`NodeMenu.tsx`), with `add subtab`
 //  · drag            the middle of a row nests inside it, its thirds place
 //                    before and after (30's `place`); the overview takes into
@@ -37,7 +37,7 @@ interface Props {
   children: ReactNode;
 }
 
-const ADD: [NodeType, string][] = [['source', 'source'], ['deck', 'deck'], ['draft', 'draft']];
+const ADD: [NodeType, string][] = [['note', 'note'], ['source', 'source'], ['deck', 'deck'], ['draft', 'draft']];
 
 export function Notebook({ nb, page, active, onOpen, children }: Props) {
   const tree = useApp((s) => s.tree);
@@ -111,7 +111,7 @@ export function Notebook({ nb, page, active, onOpen, children }: Props) {
   const add = (dir: string, type: NodeType, name?: string) => { createTab(dir, type, name).then(beginRename).catch(fail); };
   const subtab = (id: string) => {
     setOpen((o) => ({ ...o, [id]: true }));
-    add(childDirOf(id), 'draft', 'untitled');
+    add(childDirOf(id), 'note', 'untitled');
   };
 
   const onDragOverRow = (e: DragEvent, id: string, overview: boolean) => {
@@ -204,11 +204,11 @@ export function Notebook({ nb, page, active, onOpen, children }: Props) {
             })}
           </div>
           <div className="rail-foot">
-            <button type="button" className="rail-add" onClick={() => add(childDirOf(nb), 'draft', 'untitled')}>+ tab</button>
+            <button type="button" className="rail-add" onClick={() => add(childDirOf(nb), 'note', 'untitled')}>+ tab</button>
             <button
               type="button"
               className="rail-more"
-              title="a source, a deck, a draft, or a file"
+              title="a note, a source, a deck, a draft, or a file"
               onMouseDown={(e) => e.stopPropagation()}
               onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); setPlus(plus ? null : { x: r.left, y: r.bottom + 2 }); }}
             >+</button>

@@ -2,7 +2,7 @@
 title: hamiltonian mechanics
 course: PHYS 301
 lectures: 2025-10-13 to 2025-11-14
-read: due=2026-10-29 ivl=14 reps=2 pos=90
+read: due=2026-10-29 ivl=14 reps=2
 ---
 
 ## the plan

@@ -1,7 +1,7 @@
 ---
 title: weak verbs
 lectures: 2026-03-03 to 2026-04-09
-read: due=2026-10-30 ivl=21 reps=3 pos=9
+read: due=2026-10-30 ivl=21 reps=3
 ---
 
 [re-reading for ARAB 401: every three weeks or so until the final. kāna, ṣāra, bāta, dāma, zāla are hollow; aḍḥā, amsā defective; ẓalla, infakka doubled; fatiʾa hamzated. Read the whole thing, not just the cards.]

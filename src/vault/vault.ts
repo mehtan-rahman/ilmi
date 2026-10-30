@@ -53,6 +53,7 @@ export interface VaultState {
 /** Default file names for new nodes, by type. */
 export const NEW_NAMES: Record<NodeType | 'folder', string> = {
   folder: 'untitled folder',
+  note: 'untitled',
   source: 'untitled',
   deck: 'untitled deck',
   draft: 'untitled draft',
@@ -97,6 +98,8 @@ export interface ImportSpec {
   url?: string;
   author?: string;
   published?: string;
+  /** Text pasted rather than imported: a note, editable, with no `type`, `frozen`, or `imported`. */
+  note?: boolean;
   today?: string;
 }
 
@@ -473,9 +476,9 @@ export class Vault {
   }
 
   /**
-   * A new document of `type` in `dir`. Sources get no front-matter at all;
-   * decks, drafts, and extracts get `type:`; a draft also starts today's
-   * writing schedule. Resolves to the document's path.
+   * A new document of `type` in `dir`. Notes get no front-matter at all;
+   * sources, decks, drafts, and extracts get `type:`; a draft also starts
+   * today's writing schedule. Resolves to the document's path.
    */
   createDoc(dir: string, type: NodeType, name = NEW_NAMES[type], today?: string): Promise<string> {
     return this.serial(async () => {
@@ -484,7 +487,7 @@ export class Vault {
       await this.ensureDir(dir);
       const path = `${joinRel(dir, await this.freeName(dir, clean))}.md`;
       const doc: Doc = { blocks: [] };
-      if (type !== 'source') setField(doc, 'type', type);
+      if (type !== 'note') setField(doc, 'type', type);
       if (type === 'draft') {
         const day = today ?? localDay(new Date());
         setField(doc, 'started', day);
@@ -497,8 +500,9 @@ export class Vault {
   }
 
   /**
-   * A new source in `dir` from imported text: frozen, `imported` today, not
-   * enrolled (no `read` or `write`), the text read as a body the same way a
+   * A new source in `dir` from imported text: `type: source`, frozen,
+   * `imported` today, not enrolled (no `read` or `write`); with `note`, a
+   * note instead (no `type`, editable, no `imported`). The text is read as a body the same way a
    * file on disk is, so headings and cards in it are what they would be
    * there. Front-matter in the text is kept, except the fields this sets.
    * The file is named after the title; when the two differ (a numbered
@@ -514,8 +518,15 @@ export class Vault {
       const name = await this.freeName(dir, fileName(spec.name ?? title));
       const path = `${joinRel(dir, name)}.md`;
       const { doc } = parse(`${text}\n`);
-      setField(doc, 'frozen', true);
-      setField(doc, 'imported', spec.today ?? localDay(new Date()));
+      if (spec.note) {
+        setField(doc, 'type', null);
+        setField(doc, 'frozen', null);
+        setField(doc, 'imported', null);
+      } else {
+        setField(doc, 'type', 'source');
+        setField(doc, 'frozen', true);
+        setField(doc, 'imported', spec.today ?? localDay(new Date()));
+      }
       setField(doc, 'read', null);
       setField(doc, 'write', null);
       if (spec.url?.trim()) setField(doc, 'url', spec.url.trim());
@@ -574,7 +585,7 @@ export class Vault {
 
   /**
    * A new source with pages in `dir`: the PDF copied to `name.pdf`, and
-   * `name.md` beside it, frozen, `imported` today, `pdf: name.pdf`, with the
+   * `name.md` beside it, `type: source`, frozen, `imported` today, `pdf: name.pdf`, with the
    * extracted text as the body under a `## text` heading (nothing when the
    * PDF has no text). The title is written as a field when it differs from
    * the name, as `importDoc` does. Resolves to the document's path.
@@ -589,6 +600,7 @@ export class Vault {
       const pdf = `${joinRel(dir, name)}.pdf`;
       const text = spec.text.trim();
       const { doc } = parse(text ? `## text\n\n${text}\n` : '');
+      setField(doc, 'type', 'source');
       setField(doc, 'frozen', true);
       setField(doc, 'imported', spec.today ?? localDay(new Date()));
       setField(doc, 'pdf', `${name}.pdf`);
@@ -871,8 +883,9 @@ export class Vault {
           }
           if (isProse) prose++;
         });
-        const r = meta(d).read;
-        if (r && last >= 0) setField(d, 'read', { ...r, pos: Math.max(r.pos ?? 0, last + 1) });
+        // the marker moves past the passage; a note has no marker (FORMAT.md §3)
+        const dm = meta(d);
+        if (dm.read && dm.type !== 'note' && last >= 0) setField(d, 'read', { ...dm.read, pos: Math.max(dm.read.pos ?? 0, last + 1) });
       });
       await this.rewalk();
       return path;

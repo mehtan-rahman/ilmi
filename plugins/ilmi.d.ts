@@ -28,7 +28,7 @@ export type Dispose = () => void;
 
 // ── documents, as the format module sees them ───────────────────
 
-export type NodeType = 'source' | 'deck' | 'draft' | 'extract';
+export type NodeType = 'note' | 'source' | 'deck' | 'draft' | 'extract';
 export type CardForm = 'cloze' | 'qa' | 'bidir';
 
 export interface Heading { kind: 'heading'; level: number; text: string; setext?: true }

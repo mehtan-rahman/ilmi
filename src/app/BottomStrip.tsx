@@ -14,13 +14,16 @@ export function BottomStrip() {
   const sessionEl = useApp((s) => s.sessionEl);
   const id = activeTab(panes)?.id;
   const kind = id === undefined ? undefined : tabKindOf(id, docs);
-  const info = id === undefined ? undefined : docs[id];
+  // the session's element is in a document of its own
+  const info = id === undefined ? undefined : kind === 'session' && sessionEl ? docs[sessionEl.item.path] : docs[id];
   const base = hintsFor({
     kind,
     el: kind === 'session' ? sessionEl?.kind ?? 'card' : null,
     scope: id === undefined ? null : queueScope(id),
-    canEnrol: !!info && (info.type === 'source' || info.type === 'extract') && !info.read,
+    canEnrol: kind !== 'session' && !!info && (info.type === 'note' || info.type === 'source' || info.type === 'extract') && !info.read,
     pages: !!info?.pdf,
+    frozen: !!info?.frozen,
+    note: info?.type === 'note',
   });
   // a notebook's page: the step keys, ahead of the page's own
   const hints = id !== undefined && notebookOf(id, docs) ? [['⌘⌥↑↓', 'tabs'] as const, ...base] : base;

@@ -2,6 +2,7 @@
 title: readings in classical arabic prose, with commentary
 author: ed. Samīr Ḫalīl and Ruth Ashby
 course: ARAB 301 (Dr. Saeed) — also used in ARAB 202
+type: source
 ---
 
 The course reader for ARAB 301, *Readings in Classical Arabic Prose, with Commentary*, ed. Samīr Ḫalīl and Ruth Ashby (4th ed.). Forty short passages of adab prose in four graded parts, each passage printed fully vowelled, then a glossary, grammar notes keyed to the constructions in the passage, cultural notes, and a few exercises. The passages are composed or adapted by the editors "in the manner of" the anthologies (al-Tanūḫī, Ibn ʿAbd Rabbih, al-Jāḥiẓ's anecdotes, the *Faraj baʿd al-šidda* type) rather than quoted, so the vocalisation is clean and the grammar is graded. Dr. Saeed says this is a feature and a bug: good for learning the constructions, not a substitute for reading the real anthologies with their messy isnāds. Part IV drops the vowels on everything but the hard words.

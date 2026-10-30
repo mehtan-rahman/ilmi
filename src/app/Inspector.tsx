@@ -237,7 +237,7 @@ function FolderInspector({ id }: { id: string }) {
   const children: TreeNode[] = found;
   const by: Record<string, number> = {};
   for (const c of children) {
-    const k: NodeKind = c.kind === 'folder' ? 'folder' : docs[c.path]?.type ?? 'source';
+    const k: NodeKind = c.kind === 'folder' ? 'folder' : docs[c.path]?.type ?? 'note';
     by[k] = (by[k] ?? 0) + 1;
   }
   const rows: [string, ReactNode][] = [['items', children.length]];
@@ -309,7 +309,7 @@ function DocInspector({ id, info, doc, now }: { id: string; info: DocInfo; doc: 
     );
   }
 
-  // a source or an extract
+  // a note, a source, or an extract
   const parent = info.type === 'extract' ? `${dirOf(id)}.md` : null;
   const node = findNode(tree, id);
   const extracts = (node?.kind === 'doc' ? node.children ?? [] : []).filter((c) => c.kind === 'doc' && docs[c.path]?.type === 'extract');
@@ -323,7 +323,8 @@ function DocInspector({ id, info, doc, now }: { id: string; info: DocInfo; doc: 
   if (m.published) rows.push(['published', m.published.slice(0, 10)]);
   rows.push(['length', plural(words(doc.blocks), 'word')]);
   if (cards) rows.push(cardsRow);
-  if (m.read && info.pdf) rows.push(['reading', `${m.read.pos ? `p. ${m.read.pos}` : 'not started'}, ${dueLabel(m.read.due, now)}`]);
+  if (m.read && info.type === 'note') rows.push(['revisit', `${m.read.reps ? `pass ${m.read.reps + 1}` : 'first pass'}, ${dueLabel(m.read.due, now)}`]);
+  else if (m.read && info.pdf) rows.push(['reading', `${m.read.pos ? `p. ${m.read.pos}` : 'not started'}, ${dueLabel(m.read.due, now)}`]);
   else if (m.read) rows.push(['reading', `${m.read.pos ?? 0} of ${doc.blocks.filter((b) => b.kind !== 'card').length}, ${dueLabel(m.read.due, now)}`]);
   rows.push(docPriRow(id, m));
   if (m.read) rows.push(growthRow(id, 'read', m.read));
@@ -370,7 +371,7 @@ function CardBlock({ path, index, doc, group, now }: { path: string; index: numb
   // in a document with pages, the card's page is named with the document
   const page = docs[path]?.pdf ? pageOfBlock(doc, index) : null;
   const rows: [string, ReactNode][] = [['type', formLabel(b.text)], ['in', page === null ? titleOf(path, docs, null) : `${titleOf(path, docs, null)}, p. ${page}`]];
-  if (docs[path]?.frozen) rows.push(['source', 'frozen']);
+  if (docs[path]?.frozen) rows.push(['text', 'frozen']);
   // the card's own priority, on its bare line; empty means the document's
   const setPri = (n: number | null) => currentVault()?.update(path, (d) => {
     const c = cardAt(d, index, b);

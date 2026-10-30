@@ -3093,7 +3093,74 @@ Order: 33 first (it touches every label). Then two tracks: the editor
 (34 → 35 → 36 → 37) on main, structure (38 → 39) on a branch. 40 and 41
 after both.
 
-### [ ] 33. Notes — what you write is a note, what you read is a source
+### [x] 33. Notes — what you write is a note, what you read is a source
+Done 2026-10-30 on main; commit `HASH33`. The window check is pending:
+run `ILMI_SMOKE=notes` with `ILMI_VAULT` on a copy of
+`samples/double-major` and read its `shot:` captures (the screen was
+locked this session, so nothing was run in the window).
+Notes: FORMAT §3 has `note` in the `type` row, the default, and a **Type**
+paragraph; the read line on a note is *revisited* and has no `pos` (one
+written by hand is kept and dropped on the next pass). Choices made here:
+- **A typeless file with `imported` is a source.** The importers wrote no
+  `type` before this milestone, so an old imported file (frozen,
+  `imported`) would have turned into a note; `meta()` reads it as a source
+  until something writes a `type`. Every importer now writes `type:
+  source` (`importDoc`, `importPdf`, the EPUB chapters through it, the
+  clipper, SuperMemo topics); `createDoc` writes no `type` for a note and
+  `type: source` for a source.
+- **How revisit picks a heading:** it does not store one. On a revisited
+  note the reader's top row has a quiet `from…` select (the top, then the
+  note's headings to level 3, indented); choosing scrolls the page to it.
+  A pass always opens at the top, in the session and out of it; nothing is
+  written, so edits never shift it.
+- **The read line on a note:** `due ivl reps` (and `af` when not the
+  default, `pri=` as on any line); `enrolReading` writes it without `pos`,
+  `advanceRead` drops a `pos` on a note, `Vault.extract` leaves a note's
+  line alone, and the reader draws no marker or gutter. In the queue it is
+  a read item with `note: true`, `pos` 0, its row tagged `note`; the
+  session's bar says `note` and `went over it ⏎`.
+- **The new menu's order:** new note, new source, new deck, new draft, new
+  folder (then import a file…, add from text or a link). The folder lens:
+  `+ note`, `+ source` (the intake, as before), `+ deck`, `+ draft`, `+
+  folder`. The rail's `+ tab` and `add subtab` make notes; its `+` lists
+  note, source, deck, draft, import a file…. The node menu has `revisit` on
+  a note not yet enrolled. The intake lands text pasted or typed into its
+  field as a note (no `type`, editable, no `imported`, h1 `Add a note`); a
+  file, a PDF, a fetched page, or a book still lands as a source.
+- **Glyphs:** note `¶` (one's own paragraphs), source `“` (someone else's
+  words); extract `↳`, deck `◫`, draft `✎` unchanged. 38 is to pick the
+  final quiet set at 13px.
+- Notes extract (`⌘⇧E`, or `e` when frozen); drafts still only make cards.
+- **Keys:** `readerAction` (Reader.tsx) decides: bare `e` `m` `r` only
+  where the text is not being edited (a frozen page, or the surface not
+  focused); ⌘⇧E extract and ⌘⇧M card anywhere there is a selection. The
+  focused surface's `handleKeyDown` passes `view.editable`; the window
+  listener skips contenteditable targets. ⌘⇧M was free; ⌘⇧E was the
+  sidebar's toggle (App.tsx, from milestone 9), which moves to ⌃⌘S
+  (macOS's own View › Show Sidebar); the native menu (src-tauri lib.rs)
+  binds only ⌘⇧N, ⌘O, ⌘⇧O, ⌘⇧W and the standard Edit/Window items, none of
+  them these. The selection cue shows `⌘⇧E` / `⌘⇧M` on an editable page and
+  `e` / `m` on a frozen one; the bottom strip does the same (`frozen` and
+  `note` in `HintContext`; a session's element reads its own document).
+- F2 renames only while the tree has focus: the tree box is focusable
+  (`tabIndex 0`, a click on a row gives it focus) and F2 is its own
+  `onKeyDown`, not a window listener.
+- The sample: four notes lost `type: draft`, `started`, and `write:`
+  (conditional sentences, WKB, grand canonical, and the term paper's
+  reading notes: notes toward the paper, not the paper); the term paper
+  and its outline stay drafts. Five revisited notes lost `pos`. The two
+  book documents under `library/` became `type: source` (their chapters
+  and passages already were). Done through `parse`/`setField`/`serialize`
+  by a scratch script, not the generator. Now: 34 notes, 11 sources, 17
+  extracts, 10 decks, 2 drafts; 31 reading lines, 1 open draft.
+  `src/format/__tests__/samples.test.ts` walks `samples/` (parse clean,
+  fixed point) and holds the migration.
+- Corpus: `fleeting/lecture-9.md` (typeless) and `fleeting/office-hours.md`
+  (`type: note`, `read:` with no `pos`); the queue's corpus counts gain one
+  upcoming and one reading.
+Left for later: the intake's empty h1 still says `Add a source`; a note's
+`from…` pick is not remembered; `stop revisiting` is only the session's
+`done`; the Pdf lens is unchanged (its pages are always a source's).
 Today a file with no `type` is a `source`, so typed-up lecture notes sit in
 the same kind and lens as a frozen textbook chapter, and notes still being
 typed had to be `draft` with `write:` to come back, which puts
@@ -3322,6 +3389,12 @@ Wikilinks and backlinks are not here; ask the user after this one.
 file.
 
 ## Notes for the next session
+
+Milestone 33 (notes and sources, the reader's keys, F2) is done on main;
+its window check is owed: `ILMI_VAULT=<a copy of samples/double-major>
+ILMI_SMOKE=notes`, captures read and recorded under BUILD-LOG's 33 entry.
+Next is 34 (editing like an editor), on main; 38 → 39 can start on a
+branch. The sidebar toggle is ⌃⌘S now (⌘⇧E is extract).
 
 Milestones 0–32 are ticked (13 dropped); 32 (decks) was built on a branch
 beside 31 and merged by hand on 2026-10-28; its window check

@@ -245,13 +245,13 @@ describe('the rail in the canvas', () => {
     expect(useApp.getState().railFolded).toEqual({ [NB]: true });
   });
 
-  it('+ tab makes a draft named untitled in the notebook\'s children; + offers the other kinds and a file', () => {
+  it('+ tab makes a note named untitled in the notebook\'s children; + offers the other kinds and a file', () => {
     mouse(host.querySelector('.rail-add')!, 'click');
-    expect(calls).toEqual([`tab ${KIDS}|draft|untitled`]);
+    expect(calls).toEqual([`tab ${KIDS}|note|untitled`]);
     mouse(host.querySelector('.rail-more')!, 'click');
     const entries = Array.from(host.querySelectorAll<HTMLElement>('.rail-menu .ci')).map((e) => e.textContent?.slice(1));
-    expect(entries).toEqual(['source', 'deck', 'draft', 'import a file…']);
-    mouse(host.querySelectorAll<HTMLElement>('.rail-menu .ci')[1]!, 'click');
+    expect(entries).toEqual(['note', 'source', 'deck', 'draft', 'import a file…']);
+    mouse(host.querySelectorAll<HTMLElement>('.rail-menu .ci')[2]!, 'click');
     expect(calls[1]).toBe(`tab ${KIDS}|deck|`);
   });
 
@@ -261,7 +261,7 @@ describe('the rail in the canvas', () => {
     expect(entries()).toContain('add subtab');
     expect(entries()).toContain('show as tabs');
     mouse(Array.from(host.querySelectorAll<HTMLElement>('.ctx-menu .ci')).find((e) => e.textContent?.endsWith('add subtab'))!, 'click');
-    expect(calls).toEqual([`tab ${KIDS}/vectors|draft|untitled`]);
+    expect(calls).toEqual([`tab ${KIDS}/vectors|note|untitled`]);
     mouse(rowOf(NB), 'contextmenu', { clientX: 20, clientY: 40 });
     expect(entries()).toContain('show as tree');
   });

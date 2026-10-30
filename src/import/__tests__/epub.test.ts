@@ -210,7 +210,7 @@ describe('into a vault', () => {
     expect(vault.documents().filter((p) => p.startsWith('The Small Book/'))).toEqual(paths);
     const one = await vault.read(paths[0]!, true);
     expect(one.diagnostics).toEqual([]);
-    expect(one.text.split('\n').slice(0, 5)).toEqual(['---', 'frozen: true', 'imported: 2026-10-18', 'title: "One: the premise"', '---']);
+    expect(one.text.split('\n').slice(0, 6)).toEqual(['---', 'type: source', 'frozen: true', 'imported: 2026-10-18', 'title: "One: the premise"', '---']);
     expect(meta(one.doc)).toMatchObject({ frozen: true, title: 'One: the premise' });
     expect(meta(one.doc).read).toBeUndefined();
     expect(one.doc.blocks.map((b) => b.kind)).toEqual(['paragraph', 'paragraph', 'raw', 'raw', 'paragraph']);

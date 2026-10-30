@@ -3,7 +3,7 @@
 // Optional properties are absent, never explicitly undefined, so that two docs
 // compare equal with a plain deep-equal.
 
-export type NodeType = 'source' | 'deck' | 'draft' | 'extract';
+export type NodeType = 'note' | 'source' | 'deck' | 'draft' | 'extract';
 export type CardForm = 'cloze' | 'qa' | 'bidir';
 export type SrState = 'new' | 'learning' | 'review' | 'relearning';
 

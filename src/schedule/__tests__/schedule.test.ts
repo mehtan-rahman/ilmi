@@ -7,7 +7,7 @@ import { meta, parse, serialize, setField, type Card, type CardSchedule } from '
 import { nodeFs } from '../../vault/node-fs.js';
 import { Vault } from '../../vault/index.js';
 import {
-  addDays, advanceRead, advanceWrite, cardGroups, counts, dayOf, daysBetween, fold, fromFsrs, grade, gradeItem,
+  addDays, advanceRead, advanceWrite, cardGroups, counts, docItems, dayOf, daysBetween, fold, fromFsrs, grade, gradeItem,
   instantOf, nextIntervals, numberBlank, overflow, postponeOverflow, postponed, preview, queue, queueItems, reading, toFsrs, whenToDate, writing,
   type CardItem, type QueueItem,
 } from '../index.js';
@@ -148,9 +148,9 @@ describe('reading', () => {
     const vault = await Vault.open(nodeFs, root);
     try {
       const topics = (await queue(vault, NOW, 'reading')).map((i) => i.path).sort();
-      // milestone 15 added the PDF pair and its extract to the corpus
+      // milestone 15 added the PDF pair and its extract to the corpus; 33 a note revisited
       expect(topics).toEqual([
-        'papers/archive/sutton-2019.md', 'papers/crick-1995.md', 'papers/two-pages.md', 'papers/two-pages/the ruler in the margin.md',
+        'fleeting/office-hours.md', 'papers/archive/sutton-2019.md', 'papers/crick-1995.md', 'papers/two-pages.md', 'papers/two-pages/the ruler in the margin.md',
         'papers/wozniak-1990.md', 'papers/wozniak-1990/woz-ex1.md',
       ]);
       for (const path of topics) {
@@ -164,7 +164,9 @@ describe('reading', () => {
         const ivl = Math.max(1, Math.round((before.ivl ?? 1) * 2));
         expect(after, path).toMatchObject({ ivl, due: addDays(TODAY, ivl), reps: (before.reps ?? 0) + 1, af: 2 });
         const page = before.page === undefined ? '' : ` page=${before.page}`;
-        expect((await fsp.readFile(join(root, path), 'utf8'))).toContain(`read: due=${addDays(TODAY, ivl)} ivl=${ivl} reps=${(before.reps ?? 0) + 1} pos=${before.pos ?? 0}${page} af=2\n`);
+        // a note keeps no place
+        const pos = meta(loaded.doc).type === 'note' ? '' : ` pos=${before.pos ?? 0}`;
+        expect((await fsp.readFile(join(root, path), 'utf8'))).toContain(`read: due=${addDays(TODAY, ivl)} ivl=${ivl} reps=${(before.reps ?? 0) + 1}${pos}${page} af=2\n`);
       }
       // crick's factor is the corpus's own, and a postpone keeps it
       const crick = await vault.update('papers/crick-1995.md', (doc) => { advanceRead(doc, 'postpone', NOW); });
@@ -184,10 +186,22 @@ describe('reading', () => {
   });
 
   it('read on through the document changes the read line only', () => {
-    const text = '---\ntitle: t\nread: due=2026-05-27 ivl=2 reps=3 pos=2 pri=2\n---\n\nprose\n';
+    const text = '---\ntype: source\ntitle: t\nread: due=2026-05-27 ivl=2 reps=3 pos=2 pri=2\n---\n\nprose\n';
     const { doc } = parse(text);
     advanceRead(doc, 'on', NOW, 4);
-    expect(serialize(doc)).toBe(`---\ntitle: t\nread: due=${addDays(TODAY, 3)} ivl=3 reps=4 pos=4 pri=2\n---\n\nprose\n`);
+    expect(serialize(doc)).toBe(`---\ntype: source\ntitle: t\nread: due=${addDays(TODAY, 3)} ivl=3 reps=4 pos=4 pri=2\n---\n\nprose\n`);
+  });
+
+  it('a note revisited keeps no place: a pass, a postpone, and a hand-written pos dropped', () => {
+    // a file with no type is a note
+    const { doc } = parse('---\ntitle: t\nread: due=2026-05-27 ivl=2 reps=3 pos=2\n---\n\nprose\n');
+    advanceRead(doc, 'on', NOW, 4);
+    expect(serialize(doc)).toBe(`---\ntitle: t\nread: due=${addDays(TODAY, 3)} ivl=3 reps=4\n---\n\nprose\n`);
+    advanceRead(doc, 'postpone', NOW);
+    expect(meta(doc).read).toEqual({ due: addDays(TODAY, 4), ivl: 4, reps: 4 });
+    // in the queue it is a read item from the top, tagged a note
+    const [item] = docItems('n.md', doc, NOW);
+    expect(item).toMatchObject({ kind: 'read', note: true, pos: 0, next: 'prose' });
   });
 });
 
@@ -262,14 +276,15 @@ describe('queue over the sample vault', () => {
     // milestone 18's maxwell adds three blanks inside math, all after the day too (upcoming 17 → 20, cards 26 → 29);
     // milestone 30's course adds a problem set of two cards due in September (upcoming 20 → 22, cards 29 → 31)
     // milestone 32 adds a suspended q&a (left out) and a two-blank cloze with one blank suspended (upcoming 22 → 23, cards 31 → 32)
-    expect(counts(all, NOW)).toEqual({ today: 17, upcoming: 23, cards: 32, reading: 6, writing: 2 });
+    // milestone 33 adds a note revisited, after the day (upcoming 23 → 24, reading 6 → 7)
+    expect(counts(all, NOW)).toEqual({ today: 17, upcoming: 24, cards: 32, reading: 7, writing: 2 });
     const today = await queue(vault, NOW, 'today');
     expect(today.filter((i) => i.kind === 'card')).toHaveLength(13);
     expect(today.filter((i) => i.kind === 'read').map((i) => i.path)).toEqual([
       'papers/archive/sutton-2019.md', 'papers/crick-1995.md', 'papers/wozniak-1990/woz-ex1.md',
     ]);
     expect(today.filter((i) => i.kind === 'write').map((i) => i.path)).toEqual(['essays/spaced-composition.md']);
-    expect(await queue(vault, NOW, 'upcoming')).toHaveLength(23);
+    expect(await queue(vault, NOW, 'upcoming')).toHaveLength(24);
   });
 
   it('expands a multi-blank cloze into one item per group with its own schedule', async () => {

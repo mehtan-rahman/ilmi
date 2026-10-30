@@ -4,7 +4,7 @@
 // mid-gesture (a rename in progress, a drag, the open menu).
 //
 //  · click            open the node as a lens; the chevron alone folds
-//  · dbl-click / F2   inline rename
+//  · dbl-click / F2   inline rename; F2 only while the tree has focus (a click on a row gives it)
 //  · right-click      the node's menu (`NodeMenu.tsx`, shared with the folder lens);
 //                     anywhere else in the sidebar, the root's menu (new items land at the root)
 //  · +                beside the vault's name: the same menu for the selected folder, else the root
@@ -14,7 +14,7 @@
 //                     lands in the row's folder (`land.ts`), the row lit meanwhile
 //  · ⌥-click ▸        on a document with children: its children in a folder lens
 
-import { Fragment, useEffect, useRef, useState, type DragEvent, type MouseEvent, type ReactNode } from 'react';
+import { Fragment, useEffect, useRef, useState, type DragEvent, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react';
 import { childDirOf, ordered, within, type TreeNode } from '../vault/index.js';
 import { GLYPH, findNode, kindOf, metaOf, titleOf, type NodeKind } from './names.js';
 import { NodeMenu, dropMode, menuAt, type DropMode, type MenuAt } from './NodeMenu.js';
@@ -70,18 +70,15 @@ export function Tree({ activeId, onOpen }: Props) {
     setEditing({ id, value: title(id) });
   };
 
-  // F2 renames the selected row, else the active tab's node
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'F2' || editing || inField(e.target)) return;
-      const id = selected ?? activeId;
-      if (id === undefined || id === '' || !findNode(tree, id)) return;
-      e.preventDefault();
-      beginRename(id);
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [selected, activeId, editing, tree]);
+  // F2 renames the selected row, else the active tab's node, while the tree has focus;
+  // in the page, F2 is the page's
+  const onKey = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== 'F2' || editing || inField(e.target)) return;
+    const id = selected ?? activeId;
+    if (id === undefined || id === '' || !findNode(tree, id)) return;
+    e.preventDefault();
+    beginRename(id);
+  };
 
   const commitRename = () => {
     if (!editing) return;
@@ -234,7 +231,7 @@ export function Tree({ activeId, onOpen }: Props) {
   });
 
   return (
-    <div className="tree edit-tree" ref={boxRef}>
+    <div className="tree edit-tree" ref={boxRef} tabIndex={0} onKeyDown={onKey}>
       {rootRow}
       {open[''] && ordered(tree, order['']).map((n) => renderNode(n, 1))}
 

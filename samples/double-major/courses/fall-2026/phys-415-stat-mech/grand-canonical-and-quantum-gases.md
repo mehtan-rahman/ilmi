@@ -1,8 +1,5 @@
 ---
-type: draft
 title: grand canonical & quantum gases
-started: 2026-10-26
-write: due=2026-10-31 ivl=2 reps=2
 lectures: 2026-10-23 to now
 ---
 

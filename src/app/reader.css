@@ -348,6 +348,9 @@
   color: var(--fg-4);
 }
 .reader .meta .frozen-tag:hover { color: var(--fg-2); }
+/* a revisited note: where the pass starts, a heading or the top */
+.reader .meta .from-heading { max-width: 220px; text-overflow: ellipsis; }
+.reader .meta .from-heading option { color: var(--fg-1); background: var(--bg); }
 
 /* ── a draft's row: its place in spaced composition, done / reopen ── */
 .draft-sched {

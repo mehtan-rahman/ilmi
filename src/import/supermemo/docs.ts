@@ -106,7 +106,7 @@ export interface DocSpec {
 /** The empty document of `type`, front-matter set, body to be filled by the caller. */
 function shell(spec: DocSpec, body: string): Doc {
   const { doc } = parse(body ? `${body}\n` : '');
-  if (spec.type !== 'source') setField(doc, 'type', spec.type);
+  setField(doc, 'type', spec.type);
   return doc;
 }
 

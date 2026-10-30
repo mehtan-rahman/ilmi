@@ -36,7 +36,8 @@ export const QUEUE_TITLE: Record<QueueScope, string> = {
 
 export const GLYPH: Record<TabKind, string> = {
   folder: '/',
-  source: '¶',
+  note: '¶',
+  source: '“',
   extract: '↳',
   deck: '◫',
   draft: '✎',
@@ -46,7 +47,7 @@ export const GLYPH: Record<TabKind, string> = {
 };
 
 export function kindOf(path: string, docs: Record<string, DocInfo>): NodeKind {
-  return isDoc(path) ? docs[path]?.type ?? 'source' : 'folder';
+  return isDoc(path) ? docs[path]?.type ?? 'note' : 'folder';
 }
 
 export function tabKindOf(id: string, docs: Record<string, DocInfo>): TabKind {

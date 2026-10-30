@@ -143,6 +143,7 @@ describe('import', () => {
 
     expect(await read(dir, 'papers/Wozniak 1990.md')).toBe([
       '---',
+      'type: source',
       'frozen: true',
       'imported: 2024-02-05',
       'pri: 0',
@@ -201,6 +202,7 @@ describe('import', () => {
 
     expect(await read(dir, 'ideas/notes on reading.md')).toBe([
       '---',
+      'type: source',
       'frozen: true',
       'imported: 2024-02-05',
       '---',

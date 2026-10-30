@@ -72,17 +72,17 @@ describe('the sidebar menu', () => {
     act(() => { side.dispatchEvent(ev); });
     expect(ev.defaultPrevented).toBe(true);
     expect(menu()).not.toBeNull();
-    expect(entries()).toEqual(['new source', 'new deck', 'new draft', 'new folder', 'import a file…', 'add from text or a link']);
+    expect(entries()).toEqual(['new note', 'new source', 'new deck', 'new draft', 'new folder', 'import a file…', 'add from text or a link']);
     expect(menu()!.style.left).toBe('40px');
     key('Escape');
     expect(menu()).toBeNull();
     mouse(side.querySelector('h6')!, 'contextmenu', { clientX: 10, clientY: 10 });
-    expect(entries()).toEqual(['new source', 'new deck', 'new draft', 'new folder', 'import a file…', 'add from text or a link']);
+    expect(entries()).toEqual(['new note', 'new source', 'new deck', 'new draft', 'new folder', 'import a file…', 'add from text or a link']);
   });
 
   it('keeps a row\'s own menu, with rename, move to…, and delete', () => {
     mouse(row('papers/wozniak-1990.md'), 'contextmenu', { clientX: 60, clientY: 80 });
-    expect(entries()).toEqual(['new source', 'new deck', 'new draft', 'new folder', 'import a file…', 'add from text or a link', 'show as tabs', 'rename', 'move to…', 'delete source']);
+    expect(entries()).toEqual(['new note', 'new source', 'new deck', 'new draft', 'new folder', 'import a file…', 'add from text or a link', 'show as tabs', 'rename', 'move to…', 'delete source']);
     expect(side.querySelectorAll('.ctx-menu')).toHaveLength(1);
   });
 
@@ -96,7 +96,7 @@ describe('the sidebar menu', () => {
     mouse(hasSub(), 'click');
     expect(sub()).not.toBeNull();
     expect(menu()).not.toBeNull();
-    expect(Array.from(sub()!.querySelectorAll('.ci')).map((e) => e.textContent)).toEqual(['/papers', '¶wozniak-1990', '/sources']);
+    expect(Array.from(sub()!.querySelectorAll('.ci')).map((e) => e.textContent)).toEqual(['/papers', '“wozniak-1990', '/sources']);
     // the pointer leaving the list does not close it
     mouse(side.querySelector('.ctx-menu .sub-wrap')!, 'mouseleave', { bubbles: false });
     mouse(side.querySelector('.ctx-menu .sub-wrap')!, 'mouseout');
@@ -236,8 +236,22 @@ describe('nesting in the tree', () => {
     mouse(row('notes.md'), 'contextmenu', { clientX: 60, clientY: 120 });
     mouse(side.querySelector('.ctx-menu .ci.has-sub')!, 'click');
     const items = Array.from(side.querySelectorAll<HTMLElement>('.ctx-menu .sub-scroll .ci'));
-    expect(items.map((e) => [e.textContent, e.style.paddingLeft])).toEqual([['/papers', '22px'], ['¶wozniak-1990', '34px'], ['/sources', '22px']]);
+    expect(items.map((e) => [e.textContent, e.style.paddingLeft])).toEqual([['/papers', '22px'], ['“wozniak-1990', '34px'], ['/sources', '22px']]);
     mouse(items[1]!, 'click');
     expect(calls).toEqual(['move notes.md → papers/wozniak-1990']);
+  });
+});
+
+describe('F2', () => {
+  it('renames the selected row only while the tree has focus', () => {
+    const box = side.querySelector<HTMLElement>('.edit-tree')!;
+    mouse(row('notes.md'), 'mousedown');
+    // the page has focus: F2 there is not the tree's
+    (document.activeElement as HTMLElement | null)?.blur();
+    key('F2');
+    expect(side.querySelector('input.rename')).toBeNull();
+    act(() => { box.focus(); });
+    act(() => { box.dispatchEvent(new KeyboardEvent('keydown', { key: 'F2', bubbles: true, cancelable: true })); });
+    expect(side.querySelector<HTMLInputElement>('input.rename')?.value).toBe('notes');
   });
 });

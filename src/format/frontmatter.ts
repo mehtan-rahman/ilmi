@@ -10,7 +10,7 @@ import {
   type Frontmatter, type NodeType, type ReadSchedule, type WriteSchedule,
 } from './model.js';
 
-const NODE_TYPES: readonly NodeType[] = ['source', 'deck', 'draft', 'extract'];
+const NODE_TYPES: readonly NodeType[] = ['note', 'source', 'deck', 'draft', 'extract'];
 const CARD_FORMS: readonly CardForm[] = ['cloze', 'qa', 'bidir'];
 
 /** Priority: 0–100, lower first. The `pri` field, the fallback on a `read` / `write` line, and a card's override. */
@@ -249,13 +249,18 @@ export interface Meta {
   tabs?: boolean;
 }
 
-/** The document's front-matter as a plain object, defaults applied. */
+/**
+ * The document's front-matter as a plain object, defaults applied. A file
+ * with no `type` is a note, unless it carries `imported`: the importers
+ * wrote no `type` before notes existed, so such a file is still a source.
+ */
 export function meta(doc: Doc): Meta {
-  const out: Meta = { type: 'source', frozen: false };
+  const out: Meta = { type: 'note', frozen: false };
+  let typed = false;
   for (const e of doc.frontmatter?.entries ?? []) {
     if (!isField(e)) continue;
     switch (e.key) {
-      case 'type': out.type = e.value; break;
+      case 'type': out.type = e.value; typed = true; break;
       case 'title': out.title = e.value; break;
       case 'frozen': out.frozen = e.value; break;
       case 'imported': out.imported = e.value; break;
@@ -271,6 +276,7 @@ export function meta(doc: Doc): Meta {
       case 'tabs': out.tabs = e.value; break;
     }
   }
+  if (!typed && out.imported !== undefined) out.type = 'source';
   return out;
 }
 

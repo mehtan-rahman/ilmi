@@ -29,6 +29,8 @@ notes/
     crick-1995.md
     crick-1995.pdf           its pages, read in place (§3 `pdf`)
   german.md                  a deck (type: deck in front-matter)
+  fleeting/
+    lecture-9.md             a note: no type, your own writing
   essays/
     spaced-composition.md    a draft (type: draft)
   courses/
@@ -47,7 +49,7 @@ notes/
   `.obsidian`).
 - `name.md` next to a directory `name/` means the directory holds that
   document's children. A children directory holds any node: documents of
-  every type (sources, extracts, decks, drafts) and folders, to any depth,
+  every type (notes, sources, extracts, decks, drafts) and folders, to any depth,
   each walked as it would be anywhere else. Moving or renaming a document
   takes its children directory and its pages with it. An extract's backref
   (§6.3) is unchanged by where its file sits.
@@ -122,7 +124,7 @@ dropped, with a diagnostic.
 
 | key            | value                       | default   | meaning                                                            |
 | -------------- | --------------------------- | --------- | ------------------------------------------------------------------ |
-| `type`         | `source` `deck` `draft` `extract` | `source` | what lens opens the file                                     |
+| `type`         | `note` `source` `deck` `draft` `extract` | `note` | what the file is, and the lens that opens it         |
 | `title`        | string                      | filename  | display name                                                       |
 | `frozen`       | `true` `false`              | `false`   | prose is locked; cards stay editable                               |
 | `imported`     | day                         |           | when the source came in                                            |
@@ -137,6 +139,16 @@ dropped, with a diagnostic.
 | `published`    | day or instant              |           | when it was published                                              |
 | `tabs`         | `true` `false`              | `false`   | the document's children are tabs in a rail beside its page         |
 
+**Type.** A `note` is the person's own writing: editable, cards anywhere in
+it, no schedule unless asked. A `source` is what someone else wrote, read
+incrementally: imports, PDFs, EPUB chapters, clippings; every importer
+writes `type: source`. `extract`, `draft` (incremental writing), and `deck`
+are below. A file with no `type` is a note, so a plain folder of Markdown
+opened as a vault is notes; except that a file with no `type` and an
+`imported` field is a source, because the importers wrote no `type` before
+notes existed and those files stay what they were. The app writes no
+`type` for a note it makes.
+
 `read` attributes: `due` (day or instant), `ivl` (days between passes, int),
 `reps` (passes made, int), `pos` (prose blocks read, int), `page` (int ≥ 1),
 `af` (growth, number ≥ 1.1, default 1.6), `pri` (int 0–100).
@@ -144,7 +156,12 @@ dropped, with a diagnostic.
 hand-inserting a paragraph above the marker shifts it by one, which is the
 accepted trade for not tagging every paragraph with an id. On a document
 with pages, `pos` is the page the ruler is on instead, counted from 1; the
-same attribute, so nothing else changes. `page` sits on an extract carved
+same attribute, so nothing else changes. On a note, `read` means
+*revisited*: the note comes back on the same growing interval, but each pass
+starts at the top or at a heading the person picks, since a note's own edits
+would shift a position; its line keeps `due`, `ivl`, `reps`, `af` (and the
+older `pri=`) and has no `pos`. A `pos` written there by hand is kept as
+written and means nothing; the app drops it on the next pass. `page` sits on an extract carved
 from a page of its parent's PDF and names that page; it means nothing on
 any other line and is kept as written.
 

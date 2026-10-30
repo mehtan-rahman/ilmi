@@ -1,6 +1,6 @@
 ---
 title: microcanonical ensemble & entropy
-read: due=2026-11-04 ivl=12 reps=2 pos=0
+read: due=2026-11-04 ivl=12 reps=2
 lectures: 2026-08-31 to 2026-09-18
 ---
 

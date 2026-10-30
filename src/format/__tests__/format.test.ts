@@ -19,7 +19,26 @@ describe('front-matter', () => {
       type: 'source', frozen: true, imported: '2026-04-18', pri: 80,
       read: { due: '2026-06-01', ivl: 9, reps: 4, pos: 12 },
     });
-    expect(meta(parse('just a note\n').doc)).toEqual({ type: 'source', frozen: false });
+    expect(meta(parse('just a note\n').doc)).toEqual({ type: 'note', frozen: false });
+  });
+
+  it('a file with no type is a note, unless it was imported before notes existed', () => {
+    // the corpus's typeless note, and one revisited: its read line has no pos
+    const lecture = read('vault/fleeting/lecture-9.md');
+    expect(lecture.startsWith('---')).toBe(false);
+    expect(meta(parse(lecture).doc).type).toBe('note');
+    const revisited = parse(read('vault/fleeting/office-hours.md'));
+    expect(revisited.diagnostics).toEqual([]);
+    expect(meta(revisited.doc)).toEqual({ type: 'note', frozen: false, title: 'office hours, week 6', read: { due: '2026-06-02', ivl: 4, reps: 1 } });
+    // an old import, typeless and `imported`, is still a source; a `type` always wins
+    expect(meta(parse(read('vault/books/james-pluralistic-ch4.md')).doc).type).toBe('source');
+    expect(meta(parse('---\ntype: note\nimported: 2026-05-01\n---\n\nx\n').doc).type).toBe('note');
+    expect(meta(parse('---\ntype: source\n---\n\nx\n').doc).type).toBe('source');
+    // `note` round-trips like the other four, and a note made by the app carries no type
+    const d = parse('x\n').doc;
+    setField(d, 'type', 'note');
+    expect(serialize(d)).toBe('---\ntype: note\n---\n\nx\n');
+    expect(meta(parse(serialize(d)).doc).type).toBe('note');
   });
 
   it('growth: af is read, dropped when it is the default or below the floor, and written back otherwise', () => {
@@ -108,7 +127,7 @@ describe('front-matter', () => {
     const text = read('vault/courses/linear-algebra.md');
     const { doc, diagnostics } = parse(text);
     expect(diagnostics).toEqual([]);
-    expect(meta(doc)).toEqual({ type: 'source', frozen: false, title: 'linear algebra', tabs: true });
+    expect(meta(doc)).toEqual({ type: 'note', frozen: false, title: 'linear algebra', tabs: true });
     expect(serialize(doc)).toBe(text);
     setField(doc, 'tabs', null);
     expect(serialize(doc).split('\n').slice(0, 3)).toEqual(['---', 'title: linear algebra', '---']);
@@ -154,7 +173,7 @@ describe('front-matter', () => {
   it('keeps unknown lines verbatim and degrades bad values with diagnostics', () => {
     const { doc, diagnostics } = parse(read('mangled/frontmatter-ugly.md'));
     const m = meta(doc);
-    expect(m.type).toBe('source');                    // bogus → default
+    expect(m.type).toBe('note');                      // bogus → default
     expect(m.title).toBe('quoted: yes');
     expect(m.frozen).toBe(true);                      // yes # comment
     expect(m.imported).toBeUndefined();               // 2026-4-18 is not a day

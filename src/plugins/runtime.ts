@@ -794,7 +794,7 @@ export class PluginHost {
         const rel = cleanPluginPath(path);
         if (await vault.fs.stat(vault.abs(rel))) throw new Error(`${rel}: already there`);
         if (isDoc(rel)) {
-          const made = await vault.createDoc(dirOf(rel), 'source', nameOf(rel));
+          const made = await vault.createDoc(dirOf(rel), 'note', nameOf(rel));
           const next = parse(text).doc;
           await vault.update(made, (doc) => {
             delete doc.frontmatter;

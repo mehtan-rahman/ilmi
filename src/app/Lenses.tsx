@@ -1,5 +1,5 @@
 // Lenses: what a tab renders for a folder or a document, or the intake.
-// Folders and decks are lists; sources, extracts, and drafts open in the reader.
+// Folders and decks are lists; notes, sources, extracts, and drafts open in the reader.
 
 import { useEffect, useRef, useState, type DragEvent } from 'react';
 import { childDirOf, childrenAt, ordered, within, type TreeNode } from '../vault/index.js';
@@ -52,6 +52,7 @@ function PageLens({ id, active, onOpen }: LensProps) {
 // ── folder ───────────────────────────────────────────────────────
 
 const NEW: [NodeKind, string][] = [
+  ['note', '+ note'],
   ['source', '+ source'],
   ['deck', '+ deck'],
   ['draft', '+ draft'],

@@ -195,7 +195,9 @@
   width: 12px;
   flex-shrink: 0;
 }
+.edit-tree:focus { outline: none; }
 .tree .row .glyph.root { color: var(--fg-3); }
+.tree .row .glyph.note,
 .tree .row .glyph.source,
 .tree .row .glyph.deck,
 .tree .row .glyph.draft { color: var(--fg-3); }

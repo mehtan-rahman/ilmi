@@ -3204,7 +3204,7 @@ revisited from the top, selecting a word in a note and typing `e` types
 `e`, and the sample collection migrated parses clean.
 
 ### [x] 34. Editing like an editor — keys, rules, lists
-Done 2026-10-30 on main; commit `COMMIT`. The window check is pending:
+Done 2026-10-30 on main; commit `52823ee`. The window check is pending:
 run `ILMI_SMOKE=editing` with `ILMI_VAULT` on a copy of
 `samples/double-major` and read its `shot:` captures (the screen was
 locked this session, so nothing was run in the window).

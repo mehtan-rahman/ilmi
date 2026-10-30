@@ -8,7 +8,7 @@ was verified, what was not, and the prompt to resume with.
 
 ## 2026-10-30 — milestone 34: editing like an editor, keys, rules, lists
 
-Done on main; commit `COMMIT` — *editing: formatting keys that write
+Done on main; commit `52823ee` — *editing: formatting keys that write
 Markdown, block rules as typed, lists moved with their children, a
 toolbar over the selection*. Files: `src/reader/lists.ts` and
 `src/reader/commands.ts` (new), `src/reader/plugins.ts` (the list

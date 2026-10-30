@@ -315,11 +315,11 @@
   border-bottom-color: var(--line-1);
 }
 .draft-doc .dd-table td.tb-cur { background: var(--line-3); }
-/* the caret's cell: its menu at the cell's end corner */
+/* the caret's cell: its menu at the cell's end corner (placed by the table's view) */
 .draft-doc .tb-more {
   position: absolute;
   top: 2px;
-  inset-inline-end: 1px;
+  right: 1px;
   padding: 0 3px;
   font-family: var(--mono);
   font-size: 10px;
@@ -330,6 +330,7 @@
   cursor: default;
 }
 .draft-doc .tb-more::before { content: "···"; }
+.draft-doc .tb-more[hidden] { display: none; }
 .draft-doc .tb-more:hover { color: var(--fg-1); }
 /* a row and a column added at the edges, on hover */
 .draft-doc .tb-add {

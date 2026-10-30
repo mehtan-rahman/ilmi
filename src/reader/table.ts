@@ -215,26 +215,17 @@ export const rowBelow: Command = (state, dispatch) => {
 
 export const tableKey = new PluginKey<DecorationSet>('table');
 
-/** The current cell's mark (`tb-cur`) and its menu's handle (`span.tb-more`), drawn while the caret is in a table of an editable page. */
+/**
+ * The current cell's mark (`tb-cur`), drawn while the caret is in a table.
+ * Its menu's handle is the table view's own, outside the cells: a widget
+ * inside an empty cell took WebKit's typed text (41's window run 4).
+ */
 function cellDecorations(state: EditorState): DecorationSet {
   const at = cellAt(state);
   if (!at || !state.selection.$from.sameParent(state.selection.$to)) return DecorationSet.empty;
   const start = cellStart(at.table, at.tablePos, at.row, at.col);
   const cell = at.table.child(at.row).child(at.col);
-  const more = () => {
-    const el = document.createElement('span');
-    el.className = 'tb-more';
-    el.setAttribute('contenteditable', 'false');
-    el.dataset.row = String(at.row);
-    el.dataset.col = String(at.col);
-    el.title = 'row and column';
-    // drawn by CSS, so the cell's text stays its own
-    return el;
-  };
-  return DecorationSet.create(state.doc, [
-    Decoration.node(start - 1, start - 1 + cell.nodeSize, { class: 'tb-cur' }),
-    Decoration.widget(start + cell.content.size, more, { side: 1, key: `tb-more|${at.row}|${at.col}`, ignoreSelection: true, stopEvent: () => true }),
-  ]);
+  return DecorationSet.create(state.doc, [Decoration.node(start - 1, start - 1 + cell.nodeSize, { class: 'tb-cur' })]);
 }
 
 export const tablePlugin = new Plugin<DecorationSet>({

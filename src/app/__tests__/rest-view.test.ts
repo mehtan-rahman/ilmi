@@ -14,6 +14,12 @@ import { goToHeading, registerHeadings } from '../headings.js';
 import { closePopMenu, popMenuOpen } from '../popMenu.js';
 import { nodeViews } from '../Reader.js';
 
+// jsdom draws no boxes: ProseMirror's scroll to the caret asks a range for its rects
+for (const proto of [Node.prototype, Range.prototype] as unknown as { getClientRects?: () => DOMRect[]; getBoundingClientRect?: () => DOMRect }[]) {
+  proto.getClientRects ??= () => [];
+  proto.getBoundingClientRect ??= () => new DOMRect();
+}
+
 function mount(md: string, frozen = false, folds?: string[]): EditorView {
   const state = makeState(parse(md).doc.blocks, { frozen: () => frozen, pos: null, ...(folds ? { folds } : {}) });
   return new EditorView(document.body.appendChild(document.createElement('div')), { state, nodeViews, editable: () => !frozen, attributes: { class: 'draft-doc' } });
@@ -117,10 +123,17 @@ describe('a table in the page', () => {
     view.destroy();
   });
 
-  it('adds a row and a column at the edges', () => {
+  it('adds a row and a column at the edges, the caret in the new cell, typed and written', () => {
     const view = mount(TABLE);
     press(view.dom.querySelector('.tb-add-row')!);
     expect(written(view)).toBe('| form | perfect |\n| --- | --- |\n| II | فَعَّلَ |\n|  |  |');
+    // an empty new cell holds no widget for typed text to fall into
+    const td = view.dom.querySelectorAll('.dd-table tr')[2]!.querySelector('td')!;
+    expect(td.classList.contains('tb-cur')).toBe(true);
+    expect(td.querySelector('[contenteditable="false"]')).toBeNull();
+    view.dispatch(view.state.tr.insertText('III'));
+    expect(written(view)).toBe('| form | perfect |\n| --- | --- |\n| II | فَعَّلَ |\n| III |  |');
+    view.dispatch(view.state.tr.delete(view.state.selection.from - 3, view.state.selection.from));
     press(view.dom.querySelector('.tb-add-col')!);
     expect(written(view)).toBe('| form | perfect |  |\n| --- | --- | --- |\n| II | فَعَّلَ |  |\n|  |  |  |');
     view.destroy();
@@ -131,8 +144,11 @@ describe('a table in the page', () => {
     caretIn(view, 'II');
     const cur = view.dom.querySelector<HTMLElement>('td.tb-cur')!;
     expect(cur.textContent).toBe('II');
-    const more = cur.querySelector<HTMLElement>('.tb-more')!;
-    expect(more.dataset.row).toBe('1');
+    // the handle is the table's own, outside the cells: nothing but text is in a cell
+    expect(cur.querySelector('.tb-more')).toBeNull();
+    const more = view.dom.querySelector<HTMLElement>('.dd-table > .tb-more')!;
+    expect(more.hidden).toBe(false);
+    expect([more.dataset.row, more.dataset.col]).toEqual(['1', '0']);
     press(more);
     const menu = popMenuOpen()!;
     expect(Array.from(menu.querySelectorAll('.ci')).map((r) => r.getAttribute('data-act'))).toEqual([
@@ -141,11 +157,11 @@ describe('a table in the page', () => {
     menu.querySelector<HTMLElement>('[data-act="align-right"]')!.click();
     expect(written(view)).toBe('| form | perfect |\n| ---: | --- |\n| II | فَعَّلَ |');
     caretIn(view, 'II');
-    press(view.dom.querySelector('.tb-more')!);
+    press(view.dom.querySelector('.dd-table > .tb-more')!);
     popMenuOpen()!.querySelector<HTMLElement>('[data-act="delete-col"]')!.click();
     expect(written(view)).toBe('| perfect |\n| --- |\n| فَعَّلَ |');
     caretIn(view, 'فَعَّلَ');
-    press(view.dom.querySelector('.tb-more')!);
+    press(view.dom.querySelector('.dd-table > .tb-more')!);
     popMenuOpen()!.querySelector<HTMLElement>('[data-act="delete-row"]')!.click();
     expect(written(view)).toBe('| perfect |\n| --- |');
     view.destroy();

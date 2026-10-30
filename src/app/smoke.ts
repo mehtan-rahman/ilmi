@@ -5701,7 +5701,7 @@ export async function smokeRest(vault: Vault): Promise<void> {
     const formI = orig.find((l) => l.startsWith('| I |'))!;
     await lines(FORMS, [formI.replace('| basic |', '| basic meaning |')], 'a cell typed: its row\'s line changes');
     must((await text(FORMS)).split('\n').filter((l, i) => l !== orig[i]).length === 1, 'and only that line');
-    must(q('td.tb-cur .tb-more', table()), 'the caret\'s cell shows its menu');
+    must(q('td.tb-cur', table()) && q<HTMLElement>(':scope > .tb-more', table())?.hidden === false, 'the caret\'s cell shows its menu');
     await shot('rest-table-edit');
     // Tab and ⇧Tab
     await keyDown('Tab');
@@ -5718,10 +5718,11 @@ export async function smokeRest(vault: Vault): Promise<void> {
     // a row at the bottom edge, typed, deleted from the menu
     down(q<HTMLElement>('.tb-add-row', table())!);
     await lines(FORMS, [orig.find((l) => l.startsWith('| X |'))!, '|  |  |  |  |  |  |  |'], 'a row added at the bottom edge');
+    must(cellOf() === cells()[11]?.[0], `the caret is in the new row's first cell (in "${cellOf()?.textContent ?? 'nothing'}", row ${cellOf() ? cells().findIndex((r) => r.includes(cellOf() as HTMLElement)) : -1})`);
     await type('XI');
     await lines(FORMS, ['| XI |  |  |  |  |  |  |'], 'the new row typed');
     await shot('rest-table-row');
-    down(q<HTMLElement>('td.tb-cur .tb-more', table())!);
+    down(q<HTMLElement>(':scope > .tb-more', table())!);
     const menu = await poll(() => q<HTMLElement>('.pop-menu.table-menu'), 'the cell\'s menu opens', 3000);
     await shot('rest-table-menu');
     q<HTMLElement>('[data-act="delete-row"]', menu)!.click();
@@ -5733,15 +5734,15 @@ export async function smokeRest(vault: Vault): Promise<void> {
     await type('root');
     await lines(FORMS, [head.replace(/ \|$/, ' | root |')], 'the new column named');
     await shot('rest-table-column');
-    down(q<HTMLElement>('td.tb-cur .tb-more', table())!);
+    down(q<HTMLElement>(':scope > .tb-more', table())!);
     q<HTMLElement>('[data-act="delete-col"]', await poll(() => q<HTMLElement>('.pop-menu.table-menu'), 'the menu again', 3000))!.click();
     await lines(FORMS, [head, orig[orig.indexOf(head) + 1]!], 'the column deleted from the menu');
     // a row above from the menu, then gone again
     await placeIn(cells()[3]![0]!, 'III', 3);
-    down(q<HTMLElement>('td.tb-cur .tb-more', table())!);
+    down(q<HTMLElement>(':scope > .tb-more', table())!);
     q<HTMLElement>('[data-act="row-above"]', await poll(() => q<HTMLElement>('.pop-menu.table-menu'), 'the menu on III', 3000))!.click();
     await lines(FORMS, [orig.find((l) => l.startsWith('| II |'))!, '|  |  |  |  |  |  |  |', orig.find((l) => l.startsWith('| III |'))!], 'a row put above III');
-    down(q<HTMLElement>('td.tb-cur .tb-more', table())!);
+    down(q<HTMLElement>(':scope > .tb-more', table())!);
     q<HTMLElement>('[data-act="delete-row"]', await poll(() => q<HTMLElement>('.pop-menu.table-menu'), 'the menu on the new row', 3000))!.click();
     await poll(async () => { const now = (await text(FORMS)).split('\n'); return now.length === orig.length && now.filter((l, i) => l !== orig[i]).length === 1; }, 'the file is the sample\'s again but for the one cell typed');
     useApp.getState().setTheme('dark');

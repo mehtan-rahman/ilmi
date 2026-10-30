@@ -76,6 +76,10 @@ highlight.js 11.11.1 in package.json. Also, by the coordinator's word,
   effect, held back in a covered window). `setTheme` sets it at once now;
   the smoke waits for it and checks e-ink after light and after dark.
   Rerun owed.
+- Window run 4: a row added at the edge, then its typed text was not
+  written: the cell's `···` widget sat inside the new empty cell and took
+  WebKit's input. The handle is now the table view's own, outside the
+  cells. Rerun owed.
 
 ### Handoff prompt
 

@@ -4336,6 +4336,17 @@ does it too), with a test; the smoke waits for `data-theme` before reading
 a colour, checks e-ink after light and after dark, and reads oklab/oklch
 colours by their chroma (under 0.02, the e-ink paper's own warmth). Rerun
 owed.
+Window run 4 (after `7c78410`): everything passed through `a row added at
+the bottom edge`, then `failed: the new row typed`. The app's: the cell
+menu's `···` was a widget decoration inside the caret's cell, so a new,
+empty cell held only that non-editable span and ProseMirror's trailing
+break, and WebKit's typed text went beside the widget where ProseMirror
+does not read it (a cell with text, as in the earlier steps, typed fine).
+The handle is now the table view's own element, outside the cells (`.dd-table
+> .tb-more`, its row and column from the state, laid over the cell's end
+corner on a timer); the plugin only lights the cell (`tb-cur`). A test
+checks the new empty cell holds nothing but its text; the smoke asserts the
+caret is in the new row's first cell before typing. Rerun owed.
 - An outline of the page's headings (in the inspector, or the rail's
   heading list when tabs are on), a click scrolls; headings fold by a
   chevron in the margin, folds kept in state.

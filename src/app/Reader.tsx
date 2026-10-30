@@ -17,7 +17,7 @@ import {
   setReadPos, splitBlocks, atomFind, markFinds, toggleInline, toggleTask, type Band, type InlineRange, type InlineToggle, type LinkTarget, type Passage, type RawShape,
   askImageKey, closeAtMatch, dirAttr, strongDir, withBases, type Dir, findKey, insertImages, pickSlash, replaceAll, replaceMatch, slashContext, slashItems, slashKey, htmlPasteImages,
   type FindMeta, type FindState, type SlashItem, type SlashState,
-  CODE_LANGS, addColumn, addRow, alignColumn, codeHTML, codeLang, deleteColumn, deleteRow, foldKey, foldedKeys, foldsHiding, ruleEndIndex, langOf, setCodeLang, type Align, type FoldMeta,
+  CODE_LANGS, addColumn, addRow, cellAt, alignColumn, codeHTML, codeLang, deleteColumn, deleteRow, foldKey, foldedKeys, foldsHiding, ruleEndIndex, langOf, setCodeLang, type Align, type FoldMeta,
 } from '../reader/index.js';
 import { advanceWrite, whenToDate } from '../schedule/index.js';
 import { dirOf, nameOf, type Loaded, type Vault } from '../vault/index.js';
@@ -795,6 +795,7 @@ class TableView implements NodeView {
   dom: HTMLElement;
   contentDOM: HTMLElement;
   private readonly controls: HTMLElement[];
+  private readonly more: HTMLElement;
   private node: PMNode;
 
   constructor(node: PMNode, private readonly view: EditorView, private readonly getPos: () => number | undefined) {
@@ -815,16 +816,37 @@ class TableView implements NodeView {
     };
     const row = button('tb-add-row', 'add a row', () => this.run((pos) => addRow(pos, this.node.childCount)));
     const col = button('tb-add-col', 'add a column', () => this.run((pos) => addColumn(pos, this.node.firstChild!.childCount)));
-    this.controls = [row, col];
-    this.dom.append(table, row, col);
-    // the caret's cell's `···`: a widget inside the cell, its press caught here
-    this.dom.addEventListener('mousedown', (e) => {
-      const more = (e.target as HTMLElement | null)?.closest<HTMLElement>('.tb-more');
-      if (!more || !this.dom.contains(more)) return;
-      e.preventDefault();
-      e.stopPropagation();
-      this.menu(more, Number(more.dataset.row), Number(more.dataset.col));
-    });
+    // the caret's cell's `···`: the view's own, laid over the cell's end corner, never inside the cell's text
+    this.more = button('tb-more', 'row and column', () => this.menu(this.more, Number(this.more.dataset.row), Number(this.more.dataset.col)));
+    this.more.className = 'tb-more';
+    this.more.hidden = true;
+    this.controls = [row, col, this.more];
+    this.dom.append(table, row, col, this.more);
+    this.follow();
+  }
+
+  /** The handle over the caret's cell: which cell from the state now, where from the drawn cell once the page is laid out. */
+  private follow(): void {
+    const at = cellAt(this.view.state);
+    const pos = this.getPos();
+    if (!at || at.tablePos !== pos || !this.view.state.selection.$from.sameParent(this.view.state.selection.$to)) {
+      this.more.hidden = true;
+      return;
+    }
+    this.more.hidden = false;
+    this.more.dataset.row = String(at.row);
+    this.more.dataset.col = String(at.col);
+    // a timer, not a frame: WebKit holds frames back in a covered window
+    setTimeout(() => {
+      const td = this.contentDOM.children[at.row]?.children[at.col] as HTMLElement | undefined;
+      if (!td || this.more.hidden) return;
+      const box = this.dom.getBoundingClientRect();
+      const r = td.getBoundingClientRect();
+      const rtl = getComputedStyle(td).direction === 'rtl';
+      this.more.style.top = `${Math.round(r.top - box.top + 2)}px`;
+      this.more.style.left = rtl ? `${Math.round(r.left - box.left + 1)}px` : 'auto';
+      this.more.style.right = rtl ? 'auto' : `${Math.round(box.right - r.right + 1)}px`;
+    }, 0);
   }
 
   private run(cmd: (pos: number) => (state: EditorState, dispatch?: (tr: Transaction) => void) => boolean): void {
@@ -854,12 +876,13 @@ class TableView implements NodeView {
   update(node: PMNode): boolean {
     if (node.type !== schema.nodes.table) return false;
     this.node = node;
+    this.follow();
     return true;
   }
 
   stopEvent(e: Event): boolean {
     const t = e.target as Node;
-    return this.controls.some((c) => c.contains(t)) || !!(t as HTMLElement).closest?.('.tb-more');
+    return this.controls.some((c) => c.contains(t));
   }
   ignoreMutation(m: MutationRecord | { type: 'selection'; target: Node }): boolean {
     return !this.contentDOM.contains(m.target);

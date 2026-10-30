@@ -4480,7 +4480,7 @@ caret is in the new row's first cell before typing. Rerun owed.
   in the three themes; a language picker on the fence).
 - Tables edited as tables: cells in place, Tab between cells, a row or
   column added at the edges; written back as the pipe table.
-Wikilinks and backlinks are not here; ask the user after this one.
+Wikilinks and backlinks are not here; the user skipped them (2026-10-30).
 *Done when:* each works in the window on the sample and round-trips the
 file.
 
@@ -4497,8 +4497,8 @@ and a covered window holds back animation frames and transitions. Open
 items are in each milestone's notes (40: the gap under display math, the
 PDF lens's top row, math in tree and palette rows; 41: headings in list
 items don't fold, ⇧⏎ in a cell; 39: a multi-chapter PDF as a notebook;
-37: `>>>` children as a back, Tab on a card item). Wikilinks and
-backlinks wait for the user (41's text). Next: ask the user.
+37: `>>>` children as a back, Tab on a card item). Wikilinks and backlinks: skipped (the user, 2026-10-30: "I personally
+don't find them that useful"). Next: ask the user.
 
 Milestones 0–32 are ticked (13 dropped); 32 (decks) was built on a branch
 beside 31 and merged by hand on 2026-10-28; its window check

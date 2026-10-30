@@ -6,6 +6,82 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-10-30 — milestone 36: Arabic beside English
+
+Done on branch `worktree-agent-a52202991c6a668ce` (to be merged by hand);
+commit `594a4e1` — *Arabic beside English (milestone 36): each block's
+direction from its first strong character, math and code isolated, Noto
+Naskh Arabic and IBM Plex Sans Arabic bundled, a case ending's blank on
+its letter*. Files: `src/reader/direction.ts` (new, the rule),
+`src/reader/plugins.ts` (the `direction` plugin, code's `dir`),
+`src/app/fonts.css` (new), `tokens.css`, `main.tsx`, `Reader.tsx` (math,
+code, raw blocks, card faces, `clozeHTML`'s case ending, `blankAnswers`,
+`faceDir`), `Session.tsx`, `DeckBrowser.tsx`, `Queue.tsx`, `Crumbs.tsx`,
+`dir="auto"` in `Composer`, `Palette`, `Tree`, `Rail`, `Lenses`,
+`Inspector`, `Pdf`, `Intake`, the deck search; `reader.css`, `app.css`,
+`session.css`, `queue.css`; `smoke.ts` (`smokeArabic`), `vault.ts` (the
+dispatch); `package.json` and the lock (the two font packages); README;
+tests (`direction.test.ts`, `arabic.test.ts` new, `reader-view.test.ts`'s
+HTML with its `dir`s).
+
+### Done
+
+- Each block's direction from its first strong character, a block with
+  none inheriting the one before; lists and quotes by their first item,
+  each item its own; cards by their text. A decoration, never written.
+  The same rule on the read-only drawings: raw lists and tables, card
+  faces, the session, the deck browser, the queue's rows; names
+  `dir="auto"`; every field that may hold Arabic `dir="auto"` (find,
+  deck search, palette, renames, card editor, composer, intake).
+- Inline math, inline code, and card markup are LTR isolates; display
+  math LTR and centred.
+- Noto Naskh Arabic (variable) behind the serif and IBM Plex Sans Arabic
+  behind Plex, from @fontsource, only their Arabic woff2 files, with
+  Arabic `unicode-range`s: +227.9 kB of fonts, `dist` 5776 → 6016 KiB.
+  RTL blocks at line-height 1.85, no letter-spacing, no fake italic;
+  one-line rows that clip given room for the marks.
+- Logical CSS for the reader's bullets, task boxes, quote bars, list
+  indents, the card's due chip and the session card's alignment.
+- A cloze whose answer is only marks shows its blank on its letter: the
+  bare letter hidden, letter + mark revealed and on the answer face.
+
+### Verified
+
+- `npx vitest run`: 864 tests, 45 files (838 before; `direction.test.ts`
+  15, `arabic.test.ts` 11). `npm run typecheck` clean. `cargo test` 12.
+  `vite build` clean. (In this worktree vitest ran with a scratch config
+  allowing the symlinked `node_modules`, not committed.)
+
+### Not verified — the window run is owed
+
+- Nothing ran in the Tauri window. `ILMI_SMOKE=arabic` (new) drives the
+  "done when" over a copy of the sample, asserting every step (`ok: …`;
+  the first mismatch is `failed: …`); its captures are listed in 36's
+  notes. What only the window can say: Naskh's marks against the 1.85
+  line in WebKit, the joins across a case ending's span, the find field's
+  direction as typed, and how the canvas ink check reads WebKit's metrics.
+- `npm install` could not run here (node_modules is the main checkout's);
+  the lock was written with `--package-lock-only` and the packages
+  unpacked from `npm pack`. Run `npm install` on main after the merge.
+
+### Handoff prompt
+
+```
+Read PLAN.md (ground rules, Refinement, 36's notes), FORMAT.md §5, and the
+top BUILD-LOG.md entries. Merge branch worktree-agent-a52202991c6a668ce
+into main if it is not yet, then `npm install`. Run ILMI_SMOKE=arabic with
+ILMI_VAULT on a fresh copy of samples/double-major (port 1420 free, never
+kill a run that is not yours; capture with screencapture -l <window id>
+2 s after each `shot:` line), read the captures, fix what they show, and
+record it under 36's entry. Then do milestone 37 (cards where notes put
+them, and review in their place) and only that one; stop at its "done
+when". Suite, typecheck, and `cargo test` green before each commit; tick
+it, write notes, add an entry here with a fresh handoff prompt, and
+commit.
+```
+
+---
+
 ## 2026-10-30 — milestone 39: tabs, refined
 
 Done on branch `worktree-agent-afea09d94a7eddc9d` (beside 35 on main, to be

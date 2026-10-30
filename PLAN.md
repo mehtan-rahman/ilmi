@@ -3559,7 +3559,124 @@ heading) lands as the right Markdown, a pasted image is a file beside the
 note, and find walks every match of an unvoweled Arabic word in a voweled
 page.
 
-### [ ] 36. Arabic beside English — direction, type, marks
+### [x] 36. Arabic beside English — direction, type, marks
+Done 2026-10-30 on branch `worktree-agent-a52202991c6a668ce`, commit
+`594a4e1`. The window check is pending: run `ILMI_SMOKE=arabic` with
+`ILMI_VAULT` on a fresh copy of `samples/double-major` and read its
+`shot:` captures (arabic-grammar, -find, -passage, -formulas, -vocab,
+-session-vocab, -session-vocab-revealed, -session-case-ending, its
+-revealed, each with a `-dark` twin where the smoke takes one); every step
+is an `ok: …` line and the first mismatch is `failed: …`. Nothing was run
+in the window this session.
+Notes: the rule is `src/reader/direction.ts` (pure, no DOM):
+`strongDir(text)` is the first letter's direction (`\p{L}`; right to
+left for the scripts with `scx` Arabic, Hebrew, Syriac, Thaana, N'Ko,
+Samaritan, Mandaic, Adlam; digits, marks and punctuation are neutral),
+skipping what is isolated: `isolatedSpans` (math by `mathSpanEnd`, inline
+code, a link's or image's `](address)`), `markupSpans` (`{{c1::`, `}}`,
+` :: `/` ::: `, a trailing `^id`), HTML comments and bare addresses.
+`blockDirs` is the run: a block without a letter inherits the one before
+(the first takes `ltr`); `null` (code, an HTML block) is `ltr` and leaves
+the run alone. `dirAttr` / `faceDir` give the HTML attribute or React's
+`dir`, nothing when the text has no letter (it inherits). `marksOnly`,
+`baseSplit`, `withBases` are the case ending's blank.
+In the editor a plugin (`direction` in plugins.ts, last in `makeState`,
+so the reader, the session's documents and the deck's face fields all
+get it) draws `directionDecorations(doc)`: a node decoration `dir` on
+every top-level block, list item and quote line; a list or quote takes
+its first item's; a card by its text; fenced code and an HTML or comment
+raw block `ltr` without changing the run; card markup typed in a
+textblock an inline `bidi-iso` `dir="ltr"`. Recomputed on every doc
+change (one pass, each block stops at its first letter). Inline code's
+decoration carries `dir="ltr"`; a math chip is `dir="ltr"` (`mathHTML`
+and the view). The read-only drawings carry the same: `rawHTML`'s lists,
+items, quotes, paragraphs, headings and table cells (`dirAttr`), a q&a
+card's faces, a both-ways card's two faces as `<bdi>` around the arrow,
+the session's faces, the deck's `.dr-front`/`.dr-back`, the queue's row
+text; names in the tree, rail, outline, folder lens and palette are
+`dir="auto"`, crumbs and source labels `<bdi>`.
+CSS: `unicode-bidi: isolate; direction: ltr` on `.math`, `.katex`,
+`.md-code`, `.bidi-iso`, code blocks; an RTL block `line-height: 1.85`
+(1.9 on a session face, 1.75 in a queue row), `letter-spacing: 0`,
+`font-synthesis: weight` (no fake oblique on Naskh; `*em*` there is weight
+560, a q&a back upright); the reader's list margins, bullet padding, task
+box, quote bar and raw lists' indent, the card's due chip, table headers,
+and the session card's alignment are logical (`*-inline-start/end`,
+`start`/`end`). One-line rows that clip (tree, rail, folder lens, tab
+titles, palette) get `padding-block: 4px; margin-block: -4px`, so the
+clip box has room for marks without moving the row; they stay
+left-aligned. A textarea with `dir="auto"` is `unicode-bidi: plaintext`
+(each line its own way).
+Fonts: `@fontsource-variable/noto-naskh-arabic` and
+`@fontsource/ibm-plex-sans-arabic` 5.3.0, declared in `src/app/fonts.css`
+by hand from only their Arabic woff2 files (the packages' own CSS also
+carries Latin, math, symbol and Cyrillic files and woff duplicates), each
+with an Arabic `unicode-range`, as "Ilmi Naskh" (400–700, `size-adjust:
+112%`) after Source Serif and Literata in `--serif`, and "Ilmi Plex
+Arabic" (400, 500, 600) after Plex in `--sans` and `--mono`. Bundle: the
+four files are 227.9 kB (Naskh 94.0, Plex 42.8 + 45.3 + 45.7); `dist` went
+from 5776 to 6016 KiB (+4 %), the JS +3.9 kB and the CSS +3.0 kB. A page
+with no Arabic fetches none of them. In this worktree `npm install` was
+refused (node_modules is the main checkout's, symlinked): the lock and
+package.json were written with `--package-lock-only` and the two packages
+unpacked into node_modules from `npm pack`; run `npm install` on main
+after the merge to be sure it matches.
+The case ending: `withBases(clozeSegments(text))` gives a text blank
+whose answer is only marks the letter before it (`baseSplit`: the last
+letter with any marks on it), taken out of the text. `clozeHTML` draws it
+as `<span class="… on-letter">` holding the bare letter while hidden and
+letter + mark once revealed or in the reader; `blankAnswers` (the
+session's answer face, the deck's back) shows letter + mark. The session
+and queue draw a hidden `on-letter` with the letter visible and a 2 px
+underline, no inline padding (so the joins hold across the span). The
+sample has three (kāna's `غَائِبَات{{c1::ٍ}}`, the ḥāl's `مُسْرِعَات`, the
+mafʿūl muṭlaq's `قَفْزَتَيْن{{c1::ِ}}`).
+Choices made here:
+- **The read marker stays in the left margin.** It is one rule spanning
+  every block read, of both directions; on the right for RTL blocks it
+  would break into pieces on a mixed page. What sits at a block's start
+  (the bullet, the task box, the quote bar, the card's chip) follows the
+  block.
+- **No front-matter `dir:` override** (the research's suggestion): it
+  would be a format change and a setting; the per-block rule decided
+  every block in the sample. Ask before adding it.
+- **Arabic is sized by the face, not the block**: `size-adjust` on the
+  Naskh face lifts only Arabic glyphs, so the English in an Arabic block
+  and the Arabic in an English one are each at their size.
+- **The sidebar keeps names left-aligned**; `dir="auto"` orders each.
+Tests: `src/reader/__tests__/direction.test.ts` (15: letters by script,
+the first strong character with each isolated kind skipped, the run's
+inheritance and isolation, the spans, the decorations over a built doc
+and over the sample's conditional-sentences note, card markup typed,
+`marksOnly`/`baseSplit`/`withBases` on the sample's three case endings),
+`src/app/__tests__/arabic.test.ts` (11, jsdom: the grammar note, the
+prose passage and its glossary list, the vocab deck's cards and their
+`<bdi>` faces, formulas in an Arabic sentence as `dir="ltr"` chips, code
+and markup isolates, raw lists and table cells, faces, the case ending
+hidden / revealed / on the answer face, the fonts declared from Arabic
+files only and in the stacks); `reader-view.test.ts`'s HTML expectations
+gain the `dir`s.
+Smoke: `ILMI_SMOKE=arabic` (`smokeArabic`, appended to smoke.ts, dispatched
+in vault.ts) asserts the faces loaded (`document.fonts.load`/`check`, and
+Naskh measuring differently from the system's Arabic on a canvas), then
+over the grammar note, the prose passage, a note it writes with formulas
+in Arabic sentences (`fleeting/arabic-with-formulas.md`), the vocab deck,
+and sessions on a vocab card and the kāna case ending, in light and dark:
+every block's `dir` set and computed the same and matching the rule on
+its own text, RTL paragraphs at their right edge and at line-height ≥
+1.8, no letter-spacing, the glossary bullet on the right, each formula an
+LTR isolate reading left to right inside, the first formula right of the
+second, the `،` just after the second, code and display math LTR, and no
+voweled run cut by a clipping row (scrollHeight within clientHeight, and
+the run's ink, measured on a canvas in its own font, inside the box);
+plus `dir="auto"` on the find field (Arabic typed reads RTL), the deck
+search, and the palette.
+Left for later: the math editor's and code's ←/→ are not mapped by the
+block's direction (the browser moves visually; our arrow handlers at a
+chip's edges still read ← as before); smart quotes as «» in RTL blocks
+and Arabic punctuation input rules are not done; letter variants are not
+folded by find (35's note); WebKit's joining across the on-letter span
+(`قَفْزَتَيْ` + `ن`) is the window check's to confirm.
 The double major writes Arabic with ḥarakāt between English sentences and
 math. Today there is no `dir` anywhere, the layout is left-anchored
 (reader.css:222–259), and no Arabic face is in the stacks (tokens.css).

@@ -5639,6 +5639,9 @@ export async function smokeRest(vault: Vault): Promise<void> {
     must(q('.code-lang', py)?.getAttribute('data-label') === 'python', 'the corner names the language');
     must(q('[class^="hljs-"]', blocksOf()[1]!), 'the jl block is coloured as julia');
     must(!q('[class^="hljs-"]', blocksOf()[2]!), 'the plain block is not coloured');
+    // a run that failed in e-ink leaves that theme in the saved tweaks: start from light
+    useApp.getState().setTheme('light');
+    await poll(() => document.documentElement.dataset.theme === 'light', 'the page is light');
     const colourOf = (el: Element) => getComputedStyle(el).color;
     const plainColour = colourOf(py.querySelector('code')!);
     must(colourOf(kw) !== plainColour && colourOf(q('.hljs-comment', py)!) !== plainColour, `light: keyword ${colourOf(kw)}, comment ${colourOf(q('.hljs-comment', py)!)}, text ${plainColour}`);

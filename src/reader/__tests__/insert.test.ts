@@ -334,11 +334,12 @@ describe('find in the page', () => {
     expect(findIn('nothing', ' ')).toEqual([]);
   });
 
-  it('walks every match with ⏎ and wraps; cards and tables count; replace writes into text only', () => {
+  it('walks every match with ⏎ and wraps; cards and tables count; replace writes into text and table cells only', () => {
     let s = ed('كَانَ here, كان there\n\n| a |\n| --- |\n| كَانَ |\n\nq :: كَانَ');
     s = step(s, { query: 'كان', from: 0 });
     const f = findKey.getState(s)!;
-    expect(f.matches.map((m) => m.atom)).toEqual([false, false, true, true]);
+    // a table's cells are text now (milestone 41); a card is still an atom
+    expect(f.matches.map((m) => m.atom)).toEqual([false, false, false, true]);
     const seen: number[] = [];
     for (let i = 0; i < 5; i++) { seen.push(findKey.getState(s)!.index); s = step(s, { step: 1 }); }
     expect(seen).toEqual([0, 1, 2, 3, 0]);
@@ -351,28 +352,32 @@ describe('find in the page', () => {
     expect(currentMatch(s)!.from).toBe(at(s, 'كان'));
     s = s.apply(replaceAll(s, 'ليس')!.tr);
     expect(md(s).split('\n')[0]).toBe('صار here, ليس there');
+    expect(md(s)).toContain('| ليس |');
     expect(findKey.getState(s)!.matches.every((m) => m.atom)).toBe(true);
   });
 
-  it('every match is lit: its own span, or a mark in what a table or a card draws, the atom ringed and naming its indices', () => {
-    let s = ed('كان one\n\n| a |\n| --- |\n| كَانَ and كان |\n\nq :: كَانَ');
+  it('every match is lit: its own span (in a table\'s cell too), or a mark in what a card draws, the atom ringed and naming its indices', () => {
+    let s = ed('كان one\n\n| a |\n| --- |\n| كَانَ and كان |\n\nq :: كَانَ and كان');
     s = step(s, { query: 'كان', from: 0 });
     s = step(s, { index: 2 });
     const view = new EditorView(document.body.appendChild(document.createElement('div')), { state: s });
     const lit = new Set(Array.from(view.dom.querySelectorAll<HTMLElement>('[data-find]')).flatMap((el) => el.dataset.find!.split(' ')));
-    expect(lit.size).toBe(4);
+    expect(lit.size).toBe(5);
+    // the current one is a span in the table's cell
+    expect(view.dom.querySelector('td .find-current')?.textContent).toBe('كان');
     const atoms = view.dom.querySelectorAll('.find-in');
-    expect(atoms.length).toBe(2);
-    expect(atoms[0]!.classList.contains('find-current')).toBe(true);
+    expect(atoms.length).toBe(1);
+    expect(atoms[0]!.classList.contains('find-current')).toBe(false);
     view.destroy();
     // a view drawing the atom lights the matches it finds there
-    const table = s.doc.child(0).nodeSize;
-    const decos = (findPlugin.props.decorations!.call(findPlugin, s) as DecorationSet).find(table, table + s.doc.child(1).nodeSize);
+    s = step(s, { index: 4 });
+    const card = s.doc.child(0).nodeSize + s.doc.child(1).nodeSize;
+    const decos = (findPlugin.props.decorations!.call(findPlugin, s) as DecorationSet).find(card, card + s.doc.child(2).nodeSize);
     const root = document.createElement('div');
-    root.innerHTML = '<table><tr><td>كَانَ and كان</td></tr></table>';
+    root.innerHTML = '<div>q</div><div>كَانَ and كان</div>';
     markFinds(root, atomFind(decos));
     const marks = Array.from(root.querySelectorAll<HTMLElement>('mark.find-hit'));
-    expect(marks.map((m) => [m.textContent, m.dataset.find, m.classList.contains('find-current')])).toEqual([['كَانَ', '1', false], ['كان', '2', true]]);
+    expect(marks.map((m) => [m.textContent, m.dataset.find, m.classList.contains('find-current')])).toEqual([['كَانَ', '3', false], ['كان', '4', true]]);
   });
 
   it('every كان in the sample\'s kāna note, unvoweled, is found', () => {

@@ -20,6 +20,8 @@ import { activeTab } from './panes.js';
 import { useApp, type DocInfo } from './store.js';
 import { useDoc } from './useDoc.js';
 import { currentVault, openNode, resetCard } from './vault.js';
+import { notebookOf, outline } from './tabs.js';
+import { goToHeading } from './headings.js';
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 const words = (blocks: Block[]) => blocks.reduce((n, b) => (b.kind === 'card' ? n : n + b.text.split(/\s+/).filter(Boolean).length), 0);
@@ -226,6 +228,32 @@ function CardEditor({ path, index, card }: { path: string; index: number; card: 
 
 // ── per kind ─────────────────────────────────────────────────────
 
+/**
+ * The page's headings (levels 1 to 3, the list the rail's outline shows),
+ * a click bringing one into view, opening any fold it is in. Not drawn
+ * while the page's tab rail is shown, which lists them under the tab.
+ */
+function Outline({ id, doc }: { id: string; doc: Doc }) {
+  const docs = useApp((s) => s.docs);
+  const railFolded = useApp((s) => s.railFolded);
+  const nb = notebookOf(id, docs);
+  if (nb !== null && !railFolded[nb]) return null;
+  const heads = outline(doc.blocks);
+  if (!heads.length) return null;
+  const top = Math.min(...heads.map((h) => h.level));
+  return (
+    <Block title="outline">
+      <ul className="insp-outline">
+        {heads.map((h) => (
+          <li key={h.index} data-heading={h.index} data-level={h.level} style={{ paddingInlineStart: (h.level - top) * 12 }} title={h.text} onClick={() => goToHeading(id, h.index)}>
+            <span className="io-t" dir="auto">{h.text}</span>
+          </li>
+        ))}
+      </ul>
+    </Block>
+  );
+}
+
 function Gone({ kind }: { kind: string }) {
   return <Block title={kind}><p className="insp-line">no longer in the collection</p></Block>;
 }
@@ -305,6 +333,7 @@ function DocInspector({ id, info, doc, now }: { id: string; info: DocInfo; doc: 
             <KV rows={[['passes', w.reps ?? 0], ['interval', `${w.ivl ?? 1} d`], growthRow(id, 'write', w), [w.done ? 'state' : 'due', w.done ? 'done' : dueLabel(w.due, now)]]} />
           </Block>
         )}
+        <Outline id={id} doc={doc} />
         <CardList title="cards" doc={doc} now={now} />
       </>
     );
@@ -339,6 +368,7 @@ function DocInspector({ id, info, doc, now }: { id: string; info: DocInfo; doc: 
           <button type="button" className="fr-toggle" onClick={() => toggleField(id, 'frozen', !info.frozen)}>{info.frozen ? 'thaw' : 'freeze'}</button>
         </div>
       </Block>
+      {!info.pdf && <Outline id={id} doc={doc} />}
       {extracts.length > 0 && (
         <Block title="extracts">
           <ul className="insp-cards">

@@ -32,6 +32,10 @@ import { clipboardText, pasteMarkdown } from './insert.js';
 import { slashPlugin } from './slash.js';
 import { markupSpans, strongDir, type Dir } from './direction.js';
 import { htmlMarkdown } from '../import/paste.js';
+import { codeTokens } from './highlight.js';
+import { foldKey, foldPlugin, type FoldMeta } from './fold.js';
+import { cellAt, cellBreak, cellDown, nextCell, prevCell, rowBelow, tablePlugin } from './table.js';
+import { langOf } from './schema.js';
 
 /** A code block's text is code: no chips, no markers, no marks. */
 const isCode = (node: PMNode): boolean => node.type.spec.code === true;
@@ -510,6 +514,18 @@ export function directionDecorations(doc: PMNode): DecorationSet {
       decos.push(Decoration.node(pos, pos + node.nodeSize, { dir: first ?? cur }));
       return;
     }
+    if (node.type === schema.nodes.table) {
+      // the table reads its first letter's way; each cell with a letter its own, the rest the table's
+      const d = take(node);
+      decos.push(Decoration.node(pos, pos + node.nodeSize, { dir: d }));
+      node.forEach((row, ro) => {
+        row.forEach((cell, co) => {
+          const at = pos + 1 + ro + 1 + co;
+          decos.push(Decoration.node(at, at + cell.nodeSize, { dir: strongDir(cell.textContent) ?? d }));
+        });
+      });
+      return;
+    }
     decos.push(Decoration.node(pos, pos + node.nodeSize, { dir: take(node) }));
     if (node.isTextblock) markup(node, pos);
   });
@@ -527,6 +543,32 @@ const direction = new Plugin<DecorationSet>({
   props: { decorations: (state): DecorationSet | null => directionKey.getState(state) ?? null },
 });
 
+// ── code coloured by its language ────────────────────────────────
+
+/** Every code block's runs as inline decorations, by the language its fence names (highlight.ts; cached per block's text). */
+export function codeDecorations(doc: PMNode): DecorationSet {
+  const decos: Decoration[] = [];
+  doc.descendants((node, pos) => {
+    if (node.type !== schema.nodes.code_block) return !node.isTextblock;
+    for (const t of codeTokens(node.textContent, langOf(node.attrs.fence as string))) {
+      decos.push(Decoration.inline(pos + 1 + t.from, pos + 1 + t.to, { class: t.cls }));
+    }
+    return false;
+  });
+  return DecorationSet.create(doc, decos);
+}
+
+export const codeKey = new PluginKey<DecorationSet>('code');
+
+const codeColours = new Plugin<DecorationSet>({
+  key: codeKey,
+  state: {
+    init: (_c, state) => codeDecorations(state.doc),
+    apply: (tr, cur) => (tr.docChanged ? codeDecorations(tr.doc) : cur),
+  },
+  props: { decorations: (state): DecorationSet | null => codeKey.getState(state) ?? null },
+});
+
 // ── keys ─────────────────────────────────────────────────────────
 
 const lineBreak: Command = (state, dispatch) => {
@@ -540,14 +582,14 @@ const keys = keymap({
   'Mod-z': undo,
   'Shift-Mod-z': redo,
   'Mod-y': redo,
-  'Shift-Enter': lineBreak,
-  Enter: chainCommands(openMath, fenceRule, displayMathRule((tr, pos) => tr.setMeta(mathEditKey, pos)), continueBlock),
-  'Mod-Enter': chainCommands(toggleTasks, exitCode),
+  'Shift-Enter': chainCommands(cellBreak, lineBreak),
+  Enter: chainCommands(cellDown, openMath, fenceRule, displayMathRule((tr, pos) => tr.setMeta(mathEditKey, pos)), continueBlock),
+  'Mod-Enter': chainCommands(rowBelow, toggleTasks, exitCode),
   // a rule just fired: Backspace puts the typed text back
   Backspace: chainCommands(undoRule, revealBackward, joinBlock, joinIntoList),
   Delete: revealForward,
-  Tab: indentBlock,
-  'Shift-Tab': outdentBlock,
+  Tab: chainCommands(nextCell, indentBlock),
+  'Shift-Tab': chainCommands(prevCell, outdentBlock),
 });
 
 /**
@@ -586,6 +628,8 @@ export function pasteInto(state: EditorState, data: { html: string; text: string
     const tr = pasteLink(state, data.text);
     if (tr) return tr.scrollIntoView();
   }
+  // a table's cell is one line: the text goes in as it is, its breaks as spaces
+  if (cellAt(state)) return data.text ? state.tr.insertText(data.text.replace(/\s*\n\s*/g, ' ').trim()).scrollIntoView() : null;
   const html = data.plain || data.html.includes('data-pm-slice') ? '' : data.html;
   const md = (html && htmlMarkdown(html)) || data.text;
   return md ? pasteMarkdown(state, md) : null;
@@ -624,13 +668,17 @@ export interface StateOptions {
   pos: number | null;
   /** Resolves the images the text names; none, and they stay unlooked-up. */
   images?: ImageLoader;
+  /** The keys of the headings folded when the page was last seen (fold.ts); view state, never in the file. */
+  folds?: readonly string[];
 }
 
 export function makeState(blocks: Block[], opts: StateOptions): EditorState {
+  const folds = opts.folds ?? [];
   const state = EditorState.create({
     doc: toDoc(blocks),
     // images before marks: the marks read the images' state as it is after the same transaction
-    plugins: [frozenPlugin(opts.frozen), slashPlugin({ openMath: (tr, pos) => tr.setMeta(mathEditKey, pos) }), findPlugin, rules, enterRules, formatKeys, keys, keymap(baseKeymap), history(), gapCursor(), mathReform, mathEdit, images(opts.images), marks, marker, direction],
+    plugins: [frozenPlugin(opts.frozen), slashPlugin({ openMath: (tr, pos) => tr.setMeta(mathEditKey, pos) }), findPlugin, rules, enterRules, formatKeys, keys, keymap(baseKeymap), history(), gapCursor(), mathReform, mathEdit, images(opts.images), marks, marker, direction, codeColours, foldPlugin, tablePlugin],
   });
-  return opts.pos === null ? state : state.apply(state.tr.setMeta(markerKey, opts.pos));
+  const read = opts.pos === null ? state : state.apply(state.tr.setMeta(markerKey, opts.pos));
+  return folds.length ? read.apply(read.tr.setMeta(foldKey, { keys: folds } satisfies FoldMeta)) : read;
 }

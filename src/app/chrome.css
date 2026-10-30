@@ -181,6 +181,22 @@
   margin: 0;
 }
 .insp .insp-cards { list-style: none; padding: 0; margin: 0; }
+/* the page's outline: its headings, a click brings one into view */
+.insp .insp-outline { list-style: none; padding: 0; margin: 0; }
+.insp .insp-outline li {
+  font-size: 11.5px;
+  line-height: 1.45;
+  padding: 2px 0;
+  color: var(--fg-3);
+  cursor: default;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  padding-block: 4px;
+  margin-block: -2px;
+}
+.insp .insp-outline li[data-level="1"] { color: var(--fg-2); }
+.insp .insp-outline li:hover { color: var(--fg-1); }
 .insp .insp-cards li {
   display: grid;
   grid-template-columns: 1fr auto;

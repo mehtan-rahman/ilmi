@@ -5,6 +5,7 @@
 // byte for byte, so a block the pair cannot round trip stays a raw atom.
 
 import type { Node as PMNode } from 'prosemirror-model';
+import { readTable, writeTable, type Align, type TableBlock } from './blocks.js';
 import { inline, textOf } from './convert.js';
 import { schema } from './schema.js';
 
@@ -74,12 +75,35 @@ function listNode(lines: string[]): PMNode | null {
   return schema.nodes.list!.create(null, items.map((it) => schema.nodes.list_item!.create({ indent: it.indent, marker: it.marker, task: it.task }, inline(it.lines.join('\n')))));
 }
 
+/** A pipe table: a row per line, a cell per column, the column's alignment on each of its cells; the text kept as `src`. */
+function tableNode(text: string): PMNode | null {
+  const t = readTable(text);
+  if (!t) return null;
+  const rows = [t.head, ...t.rows].map((r) => schema.nodes.table_row!.create(null, r.map((c, i) => schema.nodes.table_cell!.create({ align: t.align[i] ?? null }, inline(c)))));
+  return schema.nodes.table!.create({ src: text }, rows);
+}
+
+/** A table node's cells, trimmed, and its alignment, read off the header row. */
+export function tableOf(node: PMNode): TableBlock {
+  const rows: string[][] = [];
+  const align: Align[] = [];
+  node.forEach((row, _o, r) => {
+    const cs: string[] = [];
+    row.forEach((cell) => {
+      cs.push(textOf(cell).replace(/[ \t]*\n[ \t]*/g, ' ').trim());
+      if (r === 0) align.push((cell.attrs.align as Align) ?? null);
+    });
+    rows.push(cs);
+  });
+  return { kind: 'table', align, head: rows[0] ?? [], rows: rows.slice(1) };
+}
+
 /** The node a raw block's text is edited as, or null when it stays a raw atom (a table, a rule, HTML, a shape the pair cannot put back). */
 export function rawToNode(text: string): PMNode | null {
   const lines = text.split('\n');
   if (!lines[0]) return null;
   if (lines.length === 1 && THEMATIC.test(lines[0])) return null;
-  const node = codeNode(lines) ?? quoteNode(lines) ?? listNode(lines);
+  const node = codeNode(lines) ?? quoteNode(lines) ?? listNode(lines) ?? tableNode(text);
   return node && nodeToRaw(node) === text ? node : null;
 }
 
@@ -94,7 +118,7 @@ export function itemLines(item: PMNode): string {
   return indent + marker + (task === null ? '' : `[${task}] `) + textOf(item).split('\n').map((l, i) => (i ? col + l : l)).join('\n');
 }
 
-/** The raw block a code, list, or quote node writes back as. */
+/** The raw block a code, list, quote, or table node writes back as. */
 export function nodeToRaw(node: PMNode): string {
   switch (node.type.name) {
     case 'code_block': {
@@ -111,13 +135,24 @@ export function nodeToRaw(node: PMNode): string {
       node.forEach((line) => lines.push((line.attrs.prefix as string) + textOf(line)));
       return lines.join('\n');
     }
+    case 'table': {
+      // untouched, the table goes back as it was written; changed, as the normalized pipe table
+      const t = tableOf(node);
+      const src = node.attrs.src as string | null;
+      if (src !== null) {
+        const was = readTable(src);
+        if (was && JSON.stringify(was) === JSON.stringify(t)) return src;
+      }
+      return writeTable(t);
+    }
     default:
       throw new Error(`not a raw node: ${node.type.name}`);
   }
 }
 
 /** Is this a node the pair writes back as a raw block? */
-export const isRawNode = (node: PMNode): boolean => node.type === schema.nodes.code_block || node.type === schema.nodes.list || node.type === schema.nodes.quote;
+export const isRawNode = (node: PMNode): boolean =>
+  node.type === schema.nodes.code_block || node.type === schema.nodes.list || node.type === schema.nodes.quote || node.type === schema.nodes.table;
 
 // ── markers ──────────────────────────────────────────────────────
 

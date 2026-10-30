@@ -179,7 +179,10 @@ function onEvent(vault: Vault, ev: VaultEvent): void {
       const railFolded = rekeyOpen(s.railFolded, ev.from, ev.to);
       const views: Record<string, DeckView> = {};
       for (const [k, v] of Object.entries(s.deckViews)) views[rekey(k, ev.from, ev.to) ?? k] = v;
-      useApp.setState({ docs, open: rekeyOpen(s.open, ev.from, ev.to), panes: retarget(s.panes, ev.from, ev.to), railFolded, deckViews: views });
+      const folds: Record<string, string[]> = {};
+      for (const [k, v] of Object.entries(s.folds)) folds[rekey(k, ev.from, ev.to) ?? k] = v;
+      useApp.setState({ docs, open: rekeyOpen(s.open, ev.from, ev.to), panes: retarget(s.panes, ev.from, ev.to), railFolded, deckViews: views, folds });
+      if (Object.keys(s.folds).some((k) => rekey(k, ev.from, ev.to) !== null)) queueSave({ folds });
       if (Object.keys(s.railFolded).some((k) => rekey(k, ev.from, ev.to) !== null)) queueSave({ rails: Object.keys(railFolded) });
       break;
     }
@@ -226,6 +229,7 @@ export async function openVault(path: string): Promise<Vault> {
   useApp.setState({
     open, sidebar, inspector, panes, docs: {}, queue: [], budget: cleanBudget(state.budget), clipDir: cleanClipDir(state.clippings), log: [], session: null, sessionEl: null, selectedCard: null, reveal: null,
     started: true, newVaultIn: null, gone: s0.gone.filter((p) => p !== path), notice: null, fileOver: null, intakeFiles: [], order: vault.order, railFolded, railWidth: clampRail(state.railWidth ?? RAIL_DEFAULT), deckViews: cleanViews(state.decks),
+    folds: cleanFolds(state.folds),
   });
   s0.setRecents(addRecent(s0.recents, path, new Date()));
   setWindowTitle(vaultName(path));
@@ -245,7 +249,7 @@ export function closeVault(): void {
   current = null;
   bodies.clear();
   if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; savePatch = {}; }
-  useApp.setState({ vault: null, files: [], tree: [], docs: {}, open: { '': true }, panes: emptyPanes(), queue: [], log: [], session: null, sessionEl: null, selectedCard: null, reveal: null, paletteOpen: false, intakeDir: '', notice: null, fileOver: null, intakeFiles: [], order: {}, railFolded: {}, deckViews: {} });
+  useApp.setState({ vault: null, files: [], tree: [], docs: {}, open: { '': true }, panes: emptyPanes(), queue: [], log: [], session: null, sessionEl: null, selectedCard: null, reveal: null, paletteOpen: false, intakeDir: '', notice: null, fileOver: null, intakeFiles: [], order: {}, railFolded: {}, deckViews: {}, folds: {} });
   setWindowTitle(null);
 }
 
@@ -354,8 +358,8 @@ export function openInitialVault(): Promise<void> {
       if (path) {
         const vault = await openVault(path);
         if (mode) {
-          const { smoke, smokeReader, smokeCards, smokeIntake, smokeQueue, smokeLoop, smokeShots, smokeDeck, smokePri, smokeGrowth, smokeOverload, smokePdf, smokeFaces, smokeCardsText, smokeAnki, smokeMath, smokeEpub, smokeClip, smokeClipping, smokePlugins, smokeDictionary, smokeRender, smokeLive, smokeBlocks, smokeUse, smokeLand, smokeNest, smokeTabs, smokeDecks, smokeTour, smokeNotes, smokeEditing, smokeTree, smokeInsert, smokeTabs2, smokeListCards, smokeArabic } = await import('./smoke.js');
-          const run = { reader: smokeReader, cards: smokeCards, intake: smokeIntake, queue: smokeQueue, loop: smokeLoop, shots: smokeShots, deck: smokeDeck, pri: smokePri, growth: smokeGrowth, overload: smokeOverload, pdf: smokePdf, faces: smokeFaces, 'cards-text': smokeCardsText, anki: smokeAnki, math: smokeMath, epub: smokeEpub, clip: smokeClip, clipping: smokeClipping, plugins: smokePlugins, dictionary: smokeDictionary, render: smokeRender, live: smokeLive, blocks: smokeBlocks, use: smokeUse, land: smokeLand, nest: smokeNest, tabs: smokeTabs, decks: smokeDecks, tour: smokeTour, notes: smokeNotes, editing: smokeEditing, tree: smokeTree, insert: smokeInsert, tabs2: smokeTabs2, listcards: smokeListCards, arabic: smokeArabic }[mode] ?? smoke;
+          const { smoke, smokeReader, smokeCards, smokeIntake, smokeQueue, smokeLoop, smokeShots, smokeDeck, smokePri, smokeGrowth, smokeOverload, smokePdf, smokeFaces, smokeCardsText, smokeAnki, smokeMath, smokeEpub, smokeClip, smokeClipping, smokePlugins, smokeDictionary, smokeRender, smokeLive, smokeBlocks, smokeUse, smokeLand, smokeNest, smokeTabs, smokeDecks, smokeTour, smokeNotes, smokeEditing, smokeTree, smokeInsert, smokeTabs2, smokeListCards, smokeArabic, smokeRest } = await import('./smoke.js');
+          const run = { reader: smokeReader, cards: smokeCards, intake: smokeIntake, queue: smokeQueue, loop: smokeLoop, shots: smokeShots, deck: smokeDeck, pri: smokePri, growth: smokeGrowth, overload: smokeOverload, pdf: smokePdf, faces: smokeFaces, 'cards-text': smokeCardsText, anki: smokeAnki, math: smokeMath, epub: smokeEpub, clip: smokeClip, clipping: smokeClipping, plugins: smokePlugins, dictionary: smokeDictionary, render: smokeRender, live: smokeLive, blocks: smokeBlocks, use: smokeUse, land: smokeLand, nest: smokeNest, tabs: smokeTabs, decks: smokeDecks, tour: smokeTour, notes: smokeNotes, editing: smokeEditing, tree: smokeTree, insert: smokeInsert, tabs2: smokeTabs2, listcards: smokeListCards, arabic: smokeArabic, rest: smokeRest }[mode] ?? smoke;
           await run(vault);
         }
         return;
@@ -475,6 +479,30 @@ export function setBudget(n: number): void {
   const budget = cleanBudget(n);
   useApp.setState({ budget });
   queueSave({ budget });
+}
+
+/** Folds as read from `.ilmi/state.json`: a list of strings per path, anything else dropped. */
+export function cleanFolds(raw: unknown): Record<string, string[]> {
+  const out: Record<string, string[]> = {};
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (!Array.isArray(v)) continue;
+    const keys = v.filter((x): x is string => typeof x === 'string');
+    if (keys.length) out[k] = keys;
+  }
+  return out;
+}
+
+/** The headings folded in document `path`'s reader, by key; kept with the vault's other view state, never in the file. */
+export function setFolds(path: string, keys: readonly string[]): void {
+  const cur = useApp.getState().folds;
+  const was = cur[path] ?? [];
+  if (was.length === keys.length && was.every((k, i) => k === keys[i])) return;
+  const folds = { ...cur };
+  if (keys.length) folds[path] = [...keys];
+  else delete folds[path];
+  useApp.setState({ folds });
+  queueSave({ folds });
 }
 
 /** The deck browser's chips and sort for the lens `id`; kept with the vault's other view state. */

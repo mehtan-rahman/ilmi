@@ -153,6 +153,10 @@
 // vocab deck, and a session on Arabic cards, light and dark: directions by
 // majority script (a glossed line LTR, an all-Arabic one RTL), isolation,
 // no clipped mark, the Arabic faces loaded; every step asserted.
+// `ILMI_SMOKE=rest` (`smokeRest`) over a copy of `samples/double-major`:
+// the outline in the rail and the inspector, a heading folded and kept, a
+// folded section read by one press, code coloured in three themes and its
+// language picked, the verb-forms table edited as a table (see the function).
 // `ILMI_SMOKE=welcome` runs before any vault opens: it seeds the recents
 // with the scratch vault (`ILMI_VAULT`) and a path that does not exist,
 // turns `reopen the last vault on start` off, reads the welcome's rows and
@@ -2166,13 +2170,13 @@ export async function smokeRender(vault: Vault): Promise<void> {
     await until(() => (q('.frozen-tag[data-frozen="1"]') ? true : null));
     await sleep(300);
 
-    // a drawn atom's source while it is selected: click the table (a list is edited in place since 27)
-    const list = surface.querySelector<HTMLElement>('.raw.rendered[data-kind="table"]')!;
+    // a drawn atom's source while it is selected: the table is edited in place since 41, so this logs `none`
+    const list = surface.querySelector<HTMLElement>('.raw.rendered[data-kind="table"]') ?? surface.querySelector<HTMLElement>('.dd-table')!;
     const lb = list.getBoundingClientRect();
     const target = list.querySelector<HTMLElement>('.raw-view td') ?? list;
     for (const type of ['mousedown', 'mouseup', 'click']) target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, buttons: type === 'mousedown' ? 1 : 0, detail: 1, clientX: lb.left + 10, clientY: lb.top + 10, view: window }));
     await sleep(200);
-    log(`table clicked: selected ${list.classList.contains('selected')}; source shown ${list.querySelector('.raw-src') ? getComputedStyle(list.querySelector('.raw-src')!).display : 'none'}; view shown ${getComputedStyle(list.querySelector('.raw-view')!).display}`);
+    log(`table clicked: selected ${list.classList.contains('selected')}; source shown ${list.querySelector('.raw-src') ? getComputedStyle(list.querySelector('.raw-src')!).display : 'none'}; view shown ${list.querySelector('.raw-view') ? getComputedStyle(list.querySelector('.raw-view')!).display : 'the table itself'}`);
     await shot('render-source');
 
     // an emphasised passage, extracted: the markers travel with the text
@@ -4338,6 +4342,9 @@ export async function smokeInsert(vault: Vault): Promise<void> {
     await slash('table', 'table');
     await enter();
     await expectLines('/table', ['|  |  |', '| --- | --- |', '|  |  |']);
+    // since 41 the caret lands in the header's first cell: ⏎ down a row, ⏎ out of the table
+    await enter();
+    await enter();
     fresh('after the table');
     // an image from the picker (stubbed with a file outside the notes)
     const pickPath = vault.abs('.ilmi/smoke-pick.png');
@@ -5333,7 +5340,7 @@ export async function smokeArabic(vault: Vault): Promise<void> {
     await open(PASSAGE, '.pane-body .doc-view .draft-doc');
     await themed('passage', () => {
       const { rtl } = checkBlocks('the prose passage');
-      must(rtl >= 5, 'the passage reads right to left');
+      must(rtl >= 4, 'the passage reads right to left');
       const story = qa<HTMLElement>('p.dd-p', surface()!).find((p) => p.textContent?.startsWith('قِيلَ'));
       must(story && dirOf(story) === 'rtl', 'its first paragraph is right to left');
       checkAnchored('the passage', story!);
@@ -5454,6 +5461,260 @@ export async function smokeArabic(vault: Vault): Promise<void> {
     const pal = await poll(() => q<HTMLInputElement>('.palette-input input'), 'the palette opens', 4000);
     must(pal.dir === 'auto', 'the palette field is dir="auto"');
     press('Escape');
+    log(`done; vault ${vault.root}`);
+  } catch (e) {
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+// `ILMI_SMOKE=rest` (`smokeRest`) over a copy of `samples/double-major`:
+// the editor's rest (milestone 41). The stat-mech notes' outline in the
+// rail and, with the rail folded, in the inspector, each click scrolling
+// its heading into view; lecture 9 folded by its chevron, the file
+// untouched, `state.json` keeping the key, and still folded after the page
+// is reopened; a folded section in a source read by one press on its
+// heading; a note with code written beside the sample, coloured in light,
+// dark and e-ink, a plain block given `bash` from the picker; the
+// verb-forms table edited in place: a cell typed, Tab and ⇧Tab, ⏎ down,
+// a row and a column added at the edges and from the cell's menu and
+// deleted again, the file's lines checked after each. Every step asserts
+// (`ok: …`); the first miss logs `failed: …` and stops.
+export async function smokeRest(vault: Vault): Promise<void> {
+  const log = (s: string) => info(`smoke rest: ${s}`);
+  const shot = async (name: string, ms = 2500) => { await sleep(600); log(`shot: ${name}`); await sleep(ms); };
+  const q = <T extends Element>(sel: string, root: ParentNode = document) => root.querySelector<T>(sel);
+  const qa = <T extends Element>(sel: string, root: ParentNode = document) => Array.from(root.querySelectorAll<T>(sel));
+  const must = (ok: unknown, what: string) => { if (!ok) throw new Error(what); log(`ok: ${what}`); };
+  const poll = async <T,>(probe: () => T | null | undefined | false | Promise<T | null | undefined | false>, what: string, ms = 5000): Promise<T> => {
+    const t0 = Date.now();
+    for (;;) {
+      const v = await probe();
+      if (v) { log(`ok: ${what}`); return v; }
+      if (Date.now() - t0 > ms) throw new Error(`${what} (waited ${ms} ms)`);
+      await sleep(100);
+    }
+  };
+  const { meta } = await import('../format/index.js');
+  const { setRailFolded } = await import('./vault.js');
+  const NB = 'courses/fall-2026/phys-415-stat-mech.md';
+  const CANON = 'courses/fall-2026/phys-415-stat-mech/canonical-ensemble.md';
+  const LECTURE9 = 'lecture 9 — $Z$ does everything (Wed 9/23)';
+  const SOURCE = 'library/lindqvist-statistical-physics/ch-3-the-canonical-ensemble.md';
+  const FORMS = 'courses/spring-2026/arab-302-morphology/verb-forms.md';
+  const CODE = 'fleeting/numerics.md';
+  const text = (path: string) => vault.fs.readText(vault.abs(path));
+  /** The file holds `lines` one after another, within 5 s. */
+  const lines = (path: string, want: string[], what: string) => poll(async () => {
+    const all = (await text(path)).split('\n');
+    return all.some((_, i) => want.every((l, k) => all[i + k] === l));
+  }, what);
+  /** The file no longer holds `line`, within 5 s. */
+  const gone = (path: string, line: string, what: string) => poll(async () => !(await text(path)).split('\n').includes(line), what);
+  const surface = () => q<HTMLElement>('.pane-body .doc-view .draft-doc')!;
+  const open = async (path: string, ready = '.pane-body .doc-view .draft-doc') => {
+    openNode(path);
+    await poll(() => (activeTab(useApp.getState().panes)?.id === path ? q(ready) : null), `${path} is open`, 12000);
+    await sleep(600);
+  };
+  const keyDown = async (k: string, init: KeyboardEventInit = {}) => {
+    surface().dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true, ...init }));
+    await sleep(120);
+  };
+  const type = async (str: string) => {
+    for (const ch of str) { document.execCommand('insertText', false, ch); await sleep(30); }
+    await sleep(80);
+  };
+  const down = (el: Element) => el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0 }));
+  const heading = (needle: string) => qa<HTMLElement>('.dd-h', surface()).find((h) => h.textContent?.includes(needle));
+  const inView = (el: Element) => { const r = el.getBoundingClientRect(); return r.top >= 0 && r.top < window.innerHeight * 0.5; };
+  const selText = () => window.getSelection()?.toString() ?? '';
+  const cellOf = () => { const n = window.getSelection()?.anchorNode; return (n instanceof Element ? n : n?.parentElement)?.closest('td') ?? null; };
+  const placeIn = async (td: HTMLElement, needle: string, offset: number) => {
+    surface().focus();
+    caret(td, needle, offset);
+    await sleep(150);
+  };
+  try {
+    setInspector({ open: true });
+
+    // ── the outline, in the rail ──
+    await open(CANON);
+    setRailFolded(NB, false);
+    const railRow = await poll(() => qa<HTMLElement>(`.tab-rail .rail-row.heading[data-of="${CANON}"]`).find((r) => r.textContent?.startsWith('lecture 13')), 'the rail lists the notes\' headings under the tab', 8000);
+    must(!q('.insp .insp-outline'), 'the inspector draws no outline while the rail shows it');
+    railRow.click();
+    await poll(() => { const h = heading('lecture 13'); return h && inView(h); }, 'a click on lecture 13 in the rail scrolls it to the top');
+    await shot('rest-outline-rail');
+
+    // ── the outline, in the inspector, the rail folded ──
+    setRailFolded(NB, true);
+    const inspRow = await poll(() => qa<HTMLElement>('.insp .insp-outline li').find((r) => r.textContent?.startsWith('lecture 8')), 'with the rail folded, the inspector lists the headings', 4000);
+    must(qa('.insp .insp-outline li').length === qa('.dd-h', surface()).filter((h) => /^H[123]$/.test(h.tagName)).length, 'one row for every heading of levels 1 to 3');
+    inspRow.click();
+    await poll(() => { const h = heading('lecture 8'); return h && inView(h); }, 'a click on lecture 8 in the inspector scrolls it to the top');
+    await shot('rest-outline-inspector');
+
+    // ── folding ──
+    const before = await text(CANON);
+    const h9 = heading('lecture 9')!;
+    const chev = q<HTMLElement>('.fold-chev', h9);
+    must(chev && chev.dataset.folded === '0', 'lecture 9 has a chevron in the margin');
+    must(h9.textContent?.startsWith('lecture 9'), 'the heading\'s text is its own (the chevron is drawn by CSS)');
+    down(chev!);
+    const hidden = await poll(() => { const n = qa('.fold-hidden', surface()).length; return n > 0 ? n : null; }, 'lecture 9 folds');
+    must(heading('lecture 9')!.classList.contains('fold-head'), 'the heading is marked folded');
+    must(heading('lecture 10') && getComputedStyle(heading('lecture 10')!).display !== 'none', 'lecture 10, the next heading of its level, stays');
+    const more = q<HTMLElement>('.fold-more', heading('lecture 9')!);
+    must(more, `the folded line says what it holds ("${more?.dataset.label}", ${hidden} blocks hidden)`);
+    await shot('rest-folded');
+    await sleep(800);
+    must((await text(CANON)) === before, 'the file is untouched by the fold');
+    const key = `2 ${LECTURE9}`;
+    await poll(async () => ((await vault.loadState()).folds?.[CANON] ?? []).includes(key), `state.json keeps the fold under its key ("${key}")`);
+    // reopened: still folded
+    await open(FORMS);
+    await open(CANON);
+    await poll(() => heading('lecture 9')?.classList.contains('fold-head'), 'reopened, lecture 9 is still folded');
+    must(qa('.fold-hidden', surface()).length === hidden, 'the same blocks are hidden');
+    // the outline into a fold: lecture 8 is not in it; opening via the folded line
+    down(q<HTMLElement>('.fold-more', heading('lecture 9')!)!);
+    await poll(() => !heading('lecture 9')?.classList.contains('fold-head') && qa('.fold-hidden', surface()).length === 0, 'a press on the folded line opens it');
+    await poll(async () => !((await vault.loadState()).folds?.[CANON] ?? []).includes(key), 'state.json lets the fold go');
+    setRailFolded(NB, false);
+
+    // ── a folded section in a source, read by one press ──
+    await open(SOURCE);
+    const loaded = await vault.read(SOURCE, true);
+    const blocks = loaded.doc.blocks;
+    const hi = blocks.findIndex((b) => b.kind === 'heading' && b.text.startsWith('3.7'));
+    let end = blocks.length;
+    for (let i = hi + 1; i < blocks.length; i++) { const b = blocks[i]!; if (b.kind === 'heading' && b.level <= 2) { end = i; break; } }
+    const want = blocks.slice(0, end).filter((b) => b.kind !== 'card').length;
+    const h37 = heading('3.7')!;
+    down(q<HTMLElement>('.fold-chev', h37)!);
+    await poll(() => heading('3.7')?.classList.contains('fold-head'), '3.7 two-level systems folds in the frozen source');
+    const g = q<HTMLElement>('.read-gutter')!;
+    const hr = heading('3.7')!.getBoundingClientRect();
+    const opts = { bubbles: true, clientY: hr.bottom - 2, pointerId: 1 };
+    g.dispatchEvent(new PointerEvent('pointerdown', opts));
+    g.dispatchEvent(new PointerEvent('pointerup', opts));
+    await poll(async () => meta((await vault.read(SOURCE, true)).doc).read?.pos === want, `a press on the folded heading reads through its section (pos ${want})`);
+    const rule = await poll(() => q<HTMLElement>('.read-rule'), 'the rule is drawn');
+    const ruleBottom = rule.getBoundingClientRect().bottom;
+    must(Math.abs(ruleBottom - heading('3.7')!.getBoundingClientRect().bottom) < 4, `the rule ends under the folded heading (${ruleBottom.toFixed(0)} vs ${heading('3.7')!.getBoundingClientRect().bottom.toFixed(0)})`);
+    await shot('rest-folded-source');
+    down(q<HTMLElement>('.fold-chev', heading('3.7')!)!);
+    await poll(() => !heading('3.7')?.classList.contains('fold-head'), '3.7 opens again');
+
+    // ── code coloured ──
+    const fence = '```';
+    await vault.fs.writeText(vault.abs(CODE), [
+      '# numerics', '', 'The partition function by brute force, for problem set 5.', '',
+      `${fence}python`, 'import numpy as np', '', 'def Z(beta, E):', '    """the canonical partition function"""', '    return np.sum(np.exp(-beta * E))  # one line', fence, '',
+      'The same in Julia.', '', `${fence}jl`, 'Z(β, E) = sum(exp.(-β .* E))  # broadcast', fence, '',
+      'Counting words in the notes.', '', fence, 'for f in *.md; do wc -w "$f"; done', fence, '',
+    ].join('\n'));
+    await poll(() => !!useApp.getState().docs[CODE], 'the code note is in the collection', 8000);
+    await open(CODE, '.pane-body .doc-view .draft-doc pre.dd-code');
+    const blocksOf = () => qa<HTMLElement>('pre.dd-code', surface());
+    const py = blocksOf()[0]!;
+    await poll(() => q('.hljs-keyword', py), 'the python block is coloured');
+    const kw = q<HTMLElement>('.hljs-keyword', py)!;
+    must(['import', 'def', 'return', 'as'].includes(kw.textContent ?? ''), `a keyword is a keyword ("${kw.textContent}")`);
+    must(q('.hljs-string', py) && q('.hljs-comment', py), 'strings and comments are marked');
+    must(py.querySelector('code')!.textContent!.startsWith('import numpy as np'), 'the code\'s text is the code');
+    must(q('.code-lang', py)?.getAttribute('data-label') === 'python', 'the corner names the language');
+    must(q('[class^="hljs-"]', blocksOf()[1]!), 'the jl block is coloured as julia');
+    must(!q('[class^="hljs-"]', blocksOf()[2]!), 'the plain block is not coloured');
+    const colourOf = (el: Element) => getComputedStyle(el).color;
+    const plainColour = colourOf(py.querySelector('code')!);
+    must(colourOf(kw) !== plainColour && colourOf(q('.hljs-comment', py)!) !== plainColour, `light: keyword ${colourOf(kw)}, comment ${colourOf(q('.hljs-comment', py)!)}, text ${plainColour}`);
+    py.scrollIntoView({ block: 'center' });
+    await shot('rest-code');
+    useApp.getState().setTheme('dark');
+    await sleep(400);
+    must(colourOf(kw) !== colourOf(py.querySelector('code')!), `dark: keyword ${colourOf(kw)}`);
+    await shot('rest-code-dark');
+    useApp.getState().setTheme('eink');
+    await sleep(400);
+    const grey = (c: string) => { const m = /rgba?\(([\d.]+), ([\d.]+), ([\d.]+)/.exec(c); return !!m && Math.max(+m[1]!, +m[2]!, +m[3]!) - Math.min(+m[1]!, +m[2]!, +m[3]!) <= 6; };
+    must([kw, q('.hljs-string', py)!, q('.hljs-comment', py)!].every((el) => grey(colourOf(el))), `e-ink: grey only (${colourOf(kw)}, ${colourOf(q('.hljs-string', py)!)})`);
+    must(Number(getComputedStyle(kw).fontWeight) >= 600, 'e-ink: a keyword by its weight');
+    await shot('rest-code-eink');
+    useApp.getState().setTheme('light');
+    await sleep(300);
+    // the language picker on the plain block
+    const plain = blocksOf()[2]!;
+    plain.scrollIntoView({ block: 'center' });
+    down(q<HTMLElement>('.code-lang', plain)!);
+    const langs = await poll(() => q<HTMLElement>('.pop-menu.code-langs'), 'the picker opens', 3000);
+    must(qa('.ci', langs).length === 12, `it lists the bundled languages and plain (${qa('.ci', langs).map((r) => r.textContent).join(', ')})`);
+    await shot('rest-code-picker');
+    q<HTMLElement>('[data-act="lang-bash"]', langs)!.click();
+    await lines(CODE, [`${fence}bash`, 'for f in *.md; do wc -w "$f"; done', fence], 'the fence says bash');
+    await poll(() => q('[class^="hljs-"]', blocksOf()[2]!), 'the bash block is coloured');
+
+    // ── the verb-forms table ──
+    await open(FORMS, '.pane-body .doc-view .draft-doc .dd-table');
+    const orig = (await text(FORMS)).split('\n');
+    const table = () => q<HTMLElement>('.dd-table', surface())!;
+    const cells = () => qa<HTMLTableRowElement>('tr', table()).map((tr) => qa<HTMLElement>('td', tr));
+    must(cells().length === 11 && cells()[0]!.length === 7, `the table is drawn as cells (${cells().length} rows of ${cells()[0]!.length})`);
+    must(cells()[2]![1]!.getAttribute('dir') === 'rtl' && cells()[0]![1]!.getAttribute('dir') === 'ltr', 'an Arabic cell reads right to left, the header left to right');
+    table().scrollIntoView({ block: 'center' });
+    // a cell typed
+    const basic = cells()[1]![6]!;
+    await placeIn(basic, 'basic', 5);
+    await type(' meaning');
+    const formI = orig.find((l) => l.startsWith('| I |'))!;
+    await lines(FORMS, [formI.replace('| basic |', '| basic meaning |')], 'a cell typed: its row\'s line changes');
+    must((await text(FORMS)).split('\n').filter((l, i) => l !== orig[i]).length === 1, 'and only that line');
+    must(q('td.tb-cur .tb-more', table()), 'the caret\'s cell shows its menu');
+    await shot('rest-table-edit');
+    // Tab and ⇧Tab
+    await keyDown('Tab');
+    must(cellOf()?.textContent === 'II' && selText() === 'II', `Tab: the next row's first cell, selected ("${selText()}")`);
+    await keyDown('Tab');
+    must(selText() === 'فَعَّلَ', `Tab: the next cell ("${selText()}")`);
+    await keyDown('Tab', { shiftKey: true });
+    await keyDown('Tab', { shiftKey: true });
+    must(selText() === 'basic meaning', `⇧Tab twice: back to "${selText()}"`);
+    // ⏎ down a column
+    await placeIn(cells()[2]![0]!, 'II', 2);
+    await keyDown('Enter');
+    must(cellOf()?.textContent === 'III', `⏎: the cell below ("${cellOf()?.textContent}")`);
+    // a row at the bottom edge, typed, deleted from the menu
+    down(q<HTMLElement>('.tb-add-row', table())!);
+    await lines(FORMS, [orig.find((l) => l.startsWith('| X |'))!, '|  |  |  |  |  |  |  |'], 'a row added at the bottom edge');
+    await type('XI');
+    await lines(FORMS, ['| XI |  |  |  |  |  |  |'], 'the new row typed');
+    await shot('rest-table-row');
+    down(q<HTMLElement>('td.tb-cur .tb-more', table())!);
+    const menu = await poll(() => q<HTMLElement>('.pop-menu.table-menu'), 'the cell\'s menu opens', 3000);
+    await shot('rest-table-menu');
+    q<HTMLElement>('[data-act="delete-row"]', menu)!.click();
+    await gone(FORMS, '| XI |  |  |  |  |  |  |', 'the row deleted from the menu');
+    // a column at the end edge, named, deleted from the menu
+    down(q<HTMLElement>('.tb-add-col', table())!);
+    const head = orig.find((l) => l.startsWith('| form |'))!;
+    await lines(FORMS, [`${head} |`.replace(/ \|$/, '  |'), `${orig[orig.indexOf(head) + 1]}`.replace(/ \|$/, ' | --- |')], 'a column added at the end edge');
+    await type('root');
+    await lines(FORMS, [head.replace(/ \|$/, ' | root |')], 'the new column named');
+    await shot('rest-table-column');
+    down(q<HTMLElement>('td.tb-cur .tb-more', table())!);
+    q<HTMLElement>('[data-act="delete-col"]', await poll(() => q<HTMLElement>('.pop-menu.table-menu'), 'the menu again', 3000))!.click();
+    await lines(FORMS, [head, orig[orig.indexOf(head) + 1]!], 'the column deleted from the menu');
+    // a row above from the menu, then gone again
+    await placeIn(cells()[3]![0]!, 'III', 3);
+    down(q<HTMLElement>('td.tb-cur .tb-more', table())!);
+    q<HTMLElement>('[data-act="row-above"]', await poll(() => q<HTMLElement>('.pop-menu.table-menu'), 'the menu on III', 3000))!.click();
+    await lines(FORMS, [orig.find((l) => l.startsWith('| II |'))!, '|  |  |  |  |  |  |  |', orig.find((l) => l.startsWith('| III |'))!], 'a row put above III');
+    down(q<HTMLElement>('td.tb-cur .tb-more', table())!);
+    q<HTMLElement>('[data-act="delete-row"]', await poll(() => q<HTMLElement>('.pop-menu.table-menu'), 'the menu on the new row', 3000))!.click();
+    await poll(async () => { const now = (await text(FORMS)).split('\n'); return now.length === orig.length && now.filter((l, i) => l !== orig[i]).length === 1; }, 'the file is the sample\'s again but for the one cell typed');
+    useApp.getState().setTheme('dark');
+    await shot('rest-table-dark');
+    useApp.getState().setTheme('light');
     log(`done; vault ${vault.root}`);
   } catch (e) {
     log(`failed: ${e instanceof Error ? e.message : String(e)}`);

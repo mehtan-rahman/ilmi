@@ -41,6 +41,7 @@ import { NodeMenu, menuAt, placeMenu, type MenuAt } from './NodeMenu.js';
 import type { OpenOpts } from './panes.js';
 import { deleteNode } from './remove.js';
 import { useApp } from './store.js';
+import { goToHeading } from './headings.js';
 import { RAIL_INDENT, RAIL_PAD, TAB_DEPTH, notebookPages, outline, railKeyPlace, railPad, railRows, stepPage, tabAncestors, type RailRow } from './tabs.js';
 import { treeKey, typeahead } from './treeModel.js';
 import { useDoc } from './useDoc.js';
@@ -181,6 +182,8 @@ export function Notebook({ nb, page, active, onOpen, children }: Props) {
   const loaded = useDoc(readerPage ? page : null);
   const heads = useMemo(() => (readerPage && loaded?.path === page ? outline(loaded.doc.blocks) : []), [readerPage, loaded, page]);
   const scrollTo = (index: number) => {
+    // the page's reader shows it, opening a fold it is in; else the nth drawn heading
+    if (goToHeading(page, index)) return;
     const hs = navRef.current?.parentElement?.querySelectorAll<HTMLElement>('.nb-page .dd-h');
     hs?.[index]?.scrollIntoView?.({ block: 'start' });
   };

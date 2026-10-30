@@ -116,7 +116,8 @@ export function fromDoc(doc: PMNode): Block[] {
       case 'raw':
       case 'code_block':
       case 'list':
-      case 'quote': {
+      case 'quote':
+      case 'table': {
         const raw: Raw = { kind: 'raw', text: node.type.name === 'raw' ? node.attrs.text as string : nodeToRaw(node) };
         if (node.attrs.joined === true) raw.joined = true;
         out.push(raw);

@@ -235,17 +235,15 @@ describe('markdown drawn as markdown', () => {
     view.destroy();
   });
 
-  it('draws each block form: the list as items beside their markers, the code a pre with the language, the quote its lines, the table an atom, the image an img', async () => {
+  it('draws each block form: the list as items beside their markers, the code a pre with the language, the quote its lines, the table its cells, the image an img', async () => {
     const blocks = await sampler();
     const view = mount(blocks, true, loader(await dataUrl()));
     await tick();
     const dom = view.dom;
     expect(dom.children).toHaveLength(blocks.length);
     expect(dom.querySelector('h2.dd-h')?.textContent).toBe('a sampler of markdown');
-    // only the table is still an atom
-    const atoms = Array.from(dom.querySelectorAll<HTMLElement>('.raw.rendered'));
-    expect(atoms.map((a) => a.dataset.kind)).toEqual(['table']);
-    for (const a of atoms) expect(a.getAttribute('contenteditable')).toBe('false');
+    // no block of the sampler is an atom any more: the table is edited as a table (milestone 41)
+    expect(dom.querySelectorAll('.raw.rendered')).toHaveLength(0);
     const lists = Array.from(dom.querySelectorAll<HTMLElement>('.dd-list'));
     expect(lists).toHaveLength(2);
     const items = (l: HTMLElement) => Array.from(l.querySelectorAll<HTMLElement>('.dd-li'));
@@ -267,15 +265,17 @@ describe('markdown drawn as markdown', () => {
     expect(code.querySelector('code')?.className).toBe('language-js');
     expect(code.textContent).toBe('const due = schedule(card, now);');
     expect(code.querySelectorAll('.md-mark, .math, .ed-mark')).toHaveLength(0);
-    const table = dom.querySelector('.raw-view table')!;
-    expect(Array.from(table.querySelectorAll('th')).map((th) => [th.textContent, th.getAttribute('style')])).toEqual([
-      ['form', 'text-align:left'], ['marker', 'text-align:center'], ['note', 'text-align:right'],
+    const table = dom.querySelector('.dd-table table')!;
+    const rows = Array.from(table.querySelectorAll('tr'));
+    // the header is the first row, each cell with its column's alignment
+    expect(Array.from(rows[0]!.querySelectorAll('td')).map((td) => [td.textContent, td.style.textAlign])).toEqual([
+      ['form', 'left'], ['marker', 'center'], ['note', 'right'],
     ]);
-    expect(Array.from(table.querySelectorAll('tbody tr')).map((tr) => Array.from(tr.querySelectorAll('td')).map((td) => td.textContent))).toEqual([
+    expect(rows.slice(1).map((tr) => Array.from(tr.querySelectorAll('td')).map((td) => td.textContent))).toEqual([
       ['cloze', 'braces', 'a blank'], ['question', 'a double colon', 'two sides'],
     ]);
-    // the drawn atom keeps its source behind it
-    expect(atoms[0]!.querySelector('.raw-src')?.textContent).toBe(textOf(blocks.filter((b) => b.kind === 'raw')[4]));
+    // the code is coloured by its fence's language, its text the code
+    expect(code.querySelector('.hljs-keyword')?.textContent).toBe('const');
     // the image paragraph: the picture, the alt as its caption
     const fig = dom.querySelector<HTMLElement>('p.dd-img')!;
     expect(fig).not.toBeNull();
@@ -317,15 +317,14 @@ describe('markdown drawn as markdown', () => {
   });
 
   it('shows a drawn atom\'s source while it is selected', async () => {
-    const view = mount(await sampler(), false);
-    const table = view.dom.querySelector<HTMLElement>('.raw.rendered[data-kind="table"]')!;
-    expect(table.classList.contains('selected')).toBe(false);
-    let pos = 0;
-    for (let i = 0; i < 6; i++) pos += view.state.doc.child(i).nodeSize;
-    expect(view.state.doc.child(6).type).toBe(schema.nodes.raw);
+    const view = mount(parse('Before the rule.\n\n* * *\n\nAfter it.\n').doc.blocks, false);
+    const rule = view.dom.querySelector<HTMLElement>('.raw.rendered[data-kind="rule"]')!;
+    expect(rule.classList.contains('selected')).toBe(false);
+    const pos = view.state.doc.child(0).nodeSize;
+    expect(view.state.doc.child(1).type).toBe(schema.nodes.raw);
     view.dispatch(view.state.tr.setSelection(NodeSelection.create(view.state.doc, pos)));
-    expect(table.classList.contains('selected')).toBe(true);
-    expect(table.querySelector('.raw-src')?.textContent).toBe('| form | marker | note |\n|:-----|:------:|-----:|\n| cloze | braces | a blank |\n| question | a double colon | two sides |');
+    expect(rule.classList.contains('selected')).toBe(true);
+    expect(rule.querySelector('.raw-src')?.textContent).toBe('* * *');
     view.destroy();
   });
 

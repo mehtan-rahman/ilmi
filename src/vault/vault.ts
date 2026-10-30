@@ -50,6 +50,8 @@ export interface VaultState {
   railWidth?: number;
   /** The deck browser's filter chips and sort, per deck (a lens id: a document, a folder, `''` the root). */
   decks?: Record<string, unknown>;
+  /** The headings folded in the reader, per document: each heading's key (`2 the table`, a repeat `2 notes (2)`). Never in the file. */
+  folds?: Record<string, string[]>;
 }
 
 /** What `Vault.remove` took, for `Vault.restore`: every file under it as bytes, its directories, and the order as it was. */

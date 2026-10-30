@@ -16,6 +16,7 @@ import { nextGroup } from '../format/index.js';
 import { flatText, setHeading, toggleList, toggleQuote } from './commands.js';
 import { flatRanges, inlineRanges } from './inline.js';
 import { caretInto, insertBlocks } from './insert.js';
+import { rawToNode } from './raw.js';
 import { schema } from './schema.js';
 
 const { paragraph, heading, code_block, raw, math, list_item, quote_line } = schema.nodes;
@@ -193,10 +194,17 @@ function run(item: SlashItem, tr: Transaction, opts: SlashOptions): void {
       opts.openMath?.(tr, at + 1);
       return;
     }
-    case 'rule': case 'table': {
-      const block = raw!.create({ text: item.id === 'rule' ? '---' : TABLE_SKELETON });
+    case 'rule': {
+      const block = raw!.create({ text: '---' });
       const at = insertBlocks(tr, [block, paragraph!.create()]);
       caretInto(tr, at + block.nodeSize);
+      return;
+    }
+    case 'table': {
+      // edited as a table: the caret in the header's first cell
+      const block = rawToNode(TABLE_SKELETON)!;
+      const at = insertBlocks(tr, [block, paragraph!.create()]);
+      tr.setSelection(TextSelection.create(tr.doc, at + 3));
       return;
     }
     case 'image':

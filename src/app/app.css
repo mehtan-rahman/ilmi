@@ -387,6 +387,10 @@
 .ctx-menu .ci.danger:hover { background: color-mix(in oklab, oklch(0.6 0.16 28) 14%, transparent); color: oklch(0.52 0.16 28); }
 .ctx-menu .ci.back { color: var(--fg-4); font-family: var(--mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.06em; }
 .ctx-menu .cd { height: 1px; background: var(--line-2); margin: 4px 6px; }
+/* a node view's small menu (a table cell's, a code block's language): the context menu's rows, the current one ticked */
+.pop-menu { min-width: 148px; }
+.pop-menu.code-langs { min-width: 120px; }
+.ctx-menu .ci.on .cg { color: var(--accent); }
 .ctx-menu .sub-scroll { max-height: 240px; overflow: auto; }
 [data-theme="eink"] .ctx-menu .ci.danger,
 [data-theme="eink"] .ctx-menu .ci.danger:hover { color: var(--fg-1); background: var(--line-2); }

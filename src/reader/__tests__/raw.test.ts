@@ -56,7 +56,7 @@ describe('raw blocks through the pair', () => {
     });
   }
 
-  it('edits code, lists, and quotes as themselves; tables, rules, HTML, comments, and indented code stay atoms', () => {
+  it('edits code, lists, quotes, and tables as themselves; rules, HTML, comments, and indented code stay atoms', () => {
     const kinds = new Map<string, number>();
     for (const t of sources.flatMap((s) => s.raws)) {
       const k = rawToNode(t)?.type.name ?? 'raw';
@@ -65,8 +65,11 @@ describe('raw blocks through the pair', () => {
     expect(kinds.get('list')).toBeGreaterThanOrEqual(6);
     expect(kinds.get('quote')).toBeGreaterThanOrEqual(4);
     expect(kinds.get('code_block')).toBeGreaterThanOrEqual(5);
-    expect(kinds.get('raw')).toBeGreaterThanOrEqual(15);
-    expect(rawToNode('| a | b |\n|---|---|\n| 1 | 2 |')).toBeNull();
+    expect(kinds.get('table')).toBeGreaterThanOrEqual(1);
+    expect(kinds.get('raw')).toBeGreaterThanOrEqual(10);
+    expect(rawToNode('| a | b |\n|---|---|\n| 1 | 2 |')?.type).toBe(schema.nodes.table);
+    // a pipe table needs its delimiter row
+    expect(rawToNode('| a | b |\n| 1 | 2 |')).toBeNull();
     expect(rawToNode('***')).toBeNull();
     expect(rawToNode('- - -')).toBeNull();
     expect(rawToNode('<div>\nx\n</div>')).toBeNull();

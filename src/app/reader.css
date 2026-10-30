@@ -214,16 +214,144 @@
   color: var(--fg-1);
 }
 .draft-doc .dd-code code { font: inherit; }
-.draft-doc .dd-code:not([data-lang=""])::after {
-  content: attr(data-lang);
+/* the language in the corner; on an editable page a click opens the picker */
+.draft-doc .dd-code .code-lang {
   position: absolute;
   top: 6px;
-  right: 10px;
+  inset-inline-end: 10px;
   font-family: var(--sans);
   font-size: 10.5px;
+  line-height: 1.3;
   color: var(--fg-4);
-  pointer-events: none;
+  white-space: nowrap;
+  user-select: none;
+  cursor: default;
 }
+.draft-doc .dd-code .code-lang::before { content: attr(data-label); }
+.draft-doc .dd-code .code-lang[data-empty="1"] { opacity: 0; }
+.draft-doc .dd-code:hover .code-lang[data-empty="1"] { opacity: 1; }
+.draft-doc[contenteditable="true"] .dd-code .code-lang:hover { color: var(--fg-2); }
+
+/* code coloured by language (highlight.ts): quiet hues from the tokens, e-ink by weight and grey */
+.draft-doc .hljs-keyword, .draft-doc .hljs-selector-tag, .draft-doc .hljs-literal, .raw-view .hljs-keyword, .raw-view .hljs-literal { color: var(--code-keyword); }
+.draft-doc .hljs-string, .draft-doc .hljs-regexp, .draft-doc .hljs-char, .raw-view .hljs-string { color: var(--code-string); }
+.draft-doc .hljs-number, .draft-doc .hljs-symbol, .raw-view .hljs-number { color: var(--code-number); }
+.draft-doc .hljs-comment, .draft-doc .hljs-quote, .raw-view .hljs-comment { color: var(--code-comment); font-style: italic; }
+.draft-doc .hljs-title, .draft-doc .hljs-section, .raw-view .hljs-title { color: var(--code-title); }
+.draft-doc .hljs-built_in, .draft-doc .hljs-type, .draft-doc .hljs-class, .raw-view .hljs-built_in, .raw-view .hljs-type { color: var(--code-type); }
+.draft-doc .hljs-meta, .draft-doc .hljs-attr, .draft-doc .hljs-attribute, .draft-doc .hljs-params, .draft-doc .hljs-variable, .draft-doc .hljs-template-variable, .draft-doc .hljs-property,
+.raw-view .hljs-meta, .raw-view .hljs-attr, .raw-view .hljs-variable { color: var(--code-meta); }
+.draft-doc .hljs-subst, .draft-doc .hljs-operator, .draft-doc .hljs-punctuation { color: inherit; }
+[data-theme="eink"] .draft-doc .hljs-keyword, [data-theme="eink"] .draft-doc .hljs-literal, [data-theme="eink"] .draft-doc .hljs-title,
+[data-theme="eink"] .raw-view .hljs-keyword, [data-theme="eink"] .raw-view .hljs-title { font-weight: 600; }
+
+/* folding: a chevron in the margin beside a heading with something under it, shown on hover (always while folded) */
+.draft-doc .dd-h { position: relative; }
+.draft-doc .fold-chev {
+  position: absolute;
+  inset-inline-start: -20px;
+  top: 0;
+  width: 16px;
+  height: 1.25em;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--fg-4);
+  opacity: 0;
+  cursor: default;
+  user-select: none;
+}
+.draft-doc .fold-chev::before { content: "▾"; }
+.draft-doc .fold-chev[data-folded="1"]::before { content: "▸"; }
+.draft-doc[dir="rtl"] .fold-chev[data-folded="1"]::before, .draft-doc .dd-h[dir="rtl"] .fold-chev[data-folded="1"]::before { content: "◂"; }
+.draft-doc .dd-h:hover .fold-chev, .draft-doc .fold-chev[data-folded="1"] { opacity: 1; }
+.draft-doc .fold-chev:hover { color: var(--fg-1); }
+/* beside the read marker's gutter, the chevron sits further out */
+.doc-wrap.reading .draft-doc .fold-chev { inset-inline-start: -46px; }
+.draft-doc .fold-hidden { display: none !important; }
+.draft-doc .fold-more {
+  margin-inline-start: 0.5em;
+  font-family: var(--sans);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0;
+  color: var(--fg-4);
+  user-select: none;
+  cursor: default;
+}
+.draft-doc .fold-more::before { content: attr(data-label); }
+.draft-doc .fold-more:hover { color: var(--fg-2); }
+
+/* tables edited as tables: each cell the editor's own text */
+.draft-doc .dd-table {
+  position: relative;
+  width: fit-content;
+  max-width: 100%;
+  margin: 0 0 1em;
+}
+.draft-doc .dd-table table {
+  border-collapse: collapse;
+  font-size: calc(var(--serif-size) * 0.9);
+  width: auto;
+  max-width: 100%;
+}
+.draft-doc .dd-table td {
+  position: relative;
+  padding: 4px 10px;
+  min-width: 2.5em;
+  border-bottom: 1px solid var(--line-2);
+  vertical-align: top;
+  text-align: start;
+  white-space: pre-wrap;
+}
+.draft-doc .dd-table tr:first-child td {
+  font-family: var(--sans);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--fg-3);
+  border-bottom-color: var(--line-1);
+}
+.draft-doc .dd-table td.tb-cur { background: var(--line-3); }
+/* the caret's cell: its menu at the cell's end corner */
+.draft-doc .tb-more {
+  position: absolute;
+  top: 2px;
+  inset-inline-end: 1px;
+  padding: 0 3px;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: var(--fg-4);
+  user-select: none;
+  cursor: default;
+}
+.draft-doc .tb-more::before { content: "···"; }
+.draft-doc .tb-more:hover { color: var(--fg-1); }
+/* a row and a column added at the edges, on hover */
+.draft-doc .tb-add {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--fg-4);
+  opacity: 0;
+  user-select: none;
+  cursor: default;
+  border-radius: var(--radius);
+}
+.draft-doc .tb-add::before { content: "+"; }
+.draft-doc .tb-add-row { inset-inline: 0; bottom: -14px; height: 12px; }
+.draft-doc .tb-add-col { top: 0; bottom: 0; inset-inline-end: -16px; width: 12px; }
+.draft-doc[contenteditable="true"] .dd-table:hover .tb-add { opacity: 1; }
+.draft-doc .tb-add:hover { background: var(--line-3); color: var(--fg-1); }
+.draft-doc[contenteditable="false"] .tb-more, .draft-doc[contenteditable="false"] .tb-add { display: none; }
+
 .draft-doc .dd-list { margin: 0 0 1em; }
 .draft-doc .dd-li {
   display: flex;

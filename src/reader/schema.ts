@@ -1,8 +1,9 @@
 // The ProseMirror schema for a document body. One node kind per block kind
 // in FORMAT.md §4, plus an inline math atom. Cards are atoms: they travel
 // through the editor untouched and come back out verbatim. A raw block that
-// is fenced code, a list, or a block quote is edited as itself (`raw.ts`
-// holds the lossless pair); any other raw block stays an atom.
+// is fenced code, a list, a block quote, or a pipe table is edited as
+// itself (`raw.ts` holds the lossless pair); any other raw block stays an
+// atom.
 
 import { Schema } from 'prosemirror-model';
 import type { Card } from '../format/index.js';
@@ -99,6 +100,32 @@ export const schema = new Schema({
       /** The line's `> ` as written; `''` on a lazy continuation line. */
       attrs: { prefix: { default: '> ' } },
       toDOM() { return ['div', { class: 'dd-ql' }, 0]; },
+    },
+    /**
+     * A GFM pipe table edited as itself: rows of cells, the first row the
+     * header. `src`: the table's text as read, written back unchanged while
+     * no cell, alignment, row or column has changed (raw.ts).
+     */
+    table: {
+      group: 'block',
+      content: 'table_row+',
+      isolating: true,
+      attrs: { src: { default: null }, joined: { default: false } },
+      toDOM() { return ['div', { class: 'dd-table' }, ['table', ['tbody', 0]]]; },
+    },
+    table_row: {
+      content: 'table_cell+',
+      toDOM() { return ['tr', 0]; },
+    },
+    /** One cell: its text inline, the column's alignment kept on every cell of the column. */
+    table_cell: {
+      content: 'inline*',
+      isolating: true,
+      attrs: { align: { default: null } },
+      toDOM(n) {
+        const align = n.attrs.align as string | null;
+        return ['td', align ? { style: `text-align:${align}` } : {}, 0];
+      },
     },
     text: { group: 'inline' },
     math: {

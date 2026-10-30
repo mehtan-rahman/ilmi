@@ -62,9 +62,23 @@
   --el-read: oklch(0.55 0.07 250);
   --el-write: oklch(0.52 0.07 150);
   --el-card: var(--accent);
+
+  /* code colouring: muted, low-chroma hues that sit under the gold, never beside it */
+  --code-keyword: oklch(0.45 0.09 25);
+  --code-string: oklch(0.47 0.07 150);
+  --code-number: oklch(0.50 0.08 60);
+  --code-comment: var(--fg-3);
+  --code-title: oklch(0.44 0.07 250);
+  --code-type: oklch(0.47 0.06 200);
+  --code-meta: var(--fg-2);
 }
 
 [data-theme="dark"] {
+  --code-keyword: oklch(0.76 0.08 25);
+  --code-string: oklch(0.76 0.07 150);
+  --code-number: oklch(0.80 0.08 70);
+  --code-title: oklch(0.77 0.06 250);
+  --code-type: oklch(0.77 0.05 200);
   --bg: #161618;
   --paper: #1d1d20;
   --fg: #e6e6e3;
@@ -89,6 +103,14 @@
   --el-read: var(--fg-2);
   --el-write: var(--fg-2);
   --el-card: var(--fg-1);
+  /* grey and weight only */
+  --code-keyword: var(--fg-1);
+  --code-string: var(--fg-2);
+  --code-number: var(--fg-1);
+  --code-comment: var(--fg-3);
+  --code-title: var(--fg-1);
+  --code-type: var(--fg-2);
+  --code-meta: var(--fg-2);
 }
 [data-theme="eink"] * {
   box-shadow: none !important;

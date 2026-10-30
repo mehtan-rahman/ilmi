@@ -3,12 +3,12 @@
 // beyond what prosemirror-view's decorations need; the view is in src/app.
 
 export { schema, langOf, indentWidth } from './schema.js';
-export { rawToNode, nodeToRaw, isRawNode, itemLines, markerNumber, numbered, nextMarker } from './raw.js';
+export { rawToNode, nodeToRaw, isRawNode, itemLines, markerNumber, numbered, nextMarker, tableOf } from './raw.js';
 export { toDoc, fromDoc, textOf, inline, mathSplit, blocksEqual, cardDue, type MathPart } from './convert.js';
 export { editorialRanges, type MarkRange } from './marks.js';
 export { proseIndices, cursorIndex, pickPos, setReadPos, isProse, type Band } from './marker.js';
 export {
-  makeState, directionDecorations, directionKey, markerKey, markerPos, cardsKey, frozenPlugin, frozenKey, imagesKey, mathEditKey, isMathEdit, openMath, revealKey, revealBackward, revealForward,
+  makeState, codeDecorations, codeKey, directionDecorations, directionKey, markerKey, markerPos, cardsKey, frozenPlugin, frozenKey, imagesKey, mathEditKey, isMathEdit, openMath, revealKey, revealBackward, revealForward,
   FORMAT_KEYS, pasteInto, type Edge, type StateOptions, type ImageLoader, type ImageState, type ImagesMeta,
 } from './plugins.js';
 export {
@@ -20,7 +20,10 @@ export {
   type InlineToggle, type ListKind, type LinkTarget, type KeySpec,
 } from './commands.js';
 export { inlineRanges, markerRanges, flatRanges, imageOnly, literalSpans, type InlineRange, type InlineKind } from './inline.js';
-export { classifyRaw, splitBlocks, type RawShape, type Align } from './blocks.js';
+export { classifyRaw, splitBlocks, readTable, writeTable, type RawShape, type Align, type TableBlock } from './blocks.js';
+export { CODE_LANGS, codeLang, codeTokens, codeHTML, tokensOfHtml, withLang, setCodeLang, type CodeToken } from './highlight.js';
+export { foldKey, foldPlugin, foldedKeys, foldsHiding, isFoldedAway, sections, type FoldMeta, type FoldState, type Section } from './fold.js';
+export { cellAt, cellStart, nextCell, prevCell, cellDown, cellBreak, rowBelow, addRow, addColumn, deleteRow, deleteColumn, alignColumn, tableKey, tablePlugin, type CellAt } from './table.js';
 export { cardText, passage, blockAt, insertCard, setCardText, type CardSpec, type Passage } from './cards.js';
 export { SLASH_ITEMS, slashItems, slashContext, slashKey, slashPlugin, pickSlash, litItem, opensAt, askImageKey, TABLE_SKELETON, type SlashItem, type SlashState, type SlashMeta, type SlashContext } from './slash.js';
 export { findKey, findPlugin, findMatches, findIn, foldText, foldMap, currentMatch, replaceMatch, replaceAll, closeAtMatch, atomFind, markFinds, type AtomFind, type FindState, type FindMeta, type Match } from './find.js';

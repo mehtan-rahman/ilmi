@@ -128,7 +128,8 @@ function cells(line: string): string[] {
 
 /** A GFM table: a header row, a delimiter row of dashes with optional colons, then rows; short rows are padded, long ones cut. */
 function tabled(lines: string[]): TableBlock | null {
-  if (!TABLE.test(lines[0]!) || lines.length < 2) return null;
+  if (lines.length && !TABLE.test(lines[0]!)) return null;
+  if (lines.length < 2) return null;
   const head = cells(lines[0]!);
   const delim = cells(lines[1]!);
   if (delim.length !== head.length || !delim.every((d) => DELIM_CELL.test(d))) return null;
@@ -193,4 +194,25 @@ export function splitBlocks(text: string): string[] {
     i = j + 1;
   }
   return out;
+}
+
+/** A raw block's text as a pipe table, or null when it is not one (it must begin with a pipe). */
+export const readTable = (text: string): TableBlock | null => tabled(text.split('\n'));
+
+/** A cell's text as the file writes it: one line, trimmed, its pipes escaped. */
+const cellText = (s: string): string => s.replace(/[ \t]*\n[ \t]*/g, ' ').trim().replace(/\|/g, '\\|');
+
+const DELIM: Record<string, string> = { left: ':---', center: ':---:', right: '---:' };
+
+/**
+ * A table written as the normalized pipe table: `| a | b |`, the delimiter
+ * row `---` with the alignment's colons, every row as wide as the header,
+ * no padding (an edit changes only the lines it touches). `readTable` reads
+ * it back to the same cells.
+ */
+export function writeTable(t: Pick<TableBlock, 'align' | 'head' | 'rows'>): string {
+  const n = t.head.length;
+  const row = (cs: string[]) => `| ${Array.from({ length: n }, (_, i) => cellText(cs[i] ?? '')).join(' | ')} |`;
+  const delim = `| ${Array.from({ length: n }, (_, i) => DELIM[t.align[i] ?? ''] ?? '---').join(' | ')} |`;
+  return [row(t.head), delim, ...t.rows.map(row)].join('\n');
 }

@@ -114,6 +114,8 @@ export function clipboardText(slice: Slice): string {
   let blocks: Fragment;
   if (first.type === list_item) blocks = Fragment.from(list.create(null, content));
   else if (first.type === quote_line) blocks = Fragment.from(quote.create(null, content));
+  // rows copied out of a table: a table of them, the first the header
+  else if (first.type === schema.nodes.table_row) blocks = Fragment.from(schema.nodes.table!.create(null, content));
   else if (first.isInline) blocks = Fragment.from(paragraph.create(null, content));
   else blocks = content;
   let doc: PMNode;

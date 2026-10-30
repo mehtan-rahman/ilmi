@@ -17,6 +17,7 @@ import {
   setReadPos, splitBlocks, atomFind, markFinds, toggleInline, toggleTask, type Band, type InlineRange, type InlineToggle, type LinkTarget, type Passage, type RawShape,
   askImageKey, closeAtMatch, dirAttr, strongDir, withBases, type Dir, findKey, insertImages, pickSlash, replaceAll, replaceMatch, slashContext, slashItems, slashKey, htmlPasteImages,
   type FindMeta, type FindState, type SlashItem, type SlashState,
+  CODE_LANGS, addColumn, addRow, alignColumn, codeHTML, codeLang, deleteColumn, deleteRow, foldKey, foldedKeys, foldsHiding, langOf, setCodeLang, type Align, type FoldMeta,
 } from '../reader/index.js';
 import { advanceWrite, whenToDate } from '../schedule/index.js';
 import { dirOf, nameOf, type Loaded, type Vault } from '../vault/index.js';
@@ -28,7 +29,9 @@ import { imagePicker, pageDrops, readImagePath, type ImageFile } from './pageIma
 import { dueLabel } from './items.js';
 import { titleOf } from './names.js';
 import { useApp, type DocInfo } from './store.js';
-import { currentVault, enrolReading, extractNode } from './vault.js';
+import { currentVault, enrolReading, extractNode, setFolds } from './vault.js';
+import { popMenu, type PopItem } from './popMenu.js';
+import { registerHeadings } from './headings.js';
 import 'katex/dist/katex.min.css';
 import 'prosemirror-gapcursor/style/gapcursor.css';
 import './reader.css';
@@ -199,7 +202,7 @@ function blocksHTML(text: string, tight: boolean): string {
 function shapeHTML(shape: RawShape, text: string): string {
   switch (shape.kind) {
     case 'code':
-      return `<pre><code${shape.lang ? ` class="language-${escapeHtml(shape.lang)}"` : ''}>${escapeHtml(shape.code)}</code></pre>`;
+      return `<pre><code${shape.lang ? ` class="language-${escapeHtml(shape.lang)}"` : ''}>${codeHTML(shape.code, shape.lang) ?? escapeHtml(shape.code)}</code></pre>`;
     case 'list': {
       const tag = shape.ordered ? 'ol' : 'ul';
       const start = shape.ordered && shape.start !== 1 ? ` start="${shape.start}"` : '';
@@ -365,7 +368,7 @@ export function cardHTML(card: Card): string {
  * changed between two decorations.
  */
 function ownClasses(dom: HTMLElement, own: string): void {
-  const kept = Array.from(dom.classList).filter((c) => c === 'selected' || c === 'landed' || c.startsWith('find-'));
+  const kept = Array.from(dom.classList).filter((c) => c === 'selected' || c === 'landed' || c.startsWith('find-') || c.startsWith('fold-'));
   dom.className = [own, ...kept].join(' ');
 }
 
@@ -715,11 +718,161 @@ class RawView implements NodeView {
   ignoreMutation(): boolean { return true; }
 }
 
+
+/**
+ * Fenced code: the text edited in place, coloured by the plugin's
+ * decorations; the language named in the corner, a click there (on an
+ * editable page) opening the picker, which writes the word on the fence.
+ */
+class CodeView implements NodeView {
+  dom: HTMLElement;
+  contentDOM: HTMLElement;
+  private readonly label: HTMLElement;
+  private lang = '';
+
+  constructor(node: PMNode, private readonly view: EditorView, private readonly getPos: () => number | undefined) {
+    this.dom = document.createElement('pre');
+    this.dom.className = 'dd-code';
+    this.contentDOM = document.createElement('code');
+    this.label = document.createElement('span');
+    this.label.className = 'code-lang';
+    this.label.setAttribute('contenteditable', 'false');
+    this.label.setAttribute('role', 'button');
+    this.label.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.pick();
+    });
+    this.dom.append(this.contentDOM, this.label);
+    this.render(node);
+  }
+
+  private render(node: PMNode): void {
+    this.lang = langOf(node.attrs.fence as string);
+    this.dom.dataset.lang = this.lang;
+    this.contentDOM.className = this.lang ? `language-${this.lang}` : '';
+    // the word drawn by CSS from the attribute, so the block's text stays the code
+    this.label.dataset.label = this.lang || 'plain';
+    this.label.dataset.empty = this.lang ? '0' : '1';
+    this.label.title = this.view.editable ? 'language' : '';
+  }
+
+  private pick(): void {
+    if (!this.view.editable) return;
+    const cur = codeLang(this.lang);
+    const set = (word: string) => {
+      const pos = this.getPos();
+      if (pos === undefined) return;
+      setCodeLang(pos, word)(this.view.state, this.view.dispatch.bind(this.view));
+      this.view.focus();
+    };
+    const items: PopItem[] = CODE_LANGS.map((l) => ({ label: l.label, on: cur === l.id, act: `lang-${l.id}`, run: () => { if (cur !== l.id) set(l.id); } }));
+    items.push({ label: '-' }, { label: 'plain', on: !this.lang, act: 'lang-plain', run: () => set('') });
+    popMenu(this.label.getBoundingClientRect(), items, 'code-langs');
+  }
+
+  update(node: PMNode): boolean {
+    if (node.type !== schema.nodes.code_block) return false;
+    this.render(node);
+    return true;
+  }
+
+  stopEvent(e: Event): boolean { return this.label.contains(e.target as Node); }
+  ignoreMutation(m: MutationRecord | { type: 'selection'; target: Node }): boolean {
+    return !this.contentDOM.contains(m.target);
+  }
+}
+
+const ALIGNS: [Align, string][] = [['left', 'align left'], ['center', 'align center'], ['right', 'align right']];
+
+/**
+ * A table edited as a table: the cells are the editor's own (text with the
+ * live inline rules); a row and a column are added at the edges, and the
+ * caret's cell has a menu (`···`, the table plugin's widget) for rows and
+ * columns anywhere, their deletion, and the column's alignment.
+ */
+class TableView implements NodeView {
+  dom: HTMLElement;
+  contentDOM: HTMLElement;
+  private readonly controls: HTMLElement[];
+  private node: PMNode;
+
+  constructor(node: PMNode, private readonly view: EditorView, private readonly getPos: () => number | undefined) {
+    this.node = node;
+    this.dom = document.createElement('div');
+    this.dom.className = 'dd-table';
+    const table = document.createElement('table');
+    this.contentDOM = document.createElement('tbody');
+    table.append(this.contentDOM);
+    const button = (cls: string, title: string, run: () => void) => {
+      const b = document.createElement('span');
+      b.className = `tb-add ${cls}`;
+      b.title = title;
+      b.setAttribute('contenteditable', 'false');
+      b.setAttribute('role', 'button');
+      b.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); run(); });
+      return b;
+    };
+    const row = button('tb-add-row', 'add a row', () => this.run((pos) => addRow(pos, this.node.childCount)));
+    const col = button('tb-add-col', 'add a column', () => this.run((pos) => addColumn(pos, this.node.firstChild!.childCount)));
+    this.controls = [row, col];
+    this.dom.append(table, row, col);
+    // the caret's cell's `···`: a widget inside the cell, its press caught here
+    this.dom.addEventListener('mousedown', (e) => {
+      const more = (e.target as HTMLElement | null)?.closest<HTMLElement>('.tb-more');
+      if (!more || !this.dom.contains(more)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      this.menu(more, Number(more.dataset.row), Number(more.dataset.col));
+    });
+  }
+
+  private run(cmd: (pos: number) => (state: EditorState, dispatch?: (tr: Transaction) => void) => boolean): void {
+    const pos = this.getPos();
+    if (pos === undefined || !this.view.editable) return;
+    cmd(pos)(this.view.state, this.view.dispatch.bind(this.view));
+    this.view.focus();
+  }
+
+  private menu(anchor: HTMLElement, row: number, col: number): void {
+    if (!this.view.editable) return;
+    const align = (this.node.child(0).maybeChild(col)?.attrs.align as Align) ?? null;
+    const items: PopItem[] = [
+      { label: 'row above', glyph: '+', act: 'row-above', run: () => this.run((p) => addRow(p, row, col)) },
+      { label: 'row below', glyph: '+', act: 'row-below', run: () => this.run((p) => addRow(p, row + 1, col)) },
+      { label: 'column before', glyph: '+', act: 'col-before', run: () => this.run((p) => addColumn(p, col, row)) },
+      { label: 'column after', glyph: '+', act: 'col-after', run: () => this.run((p) => addColumn(p, col + 1, row)) },
+      { label: '-' },
+      ...ALIGNS.map(([a, label]): PopItem => ({ label, on: align === a, act: `align-${a}`, run: () => this.run((p) => alignColumn(p, col, align === a ? null : a)) })),
+      { label: '-' },
+      { label: 'delete row', glyph: '⌫', danger: true, act: 'delete-row', run: () => this.run((p) => deleteRow(p, row)) },
+      { label: 'delete column', glyph: '⌫', danger: true, act: 'delete-col', run: () => this.run((p) => deleteColumn(p, col)) },
+    ];
+    popMenu(anchor.getBoundingClientRect(), items, 'table-menu');
+  }
+
+  update(node: PMNode): boolean {
+    if (node.type !== schema.nodes.table) return false;
+    this.node = node;
+    return true;
+  }
+
+  stopEvent(e: Event): boolean {
+    const t = e.target as Node;
+    return this.controls.some((c) => c.contains(t)) || !!(t as HTMLElement).closest?.('.tb-more');
+  }
+  ignoreMutation(m: MutationRecord | { type: 'selection'; target: Node }): boolean {
+    return !this.contentDOM.contains(m.target);
+  }
+}
+
 export const nodeViews = {
   card: (node: PMNode, _view: EditorView, _getPos: () => number | undefined, decorations: readonly Decoration[]) => new CardView(node, decorations),
   math: (node: PMNode, view: EditorView, getPos: () => number | undefined, decorations: readonly Decoration[]) => new MathView(node, view, getPos, decorations),
   raw: (node: PMNode, _view: EditorView, _getPos: () => number | undefined, decorations: readonly Decoration[]) => new RawView(node, decorations),
   list_item: (node: PMNode, view: EditorView, getPos: () => number | undefined) => new ListItemView(node, view, getPos),
+  code_block: (node: PMNode, view: EditorView, getPos: () => number | undefined) => new CodeView(node, view, getPos),
+  table: (node: PMNode, view: EditorView, getPos: () => number | undefined) => new TableView(node, view, getPos),
 };
 
 /** Where a ⌘-click on a link goes: the webview hands an outside address to the system. */
@@ -998,9 +1151,15 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
     const wr = wrap.getBoundingClientRect();
     const fr = first.getBoundingClientRect();
     if (idx < 0) { setRule({ top: fr.top - wr.top, height: 0 }); return; }
+    const starts: number[] = [];
     let at = 0;
-    for (let i = 0; i < idx; i++) at += doc.child(i).nodeSize;
-    const boundary = view.nodeDOM(at) as HTMLElement | null;
+    for (let i = 0; i <= idx; i++) { starts.push(at); at += doc.child(i).nodeSize; }
+    // a block inside a folded section is not drawn: the rule ends under the folded heading
+    let boundary: HTMLElement | null = null;
+    for (let i = idx; i >= 0 && !boundary; i--) {
+      const el = view.nodeDOM(starts[i]!) as HTMLElement | null;
+      if (el && !el.classList.contains('fold-hidden')) boundary = el;
+    }
     if (!boundary) { setRule(null); return; }
     const br = boundary.getBoundingClientRect();
     setRule({ top: fr.top - wr.top, height: Math.max(0, br.bottom - fr.top) });
@@ -1043,7 +1202,8 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
 
     const build = (loaded: Loaded) => {
       const m = meta(loaded.doc);
-      const state = makeState(loaded.doc.blocks, { frozen: () => frozenRef.current, pos: m.type === 'note' ? null : m.read?.pos ?? null, images: images.load });
+      // the folds the page had when it was last seen (view state, never the file's)
+      const state = makeState(loaded.doc.blocks, { frozen: () => frozenRef.current, pos: m.type === 'note' ? null : m.read?.pos ?? null, images: images.load, folds: useApp.getState().folds[id] ?? [] });
       const view = viewRef.current;
       if (view) {
         // an open find bar stays open over the new text
@@ -1060,8 +1220,16 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
           editable: () => !frozenRef.current,
           attributes: { class: 'draft-doc', spellcheck: 'true' },
           dispatchTransaction(this: EditorView, tr: Transaction) {
+            const prev = this.state;
             const next = this.state.apply(tr);
             this.updateState(next);
+            // a fold made or opened, or a folded heading's text changed: remembered by key
+            const fp = foldKey.getState(prev);
+            const fn = foldKey.getState(next);
+            if (fp !== fn && (fp?.folded.length || fn?.folded.length)) {
+              setFolds(id, foldedKeys(next));
+              measure();
+            }
             if (tr.docChanged) {
               writer.version++;
               writer.schedule(() => fromDoc(this.state.doc));
@@ -1463,12 +1631,17 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
     const doc = view.state.doc;
     const bands: Band[] = [];
     let at = 0;
+    // a folded section's blocks take its heading's band: a press on the folded heading reads the whole section
+    let shown: Band | null = null;
     doc.forEach((node) => {
       const el = view.nodeDOM(at) as HTMLElement | null;
       at += node.nodeSize;
-      if (node.type.name === 'card' || !el) return;
-      const r = el.getBoundingClientRect();
-      bands.push({ top: r.top, height: r.height });
+      if (!el) return;
+      const hidden = el.classList.contains('fold-hidden');
+      if (!hidden) { const r = el.getBoundingClientRect(); shown = { top: r.top, height: r.height }; }
+      if (node.type.name === 'card') return;
+      if (hidden && shown) bands.push(shown);
+      else if (!hidden) bands.push(shown!);
     });
     const pos = pickPos(bands, clientY);
     if (pos !== markerPos(view.state)) view.dispatch(view.state.tr.setMeta(markerKey, pos));
@@ -1499,18 +1672,27 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
     }
     return out;
   }, [blocks]);
-  const fromHeading = (index: number) => {
+  const fromHeading = (index: number): boolean => {
     const view = viewRef.current;
-    if (!view) return;
-    if (index < 0) { wrapRef.current?.closest('.pane-body, .nb-page')?.scrollTo({ top: 0 }); return; }
+    if (!view) return false;
+    if (index < 0) { wrapRef.current?.closest('.pane-body, .nb-page')?.scrollTo({ top: 0 }); return true; }
     let n = 0;
     let at: number | null = null;
     view.state.doc.forEach((node, off) => {
       if (node.type !== schema.nodes.heading) return;
       if (n++ === index && at === null) at = off;
     });
-    if (at !== null) (view.nodeDOM(at) as HTMLElement | null)?.scrollIntoView({ block: 'start' });
+    if (at === null) return false;
+    // a heading inside a folded section: the folds around it open first
+    const hiding = foldsHiding(view.state, at).map((f) => f.pos);
+    if (hiding.length) view.dispatch(view.state.tr.setMeta(foldKey, { open: hiding } satisfies FoldMeta));
+    (view.nodeDOM(at) as HTMLElement | null)?.scrollIntoView({ block: 'start' });
+    return true;
   };
+  const fromHeadingRef = useRef(fromHeading);
+  fromHeadingRef.current = fromHeading;
+  // the outline's click (the rail's, the inspector's) comes here
+  useEffect(() => registerHeadings(id, (i) => fromHeadingRef.current(i), () => activeRef.current), [id]);
 
   const toggleFrozen = () => {
     const next = !frozenRef.current;

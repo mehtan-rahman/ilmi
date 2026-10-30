@@ -87,7 +87,7 @@ describe('blocks ↔ document', () => {
 
   it('passes cards and raw blocks through untouched; a list is a list node and still comes back as written', () => {
     const blocks: Block[] = [
-      { kind: 'raw', text: '| a | b |\n|---|---|\n| 1 | 2 |' },
+      { kind: 'raw', text: '<div>\nan html block\n</div>' },
       { kind: 'card', text: 'a :: b', id: 'c1', sched: { due: '2026-05-27', state: 'review', extra: [['x', '1']] } },
     ];
     const doc = toDoc(blocks);
@@ -96,9 +96,10 @@ describe('blocks ↔ document', () => {
     const back = fromDoc(doc);
     expect(back).toEqual(blocks);
     expect(back[1]).not.toBe(blocks[1]);
-    const live = toDoc([{ kind: 'raw', text: '- a list\n- of things' }, { kind: 'raw', text: '> quoted' }, { kind: 'raw', text: '```\ncode\n```' }]);
-    expect([0, 1, 2].map((i) => live.child(i).type)).toEqual([schema.nodes.list, schema.nodes.quote, schema.nodes.code_block]);
-    expect(fromDoc(live)).toEqual([{ kind: 'raw', text: '- a list\n- of things' }, { kind: 'raw', text: '> quoted' }, { kind: 'raw', text: '```\ncode\n```' }]);
+    const raws = ['- a list\n- of things', '> quoted', '```\ncode\n```', '| a | b |\n|---|---|\n| 1 | 2 |'];
+    const live = toDoc(raws.map((text) => ({ kind: 'raw', text })));
+    expect([0, 1, 2, 3].map((i) => live.child(i).type)).toEqual([schema.nodes.list, schema.nodes.quote, schema.nodes.code_block, schema.nodes.table]);
+    expect(fromDoc(live)).toEqual(raws.map((text) => ({ kind: 'raw', text })));
   });
 });
 

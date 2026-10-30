@@ -222,6 +222,8 @@ export interface AppState {
   railWidth: number;
   /** The deck browser's chips and sort, per lens id (`.ilmi/state.json`'s `decks`). */
   deckViews: Record<string, DeckView>;
+  /** The headings folded in the reader, by document path: the keys `fold.ts` gives them. Per vault, in `.ilmi/state.json`'s `folds`. */
+  folds: Record<string, string[]>;
   session: Session | null;
   /** What the session is on now, for its tab and the inspector. */
   sessionEl: { kind: El; label: string; item: QueueItem } | null;
@@ -277,6 +279,7 @@ export const useApp = create<AppState>((set, get) => ({
   railFolded: {},
   railWidth: 200,
   deckViews: {},
+  folds: {},
   session: null,
   sessionEl: null,
   setTheme: (theme) => { set({ theme }); persist(get()); },

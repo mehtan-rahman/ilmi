@@ -4486,36 +4486,19 @@ file.
 
 ## Notes for the next session
 
-40 (a pass over everything on the full collection) is done on main,
-commits `960efd4`, `1eaa66f`, `3b5aa00`; its window check is owed
-(`ILMI_SMOKE=tour`, ILMI_VAULT on a fresh copy of samples/double-major:
-`ok:` lines, then every screen in light, dark and e-ink). With it the
-Refinement section (33–41) is complete pending its window checks (37's
-`listcards`, 36's `arabic`, 41's `rest`, 40's `tour`). What comes next is
-the user's to say: ask. Wikilinks and backlinks were set aside for the
-user (41's line). The room rule for the inspector is in `layout.ts`.
-
-41 (the editor's rest: outline, folding, code, tables) is done on main,
-commit `c1a7a60`; its window check is owed (`ILMI_SMOKE=rest`, ILMI_VAULT
-on a fresh copy of samples/double-major). Next by the user's order: 40,
-a pass over everything on the full collection, which should now also read
-41's captures. Wikilinks and backlinks: ask the user (41's line).
-
-Refinement (33–41), 2026-10-30. Done on main: 33 (notes and sources),
-34 (keys, rules, lists, the toolbar), 35 (insert, paste, find), 37 (cards
-in list items, review in context), and, built on branches and merged by
-hand, 38 (the tree), 39 (tabs) and 36 (Arabic beside English: the
-direction rule, Naskh and Plex Sans Arabic, isolation, `dir="auto"` on
-fields). Window checks run and recorded under their BUILD-LOG entries:
-33 (`notes`), 34 (`editing`), 35 (`insert`), 38 (`tree`), 39 (`tabs2`).
-Owed: 37 (`ILMI_SMOKE=listcards`) and 36 (`ILMI_SMOKE=arabic`), each with
-ILMI_VAULT on a fresh copy of samples/double-major. Then 40 (a pass over
-everything; the window runs' findings not yet taken are in 40's notes
-once it starts: an extract from a note named by its first word, slugs in
-the queue's paths, raw LaTeX in the inspector's card list and the
-`from…` list, the reader's cramped top row, the extracts folder lens's
-`inside source`), and 41. The sidebar toggle is ⌃⌘S, the rail's fold
-⌃⌘T; ⌘K over a selection in an editable page is the link field.
+Refinement (33–41) is complete, 2026-10-30, every milestone's window check
+run and recorded under its BUILD-LOG entry (33 `notes`, 34 `editing`, 35
+`insert`, 36 `arabic`, 37 `listcards`, 38 `tree`, 39 `tabs2`, 40 `tour`,
+41 `rest`), each over a fresh copy of samples/double-major. Window checks
+run best from a clean checkout of main (a git worktree with node_modules
+and src-tauri/target cloned by `cp -c`), so an agent's uncommitted edits
+on main can't touch the run; a locked screen stops WebKit from painting,
+and a covered window holds back animation frames and transitions. Open
+items are in each milestone's notes (40: the gap under display math, the
+PDF lens's top row, math in tree and palette rows; 41: headings in list
+items don't fold, ⇧⏎ in a cell; 39: a multi-chapter PDF as a notebook;
+37: `>>>` children as a back, Tab on a card item). Wikilinks and
+backlinks wait for the user (41's text). Next: ask the user.
 
 Milestones 0–32 are ticked (13 dropped); 32 (decks) was built on a branch
 beside 31 and merged by hand on 2026-10-28; its window check

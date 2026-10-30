@@ -71,6 +71,27 @@ tree all open 15 ms. Paint and the Tauri fs are not measured here.
   wrap a math blank as `$…$` (drawn in the inspector, plain in the palette
   and the PDF list); the check logs its hit. Rerun owed.
 
+### Window check (2026-10-30, run 2 at `5b155f5`)
+
+`ILMI_SMOKE=tour` on a fresh copy of samples/double-major, from a clean
+checkout of main, ran to `done` with every assertion `ok`: queue paths as
+titles on one line, lowercase kinds, the queue's inspector by course, the
+reader's top row one line with one count token, no raw TeX in the
+inspector, rail, outline or session path, no trailing break under display
+math, the Lindqvist chapter titled once, deck dues as words and no card
+list in the deck's inspector, folder rows counting everything under them
+(quantum II: 89 cards, 48 due), a one-line cloze a 121 px card revealed in
+place with no second box; every screen captured in light, dark, and e-ink
+(45 captures read). Left: the space under a display formula is still a
+little more than a paragraph's; the PDF lens's top row keeps
+`frozen`/`pages`; tree and palette rows don't render math.
+
+Also recorded here for 36 and 37 (run from the same clean checkout):
+`ILMI_SMOKE=listcards` ran to `done` at `eb70cf0`; `ILMI_SMOKE=arabic` ran
+to `done` at `d0adb50` after the rule moved to majority script (the
+passage's RTL count threshold set to 4, since its glossary is now LTR);
+`ILMI_SMOKE=rest` (41) ran to `done` at `e08c84c` after four fixes.
+
 ### Handoff prompt
 
 ```

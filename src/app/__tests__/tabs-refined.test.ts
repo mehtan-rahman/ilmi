@@ -290,6 +290,15 @@ describe('the rail in the canvas', () => {
     expect(page()).toBe(VAR);
   });
 
+  it('the outline follows the open page: the overview\'s under it, then the tab\'s under the tab', () => {
+    act(() => { useApp.setState({ panes: openTab(emptyPanes(), NB) }); });
+    const owners = () => Array.from(new Set(Array.from(host.querySelectorAll<HTMLElement>('.rail-row.heading')).map((h) => h.dataset.of)));
+    expect(owners()).toEqual([NB]);
+    mouse(rowOf(VAR), 'click');
+    expect(page()).toBe(VAR);
+    expect(owners()).toEqual([VAR]);
+  });
+
   it('a tab\'s extracts row opens their folder in the notebook, the rail kept', () => {
     mouse(rowOf(WKB).querySelector('.chev')!, 'click');
     expect(names()).toContain('2 extracts');

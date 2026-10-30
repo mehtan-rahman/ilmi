@@ -356,6 +356,7 @@ export function Notebook({ nb, page, active, onOpen, children }: Props) {
       <div
         key={`${r.path}\u0000h${h.index}`}
         className="rail-row heading"
+        data-of={r.path}
         style={{ paddingLeft: railPad(r.depth) + 22 + (h.level - top) * RAIL_INDENT }}
         data-heading={h.index}
         data-level={h.level}

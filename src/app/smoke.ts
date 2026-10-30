@@ -4734,7 +4734,9 @@ export async function smokeTabs2(vault: Vault): Promise<void> {
       openNode(QM);
       await poll(() => rrow(VAR), 'quantum II\'s rail', 8000);
       rrow(VAR)!.click();
-      const heads = await poll(() => { const h = qa<HTMLElement>('.tab-rail .rail-row.heading'); return h.length >= 5 ? h : null; }, 'the variational method\'s headings under its tab', 8000);
+      // the overview's own outline shows first (it is the open page); wait for the tab to be the page and its own headings
+      await poll(() => page() === VAR, 'the variational method is the page', 8000);
+      const heads = await poll(() => { const h = qa<HTMLElement>(`.tab-rail .rail-row.heading[data-of="${esc(VAR)}"]`); return h.length >= 5 && !q(`.tab-rail .rail-row.heading:not([data-of="${esc(VAR)}"])`) ? h : null; }, 'the variational method\'s headings under its tab, and no other row\'s', 8000);
       log(`outline: ${heads.map((h) => `${'  '.repeat(Number(h.dataset.level) - 2)}${h.textContent}`).join(' | ')}`);
       const helium = heads.find((h) => h.textContent === 'helium ground state');
       must(helium, 'the outline lists `helium ground state`');
@@ -4754,9 +4756,9 @@ export async function smokeTabs2(vault: Vault): Promise<void> {
       must(rrow(VAR)?.dataset.active === '1', 'and the rail');
       // a click on the active tab hides the outline, another shows it
       rrow(VAR)!.click();
-      await poll(() => !q('.tab-rail .rail-row.heading'), 'a click on the active tab hides its outline');
+      await poll(() => !q(`.tab-rail .rail-row.heading[data-of="${esc(VAR)}"]`), 'a click on the active tab hides its outline');
       rrow(VAR)!.click();
-      await poll(() => q('.tab-rail .rail-row.heading'), 'another shows it');
+      await poll(() => q(`.tab-rail .rail-row.heading[data-of="${esc(VAR)}"]`), 'another shows it');
     }
 
     // ── a tab added, renamed, nested and moved by keyboard ──

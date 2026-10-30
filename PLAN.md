@@ -3900,6 +3900,14 @@ change); subtab open state and the outline's hidden state are not
 remembered; the rail's `n extracts` and heading rows are not reachable by
 the keys; an undo held only until the next notice or the app closes;
 `duplicate` copies cards with their schedules as they are.
+Window run 1 (after the merge, `854659c`): all passed up to the outline, then
+`failed: the outline lists helium ground state`; the outline logged was the
+course's own. The rail was right (the open overview shows its headings
+under it, as Docs does); the smoke read them before the click on the tab
+had made it the page. Heading rows now carry `data-of` (the row whose
+outline they are); the smoke waits for the page to be the tab and for only
+its headings, and a test switches from the overview to a tab. 839 tests;
+the rerun is owed.
 Today tabs are reachable only from `show as tabs` in a right-click menu,
 the rail is a second full tree beside the sidebar's, extracts appear as
 subtabs (a chapter with 40 extracts has 40 tabs), `+ tab` makes a draft

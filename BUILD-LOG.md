@@ -59,6 +59,10 @@ the tests (`tabs-refined.test.ts`, `remove.test.ts` new).
 - A real pointer's drag on the rail, the hover look, the outline's scroll in
   WebKit, the rail's resize cursor; a multi-chapter PDF as a notebook is not
   done (a page range per document would be a format change).
+- Window run 1 (`854659c`): passed to the outline, then failed reading the
+  overview's headings before the click had made the tab the page (a smoke
+  race; the rail was right). Heading rows carry `data-of`; the smoke waits
+  for the page and that tab's headings only; a new test. 839 tests; rerun owed.
 
 ### Handoff prompt
 

@@ -6,6 +6,82 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-10-30 — milestone 40: a pass over everything, on a full collection
+
+Done on main; commits `960efd4` (the pass: top row, room rule, formulas in
+chrome, queue paths, session card, deck and folder lenses, title once,
+display math, tabs, copy), `1eaa66f` (extract names), `3b5aa00` (the
+measurements and the tour's assertions). New: `src/app/layout.ts` (the
+room rule), `chromeText.ts` (formulas as HTML or plain text, the title
+fold, the queue's path parts, the day's breakdown, the counts under a
+row), `MathText.tsx`, `__tests__/pass.test.ts`, `__tests__/perf.test.ts`.
+The list worked from was the coordinator's reading of `ILMI_SMOKE=tour`
+and every milestone's captures over a copy of the sample.
+
+### Done
+
+- The reader's top row on one line: the crumb's two nearest levels (the
+  trail in its tooltip), `8 due` (the totals in its tooltip), no
+  `editable` word, a compact `from…`.
+- The inspector yields when a pane cannot keep a 560 px measure beside
+  the sidebar and a rail; ⌘⇧I shows it anyway (`layout.ts`).
+- Display math without the empty line ProseMirror's trailing break drew
+  under it.
+- The session card fits its card; no blur; the answer appears under a
+  hairline on reveal; a cloze is answered in place.
+- The queue's rows: a path of titles on one line (`arab 401 › kāna and
+  its sisters › order: …`), kinds as lowercase words, `both ways`
+  everywhere, `in 3mo`; its inspector the day by course.
+- The deck's inspector without the card list; rows front over back from
+  one start, `in 5mo`, the interval in the tooltip.
+- The folder lens counts the cards (and due) under each row, nothing
+  when none; its inspector the same; `extracts of <title>`.
+- An imported chapter whose body opens with its title is titled once.
+- Tab titles in the sans, giving way in the middle.
+- Inline math drawn by KaTeX in the inspector, the outline, the rail's
+  headings, the session's path and the queue; plain in tooltips and
+  options.
+- Extracts named from their first clause, lower case, up to six words.
+- No uppercase transforms; the day without its middot; the landing
+  notices without the pileup.
+
+### Measured (jsdom, run alone; before → after)
+
+Collection open 24 → 27 ms; queue 2.2 → 2.3 ms; the longest note's state
+16 ms; a keystroke 1.2 → 1.3 ms plus 0.1 ms for its write; the note in
+the reader ~200 ms; deck browser, vocab 34 → 32 ms; every card 535 → 240
+ms to the first rows (the rest on timers), a row clicked 99 → 23 ms; the
+tree all open 15 ms. Paint and the Tauri fs are not measured here.
+
+### Verified
+
+- `npx vitest run`: 947 tests, 52 files (927 before; `pass.test.ts` 20,
+  `perf.test.ts` 6). `npm run typecheck` clean. `cargo test` 12. `vite
+  build` clean.
+
+### Not verified — the window run is owed
+
+- Nothing ran in the Tauri window. `ILMI_SMOKE=tour` (ILMI_VAULT on a
+  fresh copy of samples/double-major) sets light first, asserts the fixes
+  (`ok:` lines; the first miss `failed: …`), then captures every screen
+  in light, dark and e-ink.
+
+### Handoff prompt
+
+```
+Read PLAN.md (ground rules, Refinement, 40's notes and the notes for the
+next session), FORMAT.md, spec/hashiyah/BUILD-PROMPT.md, and the top
+BUILD-LOG.md entries. The Refinement section (33–41) is complete pending
+its window checks: if the user has not yet, run ILMI_SMOKE=tour (and the
+owed listcards, arabic, rest) with ILMI_VAULT on a fresh copy of
+samples/double-major (port 1420 free, never kill a run that is not yours;
+capture 2 s after each `shot:` line), read the captures, fix what they
+show, and record it under the milestone. Then ask the user what is next;
+do not start a new milestone without their word.
+```
+
+---
+
 ## 2026-10-30 — milestone 41: the editor's rest — outline, folding, code, tables
 
 Done on main; commit `c1a7a60` — *the editor's rest (milestone 41): an

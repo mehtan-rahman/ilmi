@@ -4166,7 +4166,123 @@ rail shows units without extracts, the active tab's headings navigate,
 a tab is added, renamed, nested and moved by drag and by keyboard, and a
 drag from the rail into the sidebar lands.
 
-### [ ] 40. A pass over everything, on a full collection
+### [x] 40. A pass over everything, on a full collection
+Done 2026-10-30, commits `960efd4`, `1eaa66f`, `3b5aa00`. The window check
+is pending: run `ILMI_SMOKE=tour` with `ILMI_VAULT` on a fresh copy of
+`samples/double-major` and read its `ok:` lines (the first miss is
+`failed: …`) and `shot:` captures: fix-top-row, fix-session-cloze,
+-revealed, then every screen (queue, note-physics-top, -mid, notebook,
+note-arabic, -mid, textbook, reader-arabic, vocab-deck, draft, folder,
+session-1, -shown, session-2) in light, then each with `-dark` and
+`-eink`. Nothing was run in the window this session.
+Notes: what changed, from the coordinator's reading of the tour's captures.
+- **Top row** (Reader.tsx, Crumbs.tsx, app.css): one line always
+  (`white-space: nowrap`, everything but the crumb keeps its width). The
+  crumb keeps its two nearest levels (`keptCrumbs`, `CRUMBS_KEPT`), the
+  outer ones one `…` link, the whole trail in its tooltip, each level cut
+  by its width last. The count is one token: `8 due`, or `16 cards` when
+  none is due, the full `16 cards, 8 due` (a draft's words too) in the
+  tooltip. `editable`/`frozen` left the row (the inspector's freeze/thaw
+  stays; the page carries `data-frozen`). The `from…` select is 64 px, its
+  options plain text.
+- **The room rule** (`src/app/layout.ts`, new): a pane's reading measure
+  never goes below `MEASURE_MIN` = 560 px. When the window cannot give each
+  pane 560 + its padding (48) beside the sidebar, the pane's rail (if
+  showing) and the inspector, the inspector is not drawn
+  (`inspectorShown`); its saved `open` is untouched, so it returns when the
+  window widens, a pane closes, or the rail folds. ⌘⇧I, the top strip's
+  toggle and the palette go through `toggleInspector`: drawn → closed;
+  not drawn → open and `inspForced` (shown past the rule until closed; not
+  saved). With the defaults (sidebar 232, rail 200, inspector 280) a
+  notebook page keeps the inspector from 1320 px wide; a plain page from
+  1120; two panes need 1840. The sidebar and the rail never close by
+  themselves. The smokes other than the tour run with `inspForced`.
+- **Display math**: ProseMirror's trailing break after an inline atom drew
+  an empty line under a display formula ending its paragraph; hidden
+  (`.math.display ~ br.ProseMirror-trailingBreak`), the formula's bottom
+  margin 0, so the gap under it is the paragraph rhythm.
+- **Session card** (Session.tsx, session.css): no grid of two halves, no
+  blur (the soft blob was the blurred answer face): the card is as tall as
+  its question (floor 88 px for the face, a long one scrolls inside), the
+  answer appears under a hairline only once revealed, and before that one
+  quiet line `space reveal` (a click reveals). A cloze has no answer face:
+  its blank fills in the sentence; `blankAnswers` is no longer drawn there.
+- **Queue rows** (Queue.tsx `QueuePath`, chromeText.ts `pathParts`): a path
+  of titles on one line: the parent (the document the item sits under,
+  shortened at ` · `/` — `/`: ` by `shortTitle`, e.g. `arab 401`; else the
+  folder's name), the document, a card's heading; `›` between; the parent
+  gives way first, then the heading (flex shrink weights), the whole path
+  in the tooltip. The `queueTitles` tweak drops the parent. Kind tags are
+  lowercase mono words in the quiet ink (`both ways`, not `bidir`, from
+  `FORM_LABEL`, so the deck rows, the composer, the inspector's new-card
+  forms and the session say it too). The due column says `in 3mo` /
+  `overdue 6d` (`dueWhen`), the interval in its tooltip.
+- **Queue inspector**: `due now`, what is due in that query by course
+  (`breakdown` / `groupOf`: the outermost document over the item, else its
+  top folder), most first; nothing when nothing is due.
+- **Deck lens**: the inspector keeps the deck's facts and new-card forms,
+  no card list. Rows: front over back from the row's start, each face its
+  own direction (`align-items: flex-start`); `in 5mo` / `overdue 3d`, the
+  interval in the tooltip; a cloze's answers lit in place, not repeated as
+  a back. The meta count is one token as in the reader.
+- **Folder lens**: each row counts the cards under it all the way down
+  and how many are due (`countsUnder`, `countWords`), nothing when none
+  (no `note`, no `draft`); the inspector `items`, `cards`, `due`. A
+  document's children read `extracts of <title>` when all are extracts,
+  else `under <title>` (`folderLabel`).
+- **Title once**: `bodyRepeatsTitle` (folds case, marks, punctuation, and
+  `ch. 3`/`Chapter 3`; a leading number may be on one side only): when the
+  body opens with a level 1–2 heading matching the title, the reader draws
+  no `h1`.
+- **Tabs**: titles in the sans (12 px), a notebook's `nb › page` giving way
+  in the middle (the notebook shrinks first), the whole title the tooltip.
+- **Formulas in chrome** (chromeText.ts `inlineMathHTML`, `plainMath`,
+  `hasMath`; MathText.tsx): KaTeX inline at the line's size in the
+  inspector's card list (whole names now, `cardName`, cut by CSS so a
+  formula is never cut in half), the outline, the rail's heading rows, the
+  session's path, the queue's path and reading snippets; plain text with
+  the dollars gone and common commands as characters (`|n^0⟩`, `λ`) in
+  tooltips, `<option>`s, tab titles and crumbs.
+- **Extract names** (`extractName`, src/vault): the first clause's words
+  once there are two, at most six, lower case, Markdown, card markup,
+  formulas and addresses dropped, never ending on `the`/`of`/`and`…;
+  unique by the folder's free name as before. `Typed from the green
+  notebook, pp. 1–19.` → `typed from the green notebook`.
+- **Copy**: uppercase transforms gone from every stylesheet (FREEZE,
+  RESET, OVERDUE, CLOZE, the queue's day); the day `fri 30 oct`; the
+  landing notices `placed · title, 3 pages in …` and `clipped · title, 120
+  words …`; growth `22d, 35d, 56d`.
+Measurements (vitest + jsdom over a copy of the sample, run alone;
+`ILMI_PERF_OUT=file npx vitest run src/app/__tests__/perf.test.ts`; jsdom
+draws no pixels, so these are script costs; the collection's open is
+through node's fs, not Tauri's IPC), before → after:
+collection open (walk, read, parse 74 files, the queue) 24 → 27 ms; queue
+build 2.2 → 2.3 ms; the longest note's (3,669 words) editor state and view
+16 ms; one keystroke there (transaction with every plugin's decorations
+and the DOM update) 1.2 → 1.3 ms, its write (`fromDoc` + `serialize`)
+0.1 ms; the note opened in the reader 200 → 210 ms (polled at 5 ms);
+deck browser over the vocab deck (178) 34 → 32 ms, a row clicked 15 → 14
+ms; over every card (758) 535 ms → 240 ms to the first 200 rows, the rest
+drawn on timer chunks (all by ~620 ms, the page usable meanwhile), a row
+clicked 99 → 23 ms (faces drawn once per text); the tree with all 84
+rows open 0.2 ms to compute, 15 ms to draw. Nothing else was over the
+bounds (50 ms a keystroke, 300 ms an open). Not measurable here: paint
+and layout per keystroke in WebKit (the reader's `measure` after each),
+and the Tauri fs's open.
+Tests: `pass.test.ts` (20: the formulas in chrome, the title fold and the
+reader over the Lindqvist chapter and a note, the top row, the crumb, the
+queue's paths and kinds drawn over the sample, the queue inspector's
+breakdown, counts under a course, the folder inspector, the extracts
+folder's words, the room rule, the words, the session card's CSS, a
+one-line cloze and a q&a in the session, the deck's and a note's
+inspector with no raw `$`), `perf.test.ts` (6); changed on purpose:
+extract names in `tree.test.ts` and `reader.test.ts`, the day, the folder
+lens's `under …`, the session path's tooltip, the landing notices.
+Left for later: the PDF lens's top row keeps its `frozen`/`pages` words;
+the tree and palette rows do not draw formulas (no sample name has one);
+a reading snippet cut by `firstWords` may split a formula (then shown as
+text); the inspector's room rule ignores the reading-width tweak (560 is
+fixed); a forced inspector stays forced until closed.
 With 33–39 in, run `ILMI_SMOKE=tour` over the sample and read every
 capture in light, dark, and e-ink as the BUILD-PROMPT's test asks ("it
 should read as a piece of software someone maintained for years for
@@ -4359,6 +4475,15 @@ Wikilinks and backlinks are not here; ask the user after this one.
 file.
 
 ## Notes for the next session
+
+40 (a pass over everything on the full collection) is done on main,
+commits `960efd4`, `1eaa66f`, `3b5aa00`; its window check is owed
+(`ILMI_SMOKE=tour`, ILMI_VAULT on a fresh copy of samples/double-major:
+`ok:` lines, then every screen in light, dark and e-ink). With it the
+Refinement section (33–41) is complete pending its window checks (37's
+`listcards`, 36's `arabic`, 41's `rest`, 40's `tour`). What comes next is
+the user's to say: ask. Wikilinks and backlinks were set aside for the
+user (41's line). The room rule for the inspector is in `layout.ts`.
 
 41 (the editor's rest: outline, folding, code, tables) is done on main,
 commit `c1a7a60`; its window check is owed (`ILMI_SMOKE=rest`, ILMI_VAULT

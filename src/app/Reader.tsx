@@ -1229,6 +1229,8 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
             if (fp !== fn && (fp?.folded.length || fn?.folded.length)) {
               setFolds(id, foldedKeys(next));
               measure();
+              // and again once the page has laid out without the hidden blocks (a timer: WebKit holds frames back when covered)
+              setTimeout(measure, 0);
             }
             if (tr.docChanged) {
               writer.version++;

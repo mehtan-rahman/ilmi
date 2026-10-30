@@ -5600,8 +5600,12 @@ export async function smokeRest(vault: Vault): Promise<void> {
     g.dispatchEvent(new PointerEvent('pointerup', opts));
     await poll(async () => meta((await vault.read(SOURCE, true)).doc).read?.pos === want, `a press on the folded heading reads through its section (pos ${want})`);
     const rule = await poll(() => q<HTMLElement>('.read-rule'), 'the rule is drawn');
-    const ruleBottom = rule.getBoundingClientRect().bottom;
-    must(Math.abs(ruleBottom - heading('3.7')!.getBoundingClientRect().bottom) < 4, `the rule ends under the folded heading (${ruleBottom.toFixed(0)} vs ${heading('3.7')!.getBoundingClientRect().bottom.toFixed(0)})`);
+    // the rule's top and height ease (.18 s): read it once it has come to rest, not mid-move
+    let gap = Infinity;
+    await poll(() => {
+      gap = Math.abs(rule.getBoundingClientRect().bottom - heading('3.7')!.getBoundingClientRect().bottom);
+      return gap < 4;
+    }, 'the rule ends under the folded heading', 3000).catch((e: unknown) => { throw new Error(`${e instanceof Error ? e.message : String(e)}; off by ${gap.toFixed(0)} px`); });
     await shot('rest-folded-source');
     down(q<HTMLElement>('.fold-chev', heading('3.7')!)!);
     await poll(() => !heading('3.7')?.classList.contains('fold-head'), '3.7 opens again');

@@ -7,7 +7,10 @@
 // (a session over them, deckOps.ts), `revisit` on a note not yet enrolled
 // (its reading line, no marker), and delete (asking first when there is
 // something under it). A document's menu has `show as tabs` / `show as
-// tree` (its `tabs` field, `tabs.ts`), and on a tab rail's row `add subtab`. The `+` in the sidebar's root row opens the same menu
+// tree` (its `tabs` field, `tabs.ts`), and on a tab rail's row `add subtab`; a node's has
+// `duplicate` (a copy right after it). A rail row's `···` (`tab`) is the short one: add
+// subtab, rename, duplicate, move to…, delete. Every delete has the notice's undo
+// (`remove.ts`). The `+` in the sidebar's root row opens the same menu
 // without the node's half.
 // Escape and a press outside close it; it stays inside the window at the
 // right (`MENU_W`) and the bottom (`placeMenu`).
@@ -19,7 +22,8 @@ import { hasCards, studyDeck } from './deckOps.js';
 import { importFiles } from './land.js';
 import { GLYPH, descendants, findNode, kindOf, moveTargets, titleOf, type NodeKind } from './names.js';
 import { useApp } from './store.js';
-import { createNode, enrolReading, moveNode, openIntake, removeNode, setTabs, sortByName } from './vault.js';
+import { deleteNode } from './remove.js';
+import { createNode, duplicateNode, enrolReading, moveNode, openIntake, setTabs, sortByName } from './vault.js';
 
 export const MENU_W = 190;
 
@@ -37,6 +41,8 @@ export interface MenuAt {
   y: number;
   sub: boolean;
   plus?: boolean;
+  /** A tab rail row's `···`: only add subtab, rename, duplicate, move to…, delete (Google Docs' tab menu). */
+  tab?: boolean;
 }
 
 /** A menu for `id` at the pointer, kept off the right edge. */
@@ -102,7 +108,7 @@ export function NodeMenu({ at, set, onCreated, onRename, onSubtab }: Props) {
   const del = (e: MouseEvent) => {
     e.stopPropagation();
     if (under > 0 && !asking) { setAsking(true); return; }
-    removeNode(at.id).catch(fail);
+    deleteNode(at.id).catch(fail);
     set(null);
   };
 
@@ -114,7 +120,28 @@ export function NodeMenu({ at, set, onCreated, onRename, onSubtab }: Props) {
       onMouseDown={(e) => e.stopPropagation()}
       onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); }}
     >
-      {!at.sub ? (
+      {!at.sub && at.tab ? (
+        <>
+          {onSubtab && (
+            <div className="ci" data-act="subtab" onClick={act(() => onSubtab(at.id))}>
+              <span className="cg">+</span>add subtab
+            </div>
+          )}
+          <div className="ci" data-act="rename" onClick={act(() => onRename(at.id))}>
+            <span className="cg">✎</span>rename<span className="ck">F2</span>
+          </div>
+          <div className="ci" data-act="duplicate" onClick={act(() => { duplicateNode(at.id).catch(fail); })}>
+            <span className="cg">⧉</span>duplicate
+          </div>
+          <div className="ci has-sub" data-act="move" onClick={sub(true)}>
+            <span className="cg">→</span>move to…<span className="ck">▸</span>
+          </div>
+          <div className="cd" />
+          <div className={`ci danger${asking ? ' asking' : ''}`} data-act="delete" onClick={del}>
+            <span className="cg">⌫</span>{asking ? `delete with ${under} inside?` : 'delete'}
+          </div>
+        </>
+      ) : !at.sub ? (
         <>
           {NEW_KINDS.map(([k, label]) => (
             <div key={k} className="ci" onClick={act(() => create(k))}>
@@ -172,6 +199,9 @@ export function NodeMenu({ at, set, onCreated, onRename, onSubtab }: Props) {
               <div className="cd" />
               <div className="ci" onClick={act(() => onRename(at.id))}>
                 <span className="cg">✎</span>rename<span className="ck">F2</span>
+              </div>
+              <div className="ci" data-act="duplicate" onClick={act(() => { duplicateNode(at.id).catch(fail); })}>
+                <span className="cg">⧉</span>duplicate
               </div>
               <div className="ci has-sub" onClick={sub(true)}>
                 <span className="cg">→</span>move to…<span className="ck">▸</span>

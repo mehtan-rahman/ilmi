@@ -151,7 +151,7 @@ export interface Session {
 
 export const SIDE_MIN = 160;
 export const SIDE_MAX = 440;
-export const SIDE_DEFAULT = 220;
+export const SIDE_DEFAULT = 232;
 
 /** A notice over the canvas. `seq` tells one from the next; `undo` says one is held for it (`src/app/land.ts`). */
 export interface Notice {
@@ -218,6 +218,8 @@ export interface AppState {
   order: Order;
   /** Notebooks (documents with `tabs: true`) whose tab rail is folded to a strip, by path. Per vault, in `.ilmi/state.json`. */
   railFolded: Record<string, true>;
+  /** The tab rail's width in px, one for every notebook (`tabs.ts`'s `clampRail`). Per vault, in `.ilmi/state.json`. */
+  railWidth: number;
   /** The deck browser's chips and sort, per lens id (`.ilmi/state.json`'s `decks`). */
   deckViews: Record<string, DeckView>;
   session: Session | null;
@@ -273,6 +275,7 @@ export const useApp = create<AppState>((set, get) => ({
   intakeFiles: [],
   order: {},
   railFolded: {},
+  railWidth: 200,
   deckViews: {},
   session: null,
   sessionEl: null,

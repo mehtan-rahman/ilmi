@@ -17,6 +17,15 @@ import { childDirOf, dirOf, ordered, within, type Order, type TreeNode } from '.
 import type { FlatRow, Mode, Nest } from './dnd.js';
 import { findNode } from './names.js';
 
+/**
+ * The tree's indent: 6 px to depth 0's content, 10 a level. 10, not 13 (39,
+ * from 38's window check: four levels down, `variational met…` was cut by
+ * the indent at the default width); the guides still sit under each level's
+ * chevron, 10 px apart.
+ */
+export const TREE_PAD = 6;
+export const TREE_INDENT = 10;
+
 /** One drawn row of the tree. */
 export interface TreeRow extends FlatRow {
   /** The row it sits under (`''` the root row), null for the top row. */

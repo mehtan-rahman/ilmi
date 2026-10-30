@@ -6,6 +6,79 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-10-30 — milestone 39: tabs, refined
+
+Done on branch `worktree-agent-afea09d94a7eddc9d` (beside 35 on main, to be
+merged by hand); commit `7c76a4c` — *tabs, refined (milestone 39): a `tabs`
+toggle in the top row, extracts never tabs, the active tab's outline, the
+rail from the keyboard, hover menus, ⌃⌘T, a resizable rail; 38's window
+findings fixed*. Files: `src/app/Rail.tsx` (rewritten), `tabs.ts` (the
+rail's rows as tree rows, extracts out, three levels, `railKeyPlace`,
+`outline`, `showsTabsToggle`, the width), `TabsToggle.tsx` and `remove.ts`
+(new), `drag.ts` (the rest and the spring on timers), `NodeMenu.tsx` (the
+tab menu, `duplicate`, deletes with undo), `Tree.tsx` and `treeModel.ts`
+(10 px a level), `vault.ts` (`duplicateNode`, `noteAfter`, `setRailWidth`,
+the book as a notebook), `land.ts`, `store.ts`, `useDoc.ts`, `app.css`,
+`src/vault/vault.ts` (`remove` → `Removed`, `restore`, `duplicate`),
+`src/vault/order.ts` (`restoreOrder`), `smoke.ts` (`smokeTabs2`), FORMAT §3
+(a sentence on how the rail draws), README, one line in `Reader.tsx`, and
+the tests (`tabs-refined.test.ts`, `remove.test.ts` new).
+
+### Done
+
+- 38's window findings: a still pointer resting 400 ms on a bare note's
+  middle nests it (timers, and the drop checks the clock; the window's miss
+  was likely also the smoke's target sitting in the edge band, scrolled
+  under the pointer by each dragover); every delete leaves `deleted · name`
+  with `undo`, which writes the files back and the entry into its old place
+  in `order.json`; names four levels down no longer cut at the default
+  width (10 px a level, 4 px gaps, 232 px sidebar; the sidebar's edge was
+  already a resize remembered in `state.json`).
+- `tabs` in the reader's top row of any document with children; an EPUB
+  lands as a notebook, its chapters as tabs.
+- The rail: 200 px, its edge dragged (150–360, one width remembered);
+  extracts never tabs (one `n extracts` row opening their folder inside the
+  notebook); three levels; the active tab's headings under it, a click
+  scrolling to one, a second click on the tab hiding them; `+ add tab` at
+  the top; hover `+` (a note after it) and `···` (add subtab, rename,
+  duplicate, move to…, delete); the tree's keys in the rail; ⌘⌥↑↓ from the
+  page; fold on ⌃⌘T (why in 39's notes); drags cross to the sidebar (38's).
+
+### Verified
+
+- `npx vitest run`: 818 tests, 42 files (793 before). `npm run typecheck`
+  clean. `cargo test` 12. (In this worktree vitest ran with a scratch config
+  allowing the symlinked `node_modules`, not committed.)
+
+### Not verified — the window run is owed
+
+- Nothing ran in the Tauri window. `ILMI_SMOKE=tabs2` (new) drives the
+  "done when" and the three fixes over a copy of the sample and asserts
+  every step (`ok: …` lines; the first mismatch is `failed: …`); read its 19
+  captures (listed in 39's notes).
+- A real pointer's drag on the rail, the hover look, the outline's scroll in
+  WebKit, the rail's resize cursor; a multi-chapter PDF as a notebook is not
+  done (a page range per document would be a format change).
+
+### Handoff prompt
+
+```
+Read PLAN.md (ground rules, Refinement, 38's and 39's notes), FORMAT.md §1
+and §3, and the top BUILD-LOG.md entries. Merge branch
+worktree-agent-afea09d94a7eddc9d into main if it is not yet (its one line
+in Reader.tsx: <TabsToggle path={id} /> after the crumbs). Run
+ILMI_SMOKE=tabs2, then ILMI_SMOKE=tree, each with ILMI_VAULT on a fresh copy
+of samples/double-major (port 1420 free, never kill a run that is not
+yours; capture with screencapture -l <window id> 2 s after each `shot:`
+line), read the captures, fix what they show, and record it under 39's
+entry. When 35–37 are in, do milestone 40 (a pass over everything, on a
+full collection) and only that one; stop at its "done when". Suite,
+typecheck, and `cargo test` green before each commit; tick it, write notes,
+add an entry here with a fresh handoff prompt, and commit.
+```
+
+---
+
 ## 2026-10-30 — milestone 35: insert, paste, find
 
 Done on main; commit `89d881d` — *insert, paste, find: a slash menu for

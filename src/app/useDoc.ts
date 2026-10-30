@@ -5,11 +5,12 @@ import { useEffect, useState } from 'react';
 import type { Loaded } from '../vault/index.js';
 import { currentVault } from './vault.js';
 
-export function useDoc(path: string): Loaded | null {
+/** `path` null: nothing is read (a lens that has no document to show). */
+export function useDoc(path: string | null): Loaded | null {
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   useEffect(() => {
     const vault = currentVault();
-    if (!vault) return;
+    if (!vault || path === null) { setLoaded(null); return; }
     let live = true;
     vault.read(path).then((l) => { if (live) setLoaded(l); }, () => { if (live) setLoaded(null); });
     const off = vault.subscribe((ev) => {

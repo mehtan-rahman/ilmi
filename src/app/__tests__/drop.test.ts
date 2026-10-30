@@ -32,7 +32,7 @@ function stubs(opts: { text?: string; title?: string; decks?: number; chapters?:
     importBook: async (dir, book) => {
       calls.push(`book ${dir}|${book.title}|${book.chapters.length}`);
       const folder = `${dir ? `${dir}/` : ''}${book.title}`;
-      return { folder, paths: book.chapters.map((c) => `${folder}/${c.name}.md`) };
+      return { book: `${folder}.md`, folder, paths: book.chapters.map((c) => `${folder}/${c.name}.md`) };
     },
     importAnki: async (dir, ds) => { calls.push(`anki ${dir}|${ds.map((d) => d.title).join(',')}`); return ds.map((d) => `${dir ? `${dir}/` : ''}${d.title}.md`); },
     importClip: async (dir, spec) => { calls.push(`clip ${dir}|${spec.title}|${spec.url}`); return { path: `${dir ? `${dir}/` : ''}${spec.title}.md` }; },
@@ -101,13 +101,14 @@ describe('land or ask', () => {
     expect(calls).toEqual(['pdf papers|Two Pages|4']);
   });
 
-  it('an epub lands its chapters in a folder named for the book, opening the first', async () => {
+  it('an epub lands as a notebook, its chapters as tabs under the book, opening the first', async () => {
     const { fx, calls } = stubs({ chapters: 12 });
     const r = await landFile('/Downloads/muqaddimah.epub', 'books', fx);
     if (r.kind !== 'landed') throw new Error('asked');
     expect(r.landed.line).toBe('placed · Muqaddimah · 12 chapters in books/');
     expect(r.landed.open).toBe('books/Muqaddimah/01 Chapter 1.md');
-    expect(r.landed.written).toHaveLength(12);
+    expect(r.landed.written).toHaveLength(13);
+    expect(r.landed.written[0]).toBe('books/Muqaddimah.md');
     expect(r.landed.folders).toEqual(['books/Muqaddimah']);
     expect(calls).toEqual(['book books|Muqaddimah|12']);
   });
@@ -159,7 +160,7 @@ describe('undo', () => {
     const r = await landFile('/Downloads/muqaddimah.epub', 'books', fx);
     if (r.kind !== 'landed') throw new Error('asked');
     await undoLanded(r.landed, fx.remove);
-    expect(removed).toEqual(['books/Muqaddimah']);
+    expect(removed).toEqual(['books/Muqaddimah', 'books/Muqaddimah.md']);
   });
 
   it('removes a landed file by itself, its pages going with it', async () => {
@@ -187,7 +188,7 @@ describe('several files, the notice, and the intake', () => {
     expect(st.notice).toMatchObject({ line: 'placed · Muqaddimah · 3 chapters in papers/', open: 'papers/Muqaddimah/01 Chapter 1.md', undo: true });
     expect(st.log.slice(0, 2)).toEqual(['placed · Muqaddimah · 3 chapters in papers/', 'placed · Two Pages · 2 pages in papers/']);
     await undoNotice();
-    expect(s.removed).toEqual(['papers/Muqaddimah']);
+    expect(s.removed).toEqual(['papers/Muqaddimah', 'papers/Muqaddimah.md']);
     expect(useApp.getState().notice).toBeNull();
     expect(useApp.getState().log[0]).toBe('undone · Muqaddimah · 3 chapters in papers/');
   });

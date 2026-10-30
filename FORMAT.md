@@ -214,6 +214,10 @@ document itself first and a child's own children as subtabs under it. A
 tab is a whole document or folder in its own file; nothing about the
 children changes with the field, and without it they are the same nodes in
 the tree. `tabs: false` is the default and is written only when set by hand.
+How the rail draws them is the app's, not the file's: extracts among the
+children are not drawn as tabs (a tab's show as one line under it), and it
+draws three levels. A book imported from an EPUB lands as a document with
+`tabs: true` and its chapters in its children directory.
 
 **title** is written plain when it can be and as a double-quoted JSON string
 otherwise (when it starts with a YAML-significant character, contains `: ` or

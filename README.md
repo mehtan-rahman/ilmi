@@ -72,18 +72,26 @@ row to hoist it. The menu's `new …`
 on a document makes the new item inside it, `move to…` lists documents as
 well as folders, and a document's children open as a folder lens from its
 inspector's `children` line or ⌥-click on its chevron. Deleting a document
-with children asks first.
+with children asks first. Every delete leaves a notice whose `undo` puts it
+back where it was. The sidebar's edge drags its width.
 
-A document can show its children as tabs, as Google Docs does: `show as
-tabs` on its menu (it writes `tabs: true` in its front-matter) draws a rail
-on the left of its page with the document first and its children in their
-order, a child's own children as subtabs under a chevron. A click shows that
-tab in the same pane; the pane's tab reads `linear algebra › unit 2`. `+ tab`
-makes a draft, `+` beside it a source, a deck, or an imported file; a row's
-menu has `add subtab`, and rows drag to reorder or nest. ⌘⌥↑ / ⌘⌥↓ step
-through the tabs and ⌘⇧[ folds the rail. Each tab is a whole document in
-its own file, so the queue, the palette, and a session reach it by its path
-and open the notebook on it.
+A document can show its children as tabs, as Google Docs does: `tabs` in the
+top row of any document with children (or `show as tabs` on its menu; it
+writes `tabs: true` in its front-matter) draws a rail on the left of its page
+with the document first and its children in their order, a child's own
+children as subtabs under a chevron, three levels at most. Extracts are never
+tabs: a tab's are one `n extracts` line under it that opens them as a folder.
+The open tab's headings are listed under it; a click scrolls the page there.
+A click shows a tab in the same pane; the pane's tab reads `linear algebra ›
+unit 2`. `+ add tab` at the top makes a note, `▾` beside it a source, a deck,
+a draft, or an imported file; on hover a row shows `+` (a note after it) and
+`···` (add subtab, rename, duplicate, move to…, delete), and rows drag to
+reorder or nest, into the sidebar too. With the rail focused the tree's keys
+work there; ⌘⌥↑ / ⌘⌥↓ step through the tabs from the page and ⌃⌘T folds the
+rail; its edge drags its width. A book (EPUB) lands as a notebook, its
+chapters as tabs. Each tab is a whole document in its own file, so the
+queue, the palette, and a session reach it by its path and open the notebook
+on it.
 
 In a dev build, `ILMI_VAULT=/path/to/vault npm run tauri dev` opens that vault
 at launch instead of asking for one. Add `ILMI_SMOKE=1` to run every tree

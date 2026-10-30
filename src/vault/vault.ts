@@ -5,7 +5,7 @@
 
 import { meta, parse, serialize, setField, type Card, type Diagnostic, type Doc, type NodeType } from '../format/index.js';
 import { join, relative, sameStamp, type Fs, type Stamp } from './fs.js';
-import { ORDER_FILE, childrenAt, cleanOrder, entryOf, followMove, forget, ordered, placeEntry, pruneOrder, type Order } from './order.js';
+import { ORDER_FILE, childrenAt, cleanOrder, entryOf, followMove, forget, ordered, placeEntry, pruneOrder, restoreOrder, type Order } from './order.js';
 import { addToPage } from './pages.js';
 import { baseOf, childDirOf, cleanName, dirOf, fileName, isDoc, joinRel, nameOf, pdfOf, rekey, within } from './paths.js';
 import { documents, isDocPath, isHidden, isPdfPath, walk, type DocNode, type TreeNode } from './walk.js';
@@ -46,8 +46,18 @@ export interface VaultState {
   clippings?: string;
   /** Notebooks (documents with `tabs: true`) whose tab rail is folded to a strip. */
   rails?: string[];
+  /** The tab rail's width in px. */
+  railWidth?: number;
   /** The deck browser's filter chips and sort, per deck (a lens id: a document, a folder, `''` the root). */
   decks?: Record<string, unknown>;
+}
+
+/** What `Vault.remove` took, for `Vault.restore`: every file under it as bytes, its directories, and the order as it was. */
+export interface Removed {
+  path: string;
+  files: { path: string; bytes: Uint8Array }[];
+  dirs: string[];
+  order: Order;
 }
 
 /** Default file names for new nodes, by type. */
@@ -839,9 +849,31 @@ export class Vault {
     });
   }
 
-  /** Delete a folder, or a document with its children directory and its pages. */
-  remove(path: string): Promise<void> {
+  /**
+   * Delete a folder, or a document with its children directory and its
+   * pages. Resolves to what went (every file's bytes and the order as it
+   * was), so `restore` can bring it back.
+   */
+  remove(path: string): Promise<Removed> {
     return this.serial(async () => {
+      const files: { path: string; bytes: Uint8Array }[] = [];
+      const dirs: string[] = [];
+      const take = async (rel: string): Promise<void> => {
+        const st = await this.fs.stat(this.abs(rel));
+        if (!st) return;
+        if (!st.isDir) {
+          files.push({ path: rel, bytes: await this.fs.readBytes(this.abs(rel)) });
+          return;
+        }
+        dirs.push(rel);
+        for (const e of await this.fs.readDir(this.abs(rel))) await take(joinRel(rel, e.name));
+      };
+      await take(path);
+      if (isDoc(path)) {
+        await take(childDirOf(path));
+        await take(pdfOf(path));
+      }
+      const removed: Removed = { path, files, dirs, order: structuredClone(this.order) };
       await this.fs.remove(this.abs(path));
       if (isDoc(path)) {
         await this.fs.remove(this.abs(childDirOf(path)));
@@ -856,6 +888,63 @@ export class Vault {
       await this.dropIfEmpty(dirOf(path));
       await this.rewalk();
       await this.writeOrder(forget(this.order, path));
+      return removed;
+    });
+  }
+
+  /**
+   * Put back what `remove` took: its files as they were (a children
+   * directory the delete left empty and removed is made again), and its
+   * place in its directory's order. Refuses when its name was taken since.
+   */
+  restore(r: Removed): Promise<void> {
+    return this.serial(async () => {
+      if (await this.fs.stat(this.abs(r.path))) throw new Error(`${nameOf(r.path)} already exists`);
+      const parent = dirOf(r.path);
+      if (parent !== '' && !(await this.fs.stat(this.abs(parent)))) await this.fs.mkdir(this.abs(parent));
+      for (const d of r.dirs) await this.fs.mkdir(this.abs(d));
+      for (const f of r.files) {
+        await this.fs.mkdir(this.abs(dirOf(f.path)));
+        await this.atomicWriteBytes(this.abs(f.path), f.bytes);
+        this.cache.delete(f.path);
+      }
+      await this.rewalk();
+      await this.writeOrder(restoreOrder(this.order, r.order, r.path));
+    });
+  }
+
+  /**
+   * A copy of a document (its children directory and its pages with it) or a
+   * folder, beside it as `name copy` (`name copy 2`, …), right after it in
+   * its directory's order; a `title` gets ` copy` too. Resolves to the copy's path.
+   */
+  duplicate(path: string): Promise<string> {
+    return this.serial(async () => {
+      const dir = dirOf(path);
+      const name = await this.freeName(dir, `${nameOf(path)} copy`);
+      const to = isDoc(path) ? `${joinRel(dir, name)}.md` : joinRel(dir, name);
+      const copy = async (from: string, dest: string): Promise<void> => {
+        const st = await this.fs.stat(this.abs(from));
+        if (!st) return;
+        if (!st.isDir) {
+          await this.atomicWriteBytes(this.abs(dest), await this.fs.readBytes(this.abs(from)));
+          return;
+        }
+        await this.fs.mkdir(this.abs(dest));
+        for (const e of await this.fs.readDir(this.abs(from))) await copy(joinRel(from, e.name), joinRel(dest, e.name));
+      };
+      if (!(await this.fs.stat(this.abs(path)))) throw new Error(`${path}: no such node`);
+      await copy(path, to);
+      if (isDoc(path)) {
+        await copy(childDirOf(path), childDirOf(to));
+        await copy(pdfOf(path), pdfOf(to));
+        const t = meta((await this.read(to, true)).doc).title;
+        if (t !== undefined) await this.update(to, (doc) => setField(doc, 'title', `${t} copy`));
+      }
+      await this.rewalk();
+      const shown = ordered(childrenAt(this.tree, dir) ?? [], this.order[dir]).map((n) => entryOf(n.path));
+      await this.writeOrder({ ...this.order, [dir]: placeEntry(shown, entryOf(to), entryOf(path), 'after') });
+      return to;
     });
   }
 

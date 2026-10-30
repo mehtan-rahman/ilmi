@@ -27,6 +27,9 @@ vi.mock('../vault.js', async (orig) => {
   };
 });
 
+// every delete goes through `remove.ts` (the notice's undo); here it is only named
+vi.mock('../remove.js', () => ({ deleteNode: vi.fn(async (path: string) => { calls.push(`remove ${path}`); }) }));
+
 const { Tree } = await import('../Tree.js');
 const { Crumbs, crumbTrail } = await import('../Crumbs.js');
 const { activeTab } = await import('../panes.js');
@@ -290,8 +293,8 @@ describe('the drag', () => {
       return `${wkb.className.match(/drop-\w+/)?.[0]} ${wkb.style.getPropertyValue('--drop-x')}`;
     });
     laidOut(() => { act(() => { trow('vocab.md').dispatchEvent(dragEv('dragstart', 0, 0)); }); });
-    expect(over(200)).toBe('drop-bottom 45px');
-    expect(over(30)).toBe('drop-bottom 32px');
+    expect(over(200)).toBe('drop-bottom 36px');
+    expect(over(30)).toBe('drop-bottom 26px');
     laidOut(() => { act(() => { wkb.dispatchEvent(dragEv('drop', 30, 22)); }); });
     expect(calls).toEqual(['place vocab.md after courses/qm.md']);
   });
@@ -301,7 +304,7 @@ describe('the drag', () => {
     laidOut(() => { act(() => { trow('vocab.md').dispatchEvent(dragEv('dragstart', 0, 0)); }); });
     expect(trow('vocab.md').classList.contains('dragging')).toBe(true);
     laidOut(() => { act(() => { trow('courses/qm.md').dispatchEvent(dragEv('dragover', 200, 22)); }); });
-    expect(trow('courses/qm.md').style.getPropertyValue('--drop-x')).toBe('45px');
+    expect(trow('courses/qm.md').style.getPropertyValue('--drop-x')).toBe('36px');
     laidOut(() => { act(() => { trow('courses/qm.md').dispatchEvent(dragEv('drop', 200, 22)); }); });
     expect(calls).toEqual(['place vocab.md before courses/qm/pt.md']);
     expect(trow('vocab.md').classList.contains('dragging')).toBe(false);

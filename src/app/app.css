@@ -170,7 +170,7 @@
 .tree .row {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   padding: 2px 8px 2px 0;
   color: var(--fg-2);
   border-radius: var(--radius);
@@ -944,7 +944,8 @@
 }
 .notebook .nb-page { flex: 1 1 0; min-width: 0; }
 .tab-rail {
-  width: 196px;
+  position: relative;
+  width: 200px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
@@ -956,66 +957,81 @@
   min-height: 0;
 }
 .tab-rail.folded { width: 26px; align-items: center; padding-top: 6px; gap: 6px; }
+/* the top: `+ add tab`, the kinds, the fold */
 .tab-rail .rail-head {
   display: flex;
   align-items: center;
-  padding: 8px 6px 6px 12px;
-  font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--fg-4);
+  gap: 2px;
+  padding: 8px 6px 6px 6px;
 }
-.tab-rail .rail-head span { flex: 1; }
+.tab-rail .rail-head button,
 .tab-rail .rail-fold {
   border: 0;
   background: transparent;
-  color: var(--fg-4);
-  font-family: var(--mono);
-  font-size: 11px;
-  width: 18px;
-  height: 18px;
-  line-height: 18px;
-  padding: 0;
+  color: var(--fg-3);
+  font-family: var(--sans);
+  font-size: 12px;
+  height: 20px;
+  line-height: 20px;
+  padding: 0 6px;
   border-radius: var(--radius);
   cursor: default;
 }
+.tab-rail .rail-head .rail-add { flex: 1; text-align: left; }
+.tab-rail .rail-head .rail-more,
+.tab-rail .rail-fold { font-family: var(--mono); font-size: 11px; color: var(--fg-4); width: 20px; padding: 0; text-align: center; }
+.tab-rail .rail-head button:hover,
 .tab-rail .rail-fold:hover { background: var(--line-2); color: var(--fg-1); }
 .tab-rail .rail-count { font-family: var(--mono); font-size: 10px; color: var(--fg-5); }
-.tab-rail .rail-rows { flex: 1 1 auto; overflow: auto; padding: 0 6px 8px; min-height: 0; }
+.tab-rail .rail-rows { flex: 1 1 auto; overflow: auto; padding: 0 6px 8px; min-height: 0; outline: none; }
 .tab-rail .rail-row {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 3px 8px 3px 0;
+  gap: 4px;
+  padding: 2px 6px 2px 0;
   color: var(--fg-2);
   border-radius: var(--radius);
-  line-height: 1.5;
+  line-height: 1.55;
   position: relative;
   cursor: default;
 }
 .tab-rail .rail-row:hover { background: var(--line-3); }
+/* the active tab: a soft fill, no stripe beside it */
 .tab-rail .rail-row[data-active="1"] { background: var(--accent-soft); color: var(--fg-1); }
-.tab-rail .rail-row[data-active="1"]::before {
-  content: "";
-  position: absolute;
-  left: 0; top: 3px; bottom: 3px;
-  width: 2px;
-  background: var(--accent);
-}
-/* a drop mark on the active row: its ring takes the stripe's place while it shows */
-.tab-rail .rail-row[data-active="1"].drop-top::before,
-.tab-rail .rail-row[data-active="1"].drop-bottom::before { left: var(--drop-x, 0px); width: 6px; height: 6px; background: var(--bg); }
-.tab-rail .rail-row[data-active="1"].drop-top::before { top: -3px; bottom: auto; }
-.tab-rail .rail-row[data-active="1"].drop-bottom::before { top: auto; bottom: -3px; }
+/* the selected row, where the keys start: a hairline, darker while the rail has focus */
+.tab-rail .rail-row[data-selected="1"] { box-shadow: inset 0 0 0 1px var(--line-2); }
+.tab-rail .rail-rows:focus-within .rail-row[data-selected="1"] { box-shadow: inset 0 0 0 1px var(--fg-4); }
 .tab-rail .rail-row.overview { font-weight: 500; margin-bottom: 4px; }
 .tab-rail .rail-row.overview + .rail-row { margin-top: 2px; }
-.tab-rail .rail-row .chev { width: 10px; flex-shrink: 0; font-family: var(--mono); font-size: 9px; color: var(--fg-4); }
-.tab-rail .rail-row .glyph { width: 12px; flex-shrink: 0; font-family: var(--mono); font-size: 11px; color: var(--fg-3); }
+.tab-rail .rail-row .chev { width: 9px; flex-shrink: 0; font-family: var(--mono); font-size: 9px; color: var(--fg-4); }
+.tab-rail .rail-row .glyph { width: 12px; flex-shrink: 0; text-align: center; font-family: var(--mono); font-size: 12px; line-height: 1; color: var(--fg-3); }
 .tab-rail .rail-row .glyph[data-t="draft"] { color: var(--el-write); }
 .tab-rail .rail-row .glyph[data-t="extract"] { color: var(--el-read); }
 .tab-rail .rail-row .glyph[data-t="folder"] { color: var(--fg-4); }
 .tab-rail .rail-row .name { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+/* a tab's extracts: one quiet line, opening their folder */
+.tab-rail .rail-row.extracts { color: var(--fg-4); font-size: 11.5px; }
+/* the active tab's outline: its headings under it, a click scrolls the page */
+.tab-rail .rail-row.heading { color: var(--fg-3); font-size: 11.5px; line-height: 1.45; padding-top: 1px; padding-bottom: 1px; }
+.tab-rail .rail-row.heading[data-level="1"] { color: var(--fg-2); }
+.tab-rail .rail-row.heading:hover { color: var(--fg-1); }
+/* on hover: `+` (a note after this one) and `···` (the tab's menu) */
+.tab-rail .rail-row .row-acts { display: none; gap: 2px; flex-shrink: 0; margin-left: 2px; }
+.tab-rail .rail-row:hover .row-acts,
+.tab-rail .rail-row[data-selected="1"] .row-acts { display: flex; }
+.tab-rail .rail-row .ra {
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 16px;
+  min-width: 16px;
+  text-align: center;
+  color: var(--fg-4);
+  border-radius: var(--radius);
+}
+.tab-rail .rail-row .ra:hover { color: var(--accent); background: var(--line-2); }
+.tab-rail .rail-row .ra.more { letter-spacing: -0.12em; padding-right: 0.12em; }
+.tab-rail .rail-row .asking { font-size: 11px; color: oklch(0.52 0.16 28); white-space: nowrap; flex-shrink: 0; }
+[data-theme="eink"] .tab-rail .rail-row .asking { color: var(--fg-1); font-weight: 600; }
 .tab-rail .rename {
   flex: 1;
   min-width: 0;
@@ -1030,16 +1046,26 @@
   outline: none;
   height: 18px;
 }
-.tab-rail .rail-foot { display: flex; gap: 4px; padding: 6px 12px 10px; border-top: 1px solid var(--line-3); }
-.tab-rail .rail-foot button {
-  border: 1px solid var(--line-2);
-  background: transparent;
-  color: var(--fg-3);
-  font-family: var(--mono);
-  font-size: 10.5px;
-  padding: 2px 8px;
-  border-radius: var(--radius);
-  cursor: default;
+/* the right edge: drag to resize */
+.tab-rail .rail-resize {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: -4px;
+  width: 8px;
+  cursor: col-resize;
+  z-index: 5;
 }
-.tab-rail .rail-foot .rail-add { flex: 1; text-align: left; }
-.tab-rail .rail-foot button:hover { color: var(--fg-1); border-color: var(--line-1, var(--fg-5)); }
+.tab-rail .rail-resize::after {
+  content: "";
+  position: absolute;
+  top: 0; bottom: 0; left: 4px;
+  width: 1px;
+  background: transparent;
+  transition: background .12s;
+}
+.tab-rail .rail-resize:hover::after { background: var(--accent); }
+body.resizing, body.resizing * { cursor: col-resize !important; user-select: none; }
+
+/* the `tabs` toggle in the reader's top row (TabsToggle.tsx): lit while the children are tabs */
+.reader .meta .tabs-toggle[data-on="1"] { color: var(--accent); }

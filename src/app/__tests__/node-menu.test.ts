@@ -41,6 +41,9 @@ vi.mock('../land.js', async (orig) => {
   return { ...real, importFiles: vi.fn(async (dir: string) => { calls.push(`import ${dir}`); return []; }) };
 });
 
+// every delete goes through `remove.ts` (the notice's undo); here it is only named
+vi.mock('../remove.js', () => ({ deleteNode: vi.fn(async (path: string) => { calls.push(`remove ${path}`); }) }));
+
 const { Tree } = await import('../Tree.js');
 const { Lens } = await import('../Lenses.js');
 
@@ -67,7 +70,7 @@ const flush = async () => { await act(async () => { await new Promise((r) => set
 const entries = () => Array.from(document.querySelectorAll<HTMLElement>('.ctx-menu .ci')).map((e) => e.textContent?.replace(/^./, '').replace(/F2$|▸$/, '') ?? '');
 const fire = (el: Element, type: string, init: MouseEventInit = {}) => { act(() => { el.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, ...init })); }); };
 const click = (label: string) => fire(Array.from(document.querySelectorAll<HTMLElement>('.ctx-menu .ci')).find((e) => e.textContent?.includes(label))!, 'click');
-const ROW = ['new note', 'new source', 'new deck', 'new draft', 'new folder', 'import a file…', 'add from text or a link', 'show as tabs', 'rename', 'move to…', 'delete source'];
+const ROW = ['new note', 'new source', 'new deck', 'new draft', 'new folder', 'import a file…', 'add from text or a link', 'show as tabs', 'rename', 'duplicate', 'move to…', 'delete source'];
 const FOLDER = ['new note', 'new source', 'new deck', 'new draft', 'new folder', 'import a file…', 'add from text or a link'];
 
 beforeEach(() => {
@@ -103,7 +106,7 @@ describe('one menu, in the tree and the folder lens', () => {
     act(() => { host.querySelector('.folder-view')!.dispatchEvent(ev); });
     expect(ev.defaultPrevented).toBe(true);
     // the menu the folder's own row has in the tree
-    expect(entries()).toEqual([...FOLDER, 'rename', 'move to…', 'delete folder']);
+    expect(entries()).toEqual([...FOLDER, 'rename', 'duplicate', 'move to…', 'delete folder']);
     click('new deck');
     await flush();
     expect(calls).toEqual(['create papers|deck']);
@@ -139,7 +142,7 @@ describe('one menu, in the tree and the folder lens', () => {
     mount(createElement(Lens, { id: 'papers', active: true, onOpen: () => {} }), 'pane-body');
     const open = () => fire(host.querySelector('.fv-row[data-path="papers/old"]')!, 'contextmenu', { clientX: 300, clientY: 160 });
     open();
-    expect(entries()).toEqual([...FOLDER, 'rename', 'move to…', 'delete folder']);
+    expect(entries()).toEqual([...FOLDER, 'rename', 'duplicate', 'move to…', 'delete folder']);
     click('import a file…');
     open();
     click('add from text or a link');
@@ -227,7 +230,7 @@ describe('inside a document', () => {
     expect(host.querySelector('.folder-view .crumb')?.textContent).toBe('inside source');
     expect(Array.from(host.querySelectorAll<HTMLElement>('.fv-row')).map((r) => r.dataset.path)).toEqual(['papers/wozniak-1990/woz-ex1.md', 'papers/wozniak-1990/figures']);
     fire(host.querySelector('.folder-view')!, 'contextmenu', { clientX: 300, clientY: 500 });
-    expect(entries()).toEqual(['new note', 'new source', 'new deck', 'new draft', 'new folder', 'import a file…', 'add from text or a link', 'show as tabs', 'rename', 'move to…', 'delete source']);
+    expect(entries()).toEqual(['new note', 'new source', 'new deck', 'new draft', 'new folder', 'import a file…', 'add from text or a link', 'show as tabs', 'rename', 'duplicate', 'move to…', 'delete source']);
     click('new draft');
     await flush();
     expect(calls).toEqual(['create papers/wozniak-1990|draft']);

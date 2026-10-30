@@ -3776,7 +3776,130 @@ or box said, a reorder never nests by accident, the tree is fully
 usable from the keyboard, the open note is revealed, and no name is
 truncated by its counts at the default width.
 
-### [ ] 39. Tabs, refined
+### [x] 39. Tabs, refined
+Done 2026-10-30 on branch `worktree-agent-afea09d94a7eddc9d`, commit `7c76a4c`.
+The window check is pending: run `ILMI_SMOKE=tabs2` with `ILMI_VAULT` on a
+copy of `samples/double-major` and read its `ok:` lines and `shot:`
+captures (this was a worktree; nothing ran in the window). Every step
+asserts; the first mismatch logs `failed: …` and stops.
+Notes:
+- **38's window findings, first.** (1) The rest before `into` and the
+  spring are on timers (`drag.ts`): a still pointer may send no more
+  dragovers, so when the pointer has been on a bare document's middle for
+  `INTO_DWELL` a timer redraws the drop as the box, and a drop after the
+  rest nests even if that timer was held back (the drop checks the clock).
+  No animation frames anywhere. The likely cause of the window's "middle,
+  rested" miss was also the smoke's own: its target sat in the sidebar's
+  edge band, so every dragover scrolled the row up under a still pointer
+  into the bottom quarter; both smokes now scroll the target to the middle
+  first. (2) Every delete (the tree's ⌘⌫, a menu's delete, the rail's) is
+  `deleteNode` (`src/app/remove.ts`, new): `Vault.remove` now resolves to
+  what went (every file's bytes under the node, its children directory and
+  pages included, and the order as it was), the notice says `deleted ·
+  name` with `undo`, and `Vault.restore` writes it all back and puts the
+  entry in its old place (`restoreOrder` in `order.ts`: after the nearest
+  entry above it still listed). Held in memory with the notice; a closed
+  app keeps the delete. (3) The tree's indent is 10 px a level, not 13
+  (`TREE_PAD` / `TREE_INDENT` in `treeModel.ts`; the guides still sit under
+  each chevron), the row gap 4 px, and the sidebar's default 232 px (was
+  220). The sidebar's edge was already a resize handle remembered in
+  `state.json` (`side-resize`, since 9); the smoke now drags it.
+- **The toggle**: `TabsToggle.tsx` (new), the word `tabs` in the reader's
+  top row (lit while on) on any document with children that is not a page
+  inside another notebook (`showsTabsToggle`). Reader.tsx got one import
+  and one line after `<Crumbs path={id} />`. The menu's `show as tabs` stays.
+- **EPUB as a notebook**: `importBookNode` makes a source named for the book
+  with `tabs: true` (its body the chapters' titles, numbered) and the
+  chapters in its children directory; the landing's undo removes both. A
+  multi-chapter PDF does not: chapters of one PDF as tabs need a page range
+  per document, a format change not made here (open).
+- **The rail** (`Rail.tsx` rewritten, `tabs.ts`): its rows are the tree's
+  `TreeRow`s (overview at depth 0, `only` into, like the root row; tabs at 1,
+  subtabs to `TAB_DEPTH` = 3; the deepest never nests and shows no
+  chevron), so `treeKey`, `typeahead`, and `keyPlace` (`railKeyPlace`: not
+  into the deepest level, never out of the notebook) serve it. Extracts are
+  never tabs: an open tab with extracts gets one `n extracts` row after its
+  subtabs (a placeholder to the keys and the geometry, taking a drop into
+  the tab), the notebook's own last; it opens the folder lens of that
+  children directory inside the notebook (`notebookOf` now counts a
+  notebook's own children directory as its page; `tabLabel` reads
+  `quantum II › extracts`). `notebookPages` (the ⌘⌥↑↓ order) skips extracts
+  and anything deeper than three. Width 200 px by default, 150–360, dragged
+  by its right edge (`.rail-resize`, pointer events), one width for every
+  notebook in the store and `state.json` (`railWidth`, `setRailWidth`).
+  `+ add tab` is at the top (a note, named in place), `▾` beside it for the
+  other kinds and a file, `«` the fold; the uppercase `TABS` label and the
+  gold stripe on the active row are gone (a soft fill only, as the survey
+  asked).
+- **Outline**: the active tab's headings (levels 1–3, `outline(blocks)`,
+  emphasis markers off, `#TODO:` not a heading) are rows under it, indented
+  by level; a click scrolls the page to the nth `.dd-h` (the reader's
+  heading class), and a click on the active tab hides or shows them
+  (Docs). Only for a page the reader draws (not a deck, not pages).
+- **Rows**: hover (or the selected row) shows `+` (a note right after it,
+  `noteAfter` in vault.ts, named in place) and `···`, the short menu
+  (`MenuAt.tab`): add subtab (not at the deepest level), rename, duplicate,
+  move to…, delete. `duplicate` is also on every node's full menu:
+  `Vault.duplicate` copies the file, its children directory and its pages
+  as `name copy` (`name copy 2`, …), ` copy` added to a `title`, placed right
+  after the original. Right-click is still the full node menu.
+- **Keys**: the rail's rows box is focusable (`role=tree`); a press on a row
+  selects it (a hairline, darker while focused); ↑↓ Home End → ← ⏎ F2 ⌘⌫
+  (asking in the row when something is under it) ⌥⌘↑↓ ⌥⌘← → and type-ahead,
+  as the tree's; handled keys stop in the rail, so ⌥⌘↑ there moves a row
+  instead of stepping. ⌘⌥↑↓ from the page step as before (it skips an
+  event already taken). **The fold key is ⌃⌘T** (by `code`, so an Arabic
+  layout folds too): ⌘⇧[ is macOS's previous tab; ⌃⌘T is bound by nothing
+  in macOS's own shortcuts, the native menu (`lib.rs`: ⌘⇧N ⌘O ⌘⇧O ⌘⇧W and
+  Edit's), or the app (⌃⌘S is the sidebar, the nearest sibling), and reads
+  as "tabs".
+- **Both views**: the sidebar is unchanged (a notebook's row is a document
+  with its children under it); the open tab is revealed there by 38's
+  reveal and in the rail by opening its tabs above and scrolling to it.
+  Drags cross both ways through 38's shared drag.
+- Tests: 818 (+25 over 793): `tabs-refined.test.ts` 24 (the rows without
+  extracts and their `n extracts` row, three levels, the step order, the
+  keyboard moves and their limits, the extracts row's geometry, the
+  outline, where the toggle shows, the width, the fold key, the label, the
+  restored order; the rest and the spring on fake timers, a drop after a
+  held-back timer; in the canvas the outline and its scroll, the extracts
+  row opening its folder in the notebook, the rail's keys, the hover menus,
+  `+ add tab` and the edge; the toggle; over a real vault a delete brought
+  back with its children, pages and order entry, and a duplicate),
+  `remove.test.ts` 1 (the notice's undo over a real vault); `tabs.test.ts`,
+  `tree-refined.test.ts`, `node-menu.test.ts`, `tree.test.ts`,
+  `drop.test.ts` changed on purpose (depths, 10 px, ⌃⌘T, `duplicate` in the
+  menu, the book's document in a landing). Typecheck clean; cargo 12. In
+  this worktree vitest ran with a scratch config allowing the symlinked
+  `node_modules` (`server.fs.allow`), not committed.
+- Smoke: `ILMI_SMOKE=tabs2` (`smokeTabs2`), asserting each step: the rest
+  that nests in the tree with no dragover after the first; ⌘⌫, the notice,
+  undo, the note back in its place in `order.json`; every row open, the
+  variational method four levels down not cut, ps-7's indent, the sidebar's
+  edge to 300 px and `state.json`; arab 302's `tabs` toggle on (the field
+  written, the rail drawn), off, on; abbasid poetry's rail with no extract
+  rows, the clipping's `2 extracts` row opening its folder with the rail
+  kept; quantum II's variational method's outline and a click scrolling to
+  `helium ground state`, the tab revealed in the sidebar and the rail, the
+  outline hidden and shown; `+ add tab` named `lecture 15 notes` (a note,
+  last in `order.json`), F2 to `lecture 15`, ⌥⌘→ into problem sets, ⌥⌘←
+  out after it, ⌥⌘↑ before it with the page not stepped; a still rest on
+  the variational method's middle nesting it there, a drag to the top of
+  wkb, a drag from the rail to the top of a fleeting note in the sidebar;
+  a row's `+` and `···` (its five entries, delete with undo); ⌘⇧[ not
+  folding, ⌃⌘T folding and opening; the rail's edge and `state.json`; dark,
+  e-ink. Shots: tabs2-rest-nests, -delete-notice, -indent, -toggle-off,
+  -toggle-on, -extracts-row, -extracts-folder, -outline, -added,
+  -key-nested, -key-moved, -drag-nested, -drag-moved, -rail-to-sidebar,
+  -row-more, -folded, -wider, -dark, -eink. 38's and 31's smokes were
+  updated for the 10 px indent, the rail's depths, and ⌃⌘T.
+Open: nothing ran in the window (a real pointer's drag over the rail, the
+hover look, the outline's scroll in WebKit, the resize cursor); a
+multi-chapter PDF as a notebook (needs a page range per document, a format
+change); subtab open state and the outline's hidden state are not
+remembered; the rail's `n extracts` and heading rows are not reachable by
+the keys; an undo held only until the next notice or the app closes;
+`duplicate` copies cards with their schedules as they are.
 Today tabs are reachable only from `show as tabs` in a right-click menu,
 the rail is a second full tree beside the sidebar's, extracts appear as
 subtabs (a chapter with 40 extracts has 40 tabs), `+ tab` makes a draft
@@ -3850,8 +3973,13 @@ samples/double-major) and recorded under their BUILD-LOG entries.
 Milestone 38 (the tree, refined) was built on branch
 `worktree-agent-a13978a57b82cc981` and merged by hand; its window check
 is `ILMI_SMOKE=tree`, and the reader's crumb becomes `<Crumbs path={id}
-/>` (38's notes). 39 (tabs, on `drag.ts`, `dnd.ts`, `treeModel.ts`) is
-being built beside the editor track. The sidebar toggle is
+/>` (38's notes). Milestone 35 (insert, paste, find) is done on main,
+its window check (`ILMI_SMOKE=insert`) run and recorded. Milestone 39
+(tabs, refined, with 38's three window findings fixed) was built on branch
+`worktree-agent-afea09d94a7eddc9d` and merged by hand; its window check is
+`ILMI_SMOKE=tabs2` on a copy of the sample, and its only line in
+Reader.tsx is the `<TabsToggle path={id} />` after the crumbs. Next: 36
+(Arabic beside English), 37, then 40 and 41. The sidebar toggle is
 ⌃⌘S (⌘⇧E is extract); ⌘K over a selection in an editable page is the
 link field, elsewhere the palette. Findings from the window runs not yet
 taken are listed under 40.

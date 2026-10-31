@@ -6,6 +6,98 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-10-30 — milestone 46: the open items
+
+Done on branch `worktree-agent-aaccbffc71e980574` (a worktree beside main,
+where 44 is in progress), commit `18c414a`. Nothing touched 44's ground (the
+`sr` lines, the scheduler, the session, the deck browser). New:
+`src/pdf/chapters.ts` (a book's chapters from its outline),
+`src/pdf/fixture.ts` (a book PDF with an outline, for the tests and the
+smoke), the corpus file `mangled/pdf-pages.md`, five test files.
+
+### Done
+
+- Tab, ⇧Tab, ⌥⇧↑↓ move a card item in its list like any item (the list's
+  pieces and card items read as one run and rebuilt after the move), and
+  an item takes the card items under it along.
+- ⏎ on the plain item before a card item makes the next item in the same
+  list (it already did in jsdom; the smoke checks WebKit).
+- A derivation card's steps drawn as lines in the reader's card view.
+- A card made from a selection in a list lands as the next item after
+  the item and its children.
+- A PDF with chapters in its outline lands as a notebook: the book's pair
+  with `tabs: true`, a chapter per tab, each `pdf: ../book.pdf` and
+  `pages: a-b` (FORMAT §3, the one format change, with its corpus file and
+  tests); the lens shows only a chapter's pages, numbered as the book
+  numbers them; a rename or a move keeps the paths resolving.
+- The gap under display math: WebKit's `img.ProseMirror-separator` after a
+  non-editable formula made a line box; hidden.
+- The PDF lens's top row as the reader's: no `N pages` word, a `text`
+  toggle lit in the text mode (no `pages` word there), one count token.
+- Formulas drawn in the tree's names and the palette's rows.
+- A heading in a list item folds its children; ⇧⏎ in a table cell is a
+  line break written `<br>`, read back the same.
+- The rail's and the inspector's outline mark folded headings with `…`.
+
+### Verified
+
+- `npx vitest run` (scratch worktree config): 984 tests, 57 files (948
+  before). `npm run typecheck` clean. `cargo test` 12. `vite build` clean.
+
+### Not verified — the window run is owed
+
+- Nothing ran in the Tauri window. `ILMI_SMOKE=open` (ILMI_VAULT on a fresh
+  copy of samples/double-major) sets light, asserts each item (`ok:`; the
+  first miss `failed: …`), writes its own book PDF into `.ilmi/` and drops
+  it on the intake, and logs `shot:` at each screen worth seeing.
+- Window run 1 (`dfc8c3f`, the coordinator's): failed at "the card goes up
+  with the selection on it": the reader rebuilt from its own write because
+  `blocksEqual` compared key order (a moved card's `joined`), and the
+  rebuild dropped the node selection. Compared by sorted keys now, and a
+  selected card is kept through a rebuild. Rerun owed.
+- Window run 2 (`5fd0eea`): failed at "the cell is written with `<br>`":
+  ProseMirror read the typed cell back from the DOM with the newline as a
+  space. `table_cell` is `whitespace: 'pre'`. The same happens to a
+  paragraph's soft line break; left for a decision. Rerun owed.
+- Then, on the coordinator's call: paragraphs, headings, list items and
+  quote lines are `whitespace: 'pre'` as well, so a soft break survives a
+  line typed after it; tested through the DOM over every multi-line block
+  of the samples and the corpus. 992 tests.
+- Window run 3 (`61283b2`): failed at "a card row in the palette draws its
+  formula": the palette searched the card's title cut to 50 characters, so
+  the smoke's words found no card. Search reads the whole name now; the
+  rows stay rich (KaTeX, as the tree's). Rerun owed.
+
+### Window check (2026-10-30, at `9297f45` on the branch, from a clean checkout)
+
+`ILMI_SMOKE=open` on a fresh copy of samples/double-major ran to `done`
+after three fixes (a moved card item keeps its selection: `blocksEqual` by
+sorted keys; ⇧⏎ in a cell kept as `<br>`: cells `whitespace: 'pre'`, and
+then paragraphs, headings, items and quote lines too, so a soft break
+survives typing; the palette finds a card by its whole name). Every step
+asserted: card items move by Tab, ⇧Tab, ⌥⇧↑↓; steps on two lines; the gap
+under display math 18 px, a paragraph's; ⏎ before a card item; a card made
+in a list lands as the next item; fold marks in the outline; headings in
+items fold; the tree and palette draw formulas; a three-chapter PDF lands
+as a notebook, each chapter its own pages numbered as the book's, an
+extract from page 4, the top row without `frozen`/`pages`, renaming the
+book keeps its chapters.
+
+
+### Handoff prompt
+
+```
+Read PLAN.md (ground rules, the Studying section and 46's notes),
+FORMAT.md §3 (`pages`), and this entry. Merge branch
+worktree-agent-aaccbffc71e980574 into main beside 44 (FORMAT.md §3's table
+and frontmatter.ts are where 42/43 also add keys: keep every key). Run
+ILMI_SMOKE=open over a fresh copy of samples/double-major from a clean
+checkout, read its ok: lines and shot: captures, fix what fails, and
+record the run under this entry. Then the next unchecked milestone.
+```
+
+---
+
 ## 2026-10-30 — milestone 42: a deck's numbers and its options
 
 Done on main; commit `e3e3efc`. New: `src/format/reviews.ts`,
@@ -68,6 +160,21 @@ leech, and report), the app's queue (metered), the session (grades through
   Captures: `numbers-vocab`, `-vocab-dark`, `-leech-opened`, `-notebook`,
   `-notebook-dark`, `-options-set`, `-options-inherited`, `-options-leech`,
   `-leech`, `-leech-dark`.
+
+### Window check (2026-10-30, at `a674962`, from a clean checkout)
+
+`ILMI_SMOKE=numbers` ran to `done`. The two "hangs" were the harness: it
+stopped a run at any log line starting `smoke numbers: failed`, and the
+smoke logs `failed most: …`; the harness now stops at `done;` or `failed:`
+only. Every step asserted: the log loaded (5144 reviews since 2025-09-13);
+the 110 new reverses metered (19 today, 91 held); weeks of reviews and
+reviews due, retention by week and by age, spreads, time a review, as
+type; failed-most rows naming their cards, a click opening the card in the
+deck; the counts line adding up (178 cards, 36 never seen, 2 suspended);
+`new-per-day: 4` on quantum II leaving three new cards across the notebook
+(28 held) and shown inherited on a page; `leech: 2`, `leech-action:
+suspend` suspending a card at its second lapse with its schedule kept; the
+grade's line in the month's review log.
 
 ### Handoff prompt
 

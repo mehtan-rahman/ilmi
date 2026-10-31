@@ -4496,7 +4496,7 @@ judged on `samples/double-major` and checked in the window from a clean
 checkout. The brief's bans hold: no stat cards, sparkline dashboards,
 streaks or badges; numbers are set as type, in tables and lines.
 
-Order: 44 → 42 → 43 → 45 on main (42 before 43: 44 adds 110 new reverses to the vocab deck, and 42's new-cards-per-day meters them); 46 on a branch beside them.
+Order: 44 → 42 → 43 → 45 on main (42 before 43: 44 adds 110 new reverses to the vocab deck, and 42's new-cards-per-day meters them); 46 on a branch beside them (done and merged 2026-10-30, its window check run).
 
 ### [x] 42. A deck's numbers and its options
 Done 2026-10-30, commit `e3e3efc`.
@@ -4734,7 +4734,167 @@ migrated card keeps its history.
 positives, one is merged and one linked in the window, and a linked
 pair is never both in one day's queue.
 
-### [ ] 46. The open items
+### [x] 46. The open items
+Done 2026-10-30 on branch `worktree-agent-aaccbffc71e980574`, commit `18c414a`.
+The window check is pending: run `ILMI_SMOKE=open` with `ILMI_VAULT` on a
+fresh copy of `samples/double-major` and read its `ok:` lines and `shot:`
+captures (open-card-item-tab, -card-item-moved, -steps, -display-math,
+-enter-before-card, -composer-in-list, -card-in-list, -outline-folded-rail,
+-outline-folded-inspector, -item-heading-folded, -table-br, -tree-math,
+-palette-math, -pdf-intake, -pdf-chapter, -pdf-text, -pdf-chapter-dark,
+-daily-dark); the first miss is `failed: …`. This was a worktree; nothing
+ran in the window.
+Notes, item by item:
+- **Card items in a list** (`lists.ts`, the run): a list with card items in
+  it is several top-level blocks (pieces and card atoms, every one after the
+  first `joined`, §5.2). `runAt(doc, index)` reads the run around a block as
+  one list of entries (the pieces' items and the card items, nesting by
+  indentation); `runNodes` rebuilds it (items regrouped into pieces between
+  the card items, the joins set again). Tab, ⇧Tab and ⌥⇧↑↓ go through the
+  run when the selection is a node-selected card item or text in a run that
+  holds one (`shiftRun`, `moveInRun`, tried first by `indentBlock`,
+  `outdentBlock`, `moveItem`); a list with no card item keeps the old path
+  (`setNodeMarkup` per item). An item takes its children along, card items
+  among them; numbers follow as before; the selection is put back on the
+  same entries (a card stays node-selected). The schedule line follows to
+  the new content column (the serializer's).
+- **⏎ before a card item**: in jsdom the ⏎ at the end of the plain item
+  before a card item already made the next item in the same list; the
+  `open` smoke checks it in WebKit (typed by `execCommand`, the file's three
+  lines adjacent). What still splits: ⏎ on an *empty* item there (it leaves
+  the list, as an empty item in the middle of any list does) and a
+  paragraph typed between pieces; both are a list's ordinary exit, not
+  changed.
+- **Steps in the reader's card view**: `linesHTML` (Reader.tsx) draws each
+  face's lines with `<br>` between them, breaking only outside a formula
+  (a `$$` over three lines stays one); qa faces only (a cloze is one line,
+  a both-ways card one line each side, as before).
+- **A card made in a list**: the composer remembers the item the selection
+  ended in (`Compose.item`, `listItemAt`); saving puts the card after that
+  item and its children, at its indentation, the next marker, numbers on
+  (`insertCardItem` in lists.ts), when the file written from the result
+  reads it back as that card item one more time (`readsAsItem`, a real
+  serialize → parse, so a prefix the format would read as code falls back);
+  else the paragraph card after the block as before. Saved to make
+  another, the next goes after the card just made.
+- **A multi-chapter PDF as a notebook** (FORMAT §3, `pages`): the format
+  change is one front-matter key, `pages: n-m` (or `n`; an en dash read),
+  ints from 1, the first not after the last; anything else a raw line with
+  a diagnostic. Corpus file `mangled/pdf-pages.md`, tests in
+  `pages.test.ts`; `Meta.pages`, `DocInfo.pages`, `parsePages` /
+  `formatPages`. Why this and not `pdf: book.pdf#12-40` (a file name may
+  hold `#`) or a chapter list on the book (each chapter is a document of its
+  own, with its own reading, cards and extracts, and says what it is in its
+  own file). Page numbers stay the PDF's own: `pos`, `page=`, `## p. n` on a
+  chapter count as the book counts. A `pdf` path may climb (`..`) inside
+  the vault (`normRel`; `pagesOf` used to refuse every `..`). Import:
+  `outlineEntries` (src/pdf/chapters.ts, pdf.js's `getOutline` →
+  `getDestination` → `getPageIndex`) and `chapterRanges` (top entries with
+  a page, in page order, each to the page before the next, fewer than two
+  is no book); `pdfText` returns `chapters` with each one's text;
+  `Vault.importPdfBook` lands the pair with `tabs: true` and the chapters'
+  titles numbered as its body, and `NN title.md` per chapter (`type:
+  source`, frozen, `title`, `pdf: ../name.pdf`, `pages`, the text under `##
+  text`); the intake counts `N chapters` and places it so, a drop on the
+  tree too (`landFile`). Pages before the first chapter stay only in the
+  book's own document, which is every page. The lens shows only the range
+  (`base`, the pages before it; the column, the ruler, search, `g`, the
+  rail by page all in the book's numbers); a range past the file's end is
+  cut to it. A rename of the book rewrites its chapters' `pdf` paths
+  (`retargetPages`); a chapter moved out gets a path from its new place
+  (`relFrom`); removing a chapter leaves the file. The inspector's `pages`
+  row says `book.pdf, pp. 3–5`. The fixture is `src/pdf/fixture.ts`
+  (`makeBookPdf`: Helvetica pages, an outline, no Node, so the smoke writes
+  one in the webview).
+- **The gap under display math**: the cause, found in prosemirror-view:
+  after a non-editable inline node that ends a textblock, WebKit and Chrome
+  get an `img.ProseMirror-separator` before the trailing break; 40 hid the
+  break, the image still made a line box under the formula. Hidden too, and
+  the formula's bottom margin 0 beside it. jsdom never gets the image (no
+  browser detected), which is why 40's test passed; the smoke measures the
+  gap against the paragraph's margin.
+- **The PDF lens's top row** as the reader's: the crumb, `tabs`, `study`,
+  a `text` toggle (lit while the Markdown is read; the reader's text mode
+  shows the same word, not `pages`), `start reading`, and one count token
+  (`2 due` / `5 cards`) with the pages (`12 pages` or `pp. 3–5`), `no text`
+  and the counts in its tooltip; a scan with nothing to count says `no
+  text`.
+- **Math in tree and palette rows**: `MathText` for the tree's names and the
+  palette's titles and subtitles; a card's palette row carries `math` (its
+  whole name with `$…$`, `cardName`), search still reads the plain title.
+  The rail's tab rows and the tab bar stay plain.
+- **Headings in list items fold** (`itemSections` in fold.ts): an item whose
+  text is an ATX heading (`- ## lab`) is drawn as a heading (`.dd-li.li-h`,
+  `data-level`) with the chevron, and folds its children (the items set in
+  under it, card items and the pieces after them included), keyed `- 2
+  lab`; the same plugin, state, `state.json` and opening rules as a heading.
+  Headings in quotes still do not fold.
+- **⇧⏎ in a table cell** (`cellBreak`): a line break in the cell, written
+  `<br>` (`cellText`); `<br>`, `<br/>`, `<br />` read as a break
+  (`cellLines`, raw.ts and the read-only table HTML); an untouched table
+  still goes back byte for byte.
+- **The outline marks folded headings**: `headingKeys` / `foldedHeadings`
+  (tabs.ts) key the page's headings as fold.ts does; the rail's heading rows
+  and the inspector's outline get `data-folded` and a quiet `…`.
+- Tests: 984 (+36 over 948): `src/reader/__tests__/open-items.test.ts` 14,
+  `src/app/__tests__/open-items.test.ts` 7, `src/format/__tests__/pages.test.ts`
+  3, `src/pdf/__tests__/chapters.test.ts` 4, `src/vault/__tests__/pdf-book.test.ts`
+  5, `drop.test.ts` +1 (a PDF book lands as a notebook), the corpus
+  file's round trip and mutation rounds +2; the PDF smoke's toggle
+  selector changed on purpose. Typecheck clean; cargo 12. In this worktree vitest ran with a
+  scratch config allowing the symlinked `node_modules`, not committed.
+Open: nothing ran in the window (the chevron's place on an item heading,
+the rebuilt run's caret in WebKit, the chapter's rail); a PDF whose outline
+has nested entries uses only the top level; a book's chapters are not
+re-split when the PDF changes; `duplicate` of a book copies its chapters
+still naming the original's file; a heading in a quote does not fold.
+Window run 1 (the coordinator's, `dfc8c3f`): passed through Tab, ⇧Tab and
+⌥⇧↑ on the bracket card items, then `failed: the card goes up with the
+selection on it`. The move was right in the editor's state; the reader then
+rebuilt itself from its own write: the card moved off the top gained
+`joined`, appended after its `sched`, where the parser puts `joined` before
+it, and `blocksEqual` compared JSON strings, so the same blocks read as
+changed, and the rebuild kept only a caret (`Selection.near`). Now
+`blocksEqual` compares with every object's keys sorted, and
+`withSelectionOf` keeps a selected card selected (by id, else the same card
+at the same place). Tests: the moved list read back equal though its JSON
+differs, a selected card kept through a rebuild (985). Rerun owed.
+Window run 2 (`5fd0eea`): passed through form I's meaning cell (the
+moved card stays selected, the steps on two lines, the gap under display
+math 18 px, the paragraph's), then `failed: the cell is written with
+<br>`. ⇧⏎ was taken (jsdom's keydown test passed); the break was lost when
+the typed letters were read back: WebKit types into the cell's text node,
+ProseMirror reparses the cell from the DOM with `preserveWhitespace: true`
+unless the node's `whitespace` is `pre`, and that turns a newline into a
+space, so the file got `basic root sense`. `table_cell` is `whitespace:
+'pre'` now; a test types into the text node behind ProseMirror and flushes
+its observer (986). The same reading turns a paragraph's own line break
+into a space when a line after it is typed in the browser (checked in
+jsdom: `one\ntwo` typed to `one twoX`); not changed here. Rerun owed.
+Soft breaks (the coordinator's call after run 2): `paragraph`,
+`heading` (a setext heading may run over lines; the corpus's
+`mangled/headings.md` found it), `list_item` and `quote_line` are
+`whitespace: 'pre'` too, so a line typed after a soft break in the
+browser is read back with its newline and the file's lines stay (prose
+verbatim: hemistichs, addresses, glossed lines). Card faces are atoms,
+never read from the DOM, so they need nothing. The surface was `pre-wrap`
+already, so nothing is drawn differently. `soft-breaks.test.ts` (6): a
+paragraph, a list item's continuation line, a quote, a typed double space
+and trailing space kept as typed, a line after a math chip, a pasted HTML
+paragraph still prose (the paste goes through `pasteInto`'s Markdown, not
+ProseMirror's own parse, so the source's indentation is not kept), and
+every multi-line block of `samples/` and the corpus (14) typed into
+through the DOM with its lines kept. The slash menu and the input rules
+read the state, not the DOM; their tests pass unchanged. 992 tests.
+Window run 3 (`61283b2`): passed through the `<br>` cell (written, two
+lines, read back), the tree's formula with a plain tooltip, then `failed:
+a card row in the palette draws its formula`. The rows were rich (a card
+entry carries `math`, `cardName`, drawn by KaTeX as the tree's names are:
+by design, kept); the search was the miss: it read the card's title,
+`cardLabel` cut to 50 characters, so `Poisson-bracket form`, past the cut,
+found no card. An entry now carries `find`, a card's whole name as plain
+text (`plainMath(cardName)`), and search reads it. A test: the words past
+the cut find the card first. Rerun owed.
 From the notes of 37, 39, 40, 41:
 - Tab, ⇧Tab and ⌥⇧↑↓ move a card item in a list like any item.
 - ⏎ on a plain item just before a card item doesn't split the list.

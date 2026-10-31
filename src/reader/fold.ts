@@ -10,7 +10,8 @@ import { NodeSelection, Plugin, PluginKey, type EditorState, type Transaction } 
 import { Decoration, DecorationSet, type EditorView } from 'prosemirror-view';
 import { textOf } from './convert.js';
 import { findKey } from './find.js';
-import { schema } from './schema.js';
+import { runAt } from './lists.js';
+import { indentWidth, schema } from './schema.js';
 
 /** A top-level heading and what it would fold: the blocks after it down to the next heading of its level or above. */
 export interface Section {
@@ -26,6 +27,67 @@ export interface Section {
   blocks: number;
   cards: number;
 }
+
+/** A list item whose text is an ATX heading (`- ## mechanics`): its level and text. */
+const ITEM_HEADING = /^(#{1,6})[ \t]+(.*)$/;
+
+/**
+ * Every heading inside a list item (milestone 46) and what it folds: the
+ * items after it set in further, its children, through the card items and
+ * the pieces a list with card items in it is split into (FORMAT.md §5.2).
+ * `pos` is the item's, `from`..`to` its children's span; keyed `- level
+ * text`, a repeat numbered.
+ */
+export function itemSections(doc: PMNode): Section[] {
+  const out: Section[] = [];
+  const seen = new Map<string, number>();
+  let i = 0;
+  while (i < doc.childCount) {
+    const run = runAt(doc, i);
+    if (!run) { i++; continue; }
+    // each entry's position and size, as the run's blocks hold them
+    const at: { pos: number; size: number; width: number; card: boolean; text: string | null }[] = [];
+    let pos = run.pos;
+    for (let c = run.start; c < run.end; c++) {
+      const n = doc.child(c);
+      if (n.type === schema.nodes.list) {
+        let p = pos + 1;
+        n.forEach((item) => {
+          at.push({ pos: p, size: item.nodeSize, width: indentWidth(item.attrs.indent as string), card: false, text: textOf(item) });
+          p += item.nodeSize;
+        });
+      } else {
+        const prefix = /^( *)/.exec((n.attrs.card as { item?: string }).item ?? '')![1]!;
+        at.push({ pos, size: n.nodeSize, width: indentWidth(prefix), card: true, text: null });
+      }
+      pos += n.nodeSize;
+    }
+    at.forEach((e, k) => {
+      const m = e.text === null ? null : ITEM_HEADING.exec(e.text);
+      if (!m) return;
+      let end = k + 1;
+      while (end < at.length && at[end]!.width > e.width) end++;
+      const last = at[end - 1]!;
+      const base = `- ${m[1]!.length} ${m[2]!.trim()}`;
+      const n = (seen.get(base) ?? 0) + 1;
+      seen.set(base, n);
+      out.push({
+        pos: e.pos,
+        level: m[1]!.length,
+        key: n === 1 ? base : `${base} (${n})`,
+        from: e.pos + e.size,
+        to: last.pos + last.size,
+        blocks: end - k - 1,
+        cards: at.slice(k + 1, end).filter((x) => x.card).length,
+      });
+    });
+    i = run.end;
+  }
+  return out;
+}
+
+/** The headings' sections and the list items' heading sections, in document order. */
+export const allSections = (doc: PMNode): Section[] => [...sections(doc), ...itemSections(doc)].sort((a, b) => a.pos - b.pos);
 
 /** Every top-level heading's section, in order. */
 export function sections(doc: PMNode): Section[] {
@@ -72,7 +134,7 @@ export function foldedKeys(state: EditorState): string[] {
   const f = foldKey.getState(state);
   if (!f?.folded.length) return [];
   const set = new Set(f.folded);
-  return sections(state.doc).filter((s) => set.has(s.pos)).map((s) => s.key);
+  return allSections(state.doc).filter((s) => set.has(s.pos)).map((s) => s.key);
 }
 
 /** The folded sections that hide `pos` (the outermost first). */
@@ -80,7 +142,7 @@ export function foldsHiding(state: EditorState, pos: number): Section[] {
   const f = foldKey.getState(state);
   if (!f?.folded.length) return [];
   const set = new Set(f.folded);
-  return sections(state.doc).filter((s) => set.has(s.pos) && pos >= s.from && pos < s.to);
+  return allSections(state.doc).filter((s) => set.has(s.pos) && pos >= s.from && pos < s.to);
 }
 
 /**
@@ -97,7 +159,7 @@ export function ruleEndIndex(state: EditorState, pos: number): number {
   if (idx < 0) return -1;
   const f = foldKey.getState(state);
   if (!f?.folded.length) return idx;
-  const hidden = sections(doc).filter((s) => f.folded.includes(s.pos));
+  const hidden = allSections(doc).filter((s) => f.folded.includes(s.pos));
   let at = 0;
   const starts: number[] = [];
   doc.forEach((node) => { starts.push(at); at += node.nodeSize; });
@@ -142,8 +204,9 @@ function more(s: Section) {
       e.stopPropagation();
       const at = getPos();
       if (at === undefined) return;
-      // the heading it ends: the top-level block around it
-      const head = view.state.doc.resolve(at).before(1);
+      // the heading it ends: the textblock around it, a top-level heading or a list item
+      const $a = view.state.doc.resolve(at);
+      const head = $a.depth >= 1 ? $a.before($a.depth) : at;
       view.dispatch(view.state.tr.setMeta(foldKey, { open: [head] } satisfies FoldMeta));
     });
     return el;
@@ -154,6 +217,25 @@ function decorate(doc: PMNode, folded: number[]): DecorationSet {
   const decos: Decoration[] = [];
   const set = new Set(folded);
   const hidden: { from: number; to: number }[] = [];
+  // a heading in a list item hides its children: each item and card item in its span
+  const hiddenItems: { from: number; to: number }[] = [];
+  for (const s of itemSections(doc)) {
+    const on = set.has(s.pos);
+    const node = doc.nodeAt(s.pos)!;
+    decos.push(Decoration.widget(s.pos + 1, chevron(on), { side: -1, key: `fold-chev|${on ? 1 : 0}`, ignoreSelection: true }));
+    decos.push(Decoration.node(s.pos, s.pos + node.nodeSize, { class: on ? 'li-h fold-head' : 'li-h' }));
+    if (!on) continue;
+    decos.push(Decoration.widget(s.pos + node.nodeSize - 1, more(s), { side: 1, key: `fold-more|${s.cards}|${s.blocks}`, ignoreSelection: true }));
+    hiddenItems.push({ from: s.from, to: s.to });
+  }
+  if (hiddenItems.length) {
+    const inside = (p: number) => hiddenItems.some((h) => p >= h.from && p < h.to);
+    doc.forEach((node, pos) => {
+      if (node.type === schema.nodes.list) {
+        node.forEach((item, off) => { const p = pos + 1 + off; if (inside(p)) decos.push(Decoration.node(p, p + item.nodeSize, { class: 'fold-hidden' })); });
+      } else if (node.type === schema.nodes.card && inside(pos)) decos.push(Decoration.node(pos, pos + node.nodeSize, { class: 'fold-hidden' }));
+    });
+  }
   for (const s of sections(doc)) {
     if (!s.blocks) continue;
     const on = set.has(s.pos);
@@ -177,7 +259,7 @@ const sameList = (a: readonly number[], b: readonly number[]) => a.length === b.
 /** The positions still folded after `tr`: each mapped, kept while a heading with something under it is still there. */
 function mapFolded(tr: Transaction, folded: number[]): number[] {
   const out: number[] = [];
-  const valid = new Set(sections(tr.doc).filter((s) => s.blocks > 0).map((s) => s.pos));
+  const valid = new Set(allSections(tr.doc).filter((s) => s.blocks > 0).map((s) => s.pos));
   for (const p of folded) {
     const m = tr.mapping.mapResult(p, 1);
     if (!m.deleted && valid.has(m.pos) && !out.includes(m.pos)) out.push(m.pos);
@@ -205,9 +287,9 @@ export const foldPlugin = new Plugin<FoldState>({
       let folded = tr.docChanged ? mapFolded(tr, cur.folded) : cur.folded;
       if (meta && 'keys' in meta) {
         const want = new Set(meta.keys);
-        folded = sections(state.doc).filter((s) => s.blocks > 0 && want.has(s.key)).map((s) => s.pos);
+        folded = allSections(state.doc).filter((s) => s.blocks > 0 && want.has(s.key)).map((s) => s.pos);
       } else if (meta && 'toggle' in meta) {
-        const ok = sections(state.doc).some((s) => s.pos === meta.toggle && s.blocks > 0);
+        const ok = allSections(state.doc).some((s) => s.pos === meta.toggle && s.blocks > 0);
         folded = folded.includes(meta.toggle) ? folded.filter((p) => p !== meta.toggle) : ok ? [...folded, meta.toggle].sort((a, b) => a - b) : folded;
       } else if (meta && 'open' in meta) {
         folded = folded.filter((p) => !meta.open.includes(p));

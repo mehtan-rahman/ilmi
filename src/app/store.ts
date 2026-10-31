@@ -106,6 +106,8 @@ export interface DocInfo {
   pdf?: string;
   /** `tabs: true`: its children are tabs in a rail beside its page (`tabs.ts`). */
   tabs?: true;
+  /** The `pages` field: which pages of its PDF it is (a chapter of a book that landed as a notebook). */
+  pages?: { first: number; last: number };
 }
 
 export interface Sidebar {

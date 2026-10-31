@@ -131,10 +131,18 @@ export type Field =
   | { key: 'reviews-per-day'; value: number }
   | { key: 'retention'; value: number }
   | { key: 'leech'; value: number }
-  | { key: 'leech-action'; value: LeechAction };
+  | { key: 'leech-action'; value: LeechAction }
+  /** Which pages of its PDF the document is: a chapter of a book whose pages are another document's file. */
+  | { key: 'pages'; value: PageRange };
 
 /** What a card does when its lapses reach the leech threshold: suspended, or only marked a leech. */
 export type LeechAction = 'suspend' | 'tag';
+
+/** A run of a PDF's pages, counted from 1, both ends in it. */
+export interface PageRange {
+  first: number;
+  last: number;
+}
 
 export type FieldKey = Field['key'];
 
@@ -162,7 +170,7 @@ export interface Diagnostic {
 
 export const FIELD_KEYS: readonly FieldKey[] = [
   'type', 'title', 'frozen', 'imported', 'started', 'read', 'write', 'default-card', 'pri', 'pdf', 'url', 'author', 'published', 'tabs',
-  'new-per-day', 'reviews-per-day', 'retention', 'leech', 'leech-action',
+  'new-per-day', 'reviews-per-day', 'retention', 'leech', 'leech-action', 'pages',
 ];
 
 export function isField(e: FmEntry): e is Field {

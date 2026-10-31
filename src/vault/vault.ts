@@ -7,7 +7,7 @@ import { REVIEWS_DIR, formatReview, mergeReviews, parseReviews, reviewFile, meta
 import { join, relative, sameStamp, type Fs, type Stamp } from './fs.js';
 import { ORDER_FILE, childrenAt, cleanOrder, entryOf, followMove, forget, ordered, placeEntry, pruneOrder, restoreOrder, type Order } from './order.js';
 import { addToPage } from './pages.js';
-import { baseOf, childDirOf, cleanName, dirOf, fileName, isDoc, joinRel, nameOf, pdfOf, rekey, within } from './paths.js';
+import { baseOf, childDirOf, cleanName, dirOf, fileName, isDoc, joinRel, nameOf, normRel, pdfOf, rekey, relFrom, within } from './paths.js';
 import { documents, isDocPath, isHidden, isPdfPath, walk, type DocNode, type TreeNode } from './walk.js';
 
 export interface Loaded {
@@ -173,6 +173,14 @@ export interface ImportPdfSpec {
   today?: string;
 }
 
+/** A chapter of a PDF that lands as a notebook: its title, its pages, their text. */
+export interface PdfChapterSpec {
+  title: string;
+  first: number;
+  last: number;
+  text: string;
+}
+
 const STATE_DIR = '.ilmi';
 const STATE_FILE = `${STATE_DIR}/state.json`;
 const TMP_SUFFIX = '.ilmi-tmp';
@@ -270,8 +278,9 @@ export class Vault {
     if (!isDoc(path)) return null;
     const named = meta((await this.read(path)).doc).pdf;
     if (named !== undefined) {
-      const rel = joinRel(dirOf(path), named).split('/').filter((s) => s && s !== '.').join('/');
-      if (!rel.split('/').includes('..') && (await this.fs.stat(this.abs(rel)))?.isDir === false) return rel;
+      // `../book.pdf` from a chapter in the book's children directory: resolved, never out of the vault
+      const rel = normRel(joinRel(dirOf(path), named));
+      if (rel && (await this.fs.stat(this.abs(rel)))?.isDir === false) return rel;
     }
     return this.node(path)?.pdf ?? null;
   }
@@ -677,6 +686,57 @@ export class Vault {
   }
 
   /**
+   * A PDF book as a notebook (milestone 46): the pair as `importPdf` lands
+   * it, but with `tabs: true` and the chapters' titles as its body, and a
+   * frozen source per chapter in its children directory (`NN title.md`,
+   * the title as a field), each `pdf: ../name.pdf` with its `pages`
+   * (FORMAT.md §3) and its pages' text under `## text`. Resolves to the
+   * book's document and the chapters' paths, in order.
+   */
+  importPdfBook(dir: string, spec: ImportPdfSpec & { chapters: PdfChapterSpec[] }): Promise<{ book: string; paths: string[] }> {
+    return this.serial(async () => {
+      if (!spec.bytes.length) throw new Error('nothing to import');
+      const title = spec.title.trim() || NEW_NAMES.source;
+      const today = spec.today ?? localDay(new Date());
+      await this.ensureDir(dir);
+      const name = await this.freeName(dir, fileName(title));
+      const book = `${joinRel(dir, name)}.md`;
+      const pdf = `${joinRel(dir, name)}.pdf`;
+      const contents = spec.chapters.map((c, i) => `${i + 1}. ${c.title}`).join('\n');
+      const { doc } = parse(`${contents}\n`);
+      setField(doc, 'type', 'source');
+      setField(doc, 'frozen', true);
+      setField(doc, 'imported', today);
+      setField(doc, 'pdf', `${name}.pdf`);
+      setField(doc, 'tabs', true);
+      if (title !== name || meta(doc).title !== undefined) setField(doc, 'title', title);
+      await this.atomicWriteBytes(this.abs(pdf), spec.bytes);
+      await this.commit(book, serialize(doc));
+      const folder = childDirOf(book);
+      await this.ensureDir(folder);
+      const width = String(spec.chapters.length).length;
+      const paths: string[] = [];
+      for (const [i, c] of spec.chapters.entries()) {
+        const ctitle = c.title.trim() || `chapter ${i + 1}`;
+        const cname = await this.freeName(folder, fileName(`${String(i + 1).padStart(Math.max(2, width), '0')} ${ctitle}`));
+        const path = `${joinRel(folder, cname)}.md`;
+        const text = c.text.trim();
+        const { doc: ch } = parse(text ? `## text\n\n${text}\n` : '');
+        setField(ch, 'type', 'source');
+        setField(ch, 'frozen', true);
+        setField(ch, 'imported', today);
+        setField(ch, 'title', ctitle);
+        setField(ch, 'pdf', relFrom(folder, pdf));
+        setField(ch, 'pages', { first: c.first, last: c.last });
+        await this.commit(path, serialize(ch));
+        paths.push(path);
+      }
+      await this.rewalk();
+      return { book, paths };
+    });
+  }
+
+  /**
    * A new deck in `dir` from imported cards: `imported` today, named after
    * the title, the title written as a field when the two differ, as
    * `importDoc` does. Resolves to the document's path.
@@ -717,6 +777,8 @@ export class Vault {
         if (pagesMoved && meta((await this.read(to)).doc).pdf === `${nameOf(path)}.pdf`) {
           await this.update(to, (doc) => setField(doc, 'pdf', `${clean}.pdf`));
         }
+        // the chapters under it that name its pages (`../old.pdf`) name the new file
+        if (pagesMoved) await this.retargetPages(childDirOf(path), childDirOf(to), pdfOf(path), pdfOf(to));
       }
       await this.rewalk();
       await this.writeOrder(followMove(this.order, path, to));
@@ -745,6 +807,14 @@ export class Vault {
         const from = joinRel(dirOf(path), named);
         const dest = joinRel(dir, named);
         if ((await this.fs.stat(this.abs(from)))?.isDir === false && !(await this.fs.stat(this.abs(dest)))) await this.fs.rename(this.abs(from), this.abs(dest));
+      }
+      // a chapter naming its book's pages by a path (`../book.pdf`): the field follows, so it still resolves from the new place
+      if (named !== undefined && named.includes('/')) {
+        const target = normRel(joinRel(dirOf(path), named));
+        if (target && !within(target, childDirOf(path)) && (await this.fs.stat(this.abs(target)))?.isDir === false) {
+          const next = relFrom(dir, target);
+          if (next !== named) await this.update(to, (doc) => setField(doc, 'pdf', next));
+        }
       }
       await this.dropIfEmpty(dirOf(path));
       await this.rewalk();
@@ -1064,6 +1134,31 @@ export class Vault {
     }
     this.emit({ kind: 'moved', from, to });
     return pages;
+  }
+
+  /**
+   * After a document's pages moved from `oldPdf` to `newPdf` with its
+   * children directory (`oldDir` → `newDir`): every document under it whose
+   * `pdf` field named the old file by a path names the new one.
+   */
+  private async retargetPages(oldDir: string, newDir: string, oldPdf: string, newPdf: string): Promise<void> {
+    if (!(await this.fs.stat(this.abs(newDir)))?.isDir) return;
+    const docs: string[] = [];
+    const visit = async (dir: string) => {
+      for (const e of await this.fs.readDir(this.abs(dir))) {
+        const rel = joinRel(dir, e.name);
+        if (e.isDir) await visit(rel);
+        else if (isDoc(rel)) docs.push(rel);
+      }
+    };
+    await visit(newDir);
+    for (const path of docs) {
+      const named = meta((await this.read(path)).doc).pdf;
+      if (named === undefined || !named.includes('/')) continue;
+      const was = joinRel(oldDir, path.slice(newDir.length + 1));
+      if (normRel(joinRel(dirOf(was), named)) !== oldPdf) continue;
+      await this.update(path, (doc) => setField(doc, 'pdf', relFrom(dirOf(path), newPdf)));
+    }
   }
 
   /** If `dir` is a document's children directory, point that document's `<!-- extract old -->` lines at `next`. */

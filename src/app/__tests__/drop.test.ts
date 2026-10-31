@@ -29,6 +29,11 @@ function stubs(opts: { text?: string; title?: string; decks?: number; chapters?:
     fetchPage: async (url) => ({ title: 'A Page', text: 'some words here', page: { url, site: 'example.org', author: 'Someone', published: '2026-01-01', images: [], via: 'defuddle', description: '', words: 3 } }) as Awaited<ReturnType<LandFx['fetchPage']>>,
     importText: async (dir, spec) => { calls.push(`text ${dir}|${spec.title}`); return `${dir ? `${dir}/` : ''}${spec.title}.md`; },
     importPdf: async (dir, spec) => { calls.push(`pdf ${dir}|${spec.title}|${spec.bytes.length}`); return `${dir ? `${dir}/` : ''}${spec.title}.md`; },
+    importPdfBook: async (dir, spec) => {
+      calls.push(`pdf book ${dir}|${spec.title}|${spec.chapters.length}`);
+      const folder = `${dir ? `${dir}/` : ''}${spec.title}`;
+      return { book: `${folder}.md`, paths: spec.chapters.map((c, i) => `${folder}/0${i + 1} ${c.title}.md`) };
+    },
     importBook: async (dir, book) => {
       calls.push(`book ${dir}|${book.title}|${book.chapters.length}`);
       const folder = `${dir ? `${dir}/` : ''}${book.title}`;
@@ -99,6 +104,22 @@ describe('land or ask', () => {
     const r = await landFile('/Downloads/two-pages.pdf', 'papers', fx);
     expect(r).toEqual({ kind: 'landed', landed: { line: 'placed · Two Pages, 2 pages in papers/', open: 'papers/Two Pages.md', written: ['papers/Two Pages.md'], folders: [] } });
     expect(calls).toEqual(['pdf papers|Two Pages|4']);
+  });
+
+  it('a pdf whose outline has chapters lands as a notebook, a chapter per tab, opening the first (milestone 46)', async () => {
+    const { fx, calls } = stubs();
+    const chapters = [{ title: 'Ensembles', first: 1, last: 2, text: 'a' }, { title: 'Z', first: 3, last: 5, text: 'b' }];
+    fx.readPdf = async () => ({ title: 'Stat', text: 'a\n\nb', bytes: new Uint8Array([37, 80, 68, 70]), pages: 5, chapters });
+    const r = await landFile('/Downloads/stat.pdf', 'books', fx);
+    if (r.kind !== 'landed') throw new Error('asked');
+    expect(r.landed.line).toBe('placed · Stat, 2 chapters in books/');
+    expect(r.landed.open).toBe('books/Stat/01 Ensembles.md');
+    expect(r.landed.written).toEqual(['books/Stat.md', 'books/Stat/01 Ensembles.md', 'books/Stat/02 Z.md']);
+    expect(calls).toEqual(['pdf book books|Stat|2']);
+    // one chapter is no book: the pair
+    fx.readPdf = async () => ({ title: 'Stat', text: 'a', bytes: new Uint8Array([37, 80, 68, 70]), pages: 2, chapters: [] });
+    expect((await landFile('/Downloads/stat.pdf', 'books', fx)).kind).toBe('landed');
+    expect(calls[1]).toBe('pdf books|Stat|4');
   });
 
   it('an epub lands as a notebook, its chapters as tabs under the book, opening the first', async () => {

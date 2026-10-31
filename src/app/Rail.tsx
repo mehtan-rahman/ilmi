@@ -44,7 +44,7 @@ import { useApp } from './store.js';
 import { goToHeading } from './headings.js';
 import { plainMath } from './chromeText.js';
 import { MathText } from './MathText.js';
-import { RAIL_INDENT, RAIL_PAD, TAB_DEPTH, notebookPages, outline, railKeyPlace, railPad, railRows, stepPage, tabAncestors, type RailRow } from './tabs.js';
+import { RAIL_INDENT, RAIL_PAD, TAB_DEPTH, foldedHeadings, notebookPages, outline, railKeyPlace, railPad, railRows, stepPage, tabAncestors, type RailRow } from './tabs.js';
 import { treeKey, typeahead } from './treeModel.js';
 import { useDoc } from './useDoc.js';
 import { createTab, noteAfter, placeNode, renameNode, setRailFolded, setRailWidth } from './vault.js';
@@ -79,6 +79,7 @@ export function Notebook({ nb, page, active, onOpen, children }: Props) {
   const root = useApp((s) => s.vault);
   const folded = useApp((s) => !!s.railFolded[nb]);
   const width = useApp((s) => s.railWidth);
+  const folds = useApp((s) => s.folds);
   const [open, setOpen] = useState<Record<string, true>>({});
   const [menu, setMenu] = useState<MenuAt | null>(null);
   const [plus, setPlus] = useState<{ x: number; y: number } | null>(null);
@@ -183,6 +184,7 @@ export function Notebook({ nb, page, active, onOpen, children }: Props) {
   const readerPage = isDoc(page) && pageKind !== 'deck' && !docs[page]?.pdf;
   const loaded = useDoc(readerPage ? page : null);
   const heads = useMemo(() => (readerPage && loaded?.path === page ? outline(loaded.doc.blocks) : []), [readerPage, loaded, page]);
+  const foldedHeads = useMemo(() => (loaded?.path === page ? foldedHeadings(loaded.doc.blocks, folds[page]) : new Set<number>()), [loaded, page, folds]);
   const scrollTo = (index: number) => {
     // the page's reader shows it, opening a fold it is in; else the nth drawn heading
     if (goToHeading(page, index)) return;
@@ -366,10 +368,12 @@ export function Notebook({ nb, page, active, onOpen, children }: Props) {
         style={{ paddingLeft: railPad(r.depth) + 22 + (h.level - top) * RAIL_INDENT }}
         data-heading={h.index}
         data-level={h.level}
+        data-folded={foldedHeads.has(h.index) ? '1' : undefined}
         title={plainMath(h.text)}
         onClick={() => scrollTo(h.index)}
       >
         <MathText className="name" dir="auto" text={h.text} title={false} />
+        {foldedHeads.has(h.index) && <span className="fold-mark" aria-label="folded">…</span>}
       </div>
     ));
   };

@@ -9,7 +9,7 @@
 // puts its text back on the last item.
 
 import { Fragment, type Node as PMNode, type NodeType, type ResolvedPos } from 'prosemirror-model';
-import { Selection, TextSelection, type Command, type EditorState, type Transaction } from 'prosemirror-state';
+import { NodeSelection, Selection, TextSelection, type Command, type EditorState, type Transaction } from 'prosemirror-state';
 import type { Card } from '../format/index.js';
 import { markerNumber, nextMarker, numbered } from './raw.js';
 import { indentWidth, schema } from './schema.js';
@@ -179,6 +179,7 @@ export const indentBlock: Command = (state, dispatch) => {
     dispatch?.(state.tr.insertText('  ').scrollIntoView());
     return true;
   }
+  if (shiftRun(1)(state, dispatch)) return true;
   const at = selectedItems(state);
   if (!at) return false;
   const { list: l, listPos } = at;
@@ -202,6 +203,7 @@ export const indentBlock: Command = (state, dispatch) => {
 
 /** ⇧Tab in a list: each selected item, with its children, out to its parent's column; an item at the top stays. */
 export const outdentBlock: Command = (state, dispatch) => {
+  if (shiftRun(-1)(state, dispatch)) return true;
   const at = selectedItems(state);
   if (!at) return false;
   const { list: l, listPos } = at;
@@ -230,6 +232,7 @@ export const outdentBlock: Command = (state, dispatch) => {
  */
 export function moveItem(dir: -1 | 1): Command {
   return (state, dispatch) => {
+    if (moveInRun(dir)(state, dispatch)) return true;
     const at = selectedItems(state);
     if (!at) return false;
     const { list: l, listPos } = at;
@@ -261,6 +264,304 @@ export function moveItem(dir: -1 | 1): Command {
     dispatch(tr.scrollIntoView());
     return true;
   };
+}
+
+// ── a list split by card items (FORMAT.md §5.2) ─────────────────
+//
+// A list with card items in it is several top-level blocks: list pieces
+// and card atoms, every one after the first `joined`. To the keys it is
+// one list: its entries (the pieces' items and the card items) in order,
+// nesting read from each one's indentation, so Tab, ⇧Tab and ⌥⇧↑↓ move a
+// card item, or an item with card items among its children, as any item.
+// The run is rebuilt from its entries after the move: the items regrouped
+// into pieces between the card items, the joins set again.
+
+/** One entry of a run: a plain item, or a card item (its prefix in `card.item`). */
+export type RunEntry = { kind: 'item'; node: PMNode } | { kind: 'card'; card: Card };
+
+/** The list a run of joined pieces makes: where it starts, its child indices, its entries. */
+export interface ListRun {
+  /** The document position of the run's first block. */
+  pos: number;
+  /** Child indices of the document, `[start, end)`. */
+  start: number;
+  end: number;
+  /** Whether the first block was itself joined (to a block before the run that is not part of it). */
+  firstJoined: boolean;
+  entries: RunEntry[];
+}
+
+const isCardItem = (n: PMNode | null | undefined): boolean => !!n && n.type === schema.nodes.card && (n.attrs.card as Card).item !== undefined;
+const isPiece = (n: PMNode | null | undefined): boolean => !!n && (n.type === list || isCardItem(n));
+const joinedOf = (n: PMNode): boolean => (n.type === list ? n.attrs.joined === true : (n.attrs.card as Card).joined === true);
+
+const CARD_PREFIX = /^( *)(.*)$/;
+/** An entry's indentation and its marker with the spaces after it. */
+export function entryParts(e: RunEntry): { indent: string; marker: string } {
+  if (e.kind === 'item') return { indent: e.node.attrs.indent as string, marker: e.node.attrs.marker as string };
+  const m = CARD_PREFIX.exec(e.card.item!)!;
+  return { indent: m[1]!, marker: m[2]! };
+}
+const entryWidth = (e: RunEntry): number => indentWidth(entryParts(e).indent);
+
+/** The run of list pieces and card items around top-level child `index`; null when that child is neither. */
+export function runAt(doc: PMNode, index: number): ListRun | null {
+  if (!isPiece(doc.maybeChild(index))) return null;
+  let start = index;
+  while (start > 0 && joinedOf(doc.child(start)) && isPiece(doc.child(start - 1))) start--;
+  let end = index + 1;
+  while (end < doc.childCount && isPiece(doc.child(end)) && joinedOf(doc.child(end))) end++;
+  let pos = 0;
+  for (let i = 0; i < start; i++) pos += doc.child(i).nodeSize;
+  const entries: RunEntry[] = [];
+  for (let i = start; i < end; i++) {
+    const n = doc.child(i);
+    if (n.type === list) n.forEach((item) => entries.push({ kind: 'item', node: item }));
+    else entries.push({ kind: 'card', card: n.attrs.card as Card });
+  }
+  return { pos, start, end, firstJoined: joinedOf(doc.child(start)), entries };
+}
+
+/** The blocks a run's entries make: items grouped into pieces between card items, every block after the first joined. */
+export function runNodes(entries: readonly RunEntry[], firstJoined: boolean): PMNode[] {
+  const out: PMNode[] = [];
+  let items: PMNode[] = [];
+  const flush = () => {
+    if (!items.length) return;
+    out.push(list.create(out.length || firstJoined ? { joined: true } : null, items));
+    items = [];
+  };
+  for (const e of entries) {
+    if (e.kind === 'item') { items.push(e.node); continue; }
+    flush();
+    const card = structuredClone(e.card);
+    if (out.length || firstJoined) card.joined = true;
+    else delete card.joined;
+    out.push(schema.nodes.card!.create({ card }));
+  }
+  flush();
+  return out;
+}
+
+/** The entry with a new indentation or marker. */
+function withParts(e: RunEntry, indent: string, marker: string): RunEntry {
+  if (e.kind === 'item') return { kind: 'item', node: e.node.type.create({ ...e.node.attrs, indent, marker }, e.node.content, e.node.marks) };
+  return { kind: 'card', card: { ...structuredClone(e.card), item: indent + marker } };
+}
+
+const widthsOf = (es: readonly RunEntry[]) => es.map(entryWidth);
+function wSubtreeEnd(ws: readonly number[], i: number): number {
+  let j = i + 1;
+  while (j < ws.length && ws[j]! > ws[i]!) j++;
+  return j;
+}
+function wPrevSibling(ws: readonly number[], i: number): number | null {
+  for (let k = i - 1; k >= 0; k--) {
+    if (ws[k] === ws[i]) return k;
+    if (ws[k]! < ws[i]!) return null;
+  }
+  return null;
+}
+function wParent(ws: readonly number[], i: number): number | null {
+  for (let k = i - 1; k >= 0; k--) if (ws[k]! < ws[i]!) return k;
+  return null;
+}
+function wNextSibling(ws: readonly number[], i: number): number | null {
+  const j = wSubtreeEnd(ws, i);
+  return j < ws.length && ws[j] === ws[i] ? j : null;
+}
+
+/** The run's ordered entries numbered on from the sibling before them, as `renumberList` numbers a list's items. */
+function renumberEntries(es: RunEntry[], starts: ReadonlyMap<number, number>): void {
+  const ws = widthsOf(es);
+  const nums: (number | null)[] = [];
+  es.forEach((e, i) => {
+    const { indent, marker } = entryParts(e);
+    const own = markerNumber(marker);
+    if (own === null) { nums.push(null); return; }
+    const ps = wPrevSibling(ws, i);
+    const before = ps === null ? null : nums[ps];
+    const n = before !== null && before !== undefined ? before + 1 : starts.get(i) ?? own;
+    nums.push(n);
+    if (n !== own) es[i] = withParts(e, indent, numbered(marker, n));
+  });
+}
+
+/** Where the selection sits in a run: an entry and an offset in an item's text, or a selected card item. */
+type RunPoint = { entry: number; offset: number } | { entry: number; card: true };
+
+/** The run the selection is in, and its two ends as entries; null when the selection is not in one run that holds a card item. */
+function runSelection(state: EditorState): { run: ListRun; anchor: RunPoint; head: RunPoint; from: number; to: number } | null {
+  const sel = state.selection;
+  const doc = state.doc;
+  if (sel instanceof NodeSelection) {
+    if (!isCardItem(sel.node) || sel.$from.depth !== 0) return null;
+    const index = sel.$from.index(0);
+    const run = runAt(doc, index);
+    if (!run) return null;
+    const entry = entryIndex(doc, run, index, -1);
+    const p: RunPoint = { entry, card: true };
+    return { run, anchor: p, head: p, from: entry, to: entry };
+  }
+  const point = (pos: number): { index: number; p: RunPoint } | null => {
+    const $p = doc.resolve(pos);
+    if ($p.depth !== 2 || $p.parent.type !== list_item) return null;
+    return { index: $p.index(0), p: { entry: -1, offset: $p.parentOffset } };
+  };
+  const a = point(sel.anchor);
+  const h = point(sel.head);
+  if (!a || !h) return null;
+  const run = runAt(doc, a.index);
+  if (!run || h.index < run.start || h.index >= run.end) return null;
+  if (!run.entries.some((e) => e.kind === 'card')) return null;
+  const ae = entryIndex(doc, run, a.index, doc.resolve(sel.anchor).index(1));
+  const he = entryIndex(doc, run, h.index, doc.resolve(sel.head).index(1));
+  const anchor = { entry: ae, offset: (a.p as { offset: number }).offset };
+  const head = { entry: he, offset: (h.p as { offset: number }).offset };
+  return { run, anchor, head, from: Math.min(ae, he), to: Math.max(ae, he) };
+}
+
+/** The entry index of top-level child `index` (a card item, `item` -1) or of item `item` of the piece there. */
+function entryIndex(doc: PMNode, run: ListRun, index: number, item: number): number {
+  let k = 0;
+  for (let i = run.start; i < index; i++) {
+    const n = doc.child(i);
+    k += n.type === list ? n.childCount : 1;
+  }
+  return k + Math.max(0, item);
+}
+
+/** Where entry `k` starts in the rebuilt run: an item's position, or the card's. */
+function entryPos(nodes: readonly PMNode[], runPos: number, k: number): number {
+  let pos = runPos;
+  let left = k;
+  for (const n of nodes) {
+    if (n.type === list) {
+      if (left < n.childCount) {
+        let at = pos + 1;
+        for (let i = 0; i < left; i++) at += n.child(i).nodeSize;
+        return at;
+      }
+      left -= n.childCount;
+    } else {
+      if (left === 0) return pos;
+      left--;
+    }
+    pos += n.nodeSize;
+  }
+  return pos;
+}
+
+/** The run rebuilt from `entries`, the selection put back on the entries it was on (their new indices given by `moved`). */
+function rebuildRun(state: EditorState, run: ListRun, entries: RunEntry[], anchor: RunPoint, head: RunPoint, moved: (k: number) => number): Transaction {
+  const nodes = runNodes(entries, run.firstJoined);
+  let end = run.pos;
+  for (let i = run.start; i < run.end; i++) end += state.doc.child(i).nodeSize;
+  const tr = state.tr.replaceWith(run.pos, end, nodes);
+  const at = (p: RunPoint) => {
+    const pos = entryPos(nodes, run.pos, moved(p.entry));
+    return 'card' in p ? pos : pos + 1 + p.offset;
+  };
+  if ('card' in anchor) tr.setSelection(NodeSelection.create(tr.doc, at(anchor)));
+  else tr.setSelection(TextSelection.create(tr.doc, at(anchor), at(head)));
+  return tr;
+}
+
+/** Tab, ⇧Tab over a run with card items: each selected root entry, with its children, in under the sibling before it or out to its parent's column. */
+function shiftRun(dir: 1 | -1): Command {
+  return (state, dispatch) => {
+    const at = runSelection(state);
+    if (!at) return false;
+    const es = [...at.run.entries];
+    const ws = widthsOf(es);
+    const starts = new Map<number, number>();
+    for (let i = at.from; i <= at.to; i = wSubtreeEnd(ws, i)) {
+      let target: number;
+      if (dir > 0) {
+        const ps = wPrevSibling(ws, i);
+        if (ps === null) continue;
+        target = ws[ps]! + entryParts(es[ps]!).marker.length;
+      } else {
+        if (ws[i] === 0) continue;
+        const p = wParent(ws, i);
+        target = p === null ? 0 : ws[p]!;
+      }
+      const delta = target - ws[i]!;
+      for (let k = i; k < wSubtreeEnd(ws, i); k++) {
+        const { marker } = entryParts(es[k]!);
+        es[k] = withParts(es[k]!, ' '.repeat(Math.max(0, ws[k]! + delta)), marker);
+      }
+      starts.set(i, 1);
+    }
+    if (starts.size && dispatch) {
+      renumberEntries(es, starts);
+      dispatch(rebuildRun(state, at.run, es, at.anchor, at.head, (k) => k).scrollIntoView());
+    }
+    return true;
+  };
+}
+
+/** ⌥⇧↑ / ⌥⇧↓ over a run with card items: the entry the selection is on, with its children, trades places with its sibling. */
+function moveInRun(dir: -1 | 1): Command {
+  return (state, dispatch) => {
+    const at = runSelection(state);
+    if (!at) return false;
+    const es = at.run.entries;
+    const ws = widthsOf(es);
+    const i = at.from;
+    let a: number;
+    let b: number;
+    let c: number;
+    if (dir < 0) {
+      const ps = wPrevSibling(ws, i);
+      if (ps === null) return true;
+      [a, b, c] = [ps, i, wSubtreeEnd(ws, i)];
+    } else {
+      const ns = wNextSibling(ws, i);
+      if (ns === null) return true;
+      [a, b, c] = [i, ns, wSubtreeEnd(ws, ns)];
+    }
+    if (!dispatch) return true;
+    const next = [...es.slice(0, a), ...es.slice(b, c), ...es.slice(a, b), ...es.slice(c)];
+    const n = markerNumber(entryParts(es[a]!).marker);
+    renumberEntries(next, n === null ? new Map() : new Map([[a, n]]));
+    // [a, b) went to a + (c - b); [b, c) to a
+    const moved = (k: number) => (k >= a && k < b ? k + (c - b) : k >= b && k < c ? k - (b - a) : k);
+    dispatch(rebuildRun(state, at.run, next, at.anchor, at.head, moved).scrollIntoView());
+    return true;
+  };
+}
+
+/**
+ * A card put into a list as an item (a card made from a selection inside
+ * one): after the entry at `pos` (an item, or a card item) and its
+ * children, at its indentation, with the next marker; the numbers after it
+ * move on. Null when `pos` is in no list.
+ */
+export function insertCardItem(state: EditorState, pos: number, card: Card): { tr: Transaction; pos: number } | null {
+  const doc = state.doc;
+  const $p = doc.resolve(Math.min(pos, doc.content.size));
+  let index: number;
+  let item = -1;
+  const node = doc.nodeAt(pos);
+  if (node && isCardItem(node) && $p.depth === 0) index = $p.index(0);
+  else if ($p.depth >= 1 && $p.node(1).type === list) { index = $p.index(0); item = $p.depth >= 2 ? $p.index(1) : Math.min($p.index(1), $p.node(1).childCount - 1); }
+  else return null;
+  const run = runAt(doc, index);
+  if (!run) return null;
+  const es = [...run.entries];
+  const k = entryIndex(doc, run, index, item);
+  const ws = widthsOf(es);
+  const end = wSubtreeEnd(ws, k);
+  const { indent, marker } = entryParts(es[k]!);
+  const made: RunEntry = { kind: 'card', card: { ...structuredClone(card), item: indent + nextMarker(marker) } };
+  es.splice(end, 0, made);
+  renumberEntries(es, new Map());
+  const nodes = runNodes(es, run.firstJoined);
+  let to = run.pos;
+  for (let i = run.start; i < run.end; i++) to += doc.child(i).nodeSize;
+  const tr = state.tr.replaceWith(run.pos, to, nodes);
+  return { tr, pos: entryPos(nodes, run.pos, end) };
 }
 
 /** The prefix a new quote line takes: the line's own, or the nearest one before it when the line was lazy. */

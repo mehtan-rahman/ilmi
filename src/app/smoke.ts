@@ -157,6 +157,8 @@
 // the outline in the rail and the inspector, a heading folded and kept, a
 // folded section read by one press, code coloured in three themes and its
 // language picked, the verb-forms table edited as a table (see the function).
+// `ILMI_SMOKE=open` (`smokeOpen`) over a copy of `samples/double-major`:
+// milestone 46's open items, each asserted (see the function).
 // `ILMI_SMOKE=welcome` runs before any vault opens: it seeds the recents
 // with the scratch vault (`ILMI_VAULT`) and a path that does not exist,
 // turns `reopen the last vault on start` off, reads the welcome's rows and
@@ -1313,12 +1315,12 @@ export async function smokePdf(vault: Vault): Promise<void> {
     await until(() => (q('.sel-cue') ? null : true));
 
     // the text toggle: the Markdown in the reader, and back
-    q<HTMLButtonElement>('.pdf-view .meta .frozen-tag')!.click();
+    q<HTMLButtonElement>('.pdf-view .meta .text-toggle')!.click();
     await until(() => q('.draft-doc'));
     await sleep(300);
     log(`text: blocks ${q('.draft-doc')?.children.length}; meta "${q('.doc-view .meta')?.textContent}"`);
     await shot('pdf-text');
-    qa('.doc-view .meta .frozen-tag').find((b) => b.textContent === 'pages')?.click();
+    q<HTMLButtonElement>('.doc-view .meta .text-toggle')?.click();
     await until(() => q('.pdf-view'));
 
     // the session: the reading element opens as pages; read on records the page in view
@@ -6261,5 +6263,314 @@ export async function smokeNumbers(vault: Vault): Promise<void> {
   } finally {
     finished = true;
     clearInterval(dog);
+  }
+}
+
+// `ILMI_SMOKE=open` (`smokeOpen`) over a copy of `samples/double-major`:
+// milestone 46, the open items. The Hamiltonian note's Poisson-bracket card
+// items moved by Tab, ⇧Tab, ⌥⇧↑ and ⌥⇧↓, the file's lines checked after
+// each and the list written back as the sample had it; ⏎ at the end of the
+// stat-mech note's plain item before its card item, a new item typed, the
+// list still one; a card made from a selection in the nested caveat item,
+// landing as the next item under it; a derivation card's steps drawn as
+// lines; the gap under a display formula measured against the paragraph
+// rhythm; a book PDF (generated here, three chapters in its outline)
+// dropped on the intake and landing as a notebook, a chapter opened as its
+// own pages, the top row without `pages`/`frozen` words, an extract from
+// its page 4 written as page 4, the book renamed and the chapter still
+// finding its pages; a title with a formula drawn in the tree and a card's
+// formula in the palette; a heading in a list item folded, its children
+// hidden and the key in `state.json`; ⇧⏎ in a verb-forms cell written as
+// `<br>`; lecture 9 folded and marked in the rail's outline and the
+// inspector's. Light first; a few screens again in dark. Every step asserts
+// (`ok: …`); the first miss logs `failed: …` and stops.
+export async function smokeOpen(vault: Vault): Promise<void> {
+  const log = (s: string) => info(`smoke open: ${s}`);
+  const shot = async (name: string, ms = 2500) => { await sleep(600); log(`shot: ${name}`); await sleep(ms); };
+  const q = <T extends Element>(sel: string, root: ParentNode = document) => root.querySelector<T>(sel);
+  const qa = <T extends Element>(sel: string, root: ParentNode = document) => Array.from(root.querySelectorAll<T>(sel));
+  const must = (ok: unknown, what: string) => { if (!ok) throw new Error(what); log(`ok: ${what}`); };
+  const poll = async <T,>(probe: () => T | null | undefined | false | Promise<T | null | undefined | false>, what: string, ms = 5000): Promise<T> => {
+    const t0 = Date.now();
+    for (;;) {
+      const v = await probe();
+      if (v) { log(`ok: ${what}`); return v; }
+      if (Date.now() - t0 > ms) throw new Error(`${what} (waited ${ms} ms)`);
+      await sleep(100);
+    }
+  };
+  const { meta, parse, setField } = await import('../format/index.js');
+  const { setRailFolded } = await import('./vault.js');
+  const { makeBookPdf } = await import('../pdf/fixture.js');
+  const HAM = 'courses/fall-2025/phys-301-classical-mechanics/hamiltonian-mechanics.md';
+  const NB = 'courses/fall-2026/phys-415-stat-mech.md';
+  const CANON = 'courses/fall-2026/phys-415-stat-mech/canonical-ensemble.md';
+  const FORMS = 'courses/spring-2026/arab-302-morphology/verb-forms.md';
+  const DAILY = 'fleeting/2026-10-30.md';
+  const TITLED = 'fleeting/2026-10-29.md';
+  const text = (path: string) => vault.fs.readText(vault.abs(path));
+  /** The file holds `want` one line after another, within 5 s. */
+  const lines = (path: string, want: string[], what: string) => poll(async () => {
+    const all = (await text(path)).split('\n');
+    return all.some((_, i) => want.every((l, k) => all[i + k] === l));
+  }, what);
+  const surface = () => q<HTMLElement>('.pane-body .doc-view .draft-doc')!;
+  const open = async (path: string, ready = '.pane-body .doc-view .draft-doc') => {
+    openNode(path);
+    await poll(() => (activeTab(useApp.getState().panes)?.id === path ? q(ready) : null), `${path} is open`, 12000);
+    await sleep(600);
+  };
+  const keyDown = async (k: string, init: KeyboardEventInit = {}) => {
+    surface().dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true, ...init }));
+    await sleep(200);
+  };
+  const type = async (str: string) => {
+    for (const ch of str) { document.execCommand('insertText', false, ch); await sleep(30); }
+    await sleep(80);
+  };
+  const down = (el: Element) => el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0 }));
+  /** A press on an element's middle, as a pointer's: ProseMirror selects a card atom so. */
+  const pressOn = (el: HTMLElement) => {
+    const r = el.getBoundingClientRect();
+    for (const t of ['mousedown', 'mouseup', 'click']) el.dispatchEvent(new MouseEvent(t, { bubbles: true, cancelable: true, button: 0, buttons: t === 'mousedown' ? 1 : 0, detail: 1, clientX: r.left + Math.min(40, r.width / 2), clientY: r.top + Math.min(10, r.height / 2), view: window }));
+  };
+  const cardItem = (needle: string) => qa<HTMLElement>('.card-span.in-item', surface()).find((c) => c.textContent?.includes(needle));
+  const itemText = (needle: string) => qa<HTMLElement>('.dd-li .li-text', surface()).filter((t) => t.textContent?.includes(needle)).pop();
+  const heading = (needle: string) => qa<HTMLElement>('.dd-h', surface()).find((h) => h.textContent?.includes(needle));
+  try {
+    useApp.getState().setTheme('light');
+    await poll(() => document.documentElement.dataset.theme === 'light', 'the light theme is on');
+    setInspector({ open: true });
+
+    // ── 1. a card item moved in its list like any item ──
+    const ham0 = await text(HAM);
+    const PB = [
+      '- time evolution of a phase-space function $f(q,p,t)$ in Poisson-bracket form :: $\\dfrac{df}{dt} = \\{f,H\\} + \\dfrac{\\partial f}{\\partial t}$ ^cm-pb-evol',
+      '  <!-- sr due=2027-01-08 st=review s=168 d=3.3 r=11 l=0 ivl=168 last=2026-07-24T08:02:00Z g=3 -->',
+      '- $\\{L_i, L_j\\} = {{c1::\\epsilon_{ijk}L_k}}$ ^cm-pb-L',
+      '  <!-- sr due=2026-12-25 st=review s=128 d=4.4 r=10 l=1 ivl=128 last=2026-08-19T09:20:00Z g=3 -->',
+    ];
+    must(ham0.split('\n').some((l, i, all) => PB.every((p, k) => all[i + k] === p)), 'a fresh copy of the sample: the Poisson-bracket card items as written');
+    await open(HAM);
+    const items = () => qa<HTMLElement>('.card-span.in-item', surface());
+    const lij = await poll(() => (items().length === 4 ? items()[1] : null), 'the four bracket cards are drawn as list items, the algebra one second');
+    lij.scrollIntoView({ block: 'center' });
+    surface().focus();
+    pressOn(lij.querySelector<HTMLElement>('.cs-body') ?? lij);
+    await poll(() => qa('.card-span.in-item.selected', surface()).length === 1 && items()[1]!.classList.contains('selected'), 'a press selects the card item');
+    await keyDown('Tab', { code: 'Tab' });
+    await lines(HAM, [PB[0]!, PB[1]!, `  ${PB[2]!}`, `  ${PB[3]!}`], 'Tab sets the card item under the one before it, its schedule line at the new column');
+    await poll(() => items()[1]!.style.getPropertyValue('--indent') === '2', 'drawn set in');
+    must(items()[1]!.classList.contains('selected'), 'the card stays selected');
+    await shot('open-card-item-tab');
+    await keyDown('Tab', { code: 'Tab', shiftKey: true });
+    await lines(HAM, PB, '⇧Tab brings it back out');
+    await keyDown('ArrowUp', { code: 'ArrowUp', altKey: true, shiftKey: true });
+    await lines(HAM, [PB[2]!, PB[3]!, PB[0]!, PB[1]!], '⌥⇧↑ trades it with the item before, schedules with each');
+    await poll(() => items()[0]!.classList.contains('selected'), 'the card goes up with the selection on it');
+    await shot('open-card-item-moved');
+    await keyDown('ArrowDown', { code: 'ArrowDown', altKey: true, shiftKey: true });
+    await poll(async () => (await text(HAM)) === ham0, '⌥⇧↓ puts it back: the file is the sample\'s again');
+
+    // ── 2. a step card's lines, drawn as lines ──
+    const STEPS = 'derive $\\{H, H\\}$ from the definition\n?\n1. $\\{H,H\\} = \\sum_j(\\partial_q H\\,\\partial_p H - \\partial_p H\\,\\partial_q H)$\n2. $= 0$, so a Hamiltonian with no explicit $t$ is conserved';
+    await vault.update(HAM, (doc) => { doc.blocks.push({ kind: 'card', text: STEPS }); });
+    const steps = await poll(() => qa<HTMLElement>('.card-span', surface()).find((c) => c.textContent?.includes('from the definition')), 'a derivation card written under the note is drawn', 8000);
+    steps.scrollIntoView({ block: 'center' });
+    const back = q<HTMLElement>('.cs-a', steps)!;
+    must(back.querySelectorAll('br').length === 1, 'its back holds its two steps, a break between them');
+    const lh = parseFloat(getComputedStyle(back).lineHeight) || 20;
+    must(back.getBoundingClientRect().height > lh * 1.6, `the steps stand on two lines (${Math.round(back.getBoundingClientRect().height)} px for a ${Math.round(lh)} px line)`);
+    await shot('open-steps');
+
+    // ── 3. the gap under display math is a paragraph's ──
+    const disp = await poll(() => qa<HTMLElement>('p.dd-p', surface()).find((p) => p.firstElementChild?.matches('.math.display') && p.nextElementSibling?.matches('p.dd-p')), 'a paragraph that is one display formula, a paragraph after it');
+    disp.scrollIntoView({ block: 'center' });
+    await sleep(300);
+    const formula = q<HTMLElement>('.math.display', disp)!;
+    const next = disp.nextElementSibling as HTMLElement;
+    const rhythm = parseFloat(getComputedStyle(disp).marginBottom);
+    const below = next.getBoundingClientRect().top - formula.getBoundingClientRect().bottom;
+    const seps = qa<HTMLElement>('img.ProseMirror-separator', disp);
+    log(`display math: gap below ${below.toFixed(1)} px, the paragraph's ${rhythm.toFixed(1)} px; separators ${seps.map((s) => getComputedStyle(s).display).join(',') || 'none'}; breaks ${qa<HTMLElement>('br.ProseMirror-trailingBreak', disp).map((b) => getComputedStyle(b).display).join(',') || 'none'}`);
+    must(seps.every((s) => getComputedStyle(s).display === 'none'), 'no separator image drawn under the formula');
+    must(Math.abs(below - rhythm) <= 2, 'the gap under the formula is the paragraph rhythm');
+    await shot('open-display-math');
+
+    // ── 4. ⏎ on the plain item just before a card item ──
+    for (const p of ['courses', 'courses/fall-2026', 'courses/fall-2026/phys-415-stat-mech']) toggleOpen(p, true);
+    await open(CANON);
+    const DIST = '- distinguishable identical-looking things (atoms on lattice sites in a solid, told apart by position): $Z = Z_1^N$';
+    const ZN = '- partition function of $N$ identical, non-interacting particles in a dilute gas :: $Z = Z_1^N / N!$ ^sm-ZN-identical';
+    await lines(CANON, [DIST, ZN], 'the stat-mech note has its plain item right before the card item');
+    const dist = await poll(() => itemText('distinguishable'), 'the plain item is drawn');
+    dist.scrollIntoView({ block: 'center' });
+    surface().focus();
+    const sel = window.getSelection()!;
+    sel.removeAllRanges();
+    sel.collapse(dist, dist.childNodes.length);
+    await sleep(200);
+    await keyDown('Enter', { code: 'Enter' });
+    await type('a gas of bosons: no simple factor');
+    await lines(CANON, [DIST, '- a gas of bosons: no simple factor', ZN], '⏎ made the next item in the same list, the card item right under it, no blank line');
+    const parsed = parse(await text(CANON)).doc.blocks;
+    must(parsed.some((b) => b.kind === 'card' && b.text.startsWith('partition function of $N$') && b.item === '- ' && b.joined), 'read back, the card is still a card item joined to the list');
+    await shot('open-enter-before-card');
+
+    // ── 5. a card made from a selection in a list: the next item ──
+    const CAVEAT = '  - same caveat as microcanonical: only when multiple occupancy is negligible';
+    const cav = await poll(() => itemText('multiple occupancy'), 'the nested caveat item');
+    cav.scrollIntoView({ block: 'center' });
+    surface().focus();
+    select(cav, 'multiple occupancy is negligible');
+    await poll(() => q('.sel-cue'), 'the selection cue');
+    surface().dispatchEvent(new KeyboardEvent('keydown', { key: 'M', code: 'KeyM', metaKey: true, shiftKey: true, bubbles: true, cancelable: true }));
+    const ta = await poll(() => q<HTMLTextAreaElement>('.composer textarea'), 'the composer opens on it');
+    const CARD = '$Z_1^N/N!$ holds while {{c1::multiple occupancy}} is negligible';
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(ta, CARD);
+    ta.dispatchEvent(new Event('input', { bubbles: true }));
+    await sleep(150);
+    await shot('open-composer-in-list');
+    press('Enter', { metaKey: true });
+    await poll(() => (q('.composer') ? null : true), 'the card saved');
+    await lines(CANON, [CAVEAT, `  - ${CARD}`], 'the card is the next item, under the caveat at its indentation');
+    must(parse(await text(CANON)).doc.blocks.some((b) => b.kind === 'card' && b.text === CARD && b.item === '  - '), 'read back as a card item');
+    await poll(() => cardItem('is negligible'), 'drawn as a card item in the list');
+    await shot('open-card-in-list');
+
+    // ── 6. the outline marks folded headings ──
+    setRailFolded(NB, false);
+    const h9 = await poll(() => heading('lecture 9'), 'lecture 9\'s heading');
+    h9.scrollIntoView({ block: 'center' });
+    down(q<HTMLElement>('.fold-chev', h9)!);
+    await poll(() => heading('lecture 9')?.classList.contains('fold-head'), 'lecture 9 folds');
+    await poll(() => qa<HTMLElement>(`.tab-rail .rail-row.heading[data-of="${CANON}"]`).find((r) => r.textContent?.startsWith('lecture 9') && r.dataset.folded === '1' && q('.fold-mark', r)), 'the rail\'s outline marks lecture 9 folded', 8000);
+    must(qa(`.tab-rail .rail-row.heading[data-folded="1"]`).length === 1, 'only it');
+    await shot('open-outline-folded-rail');
+    setRailFolded(NB, true);
+    await poll(() => qa<HTMLElement>('.insp .insp-outline li').find((r) => r.textContent?.startsWith('lecture 9') && r.dataset.folded === '1' && q('.fold-mark', r)), 'with the rail folded, the inspector\'s outline marks it folded', 4000);
+    await shot('open-outline-folded-inspector');
+    down(q<HTMLElement>('.fold-chev', heading('lecture 9')!)!);
+    await poll(() => !q('.insp .insp-outline li[data-folded="1"]'), 'opened again, the mark goes');
+    setRailFolded(NB, false);
+
+    // ── 7. a heading inside a list item folds ──
+    const LIST = '- ## lab checklist\n  - calibrate the scale against the 100 g mass\n  - $m = \\rho V$ :: mass from density\n- ## after the lab';
+    await vault.update(DAILY, (doc) => { doc.blocks.push(...parse(`${LIST}\n`).doc.blocks); });
+    const daily0 = await text(DAILY);
+    must(daily0.includes(LIST), 'a list with headings in its items written under the daily note');
+    await open(DAILY);
+    const lab = await poll(() => qa<HTMLElement>('.dd-li.li-h', surface()).find((li) => li.textContent?.includes('lab checklist')), 'the item\'s heading is drawn as one');
+    lab.scrollIntoView({ block: 'center' });
+    must(lab.dataset.level === '2', 'at its level');
+    down(q<HTMLElement>('.fold-chev', lab)!);
+    await poll(() => qa('.fold-hidden', surface()).length === 2, 'its two children hide, the card item among them');
+    must(q<HTMLElement>('.fold-more', lab)?.dataset.label === '… 1 card', `the folded line says what it holds ("${q<HTMLElement>('.fold-more', lab)?.dataset.label}")`);
+    must(qa<HTMLElement>('.dd-li.li-h', surface()).some((li) => li.textContent?.includes('after the lab') && getComputedStyle(li).display !== 'none'), 'the next heading item stays');
+    await shot('open-item-heading-folded');
+    await poll(async () => ((await vault.loadState()).folds?.[DAILY] ?? []).includes('- 2 lab checklist'), 'state.json keeps the fold by its key');
+    await sleep(600);
+    must((await text(DAILY)) === daily0, 'the file is untouched by the fold');
+    down(q<HTMLElement>('.fold-more', lab)!);
+    await poll(() => qa('.fold-hidden', surface()).length === 0, 'its `…` opens it');
+
+    // ── 8. ⇧⏎ in a table cell is `<br>` ──
+    await open(FORMS);
+    const cell = await poll(() => qa<HTMLElement>('.dd-table td', surface()).find((td) => td.textContent === 'basic'), 'form I\'s meaning cell');
+    cell.scrollIntoView({ block: 'center' });
+    surface().focus();
+    caret(cell, 'basic', 5);
+    await sleep(150);
+    await keyDown('Enter', { code: 'Enter', shiftKey: true });
+    await type('root sense');
+    await poll(async () => (await text(FORMS)).split('\n').some((l) => l.startsWith('| I |') && l.endsWith('| basic<br>root sense |')), 'the cell is written with `<br>`');
+    must(qa<HTMLElement>('.dd-table td', surface()).some((td) => td.textContent === 'basic\nroot sense'), 'the cell holds two lines');
+    await shot('open-table-br');
+    await open(TITLED);
+    await open(FORMS);
+    must(await poll(() => qa<HTMLElement>('.dd-table td', surface()).some((td) => td.textContent === 'basic\nroot sense'), 'reopened, the `<br>` reads back as the break'), 'the round trip holds');
+
+    // ── 9. formulas in the tree and the palette ──
+    await vault.update(TITLED, (doc) => setField(doc, 'title', 'the $J = \\oint p\\,dq$ adiabatic invariant'));
+    toggleOpen('fleeting', true);
+    const row = await poll(() => q<HTMLElement>(`.tree .row[data-path="${TITLED}"] .name .katex`), 'the tree draws the title\'s formula', 8000);
+    const tipText = row.closest('.name')?.getAttribute('title') ?? '';
+    must(tipText.includes('adiabatic invariant') && !tipText.includes('$'), `its tooltip reads the formula as text ("${tipText}")`);
+    await shot('open-tree-math');
+    useApp.setState({ paletteOpen: true });
+    const input = await poll(() => q<HTMLInputElement>('.palette-input input'), 'the palette');
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'Poisson-bracket form');
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    await poll(() => qa<HTMLElement>('.palette-row[data-t="card"]').find((r) => r.querySelector('.pt .katex')), 'a card row in the palette draws its formula');
+    must(!qa<HTMLElement>('.palette-row .pt').some((p) => /\\[a-z]+|\$/.test(p.textContent ?? '')), 'no raw TeX in the palette\'s rows');
+    await shot('open-palette-math');
+    useApp.setState({ paletteOpen: false });
+
+    // ── 10. a multi-chapter PDF as a notebook ──
+    const CH = [
+      { title: 'Ensembles', pages: [['A system in contact with a reservoir.', 'Its energy is not fixed; its temperature is.'], ['The canonical ensemble follows from counting the reservoir.']] },
+      { title: 'The partition function', pages: [['Z sums the Boltzmann factors over the states.'], ['Every average follows from Z.', 'The energy is minus the derivative of ln Z in beta.'], ['The free energy is minus kT ln Z.']] },
+      { title: 'Quantum statistics', pages: [['Bosons and fermions fill their states differently.']] },
+    ];
+    const BOOK = 'A short book of statistical physics';
+    const fixture = vault.abs('.ilmi/smoke-book.pdf');
+    await vault.fs.writeBytes(fixture, makeBookPdf(CH, BOOK));
+    openIntake('library');
+    await poll(() => q('.intake textarea'), 'the intake');
+    const { intakeHooks } = await import('./Intake.js');
+    await intakeHooks.ingestFile!(fixture);
+    const detail = await poll(() => q<HTMLElement>('.intake-detail'), 'the book read', 15000);
+    must(detail.querySelector('.stats')?.textContent?.includes('3 chapters'), `the intake counts its chapters ("${detail.querySelector('.stats')?.textContent}")`);
+    await shot('open-pdf-intake');
+    q<HTMLButtonElement>('.intake .place:not(.primary)')!.click();
+    const book = await poll(() => vault.documents().find((d) => d.startsWith('library/') && useApp.getState().docs[d]?.tabs && !!useApp.getState().docs[d]?.pdf), 'the book lands as a notebook with its pages', 10000);
+    const kids = await poll(() => { const ks = vault.documents().filter((d) => d.startsWith(`${book.slice(0, -3)}/`)).sort(); return ks.length === 3 ? ks : null; }, 'a chapter per entry in the outline', 8000);
+    const chap = kids[1]!;
+    const chText = await text(chap);
+    must(/\npdf: \.\.\/[^\n]+\.pdf\n/.test(chText) && chText.includes('\npages: 3-5\n'), `the second chapter names the book's file and its pages 3–5 (${chText.split('\n').slice(1, 8).join(' / ')})`);
+    must((await text(book)).includes('\ntabs: true\n'), 'the book\'s document has tabs');
+    await open(chap, '.pane-body .pdf-view .pdf-page');
+    const pages = await poll(() => { const ps = qa<HTMLElement>('.pane-body .pdf-view .pdf-page').map((p) => p.dataset.page); return ps.length === 3 ? ps : null; }, 'the chapter opens as its own three pages');
+    must(pages.join(',') === '3,4,5', `numbered as the book numbers them (${pages.join(',')})`);
+    await poll(() => qa('.tab-rail .rail-row').filter((r) => kids.some((k) => (r as HTMLElement).dataset.path === k)).length === 3, 'the rail shows the three chapters as tabs', 8000);
+    const meta0 = q<HTMLElement>('.pane-body .pdf-view .meta')!;
+    must(!/\b(pages|frozen)\b/.test(meta0.textContent ?? ''), `the top row has no pages or frozen word ("${meta0.textContent}")`);
+    must(q('.text-toggle', meta0)?.textContent === 'text', 'the text toggle is there');
+    const tip = qa<HTMLElement>('.right', meta0).map((r) => r.title).join(' ');
+    log(`top row: "${meta0.textContent}"; tooltip "${tip}"`);
+    await shot('open-pdf-chapter');
+    const p4 = await poll(() => { const el = q<HTMLElement>('.pdf-page[data-page="4"]'); el?.scrollIntoView({ block: 'start' }); return qa<HTMLElement>('.pdf-page[data-page="4"] .textLayer span').find((s) => s.textContent?.includes('Every average')); }, 'page 4\'s text layer has its words', 10000);
+    const r = document.createRange();
+    r.selectNodeContents(p4.firstChild!);
+    window.getSelection()!.removeAllRanges();
+    window.getSelection()!.addRange(r);
+    await poll(() => q('.pdf-view .sel-cue'), 'the selection cue on the page');
+    press('e');
+    const extract = await poll(() => vault.documents().find((d) => d.startsWith(`${chap.slice(0, -3)}/`)), 'an extract carved from the page', 8000);
+    await poll(async () => (await text(extract)).includes('page=4'), 'the extract is from page 4, as the book numbers it');
+    await poll(async () => (await text(chap)).includes('\n## p. 4\n'), 'the chapter keeps the passage under `## p. 4`');
+    q<HTMLButtonElement>('.pdf-view .meta .text-toggle')!.click();
+    await poll(() => q<HTMLElement>('.pane-body .doc-view .meta .text-toggle[data-on="1"]'), 'the text toggle reads the Markdown, lit');
+    must(!/\b(pages|frozen)\b/.test(q<HTMLElement>('.pane-body .doc-view .meta')?.textContent ?? ''), 'the text\'s top row has no pages or frozen word either');
+    await shot('open-pdf-text');
+    q<HTMLButtonElement>('.pane-body .doc-view .meta .text-toggle')!.click();
+    await poll(() => q('.pane-body .pdf-view .pdf-page'), 'and back to the pages');
+    // the book renamed: the chapters still find its file
+    const { renameNode } = await import('./vault.js');
+    const renamed = await renameNode(book, 'stat phys, briefly');
+    const chap2 = `${renamed.slice(0, -3)}/${chap.split('/').pop()}`;
+    await poll(async () => (await text(chap2)).includes('\npdf: ../stat phys, briefly.pdf\n'), 'renamed, the chapter names the book\'s new file');
+    await poll(() => useApp.getState().docs[chap2]?.pdf === renamed.replace(/\.md$/, '.pdf'), 'and its pages are found there');
+    await open(chap2, '.pane-body .pdf-view .pdf-page');
+    await poll(() => qa('.pane-body .pdf-view .pdf-page').length === 3, 'the renamed book\'s chapter opens as its pages');
+    useApp.getState().setTheme('dark');
+    await poll(() => document.documentElement.dataset.theme === 'dark', 'dark');
+    await shot('open-pdf-chapter-dark');
+    await open(DAILY);
+    await shot('open-daily-dark');
+    useApp.getState().setTheme('light');
+    log(`done; vault ${vault.root}`);
+  } catch (e) {
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
   }
 }

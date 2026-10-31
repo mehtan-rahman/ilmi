@@ -1082,6 +1082,8 @@ body.resizing, body.resizing * { cursor: col-resize !important; user-select: non
 
 /* the `tabs` toggle in the reader's top row (TabsToggle.tsx): lit while the children are tabs */
 .reader .meta .tabs-toggle[data-on="1"] { color: var(--accent); }
+/* a PDF's `text` toggle: lit while the Markdown is read instead of the pages */
+.reader .meta .text-toggle[data-on="1"] { color: var(--accent); }
 
 /* Arabic names in one-line rows: `dir="auto"` orders each name its own way,
    the row stays left-aligned with its neighbours, and the clip a cut-off

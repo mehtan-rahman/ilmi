@@ -22,14 +22,14 @@
 import { getCurrentWebview, type DragDropEvent } from '@tauri-apps/api/webview';
 import { open as pickFile } from '@tauri-apps/plugin-dialog';
 import { HTML_EXT, TEXT_EXT, deriveTitle, detect, isUrl, mapBook, mapPackage, stats, type Chapter, type ClipImage, type Mapped, type MappedBook, type MappedDeck } from '../import/index.js';
-import { NEW_NAMES, dirOf, isDoc, within, type ImportPdfSpec, type ImportSpec, type TreeNode } from '../vault/index.js';
+import { NEW_NAMES, dirOf, isDoc, within, type ImportPdfSpec, type ImportSpec, type PdfChapterSpec, type TreeNode } from '../vault/index.js';
 import { importClipNode } from './clipping.js';
 import { APKG_EXT, EPUB_EXT, PDF_EXT, fetchReadable, readAnkiPackage, readDropped, readDroppedPdf, readEpub, type Fetched, type FetchedPdf } from './fetch.js';
 import { folderPaths } from './names.js';
 import { pageDropAt } from './pageImages.js';
 import { activeTab } from './panes.js';
 import { useApp } from './store.js';
-import { currentVault, importAnkiNode, importBookNode, importNode, importPdfNode, note, openIntake, openNode, removeNode } from './vault.js';
+import { currentVault, importAnkiNode, importBookNode, importNode, importPdfBookNode, importPdfNode, note, openIntake, openNode, removeNode } from './vault.js';
 
 // ── pure ─────────────────────────────────────────────────────────
 
@@ -134,6 +134,7 @@ export interface LandFx {
   fetchPage(url: string): Promise<Fetched>;
   importText(dir: string, spec: ImportSpec): Promise<string>;
   importPdf(dir: string, spec: ImportPdfSpec): Promise<string>;
+  importPdfBook(dir: string, spec: ImportPdfSpec & { chapters: PdfChapterSpec[] }): Promise<{ book: string; paths: string[] }>;
   importBook(dir: string, book: { title: string; chapters: Chapter[] }): Promise<{ book: string; folder: string; paths: string[] }>;
   importAnki(dir: string, decks: MappedDeck[]): Promise<string[]>;
   importClip(dir: string, spec: ImportSpec, images: ClipImage[]): Promise<{ path: string }>;
@@ -150,6 +151,7 @@ export const realFx: LandFx = {
   fetchPage: fetchReadable,
   importText: importNode,
   importPdf: importPdfNode,
+  importPdfBook: importPdfBookNode,
   importBook: importBookNode,
   importAnki: importAnkiNode,
   importClip: importClipNode,
@@ -176,6 +178,11 @@ export async function landFile(path: string, dir: string, fx: LandFx = realFx): 
     case 'pdf': {
       const r = await fx.readPdf(path);
       const title = r.title.trim() || NEW_NAMES.source;
+      // a book with chapters in its outline: a notebook, a chapter per tab, each its own pages of the one file
+      if (r.chapters && r.chapters.length > 1) {
+        const { book, paths } = await fx.importPdfBook(dir, { title, bytes: r.bytes, text: r.text, chapters: r.chapters });
+        return done(`${title}, ${plural(r.chapters.length, 'chapter')}`, [book, ...paths], paths[0]!);
+      }
       const doc = await fx.importPdf(dir, { title, bytes: r.bytes, text: r.text });
       return done(`${title}, ${plural(r.pages, 'page')}`, [doc], doc);
     }

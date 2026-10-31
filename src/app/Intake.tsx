@@ -40,12 +40,14 @@ import { folderPaths, titleOf } from './names.js';
 import type { OpenOpts } from './panes.js';
 import { pdfText } from './pdfjs.js';
 import { useApp } from './store.js';
-import { importAnkiNode, importBookNode, importDeckNode, importNode, importPdfNode, note as notice } from './vault.js';
+import { importAnkiNode, importBookNode, importDeckNode, importNode, importPdfBookNode, importPdfNode, note as notice } from './vault.js';
 
 /** A PDF waiting on the intake: it lands as the pair, the text beside it as the fallback body. */
 interface PendingPdf {
   bytes: Uint8Array;
   pages: number;
+  /** A book's chapters from its outline (milestone 46): it lands as a notebook, a chapter per tab. */
+  chapters?: { title: string; first: number; last: number; text: string }[];
 }
 
 /** Dev only: the smoke drops a file on the intake through here, since the OS drop cannot be faked. */
@@ -205,7 +207,7 @@ export function Intake({ active, onOpen }: Props) {
       if (PDF_EXT.test(path)) {
         setNote('reading');
         const r = await readDroppedPdf(path);
-        take(r.text, r.title, { bytes: r.bytes, pages: r.pages }, null, true);
+        take(r.text, r.title, { bytes: r.bytes, pages: r.pages, ...(r.chapters?.length ? { chapters: r.chapters } : {}) }, null, true);
         return;
       }
       const r = await readDropped(path);
@@ -283,7 +285,7 @@ export function Intake({ active, onOpen }: Props) {
         if (PDF_EXT.test(file.name)) {
           const bytes = new Uint8Array(await file.arrayBuffer());
           const r = await pdfText(bytes);
-          take(r.text, r.title || titleFromFileName(file.name.replace(PDF_EXT, '')), { bytes, pages: r.pages });
+          take(r.text, r.title || titleFromFileName(file.name.replace(PDF_EXT, '')), { bytes, pages: r.pages, ...(r.chapters.length ? { chapters: r.chapters } : {}) });
         } else take(await file.text(), file.name.replace(/\.[^.]+$/, ''), null, null, true);
       } catch { setNote('could not read that file'); }
       return;
@@ -315,6 +317,18 @@ export function Intake({ active, onOpen }: Props) {
         return;
       }
       const title = (titleShown || (deck ? DECK_NAME : NEW_NAMES.source)).trim();
+      // a PDF with chapters in its outline: a notebook, a chapter per tab
+      if (pdf?.chapters && pdf.chapters.length > 1) {
+        const { paths } = await importPdfBookNode(chosen, { title, bytes: pdf.bytes, text: raw, chapters: pdf.chapters });
+        notice(`placed · ${plural(pdf.chapters.length, 'chapter')} in ${title}`);
+        setRaw('');
+        setPdf(null);
+        setFromFile(false);
+        setTitle('');
+        setNote('');
+        if (open && paths[0]) onOpen(paths[0], {});
+        return;
+      }
       const path = deck
         ? await importDeckNode(chosen, { title, doc: deckDoc(deck.cards, deck.leftovers) })
         : pdf
@@ -454,6 +468,7 @@ export function Intake({ active, onOpen }: Props) {
             {!deck && !anki && !book && (
               <div className="stats">
                 {pdf ? <span><b>{pdf.pages.toLocaleString()}</b> {pdf.pages === 1 ? 'page' : 'pages'}</span> : <span><b>{st.words.toLocaleString()}</b> words</span>}
+                {pdf?.chapters && pdf.chapters.length > 1 && <><span className="dot" /><span>{plural(pdf.chapters.length, 'chapter')}</span></>}
                 <span className="dot" />
                 {pdf && st.words === 0 ? <span>no text</span> : pdf ? <span>{st.words.toLocaleString()} words</span> : <span>{plural(st.paragraphs, 'paragraph')}</span>}
                 {st.words > 0 && (

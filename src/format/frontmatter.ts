@@ -7,7 +7,7 @@ import {
 } from './attrs.js';
 import {
   FIELD_KEYS, isField, type CardForm, type Diagnostic, type Doc, type Field, type FieldKey, type FmEntry,
-  type Frontmatter, type LeechAction, type NodeType, type ReadSchedule, type WriteSchedule,
+  type Frontmatter, type LeechAction, type NodeType, type PageRange, type ReadSchedule, type WriteSchedule,
 } from './model.js';
 
 const NODE_TYPES: readonly NodeType[] = ['note', 'source', 'deck', 'draft', 'extract'];
@@ -156,8 +156,26 @@ function parseValue(key: FieldKey, raw: string, warn: Warn): Field | null {
       const v = stripComment(raw) as LeechAction;
       return LEECH_ACTIONS.includes(v) ? { key, value: v } : null;
     }
+    case 'pages': {
+      const v = parsePages(stripComment(raw));
+      return v === null ? null : { key, value: v };
+    }
   }
 }
+
+const PAGES = /^(\d{1,6})(?:[ \t]*[-–][ \t]*(\d{1,6}))?$/;
+
+/** `pages`: `12-40` (an en dash read too), or one page `12`; both ends from 1, the first not after the last. */
+export function parsePages(v: string): PageRange | null {
+  const m = PAGES.exec(v.trim());
+  if (!m) return null;
+  const first = Number.parseInt(m[1]!, 10);
+  const last = m[2] === undefined ? first : Number.parseInt(m[2], 10);
+  return first >= 1 && last >= first ? { first, last } : null;
+}
+
+/** A page range as the file writes it: `12-40`, or `12` for one page. */
+export const formatPages = (r: PageRange): string => (r.first === r.last ? String(r.first) : `${r.first}-${r.last}`);
 
 function readTyped<T extends { extra?: [string, string][] }>(raw: string, specs: AttrSpec<T>[], warn: Warn): T {
   const attrs = parseAttrs(stripComment(raw), warn);
@@ -247,6 +265,7 @@ export function formatField(f: Field): string {
     case 'tabs': return `tabs: ${f.value ? 'true' : 'false'}`;
     case 'new-per-day': case 'reviews-per-day': case 'leech': case 'leech-action': return `${f.key}: ${f.value}`;
     case 'retention': return `retention: ${formatNumber(f.value)}`;
+    case 'pages': return `pages: ${formatPages(f.value)}`;
   }
 }
 
@@ -286,6 +305,8 @@ export interface Meta {
   retention?: number;
   leech?: number;
   leechAction?: LeechAction;
+  /** The `pages` field: which pages of its PDF the document is. */
+  pages?: PageRange;
 }
 
 /**
@@ -318,6 +339,7 @@ export function meta(doc: Doc): Meta {
       case 'retention': out.retention = e.value; break;
       case 'leech': out.leech = e.value; break;
       case 'leech-action': out.leechAction = e.value; break;
+      case 'pages': out.pages = e.value; break;
     }
   }
   if (!typed && out.imported !== undefined) out.type = 'source';

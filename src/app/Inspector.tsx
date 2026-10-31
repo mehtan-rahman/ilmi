@@ -23,7 +23,7 @@ import { useApp, type DocInfo } from './store.js';
 import { useDoc } from './useDoc.js';
 import { currentVault, openNode, optionsAt, resetCard } from './vault.js';
 import { docsUnder } from './deck.js';
-import { notebookOf, outline } from './tabs.js';
+import { foldedHeadings, notebookOf, outline } from './tabs.js';
 import { goToHeading } from './headings.js';
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
@@ -307,17 +307,20 @@ function CardEditor({ path, index, card }: { path: string; index: number; card: 
 function Outline({ id, doc }: { id: string; doc: Doc }) {
   const docs = useApp((s) => s.docs);
   const railFolded = useApp((s) => s.railFolded);
+  const folds = useApp((s) => s.folds[id]);
   const nb = notebookOf(id, docs);
   if (nb !== null && !railFolded[nb]) return null;
   const heads = outline(doc.blocks);
+  const folded = foldedHeadings(doc.blocks, folds);
   if (!heads.length) return null;
   const top = Math.min(...heads.map((h) => h.level));
   return (
     <Block title="outline">
       <ul className="insp-outline">
         {heads.map((h) => (
-          <li key={h.index} data-heading={h.index} data-level={h.level} style={{ paddingInlineStart: (h.level - top) * 12 }} title={plainMath(h.text)} onClick={() => goToHeading(id, h.index)}>
+          <li key={h.index} data-heading={h.index} data-level={h.level} data-folded={folded.has(h.index) ? '1' : undefined} style={{ paddingInlineStart: (h.level - top) * 12 }} title={plainMath(h.text)} onClick={() => goToHeading(id, h.index)}>
             <MathText className="io-t" dir="auto" text={h.text} title={false} />
+            {folded.has(h.index) && <span className="fold-mark" aria-label="folded">…</span>}
           </li>
         ))}
       </ul>
@@ -415,7 +418,7 @@ function DocInspector({ id, info, doc, now }: { id: string; info: DocInfo; doc: 
   const rows: [string, ReactNode][] = [];
   if (parent && docs[parent]) rows.push(['of', titleOf(parent, docs, null)]);
   rows.push(['path', <span className="mono">{id}</span>]);
-  if (info.pdf) rows.push(['pages', <span className="mono">{baseOf(info.pdf)}</span>]);
+  if (info.pdf) rows.push(['pages', <span className="mono">{baseOf(info.pdf)}{info.pages ? (info.pages.first === info.pages.last ? `, p. ${info.pages.first}` : `, pp. ${info.pages.first}–${info.pages.last}`) : ''}</span>]);
   if (m.imported) rows.push(['imported', m.imported]);
   if (m.url) rows.push(['url', <UrlLink key="url" url={m.url} />]);
   if (m.author) rows.push(['author', m.author]);

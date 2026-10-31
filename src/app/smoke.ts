@@ -6686,7 +6686,13 @@ export async function smokeExam(vault: Vault): Promise<void> {
     const all = qa('.qlist li:not(.fold)').length;
     const chip = await poll(() => qa<HTMLButtonElement>('.queue .exam-filter button').find((b) => b.textContent === 'midterm'), 'the queue offers the midterm as a filter');
     click(chip);
-    await poll(() => chip.dataset.active === '1' && qa('.qlist li:not(.fold)').length < all, `narrowed to the midterm (${qa('.qlist li:not(.fold)').length} of ${all})`);
+    await poll(() => chip.dataset.active === '1' && qa('.qlist li:not(.fold)').length < all, 'the filter narrows the list');
+    const upNow = appNow();
+    const forIt = items().filter((i) => !isDue(i, upNow) && i.exam?.label === 'midterm');
+    const shown = qa('.qlist li:not(.fold)').length;
+    log(`narrowed to the midterm: ${shown} of ${all}`);
+    must(shown === forIt.length && forIt.every((i) => under(i.path)), `only what is studied toward it: ${shown} rows, the ${forIt.length} upcoming items under the notebook`);
+    must(shown < all, `fewer than all (${shown} of ${all})`);
     await shot('exam-upcoming-filtered');
     click(chip);
     await poll(() => qa('.qlist li:not(.fold)').length === all, 'and back to everything');
@@ -6729,7 +6735,8 @@ export async function smokeExam(vault: Vault): Promise<void> {
     const bk = items().find((i) => i.kind === 'read' && i.path === BOOK)!;
     const reps0 = bk.kind === 'read' ? bk.sched.reps ?? 0 : 0;
     openSession(bk);
-    await poll(() => q('.recall-wrap .ra-l'), 'the chapter in the session', 8000);
+    // a reading's session is the document with its bar (`.doc-session`), not a card's `.recall-wrap`
+    await poll(() => useApp.getState().sessionEl?.item.path === BOOK && q('.doc-session .ra-l'), 'the chapter in the session', 8000);
     await shot('exam-reading');
     key('Enter');
     const read = await poll(async () => { const r = meta(await docOf(BOOK)).read; return r && (r.reps ?? 0) === reps0 + 1 ? r : null; }, 'a pass made: the read line rewritten', 8000);

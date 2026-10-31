@@ -64,6 +64,12 @@ FORMAT §3. Nothing touched 45's ground (similarity, the deck browser).
   was brought to a day already past, and the smoke read the replaced
   tab's rows before the new query was drawn. A pace is clamped to today
   now; the smoke waits for the query's title. Rerun owed.
+- Window run 2 (`bc70534`): through the cap, the rows, the top row and the
+  inspector; failed at "the chapter in the session": the probe looked for
+  a card's `.recall-wrap`, a reading draws `.doc-session`. Fixed in the
+  smoke; the filter's `795 of 795` was a message built before the click,
+  now counted after and asserted against the items for the midterm.
+  Rerun owed.
 
 ### Handoff prompt
 

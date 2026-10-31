@@ -4714,6 +4714,17 @@ never earlier than tomorrow). And the smoke read the rows right after
 (`openQuery`) and asserts the chapter's row says `today` and that nothing is
 brought forward before today. Tests: the sample's chapter brought to
 10-30, every pulled item today or later, the row's `today` (1062). Rerun owed.
+Window run 2 (`bc70534`): passed through the cap (`qm1-chargedosc`: FSRS
+11-29, 30d; written 11-19, 20d; stability and difficulty FSRS's own), the
+row `in 14d`, the top row `midterm in 21d` with what is left, the
+inspector; then `failed: the chapter in the session`. The smoke's probe was
+wrong, not the app: a reading's session draws `.doc-session` with its bar,
+and the probe looked for a card's `.recall-wrap`; it now waits for the
+session's element to be the chapter and its bar. The run's `narrowed to the
+midterm (795 of 795)` was the log line's text, built before the click took
+effect (the poll itself required fewer rows); the smoke now logs the count
+after and asserts the rows are exactly the upcoming items studied toward the
+midterm, all under the notebook. Rerun owed.
 - `exam: <day>` (and an optional second, `exam: 2026-12-14 final`, more
   than one allowed) on a course notebook or any document; everything under
   it (cards, sources, extracts, notes revisited) is studied toward it.

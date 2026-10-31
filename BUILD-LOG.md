@@ -6,6 +6,89 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-10-30 — milestone 42: a deck's numbers and its options
+
+Done on main; commit `e3e3efc`. New: `src/format/reviews.ts`,
+`src/schedule/options.ts`, `src/app/numbers.ts`, `src/app/NumbersLens.tsx`,
+`src/app/numbers.css`, `src/app/grading.ts`, `samples/double-major/.ilmi/reviews/`
+(14 month files), `src/format/__tests__/corpus/mangled/options.md`, four test
+files. Changed: the front-matter (five keys), the vault (`appendReviews`,
+`loadReviews`, `Fs.appendText`), the queue (`held`, `gradeItem`'s retention,
+leech, and report), the app's queue (metered), the session (grades through
+`gradeCard`, timed), the lenses (`items · cards · numbers`), the inspector
+(`options`), the Anki reader and mapping (the revlog), FORMAT §1 and §3.
+
+### Decided
+
+- **Option keys**, on a document's front-matter, inherited by everything
+  under it unless set lower: `new-per-day` (20), `reviews-per-day` (none),
+  `retention` (0.9), `leech` (8 lapses), `leech-action` (`tag`; `suspend`
+  writes `sus=1`). A folder takes them from the document above it.
+- **Twenty new a day per document**, collection-wide with nothing set,
+  as Anki's default: the vocab deck's 110 new reverses come in over a week
+  (19 today, one new card already graded). An allowance is counted where
+  the option is set: ten on a notebook is ten across it.
+- **What is over the allowance waits** for tomorrow (`held`, like a buried
+  sibling), derived, never written; learning cards are never capped; today's
+  log spends the allowance.
+- **The log**: `.ilmi/reviews/<yyyy-mm>.jsonl`, one JSON line a grade,
+  append-only; read from every `.jsonl` there with duplicates collapsed and
+  torn lines skipped, so two devices and a conflict copy merge. Never read
+  to schedule; without it the numbers say `no reviews logged` and show what
+  the sr lines hold.
+- **Numbers as type**: tables under small lowercase labels, tabular
+  figures, hairlines, today underlined in gold; no charts, tiles, or bars.
+- **`tag`** marks a leech in the numbers and the session's line; cards have
+  no tags to write one into.
+
+### Verified
+
+- `npx vitest run`: 997 tests, 57 files (960 before). `npm run typecheck`
+  clean. `cargo test` 12. `vite build` clean. The corpus and samples/ hold
+  the fixed point; the sample's log agrees with every sr line (reps,
+  lapses, last).
+
+### Not verified: the window run is owed
+
+- Nothing ran in the Tauri window. `ILMI_SMOKE=numbers` (ILMI_VAULT on a
+  fresh copy of samples/double-major) sets light, then asserts: the log
+  loaded; the vocab deck's new reverses metered to twenty a day less what
+  today spent, the rest held; the vocab deck's numbers (the counts line
+  with `logged since`, four weeks of reviews a day, four coming due,
+  retention, the spread, time a review, no chart) and a failed-most row
+  opening its card in the deck; the quantum notebook's children lens
+  reading `items cards numbers`; `new a day` set on the notebook from the
+  inspector writing `new-per-day:` and leaving three new cards across it
+  in the day's queue; a page under it showing the value inherited, `from
+  quantum II`; `leech` and `suspended` set on the notebook; a card in
+  review graded again at the threshold, suspended with its schedule kept,
+  its review-log line appended (card, line, again from review, its time),
+  the log one longer, `leech · suspended` in the log line, the card out of
+  the queue, and listed `suspended` in the notebook's failed most.
+  Captures: `numbers-vocab`, `-vocab-dark`, `-leech-opened`, `-notebook`,
+  `-notebook-dark`, `-options-set`, `-options-inherited`, `-options-leech`,
+  `-leech`, `-leech-dark`.
+
+### Handoff prompt
+
+```
+Read PLAN.md (ground rules, the Studying section, 42's and 44's notes and
+the notes for the next session), FORMAT.md, spec/hashiyah/BUILD-PROMPT.md,
+and the top BUILD-LOG.md entries. If the user has not yet, run
+ILMI_SMOKE=numbers with ILMI_VAULT on a fresh copy of samples/double-major
+(from a clean checkout of main; port 1420 free; capture 2 s after each
+`shot:` line), read the captures, fix what they show, and record it under
+42. Then do milestone 43 (exam dates) and only that: FORMAT §3 `exam`
+(inherited as 42's options are, `src/schedule/options.ts`) with a corpus
+file and tests, the scheduler's cap with tests that walk days (beside 42's
+`meterQueue`), the reading paced to the date, the inspector and the
+notebook's top row, and an ILMI_SMOKE=exams mode over a copy of
+samples/double-major. Stop at its "Done when"; tick it, write notes, log
+it, commit. Milestone 46 runs on a branch beside it: stay out of its areas.
+```
+
+---
+
 ## 2026-10-30 — milestone 44: both ways, scheduled apart
 
 Done on main; commit `08938a6`. New: `src/schedule/__tests__/both-ways.test.ts`,

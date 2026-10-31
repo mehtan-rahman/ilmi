@@ -4498,7 +4498,88 @@ streaks or badges; numbers are set as type, in tables and lines.
 
 Order: 44 → 42 → 43 → 45 on main (42 before 43: 44 adds 110 new reverses to the vocab deck, and 42's new-cards-per-day meters them); 46 on a branch beside them.
 
-### [ ] 42. A deck's numbers and its options
+### [x] 42. A deck's numbers and its options
+Done 2026-10-30, commit `e3e3efc`.
+Notes: the window check is owed (`ILMI_SMOKE=numbers`, ILMI_VAULT on a
+fresh copy of samples/double-major). **Options** (FORMAT §3, *options*):
+`new-per-day` (int ≥ 0, default 20), `reviews-per-day` (int ≥ 1, default
+none), `retention` (0.7–0.99, default 0.9, FSRS's request retention),
+`leech` (lapses, default 8), `leech-action` (`suspend` | `tag`, default
+`tag`: nothing suspended unasked). Set on a document, inherited by its cards
+and everything in its children directory, folders included, unless set
+lower (`ownersOf`, `resolveOptions` in `src/schedule/options.ts`); a folder
+has no front-matter and takes them from the document above it, so options
+"on a folder" are options on the notebook that owns it. The default of
+twenty is per document (each document its own deck), applied
+collection-wide with no setting: chosen so the vocab deck's 110 new
+reverses come in over a week, as Anki's default would. The two counts are
+allowances counted where set: ten on a notebook is ten across everything
+under it that does not set its own (`allowanceOf`). `meterQueue` walks the
+sorted queue and holds what is over (`CardItem.held`, `new` | `reviews`,
+due the next day's start, as `buried`; nothing written); learning cards are
+never capped; `spentToday` counts today's log (a new card's first grade, a
+review's grade) against the allowances. The app queue is metered
+(`buildQueue` in `src/app/vault.ts`), `DocInfo.due` follows the metered
+queue, `study` on a deck leaves held cards out unless they were picked
+(`study these`) or crammed; `queue()` in `src/schedule` is not metered (the
+tests that count the corpus use it). Leech: `becomesLeech` at the threshold
+and every half of it after (Anki's); `gradeItem` takes `retention`, `leech`,
+and `report` (what it wrote, for the log); `suspend` writes `sus=1` on the
+line graded; `tag` writes nothing, the numbers mark it, and the session's
+log line says `leech · N lapses` (no tags exist for cards, so `tag` is a
+mark, not a written tag). **The review log** (FORMAT §1): `src/format/reviews.ts`
+(`formatReview`, `parseReviews`, `mergeReviews`, `reviewKey`), one JSON
+line a grade: `at` (UTC, seconds), `doc`, `card` (the `^id`), `key` (`cN`,
+`r`, none for the bare line), `g`, `st` (before), `elapsed`, `ivl`, `next`,
+`s`, `d`, `ms` (capped at a minute), `src` (`anki`). `Vault.appendReviews`
+appends (`Fs.appendText`, optional; Tauri's `writeTextFile` with `append`;
+without it the month is read and written whole); `Vault.loadReviews` reads
+every `.jsonl` in `.ilmi/reviews/` (conflict copies too), collapses
+duplicates (same `at`, card, key, grade), skips torn lines; the app reloads
+it when the watcher reports the directory (another device's lines). Every
+session grade goes through `gradeCard` (`src/app/grading.ts`): options
+applied, one line written, the log line appended (`recordReview`). Anki:
+`anki.rs` reads `revlog` (when the table exists); `reviewsOf` maps each
+answer (a first learning answer is a new card's, a manual reschedule is
+skipped, intervals in seconds are 0); a card with history lands with an id
+(`anki-<note id in base 36>`) so its lines name it; `importAnkiNode`
+appends them under the deck's new path; the fixture gained five revlog rows
+(`npm run fixture:anki`). **Numbers** (`src/app/numbers.ts`, the view
+`src/app/NumbersLens.tsx`, `numbers.css`): the folder lens reads `items ·
+cards · numbers`, the deck lens `cards · numbers` (`lensViews` in the store,
+not remembered); over the lens's lines (`linesOf`: one per schedule a review
+rewrites) and the log's reviews of them (`reviewsUnder`: by document, or by
+card id when the document is gone): a counts line with `logged since
+<first day>` (or `no reviews logged`, the history sections then left out);
+`reviews a day`, four weeks Monday first, a total each, a day before the log
+blank; `coming due`, four weeks, overdue counted today, today underlined in
+gold; `retention`, passed over due reviews of cards in review by week (eight)
+and by how long the card had been studied (first month, one to three months,
+three to six, six on); `failed most`, lapses from half the threshold up, the
+most first, twelve at most, `leech` or `suspended`, each opening its card (a
+deck's lens turns to its cards with the card selected); `spread`, 10% 25%
+median 75% 90% of stability and difficulty; `N s a review` and the total
+over four weeks. Inspector: an `options` block on any document with cards
+in or under it, and read-only on a folder: each a field (empty takes it off,
+the one above applies; the placeholder says what applies), `from <title>`
+dimmed when inherited, nothing for a default; `a leech is suspended |
+marked`. Sample: `samples/double-major/.ilmi/reviews/` (14 months, 5144
+lines, from 2025-09-13) generated by a script kept outside the repo: per
+graded line exactly `r` lines, exactly `l` lapses, the last at the line's
+`last` with its grade, interval, stability and difficulty, histories kept
+after the term began; `numbers.test.ts` checks it against every sr line.
+Corpus: `german.md` sets `new-per-day: 10`, `leech: 6`, `leech-action:
+suspend`; `linear-algebra.md` `retention: 0.85`, `reviews-per-day: 40`;
+`mangled/options.md`. Tests: 997 (+37: `format/options.test.ts` 6,
+`schedule/options.test.ts` 11 walking days, `numbers.test.ts` 12,
+`numbers-view.test.ts` 4, anki 2, the new mangled file's round trip; pass, vault, and format tests updated). cargo 12.
+Open: the window run; options on a folder of its own (no file to hold them);
+`reviews-per-day: none` to lift an inherited cap below (not readable; take
+it off where it is set); the numbers are not in the inspector or the queue
+(the lens only); a card's own row in the deck browser does not say `leech`;
+the forecast counts each line due, not the day's allowance; a review graded
+outside the app (a hand edit) leaves no log line; the reverses' `elapsed`
+on an Anki import counts from the card's previous answer only.
 - **Numbers**, on a deck, a folder, a notebook, or the collection (the
   lens's `items · cards` gains `numbers`): reviews per day for the last
   weeks and the next weeks' forecast as a quiet typographic table or a
@@ -4650,11 +4731,14 @@ From the notes of 37, 39, 40, 41:
 
 ## Notes for the next session
 
-Studying: 44 (both ways) done 2026-10-30, its window check owed
-(`ILMI_SMOKE=bothways`, ILMI_VAULT on a fresh copy of samples/double-major).
-Next on main: 43 (exam dates), then 42, then 45; 46 runs on a branch.
-Unreviewed reverses come up as new cards (110 in the vocab deck on
-2026-10-30), which 42's new cards per day should meter.
+Studying: 44 (both ways) done 2026-10-30, its window check run. 42 (a
+deck's numbers and its options) done 2026-10-30, its window check owed
+(`ILMI_SMOKE=numbers`, ILMI_VAULT on a fresh copy of samples/double-major,
+which now carries a seeded `.ilmi/reviews/`). The vocab deck's 110 new
+reverses come in twenty a day (the default `new-per-day`, per document).
+Next on main: 43 (exam dates; its cap sits beside 42's `meterQueue` and
+options in `src/schedule/options.ts`, and `exam` is a front-matter key
+inherited the same way), then 45; 46 runs on a branch.
 
 Refinement (33–41) is complete, 2026-10-30, every milestone's window check
 run and recorded under its BUILD-LOG entry (33 `notes`, 34 `editing`, 35

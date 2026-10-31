@@ -4736,6 +4736,15 @@ ProseMirror's own parse, so the source's indentation is not kept), and
 every multi-line block of `samples/` and the corpus (14) typed into
 through the DOM with its lines kept. The slash menu and the input rules
 read the state, not the DOM; their tests pass unchanged. 992 tests.
+Window run 3 (`61283b2`): passed through the `<br>` cell (written, two
+lines, read back), the tree's formula with a plain tooltip, then `failed:
+a card row in the palette draws its formula`. The rows were rich (a card
+entry carries `math`, `cardName`, drawn by KaTeX as the tree's names are:
+by design, kept); the search was the miss: it read the card's title,
+`cardLabel` cut to 50 characters, so `Poisson-bracket form`, past the cut,
+found no card. An entry now carries `find`, a card's whole name as plain
+text (`plainMath(cardName)`), and search reads it. A test: the words past
+the cut find the card first. Rerun owed.
 From the notes of 37, 39, 40, 41:
 - Tab, ⇧Tab and ⌥⇧↑↓ move a card item in a list like any item.
 - ⏎ on a plain item just before a card item doesn't split the list.

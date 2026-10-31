@@ -63,6 +63,10 @@ smoke), the corpus file `mangled/pdf-pages.md`, five test files.
   quote lines are `whitespace: 'pre'` as well, so a soft break survives a
   line typed after it; tested through the DOM over every multi-line block
   of the samples and the corpus. 992 tests.
+- Window run 3 (`61283b2`): failed at "a card row in the palette draws its
+  formula": the palette searched the card's title cut to 50 characters, so
+  the smoke's words found no card. Search reads the whole name now; the
+  rows stay rich (KaTeX, as the tree's). Rerun owed.
 
 ### Handoff prompt
 

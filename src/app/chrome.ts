@@ -145,6 +145,8 @@ export interface Entry {
   tag: EntryTag;
   /** The row's name with its formulas as `$…$`, drawn by KaTeX (a card's whole name, cut by the row's width); `title` stays what search reads. */
   math?: string;
+  /** What search reads, when it is more than `title`: a card's whole name as plain text (its title is cut to fit). */
+  find?: string;
   /** A vault path or special tab id to open, a card in a document, a command id, or another vault to switch to. */
   target: { open: string } | { open: string; index: number; id?: string } | { command: string } | { vault: string };
 }
@@ -195,7 +197,7 @@ export function buildIndex(tree: TreeNode[], docs: Record<string, DocInfo>, card
   for (const c of cards) {
     const target: Entry['target'] = c.id === undefined ? { open: c.path, index: c.index } : { open: c.path, index: c.index, id: c.id };
     const name = cardName(c.text);
-    out.push({ key: `c:${c.path}:${c.index}`, title: cardLabel(c.text), ...(hasMath(name) ? { math: name } : {}), sub: title(c.path), tag: 'card', target });
+    out.push({ key: `c:${c.path}:${c.index}`, title: cardLabel(c.text), ...(hasMath(name) ? { math: name } : {}), find: plainMath(name), sub: title(c.path), tag: 'card', target });
   }
   for (const c of commands) out.push({ key: `x:${c.id}`, title: c.title, sub: '', tag: 'command', target: { command: c.id } });
   for (const v of vaults) out.push({ key: `v:${v.path}`, title: v.name, sub: 'collections', tag: 'vault', target: { vault: v.path } });
@@ -206,7 +208,7 @@ export function buildIndex(tree: TreeNode[], docs: Record<string, DocInfo>, card
 export function search(index: Entry[], q: string): Entry[] {
   if (!q.trim()) return index.slice(0, 40);
   return index
-    .map((it) => ({ it, score: fuzzy(q.trim(), `${it.title} ${it.sub}`) }))
+    .map((it) => ({ it, score: fuzzy(q.trim(), `${it.find ?? it.title} ${it.sub}`) }))
     .filter((r): r is { it: Entry; score: number } => r.score !== null)
     .sort((a, b) => a.score - b.score)
     .slice(0, 40)

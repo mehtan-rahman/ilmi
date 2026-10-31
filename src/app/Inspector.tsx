@@ -507,19 +507,25 @@ function CardBlock({ path, index, doc, group, dir, now }: { path: string; index:
   const linked = b.sched?.link !== undefined ? linkedTo(b.sched.link) : undefined;
   const alike = linked ? [] : pairsOf(path, index);
   const goTo = (c: { path: string; block: number; id?: string }) => () => openCard(c.path, c.block, c.id);
+  // the other card as card names are drawn elsewhere (its front, formulas set), and where it lives
+  const other = (c: { path: string; block: number; id?: string; text: string }, act: string, more = 0) => (
+    <button type="button" className="insp-link insp-other" data-act={act} onClick={goTo(c)}>
+      <MathText className="io-card" dir="auto" text={cardName(c.text)} />
+      <span className="io-where" dir="auto">{titleOf(c.path, docs, null)}</span>
+      {more > 0 && <span className="io-more">and {more} more</span>}
+    </button>
+  );
   if (linked) {
     const me = currentCards().find((c) => c.path === path && c.block === index);
     const unlink = () => { if (me) unlinkCards(me, linked).catch(console.error); };
     rows.push(['linked to', (
-      <span key="linked" className="insp-linked">
-        <button type="button" className="insp-link" data-act="linked" onClick={goTo(linked)}>{titleOf(linked.path, docs, null)}</button>
-        {me && <button type="button" className="insp-link dim" data-act="unlink" onClick={unlink}>unlink</button>}
+      <span key="linked" className="insp-same">
+        {other(linked, 'linked')}
+        {me && <button type="button" className="insp-link insp-unlink" data-act="unlink" onClick={unlink}>unlink</button>}
       </span>
     )]);
-  }
-  else if (alike.length) {
-    const top = alike[0]!.other;
-    rows.push(['also in', <button key="alike" type="button" className="insp-link" data-act="alike" onClick={goTo(top)}>{titleOf(top.path, docs, null)}{alike.length > 1 ? ` and ${alike.length - 1} more` : ''}</button>]);
+  } else if (alike.length) {
+    rows.push(['also in', <span key="alike" className="insp-same">{other(alike[0]!.other, 'alike', alike.length - 1)}</span>]);
   }
   const reset = () => { resetCard(path, index, b.id, b.text).catch(console.error); };
   return (

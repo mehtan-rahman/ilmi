@@ -203,10 +203,18 @@ describe('similar', () => {
     useApp.setState({ panes: openTab(emptyPanes(), MICRO), selectedCard: { path: MICRO, index: peak } });
     await mount(createElement(Inspector));
     const row = (k: string) => Array.from(host.querySelectorAll('.kvr')).find((r) => r.querySelector('dt')?.textContent === k);
-    expect(row('also in')!.querySelector('dd')!.textContent).toMatch(/^ch\. 2: microstates and entropy/);
+    // the other card named by its front (formulas set by KaTeX) over where it lives
+    const also = row('also in')!;
+    expect(also.querySelector('.io-card')!.textContent).toMatch(/^relative width of the multiplicity peak/);
+    expect(also.querySelector('.io-card .katex')).toBeTruthy();
+    expect(also.querySelector('.io-where')!.textContent).toBe('ch. 2: microstates and entropy');
     await act(async () => { useApp.setState({ selectedCard: { path: MICRO, index: defT } }); });
     expect(row('also in')).toBeUndefined();
-    expect(row('linked to')!.querySelector('dd')!.textContent).toBe('ch. 2: microstates and entropyunlink');
+    const lt = row('linked to')!;
+    expect(lt.querySelector('.io-card')!.textContent).toMatch(/^the statistical definition of temperature/);
+    expect(lt.querySelector('.io-where')!.textContent).toBe('ch. 2: microstates and entropy');
+    expect(lt.querySelector('button[data-act="unlink"]')!.textContent).toBe('unlink');
+    expect(lt.querySelector('button[data-act="linked"] [data-act="unlink"]')).toBeNull();
     await click(row('linked to')!.querySelector('button[data-act="linked"]'));
     expect(useApp.getState().reveal).toMatchObject({ path: CH2, id: 'lq2-def-T' });
     // unlink: both lines lose the attribute

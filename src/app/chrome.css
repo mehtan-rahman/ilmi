@@ -173,8 +173,10 @@
   overflow-wrap: anywhere;
 }
 .insp .kv .insp-link:hover { text-decoration: underline; text-underline-offset: 2px; }
-.insp .kv .insp-linked { display: inline-flex; gap: 10px; align-items: baseline; }
-.insp .kv .insp-link.dim { color: var(--fg-4); }
+.insp .kv .insp-same { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; min-width: 0; }
+.insp .kv .insp-other { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; font-family: var(--sans); font-size: 12px; color: var(--fg-1); }
+.insp .kv .insp-other .io-where, .insp .kv .insp-other .io-more { font-family: var(--mono); font-size: 10.5px; color: var(--fg-4); }
+.insp .kv .insp-unlink { color: var(--fg-4); }
 .insp .insp-line {
   font-family: var(--serif);
   font-size: 13px;

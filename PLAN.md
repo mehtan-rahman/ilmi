@@ -4819,6 +4819,17 @@ Notes:
   `also in` line opens the other card, not the pair in the list; the list
   is over the lens, not the queue (a pair is not shown from a session);
   three or more copies of one fact link two at a time.
+Window check 1 (2026-10-31, at `c10a727`, the coordinator, from a clean
+checkout): every step passed (the list, a link writing both lines with the
+stronger schedule, one of the pair in the queue, a grade on both, merge
+with a byte-exact undo, not the same remembered) until the inspector's
+`linked to` read `ch. 2: microstates and entropyunlink`: it named only the
+other card's document, with `unlink` run into it. Fixed: `linked to` and
+`also in` name the other card by its front (`cardName`, formulas by KaTeX,
+as card names are drawn elsewhere) over its document's title, and
+`unlink` is a control of its own under it; the smoke and
+`same-view.test.ts` read the parts (`.io-card`, `.io-where`, the unlink
+button). The rerun is owed.
 - Find cards that test the same fact across the collection (the sample has
   nine such pairs in stat mech alone: notes, textbook extract, drill
   deck): text folded (case, accents, Arabic marks, math normalized),

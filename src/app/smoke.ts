@@ -6755,12 +6755,17 @@ export async function smokeSame(vault: Vault): Promise<void> {
     openCard(MICRO, idx(PA), PA);
     const row = (k: string) => qa<HTMLElement>('.insp .kvr').find((r) => q('dt', r)?.textContent === k);
     const lt = await poll(() => row('linked to'), `the inspector on ${PA} says linked to`, 8000);
-    must(q('dd', lt)?.textContent === 'ch. 2: microstates and entropy', `linked to ${q('dd', lt)?.textContent}`);
+    const ltCard = q<HTMLElement>('.io-card', lt)?.textContent ?? '';
+    must(/^relative width of the multiplicity peak/.test(ltCard) && q('.io-card .katex', lt), `linked to names the card by its front, its formula set ("${ltCard.slice(0, 50)}")`);
+    must(q('.io-where', lt)?.textContent === 'ch. 2: microstates and entropy', `and where it lives (${q('.io-where', lt)?.textContent})`);
+    must(q('button[data-act="unlink"]', lt)?.textContent === 'unlink' && !q('button[data-act="linked"] [data-act="unlink"]', lt), 'unlink is a control of its own');
     await shot('same-inspector-linked');
     openCard(MICRO, idx('sm-einstein-omega'), 'sm-einstein-omega');
     const ai = await poll(() => row('also in'), 'the inspector on the Einstein solid\'s multiplicity says also in', 8000);
-    must(/^ch\. 2: microstates and entropy/.test(q('dd', ai)?.textContent ?? ''), `also in ${q('dd', ai)?.textContent}`);
-    click(q('button', ai)!);
+    const aiCard = q<HTMLElement>('.io-card', ai)?.textContent ?? '';
+    must(/^multiplicity of an Einstein solid/.test(aiCard) && q('.io-card .katex', ai), `also in names the card by its front ("${aiCard.slice(0, 50)}")`);
+    must(q('.io-where', ai)?.textContent === 'ch. 2: microstates and entropy', `and where it lives (${q('.io-where', ai)?.textContent})`);
+    click(q('button[data-act="alike"]', ai)!);
     await poll(() => useApp.getState().selectedCard?.path === CH2, 'also in opens the textbook\'s card, selected', 8000);
     await shot('same-inspector-also');
 

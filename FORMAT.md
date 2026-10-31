@@ -42,6 +42,8 @@ notes/
         eigenvalues.md
   .ilmi/                     app-private state, never required
     order.json               the order chosen for a directory's children
+    reviews/                 the review log, one file a month
+      2026-10.jsonl
 ```
 
 - A directory is a folder. A `.md` file is a document. Anything else is ignored.
@@ -74,6 +76,33 @@ notes/
   default order (folders first, then documents, by name); listed names that
   no longer exist are ignored and dropped the next time the file is written.
   Without the file every directory is in the default order.
+- **The review log** is app-private too: `.ilmi/reviews/<yyyy-mm>.jsonl`,
+  one JSON object a line, one line a grade, in the month of its `at`.
+  A card's `sr` line holds its latest state; the log holds how it got
+  there, for the numbers a lens shows. Nothing reads it to schedule a card,
+  so a vault without it loses only history (what needs it says since when it
+  was kept). A line:
+
+  ```
+  {"at":"2026-10-30T08:15:02Z","doc":"arabic/vocabulary.md","card":"voc-karam","key":"r","g":3,"st":"review","elapsed":12,"ivl":10,"next":26,"s":25.31,"d":4.2,"ms":6400}
+  ```
+
+  `at` a UTC instant to the second; `doc` the card's document, vault-relative,
+  when graded; `card` its `^id` (a card is given one when first graded, §6.1);
+  `key` the line graded, `cN` or `r` (§6.2), absent for the bare line; `g`
+  1–4; `st` the state before (`new` `learning` `review` `relearning`);
+  `elapsed` whole days since the review before, 0 for a new card; `ivl` and
+  `next` the interval before and after, in days (0 in learning steps); `s`,
+  `d` stability and difficulty after; `ms` the time on the card, at most a
+  minute, when known; `src` where the line came from when not a session in
+  the app (`anki` for an imported revlog). Keys are written in that order;
+  unknown keys are ignored on read. It is built for sync: lines are only
+  appended, never rewritten, so two devices add theirs to the same month;
+  every `.jsonl` in the directory is read (a sync tool's conflict copy
+  too); a line seen twice (the same `at`, `card`, `key`, and `g`) counts
+  once; a line that does not read as one (torn by a crash, junk) is
+  skipped. A card moved to another document is found again by its id when
+  its old document is gone.
 
 ## 2. File shape
 
@@ -138,6 +167,11 @@ dropped, with a diagnostic.
 | `author`       | string                      |           | who wrote it                                                       |
 | `published`    | day or instant              |           | when it was published                                              |
 | `tabs`         | `true` `false`              | `false`   | the document's children are tabs in a rail beside its page         |
+| `new-per-day`  | int 0–9999                  | `20`      | new cards introduced a day (options, below)                        |
+| `reviews-per-day` | int 1–9999               | none      | reviews a day, at most                                             |
+| `retention`    | number 0.7–0.99             | `0.9`     | the recall FSRS schedules for (its request retention)              |
+| `leech`        | int 1–9999                  | `8`       | lapses that make a card a leech                                    |
+| `leech-action` | `suspend` `tag`             | `tag`     | what a leech does: suspended (`sus=1`), or only marked             |
 
 **Type.** A `note` is the person's own writing: editable, cards anywhere in
 it, no schedule unless asked. A `source` is what someone else wrote, read
@@ -218,6 +252,27 @@ How the rail draws them is the app's, not the file's: extracts among the
 children are not drawn as tabs (a tab's show as one line under it), and it
 draws three levels. A book imported from an EPUB lands as a document with
 `tabs: true` and its chapters in its children directory.
+
+**Options.** `new-per-day`, `reviews-per-day`, `retention`, `leech`, and
+`leech-action` are study options. Set on a document, each applies to its
+cards and to everything under it (its children directory, all the way
+down, folders included) unless something lower sets it; where nothing
+sets one, the default in the table holds. A folder has no front-matter and
+takes them from the document above it. The two counts are allowances
+counted where they are set: `new-per-day: 10` on a notebook is ten new
+cards a day across everything under it that does not set its own, and a
+deck under it with `new-per-day: 3` has three of its own; with nothing set
+anywhere each document is its own deck of twenty. A new card is one never
+graded; what is over the day's allowance waits for the next day, in the
+queue's order, and nothing is written for it. `reviews-per-day` caps cards
+in review only, never cards in learning steps. `retention` is handed to
+FSRS for every grade under it. A leech is a card whose lapses reach
+`leech`, and again at every half of it after (eight, then twelve,
+sixteen); `leech-action: suspend` writes `sus=1` on the line graded
+(§6.2), `tag` writes nothing and the app marks it. A value that does not
+parse (`retention: 1.2`, `new-per-day: -3`) is a raw line with a
+diagnostic, as any known key's; `retention` is written as the shortest
+decimal (§7).
 
 **title** is written plain when it can be and as a double-quoted JSON string
 otherwise (when it starts with a YAML-significant character, contains `: ` or

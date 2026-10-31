@@ -17,7 +17,12 @@ export interface StudyOptions {
   cram?: boolean;
   /** Only these cards, by `path#block` (a selection's keys). */
   only?: ReadonlySet<string>;
+  /** Held over the day's allowance (the queue's `held`, `options.ts`): left out unless cramming. */
+  held?: (i: CardItem) => boolean;
 }
+
+/** A card item's place in the queue: its card and the line it asks. */
+export const itemKey = (i: CardItem): string => `${i.path}#${i.id ?? i.block}#${i.dir ?? ''}#${i.group ? JSON.stringify(i.group) : ''}`;
 
 const isNew = (i: CardItem): boolean => !i.sched?.reps;
 
@@ -29,7 +34,7 @@ export function studyItems(docs: Iterable<[string, Doc]>, now: Date, opts: Study
       if (i.kind === 'card' && (!opts.only || opts.only.has(`${i.path}#${i.block}`))) all.push(i);
     }
   }
-  if (!opts.cram) return sortQueue(all.filter((i) => isDue(i, now)), now) as CardItem[];
+  if (!opts.cram) return sortQueue(all.filter((i) => isDue(i, now) && !opts.held?.(i)), now) as CardItem[];
   const fresh = all.filter(isNew);
   const rest = sortQueue(all.filter((i) => !fresh.includes(i)), now) as CardItem[];
   return [...rest, ...fresh];

@@ -25,6 +25,7 @@ export const tauriFs: Fs = {
   },
   readText: (path) => readTextFile(path),
   writeText: (path, text) => writeTextFile(path, text),
+  appendText: (path, text) => writeTextFile(path, text, { append: true, create: true }),
   readBytes: (path) => readFile(path),
   writeBytes: (path, bytes) => writeFile(path, bytes),
   rename: (from, to) => rename(from, to),

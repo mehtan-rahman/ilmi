@@ -7,9 +7,9 @@ import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { open as pickDirectory } from '@tauri-apps/plugin-dialog';
 import { info } from '@tauri-apps/plugin-log';
-import { meta, setField, type Doc, type NodeType } from '../format/index.js';
+import { REVIEWS_DIR, meta, setField, type Doc, type Meta, type NodeType, type Review } from '../format/index.js';
 import type { Chapter, MappedDeck } from '../import/index.js';
-import { dayOf, docItems, isDue, postponeOverflow, sortQueue, type QueueItem } from '../schedule/index.js';
+import { dayOf, docItems, isDue, meterQueue, postponeOverflow, resolveOptions, spentToday, type QueueItem, type Resolved } from '../schedule/index.js';
 import { Vault, childDirOf, childrenAt, cleanName, dirOf, entryOf, fileName, isDoc, ordered, placeEntry, rekey, type ExtractSpec, type ImportDeckSpec, type ImportPdfSpec, type ImportSpec, type TreeNode, type VaultEvent, type VaultState } from '../vault/index.js';
 import { tauriFs } from '../vault/tauri-fs.js';
 import { startPlugins, stopPlugins } from '../plugins/index.js';
@@ -54,17 +54,82 @@ function infoOf(doc: Doc, items: QueueItem[], now: Date, pdf: string | null): Do
   return out;
 }
 
-/** The queue over every known document, at `now`. */
+/** Every review logged in the open vault (`.ilmi/reviews/`), oldest first; empty without a log. */
+let reviews: Review[] = [];
+
+/** The front-matter of a known document, for the options (`schedule/options.ts`). */
+const metaOf = (path: string): Meta | undefined => {
+  const doc = bodies.get(path);
+  return doc ? meta(doc) : undefined;
+};
+
+/** The study options that apply at a document or folder, and where each comes from. */
+export function optionsAt(path: string): Resolved {
+  return resolveOptions(path, metaOf);
+}
+
+/** The queue over every known document, at `now`: the day's allowances metered (new cards a day, the reviews cap). */
 function buildQueue(now: Date): QueueItem[] {
   const out: QueueItem[] = [];
   for (const [path, doc] of bodies) out.push(...docItems(path, doc, now));
-  return sortQueue(out, now);
+  const cache = new Map<string, Resolved>();
+  const optionsOf = (p: string) => { let r = cache.get(p); if (!r) { r = optionsAt(p); cache.set(p, r); } return r; };
+  return meterQueue(out, now, { optionsOf, spent: spentToday(reviews, now, optionsOf) });
+}
+
+/** Each document's `due` as the metered queue has it: a card held for tomorrow is not due today. */
+function withDue(docs: Record<string, DocInfo>, queue: QueueItem[], now: Date): Record<string, DocInfo> {
+  const due = new Map<string, Set<number>>();
+  for (const i of queue) if (i.kind === 'card' && isDue(i, now)) { const s = due.get(i.path) ?? new Set<number>(); s.add(i.block); due.set(i.path, s); }
+  let out = docs;
+  for (const [path, info] of Object.entries(docs)) {
+    const n = due.get(path)?.size ?? 0;
+    if (info.due === n) continue;
+    if (out === docs) out = { ...docs };
+    out[path] = { ...info, due: n };
+  }
+  return out;
+}
+
+/** The queue for the present moment (a card in learning steps may have come due), and each document's due count with it. */
+function publishQueue(docs: Record<string, DocInfo>, now: Date): { queue: QueueItem[]; queueAt: Date; docs: Record<string, DocInfo> } {
+  const queue = buildQueue(now);
+  return { queue, queueAt: now, docs: withDue(docs, queue, now) };
 }
 
 /** Rebuild the queue for the present moment: a card in learning steps may have come due. */
 export function refreshQueue(): void {
-  const now = new Date();
-  useApp.setState({ queue: buildQueue(now), queueAt: now });
+  useApp.setState((s) => publishQueue(s.docs, new Date()));
+}
+
+/** The review log as the app holds it. */
+export const reviewLog = (): readonly Review[] => reviews;
+
+/**
+ * Log one grade: its line appended to its month's file in `.ilmi/reviews/`,
+ * the log the numbers read updated, and the queue metered again (a new card
+ * graded spends the day's allowance).
+ */
+export async function recordReview(r: Review): Promise<void> {
+  const vault = current;
+  if (!vault) return;
+  reviews = [...reviews, r];
+  useApp.setState((s) => ({ reviews, ...publishQueue(s.docs, new Date()) }));
+  await vault.appendReviews([r]);
+}
+
+/** Read the log again: another device's lines synced in. Our own appends come back the same. */
+let reloadTimer: ReturnType<typeof setTimeout> | null = null;
+function reloadReviews(vault: Vault): void {
+  if (reloadTimer) clearTimeout(reloadTimer);
+  reloadTimer = setTimeout(() => {
+    reloadTimer = null;
+    void vault.loadReviews().then((log) => {
+      if (current !== vault || log.length === reviews.length) return;
+      reviews = log;
+      useApp.setState((s) => ({ reviews, ...publishQueue(s.docs, new Date()) }));
+    }).catch((e: unknown) => console.error('reviews', e));
+  }, 500);
 }
 
 async function publishDocs(vault: Vault): Promise<void> {
@@ -82,7 +147,7 @@ async function publishDocs(vault: Vault): Promise<void> {
     }
   }
   for (const path of [...bodies.keys()]) if (!seen.has(path)) bodies.delete(path);
-  if (current === vault) useApp.setState({ docs, queue: buildQueue(now), queueAt: now });
+  if (current === vault) useApp.setState(publishQueue(docs, now));
 }
 
 /** Publish the tree, and forget open state for anything no longer in it. */
@@ -156,7 +221,7 @@ function onEvent(vault: Vault, ev: VaultEvent): void {
       const items = docItems(ev.path, ev.loaded.doc, now);
       bodies.set(ev.path, ev.loaded.doc);
       // the pages stay what they were until the vault has looked: a changed `pdf` field lands a moment later
-      useApp.setState({ docs: { ...s.docs, [ev.path]: infoOf(ev.loaded.doc, items, now, s.docs[ev.path]?.pdf ?? null) }, queue: buildQueue(now), queueAt: now });
+      useApp.setState(publishQueue({ ...s.docs, [ev.path]: infoOf(ev.loaded.doc, items, now, s.docs[ev.path]?.pdf ?? null) }, now));
       void vault.pagesOf(ev.path).then((pdf) => {
         const cur = useApp.getState().docs[ev.path];
         if (current !== vault || !cur || (cur.pdf ?? null) === pdf) return;
@@ -171,7 +236,7 @@ function onEvent(vault: Vault, ev: VaultEvent): void {
       delete docs[ev.path];
       bodies.delete(ev.path);
       const now = new Date();
-      useApp.setState({ docs, panes: dropTabs(pagesToNotebook(s.panes, ev.path, s.docs), ev.path), queue: buildQueue(now), queueAt: now });
+      useApp.setState({ panes: dropTabs(pagesToNotebook(s.panes, ev.path, s.docs), ev.path), ...publishQueue(docs, now) });
       break;
     }
     case 'moved': {
@@ -189,6 +254,9 @@ function onEvent(vault: Vault, ev: VaultEvent): void {
     }
     case 'order':
       useApp.setState({ order: ev.order });
+      break;
+    case 'hidden':
+      if (ev.paths.some((p) => p.startsWith(`${REVIEWS_DIR}/`))) reloadReviews(vault);
       break;
   }
 }
@@ -226,11 +294,12 @@ export async function openVault(path: string): Promise<Vault> {
     panes = openTab(panes, queueId('today'));
   }
   bodies.clear();
+  reviews = await vault.loadReviews().catch((e: unknown) => { console.error('reviews', e); return []; });
   const s0 = useApp.getState();
   useApp.setState({
     open, sidebar, inspector, panes, docs: {}, queue: [], budget: cleanBudget(state.budget), clipDir: cleanClipDir(state.clippings), log: [], session: null, sessionEl: null, selectedCard: null, reveal: null,
     started: true, newVaultIn: null, gone: s0.gone.filter((p) => p !== path), notice: null, fileOver: null, intakeFiles: [], order: vault.order, railFolded, railWidth: clampRail(state.railWidth ?? RAIL_DEFAULT), deckViews: cleanViews(state.decks),
-    folds: cleanFolds(state.folds),
+    folds: cleanFolds(state.folds), reviews, lensViews: {},
   });
   s0.setRecents(addRecent(s0.recents, path, new Date()));
   setWindowTitle(vaultName(path));
@@ -249,8 +318,9 @@ export function closeVault(): void {
   current?.close();
   current = null;
   bodies.clear();
+  reviews = [];
   if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; savePatch = {}; }
-  useApp.setState({ vault: null, files: [], tree: [], docs: {}, open: { '': true }, panes: emptyPanes(), queue: [], log: [], session: null, sessionEl: null, selectedCard: null, reveal: null, paletteOpen: false, intakeDir: '', notice: null, fileOver: null, intakeFiles: [], order: {}, railFolded: {}, deckViews: {}, folds: {} });
+  useApp.setState({ vault: null, files: [], tree: [], docs: {}, open: { '': true }, panes: emptyPanes(), queue: [], log: [], session: null, sessionEl: null, selectedCard: null, reveal: null, paletteOpen: false, intakeDir: '', notice: null, fileOver: null, intakeFiles: [], order: {}, railFolded: {}, deckViews: {}, folds: {}, reviews: [], lensViews: {} });
   setWindowTitle(null);
 }
 
@@ -359,8 +429,8 @@ export function openInitialVault(): Promise<void> {
       if (path) {
         const vault = await openVault(path);
         if (mode) {
-          const { smoke, smokeReader, smokeCards, smokeIntake, smokeQueue, smokeLoop, smokeShots, smokeDeck, smokePri, smokeGrowth, smokeOverload, smokePdf, smokeFaces, smokeCardsText, smokeAnki, smokeMath, smokeEpub, smokeClip, smokeClipping, smokePlugins, smokeDictionary, smokeRender, smokeLive, smokeBlocks, smokeUse, smokeLand, smokeNest, smokeTabs, smokeDecks, smokeTour, smokeNotes, smokeEditing, smokeTree, smokeInsert, smokeTabs2, smokeListCards, smokeArabic, smokeRest, smokeBothWays } = await import('./smoke.js');
-          const run = { reader: smokeReader, cards: smokeCards, intake: smokeIntake, queue: smokeQueue, loop: smokeLoop, shots: smokeShots, deck: smokeDeck, pri: smokePri, growth: smokeGrowth, overload: smokeOverload, pdf: smokePdf, faces: smokeFaces, 'cards-text': smokeCardsText, anki: smokeAnki, math: smokeMath, epub: smokeEpub, clip: smokeClip, clipping: smokeClipping, plugins: smokePlugins, dictionary: smokeDictionary, render: smokeRender, live: smokeLive, blocks: smokeBlocks, use: smokeUse, land: smokeLand, nest: smokeNest, tabs: smokeTabs, decks: smokeDecks, tour: smokeTour, notes: smokeNotes, editing: smokeEditing, tree: smokeTree, insert: smokeInsert, tabs2: smokeTabs2, listcards: smokeListCards, arabic: smokeArabic, rest: smokeRest, bothways: smokeBothWays }[mode] ?? smoke;
+          const { smoke, smokeReader, smokeCards, smokeIntake, smokeQueue, smokeLoop, smokeShots, smokeDeck, smokePri, smokeGrowth, smokeOverload, smokePdf, smokeFaces, smokeCardsText, smokeAnki, smokeMath, smokeEpub, smokeClip, smokeClipping, smokePlugins, smokeDictionary, smokeRender, smokeLive, smokeBlocks, smokeUse, smokeLand, smokeNest, smokeTabs, smokeDecks, smokeTour, smokeNotes, smokeEditing, smokeTree, smokeInsert, smokeTabs2, smokeListCards, smokeArabic, smokeRest, smokeBothWays, smokeNumbers } = await import('./smoke.js');
+          const run = { reader: smokeReader, cards: smokeCards, intake: smokeIntake, queue: smokeQueue, loop: smokeLoop, shots: smokeShots, deck: smokeDeck, pri: smokePri, growth: smokeGrowth, overload: smokeOverload, pdf: smokePdf, faces: smokeFaces, 'cards-text': smokeCardsText, anki: smokeAnki, math: smokeMath, epub: smokeEpub, clip: smokeClip, clipping: smokeClipping, plugins: smokePlugins, dictionary: smokeDictionary, render: smokeRender, live: smokeLive, blocks: smokeBlocks, use: smokeUse, land: smokeLand, nest: smokeNest, tabs: smokeTabs, decks: smokeDecks, tour: smokeTour, notes: smokeNotes, editing: smokeEditing, tree: smokeTree, insert: smokeInsert, tabs2: smokeTabs2, listcards: smokeListCards, arabic: smokeArabic, rest: smokeRest, bothways: smokeBothWays, numbers: smokeNumbers }[mode] ?? smoke;
           // the smokes before 40 expect the inspector wherever they open it: the room rule is the tour's to check
           if (mode !== 'tour') useApp.setState({ inspForced: true });
           await run(vault);
@@ -698,7 +768,15 @@ export async function importAnkiNode(dir: string, decks: MappedDeck[]): Promise<
   for (const d of decks) {
     let at = dir;
     for (const seg of d.dir) at = await vault.folderIn(at, seg);
-    paths.push(await vault.importDeck(at, { title: d.title, doc: d.doc }));
+    const path = await vault.importDeck(at, { title: d.title, doc: d.doc });
+    paths.push(path);
+    // the deck's Anki history, into the review log under its new path
+    if (d.reviews.length) {
+      const lines = d.reviews.map((r) => ({ ...r, doc: path }));
+      await vault.appendReviews(lines);
+      reviews = [...reviews, ...lines].sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
+      useApp.setState((s) => ({ reviews, ...publishQueue(s.docs, new Date()) }));
+    }
   }
   openDir(dir);
   return paths;

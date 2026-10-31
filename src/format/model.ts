@@ -125,7 +125,16 @@ export type Field =
   /** When the clipped page was published: a day or a UTC instant. */
   | { key: 'published'; value: string }
   /** The document's children shown as tabs in a rail beside its page. */
-  | { key: 'tabs'; value: boolean };
+  | { key: 'tabs'; value: boolean }
+  /** Study options (§3, *options*): inherited by everything under the document unless set lower. */
+  | { key: 'new-per-day'; value: number }
+  | { key: 'reviews-per-day'; value: number }
+  | { key: 'retention'; value: number }
+  | { key: 'leech'; value: number }
+  | { key: 'leech-action'; value: LeechAction };
+
+/** What a card does when its lapses reach the leech threshold: suspended, or only marked a leech. */
+export type LeechAction = 'suspend' | 'tag';
 
 export type FieldKey = Field['key'];
 
@@ -153,6 +162,7 @@ export interface Diagnostic {
 
 export const FIELD_KEYS: readonly FieldKey[] = [
   'type', 'title', 'frozen', 'imported', 'started', 'read', 'write', 'default-card', 'pri', 'pdf', 'url', 'author', 'published', 'tabs',
+  'new-per-day', 'reviews-per-day', 'retention', 'leech', 'leech-action',
 ];
 
 export function isField(e: FmEntry): e is Field {

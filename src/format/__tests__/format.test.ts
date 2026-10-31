@@ -173,13 +173,13 @@ describe('front-matter', () => {
     const text = read('vault/courses/linear-algebra.md');
     const { doc, diagnostics } = parse(text);
     expect(diagnostics).toEqual([]);
-    expect(meta(doc)).toEqual({ type: 'note', frozen: false, title: 'linear algebra', tabs: true });
+    expect(meta(doc)).toEqual({ type: 'note', frozen: false, title: 'linear algebra', tabs: true, retention: 0.85, reviewsPerDay: 40 });
     expect(serialize(doc)).toBe(text);
     setField(doc, 'tabs', null);
-    expect(serialize(doc).split('\n').slice(0, 3)).toEqual(['---', 'title: linear algebra', '---']);
+    expect(serialize(doc).split('\n').slice(0, 5)).toEqual(['---', 'title: linear algebra', 'retention: 0.85', 'reviews-per-day: 40', '---']);
     expect(meta(doc).tabs).toBeUndefined();
     setField(doc, 'tabs', true);
-    expect(serialize(doc).split('\n').slice(0, 4)).toEqual(['---', 'title: linear algebra', 'tabs: true', '---']);
+    expect(serialize(doc).split('\n').slice(0, 6)).toEqual(['---', 'title: linear algebra', 'retention: 0.85', 'reviews-per-day: 40', 'tabs: true', '---']);
     expect(meta(parse('---\ntabs: false # by hand\n---\n\nx\n').doc).tabs).toBe(false);
     expect(serialize(parse('---\ntabs: false # by hand\n---\n\nx\n').doc)).toBe('---\ntabs: false\n---\n\nx\n');
     const bad = parse('---\ntabs: some\n---\n\nx\n');

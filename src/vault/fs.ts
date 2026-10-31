@@ -25,6 +25,12 @@ export interface Fs {
   readText(path: string): Promise<string>;
   /** Creates or truncates. Not atomic; the vault writes a temp file and renames. */
   writeText(path: string, text: string): Promise<void>;
+  /**
+   * Add `text` to the end of the file, creating it when missing. Optional:
+   * without it the vault reads the file and writes it back whole. Only the
+   * review log (`.ilmi/reviews/`) appends.
+   */
+  appendText?(path: string, text: string): Promise<void>;
   /** The whole file as bytes: a document's pages. */
   readBytes(path: string): Promise<Uint8Array>;
   /** Creates or truncates, like `writeText`. */

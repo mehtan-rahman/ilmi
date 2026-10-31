@@ -2,16 +2,33 @@
 // FORMAT.md §3.
 
 import {
-  parseAttrs, formatAttrs, parseDay, parseWhen, parseBool, parseInt_, parseNumber, readAttrs, writeAttrs,
+  parseAttrs, formatAttrs, formatNumber, parseDay, parseWhen, parseBool, parseInt_, parseNumber, readAttrs, writeAttrs,
   specWhen, specInt, specIntMin, specIntRange, specNumMin, specBool, type AttrSpec, type Warn,
 } from './attrs.js';
 import {
-  isField, type CardForm, type Diagnostic, type Doc, type Field, type FieldKey, type FmEntry,
-  type Frontmatter, type NodeType, type ReadSchedule, type WriteSchedule,
+  FIELD_KEYS, isField, type CardForm, type Diagnostic, type Doc, type Field, type FieldKey, type FmEntry,
+  type Frontmatter, type LeechAction, type NodeType, type ReadSchedule, type WriteSchedule,
 } from './model.js';
 
 const NODE_TYPES: readonly NodeType[] = ['note', 'source', 'deck', 'draft', 'extract'];
 const CARD_FORMS: readonly CardForm[] = ['cloze', 'qa', 'bidir'];
+const LEECH_ACTIONS: readonly LeechAction[] = ['suspend', 'tag'];
+
+/** Study options (§3): the range each takes. Retention is FSRS's request retention. */
+export const RETENTION_MIN = 0.7;
+export const RETENTION_MAX = 0.99;
+
+/** `retention` as a number in range, or null. */
+export function parseRetention(v: string): number | null {
+  const n = parseNumber(v);
+  return n !== null && n >= RETENTION_MIN && n <= RETENTION_MAX ? n : null;
+}
+
+/** A count option (`new-per-day` ≥ 0, `reviews-per-day` and `leech` ≥ 1), or null. */
+export function parseCount(v: string, min: number): number | null {
+  const n = parseInt_(v);
+  return n !== null && n >= min && n <= 9999 ? n : null;
+}
 
 /** Priority: 0–100, lower first. The `pri` field, the fallback on a `read` / `write` line, and a card's override. */
 export const PRI_MIN = 0;
@@ -125,6 +142,20 @@ function parseValue(key: FieldKey, raw: string, warn: Warn): Field | null {
       const v = parseWhen(stripComment(raw));
       return v === null ? null : { key, value: v };
     }
+    case 'new-per-day':
+    case 'reviews-per-day':
+    case 'leech': {
+      const v = parseCount(stripComment(raw), key === 'new-per-day' ? 0 : 1);
+      return v === null ? null : { key, value: v };
+    }
+    case 'retention': {
+      const v = parseRetention(stripComment(raw));
+      return v === null ? null : { key, value: v };
+    }
+    case 'leech-action': {
+      const v = stripComment(raw) as LeechAction;
+      return LEECH_ACTIONS.includes(v) ? { key, value: v } : null;
+    }
   }
 }
 
@@ -197,7 +228,7 @@ function withoutLinePri(f: Field, into?: FmEntry[]): Field {
   return out;
 }
 
-const KNOWN = new Set<string>(['type', 'title', 'frozen', 'imported', 'started', 'read', 'write', 'default-card', 'pri', 'pdf', 'url', 'author', 'published', 'tabs']);
+const KNOWN = new Set<string>(FIELD_KEYS);
 function isKnown(k: string): k is FieldKey { return KNOWN.has(k); }
 
 // ── serialize ────────────────────────────────────────────────────
@@ -214,6 +245,8 @@ export function formatField(f: Field): string {
     case 'pdf': case 'url': case 'author': return `${f.key}: ${formatTitle(f.value)}`;
     case 'published': return `published: ${f.value}`;
     case 'tabs': return `tabs: ${f.value ? 'true' : 'false'}`;
+    case 'new-per-day': case 'reviews-per-day': case 'leech': case 'leech-action': return `${f.key}: ${f.value}`;
+    case 'retention': return `retention: ${formatNumber(f.value)}`;
   }
 }
 
@@ -247,6 +280,12 @@ export interface Meta {
   published?: string;
   /** `tabs: true`: the document's children are tabs in a rail beside its page. */
   tabs?: boolean;
+  /** Study options set on this document (§3, *options*); what applies after inheritance is `schedule/options.ts`. */
+  newPerDay?: number;
+  reviewsPerDay?: number;
+  retention?: number;
+  leech?: number;
+  leechAction?: LeechAction;
 }
 
 /**
@@ -274,6 +313,11 @@ export function meta(doc: Doc): Meta {
       case 'author': out.author = e.value; break;
       case 'published': out.published = e.value; break;
       case 'tabs': out.tabs = e.value; break;
+      case 'new-per-day': out.newPerDay = e.value; break;
+      case 'reviews-per-day': out.reviewsPerDay = e.value; break;
+      case 'retention': out.retention = e.value; break;
+      case 'leech': out.leech = e.value; break;
+      case 'leech-action': out.leechAction = e.value; break;
     }
   }
   if (!typed && out.imported !== undefined) out.type = 'source';

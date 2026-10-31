@@ -13,7 +13,7 @@ export {
   type Delims, type SideDelim, type CardDelim, type SideKind, type CardKind, type Detected, type Split, type Found, type Dropped, type AnkiHeader,
 } from './cards.js';
 export {
-  mapPackage, cardOf, kindOf, seedOf as ankiSeedOf, creationDay, difficultyOf, deckLabel,
+  mapPackage, cardOf, kindOf, seedOf as ankiSeedOf, creationDay, difficultyOf, deckLabel, reviewsOf as ankiReviewsOf, ankiId,
   type AnkiPackage, type AnkiDeck, type AnkiNotetype, type AnkiNote, type AnkiCard, type AnkiDropped, type Mapped, type MappedDeck, type NotetypeKind,
 } from './anki.js';
 export {

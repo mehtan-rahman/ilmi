@@ -236,8 +236,8 @@
   letter-spacing: 0.06em;
 }
 .insp .frozen-row .fr-toggle:hover { border-color: var(--accent-soft); color: var(--fg-1); }
-.insp .deck-default { display: flex; flex-shrink: 0; }
-.insp .deck-default button {
+.insp .deck-default, .insp .opt-action { display: flex; flex-shrink: 0; }
+.insp .deck-default button, .insp .opt-action button {
   appearance: none;
   border: 0;
   background: transparent;
@@ -248,8 +248,8 @@
   cursor: default;
   letter-spacing: 0.04em;
 }
-.insp .deck-default button:last-child { padding-right: 0; }
-.insp .deck-default button[data-active="1"] { color: var(--fg-1); text-decoration: underline; text-underline-offset: 3px; }
+.insp .deck-default button:last-child, .insp .opt-action button:last-child { padding-right: 0; }
+.insp .deck-default button[data-active="1"], .insp .opt-action button[data-active="1"] { color: var(--fg-1); text-decoration: underline; text-underline-offset: 3px; }
 .insp .card-editor { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
 .insp .ce-field {
   width: 100%;
@@ -495,3 +495,6 @@
   outline: none;
 }
 .tweaks .tw-sel:focus { border-color: var(--accent); }
+.insp .opt-from { margin-left: 6px; font-family: var(--mono); font-size: 10px; color: var(--fg-4); }
+.insp .opt-row { display: inline-flex; align-items: baseline; gap: 4px; flex-wrap: wrap; }
+.insp .frozen-row[data-opt] .opt-val { color: var(--fg-2); font-size: 11.5px; }

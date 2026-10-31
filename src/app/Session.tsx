@@ -8,7 +8,7 @@
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { emitDocAction, emitGrade, runBlockHooks, usePlugins } from '../plugins/index.js';
 import { PRI_DEFAULT, blanks, cardFields, type Block, type Card } from '../format/index.js';
-import { GRADES, advanceRead, advanceWrite, dirPri, gradeItem, postponed, scheduleOf, type CardItem, type Grade, type QueueItem, type ReadItem, type WriteItem } from '../schedule/index.js';
+import { GRADES, advanceRead, advanceWrite, dirPri, postponed, scheduleOf, type CardItem, type Grade, type QueueItem, type ReadItem, type WriteItem } from '../schedule/index.js';
 import { EL_WORD, FORM_LABEL, dueLabel, gapLabels, ownBlank, sourceLabel, trailParts } from './items.js';
 import type { OpenOpts } from './panes.js';
 import { Pdf } from './Pdf.js';
@@ -18,7 +18,8 @@ import { Reader, clozeHTML, faceDir, richHTML } from './Reader.js';
 import { useApp, type El } from './store.js';
 import { useDoc } from './useDoc.js';
 import { studyHeader } from './study.js';
-import { currentVault, note, openNode } from './vault.js';
+import { currentVault, note, openNode, optionsAt } from './vault.js';
+import { gradeCard } from './grading.js';
 import './session.css';
 import './incontext.css';
 
@@ -132,7 +133,7 @@ function CardElement({ item, active, onGrade }: CardProps) {
   const f = cardFields(text);
   // the item's schedule stands in only until the document is loaded; a card reset since reads as new
   const sched = !card ? item.sched : scheduleOf(card, item.group, item.dir);
-  const gaps = gapLabels(sched, now);
+  const gaps = gapLabels(sched, now, optionsAt(item.path).opts.retention);
   const grade = (g: Grade) => { if (revealed) onGrade(g); else setRevealed(true); };
 
   useKeys(active, (key) => {
@@ -283,6 +284,9 @@ export function Session({ active, onOpen }: Props) {
 
   // a new session starts from its first element
   useEffect(() => { setIdx(0); }, [session?.seq]);
+  // how long the element has been up: a review's time, for the log
+  const shownAt = useRef(Date.now());
+  useEffect(() => { shownAt.current = Date.now(); }, [session?.seq, idx]);
 
   // the tab follows the element
   useEffect(() => {
@@ -320,7 +324,8 @@ export function Session({ active, onOpen }: Props) {
     const vault = currentVault();
     if (!vault) return;
     const now = new Date();
-    vault.update(item.path, (doc) => { gradeItem(doc, item, g, now); }).then((loaded) => {
+    gradeCard(item, g, now, now.getTime() - shownAt.current).then((loaded) => {
+      if (!loaded) return;
       // a card that had no id has one now, and a blank it numbered is numbered:
       // later items of the same card in this session follow
       const at = loaded.doc.blocks[item.block];

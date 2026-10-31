@@ -6,8 +6,8 @@
 // the way `seedOf` does for SuperMemo. What the format lacks is dropped and
 // counted, never guessed at.
 
-import { blanks, type Card, type CardSchedule, type Doc } from '../format/index.js';
-import { addDays, dayOf } from '../schedule/dates.js';
+import { blanks, type Card, type CardSchedule, type Doc, type Review, type SrState } from '../format/index.js';
+import { addDays, dayOf, instantOf } from '../schedule/dates.js';
 import { fileName } from '../vault/paths.js';
 import { cardText, deckDoc, noDropped, reduceCell, type Dropped } from './cards.js';
 
@@ -23,6 +23,23 @@ export interface AnkiPackage {
   notetypes: AnkiNotetype[];
   notes: AnkiNote[];
   cards: AnkiCard[];
+  /** The review log, oldest first; absent from a package read before 42. */
+  revlog?: AnkiReview[];
+}
+
+export interface AnkiReview {
+  /** Epoch milliseconds. */
+  id: number;
+  card: number;
+  /** 1 again … 4 easy; 0 a manual reschedule. */
+  ease: number;
+  /** After and before, days; negative is seconds, in learning. */
+  ivl: number;
+  lastIvl: number;
+  /** Milliseconds on the answer. */
+  time: number;
+  /** 0 learning, 1 review, 2 relearning, 3 filtered, 4 manual. */
+  type: number;
 }
 
 export interface AnkiDeck {
@@ -84,6 +101,8 @@ export interface MappedDeck {
   cards: number;
   /** Cards that carry a seeded schedule. */
   scheduled: number;
+  /** The Anki revlog of the cards that landed, for `.ilmi/reviews/` once the deck has a path (`doc` is filled then). */
+  reviews: Omit<Review, 'doc'>[];
 }
 
 export interface Mapped {
@@ -149,7 +168,9 @@ export function kindOf(nt: AnkiNotetype): NotetypeKind {
  * line and the reverse card's on `sr r` (FORMAT.md §6.2), any other
  * card's counted. `null` when the note makes no card.
  */
-export function cardOf(note: AnkiNote, nt: AnkiNotetype, cards: AnkiCard[], day0: string, dropped: AnkiDropped): { card: Card; other: boolean } | null {
+export function cardOf(note: AnkiNote, nt: AnkiNotetype, cards: AnkiCard[], day0: string, dropped: AnkiDropped): { card: Card; other: boolean; keys: Map<number, string | undefined> } | null {
+  // which of the card's lines each Anki card's history belongs to
+  const keys = new Map<number, string | undefined>();
   const cells = note.fields.map((f) => reduceCell(f, true, dropped));
   const kind = kindOf(nt);
   const sorted = [...cards].sort((a, b) => a.ord - b.ord);
@@ -167,7 +188,8 @@ export function cardOf(note: AnkiNote, nt: AnkiNotetype, cards: AnkiCard[], day0
       if (groups.size === 1) card.sched = s;
       else (card.blanks ??= {})[n] = s;
     }
-    return { card, other: false };
+    for (const c of sorted) if (groups.has(c.ord + 1)) keys.set(c.id, groups.size === 1 ? undefined : `c${c.ord + 1}`);
+    return { card, other: false, keys };
   }
   const full = cells.filter(Boolean);
   if (full.length < 2) return null;
@@ -183,12 +205,44 @@ export function cardOf(note: AnkiNote, nt: AnkiNotetype, cards: AnkiCard[], day0
   const r = back ? seedOf(back, day0) : null;
   if (r) card.reverse = r;
   dropped.schedules += rest.filter((c) => c !== back && c.type === 2).length;
-  return { card, other: kind === 'other' };
+  if (first) keys.set(first.id, undefined);
+  if (back) keys.set(back.id, 'r');
+  return { card, other: kind === 'other', keys };
 }
 
 // ── the package ──────────────────────────────────────────────────
 
 const hasProgress = (c: Card): boolean => !!c.sched || !!c.reverse || !!c.blanks;
+
+/** The id a card with history lands with, so its reviews can name it: the note's, in base 36. */
+export const ankiId = (note: number): string => `anki-${note.toString(36)}`;
+
+const days = (ivl: number): number => (ivl > 0 ? ivl : 0);
+
+/**
+ * One Anki card's answers as review-log lines (`format/reviews.ts`): the
+ * state before each from the row's type (a first learning answer is a new
+ * card's), the days since the answer before, the intervals in days (a
+ * learning step in seconds is 0), the time capped at a minute. Manual
+ * reschedules are not answers and are skipped.
+ */
+export function reviewsOf(rows: readonly AnkiReview[], card: string, key: string | undefined): Omit<Review, 'doc'>[] {
+  const out: Omit<Review, 'doc'>[] = [];
+  let prev: number | null = null;
+  for (const r of [...rows].sort((a, b) => a.id - b.id)) {
+    if (r.type === 4 || r.ease < 1 || r.ease > 4) continue;
+    const st: SrState = r.type === 0 ? (prev === null ? 'new' : 'learning') : r.type === 2 ? 'relearning' : 'review';
+    const line: Omit<Review, 'doc'> = {
+      at: instantOf(new Date(r.id)), card, g: r.ease as Review['g'], st,
+      elapsed: prev === null ? 0 : Math.max(0, Math.floor((r.id - prev) / 86_400_000)),
+      ivl: days(r.lastIvl), next: days(r.ivl), ms: Math.min(60_000, Math.max(0, r.time)), src: 'anki',
+    };
+    if (key !== undefined) line.key = key;
+    out.push(line);
+    prev = r.id;
+  }
+  return out;
+}
 
 /** Every deck with cards as a deck document, in name order; what was dropped, counted. */
 export function mapPackage(pkg: AnkiPackage): Mapped {
@@ -205,22 +259,29 @@ export function mapPackage(pkg: AnkiPackage): Mapped {
     byDeck.set(c.deck, deck);
     deck.set(c.note, [...(deck.get(c.note) ?? []), c]);
   }
+  const revlog = new Map<number, AnkiReview[]>();
+  for (const r of pkg.revlog ?? []) revlog.set(r.card, [...(revlog.get(r.card) ?? []), r]);
   const decks: MappedDeck[] = [];
   for (const d of [...pkg.decks].sort((a, b) => a.name.localeCompare(b.name))) {
     const group = byDeck.get(d.id);
     const cards: Card[] = [];
+    const reviews: Omit<Review, 'doc'>[] = [];
     for (const [nid, cs] of group ?? []) {
       const note = notes.get(nid);
       const nt = note && notetypes.get(note.notetype);
       const r = note && nt ? cardOf(note, nt, cs, day0, dropped) : null;
       if (!r) { dropped.notes++; continue; }
       if (r.other) other++;
+      // a card with history gets an id now, so its log lines name it
+      const lines = [...r.keys].flatMap(([cid, key]) => reviewsOf(revlog.get(cid) ?? [], ankiId(nid), key));
+      if (lines.length) { r.card.id = ankiId(nid); reviews.push(...lines); }
       cards.push(r.card);
     }
     if (!cards.length) { empty++; continue; }
     const segments = d.name.split('::').map((s) => s.trim()).filter(Boolean);
     const title = segments.pop() ?? d.name;
-    decks.push({ name: d.name, dir: segments.map(fileName), title, doc: deckDoc(cards, []), cards: cards.length, scheduled: cards.filter(hasProgress).length });
+    reviews.sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
+    decks.push({ name: d.name, dir: segments.map(fileName), title, doc: deckDoc(cards, []), cards: cards.length, scheduled: cards.filter(hasProgress).length, reviews });
   }
   return { decks, empty, other, dropped, media: pkg.media };
 }

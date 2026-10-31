@@ -8,10 +8,10 @@
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
-  AF_MIN, PRI_DEFAULT, PRI_MAX, PRI_MIN, READ_AF, WRITE_AF, cardForm, docPri, meta, parse, parseAf, parsePri, setField,
+  AF_MIN, PRI_DEFAULT, PRI_MAX, PRI_MIN, READ_AF, RETENTION_MAX, RETENTION_MIN, WRITE_AF, cardForm, docPri, meta, parse, parseAf, parseCount, parsePri, parseRetention, setField,
   type Block, type Card, type CardForm, type CardSchedule, type Doc, type ReadSchedule, type WriteSchedule,
 } from '../format/index.js';
-import { advanceWrite, inScope, nextIntervals, type CardItem } from '../schedule/index.js';
+import { advanceWrite, inScope, nextIntervals, type CardItem, type OptionKey } from '../schedule/index.js';
 import { baseOf, childDirOf, childrenAt, dirOf, isDoc, pageOfBlock, type TreeNode } from '../vault/index.js';
 import { cardName, formLabel } from './chrome.js';
 import { breakdown, countsUnder, dueItems, plainMath } from './chromeText.js';
@@ -21,7 +21,8 @@ import { INTAKE, QUEUE_TITLE, SESSION, findNode, queueScope, titleOf } from './n
 import { activeTab } from './panes.js';
 import { useApp, type DocInfo } from './store.js';
 import { useDoc } from './useDoc.js';
-import { currentVault, openNode, resetCard } from './vault.js';
+import { currentVault, openNode, optionsAt, resetCard } from './vault.js';
+import { docsUnder } from './deck.js';
 import { notebookOf, outline } from './tabs.js';
 import { goToHeading } from './headings.js';
 
@@ -64,7 +65,7 @@ interface NumFieldProps {
   className: string;
   value: number | undefined;
   /** What applies when the field is empty; shown as the placeholder. */
-  fallback: number;
+  fallback: number | string;
   min: number;
   max?: number;
   step: number;
@@ -145,6 +146,74 @@ function growthRow(path: string, key: 'read' | 'write', s: ReadSchedule | WriteS
       <span className="dim af-next">{preview}</span>
     </>
   )];
+}
+
+// ── options ──────────────────────────────────────────────────────
+
+const OPTION_FIELD: Record<Exclude<OptionKey, 'leechAction'>, 'new-per-day' | 'reviews-per-day' | 'retention' | 'leech'> = {
+  newPerDay: 'new-per-day', reviewsPerDay: 'reviews-per-day', retention: 'retention', leech: 'leech',
+};
+
+/**
+ * The study options where they apply (`schedule/options.ts`): each one's
+ * value, and where it comes from when it is not set here, dimmed (`from
+ * quantum II`); nothing for a default. On a document each is a field that
+ * writes its front-matter (empty takes it off, so the one above applies);
+ * on a folder, which has no front-matter, they read only.
+ */
+export function OptionsBlock({ path }: { path: string }) {
+  const docs = useApp((s) => s.docs);
+  const root = useApp((s) => s.vault);
+  const { opts, from } = optionsAt(path);
+  const own = isDoc(path);
+  const where = (k: OptionKey) => {
+    const f = from[k];
+    if (f === undefined) return null;
+    if (own && f === path) return null;
+    return <span className="dim opt-from" data-from={f}>from {titleOf(f, docs, root)}</span>;
+  };
+  const isOwn = (k: OptionKey) => own && from[k] === path;
+  const write = (field: 'new-per-day' | 'reviews-per-day' | 'retention' | 'leech' | 'leech-action', v: number | string | null) =>
+    currentVault()?.update(path, (d) => setField(d, field as 'leech', v as number | null)).catch(console.error);
+  const num = (k: Exclude<OptionKey, 'leechAction'>, label: string, min: number, max: number | undefined, step: number, parse: (t: string) => number | null, unit?: string): [string, ReactNode] => {
+    const value = opts[k];
+    const shown = value === null ? 'none' : String(value);
+    if (!own) return [label, <span key={k} data-opt={k}>{shown}{unit && value !== null ? ` ${unit}` : ''} {where(k)}</span>];
+    return [label, (
+      <span key={k} className="opt-row" data-opt={k}>
+        <NumField className="pri-field opt-field" value={isOwn(k) ? value ?? undefined : undefined} fallback={shown} min={min} {...(max !== undefined ? { max } : {})} step={step} parse={parse} onCommit={(n) => void write(OPTION_FIELD[k], n)} />
+        {unit && <span className="dim">{unit}</span>} {where(k)}
+      </span>
+    )];
+  };
+  const rows: [string, ReactNode][] = [
+    num('newPerDay', 'new a day', 0, 9999, 1, (t) => parseCount(t, 0)),
+    num('reviewsPerDay', 'reviews a day', 1, 9999, 1, (t) => parseCount(t, 1)),
+    num('retention', 'retention', RETENTION_MIN, RETENTION_MAX, 0.01, parseRetention),
+    num('leech', 'leech at', 1, 9999, 1, (t) => parseCount(t, 1), 'lapses'),
+  ];
+  const action = opts.leechAction;
+  return (
+    <Block title="options">
+      <KV rows={rows} />
+      <div className="frozen-row" data-opt="leechAction">
+        <span className="fr-state">a leech is {where('leechAction')}</span>
+        {own ? (
+          <div className="opt-action">
+            {(['suspend', 'tag'] as const).map((a) => (
+              <button key={a} type="button" data-active={action === a ? '1' : '0'} onClick={() => void write('leech-action', isOwn('leechAction') && action === a ? null : a)}>{a === 'suspend' ? 'suspended' : 'marked'}</button>
+            ))}
+          </div>
+        ) : <span className="opt-val">{action === 'suspend' ? 'suspended' : 'marked'}</span>}
+      </div>
+    </Block>
+  );
+}
+
+/** Whether `path` (a document or a folder) has cards in it or under it: where options apply. */
+function hasCardsUnder(path: string): boolean {
+  const s = useApp.getState();
+  return docsUnder(s.tree, path, s.order, s.files).some((p) => (s.docs[p]?.cards ?? 0) > 0);
 }
 
 /** The card as this render knew it: at its index, else by id. Not whatever slid into the index since. */
@@ -271,7 +340,7 @@ function FolderInspector({ id }: { id: string }) {
   const rows: [string, ReactNode][] = [['items', children.length]];
   if (under.cards) rows.push(['cards', under.cards]);
   if (under.due) rows.push(['due', under.due]);
-  return <Block title="folder"><KV rows={rows} /></Block>;
+  return <><Block title="folder"><KV rows={rows} /></Block>{under.cards > 0 && <OptionsBlock path={id} />}</>;
 }
 
 /** The `children` line of a document that has any: how many, a click opening them as a folder lens. */
@@ -308,6 +377,7 @@ function DocInspector({ id, info, doc, now }: { id: string; info: DocInfo; doc: 
             </div>
           </div>
         </Block>
+        <OptionsBlock path={id} />
       </>
     );
   }
@@ -367,6 +437,7 @@ function DocInspector({ id, info, doc, now }: { id: string; info: DocInfo; doc: 
           <button type="button" className="fr-toggle" data-frozen={info.frozen ? '1' : '0'} onClick={() => toggleField(id, 'frozen', !info.frozen)}>{info.frozen ? 'thaw' : 'freeze'}</button>
         </div>
       </Block>
+      {(cards > 0 || hasCardsUnder(id)) && <OptionsBlock path={id} />}
       {!info.pdf && <Outline id={id} doc={doc} />}
       {extracts.length > 0 && (
         <Block title="extracts">

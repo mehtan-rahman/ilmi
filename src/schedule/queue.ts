@@ -12,6 +12,8 @@ import {
 } from '../format/index.js';
 import type { Vault } from '../vault/index.js';
 import { grade, type Grade } from './card.js';
+import { becomesLeech } from './options.js';
+import type { LeechAction } from '../format/index.js';
 import { addDays, dayOf, dayStart, whenToDate } from './dates.js';
 import { advanceRead } from './read.js';
 import { advanceWrite } from './write.js';
@@ -56,6 +58,12 @@ export interface CardItem extends ItemBase {
    * Nothing on disk says so (FORMAT.md §6.2, siblings).
    */
   buried?: true;
+  /**
+   * Over the day's allowance (`options.ts`): a new card past `new-per-day`,
+   * a review past `reviews-per-day`. Held until the next day as `buried` is;
+   * nothing on disk says so.
+   */
+  held?: 'new' | 'reviews';
 }
 
 export interface ReadItem extends ItemBase {
@@ -363,6 +371,17 @@ export function numberBlank(text: string, index: number, n: number): string {
 export interface GradeOptions {
   /** Id generator, for tests. */
   newId?: () => string;
+  /** FSRS's request retention (`options.ts`); absent, its default 0.9. */
+  retention?: number;
+  /** The leech rule: lapses that make a leech, and what it does; `suspend` writes `sus=1` on the line graded. */
+  leech?: { threshold: number; action: LeechAction };
+  /** Told what was graded: the card's id (minted when it had none), the line's key (`cN`, `r`, or none for the bare line), the schedule before and after. For the review log. */
+  report?: (r: { id: string; key?: string; prev?: CardSchedule; next: CardSchedule }) => void;
+}
+
+/** A grade's leech: whether the schedule just reached the threshold (`becomesLeech`). */
+export function wasLeeched(before: CardSchedule | undefined, after: CardSchedule, threshold: number): boolean {
+  return becomesLeech(before?.lapses ?? 0, after.lapses ?? 0, threshold);
 }
 
 /**
@@ -386,15 +405,25 @@ export function gradeItem(doc: Doc, item: CardItem, rating: Grade, now: Date, op
     card.text = numberBlank(card.text, group.blank, n);
     group = { n };
   }
+  const params = opts.retention !== undefined ? { request_retention: opts.retention } : undefined;
+  // a leech set to suspend carries `sus=1` on the line it was graded on
+  const leeched = (prev: CardSchedule | undefined, next: CardSchedule): CardSchedule => {
+    if (opts.leech?.action === 'suspend' && wasLeeched(prev, next, opts.leech.threshold)) next.suspended = true;
+    return next;
+  };
   // a both-ways card's reverse rewrites its `sr r` line, and only that one
   if (item.dir === 'r') {
-    const next = grade(card.reverse, rating, now);
+    const prev = card.reverse;
+    const next = leeched(prev, grade(prev, rating, now, params));
     card.reverse = next;
+    opts.report?.({ id: card.id, key: 'r', ...(prev ? { prev } : {}), next });
     return next;
   }
   const own = group && 'n' in group && (item.groups > 1 || card.blanks?.[group.n] !== undefined) ? group.n : null;
-  const next = grade(own === null ? card.sched : card.blanks?.[own] ?? card.sched, rating, now);
+  const prev = own === null ? card.sched : card.blanks?.[own] ?? card.sched;
+  const next = leeched(prev, grade(prev, rating, now, params));
   if (own === null) card.sched = next;
   else card.blanks = { ...card.blanks, [own]: next };
+  opts.report?.({ id: card.id, ...(own === null ? {} : { key: `c${own}` }), ...(prev ? { prev } : {}), next });
   return next;
 }

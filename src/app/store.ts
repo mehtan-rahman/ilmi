@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { NodeType, ReadSchedule, WriteSchedule } from '../format/index.js';
+import type { NodeType, ReadSchedule, Review, WriteSchedule } from '../format/index.js';
 import type { QueueItem } from '../schedule/index.js';
 import type { Order, TreeNode } from '../vault/index.js';
 import type { DeckView } from './deck.js';
@@ -11,6 +11,9 @@ import { cleanRecents, type Recent } from './recents.js';
 // documents and keeps this in step; nothing here writes a file.
 
 export type Theme = 'light' | 'dark' | 'eink';
+
+/** A folder lens: its items, its cards, its numbers; a deck's lens: its cards or its numbers. */
+export type LensView = 'items' | 'cards' | 'numbers';
 export const THEMES: readonly Theme[] = ['light', 'dark', 'eink'];
 
 /** The accent presets from the prototype: one hue, one chroma; gold sets its own lightness. */
@@ -226,6 +229,10 @@ export interface AppState {
   deckViews: Record<string, DeckView>;
   /** The headings folded in the reader, by document path: the keys `fold.ts` gives them. Per vault, in `.ilmi/state.json`'s `folds`. */
   folds: Record<string, string[]>;
+  /** Every review logged (`.ilmi/reviews/`), oldest first, for the numbers. Empty without a log. */
+  reviews: Review[];
+  /** What a folder's or a deck's lens shows: its items, its cards, or its numbers. Not remembered. */
+  lensViews: Record<string, LensView>;
   session: Session | null;
   /** What the session is on now, for its tab and the inspector. */
   sessionEl: { kind: El; label: string; item: QueueItem } | null;
@@ -292,6 +299,8 @@ export const useApp = create<AppState>((set, get) => ({
   railWidth: 200,
   deckViews: {},
   folds: {},
+  reviews: [],
+  lensViews: {},
   session: null,
   sessionEl: null,
   setTheme: (theme) => { set({ theme }); showTheme(theme); persist(get()); },

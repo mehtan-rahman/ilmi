@@ -9,7 +9,11 @@ export { advanceRead, type ReadAction } from './read.js';
 export { advanceWrite, type WriteAction } from './write.js';
 export { grow, nextIntervals, postponed, POSTPONE_FACTOR } from './growth.js';
 export {
-  queue, queueItems, sortQueue, sameItem, docItems, counts, inScope, isDue, cardGroups, isSuspended, scheduleOf, cardDirs, dirPri, burySiblings, gradeItem, numberBlank, newId,
+  queue, queueItems, sortQueue, sameItem, docItems, counts, inScope, isDue, cardGroups, isSuspended, scheduleOf, cardDirs, dirPri, burySiblings, gradeItem, wasLeeched, numberBlank, newId,
   fold, overflow, postponeOverflow,
   type QueueItem, type Fold, type CardItem, type ReadItem, type WriteItem, type GroupKey, type Dir, type Scope, type Counts, type GradeOptions,
 } from './queue.js';
+export {
+  OPTION_DEFAULTS, OPTION_KEYS, ownersOf, resolveOptions, allowanceOf, meterQueue, spentToday, becomesLeech, isNewItem,
+  type DeckOptions, type OptionKey, type Resolved, type Spent, type MeterContext, type SpentReview,
+} from './options.js';

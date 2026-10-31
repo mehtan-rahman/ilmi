@@ -14,7 +14,7 @@ import { addDays } from '../../schedule/dates.js';
 import { Vault } from '../../vault/index.js';
 import { nodeFs } from '../../vault/node-fs.js';
 import {
-  cardOf, creationDay, deckLabel, difficultyOf, kindOf, mapPackage, seedOf,
+  ankiId, cardOf, creationDay, deckLabel, difficultyOf, kindOf, mapPackage, reviewsOf, seedOf,
   type AnkiCard, type AnkiDropped, type AnkiNote, type AnkiNotetype, type AnkiPackage,
 } from '../anki.js';
 import { droppedLabel, noDropped } from '../cards.js';
@@ -89,7 +89,7 @@ describe('cardOf', () => {
   it('writes a basic note as front :: back, more fields joined with /', () => {
     const d = fresh();
     const r = cardOf(note(['a', 'b', 'c']), notetype({ fields: ['Front', 'Back', 'Extra'] }), [card({})], DAY0, d);
-    expect(r).toEqual({ card: { kind: 'card', text: 'a :: b / c' }, other: false });
+    expect(r).toEqual({ card: { kind: 'card', text: 'a :: b / c' }, other: false, keys: new Map([[1, undefined]]) });
   });
 
   it('writes a reversed note as ::: only when its reverse card is there, each card\'s schedule on its direction\'s line', () => {
@@ -199,9 +199,10 @@ describe('mapPackage', () => {
     const due3 = addDays(DAY0, 160);
     expect(text).toBe([
       '---', 'type: deck', '---', '',
-      'What is the capital of France? :: Paris',
+      // the two cards with an Anki history land with an id, so their log lines name them
+      `What is the capital of France? :: Paris ^${ankiId(1_700_000_000_100)}`,
       `<!-- sr due=${due1} st=review s=30 d=5 r=7 l=1 ivl=30 last=${addDays(due1, -30)} -->`, '',
-      'der Vorsatz ::: resolution; intention',
+      `der Vorsatz ::: resolution; intention ^${ankiId(1_700_000_000_101)}`,
       `<!-- sr due=${due2} st=review s=45 d=6 r=9 l=0 ivl=45 last=${addDays(due2, -45)} -->`,
       `<!-- sr r due=${due3} st=review s=20 d=8 r=4 l=3 ivl=20 last=${addDays(due3, -20)} -->`, '',
     ].join('\n'));
@@ -226,6 +227,33 @@ describe('mapPackage', () => {
     expect(cards.map((c) => cardForm(c.text))).toEqual(['cloze', 'qa']);
     expect(Object.keys(cards[0]!.blanks ?? {})).toEqual(['1']);
     expect(cards[1]!.sched).toBeUndefined();
+  });
+
+  it('brings the revlog: each answer a review-log line on the line it belongs to (milestone 42)', () => {
+    const [german, science] = m.decks;
+    expect(science!.reviews).toEqual([]);
+    const id = ankiId(1_700_000_000_100);
+    const lines = german!.reviews;
+    expect(lines.map((r) => [r.card, r.key ?? '', r.g, r.st, r.elapsed, r.ivl, r.next, r.ms])).toEqual([
+      [id, '', 3, 'new', 0, 0, 0, 8000],
+      [id, '', 3, 'learning', 0, 0, 3, 6500],
+      [id, '', 1, 'review', 2, 3, 0, 12000],
+      [id, '', 3, 'relearning', 0, 0, 1, 5000],
+      // the reverse card's one answer lands on the `sr r` line; a minute and a half on it counts a minute
+      [ankiId(1_700_000_000_101), 'r', 4, 'new', 0, 0, 4, 60000],
+    ]);
+    expect(lines.every((r) => r.src === 'anki' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(r.at))).toBe(true);
+    expect(lines[0]!.at).toBe('2026-01-01T09:00:00Z');
+  });
+
+  it('skips a manual reschedule, and an old package without a revlog brings none', () => {
+    const rows = [
+      { id: 1_000, card: 1, ease: 3, ivl: 2, lastIvl: 0, time: 4000, type: 0 },
+      { id: 2_000, card: 1, ease: 0, ivl: 9, lastIvl: 2, time: 0, type: 4 },
+    ];
+    expect(reviewsOf(rows, 'x', 'c2').map((r) => [r.g, r.key, r.st])).toEqual([[3, 'c2', 'new']]);
+    const { revlog: _, ...old } = pkg;
+    expect(mapPackage(old).decks.every((d) => d.reviews.length === 0)).toBe(true);
   });
 
   it('skips a deck whose notes all made no card, and a card whose note is missing', () => {

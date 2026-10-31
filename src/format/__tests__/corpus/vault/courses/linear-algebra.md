@@ -1,6 +1,8 @@
 ---
 title: linear algebra
 tabs: true
+retention: 0.85
+reviews-per-day: 40
 ---
 
 ## the course

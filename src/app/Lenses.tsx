@@ -7,6 +7,7 @@ import { geometry, type FlatRow } from './dnd.js';
 import { rowDrag, rowMark, useDrag, type Surface } from './drag.js';
 import { nestOf } from './treeModel.js';
 import { DeckBrowser } from './DeckBrowser.js';
+import { NumbersView } from './NumbersLens.js';
 import { Intake } from './Intake.js';
 import { GLYPH, INTAKE, SESSION, findNode, kindOf, queueScope, titleOf, type NodeKind } from './names.js';
 import { countWords, countsUnder } from './chromeText.js';
@@ -16,7 +17,7 @@ import { Queue } from './Queue.js';
 import { Notebook } from './Rail.js';
 import { Reader } from './Reader.js';
 import { Session } from './Session.js';
-import { useApp, type DocInfo } from './store.js';
+import { useApp, type DocInfo, type LensView } from './store.js';
 import { NodeMenu, menuAt, type MenuAt } from './NodeMenu.js';
 import { createNode, openIntake, renameNode } from './vault.js';
 import { notebookOf } from './tabs.js';
@@ -81,8 +82,9 @@ function FolderLens({ id, active, onOpen }: LensProps) {
   const [menu, setMenu] = useState<MenuAt | null>(null);
   const drag = useDrag();
   const [editing, setEditing] = useState<{ id: string; value: string } | null>(null);
-  // the folder's items, or every card under it in the deck browser
-  const [cards, setCards] = useState(false);
+  // the folder's items, every card under it in the deck browser, or their numbers
+  const view = useApp((s) => s.lensViews[id]) ?? 'items';
+  const cards = view === 'cards';
   const editRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
     if (editing && editRef.current) {
@@ -118,17 +120,14 @@ function FolderLens({ id, active, onOpen }: LensProps) {
       // the empty space: the folder's own menu, new items landing in it
       onContextMenu={(e) => { e.preventDefault(); setMenu(menuAt(e, owner)); }}
     >
-      <div className={`reader folder-view${cards ? ' deck-view' : ''}`}>
+      <div className={`reader folder-view${view !== 'items' ? ' deck-view' : ''}`}>
         <div className="meta">
           <span className="crumb">{folderLabel(owner, id, children, docs, root)}</span>
           <span className="right">{children.length ? plural(children.length, 'item') : ''}</span>
         </div>
         <h1>{title(id)}</h1>
-        <div className="fv-view">
-          <button type="button" data-on={cards ? '0' : '1'} onClick={() => setCards(false)}>items</button>
-          <button type="button" data-on={cards ? '1' : '0'} onClick={() => setCards(true)}>cards</button>
-        </div>
-        {cards ? <DeckBrowser home={id} active={active} /> : <>
+        <ViewSwitch id={id} view={view} views={['items', 'cards', 'numbers']} />
+        {cards ? <DeckBrowser home={id} active={active} /> : view === 'numbers' ? <NumbersView home={id} /> : <>
         <div className="fv-new">
           {NEW.map(([kind, label]) => (
             <button key={kind} type="button" onClick={() => add(kind)}>{label}</button>
@@ -209,6 +208,19 @@ function RowCounts({ node }: { node: TreeNode }) {
   return <span className="fv-meta">{w.cards}{w.due && <span className="fv-due">{w.due}</span>}</span>;
 }
 
+/** `items · cards · numbers` over a lens: what it shows, kept in the store per lens id. */
+export function setLensView(id: string, view: LensView): void {
+  useApp.setState((s) => ({ lensViews: { ...s.lensViews, [id]: view } }));
+}
+
+function ViewSwitch({ id, view, views }: { id: string; view: LensView; views: LensView[] }) {
+  return (
+    <div className="fv-view">
+      {views.map((v) => <button key={v} type="button" data-view={v} data-on={view === v ? '1' : '0'} onClick={() => setLensView(id, v)}>{v}</button>)}
+    </div>
+  );
+}
+
 // ── deck ─────────────────────────────────────────────────────────
 
 /** A deck, or any document opened as its cards: the browser over it and everything under it. */
@@ -216,16 +228,19 @@ function DeckLens({ id, active }: { id: string; active: boolean }) {
   const docs = useApp((s) => s.docs);
   const root = useApp((s) => s.vault);
   const info = docs[id];
+  const shown = useApp((s) => s.lensViews[id]);
+  const view: LensView = shown === 'numbers' ? 'numbers' : 'cards';
   if (!info) return <Gone />;
   return (
     <div className="reader-wrap">
-      <div className="reader deck-view">
+      <div className="reader deck-view folder-view">
         <div className="meta">
           <span className="crumb">{info.type}</span>
           <span className="right" title={`${plural(info.cards, 'card')}${info.due ? `, ${info.due} due` : ''}`}>{info.due ? `${info.due} due` : plural(info.cards, 'card')}</span>
         </div>
         <h1>{titleOf(id, docs, root)}</h1>
-        <DeckBrowser home={id} active={active} />
+        <ViewSwitch id={id} view={view} views={['cards', 'numbers']} />
+        {view === 'numbers' ? <NumbersView home={id} /> : <DeckBrowser home={id} active={active} />}
       </div>
     </div>
   );

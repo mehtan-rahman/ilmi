@@ -168,7 +168,7 @@ export function Queue({ scope, active }: Props) {
                   {ref && <span className="ref-line">{ref}</span>}
                 </span>
                 <span className="pri">{item.pri !== PRI_DEFAULT && <b>p {item.pri}</b>}</span>
-                <span className="due" title={ivl ? `interval ${ivl}` : undefined}>{item.kind === 'card' && item.buried ? 'tomorrow' : dueWhen(item.due, now)}</span>
+                <span className="due" title={ivl ? `interval ${ivl}` : undefined}>{item.kind === 'card' && (item.buried || item.held) ? 'tomorrow' : dueWhen(item.due, now)}</span>
               </li>
             );
             if (i !== foldAt) return row;

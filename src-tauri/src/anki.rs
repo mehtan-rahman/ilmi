@@ -29,6 +29,8 @@ pub struct AnkiPackage {
     pub notetypes: Vec<AnkiNotetype>,
     pub notes: Vec<AnkiNote>,
     pub cards: Vec<AnkiCard>,
+    /// The review log, oldest first: one row per answer.
+    pub revlog: Vec<AnkiReview>,
 }
 
 #[derive(Serialize, Debug, PartialEq)]
@@ -84,6 +86,26 @@ pub struct AnkiCard {
     pub factor: i64,
     pub reps: i64,
     pub lapses: i64,
+}
+
+/// One row of Anki's `revlog`: an answer.
+#[derive(Serialize, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct AnkiReview {
+    /// When, epoch milliseconds.
+    pub id: i64,
+    pub card: i64,
+    /// The button: 1 again, 2 hard, 3 good, 4 easy (0 for a manual reschedule).
+    pub ease: i64,
+    /// The interval after, days; negative is seconds, in learning.
+    pub ivl: i64,
+    /// The interval before, the same way.
+    pub last_ivl: i64,
+    /// Milliseconds spent on the answer.
+    pub time: i64,
+    /// 0 learning, 1 review, 2 relearning, 3 filtered, 4 manual.
+    #[serde(rename = "type")]
+    pub kind: i64,
 }
 
 const COLLECTIONS: [&str; 3] = ["collection.anki21b", "collection.anki21", "collection.anki2"];
@@ -209,7 +231,20 @@ fn read_collection(conn: &Connection) -> rusqlite::Result<AnkiPackage> {
         cards.push(c?);
     }
 
-    Ok(AnkiPackage { crt, schema, media: String::new(), decks, notetypes, notes, cards })
+    // a package without the table (a hand-made one) has no history
+    let mut revlog = Vec::new();
+    let has_revlog: i64 = conn.query_row("SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'revlog'", [], |r| r.get(0))?;
+    if has_revlog > 0 {
+        let mut stmt = conn.prepare("SELECT id, cid, ease, ivl, lastIvl, time, type FROM revlog ORDER BY id")?;
+        let rows = stmt.query_map([], |r| {
+            Ok(AnkiReview { id: r.get(0)?, card: r.get(1)?, ease: r.get(2)?, ivl: r.get(3)?, last_ivl: r.get(4)?, time: r.get(5)?, kind: r.get(6)? })
+        })?;
+        for x in rows {
+            revlog.push(x?);
+        }
+    }
+
+    Ok(AnkiPackage { crt, schema, media: String::new(), decks, notetypes, notes, cards, revlog })
 }
 
 type Tables = (i64, Vec<AnkiDeck>, Vec<AnkiNotetype>);
@@ -426,6 +461,23 @@ pub mod tests {
                 rusqlite::params![id, nid, did, ord, CRT, kind, queue, due, ivl, factor, reps, lapses],
             )?;
         }
+        // the basic note's card: learned, reviewed, lapsed, relearned; the reversed note's reverse once
+        const DAY_MS: i64 = 86_400_000;
+        let t0 = CRT * 1000 + 9 * 3_600_000;
+        // (id, cid, ease, ivl, lastIvl, factor, time, type)
+        let revlog: [(i64, i64, i64, i64, i64, i64, i64, i64); 5] = [
+            (t0, 1_700_000_000_200, 3, -600, 0, 0, 8_000, 0),
+            (t0 + 600_000, 1_700_000_000_200, 3, 3, -600, 2500, 6_500, 0),
+            (t0 + 3 * DAY_MS, 1_700_000_000_200, 1, -600, 3, 2300, 12_000, 1),
+            (t0 + 3 * DAY_MS + 600_000, 1_700_000_000_200, 3, 1, -600, 2300, 5_000, 2),
+            (t0 + 5 * DAY_MS, 1_700_000_000_202, 4, 4, 0, 2500, 90_000, 0),
+        ];
+        for (id, cid, ease, ivl, last_ivl, factor, time, kind) in revlog {
+            conn.execute(
+                "INSERT INTO revlog VALUES (?1, ?2, -1, ?3, ?4, ?5, ?6, ?7, ?8)",
+                rusqlite::params![id, cid, ease, ivl, last_ivl, factor, time, kind],
+            )?;
+        }
         Ok(())
     }
 
@@ -488,6 +540,9 @@ pub mod tests {
         let c = &pkg.cards[0];
         assert_eq!((c.note, c.ord, c.deck, c.kind, c.due, c.ivl, c.factor, c.reps, c.lapses), (1_700_000_000_100, 0, DECK_GERMAN, 2, 200, 30, 2500, 7, 1));
         assert_eq!((pkg.cards[4].kind, pkg.cards[4].ivl), (0, 0));
+        assert_eq!(pkg.revlog.len(), 5);
+        let r = &pkg.revlog[2];
+        assert_eq!((r.card, r.ease, r.ivl, r.last_ivl, r.time, r.kind), (1_700_000_000_200, 1, -600, 3, 12_000, 1));
 
         if let Ok(dir) = std::env::var("ILMI_ANKI_FIXTURE") {
             let dir = Path::new(&dir);

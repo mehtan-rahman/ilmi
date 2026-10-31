@@ -68,8 +68,8 @@ export function gapLabel(next: CardSchedule, now: Date): string {
 }
 
 /** What each of the four grades would schedule, for the buttons. */
-export function gapLabels(sched: CardSchedule | undefined, now: Date): Record<Grade, string> {
-  const p = preview(sched, now);
+export function gapLabels(sched: CardSchedule | undefined, now: Date, retention?: number): Record<Grade, string> {
+  const p = preview(sched, now, retention !== undefined ? { request_retention: retention } : undefined);
   return { 1: gapLabel(p[1], now), 2: gapLabel(p[2], now), 3: gapLabel(p[3], now), 4: gapLabel(p[4], now) };
 }
 

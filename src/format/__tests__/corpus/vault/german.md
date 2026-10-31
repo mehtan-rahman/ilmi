@@ -2,6 +2,9 @@
 type: deck
 title: german · A1
 default-card: bidir
+new-per-day: 10
+leech: 6
+leech-action: suspend
 ---
 
 der Vorsatz ::: resolution; intention ^cv-vorsatz

@@ -21,6 +21,7 @@ export const nodeFs: Fs = {
   },
   readText: (path) => fsp.readFile(path, 'utf8'),
   writeText: (path, text) => fsp.writeFile(path, text, 'utf8'),
+  appendText: (path, text) => fsp.appendFile(path, text, 'utf8'),
   readBytes: async (path) => new Uint8Array(await fsp.readFile(path)),
   writeBytes: (path, bytes) => fsp.writeFile(path, bytes),
   rename: (from, to) => fsp.rename(from, to),

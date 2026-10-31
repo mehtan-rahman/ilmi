@@ -3,7 +3,7 @@
 // is a cache with a conflict rule: never overwrite a file whose stamp moved
 // since we read it.
 
-import { meta, parse, serialize, setField, type Card, type Diagnostic, type Doc, type NodeType } from '../format/index.js';
+import { REVIEWS_DIR, formatReview, mergeReviews, parseReviews, reviewFile, meta, parse, serialize, setField, type Card, type Diagnostic, type Doc, type NodeType, type Review } from '../format/index.js';
 import { join, relative, sameStamp, type Fs, type Stamp } from './fs.js';
 import { ORDER_FILE, childrenAt, cleanOrder, entryOf, followMove, forget, ordered, placeEntry, pruneOrder, restoreOrder, type Order } from './order.js';
 import { addToPage } from './pages.js';
@@ -1078,6 +1078,49 @@ export class Vault {
         if ('extracts' in b && b.extracts) b.extracts = b.extracts.map((n) => (n === old ? next : n));
       }
     });
+  }
+
+  // --- the review log -----------------------------------------------------
+  //
+  // `.ilmi/reviews/<yyyy-mm>.jsonl` (format/reviews.ts): appended to, never
+  // rewritten, so two devices syncing the folder each add their lines; read
+  // whole, every `.jsonl` there (a sync tool's conflict copy too), with
+  // duplicates collapsed and lines that are not reviews skipped.
+
+  /** Add reviews to their months' files, one line each. Nothing is read back. */
+  appendReviews(reviews: readonly Review[]): Promise<void> {
+    if (!reviews.length) return Promise.resolve();
+    return this.serial(async () => {
+      await this.fs.mkdir(this.abs(REVIEWS_DIR));
+      const byFile = new Map<string, string[]>();
+      for (const r of reviews) byFile.set(reviewFile(r.at), [...(byFile.get(reviewFile(r.at)) ?? []), formatReview(r)]);
+      for (const [rel, lines] of byFile) {
+        const abs = this.abs(rel);
+        const text = `${lines.join('\n')}\n`;
+        if (this.fs.appendText) {
+          await this.fs.appendText(abs, text);
+          continue;
+        }
+        const was = (await this.fs.stat(abs)) ? await this.fs.readText(abs) : '';
+        await this.atomicWrite(abs, was && !was.endsWith('\n') ? `${was}\n${text}` : `${was}${text}`);
+      }
+    });
+  }
+
+  /** Every review logged, oldest first; none when there is no log. */
+  async loadReviews(): Promise<Review[]> {
+    const dir = this.abs(REVIEWS_DIR);
+    if (!(await this.fs.stat(dir))?.isDir) return [];
+    const names = (await this.fs.readDir(dir)).filter((e) => e.isFile && e.name.endsWith('.jsonl')).map((e) => e.name).sort();
+    const lists: Review[][] = [];
+    for (const name of names) {
+      try {
+        lists.push(parseReviews(await this.fs.readText(join(dir, name))));
+      } catch {
+        // a file that cannot be read is a file without reviews
+      }
+    }
+    return mergeReviews(lists);
   }
 
   // --- state --------------------------------------------------------------

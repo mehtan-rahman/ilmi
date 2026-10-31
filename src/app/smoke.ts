@@ -6041,3 +6041,202 @@ export async function smokeBothWays(vault: Vault): Promise<void> {
     log(`failed: ${e instanceof Error ? e.message : String(e)}`);
   }
 }
+
+// `ILMI_SMOKE=numbers` (`smokeNumbers`) over a fresh copy of
+// `samples/double-major`, milestone 42: the seeded review log loaded; the
+// vocab deck's numbers (reviews a day, coming due, retention, failed most,
+// the spread, time a review) and a leech row opening its card in place;
+// the 110 new reverses metered to the default twenty a day; the quantum
+// notebook's numbers; options set on the notebook from the inspector
+// changing the day's queue for its cards, and inherited by a page under
+// it with where they come from; a card graded again at the leech threshold
+// suspended, its line and its review-log line checked; light and dark.
+export async function smokeNumbers(vault: Vault): Promise<void> {
+  type Card = import('../format/index.js').Card;
+  const log = (s: string) => info(`smoke numbers: ${s}`);
+  const shot = async (name: string, ms = 2500) => { await sleep(800); log(`shot: ${name}`); await sleep(ms); };
+  const q = <T extends Element>(sel: string, root: ParentNode = document) => root.querySelector<T>(sel);
+  const qa = <T extends Element>(sel: string, root: ParentNode = document) => Array.from(root.querySelectorAll<T>(sel));
+  const must = (ok: unknown, what: string) => { if (!ok) throw new Error(what); log(`ok: ${what}`); };
+  const poll = async <T,>(probe: () => T | null | undefined | false | Promise<T | null | undefined | false>, what: string, ms = 5000): Promise<T> => {
+    const t0 = Date.now();
+    for (;;) {
+      const v = await probe();
+      if (v) { log(`ok: ${what}`); return v; }
+      if (Date.now() - t0 > ms) throw new Error(`${what} (waited ${ms} ms)`);
+      await sleep(100);
+    }
+  };
+  const key = (k: string) => window.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));
+  const click = (el: Element) => el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+  /** Type into a React-controlled number field and leave it, which commits. */
+  const enter = async (el: HTMLInputElement, v: string) => {
+    el.focus();
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(el, v);
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    await sleep(50);
+    el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    el.blur();
+    await sleep(400);
+  };
+  const { parse, meta, reviewFile } = await import('../format/index.js');
+  const { dayOf, isDue, scheduleOf, whenToDate } = await import('../schedule/index.js');
+  const { refreshQueue, reviewLog, optionsAt } = await import('./vault.js');
+  const { setLensView } = await import('./Lenses.js');
+  const { studyDeck } = await import('./deckOps.js');
+  const { docsUnder } = await import('./deck.js');
+  const VOCAB = 'arabic/vocabulary.md';
+  const QM = 'courses/fall-2026/phys-412-quantum-ii';
+  const NB = `${QM}.md`;
+  const PAGE = `${QM}/wkb-approximation.md`;
+  const today = dayOf(new Date());
+  const cards = () => useApp.getState().queue.filter((i): i is CardItem => i.kind === 'card');
+  const under = (dir: string) => new Set(docsUnder(useApp.getState().tree, dir, useApp.getState().order, useApp.getState().files));
+  const isNew = (i: CardItem) => !i.sched?.reps;
+  const spentNew = (paths: Set<string>) => reviewLog().filter((r) => r.st === 'new' && paths.has(r.doc) && dayOf(whenToDate(r.at)) === today).length;
+  const front = async (path: string) => meta(parse(await vault.fs.readText(vault.abs(path))).doc);
+  try {
+    useApp.getState().setTheme('light');
+    setInspector({ open: true });
+
+    // ── the log, as seeded ──
+    const logged = reviewLog();
+    must(logged.length > 4000, `the review log is loaded: ${logged.length} reviews since ${logged[0]?.at.slice(0, 10)}`);
+
+    // ── the 110 new reverses, metered ──
+    refreshQueue();
+    const vocabNew = await poll(() => { refreshQueue(); const v = cards().filter((i) => i.path === VOCAB && i.dir === 'r' && isNew(i)); return v.length > 100 ? v : null; }, 'the vocab deck\'s new reverses are in the queue', 10000);
+    const t = new Date();
+    const dueNew = vocabNew.filter((i) => isDue(i, t));
+    const held = vocabNew.filter((i) => i.held === 'new');
+    const spent = spentNew(new Set([VOCAB]));
+    const allowance = optionsAt(VOCAB).opts.newPerDay;
+    log(`vocab: ${vocabNew.length} new reverses, ${dueNew.length} due today, ${held.length} held for tomorrow, ${spent} new graded today, allowance ${allowance}`);
+    must(allowance === 20 && optionsAt(VOCAB).from.newPerDay === undefined, 'the vocab deck sets nothing: the default twenty new a day');
+    must(dueNew.length + spent <= 20 && dueNew.length === Math.max(0, 20 - spent - cards().filter((i) => i.path === VOCAB && i.dir !== 'r' && isNew(i) && isDue(i, t)).length), `new cards a day meters the reverses: ${dueNew.length} due today, the rest held`);
+    must(held.length >= 85 && held.every((i) => dayOf(i.dueAt) !== today), `${held.length} new reverses wait for tomorrow`);
+
+    // ── the vocab deck's numbers ──
+    openNode(VOCAB);
+    setLensView(VOCAB, 'numbers');
+    const past = await poll(() => q('.numbers .nb-days[data-of="past"]'), 'the vocab deck shows its numbers', 10000);
+    const line = q('.numbers .nb-line')?.textContent ?? '';
+    log(`vocab line: ${line}`);
+    must(/^178 cards/.test(line) && /logged since 20\d\d-\d\d-\d\d/.test(line), 'the counts line, and since when the log was kept');
+    const weekTotals = qa('tbody .nb-total', past).map((e) => e.textContent);
+    log(`reviews a day, week totals: ${weekTotals.join(' ')}; today ${q('.nb-days[data-of="ahead"] td[data-today="1"]')?.textContent} due`);
+    must(weekTotals.length === 4 && weekTotals.some((x) => Number(x) > 0), 'four weeks of reviews a day from the log');
+    must(qa('.nb-days[data-of="ahead"] tbody tr').length === 4, 'four weeks coming due');
+    const rates = qa('.nb-rates .nb-rate').map((e) => e.textContent);
+    log(`retention: ${rates.join(' ')}`);
+    must(rates.some((r) => /^\d+%$/.test(r ?? '')), 'true retention by week and by age');
+    must(qa('.nb-spread tbody th').map((e) => e.textContent).join() === 'stability,difficulty', 'the spread of stability and difficulty, a line each');
+    must(/s a review/.test(q('[data-sec="time"]')?.textContent ?? ''), `time a review: ${q('[data-sec="time"]')?.textContent}`);
+    must(!q('.numbers canvas, .numbers svg:not(.katex svg)'), 'type, not charts');
+    const leechRows = qa<HTMLElement>('.nb-leeches li');
+    log(`failed most: ${leechRows.map((r) => `${r.querySelector('.nb-lapses')?.textContent} ${r.querySelector('.nb-tag')?.textContent}`).join(' | ')}`);
+    await shot('numbers-vocab');
+    useApp.getState().setTheme('dark');
+    await shot('numbers-vocab-dark');
+    useApp.getState().setTheme('light');
+    if (leechRows.length) {
+      const block = Number(leechRows[0]!.dataset.block);
+      click(q('button', leechRows[0]!)!);
+      await poll(() => useApp.getState().lensViews[VOCAB] === 'cards' && useApp.getState().selectedCard?.index === block, `a failed-most row opens its card in place (block ${block}, selected in the deck)`, 8000);
+      await shot('numbers-leech-opened', 1500);
+    }
+
+    // ── a course notebook's numbers ──
+    openNode(QM);
+    setLensView(QM, 'numbers');
+    await poll(() => q('.folder-view .numbers .nb-days'), 'the quantum notebook\'s children show their numbers', 10000);
+    must(qa('.fv-view button').map((b) => b.textContent).join(' ') === 'items cards numbers', 'the lens reads items · cards · numbers');
+    log(`quantum line: ${q('.numbers .nb-line')?.textContent}`);
+    await shot('numbers-notebook');
+    useApp.getState().setTheme('dark');
+    await shot('numbers-notebook-dark');
+    useApp.getState().setTheme('light');
+
+    // ── options on the notebook change the day's queue for its cards ──
+    const qmPaths = under(QM);
+    const newUnder = () => { refreshQueue(); const now = new Date(); return cards().filter((i) => qmPaths.has(i.path) && isNew(i) && isDue(i, now)); };
+    const before = newUnder();
+    const qmSpent = spentNew(qmPaths);
+    log(`quantum before: ${before.length} new cards due today (${[...new Set(before.map((i) => i.path.split('/').pop()))].join(', ')}), ${qmSpent} new graded today`);
+    must(before.length > 3, 'the notebook has more than three new cards due today under the default');
+    openNode(NB);
+    const field = await poll(() => q<HTMLInputElement>('.insp [data-opt="newPerDay"] input'), 'the notebook\'s inspector shows its options', 8000);
+    must(field.placeholder === '20' && !q('.insp [data-opt="newPerDay"] .opt-from'), 'new a day: the default, nothing set');
+    await enter(field, String(qmSpent + 3));
+    await poll(async () => (await front(NB)).newPerDay === qmSpent + 3, `the notebook's front-matter gains new-per-day: ${qmSpent + 3}`);
+    const after = await poll(() => { const a = newUnder(); return a.length === 3 ? a : null; }, 'the day\'s queue holds three new cards across the notebook');
+    log(`quantum after: ${after.map((i) => `${i.path.split('/').pop()}#${i.block}`).join(', ')}; held ${cards().filter((i) => qmPaths.has(i.path) && i.held === 'new').length}`);
+    await shot('numbers-options-set');
+
+    // inherited by a page under it, said where from
+    openNode(PAGE);
+    const from = await poll(() => q('.insp [data-opt="newPerDay"] .opt-from'), 'a page under the notebook shows the option inherited', 8000);
+    const pf = q<HTMLInputElement>('.insp [data-opt="newPerDay"] input')!;
+    must(from.textContent === 'from quantum II' && pf.value === '' && pf.placeholder === String(qmSpent + 3), `the page's new a day: ${pf.placeholder}, ${from.textContent}`);
+    must(optionsAt(PAGE).from.newPerDay === NB, 'the page resolves it to the notebook');
+    await shot('numbers-options-inherited');
+
+    // ── a leech at the threshold, suspended ──
+    const now = new Date();
+    // one item to its card (a q&a, else a one-blank card), so the session over it asks that one line
+    const pool = cards().filter((i) => qmPaths.has(i.path) && i.sched?.state === 'review' && (i.sched.lapses ?? 0) >= 1 && i.id !== undefined && i.groups === 1 && !i.dir);
+    const qa1 = pool.filter((i) => i.form === 'qa');
+    const cand = qa1.find((i) => isDue(i, now)) ?? pool.find((i) => isDue(i, now)) ?? qa1[0] ?? pool[0];
+    must(cand, `a card in review under the notebook with a lapse: ${cand?.id} (${cand?.sched?.lapses} lapses, ${isDue(cand!, now) ? 'due' : 'not due'})`);
+    const threshold = (cand!.sched!.lapses ?? 0) + 1;
+    openNode(NB);
+    const leechField = await poll(() => q<HTMLInputElement>('.insp [data-opt="leech"] input'), 'the leech field', 8000);
+    await enter(leechField, String(threshold));
+    const suspendBtn = await poll(() => qa<HTMLButtonElement>('.insp .opt-action button').find((b) => b.textContent === 'suspended'), 'the leech action buttons');
+    click(suspendBtn);
+    await poll(async () => { const m = await front(NB); return m.leech === threshold && m.leechAction === 'suspend'; }, `the notebook's front-matter gains leech: ${threshold} and leech-action: suspend`);
+    await shot('numbers-options-leech', 1500);
+    const logBefore = reviewLog().length;
+    const n = studyDeck(QM, { only: new Set([`${cand!.path}#${cand!.block}`]), cram: !isDue(cand!, now) });
+    must(n >= 1, `a session over ${cand!.id} (${n} item${n === 1 ? '' : 's'})`);
+    await poll(() => q('.recall-wrap .card'), 'the card is drawn', 8000);
+    key(' ');
+    await sleep(400);
+    key('1');
+    const graded = await poll(async () => {
+      const doc = parse(await vault.fs.readText(vault.abs(cand!.path))).doc;
+      const c = doc.blocks.find((b): b is Card => b.kind === 'card' && b.id === cand!.id);
+      const s = c && scheduleOf(c, cand!.group, cand!.dir);
+      return s && s.lapses === threshold ? s : null;
+    }, `${cand!.id} graded again: ${threshold} lapses`);
+    must(graded.suspended === true, `at the threshold it is suspended, its schedule kept (s=${graded.stability?.toFixed(2)}, r=${graded.reps})`);
+    // a q&a writes its bare line; a one-blank cloze its bare line, or its own `sr cN` line when it has one
+    const keyOk = (k: string | undefined) => (cand!.form === 'qa' ? k === undefined : k === undefined || /^c\d+$/.test(k));
+    const lastLine = await poll(async () => {
+      const text = await vault.fs.readText(vault.abs(reviewFile(new Date().toISOString())));
+      const l = text.trimEnd().split('\n').pop() ?? '';
+      const r = JSON.parse(l) as { card: string; g: number; st: string; key?: string; doc: string; ms?: number };
+      return r.card === cand!.id ? r : null;
+    }, 'the grade appended its line to this month\'s review log');
+    log(`log line: ${JSON.stringify(lastLine)}`);
+    must(lastLine.g === 1 && lastLine.st === 'review' && lastLine.doc === cand!.path && keyOk(lastLine.key) && typeof lastLine.ms === 'number', 'the line names the card, the line graded, again from review, the time on it');
+    must(reviewLog().length === logBefore + 1, 'one review more in the log the numbers read');
+    await poll(() => useApp.getState().log.find((l) => l === 'leech · suspended'), `the log line says so (${useApp.getState().log.slice(0, 2).join(' | ')})`);
+    refreshQueue();
+    must(!cards().some((i) => i.id === cand!.id && i.path === cand!.path && (i.dir ?? '') === (cand!.dir ?? '') && JSON.stringify(i.group ?? null) === JSON.stringify(cand!.group ?? null)), 'the suspended leech is out of the queue');
+
+    // the numbers list it, suspended
+    openNode(QM);
+    setLensView(QM, 'numbers');
+    const row = await poll(() => qa<HTMLElement>('.nb-leeches li').find((r) => r.dataset.path === cand!.path && Number(r.dataset.block) === cand!.block), 'the notebook\'s failed-most lists the leech', 8000);
+    must(row.querySelector('.nb-tag')?.textContent === 'suspended', 'marked suspended');
+    row.scrollIntoView({ block: 'center' });
+    await shot('numbers-leech');
+    useApp.getState().setTheme('dark');
+    await shot('numbers-leech-dark');
+    useApp.getState().setTheme('light');
+    log(`done; vault ${vault.root}`);
+  } catch (e) {
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}

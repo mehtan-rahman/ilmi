@@ -4709,6 +4709,18 @@ changed, and the rebuild kept only a caret (`Selection.near`). Now
 `withSelectionOf` keeps a selected card selected (by id, else the same card
 at the same place). Tests: the moved list read back equal though its JSON
 differs, a selected card kept through a rebuild (985). Rerun owed.
+Window run 2 (`5fd0eea`): passed through form I's meaning cell (the
+moved card stays selected, the steps on two lines, the gap under display
+math 18 px, the paragraph's), then `failed: the cell is written with
+<br>`. ⇧⏎ was taken (jsdom's keydown test passed); the break was lost when
+the typed letters were read back: WebKit types into the cell's text node,
+ProseMirror reparses the cell from the DOM with `preserveWhitespace: true`
+unless the node's `whitespace` is `pre`, and that turns a newline into a
+space, so the file got `basic root sense`. `table_cell` is `whitespace:
+'pre'` now; a test types into the text node behind ProseMirror and flushes
+its observer (986). The same reading turns a paragraph's own line break
+into a space when a line after it is typed in the browser (checked in
+jsdom: `one\ntwo` typed to `one twoX`); not changed here. Rerun owed.
 From the notes of 37, 39, 40, 41:
 - Tab, ⇧Tab and ⌥⇧↑↓ move a card item in a list like any item.
 - ⏎ on a plain item just before a card item doesn't split the list.

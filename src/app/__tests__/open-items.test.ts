@@ -94,6 +94,24 @@ describe('⇧⏎ in a table cell from the keyboard', () => {
     expect(serialize({ blocks: fromDoc(view.state.doc) })).toBe('| term | meaning |\n| --- | --- |\n| kāna<br>verb | was |\n');
     view.destroy();
   });
+
+  it('text typed after the break and read from the DOM keeps the break (WebKit types into the text node; the window\'s run 2)', async () => {
+    const src = '| term | meaning |\n| --- | --- |\n| kāna | was |\n';
+    const view = mount(parse(src).doc.blocks);
+    let at = -1;
+    view.state.doc.descendants((n, p) => { if (n.type.name === 'table_cell' && n.textContent === 'kāna') at = p + n.nodeSize - 1; });
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, at)));
+    view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', shiftKey: true, bubbles: true, cancelable: true }));
+    // the browser, not ProseMirror, puts the typed letters into the cell's text node; ProseMirror reads them back from the DOM
+    const td = Array.from(view.dom.querySelectorAll('td')).find((c) => c.textContent?.startsWith('kāna'))!;
+    const walker = document.createTreeWalker(td, NodeFilter.SHOW_TEXT);
+    const node = walker.nextNode() as Text;
+    expect(node.data).toBe('kāna\n');
+    node.data = 'kāna\nverb';
+    (view as unknown as { domObserver: { flush(): void } }).domObserver.flush();
+    expect(serialize({ blocks: fromDoc(view.state.doc) })).toBe('| term | meaning |\n| --- | --- |\n| kāna<br>verb | was |\n');
+    view.destroy();
+  });
 });
 
 describe('the outline marks folded headings', () => {

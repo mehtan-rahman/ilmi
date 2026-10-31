@@ -121,6 +121,8 @@ export const schema = new Schema({
     table_cell: {
       content: 'inline*',
       isolating: true,
+      // a cell's line break (⇧⏎, `<br>` in the file) is a newline in its text: read back from the DOM as one, not as a space
+      whitespace: 'pre',
       attrs: { align: { default: null } },
       toDOM(n) {
         const align = n.attrs.align as string | null;

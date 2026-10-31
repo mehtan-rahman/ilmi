@@ -55,6 +55,10 @@ smoke), the corpus file `mangled/pdf-pages.md`, five test files.
   `blocksEqual` compared key order (a moved card's `joined`), and the
   rebuild dropped the node selection. Compared by sorted keys now, and a
   selected card is kept through a rebuild. Rerun owed.
+- Window run 2 (`5fd0eea`): failed at "the cell is written with `<br>`":
+  ProseMirror read the typed cell back from the DOM with the newline as a
+  space. `table_cell` is `whitespace: 'pre'`. The same happens to a
+  paragraph's soft line break; left for a decision. Rerun owed.
 
 ### Handoff prompt
 

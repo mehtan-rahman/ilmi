@@ -168,3 +168,34 @@
 .folder-view .fv-view { display: flex; gap: 12px; margin: 2px 0 6px; font-family: var(--mono); font-size: 10.5px; }
 .folder-view .fv-view button { appearance: none; border: 0; background: transparent; padding: 0; color: var(--fg-4); cursor: default; font: inherit; }
 .folder-view .fv-view button[data-on="1"] { color: var(--fg-1); text-decoration: underline; text-underline-offset: 3px; }
+
+/* similar (milestone 45): pairs that seem to test the same fact, side by side */
+.same-list { display: flex; flex-direction: column; }
+.same-pair { border-bottom: 1px solid var(--line-2); padding: 8px 0 6px; }
+.same-pair .sp-sides { display: grid; grid-template-columns: 1fr 1fr; }
+.same-pair .sp-side { display: flex; flex-direction: column; gap: 4px; min-width: 0; padding: 0 12px 0 8px; }
+.same-pair .sp-side + .sp-side { border-left: 1px solid var(--line-2); padding-left: 12px; }
+.same-pair .sp-head { display: flex; align-items: baseline; gap: 8px; }
+.same-pair .sp-head .dr-form { padding: 0; font-family: var(--mono); font-size: 10px; color: var(--fg-4); letter-spacing: 0.04em; }
+.same-pair .sp-path {
+  appearance: none; border: 0; background: transparent; padding: 0; cursor: default;
+  font-family: var(--mono); font-size: 10px; color: var(--fg-5); text-align: start;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+}
+.same-pair .sp-path:hover { color: var(--fg-2); text-decoration: underline; text-underline-offset: 3px; }
+.same-pair .dr-faces { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.same-pair .dr-front { color: var(--fg-1); }
+.same-pair .dr-back { color: var(--fg-4); }
+.same-pair .sp-sched { display: flex; align-items: baseline; gap: 10px; font-family: var(--mono); font-size: 10.5px; color: var(--fg-4); }
+.same-pair .sp-sched .dr-due[data-due="1"] { color: var(--accent); }
+.same-pair .sp-sched .grow { flex: 1; }
+.same-pair button[data-act] {
+  appearance: none; border: 0; background: transparent; cursor: default;
+  font-family: var(--sans); font-size: 12px; color: var(--fg-2); padding: 1px 4px;
+}
+.same-pair button[data-act]:hover { color: var(--fg-1); text-decoration: underline; text-underline-offset: 3px; }
+.same-pair .sp-acts { display: flex; justify-content: center; gap: 14px; padding-top: 4px; }
+.same-more {
+  appearance: none; border: 0; background: transparent; cursor: default; margin: 8px auto;
+  font-family: var(--mono); font-size: 10.5px; color: var(--fg-4);
+}

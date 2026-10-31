@@ -21,7 +21,8 @@ import { INTAKE, QUEUE_TITLE, SESSION, findNode, queueScope, titleOf } from './n
 import { activeTab } from './panes.js';
 import { useApp, type DocInfo } from './store.js';
 import { useDoc } from './useDoc.js';
-import { currentVault, examsAtPath, openNode, optionsAt, resetCard } from './vault.js';
+import { currentVault, examsAtPath, openCard, openNode, optionsAt, resetCard } from './vault.js';
+import { currentCards, linkedTo, pairsOf, unlinkCards } from './sameOps.js';
 import { docsUnder } from './deck.js';
 import { foldedHeadings, notebookOf, outline } from './tabs.js';
 import { goToHeading } from './headings.js';
@@ -541,6 +542,30 @@ function CardBlock({ path, index, doc, group, dir, now }: { path: string; index:
     else if (c.sched) { delete c.sched.pri; if (!Object.keys(c.sched).length) delete c.sched; }
   }).catch(console.error);
   rows.push(['priority', <PriField key={`${path}:${b.id ?? index}`} value={b.sched?.pri} fallback={docPri(meta(doc))} onCommit={setPri} />]);
+  // the same fact elsewhere: the card it is linked to, else the likeliest other card (same.ts)
+  const linked = b.sched?.link !== undefined ? linkedTo(b.sched.link) : undefined;
+  const alike = linked ? [] : pairsOf(path, index);
+  const goTo = (c: { path: string; block: number; id?: string }) => () => openCard(c.path, c.block, c.id);
+  // the other card as card names are drawn elsewhere (its front, formulas set), and where it lives
+  const other = (c: { path: string; block: number; id?: string; text: string }, act: string, more = 0) => (
+    <button type="button" className="insp-link insp-other" data-act={act} onClick={goTo(c)}>
+      <MathText className="io-card" dir="auto" text={cardName(c.text)} />
+      <span className="io-where" dir="auto">{titleOf(c.path, docs, null)}</span>
+      {more > 0 && <span className="io-more">and {more} more</span>}
+    </button>
+  );
+  if (linked) {
+    const me = currentCards().find((c) => c.path === path && c.block === index);
+    const unlink = () => { if (me) unlinkCards(me, linked).catch(console.error); };
+    rows.push(['linked to', (
+      <span key="linked" className="insp-same">
+        {other(linked, 'linked')}
+        {me && <button type="button" className="insp-link insp-unlink" data-act="unlink" onClick={unlink}>unlink</button>}
+      </span>
+    )]);
+  } else if (alike.length) {
+    rows.push(['also in', <span key="alike" className="insp-same">{other(alike[0]!.other, 'alike', alike.length - 1)}</span>]);
+  }
   const reset = () => { resetCard(path, index, b.id, b.text).catch(console.error); };
   return (
     <>

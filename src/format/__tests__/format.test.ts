@@ -133,6 +133,35 @@ describe('front-matter', () => {
     expect(de.filter((c) => c.reverse).length).toBe(1);
   });
 
+  it('links: `link=<id>` on the bare line, kept in its place in the key order; dropped from a group or reverse line, or when it is no id', () => {
+    const one = parse('a :: b ^x\n<!-- sr st=review link=y due=2026-06-01 pri=20 -->\n');
+    expect((one.doc.blocks[0] as Card).sched).toEqual({ due: '2026-06-01', state: 'review', pri: 20, link: 'y' });
+    expect(serialize(one.doc)).toBe('a :: b ^x\n<!-- sr due=2026-06-01 st=review pri=20 link=y -->\n');
+    const { doc, diagnostics } = parse(read('mangled/links.md'));
+    const cards = doc.blocks.filter((b): b is Card => b.kind === 'card');
+    expect(cards.map((c) => [c.id ?? null, c.sched?.link ?? null])).toEqual([
+      ['ln-def-T', 'ln-def-T-cloze'],    // a q&a linked to a cloze of one blank
+      ['ln-def-T-cloze', 'ln-def-T'],    // the other side, naming it back
+      ['ln-alone', 'ln-nowhere'],        // no such card: kept, meaning nothing
+      ['ln-group', null],                // on a group line: dropped
+      ['ln-rev', 'ln-def-T'],            // the bare line's kept, the reverse's dropped
+      [null, null],                      // `ln/def` is no id: dropped
+      ['ln-two', 'ln-def-T'],            // two on one line: the later
+    ]);
+    expect(cards[1]!.sched).toEqual({ due: '2026-06-01', state: 'review', stability: 12, reps: 4, link: 'ln-def-T' });
+    expect(cards[4]!.reverse).toEqual({ due: '2026-06-04' });
+    expect(diagnostics.map((d) => d.message)).toEqual([
+      '"link" on a group line is ignored',
+      '"link" on a reverse line is ignored',
+      'bad value for "link": ln/def',
+    ]);
+    const out = serialize(doc);
+    expect(out).toContain('statistical definition of temperature :: $1/T = (\\partial S/\\partial U)_{N,V}$ ^ln-def-T\n<!-- sr due=2026-06-01 st=review s=12 r=4 pri=30 link=ln-def-T-cloze -->\n');
+    expect(out).toContain('$$ ^ln-def-T-cloze\n<!-- sr due=2026-06-01 st=review s=12 r=4 link=ln-def-T -->\n');
+    expect(out).toContain('a link on a group line {{c1::is dropped}} and {{c2::said}} ^ln-group\n<!-- sr c1 due=2026-06-02 -->\n');
+    expect(out).toContain('a link that is no id :: dropped, said\n<!-- sr due=2026-06-05 -->\n');
+  });
+
   it('priority: the field wins over a line, a card carries its own, a group line never does', () => {
     const { doc, diagnostics } = parse(read('mangled/priority.md'));
     const m = meta(doc);

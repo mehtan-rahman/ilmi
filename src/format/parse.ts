@@ -23,6 +23,8 @@ export const SR_SPECS: AttrSpec<CardSchedule>[] = [
   specIntRange('pri', 'pri', 0, 100),
   // `sus=1` suspends; read as a bool, written only when true (a `sus=0` is dropped on the next write)
   { key: 'sus', prop: 'suspended', parse: (v) => parseBool(v), format: () => '1' },
+  // `link=<id>`: the card with that `^id` is the same fact, one schedule between them (§6.2, links)
+  { key: 'link', prop: 'link', parse: (v) => (/^[A-Za-z0-9_-]+$/.test(v) ? v : null), format: (x) => String(x) },
 ];
 
 // ── line classifiers ─────────────────────────────────────────────
@@ -323,11 +325,14 @@ function attach(prev: Block | undefined, adjacent: boolean, tag: string, rest: s
   } else if (key === 'r') {
     // kept on any card, so a form changed by hand loses nothing; it means something on a both-ways card alone
     if (cardForm(prev.text) !== 'bidir') warn('a reverse schedule on a card that is not both ways');
+    // a link joins bare lines: the reverse keeps its own schedule
+    if (sched.link !== undefined) { warn('"link" on a reverse line is ignored'); delete sched.link; }
     if (prev.reverse) warn('card has two reverse schedules; later wins');
     prev.reverse = sched;
   } else {
     // a priority belongs to the card, on its bare line
     if (sched.pri !== undefined) { warn(`"pri" on a group line is ignored`); delete sched.pri; }
+    if (sched.link !== undefined) { warn(`"link" on a group line is ignored`); delete sched.link; }
     const blanks = prev.blanks ?? {};
     if (blanks[key]) warn(`group c${key} has two schedules; later wins`);
     blanks[key] = sched;

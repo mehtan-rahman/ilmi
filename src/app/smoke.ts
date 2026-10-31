@@ -159,6 +159,9 @@
 // language picked, the verb-forms table edited as a table (see the function).
 // `ILMI_SMOKE=open` (`smokeOpen`) over a copy of `samples/double-major`:
 // milestone 46's open items, each asserted (see the function).
+// `ILMI_SMOKE=same` (`smokeSame`) over a copy of `samples/double-major`:
+// milestone 45, the same fact twice: the stat-mech pairs listed, one linked,
+// one merged (and undone, and merged again), one said not the same.
 // `ILMI_SMOKE=welcome` runs before any vault opens: it seeds the recents
 // with the scratch vault (`ILMI_VAULT`) and a path that does not exist,
 // turns `reopen the last vault on start` off, reads the welcome's rows and
@@ -6781,6 +6784,215 @@ export async function smokeExam(vault: Vault): Promise<void> {
     log(`done; vault ${vault.root}`);
   } catch (e) {
     setClockDay(null);
+    finished = true;
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+// `ILMI_SMOKE=same` (`smokeSame`) over a fresh copy of `samples/double-major`,
+// milestone 45, the same fact twice. The stat-mech course's cards lens with
+// the `similar` chip on: the pairs listed side by side with their schedules,
+// eight of the nine stat-mech pairs among them (the free energy typed twice
+// first), every listed pair logged with its score. Then: the multiplicity
+// peak's two cards, both due, linked (each bare line naming the other, one
+// schedule, the stronger), the day's queue holding one of them, a session
+// grading it and the other card's line taking the same state, neither due
+// again that day; the free energy's two cards merged into the course
+// note's, the textbook's removed, the notice's undo putting it back, merged
+// again; a formula and its derivation said not the same, remembered in
+// `.ilmi/same.json` and gone from the list when the chip is turned on
+// again; the inspector's `linked to` and `also in`. Light, then the list in
+// dark. Every step asserts (`ok: …`); the first miss logs `failed: …` and
+// stops; thirty seconds without a line is a hang, said as a failure.
+export async function smokeSame(vault: Vault): Promise<void> {
+  type Card = import('../format/index.js').Card;
+  let last = { at: Date.now(), what: 'start' };
+  let finished = false;
+  const log = (s: string) => { last = { at: Date.now(), what: s }; void info(`smoke same: ${s}`); };
+  const dog = setInterval(() => {
+    if (finished) { clearInterval(dog); return; }
+    if (Date.now() - last.at > 30_000) { finished = true; clearInterval(dog); void info(`smoke same: failed: no progress for 30 s after "${last.what}"`); }
+  }, 2000);
+  /** An await that may never settle (the fs over IPC), bounded. */
+  const bounded = <T,>(p: Promise<T>, what: string, ms = 8000): Promise<T> =>
+    Promise.race([p, new Promise<T>((_, no) => setTimeout(() => no(new Error(`${what} (no answer in ${ms} ms)`)), ms))]);
+  const shot = async (name: string, ms = 2500) => { await sleep(800); log(`shot: ${name}`); await sleep(ms); };
+  const q = <T extends Element>(sel: string, root: ParentNode = document) => root.querySelector<T>(sel);
+  const qa = <T extends Element>(sel: string, root: ParentNode = document) => Array.from(root.querySelectorAll<T>(sel));
+  const must = (ok: unknown, what: string) => { if (!ok) throw new Error(what); log(`ok: ${what}`); };
+  const poll = async <T,>(probe: () => T | null | undefined | false | Promise<T | null | undefined | false>, what: string, ms = 5000): Promise<T> => {
+    const t0 = Date.now();
+    for (;;) {
+      const v = await probe();
+      if (v) { log(`ok: ${what}`); return v; }
+      if (Date.now() - t0 > ms) throw new Error(`${what} (waited ${ms} ms)`);
+      await sleep(100);
+    }
+  };
+  const key = (k: string) => window.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));
+  const click = (el: Element) => el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+  const { parse } = await import('../format/index.js');
+  const { dayOf, isDue } = await import('../schedule/index.js');
+  const { refreshQueue } = await import('./vault.js');
+  const { setLensView } = await import('./Lenses.js');
+  const { studyDeck } = await import('./deckOps.js');
+  const COURSE = 'courses/fall-2026/phys-415-stat-mech';
+  const MICRO = `${COURSE}/microcanonical-ensemble.md`;
+  const CANON = `${COURSE}/canonical-ensemble.md`;
+  const CH2 = 'library/lindqvist-statistical-physics/ch-2-microstates-and-entropy.md';
+  const CH3 = 'library/lindqvist-statistical-physics/ch-3-the-canonical-ensemble.md';
+  const STAT_MECH = [
+    ['sm-F-lnZ', 'lq3-F-lnZ'], ['sm-einstein-omega', 'lq2-einstein-omega'], ['sm-peak-width', 'lq2-peak-width'], ['sm-def-T', 'lq2-def-T'],
+    ['sm-equip-fail', 'lq3-equip-cond'], ['sm-classical-criterion', 'lq4-nQ'], ['sm-degeneracy', 'lq-ex-boltz-system-omega'],
+    ['sm-dv-equip', 'dr-equip'], ['sm-dv-fermi', 'dr-fermi'],
+  ] as const;
+  const text = (p: string) => bounded(vault.fs.readText(vault.abs(p)), `read ${p}`);
+  const lineUnder = async (p: string, id: string) => { const l = (await text(p)).split('\n'); const at = l.findIndex((x) => x.endsWith(` ^${id}`)); return at < 0 ? null : l[at + 1] ?? ''; };
+  const cardOf = async (p: string, id: string) => parse(await text(p)).doc.blocks.find((b): b is Card => b.kind === 'card' && b.id === id);
+  const pairEl = (a: string, b: string) => q<HTMLElement>(`.same-pair[data-a="${a}"][data-b="${b}"]`) ?? q<HTMLElement>(`.same-pair[data-a="${b}"][data-b="${a}"]`);
+  const chip = () => q<HTMLElement>('.deck-view .chip[data-chip="similar"]');
+  try {
+    useApp.getState().setTheme('light');
+    await poll(() => document.documentElement.dataset.theme === 'light', 'light');
+    setInspector({ open: true });
+
+    // ── the list: the stat-mech course's pairs ──
+    openNode(COURSE);
+    setLensView(COURSE, 'cards');
+    click(await poll(() => chip(), 'the cards lens of the stat-mech course has a similar chip', 10000));
+    await poll(() => chip()?.dataset.on === '1' && qa('.same-pair').length > 0, 'the chip on: pairs listed in place of the rows', 15000);
+    const pairs = qa<HTMLElement>('.same-pair');
+    for (const p of pairs) log(`pair ${p.dataset.score} ${p.dataset.a} ~ ${p.dataset.b}`);
+    const found = STAT_MECH.filter(([a, b]) => pairEl(a, b));
+    must(found.length >= 8, `${found.length} of the nine stat-mech pairs listed (missing: ${STAT_MECH.filter(([a, b]) => !pairEl(a, b)).map((p) => p.join(' ~ ')).join(', ') || 'none'})`);
+    must(pairs.length <= 30, `${pairs.length} pairs in the course's lens: few beyond the known ones`);
+    must([pairs[0]!.dataset.a, pairs[0]!.dataset.b].sort().join() === 'lq3-F-lnZ,sm-F-lnZ', 'the free energy typed twice is first');
+    const side = q<HTMLElement>('.sp-side', pairs[0]!)!;
+    must(q('.dr-front .katex', side) && /\d+ reviews?/.test(q('.sp-sched', side)?.textContent ?? '') && q('button[data-act="keep"]', side), 'each side draws its faces, its schedule, and keep this');
+    must(qa('.sp-acts button', pairs[0]!).map((b) => b.textContent).join() === 'link,not the same', 'each pair offers link and not the same');
+    must(q('.deck-view .deck-row') === null, 'the rows give way to the pairs');
+    await shot('same-list');
+
+    // ── link: the multiplicity peak's two cards, both due ──
+    const [PA, PB] = ['sm-peak-width', 'lq2-peak-width'];
+    refreshQueue();
+    const dueNow = () => { const t = new Date(); return useApp.getState().queue.filter((i): i is CardItem => i.kind === 'card' && (i.id === PA || i.id === PB) && isDue(i, t)).map((i) => i.id); };
+    must(dueNow().length === 2, `before the link both are in the day's queue (${dueNow().join(', ')})`);
+    const [a0, b0] = [await cardOf(MICRO, PA), await cardOf(CH2, PB)];
+    const strong = (b0?.sched?.stability ?? 0) > (a0?.sched?.stability ?? 0) ? b0!.sched! : a0!.sched!;
+    click(q('button[data-act="link"]', pairEl(PA, PB)!)!);
+    const la = await poll(async () => { const l = await lineUnder(MICRO, PA); return l?.includes(`link=${PB}`) ? l : null; }, 'linked: the course note\'s bare line names the textbook\'s card');
+    const lb = await poll(async () => { const l = await lineUnder(CH2, PB); return l?.includes(`link=${PA}`) ? l : null; }, 'and the textbook\'s names the note\'s');
+    log(`${PA}: ${la}`);
+    log(`${PB}: ${lb}`);
+    must(la.includes(`due=${strong.due} `) && lb.includes(`due=${strong.due} `) && la.includes(` s=${strong.stability} `) && lb.includes(` s=${strong.stability} `), `both take the stronger schedule (s=${strong.stability}, due ${strong.due})`);
+    must(useApp.getState().notice?.line === 'linked · 2 cards', 'the notice says linked, with its undo');
+    await poll(() => !pairEl(PA, PB), 'the linked pair leaves the list');
+    await shot('same-linked');
+
+    // ── one of them a day ──
+    await poll(() => { refreshQueue(); return dueNow().length === 1; }, 'the day\'s queue holds one of the two', 8000);
+    const shownId = dueNow()[0]!;
+    const otherId = shownId === PA ? PB : PA;
+    const buried = useApp.getState().queue.find((i): i is CardItem => i.kind === 'card' && i.id === otherId);
+    must(buried?.buried && dayOf(buried.dueAt) !== dayOf(new Date()), `${shownId} is shown, ${otherId} buried till tomorrow`);
+    openNode(queueId('today'));
+    await sleep(800);
+    await shot('same-queue');
+
+    // ── grading one counts for the other ──
+    const [shownPath, otherPath] = shownId === PA ? [MICRO, CH2] : [CH2, MICRO];
+    const shownDoc = parse(await text(shownPath)).doc;
+    const block = shownDoc.blocks.findIndex((b) => b.kind === 'card' && b.id === shownId);
+    const n = studyDeck(shownPath, { only: new Set([`${shownPath}#${block}`]) });
+    must(n === 1, `a session over ${shownId}`);
+    await poll(() => q('.recall-wrap .card'), 'the card is drawn', 8000);
+    const otherBefore = await lineUnder(otherPath, otherId);
+    key(' ');
+    await sleep(400);
+    key('3');
+    const shownAfter = await poll(async () => { const l = await lineUnder(shownPath, shownId); return l && !l.includes(`last=${strong.last}`) ? l : null; }, `grading ${shownId} rewrites its line`, 8000);
+    const otherAfter = await poll(async () => { const l = await lineUnder(otherPath, otherId); return l && l !== otherBefore ? l : null; }, `and ${otherId}'s line takes the grade`, 8000);
+    log(`${shownId}: ${shownAfter}`);
+    log(`${otherId}: ${otherAfter}`);
+    const state = (l: string) => l.replace(/ (pri|link)=\S+/g, '');
+    must(state(shownAfter) === state(otherAfter), 'the same state on both lines, each keeping its own link');
+    must(/ r=\d+ /.test(otherAfter) && Number(/ r=(\d+) /.exec(otherAfter)![1]) === (strong.reps ?? 0) + 1, 'one review more on both');
+    await sleep(600);
+    refreshQueue();
+    must(dueNow().length === 0, 'neither is due again today');
+
+    // ── merge: the free energy's two cards into the course note's ──
+    openNode(COURSE);
+    setLensView(COURSE, 'cards');
+    const chip2 = await poll(() => chip(), 'the course\'s cards lens again', 10000);
+    if (chip2.dataset.on !== '1') click(chip2);
+    const fp = await poll(() => pairEl('sm-F-lnZ', 'lq3-F-lnZ'), 'the free energy pair listed', 15000);
+    const ch3Before = await text(CH3);
+    const k0 = (await cardOf(CANON, 'sm-F-lnZ'))!.sched!;
+    const d0 = (await cardOf(CH3, 'lq3-F-lnZ'))!.sched!;
+    const keepSide = qa<HTMLElement>('.sp-side', fp).find((s) => s.dataset.key === 'sm-F-lnZ')!;
+    click(q('button[data-act="keep"]', keepSide)!);
+    await poll(async () => !(await text(CH3)).includes('^lq3-F-lnZ'), 'merged: the textbook\'s card is removed');
+    const kept = (await cardOf(CANON, 'sm-F-lnZ'))!.sched!;
+    const want = (d0.stability ?? 0) > (k0.stability ?? 0) ? d0 : k0;
+    log(`kept: s=${kept.stability} r=${kept.reps} due ${kept.due}; before: note s=${k0.stability}, textbook s=${d0.stability}`);
+    must(kept.stability === want.stability && kept.due === want.due, 'the course note\'s card keeps the stronger schedule');
+    must(useApp.getState().notice?.line === 'merged · 2 cards into 1', 'the notice says merged, with its undo');
+    await shot('same-merged');
+    click(await poll(() => qa<HTMLElement>('.notice button').find((b) => b.textContent === 'undo'), 'the notice\'s undo'));
+    await poll(async () => (await text(CH3)) === ch3Before, 'undone: the textbook\'s file is as it was, byte for byte');
+    const fp2 = await poll(() => pairEl('sm-F-lnZ', 'lq3-F-lnZ'), 'and the pair is listed again', 8000);
+    click(q('button[data-act="keep"]', qa<HTMLElement>('.sp-side', fp2).find((s) => s.dataset.key === 'sm-F-lnZ')!)!);
+    await poll(async () => !(await text(CH3)).includes('^lq3-F-lnZ'), 'merged again, and left merged');
+
+    // ── not the same: a formula and its derivation ──
+    const ns = await poll(() => pairEl('sm-sigmaE', 'sm-dv-fluct'), 'the energy fluctuation and its derivation listed');
+    click(q('button[data-act="not-same"]', ns)!);
+    const raw = await poll(async () => { const t = await bounded(vault.fs.readText(vault.abs('.ilmi/same.json')).catch(() => ''), 'read same.json'); return t.includes('sm-dv-fluct|sm-sigmaE') ? t : null; }, 'not the same: remembered in .ilmi/same.json');
+    log(`.ilmi/same.json: ${raw.replace(/\s+/g, ' ')}`);
+    await poll(() => !pairEl('sm-sigmaE', 'sm-dv-fluct'), 'the pair leaves the list');
+    must((await bounded(vault.loadNotSame(), 'load not-same')).includes('sm-dv-fluct|sm-sigmaE'), 'and reads back from the file');
+    click(chip()!);
+    await poll(() => chip()?.dataset.on === '0' && q('.deck-view .deck-row'), 'the chip off: the rows again');
+    click(chip()!);
+    await poll(() => chip()?.dataset.on === '1' && qa('.same-pair').length > 0, 'the chip on again', 10000);
+    must(!pairEl('sm-sigmaE', 'sm-dv-fluct') && !pairEl('sm-F-lnZ', 'lq3-F-lnZ') && !pairEl(PA, PB), 'never shown again; the merged and the linked pairs neither');
+    await shot('same-list-after');
+
+    // ── the inspector: linked to, also in ──
+    const micro = parse(await text(MICRO)).doc;
+    const idx = (id: string) => micro.blocks.findIndex((b) => b.kind === 'card' && b.id === id);
+    openCard(MICRO, idx(PA), PA);
+    const row = (k: string) => qa<HTMLElement>('.insp .kvr').find((r) => q('dt', r)?.textContent === k);
+    const lt = await poll(() => row('linked to'), `the inspector on ${PA} says linked to`, 8000);
+    const ltCard = q<HTMLElement>('.io-card', lt)?.textContent ?? '';
+    must(/^relative width of the multiplicity peak/.test(ltCard) && q('.io-card .katex', lt), `linked to names the card by its front, its formula set ("${ltCard.slice(0, 50)}")`);
+    must(q('.io-where', lt)?.textContent === 'ch. 2: microstates and entropy', `and where it lives (${q('.io-where', lt)?.textContent})`);
+    must(q('button[data-act="unlink"]', lt)?.textContent === 'unlink' && !q('button[data-act="linked"] [data-act="unlink"]', lt), 'unlink is a control of its own');
+    await shot('same-inspector-linked');
+    openCard(MICRO, idx('sm-einstein-omega'), 'sm-einstein-omega');
+    const ai = await poll(() => row('also in'), 'the inspector on the Einstein solid\'s multiplicity says also in', 8000);
+    const aiCard = q<HTMLElement>('.io-card', ai)?.textContent ?? '';
+    must(/^multiplicity of an Einstein solid/.test(aiCard) && q('.io-card .katex', ai), `also in names the card by its front ("${aiCard.slice(0, 50)}")`);
+    must(q('.io-where', ai)?.textContent === 'ch. 2: microstates and entropy', `and where it lives (${q('.io-where', ai)?.textContent})`);
+    click(q('button[data-act="alike"]', ai)!);
+    await poll(() => useApp.getState().selectedCard?.path === CH2, 'also in opens the textbook\'s card, selected', 8000);
+    await shot('same-inspector-also');
+
+    // ── dark ──
+    openNode(COURSE);
+    setLensView(COURSE, 'cards');
+    const chip3 = await poll(() => chip(), 'the course\'s cards lens', 10000);
+    if (chip3.dataset.on !== '1') click(chip3);
+    await poll(() => qa('.same-pair').length > 0, 'the pairs', 10000);
+    useApp.getState().setTheme('dark');
+    await poll(() => document.documentElement.dataset.theme === 'dark', 'dark');
+    await shot('same-list-dark');
+    useApp.getState().setTheme('light');
+    finished = true;
+    log(`done; vault ${vault.root}`);
+  } catch (e) {
     finished = true;
     log(`failed: ${e instanceof Error ? e.message : String(e)}`);
   }

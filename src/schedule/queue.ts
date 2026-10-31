@@ -18,6 +18,7 @@ import type { Exam, LeechAction } from '../format/index.js';
 import { addDays, dayOf, dayStart, whenToDate } from './dates.js';
 import { advanceRead } from './read.js';
 import { advanceWrite } from './write.js';
+import { buryLinked, cardsById } from './links.js';
 
 /** A numbered cloze group, or the index of an unnumbered blank in `blanks(text)` order. */
 export type GroupKey = { n: number } | { blank: number };
@@ -73,6 +74,12 @@ export interface CardItem extends ItemBase {
    * nothing on disk says so.
    */
   held?: 'new' | 'reviews';
+  /**
+   * The id of the card this one is linked to (`link=` on the bare line,
+   * FORMAT.md §6.2), on the item that asks the bare line: one of the two is
+   * shown a day (`buryLinked`), and a grade is written to both.
+   */
+  link?: string;
 }
 
 export interface ReadItem extends ItemBase {
@@ -196,6 +203,9 @@ function cardItems(path: string, block: number, card: Card, trail: readonly stri
     if (sched) item.sched = sched;
     if (group) item.group = group;
     if (dir) item.dir = dir;
+    // a link joins bare lines: the item that asks this card's bare line carries it
+    const bare = dir === 'f' || (!dir && (!group || (groups.length === 1 && !('n' in group && card.blanks?.[group.n]))));
+    if (bare && card.sched?.link !== undefined && card.id !== undefined) item.link = card.sched.link;
     return item;
   };
   // a both-ways card is two items, one per direction, siblings
@@ -263,10 +273,12 @@ export function sortQueue(items: QueueItem[], now: Date): QueueItem[] {
   });
 }
 
-/** All items over a set of documents, sorted. */
+/** All items over a set of documents, sorted; of two linked cards, one a day (`buryLinked`). */
 export function queueItems(docs: Iterable<[string, Doc]>, now: Date): QueueItem[] {
+  const list = [...docs];
   const out: QueueItem[] = [];
-  for (const [path, doc] of docs) out.push(...docItems(path, doc, now));
+  for (const [path, doc] of list) out.push(...docItems(path, doc, now));
+  buryLinked(out, cardsById(list), now);
   return sortQueue(out, now);
 }
 

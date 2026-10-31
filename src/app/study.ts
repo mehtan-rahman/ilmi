@@ -10,7 +10,7 @@
 // the review.
 
 import type { Doc } from '../format/index.js';
-import { docItems, examQueue, isDue, sortQueue, type CardItem, type ExamAt } from '../schedule/index.js';
+import { buryLinked, cardsById, docItems, examQueue, isDue, sortQueue, type CardItem, type ExamAt, type LinkedCard } from '../schedule/index.js';
 
 export interface StudyOptions {
   /** `include not due`: every unsuspended card, new ones last. */
@@ -21,6 +21,8 @@ export interface StudyOptions {
   held?: (i: CardItem) => boolean;
   /** The exams over a document: a review brought before one is due here as in the queue (`examQueue`). */
   exams?: (path: string) => readonly ExamAt[];
+  /** Every card in the collection by id (`cardsById`), for a linked card's other side outside the deck; absent, the deck's own. */
+  linked?: ReadonlyMap<string, LinkedCard>;
 }
 
 /** A card item's place in the queue: its card and the line it asks. */
@@ -31,12 +33,15 @@ const isNew = (i: CardItem): boolean => !i.sched?.reps;
 /** The session's items over `docs` (in deck order), as `opts` says. */
 export function studyItems(docs: Iterable<[string, Doc]>, now: Date, opts: StudyOptions = {}): CardItem[] {
   const all: CardItem[] = [];
-  for (const [path, doc] of docs) {
+  const list = [...docs];
+  for (const [path, doc] of list) {
     for (const i of docItems(path, doc, now)) {
       if (i.kind === 'card' && (!opts.only || opts.only.has(`${i.path}#${i.block}`))) all.push(i);
     }
   }
   if (opts.exams) examQueue(all, now, opts.exams);
+  // of two linked cards, one a day, unless cramming (asked for)
+  if (!opts.cram) buryLinked(all, opts.linked ?? cardsById(list), now);
   if (!opts.cram) return sortQueue(all.filter((i) => isDue(i, now) && !opts.held?.(i)), now) as CardItem[];
   const fresh = all.filter(isNew);
   const rest = sortQueue(all.filter((i) => !fresh.includes(i)), now) as CardItem[];

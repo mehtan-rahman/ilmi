@@ -4812,7 +4812,121 @@ is per day, not "until asked" by a setting (none was added).
 in the window, grading one leaves the other's line alone, and a
 migrated card keeps its history.
 
-### [ ] 45. The same fact twice
+### [x] 45. The same fact twice
+Done 2026-10-31 on branch `worktree-agent-aacaabba75277b534`, commit `d21495a`.
+The window check is pending: run `ILMI_SMOKE=same` with `ILMI_VAULT` on a
+fresh copy of `samples/double-major` and read its `ok:` lines and `shot:`
+captures (same-list, same-linked, same-queue, same-merged, same-list-after,
+same-inspector-linked, same-inspector-also, same-list-dark); the first miss
+is `failed: …`, a hang `failed: no progress for 30 s after "…"`. This was a
+worktree; nothing ran in the window.
+Notes:
+- **The known pairs** (read off the stat-mech files: the course notes in
+  `courses/fall-2026/phys-415-stat-mech/`, the Lindqvist chapters and
+  extracts in `library/lindqvist-statistical-physics/`, the drills in
+  `physics/derivation-drills.md`), each the same question answered the
+  same on separate schedules: `sm-F-lnZ`~`lq3-F-lnZ` (the same cloze typed
+  twice), `sm-einstein-omega`~`lq2-einstein-omega`, `sm-peak-width`~
+  `lq2-peak-width`, `sm-def-T`~`lq2-def-T` (a cloze and a q&a),
+  `sm-equip-fail`~`lq3-equip-cond`, `sm-classical-criterion`~`lq4-nQ`,
+  `sm-degeneracy`~`lq-ex-boltz-system-omega`, `sm-dv-equip`~`dr-equip`,
+  `sm-dv-fermi`~`dr-fermi` (derivations, course and drill). Fifteen more
+  across the collection (the vocab deck and the Abbasid poetry verses, the
+  grammar and morphology courses, mechanics and quantum against the drills)
+  and twenty-five overlapping pairs (a formula and its derivation, a verse's
+  completion and its meter) are listed in `same.test.ts`.
+- **The method** (`src/app/same.ts`): each card read as two faces and its
+  whole (a cloze: its text without the answers, its answers, and the text
+  with them in place); text folded as the deck search folds it (case,
+  accents, Arabic marks, tatweel), words with stopwords out, a light English
+  stem and neighbouring pairs, a lone Arabic letter kept (roots are written
+  `ك-ر-م`); math normalized (`$` gone, `\,` `\quad` `\left` `\right`
+  `\mathrm` … dropped, `\dfrac`/`\tfrac` as `\frac`, `\frac{a}{b}` and
+  `\frac12` as `a/b`, braces and parentheses dropped, `\le` as `\leq`,
+  Unicode `≈ ∂ ħ ω` as TeX) and read as tokens and their runs of two and
+  three. Weighted by idf, and divided by `1 + ln` of how many cards of the
+  card's own document share the feature (a deck's template, `what does …
+  give in forms …`, `derive …`). Score: the mean of the wholes' cosine and
+  the better face pairing's (front–front with back–back, or crossed); two
+  questions in the same words (neither a cloze) score at least the square
+  of their fronts' cosine when their backs share something (`bb ≥ 0.08` for
+  the full term, so `form VI` and `form VII` stay apart). Candidates: pairs
+  sharing a feature found in 2 to n/10 cards (the token index). Threshold
+  `SAME_THRESHOLD` 0.35.
+- **Measured** on the sample (758 cards): 45 pairs listed; stat-mech recall
+  8 of 9 (the miss, `sm-classical-criterion`~`lq4-nQ`, says the same thing
+  in other words, `criterion … nλ³ ≪ 1` against `condition … n ≪ n_Q`, and
+  scores 0.18; `sm-dv-fermi`~`dr-fermi` makes it at 0.351, close to the
+  line); of the 24 known same-fact pairs 20 listed (also missed: Fermi's
+  golden rule 0.29, form X's meaning 0.28, تُرى 0.30); of the 45 listed, 20
+  are the same fact and 25 overlap, none unrelated; 0 of 5000 random pairs
+  listed; below 0.35 pairs that share only a topic come in (at 0.34
+  `qm2-good`~`qmmt-sign`, `nh-ishrin`~`nh-dr-thalathata`). About 140 ms over
+  the 758 cards in node, a little more over 1,000; the app finds the pairs
+  again only when a card's text, place or link changes (`currentPairs`), not
+  on a grade.
+- **The link** (FORMAT §6.2, *links*; `src/schedule/links.ts`):
+  `link=<id>` on the bare `sr` line names the other card's `^id`, anywhere
+  in the vault; the app writes it on both, either side alone holds it.
+  It joins bare lines only (`bareLined`: a q&a, a both-ways card's forward,
+  a cloze of one blank with no `sr cN` line); on `sr cN` and `sr r` lines it
+  is dropped with a diagnostic, a bad value too. **Copy the state**, not
+  apply the grade: linking writes the stronger schedule (stability, then
+  reviews, then last; new is weakest) on both lines, each keeping its own
+  `pri`, `sus`; grading either writes the new state to both
+  (`gradeCard` → `linkedWith` → `copyToPartner`, one line in the other's
+  file), so the two stay one schedule and come due together; the review
+  log gets one line, the graded card's. Grading the same grade into two
+  schedules would let them drift onto separate days. **One a day**
+  (`buryLinked`, called in `queueItems`, the app's `buildQueue`, and
+  `studyItems` unless cramming): both due, the one the queue shows first
+  (priority, due, path, place) stays and the other is buried till the next
+  day; one reviewed today buries the other, whether or not it is in the
+  list (a deck studied apart); both reviewed today, nothing. `fromFsrs`
+  and a reset keep `link`. Corpus: `mangled/links.md`.
+- **The view**: the deck browser's chips gain `similar` (local, not
+  remembered): the pairs where either card is under the lens, best first,
+  side by side (form, file, faces, due, interval, reviews, lapses), the
+  search narrowing them; per side `keep this` (merge into it), per pair
+  `link` (only when both are bare-lined) and `not the same`. Each writes
+  one update per file and holds its undo in the notice (`linked · 2 cards`,
+  `merged · 2 cards into 1`, `not the same · 2 cards`). The inspector's
+  card block: `linked to <document>` with `unlink`, else `also in
+  <document>` (`and N more`), each opening the other card.
+- **Merge** (`mergePair`): `keep` stays where it is; when the other's
+  strongest line is stronger and `keep` is bare-lined, `keep`'s bare line
+  takes its state (its own `pri`, `sus` kept); the other card is removed
+  (its extract backref lines with it, as a delete); a link between the two
+  goes. **Not the same**: `.ilmi/same.json`, `{ "not": [...] }`, keys by
+  `^id` (or `path#id` when two files share it, `path#hash` with no id),
+  sorted pairs (FORMAT §1); `Vault.loadNotSame`/`saveNotSame`, the store's
+  `notSame`, reloaded when the watcher reports the file.
+- Tests: 1068 (+26: `same.test.ts` 11 (normalization, folding, faces,
+  recall and precision on the sample, the random pairs, speed over 1,000
+  cards, the skips, the keys), `links.test.ts` 6 walking days over two
+  files, `same-view.test.ts` 6 (jsdom over a copy of the sample: the chip,
+  link, a linked grade through `gradeCard`, merge with its undo, not the
+  same read back by a vault opened anew, the inspector's lines and unlink),
+  the format's link test and the corpus file's round trips). cargo 12.
+- Open: the window run; a multi-blank cloze or a both-ways card's reverse
+  can be merged but not linked; merge keeps a multi-blank card's own lines
+  even when the other is stronger; synonyms (criterion/condition) are not
+  read, so a fact said in other words is missed; numbers (42) count a
+  linked pair as two cards and the partner has no log line of its own; the
+  `also in` line opens the other card, not the pair in the list; the list
+  is over the lens, not the queue (a pair is not shown from a session);
+  three or more copies of one fact link two at a time.
+Window check 1 (2026-10-31, at `c10a727`, the coordinator, from a clean
+checkout): every step passed (the list, a link writing both lines with the
+stronger schedule, one of the pair in the queue, a grade on both, merge
+with a byte-exact undo, not the same remembered) until the inspector's
+`linked to` read `ch. 2: microstates and entropyunlink`: it named only the
+other card's document, with `unlink` run into it. Fixed: `linked to` and
+`also in` name the other card by its front (`cardName`, formulas by KaTeX,
+as card names are drawn elsewhere) over its document's title, and
+`unlink` is a control of its own under it; the smoke and
+`same-view.test.ts` read the parts (`.io-card`, `.io-where`, the unlink
+button). The rerun is owed.
 - Find cards that test the same fact across the collection (the sample has
   nine such pairs in stat mech alone: notes, textbook extract, drill
   deck): text folded (case, accents, Arabic marks, math normalized),

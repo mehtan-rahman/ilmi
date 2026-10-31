@@ -14,7 +14,9 @@ Three rules run through everything:
    lines that start with `<!-- sr` or `<!-- extract`. Everything else, including
    front-matter keys it does not know, passes through byte for byte.
 2. **One review touches one line.** A card's schedule is one comment line
-   directly under the card. Grading rewrites that line and nothing else.
+   directly under the card. Grading rewrites that line and nothing else
+   (a linked card's grade writes the other card's line too, one line each,
+   §6.2 *links*).
 3. **Damage is local.** A malformed annotation degrades to literal text with a
    diagnostic. It never takes prose with it, and it is never silently deleted.
 
@@ -44,6 +46,7 @@ notes/
     order.json               the order chosen for a directory's children
     reviews/                 the review log, one file a month
       2026-10.jsonl
+    same.json                pairs of cards said not to be the same fact
 ```
 
 - A directory is a folder. A `.md` file is a document. Anything else is ignored.
@@ -103,6 +106,13 @@ notes/
   once; a line that does not read as one (torn by a crash, junk) is
   skipped. A card moved to another document is found again by its id when
   its old document is gone.
+- **Not the same** is app-private too: `.ilmi/same.json`,
+  `{ "not": ["<key>|<key>", …] }`, the pairs of cards the person said do
+  not test the same fact, so the app never offers them again (milestone
+  45). A card's key is its `^id`, or `<path>#<id>` when two files hold the
+  same id, or `<path>#<hash of its text>` when it has none; the two keys of
+  a pair are in sorted order, joined by `|`, and the list is written sorted.
+  Without the file every pair the app finds is offered.
 
 ## 2. File shape
 
@@ -552,6 +562,7 @@ most one of each; a duplicate key is resolved later-wins with a diagnostic.
 | `g`     | int 1–4                |                   | last grade: again hard good easy         |
 | `pri`   | int 0–100              |                   | the card's own priority, over the document's (§3) |
 | `sus`   | bool, written `1`      |                   | suspended: out of the queue, the session, and the counts |
+| `link`  | id `[A-Za-z0-9_-]+`    |                   | the card with that `^id` tests the same fact: one schedule for both (below) |
 
 Every attribute is optional. A card with no `sr` line at all is a new card,
 due now; so is a card whose bare line carries only `pri`. `pri` belongs to the
@@ -589,6 +600,43 @@ buried until the next day; once one has been reviewed today, the other is
 buried until the next day. Burying is the queue's, derived from `due` and
 `last`; nothing is written, so grading one direction rewrites its line alone.
 A session asked to include what is not due (cram) shows both.
+
+**Links.** `link=<id>` on a card's bare line says the card with that `^id`
+(§6.1, anywhere in the vault) tests the same fact: the person kept both
+cards, where they are, and asked for them to be studied as one. The app
+writes it on both cards, each naming the other; either side alone is
+enough to hold the link, so a sync that brings back one file still has it.
+The rules:
+
+- A link joins bare lines. It holds between two cards each scheduled by
+  its bare line alone: a q&a, a both-ways card (its front to back; the
+  reverse stays its own), a cloze of one blank with no `sr cN` line for
+  it. On a card of several blanks, or one whose blank has its own line,
+  the attribute is kept and means nothing. On an `sr cN` or `sr r` line it
+  is dropped with a diagnostic, as `pri` is on a group line.
+- One schedule. Linking writes the stronger of the two schedules (more
+  stability; then more reviews; a new card is the weakest) on both lines,
+  each keeping its own `pri` and `sus`. Grading either card writes the new
+  state to both bare lines, each keeping its own `pri`, `sus`, and `link`:
+  the same state, not the same grade applied twice, so the two stay one
+  schedule and a grade is counted once (one line in the review log, the
+  graded card's). Lines that differ (a hand edit, a sync of one side) are
+  made the same by the next grade.
+- One a day. The two cards are siblings across files, as a both-ways
+  card's directions are within one: when both are due, the one the queue
+  shows first (lower priority, then due, then path and place) is shown and
+  the other is buried until the next day; once one has been reviewed
+  today, the other is buried. Burying is the queue's; nothing is written.
+  A suspended card is out of the pair's reckoning; its partner is studied
+  alone. A cram shows both.
+- A link that names no card in the vault, or names the card itself, means
+  nothing and is kept. Ids are the vault's to keep unique; when two files
+  hold the named id, the first in path order is the partner.
+
+Why the state is copied and not the grade applied to each: two schedules
+graded alike drift apart (each grade lands on a different `last` and
+stability) and would each come due on their own day, which is the cost a
+link is there to remove.
 
 A single-group cloze and a q&a use the bare form; a bidirectional card the bare
 form and, once its reverse has been graded, an `sr r` line. A

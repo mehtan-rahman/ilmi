@@ -141,7 +141,8 @@ export const perPassOf = (pos: number | undefined, reps: number | undefined): nu
  * The queue under exams, in place: each item under an exam ahead carries
  * it (`exam`); a review FSRS put after it and not seen in its last week is
  * due on its day in the window instead (`pulled`, the stored due); a
- * reading paced (`pulled` too). Nothing is written. Run before metering.
+ * reading paced (`pulled` too). Brought forward is never before today.
+ * Nothing is written. Run before metering.
  */
 export function examQueue(items: QueueItem[], now: Date, examsOf: (path: string) => readonly ExamAt[]): QueueItem[] {
   const today = dayOf(now);
@@ -171,8 +172,9 @@ export function examQueue(items: QueueItem[], now: Date, examsOf: (path: string)
       if (ivl === null) continue;
       const day = addDays(from, ivl);
       if (day >= due) continue;
+      // a pace that would have come before today is due today, never in the past
       i.pulled = s.due;
-      i.dueAt = dayStart(day);
+      i.dueAt = dayStart(day > today ? day : today);
     }
   }
   // a direction brought forward may now meet its sibling on one day

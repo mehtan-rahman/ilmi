@@ -6666,10 +6666,17 @@ export async function smokeExam(vault: Vault): Promise<void> {
     must(cards().filter((i) => under(i.path) && !i.buried && i.sched?.state === 'review' && (i.sched.due ?? '').slice(0, 10) > LAST).every((i) => i.pulled || (i.sched!.last ? dayOf(whenToDate(i.sched!.last)) : '') >= START), 'every review past the exam is among them');
     must(!items().some((i) => !under(i.path) && (i.pulled || i.exam)), 'nothing outside the notebook is for the midterm');
     const book = items().find((i) => i.kind === 'read' && i.path === BOOK);
-    must(book && book.pulled === '2026-11-21' && dayOf(book.dueAt) <= FINISH, `the textbook chapter, due ${book?.pulled}, is paced: next pass ${book && dayOf(book.dueAt)}`);
+    must(book && book.pulled === '2026-11-21' && dayOf(book.dueAt) <= FINISH && dayOf(book.dueAt) >= today, `the textbook chapter, due ${book?.pulled}, is paced: next pass ${book && dayOf(book.dueAt)}, not before today`);
+    must(items().every((i) => !i.pulled || dayOf(i.dueAt) >= today), 'nothing is brought forward to a day before today');
+    /** Open a saved query and wait until its own list is drawn, not the tab it replaced. */
+    const openQuery = async (scope: 'today' | 'upcoming') => {
+      openNode(queueId(scope));
+      await poll(() => q('.pane[data-active="1"] .queue h1')?.firstChild?.textContent === (scope === 'today' ? 'due today' : 'upcoming'), `the ${scope} query is drawn`, 8000);
+      await sleep(300);
+    };
 
     // ── the queue says so, and narrows to it ──
-    openNode(queueId('upcoming'));
+    await openQuery('upcoming');
     const marks = await poll(() => { const m = qa<HTMLElement>('.qlist li .for-exam'); return m.length ? m : null; }, 'upcoming rows say they are for the midterm', 8000);
     must(marks.every((m) => m.textContent === 'for the midterm'), `the words: "${marks[0]?.textContent}"`);
     const prow = marks[0]!.closest('li')!;
@@ -6683,9 +6690,10 @@ export async function smokeExam(vault: Vault): Promise<void> {
     await shot('exam-upcoming-filtered');
     click(chip);
     await poll(() => qa('.qlist li:not(.fold)').length === all, 'and back to everything');
-    openNode(queueId('today'));
+    await openQuery('today');
     const bookRow = await poll(() => qa<HTMLElement>('.qlist li[data-el="read"]').find((li) => li.textContent?.includes('ch. 9')), 'today holds the textbook chapter', 8000);
     must(bookRow.querySelector('.for-exam')?.textContent === 'for the midterm', 'its row says for the midterm');
+    must(bookRow.querySelector('.due')?.textContent === 'today', `and is due today (${bookRow.querySelector('.due')?.textContent})`);
     bookRow.scrollIntoView({ block: 'center' });
     await shot('exam-today');
 
@@ -6735,7 +6743,7 @@ export async function smokeExam(vault: Vault): Promise<void> {
     const dueThen = cards().filter((i) => i.pulled && isDue(i, now3));
     log(`on ${dayOf(now3)}: ${dueThen.length} brought-forward reviews due, ${cards().filter((i) => under(i.path) && isDue(i, now3)).length} under the notebook in all`);
     must(dueThen.length > 0, `on ${dayOf(now3)} the brought-forward reviews are due`);
-    openNode(queueId('today'));
+    await openQuery('today');
     const wrow = await poll(() => q<HTMLElement>('.qlist li .for-exam'), 'today\'s rows say for the midterm', 8000);
     wrow.closest('li')!.scrollIntoView({ block: 'center' });
     await shot('exam-last-week');
@@ -6746,7 +6754,7 @@ export async function smokeExam(vault: Vault): Promise<void> {
     setClockDay(addDays(E, 1));
     refreshQueue();
     must(!items().some((i) => i.exam || i.pulled), `on ${dayOf(appNow())} nothing is for the midterm`);
-    openNode(queueId('upcoming'));
+    await openQuery('upcoming');
     await poll(() => q('.qlist li') && !q('.qlist li .for-exam') && !q('.queue .exam-filter'), 'no row says so, no filter', 8000);
     openNode(NB);
     await poll(() => q('.pane-body .doc-view .meta') && !q('.pane-body .doc-view .meta .exam-tag'), 'the top row shows no exam', 8000);

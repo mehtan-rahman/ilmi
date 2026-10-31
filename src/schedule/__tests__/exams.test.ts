@@ -202,6 +202,9 @@ describe('exams: the quantum notebook with a midterm three weeks out', () => {
     expect(book.sched.due).toBe('2026-11-21');
     expect(book.pulled).toBe('2026-11-21');
     expect(dayOf(book.dueAt) <= FINISH).toBe(true);
+    // paced from its pass on the 28th it would have been due on the 29th: brought forward is today at the earliest
+    expect(dayOf(book.dueAt)).toBe('2026-10-30');
+    for (const i of q) if (i.pulled) expect(dayOf(i.dueAt) >= '2026-10-30', `${i.path}`).toBe(true);
     // what is left: most cards not yet stable past the 20th, the chapter's blocks
     const left = examLeft(q, book.exam!, (p) => under(p, QM), () => 0.9);
     expect(left.cards).toBe(cards.filter((i) => under(i.path, QM)).length);

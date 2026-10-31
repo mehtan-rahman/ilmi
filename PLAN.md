@@ -4701,6 +4701,19 @@ the final cannot be picked before the midterm has passed; pacing counts
 blocks, not words; a PDF chapter's pages are not counted for pacing;
 `reviews-per-day` still caps what was pulled; a session does not say
 `for the midterm`; drafts are not paced.
+Window run 1 (the coordinator's, at `4c40afd`): passed through 14 reviews
+pulled into 11-13…11-19, nothing outside the notebook, the chapter paced,
+the rows' `for the midterm`, then `failed: a row brought forward shows the
+day it is brought to (overdue 1d)`. Two causes. The chapter was paced from
+its last pass (10-28) to 10-29, a day already gone, so it read `overdue
+1d`: a reading brought forward is now due today at the earliest (`examQueue`
+clamps it as it already clamped cards; a pass paces from its own day, so
+never earlier than tomorrow). And the smoke read the rows right after
+`openNode`, before React had drawn the new query, so it found the replaced
+`due today` tab's chapter row: it now waits for the query's own title
+(`openQuery`) and asserts the chapter's row says `today` and that nothing is
+brought forward before today. Tests: the sample's chapter brought to
+10-30, every pulled item today or later, the row's `today` (1062). Rerun owed.
 - `exam: <day>` (and an optional second, `exam: 2026-12-14 final`, more
   than one allowed) on a course notebook or any document; everything under
   it (cards, sources, extracts, notes revisited) is studied toward it.

@@ -59,6 +59,11 @@ FORMAT §3. Nothing touched 45's ground (similarity, the deck browser).
   tag, a grade uncapped). A watchdog says `failed: no progress …` on a
   hang. Shots: exam-upcoming, -upcoming-filtered, -today, -notebook,
   -notebook-dark, -reading, -last-week, -after.
+- Window run 1 (`4c40afd`): failed at "a row brought forward shows the day
+  it is brought to (overdue 1d)": the chapter, paced from its last pass,
+  was brought to a day already past, and the smoke read the replaced
+  tab's rows before the new query was drawn. A pace is clamped to today
+  now; the smoke waits for the query's title. Rerun owed.
 
 ### Handoff prompt
 

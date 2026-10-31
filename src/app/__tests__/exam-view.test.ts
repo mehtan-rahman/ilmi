@@ -99,6 +99,8 @@ describe('exams in the queue', () => {
     await mount(createElement(Queue, { scope: 'today', active: false }));
     const book = Array.from(host.querySelectorAll('.qlist li[data-el="read"]')).find((li) => li.textContent?.includes('ch. 9'));
     expect(book?.querySelector('.for-exam')?.textContent).toBe('for midterm 2');
+    // brought forward, it is due today, not overdue from a day before
+    expect(book?.querySelector('.due')?.textContent).toBe('today');
     unmount();
   });
 

@@ -8,7 +8,7 @@ was verified, what was not, and the prompt to resume with.
 
 ## 2026-10-31 — milestone 43: exam dates
 
-Done on main; commit `HASH`. New: `src/schedule/exams.ts`,
+Done on main; commit `c5d91e4`. New: `src/schedule/exams.ts`,
 `src/app/clock.ts`, `src/app/ExamTag.tsx`, the corpus file
 `mangled/exam.md`, the sample's `phys-412-quantum-ii/halvorsen-ch-9-wkb.md`,
 three test files. Changed: the front-matter (`exam`), the queue (`exam`,

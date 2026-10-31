@@ -4628,7 +4628,7 @@ change the day's queue for its cards and are inherited, and a leech is
 suspended at the threshold.
 
 ### [x] 43. Exam dates
-Done 2026-10-31, commit `HASH`.
+Done 2026-10-31, commit `c5d91e4`.
 Notes: the window check is pending (`ILMI_SMOKE=exam`, ILMI_VAULT on a fresh
 copy of samples/double-major; it asserts each step, `shot:` exam-upcoming,
 -upcoming-filtered, -today, -notebook, -notebook-dark, -reading,

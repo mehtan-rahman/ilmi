@@ -71,6 +71,18 @@ FORMAT §3. Nothing touched 45's ground (similarity, the deck browser).
   now counted after and asserted against the items for the midterm.
   Rerun owed.
 
+### Window check (2026-10-31, run 3 at `09adf99`, from a clean checkout)
+
+`ILMI_SMOKE=exam` ran to `done`, every step asserted: a midterm three
+weeks out on quantum II pulls 14 reviews FSRS put past it into its last
+week, a few a day, nothing outside the notebook; the textbook chapter
+paced, its next pass today; rows say "for the midterm" and "in 14d"; the
+queue narrowed to the midterm keeps 61 of 795; the notebook's top row
+reads "midterm in 21d" with cards not yet stable and reading left in its
+tooltip, the inspector the same; a grade before the week is capped into
+it with FSRS's stability and difficulty kept; the chapter comes up in a
+session; the day after the exam a grade takes FSRS's interval uncapped.
+
 ### Handoff prompt
 
 ```

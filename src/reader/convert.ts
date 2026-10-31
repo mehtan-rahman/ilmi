@@ -128,7 +128,10 @@ export function fromDoc(doc: PMNode): Block[] {
   return out;
 }
 
-export const blocksEqual = (a: Block[], b: Block[]): boolean => JSON.stringify(a) === JSON.stringify(b);
+/** JSON with every object's keys in order: two blocks equal however their fields were set (a card's `joined` added after a move, the parser's own order). */
+const stable = (v: unknown): string => JSON.stringify(v, (_k, x: unknown) => (x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.entries(x).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) : x));
+
+export const blocksEqual = (a: Block[], b: Block[]): boolean => stable(a) === stable(b);
 
 // ── cards ────────────────────────────────────────────────────────
 

@@ -4698,6 +4698,17 @@ the rebuilt run's caret in WebKit, the chapter's rail); a PDF whose outline
 has nested entries uses only the top level; a book's chapters are not
 re-split when the PDF changes; `duplicate` of a book copies its chapters
 still naming the original's file; a heading in a quote does not fold.
+Window run 1 (the coordinator's, `dfc8c3f`): passed through Tab, ⇧Tab and
+⌥⇧↑ on the bracket card items, then `failed: the card goes up with the
+selection on it`. The move was right in the editor's state; the reader then
+rebuilt itself from its own write: the card moved off the top gained
+`joined`, appended after its `sched`, where the parser puts `joined` before
+it, and `blocksEqual` compared JSON strings, so the same blocks read as
+changed, and the rebuild kept only a caret (`Selection.near`). Now
+`blocksEqual` compares with every object's keys sorted, and
+`withSelectionOf` keeps a selected card selected (by id, else the same card
+at the same place). Tests: the moved list read back equal though its JSON
+differs, a selected card kept through a rebuild (985). Rerun owed.
 From the notes of 37, 39, 40, 41:
 - Tab, ⇧Tab and ⌥⇧↑↓ move a card item in a list like any item.
 - ⏎ on a plain item just before a card item doesn't split the list.

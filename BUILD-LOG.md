@@ -50,6 +50,11 @@ smoke), the corpus file `mangled/pdf-pages.md`, five test files.
   copy of samples/double-major) sets light, asserts each item (`ok:`; the
   first miss `failed: …`), writes its own book PDF into `.ilmi/` and drops
   it on the intake, and logs `shot:` at each screen worth seeing.
+- Window run 1 (`dfc8c3f`, the coordinator's): failed at "the card goes up
+  with the selection on it": the reader rebuilt from its own write because
+  `blocksEqual` compared key order (a moved card's `joined`), and the
+  rebuild dropped the node selection. Compared by sorted keys now, and a
+  selected card is kept through a rebuild. Rerun owed.
 
 ### Handoff prompt
 

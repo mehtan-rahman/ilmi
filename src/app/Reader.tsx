@@ -1103,8 +1103,20 @@ function cardPos(doc: PMNode, at: { index: number; id?: string }): number | null
 }
 
 /** Keep the caret where it was, as far as the new document allows. */
-function withSelectionOf(prev: EditorState | null, state: EditorState): EditorState {
+export function withSelectionOf(prev: EditorState | null, state: EditorState): EditorState {
   if (!prev) return state;
+  // a selected card stays selected: the same card (by id, else at the same place) in the new document
+  const was = prev.selection;
+  if (was instanceof NodeSelection && was.node.type === schema.nodes.card) {
+    const card = was.node.attrs.card as Card;
+    let at: number | null = null;
+    state.doc.forEach((n, pos) => {
+      if (at !== null || n.type !== schema.nodes.card) return;
+      const c = n.attrs.card as Card;
+      if (card.id !== undefined ? c.id === card.id : pos === was.from && c.text === card.text) at = pos;
+    });
+    if (at !== null) return state.apply(state.tr.setSelection(NodeSelection.create(state.doc, at)));
+  }
   const head = Math.min(prev.selection.head, state.doc.content.size);
   return state.apply(state.tr.setSelection(Selection.near(state.doc.resolve(head))));
 }

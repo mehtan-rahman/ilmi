@@ -11,7 +11,7 @@ import { describe, expect, it } from 'vitest';
 import { parse, serialize, type Card } from '../../format/index.js';
 import {
   allSections, continueBlock, flatText, foldKey, foldedKeys, foldsHiding, fromDoc, indentBlock, insertCardItem, makeState, moveItem, outdentBlock,
-  readTable, schema, toDoc, writeTable, cellBreak, type FoldMeta,
+  readTable, schema, toDoc, writeTable, cellBreak, blocksEqual, type FoldMeta,
 } from '../index.js';
 import { nodeToRaw, rawToNode } from '../raw.js';
 
@@ -80,6 +80,16 @@ describe('a card item moves in its list like any item', () => {
     s = run(s, moveItem(1));
     s = run(s, moveItem(1));
     expect(md(s)).toBe('1. one\n2. three\n3. a :: b\n4. c :: d');
+    // the file written and read back is what the editor holds, though a card moved first lost its join and the second gained one
+    // (the window's run 1: a key-order difference made the reader rebuild from the file, and the selection went)
+    const ids = '- a :: b ^ca\n  <!-- sr due=2026-11-02 st=review s=4 d=5 r=2 l=0 ivl=4 -->\n- c :: d ^cc';
+    const moved = run(pick(ed(ids), 'c :: d'), moveItem(-1));
+    const r = parse('');
+    r.doc.blocks = fromDoc(moved.doc);
+    const back = parse(serialize(r.doc)).doc.blocks;
+    expect(JSON.stringify(fromDoc(moved.doc))).not.toBe(JSON.stringify(back));
+    expect(blocksEqual(fromDoc(moved.doc), back)).toBe(true);
+    expect(selectedCard(moved)).toBe('c :: d');
     // the last sibling stays, the key still taken
     s = run(pick(s, 'c :: d'), moveItem(1));
     expect(md(s)).toBe('1. one\n2. three\n3. a :: b\n4. c :: d');

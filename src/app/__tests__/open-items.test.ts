@@ -8,12 +8,12 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { EditorView } from 'prosemirror-view';
-import { TextSelection } from 'prosemirror-state';
+import { NodeSelection, TextSelection } from 'prosemirror-state';
 import { describe, expect, it } from 'vitest';
 import { parse, serialize, type Block } from '../../format/index.js';
 import { flatText, foldKey, fromDoc, makeState, sections, type FoldMeta } from '../../reader/index.js';
 import { buildIndex } from '../chrome.js';
-import { cardHTML, handleClickOn, linesHTML, nodeViews } from '../Reader.js';
+import { cardHTML, handleClickOn, linesHTML, nodeViews, withSelectionOf } from '../Reader.js';
 import { foldedHeadings, headingKeys } from '../tabs.js';
 
 const SAMPLE = join(import.meta.dirname, '../../../samples/double-major');
@@ -42,6 +42,18 @@ describe('a card\'s step lines in the reader', () => {
     expect(a.textContent).toContain('1. ');
     expect(a.textContent).toContain('2. ');
     view.destroy();
+  });
+});
+
+describe('a selected card through a rebuild from the file', () => {
+  it('stays selected: the same card by id, after it moved', () => {
+    const live = { frozen: () => false, pos: null };
+    const before = makeState(parse('- a :: b ^ca\n- c :: d ^cc\n').doc.blocks, live);
+    let at = -1;
+    before.doc.forEach((n, p) => { if (n.type.name === 'card' && (n.attrs.card as { id?: string }).id === 'cc') at = p; });
+    const prev = before.apply(before.tr.setSelection(NodeSelection.create(before.doc, at)));
+    const next = withSelectionOf(prev, makeState(parse('- c :: d ^cc\n- a :: b ^ca\n').doc.blocks, live));
+    expect(next.selection instanceof NodeSelection && (next.selection.node.attrs.card as { id?: string }).id).toBe('cc');
   });
 });
 

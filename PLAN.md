@@ -4592,7 +4592,15 @@ line counts cards (never seen: no line of it ever graded; suspended: every
 line), the tables count reviews (each direction its own), and `coming due`
 reads `reviews due`; the smoke shoots `numbers-vocab` as soon as the
 numbers draw and asserts each row's front and place and that the counts
-add up. The rerun is owed.
+add up. Window check 2 (at `f2af35f`): the rows and the counts right
+(`178 cards, 36 never seen, 2 suspended`), then nothing after the dark
+capture for fifteen minutes: the step that opens a failed-most row hung
+rather than failed. The same click in jsdom opens the card selected in the
+deck (`numbers-view.test.ts`), so the cause in WebKit is not yet known. The
+smoke now looks the row up again after the theme changes, logs the row it
+opens, bounds every read over IPC (8 s), and runs a watchdog that logs
+`failed: no progress for 30 s after "<last line>"`; a hang that stops
+timers altogether would still be silent. The rerun is owed.
 - **Numbers**, on a deck, a folder, a notebook, or the collection (the
   lens's `items · cards` gains `numbers`): reviews per day for the last
   weeks and the next weeks' forecast as a quiet typographic table or a

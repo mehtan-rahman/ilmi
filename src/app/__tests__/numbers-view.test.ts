@@ -39,6 +39,7 @@ const { Lens } = await import('../Lenses.js');
 const { Inspector } = await import('../Inspector.js');
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 (globalThis as { ResizeObserver?: unknown }).ResizeObserver ??= class { observe() {} unobserve() {} disconnect() {} };
+Element.prototype.scrollIntoView ??= function scrollIntoView() {};
 
 let host: HTMLDivElement;
 let root: Root;
@@ -125,6 +126,21 @@ describe('numbers', () => {
       expect(r.querySelector('.nb-where')!.textContent!.trim().length).toBeGreaterThan(0);
     }
     expect(rows.some((r) => r.querySelector('.nb-front[dir="rtl"]') || r.querySelector('.nb-front .katex'))).toBe(true);
+    unmount();
+  });
+});
+
+describe('a failed-most row', () => {
+  it('opens its card in the deck: the lens turns to its cards, the card selected', async () => {
+    useApp.setState({ lensViews: { [VOCAB]: 'numbers' }, panes: openTab(emptyPanes(), VOCAB) });
+    await mount(createElement(Lens, { id: VOCAB, active: true, onOpen: () => {} }));
+    const row = host.querySelector<HTMLElement>('.nb-leeches li')!;
+    const block = Number(row.dataset.block);
+    await act(async () => { row.querySelector('button')!.click(); });
+    for (let k = 0; k < 50 && useApp.getState().selectedCard?.index !== block; k++) await act(async () => { await new Promise((r) => setTimeout(r, 10)); });
+    expect(useApp.getState().lensViews[VOCAB]).toBe('cards');
+    expect(useApp.getState().selectedCard).toEqual({ path: VOCAB, index: block });
+    expect(host.querySelector('.deck-row')).not.toBeNull();
     unmount();
   });
 });

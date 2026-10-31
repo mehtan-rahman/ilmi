@@ -6053,7 +6053,17 @@ export async function smokeBothWays(vault: Vault): Promise<void> {
 // suspended, its line and its review-log line checked; light and dark.
 export async function smokeNumbers(vault: Vault): Promise<void> {
   type Card = import('../format/index.js').Card;
-  const log = (s: string) => info(`smoke numbers: ${s}`);
+  // a watchdog: every line logged is progress; thirty seconds without one is a hang, said as a failure with the last step
+  let last = { at: Date.now(), what: 'start' };
+  let finished = false;
+  const log = (s: string) => { last = { at: Date.now(), what: s }; void info(`smoke numbers: ${s}`); };
+  const dog = setInterval(() => {
+    if (finished) { clearInterval(dog); return; }
+    if (Date.now() - last.at > 30_000) { finished = true; clearInterval(dog); void info(`smoke numbers: failed: no progress for 30 s after "${last.what}"`); }
+  }, 2000);
+  /** An await that may never settle (the fs over IPC), bounded. */
+  const bounded = <T,>(p: Promise<T>, what: string, ms = 8000): Promise<T> =>
+    Promise.race([p, new Promise<T>((_, no) => setTimeout(() => no(new Error(`${what} (no answer in ${ms} ms)`)), ms))]);
   const shot = async (name: string, ms = 2500) => { await sleep(800); log(`shot: ${name}`); await sleep(ms); };
   const q = <T extends Element>(sel: string, root: ParentNode = document) => root.querySelector<T>(sel);
   const qa = <T extends Element>(sel: string, root: ParentNode = document) => Array.from(root.querySelectorAll<T>(sel));
@@ -6094,7 +6104,7 @@ export async function smokeNumbers(vault: Vault): Promise<void> {
   const under = (dir: string) => new Set(docsUnder(useApp.getState().tree, dir, useApp.getState().order, useApp.getState().files));
   const isNew = (i: CardItem) => !i.sched?.reps;
   const spentNew = (paths: Set<string>) => reviewLog().filter((r) => r.st === 'new' && paths.has(r.doc) && dayOf(whenToDate(r.at)) === today).length;
-  const front = async (path: string) => meta(parse(await vault.fs.readText(vault.abs(path))).doc);
+  const front = async (path: string) => meta(parse(await bounded(vault.fs.readText(vault.abs(path)), `reading ${path}`)).doc);
   try {
     useApp.getState().setTheme('light');
     setInspector({ open: true });
@@ -6146,8 +6156,11 @@ export async function smokeNumbers(vault: Vault): Promise<void> {
     await shot('numbers-vocab-dark');
     useApp.getState().setTheme('light');
     if (leechRows.length) {
-      const block = Number(leechRows[0]!.dataset.block);
-      click(q('button', leechRows[0]!)!);
+      // the rows as drawn now (the theme changes redrew them), not as first found
+      const first = await poll(() => q<HTMLElement>('.nb-leeches li'), 'the failed-most rows after the theme changes');
+      const block = Number(first.dataset.block);
+      log(`opening the failed-most row ${first.dataset.path}#${block}`);
+      click(q('button', first)!);
       await poll(() => useApp.getState().lensViews[VOCAB] === 'cards' && useApp.getState().selectedCard?.index === block, `a failed-most row opens its card in place (block ${block}, selected in the deck)`, 8000)
         .catch((e: unknown) => { throw new Error(`${e instanceof Error ? e.message : String(e)}; the lens shows ${useApp.getState().lensViews[VOCAB]}, selected ${JSON.stringify(useApp.getState().selectedCard)}`); });
       await shot('numbers-leech-opened', 1500);
@@ -6211,7 +6224,7 @@ export async function smokeNumbers(vault: Vault): Promise<void> {
     await sleep(400);
     key('1');
     const graded = await poll(async () => {
-      const doc = parse(await vault.fs.readText(vault.abs(cand!.path))).doc;
+      const doc = parse(await bounded(vault.fs.readText(vault.abs(cand!.path)), `reading ${cand!.path}`)).doc;
       const c = doc.blocks.find((b): b is Card => b.kind === 'card' && b.id === cand!.id);
       const s = c && scheduleOf(c, cand!.group, cand!.dir);
       return s && s.lapses === threshold ? s : null;
@@ -6220,7 +6233,7 @@ export async function smokeNumbers(vault: Vault): Promise<void> {
     // a q&a writes its bare line; a one-blank cloze its bare line, or its own `sr cN` line when it has one
     const keyOk = (k: string | undefined) => (cand!.form === 'qa' ? k === undefined : k === undefined || /^c\d+$/.test(k));
     const lastLine = await poll(async () => {
-      const text = await vault.fs.readText(vault.abs(reviewFile(new Date().toISOString())));
+      const text = await bounded(vault.fs.readText(vault.abs(reviewFile(new Date().toISOString()))), 'reading the review log');
       const l = text.trimEnd().split('\n').pop() ?? '';
       const r = JSON.parse(l) as { card: string; g: number; st: string; key?: string; doc: string; ms?: number };
       return r.card === cand!.id ? r : null;
@@ -6245,5 +6258,8 @@ export async function smokeNumbers(vault: Vault): Promise<void> {
     log(`done; vault ${vault.root}`);
   } catch (e) {
     log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  } finally {
+    finished = true;
+    clearInterval(dog);
   }
 }

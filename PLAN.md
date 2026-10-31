@@ -5123,16 +5123,22 @@ From the notes of 37, 39, 40, 41:
 
 ## Notes for the next session
 
-Studying: 44 (both ways) done 2026-10-30, its window check run. 42 (a
-deck's numbers and its options) done 2026-10-30, its window checks recorded
-under it. 46 done and merged. 43 (exam dates) done 2026-10-31, its window
-check pending (`ILMI_SMOKE=exam`, ILMI_VAULT on a fresh copy of
-samples/double-major); the sample's quantum notebook now sets midterm 2 and
-the final, and carries its textbook's ch. 9. The app's clock is
-`src/app/clock.ts` (`appNow`; `setClockDay` for smokes that walk days).
-Next on main: 45 (the same fact twice), in progress in a worktree beside
-43; its link attribute sits on the `sr` line, and a linked pair's burying
-goes where 44's siblings and 43's `examQueue` re-bury.
+Studying (42–46) is complete, 2026-10-31: every milestone's window check
+run from a clean checkout of main and recorded under its BUILD-LOG entry
+(42 `numbers`, 43 `exam`, 44 `bothways`, 45 `same`, 46 `open`); 45 merged
+beside 43 with the queue bringing exams forward before it buries a linked
+card's twin. The app icon is the letter ʿayn beside the gold read marker
+(`design/icon.swift`, `npx tauri icon design/icon.png`). Vocabulary that
+remembers its sentence waits for a demo the user asked to see first.
+Next: reading PDFs and books, being designed with the user from
+SuperMemo's incremental reading (research in the session's scratchpad,
+`ir-research.md`): a textbook read in order, whose extracts are boxes on
+the PDF (across pages) processed in a split view beside the user's own
+note; a book of passages split from its outline and read in rotation,
+cards made off the page; adding a book is a chapter checklist, no form;
+annotations kept in the Markdown, an annotated PDF exported on request.
+The demo is https://claude.ai/artifact/X8YAWbuPf2hzcD6zmstTzr; write the
+milestones once the user says the flow is right.
 
 Refinement (33–41) is complete, 2026-10-30, every milestone's window check
 run and recorded under its BUILD-LOG entry (33 `notes`, 34 `editing`, 35

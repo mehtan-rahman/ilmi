@@ -57,7 +57,7 @@ function drawFaces(text: string): RowFaces {
  * (milestone 40: a click over the whole collection 99 ms before).
  */
 const facesCache = new Map<string, RowFaces>();
-function facesHTML(text: string): RowFaces {
+export function facesHTML(text: string): RowFaces {
   let f = facesCache.get(text);
   if (!f) {
     if (facesCache.size > 5000) facesCache.clear();

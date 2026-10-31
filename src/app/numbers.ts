@@ -96,8 +96,9 @@ export interface Leech {
 
 export interface Numbers {
   cards: number;
-  /** Lines never graded. */
+  /** Cards none of whose lines (directions, blanks) was ever graded. */
   fresh: number;
+  /** Cards every line of which is suspended. */
   suspended: number;
   /** The first day the log has for the lens; absent without a log. */
   since?: string;
@@ -220,10 +221,14 @@ export function numbersOf(lines: readonly Line[], log: readonly Review[], now: D
   const recent = since === undefined ? [] : log.filter((r) => r.ms !== undefined && dayOf(whenToDate(r.at)) >= past[0]!.start);
   const ms = recent.map((r) => r.ms!).sort((a, b) => a - b);
 
+  // the counts are of cards, so they add up: a both-ways card or a cloze of several blanks is one card however many lines it has
+  const byCard = new Map<string, Line[]>();
+  for (const l of lines) { const k = `${l.path}#${l.block}`; byCard.set(k, [...(byCard.get(k) ?? []), l]); }
+  const cardList = [...byCard.values()];
   const out: Numbers = {
-    cards: new Set(lines.map((l) => `${l.path}#${l.block}`)).size,
-    fresh: lines.filter((l) => !l.suspended && !l.sched?.reps).length,
-    suspended: lines.filter((l) => l.suspended).length,
+    cards: cardList.length,
+    fresh: cardList.filter((ls) => ls.every((l) => !l.sched?.reps)).length,
+    suspended: cardList.filter((ls) => ls.every((l) => l.suspended)).length,
     past, ahead, today: { day: today, weekday },
     byWeek, byAge: byAge.filter((a) => a.due > 0),
     leeches: leeches.slice(0, LEECH_ROWS),

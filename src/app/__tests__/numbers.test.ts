@@ -63,7 +63,8 @@ describe('the numbers', () => {
     expect(n.ahead[0]!.days).toEqual([null, null, null, null, 2, 0, 0]);
     expect(n.ahead[1]!.days.slice(0, 3)).toEqual([1, 0, 1]);
     expect(n.today).toEqual({ day: '2026-10-30', weekday: 4 });
-    expect([n.cards, n.fresh, n.suspended]).toEqual([5, 2, 1]);
+    // cards, not lines: ab is seen (its forward) though its reverse is not, so one card never seen, the new one
+    expect([n.cards, n.fresh, n.suspended]).toEqual([5, 1, 1]);
     expect(n.since).toBe('2026-10-12');
   });
 

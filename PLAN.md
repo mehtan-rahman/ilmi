@@ -4580,6 +4580,19 @@ it off where it is set); the numbers are not in the inspector or the queue
 the forecast counts each line due, not the day's allowance; a review graded
 outside the app (a hand edit) leaves no log line; the reverses' `elapsed`
 on an Anki import counts from the card's previous answer only.
+Window check 1 (2026-10-30, at `89185a6`, the coordinator): the log, the
+metering (19 reverses today, 91 held), both tables, retention, the spread
+and time a review passed; it stopped at failed most, whose rows showed
+lapses and state but not which card, and the counts line read `178 cards,
+201 never seen, 4 suspended` (directions counted as cards). Fixed: a row
+draws the card's front and back as the deck browser does (`facesHTML`,
+KaTeX, each face in its direction) over where it lives (the document's
+title, `back to front` or `blank N` for a card's other lines); the counts
+line counts cards (never seen: no line of it ever graded; suspended: every
+line), the tables count reviews (each direction its own), and `coming due`
+reads `reviews due`; the smoke shoots `numbers-vocab` as soon as the
+numbers draw and asserts each row's front and place and that the counts
+add up. The rerun is owed.
 - **Numbers**, on a deck, a folder, a notebook, or the collection (the
   lens's `items · cards` gains `numbers`): reviews per day for the last
   weeks and the next weeks' forecast as a quiet typographic table or a

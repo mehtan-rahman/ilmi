@@ -6120,6 +6120,8 @@ export async function smokeNumbers(vault: Vault): Promise<void> {
     openNode(VOCAB);
     setLensView(VOCAB, 'numbers');
     const past = await poll(() => q('.numbers .nb-days[data-of="past"]'), 'the vocab deck shows its numbers', 10000);
+    // the screen first, so a run that fails below still shows it
+    await shot('numbers-vocab');
     const line = q('.numbers .nb-line')?.textContent ?? '';
     log(`vocab line: ${line}`);
     must(/^178 cards/.test(line) && /logged since 20\d\d-\d\d-\d\d/.test(line), 'the counts line, and since when the log was kept');
@@ -6134,15 +6136,20 @@ export async function smokeNumbers(vault: Vault): Promise<void> {
     must(/s a review/.test(q('[data-sec="time"]')?.textContent ?? ''), `time a review: ${q('[data-sec="time"]')?.textContent}`);
     must(!q('.numbers canvas, .numbers svg:not(.katex svg)'), 'type, not charts');
     const leechRows = qa<HTMLElement>('.nb-leeches li');
-    log(`failed most: ${leechRows.map((r) => `${r.querySelector('.nb-lapses')?.textContent} ${r.querySelector('.nb-tag')?.textContent}`).join(' | ')}`);
-    await shot('numbers-vocab');
+    log(`failed most: ${leechRows.map((r) => `${r.querySelector('.nb-front')?.textContent?.slice(0, 24)} (${r.querySelector('.nb-where')?.textContent}) ${r.querySelector('.nb-lapses')?.textContent} ${r.querySelector('.nb-tag')?.textContent}`).join(' | ')}`);
+    must(leechRows.every((r) => (r.querySelector('.nb-front')?.textContent ?? '').trim() && (r.querySelector('.nb-where')?.textContent ?? '').trim()), 'each failed-most row names its card: its front and where it lives');
+    const [, all, fresh, sus] = /^(\d+) cards(?:, (\d+) never seen)?(?:, (\d+) suspended)?/.exec(line) ?? [];
+    must(Number(fresh ?? 0) + Number(sus ?? 0) <= Number(all), `the counts are of cards and add up (${line})`);
+    leechRows[0]?.scrollIntoView({ block: 'center' });
+    await shot('numbers-vocab-leeches');
     useApp.getState().setTheme('dark');
     await shot('numbers-vocab-dark');
     useApp.getState().setTheme('light');
     if (leechRows.length) {
       const block = Number(leechRows[0]!.dataset.block);
       click(q('button', leechRows[0]!)!);
-      await poll(() => useApp.getState().lensViews[VOCAB] === 'cards' && useApp.getState().selectedCard?.index === block, `a failed-most row opens its card in place (block ${block}, selected in the deck)`, 8000);
+      await poll(() => useApp.getState().lensViews[VOCAB] === 'cards' && useApp.getState().selectedCard?.index === block, `a failed-most row opens its card in place (block ${block}, selected in the deck)`, 8000)
+        .catch((e: unknown) => { throw new Error(`${e instanceof Error ? e.message : String(e)}; the lens shows ${useApp.getState().lensViews[VOCAB]}, selected ${JSON.stringify(useApp.getState().selectedCard)}`); });
       await shot('numbers-leech-opened', 1500);
     }
 

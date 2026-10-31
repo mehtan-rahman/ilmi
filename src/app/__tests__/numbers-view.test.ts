@@ -81,6 +81,9 @@ describe('numbers', () => {
     expect(host.querySelector('.deck-list, .deck-row')).toBeNull();
     const line = host.querySelector('.nb-line')!.textContent!;
     expect(line).toMatch(/^178 cards, \d+ never seen/);
+    // the counts are of cards and add up
+    const [, all, fresh, sus] = /^(\d+) cards, (\d+) never seen(?:, (\d+) suspended)?/.exec(line)!;
+    expect(Number(fresh) + Number(sus ?? 0)).toBeLessThanOrEqual(Number(all));
     expect(line).toContain('logged since 2025-09-');
     // four weeks back and four ahead, Monday first, a total each
     expect(host.querySelectorAll('.nb-days[data-of="past"] tbody tr')).toHaveLength(4);
@@ -116,6 +119,12 @@ describe('numbers', () => {
     const lapses = rows.map((r) => Number(r.querySelector('.nb-lapses')!.textContent));
     expect(lapses).toEqual([...lapses].sort((a, b) => b - a));
     expect(Math.min(...lapses)).toBeGreaterThanOrEqual(4);
+    // each names its card: the front drawn (formulas by KaTeX, Arabic in its direction) and where it lives
+    for (const r of rows) {
+      expect(r.querySelector('.nb-front')!.textContent!.trim().length).toBeGreaterThan(0);
+      expect(r.querySelector('.nb-where')!.textContent!.trim().length).toBeGreaterThan(0);
+    }
+    expect(rows.some((r) => r.querySelector('.nb-front[dir="rtl"]') || r.querySelector('.nb-front .katex'))).toBe(true);
     unmount();
   });
 });

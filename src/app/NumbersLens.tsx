@@ -5,9 +5,9 @@
 import { useMemo } from 'react';
 import { dayOf, whenToDate, type Resolved } from '../schedule/index.js';
 import { docsUnder } from './deck.js';
-import { fmtDays, firstWords } from './items.js';
-import { faceText } from './deck.js';
-import { MathText } from './MathText.js';
+import { fmtDays, pathLabel } from './items.js';
+import { facesHTML } from './DeckBrowser.js';
+import { titleOf } from './names.js';
 import { linesOf, numbersOf, rateLabel, reviewsUnder, spanLabel, weekLabel, type Rate, type Spread, type Week } from './numbers.js';
 import { useApp } from './store.js';
 import { docsOf, openCard, optionsAt } from './vault.js';
@@ -66,6 +66,17 @@ function SpreadRow({ name, s, fmt }: { name: string; s: Spread | null; fmt(n: nu
   return <tr data-of={name}><th>{name}</th>{s.at.map((v, i) => <td key={i}>{fmt(v)}</td>)}</tr>;
 }
 
+/** A card's front and back as the deck browser draws them: formulas by KaTeX, each face in its own direction. */
+function LeechFaces({ text }: { text: string }) {
+  const f = facesHTML(text);
+  return (
+    <span className="nb-faces">
+      <span className="nb-front" dir={f.frontDir} dangerouslySetInnerHTML={{ __html: f.front }} />
+      {f.back && <span className="nb-back" dir={f.backDir} dangerouslySetInnerHTML={{ __html: f.back }} />}
+    </span>
+  );
+}
+
 /** The numbers over the lens `home`: a deck, a folder, a document's children, `''` the collection. */
 export function NumbersView({ home }: { home: string }) {
   const tree = useApp((s) => s.tree);
@@ -85,6 +96,10 @@ export function NumbersView({ home }: { home: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tree, order, files, docs, log, home, day]);
   const plural = (k: number, w: string) => `${k} ${w}${k === 1 ? '' : 's'}`;
+  const root = useApp((s) => s.vault);
+  // where a card lives: its document's title, and the line when a card has several
+  const LINE_WORD: Record<string, string> = { r: 'back to front' };
+  const whereOf = (path: string, key?: string) => [titleOf(path, docs, root), key ? LINE_WORD[key] ?? `blank ${key.slice(1)}` : ''].filter(Boolean).join(', ');
   if (!n.cards) return <div className="numbers"><p className="empty">no cards</p></div>;
   const counts = [plural(n.cards, 'card'), n.fresh ? `${n.fresh} never seen` : '', n.suspended ? `${n.suspended} suspended` : ''].filter(Boolean).join(', ');
   return (
@@ -102,7 +117,7 @@ export function NumbersView({ home }: { home: string }) {
       )}
 
       <section className="nb-sec" data-sec="ahead">
-        <h6>coming due</h6>
+        <h6>reviews due</h6>
         <Days weeks={n.ahead} today={n.today.day} label="ahead" />
       </section>
 
@@ -124,13 +139,16 @@ export function NumbersView({ home }: { home: string }) {
               <li key={`${l.path}#${l.block}#${l.key ?? ''}`} data-leech={l.leech ? '1' : '0'} data-path={l.path} data-block={l.block}>
                 <button
                   type="button"
+                  className="nb-card"
+                  title={pathLabel(l.path)}
                   onClick={() => {
                     // a deck's lens showing its numbers turns to its cards, where the card is
                     useApp.setState((s) => ({ lensViews: { ...s.lensViews, [l.path]: 'cards' } }));
                     openCard(l.path, l.block, l.id);
                   }}
                 >
-                  <MathText className="nb-text" dir="auto" text={firstWords(faceText(l.text).replace(/\s+/g, ' '), 10)} />
+                  <LeechFaces text={l.text} />
+                  <span className="nb-where" dir="auto">{whereOf(l.path, l.key)}</span>
                 </button>
                 <span className="nb-lapses">{l.lapses}</span>
                 <span className="nb-tag">{l.suspended ? 'suspended' : l.leech ? 'leech' : ''}</span>

@@ -59,6 +59,10 @@ smoke), the corpus file `mangled/pdf-pages.md`, five test files.
   ProseMirror read the typed cell back from the DOM with the newline as a
   space. `table_cell` is `whitespace: 'pre'`. The same happens to a
   paragraph's soft line break; left for a decision. Rerun owed.
+- Then, on the coordinator's call: paragraphs, headings, list items and
+  quote lines are `whitespace: 'pre'` as well, so a soft break survives a
+  line typed after it; tested through the DOM over every multi-line block
+  of the samples and the corpus. 992 tests.
 
 ### Handoff prompt
 

@@ -18,18 +18,26 @@ export const schema = new Schema({
   nodes: {
     doc: { content: 'block+' },
     // first in the group, so Enter at the end of a heading makes a paragraph
+    // Every textblock a soft line break can live in is `whitespace: 'pre'`:
+    // when the browser types into a line after one, ProseMirror reads the
+    // block back from the DOM and would otherwise turn the newline into a
+    // space, joining the file's lines (milestone 46). The surface is
+    // `pre-wrap` already, so the break is drawn as it always was.
     paragraph: {
       group: 'block',
       content: 'inline*',
+      whitespace: 'pre',
       attrs: { id: { default: null }, extracts: { default: null } },
       toDOM(n) {
         const extracts = n.attrs.extracts as string[] | null;
         return ['p', { class: 'dd-p' + (extracts?.length ? ' extracted' : '') }, 0];
       },
     },
+    // a setext heading may run over lines
     heading: {
       group: 'block',
       content: 'inline*',
+      whitespace: 'pre',
       defining: true,
       attrs: { level: { default: 2 }, setext: { default: false } },
       toDOM(n) { return [`h${n.attrs.level as number}`, { class: 'dd-h' }, 0]; },
@@ -79,6 +87,7 @@ export const schema = new Schema({
     list_item: {
       content: 'inline*',
       defining: true,
+      whitespace: 'pre',
       /** `indent`: the whitespace before the marker; `marker`: `- `, `1. `, as written, with the whitespace after it; `task`: the box's character, null when the item has none. */
       attrs: { indent: { default: '' }, marker: { default: '- ' }, task: { default: null } },
       toDOM(n) {
@@ -97,6 +106,7 @@ export const schema = new Schema({
     quote_line: {
       content: 'inline*',
       defining: true,
+      whitespace: 'pre',
       /** The line's `> ` as written; `''` on a lazy continuation line. */
       attrs: { prefix: { default: '> ' } },
       toDOM() { return ['div', { class: 'dd-ql' }, 0]; },

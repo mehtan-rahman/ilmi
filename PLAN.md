@@ -4721,6 +4721,21 @@ space, so the file got `basic root sense`. `table_cell` is `whitespace:
 its observer (986). The same reading turns a paragraph's own line break
 into a space when a line after it is typed in the browser (checked in
 jsdom: `one\ntwo` typed to `one twoX`); not changed here. Rerun owed.
+Soft breaks (the coordinator's call after run 2): `paragraph`,
+`heading` (a setext heading may run over lines; the corpus's
+`mangled/headings.md` found it), `list_item` and `quote_line` are
+`whitespace: 'pre'` too, so a line typed after a soft break in the
+browser is read back with its newline and the file's lines stay (prose
+verbatim: hemistichs, addresses, glossed lines). Card faces are atoms,
+never read from the DOM, so they need nothing. The surface was `pre-wrap`
+already, so nothing is drawn differently. `soft-breaks.test.ts` (6): a
+paragraph, a list item's continuation line, a quote, a typed double space
+and trailing space kept as typed, a line after a math chip, a pasted HTML
+paragraph still prose (the paste goes through `pasteInto`'s Markdown, not
+ProseMirror's own parse, so the source's indentation is not kept), and
+every multi-line block of `samples/` and the corpus (14) typed into
+through the DOM with its lines kept. The slash menu and the input rules
+read the state, not the DOM; their tests pass unchanged. 992 tests.
 From the notes of 37, 39, 40, 41:
 - Tab, ⇧Tab and ⌥⇧↑↓ move a card item in a list like any item.
 - ⏎ on a plain item just before a card item doesn't split the list.

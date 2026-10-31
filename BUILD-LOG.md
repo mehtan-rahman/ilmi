@@ -9,7 +9,7 @@ was verified, what was not, and the prompt to resume with.
 ## 2026-10-31 — milestone 45: the same fact twice
 
 Done on branch `worktree-agent-aacaabba75277b534` (a worktree beside main,
-where 43 is in progress), commit `COMMIT`. Nothing touched 43's ground (the
+where 43 is in progress), commit `d21495a`. Nothing touched 43's ground (the
 interval cap, reading pacing, `exam`). New: `src/app/same.ts` (the finder,
 merge, link, unlink), `src/app/sameOps.ts` (the pairs over the open
 collection, the notices and undo), `src/schedule/links.ts` (`bareLined`,

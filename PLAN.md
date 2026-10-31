@@ -4716,7 +4716,7 @@ in the window, grading one leaves the other's line alone, and a
 migrated card keeps its history.
 
 ### [x] 45. The same fact twice
-Done 2026-10-31 on branch `worktree-agent-aacaabba75277b534`, commit `COMMIT`.
+Done 2026-10-31 on branch `worktree-agent-aacaabba75277b534`, commit `d21495a`.
 The window check is pending: run `ILMI_SMOKE=same` with `ILMI_VAULT` on a
 fresh copy of `samples/double-major` and read its `ok:` lines and `shot:`
 captures (same-list, same-linked, same-queue, same-merged, same-list-after,

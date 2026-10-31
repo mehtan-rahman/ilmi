@@ -10,7 +10,7 @@
 // the review.
 
 import type { Doc } from '../format/index.js';
-import { docItems, isDue, sortQueue, type CardItem } from '../schedule/index.js';
+import { docItems, examQueue, isDue, sortQueue, type CardItem, type ExamAt } from '../schedule/index.js';
 
 export interface StudyOptions {
   /** `include not due`: every unsuspended card, new ones last. */
@@ -19,6 +19,8 @@ export interface StudyOptions {
   only?: ReadonlySet<string>;
   /** Held over the day's allowance (the queue's `held`, `options.ts`): left out unless cramming. */
   held?: (i: CardItem) => boolean;
+  /** The exams over a document: a review brought before one is due here as in the queue (`examQueue`). */
+  exams?: (path: string) => readonly ExamAt[];
 }
 
 /** A card item's place in the queue: its card and the line it asks. */
@@ -34,6 +36,7 @@ export function studyItems(docs: Iterable<[string, Doc]>, now: Date, opts: Study
       if (i.kind === 'card' && (!opts.only || opts.only.has(`${i.path}#${i.block}`))) all.push(i);
     }
   }
+  if (opts.exams) examQueue(all, now, opts.exams);
   if (!opts.cram) return sortQueue(all.filter((i) => isDue(i, now) && !opts.held?.(i)), now) as CardItem[];
   const fresh = all.filter(isNew);
   const rest = sortQueue(all.filter((i) => !fresh.includes(i)), now) as CardItem[];

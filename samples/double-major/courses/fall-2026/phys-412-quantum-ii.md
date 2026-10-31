@@ -6,13 +6,14 @@ instructor: Prof. Lindgren
 term: fall 2026
 meets: MWF 10:00–10:50, Hollis 214
 office-hours: Tue 14:00–16:00, Thu 11:00–12:00 (Hollis 309)
+exam: 2026-11-18 midterm 2, 2026-12-14 final
 ---
 
 ## the course
 
 PHYS 412, Quantum Mechanics II. Prof. Lindgren; TA is Priya (recitation Thu 16:00, the one that actually does examples). Sequel to 312. Approximation methods first (perturbation theory, variational, WKB, time-dependent PT), then scattering, identical particles and second quantization if there's time ("there is never time").
 
-Texts: Lindgren's own lecture notes (posted after each lecture, terse), and Halvorsen, *Quantum Theory: An Intermediate Course*, chs. 6–11 as the official text. I take notes by hand in lecture and type them up here, usually within a few days. Units are the tabs, in teaching order. Problem sets and exam review are decks under problem-sets.
+Texts: Lindgren's own lecture notes (posted after each lecture, terse), and Halvorsen, *Quantum Theory: An Intermediate Course*, chs. 6–11 as the official text (ch. 9, WKB, is a tab here, imported to read before midterm 2). I take notes by hand in lecture and type them up here, usually within a few days. Units are the tabs, in teaching order. Problem sets and exam review are decks under problem-sets.
 
 ## grading
 

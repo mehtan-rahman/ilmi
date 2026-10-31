@@ -26,6 +26,7 @@ import { useApp } from './store.js';
 import { docsOf, removeCard, setDeckView } from './vault.js';
 import './session.css';
 import './deck.css';
+import { appNow } from './clock.js';
 
 const inField = (t: EventTarget | null) => {
   const el = t as HTMLElement | null;
@@ -281,7 +282,7 @@ export function DeckBrowser({ home, active }: BrowserProps) {
   const paths = useMemo(() => docsUnder(tree, home, order, files), [tree, home, order, files]);
   // `docs` changes with every write the vault reports: the bodies are read again then
   const bodies = useMemo(() => docsOf(paths), [paths, docs]);
-  const now = useMemo(() => new Date(), [bodies]);
+  const now = useMemo(() => appNow(), [bodies]);
   const rows = useMemo(() => deckRows(bodies, now), [bodies, now]);
   const shown = useMemo(() => sortRows(filterRows(rows, q, view), view.sort), [rows, q, view]);
   const keys = useMemo(() => shown.map((r) => r.key), [shown]);

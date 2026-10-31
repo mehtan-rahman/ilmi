@@ -6574,3 +6574,199 @@ export async function smokeOpen(vault: Vault): Promise<void> {
     log(`failed: ${e instanceof Error ? e.message : String(e)}`);
   }
 }
+
+// `ILMI_SMOKE=exam` (`smokeExam`) over a fresh copy of `samples/double-major`,
+// milestone 43: the quantum notebook's exam set to a midterm three weeks out
+// (written as a hand edit would be); its reviews FSRS put after the day
+// brought into the last week and its textbook chapter paced, nothing outside
+// it touched; the queue saying so (`for the midterm`) and narrowed to it; the
+// notebook's top row and the inspector showing the exam and what is left; a
+// grade before the week capped into it with FSRS's stability; a reading pass
+// paced; then the app's clock (`setClockDay`, test-only) walked into the last
+// week, where the brought-forward reviews are due, and to the day after the
+// exam, where nothing is for it and a grade is FSRS's own. Light and dark.
+export async function smokeExam(vault: Vault): Promise<void> {
+  type Card = import('../format/index.js').Card;
+  let last = { at: Date.now(), what: 'start' };
+  let finished = false;
+  const log = (s: string) => { last = { at: Date.now(), what: s }; void info(`smoke exam: ${s}`); };
+  const dog = setInterval(() => {
+    if (finished) { clearInterval(dog); return; }
+    if (Date.now() - last.at > 30_000) { finished = true; clearInterval(dog); void info(`smoke exam: failed: no progress for 30 s after "${last.what}"`); }
+  }, 2000);
+  const bounded = <T,>(p: Promise<T>, what: string, ms = 8000): Promise<T> =>
+    Promise.race([p, new Promise<T>((_, no) => setTimeout(() => no(new Error(`${what} (no answer in ${ms} ms)`)), ms))]);
+  const shot = async (name: string, ms = 2500) => { await sleep(800); log(`shot: ${name}`); await sleep(ms); };
+  const q = <T extends Element>(sel: string, root: ParentNode = document) => root.querySelector<T>(sel);
+  const qa = <T extends Element>(sel: string, root: ParentNode = document) => Array.from(root.querySelectorAll<T>(sel));
+  const must = (ok: unknown, what: string) => { if (!ok) throw new Error(what); log(`ok: ${what}`); };
+  const poll = async <T,>(probe: () => T | null | undefined | false | Promise<T | null | undefined | false>, what: string, ms = 5000): Promise<T> => {
+    const t0 = Date.now();
+    for (;;) {
+      const v = await probe();
+      if (v) { log(`ok: ${what}`); return v; }
+      if (Date.now() - t0 > ms) throw new Error(`${what} (waited ${ms} ms)`);
+      await sleep(100);
+    }
+  };
+  const key = (k: string) => window.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));
+  const click = (el: Element) => el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+  const { parse, meta, setField } = await import('../format/index.js');
+  const { addDays, dayOf, grade, isDue, scheduleOf, whenToDate, EXAM_WINDOW, READ_LEAD } = await import('../schedule/index.js');
+  const { refreshQueue, optionsAt } = await import('./vault.js');
+  const { studyDeck } = await import('./deckOps.js');
+  const { appNow, setClockDay } = await import('./clock.js');
+  const QM = 'courses/fall-2026/phys-412-quantum-ii';
+  const NB = `${QM}.md`;
+  const BOOK = `${QM}/halvorsen-ch-9-wkb.md`;
+  const today = dayOf(appNow());
+  const E = addDays(today, 21);
+  const START = addDays(E, -EXAM_WINDOW);
+  const LAST = addDays(E, -1);
+  const FINISH = addDays(E, -READ_LEAD);
+  const under = (p: string) => p === NB || p.startsWith(`${QM}/`);
+  const items = () => useApp.getState().queue;
+  const cards = () => items().filter((i): i is CardItem => i.kind === 'card');
+  const docOf = async (path: string) => parse(await bounded(vault.fs.readText(vault.abs(path)), `reading ${path}`)).doc;
+  const lineOf = async (c: CardItem) => {
+    const card = (await docOf(c.path)).blocks.find((b): b is Card => b.kind === 'card' && b.id === c.id);
+    return card ? scheduleOf(card, c.group, c.dir) : undefined;
+  };
+  /** Grade one card good in a session over it alone; resolves to its line once written. */
+  const gradeOne = async (c: CardItem, what: string) => {
+    const before = c.sched?.reps ?? 0;
+    const n = studyDeck(c.path, { only: new Set([`${c.path}#${c.block}`]), cram: !isDue(c, appNow()) });
+    must(n >= 1, `a session over ${c.id} (${what})`);
+    await poll(() => q('.recall-wrap .card'), `${c.id} is drawn`, 8000);
+    key(' ');
+    await sleep(400);
+    key('3');
+    return poll(async () => { const s = await lineOf(c); return s && (s.reps ?? 0) === before + 1 ? s : null; }, `${c.id} graded good: its line rewritten`, 8000);
+  };
+  const natural = (c: CardItem) => grade(c.sched, 3, appNow(), { request_retention: optionsAt(c.path).opts.retention });
+  try {
+    useApp.getState().setTheme('light');
+    await poll(() => document.documentElement.dataset.theme === 'light', 'light');
+    setInspector({ open: true });
+    setClockDay(null);
+
+    // ── the exam set on the notebook, three weeks out ──
+    const nb0 = meta(await docOf(NB));
+    log(`the sample's exams: ${(nb0.exams ?? []).map((e) => `${e.day} ${e.label ?? ''}`).join(', ')}`);
+    must(nb0.exams?.some((e) => e.label === 'midterm 2'), 'the sample sets midterm 2 on the notebook');
+    await bounded(vault.update(NB, (d) => setField(d, 'exam', [{ day: E, label: 'midterm' }])), 'writing the exam');
+    await poll(async () => (await bounded(vault.fs.readText(vault.abs(NB)), 'reading the notebook')).includes(`\nexam: ${E} midterm\n`), `the notebook's front-matter reads exam: ${E} midterm`);
+    await poll(() => { refreshQueue(); return items().some((i) => i.exam?.label === 'midterm'); }, 'the queue studies toward the midterm', 8000);
+
+    // ── its cards and its textbook pulled before the date; nothing else touched ──
+    const pulled = cards().filter((i) => i.pulled);
+    log(`pulled: ${pulled.length} cards, to ${[...new Set(pulled.map((i) => dayOf(i.dueAt)))].sort().join(' ')}`);
+    must(pulled.length > 5, `reviews FSRS put after ${E} are brought before it (${pulled.length})`);
+    must(pulled.every((i) => under(i.path) && dayOf(i.dueAt) >= START && dayOf(i.dueAt) <= LAST), `each into the last week, ${START} to ${LAST}, all under the notebook`);
+    must(cards().filter((i) => under(i.path) && !i.buried && i.sched?.state === 'review' && (i.sched.due ?? '').slice(0, 10) > LAST).every((i) => i.pulled || (i.sched!.last ? dayOf(whenToDate(i.sched!.last)) : '') >= START), 'every review past the exam is among them');
+    must(!items().some((i) => !under(i.path) && (i.pulled || i.exam)), 'nothing outside the notebook is for the midterm');
+    const book = items().find((i) => i.kind === 'read' && i.path === BOOK);
+    must(book && book.pulled === '2026-11-21' && dayOf(book.dueAt) <= FINISH, `the textbook chapter, due ${book?.pulled}, is paced: next pass ${book && dayOf(book.dueAt)}`);
+
+    // ── the queue says so, and narrows to it ──
+    openNode(queueId('upcoming'));
+    const marks = await poll(() => { const m = qa<HTMLElement>('.qlist li .for-exam'); return m.length ? m : null; }, 'upcoming rows say they are for the midterm', 8000);
+    must(marks.every((m) => m.textContent === 'for the midterm'), `the words: "${marks[0]?.textContent}"`);
+    const prow = marks[0]!.closest('li')!;
+    must(/^in \d+d$/.test(prow.querySelector('.due')?.textContent ?? ''), `a row brought forward shows the day it is brought to (${prow.querySelector('.due')?.textContent})`);
+    prow.scrollIntoView({ block: 'center' });
+    await shot('exam-upcoming');
+    const all = qa('.qlist li:not(.fold)').length;
+    const chip = await poll(() => qa<HTMLButtonElement>('.queue .exam-filter button').find((b) => b.textContent === 'midterm'), 'the queue offers the midterm as a filter');
+    click(chip);
+    await poll(() => chip.dataset.active === '1' && qa('.qlist li:not(.fold)').length < all, `narrowed to the midterm (${qa('.qlist li:not(.fold)').length} of ${all})`);
+    await shot('exam-upcoming-filtered');
+    click(chip);
+    await poll(() => qa('.qlist li:not(.fold)').length === all, 'and back to everything');
+    openNode(queueId('today'));
+    const bookRow = await poll(() => qa<HTMLElement>('.qlist li[data-el="read"]').find((li) => li.textContent?.includes('ch. 9')), 'today holds the textbook chapter', 8000);
+    must(bookRow.querySelector('.for-exam')?.textContent === 'for the midterm', 'its row says for the midterm');
+    bookRow.scrollIntoView({ block: 'center' });
+    await shot('exam-today');
+
+    // ── the notebook's top row and the inspector ──
+    openNode(NB);
+    const tag = await poll(() => q<HTMLButtonElement>('.pane-body .doc-view .meta .exam-tag'), 'the notebook\'s top row shows the exam', 10000);
+    must(tag.textContent === 'midterm in 21d', `it reads "${tag.textContent}"`);
+    log(`its tooltip: ${tag.title.replace(/\n/g, ' | ')}`);
+    must(/cards \d+ of \d+ not yet stable/.test(tag.title) && /reading \d+ blocks? left in 1 source/.test(tag.title), 'what is left in its tooltip');
+    const block = await poll(() => q<HTMLElement>('.insp .exam-block'), 'the inspector shows the exam', 8000);
+    const rows = qa<HTMLElement>('.kvr', block).map((r) => r.textContent ?? '');
+    log(`inspector: ${rows.join(' | ')}`);
+    must(rows[0]?.startsWith('midterm') && rows[0].endsWith('in 21d'), 'the next exam, its day, three weeks');
+    must(rows.some((r) => /^cards\d+ of \d+ not yet stable$/.test(r)) && rows.some((r) => /^reading\d+ blocks? left in 1 source/.test(r)), 'the cards not yet stable past it and the reading left');
+    await shot('exam-notebook');
+    useApp.getState().setTheme('dark');
+    await poll(() => document.documentElement.dataset.theme === 'dark', 'dark');
+    await shot('exam-notebook-dark');
+    useApp.getState().setTheme('light');
+    await poll(() => document.documentElement.dataset.theme === 'light', 'light again');
+
+    // ── a grade before the week: capped into it, the memory FSRS's ──
+    const cand = cards().find((i) => under(i.path) && i.sched?.state === 'review' && i.id !== undefined && i.groups === 1 && !i.dir && (natural(i).due ?? '') > LAST);
+    must(cand, `a card FSRS would put past the exam (${cand?.id}, natural ${cand && natural(cand).due})`);
+    const want = natural(cand!);
+    const got = await gradeOne(cand!, 'before the week');
+    log(`${cand!.id}: FSRS ${want.due} (${want.ivl}d), written ${got.due} (${got.ivl}d), s ${got.stability} d ${got.difficulty}`);
+    must((got.due ?? '') >= START && (got.due ?? '') <= LAST, `due in the last week (${got.due})`);
+    must(Math.abs((got.stability ?? 0) - (want.stability ?? 0)) < 1e-9 && Math.abs((got.difficulty ?? 0) - (want.difficulty ?? 0)) < 1e-9, 'stability and difficulty FSRS\'s own');
+
+    // ── a reading pass: it advances, paced to finish before the exam ──
+    refreshQueue();
+    const bk = items().find((i) => i.kind === 'read' && i.path === BOOK)!;
+    const reps0 = bk.kind === 'read' ? bk.sched.reps ?? 0 : 0;
+    openSession(bk);
+    await poll(() => q('.recall-wrap .ra-l'), 'the chapter in the session', 8000);
+    await shot('exam-reading');
+    key('Enter');
+    const read = await poll(async () => { const r = meta(await docOf(BOOK)).read; return r && (r.reps ?? 0) === reps0 + 1 ? r : null; }, 'a pass made: the read line rewritten', 8000);
+    log(`read: due=${read.due} ivl=${read.ivl} reps=${read.reps} pos=${read.pos}`);
+    must((read.due ?? '') <= FINISH && (read.ivl ?? 99) <= 21, `the next pass paced before ${FINISH} (${read.due})`);
+
+    // ── the last week: what was brought forward is due ──
+    setClockDay(addDays(E, -3));
+    refreshQueue();
+    const now3 = appNow();
+    const dueThen = cards().filter((i) => i.pulled && isDue(i, now3));
+    log(`on ${dayOf(now3)}: ${dueThen.length} brought-forward reviews due, ${cards().filter((i) => under(i.path) && isDue(i, now3)).length} under the notebook in all`);
+    must(dueThen.length > 0, `on ${dayOf(now3)} the brought-forward reviews are due`);
+    openNode(queueId('today'));
+    const wrow = await poll(() => q<HTMLElement>('.qlist li .for-exam'), 'today\'s rows say for the midterm', 8000);
+    wrow.closest('li')!.scrollIntoView({ block: 'center' });
+    await shot('exam-last-week');
+    openNode(NB);
+    await poll(() => q('.pane-body .doc-view .meta .exam-tag')?.textContent === 'midterm in 3d', 'the top row: midterm in 3d', 8000);
+
+    // ── the day after: the cap lifts ──
+    setClockDay(addDays(E, 1));
+    refreshQueue();
+    must(!items().some((i) => i.exam || i.pulled), `on ${dayOf(appNow())} nothing is for the midterm`);
+    openNode(queueId('upcoming'));
+    await poll(() => q('.qlist li') && !q('.qlist li .for-exam') && !q('.queue .exam-filter'), 'no row says so, no filter', 8000);
+    openNode(NB);
+    await poll(() => q('.pane-body .doc-view .meta') && !q('.pane-body .doc-view .meta .exam-tag'), 'the top row shows no exam', 8000);
+    await poll(() => q('.insp') && !q('.insp .exam-block'), 'nor the inspector', 8000);
+    const after = cards().find((i) => under(i.path) && i.sched?.state === 'review' && i.id !== undefined && i.groups === 1 && !i.dir && i.id !== cand!.id && (natural(i).ivl ?? 0) > EXAM_WINDOW);
+    must(after, `a card in review under the notebook (${after?.id}, FSRS ${after && natural(after).ivl}d)`);
+    const want2 = natural(after!);
+    const got2 = await gradeOne(after!, 'the day after');
+    log(`${after!.id}: FSRS ${want2.due} (${want2.ivl}d), written ${got2.due} (${got2.ivl}d)`);
+    must(got2.due === want2.due && got2.ivl === want2.ivl, 'graded the day after, FSRS\'s interval, uncapped');
+    await shot('exam-after');
+
+    setClockDay(null);
+    refreshQueue();
+    useApp.getState().setTheme('light');
+    finished = true;
+    log(`done; vault ${vault.root}`);
+  } catch (e) {
+    setClockDay(null);
+    finished = true;
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}

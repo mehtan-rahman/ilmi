@@ -9,7 +9,7 @@ import { open as pickDirectory } from '@tauri-apps/plugin-dialog';
 import { info } from '@tauri-apps/plugin-log';
 import { REVIEWS_DIR, meta, setField, type Doc, type Meta, type NodeType, type Review } from '../format/index.js';
 import type { Chapter, MappedDeck } from '../import/index.js';
-import { dayOf, docItems, isDue, meterQueue, postponeOverflow, resolveOptions, spentToday, type QueueItem, type Resolved } from '../schedule/index.js';
+import { activeExam, dayOf, docItems, examQueue, examsAt, isDue, meterQueue, postponeOverflow, resolveOptions, spentToday, type ExamAt, type QueueItem, type Resolved } from '../schedule/index.js';
 import { Vault, childDirOf, childrenAt, cleanName, dirOf, entryOf, fileName, isDoc, ordered, placeEntry, rekey, type ExtractSpec, type ImportDeckSpec, type ImportPdfSpec, type ImportSpec, type PdfChapterSpec, type TreeNode, type VaultEvent, type VaultState } from '../vault/index.js';
 import { tauriFs } from '../vault/tauri-fs.js';
 import { startPlugins, stopPlugins } from '../plugins/index.js';
@@ -23,6 +23,7 @@ import { addRecent, decideStart, forgetRecent, vaultName } from './recents.js';
 import { STARTER_TEXT, STARTER_TITLE } from './starter.js';
 import { RAIL_DEFAULT, addTab, clampRail, notebookOf } from './tabs.js';
 import { INSP_DEFAULT, INSP_MAX, INSP_MIN, SIDE_DEFAULT, SIDE_MAX, SIDE_MIN, useApp, type DocInfo, type Inspector, type Sidebar } from './store.js';
+import { appNow } from './clock.js';
 
 let current: Vault | null = null;
 
@@ -69,13 +70,29 @@ export function optionsAt(path: string): Resolved {
   return resolveOptions(path, metaOf);
 }
 
-/** The queue over every known document, at `now`: the day's allowances metered (new cards a day, the reviews cap). */
+/** Every exam that applies at a document or folder (`schedule/exams.ts`), by day. */
+export function examsAtPath(path: string): ExamAt[] {
+  return examsAt(path, metaOf);
+}
+
+/** The exam ahead a document is studied toward at `now`, if any. */
+export const activeExamAt = (path: string, now: Date): ExamAt | undefined => activeExam(examsAtPath(path), now);
+
+/**
+ * The queue over every known document, at `now`: what is under an exam
+ * brought before it (`examQueue`), then the day's allowances metered (new
+ * cards a day, the reviews cap, an exam's new cards).
+ */
 function buildQueue(now: Date): QueueItem[] {
   const out: QueueItem[] = [];
   for (const [path, doc] of bodies) out.push(...docItems(path, doc, now));
   const cache = new Map<string, Resolved>();
   const optionsOf = (p: string) => { let r = cache.get(p); if (!r) { r = optionsAt(p); cache.set(p, r); } return r; };
-  return meterQueue(out, now, { optionsOf, spent: spentToday(reviews, now, optionsOf) });
+  const exams = new Map<string, ExamAt[]>();
+  const examsOf = (p: string) => { let e = exams.get(p); if (!e) { e = examsAtPath(p); exams.set(p, e); } return e; };
+  examQueue(out, now, examsOf);
+  const examOf = (p: string) => activeExam(examsOf(p), now);
+  return meterQueue(out, now, { optionsOf, spent: spentToday(reviews, now, optionsOf, examOf), examOf });
 }
 
 /** Each document's `due` as the metered queue has it: a card held for tomorrow is not due today. */
@@ -100,7 +117,7 @@ function publishQueue(docs: Record<string, DocInfo>, now: Date): { queue: QueueI
 
 /** Rebuild the queue for the present moment: a card in learning steps may have come due. */
 export function refreshQueue(): void {
-  useApp.setState((s) => publishQueue(s.docs, new Date()));
+  useApp.setState((s) => publishQueue(s.docs, appNow()));
 }
 
 /** The review log as the app holds it. */
@@ -115,7 +132,7 @@ export async function recordReview(r: Review): Promise<void> {
   const vault = current;
   if (!vault) return;
   reviews = [...reviews, r];
-  useApp.setState((s) => ({ reviews, ...publishQueue(s.docs, new Date()) }));
+  useApp.setState((s) => ({ reviews, ...publishQueue(s.docs, appNow()) }));
   await vault.appendReviews([r]);
 }
 
@@ -128,13 +145,13 @@ function reloadReviews(vault: Vault): void {
     void vault.loadReviews().then((log) => {
       if (current !== vault || log.length === reviews.length) return;
       reviews = log;
-      useApp.setState((s) => ({ reviews, ...publishQueue(s.docs, new Date()) }));
+      useApp.setState((s) => ({ reviews, ...publishQueue(s.docs, appNow()) }));
     }).catch((e: unknown) => console.error('reviews', e));
   }, 500);
 }
 
 async function publishDocs(vault: Vault): Promise<void> {
-  const now = new Date();
+  const now = appNow();
   const docs: Record<string, DocInfo> = {};
   const seen = new Set<string>();
   for (const path of vault.documents()) {
@@ -218,7 +235,7 @@ function onEvent(vault: Vault, ev: VaultEvent): void {
       void publishDocs(vault);
       break;
     case 'doc': {
-      const now = new Date();
+      const now = appNow();
       const items = docItems(ev.path, ev.loaded.doc, now);
       bodies.set(ev.path, ev.loaded.doc);
       // the pages stay what they were until the vault has looked: a changed `pdf` field lands a moment later
@@ -236,7 +253,7 @@ function onEvent(vault: Vault, ev: VaultEvent): void {
       const docs = { ...s.docs };
       delete docs[ev.path];
       bodies.delete(ev.path);
-      const now = new Date();
+      const now = appNow();
       useApp.setState({ panes: dropTabs(pagesToNotebook(s.panes, ev.path, s.docs), ev.path), ...publishQueue(docs, now) });
       break;
     }
@@ -300,7 +317,7 @@ export async function openVault(path: string): Promise<Vault> {
   useApp.setState({
     open, sidebar, inspector, panes, docs: {}, queue: [], budget: cleanBudget(state.budget), clipDir: cleanClipDir(state.clippings), log: [], session: null, sessionEl: null, selectedCard: null, reveal: null,
     started: true, newVaultIn: null, gone: s0.gone.filter((p) => p !== path), notice: null, fileOver: null, intakeFiles: [], order: vault.order, railFolded, railWidth: clampRail(state.railWidth ?? RAIL_DEFAULT), deckViews: cleanViews(state.decks),
-    folds: cleanFolds(state.folds), reviews, lensViews: {},
+    folds: cleanFolds(state.folds), reviews, lensViews: {}, examFilter: null,
   });
   s0.setRecents(addRecent(s0.recents, path, new Date()));
   setWindowTitle(vaultName(path));
@@ -321,7 +338,7 @@ export function closeVault(): void {
   bodies.clear();
   reviews = [];
   if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; savePatch = {}; }
-  useApp.setState({ vault: null, files: [], tree: [], docs: {}, open: { '': true }, panes: emptyPanes(), queue: [], log: [], session: null, sessionEl: null, selectedCard: null, reveal: null, paletteOpen: false, intakeDir: '', notice: null, fileOver: null, intakeFiles: [], order: {}, railFolded: {}, deckViews: {}, folds: {}, reviews: [], lensViews: {} });
+  useApp.setState({ vault: null, files: [], tree: [], docs: {}, open: { '': true }, panes: emptyPanes(), queue: [], log: [], session: null, sessionEl: null, selectedCard: null, reveal: null, paletteOpen: false, intakeDir: '', notice: null, fileOver: null, intakeFiles: [], order: {}, railFolded: {}, deckViews: {}, folds: {}, reviews: [], lensViews: {}, examFilter: null });
   setWindowTitle(null);
 }
 
@@ -367,7 +384,7 @@ export async function newVault(parent: string, name: string): Promise<Vault> {
   await tauriFs.mkdir(path);
   const vault = await openVault(path);
   const doc = await vault.importDoc('', { title: STARTER_TITLE, text: STARTER_TEXT });
-  await vault.update(doc, (d) => setField(d, 'read', { due: dayOf(new Date()), ivl: 1, reps: 0, pos: 0 }));
+  await vault.update(doc, (d) => setField(d, 'read', { due: dayOf(appNow()), ivl: 1, reps: 0, pos: 0 }));
   openNode(doc);
   return vault;
 }
@@ -430,8 +447,8 @@ export function openInitialVault(): Promise<void> {
       if (path) {
         const vault = await openVault(path);
         if (mode) {
-          const { smoke, smokeReader, smokeCards, smokeIntake, smokeQueue, smokeLoop, smokeShots, smokeDeck, smokePri, smokeGrowth, smokeOverload, smokePdf, smokeFaces, smokeCardsText, smokeAnki, smokeMath, smokeEpub, smokeClip, smokeClipping, smokePlugins, smokeDictionary, smokeRender, smokeLive, smokeBlocks, smokeUse, smokeLand, smokeNest, smokeTabs, smokeDecks, smokeTour, smokeNotes, smokeEditing, smokeTree, smokeInsert, smokeTabs2, smokeListCards, smokeArabic, smokeRest, smokeBothWays, smokeNumbers, smokeOpen } = await import('./smoke.js');
-          const run = { reader: smokeReader, cards: smokeCards, intake: smokeIntake, queue: smokeQueue, loop: smokeLoop, shots: smokeShots, deck: smokeDeck, pri: smokePri, growth: smokeGrowth, overload: smokeOverload, pdf: smokePdf, faces: smokeFaces, 'cards-text': smokeCardsText, anki: smokeAnki, math: smokeMath, epub: smokeEpub, clip: smokeClip, clipping: smokeClipping, plugins: smokePlugins, dictionary: smokeDictionary, render: smokeRender, live: smokeLive, blocks: smokeBlocks, use: smokeUse, land: smokeLand, nest: smokeNest, tabs: smokeTabs, decks: smokeDecks, tour: smokeTour, notes: smokeNotes, editing: smokeEditing, tree: smokeTree, insert: smokeInsert, tabs2: smokeTabs2, listcards: smokeListCards, arabic: smokeArabic, rest: smokeRest, bothways: smokeBothWays, numbers: smokeNumbers, open: smokeOpen }[mode] ?? smoke;
+          const { smoke, smokeReader, smokeCards, smokeIntake, smokeQueue, smokeLoop, smokeShots, smokeDeck, smokePri, smokeGrowth, smokeOverload, smokePdf, smokeFaces, smokeCardsText, smokeAnki, smokeMath, smokeEpub, smokeClip, smokeClipping, smokePlugins, smokeDictionary, smokeRender, smokeLive, smokeBlocks, smokeUse, smokeLand, smokeNest, smokeTabs, smokeDecks, smokeTour, smokeNotes, smokeEditing, smokeTree, smokeInsert, smokeTabs2, smokeListCards, smokeArabic, smokeRest, smokeBothWays, smokeNumbers, smokeOpen, smokeExam } = await import('./smoke.js');
+          const run = { reader: smokeReader, cards: smokeCards, intake: smokeIntake, queue: smokeQueue, loop: smokeLoop, shots: smokeShots, deck: smokeDeck, pri: smokePri, growth: smokeGrowth, overload: smokeOverload, pdf: smokePdf, faces: smokeFaces, 'cards-text': smokeCardsText, anki: smokeAnki, math: smokeMath, epub: smokeEpub, clip: smokeClip, clipping: smokeClipping, plugins: smokePlugins, dictionary: smokeDictionary, render: smokeRender, live: smokeLive, blocks: smokeBlocks, use: smokeUse, land: smokeLand, nest: smokeNest, tabs: smokeTabs, decks: smokeDecks, tour: smokeTour, notes: smokeNotes, editing: smokeEditing, tree: smokeTree, insert: smokeInsert, tabs2: smokeTabs2, listcards: smokeListCards, arabic: smokeArabic, rest: smokeRest, bothways: smokeBothWays, numbers: smokeNumbers, open: smokeOpen, exam: smokeExam }[mode] ?? smoke;
           // the smokes before 40 expect the inspector wherever they open it: the room rule is the tour's to check
           if (mode !== 'tour') useApp.setState({ inspForced: true });
           await run(vault);
@@ -478,7 +495,7 @@ export function openIntake(dir = '', opts: OpenOpts = {}): void {
  */
 export function openSession(item: QueueItem, opts: OpenOpts = {}): void {
   const s = useApp.getState();
-  const items = sessionItems(dueToday(s.queue, new Date(), s.budget), item);
+  const items = sessionItems(dueToday(s.queue, appNow(), s.budget), item);
   useApp.setState({ session: { seq: (s.session?.seq ?? 0) + 1, items } });
   openNode(SESSION, opts);
 }
@@ -486,7 +503,7 @@ export function openSession(item: QueueItem, opts: OpenOpts = {}): void {
 /** Enter the queue: a session over everything due, from the top. */
 export function startSession(opts: OpenOpts = {}): void {
   const s = useApp.getState();
-  const first = dueToday(s.queue, new Date(), s.budget)[0];
+  const first = dueToday(s.queue, appNow(), s.budget)[0];
   if (first) openSession(first, opts);
 }
 
@@ -496,7 +513,7 @@ export function startSession(opts: OpenOpts = {}): void {
  */
 export async function postponeRest(): Promise<number> {
   const s = useApp.getState();
-  const done = await postponeOverflow(need(), s.queue, new Date(), s.budget);
+  const done = await postponeOverflow(need(), s.queue, appNow(), s.budget);
   if (done.length) note(`postponed · ${done.length} element${done.length === 1 ? '' : 's'}`);
   return done.length;
 }
@@ -789,7 +806,7 @@ export async function importAnkiNode(dir: string, decks: MappedDeck[]): Promise<
       const lines = d.reviews.map((r) => ({ ...r, doc: path }));
       await vault.appendReviews(lines);
       reviews = [...reviews, ...lines].sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
-      useApp.setState((s) => ({ reviews, ...publishQueue(s.docs, new Date()) }));
+      useApp.setState((s) => ({ reviews, ...publishQueue(s.docs, appNow()) }));
     }
   }
   openDir(dir);
@@ -834,7 +851,7 @@ export async function enrolReading(path: string): Promise<void> {
   await need().update(path, (doc) => {
     const m = meta(doc);
     if (m.read) return;
-    const day = dayOf(new Date());
+    const day = dayOf(appNow());
     setField(doc, 'read', m.type === 'note' ? { due: day, ivl: 1, reps: 0 } : { due: day, ivl: 1, reps: 0, pos: 0 });
   });
 }

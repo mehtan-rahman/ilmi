@@ -2,8 +2,8 @@
 // the day, what a grade would schedule, and the order a session walks.
 // Pure; the model is src/schedule, the views are Queue.tsx and Session.tsx.
 
-import type { CardForm, CardSchedule } from '../format/index.js';
-import { dayOf, dayStart, fold, isDue, preview, sameItem, whenToDate, type CardItem, type Grade, type QueueItem } from '../schedule/index.js';
+import type { CardForm, CardSchedule, Exam } from '../format/index.js';
+import { capForExam, dayOf, dayStart, fold, isDue, preview, sameItem, whenToDate, type CardItem, type Grade, type QueueItem } from '../schedule/index.js';
 import { nameOf } from '../vault/index.js';
 import type { QueueScope } from './names.js';
 import type { DocInfo, El } from './store.js';
@@ -67,10 +67,11 @@ export function gapLabel(next: CardSchedule, now: Date): string {
   return `${Math.max(1, Math.round(ms / 60000))}m`;
 }
 
-/** What each of the four grades would schedule, for the buttons. */
-export function gapLabels(sched: CardSchedule | undefined, now: Date, retention?: number): Record<Grade, string> {
+/** What each of the four grades would schedule, for the buttons; under an exam ahead, as the grade will write it (`capForExam`). */
+export function gapLabels(sched: CardSchedule | undefined, now: Date, retention?: number, exam?: { exam: Exam; key: string }): Record<Grade, string> {
   const p = preview(sched, now, retention !== undefined ? { request_retention: retention } : undefined);
-  return { 1: gapLabel(p[1], now), 2: gapLabel(p[2], now), 3: gapLabel(p[3], now), 4: gapLabel(p[4], now) };
+  const g = (n: Grade) => gapLabel(exam ? capForExam(p[n], now, exam.exam, exam.key) : p[n], now);
+  return { 1: g(1), 2: g(2), 3: g(3), 4: g(4) };
 }
 
 /** The vault-relative path without its `.md`, the folders kept: `papers/wozniak-1990`. */
@@ -179,4 +180,39 @@ export const dueToday = (items: QueueItem[], now: Date, budget: number): QueueIt
 /** A budget as stored: a whole number of elements, 0 for none. */
 export function cleanBudget(n: unknown): number {
   return typeof n === 'number' && Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+}
+
+// ── exams ────────────────────────────────────────────────────────
+
+/** An exam's name: its label, else `exam`. */
+export const examName = (e: { label?: string }): string => e.label ?? 'exam';
+
+/**
+ * What a row brought before an exam says, quietly: `for the midterm`, or
+ * `for midterm 2` when the label is numbered or a name of its own.
+ */
+export function forExam(e: { label?: string }): string {
+  const name = examName(e);
+  return /\d$/.test(name) || /^\p{Lu}/u.test(name) ? `for ${name}` : `for the ${name}`;
+}
+
+/** How far off an exam's day is: `today`, `tomorrow`, `in 19d`. Always days: the count is what matters. */
+export function examWhen(day: string, now: Date): string {
+  const d = Math.round((dayStart(day).getTime() - dayStart(dayOf(now)).getTime()) / 86400000);
+  return d <= 0 ? 'today' : d === 1 ? 'tomorrow' : `in ${d}d`;
+}
+
+/** An exam's day as the top strip writes a day: `wed 18 nov`. */
+export const examDay = (day: string): string => dayLabel(dayStart(day));
+
+/** What is left before an exam, in a line each: the cards, the reading. Empty lines left out. */
+export function leftLines(left: { cards: number; unready: number; sources: number; blocks: number; passes: number }): { cards?: string; reading?: string } {
+  const out: { cards?: string; reading?: string } = {};
+  if (left.cards) out.cards = left.unready ? `${left.unready} of ${left.cards} not yet stable` : `all ${left.cards} stable past it`;
+  const reading = [
+    left.sources ? `${left.blocks} block${left.blocks === 1 ? '' : 's'} left in ${left.sources} source${left.sources === 1 ? '' : 's'}` : '',
+    left.passes ? `${left.passes} to revisit` : '',
+  ].filter(Boolean);
+  if (reading.length) out.reading = reading.join(', ');
+  return out;
 }

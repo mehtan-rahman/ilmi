@@ -133,7 +133,15 @@ export type Field =
   | { key: 'leech'; value: number }
   | { key: 'leech-action'; value: LeechAction }
   /** Which pages of its PDF the document is: a chapter of a book whose pages are another document's file. */
-  | { key: 'pages'; value: PageRange };
+  | { key: 'pages'; value: PageRange }
+  /** The exams everything under the document is studied toward, in the order written. */
+  | { key: 'exam'; value: Exam[] };
+
+/** One exam (§3, *exams*): its day, and what it is called (`midterm 2`), when it says. */
+export interface Exam {
+  day: string;
+  label?: string;
+}
 
 /** What a card does when its lapses reach the leech threshold: suspended, or only marked a leech. */
 export type LeechAction = 'suspend' | 'tag';
@@ -170,7 +178,7 @@ export interface Diagnostic {
 
 export const FIELD_KEYS: readonly FieldKey[] = [
   'type', 'title', 'frozen', 'imported', 'started', 'read', 'write', 'default-card', 'pri', 'pdf', 'url', 'author', 'published', 'tabs',
-  'new-per-day', 'reviews-per-day', 'retention', 'leech', 'leech-action', 'pages',
+  'new-per-day', 'reviews-per-day', 'retention', 'leech', 'leech-action', 'pages', 'exam',
 ];
 
 export function isField(e: FmEntry): e is Field {

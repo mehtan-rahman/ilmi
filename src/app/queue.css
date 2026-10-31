@@ -249,3 +249,35 @@
   background: transparent;
   border-bottom: 2px solid var(--fg-4);
 }
+
+/* exams: the queue narrowed to one, and a row brought before one, said quietly */
+.queue .exam-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin-top: 8px;
+}
+.queue .exam-filter button {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  border-radius: 0;
+  padding: 0 0 1px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--fg-4);
+  cursor: pointer;
+}
+.queue .exam-filter button:hover { color: var(--fg-2); }
+.queue .exam-filter button[data-active="1"] { color: var(--fg-1); border-bottom-color: var(--accent); }
+[data-theme="eink"] .queue .exam-filter button[data-active="1"] { border-bottom-color: var(--fg); }
+.qlist .body .for-exam {
+  display: block;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--fg-4);
+  letter-spacing: 0.02em;
+  margin-top: 4px;
+}
+.qlist .body .ref-line + .for-exam { margin-top: 1px; }

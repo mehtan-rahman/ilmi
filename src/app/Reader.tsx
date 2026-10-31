@@ -40,6 +40,8 @@ import { Crumbs } from './Crumbs.js';
 import { bodyRepeatsTitle, plainMath } from './chromeText.js';
 import { TabsToggle } from './TabsToggle.js';
 import { StudyButton } from './StudyButton.js';
+import { ExamTag } from './ExamTag.js';
+import { appNow } from './clock.js';
 
 /** How long after the last keystroke the file is written. */
 const WRITE_DELAY = 500;
@@ -404,7 +406,7 @@ class CardView implements NodeView {
 
   render(node: PMNode, decorations: readonly Decoration[]): void {
     const card = node.attrs.card as Card;
-    const now = new Date();
+    const now = appNow();
     const due = cardDue(card);
     const isDue = due === undefined || whenToDate(due) <= now;
     const inner =
@@ -1777,12 +1779,12 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
   // a draft's row: where it is in spaced composition, and done / reopen
   const w = info?.type === 'draft' ? info.write : undefined;
   const writeState = w
-    ? w.done ? 'done' : `${w.reps ? `pass ${w.reps + 1}` : 'first pass'}, ${dueLabel(w.due, new Date())}`
+    ? w.done ? 'done' : `${w.reps ? `pass ${w.reps + 1}` : 'first pass'}, ${dueLabel(w.due, appNow())}`
     : '';
   const toggleDone = () => {
     if (!w) return;
     const action = w.done ? 'on' : 'done';
-    void writerRef.current?.update((doc) => { advanceWrite(doc, action, new Date()); });
+    void writerRef.current?.update((doc) => { advanceWrite(doc, action, appNow()); });
   };
 
   if (status === 'gone' || (status === 'ok' && !info)) {
@@ -1849,6 +1851,7 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
           <Crumbs path={id} />
           <TabsToggle path={id} />
           <StudyButton path={id} />
+          <ExamTag path={id} />
           {onPages && <button type="button" className="frozen-tag text-toggle" data-on="1" title="read the pages" onClick={onPages}>text</button>}
           {info && canExtract && !enrolled && (
             <button type="button" className="frozen-tag enrol" onClick={startReading}>{isNote ? 'revisit' : 'start reading'} <span className="kbd">r</span></button>

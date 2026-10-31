@@ -5,17 +5,37 @@
 // field. A note's pass (a revisit) keeps no `pos`: it starts over at the
 // top, or at a heading, each time, since the note's own edits would move it.
 
-import { READ_AF, meta, setField, type Doc, type ReadSchedule } from '../format/index.js';
+import { READ_AF, meta, setField, type Doc, type Exam, type ReadSchedule } from '../format/index.js';
 import { addDays, dayOf } from './dates.js';
+import { pacedInterval, perPassOf } from './exams.js';
 import { grow, postponed } from './growth.js';
 
 export type ReadAction = 'on' | 'postpone' | 'done';
 
-/** One pass made; `pos` moves the marker forward, never back. */
-export function readOn(r: ReadSchedule, now: Date, pos?: number): ReadSchedule {
-  const ivl = grow(r.ivl, r.af ?? READ_AF);
-  const out: ReadSchedule = { ...r, due: addDays(dayOf(now), ivl), ivl, reps: (r.reps ?? 0) + 1 };
-  if (pos !== undefined) out.pos = Math.max(r.pos ?? 0, pos);
+/**
+ * Under an exam ahead (`exams.ts`): the exam, and the document's prose
+ * blocks (`total`), or null when what is left is not counted (a note
+ * revisited, a document read by its pages).
+ */
+export interface Pace { exam: Exam; total: number | null }
+
+/**
+ * One pass made; `pos` moves the marker forward, never back. Under an exam
+ * the next pass comes no later than the pacing says (`pacedInterval`): the
+ * interval written is the shorter, so the line's due less its interval is
+ * still the day of the pass.
+ */
+export function readOn(r: ReadSchedule, now: Date, pos?: number, pace?: Pace): ReadSchedule {
+  let ivl = grow(r.ivl, r.af ?? READ_AF);
+  const reps = (r.reps ?? 0) + 1;
+  const at = pos !== undefined ? Math.max(r.pos ?? 0, pos) : r.pos;
+  if (pace) {
+    const left = pace.total === null ? null : pace.total - (at ?? 0);
+    const paced = pacedInterval(dayOf(now), pace.exam, left, perPassOf(at, reps));
+    if (paced !== null) ivl = Math.min(ivl, paced);
+  }
+  const out: ReadSchedule = { ...r, due: addDays(dayOf(now), ivl), ivl, reps };
+  if (pos !== undefined) out.pos = at!;
   return out;
 }
 
@@ -25,14 +45,19 @@ export function postpone(r: ReadSchedule, now: Date, factor?: number): ReadSched
   return { ...r, due: addDays(dayOf(now), ivl), ivl };
 }
 
-/** Apply an action to a document's `read` field in place. Throws if it is not enrolled. On a note, `pos` is never kept. */
-export function advanceRead(doc: Doc, action: ReadAction, now: Date, pos?: number): ReadSchedule | null {
+/**
+ * Apply an action to a document's `read` field in place. Throws if it is
+ * not enrolled. On a note, `pos` is never kept. `exam`: the exam ahead the
+ * document is studied toward, which paces a pass.
+ */
+export function advanceRead(doc: Doc, action: ReadAction, now: Date, pos?: number, exam?: Exam): ReadSchedule | null {
   const m = meta(doc);
   if (!m.read) throw new Error('not enrolled in reading');
   const note = m.type === 'note';
   let r = m.read;
   if (note && r.pos !== undefined) { const { pos: _, ...rest } = r; r = rest; }
-  const next = action === 'done' ? null : action === 'on' ? readOn(r, now, note ? undefined : pos) : postpone(r, now);
+  const pace: Pace | undefined = exam && { exam, total: note || m.pdf !== undefined ? null : doc.blocks.filter((b) => b.kind !== 'card').length };
+  const next = action === 'done' ? null : action === 'on' ? readOn(r, now, note ? undefined : pos, pace) : postpone(r, now);
   setField(doc, 'read', next);
   return next;
 }

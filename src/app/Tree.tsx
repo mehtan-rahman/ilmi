@@ -35,6 +35,7 @@ import { useApp } from './store.js';
 import { TREE_INDENT, TREE_PAD, keyPlace, revealRows, treeKey, treeRows, typeahead, type TreeRow } from './treeModel.js';
 import { deleteNode } from './remove.js';
 import { placeNode, renameNode, toggleOpen } from './vault.js';
+import { appNow } from './clock.js';
 
 export { MENU_W, placeMenu } from './NodeMenu.js';
 
@@ -78,7 +79,7 @@ export function Tree({ activeId, onOpen }: Props) {
   const typed = useRef({ buf: '', at: 0 });
   const editRef = useRef<HTMLInputElement>(null);
   const boxRef = useRef<HTMLDivElement>(null);
-  const now = new Date();
+  const now = appNow();
 
   const title = (path: string) => titleOf(path, docs, root);
   const fail = (e: unknown) => console.error(e);

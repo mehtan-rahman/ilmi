@@ -13,6 +13,7 @@ import { hasCards, studyDeck } from './deckOps.js';
 import { folderPaths } from './names.js';
 import { MathText } from './MathText.js';
 import { containerOf, currentVault, openCard, openIntake, openNode, openVault, postponeRest, setSidebar, startSession, toggleInspector } from './vault.js';
+import { appNow } from './clock.js';
 
 const COMMANDS: Command[] = [
   { id: 'enter', title: 'enter queue' },
@@ -85,7 +86,7 @@ export function Palette() {
 
   // `postpone the rest` is offered only while something sits below the fold
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const commands = useMemo(() => [...(overflow(queue, new Date(), budget).length ? COMMANDS : COMMANDS.filter((c) => c.id !== 'postpone')), ...pluginCommands()], [queue, budget, plugins?.version]);
+  const commands = useMemo(() => [...(overflow(queue, appNow(), budget).length ? COMMANDS : COMMANDS.filter((c) => c.id !== 'postpone')), ...pluginCommands()], [queue, budget, plugins?.version]);
   // the other vaults opened before, under `vaults`, so switching is two keys
   const vaults = useMemo(() => recents.filter((r) => r.path !== vault).map((r) => ({ path: r.path, name: r.name })), [recents, vault]);
   const index = useMemo(() => buildIndex(tree, docs, cardRefs(), commands, vaults), [tree, docs, commands, vaults]);

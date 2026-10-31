@@ -22,6 +22,7 @@ import { TextLayer, loadPdf, pageBits, type PDFDocumentProxy } from './pdfjs.js'
 import { Crumbs } from './Crumbs.js';
 import { Reader } from './Reader.js';
 import { StudyButton } from './StudyButton.js';
+import { ExamTag } from './ExamTag.js';
 import { TabsToggle } from './TabsToggle.js';
 import { useApp, type DocInfo } from './store.js';
 import { useDoc } from './useDoc.js';
@@ -602,6 +603,7 @@ function Pages({ id, active, session, onText }: PagesProps) {
           <Crumbs path={id} />
           <TabsToggle path={id} />
           <StudyButton path={id} />
+          <ExamTag path={id} />
           <button type="button" className="frozen-tag text-toggle" data-on="0" title="read the text" onClick={onText}>text</button>
           {info && canExtract && !reading && (
             <button type="button" className="frozen-tag enrol" onClick={startReading}>start reading <span className="kbd">r</span></button>

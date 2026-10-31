@@ -26,7 +26,7 @@ const files = walk(SAMPLES).map((p) => ({ name: relative(SAMPLES, p), text: read
 
 describe('samples', () => {
   it('has the double major\'s collection', () => {
-    expect(files.filter((f) => f.name.startsWith('double-major/'))).toHaveLength(74);
+    expect(files.filter((f) => f.name.startsWith('double-major/'))).toHaveLength(75);
   });
 
   for (const f of files) {

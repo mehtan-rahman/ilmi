@@ -7,8 +7,8 @@
 
 import { Fragment, useEffect, useState, type MouseEvent } from 'react';
 import { PRI_DEFAULT, cardFields } from '../format/index.js';
-import { counts, inScope, overflow, type QueueItem } from '../schedule/index.js';
-import { EL_GLYPH, QUEUE_EMPTY, dayLabel, dueWhen, intervalLabel, isFresh, kindTag, refLine, snippetOf, summary } from './items.js';
+import { counts, dayOf, examKey, inScope, overflow, type ExamAt, type QueueItem } from '../schedule/index.js';
+import { EL_GLYPH, QUEUE_EMPTY, dayLabel, dueWhen, examName, examWhen, forExam, intervalLabel, isFresh, kindTag, refLine, snippetOf, summary } from './items.js';
 import { pathParts, plainMath } from './chromeText.js';
 import { MathText } from './MathText.js';
 import type { DocInfo } from './store.js';
@@ -19,6 +19,7 @@ import { dirAttr } from '../reader/index.js';
 import { useApp } from './store.js';
 import { openCard, openNode, openSession, postponeRest, refreshQueue, startSession } from './vault.js';
 import './queue.css';
+import { appNow } from './clock.js';
 
 interface Props {
   scope: QueueScope;
@@ -76,11 +77,16 @@ export function Queue({ scope, active }: Props) {
   const budget = useApp((s) => s.budget);
   // the row names its file by its path; the tweak brings the title back
   const by = useApp((s) => (s.queueTitles ? 'title' : 'path'));
+  const examFilter = useApp((s) => s.examFilter);
   const [cursor, setCursor] = useState(0);
-  const now = new Date();
-  const items = all.filter((i) => inScope(i, scope, now));
+  const now = appNow();
+  const scoped = all.filter((i) => inScope(i, scope, now));
+  // the exams ahead the scope's elements are studied toward, soonest first; the queue can be narrowed to one
+  const exams = [...new Map(scoped.filter((i) => i.exam).map((i) => [examKey(i.exam!), i.exam!] as [string, ExamAt])).values()].sort((a, b) => (a.day < b.day ? -1 : 1));
+  const filter = examFilter !== null && exams.some((e) => examKey(e) === examFilter) ? examFilter : null;
+  const items = filter === null ? scoped : scoped.filter((i) => i.exam && examKey(i.exam) === filter);
   // the fold: where the day's budget ends, and what below it can be postponed
-  const foldAt = scope === 'today' && budget > 0 && items.length > budget ? budget : items.length;
+  const foldAt = scope === 'today' && filter === null && budget > 0 && items.length > budget ? budget : items.length;
   const rest = foldAt < items.length ? overflow(all, now, budget) : [];
   const restWord = [rest.filter((i) => i.kind === 'read').length, rest.filter((i) => i.kind === 'write').length]
     .map((n, i) => (n ? `${n} to ${i ? 'write' : 'read'}` : ''))
@@ -136,6 +142,18 @@ export function Queue({ scope, active }: Props) {
             <kbd>⏎</kbd>
           </button>
         )}
+        {exams.length > 0 && (
+          <div className="exam-filter">
+            {exams.map((e) => {
+              const k = examKey(e);
+              return (
+                <button key={k} type="button" data-active={filter === k ? '1' : '0'} title={`only what is studied toward it, ${examWhen(e.day, now)}`} onClick={() => useApp.setState({ examFilter: filter === k ? null : k })}>
+                  {examName(e)}
+                </button>
+              );
+            })}
+          </div>
+        )}
         {scope === 'today' && log.length > 0 && (
           <div className="qlog">{log.slice(0, 2).map((l, i) => <div key={i} className="qlog-line">{l}</div>)}</div>
         )}
@@ -166,9 +184,10 @@ export function Queue({ scope, active }: Props) {
                   </span>
                   <Body item={item} />
                   {ref && <span className="ref-line">{ref}</span>}
+                  {item.pulled && item.exam && <span className="for-exam" title={`brought forward from ${dueWhen(item.pulled, now)}`}>{forExam(item.exam)}</span>}
                 </span>
                 <span className="pri">{item.pri !== PRI_DEFAULT && <b>p {item.pri}</b>}</span>
-                <span className="due" title={ivl ? `interval ${ivl}` : undefined}>{item.kind === 'card' && (item.buried || item.held) ? 'tomorrow' : dueWhen(item.due, now)}</span>
+                <span className="due" title={ivl ? `interval ${ivl}` : undefined}>{item.kind === 'card' && (item.buried || item.held) ? 'tomorrow' : item.pulled ? dueWhen(dayOf(item.dueAt), now) : dueWhen(item.due, now)}</span>
               </li>
             );
             if (i !== foldAt) return row;
@@ -195,7 +214,7 @@ export function Queue({ scope, active }: Props) {
 /** The sidebar's saved queries: one row per scope, with its count. */
 export function SavedQueries({ activeId }: { activeId: string | undefined }) {
   const all = useApp((s) => s.queue);
-  const c = counts(all, new Date());
+  const c = counts(all, appNow());
   return (
     <>
       <h6>saved queries</h6>

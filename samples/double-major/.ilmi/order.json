@@ -2,7 +2,7 @@
   "": ["courses/", "library/", "arabic/", "physics/", "fleeting/"],
   "courses": ["fall-2026/", "spring-2026/", "fall-2025/"],
   "courses/fall-2026": ["phys-412-quantum-ii.md", "phys-415-stat-mech.md", "arab-401-advanced-grammar.md", "arab-455-abbasid-poetry.md"],
-  "courses/fall-2026/phys-412-quantum-ii": ["nondegenerate-perturbation-theory.md", "degenerate-perturbation-theory.md", "variational-method.md", "wkb-approximation.md", "time-dependent-perturbation-theory.md", "problem-sets/"],
+  "courses/fall-2026/phys-412-quantum-ii": ["nondegenerate-perturbation-theory.md", "degenerate-perturbation-theory.md", "variational-method.md", "wkb-approximation.md", "time-dependent-perturbation-theory.md", "halvorsen-ch-9-wkb.md", "problem-sets/"],
   "courses/fall-2026/phys-412-quantum-ii/problem-sets": ["ps-5.md", "ps-6.md", "midterm-1-review.md", "ps-7.md"],
   "courses/fall-2026/phys-415-stat-mech": ["microcanonical-ensemble.md", "canonical-ensemble.md", "grand-canonical-and-quantum-gases.md", "derivations.md"],
   "courses/fall-2026/arab-401-advanced-grammar": ["kana-and-its-sisters.md", "inna-and-its-sisters.md", "hal-and-tamyiz.md", "mafuul-mutlaq.md", "conditional-sentences.md", "irab-drills.md"],

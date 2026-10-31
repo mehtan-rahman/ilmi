@@ -6,7 +6,7 @@
 import type { CardSchedule, Review } from '../format/index.js';
 import { daysBetween, gradeItem, instantOf, whenToDate, wasLeeched, type CardItem, type Grade } from '../schedule/index.js';
 import type { Loaded } from '../vault/index.js';
-import { currentVault, note, optionsAt, recordReview } from './vault.js';
+import { activeExamAt, currentVault, note, optionsAt, recordReview } from './vault.js';
 
 /** Time on a card past this is time away from it: a review counts this much at most, as Anki caps it. */
 export const REVIEW_MS_CAP = 60_000;
@@ -36,11 +36,14 @@ export async function gradeCard(item: CardItem, g: Grade, now: Date, ms?: number
   const vault = currentVault();
   if (!vault) return null;
   const { opts } = optionsAt(item.path);
+  // studied toward an exam ahead: an interval past its last week is cut into it
+  const exam = activeExamAt(item.path, now);
   let wrote: { id: string; key?: string; prev?: CardSchedule; next: CardSchedule } | null = null;
   const loaded = await vault.update(item.path, (doc) => {
     gradeItem(doc, item, g, now, {
       retention: opts.retention,
       leech: { threshold: opts.leech, action: opts.leechAction },
+      ...(exam ? { exam } : {}),
       report: (r) => { wrote = r; },
     });
   });

@@ -8,7 +8,7 @@
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { emitDocAction, emitGrade, runBlockHooks, usePlugins } from '../plugins/index.js';
 import { PRI_DEFAULT, blanks, cardFields, type Block, type Card } from '../format/index.js';
-import { GRADES, advanceRead, advanceWrite, dirPri, postponed, scheduleOf, type CardItem, type Grade, type QueueItem, type ReadItem, type WriteItem } from '../schedule/index.js';
+import { GRADES, advanceRead, lineKey, advanceWrite, dirPri, postponed, scheduleOf, type CardItem, type Grade, type QueueItem, type ReadItem, type WriteItem } from '../schedule/index.js';
 import { EL_WORD, FORM_LABEL, dueLabel, gapLabels, ownBlank, sourceLabel, trailParts } from './items.js';
 import type { OpenOpts } from './panes.js';
 import { Pdf } from './Pdf.js';
@@ -18,10 +18,11 @@ import { Reader, clozeHTML, faceDir, richHTML } from './Reader.js';
 import { useApp, type El } from './store.js';
 import { useDoc } from './useDoc.js';
 import { studyHeader } from './study.js';
-import { currentVault, note, openNode, optionsAt } from './vault.js';
+import { activeExamAt, currentVault, note, openNode, optionsAt } from './vault.js';
 import { gradeCard } from './grading.js';
 import './session.css';
 import './incontext.css';
+import { appNow } from './clock.js';
 
 interface Props {
   active: boolean;
@@ -125,7 +126,7 @@ function CardElement({ item, active, onGrade }: CardProps) {
   const [revealed, setRevealed] = useState(false);
   const plugins = usePlugins();
   const cardRef = useRef<HTMLDivElement>(null);
-  const now = new Date();
+  const now = appNow();
   const card = liveCard(loaded?.doc.blocks, item);
   // the card's own, else the document's, live: the inspector may change either mid-session
   const pri = card ? dirPri(card, item.dir, docPri ?? PRI_DEFAULT) : item.pri;
@@ -133,7 +134,8 @@ function CardElement({ item, active, onGrade }: CardProps) {
   const f = cardFields(text);
   // the item's schedule stands in only until the document is loaded; a card reset since reads as new
   const sched = !card ? item.sched : scheduleOf(card, item.group, item.dir);
-  const gaps = gapLabels(sched, now, optionsAt(item.path).opts.retention);
+  const exam = activeExamAt(item.path, now);
+  const gaps = gapLabels(sched, now, optionsAt(item.path).opts.retention, exam && { exam, key: lineKey(card?.id ?? item.id, text, item.group, item.dir) });
   const grade = (g: Grade) => { if (revealed) onGrade(g); else setRevealed(true); };
 
   useKeys(active, (key) => {
@@ -323,7 +325,7 @@ export function Session({ active, onOpen }: Props) {
   const onGrade = (item: CardItem, g: Grade) => {
     const vault = currentVault();
     if (!vault) return;
-    const now = new Date();
+    const now = appNow();
     gradeCard(item, g, now, now.getTime() - shownAt.current).then((loaded) => {
       if (!loaded) return;
       // a card that had no id has one now, and a blank it numbered is numbered:
@@ -344,9 +346,9 @@ export function Session({ active, onOpen }: Props) {
   const onDoc = (item: ReadItem | WriteItem, action: DocAction, pos?: number) => {
     const vault = currentVault();
     if (!vault) return;
-    const now = new Date();
+    const now = appNow();
     const run = item.kind === 'read'
-      ? vault.update(item.path, (doc) => { advanceRead(doc, action, now, pos); })
+      ? vault.update(item.path, (doc) => { advanceRead(doc, action, now, pos, activeExamAt(item.path, now)); })
       : vault.update(item.path, (doc) => { advanceWrite(doc, action, now); });
     run.catch(fail);
     if (action === 'on') emitDocAction(item);

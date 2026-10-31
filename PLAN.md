@@ -4627,7 +4627,80 @@ realistic `.ilmi/reviews/` for its history), options set on a notebook
 change the day's queue for its cards and are inherited, and a leech is
 suspended at the threshold.
 
-### [ ] 43. Exam dates
+### [x] 43. Exam dates
+Done 2026-10-31, commit `HASH`.
+Notes: the window check is pending (`ILMI_SMOKE=exam`, ILMI_VAULT on a fresh
+copy of samples/double-major; it asserts each step, `shot:` exam-upcoming,
+-upcoming-filtered, -today, -notebook, -notebook-dark, -reading,
+-last-week, -after). **Format** (FORMAT §3, *exams*): one line, `exam:
+2026-11-18 midterm 2, 2026-12-14 final`, `day label` entries with a comma
+between (a label holds no comma), written in the order given, quoted like
+`title` when YAML needs it; a bad entry makes the line raw with a
+diagnostic. One line, not one per exam, since a key twice is not YAML (and
+later-wins holds). `Meta.exams`, `parseExams` / `formatExams`; corpus file
+`mangled/exam.md`, `format/__tests__/exam.test.ts`. **Where it applies**
+(`src/schedule/exams.ts`): `examsAt` walks 42's `ownersOf` and adds up
+(a deck's own quiz and the course's final both apply, by day; the same day
+and label twice is one); `activeExam` is the first after today (the
+schedule), `upcomingExam` the first on or after (the display: on its day it
+says `today`). **Cards**: `capForExam` on a grade (`GradeOptions.exam`,
+`gradeCard` passes `activeExamAt`): when FSRS puts the line past the exam's
+eve and the grade is before its last week (`EXAM_WINDOW` = 7 days), due on
+the card's own day of that week (`windowDay`, FNV of `id:cN|r`), `ivl` to
+match; `s`, `d`, state, reps FSRS's own, so the early review is FSRS's
+ordinary early review. A grade in the last week is left alone (seen in the
+last days); learning steps never capped. `examQueue` (derived, before
+`meterQueue`, in `buildQueue` and `studyItems`) does the same for a line
+written before the exam was set: `pulled` (the stored due), `dueAt` its
+window day (today if that has passed), `exam` on every item under one;
+siblings buried again after. **New cards**: where `new-per-day` is the
+default (set nowhere above), the day's allowance also lets in the exam's
+quota, `examNewQuota` = what is left (today's counted back from the log)
+over the days to `NEW_LEAD` (7) before; a `new-per-day` someone set is kept.
+**Reading** (`pacedInterval`, `readOn`'s `Pace`, `advanceRead(…, exam)`):
+a source or extract with blocks left: the passes left (left ÷ blocks a pass
+has read, `pos/reps`, 4 before any) spread over the days to `READ_LEAD` (3)
+before the exam, a day at a time past that; the interval written is the
+shorter of growth and pacing, so `due − ivl` stays the day of the pass and
+the queue's derived pacing of a paced line is the line itself (tested every
+pass). A note revisited or a PDF (nothing counts what is left) is brought to
+the finish day unless passed over in the last week. Passes advance; nothing
+is graded; postpone is unchanged (the queue paces it back). The day after:
+nothing is capped, pulled or paced; intervals grow as before. **What is
+left** (`examLeft`): card items under the node, those `recallAt` the exam
+(ts-fsrs's forgetting curve from `last`, `s`) below the retention they are
+scheduled for, blocks left in sources, notes to revisit. **UI**: the queue
+row of a pulled item says `for the midterm` / `for midterm 2` (`forExam`)
+and shows the day it is brought to; the header offers each exam ahead as a
+filter (`examFilter` in the store, not remembered); the reader's and PDF
+lens's top row (`ExamTag`, on the document that sets it) `midterm 2 in 19d`,
+what is left in its tooltip, a click opening `upcoming` narrowed to it; the
+inspector's `exam` block on any document or folder under one (the next, its
+day, `from <title>` when set above, cards, reading, the later exams a line
+each); the session's grade labels show the capped interval. **The clock**:
+`src/app/clock.ts`, `appNow()` everywhere the app schedules or draws a day,
+`setClockDay` a test-only hook (the smoke and the view test). **Sample**:
+`phys-412-quantum-ii.md` sets `exam: 2026-11-18 midterm 2, 2026-12-14
+final` (its grading table's dates); the notebook gained its textbook's ch.
+9 (`halvorsen-ch-9-wkb.md`, a frozen source, `read: due=2026-11-21 ivl=24
+reps=3 pos=6 af=3`, a tab before problem sets) so the midterm has reading to
+pull; `midterm-1-review.md`'s `exam: 2026-10-21` is now read (past). 75
+files. Tests: 1062 (+20 over 1042): `exams.test.ts` 10 (the sample walked
+from 10-30 to 12-10 with `exam: <three weeks out> midterm`: 92 of 178 grades
+before the week capped, all into it, the memory FSRS's; every card seen in
+the week, 13 to 21 reviews a day across it; the chapter finished by the
+finish day, passes only advancing; the note revisited in the week; the day
+after, grades FSRS's own and intervals past the window; stat mech
+untouched; the sample as shipped, the cap moving to the final; 400 new
+cards in by a week before, a set `new-per-day` kept), `exam.test.ts` 3,
+`exam-view.test.ts` 4, the corpus file's round trip and mutation rounds,
+the new sample file's. Typecheck clean; cargo 12.
+Open: the window run; the exam is set by hand in the file (no inspector
+field to set one); the queue filter knows only each item's next exam, so
+the final cannot be picked before the midterm has passed; pacing counts
+blocks, not words; a PDF chapter's pages are not counted for pacing;
+`reviews-per-day` still caps what was pulled; a session does not say
+`for the midterm`; drafts are not paced.
 - `exam: <day>` (and an optional second, `exam: 2026-12-14 final`, more
   than one allowed) on a course notebook or any document; everything under
   it (cards, sources, extracts, notes revisited) is studied toward it.
@@ -4913,13 +4986,15 @@ From the notes of 37, 39, 40, 41:
 ## Notes for the next session
 
 Studying: 44 (both ways) done 2026-10-30, its window check run. 42 (a
-deck's numbers and its options) done 2026-10-30, its window check owed
-(`ILMI_SMOKE=numbers`, ILMI_VAULT on a fresh copy of samples/double-major,
-which now carries a seeded `.ilmi/reviews/`). The vocab deck's 110 new
-reverses come in twenty a day (the default `new-per-day`, per document).
-Next on main: 43 (exam dates; its cap sits beside 42's `meterQueue` and
-options in `src/schedule/options.ts`, and `exam` is a front-matter key
-inherited the same way), then 45; 46 runs on a branch.
+deck's numbers and its options) done 2026-10-30, its window checks recorded
+under it. 46 done and merged. 43 (exam dates) done 2026-10-31, its window
+check pending (`ILMI_SMOKE=exam`, ILMI_VAULT on a fresh copy of
+samples/double-major); the sample's quantum notebook now sets midterm 2 and
+the final, and carries its textbook's ch. 9. The app's clock is
+`src/app/clock.ts` (`appNow`; `setClockDay` for smokes that walk days).
+Next on main: 45 (the same fact twice), in progress in a worktree beside
+43; its link attribute sits on the `sr` line, and a linked pair's burying
+goes where 44's siblings and 43's `examQueue` re-bury.
 
 Refinement (33–41) is complete, 2026-10-30, every milestone's window check
 run and recorded under its BUILD-LOG entry (33 `notes`, 34 `editing`, 35

@@ -13,7 +13,8 @@ import {
 import type { Vault } from '../vault/index.js';
 import { grade, type Grade } from './card.js';
 import { becomesLeech } from './options.js';
-import type { LeechAction } from '../format/index.js';
+import { capForExam, lineKey, type ExamAt } from './exams.js';
+import type { Exam, LeechAction } from '../format/index.js';
 import { addDays, dayOf, dayStart, whenToDate } from './dates.js';
 import { advanceRead } from './read.js';
 import { advanceWrite } from './write.js';
@@ -31,6 +32,14 @@ interface ItemBase {
   dueAt: Date;
   /** 0–100, lower first: the document's `pri` field, a card's own `pri`, else 50. */
   pri: number;
+  /** The exam ahead it is studied toward (`exams.ts`), when it sits under one. */
+  exam?: ExamAt;
+  /**
+   * Brought before the exam: a review FSRS put after it, or a reading paced
+   * to be finished in time; `dueAt` is the day it is brought to, this the
+   * stored due. Nothing on disk says so.
+   */
+  pulled?: string;
 }
 
 export interface CardItem extends ItemBase {
@@ -77,6 +86,8 @@ export interface ReadItem extends ItemBase {
   page?: number;
   /** A note revisited: no marker, each pass from the top. */
   note?: true;
+  /** A document read by its pages: `pos` is a page, and what is left is not counted. */
+  pdf?: true;
 }
 
 export interface WriteItem extends ItemBase {
@@ -217,6 +228,7 @@ export function docItems(path: string, doc: Doc, now: Date): QueueItem[] {
     if (next && next.text.trim()) item.next = next.text;
     if (m.pdf !== undefined && pos > 0) item.page = pos;
     if (note) item.note = true;
+    if (m.pdf !== undefined) item.pdf = true;
     out.push(item);
   }
   if (m.write && !m.write.done) {
@@ -375,6 +387,8 @@ export interface GradeOptions {
   retention?: number;
   /** The leech rule: lapses that make a leech, and what it does; `suspend` writes `sus=1` on the line graded. */
   leech?: { threshold: number; action: LeechAction };
+  /** The exam ahead the card is studied toward: an interval past its last week is cut into it (`capForExam`). */
+  exam?: Exam;
   /** Told what was graded: the card's id (minted when it had none), the line's key (`cN`, `r`, or none for the bare line), the schedule before and after. For the review log. */
   report?: (r: { id: string; key?: string; prev?: CardSchedule; next: CardSchedule }) => void;
 }
@@ -412,16 +426,18 @@ export function gradeItem(doc: Doc, item: CardItem, rating: Grade, now: Date, op
     return next;
   };
   // a both-ways card's reverse rewrites its `sr r` line, and only that one
+  const capped = (next: CardSchedule, g: CardItem['group'], dir?: Dir): CardSchedule =>
+    (opts.exam ? capForExam(next, now, opts.exam, lineKey(card.id, card.text, g, dir)) : next);
   if (item.dir === 'r') {
     const prev = card.reverse;
-    const next = leeched(prev, grade(prev, rating, now, params));
+    const next = leeched(prev, capped(grade(prev, rating, now, params), undefined, 'r'));
     card.reverse = next;
     opts.report?.({ id: card.id, key: 'r', ...(prev ? { prev } : {}), next });
     return next;
   }
   const own = group && 'n' in group && (item.groups > 1 || card.blanks?.[group.n] !== undefined) ? group.n : null;
   const prev = own === null ? card.sched : card.blanks?.[own] ?? card.sched;
-  const next = leeched(prev, grade(prev, rating, now, params));
+  const next = leeched(prev, capped(grade(prev, rating, now, params), group));
   if (own === null) card.sched = next;
   else card.blanks = { ...card.blanks, [own]: next };
   opts.report?.({ id: card.id, ...(own === null ? {} : { key: `c${own}` }), ...(prev ? { prev } : {}), next });

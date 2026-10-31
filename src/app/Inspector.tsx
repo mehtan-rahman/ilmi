@@ -11,20 +11,21 @@ import {
   AF_MIN, PRI_DEFAULT, PRI_MAX, PRI_MIN, READ_AF, RETENTION_MAX, RETENTION_MIN, WRITE_AF, cardForm, docPri, meta, parse, parseAf, parseCount, parsePri, parseRetention, setField,
   type Block, type Card, type CardForm, type CardSchedule, type Doc, type ReadSchedule, type WriteSchedule,
 } from '../format/index.js';
-import { advanceWrite, inScope, nextIntervals, type CardItem, type OptionKey } from '../schedule/index.js';
+import { activeExam, advanceWrite, dayOf, examKey, examLeft, inScope, nextIntervals, type CardItem, type OptionKey } from '../schedule/index.js';
 import { baseOf, childDirOf, childrenAt, dirOf, isDoc, pageOfBlock, type TreeNode } from '../vault/index.js';
 import { cardName, formLabel } from './chrome.js';
 import { breakdown, countsUnder, dueItems, plainMath } from './chromeText.js';
 import { MathText } from './MathText.js';
-import { FORM_LABEL, dueLabel, dueWhen, fmtDays } from './items.js';
+import { FORM_LABEL, dueLabel, dueWhen, examDay, examName, examWhen, fmtDays, leftLines } from './items.js';
 import { INTAKE, QUEUE_TITLE, SESSION, findNode, queueScope, titleOf } from './names.js';
 import { activeTab } from './panes.js';
 import { useApp, type DocInfo } from './store.js';
 import { useDoc } from './useDoc.js';
-import { currentVault, openNode, optionsAt, resetCard } from './vault.js';
+import { currentVault, examsAtPath, openNode, optionsAt, resetCard } from './vault.js';
 import { docsUnder } from './deck.js';
 import { foldedHeadings, notebookOf, outline } from './tabs.js';
 import { goToHeading } from './headings.js';
+import { appNow } from './clock.js';
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 const words = (blocks: Block[]) => blocks.reduce((n, b) => (b.kind === 'card' ? n : n + b.text.split(/\s+/).filter(Boolean).length), 0);
@@ -210,6 +211,42 @@ export function OptionsBlock({ path }: { path: string }) {
   );
 }
 
+// ── exams ────────────────────────────────────────────────────────
+
+/**
+ * The exams a document or folder is studied toward (`schedule/exams.ts`):
+ * the next, its day and how far off, where it is set when not here, and
+ * what is left before it under this node (cards not yet stable past it,
+ * reading left); then the ones after it, a line each. Nothing when none is
+ * ahead.
+ */
+export function ExamBlock({ path }: { path: string }) {
+  const queue = useApp((s) => s.queue);
+  const docs = useApp((s) => s.docs);
+  const root = useApp((s) => s.vault);
+  const tree = useApp((s) => s.tree);
+  const order = useApp((s) => s.order);
+  const files = useApp((s) => s.files);
+  const now = appNow();
+  const today = dayOf(now);
+  const exams = examsAtPath(path).filter((e) => e.day >= today);
+  const next = exams[0];
+  if (!next) return null;
+  const own = isDoc(path) ? path : `${path}.md`;
+  const where = next.from !== own ? <span className="dim exam-from" data-from={next.from}> from {titleOf(next.from, docs, root)}</span> : null;
+  const rows: [string, ReactNode][] = [[examName(next), <span key="day" className="exam-day" data-day={next.day}>{examDay(next.day)}, {examWhen(next.day, now)}{where}</span>]];
+  const active = activeExam(exams, now);
+  if (active && examKey(active) === examKey(next)) {
+    const under = new Set(docsUnder(tree, path, order, files));
+    const k = examKey(next);
+    const left = leftLines(examLeft(queue.filter((i) => i.exam && examKey(i.exam) === k), next, (p) => under.has(p), (p) => optionsAt(p).opts.retention));
+    if (left.cards) rows.push(['cards', <span key="cards" className="exam-cards">{left.cards}</span>]);
+    if (left.reading) rows.push(['reading', <span key="reading" className="exam-reading">{left.reading}</span>]);
+  }
+  for (const e of exams.slice(1)) rows.push([examName(e), <span key={examKey(e)} className="dim">{examDay(e.day)}</span>]);
+  return <Block title="exam"><div className="exam-block" data-exam={examKey(next)}><KV rows={rows} /></div></Block>;
+}
+
 /** Whether `path` (a document or a folder) has cards in it or under it: where options apply. */
 function hasCardsUnder(path: string): boolean {
   const s = useApp.getState();
@@ -343,7 +380,7 @@ function FolderInspector({ id }: { id: string }) {
   const rows: [string, ReactNode][] = [['items', children.length]];
   if (under.cards) rows.push(['cards', under.cards]);
   if (under.due) rows.push(['due', under.due]);
-  return <><Block title="folder"><KV rows={rows} /></Block>{under.cards > 0 && <OptionsBlock path={id} />}</>;
+  return <><Block title="folder"><KV rows={rows} /></Block><ExamBlock path={id} />{under.cards > 0 && <OptionsBlock path={id} />}</>;
 }
 
 /** The `children` line of a document that has any: how many, a click opening them as a folder lens. */
@@ -380,6 +417,7 @@ function DocInspector({ id, info, doc, now }: { id: string; info: DocInfo; doc: 
             </div>
           </div>
         </Block>
+        <ExamBlock path={id} />
         <OptionsBlock path={id} />
       </>
     );
@@ -388,7 +426,7 @@ function DocInspector({ id, info, doc, now }: { id: string; info: DocInfo; doc: 
   if (info.type === 'draft') {
     const w = m.write;
     const state = !w ? 'not enrolled' : w.done ? 'done' : w.reps ? `pass ${w.reps + 1}` : 'first pass';
-    const toggle = () => { if (w) currentVault()?.update(id, (d) => { advanceWrite(d, w.done ? 'on' : 'done', new Date()); }).catch(console.error); };
+    const toggle = () => { if (w) currentVault()?.update(id, (d) => { advanceWrite(d, w.done ? 'on' : 'done', appNow()); }).catch(console.error); };
     return (
       <>
         <Block title="draft">
@@ -440,6 +478,7 @@ function DocInspector({ id, info, doc, now }: { id: string; info: DocInfo; doc: 
           <button type="button" className="fr-toggle" data-frozen={info.frozen ? '1' : '0'} onClick={() => toggleField(id, 'frozen', !info.frozen)}>{info.frozen ? 'thaw' : 'freeze'}</button>
         </div>
       </Block>
+      <ExamBlock path={id} />
       {(cards > 0 || hasCardsUnder(id)) && <OptionsBlock path={id} />}
       {!info.pdf && <Outline id={id} doc={doc} />}
       {extracts.length > 0 && (
@@ -549,7 +588,7 @@ export function Inspector() {
   const selected = useApp((s) => s.selectedCard);
   const intakeDir = useApp((s) => s.intakeDir);
   const root = useApp((s) => s.vault);
-  const now = new Date();
+  const now = appNow();
   const id = activeTab(panes)?.id;
 
   let body: ReactNode;

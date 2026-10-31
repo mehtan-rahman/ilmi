@@ -235,6 +235,8 @@ export interface AppState {
   reviews: Review[];
   /** What a folder's or a deck's lens shows: its items, its cards, or its numbers. Not remembered. */
   lensViews: Record<string, LensView>;
+  /** The queue shown for one exam only (`examKey`); null, everything. Not remembered. */
+  examFilter: string | null;
   session: Session | null;
   /** What the session is on now, for its tab and the inspector. */
   sessionEl: { kind: El; label: string; item: QueueItem } | null;
@@ -302,6 +304,7 @@ export const useApp = create<AppState>((set, get) => ({
   deckViews: {},
   folds: {},
   reviews: [],
+  examFilter: null,
   lensViews: {},
   session: null,
   sessionEl: null,

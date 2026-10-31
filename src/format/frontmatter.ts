@@ -7,7 +7,7 @@ import {
 } from './attrs.js';
 import {
   FIELD_KEYS, isField, type CardForm, type Diagnostic, type Doc, type Field, type FieldKey, type FmEntry,
-  type Frontmatter, type LeechAction, type NodeType, type PageRange, type ReadSchedule, type WriteSchedule,
+  type Exam, type Frontmatter, type LeechAction, type NodeType, type PageRange, type ReadSchedule, type WriteSchedule,
 } from './model.js';
 
 const NODE_TYPES: readonly NodeType[] = ['note', 'source', 'deck', 'draft', 'extract'];
@@ -160,8 +160,37 @@ function parseValue(key: FieldKey, raw: string, warn: Warn): Field | null {
       const v = parsePages(stripComment(raw));
       return v === null ? null : { key, value: v };
     }
+    case 'exam': {
+      // one line, quoted like a title when it must be, entries split at commas
+      const t = parseTitle(raw.trim(), warn);
+      const v = t === null ? null : parseExams(t);
+      return v === null ? null : { key, value: v };
+    }
   }
 }
+
+const EXAM = /^(\d{4}-\d{2}-\d{2})(?:[ \t]+(\S.*))?$/;
+
+/**
+ * `exam`: one or more `day label` entries, a comma between (`2026-11-18
+ * midterm 2, 2026-12-14 final`); the label is optional and holds no comma.
+ * Any entry that is not one makes the whole value unread (null).
+ */
+export function parseExams(v: string): Exam[] | null {
+  const out: Exam[] = [];
+  for (const part of v.split(',')) {
+    const m = EXAM.exec(part.trim());
+    const day = m ? parseDay(m[1]!) : null;
+    if (!m || day === null) return null;
+    const label = m[2]?.trim().replace(/[ \t]+/g, ' ');
+    out.push(label ? { day, label } : { day });
+  }
+  return out.length ? out : null;
+}
+
+/** The exams as the line writes them: `day label` entries, `, ` between, quoted as a title is when YAML needs it. */
+export const formatExams = (exams: readonly Exam[]): string =>
+  formatTitle(exams.map((e) => (e.label ? `${e.day} ${e.label}` : e.day)).join(', '));
 
 const PAGES = /^(\d{1,6})(?:[ \t]*[-–][ \t]*(\d{1,6}))?$/;
 
@@ -266,6 +295,7 @@ export function formatField(f: Field): string {
     case 'new-per-day': case 'reviews-per-day': case 'leech': case 'leech-action': return `${f.key}: ${f.value}`;
     case 'retention': return `retention: ${formatNumber(f.value)}`;
     case 'pages': return `pages: ${formatPages(f.value)}`;
+    case 'exam': return `exam: ${formatExams(f.value)}`;
   }
 }
 
@@ -307,6 +337,8 @@ export interface Meta {
   leechAction?: LeechAction;
   /** The `pages` field: which pages of its PDF the document is. */
   pages?: PageRange;
+  /** The `exam` field: the exams set here, as written; what applies after inheritance is `schedule/exams.ts`. */
+  exams?: Exam[];
 }
 
 /**
@@ -340,6 +372,7 @@ export function meta(doc: Doc): Meta {
       case 'leech': out.leech = e.value; break;
       case 'leech-action': out.leechAction = e.value; break;
       case 'pages': out.pages = e.value; break;
+      case 'exam': out.exams = e.value; break;
     }
   }
   if (!typed && out.imported !== undefined) out.type = 'source';

@@ -173,6 +173,7 @@ dropped, with a diagnostic.
 | `leech`        | int 1–9999                  | `8`       | lapses that make a card a leech                                    |
 | `leech-action` | `suspend` `tag`             | `tag`     | what a leech does: suspended (`sus=1`), or only marked             |
 | `pages`        | `n` or `n-m`                |           | which pages of its PDF the document is, numbered as the PDF numbers them |
+| `exam`         | `day label`, `, ` between   |           | the exams everything under the document is studied toward (exams, below) |
 
 **Type.** A `note` is the person's own writing: editable, cards anywhere in
 it, no schedule unless asked. A `source` is what someone else wrote, read
@@ -293,6 +294,30 @@ sixteen); `leech-action: suspend` writes `sus=1` on the line graded
 parse (`retention: 1.2`, `new-per-day: -3`) is a raw line with a
 diagnostic, as any known key's; `retention` is written as the shortest
 decimal (§7).
+
+**Exams.** `exam: 2026-11-18 midterm 2, 2026-12-14 final` says the
+document and everything under it (its cards, and its children directory
+all the way down, as options reach) are studied toward those days. Each
+entry is a day, then optionally a label (`midterm 2`; inner runs of
+whitespace written as one space), entries separated by commas, so a label
+holds no comma. One line holds them all, not one `exam` line per exam,
+because a key given twice is not valid YAML (and here, as for any known key,
+the later line wins with a diagnostic). Written `day label`, `, ` between,
+in the order given, plain or quoted like `title`; an entry that is not a day
+(`exam: next friday`, `2026-13-01`, an empty entry) makes the line raw with a
+diagnostic. Unlike options, exams add up: a deck that sets its own quiz
+under a notebook that sets a final is studied toward both, the nearer first.
+What the app does with them, derived and never written except through the
+ordinary `sr` and `read` lines: while an exam is ahead, a grade that FSRS
+would schedule past the exam's eve, on a card not yet seen in the exam's
+last week, is due on a day of that week instead (the interval cut, the
+stability and difficulty FSRS's own); the queue brings a line written before
+the exam was set into that week the same way, nothing written; a source or
+extract with reading left is paced to be finished three days before (its
+next pass brought forward, the interval written the shorter of growth and
+pacing, so the line's `due` less its `ivl` is still the day of the pass);
+new cards under it come in early enough to be reviewed a few times, unless
+`new-per-day` is set. The day after the exam none of it applies.
 
 **title** is written plain when it can be and as a double-quoted JSON string
 otherwise (when it starts with a YAML-significant character, contains `: ` or

@@ -12,6 +12,7 @@ import { linesOf, numbersOf, rateLabel, reviewsUnder, spanLabel, weekLabel, type
 import { useApp } from './store.js';
 import { docsOf, openCard, optionsAt } from './vault.js';
 import './numbers.css';
+import { appNow } from './clock.js';
 
 const WEEKDAYS = ['m', 't', 'w', 't', 'f', 's', 's'];
 
@@ -84,9 +85,9 @@ export function NumbersView({ home }: { home: string }) {
   const files = useApp((s) => s.files);
   const docs = useApp((s) => s.docs);
   const log = useApp((s) => s.reviews);
-  const day = dayOf(new Date());
+  const day = dayOf(appNow());
   const n = useMemo(() => {
-    const now = new Date();
+    const now = appNow();
     const lines = linesOf(docsOf(docsUnder(tree, home, order, files)));
     const mine = reviewsUnder(log, lines, new Set(files));
     const cache = new Map<string, Resolved>();

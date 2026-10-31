@@ -6,6 +6,74 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-10-31 — milestone 43: exam dates
+
+Done on main; commit `HASH`. New: `src/schedule/exams.ts`,
+`src/app/clock.ts`, `src/app/ExamTag.tsx`, the corpus file
+`mangled/exam.md`, the sample's `phys-412-quantum-ii/halvorsen-ch-9-wkb.md`,
+three test files. Changed: the front-matter (`exam`), the queue (`exam`,
+`pulled`, `GradeOptions.exam`, a read item's `pdf`), the reading pass
+(`Pace`), the meter (an exam's new cards), the app's queue, grading and
+passes, the queue view, the inspector, the reader's and PDF lens's top row,
+FORMAT §3. Nothing touched 45's ground (similarity, the deck browser).
+
+### Decided
+
+- **`exam: 2026-11-18 midterm 2, 2026-12-14 final`**: one line, entries
+  `day label`, a comma between; one line because a key given twice is not
+  YAML. Inherited through `ownersOf` as options are, but exams add up.
+- **The cap cuts the interval only.** A grade FSRS puts past the exam's eve,
+  made before the exam's last week, is due on the card's own day of that
+  week (by its id: the week is spread, 13 to 21 a day on the sample); the
+  stability and difficulty are FSRS's, so the early review is FSRS's
+  ordinary early review. A card seen in the last week is left alone. The
+  queue does the same, derived, for lines written before the exam was set.
+- **New cards** under an exam come in by a week before it when the default
+  allowance would be too slow; a `new-per-day` someone set is kept as set.
+- **Reading is paced, not graded**: a source's passes left spread to three
+  days before; the interval written is the shorter of growth and pacing,
+  so the line still says the day of its pass and the queue's pacing of it
+  is the line itself. Notes and PDFs (nothing counts what is left) get one
+  pass in the last week.
+- **The day after the exam** nothing applies; intervals grow as before.
+- **A test-only clock** (`setClockDay`) so the smoke can walk to the exam.
+
+### Verified
+
+- `npx vitest run`: 1062 tests, 66 files (1042 before). `npm run
+  typecheck` clean. `cargo test` 12. `vite build` clean. The corpus and
+  samples/ hold the fixed point. `exams.test.ts` walks the sample's quantum
+  notebook a day at a time from 10-30 to 12-10 with a midterm three weeks
+  out (and as it ships, midterm 2 then the final).
+
+### Not verified: the window run is owed
+
+- Nothing ran in the Tauri window. `ILMI_SMOKE=exam` (ILMI_VAULT on a fresh
+  copy of samples/double-major) sets light, writes `exam: <today + 21>
+  midterm` on the notebook, asserts the pulled reviews (all in the last
+  week, all under the notebook), the paced chapter, the queue's `for the
+  midterm` and its filter, the top row's `midterm in 21d` and the
+  inspector's block, a grade capped into the week with FSRS's stability, a
+  paced pass; then moves the app's clock to three days before (the pulled
+  reviews due, `midterm in 3d`) and to the day after (nothing for it, no
+  tag, a grade uncapped). A watchdog says `failed: no progress …` on a
+  hang. Shots: exam-upcoming, -upcoming-filtered, -today, -notebook,
+  -notebook-dark, -reading, -last-week, -after.
+
+### Handoff prompt
+
+```
+Read PLAN.md (ground rules, the Studying section, 43's and 45's notes),
+FORMAT.md §3 (*exams*), and this entry. Run ILMI_SMOKE=exam over a fresh
+copy of samples/double-major from a clean checkout, read its ok: lines and
+shot: captures, fix what fails, and record the run under this entry. Then
+45 (the same fact twice), which was begun in a worktree beside 43: merge
+it, keeping 43's `examQueue` re-bury beside its linked pairs and every
+front-matter key in FORMAT §3's table.
+```
+
+---
+
 ## 2026-10-30 — milestone 46: the open items
 
 Done on branch `worktree-agent-aaccbffc71e980574` (a worktree beside main,

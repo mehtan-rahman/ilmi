@@ -7,6 +7,7 @@ import { dayLabel, dueToday } from './items.js';
 import { useApp } from './store.js';
 import { toggleInspector } from './vault.js';
 import { inspectorShown } from './layout.js';
+import { appNow } from './clock.js';
 
 export function TopStrip() {
   const root = useApp((s) => s.vault);
@@ -14,7 +15,7 @@ export function TopStrip() {
   // drawn or not by the room rule (`layout.ts`); App draws this strip again on a resize
   const shown = useApp((s) => inspectorShown(s, window.innerWidth));
   const budget = useApp((s) => s.budget);
-  const due = dueToday(queue, new Date(), budget).length;
+  const due = dueToday(queue, appNow(), budget).length;
   return (
     <div className="top">
       <div className="ws"><b>{baseOf(root ?? '') || 'collection'}</b></div>
@@ -24,7 +25,7 @@ export function TopStrip() {
       </button>
       <div className="right">
         <span data-due={due ? '1' : '0'}>{due} due</span>
-        <span>{dayLabel(new Date())}</span>
+        <span>{dayLabel(appNow())}</span>
       </div>
       <button type="button" className="insp-toggle" data-on={shown ? '1' : '0'} aria-pressed={shown} title="inspector ⌘⇧I" onClick={toggleInspector}>
         <span className="panel-ico" />

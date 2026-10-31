@@ -13,6 +13,7 @@
 import type { LeechAction, Meta } from '../format/index.js';
 import { addDays, dayOf, dayStart, whenToDate } from './dates.js';
 import { sortQueue, type CardItem, type QueueItem } from './queue.js';
+import { NEW_LEAD, daysFrom, examKey, type ExamAt } from './exams.js';
 
 export interface DeckOptions {
   /** New cards introduced a day. */
@@ -99,6 +100,8 @@ export interface Spent {
   fresh: Map<string, number>;
   /** Reviews done today, by allowance. */
   reviews: Map<string, number>;
+  /** New cards introduced today under each exam ahead (`examKey`). */
+  exams?: Map<string, number>;
 }
 
 export interface MeterContext {
@@ -106,6 +109,20 @@ export interface MeterContext {
   optionsOf(path: string): Resolved;
   /** What today has used of each allowance already. */
   spent?: Spent;
+  /** The exam ahead a document is studied toward (`exams.ts`), if any. */
+  examOf?(path: string): ExamAt | undefined;
+}
+
+/**
+ * The new cards a day an exam asks for: what is left of them (today's
+ * introduced counted back in) over the days until `NEW_LEAD` before it,
+ * today included; past that, over the days still before it.
+ */
+export function examNewQuota(left: number, exam: ExamAt, now: Date): number {
+  const today = dayOf(now);
+  const cutoff = addDays(exam.day, -NEW_LEAD);
+  const days = cutoff >= today ? daysFrom(today, cutoff) + 1 : Math.max(1, daysFrom(today, exam.day));
+  return Math.ceil(left / days);
 }
 
 /**
@@ -114,13 +131,30 @@ export interface MeterContext {
  * the queue's order (priority, then due), each counted where its option is
  * set. A held item has `held` and is due at the next day's start, as a
  * buried sibling is; nothing is written. Learning cards are never held.
+ * Under an exam ahead, where `new-per-day` is the default (set nowhere),
+ * a new card also comes in while the exam's quota for the day
+ * (`examNewQuota`) is not spent.
  */
 export function meterQueue(items: QueueItem[], now: Date, ctx: MeterContext): QueueItem[] {
   sortQueue(items, now);
   const tomorrow = dayStart(addDays(dayOf(now), 1));
-  const used = { fresh: new Map(ctx.spent?.fresh ?? []), reviews: new Map(ctx.spent?.reviews ?? []) };
+  const used = { fresh: new Map(ctx.spent?.fresh ?? []), reviews: new Map(ctx.spent?.reviews ?? []), exams: new Map(ctx.spent?.exams ?? []) };
   const cache = new Map<string, Resolved>();
   const opts = (path: string) => { let r = cache.get(path); if (!r) { r = ctx.optionsOf(path); cache.set(path, r); } return r; };
+  // the exam a new card counts toward: one ahead, where nothing sets new-per-day
+  const examFor = (i: CardItem): ExamAt | undefined => (ctx.examOf && opts(i.path).from.newPerDay === undefined ? ctx.examOf(i.path) : undefined);
+  const quota = new Map<string, number>();
+  if (ctx.examOf) {
+    const left = new Map<string, { exam: ExamAt; n: number }>();
+    for (const i of items) {
+      if (i.kind !== 'card' || i.buried || i.dueAt > now || !isNewItem(i)) continue;
+      const e = examFor(i);
+      if (!e) continue;
+      const k = examKey(e);
+      left.set(k, { exam: e, n: (left.get(k)?.n ?? 0) + 1 });
+    }
+    for (const [k, { exam, n }] of left) quota.set(k, examNewQuota(n + (used.exams.get(k) ?? 0), exam, now));
+  }
   let held = false;
   for (const i of items) {
     if (i.kind !== 'card' || i.buried || i.dueAt > now) continue;
@@ -133,11 +167,17 @@ export function meterQueue(items: QueueItem[], now: Date, ctx: MeterContext): Qu
     const at = allowanceOf(i.path, r, key);
     const map = fresh ? used.fresh : used.reviews;
     const n = map.get(at) ?? 0;
-    if (n >= limit) {
+    const e = fresh ? examFor(i) : undefined;
+    const ek = e && examKey(e);
+    const forExam = ek !== undefined && (used.exams.get(ek) ?? 0) < (quota.get(ek) ?? 0);
+    if (n >= limit && !forExam) {
       i.held = fresh ? 'new' : 'reviews';
       i.dueAt = tomorrow;
       held = true;
-    } else map.set(at, n + 1);
+    } else {
+      map.set(at, n + 1);
+      if (ek !== undefined) used.exams.set(ek, (used.exams.get(ek) ?? 0) + 1);
+    }
   }
   return held ? sortQueue(items, now) : items;
 }
@@ -150,16 +190,19 @@ export interface SpentReview { doc: string; at: string; st: string }
  * first grade of a new card and each grade of a card in review, on `now`'s
  * local day, counted at its document's allowance.
  */
-export function spentToday(reviews: Iterable<SpentReview>, now: Date, optionsOf: (path: string) => Resolved): Spent {
+export function spentToday(reviews: Iterable<SpentReview>, now: Date, optionsOf: (path: string) => Resolved, examOf?: (path: string) => ExamAt | undefined): Spent {
   const today = dayOf(now);
-  const out: Spent = { fresh: new Map(), reviews: new Map() };
+  const out: Spent = { fresh: new Map(), reviews: new Map(), exams: new Map() };
   for (const r of reviews) {
     if (dayOf(whenToDate(r.at)) !== today) continue;
     const fresh = r.st === 'new';
     if (!fresh && r.st !== 'review') continue;
-    const at = allowanceOf(r.doc, optionsOf(r.doc), fresh ? 'newPerDay' : 'reviewsPerDay');
+    const o = optionsOf(r.doc);
+    const at = allowanceOf(r.doc, o, fresh ? 'newPerDay' : 'reviewsPerDay');
     const map = fresh ? out.fresh : out.reviews;
     map.set(at, (map.get(at) ?? 0) + 1);
+    const e = fresh && o.from.newPerDay === undefined ? examOf?.(r.doc) : undefined;
+    if (e) out.exams!.set(examKey(e), (out.exams!.get(examKey(e)) ?? 0) + 1);
   }
   return out;
 }

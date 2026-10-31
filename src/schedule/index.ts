@@ -5,7 +5,7 @@ export { dayOf, dayStart, addDays, isDay, whenToDate, instantOf, daysBetween } f
 export { grade, preview, toFsrs, fromFsrs, GRADES, type Grade } from './card.js';
 export * as reading from './read.js';
 export * as writing from './write.js';
-export { advanceRead, type ReadAction } from './read.js';
+export { advanceRead, type ReadAction, type Pace } from './read.js';
 export { advanceWrite, type WriteAction } from './write.js';
 export { grow, nextIntervals, postponed, POSTPONE_FACTOR } from './growth.js';
 export {
@@ -15,5 +15,11 @@ export {
 } from './queue.js';
 export {
   OPTION_DEFAULTS, OPTION_KEYS, ownersOf, resolveOptions, allowanceOf, meterQueue, spentToday, becomesLeech, isNewItem,
+  examNewQuota,
   type DeckOptions, type OptionKey, type Resolved, type Spent, type MeterContext, type SpentReview,
 } from './options.js';
+export {
+  EXAM_WINDOW, READ_LEAD, NEW_LEAD, PASS_BLOCKS, examKey, examsAt, activeExam, upcomingExam, daysFrom, examWindow, windowDay, lineKey,
+  capForExam, pacedInterval, perPassOf, examQueue, recallAt, examLeft,
+  type ExamAt, type ExamLeft,
+} from './exams.js';

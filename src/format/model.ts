@@ -26,6 +26,11 @@ export interface CardSchedule {
   pri?: number;
   /** `sus=1`: left out of the queue, the session, and the counts; the schedule is kept. */
   suspended?: true;
+  /**
+   * `link=<id>`: the card with that `^id` tests the same fact; the two share
+   * one schedule, one shown a day (FORMAT.md §6.2, *links*). Only on the bare line.
+   */
+  link?: string;
   extra?: Extra;
 }
 

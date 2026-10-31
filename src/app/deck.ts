@@ -300,9 +300,11 @@ export function changeCard(card: Card, action: BulkAction): void {
       for (const s of Object.values(card.blanks ?? {})) delete s.suspended;
       break;
     case 'reset': {
-      // the schedule goes, both directions'; what is the card's and not the scheduler's stays
+      // the schedule goes, both directions'; what is the card's and not the scheduler's (priority, suspension, link) stays
       const keep = (s: CardSchedule | undefined): CardSchedule | undefined =>
-        s?.pri !== undefined || s?.suspended ? { ...(s.pri !== undefined ? { pri: s.pri } : {}), ...(s.suspended ? { suspended: true as const } : {}) } : undefined;
+        s?.pri !== undefined || s?.suspended || s?.link !== undefined
+          ? { ...(s.pri !== undefined ? { pri: s.pri } : {}), ...(s.suspended ? { suspended: true as const } : {}), ...(s.link !== undefined ? { link: s.link } : {}) }
+          : undefined;
       const bare = keep(card.sched);
       const rev = keep(card.reverse);
       delete card.sched;

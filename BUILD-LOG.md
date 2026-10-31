@@ -6,6 +6,75 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-10-31 — milestone 45: the same fact twice
+
+Done on branch `worktree-agent-aacaabba75277b534` (a worktree beside main,
+where 43 is in progress), commit `COMMIT`. Nothing touched 43's ground (the
+interval cap, reading pacing, `exam`). New: `src/app/same.ts` (the finder,
+merge, link, unlink), `src/app/sameOps.ts` (the pairs over the open
+collection, the notices and undo), `src/schedule/links.ts` (`bareLined`,
+`stronger`, `withState`, `cardsById`, `linkedWith`, `buryLinked`,
+`copyToPartner`), the corpus file `mangled/links.md`, three test files.
+Changed: the `sr` line (`link`), `fromFsrs` and a reset (carry it), the
+queue (`CardItem.link`, linked pairs buried in `queueItems`, the app's
+queue and a deck's study), `gradeCard` (the grade written to the other
+side), the vault (`.ilmi/same.json`), the store (`notSame`), the deck
+browser (`similar`), the inspector (`linked to`, `also in`), FORMAT §1, §6.2
+and rule 2.
+
+### Decided
+
+- **The known pairs**, found by reading the stat-mech files: nine, the
+  course notes against the Lindqvist chapters and extracts and the
+  derivation drills (PLAN 45's notes list them).
+- **Similarity**: folded text (the deck search's fold), words and word
+  pairs, math normalized and read as token runs, idf weights divided down
+  where a document's own cards share a feature (a deck's template),
+  cosine on the whole and on the faces, a same-question floor for two
+  q&as; candidates from a token index; threshold 0.35.
+- **Measured**: stat-mech 8 of 9; collection 20 of 24 known same-fact
+  pairs; of 45 listed, 20 the same fact, 25 overlapping, 0 unrelated; 0 of
+  5000 random pairs; ~140 ms over 758 cards.
+- **Link**: `link=<id>` on the bare `sr` line, both sides written, one side
+  enough; bare lines only. The state is copied, not the grade applied:
+  both lines always hold one schedule, so they come due together and one
+  is buried. One a day, the queue's order choosing.
+- **Merge** keeps the card you pick (`keep this`) with the stronger
+  schedule; **not the same** in `.ilmi/same.json`.
+
+### Verified
+
+- `npx vitest run` (scratch worktree config): 1068 tests, 66 files (1042
+  before). `npm run typecheck` clean. `cargo test` 12. `vite build` clean.
+
+### Not verified — the window run is owed
+
+- Nothing ran in the Tauri window. `ILMI_SMOKE=same` (ILMI_VAULT on a fresh
+  copy of samples/double-major) sets light, asserts each step (`ok:`; the
+  first miss `failed: …`; thirty seconds without a line `failed: no
+  progress …`), and logs `shot:` at same-list, same-linked, same-queue,
+  same-merged, same-list-after, same-inspector-linked,
+  same-inspector-also, same-list-dark. It lists every pair in the course's
+  lens with its score, links the multiplicity peak's two cards (both due),
+  checks the day's queue holds one, grades it in a session and checks the
+  other line took the state, merges the free energy's cards, undoes it from
+  the notice, merges again, says the fluctuation formula and its
+  derivation are not the same, and reads the inspector's lines.
+
+### Handoff prompt
+
+```
+Read PLAN.md (ground rules, the Studying section and 45's notes),
+FORMAT.md §6.2 (*links*) and §1 (`same.json`), and this entry. Merge
+branch worktree-agent-aacaabba75277b534 into main beside 43 (the queue's
+`buildQueue` and `queueItems` are where 43's cap also lands: keep both).
+Run ILMI_SMOKE=same over a fresh copy of samples/double-major from a
+clean checkout, read its ok: lines and shot: captures, fix what fails,
+and record the run under this entry.
+```
+
+---
+
 ## 2026-10-30 — milestone 46: the open items
 
 Done on branch `worktree-agent-aaccbffc71e980574` (a worktree beside main,

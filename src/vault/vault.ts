@@ -183,6 +183,8 @@ export interface PdfChapterSpec {
 
 const STATE_DIR = '.ilmi';
 const STATE_FILE = `${STATE_DIR}/state.json`;
+/** Pairs of cards said not to be the same fact (milestone 45): `{ "not": ["a|b", …] }`, each pair's two keys in order. */
+export const SAME_FILE = `${STATE_DIR}/same.json`;
 const TMP_SUFFIX = '.ilmi-tmp';
 const MAX_RETRIES = 4;
 
@@ -1229,6 +1231,25 @@ export class Vault {
     } catch {
       return {};
     }
+  }
+
+  /** The pairs said not to be the same fact (`SAME_FILE`); none without the file or when it does not read. */
+  async loadNotSame(): Promise<string[]> {
+    const abs = this.abs(SAME_FILE);
+    if (!(await this.fs.stat(abs))) return [];
+    try {
+      const parsed: unknown = JSON.parse(await this.fs.readText(abs));
+      const not = parsed && typeof parsed === 'object' ? (parsed as { not?: unknown }).not : undefined;
+      return Array.isArray(not) ? not.filter((k): k is string => typeof k === 'string') : [];
+    } catch {
+      return [];
+    }
+  }
+
+  /** Write the pairs said not to be the same fact, sorted, each once. */
+  async saveNotSame(keys: readonly string[]): Promise<void> {
+    await this.fs.mkdir(this.abs(STATE_DIR));
+    await this.atomicWrite(this.abs(SAME_FILE), `${JSON.stringify({ not: [...new Set(keys)].sort() }, null, 2)}\n`);
   }
 
   async saveState(patch: VaultState): Promise<VaultState> {

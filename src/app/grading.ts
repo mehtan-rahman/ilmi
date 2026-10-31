@@ -4,9 +4,9 @@
 // app's, never required: a write that fails there leaves the card graded.
 
 import type { CardSchedule, Review } from '../format/index.js';
-import { daysBetween, gradeItem, instantOf, whenToDate, wasLeeched, type CardItem, type Grade } from '../schedule/index.js';
+import { cardsById, copyToPartner, daysBetween, gradeItem, instantOf, linkedWith, whenToDate, wasLeeched, type CardItem, type Grade } from '../schedule/index.js';
 import type { Loaded } from '../vault/index.js';
-import { currentVault, note, optionsAt, recordReview } from './vault.js';
+import { allDocs, currentVault, note, optionsAt, recordReview } from './vault.js';
 
 /** Time on a card past this is time away from it: a review counts this much at most, as Anki caps it. */
 export const REVIEW_MS_CAP = 60_000;
@@ -31,6 +31,10 @@ export function reviewOf(path: string, id: string, key: string | undefined, g: G
  * Grade `item` with `g`: one line rewritten, the options where it sits
  * applied, a leech said in a notice (and suspended when its options say
  * so), and the grade logged. `ms` is the time spent on it, when known.
+ * A linked card's grade is written to the other card's bare line too (its
+ * state, not its priority or suspension), in its own file: the grade
+ * counts for both (FORMAT.md §6.2, links). The log has one line, the
+ * graded card's.
  */
 export async function gradeCard(item: CardItem, g: Grade, now: Date, ms?: number): Promise<Loaded | null> {
   const vault = currentVault();
@@ -45,6 +49,18 @@ export async function gradeCard(item: CardItem, g: Grade, now: Date, ms?: number
     });
   });
   const w = wrote as { id: string; key?: string; prev?: CardSchedule; next: CardSchedule } | null;
+  // the other side of a link takes the same state; a reverse's grade is the reverse's own
+  if (w && w.key === undefined) {
+    const docs = allDocs();
+    const byId = cardsById(docs);
+    const me = byId.get(w.id);
+    const other = me ? linkedWith(me.card, docs, byId) : undefined;
+    const next = w.next;
+    if (other?.card.id !== undefined) {
+      const id = other.card.id;
+      await vault.update(other.path, (doc) => { copyToPartner(doc, id, next); }).catch((e: unknown) => console.error('link', e));
+    }
+  }
   if (w) {
     if (wasLeeched(w.prev, w.next, opts.leech)) note(`leech · ${opts.leechAction === 'suspend' ? 'suspended' : `${w.next.lapses ?? 0} lapses`}`);
     await recordReview(reviewOf(item.path, w.id, w.key, g, w.prev, w.next, now, ms)).catch((e: unknown) => console.error('review log', e));

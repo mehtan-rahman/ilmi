@@ -10,11 +10,12 @@ import { EditorView } from 'prosemirror-view';
 import type { Node as PMNode } from 'prosemirror-model';
 import { PRI_DEFAULT, PRI_MAX, PRI_MIN, cardFields, meta, parsePri, type Card, type CardForm } from '../format/index.js';
 import { makeState, textOf, type Dir } from '../reader/index.js';
+import { whenToDate } from '../schedule/index.js';
 import { runBlockHooks, usePlugins } from '../plugins/index.js';
 import { revealIndex } from './chrome.js';
 import { asks, facesOf, facesText, planEdit, switchForm, type Faces } from './cardEdit.js';
 import {
-  DEFAULT_VIEW, FORM_CHIPS, NO_SELECTION, SORTS, STATE_CHIPS, clickSelect, countLabel, deckRows, docTargets, docsUnder, filterRows,
+  DEFAULT_VIEW, FORM_CHIPS, NO_SELECTION, SORTS, STATE_CHIPS, clickSelect, countLabel, deckRows, docTargets, docsUnder, filterRows, fold,
   findCard, selectAll, selectedRows, sortRows, type BulkAction, type CardRef, type DeckRow, type DeckSort, type DeckView, type Selection, type StateChip,
 } from './deck.js';
 import { bulkCards, newCardAt, saveCardEdit, studyDeck } from './deckOps.js';
@@ -23,7 +24,9 @@ import { MENU_W, placeMenu } from './NodeMenu.js';
 import { GLYPH, kindOf, titleOf } from './names.js';
 import { blankAnswers, clozeHTML, faceDir, handleClickOn, nodeViews, richHTML } from './Reader.js';
 import { useApp } from './store.js';
-import { docsOf, removeCard, setDeckView } from './vault.js';
+import { docsOf, openCard, removeCard, setDeckView } from './vault.js';
+import { canLink, cardFaces, type SameCard } from './same.js';
+import { currentPairs, linkCards, mergeCards, notTheSame } from './sameOps.js';
 import './session.css';
 import './deck.css';
 
@@ -243,6 +246,77 @@ export function CardEditor({ card, initial, pri: initialPri, onSave, onCancel }:
   );
 }
 
+// ── similar: the same fact twice ─────────────────────────────────
+
+/** One side of a pair: the card as a row draws it, where it lives, its schedule, and `keep this`. */
+function SameSide({ c, card, now, onKeep }: { c: SameCard; card: Card | null; now: Date; onKeep(): void }) {
+  const f = facesHTML(c.text);
+  const s = card?.sched;
+  const form = cardFields(c.text)?.form;
+  const suspended = !!s?.suspended;
+  return (
+    <div className="sp-side" data-key={c.key} data-path={c.path} data-block={c.block}>
+      <div className="sp-head">
+        <span className="dr-form">{form ? FORM_LABEL[form] : ''}</span>
+        <button type="button" className="sp-path" title="open the card" onClick={() => openCard(c.path, c.block, c.id)}>{pathLabel(c.path)}</button>
+      </div>
+      <div className="cs-body dr-faces">
+        <span className="dr-front" dir={f.frontDir} dangerouslySetInnerHTML={{ __html: f.front }} />
+        {f.back && <span className="dr-back" dir={f.backDir} dangerouslySetInnerHTML={{ __html: f.back }} />}
+      </div>
+      <div className="sp-sched">
+        <span className="dr-due" data-due={!suspended && (!s?.due || whenToDate(s.due) <= now) ? '1' : '0'}>{suspended ? 'suspended' : dueWhen(s?.due, now)}</span>
+        {s?.ivl !== undefined && s.ivl >= 1 && <span>{fmtDays(s.ivl)}</span>}
+        <span>{plural(s?.reps ?? 0, 'review')}</span>
+        {(s?.lapses ?? 0) > 0 && <span>{plural(s!.lapses!, 'lapse')}</span>}
+        <span className="grow" />
+        <button type="button" className="sp-keep" data-act="keep" onClick={onKeep}>keep this</button>
+      </div>
+    </div>
+  );
+}
+
+/** Pairs that seem to test the same fact, where either card is under the lens: side by side, best first, each to merge, link, or leave. */
+function SimilarList({ paths, q, now }: { paths: readonly string[]; q: string; now: Date }) {
+  const docs = useApp((s) => s.docs);
+  const notSame = useApp((s) => s.notSame);
+  const [limit, setLimit] = useState(60);
+  const pairs = useMemo(() => {
+    const under = new Set(paths);
+    const words = fold(q).split(/\s+/).filter(Boolean);
+    const hay = (c: SameCard) => fold(cardFaces(c.text)?.whole ?? c.text);
+    return currentPairs().filter((p) => (under.has(p.a.path) || under.has(p.b.path)) && (!words.length || words.every((w) => hay(p.a).includes(w) || hay(p.b).includes(w))));
+  // the pairs are found again when the files or the pairs said not the same change
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paths, q, docs, notSame]);
+  const cardOf = (c: SameCard): Card | null => {
+    const body = docsOf([c.path])[0]?.[1];
+    return body ? findCard(body, c.id === undefined ? { path: c.path, block: c.block, text: c.text } : { path: c.path, block: c.block, id: c.id, text: c.text }) : null;
+  };
+  const fail = (e: unknown) => console.error(e);
+  if (!pairs.length) return <div className="empty">nothing alike</div>;
+  return (
+    <div className="same-list">
+      {pairs.slice(0, limit).map((p) => {
+        const [ca, cb] = [cardOf(p.a), cardOf(p.b)];
+        return (
+          <div key={`${p.a.key}|${p.b.key}`} className="same-pair" data-a={p.a.key} data-b={p.b.key} data-score={p.score.toFixed(3)}>
+            <div className="sp-sides">
+              <SameSide c={p.a} card={ca} now={now} onKeep={() => { mergeCards(p.a, p.b).catch(fail); }} />
+              <SameSide c={p.b} card={cb} now={now} onKeep={() => { mergeCards(p.b, p.a).catch(fail); }} />
+            </div>
+            <div className="sp-acts">
+              {ca && cb && canLink(ca, cb) && <button type="button" data-act="link" title="one schedule for both, one of them a day" onClick={() => { linkCards(p.a, p.b).catch(fail); }}>link</button>}
+              <button type="button" data-act="not-same" onClick={() => { notTheSame(p.a, p.b).catch(fail); }}>not the same</button>
+            </div>
+          </div>
+        );
+      })}
+      {pairs.length > limit && <button type="button" className="same-more" onClick={() => setLimit((l) => l + 60)}>{pairs.length - limit} more</button>}
+    </div>
+  );
+}
+
 // ── the browser ──────────────────────────────────────────────────
 
 /** A right-click on a row: where, and whether the move list shows. */
@@ -270,6 +344,7 @@ export function DeckBrowser({ home, active }: BrowserProps) {
   const [sel, setSel] = useState<Selection>(NO_SELECTION);
   const [editing, setEditing] = useState<Editing>(null);
   const [cram, setCram] = useState(false);
+  const [similar, setSimilar] = useState(false);
   const [menu, setMenu] = useState<RowMenu | null>(null);
   const [bulkMenu, setBulkMenu] = useState<'move' | 'pri' | 'reset' | null>(null);
   const [priText, setPriText] = useState('');
@@ -400,6 +475,8 @@ export function DeckBrowser({ home, active }: BrowserProps) {
         setSel({ keys: [r.key], anchor: r.key });
       };
       if (e.key === '/') { e.preventDefault(); search.current?.focus(); }
+      // the pairs have no cursor of their own: the rows' keys wait
+      else if (similar) return;
       else if (e.key === 'j' || e.key === 'ArrowDown') { e.preventDefault(); go(at < 0 ? 0 : Math.min(shown.length - 1, at + 1)); }
       else if (e.key === 'k' || e.key === 'ArrowUp') { e.preventDefault(); go(at < 0 ? 0 : Math.max(0, at - 1)); }
       else if (e.key === 'Enter' && at >= 0) { e.preventDefault(); setEditing({ key: shown[at]!.key }); }
@@ -505,7 +582,7 @@ export function DeckBrowser({ home, active }: BrowserProps) {
           <select className="db-sort" value={view.sort} onChange={(e) => setView({ sort: e.target.value as DeckSort })}>
             {SORTS.map(([s, label]) => <option key={s} value={s}>{label}</option>)}
           </select>
-          <span className="db-count">{countLabel(shown.length, rows.length)}</span>
+          <span className="db-count">{similar ? 'pairs' : countLabel(shown.length, rows.length)}</span>
         </div>
         <div className="db-row db-chips">
           {FORM_CHIPS.map(([f, label]) => (
@@ -515,6 +592,8 @@ export function DeckBrowser({ home, active }: BrowserProps) {
           {STATE_CHIPS.map((s: StateChip) => (
             <button key={s} type="button" className="chip" data-on={view.states.includes(s) ? '1' : '0'} data-chip={s} onClick={() => setView({ states: toggle(view.states, s) })}>{s}</button>
           ))}
+          <span className="chip-gap" />
+          <button type="button" className="chip" data-on={similar ? '1' : '0'} data-chip="similar" title="cards that seem to test the same fact" onClick={() => { setSimilar(!similar); setSel(NO_SELECTION); }}>similar</button>
         </div>
         {chosen.length > 0 && (
           <div className="db-row db-actions">
@@ -563,10 +642,11 @@ export function DeckBrowser({ home, active }: BrowserProps) {
         )}
       </div>
 
-      {editingNew && newAfterKey === null && newEditor(editingNew)}
-      {rows.length === 0 && !editingNew && <div className="empty">no cards</div>}
-      {rows.length > 0 && shown.length === 0 && <div className="empty">nothing matches</div>}
-      {shown.slice(0, drawnTo).map((r) => {
+      {similar && <SimilarList paths={paths} q={q} now={now} />}
+      {!similar && editingNew && newAfterKey === null && newEditor(editingNew)}
+      {!similar && rows.length === 0 && !editingNew && <div className="empty">no cards</div>}
+      {!similar && rows.length > 0 && shown.length === 0 && <div className="empty">nothing matches</div>}
+      {!similar && shown.slice(0, drawnTo).map((r) => {
         if (editingKey === r.key) return <div key={r.key}>{editorFor(r)}</div>;
         const f = facesHTML(r.text);
         const ivl = r.sched?.ivl && r.sched.ivl >= 1 ? fmtDays(r.sched.ivl) : '';
@@ -618,7 +698,7 @@ export function DeckBrowser({ home, active }: BrowserProps) {
           </div>
         );
       })}
-      {editingNew && newAfterKey !== null && !keys.includes(newAfterKey) && newEditor(editingNew)}
+      {!similar && editingNew && newAfterKey !== null && !keys.includes(newAfterKey) && newEditor(editingNew)}
 
       {menu && menuRow && (
         <div className="ctx-menu" ref={menuRef} style={{ left: menu.x, top: menu.y }} onMouseDown={(e) => e.stopPropagation()} onContextMenu={(e) => e.preventDefault()}>

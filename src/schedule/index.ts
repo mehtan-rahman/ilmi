@@ -13,6 +13,7 @@ export {
   fold, overflow, postponeOverflow,
   type QueueItem, type Fold, type CardItem, type ReadItem, type WriteItem, type GroupKey, type Dir, type Scope, type Counts, type GradeOptions,
 } from './queue.js';
+export { bareLined, withState, stronger, cardsById, partnerOf, linkedWith, buryLinked, copyToPartner, type LinkedCard } from './links.js';
 export {
   OPTION_DEFAULTS, OPTION_KEYS, ownersOf, resolveOptions, allowanceOf, meterQueue, spentToday, becomesLeech, isNewItem,
   type DeckOptions, type OptionKey, type Resolved, type Spent, type MeterContext, type SpentReview,

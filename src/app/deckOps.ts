@@ -10,7 +10,8 @@ import { SESSION, titleOf } from './names.js';
 import type { OpenOpts } from './panes.js';
 import { useApp } from './store.js';
 import { itemKey, studyItems, type StudyOptions } from './study.js';
-import { currentVault, docsOf, note, openNode } from './vault.js';
+import { allDocs, currentVault, docsOf, note, openNode } from './vault.js';
+import { cardsById } from '../schedule/index.js';
 
 function need() {
   const v = currentVault();
@@ -62,7 +63,7 @@ export function studyDeck(id: string, opts: StudyOptions = {}, openOpts: OpenOpt
   const s = useApp.getState();
   // what the day's allowance holds back in the queue is held back here too, unless the cards were picked by hand
   const held = new Set(s.queue.filter((i) => i.kind === 'card' && i.held).map((i) => itemKey(i as import('../schedule/index.js').CardItem)));
-  const items = studyItems(docsOf(docsUnder(s.tree, id, s.order, s.files)), new Date(), opts.only ? opts : { held: (i) => held.has(itemKey(i)), ...opts });
+  const items = studyItems(docsOf(docsUnder(s.tree, id, s.order, s.files)), new Date(), { linked: cardsById(allDocs()), ...(opts.only ? opts : { held: (i: import('../schedule/index.js').CardItem) => held.has(itemKey(i)), ...opts }) });
   const title = titleOf(id, s.docs, s.vault);
   if (!items.length) {
     notify(`${opts.cram ? 'no cards' : 'nothing due'} · ${title}`);

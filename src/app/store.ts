@@ -233,6 +233,8 @@ export interface AppState {
   folds: Record<string, string[]>;
   /** Every review logged (`.ilmi/reviews/`), oldest first, for the numbers. Empty without a log. */
   reviews: Review[];
+  /** Pairs of cards said not to be the same fact (`.ilmi/same.json`, `same.ts`'s `pairKey`): never listed again. */
+  notSame: string[];
   /** What a folder's or a deck's lens shows: its items, its cards, or its numbers. Not remembered. */
   lensViews: Record<string, LensView>;
   session: Session | null;
@@ -302,6 +304,7 @@ export const useApp = create<AppState>((set, get) => ({
   deckViews: {},
   folds: {},
   reviews: [],
+  notSame: [],
   lensViews: {},
   session: null,
   sessionEl: null,

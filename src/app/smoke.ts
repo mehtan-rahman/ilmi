@@ -7670,8 +7670,8 @@ export async function smokeTextSections(vault: Vault): Promise<void> {
     const strip = (t: string) => t.replace(/^read: .*$/m, 'read');
     must(strip(clipAfter) === strip(clipBefore) && !clipAfter.includes('<!-- extract in that'), 'nothing went back to the clipping but its marker');
     must(/^read: .*pos=9\b/m.test(clipAfter), `the marker, already past it, stays (${/^read: .*$/m.exec(clipAfter)?.[0]})`);
-    const notice = useApp.getState().notice;
-    must(notice?.line === '§ in that world the vacuum · back in 3d, until dismissed · in its notes · ⏎ to write in it' && notice.open === NOTE, `the notice: "${notice?.line}"`);
+    const notice = await poll(() => useApp.getState().notice, 'the notice', 8000);
+    must(notice.line === '§ in that world the vacuum · back in 3d, until dismissed · in its notes · ⏎ to write in it' && notice.open === NOTE, `the notice: "${notice.line}"`);
     await shot('textsections-made');
     key('Enter');
     await poll(() => useApp.getState().caretHeading?.path === NOTE && useApp.getState().caretHeading?.text === 'in that world the vacuum', '⏎ opens the note at the section, the caret in it', 10000);

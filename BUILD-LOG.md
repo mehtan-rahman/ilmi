@@ -6,6 +6,123 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-11-02 — milestone 50: text sources the same way
+
+Done on main, commits `4019839` and the window check's `2c62267`,
+`ccf1fe1`, `d90ad88`, `ae18a49`, `f004c8b`. Changed: `src/vault/vault.ts` (`section`,
+`absorbExtract`, `notesOf`, `SectionSpec`) and its index, `src/app/
+vault.ts` (`sectionNode`, `absorbExtractNode`), `sections.ts`
+(`moveSection`, `moveAction`, the heading menu), `store.ts`
+(`sectionMove`), `Palette.tsx` (the move picker, the command), `Reader.tsx`
+(`marks`, the cue, `doExtract`, `recentRef`), `Inspector.tsx` (the `from`
+row, the move button, the extract's `into the note`), `smoke.ts`
+(`textsections`), tests (`vault/tree`, `app/sections-view`), FORMAT §6.5,
+README.
+
+### Decided
+
+- **One note per source, in the source's folder**: `notes.md` in its
+  children directory, where its extracts used to go, titled `<source> —
+  notes`; a section is appended, never placed.
+- **Named as an extract was**: the passage's first words, ` · 2` when
+  taken, so the queue's rows read as the old extracts' did.
+- **`from:` is prose**, a plain line under the heading, read back only for
+  the inspector; the format gives it no meaning, and nothing links back.
+- **Moving is the palette**: the heading's menu, the inspector and the
+  palette's own command all open the palette as a picker of notes, as
+  `study…` turns it into a picker of decks.
+- **Folding is offered on the extract document itself** (its inspector),
+  never on the source, never in bulk.
+- **Notes keep carving extracts** with `e`: the model would make a section
+  in place, but that restructures the person's own note; left to ask.
+
+### Verified
+
+- `npx vitest run --maxWorkers=3`: 1170 tests, 79 files (1167 before).
+  `npm run typecheck` clean. No Rust touched.
+
+### Window check (2026-11-02, mine, a clean checkout, six runs)
+
+The same rig as 49's: a detached worktree of main, `node_modules` and
+`target` cloned in, a fresh copy of the sample each run,
+`ILMI_SMOKE=textsections`, captures by window id 0.3 s after each
+`shot:` line.
+
+- **Run 1** (`4019839`): the cue reads `section e`; `e` made the note with
+  the section (`in that world the vacuum`, made today, back in 3 days, the
+  `from:` line, the passage; the note titled `why perturbation series
+  diverge — notes`; nothing back to the clipping); then the smoke expected
+  the marker to move, but it already sat past that paragraph (`pos=9`) and
+  moves forward only — the smoke's mistake (`2c62267`).
+- **Run 2**: through the notice and ⏎ opening the note at the section;
+  then the smoke searched the stale note surface for the clipping's next
+  paragraph (its own bug: it now reads the live page and waits for the
+  tab). Seen in the shots: the bottom strip still said `e extract` beside
+  a cue saying `section e`, and `move to…` was offered on a frozen
+  source's own heading; both fixed (`ccf1fe1`: the strip says `section`
+  on a text source; move is a note's).
+- **Run 3**: through the second passage (the marker to `pos=18`), the
+  chapter's note, the three rows in the day's queue (`written, no cards
+  yet · first time back`), the session in the note with the inspector's
+  `from` row and `next · back in 5d`, the pass counted, the picker and the
+  move landing in the course note; then the smoke compared two separately
+  parsed blocks by identity (`d90ad88`, with the notice shortened to `in
+  its notes`). Seen in the move shot: the picker's row tags (`note`)
+  drawn at the rows' left edge and spilling under the panel — `pdf.css`
+  has styled the book's passage tag as `.ptag` since 48, the class the
+  palette's row tags share; scoped to `.pdf-view` (`ae18a49`).
+- **Run 4** (`d90ad88`): `done`, 67 `ok:`, no `failed:`: the whole flow,
+  through the clipping edited with the sections untouched, the old
+  extract folded in from its inspector (`made=2026-10-27 due=2026-10-31
+  ivl=4 reps=1` on the line, its cards with it, the file and the
+  clipping's backref gone, the note open at it), and dark. The screen
+  locked during the run, so its later shots (move onward) were not
+  captured; the smoke ran on regardless.
+- **Run 5** (`ae18a49`, the screen unlocked again): the smoke read the
+  notice synchronously the moment the note file appeared, a beat before
+  the notice came (`f004c8b`: it polls).
+- **Run 6** (`f004c8b`): `done`, 68 `ok:`, no `failed:`, all ten shots.
+  The picker's tags sit at the rows' right; the moved section at the
+  course note's end with its line and `from:`; the extract's inspector
+  offering `into the note`; the folded `Dyson's argument` as a section
+  with its text, its `[mine]` paragraph and its Q/A card, the inspector
+  reading `written, 1 card · back for the 2nd time`, the old `§` child
+  gone from the tree; dark.
+
+Seen in the shots against the model: the cue and the strip both say
+`section`; the note appears in the tree under the clipping beside the old
+`§ Dyson's argument`; the notice sits above the strip (`§ in that world
+the vacuum · back in 3d, until dismissed · in its notes · ⏎ to write in
+it · undo · open`); the note with its two sections, `§` after each
+heading, the `from:` lines under them; the queue's three `§` rows among
+the cards and a read row; the session's bar `next · back in 5d / later /
+dismiss` with the inspector's `from` row and `dismiss · move to…`; the
+picker `move § euler had the prototype two centuries to…` listing notes
+with their paths. Reads differently from the demo: there is no demo for
+this milestone; the queue row's trail repeats the source's title (`why
+perturbation series diverge › why perturbation series diverge — notes`),
+accurate but long.
+
+### Not done
+
+- `e` in a note still makes an extract document; the picker lists notes
+  flat; a folded section keeps the extract's title.
+- From 49: `ILMI_SMOKE=open`'s PDF part unrun; a parent's blank filler
+  pages; the demo's task bar is a notice.
+
+### Handoff prompt
+
+```
+Read PLAN.md (Reading books, 47–50's notes, and Notes for the next
+session) and this entry. 47–50 are done and window-checked from clean
+checkouts. What is next is the user's to say: the open items in 49's and
+50's notes (e in a note, the picker's order, the task bar over both
+panes, tags that overlap, a clip that cannot move), or a new section of
+PLAN.md.
+```
+
+---
+
 ## 2026-11-02 — milestone 49: two books on the sample
 
 Done on main, commits `bb1ead5` (48's notice), `fe5a6a0` (the books), and

@@ -5454,7 +5454,49 @@ is not kept; the demo's task bar is still a notice.
 
 *Done when:* both flows run end to end in the window on a fresh copy of the sample. The queue reads as one line from start to end, and no extract document is left behind under the converted chapters.
 
-### [ ] 50. Text sources the same way — marked passages become sections of a note
+### [x] 50. Text sources the same way — marked passages become sections of a note
+Done 2026-11-02, commit `4019839` and the window check's `2c62267`–`f004c8b`.
+Notes: `Vault.section(source, {text, blocks})` (beside `extract`): the
+source's note is `notes.md` in its children directory, made the first
+time with no type and `title: <source's title> — notes`; the section goes
+at its end as a `##` heading named by `extractName` (the passage's first
+words, ` · 2` when taken), its line `made=<today> due=<+3d> ivl=3` plus
+the source's `pri` when it has one, a paragraph `from: <source's title>`,
+then the passage's paragraphs; the source gets no backref, no highlight,
+only its marker moved past the last touched block (a note has none).
+`Vault.absorbExtract(extract)` folds an extract document into the same
+note: its title the heading, its `read` the line (`made` its `imported`
+day; enrolled afresh when it had none), the `from:` line, its body with
+cards, ids and `sr` lines, backrefs stripped; the file removed and the
+source's backrefs to it dropped. The reader: `marks` is a `source` with no
+pages and not a book's notes; its cue reads `section e` and `e` goes
+through `sectionNode`, with a notice (`§ <name> · back in 3d, until
+dismissed · in <note> · ⏎ to write in it`, `open` the note, undo removing
+the section) and `recentRef`: ⏎ right after (not from a field or the
+editor) reveals the note at the section with `write`. Notes and extract
+documents keep carving extracts with `e`, as before. Moving: `moveSection
+(at, to)` in `sections.ts` cuts the heading's span (`sectionSpan`) from
+the note and appends it to `to` through `writeDoc`, a done row `§ … ·
+moved to <title>`; `moveAction` opens the palette with `sectionMove` set
+(a new store field), and the palette lists the notes (type note, not the
+section's own) as a picker, the placeholder `move § <heading> to…`;
+offered from the heading's menu, the palette (`move to… · <heading>`) and
+the inspector's section part (second button, after the state's own). The
+inspector's section part shows a `from` row when the block under the
+heading is a `from: ` paragraph; an extract document of a text source
+(its parent without pages) gets an `extract` block offering `into the
+note`. FORMAT §6.5 (the convention: the note, the `from:` line, moving,
+folding), README's key table. Tests: 1170 (+2 vault, +1 sections view).
+Window check (2026-11-02, mine, a clean checkout, by window id): six
+runs, recorded in BUILD-LOG; the app fixes along the way: the strip says
+`e section` on a text source, `move to…` is a note's only, and `pdf.css`'s
+`.ptag` (48's passage tag) no longer styles the palette's row tags, which
+had sat at the rows' left edge since 48; run 6 at `f004c8b` ran to
+`done`, 68 `ok:`, no `failed:`, all ten shots. Not done: `e` in a note
+still carves an extract document (the model would make a section in
+place; left for the user to say); the palette's picker lists every note
+flat, with no folder order; a converted section's heading is the
+extract's title, never renamed.
 The user, 2026-11-02, asked whether extracts from clippings and EPUBs should
 also become sections: "I think we shoudl have the same model for them, i'm
 kinda leaning towards sections of a note that aren't tied the source
@@ -5493,8 +5535,10 @@ flow was right ("Looks good"). The demo they settled on is
 `design/demos/pdf-reading.html`; its books' sources are in
 `design/books/`. 48 passed its window check from a clean checkout
 on 2026-11-02; 49 followed the same day (the books typeset from
-`design/books/text/`, the sample converted, `ILMI_SMOKE=books`). The
-user decided text sources follow the same model, written as 50: next.
+`design/books/text/`, the sample converted, `ILMI_SMOKE=books`), and 50
+(text sources as sections of a note, `ILMI_SMOKE=textsections`) the same
+evening. Reading books (47–50) is complete; what is next is the user's
+to say (the open items in 49's and 50's notes, or a new section).
 
 Refinement (33–41) is complete, 2026-10-30, every milestone's window check
 run and recorded under its BUILD-LOG entry (33 `notes`, 34 `editing`, 35

@@ -904,6 +904,8 @@
   letter-spacing: 0.02em;
   color: var(--fg-3);
 }
+/* in a session the bar sits at the foot: the notice goes above it, clear of its buttons */
+.notice[data-session="1"] { bottom: 112px; }
 .notice .nl { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .notice .na {
   appearance: none;

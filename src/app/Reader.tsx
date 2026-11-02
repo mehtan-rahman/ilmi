@@ -1264,7 +1264,9 @@ export function caretPos(doc: PMNode, at: { nth: number; text: string; offset: n
     else {
       // the block became a card (a cloze or `::` typed into it): the card is selected, as a click on it would
       let card: number | null = null;
-      doc.descendants((n, pos) => { if (card === null && n.type === schema.nodes.card && (n.attrs.card as Card).text === at.text) card = pos; return card === null; });
+      // (a card in a list item keeps its marker apart from its text)
+      const whole = (c: Card) => `${c.item ?? ''}${c.text}`;
+      doc.descendants((n, pos) => { if (card === null && n.type === schema.nodes.card && whole(n.attrs.card as Card) === at.text) card = pos; return card === null; });
       if (card !== null) return { card };
     }
   }

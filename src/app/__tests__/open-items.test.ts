@@ -71,12 +71,13 @@ describe('a selected card through a rebuild from the file', () => {
     const live = { frozen: () => false, pos: null };
     const prev0 = makeState(parse('## a heading\n\nabc\n\n## the next heading\n').doc.blocks, live);
     const end = prev0.doc.child(1).nodeSize + prev0.doc.child(0).nodeSize - 1;
-    const typed = prev0.apply(prev0.tr.insertText(' {{c1::$x$}} done', end));
+    const typed = prev0.apply(prev0.tr.insertText(' {{c1::$x$}} done', end).insertText('3. ', prev0.doc.child(0).nodeSize + 1));
     const prev = typed.apply(typed.tr.setSelection(TextSelection.create(typed.doc, typed.doc.child(0).nodeSize + typed.doc.child(1).nodeSize - 1)));
     const file = parse('').doc;
     file.blocks = fromDoc(prev.doc);
     const next = makeState(parse(serialize(file)).doc.blocks, live);
     expect(next.doc.child(1).type.name).toBe('card');
+    expect((next.doc.child(1).attrs.card as { item?: string }).item).toBe('3. ');
     const got = withSelectionOf(prev, next);
     expect(got.selection instanceof NodeSelection && got.selection.node.type.name === 'card').toBe(true);
     expect(got.selection.from).toBe(got.doc.child(0).nodeSize);

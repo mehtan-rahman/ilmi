@@ -7352,7 +7352,7 @@ export async function smokeBooks(vault: Vault): Promise<void> {
   const readOf = (p: string) => items().find((i): i is ReadItem => i.kind === 'read' && i.path === p);
   /** Draw a box on a page as a pointer would: down at its corner, a move, up at the other. */
   const drag = async (page: number, x: number, y: number, w: number, h: number) => {
-    const el = await poll(() => q<HTMLElement>(`.pane[data-active="1"] .book .pdf-page[data-page="${page}"]`), `page ${page} is drawn`, 15000);
+    const el = await poll(() => q<HTMLElement>(`.pane[data-active="1"] .book .pdf-page[data-page="${page}"]`), `page ${page} is drawn`, 30000);
     el.scrollIntoView({ block: 'center' });
     await sleep(400);
     const r = el.getBoundingClientRect();
@@ -7372,7 +7372,7 @@ export async function smokeBooks(vault: Vault): Promise<void> {
   /** A session at one item; resolves once its bar is drawn in the book. */
   const sessionAt = async (s: SectionItem | ReadItem, page: number) => {
     openSession(s);
-    await poll(() => { const el = useApp.getState().sessionEl; return el && sameItem(el.item, s) && q(`.pane[data-active="1"] .doc-session[data-book="1"] .book .pdf-page[data-page="${page}"] canvas`) && q('.pane[data-active="1"] .doc-session .session-bar') ? true : null; }, `the session opens the book at p. ${page}`, 20000);
+    await poll(() => { const el = useApp.getState().sessionEl; return el && sameItem(el.item, s) && q(`.pane[data-active="1"] .doc-session[data-book="1"] .book .pdf-page[data-page="${page}"] canvas`) && q('.pane[data-active="1"] .doc-session .session-bar') ? true : null; }, `the session opens the book at p. ${page}`, 45000); // a covered window draws its pages slowly
     await sleep(600);
   };
   const bar = () => q<HTMLElement>('.pane[data-active="1"] .session-bar')!;

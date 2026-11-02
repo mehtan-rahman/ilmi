@@ -7489,7 +7489,7 @@ export async function smokeBooks(vault: Vault): Promise<void> {
     setClockDay(DAY3);
     refreshQueue();
     const back = await poll(() => { const s = sectionOf(CH3, '3.6 · the equipartition'); return s && isDue(s, appNow()) ? s : null; }, 'five days on, it is due again', 8000);
-    must(back.written && back.cards === 3, 'written, 3 cards');
+    must(back.cards === 3, 'back with its 3 cards (a section of cards alone is written by its cards)');
     await openQuery();
     must(where(rowOf('3.6 · the equipartition')) === 'written, 3 cards · back for the 2nd time', `its row: "${where(rowOf('3.6 · the equipartition'))}"`);
     const dueCards = () => items().filter((i) => i.kind === 'card' && i.path === CH3 && isDue(i, appNow())).length;

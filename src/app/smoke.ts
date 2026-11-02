@@ -7671,7 +7671,7 @@ export async function smokeTextSections(vault: Vault): Promise<void> {
     must(strip(clipAfter) === strip(clipBefore) && !clipAfter.includes('<!-- extract in that'), 'nothing went back to the clipping but its marker');
     must(/^read: .*pos=9\b/m.test(clipAfter), `the marker, already past it, stays (${/^read: .*$/m.exec(clipAfter)?.[0]})`);
     const notice = useApp.getState().notice;
-    must(notice?.line.startsWith('§ in that world the vacuum · back in 3d, until dismissed · in why perturbation series diverge — notes · ⏎ to write in it') && notice.open === NOTE, `the notice: "${notice?.line}"`);
+    must(notice?.line === '§ in that world the vacuum · back in 3d, until dismissed · in its notes · ⏎ to write in it' && notice.open === NOTE, `the notice: "${notice?.line}"`);
     await shot('textsections-made');
     key('Enter');
     await poll(() => useApp.getState().caretHeading?.path === NOTE && useApp.getState().caretHeading?.text === 'in that world the vacuum', '⏎ opens the note at the section, the caret in it', 10000);
@@ -7736,7 +7736,8 @@ export async function smokeTextSections(vault: Vault): Promise<void> {
     click(row);
     after = await changed(COURSE, before, 'the course note took it');
     const moved = (await sectionAt(COURSE, 'euler had the prototype'))!;
-    must(parse(after).doc.blocks.at(-moved.body.length - 1) === parse(after).doc.blocks.find((b) => b.kind === 'heading' && b.text === euler.text) && moved.heading.read?.made === DAY1 && moved.body[0]!.kind === 'paragraph' && (moved.body[0] as { text: string }).text === 'from: why perturbation series diverge', 'at its end, with its line and its from line');
+    const courseBlocks = parse(after).doc.blocks;
+    must(courseBlocks.findIndex((b) => b.kind === 'heading' && b.text === euler.text) === courseBlocks.length - moved.body.length - 1 && moved.heading.read?.made === DAY1 && moved.body[0]!.kind === 'paragraph' && (moved.body[0] as { text: string }).text === 'from: why perturbation series diverge', 'at its end, with its line and its from line');
     await poll(async () => !(await headings(NOTE)).some((h) => h.text === euler.text), 'and it left the source\'s note');
     must(useApp.getState().log[0] === doneLine('§', euler.text, 'moved to WKB approximation'), `the done row: "${useApp.getState().log[0]}"`);
     await poll(() => useApp.getState().caretHeading?.path === COURSE || true, 'moved');

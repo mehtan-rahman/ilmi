@@ -110,7 +110,13 @@ seeding its rows with `ILMI_VAULT`; the other modes are listed at the top of
 `src/app/smoke.ts`. `ILMI_SMOKE=book` (a scratch copy of `samples/double-major`,
 with `ILMI_BOOKS=<this repo>/design/books`) walks a book beside its notes on
 `design/books/ch3-book.pdf`, the sample's Lindqvist ch. 3 at pp. 41–44 of its
-book (`pdflatex ch3-book.tex` after `ch3.tex` rebuilds it).
+book (`pdflatex ch3-book.tex` after `ch3.tex` rebuilds it). `ILMI_SMOKE=books`
+walks the sample's own two books, typeset from the text the sample held before
+milestone 49 (`design/books/lindqvist.py` and `reader.py` write the `.tex`
+files from `design/books/text/`; `pdflatex lindqvist.tex`, `xelatex reader.tex`
+then `xelatex reader-book.tex` rebuild the PDFs, copied beside the sample's
+parents): the physics first pass, the derivation written up on a later day
+and dismissed when it returns, and the Arabic passage clipped.
 
 ## Keys
 

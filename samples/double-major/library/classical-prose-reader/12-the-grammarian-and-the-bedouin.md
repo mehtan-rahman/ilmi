@@ -1,112 +1,128 @@
 ---
 type: source
 title: passage 12 · the grammarian and the bedouin
-frozen: true
+pdf: ../classical-prose-reader.pdf
+pages: 129-134
 imported: 2026-09-29
 course: ARAB 301
-read: due=2026-10-27 ivl=4 reps=3 pos=11
+read: due=2026-10-27 ivl=4 reps=3 pos=130 y=0.700
 ---
 
-## Passage 12. The Grammarian and the Bedouin (النَّحْوِيُّ وَالأَعْرَابِيُّ)
+## dukkān, sirḥān, ʿuthmān (passage 12, ¶3)
+<!-- read made=2026-10-02 due=2026-11-03 ivl=7 reps=2 boxes=129:0.129:0.461:0.774:0.104 -->
 
-Level: Part II. New constructions: the "five nouns"; broken plurals of the pattern *faʿālīn*; diptote proper names and their sound plurals; the *lām* of denial; the reproachful *hallā*; concessive *wa-law*. The passage is the first in the reader to take the Arabic language itself as its subject, and it should be read alongside the introduction's section on the grammarians' informants.
+<!-- box 129:0.129:0.461:0.774:0.104 -->
 
-قِيلَ: خَرَجَ نَحْوِيٌّ مِنْ أَهْلِ الكُوفَةِ إِلَى البَادِيَةِ يَطْلُبُ الفَصَاحَةَ مِنْ أَفْوَاهِ الأَعْرَابِ. فَلَقِيَ أَعْرَابِيًّا عَلَى مَاءٍ لِبَنِي تَمِيمٍ، فَسَلَّمَ عَلَيْهِ وَقَالَ: «كَيْفَ تَقُولُ: ضَرَبْتُ أَخُوكَ؟» فَقَالَ الأَعْرَابِيُّ: «لَا أَقُولُهُ أَبَدًا.» قَالَ: «فَكَيْفَ تَقُولُ؟» قَالَ: «أَقُولُ: ضَرَبْتُ أَخَاكَ.»
+### translation (2 Oct)
 
-قَالَ النَّحْوِيُّ: «فَمَا لَكَ لَا تَقُولُ: ضَرَبْتُ أَخُوكَ، كَمَا تَقُولُ: جَاءَ أَخُوكَ؟» فَقَالَ: «وَاللّٰهِ مَا أَدْرِي مَا تَقُولُ، غَيْرَ أَنَّ لِسَانِي لَا يَجْرِي بِهِ.»
+The grammarian wanted to test him, so he said, "Then how do you form the plural of *dukkān*?" "*Dakākīn*," he said. "And *sirḥān*?" "*Sarāḥīn*." "And ʿUthmān?" "ʿUthmānūn." The grammarian said, "Why didn't you say *ʿaṯāmīn*, as you said *sarāḥīn*?" The bedouin grew angry and said, "Is a man to be pluralised the way a wolf is? I would never say that, not if I were killed for it!"
 
-فَأَرَادَ النَّحْوِيُّ أَنْ يَمْتَحِنَهُ، فَقَالَ: «فَكَيْفَ تَجْمَعُ دُكَّانًا؟» قَالَ: «دَكَاكِينُ.» قَالَ: «فَسِرْحَانًا؟» قَالَ: «سَرَاحِينُ.» قَالَ: «فَعُثْمَانَ؟» قَالَ: «عُثْمَانُونَ.» فَقَالَ النَّحْوِيُّ: «هَلَّا قُلْتَ: عَثَامِينُ، كَمَا قُلْتَ: سَرَاحِينُ؟» فَغَضِبَ الأَعْرَابِيُّ وَقَالَ: «أَيُجْمَعُ الرَّجُلُ كَمَا يُجْمَعُ الذِّئْبُ؟ مَا كُنْتُ لِأَقُولَ ذٰلِكَ وَلَوْ قُتِلْتُ!»
-<!-- extract dukkan-sirhan-uthman -->
+Translation note to self: you can't translate this "naturally" without transliterating, the joke is in the forms. Dr. Saeed: in a translation for readers, gloss once in brackets — "*sirḥān* [wolf]" — and leave the rest.
 
-فَضَحِكَ النَّحْوِيُّ وَكَتَبَ مَا سَمِعَ فِي أَلْوَاحِهِ، وَقَالَ لِأَصْحَابِهِ بَعْدَ رُجُوعِهِ: «تَعَلَّمْتُ فِي يَوْمٍ وَاحِدٍ مِنْ أَعْرَابِيٍّ لَا يَقْرَأُ وَلَا يَكْتُبُ مَا لَمْ أَتَعَلَّمْهُ فِي سَنَةٍ مِنْ كُتُبِ النَّحْوِ: أَنَّ القِيَاسَ يَتْبَعُ الكَلَامَ، وَلَيْسَ الكَلَامُ تَابِعًا لِلْقِيَاسِ.»
-<!-- extract analogy-follows-speech -->
+### parsing
 
-## Glossary
+- فَأَرَادَ … أَنْ يَمْتَحِنَهُ — أَنْ + subj., maṣdar muʾawwal as object of أَرَادَ
+- كَيْفَ تَجْمَعُ دُكَّانًا — جَمَعَ "to pluralise" (technical); دُكَّانًا object, triptote so tanwīn
+- دَكَاكِينُ — khabar of an understood mubtadaʾ (جَمْعُهُ دَكَاكِينُ) or object of understood أَجْمَعُهُ — then it would be دَكَاكِينَ. Book prints ḍamma, so read as nominal: "(its plural is) dakākīn". [the book doesn't say which; I asked, Dr. Saeed: either, the book chose the nominal reading; at a pause it's *dakākīn* anyway]
+- فَسِرْحَانًا — acc., object of the understood تَجْمَعُ
+- فَعُثْمَانَ — acc., diptote: fatḥa, no tanwīn (fuʿlān + proper name)
+- عُثْمَانُونَ — sound masc. pl., nom. (same reasoning as دَكَاكِينُ)
+- هَلَّا قُلْتَ — taḥḍīḍ + perfect = reproach
+- أَيُجْمَعُ — hamza istifhām (rhetorical, indignant) + passive impf
+- مَا كُنْتُ لِأَقُولَ — negated kāna + lām al-juḥūd + subj.
+- وَلَوْ قُتِلْتُ — concessive wa-law + passive perfect
 
-- نَحْوِيّ *naḥwī* — grammarian (nisba of نَحْو, grammar)
-- الكُوفَة *al-Kūfa* — Kufa, garrison city in Iraq; seat of one of the two "schools" of grammar
-- أَعْرَابِيّ، ج أَعْرَاب *aʿrābī, aʿrāb* — a bedouin, a desert Arab
-- فَصَاحَة *faṣāḥa* — purity and correctness of speech; eloquence
-- أَفْوَاه *afwāh* — mouths (sg. فَم or فُوه; the plural is built on the root f-w-h)
-- مَاء *māʾ* — here a watering place, a well or spring belonging to a tribe
-- بَنُو تَمِيمٍ *Banū Tamīm* — a large tribe of north-eastern Arabia (genitive بَنِي after لِـ)
-- سَلَّمَ عَلَى *sallama ʿalā* — to greet with *al-salāmu ʿalaykum*
-- أَدْرِي *adrī* — I know (دَرَى، يَدْرِي, to know, be aware)
-- جَرَى، يَجْرِي بِـ *jarā, yajrī bi-* — to run with; (of the tongue) to utter readily
-- اِمْتَحَنَ *imtaḥana* — to test (VIII of m-ḥ-n)
-- دُكَّان، ج دَكَاكِين *dukkān, dakākīn* — shop
-- سِرْحَان، ج سَرَاحِين *sirḥān, sarāḥīn* — wolf (a bedouin word; also a man's name)
-- ذِئْب، ج ذِئَاب *ḏiʾb, ḏiʾāb* — wolf
-- هَلَّا *hallā* — why not…? (with the perfect, a reproach)
-- أَلْوَاح، م لَوْح *alwāḥ, lawḥ* — writing tablets
-- القِيَاس *al-qiyās* — analogy; in grammar, the regular rule derived from usage
-- الكَلَام *al-kalām* — speech, actual usage (here opposed to the rule)
+The pattern, worked out from the passage and the commentary:
 
-## Notes on grammar
+- dukkān (fuʿʿāl, with the -ān treated as stem): d-k-k-n → da-kā-kī-n
+- sirḥān (fiʿlān): s-r-ḥ-n → sa-rā-ḥī-n
+- ʿUthmān (fuʿlān) would by analogy be ʿa-ṯā-mī-n
+- also: sulṭān → salāṭīn, šayṭān → šayāṭīn, bustān → basātīn, fingān (finjān) → fanājīn
 
-**The *ḥāl* of purpose.** خَرَجَ … إِلَى البَادِيَةِ يَطْلُبُ الفَصَاحَةَ "he went out to the desert seeking pure speech." As in passage 11, an affirmative imperfect stands as a circumstantial clause without *wāw*. With verbs of motion this *ḥāl* often has the force of purpose: he went, seeking, and so in order to seek. Compare passage 15, خَرَجْتُ مِنَ البَصْرَةِ أُرِيدُ الشَّامَ.
+So *faʿālīl* = C1a C2ā C3ī C4, and the "four consonants" are counting the n. Diptote: دَكَاكِينُ / دَكَاكِينَ, no tanwīn ever.
 
-**The five nouns.** The grammarian's test sentence turns on a small group of nouns, traditionally five or six (أَبٌ، أَخٌ، حَمٌ، فُو، ذُو، and sometimes هَنٌ), which, when in construct with a following noun or a pronoun other than the first person singular, show their case by a long vowel instead of a short one: nominative أَخُوكَ, accusative أَخَاكَ, genitive أَخِيكَ. In ضَرَبْتُ أَخَاكَ "I struck your brother," أَخَا is the object and must be accusative; the grammarian's proposed ضَرَبْتُ أَخُوكَ puts the object in the nominative, which no speaker would say. The bedouin's refusal is the point: he cannot analyse the rule but his tongue will not produce the wrong form.
+#TODO: does every fuʿlān noun take faʿālīn? No — عُرْيَان (naked) is an adjective, pl. عُرَاة. It's nouns. Check in Wright vol. 1 on broken plurals of quadriliterals.
 
-**Pausal forms in the quotations.** The answers are printed with full case endings for the student's benefit. In actual speech a word at a pause loses its final short vowel and its *tanwīn* (except accusative *-an*, which becomes *-ā*): *dakākīn*, *sarāḥīn*. The editors keep the endings here because the case of the plural is part of the lesson.
+broken plural of سُلْطَان / شَيْطَان / بُسْتَان
+?
+سَلَاطِينُ / شَيَاطِينُ / بَسَاتِينُ — pattern *faʿālīl*, diptote ^rd-salatin
+<!-- sr due=2026-11-01 st=review s=4.3 d=4.03 r=2 l=0 ivl=4 last=2026-10-28T09:03:00Z g=3 -->
 
-**What's the matter with you…?** فَمَا لَكَ لَا تَقُولُ… "why don't you say…?" literally "what is there for you, not saying…?" The construction مَا لَكَ followed by a *ḥāl* (here the negated imperfect لَا تَقُولُ, or a single-word accusative) is a frequent idiom of surprise or reproach: مَا لَكَ سَاكِتًا "why are you silent?" The interrogative مَا is the subject and لَكَ its predicate.
+the plural pattern فَعَالِيلُ (دَكَاكِينُ، سَرَاحِينُ) is {{c1::diptote}}: genitive and accusative {{c2::دَكَاكِينَ}}, never tanwīn ^rd-faalil-diptote
+<!-- sr c1 due=2026-11-01 st=review s=5.2 d=3.54 r=4 l=0 ivl=5 last=2026-10-27T22:05:26Z g=3 -->
+<!-- sr c2 due=2026-10-30 st=review s=6.2 d=3.8 r=2 l=0 ivl=6 last=2026-10-24T21:03:06Z g=3 -->
 
-**Two negatives of knowing.** وَاللّٰهِ مَا أَدْرِي مَا تَقُولُ "by God, I don't know what you are saying." The first مَا negates the imperfect أَدْرِي (a negative of the present, emphatic and somewhat more formal than لَا أَدْرِي); the second مَا is a relative or interrogative pronoun, object of تَقُولُ. Students should get used to sorting the several functions of مَا by position.
+أَيُجْمَعُ الرَّجُلُ كَمَا يُجْمَعُ الذِّئْبُ؟ ::: "Is a man pluralised the way a wolf is?" (passive impf yu-…-a) ^rd-ayujmau
+<!-- sr due=2026-11-03 st=review s=9 d=6.21 r=3 l=1 ivl=9 last=2026-10-25T21:19:40Z g=4 -->
 
-**Exception with *ġayra anna*.** غَيْرَ أَنَّ لِسَانِي لَا يَجْرِي بِهِ "except that my tongue does not run with it," i.e. "only, my tongue won't say it." غَيْرَ in the accusative followed by أَنَّ introduces a qualifying "but, however." The word order after أَنَّ is the usual one: its noun لِسَانِي in the accusative (here not visible, because of the possessive *yāʾ*), its predicate a verbal sentence.
+## analogy follows speech (passage 12, ¶4)
+<!-- read made=2026-10-06 due=2026-10-30 ivl=5 reps=2 boxes=129:0.129:0.571:0.774:0.067 -->
 
-**Elliptical questions.** فَسِرْحَانًا؟ … فَعُثْمَانَ؟ "and *sirḥān*? … and ʿUthmān?" The verb of the first question (كَيْفَ تَجْمَعُ) is understood in each, so the noun keeps the accusative it would have as its object. Note that سِرْحَانًا takes *tanwīn*, while عُثْمَانَ, a proper name of the pattern *fuʿlān*, is diptote (*mamnūʿ min al-ṣarf*): accusative with a single fatḥa, and no *tanwīn* in any case.
+<!-- box 129:0.129:0.571:0.774:0.067 -->
 
-**The plural pattern *faʿālīn*.** دَكَاكِينُ and سَرَاحِينُ are broken plurals of the pattern فَعَالِيلُ, which is the regular plural for many four-consonant nouns with a long vowel in the last syllable, including nouns in *-ān* where the *n* is treated as part of the stem: دُكَّان → دَكَاكِين, سُلْطَان → سَلَاطِين, شَيْطَان → شَيَاطِين, بُسْتَان → بَسَاتِين. Like all plurals of this "maximal" shape (*ṣīġat muntahā al-jumūʿ*) they are diptote: nominative دَكَاكِينُ, genitive and accusative دَكَاكِينَ, never with *tanwīn*. Analogy would therefore suggest عَثَامِين for عُثْمَان, and the grammarian asks why the bedouin did not say it.
+### translation (6 Oct, revised 25 Oct)
 
-**Proper names take the sound plural.** عُثْمَانُونَ is the sound masculine plural of the name ʿUthmān: "men called ʿUthmān." Names of male persons, even when they have the shape of common nouns that take broken plurals, normally take the sound plural (or are paraphrased with ذَوُو, "bearers of"). The bedouin's angry answer gives the reason in his own terms: a man is not pluralised like a wolf. The grammar, that is, tracks the distinction between persons and things that the speaker feels, not the shape of the word.
+The grammarian laughed and wrote down what he had heard on his tablets, and when he got back he said to his companions: "In one day I learnt from a bedouin who can neither read nor write what I had not learnt in a year of grammar books: that the rule follows speech, and speech does not follow the rule."
 
-**The reproachful *hallā*.** هَلَّا قُلْتَ: عَثَامِينُ "why didn't you say *ʿaṯāmīn*?" هَلَّا (also أَلَا and لَوْلَا in the same sense) with a perfect verb reproaches someone for not having done something; with an imperfect it urges him to do it: هَلَّا تَقُولُ "won't you say…?" The grammarians call this *taḥḍīḍ*, "incitement."
+القِيَاس — "analogy" is the textbook word, but in a translation for non-specialists "the rule" reads better. Dr. Saeed prefers "analogy" in this class because we're reading the grammatical tradition. Keep both in mind.
 
-**The passive imperfect.** أَيُجْمَعُ الرَّجُلُ كَمَا يُجْمَعُ الذِّئْبُ "is a man pluralised as a wolf is pluralised?" The passive imperfect has *u* in the prefix and *a* before the last radical: يَجْمَعُ "he gathers, pluralises" → يُجْمَعُ "it is pluralised." The verb جَمَعَ is the grammarians' term for forming a plural, and جَمْع the term for a plural.
+### structure
 
-**The *lām* of denial.** مَا كُنْتُ لِأَقُولَ ذٰلِكَ "I am not one to say that, I would never say that." A negated كَانَ followed by لِـ and a subjunctive is a strong denial that the subject is capable of, or would ever consent to, an action. The grammarians call this *lām al-juḥūd*, the *lām* of denial, and require that the preceding verb be negated كَانَ or يَكُونُ. Do not confuse it with the *lām* of purpose: in form it is the same, and the subjunctive follows both.
+The sentence is longer than it looks. Skeleton:
 
-**Concessive *wa-law*.** وَلَوْ قُتِلْتُ "even if I were killed." As وَإِنْ is concessive with real conditions (passage 3), وَلَوْ is concessive with unreal or extreme ones, and needs no main clause after it: the preceding statement serves. قُتِلْتُ is the passive perfect of قَتَلَ: *u* on the first radical, *i* on the second.
+تَعَلَّمْتُ [where/when: فِي يَوْمٍ وَاحِدٍ] [from whom: مِنْ أَعْرَابِيٍّ لَا يَقْرَأُ وَلَا يَكْتُبُ] [object: مَا لَمْ أَتَعَلَّمْهُ فِي سَنَةٍ مِنْ كُتُبِ النَّحْوِ] : [what that was: أَنَّ … وَلَيْسَ …]
 
-**A negated relative clause.** مَا لَمْ أَتَعَلَّمْهُ فِي سَنَةٍ "what I had not learnt in a year." Here مَا is a relative pronoun, object of تَعَلَّمْتُ; inside its clause the verb is negated by لَمْ with the jussive (أَتَعَلَّمْ), and the resumptive pronoun ـهُ is attached to it. The colon in the printed text marks what follows as the content of what was learnt, a clause introduced by أَنَّ in apposition to مَا.
+- لَا يَقْرَأُ وَلَا يَكْتُبُ — jumla ṣifa on indefinite أَعْرَابِيٍّ, no relative
+- مَا — relative, object of تَعَلَّمْتُ; ـهُ in أَتَعَلَّمْهُ resumes it
+- لَمْ أَتَعَلَّمْهُ — jussive V; "had not learnt" — lam + jussive is just past negative, the pluperfect sense is from context
+- فِي سَنَةٍ مِنْ كُتُبِ النَّحْوِ — I first read مِنْ as "from (the books)" attached to سَنَة: "a year of grammar books". It attaches to أَتَعَلَّمْ: "learnt from the books in a year". Meaning is the same in English.
+- أَنَّ القِيَاسَ يَتْبَعُ الكَلَامَ — ism anna acc. + khabar verbal
+- وَلَيْسَ الكَلَامُ تَابِعًا — ism laysa nom., khabar acc.
 
-**Predicate of *laysa*.** وَلَيْسَ الكَلَامُ تَابِعًا لِلْقِيَاسِ "and speech does not follow analogy." The noun of لَيْسَ is nominative, its predicate accusative (تَابِعًا). Compare the parallel positive clause أَنَّ القِيَاسَ يَتْبَعُ الكَلَامَ, where the verb carries the meaning that the participle carries in the negative one; the variation is stylistic.
+The two halves say the same thing twice, once positively with a verb, once negatively with a participle. The commentary calls the variation "stylistic"; in class Dr. Saeed called it *muqābala* (antithesis) and said the chiasmus (qiyās–kalām / kalām–qiyās) is the point. #TODO: look up muqābala vs ṭibāq in the balāġa handout.
 
-## Cultural notes
+أَنَّ القِيَاسَ يَتْبَعُ الكَلَامَ، وَلَيْسَ الكَلَامُ {{c1::تَابِعًا}} لِلْقِيَاسِ — khabar of laysa, accusative ^rd-tabian
+<!-- sr due=2026-10-30 st=review s=8.8 d=2.96 r=2 l=0 ivl=9 last=2026-10-21T09:08:24Z g=3 -->
 
-**Basra and Kufa.** The later grammatical tradition describes two rival schools of grammar in the eighth and ninth centuries, centred on the Iraqi garrison cities of Basra and Kufa. The Basrans are remembered as stricter in their reliance on analogy, the Kufans as more willing to accept isolated attested usages. Modern scholarship treats the sharp division as partly a later construction, but the anecdotes that dramatise it are many, and the editors have made their grammarian a Kufan, perhaps to suggest that even the more permissive school had to go to the desert to learn.
+*al-samāʿ* vs *al-qiyās* in the grammarians ::: what is heard from reliable speakers vs the regular pattern inferred from it ^rd-samaa-qiyas
+<!-- sr due=2026-11-02 st=review s=8.5 d=4.46 r=3 l=0 ivl=9 last=2026-10-24T07:52:05Z g=3 -->
 
-**The bedouin as informant.** Grammarians and lexicographers of the early period travelled to the desert, or questioned bedouins who came to the cities, because the speech of the tribes was held to be the purest Arabic, uncorrupted by contact with other languages. Certain tribes, Tamīm among them, were especially valued. Many anecdotes take the form of this one: the scholar tests the informant with a trick question, and the informant's instinctive answer settles a point of grammar. They are also a little comic at the grammarian's expense.
+مِنْ أَعْرَابِيٍّ لَا يَقْرَأُ وَلَا يَكْتُبُ — why no الَّذِي? :: أَعْرَابِيٍّ is indefinite, so the clause is a jumla ṣifa with no relative pronoun ^rd-arabi-sifa
 
-**Hearing and analogy.** The grammarians distinguished *al-samāʿ*, what is heard from reliable speakers, from *al-qiyās*, the regular pattern inferred from it. The closing sentence of the passage states a principle that most of them would have accepted in theory: analogy is derived from usage, and where the two conflict, attested usage wins.
+## p. 131
 
-**Writing tablets.** The grammarian writes on أَلْوَاح, tablets of wood or bone, which could be scraped and reused. Paper was available in Iraq from the late eighth century, but the older word persisted.
-
-## Exercises
-
-- Give the three case forms of أَبُوكَ and of ذُو مَالٍ.
-- Give the plurals of سُلْطَان, بُسْتَان, and the name سُفْيَان (as a name).
-- Translate: "I would never betray a guest, even if I were poor." Use *lām al-juḥūd* and *wa-law*.
-- What is the difference between هَلَّا كَتَبْتَ and هَلَّا تَكْتُبُ?
+<!-- box 131:0.129:0.094:0.758:0.155 -->
 
 the five nouns show case by a long vowel in construct: nom. {{c1::أَخُوكَ}}, acc. {{c2::أَخَاكَ}}, gen. {{c3::أَخِيكَ}} ^rd-five-nouns
 <!-- sr c1 due=2026-10-30 st=review s=4.9 d=3.42 r=3 l=1 ivl=5 last=2026-10-25T07:31:36Z g=3 -->
 <!-- sr c2 due=2026-11-01 st=review s=5.1 d=2.3 r=4 l=0 ivl=5 last=2026-10-27T19:17:36Z g=3 -->
 <!-- sr c3 due=2026-10-31 st=review s=3.9 d=4.14 r=3 l=0 ivl=4 last=2026-10-27T07:27:32Z g=3 -->
 
-what is *lām al-juḥūd* and what must precede it? :: the lām of denial: negated كَانَ/يَكُونُ + لِـ + subjunctive, "would never": مَا كُنْتُ لِأَقُولَ ذٰلِكَ ^rd-lam-juhud
-<!-- sr due=2026-10-30 st=review s=2.7 d=5.29 r=4 l=0 ivl=3 last=2026-10-27T07:46:37Z g=3 -->
+<!-- box 131:0.129:0.383:0.758:0.134 -->
+
+مَا لَكَ سَاكِتًا؟ ::: why are you silent? (mā laka + ḥāl, surprise / reproach) ^rd-ma-laka-sakitan
+
+## p. 132
+
+<!-- box 132:0.113:0.093:0.758:0.052 -->
+
+فَعُثْمَانَ؟ — diptote name, acc. with {{c1::one fatḥa, no tanwīn}} ^rd-uthmana-dipt
+
+<!-- box 132:0.113:0.385:0.758:0.173 -->
+
+why does the bedouin say عُثْمَانُونَ and not عَثَامِين? :: personal names take the sound masc. plural; he won't pluralise a man like a wolf (سِرْحَان → سَرَاحِين) ^rd-uthmanun
+<!-- sr due=2026-11-02 st=review s=5.6 d=5.35 r=3 l=0 ivl=6 last=2026-10-27T08:04:08Z g=3 -->
+
+<!-- box 132:0.113:0.587:0.758:0.111 -->
 
 هَلَّا + perfect vs هَلَّا + imperfect
 ??
 perfect: reproach, "why didn't you…?" — imperfect: urging, "won't you…?" (taḥḍīḍ) ^rd-halla
 <!-- sr due=2026-11-02 st=review s=4.3 d=2.21 r=3 l=0 ivl=4 last=2026-10-29T21:10:09Z g=3 -->
 
-why does the bedouin say عُثْمَانُونَ and not عَثَامِين? :: personal names take the sound masc. plural; he won't pluralise a man like a wolf (سِرْحَان → سَرَاحِين) ^rd-uthmanun
-<!-- sr due=2026-11-02 st=review s=5.6 d=5.35 r=3 l=0 ivl=6 last=2026-10-27T08:04:08Z g=3 -->
+## p. 133
 
-مَا لَكَ سَاكِتًا؟ ::: why are you silent? (mā laka + ḥāl, surprise / reproach) ^rd-ma-laka-sakitan
+<!-- box 133:0.129:0.094:0.758:0.101 -->
 
-فَعُثْمَانَ؟ — diptote name, acc. with {{c1::one fatḥa, no tanwīn}} ^rd-uthmana-dipt
+what is *lām al-juḥūd* and what must precede it? :: the lām of denial: negated كَانَ/يَكُونُ + لِـ + subjunctive, "would never": مَا كُنْتُ لِأَقُولَ ذٰلِكَ ^rd-lam-juhud
+<!-- sr due=2026-10-30 st=review s=2.7 d=5.29 r=4 l=0 ivl=3 last=2026-10-27T07:46:37Z g=3 -->

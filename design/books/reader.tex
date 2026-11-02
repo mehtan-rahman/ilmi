@@ -1,47 +1,137 @@
-\documentclass[11pt,twoside]{book}
+% The sample's passage 12 of the classical prose reader, typeset from the
+% sample's own text by reader.py (do not edit by hand; edit the passage and
+% rerun). Rebuild with: xelatex reader.tex
+\documentclass[11pt,twoside,openany]{book}
 \usepackage[paperwidth=6in,paperheight=9in,inner=0.8in,outer=0.7in,top=0.85in,bottom=0.8in,headsep=0.25in]{geometry}
 \usepackage{fontspec}
 \usepackage{polyglossia}
 \setmainlanguage{english}
 \setotherlanguage{arabic}
-\setmainfont{Times New Roman}
+\setmainfont{LibertinusSerif-Regular.otf}[BoldFont=LibertinusSerif-Bold.otf,ItalicFont=LibertinusSerif-Italic.otf,BoldItalicFont=LibertinusSerif-BoldItalic.otf]
 \newfontfamily\arabicfont[Script=Arabic,Scale=1.25]{DecoType Naskh}
 \usepackage{fancyhdr}
+\usepackage{titlesec}
+\titleformat{\section}{\normalfont\large\bfseries}{}{0pt}{}
+\titlespacing*{\section}{0pt}{2.6ex plus .5ex}{1.4ex}
 \pagestyle{fancy}
 \fancyhf{}
-\fancyhead[LE]{\small\thepage\hspace{1.2em}\textsc{Readings in Classical Arabic Prose}}
-\fancyhead[RO]{\small\textsc{Passage 12\enspace The Grammarian and the Bedouin}\hspace{1.2em}\thepage}
+\fancyhead[LE]{\textenglish{\small\thepage\hspace{1.2em}\textsc{Readings in Classical Arabic Prose}}}
+\fancyhead[RO]{\textenglish{\small\textsc{Passage 12\enspace The Grammarian and the Bedouin}\hspace{1.2em}\thepage}}
 \renewcommand{\headrulewidth}{0pt}
 \setcounter{page}{129}
 \linespread{1.15}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.55em}
 \begin{document}
-\noindent{\small\itshape Level: Part II. New constructions: the ``five nouns'' (\textup{أبوك، أخوك}); broken plurals of the pattern \textup{فَعَالِين}; diptote proper names; the reproachful \textup{هَلَّا}.}
-
-\bigskip
-\begin{Arabic}
-\noindent\textbf{١٢: النَّحْوِيُّ وَالأَعْرَابِيُّ}
+{\Large\bfseries 12: The Grammarian and the Bedouin}\quad{\large\bfseries\textarabic{النَّحْوِيُّ وَالأَعْرَابِيُّ}}
 
 \medskip
-قِيلَ: خَرَجَ نَحْوِيٌّ مِنْ أَهْلِ الكُوفَةِ إِلَى البَادِيَةِ يَطْلُبُ الفَصَاحَةَ مِنْ أَفْوَاهِ الأَعْرَابِ، فَأَقَامَ فِيهِمْ أَيَّامًا يَسْمَعُ وَيَكْتُبُ. فَلَقِيَ ذَاتَ يَوْمٍ أَعْرَابِيًّا عَلَى مَاءٍ لِبَنِي تَمِيمٍ، فَسَلَّمَ عَلَيْهِ وَجَلَسَ إِلَيْهِ.
 
-قَالَ النَّحْوِيُّ: «يَا أَخَا العَرَبِ، كَيْفَ تَقُولُ: جَاءَ أَخُوكَ؟» قَالَ: «جَاءَ أَخُوكَ.» قَالَ: «فَكَيْفَ تَقُولُ: رَأَيْتُ...؟» قَالَ: «رَأَيْتُ أَخَاكَ.» قَالَ: «فَمَا لَكَ لَا تَقُولُ: رَأَيْتُ أَخُوكَ، كَمَا قُلْتَ: جَاءَ أَخُوكَ؟» فَقَالَ الأَعْرَابِيُّ: «وَاللهِ مَا أَدْرِي مَا تَقُولُ، غَيْرَ أَنَّ لِسَانِي لَا يَجْرِي بِهِ.»
+{\small\itshape Level: Part II. New constructions: the ``five nouns''; broken plurals of the pattern \emph{faʿālīn}; diptote proper names and their sound plurals; the \emph{lām} of denial; the reproachful \emph{hallā}; concessive \emph{wa-law}. The passage is the first in the reader to take the Arabic language itself as its subject, and it should be read alongside the introduction's section on the grammarians' informants.}
 
-فَأَرَادَ النَّحْوِيُّ أَنْ يَمْتَحِنَهُ فِي الجَمْعِ، فَقَالَ: «فَكَيْفَ تَجْمَعُ دُكَّانًا؟» قَالَ: «دَكَاكِينُ.» قَالَ: «فَسِرْحَانًا؟» قَالَ: «سَرَاحِينُ.» قَالَ: «فَثُعْبَانًا؟» قَالَ: «ثَعَابِينُ.» فَفَرِحَ النَّحْوِيُّ وَظَنَّ أَنَّهُ قَدْ وَقَعَ عَلَى قَاعِدَةٍ، فَقَالَ: «فَعُثْمَانَ؟» قَالَ: «عُثْمَانُونَ.»
-
-فَضَحِكَ النَّحْوِيُّ وَقَالَ: «هَلَّا قُلْتَ: عَثَامِينُ، كَمَا قُلْتَ: سَرَاحِينُ وَثَعَابِينُ؟» فَغَضِبَ الأَعْرَابِيُّ وَقَالَ: «أَتُرِيدُ أَنْ أَجْمَعَ رَجُلًا سَمَّاهُ أَبُوهُ كَمَا أَجْمَعُ ذِئْبًا أَوْ حَيَّةً؟ هَذَا كَلَامٌ لَا نَعْرِفُهُ فِي بِلَادِنَا، وَلَا يَقُولُهُ أَحَدٌ مِنْ قَوْمِي.»
-
-فَانْصَرَفَ النَّحْوِيُّ إِلَى الكُوفَةِ، وَكَانَ يَقُولُ لِأَصْحَابِهِ بَعْدَ ذَلِكَ: «تَعَلَّمْتُ فِي البَادِيَةِ أَنَّ لِلْعَرَبِ أَذْوَاقًا لَا تَحْوِيهَا القَوَاعِدُ، وَأَنَّ الأَعْرَابِيَّ يَعْرِفُ مَا لَا يَعْرِفُ لِمَاذَا يَعْرِفُهُ.»
+\begin{Arabic}
+قِيلَ: خَرَجَ نَحْوِيٌّ مِنْ أَهْلِ الكُوفَةِ إِلَى البَادِيَةِ يَطْلُبُ الفَصَاحَةَ مِنْ أَفْوَاهِ الأَعْرَابِ. فَلَقِيَ أَعْرَابِيًّا عَلَى مَاءٍ لِبَنِي تَمِيمٍ، فَسَلَّمَ عَلَيْهِ وَقَالَ: «كَيْفَ تَقُولُ: ضَرَبْتُ أَخُوكَ؟» فَقَالَ الأَعْرَابِيُّ: «لَا أَقُولُهُ أَبَدًا.» قَالَ: «فَكَيْفَ تَقُولُ؟» قَالَ: «أَقُولُ: ضَرَبْتُ أَخَاكَ.»
 \end{Arabic}
 
-\bigskip
-\noindent{\small\textbf{Notes.}\enspace
-\textup{البادية} the desert, home of the Bedouin, held to speak the purest Arabic.\enspace
-\textup{دُكّان، دكاكين} shop.\enspace
-\textup{سِرْحان، سراحين} wolf.\enspace
-\textup{ثُعْبان، ثعابين} serpent.\enspace
-\textup{عُثْمان} a man's name: diptote, and as a proper name it takes the sound plural.\enspace
-\textup{هَلَّا} ``why didn't you\ldots?'', a reproach.}
+\begin{Arabic}
+قَالَ النَّحْوِيُّ: «فَمَا لَكَ لَا تَقُولُ: ضَرَبْتُ أَخُوكَ، كَمَا تَقُولُ: جَاءَ أَخُوكَ؟» فَقَالَ: «وَاللّهِ مَا أَدْرِي مَا تَقُولُ، غَيْرَ أَنَّ لِسَانِي لَا يَجْرِي بِهِ.»
+\end{Arabic}
 
-\bigskip
-\noindent{\small\textbf{Exercises.}\enspace (1) Find every one of the ``five nouns'' in the passage and give its case. (2) Why does the Bedouin refuse \textup{عثامين}? (3) Form the broken plural of \textup{بُسْتان} and \textup{سُلْطان}.}
+\begin{Arabic}
+فَأَرَادَ النَّحْوِيُّ أَنْ يَمْتَحِنَهُ، فَقَالَ: «فَكَيْفَ تَجْمَعُ دُكَّانًا؟» قَالَ: «دَكَاكِينُ.» قَالَ: «فَسِرْحَانًا؟» قَالَ: «سَرَاحِينُ.» قَالَ: «فَعُثْمَانَ؟» قَالَ: «عُثْمَانُونَ.» فَقَالَ النَّحْوِيُّ: «هَلَّا قُلْتَ: عَثَامِينُ، كَمَا قُلْتَ: سَرَاحِينُ؟» فَغَضِبَ الأَعْرَابِيُّ وَقَالَ: «أَيُجْمَعُ الرَّجُلُ كَمَا يُجْمَعُ الذِّئْبُ؟ مَا كُنْتُ لِأَقُولَ ذلِكَ وَلَوْ قُتِلْتُ!»
+\end{Arabic}
+
+\begin{Arabic}
+فَضَحِكَ النَّحْوِيُّ وَكَتَبَ مَا سَمِعَ فِي أَلْوَاحِهِ، وَقَالَ لِأَصْحَابِهِ بَعْدَ رُجُوعِهِ: «تَعَلَّمْتُ فِي يَوْمٍ وَاحِدٍ مِنْ أَعْرَابِيٍّ لَا يَقْرَأُ وَلَا يَكْتُبُ مَا لَمْ أَتَعَلَّمْهُ فِي سَنَةٍ مِنْ كُتُبِ النَّحْوِ: أَنَّ القِيَاسَ يَتْبَعُ الكَلَامَ، وَلَيْسَ الكَلَامُ تَابِعًا لِلْقِيَاسِ.»
+\end{Arabic}
+
+\section*{Glossary}
+
+\hangindent=1.2em\hangafter=1 \textarabic{نَحْوِيّ} \emph{naḥwī} — grammarian (nisba of \textarabic{نَحْو}, grammar)
+
+\hangindent=1.2em\hangafter=1 \textarabic{الكُوفَة} \emph{al-Kūfa} — Kufa, garrison city in Iraq; seat of one of the two ``schools'' of grammar
+
+\hangindent=1.2em\hangafter=1 \textarabic{أَعْرَابِيّ، ج أَعْرَاب} \emph{aʿrābī, aʿrāb} — a bedouin, a desert Arab
+
+\hangindent=1.2em\hangafter=1 \textarabic{فَصَاحَة} \emph{faṣāḥa} — purity and correctness of speech; eloquence
+
+\hangindent=1.2em\hangafter=1 \textarabic{أَفْوَاه} \emph{afwāh} — mouths (sg. \textarabic{فَم} or \textarabic{فُوه}; the plural is built on the root f-w-h)
+
+\hangindent=1.2em\hangafter=1 \textarabic{مَاء} \emph{māʾ} — here a watering place, a well or spring belonging to a tribe
+
+\hangindent=1.2em\hangafter=1 \textarabic{بَنُو تَمِيمٍ} \emph{Banū Tamīm} — a large tribe of north-eastern Arabia (genitive \textarabic{بَنِي} after \textarabic{لِـ})
+
+\hangindent=1.2em\hangafter=1 \textarabic{سَلَّمَ عَلَى} \emph{sallama ʿalā} — to greet with \emph{al-salāmu ʿalaykum}
+
+\hangindent=1.2em\hangafter=1 \textarabic{أَدْرِي} \emph{adrī} — I know (\textarabic{دَرَى، يَدْرِي}, to know, be aware)
+
+\hangindent=1.2em\hangafter=1 \textarabic{جَرَى، يَجْرِي بِـ} \emph{jarā, yajrī bi-} — to run with; (of the tongue) to utter readily
+
+\hangindent=1.2em\hangafter=1 \textarabic{اِمْتَحَنَ} \emph{imtaḥana} — to test (VIII of m-ḥ-n)
+
+\hangindent=1.2em\hangafter=1 \textarabic{دُكَّان، ج دَكَاكِين} \emph{dukkān, dakākīn} — shop
+
+\hangindent=1.2em\hangafter=1 \textarabic{سِرْحَان، ج سَرَاحِين} \emph{sirḥān, sarāḥīn} — wolf (a bedouin word; also a man's name)
+
+\hangindent=1.2em\hangafter=1 \textarabic{ذِئْب، ج ذِئَاب} \emph{ḏiʾb, ḏiʾāb} — wolf
+
+\hangindent=1.2em\hangafter=1 \textarabic{هَلَّا} \emph{hallā} — why not…? (with the perfect, a reproach)
+
+\hangindent=1.2em\hangafter=1 \textarabic{أَلْوَاح، م لَوْح} \emph{alwāḥ, lawḥ} — writing tablets
+
+\hangindent=1.2em\hangafter=1 \textarabic{القِيَاس} \emph{al-qiyās} — analogy; in grammar, the regular rule derived from usage
+
+\hangindent=1.2em\hangafter=1 \textarabic{الكَلَام} \emph{al-kalām} — speech, actual usage (here opposed to the rule)
+
+\section*{Notes on grammar}
+
+\textbf{The \emph{ḥāl} of purpose.} \textarabic{خَرَجَ … إِلَى البَادِيَةِ يَطْلُبُ الفَصَاحَةَ} ``he went out to the desert seeking pure speech.'' As in passage 11, an affirmative imperfect stands as a circumstantial clause without \emph{wāw}. With verbs of motion this \emph{ḥāl} often has the force of purpose: he went, seeking, and so in order to seek. Compare passage 15, \textarabic{خَرَجْتُ مِنَ البَصْرَةِ أُرِيدُ الشَّامَ}.
+
+\textbf{The five nouns.} The grammarian's test sentence turns on a small group of nouns, traditionally five or six (\textarabic{أَبٌ، أَخٌ، حَمٌ، فُو، ذُو،} and sometimes \textarabic{هَنٌ}), which, when in construct with a following noun or a pronoun other than the first person singular, show their case by a long vowel instead of a short one: nominative \textarabic{أَخُوكَ}, accusative \textarabic{أَخَاكَ}, genitive \textarabic{أَخِيكَ}. In \textarabic{ضَرَبْتُ أَخَاكَ} ``I struck your brother,'' \textarabic{أَخَا} is the object and must be accusative; the grammarian's proposed \textarabic{ضَرَبْتُ أَخُوكَ} puts the object in the nominative, which no speaker would say. The bedouin's refusal is the point: he cannot analyse the rule but his tongue will not produce the wrong form.
+
+\textbf{Pausal forms in the quotations.} The answers are printed with full case endings for the student's benefit. In actual speech a word at a pause loses its final short vowel and its \emph{tanwīn} (except accusative \emph{-an}, which becomes \emph{-ā}): \emph{dakākīn}, \emph{sarāḥīn}. The editors keep the endings here because the case of the plural is part of the lesson.
+
+\textbf{What's the matter with you…?} \textarabic{فَمَا لَكَ لَا تَقُولُ}… ``why don't you say…?'' literally ``what is there for you, not saying…?'' The construction \textarabic{مَا لَكَ} followed by a \emph{ḥāl} (here the negated imperfect \textarabic{لَا تَقُولُ}, or a single-word accusative) is a frequent idiom of surprise or reproach: \textarabic{مَا لَكَ سَاكِتًا} ``why are you silent?'' The interrogative \textarabic{مَا} is the subject and \textarabic{لَكَ} its predicate.
+
+\textbf{Two negatives of knowing.} \textarabic{وَاللّهِ مَا أَدْرِي مَا تَقُولُ} ``by God, I don't know what you are saying.'' The first \textarabic{مَا} negates the imperfect \textarabic{أَدْرِي} (a negative of the present, emphatic and somewhat more formal than \textarabic{لَا أَدْرِي}); the second \textarabic{مَا} is a relative or interrogative pronoun, object of \textarabic{تَقُولُ}. Students should get used to sorting the several functions of \textarabic{مَا} by position.
+
+\textbf{Exception with \emph{ġayra anna}.} \textarabic{غَيْرَ أَنَّ لِسَانِي لَا يَجْرِي بِهِ} ``except that my tongue does not run with it,'' i.e. ``only, my tongue won't say it.'' \textarabic{غَيْرَ} in the accusative followed by \textarabic{أَنَّ} introduces a qualifying ``but, however.'' The word order after \textarabic{أَنَّ} is the usual one: its noun \textarabic{لِسَانِي} in the accusative (here not visible, because of the possessive \emph{yāʾ}), its predicate a verbal sentence.
+
+\textbf{Elliptical questions.} \textarabic{فَسِرْحَانًا؟ … فَعُثْمَانَ؟} ``and \emph{sirḥān}? … and ʿUthmān?'' The verb of the first question (\textarabic{كَيْفَ تَجْمَعُ}) is understood in each, so the noun keeps the accusative it would have as its object. Note that \textarabic{سِرْحَانًا} takes \emph{tanwīn}, while \textarabic{عُثْمَانَ}, a proper name of the pattern \emph{fuʿlān}, is diptote (\emph{mamnūʿ min al-ṣarf}): accusative with a single fatḥa, and no \emph{tanwīn} in any case.
+
+\textbf{The plural pattern \emph{faʿālīn}.} \textarabic{دَكَاكِينُ} and \textarabic{سَرَاحِينُ} are broken plurals of the pattern \textarabic{فَعَالِيلُ}, which is the regular plural for many four-consonant nouns with a long vowel in the last syllable, including nouns in \emph{-ān} where the \emph{n} is treated as part of the stem: \textarabic{دُكَّان} → \textarabic{دَكَاكِين}, \textarabic{سُلْطَان} → \textarabic{سَلَاطِين}, \textarabic{شَيْطَان} → \textarabic{شَيَاطِين}, \textarabic{بُسْتَان} → \textarabic{بَسَاتِين}. Like all plurals of this ``maximal'' shape (\emph{ṣīġat muntahā al-jumūʿ}) they are diptote: nominative \textarabic{دَكَاكِينُ}, genitive and accusative \textarabic{دَكَاكِينَ}, never with \emph{tanwīn}. Analogy would therefore suggest \textarabic{عَثَامِين} for \textarabic{عُثْمَان}, and the grammarian asks why the bedouin did not say it.
+
+\textbf{Proper names take the sound plural.} \textarabic{عُثْمَانُونَ} is the sound masculine plural of the name ʿUthmān: ``men called ʿUthmān.'' Names of male persons, even when they have the shape of common nouns that take broken plurals, normally take the sound plural (or are paraphrased with \textarabic{ذَوُو}, ``bearers of''). The bedouin's angry answer gives the reason in his own terms: a man is not pluralised like a wolf. The grammar, that is, tracks the distinction between persons and things that the speaker feels, not the shape of the word.
+
+\textbf{The reproachful \emph{hallā}.} \textarabic{هَلَّا قُلْتَ}: \textarabic{عَثَامِينُ} ``why didn't you say \emph{ʿaṯāmīn}?'' \textarabic{هَلَّا} (also \textarabic{أَلَا} and \textarabic{لَوْلَا} in the same sense) with a perfect verb reproaches someone for not having done something; with an imperfect it urges him to do it: \textarabic{هَلَّا تَقُولُ} ``won't you say…?'' The grammarians call this \emph{taḥḍīḍ}, ``incitement.''
+
+\textbf{The passive imperfect.} \textarabic{أَيُجْمَعُ الرَّجُلُ كَمَا يُجْمَعُ الذِّئْبُ} ``is a man pluralised as a wolf is pluralised?'' The passive imperfect has \emph{u} in the prefix and \emph{a} before the last radical: \textarabic{يَجْمَعُ} ``he gathers, pluralises'' → \textarabic{يُجْمَعُ} ``it is pluralised.'' The verb \textarabic{جَمَعَ} is the grammarians' term for forming a plural, and \textarabic{جَمْع} the term for a plural.
+
+\textbf{The \emph{lām} of denial.} \textarabic{مَا كُنْتُ لِأَقُولَ ذلِكَ} ``I am not one to say that, I would never say that.'' A negated \textarabic{كَانَ} followed by \textarabic{لِـ} and a subjunctive is a strong denial that the subject is capable of, or would ever consent to, an action. The grammarians call this \emph{lām al-juḥūd}, the \emph{lām} of denial, and require that the preceding verb be negated \textarabic{كَانَ} or \textarabic{يَكُونُ}. Do not confuse it with the \emph{lām} of purpose: in form it is the same, and the subjunctive follows both.
+
+\textbf{Concessive \emph{wa-law}.} \textarabic{وَلَوْ قُتِلْتُ} ``even if I were killed.'' As \textarabic{وَإِنْ} is concessive with real conditions (passage 3), \textarabic{وَلَوْ} is concessive with unreal or extreme ones, and needs no main clause after it: the preceding statement serves. \textarabic{قُتِلْتُ} is the passive perfect of \textarabic{قَتَلَ}: \emph{u} on the first radical, \emph{i} on the second.
+
+\textbf{A negated relative clause.} \textarabic{مَا لَمْ أَتَعَلَّمْهُ فِي سَنَةٍ} ``what I had not learnt in a year.'' Here \textarabic{مَا} is a relative pronoun, object of \textarabic{تَعَلَّمْتُ}; inside its clause the verb is negated by \textarabic{لَمْ} with the jussive (\textarabic{أَتَعَلَّمْ}), and the resumptive pronoun \textarabic{ـهُ} is attached to it. The colon in the printed text marks what follows as the content of what was learnt, a clause introduced by \textarabic{أَنَّ} in apposition to \textarabic{مَا}.
+
+\textbf{Predicate of \emph{laysa}.} \textarabic{وَلَيْسَ الكَلَامُ تَابِعًا لِلْقِيَاسِ} ``and speech does not follow analogy.'' The noun of \textarabic{لَيْسَ} is nominative, its predicate accusative (\textarabic{تَابِعًا}). Compare the parallel positive clause \textarabic{أَنَّ القِيَاسَ يَتْبَعُ الكَلَامَ}, where the verb carries the meaning that the participle carries in the negative one; the variation is stylistic.
+
+\section*{Cultural notes}
+
+\textbf{Basra and Kufa.} The later grammatical tradition describes two rival schools of grammar in the eighth and ninth centuries, centred on the Iraqi garrison cities of Basra and Kufa. The Basrans are remembered as stricter in their reliance on analogy, the Kufans as more willing to accept isolated attested usages. Modern scholarship treats the sharp division as partly a later construction, but the anecdotes that dramatise it are many, and the editors have made their grammarian a Kufan, perhaps to suggest that even the more permissive school had to go to the desert to learn.
+
+\textbf{The bedouin as informant.} Grammarians and lexicographers of the early period travelled to the desert, or questioned bedouins who came to the cities, because the speech of the tribes was held to be the purest Arabic, uncorrupted by contact with other languages. Certain tribes, Tamīm among them, were especially valued. Many anecdotes take the form of this one: the scholar tests the informant with a trick question, and the informant's instinctive answer settles a point of grammar. They are also a little comic at the grammarian's expense.
+
+\textbf{Hearing and analogy.} The grammarians distinguished \emph{al-samāʿ}, what is heard from reliable speakers, from \emph{al-qiyās}, the regular pattern inferred from it. The closing sentence of the passage states a principle that most of them would have accepted in theory: analogy is derived from usage, and where the two conflict, attested usage wins.
+
+\textbf{Writing tablets.} The grammarian writes on \textarabic{أَلْوَاح}, tablets of wood or bone, which could be scraped and reused. Paper was available in Iraq from the late eighth century, but the older word persisted.
+
+\section*{Exercises}
+
+\hangindent=1.2em\hangafter=1 Give the three case forms of \textarabic{أَبُوكَ} and of \textarabic{ذُو مَالٍ}.
+
+\hangindent=1.2em\hangafter=1 Give the plurals of \textarabic{سُلْطَان}, \textarabic{بُسْتَان}, and the name \textarabic{سُفْيَان} (as a name).
+
+\hangindent=1.2em\hangafter=1 Translate: ``I would never betray a guest, even if I were poor.'' Use \emph{lām al-juḥūd} and \emph{wa-law}.
+
+\hangindent=1.2em\hangafter=1 What is the difference between \textarabic{هَلَّا كَتَبْتَ} and \textarabic{هَلَّا تَكْتُبُ}?
 \end{document}

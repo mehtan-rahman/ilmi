@@ -135,8 +135,11 @@ describe('the sample collection', () => {
     const stray = listed.filter((p) => !same.has(pairKey(p.a.key, p.b.key)) && !overlap.has(pairKey(p.a.key, p.b.key)));
     expect(stray.map((p) => `${p.a.key} ~ ${p.b.key} ${p.score.toFixed(3)}`)).toEqual([]);
     const strict = listed.filter((p) => same.has(pairKey(p.a.key, p.b.key))).length;
-    // 20 of 45 listed are the same fact, the other 25 overlap (a formula and its derivation, a verse and its meter)
-    expect([strict, listed.length]).toEqual([20, 45]);
+    // 20 of 43 listed are the same fact, the other 23 overlap (a formula and its derivation, a verse and its meter);
+    // two overlapping pairs fell out when 49 moved the Lindqvist extracts into their chapters' notes: the peak-width
+    // pair now sits in one document, where its shared words read as that document's own, and the Einstein pair's
+    // score fell with the chapter's larger set of cards
+    expect([strict, listed.length]).toEqual([20, 43]);
   });
 
   it('recall over the collection: twenty of the twenty-four known pairs', () => {

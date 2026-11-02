@@ -306,15 +306,15 @@ describe('headings folded', () => {
     s = s.apply(s.tr.setMeta(foldKey, { keys: ['2 one'] } satisfies FoldMeta));
     expect(ruleEndIndex(s, 6)).toBe(2);
     expect(ruleEndIndex(s, 7)).toBe(7);
-    // the sample's source: 3.7 folded, the marker through its section ends at the heading
-    const file = readFileSync(join(SAMPLE, 'library/lindqvist-statistical-physics/ch-3-the-canonical-ensemble.md'), 'utf8');
+    // the sample's source: 9.3 folded, the marker through its section ends at the heading
+    const file = readFileSync(join(SAMPLE, 'courses/fall-2026/phys-412-quantum-ii/halvorsen-ch-9-wkb.md'), 'utf8');
     const blocks = parse(file).doc.blocks;
-    const hi = blocks.findIndex((b) => b.kind === 'heading' && b.text.startsWith('3.7'));
+    const hi = blocks.findIndex((b) => b.kind === 'heading' && b.text.startsWith('9.3'));
     let end = blocks.length;
     for (let i = hi + 1; i < blocks.length; i++) { const b = blocks[i]!; if (b.kind === 'heading' && b.level <= 2) { end = i; break; } }
     const pos = blocks.slice(0, end).filter((b) => b.kind !== 'card').length;
     let src = makeState(blocks, { frozen: () => true, pos });
-    src = src.apply(src.tr.setMeta(foldKey, { toggle: sections(src.doc).find((x) => x.key.startsWith('2 3.7'))!.pos } satisfies FoldMeta));
+    src = src.apply(src.tr.setMeta(foldKey, { toggle: sections(src.doc).find((x) => x.key.startsWith('2 9.3'))!.pos } satisfies FoldMeta));
     expect(ruleEndIndex(src, pos)).toBe(hi);
   });
 });

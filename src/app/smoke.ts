@@ -33,13 +33,9 @@
 // file that changed, what tomorrow's queue holds, and a session's length.
 // `ILMI_SMOKE=faces` enters the session and walks it to one card of each
 // form, pausing on the two faces hidden and revealed, then in the dark.
-// `ILMI_SMOKE=pdf` drops the corpus PDF on the intake, places it as the
-// pair, opens it as pages, selects on the text layer and presses `e` and
-// `m`, searches, goes to a page, reads the text instead, reads on from the
-// session, and reopens it to find the extract drawn as a highlight.
-// Milestone 15's lens: since 48 its extract, composer, rail and text-toggle
-// steps no longer exist (a selection's `e` makes a section, and the notes
-// sit beside the pages); `ILMI_SMOKE=book` holds the book instead.
+// `ILMI_SMOKE=pdf` (milestone 15's lens: the rail, the composer, the text
+// toggle, an extract from a selection) was retired in 49: `book` and `books`
+// hold the pages beside the notes.
 // `ILMI_SMOKE=cards-text` pastes a `Q:`/`A:` list and a tab list on the
 // intake, reads the delimiter row's choice, flips a delimiter, places both
 // as decks, and logs each file's lines; then pastes prose to see no row.
@@ -167,6 +163,8 @@
 // one merged (and undone, and merged again), one said not the same.
 // `ILMI_SMOKE=book` (`smokeBook`) over a copy of `samples/double-major`, with
 // `ILMI_BOOKS=<repo>/design/books`: milestone 48, the book beside its notes.
+// `ILMI_SMOKE=books` (`smokeBooks`) over a copy of `samples/double-major`: the
+// sample's own two books, three days of the flow (milestone 49).
 // `ILMI_SMOKE=welcome` runs before any vault opens: it seeds the recents
 // with the scratch vault (`ILMI_VAULT`) and a path that does not exist,
 // turns `reopen the last vault on start` off, reads the welcome's rows and
@@ -1175,195 +1173,6 @@ export async function smokeOverload(vault: Vault): Promise<void> {
   }
 }
 
-
-export async function smokePdf(vault: Vault): Promise<void> {
-  const log = (s: string) => info(`smoke pdf: ${s}`);
-  const shot = async (name: string, ms = 10000) => { await sleep(600); log(`shot: ${name}`); await sleep(ms); };
-  const q = <T extends Element>(sel: string) => document.querySelector<T>(sel);
-  const qa = (sel: string) => Array.from(document.querySelectorAll<HTMLElement>(sel));
-  const lines = (text: string, from: string, n = 6) => { const ls = text.split('\n'); const i = ls.findIndex((l) => l.startsWith(from)); return i < 0 ? 'none' : ls.slice(i, i + n).join(' / '); };
-  const fm = (text: string) => text.split('\n').slice(0, text.split('\n').indexOf('---', 1) + 1).join(' / ');
-  const highlights = (kind: string) => (typeof CSS !== 'undefined' && CSS.highlights ? CSS.highlights.get(kind)?.size ?? 0 : 'no api');
-  /** Select the first text-layer span on page `n` whose text holds `word`: the whole span, or just `part` of it. */
-  const selectOn = (n: number, word: string, part?: string) => {
-    const span = qa(`.pdf-page[data-page="${n}"] .textLayer span`).find((s) => s.textContent?.includes(word));
-    if (!span?.firstChild) throw new Error(`no "${word}" on page ${n}`);
-    const r = document.createRange();
-    if (part === undefined) r.selectNodeContents(span.firstChild);
-    else {
-      const at = span.textContent!.indexOf(part);
-      r.setStart(span.firstChild, at);
-      r.setEnd(span.firstChild, at + part.length);
-    }
-    const sel = window.getSelection()!;
-    sel.removeAllRanges();
-    sel.addRange(r);
-    return part ?? span.textContent ?? '';
-  };
-  try {
-    setInspector({ open: true });
-    // the intake: the corpus PDF dropped on it (through the dev hook; the OS drop cannot be faked)
-    openIntake('papers');
-    await until(() => q<HTMLTextAreaElement>('.intake textarea'));
-    log(`intake hint: "${q('.intake .paste-hint')?.textContent}"`);
-    const { intakeHooks } = await import('./Intake.js');
-    const { readDroppedPdf } = await import('./fetch.js');
-    try {
-      const r = await readDroppedPdf(vault.abs('papers/two-pages.pdf'));
-      log(`read: ${r.bytes.length} bytes, ${r.pages} pages, title "${r.title}", text ${r.text.length} chars`);
-    } catch (e) {
-      log(`read failed: ${e instanceof Error ? `${e.name}: ${e.message}` : String(e)}`);
-    }
-    await intakeHooks.ingestFile!(vault.abs('papers/two-pages.pdf'));
-    const detail = await until(() => q('.intake-detail') ?? (q('.intake .paste-hint .note')?.textContent && q('.intake .paste-hint .note')?.textContent !== 'reading' ? q('.intake .paste-hint') : null), 15000);
-    if (!detail.classList.contains('intake-detail')) throw new Error(`intake said "${detail.textContent}"`);
-    log(`dropped: stats "${detail.querySelector('.stats')?.textContent}"; title "${q<HTMLInputElement>('.intake .field input')?.value}"; text "${q<HTMLTextAreaElement>('.intake textarea')?.value.slice(0, 60).replace(/\n/g, ' ')}…"`);
-    await shot('pdf-intake');
-    q<HTMLButtonElement>('.intake .place.primary')!.click();
-    const path = await until(() => vault.documents().find((d) => d.startsWith('papers/two-pages') && d !== 'papers/two-pages.md' && !d.includes('/two-pages/')));
-    await sleep(400);
-    const pdfPath = useApp.getState().docs[path]?.pdf;
-    const landed = await vault.read(path, true);
-    log(`placed ${path}; pages ${pdfPath}; on disk ${(await vault.fs.stat(vault.abs(pdfPath ?? '')))?.size ?? '?'} bytes; front-matter ${fm(landed.text)}; body ${landed.doc.blocks.map((b) => b.kind).join(',')}; diagnostics ${landed.diagnostics.length}`);
-
-    // the lens: pages rendered, the text layer on, the meta row
-    await until(() => q('.pdf-view'));
-    await until(() => q('.pdf-page[data-page="1"] .textLayer span'), 15000);
-    await until(() => q('.pdf-page[data-page="2"] .textLayer span'), 15000);
-    await sleep(400);
-    log(`lens: pages ${qa('.pdf-page').length}, canvases ${qa('.pdf-page canvas').length}, text spans ${qa('.textLayer span').length}; meta "${q('.pdf-view .meta')?.textContent}"; strip "${q('.bot')?.textContent}"; inspector rows "${q('.insp .kv')?.textContent?.slice(0, 120)}"; rule ${q('.read-rule') ? 'yes' : 'none'}`);
-    await shot('pdf-pages');
-
-    // start reading: the ruler appears
-    press('r');
-    await until(() => q('.pdf-view .read-gutter'));
-    await sleep(400);
-    log(`reading: ${lines((await vault.read(path, true)).text, 'read:', 1)}; rule height ${q<HTMLElement>('.read-rule')?.style.height}`);
-
-    // extract: a line of page 1 selected on the text layer, e
-    const picked = selectOn(1, 'ruler');
-    const cue = await until(() => q('.sel-cue'));
-    log(`selected "${picked}" → cue "${cue.textContent}"`);
-    press('e');
-    const child = await until(() => vault.documents().find((d) => d.startsWith(`${path.slice(0, -3)}/`)));
-    await sleep(800);
-    const ex = await vault.read(child, true);
-    const parent = await vault.read(path, true);
-    log(`extract ${child}: ${fm(ex.text)}; body "${ex.doc.blocks[0]?.text}"; diagnostics ${ex.diagnostics.length}`);
-    log(`parent: ${lines(parent.text, '## p. 1')}; diagnostics ${parent.diagnostics.length}; highlights ${highlights('ilmi-extract')}; rail "${qa('.rail-page').map((r) => r.textContent).join(' | ')}"`);
-    await shot('pdf-extract');
-
-    // a card: a line of page 2 selected, m, a blank, ⌘↵
-    const line2 = selectOn(2, 'Spaced');
-    await until(() => q('.sel-cue'));
-    press('m');
-    const ta = await until(() => q<HTMLTextAreaElement>('.composer textarea'));
-    log(`composer seed "${ta.value}" (selected "${line2}")`);
-    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!;
-    setter.call(ta, 'Spaced practice beats {{massed}} practice, and the gap should grow');
-    ta.dispatchEvent(new Event('input', { bubbles: true }));
-    await sleep(100);
-    press('Enter', { metaKey: true });
-    await until(() => (q('.composer') ? null : true));
-    await sleep(800);
-    const withCard = await vault.read(path, true);
-    log(`card: ${lines(withCard.text, '## p. 2')}; cards ${withCard.doc.blocks.filter((b) => b.kind === 'card').length}; diagnostics ${withCard.diagnostics.length}; rail "${qa('.rail-page').map((r) => r.textContent).join(' | ')}"`);
-    // the rail's card row selects it; the inspector names the page
-    qa('.rail-item[data-t="card"]')[0]?.click();
-    await sleep(300);
-    log(`rail card: selected ${JSON.stringify(useApp.getState().selectedCard)}; inspector "${qa('.insp .block')[0]?.querySelector('.kv')?.textContent}"`);
-    await shot('pdf-card');
-
-    // search and go to page
-    press('/');
-    const findInput = await until(() => q<HTMLInputElement>('.pdf-bar input'));
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(findInput, 'written');
-    findInput.dispatchEvent(new Event('input', { bubbles: true }));
-    await sleep(50);
-    findInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
-    await sleep(600);
-    log(`search "written": bar "${q('.pdf-bar')?.textContent}"; hits highlighted ${highlights('ilmi-hit')}; page in view ${q<HTMLElement>('.pdf-view')?.dataset.page}`);
-    await shot('pdf-find');
-    press('Escape');
-    await sleep(100);
-    press('g');
-    const gotoInput = await until(() => q<HTMLInputElement>('.pdf-bar input[type="number"]'));
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(gotoInput, '1');
-    gotoInput.dispatchEvent(new Event('input', { bubbles: true }));
-    gotoInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
-    await sleep(500);
-    log(`go to 1: bar ${q('.pdf-bar') ? 'open' : 'closed'}; page in view ${q<HTMLElement>('.pdf-view')?.dataset.page}`);
-    press(']');
-    await sleep(500);
-    log(`]: page in view ${q<HTMLElement>('.pdf-view')?.dataset.page}`);
-
-    // smart jump: a figure reference and a citation on page 1, ⏎, the peek names the page of the caption and the entry
-    q<HTMLElement>('.pdf-page[data-page="1"]')?.scrollIntoView({ block: 'start' });
-    await sleep(400);
-    for (const [word, part] of [['Figure 1 shows', 'Figure 1'], ['names the method', '[1]']] as const) {
-      selectOn(1, word, part);
-      // the lens reads the selection on `selectionchange`, a task later; the cue from the last selection is still up
-      await sleep(300);
-      await until(() => (q('.sel-cue') && useApp.getState() ? true : null));
-      press('Enter');
-      const peek = await until(() => q('.pdf-peek canvas[width]'), 8000);
-      await sleep(300);
-      log(`jump "${part}": peek "${q('.pdf-peek .pk-hd')?.textContent}"; canvas ${peek.getAttribute('width')}×${peek.getAttribute('height')}; still on page ${q<HTMLElement>('.pdf-view')?.dataset.page}`);
-      if (part === 'Figure 1') await shot('pdf-jump');
-      press('Escape');
-      await until(() => (q('.pdf-peek') ? null : true));
-    }
-    // a selection that is no reference: ⏎ does nothing here
-    selectOn(1, 'ruler');
-    await sleep(300);
-    press('Enter');
-    await sleep(400);
-    log(`⏎ on prose: peek ${q('.pdf-peek') ? 'open' : 'none'}`);
-    window.getSelection()?.removeAllRanges();
-    await until(() => (q('.sel-cue') ? null : true));
-
-    // the text toggle: the Markdown in the reader, and back
-    q<HTMLButtonElement>('.pdf-view .meta .text-toggle')!.click();
-    await until(() => q('.draft-doc'));
-    await sleep(300);
-    log(`text: blocks ${q('.draft-doc')?.children.length}; meta "${q('.doc-view .meta')?.textContent}"`);
-    await shot('pdf-text');
-    q<HTMLButtonElement>('.doc-view .meta .text-toggle')?.click();
-    await until(() => q('.pdf-view'));
-
-    // the session: the reading element opens as pages; read on records the page in view
-    openNode(queueId('today'));
-    await until(() => q('.queue .qlist li'));
-    await sleep(300);
-    // the corpus's own two-pages pair is due today as well and carries the same title, so the element is picked from the queue by path
-    const item = useApp.getState().queue.find((i) => i.kind === 'read' && i.path === path);
-    log(`queue: item ${item ? `${item.kind} ${item.path} due ${item.due}` : 'none'}; rows naming two-pages ${qa('.queue .qlist li').filter((r) => r.textContent?.includes('two-pages')).length}`);
-    if (!item) throw new Error('not in the queue');
-    const corpusBefore = (await vault.read('papers/two-pages.md', true)).text;
-    openSession(item);
-    await until(() => q('.doc-session .pdf-view'));
-    await until(() => q('.doc-session .pdf-page[data-page="2"] .textLayer span'), 15000);
-    await sleep(300);
-    q<HTMLElement>('.doc-session .pdf-page[data-page="2"]')?.scrollIntoView({ block: 'start' });
-    await sleep(500);
-    log(`session: bar "${q('.session-bar')?.textContent?.slice(0, 80)}"; page in view ${q<HTMLElement>('.pdf-view')?.dataset.page}; highlights ${highlights('ilmi-extract')}`);
-    await shot('pdf-session');
-    press('Enter');
-    await sleep(800);
-    log(`read on: ${lines((await vault.read(path, true)).text, 'read:', 1)}; log "${useApp.getState().log[0]}"; the corpus pair untouched ${(await vault.read('papers/two-pages.md', true)).text === corpusBefore}; session now on "${useApp.getState().sessionEl?.label}"`);
-
-    // reopened: the extract is a highlight again, the ruler on the page read to
-    openNode(path);
-    await until(() => q('.pdf-view:not(.doc-session .pdf-view)'));
-    await until(() => q('.pdf-page[data-page="1"] .textLayer span'), 15000);
-    await sleep(600);
-    log(`reopened: highlights ${highlights('ilmi-extract')}; rule height ${q<HTMLElement>('.read-rule')?.style.height}; rail "${qa('.rail-page').map((r) => r.textContent).join(' | ')}"; inspector rows "${q('.insp .kv')?.textContent?.slice(0, 160)}"`);
-    await shot('pdf-reopened');
-    log('done');
-  } catch (e) {
-    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
-  }
-}
 
 export async function smokeFaces(vault: Vault): Promise<void> {
   const log = (s: string) => info(`smoke faces: ${s}`);
@@ -7463,6 +7272,267 @@ export async function smokeBook(vault: Vault): Promise<void> {
     useApp.getState().setTheme('dark');
     await poll(() => document.documentElement.dataset.theme === 'dark', 'dark');
     await shot('book-dark');
+    useApp.getState().setTheme('light');
+    setClockDay(null);
+    finished = true;
+    log(`done; vault ${vault.root}`);
+  } catch (e) {
+    finished = true;
+    setClockDay(null);
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+// `ILMI_SMOKE=books` (`smokeBooks`) over a fresh copy of `samples/double-major`,
+// milestone 49: the sample's own two books (library/lindqvist-statistical-
+// physics.pdf, chapters 2–4 at pp. 17–34; library/classical-prose-reader.pdf,
+// passage 12 at pp. 129–134), each chapter its pages beside its notes, the
+// old extracts boxed sections of the notes. Three days by the app's clock.
+// 2026-11-02, the physics first pass: the day's queue is one line of books,
+// sections and cards saying where each stands; reading on in ch. 3 opens
+// the book at its read point; two derivations boxed on pp. 24 and 26 become
+// sections named from the page, in book order; done for today moves the
+// read point. 2026-11-05, a later day: the boxed derivation comes up
+// `boxed nov 2, nothing written yet · first time back`, opens at its boxes,
+// is written up with numbered steps and cloze steps, then next. 2026-11-10:
+// it returns `written, 3 cards · back for the 2nd time` and is dismissed,
+// its cards still due. The Arabic passage: read in rotation, a paragraph
+// clipped with `m`, `word ::: meaning` typed under it. Light, then dark.
+export async function smokeBooks(vault: Vault): Promise<void> {
+  type Heading = import('../format/index.js').Heading;
+  type SectionItem = import('../schedule/index.js').SectionItem;
+  type ReadItem = import('../schedule/index.js').ReadItem;
+  let last = { at: Date.now(), what: 'start' };
+  let finished = false;
+  const log = (s: string) => { last = { at: Date.now(), what: s }; void info(`smoke books: ${s}`); };
+  const dog = setInterval(() => {
+    if (finished) { clearInterval(dog); return; }
+    if (Date.now() - last.at > 30_000) { finished = true; clearInterval(dog); void info(`smoke books: failed: no progress for 30 s after "${last.what}"`); }
+  }, 2000);
+  const bounded = <T,>(p: Promise<T>, what: string, ms = 8000): Promise<T> =>
+    Promise.race([p, new Promise<T>((_, no) => setTimeout(() => no(new Error(`${what} (no answer in ${ms} ms)`)), ms))]);
+  const shot = async (name: string, ms = 2500) => { await sleep(800); log(`shot: ${name}`); await sleep(ms); };
+  const q = <T extends Element>(sel: string, root: ParentNode = document) => root.querySelector<T>(sel);
+  const qa = <T extends Element>(sel: string, root: ParentNode = document) => Array.from(root.querySelectorAll<T>(sel));
+  const must = (ok: unknown, what: string) => { if (!ok) throw new Error(what); log(`ok: ${what}`); };
+  const poll = async <T,>(probe: () => T | null | undefined | false | Promise<T | null | undefined | false>, what: string, ms = 5000): Promise<T> => {
+    const t0 = Date.now();
+    for (;;) {
+      const v = await probe();
+      if (v) { log(`ok: ${what}`); return v; }
+      if (Date.now() - t0 > ms) throw new Error(`${what} (waited ${ms} ms)`);
+      await sleep(100);
+    }
+  };
+  const key = (k: string, mods: KeyboardEventInit = {}) => window.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true, ...mods }));
+  const keydown = (el: Element, k: string) => el.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));
+  const type = (s: string) => document.execCommand('insertText', false, s);
+  const { parse, parseBoxes, meta } = await import('../format/index.js');
+  const { addDays, isDue, sameItem } = await import('../schedule/index.js');
+  const { refreshQueue } = await import('./vault.js');
+  const { setClockDay, appNow } = await import('./clock.js');
+  const { doneLine } = await import('./items.js');
+  const LQ = 'library/lindqvist-statistical-physics';
+  const CH3 = `${LQ}/ch-3-the-canonical-ensemble.md`;
+  const P12 = 'library/classical-prose-reader/12-the-grammarian-and-the-bedouin.md';
+  const DAY1 = '2026-11-02';
+  const DAY2 = '2026-11-05';
+  const DAY3 = '2026-11-10';
+  const text = (p: string) => bounded(vault.fs.readText(vault.abs(p)), `reading ${p}`);
+  const headings = async (p: string) => parse(await text(p)).doc.blocks.flatMap((b) => (b.kind === 'heading' && b.level === 2 ? [b] : []));
+  const cardsUnder = async (p: string, start: string) => {
+    const doc = parse(await text(p)).doc;
+    const at = doc.blocks.findIndex((b) => b.kind === 'heading' && b.text.startsWith(start));
+    let end = at + 1;
+    while (end < doc.blocks.length && !(doc.blocks[end]!.kind === 'heading' && (doc.blocks[end] as Heading).level <= 2)) end++;
+    return doc.blocks.slice(at + 1, end).filter((b) => b.kind === 'card');
+  };
+  const items = () => useApp.getState().queue;
+  const sectionOf = (p: string, start: string) => items().find((i): i is SectionItem => i.kind === 'section' && i.path === p && i.heading.startsWith(start));
+  const readOf = (p: string) => items().find((i): i is ReadItem => i.kind === 'read' && i.path === p);
+  /** Draw a box on a page as a pointer would: down at its corner, a move, up at the other. */
+  const drag = async (page: number, x: number, y: number, w: number, h: number) => {
+    const el = await poll(() => q<HTMLElement>(`.pane[data-active="1"] .book .pdf-page[data-page="${page}"]`), `page ${page} is drawn`, 15000);
+    el.scrollIntoView({ block: 'center' });
+    await sleep(400);
+    const r = el.getBoundingClientRect();
+    const at = (fx: number, fy: number): MouseEventInit => ({ clientX: r.left + fx * r.width, clientY: r.top + fy * r.height, bubbles: true, cancelable: true, button: 0 });
+    el.dispatchEvent(new MouseEvent('mousedown', at(x, y)));
+    window.dispatchEvent(new MouseEvent('mousemove', at(x + w / 2, y + h / 2)));
+    window.dispatchEvent(new MouseEvent('mouseup', at(x + w, y + h)));
+    await sleep(200);
+  };
+  const openQuery = async () => {
+    openNode(queueId('today'));
+    await poll(() => q('.pane[data-active="1"] .queue h1')?.firstChild?.textContent === 'due today', 'the day\'s query is drawn', 8000);
+    await sleep(300);
+  };
+  const rowOf = (start: string, el = 'section') => qa<HTMLElement>('.pane[data-active="1"] .qlist li:not(.fold)').find((r) => r.dataset.el === el && r.textContent?.includes(start));
+  const where = (r: HTMLElement | undefined) => q('.ref-line', r ?? document.createElement('div'))?.textContent ?? '';
+  /** A session at one item; resolves once its bar is drawn in the book. */
+  const sessionAt = async (s: SectionItem | ReadItem, page: number) => {
+    openSession(s);
+    await poll(() => { const el = useApp.getState().sessionEl; return el && sameItem(el.item, s) && q(`.pane[data-active="1"] .doc-session[data-book="1"] .book .pdf-page[data-page="${page}"] canvas`) && q('.pane[data-active="1"] .doc-session .session-bar') ? true : null; }, `the session opens the book at p. ${page}`, 20000);
+    await sleep(600);
+  };
+  const bar = () => q<HTMLElement>('.pane[data-active="1"] .session-bar')!;
+  const actions = () => qa<HTMLElement>('.sb-actions button .ra-l', bar()).map((b) => b.textContent).join(' / ');
+  const changed = (p: string, before: string, what: string) => poll(async () => { const t = await text(p); return t !== before ? t : null; }, what, 8000);
+  try {
+    setClockDay(DAY1);
+    useApp.getState().setTheme('light');
+    await poll(() => document.documentElement.dataset.theme === 'light', 'light');
+    setInspector({ open: true });
+    useApp.setState({ notesHidden: false, inlineBoxes: {} });
+    await poll(() => useApp.getState().docs[CH3]?.pdf && useApp.getState().docs[P12]?.pdf, 'the chapter and the passage are in the collection, with their pages', 15000);
+    must(useApp.getState().docs[CH3]!.pages?.first === 23 && useApp.getState().docs[P12]!.pages?.first === 129, 'ch. 3 at pp. 23–28 of its book, passage 12 at pp. 129–134 of its');
+    must(!vault.documents().some((d) => d.startsWith(`${LQ}/ch-`) && d.split('/').length > 3), 'no extract document under the chapters');
+    refreshQueue();
+
+    // ── the day's queue: one line, each row saying where it stands ──
+    const boltz = await poll(() => sectionOf(CH3, 'why the Boltzmann factor'), 'the old extract is a section of ch. 3, in the day\'s queue', 10000);
+    must(isDue(boltz, appNow()) && boltz.written && boltz.cards === 2, 'due, written, 2 cards');
+    const ch3 = await poll(() => readOf(CH3), 'ch. 3 is in the day\'s queue to read on');
+    await poll(() => readOf(P12), 'and so is the Arabic passage');
+    await openQuery();
+    must(/^\d+ due, in priority order · “ read on in a book · § a passage or section, back until you dismiss it · ◆ a card$/.test(q('.queue .legend')?.textContent ?? ''), 'the head\'s one line');
+    const rows = qa<HTMLElement>('.pane[data-active="1"] .qlist li:not(.fold)');
+    const kinds = rows.map((r) => r.dataset.el);
+    must(where(rowOf('why the Boltzmann factor')) === 'written, 2 cards · back for the 4th time', `the Boltzmann section's row: "${where(rowOf('why the Boltzmann factor'))}"`);
+    must(where(rowOf('the N! only works')) === 'written, 1 card · back for the 4th time', `the N! section's row: "${where(rowOf('the N! only works'))}"`);
+    must(/^read on from p\. 26/.test(where(rowOf('ch. 3: the canonical ensemble', 'read'))), `ch. 3's row: "${where(rowOf('ch. 3: the canonical ensemble', 'read'))}"`);
+    must(/^read on from p\. 130/.test(where(rowOf('passage 12', 'read'))), `passage 12's row: "${where(rowOf('passage 12', 'read'))}"`);
+    const firstSec = kinds.indexOf('section');
+    must(firstSec >= 0 && kinds.slice(0, firstSec).includes('card') && kinds.slice(firstSec).includes('read'), `one line, by priority: ${kinds.slice(0, 14).join(' ')}`);
+    for (const r of rows.slice(0, 10)) log(`row: ${q('.mark', r)?.textContent} · ${(q('.body', r)?.textContent ?? '').slice(0, 50)} · ${where(r)}`);
+    rowOf('why the Boltzmann factor')?.scrollIntoView({ block: 'center' });
+    await shot('books-queue');
+
+    // ── the physics first pass: read on in ch. 3, at its read point ──
+    await sessionAt(ch3, 26);
+    must(actions().startsWith('done for today · back in'), `a book's actions: ${actions()}`);
+    must(/^read on from p\. 26/.test(q('.sb-where', bar())?.textContent ?? ''), `above them: "${q('.sb-where', bar())?.textContent}"`);
+    must(qa('.pane[data-active="1"] .doc-session .pdf-page').map((p) => (p as HTMLElement).dataset.page).join(',') === '23,24,25,26,27,28', 'the chapter\'s pages 23–28 beside its notes');
+    must(qa('.pane[data-active="1"] .doc-session .book-notes .dd-h').length === 7, 'the notes hold its seven sections');
+    must(qa('.pane[data-active="1"] .doc-session .book .pbox.dis').length >= 3, 'the dismissed ones dashed on the pages');
+    await shot('books-read-on');
+
+    // two derivations boxed on pp. 24 and 26 become sections, named from the page, in book order
+    await drag(24, 0.11, 0.67, 0.78, 0.075);
+    key('e');
+    const avg = await poll(async () => (await headings(CH3)).find((h) => h.text === '3.3 · average values (3.8)'), 'e names the ⟨E⟩ derivation "3.3 · average values (3.8)"', 10000);
+    must(avg.read?.made === DAY1 && avg.read.due === addDays(DAY1, 3) && avg.read.ivl === 3 && !!parseBoxes(avg.read.boxes ?? ''), `boxed today, back in 3 days (${avg.read?.boxes})`);
+    await shot('books-boxed');
+    key('Escape');
+    await drag(26, 0.11, 0.12, 0.78, 0.2);
+    key('e');
+    const eq = await poll(async () => (await headings(CH3)).find((h) => h.text === '3.6 · the equipartition theorem (3.16)'), 'e names the equipartition derivation "3.6 · the equipartition theorem (3.16)"', 10000);
+    const order = (await headings(CH3)).map((h) => h.text.slice(0, 22));
+    must(order.join(' | ') === 'why the Boltzmann fact | expand S_R, not Ω_R | 3.3 · average values ( | 3.3 · average values ( | 3.4 · the Helmholtz fr | 3.6 · the equipartitio | equipartition fails wh | the Schottky anomaly | 3.8 · the Einstein sol', `the notes in book order: ${order.join(' | ')}`);
+    key('Escape');
+    // done for today: the read point moves to the bottom of the view
+    let before = await text(CH3);
+    const sc = q<HTMLElement>('.pane[data-active="1"] .doc-session .book-pages')!;
+    sc.scrollTop += 240;
+    sc.dispatchEvent(new Event('scroll'));
+    await sleep(400);
+    key('Enter');
+    let after = await changed(CH3, before, 'done for today wrote the file');
+    const r1 = meta(parse(after).doc).read;
+    must(r1?.pos !== undefined && r1.pos >= 26 && r1.reps === 5 && r1.y !== undefined, `the read point moved on (pos=${r1?.pos} y=${r1?.y} reps=${r1?.reps})`);
+    must(useApp.getState().log[0] === doneLine('“', 'ch. 3: the canonical ensemble', useApp.getState().log[0]!.split(' · ').slice(-2).join(' · ')), `the done row: "${useApp.getState().log[0]}"`);
+
+    // ── a later day: the boxed derivation comes up with nothing written ──
+    setClockDay(DAY2);
+    refreshQueue();
+    const sec = await poll(() => { const s = sectionOf(CH3, '3.6 · the equipartition'); return s && isDue(s, appNow()) ? s : null; }, 'three days on, the boxed derivation is due', 8000);
+    must(!sec.written && sec.cards === 0, 'nothing written, no cards');
+    await openQuery();
+    must(where(rowOf('3.6 · the equipartition')) === 'boxed nov 2, nothing written yet · first time back', `its row: "${where(rowOf('3.6 · the equipartition'))}"`);
+    rowOf('3.6 · the equipartition')?.scrollIntoView({ block: 'center' });
+    await shot('books-later-day');
+    await sessionAt(sec, 26);
+    await poll(() => useApp.getState().caretHeading?.text === sec.heading, 'the session opens at its heading, the caret in it', 8000);
+    const lit = await poll(() => qa<HTMLElement>('.pane[data-active="1"] .doc-session .pbox.cur').filter((b) => b.dataset.section === sec.heading), 'its box lit on p. 26', 8000);
+    must(lit.length === 1 && lit[0]!.dataset.page === '26', 'one box, on p. 26');
+    must(q('.sb-where', bar())?.textContent === 'boxed nov 2, nothing written yet · first time back', `the bar: "${q('.sb-where', bar())?.textContent}"`);
+    must(actions() === 'next · back in 5d / later / dismiss', `the actions: ${actions()}`);
+    // written up: numbered steps, three of them cloze
+    const surface = q<HTMLElement>('.pane[data-active="1"] .doc-session .book-notes .draft-doc')!;
+    surface.focus();
+    keydown(surface, 'Enter');
+    await sleep(200);
+    type('1. $Z_q \\propto \\int e^{-\\beta c q^2}\\,dq$, a Gaussian integral: {{c1::$\\sqrt{\\pi/\\beta c}$}}');
+    keydown(surface, 'Enter');
+    await sleep(200);
+    type('2. so $\\ln Z_q = {{c1::-\\tfrac12 \\ln \\beta}} + \\text{const}$');
+    keydown(surface, 'Enter');
+    await sleep(200);
+    type('3. $\\langle E_q \\rangle = -\\partial_\\beta \\ln Z_q = $ {{c1::$1/2\\beta = \\tfrac12 kT$}}, whatever $c$ is');
+    await sleep(600);
+    must((surface.textContent ?? '').includes('Gaussian integral') && (surface.textContent ?? '').includes('whatever'), 'the steps are on the page');
+    await shot('books-write-up');
+    before = await text(CH3);
+    key('Enter');
+    after = await changed(CH3, before, 'next wrote the file');
+    const eq2 = (await headings(CH3)).find((h) => h.text === eq.text)!;
+    must(eq2.read?.due === addDays(DAY2, 5) && eq2.read.ivl === 5 && eq2.read.reps === 1 && eq2.read.boxes === eq.read?.boxes, `the heading's line counted the pass (${JSON.stringify(eq2.read)})`);
+    const cards = await cardsUnder(CH3, '3.6 · the equipartition');
+    must(cards.length === 3 && cards.every((c) => c.kind === 'card' && c.text.includes('{{c1::')), `the write-up is three cloze cards in the section (${cards.length})`);
+    must(useApp.getState().log[0] === doneLine('§', eq.text, 'next · back in 5d'), `the done row: "${useApp.getState().log[0]}"`);
+
+    // ── it returns written, and is dismissed; its cards stay ──
+    setClockDay(DAY3);
+    refreshQueue();
+    const back = await poll(() => { const s = sectionOf(CH3, '3.6 · the equipartition'); return s && isDue(s, appNow()) ? s : null; }, 'five days on, it is due again', 8000);
+    must(back.written && back.cards === 3, 'written, 3 cards');
+    await openQuery();
+    must(where(rowOf('3.6 · the equipartition')) === 'written, 3 cards · back for the 2nd time', `its row: "${where(rowOf('3.6 · the equipartition'))}"`);
+    const dueCards = () => items().filter((i) => i.kind === 'card' && i.path === CH3 && isDue(i, appNow())).length;
+    const cardsBefore = dueCards();
+    await shot('books-returns');
+    await sessionAt(back, 26);
+    before = await text(CH3);
+    key('d');
+    after = await changed(CH3, before, 'dismiss wrote the file');
+    const eq3 = (await headings(CH3)).find((h) => h.text === eq.text)!;
+    must(eq3.read?.due === undefined && eq3.read?.boxes === eq.read?.boxes && eq3.read?.made === DAY1, `dismissed: its line keeps made and boxes, no due (${JSON.stringify(eq3.read)})`);
+    await poll(() => { refreshQueue(); return !sectionOf(CH3, '3.6 · the equipartition') && dueCards() === cardsBefore ? true : null; }, `out of the queue, its cards still due (${cardsBefore})`, 8000);
+    must((await cardsUnder(CH3, '3.6 · the equipartition')).length === 3, 'the three cards stay in the section');
+
+    // ── the Arabic passage: read in rotation, a paragraph clipped, word ::: meaning ──
+    const p12 = await poll(() => readOf(P12), 'passage 12 is due to read on');
+    await sessionAt(p12, 130);
+    must(actions().startsWith('done for today · back in'), `a book's actions: ${actions()}`);
+    must(qa('.pane[data-active="1"] .doc-session .book-notes .dd-h').map((h) => h.textContent?.slice(0, 12)).join(' | ').startsWith('dukkān, sirḥ | analogy foll | p. 131'), 'its notes: the two boxed sections, then the pages\' clips');
+    await poll(() => qa('.pane[data-active="1"] .doc-session .book-notes .raw.clip .crop').length === 8, 'eight clips drawn as crops of their pages', 10000);
+    await drag(129, 0.12, 0.275, 0.78, 0.072);
+    key('m');
+    await poll(async () => /\n## p\. 129\n\n<!-- box 129:0\.1\d{2}:0\.2[6-8]\d:0\.7\d{2}:0\.0[6-8]\d -->\n/.test(await text(P12)), 'm clips the first paragraph under ## p. 129', 10000);
+    const caretP = await poll(() => {
+      const s = window.getSelection();
+      const n = s?.anchorNode;
+      const p = (n instanceof Element ? n : n?.parentElement)?.closest('p');
+      return p && !p.textContent?.trim() && p.previousElementSibling?.classList.contains('clip') ? p : null;
+    }, 'the caret below it', 8000);
+    log(`caret in ${caretP.className}`);
+    type('البَادِيَة ::: the desert, home of the bedouin');
+    await sleep(600);
+    await shot('books-arabic-clip');
+    before = await text(P12);
+    key('Escape');
+    key('Enter');
+    after = await changed(P12, before, 'done for today wrote the passage');
+    must(/<!-- box 129:[\d.:]+ -->\n\nالبَادِيَة ::: the desert, home of the bedouin\n/.test(after), 'the card sits under the clip');
+    const r12 = meta(parse(after).doc).read;
+    must(r12?.reps === 4 && r12.pos !== undefined && r12.pos >= 129, `the passage's read point moved on (pos=${r12?.pos} y=${r12?.y} reps=${r12?.reps})`);
+    must(/^## p\. 129\n/m.test(after) && after.indexOf('## p. 129') < after.indexOf('## p. 131'), 'the page\'s heading in page order');
+
+    // ── dark ──
+    await openQuery();
+    useApp.getState().setTheme('dark');
+    await poll(() => document.documentElement.dataset.theme === 'dark', 'dark');
+    await shot('books-dark');
     useApp.getState().setTheme('light');
     setClockDay(null);
     finished = true;

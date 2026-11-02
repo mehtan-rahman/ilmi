@@ -28,6 +28,9 @@ import { useApp, type DocInfo } from '../store.js';
 const SAMPLE = join(import.meta.dirname, '../../../samples/double-major');
 const NOW = new Date('2026-10-30T09:00:00');
 const CH3 = 'library/lindqvist-statistical-physics/ch-3-the-canonical-ensemble.md';
+// the chapter's opening as the text source it was before 49 (its body is the notes since; design/books/text holds the text)
+const CH3_TEXT = 'library/lindqvist-statistical-physics/ch-3-as-text.md';
+const CH3_OPENING = readFileSync(join(import.meta.dirname, '../../../design/books/text/ch-3-the-canonical-ensemble.md'), 'utf8').replace(/^read: .*\n/m, '').split('\n## 3.1')[0] + '\n';
 const KANA = 'courses/fall-2026/arab-401-advanced-grammar/kana-and-its-sisters.md';
 const PT = 'courses/fall-2026/phys-412-quantum-ii/nondegenerate-perturbation-theory.md';
 const VOCAB = 'arabic/vocabulary.md';
@@ -56,6 +59,7 @@ const { Queue } = await import('../Queue.js');
 beforeAll(async () => {
   dir = await fsp.mkdtemp(join(tmpdir(), 'ilmi-pass-'));
   await fsp.cp(SAMPLE, dir, { recursive: true });
+  await fsp.writeFile(join(dir, CH3_TEXT), CH3_OPENING);
   vault = await Vault.open(nodeFs, dir);
   for (const p of vault.documents()) {
     const doc = (await vault.read(p)).doc;
@@ -129,9 +133,9 @@ describe('a title and the body that opens with it', () => {
     expect(bodyRepeatsTitle('x', [{ kind: 'paragraph', text: 'x' }])).toBe(false);
   });
 
-  it('the Lindqvist chapter is titled once in the reader; a note whose body opens otherwise keeps its title', async () => {
-    useApp.setState({ panes: openTab(emptyPanes(), CH3) });
-    await mount(createElement(Lens, { id: CH3, active: true, onOpen: () => {} }));
+  it('the Lindqvist chapter as text is titled once in the reader; a note whose body opens otherwise keeps its title', async () => {
+    useApp.setState({ panes: openTab(emptyPanes(), CH3_TEXT) });
+    await mount(createElement(Lens, { id: CH3_TEXT, active: true, onOpen: () => {} }));
     await settle(() => host.querySelector('.draft-doc h1, .draft-doc .dd-h'));
     expect(host.querySelector('.doc-view > h1')).toBeNull();
     expect(host.querySelector('.draft-doc')?.textContent).toContain('Chapter 3 — The Canonical Ensemble');
@@ -353,8 +357,8 @@ describe('the inspector', () => {
 });
 
 describe('the sample, parsed for the checks above', () => {
-  it('the Lindqvist chapter opens with its own title', () => {
-    const doc = parse(readFileSync(join(SAMPLE, CH3), 'utf8')).doc;
+  it('the Lindqvist chapter\'s text opens with its own title', () => {
+    const doc = parse(CH3_OPENING).doc;
     expect(bodyRepeatsTitle(metaOf(doc).title!, doc.blocks)).toBe(true);
   });
 });

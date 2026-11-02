@@ -1,0 +1,13 @@
+% reader.pdf as it sits in its book: pp. 129 on of the PDF, after 128 blank
+% pages, so the passage document can say `pages: 129-133` and number its
+% boxes as the book numbers them. Rebuild with: xelatex reader-book.tex
+% (after reader.pdf).
+\documentclass{article}
+\usepackage[paperwidth=6in,paperheight=9in,margin=0pt]{geometry}
+\usepackage{pdfpages}
+\pagestyle{empty}
+\begin{document}
+\newcount\n \n=0
+\loop\ifnum\n<128 \null\newpage \advance\n by 1 \repeat
+\includepdf[pages=-]{reader.pdf}
+\end{document}

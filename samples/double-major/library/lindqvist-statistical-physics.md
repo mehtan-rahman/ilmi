@@ -9,7 +9,7 @@ type: source
 
 H. Lindqvist, *Statistical Physics: A First Course*, 3rd ed. The PHYS 415 textbook. Okonkwo follows it loosely — she reorders (paramagnet before Einstein solid, equipartition after $Z$) and skips most of ch. 5 (real gases) and all of ch. 8. Reads cleanly; the derivations are shorter than hers and occasionally skip the step I need. Worked examples are good. Problems are harder than the pset ones, and some of the starred ones show up as midterm problems in disguise (ch. 3 #3.7 was midterm #4).
 
-I import a chapter when the lectures get to it and read it in the queue, a few sections a pass, instead of cramming the night before. Extracts go in each chapter's folder. Cards made while reading sit in the chapter itself (the text is frozen, the cards aren't).
+I import a chapter when the lectures get to it and read it in the queue, a few sections a pass, instead of cramming the night before. A chapter opens as its pages beside my notes on it. A derivation I box on the page is a section of the notes, named from the page, and it keeps coming back until I dismiss it; the write-up and the cards go in the section.
 
 ## contents
 

@@ -745,6 +745,15 @@ the line.
 `pri`. Unlike `pri=` on the front-matter `read` line (§3), it is not a
 fallback and is never dropped.
 
+**The heading** is whatever the person names it. A passage boxed by the
+app is named from the page; a section written by hand, or an extract
+document converted into one, keeps its own words (the sample's `why the
+Boltzmann factor — count the reservoir`, boxed over the page it came from,
+with the extract's schedule on its line and its cards under it). The
+sample's Lindqvist chapters and the classical prose reader's passage 12 are
+converted this way: the book's text is on the pages (`pdf`, `pages`), the
+body is the notes, and no extract document is left under them.
+
 **Rules.** One line per heading; a second is resolved later-wins with a
 diagnostic. After anything but a heading (a paragraph, a card, a raw
 block, a list item, a blank line, nothing) the line is an orphan: kept as a
@@ -771,7 +780,11 @@ than named (a passage in Arabic, whose text a PDF reader cannot give back
 in order). It is a raw block (§6.4) like any other comment, attached to
 nothing; the app writes it under the page's `## p. N` heading (made the
 first time something lands there, in page order), the card that follows
-it below. A clip whose box is not in the grammar is an ordinary comment.
+it below. Written by hand it may sit anywhere; the sample's passage 12
+keeps one directly under each boxed section's heading, where the passage's
+words would have been, since the page's Arabic cannot be read back in
+order, and one before each card made from the commentary under its page's
+`## p. N`. A clip whose box is not in the grammar is an ordinary comment.
 
 ## 7. Attributes
 

@@ -125,7 +125,7 @@ describe('the editor decorates every block', () => {
   });
 
   it('the sample glossary: each item mostly English, so left to right', () => {
-    const doc = toDoc(parse(read('library/classical-prose-reader/12-the-grammarian-and-the-bedouin.md')).doc.blocks);
+    const doc = toDoc(parse(read('library/classical-prose-reader/11-the-judge-and-the-two-litigants.md')).doc.blocks);
     const set = directionDecorations(doc);
     const items: string[] = [];
     doc.descendants((node, pos) => {

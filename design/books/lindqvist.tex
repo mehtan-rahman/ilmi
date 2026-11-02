@@ -1,0 +1,595 @@
+% The sample's Lindqvist, chapters 2–4, typeset from the sample's own text
+% by lindqvist.py (do not edit by hand; edit the chapters and rerun).
+% Rebuild with: pdflatex lindqvist.tex (twice).
+\documentclass[10pt,twoside,openright]{book}
+\usepackage[paperwidth=6in,paperheight=9in,inner=0.8in,outer=0.7in,top=0.85in,bottom=0.8in,headsep=0.25in]{geometry}
+\usepackage{newtxtext,newtxmath}
+\usepackage{amsmath}
+\usepackage{microtype}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\titleformat{\chapter}[display]{\normalfont}{\large Chapter \thechapter}{0.6ex}{\LARGE\bfseries}
+\titlespacing*{\chapter}{0pt}{0pt}{4ex}
+\titleformat{\section}{\normalfont\large\bfseries}{\thesection}{0.8em}{}
+\titlespacing*{\section}{0pt}{2.2ex plus .5ex}{1.2ex}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[LE]{\small\thepage\hspace{1.2em}\textsc{Statistical Physics: A First Course}}
+\fancyhead[RO]{\small\textsc{\thechapter\enspace\chtitle}\hspace{1.2em}\thepage}
+\renewcommand{\headrulewidth}{0pt}
+\fancypagestyle{plain}{\fancyhf{}\renewcommand{\headrulewidth}{0pt}}
+\newcommand{\chtitle}{}
+\newcommand{\dd}{\mathrm{d}}
+\begin{document}
+% chapter 1: blank, so the pages number as the book does
+\pagestyle{empty}
+\newcount\n \n=0
+\loop\ifnum\n<16 \null\newpage \advance\n by 1 \repeat
+\pagestyle{fancy}
+\setcounter{page}{17}
+\setcounter{chapter}{1}
+\renewcommand{\chtitle}{Microstates and Entropy}
+\chapter{Microstates and Entropy}
+
+Thermodynamics, as developed in Chapter 1, takes temperature, entropy, and the second law as given. It tells us how these quantities are related but is silent on why they exist. In this chapter we begin the project that occupies the rest of the book: deriving the laws of thermodynamics from the mechanics of many particles and a single statistical assumption. The central idea is simple to state. A macroscopic system can be arranged in an astronomically large number of microscopic ways, and almost all of those ways look the same from the outside. Entropy is a measure of that number, and the second law is a consequence of its size.
+
+\section{Macrostates and microstates}
+
+Consider a system whose microscopic configuration we can, in principle, specify completely. For a collection of $N$ coins, a complete specification lists the face of each coin. For a gas, it lists the position and momentum of each molecule, or, in quantum mechanics, the occupied state of each. Such a specification is a \emph{microstate}. A \emph{macrostate} specifies only the quantities accessible to a macroscopic measurement: the total number of heads, the total energy, the volume.
+
+The number of microstates corresponding to a given macrostate is its \emph{multiplicity}, denoted $\Omega$. For $N$ coins with $n$ heads,
+
+\begin{equation}
+  \Omega(N, n) = \binom{N}{n} = \frac{N!}{n!\,(N-n)!}.
+\end{equation}
+
+The total number of microstates is $2^N$, and the probability of finding exactly $n$ heads after a fair toss is $\Omega(N,n)/2^N$.
+
+The coin example contains an implicit assumption: that every microstate is equally probable. For coins this follows from the symmetry of each toss. For a physical system we elevate it to a postulate.
+
+\begin{quote}
+\textbf{Fundamental assumption.} In an isolated system in thermal equilibrium, all accessible microstates are equally probable.
+\end{quote}
+
+The word \emph{accessible} matters. A microstate is accessible if it is consistent with the conserved quantities and constraints that define the system --- its energy, volume, number of particles, and any walls or partitions. The assumption cannot be proved from mechanics in general, though it can be motivated by the observation that the microscopic dynamics, left to run long enough, show no preference for one accessible state over another. Its real justification is that its consequences agree with experiment.
+
+\section{Two models: the paramagnet and the Einstein solid}
+
+Two models will carry most of the weight in the chapters that follow. Both are simple enough that $\Omega$ can be computed exactly.
+
+\textbf{The two-state paramagnet.} Consider $N$ magnetic dipoles, each of moment $\mu$, fixed in place in an external field $B$. Each dipole can point parallel to the field, with energy $-\mu B$, or antiparallel, with energy $+\mu B$. If $N_\uparrow$ dipoles are parallel and $N_\downarrow = N - N_\uparrow$ antiparallel, the total energy is $U = \mu B(N_\downarrow - N_\uparrow)$. The multiplicity is the number of ways to choose which dipoles are parallel:
+
+\begin{equation}
+  \Omega(N_\uparrow) = \binom{N}{N_\uparrow}.
+\end{equation}
+
+This is formally identical to the coin problem. The physics enters through the identification of $N_\uparrow$ with the energy.
+
+\textbf{The Einstein solid.} A crystalline solid may be modelled, crudely, as a collection of atoms each bound to its lattice site by a harmonic restoring force. In three dimensions each atom contributes three independent oscillators. We take all oscillators to have the same frequency $\omega$, so that each has energy levels separated by $\hbar\omega$. Measuring energy from the ground state, a solid of $N$ oscillators with total energy $U = q\hbar\omega$ has $q$ units of energy to distribute among $N$ oscillators. Since the oscillators are distinguishable (by their location) but the energy units are not, the multiplicity is the number of ways to arrange $q$ identical units and $N-1$ partitions in a line:
+
+\begin{equation}
+  \Omega(N, q) = \binom{q + N - 1}{q}.
+\end{equation}
+
+For $N = 3$ and $q = 3$ this gives $\Omega = 10$, which the reader should verify by listing the states directly.
+
+\section{Interacting systems}
+
+A single isolated system in equilibrium has nothing to do. The interesting questions arise when two systems are allowed to exchange energy. Let solids A and B, with $N_A$ and $N_B$ oscillators, be placed in weak thermal contact, so that energy passes between them slowly compared with the time it takes each to reach internal equilibrium, but the combined system is isolated. The total energy $q = q_A + q_B$ is fixed; the division between A and B is not.
+
+A macrostate of the combined system is now specified by $q_A$. For each value of $q_A$, the number of microstates is the product
+
+\begin{equation}
+  \Omega_{\text{total}}(q_A) = \Omega_A(N_A, q_A)\,\Omega_B(N_B, q - q_A),
+\end{equation}
+
+because any microstate of A can be combined with any microstate of B. By the fundamental assumption, every microstate of the combined system is equally probable, so the probability of a given $q_A$ is proportional to $\Omega_{\text{total}}(q_A)$.
+
+For small systems the distribution of $q_A$ is broad. For $N_A = N_B = 3$ and $q = 6$, the most probable division, $q_A = 3$, accounts for only about a fifth of the 462 microstates. But as the systems grow, the distribution narrows dramatically. With a few hundred oscillators in each solid, the probability of finding the energy far from its most probable division is already smaller than one part in $10^{10}$.
+
+This narrowing is the essence of irreversibility. If the two solids begin with the energy unevenly divided, the exchange of energy will carry the combined system toward the most probable division, not because any force drives it there, but because there are overwhelmingly more microstates there than anywhere else. The system, wandering at random among its accessible microstates, spends nearly all its time in the overwhelming majority. Once there, it will not return to the initial division in any time we could observe.
+
+We may now state the second law in the language of statistics: \emph{an isolated system evolves toward, and remains in, the macrostate of greatest multiplicity.}
+
+\section{Large numbers and the sharpness of the peak}
+
+To quantify the narrowing we need a way to handle factorials of large numbers. \emph{Stirling's approximation},
+
+\begin{equation}
+  N! \approx N^N e^{-N}\sqrt{2\pi N},
+\end{equation}
+
+is accurate to better than one percent for $N \ge 10$. In logarithmic form, dropping the term that grows only as $\ln N$,
+
+\begin{equation}
+  \ln N! \approx N\ln N - N.
+\end{equation}
+
+Consider an Einstein solid in the high-temperature limit, $q \gg N$. Applying Stirling's approximation to each factorial in $\Omega(N, q)$, and using $\ln(1 + x) \approx x$ for small $x$, one finds
+
+\begin{equation}
+  \Omega(N, q) \approx \left(\frac{eq}{N}\right)^N.
+\end{equation}
+
+Now let two identical solids, each with $N$ oscillators, share $q$ units. The product of their multiplicities is
+
+\begin{equation}
+  \Omega_{\text{total}} \approx \left(\frac{e}{N}\right)^{2N}(q_A q_B)^N.
+\end{equation}
+
+Writing $q_A = q/2 + x$ and $q_B = q/2 - x$, we have $q_A q_B = (q/2)^2 - x^2$, and for $x \ll q$,
+
+\begin{equation}
+  \Omega_{\text{total}} \approx \Omega_{\max}\exp\!\left[-N\left(\frac{2x}{q}\right)^2\right].
+\end{equation}
+
+The peak is a Gaussian of width $\sigma_x = q/2\sqrt{N}$. For a macroscopic solid with $N \sim 10^{20}$, the width is smaller than the peak position $q/2$ by a factor of order $10^{-10}$. A deviation from the most probable division large enough to be measured would require $x$ to be many times $\sigma_x$, and the Gaussian falls off so steeply that such a deviation will never be observed.
+
+We shall meet the factor $1/\sqrt{N}$ repeatedly. It governs the size of fluctuations in every macroscopic quantity, and it explains why thermodynamics, a theory of averages, is so precise: the averages are almost never departed from.
+
+\section{Entropy and temperature}
+
+Multiplicities of macroscopic systems are inconveniently large. It is natural to work with their logarithms, and we define the \emph{entropy} as
+
+\begin{equation}
+  S = k\ln\Omega,
+\end{equation}
+
+where $k = 1.381\times10^{-23}$ J/K is Boltzmann's constant. The logarithm has a further advantage: since the multiplicity of a composite system is the product of the multiplicities of its parts, the entropy is the sum of their entropies. The second law becomes the statement that the total entropy of an isolated system tends to increase.
+
+Return now to two systems exchanging energy. At equilibrium the total entropy $S_A + S_B$ is a maximum with respect to the division of energy, so
+
+\begin{equation}
+  \frac{\partial S_A}{\partial U_A} = \frac{\partial S_B}{\partial U_B}.
+\end{equation}
+
+The quantity $\partial S/\partial U$ is therefore the same for two systems in thermal equilibrium. This is the defining property of temperature. To fix the relationship we observe that energy flows spontaneously toward the system in which it produces the greater increase of entropy, that is, toward the system with the larger $\partial S/\partial U$. Since heat flows from hot to cold, a larger $\partial S/\partial U$ must correspond to a lower temperature. The simplest choice consistent with this and with the units of Chapter 1 is
+
+\begin{equation}
+  \frac{1}{T} = \left(\frac{\partial S}{\partial U}\right)_{N,V}.
+\end{equation}
+
+For the high-temperature Einstein solid, $S = Nk[\ln(U/N\hbar\omega) + 1]$, and differentiation gives $U = NkT$. Each oscillator holds an average energy $kT$, a result we shall recover in Chapter 3 as an instance of the equipartition theorem.
+
+For the paramagnet the result is more interesting. The entropy is largest when $N_\uparrow = N_\downarrow$, that is, at $U = 0$, and falls to zero at both $U = -N\mu B$ and $U = +N\mu B$. For $U < 0$ the slope $\partial S/\partial U$ is positive and the temperature is positive. For $U > 0$ the slope is negative, and so is the temperature. Such negative-temperature states are hotter than any positive temperature, in the sense that energy flows from them to any positive-temperature system. They can occur only in systems whose energy is bounded above.
+
+Applying the same reasoning to systems that exchange volume or particles leads to the statistical definitions of pressure and chemical potential:
+
+\begin{equation}
+  P = T\left(\frac{\partial S}{\partial V}\right)_{U,N}, \qquad \mu = -T\left(\frac{\partial S}{\partial N}\right)_{U,V}.
+\end{equation}
+
+Combining all three gives the thermodynamic identity $dU = T\,dS - P\,dV + \mu\,dN$.
+
+\section{The multiplicity of an ideal gas}
+
+For a classical gas the microstate is a point in phase space, and the counting requires a prescription for how many states occupy a given region. Quantum mechanics supplies it: for a particle confined to a box, the allowed states are spaced so that each occupies a phase-space volume $h^3$. The number of states available to one particle of energy $U$ in a volume $V$ is therefore proportional to $V V_p/h^3$, where $V_p$ is the volume of the momentum-space shell of radius $\sqrt{2mU}$.
+
+For $N$ particles the momentum space is $3N$-dimensional, and the allowed momenta lie on the surface of a hypersphere. We must also account for the indistinguishability of the particles. Interchanging two identical atoms does not produce a new microstate, so the count must be divided by the $N!$ permutations of the particles among their states. This correction is valid only when the number of available states vastly exceeds $N$, so that two particles are rarely found in the same state; the general case is the subject of Chapter 4.
+
+Carrying out the counting and applying Stirling's approximation leads to the \emph{Sackur--Tetrode equation} for the entropy of a monatomic ideal gas,
+
+\begin{equation}
+  S = Nk\left[\ln\left(\frac{V}{N}\left(\frac{4\pi m U}{3Nh^2}\right)^{3/2}\right) + \frac{5}{2}\right].
+\end{equation}
+
+From it follow the energy, $U = \frac32 NkT$, and the equation of state, $PV = NkT$, by the definitions of the previous section. The Sackur--Tetrode equation predicts an absolute entropy, including the constant term, and the prediction has been confirmed by calorimetric measurements of the entropy of monatomic gases.
+
+\textbf{Worked example 2.1.} \emph{Entropy of mixing.} A box is divided into two halves of volume $V$, each containing $N$ atoms of an ideal gas at the same temperature. The partition is removed. If the gases are different (say helium and argon), each expands into volume $2V$, and the entropy increases by $\Delta S = 2Nk\ln 2$. If the gases are identical, the macrostate after removal is indistinguishable from the one before, and $\Delta S$ must be zero. The Sackur--Tetrode equation gives exactly this: the total entropy depends on $V/N$, which is unchanged. Without the factor $1/N!$, the formula would depend on $\ln V$ rather than $\ln(V/N)$ and would predict an entropy increase of $2Nk\ln 2$ for identical gases as well. This is Gibbs's paradox, and its resolution is the indistinguishability of identical particles.
+
+\textbf{Worked example 2.2.} \emph{Entropy of a paramagnet at zero field.} At $B = 0$ every arrangement of $N$ dipoles has the same energy, and all $2^N$ are accessible. Thus $S = Nk\ln2$. When a field is applied adiabatically, the entropy is unchanged while the energy levels split; cooling the lattice and then removing the field isothermally and adiabatically in turn is the basis of adiabatic demagnetization, discussed in Chapter 7.
+
+\section*{Summary}
+
+The microcanonical approach rests on counting. For any isolated system, we determine the multiplicity $\Omega$ as a function of the conserved quantities, form $S = k\ln\Omega$, and obtain temperature, pressure, and chemical potential by differentiation. The second law appears as the overwhelming dominance of the most probable macrostate. The approach is conceptually clean but computationally demanding: for each new system the counting must be done afresh, under the constraint of exactly fixed energy. In Chapter 3 we relax that constraint and obtain a far more convenient method.
+
+\section*{Problems}
+\small
+
+\setcounter{chapter}{2}
+\renewcommand{\chtitle}{The Canonical Ensemble}
+\chapter{The Canonical Ensemble}
+
+The methods of Chapter 2 apply to isolated systems, whose energy is fixed. Most systems of interest are not isolated. A cup of coffee, a gas in a cylinder, a crystal on a laboratory bench: each exchanges energy with its surroundings and is characterized not by its energy but by its temperature. In this chapter we develop the statistical mechanics of such systems. The result, the Boltzmann distribution, is the single most useful formula in the subject.
+
+\section{A system in contact with a reservoir}
+
+Let a system of interest, which may be as small as a single atom, be in thermal contact with a much larger system, the \emph{reservoir}, at temperature $T$. The two together are isolated, with fixed total energy $U_0$. We ask: what is the probability that the small system is found in a particular microstate $s$, of energy $E_s$?
+
+The answer comes from applying the fundamental assumption not to the small system but to the combined one. When the small system is in state $s$, the reservoir has energy $U_0 - E_s$ and may be in any of $\Omega_R(U_0 - E_s)$ microstates. Each of these, combined with state $s$, is a distinct microstate of the isolated whole, and all such microstates are equally probable. Hence the probability of state $s$ is proportional to the number of reservoir states compatible with it:
+
+\begin{equation}
+  P(s) \propto \Omega_R(U_0 - E_s) = \exp\left[\frac{S_R(U_0 - E_s)}{k}\right].
+\end{equation}
+
+Because the reservoir is large, $E_s$ is a tiny fraction of its energy, and we may expand its entropy in a Taylor series. It is essential to expand $S_R$ rather than $\Omega_R$: the multiplicity changes by an enormous factor even for a small change in energy, while its logarithm changes smoothly. To first order,
+
+\begin{equation}
+  S_R(U_0 - E_s) \approx S_R(U_0) - E_s\frac{\partial S_R}{\partial U_R} = S_R(U_0) - \frac{E_s}{T}.
+\end{equation}
+
+The second-order term is proportional to $\partial(1/T)/\partial U_R$, which is the inverse of the reservoir's heat capacity, and vanishes in the limit of an infinite reservoir. The first term is independent of $s$ and can be absorbed into the constant of proportionality. Therefore
+
+\begin{equation}
+  P(s) \propto e^{-E_s/kT}.
+\end{equation}
+
+The exponential factor is the \emph{Boltzmann factor}. It is remarkable that nothing about the reservoir survives in it except its temperature. The probability of a state of the small system depends only on the energy of that state and on $T$.
+
+\section{The partition function}
+
+The constant of proportionality is fixed by requiring the probabilities to sum to one. Defining $\beta = 1/kT$,
+
+\begin{equation}
+  P(s) = \frac{e^{-\beta E_s}}{Z}, \qquad Z = \sum_s e^{-\beta E_s}.
+\end{equation}
+
+The normalizing sum $Z$ is the \emph{partition function}. It is a sum over states, not over energies; if several states share an energy, each appears separately. Equivalently, grouping states by energy level,
+
+\begin{equation}
+  Z = \sum_{\text{levels}} g(E)\, e^{-\beta E},
+\end{equation}
+
+where $g(E)$ is the degeneracy of the level. Although introduced as a normalization constant, the partition function will turn out to contain all the thermodynamic information about the system.
+
+The partition function may be read as a count of the states effectively accessible at temperature $T$. States with $E_s \ll kT$ contribute nearly one each; states with $E_s \gg kT$ contribute almost nothing. At low temperature only the ground state counts, and $Z \to g_0$; at high temperature, many states contribute.
+
+\textbf{Worked example 3.1.} \emph{Excited hydrogen in a stellar atmosphere.} In the atmosphere of a star at $T = 9500$ K, what is the ratio of the number of hydrogen atoms in the first excited level ($n = 2$) to the number in the ground level? The energy difference is 10.2 eV and $kT = 0.82$ eV, so $\Delta E/kT = 12.5$. Each level $n$ contains $2n^2$ states, so the ratio of populations is
+
+\begin{equation}
+  \frac{N_2}{N_1} = \frac{8}{2}e^{-12.5} \approx 1.5\times10^{-5}.
+\end{equation}
+
+Small as it is, this population is responsible for the Balmer absorption lines, which are strongest in stars of about this temperature. In cooler stars almost no atoms are excited; in hotter ones most are ionized.
+
+\section{Average values}
+
+The probability distribution allows us to compute the average of any quantity $X$ that takes the value $X_s$ in state $s$:
+
+\begin{equation}
+  \langle X\rangle = \sum_s X_s P(s) = \frac{1}{Z}\sum_s X_s e^{-\beta E_s}.
+\end{equation}
+
+For the energy, the sum can be generated by differentiating $Z$ with respect to $\beta$:
+
+\begin{equation}
+  \langle E\rangle = \frac{1}{Z}\sum_s E_s e^{-\beta E_s} = -\frac{1}{Z}\frac{\partial Z}{\partial\beta} = -\frac{\partial\ln Z}{\partial\beta}.
+\end{equation}
+
+This identity is the first of several in which a thermodynamic quantity is obtained by differentiating $\ln Z$. A second derivative gives the spread of the energy about its mean. One finds
+
+\begin{equation}
+  \langle E^2\rangle - \langle E\rangle^2 = \frac{\partial^2\ln Z}{\partial\beta^2} = kT^2 C_V,
+\end{equation}
+
+so the fluctuations in energy are governed by the heat capacity. For a macroscopic system, $C_V$ and $\langle E\rangle$ are both proportional to $N$, and the relative fluctuation scales as $N^{-1/2}$. The energy of a large system in contact with a reservoir is therefore sharply defined, and the canonical and microcanonical descriptions agree.
+
+\section{The Helmholtz free energy}
+
+The connection between the partition function and thermodynamics is made through the Helmholtz free energy, $F = U - TS$. We claim that
+
+\begin{equation}
+  F = -kT\ln Z.
+\end{equation}
+
+To show this, define $\tilde F = -kT\ln Z$ and differentiate with respect to $T$ at fixed volume:
+
+\begin{equation}
+  \frac{\partial\tilde F}{\partial T} = -k\ln Z - kT\frac{\partial\ln Z}{\partial T} = \frac{\tilde F}{T} - \frac{U}{T},
+\end{equation}
+
+where we have used $\partial\ln Z/\partial T = U/kT^2$. The true free energy satisfies $\partial F/\partial T = -S = (F - U)/T$, the same differential equation. The two functions therefore differ by at most a term proportional to $T$. At $T = 0$ both equal the ground-state energy (since $Z \to g_0 e^{-\beta E_0}$ and the residual entropy $k\ln g_0$ is the same for both), which fixes the constant and establishes the identity.
+
+From $F$ the remaining quantities follow by the thermodynamic relations of Chapter 1:
+
+\begin{equation}
+  S = -\left(\frac{\partial F}{\partial T}\right)_{V,N}, \qquad P = -\left(\frac{\partial F}{\partial V}\right)_{T,N}, \qquad \mu = \left(\frac{\partial F}{\partial N}\right)_{T,V}.
+\end{equation}
+
+The canonical recipe is thus: find the states and their energies, compute $Z$, take its logarithm, and differentiate. For most systems this is far easier than counting states at fixed energy, because the sum defining $Z$ is unconstrained.
+
+\section{Composite systems}
+
+If a system consists of two parts that do not interact, each state of the whole is a pair of states of the parts, and its energy is the sum. The Boltzmann factor then factorizes, and so does the partition function:
+
+\begin{equation}
+  Z_{\text{total}} = Z_1 Z_2.
+\end{equation}
+
+For $N$ independent, distinguishable particles, $Z = Z_1^N$. For $N$ identical particles that are indistinguishable, the product $Z_1^N$ overcounts each state by the $N!$ permutations of the particles, and
+
+\begin{equation}
+  Z = \frac{1}{N!}Z_1^N,
+\end{equation}
+
+subject to the same proviso as in \S2.6: the correction is accurate only when the particles are unlikely to occupy the same single-particle state. Atoms in a crystal are distinguishable by their positions; atoms in a gas are not.
+
+\textbf{The ideal gas.} For a single atom in a box of volume $V$, the translational partition function is obtained by converting the sum over states into an integral over phase space, with one state per volume $h^3$:
+
+\begin{equation}
+  Z_1 = \frac{1}{h^3}\int d^3r\,d^3p\, e^{-\beta p^2/2m} = \frac{V}{\lambda^3}, \qquad \lambda = \frac{h}{\sqrt{2\pi mkT}}.
+\end{equation}
+
+The length $\lambda$ is the \emph{thermal wavelength}, roughly the de Broglie wavelength of an atom with the typical thermal momentum. The partition function counts the number of cells of size $\lambda^3$ in the box. From $Z = Z_1^N/N!$ one recovers, in a few lines, the ideal gas law, $U = \frac32 NkT$, and the Sackur--Tetrode equation.
+
+\section{The equipartition theorem}
+
+Many energies in physics are quadratic in some coordinate or momentum: the kinetic energy $p^2/2m$, the potential energy of a spring $\frac12\kappa x^2$, the rotational energy $L^2/2I$. Suppose the energy of a system contains a term $E = cq^2$, and that the allowed values of $q$ are so closely spaced, compared with the scale set by $kT$, that the sum over them may be replaced by an integral. Then the partition function for this degree of freedom is
+
+\begin{equation}
+  Z_q \propto \int_{-\infty}^{\infty} e^{-\beta cq^2}\,dq = \sqrt{\frac{\pi}{\beta c}},
+\end{equation}
+
+and the average energy is $\langle E_q\rangle = -\partial\ln Z_q/\partial\beta = \frac{1}{2\beta}$. This is the \emph{equipartition theorem}: in thermal equilibrium, every quadratic degree of freedom carries an average energy $\frac12 kT$. The result is independent of $c$.
+
+The theorem is purely classical. Its assumption, that the levels are closely spaced, fails for any degree of freedom whose quantum of energy is comparable to or larger than $kT$. Such a degree of freedom is said to be \emph{frozen out}: it remains almost entirely in its ground state and contributes almost nothing to the energy or the heat capacity. The vibrations of most diatomic molecules are frozen at room temperature, which is why their heat capacity is $\frac52 k$ per molecule rather than $\frac72 k$. The failure of equipartition in this and other cases, most famously in the radiation of a black body, was among the first signs that classical mechanics was incomplete.
+
+\textbf{Worked example 3.3.} \emph{Vibrational excitation of nitrogen.} The vibrational quantum of the N$_2$ molecule is $\hbar\omega = 0.29$ eV, so $\Theta_v = \hbar\omega/k \approx 3400$ K. At room temperature, $y = \Theta_v/T \approx 11.3$, and the fraction of molecules in the first excited vibrational level is approximately $e^{-y} \approx 1.2\times10^{-5}$. The vibrational contribution to the heat capacity per molecule, $k\,y^2e^{y}/(e^{y} - 1)^2 \approx k\,y^2e^{-y}$, is about $1.6\times10^{-3}\,k$. For all practical purposes the vibration does not participate, and the measured heat capacity of nitrogen at room temperature, $C_V \approx 2.50\,k$ per molecule, is accounted for entirely by translation and rotation. Only above about 1000 K does the vibrational contribution become appreciable, and it approaches its classical value of $k$ only near temperatures at which the molecule begins to dissociate.
+
+It is worth emphasizing what the equipartition theorem does \emph{not} say. It does not say that every degree of freedom has energy $\frac12 kT$; it says that every \emph{quadratic} degree of freedom does, \emph{in the classical limit}. A degree of freedom whose energy is linear in a coordinate, such as the potential energy of a molecule in a uniform gravitational field, carries $kT$ rather than $\frac12 kT$; one whose energy is quartic carries $\frac14 kT$. The general rule, for $E \propto |q|^\nu$, is $\langle E\rangle = kT/\nu$, which the reader may verify by the same scaling argument.
+
+\section{Two-level systems}
+
+The simplest system with a nontrivial thermal behaviour has just two states, of energies $0$ and $\epsilon$. Its partition function is $Z_1 = 1 + e^{-\beta\epsilon}$, and the average energy is
+
+\begin{equation}
+  \langle E\rangle = \frac{\epsilon}{e^{\beta\epsilon} + 1}.
+\end{equation}
+
+At low temperature the system is almost certainly in its ground state; at high temperature the two states are nearly equally occupied, and the energy approaches $\epsilon/2$. It never exceeds this value at any positive temperature.
+
+The heat capacity of $N$ such systems is
+
+\begin{equation}
+  C = Nk\left(\frac{\epsilon}{kT}\right)^2\frac{e^{\epsilon/kT}}{(e^{\epsilon/kT} + 1)^2}.
+\end{equation}
+
+It vanishes at both low and high temperature, and has a broad maximum, of height about $0.44\,Nk$, near $kT = 0.42\,\epsilon$. The vanishing at low temperature is a consequence of the energy gap, and is shared by every system with a gap above its ground state. The vanishing at high temperature is peculiar to systems with a bounded spectrum: once the two levels are equally populated, raising the temperature cannot raise the energy. The maximum, observed in the low-temperature heat capacity of many paramagnetic salts and of materials with low-lying split electronic levels, is known as the \emph{Schottky anomaly}.
+
+\textbf{Worked example 3.2.} \emph{The paramagnet revisited.} For a dipole of moment $\mu$ in a field $B$, the energies are $\mp\mu B$, and $Z_1 = 2\cosh(\beta\mu B)$. Then $\langle E\rangle = -\mu B\tanh(\beta\mu B)$ per dipole, and the magnetization of $N$ dipoles is $M = N\mu\tanh(\mu B/kT)$, in agreement with Problem 2.5. The calculation, which required careful counting in Chapter 2, here takes three lines.
+
+\section{The Einstein solid revisited}
+
+A quantum harmonic oscillator of frequency $\omega$ has levels $E_n = (n + \frac12)\hbar\omega$, $n = 0, 1, 2, \dots$ The partition function is a geometric series:
+
+\begin{equation}
+  Z_1 = \sum_{n=0}^{\infty}e^{-\beta\hbar\omega(n + 1/2)} = \frac{e^{-\beta\hbar\omega/2}}{1 - e^{-\beta\hbar\omega}},
+\end{equation}
+
+and the average energy is
+
+\begin{equation}
+  \langle E\rangle = \frac{\hbar\omega}{2} + \frac{\hbar\omega}{e^{\beta\hbar\omega} - 1}.
+\end{equation}
+
+For a solid of $N$ atoms, regarded as $3N$ independent oscillators, the heat capacity is
+
+\begin{equation}
+  C_V = 3Nk\left(\frac{\Theta_E}{T}\right)^2\frac{e^{\Theta_E/T}}{(e^{\Theta_E/T} - 1)^2}, \qquad \Theta_E = \frac{\hbar\omega}{k}.
+\end{equation}
+
+At high temperature, $T \gg \Theta_E$, this approaches $3Nk$, the classical value of Dulong and Petit, as equipartition requires. At low temperature it falls exponentially. Einstein's 1907 calculation was the first explanation of the decline of heat capacities at low temperature, and his fit to the data for diamond, with $\Theta_E \approx 1300$ K, was impressive. Closer examination shows that real heat capacities fall more slowly, as $T^3$. The discrepancy arises because a real solid has a spectrum of vibrational frequencies extending down to zero; the low-frequency modes are not frozen out even at low temperature. The Debye model, which accounts for this, is treated in Chapter 6.
+
+\section{Summary}
+
+For a system in contact with a reservoir at temperature $T$, the probability of a microstate of energy $E_s$ is $e^{-E_s/kT}/Z$. The partition function $Z$ determines all thermodynamic properties through $F = -kT\ln Z$ and $\langle E\rangle = -\partial\ln Z/\partial\beta$. Partition functions of independent subsystems multiply. In the classical limit, each quadratic degree of freedom contributes $\frac12 kT$ to the energy; at low temperature, quantized degrees of freedom freeze out. The two-level system and the Einstein solid illustrate both behaviours and will serve as reference points in what follows.
+
+\section*{Problems}
+\small
+
+\noindent\textbf{3.1}\enspace A system has three states, of energies $0$, $\epsilon$, and $2\epsilon$. Find $Z$, $\langle E\rangle$, and $C$, and sketch $C(T)$.
+
+\smallskip
+\noindent\textbf{3.2}\enspace Show directly from the definition that $\langle E^2\rangle - \langle E\rangle^2 = kT^2C_V$.
+
+\smallskip
+\noindent\textbf{3.3}\enspace Use the Gibbs expression $S = -k\sum_s P_s\ln P_s$ to derive $F = -kT\ln Z$, and show that it reduces to $S = k\ln\Omega$ when all accessible states are equally likely.
+
+\smallskip
+\noindent\textbf{3.4}\enspace The rotational levels of a diatomic molecule are $\ell(\ell+1)\hbar^2/2I$ with degeneracy $2\ell + 1$. Show that at high temperature $Z_{\text{rot}} \approx kT\cdot 2I/\hbar^2$, and find the rotational heat capacity. Estimate the temperature below which rotation freezes out for H$_2$ ($I = 4.6\times10^{-48}$ kg\,m$^2$).
+
+\smallskip
+\noindent\textbf{3.5}\enspace Derive the Maxwell speed distribution from the Boltzmann factor, and find the most probable, mean, and root-mean-square speeds.
+
+\smallskip
+\noindent\textbf{3.6}\enspace At what temperature is 1\% of a sample of nitrogen molecules in the first excited vibrational state? Take $\hbar\omega = 0.29$ eV.
+
+\smallskip
+\noindent\textbf{3.7}\enspace A crystal contains $N$ impurity ions, each with a ground level and an excited level $\epsilon = 1.0$ meV above it, both nondegenerate. Find the temperature of the Schottky maximum and the heat capacity there.
+
+\smallskip
+\noindent\textbf{3.8}\enspace Show that the entropy of an Einstein solid vanishes as $T \to 0$, and find its high-temperature form. Compare with \S2.5.
+
+\smallskip
+\noindent\textbf{3.9}\enspace Prove that the Helmholtz free energy is minimized at equilibrium for a system at fixed $T$ and $V$.
+
+\setcounter{chapter}{3}
+\renewcommand{\chtitle}{Ideal Quantum Gases}
+\chapter{Ideal Quantum Gases}
+
+In Chapters 2 and 3 we treated gases of identical particles by counting states as if the particles were distinguishable and then dividing by $N!$. We warned more than once that this procedure is accurate only when the particles are unlikely to share a single-particle state. In this chapter we drop the approximation. The result is two new distributions, one for each kind of particle nature provides, and a set of phenomena with no classical counterpart: the degeneracy pressure of electrons, the blackbody spectrum, and Bose--Einstein condensation.
+
+\section{When the classical treatment fails}
+
+The factor $1/N!$ in the partition function $Z = Z_1^N/N!$ corrects for the permutations of particles among \emph{distinct} single-particle states. If two or more particles occupy the same state, there are fewer distinct permutations, and the correction overcompensates. The approximation is therefore good when the number of accessible single-particle states greatly exceeds the number of particles.
+
+The single-particle partition function $Z_1 = V/\lambda^3$ is, roughly, the number of states accessible at temperature $T$. The classical treatment is valid when $Z_1 \gg N$, that is, when
+
+\begin{equation}
+  \frac{V}{N} \gg \lambda^3 = \left(\frac{h}{\sqrt{2\pi mkT}}\right)^3.
+\end{equation}
+
+It is convenient to define the \emph{quantum concentration} $n_Q = 1/\lambda^3$. A gas whose density $n = N/V$ is small compared with $n_Q$ behaves classically; one whose density is comparable to or larger than $n_Q$ does not. Physically, $\lambda$ is the length over which an atom's wavefunction is spread at temperature $T$; the classical description fails when the wavefunctions of neighbouring particles overlap.
+
+For air at room temperature the ratio $n/n_Q$ is of order $10^{-7}$, and the classical treatment is superb. For the conduction electrons in a metal, which are both light and dense, $n/n_Q$ is of order $10^4$, and the classical treatment is not merely inaccurate but qualitatively wrong. Between these extremes lie liquid helium, white dwarf stars, and laboratory gases of ultracold atoms.
+
+\section{The Gibbs factor and the grand partition function}
+
+To treat identical particles correctly we change our point of view. Rather than regarding each particle as a system, we regard each single-particle state --- each \emph{orbital} --- as a system, which may contain any allowed number of particles. Since the number of particles in an orbital is not fixed, we need the statistical mechanics of a system that exchanges particles as well as energy with a reservoir.
+
+The argument of \S3.1 generalizes directly. If the system, in state $s$, has energy $E_s$ and contains $N_s$ particles, the reservoir's entropy is reduced by $E_s/T - \mu N_s/T$, where $\mu$ is the reservoir's chemical potential. Hence
+
+\begin{equation}
+  P(s) = \frac{1}{\mathcal{Z}}e^{-\beta(E_s - \mu N_s)}, \qquad \mathcal{Z} = \sum_s e^{-\beta(E_s - \mu N_s)}.
+\end{equation}
+
+The exponential is the \emph{Gibbs factor}, and $\mathcal{Z}$ is the \emph{grand partition function}. The sum runs over all states of the system with any number of particles. The average number of particles is
+
+\begin{equation}
+  \langle N\rangle = kT\frac{\partial\ln\mathcal{Z}}{\partial\mu},
+\end{equation}
+
+and the grand potential $\Phi = U - TS - \mu N = -kT\ln\mathcal{Z}$ plays the role that $F$ played in Chapter 3.
+
+\textbf{Worked example 4.1.} \emph{Oxygen binding to a single site.} A binding site on a protein can be empty, with energy $0$, or occupied by one O$_2$ molecule, with energy $-\epsilon_0$. In contact with dissolved oxygen of chemical potential $\mu$, $\mathcal{Z} = 1 + e^{\beta(\epsilon_0 + \mu)}$, and the probability that the site is occupied is
+
+\begin{equation}
+  \bar n = \frac{1}{e^{-\beta(\epsilon_0 + \mu)} + 1}.
+\end{equation}
+
+Since $\mu$ increases with the concentration of oxygen, so does the occupancy, approaching one at high concentration. Real hemoglobin, with four interacting sites, binds more cooperatively than this model predicts.
+
+\section{Fermi--Dirac and Bose--Einstein distributions}
+
+Consider a single orbital of energy $\epsilon$. If $n$ particles occupy it, its energy is $n\epsilon$. The allowed values of $n$ depend on the nature of the particles.
+
+\textbf{Fermions} --- particles of half-integer spin, including electrons, protons, neutrons, and $^3$He atoms --- obey the Pauli exclusion principle, and $n$ is either 0 or 1. Then $\mathcal{Z} = 1 + e^{-\beta(\epsilon - \mu)}$, and the average occupancy is
+
+\begin{equation}
+  \bar n_{FD} = \frac{1}{e^{(\epsilon - \mu)/kT} + 1}.
+\end{equation}
+
+This is the \emph{Fermi--Dirac distribution}.
+
+\textbf{Bosons} --- particles of integer spin, including photons, $^4$He atoms, and many other atoms --- may occupy an orbital in any number. The grand partition function is a geometric series,
+
+\begin{equation}
+  \mathcal{Z} = \sum_{n=0}^{\infty}e^{-n\beta(\epsilon - \mu)} = \frac{1}{1 - e^{-\beta(\epsilon - \mu)}},
+\end{equation}
+
+which converges only if $\mu < \epsilon$. The average occupancy is the \emph{Bose--Einstein distribution},
+
+\begin{equation}
+  \bar n_{BE} = \frac{1}{e^{(\epsilon - \mu)/kT} - 1}.
+\end{equation}
+
+When $\epsilon - \mu \gg kT$, both distributions reduce to $\bar n \approx e^{-(\epsilon - \mu)/kT}$, the Boltzmann distribution, and the occupancy of every orbital is small. This is precisely the regime in which the $1/N!$ treatment is valid. The quantum distributions thus contain the classical one as a limit, and justify it.
+
+\section{The degenerate Fermi gas}
+
+At zero temperature the Fermi--Dirac distribution is a step: every orbital with $\epsilon < \mu$ is occupied, every one above is empty. The value of $\mu$ at $T = 0$ is the \emph{Fermi energy} $E_F$. A gas in this condition, with its lowest orbitals filled solidly, is said to be \emph{degenerate}.
+
+For $N$ electrons in a volume $V$, the orbitals are labelled by momentum, and the number with momentum less than $p_F$ is $(V/h^3)(4\pi p_F^3/3)$. Each orbital accommodates two electrons, of opposite spin. Setting the total equal to $N$ gives
+
+\begin{equation}
+  E_F = \frac{p_F^2}{2m} = \frac{\hbar^2}{2m}\left(\frac{3\pi^2N}{V}\right)^{2/3}.
+\end{equation}
+
+It is useful to describe the orbitals by a \emph{density of states} $g(\epsilon)$, the number of orbitals (counting spin) per unit energy. For free electrons in three dimensions,
+
+\begin{equation}
+  g(\epsilon) = \frac{V}{2\pi^2}\left(\frac{2m}{\hbar^2}\right)^{3/2}\sqrt{\epsilon} = \frac{3N}{2E_F^{3/2}}\sqrt{\epsilon}.
+\end{equation}
+
+The total energy at $T = 0$ is $U_0 = \int_0^{E_F}\epsilon\,g(\epsilon)\,d\epsilon = \frac35 NE_F$, and the pressure is $P = \frac23 U_0/V = \frac25 nE_F$. This \emph{degeneracy pressure} persists at zero temperature and is a direct consequence of the exclusion principle.
+
+For copper, with one conduction electron per atom, $E_F \approx 7.0$ eV, corresponding to a \emph{Fermi temperature} $T_F = E_F/k \approx 8\times10^4$ K. At any temperature at which copper is solid, $T \ll T_F$, and the electron gas is very nearly in its ground state.
+
+\textbf{Worked example 4.2.} \emph{The Fermi energy of copper.} Copper has density 8960 kg/m$^3$ and atomic mass 63.5 u, so the number of atoms per unit volume is $n = 8960/(63.5\times1.66\times10^{-27}) \approx 8.5\times10^{28}$ m$^{-3}$. With one conduction electron per atom,
+
+\begin{equation}
+  E_F = \frac{\hbar^2}{2m_e}(3\pi^2n)^{2/3} = \frac{(1.055\times10^{-34})^2}{2(9.11\times10^{-31})}(2.51\times10^{30})^{2/3} \approx 1.13\times10^{-18}\ \text{J} \approx 7.0\ \text{eV}.
+\end{equation}
+
+The Fermi momentum corresponds to a speed $v_F = p_F/m \approx 1.6\times10^6$ m/s, about half a percent of the speed of light, so the nonrelativistic treatment is adequate. The degeneracy pressure, $\frac25 nE_F$, is about $3.8\times10^{10}$ Pa, nearly four hundred thousand atmospheres. It is balanced by the electrostatic attraction between the electrons and the positive ions; the electrons do not escape the metal because the ions hold them in.
+
+At a small but nonzero temperature the occupancy $\bar n_{FD}$ departs from the step function only in a band a few $kT$ wide around $\mu$. The distribution has a useful symmetry: the probability that an orbital an energy $x$ above $\mu$ is occupied equals the probability that one an energy $x$ below $\mu$ is empty, $\bar n_{FD}(\mu + x) = 1 - \bar n_{FD}(\mu - x)$. If the density of states were constant near $E_F$, this symmetry would keep $\mu$ fixed at $E_F$ as the temperature rose. Because $g(\epsilon)$ increases with $\epsilon$ in three dimensions, there are more orbitals just above $E_F$ than just below, and $\mu$ must fall slightly to keep the total number of electrons fixed. The Sommerfeld expansion gives
+
+\begin{equation}
+  \mu(T) \approx E_F\left[1 - \frac{\pi^2}{12}\left(\frac{kT}{E_F}\right)^2\right].
+\end{equation}
+
+For copper at room temperature the correction is about one part in $10^5$.
+
+\textbf{Worked example 4.3.} \emph{Electrons in a white dwarf.} A white dwarf of one solar mass, $M = 2.0\times10^{30}$ kg, compressed to roughly the radius of the earth, $R = 6.4\times10^6$ m, contains about $M/2m_p \approx 6\times10^{56}$ electrons (one per two nucleons, for a star of helium, carbon, or oxygen). The electron density is $n \approx 5\times10^{35}$ m$^{-3}$, more than six million times that in copper. The nonrelativistic formula then gives $E_F \approx 0.2$ MeV, a substantial fraction of the electron rest energy, $0.511$ MeV, so a fully nonrelativistic treatment is marginal. The temperature of the star's interior, about $10^7$ K, corresponds to $kT \approx 1$ keV, far below $E_F$: the electrons are degenerate, and it is their degeneracy pressure, not thermal pressure, that supports the star against gravity. For more massive stars the electrons become relativistic, the degeneracy pressure grows more slowly with density, and above about 1.4 solar masses no equilibrium is possible.
+
+\section{Heat capacity of the electron gas}
+
+At small nonzero temperature the step in the Fermi--Dirac distribution is rounded over an energy range of a few $kT$ around $\mu$. Only electrons within this range can be thermally excited; those deeper in the distribution are prevented from absorbing energy $\sim kT$ because the orbitals they would move into are already occupied. The number of excitable electrons is roughly $g(E_F)\,kT \sim N(kT/E_F)$, each gaining energy $\sim kT$, so $U - U_0 \sim N(kT)^2/E_F$ and $C_V \sim Nk(kT/E_F)$. A careful calculation (the Sommerfeld expansion) gives
+
+\begin{equation}
+  C_V = \frac{\pi^2}{2}Nk\frac{kT}{E_F}.
+\end{equation}
+
+At room temperature this is about 1\% of the classical value $\frac32 Nk$, which resolves a longstanding puzzle: conduction electrons, though free to carry current, contribute almost nothing to the heat capacity of a metal. At very low temperature, where the lattice contribution falls as $T^3$, the linear electronic term dominates and is readily measured.
+
+\section{Blackbody radiation}
+
+The electromagnetic field in a cavity at temperature $T$ may be regarded as a gas of photons. Photons are bosons, but unlike atoms they can be created and absorbed freely by the walls; their number is not conserved. At equilibrium the free energy is then minimized with respect to $N$, which requires $\mu = 0$. Each mode of frequency $\omega$ has average occupancy $1/(e^{\hbar\omega/kT} - 1)$ --- the same expression found for the excitation of a harmonic oscillator in \S3.8.
+
+Counting modes as for a particle in a box, with two polarizations and $\epsilon = pc$, gives the energy density per unit photon energy,
+
+\begin{equation}
+  u(\epsilon) = \frac{8\pi}{(hc)^3}\frac{\epsilon^3}{e^{\epsilon/kT} - 1},
+\end{equation}
+
+which is \emph{Planck's spectrum}. It peaks at $\epsilon \approx 2.82\,kT$. The total energy density is
+
+\begin{equation}
+  \frac{U}{V} = \frac{8\pi^5(kT)^4}{15(hc)^3},
+\end{equation}
+
+and the power radiated per unit area by a black surface is $\sigma T^4$, with the Stefan--Boltzmann constant $\sigma = 2\pi^5k^4/15h^3c^2 = 5.67\times10^{-8}$ W m$^{-2}$ K$^{-4}$. Classical equipartition, assigning $kT$ to every mode, would give an infinite energy density; the Bose--Einstein factor freezes out the high-frequency modes and makes the integral converge.
+
+\textbf{Worked example 4.4.} \emph{The cosmic background radiation.} The universe is filled with blackbody radiation at $T = 2.73$ K, a remnant of the epoch when matter and radiation were last in equilibrium. Its spectrum peaks at a photon energy $2.82\,kT \approx 6.6\times10^{-4}$ eV, in the microwave range, and its energy density is $U/V = 4\sigma T^4/c \approx 4.2\times10^{-14}$ J/m$^3$. The number density of photons, obtained by integrating $\bar n_{BE}$ over modes rather than weighting by energy, is about $4\times10^8$ per cubic metre --- far greater than the number density of baryons. The measured spectrum agrees with the Planck form to better than one part in $10^4$, the most precise blackbody known.
+
+\section{Bose--Einstein condensation}
+
+For a gas of bosons whose number is conserved, $\mu$ is determined by the requirement that the occupancies sum to $N$. As the temperature is lowered at fixed density, $\mu$ rises toward the energy of the lowest orbital, which we take as zero. Replacing the sum over orbitals with an integral over the density of states, one finds that even at $\mu = 0$ the excited orbitals can hold at most
+
+\begin{equation}
+  N_{\text{exc}} = 2.612\,\frac{V}{\lambda^3}
+\end{equation}
+
+particles. Below the temperature $T_c$ at which this equals $N$,
+
+\begin{equation}
+  kT_c = \frac{2\pi\hbar^2}{m}\left(\frac{N}{2.612\,V}\right)^{2/3},
+\end{equation}
+
+the excess particles have nowhere to go but the ground orbital, which acquires a macroscopic occupancy $N_0 = N[1 - (T/T_c)^{3/2}]$. This is \emph{Bose--Einstein condensation}. The numerical factor is $\zeta(3/2) \approx 2.612$, and the condition $n\lambda^3 = 2.612$ shows that condensation occurs precisely when the density reaches the quantum concentration, as \S4.1 led us to expect.
+
+The phenomenon is unusual among phase transitions in that it occurs without any interaction between the particles; it is a consequence of statistics alone. Its signature is the sudden appearance, below $T_c$, of a macroscopic number of particles in a single quantum state. In the laboratory gases of 1995 this was made visible directly: when the trap holding the atoms was switched off, the condensed atoms, having almost no momentum, expanded slowly, and an image of the cloud showed a sharp central peak rising out of the broad thermal distribution.
+
+For liquid $^4$He, treated as an ideal gas, the formula gives $T_c \approx 3.1$ K, close to the observed superfluid transition at 2.17 K; the difference reflects the strong interactions in the liquid. Condensation in a nearly ideal gas was first achieved in 1995, in rubidium vapour cooled below about $10^{-7}$ K.
+
+\section{Summary}
+
+Identical particles are correctly described by treating each orbital as a system in contact with a reservoir of temperature $T$ and chemical potential $\mu$. Fermions occupy orbitals according to the Fermi--Dirac distribution, bosons according to the Bose--Einstein distribution, and both reduce to the Boltzmann distribution when occupancies are small. A degenerate Fermi gas has a large zero-point energy and pressure and a heat capacity linear in $T$. Photons, with $\mu = 0$, give the Planck spectrum. Bosons with conserved number condense into their ground orbital below a critical temperature at which their density equals the quantum concentration.
+
+\section*{Problems}
+\small
+
+\noindent\textbf{4.1}\enspace Compute $n/n_Q$ for (a) nitrogen at room temperature and pressure, (b) liquid $^4$He at 2 K (density 145 kg/m$^3$), (c) conduction electrons in sodium.
+
+\smallskip
+\noindent\textbf{4.2}\enspace Show that for both Fermi--Dirac and Bose--Einstein statistics $\langle N\rangle = kT\,\partial\ln\mathcal{Z}/\partial\mu$ gives the distributions of \S4.3.
+
+\smallskip
+\noindent\textbf{4.3}\enspace Show that $\bar n_{FD}(\mu + x) = 1 - \bar n_{FD}(\mu - x)$, and interpret.
+
+\smallskip
+\noindent\textbf{4.4}\enspace Compute the Fermi energy, Fermi temperature, and degeneracy pressure of the conduction electrons in aluminium (three per atom, density 2700 kg/m$^3$).
+
+\smallskip
+\noindent\textbf{4.5}\enspace A white dwarf has the mass of the sun and the radius of the earth. Estimate the Fermi energy of its electrons and decide whether a nonrelativistic treatment is justified.
+
+\smallskip
+\noindent\textbf{4.6}\enspace Derive the Planck spectrum from the occupancy of cavity modes, and show that its maximum lies at $\epsilon \approx 2.82\,kT$.
+
+\smallskip
+\noindent\textbf{4.7}\enspace Show that the entropy of blackbody radiation is $S = \frac43 U/T$, and hence that a photon gas expanding adiabatically obeys $VT^3 = \text{const}$.
+
+\smallskip
+\noindent\textbf{4.8}\enspace Estimate $T_c$ for a gas of $10^4$ rubidium-87 atoms at a density of $10^{19}$ m$^{-3}$.
+\end{document}

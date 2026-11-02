@@ -41,13 +41,13 @@ describe('the sample in the reader', () => {
   });
 
   it('the prose passage: the passage right to left, its glossary (mostly English) left to right', () => {
-    const view = mount(blocksOf('library/classical-prose-reader/12-the-grammarian-and-the-bedouin.md'));
-    expect(blockEl(view, 'Passage 12').dir).toBe('ltr');
-    expect(blockEl(view, 'قِيلَ: خَرَجَ').dir).toBe('rtl');
+    const view = mount(blocksOf('library/classical-prose-reader/11-the-judge-and-the-two-litigants.md'));
+    expect(blockEl(view, 'Passage 11').dir).toBe('ltr');
+    expect(blockEl(view, 'اِخْتَصَمَ رَجُلَانِ').dir).toBe('rtl');
     expect(blockEl(view, 'Level: Part II').dir).toBe('ltr');
     const items = Array.from(view.dom.querySelectorAll<HTMLElement>('.dd-li'));
     expect(items.length).toBeGreaterThan(5);
-    expect(items[0]!.textContent).toContain('نَحْوِيّ');
+    expect(items[0]!.textContent).toContain('اِخْتَصَمَ');
     expect(items[0]!.dir).toBe('ltr');
     expect(items[0]!.closest<HTMLElement>('.dd-list')!.dir).toBe('ltr');
     view.destroy();

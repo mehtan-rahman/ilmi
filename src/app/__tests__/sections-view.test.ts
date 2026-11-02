@@ -86,7 +86,7 @@ describe('the day\'s queue', () => {
     await mount(createElement(Queue, { scope: 'today', active: false }));
     const rows = Array.from(host.querySelectorAll<HTMLElement>('.qlist li:not(.fold)'));
     const kinds = rows.map((r) => r.dataset.el);
-    const at = rows.findIndex((r) => r.dataset.el === 'section');
+    const at = rows.findIndex((r) => r.dataset.el === 'section' && r.textContent?.includes('pset 4 #5'));
     expect(at).toBeGreaterThan(0);
     const row = rows[at]!;
     expect(row.querySelector('.mark')?.textContent).toBe('§');

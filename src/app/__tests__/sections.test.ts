@@ -12,6 +12,7 @@ import { formatBody, parse, type Heading } from '../../format/index.js';
 import { docItems, type ReadItem, type SectionItem } from '../../schedule/index.js';
 import { fromDoc, schema, toDoc } from '../../reader/index.js';
 import { hintsFor } from '../chrome.js';
+import { headingAtPos } from '../Reader.js';
 import { QUEUE_LEGEND, glyphOf, isFresh, kindTag, nth, shortDay, standing, standsWords } from '../items.js';
 import { rowCounts } from '../names.js';
 import { actionWords, isBook } from '../Session.js';
@@ -125,6 +126,18 @@ describe('the editor', () => {
     const out = fromDoc(both) as Heading[];
     expect(out[0]!.read).toEqual({ due: '2026-11-02' });
     expect(out[1]!.read).toBeUndefined();
+  });
+
+  it('the caret\'s heading: the block the caret is in, not its place among the inline children', () => {
+    const pm = toDoc(parse('## a\n\none\n\n## b\n<!-- read due=2026-11-02 -->\n\ntwo $x$ three\n').doc.blocks);
+    let posB = -1;
+    let posTwo = -1;
+    pm.forEach((n, off) => { if (n.textContent === 'b') posB = off; if (n.textContent.startsWith('two')) posTwo = off; });
+    // at the end of heading b, and at the end of the paragraph under it (past the math chip)
+    expect(headingAtPos(pm, posB + 2)?.text).toBe('b');
+    expect(headingAtPos(pm, posTwo + pm.nodeAt(posTwo)!.content.size)?.text).toBe('b');
+    expect(headingAtPos(pm, 2)?.text).toBe('a');
+    expect(headingAtPos(pm, posB + 2)?.nth).toBe(1);
   });
 
   it('marks an enrolled heading, and a dismissed one', () => {

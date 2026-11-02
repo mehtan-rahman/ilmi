@@ -43,7 +43,8 @@ the tree's counts, the sample's canonical-ensemble, FORMAT §3 §6 §6.5 §7
 
 ### Verified
 
-- `npx vitest run --maxWorkers=3`: 1135 tests, 73 files (1088 before).
+- `npx vitest run --maxWorkers=3`: 1135 tests, 73 files (1088 before);
+  1136 with the caret fix.
   Under a load average of 30 (another project's process) the default run
   times jsdom files out; with three workers all pass. `npm run typecheck`
   clean. `vite build` clean. No Rust touched.
@@ -62,24 +63,48 @@ the tree's counts, the sample's canonical-ensemble, FORMAT §3 §6 §6.5 §7
   WebKit stopped. Port 1420 was free; both runs were mine, closed with
   `pkill -x ilmi`.
 
+### Window check 3 (the coordinator, clean checkout at `655f266`) and the fix
+
+- Failed at the same step: `the section opened at its heading, the caret
+  in it`. The smoke now logs `why:` on that failure (caretHeading, reveal,
+  the session's path, the readers, the headings marked and landed). A run
+  with it showed the reveal effect ran with the view loaded, found the
+  heading (`headingPos`), and put the caret at its end, yet the published
+  caret heading was lecture 8. The cause: `publishSelection` took the
+  caret's block as `resolve(pos).index()`, the innermost index (inside a
+  textblock, the place among its inline children), so a caret in any text
+  named a heading near the top. A user-facing bug: the inspector's section
+  part, the palette's command and the heading a session lands on all read
+  it. Fixed: `headingAtPos` resolves `index(0)`; a test covers a heading's
+  end and a paragraph past a math chip.
+
+### Window check 4 (2026-11-02, the working tree at the fix)
+
+`ILMI_SMOKE=sections` over a fresh copy of the sample, the screen unlocked,
+ran to `done`, every step asserted: the queue; the derivation opened at its
+heading (scrolled to 60 px, the 5th heading), marked, in the editor; `next ·
+back in 5d / later / dismiss` and the strip; ⏎ wrote `due=2026-11-07 ivl=5
+reps=1` and moved on to the next section, `p` wrote `due=2026-11-06 ivl=4`
+and moved on to a card, `d` removed lecture 13's line and moved on, the
+section left the queue with its 3 cards still due; come back wrote `made=
+2026-11-02 due=2026-11-05 ivl=3`; bring back on a boxed line wrote `due=
+2026-11-05 ivl=3` keeping `reps=2` and the boxes; the heading's menu offered
+come back; dark. My captures were full-screen with the window behind
+others, so they were deleted unseen; the shots are owed by window id.
+
 ### Not done
 
-- The full `ILMI_SMOKE=sections` run: ⏎/p/d each changing exactly the
-  heading's line and moving on, the dismissed section out with its cards
-  still due, come back and bring back, the heading's menu, dark. Shots:
-  sections-queue, sections-session, sections-after-next,
-  sections-after-dismiss, sections-inspector-bring-back,
-  sections-inspector-after, sections-heading-menu, sections-queue-dark.
+- Shots by window id of the passing run (sections-queue, -session,
+  -after-next, -after-dismiss, -inspector-bring-back, -inspector-after,
+  -heading-menu, -queue-dark).
 - The outline doesn't mark sections; sections are not paced under exams.
 
 ### Handoff prompt
 
 ```
 Read PLAN.md (Reading books, 47's notes, 48), FORMAT.md §6.5, and this
-entry. First run ILMI_SMOKE=sections over a fresh copy of
-samples/double-major from a clean checkout of main (screen unlocked), read
-its ok: lines and shot: captures, fix what fails, and record the run here.
-Then build 48: a document with pages opens as one split session (pages
+entry. If the shots of ILMI_SMOKE=sections are still owed, take them by
+window id from a clean checkout of main. Then build 48: a document with pages opens as one split session (pages
 left, the body in the editor right), boxes on the page become sections
 (`e`), `boxes` given its grammar (`page:x:y:w:h`, `,` between), `y` on the
 read line, the read bar, the section chip, `m` clipping, ⌘\ hiding the

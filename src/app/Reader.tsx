@@ -1135,6 +1135,14 @@ export function headingBefore(doc: PMNode, index: number): { nth: number; text: 
   return found;
 }
 
+/**
+ * The heading the position `pos` is under: the top-level block it is in
+ * (`index(0)`, not the innermost index, which inside a textblock counts its
+ * inline children), then back to the nearest heading.
+ */
+export const headingAtPos = (doc: PMNode, pos: number): { nth: number; text: string; pos: number } | null =>
+  headingBefore(doc, doc.resolve(pos).index(0));
+
 /** Where a section's heading is: the `nth` with text when its text matches, else the first with its text. */
 function headingPos(doc: PMNode, nth: number, text: string): number | null {
   let n = 0;
@@ -1229,7 +1237,7 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
       useApp.setState({ selectedCard: idx === null ? null : { path: id, index: idx } });
     }
     // the heading the caret is under, for the section's part in the inspector and the palette
-    const at = headingBefore(state.doc, state.doc.resolve(sel.from).index());
+    const at = headingAtPos(state.doc, sel.from);
     const read = at ? (state.doc.nodeAt(at.pos)?.attrs.read as SectionSchedule | null) ?? undefined : undefined;
     const was = useApp.getState().caretHeading;
     if (at ? was?.path !== id || was.nth !== at.nth || was.text !== at.text || JSON.stringify(was.read) !== JSON.stringify(read) : was?.path === id) {

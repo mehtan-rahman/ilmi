@@ -7119,7 +7119,18 @@ export async function smokeSections(vault: Vault): Promise<void> {
 
     // ── ⏎ next: the derivation opens in place; its line, and only it, changes ──
     await sessionAt(deriv);
-    const landed = await poll(() => { const c = useApp.getState().caretHeading; return c?.path === CANON && c.text === deriv.heading ? c : null; }, 'the section opened at its heading, the caret in it', 8000);
+    /** What the landing depends on, said when it does not happen. */
+    const why = () => {
+      const st = useApp.getState();
+      const hs = qa<HTMLElement>('.pane[data-active="1"] .doc-session .dd-h');
+      return `caretHeading ${JSON.stringify(st.caretHeading && { ...st.caretHeading, text: st.caretHeading.text.slice(0, 50) })}; reveal ${JSON.stringify(st.reveal)}; `
+        + `session on ${st.sessionEl?.item.path} ${st.sessionEl?.kind}; readers ${qa('.doc-view').length}; session headings ${hs.length}, landed ${hs.filter((h) => h.classList.contains('landed')).length}, `
+        + `marked ${hs.filter((h) => h.dataset.read).map((h) => (h.textContent ?? '').slice(0, 20)).join(' | ')}; focus ${document.activeElement?.className}`;
+    };
+    let landed: NonNullable<ReturnType<typeof useApp.getState>['caretHeading']>;
+    try {
+      landed = await poll(() => { const c = useApp.getState().caretHeading; return c?.path === CANON && c.text === deriv.heading ? c : null; }, 'the section opened at its heading, the caret in it', 8000);
+    } catch (e) { log(`why: ${why()}`); throw e; }
     const top = qa<HTMLElement>('.pane[data-active="1"] .doc-session .dd-h').find((e) => e.textContent?.startsWith('pset 4 #5'))?.getBoundingClientRect().top ?? -1;
     must(top >= 0 && top < window.innerHeight / 2, `scrolled to it (its top at ${Math.round(top)} px; ${landed.nth + 1}th heading)`);
     const h = await poll(() => qa<HTMLElement>('.pane[data-active="1"] .doc-session .dd-h').find((e) => e.textContent?.startsWith('pset 4 #5')), 'its heading is drawn in the editor');

@@ -5204,7 +5204,27 @@ passed the queue (legend, the derivation's row `§ … written, no cards yet
 · first time back` at 224 of 376, interleaved with reading and cards),
 then failed on reading the first caret heading before the reveal landed
 (a smoke race, fixed: it waits for the section's own); run 2 stalled at
-the session when the screen locked (WebKit stops). The full run is owed.
+the session when the screen locked (WebKit stops).
+Window check 3 (2026-11-02, the coordinator, clean checkout at `655f266`)
+failed at the same step; the smoke's new `why:` line showed the reveal had
+landed (the heading found, the caret put at its end) but `caretHeading`
+named the first heading. The cause was the app's: `publishSelection` read
+the caret's block with `resolve(pos).index()`, which inside a textblock is
+the place among its inline children (0 at the end of a one-text heading),
+so the caret anywhere in text named the wrong heading: the inspector's
+section part, the palette's command and the session's landing all read it.
+Fixed with `headingAtPos` (`index(0)`, the top-level block); a test puts the
+caret at a heading's end and past a math chip (1136 tests). Window check 4
+(2026-11-02, mine, the working tree at the fix, a fresh copy of the sample,
+the screen unlocked): `ILMI_SMOKE=sections` ran to `done`, every step
+asserted: the queue (legend, the derivation's row 224 of 376, interleaved);
+the section opened at its heading, scrolled to the top, marked, in the
+editor; the bar's words and the strip; ⏎, `p` and `d` each changing exactly
+the heading's line and moving on (to a section, then cards); lecture 13
+dismissed, out of the queue, its 3 cards still due; come back and bring
+back (reps and boxes kept) returning it; the heading's menu; dark. My
+screen captures took the whole screen with the window behind others, so
+they were deleted unseen; the shots are the coordinator's, by window id.
 - **The format** (FORMAT §6.5, new). A `<!-- read … -->` line directly under a heading enrolls the section: the heading and everything under it up to the next heading of the same or a higher level.
   - **Attributes:** `due`, `ivl`, `reps`, `af` and `pri`, as on the `read` field; `made` (the day it was enrolled); `boxes` (48, kept as written here).
   - **Dismissing** drops `due`, `ivl`, `reps` and `af`. The line stays only when it has `boxes`; otherwise it is removed.

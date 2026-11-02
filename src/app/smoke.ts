@@ -165,6 +165,9 @@
 // `ILMI_BOOKS=<repo>/design/books`: milestone 48, the book beside its notes.
 // `ILMI_SMOKE=books` (`smokeBooks`) over a copy of `samples/double-major`: the
 // sample's own two books, three days of the flow (milestone 49).
+// `ILMI_SMOKE=textsections` (`smokeTextSections`) over a copy of
+// `samples/double-major`: passages marked in a clipping and a chapter become
+// sections of their notes, moved, and an old extract folded in (milestone 50).
 // `ILMI_SMOKE=welcome` runs before any vault opens: it seeds the recents
 // with the scratch vault (`ILMI_VAULT`) and a path that does not exist,
 // turns `reopen the last vault on start` off, reads the welcome's rows and
@@ -7538,6 +7541,235 @@ export async function smokeBooks(vault: Vault): Promise<void> {
     useApp.getState().setTheme('dark');
     await poll(() => document.documentElement.dataset.theme === 'dark', 'dark');
     await shot('books-dark');
+    useApp.getState().setTheme('light');
+    setClockDay(null);
+    finished = true;
+    log(`done; vault ${vault.root}`);
+  } catch (e) {
+    finished = true;
+    setClockDay(null);
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+// `ILMI_SMOKE=textsections` (`smokeTextSections`) over a fresh copy of
+// `samples/double-major`, milestone 50: a passage marked in a text source
+// is a section of the source's note. 2026-11-02 by the app's clock: two
+// passages of the clipping `why perturbation series diverge` and one of
+// the Halvorsen chapter (a chapter of the quantum II notebook, as an EPUB
+// chapter is) are marked with `e`; each lands at the end of `notes.md` in
+// the source's folder with its heading, its read line, a `from:` line and
+// the text, nothing going back to the source but its marker; ⏎ right
+// after opens the note at the section. 2026-11-05: the three come up in
+// the one queue, each saying where it stands; a session opens one in its
+// note and `next` counts the pass; from the inspector the second is moved
+// to the course's own WKB note through the palette; the clipping is edited
+// and the sections are untouched; the clipping's old extract document is
+// folded into the note from its inspector, its schedule on the line, its
+// file gone. Light, then dark.
+export async function smokeTextSections(vault: Vault): Promise<void> {
+  type Heading = import('../format/index.js').Heading;
+  type SectionItem = import('../schedule/index.js').SectionItem;
+  let last = { at: Date.now(), what: 'start' };
+  let finished = false;
+  const log = (s: string) => { last = { at: Date.now(), what: s }; void info(`smoke textsections: ${s}`); };
+  const dog = setInterval(() => {
+    if (finished) { clearInterval(dog); return; }
+    if (Date.now() - last.at > 30_000) { finished = true; clearInterval(dog); void info(`smoke textsections: failed: no progress for 30 s after "${last.what}"`); }
+  }, 2000);
+  const bounded = <T,>(p: Promise<T>, what: string, ms = 8000): Promise<T> =>
+    Promise.race([p, new Promise<T>((_, no) => setTimeout(() => no(new Error(`${what} (no answer in ${ms} ms)`)), ms))]);
+  const shot = async (name: string, ms = 2500) => { await sleep(800); log(`shot: ${name}`); await sleep(ms); };
+  const q = <T extends Element>(sel: string, root: ParentNode = document) => root.querySelector<T>(sel);
+  const qa = <T extends Element>(sel: string, root: ParentNode = document) => Array.from(root.querySelectorAll<T>(sel));
+  const must = (ok: unknown, what: string) => { if (!ok) throw new Error(what); log(`ok: ${what}`); };
+  const poll = async <T,>(probe: () => T | null | undefined | false | Promise<T | null | undefined | false>, what: string, ms = 5000): Promise<T> => {
+    const t0 = Date.now();
+    for (;;) {
+      const v = await probe();
+      if (v) { log(`ok: ${what}`); return v; }
+      if (Date.now() - t0 > ms) throw new Error(`${what} (waited ${ms} ms)`);
+      await sleep(100);
+    }
+  };
+  const key = (k: string) => window.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));
+  const click = (el: Element) => el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+  const { parse, meta } = await import('../format/index.js');
+  const { addDays, isDue, sameItem, sectionSpan } = await import('../schedule/index.js');
+  const { refreshQueue } = await import('./vault.js');
+  const { setClockDay, appNow } = await import('./clock.js');
+  const { doneLine } = await import('./items.js');
+  const CLIP = 'fleeting/clipped-why-perturbation-series-diverge.md';
+  const NOTE = 'fleeting/clipped-why-perturbation-series-diverge/notes.md';
+  const OLD = 'fleeting/clipped-why-perturbation-series-diverge/dyson-argument.md';
+  const WKB = 'courses/fall-2026/phys-412-quantum-ii/halvorsen-ch-9-wkb.md';
+  const WKBN = 'courses/fall-2026/phys-412-quantum-ii/halvorsen-ch-9-wkb/notes.md';
+  const COURSE = 'courses/fall-2026/phys-412-quantum-ii/wkb-approximation.md';
+  const DAY1 = '2026-11-02';
+  const DAY2 = '2026-11-05';
+  const text = (p: string) => bounded(vault.fs.readText(vault.abs(p)), `reading ${p}`);
+  const has = async (p: string) => !!(await vault.fs.stat(vault.abs(p)));
+  const headings = async (p: string) => parse(await text(p)).doc.blocks.flatMap((b) => (b.kind === 'heading' && b.level === 2 ? [b] : []));
+  const sectionAt = async (p: string, start: string) => {
+    const doc = parse(await text(p)).doc;
+    const at = doc.blocks.findIndex((b) => b.kind === 'heading' && b.text.startsWith(start));
+    if (at < 0) return null;
+    const span = sectionSpan(doc.blocks, at);
+    return { heading: doc.blocks[at] as Heading, body: doc.blocks.slice(at + 1, span.end) };
+  };
+  const items = () => useApp.getState().queue;
+  const sectionOf = (p: string, start: string) => items().find((i): i is SectionItem => i.kind === 'section' && i.path === p && i.heading.startsWith(start));
+  const openDoc = async (p: string) => {
+    openNode(p);
+    const surface = await poll(() => q<HTMLElement>('.pane[data-active="1"] .doc-view .draft-doc'), `${p.split('/').pop()} is open`, 10000);
+    await sleep(400);
+    return surface;
+  };
+  /** Select `words` in the paragraph that starts with `start`, and wait for the cue. */
+  const mark = async (surface: HTMLElement, start: string, words: string) => {
+    const para = await poll(() => qa<HTMLElement>('p.dd-p', surface).find((el) => el.textContent?.startsWith(start)), `the paragraph "${start.slice(0, 30)}…"`);
+    para.scrollIntoView({ block: 'center' });
+    select(para, words);
+    return poll(() => q<HTMLElement>('.sel-cue'), 'the selection cue');
+  };
+  const openQuery = async () => {
+    openNode(queueId('today'));
+    await poll(() => q('.pane[data-active="1"] .queue h1')?.firstChild?.textContent === 'due today', 'the day\'s query is drawn', 8000);
+    await sleep(300);
+  };
+  const rowOf = (start: string) => qa<HTMLElement>('.pane[data-active="1"] .qlist li:not(.fold)').find((r) => r.dataset.el === 'section' && r.textContent?.includes(start));
+  const where = (r: HTMLElement | undefined) => q('.ref-line', r ?? document.createElement('div'))?.textContent ?? '';
+  const sessionAt = async (s: SectionItem) => {
+    openSession(s);
+    await poll(() => { const el = useApp.getState().sessionEl; return el?.kind === 'section' && sameItem(el.item, s) && q('.pane[data-active="1"] .doc-session[data-el="section"] .session-bar') ? true : null; }, 'the session is on it, its bar drawn', 15000);
+    await sleep(600);
+  };
+  const changed = (p: string, before: string, what: string) => poll(async () => { const t = await text(p); return t !== before ? t : null; }, what, 8000);
+  try {
+    setClockDay(DAY1);
+    useApp.getState().setTheme('light');
+    await poll(() => document.documentElement.dataset.theme === 'light', 'light');
+    setInspector({ open: true });
+    must(!(await has(NOTE)) && !(await has(WKBN)), 'the sources have no notes yet');
+
+    // ── the clipping: a passage marked with e is a section of its note ──
+    let surface = await openDoc(CLIP);
+    let cue = await mark(surface, 'In that world the vacuum', 'In that world the vacuum is not stable.');
+    must(qa('.cue-act', cue).map((b) => b.textContent?.trim()).join(' | ').includes('section e'), `the cue offers a section: ${qa('.cue-act', cue).map((b) => b.textContent?.trim()).join(' | ')}`);
+    await shot('textsections-cue');
+    const clipBefore = await text(CLIP);
+    key('e');
+    const first = await poll(async () => (await has(NOTE)) ? (await headings(NOTE))[0] : null, 'e makes the note with a section', 10000);
+    must(first!.text === 'in that world the vacuum', `named from the passage's first words: "${first!.text}"`);
+    must(first!.read?.made === DAY1 && first!.read.due === addDays(DAY1, 3) && first!.read.ivl === 3, `enrolled: made today, back in 3 days (${JSON.stringify(first!.read)})`);
+    const sec1 = (await sectionAt(NOTE, 'in that world'))!;
+    must(sec1.body[0]?.kind === 'paragraph' && sec1.body[0].text === 'from: why perturbation series diverge', `a from line under the heading: "${(sec1.body[0] as { text?: string }).text}"`);
+    must(sec1.body[1]?.kind === 'paragraph' && sec1.body[1].text === 'In that world the vacuum is not stable.', 'then the passage');
+    must(meta(parse(await text(NOTE)).doc).title === 'why perturbation series diverge — notes', 'the note is titled after the source');
+    const clipAfter = await text(CLIP);
+    const strip = (t: string) => t.replace(/^read: .*$/m, 'read');
+    must(strip(clipAfter) === strip(clipBefore) && !clipAfter.includes('<!-- extract in that'), 'nothing went back to the clipping but its marker');
+    must(/^read: .*pos=1[0-9]/m.test(clipAfter), `the marker moved past the passage (${/^read: .*$/m.exec(clipAfter)?.[0]})`);
+    const notice = useApp.getState().notice;
+    must(notice?.line.startsWith('§ in that world the vacuum · back in 3d, until dismissed · in why perturbation series diverge — notes · ⏎ to write in it') && notice.open === NOTE, `the notice: "${notice?.line}"`);
+    await shot('textsections-made');
+    key('Enter');
+    await poll(() => useApp.getState().caretHeading?.path === NOTE && useApp.getState().caretHeading?.text === 'in that world the vacuum', '⏎ opens the note at the section, the caret in it', 10000);
+    must(!!q('.pane[data-active="1"] .doc-view .draft-doc[contenteditable="true"]'), 'in the editor');
+    await shot('textsections-note');
+
+    // a second passage goes under the first
+    surface = await openDoc(CLIP);
+    await mark(surface, 'Euler had the prototype', 'Euler had the prototype two centuries before quantum theory.');
+    key('e');
+    await poll(async () => (await headings(NOTE)).length === 2 && (await headings(NOTE))[1]!.text.startsWith('euler had the prototype'), 'a second section under the first', 10000);
+
+    // ── the chapter (an EPUB chapter's shape: a frozen source in a notebook) ──
+    surface = await openDoc(WKB);
+    await mark(surface, 'The condition can be written', 'the wavelength must not change appreciably within a wavelength');
+    key('e');
+    const wk = await poll(async () => (await has(WKBN)) ? (await headings(WKBN))[0] : null, 'the chapter gets a note with the section', 10000);
+    must(wk!.text.startsWith('the wavelength must not change') && (await sectionAt(WKBN, 'the wavelength'))!.body[0]!.kind === 'paragraph' && ((await sectionAt(WKBN, 'the wavelength'))!.body[0] as { text: string }).text === 'from: Halvorsen ch. 9: the WKB approximation', `"${wk!.text}", from the chapter`);
+
+    // ── three days on: the three sections in the one queue ──
+    setClockDay(DAY2);
+    refreshQueue();
+    const s1 = await poll(() => { const s = sectionOf(NOTE, 'in that world'); return s && isDue(s, appNow()) ? s : null; }, 'the first section is due', 8000);
+    await poll(() => sectionOf(NOTE, 'euler') && sectionOf(WKBN, 'the wavelength'), 'and the other two');
+    await openQuery();
+    must(where(rowOf('in that world')) === 'written, no cards yet · first time back', `its row: "${where(rowOf('in that world'))}"`);
+    must(where(rowOf('the wavelength must')) === 'written, no cards yet · first time back', `the chapter's: "${where(rowOf('the wavelength must'))}"`);
+    const kinds = qa<HTMLElement>('.pane[data-active="1"] .qlist li:not(.fold)').map((r) => r.dataset.el);
+    must(kinds.includes('card') && kinds.includes('section'), 'among the cards, in the one line');
+    rowOf('in that world')?.scrollIntoView({ block: 'center' });
+    await shot('textsections-queue');
+
+    // a session opens it in its note; the inspector says where it came from; next counts the pass
+    await sessionAt(s1);
+    await poll(() => useApp.getState().caretHeading?.text === s1.heading, 'opened at its heading, the caret in it', 8000);
+    const bar = q<HTMLElement>('.pane[data-active="1"] .session-bar')!;
+    must(qa<HTMLElement>('.sb-actions button .ra-l', bar).map((b) => b.textContent).join(' / ') === 'next · back in 5d / later / dismiss', 'next · later · dismiss');
+    const fromRow = await poll(() => qa<HTMLElement>('.insp .sec-block .kvr').find((r) => q('dt', r)?.textContent === 'from'), 'the inspector\'s from row');
+    must(q('dd', fromRow)?.textContent === 'why perturbation series diverge', `from: "${q('dd', fromRow)?.textContent}"`);
+    await shot('textsections-session');
+    let before = await text(NOTE);
+    key('Enter');
+    let after = await changed(NOTE, before, 'next wrote the note');
+    must((await headings(NOTE))[0]!.read?.reps === 1 && (await headings(NOTE))[0]!.read?.due === addDays(DAY2, 5), 'the pass counted on the heading\'s line');
+    must(useApp.getState().log[0] === doneLine('§', 'in that world the vacuum', 'next · back in 5d'), `the done row: "${useApp.getState().log[0]}"`);
+
+    // ── move the second section to the course's own WKB note, through the palette ──
+    await openDoc(NOTE);
+    const euler = (await headings(NOTE)).find((h) => h.text.startsWith('euler'))!;
+    useApp.setState({ reveal: { path: NOTE, index: parse(await text(NOTE)).doc.blocks.indexOf(euler), heading: euler.text } });
+    await poll(() => useApp.getState().caretHeading?.text === euler.text, 'the caret at the second section', 8000);
+    const mv = await poll(() => q<HTMLButtonElement>('.insp .sec-block [data-act="move-to"]'), 'the inspector offers move to…');
+    click(mv);
+    const input = await poll(() => q<HTMLInputElement>('.palette-input input'), 'the palette opens');
+    must(input.placeholder.startsWith('move § euler had the prototype'), `as a picker: "${input.placeholder}"`);
+    const row = await poll(() => qa<HTMLElement>('.palette-row').find((r) => q('.psub', r)?.textContent === COURSE.replace(/\.md$/, '')), 'the course note is among the notes offered');
+    must(qa('.palette-row').every((r) => (r as HTMLElement).dataset.t === 'note'), 'notes only');
+    await shot('textsections-move');
+    before = await text(COURSE);
+    click(row);
+    after = await changed(COURSE, before, 'the course note took it');
+    const moved = (await sectionAt(COURSE, 'euler had the prototype'))!;
+    must(parse(after).doc.blocks.at(-moved.body.length - 1) === parse(after).doc.blocks.find((b) => b.kind === 'heading' && b.text === euler.text) && moved.heading.read?.made === DAY1 && moved.body[0]!.kind === 'paragraph' && (moved.body[0] as { text: string }).text === 'from: why perturbation series diverge', 'at its end, with its line and its from line');
+    await poll(async () => !(await headings(NOTE)).some((h) => h.text === euler.text), 'and it left the source\'s note');
+    must(useApp.getState().log[0] === doneLine('§', euler.text, 'moved to WKB approximation'), `the done row: "${useApp.getState().log[0]}"`);
+    await poll(() => useApp.getState().caretHeading?.path === COURSE || true, 'moved');
+    await openDoc(COURSE);
+    useApp.setState({ reveal: { path: COURSE, index: parse(after).doc.blocks.findIndex((b) => b.kind === 'heading' && b.text === euler.text), heading: euler.text } });
+    await poll(() => useApp.getState().caretHeading?.text === euler.text, 'the course note at the section', 8000);
+    await shot('textsections-moved');
+
+    // ── the clipping edited: the sections are untouched ──
+    const noteBefore = await text(NOTE);
+    const courseBefore = await text(COURSE);
+    await bounded(vault.update(CLIP, (d) => { const p = d.blocks.find((b) => b.kind === 'paragraph' && b.text.startsWith('In that world the vacuum')); if (p && p.kind === 'paragraph') p.text = `${p.text} [edited after marking]`; }), 'editing the clipping');
+    await sleep(800);
+    must((await text(NOTE)) === noteBefore && (await text(COURSE)) === courseBefore, 'the clipping edited, the sections untouched');
+
+    // ── the old extract document, folded into the note from its inspector ──
+    const oldDoc = parse(await text(OLD)).doc;
+    const oldRead = meta(oldDoc).read!;
+    await openDoc(OLD);
+    const fold = await poll(() => q<HTMLButtonElement>('.insp [data-act="absorb"]'), 'the extract\'s inspector offers into the note');
+    await shot('textsections-offer');
+    click(fold);
+    await poll(async () => !(await has(OLD)), 'the extract document is gone', 10000);
+    const folded = await poll(async () => sectionAt(NOTE, "Dyson's argument"), 'a section of the note', 8000);
+    must(folded!.heading.read?.made === '2026-10-27' && folded!.heading.read.due === oldRead.due && folded!.heading.read.ivl === oldRead.ivl && folded!.heading.read.reps === oldRead.reps, `its schedule on the line (${JSON.stringify(folded!.heading.read)})`);
+    must(folded!.body.filter((b) => b.kind === 'card').length === oldDoc.blocks.filter((b) => b.kind === 'card').length && folded!.body.filter((b) => b.kind === 'card').length > 0, 'its cards with it');
+    must(!(await text(CLIP)).includes('<!-- extract dyson-argument -->'), 'the clipping\'s backref to it is gone');
+    await poll(() => useApp.getState().caretHeading?.path === NOTE && useApp.getState().caretHeading?.text === "Dyson's argument", 'the note open at it', 10000);
+    await shot('textsections-folded');
+
+    // ── dark ──
+    await openQuery();
+    useApp.getState().setTheme('dark');
+    await poll(() => document.documentElement.dataset.theme === 'dark', 'dark');
+    await shot('textsections-dark');
     useApp.getState().setTheme('light');
     setClockDay(null);
     finished = true;

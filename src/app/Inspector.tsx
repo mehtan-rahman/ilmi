@@ -21,12 +21,12 @@ import { INTAKE, QUEUE_TITLE, SESSION, findNode, queueScope, titleOf } from './n
 import { activeTab } from './panes.js';
 import { useApp, type CaretHeading, type DocInfo } from './store.js';
 import { useDoc } from './useDoc.js';
-import { currentVault, examsAtPath, openCard, openNode, optionsAt, resetCard } from './vault.js';
+import { absorbExtractNode, currentVault, examsAtPath, openCard, openNode, optionsAt, resetCard } from './vault.js';
 import { currentCards, linkedTo, pairsOf, unlinkCards } from './sameOps.js';
 import { docsUnder } from './deck.js';
 import { foldedHeadings, notebookOf, outline } from './tabs.js';
 import { goToHeading } from './headings.js';
-import { headingOf, sectionActions, statusOf, writeDoc } from './sections.js';
+import { headingOf, moveAction, sectionActions, statusOf, writeDoc } from './sections.js';
 import { appNow } from './clock.js';
 import { chipWhen } from './bookNotes.js';
 
@@ -483,6 +483,14 @@ function DocInspector({ id, info, doc, now }: { id: string; info: DocInfo; doc: 
           </div>
         )}
       </Block>
+      {parent && docs[parent] && !docs[parent].pdf && (
+        <Block title="extract">
+          <div className="frozen-row">
+            <span className="fr-state">an extract document, from before sections</span>
+            <button type="button" className="fr-toggle" data-act="absorb" onClick={() => void absorbExtractNode(id).then((made) => { useApp.setState({ reveal: { path: made.note, index: made.index, heading: made.text } }); openNode(made.note); }).catch(console.error)}>into the note</button>
+          </div>
+        </Block>
+      )}
       {info.pdf && <PassagesBlock id={id} doc={doc} now={now} />}
       <ExamBlock path={id} />
       {(cards > 0 || hasCardsUnder(id)) && <OptionsBlock path={id} />}
@@ -556,6 +564,10 @@ export function SectionBlock({ path, doc, at, now }: { path: string; doc: Doc; a
   const status = statusOf(read);
   const here: CaretHeading = { path, nth: at.nth, text: heading.text };
   const rows: [string, ReactNode][] = [['section', <MathText key="h" className="sec-h" dir="auto" text={heading.text} />]];
+  // a passage marked in a text source says where it came from (milestone 50): a plain `from:` line under the heading
+  const first = doc.blocks[index + 1];
+  const from = first?.kind === 'paragraph' && /^from: \S/.test(first.text) ? first.text.slice(6) : null;
+  if (from !== null) rows.push(['from', <MathText key="from" className="sec-from" dir="auto" text={from} />]);
   if (read) {
     const st = sectionState(doc.blocks, index);
     const words = standsWords({ ...st, reps: read.reps ?? 0, ...(read.made ? { made: read.made } : {}), ...(read.boxes !== undefined ? { boxes: read.boxes } : {}) }, now);
@@ -570,6 +582,7 @@ export function SectionBlock({ path, doc, at, now }: { path: string; doc: Doc; a
     rows.push(['priority', <PriField key={`${path}:${heading.text}`} value={read.pri} fallback={docPri(meta(doc))} onCommit={setPri} />]);
   }
   const act = sectionActions(status, here)[0]!;
+  const mv = moveAction(here);
   return (
     <Block title="section">
       <div className="sec-block" data-status={status}>
@@ -577,6 +590,7 @@ export function SectionBlock({ path, doc, at, now }: { path: string; doc: Doc; a
         <div className="frozen-row">
           <span className="fr-state">{status === 'none' ? 'not coming back' : status === 'on' ? 'comes back until dismissed' : 'dismissed; its notes and cards stay'}</span>
           <button type="button" className="fr-toggle" data-act={act.act} onClick={() => act.run?.()}>{act.label}</button>
+          <button type="button" className="fr-toggle" data-act={mv.act} onClick={() => mv.run?.()}>{mv.label}</button>
         </div>
       </div>
     </Block>

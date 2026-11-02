@@ -146,6 +146,60 @@ describe('create', () => {
   });
 });
 
+describe('a passage marked in a text source (milestone 50)', () => {
+  it('becomes a section of the source\'s note, enrolled, with a from line; the source keeps only its marker', async () => {
+    await vault.update(WOZ, (d) => { const r = meta(d).read!; setField(d, 'read', { ...r, pos: 2 }); });
+    const before = await vault.read(WOZ);
+    const text = 'The twenty rules are the residue\n\nAtomicity is the unglamorous one';
+    const made = await vault.section(WOZ, { text, blocks: [5, 6], today: '2026-05-27' });
+    expect(made).toEqual({ note: 'papers/wozniak-1990/notes.md', index: 0, text: 'the twenty rules are the residue' });
+    const note = parse(await readDisk(made.note));
+    expect(note.diagnostics).toEqual([]);
+    expect(meta(note.doc)).toMatchObject({ type: 'note', title: 'wozniak-1990 — notes' });
+    expect(note.doc.blocks).toEqual([
+      { kind: 'heading', level: 2, text: 'the twenty rules are the residue', read: { made: '2026-05-27', due: '2026-05-30', ivl: 3, pri: 80 } },
+      { kind: 'paragraph', text: 'from: wozniak-1990' },
+      { kind: 'paragraph', text: 'The twenty rules are the residue' },
+      { kind: 'paragraph', text: 'Atomicity is the unglamorous one' },
+    ]);
+    // the source: no backref, no highlight, the marker past the passage
+    const parent = parse(await readDisk(WOZ)).doc;
+    expect(parent.blocks).toEqual(before.doc.blocks);
+    expect(meta(parent).read).toEqual({ ...meta(before.doc).read, pos: 6 });
+    expect(documents(vault.tree)).toContain(made.note);
+    // a second passage goes under the first; a name taken is numbered
+    const again = await vault.section(WOZ, { text: 'The twenty rules are the residue', blocks: [5], today: '2026-05-28' });
+    expect(again).toEqual({ note: made.note, index: 4, text: 'the twenty rules are the residue · 2' });
+    const two = parse(await readDisk(made.note)).doc;
+    expect(two.blocks.filter((b) => b.kind === 'heading').map((b) => b.text)).toEqual(['the twenty rules are the residue', 'the twenty rules are the residue · 2']);
+    expect(meta(parse(await readDisk(WOZ)).doc).read?.pos).toBe(6);
+  });
+
+  it('folds an extract document into the note as a section: its schedule on the line, its cards kept, the file and the backrefs gone', async () => {
+    const child = await vault.extract(WOZ, { text: 'Atomicity is the unglamorous one', blocks: [6], today: '2026-05-20' });
+    await vault.update(child, (d) => {
+      setField(d, 'read', { due: '2026-06-02', ivl: 9, reps: 2, pos: 1 });
+      d.blocks.push({ kind: 'paragraph', text: 'my gloss' }, { kind: 'card', text: 'atomic :: one fact per card', id: 'ex-atomic', sched: { due: '2026-06-01', st: 'review', ivl: 4 } } as never);
+    });
+    expect((await vault.read(WOZ)).doc.blocks[6]).toMatchObject({ extracts: ['atomicity is the unglamorous one'] });
+    const made = await vault.absorbExtract(child);
+    expect(made.note).toBe('papers/wozniak-1990/notes.md');
+    const note = parse(await readDisk(made.note)).doc;
+    const at = note.blocks.findIndex((b) => b.kind === 'heading' && b.text === made.text);
+    expect(made.text).toBe('atomicity is the unglamorous one');
+    expect(note.blocks[at]).toMatchObject({ kind: 'heading', level: 2, read: { made: '2026-05-20', due: '2026-06-02', ivl: 9, reps: 2, pri: 80 } });
+    expect(note.blocks.slice(at + 1)).toMatchObject([
+      { kind: 'paragraph', text: 'from: wozniak-1990' },
+      { kind: 'paragraph', text: 'Atomicity is the unglamorous one' },
+      { kind: 'paragraph', text: 'my gloss' },
+      { kind: 'card', text: 'atomic :: one fact per card', id: 'ex-atomic' },
+    ]);
+    expect(await exists(child)).toBe(false);
+    expect((await vault.read(WOZ)).doc.blocks[6]).not.toHaveProperty('extracts');
+    expect(documents(vault.tree)).not.toContain(child);
+  });
+});
+
 describe('extract', () => {
   it('names the child from the passage', () => {
     // 40: the first clause's words, lower case, at most six, never ending on a small word

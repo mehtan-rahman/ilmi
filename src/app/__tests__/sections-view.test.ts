@@ -140,6 +140,36 @@ describe('the inspector\'s section part', () => {
     unmount();
   });
 
+  it('move to… takes the section, its line and its cards to the end of another note (milestone 50)', async () => {
+    const { moveSection } = await import('../sections.js');
+    const MICRO = 'courses/fall-2026/phys-415-stat-mech/microcanonical-ensemble.md';
+    const doc = await canon();
+    const h = doc.blocks.find((b): b is Heading => b.kind === 'heading' && b.text.startsWith('lecture 13'))!;
+    const at = { path: CANON, nth: -1, text: h.text };
+    const span = (() => { let end = doc.blocks.indexOf(h) + 1; while (end < doc.blocks.length && !(doc.blocks[end]!.kind === 'heading' && (doc.blocks[end] as Heading).level <= h.level)) end++; return doc.blocks.slice(doc.blocks.indexOf(h), end); })();
+    expect(span.filter((b) => b.kind === 'card')).toHaveLength(4);
+    const targetBefore = (await vault.read(MICRO)).doc.blocks.length;
+    // the part offers it second, after the state's own action
+    await mount(createElement(SectionBlock, { path: CANON, doc, at, now: appNow() }));
+    const buttons = Array.from(host.querySelectorAll<HTMLButtonElement>('.sec-block button'));
+    expect(buttons.map((b) => b.textContent)).toEqual(['dismiss', 'move to…']);
+    await act(async () => { buttons[1]!.click(); });
+    expect(useApp.getState().sectionMove).toEqual(at);
+    expect(useApp.getState().paletteOpen).toBe(true);
+    useApp.setState({ paletteOpen: false, sectionMove: null });
+    unmount();
+    const index = await moveSection(at, MICRO);
+    expect(index).toBe(targetBefore);
+    const target = (await vault.read(MICRO)).doc;
+    expect(target.blocks.slice(targetBefore)).toEqual(span);
+    const left = await canon();
+    expect(left.blocks.some((b) => b.kind === 'heading' && b.text === h.text)).toBe(false);
+    expect(left.blocks.length).toBe(doc.blocks.length - span.length);
+    // the cards travelled: the same ids, the same lines
+    const ids = (d: Doc) => d.blocks.flatMap((b) => (b.kind === 'card' && b.id ? [b.id] : []));
+    for (const id of ids({ blocks: span } as Doc)) { expect(ids(target)).toContain(id); expect(ids(left)).not.toContain(id); }
+  });
+
   it('a dismissed section with boxes reads dismissed, and bring back gives it a fresh due', async () => {
     await vault.update(CANON, (d) => {
       const h = d.blocks.find((b): b is Heading => b.kind === 'heading' && b.text.startsWith('lecture 12'))!;

@@ -228,6 +228,8 @@ export interface AppState {
   inspForced: boolean;
   panes: Panes;
   paletteOpen: boolean;
+  /** The palette is choosing a note to move this section to (milestone 50); null otherwise. */
+  sectionMove: CaretHeading | null;
   tweaksOpen: boolean;
   selectedCard: SelectedCard | null;
   reveal: Reveal | null;
@@ -321,6 +323,7 @@ export const useApp = create<AppState>((set, get) => ({
   inspForced: false,
   panes: emptyPanes(),
   paletteOpen: false,
+  sectionMove: null,
   tweaksOpen: false,
   selectedCard: null,
   reveal: null,

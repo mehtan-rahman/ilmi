@@ -3,7 +3,7 @@
 // is a cache with a conflict rule: never overwrite a file whose stamp moved
 // since we read it.
 
-import { REVIEWS_DIR, formatReview, mergeReviews, parseReviews, reviewFile, meta, parse, serialize, setField, type Card, type Diagnostic, type Doc, type NodeType, type Review } from '../format/index.js';
+import { REVIEWS_DIR, formatReview, mergeReviews, parseReviews, reviewFile, meta, parse, serialize, setField, type Block, type Card, type Diagnostic, type Doc, type NodeType, type Review } from '../format/index.js';
 import { join, relative, sameStamp, type Fs, type Stamp } from './fs.js';
 import { ORDER_FILE, childrenAt, cleanOrder, entryOf, followMove, forget, ordered, placeEntry, pruneOrder, restoreOrder, type Order } from './order.js';
 import { addToPage } from './pages.js';
@@ -90,6 +90,30 @@ export interface ExtractSpec {
    */
   page?: number;
   today?: string;
+}
+
+/** What `Vault.section` marks in a text source (milestone 50): the passage, and the parent's blocks it touches (the marker moves past them). */
+export interface SectionSpec {
+  text: string;
+  blocks: number[];
+  today?: string;
+}
+
+/** The note a text source's marked passages go to: `notes.md` in its children directory. */
+export const notesOf = (source: string): string => `${childDirOf(source)}/notes.md`;
+
+/** A day `n` days on. */
+function plusDays(day: string, n: number): string {
+  const d = new Date(`${day}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+/** A heading's text not already taken in `blocks`: `name`, else `name · 2`, `name · 3`… */
+function freeHeading(blocks: readonly Block[], name: string): string {
+  const taken = new Set(blocks.flatMap((b) => (b.kind === 'heading' ? [b.text] : [])));
+  if (!taken.has(name)) return name;
+  for (let n = 2; ; n++) if (!taken.has(`${name} · ${n}`)) return `${name} · ${n}`;
 }
 
 /** Words a title does not end on. */
@@ -1108,6 +1132,114 @@ export class Vault {
       });
       await this.rewalk();
       return path;
+    });
+  }
+
+  /**
+   * The note a text source's marked passages go to (`notes.md` in its
+   * children directory), made when it is not there: no type, titled
+   * `<source's title> — notes`. Resolves to its path.
+   */
+  private async notesFor(source: string): Promise<string> {
+    const path = notesOf(source);
+    if (await this.fs.stat(this.abs(path))) return path;
+    await this.ensureDir(childDirOf(source));
+    const sm = meta((await this.read(source)).doc);
+    const doc: Doc = { blocks: [] };
+    setField(doc, 'title', `${sm.title ?? nameOf(source)} — notes`);
+    await this.commit(path, serialize(doc));
+    return path;
+  }
+
+  /**
+   * Mark a passage of a text source (milestone 50, FORMAT.md §6.5): a `##`
+   * section at the end of the source's note, named from the passage's first
+   * words as an extract would be, enrolled (`made` today, back in three
+   * days, the source's priority when it has one), a `from: <source>` line
+   * under the heading, then the passage as paragraphs. Nothing goes back to
+   * the source but its marker, moved past the last touched block. Resolves
+   * to the note's path, the heading's index there and its text.
+   */
+  section(source: string, spec: SectionSpec): Promise<{ note: string; index: number; text: string }> {
+    return this.serial(async () => {
+      if (!isDoc(source) || !(await this.fs.stat(this.abs(source)))) throw new Error(`${source}: no such document`);
+      const text = spec.text.trim();
+      if (!text) throw new Error('nothing to mark');
+      const today = spec.today ?? localDay(new Date());
+      const pm = meta((await this.read(source)).doc);
+      const note = await this.notesFor(source);
+      const pri = pm.pri ?? pm.read?.pri;
+      let made = { index: 0, text: '' };
+      await this.update(note, (d) => {
+        const heading = freeHeading(d.blocks, extractName(text));
+        made = { index: d.blocks.length, text: heading };
+        d.blocks.push(
+          { kind: 'heading', level: 2, text: heading, read: { made: today, due: plusDays(today, 3), ivl: 3, ...(pri !== undefined ? { pri } : {}) } },
+          { kind: 'paragraph', text: `from: ${pm.title ?? nameOf(source)}` },
+          ...text.split(/\n[ \t]*\n+/).map((t) => t.trim()).filter(Boolean).map((t): Block => ({ kind: 'paragraph', text: t })),
+        );
+      });
+      await this.update(source, (d) => {
+        let last = -1;
+        let prose = 0;
+        d.blocks.forEach((b, i) => {
+          const isProse = b.kind !== 'card';
+          if (spec.blocks.includes(i) && isProse) last = prose;
+          if (isProse) prose++;
+        });
+        const dm = meta(d);
+        if (dm.read && dm.type !== 'note' && last >= 0) setField(d, 'read', { ...dm.read, pos: Math.max(dm.read.pos ?? 0, last + 1) });
+      });
+      await this.rewalk();
+      return { note, ...made };
+    });
+  }
+
+  /**
+   * An extract document of a text source folded into the source's note
+   * as a section (milestone 50, offered, never forced): its title the
+   * heading, its reading schedule the heading's line (`made` its import
+   * day; enrolled afresh when it had none), a `from: <source>` line, then
+   * its body as it is, cards with their ids and `sr` lines; the file goes,
+   * and the source's backrefs to it with it. Resolves as `section` does.
+   */
+  absorbExtract(extract: string): Promise<{ note: string; index: number; text: string }> {
+    return this.serial(async () => {
+      const loaded = await this.read(extract);
+      const em = meta(loaded.doc);
+      const source = `${dirOf(extract)}.md`;
+      if (em.type !== 'extract' || !(await this.fs.stat(this.abs(source)))) throw new Error(`${extract}: not an extract of a document`);
+      const pm = meta((await this.read(source)).doc);
+      const today = localDay(new Date());
+      const note = await this.notesFor(source);
+      const name = nameOf(extract);
+      let made = { index: 0, text: '' };
+      await this.update(note, (d) => {
+        const heading = freeHeading(d.blocks, em.title ?? name);
+        made = { index: d.blocks.length, text: heading };
+        const r = em.read;
+        const pri = em.pri ?? r?.pri;
+        const line = r?.due !== undefined
+          ? { made: em.imported ?? today, due: r.due, ivl: r.ivl ?? 3, ...(r.reps ? { reps: r.reps } : {}), ...(r.af !== undefined ? { af: r.af } : {}), ...(pri !== undefined ? { pri } : {}) }
+          : { made: em.imported ?? today, due: plusDays(today, 3), ivl: 3, ...(pri !== undefined ? { pri } : {}) };
+        const body = loaded.doc.blocks.map((b) => structuredClone(b));
+        for (const b of body) if ((b.kind === 'paragraph' || b.kind === 'card') && b.extracts) delete b.extracts;
+        d.blocks.push({ kind: 'heading', level: 2, text: heading, read: line }, { kind: 'paragraph', text: `from: ${pm.title ?? nameOf(source)}` }, ...body);
+      });
+      await this.update(source, (d) => {
+        for (const b of d.blocks) {
+          if ((b.kind === 'paragraph' || b.kind === 'card') && b.extracts?.includes(name)) {
+            const rest = b.extracts.filter((n) => n !== name);
+            if (rest.length) b.extracts = rest;
+            else delete b.extracts;
+          }
+        }
+      });
+      await this.fs.remove(this.abs(extract));
+      for (const key of [...this.cache.keys()]) if (rekey(key, extract, extract) !== null) { this.cache.delete(key); this.emit({ kind: 'gone', path: key }); }
+      await this.rewalk();
+      await this.writeOrder(forget(this.order, extract));
+      return { note, ...made };
     });
   }
 

@@ -5,12 +5,12 @@
 // nothing typed there is lost), else through the vault.
 
 import { type Doc, type Heading, type SectionSchedule } from '../format/index.js';
-import { broughtBack, dismissed, enrolSection, sectionInQueue } from '../schedule/index.js';
+import { broughtBack, dismissed, enrolSection, sectionInQueue, sectionSpan } from '../schedule/index.js';
 import { appNow } from './clock.js';
 import { plainMath } from './chromeText.js';
 import { doneLine } from './items.js';
 import { popMenu, type PopItem } from './popMenu.js';
-import type { CaretHeading } from './store.js';
+import { useApp, type CaretHeading } from './store.js';
 import { currentVault, note } from './vault.js';
 
 /** How a write reaches a document: the reader's writer when one is open on it (`Reader.tsx` registers it). */
@@ -68,6 +68,37 @@ export function bringBack(at: CaretHeading): Promise<unknown> {
   return writeDoc(at.path, (doc) => { const h = headingOf(doc, at); if (h) h.heading.read = broughtBack(h.heading.read, appNow()); });
 }
 
+/**
+ * Move the section under `at` to the end of note `to` (milestone 50): the
+ * heading with its line, and every block under it, cards and all; the
+ * source note closes the gap. Resolves to the heading's index in `to`.
+ */
+export async function moveSection(at: CaretHeading, to: string): Promise<number | null> {
+  const vault = currentVault();
+  if (!vault || to === at.path) return null;
+  const from = (await vault.read(at.path)).doc;
+  const h = headingOf(from, at);
+  if (!h) return null;
+  const span = sectionSpan(from.blocks, h.index);
+  const blocks = from.blocks.slice(span.start, span.end).map((b) => structuredClone(b));
+  let index = -1;
+  await writeDoc(to, (d) => { index = d.blocks.length; d.blocks.push(...blocks); });
+  await writeDoc(at.path, (d) => {
+    const here = headingOf(d, at);
+    if (!here) return;
+    const s = sectionSpan(d.blocks, here.index);
+    d.blocks.splice(s.start, s.end - s.start);
+  });
+  const title = useApp.getState().docs[to]?.title ?? to.replace(/\.md$/, '').split('/').pop();
+  note(doneLine('§', plainMath(at.text), `moved to ${title}`));
+  return index;
+}
+
+/** `move to…`: the palette lists the notes the section can go to. */
+export function moveAction(at: CaretHeading): PopItem {
+  return { label: 'move to…', glyph: '→', act: 'move-to', run: () => useApp.setState({ paletteOpen: true, sectionMove: at }) };
+}
+
 /** The one action a heading offers by its state, worded as everywhere: come back, dismiss, or bring back. */
 export function sectionActions(status: SectionStatus, at: CaretHeading): PopItem[] {
   if (status === 'none') return [{ label: 'come back', glyph: '§', act: 'come-back', run: () => void comeBack(at).catch(console.error) }];
@@ -77,5 +108,5 @@ export function sectionActions(status: SectionStatus, at: CaretHeading): PopItem
 
 /** The heading's context menu, at the pointer. */
 export function sectionMenu(x: number, y: number, at: CaretHeading, read: SectionSchedule | undefined): HTMLElement {
-  return popMenu({ left: x, top: y, bottom: y }, sectionActions(statusOf(read), at), 'section-menu');
+  return popMenu({ left: x, top: y, bottom: y }, [...sectionActions(statusOf(read), at), moveAction(at)], 'section-menu');
 }

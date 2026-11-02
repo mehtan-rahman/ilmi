@@ -141,7 +141,9 @@ F2 / dbl-click   rename                 right-click  new, import, rename, move t
 on the welcome   ⏎ open the selected vault, j k move, o open vault, n new vault;
                  a folder dropped on it opens as a vault
 
-in a source      select, then e extract or m make a card; r start reading
+in a source      select, then e section (a clipping or a chapter: in its
+                 note; an extract document in an older extract) or m make
+                 a card; r start reading
 in a note        ⌘B bold, ⌘I italic, ⌘E code, ⌘⇧X strike, ⌘K link (over a
                  selection; with none it is the palette), ⌘1–⌘6 heading, ⌘0
                  paragraph, ⌘⇧8 bullets, ⌘⇧7 numbers, ⌘⇧9 tasks, ⌘⇧. quote; in

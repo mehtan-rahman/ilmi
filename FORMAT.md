@@ -754,6 +754,22 @@ sample's Lindqvist chapters and the classical prose reader's passage 12 are
 converted this way: the book's text is on the pages (`pdf`, `pages`), the
 body is the notes, and no extract document is left under them.
 
+**A passage marked in a text source** (a clipping, an EPUB chapter: `e`
+on a selection) is a section of the source's note, `notes.md` in the
+source's children directory, made the first time with `title: <the
+source's title> — notes`: a `##` heading named from the passage's first
+words as an extract would be, its line `made=<today> due=<today+3> ivl=3`
+(and the source's `pri`), a paragraph `from: <the source's title>` directly
+under the heading, then the passage as paragraphs. The section owns the
+text from then on; nothing goes back to the source but its marker, moved
+past the passage. The `from:` line is ordinary prose the app reads back for
+the inspector; the format gives it no meaning. A section moves to another
+note as its blocks (the heading with its line, everything under it, cards
+and `sr` lines with them), appended at the end. An extract document of a
+text source (§6.3) can be folded into such a section the same way, its
+`read` schedule becoming the heading's line (`made` its `imported` day);
+the app offers this, never forces it.
+
 **Rules.** One line per heading; a second is resolved later-wins with a
 diagnostic. After anything but a heading (a paragraph, a card, a raw
 block, a list item, a blank line, nothing) the line is an orphan: kept as a

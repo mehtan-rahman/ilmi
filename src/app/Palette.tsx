@@ -11,7 +11,7 @@ import { useApp } from './store.js';
 import { MENU_ID, runMenu } from './menu.js';
 import { hasCards, studyDeck } from './deckOps.js';
 import { SESSION, folderPaths } from './names.js';
-import { sectionActions, statusOf } from './sections.js';
+import { moveAction, moveSection, sectionActions, statusOf } from './sections.js';
 import { plainMath } from './chromeText.js';
 import type { CaretHeading } from './store.js';
 import { MathText } from './MathText.js';
@@ -49,7 +49,8 @@ function sectionCommand(): Command[] {
   const at = caretHere();
   if (!at) return [];
   const act = sectionActions(statusOf(at.read), at)[0]!;
-  return [{ id: `section:${act.act}`, title: `${act.label} · ${plainMath(at.text)}` }];
+  const mv = moveAction(at);
+  return [{ id: `section:${act.act}`, title: `${act.label} · ${plainMath(at.text)}` }, { id: `section:${mv.act}`, title: `${mv.label} · ${plainMath(at.text)}` }];
 }
 
 function runCommand(id: string): void {
@@ -57,7 +58,9 @@ function runCommand(id: string): void {
   const tab = activeTab(s.panes)?.id;
   if (id.startsWith('section:')) {
     const at = caretHere();
-    if (at) sectionActions(statusOf(at.read), at)[0]?.run?.();
+    if (!at) return;
+    if (id === 'section:move-to') moveAction(at).run?.();
+    else sectionActions(statusOf(at.read), at)[0]?.run?.();
     return;
   }
   switch (id) {
@@ -104,9 +107,11 @@ export function Palette() {
   const [sel, setSel] = useState(0);
   // `study…` turns the list into the things that can be studied: a deck, a folder, a document with cards under it
   const [studying, setStudying] = useState(false);
+  // `move to…` on a section (milestone 50): the list is the notes it can go to
+  const moving = useApp((s) => s.sectionMove);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
-  const close = () => useApp.setState({ paletteOpen: false });
+  const close = () => useApp.setState({ paletteOpen: false, sectionMove: null });
 
   // `postpone the rest` is offered only while something sits below the fold
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -126,7 +131,13 @@ export function Palette() {
     for (const [path, info] of Object.entries(docs)) add(path, info.type, info.title ?? path.replace(/\.md$/, ''));
     return out;
   }, [studying, tree, docs]);
-  const results = useMemo(() => search(studying ? studyIndex : index, q), [studying, studyIndex, index, q]);
+  const moveIndex = useMemo((): Entry[] => {
+    if (!moving) return [];
+    return Object.entries(docs)
+      .filter(([path, info]) => info.type === 'note' && path !== moving.path)
+      .map(([path, info]) => ({ key: `mv:${path}`, title: info.title ?? path.replace(/\.md$/, '').split('/').pop() ?? path, sub: path.replace(/\.md$/, ''), tag: 'note' as const, target: { command: `move:${path}` } }));
+  }, [moving, docs]);
+  const results = useMemo(() => search(moving ? moveIndex : studying ? studyIndex : index, q), [moving, moveIndex, studying, studyIndex, index, q]);
 
   useEffect(() => { inputRef.current?.focus(); }, []);
   // esc closes from anywhere, not only from the field
@@ -135,7 +146,7 @@ export function Palette() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
-  useEffect(() => { setSel(0); }, [q, studying]);
+  useEffect(() => { setSel(0); }, [q, studying, moving]);
   useEffect(() => {
     const list = listRef.current;
     const el = list?.querySelector<HTMLElement>('[data-sel="1"]');
@@ -149,6 +160,7 @@ export function Palette() {
     const t = it.target;
     if ('command' in t && t.command === 'study') { setStudying(true); setQ(''); inputRef.current?.focus(); return; }
     if ('command' in t && t.command.startsWith('study:')) { close(); studyDeck(t.command.slice(6)); return; }
+    if ('command' in t && t.command.startsWith('move:') && moving) { close(); void moveSection(moving, t.command.slice(5)).catch(console.error); return; }
     close();
     if ('command' in t) runCommand(t.command);
     else if ('vault' in t) void openVault(t.vault).catch(console.error);
@@ -168,7 +180,7 @@ export function Palette() {
       <div className="palette-panel" onMouseDown={(e) => e.stopPropagation()}>
         <div className="palette-input">
           <span className="g">⌕</span>
-          <input dir="auto" ref={inputRef} value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={onKey} placeholder={studying ? 'study…' : 'open or run'} spellCheck={false} />
+          <input dir="auto" ref={inputRef} value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={onKey} placeholder={moving ? `move § ${plainMath(moving.text).slice(0, 40)} to…` : studying ? 'study…' : 'open or run'} spellCheck={false} />
           <kbd>esc</kbd>
         </div>
         <div className="palette-list" ref={listRef}>

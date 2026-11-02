@@ -19,7 +19,7 @@ import {
   type FindMeta, type FindState, type SlashItem, type SlashState, textOf,
   bookKey, CODE_LANGS, addColumn, addRow, cellAt, alignColumn, codeHTML, codeLang, deleteColumn, deleteRow, foldKey, foldedKeys, foldsHiding, ruleEndIndex, langOf, setCodeLang, type Align, type FoldMeta,
 } from '../reader/index.js';
-import { advanceWrite, whenToDate } from '../schedule/index.js';
+import { advanceWrite, sectionSpan, whenToDate } from '../schedule/index.js';
 import { dirOf, nameOf, type Loaded, type Vault } from '../vault/index.js';
 import { CueActions } from '../plugins/CueActions.js';
 import { onPluginAction, publishSelection as publishPluginSelection, runBlockHooks, toPluginSelection, usePlugins, wantsBlocks, type PluginSelection } from '../plugins/index.js';
@@ -29,10 +29,11 @@ import { imagePicker, pageDrops, readImagePath, type ImageFile } from './pageIma
 import { dueLabel } from './items.js';
 import { titleOf } from './names.js';
 import { useApp, type DocInfo } from './store.js';
-import { currentVault, enrolReading, extractNode, setFolds } from './vault.js';
+import { currentVault, enrolReading, extractNode, openNode, sectionNode, setFolds } from './vault.js';
 import { popMenu, type PopItem } from './popMenu.js';
 import { registerHeadings } from './headings.js';
-import { sectionMenu, setWriteThrough } from './sections.js';
+import { sectionMenu, setWriteThrough, writeDoc } from './sections.js';
+import { notify } from './land.js';
 import { bookOptions } from './bookNotes.js';
 import { fillCrops } from './bookPdf.js';
 import 'katex/dist/katex.min.css';
@@ -1335,6 +1336,28 @@ export function Reader({ id, active = true, onPages, notes = false }: ReaderProp
   const canExtract = !notes && (info?.type === 'note' || info?.type === 'source' || info?.type === 'extract');
   const canExtractRef = useRef(false);
   canExtractRef.current = canExtract;
+  // a text source (a clipping, an EPUB chapter): a marked passage is a section of its note, not an extract (milestone 50)
+  const marks = info?.type === 'source' && !info.pdf && !notes;
+  const marksRef = useRef(false);
+  marksRef.current = marks;
+  // the section just made: ⏎ right after opens the note at it, to write there
+  const recentRef = useRef<{ note: string; index: number; text: string } | null>(null);
+  useEffect(() => {
+    if (!active) return;
+    const onKey = (e: KeyboardEvent) => {
+      const r = recentRef.current;
+      if (!r) return;
+      if (e.key === 'Shift') return;
+      recentRef.current = null;
+      if (e.key !== 'Enter' || e.metaKey || e.ctrlKey || e.altKey || inField(e.target)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      useApp.setState({ reveal: { path: r.note, index: r.index, heading: r.text, write: true } });
+      openNode(r.note);
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [active]);
   // a note revisited has no marker: each pass starts at the top, or at a heading picked here
   const isNote = info?.type === 'note';
   const actRef = useRef<(action: ReaderAction) => boolean>(() => false);
@@ -1785,6 +1808,23 @@ export function Reader({ id, active = true, onPages, notes = false }: ReaderProp
     if (!s || !writer || !canExtractRef.current) return;
     setSel(null);
     window.getSelection()?.removeAllRanges();
+    if (marksRef.current) {
+      writer.run(async () => {
+        const made = await sectionNode(id, { text: s.text, blocks: s.blocks });
+        recentRef.current = made;
+        const where = useApp.getState().docs[made.note]?.title ?? 'its notes';
+        notify(`§ ${plainMath(made.text)} · back in 3d, until dismissed · in ${where} · ⏎ to write in it`, made.note, async () => {
+          recentRef.current = null;
+          await writeDoc(made.note, (d) => {
+            const at = d.blocks.findIndex((b) => b.kind === 'heading' && b.text === made.text);
+            if (at < 0) return;
+            const span = sectionSpan(d.blocks, at);
+            d.blocks.splice(span.start, span.end - span.start);
+          });
+        });
+      }).catch(console.error);
+      return;
+    }
     writer.run(() => extractNode(id, { text: s.text, blocks: s.blocks })).catch(console.error);
   };
 
@@ -2175,7 +2215,7 @@ export function Reader({ id, active = true, onPages, notes = false }: ReaderProp
               </button>
               {canExtract && (
                 <button type="button" className="cue-act" onMouseDown={(e) => { e.preventDefault(); doExtract(); }}>
-                  extract <span className="kbd">{frozen ? 'e' : '⌘⇧E'}</span>
+                  {marks ? 'section' : 'extract'} <span className="kbd">{frozen ? 'e' : '⌘⇧E'}</span>
                 </button>
               )}
               {plugSel && <CueActions sel={plugSel} onRun={() => setSel(null)} />}

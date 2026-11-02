@@ -148,9 +148,11 @@ interface PdfProps {
   active?: boolean;
   /** Inside a reading session: `[` `]` belong to the session. */
   session?: boolean;
+  /** A session reading on in the book: the pages land at the read point. */
+  readOn?: boolean;
 }
 
-export function Pdf({ id, active = true, session = false }: PdfProps) {
+export function Pdf({ id, active = true, session = false, readOn = false }: PdfProps) {
   const hidden = useApp((s) => s.notesHidden);
   // ⌘\ hides the notes and shows them, ahead of the app's split (it checks `defaultPrevented`)
   useEffect(() => {
@@ -165,7 +167,7 @@ export function Pdf({ id, active = true, session = false }: PdfProps) {
   }, [active]);
   return (
     <div className="book" data-notes={hidden ? '0' : '1'} data-path={id}>
-      <div className="book-pages"><Pages id={id} active={active} session={session} /></div>
+      <div className="book-pages"><Pages id={id} active={active} session={session} readOn={readOn} /></div>
       {!hidden && <div className="book-notes"><Reader key={id} id={id} active={active} notes /></div>}
     </div>
   );
@@ -178,7 +180,7 @@ interface Drawn {
   dismissed: boolean;
 }
 
-function Pages({ id, active, session }: Required<PdfProps>) {
+function Pages({ id, active, session, readOn }: Required<PdfProps>) {
   const docs = useApp((s) => s.docs);
   const root = useApp((s) => s.vault);
   const caret = useApp((s) => s.caretHeading);
@@ -410,6 +412,18 @@ function Pages({ id, active, session }: Required<PdfProps>) {
     setLit(text);
     if (text) scrollToPassage(text);
   }, [caret?.path, caret?.text, caret?.nth, id, status, sizes.length, scrollToPassage]);
+  // reading on: the pages land once at the read point, the bar's end a third of the way down the view
+  const landedAt = useRef<string | null>(null);
+  useEffect(() => {
+    if (!readOn || status !== 'ok' || !sizes.length || landedAt.current === id) return;
+    const sc = scroller();
+    const rp = info?.read?.pos !== undefined ? { pos: info.read.pos, y: info.read.y ?? 1 } : null;
+    if (!sc || !rp || rp.pos < first || rp.pos > last) return;
+    const r = pageRect(rp.pos);
+    if (!r) return;
+    landedAt.current = id;
+    sc.scrollTo({ top: Math.max(0, r.top + rp.y * r.height - sc.clientHeight / 3) });
+  }, [readOn, status, sizes.length, id, first, last, info?.read?.pos, info?.read?.y, pageRect]);
   // show in book: scrolled to and flashed
   useEffect(() => {
     if (!focus || focus.path !== id) return;

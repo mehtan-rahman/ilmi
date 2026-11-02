@@ -7376,6 +7376,7 @@ export async function smokeBooks(vault: Vault): Promise<void> {
     await sleep(600);
   };
   const bar = () => q<HTMLElement>('.pane[data-active="1"] .session-bar')!;
+  const inView = (page: number) => { const sc = q<HTMLElement>('.pane[data-active="1"] .doc-session .book-pages')!; const el = q<HTMLElement>(`.pane[data-active="1"] .doc-session .pdf-page[data-page="${page}"]`)!; const a = sc.getBoundingClientRect(); const b = el.getBoundingClientRect(); return b.top < a.bottom - 40 && b.bottom > a.top + 40; };
   const actions = () => qa<HTMLElement>('.sb-actions button .ra-l', bar()).map((b) => b.textContent).join(' / ');
   const changed = (p: string, before: string, what: string) => poll(async () => { const t = await text(p); return t !== before ? t : null; }, what, 8000);
   try {
@@ -7410,6 +7411,7 @@ export async function smokeBooks(vault: Vault): Promise<void> {
 
     // ── the physics first pass: read on in ch. 3, at its read point ──
     await sessionAt(ch3, 26);
+    must(inView(26), 'the pages landed at the read point, p. 26 in view');
     must(actions().startsWith('done for today · back in'), `a book's actions: ${actions()}`);
     must(/^read on from p\. 26/.test(q('.sb-where', bar())?.textContent ?? ''), `above them: "${q('.sb-where', bar())?.textContent}"`);
     must(qa('.pane[data-active="1"] .doc-session .pdf-page').map((p) => (p as HTMLElement).dataset.page).join(',') === '23,24,25,26,27,28', 'the chapter\'s pages 23–28 beside its notes');
@@ -7503,6 +7505,7 @@ export async function smokeBooks(vault: Vault): Promise<void> {
     // ── the Arabic passage: read in rotation, a paragraph clipped, word ::: meaning ──
     const p12 = await poll(() => readOf(P12), 'passage 12 is due to read on');
     await sessionAt(p12, 130);
+    must(inView(130), 'the pages landed at the read point, p. 130 in view');
     must(actions().startsWith('done for today · back in'), `a book's actions: ${actions()}`);
     must(qa('.pane[data-active="1"] .doc-session .book-notes .dd-h').map((h) => h.textContent?.slice(0, 12)).join(' | ').startsWith('dukkān, sirḥ | analogy foll | p. 131'), 'its notes: the two boxed sections, then the pages\' clips');
     await poll(() => qa('.pane[data-active="1"] .doc-session .book-notes .raw.clip .crop').length === 8, 'eight clips drawn as crops of their pages', 10000);

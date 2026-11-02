@@ -305,7 +305,7 @@ function DocSession({ item, active, onAct, ...nav }: DocProps) {
   const what = plainMath(section ? `${docs[item.path]?.title ?? sourceLabel(item, docs)} › ${item.heading}` : sourceLabel(item, docs));
   return (
     <div className="doc-session" ref={barRef} data-el={item.kind} data-book={pages ? '1' : '0'}>
-      {pages ? <Pdf id={item.path} active={active} session /> : <Reader id={item.path} active={active} />}
+      {pages ? <Pdf id={item.path} active={active} session readOn={item.kind === 'read'} /> : <Reader id={item.path} active={active} />}
       <SessionBar kind={markOf(item)} {...(word ? { word } : {})} pri={pri} what={what} stands={standing(item, appNow(), info?.pages?.first)} glyph={glyphOf(item)} {...nav}>
         <button type="button" data-act="on" onClick={on}><span className="ra-l">{words.on}</span><kbd>⏎</kbd></button>
         <button type="button" data-act="postpone" onClick={() => onAct('postpone')}><span className="ra-l">{words.postpone}</span><kbd>p</kbd></button>

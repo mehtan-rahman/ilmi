@@ -7669,7 +7669,7 @@ export async function smokeTextSections(vault: Vault): Promise<void> {
     const clipAfter = await text(CLIP);
     const strip = (t: string) => t.replace(/^read: .*$/m, 'read');
     must(strip(clipAfter) === strip(clipBefore) && !clipAfter.includes('<!-- extract in that'), 'nothing went back to the clipping but its marker');
-    must(/^read: .*pos=1[0-9]/m.test(clipAfter), `the marker moved past the passage (${/^read: .*$/m.exec(clipAfter)?.[0]})`);
+    must(/^read: .*pos=9\b/m.test(clipAfter), `the marker, already past it, stays (${/^read: .*$/m.exec(clipAfter)?.[0]})`);
     const notice = useApp.getState().notice;
     must(notice?.line.startsWith('§ in that world the vacuum · back in 3d, until dismissed · in why perturbation series diverge — notes · ⏎ to write in it') && notice.open === NOTE, `the notice: "${notice?.line}"`);
     await shot('textsections-made');
@@ -7683,6 +7683,8 @@ export async function smokeTextSections(vault: Vault): Promise<void> {
     await mark(surface, 'Euler had the prototype', 'Euler had the prototype two centuries before quantum theory.');
     key('e');
     await poll(async () => (await headings(NOTE)).length === 2 && (await headings(NOTE))[1]!.text.startsWith('euler had the prototype'), 'a second section under the first', 10000);
+    const pos = Number(/^read: .*pos=(\d+)/m.exec(await text(CLIP))?.[1]);
+    must(pos > 9, `the marker moved past this one, further down (pos=${pos})`);
 
     // ── the chapter (an EPUB chapter's shape: a frozen source in a notebook) ──
     surface = await openDoc(WKB);

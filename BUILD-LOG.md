@@ -8,7 +8,7 @@ was verified, what was not, and the prompt to resume with.
 
 ## 2026-11-02 — milestone 47: sections that come back
 
-Done on main, commit `HASH47`. New: `src/schedule/section.ts`,
+Done on main, commit `5f5c53f`. New: `src/schedule/section.ts`,
 `src/app/sections.ts`, the corpus file `mangled/sections.md`, four test
 files (`format/section`, `schedule/section`, `app/sections`,
 `app/sections-view`). Changed: the format (`Heading.read`, the heading's

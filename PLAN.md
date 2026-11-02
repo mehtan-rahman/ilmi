@@ -5151,7 +5151,7 @@ The demo's books are originals: `design/books/ch3.tex` typesets pp. 41–44 of t
 Order: 47 → 48 → 49, on main, each judged on `samples/double-major` and checked in the window from a clean checkout.
 
 ### [x] 47. Sections that come back — one queue, and every item says where it stands
-Done 2026-11-02, commit `HASH47`.
+Done 2026-11-02, commit `5f5c53f`.
 Notes: The line is `<!-- read made due ivl reps af pri boxes -->` under an
 ATX heading or a setext underline (`Heading.read`, `SECTION_SPECS`, written
 in that order, `af` at 1.6 dropped); `boxes` is a string kept as written.

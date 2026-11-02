@@ -5373,7 +5373,75 @@ cannot be resized or moved; nothing names an Arabic passage.
 - ⌘\ hides the notes;
 - the queue opens a section at its boxes.
 
-### [ ] 49. Two books on the sample, and a pass over the flow
+### [x] 49. Two books on the sample, and a pass over the flow
+Done 2026-11-02, commits `bb1ead5` (48's notice), `fe5a6a0`, and the
+window check's `5073831`–`7aa5a10`.
+Notes: First 48's open item: a notice remembers the tab it came up on and
+closes when another is shown (`Notice.tsx`), and sits above the session
+bar while a session is on (`data-session`). Then the books. The book's
+text had to leave the sample's documents (their bodies are the notes now),
+so `design/books/text/` keeps the four files as the sample held them, and
+`design/books/lindqvist.py` and `reader.py` typeset the prose of those
+(cards, backrefs and schedules left out) into `lindqvist.tex` (pdflatex,
+ch3.tex's look: newtx, numbered equations per chapter, `\chapter` titles,
+the Problems set small; chapter 1 is sixteen blank pages so the PDF's
+numbers are the book's: ch. 2 pp. 17–22, ch. 3 23–28, ch. 4 29–34, 34
+pages, 248 KB) and `reader.tex` (XeLaTeX, polyglossia, Libertinus Serif
+from TeX Live for the transliteration glyphs, DecoType Naskh for the
+Arabic; passage 12 with its glossary, grammar notes, cultural notes and
+exercises at pp. 129–134; the running heads set in `\textenglish` since
+the first page's shipout found the Arabic font current; the dagger alif
+dropped, which the Naskh lacks); `reader-book.tex` sets it after 128
+blank pages. Both PDFs are committed and copied beside the sample's
+parents (`library/lindqvist-statistical-physics.pdf`,
+`library/classical-prose-reader.pdf`), so the parents have pages too.
+The conversion (a one-off script, not kept): each chapter takes `pdf:
+../lindqvist-statistical-physics.pdf` and its `pages`, loses `frozen`,
+its `read` line's `pos` becomes the page with a `y`; every extract
+document became a `##` section of its chapter's notes with the extract's
+own title, the book's quoted paragraphs dropped (they are the boxes), its
+own text and cards kept with their ids and `sr` lines, `made` from its
+`imported`, `due ivl reps` from its `read`, and `boxes` read off the
+typeset PDF (pdf.js text items grouped into lines, one box per page, a
+0.004 pad; the nested `expand S_R, not Ω_R` is its own section inside the
+Boltzmann one's box); the chapter's own cards sit in dismissed sections
+(`made` and `boxes`, no `due`) boxed over their passages and named as `e`
+would name them (`2.5 · entropy and temperature (2.12)`, `3.4 · the
+Helmholtz free energy (3.10–3.11)`; a test holds each to `sectionName`).
+Passage 12: its two extracts are sections boxed on p. 129 with a `<!-- box
+… -->` clip directly under each heading in place of the Arabic, their
+`##` subheadings demoted to `###`; the six cards made from the commentary
+sit under `## p. 131`, `## p. 132`, `## p. 133`, each after a clip of the
+note it came from. `.ilmi/order.json` loses the chapters' folders and the
+reviews log names the chapters for the moved cards; the parents' own
+words say how the books are read now. Tests: 1165 (+10 books.test, +3
+notice.test; the sample's file count 75 → 66; the tests that read passage
+12 or ch. 3 as text read passage 11, the chapter's opening written as a
+fixture from `design/books/text`, or Halvorsen's 9.3; `same` lists 43
+pairs, two overlapping pairs gone: the peak-width pair now sits in one
+document, where its shared words read as the document's own). FORMAT
+§6.5 (the heading is the person's; the sample's conversion) and §6.6 (a
+clip by hand may sit anywhere). `ILMI_SMOKE=pdf` is retired (deleted with
+its dispatcher entry); `ILMI_SMOKE=books` walks three days by the app's
+clock: 2026-11-02 the queue's rows (`written, 2 cards · back for the 4th
+time`, `read on from p. 26`), reading on in ch. 3 at its read point, two
+derivations boxed on pp. 24 and 26 (`3.3 · average values (3.8)`, `3.6 ·
+the equipartition theorem (3.16)`, in book order among the seven), done
+for today; 11-05 the row `boxed nov 2, nothing written yet · first time
+back`, the session at its lit box, three numbered cloze steps typed into
+the notes, next; 11-10 `written, 3 cards · back for the 2nd time`,
+dismissed, the cards still due; passage 12 read in rotation, its first
+paragraph clipped with `m`, `البَادِيَة ::: the desert …` typed under
+the clip. Window check (2026-11-02, mine, a clean checkout, by window id):
+nine runs, each failure fixed from the next commit and recorded in
+BUILD-LOG: the caret through a rebuild from the file (kept by its
+textblock's verbatim text, or on the card its block became, with a list
+item's marker), a read session landing at the read point, the smoke's
+own text and waits; run 9 at `7aa5a10` ran to `done`, 71 `ok:`, no
+`failed:`, all eight shots reading as the demo. Tests: 1167. Not done:
+`ILMI_SMOKE=open`'s PDF part still unrun; opening a parent shows its
+book's blank pages (ch. 1, the reader's first 128); the conversion script
+is not kept; the demo's task bar is still a notice.
 - **Lindqvist.**
   - Typeset chapters 2–4 from the sample's own text into one book PDF with `design/books/ch3.tex`'s look: `design/books/lindqvist.tex`, reproducible with `pdflatex`, the PDF committed beside the chapters.
   - Each chapter document takes `pdf: ../lindqvist-statistical-physics.pdf` and its `pages`. Its body (the book's text) gives way to the notes.
@@ -5424,8 +5492,9 @@ Next: Reading books (47–49), written 2026-11-01 once the user said the
 flow was right ("Looks good"). The demo they settled on is
 `design/demos/pdf-reading.html`; its books' sources are in
 `design/books/`. 48 passed its window check from a clean checkout
-on 2026-11-02 (a notice covering the session bar is left for 49). The
-user decided text sources follow the same model, written as 50.
+on 2026-11-02; 49 followed the same day (the books typeset from
+`design/books/text/`, the sample converted, `ILMI_SMOKE=books`). The
+user decided text sources follow the same model, written as 50: next.
 
 Refinement (33–41) is complete, 2026-10-30, every milestone's window check
 run and recorded under its BUILD-LOG entry (33 `notes`, 34 `editing`, 35

@@ -6,6 +6,167 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-11-02 — milestone 49: two books on the sample
+
+Done on main, commits `bb1ead5` (48's notice), `fe5a6a0` (the books), and
+the window check's `5073831`, `756b60a`, `d093859`, `054fa8c`, `8a9daff`,
+`9dd43b6`, `d0bbf54`, `7aa5a10`. New:
+`design/books/lindqvist.py`, `lindqvist.tex`, `lindqvist.pdf`,
+`reader.py`, `reader-book.tex`, `reader-book.pdf`, `design/books/text/`
+(the four documents as the sample held them, with a README), the sample's
+two PDFs, `src/app/__tests__/books.test.ts`, `notice.test.ts`. Changed:
+`reader.tex` and `reader.pdf` (regenerated from the sample's passage, six
+pages), the three chapter documents and passage 12 (notes now), the two
+parents, `.ilmi/order.json` and the reviews log, `Notice.tsx` and its
+CSS, `smoke.ts` (`books` added, `pdf` removed) and `vault.ts`, six tests
+re-pointed, FORMAT §6.5 §6.6, README.
+
+### Decided
+
+- **The book's text leaves the sample.** A chapter's body is the notes,
+  so the text the books are typeset from lives in `design/books/text/`
+  and the two converters read it there; the sample's documents hold only
+  what the person wrote.
+- **A converted extract keeps its own title** as its heading (the demo's
+  `the plural test`, `3.3 · U = −∂ ln Z/∂β`), its quoted book paragraphs
+  dropped (they are the boxes); the chapter's own cards sit in **dismissed
+  sections** boxed over their passages and named as `e` would name them,
+  since that is what `m` on a page makes.
+- **Passage 12 is clipped** where its extracts were words: a clip under
+  each section's heading, and the commentary's cards under `## p. N` with
+  a clip of the note each came from.
+- **Boxes come off the typeset PDF**: pdf.js text items grouped into
+  lines, one box per page, a 0.004 pad, matched by the passage's first
+  and last words with spaces, hyphens and ligatures folded.
+- **Page numbers are the book's**: blank pages before ch. 2 (sixteen) and
+  before p. 129 (128) so `pages:` and `boxes` count as the book counts.
+- **The notice** closes with its tab and sits above the session bar.
+- `ILMI_SMOKE=pdf` retired rather than rewritten: the lens it drove is gone.
+
+### Verified
+
+- `npx vitest run --maxWorkers=3`: 1167 tests, 79 files (1161 before: +10
+  books, +3 notice, +2 the caret through a rebuild, −9 across the
+  re-pointed tests' counts). `npm run typecheck` clean. No Rust touched.
+- `pdflatex lindqvist.tex` twice: 34 pages, no overfull lines; `xelatex
+  reader.tex`: 6 pages, no missing characters; `xelatex reader-book.tex`:
+  134 pages. The sample's PDFs are byte-identical to `design/books/`'s
+  (held by books.test).
+- Every dismissed section's heading equals `sectionName` over its boxes on
+  the real PDF (books.test); every card id of the old files is in the
+  new ones (the conversion asserted it).
+
+### Window check (2026-11-02, mine, a clean checkout, nine runs)
+
+A detached worktree of main outside the repo, `node_modules` and
+`src-tauri/target` cloned in with `cp -c`, a fresh copy of
+`samples/double-major` each run, `ILMI_SMOKE=books`, the screen unlocked
+(the first attempt waited an hour for that), port 1420 free, every
+capture by the ilmi window's id (a Swift one-liner over
+`CGWindowListCopyWindowInfo`, taken 0.3 s after each `shot:` line, on
+whatever Space the window was). What the runs found, each fixed and
+rerun from the next commit:
+
+- **Run 1** (`fe5a6a0`): through the queue, the read session, both
+  derivations boxed and named (`3.3 · average values (3.8)`, `3.6 · the
+  equipartition theorem (3.16)`, in book order among the seven), done for
+  today (`pos=27 y=0.554 reps=5`), the later day's row and session; then
+  the write-up's third line landed inside the *next heading*. After the
+  autosave the editor is rebuilt from the file and `withSelectionOf` kept
+  the caret's absolute position, which the typed `$…$` (text in the live
+  state, chips of size one once parsed) had moved forty characters on.
+  Fixed (`5073831`): the caret is kept as its textblock and its offset in
+  the block's verbatim text, found again by that text near its place.
+- **Run 2**: hand-off to run 1's still-open app (the single-instance
+  plugin) and exit 0; relaunched, it failed to land at p. 26: a read
+  session scrolled wherever the caret's first heading took it (the top of
+  p. 23; run 1 had landed on pp. 24–25 by the same accident). Fixed
+  (`756b60a`): a read session lands once at the read point, the bar's end
+  a third of the way down the view, as the demo's "read from the gold bar
+  on p. 42"; the smoke asserts the page is in view.
+- **Run 3**: the write-up's lines stayed in their section, but the third
+  was not a card: typed `= $ {{c1::…` (a space before the closing `$`
+  does not close math). The smoke's text, fixed (`d093859`), with a check
+  that the caret stays in the section after the save.
+- **Runs 4 and 5**: `caretHeading` named the next heading after the save:
+  the cloze line is a *card* in the rebuilt document, an atom with no text
+  position, so the textblock count ran past it (`054fa8c`: the card the
+  block became is selected, as a click on it would); then a card in a list
+  item keeps its `3. ` marker apart from its text, so the match missed
+  (`8a9daff`: marker and text matched together).
+- **Run 6**: the landing's 20 s was not enough for a covered window
+  (WebKit throttles it; the capture after the failure showed the book
+  landed at p. 26 all the same). The smoke waits 45 s (`9dd43b6`).
+- **Run 7**: `written` is false for a section holding cards alone, while
+  its row rightly says `written, 3 cards`; the smoke read the flag
+  (`d0bbf54`: by its cards).
+- **Run 8**: the passage's `###` subheadings matched `.dd-h`; the smoke
+  reads `h2.dd-h` (`7aa5a10`). Everything before it passed: the write-up
+  as three cloze cards, `§ 3.6 · the equipartition theorem (3.16) · next ·
+  back in 5d`, the return `written, 3 cards · back for the 2nd time`,
+  dismiss keeping `made` and `boxes` with no `due`, the three cards still
+  due (11 in the chapter), the Arabic session landed at p. 130 with eight
+  clips drawn.
+- **Run 9** (`7aa5a10`): `done`, 71 `ok:`, no `failed:`, all eight shots.
+  The Arabic passage: `m` on ¶1 clipped it under `## p. 129` with the
+  caret below, `البَادِيَة ::: the desert, home of the bedouin` typed
+  there, done for today wrote the card under the clip (the read point
+  stayed at p. 130, the clip's scroll having gone back to p. 129 and the
+  point moving forward only); dark.
+
+Seen in the shots against the demo: the day's queue is one line, its `§`
+rows saying `written, 2 cards · back for the 4th time`, its books `read on
+from p. 26` / `p. 130`; reading on opens ch. 3's pages 23–28 beside the
+seven sections with the three dismissed ones dashed, landed at the read
+point, the inspector listing the passages in book order with `today` /
+`dismissed` / `in 12d`; the `e` notice (`§ 3.3 · average values (3.8) ·
+back in 3d, until dismissed · ⏎ to write … undo`) sits above the session
+bar, clear of its buttons (48's open item); the later day's rows `boxed
+nov 2, nothing written yet · first time back`; the write-up as numbered
+steps with cloze blanks, the third selected as a card, the inspector
+naming the section `written, 3 cards · first time back`; the Arabic
+session with the ¶3 clip under its heading and `p. 129` beneath, then
+`## p. 129` with ¶1's crop and the typed `word ⇄ meaning`; dark. Reads
+differently from the demo: no task bar over both panes (a notice instead,
+as 48 left it); the `returns` shot shows the day's done rows at the top
+but not the returning section's row, which sits below the fold (the
+assertion read it); the sidebar's library rows carry no per-chapter due
+counts in the shot's folded tree.
+
+### Not done
+
+- `ILMI_SMOKE=open`'s PDF part (a fixture book landed from the intake)
+  was not run.
+- The smoke's write-up lines parse as cards in list items (`1. `); the
+  live editor makes no list of them while typing, and the `returns` shot
+  is not scrolled to the returning row.
+- Opening a parent shows its book's blank pages (ch. 1; the reader's
+  first 128), since each PDF sits beside the parent as its own.
+- The conversion script was a one-off and is not kept; `design/books/
+  text/` and the two converters are.
+- Still from 48: the demo's task bar over both panes is a notice; tags of
+  two passages on one line overlap; a clip cannot be moved or resized;
+  the outline doesn't mark sections; sections aren't paced by exams.
+
+### Handoff prompt
+
+```
+Read PLAN.md (Reading books, 47–49's notes, 50) and this entry. Then
+build 50: text sources the same way. Marking text in a clipping or an
+EPUB chapter (e) makes a ## section in that source's note (one note per
+source, in the source's folder), the passage copied in, a plain `from:
+<source>` line under the heading, the §6.5 read line, no live link back;
+a section can be moved to another note from the heading menu and the
+palette with its line and cards; existing extract documents keep working
+and are offered a conversion, not forced. Judge it on
+samples/double-major (two passages in a clipping, one in the EPUB
+chapter, one moved to a course note, the clipping edited without touching
+them) in ILMI_SMOKE=textsections, from a clean checkout, shots by window
+id.
+```
+
+---
+
 ## 2026-11-02 — milestone 48: the book beside its notes
 
 Done on main, commits `0688e64` (47's two queue items) and `14031c9`. New:

@@ -26,7 +26,7 @@ export interface HintContext {
   pages?: boolean;
   /** The document's prose is locked: bare `e` and `m` act, since nothing is typed there. */
   frozen?: boolean;
-  /** The document (or the session's element) is a note. */
+  /** The document (or the session's element) is a note, or an extract: what comes back until dismissed, not a book. */
   note?: boolean;
 }
 
@@ -47,8 +47,10 @@ export function hintsFor(c: HintContext): Hint[] {
         ? [['⏎', 'enter queue'], ['j k', 'move'], ['o', 'open one'], PALETTE]
         : [['⏎', 'open'], ['j k', 'move'], PALETTE];
     case 'session':
-      if (c.el === 'read') return [['⏎', c.note ? 'went over it' : 'read on'], ['p', 'postpone'], ['d', 'done'], ...selKeys(c.frozen || c.pages), NAV];
-      if (c.el === 'write') return [['⏎', 'worked on it'], ['p', 'postpone'], ['d', 'done'], ...selKeys(c.frozen, false), NAV];
+      // the same three everywhere: a book's ⏎ is done for today, everything else's next
+      if (c.el === 'read') return [['⏎', c.note ? 'next' : 'done for today'], ['p', 'later'], ['d', 'dismiss'], ...selKeys(c.frozen || c.pages), NAV];
+      if (c.el === 'section') return [['⏎', 'next'], ['p', 'later'], ['d', 'dismiss'], ...selKeys(c.frozen), NAV];
+      if (c.el === 'write') return [['⏎', 'next'], ['p', 'later'], ['d', 'dismiss'], ...selKeys(c.frozen, false), NAV];
       return [['space', 'reveal'], ['1 2 3 4', 'grade'], ['o', 'go to source'], NAV];
     case 'note':
     case 'source':

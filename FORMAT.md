@@ -207,7 +207,8 @@ same attribute, so nothing else changes. On a note, `read` means
 starts at the top or at a heading the person picks, since a note's own edits
 would shift a position; its line keeps `due`, `ivl`, `reps`, `af` (and the
 older `pri=`) and has no `pos`. A `pos` written there by hand is kept as
-written and means nothing; the app drops it on the next pass. `page` sits on an extract carved
+written and means nothing; the app drops it on the next pass. A single section of any document can come back the same
+way, on a line of its own under its heading (§6.5). `page` sits on an extract carved
 from a page of its parent's PDF and names that page; it means nothing on
 any other line and is kept as written.
 
@@ -513,7 +514,7 @@ so class notes can hold cards where they were typed:
 ## 6. Annotations
 
 Annotations are the lines the app owns. They sit directly under the paragraph
-they belong to, one per line, no blank line between; under a card item, set
+(or, for a section's `read` line, the heading, §6.5) they belong to, one per line, no blank line between; under a card item, set
 in to the item's content column (§5.2). A blank line breaks the
 attachment on purpose: if someone deletes a card's text and leaves its
 schedule, the orphan must not glue itself to the card above.
@@ -645,7 +646,8 @@ is allowed and kept, and the app may treat it as a fallback for groups without
 their own line. Reviewing one blank rewrites one line.
 
 An `sr` line that does not directly follow a card (it follows prose, a heading,
-a blank line, or nothing) is an orphan: kept as a raw block, reported as a
+a blank line, or nothing; a heading carries only its section's `read` line,
+§6.5) is an orphan: kept as a raw block, reported as a
 diagnostic, never attached.
 
 ### 6.3 Extract backref `<!-- extract NAME -->`
@@ -667,9 +669,62 @@ Spaced-Repetition plugin's `<!--SR:!2026-01-01,4,270-->` is not ours: the tag
 is case-sensitive `sr` followed by whitespace or `-->`. Annotation comments
 must be one line; a multi-line `<!-- sr` comment is raw.
 
+### 6.5 A section that comes back `<!-- read … -->`
+
+```
+## pset 4 #5, typed up from paper
+<!-- read made=2026-10-30 due=2026-11-02 ivl=3 -->
+```
+
+A `read` line directly under a heading (an ATX heading, or a setext
+heading's underline) enrolls the **section**: the heading and every block
+under it up to the next heading of the same or a higher level (fewer `#`s),
+subheadings included. The section comes back on the reading loop's growing
+interval, as a note revisited does (§3), until it is dismissed. Nothing
+else marks the section: its text, its cards, and their `sr` lines are
+ordinary blocks wherever the person writes them.
+
+| attr    | type             | meaning                                                         |
+| ------- | ---------------- | --------------------------------------------------------------- |
+| `made`  | day              | when it was enrolled                                             |
+| `due`   | day or instant   | when it comes back                                               |
+| `ivl`   | int ≥ 0          | days between passes                                              |
+| `reps`  | int ≥ 0          | passes made                                                      |
+| `af`    | number ≥ 1.1     | growth, as on `read` (default 1.6, written only when not)        |
+| `pri`   | int 0–100        | its own priority, over the document's `pri` field                |
+| `boxes` | string           | where its passage is on the document's pages, kept as written (milestone 48 gives it a grammar) |
+
+Written in that order, unknown keys after. Enrolling writes `made=<today>
+due=<today+3> ivl=3`. A pass (*next*) multiplies `ivl` by `af` and counts
+in `reps`; a postpone (*later*) grows `ivl` by the postpone factor and does
+not count; neither touches `made`, `pri` or `boxes`.
+
+**Dismissing** drops `due`, `ivl`, `reps` and `af`. The line stays only
+when it has `boxes`, so the passage's place on the page is not lost;
+otherwise the whole line is removed and the heading is plain again. A line
+with no `due` and with `boxes` is therefore a dismissed section: kept, out
+of the queue. A line with no `due` and no `boxes` (a bare `<!-- read -->`
+written by hand) is enrolled and due now, as a bare `read:` is. *Bring
+back* writes a fresh `due` three days out (`ivl=3`) and keeps the rest of
+the line.
+
+**Priority** is the document's `pri` field unless the line carries its own
+`pri`. Unlike `pri=` on the front-matter `read` line (§3), it is not a
+fallback and is never dropped.
+
+**Rules.** One line per heading; a second is resolved later-wins with a
+diagnostic. After anything but a heading (a paragraph, a card, a raw
+block, a list item, a blank line, nothing) the line is an orphan: kept as a
+raw block, reported, never attached, as in §6.2. A heading carries no
+other annotation: an `sr` or `extract` line under a heading is an orphan.
+A heading's text is not changed by the line. The front-matter `read`
+field (a whole document read, or a whole note revisited) is a separate
+thing and unchanged; a document may have both.
+
 ## 7. Attributes
 
-The one small grammar shared by `sr` comments and the `read`/`write` fields:
+The one small grammar shared by `sr` comments, a section's `read` line
+(§6.5), and the `read`/`write` fields:
 
 ```
 attrs := (token whitespace)* token?
@@ -707,6 +762,8 @@ The first time the app writes a hand-made file, these change, and only these:
   all `#`s or ends in space + `#`s keeps an explicit closing ` #`, since
   without it the text would be read as the closing sequence.
 - `^id` on its own line → ` ^id` on the last text line.
+- A section's `read` line → directly under its heading, canonical spacing
+  and key order (§6.5).
 - Annotation comments → canonical spacing, key order, value formatting, and
   order under the card. Duplicates collapsed. Under a card item they are
   set in to its content column (§5.2), whatever indentation they had.
@@ -714,7 +771,8 @@ The first time the app writes a hand-made file, these change, and only these:
   them dropped; a blank line after the closing `---`.
 - A `pri=` on the `read` or `write` line → dropped, when the file has a `pri`
   field (§3). Without the field it stays.
-- An `af=` on the `read` or `write` line equal to that loop's default → dropped.
+- An `af=` on the `read` or `write` line, or on a section's `read` line
+  (§6.5), equal to that loop's default → dropped.
 - A `sus=0` (or `sus=false`) on an `sr` line → dropped; `sus=true` → `sus=1`.
 - `sr f` → `sr` (the bare line is the forward).
 - A body with no front-matter whose first block is a `---` thematic break, or

@@ -14,8 +14,8 @@ describe('key hints', () => {
     expect(keys(hintsFor({ kind: 'queue', el: null, scope: 'today', canEnrol: false }))).toEqual(['⏎', 'j k', 'o', '⌘k']);
     expect(keys(hintsFor({ kind: 'queue', el: null, scope: 'cards', canEnrol: false }))).toEqual(['⏎', 'j k', '⌘k']);
     expect(keys(hintsFor({ kind: 'session', el: 'card', scope: null, canEnrol: false }))).toEqual(['space', '1 2 3 4', 'o', '[ ]']);
-    expect(hintsFor({ kind: 'session', el: 'read', scope: null, canEnrol: false })[0]).toEqual(['⏎', 'read on']);
-    expect(hintsFor({ kind: 'session', el: 'write', scope: null, canEnrol: false })[0]).toEqual(['⏎', 'worked on it']);
+    expect(hintsFor({ kind: 'session', el: 'read', scope: null, canEnrol: false })[0]).toEqual(['⏎', 'done for today']);
+    expect(hintsFor({ kind: 'session', el: 'write', scope: null, canEnrol: false })[0]).toEqual(['⏎', 'next']);
     expect(keys(hintsFor({ kind: 'source', el: null, scope: null, canEnrol: true }))).toContain('r');
     expect(keys(hintsFor({ kind: 'source', el: null, scope: null, canEnrol: false }))).not.toContain('r');
     expect(keys(hintsFor({ kind: 'deck', el: null, scope: null, canEnrol: false }))).toEqual(['j k', '⏎', '/', '⌫', 'm', '⌘k']);

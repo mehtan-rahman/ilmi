@@ -1,15 +1,21 @@
 // The session: the outstanding queue walked one element at a time, after the
-// prototype's recall.jsx. A card is revealed and graded; a reading topic
-// opens whole in the reader with the marker live and is read on, postponed,
-// or done; a note revisited opens whole from the top, with no marker; a
-// draft opens whole and is worked on, postponed, or done. Every
-// result is written to the file the element came from.
+// prototype's recall.jsx. A card is revealed and graded. Everything else
+// offers the same three: ⏎ next (a pass, back later each time), `p` later
+// (not counted), `d` dismiss (it ends; its notes and cards stay). A book or
+// source opens whole in the reader with the marker live, and its ⏎ is done
+// for today; a note revisited opens whole from the top; a section opens its
+// document at its heading, in the editor, to write in, card, and enroll
+// more; a draft opens whole. Above the actions, one line says what the
+// element is and where it stands. Every result is written to the file the
+// element came from, through its open page when it has one.
 
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { emitDocAction, emitGrade, runBlockHooks, usePlugins } from '../plugins/index.js';
-import { PRI_DEFAULT, blanks, cardFields, type Block, type Card } from '../format/index.js';
-import { GRADES, advanceRead, lineKey, advanceWrite, dirPri, postponed, scheduleOf, type CardItem, type Grade, type QueueItem, type ReadItem, type WriteItem } from '../schedule/index.js';
-import { EL_WORD, FORM_LABEL, dueLabel, gapLabels, ownBlank, sourceLabel, trailParts } from './items.js';
+import { PRI_DEFAULT, READ_AF, WRITE_AF, blanks, cardFields, type Block, type Card } from '../format/index.js';
+import { GRADES, advanceRead, advanceSection, lineKey, advanceWrite, dirPri, grow, nextGap, postponed, scheduleOf, type CardItem, type Grade, type QueueItem, type ReadItem, type SectionItem, type WriteItem } from '../schedule/index.js';
+import { EL_WORD, FORM_LABEL, dueLabel, gapLabels, glyphOf, markOf, ownBlank, sourceLabel, standing, trailParts } from './items.js';
+import { writeDoc } from './sections.js';
+import { queueId } from './names.js';
 import type { OpenOpts } from './panes.js';
 import { Pdf } from './Pdf.js';
 import { MathText } from './MathText.js';
@@ -80,22 +86,31 @@ function Nav({ idx, total, onPrev, onNext }: NavProps) {
 
 interface BarProps extends NavProps {
   kind: El;
-  /** A note revisited: named so, not `reading`. */
-  note?: boolean;
+  /** What it is called: `note` for a note revisited, `extract`, else the kind's word. */
+  word?: string;
   pri: number;
+  /** What the element is, and where it stands (the queue row's words). */
+  what: string;
+  stands: string;
+  glyph: string;
   children: ReactNode;
 }
 
-/** The control bar at the foot of a reading or writing element. */
-function SessionBar({ idx, total, kind, note, pri, children, onPrev, onNext }: BarProps) {
+/** The control bar at the foot of a reading, writing, or section element. */
+function SessionBar({ idx, total, kind, word, pri, what, stands, glyph, children, onPrev, onNext }: BarProps) {
   return (
     <div className="session-bar">
       <div className="sb-inner">
         <div className="sb-meta">
           <Nav idx={idx} total={total} onPrev={onPrev} onNext={onNext} />
           <span className="sb-count">{idx + 1} / {total}</span>
-          <span className="sb-kind" data-el={kind}>{note ? 'note' : EL_WORD[kind]}</span>
+          <span className="sb-kind" data-el={kind}>{word ?? EL_WORD[kind]}</span>
           {pri !== PRI_DEFAULT && <span className="sb-count">p {pri}</span>}
+        </div>
+        <div className="sb-stands">
+          <span className="sb-g" data-el={kind}>{glyph}</span>
+          <bdi className="sb-what"><MathText text={what} title={false} /></bdi>
+          {stands && <span className="sb-where">{stands}</span>}
         </div>
         <div className="sb-actions">{children}</div>
       </div>
@@ -240,20 +255,43 @@ function pageInView(from: HTMLElement): number | undefined {
 type DocAction = 'on' | 'postpone' | 'done';
 
 interface DocProps extends NavProps {
-  item: ReadItem | WriteItem;
+  item: ReadItem | WriteItem | SectionItem;
   active: boolean;
   onAct(action: DocAction, pos?: number): void;
+}
+
+/** How many days ⏎ sends an element out: its interval grown by its growth. */
+export function nextDays(item: ReadItem | WriteItem | SectionItem): number {
+  if (item.kind === 'section') return nextGap(item.sched);
+  return grow(item.sched.ivl, item.sched.af ?? (item.kind === 'read' ? READ_AF : WRITE_AF));
+}
+
+/** A book or source read on: its ⏎ is done for today, not next. */
+export const isBook = (item: QueueItem): boolean => item.kind === 'read' && !item.note && !item.extract;
+
+/** The three actions' words: ⏎ `next · back in Nd` (a book's `done for today · back in Nd`), `later`, `dismiss`. */
+export function actionWords(item: ReadItem | WriteItem | SectionItem): { on: string; postpone: string; done: string } {
+  const n = nextDays(item);
+  return { on: `${isBook(item) ? 'done for today' : 'next'} · back in ${n}d`, postpone: 'later', done: 'dismiss' };
 }
 
 function DocSession({ item, active, onAct, ...nav }: DocProps) {
   const barRef = useRef<HTMLDivElement>(null);
   const info = useApp((s) => s.docs[item.path]);
+  const docs = useApp((s) => s.docs);
   const reading = item.kind === 'read';
-  const pages = !!info?.pdf;
+  const section = item.kind === 'section';
+  const pages = !!info?.pdf && !section;
   // a note's pass keeps no place (FORMAT.md §3)
   const note = item.kind === 'read' && !!item.note;
-  const pri = info ? info.pri ?? (reading ? info.read?.pri : info.write?.pri) ?? PRI_DEFAULT : item.pri;
+  const pri = section ? item.pri : info ? info.pri ?? (reading ? info.read?.pri : info.write?.pri) ?? PRI_DEFAULT : item.pri;
   const on = () => onAct('on', reading && !note && barRef.current ? (pages ? pageInView(barRef.current) : blocksAbove(barRef.current)) : undefined);
+  const words = actionWords(item);
+
+  // a section opens at its heading, the caret in it and the heading marked
+  useEffect(() => {
+    if (item.kind === 'section') useApp.setState({ reveal: { path: item.path, index: item.block, heading: item.heading } });
+  }, [item]);
 
   useKeys(active, (key) => {
     if (key === 'Enter') { on(); return true; }
@@ -262,13 +300,15 @@ function DocSession({ item, active, onAct, ...nav }: DocProps) {
     return false;
   }, [item]);
 
+  const word = note ? 'note' : item.kind === 'read' && item.extract ? 'extract' : undefined;
+  const what = plainMath(section ? `${docs[item.path]?.title ?? sourceLabel(item, docs)} › ${item.heading}` : sourceLabel(item, docs));
   return (
-    <div className="doc-session" ref={barRef}>
+    <div className="doc-session" ref={barRef} data-el={item.kind}>
       {pages ? <Pdf id={item.path} active={active} session /> : <Reader id={item.path} active={active} />}
-      <SessionBar kind={item.kind} note={note} pri={pri} {...nav}>
-        <button type="button" onClick={on}><span className="ra-l">{note ? 'went over it' : reading ? 'read on' : 'worked on it'}</span><kbd>⏎</kbd></button>
-        <button type="button" onClick={() => onAct('postpone')}><span className="ra-l">postpone</span><kbd>p</kbd></button>
-        <button type="button" onClick={() => onAct('done')}><span className="ra-l">done</span><kbd>d</kbd></button>
+      <SessionBar kind={markOf(item)} {...(word ? { word } : {})} pri={pri} what={what} stands={standing(item, appNow(), info?.pages?.first)} glyph={glyphOf(item)} {...nav}>
+        <button type="button" data-act="on" onClick={on}><span className="ra-l">{words.on}</span><kbd>⏎</kbd></button>
+        <button type="button" data-act="postpone" onClick={() => onAct('postpone')}><span className="ra-l">{words.postpone}</span><kbd>p</kbd></button>
+        <button type="button" data-act="done" onClick={() => onAct('done')}><span className="ra-l">{words.done}</span><kbd>d</kbd></button>
       </SessionBar>
     </div>
   );
@@ -297,9 +337,13 @@ export function Session({ active, onOpen }: Props) {
   useEffect(() => () => useApp.setState({ sessionEl: null }), []);
 
   // a session over one deck ends where it began: back on the deck's lens
+  // the day's queue walked to its end says so, then goes back to the queue
   const deck = session?.deck;
   useEffect(() => {
     if (deck && total > 0 && idx >= total) openNode(deck.id);
+    if (deck || total === 0 || idx < total) return;
+    const t = setTimeout(() => openNode(queueId('today')), 1500);
+    return () => clearTimeout(t);
   }, [deck, idx, total]);
 
   const goPrev = () => setIdx((i) => Math.max(0, i - 1));
@@ -343,25 +387,27 @@ export function Session({ active, onOpen }: Props) {
     advance();
   };
 
-  const onDoc = (item: ReadItem | WriteItem, action: DocAction, pos?: number) => {
-    const vault = currentVault();
-    if (!vault) return;
+  const onDoc = (item: ReadItem | WriteItem | SectionItem, action: DocAction, pos?: number) => {
+    if (!currentVault()) return;
     const now = appNow();
-    const run = item.kind === 'read'
-      ? vault.update(item.path, (doc) => { advanceRead(doc, action, now, pos, activeExamAt(item.path, now)); })
-      : vault.update(item.path, (doc) => { advanceWrite(doc, action, now); });
+    // through the page when it is open, so what was just typed in it is written first
+    const run = writeDoc(item.path, (doc) => {
+      if (item.kind === 'read') advanceRead(doc, action, now, pos, activeExamAt(item.path, now));
+      else if (item.kind === 'section') advanceSection(doc, item.block, item.heading, action, now);
+      else advanceWrite(doc, action, now);
+    });
     run.catch(fail);
     if (action === 'on') emitDocAction(item);
-    const revisit = item.kind === 'read' && !!item.note;
-    const word = action === 'postpone' ? `+${postponed(item.sched.ivl)}d` : action === 'done' ? 'done' : revisit ? 'went over it' : item.kind === 'read' ? 'read on' : 'progress';
-    note(`${revisit ? 'revisit' : item.kind === 'read' ? 'read' : 'wrote'} · ${word}`);
+    const what = item.kind === 'section' ? 'section' : item.kind === 'write' ? 'draft' : item.note ? 'note' : item.extract ? 'extract' : 'read';
+    const word = action === 'postpone' ? `later, +${postponed(item.sched.ivl)}d` : action === 'done' ? 'dismissed' : actionWords(item).on;
+    note(`${what} · ${word}`);
     advance();
   };
 
   if (!el) {
     return (
       <div className="recall-wrap">
-        <div className="empty center">{total === 0 ? 'nothing due' : `done, ${plural(total, 'element')}`}</div>
+        <div className="empty center session-end">{total === 0 ? 'nothing due' : `all done, ${plural(total, 'element')} · back to the queue`}</div>
       </div>
     );
   }

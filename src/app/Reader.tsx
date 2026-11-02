@@ -10,13 +10,13 @@ import type { Node as PMNode } from 'prosemirror-model';
 import { NodeSelection, Selection, TextSelection, type EditorState, type Transaction } from 'prosemirror-state';
 import { EditorView, type Decoration, type NodeView } from 'prosemirror-view';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { PRI_DEFAULT, cardFields, clozeSegments, formatBody, mathSpanEnd, meta, parse, serialize, setField, type Blank, type Block, type Card, type Doc, type MathSeg } from '../format/index.js';
+import { PRI_DEFAULT, cardFields, clozeSegments, formatBody, mathSpanEnd, meta, parse, serialize, setField, type Blank, type Block, type Card, type Doc, type MathSeg, type SectionSchedule } from '../format/index.js';
 import {
   blockAt, blocksEqual, cardDue, cardsKey, cellLines, classifyRaw, insertCardItem, editorialRanges, flatRanges, fromDoc, frozenKey, imagesKey, indentWidth, inlineRanges, insertCard, isMathEdit,
   linkTarget, literalSpans, makeState, markerKey, markerNumber, markerPos, markerRanges, mathEditKey, mathSplit, passage, pickPos, pressed, schema, setLink,
   setReadPos, splitBlocks, atomFind, markFinds, toggleInline, toggleTask, type Band, type InlineRange, type InlineToggle, type LinkTarget, type Passage, type RawShape,
   askImageKey, closeAtMatch, dirAttr, strongDir, withBases, type Dir, findKey, insertImages, pickSlash, replaceAll, replaceMatch, slashContext, slashItems, slashKey, htmlPasteImages,
-  type FindMeta, type FindState, type SlashItem, type SlashState,
+  type FindMeta, type FindState, type SlashItem, type SlashState, textOf,
   CODE_LANGS, addColumn, addRow, cellAt, alignColumn, codeHTML, codeLang, deleteColumn, deleteRow, foldKey, foldedKeys, foldsHiding, ruleEndIndex, langOf, setCodeLang, type Align, type FoldMeta,
 } from '../reader/index.js';
 import { advanceWrite, whenToDate } from '../schedule/index.js';
@@ -32,6 +32,7 @@ import { useApp, type DocInfo } from './store.js';
 import { currentVault, enrolReading, extractNode, setFolds } from './vault.js';
 import { popMenu, type PopItem } from './popMenu.js';
 import { registerHeadings } from './headings.js';
+import { sectionMenu, setWriteThrough } from './sections.js';
 import 'katex/dist/katex.min.css';
 import 'prosemirror-gapcursor/style/gapcursor.css';
 import './reader.css';
@@ -117,6 +118,16 @@ class Writer {
     this.pending = null;
   }
 }
+
+/** The writer of each open page, so a session's action on it is written after what was typed there, never over it. */
+const openWriters = new Map<string, Writer>();
+setWriteThrough((path, mutate) => {
+  const w = openWriters.get(path);
+  if (!w) return null;
+  // what was typed goes first; the change follows it in the same chain, read back as the page's own
+  w.flush();
+  return w.update(mutate);
+});
 
 // ── rendering pieces shared by node views ────────────────────────
 
@@ -1104,6 +1115,42 @@ function cardPos(doc: PMNode, at: { index: number; id?: string }): number | null
   return byId;
 }
 
+/**
+ * The heading at or above top-level node `index`: its place among the
+ * page's headings that have text (as the file's blocks count them), its
+ * text, and where it is. Null above the first heading.
+ */
+export function headingBefore(doc: PMNode, index: number): { nth: number; text: string; pos: number } | null {
+  let nth = -1;
+  let found: { nth: number; text: string; pos: number } | null = null;
+  let off = 0;
+  for (let i = 0; i < doc.childCount && i <= index; i++) {
+    const node = doc.child(i);
+    if (node.type === schema.nodes.heading && textOf(node).trim()) {
+      nth++;
+      found = { nth, text: textOf(node), pos: off };
+    }
+    off += node.nodeSize;
+  }
+  return found;
+}
+
+/** Where a section's heading is: the `nth` with text when its text matches, else the first with its text. */
+function headingPos(doc: PMNode, nth: number, text: string): number | null {
+  let n = 0;
+  let byText: number | null = null;
+  let off = 0;
+  for (let i = 0; i < doc.childCount; i++) {
+    const node = doc.child(i);
+    const here = off;
+    off += node.nodeSize;
+    if (node.type !== schema.nodes.heading || !textOf(node).trim()) continue;
+    if (n++ === nth && textOf(node) === text) return here;
+    if (byText === null && textOf(node) === text) byText = here;
+  }
+  return byText;
+}
+
 /** Keep the caret where it was, as far as the new document allows. */
 export function withSelectionOf(prev: EditorState | null, state: EditorState): EditorState {
   if (!prev) return state;
@@ -1180,6 +1227,13 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
     const cur = useApp.getState().selectedCard;
     if (idx === null ? cur !== null && cur.path === id : cur?.path !== id || cur.index !== idx) {
       useApp.setState({ selectedCard: idx === null ? null : { path: id, index: idx } });
+    }
+    // the heading the caret is under, for the section's part in the inspector and the palette
+    const at = headingBefore(state.doc, state.doc.resolve(sel.from).index());
+    const read = at ? (state.doc.nodeAt(at.pos)?.attrs.read as SectionSchedule | null) ?? undefined : undefined;
+    const was = useApp.getState().caretHeading;
+    if (at ? was?.path !== id || was.nth !== at.nth || was.text !== at.text || JSON.stringify(was.read) !== JSON.stringify(read) : was?.path === id) {
+      useApp.setState({ caretHeading: at ? { path: id, nth: at.nth, text: at.text, ...(read ? { read } : {}) } : null });
     }
   };
 
@@ -1266,6 +1320,7 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
     if (!vault || !mount) return;
     const writer = new Writer(vault, id);
     writerRef.current = writer;
+    openWriters.set(id, writer);
     let live = true;
     // the images the text names, from the vault as blob URLs, let go with the view
     const images = imageLoader(vault, id, () => useApp.getState().remoteImages);
@@ -1409,6 +1464,7 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
       viewRef.current?.destroy();
       viewRef.current = null;
       writerRef.current = null;
+      if (openWriters.get(id) === writer) openWriters.delete(id);
       images.release();
       if (useApp.getState().selectedCard?.path === id) useApp.setState({ selectedCard: null });
     };
@@ -1438,6 +1494,26 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
   useEffect(() => {
     const view = viewRef.current;
     if (!reveal || reveal.path !== id || status !== 'ok' || !view) return;
+    // a section from the queue: the caret in its heading, the heading at the top and marked
+    if (reveal.heading !== undefined) {
+      const blocks = fromDoc(view.state.doc);
+      const nth = blocks.slice(0, reveal.index).filter((b) => b.kind === 'heading' && b.text.trim()).length;
+      const at = headingPos(view.state.doc, nth, reveal.heading);
+      if (at !== null) {
+        const hiding = foldsHiding(view.state, at).map((f) => f.pos);
+        if (hiding.length) view.dispatch(view.state.tr.setMeta(foldKey, { open: hiding } satisfies FoldMeta));
+        const node = view.state.doc.nodeAt(at);
+        view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, at + 1 + (node?.content.size ?? 0))));
+        const dom = view.nodeDOM(at) as HTMLElement | null;
+        dom?.scrollIntoView({ block: 'start' });
+        if (dom) {
+          dom.classList.add('landed');
+          setTimeout(() => dom.classList.remove('landed'), 2400);
+        }
+      }
+      useApp.setState({ reveal: null });
+      return;
+    }
     const pos = cardPos(view.state.doc, reveal);
     if (pos !== null) {
       view.dispatch(view.state.tr.setSelection(NodeSelection.create(view.state.doc, pos)));
@@ -1451,6 +1527,30 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
     }
     useApp.setState({ reveal: null });
   }, [reveal, status, id]);
+
+  // a heading's own menu (right-click): come back, dismiss, or bring back, for the section under it (FORMAT.md §6.5)
+  useEffect(() => {
+    const mount = mountRef.current;
+    if (!mount) return;
+    const onMenu = (e: MouseEvent) => {
+      const view = viewRef.current;
+      const h = (e.target as HTMLElement | null)?.closest<HTMLElement>('.dd-h');
+      if (!view || !h || !mount.contains(h)) return;
+      let pos: number;
+      try { pos = view.posAtDOM(h, 0); } catch { return; }
+      const index = view.state.doc.resolve(pos).index(0);
+      const at = headingBefore(view.state.doc, index);
+      if (!at) return;
+      e.preventDefault();
+      const node = view.state.doc.nodeAt(at.pos);
+      sectionMenu(e.clientX, e.clientY, { path: id, nth: at.nth, text: at.text }, (node?.attrs.read as SectionSchedule | null) ?? undefined);
+    };
+    mount.addEventListener('contextmenu', onMenu);
+    return () => {
+      mount.removeEventListener('contextmenu', onMenu);
+      if (useApp.getState().caretHeading?.path === id) useApp.setState({ caretHeading: null });
+    };
+  }, [id]);
 
   // ── the selection: a passage to extract or make a card from ──
   // Read from the DOM, not the editor state, because a frozen document's

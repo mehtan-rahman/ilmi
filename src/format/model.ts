@@ -62,11 +62,33 @@ export interface WriteSchedule {
   extra?: Extra;
 }
 
+/**
+ * The `<!-- read … -->` line under a heading (FORMAT.md §6.5): the section,
+ * the heading and everything under it to the next heading of its level or
+ * higher, comes back on a growing interval until it is dismissed.
+ */
+export interface SectionSchedule {
+  /** The day it was enrolled. */
+  made?: string;
+  due?: string;
+  ivl?: number;
+  reps?: number;
+  /** Growth per pass, ≥ 1.1; absent means `READ_AF`. */
+  af?: number;
+  /** Its own priority, over the document's. */
+  pri?: number;
+  /** Where its passage is on the pages (milestone 48), kept as written. */
+  boxes?: string;
+  extra?: Extra;
+}
+
 export interface Heading {
   kind: 'heading';
   level: number;
   text: string;
   setext?: true;
+  /** The section under it is enrolled (`<!-- read … -->`, FORMAT.md §6.5). */
+  read?: SectionSchedule;
 }
 
 export interface Paragraph {
@@ -188,4 +210,13 @@ export const FIELD_KEYS: readonly FieldKey[] = [
 
 export function isField(e: FmEntry): e is Field {
   return 'key' in e;
+}
+
+/**
+ * A section's line that keeps it out of the queue: no `due`, and `boxes`,
+ * which is what dismissing leaves (FORMAT.md §6.5). A line with neither,
+ * written by hand, is enrolled and due now, as a bare `read:` is.
+ */
+export function sectionDismissed(s: SectionSchedule): boolean {
+  return s.due === undefined && s.boxes !== undefined;
 }

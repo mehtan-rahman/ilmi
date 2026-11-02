@@ -10,7 +10,10 @@ import { activeTab, closePane, splitPane } from './panes.js';
 import { useApp } from './store.js';
 import { MENU_ID, runMenu } from './menu.js';
 import { hasCards, studyDeck } from './deckOps.js';
-import { folderPaths } from './names.js';
+import { SESSION, folderPaths } from './names.js';
+import { sectionActions, statusOf } from './sections.js';
+import { plainMath } from './chromeText.js';
+import type { CaretHeading } from './store.js';
 import { MathText } from './MathText.js';
 import { containerOf, currentVault, openCard, openIntake, openNode, openVault, postponeRest, setSidebar, startSession, toggleInspector } from './vault.js';
 import { appNow } from './clock.js';
@@ -33,9 +36,30 @@ const COMMANDS: Command[] = [
   { id: MENU_ID.import, title: 'import…' },
 ];
 
+/** The heading the caret is under on the page in front (a tab, or the session's element), when there is one. */
+function caretHere(): CaretHeading | null {
+  const s = useApp.getState();
+  const tab = activeTab(s.panes)?.id;
+  const path = tab === SESSION ? s.sessionEl?.item.path : tab;
+  return s.caretHeading && s.caretHeading.path === path ? s.caretHeading : null;
+}
+
+/** The section command the caret's heading offers, named as the inspector and its menu name it. */
+function sectionCommand(): Command[] {
+  const at = caretHere();
+  if (!at) return [];
+  const act = sectionActions(statusOf(at.read), at)[0]!;
+  return [{ id: `section:${act.act}`, title: `${act.label} · ${plainMath(at.text)}` }];
+}
+
 function runCommand(id: string): void {
   const s = useApp.getState();
   const tab = activeTab(s.panes)?.id;
+  if (id.startsWith('section:')) {
+    const at = caretHere();
+    if (at) sectionActions(statusOf(at.read), at)[0]?.run?.();
+    return;
+  }
   switch (id) {
     case 'enter': startSession(); break;
     case 'postpone': void postponeRest().catch(console.error); break;
@@ -86,7 +110,9 @@ export function Palette() {
 
   // `postpone the rest` is offered only while something sits below the fold
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const commands = useMemo(() => [...(overflow(queue, appNow(), budget).length ? COMMANDS : COMMANDS.filter((c) => c.id !== 'postpone')), ...pluginCommands()], [queue, budget, plugins?.version]);
+  // the heading under the caret: come back, dismiss, or bring back its section
+  const caret = useApp((s) => s.caretHeading);
+  const commands = useMemo(() => [...sectionCommand(), ...(overflow(queue, appNow(), budget).length ? COMMANDS : COMMANDS.filter((c) => c.id !== 'postpone')), ...pluginCommands()], [queue, budget, plugins?.version, caret]);
   // the other vaults opened before, under `vaults`, so switching is two keys
   const vaults = useMemo(() => recents.filter((r) => r.path !== vault).map((r) => ({ path: r.path, name: r.name })), [recents, vault]);
   const index = useMemo(() => buildIndex(tree, docs, cardRefs(), commands, vaults), [tree, docs, commands, vaults]);

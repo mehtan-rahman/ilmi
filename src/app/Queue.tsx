@@ -1,4 +1,6 @@
 // The queue: a saved query over the vault, after the prototype's views.jsx.
+// One line by priority, every kind mixed (reading, sections that come back,
+// drafts, cards), each row saying where it stands under its title.
 // `today` is the outstanding queue and enters a session; the other scopes
 // are lists that open one element at a time. `j` `k` move, `⏎` enters,
 // `o` opens the one under the cursor. A budget folds the day: the rows
@@ -8,7 +10,7 @@
 import { Fragment, useEffect, useState, type MouseEvent } from 'react';
 import { PRI_DEFAULT, cardFields } from '../format/index.js';
 import { counts, dayOf, examKey, inScope, overflow, type ExamAt, type QueueItem } from '../schedule/index.js';
-import { EL_GLYPH, QUEUE_EMPTY, dayLabel, dueWhen, examName, examWhen, forExam, intervalLabel, isFresh, kindTag, refLine, snippetOf, summary } from './items.js';
+import { QUEUE_EMPTY, QUEUE_LEGEND, dayLabel, dueWhen, examName, examWhen, forExam, glyphOf, intervalLabel, isFresh, kindTag, markOf, snippetOf, standing, summary } from './items.js';
 import { pathParts, plainMath } from './chromeText.js';
 import { MathText } from './MathText.js';
 import type { DocInfo } from './store.js';
@@ -38,6 +40,8 @@ const clickOpts = (e: MouseEvent): OpenOpts => ({ cmdClick: e.metaKey || e.ctrlK
 
 /** A row's main line: the card with its blanks covered, or the next words of a document. */
 function Body({ item }: { item: QueueItem }) {
+  // a section is named by its heading
+  if (item.kind === 'section') return <span className="sec-title" dir={faceDir(item.heading)}><MathText text={item.heading} title={false} /></span>;
   if (item.kind !== 'card') {
     const s = snippetOf(item);
     return s ? <span className="read-snip" dir={faceDir(s)}><MathText text={s} title={false} /><span className="read-ell"> …</span></span> : null;
@@ -60,6 +64,8 @@ function Body({ item }: { item: QueueItem }) {
  */
 export function QueuePath({ item, docs, by }: { item: QueueItem; docs: Record<string, DocInfo>; by: 'title' | 'path' }) {
   const p = pathParts(item, docs);
+  // a section's heading is its row's title already
+  if (item.kind === 'section') delete p.section;
   const parts = [by === 'path' ? p.parent : undefined, p.doc, p.section].filter((x): x is string => !!x);
   return (
     <span className="qpath" title={plainMath(parts.join(' › '))}>
@@ -88,7 +94,7 @@ export function Queue({ scope, active }: Props) {
   // the fold: where the day's budget ends, and what below it can be postponed
   const foldAt = scope === 'today' && filter === null && budget > 0 && items.length > budget ? budget : items.length;
   const rest = foldAt < items.length ? overflow(all, now, budget) : [];
-  const restWord = [rest.filter((i) => i.kind === 'read').length, rest.filter((i) => i.kind === 'write').length]
+  const restWord = [rest.filter((i) => i.kind !== 'write').length, rest.filter((i) => i.kind === 'write').length]
     .map((n, i) => (n ? `${n} to ${i ? 'write' : 'read'}` : ''))
     .filter(Boolean)
     .join(' · ');
@@ -136,6 +142,12 @@ export function Queue({ scope, active }: Props) {
             <span><b>{sum.card}</b> to review</span>
           </div>
         )}
+        {scope === 'today' && (
+          <div className="legend">
+            in priority order
+            {QUEUE_LEGEND.map(([g, el, what]) => <span key={el}><span className="lg-sep"> · </span><span className="lg-g" data-el={el}>{g}</span> {what}</span>)}
+          </div>
+        )}
         {scope === 'today' && items.length > 0 && (
           <button type="button" className="enter-queue" onClick={() => startSession()}>
             <span className="eq-main">enter queue</span>
@@ -164,11 +176,11 @@ export function Queue({ scope, active }: Props) {
       ) : (
         <ol className="qlist">
           {items.map((item, i) => {
-            const ref = refLine(item);
+            const ref = standing(item, now, docs[item.path]?.pages?.first);
             const ivl = item.kind === 'card' ? intervalLabel(item) : '';
             const row = (
               <li
-                key={`${item.kind}:${item.path}:${item.kind === 'card' ? `${item.block}:${JSON.stringify(item.group ?? null)}:${item.dir ?? ''}` : ''}`}
+                key={`${item.kind}:${item.path}:${item.kind === 'card' ? `${item.block}:${JSON.stringify(item.group ?? null)}:${item.dir ?? ''}` : item.kind === 'section' ? `${item.block}:${item.heading}` : ''}`}
                 data-active={i === cursor ? '1' : '0'}
                 data-el={item.kind}
                 data-fresh={isFresh(item) ? '1' : '0'}
@@ -176,7 +188,7 @@ export function Queue({ scope, active }: Props) {
                 onMouseEnter={() => setCursor(i)}
                 onClick={(e) => open(item, clickOpts(e))}
               >
-                <span className="mark" data-el={item.kind}>{EL_GLYPH[item.kind]}</span>
+                <span className="mark" data-el={markOf(item)}>{glyphOf(item)}</span>
                 <span className="body">
                   <span className="src" data-by={by}>
                     <span className="kindtag" data-el={item.kind}>{kindTag(item)}</span>

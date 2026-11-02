@@ -36,6 +36,19 @@
 }
 .queue .summary span { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .queue .summary b { color: var(--fg-2); font-weight: 500; }
+/* what the marks mean, one line: the order is priority's, every kind mixed */
+.queue .legend {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--fg-4);
+  margin-top: 4px;
+  line-height: 1.5;
+}
+.queue .legend .lg-sep { color: var(--fg-5); }
+.queue .legend .lg-g { font-family: var(--serif); }
+.queue .legend .lg-g[data-el="read"] { color: var(--el-read); }
+.queue .legend .lg-g[data-el="section"] { color: var(--el-write); }
+.queue .legend .lg-g[data-el="card"] { color: var(--el-card); font-size: 9px; }
 
 /* enter queue: a row, not a banner */
 .queue .enter-queue {
@@ -160,8 +173,9 @@
   color: var(--fg-4);
   text-align: center;
 }
-.qlist .mark[data-el="read"] { color: var(--el-read); font-size: 12px; }
+.qlist .mark[data-el="read"] { color: var(--el-read); font-family: var(--serif); font-size: 15px; }
 .qlist .mark[data-el="write"] { color: var(--el-write); }
+.qlist .mark[data-el="section"] { color: var(--el-write); font-family: var(--serif); font-size: 13px; }
 .qlist .mark[data-el="card"] { color: var(--el-card); }
 .qlist .body {
   font-family: var(--serif);
@@ -214,12 +228,13 @@
 }
 .qlist .body .cs-arrow { font-family: var(--mono); font-size: 11px; color: var(--fg-4); }
 .qlist .read-snip { font-style: italic; color: var(--fg-3); }
+.qlist .sec-title { color: var(--fg-1); }
 .qlist .read-snip .read-ell { color: var(--fg-5); font-style: normal; }
 .qlist .body .ref-line {
   display: block;
   font-family: var(--mono);
-  font-size: 9.5px;
-  color: var(--fg-5);
+  font-size: 10px;
+  color: var(--fg-4);
   letter-spacing: 0.02em;
   margin-top: 4px;
 }

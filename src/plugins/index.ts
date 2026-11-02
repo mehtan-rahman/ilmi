@@ -14,7 +14,7 @@ import { activeTab } from '../app/panes.js';
 import { useApp } from '../app/store.js';
 import { note, openNode } from '../app/vault.js';
 import type { Card } from '../format/index.js';
-import type { CardItem, Grade, QueueItem, ReadItem, WriteItem } from '../schedule/index.js';
+import type { CardItem, Grade, QueueItem, ReadItem, SectionItem, WriteItem } from '../schedule/index.js';
 import { tauriFs } from '../vault/tauri-fs.js';
 import type { Vault } from '../vault/index.js';
 import type * as A from './api.js';
@@ -55,7 +55,9 @@ export function usePlugins(): PluginHost | null {
 }
 
 function toElement(item: QueueItem): A.QueueElement {
-  const out: A.QueueElement = { kind: item.kind, path: item.path, due: item.dueAt.toISOString(), pri: item.pri };
+  // a section that comes back is reading to a plugin, its heading's block named
+  const out: A.QueueElement = { kind: item.kind === 'section' ? 'read' : item.kind, path: item.path, due: item.dueAt.toISOString(), pri: item.pri };
+  if (item.kind === 'section') out.block = item.block;
   if (item.kind === 'card') {
     out.block = item.block;
     out.text = item.text;
@@ -213,8 +215,8 @@ export function emitGrade(item: CardItem, grade: Grade, card: Card | null): void
 }
 
 /** A topic was read on, or a draft worked on. */
-export function emitDocAction(item: ReadItem | WriteItem): void {
-  host?.emit(item.kind === 'read' ? 'read-on' : 'worked-on', { element: toElement(item) });
+export function emitDocAction(item: ReadItem | WriteItem | SectionItem): void {
+  host?.emit(item.kind === 'write' ? 'worked-on' : 'read-on', { element: toElement(item) });
 }
 
 // ── the palette ─────────────────────────────────────────────────

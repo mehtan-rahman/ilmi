@@ -881,3 +881,18 @@ mark.find-hit { color: inherit; padding: 0; }
 /* a case ending's blank: its letter, the mark only once revealed; no inline
    padding, so the letter keeps its joins to its neighbours */
 .cz.on-letter, .cloze.on-letter { padding-inline: 0 !important; }
+
+/* a section that comes back (FORMAT.md §6.5): a quiet § after its heading, grey once dismissed */
+.draft-doc .dd-h[data-read]::after {
+  content: "§";
+  margin-inline-start: 0.45em;
+  font-size: 0.72em;
+  font-weight: 400;
+  color: var(--el-write);
+  vertical-align: 0.1em;
+  user-select: none;
+}
+.draft-doc .dd-h[data-read="dismissed"]::after { color: var(--fg-5); }
+/* where a section from the queue opened: a quiet fill that fades */
+.draft-doc .dd-h { transition: background 1.2s ease-out; }
+.draft-doc .dd-h.landed { background: var(--accent-soft); }

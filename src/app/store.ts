@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { NodeType, ReadSchedule, Review, WriteSchedule } from '../format/index.js';
+import type { NodeType, ReadSchedule, Review, SectionSchedule, WriteSchedule } from '../format/index.js';
 import type { QueueItem } from '../schedule/index.js';
 import type { Order, TreeNode } from '../vault/index.js';
 import type { DeckView } from './deck.js';
@@ -98,6 +98,8 @@ export interface DocInfo {
   /** Card blocks, and how many of them have something due. */
   cards: number;
   due: number;
+  /** Sections that come back (FORMAT.md §6.5) due now; absent for none. */
+  sections?: number;
   read?: ReadSchedule;
   write?: WriteSchedule;
   /** The `pri` field; absent means the default. */
@@ -137,6 +139,22 @@ export interface Reveal {
   /** The block index when it was named; `id` finds the card if that has moved. */
   index: number;
   id?: string;
+  /** A section's heading, not a card (a section opened from the queue): its text finds it if it has moved. */
+  heading?: string;
+}
+
+/**
+ * The heading the caret is under in a reader, for the inspector's section
+ * part, the palette and the heading's menu: the page, the heading's place
+ * among the page's headings (the outline's count, empty ones left out), and
+ * its text. Transient; never saved.
+ */
+export interface CaretHeading {
+  path: string;
+  nth: number;
+  text: string;
+  /** Its section's line as the page holds it now, when it has one. */
+  read?: SectionSchedule;
 }
 
 export const INSP_MIN = 220;
@@ -144,7 +162,7 @@ export const INSP_MAX = 520;
 export const INSP_DEFAULT = 280;
 
 /** The kinds of element a session walks. */
-export type El = 'card' | 'read' | 'write';
+export type El = 'card' | 'read' | 'write' | 'section';
 
 /** A review session: the elements, in order, and a number that changes each time one starts. */
 export interface Session {
@@ -204,6 +222,7 @@ export interface AppState {
   tweaksOpen: boolean;
   selectedCard: SelectedCard | null;
   reveal: Reveal | null;
+  caretHeading: CaretHeading | null;
   /** Where the intake places its next source: the folder it was opened from. */
   intakeDir: string;
   /** Every element over the vault, sorted, as of `queueAt`; the saved queries filter it. */
@@ -291,6 +310,7 @@ export const useApp = create<AppState>((set, get) => ({
   tweaksOpen: false,
   selectedCard: null,
   reveal: null,
+  caretHeading: null,
   intakeDir: '',
   queue: [],
   queueAt: new Date(0),

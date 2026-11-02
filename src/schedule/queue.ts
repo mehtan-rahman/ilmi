@@ -1,6 +1,7 @@
 // The queue: a query over a vault for what is due. Cards (one item per cloze
 // group, everything else one item), reading topics (documents with `read:`),
-// and writing drafts (documents with `write:` not done). What is due sorts by
+// sections that come back (a heading's `<!-- read … -->` line), and
+// writing drafts (documents with `write:` not done). What is due sorts by
 // priority, then due, then document order, the way SuperMemo sorts its
 // outstanding queue; what is not due yet sorts by due, then priority. Nothing
 // here is stored; `gradeItem` is the one mutation, and it rewrites one
@@ -8,7 +9,7 @@
 
 import {
   PRI_DEFAULT, blanks, cardForm, clozeParts, meta, nextGroup,
-  type Card, type CardForm, type CardSchedule, type Doc, type ReadSchedule, type WriteSchedule,
+  type Card, type CardForm, type CardSchedule, type Doc, type ReadSchedule, type SectionSchedule, type WriteSchedule,
 } from '../format/index.js';
 import type { Vault } from '../vault/index.js';
 import { grade, type Grade } from './card.js';
@@ -18,6 +19,7 @@ import type { Exam, LeechAction } from '../format/index.js';
 import { addDays, dayOf, dayStart, whenToDate } from './dates.js';
 import { advanceRead } from './read.js';
 import { advanceWrite } from './write.js';
+import { advanceSection, sectionInQueue, sectionState } from './section.js';
 import { buryLinked, cardsById } from './links.js';
 
 /** A numbered cloze group, or the index of an unnumbered blank in `blanks(text)` order. */
@@ -95,6 +97,11 @@ export interface ReadItem extends ItemBase {
   note?: true;
   /** A document read by its pages: `pos` is a page, and what is left is not counted. */
   pdf?: true;
+  /** An extract: it comes back as a section does, and says where it stands in the same words. */
+  extract?: true;
+  /** On a note revisited or an extract: anything written in it, and its cards. */
+  written?: boolean;
+  cards?: number;
 }
 
 export interface WriteItem extends ItemBase {
@@ -104,7 +111,25 @@ export interface WriteItem extends ItemBase {
   lead?: string;
 }
 
-export type QueueItem = CardItem | ReadItem | WriteItem;
+/**
+ * A section that comes back (FORMAT.md §6.5): the heading at `block` and
+ * what is under it, to the next heading of its level or higher.
+ */
+export interface SectionItem extends ItemBase {
+  kind: 'section';
+  /** Index of its heading in `doc.blocks` when the queue was built. */
+  block: number;
+  heading: string;
+  level: number;
+  /** The headings over it, outermost first, its own last. */
+  trail: string[];
+  sched: SectionSchedule;
+  /** Anything written under the heading, and its cards: where it stands. */
+  written: boolean;
+  cards: number;
+}
+
+export type QueueItem = CardItem | ReadItem | WriteItem | SectionItem;
 
 export type Scope = 'all' | 'today' | 'upcoming' | 'reading' | 'writing' | 'cards';
 
@@ -239,6 +264,11 @@ export function docItems(path: string, doc: Doc, now: Date): QueueItem[] {
     if (m.pdf !== undefined && pos > 0) item.page = pos;
     if (note) item.note = true;
     if (m.pdf !== undefined) item.pdf = true;
+    if (m.type === 'extract') item.extract = true;
+    if (note || m.type === 'extract') {
+      item.written = prose.some((b) => b.kind !== 'heading' && b.text.trim() !== '');
+      item.cards = doc.blocks.length - prose.length;
+    }
     out.push(item);
   }
   if (m.write && !m.write.done) {
@@ -253,6 +283,13 @@ export function docItems(path: string, doc: Doc, now: Date): QueueItem[] {
     if (b.kind === 'heading') {
       while (open.length && open[open.length - 1]!.level >= b.level) open.pop();
       open.push({ level: b.level, text: b.text });
+      // a section enrolled: its own priority, else the document's
+      if (sectionInQueue(b.read)) {
+        out.push({
+          kind: 'section', path, block: i, heading: b.text, level: b.level, trail: open.map((h) => h.text), sched: b.read,
+          ...sectionState(doc.blocks, i), ...withDue(b.read, now), pri: b.read.pri ?? docPri,
+        });
+      }
     } else if (b.kind === 'card') out.push(...cardItems(path, i, b, open.map((h) => h.text), docPri, now));
   });
   return out;
@@ -285,6 +322,7 @@ export function queueItems(docs: Iterable<[string, Doc]>, now: Date): QueueItem[
 /** The same element: one card group, or one document's reading or writing. */
 export function sameItem(a: QueueItem, b: QueueItem): boolean {
   if (a.kind !== b.kind || a.path !== b.path) return false;
+  if (a.kind === 'section' && b.kind === 'section') return a.heading === b.heading && (a.block === b.block || a.trail.join('\n') === b.trail.join('\n'));
   if (a.kind !== 'card' || b.kind !== 'card') return true;
   const same = a.id !== undefined && b.id !== undefined ? a.id === b.id : a.block === b.block && a.text === b.text;
   return same && JSON.stringify(a.group ?? null) === JSON.stringify(b.group ?? null) && (a.dir ?? 'f') === (b.dir ?? 'f');
@@ -295,7 +333,8 @@ export function inScope(item: QueueItem, scope: Scope, now: Date): boolean {
     case 'all': return true;
     case 'today': return isDue(item, now);
     case 'upcoming': return !isDue(item, now);
-    case 'reading': return item.kind === 'read';
+    // a section comes back as reading does
+    case 'reading': return item.kind === 'read' || item.kind === 'section';
     case 'writing': return item.kind === 'write';
     case 'cards': return item.kind === 'card';
   }
@@ -326,23 +365,24 @@ export function fold(items: QueueItem[], n: number): Fold {
  * first. Cards are never here: FSRS folds their lateness into the next
  * grade, so the app only orders them.
  */
-export function overflow(items: QueueItem[], now: Date, budget: number): (ReadItem | WriteItem)[] {
+export function overflow(items: QueueItem[], now: Date, budget: number): (ReadItem | WriteItem | SectionItem)[] {
   const due = sortQueue(items.filter((i) => isDue(i, now)), now);
   return fold(due, budget).below
-    .filter((i): i is ReadItem | WriteItem => i.kind !== 'card')
+    .filter((i): i is ReadItem | WriteItem | SectionItem => i.kind !== 'card')
     .sort((a, b) => b.pri - a.pri);
 }
 
 /**
  * Postpone everything `overflow` names, one file at a time, each through
- * `vault.update`, so each rewrites its own `read` or `write` line and
- * nothing else. Resolves to what was postponed.
+ * `vault.update`, so each rewrites its own `read` or `write` line (or a
+ * section's heading line) and nothing else. Resolves to what was postponed.
  */
-export async function postponeOverflow(vault: Vault, items: QueueItem[], now: Date, budget: number): Promise<(ReadItem | WriteItem)[]> {
+export async function postponeOverflow(vault: Vault, items: QueueItem[], now: Date, budget: number): Promise<(ReadItem | WriteItem | SectionItem)[]> {
   const rest = overflow(items, now, budget);
   for (const item of rest) {
     await vault.update(item.path, (doc) => {
       if (item.kind === 'read') advanceRead(doc, 'postpone', now);
+      else if (item.kind === 'section') advanceSection(doc, item.block, item.heading, 'postpone', now);
       else advanceWrite(doc, 'postpone', now);
     });
   }

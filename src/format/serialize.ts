@@ -1,8 +1,8 @@
 // Doc → text, in canonical form. FORMAT.md §8.
 
 import { formatAttrs, writeAttrs } from './attrs.js';
-import { formatFrontmatter } from './frontmatter.js';
-import type { Block, Card, CardSchedule, Doc } from './model.js';
+import { SECTION_SPECS, formatFrontmatter } from './frontmatter.js';
+import type { Block, Card, CardSchedule, Doc, SectionSchedule } from './model.js';
 import { SR_SPECS } from './parse.js';
 
 /** One `sr` line: bare, a cloze group's (`sr cN`), or a both-ways card's reverse (`sr r`). */
@@ -10,6 +10,12 @@ export function formatSchedule(s: CardSchedule, group?: number | 'r'): string {
   const head = group === undefined ? 'sr' : group === 'r' ? 'sr r' : `sr c${group}`;
   const attrs = formatAttrs(writeAttrs(s, SR_SPECS));
   return `<!-- ${head}${attrs ? ' ' + attrs : ''} -->`;
+}
+
+/** A section's line, under its heading (§6.5). */
+export function formatSection(s: SectionSchedule): string {
+  const attrs = formatAttrs(writeAttrs(s, SECTION_SPECS));
+  return `<!-- read${attrs ? ' ' + attrs : ''} -->`;
 }
 
 function withId(text: string, id: string | undefined): string {
@@ -32,12 +38,13 @@ function cardLines(c: Card): string[] {
 export function formatBlock(b: Block): string {
   switch (b.kind) {
     case 'heading': {
-      if (b.setext) return `${b.text}\n${b.level === 1 ? '===' : '---'}`;
-      if (!b.text) return '#'.repeat(b.level);
+      const read = b.read ? `\n${formatSection(b.read)}` : '';
+      if (b.setext) return `${b.text}\n${b.level === 1 ? '===' : '---'}${read}`;
+      if (!b.text) return '#'.repeat(b.level) + read;
       // text that is all hashes, or ends in space + hashes, would be read as
       // a closing sequence; an explicit closing ` #` protects it
       const guard = /(^|[ \t])#+$/.test(b.text) ? ' #' : '';
-      return `${'#'.repeat(b.level)} ${b.text}${guard}`;
+      return `${'#'.repeat(b.level)} ${b.text}${guard}${read}`;
     }
     case 'paragraph':
       return [withId(b.text, b.id), ...(b.extracts ?? []).map((n) => `<!-- extract ${n} -->`)].join('\n');

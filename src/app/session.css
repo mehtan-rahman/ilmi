@@ -222,7 +222,7 @@
   z-index: 30;
   width: 100%;
   max-width: min(calc(var(--reading-width) + 40px), 100%);
-  margin: -56px auto 0;
+  margin: -84px auto 0;
   padding: 0 12px;
   pointer-events: none;
 }
@@ -244,6 +244,22 @@
 .session-bar .sb-kind { font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.08em; }
 .session-bar .sb-kind[data-el="read"] { color: var(--el-read); }
 .session-bar .sb-kind[data-el="write"] { color: var(--el-write); }
+.session-bar .sb-kind[data-el="section"] { color: var(--el-write); }
+/* what it is and where it stands, the queue row's words, one line */
+.session-bar .sb-stands {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: -2px 0 8px;
+  padding: 0 3px;
+  min-width: 0;
+  white-space: nowrap;
+}
+.session-bar .sb-g { font-family: var(--serif); font-size: 13px; color: var(--fg-4); flex-shrink: 0; }
+.session-bar .sb-g[data-el="read"] { color: var(--el-read); }
+.session-bar .sb-g[data-el="section"] { color: var(--el-write); }
+.session-bar .sb-what { font-family: var(--serif); font-size: 13.5px; color: var(--fg-1); overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.session-bar .sb-where { font-family: var(--mono); font-size: 10px; color: var(--fg-4); flex-shrink: 0; }
 .session-bar .sb-actions { display: flex; gap: 8px; }
 .session-bar .sb-actions button {
   display: flex;

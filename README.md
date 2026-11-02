@@ -151,8 +151,11 @@ in a deck        j k move, ⌫ delete the selected card, m make a card;
                  × on a row, or right-click, also deletes one; right-click moves it to another deck
 in the queue     j k move, ⏎ enter, o open one; a row names its file by its
                  path (`queue shows titles` in the tweaks brings the title back)
-in a session     [ ] prev / next; space reveal, 1-4 grade; ⏎ read on or
-                 worked on it, p postpone, d done
+in a session     [ ] prev / next; space reveal, 1-4 grade; ⏎ next (a
+                 book's: done for today), p later, d dismiss
+on a heading     right-click: come back (its section returns until you
+                 dismiss it), dismiss, or bring back; the inspector and
+                 the palette have the same
 ```
 
 A PDF dropped on the intake lands as a pair, `name.pdf` beside `name.md`: the
@@ -252,6 +255,20 @@ above a card names its document and the headings over it, and `o` (or a
 click on that line) opens the document scrolled to the card, marked.
 `study` in the top row of a note or source with cards, and on a tab's
 `···`, studies what is due in it.
+
+Any section of a note or a source can come back: `come back` on the
+heading under the caret (the inspector, the heading's right-click menu, or
+the palette) writes `<!-- read made=… due=… ivl=3 -->` under it, and the
+section (the heading and everything under it, up to the next heading of its
+level) is in the day's queue in three days, sorted by priority with the
+reading and the cards, never grouped by kind. Every row says where it
+stands in one line: a section `boxed oct 29, nothing written yet`, `written,
+no cards yet` or `written, 3 cards`, then `first time back` or `back for the
+2nd time`; a book `read on from p. 42`. A section opens in its document at
+its heading, in the editor, to write in and card; the same three choices
+everywhere: ⏎ **next · back in Nd**, `p` **later** (not counted), `d`
+**dismiss** (its notes and cards stay). The tree's due counts include
+sections.
 
 The inspector sets a priority, 0 first and 100 last, on a document or on the
 selected card; what is due sorts by it. It also sets a topic's growth, the

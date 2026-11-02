@@ -6,7 +6,7 @@
 // atom.
 
 import { Schema } from 'prosemirror-model';
-import type { Card } from '../format/index.js';
+import { sectionDismissed, type Card, type SectionSchedule } from '../format/index.js';
 
 /** The first word of a fence line's info string, `''` when none. */
 export const langOf = (fence: string): string => (/^ {0,3}(?:`{3,}|~{3,})(.*)$/.exec(fence)?.[1] ?? '').trim().split(/\s+/)[0] ?? '';
@@ -39,8 +39,14 @@ export const schema = new Schema({
       content: 'inline*',
       whitespace: 'pre',
       defining: true,
-      attrs: { level: { default: 2 }, setext: { default: false } },
-      toDOM(n) { return [`h${n.attrs.level as number}`, { class: 'dd-h' }, 0]; },
+      /** `read`: the section's `<!-- read … -->` line (FORMAT.md §6.5), verbatim; null when it has none. */
+      attrs: { level: { default: 2 }, setext: { default: false }, read: { default: null } },
+      toDOM(n) {
+        const read = n.attrs.read as SectionSchedule | null;
+        // an enrolled section's heading says so, quietly: in the queue, or dismissed
+        const state = !read ? null : sectionDismissed(read) ? 'dismissed' : 'on';
+        return [`h${n.attrs.level as number}`, { class: 'dd-h', ...(state ? { 'data-read': state } : {}) }, 0];
+      },
     },
     card: {
       group: 'block',

@@ -8,8 +8,28 @@ import { nameOf } from '../vault/index.js';
 import type { QueueScope } from './names.js';
 import type { DocInfo, El } from './store.js';
 
-export const EL_GLYPH: Record<El, string> = { read: '▤', write: '✎', card: '◆' };
-export const EL_WORD: Record<El, string> = { read: 'reading', write: 'writing', card: 'card' };
+export const EL_GLYPH: Record<El, string> = { read: '“', write: '✎', card: '◆', section: '§' };
+export const EL_WORD: Record<El, string> = { read: 'reading', write: 'writing', card: 'card', section: 'section' };
+
+/**
+ * A row's mark: `“` a book or source to read on in, `§` what comes back
+ * until it is dismissed (a section, a note revisited, an extract), `◆` a
+ * card, `✎` a draft.
+ */
+export function glyphOf(item: QueueItem): string {
+  if (item.kind === 'read' && (item.note || item.extract)) return EL_GLYPH.section;
+  return EL_GLYPH[item.kind];
+}
+
+/** What a row's mark is drawn as: a note revisited and an extract are drawn as sections are. */
+export const markOf = (item: QueueItem): El => (item.kind === 'read' && (item.note || item.extract) ? 'section' : item.kind);
+
+/** The queue's head, one line: what the marks mean, and that the order is priority's. */
+export const QUEUE_LEGEND: [glyph: string, el: El, what: string][] = [
+  ['“', 'read', 'read on in a book'],
+  ['§', 'section', 'a passage or section, back until you dismiss it'],
+  ['◆', 'card', 'a card'],
+];
 
 /** One quiet line when a saved query has nothing. */
 export const QUEUE_EMPTY: Record<QueueScope, string> = {
@@ -84,6 +104,7 @@ export const pathLabel = (path: string): string => path.replace(/\.md$/, '');
  */
 export function sourceLabel(item: QueueItem, docs: Record<string, DocInfo>, by: 'title' | 'path' = 'title'): string {
   const name = by === 'path' ? pathLabel(item.path) : docs[item.path]?.title ?? nameOf(item.path);
+  if (item.kind === 'section') return `${name} — ${item.heading}`;
   if (item.kind !== 'card' || !item.section) return name;
   return `${name} — ${item.section.replace(/^§\d+\s*—\s*/, '')}`;
 }
@@ -115,12 +136,15 @@ export function firstWords(text: string, n: number): string {
 
 /** Never scheduled before. */
 export function isFresh(item: QueueItem): boolean {
+  // what comes back until it is dismissed says how often in its own words (`standing`)
+  if (item.kind === 'section' || (item.kind === 'read' && (item.note || item.extract))) return false;
   return item.kind === 'card' ? !item.sched || !item.sched.reps : !item.sched.reps;
 }
 
-/** The tag before the label in a row: `note` (a note revisited), `read`, `write`, or the card's form. */
+/** The tag before the label in a row: `note` (a note revisited), `extract`, `section`, `read`, `write`, or the card's form. */
 export function kindTag(item: QueueItem): string {
   if (item.kind === 'read' && item.note) return 'note';
+  if (item.kind === 'read' && item.extract) return 'extract';
   return item.kind === 'card' ? FORM_LABEL[item.form] : item.kind;
 }
 
@@ -132,6 +156,56 @@ export function refLine(item: QueueItem): string {
   return '';
 }
 
+/** `2nd`, `3rd`, `11th`, `21st`. */
+export function nth(n: number): string {
+  const t = n % 100;
+  const s = t >= 11 && t <= 13 ? 'th' : n % 10 === 1 ? 'st' : n % 10 === 2 ? 'nd' : n % 10 === 3 ? 'rd' : 'th';
+  return `${n}${s}`;
+}
+
+/** A day as a row names it in passing: `oct 29`. */
+export function shortDay(day: string): string {
+  const d = dayStart(day.slice(0, 10));
+  return `${MONTHS[d.getMonth()]} ${d.getDate()}`;
+}
+
+/**
+ * Where something that comes back stands, in the user's words: what is
+ * under it (`boxed oct 29, nothing written yet` with boxes, `made oct 29,
+ * …` without, `written, no cards yet`, `written, 3 cards`), then how
+ * often it has been back (`first time back`, `back for the 2nd time`), or
+ * `new` the day it was made.
+ */
+export function standsWords(s: { written: boolean; cards: number; made?: string; boxes?: string; reps?: number }, now: Date): string {
+  const what = !s.written && !s.cards
+    ? (s.made ? `${s.boxes !== undefined ? 'boxed' : 'made'} ${shortDay(s.made)}, nothing written yet` : 'nothing written yet')
+    : !s.cards ? 'written, no cards yet' : `written, ${s.cards} card${s.cards === 1 ? '' : 's'}`;
+  const back = s.reps ? `back for the ${nth(s.reps + 1)} time` : s.made === dayOf(now) ? 'new' : 'first time back';
+  return `${what} · ${back}`;
+}
+
+/**
+ * The one line under a row's title that says where the item stands: a
+ * section, a note revisited, and an extract in `standsWords`; a book or
+ * source the page or the share it reads on from; a draft its pass. A card
+ * says nothing here: its due and interval say it.
+ */
+export function standing(item: QueueItem, now: Date, firstPage?: number): string {
+  switch (item.kind) {
+    case 'section':
+      return standsWords({ written: item.written, cards: item.cards, reps: item.sched.reps ?? 0, ...(item.sched.made ? { made: item.sched.made } : {}), ...(item.sched.boxes !== undefined ? { boxes: item.sched.boxes } : {}) }, now);
+    case 'read':
+      if (item.note || item.extract) return standsWords({ written: !!item.written, cards: item.cards ?? 0, reps: item.sched.reps ?? 0 }, now);
+      if (item.pdf) return `read on from p. ${item.page ?? firstPage ?? 1}`;
+      if (item.total > 0 && item.pos > 0) return `read on, ${Math.round((item.pos / item.total) * 100)}% read`;
+      return 'read from the start';
+    case 'write':
+      return item.sched.reps ? `pass ${item.sched.reps + 1}` : 'first pass';
+    case 'card':
+      return '';
+  }
+}
+
 /** A scheduled card's interval, under its due; nothing for a new one. */
 export function intervalLabel(item: CardItem): string {
   return item.sched?.ivl && item.sched.ivl >= 1 ? fmtDays(item.sched.ivl) : '';
@@ -139,6 +213,7 @@ export function intervalLabel(item: CardItem): string {
 
 /** The row's body for a read or write item: the next words, or nothing. */
 export function snippetOf(item: QueueItem): string {
+  if (item.kind === 'section') return item.heading;
   if (item.kind === 'read') return item.next ? firstWords(item.next, 15) : '';
   if (item.kind === 'write') return item.lead ? firstWords(item.lead, 16) : '';
   return '';
@@ -168,7 +243,8 @@ export function sessionItems(today: QueueItem[], start: QueueItem): QueueItem[] 
 /** The header's counts for the day: to read, to write, to review. */
 export function summary(items: QueueItem[]): { read: number; write: number; card: number } {
   const out = { read: 0, write: 0, card: 0 };
-  for (const i of items) out[i.kind]++;
+  // a section comes back to be read again, as a note revisited does
+  for (const i of items) out[i.kind === 'section' ? 'read' : i.kind]++;
   return out;
 }
 

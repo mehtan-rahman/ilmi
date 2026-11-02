@@ -3,7 +3,7 @@
 // them. Prose text is verbatim in both directions, math chips included.
 
 import { Fragment, type Node as PMNode } from 'prosemirror-model';
-import { cardForm, mathSpanEnd, type Block, type Card, type Heading, type Paragraph, type Raw } from '../format/index.js';
+import { cardForm, mathSpanEnd, type Block, type Card, type Heading, type Paragraph, type Raw, type SectionSchedule } from '../format/index.js';
 import { nodeToRaw, rawToNode } from './raw.js';
 import { schema } from './schema.js';
 
@@ -44,7 +44,7 @@ export function inline(text: string): Fragment {
 function blockNode(b: Block): PMNode {
   switch (b.kind) {
     case 'heading':
-      return schema.nodes.heading!.create({ level: b.level, setext: b.setext === true }, inline(b.text));
+      return schema.nodes.heading!.create({ level: b.level, setext: b.setext === true, read: b.read ? structuredClone(b.read) : null }, inline(b.text));
     case 'paragraph':
       return schema.nodes.paragraph!.create({ id: b.id ?? null, extracts: b.extracts ? [...b.extracts] : null }, inline(b.text));
     case 'card':
@@ -83,6 +83,8 @@ export function textOf(node: PMNode): string {
 export function fromDoc(doc: PMNode): Block[] {
   const out: Block[] = [];
   const ids = new Set<string>();
+  // a heading split in two carries its section's line to both halves: the first keeps it
+  let lastRead: SectionSchedule | null = null;
   doc.forEach((node) => {
     switch (node.type.name) {
       case 'heading': {
@@ -90,6 +92,9 @@ export function fromDoc(doc: PMNode): Block[] {
         if (!text.trim()) return;
         const h: Heading = { kind: 'heading', level: node.attrs.level as number, text };
         if (node.attrs.setext === true) h.setext = true;
+        const read = node.attrs.read as SectionSchedule | null;
+        if (read && read !== lastRead) h.read = structuredClone(read);
+        lastRead = read;
         out.push(h);
         return;
       }

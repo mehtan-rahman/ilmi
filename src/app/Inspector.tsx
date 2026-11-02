@@ -11,21 +11,22 @@ import {
   AF_MIN, PRI_DEFAULT, PRI_MAX, PRI_MIN, READ_AF, RETENTION_MAX, RETENTION_MIN, WRITE_AF, cardForm, docPri, meta, parse, parseAf, parseCount, parsePri, parseRetention, setField,
   type Block, type Card, type CardForm, type CardSchedule, type Doc, type ReadSchedule, type WriteSchedule,
 } from '../format/index.js';
-import { activeExam, advanceWrite, dayOf, examKey, examLeft, inScope, nextIntervals, type CardItem, type OptionKey } from '../schedule/index.js';
+import { activeExam, advanceWrite, dayOf, examKey, examLeft, inScope, nextIntervals, sectionState, type CardItem, type OptionKey } from '../schedule/index.js';
 import { baseOf, childDirOf, childrenAt, dirOf, isDoc, pageOfBlock, type TreeNode } from '../vault/index.js';
 import { cardName, formLabel } from './chrome.js';
 import { breakdown, countsUnder, dueItems, plainMath } from './chromeText.js';
 import { MathText } from './MathText.js';
-import { FORM_LABEL, dueLabel, dueWhen, examDay, examName, examWhen, fmtDays, leftLines } from './items.js';
+import { FORM_LABEL, dueLabel, dueWhen, examDay, examName, examWhen, fmtDays, leftLines, standsWords } from './items.js';
 import { INTAKE, QUEUE_TITLE, SESSION, findNode, queueScope, titleOf } from './names.js';
 import { activeTab } from './panes.js';
-import { useApp, type DocInfo } from './store.js';
+import { useApp, type CaretHeading, type DocInfo } from './store.js';
 import { useDoc } from './useDoc.js';
 import { currentVault, examsAtPath, openCard, openNode, optionsAt, resetCard } from './vault.js';
 import { currentCards, linkedTo, pairsOf, unlinkCards } from './sameOps.js';
 import { docsUnder } from './deck.js';
 import { foldedHeadings, notebookOf, outline } from './tabs.js';
 import { goToHeading } from './headings.js';
+import { headingOf, sectionActions, statusOf, writeDoc } from './sections.js';
 import { appNow } from './clock.js';
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
@@ -503,6 +504,48 @@ function DocInspector({ id, info, doc, now }: { id: string; info: DocInfo; doc: 
   );
 }
 
+// ── a section that comes back ───────────────────────────────────
+
+/**
+ * The section under the caret (FORMAT.md §6.5): its heading, where it
+ * stands and when it is next, its priority (its own line's, else the
+ * document's), and the one thing to do: come back, dismiss, or bring back.
+ */
+export function SectionBlock({ path, doc, at, now }: { path: string; doc: Doc; at: CaretHeading; now: Date }) {
+  const found = headingOf(doc, at);
+  if (!found) return null;
+  const { index, heading } = found;
+  const read = heading.read;
+  const status = statusOf(read);
+  const here: CaretHeading = { path, nth: at.nth, text: heading.text };
+  const rows: [string, ReactNode][] = [['section', <MathText key="h" className="sec-h" dir="auto" text={heading.text} />]];
+  if (read) {
+    const st = sectionState(doc.blocks, index);
+    const words = standsWords({ ...st, reps: read.reps ?? 0, ...(read.made ? { made: read.made } : {}), ...(read.boxes !== undefined ? { boxes: read.boxes } : {}) }, now);
+    rows.push(['stands', <span key="st" className="sec-stands">{status === 'dismissed' ? `${words.split(' · ')[0]} · dismissed` : words}</span>]);
+    rows.push(['next', <span key="nx" className="mono sec-next">{status === 'dismissed' ? 'never: dismissed' : dueWhen(read.due, now)}</span>]);
+    const setPri = (n: number | null) => void writeDoc(path, (d) => {
+      const h = headingOf(d, here)?.heading;
+      if (!h?.read) return;
+      if (n === null) delete h.read.pri;
+      else h.read.pri = n;
+    }).catch(console.error);
+    rows.push(['priority', <PriField key={`${path}:${heading.text}`} value={read.pri} fallback={docPri(meta(doc))} onCommit={setPri} />]);
+  }
+  const act = sectionActions(status, here)[0]!;
+  return (
+    <Block title="section">
+      <div className="sec-block" data-status={status}>
+        <KV rows={rows} />
+        <div className="frozen-row">
+          <span className="fr-state">{status === 'none' ? 'not coming back' : status === 'on' ? 'comes back until dismissed' : 'dismissed; its notes and cards stay'}</span>
+          <button type="button" className="fr-toggle" data-act={act.act} onClick={() => act.run?.()}>{act.label}</button>
+        </div>
+      </div>
+    </Block>
+  );
+}
+
 /** A card's block: its form, where it is, its schedule, and the editor. */
 /** One schedule's numbers, or one quiet word. */
 function SchedKV({ sched, none, now }: { sched: CardSchedule | undefined; none: string; now: Date }) {
@@ -611,6 +654,7 @@ export function Inspector() {
   const session = useApp((s) => s.session);
   const sessionEl = useApp((s) => s.sessionEl);
   const selected = useApp((s) => s.selectedCard);
+  const caret = useApp((s) => s.caretHeading);
   const intakeDir = useApp((s) => s.intakeDir);
   const root = useApp((s) => s.vault);
   const now = appNow();
@@ -637,7 +681,9 @@ export function Inspector() {
     else if (cur.kind === 'card') {
       body = <WithDoc id={cur.path} render={(doc) => { const i = cardIndex(doc, cur); return i < 0 ? <Gone kind="card" /> : <CardBlock path={cur.path} index={i} doc={doc} group={cur.group} {...(cur.dir ? { dir: cur.dir } : {})} now={now} />; }} />;
     } else {
-      body = <WithDoc id={cur.path} render={(doc, info) => <DocInspector id={cur.path} info={info} doc={doc} now={now} />} />;
+      // a section's part: the heading the caret is under on its page, else the section on show
+      const at: CaretHeading | null = caret?.path === cur.path ? caret : cur.kind === 'section' ? { path: cur.path, nth: -1, text: cur.heading } : null;
+      body = <WithDoc id={cur.path} render={(doc, info) => <>{at && <SectionBlock path={cur.path} doc={doc} at={at} now={now} />}<DocInspector id={cur.path} info={info} doc={doc} now={now} /></>} />;
     }
   } else if (!isDoc(id)) body = <FolderInspector id={id} />;
   else {
@@ -647,6 +693,7 @@ export function Inspector() {
           {selected && selected.path === id && doc.blocks[selected.index]?.kind === 'card' && (
             <CardBlock path={id} index={selected.index} doc={doc} group={undefined} now={now} />
           )}
+          {caret?.path === id && info.type !== 'deck' && <SectionBlock path={id} doc={doc} at={caret} now={now} />}
           <DocInspector id={id} info={info} doc={doc} now={now} />
         </>
       )} />

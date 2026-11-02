@@ -127,6 +127,20 @@ She also said the information-theory reading ($S$ = missing information about th
 
 Problem set 4 #5 asked for the entropy of the two-level system directly from the Gibbs formula. With $p = e^{-x}/(1 + e^{-x})$ the excited probability, $S/Nk = -p\ln p - (1-p)\ln(1-p)$: the binary entropy. $\to 0$ at $T \to 0$ and $\to \ln 2$ at $T \to \infty$, matching lecture 5's paramagnet at $U = 0$, where $\Omega = \binom{N}{N/2} \approx 2^N$.
 
+## pset 4 #5, typed up from paper — two-level entropy straight from the Gibbs formula
+<!-- read made=2026-10-30 due=2026-11-02 ivl=3 -->
+
+Did this on paper on the bus Thursday; typing it so it's somewhere I'll see it again. $N$ independent two-level systems, levels $0$ and $\epsilon$, $x = \beta\epsilon$.
+
+1. One system: $Z_1 = 1 + e^{-x}$, so $p_1 = e^{-x}/(1 + e^{-x}) = 1/(e^x + 1)$ up, $p_0 = 1 - p_1$ down.
+2. Gibbs: $S_1 = -k(p_0\ln p_0 + p_1\ln p_1)$. Independent, so $S = N S_1$.
+3. $\ln p_1 = -x - \ln Z_1$ and $\ln p_0 = -\ln Z_1$, so $S_1/k = p_1 x + \ln Z_1$. (Check: that's $k\beta U + k\ln Z$ per system, lecture 10. ✓)
+4. $T \to 0$: $x \to \infty$, $p_1 \approx e^{-x}$, $S_1/k \approx (x + 1)e^{-x} \to 0$. Third law.
+5. $T \to \infty$: $x \to 0$, $p_1 \to \tfrac12$, $S_1/k \to \ln 2$. Every system a coin.
+6. Cross-check against lecture 5: at $U = 0$ in the paramagnet language $\Omega = \binom{N}{N/2} \approx 2^N$, $S = Nk\ln 2$. Same.
+
+What I got wrong on paper first: wrote $\ln p_0 = 0$ ("it's the ground state") — no, $p_0 < 1$ at any $T > 0$, and dropping it loses the $\ln Z_1$ term entirely, which is the whole high-$T$ answer.
+
 ## lecture 11 — composite systems, ideal gas again (Mon 9/28)
 
 Two non-interacting subsystems, distinguishable: states are pairs, energies add, the sum factorizes.
@@ -215,6 +229,7 @@ the three characteristic speeds of the Maxwell distribution, in increasing order
 <!-- sr due=2026-10-27 st=review s=3.2 d=7.9 r=5 l=2 ivl=3 last=2026-10-24T09:42:00Z g=2 -->
 
 ## lecture 13 — two-level system, Schottky anomaly (Fri 10/2, Mon 10/5)
+<!-- read made=2026-10-19 due=2026-11-09 ivl=8 reps=2 -->
 
 Simplest possible system: two states, energies $0$ and $\epsilon$, nondegenerate.
 

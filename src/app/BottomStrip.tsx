@@ -23,7 +23,7 @@ export function BottomStrip() {
     canEnrol: kind !== 'session' && !!info && (info.type === 'note' || info.type === 'source' || info.type === 'extract') && !info.read,
     pages: !!info?.pdf,
     frozen: !!info?.frozen,
-    note: info?.type === 'note',
+    note: info?.type === 'note' || (kind === 'session' && info?.type === 'extract'),
   });
   // a notebook's page: the step keys, ahead of the page's own
   const hints = id !== undefined && notebookOf(id, docs) ? [['⌘⌥↑↓', 'tabs'] as const, ...base] : base;

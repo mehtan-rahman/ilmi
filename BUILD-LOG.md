@@ -6,6 +6,88 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-11-02 — milestone 47: sections that come back
+
+Done on main, commit `HASH47`. New: `src/schedule/section.ts`,
+`src/app/sections.ts`, the corpus file `mangled/sections.md`, four test
+files (`format/section`, `schedule/section`, `app/sections`,
+`app/sections-view`). Changed: the format (`Heading.read`, the heading's
+`<!-- read … -->` line), the editor's heading node (`read` attr), the queue
+(`SectionItem`), the reading pass (`readOn`/`postpone` generic), the queue
+view (marks, legend, where each row stands), the session (next / later /
+dismiss, the stands line, writes through the open page, the end returning
+to the queue), the inspector (section part), the reader (caret heading,
+landing on a heading, the heading's menu), the palette, the bottom strip,
+the tree's counts, the sample's canonical-ensemble, FORMAT §3 §6 §6.5 §7
+§8, README.
+
+### Decided
+
+- **The line** sits under the heading; `made due ivl reps af pri boxes` in
+  that order; `boxes` kept as written for 48. No `due` with `boxes` is
+  dismissed; a bare line by hand is due now. A line's `pri` overrides the
+  document's.
+- **Dismiss** removes a line without boxes outright, so the inspector then
+  offers **come back**; **bring back** is for a line that kept its boxes.
+- **One new queue kind**, `section`, sorted with everything by priority and
+  due; counted as reading; postponed with the rest; `read` to plugins.
+- **Words**: rows and the session's line say `made|boxed oct 29, nothing
+  written yet`, `written, no cards yet`, `written, N cards`, then `new` (made
+  today), `first time back`, `back for the Nth time`; a book `read on from
+  p. N`. Actions `next · back in Nd` / `later` / `dismiss`; a book's ⏎ `done
+  for today · back in Nd`. Marks `“ § ◆ ✎`.
+- **Session writes go through the open page's writer**, so text typed in a
+  section just before ⏎ is written first, not cancelled by the line's change.
+- **The heading under the caret** (`caretHeading`) drives the inspector, the
+  heading's right-click menu and the palette; one action each by state.
+
+### Verified
+
+- `npx vitest run --maxWorkers=3`: 1135 tests, 73 files (1088 before).
+  Under a load average of 30 (another project's process) the default run
+  times jsdom files out; with three workers all pass. `npm run typecheck`
+  clean. `vite build` clean. No Rust touched.
+
+### Window check (2026-11-02, partial)
+
+- Run 1 (working tree): every queue step passed: the head's legend line;
+  the derivation's row at 224 of 376, `§`, `written, no cards yet · first
+  time back`, cards before and after it, reading among them (shot
+  `sections-queue`); lectures 12 and 13 brought to today; the session
+  opened on the derivation; then `failed: the section opened at its
+  heading ("lecture 8 …")`: the smoke took the first caret heading
+  published, before the reveal landed. Fixed in the smoke (it waits for
+  the section's own heading and checks it is scrolled into view).
+- Run 2 stalled right after the session opened: the screen locked and
+  WebKit stopped. Port 1420 was free; both runs were mine, closed with
+  `pkill -x ilmi`.
+
+### Not done
+
+- The full `ILMI_SMOKE=sections` run: ⏎/p/d each changing exactly the
+  heading's line and moving on, the dismissed section out with its cards
+  still due, come back and bring back, the heading's menu, dark. Shots:
+  sections-queue, sections-session, sections-after-next,
+  sections-after-dismiss, sections-inspector-bring-back,
+  sections-inspector-after, sections-heading-menu, sections-queue-dark.
+- The outline doesn't mark sections; sections are not paced under exams.
+
+### Handoff prompt
+
+```
+Read PLAN.md (Reading books, 47's notes, 48), FORMAT.md §6.5, and this
+entry. First run ILMI_SMOKE=sections over a fresh copy of
+samples/double-major from a clean checkout of main (screen unlocked), read
+its ok: lines and shot: captures, fix what fails, and record the run here.
+Then build 48: a document with pages opens as one split session (pages
+left, the body in the editor right), boxes on the page become sections
+(`e`), `boxes` given its grammar (`page:x:y:w:h`, `,` between), `y` on the
+read line, the read bar, the section chip, `m` clipping, ⌘\ hiding the
+notes; ILMI_SMOKE=book on design/books/ch3.pdf.
+```
+
+---
+
 ## 2026-10-31 — milestone 45: the same fact twice
 
 Done on branch `worktree-agent-aacaabba75277b534` (a worktree beside main,

@@ -20,12 +20,12 @@ export type ReadAction = 'on' | 'postpone' | 'done';
 export interface Pace { exam: Exam; total: number | null }
 
 /**
- * One pass made; `pos` moves the marker forward, never back. Under an exam
+ * One pass made (a section's too, FORMAT.md §6.5: its line has no `pos`); `pos` moves the marker forward, never back. Under an exam
  * the next pass comes no later than the pacing says (`pacedInterval`): the
  * interval written is the shorter, so the line's due less its interval is
  * still the day of the pass.
  */
-export function readOn(r: ReadSchedule, now: Date, pos?: number, pace?: Pace): ReadSchedule {
+export function readOn<T extends ReadSchedule>(r: T, now: Date, pos?: number, pace?: Pace): T & { due: string; ivl: number; reps: number } {
   let ivl = grow(r.ivl, r.af ?? READ_AF);
   const reps = (r.reps ?? 0) + 1;
   const at = pos !== undefined ? Math.max(r.pos ?? 0, pos) : r.pos;
@@ -34,13 +34,13 @@ export function readOn(r: ReadSchedule, now: Date, pos?: number, pace?: Pace): R
     const paced = pacedInterval(dayOf(now), pace.exam, left, perPassOf(at, reps));
     if (paced !== null) ivl = Math.min(ivl, paced);
   }
-  const out: ReadSchedule = { ...r, due: addDays(dayOf(now), ivl), ivl, reps };
+  const out = { ...r, due: addDays(dayOf(now), ivl), ivl, reps };
   if (pos !== undefined) out.pos = at!;
   return out;
 }
 
 /** Not now: the interval grows by `factor` (1.2 by default), never less than a day, and the pass is not counted. */
-export function postpone(r: ReadSchedule, now: Date, factor?: number): ReadSchedule {
+export function postpone<T extends ReadSchedule>(r: T, now: Date, factor?: number): T & { due: string; ivl: number } {
   const ivl = postponed(r.ivl, factor);
   return { ...r, due: addDays(dayOf(now), ivl), ivl };
 }

@@ -7,11 +7,14 @@ export * as reading from './read.js';
 export * as writing from './write.js';
 export { advanceRead, type ReadAction, type Pace } from './read.js';
 export { advanceWrite, type WriteAction } from './write.js';
+export {
+  SECTION_IVL, sectionSpan, sectionState, headingAt, sectionInQueue, enrolSection, dismissed, broughtBack, advanceSchedule, nextGap, findHeading, advanceSection,
+} from './section.js';
 export { grow, nextIntervals, postponed, POSTPONE_FACTOR } from './growth.js';
 export {
   queue, queueItems, sortQueue, sameItem, docItems, counts, inScope, isDue, cardGroups, isSuspended, scheduleOf, cardDirs, dirPri, burySiblings, gradeItem, wasLeeched, numberBlank, newId,
   fold, overflow, postponeOverflow,
-  type QueueItem, type Fold, type CardItem, type ReadItem, type WriteItem, type GroupKey, type Dir, type Scope, type Counts, type GradeOptions,
+  type QueueItem, type Fold, type CardItem, type ReadItem, type WriteItem, type SectionItem, type GroupKey, type Dir, type Scope, type Counts, type GradeOptions,
 } from './queue.js';
 export { bareLined, withState, stronger, cardsById, partnerOf, linkedWith, buryLinked, copyToPartner, type LinkedCard } from './links.js';
 export {

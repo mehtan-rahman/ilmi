@@ -7,7 +7,7 @@ import {
 } from './attrs.js';
 import {
   FIELD_KEYS, isField, type CardForm, type Diagnostic, type Doc, type Field, type FieldKey, type FmEntry,
-  type Exam, type Frontmatter, type LeechAction, type NodeType, type PageRange, type ReadSchedule, type WriteSchedule,
+  type Exam, type Frontmatter, type LeechAction, type NodeType, type PageRange, type ReadSchedule, type SectionSchedule, type WriteSchedule,
 } from './model.js';
 
 const NODE_TYPES: readonly NodeType[] = ['note', 'source', 'deck', 'draft', 'extract'];
@@ -42,6 +42,15 @@ export const WRITE_AF = 1.5;
 
 export const READ_SPECS: AttrSpec<ReadSchedule>[] = [
   specWhen('due', 'due'), specInt('ivl', 'ivl'), specInt('reps', 'reps'), specInt('pos', 'pos'), specIntMin('page', 'page', 1), specNumMin('af', 'af', AF_MIN), specIntRange('pri', 'pri', PRI_MIN, PRI_MAX),
+];
+/**
+ * The heading's `<!-- read … -->` line (FORMAT.md §6.5): `made`, then the
+ * reading line's own, then `boxes`, a page's rectangles kept as written.
+ */
+export const SECTION_SPECS: AttrSpec<SectionSchedule>[] = [
+  { key: 'made', prop: 'made', parse: parseDay, format: (x) => String(x) },
+  specWhen('due', 'due'), specInt('ivl', 'ivl'), specInt('reps', 'reps'), specNumMin('af', 'af', AF_MIN), specIntRange('pri', 'pri', PRI_MIN, PRI_MAX),
+  { key: 'boxes', prop: 'boxes', parse: (v) => v, format: (x) => String(x) },
 ];
 export const WRITE_SPECS: AttrSpec<WriteSchedule>[] = [
   specWhen('due', 'due'), specInt('ivl', 'ivl'), specInt('reps', 'reps'), specNumMin('af', 'af', AF_MIN), specIntRange('pri', 'pri', PRI_MIN, PRI_MAX), specBool('done', 'done'),

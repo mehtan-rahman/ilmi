@@ -40,7 +40,7 @@ describe('the reader\'s keys', () => {
     expect(keys({ kind: 'note', el: null, scope: null, canEnrol: true })).toEqual(['⌘⇧E extract', '⌘⇧M card', 'r revisit', '⌘F find', '⌘\\ split pane']);
     expect(keys({ kind: 'source', el: null, scope: null, canEnrol: true, frozen: true })).toEqual(['e extract', 'm card', 'r start reading', '⌘F find', '⌘\\ split pane']);
     expect(keys({ kind: 'draft', el: null, scope: null, canEnrol: false })).toEqual(['⌘⇧M card', '⌘F find', 'esc leave the text']);
-    expect(keys({ kind: 'session', el: 'read', scope: null, canEnrol: false, note: true })).toEqual(['⏎ went over it', 'p postpone', 'd done', '⌘⇧E extract', '⌘⇧M card', '[ ] prev / next']);
+    expect(keys({ kind: 'session', el: 'read', scope: null, canEnrol: false, note: true })).toEqual(['⏎ next', 'p later', 'd dismiss', '⌘⇧E extract', '⌘⇧M card', '[ ] prev / next']);
     expect(keys({ kind: 'session', el: 'read', scope: null, canEnrol: false, frozen: true })[3]).toBe('e extract');
   });
 });

@@ -6997,3 +6997,243 @@ export async function smokeSame(vault: Vault): Promise<void> {
     log(`failed: ${e instanceof Error ? e.message : String(e)}`);
   }
 }
+
+// `ILMI_SMOKE=sections` (`smokeSections`) over a fresh copy of
+// `samples/double-major`, milestone 47, the app's clock on 2026-11-02 (the
+// sample's day): the day's queue holds the typed-up derivation in
+// canonical-ensemble among the reading and the cards, by priority, its row
+// saying where it stands under the head's one line; a section opens in its
+// session at its heading, the caret in it; ⏎, `p` and `d` each change
+// exactly the heading's line and move on to the next element, whatever
+// kind; a dismissed section leaves the queue while its cards stay due; the
+// inspector's come back and bring back return it; the heading's own menu.
+// Light, and the queue once in dark.
+export async function smokeSections(vault: Vault): Promise<void> {
+  type Heading = import('../format/index.js').Heading;
+  type SectionItem = import('../schedule/index.js').SectionItem;
+  let last = { at: Date.now(), what: 'start' };
+  let finished = false;
+  const log = (s: string) => { last = { at: Date.now(), what: s }; void info(`smoke sections: ${s}`); };
+  const dog = setInterval(() => {
+    if (finished) { clearInterval(dog); return; }
+    if (Date.now() - last.at > 30_000) { finished = true; clearInterval(dog); void info(`smoke sections: failed: no progress for 30 s after "${last.what}"`); }
+  }, 2000);
+  const bounded = <T,>(p: Promise<T>, what: string, ms = 8000): Promise<T> =>
+    Promise.race([p, new Promise<T>((_, no) => setTimeout(() => no(new Error(`${what} (no answer in ${ms} ms)`)), ms))]);
+  const shot = async (name: string, ms = 2500) => { await sleep(800); log(`shot: ${name}`); await sleep(ms); };
+  const q = <T extends Element>(sel: string, root: ParentNode = document) => root.querySelector<T>(sel);
+  const qa = <T extends Element>(sel: string, root: ParentNode = document) => Array.from(root.querySelectorAll<T>(sel));
+  const must = (ok: unknown, what: string) => { if (!ok) throw new Error(what); log(`ok: ${what}`); };
+  const poll = async <T,>(probe: () => T | null | undefined | false | Promise<T | null | undefined | false>, what: string, ms = 5000): Promise<T> => {
+    const t0 = Date.now();
+    for (;;) {
+      const v = await probe();
+      if (v) { log(`ok: ${what}`); return v; }
+      if (Date.now() - t0 > ms) throw new Error(`${what} (waited ${ms} ms)`);
+      await sleep(100);
+    }
+  };
+  const key = (k: string) => window.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));
+  const click = (el: Element) => el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+  const { parse } = await import('../format/index.js');
+  const { addDays, isDue, sameItem } = await import('../schedule/index.js');
+  const { refreshQueue } = await import('./vault.js');
+  const { setClockDay, appNow } = await import('./clock.js');
+  const SM = 'courses/fall-2026/phys-415-stat-mech';
+  const CANON = `${SM}/canonical-ensemble.md`;
+  const DAY = '2026-11-02';
+  const text = (p = CANON) => bounded(vault.fs.readText(vault.abs(p)), `reading ${p}`);
+  const items = () => useApp.getState().queue;
+  const sectionOf = (start: string) => items().find((i): i is SectionItem => i.kind === 'section' && i.path === CANON && i.heading.startsWith(start));
+  const cardsUnder = async (start: string) => {
+    const doc = parse(await text()).doc;
+    const at = doc.blocks.findIndex((b) => b.kind === 'heading' && b.text.startsWith(start));
+    let end = at + 1;
+    while (end < doc.blocks.length && !(doc.blocks[end]!.kind === 'heading' && (doc.blocks[end] as Heading).level <= (doc.blocks[at] as Heading).level)) end++;
+    return items().filter((i) => i.kind === 'card' && i.path === CANON && i.block > at && i.block < end && isDue(i, appNow())).length;
+  };
+  /** The lines that differ, as `before → after`; a line gone reads `line → (gone)`. */
+  const diff = (a: string, b: string): string[] => {
+    const x = a.split('\n');
+    const y = b.split('\n');
+    if (x.length === y.length) return x.flatMap((l, i) => (l === y[i] ? [] : [`${l} → ${y[i]}`]));
+    if (x.length === y.length + 1) { const i = x.findIndex((l, k) => l !== y[k]); return x.filter((_, k) => k !== i).join('\n') === b ? [`${x[i]} → (gone)`] : ['(more than one line)']; }
+    if (y.length === x.length + 1) { const i = y.findIndex((l, k) => l !== x[k]); return y.filter((_, k) => k !== i).join('\n') === a ? [`(none) → ${y[i]}`] : ['(more than one line)']; }
+    return ['(more than one line)'];
+  };
+  const openQuery = async (scope: 'today' | 'upcoming') => {
+    openNode(queueId(scope));
+    await poll(() => q('.pane[data-active="1"] .queue h1')?.firstChild?.textContent === (scope === 'today' ? 'due today' : 'upcoming'), `the ${scope} query is drawn`, 8000);
+    await sleep(300);
+  };
+  /** A session at one section; resolves once its bar is drawn on it. */
+  const sessionAt = async (s: SectionItem) => {
+    openSession(s);
+    await poll(() => { const el = useApp.getState().sessionEl; return el?.kind === 'section' && sameItem(el.item, s) && q('.pane[data-active="1"] .doc-session[data-el="section"] .session-bar') ? true : null; }, `a session on § ${s.heading.slice(0, 40)}`, 8000);
+    await sleep(600);
+  };
+  /** The current element moved on to the one after `s` in the session's order. */
+  const movedOn = (s: SectionItem) => poll(() => {
+    const st = useApp.getState();
+    const list = st.session?.items ?? [];
+    const was = list.findIndex((i) => sameItem(i, s));
+    const now = st.sessionEl?.item;
+    if (!now) return was === list.length - 1 ? 'the end' : null;
+    return !sameItem(now, s) && list.indexOf(now) === was + 1 ? `${now.kind} (${now.path.split('/').pop()})` : null;
+  }, `and the session moved on to the next element`, 8000);
+  try {
+    setClockDay(DAY);
+    useApp.getState().setTheme('light');
+    await poll(() => document.documentElement.dataset.theme === 'light', 'light');
+    setInspector({ open: true });
+    refreshQueue();
+
+    // ── the sample as it ships: the derivation due, lecture 13 later ──
+    const deriv = await poll(() => sectionOf('pset 4 #5'), 'the typed-up derivation is in the day\'s queue', 10000);
+    must(isDue(deriv, appNow()) && deriv.written && deriv.cards === 0, 'due today, written, no cards');
+    const l13 = await poll(() => sectionOf('lecture 13'), 'lecture 13 is enrolled');
+    must(!isDue(l13, appNow()) && l13.cards === 4 && dayOfStr(l13.due) === '2026-11-09', `with its 4 cards, due later (${l13.due})`);
+    await openQuery('today');
+    must(q('.queue .legend')?.textContent === 'in priority order · “ read on in a book · § a passage or section, back until you dismiss it · ◆ a card', `the head's line: "${q('.queue .legend')?.textContent}"`);
+    const rows = qa<HTMLElement>('.pane[data-active="1"] .qlist li:not(.fold)');
+    const at = rows.findIndex((r) => r.dataset.el === 'section' && r.textContent?.includes('pset 4 #5'));
+    must(at >= 0, `the derivation's row (${at + 1} of ${rows.length})`);
+    const row = rows[at]!;
+    must(q('.mark', row)?.textContent === '§' && q('.ref-line', row)?.textContent === 'written, no cards yet · first time back', `marked §, saying "${q('.ref-line', row)?.textContent}"`);
+    const kinds = rows.map((r) => r.dataset.el);
+    log(`the day's kinds, in order: ${kinds.join(' ')}`);
+    must(kinds.slice(0, at).includes('card') && kinds.slice(at + 1).includes('card') && kinds.includes('read'), 'interleaved with reading and cards, not grouped by kind');
+    for (const r of rows.slice(0, 12)) log(`row: ${q('.mark', r)?.textContent} ${q('.kindtag', r)?.textContent} · ${(q('.body', r)?.textContent ?? '').slice(0, 60)} · ${q('.ref-line', r)?.textContent ?? ''}`);
+    row.scrollIntoView({ block: 'center' });
+    await shot('sections-queue');
+
+    // two more due today, written as a hand edit would be: lecture 12 (to postpone) and lecture 13 (to dismiss)
+    await bounded(vault.update(CANON, (d) => {
+      for (const b of d.blocks) {
+        if (b.kind !== 'heading') continue;
+        if (b.text.startsWith('lecture 12')) b.read = { made: '2026-10-28', due: DAY, ivl: 3 };
+        if (b.text.startsWith('lecture 13')) b.read = { ...b.read, due: DAY };
+      }
+    }), 'enrolling lecture 12, bringing lecture 13 to today');
+    await poll(() => { refreshQueue(); const a = sectionOf('lecture 12'); const b = sectionOf('lecture 13'); return a && b && isDue(a, appNow()) && isDue(b, appNow()) ? true : null; }, 'lectures 12 and 13 due today', 8000);
+
+    // ── ⏎ next: the derivation opens in place; its line, and only it, changes ──
+    await sessionAt(deriv);
+    const landed = await poll(() => { const c = useApp.getState().caretHeading; return c?.path === CANON && c.text === deriv.heading ? c : null; }, 'the section opened at its heading, the caret in it', 8000);
+    const top = qa<HTMLElement>('.pane[data-active="1"] .doc-session .dd-h').find((e) => e.textContent?.startsWith('pset 4 #5'))?.getBoundingClientRect().top ?? -1;
+    must(top >= 0 && top < window.innerHeight / 2, `scrolled to it (its top at ${Math.round(top)} px; ${landed.nth + 1}th heading)`);
+    const h = await poll(() => qa<HTMLElement>('.pane[data-active="1"] .doc-session .dd-h').find((e) => e.textContent?.startsWith('pset 4 #5')), 'its heading is drawn in the editor');
+    must(h.dataset.read === 'on' && !!h.closest('[contenteditable="true"]'), 'in the editor, marked as coming back');
+    const bar = q<HTMLElement>('.pane[data-active="1"] .session-bar')!;
+    const words = qa<HTMLElement>('.sb-actions button .ra-l', bar).map((b) => b.textContent);
+    must(words.join(' / ') === 'next · back in 5d / later / dismiss', `the actions read ${words.join(' / ')}`);
+    must(q('.sb-where', bar)?.textContent === 'written, no cards yet · first time back', `above them, where it stands: "${q('.sb-where', bar)?.textContent}"`);
+    const strip = qa('.bot span').map((s) => s.textContent).join(' | ');
+    must(strip.includes('⏎ next') && strip.includes('p later') && strip.includes('d dismiss'), `the bottom strip: ${strip}`);
+    await shot('sections-session');
+    let before = await text();
+    key('Enter');
+    let after = await poll(async () => { const t = await text(); return t !== before ? t : null; }, 'next wrote the file', 8000);
+    let d = diff(before, after);
+    must(d.length === 1 && d[0] === `<!-- read made=2026-10-30 due=2026-11-02 ivl=3 --> → <!-- read made=2026-10-30 due=${addDays(DAY, 5)} ivl=5 reps=1 -->`, `exactly the heading's line: ${d.join('; ')}`);
+    log(`moved on to ${await movedOn(deriv)}`);
+    await shot('sections-after-next');
+
+    // ── p later: lecture 12 ──
+    const l12 = sectionOf('lecture 12')!;
+    await sessionAt(l12);
+    before = await text();
+    key('p');
+    after = await poll(async () => { const t = await text(); return t !== before ? t : null; }, 'later wrote the file', 8000);
+    d = diff(before, after);
+    must(d.length === 1 && d[0] === `<!-- read made=2026-10-28 due=2026-11-02 ivl=3 --> → <!-- read made=2026-10-28 due=${addDays(DAY, 4)} ivl=4 -->`, `exactly the heading's line, the pass not counted: ${d.join('; ')}`);
+    log(`moved on to ${await movedOn(l12)}`);
+
+    // ── d dismiss: lecture 13 leaves the queue, its cards stay due ──
+    refreshQueue();
+    const l13d = await poll(() => sectionOf('lecture 13'), 'lecture 13 in the queue');
+    const cardsBefore = await cardsUnder('lecture 13');
+    must(cardsBefore > 0, `lecture 13 has cards due (${cardsBefore})`);
+    await sessionAt(l13d);
+    before = await text();
+    key('d');
+    after = await poll(async () => { const t = await text(); return t !== before ? t : null; }, 'dismiss wrote the file', 8000);
+    d = diff(before, after);
+    must(d.length === 1 && d[0] === '<!-- read made=2026-10-19 due=2026-11-02 ivl=8 reps=2 --> → (gone)', `exactly the heading's line, gone: ${d.join('; ')}`);
+    log(`moved on to ${await movedOn(l13d)}`);
+    await poll(() => { refreshQueue(); return !sectionOf('lecture 13'); }, 'the dismissed section left the queue', 8000);
+    must((await cardsUnder('lecture 13')) === cardsBefore, `its ${cardsBefore} cards stay due`);
+    await shot('sections-after-dismiss');
+
+    // ── the inspector: come back (no boxes), bring back (boxes) ──
+    const reveal = async (start: string) => {
+      const doc = parse(await text()).doc;
+      const index = doc.blocks.findIndex((b) => b.kind === 'heading' && b.text.startsWith(start));
+      const heading = (doc.blocks[index] as Heading).text;
+      openNode(CANON);
+      await poll(() => q('.pane[data-active="1"] .doc-view .dd-h'), 'the note is open', 8000);
+      await sleep(300);
+      useApp.setState({ reveal: { path: CANON, index, heading } });
+      await poll(() => useApp.getState().caretHeading?.text === heading, `the caret in "${heading.slice(0, 40)}"`, 8000);
+      return poll(() => q<HTMLElement>('.insp .sec-block'), 'the inspector\'s section part', 8000);
+    };
+    let part = await reveal('lecture 13');
+    let btn = q<HTMLButtonElement>('button', part)!;
+    must(part.dataset.status === 'none' && btn.textContent === 'come back', `a dismissed section with no boxes offers ${btn.textContent}`);
+    before = await text();
+    click(btn);
+    after = await poll(async () => { const t = await text(); return t !== before ? t : null; }, 'come back wrote the file', 8000);
+    d = diff(before, after);
+    must(d.length === 1 && d[0] === `(none) → <!-- read made=${DAY} due=${addDays(DAY, 3)} ivl=3 -->`, `its line back: ${d.join('; ')}`);
+    await poll(() => { refreshQueue(); const s = sectionOf('lecture 13'); return s && !isDue(s, appNow()) ? s : null; }, 'back in the queue, in 3 days', 8000);
+
+    // a dismissed passage keeps its boxes: bring back
+    await bounded(vault.update(CANON, (doc) => {
+      const b = doc.blocks.find((x): x is Heading => x.kind === 'heading' && x.text.startsWith('lecture 14'))!;
+      b.read = { made: '2026-10-20', reps: 2, boxes: '41:0.120:0.122:0.770:0.145' };
+    }), 'a dismissed passage on lecture 14');
+    part = await reveal('lecture 14');
+    await poll(() => q<HTMLElement>('.insp .sec-block')?.dataset.status === 'dismissed', 'the inspector reads it dismissed');
+    part = q<HTMLElement>('.insp .sec-block')!;
+    btn = q<HTMLButtonElement>('button', part)!;
+    const stands = qa<HTMLElement>('.kvr', part).map((r) => `${q('dt', r)?.textContent}: ${q('dd', r)?.textContent}`);
+    log(`the inspector: ${stands.join(' | ')}`);
+    must(btn.textContent === 'bring back' && stands.includes('next: never: dismissed'), `bring back, next never (${btn.textContent})`);
+    await shot('sections-inspector-bring-back');
+    before = await text();
+    click(btn);
+    after = await poll(async () => { const t = await text(); return t !== before ? t : null; }, 'bring back wrote the file', 8000);
+    d = diff(before, after);
+    must(d.length === 1 && d[0] === `<!-- read made=2026-10-20 reps=2 boxes=41:0.120:0.122:0.770:0.145 --> → <!-- read made=2026-10-20 due=${addDays(DAY, 3)} ivl=3 reps=2 boxes=41:0.120:0.122:0.770:0.145 -->`, `a fresh due, reps and boxes kept: ${d.join('; ')}`);
+    await poll(() => { refreshQueue(); return sectionOf('lecture 14'); }, 'bring back returns it to the queue', 8000);
+    await poll(() => q<HTMLElement>('.insp .sec-block')?.dataset.status === 'on' && q('.insp .sec-block button')?.textContent === 'dismiss', 'the inspector now offers dismiss');
+    await shot('sections-inspector-after');
+
+    // ── the heading's own menu ──
+    const hd = await poll(() => qa<HTMLElement>('.pane[data-active="1"] .doc-view .dd-h').find((e) => e.textContent?.startsWith('lecture 11')), 'lecture 11\'s heading');
+    const r = hd.getBoundingClientRect();
+    hd.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: r.left + 30, clientY: r.top + r.height / 2 }));
+    const menu = await poll(() => q<HTMLElement>('.section-menu'), 'right-click on a heading opens its menu');
+    must(q('[data-act="come-back"]', menu)?.textContent?.includes('come back'), `it offers come back (${menu.textContent})`);
+    await shot('sections-heading-menu');
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+
+    // ── dark ──
+    await openQuery('today');
+    useApp.getState().setTheme('dark');
+    await poll(() => document.documentElement.dataset.theme === 'dark', 'dark');
+    await shot('sections-queue-dark');
+    useApp.getState().setTheme('light');
+    setClockDay(null);
+    finished = true;
+    log(`done; vault ${vault.root}`);
+  } catch (e) {
+    finished = true;
+    setClockDay(null);
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+/** A stored due's day. */
+const dayOfStr = (due: string | undefined): string => (due ?? '').slice(0, 10);

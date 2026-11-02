@@ -158,8 +158,8 @@ const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 /**
  * What a tree row shows at its end: one number, how much is due in the
- * document (its cards due, and one for a reading or writing pass due
- * today), 0 when nothing is (drawn as nothing); and the full counts, for
+ * document (its cards due, its sections that come back, and one for a
+ * reading or writing pass due today), 0 when nothing is (drawn as nothing); and the full counts, for
  * the row's tooltip.
  */
 export function rowCounts(node: TreeNode, info: DocInfo | undefined, now: Date): { due: number; full: string } {
@@ -171,11 +171,13 @@ export function rowCounts(node: TreeNode, info: DocInfo | undefined, now: Date):
   const w = info.write;
   const write = !!w && !w.done && (!w.due || whenToDate(w.due) <= now);
   if (read) parts.push(info.type === 'note' ? 'revisit due' : 'reading due');
+  const sections = info.sections ?? 0;
+  if (sections) parts.push(`${plural(sections, 'section')} due`);
   if (write) parts.push('writing due');
   else if (w?.done) parts.push('done');
   const kids = node.children?.length ?? 0;
   if (kids) parts.push(plural(kids, 'item'));
-  return { due: info.due + (read ? 1 : 0) + (write ? 1 : 0), full: parts.join('; ') };
+  return { due: info.due + sections + (read ? 1 : 0) + (write ? 1 : 0), full: parts.join('; ') };
 }
 
 /** The quiet note at the end of a row: counts, or a state word. */

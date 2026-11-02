@@ -53,6 +53,8 @@ function infoOf(doc: Doc, items: QueueItem[], now: Date, pdf: string | null): Do
   if (pdf !== null) out.pdf = pdf;
   if (m.tabs) out.tabs = true;
   if (m.pages) out.pages = { ...m.pages };
+  const sections = items.filter((i) => i.kind === 'section' && isDue(i, now)).length;
+  if (sections) out.sections = sections;
   return out;
 }
 
@@ -100,13 +102,19 @@ function buildQueue(now: Date): QueueItem[] {
 /** Each document's `due` as the metered queue has it: a card held for tomorrow is not due today. */
 function withDue(docs: Record<string, DocInfo>, queue: QueueItem[], now: Date): Record<string, DocInfo> {
   const due = new Map<string, Set<number>>();
-  for (const i of queue) if (i.kind === 'card' && isDue(i, now)) { const s = due.get(i.path) ?? new Set<number>(); s.add(i.block); due.set(i.path, s); }
+  const sections = new Map<string, number>();
+  for (const i of queue) {
+    if (i.kind === 'card' && isDue(i, now)) { const s = due.get(i.path) ?? new Set<number>(); s.add(i.block); due.set(i.path, s); }
+    else if (i.kind === 'section' && isDue(i, now)) sections.set(i.path, (sections.get(i.path) ?? 0) + 1);
+  }
   let out = docs;
   for (const [path, info] of Object.entries(docs)) {
     const n = due.get(path)?.size ?? 0;
-    if (info.due === n) continue;
+    const k = sections.get(path) ?? 0;
+    if (info.due === n && (info.sections ?? 0) === k) continue;
     if (out === docs) out = { ...docs };
-    out[path] = { ...info, due: n };
+    const { sections: _, ...rest } = info;
+    out[path] = { ...rest, due: n, ...(k ? { sections: k } : {}) };
   }
   return out;
 }
@@ -452,8 +460,8 @@ export function openInitialVault(): Promise<void> {
       if (path) {
         const vault = await openVault(path);
         if (mode) {
-          const { smoke, smokeReader, smokeCards, smokeIntake, smokeQueue, smokeLoop, smokeShots, smokeDeck, smokePri, smokeGrowth, smokeOverload, smokePdf, smokeFaces, smokeCardsText, smokeAnki, smokeMath, smokeEpub, smokeClip, smokeClipping, smokePlugins, smokeDictionary, smokeRender, smokeLive, smokeBlocks, smokeUse, smokeLand, smokeNest, smokeTabs, smokeDecks, smokeTour, smokeNotes, smokeEditing, smokeTree, smokeInsert, smokeTabs2, smokeListCards, smokeArabic, smokeRest, smokeBothWays, smokeNumbers, smokeOpen, smokeExam, smokeSame } = await import('./smoke.js');
-          const run = { reader: smokeReader, cards: smokeCards, intake: smokeIntake, queue: smokeQueue, loop: smokeLoop, shots: smokeShots, deck: smokeDeck, pri: smokePri, growth: smokeGrowth, overload: smokeOverload, pdf: smokePdf, faces: smokeFaces, 'cards-text': smokeCardsText, anki: smokeAnki, math: smokeMath, epub: smokeEpub, clip: smokeClip, clipping: smokeClipping, plugins: smokePlugins, dictionary: smokeDictionary, render: smokeRender, live: smokeLive, blocks: smokeBlocks, use: smokeUse, land: smokeLand, nest: smokeNest, tabs: smokeTabs, decks: smokeDecks, tour: smokeTour, notes: smokeNotes, editing: smokeEditing, tree: smokeTree, insert: smokeInsert, tabs2: smokeTabs2, listcards: smokeListCards, arabic: smokeArabic, rest: smokeRest, bothways: smokeBothWays, numbers: smokeNumbers, open: smokeOpen, exam: smokeExam, same: smokeSame }[mode] ?? smoke;
+          const { smoke, smokeReader, smokeCards, smokeIntake, smokeQueue, smokeLoop, smokeShots, smokeDeck, smokePri, smokeGrowth, smokeOverload, smokePdf, smokeFaces, smokeCardsText, smokeAnki, smokeMath, smokeEpub, smokeClip, smokeClipping, smokePlugins, smokeDictionary, smokeRender, smokeLive, smokeBlocks, smokeUse, smokeLand, smokeNest, smokeTabs, smokeDecks, smokeTour, smokeNotes, smokeEditing, smokeTree, smokeInsert, smokeTabs2, smokeListCards, smokeArabic, smokeRest, smokeBothWays, smokeNumbers, smokeOpen, smokeExam, smokeSame, smokeSections } = await import('./smoke.js');
+          const run = { reader: smokeReader, cards: smokeCards, intake: smokeIntake, queue: smokeQueue, loop: smokeLoop, shots: smokeShots, deck: smokeDeck, pri: smokePri, growth: smokeGrowth, overload: smokeOverload, pdf: smokePdf, faces: smokeFaces, 'cards-text': smokeCardsText, anki: smokeAnki, math: smokeMath, epub: smokeEpub, clip: smokeClip, clipping: smokeClipping, plugins: smokePlugins, dictionary: smokeDictionary, render: smokeRender, live: smokeLive, blocks: smokeBlocks, use: smokeUse, land: smokeLand, nest: smokeNest, tabs: smokeTabs, decks: smokeDecks, tour: smokeTour, notes: smokeNotes, editing: smokeEditing, tree: smokeTree, insert: smokeInsert, tabs2: smokeTabs2, listcards: smokeListCards, arabic: smokeArabic, rest: smokeRest, bothways: smokeBothWays, numbers: smokeNumbers, open: smokeOpen, exam: smokeExam, same: smokeSame, sections: smokeSections }[mode] ?? smoke;
           // the smokes before 40 expect the inspector wherever they open it: the room rule is the tour's to check
           if (mode !== 'tour') useApp.setState({ inspForced: true });
           await run(vault);

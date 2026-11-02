@@ -6,7 +6,7 @@
 
 import { parseAttrs, parseBool, readAttrs, specWhen, specNum, specInt, specEnum, specIntRange, type AttrSpec, type Warn } from './attrs.js';
 import { cardForm } from './cloze.js';
-import { parseFrontmatter } from './frontmatter.js';
+import { READ_AF, SECTION_SPECS, parseFrontmatter } from './frontmatter.js';
 import type { Block, Card, CardSchedule, Diagnostic, Doc, Heading, Paragraph, Raw, SrState } from './model.js';
 
 export const SR_SPECS: AttrSpec<CardSchedule>[] = [
@@ -34,7 +34,7 @@ const FENCE = /^ {0,3}(`{3,}|~{3,})/;
 const ATX = /^ {0,3}(#{1,6})(?:[ \t]+(.*?))?[ \t]*$/s;
 const ATX_CLOSE = /[ \t]+#+[ \t]*$/s;
 const COMMENT_OPEN = /^[ \t]*<!--/;
-const ANNOTATION = /^[ \t]*<!--\s*(sr|extract)(?:\s+(.*?))?\s*-->[ \t]*$/s;
+const ANNOTATION = /^[ \t]*<!--\s*(sr|extract|read)(?:\s+(.*?))?\s*-->[ \t]*$/s;
 const THEMATIC = /^ {0,3}([-*_])[ \t]*(?:\1[ \t]*){2,}$/;
 const QUOTE = /^ {0,3}>/;
 const BULLET = /^ {0,3}[-*+][ \t]/;
@@ -295,6 +295,17 @@ function attach(prev: Block | undefined, adjacent: boolean, tag: string, rest: s
   // every failure to attach reads the same, so a file that is written back
   // (orphans kept verbatim, now separated by a blank line) reports no new problems
   const orphan = () => { warn(`orphan ${tag} line`); return false; };
+  // a section's line sits under its heading, and a heading carries nothing else (§6.5)
+  if (tag === 'read') {
+    if (!prev || !adjacent || prev.kind !== 'heading') return orphan();
+    const attrs = parseAttrs(rest, warn);
+    for (const b of attrs.bare) warn(`unexpected token "${b}"`);
+    const sched = readAttrs(attrs.pairs, SECTION_SPECS, warn);
+    if (sched.af === READ_AF) delete sched.af;
+    if (prev.read) warn('heading has two read lines; later wins');
+    prev.read = sched;
+    return true;
+  }
   if (!prev || !adjacent || (prev.kind !== 'paragraph' && prev.kind !== 'card')) return orphan();
   if (tag === 'extract') {
     const name = rest.trim();

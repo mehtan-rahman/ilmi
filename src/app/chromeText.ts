@@ -136,8 +136,10 @@ export function pathParts(item: QueueItem, docs: Record<string, DocInfo>): PathP
     const owner = `${dir}.md`;
     out.parent = docs[owner] ? shortTitle(docTitle(owner, docs)) : slugName(nameOf(dir));
   }
-  if (item.kind === 'card' && item.section) {
-    const sec = item.section.replace(/^§\d+\s*—\s*/, '').trim();
+  // a card's heading, and a section's own
+  const heading = item.kind === 'card' ? item.section : item.kind === 'section' ? item.heading : undefined;
+  if (heading) {
+    const sec = heading.replace(/^§\d+\s*—\s*/, '').trim();
     if (sec && foldTitle(sec) !== foldTitle(out.doc)) out.section = sec;
   }
   return out;

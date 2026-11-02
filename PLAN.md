@@ -5150,7 +5150,61 @@ The demo's books are originals: `design/books/ch3.tex` typesets pp. 41–44 of t
 
 Order: 47 → 48 → 49, on main, each judged on `samples/double-major` and checked in the window from a clean checkout.
 
-### [ ] 47. Sections that come back — one queue, and every item says where it stands
+### [x] 47. Sections that come back — one queue, and every item says where it stands
+Done 2026-11-02, commit `HASH47`.
+Notes: The line is `<!-- read made due ivl reps af pri boxes -->` under an
+ATX heading or a setext underline (`Heading.read`, `SECTION_SPECS`, written
+in that order, `af` at 1.6 dropped); `boxes` is a string kept as written.
+A line with no `due` and `boxes` is dismissed (`sectionDismissed`); a bare
+`<!-- read -->` by hand is enrolled and due now, as a bare `read:` is.
+Dismissing a line without boxes removes it, so its `made` and `pri` go
+with it and the inspector then offers **come back** (made today); **bring
+back** is for a line that kept its boxes, and keeps `reps` when the line
+has one (dismissal drops it, so on disk that only matters for a hand-edited
+line). The queue item is a new kind, `SectionItem` (`kind: 'section'`, the
+heading's block, text, trail, `written`, `cards`), counted as reading in the
+saved queries, postponed with the rest below the fold, `read` to plugins.
+Next and later reuse `readOn` / `postpone` (made generic); `src/schedule/
+section.ts` holds the span, the state, enrol, dismiss, bring back. Marks:
+`“` a book or source, `§` a section, a note revisited or an extract
+(`glyphOf`), `◆` a card, `✎` a draft; the head's legend line is the spec's.
+Rows say where they stand (`standing`, `standsWords`): dates as `oct 29`;
+`new` the day it was made, else `first time back` / `back for the Nth
+time`; a text source (no pages) reads `read on, 30% read` or `read from
+the start`; a draft `pass N`. The row's `new` tag is off for what says it
+in words. The session's action row reads `next · back in Nd` / `later` /
+`dismiss`, a book's ⏎ `done for today · back in Nd` (p and d are later and
+dismiss there too); a line above it says what it is and where it stands;
+the end of the day's queue says `all done … · back to the queue` and opens
+it. Session writes go through the open page's writer (`sections.ts`'s
+`writeDoc`, registered by `Reader.tsx`), so what was typed in a section is
+written before its line changes, never cancelled by it. A section opens
+through `reveal` with `heading`: the caret at the heading's end, scrolled
+to the top, marked `landed`; its heading carries `data-read` (a quiet `§`,
+grey once dismissed). The caret's heading is published as
+`caretHeading` (its place among headings with text, its text, its line);
+the inspector's **section** part, the heading's right-click menu
+(`popMenu`) and the palette (`come back · <heading>`) all offer the one
+action its state allows. A split heading leaves the line on its first
+half. Tree rows count sections due (`DocInfo.sections`). Sample: the
+pset 4 #5 two-level-entropy derivation, typed up from paper, no cards,
+due 2026-11-02; lecture 13 (4 cards) due 11-09, back for the 3rd time.
+Files: format (model, parse, serialize, frontmatter), reader (schema,
+convert), schedule (section.ts, queue, read), app (sections.ts, items,
+Queue, Session, Inspector, Reader, Palette, chrome, BottomStrip, names,
+vault, store, chromeText, CSS), plugins/index.ts, smoke.ts (`sections`),
+FORMAT §3, §6, §6.5 (new), §7, §8, README. Tests: 1135 (+47: format 10 and
+a corpus file, schedule 15, items/actions/editor 14, a jsdom view over the
+sample 5); under a load average of 30 the full run times out in jsdom
+files unless run with `--maxWorkers=3`. Not done: the palette's command
+and the heading menu are not in a unit test (the smoke reads the menu);
+the inspector's outline does not mark sections; nothing paces a section
+under an exam. Window check: run 1 (from the working tree, uncommitted)
+passed the queue (legend, the derivation's row `§ … written, no cards yet
+· first time back` at 224 of 376, interleaved with reading and cards),
+then failed on reading the first caret heading before the reveal landed
+(a smoke race, fixed: it waits for the section's own); run 2 stalled at
+the session when the screen locked (WebKit stops). The full run is owed.
 - **The format** (FORMAT §6.5, new). A `<!-- read … -->` line directly under a heading enrolls the section: the heading and everything under it up to the next heading of the same or a higher level.
   - **Attributes:** `due`, `ivl`, `reps`, `af` and `pri`, as on the `read` field; `made` (the day it was enrolled); `boxes` (48, kept as written here).
   - **Dismissing** drops `due`, `ivl`, `reps` and `af`. The line stays only when it has `boxes`; otherwise it is removed.

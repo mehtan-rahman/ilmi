@@ -590,7 +590,7 @@ export function SectionBlock({ path, doc, at, now }: { path: string; doc: Doc; a
         <div className="frozen-row">
           <span className="fr-state">{status === 'none' ? 'not coming back' : status === 'on' ? 'comes back until dismissed' : 'dismissed; its notes and cards stay'}</span>
           <button type="button" className="fr-toggle" data-act={act.act} onClick={() => act.run?.()}>{act.label}</button>
-          <button type="button" className="fr-toggle" data-act={mv.act} onClick={() => mv.run?.()}>{mv.label}</button>
+          {meta(doc).type === 'note' && <button type="button" className="fr-toggle" data-act={mv.act} onClick={() => mv.run?.()}>{mv.label}</button>}
         </div>
       </div>
     </Block>

@@ -11,7 +11,7 @@ import { useApp } from './store.js';
 import { MENU_ID, runMenu } from './menu.js';
 import { hasCards, studyDeck } from './deckOps.js';
 import { SESSION, folderPaths } from './names.js';
-import { moveAction, moveSection, sectionActions, statusOf } from './sections.js';
+import { canMove, moveAction, moveSection, sectionActions, statusOf } from './sections.js';
 import { plainMath } from './chromeText.js';
 import type { CaretHeading } from './store.js';
 import { MathText } from './MathText.js';
@@ -50,7 +50,7 @@ function sectionCommand(): Command[] {
   if (!at) return [];
   const act = sectionActions(statusOf(at.read), at)[0]!;
   const mv = moveAction(at);
-  return [{ id: `section:${act.act}`, title: `${act.label} · ${plainMath(at.text)}` }, { id: `section:${mv.act}`, title: `${mv.label} · ${plainMath(at.text)}` }];
+  return [{ id: `section:${act.act}`, title: `${act.label} · ${plainMath(at.text)}` }, ...(canMove(at.path) ? [{ id: `section:${mv.act}`, title: `${mv.label} · ${plainMath(at.text)}` }] : [])];
 }
 
 function runCommand(id: string): void {

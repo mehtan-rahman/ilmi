@@ -7621,13 +7621,12 @@ export async function smokeTextSections(vault: Vault): Promise<void> {
   const sectionOf = (p: string, start: string) => items().find((i): i is SectionItem => i.kind === 'section' && i.path === p && i.heading.startsWith(start));
   const openDoc = async (p: string) => {
     openNode(p);
-    const surface = await poll(() => q<HTMLElement>('.pane[data-active="1"] .doc-view .draft-doc'), `${p.split('/').pop()} is open`, 10000);
+    await poll(() => activeTab(useApp.getState().panes)?.id === p && q<HTMLElement>('.pane[data-active="1"] .doc-view .draft-doc'), `${p.split('/').pop()} is open`, 10000);
     await sleep(400);
-    return surface;
   };
-  /** Select `words` in the paragraph that starts with `start`, and wait for the cue. */
-  const mark = async (surface: HTMLElement, start: string, words: string) => {
-    const para = await poll(() => qa<HTMLElement>('p.dd-p', surface).find((el) => el.textContent?.startsWith(start)), `the paragraph "${start.slice(0, 30)}…"`);
+  /** Select `words` in the page's paragraph that starts with `start`, and wait for the cue. */
+  const mark = async (start: string, words: string) => {
+    const para = await poll(() => qa<HTMLElement>('.pane[data-active="1"] .doc-view p.dd-p').find((el) => el.textContent?.startsWith(start)), `the paragraph "${start.slice(0, 30)}…"`, 8000);
     para.scrollIntoView({ block: 'center' });
     select(para, words);
     return poll(() => q<HTMLElement>('.sel-cue'), 'the selection cue');
@@ -7653,9 +7652,10 @@ export async function smokeTextSections(vault: Vault): Promise<void> {
     must(!(await has(NOTE)) && !(await has(WKBN)), 'the sources have no notes yet');
 
     // ── the clipping: a passage marked with e is a section of its note ──
-    let surface = await openDoc(CLIP);
-    let cue = await mark(surface, 'In that world the vacuum', 'In that world the vacuum is not stable.');
+    await openDoc(CLIP);
+    const cue = await mark('In that world the vacuum', 'In that world the vacuum is not stable.');
     must(qa('.cue-act', cue).map((b) => b.textContent?.trim()).join(' | ').includes('section e'), `the cue offers a section: ${qa('.cue-act', cue).map((b) => b.textContent?.trim()).join(' | ')}`);
+    must(qa('.bot span').map((s) => s.textContent).join(' | ').includes('e section'), 'the strip says so too');
     await shot('textsections-cue');
     const clipBefore = await text(CLIP);
     key('e');
@@ -7679,16 +7679,16 @@ export async function smokeTextSections(vault: Vault): Promise<void> {
     await shot('textsections-note');
 
     // a second passage goes under the first
-    surface = await openDoc(CLIP);
-    await mark(surface, 'Euler had the prototype', 'Euler had the prototype two centuries before quantum theory.');
+    await openDoc(CLIP);
+    await mark('Euler had the prototype', 'Euler had the prototype two centuries before quantum theory.');
     key('e');
     await poll(async () => (await headings(NOTE)).length === 2 && (await headings(NOTE))[1]!.text.startsWith('euler had the prototype'), 'a second section under the first', 10000);
     const pos = Number(/^read: .*pos=(\d+)/m.exec(await text(CLIP))?.[1]);
     must(pos > 9, `the marker moved past this one, further down (pos=${pos})`);
 
     // ── the chapter (an EPUB chapter's shape: a frozen source in a notebook) ──
-    surface = await openDoc(WKB);
-    await mark(surface, 'The condition can be written', 'the wavelength must not change appreciably within a wavelength');
+    await openDoc(WKB);
+    await mark('The condition can be written', 'the wavelength must not change appreciably within a wavelength');
     key('e');
     const wk = await poll(async () => (await has(WKBN)) ? (await headings(WKBN))[0] : null, 'the chapter gets a note with the section', 10000);
     must(wk!.text.startsWith('the wavelength must not change') && (await sectionAt(WKBN, 'the wavelength'))!.body[0]!.kind === 'paragraph' && ((await sectionAt(WKBN, 'the wavelength'))!.body[0] as { text: string }).text === 'from: Halvorsen ch. 9: the WKB approximation', `"${wk!.text}", from the chapter`);

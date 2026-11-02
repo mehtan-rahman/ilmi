@@ -26,6 +26,7 @@ export function BottomStrip() {
     notesHidden,
     frozen: !!info?.frozen,
     note: info?.type === 'note' || (kind === 'session' && info?.type === 'extract'),
+    marks: info?.type === 'source' && !info.pdf,
   });
   // a notebook's page: the step keys, ahead of the page's own
   const hints = id !== undefined && notebookOf(id, docs) ? [['⌘⌥↑↓', 'tabs'] as const, ...base] : base;

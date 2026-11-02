@@ -94,6 +94,9 @@ export async function moveSection(at: CaretHeading, to: string): Promise<number 
   return index;
 }
 
+/** A section moves between notes: a source's heading stays where the author put it. */
+export const canMove = (path: string): boolean => useApp.getState().docs[path]?.type === 'note';
+
 /** `move to…`: the palette lists the notes the section can go to. */
 export function moveAction(at: CaretHeading): PopItem {
   return { label: 'move to…', glyph: '→', act: 'move-to', run: () => useApp.setState({ paletteOpen: true, sectionMove: at }) };
@@ -108,5 +111,5 @@ export function sectionActions(status: SectionStatus, at: CaretHeading): PopItem
 
 /** The heading's context menu, at the pointer. */
 export function sectionMenu(x: number, y: number, at: CaretHeading, read: SectionSchedule | undefined): HTMLElement {
-  return popMenu({ left: x, top: y, bottom: y }, [...sectionActions(statusOf(read), at), moveAction(at)], 'section-menu');
+  return popMenu({ left: x, top: y, bottom: y }, [...sectionActions(statusOf(read), at), ...(canMove(at.path) ? [moveAction(at)] : [])], 'section-menu');
 }

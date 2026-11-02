@@ -7509,7 +7509,7 @@ export async function smokeBooks(vault: Vault): Promise<void> {
     await sessionAt(p12, 130);
     must(inView(130), 'the pages landed at the read point, p. 130 in view');
     must(actions().startsWith('done for today · back in'), `a book's actions: ${actions()}`);
-    must(qa('.pane[data-active="1"] .doc-session .book-notes .dd-h').map((h) => h.textContent?.slice(0, 12)).join(' | ').startsWith('dukkān, sirḥ | analogy foll | p. 131'), 'its notes: the two boxed sections, then the pages\' clips');
+    must(qa('.pane[data-active="1"] .doc-session .book-notes h2.dd-h').map((h) => h.textContent?.slice(0, 12)).join(' | ').startsWith('dukkān, sirḥ | analogy foll | p. 131'), 'its notes: the two boxed sections, then the pages\' clips');
     await poll(() => qa('.pane[data-active="1"] .doc-session .book-notes .raw.clip .crop').length === 8, 'eight clips drawn as crops of their pages', 10000);
     await drag(129, 0.12, 0.275, 0.78, 0.072);
     key('m');

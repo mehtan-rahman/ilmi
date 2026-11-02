@@ -92,19 +92,27 @@ section left the queue with its 3 cards still due; come back wrote `made=
 come back; dark. My captures were full-screen with the window behind
 others, so they were deleted unseen; the shots are owed by window id.
 
+### Window check 5 (2026-11-02, the coordinator, clean checkout at `36da296`)
+
+`ILMI_SMOKE=sections` over a fresh copy of the sample, captured by window
+id only: `done`, 55 `ok:` lines, no `failed:`, all eight shots (each a
+moment after its name: the capture waits 2 s while the smoke goes on).
+The session bar, the inspector's section part, the § after an enrolled
+heading, and the dark queue's legend read as the demo does.
+
 ### Not done
 
-- Shots by window id of the passing run (sections-queue, -session,
-  -after-next, -after-dismiss, -inspector-bring-back, -inspector-after,
-  -heading-menu, -queue-dark).
+- The queue's done rows read `section · back in 3d` without the section's
+  name; the head's `N to read N to write N to review` sits above the
+  legend and reads as the split the user asked not to have.
 - The outline doesn't mark sections; sections are not paced under exams.
 
 ### Handoff prompt
 
 ```
 Read PLAN.md (Reading books, 47's notes, 48), FORMAT.md §6.5, and this
-entry. If the shots of ILMI_SMOKE=sections are still owed, take them by
-window id from a clean checkout of main. Then build 48: a document with pages opens as one split session (pages
+entry. First fix the two queue items under Not done (done rows named,
+the head's split counts gone or folded into the legend). Then build 48: a document with pages opens as one split session (pages
 left, the body in the editor right), boxes on the page become sections
 (`e`), `boxes` given its grammar (`page:x:y:w:h`, `,` between), `y` on the
 read line, the read bar, the section chip, `m` clipping, ⌘\ hiding the

@@ -5225,6 +5225,18 @@ dismissed, out of the queue, its 3 cards still due; come back and bring
 back (reps and boxes kept) returning it; the heading's menu; dark. My
 screen captures took the whole screen with the window behind others, so
 they were deleted unseen; the shots are the coordinator's, by window id.
+Window check 5 (2026-11-02, the coordinator, a clean checkout at
+`36da296`, a fresh copy of the sample, captured by window id only):
+`ILMI_SMOKE=sections` ran to `done`, 55 `ok:` lines, no `failed:`; all
+eight shots taken (each lands a moment after its name, since the capture
+waits 2 s and the smoke goes on). Seen in them: the session bar
+(`§ canonical ensemble & partition functions › pset 4 … · written, no
+cards yet · first time back`, `next · back in 5d / later / dismiss`), the
+inspector's section part (`comes back until dismissed · dismiss`), the §
+after an enrolled heading, the dark queue with its legend. Open: the
+queue's done rows read only `section · back in 3d`, without the section's
+name; the head still counts `19 to read 1 to write 355 to review` above
+the legend, which reads as a split the user asked not to have.
 - **The format** (FORMAT §6.5, new). A `<!-- read … -->` line directly under a heading enrolls the section: the heading and everything under it up to the next heading of the same or a higher level.
   - **Attributes:** `due`, `ivl`, `reps`, `af` and `pri`, as on the `read` field; `made` (the day it was enrolled); `boxes` (48, kept as written here).
   - **Dismissing** drops `due`, `ivl`, `reps` and `af`. The line stays only when it has `boxes`; otherwise it is removed.

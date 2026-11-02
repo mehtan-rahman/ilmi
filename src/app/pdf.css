@@ -219,7 +219,8 @@
 .pbox.flash { animation: pbox-flash 1s ease 2; }
 @keyframes pbox-flash { 50% { background: color-mix(in oklab, var(--accent) 35%, transparent); } }
 @media (prefers-reduced-motion: reduce) { .pbox.flash { animation: none; } }
-.ptag {
+/* a passage's name beside its page (scoped: the palette's row tag is `.ptag` too) */
+.pdf-view .ptag {
   position: absolute;
   pointer-events: auto;
   max-width: 190px;
@@ -232,12 +233,12 @@
   color: var(--fg-2);
   cursor: pointer;
 }
-.ptag:hover, .ptag.cur { color: var(--fg-1); }
-.ptag:hover { color: var(--accent); }
-.ptag.cont, .ptag.dis { color: var(--fg-4); }
-.ptag .pt-g { font-family: var(--serif); color: var(--accent); margin-right: 3px; }
-.ptag.dis .pt-g { color: var(--fg-4); }
-.ptag .pt-c { font-family: var(--mono); font-size: 10px; color: var(--accent); margin-left: 4px; }
+.pdf-view .ptag:hover, .pdf-view .ptag.cur { color: var(--fg-1); }
+.pdf-view .ptag:hover { color: var(--accent); }
+.pdf-view .ptag.cont, .pdf-view .ptag.dis { color: var(--fg-4); }
+.pdf-view .ptag .pt-g { font-family: var(--serif); color: var(--accent); margin-right: 3px; }
+.pdf-view .ptag.dis .pt-g { color: var(--fg-4); }
+.pdf-view .ptag .pt-c { font-family: var(--mono); font-size: 10px; color: var(--accent); margin-left: 4px; }
 .pgut {
   position: absolute;
   pointer-events: auto;

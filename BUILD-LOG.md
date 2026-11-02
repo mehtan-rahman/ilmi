@@ -72,10 +72,26 @@ bottom strip, the store, `infoOf`, the reading pass (`y`), FORMAT §3 §6.5
   head line and the done row named.
 - Port 1420 and every `ilmi` were mine, stopped through their tasks.
 
+### Window check 2 (2026-11-02, the coordinator, clean checkout at `79bdb9d`)
+
+`ILMI_SMOKE=book` over a fresh copy of the sample
+(`ILMI_BOOKS=<runtree>/design/books`), captured by window id only: `done`,
+no `failed:`, all nine shots. A first run took each shot 2 s late (the
+smoke holds 1.8 s); the rerun captures 0.3 s after each `shot:` line, so
+every shot shows its own moment. The split, the pending boxes and their
+`e section · 2 boxes · m card · esc` bar, the new section in book order,
+both crops with `p. 42` between, the notes hidden with each box's name
+beside the page, the Arabic clip, the queue's section session at its
+boxes, and dark mode read as the demo does.
+
+Seen in the shots: the `clipped · p. 1 …` notice from the Arabic page
+stays up after the tab changes and covers the session bar's later and
+dismiss buttons (book-queue-section, book-dark).
+
 ### Not done
 
-- The shots (`book-*`, nine names) are owed, by window id, from a clean
-  checkout. `ILMI_SMOKE=book` needs `ILMI_BOOKS=<repo>/design/books`.
+- A notice outlives its document and covers the session bar's buttons;
+  it should close when the tab changes, or sit clear of the bar.
 - `ILMI_SMOKE=pdf` (milestone 15) still drives the removed rail, composer
   and text toggle; the `open` smoke's PDF part was moved to the book but
   not run.
@@ -90,8 +106,9 @@ bottom strip, the store, `infoOf`, the reading pass (`y`), FORMAT §3 §6.5
 Read PLAN.md (Reading books, 47's and 48's notes, 49), FORMAT.md §3, §6.5
 and §6.6, and this entry. First run ILMI_SMOKE=book from a clean checkout
 over a fresh copy of samples/double-major (ILMI_BOOKS=<runtree>/design/books)
-and ILMI_SMOKE=open, take the shots by window id, and fix what reads wrong
-against design/demos/pdf-reading.html. Then build 49: typeset Lindqvist
+and ILMI_SMOKE=open, and fix what reads wrong against
+design/demos/pdf-reading.html, first the notice that covers the session
+bar (Not done). Leave the shots to the coordinator. Then build 49: typeset Lindqvist
 chapters 2–4 from the sample into design/books/lindqvist.tex (ch3.tex's
 look), convert each chapter's extract documents into boxed sections of its
 notes (text, cards with their ids and sr lines, the read schedule onto the

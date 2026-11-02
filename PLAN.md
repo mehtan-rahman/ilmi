@@ -5386,6 +5386,31 @@ cannot be resized or moved; nothing names an Arabic passage.
 
 *Done when:* both flows run end to end in the window on a fresh copy of the sample. The queue reads as one line from start to end, and no extract document is left behind under the converted chapters.
 
+### [ ] 50. Text sources the same way — marked passages become sections of a note
+The user, 2026-11-02, asked whether extracts from clippings and EPUBs should
+also become sections: "I think we shoudl have the same model for them, i'm
+kinda leaning towards sections of a note that aren't tied the source
+matter". Then, of the details below: "I think this makes sense".
+- **Marking text** in a clipping or an EPUB chapter (`e`) makes a `##`
+  section in that source's note, one note per source, with the passage
+  copied in. The section owns the text from then on: edit it, trim it,
+  rewrite it.
+- **Not tied to the source.** No live link, highlight or box goes back; changing or deleting the
+  clipping leaves the note alone. A plain `from: <source>` line sits under
+  the heading.
+- **The same queue.** The section carries the §6.5 read line and comes back
+  until dismissed, with next / later / dismiss, beside books' sections and
+  plain notes' sections.
+- **Moving.** A section can be moved to another note (heading menu,
+  palette), its read line and cards going with it.
+- **Older work.** Existing extract documents from text sources stay readable
+  and keep their schedules; converting them is offered, not forced.
+
+*Done when:* on the sample, marking two passages in a clipping and one in the
+EPUB makes three sections in two notes, each comes up in the one queue
+saying where it stands, one is moved to a course note, and the clipping is
+edited without touching them (`ILMI_SMOKE=textsections`).
+
 ## Notes for the next session
 
 Studying (42–46) is complete, 2026-10-31: every milestone's window check
@@ -5398,9 +5423,9 @@ remembers its sentence waits for a demo the user asked to see first.
 Next: Reading books (47–49), written 2026-11-01 once the user said the
 flow was right ("Looks good"). The demo they settled on is
 `design/demos/pdf-reading.html`; its books' sources are in
-`design/books/`. Still open with the user: whether extracts from text
-sources (clippings, EPUB) also become sections of a note instead of
-extract documents.
+`design/books/`. 48 passed its window check from a clean checkout
+on 2026-11-02 (a notice covering the session bar is left for 49). The
+user decided text sources follow the same model, written as 50.
 
 Refinement (33–41) is complete, 2026-10-30, every milestone's window check
 run and recorded under its BUILD-LOG entry (33 `notes`, 34 `editing`, 35

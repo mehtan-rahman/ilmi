@@ -7470,9 +7470,11 @@ export async function smokeBooks(vault: Vault): Promise<void> {
     type('2. so $\\ln Z_q = {{c1::-\\tfrac12 \\ln \\beta}} + \\text{const}$');
     keydown(surface, 'Enter');
     await sleep(200);
-    type('3. $\\langle E_q \\rangle = -\\partial_\\beta \\ln Z_q = $ {{c1::$1/2\\beta = \\tfrac12 kT$}}, whatever $c$ is');
-    await sleep(600);
+    type('3. $\\langle E_q \\rangle = -\\partial_\\beta \\ln Z_q$ = {{c1::$1/2\\beta = \\tfrac12 kT$}}, whatever $c$ is');
+    await sleep(1500);
     must((surface.textContent ?? '').includes('Gaussian integral') && (surface.textContent ?? '').includes('whatever'), 'the steps are on the page');
+    const ch = useApp.getState().caretHeading;
+    must(ch?.text === sec.heading, `the caret is still in the section after the write-up and its save (caretHeading: ${JSON.stringify(ch && { nth: ch.nth, text: ch.text.slice(0, 30) })})`);
     await shot('books-write-up');
     before = await text(CH3);
     key('Enter');

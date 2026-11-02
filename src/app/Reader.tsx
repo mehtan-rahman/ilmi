@@ -1227,6 +1227,7 @@ export function withSelectionOf(prev: EditorState | null, state: EditorState): E
   // of a write-up went into the next heading)
   const at = caretAt(prev.doc, prev.selection.head);
   const found = at === null ? null : caretPos(state.doc, at);
+  if (typeof found === 'object' && found !== null) return state.apply(state.tr.setSelection(NodeSelection.create(state.doc, found.card)));
   const head = found ?? Math.min(prev.selection.head, state.doc.content.size);
   return state.apply(state.tr.setSelection(Selection.near(state.doc.resolve(head))));
 }
@@ -1248,14 +1249,24 @@ export function caretAt(doc: PMNode, head: number): { nth: number; text: string;
   return { nth, text: textOf($p.parent), offset: textOf($p.parent.cut(0, $p.parentOffset)).length };
 }
 
-/** The position in `doc` that `at` names: the same textblock (by its text near its place, else its place) at the same offset in its text. */
-export function caretPos(doc: PMNode, at: { nth: number; text: string; offset: number }): number | null {
+/**
+ * The position in `doc` that `at` names: the same textblock (by its text
+ * near its place, else its place) at the same offset in its text; or the
+ * card the block became (a cloze or `::` typed into it), to be selected.
+ */
+export function caretPos(doc: PMNode, at: { nth: number; text: string; offset: number }): number | { card: number } | null {
   const blocks = textblocksOf(doc);
   if (!blocks.length) return null;
   let best = blocks[Math.min(at.nth, blocks.length - 1)]!;
   if (textOf(best.node) !== at.text) {
     const same = blocks.map((b, i) => ({ b, d: Math.abs(i - at.nth) })).filter((x) => textOf(x.b.node) === at.text).sort((a, b) => a.d - b.d)[0];
     if (same) best = same.b;
+    else {
+      // the block became a card (a cloze or `::` typed into it): the card is selected, as a click on it would
+      let card: number | null = null;
+      doc.descendants((n, pos) => { if (card === null && n.type === schema.nodes.card && (n.attrs.card as Card).text === at.text) card = pos; return card === null; });
+      if (card !== null) return { card };
+    }
   }
   let pos = best.start;
   let seen = 0;

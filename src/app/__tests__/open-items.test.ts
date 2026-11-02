@@ -67,6 +67,21 @@ describe('a selected card through a rebuild from the file', () => {
     expect(textOf(next.doc.child(0).cut(0, $m.parentOffset))).toBe('abc $x+y$ and');
   });
 
+  it('a line that became a card in the rebuilt document leaves the caret right after the card', () => {
+    const live = { frozen: () => false, pos: null };
+    const prev0 = makeState(parse('## a heading\n\nabc\n\n## the next heading\n').doc.blocks, live);
+    const end = prev0.doc.child(1).nodeSize + prev0.doc.child(0).nodeSize - 1;
+    const typed = prev0.apply(prev0.tr.insertText(' {{c1::$x$}} done', end));
+    const prev = typed.apply(typed.tr.setSelection(TextSelection.create(typed.doc, typed.doc.child(0).nodeSize + typed.doc.child(1).nodeSize - 1)));
+    const file = parse('').doc;
+    file.blocks = fromDoc(prev.doc);
+    const next = makeState(parse(serialize(file)).doc.blocks, live);
+    expect(next.doc.child(1).type.name).toBe('card');
+    const got = withSelectionOf(prev, next);
+    expect(got.selection instanceof NodeSelection && got.selection.node.type.name === 'card').toBe(true);
+    expect(got.selection.from).toBe(got.doc.child(0).nodeSize);
+  });
+
   it('stays selected: the same card by id, after it moved', () => {
     const live = { frozen: () => false, pos: null };
     const before = makeState(parse('- a :: b ^ca\n- c :: d ^cc\n').doc.blocks, live);

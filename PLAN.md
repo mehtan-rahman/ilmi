@@ -5121,6 +5121,115 @@ From the notes of 37, 39, 40, 41:
 - The outline marks folded headings.
 *Done when:* each works in the window on the sample.
 
+## Reading books
+
+Worked out with the user over fifteen versions of a demo, 2026-10-31 to
+2026-11-01 (`design/demos/pdf-reading.html`, opened from disk; published
+at https://claude.ai/artifact/X8YAWbuPf2hzcD6zmstTzr). What they asked
+for, in their words:
+- **Extracts go back to the PDF.** "cards & clozes should still be things that I wrote but I think the actual IR & extracts should just go back to the PDF".
+- **Act at any point.** "I want the flexibility to decide what to do at any point… make extracts or write notes as a read… make cards as a go along… in a way that's seamless".
+- **Two monitors.** Separate extract documents "would make extracts feel very scattered / lost… like in my head i kinda imagine the workflow mimicing if i had textbook open on one monitor and latex notes im writing up in another".
+- **One queue.** The queue "should be interleaved (this is the supermemo philosophy)", and you "should be able to dismiss passages… after you process".
+- **Not physics-only.** A physics first pass is derivations on paper, then they're typed up and carded later: "i dont want the workflow to be specific to physics but it should be able to support it!"
+
+**The model.**
+- **A chapter is its pages beside its notes.** A chapter of a PDF book opens as its pages on the left and the chapter document's own body on the right, in the full editor. The body is the person's notes on it: one continuous document per chapter.
+- **A passage is a section of the notes.** Boxing a passage on the page (one or more boxes, across pages) makes a section of the notes, named from the page, tied to the boxes, and scheduled.
+- **Anything can come back.** A section of any note, with or without a book, can come back the same way.
+- **One queue, by priority.** Today's queue mixes books to read on in, sections, and cards, each row saying where it stands ("boxed Oct 29, nothing written yet · first time back", "written, 3 cards · back for the 2nd time").
+- **The same three choices everywhere.**
+  - ⏎ **next** sends an item back later, the gap growing each time.
+  - `p` **later** postpones it without counting the pass.
+  - `d` **dismiss** ends it: its notes and cards stay.
+
+  These are the keys the session already has (`on`, `postpone`, `done`), renamed on screen. A book's ⏎ is **done for today**.
+- **What stays the same.** Cards stay what the person writes, anywhere in the notes. There are no stages, no modes and no separate review of notes.
+
+The demo's books are originals: `design/books/ch3.tex` typesets pp. 41–44 of the sample's Lindqvist ch. 3 (pdflatex, newtx, pgfplots), and `design/books/reader.tex` p. 129 of the classical prose reader's passage 12 (XeLaTeX, polyglossia, the system's DecoType Naskh). pdf.js reads the Arabic page's text out of order, so a passage in Arabic is boxed and clipped, never named from its text.
+
+Order: 47 → 48 → 49, on main, each judged on `samples/double-major` and checked in the window from a clean checkout.
+
+### [ ] 47. Sections that come back — one queue, and every item says where it stands
+- **The format** (FORMAT §6.5, new). A `<!-- read … -->` line directly under a heading enrolls the section: the heading and everything under it up to the next heading of the same or a higher level.
+  - **Attributes:** `due`, `ivl`, `reps`, `af` and `pri`, as on the `read` field; `made` (the day it was enrolled); `boxes` (48, kept as written here).
+  - **Dismissing** drops `due`, `ivl`, `reps` and `af`. The line stays only when it has `boxes`; otherwise it is removed.
+  - **Orphans:** after anything but a heading, the line is an orphan raw block with a diagnostic, as in §6.2. Headings can carry no other annotation.
+  - **Priority** is the document's `pri` unless the line says otherwise.
+- **Enrolling.**
+  - The inspector's part for the heading under the caret has **come back**, which writes `made=<today> due=<+3d> ivl=3`. The heading's context menu and the palette have it too.
+  - It works in a note or a source. A frozen source can still enroll its headings.
+  - A note's own `read` (a whole note revisited) is unchanged and uses the same words.
+- **The queue.** A section is a queue item, sorted with reading, writing and cards by priority and due, as everything is. It is never grouped by kind.
+- **Every row says where it stands**, in one line under its title:
+  - **a section:** nothing under its heading and no cards → "boxed <made>, nothing written yet" (or "made <made>, …" without boxes); text and no cards → "written, no cards yet"; cards → "written, N cards". Then "· first time back" / "· back for the Nth time" from `reps`, or "· new".
+  - **a book:** "read on from p. N".
+  - **a note revisit or an extract:** the same words as a section.
+  - **a card:** as now.
+- **The queue's head** reads, in one line, "in priority order · “ read on in a book · § a passage or section, back until you dismiss it · ◆ a card".
+- **The session.**
+  - A section opens its document at the heading, marked, in the editor, so you can write, card and enroll more.
+  - The action row reads **next · back in Nd** (⏎, `readOn` on the line), **later** (`p`, `postpone`), **dismiss** (`d`).
+  - Above the actions, one line says what the item is and where it stands (the row's words).
+  - **Renamed everywhere, keys unchanged:** a book's ⏎ is **done for today · back in Nd**. Notes, extracts, sections and drafts read **next / later / dismiss**. The bottom strip and the README's key table follow.
+  - When every item is done, the session says so and returns to the queue.
+- **The inspector** shows a section's stands / next / priority, with **dismiss** or **bring back** (a fresh `due` in 3 days, `reps` kept).
+- **Counts.** The tree's due counts include sections.
+- **Sample.** In `courses/fall-2026/phys-415-stat-mech/canonical-ensemble.md`, enroll a derivation typed up from paper with no cards yet (due today), and one section with cards (due later).
+
+*Done when:* on a fresh copy of `samples/double-major`, the day's queue interleaves the enrolled sections with reading and cards by priority, and each row says where it stands. In the window (`ILMI_SMOKE=sections`):
+- A section opens in place.
+- ⏎, `p` and `d` each change exactly the heading's line in the file and move on to the next item, whatever kind it is.
+- A dismissed section leaves the queue while its cards stay due.
+- Bring back returns it.
+
+### [ ] 48. The book beside its notes — boxes on the page become sections
+- **The split.** A document with pages opens as one split session: the PDF's pages (its `pages`, through the existing lens) on the left, its body in the full editor on the right.
+  - The body of a document with pages is never frozen; `frozen` keeps only the text of text sources.
+  - ⌘\ hides and shows the notes. This replaces milestone 15's rail beside the page, whose `## p. N` cards still show in the notes.
+- **The read bar.** A gold bar in the margin runs from the chapter's first page to the read point. `y` (0–1, three decimals) joins `pos` on the `read` line. ⏎ done for today records the point at the bottom of the view.
+- **Boxing.**
+  - Drag on a page to draw a box. Drag again, on any page, to add another; the boxes are numbered while pending. `esc` clears them.
+  - A text selection on a page boxes its lines' rectangles.
+- **`e` makes a section.**
+  - It writes a `##` heading named from the page: the nearest numbered heading at or above the first box (`3.3 · average values`) plus the equation numbers inside the boxes (`(3.13–3.15)`), else `p. N`.
+  - The section goes in book order among the boxed sections, with `<!-- read made=… due=… ivl=3 boxes=… -->`.
+  - `boxes` is `page:x:y:w:h`, fractions of the page to three decimals, `,` between; the page numbers are the PDF's.
+  - The read point moves past the last box.
+  - ⏎ right after puts the caret in the new section; a notice says it comes back in 3 days until dismissed.
+- **`m`.**
+  - In a book whose pages name their sections, `m` makes the section and puts the caret in it to type a card.
+  - Otherwise (a passage book, Arabic) it clips: a `<!-- box N:x:y:w:h -->` line under `## p. N`, drawn in the notes as the crop of the page, with the caret below for `word ::: meaning`.
+- **Linking.**
+  - With the caret in a section, its boxes are lit on the page and the book scrolls to them.
+  - A box on the page carries its section's name: a tag beside the page when there is room, a § mark in the gutter when not. Clicking it goes to the section.
+  - Under each section heading is a chip: **show in book**, **show boxes here** (the boxed crops drawn inline in the editor, page breaks marked), and its due ("due today", "back in Nd", "dismissed").
+  - A dismissed section's boxes are dashed.
+  - `[` and `]` step between sections. The inspector lists the passages in book order with when each is next.
+- **From the queue.** A section of a document with pages opens this split at the section, its boxes lit, the page scrolled to them.
+- **Older work keeps working.** Extract documents with `page=` stay readable and keep their schedules.
+
+*Done when:* on `design/books/ch3.pdf` copied into a scratch vault as a chapter (`pages: 41-44`), all of the following work in the window (`ILMI_SMOKE=book`); a test holds `boxes` and `y` to the grammar:
+- a two-box passage across pp. 41–42 becomes "3.3 · … (3.12)" in book order;
+- the caret lights its boxes;
+- show boxes here draws both crops;
+- `m` on the Arabic page clips;
+- ⌘\ hides the notes;
+- the queue opens a section at its boxes.
+
+### [ ] 49. Two books on the sample, and a pass over the flow
+- **Lindqvist.**
+  - Typeset chapters 2–4 from the sample's own text into one book PDF with `design/books/ch3.tex`'s look: `design/books/lindqvist.tex`, reproducible with `pdflatex`, the PDF committed beside the chapters.
+  - Each chapter document takes `pdf: ../lindqvist-statistical-physics.pdf` and its `pages`. Its body (the book's text) gives way to the notes.
+  - Each extract document under a chapter becomes a section of that chapter's notes: boxed over its passage on the page, its text and cards moved in with their ids and `sr` lines, and its `read` schedule carried onto the heading's line.
+- **The reader.** Do the same for the classical prose reader's passage 12 (`design/books/reader.tex`, XeLaTeX), clipped where its extracts were words.
+- **Walk the flows.** Walk both on the sample (`ILMI_SMOKE=books`), shooting each moment, and fix what reads wrong:
+  - **the physics first pass:** read on, box two derivations, done for today;
+  - **a later day:** the boxed derivation comes up "nothing written yet", is written up with numbered steps and cloze steps, then next; it returns "written, 3 cards" and is dismissed;
+  - **the Arabic passage:** read in rotation, clip, `word ::: meaning`.
+
+*Done when:* both flows run end to end in the window on a fresh copy of the sample. The queue reads as one line from start to end, and no extract document is left behind under the converted chapters.
+
 ## Notes for the next session
 
 Studying (42–46) is complete, 2026-10-31: every milestone's window check
@@ -5130,15 +5239,12 @@ beside 43 with the queue bringing exams forward before it buries a linked
 card's twin. The app icon is the letter ʿayn beside the gold read marker
 (`design/icon.swift`, `npx tauri icon design/icon.png`). Vocabulary that
 remembers its sentence waits for a demo the user asked to see first.
-Next: reading PDFs and books, being designed with the user from
-SuperMemo's incremental reading (research in the session's scratchpad,
-`ir-research.md`): a textbook read in order, whose extracts are boxes on
-the PDF (across pages) processed in a split view beside the user's own
-note; a book of passages split from its outline and read in rotation,
-cards made off the page; adding a book is a chapter checklist, no form;
-annotations kept in the Markdown, an annotated PDF exported on request.
-The demo is https://claude.ai/artifact/X8YAWbuPf2hzcD6zmstTzr; write the
-milestones once the user says the flow is right.
+Next: Reading books (47–49), written 2026-11-01 once the user said the
+flow was right ("Looks good"). The demo they settled on is
+`design/demos/pdf-reading.html`; its books' sources are in
+`design/books/`. Still open with the user: whether extracts from text
+sources (clippings, EPUB) also become sections of a note instead of
+extract documents.
 
 Refinement (33–41) is complete, 2026-10-30, every milestone's window check
 run and recorded under its BUILD-LOG entry (33 `notes`, 34 `editing`, 35

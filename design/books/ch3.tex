@@ -1,0 +1,126 @@
+\documentclass[10pt,twoside]{book}
+\usepackage[paperwidth=6in,paperheight=9in,inner=0.8in,outer=0.7in,top=0.85in,bottom=0.8in,headsep=0.25in]{geometry}
+\usepackage{newtxtext,newtxmath}
+\usepackage{amsmath}
+\usepackage{microtype}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\titleformat{\section}{\normalfont\large\bfseries}{\thesection}{0.8em}{}
+\titlespacing*{\section}{0pt}{2.2ex plus .5ex}{1.2ex}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[LE]{\small\thepage\hspace{1.2em}\textsc{Statistical Physics: A First Course}}
+\fancyhead[RO]{\small\textsc{3\enspace The Canonical Ensemble}\hspace{1.2em}\thepage}
+\renewcommand{\headrulewidth}{0pt}
+\setcounter{chapter}{3}
+\setcounter{section}{1}
+\setcounter{equation}{8}
+\renewcommand{\theequation}{3.\arabic{equation}}
+\renewcommand{\thesection}{3.\arabic{section}}
+\setcounter{page}{41}
+\newcommand{\dd}{\mathrm{d}}
+\begin{document}
+
+\section{The partition function}
+
+The result of the last section is that a system in equilibrium with a reservoir at temperature $T$ occupies a microstate $s$ of energy $E_s$ with a probability proportional to the Boltzmann factor $e^{-E_s/kT}$. Writing $\beta = 1/kT$ and requiring that the probabilities sum to one gives the \emph{canonical distribution},
+\begin{equation}
+  P_s = \frac{e^{-\beta E_s}}{Z}, \qquad Z = \sum_s e^{-\beta E_s}.
+\end{equation}
+The normalizing sum $Z$ is called the \emph{partition function}. The name (from the German \emph{Zustandssumme}, ``sum over states'') undersells it. $Z$ depends on the temperature and, through the energies $E_s$, on the volume and on whatever else fixes the levels of the system, and once it is known as a function of these variables every equilibrium property follows by differentiation. The rest of this chapter is largely an elaboration of that remark.
+
+Two features of the definition deserve comment at once. First, the sum runs over \emph{microstates}, not over energies: if an energy level $E$ is shared by $g(E)$ distinct states, it contributes $g(E)\,e^{-\beta E}$, and in this form the competition between energy and entropy is visible directly. The Boltzmann factor falls with $E$; the degeneracy usually rises steeply with it, and the product is sharply peaked. Second, the zero of energy is arbitrary. Shifting every $E_s$ by a constant $E_0$ multiplies $Z$ by $e^{-\beta E_0}$ and leaves every $P_s$ unchanged, so only energy differences have physical meaning; we shall see that $\ln Z$ shifts by $-\beta E_0$, and the mean energy by $E_0$, exactly as it should.
+
+At low temperature ($\beta \to \infty$) the sum is dominated by the ground state, and $Z \approx g_0 e^{-\beta E_0}$. At high temperature every Boltzmann factor approaches one and $Z$ simply counts the accessible states. Between these limits $Z$ interpolates smoothly, and the way it does so encodes the spectrum of the system.
+
+\section{Average values}
+
+Any quantity $X$ that takes the value $X_s$ in microstate $s$ has the canonical average
+\begin{equation}
+  \langle X\rangle = \sum_s X_s P_s = \frac{1}{Z}\sum_s X_s\, e^{-\beta E_s}.
+\end{equation}
+For the energy itself the sum can be done without knowing anything further about the system. Differentiating a single Boltzmann factor with respect to $\beta$ brings down a factor of $-E_s$,
+\begin{equation}
+  \frac{\partial}{\partial\beta}\, e^{-\beta E_s} = -E_s\, e^{-\beta E_s},
+\end{equation}
+so the sum $\sum_s E_s e^{-\beta E_s}$ is $-\partial Z/\partial\beta$, and
+\begin{equation}
+  U \equiv \langle E\rangle = -\frac{1}{Z}\frac{\partial Z}{\partial \beta} = -\frac{\partial \ln Z}{\partial \beta}.
+\end{equation}
+This is the first of the promised derivatives. Notice that it is $\ln Z$, not $Z$, that appears naturally; we shall meet this again.
+
+The same trick applied twice gives the mean square energy, $\langle E^2\rangle = Z^{-1}\,\partial^2 Z/\partial\beta^2$, and hence the variance of the energy about its mean:
+\begin{align}
+  \sigma_E^2 = \langle E^2\rangle - \langle E\rangle^2
+  &= \frac{1}{Z}\frac{\partial^2 Z}{\partial\beta^2} - \left(\frac{1}{Z}\frac{\partial Z}{\partial\beta}\right)^{\!2} \notag\\
+  &= \frac{\partial^2 \ln Z}{\partial \beta^2} = -\frac{\partial U}{\partial \beta}.
+\end{align}
+Since $\dd\beta = -\dd T/kT^2$, the last derivative is $kT^2\,\partial U/\partial T$, and $\partial U/\partial T$ at fixed volume is the heat capacity. Therefore
+\begin{equation}
+  \sigma_E^2 = kT^2 C_V .
+\end{equation}
+The fluctuations of the energy, which the canonical ensemble permits and the microcanonical forbids, are fixed by a quantity we can measure with a calorimeter. Both $U$ and $C_V$ are extensive, proportional to the number of particles $N$, so the relative size of the fluctuations is
+\begin{equation}
+  \frac{\sigma_E}{U} \propto \frac{\sqrt{N}}{N} = \frac{1}{\sqrt{N}} .
+\end{equation}
+For a macroscopic system, with $N \sim 10^{23}$, this is about one part in $10^{11}$. The energy of a system in contact with a reservoir is not fixed, but it is fixed in practice, and this is why the canonical and microcanonical ensembles give the same thermodynamics for large systems.
+
+\section{The Helmholtz free energy}
+
+Thermodynamics tells us that the natural potential for a system at fixed $T$, $V$ and $N$ is the Helmholtz free energy $F = U - TS$. Its connection with the partition function is the most compact statement in the subject:
+\begin{equation}
+  F = -kT \ln Z .
+\end{equation}
+To verify it, recall that $S = -(\partial F/\partial T)_V$, so that $F = U + T(\partial F/\partial T)_V$. In terms of $\beta$ this reads $U = \partial(\beta F)/\partial\beta$. Comparing with the expression for $U$ above, $\beta F$ and $-\ln Z$ have the same $\beta$-derivative, so they differ at most by a constant independent of temperature; the third law, or a direct check at $T\to 0$ where both reduce to $\beta E_0 - \ln g_0$, fixes the constant at zero.
+
+With $F$ in hand the entropy follows. Substituting $F = -kT\ln Z$ and $U = \sum_s E_s P_s$ into $S = (U-F)/T$, and using $\ln P_s = -\beta E_s - \ln Z$, gives
+\begin{equation}
+  S = -k \sum_s P_s \ln P_s ,
+\end{equation}
+the form in which Gibbs wrote it and the one that carries over unchanged to information theory. When all $\Omega$ accessible states are equally likely it reduces to Boltzmann's $S = k\ln\Omega$.
+
+The logarithm explains why $\ln Z$ rather than $Z$ keeps appearing. For two systems that do not interact, every microstate of the pair is a pair of microstates and the energies add, so the partition function of the whole is the product $Z = Z_1 Z_2$. Then $\ln Z$, $F$, $U$ and $S$ are all sums of the contributions of the parts, as extensive quantities must be.
+
+\section{Example: a two-level system}
+
+The simplest system with a nontrivial partition function has just two states, of energies $0$ and $\varepsilon$. It describes, for instance, a spin-$\frac12$ in a magnetic field, or an impurity with one low-lying excited level. Here
+\begin{equation}
+  Z = 1 + e^{-\beta\varepsilon}, \qquad
+  U = -\frac{\partial\ln Z}{\partial\beta} = \frac{\varepsilon}{e^{\beta\varepsilon} + 1}.
+\end{equation}
+At low temperature the system sits in its ground state and $U \to 0$; at high temperature the two states are equally occupied and $U \to \varepsilon/2$. It never reaches a population inversion: no positive temperature puts more systems in the upper state than in the lower. The heat capacity is
+\begin{equation}
+  C = \frac{\partial U}{\partial T} = k\,(\beta\varepsilon)^2\,\frac{e^{\beta\varepsilon}}{\left(e^{\beta\varepsilon}+1\right)^2} ,
+\end{equation}
+which vanishes at both ends and has a single peak near $kT \approx 0.42\,\varepsilon$ (Fig.~3.2). A bump of this shape in a measured heat capacity, the \emph{Schottky anomaly}, is the signature of a gap in a spectrum and a way to measure it.
+
+\begin{center}
+\begin{tikzpicture}
+\begin{axis}[width=3.6in,height=1.9in,xmin=0,xmax=2.5,ymin=0,ymax=0.5,
+  xlabel={$kT/\varepsilon$},ylabel={$C/k$},samples=200,domain=0.02:2.5,
+  tick label style={font=\footnotesize},label style={font=\small},axis lines=left]
+\addplot[thick] {(1/x)^2*exp(1/x)/(exp(1/x)+1)^2};
+\draw[dashed] (axis cs:0.417,0) -- (axis cs:0.417,0.439);
+\end{axis}
+\end{tikzpicture}
+
+\small\textbf{Figure 3.2}\enspace Heat capacity of a two-level system: the Schottky anomaly.
+\end{center}
+
+Of the formulas in this chapter, the one to carry away is the chain of derivatives: from $Z$ to $\ln Z$, to $U$ and $\sigma_E$ by differentiating in $\beta$, and to $F$ and $S$ by multiplying by $-kT$ and differentiating in $T$. Everything in the next three chapters is an application of it.
+
+\section*{Problems}
+\small
+\noindent\textbf{3.1}\enspace Show that shifting every energy by $E_0$ changes $\ln Z$ by $-\beta E_0$ and $F$ by $E_0$, and leaves $S$ unchanged.
+
+\smallskip
+\noindent\textbf{3.2}\enspace For the two-level system, find the entropy $S(T)$ and check its limits as $T\to 0$ and $T\to\infty$.
+
+\smallskip
+\noindent\textbf{3.3}\enspace Locate the maximum of the Schottky heat capacity numerically and confirm $kT \approx 0.42\,\varepsilon$.
+
+\smallskip
+\noindent\textbf{3.4}\enspace A system has levels $E_n = n\varepsilon$, $n = 0,1,2,\ldots$, each nondegenerate. Sum the partition function and find $U(T)$. Which physical system is this?
+\end{document}

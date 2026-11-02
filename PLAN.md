@@ -5269,7 +5269,77 @@ the legend, which reads as a split the user asked not to have.
 - A dismissed section leaves the queue while its cards stay due.
 - Bring back returns it.
 
-### [ ] 48. The book beside its notes — boxes on the page become sections
+### [x] 48. The book beside its notes — boxes on the page become sections
+Done 2026-11-02, commits `0688e64` (47's two queue items) and `14031c9`.
+Notes: First 47's open items: a done row names what it was (`doneLine`: `§
+<heading> · next · back in 5d`, a book `“ <title> · done for today · …`,
+cut at 56 characters), and the head's `N to read N to write N to review`
+is gone; the one line reads `N due, in priority order · “ … · § … · ◆ …`.
+Then 48. `Pdf.tsx` is the book: `.book`, a grid of `.book-pages` (the pages,
+reworked from milestone 15's lens) and `.book-notes` (`Reader` with
+`notes`: never frozen, no marker, no title, a `notes` head counting
+passages and cards, the book plugin, clips drawn). milestone 15's rail, its
+`text` toggle, its composer and its extract on a page are gone; old extract
+documents keep their highlights and schedules. `infoOf` writes `frozen`
+false for a document with pages, and the inspector hides freeze there. ⌘is the book's (capture phase; the app's split checks `defaultPrevented`),
+held in the store (`notesHidden`, not saved). Boxing: a plain drag on a page
+(mouse events; the notes blurred so `e` is not typed there); ⌥-drag or a
+double click selects text, whose line rectangles become one box per page
+(`boxAround`); pending boxes numbered, a `.pend` row under the last (`e
+section`, `m card`, `esc`). `e`: `sectionName` (src/pdf/name.ts) reads the
+pages' text items back to 30 pages: the lowest numbered heading (`3.3`, set
+larger than the body's size, by weight of characters) at or above the first
+box's top plus 30% of its height, with the rest of its line lowercased at
+its first letter, then the equation numbers whose baselines are inside the
+boxes; `p. N` otherwise (`named` false). `addPassage` writes the `##`
+heading (a taken name gets ` · 2`) before the first passage that starts
+later (`placeOf`, by first box page + y), `made due=+3d ivl=3 boxes`; the
+read point moves past the last box (`pointOn`, forward only) when the
+document reads; a notice with undo. ⏎ right after, `m` on a named page,
+and a clip all go through a new `Reveal.write` (the caret in a fresh line
+at the end of the section, or after the clip; an empty paragraph, which is
+never written); a reveal whose heading is not on the page yet waits 3 s for
+it. `m` elsewhere: `addToPage` a raw `<!-- box … -->` per box. Linking: the
+caret's heading (`caretHeading`) lights its boxes (`.pbox.cur`) and the
+pages scroll to them when out of view; `bookFocus` (show in book) flashes
+them; a name beside the page when the column has 210 px beside a page of at
+least 420, else a § in an 18 px gutter; a click puts the caret at its
+heading (showing the notes). `[ ]` step the passages outside a session.
+The chip is a ProseMirror widget at the heading's end (src/reader/book.ts,
+DOM from `bookNotes.ts`), the crops a block widget after the heading;
+`inlineBoxes` in the store says which are shown. Crops (`bookPdf.ts`) are a
+page rendered at the crop's scale (≤ 2.5) and cut, with 4 PDF units of room;
+the PDF is shared between the pages and the crops, refcounted, kept 20 s
+after the last holder. Format: `boxes` grammar in src/format/boxes.ts,
+normalized to three decimals, kept as written with a diagnostic when not in
+it; `y` (0–1, three decimals) after `pos`; the clip line §6.6 is a raw
+block. Session: a document with pages always opens as the book (a section
+too, landed by its reveal; with the notes hidden the pages land it); ⏎ done
+for today sends the point at the bottom of the view (`pointInView`, kept on
+`.pdf-view` as `data-at-page`/`data-at-y`), `advanceRead(…, y)`. The bottom
+strip: `drag box a passage · e section · m card · [ ] sections · / search ·
+⌘\ hide notes`. pdf.js draws with `intent: 'print'` everywhere (no
+animation frames, which WebKit holds back in a covered window: the first
+window run stalled on the crops and the second on the pages), and pages
+near the view are drawn from the scroll handler as well as the observer.
+`design/books/ch3-book.tex` sets ch3.pdf at pp. 41–44 of a 44-page book
+(`ch3-book.pdf`, committed) so a chapter can say `pages: 41-44` with the
+PDF's own numbering. Tests: 1161 (+25: format 5, naming 6 over the real
+PDFs, passages and the read point 6, the notes in jsdom 7, hints 1). Window
+check (2026-11-02, mine, the working tree, fresh copies of the sample, no
+captures taken): `ILMI_SMOKE=book` ran to `done`, 52 `ok:`, no `failed:`
+(boxes drawn by mouse events landed as `41:0.119:0.859:0.768:0.075,
+42:0.097:0.095:0.771:0.042`, the read point at `pos=42 y=0.137`, done for
+today `pos=43 y=0.234`); `ILMI_SMOKE=sections` ran to `done`, 56 `ok:`.
+Not done: the shots (book-split, book-pending, book-section, book-lit,
+book-inline, book-notes-hidden, book-clip, book-queue-section, book-dark)
+are the coordinator's; milestone 15's `ILMI_SMOKE=pdf` still drives the
+old lens and fails at its extract; the open smoke's PDF part was moved to
+the book (a selection's `e` makes a section) but not run; the demo's task
+bar above the panes (`Added … · Write in it now`) is a notice instead, and
+the session's bar sits under the split, not across both panes' top; the
+tags do not avoid each other when two passages start on one line; a clip
+cannot be resized or moved; nothing names an Arabic passage.
 - **The split.** A document with pages opens as one split session: the PDF's pages (its `pages`, through the existing lens) on the left, its body in the full editor on the right.
   - The body of a document with pages is never frozen; `frozen` keeps only the text of text sources.
   - ⌘\ hides and shows the notes. This replaces milestone 15's rail beside the page, whose `## p. N` cards still show in the notes.

@@ -6,6 +6,102 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-11-02 — milestone 48: the book beside its notes
+
+Done on main, commits `0688e64` (47's two queue items) and `14031c9`. New:
+`src/format/boxes.ts`, `src/pdf/name.ts`, `src/reader/book.ts`,
+`src/app/bookPdf.ts`, `src/app/bookNotes.ts`, `design/books/ch3-book.tex`
+and its PDF, four test files (`format/boxes`, `pdf/name`,
+`schedule/passage`, `app/book-view`). Changed: the PDF lens (now the book),
+the reader (`notes`, `Reveal.write`, clips, the chip plugin), the session,
+the inspector (passages in book order), the queue head, the done rows, the
+bottom strip, the store, `infoOf`, the reading pass (`y`), FORMAT §3 §6.5
+§6.6 §8, README, smoke.ts (`book`; `sections` and `open` updated).
+
+### Decided
+
+- **Queue head**: one line, `N due, in priority order · “ … · § … · ◆ …`;
+  no counts by kind. **Done rows** name the item: `§ <heading> · next · back
+  in 5d`, `“ <title> · done for today · back in 2d`.
+- **The split** is the PDF lens itself: every document with pages opens as
+  pages beside notes, in a tab or a session; ⌘\ hides the notes (not
+  saved). The body of a document with pages is never frozen.
+- **Boxing** is a plain drag on a page; text is selected with ⌥-drag or a
+  double click, and a selection's lines box themselves. `e` a section, `m`
+  a section to card in where the page names its sections (a numbered
+  heading found), else a clip per box under `## p. N`.
+- **Naming**: the lowest numbered heading larger than the body at or above
+  the first box (its top plus 30% of its height), the rest of its line,
+  then the equation numbers in the boxes; else `p. N`.
+- **Book order**: before the first passage that starts later; else at the
+  end. A taken name gets ` · 2`.
+- **Grammar**: `boxes := box ("," box)*`, `box := page:x:y:w:h`, fractions to
+  three decimals, normalized on write, kept with a diagnostic otherwise;
+  `y` on the read line after `pos`, a `pos` without `y` is the page's foot;
+  the read point moves forward only, except by the margin's drag.
+- **The clip** `<!-- box N:x:y:w:h -->` is a raw block, no parser change.
+- **pdf.js draws with the print intent**: no animation frames, so a covered
+  window does not stall the pages or the crops.
+
+### Verified
+
+- `npx vitest run --maxWorkers=3`: 1161 tests, 77 files (1136 before).
+  `npm run typecheck` clean. `vite build` clean. No Rust touched.
+
+### Window check (2026-11-02, mine, the working tree, no captures)
+
+- Run 1 of `ILMI_SMOKE=book`: through the split, two boxes, `e` (name,
+  book order, grammar, read point, notice), ⏎, the lit boxes and the chip;
+  failed at `show boxes here draws both crops`. Run 2 stalled before the
+  first page drew. Both were pdf.js waiting on animation frames in a
+  covered window; fixed with the print intent and drawing near pages from
+  the scroll handler.
+- Run 3 ran to `done`: 52 `ok:`, no `failed:`: the pages 41–44 beside the
+  notes in the editor, the read bar, the dismissed passage dashed; two
+  boxes across pp. 41–42 numbered; `e` made `3.3 · average values (3.12)`
+  between `3.2 · the partition function (3.9)` and `3.3 · energy
+  fluctuations (3.13–3.15)` with `boxes=41:0.119:0.859:0.768:0.075,
+  42:0.097:0.095:0.771:0.042`, the read point at `pos=42 y=0.137`; ⏎ put the
+  caret in it and lit its two boxes; show boxes here drew both crops with
+  `p. 42` between; the partition function's tag went to its section; ⌘\
+  hid and showed the notes; `m` on the Arabic page clipped under `## p. 1`,
+  drawn as its crop, the caret below; the queue opened the partition
+  function's session in the book, its boxes lit and in view; done for
+  today wrote `pos=43 y=0.234 reps=2`; dark.
+- `ILMI_SMOKE=sections` (fresh copy) ran to `done`, 56 `ok:`, with the new
+  head line and the done row named.
+- Port 1420 and every `ilmi` were mine, stopped through their tasks.
+
+### Not done
+
+- The shots (`book-*`, nine names) are owed, by window id, from a clean
+  checkout. `ILMI_SMOKE=book` needs `ILMI_BOOKS=<repo>/design/books`.
+- `ILMI_SMOKE=pdf` (milestone 15) still drives the removed rail, composer
+  and text toggle; the `open` smoke's PDF part was moved to the book but
+  not run.
+- The demo's task bar over both panes is a notice; the session bar sits
+  under the split. Tags of two passages on one line overlap. A clip cannot
+  be moved or resized. Nothing names an Arabic passage (by design: clipped).
+- The outline still doesn't mark sections; sections aren't paced by exams.
+
+### Handoff prompt
+
+```
+Read PLAN.md (Reading books, 47's and 48's notes, 49), FORMAT.md §3, §6.5
+and §6.6, and this entry. First run ILMI_SMOKE=book from a clean checkout
+over a fresh copy of samples/double-major (ILMI_BOOKS=<runtree>/design/books)
+and ILMI_SMOKE=open, take the shots by window id, and fix what reads wrong
+against design/demos/pdf-reading.html. Then build 49: typeset Lindqvist
+chapters 2–4 from the sample into design/books/lindqvist.tex (ch3.tex's
+look), convert each chapter's extract documents into boxed sections of its
+notes (text, cards with their ids and sr lines, the read schedule onto the
+heading's line), do the same for the reader's passage 12 (clipped where its
+extracts were words), retire or rewrite ILMI_SMOKE=pdf, and walk both flows
+in ILMI_SMOKE=books.
+```
+
+---
+
 ## 2026-11-02 — milestone 47: sections that come back
 
 Done on main, commit `5f5c53f`. New: `src/schedule/section.ts`,

@@ -7094,7 +7094,7 @@ export async function smokeSections(vault: Vault): Promise<void> {
     const l13 = await poll(() => sectionOf('lecture 13'), 'lecture 13 is enrolled');
     must(!isDue(l13, appNow()) && l13.cards === 4 && dayOfStr(l13.due) === '2026-11-09', `with its 4 cards, due later (${l13.due})`);
     await openQuery('today');
-    must(q('.queue .legend')?.textContent === 'in priority order · “ read on in a book · § a passage or section, back until you dismiss it · ◆ a card', `the head's line: "${q('.queue .legend')?.textContent}"`);
+    must(/^\d+ due, in priority order · “ read on in a book · § a passage or section, back until you dismiss it · ◆ a card$/.test(q('.queue .legend')?.textContent ?? '') && !q('.queue .summary'), `the head's one line, no counts by kind: "${q('.queue .legend')?.textContent}"`);
     const rows = qa<HTMLElement>('.pane[data-active="1"] .qlist li:not(.fold)');
     const at = rows.findIndex((r) => r.dataset.el === 'section' && r.textContent?.includes('pset 4 #5'));
     must(at >= 0, `the derivation's row (${at + 1} of ${rows.length})`);
@@ -7148,6 +7148,7 @@ export async function smokeSections(vault: Vault): Promise<void> {
     let d = diff(before, after);
     must(d.length === 1 && d[0] === `<!-- read made=2026-10-30 due=2026-11-02 ivl=3 --> → <!-- read made=2026-10-30 due=${addDays(DAY, 5)} ivl=5 reps=1 -->`, `exactly the heading's line: ${d.join('; ')}`);
     log(`moved on to ${await movedOn(deriv)}`);
+    must(useApp.getState().log[0] === `§ ${deriv.heading} · next · back in 5d`, `the done row names the section: "${useApp.getState().log[0]}"`);
     await shot('sections-after-next');
 
     // ── p later: lecture 12 ──

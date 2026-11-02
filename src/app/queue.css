@@ -25,18 +25,8 @@
   margin-left: 12px;
   vertical-align: 0.25em;
 }
-.queue .summary {
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--fg-4);
-  margin-top: 6px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 14px;
-}
-.queue .summary span { font-variant-numeric: tabular-nums; white-space: nowrap; }
-.queue .summary b { color: var(--fg-2); font-weight: 500; }
-/* what the marks mean, one line: the order is priority's, every kind mixed */
+/* what the marks mean, one line with the count: the order is priority's, every kind mixed, never split by kind */
+.queue .legend b { color: var(--fg-2); font-weight: 500; font-variant-numeric: tabular-nums; }
 .queue .legend {
   font-family: var(--mono);
   font-size: 10.5px;

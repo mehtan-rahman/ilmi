@@ -10,7 +10,7 @@
 import { Fragment, useEffect, useState, type MouseEvent } from 'react';
 import { PRI_DEFAULT, cardFields } from '../format/index.js';
 import { counts, dayOf, examKey, inScope, overflow, type ExamAt, type QueueItem } from '../schedule/index.js';
-import { QUEUE_EMPTY, QUEUE_LEGEND, dayLabel, dueWhen, examName, examWhen, forExam, glyphOf, intervalLabel, isFresh, kindTag, markOf, snippetOf, standing, summary } from './items.js';
+import { QUEUE_EMPTY, QUEUE_LEGEND, dayLabel, dueWhen, examName, examWhen, forExam, glyphOf, intervalLabel, isFresh, kindTag, markOf, snippetOf, standing } from './items.js';
 import { pathParts, plainMath } from './chromeText.js';
 import { MathText } from './MathText.js';
 import type { DocInfo } from './store.js';
@@ -126,8 +126,6 @@ export function Queue({ scope, active }: Props) {
     return () => window.removeEventListener('keydown', onKey);
   }, [active, items, cursor, scope]);
 
-  const sum = summary(items);
-
   return (
     <div className="queue">
       <header>
@@ -136,15 +134,8 @@ export function Queue({ scope, active }: Props) {
           <span className="day">{scope === 'today' ? dayLabel(now) : plural(items.length, 'element')}</span>
         </h1>
         {scope === 'today' && (
-          <div className="summary">
-            <span><b>{sum.read}</b> to read</span>
-            <span><b>{sum.write}</b> to write</span>
-            <span><b>{sum.card}</b> to review</span>
-          </div>
-        )}
-        {scope === 'today' && (
           <div className="legend">
-            in priority order
+            <b>{items.length}</b> due, in priority order
             {QUEUE_LEGEND.map(([g, el, what]) => <span key={el}><span className="lg-sep"> · </span><span className="lg-g" data-el={el}>{g}</span> {what}</span>)}
           </div>
         )}

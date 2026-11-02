@@ -12,7 +12,7 @@ import { advanceRead, advanceWrite, gradeItem, queue, sameItem, type CardItem, t
 import { nodeFs } from '../../vault/node-fs.js';
 import { Vault } from '../../vault/index.js';
 import {
-  cleanBudget, dayLabel, dueLabel, dueToday, firstWords, gapLabels, intervalLabel, isFresh, kindTag, ownBlank, pathLabel, refLine, sessionItems, snippetOf, sourceLabel, summary,
+  cleanBudget, dayLabel, dueLabel, dueToday, firstWords, gapLabels, intervalLabel, isFresh, kindTag, ownBlank, pathLabel, refLine, sessionItems, snippetOf, sourceLabel, doneLine,
 } from '../items.js';
 import { INTAKE, SESSION, queueId, queueScope, tabKindOf, titleOf } from '../names.js';
 
@@ -73,7 +73,9 @@ describe('labels', () => {
     expect(firstWords('  one two\nthree four five ', 3)).toBe('one two three');
     expect(snippetOf({ kind: 'read', path: 'a.md', sched: {}, pos: 0, total: 1, dueAt: NOW, pri: 2, next: 'a b c' })).toBe('a b c');
     expect(snippetOf({ kind: 'write', path: 'a.md', sched: {}, dueAt: NOW, pri: 2 })).toBe('');
-    expect(summary([card(), { kind: 'read', path: 'a.md', sched: {}, pos: 0, total: 1, dueAt: NOW, pri: 2 }])).toEqual({ read: 1, write: 0, card: 1 });
+    expect(doneLine('§', 'pset 4 #5, typed up from paper', 'next · back in 5d')).toBe('§ pset 4 #5, typed up from paper · next · back in 5d');
+    expect(doneLine('§', `a ${'very '.repeat(20)}long heading`, 'dismissed')).toMatch(/^§ a very .{40,}… · dismissed$/);
+    expect(doneLine('“', '', 'done for today · back in 2d')).toBe('“ done for today · back in 2d');
   });
 
   it('says what each grade would schedule', () => {

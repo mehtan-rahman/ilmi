@@ -13,7 +13,7 @@ import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 're
 import { emitDocAction, emitGrade, runBlockHooks, usePlugins } from '../plugins/index.js';
 import { PRI_DEFAULT, READ_AF, WRITE_AF, blanks, cardFields, type Block, type Card } from '../format/index.js';
 import { GRADES, advanceRead, advanceSection, lineKey, advanceWrite, dirPri, grow, nextGap, postponed, scheduleOf, type CardItem, type Grade, type QueueItem, type ReadItem, type SectionItem, type WriteItem } from '../schedule/index.js';
-import { EL_WORD, FORM_LABEL, dueLabel, gapLabels, glyphOf, markOf, ownBlank, sourceLabel, standing, trailParts } from './items.js';
+import { EL_WORD, FORM_LABEL, doneLine, dueLabel, gapLabels, glyphOf, markOf, ownBlank, sourceLabel, standing, trailParts } from './items.js';
 import { writeDoc } from './sections.js';
 import { queueId } from './names.js';
 import type { OpenOpts } from './panes.js';
@@ -398,9 +398,10 @@ export function Session({ active, onOpen }: Props) {
     });
     run.catch(fail);
     if (action === 'on') emitDocAction(item);
-    const what = item.kind === 'section' ? 'section' : item.kind === 'write' ? 'draft' : item.note ? 'note' : item.extract ? 'extract' : 'read';
-    const word = action === 'postpone' ? `later, +${postponed(item.sched.ivl)}d` : action === 'done' ? 'dismissed' : actionWords(item).on;
-    note(`${what} · ${word}`);
+    // the done row names what it was: a section by its heading, anything else by its document
+    const name = plainMath(item.kind === 'section' ? item.heading : docs[item.path]?.title ?? sourceLabel(item, docs));
+    const word = action === 'postpone' ? `later · back in ${postponed(item.sched.ivl)}d` : action === 'done' ? 'dismissed' : actionWords(item).on;
+    note(doneLine(glyphOf(item), name, word));
     advance();
   };
 

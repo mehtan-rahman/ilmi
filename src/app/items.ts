@@ -240,12 +240,15 @@ export function sessionItems(today: QueueItem[], start: QueueItem): QueueItem[] 
   return at < 0 ? [start] : [...today.slice(at), ...today.slice(0, at)];
 }
 
-/** The header's counts for the day: to read, to write, to review. */
-export function summary(items: QueueItem[]): { read: number; write: number; card: number } {
-  const out = { read: 0, write: 0, card: 0 };
-  // a section comes back to be read again, as a note revisited does
-  for (const i of items) out[i.kind === 'section' ? 'read' : i.kind]++;
-  return out;
+/**
+ * A done row in the queue's log: the element's mark, its name (a section's
+ * heading, else its document's title, cut to fit one line), and what
+ * became of it (`§ pset 4 #5 · next · back in 5d`).
+ */
+export function doneLine(glyph: string, name: string, word: string): string {
+  const one = name.replace(/\s+/g, ' ').trim();
+  const cut = one.length > 56 ? `${one.slice(0, 55).trimEnd()}…` : one;
+  return cut ? `${glyph} ${cut} · ${word}` : `${glyph} ${word}`;
 }
 
 export const dueNow = (items: QueueItem[], now: Date): QueueItem[] => items.filter((i) => isDue(i, now));

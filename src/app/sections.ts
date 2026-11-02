@@ -7,6 +7,8 @@
 import { type Doc, type Heading, type SectionSchedule } from '../format/index.js';
 import { broughtBack, dismissed, enrolSection, sectionInQueue } from '../schedule/index.js';
 import { appNow } from './clock.js';
+import { plainMath } from './chromeText.js';
+import { doneLine } from './items.js';
 import { popMenu, type PopItem } from './popMenu.js';
 import type { CaretHeading } from './store.js';
 import { currentVault, note } from './vault.js';
@@ -44,13 +46,13 @@ export const statusOf = (s: SectionSchedule | undefined): SectionStatus => (!s ?
 
 /** Enroll the section under `at`: back in three days. */
 export function comeBack(at: CaretHeading): Promise<unknown> {
-  note('section · back in 3d');
+  note(doneLine('§', plainMath(at.text), 'back in 3d'));
   return writeDoc(at.path, (doc) => { const h = headingOf(doc, at); if (h) enrolSection(h.heading, appNow()); });
 }
 
 /** Dismiss it: its notes and cards stay; the line goes, or keeps only its boxes. */
 export function dismissSection(at: CaretHeading): Promise<unknown> {
-  note('section · dismissed');
+  note(doneLine('§', plainMath(at.text), 'dismissed'));
   return writeDoc(at.path, (doc) => {
     const h = headingOf(doc, at);
     if (!h?.heading.read) return;
@@ -62,7 +64,7 @@ export function dismissSection(at: CaretHeading): Promise<unknown> {
 
 /** Bring a dismissed section back: due in three days, the rest of its line kept. */
 export function bringBack(at: CaretHeading): Promise<unknown> {
-  note('section · back in 3d');
+  note(doneLine('§', plainMath(at.text), 'back in 3d'));
   return writeDoc(at.path, (doc) => { const h = headingOf(doc, at); if (h) h.heading.read = broughtBack(h.heading.read, appNow()); });
 }
 

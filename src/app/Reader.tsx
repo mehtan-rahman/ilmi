@@ -1221,8 +1221,56 @@ export function withSelectionOf(prev: EditorState | null, state: EditorState): E
     });
     if (at !== null) return state.apply(state.tr.setSelection(NodeSelection.create(state.doc, at)));
   }
-  const head = Math.min(prev.selection.head, state.doc.content.size);
+  // the caret stays in its textblock at its place in the block's verbatim
+  // text: a rebuild from the file turns typed `$…$` into chips of size one,
+  // so the same absolute position would land further on (49: the third line
+  // of a write-up went into the next heading)
+  const at = caretAt(prev.doc, prev.selection.head);
+  const found = at === null ? null : caretPos(state.doc, at);
+  const head = found ?? Math.min(prev.selection.head, state.doc.content.size);
   return state.apply(state.tr.setSelection(Selection.near(state.doc.resolve(head))));
+}
+
+/** The textblocks of a document, in order, each with the position of its content. */
+function textblocksOf(doc: PMNode): { node: PMNode; start: number }[] {
+  const out: { node: PMNode; start: number }[] = [];
+  doc.descendants((node, pos) => { if (node.isTextblock) out.push({ node, start: pos + 1 }); return !node.isTextblock; });
+  return out;
+}
+
+/** Where a caret is: its textblock's place among the textblocks, that block's verbatim text, and the caret's offset in it. */
+export function caretAt(doc: PMNode, head: number): { nth: number; text: string; offset: number } | null {
+  const $p = doc.resolve(Math.min(head, doc.content.size));
+  if (!$p.parent.isTextblock) return null;
+  const start = $p.start();
+  const nth = textblocksOf(doc).findIndex((b) => b.start === start);
+  if (nth < 0) return null;
+  return { nth, text: textOf($p.parent), offset: textOf($p.parent.cut(0, $p.parentOffset)).length };
+}
+
+/** The position in `doc` that `at` names: the same textblock (by its text near its place, else its place) at the same offset in its text. */
+export function caretPos(doc: PMNode, at: { nth: number; text: string; offset: number }): number | null {
+  const blocks = textblocksOf(doc);
+  if (!blocks.length) return null;
+  let best = blocks[Math.min(at.nth, blocks.length - 1)]!;
+  if (textOf(best.node) !== at.text) {
+    const same = blocks.map((b, i) => ({ b, d: Math.abs(i - at.nth) })).filter((x) => textOf(x.b.node) === at.text).sort((a, b) => a.d - b.d)[0];
+    if (same) best = same.b;
+  }
+  let pos = best.start;
+  let seen = 0;
+  for (let i = 0; i < best.node.childCount && seen < at.offset; i++) {
+    const child = best.node.child(i);
+    if (child.isText) {
+      const take = Math.min(child.text!.length, at.offset - seen);
+      pos += take;
+      seen += take;
+    } else {
+      pos += child.nodeSize;
+      seen += child.type === schema.nodes.math ? (child.attrs.raw as string).length : 0;
+    }
+  }
+  return pos;
 }
 
 interface ReaderProps {

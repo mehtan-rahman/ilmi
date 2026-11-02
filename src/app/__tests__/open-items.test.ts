@@ -11,7 +11,7 @@ import { EditorView } from 'prosemirror-view';
 import { NodeSelection, TextSelection } from 'prosemirror-state';
 import { describe, expect, it } from 'vitest';
 import { parse, serialize, type Block } from '../../format/index.js';
-import { flatText, foldKey, fromDoc, makeState, sections, type FoldMeta } from '../../reader/index.js';
+import { flatText, foldKey, fromDoc, makeState, sections, textOf, type FoldMeta } from '../../reader/index.js';
 import { buildIndex, search } from '../chrome.js';
 import { cardHTML, handleClickOn, linesHTML, nodeViews, withSelectionOf } from '../Reader.js';
 import { foldedHeadings, headingKeys } from '../tabs.js';
@@ -46,6 +46,27 @@ describe('a card\'s step lines in the reader', () => {
 });
 
 describe('a selected card through a rebuild from the file', () => {
+  it('the caret keeps its place in its block when typed formulas become chips (49)', () => {
+    const live = { frozen: () => false, pos: null };
+    const prev0 = makeState(parse('abc\n\n## the next heading, long enough to land in\n').doc.blocks, live);
+    const end = prev0.doc.child(0).nodeSize - 1;
+    const typed = prev0.apply(prev0.tr.insertText(' $x+y$ and $\\int f$ end', end));
+    const prev = typed.apply(typed.tr.setSelection(TextSelection.create(typed.doc, typed.doc.child(0).nodeSize - 1)));
+    expect(prev.doc.child(0).childCount).toBe(1);
+    const file = parse('').doc;
+    file.blocks = fromDoc(prev.doc);
+    const next = makeState(parse(serialize(file)).doc.blocks, live);
+    expect(next.doc.child(0).childCount).toBeGreaterThan(1);
+    const got = withSelectionOf(prev, next);
+    const $h = got.doc.resolve(got.selection.head);
+    expect($h.parent).toBe(got.doc.child(0));
+    expect($h.parentOffset).toBe(got.doc.child(0).content.size);
+    // in the middle of the text, after a chip: the same offset in the verbatim text
+    const mid = prev.apply(prev.tr.setSelection(TextSelection.create(prev.doc, 1 + 'abc $x+y$ and'.length)));
+    const $m = withSelectionOf(mid, next).doc.resolve(withSelectionOf(mid, next).selection.head);
+    expect(textOf(next.doc.child(0).cut(0, $m.parentOffset))).toBe('abc $x+y$ and');
+  });
+
   it('stays selected: the same card by id, after it moved', () => {
     const live = { frozen: () => false, pos: null };
     const before = makeState(parse('- a :: b ^ca\n- c :: d ^cc\n').doc.blocks, live);

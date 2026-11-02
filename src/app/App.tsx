@@ -123,6 +123,8 @@ export function App() {
       }
       if (inField(e.target)) return;
       if (e.key === '\\') {
+        // a book's ⌘\ hides its notes (`Pdf.tsx`)
+        if (e.defaultPrevented) return;
         e.preventDefault();
         setPanes((s) => splitPane(s, s.active));
       } else if (k === 'w' && !e.shiftKey) {

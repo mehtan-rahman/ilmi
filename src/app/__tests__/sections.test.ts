@@ -113,7 +113,7 @@ describe('the three actions', () => {
 
 describe('the editor', () => {
   it('keeps a heading\'s line through the editor, byte for byte', () => {
-    const text = '## a\n<!-- read made=2026-10-30 due=2026-11-02 ivl=3 -->\n\nText.\n\nb\n---\n<!-- read made=2026-10-20 boxes=41:0:0:1:1 -->';
+    const text = '## a\n<!-- read made=2026-10-30 due=2026-11-02 ivl=3 -->\n\nText.\n\nb\n---\n<!-- read made=2026-10-20 boxes=41:0.000:0.000:1.000:1.000 -->';
     const blocks = parse(text).doc.blocks;
     expect(formatBody(fromDoc(toDoc(blocks)))).toBe(text);
   });

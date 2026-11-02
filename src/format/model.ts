@@ -40,6 +40,8 @@ export interface ReadSchedule {
   ivl?: number;
   reps?: number;
   pos?: number;
+  /** On a document with pages: how far down page `pos` the read point is, 0–1 (three decimals); absent means its foot. */
+  y?: number;
   /** On an extract carved from a page of its parent's PDF: that page, from 1. */
   page?: number;
   /** Growth per pass, ≥ 1.1; absent means `READ_AF`. */
@@ -77,7 +79,7 @@ export interface SectionSchedule {
   af?: number;
   /** Its own priority, over the document's. */
   pri?: number;
-  /** Where its passage is on the pages (milestone 48), kept as written. */
+  /** Where its passage is on the document's pages: `page:x:y:w:h`, `,` between (`boxes.ts`); kept as written when not in that grammar. */
   boxes?: string;
   extra?: Extra;
 }

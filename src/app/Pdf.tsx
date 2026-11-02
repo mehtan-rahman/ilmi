@@ -1,24 +1,33 @@
-// The PDF lens: a source whose pages exist opens as pages, rendered by pdf.js
-// with its text layer on, so a selection on a page is a DOM selection and
-// `e` and `m` work as they do in the reader. The Markdown beside the PDF is
-// the document; its cards and extracts sit in a rail to the right at their
-// page, a `text` toggle reads the Markdown instead, and the left-margin ruler
-// marks the page the way the marker marks a block. Highlights are the
-// extracts' stored text found again on the page. Nothing is written into the
-// PDF, ever; every change goes to the Markdown through the vault.
+// A document with pages opens as a book (milestone 48): its PDF's pages on
+// the left, rendered by pdf.js with the text layer on, and its body on the
+// right in the full editor: the person's notes on those pages, one
+// continuous document, never frozen. ⌘\ hides the notes and shows them.
+//
+// The pages carry what the notes say about them. A gold bar in the margin
+// runs from the first page to the read point (`pos` and `y` on the `read`
+// line). Boxes drawn on the pages (drag; drag again for another, on any
+// page; a text selection boxes its lines) become a section of the notes
+// with `e`: a `##` heading named from the page, in book order, with its
+// `<!-- read … boxes=… -->` line, back in three days until dismissed
+// (FORMAT.md §6.5). `m` makes the section and puts the caret in it to card,
+// or on a page that names no sections (a passage book, Arabic) clips the
+// box into the notes under `## p. N` (§6.6). Every section's boxes are drawn
+// on its pages, tagged with its name (a § in the gutter when there is no
+// room), dashed once dismissed; the caret's section lights its boxes and
+// the pages scroll to them. Nothing is written into the PDF, ever; every
+// change goes to the Markdown, through the open notes' writer.
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { PRI_DEFAULT, meta, setField, type Card, type Doc } from '../format/index.js';
-import { countIn, findAll, findText, jumpTarget, linesOf, refOf, type Found } from '../pdf/index.js';
+import { boxesEnd, formatClip, meta, sectionDismissed, setField, type Box, type Doc } from '../format/index.js';
+import { boxAround, countIn, findAll, findText, jumpTarget, linesOf, refOf, sectionName, type Found, type PageItem } from '../pdf/index.js';
 import { pickPos, type Band } from '../reader/index.js';
-import { addToPage, childDirOf, pageOfBlock } from '../vault/index.js';
-import { cardLabel, revealIndex } from './chrome.js';
+import { addPassage, passagesOf, pointOn, sectionState, type Passage } from '../schedule/index.js';
+import { addToPage, childDirOf } from '../vault/index.js';
 import { CueActions } from '../plugins/CueActions.js';
 import { onPluginAction, publishSelection, toPluginSelection, type PluginSelection } from '../plugins/index.js';
-import { Composer } from './Composer.js';
-import { EL_GLYPH } from './items.js';
-import { GLYPH, titleOf } from './names.js';
-import { TextLayer, loadPdf, pageBits, type PDFDocumentProxy } from './pdfjs.js';
+import { titleOf } from './names.js';
+import { TextLayer, pageBits, type PDFDocumentProxy } from './pdfjs.js';
+import { acquirePdf, itemsOf } from './bookPdf.js';
 import { Crumbs } from './Crumbs.js';
 import { Reader } from './Reader.js';
 import { StudyButton } from './StudyButton.js';
@@ -26,7 +35,11 @@ import { ExamTag } from './ExamTag.js';
 import { TabsToggle } from './TabsToggle.js';
 import { useApp, type DocInfo } from './store.js';
 import { useDoc } from './useDoc.js';
-import { currentVault, enrolReading, extractNode, openNode } from './vault.js';
+import { currentVault, enrolReading } from './vault.js';
+import { writeDoc } from './sections.js';
+import { notify } from './land.js';
+import { appNow } from './clock.js';
+import { plainMath } from './chromeText.js';
 import './pdf.css';
 
 /** Space between pages, px. */
@@ -35,6 +48,16 @@ const GAP = 18;
 const AHEAD = 900;
 /** Pages the lens looks at to decide whether the PDF has a text layer. */
 const PROBE = 3;
+/** Room beside a page for the sections' names; less than this and they are a § in the gutter. */
+const TAG_ROOM = 210;
+/** The narrowest a page is drawn while names still sit beside it. */
+const PAGE_MIN = 420;
+/** The widest a page is drawn. */
+const PAGE_MAX = 860;
+/** Room at the page's right for the gutter's §. */
+const GUTTER = 18;
+/** How far back from a passage the lens reads pages for a heading to name it. */
+const NAME_BACK = 30;
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
@@ -44,18 +67,13 @@ const inField = (t: EventTarget | null) => {
   return tag === 'input' || tag === 'textarea' || !!el?.isContentEditable;
 };
 
-/** The selection on a page: its text, the page, where it sits on screen, and the text-layer line it starts in. */
+/** The selection on a page: its text, the page, where it sits on screen, and the text-layer line it starts in; its lines as boxes. */
 interface Sel {
   text: string;
   page: number;
   rect: DOMRect;
   line: string;
-}
-
-interface Compose {
-  seed: string;
-  page: number;
-  rect: DOMRect;
+  boxes: Box[];
 }
 
 interface Size { w: number; h: number }
@@ -81,6 +99,8 @@ interface Find {
   /** Index into `pages` of the one shown. */
   at: number;
 }
+
+interface Rect { left: number; top: number; width: number; height: number }
 
 // ── highlights: the CSS Custom Highlight API, one registry for every lens ──
 
@@ -112,7 +132,15 @@ function rangeOf(nodes: Text[], f: Found): Range {
   return r;
 }
 
-// ── the lens ─────────────────────────────────────────────────────
+/** On a book's pages: the point at the bottom of the view, which done for today records (`Session.tsx`). */
+export function pointInView(from: HTMLElement): { page: number; y: number } | undefined {
+  const el = from.querySelector<HTMLElement>('.pdf-view');
+  const page = Number(el?.dataset.atPage);
+  const y = Number(el?.dataset.atY);
+  return page >= 1 && Number.isFinite(y) ? { page, y } : undefined;
+}
+
+// ── the book: pages beside notes ─────────────────────────────────
 
 interface PdfProps {
   id: string;
@@ -123,48 +151,69 @@ interface PdfProps {
 }
 
 export function Pdf({ id, active = true, session = false }: PdfProps) {
-  const [mode, setMode] = useState<'pages' | 'text'>('pages');
-  if (mode === 'text') return <Reader id={id} active={active} onPages={() => setMode('pages')} />;
-  return <Pages id={id} active={active} session={session} onText={() => setMode('text')} />;
+  const hidden = useApp((s) => s.notesHidden);
+  // ⌘\ hides the notes and shows them, ahead of the app's split (it checks `defaultPrevented`)
+  useEffect(() => {
+    if (!active) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey || e.key !== '\\') return;
+      e.preventDefault();
+      useApp.setState((s) => ({ notesHidden: !s.notesHidden }));
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [active]);
+  return (
+    <div className="book" data-notes={hidden ? '0' : '1'} data-path={id}>
+      <div className="book-pages"><Pages id={id} active={active} session={session} /></div>
+      {!hidden && <div className="book-notes"><Reader key={id} id={id} active={active} notes /></div>}
+    </div>
+  );
 }
 
-interface PagesProps extends Required<PdfProps> {
-  onText(): void;
+/** A passage's boxes on the pages, its heading's name, its cards, its state. */
+interface Drawn {
+  passage: Passage;
+  cards: number;
+  dismissed: boolean;
 }
 
-/** An extract carved from a page, for the rail and the highlights. */
-interface PageExtract {
-  path: string;
-  page: number;
-  text: string;
-}
-
-function Pages({ id, active, session, onText }: PagesProps) {
+function Pages({ id, active, session }: Required<PdfProps>) {
   const docs = useApp((s) => s.docs);
   const root = useApp((s) => s.vault);
+  const caret = useApp((s) => s.caretHeading);
+  const focus = useApp((s) => s.bookFocus);
   const reveal = useApp((s) => s.reveal);
-  const selected = useApp((s) => s.selectedCard);
+  const notesHidden = useApp((s) => s.notesHidden);
   const info: DocInfo | undefined = docs[id];
   const loaded = useDoc(id);
   const [status, setStatus] = useState<'loading' | 'ok' | 'gone'>('loading');
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
   const [sizes, setSizes] = useState<Size[]>([]);
   const [textless, setTextless] = useState(false);
-  const [width, setWidth] = useState(0);
+  const [colW, setColW] = useState(0);
   const [tick, setTick] = useState(0);
   const [sel, setSel] = useState<Sel | null>(null);
-  const [composer, setComposer] = useState<Compose | null>(null);
   const [current, setCurrent] = useState(1);
   /** The pages before the document's own (FORMAT.md §3 `pages`): a chapter of a book is its pages of the book's PDF, numbered as the book numbers them. */
   const [base, setBase] = useState(0);
-  const [pos, setPos] = useState<number | null>(null);
+  const [point, setPoint] = useState<{ pos: number; y: number } | null>(null);
   const [find, setFind] = useState<Find | null>(null);
   const [goto, setGoto] = useState(false);
-  const [extracts, setExtracts] = useState<PageExtract[]>([]);
+  const [extracts, setExtracts] = useState<{ path: string; page: number; text: string }[]>([]);
   const [peek, setPeek] = useState<Peek | null>(null);
+  /** Boxes drawn and not yet made into anything, in the order drawn. */
+  const [pending, setPending] = useState<Box[]>([]);
+  const [ghost, setGhost] = useState<Rect | null>(null);
+  /** The section just made: ⏎ puts the caret in it. */
+  const [recent, setRecent] = useState<{ index: number; text: string } | null>(null);
+  /** The section whose boxes are lit: the caret's in the notes, else the one last gone to here. */
+  const [lit, setLit] = useState<string | null>(null);
+  const [flash, setFlash] = useState<{ text: string; seq: number } | null>(null);
   const peekCanvas = useRef<HTMLCanvasElement>(null);
   const lines = useRef(new Map<number, ReturnType<typeof linesOf>>());
   const wrapRef = useRef<HTMLDivElement>(null);
+  const viewRef = useRef<HTMLDivElement>(null);
   const pagesRef = useRef<HTMLDivElement>(null);
   const findRef = useRef<HTMLInputElement>(null);
   const gotoRef = useRef<HTMLInputElement>(null);
@@ -173,32 +222,23 @@ function Pages({ id, active, session, onText }: PagesProps) {
   const rendering = useRef(new Set<number>());
   const texts = useRef(new Map<number, string>());
   const dragRef = useRef(false);
-  const selRef = useRef<Sel | null>(null);
-  selRef.current = sel;
-  const composerRef = useRef<Compose | null>(null);
-  composerRef.current = composer;
-  const findRefState = useRef<Find | null>(null);
-  findRefState.current = find;
-  const canExtract = info?.type === 'source' || info?.type === 'extract';
-  const reading = !!info?.read;
-  const readPos = info?.read?.pos ?? 0;
+  const st = useRef({ sel, pending, recent, find, goto, peek });
+  st.current = { sel, pending, recent, find, goto, peek };
+  const canEnrol = info?.type === 'source' || info?.type === 'extract' || info?.type === 'note';
+  const reading = !!info?.read && info.type !== 'note';
+  const rel = info?.pdf;
 
-  // ── the file, through the vault's fs ──
+  // ── the file, shared with the notes' crops ──
   const range = info?.pages;
   useEffect(() => {
-    const vault = currentVault();
-    const rel = info?.pdf;
-    if (!vault || !rel) return;
+    if (!rel) return;
     let live = true;
-    let task: ReturnType<typeof loadPdf> | null = null;
+    const held = acquirePdf(rel);
     rendered.current.clear();
     texts.current.clear();
     lines.current.clear();
     (async () => {
-      const bytes = await vault.fs.readBytes(vault.abs(rel));
-      if (!live) return;
-      task = loadPdf(bytes);
-      const doc = await task.promise;
+      const doc = await held.promise;
       if (!live) return;
       const out: Size[] = [];
       let hasText = false;
@@ -220,26 +260,27 @@ function Pages({ id, active, session, onText }: PagesProps) {
     })().catch((e: unknown) => { console.error(id, e); if (live) setStatus('gone'); });
     return () => {
       live = false;
-      void task?.destroy();
+      held.release();
       setPdf(null);
       setSizes([]);
       setStatus('loading');
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, info?.pdf, range?.first, range?.last]);
+  }, [id, rel, range?.first, range?.last]);
 
-  // the pages column's width sets the scale: a page fits it
+  // the column's width sets the scale: a page fits it, with room for the names beside it when there is room
   useLayoutEffect(() => {
-    const el = pagesRef.current;
+    const el = wrapRef.current;
     if (!el) return;
-    const ro = new ResizeObserver(() => setWidth(el.clientWidth));
+    const ro = new ResizeObserver(() => setColW(el.clientWidth));
     ro.observe(el);
-    setWidth(el.clientWidth);
+    setColW(el.clientWidth);
     return () => ro.disconnect();
   }, [status]);
 
   const maxW = sizes.reduce((m, s) => Math.max(m, s.w), 0) || 612;
-  const scale = width > 0 ? width / maxW : 1;
+  const roomy = colW >= PAGE_MIN + TAG_ROOM;
+  const pageW = Math.max(120, Math.min(PAGE_MAX, roomy ? colW - TAG_ROOM : colW - GUTTER));
+  const scale = colW > 0 ? pageW / maxW : 1;
   /** Each page's top, px from the top of the column, and the column's height. */
   const tops = useMemo(() => {
     const out: number[] = [0];
@@ -247,6 +288,19 @@ function Pages({ id, active, session, onText }: PagesProps) {
     sizes.forEach((s, i) => { out[i + 1] = y; y += s.h * scale + (i < sizes.length - 1 ? GAP : 0); });
     return { at: out, total: y };
   }, [sizes, scale]);
+
+  const first = base + 1;
+  const last = base + sizes.length;
+  /** A page's place in the column, px; null for a page not shown. */
+  const pageRect = useCallback((n: number): Rect | null => {
+    const s = sizes[n - base - 1];
+    if (!s) return null;
+    return { left: 0, top: tops.at[n - base] ?? 0, width: s.w * scale, height: s.h * scale };
+  }, [sizes, base, tops, scale]);
+  const boxRect = useCallback((b: Box): Rect | null => {
+    const p = pageRect(b.page);
+    return p && { left: p.left + b.x * p.width, top: p.top + b.y * p.height, width: b.w * p.width, height: b.h * p.height };
+  }, [pageRect]);
 
   // ── rendering, as pages come near ──
   const renderPage = useCallback(async (n: number) => {
@@ -262,7 +316,8 @@ function Pages({ id, active, session, onText }: PagesProps) {
       canvas.height = Math.floor(viewport.height * dpr);
       canvas.style.width = `${viewport.width}px`;
       canvas.style.height = `${viewport.height}px`;
-      await page.render(dpr === 1 ? { canvas, viewport } : { canvas, viewport, transform: [dpr, 0, 0, dpr, 0, 0] }).promise;
+      // the print intent draws without animation frames, which WebKit holds back in a covered window
+      await page.render(dpr === 1 ? { canvas, viewport, intent: 'print' } : { canvas, viewport, intent: 'print', transform: [dpr, 0, 0, dpr, 0, 0] }).promise;
       const layer = document.createElement('div');
       layer.className = 'textLayer';
       el.style.setProperty('--total-scale-factor', String(scale));
@@ -281,54 +336,104 @@ function Pages({ id, active, session, onText }: PagesProps) {
     }
   }, [pdf, scale, id]);
 
+  const scroller = () => wrapRef.current?.closest<HTMLElement>('.book-pages, .pane-body') ?? null;
+
   useEffect(() => {
     if (!pdf || !sizes.length) return;
     // a new scale: every page draws again as it comes near
     for (const [n, s] of rendered.current) if (s !== scale) { rendered.current.delete(n); pageEls.current.get(n)?.replaceChildren(); }
-    const scroller = wrapRef.current?.closest('.pane-body') ?? null;
     const io = new IntersectionObserver((entries) => {
       for (const e of entries) if (e.isIntersecting) void renderPage(Number((e.target as HTMLElement).dataset.page));
-    }, { root: scroller, rootMargin: `${AHEAD}px 0px` });
+    }, { root: scroller(), rootMargin: `${AHEAD}px 0px` });
     for (const el of pageEls.current.values()) io.observe(el);
     return () => io.disconnect();
   }, [pdf, sizes, scale, renderPage]);
 
-  // the page in view: for `read on`, and for the keys that step pages
+  // the page in view (for the keys that step pages), and the point at the bottom of the view (done for today)
   useEffect(() => {
-    const scroller = wrapRef.current?.closest('.pane-body');
-    const pages = pagesRef.current;
-    if (!scroller || !pages) return;
+    const sc = scroller();
+    if (!sc || !pagesRef.current) return;
     const onScroll = () => {
-      const top = scroller.getBoundingClientRect().top + 70;
+      const r = sc.getBoundingClientRect();
+      const top = r.top + 70;
+      const bottom = r.bottom - 8;
       let n = base + 1;
-      for (const [k, el] of pageEls.current) if (el.getBoundingClientRect().top <= top) n = Math.max(n, k);
+      let at: { page: number; y: number } | null = null;
+      for (const [k, el] of pageEls.current) {
+        const pr = el.getBoundingClientRect();
+        if (pr.top <= top) n = Math.max(n, k);
+        if (pr.top <= bottom && (!at || k > at.page)) at = { page: k, y: Math.min(1, Math.max(0, (bottom - pr.top) / pr.height)) };
+      }
       setCurrent(n);
+      // the pages near the view drawn here too: a covered window may hold the observer's callbacks back
+      for (const [k, el] of pageEls.current) {
+        const pr = el.getBoundingClientRect();
+        if (pr.bottom >= r.top - AHEAD && pr.top <= r.bottom + AHEAD) void renderPage(k);
+      }
+      const v = viewRef.current;
+      if (v && at) { v.dataset.atPage = String(at.page); v.dataset.atY = at.y.toFixed(3); }
     };
     onScroll();
-    scroller.addEventListener('scroll', onScroll, { passive: true });
-    return () => scroller.removeEventListener('scroll', onScroll);
-  }, [status, sizes, base]);
+    sc.addEventListener('scroll', onScroll, { passive: true });
+    return () => sc.removeEventListener('scroll', onScroll);
+  }, [status, sizes, base, scale, renderPage]);
 
-  const first = base + 1;
-  const last = base + sizes.length;
   const scrollTo = (n: number) => {
     const el = pageEls.current.get(Math.max(first, Math.min(last, n)));
     el?.scrollIntoView({ block: 'start' });
   };
 
-  // ── what the Markdown says about the pages: cards by section, extracts by their line ──
-  const cardsByPage = useMemo(() => {
-    const out = new Map<number, { card: Card; index: number }[]>();
-    const doc: Doc | undefined = loaded?.doc;
-    doc?.blocks.forEach((b, i) => {
-      if (b.kind !== 'card') return;
-      const p = pageOfBlock(doc, i);
-      if (p === null) return;
-      out.set(p, [...(out.get(p) ?? []), { card: b, index: i }]);
-    });
-    return out;
-  }, [loaded]);
+  // ── what the notes say about the pages: the passages, in book order ──
+  const doc: Doc | undefined = loaded?.doc;
+  const drawn = useMemo((): Drawn[] => (doc ? passagesOf(doc.blocks).map((p) => ({ passage: p, cards: sectionState(doc.blocks, p.index).cards, dismissed: sectionDismissed(p.heading.read!) })) : []), [doc]);
+  const drawnRef = useRef(drawn);
+  drawnRef.current = drawn;
 
+  /** Scroll the pages to a passage's first box, unless it is in view; `always` scrolls regardless. */
+  const scrollToPassage = useCallback((text: string, always = false) => {
+    const d = drawnRef.current.find((x) => x.passage.heading.text === text);
+    const sc = scroller();
+    const b = d?.passage.boxes[0];
+    const el = b ? pageEls.current.get(b.page) : undefined;
+    if (!sc || !b || !el) return;
+    const sr = sc.getBoundingClientRect();
+    const pr = el.getBoundingClientRect();
+    const top = pr.top + b.y * pr.height;
+    if (!always && top >= sr.top + 30 && top <= sr.bottom - 120) return;
+    sc.scrollTo({ top: Math.max(0, sc.scrollTop + top - sr.top - 60) });
+  }, []);
+
+  // the caret's section in the notes lights its boxes, and the pages scroll to them
+  useEffect(() => {
+    if (caret?.path !== id) return;
+    const text = drawnRef.current.some((d) => d.passage.heading.text === caret.text) ? caret.text : null;
+    setLit(text);
+    if (text) scrollToPassage(text);
+  }, [caret?.path, caret?.text, caret?.nth, id, status, sizes.length, scrollToPassage]);
+  // show in book: scrolled to and flashed
+  useEffect(() => {
+    if (!focus || focus.path !== id) return;
+    setLit(focus.text);
+    setFlash({ text: focus.text, seq: focus.seq });
+    scrollToPassage(focus.text, true);
+    const t = setTimeout(() => setFlash((f) => (f?.seq === focus.seq ? null : f)), 2200);
+    return () => clearTimeout(t);
+  }, [focus, id, scrollToPassage]);
+  // a section opened from the queue with the notes hidden: nothing else lands it, so the pages do
+  useEffect(() => {
+    if (!notesHidden || !reveal || reveal.path !== id || reveal.heading === undefined || status !== 'ok') return;
+    setLit(reveal.heading);
+    scrollToPassage(reveal.heading, true);
+    useApp.setState({ reveal: null });
+  }, [notesHidden, reveal, id, status, scrollToPassage]);
+
+  /** Go to a passage's section in the notes (shown, if hidden): the caret at its heading. */
+  const goToSection = (p: Passage) => {
+    setLit(p.heading.text);
+    useApp.setState({ notesHidden: false, reveal: { path: id, index: p.index, heading: p.heading.text } });
+  };
+
+  // older work: extracts carved from a page (milestone 15) keep their highlights
   const childPaths = useMemo(() => {
     const dir = `${childDirOf(id)}/`;
     return Object.keys(docs).filter((p) => p.startsWith(dir) && docs[p]?.type === 'extract' && docs[p]?.read?.page !== undefined).sort();
@@ -347,12 +452,6 @@ function Pages({ id, active, session, onText }: PagesProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [childKey]);
 
-  const extractsByPage = useMemo(() => {
-    const out = new Map<number, PageExtract[]>();
-    for (const e of extracts) out.set(e.page, [...(out.get(e.page) ?? []), e]);
-    return out;
-  }, [extracts]);
-
   // ── highlights: the extracts' text found again, and the search's hits ──
   useEffect(() => {
     const own: Range[] = [];
@@ -362,7 +461,8 @@ function Pages({ id, active, session, onText }: PagesProps) {
       if (!layer) continue;
       const nodes = textNodes(layer);
       const strs = nodes.map((t) => t.data);
-      for (const e of extractsByPage.get(n) ?? []) {
+      for (const e of extracts) {
+        if (e.page !== n) continue;
         const f = findText(strs, e.text);
         if (f) own.push(rangeOf(nodes, f));
       }
@@ -370,13 +470,12 @@ function Pages({ id, active, session, onText }: PagesProps) {
     }
     setHighlight(id, 'ilmi-extract', own);
     setHighlight(id, 'ilmi-hit', hits);
-  }, [tick, extractsByPage, find?.q, id]);
+  }, [tick, extracts, find?.q, id]);
   useEffect(() => () => { setHighlight(id, 'ilmi-extract', []); setHighlight(id, 'ilmi-hit', []); }, [id]);
 
-  // ── the selection, read from the DOM ──
+  // ── the selection, read from the DOM: a text selection on a page boxes its lines ──
   useEffect(() => {
     const capture = () => {
-      if (composerRef.current) return;
       let next: Sel | null = null;
       const s = window.getSelection();
       const pages = pagesRef.current;
@@ -386,7 +485,21 @@ function Pages({ id, active, session, onText }: PagesProps) {
         const pageEl = start?.closest<HTMLElement>('.pdf-page');
         if (pageEl && pages.contains(pageEl)) {
           const text = s.toString().replace(/\s+/g, ' ').trim();
-          if (text) next = { text, page: Number(pageEl.dataset.page), rect: range.getBoundingClientRect(), line: range.startContainer.parentElement?.textContent ?? '' };
+          if (text) {
+            // each line's rectangle on the page it is on, one box per page around them
+            const byPage = new Map<number, { x: number; y: number; w: number; h: number }[]>();
+            for (const r of Array.from(range.getClientRects())) {
+              if (r.width <= 0 || r.height <= 0) continue;
+              for (const [n, el] of pageEls.current) {
+                const pr = el.getBoundingClientRect();
+                const cy = r.top + r.height / 2;
+                if (cy < pr.top || cy > pr.bottom) continue;
+                byPage.set(n, [...(byPage.get(n) ?? []), { x: (r.left - pr.left) / pr.width, y: (r.top - pr.top) / pr.height, w: r.width / pr.width, h: r.height / pr.height }]);
+              }
+            }
+            const boxes = [...byPage].sort((a, b) => a[0] - b[0]).map(([n, rs]) => boxAround(n, rs)).filter((b): b is Box => b !== null);
+            next = { text, page: Number(pageEl.dataset.page), rect: range.getBoundingClientRect(), line: range.startContainer.parentElement?.textContent ?? '', boxes };
+          }
         }
       }
       setSel((cur) => (cur === next || (cur && next && cur.text === next.text && cur.page === next.page && cur.rect.top === next.rect.top) ? cur : next));
@@ -396,42 +509,120 @@ function Pages({ id, active, session, onText }: PagesProps) {
   }, []);
 
   // the selection as plugins see it: the text-layer line gives the context
-  const plugSel = useMemo((): PluginSelection | null => (sel && !composer ? toPluginSelection({ path: id, text: sel.text, rect: sel.rect, block: null, blockText: sel.line, page: sel.page }) : null), [sel, composer, id]);
+  const plugSel = useMemo((): PluginSelection | null => (sel ? toPluginSelection({ path: id, text: sel.text, rect: sel.rect, block: null, blockText: sel.line, page: sel.page }) : null), [sel, id]);
   useEffect(() => {
     publishSelection(plugSel);
     return () => publishSelection(null);
   }, [plugSel]);
   useEffect(() => onPluginAction(() => setSel(null)), []);
 
-  const doExtract = () => {
-    const s = selRef.current;
-    if (!s || !canExtract) return;
+  /** What `e` and `m` act on: the boxes drawn, then a text selection's. */
+  const boxesNow = (): Box[] => [...st.current.pending, ...(st.current.sel?.boxes ?? [])];
+  const clearBoxes = () => {
+    setPending([]);
     setSel(null);
     window.getSelection()?.removeAllRanges();
-    extractNode(id, { text: s.text, blocks: [], page: s.page }).catch(console.error);
   };
 
-  const openComposer = () => {
-    const s = selRef.current;
-    if (!s) return;
-    setComposer({ seed: s.text, page: s.page, rect: s.rect });
-    setSel(null);
+  /** The passage's name from its pages: the heading above it and the equations in it (`pdf/name.ts`). */
+  const nameOf = async (boxes: Box[]): Promise<{ name: string; named: boolean }> => {
+    if (!pdf || !rel) return { name: `p. ${boxes[0]!.page}`, named: false };
+    const lo = Math.max(first, boxes[0]!.page - NAME_BACK);
+    const hi = Math.max(...boxes.map((b) => b.page));
+    const items = new Map<number, PageItem[]>();
+    for (let n = lo; n <= hi; n++) items.set(n, await itemsOf(rel, pdf, n));
+    return sectionName((n) => items.get(n), lo, boxes);
   };
 
-  const saveCard = (text: string, again: boolean, pri?: number) => {
-    const c = composerRef.current;
-    if (!c) return;
-    const card: Card = { kind: 'card', text };
-    if (pri !== undefined) card.sched = { pri };
-    currentVault()?.update(id, (d) => { addToPage(d, c.page, card); }).catch(console.error);
-    if (!again) setComposer(null);
+  /** `e`: the boxes become a section of the notes, in book order; the read point moves past them. `write`: the caret goes in it. */
+  const makeSection = async (write: boolean, known?: { name: string }) => {
+    const boxes = boxesNow();
+    if (!boxes.length) return;
+    clearBoxes();
+    const { name } = known ?? await nameOf(boxes);
+    let made: { index: number; text: string } | null = null;
+    await writeDoc(id, (d) => {
+      made = addPassage(d, name, boxes, appNow());
+      const r = meta(d).read;
+      const end = boxesEnd(boxes);
+      if (r && end && meta(d).type !== 'note') {
+        const { pos: _p, y: _y, ...rest } = r;
+        setField(d, 'read', { ...rest, ...pointOn(r, end.page, end.y) });
+      }
+    });
+    const m = made as { index: number; text: string } | null;
+    if (!m) return;
+    const text = m.text;
+    setLit(text);
+    setRecent(write ? null : m);
+    notify(`§ ${plainMath(text)} · back in 3d, until dismissed${write ? '' : ' · ⏎ to write in it'}`, null, async () => {
+      await writeDoc(id, (d) => {
+        const at = d.blocks.findIndex((b) => b.kind === 'heading' && b.text === text && b.read?.boxes !== undefined);
+        if (at >= 0) d.blocks.splice(at, 1);
+      });
+    });
+    if (write) useApp.setState({ notesHidden: false, reveal: { path: id, index: m.index, heading: text, write: true } });
   };
 
-  const startReading = () => { if (canExtract && !reading) enrolReading(id).catch(console.error); };
+  /** `m`: on a page that names its sections, the section with the caret in it; otherwise each box clipped under its page, the caret below. */
+  const cardOrClip = async () => {
+    const boxes = boxesNow();
+    if (!boxes.length) return;
+    const named = await nameOf(boxes);
+    if (named.named) { await makeSection(true, named); return; }
+    clearBoxes();
+    let at = -1;
+    await writeDoc(id, (d) => {
+      for (const b of boxes) at = addToPage(d, b.page, { kind: 'raw', text: formatClip(b) });
+    });
+    if (at < 0) return;
+    notify(`clipped · ${boxes.length === 1 ? `p. ${boxes[0]!.page}` : `${boxes.length} boxes`} · the card goes below it: word ::: meaning`);
+    useApp.setState({ notesHidden: false, reveal: { path: id, index: at, write: true } });
+  };
+
+  const startReading = () => { if (canEnrol && !info?.read) enrolReading(id).catch(console.error); };
+
+  // ── drawing a box: drag on a page; a double click or ⌥-drag selects text instead ──
+  const onMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (e.button !== 0 || e.altKey || e.detail > 1 || e.metaKey || e.ctrlKey) return;
+    const t = e.target as HTMLElement;
+    if (t.closest('[data-hit]')) return;
+    const pageEl = t.closest<HTMLElement>('.pdf-page');
+    const col = pagesRef.current;
+    if (!pageEl || !col) return;
+    e.preventDefault();
+    // the keys that follow (`e`, `m`) are the pages', not the notes' to type
+    (document.activeElement as HTMLElement | null)?.blur?.();
+    window.getSelection()?.removeAllRanges();
+    setRecent(null);
+    const page = Number(pageEl.dataset.page);
+    const x0 = e.clientX;
+    const y0 = e.clientY;
+    const move = (ev: MouseEvent) => {
+      const c = col.getBoundingClientRect();
+      setGhost({ left: Math.min(x0, ev.clientX) - c.left, top: Math.min(y0, ev.clientY) - c.top, width: Math.abs(ev.clientX - x0), height: Math.abs(ev.clientY - y0) });
+    };
+    const up = (ev: MouseEvent) => {
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', up);
+      setGhost(null);
+      if (Math.abs(ev.clientX - x0) < 8 || Math.abs(ev.clientY - y0) < 6) return;
+      const pr = pageEl.getBoundingClientRect();
+      const clamp = (n: number) => Math.min(1, Math.max(0, n));
+      const x = clamp((Math.min(x0, ev.clientX) - pr.left) / pr.width);
+      const y = clamp((Math.min(y0, ev.clientY) - pr.top) / pr.height);
+      const r = clamp((Math.max(x0, ev.clientX) - pr.left) / pr.width);
+      const b = clamp((Math.max(y0, ev.clientY) - pr.top) / pr.height);
+      if (r - x <= 0.005 || b - y <= 0.003) return;
+      setPending((p) => [...p, { page, x, y, w: r - x, h: b - y }]);
+    };
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+  };
 
   // ── search and go to page ──
   const runFind = async (q: string, step = 0) => {
-    const cur = findRefState.current;
+    const cur = st.current.find;
     if (cur && cur.q === q && cur.pages.length) {
       const at = (cur.at + step + cur.pages.length) % cur.pages.length;
       setFind({ ...cur, at });
@@ -449,7 +640,6 @@ function Pages({ id, active, session, onText }: PagesProps) {
       const k = countIn(text, q);
       if (k) pages.push({ page: n, n: k });
     }
-    // start from the page in view
     let at = pages.findIndex((p) => p.page >= current);
     if (at < 0) at = 0;
     setFind({ q, pages, at });
@@ -467,7 +657,7 @@ function Pages({ id, active, session, onText }: PagesProps) {
     return l ?? [];
   };
   const doJump = async () => {
-    const s = selRef.current;
+    const s = st.current.sel;
     if (!s || !pdf) return;
     const ref = refOf(s.text);
     if (!ref) return;
@@ -490,9 +680,8 @@ function Pages({ id, active, session, onText }: PagesProps) {
       const full = document.createElement('canvas');
       full.width = Math.floor(vp.width * dpr);
       full.height = Math.floor(vp.height * dpr);
-      await page.render({ canvas: full, viewport: vp, transform: [dpr, 0, 0, dpr, 0, 0] }).promise;
+      await page.render({ canvas: full, viewport: vp, intent: 'print', transform: [dpr, 0, 0, dpr, 0, 0] }).promise;
       if (!live) return;
-      // the line's top in css px, with a little of the page above it
       const top = Math.max(0, Math.min(vp.height - PEEK_H, vp.height - (peek.y + peek.height) * scale - 24));
       const w = Math.min(PEEK_W, vp.width);
       const h = PEEK_H * (w / vp.width);
@@ -508,45 +697,72 @@ function Pages({ id, active, session, onText }: PagesProps) {
   useEffect(() => { if (find) findRef.current?.focus(); }, [find !== null]);
   useEffect(() => { if (goto) gotoRef.current?.focus(); }, [goto]);
 
-  // ── keys ──
+  // ── keys: in the capture phase, so the boxes' keys come before the session's and the notes' ──
+  const keyRef = useRef<(e: KeyboardEvent) => void>(() => {});
+  keyRef.current = (e: KeyboardEvent) => {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const s = st.current;
+    const have = s.pending.length > 0 || (s.sel?.boxes.length ?? 0) > 0;
+    const take = () => { e.preventDefault(); e.stopPropagation(); };
+    if (e.key === 'Escape') {
+      if (s.pending.length || s.find || s.goto || s.peek || s.recent) {
+        setPending([]); setFind(null); setGoto(false); setPeek(null); setRecent(null);
+        take();
+      }
+      return;
+    }
+    if (inField(e.target)) return;
+    if (have && e.key === 'e') { take(); void makeSection(false).catch(console.error); return; }
+    if (have && e.key === 'm') { take(); void cardOrClip().catch(console.error); return; }
+    // a reference under the selection: its target in a peek
+    if (s.sel && e.key === 'Enter' && refOf(s.sel.text)) { take(); void doJump(); return; }
+    if (s.recent && e.key === 'Enter' && !have) {
+      take();
+      const r = s.recent;
+      setRecent(null);
+      useApp.setState({ notesHidden: false, reveal: { path: id, index: r.index, heading: r.text, write: true } });
+      return;
+    }
+    if (s.recent && e.key !== 'Shift') setRecent(null);
+    if (!active) return;
+    if (e.key === 'r' && canEnrol && !info?.read) { take(); startReading(); }
+    else if (e.key === '/') { take(); setFind((f) => f ?? { q: '', pages: [], at: 0 }); findRef.current?.focus(); }
+    else if (e.key === 'g') { take(); setGoto(true); }
+    else if (!session && (e.key === ']' || e.key === '[')) {
+      // step between the sections, in book order; with none, between pages
+      const list = drawnRef.current.map((d) => d.passage);
+      if (!list.length) { take(); scrollTo(current + (e.key === ']' ? 1 : -1)); return; }
+      const at = list.findIndex((p) => p.heading.text === lit);
+      const next = list[at < 0 ? (e.key === ']' ? 0 : list.length - 1) : at + (e.key === ']' ? 1 : -1)];
+      take();
+      if (next) goToSection(next);
+    }
+  };
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
-      if (e.key === 'Escape') {
-        if (composerRef.current || findRefState.current || goto || peek) {
-          setComposer(null); setFind(null); setGoto(false); setPeek(null);
-          e.preventDefault();
-        }
-        return;
-      }
-      if (inField(e.target) || composerRef.current) return;
-      if (selRef.current) {
-        if (e.key === 'e' && canExtract) { e.preventDefault(); doExtract(); return; }
-        if (e.key === 'm') { e.preventDefault(); openComposer(); return; }
-        // a reference under the selection: its target in a peek; in a session, ⏎ on anything else is still read on
-        if (e.key === 'Enter' && refOf(selRef.current.text)) { e.preventDefault(); void doJump(); return; }
-      }
-      if (!active) return;
-      if (e.key === 'r' && canExtract && !reading) { e.preventDefault(); startReading(); }
-      else if (e.key === '/') { e.preventDefault(); setFind((f) => f ?? { q: '', pages: [], at: 0 }); findRef.current?.focus(); }
-      else if (e.key === 'g') { e.preventDefault(); setGoto(true); }
-      else if (!session && (e.key === ']' || e.key === '[')) { e.preventDefault(); scrollTo(current + (e.key === ']' ? 1 : -1)); }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  });
+    const onKey = (e: KeyboardEvent) => keyRef.current(e);
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, []);
 
-  // ── the ruler: the page read up to, as the marker is a block read up to ──
-  const shownPos = pos ?? readPos;
+  // ── the read bar: from the first page to the read point; the gutter sets it ──
+  const readPoint = point ?? (info?.read?.pos !== undefined ? { pos: info.read.pos, y: info.read.y ?? 1 } : null);
+  const barHeight = (() => {
+    if (!readPoint || readPoint.pos < first) return 0;
+    if (readPoint.pos > last) return tops.total;
+    const r = pageRect(readPoint.pos);
+    return r ? r.top + readPoint.y * r.height : 0;
+  })();
   const setFromY = (clientY: number) => {
     const bands: Band[] = [];
     for (let n = first; n <= last; n++) {
       const r = pageEls.current.get(n)?.getBoundingClientRect();
       if (r) bands.push({ top: r.top, height: r.height });
     }
-    // the page as the book numbers it
     const k = pickPos(bands, clientY);
-    setPos(k ? base + k : 0);
+    if (!k) { setPoint({ pos: first, y: 0 }); return; }
+    const r = pageEls.current.get(base + k)?.getBoundingClientRect();
+    const y = r ? Math.min(1, Math.max(0, (clientY - r.top) / r.height)) : 1;
+    setPoint({ pos: base + k, y });
   };
   const gutterDown = (e: React.PointerEvent<HTMLDivElement>) => {
     dragRef.current = true;
@@ -557,27 +773,13 @@ function Pages({ id, active, session, onText }: PagesProps) {
   const gutterUp = (e: React.PointerEvent<HTMLDivElement>) => {
     dragRef.current = false;
     try { e.currentTarget.releasePointerCapture(e.pointerId); } catch { /* already released */ }
-    const page = pos;
-    setPos(null);
-    if (page === null) return;
-    currentVault()?.update(id, (d) => {
+    const p = point;
+    if (!p) return;
+    void writeDoc(id, (d) => {
       const r = meta(d).read;
-      if (r) setField(d, 'read', { ...r, pos: page });
-    }).catch(console.error);
+      if (r) setField(d, 'read', { ...r, pos: p.pos, y: Math.round(p.y * 1000) / 1000 });
+    }).finally(() => setPoint(null)).catch(console.error);
   };
-
-  // a card opened from the palette or a query: its page scrolls into view and the rail row is selected
-  useEffect(() => {
-    if (!reveal || reveal.path !== id || !loaded || status !== 'ok') return;
-    const i = revealIndex(loaded.doc.blocks, reveal);
-    if (i >= 0) {
-      useApp.setState({ selectedCard: { path: id, index: i } });
-      const p = pageOfBlock(loaded.doc, i);
-      if (p !== null) scrollTo(p);
-    }
-    useApp.setState({ reveal: null });
-  }, [reveal, loaded, status, id]);
-  useEffect(() => () => { if (useApp.getState().selectedCard?.path === id) useApp.setState({ selectedCard: null }); }, [id]);
 
   if (status === 'gone' || (status === 'ok' && !info)) {
     return <div className="reader-wrap"><div className="reader"><div className="empty">no longer in the collection</div></div></div>;
@@ -587,25 +789,22 @@ function Pages({ id, active, session, onText }: PagesProps) {
   const cards = info?.cards ?? 0;
   const due = info?.due ?? 0;
   const counts = cards ? `${plural(cards, 'card')}${due ? `, ${due} due` : ''}` : '';
-  const right = due ? `${due} due` : cards ? plural(cards, 'card') : '';
   const span = !sizes.length ? '' : !base && !range ? plural(sizes.length, 'page') : first === last ? `p. ${first}` : `pp. ${first}–${last}`;
+  const readTo = info?.read?.pos ? `read to p. ${info.read.pos}` : '';
   const rightTip = [status === 'ok' ? span : '', textless ? 'no text' : '', counts].filter(Boolean).join(', ');
-  // a scan with nothing to count says it has no text, as the intake did
-  const shown = right || (textless && status === 'ok' ? 'no text' : '');
-  const local = Math.max(0, Math.min(shownPos - base, sizes.length));
-  const ruleHeight = shownPos >= 1 && local >= 1 ? (tops.at[local] ?? 0) + (sizes[local - 1]?.h ?? 0) * scale : 0;
-  const pagesWithRail = new Set([...cardsByPage.keys(), ...extractsByPage.keys()].filter((p) => p >= first && p <= last));
+  const shown = readTo || (due ? `${due} due` : cards ? plural(cards, 'card') : '') || (textless && status === 'ok' ? 'no text' : '');
+  const shownPending = [...pending, ...(sel?.boxes ?? [])];
+  const lastPending = pending.length ? boxRect(pending[pending.length - 1]!) : null;
 
   return (
     <div className="reader-wrap">
-      <div className={`reader doc-view pdf-view${reading ? ' reading' : ''}`} data-page={current}>
+      <div ref={viewRef} className={`reader doc-view pdf-view${reading ? ' reading' : ''}`} data-page={current} data-roomy={roomy ? '1' : '0'}>
         <div className="meta">
           <Crumbs path={id} />
           <TabsToggle path={id} />
           <StudyButton path={id} />
           <ExamTag path={id} />
-          <button type="button" className="frozen-tag text-toggle" data-on="0" title="read the text" onClick={onText}>text</button>
-          {info && canExtract && !reading && (
+          {info && canEnrol && !info.read && (
             <button type="button" className="frozen-tag enrol" onClick={startReading}>start reading <span className="kbd">r</span></button>
           )}
           {shown && <span className="right" title={rightTip}>{shown}</span>}
@@ -654,11 +853,11 @@ function Pages({ id, active, session, onText }: PagesProps) {
           {reading && <div className="read-gutter" onPointerDown={gutterDown} onPointerMove={gutterMove} onPointerUp={gutterUp} />}
           {reading && status === 'ok' && (
             <>
-              <div className="read-rule" style={{ top: 0, height: ruleHeight }} />
-              <div className="read-edge" style={{ top: ruleHeight }}><span className="read-knob" /></div>
+              <div className="read-rule read-bar" style={{ top: 0, height: barHeight }} title={readPoint ? `read to p. ${readPoint.pos}` : undefined} />
+              <div className="read-edge" style={{ top: barHeight }}><span className="read-knob" /></div>
             </>
           )}
-          <div className="pdf-pages" ref={pagesRef} style={{ height: tops.total || undefined }}>
+          <div className="pdf-pages" ref={pagesRef} style={{ height: tops.total || undefined, width: pageW }} onMouseDown={onMouseDown}>
             {status === 'loading' && <div className="empty">opening</div>}
             {sizes.map((s, i) => (
               <div
@@ -669,40 +868,58 @@ function Pages({ id, active, session, onText }: PagesProps) {
                 style={{ width: s.w * scale, height: s.h * scale, top: tops.at[i + 1] }}
               />
             ))}
-          </div>
-          <div className="pdf-rail">
-            {[...pagesWithRail].sort((a, b) => a - b).map((p) => (
-              <div key={p} className="rail-page" style={{ top: tops.at[p - base] }}>
-                <h6>p. {p}</h6>
-                {(extractsByPage.get(p) ?? []).map((e) => (
-                  <div key={e.path} className="rail-item" data-t="extract" onClick={(ev) => openNode(e.path, { cmdClick: ev.metaKey || ev.ctrlKey, shiftClick: ev.shiftKey })}>
-                    <span className="g" data-el="read">{GLYPH.extract}</span>
-                    <span className="t">{titleOf(e.path, docs, null)}</span>
+            <div className="pdf-marks">
+              {status === 'ok' && drawn.map(({ passage: p, cards: n, dismissed }) => {
+                const cur = lit === p.heading.text;
+                const flashing = flash?.text === p.heading.text;
+                return p.boxes.map((b, i) => {
+                  const r = boxRect(b);
+                  if (!r) return null;
+                  const label = i ? `↳ ${plainMath(p.heading.text)} (${i + 1}/${p.boxes.length})` : plainMath(p.heading.text);
+                  return (
+                    <div key={`${p.index}:${i}`} className="pbox-group">
+                      <div
+                        className={`pbox${cur ? ' cur' : ''}${dismissed ? ' dis' : ''}${flashing ? ' flash' : ''}`}
+                        data-section={p.heading.text}
+                        data-page={b.page}
+                        style={{ left: r.left, top: r.top, width: r.width, height: r.height }}
+                      />
+                      {roomy ? (
+                        <div data-hit="1" className={`ptag${i ? ' cont' : ''}${cur ? ' cur' : ''}${dismissed ? ' dis' : ''}`} style={{ left: pageW + 12, top: r.top }} title="go to this section in the notes" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); goToSection(p); }}>
+                          {!i && <span className="pt-g">§</span>}{label}{!i && n > 0 && <span className="pt-c">◆{n}</span>}
+                        </div>
+                      ) : (
+                        <div data-hit="1" className={`pgut${cur ? ' cur' : ''}${dismissed ? ' dis' : ''}`} style={{ left: pageW + 3, top: r.top }} title={label} onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); goToSection(p); }}>{i ? '↳' : '§'}</div>
+                      )}
+                    </div>
+                  );
+                });
+              })}
+              {shownPending.map((b, i) => {
+                const r = boxRect(b);
+                return r && (
+                  <div key={`pending:${i}`} className="pbox pending" style={{ left: r.left, top: r.top, width: r.width, height: r.height }}>
+                    {shownPending.length > 1 && <span className="pb-no">{i + 1}</span>}
                   </div>
-                ))}
-                {(cardsByPage.get(p) ?? []).map(({ card, index }) => (
-                  <div
-                    key={card.id ?? index}
-                    className={`rail-item${selected?.path === id && selected.index === index ? ' selected' : ''}`}
-                    data-t="card"
-                    onClick={() => useApp.setState({ selectedCard: { path: id, index } })}
-                  >
-                    <span className="g" data-el="card">{EL_GLYPH.card}</span>
-                    <span className="t">{cardLabel(card.text)}</span>
-                  </div>
-                ))}
-              </div>
-            ))}
-          </div>
-          {sel && !composer && (
-            <div className="sel-cue" style={{ top: sel.rect.bottom + 8, left: sel.rect.left }}>
-              {canExtract && (
-                <button type="button" className="cue-act" onMouseDown={(e) => { e.preventDefault(); doExtract(); }}>
-                  extract <span className="kbd">e</span>
-                </button>
+                );
+              })}
+              {ghost && <div className="pbox pending ghost" style={ghost} />}
+              {lastPending && !sel && (
+                <div data-hit="1" className="pend" style={{ left: lastPending.left, top: lastPending.top + lastPending.height + 6 }}>
+                  <button type="button" data-k="e" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); void makeSection(false).catch(console.error); }}><kbd>e</kbd>section{pending.length > 1 ? ` · ${pending.length} boxes` : ''}</button>
+                  <button type="button" data-k="m" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); void cardOrClip().catch(console.error); }}><kbd>m</kbd>card</button>
+                  <button type="button" data-k="esc" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); clearBoxes(); }}><kbd>esc</kbd></button>
+                </div>
               )}
-              <button type="button" className="cue-act" onMouseDown={(e) => { e.preventDefault(); openComposer(); }}>
-                make a card <span className="kbd">m</span>
+            </div>
+          </div>
+          {sel && (
+            <div className="sel-cue" style={{ top: sel.rect.bottom + 8, left: sel.rect.left }}>
+              <button type="button" className="cue-act" onMouseDown={(e) => { e.preventDefault(); void makeSection(false).catch(console.error); }}>
+                section <span className="kbd">e</span>
+              </button>
+              <button type="button" className="cue-act" onMouseDown={(e) => { e.preventDefault(); void cardOrClip().catch(console.error); }}>
+                card <span className="kbd">m</span>
               </button>
               {plugSel && <CueActions sel={plugSel} onRun={() => setSel(null)} />}
             </div>
@@ -715,11 +932,6 @@ function Pages({ id, active, session, onText }: PagesProps) {
             >
               <div className="pk-hd"><span>p. {peek.page}</span><span className="pk-t">{peek.text}</span><span className="kbd">esc</span></div>
               <canvas ref={peekCanvas} />
-            </div>
-          )}
-          {composer && (
-            <div className="card-pop" style={{ top: Math.min(composer.rect.bottom + 8, window.innerHeight - 280), left: Math.min(composer.rect.left, window.innerWidth - 440) }}>
-              <Composer seed={composer.seed} pri={info?.pri ?? PRI_DEFAULT} onSave={saveCard} onClose={() => setComposer(null)} />
             </div>
           )}
         </div>

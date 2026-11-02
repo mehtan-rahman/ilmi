@@ -896,3 +896,35 @@ mark.find-hit { color: inherit; padding: 0; }
 /* where a section from the queue opened: a quiet fill that fades */
 .draft-doc .dd-h { transition: background 1.2s ease-out; }
 .draft-doc .dd-h.landed { background: var(--accent-soft); }
+
+/* ── a book's notes (milestone 48): the chip at the end of a section's heading ── */
+.book-notes-doc .notes-meta { margin-bottom: 18px; }
+.book-chip {
+  display: inline-flex;
+  gap: 6px;
+  align-items: baseline;
+  margin-left: 10px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 400;
+  color: var(--fg-3);
+  white-space: nowrap;
+  user-select: none;
+  vertical-align: 2px;
+  letter-spacing: 0;
+}
+.book-chip .bc-btn {
+  font-family: var(--sans);
+  font-size: 11px;
+  color: var(--fg-2);
+  background: none;
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius);
+  padding: 0 5px;
+  cursor: pointer;
+}
+.book-chip .bc-btn:hover { border-color: var(--accent); color: var(--accent); }
+.book-chip .bc-when[data-when="due"] { color: var(--accent); }
+.book-chip .bc-when[data-when="dismissed"] { color: var(--fg-4); }
+/* the chip says it; the quiet § after the heading would say it twice */
+.book-notes-doc .draft-doc .dd-h[data-read]::after { content: none; }

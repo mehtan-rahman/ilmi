@@ -46,18 +46,34 @@ export function postpone<T extends ReadSchedule>(r: T, now: Date, factor?: numbe
 }
 
 /**
+ * The read point on a document with pages, moved forward only: page `pos`,
+ * `y` down it (absent: its foot). A point before the one held leaves it.
+ */
+export function pointOn(r: { pos?: number; y?: number }, pos: number, y: number): { pos: number; y?: number } {
+  const was = (r.pos ?? 0) + (r.y ?? 1);
+  if (r.pos !== undefined && pos + y <= was) return r.y === undefined ? { pos: r.pos } : { pos: r.pos, y: r.y };
+  return { pos, y };
+}
+
+/**
  * Apply an action to a document's `read` field in place. Throws if it is
  * not enrolled. On a note, `pos` is never kept. `exam`: the exam ahead the
- * document is studied toward, which paces a pass.
+ * document is studied toward, which paces a pass. On a document with pages
+ * `pos` is a page and `y` how far down it (FORMAT.md §3), the point moved
+ * forward only.
  */
-export function advanceRead(doc: Doc, action: ReadAction, now: Date, pos?: number, exam?: Exam): ReadSchedule | null {
+export function advanceRead(doc: Doc, action: ReadAction, now: Date, pos?: number, exam?: Exam, y?: number): ReadSchedule | null {
   const m = meta(doc);
   if (!m.read) throw new Error('not enrolled in reading');
   const note = m.type === 'note';
   let r = m.read;
   if (note && r.pos !== undefined) { const { pos: _, ...rest } = r; r = rest; }
   const pace: Pace | undefined = exam && { exam, total: note || m.pdf !== undefined ? null : doc.blocks.filter((b) => b.kind !== 'card').length };
-  const next = action === 'done' ? null : action === 'on' ? readOn(r, now, note ? undefined : pos, pace) : postpone(r, now);
+  let next: ReadSchedule | null = action === 'done' ? null : action === 'on' ? readOn(r, now, note || y !== undefined ? undefined : pos, pace) : postpone(r, now);
+  if (next && action === 'on' && !note && pos !== undefined && y !== undefined) {
+    const { pos: _p, y: _y, ...rest } = next;
+    next = { ...rest, ...pointOn(r, pos, y) };
+  }
   setField(doc, 'read', next);
   return next;
 }

@@ -17,7 +17,7 @@ import { EL_WORD, FORM_LABEL, doneLine, dueLabel, gapLabels, glyphOf, markOf, ow
 import { writeDoc } from './sections.js';
 import { queueId } from './names.js';
 import type { OpenOpts } from './panes.js';
-import { Pdf } from './Pdf.js';
+import { Pdf, pointInView } from './Pdf.js';
 import { MathText } from './MathText.js';
 import { plainMath } from './chromeText.js';
 import { Reader, clozeHTML, faceDir, richHTML } from './Reader.js';
@@ -246,18 +246,13 @@ function blocksAbove(from: HTMLElement): number | undefined {
   return n;
 }
 
-/** On a document with pages: the page in view, which the PDF lens keeps on its root. */
-function pageInView(from: HTMLElement): number | undefined {
-  const n = Number(from.querySelector<HTMLElement>('.pdf-view')?.dataset.page);
-  return n >= 1 ? n : undefined;
-}
-
 type DocAction = 'on' | 'postpone' | 'done';
 
 interface DocProps extends NavProps {
   item: ReadItem | WriteItem | SectionItem;
   active: boolean;
-  onAct(action: DocAction, pos?: number): void;
+  /** `pos`: blocks read, or on a document with pages the page at the bottom of the view, `y` how far down it. */
+  onAct(action: DocAction, pos?: number, y?: number): void;
 }
 
 /** How many days ⏎ sends an element out: its interval grown by its growth. */
@@ -281,11 +276,17 @@ function DocSession({ item, active, onAct, ...nav }: DocProps) {
   const docs = useApp((s) => s.docs);
   const reading = item.kind === 'read';
   const section = item.kind === 'section';
-  const pages = !!info?.pdf && !section;
+  // a document with pages opens as its book, a section of it at its boxes (`Pdf.tsx`)
+  const pages = !!info?.pdf;
   // a note's pass keeps no place (FORMAT.md §3)
   const note = item.kind === 'read' && !!item.note;
   const pri = section ? item.pri : info ? info.pri ?? (reading ? info.read?.pri : info.write?.pri) ?? PRI_DEFAULT : item.pri;
-  const on = () => onAct('on', reading && !note && barRef.current ? (pages ? pageInView(barRef.current) : blocksAbove(barRef.current)) : undefined);
+  const on = () => {
+    if (!reading || note || !barRef.current) { onAct('on'); return; }
+    // done for today records the point at the bottom of the view
+    if (pages) { const at = pointInView(barRef.current); onAct('on', at?.page, at?.y); return; }
+    onAct('on', blocksAbove(barRef.current));
+  };
   const words = actionWords(item);
 
   // a section opens at its heading, the caret in it and the heading marked
@@ -303,7 +304,7 @@ function DocSession({ item, active, onAct, ...nav }: DocProps) {
   const word = note ? 'note' : item.kind === 'read' && item.extract ? 'extract' : undefined;
   const what = plainMath(section ? `${docs[item.path]?.title ?? sourceLabel(item, docs)} › ${item.heading}` : sourceLabel(item, docs));
   return (
-    <div className="doc-session" ref={barRef} data-el={item.kind}>
+    <div className="doc-session" ref={barRef} data-el={item.kind} data-book={pages ? '1' : '0'}>
       {pages ? <Pdf id={item.path} active={active} session /> : <Reader id={item.path} active={active} />}
       <SessionBar kind={markOf(item)} {...(word ? { word } : {})} pri={pri} what={what} stands={standing(item, appNow(), info?.pages?.first)} glyph={glyphOf(item)} {...nav}>
         <button type="button" data-act="on" onClick={on}><span className="ra-l">{words.on}</span><kbd>⏎</kbd></button>
@@ -387,12 +388,12 @@ export function Session({ active, onOpen }: Props) {
     advance();
   };
 
-  const onDoc = (item: ReadItem | WriteItem | SectionItem, action: DocAction, pos?: number) => {
+  const onDoc = (item: ReadItem | WriteItem | SectionItem, action: DocAction, pos?: number, y?: number) => {
     if (!currentVault()) return;
     const now = appNow();
     // through the page when it is open, so what was just typed in it is written first
     const run = writeDoc(item.path, (doc) => {
-      if (item.kind === 'read') advanceRead(doc, action, now, pos, activeExamAt(item.path, now));
+      if (item.kind === 'read') advanceRead(doc, action, now, pos, activeExamAt(item.path, now), y);
       else if (item.kind === 'section') advanceSection(doc, item.block, item.heading, action, now);
       else advanceWrite(doc, action, now);
     });
@@ -415,7 +416,7 @@ export function Session({ active, onOpen }: Props) {
 
   const key = `${session?.seq}:${idx}`;
   if (el.kind !== 'card') {
-    return <DocSession key={key} item={el} active={active} idx={idx} total={total} onPrev={goPrev} onNext={goNext} onAct={(a, pos) => onDoc(el, a, pos)} />;
+    return <DocSession key={key} item={el} active={active} idx={idx} total={total} onPrev={goPrev} onNext={goNext} onAct={(a, pos, y) => onDoc(el, a, pos, y)} />;
   }
 
   const openSource = (e: MouseEvent) => goToSource({ cmdClick: e.metaKey || e.ctrlKey, shiftClick: e.shiftKey });

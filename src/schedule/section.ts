@@ -6,7 +6,7 @@
 // queue makes an item of each (`queue.ts`), the app writes through
 // `vault.update`.
 
-import { READ_AF, sectionDismissed, type Block, type Doc, type Heading, type SectionSchedule } from '../format/index.js';
+import { READ_AF, boxesAt, formatBoxes, parseBoxes, sectionDismissed, type Block, type Box, type Doc, type Heading, type SectionSchedule } from '../format/index.js';
 import { addDays, dayOf } from './dates.js';
 import { grow } from './growth.js';
 import { postpone, readOn, type ReadAction } from './read.js';
@@ -110,4 +110,57 @@ export function advanceSection(doc: Doc, index: number, text: string, action: Re
   if (next) h.read = next;
   else delete h.read;
   return next;
+}
+
+// ── passages: sections tied to boxes on the document's pages (milestone 48) ──
+
+/** A section whose line has boxes in the grammar: where it is in the blocks, its heading, its boxes. */
+export interface Passage {
+  index: number;
+  heading: Heading;
+  boxes: Box[];
+}
+
+/** Every passage of a document, in book order (by where its first box is); ties keep the file's order. */
+export function passagesOf(blocks: readonly Block[]): Passage[] {
+  const out: Passage[] = [];
+  blocks.forEach((b, index) => {
+    if (b.kind !== 'heading' || b.read?.boxes === undefined) return;
+    const boxes = parseBoxes(b.read.boxes);
+    if (boxes) out.push({ index, heading: b, boxes });
+  });
+  return out.sort((a, b) => boxesAt(a.boxes) - boxesAt(b.boxes) || a.index - b.index);
+}
+
+/**
+ * Where a new passage's heading goes, in book order among the passages: just
+ * before the first passage that starts later on the pages, else at the end.
+ */
+export function placeOf(blocks: readonly Block[], boxes: readonly Box[]): number {
+  const at = boxesAt(boxes);
+  let best = blocks.length;
+  for (const p of passagesOf(blocks)) if (boxesAt(p.boxes) > at && p.index < best) best = p.index;
+  return best;
+}
+
+/** A heading's text not already taken in the document: `name`, else `name · 2`, `name · 3`… */
+export function freeName(blocks: readonly Block[], name: string): string {
+  const taken = new Set(blocks.filter((b): b is Heading => b.kind === 'heading').map((b) => b.text));
+  if (!taken.has(name)) return name;
+  for (let n = 2; ; n++) if (!taken.has(`${name} · ${n}`)) return `${name} · ${n}`;
+}
+
+/**
+ * Boxes on the pages become a section (FORMAT.md §6.5): a `##` heading named
+ * `name`, its line `made=<today> due=<+3d> ivl=3 boxes=…`, placed in book
+ * order. In place, meant for `vault.update`; returns the heading's index
+ * and its text (made unique).
+ */
+export function addPassage(doc: Doc, name: string, boxes: readonly Box[], now: Date): { index: number; text: string } {
+  const text = freeName(doc.blocks, name);
+  const day = dayOf(now);
+  const h: Heading = { kind: 'heading', level: 2, text, read: { made: day, due: addDays(day, SECTION_IVL), ivl: SECTION_IVL, boxes: formatBoxes(boxes) } };
+  const index = placeOf(doc.blocks, boxes);
+  doc.blocks.splice(index, 0, h);
+  return { index, text };
 }

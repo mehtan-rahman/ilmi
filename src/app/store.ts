@@ -141,6 +141,15 @@ export interface Reveal {
   id?: string;
   /** A section's heading, not a card (a section opened from the queue): its text finds it if it has moved. */
   heading?: string;
+  /** The caret in a fresh line after it (a heading: after its section) instead of on it, to write there: a passage just boxed, a clip. */
+  write?: true;
+}
+
+/** A book's notes asked to show a section on the pages: its boxes lit and scrolled to, flashed (`seq` changes each time). Transient. */
+export interface BookFocus {
+  path: string;
+  text: string;
+  seq: number;
 }
 
 /**
@@ -223,6 +232,11 @@ export interface AppState {
   selectedCard: SelectedCard | null;
   reveal: Reveal | null;
   caretHeading: CaretHeading | null;
+  /** A document with pages opens as its pages beside its notes; ⌘\ hides the notes (and shows them). Not saved. */
+  notesHidden: boolean;
+  /** The sections whose boxes are drawn inline in a book's notes (`show boxes here`), by document, by heading text. Not saved. */
+  inlineBoxes: Record<string, string[]>;
+  bookFocus: BookFocus | null;
   /** Where the intake places its next source: the folder it was opened from. */
   intakeDir: string;
   /** Every element over the vault, sorted, as of `queueAt`; the saved queries filter it. */
@@ -311,6 +325,9 @@ export const useApp = create<AppState>((set, get) => ({
   selectedCard: null,
   reveal: null,
   caretHeading: null,
+  notesHidden: false,
+  inlineBoxes: {},
+  bookFocus: null,
   intakeDir: '',
   queue: [],
   queueAt: new Date(0),

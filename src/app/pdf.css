@@ -170,3 +170,119 @@
 .pdf-peek .pk-t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-4); }
 .pdf-peek canvas { display: block; background: #fff; outline: 1px solid var(--line-2); }
 [data-theme="dark"] .pdf-peek canvas { filter: invert(0.92) hue-rotate(180deg); }
+
+/* ── the book (milestone 48): pages on the left, the notes on the right,
+      each scrolling on its own; ⌘\ hides the notes ── */
+.book {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+}
+.book[data-notes="0"] { grid-template-columns: minmax(0, 1fr); }
+.book-pages, .book-notes { overflow: auto; min-height: 0; min-width: 0; position: relative; }
+.book-notes { border-left: 1px solid var(--line-1); }
+.book .book-pages .reader-wrap { padding: 22px 20px 80px 36px; align-items: stretch; }
+.book .reader.pdf-view { max-width: none; }
+.book .pdf-body { display: block; position: relative; }
+.book .pdf-pages { position: relative; }
+@media (max-width: 760px) {
+  .book { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); }
+  .book-notes { border-left: 0; border-top: 1px solid var(--line-1); }
+}
+
+/* in a session the bar sits under the book, not over it */
+.doc-session[data-book="1"] { position: absolute; inset: 0; display: flex; flex-direction: column; min-height: 0; }
+.doc-session[data-book="1"] > .book { position: relative; inset: auto; flex: 1 1 0; min-height: 0; }
+.doc-session[data-book="1"] > .session-bar { position: relative; bottom: auto; margin: 0 auto; padding: 8px 12px 10px; max-width: min(calc(var(--reading-width) + 240px), 100%); }
+
+/* the read bar: from the first page to the read point */
+.book .pdf-body .read-bar { left: -20px; width: 3px; }
+
+/* what the notes say about the pages: each passage's boxes, its name beside the page or a § in the gutter */
+.pdf-marks { position: absolute; inset: 0; pointer-events: none; z-index: 3; }
+.pbox {
+  position: absolute;
+  border: 1.5px solid color-mix(in oklab, var(--accent) 45%, transparent);
+  background: color-mix(in oklab, var(--accent) 4%, transparent);
+  border-radius: 1px;
+}
+.pbox.cur { border: 2px solid var(--accent); background: color-mix(in oklab, var(--accent) 12%, transparent); }
+.pbox.dis { border: 1.5px dashed color-mix(in oklab, var(--fg-3) 50%, transparent); background: transparent; }
+.pbox.pending { border: 1.5px dashed var(--accent); background: color-mix(in oklab, var(--accent) 7%, transparent); }
+.pbox.ghost { pointer-events: none; }
+.pbox .pb-no {
+  position: absolute; top: -16px; left: -1px; padding: 0 4px;
+  font: 10.5px var(--mono); color: var(--accent); background: var(--paper);
+}
+.pbox.flash { animation: pbox-flash 1s ease 2; }
+@keyframes pbox-flash { 50% { background: color-mix(in oklab, var(--accent) 35%, transparent); } }
+@media (prefers-reduced-motion: reduce) { .pbox.flash { animation: none; } }
+.ptag {
+  position: absolute;
+  pointer-events: auto;
+  max-width: 190px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--sans);
+  font-size: 11.5px;
+  line-height: 1.35;
+  color: var(--fg-2);
+  cursor: pointer;
+}
+.ptag:hover, .ptag.cur { color: var(--fg-1); }
+.ptag:hover { color: var(--accent); }
+.ptag.cont, .ptag.dis { color: var(--fg-4); }
+.ptag .pt-g { font-family: var(--serif); color: var(--accent); margin-right: 3px; }
+.ptag.dis .pt-g { color: var(--fg-4); }
+.ptag .pt-c { font-family: var(--mono); font-size: 10px; color: var(--accent); margin-left: 4px; }
+.pgut {
+  position: absolute;
+  pointer-events: auto;
+  cursor: pointer;
+  font-family: var(--serif);
+  font-size: 13px;
+  line-height: 1;
+  padding: 2px 3px;
+  color: color-mix(in oklab, var(--accent) 70%, transparent);
+}
+.pgut:hover, .pgut.cur { color: var(--accent); }
+.pgut.dis { color: var(--fg-4); }
+/* the boxes drawn and not yet made into anything: what `e` and `m` would do */
+.pend {
+  position: absolute;
+  pointer-events: auto;
+  z-index: 4;
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--paper);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+.pend button { padding: 3px 8px; color: var(--fg-2); border-radius: var(--radius); background: none; border: 0; font: inherit; cursor: pointer; }
+.pend button:hover { background: color-mix(in oklab, var(--accent) 9%, transparent); color: var(--fg-1); }
+.pend kbd { margin-right: 4px; color: var(--accent); font: inherit; }
+.book .pdf-page { cursor: crosshair; }
+.book .pdf-page .textLayer :is(span, br) { cursor: crosshair; }
+[data-theme="eink"] .pbox.cur { border-color: var(--fg-1); }
+
+/* ── crops of the pages drawn in the notes: a section's boxes shown here, a clip ── */
+.crop { position: relative; overflow: hidden; background: #fff; box-shadow: 0 0 0 1px var(--line-1); cursor: pointer; min-height: 24px; }
+.crop:hover { box-shadow: 0 0 0 1px var(--accent); }
+.crop canvas { display: block; max-width: 100%; height: auto !important; }
+[data-theme="dark"] .crop { background: #e9e9e6; }
+[data-theme="dark"] .crop canvas { filter: invert(0.92) hue-rotate(180deg); }
+[data-theme="eink"] .crop canvas { filter: grayscale(1) contrast(1.1); }
+.inline-boxes { margin: 0 0 14px; user-select: none; }
+.pbreak { font-family: var(--mono); font-size: 10.5px; color: var(--fg-4); text-align: center; padding: 5px 0; letter-spacing: .04em; }
+.pbreak::before, .pbreak::after { content: ""; display: inline-block; width: 60px; height: 1px; background: var(--line-1); vertical-align: middle; margin: 0 10px; }
+.draft-doc .raw.clip .raw-view { margin: 0; }
+.draft-doc .raw.clip .clip-cap { font-family: var(--mono); font-size: 10px; color: var(--fg-4); margin-top: 3px; }
+.draft-doc .raw.clip .raw-src { display: none; }
+.draft-doc .raw.clip.selected .raw-src { display: block; }

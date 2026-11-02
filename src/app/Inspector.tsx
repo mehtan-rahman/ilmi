@@ -8,10 +8,10 @@
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
-  AF_MIN, PRI_DEFAULT, PRI_MAX, PRI_MIN, READ_AF, RETENTION_MAX, RETENTION_MIN, WRITE_AF, cardForm, docPri, meta, parse, parseAf, parseCount, parsePri, parseRetention, setField,
+  AF_MIN, PRI_DEFAULT, PRI_MAX, PRI_MIN, READ_AF, RETENTION_MAX, RETENTION_MIN, WRITE_AF, cardForm, docPri, meta, pagesLabel, parse, parseAf, parseCount, parsePri, parseRetention, setField,
   type Block, type Card, type CardForm, type CardSchedule, type Doc, type ReadSchedule, type WriteSchedule,
 } from '../format/index.js';
-import { activeExam, advanceWrite, dayOf, examKey, examLeft, inScope, nextIntervals, sectionState, type CardItem, type OptionKey } from '../schedule/index.js';
+import { activeExam, advanceWrite, dayOf, examKey, examLeft, inScope, nextIntervals, passagesOf, sectionState, type CardItem, type OptionKey } from '../schedule/index.js';
 import { baseOf, childDirOf, childrenAt, dirOf, isDoc, pageOfBlock, type TreeNode } from '../vault/index.js';
 import { cardName, formLabel } from './chrome.js';
 import { breakdown, countsUnder, dueItems, plainMath } from './chromeText.js';
@@ -28,6 +28,7 @@ import { foldedHeadings, notebookOf, outline } from './tabs.js';
 import { goToHeading } from './headings.js';
 import { headingOf, sectionActions, statusOf, writeDoc } from './sections.js';
 import { appNow } from './clock.js';
+import { chipWhen } from './bookNotes.js';
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 const words = (blocks: Block[]) => blocks.reduce((n, b) => (b.kind === 'card' ? n : n + b.text.split(/\s+/).filter(Boolean).length), 0);
@@ -466,7 +467,7 @@ function DocInspector({ id, info, doc, now }: { id: string; info: DocInfo; doc: 
   rows.push(['length', plural(words(doc.blocks), 'word')]);
   if (cards) rows.push(cardsRow);
   if (m.read && info.type === 'note') rows.push(['revisit', `${m.read.reps ? `pass ${m.read.reps + 1}` : 'first pass'}, ${dueLabel(m.read.due, now)}`]);
-  else if (m.read && info.pdf) rows.push(['reading', `${m.read.pos ? `p. ${m.read.pos}` : 'not started'}, ${dueLabel(m.read.due, now)}`]);
+  else if (m.read && info.pdf) rows.push(['reading', `${m.read.pos ? `to p. ${m.read.pos}${m.read.y !== undefined && m.read.y < 1 ? `, ${Math.round(m.read.y * 100)}% down` : ''}` : 'not started'}, ${dueLabel(m.read.due, now)}`]);
   else if (m.read) rows.push(['reading', `${m.read.pos ?? 0} of ${doc.blocks.filter((b) => b.kind !== 'card').length}, ${dueLabel(m.read.due, now)}`]);
   rows.push(docPriRow(id, m));
   if (m.read) rows.push(growthRow(id, 'read', m.read));
@@ -475,11 +476,14 @@ function DocInspector({ id, info, doc, now }: { id: string; info: DocInfo; doc: 
     <>
       <Block title={info.type}>
         <KV rows={rows} />
-        <div className="frozen-row">
-          <span className="fr-state">{info.frozen ? 'frozen' : 'editable'}</span>
-          <button type="button" className="fr-toggle" data-frozen={info.frozen ? '1' : '0'} onClick={() => toggleField(id, 'frozen', !info.frozen)}>{info.frozen ? 'thaw' : 'freeze'}</button>
-        </div>
+        {!info.pdf && (
+          <div className="frozen-row">
+            <span className="fr-state">{info.frozen ? 'frozen' : 'editable'}</span>
+            <button type="button" className="fr-toggle" data-frozen={info.frozen ? '1' : '0'} onClick={() => toggleField(id, 'frozen', !info.frozen)}>{info.frozen ? 'thaw' : 'freeze'}</button>
+          </div>
+        )}
       </Block>
+      {info.pdf && <PassagesBlock id={id} doc={doc} now={now} />}
       <ExamBlock path={id} />
       {(cards > 0 || hasCardsUnder(id)) && <OptionsBlock path={id} />}
       {!info.pdf && <Outline id={id} doc={doc} />}
@@ -501,6 +505,39 @@ function DocInspector({ id, info, doc, now }: { id: string; info: DocInfo; doc: 
       )}
       <CardList title="cards" doc={doc} now={now} />
     </>
+  );
+}
+
+// ── a book's passages ───────────────────────────────────────────
+
+/**
+ * A document with pages: its passages (sections tied to boxes on its
+ * pages), in book order, each with its pages and when it is next; a click
+ * puts the caret at its heading, and the pages follow.
+ */
+function PassagesBlock({ id, doc, now }: { id: string; doc: Doc; now: Date }) {
+  const caret = useApp((s) => s.caretHeading);
+  const list = passagesOf(doc.blocks);
+  return (
+    <Block title="passages, in book order">
+      {list.length === 0 ? (
+        <p className="insp-line">none yet: drag a box on a page, then e</p>
+      ) : (
+        <ul className="insp-cards insp-passages">
+          {list.map((p) => {
+            const read = p.heading.read!;
+            const when = chipWhen(read, now);
+            const cur = caret?.path === id && caret.text === p.heading.text;
+            return (
+              <li key={`${p.index}:${p.heading.text}`} data-due={when === 'due today' ? '1' : '0'} data-cur={cur ? '1' : '0'} data-dismissed={when === 'dismissed' ? '1' : '0'} onClick={() => useApp.setState({ notesHidden: false, reveal: { path: id, index: p.index, heading: p.heading.text } })}>
+                <MathText className="cl-t" dir="auto" text={p.heading.text} />
+                <span className="cl-due" title={pagesLabel(p.boxes)}>{when === 'due today' ? 'today' : when.replace(/^back /, '')}</span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </Block>
   );
 }
 

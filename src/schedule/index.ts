@@ -5,10 +5,11 @@ export { dayOf, dayStart, addDays, isDay, whenToDate, instantOf, daysBetween } f
 export { grade, preview, toFsrs, fromFsrs, GRADES, type Grade } from './card.js';
 export * as reading from './read.js';
 export * as writing from './write.js';
-export { advanceRead, type ReadAction, type Pace } from './read.js';
+export { advanceRead, pointOn, type ReadAction, type Pace } from './read.js';
 export { advanceWrite, type WriteAction } from './write.js';
 export {
   SECTION_IVL, sectionSpan, sectionState, headingAt, sectionInQueue, enrolSection, dismissed, broughtBack, advanceSchedule, nextGap, findHeading, advanceSection,
+  passagesOf, placeOf, freeName, addPassage, type Passage,
 } from './section.js';
 export { grow, nextIntervals, postponed, POSTPONE_FACTOR } from './growth.js';
 export {

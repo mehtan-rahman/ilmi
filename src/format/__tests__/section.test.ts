@@ -28,7 +28,7 @@ describe('the section line', () => {
 
   it('writes made, due, ivl, reps, af, pri, boxes in that order, unknown keys after; af at its default dropped', () => {
     const text = '## x\n<!--   read   boxes=1:0:0:1:1 later=yes pri=30 reps=2 ivl=8 af=1.6 due=2026-11-09 made=2026-10-19   -->\n';
-    expect(serialize(parse(text).doc)).toBe('## x\n<!-- read made=2026-10-19 due=2026-11-09 ivl=8 reps=2 pri=30 boxes=1:0:0:1:1 later=yes -->\n');
+    expect(serialize(parse(text).doc)).toBe('## x\n<!-- read made=2026-10-19 due=2026-11-09 ivl=8 reps=2 pri=30 boxes=1:0.000:0.000:1.000:1.000 later=yes -->\n');
     expect(serialize(parse('## x\n<!-- read due=2026-11-09 af=2 -->\n').doc)).toBe('## x\n<!-- read due=2026-11-09 af=2 -->\n');
   });
 
@@ -77,8 +77,8 @@ describe('the section line', () => {
   });
 
   it('dismissed by the serializer\'s rules: a line keeping only its boxes stays, an emptied one goes', () => {
-    const { doc } = parse('## kept\n<!-- read made=2026-10-20 boxes=41:0:0:1:1 -->\n\n## gone\n');
-    expect(serialize(doc)).toBe('## kept\n<!-- read made=2026-10-20 boxes=41:0:0:1:1 -->\n\n## gone\n');
+    const { doc } = parse('## kept\n<!-- read made=2026-10-20 boxes=41:0.000:0.000:1.000:1.000 -->\n\n## gone\n');
+    expect(serialize(doc)).toBe('## kept\n<!-- read made=2026-10-20 boxes=41:0.000:0.000:1.000:1.000 -->\n\n## gone\n');
     delete (doc.blocks[0] as Heading).read;
     expect(serialize(doc)).toBe('## kept\n\n## gone\n');
   });

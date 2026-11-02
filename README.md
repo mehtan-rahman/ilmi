@@ -107,7 +107,10 @@ operation against that vault through the Tauri fs adapter and log the results
 to the terminal; use a scratch copy, it creates and deletes files.
 `ILMI_SMOKE=welcome` runs before any vault opens and walks the welcome instead,
 seeding its rows with `ILMI_VAULT`; the other modes are listed at the top of
-`src/app/smoke.ts`.
+`src/app/smoke.ts`. `ILMI_SMOKE=book` (a scratch copy of `samples/double-major`,
+with `ILMI_BOOKS=<this repo>/design/books`) walks a book beside its notes on
+`design/books/ch3-book.pdf`, the sample's Lindqvist ch. 3 at pp. 41–44 of its
+book (`pdflatex ch3-book.tex` after `ch3.tex` rebuilds it).
 
 ## Keys
 
@@ -145,8 +148,14 @@ in a note        ⌘B bold, ⌘I italic, ⌘E code, ⌘⇧X strike, ⌘K link (o
                  note as img-NN
 in any page      ⌘F find (case, accents, and Arabic vowel marks folded), ⏎ ⇧⏎
                  or ⌘G ⌘⇧G the next and the one before; ⌥⌘F replace
-in a PDF         the same on a page; / search, g go to a page, [ ] pages;
-                 text in the meta row reads the Markdown instead
+in a book        a document with pages: its pages beside its notes (the
+                 body, in the editor); drag on a page to box a passage
+                 (again for another, any page; a text selection boxes its
+                 lines), e makes it a section of the notes, m a section to
+                 card in (or, where the page names no sections, a clip
+                 under ## p. N), esc clears; ⏎ right after writes in it;
+                 [ ] step the sections; ⌘\ hides the notes; / search,
+                 g go to a page; drag the margin to move the read point
 in a deck        j k move, ⌫ delete the selected card, m make a card;
                  × on a row, or right-click, also deletes one; right-click moves it to another deck
 in the queue     j k move, ⏎ enter, o open one; a row names its file by its
@@ -159,11 +168,18 @@ on a heading     right-click: come back (its section returns until you
 ```
 
 A PDF dropped on the intake lands as a pair, `name.pdf` beside `name.md`: the
-Markdown is the document (schedule, priority, cards, extracts), the PDF its
-pages, read in place through pdf.js and never written. Cards and extracts made
-from a page sit under a `## p. <n>` heading in the Markdown and in a rail
-beside the page; an extract's passage is drawn on the page as a highlight
-when it is found there again. The ruler in the margin marks the page.
+Markdown is the document (schedule, priority, cards, notes), the PDF its
+pages, read in place through pdf.js and never written. It opens as a book:
+the pages on the left, the Markdown's body on the right as your notes on
+them, one continuous document. A passage boxed on the pages becomes a
+section of the notes, named from the page (`3.3 · average values (3.12)`),
+placed in book order, and comes back in the day's queue until you dismiss
+it; its boxes are drawn on the page with its name, lit while the caret is
+in it, dashed once dismissed. Under its heading a chip shows it in the
+book, draws its boxes inline, and says when it is next. The gold bar in the
+margin runs to the read point (`pos` and `y` on the `read` line); done for
+today records the bottom of the view. An older extract's passage is still
+drawn on the page as a highlight when it is found there again.
 
 Text pasted or dropped on the intake that reads as a list of cards lands as a
 deck: a row chooses what separates front from back (`Q:`/`A:` lines, a tab,

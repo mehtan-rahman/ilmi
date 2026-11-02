@@ -29,3 +29,4 @@ export { SLASH_ITEMS, slashItems, slashContext, slashKey, slashPlugin, pickSlash
 export { findKey, findPlugin, findMatches, findIn, foldText, foldMap, currentMatch, replaceMatch, replaceAll, closeAtMatch, atomFind, markFinds, type AtomFind, type FindState, type FindMeta, type Match } from './find.js';
 export { insertBlocks, insertImages, imageParagraph, caretInto, markdownBlocks, pasteMarkdown, clipboardText, htmlPasteImages } from './insert.js';
 export { strongDir, textDir, blockDirs, dirAttr, charDir, isolatedSpans, markupSpans, marksOnly, baseSplit, withBases, type Dir, type Span, type BasedSeg, type BasedBlank } from './direction.js';
+export { bookKey, bookPlugin, type BookOptions } from './book.js';

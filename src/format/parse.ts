@@ -7,6 +7,7 @@
 import { parseAttrs, parseBool, readAttrs, specWhen, specNum, specInt, specEnum, specIntRange, type AttrSpec, type Warn } from './attrs.js';
 import { cardForm } from './cloze.js';
 import { READ_AF, SECTION_SPECS, parseFrontmatter } from './frontmatter.js';
+import { parseBoxes } from './boxes.js';
 import type { Block, Card, CardSchedule, Diagnostic, Doc, Heading, Paragraph, Raw, SrState } from './model.js';
 
 export const SR_SPECS: AttrSpec<CardSchedule>[] = [
@@ -302,6 +303,7 @@ function attach(prev: Block | undefined, adjacent: boolean, tag: string, rest: s
     for (const b of attrs.bare) warn(`unexpected token "${b}"`);
     const sched = readAttrs(attrs.pairs, SECTION_SPECS, warn);
     if (sched.af === READ_AF) delete sched.af;
+    if (sched.boxes !== undefined && !parseBoxes(sched.boxes)) warn(`boxes not in the grammar (page:x:y:w:h, "," between): ${sched.boxes}; kept as written`);
     if (prev.read) warn('heading has two read lines; later wins');
     prev.read = sched;
     return true;

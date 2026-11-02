@@ -9,6 +9,7 @@ import {
   FIELD_KEYS, isField, type CardForm, type Diagnostic, type Doc, type Field, type FieldKey, type FmEntry,
   type Exam, type Frontmatter, type LeechAction, type NodeType, type PageRange, type ReadSchedule, type SectionSchedule, type WriteSchedule,
 } from './model.js';
+import { frac3, normalizeBoxes } from './boxes.js';
 
 const NODE_TYPES: readonly NodeType[] = ['note', 'source', 'deck', 'draft', 'extract'];
 const CARD_FORMS: readonly CardForm[] = ['cloze', 'qa', 'bidir'];
@@ -41,16 +42,18 @@ export const READ_AF = 1.6;
 export const WRITE_AF = 1.5;
 
 export const READ_SPECS: AttrSpec<ReadSchedule>[] = [
-  specWhen('due', 'due'), specInt('ivl', 'ivl'), specInt('reps', 'reps'), specInt('pos', 'pos'), specIntMin('page', 'page', 1), specNumMin('af', 'af', AF_MIN), specIntRange('pri', 'pri', PRI_MIN, PRI_MAX),
+  specWhen('due', 'due'), specInt('ivl', 'ivl'), specInt('reps', 'reps'), specInt('pos', 'pos'), { key: 'y', prop: 'y', parse: (v) => { const n = parseNumber(v); return n !== null && n >= 0 && n <= 1 ? n : null; }, format: (x) => frac3(x as number) }, specIntMin('page', 'page', 1), specNumMin('af', 'af', AF_MIN), specIntRange('pri', 'pri', PRI_MIN, PRI_MAX),
 ];
 /**
  * The heading's `<!-- read … -->` line (FORMAT.md §6.5): `made`, then the
- * reading line's own, then `boxes`, a page's rectangles kept as written.
+ * reading line's own, then `boxes`, the passage's rectangles on the pages
+ * (`page:x:y:w:h`, `,` between; written to three decimals, kept as written
+ * when not in that grammar, with a diagnostic from the parser).
  */
 export const SECTION_SPECS: AttrSpec<SectionSchedule>[] = [
   { key: 'made', prop: 'made', parse: parseDay, format: (x) => String(x) },
   specWhen('due', 'due'), specInt('ivl', 'ivl'), specInt('reps', 'reps'), specNumMin('af', 'af', AF_MIN), specIntRange('pri', 'pri', PRI_MIN, PRI_MAX),
-  { key: 'boxes', prop: 'boxes', parse: (v) => v, format: (x) => String(x) },
+  { key: 'boxes', prop: 'boxes', parse: normalizeBoxes, format: (x) => String(x) },
 ];
 export const WRITE_SPECS: AttrSpec<WriteSchedule>[] = [
   specWhen('due', 'due'), specInt('ivl', 'ivl'), specInt('reps', 'reps'), specNumMin('af', 'af', AF_MIN), specIntRange('pri', 'pri', PRI_MIN, PRI_MAX), specBool('done', 'done'),

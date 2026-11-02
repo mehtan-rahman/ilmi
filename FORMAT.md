@@ -165,7 +165,7 @@ dropped, with a diagnostic.
 | -------------- | --------------------------- | --------- | ------------------------------------------------------------------ |
 | `type`         | `note` `source` `deck` `draft` `extract` | `note` | what the file is, and the lens that opens it         |
 | `title`        | string                      | filename  | display name                                                       |
-| `frozen`       | `true` `false`              | `false`   | prose is locked; cards stay editable                               |
+| `frozen`       | `true` `false`              | `false`   | prose is locked; cards stay editable (a text source's; never a document with pages) |
 | `imported`     | day                         |           | when the source came in                                            |
 | `started`      | day                         |           | when the draft began                                               |
 | `read`         | attributes (§7)             |           | enrolled in incremental reading                                    |
@@ -196,13 +196,18 @@ notes existed and those files stay what they were. The app writes no
 `type` for a note it makes.
 
 `read` attributes: `due` (day or instant), `ivl` (days between passes, int),
-`reps` (passes made, int), `pos` (prose blocks read, int), `page` (int ≥ 1),
+`reps` (passes made, int), `pos` (prose blocks read, int), `y` (number 0–1,
+written to three decimals), `page` (int ≥ 1),
 `af` (growth, number ≥ 1.1, default 1.6), `pri` (int 0–100).
 `pos` counts prose blocks from the top of the body, skipping cards;
 hand-inserting a paragraph above the marker shifts it by one, which is the
 accepted trade for not tagging every paragraph with an id. On a document
-with pages, `pos` is the page the ruler is on instead, counted from 1; the
-same attribute, so nothing else changes. On a note, `read` means
+with pages, `pos` is the page the read point is on instead, counted from 1
+as the PDF counts its pages, and `y` how far down that page it is, a
+fraction from the page's top (`pos=42 y=0.740`); a `pos` with no `y` is the
+page's foot, as before `y` existed. *Done for today* records the point at
+the bottom of the view, moved forward only. `y` means nothing on a document
+without pages and is kept as written there. On a note, `read` means
 *revisited*: the note comes back on the same growing interval, but each pass
 starts at the top or at a heading the person picks, since a note's own edits
 would shift a position; its line keeps `due`, `ivl`, `reps`, `af` (and the
@@ -213,8 +218,12 @@ from a page of its parent's PDF and names that page; it means nothing on
 any other line and is kept as written.
 
 **Pages.** `pdf` names a file relative to the document, written plain or
-quoted like `title`. A document with pages keeps what came out of them in
-its body under one heading per page, `## p. <n>`, which the app adds the
+quoted like `title`. A document with pages opens as its pages beside its
+body, and the body is the person's notes on those pages: never frozen,
+whatever `frozen` says (`frozen` locks only a text source's text). A
+passage boxed on the pages is a section of the notes (§6.5, `boxes`); a
+box clipped into the notes is a clip line (§6.6). Older work kept what
+came out of the pages in the body under one heading per page, `## p. <n>`, which the app adds the
 first time something lands on that page: a card made from the page goes
 under it, and an extract carved from the page leaves the passage there as a
 paragraph carrying the `<!-- extract NAME -->` backref (§6.3), while the
@@ -692,7 +701,31 @@ ordinary blocks wherever the person writes them.
 | `reps`  | int ≥ 0          | passes made                                                      |
 | `af`    | number ≥ 1.1     | growth, as on `read` (default 1.6, written only when not)        |
 | `pri`   | int 0–100        | its own priority, over the document's `pri` field                |
-| `boxes` | string           | where its passage is on the document's pages, kept as written (milestone 48 gives it a grammar) |
+| `boxes` | boxes, below     | where its passage is on the document's pages                     |
+
+**Boxes.** `boxes` is one or more rectangles on the document's pages,
+`,` between, no spaces:
+
+```
+boxes   := box ("," box)*
+box     := page ":" x ":" y ":" w ":" h
+page    := int ≥ 1, the PDF's own page number (as `pages` counts, §3)
+x y w h := fractions of the page, 0–1, from its top-left corner
+```
+
+`x y` is the box's top-left corner, `w h` its width and height; a box has
+some width and height and lies inside its page (to the rounding of three
+decimals). Written to three decimals (`41:0.120:0.860:0.770:0.075,42:0.100:0.097:0.770:0.040`);
+a value in the grammar written otherwise (`41:0.12:0.86:0.77:0.075`) is
+written back canonically. A value not in the grammar is kept as written,
+with a diagnostic, and draws nothing. The boxes are in the order they were
+drawn; a passage's place in book order is its first box's (page, then `y`).
+Boxing a passage on the pages writes a `##` heading named from the page
+(the nearest numbered heading at or above the first box, then the equation
+numbers inside the boxes, else `p. N`; a name already taken gets ` · 2`),
+placed before the first boxed section that starts later on the pages, else
+at the end, with `made=<today> due=<today+3> ivl=3 boxes=…`. The read
+point (§3) moves past the last box.
 
 Written in that order, unknown keys after. Enrolling writes `made=<today>
 due=<today+3> ivl=3`. A pass (*next*) multiplies `ivl` by `af` and counts
@@ -720,6 +753,25 @@ other annotation: an `sr` or `extract` line under a heading is an orphan.
 A heading's text is not changed by the line. The front-matter `read`
 field (a whole document read, or a whole note revisited) is a separate
 thing and unchanged; a document may have both.
+
+### 6.6 A clip `<!-- box … -->`
+
+```
+## p. 129
+
+<!-- box 129:0.120:0.368:0.770:0.088 -->
+
+دَكَاكِينُ ::: shops
+```
+
+A comment line of its own, `box` then one box in the grammar of §6.5, is a
+**clip**: a passage of the document's pages kept in the notes as the crop
+of its page, drawn there as the page itself, for what is clipped rather
+than named (a passage in Arabic, whose text a PDF reader cannot give back
+in order). It is a raw block (§6.4) like any other comment, attached to
+nothing; the app writes it under the page's `## p. N` heading (made the
+first time something lands there, in page order), the card that follows
+it below. A clip whose box is not in the grammar is an ordinary comment.
 
 ## 7. Attributes
 
@@ -763,7 +815,7 @@ The first time the app writes a hand-made file, these change, and only these:
   without it the text would be read as the closing sequence.
 - `^id` on its own line → ` ^id` on the last text line.
 - A section's `read` line → directly under its heading, canonical spacing
-  and key order (§6.5).
+  and key order (§6.5); its `boxes`, when in the grammar, to three decimals.
 - Annotation comments → canonical spacing, key order, value formatting, and
   order under the card. Duplicates collapsed. Under a card item they are
   set in to its content column (§5.2), whatever indentation they had.

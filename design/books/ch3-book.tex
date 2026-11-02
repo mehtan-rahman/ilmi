@@ -1,0 +1,13 @@
+% ch3.pdf as it sits in its book: pp. 41-44 of the PDF, after 40 blank
+% pages, so a chapter document can say `pages: 41-44` and number its boxes
+% as the book numbers them (milestone 48's smoke, ILMI_SMOKE=book).
+% Rebuild with: pdflatex ch3-book.tex (after ch3.pdf).
+\documentclass{article}
+\usepackage[paperwidth=6in,paperheight=9in,margin=0pt]{geometry}
+\usepackage{pdfpages}
+\pagestyle{empty}
+\begin{document}
+\newcount\n \n=0
+\loop\ifnum\n<40 \null\newpage \advance\n by 1 \repeat
+\includepdf[pages=-]{ch3.pdf}
+\end{document}

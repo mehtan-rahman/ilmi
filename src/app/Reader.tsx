@@ -10,14 +10,14 @@ import type { Node as PMNode } from 'prosemirror-model';
 import { NodeSelection, Selection, TextSelection, type EditorState, type Transaction } from 'prosemirror-state';
 import { EditorView, type Decoration, type NodeView } from 'prosemirror-view';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { PRI_DEFAULT, cardFields, clozeSegments, formatBody, mathSpanEnd, meta, parse, serialize, setField, type Blank, type Block, type Card, type Doc, type MathSeg, type SectionSchedule } from '../format/index.js';
+import { PRI_DEFAULT, cardFields, clozeSegments, formatBody, formatBox, mathSpanEnd, meta, parse, parseClip, serialize, setField, type Blank, type Block, type Card, type Doc, type MathSeg, type SectionSchedule } from '../format/index.js';
 import {
   blockAt, blocksEqual, cardDue, cardsKey, cellLines, classifyRaw, insertCardItem, editorialRanges, flatRanges, fromDoc, frozenKey, imagesKey, indentWidth, inlineRanges, insertCard, isMathEdit,
   linkTarget, literalSpans, makeState, markerKey, markerNumber, markerPos, markerRanges, mathEditKey, mathSplit, passage, pickPos, pressed, schema, setLink,
   setReadPos, splitBlocks, atomFind, markFinds, toggleInline, toggleTask, type Band, type InlineRange, type InlineToggle, type LinkTarget, type Passage, type RawShape,
   askImageKey, closeAtMatch, dirAttr, strongDir, withBases, type Dir, findKey, insertImages, pickSlash, replaceAll, replaceMatch, slashContext, slashItems, slashKey, htmlPasteImages,
   type FindMeta, type FindState, type SlashItem, type SlashState, textOf,
-  CODE_LANGS, addColumn, addRow, cellAt, alignColumn, codeHTML, codeLang, deleteColumn, deleteRow, foldKey, foldedKeys, foldsHiding, ruleEndIndex, langOf, setCodeLang, type Align, type FoldMeta,
+  bookKey, CODE_LANGS, addColumn, addRow, cellAt, alignColumn, codeHTML, codeLang, deleteColumn, deleteRow, foldKey, foldedKeys, foldsHiding, ruleEndIndex, langOf, setCodeLang, type Align, type FoldMeta,
 } from '../reader/index.js';
 import { advanceWrite, whenToDate } from '../schedule/index.js';
 import { dirOf, nameOf, type Loaded, type Vault } from '../vault/index.js';
@@ -33,6 +33,8 @@ import { currentVault, enrolReading, extractNode, setFolds } from './vault.js';
 import { popMenu, type PopItem } from './popMenu.js';
 import { registerHeadings } from './headings.js';
 import { sectionMenu, setWriteThrough } from './sections.js';
+import { bookOptions } from './bookNotes.js';
+import { fillCrops } from './bookPdf.js';
 import 'katex/dist/katex.min.css';
 import 'prosemirror-gapcursor/style/gapcursor.css';
 import './reader.css';
@@ -722,7 +724,7 @@ class RawView implements NodeView {
 
   constructor(node: PMNode, decorations: readonly Decoration[] = []) {
     const text = node.attrs.text as string;
-    this.drawn = rawHTML(text) !== null;
+    this.drawn = rawHTML(text) !== null || parseClip(text) !== null;
     this.dom = document.createElement(this.drawn ? 'div' : 'pre');
     this.dom.setAttribute('contenteditable', 'false');
     this.render(node, decorations);
@@ -730,6 +732,16 @@ class RawView implements NodeView {
 
   render(node: PMNode, decorations: readonly Decoration[]): void {
     const text = node.attrs.text as string;
+    // a clip (FORMAT.md §6.6): the crop of the page it names, drawn by the book's notes (`bookPdf.ts`)
+    const clip = parseClip(text);
+    if (clip) {
+      ownClasses(this.dom, 'raw rendered clip');
+      this.dom.dataset.kind = 'clip';
+      const box = formatBox(clip);
+      if (this.dom.querySelector('.crop')?.getAttribute('data-box') === box) return;
+      this.dom.innerHTML = `<div class="raw-view"><div class="crop" data-box="${box}" title="p. ${clip.page}"></div><div class="clip-cap">p. ${clip.page}</div></div><pre class="raw-src">${escapeHtml(text)}</pre>`;
+      return;
+    }
     const drawn = rawHTML(text);
     if (!drawn) {
       ownClasses(this.dom, 'raw');
@@ -745,7 +757,8 @@ class RawView implements NodeView {
   }
 
   update(node: PMNode, decorations: readonly Decoration[]): boolean {
-    if (node.type !== schema.nodes.raw || (rawHTML(node.attrs.text as string) !== null) !== this.drawn) return false;
+    const text = node.attrs.text as string;
+    if (node.type !== schema.nodes.raw || (rawHTML(text) !== null || parseClip(text) !== null) !== this.drawn) return false;
     this.render(node, decorations);
     return true;
   }
@@ -1159,6 +1172,40 @@ function headingPos(doc: PMNode, nth: number, text: string): number | null {
   return byText;
 }
 
+/** Where the section under the heading at `at` ends: the start of the next heading of its level or higher, else the document's end. */
+export function sectionEnd(doc: PMNode, at: number): number {
+  const h = doc.nodeAt(at);
+  const level = (h?.attrs.level as number | undefined) ?? 1;
+  let off = 0;
+  for (let i = 0; i < doc.childCount; i++) {
+    const node = doc.child(i);
+    if (off > at && node.type === schema.nodes.heading && (node.attrs.level as number) <= level) return off;
+    off += node.nodeSize;
+  }
+  return off;
+}
+
+/**
+ * The caret in a fresh line at `pos` (between two top-level blocks), the
+ * surface focused, to write there: an empty paragraph just before `pos`
+ * is used, else one is made (an empty one is never written, `fromDoc`).
+ */
+export function writeAfter(view: EditorView, pos: number): void {
+  const doc = view.state.doc;
+  const $pos = doc.resolve(pos);
+  const before = $pos.nodeBefore;
+  let tr = view.state.tr;
+  let caret: number;
+  if (before?.type === schema.nodes.paragraph && !before.textContent.trim()) caret = pos - 1;
+  else {
+    tr = tr.insert(pos, schema.nodes.paragraph!.create());
+    caret = pos + 1;
+  }
+  tr = tr.setSelection(TextSelection.create(tr.doc, caret));
+  view.dispatch(tr.scrollIntoView());
+  view.focus();
+}
+
 /** Keep the caret where it was, as far as the new document allows. */
 export function withSelectionOf(prev: EditorState | null, state: EditorState): EditorState {
   if (!prev) return state;
@@ -1184,9 +1231,15 @@ interface ReaderProps {
   active?: boolean;
   /** Set when this is the text of a document with pages: the meta row offers the pages back. */
   onPages?: () => void;
+  /**
+   * The notes beside a document's pages (`Book.tsx`): the body, never
+   * frozen, with no marker (the pages keep the read point), a chip under
+   * each section that comes back, and clips drawn as their crops.
+   */
+  notes?: boolean;
 }
 
-export function Reader({ id, active = true, onPages }: ReaderProps) {
+export function Reader({ id, active = true, onPages, notes = false }: ReaderProps) {
   const docs = useApp((s) => s.docs);
   const root = useApp((s) => s.vault);
   const info = docs[id];
@@ -1200,7 +1253,7 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
   const writerRef = useRef<Writer | null>(null);
   const frozenRef = useRef(false);
   const dragRef = useRef(false);
-  frozenRef.current = info?.frozen ?? false;
+  frozenRef.current = !notes && (info?.frozen ?? false);
   const [sel, setSel] = useState<Sel | null>(null);
   const [composer, setComposer] = useState<Compose | null>(null);
   const [link, setLinkField] = useState<LinkField | null>(null);
@@ -1217,7 +1270,8 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
   const composerRef = useRef<Compose | null>(null);
   composerRef.current = composer;
   // extracts come out of notes, sources, and extracts; drafts only make cards
-  const canExtract = info?.type === 'note' || info?.type === 'source' || info?.type === 'extract';
+  // (a book's notes are the person's own: what they box on the pages becomes a section, not an extract)
+  const canExtract = !notes && (info?.type === 'note' || info?.type === 'source' || info?.type === 'extract');
   const canExtractRef = useRef(false);
   canExtractRef.current = canExtract;
   // a note revisited has no marker: each pass starts at the top, or at a heading picked here
@@ -1336,7 +1390,13 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
     const build = (loaded: Loaded) => {
       const m = meta(loaded.doc);
       // the folds the page had when it was last seen (view state, never the file's)
-      const state = makeState(loaded.doc.blocks, { frozen: () => frozenRef.current, pos: m.type === 'note' ? null : m.read?.pos ?? null, images: images.load, folds: useApp.getState().folds[id] ?? [] });
+      const state = makeState(loaded.doc.blocks, {
+        frozen: () => frozenRef.current,
+        pos: m.type === 'note' || notes ? null : m.read?.pos ?? null,
+        images: images.load,
+        folds: useApp.getState().folds[id] ?? [],
+        ...(notes ? { book: bookOptions(id) } : {}),
+      });
       const view = viewRef.current;
       if (view) {
         // an open find bar stays open over the new text
@@ -1478,6 +1538,23 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
     };
   }, [id, measure, hookBlocks]);
 
+  // a book's notes: crops (a clip, a section's boxes shown here) drawn as they appear, and the chips redrawn when asked
+  const shownHere = useApp((s) => (notes ? s.inlineBoxes[id] : undefined));
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!notes || !view || status !== 'ok') return;
+    view.dispatch(view.state.tr.setMeta(bookKey, 'redraw'));
+  }, [notes, shownHere, status, info?.pdf]);
+  useEffect(() => {
+    const mount = mountRef.current;
+    const rel = info?.pdf;
+    if (!notes || !mount || !rel || status !== 'ok') return;
+    fillCrops(mount, rel);
+    const mo = new MutationObserver(() => fillCrops(mount, rel));
+    mo.observe(mount, { childList: true, subtree: true });
+    return () => mo.disconnect();
+  }, [notes, info?.pdf, status]);
+
   // frozen or thawed: the view re-reads `editable`, and the decorations are drawn again
   useEffect(() => {
     const view = viewRef.current;
@@ -1499,6 +1576,7 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
   // a card opened from the palette or a query: once the document is built,
   // its node is selected (the inspector follows) and scrolled to; a card
   // that is gone is let go
+  const revealSince = useRef<{ reveal: unknown; at: number } | null>(null);
   useEffect(() => {
     const view = viewRef.current;
     if (!reveal || reveal.path !== id || status !== 'ok' || !view) return;
@@ -1507,17 +1585,37 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
       const blocks = fromDoc(view.state.doc);
       const nth = blocks.slice(0, reveal.index).filter((b) => b.kind === 'heading' && b.text.trim()).length;
       const at = headingPos(view.state.doc, nth, reveal.heading);
+      // a section just written (boxed on the pages) may not have reached the page yet: wait for it a little
+      if (at === null) {
+        if (revealSince.current?.reveal !== reveal) revealSince.current = { reveal, at: Date.now() };
+        if (Date.now() - revealSince.current.at < 3000) return;
+      }
       if (at !== null) {
         const hiding = foldsHiding(view.state, at).map((f) => f.pos);
         if (hiding.length) view.dispatch(view.state.tr.setMeta(foldKey, { open: hiding } satisfies FoldMeta));
         const node = view.state.doc.nodeAt(at);
-        view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, at + 1 + (node?.content.size ?? 0))));
         const dom = view.nodeDOM(at) as HTMLElement | null;
+        if (reveal.write) writeAfter(view, sectionEnd(view.state.doc, at));
+        else view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, at + 1 + (node?.content.size ?? 0))));
         dom?.scrollIntoView({ block: 'start' });
         if (dom) {
           dom.classList.add('landed');
           setTimeout(() => dom.classList.remove('landed'), 2400);
         }
+      }
+      useApp.setState({ reveal: null });
+      return;
+    }
+    // a block to write after (a clip just made): the caret in a fresh line under it
+    if (reveal.write) {
+      if (reveal.index >= view.state.doc.childCount) {
+        if (revealSince.current?.reveal !== reveal) revealSince.current = { reveal, at: Date.now() };
+        if (Date.now() - revealSince.current.at < 3000) return;
+      } else {
+        let end = 0;
+        for (let i = 0; i <= reveal.index; i++) end += view.state.doc.child(i).nodeSize;
+        writeAfter(view, end);
+        (view.nodeDOM(end - view.state.doc.child(reveal.index).nodeSize) as HTMLElement | null)?.scrollIntoView({ block: 'center' });
       }
       useApp.setState({ reveal: null });
       return;
@@ -1534,7 +1632,7 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
       }
     }
     useApp.setState({ reveal: null });
-  }, [reveal, status, id]);
+  }, [reveal, status, id, blocks]);
 
   // a heading's own menu (right-click): come back, dismiss, or bring back, for the section under it (FORMAT.md §6.5)
   useEffect(() => {
@@ -1864,7 +1962,7 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
   const fromHeading = (index: number): boolean => {
     const view = viewRef.current;
     if (!view) return false;
-    if (index < 0) { wrapRef.current?.closest('.pane-body, .nb-page')?.scrollTo({ top: 0 }); return true; }
+    if (index < 0) { wrapRef.current?.closest('.book-notes, .pane-body, .nb-page')?.scrollTo({ top: 0 }); return true; }
     let n = 0;
     let at: number | null = null;
     view.state.doc.forEach((node, off) => {
@@ -1899,10 +1997,10 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
     return <div className="reader-wrap"><div className="reader"><div className="empty">no longer in the collection</div></div></div>;
   }
 
-  // the marker is a source's or an extract's; a revisited note is read from the top or a heading
+  // the marker is a source's or an extract's; a revisited note is read from the top or a heading; a book's notes have none (its pages keep the read point)
   const enrolled = !!info?.read;
-  const reading = enrolled && !isNote;
-  const frozen = info?.frozen ?? false;
+  const reading = enrolled && !isNote && !notes;
+  const frozen = !notes && (info?.frozen ?? false);
   const cards = info?.cards ?? 0;
   const due = info?.due ?? 0;
   // one short token: what is due, the whole count in the tooltip (a draft adds its length there)
@@ -1913,9 +2011,13 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
   // a body that opens with its own title as a heading (an imported chapter) is not titled twice
   const titled = !bodyRepeatsTitle(title, blocks);
 
+  // a book's notes: how many passages and cards, where the title and the crumbs would be (the pages have them)
+  const passages = notes ? blocks.filter((b) => b.kind === 'heading' && b.read?.boxes !== undefined).length : 0;
+  const notesLine = [passages ? plural(passages, 'passage') : '', plural(cards, 'card')].join(passages ? ' · ' : '');
+
   return (
-    <div className="reader-wrap" ref={rootRef}>
-      <div className={`reader doc-view${reading ? ' reading' : ''}`} data-frozen={frozen ? '1' : '0'}>
+    <div className="reader-wrap" ref={rootRef} {...(notes && info?.pdf ? { 'data-pdf': info.pdf } : {})}>
+      <div className={`reader doc-view${reading ? ' reading' : ''}${notes ? ' book-notes-doc' : ''}`} data-frozen={frozen ? '1' : '0'}>
         {find && (
           <div className="find-bar">
             <input
@@ -1955,6 +2057,12 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
             <span className="fb-keys"><span className="kbd">⏎</span> <span className="kbd">⇧⏎</span> <span className="kbd">esc</span></span>
           </div>
         )}
+        {notes ? (
+          <div className="meta notes-meta">
+            <span className="crumb">notes</span>
+            <span className="right" title={rightTip}>{notesLine}</span>
+          </div>
+        ) : (
         <div className="meta">
           <Crumbs path={id} />
           <TabsToggle path={id} />
@@ -1973,7 +2081,8 @@ export function Reader({ id, active = true, onPages }: ReaderProps) {
           )}
           {right && <span className="right" title={rightTip}>{right}</span>}
         </div>
-        {titled && <h1>{title}</h1>}
+        )}
+        {titled && !notes && <h1>{title}</h1>}
         {w && (
           <div className="draft-sched" data-done={w.done ? '1' : '0'}>
             <span className="ds-state">{writeState}</span>

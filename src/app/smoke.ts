@@ -37,6 +37,9 @@
 // pair, opens it as pages, selects on the text layer and presses `e` and
 // `m`, searches, goes to a page, reads the text instead, reads on from the
 // session, and reopens it to find the extract drawn as a highlight.
+// Milestone 15's lens: since 48 its extract, composer, rail and text-toggle
+// steps no longer exist (a selection's `e` makes a section, and the notes
+// sit beside the pages); `ILMI_SMOKE=book` holds the book instead.
 // `ILMI_SMOKE=cards-text` pastes a `Q:`/`A:` list and a tab list on the
 // intake, reads the delimiter row's choice, flips a delimiter, places both
 // as decks, and logs each file's lines; then pastes prose to see no row.
@@ -162,6 +165,8 @@
 // `ILMI_SMOKE=same` (`smokeSame`) over a copy of `samples/double-major`:
 // milestone 45, the same fact twice: the stat-mech pairs listed, one linked,
 // one merged (and undone, and merged again), one said not the same.
+// `ILMI_SMOKE=book` (`smokeBook`) over a copy of `samples/double-major`, with
+// `ILMI_BOOKS=<repo>/design/books`: milestone 48, the book beside its notes.
 // `ILMI_SMOKE=welcome` runs before any vault opens: it seeds the recents
 // with the scratch vault (`ILMI_VAULT`) and a path that does not exist,
 // turns `reopen the last vault on start` off, reads the welcome's rows and
@@ -6538,7 +6543,8 @@ export async function smokeOpen(vault: Vault): Promise<void> {
     await poll(() => qa('.tab-rail .rail-row').filter((r) => kids.some((k) => (r as HTMLElement).dataset.path === k)).length === 3, 'the rail shows the three chapters as tabs', 8000);
     const meta0 = q<HTMLElement>('.pane-body .pdf-view .meta')!;
     must(!/\b(pages|frozen)\b/.test(meta0.textContent ?? ''), `the top row has no pages or frozen word ("${meta0.textContent}")`);
-    must(q('.text-toggle', meta0)?.textContent === 'text', 'the text toggle is there');
+    // milestone 48: the chapter is its pages beside its notes, the body in the editor
+    must(!!q('.pane-body .book .book-notes .draft-doc[contenteditable="true"]'), 'its notes sit beside its pages, in the editor');
     const tip = qa<HTMLElement>('.right', meta0).map((r) => r.title).join(' ');
     log(`top row: "${meta0.textContent}"; tooltip "${tip}"`);
     await shot('open-pdf-chapter');
@@ -6549,15 +6555,7 @@ export async function smokeOpen(vault: Vault): Promise<void> {
     window.getSelection()!.addRange(r);
     await poll(() => q('.pdf-view .sel-cue'), 'the selection cue on the page');
     press('e');
-    const extract = await poll(() => vault.documents().find((d) => d.startsWith(`${chap.slice(0, -3)}/`)), 'an extract carved from the page', 8000);
-    await poll(async () => (await text(extract)).includes('page=4'), 'the extract is from page 4, as the book numbers it');
-    await poll(async () => (await text(chap)).includes('\n## p. 4\n'), 'the chapter keeps the passage under `## p. 4`');
-    q<HTMLButtonElement>('.pdf-view .meta .text-toggle')!.click();
-    await poll(() => q<HTMLElement>('.pane-body .doc-view .meta .text-toggle[data-on="1"]'), 'the text toggle reads the Markdown, lit');
-    must(!/\b(pages|frozen)\b/.test(q<HTMLElement>('.pane-body .doc-view .meta')?.textContent ?? ''), 'the text\'s top row has no pages or frozen word either');
-    await shot('open-pdf-text');
-    q<HTMLButtonElement>('.pane-body .doc-view .meta .text-toggle')!.click();
-    await poll(() => q('.pane-body .pdf-view .pdf-page'), 'and back to the pages');
+    await poll(async () => /\n<!-- read made=\S+ due=\S+ ivl=3 boxes=4:[\d.:]+ -->\n/.test(await text(chap)), 'the selection boxes its lines: a section of the notes, its boxes on page 4 as the book numbers it', 8000);
     // the book renamed: the chapters still find its file
     const { renameNode } = await import('./vault.js');
     const renamed = await renameNode(book, 'stat phys, briefly');
@@ -7039,6 +7037,7 @@ export async function smokeSections(vault: Vault): Promise<void> {
   const { addDays, isDue, sameItem } = await import('../schedule/index.js');
   const { refreshQueue } = await import('./vault.js');
   const { setClockDay, appNow } = await import('./clock.js');
+  const { doneLine } = await import('./items.js');
   const SM = 'courses/fall-2026/phys-415-stat-mech';
   const CANON = `${SM}/canonical-ensemble.md`;
   const DAY = '2026-11-02';
@@ -7148,7 +7147,7 @@ export async function smokeSections(vault: Vault): Promise<void> {
     let d = diff(before, after);
     must(d.length === 1 && d[0] === `<!-- read made=2026-10-30 due=2026-11-02 ivl=3 --> → <!-- read made=2026-10-30 due=${addDays(DAY, 5)} ivl=5 reps=1 -->`, `exactly the heading's line: ${d.join('; ')}`);
     log(`moved on to ${await movedOn(deriv)}`);
-    must(useApp.getState().log[0] === `§ ${deriv.heading} · next · back in 5d`, `the done row names the section: "${useApp.getState().log[0]}"`);
+    must(useApp.getState().log[0] === doneLine('§', deriv.heading, 'next · back in 5d') && useApp.getState().log[0]!.startsWith('§ pset 4 #5'), `the done row names the section: "${useApp.getState().log[0]}"`);
     await shot('sections-after-next');
 
     // ── p later: lecture 12 ──
@@ -7249,3 +7248,228 @@ export async function smokeSections(vault: Vault): Promise<void> {
 
 /** A stored due's day. */
 const dayOfStr = (due: string | undefined): string => (due ?? '').slice(0, 10);
+
+// `ILMI_SMOKE=book` (`smokeBook`) over a fresh copy of `samples/double-major`,
+// milestone 48, with `ILMI_BOOKS=<repo>/design/books`: the smoke copies
+// `ch3-book.pdf` (Lindqvist ch. 3 at pp. 41–44 of its book) and `reader.pdf`
+// (the classical prose reader's passage) into `books/` of the scratch copy,
+// with a chapter (`pages: 41-44`, two passages already boxed, one of them
+// dismissed) and a passage document, and the app's clock on 2026-11-02. It
+// opens the chapter as its pages beside its notes; draws a two-box passage
+// across pp. 41–42 and makes it a section with `e` (named `3.3 · average
+// values (3.12)`, placed in book order, its line's boxes in the grammar,
+// the read point moved past it); ⏎ puts the caret in it and the caret
+// lights its boxes; show boxes here draws both crops; a dismissed passage's
+// boxes are dashed; a tag beside the page goes to its section; ⌘\ hides the
+// notes and shows them; `m` on the Arabic page clips the box under `## p. 1`
+// with the caret below it; the queue opens a section at its boxes; done for
+// today records `pos` and `y`. Light, then dark.
+export async function smokeBook(vault: Vault): Promise<void> {
+  // what the app reports with console.error, for a failure's `why:` line
+  const errors: string[] = [];
+  const consoleError = console.error;
+  console.error = (...a: unknown[]) => { errors.push(a.map((x) => (x instanceof Error ? x.message : String(x))).join(' ').slice(0, 200)); consoleError(...a); };
+  type SectionItem = import('../schedule/index.js').SectionItem;
+  type ReadItem = import('../schedule/index.js').ReadItem;
+  let last = { at: Date.now(), what: 'start' };
+  let finished = false;
+  const log = (s: string) => { last = { at: Date.now(), what: s }; void info(`smoke book: ${s}`); };
+  const dog = setInterval(() => {
+    if (finished) { clearInterval(dog); return; }
+    if (Date.now() - last.at > 30_000) { finished = true; clearInterval(dog); void info(`smoke book: failed: no progress for 30 s after "${last.what}"`); }
+  }, 2000);
+  const bounded = <T,>(p: Promise<T>, what: string, ms = 8000): Promise<T> =>
+    Promise.race([p, new Promise<T>((_, no) => setTimeout(() => no(new Error(`${what} (no answer in ${ms} ms)`)), ms))]);
+  const shot = async (name: string, ms = 2500) => { await sleep(800); log(`shot: ${name}`); await sleep(ms); };
+  const q = <T extends Element>(sel: string, root: ParentNode = document) => root.querySelector<T>(sel);
+  const qa = <T extends Element>(sel: string, root: ParentNode = document) => Array.from(root.querySelectorAll<T>(sel));
+  const must = (ok: unknown, what: string) => { if (!ok) throw new Error(what); log(`ok: ${what}`); };
+  const poll = async <T,>(probe: () => T | null | undefined | false | Promise<T | null | undefined | false>, what: string, ms = 5000): Promise<T> => {
+    const t0 = Date.now();
+    for (;;) {
+      const v = await probe();
+      if (v) { log(`ok: ${what}`); return v; }
+      if (Date.now() - t0 > ms) throw new Error(`${what} (waited ${ms} ms)`);
+      await sleep(100);
+    }
+  };
+  const key = (k: string, mods: KeyboardEventInit = {}) => window.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true, ...mods }));
+  const down = (el: Element) => el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0 }));
+  const { parse, parseBoxes, meta } = await import('../format/index.js');
+  const { refreshQueue } = await import('./vault.js');
+  const { setClockDay } = await import('./clock.js');
+  const DAY = '2026-11-02';
+  const SB = 'books';
+  const CH3 = `${SB}/ch-3-the-canonical-ensemble.md`;
+  const P12 = `${SB}/passage-12.md`;
+  const NAME = '3.3 · average values (3.12)';
+  const text = (p: string) => bounded(vault.fs.readText(vault.abs(p)), `reading ${p}`);
+  const headings = async (p: string) => parse(await text(p)).doc.blocks.flatMap((b) => (b.kind === 'heading' ? [b] : []));
+  /** Draw a box on a page as a pointer would: down at its corner, a move, up at the other. */
+  const drag = async (page: number, x: number, y: number, w: number, h: number) => {
+    const el = await poll(() => q<HTMLElement>(`.pane[data-active="1"] .book .pdf-page[data-page="${page}"]`), `page ${page} is drawn`);
+    el.scrollIntoView({ block: 'center' });
+    await sleep(300);
+    const r = el.getBoundingClientRect();
+    const at = (fx: number, fy: number): MouseEventInit => ({ clientX: r.left + fx * r.width, clientY: r.top + fy * r.height, bubbles: true, cancelable: true, button: 0 });
+    el.dispatchEvent(new MouseEvent('mousedown', at(x, y)));
+    window.dispatchEvent(new MouseEvent('mousemove', at(x + w / 2, y + h / 2)));
+    window.dispatchEvent(new MouseEvent('mouseup', at(x + w, y + h)));
+    await sleep(200);
+  };
+  const near = (a: number, b: number) => Math.abs(a - b) < 0.004;
+  const openBook = async (p: string, first: number) => {
+    openNode(p);
+    await poll(() => q(`.pane[data-active="1"] .book .pdf-page[data-page="${first}"] canvas`), `${p.split('/').pop()} opens as its pages, drawn`, 15000);
+    await poll(() => q('.pane[data-active="1"] .book .book-notes .draft-doc'), 'beside its notes', 8000);
+    await sleep(500);
+  };
+  try {
+    setClockDay(DAY);
+    useApp.getState().setTheme('light');
+    await poll(() => document.documentElement.dataset.theme === 'light', 'light');
+    setInspector({ open: true });
+    useApp.setState({ notesHidden: false, inlineBoxes: {} });
+
+    // ── the books, into the scratch copy ──
+    const books = await invoke<string | null>('dev_env', { name: 'ILMI_BOOKS' });
+    if (!books) throw new Error('ILMI_BOOKS is not set: point it at the repository\'s design/books');
+    await vault.fs.mkdir(vault.abs(SB));
+    await vault.fs.writeBytes(vault.abs(`${SB}/lindqvist.pdf`), new Uint8Array(await bounded(invoke<ArrayBuffer>('read_dropped_bytes', { path: `${books}/ch3-book.pdf` }), 'reading ch3-book.pdf')));
+    await vault.fs.writeBytes(vault.abs(`${SB}/reader.pdf`), new Uint8Array(await bounded(invoke<ArrayBuffer>('read_dropped_bytes', { path: `${books}/reader.pdf` }), 'reading reader.pdf')));
+    await vault.fs.writeText(vault.abs(CH3), [
+      '---', 'type: source', 'title: "ch. 3: the canonical ensemble"', 'pdf: lindqvist.pdf', 'pages: 41-44', 'pri: 20', `read: due=${DAY} ivl=2 reps=1 pos=41 y=0.300`, '---', '',
+      '## 3.2 · the partition function (3.9)', `<!-- read made=2026-10-20 due=${DAY} ivl=3 boxes=41:0.120:0.090:0.770:0.180 -->`, '',
+      '$P_s = e^{-\\beta E_s}/Z$, $Z = \\sum_s e^{-\\beta E_s}$: the sum is over states, not levels.', '',
+      'Shifting every energy by $E_0$ multiplies $Z$ by {{c1::$e^{-\\beta E_0}$}}; the $P_s$ are unchanged.', '',
+      '## 3.3 · energy fluctuations (3.13–3.15)', '<!-- read made=2026-10-24 reps=2 boxes=42:0.100:0.135:0.770:0.375 -->', '',
+      'Done with it: $\\sigma_E^2 = kT^2 C_V$.', '',
+    ].join('\n'));
+    await vault.fs.writeText(vault.abs(P12), ['---', 'type: source', 'title: passage 12 · the grammarian and the bedouin', 'pdf: reader.pdf', '---', ''].join('\n'));
+    await poll(() => useApp.getState().docs[CH3]?.pdf && useApp.getState().docs[P12]?.pdf, 'the chapter and the passage are in the collection, with their pages', 15000);
+    must(useApp.getState().docs[CH3]!.frozen === false, 'a document with pages is never frozen');
+
+    // ── the split: pages left, notes right ──
+    await openBook(CH3, 41);
+    must(qa('.pane[data-active="1"] .book .pdf-page').map((p) => (p as HTMLElement).dataset.page).join(',') === '41,42,43,44', 'its pages are 41–44, as the book numbers them');
+    must(q('.pane[data-active="1"] .book-notes .draft-doc')?.getAttribute('contenteditable') === 'true', 'the notes are the body, in the editor');
+    must(!!q('.pane[data-active="1"] .book .read-bar'), 'the gold read bar runs down the margin');
+    must(qa('.pane[data-active="1"] .book .pbox.dis').some((b) => (b as HTMLElement).dataset.section?.startsWith('3.3 · energy fluctuations')), 'a dismissed passage\'s boxes are dashed');
+    const strip = qa('.bot span').map((s) => s.textContent).join(' | ');
+    must(strip.includes('drag box a passage') && strip.includes('e section') && strip.includes('⌘\\ hide notes'), `the bottom strip: ${strip}`);
+    await shot('book-split');
+
+    // ── a two-box passage across pp. 41–42 becomes a section, in book order ──
+    await drag(41, 0.12, 0.86, 0.77, 0.075);
+    await drag(42, 0.1, 0.097, 0.77, 0.04);
+    const pend = qa<HTMLElement>('.pane[data-active="1"] .book .pbox.pending:not(.ghost)');
+    must(pend.length === 2 && pend.map((p) => q('.pb-no', p)?.textContent).join(',') === '1,2', `two boxes pending, numbered (${pend.length})`);
+    must(q('.pane[data-active="1"] .book .pend [data-k="e"]')?.textContent === 'esection · 2 boxes', `e offers a section of 2 boxes ("${q('.pend [data-k="e"]')?.textContent}")`);
+    await shot('book-pending');
+    key('e');
+    const made = await poll(async () => (await headings(CH3)).find((h) => h.text === NAME), `e makes "${NAME}"`, 10000);
+    const order = (await headings(CH3)).map((h) => h.text);
+    must(order.join(' | ') === `3.2 · the partition function (3.9) | ${NAME} | 3.3 · energy fluctuations (3.13–3.15)`, `in book order: ${order.join(' | ')}`);
+    const boxes = parseBoxes(made.read?.boxes ?? '');
+    must(made.read?.made === DAY && made.read.due === '2026-11-05' && made.read.ivl === 3, `made today, back in 3 days (${JSON.stringify(made.read)})`);
+    must(!!boxes && boxes.length === 2 && boxes[0]!.page === 41 && boxes[1]!.page === 42 && near(boxes[0]!.y, 0.86) && near(boxes[1]!.h, 0.04), `its boxes in the grammar: ${made.read?.boxes}`);
+    must(/boxes=41:\d\.\d{3}:\d\.\d{3}:\d\.\d{3}:\d\.\d{3},42:\d\.\d{3}:\d\.\d{3}:\d\.\d{3}:\d\.\d{3} -->/.test(await text(CH3)), 'written page:x:y:w:h, three decimals, "," between');
+    const read = meta(parse(await text(CH3)).doc).read;
+    must(read?.pos === 42 && near(read.y ?? 0, 0.137), `the read point moved past the last box (pos=${read?.pos} y=${read?.y})`);
+    must(useApp.getState().notice?.line.startsWith(`§ ${NAME} · back in 3d, until dismissed`), `the notice: "${useApp.getState().notice?.line}"`);
+    await shot('book-section');
+
+    // ⏎ right after: the caret in it; the caret lights its boxes
+    key('Enter');
+    await poll(() => useApp.getState().caretHeading?.text === NAME, '⏎ puts the caret in the new section', 8000);
+    const lit = await poll(() => { const l = qa<HTMLElement>('.pane[data-active="1"] .book .pbox.cur'); return l.length === 2 && l.every((b) => b.dataset.section === NAME) ? l : null; }, 'the caret lights its two boxes', 8000);
+    must(lit.map((b) => b.dataset.page).join(',') === '41,42', 'on pp. 41 and 42');
+    await shot('book-lit');
+
+    // show boxes here draws both crops, a page break between
+    const hd = await poll(() => qa<HTMLElement>('.pane[data-active="1"] .book-notes .dd-h').find((h) => h.textContent?.startsWith(NAME)), 'its heading in the notes');
+    const chip = q<HTMLElement>('.book-chip', hd)!;
+    must(chip.textContent === 'show in bookshow boxes hereback in 3d', `its chip: "${chip.textContent}"`);
+    down(q('[data-act="show-here"]', chip)!);
+    let crops: HTMLCanvasElement[];
+    try {
+      crops = await poll(() => { const cs = qa<HTMLCanvasElement>(`.pane[data-active="1"] .book-notes .inline-boxes .crop canvas`); return cs.length === 2 ? cs : null; }, 'show boxes here draws both crops', 10000);
+    } catch (e) {
+      log(`why: inline ${qa('.book-notes .inline-boxes').length}, crops ${qa('.book-notes .inline-boxes .crop').map((c) => `${(c as HTMLElement).dataset.box}=${(c as HTMLElement).dataset.drawn}`).join(' ')}, shown ${JSON.stringify(useApp.getState().inlineBoxes)}, chip "${q('.book-chip', hd)?.textContent}", errors ${errors.join(' | ')}`);
+      throw e;
+    }
+    must(q('.pane[data-active="1"] .book-notes .inline-boxes .pbreak')?.textContent === 'p. 42' && crops.every((c) => c.width > 50 && c.height > 5), 'a page break marked between them');
+    await shot('book-inline');
+
+    // a tag beside the page (or the gutter's §) goes to its section
+    const tag = await poll(() => qa<HTMLElement>('.pane[data-active="1"] .book .ptag:not(.cont), .pane[data-active="1"] .book .pgut').find((t) => (t.textContent ?? '').includes('3.2 · the partition') || t.title.startsWith('3.2 · the partition')), 'the partition function is named beside its box');
+    down(tag);
+    await poll(() => useApp.getState().caretHeading?.text === '3.2 · the partition function (3.9)', 'clicking it goes to its section', 8000);
+
+    // ⌘\ hides the notes, and shows them
+    key('\\', { metaKey: true });
+    await poll(() => q('.pane[data-active="1"] .book[data-notes="0"]') && !q('.pane[data-active="1"] .book-notes'), '⌘\\ hides the notes');
+    await shot('book-notes-hidden');
+    key('\\', { metaKey: true });
+    await poll(() => q('.pane[data-active="1"] .book[data-notes="1"] .book-notes .draft-doc'), 'and shows them');
+
+    // ── m on the Arabic page clips ──
+    await openBook(P12, 1);
+    await drag(1, 0.12, 0.368, 0.77, 0.088);
+    key('m');
+    await poll(async () => /\n## p\. 1\n\n<!-- box 1:0\.1\d{2}:0\.3\d{2}:0\.7\d{2}:0\.0\d{2} -->\n/.test(await text(P12)), 'm clips the box under ## p. 1', 10000);
+    await poll(() => qa<HTMLCanvasElement>('.pane[data-active="1"] .book-notes .raw.clip .crop canvas').length === 1, 'the clip is drawn in the notes as the crop of its page', 10000);
+    const caretP = await poll(() => {
+      const s = window.getSelection();
+      const n = s?.anchorNode;
+      const p = (n instanceof Element ? n : n?.parentElement)?.closest('p');
+      return p && !p.textContent?.trim() && p.previousElementSibling?.classList.contains('clip') ? p : null;
+    }, 'the caret below it, for word ::: meaning', 8000);
+    log(`caret in ${caretP.className}`);
+    await shot('book-clip');
+
+    // ── the queue opens a section at its boxes ──
+    refreshQueue();
+    const sec = await poll(() => useApp.getState().queue.find((i): i is SectionItem => i.kind === 'section' && i.path === CH3 && i.heading.startsWith('3.2')), 'the partition function is in the day\'s queue', 8000);
+    openSession(sec);
+    await poll(() => q('.pane[data-active="1"] .doc-session[data-book="1"] .book .pdf-page[data-page="41"] canvas'), 'its session opens the book', 15000);
+    await poll(() => useApp.getState().caretHeading?.path === CH3 && useApp.getState().caretHeading?.text === sec.heading, 'at the section, the caret in it', 8000);
+    const box = await poll(() => q<HTMLElement>(`.pane[data-active="1"] .doc-session .pbox.cur[data-section="${sec.heading}"]`), 'its boxes lit', 8000);
+    const pr = q<HTMLElement>('.pane[data-active="1"] .doc-session .book-pages')!.getBoundingClientRect();
+    const br = box.getBoundingClientRect();
+    must(br.top >= pr.top && br.top < pr.bottom, `the pages scrolled to them (box at ${Math.round(br.top - pr.top)} px in a ${Math.round(pr.height)} px view)`);
+    must(qa('.pane[data-active="1"] .session-bar .sb-actions .ra-l').map((b) => b.textContent).join(' / ').startsWith('next · back in'), 'next / later / dismiss under the book');
+    await shot('book-queue-section');
+
+    // ── done for today records the point at the bottom of the view ──
+    const readItem = await poll(() => useApp.getState().queue.find((i): i is ReadItem => i.kind === 'read' && i.path === CH3), 'the chapter is in the day\'s queue to read on', 8000);
+    openSession(readItem);
+    await poll(() => useApp.getState().sessionEl?.kind === 'read' && q('.pane[data-active="1"] .doc-session[data-book="1"] .book .pdf-page[data-page="43"]'), 'reading on in the book', 15000);
+    await sleep(400);
+    const p43 = q<HTMLElement>('.pane[data-active="1"] .doc-session .pdf-page[data-page="43"]')!;
+    const sc = q<HTMLElement>('.pane[data-active="1"] .doc-session .book-pages')!;
+    sc.scrollTop += p43.getBoundingClientRect().top - sc.getBoundingClientRect().top - (sc.clientHeight - 120);
+    sc.dispatchEvent(new Event('scroll'));
+    await sleep(400);
+    const before = await text(CH3);
+    key('Enter');
+    const after = await poll(async () => { const t = await text(CH3); return t !== before ? t : null; }, 'done for today wrote the read line', 8000);
+    const r2 = meta(parse(after).doc).read;
+    must(r2?.pos === 43 && r2.y !== undefined && r2.y > 0 && r2.y < 1 && r2.reps === 2, `pos and y at the bottom of the view (pos=${r2?.pos} y=${r2?.y} reps=${r2?.reps})`);
+    must(/\nread: due=\S+ ivl=\d+ reps=2 pos=43 y=0\.\d{3}\n/.test(after), 'y written to three decimals after pos');
+
+    // ── dark ──
+    await openBook(CH3, 41);
+    useApp.getState().setTheme('dark');
+    await poll(() => document.documentElement.dataset.theme === 'dark', 'dark');
+    await shot('book-dark');
+    useApp.getState().setTheme('light');
+    setClockDay(null);
+    finished = true;
+    log(`done; vault ${vault.root}`);
+  } catch (e) {
+    finished = true;
+    setClockDay(null);
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}

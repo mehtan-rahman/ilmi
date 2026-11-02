@@ -12,6 +12,7 @@ export function BottomStrip() {
   const panes = useApp((s) => s.panes);
   const docs = useApp((s) => s.docs);
   const sessionEl = useApp((s) => s.sessionEl);
+  const notesHidden = useApp((s) => s.notesHidden);
   const id = activeTab(panes)?.id;
   const kind = id === undefined ? undefined : tabKindOf(id, docs);
   // the session's element is in a document of its own
@@ -22,6 +23,7 @@ export function BottomStrip() {
     scope: id === undefined ? null : queueScope(id),
     canEnrol: kind !== 'session' && !!info && (info.type === 'note' || info.type === 'source' || info.type === 'extract') && !info.read,
     pages: !!info?.pdf,
+    notesHidden,
     frozen: !!info?.frozen,
     note: info?.type === 'note' || (kind === 'session' && info?.type === 'extract'),
   });

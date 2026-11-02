@@ -11,6 +11,7 @@
 // changes, and the marker's settled blocks are dimmed. All state-level; the
 // view adds node views on top.
 
+import { bookPlugin, type BookOptions } from './book.js';
 import { baseKeymap, chainCommands, exitCode } from 'prosemirror-commands';
 import { gapCursor } from 'prosemirror-gapcursor';
 import { history, redo, undo } from 'prosemirror-history';
@@ -670,6 +671,8 @@ export interface StateOptions {
   images?: ImageLoader;
   /** The keys of the headings folded when the page was last seen (fold.ts); view state, never in the file. */
   folds?: readonly string[];
+  /** A book's notes: the chips under its sections' headings and their inline crops (`book.ts`). */
+  book?: BookOptions;
 }
 
 export function makeState(blocks: Block[], opts: StateOptions): EditorState {
@@ -677,7 +680,7 @@ export function makeState(blocks: Block[], opts: StateOptions): EditorState {
   const state = EditorState.create({
     doc: toDoc(blocks),
     // images before marks: the marks read the images' state as it is after the same transaction
-    plugins: [frozenPlugin(opts.frozen), slashPlugin({ openMath: (tr, pos) => tr.setMeta(mathEditKey, pos) }), findPlugin, rules, enterRules, formatKeys, keys, keymap(baseKeymap), history(), gapCursor(), mathReform, mathEdit, images(opts.images), marks, marker, direction, codeColours, foldPlugin, tablePlugin],
+    plugins: [frozenPlugin(opts.frozen), slashPlugin({ openMath: (tr, pos) => tr.setMeta(mathEditKey, pos) }), findPlugin, rules, enterRules, formatKeys, keys, keymap(baseKeymap), history(), gapCursor(), mathReform, mathEdit, images(opts.images), marks, marker, direction, codeColours, foldPlugin, tablePlugin, ...(opts.book ? [bookPlugin(opts.book)] : [])],
   });
   const read = opts.pos === null ? state : state.apply(state.tr.setMeta(markerKey, opts.pos));
   return folds.length ? read.apply(read.tr.setMeta(foldKey, { keys: folds } satisfies FoldMeta)) : read;

@@ -37,6 +37,15 @@ The third run, https://github.com/mehtan-rahman/ilmi/actions/runs/41714440595,
 passed: the check on Linux, then the universal DMG on macOS, kept as the
 artifact `ilmi-macos-universal`.
 
+**Release v0.1.0** (asked for in chat): the tag `v0.1.0` on `2ec563e` ran
+the workflow, which opened the draft with `ilmi_0.1.0_universal.dmg` and an
+`ilmi_universal.app.tar.gz` that tauri-action adds for an updater (deleted
+from the release; nothing uses it); published with notes as the latest,
+https://github.com/mehtan-rahman/ilmi/releases/tag/v0.1.0. Verified: the
+DMG downloaded from the release mounts, its binary is `x86_64 arm64`,
+ad-hoc signed, and the app opens from it to the last collection (captured
+by window id).
+
 ---
 
 ## 2026-11-03 — a macOS installer and its workflow (asked for in chat, no milestone)

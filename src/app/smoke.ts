@@ -7970,7 +7970,7 @@ export async function smokeCadence(vault: Vault): Promise<void> {
     must(merchant.pos === 6 && merchant.pos < merchant.total, `half read: ${merchant.pos} of ${merchant.total}`);
     await sessionAt(merchant);
     must(actions() === 'done for today · back in 3d / later / dismiss', `a source with reading left: ${actions()}`);
-    const growth = await poll(() => q('.inspector .af-next')?.textContent, 'the inspector has its growth row');
+    const growth = await poll(() => q('.insp .af-next')?.textContent, 'the inspector has its growth row');
     must(growth === 'every third day while reading', `the growth row reads the cadence: "${growth}"`);
     await shot('cadence-source');
     before = await text(MERCHANT);

@@ -65,6 +65,26 @@ numbers); new `src/schedule/__tests__/growth.test.ts` and the corpus file
   three builds that day, another order the next, the 50s' and 80s' key
   means within 0.1 of their priorities, the first element a 50 and the
   last an 80.
+- Window check, 2026-11-03, from a clean checkout of main by window id,
+  over a fresh copy of `samples/double-major`: four runs. Runs 1 to 3
+  failed on the smoke itself, never the app: the inspector asked for by
+  `.inspector` where its class is `.insp` (`4926567`, `a6232ed`); the
+  "untouched" check comparing a whole file whose backlog read line was
+  rightly postponed beside its section first due today, now each item's
+  own line (`00c4a5c`); the Hamiltonian note's interval expected at the
+  sample's 14 where `postpone the rest` had grown it to 17 (`f9f566e`).
+  Run 4 at `f9f566e`: `done`, 42 `ok:`, no `failed:`, six captures: the
+  pset derivation at 2027-01-01 `next · back in 101d` and its line at
+  `ivl=101`; the merchant at priority 70 `done for today · back in 3d`,
+  its growth row `every third day while reading`, its line `ivl=3
+  reps=3 pos=6`; the day's order held over two more builds with the
+  first five at 50 and the last five at 50 to 70; the backlog of 18
+  postponed with the two elements first due today untouched; the qasida
+  clipping read to its end `dismiss / later / dismiss` and dismissed by
+  ⏎; the note's interval field 17 → 100 writing `ivl=100 due=+100
+  reps=2`; the next day's order swapped 32360 pairs among 363 shared
+  elements, its backlog of 2 postponed by the day's first build with the
+  tweak on; dark.
 
 ### Not done
 

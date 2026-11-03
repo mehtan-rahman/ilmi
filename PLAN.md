@@ -5593,7 +5593,12 @@ priority 70 on its cadence, the day's order twice, `postpone the rest`
 with a budget of 5, the qasida clipping read to its end, the interval
 field on the Hamiltonian note, the next day's order and the tweak at its
 start, the pset derivation at 2027-01-01 landing at 101 days — that step
-runs first, before any postpone touches its line). Not done: a draft
+runs first, before any postpone touches its line). Window check
+(2026-11-03, mine, a clean checkout, by window id): four runs, the first
+three fixing the smoke (`.insp`, each item's own line, the note's
+interval as the backlog left it: `4926567`, `00c4a5c`, `a6232ed`,
+`f9f566e`), run 4 `done`, 42 `ok:`, no `failed:`, six shots, recorded in
+BUILD-LOG. Not done: a draft
 still grows from its stored interval (the milestone names sections,
 extracts and notes); `postpone the rest` as a row shows only at the
 fold, the palette command and the tweak work without a budget; the

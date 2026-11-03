@@ -2,10 +2,11 @@
 // group, everything else one item), reading topics (documents with `read:`),
 // sections that come back (a heading's `<!-- read … -->` line), and
 // writing drafts (documents with `write:` not done). What is due sorts by
-// priority, then due, then document order, the way SuperMemo sorts its
-// outstanding queue; what is not due yet sorts by due, then priority. Nothing
-// here is stored; `gradeItem` is the one mutation, and it rewrites one
-// schedule line.
+// the day's key (a draw around its priority, seeded by the item and the
+// day, `growth.ts`), then stored due, then document order, so the top holds
+// and the middle mixes, reshuffled each day; what is not due yet sorts by
+// due, then priority. Nothing here is stored; `gradeItem` is the one
+// mutation, and it rewrites one schedule line.
 
 import {
   PRI_DEFAULT, blanks, cardForm, clozeParts, meta, nextGroup,
@@ -17,6 +18,7 @@ import { becomesLeech } from './options.js';
 import { capForExam, lineKey, type ExamAt } from './exams.js';
 import type { Exam, LeechAction } from '../format/index.js';
 import { addDays, dayOf, dayStart, whenToDate } from './dates.js';
+import { sampleKey } from './growth.js';
 import { advanceRead } from './read.js';
 import { advanceWrite } from './write.js';
 import { advanceSection, sectionInQueue, sectionState } from './section.js';
@@ -295,18 +297,31 @@ export function docItems(path: string, doc: Doc, now: Date): QueueItem[] {
   return out;
 }
 
+/** What seeds an item's draw beside the day: its path and its heading, card id (else its block, group and direction), or kind. */
+export function itemSeed(item: QueueItem): string {
+  if (item.kind === 'section') return `${item.path}\n${item.heading}`;
+  if (item.kind === 'card') return `${item.path}\n${item.id ?? `#${item.block}`}${item.group ? `/${'n' in item.group ? `c${item.group.n}` : `b${item.group.blank}`}` : ''}${item.dir === 'r' ? '/r' : ''}`;
+  return `${item.path}\n${item.kind}`;
+}
+
+/** The day's key of a due item: a draw around `pri/100`, the same all day for the same item (`sampleKey`). Lower comes first. */
+export const itemKey = (item: QueueItem, day: string): number => sampleKey(`${itemSeed(item)}\n${day}`, item.pri);
+
 /**
- * In place. What is due comes first, by priority, then due; what is not due
- * yet follows, by due, then priority. A stable sort keeps document order
- * after that.
+ * In place. What is due comes first, by the day's key, then stored due
+ * (oldest first); what is not due yet follows, by due, then priority. A
+ * stable sort keeps document order after that.
  */
 export function sortQueue(items: QueueItem[], now: Date): QueueItem[] {
+  const day = dayOf(now);
+  const keys = new Map<QueueItem, number>();
+  const keyOf = (i: QueueItem) => { let k = keys.get(i); if (k === undefined) { k = itemKey(i, day); keys.set(i, k); } return k; };
   return items.sort((a, b) => {
     const da = isDue(a, now);
     const db = isDue(b, now);
     if (da !== db) return da ? -1 : 1;
     const due = a.dueAt.getTime() - b.dueAt.getTime();
-    return da ? a.pri - b.pri || due : due || a.pri - b.pri;
+    return da ? keyOf(a) - keyOf(b) || due : due || a.pri - b.pri;
   });
 }
 
@@ -360,25 +375,27 @@ export function fold(items: QueueItem[], n: number): Fold {
   return { above: items.slice(0, n), below: items.slice(n) };
 }
 
+/** Was the item's stored due before `now`'s day: the backlog, as against what is first due today. */
+export const isBacklog = (item: QueueItem, now: Date): boolean => item.due !== undefined && dayOf(whenToDate(item.due)) < dayOf(now);
+
 /**
- * The reading and writing due now that fall below the fold, lowest priority
- * first. Cards are never here: FSRS folds their lateness into the next
- * grade, so the app only orders them.
+ * The backlog: the reading and writing due before today, lowest key first;
+ * what is first due today is left alone, whatever the fold. Cards are never
+ * here: FSRS folds their lateness into the next grade, so the app only
+ * orders them.
  */
-export function overflow(items: QueueItem[], now: Date, budget: number): (ReadItem | WriteItem | SectionItem)[] {
+export function overflow(items: QueueItem[], now: Date): (ReadItem | WriteItem | SectionItem)[] {
   const due = sortQueue(items.filter((i) => isDue(i, now)), now);
-  return fold(due, budget).below
-    .filter((i): i is ReadItem | WriteItem | SectionItem => i.kind !== 'card')
-    .sort((a, b) => b.pri - a.pri);
+  return due.filter((i): i is ReadItem | WriteItem | SectionItem => i.kind !== 'card' && isBacklog(i, now));
 }
 
 /**
- * Postpone everything `overflow` names, one file at a time, each through
+ * Postpone the backlog `overflow` names, one file at a time, each through
  * `vault.update`, so each rewrites its own `read` or `write` line (or a
  * section's heading line) and nothing else. Resolves to what was postponed.
  */
-export async function postponeOverflow(vault: Vault, items: QueueItem[], now: Date, budget: number): Promise<(ReadItem | WriteItem | SectionItem)[]> {
-  const rest = overflow(items, now, budget);
+export async function postponeOverflow(vault: Vault, items: QueueItem[], now: Date): Promise<(ReadItem | WriteItem | SectionItem)[]> {
+  const rest = overflow(items, now);
   for (const item of rest) {
     await vault.update(item.path, (doc) => {
       if (item.kind === 'read') advanceRead(doc, 'postpone', now);

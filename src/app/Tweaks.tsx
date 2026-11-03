@@ -1,10 +1,10 @@
-// The tweaks panel: theme, accent, density, whether the last vault reopens
-// on start, whether a clipped page's images are downloaded, whether images
-// from the web are shown, whether the queue names documents by title, the
-// day's budget, and where clippings land. ⌘, opens it. The first seven live
-// in the webview's storage, not in any vault;
-// the budget and the clippings folder are the open vault's, in its
-// `.ilmi/state.json`.
+// The tweaks panel: theme, accent, density, text size, whether the last
+// vault reopens on start, whether a clipped page's images are downloaded,
+// whether images from the web are shown, whether the queue names documents
+// by title, whether the backlog is postponed when the day starts, the
+// day's budget, and where clippings land. ⌘, opens it. The first nine live
+// in the webview's storage, not in any vault; the budget and the clippings
+// folder are the open vault's, in its `.ilmi/state.json`.
 
 import { useEffect, useState } from 'react';
 import { PluginsSection } from '../plugins/PluginsSection.js';
@@ -73,6 +73,7 @@ export function Tweaks() {
   const clipImages = useApp((s) => s.clipImages);
   const remoteImages = useApp((s) => s.remoteImages);
   const queueTitles = useApp((s) => s.queueTitles);
+  const backlog = useApp((s) => s.backlog);
   const vault = useApp((s) => s.vault);
   const budget = useApp((s) => s.budget);
   const clipDir = useApp((s) => s.clipDir);
@@ -160,6 +161,13 @@ export function Tweaks() {
         <div className="tw-seg">
           <button type="button" data-active={queueTitles ? '1' : '0'} onClick={() => useApp.getState().setQueueTitles(true)}>on</button>
           <button type="button" data-active={queueTitles ? '0' : '1'} onClick={() => useApp.getState().setQueueTitles(false)}>off</button>
+        </div>
+      </div>
+      <div className="tw-row">
+        <span className="tw-lbl">postpone the backlog when the day starts</span>
+        <div className="tw-seg">
+          <button type="button" data-active={backlog ? '1' : '0'} onClick={() => useApp.getState().setBacklog(true)}>on</button>
+          <button type="button" data-active={backlog ? '0' : '1'} onClick={() => useApp.getState().setBacklog(false)}>off</button>
         </div>
       </div>
       {vault !== null && (

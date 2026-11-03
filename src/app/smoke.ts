@@ -169,6 +169,12 @@
 // `samples/double-major`: passages marked in a clipping and a chapter become
 // sections of their notes, moved, and an old extract folded in (milestone 50).
 // `ILMI_SMOKE=zoom` (`smokeZoom`): the page's text size by ⌘= ⌘− ⌘0 and the tweaks.
+// `ILMI_SMOKE=cadence` (`smokeCadence`) over a copy of `samples/double-major`:
+// milestone 51, the reading loop re-tuned: a pass on a half-read source lands
+// on its cadence, a section sixty days late lands past 90 days, the day's
+// order differs between two days and holds within one, `postpone the rest`
+// touches nothing first due today (and the tweak runs it at the day's start),
+// ⏎ on a finished source dismisses it, the inspector's interval field.
 // `ILMI_SMOKE=welcome` runs before any vault opens: it seeds the recents
 // with the scratch vault (`ILMI_VAULT`) and a path that does not exist,
 // turns `reopen the last vault on start` off, reads the welcome's rows and
@@ -6368,7 +6374,7 @@ export async function smokeOpen(vault: Vault): Promise<void> {
     window.getSelection()!.addRange(r);
     await poll(() => q('.pdf-view .sel-cue'), 'the selection cue on the page');
     press('e');
-    await poll(async () => /\n<!-- read made=\S+ due=\S+ ivl=3 boxes=4:[\d.:]+ -->\n/.test(await text(chap)), 'the selection boxes its lines: a section of the notes, its boxes on page 4 as the book numbers it', 8000);
+    await poll(async () => /\n<!-- read made=\S+ due=\S+ ivl=[123] boxes=4:[\d.:]+ -->\n/.test(await text(chap)), 'the selection boxes its lines: a section of the notes, its boxes on page 4 as the book numbers it', 8000);
     // the book renamed: the chapters still find its file
     const { renameNode } = await import('./vault.js');
     const renamed = await renameNode(book, 'stat phys, briefly');
@@ -7008,7 +7014,7 @@ export async function smokeSections(vault: Vault): Promise<void> {
     click(btn);
     after = await poll(async () => { const t = await text(); return t !== before ? t : null; }, 'come back wrote the file', 8000);
     d = diff(before, after);
-    must(d.length === 1 && d[0] === `(none) → <!-- read made=${DAY} due=${addDays(DAY, 3)} ivl=3 -->`, `its line back: ${d.join('; ')}`);
+    must(d.length === 1 && d[0] === `(none) → <!-- read made=${DAY} due=${addDays(DAY, 2)} ivl=2 -->`, `its line back: ${d.join('; ')}`);
     await poll(() => { refreshQueue(); const s = sectionOf('lecture 13'); return s && !isDue(s, appNow()) ? s : null; }, 'back in the queue, in 3 days', 8000);
 
     // a dismissed passage keeps its boxes: bring back
@@ -7028,7 +7034,7 @@ export async function smokeSections(vault: Vault): Promise<void> {
     click(btn);
     after = await poll(async () => { const t = await text(); return t !== before ? t : null; }, 'bring back wrote the file', 8000);
     d = diff(before, after);
-    must(d.length === 1 && d[0] === `<!-- read made=2026-10-20 reps=2 boxes=41:0.120:0.122:0.770:0.145 --> → <!-- read made=2026-10-20 due=${addDays(DAY, 3)} ivl=3 reps=2 boxes=41:0.120:0.122:0.770:0.145 -->`, `a fresh due, reps and boxes kept: ${d.join('; ')}`);
+    must(d.length === 1 && d[0] === `<!-- read made=2026-10-20 reps=2 boxes=41:0.120:0.122:0.770:0.145 --> → <!-- read made=2026-10-20 due=${addDays(DAY, 2)} ivl=2 reps=2 boxes=41:0.120:0.122:0.770:0.145 -->`, `a fresh due, reps and boxes kept: ${d.join('; ')}`);
     await poll(() => { refreshQueue(); return sectionOf('lecture 14'); }, 'bring back returns it to the queue', 8000);
     await poll(() => q<HTMLElement>('.insp .sec-block')?.dataset.status === 'on' && q('.insp .sec-block button')?.textContent === 'dismiss', 'the inspector now offers dismiss');
     await shot('sections-inspector-after');
@@ -7184,12 +7190,12 @@ export async function smokeBook(vault: Vault): Promise<void> {
     const order = (await headings(CH3)).map((h) => h.text);
     must(order.join(' | ') === `3.2 · the partition function (3.9) | ${NAME} | 3.3 · energy fluctuations (3.13–3.15)`, `in book order: ${order.join(' | ')}`);
     const boxes = parseBoxes(made.read?.boxes ?? '');
-    must(made.read?.made === DAY && made.read.due === '2026-11-05' && made.read.ivl === 3, `made today, back in 3 days (${JSON.stringify(made.read)})`);
+    must(made.read?.made === DAY && made.read.due === '2026-11-03' && made.read.ivl === 1, `made today, back tomorrow: the chapter's priority is 20 (${JSON.stringify(made.read)})`);
     must(!!boxes && boxes.length === 2 && boxes[0]!.page === 41 && boxes[1]!.page === 42 && near(boxes[0]!.y, 0.86) && near(boxes[1]!.h, 0.04), `its boxes in the grammar: ${made.read?.boxes}`);
     must(/boxes=41:\d\.\d{3}:\d\.\d{3}:\d\.\d{3}:\d\.\d{3},42:\d\.\d{3}:\d\.\d{3}:\d\.\d{3}:\d\.\d{3} -->/.test(await text(CH3)), 'written page:x:y:w:h, three decimals, "," between');
     const read = meta(parse(await text(CH3)).doc).read;
     must(read?.pos === 42 && near(read.y ?? 0, 0.137), `the read point moved past the last box (pos=${read?.pos} y=${read?.y})`);
-    must(useApp.getState().notice?.line.startsWith(`§ ${NAME} · back in 3d, until dismissed`), `the notice: "${useApp.getState().notice?.line}"`);
+    must(useApp.getState().notice?.line.startsWith(`§ ${NAME} · back in 1d, until dismissed`), `the notice: "${useApp.getState().notice?.line}"`);
     await shot('book-section');
 
     // ⏎ right after: the caret in it; the caret lights its boxes
@@ -7202,7 +7208,7 @@ export async function smokeBook(vault: Vault): Promise<void> {
     // show boxes here draws both crops, a page break between
     const hd = await poll(() => qa<HTMLElement>('.pane[data-active="1"] .book-notes .dd-h').find((h) => h.textContent?.startsWith(NAME)), 'its heading in the notes');
     const chip = q<HTMLElement>('.book-chip', hd)!;
-    must(chip.textContent === 'show in bookshow boxes hereback in 3d', `its chip: "${chip.textContent}"`);
+    must(chip.textContent === 'show in bookshow boxes hereback in 1d', `its chip: "${chip.textContent}"`);
     down(q('[data-act="show-here"]', chip)!);
     let crops: HTMLCanvasElement[];
     try {
@@ -7427,7 +7433,7 @@ export async function smokeBooks(vault: Vault): Promise<void> {
     await drag(24, 0.11, 0.67, 0.78, 0.075);
     key('e');
     const avg = await poll(async () => (await headings(CH3)).find((h) => h.text === '3.3 · average values (3.8)'), 'e names the ⟨E⟩ derivation "3.3 · average values (3.8)"', 10000);
-    must(avg.read?.made === DAY1 && avg.read.due === addDays(DAY1, 3) && avg.read.ivl === 3 && !!parseBoxes(avg.read.boxes ?? ''), `boxed today, back in 3 days (${avg.read?.boxes})`);
+    must(avg.read?.made === DAY1 && avg.read.due === addDays(DAY1, 2) && avg.read.ivl === 2 && !!parseBoxes(avg.read.boxes ?? ''), `boxed today, back in 2 days, the cadence at priority 50 (${avg.read?.boxes})`);
     await shot('books-boxed');
     key('Escape');
     await drag(26, 0.11, 0.12, 0.78, 0.2);
@@ -7662,7 +7668,7 @@ export async function smokeTextSections(vault: Vault): Promise<void> {
     key('e');
     const first = await poll(async () => (await has(NOTE)) ? (await headings(NOTE))[0] : null, 'e makes the note with a section', 10000);
     must(first!.text === 'in that world the vacuum', `named from the passage's first words: "${first!.text}"`);
-    must(first!.read?.made === DAY1 && first!.read.due === addDays(DAY1, 3) && first!.read.ivl === 3, `enrolled: made today, back in 3 days (${JSON.stringify(first!.read)})`);
+    must(first!.read?.made === DAY1 && first!.read.due === addDays(DAY1, 2) && first!.read.ivl === 2, `enrolled: made today, back in 2 days, the cadence at priority 50 (${JSON.stringify(first!.read)})`);
     const sec1 = (await sectionAt(NOTE, 'in that world'))!;
     must(sec1.body[0]?.kind === 'paragraph' && sec1.body[0].text === 'from: why perturbation series diverge', `a from line under the heading: "${(sec1.body[0] as { text?: string }).text}"`);
     must(sec1.body[1]?.kind === 'paragraph' && sec1.body[1].text === 'In that world the vacuum is not stable.', 'then the passage');
@@ -7672,7 +7678,7 @@ export async function smokeTextSections(vault: Vault): Promise<void> {
     must(strip(clipAfter) === strip(clipBefore) && !clipAfter.includes('<!-- extract in that'), 'nothing went back to the clipping but its marker');
     must(/^read: .*pos=9\b/m.test(clipAfter), `the marker, already past it, stays (${/^read: .*$/m.exec(clipAfter)?.[0]})`);
     const notice = await poll(() => useApp.getState().notice, 'the notice', 8000);
-    must(notice.line === '§ in that world the vacuum · back in 3d, until dismissed · in its notes · ⏎ to write in it' && notice.open === NOTE, `the notice: "${notice.line}"`);
+    must(notice.line === '§ in that world the vacuum · back in 2d, until dismissed · in its notes · ⏎ to write in it' && notice.open === NOTE, `the notice: "${notice.line}"`);
     await shot('textsections-made');
     key('Enter');
     await poll(() => useApp.getState().caretHeading?.path === NOTE && useApp.getState().caretHeading?.text === 'in that world the vacuum', '⏎ opens the note at the section, the caret in it', 10000);
@@ -7851,6 +7857,213 @@ export async function smokeZoom(vault: Vault): Promise<void> {
     log(`done; vault ${vault.root}`);
   } catch (e) {
     useApp.getState().setZoom(1);
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+// `ILMI_SMOKE=cadence` (`smokeCadence`) over a fresh copy of `samples/double-major`,
+// milestone 51: the reading loop re-tuned. 2026-11-03 by the app's clock: a
+// half-read source at priority 70 comes up `done for today · back in 3d`,
+// its inspector's growth row reads `every third day while reading`, and
+// ⏎ writes `ivl=3 due=+3` and one more pass; the day's queue holds its
+// order between two builds; `postpone the rest` postpones only what was
+// due before today; a source whose marker is at its end comes up with
+// ⏎ reading `dismiss`, and ⏎ drops its `read` field; the inspector's
+// interval field writes `ivl=100 due=+100` on a note revisited.
+// 2026-11-04: the order differs from the day before; with the tweak on,
+// the day's first build postpones the backlog. First of all, though, at
+// 2027-01-01, before any postpone touches its line: the pset derivation
+// (due 2026-11-02, ivl=3) comes up `next · back in 101d` and ⏎ lands it
+// there. Light, then dark.
+export async function smokeCadence(vault: Vault): Promise<void> {
+  type ReadItem = import('../schedule/index.js').ReadItem;
+  type SectionItem = import('../schedule/index.js').SectionItem;
+  type QueueItem = import('../schedule/index.js').QueueItem;
+  let last = { at: Date.now(), what: 'start' };
+  let finished = false;
+  const log = (s: string) => { last = { at: Date.now(), what: s }; void info(`smoke cadence: ${s}`); };
+  const dog = setInterval(() => {
+    if (finished) { clearInterval(dog); return; }
+    if (Date.now() - last.at > 30_000) { finished = true; clearInterval(dog); void info(`smoke cadence: failed: no progress for 30 s after "${last.what}"`); }
+  }, 2000);
+  const bounded = <T,>(p: Promise<T>, what: string, ms = 8000): Promise<T> =>
+    Promise.race([p, new Promise<T>((_, no) => setTimeout(() => no(new Error(`${what} (no answer in ${ms} ms)`)), ms))]);
+  const shot = async (name: string, ms = 2500) => { await sleep(800); log(`shot: ${name}`); await sleep(ms); };
+  const q = <T extends Element>(sel: string, root: ParentNode = document) => root.querySelector<T>(sel);
+  const qa = <T extends Element>(sel: string, root: ParentNode = document) => Array.from(root.querySelectorAll<T>(sel));
+  const must = (ok: unknown, what: string) => { if (!ok) throw new Error(what); log(`ok: ${what}`); };
+  const poll = async <T,>(probe: () => T | null | undefined | false | Promise<T | null | undefined | false>, what: string, ms = 5000): Promise<T> => {
+    const t0 = Date.now();
+    for (;;) {
+      const v = await probe();
+      if (v) { log(`ok: ${what}`); return v; }
+      if (Date.now() - t0 > ms) throw new Error(`${what} (waited ${ms} ms)`);
+      await sleep(100);
+    }
+  };
+  const key = (k: string, mods: KeyboardEventInit = {}) => window.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true, ...mods }));
+  const { parse, meta, setField } = await import('../format/index.js');
+  const { addDays, isDue, itemSeed, overflow, sameItem } = await import('../schedule/index.js');
+  const { postponeRest, refreshQueue, setBudget } = await import('./vault.js');
+  const { setClockDay, appNow } = await import('./clock.js');
+  const { doneLine } = await import('./items.js');
+  const MERCHANT = 'library/classical-prose-reader/15-the-merchant-who-was-robbed.md';
+  const QASIDA = 'courses/fall-2026/arab-455-abbasid-poetry/clipped-on-translating-the-qasida.md';
+  const HAMILTON = 'courses/fall-2025/phys-301-classical-mechanics/hamiltonian-mechanics.md';
+  const CANON = 'courses/fall-2026/phys-415-stat-mech/canonical-ensemble.md';
+  const DAY1 = '2026-11-03';
+  const DAY2 = '2026-11-04';
+  const DAY3 = '2027-01-01';
+  const text = (p: string) => bounded(vault.fs.readText(vault.abs(p)), `reading ${p}`);
+  const readLine = async (p: string) => meta(parse(await text(p)).doc).read;
+  const items = () => useApp.getState().queue;
+  const due = () => items().filter((i) => isDue(i, appNow()));
+  const readOf = (p: string) => items().find((i): i is ReadItem => i.kind === 'read' && i.path === p);
+  const sectionOf = (p: string, start: string) => items().find((i): i is SectionItem => i.kind === 'section' && i.path === p && i.heading.startsWith(start));
+  const order = () => due().map(itemSeed);
+  const sessionAt = async (it: QueueItem) => {
+    openSession(it);
+    await poll(() => { const el = useApp.getState().sessionEl; return el && sameItem(el.item, it) && q('.pane[data-active="1"] .doc-session .session-bar') ? true : null; }, `the session opens at ${it.path}`, 20000);
+    await sleep(500);
+  };
+  const bar = () => q<HTMLElement>('.pane[data-active="1"] .session-bar')!;
+  const actions = () => qa<HTMLElement>('.sb-actions button .ra-l', bar()).map((b) => b.textContent).join(' / ');
+  const changed = (p: string, before: string, what: string) => poll(async () => { const t = await text(p); return t !== before ? t : null; }, what, 8000);
+  const setNum = (el: HTMLInputElement, v: string) => {
+    el.focus();
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(el, v);
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.blur();
+  };
+  try {
+    setClockDay(DAY1);
+    useApp.getState().setTheme('light');
+    await poll(() => document.documentElement.dataset.theme === 'light', 'light');
+    useApp.getState().setBacklog(false);
+    setInspector({ open: true });
+    await poll(() => useApp.getState().docs[MERCHANT] && useApp.getState().docs[CANON], 'the sample is in the collection', 15000);
+    refreshQueue();
+
+    let before: string;
+    let after: string;
+
+    // ── a section sixty days late grows from the time elapsed ──
+    setClockDay(DAY3);
+    refreshQueue();
+    const sec = await poll(() => { const s = sectionOf(CANON, 'pset 4 #5'); return s && isDue(s, appNow()) ? s : null; }, 'the pset derivation is due, sixty days late', 8000);
+    must(sec.sched.ivl === 3 && sec.sched.due === '2026-11-02', `its line still reads ivl=3 due=2026-11-02`);
+    await sessionAt(sec);
+    must(actions() === 'next · back in 101d / later / dismiss', `next grows from the 63 days elapsed: ${actions()}`);
+    await shot('cadence-late');
+    before = await text(CANON);
+    key('Enter');
+    after = await changed(CANON, before, 'next wrote the file');
+    must(after.includes(`<!-- read made=2026-10-30 due=${addDays(DAY3, 101)} ivl=101 reps=1 -->`), 'the line lands at 101 days, past 90');
+    must(useApp.getState().log[0] === doneLine('§', sec.heading, 'next · back in 101d'), `the done row: "${useApp.getState().log[0]}"`);
+    setClockDay(DAY1);
+    refreshQueue();
+
+    // ── a half-read source lands on its cadence ──
+    // at priority 70 the cadence is every third day; the sample's own priority (50) would be every other
+    await vault.update(MERCHANT, (d) => setField(d, 'pri', 70));
+    const merchant = await poll(() => { const r = readOf(MERCHANT); return r && r.pri === 70 && isDue(r, appNow()) ? r : null; }, 'the merchant is due, at priority 70', 8000);
+    must(merchant.pos === 6 && merchant.pos < merchant.total, `half read: ${merchant.pos} of ${merchant.total}`);
+    await sessionAt(merchant);
+    must(actions() === 'done for today · back in 3d / later / dismiss', `a source with reading left: ${actions()}`);
+    const growth = await poll(() => q('.inspector .af-next')?.textContent, 'the inspector has its growth row');
+    must(growth === 'every third day while reading', `the growth row reads the cadence: "${growth}"`);
+    await shot('cadence-source');
+    before = await text(MERCHANT);
+    key('Enter');
+    after = await changed(MERCHANT, before, 'done for today wrote the file');
+    const r1 = meta(parse(after).doc).read!;
+    must(r1.ivl === 3 && r1.due === addDays(DAY1, 3) && r1.reps === 3 && (r1.pos ?? 0) >= 6, `the line landed on its cadence, not grown: ${after.split('\n').find((l) => l.startsWith('read:'))}`);
+    must(useApp.getState().log[0] === doneLine('“', 'passage 15 · the merchant who was robbed', 'done for today · back in 3d'), `the done row: "${useApp.getState().log[0]}"`);
+
+    // ── the day's order holds within the day ──
+    openNode(queueId('today'));
+    await poll(() => q('.pane[data-active="1"] .queue h1')?.firstChild?.textContent === 'due today', 'the day\'s query is drawn', 8000);
+    const o1 = order();
+    refreshQueue();
+    await sleep(200);
+    refreshQueue();
+    must(o1.length > 20 && o1.join('|') === order().join('|'), `the order holds within the day over two more builds (${o1.length} due)`);
+    const pris = due().map((i) => i.pri);
+    must(pris.slice(0, 5).every((p) => p <= 50) && pris.slice(-5).every((p) => p >= 50), `the top holds: first five at ${pris.slice(0, 5).join(' ')}, last five at ${pris.slice(-5).join(' ')}`);
+    await shot('cadence-queue');
+
+    // ── postpone the rest touches nothing first due today ──
+    setBudget(5);
+    const rest = overflow(items(), appNow());
+    must(rest.length > 0 && rest.every((i) => i.due !== undefined && i.due < DAY1), `the rest is the backlog: ${rest.length} elements, every one due before today`);
+    const todays = due().filter((i) => i.kind !== 'card' && (i.due === undefined || i.due.startsWith(DAY1)));
+    must(todays.length > 0, `${todays.length} element(s) first due today (${todays.map((i) => i.path.split('/').pop()).join(', ')})`);
+    const lines = new Map<string, string>();
+    for (const i of todays) lines.set(i.path, await text(i.path));
+    const n = await postponeRest();
+    must(n === rest.length, `postpone the rest postponed ${n}`);
+    for (const i of todays) must((await text(i.path)) === lines.get(i.path), `untouched: ${i.path}`);
+    const q15 = await readLine(QASIDA);
+    must(q15?.due !== undefined && q15.due > DAY1 && q15.ivl === 14, `a backlog source postponed: ivl 12 → 14, due ${q15?.due}`);
+    setBudget(0);
+    await poll(() => { refreshQueue(); return overflow(items(), appNow()).length === 0 ? true : null; }, 'no backlog left', 8000);
+
+    // ── a finished source: ⏎ reads dismiss ──
+    await vault.update(QASIDA, (d) => { const m = meta(d); setField(d, 'read', { ...m.read, due: DAY1, pos: d.blocks.filter((b) => b.kind !== 'card').length }); });
+    const done = await poll(() => { refreshQueue(); const r = readOf(QASIDA); return r && r.pos >= r.total && isDue(r, appNow()) ? r : null; }, 'the qasida clipping is read to its end', 8000);
+    await sessionAt(done);
+    must(actions() === 'dismiss / later / dismiss', `at the end, ⏎ reads dismiss: ${actions()}`);
+    await shot('cadence-end');
+    before = await text(QASIDA);
+    key('Enter');
+    after = await changed(QASIDA, before, '⏎ wrote the file');
+    must(meta(parse(after).doc).read === undefined, 'its read field is gone: dismissed');
+    must(useApp.getState().log[0] === doneLine('“', 'On translating the qaṣīda', 'dismissed'), `the done row: "${useApp.getState().log[0]}"`);
+
+    // ── the inspector's interval field ──
+    openNode(HAMILTON);
+    const ivl = await poll(() => qa<HTMLInputElement>('.inspector .ivl-field').find((f) => f.value === '14'), 'the note\'s inspector has an interval field reading 14', 8000);
+    before = await text(HAMILTON);
+    setNum(ivl, '100');
+    after = await changed(HAMILTON, before, 'the field wrote the file');
+    const h = meta(parse(after).doc).read!;
+    must(h.ivl === 100 && h.due === addDays(DAY1, 100) && h.reps === 2, `ivl=100 due=+100, nothing else: ${after.split('\n').find((l) => l.startsWith('read:'))}`);
+    await shot('cadence-interval');
+
+    // ── another day: the order differs; the tweak postpones the backlog at the day's start ──
+    setClockDay(DAY2);
+    refreshQueue();
+    const o2 = order();
+    const common = o1.filter((k) => o2.includes(k));
+    const a = common.map((k) => o1.indexOf(k));
+    const b = common.map((k) => o2.indexOf(k));
+    let inversions = 0;
+    for (let i = 0; i < common.length; i++) for (let j = i + 1; j < common.length; j++) if ((a[i]! - a[j]!) * (b[i]! - b[j]!) < 0) inversions++;
+    must(common.length > 20 && inversions > 0, `the order differs the next day: ${inversions} pairs swapped among ${common.length} shared elements`);
+    const backlog = overflow(items(), appNow());
+    must(backlog.length > 0 && backlog.every((i) => i.due !== undefined && i.due < DAY2), `a backlog of ${backlog.length} on the new day`);
+    useApp.getState().setBacklog(true);
+    setClockDay(DAY1);
+    refreshQueue();
+    setClockDay(DAY2);
+    refreshQueue();
+    await poll(() => useApp.getState().log[0]?.startsWith('postponed · ') ? useApp.getState().log[0] : null, 'the day\'s first build postponed the backlog', 8000);
+    await poll(() => { refreshQueue(); return overflow(items(), appNow()).length === 0 ? true : null; }, 'and none is left', 8000);
+    useApp.getState().setBacklog(false);
+
+    // ── dark ──
+    openNode(queueId('today'));
+    useApp.getState().setTheme('dark');
+    await poll(() => document.documentElement.dataset.theme === 'dark', 'dark');
+    await shot('cadence-dark');
+    useApp.getState().setTheme('light');
+    setClockDay(null);
+    finished = true;
+    log(`done; vault ${vault.root}`);
+  } catch (e) {
+    finished = true;
+    useApp.getState().setBacklog(false);
+    setClockDay(null);
     log(`failed: ${e instanceof Error ? e.message : String(e)}`);
   }
 }

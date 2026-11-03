@@ -8,7 +8,7 @@
 // line). Boxes drawn on the pages (drag; drag again for another, on any
 // page; a text selection boxes its lines) become a section of the notes
 // with `e`: a `##` heading named from the page, in book order, with its
-// `<!-- read … boxes=… -->` line, back in three days until dismissed
+// `<!-- read … boxes=… -->` line, back on its cadence until dismissed
 // (FORMAT.md §6.5). `m` makes the section and puts the caret in it to card,
 // or on a page that names no sections (a passage book, Arabic) clips the
 // box into the notes under `## p. N` (§6.6). Every section's boxes are drawn
@@ -150,9 +150,11 @@ interface PdfProps {
   session?: boolean;
   /** A session reading on in the book: the pages land at the read point. */
   readOn?: boolean;
+  /** Told the book's last page once the file is read (the session's ⏎ reads `dismiss` past it). */
+  onLast?: ((page: number) => void) | undefined;
 }
 
-export function Pdf({ id, active = true, session = false, readOn = false }: PdfProps) {
+export function Pdf({ id, active = true, session = false, readOn = false, onLast }: PdfProps) {
   const hidden = useApp((s) => s.notesHidden);
   // ⌘\ hides the notes and shows them, ahead of the app's split (it checks `defaultPrevented`)
   useEffect(() => {
@@ -167,7 +169,7 @@ export function Pdf({ id, active = true, session = false, readOn = false }: PdfP
   }, [active]);
   return (
     <div className="book" data-notes={hidden ? '0' : '1'} data-path={id}>
-      <div className="book-pages"><Pages id={id} active={active} session={session} readOn={readOn} /></div>
+      <div className="book-pages"><Pages id={id} active={active} session={session} readOn={readOn} onLast={onLast} /></div>
       {!hidden && <div className="book-notes"><Reader key={id} id={id} active={active} notes /></div>}
     </div>
   );
@@ -180,7 +182,9 @@ interface Drawn {
   dismissed: boolean;
 }
 
-function Pages({ id, active, session, readOn }: Required<PdfProps>) {
+function Pages({ id, active, session, readOn, onLast }: Omit<Required<PdfProps>, 'onLast'> & { onLast: PdfProps['onLast'] }) {
+  const lastRef = useRef(onLast);
+  lastRef.current = onLast;
   const docs = useApp((s) => s.docs);
   const root = useApp((s) => s.vault);
   const caret = useApp((s) => s.caretHeading);
@@ -254,6 +258,7 @@ function Pages({ id, active, session, readOn }: Required<PdfProps>) {
         if (n < lo + PROBE && !hasText) hasText = (await pageBits(page)).some((b) => b.str.trim() !== '');
       }
       if (!live) return;
+      lastRef.current?.(hi);
       setBase(lo - 1);
       setPdf(doc);
       setSizes(out);
@@ -554,7 +559,7 @@ function Pages({ id, active, session, readOn }: Required<PdfProps>) {
     if (!boxes.length) return;
     clearBoxes();
     const { name } = known ?? await nameOf(boxes);
-    let made: { index: number; text: string } | null = null;
+    let made: { index: number; text: string; ivl: number } | null = null;
     await writeDoc(id, (d) => {
       made = addPassage(d, name, boxes, appNow());
       const r = meta(d).read;
@@ -564,12 +569,12 @@ function Pages({ id, active, session, readOn }: Required<PdfProps>) {
         setField(d, 'read', { ...rest, ...pointOn(r, end.page, end.y) });
       }
     });
-    const m = made as { index: number; text: string } | null;
+    const m = made as { index: number; text: string; ivl: number } | null;
     if (!m) return;
     const text = m.text;
     setLit(text);
     setRecent(write ? null : m);
-    notify(`§ ${plainMath(text)} · back in 3d, until dismissed${write ? '' : ' · ⏎ to write in it'}`, null, async () => {
+    notify(`§ ${plainMath(text)} · back in ${m.ivl}d, until dismissed${write ? '' : ' · ⏎ to write in it'}`, null, async () => {
       await writeDoc(id, (d) => {
         const at = d.blocks.findIndex((b) => b.kind === 'heading' && b.text === text && b.read?.boxes !== undefined);
         if (at >= 0) d.blocks.splice(at, 1);

@@ -261,10 +261,38 @@ what the inspector shows and what a reader of the file wants to know.
 plus `done` (`true`/`false`). A done draft keeps its line so it can be
 reopened.
 
-**Growth** is SuperMemo's A-factor: each pass multiplies the interval by
-`af`, rounded, never below one day. `af` is written only when it is not the
-default; a value below 1.1 is dropped with a diagnostic, and the default
-value, if written by hand, goes on the first write (§8).
+**Growth** is SuperMemo's A-factor, re-tuned on 2026-11-03 from a
+day-by-day simulation (`design/sim/irsim.py` is the reference; its
+constants are the app's). A pass multiplies by `af`, rounded, never below
+one day, from the longer of the stored `ivl` and the days since the pass
+before (the line's `due` less its `ivl`): on time the two are the same;
+sixty days late on `ivl=3` the next interval is 101, not 5. That is the
+rule for a note revisited, an extract, a section (§6.5), a draft (from its
+stored interval) and a source read to its end. **A source with reading
+left** (`pos` short of its prose, or any document read by its pages) does
+not grow: a pass writes `ivl` as its **cadence** and `due` as today plus
+it, `reps` one more. The cadence is `1 + min(2, ⌊3·pri/100⌋)` days of the
+priority that applies (the `pri` field, else the line's, else 50): every
+day under 34, every other day to 66, every third day above. Postpone
+grows the stored `ivl` by 1.2 (at least a day) whatever the document is,
+and counts no pass. Enrolling writes `ivl` as the cadence and `due` today;
+an extract carved out starts the same way, due today on the cadence of its
+priority. `af` is written only when it is not the default; a value below
+1.1 is dropped with a diagnostic, and the default value, if written by
+hand, goes on the first write (§8). The app's interval field writes `ivl`
+and `due = today + ivl` and nothing else.
+
+**The day's order.** What is due sorts by a draw, not by `pri` alone: each
+due item's key is a Beta draw with mean `pri/100` (clamped to .01–.99)
+and pseudo-count 20, seeded by the item (its path and heading, card id,
+or kind) and the day, then by stored due (oldest first), then file order.
+The same all day, another order the next; ±11 points at 50, ±5 at 95, so
+the top holds and the middle mixes. What is not due sorts by due, then
+priority. Nothing of this is written. **The backlog** is what was due
+before today; *postpone the rest* postpones only it (reading, sections
+and drafts, never cards), leaving what is first due today alone; a tweak,
+off by default, runs that at the day's first queue build, and the vault's
+`.ilmi/state.json` keeps `lastDay` so the day's start is known once.
 
 **Priority** is one scale for everything, as in SuperMemo: `0` comes first,
 `100` last, `50` when nothing says otherwise. The `pri` field is the document's
@@ -724,13 +752,18 @@ Boxing a passage on the pages writes a `##` heading named from the page
 (the nearest numbered heading at or above the first box, then the equation
 numbers inside the boxes, else `p. N`; a name already taken gets ` · 2`),
 placed before the first boxed section that starts later on the pages, else
-at the end, with `made=<today> due=<today+3> ivl=3 boxes=…`. The read
-point (§3) moves past the last box.
+at the end, with `made=<today> due=<today+c> ivl=c boxes=…` (`c` the
+cadence of the document's priority). The read point (§3) moves past the
+last box.
 
 Written in that order, unknown keys after. Enrolling writes `made=<today>
-due=<today+3> ivl=3`. A pass (*next*) multiplies `ivl` by `af` and counts
-in `reps`; a postpone (*later*) grows `ivl` by the postpone factor and does
-not count; neither touches `made`, `pri` or `boxes`.
+due=<today+c> ivl=c`, `c` the cadence of the section's priority (§3,
+*Growth*: the line's own `pri`, else the document's, else 50; every other
+day at the default). A pass (*next*) grows `ivl` by `af` from the longer
+of `ivl` and the days since the pass before (`due − ivl`), so a section
+sixty days late on `ivl=3` comes back in 101 days, not 5, and counts in
+`reps`; a postpone (*later*) grows the stored `ivl` by the postpone factor
+and does not count; neither touches `made`, `pri` or `boxes`.
 
 **Dismissing** drops `due`, `ivl`, `reps` and `af`. The line stays only
 when it has `boxes`, so the passage's place on the page is not lost;
@@ -738,7 +771,7 @@ otherwise the whole line is removed and the heading is plain again. A line
 with no `due` and with `boxes` is therefore a dismissed section: kept, out
 of the queue. A line with no `due` and no `boxes` (a bare `<!-- read -->`
 written by hand) is enrolled and due now, as a bare `read:` is. *Bring
-back* writes a fresh `due` three days out (`ivl=3`) and keeps the rest of
+back* writes a fresh `due` on the cadence (`ivl=c`) and keeps the rest of
 the line.
 
 **Priority** is the document's `pri` field unless the line carries its own
@@ -758,8 +791,8 @@ body is the notes, and no extract document is left under them.
 on a selection) is a section of the source's note, `notes.md` in the
 source's children directory, made the first time with `title: <the
 source's title> — notes`: a `##` heading named from the passage's first
-words as an extract would be, its line `made=<today> due=<today+3> ivl=3`
-(and the source's `pri`), a paragraph `from: <the source's title>` directly
+words as an extract would be, its line `made=<today> due=<today+c> ivl=c`
+(and the source's `pri`, whose cadence `c` is), a paragraph `from: <the source's title>` directly
 under the heading, then the passage as paragraphs. The section owns the
 text from then on; nothing goes back to the source but its marker, moved
 past the passage. The `from:` line is ordinary prose the app reads back for

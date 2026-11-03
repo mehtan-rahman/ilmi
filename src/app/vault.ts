@@ -9,7 +9,7 @@ import { open as pickDirectory } from '@tauri-apps/plugin-dialog';
 import { info } from '@tauri-apps/plugin-log';
 import { REVIEWS_DIR, meta, setField, type Doc, type Meta, type NodeType, type Review } from '../format/index.js';
 import type { Chapter, MappedDeck } from '../import/index.js';
-import { activeExam, buryLinked, cardsById, dayOf, docItems, examQueue, examsAt, isDue, meterQueue, postponeOverflow, resolveOptions, spentToday, type ExamAt, type QueueItem, type Resolved } from '../schedule/index.js';
+import { activeExam, buryLinked, cadence, cardsById, dayOf, docItems, examQueue, examsAt, isDue, meterQueue, postponeOverflow, readPri, resolveOptions, spentToday, type ExamAt, type QueueItem, type Resolved } from '../schedule/index.js';
 import { SAME_FILE, Vault, childDirOf, childrenAt, cleanName, dirOf, entryOf, fileName, isDoc, ordered, placeEntry, rekey, type ExtractSpec, type SectionSpec, type ImportDeckSpec, type ImportPdfSpec, type ImportSpec, type PdfChapterSpec, type TreeNode, type VaultEvent, type VaultState } from '../vault/index.js';
 import { tauriFs } from '../vault/tauri-fs.js';
 import { startPlugins, stopPlugins } from '../plugins/index.js';
@@ -129,6 +129,26 @@ function publishQueue(docs: Record<string, DocInfo>, now: Date): { queue: QueueI
 /** Rebuild the queue for the present moment: a card in learning steps may have come due. */
 export function refreshQueue(): void {
   useApp.setState((s) => publishQueue(s.docs, appNow()));
+  dayStarted();
+}
+
+/** The last day the queue was built on, from `.ilmi/state.json`; null until the vault says. */
+let lastDay: string | null = null;
+
+/**
+ * The first queue build of a day: the day is recorded (`VaultState.lastDay`),
+ * and with the `postpone the backlog when the day starts` tweak on, what was
+ * due before today is postponed (`postponeRest`). Nothing on the day the
+ * vault is first opened, which has no day before it.
+ */
+function dayStarted(): void {
+  if (!current) return;
+  const day = dayOf(appNow());
+  if (lastDay === day) return;
+  const first = lastDay === null;
+  lastDay = day;
+  queueSave({ lastDay: day });
+  if (!first && useApp.getState().backlog) void postponeRest().catch((e: unknown) => console.error('backlog', e));
 }
 
 /** The review log as the app holds it. */
@@ -176,7 +196,9 @@ async function publishDocs(vault: Vault): Promise<void> {
     }
   }
   for (const path of [...bodies.keys()]) if (!seen.has(path)) bodies.delete(path);
-  if (current === vault) useApp.setState(publishQueue(docs, now));
+  if (current !== vault) return;
+  useApp.setState(publishQueue(docs, now));
+  dayStarted();
 }
 
 /** Publish the tree, and forget open state for anything no longer in it. */
@@ -325,6 +347,7 @@ export async function openVault(path: string): Promise<Vault> {
     panes = openTab(panes, queueId('today'));
   }
   bodies.clear();
+  lastDay = typeof state.lastDay === 'string' ? state.lastDay : null;
   reviews = await vault.loadReviews().catch((e: unknown) => { console.error('reviews', e); return []; });
   const s0 = useApp.getState();
   useApp.setState({
@@ -350,6 +373,7 @@ export function closeVault(): void {
   current?.close();
   current = null;
   bodies.clear();
+  lastDay = null;
   reviews = [];
   if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; savePatch = {}; }
   useApp.setState({ vault: null, files: [], tree: [], docs: {}, open: { '': true }, panes: emptyPanes(), queue: [], log: [], session: null, sessionEl: null, selectedCard: null, reveal: null, paletteOpen: false, intakeDir: '', notice: null, fileOver: null, intakeFiles: [], order: {}, railFolded: {}, deckViews: {}, folds: {}, reviews: [], lensViews: {}, examFilter: null });
@@ -461,8 +485,8 @@ export function openInitialVault(): Promise<void> {
       if (path) {
         const vault = await openVault(path);
         if (mode) {
-          const { smoke, smokeReader, smokeCards, smokeIntake, smokeQueue, smokeLoop, smokeShots, smokeDeck, smokePri, smokeGrowth, smokeOverload, smokeFaces, smokeCardsText, smokeAnki, smokeMath, smokeEpub, smokeClip, smokeClipping, smokePlugins, smokeDictionary, smokeRender, smokeLive, smokeBlocks, smokeUse, smokeLand, smokeNest, smokeTabs, smokeDecks, smokeTour, smokeNotes, smokeEditing, smokeTree, smokeInsert, smokeTabs2, smokeListCards, smokeArabic, smokeRest, smokeBothWays, smokeNumbers, smokeOpen, smokeExam, smokeSame, smokeSections, smokeBook, smokeBooks, smokeTextSections, smokeZoom } = await import('./smoke.js');
-          const run = { reader: smokeReader, cards: smokeCards, intake: smokeIntake, queue: smokeQueue, loop: smokeLoop, shots: smokeShots, deck: smokeDeck, pri: smokePri, growth: smokeGrowth, overload: smokeOverload, faces: smokeFaces, 'cards-text': smokeCardsText, anki: smokeAnki, math: smokeMath, epub: smokeEpub, clip: smokeClip, clipping: smokeClipping, plugins: smokePlugins, dictionary: smokeDictionary, render: smokeRender, live: smokeLive, blocks: smokeBlocks, use: smokeUse, land: smokeLand, nest: smokeNest, tabs: smokeTabs, decks: smokeDecks, tour: smokeTour, notes: smokeNotes, editing: smokeEditing, tree: smokeTree, insert: smokeInsert, tabs2: smokeTabs2, listcards: smokeListCards, arabic: smokeArabic, rest: smokeRest, bothways: smokeBothWays, numbers: smokeNumbers, open: smokeOpen, exam: smokeExam, same: smokeSame, sections: smokeSections, book: smokeBook, books: smokeBooks, textsections: smokeTextSections, zoom: smokeZoom }[mode] ?? smoke;
+          const { smoke, smokeReader, smokeCards, smokeIntake, smokeQueue, smokeLoop, smokeShots, smokeDeck, smokePri, smokeGrowth, smokeOverload, smokeFaces, smokeCardsText, smokeAnki, smokeMath, smokeEpub, smokeClip, smokeClipping, smokePlugins, smokeDictionary, smokeRender, smokeLive, smokeBlocks, smokeUse, smokeLand, smokeNest, smokeTabs, smokeDecks, smokeTour, smokeNotes, smokeEditing, smokeTree, smokeInsert, smokeTabs2, smokeListCards, smokeArabic, smokeRest, smokeBothWays, smokeNumbers, smokeOpen, smokeExam, smokeSame, smokeSections, smokeBook, smokeBooks, smokeTextSections, smokeZoom, smokeCadence } = await import('./smoke.js');
+          const run = { reader: smokeReader, cards: smokeCards, intake: smokeIntake, queue: smokeQueue, loop: smokeLoop, shots: smokeShots, deck: smokeDeck, pri: smokePri, growth: smokeGrowth, overload: smokeOverload, faces: smokeFaces, 'cards-text': smokeCardsText, anki: smokeAnki, math: smokeMath, epub: smokeEpub, clip: smokeClip, clipping: smokeClipping, plugins: smokePlugins, dictionary: smokeDictionary, render: smokeRender, live: smokeLive, blocks: smokeBlocks, use: smokeUse, land: smokeLand, nest: smokeNest, tabs: smokeTabs, decks: smokeDecks, tour: smokeTour, notes: smokeNotes, editing: smokeEditing, tree: smokeTree, insert: smokeInsert, tabs2: smokeTabs2, listcards: smokeListCards, arabic: smokeArabic, rest: smokeRest, bothways: smokeBothWays, numbers: smokeNumbers, open: smokeOpen, exam: smokeExam, same: smokeSame, sections: smokeSections, book: smokeBook, books: smokeBooks, textsections: smokeTextSections, zoom: smokeZoom, cadence: smokeCadence }[mode] ?? smoke;
           // the smokes before 40 expect the inspector wherever they open it: the room rule is the tour's to check
           if (mode !== 'tour') useApp.setState({ inspForced: true });
           await run(vault);
@@ -522,12 +546,13 @@ export function startSession(opts: OpenOpts = {}): void {
 }
 
 /**
- * Postpone every reading and writing element below today's fold, lowest
- * priority first; one line per file, cards untouched. Resolves to how many.
+ * Postpone the backlog: the reading and writing due before today, lowest
+ * key first; what is first due today is left alone, cards untouched; one
+ * line per file. Resolves to how many.
  */
 export async function postponeRest(): Promise<number> {
   const s = useApp.getState();
-  const done = await postponeOverflow(need(), s.queue, appNow(), s.budget);
+  const done = await postponeOverflow(need(), s.queue, appNow());
   if (done.length) note(`postponed · ${done.length} element${done.length === 1 ? '' : 's'}`);
   return done.length;
 }
@@ -855,7 +880,7 @@ export async function importBookNode(dir: string, book: { title: string; chapter
 }
 
 /** Mark a passage of a text source: a section of the source's note (milestone 50); the source's row opens so the note is visible. */
-export async function sectionNode(source: string, spec: SectionSpec): Promise<{ note: string; index: number; text: string }> {
+export async function sectionNode(source: string, spec: SectionSpec): Promise<{ note: string; index: number; text: string; ivl: number }> {
   const made = await need().section(source, spec);
   toggleOpen(source, true);
   return made;
@@ -877,15 +902,16 @@ export async function extractNode(parent: string, spec: ExtractSpec): Promise<st
 
 /**
  * Enrol a source or extract in incremental reading, due today, from the
- * top; a note is revisited: the same line without `pos` (FORMAT.md §3).
- * A no-op when it already is.
+ * top, its interval the cadence of its priority; a note is revisited: the
+ * same line without `pos` (FORMAT.md §3). A no-op when it already is.
  */
 export async function enrolReading(path: string): Promise<void> {
   await need().update(path, (doc) => {
     const m = meta(doc);
     if (m.read) return;
     const day = dayOf(appNow());
-    setField(doc, 'read', m.type === 'note' ? { due: day, ivl: 1, reps: 0 } : { due: day, ivl: 1, reps: 0, pos: 0 });
+    const ivl = cadence(readPri(m));
+    setField(doc, 'read', m.type === 'note' ? { due: day, ivl, reps: 0 } : { due: day, ivl, reps: 0, pos: 0 });
   });
 }
 

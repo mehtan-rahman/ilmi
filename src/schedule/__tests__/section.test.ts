@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parse, serialize, type Heading } from '../../format/index.js';
 import {
-  SECTION_IVL, advanceSection, broughtBack, counts, dayOf, dismissed, docItems, enrolSection, headingAt, inScope, nextGap, overflow,
+  firstGap, advanceSection, itemKey, broughtBack, counts, dayOf, dismissed, docItems, enrolSection, headingAt, inScope, nextGap, overflow,
   queueItems, sameItem, sectionSpan, sectionState, type SectionItem,
 } from '../index.js';
 
@@ -75,19 +75,35 @@ describe('a section', () => {
     expect(sectionState(doc.blocks, at('nothing yet'))).toEqual({ written: false, cards: 0 });
   });
 
-  it('enrolls made today, back in three days; an enrolled line is left as it is', () => {
+  it('enrolls made today, back on the cadence of its priority; an enrolled line is left as it is', () => {
     const h: Heading = { kind: 'heading', level: 2, text: 'x' };
-    expect(enrolSection(h, NOW)).toEqual({ made: TODAY, due: '2026-11-05', ivl: SECTION_IVL });
+    expect(enrolSection(h, NOW)).toEqual({ made: TODAY, due: '2026-11-04', ivl: firstGap(undefined) });
+    expect(firstGap(undefined)).toBe(2);
     const again = { ...h.read! };
     expect(enrolSection(h, new Date('2026-11-04T12:00:00Z'))).toEqual(again);
+    // the document's priority sets it: every day under 34, every other day to 66, every third day above
+    expect(enrolSection({ kind: 'heading', level: 2, text: 'y' }, NOW, 20)).toEqual({ made: TODAY, due: '2026-11-03', ivl: 1 });
+    expect(enrolSection({ kind: 'heading', level: 2, text: 'z' }, NOW, 80)).toEqual({ made: TODAY, due: '2026-11-05', ivl: 3 });
+    // a dismissed line's own priority wins over the document's
+    expect(enrolSection({ kind: 'heading', level: 2, text: 'w', read: { made: '2026-10-01', pri: 90, boxes: '41:0:0:1:1' } }, NOW, 20)).toEqual({ made: '2026-10-01', pri: 90, boxes: '41:0:0:1:1', due: '2026-11-05', ivl: 3 });
   });
 
   it('next grows the interval and counts the pass; later grows it less and does not count', () => {
     const s = { made: '2026-10-30', due: TODAY, ivl: 3 };
     const d = parse(`## x\n<!-- read made=2026-10-30 due=${TODAY} ivl=3 -->\n`).doc;
-    expect(nextGap(s)).toBe(5);
+    expect(nextGap(s, NOW)).toBe(5);
     expect(advanceSection(d, 0, 'x', 'on', NOW)).toEqual({ made: '2026-10-30', due: '2026-11-07', ivl: 5, reps: 1 });
     expect(advanceSection(d, 0, 'x', 'postpone', NOW)).toEqual({ made: '2026-10-30', due: '2026-11-08', ivl: 6, reps: 1 });
+  });
+
+  it('next sixty days late grows from the time elapsed: ivl=3 lands at 101, not 5', () => {
+    const late = new Date('2027-01-01T12:00:00Z');
+    const s = { made: '2026-10-30', due: '2026-11-02', ivl: 3 };
+    expect(nextGap(s, late)).toBe(101);
+    const d = parse('## x\n<!-- read made=2026-10-30 due=2026-11-02 ivl=3 -->\n').doc;
+    expect(advanceSection(d, 0, 'x', 'on', late)).toEqual({ made: '2026-10-30', due: '2027-04-12', ivl: 101, reps: 1 });
+    // later still grows the stored interval
+    expect(advanceSection(parse('## x\n<!-- read made=2026-10-30 due=2026-11-02 ivl=3 -->\n').doc, 0, 'x', 'postpone', late)).toEqual({ made: '2026-10-30', due: '2027-01-05', ivl: 4 });
   });
 
   it('dismissing drops due, ivl, reps and af; the line stays only with boxes', () => {
@@ -95,9 +111,10 @@ describe('a section', () => {
     expect(dismissed({ made: '2026-10-30', due: TODAY, ivl: 8, reps: 2, pri: 30, boxes: '41:0:0:1:1' })).toEqual({ made: '2026-10-30', pri: 30, boxes: '41:0:0:1:1' });
   });
 
-  it('brought back: a fresh due in three days, the rest kept', () => {
-    expect(broughtBack({ made: '2026-10-20', boxes: '41:0:0:1:1', pri: 30 }, NOW)).toEqual({ made: '2026-10-20', boxes: '41:0:0:1:1', pri: 30, due: '2026-11-05', ivl: 3 });
-    expect(broughtBack({ made: '2026-10-20', reps: 4, due: '2026-12-01', ivl: 30 }, NOW)).toEqual({ made: '2026-10-20', reps: 4, due: '2026-11-05', ivl: 3 });
+  it('brought back: a fresh due on its cadence, the rest kept', () => {
+    expect(broughtBack({ made: '2026-10-20', boxes: '41:0:0:1:1', pri: 30 }, NOW)).toEqual({ made: '2026-10-20', boxes: '41:0:0:1:1', pri: 30, due: '2026-11-03', ivl: 1 });
+    expect(broughtBack({ made: '2026-10-20', reps: 4, due: '2026-12-01', ivl: 30 }, NOW)).toEqual({ made: '2026-10-20', reps: 4, due: '2026-11-04', ivl: 2 });
+    expect(broughtBack({ made: '2026-10-20', reps: 4, due: '2026-12-01', ivl: 30 }, NOW, 70)).toEqual({ made: '2026-10-20', reps: 4, due: '2026-11-05', ivl: 3 });
   });
 
   it('each of the three changes exactly the heading\'s line in the file', () => {
@@ -145,13 +162,15 @@ describe('sections in the queue', () => {
     expect(sameItem(sections[0]!, sections[1]!)).toBe(false);
   });
 
-  it('interleaves with reading and cards by priority, then due, never grouped by kind', () => {
+  it('interleaves with reading and cards by the day\'s key, never grouped by kind', () => {
     const book = parse('---\ntype: source\npri: 30\nread: due=2026-11-01 ivl=2 reps=1 pos=3\n---\n\nOne.\n\nTwo.\n\nThree.\n\nFour.\n').doc;
     const deck = parse('---\ntype: deck\npri: 45\n---\n\nq :: a ^d1\n<!-- sr due=2026-11-02 st=review s=3 d=5 r=2 l=0 ivl=4 last=2026-10-29T08:00:00Z g=3 -->\n').doc;
     const q = queueItems([['notes.md', parse(NOTE).doc], ['book.md', book], ['deck.md', deck]], NOW);
-    const due = q.filter((i) => i.dueAt <= NOW).map((i) => `${i.kind}:${i.pri}`);
-    // the card due yesterday before the sections due today, at one priority
-    expect(due).toEqual(['read:30', 'card:40', 'section:40', 'section:40', 'card:45']);
+    const due = q.filter((i) => i.dueAt <= NOW);
+    // the day's draw around each priority: the sections at 40 and the cards at 40 and 45 mix, the read at 30 leads
+    expect(due.map((i) => `${i.kind}:${i.pri}`)).toEqual(['read:30', 'section:40', 'card:40', 'section:40', 'card:45']);
+    const keys = due.map((i) => itemKey(i, TODAY));
+    expect(keys).toEqual([...keys].sort((a, b) => a - b));
     // with cards (pri 20) is not due until the 9th: it waits below
     expect(q.find((i) => i.kind === 'section' && i.heading === 'with cards')!.dueAt > NOW).toBe(true);
   });
@@ -172,8 +191,9 @@ describe('sections in the queue', () => {
     expect(docItems('notes.md', d, NOW).some((x) => x.kind === 'section' && x.heading === 'with cards')).toBe(false);
   });
 
-  it('below the fold, it is postponed with the reading and writing', () => {
-    expect(overflow(items, NOW, 1).map((i) => i.kind)).toEqual(['section', 'section']);
+  it('in the backlog (due before today) it is postponed with the reading and writing; first due today, it is left alone', () => {
+    expect(overflow(items, NOW)).toEqual([]);
+    expect(overflow(items, new Date('2026-11-03T12:00:00Z')).map((i) => i.kind)).toEqual(['section', 'section']);
   });
 });
 

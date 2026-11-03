@@ -3,7 +3,8 @@
 // is a cache with a conflict rule: never overwrite a file whose stamp moved
 // since we read it.
 
-import { REVIEWS_DIR, formatReview, mergeReviews, parseReviews, reviewFile, meta, parse, serialize, setField, type Block, type Card, type Diagnostic, type Doc, type NodeType, type Review } from '../format/index.js';
+import { PRI_DEFAULT, REVIEWS_DIR, formatReview, mergeReviews, parseReviews, reviewFile, meta, parse, serialize, setField, type Block, type Card, type Diagnostic, type Doc, type NodeType, type Review } from '../format/index.js';
+import { cadence } from '../schedule/growth.js';
 import { join, relative, sameStamp, type Fs, type Stamp } from './fs.js';
 import { ORDER_FILE, childrenAt, cleanOrder, entryOf, followMove, forget, ordered, placeEntry, pruneOrder, restoreOrder, type Order } from './order.js';
 import { addToPage } from './pages.js';
@@ -52,6 +53,8 @@ export interface VaultState {
   decks?: Record<string, unknown>;
   /** The headings folded in the reader, per document: each heading's key (`2 the table`, a repeat `2 notes (2)`). Never in the file. */
   folds?: Record<string, string[]>;
+  /** The last day the queue was built on, so the day's start is known once (the backlog tweak runs then). */
+  lastDay?: string;
 }
 
 /** What `Vault.remove` took, for `Vault.restore`: every file under it as bytes, its directories, and the order as it was. */
@@ -101,6 +104,9 @@ export interface SectionSpec {
 
 /** The note a text source's marked passages go to: `notes.md` in its children directory. */
 export const notesOf = (source: string): string => `${childDirOf(source)}/notes.md`;
+
+/** How far out an extract or a section first comes back: the cadence of its priority (milestone 51, FORMAT.md §3). */
+const firstGap = (pri: number | undefined): number => cadence(pri ?? PRI_DEFAULT);
 
 /** A day `n` days on. */
 function plusDays(day: string, n: number): string {
@@ -1106,10 +1112,11 @@ export class Vault {
       };
       setField(doc, 'type', 'extract');
       setField(doc, 'imported', today);
-      // the extract starts at the parent's priority (a `pri=` left on the parent's read line counts)
+      // the extract starts at the parent's priority (a `pri=` left on the parent's read line counts), its first interval that priority's cadence
       const pri = pm.pri ?? pm.read?.pri;
       if (pri !== undefined) setField(doc, 'pri', pri);
-      setField(doc, 'read', spec.page === undefined ? { due: today, ivl: 1, reps: 0, pos: 0 } : { due: today, ivl: 1, reps: 0, pos: 0, page: spec.page });
+      const ivl = firstGap(pri);
+      setField(doc, 'read', spec.page === undefined ? { due: today, ivl, reps: 0, pos: 0 } : { due: today, ivl, reps: 0, pos: 0, page: spec.page });
       await this.commit(path, serialize(doc));
       await this.update(parent, (d) => {
         if (spec.page !== undefined) {
@@ -1154,13 +1161,14 @@ export class Vault {
   /**
    * Mark a passage of a text source (milestone 50, FORMAT.md §6.5): a `##`
    * section at the end of the source's note, named from the passage's first
-   * words as an extract would be, enrolled (`made` today, back in three
-   * days, the source's priority when it has one), a `from: <source>` line
-   * under the heading, then the passage as paragraphs. Nothing goes back to
-   * the source but its marker, moved past the last touched block. Resolves
-   * to the note's path, the heading's index there and its text.
+   * words as an extract would be, enrolled (`made` today, back on the
+   * cadence of the source's priority, which the line carries when the
+   * source has one), a `from: <source>` line under the heading, then the
+   * passage as paragraphs. Nothing goes back to the source but its marker,
+   * moved past the last touched block. Resolves to the note's path, the
+   * heading's index there, its text and its interval.
    */
-  section(source: string, spec: SectionSpec): Promise<{ note: string; index: number; text: string }> {
+  section(source: string, spec: SectionSpec): Promise<{ note: string; index: number; text: string; ivl: number }> {
     return this.serial(async () => {
       if (!isDoc(source) || !(await this.fs.stat(this.abs(source)))) throw new Error(`${source}: no such document`);
       const text = spec.text.trim();
@@ -1169,12 +1177,13 @@ export class Vault {
       const pm = meta((await this.read(source)).doc);
       const note = await this.notesFor(source);
       const pri = pm.pri ?? pm.read?.pri;
-      let made = { index: 0, text: '' };
+      const ivl = firstGap(pri);
+      let made = { index: 0, text: '', ivl };
       await this.update(note, (d) => {
         const heading = freeHeading(d.blocks, extractName(text));
-        made = { index: d.blocks.length, text: heading };
+        made = { index: d.blocks.length, text: heading, ivl };
         d.blocks.push(
-          { kind: 'heading', level: 2, text: heading, read: { made: today, due: plusDays(today, 3), ivl: 3, ...(pri !== undefined ? { pri } : {}) } },
+          { kind: 'heading', level: 2, text: heading, read: { made: today, due: plusDays(today, ivl), ivl, ...(pri !== undefined ? { pri } : {}) } },
           { kind: 'paragraph', text: `from: ${pm.title ?? nameOf(source)}` },
           ...text.split(/\n[ \t]*\n+/).map((t) => t.trim()).filter(Boolean).map((t): Block => ({ kind: 'paragraph', text: t })),
         );
@@ -1219,9 +1228,10 @@ export class Vault {
         made = { index: d.blocks.length, text: heading };
         const r = em.read;
         const pri = em.pri ?? r?.pri;
+        const gap = firstGap(pri);
         const line = r?.due !== undefined
-          ? { made: em.imported ?? today, due: r.due, ivl: r.ivl ?? 3, ...(r.reps ? { reps: r.reps } : {}), ...(r.af !== undefined ? { af: r.af } : {}), ...(pri !== undefined ? { pri } : {}) }
-          : { made: em.imported ?? today, due: plusDays(today, 3), ivl: 3, ...(pri !== undefined ? { pri } : {}) };
+          ? { made: em.imported ?? today, due: r.due, ivl: r.ivl ?? gap, ...(r.reps ? { reps: r.reps } : {}), ...(r.af !== undefined ? { af: r.af } : {}), ...(pri !== undefined ? { pri } : {}) }
+          : { made: em.imported ?? today, due: plusDays(today, gap), ivl: gap, ...(pri !== undefined ? { pri } : {}) };
         const body = loaded.doc.blocks.map((b) => structuredClone(b));
         for (const b of body) if ((b.kind === 'paragraph' || b.kind === 'card') && b.extracts) delete b.extracts;
         d.blocks.push({ kind: 'heading', level: 2, text: heading, read: line }, { kind: 'paragraph', text: `from: ${pm.title ?? nameOf(source)}` }, ...body);

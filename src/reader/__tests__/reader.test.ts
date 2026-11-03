@@ -399,7 +399,7 @@ describe('extracts and cards, end to end', () => {
     });
     expect(meta(parent.doc).read?.pos).toBe(12);
     const ex = await vault.read(child);
-    expect(meta(ex.doc)).toMatchObject({ type: 'extract', imported: '2026-05-27', pri: 80, read: { due: '2026-05-27', ivl: 1, reps: 0, pos: 0 } });
+    expect(meta(ex.doc)).toMatchObject({ type: 'extract', imported: '2026-05-27', pri: 80, read: { due: '2026-05-27', ivl: 3, reps: 0, pos: 0 } });
     expect(ex.doc.blocks).toEqual([{ kind: 'paragraph', text: sel.text }]);
 
     // in the tree

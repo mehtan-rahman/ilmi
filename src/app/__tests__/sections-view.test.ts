@@ -136,7 +136,7 @@ describe('the inspector\'s section part', () => {
     const again = host.querySelector<HTMLButtonElement>('.sec-block button')!;
     expect(again.textContent).toBe('come back');
     await act(async () => { again.click(); });
-    await vi.waitFor(async () => expect(await text()).toContain('(Fri 10/2, Mon 10/5)\n<!-- read made=2026-11-02 due=2026-11-05 ivl=3 -->\n'));
+    await vi.waitFor(async () => expect(await text()).toContain('(Fri 10/2, Mon 10/5)\n<!-- read made=2026-11-02 due=2026-11-04 ivl=2 -->\n'));
     unmount();
   });
 
@@ -184,7 +184,27 @@ describe('the inspector\'s section part', () => {
     const button = host.querySelector<HTMLButtonElement>('.sec-block button')!;
     expect(button.textContent).toBe('bring back');
     await act(async () => { button.click(); });
-    await vi.waitFor(async () => expect(await text()).toContain('<!-- read made=2026-10-20 due=2026-11-05 ivl=3 boxes=41:0.120:0.122:0.770:0.145 -->'));
+    await vi.waitFor(async () => expect(await text()).toContain('<!-- read made=2026-10-20 due=2026-11-04 ivl=2 boxes=41:0.120:0.122:0.770:0.145 -->'));
+    unmount();
+  });
+});
+
+describe('the inspector\'s interval field (milestone 51)', () => {
+  it('writes ivl and due = today + ivl on the section\'s line, nothing else', async () => {
+    const doc = await canon();
+    // lecture 12 as the test above left it: brought back on its cadence, its boxes kept (lecture 13 was moved away)
+    const h = doc.blocks.find((b): b is Heading => b.kind === 'heading' && b.text.startsWith('lecture 12'))!;
+    expect(h.read).toEqual({ made: '2026-10-20', due: '2026-11-04', ivl: 2, boxes: '41:0.120:0.122:0.770:0.145' });
+    await mount(createElement(SectionBlock, { path: CANON, doc, at: { path: CANON, nth: -1, text: h.text }, now: appNow() }));
+    const field = host.querySelector<HTMLInputElement>('.ivl-field')!;
+    expect(field.value).toBe('2');
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(field, '100');
+      field.dispatchEvent(new Event('input', { bubbles: true }));
+      field.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
+    });
+    // come back in 100 days: the rest of the line stands
+    await vi.waitFor(async () => expect(await text()).toContain('<!-- read made=2026-10-20 due=2027-02-10 ivl=100 boxes=41:0.120:0.122:0.770:0.145 -->\n'));
     unmount();
   });
 });

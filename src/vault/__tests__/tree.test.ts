@@ -152,7 +152,8 @@ describe('a passage marked in a text source (milestone 50)', () => {
     const before = await vault.read(WOZ);
     const text = 'The twenty rules are the residue\n\nAtomicity is the unglamorous one';
     const made = await vault.section(WOZ, { text, blocks: [5, 6], today: '2026-05-27' });
-    expect(made).toEqual({ note: 'papers/wozniak-1990/notes.md', index: 0, text: 'the twenty rules are the residue' });
+    // at priority 80 the section first comes back on the cadence of every third day
+    expect(made).toEqual({ note: 'papers/wozniak-1990/notes.md', index: 0, text: 'the twenty rules are the residue', ivl: 3 });
     const note = parse(await readDisk(made.note));
     expect(note.diagnostics).toEqual([]);
     expect(meta(note.doc)).toMatchObject({ type: 'note', title: 'wozniak-1990 — notes' });
@@ -169,7 +170,7 @@ describe('a passage marked in a text source (milestone 50)', () => {
     expect(documents(vault.tree)).toContain(made.note);
     // a second passage goes under the first; a name taken is numbered
     const again = await vault.section(WOZ, { text: 'The twenty rules are the residue', blocks: [5], today: '2026-05-28' });
-    expect(again).toEqual({ note: made.note, index: 4, text: 'the twenty rules are the residue · 2' });
+    expect(again).toEqual({ note: made.note, index: 4, text: 'the twenty rules are the residue · 2', ivl: 3 });
     const two = parse(await readDisk(made.note)).doc;
     expect(two.blocks.filter((b) => b.kind === 'heading').map((b) => b.text)).toEqual(['the twenty rules are the residue', 'the twenty rules are the residue · 2']);
     expect(meta(parse(await readDisk(WOZ)).doc).read?.pos).toBe(6);
@@ -226,7 +227,8 @@ describe('extract', () => {
     expect(await exists(child)).toBe(true);
     const ex = parse(await readDisk(child));
     expect(ex.diagnostics).toEqual([]);
-    expect(meta(ex.doc)).toMatchObject({ type: 'extract', imported: '2026-05-27', pri: 80, read: { due: '2026-05-27', ivl: 1, reps: 0, pos: 0 } });
+    // its first interval is the cadence of its priority: every third day at 80
+    expect(meta(ex.doc)).toMatchObject({ type: 'extract', imported: '2026-05-27', pri: 80, read: { due: '2026-05-27', ivl: 3, reps: 0, pos: 0 } });
     expect(meta(ex.doc).read?.pri).toBeUndefined();
     expect(ex.doc.blocks).toEqual([
       { kind: 'paragraph', text: 'twenty rules of formulating knowledge' },
@@ -266,7 +268,7 @@ describe('extract', () => {
     // a parent not enrolled in reading: the child still is, with no priority, and the parent has no marker to move
     const james = await vault.extract('books/james-pluralistic-ch4.md', { text: 'x y', blocks: [0], name: 'given', today: '2026-05-27' });
     expect(james).toBe('books/james-pluralistic-ch4/given.md');
-    expect(meta((await vault.read(james)).doc).read).toEqual({ due: '2026-05-27', ivl: 1, reps: 0, pos: 0 });
+    expect(meta((await vault.read(james)).doc).read).toEqual({ due: '2026-05-27', ivl: 2, reps: 0, pos: 0 });
     expect(meta((await vault.read('books/james-pluralistic-ch4.md')).doc).read).toBeUndefined();
   });
 
@@ -507,7 +509,7 @@ describe('pages', () => {
     const before = (await vault.read(PAIR)).text;
     const child = await vault.extract(PAIR, { text: 'Nothing is ever written into this file.', blocks: [], page: 2, today: '2026-05-27' });
     expect(child).toBe('papers/two-pages/nothing is ever written into.md');
-    expect(await readDisk(child)).toBe('---\ntype: extract\nimported: 2026-05-27\npri: 50\nread: due=2026-05-27 ivl=1 reps=0 pos=0 page=2\n---\n\nNothing is ever written into this file.\n');
+    expect(await readDisk(child)).toBe('---\ntype: extract\nimported: 2026-05-27\npri: 50\nread: due=2026-05-27 ivl=2 reps=0 pos=0 page=2\n---\n\nNothing is ever written into this file.\n');
     const after = (await vault.read(PAIR)).text;
     // the parent's `## p. 2` section grew by the paragraph and its backref; the marker stayed
     expect(after.split('\n').length).toBe(before.split('\n').length + 3);

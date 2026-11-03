@@ -29,6 +29,15 @@ describe('app store', () => {
     useApp.getState().setRemoteImages(true);
   });
 
+  it('postpones the backlog when the day starts only when asked: off by default, kept with the tweaks', () => {
+    expect(useApp.getState().backlog).toBe(false);
+    useApp.getState().setBacklog(true);
+    expect(useApp.getState().backlog).toBe(true);
+    expect(JSON.parse(localStorage.getItem('ilmi.tweaks') ?? '{}').backlog).toBe(true);
+    useApp.getState().setBacklog(false);
+    expect(JSON.parse(localStorage.getItem('ilmi.tweaks') ?? '{}').backlog).toBe(false);
+  });
+
   it('sets a theme directly', () => {
     useApp.getState().setTheme('eink');
     expect(useApp.getState().theme).toBe('eink');

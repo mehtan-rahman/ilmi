@@ -31,11 +31,11 @@ describe('passages in book order', () => {
     expect(placeOf(doc.blocks, [{ page: 43, x: 0, y: 0.2, w: 1, h: 0.1 }])).toBe(doc.blocks.length);
   });
 
-  it('writes its heading and line, made today, back in three days, its boxes canonical', () => {
+  it('writes its heading and line, made today, back on its cadence (every other day at the default priority), its boxes canonical', () => {
     const { doc } = parse(NOTES);
     const made = addPassage(doc, '3.3 · average values (3.12)', [{ page: 41, x: 0.12, y: 0.86, w: 0.77, h: 0.075 }, { page: 42, x: 0.1, y: 0.097, w: 0.77, h: 0.04 }], NOW);
-    expect(made).toEqual({ index: 2, text: '3.3 · average values (3.12)' });
-    expect(serialize(doc)).toContain('The sum is over states.\n\n## 3.3 · average values (3.12)\n<!-- read made=2026-11-02 due=2026-11-05 ivl=3 boxes=41:0.120:0.860:0.770:0.075,42:0.100:0.097:0.770:0.040 -->\n\n## 3.3 · energy fluctuations');
+    expect(made).toEqual({ index: 2, text: '3.3 · average values (3.12)', ivl: 2 });
+    expect(serialize(doc)).toContain('The sum is over states.\n\n## 3.3 · average values (3.12)\n<!-- read made=2026-11-02 due=2026-11-04 ivl=2 boxes=41:0.120:0.860:0.770:0.075,42:0.100:0.097:0.770:0.040 -->\n\n## 3.3 · energy fluctuations');
   });
 
   it('a name already taken gets a number', () => {
@@ -58,7 +58,8 @@ describe('the read point', () => {
     const { doc } = parse(NOTES);
     advanceRead(doc, 'on', NOW, 42, undefined, 0.74);
     expect(meta(doc).read).toMatchObject({ pos: 42, y: 0.74, reps: 2 });
-    expect(serialize(doc)).toContain('read: due=2026-11-05 ivl=3 reps=2 pos=42 y=0.740\n');
+    // a document read by its pages always has reading left: it comes back on its cadence
+    expect(serialize(doc)).toContain('read: due=2026-11-04 ivl=2 reps=2 pos=42 y=0.740\n');
     const back = parse(NOTES).doc;
     advanceRead(back, 'on', NOW, 41, undefined, 0.2);
     expect(meta(back).read).toMatchObject({ pos: 41, y: 0.5 });

@@ -5,7 +5,7 @@
 // are lists that open one element at a time. `j` `k` move, `⏎` enters,
 // `o` opens the one under the cursor. A budget folds the day: the rows
 // above the fold are the day's work, the rest sit dimmed below a rule, and
-// `postpone the rest` pushes the reading and writing among them out.
+// `postpone the rest` pushes the backlog among the reading and writing out.
 
 import { Fragment, useEffect, useState, type MouseEvent } from 'react';
 import { PRI_DEFAULT, cardFields } from '../format/index.js';
@@ -91,9 +91,9 @@ export function Queue({ scope, active }: Props) {
   const exams = [...new Map(scoped.filter((i) => i.exam).map((i) => [examKey(i.exam!), i.exam!] as [string, ExamAt])).values()].sort((a, b) => (a.day < b.day ? -1 : 1));
   const filter = examFilter !== null && exams.some((e) => examKey(e) === examFilter) ? examFilter : null;
   const items = filter === null ? scoped : scoped.filter((i) => i.exam && examKey(i.exam) === filter);
-  // the fold: where the day's budget ends, and what below it can be postponed
+  // the fold: where the day's budget ends; under it, the backlog (due before today) can be postponed
   const foldAt = scope === 'today' && filter === null && budget > 0 && items.length > budget ? budget : items.length;
-  const rest = foldAt < items.length ? overflow(all, now, budget) : [];
+  const rest = foldAt < items.length ? overflow(all, now) : [];
   const restWord = [rest.filter((i) => i.kind !== 'write').length, rest.filter((i) => i.kind === 'write').length]
     .map((n, i) => (n ? `${n} to ${i ? 'write' : 'read'}` : ''))
     .filter(Boolean)

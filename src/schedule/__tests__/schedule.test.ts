@@ -7,8 +7,8 @@ import { meta, parse, serialize, setField, type Card, type CardSchedule } from '
 import { nodeFs } from '../../vault/node-fs.js';
 import { Vault } from '../../vault/index.js';
 import {
-  addDays, advanceRead, advanceWrite, cardGroups, counts, docItems, dayOf, daysBetween, fold, fromFsrs, grade, gradeItem,
-  instantOf, nextIntervals, numberBlank, overflow, postponeOverflow, postponed, preview, queue, queueItems, reading, toFsrs, whenToDate, writing,
+  addDays, advanceRead, advanceWrite, cadence, cardGroups, counts, docItems, dayOf, daysBetween, fold, fromFsrs, grade, gradeItem, readPri, readingLeft,
+  instantOf, isBacklog, itemKey, nextIntervals, numberBlank, overflow, postponeOverflow, postponed, preview, queue, queueItems, reading, toFsrs, whenToDate, writing,
   type CardItem, type QueueItem,
 } from '../index.js';
 
@@ -142,7 +142,7 @@ describe('reading', () => {
     expect(nextIntervals(1, 1.1, 4)).toEqual([1, 1, 1, 1]);
   });
 
-  it('a pass over the corpus\'s reading topics with af=2 lands where the formula says', async () => {
+  it('a pass over the corpus\'s reading topics with af=2: a source with reading left lands on its cadence, the rest grow', async () => {
     const root = await fsp.mkdtemp(join(tmpdir(), 'ilmi-af-'));
     await fsp.cp(CORPUS, root, { recursive: true });
     const vault = await Vault.open(nodeFs, root);
@@ -153,24 +153,35 @@ describe('reading', () => {
         'fleeting/office-hours.md', 'papers/archive/sutton-2019.md', 'papers/crick-1995.md', 'papers/two-pages.md', 'papers/two-pages/the ruler in the margin.md',
         'papers/wozniak-1990.md', 'papers/wozniak-1990/woz-ex1.md',
       ]);
+      const landed: Record<string, string> = {};
       for (const path of topics) {
-        const before = meta((await vault.read(path)).doc).read!;
+        const bm = meta((await vault.read(path)).doc);
+        const before = bm.read!;
+        const total = (await vault.read(path)).doc.blocks.filter((b) => b.kind !== 'card').length;
         const loaded = await vault.update(path, (doc) => {
           const r = meta(doc).read!;
           setField(doc, 'read', { ...r, af: 2 });
           advanceRead(doc, 'on', NOW);
         });
         const after = meta(loaded.doc).read!;
-        const ivl = Math.max(1, Math.round((before.ivl ?? 1) * 2));
+        // every line is due on the day, so the elapsed base is the stored interval
+        const left = readingLeft(bm, before.pos, total);
+        const ivl = left ? cadence(readPri(bm)) : Math.max(1, Math.round((before.ivl ?? 1) * 2));
+        landed[path] = `${left ? 'cadence' : 'grown'} ${ivl}`;
         expect(after, path).toMatchObject({ ivl, due: addDays(TODAY, ivl), reps: (before.reps ?? 0) + 1, af: 2 });
         const page = before.page === undefined ? '' : ` page=${before.page}`;
         // a note keeps no place
         const pos = meta(loaded.doc).type === 'note' ? '' : ` pos=${before.pos ?? 0}`;
         expect((await fsp.readFile(join(root, path), 'utf8'))).toContain(`read: due=${addDays(TODAY, ivl)} ivl=${ivl} reps=${(before.reps ?? 0) + 1}${pos}${page} af=2\n`);
       }
-      // crick's factor is the corpus's own, and a postpone keeps it
+      // the sources with reading left (at priority 50: every other day) land on the cadence; the note, the extracts and wozniak, read to its end, grow
+      expect(landed).toEqual({
+        'fleeting/office-hours.md': 'grown 8', 'papers/archive/sutton-2019.md': 'cadence 2', 'papers/crick-1995.md': 'cadence 2', 'papers/two-pages.md': 'cadence 2',
+        'papers/two-pages/the ruler in the margin.md': 'grown 4', 'papers/wozniak-1990.md': 'grown 18', 'papers/wozniak-1990/woz-ex1.md': 'grown 2',
+      });
+      // crick's factor is the corpus's own, and a postpone keeps it, growing the stored interval by 1.2 (at least a day)
       const crick = await vault.update('papers/crick-1995.md', (doc) => { advanceRead(doc, 'postpone', NOW); });
-      expect(meta(crick.doc).read).toEqual({ due: addDays(TODAY, 5), ivl: 5, reps: 4, pos: 2, af: 2 });
+      expect(meta(crick.doc).read).toEqual({ due: addDays(TODAY, 3), ivl: 3, reps: 4, pos: 2, af: 2 });
     } finally {
       vault.close();
       await fsp.rm(root, { recursive: true, force: true });
@@ -282,7 +293,7 @@ describe('queue over the sample vault', () => {
     expect(counts(all, NOW)).toEqual({ today: 19, upcoming: 30, cards: 40, reading: 7, writing: 2 });
     const today = await queue(vault, NOW, 'today');
     expect(today.filter((i) => i.kind === 'card')).toHaveLength(15);
-    expect(today.filter((i) => i.kind === 'read').map((i) => i.path)).toEqual([
+    expect(today.filter((i) => i.kind === 'read').map((i) => i.path).sort()).toEqual([
       'papers/archive/sutton-2019.md', 'papers/crick-1995.md', 'papers/wozniak-1990/woz-ex1.md',
     ]);
     expect(today.filter((i) => i.kind === 'write').map((i) => i.path)).toEqual(['essays/spaced-composition.md']);
@@ -313,24 +324,33 @@ describe('queue over the sample vault', () => {
 
   const key = (i: QueueItem) => `${i.kind}:${i.kind === 'card' ? `${i.id ?? '?'}${i.group ? `/${'n' in i.group ? `c${i.group.n}` : `b${i.group.blank}`}` : ''}${i.dir === 'r' ? '/r' : ''}` : i.path}`;
 
-  it('sorts what is due by priority, then due, then document order', async () => {
+  it('sorts what is due by the day\'s key (a draw around its priority, seeded by the item and the day), then due; the same all day, another order the next', async () => {
     const today = await queue(vault, NOW, 'today');
-    // the corpus's old scale, 1 → 10, 2 → 50, 3 → 80, keeps the day's topics and drafts in their order
-    expect(today.filter((i) => i.kind !== 'card').map(key)).toEqual([
-      'write:essays/spaced-composition.md', 'read:papers/archive/sutton-2019.md', 'read:papers/crick-1995.md', 'read:papers/wozniak-1990/woz-ex1.md',
-    ]);
-    // cards sit with their document now: wozniak-1990's at 80, after everything at 50
+    // the day's order pinned: the 50s lead and the 80s trail, mixed where their draws meet
     expect(today.map(key)).toEqual([
-      'card:cv-luecke', 'card:cmar-drive', 'write:essays/spaced-composition.md', 'card:cd-resurface/c1', 'card:cd-resurface/c2',
-      'read:papers/archive/sutton-2019.md', 'read:papers/crick-1995.md', 'card:cck-ncc', 'card:cv-vorsatz', 'card:cv-wdh', 'card:la-span/r', 'card:cv-gedacht/r', 'card:?',
-      'card:cw3-leech', 'card:cw2-retr/b0', 'card:cw2-min/c1', 'read:papers/wozniak-1990/woz-ex1.md', 'card:cw2-integ/c1', 'card:cw2-integ/c2',
+      'card:cd-resurface/c1', 'card:cv-gedacht/r', 'card:cv-luecke', 'read:papers/crick-1995.md', 'card:cmar-drive', 'card:la-span/r', 'card:cck-ncc',
+      'card:cw2-min/c1', 'card:cd-resurface/c2', 'read:papers/archive/sutton-2019.md', 'card:cv-wdh', 'card:cv-vorsatz', 'card:?', 'write:essays/spaced-composition.md',
+      'card:cw2-retr/b0', 'card:cw2-integ/c1', 'read:papers/wozniak-1990/woz-ex1.md', 'card:cw3-leech', 'card:cw2-integ/c2',
     ]);
-    const pris = today.map((i) => i.pri);
-    expect(pris).toEqual([...pris].sort((a, b) => a - b));
-    for (const p of [50, 80]) {
-      const dues = today.filter((i) => i.pri === p).map((i) => i.dueAt.getTime());
-      expect(dues).toEqual([...dues].sort((a, b) => a - b));
-    }
+    // the keys are what sorts it, and they are stable: the same list again
+    const keys = today.map((i) => itemKey(i, TODAY));
+    expect(keys).toEqual([...keys].sort((a, b) => a - b));
+    expect((await queue(vault, NOW, 'today')).map(key)).toEqual(today.map(key));
+    expect((await queue(vault, new Date(NOW.getTime() + 3_600_000), 'today')).map(key)).toEqual(today.map(key));
+    // the next day: the same elements (less what moves), another order
+    const tomorrow = new Date(NOW.getTime() + 86_400_000);
+    const next = (await queue(vault, tomorrow, 'today')).map(key).filter((k) => today.map(key).includes(k));
+    expect(next.sort()).toEqual(today.map(key).filter((k) => next.includes(k)).sort());
+    expect((await queue(vault, tomorrow, 'today')).map(key).filter((k) => today.map(key).includes(k))).not.toEqual(today.map(key).filter((k) => next.includes(k)));
+    // the draw sits around the priority: the day's 50s (thirteen) and 80s (six) each keep their mean near it, the first element a 50 and the last an 80
+    const at = (p: number) => today.filter((i) => i.pri === p).map((i) => itemKey(i, TODAY));
+    const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
+    expect(at(50)).toHaveLength(13);
+    expect(at(80)).toHaveLength(6);
+    expect(Math.abs(mean(at(50)) - 0.5)).toBeLessThan(0.1);
+    expect(Math.abs(mean(at(80)) - 0.8)).toBeLessThan(0.1);
+    expect(today[0]!.pri).toBe(50);
+    expect(today[today.length - 1]!.pri).toBe(80);
   });
 
   it('sorts what is not due yet by due, then priority, after everything due', async () => {
@@ -461,41 +481,47 @@ describe('the fold', () => {
 
   it('splits a sorted day at the budget; no budget is no fold', () => {
     const items = queueItems([['a.md', doc('read', 10)], ['b.md', doc('read', 20)], ['c.md', doc('write', 30)]], NOW);
-    expect(fold(items, 2).above.map(key)).toEqual(['read:a.md', 'read:b.md']);
-    expect(fold(items, 2).below.map(key)).toEqual(['write:c.md']);
+    expect(fold(items, 2).above).toEqual(items.slice(0, 2));
+    expect(fold(items, 2).below).toEqual(items.slice(2));
     expect(fold(items, 3)).toEqual({ above: items, below: [] });
     expect(fold(items, 0)).toEqual({ above: items, below: [] });
     expect(fold(items, -1)).toEqual({ above: items, below: [] });
     expect(fold([], 2)).toEqual({ above: [], below: [] });
   });
 
-  it('the overflow is the reading and writing below the fold, lowest priority first, never a card', () => {
+  it('the overflow is the backlog: reading and writing due before today, lowest key first; never a card, never what is first due today', () => {
     const docs: [string, ReturnType<typeof parse>['doc']][] = [
       ['a.md', doc('read', 10)], ['b.md', doc('write', 90)], ['c.md', doc('read', 60)],
-      ['d.md', parse('---\npri: 95\n---\n\nq :: a ^c1\n<!-- sr due=2026-05-27 -->\n').doc],
+      ['d.md', parse('---\npri: 95\n---\n\nq :: a ^c1\n<!-- sr due=2026-05-20 -->\n').doc],
       ['e.md', parse('---\npri: 70\nread: due=2026-06-01 ivl=3\n---\n\nprose\n').doc],
+      ['f.md', parse('---\npri: 40\nread: due=2026-05-20 ivl=3\n---\n\nprose\n').doc],
+      ['g.md', parse('---\npri: 70\nwrite: due=2026-05-25 ivl=2 done=false\n---\n\nprose\n').doc],
     ];
     const items = queueItems(docs, NOW);
-    expect(items.map(key)).toEqual(['read:a.md', 'read:c.md', 'write:b.md', 'card:c1', 'read:e.md']);
-    expect(overflow(items, NOW, 1).map(key)).toEqual(['write:b.md', 'read:c.md']);
-    expect(overflow(items, NOW, 3).map(key)).toEqual([]);
-    expect(overflow(items, NOW, 0)).toEqual([]);
+    const rest = overflow(items, NOW);
+    expect(rest.map(key).sort()).toEqual(['read:f.md', 'write:g.md']);
+    expect(rest.map((i) => itemKey(i, TODAY))).toEqual([...rest].map((i) => itemKey(i, TODAY)).sort((x, y) => x - y));
+    expect(overflow(items.filter((i) => isBacklog(i, NOW) === false), NOW)).toEqual([]);
     // the whole queue can be handed in unsorted: what is not due is not overflow
-    expect(overflow([...items].reverse(), NOW, 1).map(key)).toEqual(['write:b.md', 'read:c.md']);
+    expect(overflow([...items].reverse(), NOW).map(key).sort()).toEqual(['read:f.md', 'write:g.md']);
   });
 
-  it('postponing the overflow of the corpus day rewrites one line per topic and touches no card', async () => {
+  it('postponing the backlog of the corpus day rewrites one line per topic and touches no card', async () => {
     const before = new Map<string, string>();
     for (const path of vault.documents()) before.set(path, await readDisk(path));
     const all = await queue(vault, NOW);
-    const today = all.filter((i) => i.dueAt <= NOW);
-    expect(today).toHaveLength(19);
-    // budget 5: one draft above the fold, the three reading topics below it, with nine cards
-    const rest = overflow(all, NOW, 5);
-    expect(rest.map((i) => `${i.kind}:${i.path}:${i.pri}`)).toEqual([
-      'read:papers/wozniak-1990/woz-ex1.md:80', 'read:papers/archive/sutton-2019.md:50', 'read:papers/crick-1995.md:50',
+    expect(all.filter((i) => i.dueAt <= NOW)).toHaveLength(19);
+    // everything in the corpus is first due on the day: nothing is backlog until the day after
+    expect(overflow(all, NOW)).toEqual([]);
+    expect(await postponeOverflow(vault, all, NOW)).toEqual([]);
+    for (const path of vault.documents()) expect(await readDisk(path), path).toBe(before.get(path));
+    const tomorrow = new Date(NOW.getTime() + 86400000);
+    const next = await queue(vault, tomorrow);
+    const rest = overflow(next, tomorrow);
+    expect(rest.map((i) => `${i.kind}:${i.path}:${i.pri}`).sort()).toEqual([
+      'read:papers/archive/sutton-2019.md:50', 'read:papers/crick-1995.md:50', 'read:papers/wozniak-1990/woz-ex1.md:80', 'write:essays/spaced-composition.md:50',
     ]);
-    const done = await postponeOverflow(vault, all, NOW, 5);
+    const done = await postponeOverflow(vault, next, tomorrow);
     expect(done).toEqual(rest);
     for (const path of vault.documents()) {
       const was = before.get(path)!.split('\n');
@@ -505,36 +531,39 @@ describe('the fold', () => {
         expect(now, path).toEqual(was);
       } else {
         expect(changed, path).toHaveLength(1);
-        expect(was[changed[0]! - 1]).toMatch(/^read: /);
-        expect(now[changed[0]! - 1]).toMatch(/^read: /);
+        expect(was[changed[0]! - 1]).toMatch(/^(read|write): /);
+        expect(now[changed[0]! - 1]).toMatch(/^(read|write): /);
       }
     }
-    expect(await readDisk('papers/crick-1995.md')).toContain('\nread: due=2026-05-30 ivl=3 reps=3 pos=2 af=2\n');
-    expect(await readDisk('papers/archive/sutton-2019.md')).toContain('\nread: due=2026-05-29 ivl=2 reps=0 pos=0\n');
-    expect(await readDisk('papers/wozniak-1990/woz-ex1.md')).toContain('\nread: due=2026-05-29 ivl=2 reps=1 pos=0\n');
-    // tomorrow: the topics are gone, the cards below the fold are still there
-    const tomorrow = new Date(NOW.getTime() + 86400000);
-    const next = await queue(vault, tomorrow, 'today');
-    expect(next.filter((i) => i.kind === 'read')).toEqual([]);
-    // less the three topics; and the reverse of a card whose forward was reviewed on the day comes up
-    expect(next).toHaveLength(19 - 3 + 1);
-    expect(overflow(await queue(vault, tomorrow), tomorrow, 5)).toEqual([]);
+    // each interval grew by 1.2, at least a day, from the day of the postpone
+    expect(await readDisk('papers/crick-1995.md')).toContain('\nread: due=2026-05-31 ivl=3 reps=3 pos=2 af=2\n');
+    expect(await readDisk('papers/archive/sutton-2019.md')).toContain('\nread: due=2026-05-30 ivl=2 reps=0 pos=0\n');
+    expect(await readDisk('papers/wozniak-1990/woz-ex1.md')).toContain('\nread: due=2026-05-30 ivl=2 reps=1 pos=0\n');
+    expect(await readDisk('essays/spaced-composition.md')).toContain('\nwrite: due=2026-05-31 ivl=3 reps=1 done=false\n');
+    // the day after: the topics are gone, the cards are still there
+    const later = new Date(NOW.getTime() + 2 * 86400000);
+    const then = await queue(vault, later, 'today');
+    expect(then.filter((i) => i.kind !== 'card')).toEqual([]);
+    expect(then.length).toBeGreaterThan(10);
+    expect(overflow(await queue(vault, later), later)).toEqual([]);
   });
 
-  it('a day of topics over budget opens within budget the next day', async () => {
+  it('a day with a backlog: the backlog is postponed, what is first due today stays', async () => {
     const root2 = await fsp.mkdtemp(join(tmpdir(), 'ilmi-fold2-'));
     try {
       const pris = [10, 20, 30, 40, 50, 60];
-      for (const p of pris) await fsp.writeFile(join(root2, `t${p}.md`), `---\npri: ${p}\n${p % 20 === 0 ? 'write' : 'read'}: due=2026-05-27 ivl=${p / 10} reps=1\n---\n\nprose\n`);
+      // three first due today, three due two days before
+      for (const p of pris) await fsp.writeFile(join(root2, `t${p}.md`), `---\npri: ${p}\n${p % 20 === 0 ? 'write' : 'read'}: due=${p <= 30 ? '2026-05-27' : '2026-05-25'} ivl=${p / 10} reps=1\n---\n\nprose\n`);
       const v = await Vault.open(nodeFs, root2);
       try {
         const all = await queue(v, NOW);
         expect(all.filter((i) => i.dueAt <= NOW)).toHaveLength(6);
-        const done = await postponeOverflow(v, all, NOW, 3);
-        expect(done.map((i) => i.pri)).toEqual([60, 50, 40]);
+        const done = await postponeOverflow(v, all, NOW);
+        expect(done.map((i) => i.pri).sort()).toEqual([40, 50, 60]);
+        expect(done.map((i) => itemKey(i, TODAY))).toEqual([...done].map((i) => itemKey(i, TODAY)).sort((x, y) => x - y));
         const tomorrow = new Date(NOW.getTime() + 86400000);
         const next = await queue(v, tomorrow, 'today');
-        expect(next.map((i) => i.pri)).toEqual([10, 20, 30]);
+        expect(next.map((i) => i.pri).sort()).toEqual([10, 20, 30]);
         // each interval grew by 1.2, at least a day: 4 → 5, 5 → 6, 6 → 7
         expect(await fsp.readFile(join(root2, 't40.md'), 'utf8')).toContain('write: due=2026-06-01 ivl=5 reps=1\n');
         expect(await fsp.readFile(join(root2, 't50.md'), 'utf8')).toContain('read: due=2026-06-02 ivl=6 reps=1\n');

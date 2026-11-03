@@ -3,7 +3,8 @@
 // offers the same three: ⏎ next (a pass, back later each time), `p` later
 // (not counted), `d` dismiss (it ends; its notes and cards stay). A book or
 // source opens whole in the reader with the marker live, and its ⏎ is done
-// for today; a note revisited opens whole from the top; a section opens its
+// for today (`dismiss`, once the marker is at or past its end); a note
+// revisited opens whole from the top; a section opens its
 // document at its heading, in the editor, to write in, card, and enroll
 // more; a draft opens whole. Above the actions, one line says what the
 // element is and where it stands. Every result is written to the file the
@@ -12,7 +13,7 @@
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { emitDocAction, emitGrade, runBlockHooks, usePlugins } from '../plugins/index.js';
 import { PRI_DEFAULT, READ_AF, WRITE_AF, blanks, cardFields, type Block, type Card } from '../format/index.js';
-import { GRADES, advanceRead, advanceSection, lineKey, advanceWrite, dirPri, grow, nextGap, postponed, scheduleOf, type CardItem, type Grade, type QueueItem, type ReadItem, type SectionItem, type WriteItem } from '../schedule/index.js';
+import { GRADES, advanceRead, advanceSection, cadence, grownAt, lineKey, advanceWrite, dirPri, grow, nextGap, postponed, scheduleOf, type CardItem, type Grade, type QueueItem, type ReadItem, type SectionItem, type WriteItem } from '../schedule/index.js';
 import { EL_WORD, FORM_LABEL, doneLine, dueLabel, gapLabels, glyphOf, markOf, ownBlank, sourceLabel, standing, trailParts } from './items.js';
 import { writeDoc } from './sections.js';
 import { queueId } from './names.js';
@@ -255,19 +256,42 @@ interface DocProps extends NavProps {
   onAct(action: DocAction, pos?: number, y?: number): void;
 }
 
-/** How many days ⏎ sends an element out: its interval grown by its growth. */
-export function nextDays(item: ReadItem | WriteItem | SectionItem): number {
-  if (item.kind === 'section') return nextGap(item.sched);
-  return grow(item.sched.ivl, item.sched.af ?? (item.kind === 'read' ? READ_AF : WRITE_AF));
-}
-
 /** A book or source read on: its ⏎ is done for today, not next. */
 export const isBook = (item: QueueItem): boolean => item.kind === 'read' && !item.note && !item.extract;
 
-/** The three actions' words: ⏎ `next · back in Nd` (a book's `done for today · back in Nd`), `later`, `dismiss`. */
-export function actionWords(item: ReadItem | WriteItem | SectionItem): { on: string; postpone: string; done: string } {
-  const n = nextDays(item);
-  return { on: `${isBook(item) ? 'done for today' : 'next'} · back in ${n}d`, postpone: 'later', done: 'dismiss' };
+/** A book or source with reading left: it comes back on its cadence. A document read by its pages always has, until its marker reaches its end. */
+export const readingOn = (item: ReadItem): boolean => isBook(item) && (!!item.pdf || item.pos < item.total);
+
+/**
+ * How many days ⏎ sends an element out at `now`: a source with reading
+ * left on its cadence; a section, a note revisited or an extract grown
+ * from the time elapsed; a draft grown from its interval.
+ */
+export function nextDays(item: ReadItem | WriteItem | SectionItem, now: Date): number {
+  if (item.kind === 'section') return nextGap(item.sched, now);
+  if (item.kind === 'read') return readingOn(item) ? cadence(item.pri) : grownAt(item.sched, now, item.sched.af ?? READ_AF);
+  return grow(item.sched.ivl, item.sched.af ?? WRITE_AF);
+}
+
+/**
+ * The three actions' words: ⏎ `next · back in Nd` (a book's `done for today ·
+ * back in Nd`; `dismiss` once the marker is at or past its end, `atEnd`),
+ * `later`, `dismiss`.
+ */
+export function actionWords(item: ReadItem | WriteItem | SectionItem, now: Date, atEnd = false): { on: string; postpone: string; done: string } {
+  const on = atEnd ? 'dismiss' : `${isBook(item) ? 'done for today' : 'next'} · back in ${nextDays(item, now)}d`;
+  return { on, postpone: 'later', done: 'dismiss' };
+}
+
+/**
+ * Whether a source's marker is at or past its end: the last prose block,
+ * or the last of its pages (`last`, from the book once its file is read).
+ * Its ⏎ then dismisses it.
+ */
+export function atEndOf(item: ReadItem | WriteItem | SectionItem, pages: boolean, last: number | null): boolean {
+  if (item.kind !== 'read' || !isBook(item)) return false;
+  if (pages) return last !== null && (item.sched.pos ?? 0) >= last;
+  return item.total > 0 && item.pos >= item.total;
 }
 
 function DocSession({ item, active, onAct, ...nav }: DocProps) {
@@ -281,13 +305,17 @@ function DocSession({ item, active, onAct, ...nav }: DocProps) {
   // a note's pass keeps no place (FORMAT.md §3)
   const note = item.kind === 'read' && !!item.note;
   const pri = section ? item.pri : info ? info.pri ?? (reading ? info.read?.pri : info.write?.pri) ?? PRI_DEFAULT : item.pri;
+  // the book's last page, once its file is read: a marker at or past it makes ⏎ dismiss
+  const [last, setLast] = useState<number | null>(null);
+  const atEnd = atEndOf(item, pages, last);
   const on = () => {
+    if (atEnd) { onAct('done'); return; }
     if (!reading || note || !barRef.current) { onAct('on'); return; }
     // done for today records the point at the bottom of the view
     if (pages) { const at = pointInView(barRef.current); onAct('on', at?.page, at?.y); return; }
     onAct('on', blocksAbove(barRef.current));
   };
-  const words = actionWords(item);
+  const words = actionWords(item, appNow(), atEnd);
 
   // a section opens at its heading, the caret in it and the heading marked
   useEffect(() => {
@@ -305,7 +333,7 @@ function DocSession({ item, active, onAct, ...nav }: DocProps) {
   const what = plainMath(section ? `${docs[item.path]?.title ?? sourceLabel(item, docs)} › ${item.heading}` : sourceLabel(item, docs));
   return (
     <div className="doc-session" ref={barRef} data-el={item.kind} data-book={pages ? '1' : '0'}>
-      {pages ? <Pdf id={item.path} active={active} session readOn={item.kind === 'read'} /> : <Reader id={item.path} active={active} />}
+      {pages ? <Pdf id={item.path} active={active} session readOn={item.kind === 'read'} onLast={setLast} /> : <Reader id={item.path} active={active} />}
       <SessionBar kind={markOf(item)} {...(word ? { word } : {})} pri={pri} what={what} stands={standing(item, appNow(), info?.pages?.first)} glyph={glyphOf(item)} {...nav}>
         <button type="button" data-act="on" onClick={on}><span className="ra-l">{words.on}</span><kbd>⏎</kbd></button>
         <button type="button" data-act="postpone" onClick={() => onAct('postpone')}><span className="ra-l">{words.postpone}</span><kbd>p</kbd></button>
@@ -401,7 +429,7 @@ export function Session({ active, onOpen }: Props) {
     if (action === 'on') emitDocAction(item);
     // the done row names what it was: a section by its heading, anything else by its document
     const name = plainMath(item.kind === 'section' ? item.heading : docs[item.path]?.title ?? sourceLabel(item, docs));
-    const word = action === 'postpone' ? `later · back in ${postponed(item.sched.ivl)}d` : action === 'done' ? 'dismissed' : actionWords(item).on;
+    const word = action === 'postpone' ? `later · back in ${postponed(item.sched.ivl)}d` : action === 'done' ? 'dismissed' : actionWords(item, now).on;
     note(doneLine(glyphOf(item), name, word));
     advance();
   };

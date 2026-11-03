@@ -5521,7 +5521,85 @@ EPUB makes three sections in two notes, each comes up in the one queue
 saying where it stands, one is moved to a course note, and the clipping is
 edited without touching them (`ILMI_SMOKE=textsections`).
 
-### [ ] 51. The reading loop, re-tuned — a cadence for sources, growth for sections, a sampled day
+### [x] 51. The reading loop, re-tuned — a cadence for sources, growth for sections, a sampled day
+Done 2026-11-03, commit `COMMIT51`.
+Notes: `growth.ts` holds the rules and the reference's constants: `cadence
+(pri)` and `cadenceWords`, `elapsedBase(r, now)` (the longer of `ivl` and
+the days since `due − ivl`) and `grownAt`, `KAPPA` 20, `hashSeed` (FNV-1a),
+`mulberry32`, `gammaSample` (Marsaglia–Tsang, a shape under one through
+shape + 1 and a uniform's root), `betaSample`, `sampleKey(seed, pri)`; a
+test holds `design/sim/irsim.py` to the same constants and formulas.
+`readOn(r, now, pos, pace, onCadence)` lands on `onCadence` when given,
+else grows from the elapsed time; `advanceRead` decides by `readingLeft
+(m, pos after the pass, total)` (a source short of its prose, or any
+document with pages; never a note or an extract) and `readPri(m)`; the
+exam's `pacedInterval` still caps it. `section.ts`: `SECTION_IVL` is gone,
+`firstGap(pri)` is the cadence (the line's own `pri` wins over the
+document's), `enrolSection` and `broughtBack` take the document's priority,
+`addPassage` reads it from the document and returns `ivl`, `nextGap(s,
+now)`. `queue.ts`: `itemSeed` (path + heading, card id with its group and
+direction (else `#block`), or kind), `itemKey(item, day)`, `sortQueue`
+keyed by it for what is due (keys cached per sort; `now` gives the day,
+so tests pass a fixed `NOW`), `isBacklog`, and `overflow(items, now)`
+without the fold: the backlog among what is due, lowest key first, cards
+never — the simulation's rule postpones the backlog whatever the budget,
+so the fold is only the session's split now; `postponeOverflow(vault,
+items, now)`. The vault: an extract's first interval is the cadence of its
+priority, due today as before; `section` and `absorbExtract` (a line
+without a due) write `due=+c ivl=c` and `section` returns `ivl`;
+`VaultState.lastDay`. The app: `enrolReading` writes `ivl=cadence(pri)`
+due today (a note too); `dayStarted` after each queue build records the
+day (`lastDay`, saved) and, with the `postpone the backlog when the day
+starts` tweak on (`backlog` in `ilmi.tweaks`, `setBacklog`, a row in ⌘,),
+runs `postponeRest` — never on a vault's first day; `comeBack` and
+`bringBack` say `back in Nd` from the cadence, as the section notices do
+(`sectionNode` returns `ivl`, `Pdf.tsx`'s `makeSection` reads it off
+`addPassage`). `Session.tsx`: `readingOn(item)`, `nextDays(item, now)` (a
+source on its cadence, a section or note from the elapsed time, a draft
+from its interval), `actionWords(item, now, atEnd)`, `atEndOf(item, pages,
+last)`: a text source's marker at its last block, a book's at its last
+page (`Pdf`'s new `onLast` prop tells the session the page range's end
+once the file is read, so ⏎ reads `done for today` for a beat before);
+⏎ then does what `d` does and the done row reads `dismissed`. The
+inspector: an `interval` field (`ivlField`, `.ivl-field`, whole days ≥ 1)
+on every reading row (source, extract, note, draft) and on the section
+block while it is on, writing `ivl` and `due = today + ivl` and nothing
+else; the growth row previews from the elapsed base and, on a source with
+reading left, reads `every third day while reading` (`cadenceWords`) in
+place of three intervals. The Python reference run (`python3
+design/sim/semester.py`, 2026-11-03): at 45 minutes a day and 8-minute
+passes the three textbooks finish in 31, 64 and 78 days, the priority-75
+side book in 80; at 30 minutes text 3 reaches 90% and the side book
+starves at 34%, as PLAN said it should. FORMAT §3 *Growth* (rewritten:
+the elapsed rule, the cadence, enrolling, the interval field; a new
+paragraph on the day's order and the backlog) and §6.5 (enrolling,
+boxing, bring back, a text source's section, the pass); README (the
+reading paragraph, the inspector paragraph, the key table, the tweaks
+line). Tests: 1185 (+14: `growth.test.ts` 9 — the cadence, the corpus
+file `mangled/cadence.md` (a source mid-read at priority 70 whose pass
+lands on `ivl=3 due=+3`, late or not, and grows only when read to its
+end), `readingLeft`, the elapsed base, the sampler's mean and spread at
+κ=20 and its clamp, the generators, the Python constants; the section
+tests' late pass and priorities; the fold tests rewritten for the
+backlog; the order tests pin the sampled order of 2026-05-27 over the
+corpus and its stability within the day and change across days; the
+inspector's interval field in jsdom; the tweak's default). The order
+pins in `study`, `list-cards` and `section` tests were re-pinned to the
+day's draw. Older smokes' first-interval numbers follow the cadence
+(`sections` 2d, `book` 1d at its chapter's priority 20, `books` and
+`textsections` 2d) but were not run. Window check pending:
+`ILMI_SMOKE=cadence` walks the done-when (the merchant passage at
+priority 70 on its cadence, the day's order twice, `postpone the rest`
+with a budget of 5, the qasida clipping read to its end, the interval
+field on the Hamiltonian note, the next day's order and the tweak at its
+start, the pset derivation at 2027-01-01 landing at 101 days — that step
+runs first, before any postpone touches its line). Not done: a draft
+still grows from its stored interval (the milestone names sections,
+extracts and notes); `postpone the rest` as a row shows only at the
+fold, the palette command and the tweak work without a budget; the
+backlog's `lowest key first` is read as the day's order (cosmetic: every
+one of them is postponed); the growth row on a document with pages
+always reads the cadence, since its reading is never counted done.
 The user, 2026-11-03, after the loop was vetted against help.supermemo.org,
 mochar's three systems (Dirichlet, then Beta, then plain ranks), and a
 day-by-day simulation (`design/sim/`): "I think we should have a better
@@ -5599,9 +5677,15 @@ flow was right ("Looks good"). The demo they settled on is
 on 2026-11-02; 49 followed the same day (the books typeset from
 `design/books/text/`, the sample converted, `ILMI_SMOKE=books`), and 50
 (text sources as sections of a note, `ILMI_SMOKE=textsections`) the same
-evening. Reading books (47–50) is complete. Next: 51, the reading loop re-tuned,
+evening. Reading books (47–50) is complete. 51, the reading loop re-tuned,
 written 2026-11-03 from the simulation in `design/sim/` once the user said
-"we should adjust".
+"we should adjust", was built the same day: a cadence for sources with
+reading left, growth from the elapsed time for the rest, a sampled day,
+the backlog rule and its tweak, an end for a finished source, the
+inspector's interval field. Its window check (`ILMI_SMOKE=cadence`, from a
+clean checkout) is still to run; the older smokes' first-interval numbers
+were updated to the cadence but not run either. Next is the user's to
+say.
 
 Refinement (33–41) is complete, 2026-10-30, every milestone's window check
 run and recorded under its BUILD-LOG entry (33 `notes`, 34 `editing`, 35

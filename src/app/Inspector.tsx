@@ -11,7 +11,7 @@ import {
   AF_MIN, PRI_DEFAULT, PRI_MAX, PRI_MIN, READ_AF, RETENTION_MAX, RETENTION_MIN, WRITE_AF, cardForm, docPri, meta, pagesLabel, parse, parseAf, parseCount, parsePri, parseRetention, setField,
   type Block, type Card, type CardForm, type CardSchedule, type Doc, type ReadSchedule, type WriteSchedule,
 } from '../format/index.js';
-import { activeExam, advanceWrite, dayOf, examKey, examLeft, inScope, nextIntervals, passagesOf, sectionState, type CardItem, type OptionKey } from '../schedule/index.js';
+import { activeExam, addDays, advanceWrite, cadence, cadenceWords, dayOf, elapsedBase, examKey, examLeft, inScope, nextIntervals, passagesOf, readPri, readingLeft, sectionState, type CardItem, type OptionKey } from '../schedule/index.js';
 import { baseOf, childDirOf, childrenAt, dirOf, isDoc, pageOfBlock, type TreeNode } from '../vault/index.js';
 import { cardName, formLabel } from './chrome.js';
 import { breakdown, countsUnder, dueItems, plainMath } from './chromeText.js';
@@ -131,10 +131,12 @@ function docPriRow(path: string, m: ReturnType<typeof meta>): [string, ReactNode
 
 /**
  * A topic's growth row: the `af` on its `read` / `write` line (empty means
- * the loop's default), and the next three intervals from where it stands.
- * Written through `setField`; the default, or nothing, takes `af` off the line.
+ * the loop's default), and the next three intervals from where it stands
+ * (a reading's from the time elapsed); on a source with reading left, its
+ * cadence instead, since a pass lands there and does not grow. Written
+ * through `setField`; the default, or nothing, takes `af` off the line.
  */
-function growthRow(path: string, key: 'read' | 'write', s: ReadSchedule | WriteSchedule): [string, ReactNode] {
+function growthRow(path: string, key: 'read' | 'write', s: ReadSchedule | WriteSchedule, now: Date, onCadence?: number): [string, ReactNode] {
   const def = key === 'read' ? READ_AF : WRITE_AF;
   const write = (n: number | null) => currentVault()?.update(path, (d) => {
     const m = meta(d);
@@ -143,13 +145,36 @@ function growthRow(path: string, key: 'read' | 'write', s: ReadSchedule | WriteS
     const { af: _, ...rest } = cur;
     setField(d, key, n === null ? rest : { ...rest, af: n });
   }).catch(console.error);
-  const preview = nextIntervals(s.ivl, s.af ?? def).map(fmtDays).join(', ');
+  const preview = onCadence !== undefined ? `${cadenceWords(onCadence)} while reading` : nextIntervals(key === 'read' ? elapsedBase(s, now) : s.ivl, s.af ?? def).map(fmtDays).join(', ');
   return ['growth', (
     <>
       <NumField className="af-field" value={s.af} fallback={def} min={AF_MIN} step={0.1} parse={parseAf} none={def} onCommit={write} />
       <span className="dim af-next">{preview}</span>
     </>
   )];
+}
+
+/** A whole number of days, one or more. */
+const parseIvl = (t: string): number | null => { const n = Math.floor(Number(t)); return Number.isFinite(n) && n >= 1 ? n : null; };
+
+/**
+ * A reading's interval as a field (milestone 51): it writes `ivl` and
+ * `due = today + ivl`, nothing else, so what is not understood yet can
+ * come back in a hundred days. `write` is given the days.
+ */
+function ivlField(key: string, ivl: number | undefined, write: (n: number) => void): ReactNode {
+  return <NumField key={key} className="pri-field ivl-field" value={ivl} fallback={ivl ?? 1} min={1} step={1} parse={parseIvl} onCommit={(n) => { if (n !== null) write(n); }} />;
+}
+
+/** The interval row of a document's `read` / `write` line: the field, written through `setField`. */
+function ivlRow(path: string, key: 'read' | 'write', s: ReadSchedule | WriteSchedule, now: Date): [string, ReactNode] {
+  const write = (n: number) => currentVault()?.update(path, (d) => {
+    const m = meta(d);
+    const cur = key === 'read' ? m.read : m.write;
+    if (!cur) return;
+    setField(d, key, { ...cur, ivl: n, due: addDays(dayOf(now), n) });
+  }).catch(console.error);
+  return ['interval', ivlField(`${path}:${key}`, s.ivl, write)];
 }
 
 // ── options ──────────────────────────────────────────────────────
@@ -443,7 +468,7 @@ function DocInspector({ id, info, doc, now }: { id: string; info: DocInfo; doc: 
         </Block>
         {w && (
           <Block title="spaced composition">
-            <KV rows={[['passes', w.reps ?? 0], ['interval', `${w.ivl ?? 1} d`], growthRow(id, 'write', w), [w.done ? 'state' : 'due', w.done ? 'done' : dueLabel(w.due, now)]]} />
+            <KV rows={[['passes', w.reps ?? 0], ivlRow(id, 'write', w, now), growthRow(id, 'write', w, now), [w.done ? 'state' : 'due', w.done ? 'done' : dueLabel(w.due, now)]]} />
           </Block>
         )}
         <Outline id={id} doc={doc} />
@@ -469,8 +494,10 @@ function DocInspector({ id, info, doc, now }: { id: string; info: DocInfo; doc: 
   if (m.read && info.type === 'note') rows.push(['revisit', `${m.read.reps ? `pass ${m.read.reps + 1}` : 'first pass'}, ${dueLabel(m.read.due, now)}`]);
   else if (m.read && info.pdf) rows.push(['reading', `${m.read.pos ? `to p. ${m.read.pos}${m.read.y !== undefined && m.read.y < 1 ? `, ${Math.round(m.read.y * 100)}% down` : ''}` : 'not started'}, ${dueLabel(m.read.due, now)}`]);
   else if (m.read) rows.push(['reading', `${m.read.pos ?? 0} of ${doc.blocks.filter((b) => b.kind !== 'card').length}, ${dueLabel(m.read.due, now)}`]);
+  if (m.read) rows.push(ivlRow(id, 'read', m.read, now));
   rows.push(docPriRow(id, m));
-  if (m.read) rows.push(growthRow(id, 'read', m.read));
+  // a source with reading left comes back on its cadence; the rest grow
+  if (m.read) rows.push(growthRow(id, 'read', m.read, now, readingLeft(m, m.read.pos, doc.blocks.filter((b) => b.kind !== 'card').length) ? cadence(readPri(m)) : undefined));
   rows.push(...childrenRow(id, tree));
   return (
     <>
@@ -573,6 +600,15 @@ export function SectionBlock({ path, doc, at, now }: { path: string; doc: Doc; a
     const words = standsWords({ ...st, reps: read.reps ?? 0, ...(read.made ? { made: read.made } : {}), ...(read.boxes !== undefined ? { boxes: read.boxes } : {}) }, now);
     rows.push(['stands', <span key="st" className="sec-stands">{status === 'dismissed' ? `${words.split(' · ')[0]} · dismissed` : words}</span>]);
     rows.push(['next', <span key="nx" className="mono sec-next">{status === 'dismissed' ? 'never: dismissed' : dueWhen(read.due, now)}</span>]);
+    if (status === 'on') {
+      const setIvl = (n: number) => void writeDoc(path, (d) => {
+        const h = headingOf(d, here)?.heading;
+        if (!h?.read) return;
+        h.read.ivl = n;
+        h.read.due = addDays(dayOf(now), n);
+      }).catch(console.error);
+      rows.push(['interval', ivlField(`${path}:${heading.text}:ivl`, read.ivl, setIvl)]);
+    }
     const setPri = (n: number | null) => void writeDoc(path, (d) => {
       const h = headingOf(d, here)?.heading;
       if (!h?.read) return;
@@ -581,7 +617,7 @@ export function SectionBlock({ path, doc, at, now }: { path: string; doc: Doc; a
     }).catch(console.error);
     rows.push(['priority', <PriField key={`${path}:${heading.text}`} value={read.pri} fallback={docPri(meta(doc))} onCommit={setPri} />]);
   }
-  const act = sectionActions(status, here)[0]!;
+  const act = sectionActions(status, here, read)[0]!;
   const mv = moveAction(here);
   return (
     <Block title="section">

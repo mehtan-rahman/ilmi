@@ -48,7 +48,7 @@ function caretHere(): CaretHeading | null {
 function sectionCommand(): Command[] {
   const at = caretHere();
   if (!at) return [];
-  const act = sectionActions(statusOf(at.read), at)[0]!;
+  const act = sectionActions(statusOf(at.read), at, at.read)[0]!;
   const mv = moveAction(at);
   return [{ id: `section:${act.act}`, title: `${act.label} · ${plainMath(at.text)}` }, ...(canMove(at.path) ? [{ id: `section:${mv.act}`, title: `${mv.label} · ${plainMath(at.text)}` }] : [])];
 }
@@ -60,7 +60,7 @@ function runCommand(id: string): void {
     const at = caretHere();
     if (!at) return;
     if (id === 'section:move-to') moveAction(at).run?.();
-    else sectionActions(statusOf(at.read), at)[0]?.run?.();
+    else sectionActions(statusOf(at.read), at, at.read)[0]?.run?.();
     return;
   }
   switch (id) {
@@ -99,7 +99,6 @@ export function Palette() {
   const tree = useApp((s) => s.tree);
   const docs = useApp((s) => s.docs);
   const queue = useApp((s) => s.queue);
-  const budget = useApp((s) => s.budget);
   const plugins = usePlugins();
   const recents = useApp((s) => s.recents);
   const vault = useApp((s) => s.vault);
@@ -113,11 +112,11 @@ export function Palette() {
   const listRef = useRef<HTMLDivElement>(null);
   const close = () => useApp.setState({ paletteOpen: false, sectionMove: null });
 
-  // `postpone the rest` is offered only while something sits below the fold
+  // `postpone the rest` is offered only while there is a backlog (reading or writing due before today)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   // the heading under the caret: come back, dismiss, or bring back its section
   const caret = useApp((s) => s.caretHeading);
-  const commands = useMemo(() => [...sectionCommand(), ...(overflow(queue, appNow(), budget).length ? COMMANDS : COMMANDS.filter((c) => c.id !== 'postpone')), ...pluginCommands()], [queue, budget, plugins?.version, caret]);
+  const commands = useMemo(() => [...sectionCommand(), ...(overflow(queue, appNow()).length ? COMMANDS : COMMANDS.filter((c) => c.id !== 'postpone')), ...pluginCommands()], [queue, plugins?.version, caret]);
   // the other vaults opened before, under `vaults`, so switching is two keys
   const vaults = useMemo(() => recents.filter((r) => r.path !== vault).map((r) => ({ path: r.path, name: r.name })), [recents, vault]);
   const index = useMemo(() => buildIndex(tree, docs, cardRefs(), commands, vaults), [tree, docs, commands, vaults]);

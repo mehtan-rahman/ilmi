@@ -6,6 +6,90 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-11-03 — milestone 51: the reading loop, re-tuned
+
+Done on main, commit `COMMIT51`. Changed: `src/schedule/growth.ts` (the
+cadence, growth from the elapsed time, the seeded Beta sampler), `read.ts`
+(`readOn` on a cadence, `readingLeft`, `readPri`), `section.ts`
+(`firstGap` for `SECTION_IVL`, priorities into enrol and bring back,
+`nextGap` at a time), `queue.ts` (`itemSeed`, `itemKey`, the sampled
+`sortQueue`, `isBacklog`, `overflow` as the backlog), `index.ts`;
+`src/vault/vault.ts` (first intervals, `lastDay`); `src/app/vault.ts`
+(`enrolReading`, `dayStarted`, `postponeRest`, the smoke entry),
+`store.ts` and `Tweaks.tsx` (the `backlog` tweak), `sections.ts`,
+`Session.tsx` (`readingOn`, `nextDays`, `actionWords`, `atEndOf`),
+`Pdf.tsx` (`onLast`, the notice), `Reader.tsx` (the notice), `Palette.tsx`
+and `Queue.tsx` (overflow without the fold), `Inspector.tsx` (the interval
+field, the growth row's cadence), `smoke.ts` (`cadence`; the older smokes'
+numbers); new `src/schedule/__tests__/growth.test.ts` and the corpus file
+`mangled/cadence.md`; tests re-pinned (`schedule`, `section`, `passage`,
+`tree`, `reader`, `study`, `list-cards`, `sections`, `sections-view`,
+`store`); FORMAT §3 and §6.5, README, PLAN.
+
+### Decided
+
+- **The fold is not the backlog.** `irsim.py` postpones everything
+  overdue at the day's start whatever the budget, so `overflow` lost its
+  budget: `postpone the rest` (the fold's row, the palette, the tweak)
+  postpones what was due before today and nothing first due today; the
+  budget only folds the day for the session and the strip.
+- **An extract starts due today** on the cadence of its priority, as `r`
+  enrols a source; a section starts `due = today + cadence`, as it was
+  `+3` before.
+- **The draw is seeded by the item and the day**: a card by its id (its
+  group and direction after it; `#block` with no id), a section by its
+  heading, a document's reading or writing by its kind; FNV-1a into
+  mulberry32, Box–Muller normals into Marsaglia–Tsang gammas, two gammas
+  a Beta. No dependency.
+- **The end of a source** is its marker at or past the last prose block,
+  or the last page of its range; the book tells the session its last
+  page through a prop once the file is read.
+- **The growth row says the cadence** on a source with reading left
+  (`every other day while reading`) since nothing grows there; the
+  interval field sits above the priority on every reading row.
+- **The tweak** lives with the others in `ilmi.tweaks`; the vault's
+  `.ilmi/state.json` records only `lastDay`, so the first build of a day
+  is known once and a vault's first day runs nothing.
+
+### Verified
+
+- `npx vitest run --maxWorkers=3`: 1185 tests, 80 files (1171 before).
+  `npm run typecheck` clean. No Rust touched.
+- `python3 design/sim/semester.py` with the shipped constants: at 45
+  minutes a day and 8-minute passes the three textbooks finish in 31, 64
+  and 78 days (the priority-75 side book in 80, every article read); at
+  30 minutes text 3 reaches 90% and the side book 34%; at 60 minutes
+  31, 62, 63 and 62. A test holds `irsim.py`'s constants and formulas to
+  `growth.ts`.
+- The order test pins 2026-05-27 over the corpus: the same list over
+  three builds that day, another order the next, the 50s' and 80s' key
+  means within 0.1 of their priorities, the first element a 50 and the
+  last an 80.
+
+### Not done
+
+- The window check: `ILMI_SMOKE=cadence` is written, not run; the older
+  smokes' numbers follow the cadence but are unrun too.
+- A draft still grows from its stored interval; `postpone the rest` as a
+  row shows only at the fold; the backlog's order is the day's (every
+  element of it is postponed, so it only orders the writes).
+- From 50: `e` in a note makes an extract document; the picker lists
+  notes flat; from 49: `ILMI_SMOKE=open`'s PDF part unrun.
+
+### Handoff prompt
+
+```
+Read PLAN.md (51's notes and Notes for the next session) and this entry.
+51 is built and green (1185 tests) but not window-checked: run
+`ILMI_SMOKE=cadence` from a clean checkout of main over a fresh copy of
+samples/double-major, captures by window id, and record the run under
+this entry, fixing what reads wrong. Then the older smokes whose numbers
+changed (`sections`, `book`, `books`, `textsections`), if time allows.
+What is next after that is the user's to say.
+```
+
+---
+
 ## 2026-11-03 — text size (asked for in chat, no milestone)
 
 Commits `5f0ca95`, `723e40d`. The user asked to zoom in and out in

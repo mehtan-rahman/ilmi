@@ -1812,7 +1812,7 @@ export function Reader({ id, active = true, onPages, notes = false }: ReaderProp
       writer.run(async () => {
         const made = await sectionNode(id, { text: s.text, blocks: s.blocks });
         recentRef.current = made;
-        notify(`§ ${plainMath(made.text)} · back in 3d, until dismissed · in its notes · ⏎ to write in it`, made.note, async () => {
+        notify(`§ ${plainMath(made.text)} · back in ${made.ivl}d, until dismissed · in its notes · ⏎ to write in it`, made.note, async () => {
           recentRef.current = null;
           await writeDoc(made.note, (d) => {
             const at = d.blocks.findIndex((b) => b.kind === 'heading' && b.text === made.text);

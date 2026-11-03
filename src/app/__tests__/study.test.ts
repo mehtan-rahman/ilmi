@@ -42,8 +42,8 @@ const key = (i: CardItem) => `${i.id ?? i.text.slice(0, 12)}${i.group && 'n' in 
 describe('a deck', () => {
   it('due only: the cards due now, in the queue order', async () => {
     const items = studyItems(await loaded(under(DECK)), NOW);
-    // the queue's order: what is due by priority, then due; a both-ways card's reverse when its forward is not up today
-    expect(items.map(key)).toEqual(['cv-luecke', 'cv-vorsatz', 'cv-wdh', 'cv-gedacht/r', 'ein Wort ohn']);
+    // the queue's order on the day (a draw around the priority, the same all day); a both-ways card's reverse when its forward is not up today
+    expect(items.map(key)).toEqual(['cv-gedacht/r', 'cv-luecke', 'cv-wdh', 'cv-vorsatz', 'ein Wort ohn']);
     expect(items.every((i) => i.kind === 'card')).toBe(true);
   });
 
@@ -51,7 +51,7 @@ describe('a deck', () => {
     const items = studyItems(await loaded(under(DECK)), NOW, { cram: true });
     // both directions, asked for: the buried ones too, at the next day's start
     expect(items.map(key)).toEqual([
-      'cv-luecke', 'cv-vorsatz', 'cv-wdh', 'cv-vorsatz/r', 'cv-vergessen', 'cv-gedacht', 'cv-cloze',
+      'cv-luecke', 'cv-wdh', 'cv-vorsatz', 'cv-vorsatz/r', 'cv-vergessen', 'cv-gedacht', 'cv-cloze',
       'cv-wdh/r', 'cv-gedacht/r', 'cv-vergessen/r', 'cv-luecke/r', 'ein Wort ohn', 'ein Wort ohn/r',
     ]);
   });
@@ -95,7 +95,7 @@ describe('a selection', () => {
     const docs = await loaded(under(''));
     const rows = deckRows(docs, NOW).filter((r) => ['cv-wdh', 'cv-gedacht', 'la-span'].includes(r.id ?? ''));
     const only = new Set(rows.map((r) => r.key));
-    expect(studyItems(docs, NOW, { only }).map(key)).toEqual(['cv-wdh', 'la-span/r', 'cv-gedacht/r']);
+    expect(studyItems(docs, NOW, { only }).map(key)).toEqual(['cv-gedacht/r', 'la-span/r', 'cv-wdh']);
     expect(studyItems(docs, NOW, { only, cram: true }).map(key)).toEqual(['cv-wdh', 'cv-gedacht', 'la-span', 'la-span/r', 'cv-wdh/r', 'cv-gedacht/r']);
   });
 });

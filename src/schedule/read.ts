@@ -1,14 +1,18 @@
-// The reading loop: a source enrolled with `read:` comes back on a growing
-// interval until it is marked done. Never graded. Mirrors the prototype's
-// `readAdvance`: read on multiplies the interval by the line's `af` (1.6
-// when absent), postpone multiplies it by a smaller factor, done drops the
-// field. A note's pass (a revisit) keeps no `pos`: it starts over at the
-// top, or at a heading, each time, since the note's own edits would move it.
+// The reading loop: a source enrolled with `read:` comes back until it is
+// marked done. Never graded. Mirrors the prototype's `readAdvance`, re-tuned
+// in milestone 51: while a source has reading left it comes back on its
+// cadence (`cadence(pri)`: every day, every other day, every third day) and
+// does not grow; a note revisited, an extract, a section, or a source read
+// to its end grows by the line's `af` (1.6 when absent) from the time
+// elapsed since the pass before; postpone multiplies the stored interval by
+// a smaller factor; done drops the field. A note's pass (a revisit) keeps no
+// `pos`: it starts over at the top, or at a heading, each time, since the
+// note's own edits would move it.
 
-import { READ_AF, meta, setField, type Doc, type Exam, type ReadSchedule } from '../format/index.js';
+import { PRI_DEFAULT, READ_AF, meta, setField, type Doc, type Exam, type ReadSchedule } from '../format/index.js';
 import { addDays, dayOf } from './dates.js';
 import { pacedInterval, perPassOf } from './exams.js';
-import { grow, postponed } from './growth.js';
+import { cadence, grownAt, postponed } from './growth.js';
 
 export type ReadAction = 'on' | 'postpone' | 'done';
 
@@ -20,13 +24,16 @@ export type ReadAction = 'on' | 'postpone' | 'done';
 export interface Pace { exam: Exam; total: number | null }
 
 /**
- * One pass made (a section's too, FORMAT.md §6.5: its line has no `pos`); `pos` moves the marker forward, never back. Under an exam
- * the next pass comes no later than the pacing says (`pacedInterval`): the
- * interval written is the shorter, so the line's due less its interval is
- * still the day of the pass.
+ * One pass made (a section's too, FORMAT.md §6.5: its line has no `pos`);
+ * `pos` moves the marker forward, never back. The next interval grows from
+ * the elapsed time (`grownAt`), or is `onCadence` days when given: a source
+ * with reading left comes back on its cadence and does not grow. Under an
+ * exam the next pass comes no later than the pacing says (`pacedInterval`):
+ * the interval written is the shorter, so the line's due less its interval
+ * is still the day of the pass.
  */
-export function readOn<T extends ReadSchedule>(r: T, now: Date, pos?: number, pace?: Pace): T & { due: string; ivl: number; reps: number } {
-  let ivl = grow(r.ivl, r.af ?? READ_AF);
+export function readOn<T extends ReadSchedule>(r: T, now: Date, pos?: number, pace?: Pace, onCadence?: number): T & { due: string; ivl: number; reps: number } {
+  let ivl = onCadence ?? grownAt(r, now, r.af ?? READ_AF);
   const reps = (r.reps ?? 0) + 1;
   const at = pos !== undefined ? Math.max(r.pos ?? 0, pos) : r.pos;
   if (pace) {
@@ -55,12 +62,27 @@ export function pointOn(r: { pos?: number; y?: number }, pos: number, y: number)
   return { pos, y };
 }
 
+/** The priority a document's reading is paced by: its `pri` field, else the one left on its `read` line, else the default. */
+export const readPri = (m: { pri?: number; read?: { pri?: number } }): number => m.pri ?? m.read?.pri ?? PRI_DEFAULT;
+
+/**
+ * Whether a document has reading left after a pass that moves its marker
+ * to `at`: a source whose marker is short of its prose, or any document
+ * read by its pages. A note revisited and an extract come back as sections
+ * do, growing; they never have reading left.
+ */
+export function readingLeft(m: { type?: string; pdf?: string }, at: number | undefined, total: number): boolean {
+  if (m.type === 'note' || m.type === 'extract') return false;
+  return m.pdf !== undefined || (at ?? 0) < total;
+}
+
 /**
  * Apply an action to a document's `read` field in place. Throws if it is
  * not enrolled. On a note, `pos` is never kept. `exam`: the exam ahead the
  * document is studied toward, which paces a pass. On a document with pages
  * `pos` is a page and `y` how far down it (FORMAT.md §3), the point moved
- * forward only.
+ * forward only. A source with reading left after the pass lands on its
+ * cadence; anything else grows from the elapsed time.
  */
 export function advanceRead(doc: Doc, action: ReadAction, now: Date, pos?: number, exam?: Exam, y?: number): ReadSchedule | null {
   const m = meta(doc);
@@ -68,8 +90,12 @@ export function advanceRead(doc: Doc, action: ReadAction, now: Date, pos?: numbe
   const note = m.type === 'note';
   let r = m.read;
   if (note && r.pos !== undefined) { const { pos: _, ...rest } = r; r = rest; }
-  const pace: Pace | undefined = exam && { exam, total: note || m.pdf !== undefined ? null : doc.blocks.filter((b) => b.kind !== 'card').length };
-  let next: ReadSchedule | null = action === 'done' ? null : action === 'on' ? readOn(r, now, note || y !== undefined ? undefined : pos, pace) : postpone(r, now);
+  const total = doc.blocks.filter((b) => b.kind !== 'card').length;
+  const pace: Pace | undefined = exam && { exam, total: note || m.pdf !== undefined ? null : total };
+  const marker = note || y !== undefined ? undefined : pos;
+  const after = marker !== undefined ? Math.max(r.pos ?? 0, marker) : r.pos;
+  const onCadence = readingLeft(m, after, total) ? cadence(readPri(m)) : undefined;
+  let next: ReadSchedule | null = action === 'done' ? null : action === 'on' ? readOn(r, now, marker, pace, onCadence) : postpone(r, now);
   if (next && action === 'on' && !note && pos !== undefined && y !== undefined) {
     const { pos: _p, y: _y, ...rest } = next;
     next = { ...rest, ...pointOn(r, pos, y) };

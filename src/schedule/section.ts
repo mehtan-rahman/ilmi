@@ -1,18 +1,19 @@
 // Sections that come back: a heading's `<!-- read … -->` line (FORMAT.md
 // §6.5) enrolls the heading and everything under it, up to the next heading
-// of its level or higher. It comes back on the reading loop's growing
-// interval: next counts a pass (`readOn`), later does not (`postpone`),
-// dismiss ends it, its notes and cards left where they are. Pure; the
-// queue makes an item of each (`queue.ts`), the app writes through
-// `vault.update`.
+// of its level or higher. It first comes back on the cadence of its
+// priority (`cadence`), then on the reading loop's growing interval, grown
+// from the time elapsed: next counts a pass (`readOn`), later does not
+// (`postpone`), dismiss ends it, its notes and cards left where they are.
+// Pure; the queue makes an item of each (`queue.ts`), the app writes
+// through `vault.update`.
 
-import { READ_AF, boxesAt, formatBoxes, parseBoxes, sectionDismissed, type Block, type Box, type Doc, type Heading, type SectionSchedule } from '../format/index.js';
+import { PRI_DEFAULT, READ_AF, boxesAt, formatBoxes, meta, parseBoxes, sectionDismissed, type Block, type Box, type Doc, type Heading, type SectionSchedule } from '../format/index.js';
 import { addDays, dayOf } from './dates.js';
-import { grow } from './growth.js';
+import { cadence, grownAt } from './growth.js';
 import { postpone, readOn, type ReadAction } from './read.js';
 
-/** How far out a section first comes back, and comes back again when brought back. */
-export const SECTION_IVL = 3;
+/** How far out a section first comes back, and comes back again when brought back: the cadence of its priority (the line's own, else the document's). */
+export const firstGap = (pri: number | undefined): number => cadence(pri ?? PRI_DEFAULT);
 
 /** The blocks of the section under the heading at `index`: from it to the next heading of its level or higher. */
 export function sectionSpan(blocks: readonly Block[], index: number): { start: number; end: number } {
@@ -53,12 +54,13 @@ export function headingAt(blocks: readonly Block[], index: number): number {
 /** In the queue: its line has a `due`, or is a bare one written by hand; a dismissed line is not. */
 export const sectionInQueue = (s: SectionSchedule | undefined): s is SectionSchedule => !!s && !sectionDismissed(s);
 
-/** Enroll: made today, back in three days. A line already there is left as it is. */
-export function enrolSection(h: Heading, now: Date): SectionSchedule {
+/** Enroll: made today, back on its cadence (`pri` the document's; the line's own wins). A line already there is left as it is. */
+export function enrolSection(h: Heading, now: Date, pri?: number): SectionSchedule {
   const cur = h.read;
   if (cur && !sectionDismissed(cur)) return cur;
   const day = dayOf(now);
-  const next: SectionSchedule = { ...cur, made: cur?.made ?? day, due: addDays(day, SECTION_IVL), ivl: SECTION_IVL };
+  const ivl = firstGap(cur?.pri ?? pri);
+  const next: SectionSchedule = { ...cur, made: cur?.made ?? day, due: addDays(day, ivl), ivl };
   h.read = next;
   return next;
 }
@@ -73,10 +75,11 @@ export function dismissed(s: SectionSchedule): SectionSchedule | null {
   return rest.boxes !== undefined ? rest : null;
 }
 
-/** Brought back: a fresh due in three days, the rest of the line (`reps` with it) kept. */
-export function broughtBack(s: SectionSchedule | undefined, now: Date): SectionSchedule {
+/** Brought back: a fresh due on its cadence, the rest of the line (`reps` with it) kept. */
+export function broughtBack(s: SectionSchedule | undefined, now: Date, pri?: number): SectionSchedule {
   const day = dayOf(now);
-  return { ...s, made: s?.made ?? day, due: addDays(day, SECTION_IVL), ivl: SECTION_IVL };
+  const ivl = firstGap(s?.pri ?? pri);
+  return { ...s, made: s?.made ?? day, due: addDays(day, ivl), ivl };
 }
 
 /** One of the session's three: next (a pass), later (not counted), dismiss. Null when the line goes. */
@@ -85,8 +88,8 @@ export function advanceSchedule(s: SectionSchedule, action: ReadAction, now: Dat
   return action === 'on' ? readOn(s, now) : postpone(s, now);
 }
 
-/** How many days next would send it out: `back in Nd`. */
-export const nextGap = (s: SectionSchedule): number => grow(s.ivl, s.af ?? READ_AF);
+/** How many days next would send it out at `now`: `back in Nd`, grown from the time elapsed. */
+export const nextGap = (s: SectionSchedule, now: Date): number => grownAt(s, now, s.af ?? READ_AF);
 
 /**
  * The section's heading in `doc`: at `index` when it is still that
@@ -152,15 +155,17 @@ export function freeName(blocks: readonly Block[], name: string): string {
 
 /**
  * Boxes on the pages become a section (FORMAT.md §6.5): a `##` heading named
- * `name`, its line `made=<today> due=<+3d> ivl=3 boxes=…`, placed in book
- * order. In place, meant for `vault.update`; returns the heading's index
- * and its text (made unique).
+ * `name`, its line `made=<today> due=<today+cadence> ivl=<cadence> boxes=…`
+ * (the cadence of the document's priority), placed in book order. In
+ * place, meant for `vault.update`; returns the heading's index, its text
+ * (made unique) and its interval.
  */
-export function addPassage(doc: Doc, name: string, boxes: readonly Box[], now: Date): { index: number; text: string } {
+export function addPassage(doc: Doc, name: string, boxes: readonly Box[], now: Date): { index: number; text: string; ivl: number } {
   const text = freeName(doc.blocks, name);
   const day = dayOf(now);
-  const h: Heading = { kind: 'heading', level: 2, text, read: { made: day, due: addDays(day, SECTION_IVL), ivl: SECTION_IVL, boxes: formatBoxes(boxes) } };
+  const ivl = firstGap(meta(doc).pri);
+  const h: Heading = { kind: 'heading', level: 2, text, read: { made: day, due: addDays(day, ivl), ivl, boxes: formatBoxes(boxes) } };
   const index = placeOf(doc.blocks, boxes);
   doc.blocks.splice(index, 0, h);
-  return { index, text };
+  return { index, text, ivl };
 }

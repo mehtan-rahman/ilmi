@@ -81,10 +81,18 @@ describe('the marks', () => {
 
 describe('the three actions', () => {
   it('next · back in Nd, later, dismiss; a book\'s ⏎ is done for today', () => {
-    expect(actionWords(section())).toEqual({ on: 'next · back in 5d', postpone: 'later', done: 'dismiss' });
-    expect(actionWords(read({ note: true, sched: { ivl: 5 } })).on).toBe('next · back in 8d');
-    expect(actionWords(read()).on).toBe('done for today · back in 3d');
-    expect(actionWords({ kind: 'write', path: 'd.md', sched: { ivl: 2 }, dueAt: NOW, pri: 50 }).on).toBe('next · back in 3d');
+    expect(actionWords(section(), NOW)).toEqual({ on: 'next · back in 5d', postpone: 'later', done: 'dismiss' });
+    expect(actionWords(read({ note: true, sched: { ivl: 5 } }), NOW).on).toBe('next · back in 8d');
+    // a source with reading left comes back on the cadence of its priority, whatever its interval
+    expect(actionWords(read(), NOW).on).toBe('done for today · back in 2d');
+    expect(actionWords(read({ pri: 20 }), NOW).on).toBe('done for today · back in 1d');
+    expect(actionWords(read({ pri: 70, sched: { ivl: 30 } }), NOW).on).toBe('done for today · back in 3d');
+    // read to its end, it grows; and ⏎ at the end reads dismiss
+    expect(actionWords(read({ pos: 3, total: 3 }), NOW).on).toBe('done for today · back in 3d');
+    expect(actionWords(read({ pos: 3, total: 3 }), NOW, true).on).toBe('dismiss');
+    // a section sixty days late grows from the time elapsed
+    expect(actionWords(section(), new Date('2027-01-01T12:00:00Z')).on).toBe('next · back in 101d');
+    expect(actionWords({ kind: 'write', path: 'd.md', sched: { ivl: 2 }, dueAt: NOW, pri: 50 }, NOW).on).toBe('next · back in 3d');
     expect(isBook(read({ extract: true }))).toBe(false);
   });
 

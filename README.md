@@ -136,7 +136,8 @@ F2 / dbl-click   rename                 right-click  new, import, rename, move t
 ⌘= ⌘−            text size, bigger and smaller (⌘0 back to 100%); kept with the tweaks
 ⌘,               tweaks: theme, accent, density, text size, reopen the last vault on start,
                  download images when clipping, show remote images, queue
-                 shows titles (kept outside the vault); the day's budget,
+                 shows titles, postpone the backlog when the day starts
+                 (kept outside the vault); the day's budget,
                  where clippings go, and plugins (kept in the vault's .ilmi)
 
 on the welcome   ⏎ open the selected vault, j k move, o open vault, n new vault;
@@ -170,7 +171,7 @@ in a deck        j k move, ⌫ delete the selected card, m make a card;
 in the queue     j k move, ⏎ enter, o open one; a row names its file by its
                  path (`queue shows titles` in the tweaks brings the title back)
 in a session     [ ] prev / next; space reveal, 1-4 grade; ⏎ next (a
-                 book's: done for today), p later, d dismiss
+                 book's: done for today; at its end: dismiss), p later, d dismiss
 on a heading     right-click: come back (its section returns until you
                  dismiss it), dismiss, or bring back; the inspector and
                  the palette have the same
@@ -283,26 +284,38 @@ click on that line) opens the document scrolled to the card, marked.
 
 Any section of a note or a source can come back: `come back` on the
 heading under the caret (the inspector, the heading's right-click menu, or
-the palette) writes `<!-- read made=… due=… ivl=3 -->` under it, and the
-section (the heading and everything under it, up to the next heading of its
-level) is in the day's queue in three days, sorted by priority with the
-reading and the cards, never grouped by kind. Every row says where it
+the palette) writes `<!-- read made=… due=… ivl=2 -->` under it (the
+interval is the cadence of its priority: every day under 34, every other
+day to 66, every third day above), and the section (the heading and
+everything under it, up to the next heading of its level) is in the day's
+queue when it is due, sorted with the reading and the cards by the day's
+draw around each priority, never grouped by kind. Every row says where it
 stands in one line: a section `boxed oct 29, nothing written yet`, `written,
 no cards yet` or `written, 3 cards`, then `first time back` or `back for the
 2nd time`; a book `read on from p. 42`. A section opens in its document at
 its heading, in the editor, to write in and card; the same three choices
 everywhere: ⏎ **next · back in Nd**, `p` **later** (not counted), `d`
-**dismiss** (its notes and cards stay). The tree's due counts include
-sections.
+**dismiss** (its notes and cards stay). A book or source with reading left
+comes back on its cadence (⏎ **done for today · back in Nd**, the interval
+never growing); once its marker is at its last block or page, ⏎ reads
+**dismiss**. A section, a note revisited or an extract grows from the time
+elapsed since the pass before, so sixty days late on three lands past
+ninety, not at five. The tree's due counts include sections.
 
 The inspector sets a priority, 0 first and 100 last, on a document or on the
-selected card; what is due sorts by it. It also sets a topic's growth, the
-factor each pass multiplies the interval by (1.6 reading, 1.5 writing), and
-shows the next three intervals; postpone grows the interval by 1.2. A budget
-folds the day at that many elements: the top strip counts what is above the
-fold, a session walks it, and `postpone the rest`, a row under the fold or a
-palette command, postpones the reading and writing below it; cards stay
-where they are. The bottom strip shows the keys that work where you are. `ilmi.theme('dark')`
+selected card; what is due sorts by a draw around it, the same all day and
+another order the next, so the top holds and the middle mixes. It also sets a
+topic's growth, the factor each pass multiplies the interval by (1.6
+reading, 1.5 writing), and shows the next three intervals (a source with
+reading left shows its cadence instead), and a reading's interval outright
+(`ivl` and `due = today + ivl`, nothing else: come back in 100 days for what
+is not understood yet); postpone grows the interval by 1.2. A budget folds
+the day at that many elements: the top strip counts what is above the fold
+and a session walks it. `postpone the rest`, a row under the fold or a
+palette command, postpones the backlog, the reading and writing due before
+today, and leaves what is first due today alone; cards stay where they are;
+`postpone the backlog when the day starts`, a tweak off by default, runs
+it at the day's first queue build. The bottom strip shows the keys that work where you are. `ilmi.theme('dark')`
 and friends still work from the devtools console.
 
 The app owns the `ilmi://` scheme, the same grammar as Obsidian's URI under

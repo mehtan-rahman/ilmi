@@ -112,8 +112,8 @@ describe('the queue, a session, and a review', () => {
     expect(items.map((i) => i.text.split(' ::')[0])).toEqual(['$Z$', 'free energy', 'nested', 'the {{c1::Boltzmann}} factor']);
     expect(items[0]!.trail).toEqual(['stat mech', 'canonical ensemble', 'the partition function']);
     expect(items[0]!.section).toBe('the partition function');
-    // a session over the note: the due ones (the new three; free energy is due on the 2nd)
-    expect(studyItems([['courses/stat-mech.md', doc]], NOW).map((i) => i.text.split(' ::')[0])).toEqual(['$Z$', 'nested', 'the {{c1::Boltzmann}} factor']);
+    // a session over the note: the due ones (the new three; free energy is due on the 2nd), in the day's order
+    expect(studyItems([['courses/stat-mech.md', doc]], NOW).map((i) => i.text.split(' ::')[0])).toEqual(['the {{c1::Boltzmann}} factor', 'nested', '$Z$']);
   });
 
   it('a grade rewrites one line, under the item at its content column', () => {

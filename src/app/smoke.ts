@@ -8027,7 +8027,9 @@ export async function smokeCadence(vault: Vault): Promise<void> {
 
     // ── the inspector's interval field ──
     openNode(HAMILTON);
-    const ivl = await poll(() => qa<HTMLInputElement>('.insp .ivl-field').find((f) => f.value === '14'), 'the note\'s inspector has an interval field reading 14', 8000);
+    // 17, not the sample's 14: the note was backlog (due oct 29) and `postpone the rest` grew it above
+    const hIvl = String((await readLine(HAMILTON))!.ivl);
+    const ivl = await poll(() => qa<HTMLInputElement>('.insp .ivl-field').find((f) => f.value === hIvl), `the note's inspector has an interval field reading ${hIvl}`, 8000);
     before = await text(HAMILTON);
     setNum(ivl, '100');
     after = await changed(HAMILTON, before, 'the field wrote the file');

@@ -7998,11 +7998,16 @@ export async function smokeCadence(vault: Vault): Promise<void> {
     must(rest.length > 0 && rest.every((i) => i.due !== undefined && i.due < DAY1), `the rest is the backlog: ${rest.length} elements, every one due before today`);
     const todays = due().filter((i) => i.kind !== 'card' && (i.due === undefined || i.due.startsWith(DAY1)));
     must(todays.length > 0, `${todays.length} element(s) first due today (${todays.map((i) => i.path.split('/').pop()).join(', ')})`);
+    // its own line: a file may hold a backlog read line beside a section first due today
+    const ownLine = async (i: QueueItem) => {
+      const d = parse(await text(i.path)).doc;
+      return JSON.stringify(i.kind === 'section' ? (d.blocks.find((b) => b.kind === 'heading' && b.text === i.heading) as { read?: unknown } | undefined)?.read : i.kind === 'read' ? meta(d).read : null);
+    };
     const lines = new Map<string, string>();
-    for (const i of todays) lines.set(i.path, await text(i.path));
+    for (const i of todays) lines.set(itemSeed(i), await ownLine(i));
     const n = await postponeRest();
     must(n === rest.length, `postpone the rest postponed ${n}`);
-    for (const i of todays) must((await text(i.path)) === lines.get(i.path), `untouched: ${i.path}`);
+    for (const i of todays) must((await ownLine(i)) === lines.get(itemSeed(i)), `untouched: ${i.kind} ${i.path.split('/').pop()}${i.kind === 'section' ? ` § ${i.heading.slice(0, 30)}` : ''}`);
     const q15 = await readLine(QASIDA);
     must(q15?.due !== undefined && q15.due > DAY1 && q15.ivl === 14, `a backlog source postponed: ivl 12 → 14, due ${q15?.due}`);
     setBudget(0);

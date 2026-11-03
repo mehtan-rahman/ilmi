@@ -8,7 +8,7 @@ was verified, what was not, and the prompt to resume with.
 
 ## 2026-11-03 — README, docs, and screenshots (asked for in chat, no milestone)
 
-Commit `COMMIT`, before the first push to GitHub. README is now the front
+Commit `6587378`, before the first push to GitHub. README is now the front
 door: the pitch, a hero screenshot of a book beside its notes, install (the
 DMG and from source), the first day in six steps, a screenshot table, how
 the day is scheduled in five bullets, the documents, a short key list, the

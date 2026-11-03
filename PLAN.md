@@ -5521,6 +5521,68 @@ EPUB makes three sections in two notes, each comes up in the one queue
 saying where it stands, one is moved to a course note, and the clipping is
 edited without touching them (`ILMI_SMOKE=textsections`).
 
+### [ ] 51. The reading loop, re-tuned — a cadence for sources, growth for sections, a sampled day
+The user, 2026-11-03, after the loop was vetted against help.supermemo.org,
+mochar's three systems (Dirichlet, then Beta, then plain ranks), and a
+day-by-day simulation (`design/sim/`): "I think we should have a better
+incremental reading algorithm", then "I think we should adjust then. Like i
+should be able to finish a few textbooks per semester assuming regular
+things and whatnot". The simulation's finding: under ×1.6 growth a
+600-paragraph book is 32% read after two years with unlimited time, since
+by the twelfth pass it is not due for a year; the books were never
+time-limited, only not due. With a cadence, three 500-paragraph textbooks
+at priorities 20, 35 and 50 finish in 31, 64 and 74 days at 45 minutes a
+day beside an article every four days and the cards
+(`design/sim/semester.py`); at 30 minutes the priority-75 side book starves
+first, as it should. Nothing new is written to a file: `pri`, `ivl`, `due`,
+`reps`, `af` carry it all.
+- **Cadence.** `cadence(pri) = 1 + min(2, floor(3·pri/100))` in
+  `growth.ts`: every day under 34, every other day to 66, every third day
+  above. A source with reading left (`pos < total`, or a document with
+  pages) comes back on its cadence: a pass writes `ivl = cadence(pri)`,
+  `due = today + ivl`, `reps + 1`, and does not grow. `p` still grows it by
+  1.2 and a lower priority slows it; `r` enrols it due today with `ivl =
+  cadence(pri)`. Exam pacing (`pacedInterval`) still caps it. The
+  inspector's growth row on such a source shows the cadence, not three
+  intervals.
+- **Growth from the elapsed time.** A section, an extract document, and a
+  note revisited grow by `af` as now, but from `max(ivl, today − (due −
+  ivl))`, the day of the pass before: on time nothing changes; sixty days
+  late on `ivl=3` lands at 96, not 5. A fresh section's or extract's first
+  interval is `cadence(pri)` (was 3 and 1).
+- **The day's order.** `sortQueue` takes the day: each due item's key is a
+  Beta draw with mean `pri/100` (clamped .01–.99) and pseudo-count 20,
+  seeded by `path + heading or card id + day` (a small seeded PRNG and
+  Marsaglia–Tsang in `growth.ts`, no dependency), then stored due oldest
+  first, then file order. Stable within a day, reshuffled across days; ±11
+  points at 50, ±5 at 95, so the top holds and the middle mixes. Not-due
+  items sort by due as now. Tests pass a fixed day.
+- **The backlog.** `postpone the rest` leaves what is first due today alone
+  and postpones only what was due before today, lowest key first, cards
+  never. One tweak, off by default, `postpone the backlog when the day
+  starts`, runs it at the first queue build of a day; `VaultState.lastDay`
+  records the day. The one new setting; asked for in the conversation.
+- **An end.** When a source's marker is at or past its last block (or last
+  page), the session's ⏎ reads `dismiss` and does what `d` does.
+- **Reschedule.** The inspector's `interval` on a reading row (source,
+  extract, section, draft) becomes a number field writing `ivl` and `due =
+  today + ivl`, nothing else: "come back in 100 days" for what is not
+  understood yet.
+- **FORMAT.md** §3 *Growth* and §6.5 *Enrolling* say the new rules; the
+  corpus gets a source mid-read whose pass lands on its cadence, and the
+  order test pins a day's sampled order.
+- Not in this milestone: a per-document pseudo-count, behavioural priority
+  updates (edit distance, time spent), a topic-to-card ratio, automatic
+  priority drift, a cap on intervals. Each would make the number mean
+  something the person did not write.
+
+*Done when:* on the sample, a pass on a half-read source lands on its
+cadence and the file says so; a section passed sixty days late lands past
+90 days; the queue's order differs between two days and holds within one;
+`postpone the rest` touches nothing first due today; ⏎ on a finished source
+dismisses it; and `design/sim/irsim.py` with the shipped constants still
+finishes the semester's three textbooks (`ILMI_SMOKE=cadence`).
+
 ## Notes for the next session
 
 Studying (42–46) is complete, 2026-10-31: every milestone's window check
@@ -5537,8 +5599,9 @@ flow was right ("Looks good"). The demo they settled on is
 on 2026-11-02; 49 followed the same day (the books typeset from
 `design/books/text/`, the sample converted, `ILMI_SMOKE=books`), and 50
 (text sources as sections of a note, `ILMI_SMOKE=textsections`) the same
-evening. Reading books (47–50) is complete; what is next is the user's
-to say (the open items in 49's and 50's notes, or a new section).
+evening. Reading books (47–50) is complete. Next: 51, the reading loop re-tuned,
+written 2026-11-03 from the simulation in `design/sim/` once the user said
+"we should adjust".
 
 Refinement (33–41) is complete, 2026-10-30, every milestone's window check
 run and recorded under its BUILD-LOG entry (33 `notes`, 34 `editing`, 35

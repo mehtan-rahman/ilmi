@@ -22,6 +22,21 @@ a copy of `samples/double-major` named `double-major` (the `tour` mode stops
 on a stale assertion before its screen loop). Verified: 1188 tests,
 typecheck clean, every capture looked at. Not changed: no LICENSE file yet.
 
+Pushed afterwards to https://github.com/mehtan-rahman/ilmi (public, `main`;
+the account's older unrelated `ilmi` became `ilmi-old` at the user's
+choice; this repo's git uses the `gh` login as its credential helper, since
+the keychain held another account's). The first workflow runs found two
+things the Mac had not: `exams.test.ts`'s walk ended on 2026-12-10 and the
+first review after the exam lands a day or two apart by time zone (ts-fsrs
+counts elapsed days by UTC date), so under UTC none fell inside it; the walk
+now runs to the year's end. `perf.test.ts`'s budgets are the Mac's and skip
+when `CI` is set. And an unset secret still reaches the Tauri CLI as an
+empty `APPLE_CERTIFICATE`, which it tries to import; the workflow exports
+the signing variables only when the secret exists.
+The third run, https://github.com/mehtan-rahman/ilmi/actions/runs/41714440595,
+passed: the check on Linux, then the universal DMG on macOS, kept as the
+artifact `ilmi-macos-universal`.
+
 ---
 
 ## 2026-11-03 — a macOS installer and its workflow (asked for in chat, no milestone)

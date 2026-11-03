@@ -30,7 +30,9 @@
 
   --reading-width: 600px;
   --serif-weight: 420;
-  --serif-size: 18px;
+  /* the page's text size: 18px at zoom 1 (⌘= ⌘− ⌘0, a tweak) */
+  --zoom: 1;
+  --serif-size: calc(18px * var(--zoom));
 
   /* density: 1 regular, <1 compact, >1 airy */
   --rho: 1;

@@ -13,7 +13,7 @@ import { Tree } from './Tree.js';
 import { Tweaks } from './Tweaks.js';
 import { Welcome } from './Welcome.js';
 import { activeTab, closeTab, splitPane } from './panes.js';
-import { ACCENTS, INSP_MAX, INSP_MIN, SIDE_MAX, SIDE_MIN, useApp } from './store.js';
+import { ACCENTS, INSP_MAX, INSP_MIN, SIDE_MAX, SIDE_MIN, useApp, ZOOM_STEP } from './store.js';
 import { openInitialVault, openNode, rememberTab, setInspector, setSidebar, toggleInspector } from './vault.js';
 import { inspectorShown } from './layout.js';
 import './app.css';
@@ -51,6 +51,7 @@ export function App() {
   const theme = useApp((s) => s.theme);
   const accent = useApp((s) => s.accent);
   const rho = useApp((s) => s.density);
+  const zoom = useApp((s) => s.zoom);
   const vault = useApp((s) => s.vault);
   const sidebar = useApp((s) => s.sidebar);
   const inspector = useApp((s) => s.inspector);
@@ -76,12 +77,13 @@ export function App() {
     const root = document.documentElement;
     root.setAttribute('data-theme', theme);
     root.style.setProperty('--rho', String(rho));
+    root.style.setProperty('--zoom', String(zoom));
     const a = ACCENTS[accent];
     root.style.setProperty('--accent-h', String(a.h));
     root.style.setProperty('--accent-c', String(a.c));
     root.style.setProperty('--accent-l-light', String(a.light));
     root.style.setProperty('--accent-l-dark', String(a.dark));
-  }, [theme, accent, rho]);
+  }, [theme, accent, rho, zoom]);
 
   useEffect(() => {
     openInitialVault().catch((e: unknown) => console.error(e));
@@ -119,6 +121,13 @@ export function App() {
       if (k === ',') {
         e.preventDefault();
         useApp.setState((s) => ({ tweaksOpen: !s.tweaksOpen }));
+        return;
+      }
+      // ⌘= ⌘− ⌘0: the page's text size, from anywhere, the editor included
+      if (!e.shiftKey && !e.altKey && (e.key === '=' || e.key === '+' || e.key === '-' || e.key === '0')) {
+        e.preventDefault();
+        const s = useApp.getState();
+        s.setZoom(e.key === '0' ? 1 : s.zoom + (e.key === '-' ? -ZOOM_STEP : ZOOM_STEP));
         return;
       }
       if (inField(e.target)) return;

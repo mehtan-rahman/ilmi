@@ -6,7 +6,7 @@ import type { TreeNode } from '../../vault/index.js';
 import type { Block } from '../../format/index.js';
 import { buildIndex, cardLabel, fuzzy, hintsFor, revealIndex, search } from '../chrome.js';
 import { queueId } from '../names.js';
-import { ACCENTS, THEMES, useApp } from '../store.js';
+import { ACCENTS, THEMES, useApp, ZOOM_MAX, ZOOM_MIN } from '../store.js';
 
 describe('key hints', () => {
   it('names only the keys bound on each surface', () => {
@@ -110,6 +110,18 @@ describe('landing on a card', () => {
 });
 
 describe('tweaks', () => {
+  it('keeps the text size inside its range, in hundredths', () => {
+    useApp.getState().setZoom(1.1);
+    expect(useApp.getState().zoom).toBe(1.1);
+    useApp.getState().setZoom(9);
+    expect(useApp.getState().zoom).toBe(ZOOM_MAX);
+    useApp.getState().setZoom(0.1);
+    expect(useApp.getState().zoom).toBe(ZOOM_MIN);
+    useApp.getState().setZoom(1.2000000001);
+    expect(useApp.getState().zoom).toBe(1.2);
+    useApp.getState().setZoom(1);
+  });
+
   it('keeps density inside its range and knows every accent', () => {
     useApp.getState().setDensity(9);
     expect(useApp.getState().density).toBe(1.6);

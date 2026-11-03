@@ -133,7 +133,8 @@ F2 / dbl-click   rename                 right-click  new, import, rename, move t
 ⌘V               an address, with nothing focused: clipped into the active tab's folder
 ⌘W               close tab              ⌘\           split pane
 ⌃⌘S              sidebar                ⌘⇧I          inspector
-⌘,               tweaks: theme, accent, density, reopen the last vault on start,
+⌘= ⌘−            text size, bigger and smaller (⌘0 back to 100%); kept with the tweaks
+⌘,               tweaks: theme, accent, density, text size, reopen the last vault on start,
                  download images when clipping, show remote images, queue
                  shows titles (kept outside the vault); the day's budget,
                  where clippings go, and plugins (kept in the vault's .ilmi)

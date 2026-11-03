@@ -33,6 +33,8 @@ export interface Tweaks {
   theme: Theme;
   accent: Accent;
   density: number;
+  /** The page's text size as a factor of 18px (⌘= ⌘− ⌘0). */
+  zoom: number;
   /** Reopen the last vault on start, without a click. */
   reopen: boolean;
   /** Download a clipped page's images into the document's folder. */
@@ -44,8 +46,11 @@ export interface Tweaks {
 }
 export const DENSITY_MIN = 0.6;
 export const DENSITY_MAX = 1.6;
+export const ZOOM_MIN = 0.7;
+export const ZOOM_MAX = 1.8;
+export const ZOOM_STEP = 0.1;
 const TWEAKS_KEY = 'ilmi.tweaks';
-const DEFAULT_TWEAKS: Tweaks = { theme: 'light', accent: 'gold', density: 1, reopen: true, clipImages: true, remoteImages: true, queueTitles: false };
+const DEFAULT_TWEAKS: Tweaks = { theme: 'light', accent: 'gold', density: 1, zoom: 1, reopen: true, clipImages: true, remoteImages: true, queueTitles: false };
 
 function loadTweaks(): Tweaks {
   try {
@@ -56,6 +61,7 @@ function loadTweaks(): Tweaks {
       theme: THEMES.includes(t.theme as Theme) ? (t.theme as Theme) : DEFAULT_TWEAKS.theme,
       accent: t.accent !== undefined && t.accent in ACCENTS ? t.accent : DEFAULT_TWEAKS.accent,
       density: typeof t.density === 'number' && t.density >= DENSITY_MIN && t.density <= DENSITY_MAX ? t.density : DEFAULT_TWEAKS.density,
+      zoom: typeof t.zoom === 'number' && t.zoom >= ZOOM_MIN && t.zoom <= ZOOM_MAX ? t.zoom : DEFAULT_TWEAKS.zoom,
       reopen: typeof t.reopen === 'boolean' ? t.reopen : DEFAULT_TWEAKS.reopen,
       clipImages: typeof t.clipImages === 'boolean' ? t.clipImages : DEFAULT_TWEAKS.clipImages,
       remoteImages: typeof t.remoteImages === 'boolean' ? t.remoteImages : DEFAULT_TWEAKS.remoteImages,
@@ -198,6 +204,8 @@ export interface AppState {
   theme: Theme;
   accent: Accent;
   density: number; // --rho: 1 regular, <1 compact, >1 airy
+  /** The page's text size, `--zoom`: 1 is 18px. A tweak, kept with the others. */
+  zoom: number;
   /** Reopen the last vault on start. A tweak, kept with the others. */
   reopen: boolean;
   /** Download a clipped page's images. A tweak, kept with the others. */
@@ -281,6 +289,7 @@ export interface AppState {
   cycleTheme(): void;
   setAccent(accent: Accent): void;
   setDensity(rho: number): void;
+  setZoom(zoom: number): void;
   setReopen(on: boolean): void;
   setClipImages(on: boolean): void;
   setRemoteImages(on: boolean): void;
@@ -305,6 +314,7 @@ export const useApp = create<AppState>((set, get) => ({
   theme: tweaks.theme,
   accent: tweaks.accent,
   density: tweaks.density,
+  zoom: tweaks.zoom,
   reopen: tweaks.reopen,
   clipImages: tweaks.clipImages,
   remoteImages: tweaks.remoteImages,
@@ -361,6 +371,7 @@ export const useApp = create<AppState>((set, get) => ({
   },
   setAccent: (accent) => { set({ accent }); persist(get()); },
   setDensity: (density) => { set({ density: Math.min(DENSITY_MAX, Math.max(DENSITY_MIN, density)) }); persist(get()); },
+  setZoom: (zoom) => { set({ zoom: Math.round(Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, zoom)) * 100) / 100 }); persist(get()); },
   setReopen: (reopen) => { set({ reopen }); persist(get()); },
   setClipImages: (clipImages) => { set({ clipImages }); persist(get()); },
   setRemoteImages: (remoteImages) => { set({ remoteImages }); persist(get()); },
@@ -369,7 +380,7 @@ export const useApp = create<AppState>((set, get) => ({
   setPanes: (next) => set({ panes: typeof next === 'function' ? next(get().panes) : next }),
 }));
 
-const persist = (s: AppState) => saveTweaks({ theme: s.theme, accent: s.accent, density: s.density, reopen: s.reopen, clipImages: s.clipImages, remoteImages: s.remoteImages, queueTitles: s.queueTitles });
+const persist = (s: AppState) => saveTweaks({ theme: s.theme, accent: s.accent, density: s.density, zoom: s.zoom, reopen: s.reopen, clipImages: s.clipImages, remoteImages: s.remoteImages, queueTitles: s.queueTitles });
 
 declare global {
   interface Window {

@@ -9,7 +9,7 @@
 import { useEffect, useState } from 'react';
 import { PluginsSection } from '../plugins/PluginsSection.js';
 import { folderPaths, titleOf } from './names.js';
-import { ACCENTS, DENSITY_MAX, DENSITY_MIN, THEMES, useApp, type Accent, type Theme } from './store.js';
+import { ACCENTS, DENSITY_MAX, DENSITY_MIN, THEMES, useApp, type Accent, type Theme, ZOOM_MAX, ZOOM_MIN, ZOOM_STEP } from './store.js';
 import { setBudget, setClipDir } from './vault.js';
 
 const THEME_LABEL: Record<Theme, string> = { light: 'light', dark: 'dark', eink: 'e-ink' };
@@ -68,6 +68,7 @@ export function Tweaks() {
   const theme = useApp((s) => s.theme);
   const accent = useApp((s) => s.accent);
   const density = useApp((s) => s.density);
+  const zoom = useApp((s) => s.zoom);
   const reopen = useApp((s) => s.reopen);
   const clipImages = useApp((s) => s.clipImages);
   const remoteImages = useApp((s) => s.remoteImages);
@@ -118,6 +119,19 @@ export function Tweaks() {
           step={0.05}
           value={density}
           onChange={(e) => useApp.getState().setDensity(Number(e.target.value))}
+        />
+      </div>
+      <div className="tw-row">
+        <span className="tw-lbl">text size <span className="tw-val">{Math.round(zoom * 100)}%</span></span>
+        <input
+          type="range"
+          className="tw-slider"
+          min={ZOOM_MIN}
+          max={ZOOM_MAX}
+          step={ZOOM_STEP}
+          value={zoom}
+          onChange={(e) => useApp.getState().setZoom(Number(e.target.value))}
+          title="⌘= bigger, ⌘− smaller, ⌘0 back to 100%"
         />
       </div>
       <div className="tw-row">

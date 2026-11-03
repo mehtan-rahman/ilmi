@@ -168,6 +168,7 @@
 // `ILMI_SMOKE=textsections` (`smokeTextSections`) over a copy of
 // `samples/double-major`: passages marked in a clipping and a chapter become
 // sections of their notes, moved, and an old extract folded in (milestone 50).
+// `ILMI_SMOKE=zoom` (`smokeZoom`): the page's text size by ⌘= ⌘− ⌘0 and the tweaks.
 // `ILMI_SMOKE=welcome` runs before any vault opens: it seeds the recents
 // with the scratch vault (`ILMI_VAULT`) and a path that does not exist,
 // turns `reopen the last vault on start` off, reads the welcome's rows and
@@ -7780,6 +7781,76 @@ export async function smokeTextSections(vault: Vault): Promise<void> {
   } catch (e) {
     finished = true;
     setClockDay(null);
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+// `ILMI_SMOKE=zoom` (`smokeZoom`) over a copy of `samples/double-major`: the
+// page's text size. ⌘= twice makes a note's text bigger (the computed font
+// size of its paragraphs, and the headings with it), ⌘− smaller, ⌘0 back
+// to 18px; it works with the caret in the editor; the tweaks panel shows
+// `text size 120%` and its slider sets it; the size is kept in the tweaks.
+export async function smokeZoom(vault: Vault): Promise<void> {
+  const log = (s: string) => void info(`smoke zoom: ${s}`);
+  const shot = async (name: string, ms = 2500) => { await sleep(800); log(`shot: ${name}`); await sleep(ms); };
+  const q = <T extends Element>(sel: string) => document.querySelector<T>(sel);
+  const must = (ok: unknown, what: string) => { if (!ok) throw new Error(what); log(`ok: ${what}`); };
+  const poll = async <T,>(probe: () => T | null | undefined | false, what: string, ms = 5000): Promise<T> => {
+    const t0 = Date.now();
+    for (;;) {
+      const v = probe();
+      if (v) { log(`ok: ${what}`); return v; }
+      if (Date.now() - t0 > ms) throw new Error(`${what} (waited ${ms} ms)`);
+      await sleep(100);
+    }
+  };
+  const key = (k: string, target: EventTarget = window) => target.dispatchEvent(new KeyboardEvent('keydown', { key: k, metaKey: true, bubbles: true, cancelable: true }));
+  const NOTE = 'courses/fall-2026/phys-415-stat-mech/canonical-ensemble.md';
+  const px = (sel: string) => parseFloat(getComputedStyle(q<HTMLElement>(sel)!).fontSize);
+  const near = (a: number, b: number) => Math.abs(a - b) < 0.6;
+  try {
+    useApp.getState().setTheme('light');
+    useApp.getState().setZoom(1);
+    openNode(NOTE);
+    const surface = await poll(() => q<HTMLElement>('.pane[data-active="1"] .doc-view .draft-doc'), 'the note is open', 10000);
+    await poll(() => q('.pane[data-active="1"] .draft-doc p.dd-p'), 'its paragraphs are drawn');
+    await sleep(300);
+    const base = px('.pane[data-active="1"] .draft-doc p.dd-p');
+    const h2 = px('.pane[data-active="1"] .draft-doc h2.dd-h');
+    must(near(base, 18), `the text is 18px at 100% (${base}px)`);
+    log(`a heading at ${h2}px`);
+    key('=');
+    key('=');
+    await poll(() => near(px('.pane[data-active="1"] .draft-doc p.dd-p'), 18 * 1.2), `⌘= twice: 120%, ${px('.pane[data-active="1"] .draft-doc p.dd-p')}px`);
+    must(near(px('.pane[data-active="1"] .draft-doc h2.dd-h'), h2 * 1.2), `the headings with it (${px('.pane[data-active="1"] .draft-doc h2.dd-h')}px)`);
+    must(useApp.getState().zoom === 1.2, 'the tweak reads 1.2');
+    await shot('zoom-bigger');
+    // from the editor, with the caret in the text
+    surface.focus();
+    key('-', surface);
+    await poll(() => useApp.getState().zoom === 1.1, '⌘− from the editor: 110%');
+    must(near(px('.pane[data-active="1"] .draft-doc p.dd-p'), 18 * 1.1), `${px('.pane[data-active="1"] .draft-doc p.dd-p')}px`);
+    key('0');
+    await poll(() => useApp.getState().zoom === 1 && near(px('.pane[data-active="1"] .draft-doc p.dd-p'), 18), '⌘0: back to 18px');
+    // the tweaks panel: the row and its slider
+    for (let i = 0; i < 3; i++) key('=');
+    await poll(() => useApp.getState().zoom === 1.3, '⌘= three times: 130%');
+    useApp.setState({ tweaksOpen: true });
+    const row = await poll(() => Array.from(document.querySelectorAll<HTMLElement>('.tweaks .tw-row')).find((r) => r.textContent?.startsWith('text size')), 'the tweaks panel has a text size row');
+    must(q('.tw-val', row)?.textContent === '130%', `reading ${q('.tw-val', row)?.textContent}`);
+    await shot('zoom-tweaks');
+    const slider = q<HTMLInputElement>('input', row)!;
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
+    setter.call(slider, '0.9');
+    slider.dispatchEvent(new Event('input', { bubbles: true }));
+    await poll(() => useApp.getState().zoom === 0.9 && near(px('.pane[data-active="1"] .draft-doc p.dd-p'), 18 * 0.9), 'the slider sets 90%');
+    must(JSON.parse(localStorage.getItem('ilmi.tweaks') ?? '{}').zoom === 0.9, 'kept with the tweaks');
+    useApp.setState({ tweaksOpen: false });
+    await shot('zoom-smaller');
+    useApp.getState().setZoom(1);
+    log(`done; vault ${vault.root}`);
+  } catch (e) {
+    useApp.getState().setZoom(1);
     log(`failed: ${e instanceof Error ? e.message : String(e)}`);
   }
 }

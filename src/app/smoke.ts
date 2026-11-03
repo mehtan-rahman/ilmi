@@ -7793,7 +7793,7 @@ export async function smokeTextSections(vault: Vault): Promise<void> {
 export async function smokeZoom(vault: Vault): Promise<void> {
   const log = (s: string) => void info(`smoke zoom: ${s}`);
   const shot = async (name: string, ms = 2500) => { await sleep(800); log(`shot: ${name}`); await sleep(ms); };
-  const q = <T extends Element>(sel: string) => document.querySelector<T>(sel);
+  const q = <T extends Element>(sel: string, root: ParentNode = document) => root.querySelector<T>(sel);
   const must = (ok: unknown, what: string) => { if (!ok) throw new Error(what); log(`ok: ${what}`); };
   const poll = async <T,>(probe: () => T | null | undefined | false, what: string, ms = 5000): Promise<T> => {
     const t0 = Date.now();

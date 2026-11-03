@@ -8,7 +8,7 @@ was verified, what was not, and the prompt to resume with.
 
 ## 2026-11-03 — a macOS installer and its workflow (asked for in chat, no milestone)
 
-Commit `COMMIT`. `npm run tauri build` now bundles `ilmi.app` and a DMG
+Commit `584508c`. `npm run tauri build` now bundles `ilmi.app` and a DMG
 (`bundle.targets` is `["app", "dmg"]`), and `.github/workflows/release.yml`
 builds a universal DMG on a tag `v*` (tests and typecheck on Linux first,
 then `tauri-apps/tauri-action` on `macos-latest`, a draft release named

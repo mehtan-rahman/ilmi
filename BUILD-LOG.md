@@ -8,7 +8,7 @@ was verified, what was not, and the prompt to resume with.
 
 ## 2026-11-03 — milestone 51: the reading loop, re-tuned
 
-Done on main, commit `COMMIT51`. Changed: `src/schedule/growth.ts` (the
+Done on main, commit `0c2f61d`. Changed: `src/schedule/growth.ts` (the
 cadence, growth from the elapsed time, the seeded Beta sampler), `read.ts`
 (`readOn` on a cadence, `readingLeft`, `readPri`), `section.ts`
 (`firstGap` for `SECTION_IVL`, priorities into enrol and bring back,

@@ -5522,7 +5522,7 @@ saying where it stands, one is moved to a course note, and the clipping is
 edited without touching them (`ILMI_SMOKE=textsections`).
 
 ### [x] 51. The reading loop, re-tuned — a cadence for sources, growth for sections, a sampled day
-Done 2026-11-03, commit `COMMIT51`.
+Done 2026-11-03, commit `0c2f61d`.
 Notes: `growth.ts` holds the rules and the reference's constants: `cadence
 (pri)` and `cadenceWords`, `elapsedBase(r, now)` (the longer of `ivl` and
 the days since `due − ivl`) and `grownAt`, `KAPPA` 20, `hashSeed` (FNV-1a),

@@ -102,6 +102,9 @@ numbers); new `src/schedule/__tests__/growth.test.ts` and the corpus file
   clipping held over (`ivl=12`, due tomorrow). Tests: 1188. The user's
   question that led here, whether a cadence fits how reading works, is
   answered in PLAN's 52 (a finish-by day), written but not built.
+  Window check at `04d1ca0` from a clean checkout, by window id: `done`,
+  42 `ok:`, no `failed:`, the qasida clipping held over to tomorrow at
+  `ivl=12`.
 
 ### Not done
 

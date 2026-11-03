@@ -6,6 +6,24 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-11-03 — text size (asked for in chat, no milestone)
+
+Commits `5f0ca95`, `723e40d`. The user asked to zoom in and out in
+notes. The page's text token is now `--serif-size: calc(18px * --zoom)`;
+`zoom` is a tweak beside density (0.7–1.8 in tenths, kept in
+`ilmi.tweaks`, `setZoom`), set by ⌘= / ⌘+ and ⌘− from anywhere (the editor
+included) and ⌘0 back to 1, and by a `text size` slider in ⌘, showing a
+percent. Headings, math chips and a book's notes follow, since they derive
+from the token; the chrome does not. README's key table. Tests: 1171
+(+1, the clamp and rounding). `ILMI_SMOKE=zoom` walks it; run from a clean
+checkout on 2026-11-03: `done`, 14 `ok:`, no `failed:` — 18px → 21.6px
+after ⌘= twice (a heading 20.5 → 24.6), ⌘− from inside the editor to
+19.8px, ⌘0 back, the tweaks row reading `130%`, the slider to 90%, kept
+with the tweaks. The first attempt found the user's own `tauri dev` on
+port 1420 and was not run until it was closed.
+
+---
+
 ## 2026-11-02 — milestone 50: text sources the same way
 
 Done on main, commits `4019839` and the window check's `2c62267`,

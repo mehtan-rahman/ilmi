@@ -8074,3 +8074,68 @@ export async function smokeCadence(vault: Vault): Promise<void> {
     log(`failed: ${e instanceof Error ? e.message : String(e)}`);
   }
 }
+
+// `ILMI_SMOKE=readme` over a copy of `samples/double-major`: the screens the
+// README shows, nothing asserted. Each `shot:` line marks one, in the light
+// theme and then the dark; the book is opened at the pages its sections box.
+export async function smokeReadme(vault: Vault): Promise<void> {
+  const log = (s: string) => info(`smoke readme: ${s}`);
+  const q = <T extends Element>(sel: string) => document.querySelector<T>(sel);
+  const shot = async (name: string, ms = 3000) => { await sleep(1500); log(`shot: ${name}`); await sleep(ms); };
+  const open = async (path: string) => {
+    openNode(path);
+    await until(() => (activeTab(useApp.getState().panes)?.id === path ? q('.pane-body .doc-view .draft-doc, .pane-body .deck-view, .pane-body .folder-view, .pane-body .book') : null), 15000);
+    await sleep(600);
+  };
+  const scrollTo = (text: string) => {
+    const el = Array.from(document.querySelectorAll<HTMLElement>('.doc-view .draft-doc > *')).find((e) => e.textContent?.includes(text));
+    el?.scrollIntoView({ block: 'start' });
+  };
+  const PT = 'courses/fall-2026/phys-412-quantum-ii/nondegenerate-perturbation-theory.md';
+  const CH3 = 'library/lindqvist-statistical-physics/ch-3-the-canonical-ensemble.md';
+  const QM = 'courses/fall-2026/phys-412-quantum-ii.md';
+  const screens: [string, () => Promise<void>][] = [
+    ['queue', async () => { openNode(queueId('today')); await until(() => q('.queue .qlist li')); await sleep(600); }],
+    ['book', async () => {
+      await open(CH3);
+      await until(() => q('.pane-body .book .pdf-page canvas'), 20000);
+      await sleep(2500);
+      q('.pane-body .book .pdf-page[data-page="24"]')?.scrollIntoView({ block: 'start' });
+      await sleep(2500);
+    }],
+    ['note', async () => { await open(PT); scrollTo('second order'); }],
+    ['notebook', () => open(QM)],
+    ['arabic', async () => { await open('courses/fall-2026/arab-401-advanced-grammar/kana-and-its-sisters.md'); scrollTo('خبر'); }],
+    ['deck', () => open('arabic/vocabulary.md')],
+    ['draft', () => open('courses/fall-2026/arab-455-abbasid-poetry/term-paper.md')],
+    ['folder', () => open('courses/fall-2026')],
+    ['session', async () => {
+      openNode(queueId('today'));
+      await until(() => q('.queue'));
+      press('Enter');
+      await until(() => q('.recall-wrap .card, .doc-session'), 10000);
+      for (let i = 0; i < 80 && !q('.recall-wrap .card .cloze-text'); i++) { press(']'); await sleep(120); }
+      await sleep(400);
+    }],
+    ['session-shown', async () => { press(' '); await sleep(300); }],
+  ];
+  try {
+    setSidebar({ hidden: false });
+    setInspector({ open: false });
+    useApp.setState({ railFolded: {} });
+    for (const p of ['courses', 'courses/fall-2026', 'courses/fall-2026/phys-412-quantum-ii', 'library', 'library/lindqvist-statistical-physics', 'arabic']) toggleOpen(p, true);
+    for (const theme of ['light', 'dark'] as const) {
+      useApp.getState().setTheme(theme);
+      await until(() => (document.documentElement.dataset.theme === theme ? true : null));
+      for (const [name, go] of screens) {
+        await go();
+        await shot(theme === 'light' ? name : `${name}-${theme}`);
+      }
+    }
+    useApp.getState().setTheme('light');
+    log(`done; vault ${vault.root}`);
+  } catch (e) {
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+    useApp.getState().setTheme('light');
+  }
+}

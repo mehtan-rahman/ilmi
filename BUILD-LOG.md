@@ -6,6 +6,24 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-11-03 — README, docs, and screenshots (asked for in chat, no milestone)
+
+Commit `COMMIT`, before the first push to GitHub. README is now the front
+door: the pitch, a hero screenshot of a book beside its notes, install (the
+DMG and from source), the first day in six steps, a screenshot table, how
+the day is scheduled in five bullets, the documents, a short key list, the
+layout, and a status paragraph. Its prose moved, verbatim, into `docs/`:
+`guide.md` (collections, the tree and notebooks, bringing things in, reading,
+writing, the day, plugins), `keys.md` (the full table), and `development.md`
+(running, the smoke modes, the installer and workflow, the layout, the
+documents). Nine screenshots under `docs/screenshots/` at 1600 px, captured
+by window id from `ILMI_SMOKE=readme`, a new assertion-free smoke mode over
+a copy of `samples/double-major` named `double-major` (the `tour` mode stops
+on a stale assertion before its screen loop). Verified: 1188 tests,
+typecheck clean, every capture looked at. Not changed: no LICENSE file yet.
+
+---
+
 ## 2026-11-03 — a macOS installer and its workflow (asked for in chat, no milestone)
 
 Commit `584508c`. `npm run tauri build` now bundles `ilmi.app` and a DMG

@@ -145,7 +145,7 @@ function growthRow(path: string, key: 'read' | 'write', s: ReadSchedule | WriteS
     const { af: _, ...rest } = cur;
     setField(d, key, n === null ? rest : { ...rest, af: n });
   }).catch(console.error);
-  const preview = onCadence !== undefined ? `${cadenceWords(onCadence)} while reading` : nextIntervals(key === 'read' ? elapsedBase(s, now) : s.ivl, s.af ?? def).map(fmtDays).join(', ');
+  const preview = onCadence !== undefined ? `${cadenceWords(onCadence)} while reading` : nextIntervals(elapsedBase(s, now), s.af ?? def).map(fmtDays).join(', ');
   return ['growth', (
     <>
       <NumField className="af-field" value={s.af} fallback={def} min={AF_MIN} step={0.1} parse={parseAf} none={def} onCommit={write} />

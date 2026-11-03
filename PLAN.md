@@ -5555,8 +5555,7 @@ runs `postponeRest` — never on a vault's first day; `comeBack` and
 `bringBack` say `back in Nd` from the cadence, as the section notices do
 (`sectionNode` returns `ivl`, `Pdf.tsx`'s `makeSection` reads it off
 `addPassage`). `Session.tsx`: `readingOn(item)`, `nextDays(item, now)` (a
-source on its cadence, a section or note from the elapsed time, a draft
-from its interval), `actionWords(item, now, atEnd)`, `atEndOf(item, pages,
+source on its cadence, a section, note or draft from the elapsed time), `actionWords(item, now, atEnd)`, `atEndOf(item, pages,
 last)`: a text source's marker at its last block, a book's at its last
 page (`Pdf`'s new `onLast` prop tells the session the page range's end
 once the file is read, so ⏎ reads `done for today` for a beat before);
@@ -5598,9 +5597,9 @@ runs first, before any postpone touches its line). Window check
 three fixing the smoke (`.insp`, each item's own line, the note's
 interval as the backlog left it: `4926567`, `00c4a5c`, `a6232ed`,
 `f9f566e`), run 4 `done`, 42 `ok:`, no `failed:`, six shots, recorded in
-BUILD-LOG. Not done: a draft
-still grows from its stored interval (the milestone names sections,
-extracts and notes); `postpone the rest` as a row shows only at the
+BUILD-LOG. Drafts grow from the elapsed time too since the
+same evening, when the user asked ("I think change drafts"). Not done:
+`postpone the rest` as a row shows only at the
 fold, the palette command and the tweak work without a budget; the
 backlog's `lowest key first` is read as the day's order (cosmetic: every
 one of them is postponed); the growth row on a document with pages

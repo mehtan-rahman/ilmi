@@ -85,13 +85,17 @@ numbers); new `src/schedule/__tests__/growth.test.ts` and the corpus file
   reps=2`; the next day's order swapped 32360 pairs among 363 shared
   elements, its backlog of 2 postponed by the day's first build with the
   tweak on; dark.
+- Drafts, the same evening, on the user's word ("I think change
+  drafts"): `workedOn` grows from the elapsed time through `grownAt`, the
+  session's `back in Nd` and the inspector's preview with it; a test for a
+  draft 63 days late landing at 95; FORMAT §3 says so. Two stale
+  worktrees of earlier sessions removed.
 
 ### Not done
 
 - The window check: `ILMI_SMOKE=cadence` is written, not run; the older
   smokes' numbers follow the cadence but are unrun too.
-- A draft still grows from its stored interval; `postpone the rest` as a
-  row shows only at the fold; the backlog's order is the day's (every
+- `postpone the rest` as a row shows only at the fold; the backlog's order is the day's (every
   element of it is postponed, so it only orders the writes).
 - From 50: `e` in a note makes an extract document; the picker lists
   notes flat; from 49: `ILMI_SMOKE=open`'s PDF part unrun.

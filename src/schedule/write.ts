@@ -1,18 +1,19 @@
 // The writing loop: a draft enrolled with `write:` resurfaces on a growing
 // interval until it is marked done. Never graded. Mirrors the prototype's
 // `writeAdvance`: worked on it multiplies the interval by the line's `af`
-// (1.5 when absent), postpone multiplies it by a smaller factor, done keeps
-// the line so the draft can be reopened.
+// (1.5 when absent) from the time elapsed, as a section does (`grownAt`),
+// postpone multiplies it by a smaller factor, done keeps the line so the
+// draft can be reopened.
 
 import { WRITE_AF, meta, setField, type Doc, type WriteSchedule } from '../format/index.js';
 import { addDays, dayOf } from './dates.js';
-import { grow, postponed } from './growth.js';
+import { grownAt, postponed } from './growth.js';
 
 export type WriteAction = 'on' | 'postpone' | 'done';
 
-/** One pass made. Reopens a done draft. */
+/** One pass made, grown from the time elapsed. Reopens a done draft. */
 export function workedOn(w: WriteSchedule, now: Date): WriteSchedule {
-  const ivl = grow(w.ivl, w.af ?? WRITE_AF);
+  const ivl = grownAt(w, now, w.af ?? WRITE_AF);
   return { ...w, due: addDays(dayOf(now), ivl), ivl, reps: (w.reps ?? 0) + 1, done: false };
 }
 

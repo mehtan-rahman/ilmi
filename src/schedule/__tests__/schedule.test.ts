@@ -229,6 +229,11 @@ describe('writing', () => {
     expect(writing.workedOn({ ivl: 10, af: 3 }, NOW)).toMatchObject({ ivl: 30, due: addDays(TODAY, 30) });
   });
 
+  it('worked on it late: grows from the days elapsed, as a section does', () => {
+    // due march 28 on ivl=3: the pass before was march 25, 63 days ago
+    expect(writing.workedOn({ due: '2026-03-28', ivl: 3, reps: 1 }, NOW)).toEqual({ due: addDays(TODAY, 95), ivl: 95, reps: 2, done: false });
+  });
+
   it('postpone: the interval grows by 1.2, at least a day more; done: keeps the line', () => {
     expect(writing.postpone(w, NOW)).toEqual({ ...w, due: addDays(TODAY, 3), ivl: 3 });
     expect(writing.postpone({ ivl: 20 }, NOW)).toEqual({ due: addDays(TODAY, 24), ivl: 24 });

@@ -13,7 +13,7 @@
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { emitDocAction, emitGrade, runBlockHooks, usePlugins } from '../plugins/index.js';
 import { PRI_DEFAULT, READ_AF, WRITE_AF, blanks, cardFields, type Block, type Card } from '../format/index.js';
-import { GRADES, advanceRead, advanceSection, cadence, grownAt, lineKey, advanceWrite, dirPri, grow, nextGap, postponed, scheduleOf, type CardItem, type Grade, type QueueItem, type ReadItem, type SectionItem, type WriteItem } from '../schedule/index.js';
+import { GRADES, advanceRead, advanceSection, cadence, grownAt, lineKey, advanceWrite, dirPri, nextGap, postponed, scheduleOf, type CardItem, type Grade, type QueueItem, type ReadItem, type SectionItem, type WriteItem } from '../schedule/index.js';
 import { EL_WORD, FORM_LABEL, doneLine, dueLabel, gapLabels, glyphOf, markOf, ownBlank, sourceLabel, standing, trailParts } from './items.js';
 import { writeDoc } from './sections.js';
 import { queueId } from './names.js';
@@ -265,12 +265,12 @@ export const readingOn = (item: ReadItem): boolean => isBook(item) && (!!item.pd
 /**
  * How many days ⏎ sends an element out at `now`: a source with reading
  * left on its cadence; a section, a note revisited or an extract grown
- * from the time elapsed; a draft grown from its interval.
+ * from the time elapsed, a draft the same.
  */
 export function nextDays(item: ReadItem | WriteItem | SectionItem, now: Date): number {
   if (item.kind === 'section') return nextGap(item.sched, now);
   if (item.kind === 'read') return readingOn(item) ? cadence(item.pri) : grownAt(item.sched, now, item.sched.af ?? READ_AF);
-  return grow(item.sched.ivl, item.sched.af ?? WRITE_AF);
+  return grownAt(item.sched, now, item.sched.af ?? WRITE_AF);
 }
 
 /**

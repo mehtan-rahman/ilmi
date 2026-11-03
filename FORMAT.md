@@ -267,8 +267,8 @@ constants are the app's). A pass multiplies by `af`, rounded, never below
 one day, from the longer of the stored `ivl` and the days since the pass
 before (the line's `due` less its `ivl`): on time the two are the same;
 sixty days late on `ivl=3` the next interval is 101, not 5. That is the
-rule for a note revisited, an extract, a section (§6.5), a draft (from its
-stored interval) and a source read to its end. **A source with reading
+rule for a note revisited, an extract, a section (§6.5), a draft, and a
+source read to its end. **A source with reading
 left** (`pos` short of its prose, or any document read by its pages) does
 not grow: a pass writes `ivl` as its **cadence** and `due` as today plus
 it, `reps` one more. The cadence is `1 + min(2, ⌊3·pri/100⌋)` days of the

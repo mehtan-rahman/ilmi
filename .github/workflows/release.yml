@@ -1,0 +1,71 @@
+# Builds the macOS installer: a universal (Apple Silicon + Intel) `ilmi.app`
+# inside a `.dmg`. Runs when a `v*` tag is pushed, which also opens a draft
+# GitHub release holding the DMG, or by hand from the Actions tab, which only
+# keeps the DMG as a workflow artifact.
+#
+# The app is signed and notarized when the six APPLE_* secrets are set
+# (README, "Installing"); without them the DMG is unsigned and macOS asks
+# the person to allow it once under System Settings > Privacy & Security.
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+
+  macos:
+    needs: check
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: npm ci
+      - name: build the app and the DMG
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # signing (optional): a base64 .p12 Developer ID Application certificate
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          # notarization (optional): an Apple ID with an app-specific password
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        with:
+          args: --target universal-apple-darwin
+          # a tag push opens a draft release named after the tag; a manual run makes no release
+          tagName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
+          releaseName: ${{ startsWith(github.ref, 'refs/tags/') && format('ilmi {0}', github.ref_name) || '' }}
+          releaseDraft: true
+          prerelease: false
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ilmi-macos-universal
+          path: src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+          if-no-files-found: error

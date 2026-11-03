@@ -31,6 +31,32 @@ ships two under `plugins/`: the sample, and a dictionary that looks a selected
 word up (Wiktionary by default, Arabic clitics stripped on the way) and adds
 it to a vocab deck from the popover.
 
+## Installing
+
+`npm run tauri build` makes the macOS app and its installer:
+`src-tauri/target/release/bundle/macos/ilmi.app` and, beside it under
+`dmg/`, `ilmi_<version>_aarch64.dmg` (the version is `src-tauri/tauri.conf.json`'s).
+Drag the app into Applications from the DMG. The build is unsigned unless a
+Developer ID certificate is on the keychain, so the first launch is refused
+and allowed once under System Settings > Privacy & Security (Open Anyway).
+
+On GitHub, pushing a tag `v<version>` runs `.github/workflows/release.yml`:
+tests and the typecheck on Linux, then the app on a macOS runner as a
+universal binary (Apple Silicon and Intel), attached to a draft release
+named after the tag. Publishing the draft is a click. The Actions tab's
+"Run workflow" builds the same DMG as a workflow artifact without a release.
+With six repository secrets the workflow signs and notarizes the app so it
+opens without the Privacy & Security step: `APPLE_CERTIFICATE` (the
+Developer ID Application `.p12`, base64), `APPLE_CERTIFICATE_PASSWORD`,
+`APPLE_SIGNING_IDENTITY` (its name, `Developer ID Application: …`),
+`APPLE_ID`, `APPLE_PASSWORD` (an app-specific password) and `APPLE_TEAM_ID`.
+
+The Tauri CLI refuses to build when an npm package and its Rust crate differ
+in minor version, so bump them together: the crates follow
+`rust-version` in `src-tauri/Cargo.toml` (`cargo update -p tauri …` takes
+the newest the MSRV allows), and the `@tauri-apps/*` packages go to the
+same minors.
+
 Arabic and English share a page: each block reads the way its first letter
 does (a block with no letter, a formula or a number, reads like the one
 before it), formulas and inline code stay left to right inside an Arabic

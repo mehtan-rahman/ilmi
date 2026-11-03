@@ -6,6 +6,29 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-11-03 — a macOS installer and its workflow (asked for in chat, no milestone)
+
+Commit `COMMIT`. `npm run tauri build` now bundles `ilmi.app` and a DMG
+(`bundle.targets` is `["app", "dmg"]`), and `.github/workflows/release.yml`
+builds a universal DMG on a tag `v*` (tests and typecheck on Linux first,
+then `tauri-apps/tauri-action` on `macos-latest`, a draft release named
+after the tag) or by hand as a workflow artifact; signing and notarization
+turn on when the six `APPLE_*` secrets exist. README has an "Installing"
+section. The first local build was refused by the CLI's version check:
+the npm packages were a minor ahead of the crates, which the MSRV-aware
+resolver held at `rust-version = "1.77.2"`; it is `1.90` now, the Tauri
+crates on their newest 2.x and the `@tauri-apps/*` packages on the same
+minors. Verified: `ilmi_0.1.0_aarch64.dmg` (9.9 MiB) mounted, the app opened
+from it (ad-hoc signed, no identity on this machine) to the collection
+picker, captured by window id; 1188 tests, typecheck clean (a first test
+run beside the release compile lost two to timeouts, the reruns none). Not
+verified: the workflow itself, since the repo has no remote; the GitHub
+`mehtan-rahman/ilmi` is an older, unrelated history. Not changed: the
+identifier `dev.ilmi.app`, which the CLI warns ends in `.app`; changing it
+would move the app's data and log directories.
+
+---
+
 ## 2026-11-03 — milestone 51: the reading loop, re-tuned
 
 Done on main, commit `0c2f61d`. Changed: `src/schedule/growth.ts` (the

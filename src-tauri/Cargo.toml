@@ -3,7 +3,7 @@ name = "ilmi"
 version = "0.1.0"
 description = "incremental reading, cards, and writing over a directory of markdown"
 edition = "2021"
-rust-version = "1.77.2"
+rust-version = "1.90"
 
 [lib]
 name = "ilmi_lib"

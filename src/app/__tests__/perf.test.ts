@@ -69,7 +69,9 @@ function infoOf(doc: Doc, items: QueueItem[]): DocInfo {
   return out;
 }
 
-describe('the sample, measured', () => {
+// The budgets are for the development machine (an Apple Silicon Mac); a shared
+// CI runner is slower by an unknown factor, so there they would only be noise.
+describe.skipIf(!!process.env.CI)('the sample, measured', () => {
   beforeAll(async () => {
     dir = await fsp.mkdtemp(join(tmpdir(), 'ilmi-perf-'));
     await fsp.cp(SAMPLE, dir, { recursive: true });

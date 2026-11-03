@@ -218,7 +218,10 @@ describe('exams: the quantum notebook with a midterm three weeks out', () => {
     const docs = withMidterm();
     const firstWeek: Record<string, number> = {};
     let afterExam: QueueItem[] = [];
-    const { grades, passes } = simulate(docs, '2026-10-30', '2026-12-10', (day, q) => {
+    // to the year's end: the first review after the exam lands in December, a day
+    // or two apart by time zone (ts-fsrs counts elapsed days by UTC date), so the
+    // walk runs well past it
+    const { grades, passes } = simulate(docs, '2026-10-30', '2026-12-31', (day, q) => {
       if (day === addDays(E, 1)) afterExam = q;
     });
     const qm = grades.filter((g) => under(g.path, QM));

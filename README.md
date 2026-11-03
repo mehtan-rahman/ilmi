@@ -315,7 +315,9 @@ and a session walks it. `postpone the rest`, a row under the fold or a
 palette command, postpones the backlog, the reading and writing due before
 today, and leaves what is first due today alone; cards stay where they are;
 `postpone the backlog when the day starts`, a tweak off by default, runs
-it at the day's first queue build. The bottom strip shows the keys that work where you are. `ilmi.theme('dark')`
+it at the day's first queue build; a source with reading left that it
+pushes on is only held over to tomorrow, its cadence kept, where `p` on it
+still grows the interval. The bottom strip shows the keys that work where you are. `ilmi.theme('dark')`
 and friends still work from the devtools console.
 
 The app owns the `ilmi://` scheme, the same grammar as Obsidian's URI under

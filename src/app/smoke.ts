@@ -8009,7 +8009,7 @@ export async function smokeCadence(vault: Vault): Promise<void> {
     must(n === rest.length, `postpone the rest postponed ${n}`);
     for (const i of todays) must((await ownLine(i)) === lines.get(itemSeed(i)), `untouched: ${i.kind} ${i.path.split('/').pop()}${i.kind === 'section' ? ` § ${i.heading.slice(0, 30)}` : ''}`);
     const q15 = await readLine(QASIDA);
-    must(q15?.due !== undefined && q15.due > DAY1 && q15.ivl === 14, `a backlog source postponed: ivl 12 → 14, due ${q15?.due}`);
+    must(q15?.due === addDays(DAY1, 1) && q15.ivl === 12, `a backlog source with reading left is held over to tomorrow, its interval kept: ivl ${q15?.ivl}, due ${q15?.due}`);
     setBudget(0);
     await poll(() => { refreshQueue(); return overflow(items(), appNow()).length === 0 ? true : null; }, 'no backlog left', 8000);
 

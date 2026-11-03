@@ -14,7 +14,14 @@ import { addDays, dayOf } from './dates.js';
 import { pacedInterval, perPassOf } from './exams.js';
 import { cadence, grownAt, postponed } from './growth.js';
 
-export type ReadAction = 'on' | 'postpone' | 'done';
+/**
+ * `postpone` is the person's (`p`: not now); `backlog` is the app's, the
+ * day's leftover pushed on by `postpone the rest` or the day-start tweak. A
+ * source with reading left is only held over to tomorrow by the backlog, its
+ * cadence kept, since the person did not choose to skip it; anything else is
+ * postponed the same way either way.
+ */
+export type ReadAction = 'on' | 'postpone' | 'done' | 'backlog';
 
 /**
  * Under an exam ahead (`exams.ts`): the exam, and the document's prose
@@ -52,6 +59,11 @@ export function postpone<T extends ReadSchedule>(r: T, now: Date, factor?: numbe
   return { ...r, due: addDays(dayOf(now), ivl), ivl };
 }
 
+/** Held over: due tomorrow, the interval (a source's cadence) kept, no pass counted. */
+export function heldOver<T extends ReadSchedule>(r: T, now: Date): T & { due: string } {
+  return { ...r, due: addDays(dayOf(now), 1) };
+}
+
 /**
  * The read point on a document with pages, moved forward only: page `pos`,
  * `y` down it (absent: its foot). A point before the one held leaves it.
@@ -82,7 +94,9 @@ export function readingLeft(m: { type?: string; pdf?: string }, at: number | und
  * document is studied toward, which paces a pass. On a document with pages
  * `pos` is a page and `y` how far down it (FORMAT.md §3), the point moved
  * forward only. A source with reading left after the pass lands on its
- * cadence; anything else grows from the elapsed time.
+ * cadence; anything else grows from the elapsed time. The backlog holds a
+ * source with reading left over to tomorrow (`heldOver`); the rest it
+ * postpones.
  */
 export function advanceRead(doc: Doc, action: ReadAction, now: Date, pos?: number, exam?: Exam, y?: number): ReadSchedule | null {
   const m = meta(doc);
@@ -95,7 +109,10 @@ export function advanceRead(doc: Doc, action: ReadAction, now: Date, pos?: numbe
   const marker = note || y !== undefined ? undefined : pos;
   const after = marker !== undefined ? Math.max(r.pos ?? 0, marker) : r.pos;
   const onCadence = readingLeft(m, after, total) ? cadence(readPri(m)) : undefined;
-  let next: ReadSchedule | null = action === 'done' ? null : action === 'on' ? readOn(r, now, marker, pace, onCadence) : postpone(r, now);
+  let next: ReadSchedule | null = action === 'done' ? null
+    : action === 'on' ? readOn(r, now, marker, pace, onCadence)
+    : action === 'backlog' && onCadence !== undefined ? heldOver(r, now)
+    : postpone(r, now);
   if (next && action === 'on' && !note && pos !== undefined && y !== undefined) {
     const { pos: _p, y: _y, ...rest } = next;
     next = { ...rest, ...pointOn(r, pos, y) };

@@ -398,7 +398,7 @@ export async function postponeOverflow(vault: Vault, items: QueueItem[], now: Da
   const rest = overflow(items, now);
   for (const item of rest) {
     await vault.update(item.path, (doc) => {
-      if (item.kind === 'read') advanceRead(doc, 'postpone', now);
+      if (item.kind === 'read') advanceRead(doc, 'backlog', now);
       else if (item.kind === 'section') advanceSection(doc, item.block, item.heading, 'postpone', now);
       else advanceWrite(doc, 'postpone', now);
     });

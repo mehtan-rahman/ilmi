@@ -86,7 +86,10 @@ def simulate(v, roster, days=365, seed=0, minutes=MIN_PER_DAY, log=None):
                 if isinstance(it, Section) and it.dismissed: continue
                 if isinstance(it, Source) and it.finished >= 0: continue
                 if it.due < day:
-                    it.ivl = postponed(it.ivl); it.due = day + it.ivl
+                    if v.cadence and isinstance(it, Source):
+                        it.due = day + 1          # held over: a missed day keeps the cadence
+                    else:
+                        it.ivl = postponed(it.ivl); it.due = day + it.ivl
         due = []
         for s in sources:
             if s.finished < 0 and s.due <= day: due.append((s, s.pri))

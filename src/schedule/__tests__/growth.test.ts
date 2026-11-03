@@ -115,6 +115,19 @@ describe('the day\'s draw', () => {
   });
 });
 
+describe('the backlog', () => {
+  it('holds a source with reading left over to tomorrow, its cadence kept; the person\'s postpone still grows it', () => {
+    const src = () => parse('---\ntype: source\nread: due=2026-10-20 ivl=3 reps=2 pos=4\n---\n\na\n\nb\n\nc\n\nd\n\ne\n\nf\n').doc;
+    expect(advanceRead(src(), 'backlog', NOW)).toEqual({ due: '2026-11-04', ivl: 3, reps: 2, pos: 4 });
+    expect(advanceRead(src(), 'postpone', NOW)).toEqual({ due: '2026-11-07', ivl: 4, reps: 2, pos: 4 });
+  });
+  it('postpones a note revisited either way', () => {
+    const note = () => parse('---\nread: due=2026-10-20 ivl=10 reps=2\n---\n\na\n').doc;
+    expect(advanceRead(note(), 'backlog', NOW)).toEqual({ due: '2026-11-15', ivl: 12, reps: 2 });
+    expect(advanceRead(note(), 'postpone', NOW)).toEqual({ due: '2026-11-15', ivl: 12, reps: 2 });
+  });
+});
+
 describe('the Python reference', () => {
   it('design/sim/irsim.py keeps the constants that ship: the growth, the postpone factor, the pseudo-count and the cadence', () => {
     const py = readFileSync(join(import.meta.dirname, '../../../design/sim/irsim.py'), 'utf8');
@@ -125,6 +138,7 @@ describe('the Python reference', () => {
     expect(py).toContain('return 1 + min(2, int(3 * pri / 100))');
     expect(py).toContain('return max(round(ivl * POSTPONE), ivl + 1)');
     expect(py).toContain('base = max(it.ivl, day - it.last) if v.elapsed else it.ivl');
+    expect(py).toContain('it.due = day + 1          # held over');
     // the same rule in both: grow, postpone, and the cadence over the whole scale
     for (let pri = 0; pri <= 100; pri++) expect(cadence(pri)).toBe(1 + Math.min(2, Math.trunc((3 * pri) / 100)));
     for (const ivl of [1, 2, 3, 5, 8, 13, 30]) {

@@ -273,9 +273,13 @@ left** (`pos` short of its prose, or any document read by its pages) does
 not grow: a pass writes `ivl` as its **cadence** and `due` as today plus
 it, `reps` one more. The cadence is `1 + min(2, ⌊3·pri/100⌋)` days of the
 priority that applies (the `pri` field, else the line's, else 50): every
-day under 34, every other day to 66, every third day above. Postpone
-grows the stored `ivl` by 1.2 (at least a day) whatever the document is,
-and counts no pass. Enrolling writes `ivl` as the cadence and `due` today;
+day under 34, every other day to 66, every third day above. Postpone, the
+person's `p`, grows the stored `ivl` by 1.2 (at least a day) whatever the
+document is, and counts no pass. The backlog rule (`postpone the rest`, or
+the tweak at the day's start) does the same, except that a source with
+reading left is held over to tomorrow with its `ivl` kept: the person did
+not choose to skip it, and a missed day should not stretch a book's
+cadence. Enrolling writes `ivl` as the cadence and `due` today;
 an extract carved out starts the same way, due today on the cadence of its
 priority. `af` is written only when it is not the default; a value below
 1.1 is dropped with a diagnostic, and the default value, if written by

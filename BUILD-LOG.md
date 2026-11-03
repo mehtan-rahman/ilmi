@@ -90,6 +90,18 @@ numbers); new `src/schedule/__tests__/growth.test.ts` and the corpus file
   session's `back in Nd` and the inspector's preview with it; a test for a
   draft 63 days late landing at 95; FORMAT §3 says so. Two stale
   worktrees of earlier sessions removed.
+- The backlog, later the same evening, after a chart of the semester run
+  (`design/sim`, with passes recorded) showed text 3 in a ten-day hole: a
+  full day cost it its turn and the backlog rule then grew its gap twice.
+  `ReadAction` gained `backlog`; `postponeOverflow` uses it; a source with
+  reading left is held over to tomorrow with its cadence kept (`heldOver`),
+  anything else postponed as before, and `p` still grows. `irsim.py`
+  mirrors it; FORMAT §3 and README say so; the fold test now expects the
+  two corpus sources back the day after and the extract and draft not;
+  two tests in `growth.test.ts`; the cadence smoke expects the qasida
+  clipping held over (`ivl=12`, due tomorrow). Tests: 1188. The user's
+  question that led here, whether a cadence fits how reading works, is
+  answered in PLAN's 52 (a finish-by day), written but not built.
 
 ### Not done
 

@@ -5598,7 +5598,15 @@ three fixing the smoke (`.insp`, each item's own line, the note's
 interval as the backlog left it: `4926567`, `00c4a5c`, `a6232ed`,
 `f9f566e`), run 4 `done`, 42 `ok:`, no `failed:`, six shots, recorded in
 BUILD-LOG. Drafts grow from the elapsed time too since the
-same evening, when the user asked ("I think change drafts"). Not done:
+same evening, when the user asked ("I think change drafts"). The same
+evening, after the chart of the semester run showed text 3 falling into
+a ten-day hole (a full day cost it its turn, and the backlog rule then
+grew its gap twice), the two postpones were split: `ReadAction` gained
+`backlog`, which `postponeOverflow` uses; a source with reading left is
+held over to tomorrow with its cadence kept (`heldOver` in `read.ts`),
+anything else postponed as before; `p` still grows. The user: "makes
+sense". `irsim.py` mirrors it, FORMAT §3 and README say so, the fold
+test and the cadence smoke expect it. Not done:
 `postpone the rest` as a row shows only at the
 fold, the palette command and the tweak work without a budget; the
 backlog's `lowest key first` is read as the day's order (cosmetic: every
@@ -5664,6 +5672,38 @@ cadence and the file says so; a section passed sixty days late lands past
 `postpone the rest` touches nothing first due today; ⏎ on a finished source
 dismisses it; and `design/sim/irsim.py` with the shipped constants still
 finishes the semester's three textbooks (`ILMI_SMOKE=cadence`).
+
+### [ ] 52. Finish by — a day on a source that paces its reading
+From the conversation of 2026-11-03 on how reading actually works: a
+textbook usually follows something external (lectures, a reading group,
+a deadline), so priority is a stand-in for "how soon do I need this", and
+a date would be more honest. The exam pacing (43) already does this for a
+source under an exam; this is the same code with its own trigger. The
+user: "makes sense". Ask before building: it is a front-matter field.
+- **FORMAT.md §3**: `finish: <day>` on a source (a document with `read`),
+  plain or quoted like `title`; a value that is not a day is a raw line
+  with a diagnostic. Means nothing on a note, a draft, or a deck. Not
+  inherited. After the day it means nothing and is left as written.
+- **Pacing**: while the day is ahead, a pass on the source is paced as
+  under an exam (`pacedInterval` with the finish day itself as the target,
+  no lead): the next pass comes no later than the pacing says, the
+  interval written the shorter of the cadence and the pacing. The backlog
+  rule holds it over to tomorrow as any book. An exam ahead that is
+  nearer still wins.
+- **Inspector**: a `finish by` row on a source with a date field (empty
+  clears). The queue row and the session bar say `on pace · 9 passes
+  left` or `behind · 14 passes left` after the standing, nothing when no
+  day is set.
+- **Corpus**: a source with `finish:` and a test that its pass lands no
+  later than the pacing says; the mangled corpus gets a bad value.
+- Not in this milestone: a finish day on a folder or a notebook; a
+  per-pass size the person sets (`perPassOf` reads it off the passes
+  made, as now).
+
+*Done when:* on the sample, setting a finish day three weeks out on a
+half-read source makes its next pass land on the pacing's day rather than
+its cadence, the row says how many passes are left, and clearing the day
+puts it back on its cadence (`ILMI_SMOKE=finish`).
 
 ## Notes for the next session
 

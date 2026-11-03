@@ -540,15 +540,15 @@ describe('the fold', () => {
         expect(now[changed[0]! - 1]).toMatch(/^(read|write): /);
       }
     }
-    // each interval grew by 1.2, at least a day, from the day of the postpone
-    expect(await readDisk('papers/crick-1995.md')).toContain('\nread: due=2026-05-31 ivl=3 reps=3 pos=2 af=2\n');
-    expect(await readDisk('papers/archive/sutton-2019.md')).toContain('\nread: due=2026-05-30 ivl=2 reps=0 pos=0\n');
+    // a source with reading left is held over to tomorrow, its interval kept; the extract and the draft grew by 1.2, at least a day
+    expect(await readDisk('papers/crick-1995.md')).toContain('\nread: due=2026-05-29 ivl=2 reps=3 pos=2 af=2\n');
+    expect(await readDisk('papers/archive/sutton-2019.md')).toContain('\nread: due=2026-05-29 ivl=1 reps=0 pos=0\n');
     expect(await readDisk('papers/wozniak-1990/woz-ex1.md')).toContain('\nread: due=2026-05-30 ivl=2 reps=1 pos=0\n');
     expect(await readDisk('essays/spaced-composition.md')).toContain('\nwrite: due=2026-05-31 ivl=3 reps=1 done=false\n');
-    // the day after: the topics are gone, the cards are still there
+    // the day after: the two sources are back, the extract and the draft are not, the cards are still there
     const later = new Date(NOW.getTime() + 2 * 86400000);
     const then = await queue(vault, later, 'today');
-    expect(then.filter((i) => i.kind !== 'card')).toEqual([]);
+    expect(then.filter((i) => i.kind !== 'card').map((i) => i.path).sort()).toEqual(['papers/archive/sutton-2019.md', 'papers/crick-1995.md']);
     expect(then.length).toBeGreaterThan(10);
     expect(overflow(await queue(vault, later), later)).toEqual([]);
   });

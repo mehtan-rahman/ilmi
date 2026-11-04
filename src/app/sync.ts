@@ -114,9 +114,11 @@ function serial<T>(fn: () => Promise<T>): Promise<T> {
   return run;
 }
 
+/** A fetch or push that failed at the transport: libgit2's `Net`, `Ssl` and `Http` classes (`unsupported URL protocol; class=Net (12)`), or the words such failures use. */
 const isNetwork = (e: unknown) => {
   const m = e instanceof Error ? e.message : String(e);
-  return /resolve|connect|timed out|network|unreachable|failed to|could not|unexpected|SSL|TLS|authentication|401|403|404|no such file|not found/i.test(m);
+  return /class=(Net|Ssl|Http) \(/.test(m)
+    || /resolve|connect|timed out|network|unreachable|failed to|could not|unexpected|SSL|TLS|authentication|401|403|404|no such file|not found/i.test(m);
 };
 
 async function status(at: string): Promise<Status> {

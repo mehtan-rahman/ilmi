@@ -5705,6 +5705,191 @@ half-read source makes its next pass land on the pacing's day rather than
 its cadence, the row says how many passes are left, and clearing the day
 puts it back on its cadence (`ILMI_SMOKE=finish`).
 
+## Beyond the Mac
+
+Worked out with the user on 2026-11-03 and 04, after the macOS installer,
+the release workflow, and v0.1.0. What they asked for, in their words:
+- **A companion iPad.** "i'd eventually like the ipad to be companion,
+  like e.g., taking notes w/ apple pencil (working out math) as im reading
+  book or whatever".
+- **The phone too.** "i'd still like to do basic cards and stuff from my
+  phone too".
+- **Sync that is not Apple's.** "Is there no other way to do sync that's
+  not specific to apple platform?" — and, on using both devices at once,
+  what git would do with it.
+
+**The model.**
+- **The vault is a git repository.** That is the sync, on every platform:
+  ilmi commits what it writes, pulls on open, on focus, on a timer, and on
+  a nudge, and pushes after a session. Any host: a private GitHub repo, a
+  bare repo on a machine of the user's. History and backup fall out of it.
+- **Merges are the format's.** One review touches one line, so two
+  devices changing different cards in one file merge clean. The same
+  schedule line changed on both (`sr`, `read`, `write`, a section's
+  `read`): the later instant wins. Prose changed on both in one paragraph:
+  both versions kept under a notice; damage stays local. A file edited on
+  one side and deleted on the other: the edit stays. `.ilmi/order.json`:
+  the pulled one wins. The review log is append-only, one line a review.
+  PDFs are never written, so never in conflict. Not live: a few seconds
+  with the nudge, a couple of minutes without; the queue is derived from
+  the files each device has, so the same card can show due on both until
+  the next pull, and the later-instant rule cleans up what slips through.
+- **The iPad reads and inks, the Mac types and reviews.** The pages beside
+  the notes as on the Mac, a passage boxed with a finger or the Pencil, a
+  page of working under the section being read. Ink is an image block the
+  format already has, `![worked 3.9](ink-03.png)`, with the strokes beside
+  it under the same name so the drawing reopens editable; the PNG is what
+  every other tool reads. The Pencil canvas is native (PencilKit), one
+  small Tauri plugin in Swift, because a browser canvas cannot match its
+  latency and palm rejection. Working-out stays ink; the result is typed
+  into a card. Scribble into the editor comes free with iPadOS.
+- **The phone is for cards and clipping.** The day's queue and the
+  session are its face, grades as big buttons, a quick card into a deck,
+  a page clipped from Safari. Reading is possible there, not the point.
+- **What stays the same.** No modes, no second format, no state the files
+  do not hold. The same renderer on every platform; the Rust side gains
+  git and, on iOS, the canvas. Tweaks stay per device; the sync's remote
+  and token live with them, outside the vault.
+
+**What the user decides before 55:** the Apple Developer Program (99 USD
+a year) is needed to run on a device for more than seven days, for
+TestFlight, and for the App Store; the simulator and a seven-day install
+on their own iPad are free. Signing the Mac build (the six `APPLE_*`
+secrets, README "Installing") rides on the same membership. Where the git
+host is. Whether the phone (56) comes before touch reading (57).
+
+Order: 53 → 54 on the Mac, judged as every milestone is; 55 → 58 need
+Xcode and the simulator, checked there the way the window is checked here.
+52 (finish by) waits for the user's word and is not in this order.
+
+---
+### [ ] 53. Sync by git — the vault as a repository, merged by the format's rules
+- **Rust**: `git2` (vendored libgit2, HTTPS with a token; no SSH). Commands
+  for the renderer: status, init, clone, commit, fetch, merge, push, with
+  the conflict list. Nothing shells out to a `git` binary.
+- **Setup**: `sync` in the tweaks (⌘,, the vault's section): a remote URL
+  and a token, kept with the tweaks outside the vault; `connect` clones
+  into a chosen empty folder or turns the open vault into a repository
+  with that remote. A vault that is already a repository is used as it is;
+  `.ilmi/` is tracked, `plugins/*/data.json` too, nothing ignored but what
+  the app never reads.
+- **When**: a commit after each batch of writes (a session, a save, an
+  import), at most one a minute, messages naming what changed ("3 reviews,
+  ch. 3 read on, term paper edited"); a pull on open, on focus, every two
+  minutes; a push after a session, on close, and a minute after any
+  commit. Offline is quiet: commits accumulate, the strip says so.
+- **Merge**: a three-way merge per file. The format's rules above, applied
+  line by line: a schedule line changed on both sides takes the later
+  instant (`last` on `sr`, `made`/`due` on `read` and `write`); a conflict
+  in prose keeps both versions as two blocks with a notice naming the
+  file and the heading, never conflict markers in the file; modify/delete
+  keeps the edit; `.ilmi/order.json` takes the pulled side; the review log
+  is unioned. Every merge is one commit the person can see in history.
+- **Strip and notice**: the top strip's right end says `synced`, `3 to
+  push`, `pulling…`, `offline`, or `2 conflicts` (a click opens the
+  files); a notice when a pull changed what is open, which the watcher
+  already reloads.
+- **Tests**: a local bare repository and two working copies in a temp
+  dir, every rule above exercised through the Rust commands (cargo tests)
+  and the merge through vitest where it is pure. `ILMI_SMOKE=sync`: two
+  copies of the sample over one bare repo, a review on each, a pass on
+  each, the same card on both, a paragraph on both, a drag on both.
+- Not in this milestone: SSH, LFS, a git host's own sign-in, merging
+  binary files, the nudge (54).
+
+*Done when:* two copies of the sample share a bare repository; a card
+graded in each lands in both; the same card graded in both keeps the
+later grade; a paragraph edited in both shows both under a notice; a drag
+in both keeps the pulled order; and the strip says where things stand
+(`ILMI_SMOKE=sync`, both windows checked).
+
+### [ ] 54. The nudge — a pull the moment the other device pushed
+- After every push, ilmi publishes "changed" to a topic; every open ilmi
+  on that vault is subscribed and pulls at once. The topic carries no
+  content. Default transport: an ntfy topic named by a hash of the remote
+  URL, over the server in the tweaks (`https://ntfy.sh` until changed);
+  the subscription is server-sent events through the http plugin,
+  reconnecting quietly. A sync with no nudge configured is the timer.
+- Latency in the strip: `synced · 2 s ago`.
+- Not in this milestone: a relay carrying content, local-network peers.
+
+*Done when:* a review in one copy appears in the other within five
+seconds with the timer off (`ILMI_SMOKE=nudge`).
+
+### [ ] 55. The iOS target — the same app on an iPad
+- `npm run tauri ios dev` builds and runs in the simulator and on a device
+  with a free team. Desktop-only pieces gated with `cfg(desktop)`: single
+  instance, the menu bar, the paste-as-plain-text item, the welcome's
+  folder drop. The `ilmi://` scheme registered for iOS.
+- **The vault on iOS** is cloned by 53 into the app's Documents folder,
+  visible in the Files app (`UIFileSharingEnabled`,
+  `LSSupportsOpeningDocumentsInPlace`), so it can also be inspected or
+  backed up by hand. The welcome on iOS is `connect` and the vaults
+  cloned before.
+- **Layout**: a landscape iPad is a narrow Mac: sidebar and inspector
+  hide, one pane. Portrait is one pane, the sidebar a sheet from the left
+  edge, the book view's notes folded. Touch basics: tap opens, the
+  selection bar offers card and extract, scrolling is the page's own; the
+  keyboard's ⌘ keys work where iPadOS allows them.
+- **Checks**: the smoke modes run in the simulator, chosen by a dev-only
+  file in the app's Documents (`smoke.json`: mode and vault) since there
+  are no environment variables; captures by `xcrun simctl io screenshot`.
+- Not in this milestone: the phone's layout (56), the Pencil (57, 58),
+  the App Store.
+
+*Done when:* on a simulated iPad the sample, cloned from a local bare
+repository, opens; the queue walks; a card graded there lands on the Mac
+by 53; `ILMI_SMOKE=tour` runs there and its captures are looked at.
+
+### [ ] 56. The phone — cards and clipping
+- Under 600 px wide the app's face is the day: the queue as rows, the
+  session full screen with the four grades as buttons across the bottom,
+  ⏎ `p` `d` as buttons on a topic row. The tree and the palette behind one
+  button; a document opens as a single page.
+- A quick card: `+` on a deck or the queue opens the composer with front
+  and back, lands in the deck chosen last.
+- Clipping: Safari's share sheet needs native code, so the first version
+  is an `ilmi://new?url=` Shortcut the README documents, and the
+  bookmarklet; the share extension is a later milestone if the Shortcut
+  is not enough.
+- Not in this milestone: reading on the phone beyond opening a page,
+  ink, the watch.
+
+*Done when:* on a simulated iPhone the day's cards are reviewed with the
+buttons, a card is added to a deck, a page is clipped through the
+Shortcut, and all three reach the Mac.
+
+### [ ] 57. Touch reading — a passage boxed with a finger or the Pencil
+- The pages take pointer events: a finger or Pencil drag boxes a passage,
+  a second drag another, a tap clears; the selection bar on the notes
+  offers section and card. Long-press where right-click was, on rows,
+  headings, and cards; the tree's rows drag after a long press. The
+  book's notes slide in from the right in portrait.
+- Not in this milestone: ink (58).
+
+*Done when:* on a simulated iPad a chapter of the sample is read, a
+passage boxed with the (simulated) Pencil becomes a section, and the
+section is on the Mac.
+
+### [ ] 58. Ink — a page of working under the section being read
+- **A Tauri plugin in Swift** opens a PencilKit canvas over the web view
+  (full screen, the tool picker shown) and returns a PNG at 2× and the
+  strokes (`PKDrawing` data). Opening with existing strokes edits them.
+- **In the notes**: `draw` beside `extract` and `card` on a section's
+  heading and in the insert menu on iOS writes `![working](ink-NN.png)`
+  under the heading, the PNG beside the note as images already land
+  (`name/ink-NN.png`), the strokes as `name/ink-NN.pkdrawing`. A tap on
+  the image on iOS reopens the canvas; on the Mac it is the picture. 53
+  carries both files.
+- **FORMAT.md**: a line under images, §4, naming the sidecar convention;
+  no new syntax. A corpus note with an ink block and its sidecar.
+- Not in this milestone: handwriting to LaTeX (Mathpix or MyScript, if
+  ever), ink on the PDF page itself, ink in a card face.
+
+*Done when:* on a simulated iPad a page of working is drawn under the
+section being read, reopens editable, and shows on the Mac under the same
+heading.
+
 ## Notes for the next session
 
 Studying (42–46) is complete, 2026-10-31: every milestone's window check
@@ -5728,8 +5913,11 @@ reading left, growth from the elapsed time for the rest, a sampled day,
 the backlog rule and its tweak, an end for a finished source, the
 inspector's interval field. Its window check (`ILMI_SMOKE=cadence`, from a
 clean checkout) is still to run; the older smokes' first-interval numbers
-were updated to the cadence but not run either. Next is the user's to
-say.
+were updated to the cadence but not run either. 51's window check ran on
+2026-11-03 (`cadence`, 42 ok, with the backlog split); the installer, the
+release workflow, the docs, the first push, and v0.1.0 followed the same
+day (BUILD-LOG). Next: Beyond the Mac (53–58), written 2026-11-04; 52
+waits for the user's word.
 
 Refinement (33–41) is complete, 2026-10-30, every milestone's window check
 run and recorded under its BUILD-LOG entry (33 `notes`, 34 `editing`, 35

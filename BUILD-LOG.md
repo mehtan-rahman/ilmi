@@ -6,6 +6,33 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-11-04 — Beyond the Mac, planned (no milestone built)
+
+PLAN.md gains the section "Beyond the Mac", milestones 53–58, from the
+conversation on an iPad companion (Pencil working-out under the section
+being read), cards from the phone, and sync that is not Apple's: 53 sync
+by git with the format's merge rules, 54 the nudge, 55 the iOS target,
+56 the phone, 57 touch reading, 58 ink. 52 (finish by) still waits for
+the user's word. Handoff prompt for the next session:
+
+```
+Read PLAN.md, FORMAT.md, BUILD-LOG.md, and spec/hashiyah/HANDOFF.md. The
+next section of PLAN.md is "Beyond the Mac" (53–58); its introduction
+holds the decisions and the user's words. Do milestone 53 and only that
+one (52 waits for the user; skip it). Stop at its "done when". Then tick
+it, write notes for the next session under it, add an entry to
+BUILD-LOG.md with a fresh handoff prompt, and commit. Rules as in
+PLAN.md's ground rules: export PATH=$HOME/.cargo/bin:/opt/homebrew/bin:$PATH;
+npm test and npm run typecheck green before a commit, and cargo test for
+the Rust side; one commit per milestone; ask before a screen, section, or
+setting the brief does not name; a FORMAT change needs a corpus file and
+a test. The window check runs from a clean checkout of main over a copy
+of samples/double-major; never kill a process on port 1420 that is not
+yours; capture only by window id.
+```
+
+---
+
 ## 2026-11-03 — README, docs, and screenshots (asked for in chat, no milestone)
 
 Commit `6587378`, before the first push to GitHub. README is now the front

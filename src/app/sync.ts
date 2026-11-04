@@ -220,7 +220,7 @@ async function pullNow(at: string): Promise<void> {
     }
   } finally {
     if (root === at) patch({ busy: null });
-    scheduleStatus(0);
+    await refreshSync().catch(() => {});
   }
 }
 
@@ -248,7 +248,7 @@ async function pushNow(at: string, retry = true): Promise<void> {
     }
   } finally {
     if (root === at) patch({ busy: null });
-    scheduleStatus(0);
+    await refreshSync().catch(() => {});
   }
 }
 

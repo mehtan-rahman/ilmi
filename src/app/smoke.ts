@@ -8338,7 +8338,7 @@ export async function smokeSync(vault: Vault): Promise<void> {
     await shot('sync-pending');
     const dayf = await b<string>('grade', { path: VOCAB, id: 'voc-dayf', g: 4 });
     await a('sync');
-    must(word() === 'synced', 'a pushed: synced');
+    await poll(() => word() === 'synced', 'a pushed: synced');
     const bAfter = await b<State>('sync');
     must(bAfter.word === 'synced' && bAfter.conflicts.length === 0, `b merged and pushed: ${bAfter.word}`);
     openNode(VOCAB);
@@ -8407,7 +8407,7 @@ export async function smokeSync(vault: Vault): Promise<void> {
     await b('remote', { url: host });
     const back = await b<State>('sync');
     must(back.word === 'synced', `b back on its remote: ${back.word}`);
-    must(word() === 'synced', `a: ${word()}`);
+    await poll(() => word() === 'synced', 'a: synced');
     await shot('sync-synced');
 
     // ── dark ──

@@ -8400,7 +8400,13 @@ export async function smokeSync(vault: Vault): Promise<void> {
     await a('sync');
     const dragged = await b<State>('sync');
     must(dragged.conflicts.length === 0, 'the order is no conflict');
-    must(JSON.stringify(await b('orderOf', { dir: FLEETING })) === JSON.stringify(orderA), 'b takes the pulled order');
+    // the pull wrote `.ilmi/order.json`; b's vault takes it once its watcher reports the file
+    let orderBNow = '';
+    for (let i = 0; i < 25 && orderBNow !== JSON.stringify(orderA); i++) {
+      if (i) await sleep(200);
+      orderBNow = JSON.stringify(await b('orderOf', { dir: FLEETING }));
+    }
+    must(orderBNow === JSON.stringify(orderA), `b takes the pulled order: ${orderBNow}`);
     await a('sync');
     must(JSON.stringify(await a('orderOf', { dir: FLEETING })) === JSON.stringify(orderA), "a's order stands");
     await shot('sync-order');

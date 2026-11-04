@@ -26,6 +26,7 @@ import { useApp, type El } from './store.js';
 import { useDoc } from './useDoc.js';
 import { studyHeader } from './study.js';
 import { activeExamAt, currentVault, note, openNode, optionsAt } from './vault.js';
+import { sessionEnded } from './sync.js';
 import { gradeCard } from './grading.js';
 import './session.css';
 import './incontext.css';
@@ -369,6 +370,7 @@ export function Session({ active, onOpen }: Props) {
   // the day's queue walked to its end says so, then goes back to the queue
   const deck = session?.deck;
   useEffect(() => {
+    if (total > 0 && idx >= total) sessionEnded();
     if (deck && total > 0 && idx >= total) openNode(deck.id);
     if (deck || total === 0 || idx < total) return;
     const t = setTimeout(() => openNode(queueId('today')), 1500);

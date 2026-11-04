@@ -44,6 +44,14 @@ then `xelatex reader-book.tex` rebuild the PDFs, copied beside the sample's
 parents): the physics first pass, the derivation written up on a later day
 and dismissed when it returns, and the Arabic passage clipped.
 
+`ILMI_SMOKE=sync` (milestone 53) wants two devices: `ILMI_VAULT` is a scratch
+copy of the sample and `ILMI_VAULT2` an empty path beside it; the app opens a
+second window over it (`ILMI_VAULT2` alone, without the smoke, opens any
+vault in a second window), the first makes a bare repository beside its copy
+and connects, the second clones, and the two take turns over Tauri events.
+To run a smoke beside the installed app (the single-instance plugin would
+hand the launch to it), give the dev build its own identifier:
+`npm run tauri dev -- --config '{"identifier":"dev.ilmi.check"}'`.
 `ILMI_SMOKE=readme` over a copy of the sample walks the screens the README
 shows and marks each with a `shot:` line; the README's images were captured
 that way, by window id, and scaled to 1600 px wide. Each smoke mode logs `ok:` and `failed:` lines and `shot: <name>` marks
@@ -89,9 +97,10 @@ src/schedule/      ts-fsrs grading, the reading and writing loops, the queue que
 src/import/        text from a paste, a page, a list of cards, an Anki package, a book in EPUB, or a SuperMemo collection, on its way to a file
 src/pdf/           the PDF lens's pure side: a page's text from pdf.js items, finding a passage again
 src/plugins/       the plugin runtime (api.ts is the typed handle, runtime.ts the loader) and its tweaks section
+src/sync/          the merge of one file changed on both devices, by the format's rules; src/app/sync.ts is the policy over the Rust commands
 plugins/           the plugins the repo ships, built by `npm run plugins`; ilmi.d.ts is the API; see PLUGINS.md
 scripts/           command-line tools, run with tsx
-src-tauri/         desktop shell (Tauri v2, fs + dialog + http + deep-link + single-instance + opener + log plugins; anki.rs reads a package, epub.rs a book, plugin.rs a plugin zip)
+src-tauri/         desktop shell (Tauri v2, fs + dialog + http + deep-link + single-instance + opener + log plugins; anki.rs reads a package, epub.rs a book, plugin.rs a plugin zip, sync.rs the vault as a git repository over libgit2)
 ```
 
 ## The documents

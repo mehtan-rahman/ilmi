@@ -296,6 +296,32 @@ pushes on is only held over to tomorrow, its cadence kept, where `p` on it
 still grows the interval. The bottom strip shows the keys that work where you are. `ilmi.theme('dark')`
 and friends still work from the devtools console.
 
+## Sync
+
+A collection syncs between devices as a git repository. In the tweaks (⌘,),
+`remote` takes a repository's HTTPS address (a private GitHub repository, a
+bare repository on a machine of yours) and `token` what it asks for;
+`connect` makes the open collection a repository on that remote and brings
+the two level, `clone…` puts the remote's collection into an empty folder
+and opens it. From then on the app commits what it writes after each batch
+(a session, a save, an import; at most once a minute, the message naming
+what changed), pulls on open, on focus, and every two minutes, and pushes
+after a session, on close, and a minute after a commit. The top strip says
+where things stand: `synced`, `3 to push`, `pulling…`, `offline`, or
+`2 conflicts`. Offline is quiet; commits wait.
+
+Two devices changing different cards in one file merge clean. The same card
+graded on both keeps the later grade; a source read on on both keeps the
+later pass. A paragraph edited on both keeps both versions, one block after
+the other, under a notice naming the file and the heading; `2 conflicts` in
+the strip opens the files. A file edited on one side and deleted on the
+other keeps the edit; the order chosen for a folder takes the pulled side;
+the review log is unioned. Every merge is one commit in the history. A
+collection that is a repository already is used as it is; `.ilmi/state.json`
+(the window's own state) stays out, the rest travels, PDFs included. The
+remote and the token live with the tweaks on each device, never in the
+collection. SSH remotes and large files are not supported.
+
 ## Plugins
 
 Plugins live in a vault's `.ilmi/plugins/` and are turned on in tweaks; the

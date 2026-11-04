@@ -10,7 +10,10 @@ import { useEffect, useState } from 'react';
 import { PluginsSection } from '../plugins/PluginsSection.js';
 import { folderPaths, titleOf } from './names.js';
 import { ACCENTS, DENSITY_MAX, DENSITY_MIN, THEMES, useApp, type Accent, type Theme, ZOOM_MAX, ZOOM_MIN, ZOOM_STEP } from './store.js';
-import { setBudget, setClipDir } from './vault.js';
+import { open as pickDirectory } from '@tauri-apps/plugin-dialog';
+import { notify } from './land.js';
+import { cloneInto, connect, setRemote, syncWord } from './sync.js';
+import { openVault, setBudget, setClipDir } from './vault.js';
 
 const THEME_LABEL: Record<Theme, string> = { light: 'light', dark: 'dark', eink: 'e-ink' };
 
@@ -61,6 +64,83 @@ function ClipDirPick({ value }: { value: string }) {
         <option key={f} value={f}>{f === '' ? titleOf('', docs, vault) : f}</option>
       ))}
     </select>
+  );
+}
+
+/** A text field that commits on blur or ⏎; escape restores. */
+function TextField({ value, type = 'text', onCommit }: { value: string; type?: 'text' | 'password'; onCommit: (v: string) => void }) {
+  const [text, setText] = useState(value);
+  useEffect(() => { setText(value); }, [value]);
+  const commit = () => { if (text !== value) onCommit(text); };
+  return (
+    <input
+      className="tw-text"
+      type={type}
+      spellCheck={false}
+      autoCapitalize="off"
+      autoCorrect="off"
+      value={text}
+      onChange={(e) => setText(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') { e.preventDefault(); commit(); e.currentTarget.blur(); }
+        else if (e.key === 'Escape') { e.preventDefault(); setText(value); e.currentTarget.blur(); }
+        e.stopPropagation();
+      }}
+    />
+  );
+}
+
+/**
+ * Sync: where the vault stands, its remote and token, and `connect` (this
+ * collection becomes a repository on that remote) or `clone…` (the remote
+ * into an empty folder, opened). A collection that is a repository with a
+ * remote already shows its word and the fields alone.
+ */
+function SyncRows() {
+  const sync = useApp((s) => s.sync);
+  const settings = useApp((s) => s.syncSettings);
+  const [busy, setBusy] = useState(false);
+  const word = syncWord(sync);
+  const fail = (what: string) => (e: unknown) => { notify(`${what} · ${e instanceof Error ? e.message : String(e)}`); };
+  const doConnect = () => {
+    setBusy(true);
+    connect(settings.url, settings.token).catch(fail('connect')).finally(() => setBusy(false));
+  };
+  const doClone = async () => {
+    const dir = await pickDirectory({ directory: true, recursive: true, multiple: false });
+    if (!dir) return;
+    setBusy(true);
+    try {
+      const dest = await cloneInto(settings.url, settings.token, dir);
+      useApp.setState({ tweaksOpen: false });
+      await openVault(dest);
+    } catch (e) {
+      fail('clone')(e);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <>
+      <div className="tw-row">
+        <span className="tw-lbl">sync <span className="tw-val">{word ?? 'off'}</span></span>
+        {!sync.on && (
+          <div className="tw-seg">
+            <button type="button" disabled={busy || !settings.url.trim()} onClick={doConnect}>connect</button>
+            <button type="button" disabled={busy || !settings.url.trim()} onClick={() => void doClone()}>clone…</button>
+          </div>
+        )}
+      </div>
+      <div className="tw-row">
+        <span className="tw-lbl">remote</span>
+        <TextField value={settings.url} onCommit={(url) => void setRemote(url, settings.token).catch(fail('remote'))} />
+      </div>
+      <div className="tw-row">
+        <span className="tw-lbl">token</span>
+        <TextField value={settings.token} type="password" onCommit={(token) => void setRemote(settings.url, token).catch(fail('token'))} />
+      </div>
+    </>
   );
 }
 
@@ -182,6 +262,7 @@ export function Tweaks() {
           <ClipDirPick value={clipDir} />
         </div>
       )}
+      {vault !== null && <SyncRows />}
       {vault !== null && <PluginsSection />}
     </div>
   );

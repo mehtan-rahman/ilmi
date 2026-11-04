@@ -31,6 +31,8 @@ tauri-plugin-deep-link = "2"
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 # the inspector's `url` row opens a clipped page in the browser
 tauri-plugin-opener = "2"
+# sync (milestone 53): the vault as a git repository, libgit2 built in; HTTPS with a token, no SSH, no git binary
+git2 = { version = "0.20", default-features = false, features = ["https", "vendored-libgit2"] }
 
 # Paste and Match Style: the menu item sends the WKWebView `pasteAsPlainText:` (lib.rs)
 [target.'cfg(target_os = "macos")'.dependencies]

@@ -58,6 +58,10 @@
   font-variant-numeric: tabular-nums;
 }
 .top .right [data-due="1"] { color: var(--fg-2); }
+.top .right .sync { color: var(--fg-4); background: none; border: 0; padding: 0; font: inherit; letter-spacing: inherit; }
+.top .right .sync[data-sync="pending"], .top .right .sync[data-sync="offline"] { color: var(--fg-3); }
+.top .right .sync[data-sync="conflicts"] { color: var(--accent); cursor: pointer; }
+.top .right .sync[data-sync="conflicts"]:hover { text-decoration: underline; text-underline-offset: 3px; }
 @media (max-width: 1000px) { .top .right { display: none; } }
 .insp-toggle {
   appearance: none;
@@ -489,6 +493,21 @@
   outline: none;
 }
 .tweaks .tw-num:focus { border-color: var(--accent); }
+.tweaks .tw-text {
+  flex: 1 1 160px;
+  min-width: 0;
+  max-width: 260px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--fg-1);
+  background: transparent;
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius);
+  padding: 3px 6px;
+  outline: none;
+}
+.tweaks .tw-text:focus { border-color: var(--accent); }
+.tweaks .tw-seg button:disabled { color: var(--fg-4); cursor: default; }
 .tweaks .tw-sel {
   max-width: 100%;
   font-family: var(--mono);

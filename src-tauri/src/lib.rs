@@ -1,6 +1,7 @@
 mod anki;
 mod epub;
 mod plugin;
+mod sync;
 
 use tauri::menu::{MenuBuilder, MenuItemBuilder, MenuItemKind, SubmenuBuilder};
 use tauri::{Emitter, Manager};
@@ -142,6 +143,72 @@ fn paste_plain(app: &tauri::AppHandle) {
     }
 }
 
+// ── sync (milestone 53) ──────────────────────────────────────────
+//
+// Each command runs its git work off the main thread (`spawn_blocking`): a
+// fetch or a push waits on the network, and a merge reads every changed
+// blob. The renderer's `src/app/sync.ts` drives them; `sync.rs` says what
+// each does.
+
+async fn blocking<T: Send + 'static>(f: impl FnOnce() -> Result<T, String> + Send + 'static) -> Result<T, String> {
+    tauri::async_runtime::spawn_blocking(f).await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn sync_status(root: String) -> Result<sync::Status, String> {
+    blocking(move || sync::status(&root)).await
+}
+
+#[tauri::command]
+async fn sync_init(root: String, remote: Option<String>) -> Result<(), String> {
+    blocking(move || sync::init(&root, remote.as_deref())).await
+}
+
+#[tauri::command]
+async fn sync_init_bare(path: String) -> Result<(), String> {
+    blocking(move || sync::init_bare(&path)).await
+}
+
+#[tauri::command]
+async fn sync_set_remote(root: String, url: String) -> Result<(), String> {
+    blocking(move || sync::set_remote(&root, &url)).await
+}
+
+#[tauri::command]
+async fn sync_clone(url: String, token: Option<String>, dest: String) -> Result<(), String> {
+    blocking(move || sync::clone(&url, token, &dest)).await
+}
+
+#[tauri::command]
+async fn sync_changes(root: String) -> Result<Vec<sync::Change>, String> {
+    blocking(move || sync::changes(&root)).await
+}
+
+#[tauri::command]
+async fn sync_commit(root: String, message: String) -> Result<Option<String>, String> {
+    blocking(move || sync::commit(&root, &message)).await
+}
+
+#[tauri::command]
+async fn sync_fetch(root: String, token: Option<String>) -> Result<sync::Status, String> {
+    blocking(move || sync::fetch(&root, token)).await
+}
+
+#[tauri::command]
+async fn sync_merge(root: String) -> Result<sync::Merge, String> {
+    blocking(move || sync::merge(&root)).await
+}
+
+#[tauri::command]
+async fn sync_resolve(root: String, theirs: String, message: String, files: Vec<sync::Resolved>) -> Result<String, String> {
+    blocking(move || sync::resolve(&root, &theirs, &message, files)).await
+}
+
+#[tauri::command]
+async fn sync_push(root: String, token: Option<String>) -> Result<sync::Status, String> {
+    blocking(move || sync::push(&root, token)).await
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -163,7 +230,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![allow_vault, read_dropped, read_dropped_bytes, read_anki_package, read_epub, read_plugin_zip, dev_env, set_recent_vaults])
+        .invoke_handler(tauri::generate_handler![allow_vault, read_dropped, read_dropped_bytes, read_anki_package, read_epub, read_plugin_zip, dev_env, set_recent_vaults, sync_status, sync_init, sync_init_bare, sync_set_remote, sync_clone, sync_changes, sync_commit, sync_fetch, sync_merge, sync_resolve, sync_push])
         // Every item of the File menu reaches the renderer as one `menu`
         // event carrying the item's id; `src/app/menu.ts` does the rest.
         .on_menu_event(|app, event| {
@@ -189,6 +256,17 @@ pub fn run() {
                         .level(log::LevelFilter::Info)
                         .build(),
                 )?;
+                // Dev only: `ILMI_VAULT2=/path` opens a second window over
+                // that vault beside the first (the sync smoke's other
+                // device). The renderer tells the windows apart by label.
+                if std::env::var("ILMI_VAULT2").map(|v| !v.is_empty()).unwrap_or(false) {
+                    tauri::WebviewWindowBuilder::new(app, "second", tauri::WebviewUrl::default())
+                        .title("ilmi · second")
+                        .inner_size(1280.0, 820.0)
+                        .min_inner_size(720.0, 480.0)
+                        .position(80.0, 80.0)
+                        .build()?;
+                }
             }
             // The menu bar. The default macOS menu binds ⌘W to Close Window;
             // the app uses ⌘W to close a tab, so the menu is built here

@@ -24,6 +24,7 @@ import { STARTER_TEXT, STARTER_TITLE } from './starter.js';
 import { RAIL_DEFAULT, addTab, clampRail, notebookOf } from './tabs.js';
 import { INSP_DEFAULT, INSP_MAX, INSP_MIN, SIDE_DEFAULT, SIDE_MAX, SIDE_MIN, useApp, type DocInfo, type Inspector, type Sidebar } from './store.js';
 import { appNow } from './clock.js';
+import { startSync, stopSync } from './sync.js';
 
 let current: Vault | null = null;
 
@@ -319,6 +320,7 @@ function onEvent(vault: Vault, ev: VaultEvent): void {
 /** Open the directory at `path`, watch it, and publish its tree. */
 export async function openVault(path: string): Promise<Vault> {
   stopPlugins();
+  stopSync();
   current?.close();
   // The dialog widens the fs scope to what it picked; a path from anywhere
   // else (env var, a remembered vault later) is widened here.
@@ -364,12 +366,15 @@ export async function openVault(path: string): Promise<Vault> {
   await publishDocs(vault);
   // the plugins the vault has on; a failure there is theirs, not the vault's
   await startPlugins(vault).catch((e: unknown) => console.error('plugins', e));
+  // sync, when the vault is a repository with a remote: a pull now, then the timers (`sync.ts`)
+  void startSync(vault).catch((e: unknown) => console.error('sync', e));
   if (import.meta.env.DEV) void info(`vault ${path}: ${vault.documents().join(', ')}`);
   return vault;
 }
 
 /** Back to the welcome: the watcher stops, the store forgets the vault's data; the recents keep it. */
 export function closeVault(): void {
+  stopSync();
   current?.close();
   current = null;
   bodies.clear();
@@ -477,6 +482,17 @@ export function openInitialVault(): Promise<void> {
     if (import.meta.env.DEV) {
       const path = await invoke<string | null>('dev_env', { name: 'ILMI_VAULT' });
       const mode = await invoke<string | null>('dev_env', { name: 'ILMI_SMOKE' });
+      // the second window (`ILMI_VAULT2`, the sync smoke's other device): its own vault, or the smoke's steps
+      if (getCurrentWindow().label === 'second') {
+        const path2 = await invoke<string | null>('dev_env', { name: 'ILMI_VAULT2' });
+        if (mode === 'sync') {
+          const { smokeSyncSecond } = await import('./smoke.js');
+          await smokeSyncSecond(path2);
+        } else if (path2) {
+          await openVault(path2);
+        }
+        return;
+      }
       if (mode === 'welcome') {
         const { smokeWelcome } = await import('./smoke.js');
         await smokeWelcome(path);
@@ -485,8 +501,8 @@ export function openInitialVault(): Promise<void> {
       if (path) {
         const vault = await openVault(path);
         if (mode) {
-          const { smoke, smokeReader, smokeCards, smokeIntake, smokeQueue, smokeLoop, smokeShots, smokeDeck, smokePri, smokeGrowth, smokeOverload, smokeFaces, smokeCardsText, smokeAnki, smokeMath, smokeEpub, smokeClip, smokeClipping, smokePlugins, smokeDictionary, smokeRender, smokeLive, smokeBlocks, smokeUse, smokeLand, smokeNest, smokeTabs, smokeDecks, smokeTour, smokeNotes, smokeEditing, smokeTree, smokeInsert, smokeTabs2, smokeListCards, smokeArabic, smokeRest, smokeBothWays, smokeNumbers, smokeOpen, smokeExam, smokeSame, smokeSections, smokeBook, smokeBooks, smokeTextSections, smokeZoom, smokeCadence, smokeReadme } = await import('./smoke.js');
-          const run = { reader: smokeReader, cards: smokeCards, intake: smokeIntake, queue: smokeQueue, loop: smokeLoop, shots: smokeShots, deck: smokeDeck, pri: smokePri, growth: smokeGrowth, overload: smokeOverload, faces: smokeFaces, 'cards-text': smokeCardsText, anki: smokeAnki, math: smokeMath, epub: smokeEpub, clip: smokeClip, clipping: smokeClipping, plugins: smokePlugins, dictionary: smokeDictionary, render: smokeRender, live: smokeLive, blocks: smokeBlocks, use: smokeUse, land: smokeLand, nest: smokeNest, tabs: smokeTabs, decks: smokeDecks, tour: smokeTour, notes: smokeNotes, editing: smokeEditing, tree: smokeTree, insert: smokeInsert, tabs2: smokeTabs2, listcards: smokeListCards, arabic: smokeArabic, rest: smokeRest, bothways: smokeBothWays, numbers: smokeNumbers, open: smokeOpen, exam: smokeExam, same: smokeSame, sections: smokeSections, book: smokeBook, books: smokeBooks, textsections: smokeTextSections, zoom: smokeZoom, cadence: smokeCadence, readme: smokeReadme }[mode] ?? smoke;
+          const { smoke, smokeReader, smokeCards, smokeIntake, smokeQueue, smokeLoop, smokeShots, smokeDeck, smokePri, smokeGrowth, smokeOverload, smokeFaces, smokeCardsText, smokeAnki, smokeMath, smokeEpub, smokeClip, smokeClipping, smokePlugins, smokeDictionary, smokeRender, smokeLive, smokeBlocks, smokeUse, smokeLand, smokeNest, smokeTabs, smokeDecks, smokeTour, smokeNotes, smokeEditing, smokeTree, smokeInsert, smokeTabs2, smokeListCards, smokeArabic, smokeRest, smokeBothWays, smokeNumbers, smokeOpen, smokeExam, smokeSame, smokeSections, smokeBook, smokeBooks, smokeTextSections, smokeZoom, smokeCadence, smokeReadme, smokeSync } = await import('./smoke.js');
+          const run = { reader: smokeReader, cards: smokeCards, intake: smokeIntake, queue: smokeQueue, loop: smokeLoop, shots: smokeShots, deck: smokeDeck, pri: smokePri, growth: smokeGrowth, overload: smokeOverload, faces: smokeFaces, 'cards-text': smokeCardsText, anki: smokeAnki, math: smokeMath, epub: smokeEpub, clip: smokeClip, clipping: smokeClipping, plugins: smokePlugins, dictionary: smokeDictionary, render: smokeRender, live: smokeLive, blocks: smokeBlocks, use: smokeUse, land: smokeLand, nest: smokeNest, tabs: smokeTabs, decks: smokeDecks, tour: smokeTour, notes: smokeNotes, editing: smokeEditing, tree: smokeTree, insert: smokeInsert, tabs2: smokeTabs2, listcards: smokeListCards, arabic: smokeArabic, rest: smokeRest, bothways: smokeBothWays, numbers: smokeNumbers, open: smokeOpen, exam: smokeExam, same: smokeSame, sections: smokeSections, book: smokeBook, books: smokeBooks, textsections: smokeTextSections, zoom: smokeZoom, cadence: smokeCadence, readme: smokeReadme, sync: smokeSync }[mode] ?? smoke;
           // the smokes before 40 expect the inspector wherever they open it: the room rule is the tour's to check
           if (mode !== 'tour') useApp.setState({ inspForced: true });
           await run(vault);

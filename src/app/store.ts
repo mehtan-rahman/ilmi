@@ -5,6 +5,7 @@ import type { Order, TreeNode } from '../vault/index.js';
 import type { DeckView } from './deck.js';
 import { emptyPanes, type Panes } from './panes.js';
 import { cleanRecents, type Recent } from './recents.js';
+import type { SyncSettings, SyncState } from './sync.js';
 
 // App state that is not on disk, plus a read-only mirror of what is. The
 // vault (src/app/vault.ts) is the store of record for the tree and the
@@ -287,6 +288,10 @@ export interface AppState {
   lensViews: Record<string, LensView>;
   /** The queue shown for one exam only (`examKey`); null, everything. Not remembered. */
   examFilter: string | null;
+  /** Sync by git (`sync.ts`): where the open vault stands with its remote. */
+  sync: SyncState;
+  /** The open vault's remote and token, kept with the tweaks (`sync.ts`); empty when none. */
+  syncSettings: SyncSettings;
   session: Session | null;
   /** What the session is on now, for its tab and the inspector. */
   sessionEl: { kind: El; label: string; item: QueueItem } | null;
@@ -366,6 +371,8 @@ export const useApp = create<AppState>((set, get) => ({
   examFilter: null,
   notSame: [],
   lensViews: {},
+  sync: { on: false, repo: false, busy: null, offline: false, toPush: 0, conflicts: [], at: null },
+  syncSettings: { url: '', token: '' },
   session: null,
   sessionEl: null,
   setTheme: (theme) => { set({ theme }); showTheme(theme); persist(get()); },

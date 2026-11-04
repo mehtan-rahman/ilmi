@@ -175,6 +175,13 @@
 // order differs between two days and holds within one, `postpone the rest`
 // touches nothing first due today (and the tweak runs it at the day's start),
 // ⏎ on a finished source dismisses it, the inspector's interval field.
+// `ILMI_SMOKE=sync` (`smokeSync`, with `ILMI_VAULT2=<an empty path>`) over
+// a copy of `samples/double-major`: milestone 53, sync by git. The first
+// window connects its copy to a bare repository beside it; the second
+// window (`ILMI_VAULT2`) clones it and takes its steps over Tauri events; a
+// card graded in each, the same card graded in both, a pass on each, a
+// paragraph edited in both, a drag in both, offline and back; the strip's
+// word and the notices read on both sides (see the function).
 // `ILMI_SMOKE=welcome` runs before any vault opens: it seeds the recents
 // with the scratch vault (`ILMI_VAULT`) and a path that does not exist,
 // turns `reopen the last vault on start` off, reads the welcome's rows and
@@ -194,7 +201,7 @@ import { GLYPH, SESSION, queueId, titleOf } from './names.js';
 import { vaultName } from './recents.js';
 import { useApp } from './store.js';
 import { runMenu } from './menu.js';
-import { createNode, currentVault, importNode, moveNode, toggleOpen, openCard, openIntake, openNode, openSession, removeNode, renameNode, setInspector, setSidebar, startFromRecents } from './vault.js';
+import { createNode, currentVault, importNode, moveNode, toggleOpen, openCard, openIntake, openNode, openSession, openVault, removeNode, renameNode, setInspector, setSidebar, startFromRecents } from './vault.js';
 import { activeTab } from './panes.js';
 
 const WOZ = 'papers/wozniak-1990.md';
@@ -8137,5 +8144,287 @@ export async function smokeReadme(vault: Vault): Promise<void> {
   } catch (e) {
     log(`failed: ${e instanceof Error ? e.message : String(e)}`);
     useApp.getState().setTheme('light');
+  }
+}
+
+// ── milestone 53: sync by git ────────────────────────────────────
+
+type SyncStep = { id: number; name: string; args: Record<string, unknown> };
+type SyncReply = { id: number; ok: boolean; value?: unknown; error?: string };
+
+/**
+ * One device's moves, by name: what the second window does when asked
+ * over the `smoke-step` event, and what the first does itself. Each
+ * resolves to what the asking side checks.
+ */
+async function syncSteps(name: string, args: Record<string, unknown>): Promise<unknown> {
+  const { meta, parse } = await import('../format/index.js');
+  const { advanceRead } = await import('../schedule/index.js');
+  const { gradeCard } = await import('./grading.js');
+  const { appNow } = await import('./clock.js');
+  const { cloneInto, openConflicts, setRemote, syncNow, syncWord } = await import('./sync.js');
+  const vault = () => { const v = currentVault(); if (!v) throw new Error('no vault open'); return v; };
+  const text = async (p: string) => vault().fs.readText(vault().abs(p));
+  const state = () => {
+    const s = useApp.getState();
+    return { word: syncWord(s.sync), toPush: s.sync.toPush, conflicts: s.sync.conflicts, notice: s.notice?.line ?? null, log: s.log.slice(0, 3), root: s.vault };
+  };
+  const str = (k: string) => { const v = args[k]; if (typeof v !== 'string') throw new Error(`${name}: ${k}`); return v; };
+  switch (name) {
+    case 'clone': {
+      const dest = await cloneInto(str('url'), '', str('dest'));
+      await openVault(dest);
+      await until(() => (useApp.getState().docs['arabic/vocabulary.md'] ? true : null), 20000);
+      await until(() => (useApp.getState().sync.on ? true : null), 20000);
+      return state();
+    }
+    case 'grade': {
+      const item = useApp.getState().queue.find((i): i is CardItem => i.kind === 'card' && i.path === str('path') && i.id === str('id'));
+      if (!item) throw new Error(`no card ${str('id')} in ${str('path')}`);
+      await gradeCard(item, Number(args.g) as 1 | 2 | 3 | 4, appNow());
+      const line = (await text(str('path'))).split('\n').find((l, i, ls) => l.startsWith('<!-- sr') && ls[i - 1]?.endsWith(`^${str('id')}`));
+      return line ?? null;
+    }
+    case 'pass': {
+      await vault().update(str('path'), (doc) => { advanceRead(doc, 'on', appNow(), (meta(doc).read?.pos ?? 0) + 1); });
+      return meta(parse(await text(str('path'))).doc).read ?? null;
+    }
+    case 'edit': {
+      await vault().update(str('path'), (doc) => {
+        for (const b of doc.blocks) if ((b.kind === 'paragraph' || b.kind === 'card') && b.text.includes(str('find'))) b.text = b.text.replace(str('find'), str('replace'));
+      });
+      return await text(str('path'));
+    }
+    case 'order': {
+      const names = args.names as string[];
+      await vault().setOrder(str('dir'), names);
+      return vault().order[str('dir')] ?? null;
+    }
+    case 'orderOf':
+      return vault().order[str('dir')] ?? null;
+    case 'sync':
+      await syncNow();
+      return state();
+    case 'state':
+      return state();
+    case 'text':
+      return await text(str('path'));
+    case 'remote':
+      await setRemote(str('url'), '');
+      return state();
+    case 'conflicts':
+      openConflicts();
+      return state();
+    case 'open':
+      openNode(str('path'));
+      await sleep(300);
+      return state();
+    case 'theme':
+      useApp.getState().setTheme(str('name') as 'light' | 'dark');
+      await sleep(200);
+      return state();
+    default:
+      throw new Error(`no step ${name}`);
+  }
+}
+
+/**
+ * The second window's side (`ILMI_VAULT2`, the folder it will clone into):
+ * it waits for the first window's steps, runs each, and answers on
+ * `smoke-reply`. Nothing opens until the clone step.
+ */
+export async function smokeSyncSecond(path2: string | null): Promise<void> {
+  const { emitTo, listen } = await import('@tauri-apps/api/event');
+  const log = (s: string) => void info(`smoke sync b: ${s}`);
+  if (!path2) { log('failed: no ILMI_VAULT2'); return; }
+  useApp.setState({ started: true, inspForced: true });
+  await listen<SyncStep>('smoke-step', (ev) => {
+    const { id, name, args } = ev.payload;
+    void syncSteps(name, args)
+      .then((value) => { log(`${name} ok`); return emitTo('main', 'smoke-reply', { id, ok: true, value } satisfies SyncReply); })
+      .catch((e: unknown) => { const error = e instanceof Error ? e.message : String(e); log(`${name} failed: ${error}`); return emitTo('main', 'smoke-reply', { id, ok: false, error } satisfies SyncReply); });
+  });
+  log('ready');
+}
+
+// `ILMI_SMOKE=sync` (`smokeSync`) over a fresh copy of `samples/double-major`,
+// with `ILMI_VAULT2` an empty path beside it: milestone 53. This window (a)
+// makes a bare repository beside its copy and connects to it; the second
+// window (b) clones it. Then, each step synced in turn (a push, the other's
+// pull and push, the first's pull): a card graded in each lands in both;
+// the same card graded in both keeps the later grade; a pass on each lands
+// in both; a paragraph edited in both shows both under a notice, and the
+// strip says `1 conflict` until the file is opened; a drag in both keeps
+// the pulled order; a remote that cannot be reached reads `offline` and
+// comes back; a pull that changes the open document says so. Light, then
+// dark.
+export async function smokeSync(vault: Vault): Promise<void> {
+  const { emitTo, listen } = await import('@tauri-apps/api/event');
+  const { meta, parse } = await import('../format/index.js');
+  const { connect, initBare, saveSettings, syncNow, syncWord } = await import('./sync.js');
+  let last = { at: Date.now(), what: 'start' };
+  let finished = false;
+  const log = (s: string) => { last = { at: Date.now(), what: s }; void info(`smoke sync: ${s}`); };
+  const dog = setInterval(() => {
+    if (finished) { clearInterval(dog); return; }
+    if (Date.now() - last.at > 45_000) { finished = true; clearInterval(dog); void info(`smoke sync: failed: no progress for 45 s after "${last.what}"`); }
+  }, 2000);
+  const shot = async (name: string, ms = 2500) => { await sleep(800); log(`shot: ${name}`); await sleep(ms); };
+  const q = <T extends Element>(sel: string, root: ParentNode = document) => root.querySelector<T>(sel);
+  const must = (ok: unknown, what: string) => { if (!ok) throw new Error(what); log(`ok: ${what}`); };
+  const poll = async <T,>(probe: () => T | null | undefined | false | Promise<T | null | undefined | false>, what: string, ms = 8000): Promise<T> => {
+    const t0 = Date.now();
+    for (;;) {
+      const v = await probe();
+      if (v) { log(`ok: ${what}`); return v; }
+      if (Date.now() - t0 > ms) throw new Error(`${what} (waited ${ms} ms)`);
+      await sleep(100);
+    }
+  };
+  // the second window's steps: asked over an event, answered over another
+  const replies = new Map<number, (r: SyncReply) => void>();
+  let seq = 0;
+  const unlisten = await listen<SyncReply>('smoke-reply', (ev) => { replies.get(ev.payload.id)?.(ev.payload); });
+  const b = async <T,>(name: string, args: Record<string, unknown> = {}, ms = 30000): Promise<T> => {
+    const id = ++seq;
+    const reply = new Promise<SyncReply>((resolve, reject) => {
+      replies.set(id, resolve);
+      setTimeout(() => { replies.delete(id); reject(new Error(`b: ${name} (no answer in ${ms} ms)`)); }, ms);
+    });
+    await emitTo('second', 'smoke-step', { id, name, args } satisfies SyncStep);
+    const r = await reply;
+    replies.delete(id);
+    if (!r.ok) throw new Error(`b: ${name}: ${r.error}`);
+    log(`b: ${name}`);
+    return r.value as T;
+  };
+  const a = <T,>(name: string, args: Record<string, unknown> = {}) => syncSteps(name, args) as Promise<T>;
+  type State = { word: string | null; toPush: number; conflicts: { path: string; heading: string }[]; notice: string | null; log: string[]; root: string | null };
+  const word = () => q('.top .sync')?.textContent ?? null;
+  const VOCAB = 'arabic/vocabulary.md';
+  const MERCHANT = 'library/classical-prose-reader/15-the-merchant-who-was-robbed.md';
+  const QASIDA = 'courses/fall-2026/arab-455-abbasid-poetry/clipped-on-translating-the-qasida.md';
+  const NOTE = 'fleeting/idea-for-honors-thesis.md';
+  const FLEETING = 'fleeting';
+  const srLine = (text: string, id: string) => text.split('\n').find((l, i, ls) => l.startsWith('<!-- sr') && ls[i - 1]?.endsWith(`^${id}`)) ?? null;
+  const readLine = (text: string) => JSON.stringify(meta(parse(text).doc).read ?? null);
+  try {
+    const path2 = await invoke<string | null>('dev_env', { name: 'ILMI_VAULT2' });
+    if (!path2) throw new Error('ILMI_VAULT2 is not set');
+    useApp.getState().setTheme('light');
+    await poll(() => useApp.getState().docs[VOCAB] && useApp.getState().docs[NOTE], 'the sample is in the collection', 15000);
+    must(word() === null, 'the strip says nothing while the collection has no remote');
+
+    // ── a connects, b clones ──
+    const host = `${vault.root}-host.git`;
+    await initBare(host);
+    saveSettings(vault.root, { url: host, token: '' });
+    useApp.setState({ tweaksOpen: true });
+    await poll(() => q<HTMLInputElement>('.tweaks .tw-text')?.value === host, 'the tweaks show the remote');
+    const btn = await poll(() => Array.from(document.querySelectorAll<HTMLButtonElement>('.tweaks .tw-seg button')).find((x) => x.textContent === 'connect' && !x.disabled), 'connect is there');
+    await shot('sync-tweaks');
+    btn.click();
+    await poll(() => word() === 'synced', 'connect: the strip reads synced', 20000);
+    useApp.setState({ tweaksOpen: false });
+    must((await a<string>('text', { path: '.gitignore' })).includes('.ilmi/state.json'), 'the ignore file leaves state.json out');
+    await connect(host, '').catch(() => {});
+    const bs = await b<State>('clone', { url: host, dest: path2 }, 60000);
+    must(bs.root === path2 && bs.word === 'synced', `b cloned into ${path2} and reads synced`);
+    must(!(await b<string>('text', { path: '.ilmi/order.json' })).includes('"tab"'), 'b has the order and no state.json');
+
+    // ── a card graded in each lands in both ──
+    const karam = await a<string>('grade', { path: VOCAB, id: 'voc-karam', g: 3 });
+    await poll(() => word() === '1 to push', 'a grade: the strip reads 1 to push');
+    await shot('sync-pending');
+    const dayf = await b<string>('grade', { path: VOCAB, id: 'voc-dayf', g: 4 });
+    await a('sync');
+    must(word() === 'synced', 'a pushed: synced');
+    const bAfter = await b<State>('sync');
+    must(bAfter.word === 'synced' && bAfter.conflicts.length === 0, `b merged and pushed: ${bAfter.word}`);
+    openNode(VOCAB);
+    await sleep(500);
+    await a('sync');
+    const tA = await a<string>('text', { path: VOCAB });
+    const tB = await b<string>('text', { path: VOCAB });
+    must(srLine(tA, 'voc-karam') === karam && srLine(tB, 'voc-karam') === karam, "a's grade is in both");
+    must(srLine(tA, 'voc-dayf') === dayf && srLine(tB, 'voc-dayf') === dayf, "b's grade is in both");
+    await poll(() => useApp.getState().notice?.line === 'pulled · arabic vocabulary changed', 'a notice: the open document changed under the pull');
+    await shot('sync-pulled');
+
+    // ── the same card graded in both keeps the later grade ──
+    await a('grade', { path: VOCAB, id: 'voc-naqa', g: 2 });
+    await sleep(1200);
+    const naqaB = await b<string>('grade', { path: VOCAB, id: 'voc-naqa', g: 4 });
+    await a('sync');
+    const bMerged = await b<State>('sync');
+    must(bMerged.conflicts.length === 0, 'the same line on both is no conflict');
+    must(srLine(await b<string>('text', { path: VOCAB }), 'voc-naqa') === naqaB, "b keeps its later grade");
+    await a('sync');
+    must(srLine(await a<string>('text', { path: VOCAB }), 'voc-naqa') === naqaB, "a takes b's later grade");
+
+    // ── a pass on each ──
+    const mA = JSON.stringify(await a('pass', { path: MERCHANT }));
+    const qB = JSON.stringify(await b('pass', { path: QASIDA }));
+    await a('sync');
+    await b('sync');
+    await a('sync');
+    must(readLine(await b<string>('text', { path: MERCHANT })) === mA && readLine(await a<string>('text', { path: QASIDA })) === qB, 'both passes are in both');
+
+    // ── a paragraph edited in both shows both under a notice ──
+    await a('edit', { path: NOTE, find: 'Ask both.', replace: 'Ask both, soon.' });
+    await b('edit', { path: NOTE, find: 'Deadline for the proposal is February.', replace: 'Deadline for the proposal is February, firm.' });
+    await a('sync');
+    const conflict = await b<State>('sync');
+    must(conflict.word === '1 conflict' && conflict.conflicts.length === 1 && conflict.conflicts[0]!.path === NOTE && conflict.conflicts[0]!.heading === 'idea for honors thesis', `b: ${conflict.word}, ${JSON.stringify(conflict.conflicts)}`);
+    must(conflict.notice === 'both versions kept · idea for honors thesis § idea for honors thesis', `b's notice: ${conflict.notice}`);
+    const noteB = await b<string>('text', { path: NOTE });
+    must(noteB.includes('Ask both, soon.') && noteB.includes('February, firm.') && !/<<<<|>>>>/.test(noteB), 'b keeps both paragraphs, no markers');
+    const paras = noteB.split('\n').filter((l) => l.startsWith('Advisors:'));
+    must(paras.length === 2, 'as two blocks, one after the other');
+    await shot('sync-conflict');
+    const opened = await b<State>('conflicts');
+    must(opened.word === 'synced' && opened.conflicts.length === 0, 'b: the click opens the file and the count clears');
+    await a('sync');
+    must((await a<string>('text', { path: NOTE })) === noteB, 'a has both versions too');
+
+    // ── a drag in both keeps the pulled order ──
+    const orderA = ['idea-for-honors-thesis.md', '2026-10-30.md', '2026-10-29.md', '2026-10-27.md', 'clipped-why-perturbation-series-diverge.md'];
+    const orderB = ['clipped-why-perturbation-series-diverge.md', '2026-10-27.md', '2026-10-29.md', '2026-10-30.md', 'idea-for-honors-thesis.md'];
+    await a('order', { dir: FLEETING, names: orderA });
+    await b('order', { dir: FLEETING, names: orderB });
+    await a('sync');
+    const dragged = await b<State>('sync');
+    must(dragged.conflicts.length === 0, 'the order is no conflict');
+    must(JSON.stringify(await b('orderOf', { dir: FLEETING })) === JSON.stringify(orderA), 'b takes the pulled order');
+    await a('sync');
+    must(JSON.stringify(await a('orderOf', { dir: FLEETING })) === JSON.stringify(orderA), "a's order stands");
+    await shot('sync-order');
+
+    // ── offline, and back ──
+    await b('remote', { url: `${vault.root}-nowhere.git` });
+    const off = await b<State>('sync');
+    must(off.word === 'offline', `b with a remote it cannot reach: ${off.word}`);
+    await b('remote', { url: host });
+    const back = await b<State>('sync');
+    must(back.word === 'synced', `b back on its remote: ${back.word}`);
+    must(word() === 'synced', `a: ${word()}`);
+    await shot('sync-synced');
+
+    // ── dark ──
+    useApp.getState().setTheme('dark');
+    await b('theme', { name: 'dark' });
+    await poll(() => document.documentElement.dataset.theme === 'dark', 'dark');
+    await shot('sync-dark');
+    useApp.getState().setTheme('light');
+    await b('theme', { name: 'light' });
+    await syncNow();
+    must(syncWord(useApp.getState().sync) === 'synced', 'synced at the end');
+    finished = true;
+    unlisten();
+    log(`done; vault ${vault.root}, host ${host}, b ${path2}`);
+  } catch (e) {
+    finished = true;
+    unlisten();
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
   }
 }

@@ -234,7 +234,8 @@ async function pushNow(at: string, retry = true): Promise<void> {
   try {
     await commitNow(at);
     const st = await status(at);
-    if (st.ahead === 0 && !st.dirty.length) { patch({ offline: false }); return; }
+    // nothing to send says nothing about the remote: `offline` stands as the pull left it
+    if (st.ahead === 0 && !st.dirty.length) return;
     try {
       await invoke<Status>('sync_push', { root: at, token: settings().token || null });
       patch({ offline: false, at: Date.now() });

@@ -5763,7 +5763,86 @@ Xcode and the simulator, checked there the way the window is checked here.
 52 (finish by) waits for the user's word and is not in this order.
 
 ---
-### [ ] 53. Sync by git — the vault as a repository, merged by the format's rules
+### [x] 53. Sync by git — the vault as a repository, merged by the format's rules
+Done 2026-11-04, commits `37eaa2e` (the milestone) through `f456377` (the
+window check's fixes, one each).
+Notes: `src-tauri/src/sync.rs` is the plumbing over `git2` 0.20 (vendored
+libgit2, HTTPS only; `default-features = false`): `status` (repo, remote,
+branch, dirty, ahead, behind), `init` (a `.gitignore` of `.ilmi/state.json`,
+`*.ilmi-tmp`, `.DS_Store`; the branch `main`), `set_remote`, `init_bare`,
+`clone` (an empty folder or "not an empty folder"), `changes` (path, before,
+after, binary), `commit` (add-all; `None` with nothing to commit),
+`fetch` (`+refs/heads/*:refs/remotes/origin/*`, the token as
+`userpass_plaintext`), `merge`, `resolve`, `push` (`refs/heads/main` both
+sides; a refused update is the error). `merge` diffs base→theirs and
+base→ours per path: a path changed on their side alone is written to the
+working tree (`take_from`: a temp file beside it, then a rename), one
+changed on both is handed back as base/ours/theirs text (binary flagged),
+nothing past the base is a fast-forward (`reset --mixed` to theirs), a
+clean merge commits "merge from origin" with two parents, unrelated
+histories merge over an empty base; `resolve(root, theirs, message, files)`
+writes what the renderer decided and commits with two parents. Errors are
+libgit2's text with its class (`unsupported URL protocol; class=Net (12)`).
+Nine cargo tests over bare repositories in a temp dir. The pure merge is
+`src/sync/merge.ts`: `blocks` (front matter one block, then the format's
+blocks), `diff3` by LCS with head and tail trimmed, `scheduleKind`,
+`later` (`last`, then `due`; ours on a tie), `mergeMarkdown` (no base:
+the common lines of the two sides stand in; a hunk with the same block
+count on all three sides merges block by block; front matter line by
+line, a schedule pair to the later instant, any other both-changed line to
+the pulled side; a prose conflict keeps ours then theirs and records the
+heading above), `mergeFile` (a log `.jsonl` and `.ilmi/same.json` are
+unioned, `.ilmi/order.json` and other app-private JSON take the pulled
+side, binary keeps ours, `.md` goes through `mergeMarkdown`), and
+`describeChanges` ("3 reviews, ch. 3 read on, term paper edited, and N
+more"). `src/app/sync.ts` is the policy: the remote and token in
+`localStorage` `ilmi.sync` by vault root; `startSync` on open (vault
+events outside `.git/` mark the vault touched; a commit after 5 s quiet,
+at most one a minute; a pull on open, on focus after 15 s away, every 2
+min; a push a minute after a commit and 5 s after a session ends;
+`stopSync` on close commits and pushes), every git call through one
+`serial` chain; `pullNow` commits, fetches (a transport error, by
+libgit2's `Net`/`Ssl`/`Http` class or the words such failures use, reads
+`offline` and stops), merges, resolves conflicts through `mergeFile`, and
+notes `both versions kept · <doc> § <heading>` (the strip's `N conflicts`
+until the file is opened), `pulled · <doc> changed` when the open document
+changed, else `pulled · N files`; `pushNow` retries once after a pull when
+behind, and with nothing to send leaves `offline` as the pull left it; the
+strip's word is read after the status refresh. The strip (`TopStrip`)
+says `synced`, `N to push`, `pulling…`, `pushing…`, `offline`, `N
+conflicts` (a button: opens the files); the tweaks' `sync` rows
+(`SyncRows`: the word or `off`, `connect`, `clone…` into a picked empty
+folder, `remote`, `token`); `Session.tsx` ends a session into
+`sessionEnded`. A second window (`second`, from `ILMI_VAULT2`, debug
+builds only) and the `ILMI_SMOKE=sync` smoke drive two copies over one
+bare repository by RPC over Tauri events (`smoke-step`/`smoke-reply`); a
+value crossing that bridge comes back with its keys sorted (the Rust
+side's map), so compare by keys. The window check: run 10 on `f456377`,
+34 checks, 14 captures looked at (tweaks, pending, pulled, conflict,
+order, synced, dark; both windows). Runs 1–9 each found one thing, fixed
+in its own commit: the strip read before the status; the pass compare
+by key order; `connected` noted twice; the tweaks' text fields tall (a
+flex basis in a column); a notice naming a document by its file stem
+(now `titleOf`, as the tree); the order check before the watcher; a
+missing remote read as a thrown error rather than `offline`; and the
+empty push clearing `offline`.
+Decided: `.ilmi/state.json` is ignored (per-device view state: tabs,
+sidebar width), though the brief said nothing ignored but what the app
+never reads — a pulled tab layout would be wrong on the other device.
+A front-matter line changed on both sides that is not a schedule takes
+the pulled side. A rename against an edit is a modify/delete pair and
+keeps the edit under the old name (no rename detection). A card graded
+on one side and reworded on the other is two blocks under the notice
+(the merge is by block; the `sr` line travels with its card). No `sync
+now` command (not in the brief; the tweaks' `connect` and the timers are
+the surface). The HTTPS-with-token path is written but no check
+exercises it: every test and the smoke use a local bare repository.
+After a pull the vault's tree and order follow the watcher, a moment
+later. The dark captures of one run came out blank with the same code
+that painted a run later; the display, not the app.
+For 54: the nudge publishes after every push, so `pushNow`'s success
+path is where it goes, and `pull()` is what the subscription calls; the
+strip's `synced · 2 s ago` wants `at` from `SyncState`, already kept.
 - **Rust**: `git2` (vendored libgit2, HTTPS with a token; no SSH). Commands
   for the renderer: status, init, clone, commit, fetch, merge, push, with
   the conflict list. Nothing shells out to a `git` binary.

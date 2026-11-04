@@ -6,6 +6,99 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-11-04 — milestone 53: sync by git
+
+Done on main: `37eaa2e` (the milestone) and, from the window check, one
+small commit per finding, `8625c3e` `b5ddc57` `c3203cb` `d44b4c5`
+`a458639` `cb5c0cb` `f456377`. Changed: new `src-tauri/src/sync.rs`
+(git2 over vendored libgit2: status, init, clone, commit, fetch, merge,
+resolve, push; nine cargo tests over bare repositories), `lib.rs` (the
+`sync_*` commands on a blocking thread; the `second` window under
+`ILMI_VAULT2` in debug builds), `capabilities/default.json`, `Cargo.toml`;
+new `src/sync/merge.ts` (blocks, diff3, the format's merge rules,
+`mergeFile`, `describeChanges`) with `__tests__/merge.test.ts` (15 tests,
+the corpus round-tripped); new `src/app/sync.ts` (settings, timers, the
+serial controller, pull and push, connect, clone, the conflict list);
+`store.ts` (`sync`, `syncSettings`), `vault.ts` (start and stop with the
+vault; the second window's open), `TopStrip.tsx` (the word), `Tweaks.tsx`
+(`SyncRows`, `TextField`), `Session.tsx` (`sessionEnded`), `chrome.css`,
+`smoke.ts` (`ILMI_SMOKE=sync`: two windows over one bare repository, by
+RPC over Tauri events); `docs/guide.md` (Sync), `docs/development.md`,
+README, PLAN.
+
+### Decided
+
+- **The vault is the repository.** `.ilmi/` and `plugins/*/data.json` are
+  tracked; only `.ilmi/state.json` (tabs, sidebar: one device's view),
+  temp files and `.DS_Store` are ignored. Every merge is a commit with two
+  parents the person can see; never a conflict marker in a file.
+- **The format's rules, by block.** A schedule line on both sides takes
+  the later instant; prose on both keeps ours then theirs under the
+  heading, and the strip says `1 conflict` until the file is opened; a
+  modify against a delete keeps the edit; `.ilmi/order.json` takes the
+  pulled side; the review log is unioned. A front-matter line that is not
+  a schedule takes the pulled side.
+- **Offline is quiet.** A fetch or push that fails at the transport (by
+  libgit2's error class or its words) reads `offline`; commits accumulate;
+  a push with nothing to send says nothing about the remote.
+- **A notice names a document as the tree does** (`titleOf`: the title,
+  else the file name as a name).
+- **The second window is a debug affordance** (`ILMI_VAULT2`), not a
+  feature: the smoke's window b.
+
+### Verified
+
+1203 tests in 81 files, typecheck clean, 21 cargo tests, no warnings.
+Window check from a clean worktree of main at `f456377` over a copy of
+`samples/double-major` with `ILMI_VAULT2` beside it, dev identifier
+`dev.ilmi.check` so the user's running app is left alone: 34 checks and 14
+captures (both windows: tweaks, pending, pulled, conflict, order, synced,
+dark), every capture looked at. Ten runs in all; the first nine each
+stopped on one thing, fixed in its own commit (listed in PLAN's notes).
+Not exercised: HTTPS with a token against a real host — every check uses
+a local bare repository.
+
+### Rig notes
+
+A dev app binary's command line is `target/debug/ilmi`, relative: filter
+by the process's working directory (`lsof -d cwd`), not by `runtree` in
+the command line, and kill it by pid when the run ends — one that outlives
+its wrapper swallows the next launch under the same identifier through the
+single-instance plugin, and the next run's log stops at `Running
+target/debug/ilmi`. Capture by window id with a retry: one shot a run is
+missed on the first try. One run's late captures were blank for the whole
+window (same bytes each) while the page's JavaScript ran on; the next run
+on the same commit painted them all.
+
+Asked for in chat: git had no identity set, so every commit so far is
+authored `mehtan <mehtan@…local>`, which GitHub links to no account; the
+global config is now `Mehtan Rahman <132422763+mehtan-rahman@users.noreply.github.com>`
+(from this session's second commit on). The older commits stay as they
+are unless the user asks for a rewrite and force push.
+
+Handoff prompt for the next session:
+
+```
+Read PLAN.md, FORMAT.md, BUILD-LOG.md, and spec/hashiyah/HANDOFF.md. The
+section of PLAN.md in progress is "Beyond the Mac" (53–58); its
+introduction holds the decisions and the user's words, and 53's notes say
+where the nudge hooks in. Do milestone 54 and only that one (52 waits for
+the user; skip it). Stop at its "done when". Then tick it, write notes for
+the next session under it, add an entry to BUILD-LOG.md with a fresh
+handoff prompt, and commit. Rules as in PLAN.md's ground rules: export
+PATH=$HOME/.cargo/bin:/opt/homebrew/bin:$PATH; npm test and npm run
+typecheck green before a commit, and cargo test for the Rust side; one
+commit per milestone; ask before a screen, section, or setting the brief
+does not name; a FORMAT change needs a corpus file and a test. The window
+check runs from a clean checkout of main over a copy of
+samples/double-major (the sync and nudge smokes want ILMI_VAULT2 beside
+it and the dev identifier override from docs/development.md); never kill
+a process on port 1420 that is not yours, and stop your own app binary by
+pid when a run ends; capture only by window id.
+```
+
+---
+
 ## 2026-11-04 — Beyond the Mac, planned (no milestone built)
 
 PLAN.md gains the section "Beyond the Mac", milestones 53–58, from the

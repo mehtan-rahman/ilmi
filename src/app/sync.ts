@@ -13,6 +13,7 @@ import type { Vault, VaultEvent } from '../vault/index.js';
 import { notify } from './land.js';
 import { activeTab } from './panes.js';
 import { useApp } from './store.js';
+import { titleOf } from './names.js';
 import { note, openNode } from './vault.js';
 
 /** The remote and its token, per vault path, in the webview's storage. */
@@ -176,7 +177,8 @@ function openDoc(): string | null {
   return id.endsWith('.md') ? id : null;
 }
 
-const nameOf = (path: string): string => useApp.getState().docs[path]?.title ?? path.replace(/^.*\//, '').replace(/\.md$/, '');
+/** A document as the tree names it: its title, else its file name as a name. */
+const nameOf = (path: string): string => { const s = useApp.getState(); return titleOf(path, s.docs, s.vault); };
 
 /** Fetch and merge: what the other side changed lands in the working tree (the watcher reloads it); two versions of one file meet by the format's rules. */
 async function pullNow(at: string): Promise<void> {

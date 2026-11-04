@@ -52,6 +52,10 @@ and connects, the second clones, and the two take turns over Tauri events.
 To run a smoke beside the installed app (the single-instance plugin would
 hand the launch to it), give the dev build its own identifier:
 `npm run tauri dev -- --config '{"identifier":"dev.ilmi.check"}'`.
+`ILMI_SMOKE=nudge` (milestone 54) wants the same two paths: the Rust side
+starts an ntfy-shaped server on the loopback (`src-tauri/src/nudge.rs`, dev
+builds only), both windows take it as their `nudge` and turn their pull
+timers off, and a grade pushed in one is timed until it lands in the other.
 `ILMI_SMOKE=readme` over a copy of the sample walks the screens the README
 shows and marks each with a `shot:` line; the README's images were captured
 that way, by window id, and scaled to 1600 px wide. Each smoke mode logs `ok:` and `failed:` lines and `shot: <name>` marks

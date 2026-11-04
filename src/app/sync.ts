@@ -5,7 +5,10 @@
 // focus, every two minutes; a push after a session, on close, and a minute
 // after any commit. Two versions of one file meet in `src/sync/merge.ts`,
 // by the format's rules. The remote and its token live with the tweaks,
-// outside the vault, per vault path; offline is quiet.
+// outside the vault, per vault path; offline is quiet. After every push
+// the nudge (`nudge.ts`, milestone 54) tells the other devices, and a
+// nudge from one of them is a pull at once; the timer stays for what the
+// nudge misses.
 
 import { invoke } from '@tauri-apps/api/core';
 import { describeChanges, mergeFile, type Change, type Kept } from '../sync/index.js';
@@ -14,13 +17,18 @@ import { notify } from './land.js';
 import { activeTab } from './panes.js';
 import { useApp } from './store.js';
 import { titleOf } from './names.js';
+import { ago, NUDGE_SERVER, publishNudge, subscribeNudge, type Subscription } from './nudge.js';
 import { note, openNode } from './vault.js';
 
-/** The remote and its token, per vault path, in the webview's storage. */
+/** The remote, its token, and the nudge's server, per vault path, in the webview's storage. */
 export interface SyncSettings {
   url: string;
   token: string;
+  /** The ntfy server the nudge goes over; empty, and the timer is all there is. */
+  server: string;
 }
+
+export const NO_SETTINGS: SyncSettings = { url: '', token: '', server: NUDGE_SERVER };
 
 export interface SyncState {
   /** The vault is a repository with a remote: sync runs. */
@@ -59,7 +67,7 @@ function loadAll(): Record<string, SyncSettings> {
     const raw = globalThis.localStorage?.getItem(SETTINGS_KEY);
     const o = raw ? (JSON.parse(raw) as Record<string, Partial<SyncSettings>>) : {};
     const out: Record<string, SyncSettings> = {};
-    for (const [k, v] of Object.entries(o)) if (v && typeof v === 'object') out[k] = { url: typeof v.url === 'string' ? v.url : '', token: typeof v.token === 'string' ? v.token : '' };
+    for (const [k, v] of Object.entries(o)) if (v && typeof v === 'object') out[k] = { url: typeof v.url === 'string' ? v.url : '', token: typeof v.token === 'string' ? v.token : '', server: typeof v.server === 'string' ? v.server : NUDGE_SERVER };
     return out;
   } catch {
     return {};
@@ -68,13 +76,13 @@ function loadAll(): Record<string, SyncSettings> {
 
 /** The settings for vault `root`; empty when none were set. */
 export function settingsOf(root: string): SyncSettings {
-  return loadAll()[root] ?? { url: '', token: '' };
+  return loadAll()[root] ?? { ...NO_SETTINGS };
 }
 
 /** Remember the settings for vault `root` (the open vault's reach the store). */
 export function saveSettings(root: string, s: SyncSettings): void {
   const all = loadAll();
-  if (s.url || s.token) all[root] = s; else delete all[root];
+  if (s.url || s.token || s.server !== NUDGE_SERVER) all[root] = s; else delete all[root];
   try { globalThis.localStorage?.setItem(SETTINGS_KEY, JSON.stringify(all)); } catch { /* the session keeps them */ }
   if (useApp.getState().vault === root) useApp.setState({ syncSettings: s });
 }
@@ -88,6 +96,11 @@ export function syncWord(s: SyncState): string | null {
   if (s.offline) return 'offline';
   if (s.toPush) return `${s.toPush} to push`;
   return 'synced';
+}
+
+/** Beside `synced`: how long ago the remote was last reached (`2 s ago`), the nudge's latency made visible; null otherwise. */
+export function syncAge(s: SyncState, now = Date.now()): string | null {
+  return syncWord(s) === 'synced' && s.at !== null ? ago(now - s.at) : null;
 }
 
 // ── the controller ───────────────────────────────────────────────
@@ -104,6 +117,12 @@ let statusTimer: ReturnType<typeof setTimeout> | null = null;
 /** One git operation at a time: the queue of what is asked for. */
 let chain: Promise<unknown> = Promise.resolve();
 let listening = false;
+/** The nudge's stream, while the vault has a remote and a server. */
+let nudge: Subscription | null = null;
+/** A pull the nudge asked for, not started yet: another nudge adds nothing. */
+let nudgeQueued = false;
+/** The pull timer runs unless the smoke turns it off to show the nudge alone does the work. */
+let timers = true;
 
 const patch = (p: Partial<SyncState>) => useApp.setState((s) => ({ sync: { ...s.sync, ...p } }));
 
@@ -239,6 +258,7 @@ async function pushNow(at: string, retry = true): Promise<void> {
     try {
       await invoke<Status>('sync_push', { root: at, token: settings().token || null });
       patch({ offline: false, at: Date.now() });
+      void publishNudge(settings().server, settings().url);
     } catch (e) {
       // behind the remote: bring it in, then once more
       if (retry) {
@@ -291,6 +311,40 @@ function onFocus(): void {
   void pull().catch((e: unknown) => console.error('sync pull', e));
 }
 
+/** A nudge arrived (or the stream came back): one pull, however many arrive while it waits its turn. */
+function onNudge(): void {
+  if (!root || !useApp.getState().sync.on || nudgeQueued) return;
+  nudgeQueued = true;
+  const at = root;
+  void serial(() => { nudgeQueued = false; return pullNow(at); }).catch((e: unknown) => console.error('sync nudge', e));
+}
+
+/** Listen on the remote's topic, when the vault syncs and a server is set; the stream before, if any, closes. */
+function startNudge(): void {
+  stopNudge();
+  const s = settings();
+  if (!root || !useApp.getState().sync.on || !s.server.trim() || !s.url.trim()) return;
+  nudge = subscribeNudge(s.server, s.url, onNudge);
+}
+
+function stopNudge(): void {
+  nudge?.stop();
+  nudge = null;
+  nudgeQueued = false;
+}
+
+function startPullTimer(): void {
+  if (pullTimer || !timers) return;
+  pullTimer = setInterval(() => { void pull().catch((e: unknown) => console.error('sync pull', e)); }, PULL_EVERY_MS);
+}
+
+/** Dev only (the nudge smoke): the pull timer off, so a change crossing is the nudge's doing. */
+export function setPullTimer(on: boolean): void {
+  timers = on;
+  if (!on && pullTimer) { clearInterval(pullTimer); pullTimer = null; }
+  if (on && root && useApp.getState().sync.on) startPullTimer();
+}
+
 function onVaultEvent(ev: VaultEvent): void {
   // the repository's own files move on every command; nothing of ours
   if (ev.kind === 'hidden' && ev.paths.every((p) => p.startsWith('.git/') || p === '.git')) return;
@@ -312,7 +366,8 @@ export async function startSync(vault: Vault): Promise<void> {
   const st = await refreshSync();
   if (root !== vault.root) return;
   if (st.on) {
-    pullTimer = setInterval(() => { void pull().catch((e: unknown) => console.error('sync pull', e)); }, PULL_EVERY_MS);
+    startPullTimer();
+    startNudge();
     await pull().catch((e: unknown) => console.error('sync pull', e));
   }
 }
@@ -322,17 +377,20 @@ export function stopSync(): void {
   const at = root;
   const on = useApp.getState().sync.on;
   root = null;
+  stopNudge();
   unsubscribe?.();
   unsubscribe = null;
   for (const t of [commitTimer, pushTimer, statusTimer]) if (t) clearTimeout(t);
   commitTimer = pushTimer = statusTimer = null;
   if (pullTimer) clearInterval(pullTimer);
   pullTimer = null;
-  useApp.setState({ sync: SYNC_OFF, syncSettings: { url: '', token: '' } });
+  useApp.setState({ sync: SYNC_OFF, syncSettings: { ...NO_SETTINGS } });
   if (at && on) {
+    const s = settingsOf(at);
     void serial(async () => {
       await commitNow(at);
-      await invoke('sync_push', { root: at, token: settingsOf(at).token || null });
+      await invoke('sync_push', { root: at, token: s.token || null });
+      await publishNudge(s.server, s.url);
     }).catch(() => { /* offline: next time */ });
   }
 }
@@ -347,7 +405,7 @@ export async function connect(url: string, token: string): Promise<void> {
   if (!at) throw new Error('no vault open');
   const clean = url.trim();
   if (!clean) throw new Error('no remote');
-  saveSettings(at, { url: clean, token });
+  saveSettings(at, { ...settings(), url: clean, token });
   await serial(async () => {
     await invoke('sync_init', { root: at, remote: clean });
     await refreshSync();
@@ -355,7 +413,7 @@ export async function connect(url: string, token: string): Promise<void> {
     await pullNow(at);
     await pushNow(at);
   });
-  if (root === at && !pullTimer) pullTimer = setInterval(() => { void pull().catch((e: unknown) => console.error('sync pull', e)); }, PULL_EVERY_MS);
+  if (root === at) { startPullTimer(); startNudge(); }
   const s = useApp.getState().sync;
   note(s.offline ? 'connected · offline' : 'connected');
 }
@@ -364,9 +422,18 @@ export async function connect(url: string, token: string): Promise<void> {
 export async function setRemote(url: string, token: string): Promise<void> {
   const at = root;
   if (!at) return;
-  saveSettings(at, { url: url.trim(), token });
+  saveSettings(at, { ...settings(), url: url.trim(), token });
   if (useApp.getState().sync.repo && url.trim()) await invoke('sync_set_remote', { root: at, url: url.trim() });
   await refreshSync();
+  if (root === at) startNudge();
+}
+
+/** The nudge's server (the tweaks' field): empty turns the nudge off; the stream follows the change. */
+export function setNudgeServer(server: string): void {
+  const at = root;
+  if (!at) return;
+  saveSettings(at, { ...settings(), server: server.trim() });
+  startNudge();
 }
 
 /** `clone…`: the remote into `dest`, an empty folder; the settings go with it. Resolves to the path to open. */
@@ -374,7 +441,7 @@ export async function cloneInto(url: string, token: string, dest: string): Promi
   const clean = url.trim();
   if (!clean) throw new Error('no remote');
   await invoke('sync_clone', { url: clean, token: token || null, dest });
-  saveSettings(dest, { url: clean, token });
+  saveSettings(dest, { ...settingsOf(dest), url: clean, token });
   return dest;
 }
 

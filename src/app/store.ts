@@ -5,6 +5,7 @@ import type { Order, TreeNode } from '../vault/index.js';
 import type { DeckView } from './deck.js';
 import { emptyPanes, type Panes } from './panes.js';
 import { cleanRecents, type Recent } from './recents.js';
+import { NUDGE_SERVER } from './nudge.js';
 import type { SyncSettings, SyncState } from './sync.js';
 
 // App state that is not on disk, plus a read-only mirror of what is. The
@@ -372,7 +373,7 @@ export const useApp = create<AppState>((set, get) => ({
   notSame: [],
   lensViews: {},
   sync: { on: false, repo: false, busy: null, offline: false, toPush: 0, conflicts: [], at: null },
-  syncSettings: { url: '', token: '' },
+  syncSettings: { url: '', token: '', server: NUDGE_SERVER },
   session: null,
   sessionEl: null,
   setTheme: (theme) => { set({ theme }); showTheme(theme); persist(get()); },

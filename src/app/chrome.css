@@ -60,6 +60,8 @@
 .top .right [data-due="1"] { color: var(--fg-2); }
 .top .right .sync { color: var(--fg-4); background: none; border: 0; padding: 0; font: inherit; letter-spacing: inherit; }
 .top .right .sync[data-sync="pending"], .top .right .sync[data-sync="offline"] { color: var(--fg-3); }
+.top .right .ago { color: var(--fg-4); margin-left: -9px; }
+.top .right .ago::before { content: '· '; }
 .top .right .sync[data-sync="conflicts"] { color: var(--accent); cursor: pointer; }
 .top .right .sync[data-sync="conflicts"]:hover { text-decoration: underline; text-underline-offset: 3px; }
 @media (max-width: 1000px) { .top .right { display: none; } }

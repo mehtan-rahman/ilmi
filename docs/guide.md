@@ -307,8 +307,16 @@ and opens it. From then on the app commits what it writes after each batch
 (a session, a save, an import; at most once a minute, the message naming
 what changed), pulls on open, on focus, and every two minutes, and pushes
 after a session, on close, and a minute after a commit. The top strip says
-where things stand: `synced`, `3 to push`, `pulling…`, `offline`, or
-`2 conflicts`. Offline is quiet; commits wait.
+where things stand: `synced · 2 s ago`, `3 to push`, `pulling…`, `offline`,
+or `2 conflicts`. Offline is quiet; commits wait.
+
+A push also nudges the other devices, so a change crosses in seconds rather
+than waiting for the timer: the app announces "changed" on a topic named by
+a hash of the remote's address (nothing of the collection goes out), over
+the ntfy server in the tweaks' `nudge` field, `https://ntfy.sh` unless you
+run your own; every open copy of the collection listens there and pulls at
+once. The age beside `synced` is how long since the remote was last
+reached. Clear the field and the timers are all there is.
 
 Two devices changing different cards in one file merge clean. The same card
 graded on both keeps the later grade; a source read on on both keeps the

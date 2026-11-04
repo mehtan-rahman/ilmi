@@ -12,7 +12,7 @@ import { folderPaths, titleOf } from './names.js';
 import { ACCENTS, DENSITY_MAX, DENSITY_MIN, THEMES, useApp, type Accent, type Theme, ZOOM_MAX, ZOOM_MIN, ZOOM_STEP } from './store.js';
 import { open as pickDirectory } from '@tauri-apps/plugin-dialog';
 import { notify } from './land.js';
-import { cloneInto, connect, setRemote, syncWord } from './sync.js';
+import { cloneInto, connect, setNudgeServer, setRemote, syncWord } from './sync.js';
 import { openVault, setBudget, setClipDir } from './vault.js';
 
 const THEME_LABEL: Record<Theme, string> = { light: 'light', dark: 'dark', eink: 'e-ink' };
@@ -95,7 +95,8 @@ function TextField({ value, type = 'text', onCommit }: { value: string; type?: '
  * Sync: where the vault stands, its remote and token, and `connect` (this
  * collection becomes a repository on that remote) or `clone…` (the remote
  * into an empty folder, opened). A collection that is a repository with a
- * remote already shows its word and the fields alone.
+ * remote already shows its word and the fields alone. `nudge` is the ntfy
+ * server a push is announced over (milestone 54); empty, the timer alone.
  */
 function SyncRows() {
   const sync = useApp((s) => s.sync);
@@ -139,6 +140,10 @@ function SyncRows() {
       <div className="tw-row">
         <span className="tw-lbl">token</span>
         <TextField value={settings.token} type="password" onCommit={(token) => void setRemote(settings.url, token).catch(fail('token'))} />
+      </div>
+      <div className="tw-row">
+        <span className="tw-lbl">nudge</span>
+        <TextField value={settings.server} onCommit={(server) => setNudgeServer(server)} />
       </div>
     </>
   );

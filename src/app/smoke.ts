@@ -182,6 +182,11 @@
 // card graded in each, the same card graded in both, a pass on each, a
 // paragraph edited in both, a drag in both, offline and back; the strip's
 // word and the notices read on both sides (see the function).
+// `ILMI_SMOKE=nudge` (`smokeNudge`, with `ILMI_VAULT2`) the same two
+// windows over a loopback ntfy-shaped server the Rust side starts, the
+// pull timers off: a grade pushed in one lands in the other on the nudge
+// alone, timed; the stream dropped and back; the nudge off in one, and the
+// timer is all there is (see the function).
 // `ILMI_SMOKE=welcome` runs before any vault opens: it seeds the recents
 // with the scratch vault (`ILMI_VAULT`) and a path that does not exist,
 // turns `reopen the last vault on start` off, reads the welcome's rows and
@@ -8162,17 +8167,19 @@ async function syncSteps(name: string, args: Record<string, unknown>): Promise<u
   const { advanceRead } = await import('../schedule/index.js');
   const { gradeCard } = await import('./grading.js');
   const { appNow } = await import('./clock.js');
-  const { cloneInto, openConflicts, setRemote, syncNow, syncWord } = await import('./sync.js');
+  const { cloneInto, openConflicts, push, saveSettings, setNudgeServer, setPullTimer, setRemote, settingsOf, syncAge, syncNow, syncWord } = await import('./sync.js');
   const vault = () => { const v = currentVault(); if (!v) throw new Error('no vault open'); return v; };
   const text = async (p: string) => vault().fs.readText(vault().abs(p));
   const state = () => {
     const s = useApp.getState();
-    return { word: syncWord(s.sync), toPush: s.sync.toPush, conflicts: s.sync.conflicts, notice: s.notice?.line ?? null, log: s.log.slice(0, 3), root: s.vault };
+    return { word: syncWord(s.sync), age: syncAge(s.sync), ago: document.querySelector('.top .ago')?.textContent ?? null, toPush: s.sync.toPush, conflicts: s.sync.conflicts, notice: s.notice?.line ?? null, log: s.log.slice(0, 3), root: s.vault };
   };
   const str = (k: string) => { const v = args[k]; if (typeof v !== 'string') throw new Error(`${name}: ${k}`); return v; };
   switch (name) {
     case 'clone': {
       const dest = await cloneInto(str('url'), '', str('dest'));
+      // the nudge smoke: its own server, set before the vault opens and subscribes
+      if (typeof args.server === 'string') saveSettings(dest, { ...settingsOf(dest), server: args.server });
       await openVault(dest);
       await until(() => (useApp.getState().docs['arabic/vocabulary.md'] ? true : null), 20000);
       await until(() => (useApp.getState().sync.on ? true : null), 20000);
@@ -8222,6 +8229,16 @@ async function syncSteps(name: string, args: Record<string, unknown>): Promise<u
     case 'theme':
       useApp.getState().setTheme(str('name') as 'light' | 'dark');
       await sleep(200);
+      return state();
+    // milestone 54
+    case 'push':
+      await push();
+      return state();
+    case 'timer':
+      setPullTimer(Boolean(args.on));
+      return state();
+    case 'nudge':
+      setNudgeServer(str('server'));
       return state();
     default:
       throw new Error(`no step ${name}`);
@@ -8320,7 +8337,7 @@ export async function smokeSync(vault: Vault): Promise<void> {
     // ── a connects, b clones ──
     const host = `${vault.root}-host.git`;
     await initBare(host);
-    saveSettings(vault.root, { url: host, token: '' });
+    saveSettings(vault.root, { url: host, token: '', server: '' });
     useApp.setState({ tweaksOpen: true });
     await poll(() => q<HTMLInputElement>('.tweaks .tw-text')?.value === host, 'the tweaks show the remote');
     const btn = await poll(() => Array.from(document.querySelectorAll<HTMLButtonElement>('.tweaks .tw-seg button')).find((x) => x.textContent === 'connect' && !x.disabled), 'connect is there');
@@ -8330,7 +8347,7 @@ export async function smokeSync(vault: Vault): Promise<void> {
     useApp.setState({ tweaksOpen: false });
     must((await a<string>('text', { path: '.gitignore' })).includes('.ilmi/state.json'), 'the ignore file leaves state.json out');
     await poll(() => useApp.getState().log.includes('connected'), 'connect: noted', 20000);
-    const bs = await b<State>('clone', { url: host, dest: path2 }, 60000);
+    const bs = await b<State>('clone', { url: host, dest: path2, server: '' }, 60000);
     must(bs.root === path2 && bs.word === 'synced', `b cloned into ${path2} and reads synced`);
     must(!(await b<string>('text', { path: '.ilmi/order.json' })).includes('"tab"'), 'b has the order and no state.json');
 
@@ -8433,6 +8450,151 @@ export async function smokeSync(vault: Vault): Promise<void> {
     finished = true;
     unlisten();
     log(`done; vault ${vault.root}, host ${host}, b ${path2}`);
+  } catch (e) {
+    finished = true;
+    unlisten();
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+// `ILMI_SMOKE=nudge` (`smokeNudge`) over a fresh copy of `samples/double-major`
+// with `ILMI_VAULT2` an empty path beside it: milestone 54. The Rust side
+// starts a loopback ntfy-shaped server; this window (a) connects its copy to
+// a bare repository beside it with that server as its `nudge`, the second
+// window (b) clones with the same, and both turn their pull timers off. A
+// grade pushed in a lands in b on the nudge alone, within five seconds, and
+// the other way; the strip reads `synced · N s ago`; the streams dropped,
+// both come back and the next nudge lands; the nudge off in b, a push in a
+// stays out until b pulls, and on again. Light, then dark.
+export async function smokeNudge(vault: Vault): Promise<void> {
+  const { emitTo, listen } = await import('@tauri-apps/api/event');
+  const { connect, initBare, saveSettings, setPullTimer, syncNow, syncWord } = await import('./sync.js');
+  const { topicOf } = await import('./nudge.js');
+  let last = { at: Date.now(), what: 'start' };
+  let finished = false;
+  const log = (s: string) => { last = { at: Date.now(), what: s }; void info(`smoke nudge: ${s}`); };
+  const dog = setInterval(() => {
+    if (finished) { clearInterval(dog); return; }
+    if (Date.now() - last.at > 45_000) { finished = true; clearInterval(dog); void info(`smoke nudge: failed: no progress for 45 s after "${last.what}"`); }
+  }, 2000);
+  const shot = async (name: string, ms = 2500) => { await sleep(800); log(`shot: ${name}`); await sleep(ms); };
+  const q = <T extends Element>(sel: string, root: ParentNode = document) => root.querySelector<T>(sel);
+  const must = (ok: unknown, what: string) => { if (!ok) throw new Error(what); log(`ok: ${what}`); };
+  const poll = async <T,>(probe: () => T | null | undefined | false | Promise<T | null | undefined | false>, what: string, ms = 8000): Promise<T> => {
+    const t0 = Date.now();
+    for (;;) {
+      const v = await probe();
+      if (v) { log(`ok: ${what}`); return v; }
+      if (Date.now() - t0 > ms) throw new Error(`${what} (waited ${ms} ms)`);
+      await sleep(100);
+    }
+  };
+  const replies = new Map<number, (r: SyncReply) => void>();
+  let seq = 0;
+  const unlisten = await listen<SyncReply>('smoke-reply', (ev) => { replies.get(ev.payload.id)?.(ev.payload); });
+  const b = async <T,>(name: string, args: Record<string, unknown> = {}, ms = 30000): Promise<T> => {
+    const id = ++seq;
+    const reply = new Promise<SyncReply>((resolve, reject) => {
+      replies.set(id, resolve);
+      setTimeout(() => { replies.delete(id); reject(new Error(`b: ${name} (no answer in ${ms} ms)`)); }, ms);
+    });
+    await emitTo('second', 'smoke-step', { id, name, args } satisfies SyncStep);
+    const r = await reply;
+    replies.delete(id);
+    if (!r.ok) throw new Error(`b: ${name}: ${r.error}`);
+    log(`b: ${name}`);
+    return r.value as T;
+  };
+  const a = <T,>(name: string, args: Record<string, unknown> = {}) => syncSteps(name, args) as Promise<T>;
+  type State = { word: string | null; age: string | null; ago: string | null; toPush: number; root: string | null };
+  const word = () => q('.top .sync')?.textContent ?? null;
+  const age = () => q('.top .ago')?.textContent ?? null;
+  const VOCAB = 'arabic/vocabulary.md';
+  const srLine = (text: string, id: string) => text.split('\n').find((l, i, ls) => l.startsWith('<!-- sr') && ls[i - 1]?.endsWith(`^${id}`)) ?? null;
+  const listeners = (topic: string) => invoke<number>('dev_nudge_listeners', { topic });
+  /** A grade in one window, pushed; how long until the other window's file has it. */
+  const crossing = async (from: 'a' | 'b', id: string, g: number, limit = 5000): Promise<number> => {
+    const here = from === 'a' ? a : b;
+    const there = from === 'a' ? b : a;
+    const line = await here<string>('grade', { path: VOCAB, id, g });
+    await here('push');
+    const t0 = Date.now();
+    await poll(async () => srLine(await there<string>('text', { path: VOCAB }), id) === line, `${from}'s grade of ${id} crossed on the nudge`, limit);
+    return Date.now() - t0;
+  };
+  try {
+    const path2 = await invoke<string | null>('dev_env', { name: 'ILMI_VAULT2' });
+    if (!path2) throw new Error('ILMI_VAULT2 is not set');
+    const server = await invoke<string>('dev_nudge_serve');
+    must(/^http:\/\/127\.0\.0\.1:\d+$/.test(server), `the dev nudge server is at ${server}`);
+    useApp.getState().setTheme('light');
+    await poll(() => useApp.getState().docs[VOCAB], 'the sample is in the collection', 15000);
+
+    // ── a connects with the server as its nudge; b clones with the same ──
+    const host = `${vault.root}-host.git`;
+    const topic = topicOf(host);
+    await initBare(host);
+    saveSettings(vault.root, { url: host, token: '', server });
+    useApp.setState({ tweaksOpen: true });
+    const fields = await poll(() => { const f = Array.from(document.querySelectorAll<HTMLInputElement>('.tweaks .tw-text')); return f.length >= 3 ? f : null; }, 'the tweaks show the sync fields');
+    must(fields[0]!.value === host && fields[2]!.value === server, `remote and nudge fields: ${fields[0]!.value}, ${fields[2]!.value}`);
+    must(Array.from(document.querySelectorAll('.tweaks .tw-lbl')).some((l) => l.textContent?.startsWith('nudge')), 'the row is named nudge');
+    await shot('nudge-tweaks');
+    useApp.setState({ tweaksOpen: false });
+    await connect(host, '');
+    await poll(() => word() === 'synced', 'connect: the strip reads synced', 20000);
+    await poll(async () => (await listeners(topic)) === 1, 'a listens on the topic', 5000);
+    setPullTimer(false);
+    const bs = await b<State>('clone', { url: host, dest: path2, server }, 60000);
+    must(bs.root === path2 && bs.word === 'synced', `b cloned into ${path2} and reads synced`);
+    await poll(async () => (await listeners(topic)) === 2, 'b listens too', 5000);
+    await b('timer', { on: false });
+
+    // ── a grade pushed in a lands in b on the nudge alone ──
+    const ab = await crossing('a', 'voc-karam', 3);
+    log(`ok: a → b in ${ab} ms`);
+    const bState = await b<State>('state');
+    must(bState.word === 'synced' && bState.age !== null && /^(just now|\d+ s ago)$/.test(bState.age) && bState.ago === bState.age, `b's strip: ${bState.word} · ${bState.ago}`);
+    const ba = await crossing('b', 'voc-dayf', 4);
+    log(`ok: b → a in ${ba} ms`);
+    await poll(() => word() === 'synced' && /^(just now|\d+ s ago)$/.test(age() ?? ''), `a's strip: ${word()} · ${age()}`);
+    await shot('nudge-synced');
+    await sleep(3000);
+    must(/^\d+ s ago$/.test(age() ?? ''), `the age ticks: ${age()}`);
+
+    // ── the streams dropped: both come back, and the next nudge lands ──
+    const dropped = await invoke<number>('dev_nudge_drop');
+    must(dropped === 2, `the server dropped ${dropped} streams`);
+    await poll(async () => (await listeners(topic)) === 2, 'both windows are back on the topic', 10000);
+    const again = await crossing('a', 'voc-naqa', 2);
+    log(`ok: after the drop, a → b in ${again} ms`);
+
+    // ── the nudge off in b: a push in a stays out until b pulls ──
+    await b('nudge', { server: '' });
+    await poll(async () => (await listeners(topic)) === 1, 'b left the topic', 5000);
+    const line = await a<string>('grade', { path: VOCAB, id: 'voc-akrama', g: 3 });
+    await a('push');
+    await sleep(3000);
+    must(srLine(await b<string>('text', { path: VOCAB }), 'voc-akrama') !== line, 'without the nudge, b has not seen the grade after 3 s');
+    const pulled = await b<State>('sync');
+    must(pulled.word === 'synced' && srLine(await b<string>('text', { path: VOCAB }), 'voc-akrama') === line, "b's own pull brings it");
+    await b('nudge', { server });
+    await poll(async () => (await listeners(topic)) === 2, 'b is back on the topic', 5000);
+    const once = await crossing('a', 'voc-nahara', 3);
+    log(`ok: nudge on again, a → b in ${once} ms`);
+
+    // ── dark ──
+    useApp.getState().setTheme('dark');
+    await b('theme', { name: 'dark' });
+    await poll(() => document.documentElement.dataset.theme === 'dark', 'dark');
+    await shot('nudge-dark');
+    useApp.getState().setTheme('light');
+    await b('theme', { name: 'light' });
+    await syncNow();
+    must(syncWord(useApp.getState().sync) === 'synced', 'synced at the end');
+    finished = true;
+    unlisten();
+    log(`done; vault ${vault.root}, host ${host}, b ${path2}, server ${server}`);
   } catch (e) {
     finished = true;
     unlisten();

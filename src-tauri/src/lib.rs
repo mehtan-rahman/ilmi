@@ -1,5 +1,7 @@
 mod anki;
 mod epub;
+#[cfg(debug_assertions)]
+mod nudge;
 mod plugin;
 mod sync;
 
@@ -88,6 +90,47 @@ fn dev_env(name: String) -> Option<String> {
         std::env::var(name).ok().filter(|s| !s.is_empty())
     } else {
         None
+    }
+}
+
+/// Dev only: the loopback ntfy-shaped server the nudge smoke publishes
+/// and listens over (`nudge.rs`); its address. An error in release.
+#[tauri::command]
+fn dev_nudge_serve() -> Result<String, String> {
+    #[cfg(debug_assertions)]
+    {
+        nudge::serve()
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        Err("dev only".to_string())
+    }
+}
+
+/// Dev only: every stream on that server closed, as a lost connection would; how many there were.
+#[tauri::command]
+fn dev_nudge_drop() -> Result<usize, String> {
+    #[cfg(debug_assertions)]
+    {
+        Ok(nudge::drop_all())
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        Err("dev only".to_string())
+    }
+}
+
+/// Dev only: how many streams are open on `topic`.
+#[tauri::command]
+fn dev_nudge_listeners(topic: String) -> Result<usize, String> {
+    #[cfg(debug_assertions)]
+    {
+        Ok(nudge::listeners(&topic))
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        let _ = topic;
+        Err("dev only".to_string())
     }
 }
 
@@ -230,7 +273,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![allow_vault, read_dropped, read_dropped_bytes, read_anki_package, read_epub, read_plugin_zip, dev_env, set_recent_vaults, sync_status, sync_init, sync_init_bare, sync_set_remote, sync_clone, sync_changes, sync_commit, sync_fetch, sync_merge, sync_resolve, sync_push])
+        .invoke_handler(tauri::generate_handler![allow_vault, read_dropped, read_dropped_bytes, read_anki_package, read_epub, read_plugin_zip, dev_env, dev_nudge_serve, dev_nudge_drop, dev_nudge_listeners, set_recent_vaults, sync_status, sync_init, sync_init_bare, sync_set_remote, sync_clone, sync_changes, sync_commit, sync_fetch, sync_merge, sync_resolve, sync_push])
         // Every item of the File menu reaches the renderer as one `menu`
         // event carrying the item's id; `src/app/menu.ts` does the rest.
         .on_menu_event(|app, event| {

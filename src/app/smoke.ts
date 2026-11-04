@@ -8307,7 +8307,9 @@ export async function smokeSync(vault: Vault): Promise<void> {
   const NOTE = 'fleeting/idea-for-honors-thesis.md';
   const FLEETING = 'fleeting';
   const srLine = (text: string, id: string) => text.split('\n').find((l, i, ls) => l.startsWith('<!-- sr') && ls[i - 1]?.endsWith(`^${id}`)) ?? null;
-  const readLine = (text: string) => JSON.stringify(meta(parse(text).doc).read ?? null);
+  // keys sorted: a value from the second window crossed the event bridge, whose Rust side orders an object's keys
+  const canon = (v: unknown) => (v && typeof v === 'object' ? JSON.stringify(v, Object.keys(v).sort()) : JSON.stringify(v ?? null));
+  const readLine = (text: string) => canon(meta(parse(text).doc).read ?? null);
   try {
     const path2 = await invoke<string | null>('dev_env', { name: 'ILMI_VAULT2' });
     if (!path2) throw new Error('ILMI_VAULT2 is not set');
@@ -8327,7 +8329,7 @@ export async function smokeSync(vault: Vault): Promise<void> {
     await poll(() => word() === 'synced', 'connect: the strip reads synced', 20000);
     useApp.setState({ tweaksOpen: false });
     must((await a<string>('text', { path: '.gitignore' })).includes('.ilmi/state.json'), 'the ignore file leaves state.json out');
-    await connect(host, '').catch(() => {});
+    await poll(() => useApp.getState().log.includes('connected'), 'connect: noted', 20000);
     const bs = await b<State>('clone', { url: host, dest: path2 }, 60000);
     must(bs.root === path2 && bs.word === 'synced', `b cloned into ${path2} and reads synced`);
     must(!(await b<string>('text', { path: '.ilmi/order.json' })).includes('"tab"'), 'b has the order and no state.json');
@@ -8363,8 +8365,8 @@ export async function smokeSync(vault: Vault): Promise<void> {
     must(srLine(await a<string>('text', { path: VOCAB }), 'voc-naqa') === naqaB, "a takes b's later grade");
 
     // ── a pass on each ──
-    const mA = JSON.stringify(await a('pass', { path: MERCHANT }));
-    const qB = JSON.stringify(await b('pass', { path: QASIDA }));
+    const mA = canon(await a('pass', { path: MERCHANT }));
+    const qB = canon(await b('pass', { path: QASIDA }));
     await a('sync');
     await b('sync');
     await a('sync');

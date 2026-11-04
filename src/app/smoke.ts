@@ -8368,7 +8368,10 @@ export async function smokeSync(vault: Vault): Promise<void> {
     await a('sync');
     await b('sync');
     await a('sync');
-    must(readLine(await b<string>('text', { path: MERCHANT })) === mA && readLine(await a<string>('text', { path: QASIDA })) === qB, 'both passes are in both');
+    const mB = readLine(await b<string>('text', { path: MERCHANT }));
+    must(mB === mA, `a's pass is in b: ${mB} (a wrote ${mA})`);
+    const qA = readLine(await a<string>('text', { path: QASIDA }));
+    must(qA === qB, `b's pass is in a: ${qA} (b wrote ${qB})`);
 
     // ── a paragraph edited in both shows both under a notice ──
     await a('edit', { path: NOTE, find: 'Ask both.', replace: 'Ask both, soon.' });

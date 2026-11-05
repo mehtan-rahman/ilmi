@@ -6,6 +6,119 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-11-04 — milestone 55: the iOS target
+
+Done on main: `b9c1b3d`. Xcode 27.2 and the iOS 27.2 simulator runtime
+were installed by the user during the session; the Rust iOS targets and,
+from Homebrew, `xcodegen`, `libimobiledevice` and `cocoapods` were added
+by it (Homebrew brought ruby and openssl@4 with them and unlinked
+openssl@3). Changed: `src-tauri/src/lib.rs` (the desktop's own under
+`cfg(desktop)`; `platform`, `documents_vaults`, `dev_env` reading
+`Documents/smoke.json`; one cargo test), `Cargo.toml` (single-instance
+for the desktop only; OpenSSL built in on iOS), `tauri.conf.json` (the
+deep-link plugin's `mobile` scheme), new `Info.ios.plist`, new
+`src-tauri/gen/apple` (the Xcode project, with `libz.tbd` and
+`libiconv.tbd` for libgit2 and ilmi's icons); new `src/app/platform.ts`
+with `__tests__/platform.test.ts` (8) and `__tests__/ipad-view.test.ts`
+(6); `vault.ts` (the platform at launch, the clones listed, `connectClone`,
+`toggleSidebar`, the iPad's defaults), `sync.ts` (settings by
+`vaultKey`), `store.ts` (`mobile`, `sideSheet`, one pane), `Welcome.tsx`
+(`connect`), `App.tsx` (the shape, the sheet, the edge swipe, the
+viewport), `TopStrip.tsx`, `Canvas.tsx`, `BottomStrip.tsx`, `Palette.tsx`,
+`Tweaks.tsx`, `Reader.tsx` and `Pdf.tsx` (the cue under a finger),
+`app.css`, `chrome.css`, `index.html` (the viewport), `smoke.ts`
+(`ILMI_SMOKE=ipad`; the tour's stale chapter assertion); `docs/guide.md`
+(On an iPad), `docs/development.md` (The iPad), README, PLAN.
+
+### Decided
+
+- **One app, told where it runs.** The Rust side says `mobile` and names
+  Documents; nothing sniffs the user agent (an iPad's says Macintosh).
+  The iPad's side also draws in the Mac's window under `ILMI_MOBILE=1`.
+- **The welcome on an iPad is `connect` and what is in Documents.** A
+  remote and a token; the clone lands under the remote's name. The rows
+  are the folders there now, not remembered paths: the app's container
+  moved on every reinstall in the simulator.
+- **Landscape is a narrow Mac, portrait has a sheet.** One pane always;
+  the sidebar and the inspector hidden until their toggles; in portrait
+  the sidebar comes over the page and goes once something opens, and a
+  book's notes start folded. The sidebar's toggle in the top strip is
+  the one control the brief did not name.
+- **`smoke.json` is the environment.** `mode`, `vault`, and any other
+  key as its variable; dev builds only.
+- **The Xcode project is in the repository**, in the form a build leaves
+  it, with two lines of its own for libgit2.
+
+### Verified
+
+1226 tests in 84 files, typecheck clean, 23 cargo tests, no warnings;
+`cargo check` for `aarch64-apple-ios-sim` and `aarch64-apple-ios`. From a
+clean worktree of main at `b9c1b3d`: on a simulated iPad Air 11-inch
+(M4), `ILMI_SMOKE=ipad` (31 checks, 12 captures looked at) cloned the
+sample from a local bare repository into the app's Documents, opened
+it, walked six cards of the queue by their buttons, and pushed; the
+Mac's copy, opened in the Mac app (dev identifier `dev.ilmi.check`),
+pulled `6 reviews` and its vocabulary deck held the remote's schedule
+line. `ILMI_SMOKE=tour` on the iPad: 23 checks, 45 captures in light,
+dark and e-ink, every one looked at. The same smoke in the Mac's window
+at 1180×748 with `ILMI_MOBILE=1` for landscape (30 checks, 12 captures),
+and the Mac's own tour (23 checks, 45 captures) for what must not have
+changed. Findings on the way, fixed before the commit: git2 wanting
+OpenSSL on a cross build; the link missing zlib and iconv; the default
+Tauri icon; the tour's stale assertion; the smoke's own (a chapter's
+notes are folded in portrait, a first grade adds a line).
+
+Not verified: a device (no team; nothing signed or installed); landscape
+on the simulator (nothing turns it: `simctl` has no command, this Xcode
+no Simulator app, and the app's own requests were ignored); a real
+finger (the edge swipe, a tap on the cue over a live selection,
+scrolling, the keyboard on the glass); the arrival of an `ilmi://` link
+(iPadOS asks "Open in ilmi?", and the answer is a tap); the Files app;
+HTTPS with a token on iOS; a pull landing on the iPad.
+
+### Rig notes
+
+`npx tauri ios dev "<device>"` stays running in the background and
+redeploys on a Rust change; each redeploy moves the app's data container
+(Documents comes along), so ask `simctl get_app_container` again before
+writing `smoke.json`. The log is under `Library/Application
+Support/dev.ilmi.app/logs/`. A capture script in zsh must not name a
+variable `LINES`. The Mac app runs beside the simulator on the same dev
+server with `beforeDevCommand` emptied. A locked screen stalls the Mac's
+webview (timers barely run) but not the simulator. `simctl openurl`
+leaves a system alert up that only a tap or a shutdown clears.
+
+Handoff prompt for the next session:
+
+```
+Read PLAN.md, FORMAT.md, BUILD-LOG.md, and spec/hashiyah/HANDOFF.md. The
+section of PLAN.md in progress is "Beyond the Mac" (53–58); its
+introduction holds the decisions and the user's words, and the notes
+under 53, 54 and 55 say what the Rust side, the sync policy, and the
+iOS target look like (55's end has the simulator rig). Do milestone 56
+and only that one (52 waits for the user; skip it). Stop at its "done
+when". Then tick it, write notes for the next session under it, add an
+entry to BUILD-LOG.md with a fresh handoff prompt, and commit. Rules as
+in PLAN.md's ground rules: export
+PATH=$HOME/.cargo/bin:/opt/homebrew/bin:$PATH; npm test and npm run
+typecheck green before a commit, and cargo test for the Rust side; one
+commit per milestone; ask before a screen, section, or setting the brief
+does not name; a FORMAT change needs a corpus file and a test. 56 is
+checked on a simulated iPhone (Xcode and the iOS runtime are installed;
+if they are gone, say so and stop rather than install them): smoke.json
+in the app's Documents chooses the smoke, captures by xcrun simctl io
+screenshot, the simulator shut down when the run ends. The Mac window
+check still runs from a clean checkout of main over a copy of
+samples/double-major (the dev identifier override from
+docs/development.md); never kill a process on port 1420 that is not
+yours, and stop your own app binary by pid when a run ends; capture
+only by window id. Whether the phone (56) comes before touch reading
+(57) is the user's to say (PLAN, "What the user decides"); if they have
+not said, ask before starting.
+```
+
+---
+
 ## 2026-11-04 — milestone 54: the nudge
 
 Done on main: `9202049` (the milestone) and, from the window check, one

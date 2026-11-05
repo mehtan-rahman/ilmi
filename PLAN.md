@@ -5761,7 +5761,8 @@ host is. Whether the phone (56) comes before touch reading (57).
 Order: 53 → 54 on the Mac, judged as every milestone is; 55 → 58 need
 Xcode and the simulator, checked there the way the window is checked here.
 52 (finish by) waits for the user's word and is not in this order.
-53 and 54 are done and window-checked (2026-11-04); 55 is next.
+53 and 54 are done and window-checked (2026-11-04); 55 followed the same
+day, checked on a simulated iPad; 56 is next.
 
 ---
 ### [x] 53. Sync by git — the vault as a repository, merged by the format's rules
@@ -5946,7 +5947,113 @@ rest under `cfg(desktop)`.
 *Done when:* a review in one copy appears in the other within five
 seconds with the timer off (`ILMI_SMOKE=nudge`).
 
-### [ ] 55. The iOS target — the same app on an iPad
+### [x] 55. The iOS target — the same app on an iPad
+Done 2026-11-04, commit `b9c1b3d`.
+Notes: **Rust.** `lib.rs` puts the desktop's own under `cfg(desktop)`: the
+single-instance plugin (a target-specific dependency now), the menu bar and
+its constants with Paste and Match Style, `on_menu_event`, the second
+window; `set_recent_vaults` is a no-op on mobile. New commands: `platform`
+(`mobile`, `documents`: the app's Documents on iOS, nothing on the
+desktop but for `ILMI_MOBILE=1 ILMI_DOCUMENTS=<dir>` in a dev build, which
+draws the iPad's side in the Mac's window), `documents_vaults` (the
+folders in Documents, by name), and `dev_env` falling back to
+`Documents/smoke.json` (`smoke_json`: `mode` is `ILMI_SMOKE`, `vault` by
+name is the one in Documents, any other key the variable of its name in
+capitals; one cargo test). git2 names openssl-sys for every unix but
+macOS, so the `target_os = "ios"` section builds it in
+(`vendored-openssl`), unused: libgit2 speaks TLS through the system
+there. **The project.** `src-tauri/gen/apple` is `tauri ios init`'s, kept
+in the repository in the form a build leaves it (Info.plist with
+`Info.ios.plist`'s two keys and the `ilmi` URL type merged in);
+`project.yml` has `libz.tbd` and `libiconv.tbd` added by hand for libgit2
+(a static library cannot ask for them; `xcodegen generate` after an
+edit); the icons are `npx tauri icon design/icon.png`'s. Tooling added to
+this Mac: the Rust targets `aarch64-apple-ios` and `-ios-sim`, and from
+Homebrew `xcodegen`, `libimobiledevice`, `cocoapods` (with ruby and
+openssl@4, which unlinked openssl@3). **Renderer.** `src/app/platform.ts`
+is the pure side: `loadPlatform` once at launch (`vault.ts`'s
+`openInitialVault`; `mobile` in the store, `data-mobile` on the page),
+`shapeOf` (`desktop`, `landscape`, `portrait` by width against height),
+`vaultKey` (a vault in Documents is `documents:<name>`: the app's
+container moved on every reinstall in the simulator, Documents kept),
+`nameFromRemote`, `cloneDest`, `clonedVaults`, `onePane`, `press`.
+`vault.ts`: `listClones` rewrites the recents from the folders in
+Documents on start and on close, `connectClone` is 53's `cloneInto` into
+`Documents/<name>` then `openVault`, `toggleSidebar`, the sidebar and the
+inspector hidden by default on an iPad (a saved state wins after that),
+a vault never opened there listed but not reopened. `sync.ts` keeps its
+settings by `vaultKey`. `Welcome.tsx` on an iPad: `connect` alone (c),
+two fields (remote, token) and `clone`, the clone's own words when it
+fails, rows by name with no path, no folder drop. `App.tsx`: the shape,
+the sidebar as a column or in portrait a sheet over the canvas cell
+(`sideSheet`, not saved; closed when the active tab or the shape
+changes; a touch from within 24 px of the left edge opens it, a swipe
+left closes it), `notesHidden` set by the shape (folded in portrait),
+`--shell-h` from the visual viewport, no drag handles. `TopStrip` gains
+the sidebar's toggle at its left end on an iPad; `Canvas` has no split
+there and the store folds any second pane back; the palette leaves out
+split, close pane, open and new collection; the tweaks leave out
+`clone…`; the bottom strip drops `split pane`. `chrome.css`'s last block
+is the iPad's: safe-area insets on the strips, the page fixed so only
+panes scroll, the strip's right side at any width, the sheet and its
+scrim. `Reader` and `Pdf`: the cue's card and extract through `press` (a
+touch acts at once; the mouse press a tap sends after is let go), the
+cue below the selection on an iPad. Tests: `platform.test.ts` (8),
+`ipad-view.test.ts` (6, jsdom). **Checked.** On a simulated iPad Air
+11-inch (M4), iOS 27.2, Xcode 27.2, from a clean checkout of `b9c1b3d`:
+`ILMI_SMOKE=ipad` by `smoke.json`, 31 checks and 12 captures looked at
+(welcome, connect, the clone open, the sheet, the inspector, the session
+hidden and shown, walked, synced, the cue, a chapter's pages with the
+notes folded, dark): the sample cloned from a local bare repository into
+Documents, six cards graded by their buttons, the push; then the Mac's
+copy opened in the Mac app pulled `6 reviews` and held the same schedule
+line as the remote. `ILMI_SMOKE=tour` there: 23 checks, 45 captures
+(light, dark, e-ink), every one looked at. Landscape in the Mac's
+window (`ILMI_MOBILE=1`, 1180×748): 30 checks, 12 captures. The Mac's
+own tour from the same checkout: 23 checks, 45 captures, the Mac's
+layout as it was. 1226 tests, typecheck clean, 23 cargo tests.
+Decided: the sidebar's toggle in the top strip (the brief names the
+sheet and its edge; an iPad may have no keyboard for ⌃⌘S and no pointer
+for the handle), shown only there. The welcome lists every folder in
+Documents, cloned or put there by hand. A clone is named by its
+remote's last segment; a second clone of that name is refused with
+`not an empty folder`. The strips keep their key hints. Commits made on
+the iPad are `ilmi <ilmi@device>` (53's fallback identity). The tour's
+"the chapter is titled once" had been stale since 49 (the chapter is
+pages beside notes) and stopped the tour on the Mac too; it now counts
+the headings naming the chapter.
+Not checked: a device (no team is set; `cargo check --target
+aarch64-apple-ios` passes, nothing was signed or installed). Landscape
+on the simulator: `simctl` cannot turn a device, this Xcode has no
+Simulator app to do it from, and the app asking for it
+(`requestGeometryUpdate`, `UIDevice`'s orientation) was ignored. A real
+finger: the edge swipe, a tap on the cue with a live selection, the
+panes' scrolling, the keyboard on the glass; `simctl` cannot touch, so
+every tap was a click from the smoke. `ilmi://`: `simctl openurl` brings
+iPadOS's "Open in ilmi?", so the scheme is registered; the link's
+arrival was not seen (the answer is a tap). The Files app. HTTPS with a
+token on iOS. A pull landing on the iPad (the watcher under iOS): the
+iPad only pushed.
+Open: rows, tabs, and strips are the Mac's size, small under a finger
+(56, 57). A book's notes folded in portrait unfold only by what reveals
+a section or ⌘\ on a keyboard, until 57's slide-in. The app icon is the
+Mac's rounded square on white inside iOS's own mask. OpenSSL is linked
+for nothing.
+For 56: `shapeOf` already calls anything taller than wide `portrait`;
+the phone's face is a rule under 600 px on top of it, and
+`html[data-mobile]`, `data-shape` are there for the styles. iPhone
+simulators are installed beside the iPads. The rig (scratchpad scripts
+do not survive a session): `npx tauri ios dev "<device name>"` from the
+run tree, left running (it serves the renderer on 1420 and redeploys on
+a Rust change); write `smoke.json` into `$(xcrun simctl
+get_app_container booted dev.ilmi.app data)/Documents`, asked for again
+after each redeploy since the container moves; `xcrun simctl terminate`
+then `launch`; read `Library/Application Support/dev.ilmi.app/logs/
+ilmi.log` there for `shot:` lines and capture with `xcrun simctl io
+booted screenshot`; `xcrun simctl shutdown` at the end. The Mac app can
+run beside it on the same dev server with `--config
+'{"identifier":"dev.ilmi.check","build":{"beforeDevCommand":""}}'`. A
+locked screen stalls the Mac's window but not the simulator.
 - `npm run tauri ios dev` builds and runs in the simulator and on a device
   with a free team. Desktop-only pieces gated with `cfg(desktop)`: single
   instance, the menu bar, the paste-as-plain-text item, the welcome's
@@ -6047,7 +6154,9 @@ were updated to the cadence but not run either. 51's window check ran on
 2026-11-03 (`cadence`, 42 ok, with the backlog split); the installer, the
 release workflow, the docs, the first push, and v0.1.0 followed the same
 day (BUILD-LOG). Next: Beyond the Mac (53–58), written 2026-11-04; 52
-waits for the user's word.
+waits for the user's word. 53, 54 and 55 (sync by git, the nudge, the
+iOS target on a simulated iPad) were done on 2026-11-04; 56, the phone,
+is next.
 
 Refinement (33–41) is complete, 2026-10-30, every milestone's window check
 run and recorded under its BUILD-LOG entry (33 `notes`, 34 `editing`, 35

@@ -6,6 +6,84 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-11-04 — milestone 54: the nudge
+
+Done on main: `9202049` (the milestone) and, from the window check, one
+small commit per finding, `7af64b5` `62b54ed` `bda14e9` `9324a81`.
+Changed: new `src/app/nudge.ts` (the topic from the remote by SHA-256, the
+server-sent events off the http plugin's streamed body, the publish, the
+reconnect, the age) with `__tests__/nudge.test.ts` (9 tests: the hash's
+vectors, the topic, events split across chunks, own messages ignored, the
+publish, the subscription under a fake server with fake timers, the
+age); `sync.ts` (`server` in the settings, the subscription with the
+vault, a nudge folded into one pull, the publish after a push,
+`setNudgeServer`, `setPullTimer`, `syncAge`); `store.ts`, `TopStrip.tsx`
+(`synced · 2 s ago`, ticking), `Tweaks.tsx` (the `nudge` row),
+`chrome.css`, `vault.ts` (the second window answers the nudge smoke too),
+`smoke.ts` (`ILMI_SMOKE=nudge`; the sync smoke keeps its server empty);
+new `src-tauri/src/nudge.rs` (a loopback ntfy-shaped server, debug
+builds, one cargo test), `lib.rs` (three `dev_nudge_*` commands),
+`capabilities/default.json` (`https://**:*`, `http://**:*`); `docs/guide.md`
+(Sync), `docs/development.md`, PLAN.
+
+### Decided
+
+- **A push nudges, a nudge pulls.** The topic is a hash of the remote,
+  never the remote; the message is `changed from <window id>`, so the
+  publisher ignores its own. The server is a per-vault setting beside the
+  remote and token, `https://ntfy.sh` unless changed; empty, the timers
+  are all there is. The pull timer stays on with the nudge.
+- **The strip shows the latency.** `synced · 2 s ago` is how long since
+  the remote was last reached; it ticks each second for a minute, then
+  each half minute; only beside `synced`.
+- **Reconnecting is quiet.** A second doubling to a minute, reset once a
+  connection held ten seconds; a connection that comes back pulls once.
+
+### Verified
+
+1212 tests in 82 files, typecheck clean, 22 cargo tests, no warnings.
+Window check from a clean worktree of main at `9324a81` over a copy of
+`samples/double-major` with `ILMI_VAULT2` beside it, dev identifier
+`dev.ilmi.check`, over the loopback server: 29 checks and 6 captures
+(both windows: tweaks, synced, dark), every capture looked at. A grade
+pushed in one window was in the other's file before the push call
+returned (local repositories; the public server's round trip is what a
+real pair would see). Five runs; the first four each stopped on one
+thing, fixed in its own commit (listed in PLAN's notes). Not exercised:
+`ntfy.sh` itself — no check touches the network.
+
+### Rig notes
+
+The second window's title changes from `ilmi · second` to `vault-b · ilmi`
+once it opens its clone, so a capture script that sorts the two windows
+by title must match both. Otherwise as 53's notes: the app by pid after
+checking its cwd, the identifier override, retrying captures.
+
+Handoff prompt for the next session:
+
+```
+Read PLAN.md, FORMAT.md, BUILD-LOG.md, and spec/hashiyah/HANDOFF.md. The
+section of PLAN.md in progress is "Beyond the Mac" (53–58); its
+introduction holds the decisions and the user's words, and the notes
+under 53 and 54 say what the Rust side and the sync policy look like.
+Do milestone 55 and only that one (52 waits for the user; skip it). Stop
+at its "done when". Then tick it, write notes for the next session under
+it, add an entry to BUILD-LOG.md with a fresh handoff prompt, and commit.
+Rules as in PLAN.md's ground rules: export
+PATH=$HOME/.cargo/bin:/opt/homebrew/bin:$PATH; npm test and npm run
+typecheck green before a commit, and cargo test for the Rust side; one
+commit per milestone; ask before a screen, section, or setting the brief
+does not name; a FORMAT change needs a corpus file and a test. 55 needs
+Xcode and the iOS simulator; if they are not installed, say so and stop
+rather than install them. The Mac window check still runs from a clean
+checkout of main over a copy of samples/double-major (the dev identifier
+override from docs/development.md); never kill a process on port 1420
+that is not yours, and stop your own app binary by pid when a run ends;
+capture only by window id.
+```
+
+---
+
 ## 2026-11-04 — milestone 53: sync by git
 
 Done on main: `37eaa2e` (the milestone) and, from the window check, one

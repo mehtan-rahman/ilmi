@@ -5761,6 +5761,7 @@ host is. Whether the phone (56) comes before touch reading (57).
 Order: 53 → 54 on the Mac, judged as every milestone is; 55 → 58 need
 Xcode and the simulator, checked there the way the window is checked here.
 52 (finish by) waits for the user's word and is not in this order.
+53 and 54 are done and window-checked (2026-11-04); 55 is next.
 
 ---
 ### [x] 53. Sync by git — the vault as a repository, merged by the format's rules
@@ -5882,7 +5883,57 @@ later grade; a paragraph edited in both shows both under a notice; a drag
 in both keeps the pulled order; and the strip says where things stand
 (`ILMI_SMOKE=sync`, both windows checked).
 
-### [ ] 54. The nudge — a pull the moment the other device pushed
+### [x] 54. The nudge — a pull the moment the other device pushed
+Done 2026-11-04, commits `9202049` (the milestone) through `9324a81` (the
+window check's fixes, one each).
+Notes: `src/app/nudge.ts` is the transport: `topicOf` (`ilmi-` and the
+first 32 hex digits of SHA-256 over the remote trimmed of a trailing slash
+and `.git`; the hash is written out so the topic is known synchronously),
+`parseSse` (ntfy's `data:` JSON per blank-line-ended event, the tail kept
+for the next chunk), `isNudge` (a `message` event reading `changed from
+<window id>` that is not ours; `open` and `keepalive` are not),
+`publishNudge` (a POST, quiet on failure), `subscribeNudge` (the http
+plugin's `fetch` with the body read as a stream; on an end or a failure a
+wait of 1 s doubling to 60 s, reset once a connection held 10 s; the
+second and later connections report `reconnect`, which is a pull, since a
+nudge could have gone by), and `ago`. `src/app/sync.ts`: `SyncSettings`
+gains `server` (`https://ntfy.sh` until changed, stored beside the remote
+and token per vault; empty is the timer alone), `startNudge`/`stopNudge`
+with the vault and on every change of remote or server, `onNudge` folds
+however many nudges into one queued pull through `serial`, `pushNow`'s
+success path and the close-time push publish, `setNudgeServer`,
+`setPullTimer` (the smoke's switch), `syncAge`. `TopStrip` draws the age
+as `.ago` beside `synced`, ticking each second under a minute and each
+half minute after; `Tweaks` gains the `nudge` row under `token`.
+`src-tauri/src/nudge.rs` (debug builds) is a loopback ntfy-shaped server
+on std's `TcpListener` for the smoke: `POST /<topic>`, `GET /<topic>/sse`
+chunked, `drop_all`, `listeners` (a stream the client closed set aside by
+a peek); `dev_nudge_serve`, `dev_nudge_drop`, `dev_nudge_listeners`.
+`ILMI_SMOKE=nudge`: both windows on that server, pull timers off, a grade
+pushed in each lands in the other on the nudge alone (timed from the
+push's return: single-digit ms over local repositories), the strip's age,
+the streams dropped and back, the nudge off in b and the grade staying
+out until b's own pull, on again. The window check: run 5 on `9324a81`,
+29 checks, 6 captures looked at (tweaks, synced, dark; both windows).
+Runs 1–4 each found one thing: the http scope's `http://**` admits only
+the default port (a pattern with a hostname and no port gets an empty
+port in urlpattern; `**:*` beside it, `7af64b5`, which also frees any
+self-hosted ntfy or clipped page on a port); the smoke read b's strip
+while its pull was still settling; the dev server counted a stream its
+client had closed; and a stopped stream's socket closes only on the
+server's next write, because the http plugin keeps the response while a
+body read is pending — the smoke lets the publish do it.
+Decided: the message is `changed from <window id>` so a window ignores
+its own publish (the brief's "changed"; the topic still carries nothing
+of the vault). The timer stays on beside the nudge. The age shows only
+beside `synced`. No check reaches `ntfy.sh` itself: the same code with
+the base URL swapped, unexercised against the public server, as 53's
+HTTPS-with-token path is. A stopped subscription's socket lingers until
+the server's next event (ntfy's keepalive, 45 s) — one socket, then gone.
+For 55: `nudge.rs` is `cfg(debug_assertions)` and std-only, so it builds
+for the simulator; the renderer side is platform-free; the `second`
+window and `ILMI_VAULT2` are desktop debug affordances and gate with the
+rest under `cfg(desktop)`.
 - After every push, ilmi publishes "changed" to a topic; every open ilmi
   on that vault is subscribed and pulls at once. The topic carries no
   content. Default transport: an ntfy topic named by a hash of the remote

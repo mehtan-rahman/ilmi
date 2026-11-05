@@ -8553,8 +8553,9 @@ export async function smokeNudge(vault: Vault): Promise<void> {
     // ── a grade pushed in a lands in b on the nudge alone ──
     const ab = await crossing('a', 'voc-karam', 3);
     log(`ok: a → b in ${ab} ms`);
-    const bState = await b<State>('state');
-    must(bState.word === 'synced' && bState.age !== null && /^(just now|\d+ s ago)$/.test(bState.age) && bState.ago === bState.age, `b's strip: ${bState.word} · ${bState.ago}`);
+    // the file lands before the pull's own bookkeeping ends: the strip settles a moment later
+    const bState = await poll(async () => { const st = await b<State>('state'); return st.word === 'synced' ? st : null; }, "b's pull is over");
+    must(bState.age !== null && /^(just now|\d+ s ago)$/.test(bState.age) && bState.ago === bState.age, `b's strip: ${bState.word} · ${bState.ago}`);
     const ba = await crossing('b', 'voc-dayf', 4);
     log(`ok: b → a in ${ba} ms`);
     await poll(() => word() === 'synced' && /^(just now|\d+ s ago)$/.test(age() ?? ''), `a's strip: ${word()} · ${age()}`);

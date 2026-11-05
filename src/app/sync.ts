@@ -324,7 +324,7 @@ function startNudge(): void {
   stopNudge();
   const s = settings();
   if (!root || !useApp.getState().sync.on || !s.server.trim() || !s.url.trim()) return;
-  nudge = subscribeNudge(s.server, s.url, onNudge);
+  nudge = subscribeNudge(s.server, s.url, onNudge, { onError: (e) => console.warn('nudge', e) });
 }
 
 function stopNudge(): void {

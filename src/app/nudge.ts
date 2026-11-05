@@ -146,7 +146,7 @@ export function subscribeNudge(
   server: string,
   remote: string,
   onNudge: (why: 'nudge' | 'reconnect') => void,
-  opts: { fetch?: Fetch; device?: string; setTimeout?: typeof globalThis.setTimeout } = {},
+  opts: { fetch?: Fetch; device?: string; setTimeout?: typeof globalThis.setTimeout; onError?: (e: unknown) => void } = {},
 ): Subscription {
   const fetch = opts.fetch ?? httpFetch;
   const device = opts.device ?? DEVICE;
@@ -182,7 +182,10 @@ export function subscribeNudge(
       const started = Date.now();
       try {
         await once();
-      } catch { /* quiet: the wait, then again */ }
+      } catch (e) {
+        // quiet: the wait, then again
+        if (!stopped) opts.onError?.(e);
+      }
       if (stopped) return;
       if (Date.now() - started > HELD_MS) wait = RECONNECT_MIN_MS;
       await new Promise<void>((r) => later(r, wait));

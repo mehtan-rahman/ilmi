@@ -5779,6 +5779,16 @@ later. can you decide what's reasonable for 2 and 3?"):
   face does the finger-sized work 57 inherits; 57 and 58 are both the
   Pencil's and run back to back.
 
+**Reopened the same day.** Told that GitHub refuses a file over 100 MB,
+the user: "This doesnt seem like the righ tsolution then. i'd love to
+have something that i can replace goodnotes with for example". So the
+host and the order above do not stand as written, and 56 does not start
+on them. What that asks, as put to the user and not yet answered: the
+big bytes (PDFs, ink) out of git's own storage, most likely Git LFS on
+the same host spoken by the app, fetched when a book is opened; ink on
+the book's pages themselves, which 58 leaves out; the iPad (57, 58)
+before the phone. Nothing here is decided until they say.
+
 Order: 53 → 54 on the Mac, judged as every milestone is; 55 → 58 need
 Xcode and the simulator, checked there the way the window is checked here.
 52 (finish by) waits for the user's word and is not in this order.

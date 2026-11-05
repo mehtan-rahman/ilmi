@@ -109,6 +109,13 @@ selection, and scrolling stay unverified. The recipe is in PLAN under
 55 ("The touch rig"); the two files were in the scratchpad and are
 rebuilt from it.
 
+Then the user, on hearing of GitHub's 100 MB a file: "This doesnt seem
+like the righ tsolution then. i'd love to have something that i can
+replace goodnotes with for example". The host and the order are marked
+reopened in PLAN; a direction was put to them (large files through Git
+LFS on the same host, ink on the book's pages, the iPad before the
+phone) and waits for their word.
+
 Handoff prompt for the next session:
 
 ```
@@ -136,10 +143,11 @@ check still runs from a clean checkout of main over a copy of
 samples/double-major (the dev identifier override from
 docs/development.md); never kill a process on port 1420 that is not
 yours, and stop your own app binary by pid when a run ends; capture
-only by window id. The order (56, 57, 58), the git host (a private
-GitHub repository over HTTPS), and the Developer Program (later:
-simulator only, nothing signed) are decided in PLAN, "What the user
-decides"; do not ask again.
+only by window id. Before anything else: the order and the git host
+were reopened by the user on 2026-11-04 (PLAN, "What the user decides",
+"Reopened the same day": they want something that can replace
+GoodNotes, so large PDFs and ink have to sync). Do not start 56 until
+they have settled that with you; if this prompt is all you have, ask.
 ```
 
 ---

@@ -5789,12 +5789,20 @@ the same host spoken by the app, fetched when a book is opened; ink on
 the book's pages themselves, which 58 leaves out; the iPad (57, 58)
 before the phone. Nothing here is decided until they say.
 
+**Settled 2026-11-05.** After the research and a day's questions the
+user chose a database under the app, merged by CRDT, with every storage
+built in and the files as an export: the section "A database under the
+app, synced by CRDT to any storage" (59–68) holds it, and its order
+replaces the one above. No git host is needed for it; 53's sync goes at
+66.
+
 Order: 53 → 54 on the Mac, judged as every milestone is; 55 → 58 need
 Xcode and the simulator, checked there the way the window is checked here.
 52 (finish by) waits for the user's word and is not in this order.
 53 and 54 are done and window-checked (2026-11-04); 55 followed the same
-day, checked on a simulated iPad; 56 is next, then 57 and 58 (decided
-above).
+day, checked on a simulated iPad. What follows 55 is 59 ("A database
+under the app, synced by CRDT to any storage" has the order); 56–58 take
+their places in it.
 
 ---
 ### [x] 53. Sync by git — the vault as a repository, merged by the format's rules
@@ -6194,6 +6202,290 @@ section is on the Mac.
 section being read, reopens editable, and shows on the Mac under the same
 heading.
 
+Revised 2026-11-05 (the research; "A database under the app, synced by
+CRDT to any storage"): the strokes are the ink, rows in the store by
+page, and the picture is made from them, never merged; one drawing a
+page; saved when the page closes or goes quiet, not a stroke at a time;
+two devices' strokes on one page are all kept, by stroke id, with the
+removals recorded, and until that is proven both pages are kept. "53
+carries both files" becomes the engine of 61–63; the PNG and the
+`.pkdrawing` beside the note are what an export writes. Measure a
+page's bytes as strokes and as a PNG, and whether a stroke's id
+survives a save, before building on either.
+
+## A database under the app, synced by CRDT to any storage
+
+Worked out with the user on 2026-11-04 and 05, after 55 and the research
+they asked for (`reports/ilmi sync and storage architecture.md`, its notes
+in `research_notes/`; the report argues for files and was written before
+the last two answers below). What they asked for, in their words:
+- **Something that can stand in for GoodNotes.** Told that GitHub refuses
+  a file over 100 MB: "This doesnt seem like the righ tsolution then. i'd
+  love to have something that i can replace goodnotes with for example".
+- **Every kind of data, not cards alone.** "one thing to keep in mind is
+  that the original messages were based on flashcards only but we have ll
+  kinds of data m odels here".
+- **Storage they already have, built in.** "could we do autoamtic syncs
+  to dropbox/goodgle drive/icloud or smthn? like built in supported like
+  that? or my own server if i wanted"; then "I think lets implement all
+  of these options?".
+- **Merging by CRDT.** "i was really curious about the CRDT thing from
+  all the comments, i htink it's worth to implement".
+- **A database, with the files as an export.** First "yeah CRDT over
+  files makes sense", then: "I don't mind rebuilding since that's
+  something you gotta do and AI moves quick. Could we consider switching
+  to db with export collection as zip/files?"
+
+**Why the store changes, when the research said keep the files.** The
+research kept them on two premises: that the vault being a folder other
+tools edit mattered, and that a rebuild was a cost to avoid. The user
+withdrew both. What then decides it:
+- Ink, pages, strokes, and marks on a PDF's pages are records, not
+  prose; a GoodNotes is not Markdown-shaped.
+- A phone cannot hold every document parsed in memory (3.7 times the
+  text, measured); a database reads what a screen needs.
+- Everything gets an id, so a rename or a move is one field changing and
+  nothing is related by path.
+- One copy of the truth. Merging over files needed the files, the merge
+  state, and later an index, kept in step by comparing them.
+What still stands from the research: cr-sqlite is not used (no release
+since January 2024, one winner a cell, no text merge); speed at today's
+sizes was never the reason; the search index needs ilmi's own folding
+for Arabic.
+
+**The model.**
+- **The store is SQLite, one file a collection, per device**, on the Rust
+  side (rusqlite with its own SQLite, which builds for iOS). The app
+  above it keeps asking `Vault` for documents by path; 8 files outside
+  `src/vault` touch the file system today.
+- **A document's text is still Markdown as FORMAT.md has it**, edited as
+  now. What moves out of the text into rows is state: a card's schedule,
+  a section's and a document's reading and writing schedules, the review
+  log, a directory's order. A card has its `^id` from the day it is
+  made.
+- **FORMAT.md becomes the contract for a document's text and for what an
+  export holds.** `import` reads a folder as today's parser does;
+  `export` writes the collection as a folder or a zip through today's
+  serializer, schedule lines and `.ilmi/` back in their places, so an
+  exported collection is a vault any earlier ilmi, or any editor, reads.
+  `mirror`: a folder kept up to date one way, for reading by other tools.
+  The corpus and its round-trip tests stay as the proof.
+- **A CRDT is data two devices can change apart and always merge, with no
+  server and no common ancestor.** Every write goes through the store,
+  which records it as a change; each kind of data merges by the kind
+  that fits it:
+  - A document's text: a text CRDT (a library: Loro or Automerge). Two
+    devices editing one paragraph merge by character; where both changed
+    one paragraph, the notice 53 shows lists it.
+  - A schedule: the later review instant wins (53's rule), now a row, so
+    a card reworded on one device and graded on the other is one card.
+  - Any other field (a title, a priority, a setting): by field, the
+    later write by a clock that orders devices' writes.
+  - The review log, the pairs said not the same: sets that only grow.
+  - The tree: a document's parent and place are fields; two moves merge,
+    and a move that would make a loop is dropped the same way everywhere.
+  - Ink: a set of strokes by id, with the removals recorded.
+  - PDFs and images: never merged; whole files named by their SHA-256,
+    kept beside the database.
+- **Storage that nobody overwrites.** In the storage each device writes
+  its own files of changes, once each, and reads everyone else's. So a
+  storage needs four verbs (list, read, write a new file, delete) and no
+  "only if unchanged" check, which is what lets Google Drive and a folder
+  the OS syncs work. Old change files are folded into a snapshot and
+  deleted after a while.
+- **The storages, one a collection:** a folder (a NAS, a disk, what the
+  tests use), S3-compatible (Cloudflare R2, MinIO on the user's own
+  machine), WebDAV (Nextcloud, a Synology), Dropbox, Google Drive, and
+  iCloud Drive once the Developer Program is joined. The user's own
+  server is the second or third of these; ilmi has no server of its own.
+- **Big files come when they are opened.** Each device says what it
+  keeps: everything, or what has been opened. The phone keeps what has
+  been opened.
+- **Safety, since one file now holds everything:** a dated export is kept
+  automatically (daily, the last seven), beside the storage's own copy.
+- **Git (53–55's sync) goes** once the engine has passed the same checks
+  on a device (65); until then it is left working over an exported
+  folder. The nudge (54) stays.
+- **Automatic means:** on the Mac while the app is open; on iOS when the
+  app opens, while it is used, and as it is left (no app syncs behind a
+  locked screen); a large download may finish in the background.
+
+**What the user gives up, said plainly:** another editor, a script, or an
+assistant can no longer change the live notes. They can read the mirror
+or an export, and what they change comes back only by `import`.
+
+**Screens and settings these milestones may add** (named here so they
+are in the brief): the welcome lists collections and gains `import
+folder`; the palette gains `export collection` (folder · zip); Tweaks
+gains `mirror` (a folder, off by default), and under the sync rows
+`storage` (folder · s3 · webdav · dropbox · google drive · icloud) with
+the fields each needs, and `keep files` (all · opened).
+
+**What the user provides, when its milestone comes:** a bucket or a
+server of theirs for 63's real check (optional; without one it is
+recorded as not verified); a Dropbox app key and a Google OAuth client
+for 64 (their accounts; Google verifies an app before its sign-in stops
+expiring weekly); the Developer Program for 65's iCloud; an iPad or
+iPhone on a cable for 66 (a free team's seven-day install is enough).
+
+Order: 59 → 60 → 61 → 62 → 63, on the Mac. Then the iPad, because ink is
+what GoodNotes is: 57 → 58 → 67. Then 64, the phone (56), and 68. 65
+when the Developer Program is joined. 66 as soon after 63 as the user
+has a device to plug in; nothing real is kept on the engine before it.
+
+### [ ] 59. The store — a database under the vault, in and out as files
+- **`src-tauri/src/store.rs`**: SQLite through rusqlite (bundled), one
+  file a collection under the app's data directory. Tables for
+  documents (id, parent, name, place, kind, text, front matter) and
+  blobs (hash, size, path); nothing else yet. `cargo check` for both iOS
+  targets.
+- **`Vault` over the store**: the same interface the app uses today
+  (documents by path, the tree, a write, a rename, events on change), so
+  the app above does not change. Paths are made from names and parents.
+  PDFs and images are files in the collection's own folder, by hash.
+- **`import folder`** (the welcome, and a dev command): a vault as
+  FORMAT.md describes becomes a collection. **`export collection`** (the
+  palette): a folder or a zip that is a vault again.
+- **Tests**: the corpus and `samples/double-major` imported and exported
+  come back byte for byte; every existing test green, the ones over an
+  in-memory file system now over an in-memory store. The smokes import
+  the sample where they copied it.
+- The ground rule on FORMAT.md is rewritten as the model above has it;
+  README, the guide, and the welcome's line say what the collection is.
+- Not in this milestone: state out of the text (60), any sync (git still
+  works over an export), the mirror, automatic exports.
+
+*Done when:* the sample, imported, opens in the Mac's window from the
+database and `ILMI_SMOKE=tour` passes on it; an export of it equals the
+sample; nothing reads a Markdown file from disk while the app runs.
+
+### [ ] 60. State in rows — schedules, the log, the queue by query
+- A card's schedule, a section's and a document's `read` and `write`,
+  the review log, a directory's order, and the pairs not the same become
+  tables keyed by ids; a grade is one transaction and no longer rewrites
+  a document's text. Import lifts them out of the text; export puts them
+  back.
+- Cards, sections and extracts are indexed when their document is
+  written (one document parsed, its rows replaced). Open parses nothing;
+  the queue, a deck's rows, the tree's counts, and the numbers are
+  queries. A grade re-derives one card.
+- `ILMI_SMOKE=size`: a dev command imports the sample 15 and 152 times
+  over (about 11,000 and 115,000 cards), opens each, grades a card, and
+  prints the open, the grade, and the heap.
+- `mirror` and the dated exports.
+
+*Done when:* in the Mac's window the 115,000-card collection opens and a
+card is graded, with the times and the heap in the notes beside the
+research's for files (3.5 s to open, 0.95 s a change, 381 MB under
+Node); an export of the sample still equals the sample.
+
+### [ ] 61. The engine — changes merged by CRDT, two copies over a folder
+- **Choose the text library first**, on the sample: Loro and Automerge
+  (both have Rust cores and were active in November 2026). Measured: the
+  state's size for the sample's documents, a build for the iOS targets,
+  what it adds to the binary, how old history is dropped. The choice and
+  the numbers go in the notes.
+- **Every write is a change**: the store records each field written with
+  the device and a clock that orders writes across devices; a document's
+  text records the library's own updates. Merging applies the rules in
+  the model; the same changes in any order give the same collection.
+- **The storage's shape**: `format`, `devices/<device>/<n>` written once
+  each. A sync lists, reads what it has not seen, merges, writes its
+  own. A second device joins by taking the storage's state.
+- **One storage**: a folder, chosen by the dev environment; no Tweaks
+  row yet.
+- **Tests**: copies making random edits and syncing in random orders all
+  end the same; 53's merge cases restated for rows and text; a card
+  reworded on one and graded on the other; one paragraph edited in two
+  places. `ILMI_SMOKE=crdt`: two windows over two collections and a
+  folder, as 53's smoke.
+- Not in this milestone: big files, a network, snapshots.
+
+*Done when:* two collections made from the sample sync through a folder;
+a grade on each lands in the other; a card reworded on one and graded on
+the other is one card with both; the random test passes.
+
+### [ ] 62. The tree and the rest — moves, order, and settings that merge
+- A rename or a move on one device with an edit, or a new child, on the
+  other: one document, in its new place, its children with it. Two
+  reorderings of one directory merge move by move. A delete against an
+  edit keeps the edit (as 53). A move into its own descendant is dropped
+  alike on every device.
+- The random test gains renames, moves, reorders and deletes.
+
+*Done when:* a rename against an edit, a move against a new child, and
+two reorderings, each made on two collections, come to one tree with
+nothing twice and nothing lost.
+
+### [ ] 63. Big files and real storage — S3, WebDAV, and what a device keeps
+- PDFs and images go to the storage as `blobs/<sha256>`, whole. A blob
+  is written before the change that names it.
+- `keep files` (all · opened): a book whose PDF is not here says so on
+  its row and fetches it on open, the progress in the strip.
+- Storages: S3-compatible (endpoint, bucket, key, secret) and WebDAV
+  (address, user, password), beside the folder; `storage` and its fields
+  in Tweaks, kept where 53 kept the token. Debug builds carry loopback
+  servers shaped like each for the smoke (as 54's nudge server).
+- Snapshots: a device folds the change files into one when they pass a
+  count; what a snapshot covers is deleted after thirty days.
+
+*Done when:* two collections sync through each loopback server; a 200 MB
+PDF added on one opens on the other once fetched, and a collection set
+to `opened` holds no PDF until one is opened; the same against a real
+bucket or server of the user's, or that recorded as not verified.
+
+### [ ] 64. Dropbox and Google Drive — sign in and it syncs
+- Sign-in in the system browser, back by `ilmi://`; the app keeps to a
+  folder of its own in each. Dropbox sends a file over 150 MB in parts.
+- Not in this milestone: OneDrive, Box.
+
+*Done when:* with the user's keys, two collections signed in to each
+service sync a grade and a large PDF; without them the milestone stops
+at loopback fakes and says so.
+
+### [ ] 65. iCloud Drive — waits for the Developer Program
+- The app's iCloud folder as a storage: the OS carries the files, and
+  since no device overwrites another's there are no conflict copies. A
+  Swift plugin for the folder's address and for asking a file down.
+
+*Done when:* a Mac and a simulated or real iPad on one Apple account sync
+a grade and a PDF through it.
+
+### [ ] 66. The device — a real iPad or iPhone, and git let go
+- The app on the user's device: the open and the heap with their own
+  collection, a sync on open and on leaving, a blob finishing in the
+  background, everything 55 left unchecked that needs glass.
+- 53–55's git sync, its Tweaks rows and its smokes are removed; an
+  export is what git may still be pointed at.
+
+*Done when:* the user's collection syncs between their Mac and their
+device through the storage they chose, and what was measured is in the
+notes.
+
+### [ ] 67. Ink on the page — strokes over a book's pages
+After 57 and 58 (see the note under 58: ink is rows of strokes, by page).
+- The Pencil writes on a book's page; the strokes are rows keyed by the
+  PDF's hash and the page, never written into the PDF; the page shows
+  them on every device, the Mac as a picture.
+- A notebook is a document whose blocks are ink pages (58 gives the
+  block).
+- Not in this milestone: handwriting search, shapes, templates.
+
+*Done when:* on a simulated iPad a page of the sample's book is written
+on, the writing is there on the Mac, and strokes added to one page on
+two collections are all there on both.
+
+### [ ] 68. Search across everything
+- An index in the same database over every document's text and every
+  card: folded as the deck search folds (case, combining marks, the
+  tatweel), in three-letter pieces so Arabic with its prefixes and
+  suffixes is found; a query under three letters scans.
+- The palette searches text as well as names.
+
+*Done when:* in the 115,000-card collection a word, an unvoweled Arabic
+word, and a phrase are each found in under a tenth of a second, and the
+sample's five files holding كرم are all found.
+
 ## Notes for the next session
 
 Studying (42–46) is complete, 2026-10-31: every milestone's window check
@@ -6222,8 +6514,11 @@ were updated to the cadence but not run either. 51's window check ran on
 release workflow, the docs, the first push, and v0.1.0 followed the same
 day (BUILD-LOG). Next: Beyond the Mac (53–58), written 2026-11-04; 52
 waits for the user's word. 53, 54 and 55 (sync by git, the nudge, the
-iOS target on a simulated iPad) were done on 2026-11-04; 56, the phone,
-is next.
+iOS target on a simulated iPad) were done on 2026-11-04. Then, on
+2026-11-05, the user chose a database under the app, merged by CRDT and
+synced to any storage, with the files as an export ("A database under
+the app, synced by CRDT to any storage", 59–68); 59, the store, is
+next, and 56–58 take their places in that section's order.
 
 Refinement (33–41) is complete, 2026-10-30, every milestone's window check
 run and recorded under its BUILD-LOG entry (33 `notes`, 34 `editing`, 35

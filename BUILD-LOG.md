@@ -6,6 +6,84 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-11-05 — the store and the sync reconsidered; the plan for 59–68
+
+No code. A day of questions from the user after 55, the research they
+asked for, and a new section in PLAN.md.
+
+What happened, in order. On hearing that GitHub refuses a file over
+100 MB the user wanted something that could stand in for GoodNotes, then
+asked how others sync, then for "a deep review/analysis of what's the
+best way to do this", pasting a thread that argues for SQLite and
+cr-sqlite. Five lines of research ran (ilmi's own load timed at size
+with its own parser; SQLite and CRDT libraries; git and LFS on iOS;
+app-level and vendor sync; ink and large PDFs) and a report was written:
+`reports/ilmi sync and storage architecture.md`, notes in
+`research_notes/`. The report argues for keeping the files, git for
+text, and a bucket for PDFs and ink. The user then pointed out that the
+thread was about cards alone and ilmi has many kinds of data; asked for
+built-in Dropbox, Google Drive, iCloud, or a server of their own; said
+CRDT merging was worth building; and, shown what a database store costs
+(the live files, a rebuild), said they did not mind the rebuild and
+asked for a database with the collection exported as files or a zip.
+
+Decided (PLAN, "A database under the app, synced by CRDT to any
+storage"): SQLite per device as the store, a document's text still
+Markdown as FORMAT.md has it, state in rows, FORMAT.md the contract for
+text and for import and export; every write a change, merged by the
+CRDT kind that fits each kind of data, the text by a library chosen in
+61; devices exchange files of changes that nobody overwrites, so any
+storage with list, read, write and delete will do; git goes at 66.
+Milestones 59–68; 56–58 keep their briefs and take places in the new
+order (58's ink revised in a note under it).
+
+The report disagrees with the decision in one place and should be read
+with that in mind: it keeps the files because they were the premise and
+a rebuild was to be avoided, and the user withdrew both afterwards. Its
+measurements, its findings on cr-sqlite, on LFS, on the vendors, on ink
+and on large PDFs in the web view stand.
+
+Not verified, and carried into the milestones: everything the report
+lists as unmeasured on a device; the choice between Loro and Automerge;
+that Google Drive is usable with only list, read, write and delete (the
+design needs no conditional write, so it should be); a PencilKit canvas
+over Tauri's web view.
+
+Also in this session, after 55's entry below: Apple's UI test runner
+turns and touches the simulated iPad with no Simulator window (the
+recipe is in PLAN under 55).
+
+Handoff prompt for the next session:
+
+```
+Read PLAN.md, FORMAT.md, BUILD-LOG.md, and spec/hashiyah/HANDOFF.md. The
+section of PLAN.md in progress is "A database under the app, synced by
+CRDT to any storage" (59–68); its introduction holds the decisions, the
+user's words, what they give up, and the screens and settings its
+milestones may add. reports/ilmi sync and storage architecture.md and
+research_notes/ hold the measurements behind it (the report argues for
+files; the user chose the database after it, see the BUILD-LOG entry of
+2026-11-05). Do milestone 59 and only that one (52 waits for the user;
+56–58 come later in that section's order). Stop at its "done when".
+Then tick it, write notes for the next session under it, add an entry
+to BUILD-LOG.md with a fresh handoff prompt, and commit. Rules as in
+PLAN.md's ground rules: export
+PATH=$HOME/.cargo/bin:/opt/homebrew/bin:$PATH; npm test and npm run
+typecheck green before a commit, and cargo test for the Rust side; one
+commit per milestone; ask before a screen, section, or setting the
+section does not name; a FORMAT change needs a corpus file and a test.
+59 is checked in the Mac's window, from a clean checkout of main (the
+dev identifier override from docs/development.md); it also has to pass
+cargo check for aarch64-apple-ios and aarch64-apple-ios-sim. Never kill
+a process on port 1420 that is not yours, and stop your own app binary
+by pid when a run ends; capture only by window id. Nothing of the
+user's is in a collection yet, so no migration of real data is needed;
+keep 53–55's git sync working over an exported folder or say plainly
+what of it broke.
+```
+
+---
+
 ## 2026-11-04 — milestone 55: the iOS target
 
 Done on main: `b9c1b3d`. Xcode 27.2 and the iOS 27.2 simulator runtime

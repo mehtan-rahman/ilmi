@@ -1,13 +1,14 @@
-// Before a vault is open: the wordmark, one line, `open vault` and `new
-// vault`, and the vaults opened before as rows. The palette's panel, in the
-// canvas. ⏎ opens the selected row, j k move, o and n are the buttons; a
-// folder dropped on it opens as a vault. A new vault is named here, in a
-// field, once its parent folder is picked.
+// Before a collection is open: the wordmark, two lines, `new collection`
+// and `import folder`, and the collections there are as rows (milestone
+// 59: each is a database under the app's data directory). The palette's
+// panel, in the canvas. ⏎ opens the selected row, j k move, n and i are
+// the buttons; a folder dropped on it is imported as a collection and
+// opened. A new collection is named here, in a field.
 //
 // On an iPad (milestone 55) there is no folder to pick or drop: the one
-// button is `connect`, which takes a remote and a token and clones it into
-// the app's Documents (53's clone), and the rows are the vaults cloned
-// before. c is the button.
+// button is `connect`, which takes a remote and a token and clones it as
+// a collection (53's clone, imported), and the rows are the collections
+// there. c is the button.
 
 import type { DragDropEvent } from '@tauri-apps/api/webview';
 import { useEffect, useRef, useState } from 'react';
@@ -16,15 +17,15 @@ import { dropRoutes } from './land.js';
 import { NEVER } from './platform.js';
 import { GONE, openedLabel } from './recents.js';
 import { useApp } from './store.js';
-import { connectClone, forgetVault, newVault, openVault, pickVault, pickVaultParent } from './vault.js';
+import { connectClone, forgetVault, importVault, importVaultFrom, nameNewVault, newVault, openVault } from './vault.js';
 
-/** The README's first sentence. */
-const LINE = 'incremental reading, spaced-repetition cards, and incremental writing over a directory of plain Markdown files.';
+/** The README's first two sentences: what the app is, and what a collection is. */
+const LINE = 'incremental reading, spaced-repetition cards, and incremental writing over notes in Markdown. A collection is a database on this device; a folder of plain Markdown files is what goes in and what comes out.';
 
 export function Welcome() {
   const recents = useApp((s) => s.recents);
   const gone = useApp((s) => s.gone);
-  const parent = useApp((s) => s.newVaultIn);
+  const naming = useApp((s) => s.namingVault);
   const mobile = useApp((s) => s.mobile);
   const [sel, setSel] = useState(0);
   const [name, setName] = useState('');
@@ -35,12 +36,14 @@ export function Welcome() {
   const [remote, setRemote] = useState('');
   const [token, setToken] = useState('');
   const [cloning, setCloning] = useState(false);
+  // a folder on its way in
+  const [importing, setImporting] = useState(false);
   const busy = useRef(false);
   const field = useRef<HTMLInputElement>(null);
   const remoteField = useRef<HTMLInputElement>(null);
   const now = new Date();
 
-  // a vault that fails to open (its folder went since the start) joins the dimmed rows
+  // a collection that fails to open joins the dimmed rows
   const open = (path: string) => {
     if (busy.current) return;
     busy.current = true;
@@ -51,16 +54,29 @@ export function Welcome() {
     });
   };
 
-  const create = () => {
-    if (parent === null || busy.current) return;
+  // a folder picked or dropped: imported as a collection, then opened; what goes wrong is said under the buttons
+  const bring = (run: () => Promise<unknown>) => {
+    if (busy.current) return;
     busy.current = true;
-    newVault(parent, name).catch((e: unknown) => {
+    setProblem(null);
+    setImporting(true);
+    run().then(() => { busy.current = false; setImporting(false); }, (e: unknown) => {
+      busy.current = false;
+      setImporting(false);
+      setProblem(e instanceof Error ? e.message : String(e));
+    });
+  };
+
+  const create = () => {
+    if (!naming || busy.current) return;
+    busy.current = true;
+    newVault(name).catch((e: unknown) => {
       busy.current = false;
       setProblem(e instanceof Error ? e.message : String(e));
     });
   };
   const cancel = () => {
-    useApp.setState({ newVaultIn: null });
+    useApp.setState({ namingVault: false });
     setName('');
     setProblem(null);
   };
@@ -82,7 +98,7 @@ export function Welcome() {
     setProblem(null);
   };
 
-  useEffect(() => { if (parent !== null) field.current?.focus(); }, [parent]);
+  useEffect(() => { if (naming) field.current?.focus(); }, [naming]);
   useEffect(() => { if (connecting) remoteField.current?.focus(); }, [connecting]);
   useEffect(() => { setSel((s) => Math.min(s, Math.max(0, recents.length - 1))); }, [recents.length]);
 
@@ -96,8 +112,8 @@ export function Welcome() {
       else if (e.key === 'k' || e.key === 'ArrowUp') { e.preventDefault(); setSel((s) => Math.max(0, s - 1)); }
       else if (e.key === 'Enter') { const r = recents[sel]; if (r) { e.preventDefault(); open(r.path); } }
       else if (mobile) { if (e.key === 'c') { e.preventDefault(); setConnecting(true); } }
-      else if (e.key === 'o') { e.preventDefault(); void pickVault().catch(console.error); }
-      else if (e.key === 'n') { e.preventDefault(); void pickVaultParent().catch(console.error); }
+      else if (e.key === 'i') { e.preventDefault(); bring(importVault); }
+      else if (e.key === 'n') { e.preventDefault(); nameNewVault(); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -112,7 +128,7 @@ export function Welcome() {
       else if (ev.type === 'drop') {
         setDrag(false);
         const p = ev.paths[0];
-        if (p) open(p.replace(/\/+$/, ''));
+        if (p) bring(() => importVaultFrom(p.replace(/\/+$/, '')));
       } else setDrag(true);
     };
     dropRoutes.welcome = on;
@@ -138,8 +154,9 @@ export function Welcome() {
           </div>
         ) : (
           <div className="welcome-acts">
-            <button type="button" onClick={() => void pickVault().catch(console.error)}>open collection</button>
-            <button type="button" onClick={() => void pickVaultParent().catch(console.error)}>new collection</button>
+            <button type="button" onClick={nameNewVault}>new collection</button>
+            <button type="button" disabled={importing} onClick={() => bring(importVault)}>import folder</button>
+            {!naming && <span className="welcome-problem">{importing ? 'importing…' : problem ?? ''}</span>}
           </div>
         )}
         {mobile && connecting && (
@@ -172,9 +189,9 @@ export function Welcome() {
             </label>
           </div>
         )}
-        {parent !== null && (
+        {naming && (
           <div className="welcome-name">
-            <span className="psub">{parent}/</span>
+            <span className="psub">new collection</span>
             <input
               ref={field}
               value={name}
@@ -206,7 +223,7 @@ export function Welcome() {
                 >
                   <span className="pg">{ENTRY_GLYPH.vault}</span>
                   <span className="pt">{r.name}</span>
-                  <span className="psub">{mobile ? '' : r.path}</span>
+                  <span className="psub" />
                   <span className="ptag">{missing ? GONE : r.opened === NEVER ? '' : openedLabel(r.opened, now)}</span>
                   {missing && (
                     <button type="button" className="welcome-forget" onClick={(e) => { e.stopPropagation(); forgetVault(r.path); }}>forget</button>
@@ -225,8 +242,8 @@ export function Welcome() {
           )}
           {mobile ? <span><kbd>c</kbd> connect</span> : (
             <>
-              <span><kbd>o</kbd> open collection</span><span className="dot" />
-              <span><kbd>n</kbd> new collection</span>
+              <span><kbd>n</kbd> new collection</span><span className="dot" />
+              <span><kbd>i</kbd> import folder</span>
             </>
           )}
         </div>

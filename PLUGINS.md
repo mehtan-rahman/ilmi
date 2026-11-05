@@ -1,6 +1,6 @@
 # Plugins
 
-A plugin is a folder in the vault, `.ilmi/plugins/<id>/`, holding three
+A plugin is a folder in the collection, `.ilmi/plugins/<id>/`, holding three
 files. It is off until it is turned on in tweaks (⌘,), runs with the app's
 access to the vault and the network and nothing else, and a throw anywhere
 in it is caught, shown as a notice naming the plugin, and turns it off for
@@ -98,8 +98,8 @@ regenerates `plugins/ilmi.d.ts` from `src/plugins/api.ts`. The shipped
 plugins are also copied into the corpus vault for the tests (the sample on,
 the rest off), so run it after changing one. A plugin's own tests live
 beside it in `plugins/<id>/__tests__/` and run with `npx vitest run`; the
-helpers in `src/plugins/__tests__/memfs.ts` give them the corpus vault in an
-in-memory fs and a bridge that remembers its notices and fetches.
+helpers in `src/plugins/__tests__/memfs.ts` give them the corpus vault in a
+collection in memory and a bridge that remembers its notices and fetches.
 
 ## The ones here
 
@@ -131,9 +131,12 @@ under one folder. It lands in `.ilmi/plugins/<id>/` under the manifest's id
 and is turned on. The same id already there with the same version is
 refused with a notice; with another version, `replace` is offered.
 
-To develop against a vault, point your bundler's output at
-`<vault>/.ilmi/plugins/<id>/main.js`: every write reloads the plugin, with
-a notice. `reload` on the row does the same by hand.
+A collection is a database (milestone 59), so a bundler can no longer write
+into it and have the plugin reload on every build: add the built folder
+again with `from a folder` (a new `version` in `plugin.json` gets `replace`
+offered). `reload` on the row runs what the collection holds again. An
+exported collection carries its plugins under `.ilmi/plugins/`, and an
+imported folder brings them in.
 
 ## Publishing
 

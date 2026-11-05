@@ -1,31 +1,32 @@
-import { promises as fsp, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { meta, setField, type Card } from '../../format/index.js';
-import { nodeFs } from '../node-fs.js';
+import { STORE, openDisk, type Disk } from './disk.js';
 import { Vault, VaultConflict, childrenAt, cleanOrder, directories, documents, entryOf, followMove, forget, ordered, placeEntry, pruneOrder, walk, type TreeNode, type VaultEvent } from '../index.js';
 
 const CORPUS = fileURLToPath(new URL('../../format/__tests__/corpus/vault/', import.meta.url));
 const WOZ = 'papers/wozniak-1990.md';
 const DECK = 'german.md';
 
+// over a temporary directory, and again over a collection's store (`disk.ts`, `vault-store.test.ts`)
+let disk: Disk;
 let root: string;
 let vault: Vault;
 
 beforeEach(async () => {
-  root = await fsp.mkdtemp(join(tmpdir(), 'ilmi-vault-'));
-  await fsp.cp(CORPUS, root, { recursive: true });
-  vault = await Vault.open(nodeFs, root);
+  disk = await openDisk(CORPUS, 'vault');
+  root = disk.root;
+  vault = await Vault.open(disk.fs, root);
 });
 
 afterEach(async () => {
   vault.close();
-  await fsp.rm(root, { recursive: true, force: true });
+  await disk.dispose();
 });
 
-const readDisk = (rel: string) => fsp.readFile(join(root, rel), 'utf8');
+const readDisk = (rel: string) => disk.read(rel);
 
 /** Lines that differ between two texts of equal length. */
 function changedLines(a: string, b: string): number[] {
@@ -63,13 +64,13 @@ describe('walk', () => {
   });
 
   it('ignores dot-directories and non-markdown files', async () => {
-    await fsp.mkdir(join(root, '.obsidian'));
-    await fsp.writeFile(join(root, '.obsidian/workspace.md'), 'x\n');
-    await fsp.mkdir(join(root, '.ilmi'), { recursive: true });
-    await fsp.writeFile(join(root, '.ilmi/state.json'), '{}\n');
-    await fsp.writeFile(join(root, 'notes.txt'), 'x\n');
-    await fsp.writeFile(join(root, 'papers/figure.png'), '');
-    const tree = await walk(nodeFs, root);
+    await disk.mkdir('.obsidian');
+    await disk.write('.obsidian/workspace.md', 'x\n');
+    await disk.mkdir('.ilmi');
+    await disk.write('.ilmi/state.json', '{}\n');
+    await disk.write('notes.txt', 'x\n');
+    await disk.write('papers/figure.png', '');
+    const tree = await walk(disk.fs, root);
     expect(names(tree)).toEqual(['books/', 'courses/', 'essays/', 'fleeting/', 'papers/', 'german']);
     expect(documents(tree)).not.toContain('notes.txt');
   });
@@ -109,7 +110,7 @@ describe('read', () => {
     expect(loaded.diagnostics).toEqual([]);
     expect(loaded.stamp).not.toBeNull();
 
-    await fsp.writeFile(join(root, 'broken.md'), 'prose\n<!-- sr due=2026-01-01 -->\n');
+    await disk.write('broken.md', 'prose\n<!-- sr due=2026-01-01 -->\n');
     const broken = await vault.read('broken.md');
     expect(broken.diagnostics.length).toBeGreaterThan(0);
     expect(vault.diagnostics('broken.md')).toBe(broken.diagnostics);
@@ -163,13 +164,13 @@ describe('write', () => {
     const i = doc.blocks.findIndex((b) => b.kind === 'card' && b.text === text);
     expect(doc.blocks[i]).toEqual({ kind: 'card', text });
     // a card is added above it on disk before the vault hears of it
-    const disk = await readDisk(DECK);
-    await fsp.writeFile(join(root, DECK), disk.replace('vergessen ::: to forget ^', 'neu ::: new\n\nvergessen ::: to forget ^'));
+    const onDiskText = await readDisk(DECK);
+    await disk.write(DECK, onDiskText.replace('vergessen ::: to forget ^', 'neu ::: new\n\nvergessen ::: to forget ^'));
     await expect(vault.removeCard(DECK, i, undefined, 'nothing like it')).rejects.toThrow(/no such card/);
     const written = await vault.removeCard(DECK, i, undefined, text);
     expect(written.doc.blocks.some((b) => b.kind === 'card' && b.text === text)).toBe(false);
     expect(written.doc.blocks.some((b) => b.kind === 'card' && b.id === 'cv-cloze')).toBe(true);
-    expect((await readDisk(DECK)).split('\n')).toEqual(disk.replace('vergessen ::: to forget ^', 'neu ::: new\n\nvergessen ::: to forget ^').split('\n').filter((l) => l !== text).slice(0, -1));
+    expect((await readDisk(DECK)).split('\n')).toEqual(onDiskText.replace('vergessen ::: to forget ^', 'neu ::: new\n\nvergessen ::: to forget ^').split('\n').filter((l) => l !== text).slice(0, -1));
   });
 
   it('resets one card by dropping its sr line and nothing else', async () => {
@@ -258,21 +259,22 @@ describe('write', () => {
     const { doc } = await vault.read(DECK);
     const i = doc.blocks.findIndex((b) => b.kind === 'card' && b.id === 'cv-vergessen');
     // an edit the watcher has not delivered yet
-    const disk = await readDisk(DECK);
-    await fsp.writeFile(join(root, DECK), disk.replace('vergessen ::: to forget ^', 'vergessen ::: to forget; to leave behind ^'));
+    const onDiskText = await readDisk(DECK);
+    await disk.write(DECK, onDiskText.replace('vergessen ::: to forget ^', 'vergessen ::: to forget; to leave behind ^'));
     const dest = await vault.moveCard(DECK, i, WOZ, 'cv-vergessen');
     expect(dest.doc.blocks[dest.doc.blocks.length - 1]).toMatchObject({ kind: 'card', text: 'vergessen ::: to forget; to leave behind', id: 'cv-vergessen' });
     expect(await readDisk(WOZ)).toContain('vergessen ::: to forget; to leave behind ^cv-vergessen');
     expect(await readDisk(DECK)).not.toContain('vergessen');
   });
 
-  it('leaves a card that changed between the two writes in the source, so it is in both files', async () => {
+  // a write made inside an event, before the vault's next step: only a directory can be written without waiting
+  it.skipIf(STORE)('leaves a card that changed between the two writes in the source, so it is in both files', async () => {
     const { doc } = await vault.read(DECK);
     const i = doc.blocks.findIndex((b) => b.kind === 'card' && b.id === 'cv-vergessen');
-    const disk = await readDisk(DECK);
+    const onDiskText = await readDisk(DECK);
     // the source changes the moment the destination is written
     const off = vault.subscribe((ev) => {
-      if (ev.kind === 'doc' && ev.path === WOZ) writeFileSync(join(root, DECK), disk.replace('vergessen ::: to forget ^', 'vergessen ::: to forget; to leave behind ^'));
+      if (ev.kind === 'doc' && ev.path === WOZ) writeFileSync(join(root, DECK), onDiskText.replace('vergessen ::: to forget ^', 'vergessen ::: to forget; to leave behind ^'));
     });
     await expect(vault.moveCard(DECK, i, WOZ, 'cv-vergessen')).rejects.toBeInstanceOf(VaultConflict);
     off();
@@ -322,7 +324,7 @@ describe('write', () => {
     await vault.update(WOZ, (doc) => {
       firstScheduledCard(doc.blocks).sched!.due = '2026-07-04';
     });
-    const files = await fsp.readdir(join(root, 'papers'));
+    const files = await disk.names('papers');
     expect(files.filter((f) => f.includes('tmp'))).toEqual([]);
   });
 
@@ -331,7 +333,7 @@ describe('write', () => {
     const original = await readDisk(WOZ);
     const edited = original.replace('## §1 — the premise', '## §1 — the premise, revised');
     expect(edited).not.toBe(original);
-    await fsp.writeFile(join(root, WOZ), edited);
+    await disk.write(WOZ, edited);
 
     await vault.update(WOZ, (doc) => {
       firstScheduledCard(doc.blocks).sched!.due = '2026-07-04';
@@ -344,7 +346,7 @@ describe('write', () => {
 
   it('refuses a whole-doc overwrite when the file moved', async () => {
     const { doc } = await vault.read(WOZ);
-    await fsp.appendFile(join(root, WOZ), '\nlate addition\n');
+    await disk.append(WOZ, '\nlate addition\n');
     await expect(vault.write(WOZ, doc)).rejects.toBeInstanceOf(VaultConflict);
     expect(await readDisk(WOZ)).toContain('late addition');
   });
@@ -368,7 +370,7 @@ describe('external changes', () => {
     const events: VaultEvent[] = [];
     vault.subscribe((ev) => events.push(ev));
     const before = await vault.read(WOZ);
-    await fsp.writeFile(join(root, WOZ), before.text.replace('the premise', 'the PREMISE'));
+    await disk.write(WOZ, before.text.replace('the premise', 'the PREMISE'));
     await vault.changed([join(root, WOZ)]);
     expect(events.map((e) => e.kind)).toEqual(['doc']);
     const after = await vault.read(WOZ);
@@ -380,8 +382,8 @@ describe('external changes', () => {
     const events: VaultEvent[] = [];
     vault.subscribe((ev) => events.push(ev));
     await vault.read('german.md');
-    await fsp.writeFile(join(root, 'papers/new-paper.md'), '# new\n');
-    await fsp.rm(join(root, 'german.md'));
+    await disk.write('papers/new-paper.md', '# new\n');
+    await disk.rm('german.md');
     await vault.changed(['papers/new-paper.md', 'german.md']);
     expect(events.map((e) => e.kind).sort()).toEqual(['gone', 'tree']);
     expect(vault.documents()).toContain('papers/new-paper.md');
@@ -403,7 +405,7 @@ describe('external changes', () => {
     await vault.watch();
     await new Promise((r) => setTimeout(r, 100));
     const before = await readDisk(WOZ);
-    await fsp.writeFile(join(root, WOZ), before.replace('the premise', 'the PREMISE'));
+    await disk.write(WOZ, before.replace('the premise', 'the PREMISE'));
     await vi.waitFor(() => expect(events.some((e) => e.kind === 'doc')).toBe(true), { timeout: 3000 });
     expect((await vault.read(WOZ)).text).toContain('the PREMISE');
   });
@@ -412,8 +414,8 @@ describe('external changes', () => {
 describe('state', () => {
   it('is empty when absent or malformed', async () => {
     expect(await vault.loadState()).toEqual({});
-    await fsp.mkdir(join(root, '.ilmi'), { recursive: true });
-    await fsp.writeFile(join(root, '.ilmi/state.json'), '{not json');
+    await disk.mkdir('.ilmi');
+    await disk.write('.ilmi/state.json', '{not json');
     expect(await vault.loadState()).toEqual({});
   });
 
@@ -423,15 +425,15 @@ describe('state', () => {
     await vault.saveState({ budget: 12 });
     expect(await vault.loadState()).toEqual({ folders: ['papers'], tab: 'german.md', budget: 12 });
     expect(JSON.parse(await readDisk('.ilmi/state.json'))).toEqual({ folders: ['papers'], tab: 'german.md', budget: 12 });
-    expect(names(await walk(nodeFs, root))).not.toContain('.ilmi/');
+    expect(names(await walk(disk.fs, root))).not.toContain('.ilmi/');
   });
 });
 
 // ── milestone 30: anything under anything, in an order you choose ──
 
 const COURSE = 'courses/linear-algebra.md';
-const onDisk = async (rel: string) => !!(await nodeFs.stat(join(root, rel)));
-const dirOnDisk = async (rel: string) => (await nodeFs.stat(join(root, rel)))?.isDir === true;
+const onDisk = (rel: string) => disk.exists(rel);
+const dirOnDisk = (rel: string) => disk.isDir(rel);
 
 function nodeAt(nodes: TreeNode[], path: string): TreeNode | undefined {
   for (const n of nodes) {
@@ -485,7 +487,7 @@ describe('nesting', () => {
     expect(await onDisk('papers/two-pages')).toBe(false);
     expect(await vault.pagesOf(to)).toBe('courses/linear-algebra/two-pages.pdf');
     // a field naming a file that is not the stem's: it goes along too
-    await fsp.writeFile(join(root, 'papers/scan.pdf'), '%PDF-1.4\n');
+    await disk.write('papers/scan.pdf', '%PDF-1.4\n');
     await vault.update('papers/crick-1995.md', (d) => setField(d, 'pdf', 'scan.pdf'));
     const crick = await vault.move('papers/crick-1995.md', 'essays');
     expect(await onDisk('essays/scan.pdf')).toBe(true);
@@ -534,7 +536,7 @@ describe('order', () => {
     await vault.createDoc('courses/linear-algebra', 'draft', 'a first unit');
     expect(shown('courses/linear-algebra')).toEqual(['vectors', 'problem-set-1', 'unit-2/', 'a first unit']);
     // reopened, it is read back
-    const again = await Vault.open(nodeFs, root);
+    const again = await Vault.open(disk.fs, root);
     expect(again.order).toEqual({ 'courses/linear-algebra': ['vectors.md', 'problem-set-1.md'] });
   });
 
@@ -554,9 +556,9 @@ describe('order', () => {
   });
 
   it('drops listed names that no longer exist on the next write', async () => {
-    await fsp.mkdir(join(root, '.ilmi'), { recursive: true });
-    await fsp.writeFile(join(root, '.ilmi/order.json'), JSON.stringify({ 'courses/linear-algebra': ['gone.md', 'vectors.md'], 'no/such/dir': ['x.md'], '': ['papers/', 'nothing/'] }));
-    vault = await Vault.open(nodeFs, root);
+    await disk.mkdir('.ilmi');
+    await disk.write('.ilmi/order.json', JSON.stringify({ 'courses/linear-algebra': ['gone.md', 'vectors.md'], 'no/such/dir': ['x.md'], '': ['papers/', 'nothing/'] }));
+    vault = await Vault.open(disk.fs, root);
     // read as it is: the stale names wait for a write
     expect(vault.order['no/such/dir']).toEqual(['x.md']);
     expect(shown('courses/linear-algebra')).toEqual(['vectors', 'unit-2/', 'problem-set-1']);
@@ -591,7 +593,7 @@ describe('order', () => {
     expect(vault.order['courses/linear-algebra']).toEqual(['unit-2/']);
     const events: VaultEvent[] = [];
     vault.subscribe((e) => events.push(e));
-    await fsp.writeFile(join(root, '.ilmi/order.json'), JSON.stringify({ '': ['german.md'] }));
+    await disk.write('.ilmi/order.json', JSON.stringify({ '': ['german.md'] }));
     await vault.changed([join(root, '.ilmi/order.json')]);
     expect(vault.order).toEqual({ '': ['german.md'] });
     expect(events.find((e) => e.kind === 'order')).toEqual({ kind: 'order', order: { '': ['german.md'] } });

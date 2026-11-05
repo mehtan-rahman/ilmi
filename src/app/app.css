@@ -62,6 +62,8 @@
   cursor: default;
 }
 .welcome-acts button:hover { border-color: var(--fg-4); color: var(--fg-1); }
+/* a folder on its way in, or why it did not come: the name field's problem line, beside the buttons */
+.welcome-acts .welcome-problem { align-self: center; margin-left: 4px; color: var(--fg-4); font-family: var(--mono); font-size: 10.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .welcome-name {
   display: flex;
   align-items: center;

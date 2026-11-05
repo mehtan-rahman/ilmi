@@ -1,5 +1,11 @@
-// Sync by git (milestone 53): the open vault is a repository, and this is
-// the policy over the Rust commands (`src-tauri/src/sync.rs`). A commit
+// Sync by git (milestone 53): the open collection has a repository, and
+// this is the policy over the Rust commands (`src-tauri/src/sync.rs`).
+// Since milestone 59 a collection is a database, so the repository is a
+// folder beside it (`<collection>/repo`) kept as an export of it: before a
+// commit the folder is made to hold what the collection holds
+// (`mirrorFolder`), and after a pull the files that changed are taken back
+// in (`takeFiles`). Git goes when the CRDT engine has passed the same
+// checks on a device (milestone 66). A commit
 // after each batch of writes (a quiet five seconds after the last, at most
 // one a minute), its message naming what changed; a pull on open, on
 // focus, every two minutes; a push after a session, on close, and a minute
@@ -12,13 +18,15 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { describeChanges, mergeFile, type Change, type Kept } from '../sync/index.js';
-import type { Vault, VaultEvent } from '../vault/index.js';
+import { mirrorFolder, importFolder, takeFiles, type Vault, type VaultEvent } from '../vault/index.js';
+import { createCollection, deleteCollection, listCollections } from '../vault/tauri-store.js';
+import { collectionFs, diskFs, freeName } from './collections.js';
 import { notify } from './land.js';
 import { activeTab } from './panes.js';
 import { useApp } from './store.js';
 import { titleOf } from './names.js';
 import { ago, NUDGE_SERVER, publishNudge, subscribeNudge, type Subscription } from './nudge.js';
-import { vaultKey } from './platform.js';
+import { nameFromRemote, vaultKey } from './platform.js';
 import { note, openNode } from './vault.js';
 
 /** The remote, its token, and the nudge's server, per vault path, in the webview's storage. */
@@ -108,6 +116,18 @@ export function syncAge(s: SyncState, now = Date.now()): string | null {
 // ── the controller ───────────────────────────────────────────────
 
 let root: string | null = null;
+/** The open collection, whose files the repository's folder mirrors. */
+let open: Vault | null = null;
+/** The folder may not hold what the collection holds: true from the open (the last session's writes may not have reached it) and after any write. */
+let stale = true;
+/** Something was written in this session and is not in the folder yet: the strip counts it as it would a file not committed. */
+let unwritten = false;
+/** A pull's files are being taken in: what the vault says of them is not a write of ours. */
+let taking = false;
+/** Hidden paths a pull just wrote into the collection, whose echo from the store's watcher is still to come. */
+const taken = new Set<string>();
+/** The app's view state: in the collection, never in a commit (the repository's `.gitignore`). */
+const STATE_FILE = '.ilmi/state.json';
 let unsubscribe: (() => void) | null = null;
 let lastCommit = 0;
 let lastPull = 0;
@@ -142,8 +162,41 @@ const isNetwork = (e: unknown) => {
     || /resolve|connect|timed out|network|unreachable|failed to|could not|unexpected|SSL|TLS|authentication|401|403|404|no such file|not found/i.test(m);
 };
 
+/** The repository of the collection at `at`: a folder beside its database, an export of it. */
+export const repoOf = (at: string): string => `${at.replace(/\/+$/, '')}/repo`;
+
 async function status(at: string): Promise<Status> {
-  return invoke<Status>('sync_status', { root: at });
+  return invoke<Status>('sync_status', { root: repoOf(at) });
+}
+
+/** The repository's folder made to hold what the collection holds, when something was written since. */
+async function writeOut(at: string): Promise<void> {
+  const vault = open;
+  if (!vault || vault.root !== at || !stale) return;
+  stale = false;
+  unwritten = false;
+  try {
+    await invoke('allow_vault', { path: repoOf(at) });
+    await mirrorFolder(vault.fs, at, diskFs, repoOf(at));
+  } catch (e) {
+    stale = true;
+    unwritten = true;
+    throw e;
+  }
+}
+
+/** The files a pull changed, from the repository's folder into the collection; the vault told. */
+async function takeIn(at: string, paths: readonly string[]): Promise<void> {
+  const vault = open;
+  if (!vault || vault.root !== at || !paths.length) return;
+  taking = true;
+  try {
+    for (const p of paths) if (p.split('/').some((seg) => seg.startsWith('.'))) taken.add(p);
+    await takeFiles(diskFs, repoOf(at), vault.fs, at, paths);
+    await vault.changed([...paths]);
+  } finally {
+    taking = false;
+  }
 }
 
 /** Read the repository's state into the store. */
@@ -152,7 +205,8 @@ export async function refreshSync(): Promise<SyncState> {
   if (!at) return SYNC_OFF;
   const st = await status(at);
   if (root !== at) return SYNC_OFF;
-  patch({ repo: st.repo, on: st.repo && st.remote !== null, toPush: st.ahead + (st.dirty.length ? 1 : 0) });
+  // what is written and not yet in the folder counts as it would once there
+  patch({ repo: st.repo, on: st.repo && st.remote !== null, toPush: st.ahead + (st.dirty.length || (st.repo && unwritten) ? 1 : 0) });
   return useApp.getState().sync;
 }
 
@@ -163,9 +217,10 @@ function scheduleStatus(ms = 300): void {
 
 /** A commit of what is written, when something is: its message names the changes. Resolves to the commit's id, or null. */
 async function commitNow(at: string): Promise<string | null> {
-  const changes = await invoke<Change[]>('sync_changes', { root: at });
+  await writeOut(at);
+  const changes = await invoke<Change[]>('sync_changes', { root: repoOf(at) });
   if (changes.length === 0) return null;
-  const id = await invoke<string | null>('sync_commit', { root: at, message: describeChanges(changes) });
+  const id = await invoke<string | null>('sync_commit', { root: repoOf(at), message: describeChanges(changes) });
   lastCommit = Date.now();
   if (id) schedulePush();
   return id;
@@ -203,14 +258,14 @@ function openDoc(): string | null {
 /** A document as the tree names it: its title, else its file name as a name. */
 const nameOf = (path: string): string => { const s = useApp.getState(); return titleOf(path, s.docs, s.vault); };
 
-/** Fetch and merge: what the other side changed lands in the working tree (the watcher reloads it); two versions of one file meet by the format's rules. */
+/** Fetch and merge: what the other side changed lands in the repository's folder and is taken into the collection; two versions of one file meet by the format's rules. */
 async function pullNow(at: string): Promise<void> {
   if (!useApp.getState().sync.on) return;
   patch({ busy: 'pulling' });
   try {
     await commitNow(at);
     try {
-      await invoke<Status>('sync_fetch', { root: at, token: settings().token || null });
+      await invoke<Status>('sync_fetch', { root: repoOf(at), token: settings().token || null });
     } catch (e) {
       if (!isNetwork(e)) throw e;
       patch({ offline: true });
@@ -218,7 +273,7 @@ async function pullNow(at: string): Promise<void> {
     }
     patch({ offline: false, at: Date.now() });
     lastPull = Date.now();
-    const m = await invoke<Merge>('sync_merge', { root: at });
+    const m = await invoke<Merge>('sync_merge', { root: repoOf(at) });
     const changed = [...m.pulled];
     const kept: Kept[] = [];
     if (m.kind === 'conflicts' && m.theirs) {
@@ -231,8 +286,9 @@ async function pullNow(at: string): Promise<void> {
       }
       const where = kept.map((k) => `${nameOf(k.path)} § ${k.heading}`);
       const message = kept.length ? `merge from origin: both versions kept in ${[...new Set(where)].join(', ')}` : 'merge from origin';
-      await invoke<string>('sync_resolve', { root: at, theirs: m.theirs, message, files });
+      await invoke<string>('sync_resolve', { root: repoOf(at), theirs: m.theirs, message, files });
     }
+    await takeIn(at, [...new Set(changed)]);
     if (root !== at) return;
     if (kept.length) {
       patch({ conflicts: [...useApp.getState().sync.conflicts, ...kept] });
@@ -258,7 +314,7 @@ async function pushNow(at: string, retry = true): Promise<void> {
     // nothing to send says nothing about the remote: `offline` stands as the pull left it
     if (st.ahead === 0 && !st.dirty.length) return;
     try {
-      await invoke<Status>('sync_push', { root: at, token: settings().token || null });
+      await invoke<Status>('sync_push', { root: repoOf(at), token: settings().token || null });
       patch({ offline: false, at: Date.now() });
       void publishNudge(settings().server, settings().url);
     } catch (e) {
@@ -348,8 +404,14 @@ export function setPullTimer(on: boolean): void {
 }
 
 function onVaultEvent(ev: VaultEvent): void {
-  // the repository's own files move on every command; nothing of ours
-  if (ev.kind === 'hidden' && ev.paths.every((p) => p.startsWith('.git/') || p === '.git')) return;
+  // a pull's own files, as the vault reports them and as the store's watcher echoes them a moment later
+  if (taking) return;
+  if (ev.kind === 'hidden') {
+    const ours = ev.paths.filter((p) => !taken.delete(p) && p !== STATE_FILE);
+    if (!ours.length) return;
+  }
+  stale = true;
+  unwritten = true;
   touched();
 }
 
@@ -357,6 +419,10 @@ function onVaultEvent(ev: VaultEvent): void {
 export async function startSync(vault: Vault): Promise<void> {
   stopSync();
   root = vault.root;
+  open = vault;
+  stale = true;
+  unwritten = false;
+  taken.clear();
   const s = settingsOf(vault.root);
   useApp.setState({ sync: SYNC_OFF, syncSettings: s });
   unsubscribe = vault.subscribe(onVaultEvent);
@@ -378,7 +444,9 @@ export async function startSync(vault: Vault): Promise<void> {
 export function stopSync(): void {
   const at = root;
   const on = useApp.getState().sync.on;
+  const closing = open;
   root = null;
+  open = null;
   stopNudge();
   unsubscribe?.();
   unsubscribe = null;
@@ -390,17 +458,25 @@ export function stopSync(): void {
   if (at && on) {
     const s = settingsOf(at);
     void serial(async () => {
-      await commitNow(at);
-      await invoke('sync_push', { root: at, token: s.token || null });
+      // the collection is closing: its last writes go out through it once more
+      if (closing && stale) {
+        await invoke('allow_vault', { path: repoOf(at) });
+        await mirrorFolder(closing.fs, at, diskFs, repoOf(at));
+      }
+      const changes = await invoke<Change[]>('sync_changes', { root: repoOf(at) });
+      if (changes.length) await invoke<string | null>('sync_commit', { root: repoOf(at), message: describeChanges(changes) });
+      await invoke('sync_push', { root: repoOf(at), token: s.token || null });
       await publishNudge(s.server, s.url);
     }).catch(() => { /* offline: next time */ });
   }
 }
 
 /**
- * `connect`: the open vault becomes a repository with `url` as its remote
- * (a repository already is used as it is, its remote pointed there),
- * everything committed, the remote brought in, and ours pushed.
+ * `connect`: the open collection gets a repository (the folder beside its
+ * database, written out from it) with `url` as its remote (a repository
+ * already there is used as it is, its remote pointed there), everything
+ * committed, the remote brought in, and ours pushed. The app's
+ * `.gitignore` made with the repository is taken into the collection.
  */
 export async function connect(url: string, token: string): Promise<void> {
   const at = root;
@@ -409,7 +485,10 @@ export async function connect(url: string, token: string): Promise<void> {
   if (!clean) throw new Error('no remote');
   saveSettings(at, { ...settings(), url: clean, token });
   await serial(async () => {
-    await invoke('sync_init', { root: at, remote: clean });
+    stale = true;
+    await writeOut(at);
+    await invoke('sync_init', { root: repoOf(at), remote: clean });
+    await takeIn(at, ['.gitignore']);
     await refreshSync();
     await commitNow(at);
     await pullNow(at);
@@ -425,7 +504,7 @@ export async function setRemote(url: string, token: string): Promise<void> {
   const at = root;
   if (!at) return;
   saveSettings(at, { ...settings(), url: url.trim(), token });
-  if (useApp.getState().sync.repo && url.trim()) await invoke('sync_set_remote', { root: at, url: url.trim() });
+  if (useApp.getState().sync.repo && url.trim()) await invoke('sync_set_remote', { root: repoOf(at), url: url.trim() });
   await refreshSync();
   if (root === at) startNudge();
 }
@@ -438,11 +517,26 @@ export function setNudgeServer(server: string): void {
   startNudge();
 }
 
-/** `clone…`: the remote into `dest`, an empty folder; the settings go with it. Resolves to the path to open. */
-export async function cloneInto(url: string, token: string, dest: string): Promise<string> {
+/**
+ * `clone…`, and the iPad's `connect`: the remote as a new collection named
+ * for it (`name` when given; `name 2` when taken), cloned into the folder
+ * beside the database and imported from there; the settings go with it.
+ * Resolves to the collection's root, to open. A collection whose clone
+ * fails is removed again.
+ */
+export async function cloneCollection(url: string, token: string, name?: string): Promise<string> {
   const clean = url.trim();
   if (!clean) throw new Error('no remote');
-  await invoke('sync_clone', { url: clean, token: token || null, dest });
+  const { names } = await listCollections();
+  const dest = await createCollection(freeName(name ?? nameFromRemote(clean), names));
+  try {
+    await invoke('sync_clone', { url: clean, token: token || null, dest: repoOf(dest) });
+    await invoke('allow_vault', { path: repoOf(dest) });
+    await importFolder(diskFs, repoOf(dest), collectionFs(dest), dest);
+  } catch (e) {
+    await deleteCollection(dest).catch(() => { /* the clone's error is the one to show */ });
+    throw e;
+  }
   saveSettings(dest, { ...settingsOf(dest), url: clean, token });
   return dest;
 }

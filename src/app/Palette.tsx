@@ -15,6 +15,8 @@ import { canMove, moveAction, moveSection, sectionActions, statusOf } from './se
 import { plainMath } from './chromeText.js';
 import type { CaretHeading } from './store.js';
 import { MathText } from './MathText.js';
+import { exportCollection } from './collections.js';
+import { notify } from './land.js';
 import { containerOf, currentVault, openCard, openIntake, openNode, openVault, postponeRest, startSession, toggleInspector, toggleSidebar } from './vault.js';
 import { appNow } from './clock.js';
 
@@ -30,14 +32,17 @@ const COMMANDS: Command[] = [
   { id: 'theme', title: 'next theme' },
   { id: 'tweaks', title: 'tweaks' },
   // the File menu's four, by the same ids, so there is a path without the native menu
-  { id: MENU_ID.open, title: 'open collection…' },
+  { id: MENU_ID.open, title: 'import folder…' },
   { id: MENU_ID.new, title: 'new collection…' },
   { id: MENU_ID.close, title: 'close collection' },
   { id: MENU_ID.import, title: 'import…' },
+  // the collection out as a vault again (milestone 59): a folder, or one zip
+  { id: 'export-folder', title: 'export collection · folder' },
+  { id: 'export-zip', title: 'export collection · zip' },
 ];
 
-/** What an iPad's palette leaves out: a second pane, and a collection opened or made through a folder picker. */
-const DESKTOP_ONLY: ReadonlySet<string> = new Set(['split', 'close-pane', MENU_ID.open, MENU_ID.new]);
+/** What an iPad's palette leaves out: a second pane, and what goes through a folder picker (a folder in, a new collection, an export). */
+const DESKTOP_ONLY: ReadonlySet<string> = new Set(['split', 'close-pane', MENU_ID.open, MENU_ID.new, 'export-folder', 'export-zip']);
 
 /** The heading the caret is under on the page in front (a tab, or the session's element), when there is one. */
 function caretHere(): CaretHeading | null {
@@ -76,6 +81,15 @@ function runCommand(id: string): void {
     case 'inspector': toggleInspector(); break;
     case 'theme': s.cycleTheme(); break;
     case 'tweaks': useApp.setState({ tweaksOpen: true }); break;
+    case 'export-folder':
+    case 'export-zip': {
+      const vault = currentVault();
+      if (!vault) break;
+      exportCollection(vault, id === 'export-zip' ? 'zip' : 'folder')
+        .then((dest) => { if (dest) notify(`exported · ${dest}`); })
+        .catch((e: unknown) => notify(`export · ${e instanceof Error ? e.message : String(e)}`));
+      break;
+    }
     case MENU_ID.open:
     case MENU_ID.new:
     case MENU_ID.close:

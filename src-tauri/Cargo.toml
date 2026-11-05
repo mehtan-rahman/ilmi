@@ -25,6 +25,11 @@ tauri-plugin-http = "2"
 zip = { version = "9", default-features = false, features = ["deflate"] }
 zstd = "0.14"
 rusqlite = { version = "0.40", features = ["bundled", "collation"] }
+# the store (milestone 59): a collection is an SQLite file (rusqlite above, its own SQLite built in, which
+# builds for iOS); a PDF or an image is a file beside it named by its SHA-256; a blob's collection arrives
+# percent-encoded in a header beside the raw bytes
+sha2 = "0.10"
+percent-encoding = "2"
 # the EPUB reader: the package, navigation, and NCX documents are XML
 quick-xml = "0.42"
 tauri-plugin-deep-link = "2"

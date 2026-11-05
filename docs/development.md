@@ -1,8 +1,16 @@
 # Developing ilmi
 
 The app is Tauri v2 (Rust shell) around a Vite + React + TypeScript renderer.
-Markdown files are the model; `src/format/` is the only code that touches
-them, held to `FORMAT.md` by round-trip tests over a corpus.
+A collection is an SQLite database under the app's data directory
+(`src-tauri/src/store.rs`; `collections/<name>/collection.db`, PDFs and
+images beside it under `blobs/` by their SHA-256). A document's text in it
+is Markdown; `src/format/` is the only code that reads or writes that text,
+held to `FORMAT.md` by round-trip tests over a corpus, and a folder of files
+goes in and comes out through `src/vault/transfer.ts`, held to the same
+bytes by `src/vault/__tests__/store.test.ts`. The vault layer above is pure
+over an `Fs`: `src/vault/store.ts` gives it the database as one (a path is
+made from rows' names and parents), and the vault's own tests run over both
+a directory and a store in memory.
 
 ## Running
 
@@ -27,10 +35,20 @@ plugin is written, installed, and published is in `PLUGINS.md`.
 
 ## Dev flags and smoke runs
 
-In a dev build, `ILMI_VAULT=/path/to/vault npm run tauri dev` opens that vault
-at launch instead of asking for one. Add `ILMI_SMOKE=1` to run every tree
-operation against that vault through the Tauri fs adapter and log the results
-to the terminal; use a scratch copy, it creates and deletes files.
+In a dev build, `ILMI_VAULT=/path/to/folder npm run tauri dev` imports that
+folder as a collection of its name at launch (the last import of that name
+is replaced, so every run starts from the files; the folder is only read)
+and opens it instead of asking for one. Add `ILMI_SMOKE=1` to run every tree
+operation against that collection through the real store and log the
+results to the terminal. `ILMI_SMOKE=store` (a scratch copy of
+`samples/double-major`) is milestone 59's own check: the folder imported a
+second time and exported as `<folder>-export` and `<folder>-export.zip`,
+each file compared with the folder's (`diff -r` from a shell says the same),
+then writes, an image, a rename and a move read back from the database, and
+the collection closed and reopened from the welcome. Give a dev run its own
+identifier (below) and its collections are under
+`~/Library/Application Support/<identifier>/collections/`, apart from the
+installed app's.
 `ILMI_SMOKE=welcome` runs before any vault opens and walks the welcome instead,
 seeding its rows with `ILMI_VAULT`; the other modes are listed at the top of
 `src/app/smoke.ts`. `ILMI_SMOKE=book` (a scratch copy of `samples/double-major`,
@@ -45,10 +63,11 @@ parents): the physics first pass, the derivation written up on a later day
 and dismissed when it returns, and the Arabic passage clipped.
 
 `ILMI_SMOKE=sync` (milestone 53) wants two devices: `ILMI_VAULT` is a scratch
-copy of the sample and `ILMI_VAULT2` an empty path beside it; the app opens a
-second window over it (`ILMI_VAULT2` alone, without the smoke, opens any
-vault in a second window), the first makes a bare repository beside its copy
-and connects, the second clones, and the two take turns over Tauri events.
+copy of the sample and `ILMI_VAULT2` a path beside it whose name the second
+collection takes; the app opens a second window (`ILMI_VAULT2` alone,
+without the smoke, imports that folder and opens it in a second window), the
+first makes a bare repository beside its folder and connects, the second
+clones it as a collection, and the two take turns over Tauri events.
 To run a smoke beside the installed app (the single-instance plugin would
 hand the launch to it), give the dev build its own identifier:
 `npm run tauri dev -- --config '{"identifier":"dev.ilmi.check"}'`.
@@ -92,12 +111,14 @@ or `APPLE_DEVELOPMENT_TEAM` names it for the command line. What is the
 desktop's alone sits under `cfg(desktop)` in `src-tauri/src/lib.rs`: the
 single-instance plugin, the menu bar, the second window. The renderer asks
 the Rust side where it runs once (`platform`, `src/app/platform.ts`): on iOS
-the welcome is `connect` and the vaults in the app's Documents, and the
-shell is one pane.
+the welcome is `connect` and the collections there are (databases under the
+app's data directory, as on the Mac), and the shell is one pane.
 
 An app on iOS has no environment to set, so a dev build reads the smoke's
 variables from `smoke.json` in its Documents: `{"mode": "tour", "vault":
-"double-major"}` is `ILMI_SMOKE=tour` over the vault of that name there, and
+"double-major"}` is `ILMI_SMOKE=tour` over the folder of that name there
+(imported as a collection, as `ILMI_VAULT` is on the Mac; not run on the
+simulator since milestone 59), and
 any other key is the variable of its name in capitals (`"remote"` is
 `ILMI_REMOTE`). A simulator's Documents is a folder on the Mac:
 
@@ -150,8 +171,8 @@ same minors.
 ```
 index.html         Vite entry
 src/app/           renderer: React, Zustand store, tokens.css
-src/format/        parser and serializer, the only code that touches vault files
-src/vault/         open, walk, read, write, watch, and reshape a vault; pure over an Fs interface
+src/format/        parser and serializer, the only code that reads or writes a document's text
+src/vault/         open, walk, read, write, watch, and reshape a vault; pure over an Fs interface. store.ts is a collection's rows as an Fs (tauri-store.ts over the Rust side, mem-store.ts for tests), transfer.ts a folder in and out
 src/schedule/      ts-fsrs grading, the reading and writing loops, the queue query
 src/import/        text from a paste, a page, a list of cards, an Anki package, a book in EPUB, or a SuperMemo collection, on its way to a file
 src/pdf/           the PDF lens's pure side: a page's text from pdf.js items, finding a passage again
@@ -159,12 +180,13 @@ src/plugins/       the plugin runtime (api.ts is the typed handle, runtime.ts th
 src/sync/          the merge of one file changed on both devices, by the format's rules; src/app/sync.ts is the policy over the Rust commands
 plugins/           the plugins the repo ships, built by `npm run plugins`; ilmi.d.ts is the API; see PLUGINS.md
 scripts/           command-line tools, run with tsx
-src-tauri/         the shell (Tauri v2, fs + dialog + http + deep-link + single-instance + opener + log plugins; anki.rs reads a package, epub.rs a book, plugin.rs a plugin zip, sync.rs the vault as a git repository over libgit2); gen/apple is the iOS project
+src-tauri/         the shell (Tauri v2, fs + dialog + http + deep-link + single-instance + opener + log plugins; store.rs is a collection's SQLite and blobs, anki.rs reads a package, epub.rs a book, plugin.rs a plugin zip, sync.rs a folder as a git repository over libgit2); gen/apple is the iOS project
 ```
 
 ## The documents
 
-- `FORMAT.md` is the on-disk contract: change it only with a corpus file and a
+- `FORMAT.md` is the contract for a document's text and for the folder an
+  import reads and an export writes: change it only with a corpus file and a
   test that shows why.
 - `PLAN.md` is the build order, one milestone per session, with notes under
   each; `BUILD-LOG.md` is the session narrative and carries the handoff prompt.

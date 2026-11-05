@@ -221,8 +221,8 @@ describe('in the app', () => {
 
   beforeEach(async () => {
     fs = memFs();
-    seed(fs, ['hello', 'dictionary']);
-    enable(fs, ['dictionary']);
+    await seed(fs, ['hello', 'dictionary']);
+    await enable(fs, ['dictionary']);
     await open();
   });
 
@@ -241,8 +241,8 @@ describe('in the app', () => {
     expect(host.settingsOf('dictionary').map((c) => (c.kind === 'note' ? c.text : `${c.kind} ${c.key} "${c.label}"`))).toEqual([
       `text url "dictionary url"`, `text path "definitions at"`, `text language "language"`, `text deck "deck"`, `toggle context "context on the back"`,
     ]);
-    await until(() => fs.files.has(`${ROOT}/.ilmi/plugins/dictionary/data.json`));
-    expect(JSON.parse(fs.files.get(`${ROOT}/.ilmi/plugins/dictionary/data.json`) as string)).toEqual({ context: true });
+    for (let i = 0; !(await fs.has(`${ROOT}/.ilmi/plugins/dictionary/data.json`)) && i < 300; i++) await sleep(10);
+    expect(JSON.parse((await fs.get(`${ROOT}/.ilmi/plugins/dictionary/data.json`))!)).toEqual({ context: true });
   });
 
   it('looks the Arabic word up past its article, shows the entries, and adds the card to a deck it creates', async () => {

@@ -19,6 +19,11 @@ export interface FsStat extends Stamp {
 }
 
 export interface Fs {
+  /**
+   * A write lands whole or not at all (a store, `store.ts`): the vault
+   * writes in place, with no temp file and rename.
+   */
+  readonly atomic?: boolean;
   readDir(path: string): Promise<FsEntry[]>;
   /** `null` when the path does not exist. */
   stat(path: string): Promise<FsStat | null>;

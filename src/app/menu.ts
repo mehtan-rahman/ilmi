@@ -9,7 +9,7 @@ import { listen } from '@tauri-apps/api/event';
 import { importFiles } from './land.js';
 import type { Recent } from './recents.js';
 import { useApp } from './store.js';
-import { closeVault, openVault, pickVault, pickVaultParent } from './vault.js';
+import { closeVault, importVault, nameNewVault, openVault } from './vault.js';
 
 /** The ids the Rust side gives the File menu's items; a recent vault is `recent:<path>`. */
 export const MENU_ID = { new: 'new', open: 'open', close: 'close', recent: 'recent', import: 'import' } as const;
@@ -29,29 +29,32 @@ export function menuAction(id: string): MenuAction {
 
 /** What `runMenu` reaches for; the real ones unless a test hands in others. */
 export interface MenuFx {
-  pickVault(): Promise<unknown>;
-  pickVaultParent(): Promise<string | null>;
+  /** New Collection from Folder…: the folder picker, the folder imported as a collection and opened. */
+  importVault(): Promise<unknown>;
+  /** The welcome takes a new collection's name. */
+  nameNewVault(): void;
   closeVault(): void;
   openVault(path: string): Promise<unknown>;
   /** File → Import…: the picker, each file landing in the active tab's folder (`land.ts`). */
   importFiles(): Promise<unknown>;
 }
 
-const real: MenuFx = { pickVault, pickVaultParent, closeVault, openVault, importFiles: () => importFiles() };
+const real: MenuFx = { importVault, nameNewVault, closeVault, openVault, importFiles: () => importFiles() };
 
 /**
- * Do what one item asks. Open: the folder picker, then the vault. New: the
- * parent picker first, so a dismissed dialog leaves the vault open; then the
- * open vault closes with its tabs and the welcome takes the name. Close: to
- * the welcome. Recent: that vault. Import: the file picker, the files
- * landing as a drop does. Resolves to the action taken, or null.
+ * Do what one item asks. Open (New Collection from Folder…, milestone 59):
+ * the folder picker, the folder imported as a collection and opened; a
+ * dismissed dialog leaves the open collection as it is. New: the open
+ * collection closes with its tabs and the welcome takes the name. Close:
+ * to the welcome. Recent: that collection. Import: the file picker, the
+ * files landing as a drop does. Resolves to the action taken, or null.
  */
 export async function runMenu(id: string, fx: MenuFx = real): Promise<MenuAction> {
   const a = menuAction(id);
   if (!a) return null;
   switch (a.kind) {
-    case 'open': await fx.pickVault(); break;
-    case 'new': { const dir = await fx.pickVaultParent(); if (dir) fx.closeVault(); break; }
+    case 'open': await fx.importVault(); break;
+    case 'new': fx.closeVault(); fx.nameNewVault(); break;
     case 'close': fx.closeVault(); break;
     case 'recent': await fx.openVault(a.path); break;
     case 'import': await fx.importFiles(); break;

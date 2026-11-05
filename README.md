@@ -2,14 +2,16 @@
 
 # ilmi
 
-Incremental reading, spaced-repetition cards, and incremental writing over a
-folder of plain Markdown files. The files are the model; the app is a lens.
+Incremental reading, spaced-repetition cards, and incremental writing over
+notes in Markdown. A collection is a database on your device; a folder of
+plain Markdown files is what goes in and what comes out.
 
 <p align="center"><img src="docs/screenshots/book.png" width="920" alt="A textbook's pages on the left, your notes on them on the right, a boxed passage lit as a section of the notes"></p>
 
-You keep a folder of Markdown, as you would for Obsidian or a plain text
-editor. ilmi opens it as a *collection* and adds three loops over the files,
-each written back as one readable line in the file it belongs to:
+You keep notes in Markdown, as you would for Obsidian or a plain text
+editor. ilmi imports a folder of them as a *collection* and adds three loops
+over the documents, each written back as one readable line in the document
+it belongs to:
 
 - **Reading.** A PDF, a book in EPUB, a clipped web page, or a pasted text is
   a *source*. You read it in passes; a passage you box or select becomes a
@@ -28,8 +30,11 @@ One queue holds the day: cards, reading, sections, drafts, sorted by a draw
 around each item's priority so the top holds and the middle mixes. A budget
 folds the day at as many elements as you have time for.
 
-Everything is Markdown you can read and edit elsewhere: `FORMAT.md` is the
-contract, and the app's own annotations are the only lines it ever writes.
+Every document is Markdown, and `export collection` writes the whole
+collection out as a folder (or a zip) of plain files you can read and edit
+elsewhere: `FORMAT.md` is the contract, and the app's own annotations are
+the only lines it ever adds. The live collection is the app's own database,
+so another editor's changes come back by importing the folder again.
 
 ## Install
 
@@ -51,9 +56,11 @@ pushed; `docs/development.md` has the details and the signing secrets.
 
 ## The first day
 
-1. **New collection** (⌘⇧N) makes a folder with `start here.md`, one short
-   source with a card in it. `Open collection` (⌘O) opens any folder of
-   Markdown you already have.
+1. **New collection** (⌘⇧N) makes a collection with `start here.md`, one
+   short source with a card in it. `Import folder` (⌘O, *New Collection
+   from Folder…* in the File menu) brings in any folder of Markdown you
+   already have, as a collection named after it; the folder is left as it
+   is.
 2. **Drop something on the window**: a PDF lands beside a Markdown file for
    your notes on it and opens as a book; an EPUB lands as a notebook with a
    tab per chapter; a `.txt` or `.md` of prose lands as a source; an Anki
@@ -124,7 +131,7 @@ a day, three textbooks a semester finish.
 ## Keys
 
 ```
-⌘K      palette            ⌘⇧N / ⌘O   new / open collection
+⌘K      palette            ⌘⇧N / ⌘O   new collection / import a folder
 ⌘W      close tab          ⌘\          split pane
 ⌃⌘S     sidebar            ⌘⇧I        inspector
 ⌘,      tweaks             ⌘F          find in a page
@@ -139,14 +146,14 @@ The full list, including the editor's and the book's, is `docs/keys.md`.
 
 ```
 src/app/        renderer: React, Zustand store, tokens.css
-src/format/     parser and serializer, the only code that touches vault files
-src/vault/      open, walk, read, write, watch, and reshape a vault
+src/format/     parser and serializer, the only code that reads or writes a document's text
+src/vault/      open, walk, read, write, watch, and reshape a vault; store.ts is a collection's database as its file system, transfer.ts a folder in and out
 src/schedule/   FSRS grading, the reading and writing loops, the queue
 src/import/     text, pages, card lists, Anki, EPUB, SuperMemo, on their way to files
 src/pdf/        the book lens's pure side
 src/plugins/    the plugin runtime
 src/sync/       the merge of a file changed on two devices, by the format's rules
-src-tauri/      the shell (Tauri v2, Rust); anki.rs and epub.rs read packages, sync.rs is git; gen/apple is the iOS project
+src-tauri/      the shell (Tauri v2, Rust); store.rs is a collection's SQLite, anki.rs and epub.rs read packages, sync.rs is git; gen/apple is the iOS project
 docs/           guide, keys, screenshots, development notes
 ```
 
@@ -155,7 +162,8 @@ docs/           guide, keys, screenshots, development notes
 Version 0.1, built for one person's semester and in daily use. macOS, and
 the same app on an iPad from source (`docs/development.md`, *The iPad*; run
 in the simulator so far, not on a device); no other platform has been built
-or tried. A collection syncs between devices as a git repository
-(`docs/guide.md`, *Sync*). Around twelve hundred tests
+or tried. A collection is an SQLite database under the app's data
+directory, exported as files on request, and syncs between devices as a git
+repository over such an export (`docs/guide.md`, *Sync*). Around twelve hundred tests
 cover the format, the vault, and the schedule; the window is checked by the
 smoke modes in `src/app/smoke.ts`.

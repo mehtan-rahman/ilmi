@@ -1,11 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { emptyPanes, openTab, splitPane } from '../panes.js';
-import { DESKTOP, NEVER, clonedVaults, cloneDest, documentsDir, isMobile, nameFromRemote, onePane, press, setPlatform, shapeOf, vaultKey } from '../platform.js';
+import { DESKTOP, NEVER, collectionRows, collectionsHome, documentsDir, isMobile, nameFromRemote, onePane, press, setCollectionsHome, setPlatform, shapeOf, vaultKey } from '../platform.js';
 import type { Recent } from '../recents.js';
 
 const DOCS = '/var/mobile/Containers/Data/Application/AAAA-1111/Documents';
+// where the collections are: under the app's data directory, which moves between installs as Documents does
+const HOME = '/var/mobile/Containers/Data/Application/AAAA-1111/Library/Application Support/dev.ilmi.app/collections';
 
-afterEach(() => setPlatform(DESKTOP));
+afterEach(() => { setPlatform(DESKTOP); setCollectionsHome(null); });
 
 describe('the platform', () => {
   it('is the desktop until told otherwise', () => {
@@ -25,15 +27,17 @@ describe('the platform', () => {
   });
 });
 
-describe('a vault on iOS', () => {
-  it('is known by its place in Documents, since the container moves between installs', () => {
-    expect(vaultKey(`${DOCS}/double-major`, DOCS)).toBe('documents:double-major');
-    expect(vaultKey('/var/mobile/Containers/Data/Application/BBBB-2222/Documents/double-major/', '/var/mobile/Containers/Data/Application/BBBB-2222/Documents')).toBe('documents:double-major');
-    // the desktop keeps the path, and so does anything outside Documents
+describe('a collection', () => {
+  it('is known by its name among the collections, since the container moves between installs', () => {
+    expect(vaultKey(`${HOME}/double-major`, HOME)).toBe('collection:double-major');
+    expect(vaultKey('/var/mobile/Containers/Data/Application/BBBB-2222/Library/Application Support/dev.ilmi.app/collections/double-major/', '/var/mobile/Containers/Data/Application/BBBB-2222/Library/Application Support/dev.ilmi.app/collections')).toBe('collection:double-major');
+    // a path elsewhere is itself, and so is any path before the collections' place is known
     expect(vaultKey('/Users/me/notes/', null)).toBe('/Users/me/notes');
-    expect(vaultKey('/elsewhere/notes', DOCS)).toBe('/elsewhere/notes');
-    setPlatform({ mobile: true, documents: DOCS });
-    expect(vaultKey(`${DOCS}/notes`)).toBe('documents:notes');
+    expect(vaultKey('/elsewhere/notes', HOME)).toBe('/elsewhere/notes');
+    expect(collectionsHome()).toBeNull();
+    setCollectionsHome(`${HOME}/`);
+    expect(collectionsHome()).toBe(HOME);
+    expect(vaultKey(`${HOME}/notes`)).toBe('collection:notes');
   });
 
   it('is cloned under the name its remote ends in', () => {
@@ -44,22 +48,23 @@ describe('a vault on iOS', () => {
     expect(nameFromRemote('https://host/x/y.git?ref=main')).toBe('y');
     expect(nameFromRemote('  ')).toBe('collection');
     expect(nameFromRemote('https://host/..')).toBe('collection');
-    expect(cloneDest(`${DOCS}/`, 'https://github.com/me/notes.git')).toBe(`${DOCS}/notes`);
   });
 
-  it('lists the vaults in Documents at the paths they have now, the last opened first', () => {
+  it('is listed at the path it has now, the last opened first', () => {
     const recents: Recent[] = [
       // remembered under a container that is gone
-      { path: '/var/mobile/Containers/Data/Application/OLD-0000/Documents/physics', name: 'physics', opened: '2026-11-03T10:00:00.000Z' },
-      { path: `${DOCS}/arabic`, name: 'arabic', opened: '2026-11-04T09:00:00.000Z' },
-      { path: `${DOCS}/deleted`, name: 'deleted', opened: '2026-11-04T12:00:00.000Z' },
+      { path: '/var/mobile/Containers/Data/Application/OLD-0000/Library/Application Support/dev.ilmi.app/collections/physics', name: 'physics', opened: '2026-11-03T10:00:00.000Z' },
+      { path: `${HOME}/arabic`, name: 'arabic', opened: '2026-11-04T09:00:00.000Z' },
+      { path: `${HOME}/deleted`, name: 'deleted', opened: '2026-11-04T12:00:00.000Z' },
+      // a folder opened as a vault before milestone 59: not a collection, not listed
+      { path: '/Users/me/notes', name: 'notes', opened: '2026-11-04T13:00:00.000Z' },
     ];
-    const rows = clonedVaults(DOCS, ['arabic', 'new-one', 'physics', 'another'], recents);
+    const rows = collectionRows(HOME, ['arabic', 'new-one', 'physics', 'another'], recents);
     expect(rows.map((r) => r.name)).toEqual(['arabic', 'physics', 'another', 'new-one']);
-    expect(rows.map((r) => r.path)).toEqual([`${DOCS}/arabic`, `${DOCS}/physics`, `${DOCS}/another`, `${DOCS}/new-one`]);
+    expect(rows.map((r) => r.path)).toEqual([`${HOME}/arabic`, `${HOME}/physics`, `${HOME}/another`, `${HOME}/new-one`]);
     expect(rows[0]!.opened).toBe('2026-11-04T09:00:00.000Z');
     expect(rows[2]!.opened).toBe(NEVER);
-    expect(clonedVaults(DOCS, [], recents)).toEqual([]);
+    expect(collectionRows(HOME, [], recents)).toEqual([]);
   });
 });
 

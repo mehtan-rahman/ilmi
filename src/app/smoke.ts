@@ -1,7 +1,12 @@
 // Dev only: `ILMI_VAULT=/path ILMI_SMOKE=1 npm run tauri dev` runs every
-// tree operation through the real Tauri fs adapter and logs each result to
-// the terminal, since this sandbox cannot see the window. Point it at a
-// scratch copy of a vault: it creates, renames, moves, and deletes files.
+// tree operation through the real store (the Rust side's SQLite, milestone
+// 59) and logs each result to the terminal, since this sandbox cannot see
+// the window. `ILMI_VAULT` is a folder of files (a scratch copy of the
+// corpus vault or of `samples/double-major`): it is imported afresh as a
+// collection of its own name on every run (`devCollection`), and the smoke
+// creates, renames, moves, and deletes in that collection, never in the
+// folder. A file a smoke hands to the Rust side by path (a package, a PDF
+// to drop) is named under the folder (`sourceDir`).
 // `ILMI_SMOKE=reader` opens a document in the reader instead, types into
 // a paragraph, moves the marker, and logs what reached the disk.
 // `ILMI_SMOKE=cards` selects a passage of a frozen source, presses `e`,
@@ -219,6 +224,9 @@ import { activeTab } from './panes.js';
 const WOZ = 'papers/wozniak-1990.md';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** The folder the run's collection was imported from (`ILMI_VAULT`), for a file handed to the Rust side by path. */
+const sourceDir = async (): Promise<string> => ((await invoke<string | null>('dev_env', { name: 'ILMI_VAULT' })) ?? '').replace(/\/+$/, '');
 
 async function until<T>(probe: () => T | null | undefined, ms = 5000): Promise<T> {
   const t0 = Date.now();
@@ -1347,7 +1355,7 @@ export async function smokeAnki(vault: Vault): Promise<void> {
     await until(() => q<HTMLTextAreaElement>('.intake textarea'));
     log(`intake hint: "${q('.intake .paste-hint')?.textContent}"`);
     const { intakeHooks } = await import('./Intake.js');
-    const apkg = (await invoke<string | null>('dev_env', { name: 'ILMI_APKG' })) ?? vault.abs('two-decks.apkg');
+    const apkg = (await invoke<string | null>('dev_env', { name: 'ILMI_APKG' })) ?? `${await sourceDir()}/two-decks.apkg`;
     await intakeHooks.ingestFile!(apkg);
     const detail = await until(() => q('.intake-detail') ?? (q('.intake .paste-hint .note')?.textContent && q('.intake .paste-hint .note')?.textContent !== 'reading' ? q('.intake .paste-hint') : null), 15000);
     if (!detail.classList.contains('intake-detail')) throw new Error(`intake said "${detail.textContent}"`);
@@ -1439,7 +1447,7 @@ export async function smokeEpub(vault: Vault): Promise<void> {
     await until(() => q<HTMLTextAreaElement>('.intake textarea'));
     log(`intake hint: "${q('.intake .paste-hint')?.textContent}"`);
     const { intakeHooks } = await import('./Intake.js');
-    const epub = (await invoke<string | null>('dev_env', { name: 'ILMI_EPUB' })) ?? vault.abs('three-chapters.epub');
+    const epub = (await invoke<string | null>('dev_env', { name: 'ILMI_EPUB' })) ?? `${await sourceDir()}/three-chapters.epub`;
     await intakeHooks.ingestFile!(epub);
     const detail = await until(() => q('.intake-detail') ?? (q('.intake .paste-hint .note')?.textContent && q('.intake .paste-hint .note')?.textContent !== 'reading' ? q('.intake .paste-hint') : null), 15000);
     if (!detail.classList.contains('intake-detail')) throw new Error(`intake said "${detail.textContent}"`);
@@ -1794,7 +1802,7 @@ export async function smokeWelcome(scratch: string | null): Promise<void> {
     await until(() => (q('.palette-overlay') ? null : true));
   };
   try {
-    if (!scratch) throw new Error('ILMI_VAULT names the scratch vault to seed the recents with');
+    if (!scratch) throw new Error('ILMI_VAULT names the folder imported as the collection the welcome lists');
     if (sessionStorage.getItem(MARK)) {
       // the second run: the toggle is on, the scratch vault is the newest; it should open itself
       sessionStorage.removeItem(MARK);
@@ -1808,7 +1816,14 @@ export async function smokeWelcome(scratch: string | null): Promise<void> {
       return;
     }
 
-    // the first run: seed the recents, toggle off, then let the start decide
+    // the collections earlier runs made here go first
+    {
+      const { deleteCollection, listCollections } = await import('../vault/tauri-store.js');
+      const { home, names } = await listCollections();
+      for (const n of names) if (n.startsWith('welcome-smoke-')) await deleteCollection(`${home}/${n}`);
+    }
+    // the first run: the recents remember the collection and a folder that is no collection (a vault
+    // opened by its path before milestone 59), toggle off, then let the start decide: the rows are the collections
     const gonePath = '/nowhere/gone-vault';
     const s0 = useApp.getState();
     s0.setReopen(false);
@@ -1843,10 +1858,10 @@ export async function smokeWelcome(scratch: string | null): Promise<void> {
     await sleep(400);
     log(`closed: vault ${useApp.getState().vault}; title "${await title()}"; rows: ${rows()}`);
 
-    // a new vault beside the scratch one: the picker cannot be faked, so the parent is set through the store
+    // a new collection beside the scratch one, named on the welcome
     const parent = scratch.slice(0, scratch.lastIndexOf('/'));
     const name = `welcome-smoke-${new Date().toISOString().slice(11, 19).replace(/:/g, '')}`;
-    useApp.setState({ newVaultIn: parent });
+    key(window, 'n');
     const field = await until(() => q<HTMLInputElement>('.welcome-name input'));
     log(`naming in "${q('.welcome-name .psub')?.textContent}"; field focused ${document.activeElement === field}`);
     type(field, 'a/b');
@@ -2094,7 +2109,7 @@ export async function smokeRender(vault: Vault): Promise<void> {
     openIntake('');
     await until(() => q<HTMLTextAreaElement>('.intake textarea'));
     const { intakeHooks } = await import('./Intake.js');
-    const epub = (await invoke<string | null>('dev_env', { name: 'ILMI_EPUB' })) ?? vault.abs('three-chapters.epub');
+    const epub = (await invoke<string | null>('dev_env', { name: 'ILMI_EPUB' })) ?? `${await sourceDir()}/three-chapters.epub`;
     await intakeHooks.ingestFile!(epub);
     await until(() => q('.intake-detail'), 15000);
     await sleep(300);
@@ -2534,8 +2549,8 @@ export async function smokeLand(vault: Vault): Promise<void> {
   const tab = () => activeTab(useApp.getState().panes)?.id;
   try {
     const { dropAt, importFiles, onPaste } = await import('./land.js');
-    const pdf = vault.abs('papers/two-pages.pdf');
-    const epub = (await invoke<string | null>('dev_env', { name: 'ILMI_EPUB' })) ?? vault.abs('three-chapters.epub');
+    const pdf = `${await sourceDir()}/papers/two-pages.pdf`;
+    const epub = (await invoke<string | null>('dev_env', { name: 'ILMI_EPUB' })) ?? `${await sourceDir()}/three-chapters.epub`;
     log(`start: ${docsNow()} documents; tree ${tree()}`);
 
     // a PDF dropped on a folder row: it lands there, opens, and the notice says so
@@ -8175,7 +8190,8 @@ async function syncSteps(name: string, args: Record<string, unknown>): Promise<u
   const { advanceRead } = await import('../schedule/index.js');
   const { gradeCard } = await import('./grading.js');
   const { appNow } = await import('./clock.js');
-  const { cloneInto, openConflicts, push, saveSettings, setNudgeServer, setPullTimer, setRemote, settingsOf, syncAge, syncNow, syncWord } = await import('./sync.js');
+  const { cloneCollection, openConflicts, push, saveSettings, setNudgeServer, setPullTimer, setRemote, settingsOf, syncAge, syncNow, syncWord } = await import('./sync.js');
+  const { deleteCollection, listCollections } = await import('../vault/tauri-store.js');
   const vault = () => { const v = currentVault(); if (!v) throw new Error('no vault open'); return v; };
   const text = async (p: string) => vault().fs.readText(vault().abs(p));
   const state = () => {
@@ -8185,12 +8201,18 @@ async function syncSteps(name: string, args: Record<string, unknown>): Promise<u
   const str = (k: string) => { const v = args[k]; if (typeof v !== 'string') throw new Error(`${name}: ${k}`); return v; };
   switch (name) {
     case 'clone': {
-      const dest = await cloneInto(str('url'), '', str('dest'));
+      // the clone is a collection named as `dest` is; the one an earlier run left under that name goes first
+      const name = vaultName(str('dest'));
+      const { home, names } = await listCollections();
+      if (names.includes(name)) await deleteCollection(`${home}/${name}`);
+      const dest = await cloneCollection(str('url'), '', name);
       // the nudge smoke: its own server, set before the vault opens and subscribes
       if (typeof args.server === 'string') saveSettings(dest, { ...settingsOf(dest), server: args.server });
       await openVault(dest);
       await until(() => (useApp.getState().docs['arabic/vocabulary.md'] ? true : null), 20000);
       await until(() => (useApp.getState().sync.on ? true : null), 20000);
+      // the first pull writes the collection out to the repository's folder before it reads synced
+      await until(() => (syncWord(useApp.getState().sync) === 'synced' ? true : null), 30000);
       return state();
     }
     case 'grade': {
@@ -8254,7 +8276,7 @@ async function syncSteps(name: string, args: Record<string, unknown>): Promise<u
 }
 
 /**
- * The second window's side (`ILMI_VAULT2`, the folder it will clone into):
+ * The second window's side (`ILMI_VAULT2`, whose name the collection it clones takes):
  * it waits for the first window's steps, runs each, and answers on
  * `smoke-reply`. Nothing opens until the clone step.
  */
@@ -8343,7 +8365,8 @@ export async function smokeSync(vault: Vault): Promise<void> {
     must(word() === null, 'the strip says nothing while the collection has no remote');
 
     // ── a connects, b clones ──
-    const host = `${vault.root}-host.git`;
+    // the host is a bare repository beside the folder the collection was imported from
+    const host = `${await sourceDir()}-host.git`;
     await initBare(host);
     saveSettings(vault.root, { url: host, token: '', server: '' });
     useApp.setState({ tweaksOpen: true });
@@ -8356,7 +8379,7 @@ export async function smokeSync(vault: Vault): Promise<void> {
     must((await a<string>('text', { path: '.gitignore' })).includes('.ilmi/state.json'), 'the ignore file leaves state.json out');
     await poll(() => useApp.getState().log.includes('connected'), 'connect: noted', 20000);
     const bs = await b<State>('clone', { url: host, dest: path2, server: '' }, 60000);
-    must(bs.root === path2 && bs.word === 'synced', `b cloned into ${path2} and reads synced`);
+    must(vaultName(bs.root ?? '') === vaultName(path2) && bs.word === 'synced', `b cloned into the collection ${vaultName(path2)} and reads synced`);
     must(!(await b<string>('text', { path: '.ilmi/order.json' })).includes('"tab"'), 'b has the order and no state.json');
 
     // ── a card graded in each lands in both ──
@@ -8539,7 +8562,7 @@ export async function smokeNudge(vault: Vault): Promise<void> {
     await poll(() => useApp.getState().docs[VOCAB], 'the sample is in the collection', 15000);
 
     // ── a connects with the server as its nudge; b clones with the same ──
-    const host = `${vault.root}-host.git`;
+    const host = `${await sourceDir()}-host.git`;
     const topic = topicOf(host);
     await initBare(host);
     saveSettings(vault.root, { url: host, token: '', server });
@@ -8554,7 +8577,7 @@ export async function smokeNudge(vault: Vault): Promise<void> {
     await poll(async () => (await listeners(topic)) === 1, 'a listens on the topic', 5000);
     setPullTimer(false);
     const bs = await b<State>('clone', { url: host, dest: path2, server }, 60000);
-    must(bs.root === path2 && bs.word === 'synced', `b cloned into ${path2} and reads synced`);
+    must(vaultName(bs.root ?? '') === vaultName(path2) && bs.word === 'synced', `b cloned into the collection ${vaultName(path2)} and reads synced`);
     await poll(async () => (await listeners(topic)) === 2, 'b listens too', 5000);
     await b('timer', { on: false });
 
@@ -8647,7 +8670,7 @@ export async function smokeIpad(): Promise<void> {
   const tap = (el: Element | null | undefined) => { if (!el) throw new Error('nothing to tap'); (el as HTMLElement).click(); };
   const px = (v: string) => Math.round(parseFloat(v) || 0);
   try {
-    const { documentsDir, isMobile, nameFromRemote, shapeOf } = await import('./platform.js');
+    const { collectionsHome, documentsDir, isMobile, nameFromRemote, shapeOf } = await import('./platform.js');
     const { push, syncWord } = await import('./sync.js');
     const remote = await invoke<string | null>('dev_env', { name: 'ILMI_REMOTE' });
     if (!remote) throw new Error('ILMI_REMOTE (smoke.json: "remote") names the repository to clone');
@@ -8670,7 +8693,7 @@ export async function smokeIpad(): Promise<void> {
     const name = nameFromRemote(remote);
     const row = qa<HTMLElement>('.welcome-row').find((r) => r.querySelector('.pt')?.textContent === name);
     if (row) {
-      log(`${name} is in Documents already: opened from its row`);
+      log(`${name} is a collection already: opened from its row`);
       tap(row);
     } else {
       tap(q('.welcome-acts button'));
@@ -8686,7 +8709,7 @@ export async function smokeIpad(): Promise<void> {
     } catch { /* said below */ }
     must(useApp.getState().vault !== null, `the clone opens${useApp.getState().vault === null ? ` (the welcome says "${q('.welcome-problem')?.textContent ?? ''}")` : ''}`);
     const vault = currentVault()!;
-    must(vault.root === `${documents}/${name}`, `the vault is in Documents under the remote's name (${name})`);
+    must(vault.root === `${collectionsHome()}/${name}`, `the clone is a collection under the remote's name (${name})`);
     await poll(() => vault.documents().length > 0 && useApp.getState().queue.length > 0, `the sample is there (${vault.documents().length} documents)`, 20000);
     await poll(() => useApp.getState().sync.on, 'the clone is a repository with its remote');
     await poll(() => syncWord(useApp.getState().sync) === 'synced', 'the strip says synced', 20000);
@@ -8819,5 +8842,150 @@ export async function smokeIpad(): Promise<void> {
   } catch (e) {
     log(`failed: ${e instanceof Error ? e.message : String(e)}`);
     useApp.getState().setTheme('light');
+  }
+}
+
+// `ILMI_SMOKE=store` over a fresh copy of `samples/double-major`: milestone
+// 59, the store under the app. The collection that is open was imported
+// from the folder (`devCollection`); here the same folder is imported a
+// second time and, without the app ever opening it, exported as a folder
+// and as a zip beside the source (`<ILMI_VAULT>-export`, `-export.zip`):
+// every file must be in the export with the same bytes, and a shell `diff
+// -r` can say so again. Then the open collection: its folder on disk holds
+// a database and blobs and no Markdown; a write, an image, a rename and a
+// move are read back from the database through a store opened afresh; the
+// palette has the two export commands and `import folder…`; closed, the
+// welcome lists it with `new collection` and `import folder`, and its row
+// opens it again as it was left.
+export async function smokeStore(vault: Vault): Promise<void> {
+  const log = (s: string) => void info(`smoke store: ${s}`);
+  const shot = async (name: string, ms = 2500) => { await sleep(800); log(`shot: ${name}`); await sleep(ms); };
+  const q = <T extends Element>(sel: string, root: ParentNode = document) => root.querySelector<T>(sel);
+  const qa = <T extends Element>(sel: string, root: ParentNode = document) => Array.from(root.querySelectorAll<T>(sel));
+  const must = (ok: unknown, what: string) => { if (!ok) throw new Error(what); log(`ok: ${what}`); };
+  const key = (el: Element | Window, k: string) => el.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));
+  const type = (el: HTMLInputElement, text: string) => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(el, text);
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  };
+  try {
+    const { collectionFs, diskFs, exportToFolder, exportToZip, importCollection } = await import('./collections.js');
+    const { deleteCollection, listCollections } = await import('../vault/tauri-store.js');
+    const { tauriFs } = await import('../vault/tauri-fs.js');
+    const { skipped } = await import('../vault/index.js');
+    type AnyFs = typeof tauriFs;
+    /** Every file under `root` on `fs`, by its path from it. */
+    const filesOf = async (fs: AnyFs, root: string): Promise<string[]> => {
+      const out: string[] = [];
+      const visit = async (rel: string): Promise<void> => {
+        for (const e of await fs.readDir(rel ? `${root}/${rel}` : root)) {
+          if (skipped(e.name)) continue;
+          const path = rel ? `${rel}/${e.name}` : e.name;
+          if (e.isDir) await visit(path); else out.push(path);
+        }
+      };
+      await visit('');
+      return out.sort();
+    };
+    const same = (a: Uint8Array, b: Uint8Array) => a.length === b.length && a.every((x, i) => x === b[i]);
+
+    const src = await sourceDir();
+    if (!src) throw new Error('ILMI_VAULT names the folder to import');
+    await invoke('allow_vault', { path: src });
+    const { home, names } = await listCollections();
+    const name = vaultName(vault.root);
+    must(vault.root === `${home}/${name}` && names.includes(name), `the open collection is ${name}, under the app's data directory`);
+    const source = await filesOf(diskFs, src);
+    const docs = source.filter((p) => p.endsWith('.md') && !p.split('/').some((seg) => seg.startsWith('.')));
+    await until(() => (useApp.getState().files.length >= docs.length ? true : null), 20000);
+    must(docs.every((p) => vault.documents().includes(p)) && vault.documents().length === docs.length, `every document of the folder is in the collection (${docs.length})`);
+    useApp.getState().setTheme('light');
+    await shot('store-open');
+
+    // ── in and out as files: a second import, never opened by the app, exported both ways ──
+    const copy = await importCollection(src, { name: `${name}-roundtrip`, replace: true });
+    const out = `${src}-export`;
+    const zip = `${src}-export.zip`;
+    await invoke('allow_vault', { path: out });
+    await tauriFs.remove(out);
+    const t0 = Date.now();
+    const written = await exportToFolder(collectionFs(copy), copy, out);
+    must(written === source.length, `the export wrote ${written} files, as many as the folder has`);
+    const exported = await filesOf(diskFs, out);
+    must(JSON.stringify(exported) === JSON.stringify(source), 'the export holds the same paths as the folder');
+    let differ: string[] = [];
+    for (const p of source) if (!same(await diskFs.readBytes(`${src}/${p}`), await diskFs.readBytes(`${out}/${p}`))) differ.push(p);
+    must(differ.length === 0, `every exported file equals the folder's, byte for byte${differ.length ? ` (differ: ${differ.slice(0, 5).join(', ')})` : ''} (${Date.now() - t0} ms)`);
+    const zipped = await exportToZip(collectionFs(copy), copy, name, zip);
+    must(zipped === source.length, `the zip holds ${zipped} files`);
+    must(!(await tauriFs.stat(`${copy}/export`)), 'the zip left nothing beside the database');
+    await deleteCollection(copy);
+    must(!(await listCollections()).names.includes(`${name}-roundtrip`), 'the second collection is deleted');
+
+    // ── on disk a collection is a database and blobs ──
+    await invoke('allow_vault', { path: vault.root });
+    const top = (await tauriFs.readDir(vault.root)).map((e) => e.name).sort();
+    must(top.includes('collection.db') && top.includes('blobs') && top.every((n) => n.startsWith('collection.db') || n === 'blobs'), `its folder holds ${top.join(', ')}`);
+    const blobs = await filesOf(tauriFs, `${vault.root}/blobs`);
+    const binaries = source.filter((p) => !p.endsWith('.md') && !p.split('/').some((seg) => seg.startsWith('.')));
+    must(blobs.length > 0 && blobs.length <= binaries.length && blobs.every((p) => /^[0-9a-f]{2}\/[0-9a-f]{64}$/.test(p)), `no Markdown file on disk: ${blobs.length} blobs named by their hash for the folder's ${binaries.length} PDFs and images`);
+
+    // ── writes land in the database: read back through a store opened afresh ──
+    const fresh = () => collectionFs(vault.root);
+    const note = docs.find((p) => p.startsWith('fleeting/')) ?? docs[0]!;
+    const before = await fresh().rowAt(vault.abs(note));
+    await vault.update(note, (doc) => { doc.blocks.push({ kind: 'paragraph', text: 'written by the store smoke' }); });
+    const after = await fresh().rowAt(vault.abs(note));
+    must(before && after && after.id === before.id && after.rev > before.rev && (await fresh().readText(vault.abs(note))).includes('written by the store smoke'), `a write to ${note} is in the database under the same row`);
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3, 4, 5, 6, 7, 8]);
+    const img = await vault.addImage(note, png, 'image/png');
+    const imgPath = `${note.slice(0, note.lastIndexOf('/') + 1)}${decodeURIComponent(img)}`;
+    const imgRow = await fresh().rowAt(vault.abs(imgPath));
+    must(imgRow?.blob && same(await fresh().readBytes(vault.abs(imgPath)), png) && (await filesOf(tauriFs, `${vault.root}/blobs`)).includes(`${imgRow.blob.slice(0, 2)}/${imgRow.blob}`), `an image added to it is a blob by its hash (${imgPath})`);
+    const renamed = await renameNode(note, 'renamed by the smoke');
+    const moved = await moveNode(renamed, '');
+    await sleep(300);
+    const row = await fresh().rowAt(vault.abs(moved));
+    must(row && before && row.id === before.id && row.parent === null && row.name === 'renamed by the smoke', `renamed and moved to the top, it is the same row (${moved})`);
+    must(await fresh().stat(vault.abs(`renamed by the smoke/${imgPath.slice(imgPath.lastIndexOf('/') + 1)}`)), 'and what was under it went with it');
+    must(useApp.getState().files.includes(moved) && !useApp.getState().files.includes(note), 'the tree shows it in its new place');
+    openNode(moved);
+    await until(() => q('.doc-view'));
+    await shot('store-moved');
+
+    // ── the palette: export, and a folder in ──
+    useApp.setState({ paletteOpen: true });
+    const input = await until(() => q<HTMLInputElement>('.palette-input input'));
+    type(input, 'export collection');
+    await sleep(200);
+    const exportRows = qa('.palette-row .pt').map((r) => r.textContent);
+    must(exportRows.includes('export collection · folder') && exportRows.includes('export collection · zip'), `the palette offers ${exportRows.join(' / ')}`);
+    await shot('store-palette');
+    type(input, 'import folder');
+    await sleep(200);
+    must(qa('.palette-row .pt').some((r) => r.textContent === 'import folder…'), 'and import folder…');
+    key(input, 'Escape');
+    await until(() => (q('.palette-overlay') ? null : true));
+
+    // ── closed: the welcome lists it; its row opens it as it was left ──
+    await runMenu('close');
+    await until(() => q('.welcome'));
+    await sleep(500);
+    const buttons = qa('.welcome-acts button').map((b) => b.textContent);
+    must(buttons.join(', ') === 'new collection, import folder', `the welcome offers ${buttons.join(', ')}`);
+    must(q('.welcome-line')?.textContent?.includes('A collection is a database on this device'), 'its line says what a collection is');
+    const rowEl = qa<HTMLElement>('.welcome-row').find((r) => r.querySelector('.pt')?.textContent === name);
+    must(rowEl, `and lists ${qa('.welcome-row .pt').map((r) => r.textContent).join(', ')}`);
+    await shot('store-welcome');
+    rowEl!.click();
+    await until(() => (useApp.getState().vault === vault.root ? true : null), 15000);
+    await until(() => (useApp.getState().files.includes(moved) ? true : null), 15000);
+    const again = currentVault()!;
+    must(again !== vault && (await again.read(moved)).text.includes('written by the store smoke'), 'reopened from its row, the write, the rename and the move are there');
+    must(activeTab(useApp.getState().panes)?.id === moved, 'and the tab it was left on');
+    await shot('store-reopened');
+    log(`done; collection ${vault.root}, export ${out}, zip ${zip}`);
+  } catch (e) {
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
   }
 }

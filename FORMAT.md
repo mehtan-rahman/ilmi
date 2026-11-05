@@ -1,11 +1,17 @@
 # ilmi on-disk format
 
-A vault is a directory of Markdown files. The app is a viewer over them, never
-their owner: open any file in a text editor, change it, and the app picks it up.
-This document is the contract. `src/format/` implements it; the round-trip
+A vault is a directory of Markdown files. Since milestone 59 the app keeps a
+collection in a database of its own, and a vault is what it reads in (`import
+folder`) and what it writes out (`export collection`, as a folder or a zip): a
+document's text in the database is the text this document describes, byte for
+byte, and an export is a vault that any text editor, and any earlier ilmi,
+reads. A file changed in a text editor comes back by importing its folder.
+This document is the contract for both: a document's text, and what a vault
+holds. `src/format/` implements it; the round-trip
 tests in `src/format/__tests__/` hold it to the fixed point
 `parse(serialize(parse(x))) = parse(x)` for every file in the corpus, including
-hand-mangled ones.
+hand-mangled ones, and `src/vault/__tests__/store.test.ts` holds a vault
+imported and exported to the same bytes it went in with.
 
 Three rules run through everything:
 

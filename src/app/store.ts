@@ -222,9 +222,9 @@ export interface AppState {
   queueTitles: boolean;
   /** Postpone the backlog when the day starts (`vault.ts`'s `dayStarted`). A tweak, kept with the others, off by default. */
   backlog: boolean;
-  /** The vaults opened before, newest first; in the webview's storage. */
+  /** The collections there are, the last opened first (the welcome's rows, Open Recent); in the webview's storage. */
   recents: Recent[];
-  /** Recent vaults whose folder was not there when last looked for. */
+  /** Collections that did not open when last tried. */
   gone: string[];
   /** False until the start decision is made, so the welcome does not flash before a vault reopens itself. */
   started: boolean;
@@ -232,8 +232,8 @@ export interface AppState {
   mobile: boolean;
   /** The sidebar drawn as a sheet over the page (an iPad in portrait), open. Not saved. */
   sideSheet: boolean;
-  /** The parent folder a new vault is being named in, on the welcome; null when it is not. */
-  newVaultIn: string | null;
+  /** A new collection is being named, on the welcome. */
+  namingVault: boolean;
   /** Absolute path of the open vault, or null before one is picked. */
   vault: string | null;
   /** Vault-relative document paths, tree order. */
@@ -342,7 +342,7 @@ export const useApp = create<AppState>((set, get) => ({
   started: false,
   mobile: false,
   sideSheet: false,
-  newVaultIn: null,
+  namingVault: false,
   vault: null,
   files: [],
   tree: [],

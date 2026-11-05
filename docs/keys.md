@@ -11,7 +11,7 @@ F2 / dbl-click   rename                 right-click  new, import, rename, move t
                                                      the same in the sidebar and the folder lens;
                                                      anywhere else there, the folder's own
 +                beside the vault's name: new, import, or add, into the selected folder
-⌘⇧N              new collection         ⌘O           open collection
+⌘⇧N              new collection         ⌘O           import a folder as a collection
 ⌘⇧O              import…                ⌘⇧W          close collection
 ⌘V               an address, with nothing focused: clipped into the active tab's folder
 ⌘W               close tab              ⌘\           split pane
@@ -23,8 +23,10 @@ F2 / dbl-click   rename                 right-click  new, import, rename, move t
                  (kept outside the vault); the day's budget,
                  where clippings go, and plugins (kept in the vault's .ilmi)
 
-on the welcome   ⏎ open the selected vault, j k move, o open vault, n new vault;
-                 a folder dropped on it opens as a vault
+on the welcome   ⏎ open the selected collection, j k move, n new collection,
+                 i import folder; a folder dropped on it is imported as a collection
+⌘K               export collection · folder, export collection · zip: the collection
+                 out as a folder of Markdown files, or as one zip
 
 in a source      select, then e section (a clipping or a chapter: in its
                  note; an extract document in an older extract) or m make

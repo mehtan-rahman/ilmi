@@ -10,9 +10,8 @@ import { useEffect, useState } from 'react';
 import { PluginsSection } from '../plugins/PluginsSection.js';
 import { folderPaths, titleOf } from './names.js';
 import { ACCENTS, DENSITY_MAX, DENSITY_MIN, THEMES, useApp, type Accent, type Theme, ZOOM_MAX, ZOOM_MIN, ZOOM_STEP } from './store.js';
-import { open as pickDirectory } from '@tauri-apps/plugin-dialog';
 import { notify } from './land.js';
-import { cloneInto, connect, setNudgeServer, setRemote, syncWord } from './sync.js';
+import { cloneCollection, connect, setNudgeServer, setRemote, syncWord } from './sync.js';
 import { openVault, setBudget, setClipDir } from './vault.js';
 
 const THEME_LABEL: Record<Theme, string> = { light: 'light', dark: 'dark', eink: 'e-ink' };
@@ -94,7 +93,7 @@ function TextField({ value, type = 'text', onCommit }: { value: string; type?: '
 /**
  * Sync: where the vault stands, its remote and token, and `connect` (this
  * collection becomes a repository on that remote) or `clone…` (the remote
- * into an empty folder, opened). A collection that is a repository with a
+ * as a new collection under its own name, opened). A collection that is a repository with a
  * remote already shows its word and the fields alone. `nudge` is the ntfy
  * server a push is announced over (milestone 54); empty, the timer alone.
  */
@@ -102,7 +101,7 @@ function SyncRows() {
   const sync = useApp((s) => s.sync);
   const settings = useApp((s) => s.syncSettings);
   const [busy, setBusy] = useState(false);
-  // an iPad has no folder to pick: its clone is the welcome's `connect`
+  // an iPad's clone is the welcome's `connect`
   const mobile = useApp((s) => s.mobile);
   const word = syncWord(sync);
   const fail = (what: string) => (e: unknown) => { notify(`${what} · ${e instanceof Error ? e.message : String(e)}`); };
@@ -111,11 +110,9 @@ function SyncRows() {
     connect(settings.url, settings.token).catch(fail('connect')).finally(() => setBusy(false));
   };
   const doClone = async () => {
-    const dir = await pickDirectory({ directory: true, recursive: true, multiple: false });
-    if (!dir) return;
     setBusy(true);
     try {
-      const dest = await cloneInto(settings.url, settings.token, dir);
+      const dest = await cloneCollection(settings.url, settings.token);
       useApp.setState({ tweaksOpen: false });
       await openVault(dest);
     } catch (e) {

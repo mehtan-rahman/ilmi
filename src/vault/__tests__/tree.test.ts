@@ -1,10 +1,7 @@
-import { promises as fsp } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { meta, parse, setField } from '../../format/index.js';
-import { nodeFs } from '../node-fs.js';
+import { openDisk, type Disk } from './disk.js';
 import { Vault, addToPage, documents, extractName, pageOf, pageOfBlock, pageSection, type TreeNode, type VaultEvent } from '../index.js';
 import { childDirOf, cleanName, fileName, nameOf, rekey, within } from '../paths.js';
 
@@ -12,26 +9,26 @@ const CORPUS = fileURLToPath(new URL('../../format/__tests__/corpus/vault/', imp
 const WOZ = 'papers/wozniak-1990.md';
 const EX1 = 'papers/wozniak-1990/woz-ex1.md';
 
-let root: string;
+// over a temporary directory, and again over a collection's store (`disk.ts`, `tree-store.test.ts`)
+let disk: Disk;
 let vault: Vault;
 let events: VaultEvent[];
 
 beforeEach(async () => {
-  root = await fsp.mkdtemp(join(tmpdir(), 'ilmi-tree-'));
-  await fsp.cp(CORPUS, root, { recursive: true });
-  vault = await Vault.open(nodeFs, root);
+  disk = await openDisk(CORPUS, 'tree');
+  vault = await Vault.open(disk.fs, disk.root);
   events = [];
   vault.subscribe((ev) => events.push(ev));
 });
 
 afterEach(async () => {
   vault.close();
-  await fsp.rm(root, { recursive: true, force: true });
+  await disk.dispose();
 });
 
-const exists = async (rel: string) => !!(await nodeFs.stat(join(root, rel)));
-const isDir = async (rel: string) => (await nodeFs.stat(join(root, rel)))?.isDir === true;
-const readDisk = (rel: string) => fsp.readFile(join(root, rel), 'utf8');
+const exists = (rel: string) => disk.exists(rel);
+const isDir = (rel: string) => disk.isDir(rel);
+const readDisk = (rel: string) => disk.read(rel);
 
 function find(nodes: TreeNode[], path: string): TreeNode | undefined {
   for (const n of nodes) {
@@ -382,7 +379,7 @@ describe('move', () => {
     await expect(vault.move('papers', 'papers')).rejects.toThrow('into itself');
     await expect(vault.move(WOZ, 'papers/wozniak-1990')).rejects.toThrow('into itself');
     await expect(vault.move('papers', 'nowhere')).rejects.toThrow('no such folder');
-    await fsp.writeFile(join(root, 'books/crick-1995.md'), 'x\n');
+    await disk.write('books/crick-1995.md', 'x\n');
     await expect(vault.move('papers/crick-1995.md', 'books')).rejects.toThrow('already exists');
     expect(await vault.move(WOZ, 'papers')).toBe(WOZ);
     expect(treeEvents()).toBe(0);
@@ -481,14 +478,14 @@ A good system spends your attention the way a careful gardener spends water: not
 describe('pages', () => {
   const PAIR = 'papers/two-pages.md';
   const PDF = 'papers/two-pages.pdf';
-  const bytes = () => fsp.readFile(join(root, PDF));
+  const bytes = () => disk.bytes(PDF);
 
   it('finds a document\'s pages by stem, by its field, and not at all', async () => {
     expect(await vault.pagesOf(PAIR)).toBe(PDF);
     expect(await vault.pagesOf(WOZ)).toBeNull();
     expect(await vault.pagesOf('papers')).toBeNull();
     // the field wins when it names a file that exists; a missing one falls back to the stem
-    await fsp.copyFile(join(root, PDF), join(root, 'papers/other.pdf'));
+    await disk.copy(PDF, 'papers/other.pdf');
     await vault.update(PAIR, (d) => setField(d, 'pdf', 'other.pdf'));
     expect(await vault.pagesOf(PAIR)).toBe('papers/other.pdf');
     await vault.update(PAIR, (d) => setField(d, 'pdf', 'nowhere.pdf'));
@@ -501,7 +498,7 @@ describe('pages', () => {
   });
 
   it('a new document never adopts a stray PDF', async () => {
-    await fsp.copyFile(join(root, PDF), join(root, 'papers/stray.pdf'));
+    await disk.copy(PDF, 'papers/stray.pdf');
     expect(await vault.createDoc('papers', 'source', 'stray')).toBe('papers/stray 2.md');
   });
 
@@ -529,7 +526,7 @@ describe('pages', () => {
     const path = await vault.importPdf('books', { title: 'A dropped paper', bytes: data, text: 'Two pages\n\nThe first line.\n\nThe second.', today: '2026-09-22' });
     expect(path).toBe('books/A dropped paper.md');
     expect(await readDisk(path)).toBe('---\ntype: source\nfrozen: true\nimported: 2026-09-22\npdf: A dropped paper.pdf\n---\n\n## text\n\nTwo pages\n\nThe first line.\n\nThe second.\n');
-    expect(Buffer.from(await fsp.readFile(join(root, 'books/A dropped paper.pdf'))).equals(Buffer.from(data))).toBe(true);
+    expect(Buffer.from(await disk.bytes('books/A dropped paper.pdf')).equals(Buffer.from(data))).toBe(true);
     expect(await vault.pagesOf(path)).toBe('books/A dropped paper.pdf');
     expect(find(vault.tree, path)).toMatchObject({ kind: 'doc', pdf: 'books/A dropped paper.pdf' });
     // no text: no body; a taken name is numbered for both files; nothing to copy is refused
@@ -559,7 +556,7 @@ describe('pages', () => {
 
   it('a PDF arriving beside a document attaches it on the next walk', async () => {
     expect(find(vault.tree, 'papers/crick-1995.md')).not.toHaveProperty('pdf');
-    await fsp.copyFile(join(root, PDF), join(root, 'papers/crick-1995.pdf'));
+    await disk.copy(PDF, 'papers/crick-1995.pdf');
     await vault.changed(['papers/crick-1995.pdf']);
     expect(find(vault.tree, 'papers/crick-1995.md')).toMatchObject({ pdf: 'papers/crick-1995.pdf' });
     expect(await vault.pagesOf('papers/crick-1995.md')).toBe('papers/crick-1995.pdf');

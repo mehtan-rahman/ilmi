@@ -4,12 +4,12 @@
 import { describe, expect, it } from 'vitest';
 import { MENU_ID, menuAction, recentRows, runMenu, type MenuFx } from '../menu.js';
 
-/** Stubs that record what was reached for; the parent picker answers `dir`. */
-function fx(dir: string | null = '/home/me') {
+/** Stubs that record what was reached for. */
+function fx() {
   const calls: string[] = [];
   const f: MenuFx = {
-    pickVault: async () => { calls.push('pickVault'); return null; },
-    pickVaultParent: async () => { calls.push('pickVaultParent'); return dir; },
+    importVault: async () => { calls.push('importVault'); return null; },
+    nameNewVault: () => { calls.push('nameNewVault'); },
     closeVault: () => { calls.push('closeVault'); },
     openVault: async (path) => { calls.push(`openVault ${path}`); return null; },
     importFiles: async () => { calls.push('importFiles'); return []; },
@@ -34,22 +34,16 @@ describe('the menu ids', () => {
 });
 
 describe('the dispatch', () => {
-  it('Open runs the folder picker, which opens the vault itself', async () => {
+  it('Open runs the folder picker, which imports the folder as a collection and opens it itself', async () => {
     const { f, calls } = fx();
     expect(await runMenu('open', f)).toEqual({ kind: 'open' });
-    expect(calls).toEqual(['pickVault']);
+    expect(calls).toEqual(['importVault']);
   });
 
-  it('New picks the parent first, then closes the open vault for the welcome to take the name', async () => {
-    const { f, calls } = fx('/home/me/vaults');
+  it('New closes the open collection for the welcome to take the name', async () => {
+    const { f, calls } = fx();
     expect(await runMenu('new', f)).toEqual({ kind: 'new' });
-    expect(calls).toEqual(['pickVaultParent', 'closeVault']);
-  });
-
-  it('a dismissed parent picker leaves the vault open', async () => {
-    const { f, calls } = fx(null);
-    await runMenu('new', f);
-    expect(calls).toEqual(['pickVaultParent']);
+    expect(calls).toEqual(['closeVault', 'nameNewVault']);
   });
 
   it('Close closes to the welcome', async () => {

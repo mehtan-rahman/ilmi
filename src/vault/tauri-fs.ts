@@ -1,6 +1,9 @@
-// `Fs` over @tauri-apps/plugin-fs, for the app. The picked vault directory is
-// added to the fs scope by the dialog plugin when it is chosen (recursive), so
-// nothing here needs a base directory.
+// `Fs` over @tauri-apps/plugin-fs: a directory on disk. Since milestone 59
+// the open collection is not one (`store.ts`); this is the folder an import
+// reads, the folder an export writes, and the repository the git sync keeps
+// beside a collection (`src/app/collections.ts`). A picked directory is
+// added to the fs scope by the dialog plugin when it is chosen (recursive),
+// so nothing here needs a base directory.
 
 import {
   exists, mkdir, readDir, readFile, readTextFile, remove, rename, stat, watch, writeFile, writeTextFile,

@@ -3,6 +3,7 @@ mod epub;
 #[cfg(debug_assertions)]
 mod nudge;
 mod plugin;
+mod store;
 mod sync;
 
 #[cfg(desktop)]
@@ -37,8 +38,11 @@ const MENU_IMPORT: &str = "import";
 #[cfg(target_os = "macos")]
 const MENU_PASTE_PLAIN: &str = "paste-plain";
 
-/// Widen the fs scope to a vault directory. The dialog plugin does this for a
-/// picked directory; this covers paths that arrive any other way. The
+/// Widen the fs scope to a folder on disk: one an import reads or an export
+/// writes, the repository kept beside a collection (since milestone 59 the
+/// collection itself is a database, `store.rs`, and is not reached through
+/// the fs plugin). The dialog plugin does this for a picked directory; this
+/// covers paths that arrive any other way. The
 /// plugin's global scope matches with `require_literal_leading_dot` on unix
 /// whatever the config says, so `vault/**` never reaches `.ilmi/`; that
 /// directory is granted by name.
@@ -51,6 +55,26 @@ fn allow_vault(app: tauri::AppHandle, path: String) -> Result<(), String> {
     scope
         .allow_directory(std::path::Path::new(&path).join(".ilmi"), true)
         .map_err(|e| e.to_string())
+}
+
+/// A hidden entry (`.ilmi`, `.gitignore`) of a folder the scope already
+/// reaches, let in by name: an import reads a vault's dot-entries and an
+/// export writes them (`src/app/collections.ts`), and `dir/**` does not
+/// match them. Refused when the entry's folder is not in the scope.
+#[tauri::command]
+fn allow_hidden(app: tauri::AppHandle, path: String) -> Result<(), String> {
+    let p = std::path::Path::new(&path);
+    let hidden = p.file_name().map(|n| n.to_string_lossy().starts_with('.')).unwrap_or(false);
+    if !hidden {
+        return Ok(());
+    }
+    let scope = app.fs_scope();
+    match p.parent() {
+        Some(parent) if scope.is_allowed(parent) => {}
+        _ => return Err(format!("{path}: outside what was opened")),
+    }
+    scope.allow_directory(p, true).map_err(|e| e.to_string())?;
+    scope.allow_file(p).map_err(|e| e.to_string())
 }
 
 /// A file dropped on the window, read as text. The fs scope covers only the
@@ -95,8 +119,8 @@ fn read_plugin_zip(path: String) -> Result<plugin::PluginZip, String> {
 }
 
 /// Where the app runs, for the renderer: `mobile` (iOS: the welcome is
-/// `connect` and the clones, the layout one pane) and the folder the vaults
-/// live in there, the app's Documents, which the Files app shows. On the
+/// `connect` and the collections, the layout one pane) and the app's
+/// Documents there, which the Files app shows. On the
 /// desktop both are off; a dev build takes `ILMI_MOBILE=1` and
 /// `ILMI_DOCUMENTS=/path` to draw the iPad's side in the Mac's window.
 #[derive(serde::Serialize)]
@@ -111,8 +135,9 @@ fn platform(app: tauri::AppHandle) -> Platform {
     Platform { mobile: documents.is_some(), documents }
 }
 
-/// The folder the vaults are cloned into on iOS; `None` on the desktop
-/// (but for the dev override).
+/// The app's Documents on iOS (the Files app shows it; a dev run's
+/// `smoke.json` is read from it); `None` on the desktop (but for the dev
+/// override). The collections themselves are under the app's data directory.
 fn documents_dir(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
     #[cfg(mobile)]
     {
@@ -127,23 +152,6 @@ fn documents_dir(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
             None
         }
     }
-}
-
-/// The vaults in Documents, by name: every folder there that is not hidden.
-/// Read here because the fs scope reaches a vault only once it is opened.
-#[tauri::command]
-fn documents_vaults(app: tauri::AppHandle) -> Result<Vec<String>, String> {
-    let Some(dir) = documents_dir(&app) else { return Ok(Vec::new()) };
-    let _ = std::fs::create_dir_all(&dir);
-    let mut out: Vec<String> = std::fs::read_dir(&dir)
-        .map_err(|e| e.to_string())?
-        .filter_map(|e| e.ok())
-        .filter(|e| e.file_type().map(|t| t.is_dir()).unwrap_or(false))
-        .filter_map(|e| e.file_name().into_string().ok())
-        .filter(|n| !n.starts_with('.'))
-        .collect();
-    out.sort();
-    Ok(out)
 }
 
 /// Dev only: an environment variable of the dev process, for
@@ -229,6 +237,98 @@ fn dev_nudge_listeners(topic: String) -> Result<usize, String> {
         let _ = topic;
         Err("dev only".to_string())
     }
+}
+
+// ── the store (milestone 59) ─────────────────────────────────────
+//
+// A collection is a folder under the app's data directory holding one
+// SQLite file and its blobs (`store.rs`). The renderer names a collection
+// by that folder, and nothing outside `collections/` can be named. The
+// commands run off the main thread; the stores sit behind one lock.
+
+/// `collections/` under the app's data directory, made on first use.
+fn collections_dir(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+    let dir = app.path().app_data_dir().map_err(|e| e.to_string())?.join("collections");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    Ok(dir)
+}
+
+fn collection_dir(app: &tauri::AppHandle, root: &str) -> Result<std::path::PathBuf, String> {
+    store::dir_in(&collections_dir(app)?, root)
+}
+
+/// Where the collections live, and the ones there, by name.
+#[derive(serde::Serialize)]
+struct Collections {
+    home: String,
+    names: Vec<String>,
+}
+
+#[tauri::command(async)]
+fn store_list(app: tauri::AppHandle) -> Result<Collections, String> {
+    let home = collections_dir(&app)?;
+    Ok(Collections { names: store::list(&home)?, home: home.to_string_lossy().into_owned() })
+}
+
+/// A new, empty collection called `name`; its folder. `already there` when the name is taken.
+#[tauri::command(async)]
+fn store_create(app: tauri::AppHandle, stores: tauri::State<'_, store::Stores>, name: String) -> Result<String, String> {
+    let clean = store::clean_name(&name).ok_or_else(|| "not a name".to_string())?;
+    let dir = collections_dir(&app)?.join(clean);
+    if dir.exists() {
+        return Err("already there".to_string());
+    }
+    stores.create(&dir)?;
+    Ok(dir.to_string_lossy().into_owned())
+}
+
+/// A collection closed and deleted with everything in it: an import that failed half way, a dev run's last copy.
+#[tauri::command(async)]
+fn store_delete(app: tauri::AppHandle, stores: tauri::State<'_, store::Stores>, root: String) -> Result<(), String> {
+    stores.delete(&collection_dir(&app, &root)?)
+}
+
+#[tauri::command(async)]
+fn store_rows(app: tauri::AppHandle, stores: tauri::State<'_, store::Stores>, root: String) -> Result<Vec<store::Row>, String> {
+    stores.rows(&collection_dir(&app, &root)?)
+}
+
+#[tauri::command(async)]
+fn store_text(app: tauri::AppHandle, stores: tauri::State<'_, store::Stores>, root: String, id: String) -> Result<String, String> {
+    stores.text(&collection_dir(&app, &root)?, &id)
+}
+
+#[tauri::command(async)]
+fn store_put(app: tauri::AppHandle, stores: tauri::State<'_, store::Stores>, root: String, at: store::Place, content: Option<store::Content>) -> Result<store::Row, String> {
+    stores.put(&collection_dir(&app, &root)?, &at, content.as_ref())
+}
+
+#[tauri::command(async)]
+fn store_remove(app: tauri::AppHandle, stores: tauri::State<'_, store::Stores>, root: String, ids: Vec<String>) -> Result<(), String> {
+    stores.remove(&collection_dir(&app, &root)?, &ids)
+}
+
+/// A blob's bytes, raw as the request's body; its collection in the `root` header, percent-encoded (a header is ASCII).
+#[tauri::command]
+async fn store_blob_put(app: tauri::AppHandle, stores: tauri::State<'_, store::Stores>, request: tauri::ipc::Request<'_>) -> Result<store::BlobInfo, String> {
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
+        return Err("a blob is sent as bytes".to_string());
+    };
+    let header = request.headers().get("root").and_then(|v| v.to_str().ok()).ok_or_else(|| "no collection named".to_string())?;
+    let root = percent_encoding::percent_decode_str(header).decode_utf8().map_err(|e| e.to_string())?;
+    stores.blob_put(&collection_dir(&app, &root)?, bytes)
+}
+
+#[tauri::command(async)]
+fn store_blob_get(app: tauri::AppHandle, stores: tauri::State<'_, store::Stores>, root: String, hash: String) -> Result<tauri::ipc::Response, String> {
+    stores.blob_get(&collection_dir(&app, &root)?, &hash).map(tauri::ipc::Response::new)
+}
+
+/// `export collection` as a zip: the folder the renderer wrote (`dir`), zipped under `top` at `dest`; how many files.
+#[tauri::command(async)]
+fn zip_folder(dir: String, top: String, dest: String) -> Result<usize, String> {
+    let top = store::clean_name(&top).ok_or_else(|| "not a name".to_string())?;
+    store::zip_dir(std::path::Path::new(&dir), top, std::path::Path::new(&dest))
 }
 
 /// One vault the renderer remembers, for the Open Recent submenu.
@@ -396,7 +496,8 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![allow_vault, read_dropped, read_dropped_bytes, read_anki_package, read_epub, read_plugin_zip, platform, documents_vaults, dev_env, dev_nudge_serve, dev_nudge_drop, dev_nudge_listeners, set_recent_vaults, sync_status, sync_init, sync_init_bare, sync_set_remote, sync_clone, sync_changes, sync_commit, sync_fetch, sync_merge, sync_resolve, sync_push])
+        .manage(store::Stores::default())
+        .invoke_handler(tauri::generate_handler![allow_vault, allow_hidden, read_dropped, read_dropped_bytes, read_anki_package, read_epub, read_plugin_zip, platform, dev_env, dev_nudge_serve, dev_nudge_drop, dev_nudge_listeners, set_recent_vaults, store_list, store_create, store_delete, store_rows, store_text, store_put, store_remove, store_blob_put, store_blob_get, zip_folder, sync_status, sync_init, sync_init_bare, sync_set_remote, sync_clone, sync_changes, sync_commit, sync_fetch, sync_merge, sync_resolve, sync_push])
         .setup(|app| {
             // Windows and Linux learn the scheme at run time; macOS reads it
             // from the bundle's Info.plist, which Tauri writes from the
@@ -427,7 +528,8 @@ pub fn run() {
             }
             // The menu bar. The default macOS menu binds ⌘W to Close Window;
             // the app uses ⌘W to close a tab, so the menu is built here
-            // without that item. File holds the collection commands and
+            // without that item. File holds the collection commands (a new
+            // one named on the welcome, or a folder imported as one) and
             // Import… (the picker; the files land as a drop does); its
             // Open Recent submenu is filled by `set_recent_vaults` from the
             // renderer's recents and rebuilt when they change. The app menu
@@ -438,7 +540,7 @@ pub fn run() {
                 let new_item = MenuItemBuilder::with_id(MENU_NEW, "New Collection…")
                     .accelerator("CmdOrCtrl+Shift+N")
                     .build(app)?;
-                let open_item = MenuItemBuilder::with_id(MENU_OPEN, "Open Collection…")
+                let open_item = MenuItemBuilder::with_id(MENU_OPEN, "New Collection from Folder…")
                     .accelerator("CmdOrCtrl+O")
                     .build(app)?;
                 let recent = SubmenuBuilder::with_id(app, MENU_RECENT, "Open Recent")

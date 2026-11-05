@@ -41,7 +41,7 @@ async function open(): Promise<void> {
 
 beforeEach(async () => {
   fs = memFs();
-  seed(fs);
+  await seed(fs);
   globalThis.__ilmi = undefined;
   globalThis.__off = undefined;
   await open();
@@ -95,7 +95,7 @@ describe('the sample, from the corpus', () => {
     expect(host.settingsOf('hello')).toEqual([{ kind: 'text', key: 'greeting', label: 'greeting', placeholder: 'hi' }]);
     expect(host.settingValue('hello', 'greeting')).toBeUndefined();
     await host.setSetting('hello', 'greeting', 'salaam');
-    expect(JSON.parse(fs.files.get(`${ROOT}/.ilmi/plugins/hello/data.json`) as string)).toEqual({ greeting: 'salaam' });
+    expect(JSON.parse((await fs.get(`${ROOT}/.ilmi/plugins/hello/data.json`))!)).toEqual({ greeting: 'salaam' });
     host.runCommand('plugin:hello:say-hi');
     expect(bridge.notices).toEqual(['salaam']);
     // a fresh runtime over the same files reads it back
@@ -103,7 +103,7 @@ describe('the sample, from the corpus', () => {
     await open();
     expect(host.settingValue('hello', 'greeting')).toBe('salaam');
     await host.setSetting('hello', 'greeting', '');
-    expect(JSON.parse(fs.files.get(`${ROOT}/.ilmi/plugins/hello/data.json`) as string)).toEqual({});
+    expect(JSON.parse((await fs.get(`${ROOT}/.ilmi/plugins/hello/data.json`))!)).toEqual({});
   });
 
   it('hears a grade', () => {
@@ -114,7 +114,7 @@ describe('the sample, from the corpus', () => {
   it('takes everything back when turned off, and gives it back when turned on', async () => {
     await host.setEnabled('hello', false);
     expect(host.rows()[0]).toMatchObject({ enabled: false, state: 'off', hasSettings: false });
-    expect(JSON.parse(fs.files.get(`${ROOT}/.ilmi/plugins.json`) as string)).toEqual([]);
+    expect(JSON.parse((await fs.get(`${ROOT}/.ilmi/plugins.json`))!)).toEqual([]);
     expect(host.pluginCommands()).toEqual([]);
     expect(host.actionsFor(SEL)).toEqual([]);
     expect(host.hasBlockHooks()).toBe(false);
@@ -124,7 +124,7 @@ describe('the sample, from the corpus', () => {
     expect(bridge.notices).toEqual([]);
     await host.setEnabled('hello', true);
     expect(host.rows()[0]).toMatchObject({ enabled: true, state: 'on' });
-    expect(JSON.parse(fs.files.get(`${ROOT}/.ilmi/plugins.json`) as string)).toEqual(['hello']);
+    expect(JSON.parse((await fs.get(`${ROOT}/.ilmi/plugins.json`))!)).toEqual(['hello']);
     expect(host.pluginCommands().length).toBe(1);
     expect(document.head.querySelector('style[data-plugin="hello"]')).not.toBeNull();
   });
@@ -133,8 +133,8 @@ describe('the sample, from the corpus', () => {
 describe('the handle', () => {
   beforeEach(async () => {
     host.stop();
-    addPlugin(fs, 't', KEEP_HANDLE);
-    enable(fs, ['hello', 't']);
+    await addPlugin(fs, 't', KEEP_HANDLE);
+    await enable(fs, ['hello', 't']);
     await open();
   });
 
@@ -201,7 +201,7 @@ describe('the handle', () => {
     ilmi.store.on('change', (d) => seen.push(d));
     expect(await ilmi.store.load()).toEqual({});
     await ilmi.store.save({ a: 1 });
-    expect(JSON.parse(fs.files.get(`${ROOT}/.ilmi/plugins/t/data.json`) as string)).toEqual({ a: 1 });
+    expect(JSON.parse((await fs.get(`${ROOT}/.ilmi/plugins/t/data.json`))!)).toEqual({ a: 1 });
     expect(ilmi.store.get('a')).toBe(1);
     expect(seen).toEqual([{ a: 1 }]);
   });
@@ -247,8 +247,8 @@ describe('the handle', () => {
 describe('faults', () => {
   it('a plugin that throws on activate is off for the session, with a notice; the others stand', async () => {
     host.stop();
-    addPlugin(fs, 'bad', `module.exports.activate = () => { throw new Error('boom'); };`);
-    enable(fs, ['bad', 'hello']);
+    await addPlugin(fs, 'bad', `module.exports.activate = () => { throw new Error('boom'); };`);
+    await enable(fs, ['bad', 'hello']);
     await open();
     expect(bridge.notices).toEqual(['bad: boom']);
     expect(host.rows().map((r) => [r.id, r.state, r.error])).toEqual([['bad', 'failed', 'boom'], ['hello', 'on', undefined]]);
@@ -258,12 +258,12 @@ describe('faults', () => {
 
   it('a throw inside a callback deactivates that plugin and leaves the rest', async () => {
     host.stop();
-    addPlugin(fs, 'flaky', `module.exports.activate = (ilmi) => {
+    await addPlugin(fs, 'flaky', `module.exports.activate = (ilmi) => {
       ilmi.commands.add({ id: 'go', name: 'flaky: go', run() { throw new Error('mid-run'); } });
       ilmi.session.on('grade', () => { throw new Error('on grade'); });
       ilmi.render.onBlock(() => { throw new Error('on block'); });
     };`);
-    enable(fs, ['hello', 'flaky']);
+    await enable(fs, ['hello', 'flaky']);
     await open();
     expect(host.pluginCommands().length).toBe(2);
     host.runCommand('plugin:flaky:go');
@@ -277,8 +277,8 @@ describe('faults', () => {
 
   it('a rejected promise fails the plugin too', async () => {
     host.stop();
-    addPlugin(fs, 'slow', `module.exports.activate = (ilmi) => { ilmi.commands.add({ id: 'go', name: 'slow: go', async run() { throw new Error('later'); } }); };`);
-    enable(fs, ['slow']);
+    await addPlugin(fs, 'slow', `module.exports.activate = (ilmi) => { ilmi.commands.add({ id: 'go', name: 'slow: go', async run() { throw new Error('later'); } }); };`);
+    await enable(fs, ['slow']);
     await open();
     host.runCommand('plugin:slow:go');
     await sleep(0);
@@ -288,8 +288,8 @@ describe('faults', () => {
 
   it('an api mismatch is refused with a notice', async () => {
     host.stop();
-    addPlugin(fs, 'old', KEEP_HANDLE, { api: 0, name: 'old one' });
-    enable(fs, ['old', 'hello']);
+    await addPlugin(fs, 'old', KEEP_HANDLE, { api: 0, name: 'old one' });
+    await enable(fs, ['old', 'hello']);
     await open();
     expect(bridge.notices).toEqual(['old one was written for api 0, this is api 1']);
     expect(host.rows().find((r) => r.id === 'old')).toMatchObject({ state: 'refused', enabled: true, error: 'written for api 0, this is api 1' });
@@ -299,11 +299,9 @@ describe('faults', () => {
 
   it('a folder without a readable manifest is a broken row, not a crash', async () => {
     host.stop();
-    fs.dirs.add(`${ROOT}/.ilmi/plugins/junk`);
-    fs.files.set(`${ROOT}/.ilmi/plugins/junk/plugin.json`, '{not json');
-    fs.dirs.add(`${ROOT}/.ilmi/plugins/other`);
-    fs.files.set(`${ROOT}/.ilmi/plugins/other/plugin.json`, JSON.stringify({ id: 'elsewhere', name: 'x', version: '1', api: 1 }));
-    enable(fs, ['junk', 'hello']);
+    await fs.put(`${ROOT}/.ilmi/plugins/junk/plugin.json`, '{not json');
+    await fs.put(`${ROOT}/.ilmi/plugins/other/plugin.json`, JSON.stringify({ id: 'elsewhere', name: 'x', version: '1', api: 1 }));
+    await enable(fs, ['junk', 'hello']);
     await open();
     expect(host.rows().map((r) => [r.id, r.state, r.error])).toEqual([
       ['hello', 'on', undefined],
@@ -315,8 +313,8 @@ describe('faults', () => {
 
   it('a `require` serves nothing', async () => {
     host.stop();
-    addPlugin(fs, 'needy', `const x = require('left-pad'); module.exports.activate = () => {};`);
-    enable(fs, ['needy']);
+    await addPlugin(fs, 'needy', `const x = require('left-pad'); module.exports.activate = () => {};`);
+    await enable(fs, ['needy']);
     await open();
     expect(bridge.notices).toEqual([`needy: require('left-pad'): plugins bundle their dependencies`]);
   });
@@ -324,7 +322,7 @@ describe('faults', () => {
 
 describe('the files on disk', () => {
   it('reloads a running plugin when its bundle changes, with a notice', async () => {
-    fs.files.set(`${ROOT}/.ilmi/plugins/hello/main.js`, `module.exports.activate = (ilmi) => { ilmi.commands.add({ id: 'two', name: 'hello: two', run() {} }); };`);
+    await fs.put(`${ROOT}/.ilmi/plugins/hello/main.js`, `module.exports.activate = (ilmi) => { ilmi.commands.add({ id: 'two', name: 'hello: two', run() {} }); };`);
     await vault.changed([`${ROOT}/.ilmi/plugins/hello/main.js`]);
     await sleep(600);
     expect(bridge.notices).toEqual(['reloaded · hello']);
@@ -343,7 +341,7 @@ describe('the files on disk', () => {
     expect(bridge.notices).toEqual(['removed · hello']);
     expect(host.rows()).toEqual([]);
     expect(host.pluginCommands()).toEqual([]);
-    addPlugin(fs, 'hello', KEEP_HANDLE, { version: '0.2.0' });
+    await addPlugin(fs, 'hello', KEEP_HANDLE, { version: '0.2.0' });
     await vault.changed([`${ROOT}/.ilmi/plugins/hello/plugin.json`]);
     await sleep(600);
     expect(host.rows()[0]).toMatchObject({ id: 'hello', version: '0.2.0', enabled: true, state: 'on' });
@@ -351,18 +349,18 @@ describe('the files on disk', () => {
   });
 
   it('follows plugins.json edited by hand', async () => {
-    fs.files.set(`${ROOT}/.ilmi/plugins.json`, '[]');
+    await fs.put(`${ROOT}/.ilmi/plugins.json`, '[]');
     await vault.changed([`${ROOT}/.ilmi/plugins.json`]);
     await sleep(600);
     expect(host.rows()[0]).toMatchObject({ enabled: false, state: 'off' });
-    fs.files.set(`${ROOT}/.ilmi/plugins.json`, '["hello"]');
+    await fs.put(`${ROOT}/.ilmi/plugins.json`, '["hello"]');
     await vault.changed([`${ROOT}/.ilmi/plugins.json`]);
     await sleep(600);
     expect(host.rows()[0]).toMatchObject({ enabled: true, state: 'on' });
   });
 
   it('a data.json edited by hand reaches the plugin', async () => {
-    fs.files.set(`${ROOT}/.ilmi/plugins/hello/data.json`, '{"greeting":"hallo"}');
+    await fs.put(`${ROOT}/.ilmi/plugins/hello/data.json`, '{"greeting":"hallo"}');
     await vault.changed([`${ROOT}/.ilmi/plugins/hello/data.json`]);
     await sleep(600);
     expect(host.settingValue('hello', 'greeting')).toBe('hallo');
@@ -387,8 +385,8 @@ describe('adding one from a file', () => {
     expect(r).toEqual({ status: 'added', id: 'hello', name: 'hello' });
     expect(bridge.notices).toEqual(['added · hello']);
     expect(host.rows()[0]).toMatchObject({ id: 'hello', enabled: true, state: 'on' });
-    expect(fs.files.has(`${ROOT}/.ilmi/plugins/hello/style.css`)).toBe(true);
-    expect(JSON.parse(fs.files.get(`${ROOT}/.ilmi/plugins.json`) as string)).toEqual(['hello']);
+    expect(await fs.has(`${ROOT}/.ilmi/plugins/hello/style.css`)).toBe(true);
+    expect(JSON.parse((await fs.get(`${ROOT}/.ilmi/plugins.json`))!)).toEqual(['hello']);
     expect(host.pluginCommands().length).toBe(1);
   });
 

@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "main window: the picked vault directory, dialogs, page fetches for the intake, ilmi:// links, a clipped page's address opened in the browser, dev logging",
+  "description": "main window: the folders an import reads and an export writes (picked, or granted by allow_vault and allow_hidden) and the repository kept beside a collection, dialogs, page fetches for the intake, ilmi:// links, a clipped page's address opened in the browser, dev logging",
   "windows": ["main", "second"],
   "permissions": [
     "core:default",

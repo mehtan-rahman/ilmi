@@ -1,7 +1,8 @@
 // The one open vault, and how it gets opened. Kept outside the Zustand store
 // because a Vault holds a watcher and a cache; the store gets plain data.
-// Every tree operation here goes to disk through the vault and comes back
-// through its events; nothing edits the store's tree directly.
+// Every tree operation here goes to the collection's database through the
+// vault (`collections.ts`, milestone 59) and comes back through its
+// events; nothing edits the store's tree directly.
 
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -11,21 +12,22 @@ import { REVIEWS_DIR, meta, setField, type Doc, type Meta, type NodeType, type R
 import type { Chapter, MappedDeck } from '../import/index.js';
 import { activeExam, buryLinked, cadence, cardsById, dayOf, docItems, examQueue, examsAt, isDue, meterQueue, postponeOverflow, readPri, resolveOptions, spentToday, type ExamAt, type QueueItem, type Resolved } from '../schedule/index.js';
 import { SAME_FILE, Vault, childDirOf, childrenAt, cleanName, dirOf, entryOf, fileName, isDoc, ordered, placeEntry, rekey, type ExtractSpec, type SectionSpec, type ImportDeckSpec, type ImportPdfSpec, type ImportSpec, type PdfChapterSpec, type TreeNode, type VaultEvent, type VaultState } from '../vault/index.js';
-import { tauriFs } from '../vault/tauri-fs.js';
+import { createCollection, listCollections } from '../vault/tauri-store.js';
 import { startPlugins, stopPlugins } from '../plugins/index.js';
 import { cleanClipDir } from './clip.js';
+import { collectionFs, importCollection } from './collections.js';
 import { cleanViews, type DeckView } from './deck.js';
 import { cleanBudget, dueToday, sessionItems } from './items.js';
 import { INTAKE, SESSION, queueId, queueScope } from './names.js';
 import { inspectorShown } from './layout.js';
 import { activeTab, dropTabs, emptyPanes, openTab, retarget, type OpenOpts, type Panes } from './panes.js';
-import { NEVER, clonedVaults, cloneDest, documentsDir, isMobile, loadPlatform } from './platform.js';
+import { NEVER, collectionRows, collectionsHome, isMobile, loadPlatform, setCollectionsHome } from './platform.js';
 import { addRecent, decideStart, forgetRecent, vaultName } from './recents.js';
 import { STARTER_TEXT, STARTER_TITLE } from './starter.js';
 import { RAIL_DEFAULT, addTab, clampRail, notebookOf } from './tabs.js';
 import { INSP_DEFAULT, INSP_MAX, INSP_MIN, SIDE_DEFAULT, SIDE_MAX, SIDE_MIN, useApp, type DocInfo, type Inspector, type Sidebar } from './store.js';
 import { appNow } from './clock.js';
-import { cloneInto, startSync, stopSync } from './sync.js';
+import { cloneCollection, startSync, stopSync } from './sync.js';
 
 let current: Vault | null = null;
 
@@ -318,15 +320,12 @@ function onEvent(vault: Vault, ev: VaultEvent): void {
 
 // ── open ─────────────────────────────────────────────────────────
 
-/** Open the directory at `path`, watch it, and publish its tree. */
+/** Open the collection whose folder is `path` (its database read through the store), watch it, and publish its tree. */
 export async function openVault(path: string): Promise<Vault> {
   stopPlugins();
   stopSync();
   current?.close();
-  // The dialog widens the fs scope to what it picked; a path from anywhere
-  // else (env var, a remembered vault later) is widened here.
-  await invoke('allow_vault', { path });
-  const vault = await Vault.open(tauriFs, path);
+  const vault = await Vault.open(collectionFs(path), path);
   current = vault;
   const state = await vault.loadState();
   const open: Record<string, true> = { '': true };
@@ -357,7 +356,7 @@ export async function openVault(path: string): Promise<Vault> {
   const s0 = useApp.getState();
   useApp.setState({
     open, sidebar, inspector, panes, docs: {}, queue: [], budget: cleanBudget(state.budget), clipDir: cleanClipDir(state.clippings), log: [], session: null, sessionEl: null, selectedCard: null, reveal: null,
-    started: true, sideSheet: false, newVaultIn: null, gone: s0.gone.filter((p) => p !== path), notice: null, fileOver: null, intakeFiles: [], order: vault.order, railFolded, railWidth: clampRail(state.railWidth ?? RAIL_DEFAULT), deckViews: cleanViews(state.decks),
+    started: true, sideSheet: false, namingVault: false, gone: s0.gone.filter((p) => p !== path), notice: null, fileOver: null, intakeFiles: [], order: vault.order, railFolded, railWidth: clampRail(state.railWidth ?? RAIL_DEFAULT), deckViews: cleanViews(state.decks),
     folds: cleanFolds(state.folds), reviews, lensViews: {}, examFilter: null,
     notSame: await vault.loadNotSame().catch(() => []),
   });
@@ -384,7 +383,7 @@ export function closeVault(): void {
   lastDay = null;
   reviews = [];
   if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; savePatch = {}; }
-  if (isMobile()) void listClones().catch(console.error);
+  void listVaults().catch(console.error);
   useApp.setState({ vault: null, sideSheet: false, files: [], tree: [], docs: {}, open: { '': true }, panes: emptyPanes(), queue: [], log: [], session: null, sessionEl: null, selectedCard: null, reveal: null, paletteOpen: false, intakeDir: '', notice: null, fileOver: null, intakeFiles: [], order: {}, railFolded: {}, deckViews: {}, folds: {}, reviews: [], lensViews: {}, examFilter: null });
   setWindowTitle(null);
 }
@@ -403,95 +402,74 @@ function setWindowTitle(name: string | null): void {
   } catch { /* not under Tauri */ }
 }
 
-/** Ask for a directory, then open it. Resolves to null if the dialog was dismissed. */
-export async function pickVault(): Promise<Vault | null> {
+/** `import folder`: ask for a folder; it becomes a collection named after it, and opens. Resolves to null if the dialog was dismissed. */
+export async function importVault(): Promise<Vault | null> {
   const dir = await pickDirectory({ directory: true, recursive: true, multiple: false });
-  return dir ? openVault(dir) : null;
+  return dir ? importVaultFrom(dir) : null;
 }
 
-/** Ask for the folder a new vault goes in; the welcome then takes its name. Resolves to the folder, or null if dismissed. */
-export async function pickVaultParent(): Promise<string | null> {
-  const dir = await pickDirectory({ directory: true, recursive: true, multiple: false });
-  if (dir) useApp.setState({ newVaultIn: dir });
-  return dir;
+/** The folder at `dir` (picked, or dropped on the welcome) imported as a collection and opened. */
+export async function importVaultFrom(dir: string): Promise<Vault> {
+  return openVault(await importCollection(dir));
+}
+
+/** `new collection`: the welcome takes its name. */
+export function nameNewVault(): void {
+  useApp.setState({ namingVault: true });
 }
 
 /**
- * A new vault: the folder `name` in `parent`, with `start here.md` in it (a
- * frozen source on the three loops with one card, enrolled for reading), then
- * opened. Rejects with `already there` when the folder exists.
+ * A new collection called `name`, with `start here.md` in it (a frozen
+ * source on the three loops with one card, enrolled for reading), then
+ * opened. Rejects with `already there` when the name is taken.
  */
-export async function newVault(parent: string, name: string): Promise<Vault> {
+export async function newVault(name: string): Promise<Vault> {
   const clean = cleanName(name);
-  if (!clean) throw new Error('not a folder name');
-  const root = parent.replace(/\/+$/, '');
-  const path = `${root}/${clean}`;
-  await invoke('allow_vault', { path: root });
-  if (await tauriFs.stat(path)) throw new Error('already there');
-  await tauriFs.mkdir(path);
-  const vault = await openVault(path);
+  if (!clean) throw new Error('not a name');
+  const vault = await openVault(await createCollection(clean));
   const doc = await vault.importDoc('', { title: STARTER_TITLE, text: STARTER_TEXT });
   await vault.update(doc, (d) => setField(d, 'read', { due: dayOf(appNow()), ivl: 1, reps: 0, pos: 0 }));
   openNode(doc);
   return vault;
 }
 
-/** Which of `paths` are directories now. Each is let into the fs scope first; they were vaults once. */
-async function probeVaults(paths: string[]): Promise<Set<string>> {
-  const present = new Set<string>();
-  for (const p of paths) {
-    try {
-      await invoke('allow_vault', { path: p });
-      if ((await tauriFs.stat(p))?.isDir) present.add(p);
-    } catch (e) {
-      console.error(p, e);
-    }
-  }
-  return present;
-}
-
 /**
- * On iOS the welcome's rows are the vaults in the app's Documents, at the
- * paths they have now (the container moves between installs, so a path
- * remembered is not one to trust): the recents are rewritten from the
- * folders there, each with the time it was last opened when one is known.
+ * The welcome's rows are the collections there are, at the paths they have
+ * now (the app's data directory moves between installs on iOS, so a path
+ * remembered is not one to trust): the recents are rewritten from them,
+ * each with the time it was last opened when one is known.
  */
-export async function listClones(): Promise<void> {
-  const documents = documentsDir();
-  if (!documents) return;
-  const names = await invoke<string[]>('documents_vaults');
+export async function listVaults(): Promise<void> {
+  const { home, names } = await listCollections();
+  setCollectionsHome(home);
   const s = useApp.getState();
-  s.setRecents(clonedVaults(documents, names, s.recents));
+  s.setRecents(collectionRows(home, names, s.recents));
   useApp.setState({ gone: [] });
 }
 
 /**
- * The welcome's `connect` on iOS: the remote cloned into Documents under
- * its own name (53's clone; the remote and token kept with it), then
- * opened. Rejects with libgit2's words, or `not an empty folder` when a
- * vault of that name is there already.
+ * The welcome's `connect` on iOS: the remote cloned as a collection under
+ * its own name (53's clone into the folder the sync keeps, then imported;
+ * the remote and token kept with it), then opened. Rejects with libgit2's
+ * words, or `already there` when a collection of that name is.
  */
 export async function connectClone(url: string, token: string): Promise<Vault> {
-  const documents = documentsDir();
-  if (!documents) throw new Error('no documents folder');
   if (!url.trim()) throw new Error('no remote');
-  const dest = await cloneInto(url, token, cloneDest(documents, url));
-  return openVault(dest);
+  return openVault(await cloneCollection(url, token));
 }
 
 /**
- * The start decision: the folders of the remembered vaults looked for, the
- * missing ones marked, and the newest reopened when the toggle is on and it
- * is there; otherwise the welcome shows.
+ * The start decision: the collections listed, and the last opened one
+ * reopened when the toggle is on; otherwise the welcome shows. Outside
+ * Tauri there is nothing to list and the welcome shows.
  */
 export async function startFromRecents(): Promise<void> {
-  if (isMobile()) await listClones().catch(console.error);
+  await listVaults().catch(console.error);
   const s = useApp.getState();
-  const present = await probeVaults(s.recents.map((r) => r.path));
-  useApp.setState({ gone: s.recents.map((r) => r.path).filter((p) => !present.has(p)) });
+  const present = new Set(collectionsHome() ? s.recents.map((r) => r.path) : []);
   const start = decideStart(s.recents, s.reopen, present);
-  // on iOS a vault in Documents that was never opened here is listed, not reopened
-  if (start.kind === 'reopen' && !(isMobile() && s.recents[0]?.opened === NEVER)) {
+  // a collection never opened here is listed, not reopened
+  if (start.kind === 'reopen' && s.recents[0]?.opened !== NEVER) {
     try {
       await openVault(start.path);
       return;
@@ -503,14 +481,30 @@ export async function startFromRecents(): Promise<void> {
   useApp.setState({ started: true });
 }
 
+/**
+ * Dev only: what `ILMI_VAULT` names, as a collection to open. A folder of
+ * files is imported afresh under its own name, the last import of that
+ * name replaced, so a smoke always starts from the files; a collection's
+ * own folder is opened as it is.
+ */
+export async function devCollection(path: string): Promise<string> {
+  const { home } = await listCollections();
+  setCollectionsHome(home);
+  const clean = path.replace(/\/+$/, '');
+  if (clean.startsWith(`${home.replace(/\/+$/, '')}/`)) return clean;
+  return importCollection(clean, { replace: true });
+}
+
 let initial: Promise<void> | null = null;
 
 /**
- * What opens at launch. In dev, `ILMI_VAULT=/path npm run tauri dev` opens
- * that vault and `ILMI_SMOKE=…` then runs `smoke.ts`; `ILMI_SMOKE=welcome`
- * runs its smoke before any vault opens, with `ILMI_VAULT` as the vault it
- * seeds. Otherwise the recents decide (`startFromRecents`). Runs once,
- * however many times React's StrictMode mounts the effect.
+ * What opens at launch. In dev, `ILMI_VAULT=/path npm run tauri dev` imports
+ * the folder at that path as a collection (`devCollection`) and opens it,
+ * and `ILMI_SMOKE=…` then runs `smoke.ts`; `ILMI_SMOKE=welcome` runs its
+ * smoke before any collection opens, with `ILMI_VAULT`'s as the one it
+ * expects on the welcome. Otherwise the recents decide
+ * (`startFromRecents`). Runs once, however many times React's StrictMode
+ * mounts the effect.
  */
 export function openInitialVault(): Promise<void> {
   initial ??= (async () => {
@@ -526,13 +520,13 @@ export function openInitialVault(): Promise<void> {
           const { smokeSyncSecond } = await import('./smoke.js');
           await smokeSyncSecond(path2);
         } else if (path2) {
-          await openVault(path2);
+          await openVault(await devCollection(path2));
         }
         return;
       }
       if (mode === 'welcome') {
         const { smokeWelcome } = await import('./smoke.js');
-        await smokeWelcome(path);
+        await smokeWelcome(path ? await devCollection(path) : null);
         return;
       }
       // the iPad's own smoke starts at its welcome: the clone is its first step
@@ -542,10 +536,10 @@ export function openInitialVault(): Promise<void> {
         return;
       }
       if (path) {
-        const vault = await openVault(path);
+        const vault = await openVault(await devCollection(path));
         if (mode) {
-          const { smoke, smokeReader, smokeCards, smokeIntake, smokeQueue, smokeLoop, smokeShots, smokeDeck, smokePri, smokeGrowth, smokeOverload, smokeFaces, smokeCardsText, smokeAnki, smokeMath, smokeEpub, smokeClip, smokeClipping, smokePlugins, smokeDictionary, smokeRender, smokeLive, smokeBlocks, smokeUse, smokeLand, smokeNest, smokeTabs, smokeDecks, smokeTour, smokeNotes, smokeEditing, smokeTree, smokeInsert, smokeTabs2, smokeListCards, smokeArabic, smokeRest, smokeBothWays, smokeNumbers, smokeOpen, smokeExam, smokeSame, smokeSections, smokeBook, smokeBooks, smokeTextSections, smokeZoom, smokeCadence, smokeReadme, smokeSync, smokeNudge } = await import('./smoke.js');
-          const run = { reader: smokeReader, cards: smokeCards, intake: smokeIntake, queue: smokeQueue, loop: smokeLoop, shots: smokeShots, deck: smokeDeck, pri: smokePri, growth: smokeGrowth, overload: smokeOverload, faces: smokeFaces, 'cards-text': smokeCardsText, anki: smokeAnki, math: smokeMath, epub: smokeEpub, clip: smokeClip, clipping: smokeClipping, plugins: smokePlugins, dictionary: smokeDictionary, render: smokeRender, live: smokeLive, blocks: smokeBlocks, use: smokeUse, land: smokeLand, nest: smokeNest, tabs: smokeTabs, decks: smokeDecks, tour: smokeTour, notes: smokeNotes, editing: smokeEditing, tree: smokeTree, insert: smokeInsert, tabs2: smokeTabs2, listcards: smokeListCards, arabic: smokeArabic, rest: smokeRest, bothways: smokeBothWays, numbers: smokeNumbers, open: smokeOpen, exam: smokeExam, same: smokeSame, sections: smokeSections, book: smokeBook, books: smokeBooks, textsections: smokeTextSections, zoom: smokeZoom, cadence: smokeCadence, readme: smokeReadme, sync: smokeSync, nudge: smokeNudge }[mode] ?? smoke;
+          const { smoke, smokeReader, smokeCards, smokeIntake, smokeQueue, smokeLoop, smokeShots, smokeDeck, smokePri, smokeGrowth, smokeOverload, smokeFaces, smokeCardsText, smokeAnki, smokeMath, smokeEpub, smokeClip, smokeClipping, smokePlugins, smokeDictionary, smokeRender, smokeLive, smokeBlocks, smokeUse, smokeLand, smokeNest, smokeTabs, smokeDecks, smokeTour, smokeNotes, smokeEditing, smokeTree, smokeInsert, smokeTabs2, smokeListCards, smokeArabic, smokeRest, smokeBothWays, smokeNumbers, smokeOpen, smokeExam, smokeSame, smokeSections, smokeBook, smokeBooks, smokeTextSections, smokeZoom, smokeCadence, smokeReadme, smokeSync, smokeNudge, smokeStore } = await import('./smoke.js');
+          const run = { reader: smokeReader, cards: smokeCards, intake: smokeIntake, queue: smokeQueue, loop: smokeLoop, shots: smokeShots, deck: smokeDeck, pri: smokePri, growth: smokeGrowth, overload: smokeOverload, faces: smokeFaces, 'cards-text': smokeCardsText, anki: smokeAnki, math: smokeMath, epub: smokeEpub, clip: smokeClip, clipping: smokeClipping, plugins: smokePlugins, dictionary: smokeDictionary, render: smokeRender, live: smokeLive, blocks: smokeBlocks, use: smokeUse, land: smokeLand, nest: smokeNest, tabs: smokeTabs, decks: smokeDecks, tour: smokeTour, notes: smokeNotes, editing: smokeEditing, tree: smokeTree, insert: smokeInsert, tabs2: smokeTabs2, listcards: smokeListCards, arabic: smokeArabic, rest: smokeRest, bothways: smokeBothWays, numbers: smokeNumbers, open: smokeOpen, exam: smokeExam, same: smokeSame, sections: smokeSections, book: smokeBook, books: smokeBooks, textsections: smokeTextSections, zoom: smokeZoom, cadence: smokeCadence, readme: smokeReadme, sync: smokeSync, nudge: smokeNudge, store: smokeStore }[mode] ?? smoke;
           // the smokes before 40 expect the inspector wherever they open it: the room rule is the tour's to check
           if (mode !== 'tour') useApp.setState({ inspForced: true });
           await run(vault);

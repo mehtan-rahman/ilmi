@@ -1,7 +1,9 @@
 // Where the app runs (milestone 55). On the Mac nothing here changes
 // anything. On an iPad the Rust side says `mobile` and names the app's
-// Documents folder: the vaults are cloned into it (the Files app shows it),
-// the welcome is `connect` and the clones, and the shell is one pane, a
+// Documents folder (the Files app shows it; since milestone 59 the
+// collections are databases under the app's data directory there as on the
+// Mac, and Documents holds only a dev run's `smoke.json`),
+// the welcome is `connect` and the collections, and the shell is one pane, a
 // landscape iPad a narrow Mac with the sidebar and the inspector hidden,
 // portrait the same with the sidebar a sheet from the left edge and a
 // book's notes folded. The pure parts are here; `vault.ts` asks the Rust
@@ -13,7 +15,7 @@ import { vaultName, type Recent } from './recents.js';
 
 export interface Platform {
   mobile: boolean;
-  /** The folder the vaults live in on iOS (the app's Documents); null on the desktop. */
+  /** The app's Documents on iOS; null on the desktop. */
   documents: string | null;
 }
 
@@ -52,16 +54,25 @@ export function shapeOf(mobile: boolean, width: number, height: number): Shape {
   return width > height ? 'landscape' : 'portrait';
 }
 
+/** Where the collections live (`collections/` under the app's data directory); null until the Rust side has said. */
+let home: string | null = null;
+
+export const collectionsHome = (): string | null => home;
+
+export function setCollectionsHome(path: string | null): void {
+  home = path ? path.replace(/\/+$/, '') : null;
+}
+
 /**
- * The key a vault's settings are kept under, outside the vault. A path on
- * the desktop. On iOS the app's container moves between installs, so a
- * vault in Documents is known by its path below it (`documents:name`).
+ * The key a collection's settings are kept under, outside it. The app's
+ * data directory moves between installs on iOS, so a collection is known
+ * by its name there (`collection:name`); a path elsewhere is itself.
  */
-export function vaultKey(root: string, documents: string | null = platform.documents): string {
+export function vaultKey(root: string, collections: string | null = home): string {
   const r = root.replace(/\/+$/, '');
-  if (documents) {
-    const d = documents.replace(/\/+$/, '');
-    if (r.startsWith(`${d}/`)) return `documents:${r.slice(d.length + 1)}`;
+  if (collections) {
+    const d = collections.replace(/\/+$/, '');
+    if (r.startsWith(`${d}/`)) return `collection:${r.slice(d.length + 1)}`;
   }
   return r;
 }
@@ -74,22 +85,17 @@ export function nameFromRemote(url: string): string {
   return name || 'collection';
 }
 
-/** Where `connect` clones `url` on iOS: the folder of its name in Documents. */
-export function cloneDest(documents: string, url: string): string {
-  return `${documents.replace(/\/+$/, '')}/${nameFromRemote(url)}`;
-}
-
 /** A row's time for a vault never opened here: before anything was. */
 export const NEVER = new Date(0).toISOString();
 
 /**
- * The welcome's rows on iOS: every vault in Documents (`names`, its
- * folders), at the path it has now, with the time it was last opened when
- * the recents remember one of that name; the last opened first, then by
- * name. Nothing outside Documents is listed.
+ * The welcome's rows: every collection there is (`names`, the folders
+ * under `collections`), at the path it has now, with the time it was last
+ * opened when the recents remember one of that name; the last opened
+ * first, then by name. Nothing outside `collections` is listed.
  */
-export function clonedVaults(documents: string, names: readonly string[], recents: readonly Recent[]): Recent[] {
-  const d = documents.replace(/\/+$/, '');
+export function collectionRows(collections: string, names: readonly string[], recents: readonly Recent[]): Recent[] {
+  const d = collections.replace(/\/+$/, '');
   const opened = new Map<string, string>();
   for (const r of recents) {
     const n = vaultName(r.path);

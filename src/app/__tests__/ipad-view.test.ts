@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 // The iPad's side of the shell (milestone 55), drawn in jsdom: the welcome
-// is `connect` and the vaults in Documents, with no folder to pick or drop;
+// is `connect` and the collections there are, with no folder to pick or drop;
 // `connect` takes a remote and a token and hands them to the clone, whose
 // words show when it fails; the top strip has a toggle for the sidebar; the
 // tab bar offers no split; the palette leaves out what needs a second pane
-// or a folder picker. The Mac's welcome is drawn beside it, unchanged.
+// or a folder picker. The Mac's welcome is drawn beside it: a new
+// collection named, a folder imported (milestone 59).
 
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -26,8 +27,8 @@ vi.mock('../vault.js', async (orig) => {
       return null;
     }),
     openVault: vi.fn(async (path: string) => { calls.push(`open ${path}`); return null; }),
-    pickVault: vi.fn(async () => { calls.push('pick'); return null; }),
-    pickVaultParent: vi.fn(async () => { calls.push('pick-parent'); return null; }),
+    importVault: vi.fn(async () => { calls.push('import'); return null; }),
+    importVaultFrom: vi.fn(async (dir: string) => { calls.push(`import ${dir}`); return null; }),
   };
 });
 
@@ -85,7 +86,7 @@ afterEach(async () => {
 });
 
 describe("the iPad's welcome", () => {
-  it('offers connect alone, and lists the vaults in Documents by name', async () => {
+  it('offers connect alone, and lists the collections by name', async () => {
     await draw(createElement(Welcome));
     expect(qa('.welcome-acts button').map((b) => b.textContent)).toEqual(['connect']);
     expect(q('.palette-foot')?.textContent).toContain('connect');
@@ -137,17 +138,32 @@ describe("the iPad's welcome", () => {
 });
 
 describe("the Mac's welcome", () => {
-  it('is as it was: open and new, the path on each row, a folder dropped', async () => {
+  it('names a new collection or imports a folder, picked or dropped; a row carries no path', async () => {
     setPlatform(DESKTOP);
-    useApp.setState({ mobile: false, recents: [{ path: '/Users/me/notes', name: 'notes', opened: new Date().toISOString() }] });
+    useApp.setState({ mobile: false, recents: [{ path: '/data/collections/notes', name: 'notes', opened: new Date().toISOString() }] });
     await draw(createElement(Welcome));
-    expect(qa('.welcome-acts button').map((b) => b.textContent)).toEqual(['open collection', 'new collection']);
-    expect(q('.welcome-row .psub')?.textContent).toBe('/Users/me/notes');
+    expect(qa('.welcome-acts button').map((b) => b.textContent)).toEqual(['new collection', 'import folder']);
+    expect(q('.welcome-line')?.textContent).toContain('A collection is a database on this device');
+    expect(q('.palette-foot')?.textContent).toContain('import folder');
+    // the path is the app's own folder: the name says which
+    expect(q('.welcome-row .pt')?.textContent).toBe('notes');
+    expect(q('.welcome-row .psub')?.textContent).toBe('');
     expect(dropRoutes.welcome).toBeDefined();
     await key('c');
     expect(q('.welcome-connect')).toBeNull();
+    // o opened a folder as a vault once: nothing now
     await key('o');
-    expect(calls).toEqual(['pick']);
+    expect(calls).toEqual([]);
+    await key('i');
+    expect(calls).toEqual(['import']);
+    // a folder dropped on the window is imported
+    await act(async () => { dropRoutes.welcome!({ type: 'drop', paths: ['/Users/me/old notes/'], position: { x: 0, y: 0 } } as never); });
+    expect(calls).toEqual(['import', 'import /Users/me/old notes']);
+    // n asks for the name here, with no folder to pick first
+    expect(q('.welcome-name input')).toBeNull();
+    await key('n');
+    expect(q('.welcome-name input')).not.toBeNull();
+    expect(q('.welcome-name .psub')?.textContent).toBe('new collection');
   });
 });
 

@@ -4,32 +4,29 @@
 // chapter keep the path resolving; a chapter's removal leaves the book's
 // file. Over a temporary copy of the corpus vault.
 
-import { promises as fsp } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { meta } from '../../format/index.js';
 import { makeBookPdf } from '../../pdf/fixture.js';
-import { nodeFs } from '../node-fs.js';
+import { openDisk, type Disk } from './disk.js';
 import { Vault, normRel, relFrom, type TreeNode } from '../index.js';
 
 const CORPUS = new URL('../../format/__tests__/corpus/vault/', import.meta.url).pathname;
 
-let root: string;
+// over a temporary directory, and again over a collection's store (`disk.ts`, `pdf-book-store.test.ts`)
+let disk: Disk;
 let vault: Vault;
 
 beforeEach(async () => {
-  root = await fsp.mkdtemp(join(tmpdir(), 'ilmi-book-'));
-  await fsp.cp(CORPUS, root, { recursive: true });
-  vault = await Vault.open(nodeFs, root);
+  disk = await openDisk(CORPUS, 'book');
+  vault = await Vault.open(disk.fs, disk.root);
 });
 afterEach(async () => {
   vault.close();
-  await fsp.rm(root, { recursive: true, force: true });
+  await disk.dispose();
 });
 
-const exists = async (rel: string) => !!(await nodeFs.stat(join(root, rel)));
-const readDisk = (rel: string) => fsp.readFile(join(root, rel), 'utf8');
+const exists = (rel: string) => disk.exists(rel);
+const readDisk = (rel: string) => disk.read(rel);
 const kids = (nodes: TreeNode[], path: string): string[] => {
   for (const n of nodes) {
     if (n.path === path) return (n.kind === 'folder' ? n.children : n.children ?? []).map((c) => c.path);

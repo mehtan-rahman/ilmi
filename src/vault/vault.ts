@@ -1,7 +1,9 @@
-// A vault: a directory of Markdown files, watched, read through `parse`, and
-// written through `serialize`. The files are the store of record; this class
-// is a cache with a conflict rule: never overwrite a file whose stamp moved
-// since we read it.
+// A vault: a tree of Markdown documents, watched, read through `parse`, and
+// written through `serialize`, over an `Fs`. In the app that is a
+// collection's store (`store.ts`, milestone 59: rows in a database, paths
+// made from names and parents); in tests and tools it can be a directory.
+// Either is the store of record; this class is a cache with a conflict
+// rule: never overwrite a file whose stamp moved since we read it.
 
 import { PRI_DEFAULT, REVIEWS_DIR, formatReview, mergeReviews, parseReviews, reviewFile, meta, parse, serialize, setField, type Block, type Card, type Diagnostic, type Doc, type NodeType, type Review } from '../format/index.js';
 import { cadence } from '../schedule/growth.js';
@@ -396,6 +398,7 @@ export class Vault {
   }
 
   private async viaTmp(abs: string, write: (tmp: string) => Promise<void>): Promise<void> {
+    if (this.fs.atomic) return write(abs);
     const tmp = `${abs}${TMP_SUFFIX}`;
     await write(tmp);
     try {

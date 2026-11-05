@@ -1,23 +1,41 @@
 # Using ilmi
 
-ilmi is a desktop app over a folder of Markdown files, the *collection*. The
-files are the model: anything you can do in the app leaves one readable line in
-one file, and anything you change in another editor the app picks up. This guide
+ilmi is a desktop app over your notes in Markdown, kept as a *collection*: a
+database of its own on your device, in which every document's text is plain
+Markdown. Anything you can do in the app leaves one readable line in one
+document; a folder of Markdown files is what a collection is made from and
+what it exports to. This guide
 walks the app the way a day goes: open a collection, bring things in, read,
 write, card, and work the day's queue. The keys are listed in `keys.md`, the
 file format in `FORMAT.md`, and plugins in `PLUGINS.md`.
 
 ## Collections
 
-The app opens on the vault it had open last; the welcome (the wordmark, `open
-vault`, `new vault`, and the vaults opened before as rows) shows when there is
-none, when that folder is not where it was, or when `reopen the last vault on
-start` is off in the tweaks. A new vault starts with `start here.md`, one short
-source with a card in it. While a vault is open the File menu has `New
-Collection…` (⌘⇧N), `Open Collection…` (⌘O), `Open Recent` (the vaults opened
-before, by name), `Import…` (⌘⇧O), and `Close Collection` (⌘⇧W), and the
-palette has the same as `open collection…`, `new collection…`, `import…`,
-`close collection`, and the other recent vaults under `vaults`.
+The app opens on the collection it had open last; the welcome (the wordmark,
+`new collection`, `import folder`, and the collections there are as rows)
+shows when there is none or when `reopen the last collection on start` is
+off in the tweaks. A new collection is named on the welcome and starts with
+`start here.md`, one short source with a card in it. `import folder` takes a
+folder of Markdown files (a vault as `FORMAT.md` describes it, or any notes
+you have) and makes a collection named after it, every file in it included;
+a folder dropped on the welcome does the same. The folder is left as it is
+and is not read again.
+
+A collection lives under the app's data directory as one database file, with
+its PDFs and images beside it. To get files back, `export collection ·
+folder` in the palette writes it to a place you choose as a folder of
+Markdown, each document at its path with its schedule lines in it, and
+`export collection · zip` writes the same as one file. An export is what
+another editor, a script, or a backup works on; what is changed there comes
+back by importing that folder as a collection. Nothing else changes the live
+collection.
+
+While a collection is open the File menu has `New Collection…` (⌘⇧N), `New
+Collection from Folder…` (⌘O), `Open Recent` (the other collections, by
+name), `Import…` (⌘⇧O, files into the open collection), and `Close
+Collection` (⌘⇧W), and the palette has the same as `import folder…`, `new
+collection…`, `import…`, `close collection`, and the other collections under
+`vaults`.
 
 ## The tree
 
@@ -301,9 +319,11 @@ and friends still work from the devtools console.
 A collection syncs between devices as a git repository. In the tweaks (⌘,),
 `remote` takes a repository's HTTPS address (a private GitHub repository, a
 bare repository on a machine of yours) and `token` what it asks for;
-`connect` makes the open collection a repository on that remote and brings
-the two level, `clone…` puts the remote's collection into an empty folder
-and opens it. From then on the app commits what it writes after each batch
+`connect` gives the open collection a repository on that remote and brings
+the two level, `clone…` makes a new collection from the remote, named for
+it, and opens it. The repository is a folder the app keeps beside the
+collection's database, written out from it before each commit and read back
+into it after each pull. From then on the app commits what it writes after each batch
 (a session, a save, an import; at most once a minute, the message naming
 what changed), pulls on open, on focus, and every two minutes, and pushes
 after a session, on close, and a minute after a commit. The top strip says
@@ -324,9 +344,11 @@ later pass. A paragraph edited on both keeps both versions, one block after
 the other, under a notice naming the file and the heading; `2 conflicts` in
 the strip opens the files. A file edited on one side and deleted on the
 other keeps the edit; the order chosen for a folder takes the pulled side;
-the review log is unioned. Every merge is one commit in the history. A
-collection that is a repository already is used as it is; `.ilmi/state.json`
-(the window's own state) stays out, the rest travels, PDFs included. The
+the review log is unioned. Every merge is one commit in the history.
+`.ilmi/state.json` (the window's own state) stays out, the rest travels,
+PDFs included. A folder that was a repository before it was imported does
+not bring its history: `connect` the collection to the same remote and the
+two are merged. The
 remote and the token live with the tweaks on each device, never in the
 collection. SSH remotes and large files are not supported.
 
@@ -334,9 +356,9 @@ collection. SSH remotes and large files are not supported.
 
 The same app runs on an iPad, beside the Mac rather than instead of it. Its
 welcome has one button, `connect`: give it the remote and the token and the
-collection is cloned into the app's own folder, which the Files app shows
-under *On My iPad*, so it can be looked at or backed up by hand. The
-collections cloned before are the rows under it. From there sync is the
+remote is cloned as a collection in the app's own data, as on the Mac (the
+Files app no longer shows it; the remote is its copy). The collections there
+are the rows under it. From there sync is the
 Mac's: a card graded on the iPad is on the Mac after its next pull.
 
 Held sideways the iPad is a narrow Mac window: one pane, the sidebar and

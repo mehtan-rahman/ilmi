@@ -5758,11 +5758,33 @@ on their own iPad are free. Signing the Mac build (the six `APPLE_*`
 secrets, README "Installing") rides on the same membership. Where the git
 host is. Whether the phone (56) comes before touch reading (57).
 
+**Decided 2026-11-04** (the user: "I'll join apple developer program
+later. can you decide what's reasonable for 2 and 3?"):
+- **The Developer Program: later.** Until then 56–58 are checked on the
+  simulator alone; nothing is signed, nothing goes on a device.
+- **The git host: a private GitHub repository over HTTPS**, with a
+  fine-grained token that reaches that one repository (Contents: read
+  and write), pasted into Tweaks' `token` on each device. Why: the sync
+  speaks HTTPS only (no SSH, 53); the phone has to reach the host away
+  from the Mac's network, which a bare repository on the Mac cannot
+  give; the user's account is there already. The nudge stays on its
+  default (`https://ntfy.sh`, a topic hashed from the remote). To watch:
+  GitHub refuses a file over 100 MB and there is no LFS (53), so a very
+  large PDF would have to stay out of the vault. A self-hosted Forgejo
+  or Gitea is the same HTTPS to the app, a change of the `remote` row
+  and nothing else, if the notes should leave GitHub. Tests and smokes
+  keep their local bare repositories.
+- **The order: 56, then 57, then 58.** The phone is the smaller piece
+  and the daily one (the day's cards anywhere), and its buttons-first
+  face does the finger-sized work 57 inherits; 57 and 58 are both the
+  Pencil's and run back to back.
+
 Order: 53 → 54 on the Mac, judged as every milestone is; 55 → 58 need
 Xcode and the simulator, checked there the way the window is checked here.
 52 (finish by) waits for the user's word and is not in this order.
 53 and 54 are done and window-checked (2026-11-04); 55 followed the same
-day, checked on a simulated iPad; 56 is next.
+day, checked on a simulated iPad; 56 is next, then 57 and 58 (decided
+above).
 
 ---
 ### [x] 53. Sync by git — the vault as a repository, merged by the format's rules
@@ -6034,6 +6056,39 @@ iPadOS's "Open in ilmi?", so the scheme is registered; the link's
 arrival was not seen (the answer is a tap). The Files app. HTTPS with a
 token on iOS. A pull landing on the iPad (the watcher under iOS): the
 iPad only pushed.
+Checked afterwards, the same day, without a Simulator window (the user:
+"is there no way to do headless"): Apple's UI test runner turns and
+touches a simulated device from `xcodebuild test`. On the iPad Air, over
+the build 55 left installed and `npm run dev` alone on 1420: a tap on
+the welcome's row opened the vault; a drag from the left edge in
+portrait brought the sidebar's sheet and a tap on the scrim sent it
+back; `XCUIDevice.shared.orientation = .landscapeLeft` turned it and
+the shell drew landscape (one pane, the sidebar hidden); an
+`ilmi://new?name=…&content=…` link opened through
+`XCUIDevice.shared.system.open` arrived with no prompt, wrote
+`from-a-link.md` into the clone and opened it (`1 to push`). Seven
+captures looked at. Still not checked: a device, the Files app, HTTPS
+with a token on iOS, a pull landing on the iPad, the keyboard on the
+glass, a tap on the cue over a live selection, scrolling under a
+finger.
+The touch rig (it was in the scratchpad; two files rebuild it): an
+xcodegen `project.yml` with one target of `type: bundle.ui-testing`,
+`platform: iOS`, `GENERATE_INFOPLIST_FILE: YES`, no app target, and a
+scheme that tests it; a Swift `XCTestCase` that takes
+`XCUIApplication(bundleIdentifier: "dev.ilmi.app")`, `launch()`es it,
+finds the renderer's text by accessibility
+(`app.staticTexts["double-major"]`, with `waitForExistence`) or touches
+by `app.coordinate(withNormalizedOffset:)` (`tap()`,
+`press(forDuration:thenDragTo:)` for a swipe or a boxed passage), and
+writes `XCUIScreen.main.screenshot().pngRepresentation` to a host path
+(the simulator's runner can write there; the picture is in the device's
+own upright, so a landscape capture comes out on its side). Run with
+`xcodebuild test -project … -scheme … -destination 'id=<udid>'
+-derivedDataPath …`; an environment variable named `TEST_RUNNER_<NAME>`
+reaches the test as `<NAME>`. About a minute a run, the device booted
+by `simctl boot` first. The strip's sidebar toggle was not found as
+`app.buttons["sidebar"]` straight after a turn (no wait was given; a
+coordinate does).
 Open: rows, tabs, and strips are the Mac's size, small under a finger
 (56, 57). A book's notes folded in portrait unfold only by what reveals
 a section or ⌘\ on a keyboard, until 57's slide-in. The app icon is the
@@ -6050,7 +6105,9 @@ get_app_container booted dev.ilmi.app data)/Documents`, asked for again
 after each redeploy since the container moves; `xcrun simctl terminate`
 then `launch`; read `Library/Application Support/dev.ilmi.app/logs/
 ilmi.log` there for `shot:` lines and capture with `xcrun simctl io
-booted screenshot`; `xcrun simctl shutdown` at the end. The Mac app can
+booted screenshot`; `xcrun simctl shutdown` at the end. What needs a
+finger, a turn, or a link from outside goes through the touch rig above
+(56's Shortcut link, 57's boxed passage). The Mac app can
 run beside it on the same dev server with `--config
 '{"identifier":"dev.ilmi.check","build":{"beforeDevCommand":""}}'`. A
 locked screen stalls the Mac's window but not the simulator.

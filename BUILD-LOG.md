@@ -88,6 +88,27 @@ server with `beforeDevCommand` emptied. A locked screen stalls the Mac's
 webview (timers barely run) but not the simulator. `simctl openurl`
 leaves a system alert up that only a tap or a shutdown clears.
 
+### After the commit: the user's decisions, and a headless touch check
+
+The user, the same day: the Developer Program later; "can you decide
+what's reasonable for 2 and 3? is there no way to do headless or smthn".
+Decided (PLAN, "What the user decides"): the host is a private GitHub
+repository over HTTPS with a fine-grained token for that one repository;
+the order is 56, 57, 58.
+
+Headless: yes. `xcodebuild test` with a UI test bundle (XCUIAutomation
+ships with Xcode 27.2; no Simulator window, no app target, the app taken
+by bundle id) turned and touched the simulated iPad Air. Verified there,
+seven captures looked at: a tap opening the vault from the welcome, the
+edge swipe bringing the sidebar's sheet in portrait and the scrim's tap
+closing it, landscape on the simulator itself, and an `ilmi://new` link
+arriving and writing its document. That takes four lines off the list
+above; a device, the Files app, HTTPS with a token on iOS, a pull
+landing on the iPad, the keyboard on the glass, the cue over a live
+selection, and scrolling stay unverified. The recipe is in PLAN under
+55 ("The touch rig"); the two files were in the scratchpad and are
+rebuilt from it.
+
 Handoff prompt for the next session:
 
 ```
@@ -107,14 +128,18 @@ does not name; a FORMAT change needs a corpus file and a test. 56 is
 checked on a simulated iPhone (Xcode and the iOS runtime are installed;
 if they are gone, say so and stop rather than install them): smoke.json
 in the app's Documents chooses the smoke, captures by xcrun simctl io
-screenshot, the simulator shut down when the run ends. The Mac window
+screenshot, the simulator shut down when the run ends; what needs a
+finger, a turn, or a link from outside (the Shortcut's ilmi:// link)
+goes through the touch rig in PLAN under 55, an xcodebuild UI test with
+no Simulator window. The Mac window
 check still runs from a clean checkout of main over a copy of
 samples/double-major (the dev identifier override from
 docs/development.md); never kill a process on port 1420 that is not
 yours, and stop your own app binary by pid when a run ends; capture
-only by window id. Whether the phone (56) comes before touch reading
-(57) is the user's to say (PLAN, "What the user decides"); if they have
-not said, ask before starting.
+only by window id. The order (56, 57, 58), the git host (a private
+GitHub repository over HTTPS), and the Developer Program (later:
+simulator only, nothing signed) are decided in PLAN, "What the user
+decides"; do not ask again.
 ```
 
 ---

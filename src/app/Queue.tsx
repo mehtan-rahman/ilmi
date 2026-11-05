@@ -28,6 +28,14 @@ interface Props {
   active: boolean;
 }
 
+/**
+ * A list up to `QUEUE_WHOLE` rows is drawn whole. A longer one (a
+ * collection can hold more than a page should) draws `QUEUE_ROWS` at
+ * first and as many more each time its end is asked for.
+ */
+export const QUEUE_WHOLE = 1500;
+export const QUEUE_ROWS = 300;
+
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 const inField = (t: EventTarget | null) => {
@@ -85,6 +93,7 @@ export function Queue({ scope, active }: Props) {
   const by = useApp((s) => (s.queueTitles ? 'title' : 'path'));
   const examFilter = useApp((s) => s.examFilter);
   const [cursor, setCursor] = useState(0);
+  const [rows, setRows] = useState(QUEUE_ROWS);
   const now = appNow();
   const scoped = all.filter((i) => inScope(i, scope, now));
   // the exams ahead the scope's elements are studied toward, soonest first; the queue can be narrowed to one
@@ -105,6 +114,9 @@ export function Queue({ scope, active }: Props) {
   useEffect(() => {
     if (cursor > items.length - 1) setCursor(Math.max(0, items.length - 1));
   }, [items.length, cursor]);
+
+  // the rows drawn: the first page, on past the cursor and the fold as they move
+  const drawn = items.length <= QUEUE_WHOLE ? items.length : Math.min(items.length, Math.max(rows, cursor + 40, foldAt < items.length ? foldAt + 40 : 0));
 
   // the cards query opens the card where it lives; the other scopes review it
   const open = (item: QueueItem, opts: OpenOpts = {}) => {
@@ -166,7 +178,7 @@ export function Queue({ scope, active }: Props) {
         <div className="empty">{QUEUE_EMPTY[scope]}</div>
       ) : (
         <ol className="qlist">
-          {items.map((item, i) => {
+          {items.slice(0, drawn).map((item, i) => {
             const ref = standing(item, now, docs[item.path]?.pages?.first);
             const ivl = item.kind === 'card' ? intervalLabel(item) : '';
             const row = (
@@ -208,6 +220,11 @@ export function Queue({ scope, active }: Props) {
               </Fragment>
             );
           })}
+          {drawn < items.length && (
+            <li className="fold" data-below={drawn >= foldAt ? '1' : '0'} onClick={() => setRows(drawn + QUEUE_ROWS)}>
+              <span className="fold-n">{items.length - drawn} more</span>
+            </li>
+          )}
         </ol>
       )}
     </div>

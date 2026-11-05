@@ -200,6 +200,10 @@
 // `start here.md`, switches back through the palette's `vaults` group,
 // turns the toggle on, and reloads the page; the second run (a
 // sessionStorage marker) only checks that the vault opened itself.
+// `ILMI_SMOKE=size` (`smokeSize`, milestone 60) runs from the welcome: the
+// folder imported 15 and 152 times over (`ILMI_SIZE`) into collections of
+// their own, each opened and a card graded, the times and the web content
+// process's memory printed (see the function).
 // `ILMI_SMOKE=ipad` (`smokeIpad`, milestone 55) starts at the iPad's
 // welcome, on a simulated iPad from `smoke.json` in the app's Documents
 // (`{"mode": "ipad", "remote": "/path/to/bare.git"}`) or in the Mac's
@@ -8853,7 +8857,11 @@ export async function smokeIpad(): Promise<void> {
 // every file must be in the export with the same bytes, and a shell `diff
 // -r` can say so again. Then the open collection: its folder on disk holds
 // a database and blobs and no Markdown; a write, an image, a rename and a
-// move are read back from the database through a store opened afresh; the
+// move are read back from the database through a store opened afresh;
+// milestone 60: a card's schedule lines are rows and not in the stored
+// text, a grade changes a row and the log and leaves the text, the mirror
+// (`<ILMI_VAULT>-mirror/`) holds what an export holds and follows a write,
+// and the day's dated export is made once and the oldest of eight goes; the
 // palette has the two export commands and `import folder…`; closed, the
 // welcome lists it with `new collection` and `import folder`, and its row
 // opens it again as it was left.
@@ -8925,7 +8933,7 @@ export async function smokeStore(vault: Vault): Promise<void> {
     // ── on disk a collection is a database and blobs ──
     await invoke('allow_vault', { path: vault.root });
     const top = (await tauriFs.readDir(vault.root)).map((e) => e.name).sort();
-    must(top.includes('collection.db') && top.includes('blobs') && top.every((n) => n.startsWith('collection.db') || n === 'blobs'), `its folder holds ${top.join(', ')}`);
+    must(top.includes('collection.db') && top.includes('blobs') && top.every((n) => n.startsWith('collection.db') || n === 'blobs' || n === 'exports'), `its folder holds ${top.join(', ')}`);
     const blobs = await filesOf(tauriFs, `${vault.root}/blobs`);
     const binaries = source.filter((p) => !p.endsWith('.md') && !p.split('/').some((seg) => seg.startsWith('.')));
     must(blobs.length > 0 && blobs.length <= binaries.length && blobs.every((p) => /^[0-9a-f]{2}\/[0-9a-f]{64}$/.test(p)), `no Markdown file on disk: ${blobs.length} blobs named by their hash for the folder's ${binaries.length} PDFs and images`);
@@ -8952,6 +8960,80 @@ export async function smokeStore(vault: Vault): Promise<void> {
     openNode(moved);
     await until(() => q('.doc-view'));
     await shot('store-moved');
+
+    // ── state in rows (milestone 60): a grade is a schedule's row and a line of the log, not the document's text ──
+    const { gradeCard } = await import('./grading.js');
+    const { isDue } = await import('../schedule/index.js');
+    const { refreshQueue } = await import('./vault.js');
+    refreshQueue();
+    const due = useApp.getState().queue.find((i): i is CardItem => i.kind === 'card' && isDue(i, new Date()) && i.id !== undefined && !!i.sched?.due);
+    if (!due) throw new Error('no reviewed card is due in the folder');
+    const dueRow = (await fresh().rowAt(vault.abs(due.path)))!;
+    const stored = await fresh().store.doc(dueRow.id);
+    const fileBefore = await fresh().readText(vault.abs(due.path));
+    must(/^\s*<!-- sr /m.test(fileBefore) && !/^\s*<!-- sr /m.test(stored.front + stored.text) && stored.state.some((x) => x.kind === 'card' && x.item === due.id), `${due.path}: its schedule lines are rows by card id, not in the text the database holds`);
+    const logBefore = await fresh().reviewCount();
+    await gradeCard(due, 3, new Date());
+    const graded = await fresh().store.doc(dueRow.id);
+    const fileAfter = await fresh().readText(vault.abs(due.path));
+    const [la, lb] = [fileBefore.split('\n'), fileAfter.split('\n')];
+    const changed = la.length === lb.length ? la.flatMap((l, i) => (l === lb[i] ? [] : [i])) : [];
+    must(graded.front + graded.text === stored.front + stored.text && changed.length === 1 && /^\s*<!-- sr /.test(lb[changed[0]!] ?? ''), 'a grade left the stored text as it was; the file read back differs by the one schedule line');
+    must((await fresh().reviewCount()) === logBefore + 1 && useApp.getState().reviews.length === logBefore + 1, 'and added one line to the review log');
+    const item = useApp.getState().queue.find((i) => i.kind === 'card' && i.path === due.path && i.id === due.id && (i.dir ?? 'f') === (due.dir ?? 'f') && JSON.stringify(i.group ?? null) === JSON.stringify(due.group ?? null));
+    must(item && !isDue(item, new Date()), 'the queue has the card with its new schedule');
+    must((await fresh().digests()).size === vault.documents().length, `the index holds every document (${vault.documents().length})`);
+
+    // ── the mirror: a folder kept as the collection is; a write follows it ──
+    const { mirrorTo, mirrorOff, mirrorNow, keepDated, exportsDir, EXPORTS_KEPT } = await import('./keep.js');
+    const mirrorParent = `${src}-mirror`;
+    await invoke('allow_vault', { path: mirrorParent });
+    await tauriFs.remove(mirrorParent);
+    await tauriFs.mkdir(mirrorParent);
+    const mirror = await mirrorTo(vault, mirrorParent);
+    must(mirror === `${mirrorParent}/${name}` && useApp.getState().mirror === mirror, `the mirror is ${mirror}`);
+    const wantOut = `${src}-mirror-want`;
+    await invoke('allow_vault', { path: wantOut });
+    await tauriFs.remove(wantOut);
+    await exportToFolder(vault.fs, vault.root, wantOut);
+    const mirrorDiff = async (): Promise<string[]> => {
+      const want = await filesOf(diskFs, wantOut);
+      const have = (await filesOf(diskFs, mirror)).filter((p) => p !== '.ilmi-mirror.json');
+      if (JSON.stringify(want) !== JSON.stringify(have)) return ['the paths'];
+      const out: string[] = [];
+      for (const p of want) if (!same(await diskFs.readBytes(`${wantOut}/${p}`), await diskFs.readBytes(`${mirror}/${p}`))) out.push(p);
+      return out;
+    };
+    // `.ilmi/state.json` moves with the window (a tab, a width): it is left out of the comparison
+    const steady = (paths: string[]) => paths.filter((p) => p !== '.ilmi/state.json');
+    must(steady(await mirrorDiff()).length === 0, 'it holds what an export holds, file for file');
+    await vault.update(moved, (doc) => { doc.blocks.push({ kind: 'paragraph', text: 'followed by the mirror' }); });
+    let followed = false;
+    for (let i = 0; i < 100 && !followed; i++) {
+      await sleep(100);
+      followed = (await diskFs.readText(`${mirror}/${moved}`).catch(() => '')).includes('followed by the mirror');
+    }
+    must(followed, 'a write to the collection reached the mirror on its own');
+    useApp.setState({ tweaksOpen: true });
+    const mirrorRow = await until(() => qa('.tweaks .tw-row').find((r) => r.querySelector('.tw-lbl')?.textContent?.startsWith('mirror')));
+    must(mirrorRow.querySelector('.tw-val')?.textContent === `${mirrorParent.slice(mirrorParent.lastIndexOf('/') + 1)}/${name}` && Array.from(mirrorRow.querySelectorAll('button')).map((b) => b.textContent).join(' ') === 'choose… off', `Tweaks has the mirror's row: ${mirrorRow.textContent}`);
+    await shot('store-mirror');
+    mirrorOff(vault);
+    await sleep(200);
+    must(useApp.getState().mirror === '' && (await until(() => qa('.tweaks .tw-row').find((r) => r.querySelector('.tw-lbl')?.textContent?.startsWith('mirror')))).querySelector('.tw-val')?.textContent === 'off' && (await mirrorNow()).length === 0, 'turned off, the row says off and the folder is left as it is');
+    useApp.setState({ tweaksOpen: false });
+
+    // ── the dated exports: one a day beside the database, the last seven kept ──
+    const dated = exportsDir(vault.root);
+    await invoke('allow_vault', { path: dated });
+    await tauriFs.remove(dated);
+    await tauriFs.mkdir(dated);
+    for (let d = 1; d <= EXPORTS_KEPT; d++) await tauriFs.writeText(`${dated}/2026-10-0${d}.zip`, 'an older day');
+    const today = await keepDated(vault);
+    const zips = (await tauriFs.readDir(dated)).map((e) => e.name).sort();
+    must(today && zips.length === EXPORTS_KEPT && zips.at(-1) === today.slice(today.lastIndexOf('/') + 1) && !zips.includes('2026-10-01.zip') && /^\d{4}-\d{2}-\d{2}\.zip$/.test(zips.at(-1)!), `today's export is ${today?.slice(today.lastIndexOf('/') + 1)}; ${zips.length} kept, the oldest gone`);
+    must((await keepDated(vault)) === null && (await tauriFs.stat(today!))!.size > 100_000, 'made once a day, and it is the collection, not a stub');
+    log(`dated: ${today}`);
 
     // ── the palette: export, and a folder in ──
     useApp.setState({ paletteOpen: true });
@@ -8985,6 +9067,136 @@ export async function smokeStore(vault: Vault): Promise<void> {
     must(activeTab(useApp.getState().panes)?.id === moved, 'and the tab it was left on');
     await shot('store-reopened');
     log(`done; collection ${vault.root}, export ${out}, zip ${zip}`);
+  } catch (e) {
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+// ILMI_SMOKE=size (milestone 60): the sample imported many times over into
+// collections of their own (`ILMI_SIZE`, copies, `15,152` by default: about
+// 11,000 and 115,000 cards), each opened, a card graded, and the times and
+// the web content process's memory printed. Each copy is the folder
+// `ILMI_VAULT` names under `cNNN/`, through the same import a person's
+// folder takes; `.ilmi/` (the order, the review log) goes in once. Runs
+// from the welcome: no collection is opened before the first. With
+// `ILMI_SIZE_KEEP=1` a collection the run before made is opened as it is:
+// the memory read then is a page's that has only opened it.
+export async function smokeSize(src: string | null): Promise<void> {
+  const log = (s: string) => void info(`smoke size: ${s}`);
+  const shot = async (name: string, ms = 2500) => { await sleep(800); log(`shot: ${name}`); await sleep(ms); };
+  const must = (ok: unknown, what: string) => { if (!ok) throw new Error(what); log(`ok: ${what}`); };
+  const ms = (n: number) => `${Math.round(n)} ms`;
+  const mb = (n: number | null) => (n === null ? 'not measured' : `${Math.round(n / 1e6)} MB`);
+  // what the page holds once WebKit has been told to collect (`dev_web_memory`), and the most the process has held
+  const memory = async (): Promise<{ now: number; peak: number } | null> => {
+    await sleep(2000);
+    const got = await invoke<[number, number] | null>('dev_web_memory', { collect: true });
+    return got ? { now: got[0], peak: got[1] } : null;
+  };
+  try {
+    if (!src) throw new Error('ILMI_VAULT names the folder to import');
+    const { collectionFs, diskFs } = await import('./collections.js');
+    const { createCollection, deleteCollection, listCollections } = await import('../vault/tauri-store.js');
+    const { importFolder } = await import('../vault/index.js');
+    const { gradeCard } = await import('./grading.js');
+    const { closeVault, refreshQueue } = await import('./vault.js');
+    const { isDue } = await import('../schedule/index.js');
+    const { setCollectionsHome } = await import('./platform.js');
+    const from = src.replace(/\/+$/, '');
+    await invoke('allow_vault', { path: from });
+    const sizes = ((await invoke<string | null>('dev_env', { name: 'ILMI_SIZE' })) ?? '15,152').split(',').map((x) => Number(x.trim())).filter((n) => Number.isInteger(n) && n > 0);
+    useApp.setState({ started: true });
+    useApp.getState().setTheme('light');
+    await sleep(1500);
+    const empty = await memory();
+    log(`memory with no collection open: ${mb(empty?.now ?? null)}`);
+    // the folder without `.ilmi/`: what each copy is
+    const copyFs: typeof diskFs = { ...diskFs, readDir: async (path) => (await diskFs.readDir(path)).filter((e) => path !== from || e.name !== '.ilmi') };
+    for (const n of sizes) {
+      const name = `size-${n}`;
+      const { home, names } = await listCollections();
+      setCollectionsHome(home);
+      // `ILMI_SIZE_KEEP=1` opens the collection a run before left, so the page that opens it has imported nothing
+      const kept = names.includes(name) && !!(await invoke<string | null>('dev_env', { name: 'ILMI_SIZE_KEEP' }));
+      let root = `${home}/${name}`;
+      if (kept) log(`${name}: kept from the run before`);
+      else {
+        if (names.includes(name)) await deleteCollection(root);
+        root = await createCollection(name);
+        const fs = collectionFs(root);
+        const t0 = performance.now();
+        let files = 0;
+        if ((await diskFs.stat(`${from}/.ilmi`))?.isDir) {
+          await fs.mkdir(`${root}/.ilmi`);
+          files += await importFolder(diskFs, `${from}/.ilmi`, fs, `${root}/.ilmi`);
+        }
+        for (let c = 1; c <= n; c++) {
+          const dir = `${root}/c${String(c).padStart(3, '0')}`;
+          await fs.mkdir(dir);
+          files += await importFolder(copyFs, from, fs, dir);
+        }
+        const imported = performance.now() - t0;
+        log(`${name}: ${n} copies, ${files} files imported in ${ms(imported)}`);
+      }
+
+      // two frames on, or half a second when the window is covered and is given none
+      const frame = () => Promise.race([new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r()))), sleep(500)]);
+      let seen = document.visibilityState === 'visible';
+      const watch = () => { if (document.visibilityState !== 'visible') seen = false; };
+      document.addEventListener('visibilitychange', watch);
+      const t1 = performance.now();
+      const vault = await openVault(root);
+      const opened = performance.now() - t1;
+      // the day's page is drawn, not every row of it
+      await until(() => document.querySelector('.qlist li'), 120000);
+      await frame();
+      const drawn = performance.now() - t1;
+      const s = useApp.getState();
+      const docs = Object.keys(s.docs).length;
+      const cards = Object.values(s.docs).reduce((sum, d) => sum + d.cards, 0);
+      must(docs === vault.documents().length && docs > 0, `${name}: opened, ${docs} documents and ${cards} cards known, ${s.queue.length} in the queue`);
+      const rows = document.querySelectorAll('.qlist li').length;
+      await sleep(2000);
+      const now = new Date();
+      const item = useApp.getState().queue.find((i): i is CardItem => i.kind === 'card' && isDue(i, now) && i.id !== undefined);
+      if (!item) throw new Error(`${name}: no card is due`);
+      const lines = useApp.getState().reviews.length;
+      const t4 = performance.now();
+      await gradeCard(item, 3, now);
+      const graded = performance.now() - t4;
+      await frame();
+      const redrawn = performance.now() - t4;
+      const after = useApp.getState().queue.find((i) => i.kind === 'card' && i.path === item.path && i.id === item.id && (i.dir ?? 'f') === (item.dir ?? 'f') && JSON.stringify(i.group ?? null) === JSON.stringify(item.group ?? null));
+      must(after && after.kind === 'card' && after.sched?.last !== item.sched?.last && !isDue(after, now), `${name}: a card of ${item.path} graded; the queue has it with its new schedule`);
+      must(useApp.getState().reviews.length === lines + 1 && (await collectionFs(root).reviewCount()) === lines + 1, `${name}: and the log has its line`);
+      // weighed as the app left it: nothing else has been read into the page
+      const held = await memory();
+      // each part alone, once the window is at rest
+      const t2 = performance.now();
+      const again = await collectionFs(root).digests();
+      const index = performance.now() - t2;
+      again.clear();
+      const t3 = performance.now();
+      refreshQueue();
+      const rebuilt = performance.now() - t3;
+      // a covered window's page is slowed by the system: its times are not the app's
+      if (document.visibilityState !== 'visible' || !seen) log(`${name}: the window was covered during this run; the times below are a throttled page's`);
+      log(`${name}: open ${ms(opened)}, the day's page drawn at ${ms(drawn)} (the index read alone ${ms(index)}) · grade ${ms(graded)}, drawn again at ${ms(redrawn)} (a queue rebuild alone ${ms(rebuilt)}) · memory ${mb(held?.now ?? null)}${held && empty ? `, ${mb(held.now - empty.now)} over none open; ${mb(held.peak)} at its most` : ''} · ${rows} rows drawn of ${useApp.getState().queue.filter((i) => isDue(i, new Date())).length} due`);
+      // `ILMI_SIZE_PARSED=1`: every document read and parsed into the vault's cache as well, which is what opening
+      // did before the index (milestone 59), weighed in the same page for a like-for-like figure
+      if (await invoke<string | null>('dev_env', { name: 'ILMI_SIZE_PARSED' })) {
+        const t5 = performance.now();
+        for (const path of vault.documents()) await vault.read(path);
+        const parsed = performance.now() - t5;
+        const all = await memory();
+        log(`${name}: with every document read and parsed too, as an open was before the index: ${ms(parsed)} more, memory ${mb(all?.now ?? null)}${all && empty ? `, ${mb(all.now - empty.now)} over none open` : ''}`);
+      }
+      document.removeEventListener('visibilitychange', watch);
+      await shot(name);
+      closeVault();
+      await sleep(1500);
+    }
+    log('done');
   } catch (e) {
     log(`failed: ${e instanceof Error ? e.message : String(e)}`);
   }

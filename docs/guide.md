@@ -30,6 +30,19 @@ another editor, a script, or a backup works on; what is changed there comes
 back by importing that folder as a collection. Nothing else changes the live
 collection.
 
+Two copies are kept without asking for an export. `mirror` in the tweaks
+(off until you choose a folder; the Mac's) keeps a folder of the
+collection's name inside the one you pick as the collection is, a moment
+after each change, for other tools to read: the same files an export
+writes. It goes one way; a file changed there is written over by the next
+change to its document, and a file of your own put there is left alone. A
+folder that already holds something else is never taken: the mirror goes
+beside it under the name with a number. And once a day, when the collection
+is opened or the day turns, the whole collection is written as a zip under
+`exports/` beside its database (in the app's data directory), the last
+seven days kept: what to import if the database is ever damaged. Each is a
+full export, PDFs included, so seven of them take seven times the room.
+
 While a collection is open the File menu has `New Collection…` (⌘⇧N), `New
 Collection from Folder…` (⌘O), `Open Recent` (the other collections, by
 name), `Import…` (⌘⇧O, files into the open collection), and `Close

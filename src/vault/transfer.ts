@@ -6,6 +6,7 @@
 
 import type { Fs } from './fs.js';
 import { join } from './fs.js';
+import { stampOf } from './lift.js';
 
 /** What never goes in or out: a repository's own folder, the Finder's file, a half-written file. */
 export const skipped = (name: string): boolean => name === '.git' || name === '.DS_Store' || name.endsWith('.ilmi-tmp');
@@ -108,3 +109,93 @@ export async function takeFiles(from: Fs, dir: string, to: Fs, root: string, pat
     }
   }
 }
+
+// ── the mirror (milestone 60) ────────────────────────────────────
+//
+// A folder kept as the collection is, one way, for other tools to read.
+// Unlike `mirrorFolder` (the git sync's, over a folder that is the app's
+// own), it may sit among a person's files: it removes only what it wrote.
+
+/** What the mirror wrote, in its folder: each file's path and the stamp it was written at. */
+export const MIRROR_LIST = '.ilmi-mirror.json';
+
+type Listed = Record<string, string>;
+
+async function readList(to: Fs, dir: string): Promise<Listed | null> {
+  if (!(await to.stat(join(dir, MIRROR_LIST)))) return null;
+  try {
+    const o = JSON.parse(await to.readText(join(dir, MIRROR_LIST))) as { files?: unknown };
+    const out: Listed = {};
+    if (o.files && typeof o.files === 'object') for (const [k, v] of Object.entries(o.files as Record<string, unknown>)) if (typeof v === 'string') out[k] = v;
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * One pass: every file of the collection `from` (rooted at `root`) that
+ * the folder `dir` on `to` does not hold as the list says is written, and
+ * every file the list names that the collection no longer has is removed
+ * (a directory that leaves empty with it). A row's stamp says whether it
+ * changed, so a file that did not is not read; a view under `.ilmi/` has
+ * none and is compared by what it holds. Resolves to the paths written or
+ * removed.
+ */
+export async function mirrorPass(from: Fs, root: string, to: Fs, dir: string): Promise<string[]> {
+  const was = (await readList(to, dir)) ?? {};
+  const now: Listed = {};
+  const changed: string[] = [];
+  await to.mkdir(dir);
+  const visit = async (rel: string): Promise<void> => {
+    for (const e of (await from.readDir(join(root, rel))).filter((x) => !skipped(x.name))) {
+      const path = rel ? `${rel}/${e.name}` : e.name;
+      if (e.isDir) { await visit(path); continue; }
+      if (!e.isFile) continue;
+      const st = await from.stat(join(root, path));
+      let bytes: Uint8Array | null = null;
+      let stamp = st && st.mtimeMs ? `${st.mtimeMs}.${st.size}` : '';
+      if (!stamp) {
+        bytes = await from.readBytes(join(root, path));
+        stamp = `=${stampOf(new TextDecoder().decode(bytes))}`;
+      }
+      now[path] = stamp;
+      if (was[path] === stamp) continue;
+      const at = path.lastIndexOf('/');
+      if (at > 0) await to.mkdir(join(dir, path.slice(0, at)));
+      await to.writeBytes(join(dir, path), bytes ?? (await from.readBytes(join(root, path))));
+      changed.push(path);
+    }
+  };
+  await visit('');
+  for (const path of Object.keys(was)) {
+    if (path in now) continue;
+    await to.remove(join(dir, path));
+    changed.push(path);
+    // the directories it leaves empty go with it, up to the mirror's own
+    for (let at = path.lastIndexOf('/'); at > 0; at = path.lastIndexOf('/', at - 1)) {
+      const parent = join(dir, path.slice(0, at));
+      if (!(await to.stat(parent))?.isDir || (await to.readDir(parent)).length) break;
+      await to.remove(parent);
+    }
+  }
+  if (changed.length || JSON.stringify(was) !== JSON.stringify(now)) await to.writeText(join(dir, MIRROR_LIST), `${JSON.stringify({ files: now }, null, 2)}\n`);
+  return changed;
+}
+
+/**
+ * Where the collection `name` is mirrored inside the folder `parent`: the
+ * folder of its name when that is not there, is empty, or is a mirror
+ * already; else `name 2`, `name 3`. A folder that holds something the
+ * mirror did not write is never taken.
+ */
+export async function mirrorDirIn(to: Fs, parent: string, name: string): Promise<string> {
+  for (let n = 1; ; n++) {
+    const dir = join(parent.replace(/\/+$/, ''), n === 1 ? name : `${name} ${n}`);
+    const st = await to.stat(dir);
+    if (!st) return dir;
+    if (!st.isDir) continue;
+    if ((await readList(to, dir)) !== null || !(await to.readDir(dir)).filter((e) => e.name !== '.DS_Store').length) return dir;
+  }
+}
+

@@ -298,6 +298,8 @@ export interface AppState {
   sync: SyncState;
   /** The open vault's remote and token, kept with the tweaks (`sync.ts`); empty when none. */
   syncSettings: SyncSettings;
+  /** The folder the open collection is mirrored to (`keep.ts`); empty, none. */
+  mirror: string;
   session: Session | null;
   /** What the session is on now, for its tab and the inspector. */
   sessionEl: { kind: El; label: string; item: QueueItem } | null;
@@ -381,6 +383,7 @@ export const useApp = create<AppState>((set, get) => ({
   lensViews: {},
   sync: { on: false, repo: false, busy: null, offline: false, toPush: 0, conflicts: [], at: null },
   syncSettings: { url: '', token: '', server: NUDGE_SERVER },
+  mirror: '',
   session: null,
   sessionEl: null,
   setTheme: (theme) => { set({ theme }); showTheme(theme); persist(get()); },

@@ -6,6 +6,15 @@ folder`) and what it writes out (`export collection`, as a folder or a zip): a
 document's text in the database is the text this document describes, byte for
 byte, and an export is a vault that any text editor, and any earlier ilmi,
 reads. A file changed in a text editor comes back by importing its folder.
+Since milestone 60 the database keeps what is state apart from the text: a
+card's `sr` lines, a section's `read` line, the attributes of `read` and
+`write` are rows keyed by the card's `^id`, the heading, or the field, and
+the order, the review log and the pairs said not the same (§1, `.ilmi/`) are
+tables; a grade writes a row and leaves the document's text alone. None of
+that changes this document: what the app reads of a document, and what an
+export writes, is the file below with its lines in their places, put
+together through the same parser and serializer; a file never touched since
+it was imported comes out byte for byte, one written by hand included.
 This document is the contract for both: a document's text, and what a vault
 holds. `src/format/` implements it; the round-trip
 tests in `src/format/__tests__/` hold it to the fixed point

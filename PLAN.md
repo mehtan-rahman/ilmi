@@ -24,8 +24,9 @@ to BUILD-LOG.md with a fresh handoff prompt, and commit.
   reads and an export writes. Since milestone 59 a collection is a database
   under the app's data directory (`src-tauri/src/store.rs`, reached only
   through `src/vault/store.ts`); its documents' text is Markdown as
-  `FORMAT.md` has it, and an exported collection is a vault any editor
-  reads. Change the format only with a corpus file and a test that shows
+  `FORMAT.md` has it (since milestone 60 stored without its state, which
+  is in tables and put back by a read and by an export), and an exported
+  collection is a vault any editor reads. Change the format only with a corpus file and a test that shows
   why.
 - Tooling: node lives in `/opt/homebrew/bin`, cargo in `~/.cargo/bin`; prefix commands with
   `export PATH=$HOME/.cargo/bin:/opt/homebrew/bin:$PATH`. `npm test` must be green before a
@@ -6454,7 +6455,148 @@ app (`store_delete` is used by a failed import and by dev runs).
 database and `ILMI_SMOKE=tour` passes on it; an export of it equals the
 sample; nothing reads a Markdown file from disk while the app runs.
 
-### [ ] 60. State in rows — schedules, the log, the queue by query
+### [x] 60. State in rows — schedules, the log, the queue by query
+Done 2026-11-05, commit `HASH60`.
+Notes: **The shape chosen.** `Vault` is still unchanged over `Fs`, and the
+app above still reads and writes the file FORMAT.md describes. What
+changed is under `storeFs` (`src/vault/store.ts`): a write of a document
+takes the file apart (`src/vault/lift.ts`, `decompose`) and a read puts it
+together (`compose`), both through the format's own parser and
+serializer. The row's `text` holds the document without its state; the
+state is rows of `schedules (doc, kind, item, key, due, last, attrs)`:
+a card's lines by its `^id` (`key` empty, `r`, `cN`), a section's line by
+its heading's text (a repeat `text\n2`), the document's `read` and `write`
+(the key stays in the front matter, bare, where it was, so enrolled is
+still the text's to say). `attrs` is the line as the model holds it, as
+JSON; `due` and `last` are copied out beside it for 61's merges and for
+queries nothing asks yet. The three app files that were rows of text are
+views of tables now, read and written by the vault as the files they
+were: `.ilmi/order.json` is `documents.place`, `.ilmi/reviews/*.jsonl` is
+`reviews (seq, file, at, doc, card, key, g, line)` (every `.jsonl` there,
+a sync's conflict copy too; a file reads back as its lines in the order
+written), `.ilmi/same.json` is `not_same (pair)`. `.ilmi/state.json` and
+the plugins stay rows of text. **Byte for byte, how.** `decompose` checks
+that its own text and rows compose to the canonical form
+(`serialize(parse(x))`); when they would not (two cards under one id), it
+lifts nothing and keeps the text whole, which still reads. A file that
+was not canonical when it came in (written by hand) is kept beside in
+`originals (key, text, stamp)` with a stamp of what it composed to then,
+and is what a read gives while the document still composes to the same;
+the first change to its text or state drops it, which is when the app's
+first write normalized such a file before. The same table keeps an
+`order.json`, a `same.json` or a review file as it came in (the sample's
+`order.json` is one: its arrays are on one line each). So an untouched
+file is exported as it was imported, the corpus's hand-mangled files
+included (`src/vault/__tests__/store.test.ts`, `state in rows`), and the
+sample needs no original but that one. **A grade.** Still
+`vault.update(path, gradeItem)`: the store finds the text unchanged and
+writes the schedule's row, the document's index, and, through
+`StoreFs.logWith`, the grade's line of the log, in one transaction
+(`Store.put` with a `Lift`; the Rust test counts the changes to show the
+text is not written). Two things are not one transaction: a linked card's
+partner (its own write after), and the first grade of a card with no
+`^id`, which writes the id into the text as FORMAT.md §6.1 has it.
+**The index.** `digests (doc, data)`: per document, its fields, headings
+and cards whole and every other block as a mark (`…`, or nothing when
+empty; the three blocks a queue row quotes keep 200 characters), written
+in the transaction that writes the document. `openVault` reads the
+digests in pages (`StoreFs.digests`, the JSON passed through Rust unread)
+and builds everything from them: `bodies` in `src/app/vault.ts` is now
+digests, and `docItems`, a deck's rows, the numbers, the counts, the
+same-fact finder and the links read a digest as they read a document, so
+none of them changed. After that the store tells the app of each write
+with the document's digest (`onIndex`), and the queue keeps each
+document's items between builds (`derivedOf`): a change re-derives one
+document, and what runs over everything is the day's order (exams,
+links, allowances, the sort), with each item's draw for the day kept.
+**Said plainly: the queue is not an SQL query.** The day's order is a
+seeded draw, allowances counted where they are set, exams and links;
+none of it is expressible as `WHERE due <= ?` without rewriting
+`schedule/` in SQL or Rust. What was built is the other half of the
+bullet: nothing is parsed to open, and one document is parsed to grade.
+A queue that loads only what is due (the heap then follows the day, not
+the collection) is the next step and is not done; `schedules.due` is
+there for it. **Measured, in the Mac's window** (dev build, WebKit, the
+window in front; `ILMI_SMOKE=size`, three clean runs), the sample 152
+times over: 10,032 documents, 115,216 cards, 165,376 queue items, 66,727
+of them due. Import 28 s. Open 1.5–2.1 s to the queue's data, 1.7–2.8 s
+to the day's page drawn; the index read alone 0.3–0.6 s. A grade
+0.52–0.57 s (0.55–0.62 s to the page drawn again), of which a queue
+rebuild alone is 0.17–0.23 s. The research's figures for files: 3.5 s to
+open (Node, no IPC), 0.95 s a rebuild and about 2 s a grade, 381 MB
+under Node. Memory, which is the weak figure: the web content process
+holds 608–642 MB more than with no collection open (68–70 MB), read as
+its footprint after WebKit was told to collect, and 1.1–1.2 GB at its
+most while opening; the index alone, held and weighed, is 159 MB. In the
+same page, reading and parsing every document as an open did before
+takes 9.8 s more and holds 1,072 MB over none. Under Node the index, the
+items and a queue are about 190 MB against the research's 381 MB. So
+against files the open is two to five times shorter, a grade about four
+times, and the heap about half in either engine; but 600 MB is not a
+phone's. Where it goes beyond the index and the items (46 MB for 165,376
+items, measured in JavaScriptCore's own shell) was not found: clearing
+the structures one at a time gives little back, which fits a heap that
+does not compact after the open's garbage, and nothing was proved. The
+sample 15 times over (11,370 cards): open 0.24–0.27 s, a grade 0.10 s,
+161–194 MB over none. A covered window's page is slowed five to seven
+times by the system (one run opened in 10.7 s); the smoke says when that
+happened. **The queue's page.** A list longer than 1,500 rows draws 300
+and a last row `N more` that draws the next 300 (`QUEUE_WHOLE`,
+`QUEUE_ROWS` in `Queue.tsx`); shorter lists are drawn whole as before.
+Without it the 66,727 rows are not drawable. **Mirror and dated
+exports** (`src/app/keep.ts`). Tweaks › `mirror` (the Mac's; `choose…`
+and, once on, `off`; kept by collection in `localStorage` as sync's
+settings are): a folder of the collection's name inside the one picked,
+never one that holds something the mirror did not write (`name 2` then).
+`mirrorPass` (`transfer.ts`) writes the files whose row stamp moved and
+removes only what `.ilmi-mirror.json` there lists, two seconds after a
+write; nothing is read back. `keepDated`: `<collection>/exports/<day>.zip`,
+the export `export collection · zip` writes, twenty seconds after a
+collection opens and when the day turns, the last seven kept. Each is the
+whole collection, PDFs included: 63 should keep blobs once. A dev run of
+a smoke makes none on its own. **Rust.** `store.rs`: the five tables, a
+trigger that drops a document's original with its row, `user_version` 2,
+`synchronous = NORMAL` (a commit no longer syncs; the log is synced at a
+checkpoint, so a power cut can lose the last writes but not the
+database). `put` takes the `Lift`; new commands for the version, a
+document with its rows, places, digests, the log, the pairs, originals;
+`dev_web_memory` (debug, macOS) finds this window's web content process
+by its responsible pid, posts `org.WebKit.lowMemory` when asked (every
+WebKit process of the session drops caches and collects), and returns
+its footprint and peak. **A collection made by 59** (`user_version` 1)
+opens: `storeFs` takes every document apart and lifts the three files
+before anything reads them, each step safe to repeat, then writes 2.
+Checked on a database 59's build made from the sample (816 schedules,
+5,144 log lines, 59 places, no `sr` line left in any text, `tour` 23 ok
+over it). A collection the new build has opened is not one 59's build
+reads rightly; no build 59 was released. A database written by a newer
+schema is refused. **Not done, against the model.** *A card has its
+`^id` from the day it is made* is not built: giving every card an id on
+import rewrites every file with cards, and the export of an untouched
+file would no longer be the file, which the git sync still in place
+relies on (a first sync would rewrite the repository). A card without an
+id is keyed by its place among the document's cards (`#n`) and gets its
+id at its first grade, as before. 61 needs ids before two devices can
+grade one new card apart; it should mint them when it replaces git, not
+before. Also for 61 and 62: a section is keyed by its heading's text (a
+rename is a new key, carried by the write that renames it); a log line's
+`doc` and a not-same pair's key are still paths; a schedule changed by a
+merge must have its document's digest made again (`decompose` of the
+composed text). **Not verified.** Nothing on the simulated iPad (no
+simulator was booted; `cargo check` for both iOS targets passes), so
+59's iPad list stands and 60 adds the upgrade and the dated export
+there. The mirror's folder picker and the dated export's own timers
+(the smoke calls `mirrorTo` and `keepDated`). Smokes run: `store` (34
+ok), `tour` (23, 45 captures), `sync` (34), `nudge` (29), `size`; no
+other was rerun. The Queue lens beyond its first 300 rows by hand.
+**Left.** `storeFs` still holds every row in memory and `walk` still
+walks them all; the review log is still read whole at open (the queue
+now looks only at today's tail, and a reload asks the count first); the
+palette's `postpone the rest` check sorts the whole queue when it opens;
+the exam filter draws one chip an exam (152 on the size collection);
+`size-*` collections are left for the person running the smoke to
+delete; restoring a dated export is `import folder` on the unzipped
+folder, by hand.
 - A card's schedule, a section's and a document's `read` and `write`,
   the review log, a directory's order, and the pairs not the same become
   tables keyed by ids; a grade is one transaction and no longer rewrites
@@ -6616,8 +6758,13 @@ the app, synced by CRDT to any storage", 59–68); 59, the store, was
 built the same day (a collection is an SQLite database under the app's
 data directory, a folder of files what goes in and comes out; `Vault`
 unchanged over an `Fs` the store gives it; git sync kept over a folder
-beside the database). 60, state in rows, is next; 56–58 take their
-places in that section's order.
+beside the database). 60, state in rows, followed the same day:
+schedules, the review log, the order and the pairs in tables, a
+document's text stored without them and put together on a read, an index
+written with each document so that opening parses nothing, the mirror
+and the dated exports; the 115,216-card collection opens in about two
+seconds in the Mac's window and its heap is the open item. 61, the
+engine, is next; 56–58 take their places in that section's order.
 
 Refinement (33–41) is complete, 2026-10-30, every milestone's window check
 run and recorded under its BUILD-LOG entry (33 `notes`, 34 `editing`, 35

@@ -11,7 +11,10 @@ import { join as joinPath, relative as relPath } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { parse } from '../../format/index.js';
-import { Vault, exportFolder, importFolder, mirrorFolder, splitFront, storeFs, takeFiles, type Row, type StoreFs } from '../index.js';
+import { formatReview, parseReviews, setField, type Card, type Doc, type Review } from '../../format/index.js';
+import { gradeItem, queueItems, type CardItem } from '../../schedule/index.js';
+import { MIRROR_LIST, Vault, exportFolder, importFolder, mirrorDirIn, mirrorFolder, mirrorPass, splitFront, storeFs, takeFiles, type Row, type StoreFs } from '../index.js';
+import { DIGEST_MARK } from '../lift.js';
 import { memStore, type MemStore } from '../mem-store.js';
 import { nodeFs } from '../node-fs.js';
 
@@ -125,8 +128,11 @@ describe('in and out as files', () => {
     expect(rows.get('papers/two-pages.pdf')).toMatchObject({ kind: 'file', parent: papers.id });
     expect(store.blobs.size).toBe([...rows.values()].filter((r) => r.blob !== null).length);
     expect(rows.get('.ilmi/plugins.json')).toMatchObject({ kind: 'file', blob: null });
+    // a document's row holds its text without its state (milestone 60); what is read is the file
     const whole = await fsp.readFile(joinPath(CORPUS, 'papers/wozniak-1990.md'), 'utf8');
-    expect(await store.text(woz.id)).toBe(whole);
+    expect(whole).toContain('<!-- sr ');
+    expect(await store.text(woz.id)).not.toContain('<!-- sr ');
+    expect(await storeFs(store, ROOT).readText(`${ROOT}/papers/wozniak-1990.md`)).toBe(whole);
     expect(woz.size).toBe(Buffer.byteLength(whole));
   });
 
@@ -189,10 +195,10 @@ describe('paths made from names and parents', () => {
     const { store, fs } = await collection(CORPUS);
     const vault = await Vault.open(fs, ROOT);
     const row = (await fs.rowAt(`${ROOT}/german.md`))!;
-    const texts = store.calls.text;
+    const reads = store.calls.doc;
     await vault.read('german.md');
     await vault.read('german.md');
-    expect(store.calls.text - texts).toBe(1);
+    expect(store.calls.doc - reads).toBe(1);
     const puts = store.calls.put;
     await vault.update('german.md', (doc) => { doc.blocks.push({ kind: 'paragraph', text: 'a line more' }); });
     // one write, in place: no temp file, no rename
@@ -308,5 +314,303 @@ describe('a folder kept as the collection is', () => {
     expect(vault.documents()).not.toContain('essays/spaced-composition.md');
     expect(await fs.stat(`${ROOT}/.git`)).toBeNull();
     expect(await mirrorFolder(fs, ROOT, nodeFs, dir)).toEqual([]);
+  });
+});
+
+describe('state in rows', () => {
+  const linesOf = (text: string, re: RegExp): string[] => text.split('\n').filter((l) => re.test(l));
+
+  it('lifts every schedule out of the sample\'s text, and the text reads back whole', async () => {
+    const { store, fs } = await collection(SAMPLE);
+    const rows = await rowsByPath(store);
+    let lifted = 0;
+    for (const [path, r] of rows) {
+      if (r.kind !== 'doc') continue;
+      const file = await fsp.readFile(joinPath(SAMPLE, path), 'utf8');
+      const held = store.tables.texts.get(r.id)!;
+      const stored = held.front + held.text;
+      // no card's line, no section's line, and nothing after `read:` or `write:` is left in the row's text
+      expect(linesOf(stored, /^\s*<!-- (sr|read)\b/), path).toEqual([]);
+      expect(linesOf(held.front, /^(read|write): ./), path).toEqual([]);
+      const state = store.tables.state.get(r.id) ?? [];
+      expect(state.length, path).toBe(linesOf(file, /^\s*<!-- (sr|read)\b/).length + linesOf(file, /^(read|write): ./).length);
+      lifted += state.length;
+      // the sample is as the app writes it: nothing needs keeping beside
+      expect(store.tables.originals.has(r.id), path).toBe(false);
+      expect(await fs.readText(`${ROOT}/${path}`), path).toBe(file);
+    }
+    expect(lifted).toBeGreaterThan(800);
+    // a card's lines are keyed by its id and say when it is due
+    const vocab = rows.get('arabic/vocabulary.md')!;
+    const state = store.tables.state.get(vocab.id)!;
+    const karam = state.filter((x) => x.item === 'voc-karam');
+    expect(karam.map((x) => x.key)).toEqual(['']);
+    expect(JSON.parse(karam[0]!.attrs)).toHaveProperty('due');
+    // a cloze's groups are rows of their own under the card's id; a section's line is a row by its heading
+    const all = [...store.tables.state.values()].flat();
+    expect(all.some((x) => x.kind === 'card' && /^c\d+$/.test(x.key))).toBe(true);
+    expect(all.filter((x) => x.kind === 'section').length).toBeGreaterThan(0);
+  });
+
+  it('a grade writes a schedule, the index and a line of the log in one transaction, and not the text', async () => {
+    const { store, fs } = await collection(SAMPLE);
+    const vault = await Vault.open(fs, ROOT);
+    const path = 'arabic/vocabulary.md';
+    const before = (await vault.read(path)).text;
+    const now = new Date('2026-11-05T09:00:00Z');
+    const item = queueItems([[path, (await vault.read(path)).doc]], now).find((i): i is CardItem => i.kind === 'card' && i.id === 'voc-karam' && i.dir !== 'r')!;
+    const writes = store.tables.textWrites;
+    const puts = store.calls.put;
+    const logged = store.tables.reviews.length;
+    const line: Review = { at: '2026-11-05T09:00:00Z', doc: path, card: 'voc-karam', g: 3, st: 'review', elapsed: 3, ivl: 3, next: 9 };
+    fs.logWith(path, [line]);
+    await vault.update(path, (doc) => { gradeItem(doc, item, 3, now); });
+    await fs.flushLog(path);
+    expect(store.calls.put - puts).toBe(1);
+    expect(store.calls.reviewsPut).toBe(14);
+    expect(store.tables.textWrites).toBe(writes);
+    expect(store.tables.reviews.length).toBe(logged + 1);
+    expect(store.tables.reviews.at(-1)).toMatchObject({ file: '2026-11.jsonl', card: 'voc-karam', line: formatReview(line) });
+    // the file, read back, differs by the one line the grade rewrote
+    const after = (await vault.read(path)).text;
+    const a = before.split('\n');
+    const b = after.split('\n');
+    expect(b.length).toBe(a.length);
+    const changed = a.flatMap((l, i) => (l === b[i] ? [] : [i]));
+    expect(changed.length).toBe(1);
+    expect(b[changed[0]!]).toMatch(/^<!-- sr due=\S+ st=review .* last=2026-11-05T09:00:00Z g=3 -->$/);
+    // the index has the card as it is now, and the log reads back with the line at its end
+    const digest = (await fs.digests()).get(path)!;
+    const card = digest.blocks.find((x): x is Card => x.kind === 'card' && x.id === 'voc-karam')!;
+    expect(card.sched?.last).toBe('2026-11-05T09:00:00Z');
+    expect((await vault.loadReviews()).at(-1)).toEqual(line);
+    expect(await fs.reviewCount()).toBe(logged + 1);
+    expect((await fs.readDir(`${ROOT}/.ilmi/reviews`)).map((e) => e.name)).toContain('2026-11.jsonl');
+  });
+
+  it('the index holds a document\'s cards and headings whole and its prose as marks', async () => {
+    const { fs } = await collection(SAMPLE);
+    const digests = await fs.digests();
+    const files = [...(await filesOf(SAMPLE)).keys()].filter((p) => p.endsWith('.md'));
+    expect([...digests.keys()].sort()).toEqual(files.sort());
+    const now = new Date('2026-11-05T09:00:00Z');
+    for (const path of files) {
+      const doc = parse(await fsp.readFile(joinPath(SAMPLE, path), 'utf8')).doc;
+      const dig = digests.get(path)!;
+      expect(dig.blocks.length, path).toBe(doc.blocks.length);
+      dig.blocks.forEach((b, i) => {
+        const real = doc.blocks[i]!;
+        if (b.kind === 'card' || b.kind === 'heading') expect(b, path).toEqual(real);
+        else expect(b.text === '' || b.text === DIGEST_MARK || real.text.startsWith(b.text), path).toBe(true);
+      });
+      // the queue reads the digest as it reads the document, down to a row's opening words
+      const strip = (items: ReturnType<typeof queueItems>) => items.map((i) => ({ ...i, ...('next' in i && i.next ? { next: i.next.slice(0, 60) } : {}), ...('lead' in i && i.lead ? { lead: i.lead.slice(0, 60) } : {}) }));
+      expect(strip(queueItems([[path, dig]], now)), path).toEqual(strip(queueItems([[path, doc]], now)));
+    }
+    // a write is told with the document's digest
+    const seen: [string, Doc | null][] = [];
+    const off = fs.onIndex((path, doc) => seen.push([path, doc]));
+    await fs.writeText(`${ROOT}/fleeting/new.md`, 'q :: a\n\nprose that is not a card, and goes on past the point\n');
+    off();
+    await fs.writeText(`${ROOT}/fleeting/unseen.md`, 'x\n');
+    expect(seen.map(([p]) => p)).toEqual(['fleeting/new.md']);
+    expect(seen[0]![1]!.blocks.map((b) => b.kind)).toEqual(['card', 'paragraph']);
+  });
+
+  it('a file written by hand comes back as it was until its text or its state changes', async () => {
+    const store = memStore();
+    const fs = storeFs(store, ROOT);
+    const hand = '---\r\nread:   due=2026-11-06  ivl=2\r\n---\r\n\r\nq :: a\r\n<!--   sr due=2026-11-07   st=review -->\r\n\r\n\r\nprose\r\n';
+    await fs.writeText(`${ROOT}/hand.md`, hand);
+    expect(await fs.readText(`${ROOT}/hand.md`)).toBe(hand);
+    const row = (await fs.rowAt(`${ROOT}/hand.md`))!;
+    expect(store.tables.originals.get(row.id)?.text).toBe(hand);
+    expect(store.tables.state.get(row.id)!.length).toBe(2);
+    // a second store over the same rows reads the same bytes
+    expect(await storeFs(store, ROOT).readText(`${ROOT}/hand.md`)).toBe(hand);
+    const vault = await Vault.open(fs, ROOT);
+    await vault.update('hand.md', (doc) => setField(doc, 'read', { due: '2026-11-09', ivl: 3 }));
+    // the app's first write is the one that normalizes it, as before
+    expect(await fs.readText(`${ROOT}/hand.md`)).toBe('---\nread: due=2026-11-09 ivl=3\n---\n\nq :: a\n<!-- sr due=2026-11-07 st=review -->\n\nprose\n');
+    expect(store.tables.originals.has(row.id)).toBe(false);
+  });
+
+  it('a card without an id is keyed by its place, and what cannot be lifted is kept whole', async () => {
+    const store = memStore();
+    const fs = storeFs(store, ROOT);
+    const text = 'first :: card\n\nsecond :: card\n<!-- sr due=2026-11-07 -->\n';
+    await fs.writeText(`${ROOT}/a.md`, text);
+    const a = (await fs.rowAt(`${ROOT}/a.md`))!;
+    expect(store.tables.state.get(a.id)).toEqual([{ kind: 'card', item: '#1', key: '', attrs: '{"due":"2026-11-07"}' }]);
+    expect(await fs.readText(`${ROOT}/a.md`)).toBe(text);
+    // two cards under one id: their lines have one key between them, so the text is kept as it is
+    const twins = 'one :: a ^same\n<!-- sr due=2026-11-07 -->\n\ntwo :: b ^same\n<!-- sr due=2026-11-09 -->\n';
+    await fs.writeText(`${ROOT}/b.md`, twins);
+    const b = (await fs.rowAt(`${ROOT}/b.md`))!;
+    expect(store.tables.state.has(b.id)).toBe(false);
+    expect(await store.text(b.id)).toBe(twins);
+    expect(await fs.readText(`${ROOT}/b.md`)).toBe(twins);
+  });
+
+  it('the order of a directory is the rows\' places, read and written as `.ilmi/order.json`', async () => {
+    const { store, fs } = await collection(SAMPLE);
+    const file = await fsp.readFile(joinPath(SAMPLE, '.ilmi/order.json'), 'utf8');
+    // no row holds the file
+    expect((await rowsByPath(store)).has('.ilmi/order.json')).toBe(false);
+    expect((await fs.readDir(`${ROOT}/.ilmi`)).map((e) => e.name)).toContain('order.json');
+    const vault = await Vault.open(fs, ROOT);
+    expect(vault.order).toEqual(JSON.parse(file));
+    const rows = await rowsByPath(store);
+    expect(['courses', 'library', 'arabic', 'physics', 'fleeting'].map((n) => rows.get(n)!.place)).toEqual([0, 1, 2, 3, 4]);
+    expect(rows.get('library/lindqvist-statistical-physics/ch-3-the-canonical-ensemble.md')!.place).toBe(1);
+    // as it came in, byte for byte, while the order is what it was
+    expect(await fs.readText(`${ROOT}/.ilmi/order.json`)).toBe(file);
+    // a rename keeps the row's place; the file follows
+    const to = await vault.rename('physics/derivation-drills.md', 'drills');
+    expect(vault.order['physics']).toEqual(['drills.md', 'constants-and-orders-of-magnitude.md']);
+    expect((await fs.rowAt(`${ROOT}/${to}`))!.place).toBe(0);
+    expect(JSON.parse(await fs.readText(`${ROOT}/.ilmi/order.json`))['physics']).toEqual(['drills.md', 'constants-and-orders-of-magnitude.md']);
+    await vault.setOrder('physics', null);
+    expect((await fs.rowAt(`${ROOT}/${to}`))!.place).toBeNull();
+    expect(JSON.parse(await fs.readText(`${ROOT}/.ilmi/order.json`))).not.toHaveProperty('physics');
+    // a collection opened afresh over the same rows has the same order
+    const again = await Vault.open(storeFs(store, ROOT), ROOT);
+    expect(again.order).toEqual(vault.order);
+  });
+
+  it('the review log is rows: a file of it reads back as written, and a line added drops what was not a review', async () => {
+    const store = memStore();
+    const fs = storeFs(store, ROOT);
+    const vault = await Vault.open(fs, ROOT);
+    const r = (at: string, card: string): Review => ({ at, doc: 'deck.md', card, g: 3, st: 'review', elapsed: 2, ivl: 2, next: 5, s: 5.25 });
+    await vault.appendReviews([r('2026-10-30T08:00:00Z', 'a'), r('2026-11-01T08:00:00Z', 'b')]);
+    await vault.appendReviews([r('2026-10-31T08:00:00Z', 'c')]);
+    expect(store.tables.reviews.map((x) => [x.file, x.card])).toEqual([['2026-10.jsonl', 'a'], ['2026-11.jsonl', 'b'], ['2026-10.jsonl', 'c']]);
+    expect((await rowsByPath(store)).has('.ilmi/reviews/2026-10.jsonl')).toBe(false);
+    expect(await fs.readText(`${ROOT}/.ilmi/reviews/2026-10.jsonl`)).toBe(`${formatReview(r('2026-10-30T08:00:00Z', 'a'))}\n${formatReview(r('2026-10-31T08:00:00Z', 'c'))}\n`);
+    expect((await vault.loadReviews()).map((x) => x.card)).toEqual(['a', 'c', 'b']);
+    // a file with a torn line and a line twice, as a sync leaves one
+    const hand = `${formatReview(r('2026-09-01T08:00:00Z', 'd'))}\n{"at":"2026-09-02T0\n${formatReview(r('2026-09-01T08:00:00Z', 'd'))}\n`;
+    await fs.writeText(`${ROOT}/.ilmi/reviews/2026-09 (conflict).jsonl`, hand);
+    expect(await fs.readText(`${ROOT}/.ilmi/reviews/2026-09 (conflict).jsonl`)).toBe(hand);
+    expect((await fs.readDir(`${ROOT}/.ilmi/reviews`)).map((e) => e.name).sort()).toEqual(['2026-09 (conflict).jsonl', '2026-10.jsonl', '2026-11.jsonl']);
+    expect((await vault.loadReviews()).map((x) => x.card)).toEqual(['d', 'a', 'c', 'b']);
+    await fs.appendText!(`${ROOT}/.ilmi/reviews/2026-09 (conflict).jsonl`, `${formatReview(r('2026-09-03T08:00:00Z', 'e'))}\n`);
+    expect(parseReviews(await fs.readText(`${ROOT}/.ilmi/reviews/2026-09 (conflict).jsonl`)).map((x) => x.card)).toEqual(['d', 'd', 'e']);
+    await fs.remove(`${ROOT}/.ilmi/reviews/2026-10.jsonl`);
+    expect(await fs.stat(`${ROOT}/.ilmi/reviews/2026-10.jsonl`)).toBeNull();
+    expect((await vault.loadReviews()).map((x) => x.card)).toEqual(['d', 'e', 'b']);
+  });
+
+  it('the pairs said not the same are rows, read and written as `.ilmi/same.json`', async () => {
+    const store = memStore();
+    const fs = storeFs(store, ROOT);
+    const vault = await Vault.open(fs, ROOT);
+    expect(await vault.loadNotSame()).toEqual([]);
+    expect(await fs.stat(`${ROOT}/.ilmi/same.json`)).toBeNull();
+    await vault.saveNotSame(['b|c', 'a|b']);
+    expect(await store.same()).toEqual(['a|b', 'b|c']);
+    expect(await vault.loadNotSame()).toEqual(['a|b', 'b|c']);
+    expect(await fs.readText(`${ROOT}/.ilmi/same.json`)).toBe('{\n  "not": [\n    "a|b",\n    "b|c"\n  ]\n}\n');
+    expect((await rowsByPath(store)).has('.ilmi/same.json')).toBe(false);
+    // none left: the file the app wrote is still the file
+    await vault.saveNotSame([]);
+    expect(await vault.loadNotSame()).toEqual([]);
+    expect(await fs.readText(`${ROOT}/.ilmi/same.json`)).toBe('{\n  "not": []\n}\n');
+  });
+
+  it('a collection made before the tables is taken apart when it opens, and comes out as it went in', async () => {
+    // as milestone 59 stored it: every file's text whole in its row
+    const old = memStore(1);
+    const put = async (parent: string | null, name: string, kind: 'folder' | 'doc' | 'file', id: string, text?: string) =>
+      old.put({ id, parent, name, place: null, kind }, text === undefined ? undefined : kind === 'doc' ? splitFront(text) : { front: null, text });
+    const deck = '---\ntype: deck\nread: due=2026-11-06 ivl=2\n---\n\nq :: a ^c1\n<!-- sr due=2026-11-07 st=review -->\n';
+    const order = '{\n  "": [\n    "b.md",\n    "deck.md"\n  ]\n}\n';
+    const log = `${formatReview({ at: '2026-10-30T08:00:00Z', doc: 'deck.md', card: 'c1', g: 3, st: 'new', elapsed: 0, ivl: 0, next: 1 })}\n`;
+    await put(null, 'deck', 'doc', 'd', deck);
+    await put(null, 'b', 'doc', 'b', 'plain\n');
+    await put(null, '.ilmi', 'folder', 'i');
+    await put('i', 'order.json', 'file', 'o', order);
+    await put('i', 'state.json', 'file', 's', '{}\n');
+    await put('i', 'reviews', 'folder', 'r');
+    await put('r', '2026-10.jsonl', 'file', 'l', log);
+    const fs = storeFs(old, ROOT);
+    expect(await fs.readText(`${ROOT}/deck.md`)).toBe(deck);
+    expect(await old.version()).toBe(2);
+    expect(await old.text('d')).not.toContain('<!-- sr');
+    expect(old.tables.state.get('d')!.map((x) => x.kind).sort()).toEqual(['card', 'read']);
+    expect((await fs.digests()).get('deck.md')!.blocks[0]).toMatchObject({ kind: 'card', id: 'c1', sched: { due: '2026-11-07' } });
+    const rows = await rowsByPath(old);
+    expect([...rows.keys()].sort()).toEqual(['.ilmi', '.ilmi/reviews', '.ilmi/state.json', 'b.md', 'deck.md']);
+    expect([rows.get('b.md')!.place, rows.get('deck.md')!.place]).toEqual([0, 1]);
+    expect(old.tables.reviews.length).toBe(1);
+    const out = await tmp('upgraded');
+    await exportFolder(fs, ROOT, nodeFs, out);
+    const files = await filesOf(out);
+    expect([...files.keys()].sort()).toEqual(['.ilmi/', '.ilmi/order.json', '.ilmi/reviews/', '.ilmi/reviews/2026-10.jsonl', '.ilmi/state.json', 'b.md', 'deck.md']);
+    expect(files.get('deck.md')!.toString()).toBe(deck);
+    expect(files.get('.ilmi/order.json')!.toString()).toBe(order);
+    expect(files.get('.ilmi/reviews/2026-10.jsonl')!.toString()).toBe(log);
+    // a collection from a newer ilmi is not opened
+    await expect(storeFs(memStore(3), ROOT).readDir(ROOT)).rejects.toThrow('newer');
+  });
+});
+
+describe('a mirror among a person\'s files', () => {
+  it('writes what changed, removes only what it wrote, and reads nothing back', async () => {
+    const { store, fs } = await collection(CORPUS);
+    const vault = await Vault.open(fs, ROOT);
+    const parent = await tmp('mirror');
+    const dir = await mirrorDirIn(nodeFs, parent, 'notes');
+    expect(dir).toBe(joinPath(parent, 'notes'));
+    const first = await mirrorPass(fs, ROOT, nodeFs, dir);
+    const corpus = await filesOf(CORPUS);
+    const files = [...corpus.keys()].filter((p) => !p.endsWith('/'));
+    expect(first.sort()).toEqual(files.sort());
+    const out = await filesOf(dir);
+    for (const p of files) expect(out.get(p)!.equals(corpus.get(p)!), p).toBe(true);
+    expect(Object.keys(JSON.parse(out.get(MIRROR_LIST)!.toString()).files).sort()).toEqual(files.sort());
+    // nothing changed: nothing is written, and no document is read to find that out
+    const reads = store.calls.doc;
+    expect(await mirrorPass(fs, ROOT, nodeFs, dir)).toEqual([]);
+    expect(store.calls.doc).toBe(reads);
+    // a person's own file in the folder, and one of theirs where a document will go
+    await fsp.writeFile(joinPath(dir, 'mine.txt'), 'theirs\n');
+    await vault.update('german.md', (doc) => { doc.blocks.push({ kind: 'paragraph', text: 'a line more' }); });
+    const to = await vault.rename('papers/wozniak-1990.md', 'woz');
+    await vault.remove('essays/spaced-composition.md');
+    await vault.appendReviews([{ at: '2026-11-05T09:00:00Z', doc: 'german.md', card: 'x', g: 3, st: 'review', elapsed: 1, ivl: 1, next: 3 }]);
+    const second = await mirrorPass(fs, ROOT, nodeFs, dir);
+    expect(second).toContain('german.md');
+    expect(second).toContain(to);
+    expect(second).toContain('papers/wozniak-1990.md');
+    expect(second).toContain('papers/woz/woz-ex1.md');
+    expect(second).toContain('essays/spaced-composition.md');
+    expect(second).toContain('.ilmi/reviews/2026-11.jsonl');
+    const after = await filesOf(dir);
+    expect(after.get('german.md')!.toString()).toContain('a line more');
+    expect(after.has('papers/wozniak-1990.md')).toBe(false);
+    expect(after.has('papers/wozniak-1990/')).toBe(false);
+    expect(after.has('papers/woz/woz-ex1.md')).toBe(true);
+    expect(after.has('essays/spaced-composition.md')).toBe(false);
+    expect(after.get('mine.txt')!.toString()).toBe('theirs\n');
+    // the folder is the collection again, beside what was theirs
+    const want = await tmp('mirror-want');
+    await exportFolder(fs, ROOT, nodeFs, want);
+    const exported = await filesOf(want);
+    for (const [p, bytes] of exported) if (bytes) expect(after.get(p)!.equals(bytes), p).toBe(true);
+    expect([...after.keys()].filter((p) => !exported.has(p) && !p.endsWith('/')).sort()).toEqual([MIRROR_LIST, 'mine.txt']);
+  });
+
+  it('never takes a folder that holds something it did not write', async () => {
+    const parent = await tmp('mirror-taken');
+    await fsp.mkdir(joinPath(parent, 'notes'));
+    await fsp.writeFile(joinPath(parent, 'notes/theirs.md'), 'x\n');
+    await fsp.mkdir(joinPath(parent, 'notes 2'));
+    await fsp.writeFile(joinPath(parent, 'notes 2', MIRROR_LIST), '{"files":{}}\n');
+    await fsp.mkdir(joinPath(parent, 'empty'));
+    expect(await mirrorDirIn(nodeFs, parent, 'notes')).toBe(joinPath(parent, 'notes 2'));
+    expect(await mirrorDirIn(nodeFs, parent, 'empty')).toBe(joinPath(parent, 'empty'));
+    expect(await mirrorDirIn(nodeFs, `${parent}/`, 'new')).toBe(joinPath(parent, 'new'));
   });
 });

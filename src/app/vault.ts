@@ -10,8 +10,8 @@ import { open as pickDirectory } from '@tauri-apps/plugin-dialog';
 import { info } from '@tauri-apps/plugin-log';
 import { REVIEWS_DIR, meta, setField, type Doc, type Meta, type NodeType, type Review } from '../format/index.js';
 import type { Chapter, MappedDeck } from '../import/index.js';
-import { activeExam, buryLinked, cadence, cardsById, dayOf, docItems, examQueue, examsAt, isDue, meterQueue, postponeOverflow, readPri, resolveOptions, spentToday, type ExamAt, type QueueItem, type Resolved } from '../schedule/index.js';
-import { SAME_FILE, Vault, childDirOf, childrenAt, cleanName, dirOf, entryOf, fileName, isDoc, ordered, placeEntry, rekey, type ExtractSpec, type SectionSpec, type ImportDeckSpec, type ImportPdfSpec, type ImportSpec, type PdfChapterSpec, type TreeNode, type VaultEvent, type VaultState } from '../vault/index.js';
+import { activeExam, addDays, buryLinked, cadence, cardsById, dayOf, dayStart, docItems, examQueue, examsAt, isDue, itemKey, meterQueue, postponeOverflow, readPri, resolveOptions, spentToday, whenToDate, type ExamAt, type QueueItem, type Resolved } from '../schedule/index.js';
+import { SAME_FILE, Vault, childDirOf, childrenAt, cleanName, dirOf, entryOf, fileName, isDoc, joinRel, normRel, ordered, placeEntry, rekey, type DocNode, type ExtractSpec, type SectionSpec, type ImportDeckSpec, type ImportPdfSpec, type ImportSpec, type PdfChapterSpec, type StoreFs, type TreeNode, type VaultEvent, type VaultState } from '../vault/index.js';
 import { createCollection, listCollections } from '../vault/tauri-store.js';
 import { startPlugins, stopPlugins } from '../plugins/index.js';
 import { cleanClipDir } from './clip.js';
@@ -28,6 +28,7 @@ import { RAIL_DEFAULT, addTab, clampRail, notebookOf } from './tabs.js';
 import { INSP_DEFAULT, INSP_MAX, INSP_MIN, SIDE_DEFAULT, SIDE_MAX, SIDE_MIN, useApp, type DocInfo, type Inspector, type Sidebar } from './store.js';
 import { appNow } from './clock.js';
 import { cloneCollection, startSync, stopSync } from './sync.js';
+import { keepDatedSoon, startMirror, stopDated, stopMirror } from './keep.js';
 
 let current: Vault | null = null;
 
@@ -37,8 +38,100 @@ export function currentVault(): Vault | null {
 
 // ── document info and the queue ──────────────────────────────────
 
-/** Every document's parsed form, by path, as last reported by the vault; the queue is built from it. */
+/**
+ * Every document, by path, as the queue, a deck's rows, the counts and the
+ * numbers read it. When a collection opens these are the index's digests
+ * (`vault/lift.ts`: fields, headings and cards whole, prose as marks), so
+ * nothing is parsed; a document written since is its digest as the store
+ * made it then. Never written back: the vault holds the documents.
+ */
 const bodies = new Map<string, Doc>();
+
+/** The store under the open vault, when it is one (`vault/store.ts`): it keeps the index. */
+const storeOf = (vault: Vault): StoreFs | null => ('digests' in vault.fs ? (vault.fs as StoreFs) : null);
+
+/** The front matter of each known document, read once. */
+const metas = new Map<string, Meta>();
+
+/**
+ * One document's queue items as `docItems` makes them, kept until the
+ * document changes or the clock makes them stale: the day turns, or a
+ * both-ways card's direction comes due (its sibling may then be held
+ * back). `links` is how many of its items are one side of a link. The
+ * items are never changed once made: a queue holds them as they are, or
+ * a copy where a step of the day's order marks one.
+ */
+interface Derived {
+  items: QueueItem[];
+  day: string;
+  /** Made at, and good until: a clock set back (a test's) makes them again too. */
+  at: number;
+  until: number;
+  links: number;
+}
+const derived = new Map<string, Derived>();
+
+/** Each kept item's draw for the day (`sortQueue`), made when first asked for: the same all day, and not cheap. */
+let dayKeys: { day: string; keys: WeakMap<QueueItem, number> } = { day: '', keys: new WeakMap() };
+
+/** Whether any card known is one side of a link (FORMAT.md §6.2): without one, a grade has no other side to look for. */
+export function anyLinks(): boolean {
+  // nothing made yet says nothing either way
+  if (!derived.size) return true;
+  for (const d of derived.values()) if (d.links) return true;
+  return false;
+}
+
+/** The options and the exams that apply at a path, kept until a document's front matter or the tree changes. */
+const optionsCache = new Map<string, Resolved>();
+const examsCache = new Map<string, ExamAt[]>();
+
+function forgetInherited(): void {
+  optionsCache.clear();
+  examsCache.clear();
+}
+
+/** Take a document's digest (or its parsed form) as what is known of it. */
+function setBody(path: string, doc: Doc): void {
+  const m = meta(doc);
+  const was = metas.get(path);
+  bodies.set(path, doc);
+  metas.set(path, m);
+  derived.delete(path);
+  // options and exams are inherited down the tree: a front matter that changed may change them anywhere under it
+  if (!was || JSON.stringify(inherited(was)) !== JSON.stringify(inherited(m))) forgetInherited();
+}
+
+function dropBody(path: string): void {
+  if (!bodies.delete(path)) return;
+  metas.delete(path);
+  derived.delete(path);
+  forgetInherited();
+}
+
+/** What of a front matter reaches the documents under it. */
+const inherited = (m: Meta) => [m.newPerDay, m.reviewsPerDay, m.retention, m.leech, m.leechAction, m.exams];
+
+function derivedOf(path: string, now: Date): Derived {
+  const day = dayOf(now);
+  const t = now.getTime();
+  const hit = derived.get(path);
+  if (hit && hit.day === day && t >= hit.at && t < hit.until) return hit;
+  const items = docItems(path, bodies.get(path)!, now);
+  let until = dayStart(addDays(day, 1)).getTime();
+  let links = 0;
+  for (const i of items) {
+    if (i.kind !== 'card') continue;
+    if (i.link !== undefined) links++;
+    if (i.dir && i.due) {
+      const due = whenToDate(i.due).getTime();
+      if (due > t && due < until) until = due;
+    }
+  }
+  const made: Derived = { items, day, at: t, until, links };
+  derived.set(path, made);
+  return made;
+}
 
 function infoOf(doc: Doc, items: QueueItem[], now: Date, pdf: string | null): DocInfo {
   const m = meta(doc);
@@ -66,20 +159,33 @@ function infoOf(doc: Doc, items: QueueItem[], now: Date, pdf: string | null): Do
 /** Every review logged in the open vault (`.ilmi/reviews/`), oldest first; empty without a log. */
 let reviews: Review[] = [];
 
+/** The reviews of `now`'s local day: the log is in order, so they are its tail. */
+function reviewsToday(now: Date): Review[] {
+  const from = dayStart(dayOf(now)).toISOString().slice(0, 19) + 'Z';
+  let lo = 0;
+  let hi = reviews.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (reviews[mid]!.at < from) lo = mid + 1; else hi = mid;
+  }
+  return lo === 0 ? reviews : reviews.slice(lo);
+}
+
 /** The front-matter of a known document, for the options (`schedule/options.ts`). */
-const metaOf = (path: string): Meta | undefined => {
-  const doc = bodies.get(path);
-  return doc ? meta(doc) : undefined;
-};
+const metaOf = (path: string): Meta | undefined => metas.get(path);
 
 /** The study options that apply at a document or folder, and where each comes from. */
 export function optionsAt(path: string): Resolved {
-  return resolveOptions(path, metaOf);
+  let r = optionsCache.get(path);
+  if (!r) { r = resolveOptions(path, metaOf); optionsCache.set(path, r); }
+  return r;
 }
 
 /** Every exam that applies at a document or folder (`schedule/exams.ts`), by day. */
 export function examsAtPath(path: string): ExamAt[] {
-  return examsAt(path, metaOf);
+  let e = examsCache.get(path);
+  if (!e) { e = examsAt(path, metaOf); examsCache.set(path, e); }
+  return e;
 }
 
 /** The exam ahead a document is studied toward at `now`, if any. */
@@ -88,20 +194,49 @@ export const activeExamAt = (path: string, now: Date): ExamAt | undefined => act
 /**
  * The queue over every known document, at `now`: what is under an exam
  * brought before it (`examQueue`), then the day's allowances metered (new
- * cards a day, the reviews cap, an exam's new cards).
+ * cards a day, the reviews cap, an exam's new cards). Each document's
+ * items are kept between builds (`derivedOf`), so a change re-derives one
+ * document; what is done over all of them is the day's order.
  */
 function buildQueue(now: Date): QueueItem[] {
+  const day = dayOf(now);
+  const t = now.getTime();
+  if (dayKeys.day !== day) dayKeys = { day, keys: new WeakMap() };
+  const all: Derived[] = [];
+  let links = 0;
+  for (const path of bodies.keys()) {
+    const d = derivedOf(path, now);
+    links += d.links;
+    all.push(d);
+  }
   const out: QueueItem[] = [];
-  for (const [path, doc] of bodies) out.push(...docItems(path, doc, now));
-  const cache = new Map<string, Resolved>();
-  const optionsOf = (p: string) => { let r = cache.get(p); if (!r) { r = optionsAt(p); cache.set(p, r); } return r; };
-  const exams = new Map<string, ExamAt[]>();
-  const examsOf = (p: string) => { let e = exams.get(p); if (!e) { e = examsAtPath(p); exams.set(p, e); } return e; };
-  examQueue(out, now, examsOf);
+  // the steps below mark items in place, so what one may mark is a copy: an item under an exam ahead (tagged, brought
+  // forward), a card due that an allowance may hold, and with a link anywhere any card (its twin may be buried)
+  const from = new Map<QueueItem, QueueItem>();
+  const examOf = (p: string) => activeExam(examsAtPath(p), now);
+  for (const d of all) {
+    if (!d.items.length) continue;
+    const under = examOf(d.items[0]!.path) !== undefined;
+    for (const base of d.items) {
+      const marked = under || (base.kind === 'card' && (links > 0 || base.dueAt.getTime() <= t));
+      if (!marked) { out.push(base); continue; }
+      const item = { ...base };
+      from.set(item, base);
+      out.push(item);
+    }
+  }
+  const keys = dayKeys.keys;
+  const keyOf = (item: QueueItem, on: string): number => {
+    if (on !== day) return itemKey(item, on);
+    const base = from.get(item) ?? item;
+    let k = keys.get(base);
+    if (k === undefined) { k = itemKey(base, on); keys.set(base, k); }
+    return k;
+  };
+  examQueue(out, now, examsAtPath);
   // of two linked cards, one a day (after the exams have brought theirs forward)
-  buryLinked(out, cardsById(bodies), now);
-  const examOf = (p: string) => activeExam(examsOf(p), now);
-  return meterQueue(out, now, { optionsOf, spent: spentToday(reviews, now, optionsOf, examOf), examOf });
+  if (links) buryLinked(out, cardsById(bodies), now);
+  return meterQueue(out, now, { optionsOf: optionsAt, spent: spentToday(reviewsToday(now), now, optionsAt, examOf), examOf, keyOf });
 }
 
 /** Each document's `due` as the metered queue has it: a card held for tomorrow is not due today. */
@@ -152,6 +287,9 @@ function dayStarted(): void {
   const first = lastDay === null;
   lastDay = day;
   queueSave({ lastDay: day });
+  // the day turned with the collection open: its export for the new day
+  const vault = current;
+  if (!first) void keepsDated().then((on) => { if (on && current === vault) keepDatedSoon(vault, currentVault); });
   if (!first && useApp.getState().backlog) void postponeRest().catch((e: unknown) => console.error('backlog', e));
 }
 
@@ -159,14 +297,34 @@ function dayStarted(): void {
 export const reviewLog = (): readonly Review[] => reviews;
 
 /**
- * Log one grade: its line appended to its month's file in `.ilmi/reviews/`,
- * the log the numbers read updated, and the queue metered again (a new card
- * graded spends the day's allowance).
+ * A grade's line taken into the log the app holds before its write lands,
+ * so the queue built as the write is reported already counts it (a new
+ * card graded spends the day's allowance). `dropReview` takes it out again
+ * when the write did not happen.
  */
-export async function recordReview(r: Review): Promise<void> {
+export function stageReview(r: Review): void {
+  reviews = [...reviews, r];
+}
+
+export function dropReview(r: Review): void {
+  reviews = reviews.filter((x) => x !== r);
+}
+
+/**
+ * Log one grade: the log the numbers read updated and the queue metered
+ * again. Its line is appended to its month's file in `.ilmi/reviews/`
+ * here, unless it went in with the grade's own write (`logged`: over a
+ * store the two are one transaction, `grading.ts`).
+ */
+export async function recordReview(r: Review, logged = false): Promise<void> {
   const vault = current;
   if (!vault) return;
-  reviews = [...reviews, r];
+  if (!reviews.includes(r)) reviews = [...reviews, r];
+  if (logged) {
+    // the write that carried it rebuilt the queue with it counted
+    useApp.setState({ reviews });
+    return;
+  }
   useApp.setState((s) => ({ reviews, ...publishQueue(s.docs, appNow()) }));
   await vault.appendReviews([r]);
 }
@@ -177,32 +335,108 @@ function reloadReviews(vault: Vault): void {
   if (reloadTimer) clearTimeout(reloadTimer);
   reloadTimer = setTimeout(() => {
     reloadTimer = null;
-    void vault.loadReviews().then((log) => {
+    void (async () => {
+      // over a store the count says whether anything came in, without reading a line
+      const store = storeOf(vault);
+      if (store && (await store.reviewCount()) === reviews.length) return;
+      const log = await vault.loadReviews();
       if (current !== vault || log.length === reviews.length) return;
       reviews = log;
       useApp.setState((s) => ({ reviews, ...publishQueue(s.docs, appNow()) }));
-    }).catch((e: unknown) => console.error('reviews', e));
+    })().catch((e: unknown) => console.error('reviews', e));
   }, 500);
 }
 
+/** Each document's node in the tree, by path. */
+function nodesByPath(tree: TreeNode[]): Map<string, DocNode> {
+  const out = new Map<string, DocNode>();
+  const visit = (nodes: TreeNode[]) => {
+    for (const n of nodes) {
+      if (n.kind === 'doc') out.set(n.path, n);
+      if (n.kind === 'folder') visit(n.children);
+      else if (n.children) visit(n.children);
+    }
+  };
+  visit(tree);
+  return out;
+}
+
+/** Where a document's pages are, as `Vault.pagesOf` finds them, from what is known of it: no document is read. */
+async function pagesFor(vault: Vault, path: string, node: DocNode | undefined): Promise<string | null> {
+  const named = metas.get(path)?.pdf;
+  if (named !== undefined) {
+    const rel = normRel(joinRel(dirOf(path), named));
+    if (rel && (await vault.fs.stat(vault.abs(rel)))?.isDir === false) return rel;
+  }
+  return node?.pdf ?? null;
+}
+
+/** The vault whose index has been read into `bodies`. */
+let indexed: Vault | null = null;
+
+/**
+ * What is known of every document, published: from the index when the
+ * collection opens (one read of the digests, nothing parsed), and after
+ * that kept in step by the store's own word of each write (`onIndexed`);
+ * a document the tree has that is not known yet is read.
+ */
 async function publishDocs(vault: Vault): Promise<void> {
   const now = appNow();
-  const docs: Record<string, DocInfo> = {};
-  const seen = new Set<string>();
-  for (const path of vault.documents()) {
+  const paths = vault.documents();
+  if (indexed !== vault) {
+    bodies.clear();
+    metas.clear();
+    derived.clear();
+    forgetInherited();
+    const index = await storeOf(vault)?.digests();
+    if (current !== vault) return;
+    if (index) for (const path of paths) { const doc = index.get(path); if (doc) setBody(path, doc); }
+    indexed = vault;
+  }
+  const seen = new Set(paths);
+  for (const path of [...bodies.keys()]) if (!seen.has(path)) dropBody(path);
+  for (const path of paths) {
+    if (bodies.has(path)) continue;
     try {
-      const doc = (await vault.read(path)).doc;
-      bodies.set(path, doc);
-      seen.add(path);
-      docs[path] = infoOf(doc, docItems(path, doc, now), now, await vault.pagesOf(path));
+      setBody(path, (await vault.read(path)).doc);
     } catch (e) {
       console.error(path, e);
     }
   }
-  for (const path of [...bodies.keys()]) if (!seen.has(path)) bodies.delete(path);
+  if (current !== vault) return;
+  const nodes = nodesByPath(vault.tree);
+  const docs: Record<string, DocInfo> = {};
+  for (const path of paths) {
+    const doc = bodies.get(path);
+    if (doc) docs[path] = infoOf(doc, derivedOf(path, now).items, now, await pagesFor(vault, path, nodes.get(path)));
+  }
   if (current !== vault) return;
   useApp.setState(publishQueue(docs, now));
   dayStarted();
+}
+
+/** A document as last written or reported: what is known of it replaced, its row's numbers and the queue with it. */
+function publishDoc(vault: Vault, path: string, doc: Doc): void {
+  const s = useApp.getState();
+  const now = appNow();
+  setBody(path, doc);
+  // the pages stay what they were until the vault has looked: a changed `pdf` field lands a moment later
+  useApp.setState(publishQueue({ ...s.docs, [path]: infoOf(doc, derivedOf(path, now).items, now, s.docs[path]?.pdf ?? null) }, now));
+  void pagesFor(vault, path, nodesByPath(vault.tree).get(path)).then((pdf) => {
+    const cur = useApp.getState().docs[path];
+    if (current !== vault || !cur || (cur.pdf ?? null) === pdf) return;
+    const next = { ...cur };
+    if (pdf === null) delete next.pdf; else next.pdf = pdf;
+    useApp.setState((st) => ({ docs: { ...st.docs, [path]: next } }));
+  });
+}
+
+/** The store's word of a document it has just written: its digest is what is known of it from now. */
+function onIndexed(vault: Vault, path: string, doc: Doc | null): void {
+  if (current !== vault || indexed !== vault || !doc) return;
+  // a document the tree does not have yet is published when the tree is (`publishDocs` reads what it is missing)
+  if (!useApp.getState().docs[path] && !bodies.has(path)) { setBody(path, doc); return; }
+  publishDoc(vault, path, doc);
 }
 
 /** Publish the tree, and forget open state for anything no longer in it. */
@@ -271,25 +505,14 @@ function onEvent(vault: Vault, ev: VaultEvent): void {
       publishTree(vault);
       void publishDocs(vault);
       break;
-    case 'doc': {
-      const now = appNow();
-      const items = docItems(ev.path, ev.loaded.doc, now);
-      bodies.set(ev.path, ev.loaded.doc);
-      // the pages stay what they were until the vault has looked: a changed `pdf` field lands a moment later
-      useApp.setState(publishQueue({ ...s.docs, [ev.path]: infoOf(ev.loaded.doc, items, now, s.docs[ev.path]?.pdf ?? null) }, now));
-      void vault.pagesOf(ev.path).then((pdf) => {
-        const cur = useApp.getState().docs[ev.path];
-        if (current !== vault || !cur || (cur.pdf ?? null) === pdf) return;
-        const next = { ...cur };
-        if (pdf === null) delete next.pdf; else next.pdf = pdf;
-        useApp.setState((st) => ({ docs: { ...st.docs, [ev.path]: next } }));
-      });
+    case 'doc':
+      // over a store the write itself was reported with the document's digest (`onIndexed`); a directory has only this
+      if (!storeOf(vault)) publishDoc(vault, ev.path, ev.loaded.doc);
       break;
-    }
     case 'gone': {
       const docs = { ...s.docs };
       delete docs[ev.path];
-      bodies.delete(ev.path);
+      dropBody(ev.path);
       const now = appNow();
       useApp.setState({ panes: dropTabs(pagesToNotebook(s.panes, ev.path, s.docs), ev.path), ...publishQueue(docs, now) });
       break;
@@ -297,6 +520,13 @@ function onEvent(vault: Vault, ev: VaultEvent): void {
     case 'moved': {
       const docs: Record<string, DocInfo> = {};
       for (const [k, v] of Object.entries(s.docs)) docs[rekey(k, ev.from, ev.to) ?? k] = v;
+      // what is known of each document goes with it; its items name its path, so they are made again
+      for (const [k, doc] of [...bodies]) {
+        const to = rekey(k, ev.from, ev.to);
+        if (to === null || to === k) continue;
+        dropBody(k);
+        setBody(to, doc);
+      }
       const railFolded = rekeyOpen(s.railFolded, ev.from, ev.to);
       const views: Record<string, DeckView> = {};
       for (const [k, v] of Object.entries(s.deckViews)) views[rekey(k, ev.from, ev.to) ?? k] = v;
@@ -324,6 +554,8 @@ function onEvent(vault: Vault, ev: VaultEvent): void {
 export async function openVault(path: string): Promise<Vault> {
   stopPlugins();
   stopSync();
+  stopMirror();
+  stopDated();
   current?.close();
   const vault = await Vault.open(collectionFs(path), path);
   current = vault;
@@ -351,6 +583,10 @@ export async function openVault(path: string): Promise<Vault> {
     panes = openTab(panes, queueId('today'));
   }
   bodies.clear();
+  metas.clear();
+  derived.clear();
+  forgetInherited();
+  indexed = null;
   lastDay = typeof state.lastDay === 'string' ? state.lastDay : null;
   reviews = await vault.loadReviews().catch((e: unknown) => { console.error('reviews', e); return []; });
   const s0 = useApp.getState();
@@ -364,22 +600,42 @@ export async function openVault(path: string): Promise<Vault> {
   setWindowTitle(vaultName(path));
   publishTree(vault);
   vault.subscribe((ev) => onEvent(vault, ev));
+  storeOf(vault)?.onIndex((p, doc) => onIndexed(vault, p, doc));
   await vault.watch();
   await publishDocs(vault);
   // the plugins the vault has on; a failure there is theirs, not the vault's
   await startPlugins(vault).catch((e: unknown) => console.error('plugins', e));
   // sync, when the vault is a repository with a remote: a pull now, then the timers (`sync.ts`)
   void startSync(vault).catch((e: unknown) => console.error('sync', e));
+  // the copies kept outside the database (`keep.ts`): the mirror, when one is set, and the day's export
+  void startMirror(vault).catch((e: unknown) => console.error('mirror', e));
+  void keepsDated().then((on) => { if (on && current === vault) keepDatedSoon(vault, currentVault); });
   if (import.meta.env.DEV) void info(`vault ${path}: ${vault.documents().join(', ')}`);
   return vault;
+}
+
+/** Whether the day's export is made on its own: always, but for a dev run of a smoke, which makes its own when it checks them. */
+async function keepsDated(): Promise<boolean> {
+  if (!import.meta.env.DEV) return true;
+  try {
+    return !(await invoke<string | null>('dev_env', { name: 'ILMI_SMOKE' }));
+  } catch {
+    return false;
+  }
 }
 
 /** Back to the welcome: the watcher stops, the store forgets the vault's data; the recents keep it. */
 export function closeVault(): void {
   stopSync();
+  stopMirror();
+  stopDated();
   current?.close();
   current = null;
   bodies.clear();
+  metas.clear();
+  derived.clear();
+  forgetInherited();
+  indexed = null;
   lastDay = null;
   reviews = [];
   if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; savePatch = {}; }
@@ -527,6 +783,12 @@ export function openInitialVault(): Promise<void> {
       if (mode === 'welcome') {
         const { smokeWelcome } = await import('./smoke.js');
         await smokeWelcome(path ? await devCollection(path) : null);
+        return;
+      }
+      // the size smoke makes its own collections from the folder, and opens each
+      if (mode === 'size') {
+        const { smokeSize } = await import('./smoke.js');
+        await smokeSize(path);
         return;
       }
       // the iPad's own smoke starts at its welcome: the clone is its first step

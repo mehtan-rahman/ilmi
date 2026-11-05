@@ -6,6 +6,129 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-11-05 — milestone 60: state in rows
+
+Done on main: `HASH60`. A document's text is stored without its state;
+schedules, the review log, a directory's order and the pairs said not the
+same are tables; an index written with each document lets a collection
+open without parsing anything; a mirror folder and dated exports are
+kept. New: `src/vault/lift.ts` (a file taken apart and put together, the
+digest), `src/app/keep.ts` (the mirror, the dated exports). Changed:
+`src-tauri/src/store.rs` (five tables, the `Lift` in `put`, schema 2; 9
+cargo tests there), `lib.rs` (the store's new commands, `dev_web_memory`),
+`src/vault/store.ts` (the `Store` interface, `storeFs` rewritten over
+it: documents, the three views under `.ilmi/`, originals, the upgrade,
+`digests`, `onIndex`, `logWith`), `mem-store.ts`, `tauri-store.ts`,
+`transfer.ts` (`mirrorPass`, `mirrorDirIn`), `src/schedule/queue.ts` and
+`options.ts` (the sort takes kept draws), `src/app/vault.ts` (opening
+from the index, each document's items kept, the store's word of a
+write), `grading.ts` (the log line with the write), `Queue.tsx` (a long
+list by the page), `Tweaks.tsx` and `store.ts` (the `mirror` row),
+`smoke.ts` (`ILMI_SMOKE=size`; `store` extended), FORMAT.md's opening,
+`docs/guide.md`, `docs/development.md`, PLAN (60's notes, the ground rule).
+
+### Decided
+
+- **The store still gives the vault a file.** A write is taken apart
+  under `storeFs` and a read put together, through the format's parser
+  and serializer, so `Vault` and everything above it did not change and
+  the vault's tests still run over both. A grade goes the way it went;
+  the store sees the text is the same and writes a row.
+- **An untouched file is the file.** Text and rows must compose to the
+  canonical form or nothing is lifted; a file that came in otherwise is
+  kept beside until its document changes. The round trip of the corpus,
+  hand-mangled files included, and of the sample holds byte for byte.
+- **Ids are not minted for every card**, against the model's line. It
+  would rewrite every imported file with cards and break the export of
+  untouched files that the git sync still stands on. 61 should do it when
+  it replaces git.
+- **The index is a digest per document, read by the code that read
+  documents.** The queue is built over digests in the renderer, each
+  document's items kept between builds; it is not an SQL query. The
+  day's order is not expressible as one without rewriting the scheduler.
+- **Dated exports are whole**, PDFs included, seven kept. Simple and
+  safe now; 63 should keep big files once.
+
+### Verified
+
+1335 tests in 88 files (1 skipped), typecheck clean, 32 cargo tests,
+`cargo check` for both iOS targets. In vitest: every schedule of the
+sample lifted and every file read back whole; a grade as one `put` with
+no text written and one line of the log; the index against the parsed
+documents, queue items equal; a hand-written file kept until it changes;
+the order, the log and the pairs as tables behind their files; a
+collection of schema 1 upgraded and exported as it went in; the mirror
+among a person's files. In the Mac's window from a clean checkout (dev
+identifier, the app stopped by pid, captures by window id): `store` over
+the sample, 34 checks (the 59 ones, then a grade leaving the stored text
+alone and changing one line of the file, the mirror equal to an export
+and following a write, Tweaks' row, the dated export made once and the
+oldest of eight removed), its folder and zip equal to the sample by
+`diff -r` from a shell; `tour` 23 checks and 45 captures; `sync` 34;
+`nudge` 29; `size` three clean runs (figures in PLAN under 60: the
+115,216-card collection opens in 1.5–2.1 s and a card is graded in
+0.52–0.57 s; 608–642 MB over an empty page). A database made by 59's
+build from the sample, opened by this one: schema 2 after, 816
+schedules, 5,144 log lines, no `sr` line left in a text, `tour` 23 over
+it.
+
+### Not verified
+
+Nothing on the simulated iPad (none was booted). The mirror's picker and
+the dated export's timers by hand. The smokes other than the five above.
+Where the window's memory goes beyond the index and the queue's items.
+
+### For the user
+
+Nothing to do. If you imported a collection with the build before this
+one, it is brought up the first time this build opens it. `mirror` in
+the tweaks keeps a folder of plain files up to date for other tools, if
+you want one. Each day's export is under the collection's folder in the
+app's data directory.
+
+Handoff prompt for the next session:
+
+```
+Read PLAN.md, FORMAT.md, BUILD-LOG.md, and spec/hashiyah/HANDOFF.md. The
+section of PLAN.md in progress is "A database under the app, synced by
+CRDT to any storage" (59–68); its introduction holds the decisions, and
+59's and 60's notes say how the store sits under the app: `Vault`
+unchanged over an `Fs` that src/vault/store.ts makes from a collection's
+rows (src-tauri/src/store.rs); a document's text stored without its
+state, which is rows (schedules, reviews, documents.place, not_same)
+taken out and put back by src/vault/lift.ts; an index (digests) written
+with each document, which is all an open reads. Do milestone 61 and only
+that one (52 waits for the user; 56–58 come later in that section's
+order). Stop at its "done when". Then tick it, write notes for the next
+session under it, add an entry to BUILD-LOG.md with a fresh handoff
+prompt, and commit. Rules as in PLAN.md's ground rules: export
+PATH=$HOME/.cargo/bin:/opt/homebrew/bin:$PATH; npm test and npm run
+typecheck green before a commit, and cargo test for the Rust side (run
+the tests on a quiet machine: the timed ones fail under load); one
+commit per milestone; ask before a screen, section, or setting the
+section does not name; a FORMAT change needs a corpus file and a test.
+61 starts by choosing the text library on the sample and recording the
+numbers. Read 60's notes "Not done, against the model" first: cards do
+not all have ids yet, a section is keyed by its heading's text, a log
+line's doc and a not-same pair are still paths, and a schedule changed
+by a merge needs its document's digest made again. Keep
+src/vault/__tests__/store.test.ts's round trip of the corpus and the
+sample byte for byte, and ILMI_SMOKE=store passing; git sync stays
+working until 66. The window checks run from a clean checkout of main
+with the dev identifier override (docs/development.md): ILMI_VAULT is a
+folder, imported afresh as a collection on each run. Never kill a
+process on port 1420 that is not yours, stop your own app binary by pid
+when a run ends, capture only by window id; a covered window's page runs
+several times slower, so time nothing in one. Still unverified since 59:
+everything on the simulated iPad over the store. The open item from 60
+is memory: about 600 MB in the Mac's web view for 115,000 cards, cause
+not found. Ask before changing the database's schema in a way an
+existing collection could not open; the upgrade from schema 1 in
+storeFs is the pattern.
+```
+
+---
+
 ## 2026-11-05 — milestone 59: the store
 
 Done on main: `8aafcf1`. A collection is now an SQLite database under

@@ -171,6 +171,72 @@ fn dev_env(app: tauri::AppHandle, name: String) -> Option<String> {
     }
 }
 
+/// Dev only, macOS: the memory of this window's web content process, in
+/// bytes, for `ILMI_SMOKE=size` (the page cannot weigh itself in WebKit):
+/// what it holds now, and the most it has held. The process is the
+/// `com.apple.WebKit.WebContent` whose responsible process is this one (or
+/// the terminal this one answers to, for a `tauri dev` run), started after
+/// it, the largest when there are several; what is read is its physical
+/// footprint, the figure Activity Monitor shows. With `collect`, WebKit is
+/// first told memory is low (`org.WebKit.lowMemory`, the notification its
+/// own tests post: every WebKit process of the session drops its caches
+/// and collects garbage), so the figure is what the page holds and not
+/// what it has yet to let go. `None` when no such process is found, on
+/// other systems, and in release.
+#[tauri::command(async)]
+fn dev_web_memory(collect: bool) -> Option<(u64, u64)> {
+    #[cfg(all(debug_assertions, target_os = "macos"))]
+    {
+        use std::os::raw::{c_char, c_int, c_void};
+        extern "C" {
+            fn proc_listallpids(buffer: *mut c_void, buffersize: c_int) -> c_int;
+            fn proc_name(pid: c_int, buffer: *mut c_void, buffersize: u32) -> c_int;
+            fn proc_pid_rusage(pid: c_int, flavor: c_int, buffer: *mut c_void) -> c_int;
+            fn responsibility_get_pid_responsible_for_pid(pid: c_int) -> c_int;
+            fn notify_post(name: *const c_char) -> u32;
+        }
+        if collect {
+            unsafe { notify_post(c"org.WebKit.lowMemory".as_ptr()) };
+            std::thread::sleep(std::time::Duration::from_secs(6));
+        }
+        // rusage_info_v4: a 16-byte uuid, then 64-bit counters; the footprint is the eighth, the start time the
+        // ninth, the footprint's lifetime peak the twenty-ninth
+        const RUSAGE_INFO_V4: c_int = 4;
+        let usage = |pid: c_int| -> Option<[u64; 48]> {
+            let mut buf = [0u64; 48];
+            (unsafe { proc_pid_rusage(pid, RUSAGE_INFO_V4, buf.as_mut_ptr().cast()) } == 0).then_some(buf)
+        };
+        let me = std::process::id() as c_int;
+        let mine = [me, unsafe { responsibility_get_pid_responsible_for_pid(me) }];
+        let started = usage(me)?[10];
+        let mut pids = vec![0 as c_int; 8192];
+        let n = unsafe { proc_listallpids(pids.as_mut_ptr().cast(), (pids.len() * std::mem::size_of::<c_int>()) as c_int) };
+        let mut best: Option<(u64, u64)> = None;
+        for &pid in pids.iter().take(n.max(0) as usize) {
+            let mut name = [0u8; 256];
+            let len = unsafe { proc_name(pid, name.as_mut_ptr().cast(), name.len() as u32) };
+            if len <= 0 || !String::from_utf8_lossy(&name[..len as usize]).starts_with("com.apple.WebKit.WebContent") {
+                continue;
+            }
+            if !mine.contains(&unsafe { responsibility_get_pid_responsible_for_pid(pid) }) {
+                continue;
+            }
+            // one started before this app is another app's
+            if let Some(u) = usage(pid).filter(|u| u[10] >= started) {
+                if best.is_none_or(|b| u[9] > b.0) {
+                    best = Some((u[9], u[30]));
+                }
+            }
+        }
+        best
+    }
+    #[cfg(not(all(debug_assertions, target_os = "macos")))]
+    {
+        let _ = collect;
+        None
+    }
+}
+
 /// `ILMI_<NAME>` as `Documents/smoke.json` gives it: `{"mode": "tour",
 /// "vault": "double-major"}` is `ILMI_SMOKE=tour` over the vault of that
 /// name in Documents (a path that is not absolute is taken from there); any
@@ -299,8 +365,69 @@ fn store_text(app: tauri::AppHandle, stores: tauri::State<'_, store::Stores>, ro
 }
 
 #[tauri::command(async)]
-fn store_put(app: tauri::AppHandle, stores: tauri::State<'_, store::Stores>, root: String, at: store::Place, content: Option<store::Content>) -> Result<store::Row, String> {
-    stores.put(&collection_dir(&app, &root)?, &at, content.as_ref())
+fn store_put(app: tauri::AppHandle, stores: tauri::State<'_, store::Stores>, root: String, at: store::Place, content: Option<store::Content>, lift: Option<store::Lift>) -> Result<store::Row, String> {
+    stores.put(&collection_dir(&app, &root)?, &at, content.as_ref(), lift.as_ref())
+}
+
+#[tauri::command(async)]
+fn store_version(app: tauri::AppHandle, stores: tauri::State<'_, store::Stores>, root: String) -> Result<i64, String> {
+    stores.version(&collection_dir(&app, &root)?)
+}
+
+#[tauri::command(async)]
+fn store_set_version(app: tauri::AppHandle, stores: tauri::State<'_, store::Stores>, root: String, version: i64) -> Result<(), String> {
+    stores.set_version(&collection_dir(&app, &root)?, version)
+}
+
+#[tauri::command(async)]
+fn store_doc(app: tauri::AppHandle, stores: tauri::State<'_, store::Stores>, root: String, id: String) -> Result<store::DocContent, String> {
+    stores.doc(&collection_dir(&app, &root)?, &id)
+}
+
+#[tauri::command(async)]
+fn store_places(app: tauri::AppHandle, stores: tauri::State<'_, store::Stores>, root: String, set: Vec<(String, f64)>) -> Result<(), String> {
+    stores.places(&collection_dir(&app, &root)?, &set)
+}
+
+/// A page of the index, as the JSON it is stored as: the response is that text, read once by the renderer.
+#[tauri::command(async)]
+fn store_digests(app: tauri::AppHandle, stores: tauri::State<'_, store::Stores>, root: String, after: Option<String>, limit: i64) -> Result<tauri::ipc::Response, String> {
+    stores.digests(&collection_dir(&app, &root)?, after.as_deref(), limit).map(tauri::ipc::Response::new)
+}
+
+#[tauri::command(async)]
+fn store_review_files(app: tauri::AppHandle, stores: tauri::State<'_, store::Stores>, root: String) -> Result<Vec<(String, i64)>, String> {
+    stores.review_files(&collection_dir(&app, &root)?)
+}
+
+#[tauri::command(async)]
+fn store_reviews(app: tauri::AppHandle, stores: tauri::State<'_, store::Stores>, root: String, file: Option<String>) -> Result<Vec<String>, String> {
+    stores.reviews(&collection_dir(&app, &root)?, file.as_deref())
+}
+
+#[tauri::command(async)]
+fn store_reviews_put(app: tauri::AppHandle, stores: tauri::State<'_, store::Stores>, root: String, file: String, rows: Vec<store::ReviewRow>, replace: bool) -> Result<(), String> {
+    stores.reviews_put(&collection_dir(&app, &root)?, &file, &rows, replace)
+}
+
+#[tauri::command(async)]
+fn store_same(app: tauri::AppHandle, stores: tauri::State<'_, store::Stores>, root: String) -> Result<Vec<String>, String> {
+    stores.same(&collection_dir(&app, &root)?)
+}
+
+#[tauri::command(async)]
+fn store_same_put(app: tauri::AppHandle, stores: tauri::State<'_, store::Stores>, root: String, pairs: Vec<String>) -> Result<(), String> {
+    stores.same_put(&collection_dir(&app, &root)?, &pairs)
+}
+
+#[tauri::command(async)]
+fn store_originals(app: tauri::AppHandle, stores: tauri::State<'_, store::Stores>, root: String) -> Result<Vec<(String, store::Original)>, String> {
+    stores.originals(&collection_dir(&app, &root)?)
+}
+
+#[tauri::command(async)]
+fn store_original_put(app: tauri::AppHandle, stores: tauri::State<'_, store::Stores>, root: String, key: String, original: Option<store::Original>) -> Result<(), String> {
+    stores.original_put(&collection_dir(&app, &root)?, &key, original.as_ref())
 }
 
 #[tauri::command(async)]
@@ -497,7 +624,7 @@ pub fn run() {
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_opener::init())
         .manage(store::Stores::default())
-        .invoke_handler(tauri::generate_handler![allow_vault, allow_hidden, read_dropped, read_dropped_bytes, read_anki_package, read_epub, read_plugin_zip, platform, dev_env, dev_nudge_serve, dev_nudge_drop, dev_nudge_listeners, set_recent_vaults, store_list, store_create, store_delete, store_rows, store_text, store_put, store_remove, store_blob_put, store_blob_get, zip_folder, sync_status, sync_init, sync_init_bare, sync_set_remote, sync_clone, sync_changes, sync_commit, sync_fetch, sync_merge, sync_resolve, sync_push])
+        .invoke_handler(tauri::generate_handler![allow_vault, allow_hidden, read_dropped, read_dropped_bytes, read_anki_package, read_epub, read_plugin_zip, platform, dev_env, dev_web_memory, dev_nudge_serve, dev_nudge_drop, dev_nudge_listeners, set_recent_vaults, store_list, store_create, store_delete, store_rows, store_text, store_put, store_remove, store_version, store_set_version, store_doc, store_places, store_digests, store_review_files, store_reviews, store_reviews_put, store_same, store_same_put, store_originals, store_original_put, store_blob_put, store_blob_get, zip_folder, sync_status, sync_init, sync_init_bare, sync_set_remote, sync_clone, sync_changes, sync_commit, sync_fetch, sync_merge, sync_resolve, sync_push])
         .setup(|app| {
             // Windows and Linux learn the scheme at run time; macOS reads it
             // from the bundle's Info.plist, which Tauri writes from the

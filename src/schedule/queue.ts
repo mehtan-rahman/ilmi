@@ -309,20 +309,25 @@ export const itemKey = (item: QueueItem, day: string): number => sampleKey(`${it
 
 /**
  * In place. What is due comes first, by the day's key, then stored due
- * (oldest first); what is not due yet follows, by due, then priority. A
- * stable sort keeps document order after that.
+ * (oldest first); what is not due yet follows, by due, then priority;
+ * document order after that. `keyOf` gives a due item's key for the day
+ * when the caller keeps them (a draw is not cheap, and is the same all
+ * day); without it each is drawn here.
  */
-export function sortQueue(items: QueueItem[], now: Date): QueueItem[] {
+export function sortQueue(items: QueueItem[], now: Date, keyOf: (item: QueueItem, day: string) => number = itemKey): QueueItem[] {
   const day = dayOf(now);
-  const keys = new Map<QueueItem, number>();
-  const keyOf = (i: QueueItem) => { let k = keys.get(i); if (k === undefined) { k = itemKey(i, day); keys.set(i, k); } return k; };
-  return items.sort((a, b) => {
-    const da = isDue(a, now);
-    const db = isDue(b, now);
-    if (da !== db) return da ? -1 : 1;
-    const due = a.dueAt.getTime() - b.dueAt.getTime();
-    return da ? keyOf(a) - keyOf(b) || due : due || a.pri - b.pri;
+  const t = now.getTime();
+  const rows = items.map((item, at) => {
+    const when = item.dueAt.getTime();
+    const due = when <= t;
+    return { item, at, due, when, key: due ? keyOf(item, day) : 0 };
   });
+  rows.sort((a, b) => {
+    if (a.due !== b.due) return a.due ? -1 : 1;
+    return (a.due ? a.key - b.key || a.when - b.when : a.when - b.when || a.item.pri - b.item.pri) || a.at - b.at;
+  });
+  for (let i = 0; i < rows.length; i++) items[i] = rows[i]!.item;
+  return items;
 }
 
 /** All items over a set of documents, sorted; of two linked cards, one a day (`buryLinked`). */

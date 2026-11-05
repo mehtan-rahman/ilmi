@@ -11,4 +11,4 @@ export { ORDER_FILE, childrenAt, cleanOrder, directories, entryOf, followMove, f
 export { pageHeading, pageOf, pageOfBlock, pageSection, addToPage } from './pages.js';
 export { Vault, VaultConflict, SAME_FILE, NEW_NAMES, extractName, notesOf, imageExt, type ExtractSpec, type SectionSpec, type ImportSpec, type ImportPdfSpec, type PdfChapterSpec, type ImportDeckSpec, type ImageGet, type Loaded, type Removed, type VaultEvent, type VaultState } from './vault.js';
 export { storeFs, splitFront, newId, type Store, type StoreFs, type Row, type RowKind, type Place, type Content } from './store.js';
-export { importFolder, exportFolder, mirrorFolder, takeFiles, skipped } from './transfer.js';
+export { importFolder, exportFolder, mirrorFolder, takeFiles, skipped, mirrorPass, mirrorDirIn, MIRROR_LIST } from './transfer.js';

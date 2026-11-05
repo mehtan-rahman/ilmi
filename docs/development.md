@@ -45,7 +45,20 @@ results to the terminal. `ILMI_SMOKE=store` (a scratch copy of
 second time and exported as `<folder>-export` and `<folder>-export.zip`,
 each file compared with the folder's (`diff -r` from a shell says the same),
 then writes, an image, a rename and a move read back from the database, and
-the collection closed and reopened from the welcome. Give a dev run its own
+the collection closed and reopened from the welcome; since milestone 60 it
+also grades a card and reads the database to see that only a schedule's row
+and the log changed, mirrors the collection to `<folder>-mirror/` and
+watches a write follow, and makes the day's dated export. `ILMI_SMOKE=size`
+(over the same copy, with `ILMI_SIZE=15,152` by default) imports the folder
+that many times over into collections `size-15` and `size-152` (about
+11,000 and 115,000 cards), opens each, grades a card, and prints the open,
+the grade, and the memory of the window's web content process (a dev-only
+command reads its footprint, after posting WebKit's own low-memory
+notification so that garbage is collected first, in every WebKit process of
+the session; the page cannot weigh itself in WebKit). It
+says so when the window was covered during the run: the system slows a
+covered window's page several times over, and those times are not the
+app's. Delete the collections afterwards. Give a dev run its own
 identifier (below) and its collections are under
 `~/Library/Application Support/<identifier>/collections/`, apart from the
 installed app's.

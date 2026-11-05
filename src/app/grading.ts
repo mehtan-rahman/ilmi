@@ -5,8 +5,8 @@
 
 import type { CardSchedule, Review } from '../format/index.js';
 import { cardsById, copyToPartner, daysBetween, gradeItem, instantOf, linkedWith, whenToDate, wasLeeched, type CardItem, type Grade } from '../schedule/index.js';
-import type { Loaded } from '../vault/index.js';
-import { activeExamAt, allDocs, currentVault, note, optionsAt, recordReview } from './vault.js';
+import type { Loaded, StoreFs } from '../vault/index.js';
+import { activeExamAt, allDocs, anyLinks, currentVault, dropReview, note, optionsAt, recordReview, stageReview } from './vault.js';
 
 /** Time on a card past this is time away from it: a review counts this much at most, as Anki caps it. */
 export const REVIEW_MS_CAP = 60_000;
@@ -42,18 +42,37 @@ export async function gradeCard(item: CardItem, g: Grade, now: Date, ms?: number
   const { opts } = optionsAt(item.path);
   // studied toward an exam ahead: an interval past its last week is cut into it
   const exam = activeExamAt(item.path, now);
+  // over a store the grade's line goes into the log in the transaction that writes its schedule
+  const store = 'logWith' in vault.fs ? (vault.fs as StoreFs) : null;
   let wrote: { id: string; key?: string; prev?: CardSchedule; next: CardSchedule } | null = null;
-  const loaded = await vault.update(item.path, (doc) => {
-    gradeItem(doc, item, g, now, {
-      retention: opts.retention,
-      leech: { threshold: opts.leech, action: opts.leechAction },
-      ...(exam ? { exam } : {}),
-      report: (r) => { wrote = r; },
+  let line: Review | null = null;
+  const unstage = () => { if (line) dropReview(line); line = null; };
+  let loaded: Loaded;
+  try {
+    loaded = await vault.update(item.path, (doc) => {
+      gradeItem(doc, item, g, now, {
+        retention: opts.retention,
+        leech: { threshold: opts.leech, action: opts.leechAction },
+        ...(exam ? { exam } : {}),
+        report: (r) => {
+          wrote = r;
+          if (!store) return;
+          // the update may run again on a file that moved: the line is the last run's
+          unstage();
+          line = reviewOf(item.path, r.id, r.key, g, r.prev, r.next, now, ms);
+          stageReview(line);
+          store.logWith(item.path, [line]);
+        },
+      });
     });
-  });
+  } catch (e) {
+    unstage();
+    store?.logWith(item.path, []);
+    throw e;
+  }
   const w = wrote as { id: string; key?: string; prev?: CardSchedule; next: CardSchedule } | null;
   // the other side of a link takes the same state; a reverse's grade is the reverse's own
-  if (w && w.key === undefined) {
+  if (w && w.key === undefined && anyLinks()) {
     const docs = allDocs();
     const byId = cardsById(docs);
     const me = byId.get(w.id);
@@ -66,7 +85,13 @@ export async function gradeCard(item: CardItem, g: Grade, now: Date, ms?: number
   }
   if (w) {
     if (wasLeeched(w.prev, w.next, opts.leech)) note(`leech · ${opts.leechAction === 'suspend' ? 'suspended' : `${w.next.lapses ?? 0} lapses`}`);
-    await recordReview(reviewOf(item.path, w.id, w.key, g, w.prev, w.next, now, ms)).catch((e: unknown) => console.error('review log', e));
+    const staged = line as Review | null;
+    if (store && staged) {
+      await store.flushLog(item.path).catch((e: unknown) => console.error('review log', e));
+      await recordReview(staged, true);
+    } else {
+      await recordReview(reviewOf(item.path, w.id, w.key, g, w.prev, w.next, now, ms)).catch((e: unknown) => console.error('review log', e));
+    }
   }
   return loaded;
 }

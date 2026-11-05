@@ -12,7 +12,8 @@ import { folderPaths, titleOf } from './names.js';
 import { ACCENTS, DENSITY_MAX, DENSITY_MIN, THEMES, useApp, type Accent, type Theme, ZOOM_MAX, ZOOM_MIN, ZOOM_STEP } from './store.js';
 import { notify } from './land.js';
 import { cloneCollection, connect, setNudgeServer, setRemote, syncWord } from './sync.js';
-import { openVault, setBudget, setClipDir } from './vault.js';
+import { chooseMirror, mirrorOff } from './keep.js';
+import { currentVault, openVault, setBudget, setClipDir } from './vault.js';
 
 const THEME_LABEL: Record<Theme, string> = { light: 'light', dark: 'dark', eink: 'e-ink' };
 
@@ -148,6 +149,31 @@ function SyncRows() {
   );
 }
 
+/**
+ * Mirror: a folder kept as the collection is, one way, for other tools to
+ * read (`keep.ts`). Off by default; `choose…` asks for a folder and the
+ * mirror is a folder of the collection's name inside it.
+ */
+function MirrorRow() {
+  const mirror = useApp((s) => s.mirror);
+  const [busy, setBusy] = useState(false);
+  const choose = () => {
+    const vault = currentVault();
+    if (!vault) return;
+    setBusy(true);
+    chooseMirror(vault).catch((e: unknown) => notify(`mirror · ${e instanceof Error ? e.message : String(e)}`)).finally(() => setBusy(false));
+  };
+  return (
+    <div className="tw-row">
+      <span className="tw-lbl">mirror <span className="tw-val" title={mirror || undefined}>{mirror ? mirror.slice(mirror.lastIndexOf('/', mirror.lastIndexOf('/') - 1) + 1) : 'off'}</span></span>
+      <div className="tw-seg">
+        <button type="button" disabled={busy} onClick={choose}>choose…</button>
+        {mirror && <button type="button" disabled={busy} onClick={() => { const vault = currentVault(); if (vault) mirrorOff(vault); }}>off</button>}
+      </div>
+    </div>
+  );
+}
+
 export function Tweaks() {
   const theme = useApp((s) => s.theme);
   const accent = useApp((s) => s.accent);
@@ -161,6 +187,7 @@ export function Tweaks() {
   const vault = useApp((s) => s.vault);
   const budget = useApp((s) => s.budget);
   const clipDir = useApp((s) => s.clipDir);
+  const mobile = useApp((s) => s.mobile);
   const close = () => useApp.setState({ tweaksOpen: false });
 
   useEffect(() => {
@@ -266,6 +293,7 @@ export function Tweaks() {
           <ClipDirPick value={clipDir} />
         </div>
       )}
+      {vault !== null && !mobile && <MirrorRow />}
       {vault !== null && <SyncRows />}
       {vault !== null && <PluginsSection />}
     </div>

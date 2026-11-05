@@ -4,14 +4,28 @@
 // under it is read through the file system.
 
 import { invoke } from '@tauri-apps/api/core';
-import type { Row, Store } from './store.js';
+import type { Doc } from '../format/index.js';
+import type { Original } from './lift.js';
+import type { DocContent, Row, Store } from './store.js';
 
 export function tauriStore(root: string): Store {
   return {
+    version: () => invoke<number>('store_version', { root }),
+    setVersion: (version) => invoke<void>('store_set_version', { root, version }),
     rows: () => invoke<Row[]>('store_rows', { root }),
     text: (id) => invoke<string>('store_text', { root, id }),
-    put: (at, content) => invoke<Row>('store_put', { root, at, content: content ?? null }),
+    doc: (id) => invoke<DocContent>('store_doc', { root, id }),
+    put: (at, content, lift) => invoke<Row>('store_put', { root, at, content: content ?? null, lift: lift ?? null }),
     remove: (ids) => invoke<void>('store_remove', { root, ids }),
+    places: (set) => invoke<void>('store_places', { root, set }),
+    digests: (after, limit) => invoke<[string, Doc][]>('store_digests', { root, after, limit }),
+    reviewFiles: () => invoke<[string, number][]>('store_review_files', { root }),
+    reviews: (file) => invoke<string[]>('store_reviews', { root, file }),
+    reviewsPut: (file, rows, replace) => invoke<void>('store_reviews_put', { root, file, rows, replace }),
+    same: () => invoke<string[]>('store_same', { root }),
+    samePut: (pairs) => invoke<void>('store_same_put', { root, pairs }),
+    originals: () => invoke<[string, Original][]>('store_originals', { root }),
+    originalPut: (key, original) => invoke<void>('store_original_put', { root, key, original }),
     // the bytes go raw as the request's body; a header is ASCII, so the collection's path is percent-encoded
     blobPut: (bytes) => invoke<{ hash: string; size: number }>('store_blob_put', bytes, { headers: { root: encodeURIComponent(root) } }),
     blobGet: async (hash) => new Uint8Array(await invoke<ArrayBuffer>('store_blob_get', { root, hash })),

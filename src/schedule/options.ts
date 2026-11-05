@@ -111,6 +111,8 @@ export interface MeterContext {
   spent?: Spent;
   /** The exam ahead a document is studied toward (`exams.ts`), if any. */
   examOf?(path: string): ExamAt | undefined;
+  /** A due item's key for the day, when the caller keeps them (`sortQueue`). */
+  keyOf?(item: QueueItem, day: string): number;
 }
 
 /**
@@ -136,7 +138,7 @@ export function examNewQuota(left: number, exam: ExamAt, now: Date): number {
  * (`examNewQuota`) is not spent.
  */
 export function meterQueue(items: QueueItem[], now: Date, ctx: MeterContext): QueueItem[] {
-  sortQueue(items, now);
+  sortQueue(items, now, ctx.keyOf);
   const tomorrow = dayStart(addDays(dayOf(now), 1));
   const used = { fresh: new Map(ctx.spent?.fresh ?? []), reviews: new Map(ctx.spent?.reviews ?? []), exams: new Map(ctx.spent?.exams ?? []) };
   const cache = new Map<string, Resolved>();
@@ -179,7 +181,7 @@ export function meterQueue(items: QueueItem[], now: Date, ctx: MeterContext): Qu
       if (ek !== undefined) used.exams.set(ek, (used.exams.get(ek) ?? 0) + 1);
     }
   }
-  return held ? sortQueue(items, now) : items;
+  return held ? sortQueue(items, now, ctx.keyOf) : items;
 }
 
 /** A review the allowance counts: what was graded, on which day, from which state. */

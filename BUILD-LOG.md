@@ -6,6 +6,131 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-11-05 — milestone 59: the store
+
+Done on main: `8aafcf1`. A collection is now an SQLite database under
+the app's data directory; a folder of Markdown files is what is imported
+and what is exported. New: `src-tauri/src/store.rs` (the tables, the
+blobs, the open stores, `zip_dir`; 6 cargo tests), `src/vault/store.ts`
+(`Store`, `storeFs`, `splitFront`), `src/vault/tauri-store.ts`,
+`src/vault/mem-store.ts`, `src/vault/transfer.ts`, `src/app/collections.ts`,
+`src/vault/__tests__/store.test.ts` (14), `disk.ts` and three
+`*-store.test.ts` files that run the vault's tests again over a store.
+Changed: `lib.rs` (the store's commands, `allow_hidden`, the menu's
+label, `documents_vaults` removed), `Cargo.toml` (`sha2`,
+`percent-encoding`, both already in the lock), `src/vault/fs.ts`
+(`atomic`), `vault.ts` (one line: a whole write goes in place),
+`src/app/vault.ts`, `platform.ts`, `store.ts`, `Welcome.tsx`, `menu.ts`,
+`Palette.tsx`, `Tweaks.tsx`, `sync.ts`, `app.css` (one rule, the
+welcome's import message), `smoke.ts` (`ILMI_SMOKE=store`; the smokes'
+disk paths), the plugin tests' helper (a collection in memory), and the
+tests of the menu, the platform and the iPad's welcome; FORMAT.md's
+opening, README, `docs/guide.md`, `docs/keys.md`, `docs/development.md`,
+PLUGINS.md, PLAN (the ground rule on FORMAT.md, 59's notes).
+
+### Decided
+
+- **`Vault` stays as it is; the store is an `Fs` under it.** Eight files
+  outside `src/vault` reach files through `vault.fs` and `vault.abs`
+  (images, book PDFs, the plugin runtime, the smokes). Giving the vault a
+  file-system-shaped store kept all of them, and let the vault's tests
+  run over both. Paths are made from names and parents inside `storeFs`;
+  a document's children are the rows under it, so a rename is one row.
+- **Text in rows, files as blobs.** A document and anything under a
+  dot-directory that is valid UTF-8 is text in its row; the rest is a
+  file named by its SHA-256. A `.md` that is not UTF-8 is a blob too, so
+  the bytes come back as they went in.
+- **A collection is named by its folder under the app's data
+  directory**, and that path is the vault's root: recents, the window's
+  title, a link's `vault=`, and the sync settings keep working by name.
+- **Import and export are one copy between two `Fs`s**, so the round
+  trip the tests hold is the code the app runs.
+- **Git sync runs over `<collection>/repo`**, an export kept in step by
+  a mirror out and a take-in, until 66.
+- **`place` waits for 60.** The order and the app's state under `.ilmi/`
+  are rows holding the files' text for now.
+
+### Verified
+
+1324 tests in 88 files (1 skipped: a write made inside an event, which
+only a directory can take without waiting), typecheck clean, 29 cargo
+tests, `cargo check` for `aarch64-apple-ios` and `aarch64-apple-ios-sim`.
+The corpus vault and `samples/double-major`, imported and exported in
+vitest, come back byte for byte, every file. In the Mac's window, from a
+clean checkout (the dev identifier `dev.ilmi.check`, the app stopped by
+pid after each run, captures by window id), at `8aafcf1`:
+`ILMI_SMOKE=store` over a copy of the sample (22 checks, 5 captures
+looked at): the folder imported a second time and exported as a folder
+and as a zip, each equal to the sample by the smoke's own compare and by
+`diff -r` from a shell (83 files; the zip unzipped first); the
+collection's own folder holding a database and two blobs and no
+Markdown; a write, an image, a rename and a move read back through a
+store opened afresh; the welcome and the palette; closed, and reopened
+from its row as it was left. `ILMI_SMOKE=tour` over the sample imported:
+23 checks, 45 captures, the counts of 55's run over the folder. On the
+tree as it stood just before the commit (an unattached snapshot,
+`3d954d6`; what changed after it is docs, comments, and one CSS rule):
+`sync` 34 checks and `nudge` 29, the counts of 53 and 54, and `welcome`
+walked (the rows are the collections, a bad name refused, a new
+collection made, the last one reopened after a reload). `sync` passed on
+its second run: on the first, b's strip read `1 to push` from the open
+until the first mirror out; the strip now counts only what this session
+wrote, and the clone step waits for `synced`. The first run of the full
+test suite had 32 failures, all timeouts and timing thresholds while
+another project held the machine at a load of 100; on a quiet machine
+it is green.
+
+### Not verified
+
+Nothing on the simulated iPad (compile checks only): `connect` there,
+sync there, and `smoke.json`'s `vault` are unproven since this change.
+The folder picker, the save picker, and the File menu's item by hand.
+The smokes other than `store`, `tour`, `sync`, `nudge` and `welcome`;
+`anki`, `epub`, `land`, `use` and `ipad` were edited without a run. A
+release bundle (`cargo check --release` passes; `tauri build` was not
+run). Sizes beyond the sample.
+
+### For the user
+
+The app no longer opens a folder in place. Import your own folder once
+(`import folder` on the welcome); it is left as it is, and the old
+entries on the welcome go. `export collection` in the palette gives the
+files back. Nothing of yours is touched until you import it.
+
+Handoff prompt for the next session:
+
+```
+Read PLAN.md, FORMAT.md, BUILD-LOG.md, and spec/hashiyah/HANDOFF.md. The
+section of PLAN.md in progress is "A database under the app, synced by
+CRDT to any storage" (59–68); its introduction holds the decisions, and
+59's notes say how the store sits under the app: `Vault` unchanged over
+an `Fs` that src/vault/store.ts makes from a collection's rows
+(src-tauri/src/store.rs), a folder in and out through
+src/vault/transfer.ts, git sync over <collection>/repo. Do milestone 60
+and only that one (52 waits for the user; 56–58 come later in that
+section's order). Stop at its "done when". Then tick it, write notes for
+the next session under it, add an entry to BUILD-LOG.md with a fresh
+handoff prompt, and commit. Rules as in PLAN.md's ground rules: export
+PATH=$HOME/.cargo/bin:/opt/homebrew/bin:$PATH; npm test and npm run
+typecheck green before a commit, and cargo test for the Rust side (run
+the tests on a quiet machine: the timed ones fail under load); one
+commit per milestone; ask before a screen, section, or setting the
+section does not name; a FORMAT change needs a corpus file and a test.
+60 moves state out of the text into tables, so an export has to put it
+back: keep src/vault/__tests__/store.test.ts's round trip of the corpus
+and the sample byte for byte, and ILMI_SMOKE=store passing. The window
+checks run from a clean checkout of main with the dev identifier
+override (docs/development.md): ILMI_VAULT is a folder, imported afresh
+as a collection on each run. Never kill a process on port 1420 that is
+not yours, stop your own app binary by pid when a run ends, capture only
+by window id. 59 left unverified, and worth a run when the simulator is
+up: the iPad's connect and sync over the store. Nothing of the user's is
+in a collection yet unless they have imported it; ask before changing
+the database's schema in a way an existing collection could not open.
+```
+
+---
+
 ## 2026-11-05 — the store and the sync reconsidered; the plan for 59–68
 
 No code. A day of questions from the user after 55, the research they

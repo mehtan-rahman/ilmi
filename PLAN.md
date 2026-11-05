@@ -20,8 +20,13 @@ to BUILD-LOG.md with a fresh handoff prompt, and commit.
 
 - The prototype in `spec/hashiyah/` is the decided spec for behavior and feel.
   `spec/hashiyah/BUILD-PROMPT.md` wins on architecture. This file wins on order.
-- `FORMAT.md` is the contract for anything that touches disk. Change the
-  format only with a corpus file and a test that shows why.
+- `FORMAT.md` is the contract for a document's text and for what an import
+  reads and an export writes. Since milestone 59 a collection is a database
+  under the app's data directory (`src-tauri/src/store.rs`, reached only
+  through `src/vault/store.ts`); its documents' text is Markdown as
+  `FORMAT.md` has it, and an exported collection is a vault any editor
+  reads. Change the format only with a corpus file and a test that shows
+  why.
 - Tooling: node lives in `/opt/homebrew/bin`, cargo in `~/.cargo/bin`; prefix commands with
   `export PATH=$HOME/.cargo/bin:/opt/homebrew/bin:$PATH`. `npm test` must be green before a
   commit. `npm run typecheck` too.
@@ -6333,7 +6338,97 @@ what GoodNotes is: 57 → 58 → 67. Then 64, the phone (56), and 68. 65
 when the Developer Program is joined. 66 as soon after 63 as the user
 has a device to plug in; nothing real is kept on the engine before it.
 
-### [ ] 59. The store — a database under the vault, in and out as files
+### [x] 59. The store — a database under the vault, in and out as files
+Done 2026-11-05, commit `8aafcf1`.
+Notes: **The shape chosen.** `Vault` is unchanged and still pure over
+`Fs`; the store reaches it as an `Fs` (`src/vault/store.ts`, `storeFs`).
+The app, the plugins, the images and the book PDFs all go through
+`vault.fs` and `vault.abs`, so nothing above the vault changed, and the
+vault's own tests now run twice, over a directory and over a store in
+memory. A path is made from rows' names and parents: `papers/maxwell.md`
+is the row named `maxwell` under the row named `papers`, and
+`papers/maxwell/` is what has that document for a parent. What differs
+from a directory is at the top of `store.ts`: a document and its children
+move as one row (a rename is one `put`, the id and the `rev` kept); a
+children directory exists while it holds something; a folder made before
+its document becomes the document, and a document removed over children
+leaves a folder; writes are whole (`Fs.atomic`, so `Vault.viaTmp` writes
+in place); `watch` reports the store's own writes 30 ms later, as a
+directory watcher reported the app's own. **Rust.** `src-tauri/src/store.rs`:
+`documents (id, parent, name, place, kind, front, text, blob, size, rev)`
+and `blobs (hash, size, path)`, WAL, `user_version` 1. Beyond the brief's
+columns: `blob` (the hash of a row kept as a file), `size`, and `rev` (a
+counter that moves on a content write and never on a move: it is the
+`Fs` stamp). `place` is carried and not used: the order is still
+`.ilmi/order.json`, which, with `state.json`, the review log, `same.json`
+and the plugins, is rows of kind `file` holding text (60 lifts them into
+tables). `front` is the front matter block as written and `text` the
+rest; the two joined are the file, byte for byte (`splitFront` follows
+the parser's rule for where the block ends). A document or a hidden file
+that is valid UTF-8 is text in its row; anything else is a blob under
+`blobs/<2 hex>/<sha256>`. Blobs no row names are swept when a collection
+opens, not when a row is deleted (an undo puts the row back). Commands:
+`store_list` (home and names), `store_create`, `store_delete`,
+`store_rows`, `store_text`, `store_put`, `store_remove`, `store_blob_put`
+(the bytes raw as the request's body, the collection percent-encoded in a
+header), `store_blob_get`, `zip_folder`, and `allow_hidden` (the fs scope
+takes a dot-entry only by name; an import and an export grant each as
+they meet it). A collection is named by its folder,
+`<app data>/collections/<name>`, and that path is the vault's root;
+nothing outside `collections/` can be named. `documents_vaults` is gone.
+**In and out.** `src/vault/transfer.ts`: `importFolder` and
+`exportFolder` are one copy of a tree between two `Fs`s (`.git`,
+`.DS_Store` and `*.ilmi-tmp` skipped); `mirrorFolder` and `takeFiles` are
+the git sync's. `src/app/collections.ts`: `importCollection` (named after
+the folder, `name 2` when taken; a failed import removes its collection),
+`exportCollection` (folder: under the collection's name in the place
+picked; zip: written out to `<collection>/export`, zipped by the Rust
+side under a folder of the collection's name, the folder removed).
+**The app.** `openVault(root)` opens a collection; `importVault`,
+`importVaultFrom`, `nameNewVault`, `newVault(name)`, `listVaults` (the
+recents are rewritten from the collections there are, on start and on
+close, on the Mac as on the iPad since 55), `devCollection`
+(`ILMI_VAULT` is a folder imported afresh on every run, the last import
+of that name replaced; `sourceDir()` in `smoke.ts` is that folder, for a
+file handed to the Rust side by path). The welcome: `new collection` (n;
+named there, no folder asked for), `import folder` (i; a folder dropped
+does the same), rows without paths, two sentences for a line. The
+palette: `import folder…`, `export collection · folder`, `export
+collection · zip` (desktop only). File › Open Collection… is `New
+Collection from Folder…` (⌘O), which the brief did not name. `vaultKey`
+is `collection:<name>`. **Git sync, kept.** The repository is
+`<collection>/repo`, an export kept in step: `mirrorFolder` before a
+commit, `takeFiles` after a pull, the `.gitignore` taken in on
+`connect`; `clone…` and the iPad's `connect` are `cloneCollection`
+(cloned into `repo`, imported from there). The strip counts a write not
+yet in the folder as it counted a file not committed, and ignores a
+pull's own echo and `state.json`. Each commit reads every file of the
+collection to compare (fine at the sample's size; git goes at 66).
+**What broke or changed, said plainly.** A folder is no longer opened in
+place: the user's own folder has to be imported once, and their old
+recents (folder paths) drop off the welcome. Another editor cannot
+change the live notes. A folder that was a repository does not bring its
+history (`.git` is skipped). A plugin's bundler can no longer write into
+the collection and have it reload (PLUGINS.md). On the iPad the
+collection is no longer in Documents, so the Files app does not show it,
+and the iPad has no export (it needs a folder picker). **Not verified.**
+Nothing ran on the simulated iPad: `cargo check` for both iOS targets
+only, so `connect` there, `smoke.json`'s `vault`, and sync there are
+unproven since this change. The folder and save pickers and the File
+menu's item were not driven (the smoke calls `exportToFolder` and
+`exportToZip` directly). Of the smokes, `store`, `tour`, `sync`,
+`nudge` and `welcome` ran; the rest were not rerun, and `anki`, `epub`,
+`land`, `use` and `ipad` were edited for `sourceDir()` and the
+collection's root without a run. Import and export were not timed beyond
+the sample (83 files, a few seconds under load). **Left for 60 and
+after.** The open still reads and parses every document (`publishDocs`);
+`storeFs` holds every row (not its text) in memory; one collection open
+in two windows at once would be two indexes over one database, each
+blind to the other's writes (nothing prevents it; the app has one
+window, the dev build's second opens another collection); a welcome
+smoke's `welcome-smoke-*` collections are deleted by the next run, not
+by the one that made them; deleting a collection has no place in the
+app (`store_delete` is used by a failed import and by dev runs).
 - **`src-tauri/src/store.rs`**: SQLite through rusqlite (bundled), one
   file a collection under the app's data directory. Tables for
   documents (id, parent, name, place, kind, text, front matter) and
@@ -6517,8 +6612,12 @@ waits for the user's word. 53, 54 and 55 (sync by git, the nudge, the
 iOS target on a simulated iPad) were done on 2026-11-04. Then, on
 2026-11-05, the user chose a database under the app, merged by CRDT and
 synced to any storage, with the files as an export ("A database under
-the app, synced by CRDT to any storage", 59–68); 59, the store, is
-next, and 56–58 take their places in that section's order.
+the app, synced by CRDT to any storage", 59–68); 59, the store, was
+built the same day (a collection is an SQLite database under the app's
+data directory, a folder of files what goes in and comes out; `Vault`
+unchanged over an `Fs` the store gives it; git sync kept over a folder
+beside the database). 60, state in rows, is next; 56–58 take their
+places in that section's order.
 
 Refinement (33–41) is complete, 2026-10-30, every milestone's window check
 run and recorded under its BUILD-LOG entry (33 `notes`, 34 `editing`, 35

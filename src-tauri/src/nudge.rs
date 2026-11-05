@@ -40,9 +40,24 @@ pub fn drop_all() -> usize {
     n
 }
 
-/// How many streams are open on `topic`.
+/// How many streams are open on `topic`, the ones the client closed set aside first.
 pub fn listeners(topic: &str) -> usize {
-    STREAMS.lock().unwrap_or_else(|e| e.into_inner()).iter().filter(|(t, _)| t == topic).count()
+    let mut streams = STREAMS.lock().unwrap_or_else(|e| e.into_inner());
+    streams.retain(|(_, s)| alive(s));
+    streams.iter().filter(|(t, _)| t == topic).count()
+}
+
+/// A closed peer shows as an end of input on a peek; an open one has nothing to read yet.
+fn alive(s: &TcpStream) -> bool {
+    let _ = s.set_nonblocking(true);
+    let mut buf = [0u8; 1];
+    let alive = match s.peek(&mut buf) {
+        Ok(0) => false,
+        Ok(_) => true,
+        Err(e) => e.kind() == std::io::ErrorKind::WouldBlock,
+    };
+    let _ = s.set_nonblocking(false);
+    alive
 }
 
 fn handle(stream: TcpStream) {
@@ -171,7 +186,12 @@ mod tests {
         let got = read_some(&mut a);
         assert!(got.contains("event: message") && got.contains("\"message\":\"changed from 12345678\"") && got.contains("\"topic\":\"ilmi-aaaa\""), "{got}");
         assert_eq!(read_some(&mut b), "");
-        assert!(drop_all() >= 2);
+        // a client that went away is not a listener
+        drop(b);
+        std::thread::sleep(Duration::from_millis(50));
+        assert_eq!(listeners("ilmi-bbbb"), 0);
+        assert_eq!(listeners("ilmi-aaaa"), 1);
+        assert!(drop_all() >= 1);
         assert_eq!(read_some(&mut a), "");
         assert_eq!(listeners("ilmi-aaaa"), 0);
     }

@@ -8558,7 +8558,7 @@ export async function smokeNudge(vault: Vault): Promise<void> {
     must(bState.age !== null && /^(just now|\d+ s ago)$/.test(bState.age) && bState.ago === bState.age, `b's strip: ${bState.word} · ${bState.ago}`);
     const ba = await crossing('b', 'voc-dayf', 4);
     log(`ok: b → a in ${ba} ms`);
-    await poll(() => word() === 'synced' && /^(just now|\d+ s ago)$/.test(age() ?? ''), `a's strip: ${word()} · ${age()}`);
+    await poll(() => word() === 'synced' && /^(just now|\d+ s ago)$/.test(age() ?? ''), "a's strip reads synced with its age");
     await shot('nudge-synced');
     await sleep(3000);
     must(/^\d+ s ago$/.test(age() ?? ''), `the age ticks: ${age()}`);

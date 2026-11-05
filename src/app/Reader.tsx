@@ -46,6 +46,7 @@ import { TabsToggle } from './TabsToggle.js';
 import { StudyButton } from './StudyButton.js';
 import { ExamTag } from './ExamTag.js';
 import { appNow } from './clock.js';
+import { press } from './platform.js';
 
 /** How long after the last keystroke the file is written. */
 const WRITE_DELAY = 500;
@@ -1066,6 +1067,8 @@ const SLASH_ROOM = 320;
 
 /** Room the toolbar wants above a selection; nearer the top it sits below. */
 const CUE_ROOM = 56;
+/** Under a finger the cue sits below the selection, clear of its handle: iPadOS puts its own menu above. */
+const CUE_TOUCH_GAP = 30;
 
 /** The selection, as a passage plus where it ends and where it sits on screen. */
 interface Sel extends Passage {
@@ -2101,6 +2104,9 @@ export function Reader({ id, active = true, onPages, notes = false }: ReaderProp
   const enrolled = !!info?.read;
   const reading = enrolled && !isNote && !notes;
   const frozen = !notes && (info?.frozen ?? false);
+  // the selection's cue: above it when there is room, below under a finger (`CUE_TOUCH_GAP`)
+  const touch = useApp.getState().mobile;
+  const cueBelow = sel !== null && (touch || sel.rect.top < CUE_ROOM);
   const cards = info?.cards ?? 0;
   const due = info?.due ?? 0;
   // one short token: what is due, the whole count in the tooltip (a draft adds its length there)
@@ -2199,7 +2205,7 @@ export function Reader({ id, active = true, onPages, notes = false }: ReaderProp
           )}
           <div className="doc-mount" ref={mountRef} />
           {sel && !composer && !link && (
-            <div className="sel-cue" data-place={sel.rect.top < CUE_ROOM ? 'below' : 'above'} style={{ top: sel.rect.top < CUE_ROOM ? sel.rect.bottom + 8 : sel.rect.top - 8, left: sel.rect.left }}>
+            <div className="sel-cue" data-place={cueBelow ? 'below' : 'above'} style={{ top: cueBelow ? sel.rect.bottom + (touch ? CUE_TOUCH_GAP : 8) : sel.rect.top - 8, left: sel.rect.left }}>
               {!frozen && (
                 <>
                   {FORMATS.map(([kind, label, keys]) => (
@@ -2209,11 +2215,11 @@ export function Reader({ id, active = true, onPages, notes = false }: ReaderProp
                   <span className="cue-sep" />
                 </>
               )}
-              <button type="button" className="cue-act" onMouseDown={(e) => { e.preventDefault(); openComposer(); }}>
+              <button type="button" className="cue-act" {...press(openComposer)}>
                 card <span className="kbd">{frozen ? 'm' : '⌘⇧M'}</span>
               </button>
               {canExtract && (
-                <button type="button" className="cue-act" onMouseDown={(e) => { e.preventDefault(); doExtract(); }}>
+                <button type="button" className="cue-act" {...press(doExtract)}>
                   {marks ? 'section' : 'extract'} <span className="kbd">{frozen ? 'e' : '⌘⇧E'}</span>
                 </button>
               )}

@@ -14,8 +14,9 @@ import { Tweaks } from './Tweaks.js';
 import { Welcome } from './Welcome.js';
 import { activeTab, closeTab, splitPane } from './panes.js';
 import { ACCENTS, INSP_MAX, INSP_MIN, SIDE_MAX, SIDE_MIN, useApp, ZOOM_STEP } from './store.js';
-import { openInitialVault, openNode, rememberTab, setInspector, setSidebar, toggleInspector } from './vault.js';
+import { openInitialVault, openNode, rememberTab, setInspector, setSidebar, toggleInspector, toggleSidebar } from './vault.js';
 import { inspectorShown } from './layout.js';
+import { shapeOf } from './platform.js';
 import './app.css';
 import './chrome.css';
 
@@ -23,6 +24,10 @@ import './chrome.css';
 const SIDE_COLLAPSE = 80;
 /** Narrower than this and a drag on the handle closes the inspector. */
 const INSP_COLLAPSE = 120;
+/** A touch that starts this near the left edge can pull the sidebar's sheet in (an iPad in portrait). */
+const EDGE = 24;
+/** How far a finger travels sideways before it is a swipe. */
+const SWIPE = 36;
 
 const inField = (t: EventTarget | null) => {
   const tag = (t as HTMLElement | null)?.tagName?.toLowerCase();
@@ -64,13 +69,70 @@ export function App() {
   const docs = useApp((s) => s.docs);
   const railFolded = useApp((s) => s.railFolded);
   const railWidth = useApp((s) => s.railWidth);
+  const mobile = useApp((s) => s.mobile);
+  const sideSheet = useApp((s) => s.sideSheet);
   // the window's width, for the room rule (`layout.ts`): the inspector yields before the page's measure does
   const [win, setWin] = useState(() => window.innerWidth);
+  const [winH, setWinH] = useState(() => window.innerHeight);
   useEffect(() => {
-    const onResize = () => setWin(window.innerWidth);
+    const onResize = () => { setWin(window.innerWidth); setWinH(window.innerHeight); };
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
   }, []);
+  // an iPad's shape (`platform.ts`): landscape is a narrow Mac, portrait draws the sidebar as a sheet
+  const shape = shapeOf(mobile, win, winH);
+  const sheet = shape === 'portrait';
+  const activeId = activeTab(panes)?.id;
+  // the sheet is for one choice: it closes once something opens, and when the iPad turns
+  useEffect(() => { useApp.setState({ sideSheet: false }); }, [activeId, shape]);
+  // portrait folds a book's notes; landscape has them beside the pages again
+  useEffect(() => {
+    if (shape !== 'desktop') useApp.setState({ notesHidden: shape === 'portrait' });
+  }, [shape]);
+  useEffect(() => { document.documentElement.dataset.shape = shape; }, [shape]);
+  // the keyboard on the glass covers the bottom of the page: the shell is as tall as what is left
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!mobile || !vv) return;
+    const fit = () => {
+      document.documentElement.style.setProperty('--shell-h', `${Math.round(vv.height)}px`);
+      if (window.scrollY !== 0) window.scrollTo(0, 0);
+    };
+    fit();
+    vv.addEventListener('resize', fit);
+    vv.addEventListener('scroll', fit);
+    return () => {
+      vv.removeEventListener('resize', fit);
+      vv.removeEventListener('scroll', fit);
+      document.documentElement.style.removeProperty('--shell-h');
+    };
+  }, [mobile]);
+  // portrait: a swipe in from the left edge opens the sheet, a swipe left on it closes it
+  useEffect(() => {
+    if (!sheet || vault === null) return;
+    let from: { x: number; y: number; edge: boolean } | null = null;
+    const start = (e: TouchEvent) => {
+      const t = e.touches[0];
+      from = t && e.touches.length === 1 ? { x: t.clientX, y: t.clientY, edge: t.clientX <= EDGE } : null;
+    };
+    const move = (e: TouchEvent) => {
+      const t = e.touches[0];
+      if (!from || !t) return;
+      const dx = t.clientX - from.x;
+      const dy = Math.abs(t.clientY - from.y);
+      if (Math.abs(dx) < SWIPE || dy > Math.abs(dx)) return;
+      const open = useApp.getState().sideSheet;
+      if (dx > 0 && from.edge && !open) useApp.setState({ sideSheet: true });
+      else if (dx < 0 && open) useApp.setState({ sideSheet: false });
+      from = null;
+    };
+    window.addEventListener('touchstart', start, { passive: true });
+    window.addEventListener('touchmove', move, { passive: true });
+    return () => {
+      window.removeEventListener('touchstart', start);
+      window.removeEventListener('touchmove', move);
+    };
+  }, [sheet, vault]);
 
   // the tweaks, as CSS
   useEffect(() => {
@@ -143,7 +205,7 @@ export function App() {
         rememberTab();
       } else if (e.metaKey && e.ctrlKey && !e.shiftKey && k === 's') {
         e.preventDefault();
-        setSidebar({ hidden: !useApp.getState().sidebar.hidden });
+        toggleSidebar();
       } else if (e.shiftKey && k === 'i') {
         e.preventDefault();
         toggleInspector();
@@ -163,25 +225,28 @@ export function App() {
     );
   }
 
-  const sideW = sidebar.hidden ? 0 : sidebar.width;
-  const inspOn = inspectorShown({ sidebar, inspector, inspForced, panes, docs, railFolded, railWidth }, win);
+  // the sidebar is a column beside the page, or in portrait a sheet over it that takes no room
+  const sideOn = sheet ? sideSheet : !sidebar.hidden;
+  const sideW = sideOn && !sheet ? sidebar.width : 0;
+  const inspOn = inspectorShown({ sidebar: sheet ? { ...sidebar, hidden: true } : sidebar, inspector, inspForced, panes, docs, railFolded, railWidth }, win);
   const inspW = inspOn ? inspector.width : 0;
-  const active = activeTab(panes)?.id;
+  const active = activeId;
   return (
     <>
       <div className="shell" style={{ '--side-w': `${sideW}px`, '--insp-w': `${inspW}px` } as React.CSSProperties}>
         <TopStrip />
-        {!sidebar.hidden && (
-          <div className="side">
+        {sheet && sideOn && <div className="side-scrim" onClick={() => useApp.setState({ sideSheet: false })} />}
+        {sideOn && (
+          <div className="side" data-sheet={sheet ? '1' : undefined} style={sheet ? ({ '--sheet-w': `${Math.min(sidebar.width, Math.round(win * 0.84))}px` } as React.CSSProperties) : undefined}>
             <h6>workspace</h6>
             <Tree activeId={active} onOpen={openNode} />
             <SavedQueries activeId={active} />
           </div>
         )}
-        <div className="side-resize" data-hidden={sidebar.hidden ? '1' : '0'} onMouseDown={startSideResize} />
+        {!mobile && <div className="side-resize" data-hidden={sidebar.hidden ? '1' : '0'} onMouseDown={startSideResize} />}
         <Canvas />
         {inspOn && <Inspector />}
-        {inspOn && <div className="insp-resize" onMouseDown={startInspResize} />}
+        {inspOn && !mobile && <div className="insp-resize" onMouseDown={startInspResize} />}
         <BottomStrip />
         <Notice />
       </div>

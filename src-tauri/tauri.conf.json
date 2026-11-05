@@ -43,7 +43,8 @@
     "deep-link": {
       "desktop": {
         "schemes": ["ilmi"]
-      }
+      },
+      "mobile": [{ "scheme": ["ilmi"], "appLink": false }]
     }
   }
 }

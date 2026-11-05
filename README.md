@@ -146,15 +146,16 @@ src/import/     text, pages, card lists, Anki, EPUB, SuperMemo, on their way to 
 src/pdf/        the book lens's pure side
 src/plugins/    the plugin runtime
 src/sync/       the merge of a file changed on two devices, by the format's rules
-src-tauri/      the desktop shell (Tauri v2, Rust); anki.rs and epub.rs read packages, sync.rs is git
+src-tauri/      the shell (Tauri v2, Rust); anki.rs and epub.rs read packages, sync.rs is git; gen/apple is the iOS project
 docs/           guide, keys, screenshots, development notes
 ```
 
 ## Status
 
-Version 0.1, built for one person's semester and in daily use. macOS only
-for now; the Rust shell has nothing platform-specific beyond one menu item,
-but no other platform has been built or tried. A collection syncs between
-devices as a git repository (`docs/guide.md`, *Sync*). Around twelve hundred tests
+Version 0.1, built for one person's semester and in daily use. macOS, and
+the same app on an iPad from source (`docs/development.md`, *The iPad*; run
+in the simulator so far, not on a device); no other platform has been built
+or tried. A collection syncs between devices as a git repository
+(`docs/guide.md`, *Sync*). Around twelve hundred tests
 cover the format, the vault, and the schedule; the window is checked by the
 smoke modes in `src/app/smoke.ts`.

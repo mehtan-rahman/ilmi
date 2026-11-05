@@ -19,12 +19,13 @@ import { cleanBudget, dueToday, sessionItems } from './items.js';
 import { INTAKE, SESSION, queueId, queueScope } from './names.js';
 import { inspectorShown } from './layout.js';
 import { activeTab, dropTabs, emptyPanes, openTab, retarget, type OpenOpts, type Panes } from './panes.js';
+import { NEVER, clonedVaults, cloneDest, documentsDir, isMobile, loadPlatform } from './platform.js';
 import { addRecent, decideStart, forgetRecent, vaultName } from './recents.js';
 import { STARTER_TEXT, STARTER_TITLE } from './starter.js';
 import { RAIL_DEFAULT, addTab, clampRail, notebookOf } from './tabs.js';
 import { INSP_DEFAULT, INSP_MAX, INSP_MIN, SIDE_DEFAULT, SIDE_MAX, SIDE_MIN, useApp, type DocInfo, type Inspector, type Sidebar } from './store.js';
 import { appNow } from './clock.js';
-import { startSync, stopSync } from './sync.js';
+import { cloneInto, startSync, stopSync } from './sync.js';
 
 let current: Vault | null = null;
 
@@ -332,13 +333,15 @@ export async function openVault(path: string): Promise<Vault> {
   for (const f of state.folders ?? []) open[f] = true;
   const railFolded: Record<string, true> = {};
   for (const f of Array.isArray(state.rails) ? state.rails : []) if (typeof f === 'string') railFolded[f] = true;
+  // an iPad is a narrow Mac: the sidebar and the inspector start hidden there (`platform.ts`)
+  const mobile = isMobile();
   const sidebar: Sidebar = {
     width: Math.min(SIDE_MAX, Math.max(SIDE_MIN, state.sidebar?.width ?? SIDE_DEFAULT)),
-    hidden: state.sidebar?.hidden ?? false,
+    hidden: state.sidebar?.hidden ?? mobile,
   };
   const inspector: Inspector = {
     width: Math.min(INSP_MAX, Math.max(INSP_MIN, state.inspector?.width ?? INSP_DEFAULT)),
-    open: state.inspector?.open ?? window.innerWidth > 1180,
+    open: state.inspector?.open ?? (!mobile && window.innerWidth > 1180),
   };
   // the last tab comes back, except a session; nothing remembered opens the day
   let panes = emptyPanes();
@@ -354,7 +357,7 @@ export async function openVault(path: string): Promise<Vault> {
   const s0 = useApp.getState();
   useApp.setState({
     open, sidebar, inspector, panes, docs: {}, queue: [], budget: cleanBudget(state.budget), clipDir: cleanClipDir(state.clippings), log: [], session: null, sessionEl: null, selectedCard: null, reveal: null,
-    started: true, newVaultIn: null, gone: s0.gone.filter((p) => p !== path), notice: null, fileOver: null, intakeFiles: [], order: vault.order, railFolded, railWidth: clampRail(state.railWidth ?? RAIL_DEFAULT), deckViews: cleanViews(state.decks),
+    started: true, sideSheet: false, newVaultIn: null, gone: s0.gone.filter((p) => p !== path), notice: null, fileOver: null, intakeFiles: [], order: vault.order, railFolded, railWidth: clampRail(state.railWidth ?? RAIL_DEFAULT), deckViews: cleanViews(state.decks),
     folds: cleanFolds(state.folds), reviews, lensViews: {}, examFilter: null,
     notSame: await vault.loadNotSame().catch(() => []),
   });
@@ -381,7 +384,8 @@ export function closeVault(): void {
   lastDay = null;
   reviews = [];
   if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; savePatch = {}; }
-  useApp.setState({ vault: null, files: [], tree: [], docs: {}, open: { '': true }, panes: emptyPanes(), queue: [], log: [], session: null, sessionEl: null, selectedCard: null, reveal: null, paletteOpen: false, intakeDir: '', notice: null, fileOver: null, intakeFiles: [], order: {}, railFolded: {}, deckViews: {}, folds: {}, reviews: [], lensViews: {}, examFilter: null });
+  if (isMobile()) void listClones().catch(console.error);
+  useApp.setState({ vault: null, sideSheet: false, files: [], tree: [], docs: {}, open: { '': true }, panes: emptyPanes(), queue: [], log: [], session: null, sessionEl: null, selectedCard: null, reveal: null, paletteOpen: false, intakeDir: '', notice: null, fileOver: null, intakeFiles: [], order: {}, railFolded: {}, deckViews: {}, folds: {}, reviews: [], lensViews: {}, examFilter: null });
   setWindowTitle(null);
 }
 
@@ -447,16 +451,47 @@ async function probeVaults(paths: string[]): Promise<Set<string>> {
 }
 
 /**
+ * On iOS the welcome's rows are the vaults in the app's Documents, at the
+ * paths they have now (the container moves between installs, so a path
+ * remembered is not one to trust): the recents are rewritten from the
+ * folders there, each with the time it was last opened when one is known.
+ */
+export async function listClones(): Promise<void> {
+  const documents = documentsDir();
+  if (!documents) return;
+  const names = await invoke<string[]>('documents_vaults');
+  const s = useApp.getState();
+  s.setRecents(clonedVaults(documents, names, s.recents));
+  useApp.setState({ gone: [] });
+}
+
+/**
+ * The welcome's `connect` on iOS: the remote cloned into Documents under
+ * its own name (53's clone; the remote and token kept with it), then
+ * opened. Rejects with libgit2's words, or `not an empty folder` when a
+ * vault of that name is there already.
+ */
+export async function connectClone(url: string, token: string): Promise<Vault> {
+  const documents = documentsDir();
+  if (!documents) throw new Error('no documents folder');
+  if (!url.trim()) throw new Error('no remote');
+  const dest = await cloneInto(url, token, cloneDest(documents, url));
+  return openVault(dest);
+}
+
+/**
  * The start decision: the folders of the remembered vaults looked for, the
  * missing ones marked, and the newest reopened when the toggle is on and it
  * is there; otherwise the welcome shows.
  */
 export async function startFromRecents(): Promise<void> {
+  if (isMobile()) await listClones().catch(console.error);
   const s = useApp.getState();
   const present = await probeVaults(s.recents.map((r) => r.path));
   useApp.setState({ gone: s.recents.map((r) => r.path).filter((p) => !present.has(p)) });
   const start = decideStart(s.recents, s.reopen, present);
-  if (start.kind === 'reopen') {
+  // on iOS a vault in Documents that was never opened here is listed, not reopened
+  if (start.kind === 'reopen' && !(isMobile() && s.recents[0]?.opened === NEVER)) {
     try {
       await openVault(start.path);
       return;
@@ -479,6 +514,8 @@ let initial: Promise<void> | null = null;
  */
 export function openInitialVault(): Promise<void> {
   initial ??= (async () => {
+    // where the app runs, before anything is drawn by it (`platform.ts`)
+    useApp.setState({ mobile: (await loadPlatform()).mobile });
     if (import.meta.env.DEV) {
       const path = await invoke<string | null>('dev_env', { name: 'ILMI_VAULT' });
       const mode = await invoke<string | null>('dev_env', { name: 'ILMI_SMOKE' });
@@ -496,6 +533,12 @@ export function openInitialVault(): Promise<void> {
       if (mode === 'welcome') {
         const { smokeWelcome } = await import('./smoke.js');
         await smokeWelcome(path);
+        return;
+      }
+      // the iPad's own smoke starts at its welcome: the clone is its first step
+      if (mode === 'ipad') {
+        const { smokeIpad } = await import('./smoke.js');
+        await smokeIpad();
         return;
       }
       if (path) {
@@ -595,6 +638,17 @@ export function setSidebar(patch: Partial<Sidebar>): void {
   const sidebar = { ...useApp.getState().sidebar, ...patch };
   useApp.setState({ sidebar });
   queueSave({ sidebar });
+}
+
+/**
+ * ⌃⌘S and the iPad's toggle in the top strip: the sidebar shown or hidden.
+ * On an iPad in portrait it is a sheet over the page, open or not, and the
+ * saved state (the column's) is left as it is.
+ */
+export function toggleSidebar(): void {
+  const s = useApp.getState();
+  if (s.mobile && window.innerWidth <= window.innerHeight) useApp.setState({ sideSheet: !s.sideSheet });
+  else setSidebar({ hidden: !s.sidebar.hidden });
 }
 
 export function setInspector(patch: Partial<Inspector>): void {

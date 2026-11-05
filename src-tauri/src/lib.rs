@@ -5,18 +5,31 @@ mod nudge;
 mod plugin;
 mod sync;
 
+#[cfg(desktop)]
 use tauri::menu::{MenuBuilder, MenuItemBuilder, MenuItemKind, SubmenuBuilder};
-use tauri::{Emitter, Manager};
+#[cfg(desktop)]
+use tauri::Emitter;
+use tauri::Manager;
 use tauri_plugin_fs::FsExt;
+
+// What is the desktop's alone is under `cfg(desktop)` (milestone 55): the
+// single-instance plugin, the menu bar with its Paste and Match Style, the
+// second window. iOS has one instance, no menu bar, and one window.
 
 /// The ids of the File menu's items, as the renderer receives them on the
 /// `menu` event (`src/app/menu.ts` dispatches on them). A recent vault's
 /// item is `recent:<path>`.
+#[cfg(desktop)]
 const MENU_FILE: &str = "file";
+#[cfg(desktop)]
 const MENU_RECENT: &str = "recent";
+#[cfg(desktop)]
 const MENU_NEW: &str = "new";
+#[cfg(desktop)]
 const MENU_OPEN: &str = "open";
+#[cfg(desktop)]
 const MENU_CLOSE: &str = "close";
+#[cfg(desktop)]
 const MENU_IMPORT: &str = "import";
 /// Edit › Paste and Match Style (⌘⇧V, macOS): the webview's own
 /// `pasteAsPlainText:`, whose paste event carries only the clipboard's plain
@@ -81,16 +94,100 @@ fn read_plugin_zip(path: String) -> Result<plugin::PluginZip, String> {
     plugin::read_zip(std::path::Path::new(&path))
 }
 
+/// Where the app runs, for the renderer: `mobile` (iOS: the welcome is
+/// `connect` and the clones, the layout one pane) and the folder the vaults
+/// live in there, the app's Documents, which the Files app shows. On the
+/// desktop both are off; a dev build takes `ILMI_MOBILE=1` and
+/// `ILMI_DOCUMENTS=/path` to draw the iPad's side in the Mac's window.
+#[derive(serde::Serialize)]
+struct Platform {
+    mobile: bool,
+    documents: Option<String>,
+}
+
+#[tauri::command]
+fn platform(app: tauri::AppHandle) -> Platform {
+    let documents = documents_dir(&app).map(|p| p.to_string_lossy().into_owned());
+    Platform { mobile: documents.is_some(), documents }
+}
+
+/// The folder the vaults are cloned into on iOS; `None` on the desktop
+/// (but for the dev override).
+fn documents_dir(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
+    #[cfg(mobile)]
+    {
+        app.path().document_dir().ok()
+    }
+    #[cfg(desktop)]
+    {
+        let _ = app;
+        if cfg!(debug_assertions) && std::env::var("ILMI_MOBILE").map(|v| !v.is_empty()).unwrap_or(false) {
+            std::env::var("ILMI_DOCUMENTS").ok().filter(|s| !s.is_empty()).map(std::path::PathBuf::from)
+        } else {
+            None
+        }
+    }
+}
+
+/// The vaults in Documents, by name: every folder there that is not hidden.
+/// Read here because the fs scope reaches a vault only once it is opened.
+#[tauri::command]
+fn documents_vaults(app: tauri::AppHandle) -> Result<Vec<String>, String> {
+    let Some(dir) = documents_dir(&app) else { return Ok(Vec::new()) };
+    let _ = std::fs::create_dir_all(&dir);
+    let mut out: Vec<String> = std::fs::read_dir(&dir)
+        .map_err(|e| e.to_string())?
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().map(|t| t.is_dir()).unwrap_or(false))
+        .filter_map(|e| e.file_name().into_string().ok())
+        .filter(|n| !n.starts_with('.'))
+        .collect();
+    out.sort();
+    Ok(out)
+}
+
 /// Dev only: an environment variable of the dev process, for
 /// `ILMI_VAULT=/path npm run tauri dev` (open that vault at launch) and
-/// `ILMI_SMOKE=…` (run a smoke script). Always `None` in release.
+/// `ILMI_SMOKE=…` (run a smoke script). An app on iOS has no environment
+/// to set, so there the same names are read from `smoke.json` in its
+/// Documents (`smoke_json`). Always `None` in release.
 #[tauri::command]
-fn dev_env(name: String) -> Option<String> {
+fn dev_env(app: tauri::AppHandle, name: String) -> Option<String> {
     if cfg!(debug_assertions) && name.starts_with("ILMI_") {
-        std::env::var(name).ok().filter(|s| !s.is_empty())
+        std::env::var(&name)
+            .ok()
+            .filter(|s| !s.is_empty())
+            .or_else(|| documents_dir(&app).and_then(|dir| smoke_json(&dir, &name)))
     } else {
         None
     }
+}
+
+/// `ILMI_<NAME>` as `Documents/smoke.json` gives it: `{"mode": "tour",
+/// "vault": "double-major"}` is `ILMI_SMOKE=tour` over the vault of that
+/// name in Documents (a path that is not absolute is taken from there); any
+/// other key is the variable of its name in capitals (`"remote"` is
+/// `ILMI_REMOTE`). A file that is missing or not an object gives nothing.
+fn smoke_json(documents: &std::path::Path, name: &str) -> Option<String> {
+    let text = std::fs::read_to_string(documents.join("smoke.json")).ok()?;
+    let json: serde_json::Value = serde_json::from_str(&text).ok()?;
+    let key = match name {
+        "ILMI_SMOKE" => "mode".to_string(),
+        other => other.strip_prefix("ILMI_")?.to_lowercase(),
+    };
+    let value = match json.get(&key)? {
+        serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::Number(n) => n.to_string(),
+        serde_json::Value::Bool(true) => "1".to_string(),
+        _ => return None,
+    };
+    if value.is_empty() {
+        return None;
+    }
+    if key == "vault" && !std::path::Path::new(&value).is_absolute() {
+        return Some(documents.join(&value).to_string_lossy().into_owned());
+    }
+    Some(value)
 }
 
 /// Dev only: the loopback ntfy-shaped server the nudge smoke publishes
@@ -136,6 +233,7 @@ fn dev_nudge_listeners(topic: String) -> Result<usize, String> {
 
 /// One vault the renderer remembers, for the Open Recent submenu.
 #[derive(serde::Deserialize)]
+#[cfg_attr(mobile, allow(dead_code))]
 struct RecentVault {
     path: String,
     name: String,
@@ -147,6 +245,18 @@ struct RecentVault {
 /// none. Tauri runs every menu mutation on the main thread.
 #[tauri::command]
 fn set_recent_vaults(app: tauri::AppHandle, items: Vec<RecentVault>) -> Result<(), String> {
+    // no menu bar on iOS: the welcome's rows are the list
+    #[cfg(mobile)]
+    {
+        let _ = (app, items);
+        Ok(())
+    }
+    #[cfg(desktop)]
+    set_recent_menu(app, items)
+}
+
+#[cfg(desktop)]
+fn set_recent_menu(app: tauri::AppHandle, items: Vec<RecentVault>) -> Result<(), String> {
     let Some(menu) = app.menu() else { return Ok(()) };
     let Some(MenuItemKind::Submenu(file)) = menu.get(MENU_FILE) else { return Ok(()) };
     let Some(MenuItemKind::Submenu(recent)) = file.get(MENU_RECENT) else { return Ok(()) };
@@ -254,18 +364,31 @@ async fn sync_push(root: String, token: Option<String>) -> Result<sync::Status, 
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
-        // First, so a second launch (the OS opening an `ilmi://` link on
-        // Windows or Linux, where a link is an argument to a new process)
-        // hands its arguments to the running one and exits. The plugin's
-        // `deep-link` feature forwards the link to the deep-link plugin's
-        // event; this closure only brings the window to the front.
-        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
-            if let Some(w) = app.get_webview_window("main") {
-                let _ = w.unminimize();
-                let _ = w.set_focus();
-            }
-        }))
+    let builder = tauri::Builder::default();
+    // First, so a second launch (the OS opening an `ilmi://` link on
+    // Windows or Linux, where a link is an argument to a new process)
+    // hands its arguments to the running one and exits. The plugin's
+    // `deep-link` feature forwards the link to the deep-link plugin's
+    // event; this closure only brings the window to the front.
+    #[cfg(desktop)]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+        if let Some(w) = app.get_webview_window("main") {
+            let _ = w.unminimize();
+            let _ = w.set_focus();
+        }
+    }));
+    // Every item of the File menu reaches the renderer as one `menu`
+    // event carrying the item's id; `src/app/menu.ts` does the rest.
+    #[cfg(desktop)]
+    let builder = builder.on_menu_event(|app, event| {
+        #[cfg(target_os = "macos")]
+        if event.id().0 == MENU_PASTE_PLAIN {
+            paste_plain(app);
+            return;
+        }
+        let _ = app.emit("menu", event.id().0.clone());
+    });
+    builder
         // `ilmi://`, the scheme in `tauri.conf.json`; the renderer listens
         // for `deep-link://new-url` and `clipper.ts` does what the link asks.
         .plugin(tauri_plugin_deep_link::init())
@@ -273,17 +396,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![allow_vault, read_dropped, read_dropped_bytes, read_anki_package, read_epub, read_plugin_zip, dev_env, dev_nudge_serve, dev_nudge_drop, dev_nudge_listeners, set_recent_vaults, sync_status, sync_init, sync_init_bare, sync_set_remote, sync_clone, sync_changes, sync_commit, sync_fetch, sync_merge, sync_resolve, sync_push])
-        // Every item of the File menu reaches the renderer as one `menu`
-        // event carrying the item's id; `src/app/menu.ts` does the rest.
-        .on_menu_event(|app, event| {
-            #[cfg(target_os = "macos")]
-            if event.id().0 == MENU_PASTE_PLAIN {
-                paste_plain(app);
-                return;
-            }
-            let _ = app.emit("menu", event.id().0.clone());
-        })
+        .invoke_handler(tauri::generate_handler![allow_vault, read_dropped, read_dropped_bytes, read_anki_package, read_epub, read_plugin_zip, platform, documents_vaults, dev_env, dev_nudge_serve, dev_nudge_drop, dev_nudge_listeners, set_recent_vaults, sync_status, sync_init, sync_init_bare, sync_set_remote, sync_clone, sync_changes, sync_commit, sync_fetch, sync_merge, sync_resolve, sync_push])
         .setup(|app| {
             // Windows and Linux learn the scheme at run time; macOS reads it
             // from the bundle's Info.plist, which Tauri writes from the
@@ -302,6 +415,7 @@ pub fn run() {
                 // Dev only: `ILMI_VAULT2=/path` opens a second window over
                 // that vault beside the first (the sync smoke's other
                 // device). The renderer tells the windows apart by label.
+                #[cfg(desktop)]
                 if std::env::var("ILMI_VAULT2").map(|v| !v.is_empty()).unwrap_or(false) {
                     tauri::WebviewWindowBuilder::new(app, "second", tauri::WebviewUrl::default())
                         .title("ilmi · second")
@@ -318,7 +432,8 @@ pub fn run() {
             // Open Recent submenu is filled by `set_recent_vaults` from the
             // renderer's recents and rebuilt when they change. The app menu
             // is macOS only; Windows and Linux get File, Edit, and Window
-            // with Quit at the end of File.
+            // with Quit at the end of File. iOS has no menu bar.
+            #[cfg(desktop)]
             {
                 let new_item = MenuItemBuilder::with_id(MENU_NEW, "New Collection…")
                     .accelerator("CmdOrCtrl+Shift+N")
@@ -387,4 +502,42 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("error while running ilmi");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::smoke_json;
+
+    #[test]
+    fn smoke_json_stands_in_for_the_environment() {
+        let dir = std::env::temp_dir().join(format!("ilmi-smoke-json-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        // no file: nothing
+        assert_eq!(smoke_json(&dir, "ILMI_SMOKE"), None);
+        std::fs::write(
+            dir.join("smoke.json"),
+            r#"{"mode": "tour", "vault": "double-major", "remote": "/tmp/bare.git", "empty": "", "list": [1]}"#,
+        )
+        .unwrap();
+        assert_eq!(smoke_json(&dir, "ILMI_SMOKE").as_deref(), Some("tour"));
+        // a vault by name is the one in Documents
+        assert_eq!(
+            smoke_json(&dir, "ILMI_VAULT"),
+            Some(dir.join("double-major").to_string_lossy().into_owned())
+        );
+        assert_eq!(smoke_json(&dir, "ILMI_REMOTE").as_deref(), Some("/tmp/bare.git"));
+        assert_eq!(smoke_json(&dir, "ILMI_EMPTY"), None);
+        assert_eq!(smoke_json(&dir, "ILMI_LIST"), None);
+        assert_eq!(smoke_json(&dir, "ILMI_VAULT2"), None);
+        assert_eq!(smoke_json(&dir, "HOME"), None);
+        // an absolute vault is taken as it is
+        std::fs::write(dir.join("smoke.json"), r#"{"mode": "queue", "vault": "/elsewhere/v"}"#).unwrap();
+        assert_eq!(smoke_json(&dir, "ILMI_VAULT").as_deref(), Some("/elsewhere/v"));
+        // not an object, not JSON: nothing
+        std::fs::write(dir.join("smoke.json"), "[]").unwrap();
+        assert_eq!(smoke_json(&dir, "ILMI_SMOKE"), None);
+        std::fs::write(dir.join("smoke.json"), "mode: tour").unwrap();
+        assert_eq!(smoke_json(&dir, "ILMI_SMOKE"), None);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 }

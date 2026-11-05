@@ -91,6 +91,23 @@
 }
 .welcome-name input::placeholder { color: var(--fg-5); }
 .welcome-name .welcome-problem { color: var(--fg-4); font-size: 10.5px; white-space: nowrap; }
+/* the iPad's `connect`: a remote and a token, two rows of the name field's kind */
+.welcome-connect .welcome-name { cursor: text; }
+.welcome-connect .welcome-name .psub { width: 48px; flex: 0 0 auto; }
+.welcome-connect .welcome-problem { max-width: 50%; overflow: hidden; text-overflow: ellipsis; }
+.welcome-go {
+  font: inherit;
+  font-family: var(--sans);
+  font-size: 12.5px;
+  color: var(--fg-2);
+  background: transparent;
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius);
+  padding: 4px 10px;
+  cursor: default;
+  flex-shrink: 0;
+}
+.welcome-go:disabled { color: var(--fg-5); }
 .welcome kbd {
   font-family: var(--mono);
   font-size: 9.5px;

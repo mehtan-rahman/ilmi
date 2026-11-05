@@ -195,6 +195,13 @@
 // `start here.md`, switches back through the palette's `vaults` group,
 // turns the toggle on, and reloads the page; the second run (a
 // sessionStorage marker) only checks that the vault opened itself.
+// `ILMI_SMOKE=ipad` (`smokeIpad`, milestone 55) starts at the iPad's
+// welcome, on a simulated iPad from `smoke.json` in the app's Documents
+// (`{"mode": "ipad", "remote": "/path/to/bare.git"}`) or in the Mac's
+// window with `ILMI_MOBILE=1 ILMI_DOCUMENTS=<dir> ILMI_REMOTE=<bare>`:
+// `connect` clones the remote into Documents, the shell is one pane with
+// the sidebar and the inspector hidden, the queue is walked by its buttons,
+// a card graded there is pushed (see the function).
 
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -3145,7 +3152,8 @@ export async function smokeTour(vault: Vault): Promise<void> {
     // the Lindqvist chapter, titled once
     await open(CH3);
     await sleep(300);
-    must(!q('.pane-body .doc-view > h1') && /Chapter 3/.test(q('.pane-body .draft-doc')?.textContent ?? ''), 'the chapter is titled once');
+    // (since 49 the chapter is its pages beside its notes: one heading names it, whether the notes are shown or folded)
+    must(qa('.pane-body h1').filter((h) => /canonical ensemble/.test(h.textContent ?? '')).length === 1, 'the chapter is titled once');
 
     // the deck's rows: the due as words, the interval in the tooltip
     await open('arabic/vocabulary.md');
@@ -8601,5 +8609,215 @@ export async function smokeNudge(vault: Vault): Promise<void> {
     finished = true;
     unlisten();
     log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+// `ILMI_SMOKE=ipad`: milestone 55's "done when", from the iPad's side. No
+// vault is given: the welcome is where it starts. `ILMI_REMOTE` (on iOS
+// `"remote"` in `Documents/smoke.json`) names a repository the sample was
+// pushed to; a simulated iPad reads the Mac's disk, so a bare repository
+// beside the Mac's copy serves. The welcome shows `connect` alone and the
+// vaults in Documents; `connect` with the remote clones it under its own
+// name and opens it (a vault of that name left by an earlier run is opened
+// from its row instead). The shell is checked for its shape: one pane, no
+// split control, the sidebar and the inspector hidden until asked for, the
+// sidebar a column in landscape and a sheet over the page in portrait that
+// closes once a row is tapped, the strips clear of the status bar. The
+// queue is walked by its buttons, never a key: `enter queue`, then up to
+// six elements, a card revealed and graded `good`, a topic read on. The
+// first card graded is named with its file's changed lines (`graded: …`),
+// so the Mac's side can look for the same lines; the push follows and the
+// strip must say `synced`. Then a passage is selected in a source for the
+// cue (below the selection, `card` and `extract`), and a book is opened
+// for its notes: folded in portrait, beside the pages in landscape.
+export async function smokeIpad(): Promise<void> {
+  const log = (s: string) => info(`smoke ipad: ${s}`);
+  const q = <T extends Element>(sel: string, root: ParentNode = document) => root.querySelector<T>(sel);
+  const qa = <T extends Element>(sel: string, root: ParentNode = document) => Array.from(root.querySelectorAll<T>(sel));
+  const shot = async (name: string, ms = 3500) => { await sleep(1200); log(`shot: ${name}`); await sleep(ms); };
+  const must = (ok: boolean, what: string) => { if (!ok) throw new Error(what); log(`ok: ${what}`); };
+  const poll = async (probe: () => boolean, what: string, ms = 8000) => {
+    try { await until(() => (probe() ? true : null), ms); } catch { throw new Error(what); }
+    log(`ok: ${what}`);
+  };
+  const type = (el: HTMLInputElement, text: string) => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(el, text);
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  };
+  const tap = (el: Element | null | undefined) => { if (!el) throw new Error('nothing to tap'); (el as HTMLElement).click(); };
+  const px = (v: string) => Math.round(parseFloat(v) || 0);
+  try {
+    const { documentsDir, isMobile, nameFromRemote, shapeOf } = await import('./platform.js');
+    const { push, syncWord } = await import('./sync.js');
+    const remote = await invoke<string | null>('dev_env', { name: 'ILMI_REMOTE' });
+    if (!remote) throw new Error('ILMI_REMOTE (smoke.json: "remote") names the repository to clone');
+    must(isMobile() && useApp.getState().mobile && document.documentElement.dataset.mobile === '1', 'the app knows it is on an iPad');
+    const documents = documentsDir()!;
+    const shape = () => shapeOf(true, window.innerWidth, window.innerHeight);
+    log(`documents ${documents}; window ${window.innerWidth}×${window.innerHeight} (${shape()}); pixel ratio ${window.devicePixelRatio}; agent ${navigator.userAgent}`);
+
+    // ── the welcome ──
+    useApp.getState().setReopen(false);
+    useApp.getState().setTheme('light');
+    await startFromRecents();
+    await until(() => q('.welcome'));
+    await sleep(400);
+    const buttons = qa('.welcome-acts button').map((b) => b.textContent);
+    log(`welcome: buttons ${buttons.join(', ')}; foot "${q('.welcome .palette-foot')?.textContent}"; rows ${qa('.welcome-row .pt').map((r) => r.textContent).join(', ') || '(none)'}`);
+    must(buttons.length === 1 && buttons[0] === 'connect', 'the welcome offers connect alone');
+    await shot('ipad-welcome');
+
+    const name = nameFromRemote(remote);
+    const row = qa<HTMLElement>('.welcome-row').find((r) => r.querySelector('.pt')?.textContent === name);
+    if (row) {
+      log(`${name} is in Documents already: opened from its row`);
+      tap(row);
+    } else {
+      tap(q('.welcome-acts button'));
+      const field = await until(() => q<HTMLInputElement>('.welcome-connect input'));
+      must(qa('.welcome-connect input').length === 2 && q<HTMLInputElement>('.welcome-connect input[type="password"]') !== null, 'connect asks for a remote and a token');
+      type(field, remote);
+      await shot('ipad-connect');
+      tap(q('.welcome-go'));
+    }
+    // the clone's own words when it fails, not a wait run out
+    try {
+      await until(() => (useApp.getState().vault !== null ? true : q('.welcome-problem')?.textContent && q('.welcome-problem')?.textContent !== 'cloning…' ? true : null), 90000);
+    } catch { /* said below */ }
+    must(useApp.getState().vault !== null, `the clone opens${useApp.getState().vault === null ? ` (the welcome says "${q('.welcome-problem')?.textContent ?? ''}")` : ''}`);
+    const vault = currentVault()!;
+    must(vault.root === `${documents}/${name}`, `the vault is in Documents under the remote's name (${name})`);
+    await poll(() => vault.documents().length > 0 && useApp.getState().queue.length > 0, `the sample is there (${vault.documents().length} documents)`, 20000);
+    await poll(() => useApp.getState().sync.on, 'the clone is a repository with its remote');
+    await poll(() => syncWord(useApp.getState().sync) === 'synced', 'the strip says synced', 20000);
+
+    // ── the shell's shape ──
+    await until(() => q('.queue .qlist li'), 10000);
+    const top = q<HTMLElement>('.top')!;
+    const bot = q<HTMLElement>('.bot')!;
+    log(`strips: top ${Math.round(top.getBoundingClientRect().height)}px (inset ${px(getComputedStyle(top).paddingTop)}), bottom ${Math.round(bot.getBoundingClientRect().height)}px (inset ${px(getComputedStyle(bot).paddingBottom)}); shell ${Math.round(q<HTMLElement>('.shell')!.getBoundingClientRect().height)} of ${window.innerHeight}`);
+    must(qa('.pane').length === 1 && !q('.tabbar .ctl'), 'one pane, and no split to ask for');
+    must(!q('.side') && !q('.insp'), 'the sidebar and the inspector start hidden');
+    must(!q('.side-resize') && !q('.insp-resize'), 'no drag handles');
+    must(q('.top .side-toggle') !== null && q('.top .insp-toggle:not(.side-toggle)') !== null, 'the strip has a toggle for each');
+    must(getComputedStyle(q<HTMLElement>('.top .right')!).display !== 'none', 'the strip shows where sync stands');
+    await shot(`ipad-open-${shape()}`);
+
+    // the sidebar: a column in landscape, a sheet over the page in portrait; a tap on a row opens it
+    tap(q('.top .side-toggle'));
+    const side = await until(() => q<HTMLElement>('.side'));
+    const pageLeft = () => Math.round(q<HTMLElement>('.canvas')!.getBoundingClientRect().left);
+    if (shape() === 'portrait') {
+      must(side.dataset.sheet === '1' && q('.side-scrim') !== null && pageLeft() === 0, 'portrait: the sidebar is a sheet over the page');
+    } else {
+      must(side.dataset.sheet === undefined && !q('.side-scrim') && pageLeft() > 100, 'landscape: the sidebar is a column beside the page');
+    }
+    log(`sidebar: ${Math.round(side.getBoundingClientRect().width)}px wide, rows ${qa('.side .trow').length}`);
+    await shot(`ipad-sidebar-${shape()}`);
+    toggleOpen('library', true);
+    const READER = 'library/classical-prose-reader/11-the-judge-and-the-two-litigants.md';
+    toggleOpen('library/classical-prose-reader.md', true);
+    const rowOf = (path: string) => q<HTMLElement>(`.side .trow[data-path="${path}"]`);
+    const tapped = await until(() => rowOf(READER) ?? rowOf('library/classical-prose-reader.md'));
+    tap(tapped);
+    await poll(() => activeTab(useApp.getState().panes)?.id === tapped.dataset.path, `a tap on a row opens it (${tapped.dataset.path})`);
+    if (shape() === 'portrait') await poll(() => !q('.side') && !q('.side-scrim'), 'the sheet closes once something opens');
+    else {
+      tap(q('.top .side-toggle'));
+      await poll(() => !q('.side'), 'the toggle hides the column again');
+    }
+    tap(q('.top .insp-toggle:not(.side-toggle)'));
+    await poll(() => q('.insp') !== null, 'the inspector comes when asked for');
+    await shot(`ipad-inspector-${shape()}`);
+    tap(q('.top .insp-toggle:not(.side-toggle)'));
+    await poll(() => !q('.insp'), 'and goes');
+
+    // ── the queue, by its buttons ──
+    openNode(queueId('today'));
+    const enter = await until(() => q<HTMLElement>('.queue .enter-queue'), 10000);
+    log(`queue: ${qa('.qlist li').length} rows; first "${q('.qlist li')?.textContent?.replace(/\s+/g, ' ').slice(0, 80)}"`);
+    tap(enter);
+    await until(() => q('.recall-wrap .card, .doc-session'), 10000);
+    await shot('ipad-session');
+    let graded: string | null = null;
+    for (let i = 0; i < 6; i++) {
+      const el = useApp.getState().sessionEl;
+      if (!el || activeTab(useApp.getState().panes)?.id !== SESSION) { log(`the session ended after ${i}`); break; }
+      const path = el.item.path;
+      const before = await vault.fs.readText(vault.abs(path));
+      if (el.kind === 'card') {
+        const hint = q<HTMLElement>('.recall-wrap .card .face-hint');
+        tap(hint);
+        await until(() => (q('.recall-wrap .card[data-revealed="1"]') ? true : null));
+        if (i === 0) await shot('ipad-session-shown');
+        tap(qa<HTMLElement>('.recall-wrap .grades button')[2]);
+      } else {
+        tap(q<HTMLElement>('.session-bar button[data-act="on"]'));
+      }
+      let after = before;
+      for (let t = 0; t < 80 && after === before; t++) { await sleep(100); after = await vault.fs.readText(vault.abs(path)); }
+      // the lines the file has now that it had not (a first grade adds its schedule line, a later one rewrites it)
+      const had = new Map<string, number>();
+      for (const l of before.split('\n')) had.set(l, (had.get(l) ?? 0) + 1);
+      const fresh = after.split('\n').filter((l) => { const n = had.get(l) ?? 0; if (n > 0) { had.set(l, n - 1); return false; } return true; });
+      const text = fresh.join(' ⏎ ');
+      log(`${i + 1}: ${el.kind} in ${path}: ${fresh.length} line${fresh.length === 1 ? '' : 's'} new, "${text.slice(0, 160)}"`);
+      must(after !== before, `element ${i + 1} (${el.kind}) wrote its file`);
+      if (el.kind === 'card' && graded === null) {
+        graded = path;
+        log(`graded: ${path} :: ${text}`);
+      }
+      await sleep(500);
+    }
+    must(graded !== null, 'a card was graded by its buttons');
+    await shot('ipad-session-walked');
+
+    // the push: what was graded reaches the remote, and the strip says so
+    await push();
+    await poll(() => { const s = useApp.getState().sync; return syncWord(s) === 'synced' && s.toPush === 0; }, 'pushed: the strip says synced', 30000);
+    log(`strip: "${q('.top .right')?.textContent?.replace(/\s+/g, ' ')}"`);
+    await shot('ipad-synced');
+
+    // ── a passage selected: the cue, below it ──
+    const NOTE = 'courses/fall-2026/arab-401-advanced-grammar/kana-and-its-sisters.md';
+    openNode(NOTE);
+    const surface = await until(() => (activeTab(useApp.getState().panes)?.id === NOTE ? q<HTMLElement>('.pane-body .doc-view .draft-doc') : null), 10000);
+    await sleep(600);
+    const para = qa<HTMLElement>('p.dd-p', surface).find((p) => (p.textContent ?? '').length > 80);
+    if (para) {
+      const words = (para.textContent ?? '').split(/\s+/).slice(2, 6).join(' ');
+      para.scrollIntoView({ block: 'center' });
+      select(para, words);
+      const cue = await until(() => q<HTMLElement>('.sel-cue'));
+      log(`cue: ${qa('.sel-cue .cue-act').map((b) => b.textContent?.trim()).join(' | ')}; placed ${cue.dataset.place}`);
+      must(cue.dataset.place === 'below', 'the cue sits below the selection, clear of the system menu');
+      must(qa('.sel-cue .cue-act').some((b) => b.textContent?.includes('card')), 'the cue offers a card');
+      await shot('ipad-cue');
+      window.getSelection()?.removeAllRanges();
+    } else log('no paragraph long enough for the cue');
+
+    // ── a book: its notes folded in portrait, beside the pages in landscape ──
+    // (a chapter: the book's own first pages are blank)
+    const BOOK = 'library/lindqvist-statistical-physics/ch-3-the-canonical-ensemble.md';
+    if (vault.documents().includes(BOOK)) {
+      openNode(BOOK);
+      const book = await until(() => q<HTMLElement>('.pane-body .book'), 15000);
+      await until(() => q('canvas', book), 30000);
+      await sleep(1500);
+      log(`book: notes ${book.dataset.notes === '1' ? 'shown' : 'folded'}; pages drawn ${qa('canvas', book).length}`);
+      must((book.dataset.notes === '0') === (shape() === 'portrait'), shape() === 'portrait' ? 'portrait: the book\'s notes are folded' : 'landscape: the notes are beside the pages');
+      await shot(`ipad-book-${shape()}`);
+    } else log(`no ${BOOK} in the clone`);
+
+    // dark, once
+    useApp.getState().setTheme('dark');
+    openNode(queueId('today'));
+    await poll(() => document.documentElement.dataset.theme === 'dark', 'dark');
+    await shot('ipad-dark');
+    useApp.getState().setTheme('light');
+    log(`done; vault ${vault.root}, remote ${remote}`);
+  } catch (e) {
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+    useApp.getState().setTheme('light');
   }
 }

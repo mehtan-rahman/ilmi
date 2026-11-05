@@ -29,7 +29,10 @@ export function BottomStrip() {
     marks: info?.type === 'source' && !info.pdf,
   });
   // a notebook's page: the step keys, ahead of the page's own
-  const hints = id !== undefined && notebookOf(id, docs) ? [['⌘⌥↑↓', 'tabs'] as const, ...base] : base;
+  const mobile = useApp((s) => s.mobile);
+  const all = id !== undefined && notebookOf(id, docs) ? [['⌘⌥↑↓', 'tabs'] as const, ...base] : base;
+  // an iPad is one pane: ⌘\ splits nothing there
+  const hints = mobile ? all.filter(([, what]) => what !== 'split pane') : all;
   return (
     <div className="bot">
       {hints.map(([keys, what], i) => (

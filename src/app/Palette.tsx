@@ -15,7 +15,7 @@ import { canMove, moveAction, moveSection, sectionActions, statusOf } from './se
 import { plainMath } from './chromeText.js';
 import type { CaretHeading } from './store.js';
 import { MathText } from './MathText.js';
-import { containerOf, currentVault, openCard, openIntake, openNode, openVault, postponeRest, setSidebar, startSession, toggleInspector } from './vault.js';
+import { containerOf, currentVault, openCard, openIntake, openNode, openVault, postponeRest, startSession, toggleInspector, toggleSidebar } from './vault.js';
 import { appNow } from './clock.js';
 
 const COMMANDS: Command[] = [
@@ -35,6 +35,9 @@ const COMMANDS: Command[] = [
   { id: MENU_ID.close, title: 'close collection' },
   { id: MENU_ID.import, title: 'import…' },
 ];
+
+/** What an iPad's palette leaves out: a second pane, and a collection opened or made through a folder picker. */
+const DESKTOP_ONLY: ReadonlySet<string> = new Set(['split', 'close-pane', MENU_ID.open, MENU_ID.new]);
 
 /** The heading the caret is under on the page in front (a tab, or the session's element), when there is one. */
 function caretHere(): CaretHeading | null {
@@ -69,7 +72,7 @@ function runCommand(id: string): void {
     case 'intake': openIntake(tab === undefined || tab.startsWith(':') ? '' : containerOf(tab)); break;
     case 'split': s.setPanes((p) => splitPane(p, p.active)); break;
     case 'close-pane': s.setPanes((p) => closePane(p, p.active)); break;
-    case 'sidebar': setSidebar({ hidden: !s.sidebar.hidden }); break;
+    case 'sidebar': toggleSidebar(); break;
     case 'inspector': toggleInspector(); break;
     case 'theme': s.cycleTheme(); break;
     case 'tweaks': useApp.setState({ tweaksOpen: true }); break;
@@ -116,7 +119,9 @@ export function Palette() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   // the heading under the caret: come back, dismiss, or bring back its section
   const caret = useApp((s) => s.caretHeading);
-  const commands = useMemo(() => [...sectionCommand(), ...(overflow(queue, appNow()).length ? COMMANDS : COMMANDS.filter((c) => c.id !== 'postpone')), ...pluginCommands()], [queue, plugins?.version, caret]);
+  // an iPad has one pane and no folder to pick: its commands leave those out (`platform.ts`)
+  const mobile = useApp((s) => s.mobile);
+  const commands = useMemo(() => [...sectionCommand(), ...COMMANDS.filter((c) => (c.id !== 'postpone' || overflow(queue, appNow()).length > 0) && !(mobile && DESKTOP_ONLY.has(c.id))), ...pluginCommands()], [queue, plugins?.version, caret, mobile]);
   // the other vaults opened before, under `vaults`, so switching is two keys
   const vaults = useMemo(() => recents.filter((r) => r.path !== vault).map((r) => ({ path: r.path, name: r.name })), [recents, vault]);
   const index = useMemo(() => buildIndex(tree, docs, cardRefs(), commands, vaults), [tree, docs, commands, vaults]);

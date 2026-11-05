@@ -39,6 +39,8 @@ function TabBar({ pane, index, canClosePane }: TabBarProps) {
   const root = useApp((s) => s.vault);
   const sessionEl = useApp((s) => s.sessionEl);
   const setPanes = useApp((s) => s.setPanes);
+  // an iPad is one pane: no split to ask for
+  const mobile = useApp((s) => s.mobile);
   const after = () => rememberTab();
   return (
     <div className="tabbar">
@@ -66,7 +68,7 @@ function TabBar({ pane, index, canClosePane }: TabBarProps) {
         );
       })}
       <div className="spacer" />
-      <div className="ctl" onClick={() => setPanes((s) => splitPane(s, index))}>⊟</div>
+      {!mobile && <div className="ctl" onClick={() => setPanes((s) => splitPane(s, index))}>⊟</div>}
       {canClosePane && <div className="ctl" onClick={() => { setPanes((s) => closePane(s, index)); after(); }}>×</div>}
     </div>
   );

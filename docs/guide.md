@@ -330,6 +330,23 @@ collection that is a repository already is used as it is; `.ilmi/state.json`
 remote and the token live with the tweaks on each device, never in the
 collection. SSH remotes and large files are not supported.
 
+### On an iPad
+
+The same app runs on an iPad, beside the Mac rather than instead of it. Its
+welcome has one button, `connect`: give it the remote and the token and the
+collection is cloned into the app's own folder, which the Files app shows
+under *On My iPad*, so it can be looked at or backed up by hand. The
+collections cloned before are the rows under it. From there sync is the
+Mac's: a card graded on the iPad is on the Mac after its next pull.
+
+Held sideways the iPad is a narrow Mac window: one pane, the sidebar and
+the inspector hidden until the toggles at the two ends of the top strip are
+tapped. Upright, the sidebar comes over the page from the left edge (its
+toggle, or a swipe in from the edge) and goes once something is opened, and
+a book's notes start folded. A tap opens; the queue, the session, and its
+grades are buttons; a passage selected brings `card` and `extract` under it.
+With a keyboard attached the keys are the Mac's.
+
 ## Plugins
 
 Plugins live in a vault's `.ilmi/plugins/` and are turned on in tweaks; the

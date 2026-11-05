@@ -39,6 +39,7 @@ import { currentVault, enrolReading } from './vault.js';
 import { writeDoc } from './sections.js';
 import { notify } from './land.js';
 import { appNow } from './clock.js';
+import { press } from './platform.js';
 import { plainMath } from './chromeText.js';
 import './pdf.css';
 
@@ -934,10 +935,10 @@ function Pages({ id, active, session, readOn, onLast }: Omit<Required<PdfProps>,
           </div>
           {sel && (
             <div className="sel-cue" style={{ top: sel.rect.bottom + 8, left: sel.rect.left }}>
-              <button type="button" className="cue-act" onMouseDown={(e) => { e.preventDefault(); void makeSection(false).catch(console.error); }}>
+              <button type="button" className="cue-act" {...press(() => void makeSection(false).catch(console.error))}>
                 section <span className="kbd">e</span>
               </button>
-              <button type="button" className="cue-act" onMouseDown={(e) => { e.preventDefault(); void cardOrClip().catch(console.error); }}>
+              <button type="button" className="cue-act" {...press(() => void cardOrClip().catch(console.error))}>
                 card <span className="kbd">m</span>
               </button>
               {plugSel && <CueActions sel={plugSel} onRun={() => setSel(null)} />}

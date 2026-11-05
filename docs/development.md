@@ -64,6 +64,61 @@ where a screen is worth capturing; the app log is at
 to the running one (single instance), so stop the previous run before
 starting another.
 
+## The iPad
+
+The same app builds for iOS (milestone 55). It needs Xcode with an iOS
+simulator runtime (Xcode > Settings > Components), the Rust targets
+(`rustup target add aarch64-apple-ios aarch64-apple-ios-sim`), and from
+Homebrew `xcodegen`, `libimobiledevice`, and `cocoapods`. The Xcode project
+is `src-tauri/gen/apple`, written by `npm run tauri ios init` and kept in
+the repository; `src-tauri/Info.ios.plist` is merged into its `Info.plist`
+(the two keys that show the app's Documents in the Files app), and the
+`ilmi://` scheme comes from `plugins.deep-link.mobile` in `tauri.conf.json`.
+`project.yml` there carries two lines added by hand, `libz.tbd` and
+`libiconv.tbd` (libgit2 links the system's zlib and iconv, and the app's
+link has to name them); after an edit, or if `tauri ios init` rewrites the
+file, put them back and run `xcodegen generate` in that folder. On iOS git2
+also builds OpenSSL in (`Cargo.toml`, the `target_os = "ios"` section): it
+names openssl-sys for every unix but macOS, though libgit2 speaks TLS
+through the system there.
+
+```
+npm run tauri ios dev "iPad Air 11-inch (M3)"   # a simulator, by its name in `xcrun simctl list devices`
+npm run tauri ios dev -- --open                  # Xcode, for a device: choose a team under Signing & Capabilities
+```
+
+A free team installs on a device for seven days; `bundle.iOS.developmentTeam`
+or `APPLE_DEVELOPMENT_TEAM` names it for the command line. What is the
+desktop's alone sits under `cfg(desktop)` in `src-tauri/src/lib.rs`: the
+single-instance plugin, the menu bar, the second window. The renderer asks
+the Rust side where it runs once (`platform`, `src/app/platform.ts`): on iOS
+the welcome is `connect` and the vaults in the app's Documents, and the
+shell is one pane.
+
+An app on iOS has no environment to set, so a dev build reads the smoke's
+variables from `smoke.json` in its Documents: `{"mode": "tour", "vault":
+"double-major"}` is `ILMI_SMOKE=tour` over the vault of that name there, and
+any other key is the variable of its name in capitals (`"remote"` is
+`ILMI_REMOTE`). A simulator's Documents is a folder on the Mac:
+
+```
+DOCS=$(xcrun simctl get_app_container booted dev.ilmi.app data)/Documents
+echo '{"mode": "ipad", "remote": "/path/to/double-major.git"}' > $DOCS/smoke.json
+xcrun simctl io booted screenshot shot.png
+```
+
+`ILMI_SMOKE=ipad` starts at the welcome: `connect` clones the remote (a
+simulator reads the Mac's disk, so a bare repository there serves), the
+shell's shape is checked, the queue is walked by its buttons, and a card
+graded there is pushed; its `graded:` line names the file and the lines
+that changed, for the Mac's copy to be compared with. The app's log is
+`Library/Application Support/dev.ilmi.app/logs/ilmi.log` under the same
+container. The app is started again over a new `smoke.json` with
+`xcrun simctl terminate booted dev.ilmi.app` and `xcrun simctl launch booted
+dev.ilmi.app` while `tauri ios dev` keeps serving the renderer. The iPad's
+side also draws in the Mac's window, without Xcode:
+`ILMI_MOBILE=1 ILMI_DOCUMENTS=/some/empty/dir npm run tauri dev`.
+
 ## Building the installer
 
 `npm run tauri build` makes the macOS app and its installer:
@@ -104,7 +159,7 @@ src/plugins/       the plugin runtime (api.ts is the typed handle, runtime.ts th
 src/sync/          the merge of one file changed on both devices, by the format's rules; src/app/sync.ts is the policy over the Rust commands
 plugins/           the plugins the repo ships, built by `npm run plugins`; ilmi.d.ts is the API; see PLUGINS.md
 scripts/           command-line tools, run with tsx
-src-tauri/         desktop shell (Tauri v2, fs + dialog + http + deep-link + single-instance + opener + log plugins; anki.rs reads a package, epub.rs a book, plugin.rs a plugin zip, sync.rs the vault as a git repository over libgit2)
+src-tauri/         the shell (Tauri v2, fs + dialog + http + deep-link + single-instance + opener + log plugins; anki.rs reads a package, epub.rs a book, plugin.rs a plugin zip, sync.rs the vault as a git repository over libgit2); gen/apple is the iOS project
 ```
 
 ## The documents

@@ -18,6 +18,7 @@ import { activeTab } from './panes.js';
 import { useApp } from './store.js';
 import { titleOf } from './names.js';
 import { ago, NUDGE_SERVER, publishNudge, subscribeNudge, type Subscription } from './nudge.js';
+import { vaultKey } from './platform.js';
 import { note, openNode } from './vault.js';
 
 /** The remote, its token, and the nudge's server, per vault path, in the webview's storage. */
@@ -74,15 +75,16 @@ function loadAll(): Record<string, SyncSettings> {
   }
 }
 
-/** The settings for vault `root`; empty when none were set. */
+/** The settings for vault `root`; empty when none were set. Kept by `vaultKey`: the path, or on iOS the vault's place in Documents. */
 export function settingsOf(root: string): SyncSettings {
-  return loadAll()[root] ?? { ...NO_SETTINGS };
+  return loadAll()[vaultKey(root)] ?? { ...NO_SETTINGS };
 }
 
 /** Remember the settings for vault `root` (the open vault's reach the store). */
 export function saveSettings(root: string, s: SyncSettings): void {
   const all = loadAll();
-  if (s.url || s.token || s.server !== NUDGE_SERVER) all[root] = s; else delete all[root];
+  const key = vaultKey(root);
+  if (s.url || s.token || s.server !== NUDGE_SERVER) all[key] = s; else delete all[key];
   try { globalThis.localStorage?.setItem(SETTINGS_KEY, JSON.stringify(all)); } catch { /* the session keeps them */ }
   if (useApp.getState().vault === root) useApp.setState({ syncSettings: s });
 }

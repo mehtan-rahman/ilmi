@@ -4,13 +4,16 @@
 // toggle. The age beside `synced` is how long since the remote was last
 // reached, kept current by a tick: the nudge's latency, in view. After
 // the prototype's chrome.jsx, with its counts trimmed to the one that
-// matters: the day's work, above the fold.
+// matters: the day's work, above the fold. On an iPad (milestone 55) the
+// sidebar has a toggle too, at the left end: there may be no keyboard for
+// ⌃⌘S and no pointer for the handle.
 
 import { useEffect, useState } from 'react';
 import { baseOf } from '../vault/index.js';
 import { dayLabel, dueToday } from './items.js';
 import { useApp } from './store.js';
-import { toggleInspector } from './vault.js';
+import { toggleInspector, toggleSidebar } from './vault.js';
+import { shapeOf } from './platform.js';
 import { inspectorShown } from './layout.js';
 import { appNow } from './clock.js';
 import { openConflicts, syncAge, syncWord } from './sync.js';
@@ -39,8 +42,16 @@ export function TopStrip() {
   const word = syncWord(sync);
   const now = useTick(sync.at);
   const age = syncAge(sync, now);
+  const mobile = useApp((s) => s.mobile);
+  // lit while the sidebar is drawn: the column, or in portrait the sheet (App draws this strip again on a turn)
+  const sideOn = useApp((s) => (shapeOf(s.mobile, window.innerWidth, window.innerHeight) === 'portrait' ? s.sideSheet : !s.sidebar.hidden));
   return (
     <div className="top">
+      {mobile && (
+        <button type="button" className="insp-toggle side-toggle" data-on={sideOn ? '1' : '0'} aria-pressed={sideOn} aria-label="sidebar" onClick={toggleSidebar}>
+          <span className="panel-ico" />
+        </button>
+      )}
       <div className="ws"><b>{baseOf(root ?? '') || 'collection'}</b></div>
       <button type="button" className="palette" onClick={() => useApp.setState({ paletteOpen: true })}>
         <span className="g">⌕</span>

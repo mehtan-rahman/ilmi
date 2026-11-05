@@ -525,3 +525,58 @@
 .insp .opt-from { margin-left: 6px; font-family: var(--mono); font-size: 10px; color: var(--fg-4); }
 .insp .opt-row { display: inline-flex; align-items: baseline; gap: 4px; flex-wrap: wrap; }
 .insp .frozen-row[data-opt] .opt-val { color: var(--fg-2); font-size: 11.5px; }
+
+/* ── an iPad (milestone 55) ───────────────────────────────────── */
+/* `data-mobile` is set once at launch (`platform.ts`), `data-shape` by App
+   as the iPad turns. Landscape is a narrow Mac; portrait draws the sidebar
+   as a sheet over the page. The strips keep clear of the status bar and
+   the home indicator; the page itself never scrolls or bounces, only the
+   panes do. */
+html[data-mobile="1"],
+html[data-mobile="1"] body {
+  overflow: hidden;
+  overscroll-behavior: none;
+  -webkit-text-size-adjust: 100%;
+}
+html[data-mobile="1"] body {
+  position: fixed;
+  inset: 0;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+html[data-mobile="1"] .shell {
+  height: var(--shell-h, 100dvh);
+  grid-template-rows: calc(30px + env(safe-area-inset-top, 0px)) 1fr calc(22px + env(safe-area-inset-bottom, 0px));
+}
+html[data-mobile="1"] .top {
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-left: max(14px, env(safe-area-inset-left, 0px));
+  padding-right: max(14px, env(safe-area-inset-right, 0px));
+}
+html[data-mobile="1"] .bot {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-left: max(14px, env(safe-area-inset-left, 0px));
+}
+html[data-mobile="1"] .welcome { padding-top: max(12vh, calc(env(safe-area-inset-top, 0px) + 24px)); }
+/* the strip says where sync stands at any width there */
+html[data-mobile="1"] .top .right { display: flex; }
+/* a finger's worth of toggle; the sidebar's is the inspector's, mirrored */
+html[data-mobile="1"] .insp-toggle { padding: 9px 10px; margin: 0 -6px; }
+.side-toggle .panel-ico::after { right: auto; left: 0; border-left: 0; border-right: 1px solid var(--fg-4); }
+.side-toggle[data-on="1"] .panel-ico::after { border-right-color: var(--fg-2); }
+/* portrait: the sidebar over the page, from the left edge; a tap beside it closes it */
+.side[data-sheet="1"] {
+  grid-area: canvas;
+  justify-self: start;
+  width: var(--sheet-w, 280px);
+  z-index: 52;
+  background: var(--bg);
+  border-right: 1px solid var(--line-1);
+  padding-left: max(8px, env(safe-area-inset-left, 0px));
+}
+.side-scrim {
+  grid-area: canvas;
+  z-index: 51;
+  background: color-mix(in oklab, var(--fg) 12%, transparent);
+}
+[data-theme="eink"] .side-scrim { background: transparent; }

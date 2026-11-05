@@ -4,6 +4,7 @@ import type { QueueItem } from '../schedule/index.js';
 import type { Order, TreeNode } from '../vault/index.js';
 import type { DeckView } from './deck.js';
 import { emptyPanes, type Panes } from './panes.js';
+import { onePane } from './platform.js';
 import { cleanRecents, type Recent } from './recents.js';
 import { NUDGE_SERVER } from './nudge.js';
 import type { SyncSettings, SyncState } from './sync.js';
@@ -227,6 +228,10 @@ export interface AppState {
   gone: string[];
   /** False until the start decision is made, so the welcome does not flash before a vault reopens itself. */
   started: boolean;
+  /** On an iPad (`platform.ts`): the welcome is `connect` and the clones, the shell one pane. Set once at launch. */
+  mobile: boolean;
+  /** The sidebar drawn as a sheet over the page (an iPad in portrait), open. Not saved. */
+  sideSheet: boolean;
   /** The parent folder a new vault is being named in, on the welcome; null when it is not. */
   newVaultIn: string | null;
   /** Absolute path of the open vault, or null before one is picked. */
@@ -335,6 +340,8 @@ export const useApp = create<AppState>((set, get) => ({
   recents: loadRecents(),
   gone: [],
   started: false,
+  mobile: false,
+  sideSheet: false,
   newVaultIn: null,
   vault: null,
   files: [],
@@ -395,6 +402,11 @@ export const useApp = create<AppState>((set, get) => ({
   setRecents: (recents) => { set({ recents }); saveRecents(recents); },
   setPanes: (next) => set({ panes: typeof next === 'function' ? next(get().panes) : next }),
 }));
+
+// an iPad shows one pane: whatever asks for a second (a split, ⌘⇧-click) is folded back into the first
+useApp.subscribe((s) => {
+  if (s.mobile && s.panes.panes.length > 1) useApp.setState({ panes: onePane(s.panes) });
+});
 
 const persist = (s: AppState) => saveTweaks({ theme: s.theme, accent: s.accent, density: s.density, zoom: s.zoom, reopen: s.reopen, clipImages: s.clipImages, remoteImages: s.remoteImages, queueTitles: s.queueTitles, backlog: s.backlog });
 

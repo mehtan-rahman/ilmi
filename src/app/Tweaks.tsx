@@ -102,6 +102,8 @@ function SyncRows() {
   const sync = useApp((s) => s.sync);
   const settings = useApp((s) => s.syncSettings);
   const [busy, setBusy] = useState(false);
+  // an iPad has no folder to pick: its clone is the welcome's `connect`
+  const mobile = useApp((s) => s.mobile);
   const word = syncWord(sync);
   const fail = (what: string) => (e: unknown) => { notify(`${what} · ${e instanceof Error ? e.message : String(e)}`); };
   const doConnect = () => {
@@ -129,7 +131,7 @@ function SyncRows() {
         {!sync.on && (
           <div className="tw-seg">
             <button type="button" disabled={busy || !settings.url.trim()} onClick={doConnect}>connect</button>
-            <button type="button" disabled={busy || !settings.url.trim()} onClick={() => void doClone()}>clone…</button>
+            {!mobile && <button type="button" disabled={busy || !settings.url.trim()} onClick={() => void doClone()}>clone…</button>}
           </div>
         )}
       </div>

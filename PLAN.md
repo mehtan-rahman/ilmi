@@ -6456,7 +6456,7 @@ database and `ILMI_SMOKE=tour` passes on it; an export of it equals the
 sample; nothing reads a Markdown file from disk while the app runs.
 
 ### [x] 60. State in rows — schedules, the log, the queue by query
-Done 2026-11-05, commit `HASH60`.
+Done 2026-11-05, commit `5074b6d`.
 Notes: **The shape chosen.** `Vault` is still unchanged over `Fs`, and the
 app above still reads and writes the file FORMAT.md describes. What
 changed is under `storeFs` (`src/vault/store.ts`): a write of a document

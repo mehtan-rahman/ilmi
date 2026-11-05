@@ -8,7 +8,7 @@ was verified, what was not, and the prompt to resume with.
 
 ## 2026-11-05 — milestone 60: state in rows
 
-Done on main: `HASH60`. A document's text is stored without its state;
+Done on main: `5074b6d`. A document's text is stored without its state;
 schedules, the review log, a directory's order and the pairs said not the
 same are tables; an index written with each document lets a collection
 open without parsing anything; a mirror folder and dated exports are

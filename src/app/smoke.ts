@@ -8572,11 +8572,12 @@ export async function smokeNudge(vault: Vault): Promise<void> {
 
     // ── the nudge off in b: a push in a stays out until b pulls ──
     await b('nudge', { server: '' });
-    await poll(async () => (await listeners(topic)) === 1, 'b left the topic', 5000);
     const line = await a<string>('grade', { path: VOCAB, id: 'voc-akrama', g: 3 });
     await a('push');
     await sleep(3000);
     must(srLine(await b<string>('text', { path: VOCAB }), 'voc-akrama') !== line, 'without the nudge, b has not seen the grade after 3 s');
+    // the http plugin holds a stream while a read waits on it, so b's socket closes on the server's next write: that publish
+    await poll(async () => (await listeners(topic)) === 1, 'b left the topic', 5000);
     const pulled = await b<State>('sync');
     must(pulled.word === 'synced' && srLine(await b<string>('text', { path: VOCAB }), 'voc-akrama') === line, "b's own pull brings it");
     await b('nudge', { server });

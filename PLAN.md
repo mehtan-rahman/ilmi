@@ -6362,7 +6362,259 @@ Mac's own run wants too: one or the other.
 passage boxed with the (simulated) Pencil becomes a section, and the
 section is on the Mac.
 
-### [ ] 58. Ink — a page of working under the section being read
+### [x] 58. Ink — a page of working under the section being read
+Done 2026-11-06, commit `0e0b3eb`.
+Notes: **Measured first, as the revision asks.** On the Mac, where
+PencilKit also is (a made-up page: 672 strokes of 8 to 28 points, 24
+lines of 28): one `PKDrawing` 250,940 bytes; a row a stroke, each a
+`PKDrawing` of that stroke alone, 343,789 bytes (511 a stroke, about 21 a
+point and 140 of wrapping); a PNG at 2× of what they cover, 1582×2094,
+768,865 bytes; drawn in 44 ms, put together in 13. A smaller one, 112
+strokes: 42,818, 58,358 and 137,598 (`cargo test -p tauri-plugin-ink --
+--ignored --nocapture a_page_weighed`). On the simulated iPad, a page
+drawn by the rig's finger: 8 strokes (straight drags, more points apiece than a pen's letters) are 7,236 bytes as rows (905 a stroke), 6,249 as one drawing, and 47,935 as the PNG (1138×928); with two more, 9,042, 7,794 and 62,278 (1138×1236). So a picture is two to
+seven times its strokes, and it is all of it again at every save, where
+strokes are only the new ones. **Whether a stroke's id survives a save: PencilKit
+gives a stroke none.** `PKStroke` has no identifier in its interface, and
+the bytes say nothing either: a drawing loaded and written again is other
+bytes, and one stroke written twice is two different files (the drawing
+is a CRDT of PencilKit's own, with a replica id drawn from a preference
+of the process). What a save does keep of a stroke is when it was made
+(`path.creationDate`), its seed (`randomSeed`) and its points: all 672
+came back with all three after one save and after a second, and a stroke
+moved keeps its date and gains a transform. **So a stroke is named here by
+what it is**: sixteen hex digits of a SHA-256 over its creation date, its
+seed, its ink's kind, its transform, its points' places and its mask's
+bounds (`nameOf`, `src-tauri/ink/native/ink.m`). A stroke left alone has
+its name after any number of saves; one moved by the lasso or cut by the
+eraser is another stroke (one taken away, one added). The colour is not
+in the name: nothing in the canvas changes a stroke's colour and leaves
+the rest, and a colour does not read the same on both systems.
+**What was chosen from it.** The strokes are the ink, rows of a new
+table by page, and they are what crosses; nothing made from them is kept
+or merged. The picture and the drawing are made where they are read, on
+the Mac too, which is what the measurement argues for and what the
+revision says ("the picture is made from them, never merged"; "the PNG
+and the `.pkdrawing` beside the note are what an export writes"). That
+needed PencilKit on the Mac, which has it: so the first native code is
+two pieces, not one. **The plugin** (`src-tauri/ink`, a crate of its own,
+`tauri-plugin-ink`). `ios/` is the Swift package Tauri builds into the
+iOS app: a `PKCanvasView` over the web view, the whole screen, the tool
+picker shown, a `done` at the top right; `open` takes a drawing or none
+and answers with the one it holds when it closes, and `peek` says how
+many strokes the open canvas holds and, once it has been left alone for
+as long as asked, gives the drawing as it stands. `native/ink.m` is
+Objective-C over PencilKit, compiled by the crate's build script for the
+Mac and iOS alike and called from Rust: `split` (a drawing as its
+strokes, each with its name, its instant, and a `PKDrawing` of it
+alone), `join` (strokes as the one drawing PencilKit writes), `picture`
+(a PNG at 2× of what they cover and 12 points round it, on nothing, in
+the light appearance whatever the system's), `sample` (a made-up page,
+for the tests and the corpus). The bullet's "returns a PNG at 2× and the
+strokes" is two calls now, `open` and `picture`, so that the Mac's
+picture and the iPad's are one function's. The app's commands
+(`lib.rs`): `ink_open`, `ink_peek`, `ink_split`, `store_ink`,
+`store_ink_file`; no plugin command is reached from the page, so the
+capabilities did not change. **The store.** Schema 4: the table `ink
+(page, stroke, at, data)` and a trigger that takes a page's strokes with
+its row, both made as a collection opens; a collection of 3 opens as it
+is and is marked 4, and a build of 63's then refuses it. **No fourth
+kind of row**: `documents.kind` is checked against `folder`, `doc`,
+`file` in every collection there is, and SQLite cannot change a check
+without making the table again, so a page of ink is a file's row that
+holds no blob and is named `ink-01.pkdrawing` (`isInk`,
+`src/vault/store.ts`); its strokes are found by its id. Read as a file
+that row is the `PKDrawing` made of its strokes, and beside it there is
+`ink-01.png`, which is no row at all: listed, stat'd and read while the
+page is, made from the strokes (`pictureOf`). So `Vault` and everything
+over `Fs` is unchanged again: the reader draws the picture as it draws
+any image, an export and the mirror write both files, a note deleted and
+put back has them. `StoreFs.ink` and `setInk` are the two new ways in:
+`setInk` is told the strokes a page holds now and writes the difference
+in one transaction (`Op::Ink`), the row's `rev` moved and its size the
+strokes' bytes. What is made is kept beside the database
+(`<collection>/ink/<page>.<rev>.drawing|picture`) until the page's `rev`
+moves, because PencilKit does not write one drawing as the same bytes
+twice and git's folder compares bytes. **A drawing that comes in as a
+file stays a file** (an import, the corpus's page): nothing has to read
+PencilKit's bytes to keep it, the round trips are byte for byte without
+PencilKit, and it becomes a page of strokes the first time it is drawn
+on (the canvas opens on whatever the `.pkdrawing` reads as; the picture
+that came in beside it goes then, since the strokes make it). The other
+way, a file written over a page of strokes (git's pull, a restore) is
+that file from then on, its strokes taken away and the picture they made
+left beside it as a file. **How strokes merge** (`src/sync/engine.ts`).
+A stroke is a register, `~i|<page>|<stroke>`: its instant and its bytes,
+or nothing once it is taken away, by the later write as every register
+is. So strokes two devices add to one page are all kept, one erased on
+either is gone on both, and one erased and put back is there by the
+later of the two. A stroke is a change to its page's row, so a page
+deleted on one device and drawn on on the other comes back whole (every
+stroke its registers hold is written again when the row is). The first
+changes of a collection that holds pages carry their strokes, and a
+snapshot carries them as it carries every register. The key is outside
+the row's own prefix on purpose: a merge reads every register under each
+row it touches, and a page's strokes would be read with it. "Until that
+is proven both pages are kept" is answered by the tests and not by a
+second page. **In the notes** (`src/app/ink.ts`). On an iPad a section's
+heading's menu (57's long press) has `draw`, and the insert menu has a
+`draw` row after `image` (`setCanvas`, said once at launch; the Mac has
+neither). Either opens the canvas on a new page, `ink-NN` one past the
+highest among the note's files; the first time the page is kept with a
+stroke on it, `![working](name/ink-NN.png)` goes in as a block at the end
+of that heading's section (with no heading above the caret, at the
+document's end), through the open reader's writer. A canvas closed clean
+leaves nothing. A tap on a picture that has a `.pkdrawing` beside it
+opens the canvas on it again. **Saved when it goes quiet or closes**: the
+page looks at the open canvas every 1.2 s and keeps it once it has been
+left alone 2.5 s (`QUIET_MS`), and again at `done`; a keep takes the
+drawing apart on the Rust side and writes the strokes that are new and
+takes away the ones that are gone, so a page gone on with writes a few
+rows. The sync is told (`crdtWrote`: strokes are no document's write).
+A reader showing a page's picture reads it again when its strokes change
+here or by a merge (`inkRev`, `watchInk`). On dark paper the picture is
+inverted by a style (`.md-img[data-ink]`), since it is drawn dark on
+nothing. **A finger on the canvas.** A real user gets the system's
+canvas (`drawingPolicy = .default`): the Pencil draws, a finger scrolls,
+and the tool picker's own "draw with finger" is the system's to offer.
+A finger draws (`.anyInput`) only when the canvas is opened by a dev
+run under a smoke (`finger`, from `dev_env`'s `ILMI_SMOKE`), which is how
+the rig's touches are strokes. **FORMAT.md**: §4 gains the paragraph on
+images and the page of ink's two files, §1 a sentence, §10 what ink is
+not yet. The corpus has `fleeting/worked-example.md` with
+`worked-example/ink-01.png` and `ink-01.pkdrawing` (27 strokes;
+`npm run fixture:ink` makes them with PencilKit on the Mac).
+`tauri.conf.json` says the Mac app needs macOS 10.15, where PencilKit
+is (it said nothing, which is 10.13); on 10.15 itself a page reads as
+"no PencilKit" (the stroke interface is macOS 11's), not tried.
+**Tests.** Vitest, 1426 in 92 files (+13): `store.test.ts` (the corpus's page in and
+out byte for byte; a page drawn, both files listed and read and one of
+them a row, a stroke it had left alone and its bytes not written again,
+an export and its import back; a drawing kept as a file becoming
+strokes, moving with its note, written over; a note deleted and put
+back), `engine.test.ts` (strokes from two copies all kept, one erased
+gone on both, erased and put back; a page deleted against one drawn on;
+first changes, a file become strokes on both, a copy from a snapshot; a
+collection that does not sync recording nothing), and the random test
+with pages drawn on, erased from and thrown away from a draw of its own,
+`ILMI_SEEDS=1-500` with and without `ILMI_SNAPS=1`; `ink.test.ts` (a
+page's name, its line and where it goes, `draw` among the rows only
+where there is a canvas). Cargo: 45 in the app (the table, what is read
+made from it and the same on a second read, a collection of 3 opening)
+and 4 in the plugin (a stroke's name after three saves, strokes of two
+drawings joined and one taken out, a picture, the corpus's page).
+**Found on the way.** *PencilKit traps in a process with no bundle
+identifier* (`PKReplicaManager` writes a preference by it): a test's
+binary, and perhaps `tauri dev`'s. `ink.m` gives such a process one
+(`dev.ilmi.ink`) before PencilKit is used; the app's own is left alone.
+*A canvas given its drawing before it is laid out draws only part of
+it* (everything left of 512 points was blank on reopening): the drawing
+is given once the canvas has a size. *The simulator does not finish
+booting, and `simctl launch` does not return, while the Mac's screen is
+locked* (SpringBoard stops at its connection to the host's Metal
+service); an app already running there goes on, as 57 saw. *A plugin
+beside the app's sources makes `tauri dev` rebuild twice*: its build
+copies Tauri's Swift package into `ink/.tauri`, which the watcher takes
+for a change; `src-tauri/.taurignore` names it. *A tap on a picture
+leaves the caret in the notes*, and the keyboard's bar came back with
+the page when the canvas closed: the canvas lets go of the focus as it
+opens.
+**Checked,** from a clean checkout of `0e0b3eb` (`tauri ios dev` run over
+it: it found the simulator's build, made from the working tree a quarter
+of an hour before, current, and installed it again; the native code did
+not change between). *On the Mac first:* `ILMI_SMOKE=ink` over a copy of the sample
+named `ink-major` made the storage (4 ok). *On a simulated iPad Air
+11-inch (M4), iOS 27.2,* `ink`, 46 ok and 6 captures, each looked at,
+under 16 touches the rig made (a flick, a long press, 4 taps, 10 drags):
+a collection made from that storage; the chapter open and its notes
+brought in from the right edge; a long press on `3.3 · average values
+(3.9)`: its menu, `bring back` and `draw`; a tap on `draw`: the canvas
+over the page, the tool picker under it; eight drags, each one stroke
+more on the canvas; left alone, the page kept (8 strokes in the store,
+the line in the notes' text) with the canvas still open; `done`: closed,
+nothing written again, the line under the section's heading and before
+the next, the page a row with no file behind it and its picture no row,
+the picture read as a PNG of 1138×928 and drawn in the notes under the
+heading; a tap on it: the canvas again with its 8 strokes, all drawn;
+two more; `done`: 8 of 8 names as they were and their bytes not written
+again, 2 new, the picture taller (1138×1236) and shown; synced. *On the
+Mac again* (`ILMI_VAULT=<its collection> ILMI_EXPECT=<the heading>
+ILMI_STROKES=10`), 20 ok and 2 captures looked at: after a sync the
+line is in the chapter under the same heading; the 10 strokes are rows;
+no file crossed (the storage's `blobs/` as it was); the picture read
+there is a PNG the Mac made, 1138×1236, the same on a second read; the
+drawing beside it is PencilKit's and, taken apart again, the same 10
+names in order; both are files to an export; in the window the picture
+is under the heading in the notes, with ink in it on nothing, light on
+dark paper; the heading's menu there has no `draw`. **How the ink
+reached the Mac: as ten registers through the engine and a storage
+folder** on the Mac's disk named in `smoke.json`, the picture made on
+the Mac from them; no PNG and no drawing crossed. Also from that
+checkout. The Mac: `store` 34 ok (its folder equal to the sample by
+`diff -r`), `crdt` 72 and 18 captures, `storage` over the S3-shaped
+server 76 and 12 (those two runs' captures were not looked at: their
+checks are the lines), `tour` 23 and 45 (looked over on a sheet), `touch` 4
+before the iPad and 9 after (the section, its capture looked at). The
+simulator: `tour` 23 and 45 (a sheet), `touch` 69 and 10 (a sheet; the
+heading's menu there has `draw` under `dismiss` now), each on its first
+run. The random test, `ILMI_SEEDS=1-500` and again with `ILMI_SNAPS=1`:
+all 500 end the same both ways, over the commit. Not run: `sync`,
+`nudge`, `book`, `books`, `ipad`, `storage` over WebDAV, `size`.
+**Not done, and limits.** *The picture is not the bullet's `PNG at 2×`
+from the plugin* but the same thing from `picture`, and the
+`.pkdrawing` is not a row: both said above. *Strokes are held twice in a
+collection that syncs* (the `ink` table and the register's value, in
+base64), as schedules are; a page of 672 strokes is about 350 KB and
+470 KB. *A stroke's register stays when it is taken away* (its value
+gone), as every register does. *Under git sync a page crosses as its
+two files*: the folder git commits holds them as an export does, and a
+pull that changes the `.pkdrawing` writes it over the page, which is a
+file from then on (its picture beside it), until it is drawn on again.
+Git goes at 66. *A page thrown away leaves its line in the note*, and
+the line a broken image; a page all of whose strokes are erased is an
+empty picture. *The canvas is the system's size and paper*: no page
+size, no ruling, no zoom set here; its background is the system's, not
+the theme's, and the picture is always drawn for light paper and
+inverted by the reader on dark. *No palm, no hover, no Scribble choice,
+no double-tap* beyond what PencilKit does by itself. *The picture is cut
+to what the strokes cover*, so it grows and moves as the page is written
+on. *`draw` in the insert menu goes under the heading the caret is
+under*, as the bullet says, not where the caret is. *Nothing draws on
+the Mac*: there the picture is a picture, and `draw` is not offered.
+*The iPad has no export* (59), so what an export writes was read on the
+Mac. *The dated export and the mirror make every page's two files each
+time a page changed*; not timed on a collection with many pages.
+**Not verified, said plainly.** *The Pencil.* Xcode 27.2's test runner
+makes fingers only (57), so every stroke was a finger's drag on a canvas
+told to take one. Not seen: the Pencil drawing with the canvas as a
+real user gets it (the finger scrolling then), pressure, tilt and their
+bytes, the eraser, the lasso (a stroke moved or cut is another name by
+the rule above: tested only as names taken away and added), undo in the
+tool picker, the ruler, a long page scrolled. *A device.* *Two devices
+drawing on one page in the window*: the engine's tests have it, the
+simulator and the Mac did not (67's "done when"). *`draw` picked from
+the insert menu* on the simulator (the row is there; the canvas was
+opened from the heading's menu). *A page on a note that is not a book's
+notes*, a page in landscape, a second page under one note (`ink-02`: the
+name is tested, the canvas was not opened twice). *The Mac's picture in
+a release bundle*, and on macOS 10.15. *An export to a folder and a zip
+from the palette* with a page in it (the smoke reads both files through
+the store, which is what an export reads). *Git sync with a page*. *S3
+and WebDAV with strokes* (they are registers like any; `storage` ran
+without a page). *The size collection with pages.*
+**For 67.** The block is here: a page is a row and its strokes, `setInk`
+and `ink` by path, a register a stroke, the plugin's `open`/`peek`, and
+`split`/`join`/`picture` on both systems. A book's page wants its
+strokes keyed by the PDF's hash and the page (the bullet), which is a
+page id that is not a row's: `~i|<page>|…` takes any string, and the
+`ink` table's `page` too, but the trigger and "a stroke is a change to
+its row" assume a row, so say what a page of a PDF is when the PDF's row
+goes. The canvas there is over a page's picture, not white, and the
+Pencil has to write where 57 has it box (`boxStart`): choose which.
+After a merge that brings another device's strokes the picture is made
+again by whoever reads it, so the two-collection check needs nothing
+new but the second device. A notebook ("a document whose blocks are ink
+pages") is this block, several to a note: `nextPage` numbers them.
 - **A Tauri plugin in Swift** opens a PencilKit canvas over the web view
   (full screen, the tool picker shown) and returns a PNG at 2× and the
   strokes (`PKDrawing` data). Opening with existing strokes edits them.
@@ -7437,9 +7689,16 @@ right-click where it rests; a row is dragged by the web view's own drag;
 a book's notes slide in from the right in portrait; `ILMI_SMOKE=touch`
 under touches an XCUITest bundle makes (`scripts/touch-rig`), the
 section made on the iPad found on the Mac through a storage folder. No
-Pencil could be simulated. Next in the section's order: 58, 67 (ink),
-then 64, 56, 68; 65 and 66 wait for things only the user has, 52 for
-the user's word.
+Pencil could be simulated. 58, ink, the same day, and the first native
+code: a page of working drawn on PencilKit's canvas under a section's
+heading on the iPad, kept as its strokes (a table by page, a register a
+stroke, each stroke named by what a save keeps of it, since PencilKit
+gives it no id), the picture and the drawing beside it made from them
+where they are read, on the Mac too (`src-tauri/ink`);
+`ILMI_SMOKE=ink` over a storage folder, the rig's finger for the Pencil
+again. Next in the section's order: 67 (ink on a book's pages), then
+64, 56, 68; 65 and 66 wait for things only the user has, 52 for the
+user's word.
 
 Refinement (33–41) is complete, 2026-10-30, every milestone's window check
 run and recorded under its BUILD-LOG entry (33 `notes`, 34 `editing`, 35

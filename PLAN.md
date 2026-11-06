@@ -6939,7 +6939,196 @@ other.
 two reorderings, each made on two collections, come to one tree with
 nothing twice and nothing lost.
 
-### [ ] 63. Big files and real storage — S3, WebDAV, and what a device keeps
+### [x] 63. Big files and real storage — S3, WebDAV, and what a device keeps
+Done 2026-11-06, commit `f6a5925`.
+Notes: **The shape chosen.** `Vault` and the app above are unchanged
+again. A storage is still four verbs (`src/sync/storage.ts`), and has two
+more that are optional: `up(hash)` and `down(hash, size)`, by which a file
+goes between the collection's `blobs/` and the storage without passing
+through the engine. The app's storages (`src/app/storage.ts`) have them
+for every kind, done on the Rust side (`src-tauri/src/storage.rs`): a
+file is sent as a request's body a quarter megabyte at a time and written
+to disk as it arrives, hashed, and kept only if its bytes hash to its
+name. The tests' storage has neither and the engine reads and writes the
+bytes itself, as 61 did. **A file named and not here.** A merge no longer
+fetches: a row names its blob by hash (`b`) and, new, says its size (`z`,
+written with it), and a blob whose bytes are not here is a row of `blobs`
+with an empty `path`. No schema change: no table, no column; a build of
+62's opens such a collection and fails only to read that file. The engine
+gives `away`, `fetch` and `fetchAll`; `sync` fetches every file after its
+push when the device keeps them all, unless told `files: false`, which
+the app does so that a sync never waits on a PDF and the strip can show
+the fetch. `StoreFs` knows which paths are away (`away`, `isAway`), and a
+read of one asks `door.fetcher`, which the app sets while a storage is
+connected: so a book, an image in a note, an export each bring what they
+read, and with no storage the read says the file is not here. A blob that
+is in no storage yet (its change arrived first) stays named, and comes on
+a later sync. **Big files beside the web view.** `StoreFs.pieces` reads a
+blob by ranges (`store_blob_range`), and the PDF lens opens a PDF over
+16 MB that way (`loadPdfPieces`, pdf.js's range transport, half a megabyte
+a request, nothing fetched ahead): only the pages shown are read.
+`StoreFs.take` brings a file in from disk by its path, copied and hashed
+on the Rust side. `Fs.ref` and `writeRef` name a store's file by its
+hash, and `Vault.remove`, `restore` and `duplicate` use them: a book whose
+PDF is away is deleted, put back and copied without being fetched, and
+the undo of a delete no longer holds a PDF's bytes. **The storages.**
+`storage.rs`, over the http plugin's own client (reqwest, its `stream`
+feature; one new direct dependency, `futures-util`, already in the
+tree). S3: path-style addresses (`<endpoint>/<bucket>/<key>`), Signature
+Version 4 written here over `sha2` (a hand HMAC), the payload's hash
+always signed (a blob's is its name, so the server checks the upload for
+us), `ListObjectsV2` paged by its token, one `PUT` an object. `bucket`
+may carry a prefix after a `/`. The region is read off an AWS endpoint,
+`auto` for R2, `us-east-1` otherwise (MinIO's default): there is no
+region field, since the section names four. WebDAV: basic auth, `PROPFIND`
+depth 1 walked folder by folder (the answer read by its tags' local
+names, whatever prefix a server gives `DAV:`), `PUT`, `GET`, `DELETE`, and
+`MKCOL` for the folders above a file only when a `PUT` is refused for
+want of one. No `MOVE` from a part file: Nextcloud keeps `.part` for
+itself, and servers differ on whether a `PUT` is whole before it shows.
+So a device's file now says in its first line how many lines it has
+(`k`), and one that reads short is left for the next sync; a snapshot's
+parts say the same, and a blob is checked by its hash. That makes any
+storage safe to read while it is written, a folder another program syncs
+included. **The loopback servers** (`src-tauri/src/devstore.rs`, debug
+builds, as 54's): one listener, `/s3/<bucket>/…` and `/dav/…` over a
+folder (`ILMI_STORAGE_DIR`). The S3 side refuses a request whose
+signature is not what its headers come to and a body that does not hash
+to its header, pages a listing at a thousand keys, and wants a
+`Content-Length`; the WebDAV side refuses a `PUT` into a folder that is
+not there (409) and a wrong password. Bodies go to disk as they arrive.
+**Snapshots.** When the change files in the storage that no snapshot
+covers pass 64 (`SNAP_AFTER`), a device that has merged all of them and
+sent its own writes what it holds as `snapshots/<device>/<n>/1…k` (about
+a megabyte each) and then `head`: who, when, how many files of each
+device it covers, how many parts. A snapshot is state, not changes:
+every register with its stamp, every text as the library keeps it, what
+each row had seen of each device (a new op, `e`) and each delete, the
+log. Each of those merges by taking the later or the larger, so any
+device can merge a snapshot at any time, whatever it holds and whatever
+it has not sent, twice or out of order, through the same `merge` a file
+goes through (a part is a file marked `snap`: its registers are not
+counted as its writer's changes, and a text it brings nothing to is not
+written again). Its rows go parents first, so a reader places each once.
+A device takes a snapshot in place of files when it would save reading 16
+(`SNAP_WORTH`) or when a file it has yet to read is gone; a new device
+starts from one, and writes nothing (62's old undoings are not written
+again: the tree comes as state). Thirty days after a snapshot was
+written (its writer's clock) any device deletes the change files it
+covers, and the snapshots it covers wholly. **Decided: a text's history
+is kept whole in a snapshot, so every device can always merge with one.**
+The handoff asked what a device does that has not merged up to a shallow
+snapshot's version; tried in `loro-crdt` 1.17.1 on a text of 1,214 bytes
+after 300 edits (state 1,806 bytes whole, 894 shallow): a text loaded
+from the shallow snapshot refuses an edit made before it ("The
+dependencies of the importing updates are not included in the shallow
+history of the doc"), and a device holding such an edit that imports the
+shallow snapshot is left, without an error, with a different text. With
+no server, no device can know that every other has merged up to a
+version (one may be away for a month with work it has not sent, and the
+tests have that device), and an edit already in the storage when a
+snapshot is written may be one of those. So nothing is dropped; the cost
+is 61's figure, a text's state about 1.25 times its text and growing with
+its edits. Dropping history safely needs a rule for the device that was
+away (its unsent text merged by paragraph, as git's was, and sent as a
+new edit) and for the edit that crosses the snapshot in flight; neither
+is built. **The app.** Tweaks, under the sync rows: `storage` with its
+word and `folder` · `s3` · `webdav`; then that kind's fields (`folder`
+with `choose…`; `endpoint`, `bucket`, `key`, `secret`; `address`, `user`,
+`password`; the last of each masked); then `connect` and `join…`, or
+`off`; then `keep files` `all` · `opened`. They are kept as 53's token
+is: `localStorage`, by collection, on each device (`ilmi.storage`).
+`connect` is the engine's (an empty storage takes the collection, one
+that holds it is met, another's is refused and the setting left off);
+`join…` makes a new collection from the storage, named for the folder,
+the bucket or the address's last part, with the same settings, and opens
+it, as `clone…` does for git. A collection that syncs this way does not
+sync by git, and git's row reads `off` with `connect` held. `keep files`
+is `all` on the Mac and `opened` on iOS until it is chosen. A book whose
+PDF is away has `not here` at the end of its row, where the due count
+goes. The strip reads `pulling 40%` or `pushing 40%` while a file is on
+its way (the Rust side tells the window at most a hundred times a file).
+A storage that is not reached when a collection opens is tried again by
+the timers (61's stopped at the first failure). **Dated exports and the
+mirror.** A dated export no longer holds the PDFs and images: they are
+not in the database it is a safeguard for, but files under `blobs/` by
+hash, never rewritten; the zip's `.ilmi/blobs.json` says which path is
+which. The sample's is 437 KB. (Before, each of seven held every PDF, and
+on a device that keeps what it has opened would have fetched every one,
+daily.) The mirror takes no notice of a file that is away and writes it
+when it comes. `export collection` is whole, and fetches what is away.
+**Found on the way.** A collection made anew under a name took the
+storage settings the last one of that name had (the smoke's second run
+tried the first run's server): a collection that is imported, made or
+cloned now starts with none. A `PUT` with no body went out with no
+length, which the loopback server refuses as S3 does. The Rust tests wiped the server's folder under
+each other until it was made once. **Measured, in the Mac's window, a
+debug build, over the loopback:** a 200 MB PDF taken in from disk in
+6.7 s (copied and hashed by unoptimized code), sent in 6.7 s, fetched
+and its first page drawn in 7.2 s in the other window; the most the web
+view had held grew by 0 to 56 MB across all of it in four runs. **Tests.**
+Rust, 44: Amazon's three published S3 signature examples come to their
+signatures; curl's own `--aws-sigv4` is taken by the loopback server and
+a wrong secret refused; the four verbs over a folder, the bucket and the
+WebDAV folder; five megabytes up and down in pieces, the same bytes; a
+body under another's hash refused; a listing of 1,203 keys in two pages;
+a blob named before its bytes, taken in, read by range.
+`a_server_the_environment_names` runs the verbs and three megabytes in
+pieces against a bucket or a WebDAV folder named in
+`ILMI_TEST_S3=endpoint,bucket,key,secret` or
+`ILMI_TEST_WEBDAV=address,user,password`: it passed against Apache
+httpd 2.4.67's mod_dav on the loopback, which is the one server not
+written here that the client has met. Vitest, 1400 in 89 files:
+`engine.test.ts` 63 (a copy that keeps the opened holds no PDF until one
+is read, and two reads fetch once; a book away deleted, put back and
+copied unfetched; a blob not yet in the storage; a storage's own way
+used and the engine holding no bytes; a snapshot written, a new copy
+reading it and none of the files it covers; thirty days, and a copy that
+was away with a grade, an edit to a paragraph the others also changed, a
+new document and a rename, all kept; a second snapshot and the first
+gone; a file cut at a line's end not taken for whole), the random test
+with one seed in three writing snapshots every four files, deleting a
+quarter of an hour on, and a fourth copy joining at the end;
+`ILMI_SEEDS=1-500` passed over the commit with and without `ILMI_SNAPS=1`.
+**Said plainly, what is not done.** *Adding a PDF still passes through
+the web view*: a drop reads the file for its text and writes it back
+(`take` is there and only the smoke uses it), and `export collection`,
+git's folder and an image read each file whole. *Nothing is evicted*: set
+to `opened`, a device keeps what it already holds. *One `PUT` a file*: no
+upload in parts (S3's limit is 5 GB a `PUT`), nothing resumed, a transfer
+cut short starts again; no retry beyond the next sync. *The secret and
+the password are in `localStorage` in the clear*, as the token is. *The
+nudge is still not wired to the engine*: a change crosses on the timers.
+*A snapshot's rows that are deleted stay in every snapshot*, and a part
+written for a snapshot whose head never was is never removed. *Restoring
+a dated export* is by hand and now also means copying the files
+`blobs.json` lists. **Stopped, for the user.** *The iPad has no way to
+join a storage*: its welcome's one button is git's `connect`, and a
+storage there is a screen the section does not name. On the Mac a second
+device starts by opening any collection and pressing `join…`, which is
+roundabout for the same reason: the welcome was not touched. `join…` and
+the row of buttons without a label are not named in the introduction
+either; they were built as the storage row's own actions, the way sync's
+row has `connect` and `clone…`: say if they should be elsewhere. **Limits.**
+The thirty days are by the snapshot writer's clock against the deleting
+device's; a wrong clock deletes early, which costs a device behind a
+snapshot's read and loses nothing. Two devices that pass the count at
+once each write a snapshot. Files are fetched one after another. The
+loopback servers speak http; nothing here has spoken https to a storage.
+**Not verified.** A real bucket or server: the user gave none, so R2,
+AWS, MinIO, Nextcloud and a Synology are all untried (the env test above
+is the way to try one). Nothing on the simulated iPad, the settings and
+`keep files` there included. A release bundle. The size collection
+through the engine, and a snapshot of it. Not driven in the window: the
+folder kind and its `choose…`, the `join…` and `off` buttons (the smoke
+joins by the function under the button), the percent as drawn (it is
+read from the store; no capture shows one), an image fetched when its
+note is shown, a delete and undo of a book that is away, the mirror
+beside away files, the timers. Smokes run from a clean checkout of
+`f6a5925`: `storage` over the S3-shaped server (76 ok, 12 captures) and
+over the WebDAV-shaped one (75, 12), `crdt` (72, 18), `store` (34, its
+folder and zip equal to the sample by `diff -r`), `sync` (34), `tour`
+(23, 45 captures), `nudge` (29); no other.
 - PDFs and images go to the storage as `blobs/<sha256>`, whole. A blob
   is written before the change that names it.
 - `keep files` (all · opened): a book whose PDF is not here says so on
@@ -7060,8 +7249,14 @@ merge row by row; of moves that would put a row under itself the latest
 is undone by a change every device writes alike; two rows of one name
 in one place are both shown, the second numbered; nothing was built for
 the title's "settings that merge", which no bullet names. 63, big files
-and real storage, is next; 56–58 take their places in that section's
-order.
+and real storage, the same day: a storage chosen in the tweaks (a folder,
+an S3-compatible bucket, a WebDAV folder), PDFs and images sent and
+fetched as streams on the Rust side and only when asked for (`keep
+files`), snapshots that any device can merge and the change files they
+cover deleted thirty days on, loopback servers for the smoke; no real
+bucket or server was given, so that check is not made. Next in the
+section's order: 57, 58, 67 (the iPad, touch and ink), then 64, 56, 68;
+65 and 66 wait for things only the user has, 52 for the user's word.
 
 Refinement (33–41) is complete, 2026-10-30, every milestone's window check
 run and recorded under its BUILD-LOG entry (33 `notes`, 34 `editing`, 35

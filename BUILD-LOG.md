@@ -6,6 +6,207 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-11-06 — milestone 63: big files and real storage
+
+Done on main: `f6a5925`. A collection syncs through a storage chosen in
+the tweaks: a folder, an S3-compatible bucket, or a WebDAV folder. A PDF
+or an image goes between the collection and the storage on the Rust side
+a piece at a time, and only when it is asked for: after a sync on a
+device that keeps every file, when it is opened on one that keeps what it
+has opened, whose books say `not here` until then. The change files fold
+into snapshots, and what a snapshot covers is deleted thirty days on.
+New: `src-tauri/src/storage.rs` (the S3 and WebDAV clients, Signature
+Version 4, a file up and down as a stream), `src-tauri/src/devstore.rs`
+(the loopback servers shaped like each, debug builds),
+`src/app/storage.ts` (the settings and the app's storages). Changed:
+`src/sync/engine.ts` (a blob's size beside its name, a merge that names
+and does not fetch, `away` / `fetch` / `fetchAll`, snapshots written,
+taken and tidied, a file's line count in its head), `src/sync/storage.ts`
+(`up`, `down`), `src/vault/store.ts` (`away`, `pieces`, `take`, `ref`,
+the fetcher), `mem-store.ts`, `tauri-store.ts`, `fs.ts`, `vault.ts`
+(delete, restore and copy by name), `transfer.ts` (`leave`),
+`src-tauri/src/store.rs` (a blob named before its bytes, taken from
+disk, read by range; registers by the page) and `lib.rs` (the commands),
+`src/app/crdt.ts` (rewritten around the setting), `Tweaks.tsx`,
+`Tree.tsx`, `sync.ts` (the percent), `keep.ts` (dated exports without
+the PDFs), `bookPdf.ts` and `pdfjs.ts` (a big PDF by ranges), `smoke.ts`
+(`storage`), the tests, `docs/guide.md`, `docs/development.md`, PLAN
+(63's notes). No schema change, no FORMAT change.
+
+### Decided
+
+- **The storages are on the Rust side**, over the client the http plugin
+  already links: one signing, and a 200 MB body streamed from a file. The
+  folder kind keeps 61's verbs and gains the same streamed copy for its
+  files.
+- **A merge names a file and does not fetch it.** The size travels with
+  the hash, so a row can say how big a book is that it does not hold. The
+  bytes are a separate matter, after a sync or at a read, never inside
+  one.
+- **A snapshot is state that any device can merge**, not a base a device
+  must have reached. So the device that was away past the thirty days
+  with unsent work needs no special path: it merges the snapshot like a
+  file.
+- **A text's history is kept whole in a snapshot.** Tried: a text loaded
+  from Loro's shallow snapshot refuses an edit made before it, and a
+  device holding such an edit that imports one is left with a different
+  text and no error. Without a server nothing can say every device has
+  passed a version. PLAN under 63 has the numbers and what dropping it
+  safely would take.
+- **No `MOVE` on WebDAV; a file says how many lines it has.** Nextcloud
+  keeps `.part` for itself, and servers differ on when a `PUT` shows. A
+  reader that counts lines is safe on any storage.
+- **A dated export leaves the PDFs out and lists them.** They are files
+  of their own beside the database, by hash; seven copies a week of every
+  book was 60's open item.
+- **`connect` and `join…` on the storage's rows**, as sync's row has
+  `connect` and `clone…`. The introduction names the kinds and the
+  fields, not these; see *For the user*.
+
+### Verified
+
+1400 tests in 89 files (1 skipped), typecheck clean, 44 cargo tests,
+`cargo check` for both iOS targets. In cargo: Amazon's three published S3
+signature examples; curl's own `--aws-sigv4` taken by the loopback
+server; the verbs and five megabytes in pieces over a folder, the bucket
+and the WebDAV folder; the same against Apache httpd 2.4.67's mod_dav on
+the loopback (`ILMI_TEST_WEBDAV`), the one server not written here. In
+vitest: the cases in PLAN under 63; `ILMI_SEEDS=1-500` over the commit
+with and without `ILMI_SNAPS=1`, all ending the same. In the Mac's
+window, from a clean checkout of `f6a5925` (the dev identifier, the app
+stopped by pid, each window captured by id; the runs before the commit
+were over snapshots of the working tree): `ILMI_SMOKE=storage` over the
+S3-shaped server, 76 checks and 12 captures, and over the WebDAV-shaped
+one, 75 and 12. In each: the tweaks' storage row found reading `off`,
+the kind pressed, the fields typed, `connect` pressed, the row reading
+`synced`; the second collection made from the storage with `keep files`
+at `opened`: the same 66 documents and log, both PDFs named, none on
+disk, its books' rows reading `not here`; a grade each way; a book
+opened in it: its PDF fetched, the same bytes as the first's, the other
+still away; a 200 MB PDF taken in from disk by the first and synced, the
+strip's word going `pushing 1%` and on up; the second's row for it
+reading `not here` and 200 MB; opened there: `pulling 1%` onward, the
+file whole on disk, its first page drawn (read by ranges), the most the
+web view had held up by 0 to 56 MB; an image made in the second on the
+first's disk after a sync, unopened; a snapshot in the storage, a third
+collection made from it (the snapshot read in place of the files it
+covers) holding the same documents and log and no file; its `keep files` pressed to `all`, and four files on disk.
+The captures of the tweaks (both kinds), the joined window's rows, the
+big book away and open, and the dark pair were looked at. Also `crdt`
+(72, 18 captures), `store` (34, folder and zip equal to the sample by
+`diff -r`), `sync` (34), `tour` (23, 45 captures), `nudge` (29): the
+counts of 62. The dated zip was opened on the store run before the
+commit, not on this one: 437 KB, `.ilmi/blobs.json` in it and no PDF.
+
+### Not verified
+
+A real bucket or server: none was given. R2, AWS, MinIO, Nextcloud, a
+Synology, and https to any storage are untried. Nothing on the simulated
+iPad. A release bundle. The size collection through the engine or as a
+snapshot. In the window: the folder kind's `choose…`, the `join…` and
+`off` buttons (the smoke joins by the function under the button), a
+percent as drawn (read from the store), an image fetched when its note
+shows, a delete and undo of a book that is away, the mirror beside away
+files, the timers. The smokes other than the six above.
+
+### Rig notes
+
+`rig/storage.sh <tag> <s3|webdav>` runs the smoke (it makes
+`m63/big.pdf`, 200 MB, with `rig/bigpdf.py` when it is not there). A
+second run found the first run's storage settings on the fresh
+collection of the same name (they are kept by name): fixed in the app,
+and worth knowing when a dev run behaves as if it remembered something.
+The Mac slept once more during a long seed run: three seeds "timed out"
+at 218, 973 and 939 seconds and pass alone in half a second. A private
+Apache for the WebDAV check is `/usr/sbin/httpd -f <conf>` with
+`mod_dav` and `mod_dav_fs` on a high port, stopped with `-k stop`.
+
+### For the user
+
+Open the tweaks (⌘,): under the sync rows there is `storage`. Choose a
+folder on a disk both your devices see, or give a bucket or a WebDAV
+folder, press `connect`, and on the other device press `join…` from any
+open collection. That is the first time the engine runs outside a dev
+build, so treat it as a trial beside git, not in place of it, until 66.
+Three things to say when you look:
+- A bucket or server of yours was optional and none was given, so the
+  real check is not made. With one, `ILMI_TEST_S3=endpoint,bucket,key,secret
+  cargo test a_server_the_environment_names` in `src-tauri` (or
+  `ILMI_TEST_WEBDAV=address,user,password`) tries the client against it
+  in a few seconds, on an empty bucket or folder.
+- The iPad cannot join a storage: its welcome has git's `connect` only,
+  and a second button or field there is a screen the section does not
+  name. Say what the welcome should offer.
+- `join…` and the row of buttons under the fields are mine, by analogy
+  with `clone…`. Say if they belong elsewhere.
+Still open from 62: its title's "settings that merge".
+
+Handoff prompt for the next session:
+
+```
+Read PLAN.md, FORMAT.md, BUILD-LOG.md, and spec/hashiyah/HANDOFF.md. The
+section of PLAN.md in progress is "A database under the app, synced by
+CRDT to any storage" (59–68); its introduction holds the decisions and
+the order, and 59's to 63's notes say how it stands: `Vault` unchanged
+over an `Fs` that src/vault/store.ts makes from a collection's rows
+(src-tauri/src/store.rs); state in rows; an engine (src/sync/engine.ts)
+told of every write, merging registers by a hybrid clock and text
+through Loro, the tree made from the registers alike on every device;
+and since 63 a storage chosen in the tweaks (src/app/storage.ts: a
+folder, an S3 bucket, a WebDAV folder; src-tauri/src/storage.rs), PDFs
+and images named by a merge and fetched when asked for (`keep files`
+all · opened; a book away says `not here`), snapshots any device can
+merge, and the change files they cover deleted thirty days on. The
+section's order after 63 is 57, 58, 67, then 64, 56, 68 (65 and 66 wait
+for things only the user has; 52 waits for the user). Do milestone 57,
+"Touch reading — a passage boxed with a finger or the Pencil", in the
+section "Beyond the Mac", and only that one. Stop at its "done when".
+Then tick it, write notes for the next session under it, add an entry
+to BUILD-LOG.md with a fresh handoff prompt, and commit. Rules as in
+PLAN.md's ground rules: export
+PATH=$HOME/.cargo/bin:/opt/homebrew/bin:$PATH; npm test and npm run
+typecheck green before a commit, and cargo test for the Rust side
+(cargo check for both iOS targets if Rust changes); one commit per
+milestone; ask before a screen, section, or setting the brief does not
+name; a FORMAT change needs a corpus file and a test. Read 55's notes
+first (the iOS target, what ran on the simulated iPad and what did
+not), and 59's to 63's "Not verified": nothing has run on the simulated
+iPad since 59, so the store, the engine, WebAssembly in its web view,
+the storages and `keep files` are all unproven there, and 57's "done
+when" needs them (a section made on the iPad has to reach the Mac).
+The iPad has no way to join a storage from its welcome (63 stopped
+there for the user); a dev run can name one in `smoke.json`
+(`"storage": "/a/folder/on/the/Mac"`, which the simulator reads as the
+Mac's app does; the loopback servers are one a process, so the Mac's
+app and the simulator's would not share one), so use the folder for
+the check and say so. 57 is pointer events
+on the book's pages (src/app/Pdf.tsx boxes by mouse today), long-press
+where right-click is, and the notes sliding in in portrait
+(src/app/platform.ts, layout.ts). Keep ILMI_SMOKE=store, crdt (72
+checks), storage (76 over s3, 75 over webdav), sync, tour and nudge
+passing on the Mac, and the random test in
+src/sync/__tests__/engine.test.ts (`ILMI_SEEDS=1-500`, and with
+`ILMI_SNAPS=1`). The window checks run from a clean checkout of main
+with the dev identifier override; ILMI_VAULT is a folder, imported
+afresh as a collection on each run (its storage settings forgotten
+with it). Never kill a process on port 1420 that is not yours, stop
+your own app binary by pid when a run ends, capture only by window id;
+a covered window's page runs several times slower, so time nothing in
+one; a locked screen stalls the window, and the Mac on battery sleeps
+in the middle of a test run (a test that "took" minutes slept: rerun
+it). Open for the user, not to be built without their word: a way to
+join a storage on the iPad's welcome; whether `join…` and the buttons
+under the storage's fields stay where 63 put them; 62's "settings that
+merge". Not done in 63, said in its notes: a text's history is kept
+whole, a dropped PDF still passes through the web view on its way in,
+nothing is evicted when `keep files` is set to opened, no upload in
+parts, no real bucket or server tried. Ask before changing the
+database's schema in a way an existing collection could not open (63
+changed none).
+```
+
+---
+
 ## 2026-11-06 — milestone 62: the tree
 
 Done on main: `d60da33`. The tree two collections make from each other's

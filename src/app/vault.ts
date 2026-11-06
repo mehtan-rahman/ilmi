@@ -27,7 +27,8 @@ import { STARTER_TEXT, STARTER_TITLE } from './starter.js';
 import { RAIL_DEFAULT, addTab, clampRail, notebookOf } from './tabs.js';
 import { INSP_DEFAULT, INSP_MAX, INSP_MIN, SIDE_DEFAULT, SIDE_MAX, SIDE_MIN, useApp, type DocInfo, type Inspector, type Sidebar } from './store.js';
 import { appNow } from './clock.js';
-import { joinCollection, startCrdt, stopCrdt, storageDir } from './crdt.js';
+import { devStorage, joinCollection, startCrdt, stopCrdt } from './crdt.js';
+import { forgetStorage } from './storage.js';
 import { cloneCollection, startSync, stopSync } from './sync.js';
 import { keepDatedSoon, startMirror, stopDated, stopMirror } from './keep.js';
 
@@ -687,7 +688,9 @@ export function nameNewVault(): void {
 export async function newVault(name: string): Promise<Vault> {
   const clean = cleanName(name);
   if (!clean) throw new Error('not a name');
-  const vault = await openVault(await createCollection(clean));
+  const made = await createCollection(clean);
+  forgetStorage(made);
+  const vault = await openVault(made);
   const doc = await vault.importDoc('', { title: STARTER_TITLE, text: STARTER_TEXT });
   await vault.update(doc, (d) => setField(d, 'read', { due: dayOf(appNow()), ivl: 1, reps: 0, pos: 0 }));
   openNode(doc);
@@ -777,8 +780,8 @@ export function openInitialVault(): Promise<void> {
       // the second window (`ILMI_VAULT2`, the sync smoke's other device): its own vault, or the smoke's steps
       if (getCurrentWindow().label === 'second') {
         const path2 = await invoke<string | null>('dev_env', { name: 'ILMI_VAULT2' });
-        const storage = await storageDir();
-        if (mode === 'sync' || mode === 'nudge' || mode === 'crdt') {
+        const storage = await devStorage();
+        if (mode === 'sync' || mode === 'nudge' || mode === 'crdt' || mode === 'storage') {
           const { smokeSyncSecond } = await import('./smoke.js');
           await smokeSyncSecond(path2, mode);
         } else if (path2 && storage) {
@@ -809,8 +812,8 @@ export function openInitialVault(): Promise<void> {
       if (path) {
         const vault = await openVault(await devCollection(path));
         if (mode) {
-          const { smoke, smokeReader, smokeCards, smokeIntake, smokeQueue, smokeLoop, smokeShots, smokeDeck, smokePri, smokeGrowth, smokeOverload, smokeFaces, smokeCardsText, smokeAnki, smokeMath, smokeEpub, smokeClip, smokeClipping, smokePlugins, smokeDictionary, smokeRender, smokeLive, smokeBlocks, smokeUse, smokeLand, smokeNest, smokeTabs, smokeDecks, smokeTour, smokeNotes, smokeEditing, smokeTree, smokeInsert, smokeTabs2, smokeListCards, smokeArabic, smokeRest, smokeBothWays, smokeNumbers, smokeOpen, smokeExam, smokeSame, smokeSections, smokeBook, smokeBooks, smokeTextSections, smokeZoom, smokeCadence, smokeReadme, smokeSync, smokeNudge, smokeStore, smokeCrdt } = await import('./smoke.js');
-          const run = { reader: smokeReader, cards: smokeCards, intake: smokeIntake, queue: smokeQueue, loop: smokeLoop, shots: smokeShots, deck: smokeDeck, pri: smokePri, growth: smokeGrowth, overload: smokeOverload, faces: smokeFaces, 'cards-text': smokeCardsText, anki: smokeAnki, math: smokeMath, epub: smokeEpub, clip: smokeClip, clipping: smokeClipping, plugins: smokePlugins, dictionary: smokeDictionary, render: smokeRender, live: smokeLive, blocks: smokeBlocks, use: smokeUse, land: smokeLand, nest: smokeNest, tabs: smokeTabs, decks: smokeDecks, tour: smokeTour, notes: smokeNotes, editing: smokeEditing, tree: smokeTree, insert: smokeInsert, tabs2: smokeTabs2, listcards: smokeListCards, arabic: smokeArabic, rest: smokeRest, bothways: smokeBothWays, numbers: smokeNumbers, open: smokeOpen, exam: smokeExam, same: smokeSame, sections: smokeSections, book: smokeBook, books: smokeBooks, textsections: smokeTextSections, zoom: smokeZoom, cadence: smokeCadence, readme: smokeReadme, sync: smokeSync, nudge: smokeNudge, store: smokeStore, crdt: smokeCrdt }[mode] ?? smoke;
+          const { smoke, smokeReader, smokeCards, smokeIntake, smokeQueue, smokeLoop, smokeShots, smokeDeck, smokePri, smokeGrowth, smokeOverload, smokeFaces, smokeCardsText, smokeAnki, smokeMath, smokeEpub, smokeClip, smokeClipping, smokePlugins, smokeDictionary, smokeRender, smokeLive, smokeBlocks, smokeUse, smokeLand, smokeNest, smokeTabs, smokeDecks, smokeTour, smokeNotes, smokeEditing, smokeTree, smokeInsert, smokeTabs2, smokeListCards, smokeArabic, smokeRest, smokeBothWays, smokeNumbers, smokeOpen, smokeExam, smokeSame, smokeSections, smokeBook, smokeBooks, smokeTextSections, smokeZoom, smokeCadence, smokeReadme, smokeSync, smokeNudge, smokeStore, smokeCrdt, smokeStorage } = await import('./smoke.js');
+          const run = { reader: smokeReader, cards: smokeCards, intake: smokeIntake, queue: smokeQueue, loop: smokeLoop, shots: smokeShots, deck: smokeDeck, pri: smokePri, growth: smokeGrowth, overload: smokeOverload, faces: smokeFaces, 'cards-text': smokeCardsText, anki: smokeAnki, math: smokeMath, epub: smokeEpub, clip: smokeClip, clipping: smokeClipping, plugins: smokePlugins, dictionary: smokeDictionary, render: smokeRender, live: smokeLive, blocks: smokeBlocks, use: smokeUse, land: smokeLand, nest: smokeNest, tabs: smokeTabs, decks: smokeDecks, tour: smokeTour, notes: smokeNotes, editing: smokeEditing, tree: smokeTree, insert: smokeInsert, tabs2: smokeTabs2, listcards: smokeListCards, arabic: smokeArabic, rest: smokeRest, bothways: smokeBothWays, numbers: smokeNumbers, open: smokeOpen, exam: smokeExam, same: smokeSame, sections: smokeSections, book: smokeBook, books: smokeBooks, textsections: smokeTextSections, zoom: smokeZoom, cadence: smokeCadence, readme: smokeReadme, sync: smokeSync, nudge: smokeNudge, store: smokeStore, crdt: smokeCrdt, storage: smokeStorage }[mode] ?? smoke;
           // the smokes before 40 expect the inspector wherever they open it: the room rule is the tour's to check
           if (mode !== 'tour') useApp.setState({ inspForced: true });
           await run(vault);

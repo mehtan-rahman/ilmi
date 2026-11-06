@@ -43,6 +43,8 @@ export function memStore(version = STORE_VERSION): MemStore {
   const reviews: ReviewRow[] = [];
   let same: string[] = [];
   const blobs = new Map<string, Uint8Array>();
+  /** Blobs rows may name before their bytes are here, by size. */
+  const expected = new Map<string, number>();
   const calls: Record<Call, number> = { rows: 0, text: 0, doc: 0, put: 0, remove: 0, places: 0, digests: 0, reviews: 0, reviewsPut: 0, blobPut: 0, blobGet: 0 };
   const regs = new Map<string, Reg>();
   const crdt = new Map<string, string>();
@@ -73,9 +75,9 @@ export function memStore(version = STORE_VERSION): MemStore {
       const blob = content.blob ?? null;
       if (blob !== null) {
         const b = blobs.get(blob);
-        if (!b) throw new Error(`${blob}: no such blob`);
+        if (!b && !expected.has(blob)) throw new Error(`${blob}: no such blob`);
         texts.delete(at.id);
-        row.size = b.length;
+        row.size = b ? b.length : expected.get(blob)!;
       } else {
         const t = { front: content.front ?? '', text: content.text ?? '' };
         const was = texts.get(at.id);
@@ -175,15 +177,26 @@ export function memStore(version = STORE_VERSION): MemStore {
       calls.blobPut++;
       const hash = createHash('sha256').update(data).digest('hex');
       if (!blobs.has(hash)) blobs.set(hash, new Uint8Array(data));
+      // a row that named it before its size was known says it now
+      for (const r of rows.values()) if (r.blob === hash) r.size = data.length;
       return { hash, size: data.length };
     },
     async blobGet(hash) {
       calls.blobGet++;
       const b = blobs.get(hash);
-      if (!b) throw new Error(`${hash}: no such blob`);
+      if (!b) throw new Error(expected.has(hash) ? `${hash}: not here` : `${hash}: no such blob`);
       return new Uint8Array(b);
     },
     async blobHas(hash) { return blobs.has(hash); },
+    async blobsAway() {
+      const named = new Set([...rows.values()].flatMap((r) => (r.blob !== null ? [r.blob] : [])));
+      return [...expected].filter(([h]) => !blobs.has(h) && named.has(h)).sort((a, b) => (a[0] < b[0] ? -1 : 1));
+    },
+    async blobRange(hash, begin, end) {
+      const b = blobs.get(hash);
+      if (!b) throw new Error(`${hash}: not here`);
+      return new Uint8Array(b.subarray(begin, Math.min(end, b.length)));
+    },
     // not rolled back when a write in it throws, as the database's is: nothing here tests a batch that fails
     async batch(ops: StoreOp[]) {
       const put: string[] = [];
@@ -200,6 +213,7 @@ export function memStore(version = STORE_VERSION): MemStore {
           case 'crdt': if (o.state === null) crdt.delete(o.doc); else crdt.set(o.doc, o.state); break;
           case 'out': outbox.set(o.seq, o.data); break;
           case 'outDrop': for (const k of [...outbox.keys()]) if (k <= o.upTo) outbox.delete(k); break;
+          case 'expect': if (!expected.get(o.hash)) expected.set(o.hash, o.size); break;
         }
       }
       return put.flatMap((id) => { const r = rows.get(id); return r ? [{ ...r }] : []; });
@@ -210,6 +224,9 @@ export function memStore(version = STORE_VERSION): MemStore {
       const out: Reg[] = [];
       for (const p of prefixes) for (const r of [...regs.values()].filter((x) => x.key.startsWith(p)).sort((a, b) => (a.key < b.key ? -1 : 1))) out.push({ ...r });
       return out;
+    },
+    async regsPage(after, limit) {
+      return [...regs.keys()].sort().filter((k) => after === null || k > after).slice(0, limit).map((k) => ({ ...regs.get(k)! }));
     },
     async crdt(doc) { return crdt.get(doc) ?? null; },
     async outbox(after, size) {

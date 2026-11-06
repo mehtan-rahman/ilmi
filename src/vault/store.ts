@@ -48,6 +48,12 @@
 //   the engine shows the one whose id sorts later as `notes 2` (milestone
 //   62); until it has, the one whose id sorts first is the one a path
 //   finds.
+// - Since milestone 63 a file a row names need not be here: a collection
+//   that keeps only what it has opened knows a PDF by its hash and size
+//   until a read of it asks the storage for its bytes (`door.fetcher`).
+//   `away` says which paths those are; `pieces` reads a big file a piece
+//   at a time and `take` brings one in from disk, neither through the
+//   renderer's memory; `ref` and `writeRef` move one by its name alone.
 
 import { formatReview, parseReviews, serialize, type Doc, type Review } from '../format/index.js';
 import type { Fs, FsEntry, FsStat } from './fs.js';
@@ -151,7 +157,9 @@ export type StoreOp =
   /** A document's text as the text library keeps it, in base64. */
   | { op: 'crdt'; doc: string; state: string | null }
   | { op: 'out'; seq: number; data: string }
-  | { op: 'outDrop'; upTo: number };
+  | { op: 'outDrop'; upTo: number }
+  /** A blob a row of this batch names, by hash and size, whether or not its bytes are here. */
+  | { op: 'expect'; hash: string; size: number };
 
 /** The rows and blobs of one collection. `tauri-store.ts` is the app's, `mem-store.ts` the tests'. */
 export interface Store {
@@ -193,7 +201,14 @@ export interface Store {
   originalPut(key: string, original: Original | null): Promise<void>;
   blobPut(bytes: Uint8Array): Promise<{ hash: string; size: number }>;
   blobGet(hash: string): Promise<Uint8Array>;
+  /** Whether a blob's bytes are here: a row may name one that has not come from the storage yet. */
   blobHas(hash: string): Promise<boolean>;
+  /** The blobs rows name whose bytes are not here, each with its size. */
+  blobsAway(): Promise<[hash: string, size: number][]>;
+  /** A file on disk taken in as a blob without its bytes passing through here. The app's only. */
+  blobTake?(path: string): Promise<{ hash: string; size: number }>;
+  /** The bytes of a blob from `begin` up to `end`. The app's only. */
+  blobRange?(hash: string, begin: number, end: number): Promise<Uint8Array>;
   /** Several writes as one transaction: all, or none. The rows the `put`s wrote, as they are after it, in order. */
   batch(ops: StoreOp[]): Promise<Row[]>;
   /** The engine's own keys and values. */
@@ -202,6 +217,8 @@ export interface Store {
   regs(keys: string[]): Promise<Reg[]>;
   /** Every register whose key starts with one of `prefixes`. */
   regsUnder(prefixes: string[]): Promise<Reg[]>;
+  /** Every register after the key `after`, by key, `limit` at most: a snapshot reads them all. */
+  regsPage(after: string | null, limit: number): Promise<Reg[]>;
   /** A document's text as the text library keeps it, in base64; null when it keeps none. */
   crdt(doc: string): Promise<string | null>;
   /** The changes waiting to be written to the storage, after `after`, in order: as many as fit in `bytes`, one at least. */
@@ -211,7 +228,7 @@ export interface Store {
 
 /** What the engine is told of a write before it is made; what it answers goes into the write's transaction. Nothing, for a collection that does not sync. */
 export interface Recorder {
-  put(w: { at: Place; before: Row | undefined; rel: string; content: Content | undefined; lift: Lift | undefined }): Promise<StoreOp[]>;
+  put(w: { at: Place; before: Row | undefined; rel: string; content: Content | undefined; lift: Lift | undefined; size?: number }): Promise<StoreOp[]>;
   remove(gone: { row: Row; rel: string }[]): Promise<StoreOp[]>;
   /** The rows an order written gave another place. `kept`: the row is where it was shown, and only now has a number for it. */
   places(changed: [id: string, place: number | null, kept: boolean][]): Promise<StoreOp[]>;
@@ -230,6 +247,8 @@ export interface ViewWrite {
   reviews: { file: string; rows: ReviewRow[] }[];
   /** The pairs said not the same, when they changed. */
   pairs: string[] | null;
+  /** Blobs the rows above name whose bytes are not here: each by its hash and size. */
+  expects?: [hash: string, size: number][];
 }
 
 /** The engine's way into the store's `Fs`. */
@@ -246,6 +265,10 @@ export interface Door {
   apply(view: ViewWrite, extra: StoreOp[]): Promise<void>;
   /** The engine is told of every write from here on. */
   record(recorder: Recorder | null): void;
+  /** How a blob that is not here is brought from the storage, for a read that needs it. Rejects when it cannot be. */
+  fetcher(fn: ((hash: string, size: number) => Promise<void>) | null): void;
+  /** A blob's bytes have come: the rows that name it are files that can be read, and the watchers are told. */
+  landed(hash: string): void;
 }
 
 /** The id of a row under a dot-directory: its path, so two devices that each make it have made one row. */
@@ -367,6 +390,20 @@ export interface StoreFs extends Fs {
   reviewCount(): Promise<number>;
   /** The engine's way in (milestone 61). */
   readonly door: Door;
+  /** The files whose bytes are not here (milestone 63), by vault-relative path. */
+  away(): string[];
+  /** Whether the file at `path` is one of them. */
+  isAway(path: string): boolean;
+  /** The SHA-256 of the file at `path` when it is kept beside the database, else null. */
+  blobAt(path: string): string | null;
+  /**
+   * A big file read a piece at a time: its length, and a read of the bytes
+   * from `begin` up to `end`. Null when the file is text, or the store
+   * cannot read by the piece. A file that is not here is fetched first.
+   */
+  pieces(path: string): Promise<{ size: number; read(begin: number, end: number): Promise<Uint8Array> } | null>;
+  /** The file on disk at `from` becomes the file at `path`, copied by the store without passing through here. False when the store cannot (it is then to be written the usual way). */
+  take(path: string, from: string): Promise<boolean>;
 }
 
 const WATCH_DEBOUNCE_MS = 30;
@@ -379,7 +416,26 @@ export function storeFs(store: Store, root: string): StoreFs {
   const kids = new Map<string, Set<string>>();
   const key = (parent: string | null): string => parent ?? '';
 
+  /** Blobs rows name whose bytes are not here, each with its size; and the size of each blob a row has named. */
+  const awayBlobs = new Map<string, number>();
+  const blobSizes = new Map<string, number>();
+  let fetcher: ((hash: string, size: number) => Promise<void>) | null = null;
+  /** One fetch a blob, however many reads ask. */
+  const fetching = new Map<string, Promise<void>>();
+  const need = async (hash: string): Promise<void> => {
+    if (!awayBlobs.has(hash)) return;
+    if (!fetcher) throw new Error('this file is not here');
+    let run = fetching.get(hash);
+    if (!run) {
+      run = fetcher(hash, awayBlobs.get(hash) ?? 0).finally(() => { fetching.delete(hash); });
+      fetching.set(hash, run);
+    }
+    await run;
+    if (awayBlobs.has(hash)) throw new Error('this file is not in the storage yet');
+  };
+
   const link = (r: Row): void => {
+    if (r.blob !== null && r.size > 0) blobSizes.set(r.blob, r.size);
     const old = rows.get(r.id);
     if (old) kids.get(key(old.parent))?.delete(old.id);
     rows.set(r.id, r);
@@ -495,7 +551,8 @@ export function storeFs(store: Store, root: string): StoreFs {
   };
   const put = async (at: Place, content?: Content, lift?: Lift): Promise<Row> => {
     const before = rows.get(at.id);
-    const extra = recorder ? await recorder.put({ at, before, rel: relAt(at), content, lift }) : [];
+    const size = content?.blob ? blobSizes.get(content.blob) : undefined;
+    const extra = recorder ? await recorder.put({ at, before, rel: relAt(at), content, lift, ...(size !== undefined ? { size } : {}) }) : [];
     const row = extra.length ? (await store.batch([putOp(at, content, lift), ...extra]))[0]! : await store.put(at, content, lift);
     link(row);
     if (before && before.parent !== row.parent) await tidy(before.parent);
@@ -570,7 +627,11 @@ export function storeFs(store: Store, root: string): StoreFs {
       }
     }
     const bytes = typeof data === 'string' ? encoder.encode(data) : data;
-    return { content: { blob: (await store.blobPut(bytes)).hash } };
+    const kept = await store.blobPut(bytes);
+    blobSizes.set(kept.hash, kept.size);
+    // bytes written here are here, whatever a merge had only named
+    awayBlobs.delete(kept.hash);
+    return { content: { blob: kept.hash } };
   };
 
   /** A document's file: its text and its rows put together (`lift.ts`). */
@@ -580,10 +641,13 @@ export function storeFs(store: Store, root: string): StoreFs {
     return recompose(c.front + c.text, state, c.original);
   };
   const textOf = (r: Row): Promise<string> => (r.kind === 'doc' ? docText(r) : store.text(r.id));
-  const bytesOf = async (r: Row): Promise<Uint8Array> => (r.blob !== null ? store.blobGet(r.blob) : encoder.encode(await textOf(r)));
+  const blobBytes = async (hash: string): Promise<Uint8Array> => { await need(hash); return store.blobGet(hash); };
+  const bytesOf = async (r: Row): Promise<Uint8Array> => (r.blob !== null ? blobBytes(r.blob) : encoder.encode(await textOf(r)));
 
   /** Write a row with what `data` is stored as; a document's index and the log lines waiting on it go in the same transaction. */
-  const store_ = async (at: Place, rel: string, data: string | Uint8Array): Promise<Row> => {
+  const store_ = async (at: Place, rel: string, data: string | Uint8Array | { blob: string }): Promise<Row> => {
+    // a blob by its name alone: the bytes are the store's already
+    if (typeof data === 'object' && 'blob' in data) return put(at, { blob: data.blob });
     const { content, lift, doc } = await contentFor(rel, at.kind === 'doc', data);
     const waiting = lift ? pendingLog.get(rel) : undefined;
     if (lift && waiting?.length) lift.reviews = waiting.map((r) => reviewRow(fileOf(r), r));
@@ -800,6 +864,7 @@ export function storeFs(store: Store, root: string): StoreFs {
 
   const ready: Promise<void> = (async () => {
     for (const r of await store.rows()) link(r);
+    for (const [hash, size] of await store.blobsAway()) awayBlobs.set(hash, size);
     const version = await store.version();
     if (version > STORE_VERSION) throw new Error('this collection was written by a newer ilmi');
     for (const [k, o] of await store.originals()) originals.set(k, o);
@@ -821,7 +886,7 @@ export function storeFs(store: Store, root: string): StoreFs {
   };
 
   /** The row at (`parent`, `seg`) holding `data`, new or taking the place of a folder of the document's name. */
-  const create = async (parent: Row | null, seg: string, rel: string, data: string | Uint8Array): Promise<Row> => {
+  const create = async (parent: Row | null, seg: string, rel: string, data: string | Uint8Array | { blob: string }): Promise<Row> => {
     const doc = docName(seg);
     const pid = parent?.id ?? null;
     if (doc !== null) {
@@ -832,11 +897,11 @@ export function storeFs(store: Store, root: string): StoreFs {
     return store_({ id: idFor(rel), parent: pid, name: doc ?? seg, place: null, kind: doc !== null ? 'doc' : 'file' }, rel, data);
   };
 
-  const writeInner = async (abs: string, data: string | Uint8Array): Promise<void> => {
+  const writeInner = async (abs: string, data: string | Uint8Array | { blob: string }): Promise<void> => {
     const rel = relative(root, abs) ?? '';
     const at = locate(abs);
     const v = virtualOf(rel);
-    if (v && at.kind !== 'row') {
+    if (v && at.kind !== 'row' && !(typeof data === 'object' && 'blob' in data)) {
       const text = typeof data === 'string' ? data : (() => { try { return strict.decode(data); } catch { return null; } })();
       // bytes that are not text stay a file of their own, as before
       if (text !== null) {
@@ -855,7 +920,7 @@ export function storeFs(store: Store, root: string): StoreFs {
       if (seg === at.name) await create(at.parent, seg, rel, data);
       else {
         // a document on its way in is text, not yet taken apart
-        const { content } = await contentFor(rel, false, data, docName(seg) !== null);
+        const { content } = typeof data === 'object' && 'blob' in data ? { content: { blob: data.blob } } : await contentFor(rel, false, data, docName(seg) !== null);
         await put({ id: newId(), parent: at.parent?.id ?? null, name: at.name, place: null, kind: 'file' }, content);
       }
     }
@@ -901,7 +966,7 @@ export function storeFs(store: Store, root: string): StoreFs {
       return { text };
     }
     if (at.kind !== 'row' || at.row.kind === 'folder') throw new Error(`${path}: no such file`);
-    return at.row.blob !== null ? { bytes: await store.blobGet(at.row.blob) } : { text: await textOf(at.row) };
+    return at.row.blob !== null ? { bytes: await blobBytes(at.row.blob) } : { text: await textOf(at.row) };
   };
 
   // ── the engine's way in ────────────────────────────────────────
@@ -913,8 +978,14 @@ export function storeFs(store: Store, root: string): StoreFs {
     pathOf: (r) => pathOf(r),
     abs: (rel) => join(root, rel),
     record(r) { recorder = r; },
+    fetcher(fn) { fetcher = fn; },
+    landed(hash) {
+      if (!awayBlobs.delete(hash)) return;
+      for (const r of rows.values()) if (r.blob === hash) touched(join(root, pathOf(r)));
+    },
     async apply(view, extra) {
       const ops: StoreOp[] = [];
+      for (const [hash, size] of view.expects ?? []) ops.push({ op: 'expect', hash, size });
       const docs = new Map<string, Doc>();
       const was = new Map<string, Row>();
       for (const p of view.puts) {
@@ -938,6 +1009,7 @@ export function storeFs(store: Store, root: string): StoreFs {
       ops.push(...extra);
       if (!ops.length) return;
       const written = await store.batch(ops);
+      for (const [hash, size] of view.expects ?? []) awayBlobs.set(hash, size);
       for (const r of written) link(r);
       for (const id of view.removes) unlink(id);
       let placed = false;
@@ -974,6 +1046,56 @@ export function storeFs(store: Store, root: string): StoreFs {
       const at = locate(path);
       return at.kind === 'row' ? at.row : null;
     },
+
+    away() {
+      if (!awayBlobs.size) return [];
+      const out: string[] = [];
+      for (const r of rows.values()) if (r.blob !== null && awayBlobs.has(r.blob)) out.push(pathOf(r));
+      return out.sort();
+    },
+
+    isAway(path) {
+      const at = locate(path);
+      return at.kind === 'row' && at.row.blob !== null && awayBlobs.has(at.row.blob);
+    },
+
+    blobAt(path) {
+      const at = locate(path);
+      return at.kind === 'row' ? at.row.blob : null;
+    },
+
+    async pieces(path) {
+      await ready;
+      const at = locate(path);
+      if (at.kind !== 'row' || at.row.blob === null || !store.blobRange) return null;
+      const hash = at.row.blob;
+      await need(hash);
+      const range = store.blobRange.bind(store);
+      return { size: blobSizes.get(hash) ?? at.row.size, read: (begin, end) => range(hash, begin, end) };
+    },
+
+    take: (path, from) =>
+      serial(async () => {
+        if (!store.blobTake) return false;
+        const kept = await store.blobTake(from);
+        blobSizes.set(kept.hash, kept.size);
+        awayBlobs.delete(kept.hash);
+        await writeInner(path, { blob: kept.hash });
+        touched(path);
+        return true;
+      }),
+
+    ref: async (path) => {
+      await ready;
+      const at = locate(path);
+      return at.kind === 'row' ? at.row.blob : null;
+    },
+
+    writeRef: (path, ref) =>
+      serial(async () => {
+        await writeInner(path, { blob: ref });
+        touched(path);
+      }),
 
     async digests() {
       await ready;

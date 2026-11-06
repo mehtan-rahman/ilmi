@@ -6,7 +6,8 @@
 
 import { parseBox, type Box } from '../format/index.js';
 import { pageItems, type PageItem } from '../pdf/index.js';
-import { loadPdf, type PDFDocumentProxy } from './pdfjs.js';
+import type { StoreFs } from '../vault/index.js';
+import { loadPdf, loadPdfPieces, type PDFDocumentProxy } from './pdfjs.js';
 import { currentVault } from './vault.js';
 
 interface Held {
@@ -20,6 +21,8 @@ interface Held {
 const held = new Map<string, Held>();
 /** How long a PDF no one holds stays loaded. */
 const LINGER = 20_000;
+/** A PDF larger than this is read a piece at a time, as its pages are asked for; a smaller one whole. */
+export const WHOLE_MAX = 16 * 1024 * 1024;
 
 /** Take the PDF at vault-relative `rel`; `release` lets it go. */
 export function acquirePdf(rel: string): { promise: Promise<PDFDocumentProxy>; release(): void } {
@@ -29,8 +32,10 @@ export function acquirePdf(rel: string): { promise: Promise<PDFDocumentProxy>; r
     let task: ReturnType<typeof loadPdf> | null = null;
     const promise = (async () => {
       if (!vault) throw new Error('no collection open');
-      const bytes = await vault.fs.readBytes(vault.abs(rel));
-      task = loadPdf(bytes);
+      // a file that is not on this device is fetched by either read
+      const size = (await vault.fs.stat(vault.abs(rel)))?.size ?? 0;
+      const pieces = size > WHOLE_MAX ? await (vault.fs as Partial<StoreFs>).pieces?.(vault.abs(rel)) : null;
+      task = pieces ? loadPdfPieces(pieces.size, pieces.read) : loadPdf(await vault.fs.readBytes(vault.abs(rel)));
       return task.promise;
     })();
     const entry: Held = { promise, refs: 0, timer: null, items: new Map(), destroy: () => { void task?.destroy(); } };

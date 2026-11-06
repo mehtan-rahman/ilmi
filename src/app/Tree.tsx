@@ -66,6 +66,9 @@ export function Tree({ activeId, onOpen }: Props) {
   const order = useApp((s) => s.order);
   const root = useApp((s) => s.vault);
   const fileOver = useApp((s) => s.fileOver);
+  // the files that are not on this device (milestone 63): a book whose PDF is one of them says so
+  const awayList = useApp((s) => s.away);
+  const away = useMemo(() => new Set(awayList), [awayList]);
   const drag = useDrag();
   const [editing, setEditing] = useState<Editing | null>(null);
   const [menu, setMenu] = useState<MenuAt | null>(null);
@@ -240,6 +243,7 @@ export function Tree({ activeId, onOpen }: Props) {
     const m = rowMark(drag, id, id, SURF);
     const cls = ['row', 'trow', m.className, fileOver === id && !m.className.includes('drop-') ? 'drop-into' : '', isRoot ? 'root-row' : ''].filter(Boolean).join(' ');
     const asked = asking === id && node ? descendants(node) : 0;
+    const notHere = node?.kind === 'doc' && node.pdf !== undefined && away.has(node.pdf);
     const onClick = (e: MouseEvent) => {
       if (editingThis) return;
       if (e.altKey && !isRoot && r.has) { setHoist(id); setSelected(id); return; }
@@ -298,6 +302,7 @@ export function Tree({ activeId, onOpen }: Props) {
           <MathText className="name" dir="auto" text={title(id)} />
         )}
         {asked > 0 && <span className="asking">delete with {asked} inside? ⌘⌫</span>}
+        {!asked && notHere && <span className="away">not here</span>}
         {!asked && counts.due > 0 && <span className="due">{counts.due}</span>}
         {id === '' && (
           <span className="side-add" title="new, import, or add" onMouseDown={(e) => e.stopPropagation()} onClick={(e) => menuFrom(e, plusDir, true)}>+</span>

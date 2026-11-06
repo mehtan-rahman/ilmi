@@ -47,6 +47,15 @@ export interface Fs {
   /** File or directory, recursive. */
   remove(path: string): Promise<void>;
   /**
+   * A name for what the file at `path` holds, when it can be written
+   * elsewhere by that name alone (`writeRef`) without its bytes being
+   * read: a store's PDF or image, by its hash. Null for any other file.
+   * Optional: a directory has none.
+   */
+  ref?(path: string): Promise<string | null>;
+  /** The file at `path` holds what `ref` names. */
+  writeRef?(path: string, ref: string): Promise<void>;
+  /**
    * Watch a directory recursively. `onChange` gets absolute paths of entries
    * that may have changed; the vault stats them to find out what happened.
    */

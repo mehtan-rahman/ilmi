@@ -20,7 +20,10 @@ tauri = { version = "2.11.3", features = [] }
 tauri-plugin-log = "2"
 tauri-plugin-fs = { version = "2", features = ["watch"] }
 tauri-plugin-dialog = "2"
-tauri-plugin-http = "2"
+# the http plugin's own client (reqwest, re-exported) also carries the storages (milestone 63): S3 and WebDAV, a
+# big file sent and taken as a stream
+tauri-plugin-http = { version = "2", features = ["stream"] }
+futures-util = { version = "0.3", default-features = false }
 # the Anki package reader: a zip holding an SQLite database, zstd-compressed in newer exports
 zip = { version = "9", default-features = false, features = ["deflate"] }
 zstd = "0.14"

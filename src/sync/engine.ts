@@ -19,8 +19,13 @@
 // - The review log: a set that only grows.
 // - A row deleted on one device and changed on another keeps the change:
 //   a delete names the changes it had seen, and only those.
-// - PDFs and images are never merged: a row names one by its hash, and
-//   the bytes go to the storage whole before the change that names them.
+// - PDFs and images are never merged: a row names one by its hash (and
+//   says its size), and the bytes go to the storage whole before the
+//   change that names them. Since milestone 63 a merge only names them:
+//   the bytes come when they are asked for (`fetch`), all of them after
+//   a sync on a device that keeps every file, each when it is opened on
+//   one that keeps what it has opened, and through `Storage.up` and
+//   `down` where the storage has them they never pass through here.
 // - The tree (milestone 62) is what the registers make, by rules that
 //   read nothing but the registers, so every device makes the same one:
 //   a row's parent is the later move. Of moves that together would put a
@@ -48,12 +53,33 @@
 // the app sees is what the registers and the texts make, written through
 // the store's door whenever a merge changes them.
 //
+// Snapshots (milestone 63). When the change files in the storage that no
+// snapshot covers pass a count, the device that sees it, once it has merged
+// them all and sent its own, writes what it holds as one snapshot:
+// `snapshots/<device>/<n>/1…k`, then `head`, which says how many files of
+// each device it covers. A snapshot is state, not changes: every register
+// with its stamp, every text as the library keeps it, the changes each
+// row had seen, the log. Each of those merges by taking the later or the
+// larger, so any device can merge a snapshot at any time, whatever it
+// holds, and merging one twice changes nothing. A device takes one when
+// the files it has yet to read are gone or are many; a new device starts
+// from one. Thirty days after a snapshot was written the change files it
+// covers are deleted, and the snapshots it covers with them.
+//
+// A text's history is kept whole in a snapshot. The library can drop it
+// (a shallow snapshot), but a text loaded from one refuses an edit made
+// by a device that had not yet merged up to the snapshot, and a device
+// holding such an edit that imports one is left with a different text:
+// with no server, nothing can say that every device has merged up to a
+// version, so nothing is dropped. PLAN.md under 63 has the measurement.
+//
 // A change is one JSON object: `g` a register (`k` its key, `v` its value,
 // `c` its stamp; `a` when it is not a change a delete has to have seen for
 // the row to go: a dropped move undone, a place a row only kept or lost
 // when its directory's order was written), `x` a text update (`u`, with `vv` the version it was
 // made at), `d` a delete (`e`: the changes to the row it had seen, by
-// device), `r` a line of the review log. A write's changes travel
+// device), `r` a line of the review log, and in a snapshot `e` (the changes
+// to a row its writer had seen, by device). A write's changes travel
 // together (`{ s, ops }`, `s` this device's count of them), and a file in
 // the storage is a header line and then one such line a write.
 
@@ -71,11 +97,15 @@ type Op =
   | { t: 'g'; k: string; v: string | null; c: string; a?: 1 }
   | { t: 'x'; id: string; u: string; vv: string }
   | { t: 'd'; id: string; e: Record<string, number> }
-  | { t: 'r'; f: string; l: string };
+  | { t: 'r'; f: string; l: string }
+  | { t: 'e'; id: string; e: Record<string, number> };
 
 interface Batch { s: number; ops: Op[] }
-interface FileIn { device: string; n: number; seen: Record<string, number>; batches: Batch[] }
+/** `snap`: a part of a snapshot, which is state: nothing in it is a change of its writer's to count. */
+interface FileIn { device: string; n: number; seen: Record<string, number>; batches: Batch[]; snap?: boolean }
 interface Plan { n: number; to: number; seen: Record<string, number> }
+/** A snapshot's `head`: who wrote it, when, how many files of each device it covers, and in how many parts it is. */
+interface Head { device: string; n: number; at: number; covers: Record<string, number>; parts: number }
 
 export interface Synced {
   /** Files of other devices merged, and files of this one written. */
@@ -85,6 +115,10 @@ export interface Synced {
   kept: Kept[];
   /** Documents a merge changed, by path. */
   changed: string[];
+  /** Snapshots merged in place of the files they cover; whether this sync wrote one; files it deleted from the storage. */
+  took: number;
+  snapped: boolean;
+  dropped: number;
 }
 
 export interface Engine {
@@ -100,10 +134,21 @@ export interface Engine {
    * storage that holds another collection is refused.
    */
   connect(storage: Storage): Promise<'made' | 'joined' | 'connected'>;
-  /** Read what the other devices wrote, merge it, write this device's own. */
-  sync(storage: Storage): Promise<Synced>;
+  /**
+   * Read what the other devices wrote, merge it, write this device's own.
+   * Then, on a device that keeps every file, the PDFs and images it does
+   * not hold yet are fetched; `files: false` leaves that to the caller
+   * (`fetchAll`), who may want to show it and not wait on it.
+   */
+  sync(storage: Storage, opts?: { files?: boolean }): Promise<Synced>;
   /** How many writes made here are not in the storage yet. */
   waiting(): Promise<number>;
+  /** The files rows name whose bytes are not here, by hash, each with its size. */
+  away(): Promise<[hash: string, size: number][]>;
+  /** One of them brought from the storage. False when the storage does not hold it yet. */
+  fetch(storage: Storage, hash: string): Promise<boolean>;
+  /** All of them; how many came, and how many the storage did not have or would not give. */
+  fetchAll(storage: Storage): Promise<{ fetched: number; left: number }>;
 }
 
 export interface EngineOptions {
@@ -112,7 +157,19 @@ export interface EngineOptions {
   now?: () => number;
   /** A new device's id: sixteen hex digits. */
   newDevice?: () => string;
+  /** What this device keeps of the PDFs and images: all, or the ones it has opened. All when not said. */
+  keep?: () => 'all' | 'opened';
+  /** A snapshot is written when this many change files are in the storage that none covers. */
+  snapAfter?: number | (() => number);
+  /** A snapshot is read in place of the files it covers when it saves reading this many (or any of them is gone). */
+  snapWorth?: number | (() => number);
+  /** What a snapshot covers is deleted this long after it was written. */
+  snapKeepMs?: number;
 }
+
+export const SNAP_AFTER = 64;
+export const SNAP_WORTH = 16;
+export const SNAP_KEEP_MS = 30 * 24 * 60 * 60 * 1000;
 
 /** The app's view state: this device's own, never a change. */
 const STATE_FILE = '.ilmi/state.json';
@@ -122,6 +179,7 @@ const skip = (rel: string): boolean => rel === STATE_FILE || rel.endsWith('.ilmi
 const FILE_BYTES = 1_000_000;
 const TEXT = 't';
 const FORMAT = 'format';
+const SNAPSHOTS = 'snapshots/';
 const DEVICE_LEN = 16;
 /** Leads the stamp of a place a row only kept: it sorts below every stamp of a move. */
 const KEPT = '!';
@@ -321,6 +379,17 @@ export function engine(fs: StoreFs, opts: EngineOptions): Engine {
   const cur = new Map<string, number>();
   /** Rows shown otherwise than their registers have them: a move dropped for the loop it would make, a name a row before it holds. */
   let displaced = new Set<string>();
+  /** How many snapshots this device has written. */
+  let snaps = 0;
+  /** The heads of the snapshots read from the storage, by `<device>/<n>`. */
+  const heads = new Map<string, Head>();
+  /** What the last pull found listed: each device's files, and the snapshots that are whole. */
+  let listed: { by: Map<string, Set<number>>; whole: Head[]; paths: string[] } = { by: new Map(), whole: [], paths: [] };
+  const keep = opts.keep ?? (() => 'all' as const);
+  const count = (v: number | (() => number) | undefined, or: number): number => (typeof v === 'function' ? v() : v ?? or);
+  const snapAfter = (): number => count(opts.snapAfter, SNAP_AFTER);
+  const snapWorth = (): number => count(opts.snapWorth, SNAP_WORTH);
+  const snapKeepMs = opts.snapKeepMs ?? SNAP_KEEP_MS;
 
   const ready: Promise<void> = (async () => {
     const meta = new Map(await store.meta());
@@ -330,6 +399,7 @@ export function engine(fs: StoreFs, opts: EngineOptions): Engine {
     seq = Number(meta.get('seq') ?? 0);
     sent = Number(meta.get('sent') ?? 0);
     files = Number(meta.get('files') ?? 0);
+    snaps = Number(meta.get('snaps') ?? 0);
     const p = meta.get('plan');
     plan = p ? (JSON.parse(p) as Plan) : null;
     for (const [k, v] of meta) if (k.startsWith('cur|')) cur.set(k.slice(4), Number(v));
@@ -396,7 +466,7 @@ export function engine(fs: StoreFs, opts: EngineOptions): Engine {
   };
 
   /** A row written: what changed of it, as registers and changes, into `p`. */
-  const recordPut = async (p: Pending, w: { at: Place; before: Row | undefined; content: Content | undefined; lift: Lift | undefined }): Promise<void> => {
+  const recordPut = async (p: Pending, w: { at: Place; before: Row | undefined; content: Content | undefined; lift: Lift | undefined; size?: number | undefined }): Promise<void> => {
     const { at, before, content, lift } = w;
     const id = at.id;
     const c = clk.tick();
@@ -419,7 +489,11 @@ export function engine(fs: StoreFs, opts: EngineOptions): Engine {
     if (!content) return;
     const blob = content.blob ?? null;
     if (blob !== null) {
-      if (before?.blob !== blob) reg('b', blob);
+      if (before?.blob !== blob) {
+        reg('b', blob);
+        // its size goes with its name: a device that does not fetch it can still say how big it is
+        if (w.size !== undefined) reg('z', String(w.size));
+      }
       return;
     }
     if (before && before.blob !== null) reg('b', null);
@@ -597,7 +671,7 @@ export function engine(fs: StoreFs, opts: EngineOptions): Engine {
               lift = { state: d.state, digest: '', original: null, size: 0 };
             } else content = { front: null, text: await store.text(row.id) };
           }
-          await recordPut(p, { at: { id: row.id, parent: row.parent, name: row.name, place: row.place, kind: row.kind }, before: undefined, content, lift });
+          await recordPut(p, { at: { id: row.id, parent: row.parent, name: row.name, place: row.place, kind: row.kind }, before: undefined, content, lift, size: row.blob !== null ? row.size : undefined });
           if (p.unkeyed) loose.push(rel);
           ops.push(...(await finish(p)));
           if (++n % 40 === 0) await flush();
@@ -666,19 +740,21 @@ export function engine(fs: StoreFs, opts: EngineOptions): Engine {
   // ── merging ────────────────────────────────────────────────────
 
   /** The updates of one file to one document's text, taken in: its body after, its state, and the headings over what both sides changed. */
-  const mergeText = async (id: string, ops: Extract<Op, { t: 'x' }>[]): Promise<{ body: string; state: string | null; kept: (string | null)[] }> => {
+  const mergeText = async (id: string, ops: Extract<Op, { t: 'x' }>[]): Promise<{ body: string; state: string | null; kept: (string | null)[]; changed: boolean }> => {
     const state = await store.crdt(id);
-    if (!state && !ops.length) return { body: '', state: null, kept: [] };
+    if (!state && !ops.length) return { body: '', state: null, kept: [], changed: false };
     const L = await loro();
     const doc = new L.LoroDoc();
     try {
       if (state) doc.import(unb64(state));
       const text = doc.getText(TEXT);
-      if (!ops.length) return { body: text.toString(), state: null, kept: [] };
+      if (!ops.length) return { body: text.toString(), state: null, kept: [], changed: false };
       const ours = text.toString();
       const mine = doc.oplogVersion();
       for (const o of ops) doc.import(unb64(o.u));
       const body = text.toString();
+      // a snapshot's text that this device holds all of already brings nothing
+      if (state && doc.oplogVersion().compare(mine) === 0) return { body, state: null, kept: [], changed: false };
       let kept: (string | null)[] = [];
       if (state && body !== ours) {
         try {
@@ -697,7 +773,7 @@ export function engine(fs: StoreFs, opts: EngineOptions): Engine {
           }
         } catch { /* a version that does not read lists nothing; the merge stands */ }
       }
-      return { body, state: b64(doc.export({ mode: 'snapshot' })), kept };
+      return { body, state: b64(doc.export({ mode: 'snapshot' })), kept, changed: true };
     } finally {
       doc.free();
     }
@@ -714,11 +790,12 @@ export function engine(fs: StoreFs, opts: EngineOptions): Engine {
   const merge = async (file: FileIn | null, storage: Storage, out: { kept: Kept[]; changed: Set<string> }): Promise<void> => {
     // 1. the registers the file's changes name, as they are here
     const batches = file?.batches ?? [];
+    const snap = file?.snap === true;
     const keys = new Set<string>();
     for (const b of batches) {
       for (const o of b.ops) {
         if (o.t === 'g') { keys.add(o.k); const id = rowOf(o.k); if (id) keys.add(`${id}|e`); }
-        else if (o.t === 'x') keys.add(`${o.id}|e`);
+        else if (o.t === 'x' || o.t === 'e') keys.add(`${o.id}|e`);
         else if (o.t === 'd') keys.add(`${o.id}|d`);
       }
     }
@@ -746,11 +823,20 @@ export function engine(fs: StoreFs, opts: EngineOptions): Engine {
           // one stamp, two values: two devices undid one move, each as it saw the tree; the value decides
           if (!had || o.c > had.stamp || (o.c === had.stamp && (o.v ?? '') > (had.value ?? ''))) dirty.set(o.k, { key: o.k, stamp: o.c, value: o.v });
           const id = rowOf(o.k);
-          if (id && o.a) touched.add(id);
+          // in a snapshot a register is what its writer held, not a change of its own: what each row had seen comes beside it (`e`)
+          if (id && (o.a || snap)) touched.add(id);
           else if (id) bump(id, b.s);
         } else if (o.t === 'x') {
           texts.set(o.id, [...(texts.get(o.id) ?? []), o]);
-          bump(o.id, b.s);
+          if (snap) touched.add(o.id);
+          else bump(o.id, b.s);
+        } else if (o.t === 'e') {
+          const k = `${o.id}|e`;
+          const e = JSON.parse(at(k)?.value ?? '{}') as Record<string, number>;
+          let moved = false;
+          for (const [dev, n] of Object.entries(o.e)) if ((e[dev] ?? 0) < n) { e[dev] = n; moved = true; }
+          if (moved) dirty.set(k, { key: k, stamp: '', value: JSON.stringify(e) });
+          touched.add(o.id);
         } else if (o.t === 'd') {
           const k = `${o.id}|d`;
           const was = at(k);
@@ -996,19 +1082,22 @@ export function engine(fs: StoreFs, opts: EngineOptions): Engine {
     const order = [...show.values()].map((v) => ({ v, d: depth(v.id) })).sort((a, b) => a.d - b.d || (a.v.id < b.v.id ? -1 : 1));
     const view: ViewWrite = { puts: [], removes, reviews: [...lines].map(([f, rows]) => ({ file: f, rows })), pairs: null };
     const crdts: StoreOp[] = [];
-    const listed: { id: string; heading: string | null }[] = [];
+    const noted: { id: string; heading: string | null }[] = [];
     const wrote = new Set<string>();
-    const needBlob = async (hash: string): Promise<void> => {
-      if (await store.blobHas(hash)) return;
-      const bytes = await storage.read(`blobs/${hash}`);
-      if (!bytes) throw new Error(`a file is not in the storage yet (${hash.slice(0, 12)})`);
-      await store.blobPut(bytes);
+    /** The files the rows written name whose bytes are not here: named now, fetched when they are asked for. */
+    const expects = new Map<string, number>();
+    const merged = new Map<string, Awaited<ReturnType<typeof mergeText>>>();
+    const textOf = async (id: string): Promise<Awaited<ReturnType<typeof mergeText>>> => {
+      let m = merged.get(id);
+      if (!m) merged.set(id, (m = await mergeText(id, texts.get(id) ?? [])));
+      return m;
     };
     for (const { v } of order) {
       const id = v.id;
       const here = door.row(id);
       const subs = changedOf.get(id) ?? new Set<string>();
-      const content = !here || texts.has(id) || [...subs].some((k) => k === 'k' || k === 'b' || k === 't' || k.startsWith('m|') || k.startsWith('s|'));
+      // a snapshot carries every text: only the ones that bring something are written
+      const content = !here || (texts.has(id) && (!snap || (await textOf(id)).changed)) || [...subs].some((k) => k === 'k' || k === 'b' || k === 't' || k.startsWith('m|') || k.startsWith('s|'));
       if (!content) {
         if (!samePlace(here!, v.at)) view.puts.push({ at: v.at });
         continue;
@@ -1020,7 +1109,7 @@ export function engine(fs: StoreFs, opts: EngineOptions): Engine {
       }
       const blob = val('b');
       if (blob !== null) {
-        await needBlob(blob);
+        if (!(await store.blobHas(blob))) expects.set(blob, Number(val('z') ?? 0) || 0);
         view.puts.push({ at: v.at, content: { blob } });
         continue;
       }
@@ -1030,10 +1119,10 @@ export function engine(fs: StoreFs, opts: EngineOptions): Engine {
       }
       let body: string;
       if (texts.has(id) || !here || here.kind !== 'doc' || here.blob !== null) {
-        const m = await mergeText(id, texts.get(id) ?? []);
+        const m = await textOf(id);
         body = m.body;
         if (m.state) crdts.push({ op: 'crdt', doc: id, state: m.state });
-        for (const heading of m.kept) listed.push({ id, heading });
+        for (const heading of m.kept) noted.push({ id, heading });
       } else {
         const c = await store.doc(id);
         body = bodyOf(c.front, c.text);
@@ -1043,11 +1132,12 @@ export function engine(fs: StoreFs, opts: EngineOptions): Engine {
     }
     for (const [id, p] of side) { const r = door.row(id); if (r && !samePlace(r, p)) view.puts.push({ at: p }); }
     // a text changed under a row that is not shown, or is shown as a folder now, is kept all the same
-    for (const [id, ops] of texts) {
+    for (const id of texts.keys()) {
       if (wrote.has(id)) continue;
-      const m = await mergeText(id, ops);
+      const m = await textOf(id);
       if (m.state) crdts.push({ op: 'crdt', doc: id, state: m.state });
     }
+    if (expects.size) view.expects = [...expects];
     if ([...dirty.keys()].some((k) => k.startsWith('~q|'))) {
       const pairs = new Set(await store.same());
       for (const r of dirty.values()) {
@@ -1065,12 +1155,14 @@ export function engine(fs: StoreFs, opts: EngineOptions): Engine {
       ...crdts,
       ...(undone.length ? [{ op: 'out', seq, data: JSON.stringify({ s: seq, ops: undone } satisfies Batch) }, { op: 'meta', key: 'seq', value: String(seq) }] satisfies StoreOp[] : []),
       ...(shifted ? [{ op: 'meta', key: 'displaced', value: still.length ? JSON.stringify(still) : null } satisfies StoreOp] : []),
-      ...(file ? [{ op: 'meta', key: `cur|${file.device}`, value: String(file.n) }, { op: 'meta', key: 'hlc', value: clk.last() }] satisfies StoreOp[] : []),
+      // a part of a snapshot moves no count: how far each device has been read is said once the whole of it is in
+      ...(file && !snap ? [{ op: 'meta', key: `cur|${file.device}`, value: String(file.n) }] satisfies StoreOp[] : []),
+      ...(file ? [{ op: 'meta', key: 'hlc', value: clk.last() }] satisfies StoreOp[] : []),
     ]);
     displaced = off;
-    if (file) cur.set(file.device, file.n);
+    if (file && !snap) cur.set(file.device, file.n);
     for (const id of wrote) { const r = door.row(id); if (r) out.changed.add(door.pathOf(r)); }
-    for (const l of listed) {
+    for (const l of noted) {
       const r = door.row(l.id);
       if (!r) continue;
       let heading = l.heading;
@@ -1085,11 +1177,15 @@ export function engine(fs: StoreFs, opts: EngineOptions): Engine {
 
   // ── a sync ─────────────────────────────────────────────────────
 
-  const parseFile = (dev: string, n: number, bytes: Uint8Array): FileIn => {
+  /** A device's file as it reads; null when it is not whole yet (its head says how many lines it has, and a storage that shows a file while it is being written shows fewer). */
+  const parseFile = (dev: string, n: number, bytes: Uint8Array): FileIn | null => {
     const [head, ...rest] = fromUtf8.decode(bytes).split('\n');
-    const h = JSON.parse(head ?? '') as { ilmi?: unknown; device?: unknown; n?: unknown; seen?: Record<string, number> };
+    let h: { ilmi?: unknown; device?: unknown; n?: unknown; seen?: Record<string, number>; k?: unknown };
+    try { h = JSON.parse(head ?? '') as typeof h; } catch { return null; }
     if (h.ilmi !== 1 || h.device !== dev || h.n !== n) throw new Error(`devices/${dev}/${n} is not what its name says`);
-    return { device: dev, n, seen: h.seen ?? {}, batches: rest.filter((l) => l.trim()).map((l) => JSON.parse(l) as Batch) };
+    const lines = rest.filter((l) => l.trim());
+    if (typeof h.k === 'number' && lines.length !== h.k) return null;
+    try { return { device: dev, n, seen: h.seen ?? {}, batches: lines.map((l) => JSON.parse(l) as Batch) }; } catch { return null; }
   };
 
   let busy: Promise<unknown> = Promise.resolve();
@@ -1107,18 +1203,87 @@ export function engine(fs: StoreFs, opts: EngineOptions): Engine {
     return { collection: f.collection };
   };
 
-  const pull = async (storage: Storage, out: { kept: Kept[]; changed: Set<string> }): Promise<number> => {
+  /** The snapshots in the storage that are whole (their head is written last), each head read once. */
+  const snapshotsOf = async (storage: Storage): Promise<{ whole: Head[]; paths: string[] }> => {
+    const paths = await storage.list(SNAPSHOTS);
+    const whole: Head[] = [];
+    for (const p of paths) {
+      const m = /^snapshots\/([0-9a-f]+)\/(\d+)\/head$/.exec(p);
+      if (!m) continue;
+      const key = `${m[1]}/${m[2]}`;
+      let h: Head | undefined = heads.get(key);
+      if (!h) {
+        const bytes = await storage.read(p);
+        if (!bytes) continue;
+        let j: Partial<Head> & { ilmi?: unknown };
+        try { j = JSON.parse(fromUtf8.decode(bytes)) as typeof j; } catch { continue; }
+        if (j.ilmi !== 1 || j.device !== m[1] || j.n !== Number(m[2]) || typeof j.at !== 'number' || typeof j.parts !== 'number' || !j.covers || typeof j.covers !== 'object') continue;
+        h = { device: m[1]!, n: Number(m[2]), at: j.at, covers: j.covers, parts: j.parts };
+        heads.set(key, h);
+      }
+      whole.push(h);
+    }
+    return { whole, paths };
+  };
+
+  /** A snapshot merged, part by part, and then every device read as far as it covers. */
+  const takeSnapshot = async (storage: Storage, head: Head, out: { kept: Kept[]; changed: Set<string> }): Promise<void> => {
+    for (let k = 1; k <= head.parts; k++) {
+      const path = `${SNAPSHOTS}${head.device}/${head.n}/${k}`;
+      const bytes = await storage.read(path);
+      if (!bytes) throw new Error(`${path} is not in the storage`);
+      const [first, ...rest] = fromUtf8.decode(bytes).split('\n');
+      const h = JSON.parse(first ?? '') as { ilmi?: unknown; snapshot?: unknown; device?: unknown; part?: unknown; k?: unknown };
+      const lines = rest.filter((l) => l.trim());
+      if (h.ilmi !== 1 || h.snapshot !== head.n || h.device !== head.device || h.part !== k || h.k !== lines.length) throw new Error(`${path} is not what its name says`);
+      const part: FileIn = { device: head.device, n: 0, seen: {}, batches: lines.map((l) => JSON.parse(l) as Batch), snap: true };
+      await door.run(() => merge(part, storage, out));
+    }
+    await door.run(async () => {
+      const ahead = Object.entries(head.covers).filter(([d, k]) => d !== device && k > (cur.get(d) ?? 0));
+      if (!ahead.length) return;
+      await store.batch(ahead.map(([d, k]) => ({ op: 'meta', key: `cur|${d}`, value: String(k) })));
+      for (const [d, k] of ahead) cur.set(d, k);
+    });
+  };
+
+  const pull = async (storage: Storage, out: { kept: Kept[]; changed: Set<string> }): Promise<{ merged: number; took: number }> => {
     const by = new Map<string, Set<number>>();
     for (const p of await storage.list('devices/')) {
       const m = /^devices\/([0-9a-f]+)\/(\d+)$/.exec(p);
       if (m) by.set(m[1]!, (by.get(m[1]!) ?? new Set()).add(Number(m[2])));
     }
+    const found = await snapshotsOf(storage);
+    listed = { by, ...found };
     // a file of this device's that it does not know it wrote: this is an older copy of the collection
-    for (const k of by.get(device!) ?? []) if (k > Math.max(files, plan?.n ?? 0)) throw new Error('this copy of the collection is older than what it has sent');
+    const mine = Math.max(files, plan?.n ?? 0);
+    for (const k of by.get(device!) ?? []) if (k > mine) throw new Error('this copy of the collection is older than what it has sent');
+    for (const h of found.whole) if ((h.covers[device!] ?? 0) > mine) throw new Error('this copy of the collection is older than what it has sent');
     const read = new Map<string, FileIn>();
     let merged = 0;
+    let took = 0;
     // a write made here since the last merge may have made room for a row that is displaced
     if (displaced.size) await door.run(() => merge(null, storage, out));
+    // a snapshot in place of the files it covers, when one of them is gone from the storage or they are many
+    for (;;) {
+      let best: Head | null = null;
+      let most = 0;
+      for (const h of found.whole) {
+        let gain = 0;
+        let gone = false;
+        for (const [d, k] of Object.entries(h.covers)) {
+          const have = cur.get(d) ?? 0;
+          if (d === device || k <= have) continue;
+          gain += k - have;
+          const has = by.get(d);
+          for (let n = have + 1; n <= k && !gone; n++) if (!has?.has(n)) gone = true;
+        }
+        if (gain > most && (gone || gain >= snapWorth())) { best = h; most = gain; }
+      }
+      if (!best) break;
+      await takeSnapshot(storage, best, out);
+      took += 1;
+    }
     for (let moved = true; moved; ) {
       moved = false;
       for (const [dev, has] of by) {
@@ -1130,7 +1295,9 @@ export function engine(fs: StoreFs, opts: EngineOptions): Engine {
         if (!file) {
           const bytes = await storage.read(path);
           if (!bytes) continue;
-          file = parseFile(dev, n, bytes);
+          const parsed = parseFile(dev, n, bytes);
+          if (!parsed) continue;
+          file = parsed;
           read.set(path, file);
         }
         // merged once everything its writer had read is here: a parent before its child, a text's start before its edits
@@ -1143,7 +1310,7 @@ export function engine(fs: StoreFs, opts: EngineOptions): Engine {
         moved = true;
       }
     }
-    return merged;
+    return { merged, took };
   };
 
   const push = async (storage: Storage): Promise<number> => {
@@ -1165,12 +1332,14 @@ export function engine(fs: StoreFs, opts: EngineOptions): Engine {
         for (const o of (JSON.parse(data) as Batch).ops) {
           if (o.t !== 'g' || o.v === null || o.k !== `${rowOf(o.k)}|b`) continue;
           blobs ??= new Set((await storage.list('blobs/')).map((p) => p.slice('blobs/'.length)));
-          if (blobs.has(o.v)) continue;
-          await storage.write(`blobs/${o.v}`, await store.blobGet(o.v));
+          // one this device names and never held is another's to send
+          if (blobs.has(o.v) || !(await store.blobHas(o.v))) continue;
+          if (storage.up) await storage.up(o.v);
+          else await storage.write(`blobs/${o.v}`, await store.blobGet(o.v));
           blobs.add(o.v);
         }
       }
-      const head = JSON.stringify({ ilmi: 1, device, n: next.n, seen: next.seen });
+      const head = JSON.stringify({ ilmi: 1, device, n: next.n, seen: next.seen, k: rows.length });
       await storage.write(`devices/${device}/${next.n}`, utf8.encode(`${[head, ...rows.map(([, data]) => data)].join('\n')}\n`));
       await door.run(() => store.batch([
         { op: 'meta', key: 'sent', value: String(next.to) },
@@ -1184,6 +1353,176 @@ export function engine(fs: StoreFs, opts: EngineOptions): Engine {
       wrote += 1;
     }
     return wrote;
+  };
+
+  // ── snapshots ──────────────────────────────────────────────────
+
+  /** Everything this collection holds, as state, in parts of about a file's size; then the head that makes it a snapshot. */
+  const writeSnapshot = async (storage: Storage): Promise<void> => {
+    const n = snaps + 1;
+    const base = `${SNAPSHOTS}${device}/${n}`;
+    const covers = { ...Object.fromEntries(cur), [device!]: files };
+    const L = await loro();
+    let part = 0;
+    let lines: string[] = [];
+    let size = 0;
+    let ops: Op[] = [];
+    const batch = (): void => {
+      if (!ops.length) return;
+      const l = JSON.stringify({ s: 0, ops } satisfies Batch);
+      lines.push(l);
+      size += l.length;
+      ops = [];
+    };
+    const flush = async (): Promise<void> => {
+      batch();
+      if (!lines.length) return;
+      part += 1;
+      const head = JSON.stringify({ ilmi: 1, snapshot: n, device, part, k: lines.length });
+      await storage.write(`${base}/${part}`, utf8.encode(`${[head, ...lines].join('\n')}\n`));
+      lines = [];
+      size = 0;
+    };
+    const add = async (op: Op): Promise<void> => {
+      ops.push(op);
+      if (ops.length >= 200 || op.t === 'x') batch();
+      if (size >= FILE_BYTES) await flush();
+    };
+    const done = new Set<string>();
+    const row = async (id: string, regs: Reg[]): Promise<void> => {
+      done.add(id);
+      for (const r of regs) {
+        const sub = r.key.slice(id.length + 1);
+        if (sub === 'e' || sub === 'd') {
+          let e: Record<string, number> = {};
+          try { e = JSON.parse(r.value ?? '{}') as Record<string, number>; } catch { /* nothing seen */ }
+          await add({ t: sub, id, e });
+        } else await add({ t: 'g', k: r.key, v: r.value, c: r.stamp });
+      }
+      const state = await store.crdt(id);
+      if (!state) return;
+      const doc = new L.LoroDoc();
+      try {
+        doc.import(unb64(state));
+        await add({ t: 'x', id, u: state, vv: b64(doc.oplogVersion().encode()) });
+      } finally {
+        doc.free();
+      }
+    };
+    // the rows of the tree, a parent before what is under it, so a device reading it places each row once
+    const ids: string[] = [];
+    const visit = (parent: string | null): void => {
+      for (const r of door.childrenOf(parent).sort((a, b) => (a.id < b.id ? -1 : 1))) { ids.push(r.id); visit(r.id); }
+    };
+    visit(null);
+    for (let i = 0; i < ids.length; i += 50) {
+      const chunk = ids.slice(i, i + 50);
+      const of = new Map<string, Reg[]>(chunk.map((id) => [id, []]));
+      for (const r of await store.regsUnder(chunk.map((id) => `${id}|`))) of.get(rowOf(r.key)!)?.push(r);
+      for (const id of chunk) if (of.get(id)!.length) await row(id, of.get(id)!);
+    }
+    // then what the tree does not show: rows deleted (a device behind must hear of it), and the collection's own registers
+    let held: { id: string; regs: Reg[] } | null = null;
+    for (let after: string | null = null; ; ) {
+      const page = await store.regsPage(after, 2000);
+      for (const r of page) {
+        const id = rowOf(r.key);
+        if (held && held.id !== id) { await row(held.id, held.regs); held = null; }
+        if (id === null) await add({ t: 'g', k: r.key, v: r.value, c: r.stamp });
+        else if (!done.has(id)) (held ??= { id, regs: [] }).regs.push(r);
+      }
+      if (page.length < 2000) break;
+      after = page[page.length - 1]!.key;
+    }
+    if (held) await row(held.id, held.regs);
+    for (const [file] of await store.reviewFiles()) for (const l of await store.reviews(file)) await add({ t: 'r', f: file, l });
+    await flush();
+    const head: Head & { ilmi: 1 } = { ilmi: 1, device: device!, n, at: now(), covers, parts: part };
+    await storage.write(`${base}/head`, utf8.encode(`${JSON.stringify(head)}\n`));
+    await store.batch([{ op: 'meta', key: 'snaps', value: String(n) }]);
+    snaps = n;
+    heads.set(`${device}/${n}`, head);
+    listed.whole.push(head);
+  };
+
+  /** A snapshot, when the change files none covers have passed the count and this device holds all of them. */
+  const snapshotIfDue = async (storage: Storage): Promise<boolean> => {
+    const covered = (dev: string): number => listed.whole.reduce((m, h) => Math.max(m, h.covers[dev] ?? 0), 0);
+    let loose = 0;
+    for (const [dev, has] of listed.by) {
+      if (dev === device) continue;
+      const c = covered(dev);
+      for (const n of has) {
+        if (n > (cur.get(dev) ?? 0)) return false;
+        if (n > c) loose += 1;
+      }
+    }
+    loose += Math.max(0, files - covered(device!));
+    if (loose < snapAfter() || (await store.outboxCount()) > 0) return false;
+    await writeSnapshot(storage);
+    return true;
+  };
+
+  /** Thirty days after a snapshot was written, the change files it covers go from the storage, and the snapshots it covers. */
+  const tidy = async (storage: Storage): Promise<number> => {
+    const old = listed.whole.filter((h) => now() - h.at >= snapKeepMs);
+    if (!old.length) return 0;
+    let dropped = 0;
+    for (const [dev, has] of listed.by) {
+      const upTo = old.reduce((m, h) => Math.max(m, h.covers[dev] ?? 0), 0);
+      for (const n of [...has].sort((a, b) => a - b)) {
+        if (n > upTo) break;
+        await storage.remove(`devices/${dev}/${n}`);
+        has.delete(n);
+        dropped += 1;
+      }
+    }
+    const under = (a: Head, b: Head): boolean => a !== b && Object.entries(a.covers).every(([d, k]) => k <= (b.covers[d] ?? 0)) && (a.at < b.at || (a.at === b.at && `${a.device}/${a.n}` < `${b.device}/${b.n}`));
+    for (const h of [...listed.whole]) {
+      if (!old.some((o) => under(h, o))) continue;
+      const dir = `${SNAPSHOTS}${h.device}/${h.n}/`;
+      // the head first: without it the rest is no snapshot
+      await storage.remove(`${dir}head`);
+      for (const p of listed.paths) if (p.startsWith(dir) && p !== `${dir}head`) await storage.remove(p);
+      heads.delete(`${h.device}/${h.n}`);
+      listed.whole = listed.whole.filter((x) => x !== h);
+      dropped += 1;
+    }
+    return dropped;
+  };
+
+  // ── the files ──────────────────────────────────────────────────
+
+  const coming = new Map<string, Promise<boolean>>();
+  /** A file's bytes from the storage into the collection: by the storage's own way when it has one, else through here. */
+  const fetchOne = (storage: Storage, hash: string, size: number): Promise<boolean> => {
+    let run = coming.get(hash);
+    if (!run) {
+      run = (async () => {
+        if (!(await store.blobHas(hash))) {
+          if (storage.down) {
+            if (!(await storage.down(hash, size))) return false;
+          } else {
+            const bytes = await storage.read(`blobs/${hash}`);
+            if (!bytes) return false;
+            if ((await store.blobPut(bytes)).hash !== hash) throw new Error('a file in the storage is not what its name says');
+          }
+        }
+        door.landed(hash);
+        return true;
+      })().finally(() => { coming.delete(hash); });
+      coming.set(hash, run);
+    }
+    return run;
+  };
+  const fetchAll = async (storage: Storage): Promise<{ fetched: number; left: number }> => {
+    let fetched = 0;
+    let left = 0;
+    for (const [hash, size] of await store.blobsAway()) {
+      const ok = await fetchOne(storage, hash, size).catch(() => false);
+      if (ok) fetched += 1; else left += 1;
+    }
+    return { fetched, left };
   };
 
   return {
@@ -1219,7 +1558,7 @@ export function engine(fs: StoreFs, opts: EngineOptions): Engine {
         for (const rel of await door.run(bootstrap)) await mint(rel);
         return 'made';
       }),
-    sync: (storage) =>
+    sync: (storage, o) =>
       lock(async () => {
         await ready;
         if (!device || !booted) throw new Error('the collection has no storage yet');
@@ -1227,13 +1566,29 @@ export function engine(fs: StoreFs, opts: EngineOptions): Engine {
         if (!raw) throw new Error('the storage is not there');
         if (formatOf(raw).collection !== collection) throw new Error('this storage holds another collection');
         const out = { kept: [] as Kept[], changed: new Set<string>() };
-        const read = await pull(storage, out);
+        const { merged, took } = await pull(storage, out);
         const wrote = await push(storage);
-        return { read, wrote, kept: out.kept, changed: [...out.changed] };
+        const snapped = await snapshotIfDue(storage);
+        const dropped = await tidy(storage);
+        if (o?.files !== false && keep() === 'all') await fetchAll(storage);
+        return { read: merged, wrote, kept: out.kept, changed: [...out.changed], took, snapped, dropped };
       }),
     async waiting() {
       await ready;
       return store.outboxCount();
+    },
+    async away() {
+      await ready;
+      return store.blobsAway();
+    },
+    async fetch(storage, hash) {
+      await ready;
+      const size = (await store.blobsAway()).find(([h]) => h === hash)?.[1] ?? 0;
+      return fetchOne(storage, hash, size);
+    },
+    async fetchAll(storage) {
+      await ready;
+      return fetchAll(storage);
     },
   };
 }

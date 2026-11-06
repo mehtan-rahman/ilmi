@@ -13,7 +13,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { parse } from '../../format/index.js';
 import { formatReview, parseReviews, setField, type Card, type Doc, type Review } from '../../format/index.js';
 import { gradeItem, queueItems, type CardItem } from '../../schedule/index.js';
-import { MIRROR_LIST, Vault, exportFolder, importFolder, mirrorDirIn, mirrorFolder, mirrorPass, splitFront, storeFs, takeFiles, type Row, type StoreFs } from '../index.js';
+import { MIRROR_LIST, Vault, join, exportFolder, importFolder, mirrorDirIn, mirrorFolder, mirrorPass, splitFront, storeFs, takeFiles, type Row, type StoreFs } from '../index.js';
 import { DIGEST_MARK } from '../lift.js';
 import { memStore, type MemStore } from '../mem-store.js';
 import { nodeFs } from '../node-fs.js';
@@ -631,5 +631,50 @@ describe('a mirror among a person\'s files', () => {
     expect(await mirrorDirIn(nodeFs, parent, 'notes')).toBe(joinPath(parent, 'notes 2'));
     expect(await mirrorDirIn(nodeFs, parent, 'empty')).toBe(joinPath(parent, 'empty'));
     expect(await mirrorDirIn(nodeFs, `${parent}/`, 'new')).toBe(joinPath(parent, 'new'));
+  });
+});
+
+describe('files that are named and not here (milestone 63)', () => {
+  it('an export and a mirror leave out what they are told to, and a file is read by the piece', async () => {
+    const store = memStore();
+    const fs = storeFs(store, ROOT);
+    await importFolder(nodeFs, SAMPLE, fs, ROOT);
+    const pdf = 'library/classical-prose-reader.pdf';
+    const hash = fs.blobAt(join(ROOT, pdf));
+    expect(hash).toMatch(/^[0-9a-f]{64}$/);
+    expect(fs.blobAt(join(ROOT, 'arabic/vocabulary.md'))).toBeNull();
+    expect(fs.away()).toEqual([]);
+    expect(fs.isAway(join(ROOT, pdf))).toBe(false);
+    // the dated export's way: every file but the ones kept beside the database, which it lists
+    const left: Record<string, string> = {};
+    const out = await tmp('leave');
+    const wrote = await exportFolder(fs, ROOT, nodeFs, out, (path) => { const h = fs.blobAt(join(ROOT, path)); if (h) left[path] = h; return h !== null; });
+    expect(Object.keys(left).sort()).toEqual(['library/classical-prose-reader.pdf', 'library/lindqvist-statistical-physics.pdf']);
+    const sample = await filesOf(SAMPLE);
+    const files = [...sample.keys()].filter((p) => !p.endsWith('/'));
+    expect(wrote).toBe(files.length - 2);
+    const got = await filesOf(out);
+    expect(got.has(pdf)).toBe(false);
+    expect(got.get('arabic/vocabulary.md')!.equals(sample.get('arabic/vocabulary.md')!)).toBe(true);
+    // a mirror told to leave a file takes no notice of it, and writes it on the pass that is no longer told to
+    const dir = joinPath(await tmp('mirror-leave'), 'm');
+    const first = await mirrorPass(fs, ROOT, nodeFs, dir, (path) => path === pdf);
+    expect(first).not.toContain(pdf);
+    expect(first.length).toBe(files.length - 1);
+    expect(await mirrorPass(fs, ROOT, nodeFs, dir)).toEqual([pdf]);
+    // a piece of the file, as a reader of a big one asks for it
+    const whole = sample.get(pdf)!;
+    const pieces = await fs.pieces(join(ROOT, pdf));
+    expect(pieces?.size).toBe(whole.length);
+    expect(Buffer.from(await pieces!.read(100, 164)).equals(whole.subarray(100, 164))).toBe(true);
+    expect(await fs.pieces(join(ROOT, 'arabic/vocabulary.md'))).toBeNull();
+    // a store with no way to take a file from disk says so, and the file is written the usual way
+    expect(await fs.take(join(ROOT, 'library/other.pdf'), '/somewhere/other.pdf')).toBe(false);
+    // by its name alone: the same bytes under another path, none read
+    const reads = store.calls.blobGet;
+    await fs.writeRef!(join(ROOT, 'library/copy.pdf'), (await fs.ref!(join(ROOT, pdf)))!);
+    expect(store.calls.blobGet).toBe(reads);
+    expect(Buffer.from(await fs.readBytes(join(ROOT, 'library/copy.pdf'))).equals(whole)).toBe(true);
+    expect(await fs.ref!(join(ROOT, 'arabic/vocabulary.md'))).toBeNull();
   });
 });

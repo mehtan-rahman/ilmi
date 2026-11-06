@@ -8,6 +8,7 @@ import { onePane } from './platform.js';
 import { cleanRecents, type Recent } from './recents.js';
 import { NUDGE_SERVER } from './nudge.js';
 import type { SyncSettings, SyncState } from './sync.js';
+import type { StorageSettings } from './storage.js';
 
 // App state that is not on disk, plus a read-only mirror of what is. The
 // vault (src/app/vault.ts) is the store of record for the tree and the
@@ -300,6 +301,10 @@ export interface AppState {
   syncSettings: SyncSettings;
   /** The folder the open collection is mirrored to (`keep.ts`); empty, none. */
   mirror: string;
+  /** The storage the open collection syncs through and what this device keeps of its files (`storage.ts`, milestone 63). */
+  storage: StorageSettings;
+  /** The files of the open collection whose bytes are not on this device, by path: a book's row says so. */
+  away: string[];
   session: Session | null;
   /** What the session is on now, for its tab and the inspector. */
   sessionEl: { kind: El; label: string; item: QueueItem } | null;
@@ -384,6 +389,8 @@ export const useApp = create<AppState>((set, get) => ({
   sync: { on: false, repo: false, busy: null, offline: false, toPush: 0, conflicts: [], at: null },
   syncSettings: { url: '', token: '', server: NUDGE_SERVER },
   mirror: '',
+  storage: { on: false, kind: 'folder', folder: '', endpoint: '', bucket: '', key: '', secret: '', address: '', user: '', password: '', keep: null },
+  away: [],
   session: null,
   sessionEl: null,
   setTheme: (theme) => { set({ theme }); showTheme(theme); persist(get()); },

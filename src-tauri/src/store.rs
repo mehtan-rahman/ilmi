@@ -31,6 +31,13 @@
 //! the rows they belong to in one transaction, so a change and its record
 //! are never apart.
 //!
+//! Since milestone 63 a blob a row names need not be here: a collection
+//! that keeps only the files it has opened knows a PDF by its hash and its
+//! size (`blobs.path` empty) until the storage has given it its bytes.
+//! Big files come and go as files, never through the renderer: one taken
+//! in from disk (`take`), one that came down from a storage (`land`), a
+//! piece of one read for the page that asks (`blob_range`).
+//!
 //! Nothing here knows the format or what a path is: the renderer's
 //! `src/vault/store.ts` reads the rows once, keeps the tree, takes a file
 //! apart on a write (`src/vault/lift.ts`) and puts it together on a read.
@@ -240,6 +247,8 @@ pub enum Op {
     Out { seq: i64, data: String },
     #[serde(rename_all = "camelCase")]
     OutDrop { up_to: i64 },
+    /// A blob a row is about to name, by its hash and size, whether or not its bytes are here.
+    Expect { hash: String, size: i64 },
 }
 
 #[derive(Serialize, Debug, Clone, PartialEq)]
@@ -441,6 +450,7 @@ impl Store {
                 Op::OutDrop { up_to } => {
                     tx.execute("DELETE FROM outbox WHERE seq <= ?1", [up_to]).map_err(err)?;
                 }
+                Op::Expect { hash, size } => expect_tx(&tx, hash, *size)?,
             }
         }
         let mut rows = Vec::new();
@@ -529,10 +539,103 @@ impl Store {
         self.conn.query_row("SELECT COUNT(*) FROM outbox", [], |r| r.get(0)).map_err(err)
     }
 
-    /// Whether a blob of that hash is kept here.
+    /// Whether a blob of that hash is kept here: its bytes, not only its name.
     pub fn blob_has(&self, hash: &str) -> Result<bool, String> {
-        self.conn.query_row("SELECT COUNT(*) > 0 FROM blobs WHERE hash = ?1", [hash], |r| r.get(0)).map_err(err)
+        self.conn.query_row("SELECT COUNT(*) > 0 FROM blobs WHERE hash = ?1 AND path <> ''", [hash], |r| r.get(0)).map_err(err)
     }
+
+    /// Every register after `after`, by key: a page of them (a snapshot reads them all).
+    pub fn regs_page(&self, after: Option<&str>, limit: i64) -> Result<Vec<Reg>, String> {
+        let mut st = self.conn.prepare("SELECT key, stamp, value FROM regs WHERE key > ?1 ORDER BY key LIMIT ?2").map_err(err)?;
+        let rows = st
+            .query_map(params![after.unwrap_or(""), limit], |r| Ok(Reg { key: r.get(0)?, stamp: r.get(1)?, value: r.get(2)? }))
+            .map_err(err)?;
+        rows.collect::<rusqlite::Result<Vec<Reg>>>().map_err(err)
+    }
+
+    /// The blobs rows name whose bytes are not here, each with its size.
+    pub fn blobs_away(&self) -> Result<Vec<(String, i64)>, String> {
+        let mut st = self
+            .conn
+            .prepare("SELECT hash, size FROM blobs WHERE path = '' AND hash IN (SELECT blob FROM documents WHERE blob IS NOT NULL) ORDER BY hash")
+            .map_err(err)?;
+        let rows = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?))).map_err(err)?;
+        rows.collect::<rusqlite::Result<Vec<_>>>().map_err(err)
+    }
+
+    /// Where a blob's file is, when its bytes are here.
+    pub fn blob_file(&self, hash: &str) -> Result<Option<PathBuf>, String> {
+        let rel: Option<String> = self.conn.query_row("SELECT path FROM blobs WHERE hash = ?1", [hash], |r| r.get(0)).optional().map_err(err)?;
+        Ok(rel.filter(|p| !p.is_empty()).map(|p| self.dir.join(p)))
+    }
+
+    /// The file at `tmp` (under this collection's `blobs/`), whose bytes hash to `hash`, is that blob from now on.
+    pub fn blob_land(&self, hash: &str, tmp: &Path, size: i64) -> Result<BlobInfo, String> {
+        if !is_hash(hash) {
+            return Err(format!("{hash}: not a hash"));
+        }
+        let rel = Store::blob_path(hash);
+        let abs = self.dir.join(&rel);
+        if abs.is_file() {
+            let _ = std::fs::remove_file(tmp);
+        } else {
+            std::fs::create_dir_all(abs.parent().unwrap()).map_err(err)?;
+            std::fs::rename(tmp, &abs).map_err(err)?;
+        }
+        self.conn
+            .execute(
+                "INSERT INTO blobs (hash, size, path) VALUES (?1, ?2, ?3) ON CONFLICT(hash) DO UPDATE SET size = excluded.size, path = excluded.path",
+                params![hash, size, rel],
+            )
+            .map_err(err)?;
+        // a row that named it before its size was known says it now; its stamp does not move
+        self.conn.execute("UPDATE documents SET size = ?2 WHERE blob = ?1 AND size <> ?2", params![hash, size]).map_err(err)?;
+        Ok(BlobInfo { hash: hash.to_string(), size })
+    }
+
+    /// Where a file on its way in is written before it has its name.
+    pub fn blob_tmp(&self) -> Result<PathBuf, String> {
+        static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let dir = self.dir.join(BLOBS_DIR);
+        std::fs::create_dir_all(&dir).map_err(err)?;
+        Ok(dir.join(format!("in-{}-{}.tmp", std::process::id(), N.fetch_add(1, std::sync::atomic::Ordering::Relaxed))))
+    }
+}
+
+/// Sixty-four hex digits, lower case: a SHA-256 as a blob is named by it.
+pub fn is_hash(s: &str) -> bool {
+    s.len() == 64 && s.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+}
+
+fn expect_tx(tx: &Connection, hash: &str, size: i64) -> Result<(), String> {
+    if !is_hash(hash) {
+        return Err(format!("{hash}: not a hash"));
+    }
+    tx.execute("INSERT OR IGNORE INTO blobs (hash, size, path) VALUES (?1, ?2, '')", params![hash, size]).map_err(err)?;
+    tx.execute("UPDATE blobs SET size = ?2 WHERE hash = ?1 AND path = '' AND size = 0", params![hash, size]).map_err(err)?;
+    Ok(())
+}
+
+/// `src` copied to `dest`, a megabyte at a time; its SHA-256 in hex and its length. `progress` is told the bytes so far.
+pub fn copy_hashing(src: &Path, dest: &Path, mut progress: impl FnMut(u64)) -> Result<(String, u64), String> {
+    use std::io::Read;
+    let mut from = std::fs::File::open(src).map_err(err)?;
+    let mut to = std::fs::File::create(dest).map_err(err)?;
+    let mut hasher = Sha256::new();
+    let mut buf = vec![0u8; 1 << 20];
+    let mut done: u64 = 0;
+    loop {
+        let n = from.read(&mut buf).map_err(err)?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+        to.write_all(&buf[..n]).map_err(err)?;
+        done += n as u64;
+        progress(done);
+    }
+    to.sync_all().map_err(err)?;
+    Ok((hasher.finalize().iter().map(|b| format!("{b:02x}")).collect(), done))
 }
 
 fn put_tx(tx: &Connection, rev_at: &mut i64, at: &Place, content: Option<&Content>, lift: Option<&Lift>) -> Result<(), String> {
@@ -777,8 +880,12 @@ impl Store {
             std::fs::rename(&tmp, &abs).map_err(err)?;
         }
         let size = bytes.len() as i64;
+        // a blob known only by name until now has its bytes from here on
         self.conn
-            .execute("INSERT OR IGNORE INTO blobs (hash, size, path) VALUES (?1, ?2, ?3)", params![hash, size, rel])
+            .execute(
+                "INSERT INTO blobs (hash, size, path) VALUES (?1, ?2, ?3) ON CONFLICT(hash) DO UPDATE SET size = excluded.size, path = excluded.path",
+                params![hash, size, rel],
+            )
             .map_err(err)?;
         Ok(BlobInfo { hash, size })
     }
@@ -790,7 +897,26 @@ impl Store {
             .optional()
             .map_err(err)?
             .ok_or_else(|| format!("{hash}: no such blob"))?;
+        if rel.is_empty() {
+            return Err(format!("{hash}: not here"));
+        }
         std::fs::read(self.dir.join(rel)).map_err(err)
+    }
+
+    /// The bytes of a blob from `begin` up to `end`, for a reader that takes a file a piece at a time.
+    pub fn blob_range(&self, hash: &str, begin: u64, end: u64) -> Result<Vec<u8>, String> {
+        use std::io::{Read, Seek, SeekFrom};
+        let path = self.blob_file(hash)?.ok_or_else(|| format!("{hash}: not here"))?;
+        let mut f = std::fs::File::open(path).map_err(err)?;
+        let len = f.metadata().map_err(err)?.len();
+        let end = end.min(len);
+        if begin >= end {
+            return Ok(Vec::new());
+        }
+        f.seek(SeekFrom::Start(begin)).map_err(err)?;
+        let mut out = vec![0u8; (end - begin) as usize];
+        f.read_exact(&mut out).map_err(err)?;
+        Ok(out)
     }
 
     /// Blobs no row names, dropped with their files. Run when a collection
@@ -807,7 +933,9 @@ impl Store {
             .collect::<rusqlite::Result<_>>()
             .map_err(err)?;
         for (hash, rel) in loose {
-            let _ = std::fs::remove_file(self.dir.join(rel));
+            if !rel.is_empty() {
+                let _ = std::fs::remove_file(self.dir.join(rel));
+            }
             self.conn.execute("DELETE FROM blobs WHERE hash = ?1", [hash]).map_err(err)?;
         }
         Ok(())
@@ -936,6 +1064,35 @@ impl Stores {
     }
     pub fn blob_get(&self, dir: &Path, hash: &str) -> Result<Vec<u8>, String> {
         self.with(dir, |s| s.blob_get(hash))
+    }
+    pub fn regs_page(&self, dir: &Path, after: Option<&str>, limit: i64) -> Result<Vec<Reg>, String> {
+        self.with(dir, |s| s.regs_page(after, limit))
+    }
+    pub fn blobs_away(&self, dir: &Path) -> Result<Vec<(String, i64)>, String> {
+        self.with(dir, |s| s.blobs_away())
+    }
+    pub fn blob_file(&self, dir: &Path, hash: &str) -> Result<Option<PathBuf>, String> {
+        self.with(dir, |s| s.blob_file(hash))
+    }
+    pub fn blob_tmp(&self, dir: &Path) -> Result<PathBuf, String> {
+        self.with(dir, |s| s.blob_tmp())
+    }
+    pub fn blob_land(&self, dir: &Path, hash: &str, tmp: &Path, size: i64) -> Result<BlobInfo, String> {
+        self.with(dir, |s| s.blob_land(hash, tmp, size))
+    }
+    pub fn blob_range(&self, dir: &Path, hash: &str, begin: u64, end: u64) -> Result<Vec<u8>, String> {
+        self.with(dir, |s| s.blob_range(hash, begin, end))
+    }
+
+    /// A file on disk taken in as a blob: copied beside the database and
+    /// named by its hash, a megabyte at a time, the lock held only to
+    /// name it. The renderer never holds its bytes.
+    pub fn take(&self, dir: &Path, src: &Path) -> Result<BlobInfo, String> {
+        let tmp = self.blob_tmp(dir)?;
+        let (hash, size) = copy_hashing(src, &tmp, |_| {}).inspect_err(|_| {
+            let _ = std::fs::remove_file(&tmp);
+        })?;
+        self.blob_land(dir, &hash, &tmp, size as i64)
     }
 }
 
@@ -1313,6 +1470,60 @@ mod tests {
         assert!(!s.blob_has("00").unwrap());
         let info = s.blob_put(b"bytes").unwrap();
         assert!(s.blob_has(&info.hash).unwrap());
+    }
+
+    #[test]
+    fn a_blob_is_named_before_its_bytes_are_here_and_taken_in_as_a_file() {
+        let home = scratch("away");
+        let dir = home.join("c");
+        let stores = Stores::default();
+        stores.create(&dir).unwrap();
+        let bytes: Vec<u8> = (0..3_000_000u32).map(|i| (i % 251) as u8).collect();
+        let hash: String = Sha256::digest(&bytes).iter().map(|b| format!("{b:02x}")).collect();
+        // named by a row, by hash and size, with no bytes
+        stores
+            .batch(&dir, &[
+                Op::Expect { hash: hash.clone(), size: bytes.len() as i64 },
+                Op::Put { at: place("p", None, "book.pdf", "file"), content: Some(Content { blob: Some(hash.clone()), ..Default::default() }), lift: None },
+            ])
+            .unwrap();
+        let row = &stores.rows(&dir).unwrap()[0];
+        assert_eq!((row.blob.as_deref(), row.size), (Some(hash.as_str()), 3_000_000));
+        assert!(!stores.blob_has(&dir, &hash).unwrap());
+        assert_eq!(stores.blobs_away(&dir).unwrap(), vec![(hash.clone(), 3_000_000)]);
+        assert!(stores.blob_get(&dir, &hash).unwrap_err().ends_with("not here"));
+        assert!(stores.blob_file(&dir, &hash).unwrap().is_none());
+        assert!(stores.batch(&dir, &[Op::Expect { hash: "../x".into(), size: 1 }]).is_err());
+        // a sweep leaves the collection's own folder alone
+        stores.with(&dir, |s| s.sweep()).unwrap();
+        assert!(dir.join(DB_FILE).is_file());
+        // its bytes arrive as a file
+        let src = home.join("book.pdf");
+        std::fs::write(&src, &bytes).unwrap();
+        let rev = row.rev;
+        assert_eq!(stores.take(&dir, &src).unwrap(), BlobInfo { hash: hash.clone(), size: 3_000_000 });
+        assert!(stores.blob_has(&dir, &hash).unwrap());
+        assert!(stores.blobs_away(&dir).unwrap().is_empty());
+        assert_eq!(stores.rows(&dir).unwrap()[0].rev, rev);
+        assert_eq!(stores.blob_range(&dir, &hash, 1_000_000, 1_000_004).unwrap(), bytes[1_000_000..1_000_004]);
+        assert_eq!(stores.blob_range(&dir, &hash, 2_999_998, 9_999_999).unwrap(), bytes[2_999_998..]);
+        assert!(stores.blob_range(&dir, &hash, 5_000_000, 5_000_001).unwrap().is_empty());
+        // nothing is left of the way in but the blob itself
+        let left: Vec<String> = std::fs::read_dir(dir.join("blobs")).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
+        assert_eq!(left, vec![hash[..2].to_string()]);
+        // an expected size of nothing is corrected by the first that knows it; bytes put the old way fill a name too
+        let small: String = Sha256::digest(b"small").iter().map(|b| format!("{b:02x}")).collect();
+        stores.batch(&dir, &[Op::Expect { hash: small.clone(), size: 0 }, Op::Expect { hash: small.clone(), size: 5 }]).unwrap();
+        let sized: i64 = stores.with(&dir, |s| s.conn.query_row("SELECT size FROM blobs WHERE hash = ?1", [&small], |r| r.get(0)).map_err(err)).unwrap();
+        assert_eq!(sized, 5);
+        assert!(!stores.blob_has(&dir, &small).unwrap());
+        assert_eq!(stores.blob_put(&dir, b"small").unwrap().hash, small);
+        assert!(stores.blob_has(&dir, &small).unwrap());
+        // the registers a page at a time
+        stores.batch(&dir, &[Op::Regs { set: (0..5).map(|i| Reg { key: format!("r{i}|n"), stamp: "1".into(), value: None }).collect() }]).unwrap();
+        let page = stores.regs_page(&dir, None, 2).unwrap();
+        assert_eq!(page.iter().map(|r| r.key.as_str()).collect::<Vec<_>>(), vec!["r0|n", "r1|n"]);
+        assert_eq!(stores.regs_page(&dir, Some("r1|n"), 10).unwrap().len(), 3);
     }
 
     #[test]

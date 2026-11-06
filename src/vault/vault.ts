@@ -62,7 +62,8 @@ export interface VaultState {
 /** What `Vault.remove` took, for `Vault.restore`: every file under it as bytes, its directories, and the order as it was. */
 export interface Removed {
   path: string;
-  files: { path: string; bytes: Uint8Array }[];
+  /** `ref` names what a file held when the `Fs` can write it back by name alone (a store's PDF): its bytes are then not read. */
+  files: { path: string; bytes: Uint8Array; ref?: string }[];
   dirs: string[];
   order: Order;
 }
@@ -996,13 +997,15 @@ export class Vault {
    */
   remove(path: string): Promise<Removed> {
     return this.serial(async () => {
-      const files: { path: string; bytes: Uint8Array }[] = [];
+      const files: Removed['files'] = [];
       const dirs: string[] = [];
       const take = async (rel: string): Promise<void> => {
         const st = await this.fs.stat(this.abs(rel));
         if (!st) return;
         if (!st.isDir) {
-          files.push({ path: rel, bytes: await this.fs.readBytes(this.abs(rel)) });
+          // a store's PDF or image is put back by its name: a book whose pages are not on this device is not fetched to be deleted
+          const ref = this.fs.writeRef ? await this.fs.ref?.(this.abs(rel)) : null;
+          files.push(ref ? { path: rel, bytes: new Uint8Array(0), ref } : { path: rel, bytes: await this.fs.readBytes(this.abs(rel)) });
           return;
         }
         dirs.push(rel);
@@ -1045,7 +1048,8 @@ export class Vault {
       for (const d of r.dirs) await this.fs.mkdir(this.abs(d));
       for (const f of r.files) {
         await this.fs.mkdir(this.abs(dirOf(f.path)));
-        await this.atomicWriteBytes(this.abs(f.path), f.bytes);
+        if (f.ref && this.fs.writeRef) await this.fs.writeRef(this.abs(f.path), f.ref);
+        else await this.atomicWriteBytes(this.abs(f.path), f.bytes);
         this.cache.delete(f.path);
       }
       await this.rewalk();
@@ -1067,7 +1071,9 @@ export class Vault {
         const st = await this.fs.stat(this.abs(from));
         if (!st) return;
         if (!st.isDir) {
-          await this.atomicWriteBytes(this.abs(dest), await this.fs.readBytes(this.abs(from)));
+          const ref = this.fs.writeRef ? await this.fs.ref?.(this.abs(from)) : null;
+          if (ref) await this.fs.writeRef!(this.abs(dest), ref);
+          else await this.atomicWriteBytes(this.abs(dest), await this.fs.readBytes(this.abs(from)));
           return;
         }
         await this.fs.mkdir(this.abs(dest));

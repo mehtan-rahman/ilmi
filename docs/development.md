@@ -109,7 +109,26 @@ would put a row under itself is undone by a change every device writes
 alike, and of two rows with one name in one place the second is shown as
 `name 2` without being renamed. `ILMI_SEEDS=1-500 npx vitest run
 src/sync/__tests__/engine.test.ts -t "all end the same"` runs the random
-test over more seeds than the suite's 24 (a few hundred a process).
+test over more seeds than the suite's 24 (a few hundred a process); with
+`ILMI_SNAPS=1` every seed folds its change files into snapshots as it goes
+and deletes what they cover (one seed in three does without it).
+Since milestone 63 the storage is a setting (Tweaks › storage: a folder, an
+S3-compatible bucket, a WebDAV folder; `src/app/storage.ts`), and
+`ILMI_STORAGE` may also be `s3` or `webdav`: a debug build carries a
+loopback server shaped like each (`src-tauri/src/devstore.rs`, over
+`ILMI_STORAGE_DIR` or a temporary folder; the S3 side checks every
+request's Signature Version 4 and every body's hash). The storage also
+holds `snapshots/<device>/<n>/` (`ILMI_SNAP=4` writes one after four
+change files instead of sixty-four). `ILMI_SMOKE=storage` wants
+`ILMI_KIND=s3` or `webdav` and no `ILMI_STORAGE`, `ILMI_VAULT2` a name,
+and `ILMI_BIG` a PDF of 200 MB on disk: the first window fills the tweaks'
+storage rows and presses `connect`, the second makes a collection that
+keeps what it has opened, and the big PDF is taken in, sent, and opened in
+the other (about a minute and a half). The Rust side's own tests run the
+storage's verbs against both servers; with `ILMI_TEST_S3=endpoint,bucket,key,secret`
+or `ILMI_TEST_WEBDAV=address,user,password` in the environment, `cargo test
+a_server_the_environment_names` runs them against a bucket or a WebDAV
+folder of yours too (an empty one; it removes what it writes).
 `ILMI_SMOKE=readme` over a copy of the sample walks the screens the README
 shows and marks each with a `shot:` line; the README's images were captured
 that way, by window id, and scaled to 1600 px wide. Each smoke mode logs `ok:` and `failed:` lines and `shot: <name>` marks
@@ -212,10 +231,10 @@ src/schedule/      ts-fsrs grading, the reading and writing loops, the queue que
 src/import/        text from a paste, a page, a list of cards, an Anki package, a book in EPUB, or a SuperMemo collection, on its way to a file
 src/pdf/           the PDF lens's pure side: a page's text from pdf.js items, finding a passage again
 src/plugins/       the plugin runtime (api.ts is the typed handle, runtime.ts the loader) and its tweaks section
-src/sync/          engine.ts merges a collection's changes by CRDT (registers by a clock, a document's text through Loro, the tree and each directory's order from the registers, change files in a storage; src/app/crdt.ts runs it); merge.ts is git sync's merge of one file changed on both devices, src/app/sync.ts its policy over the Rust commands
+src/sync/          engine.ts merges a collection's changes by CRDT (registers by a clock, a document's text through Loro, the tree and each directory's order from the registers, change files and snapshots in a storage, the PDFs fetched when asked for; src/app/crdt.ts runs it, src/app/storage.ts makes the storages); merge.ts is git sync's merge of one file changed on both devices, src/app/sync.ts its policy over the Rust commands
 plugins/           the plugins the repo ships, built by `npm run plugins`; ilmi.d.ts is the API; see PLUGINS.md
 scripts/           command-line tools, run with tsx
-src-tauri/         the shell (Tauri v2, fs + dialog + http + deep-link + single-instance + opener + log plugins; store.rs is a collection's SQLite and blobs, anki.rs reads a package, epub.rs a book, plugin.rs a plugin zip, sync.rs a folder as a git repository over libgit2); gen/apple is the iOS project
+src-tauri/         the shell (Tauri v2, fs + dialog + http + deep-link + single-instance + opener + log plugins; store.rs is a collection's SQLite and blobs, storage.rs an S3 bucket or a WebDAV folder as a storage (and a blob sent or fetched as a stream), devstore.rs the debug build's loopback servers shaped like each, anki.rs reads a package, epub.rs a book, plugin.rs a plugin zip, sync.rs a folder as a git repository over libgit2); gen/apple is the iOS project
 ```
 
 ## The documents

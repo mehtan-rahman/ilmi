@@ -1,14 +1,16 @@
 mod anki;
+#[cfg(debug_assertions)]
+mod devstore;
 mod epub;
 #[cfg(debug_assertions)]
 mod nudge;
 mod plugin;
+mod storage;
 mod store;
 mod sync;
 
 #[cfg(desktop)]
 use tauri::menu::{MenuBuilder, MenuItemBuilder, MenuItemKind, SubmenuBuilder};
-#[cfg(desktop)]
 use tauri::Emitter;
 use tauri::Manager;
 use tauri_plugin_fs::FsExt;
@@ -492,6 +494,153 @@ fn store_blob_get(app: tauri::AppHandle, stores: tauri::State<'_, store::Stores>
     stores.blob_get(&collection_dir(&app, &root)?, &hash).map(tauri::ipc::Response::new)
 }
 
+#[tauri::command(async)]
+fn store_regs_page(app: tauri::AppHandle, stores: tauri::State<'_, store::Stores>, root: String, after: Option<String>, limit: i64) -> Result<Vec<store::Reg>, String> {
+    stores.regs_page(&collection_dir(&app, &root)?, after.as_deref(), limit)
+}
+
+/// The blobs rows name whose bytes are not here (milestone 63), each with its size.
+#[tauri::command(async)]
+fn store_blobs_away(app: tauri::AppHandle, stores: tauri::State<'_, store::Stores>, root: String) -> Result<Vec<(String, i64)>, String> {
+    stores.blobs_away(&collection_dir(&app, &root)?)
+}
+
+/// A file on disk taken in as a blob without its bytes crossing to the renderer: copied and named by its hash here.
+#[tauri::command(async)]
+fn store_blob_take(app: tauri::AppHandle, stores: tauri::State<'_, store::Stores>, root: String, path: String) -> Result<store::BlobInfo, String> {
+    stores.take(&collection_dir(&app, &root)?, std::path::Path::new(&path))
+}
+
+/// A piece of a blob, for a reader that takes a big file as it needs it (the PDF lens).
+#[tauri::command(async)]
+fn store_blob_range(app: tauri::AppHandle, stores: tauri::State<'_, store::Stores>, root: String, hash: String, begin: u64, end: u64) -> Result<tauri::ipc::Response, String> {
+    stores.blob_range(&collection_dir(&app, &root)?, &hash, begin, end).map(tauri::ipc::Response::new)
+}
+
+// ── the storages (milestone 63) ──────────────────────────────────
+//
+// `storage.rs` reaches a bucket or a WebDAV folder (and a folder on disk,
+// for a blob). The renderer's engine reads and writes the small files
+// through the four verbs; a blob goes between the collection's `blobs/`
+// and the storage here, a piece at a time, the window told how far it is.
+
+#[tauri::command]
+async fn storage_list(config: storage::Config, prefix: String) -> Result<Vec<String>, String> {
+    storage::list(&config, &prefix).await
+}
+
+/// A file's bytes, raw; `null` when the storage does not hold it.
+#[tauri::command]
+async fn storage_read(config: storage::Config, path: String) -> Result<tauri::ipc::Response, String> {
+    Ok(match storage::read(&config, &path).await? {
+        Some(bytes) => tauri::ipc::Response::new(bytes),
+        None => tauri::ipc::Response::new("null".to_string()),
+    })
+}
+
+/// The bytes raw as the request's body; the storage and the path in headers, percent-encoded (a header is ASCII).
+#[tauri::command]
+async fn storage_write(request: tauri::ipc::Request<'_>) -> Result<(), String> {
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
+        return Err("a file is sent as bytes".to_string());
+    };
+    let header = |name: &str| -> Result<String, String> {
+        let v = request.headers().get(name).and_then(|v| v.to_str().ok()).ok_or_else(|| format!("no {name}"))?;
+        Ok(percent_encoding::percent_decode_str(v).decode_utf8().map_err(|e| e.to_string())?.into_owned())
+    };
+    let config: storage::Config = serde_json::from_str(&header("config")?).map_err(|e| e.to_string())?;
+    storage::write(&config, &header("path")?, bytes.clone()).await
+}
+
+#[tauri::command]
+async fn storage_remove(config: storage::Config, path: String) -> Result<(), String> {
+    storage::remove(&config, &path).await
+}
+
+/// How far a blob is on its way, for the strip: sent to the window that asked, at most a hundred times a file.
+#[derive(serde::Serialize, Clone)]
+struct BlobProgress {
+    hash: String,
+    done: u64,
+    total: u64,
+    up: bool,
+}
+
+fn progress_to(window: &tauri::WebviewWindow, hash: &str, total: u64, up: bool) -> impl Fn(u64, Option<u64>) + Send + Sync + 'static {
+    let app = window.app_handle().clone();
+    let label = window.label().to_string();
+    let hash = hash.to_string();
+    let last = std::sync::atomic::AtomicU64::new(0);
+    move |done, whole| {
+        let total = whole.unwrap_or(total).max(1);
+        let was = last.load(std::sync::atomic::Ordering::Relaxed);
+        if done < total && done.saturating_sub(was) < (total / 100).max(1 << 18) {
+            return;
+        }
+        last.store(done, std::sync::atomic::Ordering::Relaxed);
+        let _ = app.emit_to(label.as_str(), "blob-progress", BlobProgress { hash: hash.clone(), done, total, up });
+    }
+}
+
+/// A blob of the collection sent to its storage as `blobs/<hash>`, from its file, a piece at a time.
+#[tauri::command]
+async fn storage_blob_up(window: tauri::WebviewWindow, stores: tauri::State<'_, store::Stores>, root: String, config: storage::Config, hash: String) -> Result<(), String> {
+    let dir = collection_dir(window.app_handle(), &root)?;
+    let file = stores.blob_file(&dir, &hash)?.ok_or_else(|| format!("{hash}: not here"))?;
+    let total = std::fs::metadata(&file).map(|m| m.len()).unwrap_or(0);
+    let tell = progress_to(&window, &hash, total, true);
+    storage::upload(&config, &format!("blobs/{hash}"), &file, &hash, move |n| tell(n, None)).await
+}
+
+/// A blob fetched from the storage into the collection, written to a file as it arrives and kept only when its
+/// bytes hash to its name. False when the storage does not hold it (yet).
+#[tauri::command]
+async fn storage_blob_down(window: tauri::WebviewWindow, stores: tauri::State<'_, store::Stores>, root: String, config: storage::Config, hash: String, size: Option<u64>) -> Result<bool, String> {
+    if !store::is_hash(&hash) {
+        return Err(format!("{hash}: not a hash"));
+    }
+    let dir = collection_dir(window.app_handle(), &root)?;
+    if stores.blob_has(&dir, &hash)? {
+        return Ok(true);
+    }
+    let tmp = stores.blob_tmp(&dir)?;
+    let got = storage::download(&config, &format!("blobs/{hash}"), &tmp, progress_to(&window, &hash, size.unwrap_or(0), false)).await;
+    match got {
+        Ok(Some((sha, len))) if sha == hash => stores.blob_land(&dir, &hash, &tmp, len as i64).map(|_| true),
+        Ok(Some(_)) => {
+            let _ = std::fs::remove_file(&tmp);
+            Err("the file in the storage is not what its name says".to_string())
+        }
+        Ok(None) => {
+            let _ = std::fs::remove_file(&tmp);
+            Ok(false)
+        }
+        Err(e) => {
+            let _ = std::fs::remove_file(&tmp);
+            Err(e)
+        }
+    }
+}
+
+/// Dev only: the loopback servers shaped like an S3 bucket and a WebDAV folder (`devstore.rs`), over
+/// `ILMI_STORAGE_DIR` or a folder of the system's temporary ones; the settings that reach each. An error in release.
+#[tauri::command]
+fn dev_storage_serve() -> Result<serde_json::Value, String> {
+    #[cfg(debug_assertions)]
+    {
+        let root = std::env::var("ILMI_STORAGE_DIR")
+            .ok()
+            .filter(|s| !s.is_empty())
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| std::env::temp_dir().join(format!("ilmi-devstore-{}", std::process::id())));
+        devstore::serve(&root).map(|url| devstore::settings(&url))
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        Err("dev only".to_string())
+    }
+}
+
 /// `export collection` as a zip: the folder the renderer wrote (`dir`), zipped under `top` at `dest`; how many files.
 #[tauri::command(async)]
 fn zip_folder(dir: String, top: String, dest: String) -> Result<usize, String> {
@@ -665,7 +814,7 @@ pub fn run() {
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_opener::init())
         .manage(store::Stores::default())
-        .invoke_handler(tauri::generate_handler![allow_vault, allow_hidden, read_dropped, read_dropped_bytes, read_anki_package, read_epub, read_plugin_zip, platform, dev_env, dev_web_memory, dev_nudge_serve, dev_nudge_drop, dev_nudge_listeners, set_recent_vaults, store_list, store_create, store_delete, store_rows, store_text, store_put, store_remove, store_version, store_set_version, store_doc, store_places, store_digests, store_review_files, store_reviews, store_reviews_put, store_same, store_same_put, store_originals, store_original_put, store_blob_put, store_blob_get, store_batch, store_meta, store_regs, store_regs_under, store_crdt, store_outbox, store_outbox_count, store_blob_has, zip_folder, sync_status, sync_init, sync_init_bare, sync_set_remote, sync_clone, sync_changes, sync_commit, sync_fetch, sync_merge, sync_resolve, sync_push])
+        .invoke_handler(tauri::generate_handler![allow_vault, allow_hidden, read_dropped, read_dropped_bytes, read_anki_package, read_epub, read_plugin_zip, platform, dev_env, dev_web_memory, dev_nudge_serve, dev_nudge_drop, dev_nudge_listeners, set_recent_vaults, store_list, store_create, store_delete, store_rows, store_text, store_put, store_remove, store_version, store_set_version, store_doc, store_places, store_digests, store_review_files, store_reviews, store_reviews_put, store_same, store_same_put, store_originals, store_original_put, store_blob_put, store_blob_get, store_batch, store_meta, store_regs, store_regs_under, store_crdt, store_outbox, store_outbox_count, store_blob_has, store_regs_page, store_blobs_away, store_blob_take, store_blob_range, storage_list, storage_read, storage_write, storage_remove, storage_blob_up, storage_blob_down, dev_storage_serve, zip_folder, sync_status, sync_init, sync_init_bare, sync_set_remote, sync_clone, sync_changes, sync_commit, sync_fetch, sync_merge, sync_resolve, sync_push])
         .setup(|app| {
             // Windows and Linux learn the scheme at run time; macOS reads it
             // from the bundle's Info.plist, which Tauri writes from the

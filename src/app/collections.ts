@@ -11,12 +11,13 @@ import { baseOf, exportFolder, fileName, importFolder, storeFs, type Fs, type St
 import { tauriFs } from '../vault/tauri-fs.js';
 import { createCollection, deleteCollection, listCollections, tauriStore } from '../vault/tauri-store.js';
 import { engineFor } from './crdt.js';
+import { forgetStorage } from './storage.js';
 import { vaultName } from './recents.js';
 
 /** The `Fs` over the collection whose folder is `root`, its engine told of every write (`crdt.ts`; it records nothing for a collection that does not sync). */
 export function collectionFs(root: string): StoreFs {
   const fs = storeFs(tauriStore(root), root);
-  engineFor(fs);
+  engineFor(fs, root);
   return fs;
 }
 
@@ -70,6 +71,7 @@ export async function importCollection(dir: string, opts: { name?: string; repla
   const base = fileName(opts.name ?? baseOf(from));
   if (opts.replace && names.includes(base)) await deleteCollection(`${home}/${base}`);
   const root = await createCollection(opts.replace ? base : freeName(base, names));
+  forgetStorage(root);
   try {
     await importFolder(diskFs, from, collectionFs(root), root);
   } catch (e) {
@@ -88,14 +90,20 @@ export async function exportToFolder(fs: Fs, root: string, dest: string): Promis
 /**
  * The same as one zip at `dest`, its files under a folder named `name`:
  * written out beside the database first, zipped by the Rust side, and the
- * folder removed.
+ * folder removed. `leave` names files not written, and `also` gives files
+ * written beside the rest once it is out (the dated export's, `keep.ts`).
  */
-export async function exportToZip(fs: Fs, root: string, name: string, dest: string): Promise<number> {
+export async function exportToZip(fs: Fs, root: string, name: string, dest: string, opts: { leave?: (path: string) => boolean; also?: () => Record<string, string> } = {}): Promise<number> {
   const tmp = `${root}/export`;
   await invoke('allow_vault', { path: tmp });
   await tauriFs.remove(tmp);
   try {
-    await exportFolder(fs, root, diskFs, tmp);
+    await exportFolder(fs, root, diskFs, tmp, opts.leave);
+    // files written beside what was exported: the dated export's list of the PDFs it left out
+    for (const [path, text] of Object.entries(opts.also?.() ?? {})) {
+      await diskFs.mkdir(`${tmp}/${path.slice(0, Math.max(0, path.lastIndexOf('/')))}`.replace(/\/$/, ''));
+      await diskFs.writeText(`${tmp}/${path}`, text);
+    }
     return await invoke<number>('zip_folder', { dir: tmp, top: name, dest });
   } finally {
     await tauriFs.remove(tmp).catch(() => { /* a leftover is removed by the next export */ });

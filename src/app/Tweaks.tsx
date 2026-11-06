@@ -4,7 +4,9 @@
 // by title, whether the backlog is postponed when the day starts, the
 // day's budget, and where clippings land. ⌘, opens it. The first nine live
 // in the webview's storage, not in any vault; the budget and the clippings
-// folder are the open vault's, in its `.ilmi/state.json`.
+// folder are the open vault's, in its `.ilmi/state.json`. Under the sync
+// rows, the storage the collection syncs through (a folder, an S3 bucket, a
+// WebDAV folder) and what this device keeps of its files (milestone 63).
 
 import { useEffect, useState } from 'react';
 import { PluginsSection } from '../plugins/PluginsSection.js';
@@ -13,6 +15,9 @@ import { ACCENTS, DENSITY_MAX, DENSITY_MIN, THEMES, useApp, type Accent, type Th
 import { notify } from './land.js';
 import { cloneCollection, connect, setNudgeServer, setRemote, syncWord } from './sync.js';
 import { chooseMirror, mirrorOff } from './keep.js';
+import { connectStorage, joinStorage, setStorage, storageOff } from './crdt.js';
+import { keepOf, storageReady, type StorageKind } from './storage.js';
+import { open as pickDirectory } from '@tauri-apps/plugin-dialog';
 import { currentVault, openVault, setBudget, setClipDir } from './vault.js';
 
 const THEME_LABEL: Record<Theme, string> = { light: 'light', dark: 'dark', eink: 'e-ink' };
@@ -68,7 +73,7 @@ function ClipDirPick({ value }: { value: string }) {
 }
 
 /** A text field that commits on blur or ⏎; escape restores. */
-function TextField({ value, type = 'text', onCommit }: { value: string; type?: 'text' | 'password'; onCommit: (v: string) => void }) {
+function TextField({ value, type = 'text', disabled = false, onCommit }: { value: string; type?: 'text' | 'password'; disabled?: boolean; onCommit: (v: string) => void }) {
   const [text, setText] = useState(value);
   useEffect(() => { setText(value); }, [value]);
   const commit = () => { if (text !== value) onCommit(text); };
@@ -79,6 +84,7 @@ function TextField({ value, type = 'text', onCommit }: { value: string; type?: '
       spellCheck={false}
       autoCapitalize="off"
       autoCorrect="off"
+      disabled={disabled}
       value={text}
       onChange={(e) => setText(e.target.value)}
       onBlur={commit}
@@ -104,7 +110,9 @@ function SyncRows() {
   const [busy, setBusy] = useState(false);
   // an iPad's clone is the welcome's `connect`
   const mobile = useApp((s) => s.mobile);
-  const word = syncWord(sync);
+  // a collection that syncs through a storage does not sync by git: the word is the storage's row's
+  const stored = useApp((s) => s.storage.on);
+  const word = stored ? null : syncWord(sync);
   const fail = (what: string) => (e: unknown) => { notify(`${what} · ${e instanceof Error ? e.message : String(e)}`); };
   const doConnect = () => {
     setBusy(true);
@@ -126,9 +134,9 @@ function SyncRows() {
     <>
       <div className="tw-row">
         <span className="tw-lbl">sync <span className="tw-val">{word ?? 'off'}</span></span>
-        {!sync.on && (
+        {(!sync.on || stored) && (
           <div className="tw-seg">
-            <button type="button" disabled={busy || !settings.url.trim()} onClick={doConnect}>connect</button>
+            <button type="button" disabled={busy || stored || !settings.url.trim()} onClick={doConnect}>connect</button>
             {!mobile && <button type="button" disabled={busy || !settings.url.trim()} onClick={() => void doClone()}>clone…</button>}
           </div>
         )}
@@ -144,6 +152,95 @@ function SyncRows() {
       <div className="tw-row">
         <span className="tw-lbl">nudge</span>
         <TextField value={settings.server} onCommit={(server) => setNudgeServer(server)} />
+      </div>
+    </>
+  );
+}
+
+const KINDS: StorageKind[] = ['folder', 's3', 'webdav'];
+
+/**
+ * Storage (milestone 63): where the collection's changes and files are
+ * kept for its other devices. The kind, the fields that kind needs,
+ * `connect` (this collection syncs through it from now on: an empty
+ * storage takes it) or `join…` (what the storage holds as a new
+ * collection, opened), and `off`. Then what this device keeps of the
+ * PDFs and images: every one, or the ones it has opened. The fields are
+ * kept with the tweaks, as sync's remote and token are.
+ */
+function StorageRows() {
+  const st = useApp((s) => s.storage);
+  const sync = useApp((s) => s.sync);
+  const mobile = useApp((s) => s.mobile);
+  const [busy, setBusy] = useState(false);
+  const fail = (what: string) => (e: unknown) => { notify(`${what} · ${e instanceof Error ? e.message : String(e)}`); };
+  const ready = storageReady(st);
+  const locked = st.on || busy;
+  const doConnect = () => {
+    setBusy(true);
+    connectStorage().catch(fail('storage')).finally(() => setBusy(false));
+  };
+  const doJoin = async () => {
+    setBusy(true);
+    try {
+      const dest = await joinStorage();
+      useApp.setState({ tweaksOpen: false });
+      await openVault(dest);
+    } catch (e) {
+      fail('storage')(e);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const choose = async () => {
+    const dir = await pickDirectory({ directory: true, recursive: true, multiple: false });
+    if (dir) setStorage({ folder: dir });
+  };
+  const field = (label: string, key: 'endpoint' | 'bucket' | 'key' | 'secret' | 'address' | 'user' | 'password', secret = false) => (
+    <div className="tw-row" key={key}>
+      <span className="tw-lbl">{label}</span>
+      <TextField value={st[key]} type={secret ? 'password' : 'text'} disabled={locked} onCommit={(v) => setStorage({ [key]: v })} />
+    </div>
+  );
+  const keep = keepOf(st);
+  return (
+    <>
+      <div className="tw-row">
+        <span className="tw-lbl">storage <span className="tw-val">{st.on ? (syncWord(sync) ?? 'off') : 'off'}</span></span>
+        <div className="tw-seg">
+          {KINDS.filter((k) => !(mobile && k === 'folder')).map((k) => (
+            <button key={k} type="button" data-active={st.kind === k ? '1' : '0'} disabled={locked} onClick={() => setStorage({ kind: k })}>{k}</button>
+          ))}
+        </div>
+      </div>
+      {st.kind === 'folder' && (
+        <div className="tw-row">
+          <span className="tw-lbl">folder <span className="tw-val" title={st.folder || undefined}>{st.folder ? st.folder.slice(st.folder.lastIndexOf('/', st.folder.lastIndexOf('/') - 1) + 1) : ''}</span></span>
+          <div className="tw-seg">
+            <button type="button" disabled={locked} onClick={() => void choose()}>choose…</button>
+          </div>
+        </div>
+      )}
+      {st.kind === 's3' && [field('endpoint', 'endpoint'), field('bucket', 'bucket'), field('key', 'key'), field('secret', 'secret', true)]}
+      {st.kind === 'webdav' && [field('address', 'address'), field('user', 'user'), field('password', 'password', true)]}
+      <div className="tw-row">
+        <div className="tw-seg">
+          {st.on
+            ? <button type="button" disabled={busy} onClick={() => { setBusy(true); storageOff().catch(fail('storage')).finally(() => setBusy(false)); }}>off</button>
+            : (
+              <>
+                <button type="button" disabled={busy || !ready} onClick={doConnect}>connect</button>
+                <button type="button" disabled={busy || !ready} onClick={() => void doJoin()}>join…</button>
+              </>
+            )}
+        </div>
+      </div>
+      <div className="tw-row">
+        <span className="tw-lbl">keep files</span>
+        <div className="tw-seg">
+          <button type="button" data-active={keep === 'all' ? '1' : '0'} onClick={() => setStorage({ keep: 'all' })}>all</button>
+          <button type="button" data-active={keep === 'opened' ? '1' : '0'} onClick={() => setStorage({ keep: 'opened' })}>opened</button>
+        </div>
       </div>
     </>
   );
@@ -295,6 +392,7 @@ export function Tweaks() {
       )}
       {vault !== null && !mobile && <MirrorRow />}
       {vault !== null && <SyncRows />}
+      {vault !== null && <StorageRows />}
       {vault !== null && <PluginsSection />}
     </div>
   );

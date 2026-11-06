@@ -45,6 +45,22 @@ export async function pageBits(page: pdfjs.PDFPageProxy): Promise<TextBit[]> {
   return out;
 }
 
+/**
+ * Open a PDF that is read a piece at a time (milestone 63): pdf.js asks
+ * for the ranges it needs (the cross-reference table, then the pages
+ * shown) and `read` answers each, so a book of hundreds of megabytes is
+ * never held whole in the web view.
+ */
+export function loadPdfPieces(size: number, read: (begin: number, end: number) => Promise<Uint8Array>): pdfjs.PDFDocumentLoadingTask {
+  const transport = new pdfjs.PDFDataRangeTransport(size, null);
+  transport.requestDataRange = (begin: number, end: number) => {
+    void read(begin, end).then((chunk) => transport.onDataRange(begin, chunk), (e: unknown) => { console.error('pdf range', e); transport.abort(); });
+  };
+  return pdfjs.getDocument({ range: transport, rangeChunkSize: PIECE, disableAutoFetch: true, disableStream: true, verbosity: 0 });
+}
+/** How much of a PDF is asked for at a time. */
+const PIECE = 1 << 19;
+
 export interface PdfText {
   pages: number;
   /** Every page's paragraphs, in order; empty for a scan. */

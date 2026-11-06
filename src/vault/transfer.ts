@@ -11,15 +11,16 @@ import { stampOf } from './lift.js';
 /** What never goes in or out: a repository's own folder, the Finder's file, a half-written file. */
 export const skipped = (name: string): boolean => name === '.git' || name === '.DS_Store' || name.endsWith('.ilmi-tmp');
 
-async function copyTree(from: Fs, fromRoot: string, to: Fs, toRoot: string, rel: string): Promise<number> {
+async function copyTree(from: Fs, fromRoot: string, to: Fs, toRoot: string, rel: string, leave?: (path: string) => boolean): Promise<number> {
   let files = 0;
   const entries = (await from.readDir(join(fromRoot, rel))).filter((e) => !skipped(e.name)).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
   for (const e of entries) {
     const path = rel ? `${rel}/${e.name}` : e.name;
     if (e.isDir) {
       await to.mkdir(join(toRoot, path));
-      files += await copyTree(from, fromRoot, to, toRoot, path);
+      files += await copyTree(from, fromRoot, to, toRoot, path, leave);
     } else if (e.isFile) {
+      if (leave?.(path)) continue;
       await to.writeBytes(join(toRoot, path), await from.readBytes(join(fromRoot, path)));
       files++;
     }
@@ -41,11 +42,13 @@ export function importFolder(from: Fs, dir: string, to: Fs, root: string): Promi
  * vault again: each document at the path its names and parents make, the
  * schedule lines in its text, `.ilmi/` in its place, PDFs and images under
  * their names. `dir` is made; what is in it already is left. Resolves to
- * how many files were written.
+ * how many files were written. `leave` names files that are not written
+ * (by vault-relative path): the dated export's PDFs, which are kept once,
+ * beside the database.
  */
-export async function exportFolder(from: Fs, root: string, to: Fs, dir: string): Promise<number> {
+export async function exportFolder(from: Fs, root: string, to: Fs, dir: string, leave?: (path: string) => boolean): Promise<number> {
   await to.mkdir(dir);
-  return copyTree(from, root, to, dir, '');
+  return copyTree(from, root, to, dir, '', leave);
 }
 
 const same = (a: Uint8Array, b: Uint8Array): boolean => {
@@ -140,9 +143,11 @@ async function readList(to: Fs, dir: string): Promise<Listed | null> {
  * (a directory that leaves empty with it). A row's stamp says whether it
  * changed, so a file that did not is not read; a view under `.ilmi/` has
  * none and is compared by what it holds. Resolves to the paths written or
- * removed.
+ * removed. `leave` names files the pass takes no notice of: the ones whose
+ * bytes are not on this device (milestone 63), which the mirror gets when
+ * they come.
  */
-export async function mirrorPass(from: Fs, root: string, to: Fs, dir: string): Promise<string[]> {
+export async function mirrorPass(from: Fs, root: string, to: Fs, dir: string, leave?: (path: string) => boolean): Promise<string[]> {
   const was = (await readList(to, dir)) ?? {};
   const now: Listed = {};
   const changed: string[] = [];
@@ -151,7 +156,7 @@ export async function mirrorPass(from: Fs, root: string, to: Fs, dir: string): P
     for (const e of (await from.readDir(join(root, rel))).filter((x) => !skipped(x.name))) {
       const path = rel ? `${rel}/${e.name}` : e.name;
       if (e.isDir) { await visit(path); continue; }
-      if (!e.isFile) continue;
+      if (!e.isFile || leave?.(path)) continue;
       const st = await from.stat(join(root, path));
       let bytes: Uint8Array | null = null;
       let stamp = st && st.mtimeMs ? `${st.mtimeMs}.${st.size}` : '';

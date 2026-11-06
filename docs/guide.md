@@ -38,10 +38,12 @@ writes. It goes one way; a file changed there is written over by the next
 change to its document, and a file of your own put there is left alone. A
 folder that already holds something else is never taken: the mirror goes
 beside it under the name with a number. And once a day, when the collection
-is opened or the day turns, the whole collection is written as a zip under
+is opened or the day turns, the collection is written as a zip under
 `exports/` beside its database (in the app's data directory), the last
-seven days kept: what to import if the database is ever damaged. Each is a
-full export, PDFs included, so seven of them take seven times the room.
+seven days kept: what to import if the database is ever damaged. It holds
+every document and the state, not the PDFs and images: those are not in
+the database but files of their own under `blobs/` there, each named by
+its SHA-256, and the zip's `.ilmi/blobs.json` says which path is which.
 
 While a collection is open the File menu has `New Collection…` (⌘⇧N), `New
 Collection from Folder…` (⌘O), `Open Recent` (the other collections, by
@@ -364,6 +366,35 @@ not bring its history: `connect` the collection to the same remote and the
 two are merged. The
 remote and the token live with the tweaks on each device, never in the
 collection. SSH remotes and large files are not supported.
+
+### Through a storage
+
+The other way to sync needs no repository: a storage, which is a folder (a
+disk, a NAS), an S3-compatible bucket (Cloudflare R2, MinIO, AWS), or a
+WebDAV folder (Nextcloud, a Synology). In the tweaks, `storage` takes the
+kind and the fields it needs: a folder; or `endpoint`, `bucket` (a prefix
+may follow the bucket's name after a `/`), `key` and `secret`; or the
+folder's `address`, `user` and `password`. `connect` puts the open
+collection in an empty storage, or meets the storage that already holds
+it; `join…` makes a new collection from what a storage holds and opens it,
+which is how a second device starts. `off` stops; what is in the storage
+stays. A collection that syncs this way does not sync by git.
+
+Each device writes its own changes to the storage and reads the others',
+on open, a few seconds after a change, when the window comes back, and
+every half minute; the strip reads as it does for git. Nothing needs a
+server of ilmi's, and nothing is overwritten there. Two devices changing
+one paragraph are merged by character and the paragraph is named in a
+notice; the same card graded on both keeps the later grade; a document
+moved on one and edited on the other is one document in its new place.
+
+`keep files` says what a device holds of the PDFs and images: `all`, or
+`opened`. Set to `opened`, a book whose PDF is not on the device says `not
+here` on its row and fetches it when it is opened, the strip reading
+`pulling 40%` as it comes. A large PDF goes to and from the storage a
+piece at a time, and a book over 16 MB is read from disk as its pages are
+turned to. The fields are kept with the tweaks on each device, never in
+the collection.
 
 ### On an iPad
 

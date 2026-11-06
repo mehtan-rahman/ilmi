@@ -27,6 +27,7 @@ import { useApp } from './store.js';
 import { titleOf } from './names.js';
 import { ago, NUDGE_SERVER, publishNudge, subscribeNudge, type Subscription } from './nudge.js';
 import { nameFromRemote, vaultKey } from './platform.js';
+import { forgetStorage } from './storage.js';
 import { note, openNode } from './vault.js';
 
 /** The remote, its token, and the nudge's server, per vault path, in the webview's storage. */
@@ -53,9 +54,11 @@ export interface SyncState {
   conflicts: Kept[];
   /** When the remote was last reached, ms since the epoch; null before. */
   at: number | null;
+  /** A file on its way to or from the storage (`crdt.ts`, milestone 63): which way, and how much of it has gone, 0 to 1. */
+  progress?: { up: boolean; part: number } | null;
 }
 
-export const SYNC_OFF: SyncState = { on: false, repo: false, busy: null, offline: false, toPush: 0, conflicts: [], at: null };
+export const SYNC_OFF: SyncState = { on: false, repo: false, busy: null, offline: false, toPush: 0, conflicts: [], at: null, progress: null };
 
 // the cadence, in ms
 export const QUIET_MS = 5_000;
@@ -101,6 +104,7 @@ export function saveSettings(root: string, s: SyncSettings): void {
 export function syncWord(s: SyncState): string | null {
   if (!s.on) return null;
   if (s.conflicts.length) return `${s.conflicts.length} conflict${s.conflicts.length === 1 ? '' : 's'}`;
+  if (s.progress) return `${s.progress.up ? 'pushing' : 'pulling'} ${Math.min(99, Math.floor(s.progress.part * 100))}%`;
   if (s.busy === 'pulling') return 'pulling…';
   if (s.busy === 'pushing') return 'pushing…';
   if (s.offline) return 'offline';
@@ -529,6 +533,7 @@ export async function cloneCollection(url: string, token: string, name?: string)
   if (!clean) throw new Error('no remote');
   const { names } = await listCollections();
   const dest = await createCollection(freeName(name ?? nameFromRemote(clean), names));
+  forgetStorage(dest);
   try {
     await invoke('sync_clone', { url: clean, token: token || null, dest: repoOf(dest) });
     await invoke('allow_vault', { path: repoOf(dest) });

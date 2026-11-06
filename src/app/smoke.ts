@@ -192,6 +192,13 @@
 // pull timers off: a grade pushed in one lands in the other on the nudge
 // alone, timed; the stream dropped and back; the nudge off in one, and the
 // timer is all there is (see the function).
+// `ILMI_SMOKE=storage` (`smokeStorage`, milestone 63, with `ILMI_VAULT2` a
+// name, `ILMI_STORAGE=s3` or `webdav`, `ILMI_BIG` a large PDF on disk and
+// `ILMI_SNAP=4`): the same two windows through the loopback server shaped
+// like a bucket or a WebDAV folder; the second collection keeps what it
+// has opened and holds no PDF until one is; a 200 MB PDF taken in by one
+// goes up and comes down by the piece, and opens; a snapshot is written
+// and a third collection made from it (see the function).
 // `ILMI_SMOKE=crdt` (`smokeCrdt`, milestone 61, with `ILMI_VAULT2` a name
 // for the second collection and `ILMI_STORAGE` an empty folder) over
 // `samples/double-major`: this window's collection makes the storage in the
@@ -8203,8 +8210,16 @@ async function syncSteps(name: string, args: Record<string, unknown>): Promise<u
   const { appNow } = await import('./clock.js');
   const { cloneCollection, openConflicts, push, saveSettings, setNudgeServer, setPullTimer, setRemote, settingsOf, syncAge, syncNow, syncWord } = await import('./sync.js');
   const { deleteCollection, listCollections } = await import('../vault/tauri-store.js');
-  const { crdtNow, crdtOn, joinCollection, setCrdtTimers } = await import('./crdt.js');
+  const { crdtNow, crdtOn, devStorage, filesSettled, joinCollection, setCrdtTimers } = await import('./crdt.js');
+  type StoreFs = import('../vault/index.js').StoreFs;
   const vault = () => { const v = currentVault(); if (!v) throw new Error('no vault open'); return v; };
+  const sfs = () => vault().fs as StoreFs;
+  /** The strip's words while `fn` runs, as the store has them: a covered window may not draw each. */
+  const wordsDuring = async <T,>(fn: () => Promise<T>): Promise<{ value: T; words: string[] }> => {
+    const words = new Set<string>();
+    const stop = useApp.subscribe((s) => { const w = syncWord(s.sync); if (w) words.add(w); });
+    try { return { value: await fn(), words: [...words] }; } finally { stop(); }
+  };
   const text = async (p: string) => vault().fs.readText(vault().abs(p));
   const state = () => {
     const s = useApp.getState();
@@ -8273,11 +8288,86 @@ async function syncSteps(name: string, args: Record<string, unknown>): Promise<u
     // milestone 61: this window's collection is made from the storage, and opens
     case 'join': {
       setCrdtTimers(false);
-      const root = await joinCollection(str('storage'), vaultName(str('dest')), true);
+      // from a folder, or (milestone 63) from a storage by its settings, which become this collection's
+      const from = typeof args.storage === 'string' ? args.storage : ((args.settings as import('./storage.js').StorageSettings | undefined) ?? await devStorage());
+      if (!from) throw new Error('join: no storage');
+      const root = await joinCollection(from, vaultName(str('dest')), true);
       await openVault(root);
       await until(() => (useApp.getState().docs['arabic/vocabulary.md'] ? true : null), 30000);
       await until(() => (syncWord(useApp.getState().sync) === 'synced' ? true : null), 30000);
-      return { ...state(), documents: vault().documents().length };
+      return { ...state(), documents: vault().documents().length, took: (await import('./crdt.js')).lastJoin?.took ?? 0 };
+    }
+    // milestone 63: the files
+    case 'away':
+      return sfs().away();
+    case 'blobFiles': {
+      // the files under this collection's `blobs/`, on disk
+      const { tauriFs } = await import('../vault/tauri-fs.js');
+      const dir = `${vault().root}/blobs`;
+      await invoke('allow_vault', { path: dir });
+      if (!(await tauriFs.stat(dir))) return [];
+      const out: { name: string; size: number }[] = [];
+      for (const d of await tauriFs.readDir(dir)) {
+        if (!d.isDir) { out.push({ name: d.name, size: (await tauriFs.stat(`${dir}/${d.name}`))?.size ?? 0 }); continue; }
+        for (const f of await tauriFs.readDir(`${dir}/${d.name}`)) out.push({ name: f.name, size: (await tauriFs.stat(`${dir}/${d.name}/${f.name}`))?.size ?? 0 });
+      }
+      return out;
+    }
+    case 'rowAway': {
+      // the book's row in the tree, its folders opened, and what it says of its PDF
+      const path = str('path');
+      for (let at = path.indexOf('/'); at > 0; at = path.indexOf('/', at + 1)) toggleOpen(path.slice(0, at), true);
+      const row = await until(() => document.querySelector<HTMLElement>(`.trow[data-path="${CSS.escape(path)}"]:not(.placeholder)`), 8000);
+      row.scrollIntoView({ block: 'center' });
+      await sleep(200);
+      return row.querySelector('.away')?.textContent ?? null;
+    }
+    case 'openBook': {
+      // the book opened: its PDF fetched if it is not here, its first page drawn
+      const { value, words } = await wordsDuring(async () => {
+        // a page of the book that was open before is not this one's
+        for (const c of document.querySelectorAll<HTMLElement>('.pdf-page canvas')) c.dataset.before = '1';
+        openNode(str('path'));
+        await until(() => (activeTab(useApp.getState().panes)?.id === str('path') ? true : null), 8000);
+        await until(() => document.querySelector(`.pane[data-active="1"] .book .pdf-page[data-page="1"] canvas:not([data-before])`), Number(args.ms ?? 30000));
+        return true;
+      });
+      await sleep(400);
+      return { ...state(), drawn: value, words, pages: document.querySelectorAll('.pane[data-active="1"] .book .pdf-page').length };
+    }
+    case 'syncWords': {
+      const { words } = await wordsDuring(async () => { await crdtNow(); await filesSettled(); });
+      return { ...state(), words };
+    }
+    case 'settle':
+      await filesSettled();
+      return sfs().away();
+    case 'size':
+      return (await vault().fs.stat(vault().abs(str('path'))))?.size ?? null;
+    case 'sha': {
+      const bytes = await vault().fs.readBytes(vault().abs(str('path')));
+      const hash = await crypto.subtle.digest('SHA-256', bytes as BufferSource);
+      return { size: bytes.length, sha: [...new Uint8Array(hash)].map((x) => x.toString(16).padStart(2, '0')).join('') };
+    }
+    case 'image': {
+      // a small file that is not text, written as an image a note would name
+      const bytes = Uint8Array.from(atob(str('base64')), (c) => c.charCodeAt(0));
+      await vault().fs.writeBytes(vault().abs(str('path')), bytes);
+      return bytes.length;
+    }
+    case 'memory':
+      return await invoke<[number, number] | null>('dev_web_memory', { collect: false });
+    case 'keep': {
+      // Tweaks › keep files, by its button
+      useApp.setState({ tweaksOpen: true });
+      const row = await until(() => [...document.querySelectorAll<HTMLElement>('.tweaks .tw-row')].find((r) => r.querySelector('.tw-lbl')?.textContent === 'keep files'), 5000);
+      const button = [...row.querySelectorAll<HTMLButtonElement>('button')].find((x) => x.textContent === str('to'));
+      if (!button) throw new Error(`keep: no ${str('to')}`);
+      button.click();
+      await sleep(300);
+      const lit = row.querySelector('button[data-active="1"]')?.textContent ?? null;
+      if (!args.stay) useApp.setState({ tweaksOpen: false });
+      return lit;
     }
     case 'documents':
       return vault().documents().length;
@@ -8323,7 +8413,7 @@ async function syncSteps(name: string, args: Record<string, unknown>): Promise<u
  */
 export async function smokeSyncSecond(path2: string | null, mode = 'sync'): Promise<void> {
   const { emitTo, listen } = await import('@tauri-apps/api/event');
-  const log = (s: string) => void info(`smoke ${mode === 'crdt' ? 'crdt' : 'sync'} b: ${s}`);
+  const log = (s: string) => void info(`smoke ${mode === 'crdt' || mode === 'storage' ? mode : 'sync'} b: ${s}`);
   if (!path2) { log('failed: no ILMI_VAULT2'); return; }
   useApp.setState({ started: true, inspForced: true });
   await listen<SyncStep>('smoke-step', (ev) => {
@@ -8813,6 +8903,270 @@ export async function smokeCrdt(vault: Vault): Promise<void> {
   }
 }
 
+
+// `ILMI_SMOKE=storage` (`smokeStorage`) over `samples/double-major`, with
+// `ILMI_KIND=s3` or `webdav` (the loopback server a debug build carries,
+// shaped like a bucket or a WebDAV folder, over `ILMI_STORAGE_DIR`),
+// `ILMI_VAULT2` a name for the second collection, `ILMI_BIG` a PDF of 200 MB
+// on disk and `ILMI_SNAP=4`: milestone 63. Nothing names the storage but
+// the tweaks: in this window (a) the kind is chosen, its fields typed,
+// and `connect` pressed, and the collection, which keeps every file,
+// meets the empty storage. The second window's (b), which keeps what it
+// has opened, is made from the storage and holds no PDF: its books' rows
+// say `not here`. A grade in each lands in the other. b opens a book: its
+// PDF is fetched, and only it. a takes the big PDF in from disk and syncs:
+// it goes up by the piece, the strip saying how far; b's row says `not
+// here` and how big it is; b opens it: it comes down by the piece, and
+// its first page is drawn; the web view's memory has not grown by the
+// file. An image made in b is in a after a sync, unopened. The change
+// files pass the count: a snapshot is in the storage, and a third
+// collection made from it holds what the others hold, and no file until
+// its `keep files` is set to all.
+export async function smokeStorage(vault: Vault): Promise<void> {
+  const { emitTo, listen } = await import('@tauri-apps/api/event');
+  const { crdtOn, filesSettled, setCrdtTimers } = await import('./crdt.js');
+  const { devStorages, storageFor, storageOf } = await import('./storage.js');
+  type StoreFs = import('../vault/index.js').StoreFs;
+  let last = { at: Date.now(), what: 'start' };
+  let finished = false;
+  const log = (s: string) => { last = { at: Date.now(), what: s }; void info(`smoke storage: ${s}`); };
+  const dog = setInterval(() => {
+    if (finished) { clearInterval(dog); return; }
+    if (Date.now() - last.at > 150_000) { finished = true; clearInterval(dog); void info(`smoke storage: failed: no progress for 150 s after "${last.what}"`); }
+  }, 2000);
+  const shot = async (name: string, ms = 2500) => { await sleep(800); log(`shot: ${name}`); await sleep(ms); };
+  const q = <T extends Element>(sel: string, root: ParentNode = document) => root.querySelector<T>(sel);
+  const must = (ok: unknown, what: string) => { if (!ok) throw new Error(what); log(`ok: ${what}`); };
+  const poll = async <T,>(probe: () => T | null | undefined | false | Promise<T | null | undefined | false>, what: string, ms = 8000): Promise<T> => {
+    const t0 = Date.now();
+    for (;;) {
+      const v = await probe();
+      if (v) { log(`ok: ${what}`); return v; }
+      if (Date.now() - t0 > ms) throw new Error(`${what} (waited ${ms} ms)`);
+      await sleep(100);
+    }
+  };
+  const replies = new Map<number, (r: SyncReply) => void>();
+  let seq = 0;
+  const unlisten = await listen<SyncReply>('smoke-reply', (ev) => { replies.get(ev.payload.id)?.(ev.payload); });
+  const b = async <T,>(name: string, args: Record<string, unknown> = {}, ms = 30000): Promise<T> => {
+    const id = ++seq;
+    const reply = new Promise<SyncReply>((resolve, reject) => {
+      replies.set(id, resolve);
+      setTimeout(() => { replies.delete(id); reject(new Error(`b: ${name} (no answer in ${ms} ms)`)); }, ms);
+    });
+    await emitTo('second', 'smoke-step', { id, name, args } satisfies SyncStep);
+    const r = await reply;
+    replies.delete(id);
+    if (!r.ok) throw new Error(`b: ${name}: ${r.error}`);
+    log(`b: ${name}`);
+    return r.value as T;
+  };
+  const a = <T,>(name: string, args: Record<string, unknown> = {}) => syncSteps(name, args) as Promise<T>;
+  type State = { word: string | null; toPush: number; conflicts: { path: string; heading: string }[]; notice: string | null; log: string[]; root: string | null; documents?: number; words?: string[]; drawn?: boolean; pages?: number; took?: number };
+  type OnDisk = { name: string; size: number }[];
+  const word = () => q('.top .sync')?.textContent ?? null;
+  const VOCAB = 'arabic/vocabulary.md';
+  const NOTE = 'fleeting/idea-for-honors-thesis.md';
+  const BOOK = 'library/classical-prose-reader.md';
+  const BOOK_PDF = 'library/classical-prose-reader.pdf';
+  const OTHER_PDF = 'library/lindqvist-statistical-physics.pdf';
+  const BIG = 'library/a-big-book.md';
+  const BIG_PDF = 'library/a-big-book.pdf';
+  const srLine = (text: string, id: string) => text.split('\n').find((l, i, ls) => l.startsWith('<!-- sr') && ls[i - 1]?.endsWith(`^${id}`)) ?? null;
+  const mb = (n: number) => `${(n / 1048576).toFixed(0)} MB`;
+  /** a's change out, b's merge and its own out, a's merge. */
+  const round = async (): Promise<State> => { await a('sync'); const s = await b<State>('sync'); await a('sync'); return s; };
+  /** Until both hold the same documents: b's vault follows a merge a moment after its sync answers. */
+  const sameDocs = async (what: string) => poll(async () => JSON.stringify(await b('paths')) === JSON.stringify(await a('paths')), what, 15000);
+  try {
+    const path2 = await invoke<string | null>('dev_env', { name: 'ILMI_VAULT2' });
+    const big = await invoke<string | null>('dev_env', { name: 'ILMI_BIG' });
+    const kind = await invoke<string | null>('dev_env', { name: 'ILMI_KIND' });
+    if (!path2) throw new Error('ILMI_VAULT2 is not set');
+    if (kind !== 's3' && kind !== 'webdav') throw new Error('ILMI_KIND is not s3 or webdav');
+    if (!big) throw new Error('ILMI_BIG is not set');
+    const settings = (await devStorages())[kind];
+    setCrdtTimers(false);
+    useApp.getState().setTheme('light');
+    await poll(() => useApp.getState().docs[VOCAB] && useApp.getState().docs[NOTE], 'the sample is in the collection', 15000);
+
+    // ── the tweaks: the kind chosen, its fields typed, connect ──
+    must(!crdtOn() && word() === null, 'a: no storage yet, and the strip says nothing of one');
+    useApp.setState({ tweaksOpen: true });
+    const rowOf = (label: string) => [...document.querySelectorAll<HTMLElement>('.tweaks .tw-row')].find((r) => r.querySelector('.tw-lbl')?.firstChild?.textContent?.trim() === label);
+    const press = (row: HTMLElement | undefined, text: string) => { const x = [...(row?.querySelectorAll<HTMLButtonElement>('button') ?? [])].find((n) => n.textContent === text); if (!x || x.disabled) throw new Error(`no ${text} to press`); x.click(); };
+    const type = async (label: string, value: string) => {
+      const input = (await poll(() => rowOf(label)?.querySelector<HTMLInputElement>('input'), `a: the ${label} field`)) as HTMLInputElement;
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+      await sleep(80);
+    };
+    const storageRow = await poll(() => rowOf('storage'), 'a: the tweaks have a storage row');
+    must(storageRow.querySelector('.tw-val')?.textContent === 'off' && [...storageRow.querySelectorAll('button')].map((x) => x.textContent).join(' ') === 'folder s3 webdav', 'it reads off, and offers folder, s3 and webdav');
+    const actions = () => [...document.querySelectorAll<HTMLElement>('.tweaks .tw-row')].find((r) => [...r.querySelectorAll('button')].some((x) => x.textContent === 'connect' && r.querySelector('.tw-lbl') === null));
+    must(rowOf('keep files')?.querySelector('button[data-active="1"]')?.textContent === 'all', 'keep files reads all');
+    press(storageRow, kind);
+    await sleep(150);
+    must([...(actions()?.querySelectorAll<HTMLButtonElement>('button') ?? [])].every((x) => x.disabled), 'connect and join wait for the fields');
+    if (kind === 's3') {
+      await type('endpoint', settings.endpoint);
+      await type('bucket', settings.bucket);
+      await type('key', settings.key);
+      await type('secret', settings.secret);
+      must(rowOf('secret')?.querySelector('input')?.type === 'password', 'the secret is not shown');
+    } else {
+      await type('address', settings.address);
+      await type('user', settings.user);
+      await type('password', settings.password);
+      must(rowOf('password')?.querySelector('input')?.type === 'password', 'the password is not shown');
+    }
+    const kept = storageOf(vault.root);
+    must(kept.kind === kind && !kept.on && (kind === 's3' ? kept.secret === settings.secret && kept.bucket === settings.bucket : kept.password === settings.password && kept.address === settings.address), 'the fields are kept with the tweaks');
+    press(actions(), 'connect');
+
+    // ── a makes the storage on the server, b is made from it and keeps what it opens ──
+    await poll(() => crdtOn() && word() === 'synced', `a met the ${kind} storage and reads synced`, 60000);
+    await poll(() => useApp.getState().log.includes('storage made'), 'a: noted');
+    await poll(() => rowOf('storage')?.querySelector('.tw-val')?.textContent === 'synced' && rowOf('storage')?.querySelector<HTMLButtonElement>('button')?.disabled, 'the row reads synced, its kind held');
+    must(storageOf(vault.root).on, 'and the collection is set to sync through it');
+    await shot('storage-tweaks');
+    useApp.setState({ tweaksOpen: false });
+    const st = await storageFor(settings, vault.root);
+    const listing = await st.list('');
+    must(listing.includes('format') && listing.some((p) => /^devices\/[0-9a-f]{16}\/1$/.test(p)), `the storage holds format and a device's first file (${listing.length} files)`);
+    must(listing.filter((p) => p.startsWith('blobs/')).length === 2, 'and the two PDFs, each under its hash');
+    must((await a<string[]>('settle')).length === 0, 'a keeps every file: none is away');
+    const docsA = vault.documents().length;
+    const reviewsA = (await vault.loadReviews()).length;
+    const bs = await b<State>('join', { dest: path2, settings: { ...settings, keep: 'opened' } }, 120000);
+    must(vaultName(bs.root ?? '') === vaultName(path2) && bs.word === 'synced', `b was made from the storage as ${vaultName(path2)} and reads synced`);
+    must(bs.documents === docsA, `b holds a's ${docsA} documents (${bs.documents})`);
+    must((await b<number>('reviews')) === reviewsA, `and its ${reviewsA} lines of the log`);
+    for (const p of [VOCAB, NOTE, BOOK]) must((await b<string>('text', { path: p })) === (await a<string>('text', { path: p })), `${p} reads the same in both`);
+    must(JSON.stringify(await b('away')) === JSON.stringify([BOOK_PDF, OTHER_PDF]), 'b: both PDFs are named and neither is here');
+    must((await b<OnDisk>('blobFiles')).length === 0, 'b holds no PDF on disk');
+    must((await b<number>('size', { path: BOOK_PDF })) === (await a<number>('size', { path: BOOK_PDF })), 'b knows how big the one it does not hold is');
+    must((await b<string | null>('rowAway', { path: BOOK })) === 'not here', "b: the book's row says not here");
+    must((await a<string | null>('rowAway', { path: BOOK })) === null, "a: the book's row says nothing");
+    await shot('storage-joined');
+
+    // ── a grade in each lands in the other ──
+    const karam = await a<string>('grade', { path: VOCAB, id: 'voc-karam', g: 3 });
+    await poll(() => word() === '1 to push', 'a grade: the strip reads 1 to push');
+    const dayf = await b<string>('grade', { path: VOCAB, id: 'voc-dayf', g: 4 });
+    const merged = await round();
+    must(merged.word === 'synced' && merged.conflicts.length === 0, `b merged and wrote its own: ${merged.word}`);
+    await poll(() => word() === 'synced', 'a: synced');
+    const tA = await a<string>('text', { path: VOCAB });
+    const tB = await b<string>('text', { path: VOCAB });
+    must(srLine(tA, 'voc-karam') === karam && srLine(tB, 'voc-karam') === karam, "a's grade is in both");
+    must(srLine(tA, 'voc-dayf') === dayf && srLine(tB, 'voc-dayf') === dayf, "b's grade is in both");
+    must(tA === tB, 'the document is the same in both');
+    must((await vault.loadReviews()).length === reviewsA + 2 && (await b<number>('reviews')) === reviewsA + 2, 'the log has both grades, in both');
+    must((await st.list('devices/')).map((p) => p.split('/')[1]).filter((d, i, l) => l.indexOf(d) === i).length === 2, 'two devices have written to the storage');
+    must((await b<OnDisk>('blobFiles')).length === 0, 'b still holds no PDF: a sync fetches none');
+
+    // ── b opens a book: its PDF comes, and only it ──
+    const opened = await b<State>('openBook', { path: BOOK }, 60000);
+    must(opened.drawn, 'b: the book opens as its pages, the first drawn');
+    must(JSON.stringify(await b('away')) === JSON.stringify([OTHER_PDF]), 'b: the opened PDF is here, the other is not');
+    must((await b<OnDisk>('blobFiles')).length === 1, 'b holds one PDF on disk');
+    const shaA = await a<{ size: number; sha: string }>('sha', { path: BOOK_PDF });
+    const shaB = await b<{ size: number; sha: string }>('sha', { path: BOOK_PDF });
+    must(shaA.sha === shaB.sha && shaA.size === shaB.size, `and it is a's, byte for byte (${shaA.size} bytes)`);
+    must((await b<string | null>('rowAway', { path: BOOK })) === null, "b: the book's row no longer says not here");
+    await shot('storage-opened');
+
+    // ── a 200 MB PDF: taken in from disk, up by the piece, away in b, down by the piece when it is opened ──
+    const { tauriFs } = await import('../vault/tauri-fs.js');
+    await invoke('allow_vault', { path: big.slice(0, big.lastIndexOf('/')) });
+    const bigSize = (await tauriFs.stat(big))?.size ?? 0;
+    must(bigSize >= 200 * 1048576, `the big PDF is ${mb(bigSize)} on disk`);
+    const mem0 = await a<[number, number] | null>('memory');
+    const t0 = Date.now();
+    must(await (vault.fs as StoreFs).take(vault.abs(BIG_PDF), big), 'a: taken in as a file, not through the window');
+    await vault.fs.writeText(vault.abs(BIG), '---\ntitle: a big book\ntype: source\n---\n\nTwo hundred megabytes of pages.\n');
+    await poll(() => useApp.getState().docs[BIG], 'a: the book is in the tree');
+    log(`took: ${Date.now() - t0} ms`);
+    must((await a<number>('size', { path: BIG_PDF })) === bigSize, `a: its row says ${mb(bigSize)}`);
+    const t1 = Date.now();
+    const up = await a<State>('syncWords');
+    log(`up: ${Date.now() - t1} ms · ${up.words?.join(', ')}`);
+    must(up.words?.some((w) => /^pushing \d+%$/.test(w)), 'a: the strip said how far the file was on its way up');
+    must(up.word === 'synced', 'a: synced');
+    must((await st.list('blobs/')).length === 3, 'the storage holds it, under its hash');
+    const got = await b<State>('sync');
+    await sameDocs('b has the book');
+    must(got.word === 'synced', 'b: synced');
+    must((await b<string[]>('away')).includes(BIG_PDF), 'b: the big PDF is named, and not here');
+    must((await b<number>('size', { path: BIG_PDF })) === bigSize, `b: its row knows it is ${mb(bigSize)}`);
+    must((await b<OnDisk>('blobFiles')).length === 1, 'b still holds one PDF on disk');
+    must((await b<string | null>('rowAway', { path: BIG })) === 'not here', "b: the big book's row says not here");
+    await shot('storage-big-away');
+    const t2 = Date.now();
+    const down = await b<State>('openBook', { path: BIG, ms: 120000 }, 150000);
+    log(`down and drawn: ${Date.now() - t2} ms · ${down.words?.join(', ')}`);
+    must(down.drawn, 'b: the big book opens, its first page drawn');
+    must(down.words?.some((w) => /^pulling \d+%$/.test(w)), 'b: the strip said how far the file was on its way down');
+    const onDisk = await b<OnDisk>('blobFiles');
+    must(onDisk.length === 2 && onDisk.some((f) => f.size === bigSize), `b holds it on disk, whole (${onDisk.map((f) => mb(f.size)).join(', ')})`);
+    must(!(await b<string[]>('away')).includes(BIG_PDF) && (await b<string | null>('rowAway', { path: BIG })) === null, 'b: and its row no longer says not here');
+    const mem1 = await a<[number, number] | null>('memory');
+    if (mem0 && mem1) {
+      log(`web view: ${mb(mem0[0])} before, ${mb(mem1[0])} after; the most it held ${mb(mem0[1])} before, ${mb(mem1[1])} after`);
+      must(mem1[1] - mem0[1] < bigSize / 2, `the web view never held the file: its peak grew by ${mb(Math.max(0, mem1[1] - mem0[1]))}`);
+    } else log('web view: not weighed');
+    await shot('storage-big-open');
+
+    // ── a device that keeps every file has one after a sync, unopened ──
+    const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+    await b('image', { path: 'fleeting/figure.png', base64: png });
+    await b('sync');
+    await a('syncWords');
+    must((await a<string[]>('away')).length === 0, "a: b's image is here after the sync, unopened");
+    must((await a<{ size: number; sha: string }>('sha', { path: 'fleeting/figure.png' })).size === atob(png).length, 'and is the image');
+
+    // ── the change files pass the count: a snapshot, and a collection made from it ──
+    for (let i = 0; i < 6 && !(await st.list('snapshots/')).some((p) => p.endsWith('/head')); i++) {
+      await a('grade', { path: VOCAB, id: i % 2 ? 'voc-naqa' : 'voc-akrama', g: 3 });
+      await b('pass', { path: 'library/classical-prose-reader/15-the-merchant-who-was-robbed.md' });
+      await round();
+    }
+    const snaps = await st.list('snapshots/');
+    must(snaps.some((p) => /^snapshots\/[0-9a-f]{16}\/1\/head$/.test(p)) && snaps.some((p) => /\/1\/1$/.test(p)), `a snapshot is in the storage (${snaps.length} files)`);
+    await round();
+    const third = `${path2}-c`;
+    const cs = await b<State>('join', { dest: third, settings: { ...settings, keep: 'opened' } }, 120000);
+    must(vaultName(cs.root ?? '') === vaultName(third) && cs.word === 'synced', `a third collection was made from the storage as ${vaultName(third)}`);
+    must((cs.took ?? 0) >= 1, 'from the snapshot, in place of the files it covers');
+    await sameDocs('it holds the documents a holds');
+    for (const p of [VOCAB, NOTE, BIG]) must((await b<string>('text', { path: p })) === (await a<string>('text', { path: p })), `${p} reads the same in it`);
+    must((await b<number>('reviews')) === (await vault.loadReviews()).length, 'and the log');
+    must((await b<OnDisk>('blobFiles')).length === 0 && (await b<string[]>('away')).length === 4, 'it holds no file, and names four');
+    // ── keep files · all: the files it does not hold come ──
+    must((await b<string | null>('keep', { to: 'all', stay: true })) === 'all', 'its keep files, set to all');
+    await poll(async () => (await b<string[]>('settle')).length === 0, 'and every file comes', 120000);
+    const all = await b<OnDisk>('blobFiles');
+    must(all.length === 4 && all.some((f) => f.size === bigSize), `four files on disk, the big one whole (${all.map((f) => mb(f.size)).join(', ')})`);
+    await b('rowAway', { path: BIG });
+
+    useApp.getState().setTheme('dark');
+    await b('theme', { name: 'dark' });
+    await b('rowAway', { path: BIG });
+    await shot('storage-dark');
+    useApp.getState().setTheme('light');
+    await b('theme', { name: 'light' });
+    await filesSettled();
+    log('done');
+  } catch (e) {
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  } finally {
+    finished = true;
+    unlisten();
+  }
+}
 // `ILMI_SMOKE=nudge` (`smokeNudge`) over a fresh copy of `samples/double-major`
 // with `ILMI_VAULT2` an empty path beside it: milestone 54. The Rust side
 // starts a loopback ntfy-shaped server; this window (a) connects its copy to

@@ -7,7 +7,13 @@
 // same. Milestone 62, the tree: a rename against an edit, a move against a
 // new child, two reorderings merged row by row, a move into its own
 // descendant dropped alike everywhere, two rows of one name both shown;
-// and the random test with renames, moves, reorders and deletes.
+// and the random test with renames, moves, reorders and deletes. Milestone
+// 63: a copy that keeps the files it has opened holds no PDF until one is
+// read; a file goes by the storage's own way where it has one; the change
+// files fold into a snapshot, a new copy starts from it, and a copy that
+// was away past the day its files were deleted takes it with what it had
+// not sent; the random test with snapshots written and files deleted as
+// it goes, and a copy that joins at the end.
 
 import { promises as fsp } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -19,9 +25,9 @@ import { Vault, importFolder, join, storeFs, type StoreFs } from '../../vault/in
 import { memStore, type MemStore } from '../../vault/mem-store.js';
 import { nodeFs } from '../../vault/node-fs.js';
 import { rising } from '../../vault/store.js';
-import { bothChanged, engine, frontLines, type Engine } from '../engine.js';
+import { bothChanged, engine, frontLines, type Engine, type EngineOptions } from '../engine.js';
 import { clock, msOf } from '../clock.js';
-import { folderStorage, memStorage, type MemStorage } from '../storage.js';
+import { folderStorage, memStorage, type MemStorage, type Storage } from '../storage.js';
 
 const SAMPLE = fileURLToPath(new URL('../../../samples/double-major', import.meta.url));
 const CORPUS = fileURLToPath(new URL('../../format/__tests__/corpus/vault', import.meta.url));
@@ -45,13 +51,13 @@ interface Copy {
 let made = 0;
 const T0 = Date.parse('2026-11-05T09:00:00Z');
 
-async function copy(name: string, from?: string): Promise<Copy> {
+async function copy(name: string, from?: string, opts: Partial<EngineOptions> = {}): Promise<Copy> {
   const store = memStore();
   const fs = storeFs(store, ROOT);
   if (from) await importFolder(nodeFs, from, fs, ROOT);
   const at = { ms: T0 };
   const n = ++made;
-  const eng = engine(fs, { loro, now: () => at.ms, newDevice: () => n.toString(16).padStart(16, '0') });
+  const eng = engine(fs, { loro, now: () => at.ms, newDevice: () => n.toString(16).padStart(16, '0'), ...opts });
   const read = (rel: string) => fs.readText(join(ROOT, rel));
   const write = (rel: string, text: string) => fs.writeText(join(ROOT, rel), text);
   return {
@@ -85,7 +91,7 @@ async function settle(storage: MemStorage, copies: Copy[]): Promise<void> {
     let moved = 0;
     for (const c of copies) {
       const r = await c.eng.sync(storage);
-      moved += r.read + r.wrote;
+      moved += r.read + r.wrote + r.took;
     }
     if (!moved) return;
   }
@@ -846,6 +852,300 @@ function rng(seed: number): () => number {
   };
 }
 
+describe('big files and snapshots (milestone 63)', () => {
+  const BOOK = 'library/classical-prose-reader.pdf';
+  const OTHER = 'library/lindqvist-statistical-physics.pdf';
+  /** What differs between two copies, the order's file read for what it says (the copy that imported it keeps it as it came, 60's rule). */
+  const apart = async (x: Copy, y: Copy): Promise<string[]> => {
+    const [fx, fy] = [await x.files(), await y.files()];
+    const order = (f: Map<string, string>): string => JSON.stringify(Object.entries(JSON.parse(text(f.get('.ilmi/order.json')) || '{}') as Record<string, string[]>).sort(([p], [q]) => (p < q ? -1 : 1)));
+    const out = order(fx) === order(fy) ? [] : [`.ilmi/order.json:\n${order(fx)}\n${order(fy)}`];
+    fx.delete('.ilmi/order.json');
+    fy.delete('.ilmi/order.json');
+    return [...out, ...differences(fx, fy)];
+  };
+  const docsOf = async (c: Copy): Promise<Map<string, string>> => {
+    const out = new Map<string, string>();
+    for (const r of c.fs.door.rows()) if (r.kind === 'doc') out.set(c.fs.door.pathOf(r), await c.read(c.fs.door.pathOf(r)));
+    return out;
+  };
+
+  it('a copy that keeps what it has opened holds no PDF until one is read', async () => {
+    const storage = memStorage();
+    const a = await copy('a', SAMPLE);
+    await a.eng.connect(storage);
+    await a.eng.sync(storage);
+    const b = await copy('b', undefined, { keep: () => 'opened' });
+    await b.eng.connect(storage);
+    await b.eng.sync(storage);
+    expect(b.store.blobs.size).toBe(0);
+    expect(b.fs.away()).toEqual([BOOK, OTHER]);
+    expect(b.fs.isAway(join(ROOT, BOOK))).toBe(true);
+    expect(await b.eng.away()).toHaveLength(2);
+    // the row is there, and says how big its file is
+    expect((await b.fs.stat(join(ROOT, BOOK)))?.size).toBe((await a.fs.stat(join(ROOT, BOOK)))?.size);
+    expect(await docsOf(b)).toEqual(await docsOf(a));
+    // with no way to the storage a read says the file is not here
+    await expect(b.fs.readBytes(join(ROOT, BOOK))).rejects.toThrow('not here');
+    // with one, the read brings it, and only it
+    const told: string[] = [];
+    await b.fs.watch(ROOT, (paths) => told.push(...paths));
+    b.fs.door.fetcher(async (hash) => { await b.eng.fetch(storage, hash); });
+    const [one, two] = await Promise.all([b.fs.readBytes(join(ROOT, BOOK)), b.fs.readBytes(join(ROOT, BOOK))]);
+    expect(Buffer.from(one!).equals(Buffer.from(await a.fs.readBytes(join(ROOT, BOOK))))).toBe(true);
+    expect(two!.length).toBe(one!.length);
+    expect(b.store.blobs.size).toBe(1);
+    expect(b.fs.away()).toEqual([OTHER]);
+    await new Promise((r) => setTimeout(r, 60));
+    expect(told).toContain(join(ROOT, BOOK));
+    // a sync fetches nothing more
+    await b.eng.sync(storage);
+    expect(b.store.blobs.size).toBe(1);
+    // a copy that keeps every file has them after its sync
+    const c = await copy('c');
+    await c.eng.connect(storage);
+    await c.eng.sync(storage);
+    expect(c.store.blobs.size).toBe(2);
+    expect(c.fs.away()).toEqual([]);
+    expect(await apart(a, c)).toEqual([]);
+  });
+
+  it('a book whose PDF is not here is deleted, put back and copied without its bytes', async () => {
+    const storage = memStorage();
+    const a = await copy('a', SAMPLE);
+    await a.eng.connect(storage);
+    await a.eng.sync(storage);
+    const b = await copy('b', undefined, { keep: () => 'opened' });
+    await b.eng.connect(storage);
+    await b.eng.sync(storage);
+    let fetched = 0;
+    b.fs.door.fetcher(async (hash) => { fetched += 1; await b.eng.fetch(storage, hash); });
+    const vault = await Vault.open(b.fs, ROOT);
+    const removed = await vault.remove('library/classical-prose-reader.md');
+    expect(removed.files.find((f) => f.path === BOOK)?.ref).toMatch(/^[0-9a-f]{64}$/);
+    expect(await b.fs.stat(join(ROOT, BOOK))).toBeNull();
+    await vault.restore(removed);
+    expect(b.fs.away()).toEqual([BOOK, OTHER]);
+    const dup = await vault.duplicate('library/lindqvist-statistical-physics.md');
+    expect(b.fs.away()).toEqual([BOOK, dup.replace(/\.md$/, '.pdf'), OTHER].sort());
+    expect(fetched).toBe(0);
+    expect(b.store.blobs.size).toBe(0);
+    // and the other copy has the book again, and the copy of the other, with their pages
+    await settle(storage, [b, a]);
+    expect(Buffer.from(await a.fs.readBytes(join(ROOT, dup.replace(/\.md$/, '.pdf')))).equals(Buffer.from(await a.fs.readBytes(join(ROOT, OTHER))))).toBe(true);
+    expect((await a.fs.stat(join(ROOT, BOOK)))?.size).toBeGreaterThan(1000);
+  });
+
+  it('a file whose bytes are not in the storage yet is named all the same, and comes when they are', async () => {
+    const { a, b, storage } = await pair();
+    const bytes = new Uint8Array(70_000).map((_, i) => (i * 31) % 251);
+    await a.fs.writeBytes(join(ROOT, 'library/scan.pdf'), bytes);
+    await a.eng.sync(storage);
+    const path = [...storage.files.keys()].filter((p) => p.startsWith('blobs/')).find((p) => storage.files.get(p)!.length === bytes.length)!;
+    const held = storage.files.get(path)!;
+    storage.files.delete(path);
+    const r = await b.eng.sync(storage);
+    expect(r.read).toBe(1);
+    expect(b.fs.away()).toEqual(['library/scan.pdf']);
+    expect((await b.fs.stat(join(ROOT, 'library/scan.pdf')))?.size).toBe(bytes.length);
+    expect(await b.eng.fetchAll(storage)).toEqual({ fetched: 0, left: 1 });
+    // a file that is not what its name says is not kept
+    storage.files.set(path, new Uint8Array([1, 2, 3]));
+    await expect(b.eng.fetch(storage, path.slice('blobs/'.length))).rejects.toThrow('not what its name says');
+    expect(b.fs.away()).toEqual(['library/scan.pdf']);
+    storage.files.set(path, held);
+    await b.eng.sync(storage);
+    expect(b.fs.away()).toEqual([]);
+    expect(Buffer.from(await b.fs.readBytes(join(ROOT, 'library/scan.pdf'))).equals(Buffer.from(bytes))).toBe(true);
+  });
+
+  it('a storage with its own way for files is given them by name, and the engine never holds their bytes', async () => {
+    const storage = memStorage();
+    const a = await copy('a', SAMPLE);
+    const b = await copy('b');
+    const ups: string[] = [];
+    const downs: string[] = [];
+    const wrote: string[] = [];
+    const reads: string[] = [];
+    const tracked: Storage = {
+      list: (p) => storage.list(p),
+      read: (p) => { reads.push(p); return storage.read(p); },
+      write: (p, bytes) => { wrote.push(p); return storage.write(p, bytes); },
+      remove: (p) => storage.remove(p),
+    };
+    const sa: Storage = { ...tracked, up: async (hash) => { ups.push(hash); storage.files.set(`blobs/${hash}`, a.store.blobs.get(hash)!); } };
+    const sb: Storage = { ...tracked, down: async (hash) => { downs.push(hash); const bytes = storage.files.get(`blobs/${hash}`); if (!bytes) return false; await b.store.blobPut(bytes); return true; } };
+    await a.eng.connect(sa);
+    await a.eng.sync(sa);
+    expect(ups).toHaveLength(2);
+    expect(a.store.calls.blobGet).toBe(0);
+    expect(wrote.filter((p) => p.startsWith('blobs/'))).toEqual([]);
+    await b.eng.connect(sb);
+    await b.eng.sync(sb);
+    expect(downs.sort()).toEqual([...ups].sort());
+    expect(reads.filter((p) => p.startsWith('blobs/'))).toEqual([]);
+    expect(await apart(a, b)).toEqual([]);
+  });
+
+  it('the change files fold into a snapshot when they pass a count, and a new copy starts from it', async () => {
+    const opts = { snapAfter: 6, snapWorth: 3 };
+    const storage = memStorage();
+    const a = await copy('a', SAMPLE, opts);
+    await a.eng.connect(storage);
+    await a.eng.sync(storage);
+    const b = await copy('b', undefined, opts);
+    await b.eng.connect(storage);
+    await b.eng.sync(storage);
+    const before = [...storage.files.keys()].filter((p) => p.startsWith('devices/')).length;
+    let snapped = 0;
+    for (let i = 0; i < 6 && !snapped; i++) {
+      a.at.ms += 60_000;
+      b.at.ms += 60_000;
+      await grade(a, VOCAB, 'voc-karam', 3);
+      await b.change('arabic/roots.md', (doc) => { doc.blocks.push({ kind: 'paragraph', text: `A thought b had, ${i}.` }); });
+      // a folder moved into another and a document deleted: a snapshot carries the tree and what is gone from it
+      if (i === 0) await a.fs.rename(join(ROOT, 'fleeting'), join(ROOT, 'physics/fleeting'));
+      if (i === 1) await b.fs.remove(join(ROOT, 'physics/derivation-drills.md'));
+      for (const c of [a, b, a]) if ((await c.eng.sync(storage)).snapped) snapped += 1;
+    }
+    expect(snapped).toBe(1);
+    const heads = [...storage.files.keys()].filter((p) => /^snapshots\/[0-9a-f]+\/1\/head$/.test(p));
+    expect(heads).toHaveLength(1);
+    const head = JSON.parse(text(Buffer.from(storage.files.get(heads[0]!)!).toString('base64'))) as { covers: Record<string, number>; parts: number };
+    const all = [...storage.files.keys()].filter((p) => p.startsWith('devices/'));
+    expect(all.length).toBeGreaterThan(before);
+    // it covers every file there was when it was written, which had passed the count
+    const covered = Object.values(head.covers).reduce((x, y) => x + y, 0);
+    expect(covered).toBeGreaterThanOrEqual(opts.snapAfter);
+    expect(covered).toBeLessThanOrEqual(all.length);
+    await settle(storage, [a, b]);
+    // a new copy reads the snapshot and none of the files it covers, and has nothing of its own to say
+    const reads: string[] = [];
+    const tracked: Storage = { ...storage, list: (p) => storage.list(p), read: (p) => { reads.push(p); return storage.read(p); }, write: (p, x) => storage.write(p, x), remove: (p) => storage.remove(p) };
+    const c = await copy('c', undefined, opts);
+    c.at.ms = a.at.ms;
+    await c.eng.connect(tracked);
+    const r = await c.eng.sync(tracked);
+    expect(r.took).toBe(1);
+    expect(r.wrote).toBe(0);
+    for (const p of reads.filter((x) => x.startsWith('devices/'))) {
+      const [, dev, n] = p.split('/');
+      expect(Number(n), p).toBeGreaterThan(head.covers[dev!] ?? 0);
+    }
+    expect(await apart(a, c)).toEqual([]);
+    expect(await apart(a, b)).toEqual([]);
+    expect([...(await c.files()).keys()].some((p) => p.startsWith('physics/fleeting/'))).toBe(true);
+    expect(await c.fs.stat(join(ROOT, 'physics/derivation-drills.md'))).toBeNull();
+    const paths = (x: Copy): string[] => x.fs.door.rows().map((r) => x.fs.door.pathOf(r)).filter((q) => q !== '.ilmi/state.json').sort();
+    expect(paths(c)).toEqual(paths(a));
+    // a copy that holds all a snapshot covers has no use for it
+    expect((await a.eng.sync(storage)).took).toBe(0);
+    // and what the new copy does from here on reaches the others
+    await grade(c, VOCAB, 'voc-dayf', 4);
+    await settle(storage, [c, a, b]);
+    expect(srOf(await a.read(VOCAB), 'voc-dayf')).toBe(srOf(await c.read(VOCAB), 'voc-dayf'));
+    expect(await apart(a, c)).toEqual([]);
+  });
+
+  it('what a snapshot covers is deleted thirty days on, and a copy that was away takes the snapshot with what it had not sent', async () => {
+    const opts = { snapAfter: 5, snapWorth: 50 };
+    const DAY = 86_400_000;
+    const storage = memStorage();
+    const a = await copy('a', SAMPLE, opts);
+    await a.eng.connect(storage);
+    await a.eng.sync(storage);
+    const b = await copy('b', undefined, opts);
+    const c = await copy('c', undefined, opts);
+    for (const x of [b, c]) { await x.eng.connect(storage); await x.eng.sync(storage); }
+    // c goes away with work it has not sent: a grade, a paragraph changed, a document made, a rename
+    await grade(c, VOCAB, 'voc-dayf', 4);
+    await c.change(NOTE, (doc) => { const p = doc.blocks.find((x) => x.kind === 'paragraph')!; (p as { text: string }).text += ' And c thought so too, while away.'; });
+    await c.write('fleeting/written-away.md', '---\ntype: draft\n---\n\nWritten on a train.\n');
+    await c.fs.rename(join(ROOT, 'physics/derivation-drills.md'), join(ROOT, 'physics/drills.md'));
+    // meanwhile a and b work, and one of them writes a snapshot
+    let snapped = 0;
+    for (let i = 0; i < 8 && !snapped; i++) {
+      a.at.ms += 60_000;
+      b.at.ms += 60_000;
+      await grade(a, VOCAB, 'voc-karam', 3);
+      await b.change(NOTE, (doc) => { const p = doc.blocks.find((x) => x.kind === 'paragraph')!; (p as { text: string }).text = `Meanwhile b began it otherwise (${i}). ${(p as { text: string }).text}`; });
+      await a.change('physics/derivation-drills.md', (doc) => { doc.blocks.push({ kind: 'paragraph', text: `a kept drilling, ${i}.` }); });
+      for (const x of [a, b, a]) if ((await x.eng.sync(storage)).snapped) snapped += 1;
+    }
+    expect(snapped).toBe(1);
+    const devices = (): string[] => [...storage.files.keys()].filter((p) => p.startsWith('devices/'));
+    const had = devices().length;
+    // twenty-nine days on, every file is still there
+    for (const x of [a, b]) x.at.ms += 29 * DAY;
+    expect((await a.eng.sync(storage)).dropped).toBe(0);
+    expect(devices().length).toBe(had);
+    // on the thirty-first, what the snapshot covers goes
+    for (const x of [a, b]) x.at.ms += 2 * DAY;
+    const tidied = await b.eng.sync(storage);
+    expect(tidied.dropped).toBeGreaterThanOrEqual(had - 2);
+    expect(devices().length).toBeLessThanOrEqual(2);
+    await settle(storage, [a, b]);
+    expect(await apart(a, b)).toEqual([]);
+    // c comes back: the files it had not read are gone, the snapshot is there
+    c.at.ms += 31 * DAY + 600_000;
+    const back = await c.eng.sync(storage);
+    expect(back.took).toBe(1);
+    expect(back.wrote).toBeGreaterThanOrEqual(1);
+    await settle(storage, [a, b, c]);
+    expect(await apart(a, c)).toEqual([]);
+    expect(await apart(a, b)).toEqual([]);
+    // nothing of c's is lost and nothing of the others'
+    const note = await a.read(NOTE);
+    expect(note).toContain('And c thought so too, while away.');
+    expect(note).toContain('Meanwhile b began it otherwise (0).');
+    expect(await a.read('fleeting/written-away.md')).toContain('Written on a train.');
+    expect(srOf(await a.read(VOCAB), 'voc-dayf')).toBe(srOf(await c.read(VOCAB), 'voc-dayf'));
+    expect(srOf(await c.read(VOCAB), 'voc-karam')).toBe(srOf(await a.read(VOCAB), 'voc-karam'));
+    // the rename c made and the paragraphs a added to the document are one document
+    expect(await a.fs.stat(join(ROOT, 'physics/derivation-drills.md'))).toBeNull();
+    expect(await b.read('physics/drills.md')).toContain('a kept drilling, 0.');
+    // a later snapshot covers the first, which goes with what it covered thirty days after
+    for (let i = 0; i < 8; i++) {
+      for (const x of [a, b, c]) x.at.ms += 60_000;
+      await grade(a, VOCAB, 'voc-naqa', 3);
+      await grade(b, VOCAB, 'voc-akrama', 3);
+      for (const x of [a, b, c, a]) await x.eng.sync(storage);
+    }
+    const snapshots = (): string[] => [...storage.files.keys()].filter((p) => /^snapshots\/.*\/head$/.test(p));
+    expect(snapshots().length).toBeGreaterThanOrEqual(2);
+    for (const x of [a, b, c]) x.at.ms += 31 * DAY;
+    await settle(storage, [a, b, c]);
+    await a.eng.sync(storage);
+    expect(snapshots().length).toBeGreaterThanOrEqual(1);
+    expect(snapshots().length).toBeLessThan(3);
+    // a copy made now starts from what is left, and is the same collection
+    const d = await copy('d', undefined, opts);
+    d.at.ms = a.at.ms;
+    await d.eng.connect(storage);
+    await d.eng.sync(storage);
+    await settle(storage, [a, b, c, d]);
+    expect(await apart(a, d)).toEqual([]);
+  });
+
+  it('a file read while it is still being written is not taken for whole', async () => {
+    const { a, b, storage } = await pair();
+    await grade(a, VOCAB, 'voc-karam', 3);
+    await a.change(NOTE, (doc) => { doc.blocks.push({ kind: 'paragraph', text: 'A second write, for a second line.' }); });
+    await a.eng.sync(storage);
+    const path = [...storage.files.keys()].filter((p) => p.startsWith('devices/')).sort().pop()!;
+    const whole = storage.files.get(path)!;
+    const lines = Buffer.from(whole).toString('utf8').split('\n');
+    expect(lines.length).toBeGreaterThanOrEqual(4);
+    // cut at the end of a line: every line of it reads, and it is one short
+    storage.files.set(path, new Uint8Array(Buffer.from(`${lines.slice(0, 2).join('\n')}\n`)));
+    expect((await b.eng.sync(storage)).read).toBe(0);
+    expect(srOf(await b.read(VOCAB), 'voc-karam')).not.toBe(srOf(await a.read(VOCAB), 'voc-karam'));
+    storage.files.set(path, whole);
+    expect((await b.eng.sync(storage)).read).toBe(1);
+    expect(await apart(a, b)).toEqual([]);
+  });
+});
+
 describe('copies making random edits and syncing in random orders', () => {
   const random = { math: Math.random, crypto: globalThis.crypto.getRandomValues };
   afterEach(() => {
@@ -884,12 +1184,15 @@ describe('copies making random edits and syncing in random orders', () => {
       globalThis.crypto.getRandomValues = ((b: Uint8Array) => { for (let i = 0; i < b.length; i++) b[i] = Math.floor(ids() * 256); return b; }) as typeof globalThis.crypto.getRandomValues;
       const pick = <T,>(list: readonly T[]): T => list[Math.floor(rnd() * list.length)]!;
       const storage = memStorage();
-      const first = await copy('a', CORPUS);
+      // one seed in three (every one with `ILMI_SNAPS=1`) folds its change files into snapshots as it goes and deletes what they cover a
+      // quarter of an hour on: copies read snapshots in place of files, and of files that are gone
+      const snaps: Partial<EngineOptions> = seed % 3 === 0 || process.env.ILMI_SNAPS ? { snapAfter: 4, snapWorth: 3, snapKeepMs: 15 * 60_000 } : {};
+      const first = await copy('a', CORPUS, snaps);
       await first.eng.connect(storage);
       await first.eng.sync(storage);
       const copies = [first];
       for (const name of ['b', 'c']) {
-        const c = await copy(name);
+        const c = await copy(name, undefined, snaps);
         await c.eng.connect(storage);
         await c.eng.sync(storage);
         copies.push(c);
@@ -978,9 +1281,19 @@ describe('copies making random edits and syncing in random orders', () => {
         if (rnd() < 0.35) await pick(copies).eng.sync(storage);
       }
       await settle(storage, [...copies].sort(() => rnd() - 0.5));
+      if (snaps.snapAfter) {
+        // a copy made now, from whatever the storage still holds, is the same collection
+        const late = await copy('d', undefined, snaps);
+        late.at.ms = Math.max(...copies.map((c) => c.at.ms));
+        await late.eng.connect(storage);
+        await late.eng.sync(storage);
+        copies.push(late);
+        await settle(storage, copies);
+      }
       const files = await Promise.all(copies.map((c) => shown(c)));
       expect(differences(files[0]!, files[1]!)).toEqual([]);
       expect(differences(files[0]!, files[2]!)).toEqual([]);
+      if (files[3]) expect(differences(files[0]!, files[3])).toEqual([]);
       // and every document still reads as one: what a copy made from the storage holds is what the format writes
       for (const [path, b] of await copies[1]!.files()) if (path.endsWith('.md') && !path.startsWith('.')) expect(serialize(parse(text(b)).doc), path).toBe(text(b));
       // nothing is twice: no two rows of one copy are shown under one path

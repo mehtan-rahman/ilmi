@@ -224,6 +224,15 @@
   flex-shrink: 0;
   margin-left: 4px;
 }
+/* a book whose PDF is not on this device (milestone 63): it comes when the book is opened */
+.tree .row .away {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--fg-5);
+  white-space: nowrap;
+  flex-shrink: 0;
+  margin-left: 4px;
+}
 .tree .row .asking {
   font-family: var(--sans);
   font-size: 11px;

@@ -6760,7 +6760,8 @@ expiring weekly); the Developer Program for 65's iCloud; an iPad or
 iPhone on a cable for 66 (a free team's seven-day install is enough).
 
 Order: 59 → 60 → 61 → 62 → 63, on the Mac. Then the iPad, because ink is
-what GoodNotes is: 57 → 58 → 67. Then 64, the phone (56), and 68. 65
+what GoodNotes is: 57 → 58 → 67, then 69 (the user's, 2026-11-06: ink
+where the Pencil lands). Then 64, the phone (56), and 68. 65
 when the Developer Program is joined. 66 as soon after 63 as the user
 has a device to plug in; nothing real is kept on the engine before it.
 
@@ -7848,6 +7849,55 @@ two collections are all there on both.
 *Done when:* in the 115,000-card collection a word, an unvoweled Arabic
 word, and a phrase are each found in under a tenth of a second, and the
 sample's five files holding كرم are all found.
+
+### [ ] 69. Ink where the Pencil lands — writing with nothing to open
+Asked for by the user on 2026-11-06, after 58 and 67: "This impelmentation
+looks weird? like i'd rather have it feel like goodnotes where i can just
+write ink wherever vs having to insert ink image or smthn". Asked which of
+three they meant in a note, they chose ink inline in the note, and 58's
+`draw` and its full-screen canvas removed. They did not choose a layer of
+ink over a note's text, or a document of blank notebook pages; neither is
+built here. The same holds on a book's page, where 67 opens a canvas over
+the page at the Pencil's first touch (a touch that is not a stroke) and
+closes it at `done`: that is the thing they called weird, and it goes too.
+- **The Pencil put to a note on the iPad writes there.** An ink area opens
+  in the flow of the text at that place (between the blocks nearest it,
+  inside the section it is in) and the stroke that opened it is its first.
+  It grows downward as the writing nears its lower edge. Nothing is chosen
+  first: no menu, no full screen, no `done`. A finger scrolls the note and
+  taps to place the caret, as now; the Pencil in an ink area that is there
+  adds to it, and in the text elsewhere opens another.
+- **The Pencil put to a book's page writes there**, on the page where it
+  stands among the others: its first touch is its first stroke, the pages
+  scroll under a finger with the writing on them, a finger still boxes a
+  passage after its hold (57), and there is no canvas over the page to
+  open or to close.
+- **The tools** are the system's tool picker, shown while ink is being
+  written and gone when the caret is back in the text or the Pencil has
+  been away a while.
+- **Kept as 58 and 67 keep it**: the strokes are rows, saved when the
+  writing has been quiet and when it is left; a note's line
+  `![working](name/ink-NN.png)` is written with the first stroke kept, and
+  an area with every stroke erased leaves no line. The format, the store
+  and the engine do not change; a page 58 made is an area like any other,
+  and what 67 wrote on a page is there to be written beside.
+- **58's `draw` goes** from the heading's menu and the insert menu, and
+  the full-screen canvas with it, in a note and over a book's page. A tap
+  on a page's picture opens nothing: the ink is live where it is.
+- The Mac shows the pictures, as now.
+- Not in this milestone: ink over a note's text, tied to its paragraphs;
+  blank notebook pages; ink drawn with a finger (a dev run's smoke may let
+  a finger stand in for the Pencil, as 58's did, since the simulator makes
+  no Pencil); where a book's page ink goes in an export (67 left it for
+  the user).
+
+*Done when:* on a simulated iPad the (simulated) Pencil put down between
+two paragraphs of a note writes there with nothing chosen first, the area
+grows as the writing goes down, and the note scrolls under a finger with
+the area in it; put down on a page of the sample's book its first touch
+is a stroke on that page and the pages scroll with it; both are on the
+Mac, the one between the same two paragraphs and the other on the same
+page; and `draw` and `done` are nowhere.
 
 ## Notes for the next session
 

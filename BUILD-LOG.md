@@ -6,6 +6,108 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-11-06 — the user on ink; milestone 69 written
+
+No code. The user looked at ink as 58 and 67 made it and said: "This
+impelmentation looks weird? like i'd rather have it feel like goodnotes
+where i can just write ink wherever vs having to insert ink image or
+smthn". Asked what that means in a note (three ways were put to them),
+they chose ink inline in the note, the area opening where the Pencil
+lands and growing as they write, and 58's `draw` and its full-screen
+canvas removed. They did not choose ink over a note's text or blank
+notebook pages. Earlier the same day they had accepted that on a book's
+page the Pencil writes, a finger scrolls and boxes after its hold, and a
+mouse boxes. 67 then built the page's writing as a canvas opened over
+the page by the Pencil's first touch and closed by `done`, and asked
+whether that was right: by what they said, it is not. Milestone 69 in
+PLAN.md is both: the Pencil's first touch is a stroke, in a note and on
+a book's page, with nothing to open and nothing to close. It runs next,
+before 64.
+
+67 itself was checked again from a clean checkout of `70f80e9` by the
+session that runs the loop (its `pageink` chain; the numbers are under
+67's entry below when they differ).
+
+Handoff prompt for the next session:
+
+```
+Read PLAN.md, FORMAT.md, BUILD-LOG.md, and spec/hashiyah/HANDOFF.md. The
+section of PLAN.md in progress is "A database under the app, synced by
+CRDT to any storage" (59–69); its introduction holds the decisions and
+the order, and 59's to 63's notes say how it stands (a collection is an
+SQLite database, `Vault` unchanged over an `Fs` that src/vault/store.ts
+makes from its rows; an engine, src/sync/engine.ts, told of every write,
+merging registers by a hybrid clock and text through Loro; a storage
+chosen in the tweaks). After 63 came 57, 58 and 67 (done); the order now
+is 69, then 64, 56 and 68 (65 and 66 wait for things only the user has;
+52 waits for the user). Do milestone 69, "Ink where the Pencil lands —
+writing with nothing to open", and only that one. Stop at its "done
+when". Then tick it, write notes for the next session under it, add an
+entry to BUILD-LOG.md with a fresh handoff prompt (for 64: the prompt in
+67's entry below is the one to carry forward, brought up to date), and
+commit. Rules as in PLAN.md's ground rules: export
+PATH=$HOME/.cargo/bin:/opt/homebrew/bin:$PATH; npm test and npm run
+typecheck green before a commit, and cargo test in src-tauri (the app's
+46 and `-p tauri-plugin-ink`'s 5), cargo check for both iOS targets when
+Rust or Swift changes; one commit per milestone; ask before a screen,
+section, or setting the brief does not name; a FORMAT change needs a
+corpus file and a test (69 names none). Read 69's own text first: it is
+the user's words and their choices, and it says what is not to be built
+(ink over a note's text, blank notebook pages). Then 58's and 67's
+notes, and 57's and 55's for the simulator and the touch rig. What is
+there to change: 58's canvas is a full-screen `PKCanvasView` over the
+web view (src-tauri/ink/ios, `open` and `peek`; src/app/ink.ts runs it:
+`draw` in a heading's long-press menu and the insert menu, a tap on a
+page's picture reopens it, kept when quiet 2.5 s and at `done`); 67
+opens the same canvas over a book's page at the Pencil's first touch,
+the page's picture under it (`writeOn` in src/app/ink.ts, `pagePress` in
+src/app/touch.ts, the plugin's `open` with `paper`), and lays a picture
+of a page's strokes over the page everywhere (`PageInk` in
+src/app/Pdf.tsx). What stays: a page of ink is its strokes (the store's
+`ink` table, by a note's page or by `p.<the PDF's SHA-256>.<page>`; a
+register a stroke in the engine; a stroke named by a hash), the note's
+line `![working](name/ink-NN.png)`, the Mac making its pictures from the
+strokes. The work is the interaction: ink live in place, in a web view
+that scrolls. Decide and say before building how a canvas stays where
+its area or its page is while the web view scrolls and the text reflows
+(a native view that follows the page's layout, one for what is on
+screen; or something else), measure what a stroke's first touch costs
+(the time from the Pencil's touch to ink, the first touch not lost), and
+say plainly what could only be judged with a real Pencil. Xcode 27.2's
+test runner makes fingers only: a simulated Pencil is an event the smoke
+makes or the rig's finger on a canvas told to take one for the run; the
+Pencil itself is not exercised, and that has to be said. The simulator
+does not finish booting, and `simctl launch` does not return, while the
+Mac's screen is locked; a locked screen stalls the Mac's window or
+leaves it unpainted: wait for it, do not skip, and look at what a
+capture shows. The first rig touch after a boot can be dropped: run
+again before believing it. An app left open on the simulator loads its
+page again when a dev server comes back on 1420 and runs the last
+`smoke.json` from the top: stop it after each run. The smokes `ink`
+(46 on the iPad, 4 and 20 on the Mac) and `pageink` (56 and 25 on the
+iPad, 16 and 23 on the Mac) assert the canvas, `draw` and `done` that 69
+removes: rewrite them for what 69 builds, keep what they prove about
+the strokes crossing between two collections, and say their new counts.
+Keep `touch` (70; 4 and 9), `book` (52), `books` (71; it failed once in
+67's chain at "the caret is still in the section after the write-up" and
+passed twice after: run it again before believing either), `tour` (23,
+on the Mac and the simulator), `crdt` (72), `storage` (76 over s3),
+`store` (its export equal to the sample by `diff -r`) passing, and the
+random test in src/sync/__tests__/engine.test.ts (`ILMI_SEEDS=1-500`,
+and with `ILMI_SNAPS=1`). The Mac's window checks run from a clean
+checkout of main with the dev identifier override. Never kill a process
+on port 1420 that is not yours, and run the simulator's dev server or
+the Mac's, not both; stop your own app binary by pid when a run ends,
+capture the Mac only by window id. Open for the user, not to be built
+without their word: where what is written on a book's pages goes in an
+exported folder; whether a page of ink should be a kind of row of its
+own; whether a finger boxes after a hold (57); a way to join a storage
+on the iPad's welcome; whether `join…` and the buttons under the
+storage's fields stay where 63 put them; 62's "settings that merge".
+```
+
+---
+
 ## 2026-11-06 — milestone 67: ink on the page
 
 Done on main: `70f80e9`. On an iPad the Pencil's touch on a book's page

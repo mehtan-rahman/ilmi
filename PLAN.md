@@ -6760,8 +6760,10 @@ expiring weekly); the Developer Program for 65's iCloud; an iPad or
 iPhone on a cable for 66 (a free team's seven-day install is enough).
 
 Order: 59 → 60 → 61 → 62 → 63, on the Mac. Then the iPad, because ink is
-what GoodNotes is: 57 → 58 → 67, then 69 (the user's, 2026-11-06: ink
-where the Pencil lands). Then 64, the phone (56), and 68. 65
+what GoodNotes is: 57 → 58 → 67, then the user's two of 2026-11-06:
+70 (a book's pages fill the window) and 69 (ink where the Pencil lands),
+70 first, since 69 lays live ink over pages whose width 70 changes.
+Then 64, the phone (56), and 68. 65
 when the Developer Program is joined. 66 as soon after 63 as the user
 has a device to plug in; nothing real is kept on the engine before it.
 
@@ -7898,6 +7900,43 @@ the area in it; put down on a page of the sample's book its first touch
 is a stroke on that page and the pages scroll with it; both are on the
 Mac, the one between the same two paragraphs and the other on the same
 page; and `draw` and `done` are nowhere.
+
+### [ ] 70. A book's pages fill the window
+Asked for by the user on 2026-11-06, the same afternoon as 69: "Is it not
+possible to have the pdf reader also be a little seamless as well? I
+would kinda like if the pdf window was fuller / no rightside bar or
+aything (both mobile and desktop)". Shown three layouts, they chose the
+pages alone, with the tree as it is and the notes on demand (not the
+notes kept beside the pages, and not the tree folded away as well).
+- **A book open is its pages.** On the Mac and on the iPad, upright or on
+  its side, a document with pages opens with the pages across the whole
+  pane: no notes beside them and no inspector. The pages are drawn to the
+  pane's width, up to a width a page is still read at, and centred past
+  it. The tree keeps its place and its fold, as now.
+- **The notes come in over the pages from the right** when they are asked
+  for, and fold away again: by the key that shows and hides them today on
+  the Mac, by the edge swipe 57 built on the iPad, and by whatever goes
+  to a section (a box made a section, `show in book` and `show boxes
+  here` from the other side, a queue's item that is a section of the
+  book). A tap or a click beside them, the same key, or the swipe back
+  folds them. This is 57's portrait behaviour made the one behaviour.
+- **The inspector is closed when a book opens.** Its own toggle still
+  opens it, for the book's fields and its passages in book order; it is
+  not shown otherwise, and opening another kind of document leaves it as
+  that document had it.
+- A session over a book reads the same way: the pages, and the notes in
+  over them when the item is a section.
+- Not in this milestone: a text source's layout, the tree's, a reader
+  with no chrome at all (the choice not taken); zoom; two pages side by
+  side.
+
+*Done when:* on the Mac and on a simulated iPad, upright and on its side,
+a chapter of the sample's book opens with its pages across the pane and
+nothing beside them; a passage boxed and made a section brings the notes
+in over the pages with the section in them, and they fold away again;
+the inspector opens only by its toggle; and the smokes that read a book
+(`book`, `books`, `touch`, `pageink`, `tour`) pass, rewritten where they
+looked for the notes beside the pages.
 
 ## Notes for the next session
 

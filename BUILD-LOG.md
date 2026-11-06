@@ -6,6 +6,84 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-11-06 — the user on the reader; milestone 70 written, before 69
+
+No code. The user, the same afternoon: "Is it not possible to have the
+pdf reader also be a little seamless as well? I would kinda like if the
+pdf window was fuller / no rightside bar or aything (both mobile and
+desktop)". Shown three layouts for an open book (the pages alone with
+the notes on demand; the pages and the notes without the inspector; the
+pages with the tree folded away too), they chose the first. Milestone 70
+in PLAN.md is that. It runs before 69: 69 lays live ink over a book's
+pages, and 70 changes how wide those pages are and where the notes are,
+so the ink is built once, over the layout that stays. 67's `pageink`
+chain was run again from a clean checkout of `70f80e9` by the session
+that runs the loop and matched 67's entry: 16 and 23 on the Mac, 56 and
+25 on the simulated iPad.
+
+Handoff prompt for the next session:
+
+```
+Read PLAN.md, FORMAT.md, BUILD-LOG.md, and spec/hashiyah/HANDOFF.md. The
+section of PLAN.md in progress is "A database under the app, synced by
+CRDT to any storage" (59–70); its introduction holds the decisions and
+the order. After 63 came 57, 58 and 67 (done); the order now is 70, then
+69, then 64, 56 and 68 (65 and 66 wait for things only the user has; 52
+waits for the user). Do milestone 70, "A book's pages fill the window",
+and only that one. Stop at its "done when". Then tick it, write notes
+for the next session under it, add an entry to BUILD-LOG.md with a fresh
+handoff prompt (for 69: the prompt in the entry below this one, "the
+user on ink; milestone 69 written", is the one to carry forward, brought
+up to date with what 70 changed about a book's pages, its notes and the
+smokes' counts), and commit. Rules as in PLAN.md's ground rules: export
+PATH=$HOME/.cargo/bin:/opt/homebrew/bin:$PATH; npm test and npm run
+typecheck green before a commit, and cargo test in src-tauri (the app's
+46 and `-p tauri-plugin-ink`'s 5), cargo check for both iOS targets if
+Rust or Swift changes (70 should need neither); one commit per
+milestone; ask before a screen, section, or setting the brief does not
+name; a FORMAT change needs a corpus file and a test (70 names none).
+Read 70's own text first: it is the user's words and the layout they
+chose of three, and it says what is not to be built. Then 48's and 49's
+notes (the book beside its notes: src/app/Pdf.tsx, the notes column,
+`show in book`, `show boxes here`), 57's (the notes sliding in over the
+pages in portrait on the iPad: src/app/platform.ts, layout.ts, the edge
+swipe, the tap beside them) and 67's (`PageInk` over a page). 70 makes
+57's portrait behaviour the one behaviour, on the Mac and on the iPad
+either way up, and closes the inspector when a book opens. Say in the
+notes what key shows and hides the notes on the Mac (the strip reads
+`show notes` / `hide notes` today), how wide a page is drawn before it
+is centred, and what a session over a book does. The smokes that read a
+book look for the notes beside the pages: rewrite them where they do,
+keep what they prove, and say their new counts: `book` (52), `books`
+(71; it failed once in 67's chain at "the caret is still in the section
+after the write-up" and passed twice after: run it again before
+believing either), `touch` (70 on the iPad; 4 and 9 on the Mac),
+`pageink` (56 and 25 on the iPad, 16 and 23 on the Mac), `ink` (46; 4
+and 20), `tour` (23, on the Mac and the simulator). Keep `crdt` (72),
+`storage` (76 over s3) and `store` (its export equal to the sample by
+`diff -r`) passing; they should not be touched. The simulator's checks
+need the touch rig (scripts/touch-rig; 57's notes): Xcode 27.2's test
+runner makes fingers only. The simulator does not finish booting, and
+`simctl launch` does not return, while the Mac's screen is locked; a
+locked screen stalls the Mac's window or leaves it unpainted: wait for
+it, do not skip, and look at what a capture shows. The first rig touch
+after a boot can be dropped: run again before believing it. An app left
+open on the simulator loads its page again when a dev server comes back
+on 1420 and runs the last `smoke.json` from the top: stop it after each
+run. The Mac's window checks run from a clean checkout of main with the
+dev identifier override. Never kill a process on port 1420 that is not
+yours, and run the simulator's dev server or the Mac's, not both; stop
+your own app binary by pid when a run ends, capture the Mac only by
+window id. Open for the user, not to be built without their word: where
+what is written on a book's pages goes in an exported folder; whether a
+page of ink should be a kind of row of its own; whether a finger boxes
+after a hold (57); a way to join a storage on the iPad's welcome;
+whether `join…` and the buttons under the storage's fields stay where 63
+put them; 62's "settings that merge".
+```
+
+---
+
 ## 2026-11-06 — the user on ink; milestone 69 written
 
 No code. The user looked at ink as 58 and 67 made it and said: "This
@@ -39,8 +117,9 @@ SQLite database, `Vault` unchanged over an `Fs` that src/vault/store.ts
 makes from its rows; an engine, src/sync/engine.ts, told of every write,
 merging registers by a hybrid clock and text through Loro; a storage
 chosen in the tweaks). After 63 came 57, 58 and 67 (done); the order now
-is 69, then 64, 56 and 68 (65 and 66 wait for things only the user has;
-52 waits for the user). Do milestone 69, "Ink where the Pencil lands —
+is 70 (done before this one is taken up), 69, then 64, 56 and 68 (65
+and 66 wait for things only the user has; 52 waits for the user). Do
+milestone 69, "Ink where the Pencil lands —
 writing with nothing to open", and only that one. Stop at its "done
 when". Then tick it, write notes for the next session under it, add an
 entry to BUILD-LOG.md with a fresh handoff prompt (for 64: the prompt in

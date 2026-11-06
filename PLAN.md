@@ -7914,12 +7914,16 @@ notes kept beside the pages, and not the tree folded away as well).
   pane's width, up to a width a page is still read at, and centred past
   it. The tree keeps its place and its fold, as now.
 - **The notes come in over the pages from the right** when they are asked
-  for, and fold away again: by the key that shows and hides them today on
-  the Mac, by the edge swipe 57 built on the iPad, and by whatever goes
-  to a section (a box made a section, `show in book` and `show boxes
-  here` from the other side, a queue's item that is a section of the
-  book). A tap or a click beside them, the same key, or the swipe back
-  folds them. This is 57's portrait behaviour made the one behaviour.
+  for, and fold away again. The user, when shown this: "Should have
+  option to open notes though". So there is something to press, on the
+  Mac and the iPad alike: `notes` among the words over the pages (where
+  `tabs` and `study` are), which opens them and, pressed again, folds
+  them. Beside it, as now: the key that shows and hides them on the Mac,
+  the edge swipe 57 built on the iPad, and whatever goes to a section (a
+  box made a section, `show in book` and `show boxes here` from the
+  other side, a queue's item that is a section of the book). A tap or a
+  click beside them, the same key, or the swipe back folds them. This is
+  57's portrait behaviour made the one behaviour.
 - **The inspector is closed when a book opens.** Its own toggle still
   opens it, for the book's fields and its passages in book order; it is
   not shown otherwise, and opening another kind of document leaves it as
@@ -7932,8 +7936,9 @@ notes kept beside the pages, and not the tree folded away as well).
 
 *Done when:* on the Mac and on a simulated iPad, upright and on its side,
 a chapter of the sample's book opens with its pages across the pane and
-nothing beside them; a passage boxed and made a section brings the notes
-in over the pages with the section in them, and they fold away again;
+nothing beside them; `notes` over the pages opens the notes and folds
+them; a passage boxed and made a section brings the notes in over the
+pages with the section in them, and they fold away again;
 the inspector opens only by its toggle; and the smokes that read a book
 (`book`, `books`, `touch`, `pageink`, `tour`) pass, rewritten where they
 looked for the notes beside the pages.

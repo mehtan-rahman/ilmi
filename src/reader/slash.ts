@@ -6,7 +6,8 @@
 // ⌘Z puts the typed text back. Block rows turn the block the caret is in
 // (headings, lists, a quote: the commands the keys run); insert rows put a
 // block in (code, a display formula, a rule, a table, an image); the card
-// rows turn the paragraph into a card's shape.
+// rows turn the paragraph into a card's shape. Where there is a canvas
+// (an iPad, milestone 58) `draw` is a row too: a page of ink.
 
 import type { Node as PMNode } from 'prosemirror-model';
 import { EditorState, Plugin, PluginKey, Selection, TextSelection, type Command, type Transaction } from 'prosemirror-state';
@@ -57,6 +58,15 @@ export const SLASH_ITEMS: SlashItem[] = [
   { id: 'both', label: 'both ways', md: ':::', aliases: ['reverse', 'bidirectional', 'card', 'two ways'], where: ['paragraph'] },
 ];
 
+/** A page of ink: a row only where there is a canvas, after `image`. */
+export const DRAW_ITEM: SlashItem = { id: 'draw', label: 'draw', md: '![]()', aliases: ['ink', 'pencil', 'sketch', 'working', 'canvas'], where: ALL };
+
+let canvas = false;
+/** Whether there is a canvas to draw on (an iPad's). Said once, at launch. */
+export function setCanvas(on: boolean): void {
+  canvas = on;
+}
+
 /** How well `q` names `item`: lower is better, null when it does not. */
 function rank(item: SlashItem, q: string): number | null {
   if (!q) return 0;
@@ -74,7 +84,7 @@ function rank(item: SlashItem, q: string): number | null {
 /** The rows for `query` where the caret is, best first, the menu's order kept among equals. */
 export function slashItems(query: string, where: SlashContext): SlashItem[] {
   const q = query.toLowerCase().trim();
-  return SLASH_ITEMS
+  return (canvas ? SLASH_ITEMS.flatMap((it) => (it.id === 'image' ? [it, DRAW_ITEM] : [it])) : SLASH_ITEMS)
     .filter((it) => it.where.includes(where))
     .map((it, i) => ({ it, i, r: rank(it, q) }))
     .filter((x): x is { it: SlashItem; i: number; r: number } => x.r !== null)
@@ -171,6 +181,8 @@ export const TABLE_SKELETON = '|  |  |\n| --- | --- |\n|  |  |';
 
 /** Set on the transaction when the image row was picked: the reader asks for the file and puts it in at the caret. */
 export const askImageKey = new PluginKey('askImage');
+/** Set when the draw row was picked: the reader opens the canvas, and the page's line goes under the heading the caret is under. */
+export const askDrawKey = new PluginKey('askDraw');
 
 function run(item: SlashItem, tr: Transaction, opts: SlashOptions): void {
   switch (item.id) {
@@ -209,6 +221,9 @@ function run(item: SlashItem, tr: Transaction, opts: SlashOptions): void {
     }
     case 'image':
       tr.setMeta(askImageKey, true);
+      return;
+    case 'draw':
+      tr.setMeta(askDrawKey, true);
       return;
     case 'cloze': {
       const { $from } = tr.selection;

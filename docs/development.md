@@ -228,6 +228,26 @@ itself. `src/app/touch.ts` holds the three timings (a finger's hold before
 a box, the long press, how long a touch rests before the system's own
 selection is kept off).
 
+`ILMI_SMOKE=ink` (milestone 58) is three runs over one storage folder in
+the same way. The Mac first (`ILMI_VAULT`, `ILMI_STORAGE`), then the
+simulator with `{"mode": "ink", "storage": "<that folder>"}` and
+`TEST_RUNNER_MODE=ink`: a long press on a section's heading in a book's
+notes, `draw`, strokes on the canvas, `done`, a tap on the picture, two
+more strokes, `done`; its `page:` lines say what the page weighs as strokes
+and as a PNG, and its `ink:` line the heading and the count. Then the Mac
+again with `ILMI_VAULT=<the collection's own folder> ILMI_EXPECT=<the
+heading> ILMI_STROKES=<the count>`: the page is under the heading as a
+picture the Mac made from the strokes. The canvas is PencilKit's
+(`src-tauri/ink`: `ios/` is the Swift package Tauri builds into the app,
+`native/ink.m` what reads a drawing as strokes and draws them, on the Mac
+too). A simulator has no Pencil, and the canvas takes a finger only when a
+dev run's smoke is what opened it (`finger`, `src/app/ink.ts`); otherwise
+it is the system's, where the Pencil draws. `npm run fixture:ink` writes
+the corpus's page again (PencilKit on the Mac), and `cargo test -p
+tauri-plugin-ink` in `src-tauri` runs what reads a drawing; `-- --ignored
+--nocapture a_page_weighed` prints a made-up page's bytes as strokes and
+as a PNG.
+
 ## Building the installer
 
 `npm run tauri build` makes the macOS app and its installer:
@@ -268,7 +288,7 @@ src/plugins/       the plugin runtime (api.ts is the typed handle, runtime.ts th
 src/sync/          engine.ts merges a collection's changes by CRDT (registers by a clock, a document's text through Loro, the tree and each directory's order from the registers, change files and snapshots in a storage, the PDFs fetched when asked for; src/app/crdt.ts runs it, src/app/storage.ts makes the storages); merge.ts is git sync's merge of one file changed on both devices, src/app/sync.ts its policy over the Rust commands
 plugins/           the plugins the repo ships, built by `npm run plugins`; ilmi.d.ts is the API; see PLUGINS.md
 scripts/           command-line tools, run with tsx
-src-tauri/         the shell (Tauri v2, fs + dialog + http + deep-link + single-instance + opener + log plugins; store.rs is a collection's SQLite and blobs, storage.rs an S3 bucket or a WebDAV folder as a storage (and a blob sent or fetched as a stream), devstore.rs the debug build's loopback servers shaped like each, anki.rs reads a package, epub.rs a book, plugin.rs a plugin zip, sync.rs a folder as a git repository over libgit2); gen/apple is the iOS project
+src-tauri/         the shell (Tauri v2, fs + dialog + http + deep-link + single-instance + opener + log plugins, and ink/, its own: the PencilKit canvas on iOS and a drawing read as strokes; store.rs is a collection's SQLite and blobs, storage.rs an S3 bucket or a WebDAV folder as a storage (and a blob sent or fetched as a stream), devstore.rs the debug build's loopback servers shaped like each, anki.rs reads a package, epub.rs a book, plugin.rs a plugin zip, sync.rs a folder as a git repository over libgit2); gen/apple is the iOS project
 ```
 
 ## The documents

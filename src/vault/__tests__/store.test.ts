@@ -15,7 +15,8 @@ import { formatReview, parseReviews, setField, type Card, type Doc, type Review 
 import { gradeItem, queueItems, type CardItem } from '../../schedule/index.js';
 import { MIRROR_LIST, Vault, join, exportFolder, importFolder, mirrorDirIn, mirrorFolder, mirrorPass, splitFront, storeFs, takeFiles, type Row, type StoreFs } from '../index.js';
 import { DIGEST_MARK } from '../lift.js';
-import { memStore, type MemStore } from '../mem-store.js';
+import { memDrawing, memPicture, memSplit, memStore, type MemStore } from '../mem-store.js';
+import { STORE_VERSION, isInk, type InkStroke } from '../store.js';
 import { nodeFs } from '../node-fs.js';
 
 const CORPUS = fileURLToPath(new URL('../../format/__tests__/corpus/vault', import.meta.url));
@@ -542,7 +543,7 @@ describe('state in rows', () => {
     await put('r', '2026-10.jsonl', 'file', 'l', log);
     const fs = storeFs(old, ROOT);
     expect(await fs.readText(`${ROOT}/deck.md`)).toBe(deck);
-    expect(await old.version()).toBe(3);
+    expect(await old.version()).toBe(STORE_VERSION);
     expect(await old.text('d')).not.toContain('<!-- sr');
     expect(old.tables.state.get('d')!.map((x) => x.kind).sort()).toEqual(['card', 'read']);
     expect((await fs.digests()).get('deck.md')!.blocks[0]).toMatchObject({ kind: 'card', id: 'c1', sched: { due: '2026-11-07' } });
@@ -558,7 +559,7 @@ describe('state in rows', () => {
     expect(files.get('.ilmi/order.json')!.toString()).toBe(order);
     expect(files.get('.ilmi/reviews/2026-10.jsonl')!.toString()).toBe(log);
     // a collection from a newer ilmi is not opened
-    await expect(storeFs(memStore(4), ROOT).readDir(ROOT)).rejects.toThrow('newer');
+    await expect(storeFs(memStore(STORE_VERSION + 1), ROOT).readDir(ROOT)).rejects.toThrow('newer');
   });
 
   it('a collection of milestone 60 opens as it is: the engine\'s tables are the only thing it lacked', async () => {
@@ -569,7 +570,7 @@ describe('state in rows', () => {
     const puts = was.calls.put;
     const fs = storeFs(was, ROOT);
     expect(await fs.readText(`${ROOT}/german.md`)).toBe(await fsp.readFile(joinPath(CORPUS, 'german.md'), 'utf8'));
-    expect(await was.version()).toBe(3);
+    expect(await was.version()).toBe(STORE_VERSION);
     // nothing was taken apart again
     expect(was.calls.put).toBe(puts);
   });
@@ -676,5 +677,107 @@ describe('files that are named and not here (milestone 63)', () => {
     expect(store.calls.blobGet).toBe(reads);
     expect(Buffer.from(await fs.readBytes(join(ROOT, 'library/copy.pdf'))).equals(whole)).toBe(true);
     expect(await fs.ref!(join(ROOT, 'arabic/vocabulary.md'))).toBeNull();
+  });
+});
+
+describe('ink (milestone 58)', () => {
+  const NOTE = 'fleeting/worked-example.md';
+  const PAGE = 'fleeting/worked-example/ink-01.pkdrawing';
+  const PICTURE = 'fleeting/worked-example/ink-01.png';
+  const stroke = (n: number): InkStroke => ({ stroke: `s${n}`, at: 1000 + n, data: Buffer.from(`stroke ${n}`).toString('base64') });
+  const names = async (fs: StoreFs, dir: string): Promise<string[]> => (await fs.readDir(join(ROOT, dir))).map((e) => e.name).sort();
+
+  it('the corpus\'s page comes in as its two files and goes out as them, byte for byte', async () => {
+    const { fs, store } = await collection(CORPUS);
+    const rows = await rowsByPath(store);
+    // a drawing that came in as a file is a file: nothing has to read PencilKit's bytes to keep it
+    expect(rows.get(PAGE)!.blob).not.toBeNull();
+    expect(isInk(rows.get(PAGE)!)).toBe(false);
+    expect(await fs.ink(join(ROOT, PAGE))).toBeNull();
+    const out = await tmp('ink-out');
+    await exportFolder(fs, ROOT, nodeFs, out);
+    const [want, got] = [await filesOf(CORPUS), await filesOf(out)];
+    for (const p of [NOTE, PAGE, PICTURE]) expect(got.get(p)!.equals(want.get(p)!), p).toBe(true);
+    // FORMAT.md §4: the note names the picture, and the drawing is beside it under the same name
+    expect(parse(want.get(NOTE)!.toString('utf8')).doc.blocks.some((b) => b.kind === 'paragraph' && b.text === '![working](worked-example/ink-01.png)')).toBe(true);
+  });
+
+  it('a page drawn is a row and its strokes; the drawing and the picture are made when they are read', async () => {
+    const { fs, store } = await collection(CORPUS);
+    const page = join(ROOT, 'german/ink-01.pkdrawing');
+    expect(await fs.setInk(page, [stroke(1), stroke(2)])).toEqual({ added: 2, removed: 0 });
+    const row = (await rowsByPath(store)).get('german/ink-01.pkdrawing')!;
+    expect(isInk(row)).toBe(true);
+    expect(store.blobs.size).toBe((await collection(CORPUS)).store.blobs.size);
+    // both files are there to whoever lists, stats or reads, and only one is a row
+    expect(await names(fs, 'german')).toEqual(['ink-01.pkdrawing', 'ink-01.png']);
+    expect((await store.rows()).filter((r) => r.parent === row.parent).map((r) => r.name)).toEqual(['ink-01.pkdrawing']);
+    expect(await fs.stat(join(ROOT, 'german/ink-01.png'))).toMatchObject({ isDir: false });
+    expect(await fs.readBytes(page)).toEqual(memDrawing([stroke(1), stroke(2)]));
+    expect(await fs.readBytes(join(ROOT, 'german/ink-01.png'))).toEqual(memPicture([stroke(1), stroke(2)]));
+    expect(await fs.ink(join(ROOT, 'german/ink-01.png'))).toEqual([stroke(1), stroke(2)]);
+    // the canvas gives back what it holds: a stroke it had is left alone, a new one is added, one erased goes
+    const again = memSplit(await fs.readBytes(page)).map((x) => ({ ...x, data: `${x.data}AA` }));
+    const stamp = (await fs.stat(page))!;
+    expect(await fs.setInk(page, again)).toEqual({ added: 0, removed: 0 });
+    expect(await fs.stat(page)).toEqual(stamp);
+    expect(await fs.setInk(page, [again[1]!, stroke(3)])).toEqual({ added: 1, removed: 1 });
+    expect((await fs.ink(page))!.map((x) => x.stroke)).toEqual(['s2', 's3']);
+    expect((await fs.ink(page))![0]!.data).toBe(stroke(2).data);
+    expect((await fs.stat(page))!.mtimeMs).toBeGreaterThan(stamp.mtimeMs);
+    // a picture written beside a page is not kept: the strokes make it
+    await fs.writeBytes(join(ROOT, 'german/ink-01.png'), new Uint8Array([1, 2, 3]));
+    expect(await fs.readBytes(join(ROOT, 'german/ink-01.png'))).toEqual(memPicture([stroke(2), stroke(3)]));
+    // an export writes the two files; brought in again they are files, and the same bytes go out
+    const out = await tmp('ink-export');
+    await exportFolder(fs, ROOT, nodeFs, out);
+    const got = await filesOf(out);
+    expect(got.get('german/ink-01.pkdrawing')!.equals(Buffer.from(memDrawing([stroke(2), stroke(3)])))).toBe(true);
+    expect(got.get('german/ink-01.png')!.equals(Buffer.from(memPicture([stroke(2), stroke(3)])))).toBe(true);
+    const back = await collection(out);
+    const out2 = await tmp('ink-export-2');
+    await exportFolder(back.fs, ROOT, nodeFs, out2);
+    const got2 = await filesOf(out2);
+    expect([...got2.keys()].sort()).toEqual([...got.keys()].sort());
+    for (const [p, b] of got) if (b) expect(got2.get(p)!.equals(b), p).toBe(true);
+    // the page goes with its row, and its strokes with it
+    await fs.remove(page);
+    expect(await names(fs, 'german').catch(() => [])).toEqual([]);
+    expect(await store.ink(row.id)).toEqual([]);
+  });
+
+  it('a drawing kept as a file becomes a page of strokes when it is drawn on, and moves with its note', async () => {
+    const { fs, store } = await collection(CORPUS);
+    const blobs = store.blobs.size;
+    await fs.setInk(join(ROOT, PAGE), [stroke(1)]);
+    const rows = await rowsByPath(store);
+    expect(isInk(rows.get(PAGE)!)).toBe(true);
+    // the picture that came in beside it is gone as a row: the one the strokes make is read in its place
+    expect(rows.has(PICTURE)).toBe(false);
+    expect(await fs.readBytes(join(ROOT, PICTURE))).toEqual(memPicture([stroke(1)]));
+    expect(store.blobs.size).toBe(blobs);
+    await fs.rename(join(ROOT, NOTE), join(ROOT, 'essays/worked.md'));
+    expect(await names(fs, 'essays/worked')).toEqual(['ink-01.pkdrawing', 'ink-01.png']);
+    expect(await fs.ink(join(ROOT, 'essays/worked/ink-01.pkdrawing'))).toEqual([stroke(1)]);
+    // a file written over a page is that file from now on
+    await fs.writeBytes(join(ROOT, 'essays/worked/ink-01.pkdrawing'), new Uint8Array([9, 9]));
+    expect(await fs.ink(join(ROOT, 'essays/worked/ink-01.pkdrawing'))).toBeNull();
+    expect(await fs.readBytes(join(ROOT, 'essays/worked/ink-01.pkdrawing'))).toEqual(new Uint8Array([9, 9]));
+    // and the picture its strokes made is a file beside it
+    expect(await names(fs, 'essays/worked')).toEqual(['ink-01.pkdrawing', 'ink-01.png']);
+    expect((await rowsByPath(store)).get('essays/worked/ink-01.png')!.blob).not.toBeNull();
+    expect(await fs.readBytes(join(ROOT, 'essays/worked/ink-01.png'))).toEqual(memPicture([stroke(1)]));
+  });
+
+  it('a note deleted with its page and put back has the drawing and its picture', async () => {
+    const { fs } = await collection(CORPUS);
+    await fs.setInk(join(ROOT, PAGE), [stroke(1), stroke(2)]);
+    const vault = await Vault.open(fs, ROOT);
+    const removed = await vault.remove(NOTE);
+    expect(await fs.stat(join(ROOT, PAGE))).toBeNull();
+    await vault.restore(removed);
+    // put back as the two files an export would have written: the strokes are in the drawing
+    expect(memSplit(await fs.readBytes(join(ROOT, PAGE))).map((x) => x.stroke)).toEqual(['s1', 's2']);
+    expect(await fs.readBytes(join(ROOT, PICTURE))).toEqual(memPicture([stroke(1), stroke(2)]));
   });
 });

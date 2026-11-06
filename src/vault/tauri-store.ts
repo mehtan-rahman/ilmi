@@ -6,7 +6,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import type { Doc } from '../format/index.js';
 import type { Original } from './lift.js';
-import type { DocContent, Reg, Row, Store } from './store.js';
+import type { DocContent, InkStroke, Reg, Row, Store } from './store.js';
 
 export function tauriStore(root: string): Store {
   return {
@@ -31,6 +31,8 @@ export function tauriStore(root: string): Store {
     blobGet: async (hash) => new Uint8Array(await invoke<ArrayBuffer>('store_blob_get', { root, hash })),
     blobHas: (hash) => invoke<boolean>('store_blob_has', { root, hash }),
     blobsAway: () => invoke<[string, number][]>('store_blobs_away', { root }),
+    ink: (page) => invoke<InkStroke[]>('store_ink', { root, page }),
+    inkFile: async (page, what) => new Uint8Array(await invoke<ArrayBuffer>('store_ink_file', { root, page, what })),
     blobTake: (path) => invoke<{ hash: string; size: number }>('store_blob_take', { root, path }),
     blobRange: async (hash, begin, end) => new Uint8Array(await invoke<ArrayBuffer>('store_blob_range', { root, hash, begin, end })),
     batch: (ops) => invoke<Row[]>('store_batch', { root, ops }),

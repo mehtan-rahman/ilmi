@@ -494,6 +494,39 @@ fn store_blob_get(app: tauri::AppHandle, stores: tauri::State<'_, store::Stores>
     stores.blob_get(&collection_dir(&app, &root)?, &hash).map(tauri::ipc::Response::new)
 }
 
+/// A page of ink's strokes (milestone 58), in the order they were drawn.
+#[tauri::command(async)]
+fn store_ink(app: tauri::AppHandle, stores: tauri::State<'_, store::Stores>, root: String, page: String) -> Result<Vec<store::InkStroke>, String> {
+    stores.ink(&collection_dir(&app, &root)?, &page)
+}
+
+/// A page of ink as a file, made from its strokes: `drawing` (what PencilKit opens) or `picture` (a PNG).
+#[tauri::command(async)]
+fn store_ink_file(app: tauri::AppHandle, stores: tauri::State<'_, store::Stores>, root: String, page: String, what: String) -> Result<tauri::ipc::Response, String> {
+    stores.ink_file(&collection_dir(&app, &root)?, &page, &what).map(tauri::ipc::Response::new)
+}
+
+/// A PencilKit drawing (base64) as its strokes, each with the name it keeps across saves.
+#[tauri::command(async)]
+fn ink_split(drawing: String) -> Result<Vec<store::InkStroke>, String> {
+    use base64::Engine as _;
+    let b64 = base64::engine::general_purpose::STANDARD;
+    let bytes = b64.decode(drawing).map_err(|e| e.to_string())?;
+    Ok(tauri_plugin_ink::split(&bytes)?.into_iter().map(|s| store::InkStroke { stroke: s.key, at: s.at, data: b64.encode(s.data) }).collect())
+}
+
+/// The canvas over the web view (iOS), until `done`: the drawing it held. `finger` lets a finger draw, for a check on a simulator.
+#[tauri::command]
+async fn ink_open(ink: tauri::State<'_, tauri_plugin_ink::Ink<tauri::Wry>>, drawing: Option<String>, finger: Option<bool>) -> Result<tauri_plugin_ink::Page, String> {
+    ink.open(tauri_plugin_ink::Open { drawing, finger: finger.unwrap_or(false) }).await
+}
+
+/// The open canvas: how many strokes it holds, and its drawing once it has changed and been left alone for `quiet_ms`.
+#[tauri::command]
+async fn ink_peek(ink: tauri::State<'_, tauri_plugin_ink::Ink<tauri::Wry>>, quiet_ms: u32) -> Result<tauri_plugin_ink::Page, String> {
+    ink.peek(quiet_ms).await
+}
+
 #[tauri::command(async)]
 fn store_regs_page(app: tauri::AppHandle, stores: tauri::State<'_, store::Stores>, root: String, after: Option<String>, limit: i64) -> Result<Vec<store::Reg>, String> {
     stores.regs_page(&collection_dir(&app, &root)?, after.as_deref(), limit)
@@ -813,8 +846,9 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_ink::init())
         .manage(store::Stores::default())
-        .invoke_handler(tauri::generate_handler![allow_vault, allow_hidden, read_dropped, read_dropped_bytes, read_anki_package, read_epub, read_plugin_zip, platform, dev_env, dev_web_memory, dev_nudge_serve, dev_nudge_drop, dev_nudge_listeners, set_recent_vaults, store_list, store_create, store_delete, store_rows, store_text, store_put, store_remove, store_version, store_set_version, store_doc, store_places, store_digests, store_review_files, store_reviews, store_reviews_put, store_same, store_same_put, store_originals, store_original_put, store_blob_put, store_blob_get, store_batch, store_meta, store_regs, store_regs_under, store_crdt, store_outbox, store_outbox_count, store_blob_has, store_regs_page, store_blobs_away, store_blob_take, store_blob_range, storage_list, storage_read, storage_write, storage_remove, storage_blob_up, storage_blob_down, dev_storage_serve, zip_folder, sync_status, sync_init, sync_init_bare, sync_set_remote, sync_clone, sync_changes, sync_commit, sync_fetch, sync_merge, sync_resolve, sync_push])
+        .invoke_handler(tauri::generate_handler![allow_vault, allow_hidden, read_dropped, read_dropped_bytes, read_anki_package, read_epub, read_plugin_zip, platform, dev_env, dev_web_memory, dev_nudge_serve, dev_nudge_drop, dev_nudge_listeners, set_recent_vaults, store_list, store_create, store_delete, store_rows, store_text, store_put, store_remove, store_version, store_set_version, store_doc, store_places, store_digests, store_review_files, store_reviews, store_reviews_put, store_same, store_same_put, store_originals, store_original_put, store_blob_put, store_blob_get, store_batch, store_meta, store_regs, store_regs_under, store_crdt, store_outbox, store_outbox_count, store_blob_has, store_regs_page, store_blobs_away, store_blob_take, store_blob_range, store_ink, store_ink_file, ink_split, ink_open, ink_peek, storage_list, storage_read, storage_write, storage_remove, storage_blob_up, storage_blob_down, dev_storage_serve, zip_folder, sync_status, sync_init, sync_init_bare, sync_set_remote, sync_clone, sync_changes, sync_commit, sync_fetch, sync_merge, sync_resolve, sync_push])
         .setup(|app| {
             // Windows and Linux learn the scheme at run time; macOS reads it
             // from the bundle's Info.plist, which Tauri writes from the

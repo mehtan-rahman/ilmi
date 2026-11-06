@@ -1,0 +1,16 @@
+[package]
+name = "tauri-plugin-ink"
+version = "0.1.0"
+description = "ilmi's ink: a PencilKit canvas over the web view on iOS, and a drawing taken apart into strokes, put together, and drawn as a picture wherever PencilKit is"
+edition = "2021"
+rust-version = "1.90"
+links = "tauri-plugin-ink"
+publish = false
+
+[build-dependencies]
+tauri-plugin = { version = "2", features = ["build"] }
+cc = "1"
+
+[dependencies]
+tauri = { version = "2.11.3", features = [] }
+serde = { version = "1.0", features = ["derive"] }

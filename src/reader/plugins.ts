@@ -217,6 +217,13 @@ function imageWidget(src: string, alt: string, state: ImageState): (view: { disp
       img.src = state.url;
       img.alt = alt;
       img.draggable = false;
+      // what it was written as: a tap on a page of ink finds its drawing by it, and its strokes are drawn for the theme
+      img.dataset.src = src;
+      if (/(^|\/)ink-\d+\.png$/i.test(src.split(/[?#]/)[0] ?? '')) {
+        img.dataset.ink = '1';
+        // a page of ink is drawn at two pixels a point: shown at the size it was written, where the page is wide enough
+        img.onload = () => { if (img.naturalWidth) img.style.width = `${img.naturalWidth / 2}px`; };
+      }
       img.onerror = () => { view.dispatch(view.state.tr.setMeta(imagesKey, { src, state: 'broken' } satisfies ImagesMeta)); };
       return img;
     }

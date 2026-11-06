@@ -192,6 +192,11 @@ function onWrite(): void {
   writeTimer = setTimeout(() => { writeTimer = null; void crdtNow().catch(() => {}); }, WRITE_QUIET_MS);
 }
 
+/** A write the vault does not announce (a page of ink's strokes, milestone 58): synced as any write is, once it has been quiet. */
+export function crdtWrote(): void {
+  if (open) onWrite();
+}
+
 function onFocus(): void {
   if (!open || !timers || Date.now() - lastSync < FOCUS_GAP_MS) return;
   void crdtNow().catch(() => {});

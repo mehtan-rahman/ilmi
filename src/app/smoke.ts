@@ -224,6 +224,11 @@
 // read there under touches the touch rig makes (a passage boxed by a held
 // finger becomes a section), and the Mac finds the section after a sync
 // (`ILMI_EXPECT`; see the functions).
+// `ILMI_SMOKE=ink` (`smokeInk` on an iPad, `smokeInkMac` on the Mac,
+// milestone 58), over a storage folder as `touch` is: a page of working is
+// drawn under a section's heading on the iPad's canvas, kept as strokes,
+// reopened and drawn on again, and the Mac finds it under the same heading
+// as a picture it makes from the strokes (`ILMI_EXPECT`, `ILMI_STROKES`).
 // `ILMI_SMOKE=ipad` (`smokeIpad`, milestone 55) starts at the iPad's
 // welcome, on a simulated iPad from `smoke.json` in the app's Documents
 // (`{"mode": "ipad", "remote": "/path/to/bare.git"}`) or in the Mac's
@@ -9886,6 +9891,310 @@ export async function smokeTouchMac(vault: Vault): Promise<void> {
     const head = await poll(() => Array.from(document.querySelectorAll<HTMLElement>('.pane[data-active="1"] .book-notes .dd-h')).find((h) => h.textContent?.includes(expect.slice(0, 12))), 'and its heading is in the notes');
     head.scrollIntoView({ block: 'center' });
     await shot('touch-mac-section');
+    log(`done; collection ${vault.root}, storage ${dir}`);
+  } catch (e) {
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+// `ILMI_SMOKE=ink`: milestone 58's "done when", in three runs over one
+// storage folder, as `touch` is.
+//  1. The Mac (`ILMI_VAULT` a copy of the sample, `ILMI_STORAGE` an empty
+//     folder): its collection makes the storage. `smokeInkMac`.
+//  2. The iPad (`smokeInk`, `{"mode": "ink", "storage": "<the folder>"}`):
+//     a collection made from the storage, the chapter opened and its notes
+//     brought in. Then under touches the rig makes: a long press on a
+//     section's heading, `draw` in its menu, the canvas over the page,
+//     strokes drawn with a finger (a simulator has no Pencil: the canvas
+//     takes a finger because this is a dev run's check), the page kept
+//     when the canvas goes quiet while it is still open, `done`; the
+//     picture under the heading in the notes; a tap on it and the canvas
+//     again with the strokes it had, two more drawn, `done`: only those
+//     two are written, the rest keep their names. What the page weighs as
+//     strokes and as a picture is logged (`page: …`), and it is synced.
+//  3. The Mac again (`ILMI_VAULT` its collection's own folder,
+//     `ILMI_EXPECT` the heading, `ILMI_STROKES` how many): after a sync the
+//     page is under the same heading, its picture made here from the
+//     strokes, and the drawing an export writes reads back as them.
+export async function smokeInk(): Promise<void> {
+  type StoreFs = import('../vault/index.js').StoreFs;
+  let last = { at: Date.now(), what: 'start' };
+  let finished = false;
+  const log = (s: string) => { last = { at: Date.now(), what: s }; void info(`smoke ink: ${s}`); };
+  const dog = setInterval(() => {
+    if (finished) { clearInterval(dog); return; }
+    if (Date.now() - last.at > 90_000) { finished = true; clearInterval(dog); void info(`smoke ink: failed: no progress for 90 s after "${last.what}"`); }
+  }, 2000);
+  const q = <T extends Element>(sel: string, root: ParentNode = document) => root.querySelector<T>(sel);
+  const qa = <T extends Element>(sel: string, root: ParentNode = document) => Array.from(root.querySelectorAll<T>(sel));
+  const shot = async (name: string, ms = 2500) => { await sleep(900); log(`shot: ${name}`); await sleep(ms); };
+  const must = (ok: unknown, what: string) => { if (!ok) throw new Error(what); log(`ok: ${what}`); };
+  const poll = async <T,>(probe: () => T | null | undefined | false | Promise<T | null | undefined | false>, what: string, ms = 8000): Promise<T> => {
+    const t0 = Date.now();
+    for (;;) {
+      const v = await probe();
+      if (v) { log(`ok: ${what}`); return v; }
+      if (Date.now() - t0 > ms) throw new Error(`${what} (waited ${ms} ms)`);
+      await sleep(100);
+    }
+  };
+  const ask = (verb: string, ...n: number[]) => log(`do: ${verb} ${n.map((v) => v.toFixed(4)).join(' ')}`);
+  const fx = (x: number) => x / window.innerWidth;
+  const fy = (y: number) => y / window.innerHeight;
+  const mid = (el: Element): [number, number] => { const r = el.getBoundingClientRect(); return [fx(r.left + r.width / 2), fy(r.top + r.height / 2)]; };
+  try {
+    const { isMobile, shapeOf } = await import('./platform.js');
+    const { devStorage, joinCollection, crdtNow } = await import('./crdt.js');
+    const { syncWord } = await import('./sync.js');
+    const { parse } = await import('../format/index.js');
+    const { slashItems } = await import('../reader/index.js');
+    const ink = await import('./ink.js');
+    must(isMobile() && document.documentElement.dataset.mobile === '1', 'the app knows it is on an iPad');
+    const storage = await devStorage();
+    if (!storage || storage.kind !== 'folder') throw new Error('ILMI_STORAGE (smoke.json: "storage") names the folder the Mac\'s collection made its storage in');
+    log(`window ${window.innerWidth}×${window.innerHeight}; pixel ratio ${window.devicePixelRatio}; storage ${storage.folder}`);
+    must(shapeOf(true, window.innerWidth, window.innerHeight) === 'portrait', 'the iPad is upright');
+
+    // ── a collection made from the storage, the chapter open, its notes brought in ──
+    useApp.getState().setReopen(false);
+    useApp.getState().setTheme('light');
+    await startFromRecents();
+    await until(() => q('.welcome'));
+    const vault = await openVault(await joinCollection(storage, 'double-major', true));
+    must(vault.documents().length === 66, 'the collection is made from the storage: 66 documents');
+    await poll(() => syncWord(useApp.getState().sync) === 'synced', 'the strip says synced', 30000);
+    const BOOK = 'library/lindqvist-statistical-physics/ch-3-the-canonical-ensemble.md';
+    const HEAD = '3.3 · average values (3.9)';
+    const DIR = BOOK.replace(/\.md$/, '');
+    const PAGE = `${DIR}/ink-01.pkdrawing`;
+    const PICTURE = `${DIR}/ink-01.png`;
+    const LINE = '![working](ch-3-the-canonical-ensemble/ink-01.png)';
+    const fs = vault.fs as StoreFs;
+    const text = () => vault.fs.readText(vault.abs(BOOK));
+    const canvas = () => invoke<{ strokes: number; open: boolean }>('ink_peek', { quietMs: 3_600_000 });
+    must(!(await text()).includes('ink-01') && (await fs.stat(vault.abs(PAGE))) === null, 'the chapter has no page of ink yet');
+    must(slashItems('draw', 'paragraph')[0]?.id === 'draw' && slashItems('', 'paragraph').some((i) => i.id === 'draw'), 'the insert menu has draw among its rows here');
+    openNode(BOOK);
+    const book = await poll(() => q<HTMLElement>('.pane[data-active="1"] .book'), 'the chapter opens as a book', 15000);
+    await poll(() => q('.pdf-page canvas', book), 'its book is fetched and a page drawn', 60000);
+    ask('flick', 0.996, 0.5, 0.55, 0.5);
+    const notes = await poll(() => (book.dataset.notes === '1' ? q<HTMLElement>('.book-notes', book) : null), 'a swipe in from the right edge brings the notes', 25000);
+    await sleep(600);
+    const heading = () => qa<HTMLElement>('.dd-h', notes).find((h) => h.textContent?.includes('average values (3.9)'));
+    (await poll(heading, 'the section being read has its heading there')).scrollIntoView({ block: 'center' });
+    await sleep(500);
+
+    // ── draw, from the heading's menu ──
+    const words = document.createRange();
+    words.selectNodeContents(heading()!);
+    const wr = [...words.getClientRects()].find((r) => r.width > 20) ?? heading()!.getBoundingClientRect();
+    ask('press', fx(wr.left + Math.min(60, wr.width / 2)), fy(wr.top + wr.height / 2), 0.9);
+    const menu = await poll(() => q<HTMLElement>('.ctx-menu.section-menu'), 'a long press on the heading opens its menu', 25000);
+    const item = q<HTMLElement>('.ci[data-act="draw"]', menu);
+    log(`heading menu: ${qa('.ci', menu).map((i) => i.textContent).join(' | ')}`);
+    must(item && /^\s*✎?\s*draw\s*$/.test(item.textContent ?? ''), 'with draw in it');
+    await shot('ink-menu');
+    ask('tap', ...mid(item!));
+    await poll(async () => (await canvas()).open, 'a tap on draw opens the canvas', 25000);
+    must(ink.drawing(), 'over the page, until done');
+    await sleep(1500);
+    await shot('ink-canvas');
+
+    // ── strokes, with a finger: one drag is one stroke ──
+    const FIRST: [number, number, number, number][] = [
+      [0.18, 0.22, 0.42, 0.20], [0.30, 0.16, 0.31, 0.30], [0.50, 0.24, 0.70, 0.23], [0.50, 0.28, 0.70, 0.29],
+      [0.16, 0.42, 0.40, 0.36], [0.44, 0.38, 0.62, 0.44], [0.66, 0.36, 0.82, 0.42], [0.20, 0.52, 0.80, 0.53],
+    ];
+    let n = 0;
+    for (const [x1, y1, x2, y2] of FIRST) {
+      ask('drag', x1, y1, x2, y2, 0.05);
+      n += 1;
+      const want = n;
+      await poll(async () => (await canvas()).strokes === want, `stroke ${want} is on the canvas`, 25000);
+    }
+    await shot('ink-drawn');
+    // ── kept when it goes quiet, the canvas still open ──
+    const kept = await poll(async () => { const got = await fs.ink(vault.abs(PAGE)); return got && got.length === FIRST.length ? got : null; }, `left alone, the page is kept: ${FIRST.length} strokes in the store`, 20000);
+    must((await canvas()).open, 'while the canvas is still open');
+    await poll(async () => (await text()).includes(LINE), 'and its line is in the notes\' text', 10000);
+    const names = kept.map((k) => k.stroke);
+    must(new Set(names).size === names.length && names.every((k) => /^[0-9a-f]{16}$/.test(k)), 'each stroke has a name of its own');
+
+    // ── done ──
+    const probe = document.createElement('div');
+    probe.style.cssText = 'position:fixed;top:0;left:0;height:env(safe-area-inset-top);width:env(safe-area-inset-right);visibility:hidden';
+    document.body.appendChild(probe);
+    const safe = { top: probe.getBoundingClientRect().height, right: probe.getBoundingClientRect().width };
+    probe.remove();
+    const DONE: [number, number] = [fx(window.innerWidth - safe.right - 8 - 36), fy(safe.top + 4 + 20)];
+    ask('tap', ...DONE);
+    await poll(async () => !(await canvas()).open, 'a tap on done closes the canvas', 25000);
+    await poll(() => !ink.drawing(), 'and the page is kept as it closed');
+    must((await fs.ink(vault.abs(PAGE)))!.length === FIRST.length, 'the same strokes: closing wrote none again');
+    const blocks = parse(await text()).doc.blocks;
+    const hi = blocks.findIndex((b) => b.kind === 'heading' && b.text === HEAD);
+    const li = blocks.findIndex((b) => b.kind === 'paragraph' && b.text === LINE);
+    const next = blocks.findIndex((b, i) => i > hi && b.kind === 'heading');
+    must(hi >= 0 && li > hi && li < next, `the line is under the section's heading, before the next one (blocks ${hi} < ${li} < ${next})`);
+    const row = await fs.rowAt(vault.abs(PAGE));
+    must(row && row.blob === null && (await fs.rowAt(vault.abs(PICTURE))) === null, 'the page is a row with no file behind it, and its picture is no row');
+    const pngSize = (b: Uint8Array) => ({ w: new DataView(b.buffer, b.byteOffset).getUint32(16), h: new DataView(b.buffer, b.byteOffset).getUint32(20) });
+    const pic1 = await fs.readBytes(vault.abs(PICTURE));
+    must(pic1[1] === 0x50 && pic1[2] === 0x4e && pic1[3] === 0x47, `read, the picture is a PNG made from the strokes (${pngSize(pic1).w}×${pngSize(pic1).h})`);
+    const img = await poll(() => { const i = qa<HTMLImageElement>('img.md-img[data-ink]', notes)[0]; return i && i.complete && i.naturalWidth > 0 ? i : null; }, 'the picture is drawn in the notes', 15000);
+    must(!!(heading()!.compareDocumentPosition(img) & Node.DOCUMENT_POSITION_FOLLOWING), 'under the heading');
+    img.scrollIntoView({ block: 'center' });
+    await sleep(600);
+    const k1 = ink.lastKept!;
+    log(`page: ${k1.strokes} strokes; as rows ${k1.rows} bytes (${Math.round(k1.rows / k1.strokes)} a stroke); as one drawing ${k1.drawing} bytes; as a PNG ${pic1.length} bytes (${pngSize(pic1).w}×${pngSize(pic1).h})`);
+    await shot('ink-in-notes');
+
+    // ── a tap on the picture: the canvas again, with what it held ──
+    ask('tap', ...mid(img));
+    await poll(async () => (await canvas()).open, 'a tap on the picture opens the canvas again', 25000);
+    must((await canvas()).strokes === FIRST.length, `with the ${FIRST.length} strokes it held: the page reopens editable`);
+    await sleep(1500);
+    const MORE: [number, number, number, number][] = [[0.22, 0.62, 0.50, 0.66], [0.56, 0.66, 0.78, 0.60]];
+    for (const [x1, y1, x2, y2] of MORE) {
+      ask('drag', x1, y1, x2, y2, 0.05);
+      n += 1;
+      const want = n;
+      await poll(async () => (await canvas()).strokes === want, `stroke ${want} is on the canvas`, 25000);
+    }
+    await shot('ink-reopened');
+    ask('tap', ...DONE);
+    await poll(async () => !(await canvas()).open, 'done', 25000);
+    await poll(() => !ink.drawing(), 'and kept');
+    const after = (await fs.ink(vault.abs(PAGE)))!;
+    const still = names.filter((k) => after.some((s) => s.stroke === k)).length;
+    must(after.length === n && still === names.length, `a stroke's name outlives a save: ${still} of ${names.length} are who they were, and ${after.length - still} are new`);
+    must(kept.every((k) => after.find((s) => s.stroke === k.stroke)?.data === k.data), 'and the ones it had were not written again');
+    const pic2 = await fs.readBytes(vault.abs(PICTURE));
+    must(pngSize(pic2).h > pngSize(pic1).h, `the picture is made again, taller by the new strokes (${pngSize(pic2).w}×${pngSize(pic2).h})`);
+    await poll(() => { const i = qa<HTMLImageElement>('img.md-img[data-ink]', notes)[0]; return i && i.complete && i.naturalHeight === pngSize(pic2).h; }, 'and the notes show the new one', 15000);
+    must((await text()).split(LINE).length === 2, 'the notes still name the page once');
+    const k2 = ink.lastKept!;
+    log(`page: ${k2.strokes} strokes; as rows ${after.reduce((t, s) => t + Math.floor((s.data.length * 3) / 4), 0)} bytes; as one drawing ${k2.drawing} bytes; as a PNG ${pic2.length} bytes (${pngSize(pic2).w}×${pngSize(pic2).h})`);
+    qa<HTMLImageElement>('img.md-img[data-ink]', notes)[0]!.scrollIntoView({ block: 'center' });
+    await shot('ink-in-notes-again');
+
+    // ── synced: the strokes are in the storage, and no picture is ──
+    await crdtNow();
+    await poll(() => { const s = useApp.getState().sync; return syncWord(s) === 'synced' && s.toPush === 0; }, 'synced: nothing left to push', 30000);
+    log(`ink: ${HEAD} :: ${after.length}`);
+    finished = true;
+    log(`done; collection ${vault.root}, storage ${storage.folder}`);
+  } catch (e) {
+    finished = true;
+    log('shot: ink-failed');
+    await sleep(1500);
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+/** The Mac's side of `ILMI_SMOKE=ink` (see `smokeInk`): the storage made, and after the iPad's run the page found under its heading, as a picture. */
+export async function smokeInkMac(vault: Vault): Promise<void> {
+  type StoreFs = import('../vault/index.js').StoreFs;
+  const log = (s: string) => void info(`smoke ink: ${s}`);
+  const q = <T extends Element>(sel: string, root: ParentNode = document) => root.querySelector<T>(sel);
+  const qa = <T extends Element>(sel: string, root: ParentNode = document) => Array.from(root.querySelectorAll<T>(sel));
+  const shot = async (name: string, ms = 2500) => { await sleep(900); log(`shot: ${name}`); await sleep(ms); };
+  const must = (ok: unknown, what: string) => { if (!ok) throw new Error(what); log(`ok: ${what}`); };
+  const poll = async <T,>(probe: () => T | null | undefined | false | Promise<T | null | undefined | false>, what: string, ms = 8000): Promise<T> => {
+    const t0 = Date.now();
+    for (;;) {
+      const v = await probe();
+      if (v) { log(`ok: ${what}`); return v; }
+      if (Date.now() - t0 > ms) throw new Error(`${what} (waited ${ms} ms)`);
+      await sleep(100);
+    }
+  };
+  try {
+    const { crdtNow, crdtOn, storageDir } = await import('./crdt.js');
+    const { syncWord } = await import('./sync.js');
+    const { parse } = await import('../format/index.js');
+    const { slashItems } = await import('../reader/index.js');
+    const { diskFs } = await import('./collections.js');
+    const dir = await storageDir();
+    if (!dir) throw new Error('ILMI_STORAGE names the folder the two devices share');
+    const expect = await invoke<string | null>('dev_env', { name: 'ILMI_EXPECT' });
+    const strokes = Number((await invoke<string | null>('dev_env', { name: 'ILMI_STROKES' })) ?? 0);
+    const BOOK = 'library/lindqvist-statistical-physics/ch-3-the-canonical-ensemble.md';
+    const DIR = BOOK.replace(/\.md$/, '');
+    const PAGE = `${DIR}/ink-01.pkdrawing`;
+    const PICTURE = `${DIR}/ink-01.png`;
+    const LINE = '![working](ch-3-the-canonical-ensemble/ink-01.png)';
+    const fs = vault.fs as StoreFs;
+    const text = () => vault.fs.readText(vault.abs(BOOK));
+    useApp.getState().setTheme('light');
+    await poll(() => crdtOn() && syncWord(useApp.getState().sync) === 'synced', 'the collection syncs through the folder', 60000);
+    must(!slashItems('', 'paragraph').some((i) => i.id === 'draw'), 'the Mac has no canvas: draw is not among the insert menu\'s rows');
+    if (!expect) {
+      // the first run: the storage is this collection's
+      await crdtNow();
+      const names = await diskFs.readDir(dir);
+      must(names.some((n) => n.name === 'format') && names.some((n) => n.name === 'devices') && names.some((n) => n.name === 'blobs'), `the storage is made in ${dir}`);
+      must(!(await text()).includes('ink-01') && (await fs.stat(vault.abs(PAGE))) === null, 'the chapter has no page of ink yet');
+      log(`done; collection ${vault.root}, storage ${dir}`);
+      return;
+    }
+    // after the iPad: its page comes with a sync
+    const blobsBefore = (await diskFs.readDir(`${dir}/blobs`)).length;
+    await poll(async () => { await crdtNow(); return (await text()).includes(LINE); }, 'the page drawn on the iPad is named in the chapter here', 30000);
+    const blocks = parse(await text()).doc.blocks;
+    const hi = blocks.findIndex((b) => b.kind === 'heading' && b.text === expect);
+    const li = blocks.findIndex((b) => b.kind === 'paragraph' && b.text === LINE);
+    const next = blocks.findIndex((b, i) => i > hi && b.kind === 'heading');
+    must(hi >= 0 && li > hi && li < next, `under the same heading: "${expect}" (blocks ${hi} < ${li} < ${next})`);
+    const got = await poll(async () => { const s = await fs.ink(vault.abs(PAGE)); return s && s.length === strokes ? s : null; }, `its ${strokes} strokes are rows here`, 20000);
+    const row = await fs.rowAt(vault.abs(PAGE));
+    must(row && row.blob === null && (await fs.rowAt(vault.abs(PICTURE))) === null, 'the page is a row with no file behind it, and its picture is no row');
+    must((await diskFs.readDir(`${dir}/blobs`)).length === blobsBefore && !useApp.getState().away.some((p) => p.includes('ink-')), 'nothing crossed as a file: the storage holds no picture and no drawing');
+    // the picture, made here from the strokes
+    const png = await fs.readBytes(vault.abs(PICTURE));
+    const size = { w: new DataView(png.buffer, png.byteOffset).getUint32(16), h: new DataView(png.buffer, png.byteOffset).getUint32(20) };
+    must(png[1] === 0x50 && png[2] === 0x4e && png[3] === 0x47 && size.w > 200 && size.h > 100, `read here, the picture is a PNG the Mac made from them (${size.w}×${size.h}, ${png.length} bytes)`);
+    must((await fs.readBytes(vault.abs(PICTURE))).length === png.length, 'the same picture on a second read');
+    // the drawing an export writes: PencilKit's, and the same strokes when it is taken apart again
+    const drawing = await fs.readBytes(vault.abs(PAGE));
+    let bin = '';
+    for (let i = 0; i < drawing.length; i += 0x8000) bin += String.fromCharCode(...drawing.subarray(i, i + 0x8000));
+    const again = await invoke<{ stroke: string }[]>('ink_split', { drawing: btoa(bin) });
+    must(again.length === strokes && again.every((s, i) => s.stroke === got[i]!.stroke), `the drawing beside it is PencilKit's (${drawing.length} bytes) and reads back as the same ${strokes} strokes, by name`);
+    const listed = (await fs.readDir(vault.abs(DIR))).map((e) => e.name).filter((x) => x.startsWith('ink-')).sort();
+    must(listed.join(' ') === 'ink-01.pkdrawing ink-01.png', `both are files to an export (${listed.join(', ')})`);
+    // in the window
+    useApp.setState({ notesHidden: false });
+    openNode(BOOK);
+    const book = await poll(() => q<HTMLElement>('.pane[data-active="1"] .book'), 'the chapter opens', 15000);
+    const notes = await poll(() => q<HTMLElement>('.book-notes', book), 'its notes beside the pages');
+    const head = await poll(() => qa<HTMLElement>('.dd-h', notes).find((h) => h.textContent?.includes(expect.slice(0, 12))), 'the heading is in the notes');
+    const img = await poll(() => { const i = qa<HTMLImageElement>('img.md-img[data-ink]', notes)[0]; return i && i.complete && i.naturalWidth === size.w ? i : null; }, 'the picture is drawn in the notes', 15000);
+    must(!!(head.compareDocumentPosition(img) & Node.DOCUMENT_POSITION_FOLLOWING), 'under the heading');
+    const cv = document.createElement('canvas');
+    cv.width = img.naturalWidth;
+    cv.height = img.naturalHeight;
+    const cx = cv.getContext('2d')!;
+    cx.drawImage(img, 0, 0);
+    const px = cx.getImageData(0, 0, cv.width, cv.height).data;
+    let inked = 0;
+    for (let i = 3; i < px.length; i += 4) if (px[i]! > 40) inked++;
+    must(inked > 2000 && inked < px.length / 4 / 2, `with ink in it, on nothing (${inked} of ${px.length / 4} px)`);
+    // the heading's menu here has no draw, and a click on the picture opens nothing
+    const hr = head.getBoundingClientRect();
+    head.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: hr.left + 20, clientY: hr.top + hr.height / 2 }));
+    const menu = await poll(() => q<HTMLElement>('.ctx-menu.section-menu'), 'the heading\'s menu');
+    must(!q('.ci[data-act="draw"]', menu), `has no draw on the Mac (${qa('.ci', menu).map((i) => i.textContent).join(' | ')})`);
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    await sleep(300);
+    img.scrollIntoView({ block: 'center' });
+    await shot('ink-mac');
+    useApp.getState().setTheme('dark');
+    await sleep(400);
+    must(/invert/.test(getComputedStyle(img).filter), 'on dark paper its strokes are light');
+    await shot('ink-mac-dark');
+    useApp.getState().setTheme('light');
     log(`done; collection ${vault.root}, storage ${dir}`);
   } catch (e) {
     log(`failed: ${e instanceof Error ? e.message : String(e)}`);

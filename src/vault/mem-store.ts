@@ -7,7 +7,7 @@
 import { createHash } from 'node:crypto';
 import type { Doc } from '../format/index.js';
 import type { Original } from './lift.js';
-import { STORE_VERSION, type Content, type DocContent, type Lift, type Place, type Reg, type ReviewRow, type Row, type Sched, type Store, type StoreOp } from './store.js';
+import { STORE_VERSION, type Content, type DocContent, type InkStroke, type Lift, type Place, type Reg, type ReviewRow, type Row, type Sched, type Store, type StoreOp } from './store.js';
 
 type Call = 'rows' | 'text' | 'doc' | 'put' | 'remove' | 'places' | 'digests' | 'reviews' | 'reviewsPut' | 'blobPut' | 'blobGet';
 
@@ -33,6 +33,19 @@ export interface MemStore extends Store {
   };
 }
 
+// PencilKit is not here: a drawing in the tests is its strokes, a line each, and a picture names them.
+const utf8 = new TextEncoder();
+/** The stand-in for the drawing PencilKit makes of `strokes`. */
+export const memDrawing = (strokes: readonly InkStroke[]): Uint8Array => utf8.encode(`drawing\n${strokes.map((x) => `${x.stroke} ${x.at} ${x.data}\n`).join('')}`);
+/** The stand-in for their picture: empty for none, as the real one is. */
+export const memPicture = (strokes: readonly InkStroke[]): Uint8Array => utf8.encode(strokes.length ? `picture of ${strokes.map((x) => x.stroke).join(' ')}\n` : '');
+/** A stand-in drawing taken apart again, as the Rust side takes PencilKit's apart. */
+export function memSplit(drawing: Uint8Array): InkStroke[] {
+  const lines = new TextDecoder().decode(drawing).split('\n');
+  if (lines[0] !== 'drawing') throw new Error('not a drawing');
+  return lines.slice(1).filter(Boolean).map((l) => { const [stroke, at, data] = l.split(' '); return { stroke: stroke!, at: Number(at), data: data ?? '' }; });
+}
+
 /** A collection in memory; `version` is the schema it claims to have been written by (a test of the upgrade starts below the present one). */
 export function memStore(version = STORE_VERSION): MemStore {
   const rows = new Map<string, Row>();
@@ -50,6 +63,8 @@ export function memStore(version = STORE_VERSION): MemStore {
   const crdt = new Map<string, string>();
   const outbox = new Map<number, string>();
   const meta = new Map<string, string>();
+  const ink = new Map<string, Map<string, InkStroke>>();
+  const strokesOf = (page: string): InkStroke[] => [...(ink.get(page)?.values() ?? [])].sort((a, b) => a.at - b.at || (a.stroke < b.stroke ? -1 : 1)).map((x) => ({ ...x }));
   const tables = { texts, state, digests, originals, reviews, textWrites: 0, regs, crdt, outbox, meta };
   let rev = 0;
   let schema = version;
@@ -63,6 +78,7 @@ export function memStore(version = STORE_VERSION): MemStore {
     for (const r of [...rows.values()]) if (r.parent === id) removeOne(r.id);
     rows.delete(id);
     texts.delete(id);
+    ink.delete(id);
     forget(id);
   };
   const putNow = (at: Place, content?: Content, lift?: Lift): Row => {
@@ -214,10 +230,21 @@ export function memStore(version = STORE_VERSION): MemStore {
           case 'out': outbox.set(o.seq, o.data); break;
           case 'outDrop': for (const k of [...outbox.keys()]) if (k <= o.upTo) outbox.delete(k); break;
           case 'expect': if (!expected.get(o.hash)) expected.set(o.hash, o.size); break;
+          case 'ink': {
+            const page = ink.get(o.page) ?? new Map<string, InkStroke>();
+            ink.set(o.page, page);
+            for (const x of o.add) page.set(x.stroke, { ...x });
+            for (const k of o.remove) page.delete(k);
+            const r = rows.get(o.page);
+            if (r) { rows.set(r.id, { ...r, size: [...page.values()].reduce((n, x) => n + x.data.length, 0), rev: ++rev }); put.push(r.id); }
+            break;
+          }
         }
       }
       return put.flatMap((id) => { const r = rows.get(id); return r ? [{ ...r }] : []; });
     },
+    async ink(page) { return strokesOf(page); },
+    async inkFile(page, what) { return what === 'drawing' ? memDrawing(strokesOf(page)) : memPicture(strokesOf(page)); },
     async meta() { return [...meta].sort((a, b) => (a[0] < b[0] ? -1 : 1)); },
     async regs(keys) { return keys.flatMap((k) => { const r = regs.get(k); return r ? [{ ...r }] : []; }); },
     async regsUnder(prefixes) {

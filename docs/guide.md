@@ -423,6 +423,14 @@ back. Where the Mac has a right-click, hold: a row, a heading and a deck's
 card open their menus when the finger lifts, and a row held and then moved
 is dragged.
 
+A page of working: hold a section's heading in the notes and choose `draw`
+(or `/draw` where the caret is), and the Pencil's canvas comes over the
+page. Write, then `done`: the page is under that section as a picture, and
+a tap on the picture opens it again to go on. It is kept as its strokes,
+so the Mac and every other device show the same picture without a file
+crossing, and an export writes it as `name/ink-01.png` with its drawing
+beside it, `name/ink-01.pkdrawing`.
+
 ## Plugins
 
 Plugins live in a vault's `.ilmi/plugins/` and are turned on in tweaks; the

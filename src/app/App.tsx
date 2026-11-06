@@ -18,6 +18,7 @@ import { openInitialVault, openNode, rememberTab, setInspector, setSidebar, togg
 import { inspectorShown } from './layout.js';
 import { shapeOf } from './platform.js';
 import { installLongPress } from './touch.js';
+import { watchInk } from './ink.js';
 import './app.css';
 import './chrome.css';
 
@@ -141,6 +142,9 @@ export function App() {
 
   // a touch held and let go is a right-click where it rests (`touch.ts`)
   useEffect(() => installLongPress(), []);
+
+  // a page of ink changed in the open collection: the readers showing its picture look again (`ink.ts`)
+  useEffect(() => { void watchInk(); }, [vault]);
 
   // the tweaks, as CSS
   useEffect(() => {

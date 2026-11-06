@@ -91,6 +91,7 @@ describe('walk', () => {
       'fleeting/lecture-9.md',
       'fleeting/markdown-sampler.md',
       'fleeting/office-hours.md',
+      'fleeting/worked-example.md',
       'papers/archive/sutton-2019.md',
       'papers/crick-1995.md',
       'papers/maxwell.md',

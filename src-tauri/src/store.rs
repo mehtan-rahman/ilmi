@@ -38,6 +38,14 @@
 //! in from disk (`take`), one that came down from a storage (`land`), a
 //! piece of one read for the page that asks (`blob_range`).
 //!
+//! Since milestone 58 a page of ink is a file's row that holds no blob
+//! (`ink-01.pkdrawing`; `documents.kind` is checked against the three
+//! kinds there were, so there is no fourth) and its strokes are rows of
+//! `ink`, each named by what it is (`tauri-plugin-ink` reads a
+//! PencilKit drawing as strokes). Nothing made from them is kept: the
+//! drawing PencilKit opens and the picture a note shows are put together
+//! when they are read (`ink_file`).
+//!
 //! Nothing here knows the format or what a path is: the renderer's
 //! `src/vault/store.ts` reads the rows once, keeps the tree, takes a file
 //! apart on a write (`src/vault/lift.ts`) and puts it together on a read.
@@ -54,6 +62,8 @@ use std::sync::Mutex;
 /// The database's file in a collection's folder.
 pub const DB_FILE: &str = "collection.db";
 const BLOBS_DIR: &str = "blobs";
+/// What is made from a page of ink's strokes when it is read as a file, kept until the page changes.
+const INK_DIR: &str = "ink";
 
 const SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS blobs (
@@ -128,14 +138,26 @@ CREATE TRIGGER IF NOT EXISTS documents_gone AFTER DELETE ON documents
 BEGIN
   DELETE FROM originals WHERE key = OLD.id;
 END;
+CREATE TABLE IF NOT EXISTS ink (
+  page TEXT NOT NULL,
+  stroke TEXT NOT NULL,
+  at REAL NOT NULL,
+  data BLOB NOT NULL,
+  PRIMARY KEY (page, stroke)
+) WITHOUT ROWID;
+CREATE TRIGGER IF NOT EXISTS documents_gone_ink AFTER DELETE ON documents
+BEGIN
+  DELETE FROM ink WHERE page = OLD.id;
+END;
 ";
 
 /// The schema this code writes. A collection made before the state had
 /// tables is 1: it opens, and the renderer takes its documents apart
 /// before anything else reads them (`storeFs` in `src/vault/store.ts`).
 /// 3 adds the engine's tables (milestone 61), which are made when a
-/// collection opens; a collection of 2 needs nothing more.
-pub const VERSION: i64 = 3;
+/// collection opens; a collection of 2 needs nothing more. 4 adds `ink`
+/// (milestone 58), made the same way: a collection of 3 opens as it is.
+pub const VERSION: i64 = 4;
 
 /// A row of the tree, without its text.
 #[derive(Serialize, Debug, Clone, PartialEq)]
@@ -229,6 +251,14 @@ pub struct Reg {
     pub value: Option<String>,
 }
 
+/// One stroke of a page of ink: its name, when it was drawn (seconds since 1970: the order strokes lie in), and a `PKDrawing` of it alone, in base64.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct InkStroke {
+    pub stroke: String,
+    pub at: f64,
+    pub data: String,
+}
+
 /// One write of a batch (`Store::batch`): the store's own writes, and the engine's.
 #[derive(Deserialize, Debug, Clone)]
 #[serde(tag = "op", rename_all = "camelCase")]
@@ -249,6 +279,8 @@ pub enum Op {
     OutDrop { up_to: i64 },
     /// A blob a row is about to name, by its hash and size, whether or not its bytes are here.
     Expect { hash: String, size: i64 },
+    /// Strokes added to a page of ink and taken from it. The page's row says how many bytes its strokes are, and its `rev` moves.
+    Ink { page: String, add: Vec<InkStroke>, remove: Vec<String> },
 }
 
 #[derive(Serialize, Debug, Clone, PartialEq)]
@@ -451,6 +483,10 @@ impl Store {
                     tx.execute("DELETE FROM outbox WHERE seq <= ?1", [up_to]).map_err(err)?;
                 }
                 Op::Expect { hash, size } => expect_tx(&tx, hash, *size)?,
+                Op::Ink { page, add, remove } => {
+                    ink_tx(&tx, &mut rev, page, add, remove)?;
+                    put.push(page);
+                }
             }
         }
         let mut rows = Vec::new();
@@ -551,6 +587,51 @@ impl Store {
             .query_map(params![after.unwrap_or(""), limit], |r| Ok(Reg { key: r.get(0)?, stamp: r.get(1)?, value: r.get(2)? }))
             .map_err(err)?;
         rows.collect::<rusqlite::Result<Vec<Reg>>>().map_err(err)
+    }
+
+    /// A page's strokes, in the order they were drawn.
+    pub fn ink(&self, page: &str) -> Result<Vec<InkStroke>, String> {
+        let mut st = self.conn.prepare("SELECT stroke, at, data FROM ink WHERE page = ?1 ORDER BY at, stroke").map_err(err)?;
+        let rows = st
+            .query_map([page], |r| {
+                let data: Vec<u8> = r.get(2)?;
+                Ok(InkStroke { stroke: r.get(0)?, at: r.get(1)?, data: base64::engine::general_purpose::STANDARD.encode(data) })
+            })
+            .map_err(err)?;
+        rows.collect::<rusqlite::Result<Vec<_>>>().map_err(err)
+    }
+
+    /// A page of ink as a file, made from its strokes: `drawing` is the `PKDrawing` PencilKit opens, `picture` a PNG at 2× of what they cover (empty when there are none).
+    /// PencilKit does not write one drawing as the same bytes twice, so what is made is kept beside the database until the page's `rev` moves: a file read twice is the same file.
+    pub fn ink_file(&self, page: &str, what: &str) -> Result<Vec<u8>, String> {
+        if !matches!(what, "drawing" | "picture") {
+            return Err(format!("{what}: not a file a page of ink is"));
+        }
+        let rev: i64 = self.conn.query_row("SELECT rev FROM documents WHERE id = ?1", [page], |r| r.get(0)).optional().map_err(err)?.unwrap_or(0);
+        let plain = !page.is_empty() && page.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'.');
+        let dir = self.dir.join(INK_DIR);
+        let made = dir.join(format!("{page}.{rev}.{what}"));
+        if plain {
+            if let Ok(bytes) = std::fs::read(&made) {
+                return Ok(bytes);
+            }
+        }
+        let mut st = self.conn.prepare("SELECT data FROM ink WHERE page = ?1 ORDER BY at, stroke").map_err(err)?;
+        let strokes: Vec<Vec<u8>> = st.query_map([page], |r| r.get(0)).map_err(err)?.collect::<rusqlite::Result<_>>().map_err(err)?;
+        let refs: Vec<&[u8]> = strokes.iter().map(Vec::as_slice).collect();
+        let bytes = if what == "drawing" { tauri_plugin_ink::join(&refs)? } else { tauri_plugin_ink::picture(&refs, 2.0)? };
+        if plain && std::fs::create_dir_all(&dir).is_ok() {
+            // the ones made before the page changed go
+            let (head, tail) = (format!("{page}."), format!(".{what}"));
+            for e in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
+                let name = e.file_name().to_string_lossy().into_owned();
+                if name.starts_with(&head) && name.ends_with(&tail) {
+                    let _ = std::fs::remove_file(e.path());
+                }
+            }
+            let _ = std::fs::write(&made, &bytes);
+        }
+        Ok(bytes)
     }
 
     /// The blobs rows name whose bytes are not here, each with its size.
@@ -708,6 +789,23 @@ fn put_tx(tx: &Connection, rev_at: &mut i64, at: &Place, content: Option<&Conten
         *rev_at = rev;
         Ok(())
     }
+}
+
+fn ink_tx(tx: &Connection, rev_at: &mut i64, page: &str, add: &[InkStroke], remove: &[String]) -> Result<(), String> {
+    for s in add {
+        let bytes = base64::engine::general_purpose::STANDARD.decode(&s.data).map_err(err)?;
+        tx.execute("INSERT OR REPLACE INTO ink (page, stroke, at, data) VALUES (?1, ?2, ?3, ?4)", params![page, s.stroke, s.at, bytes]).map_err(err)?;
+    }
+    for k in remove {
+        tx.execute("DELETE FROM ink WHERE page = ?1 AND stroke = ?2", params![page, k]).map_err(err)?;
+    }
+    *rev_at += 1;
+    tx.execute(
+        "UPDATE documents SET size = (SELECT COALESCE(SUM(LENGTH(data)), 0) FROM ink WHERE page = ?1), rev = ?2 WHERE id = ?1",
+        params![page, *rev_at],
+    )
+    .map_err(err)?;
+    Ok(())
 }
 
 fn remove_tx(tx: &Connection, ids: &[String]) -> Result<(), String> {
@@ -1070,6 +1168,12 @@ impl Stores {
     }
     pub fn blobs_away(&self, dir: &Path) -> Result<Vec<(String, i64)>, String> {
         self.with(dir, |s| s.blobs_away())
+    }
+    pub fn ink(&self, dir: &Path, page: &str) -> Result<Vec<InkStroke>, String> {
+        self.with(dir, |s| s.ink(page))
+    }
+    pub fn ink_file(&self, dir: &Path, page: &str, what: &str) -> Result<Vec<u8>, String> {
+        self.with(dir, |s| s.ink_file(page, what))
     }
     pub fn blob_file(&self, dir: &Path, hash: &str) -> Result<Option<PathBuf>, String> {
         self.with(dir, |s| s.blob_file(hash))
@@ -1524,6 +1628,60 @@ mod tests {
         let page = stores.regs_page(&dir, None, 2).unwrap();
         assert_eq!(page.iter().map(|r| r.key.as_str()).collect::<Vec<_>>(), vec!["r0|n", "r1|n"]);
         assert_eq!(stores.regs_page(&dir, Some("r1|n"), 10).unwrap().len(), 3);
+    }
+
+    #[test]
+    fn a_page_of_ink_is_its_strokes_and_what_is_read_is_made_from_them() {
+        use base64::Engine as _;
+        let b64 = base64::engine::general_purpose::STANDARD;
+        let dir = scratch("ink");
+        let mut s = Store::create(&dir).unwrap();
+        let strokes: Vec<InkStroke> = tauri_plugin_ink::split(&tauri_plugin_ink::sample(2, 6, 5).unwrap())
+            .unwrap()
+            .into_iter()
+            .map(|x| InkStroke { stroke: x.key, at: x.at, data: b64.encode(x.data) })
+            .collect();
+        let page = place("p", None, "ink-01.pkdrawing", "file");
+        let empty = Content { text: Some(String::new()), ..Default::default() };
+        // the row and its strokes in one transaction; the row comes back as the strokes left it
+        let rows = s
+            .batch(&[Op::Put { at: page.clone(), content: Some(empty), lift: None }, Op::Ink { page: "p".into(), add: strokes[..8].to_vec(), remove: vec![] }])
+            .unwrap();
+        let row = rows.last().unwrap();
+        assert!(row.blob.is_none() && row.size > 0);
+        assert_eq!(s.ink("p").unwrap(), strokes[..8].to_vec(), "in the order they were drawn");
+        // read as a file: the drawing PencilKit opens, holding those strokes, and the same bytes on a second read
+        let drawing = s.ink_file("p", "drawing").unwrap();
+        let names = |d: &[u8]| tauri_plugin_ink::split(d).unwrap().into_iter().map(|x| x.key).collect::<Vec<_>>();
+        assert_eq!(names(&drawing), strokes[..8].iter().map(|x| x.stroke.clone()).collect::<Vec<_>>());
+        assert_eq!(s.ink_file("p", "drawing").unwrap(), drawing);
+        let picture = s.ink_file("p", "picture").unwrap();
+        assert_eq!(&picture[..4], b"\x89PNG");
+        // four more and one taken away: the `rev` moves, and what is read is made again
+        let rows = s.batch(&[Op::Ink { page: "p".into(), add: strokes[8..].to_vec(), remove: vec![strokes[0].stroke.clone()] }]).unwrap();
+        assert!(rows[0].rev > row.rev);
+        assert_eq!(names(&s.ink_file("p", "drawing").unwrap()), strokes[1..].iter().map(|x| x.stroke.clone()).collect::<Vec<_>>());
+        assert_ne!(s.ink_file("p", "picture").unwrap(), picture);
+        assert_eq!(std::fs::read_dir(dir.join(INK_DIR)).unwrap().count(), 2, "the ones made before are not kept");
+        // a move is not a change to it; the strokes go with the row
+        s.put(&place("f", None, "notes", "folder"), None, None).unwrap();
+        let moved = s.put(&place("p", Some("f"), "ink-01.pkdrawing", "file"), None, None).unwrap();
+        assert_eq!(moved.rev, rows[0].rev);
+        s.remove(&["f".to_string()]).unwrap();
+        assert!(s.ink("p").unwrap().is_empty());
+        assert!(s.ink_file("p", "picture").unwrap().is_empty());
+        // a collection made before there was ink (schema 3) gets the table as it opens, and keeps its number until it is brought up
+        let old = scratch("ink-old");
+        {
+            let conn = Connection::open(old.join(DB_FILE)).unwrap();
+            conn.execute_batch(SCHEMA).unwrap();
+            conn.execute_batch("DROP TRIGGER documents_gone_ink; DROP TABLE ink; PRAGMA user_version = 3;").unwrap();
+        }
+        let mut was = Store::open(&old).unwrap();
+        assert_eq!(was.version().unwrap(), 3);
+        was.batch(&[Op::Put { at: page, content: Some(Content { text: Some(String::new()), ..Default::default() }), lift: None }, Op::Ink { page: "p".into(), add: strokes[..2].to_vec(), remove: vec![] }])
+            .unwrap();
+        assert_eq!(was.ink("p").unwrap().len(), 2);
     }
 
     #[test]

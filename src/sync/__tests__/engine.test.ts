@@ -13,7 +13,10 @@
 // files fold into a snapshot, a new copy starts from it, and a copy that
 // was away past the day its files were deleted takes it with what it had
 // not sent; the random test with snapshots written and files deleted as
-// it goes, and a copy that joins at the end.
+// it goes, and a copy that joins at the end. Milestone 58, ink: strokes
+// two copies add to one page are all kept, each by its name, one erased
+// is gone on both, a page deleted on one and drawn on on the other keeps
+// the drawing; and the random test draws, erases and deletes pages.
 
 import { promises as fsp } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -22,9 +25,9 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { formatReview, meta, parse, serialize, setField, type Card, type Doc, type Review } from '../../format/index.js';
 import { Vault, importFolder, join, storeFs, type StoreFs } from '../../vault/index.js';
-import { memStore, type MemStore } from '../../vault/mem-store.js';
+import { memPicture, memSplit, memStore, type MemStore } from '../../vault/mem-store.js';
 import { nodeFs } from '../../vault/node-fs.js';
-import { rising } from '../../vault/store.js';
+import { rising, type InkStroke } from '../../vault/store.js';
 import { bothChanged, engine, frontLines, type Engine, type EngineOptions } from '../engine.js';
 import { clock, msOf } from '../clock.js';
 import { folderStorage, memStorage, type MemStorage, type Storage } from '../storage.js';
@@ -552,7 +555,8 @@ describe('the tree (milestone 62)', () => {
 
   it('two reorderings of one directory merge move by move: the first each makes, and the ones after', async () => {
     const { a, b, storage } = await pair(CORPUS);
-    const shown = async (c: Copy): Promise<string[]> => (JSON.parse(await c.read('.ilmi/order.json')) as Record<string, string[]>)['fleeting'] ?? [];
+    // (the note with the corpus's page of ink, milestone 58, sorts last there and is never dragged: it is left out of the lists)
+    const shown = async (c: Copy): Promise<string[]> => ((JSON.parse(await c.read('.ilmi/order.json')) as Record<string, string[]>)['fleeting'] ?? []).filter((n) => n !== 'worked-example.md');
     const drag = async (c: Copy, name: string, target: string, mode: 'before' | 'after'): Promise<void> => {
       const vault = await Vault.open(c.fs, ROOT);
       await vault.place(`fleeting/${name}.md`, `fleeting/${target}.md`, mode);
@@ -840,6 +844,105 @@ describe('the pieces', () => {
 });
 
 // ── copies making random edits, syncing in random orders ──────────
+
+describe('ink (milestone 58)', () => {
+  const PAGE = join(ROOT, 'german/ink-01.pkdrawing');
+  const PICTURE = join(ROOT, 'german/ink-01.png');
+  const stroke = (n: number): InkStroke => ({ stroke: `s${n}`, at: 1000 + n, data: Buffer.from(`stroke ${n}`).toString('base64') });
+  const keys = async (c: Copy, page = PAGE): Promise<string[] | null> => (await c.fs.ink(page))?.map((x) => x.stroke) ?? null;
+
+  it('strokes two copies add to one page are all kept, each by its name; one erased is gone on both', async () => {
+    const { a, b, storage } = await pair(CORPUS);
+    await a.fs.setInk(PAGE, [stroke(1), stroke(2)]);
+    await settle(storage, [a, b]);
+    expect(await keys(b)).toEqual(['s1', 's2']);
+    expect(await b.fs.readBytes(PICTURE)).toEqual(memPicture([stroke(1), stroke(2)]));
+    // each draws on it apart: the canvas gives back the strokes it was opened with and the new one
+    a.at.ms += 60_000;
+    await a.fs.setInk(PAGE, [...memSplit(await a.fs.readBytes(PAGE)), stroke(3)]);
+    b.at.ms += 90_000;
+    await b.fs.setInk(PAGE, [...memSplit(await b.fs.readBytes(PAGE)), stroke(4)]);
+    await settle(storage, [b, a]);
+    expect(await keys(a)).toEqual(['s1', 's2', 's3', 's4']);
+    expect(differences(await a.files(), await b.files())).toEqual([]);
+    // one erases a stroke while the other adds one: the erased one is gone on both and the new one is there
+    a.at.ms += 60_000;
+    await a.fs.setInk(PAGE, (await a.fs.ink(PAGE))!.filter((x) => x.stroke !== 's1'));
+    b.at.ms += 60_000;
+    await b.fs.setInk(PAGE, [...(await b.fs.ink(PAGE))!, stroke(5)]);
+    await settle(storage, [a, b]);
+    expect(await keys(a)).toEqual(['s2', 's3', 's4', 's5']);
+    expect(await keys(b)).toEqual(['s2', 's3', 's4', 's5']);
+    // both erase one: gone, once. Erased and drawn again (an undo after a save): there, by the later of the two
+    a.at.ms += 60_000;
+    b.at.ms += 60_000;
+    await a.fs.setInk(PAGE, (await a.fs.ink(PAGE))!.filter((x) => x.stroke !== 's2'));
+    await b.fs.setInk(PAGE, (await b.fs.ink(PAGE))!.filter((x) => x.stroke !== 's2' && x.stroke !== 's3'));
+    b.at.ms += 60_000;
+    await b.fs.setInk(PAGE, [...(await b.fs.ink(PAGE))!, stroke(3)]);
+    await settle(storage, [a, b]);
+    expect(await keys(a)).toEqual(['s3', 's4', 's5']);
+    expect(differences(await a.files(), await b.files())).toEqual([]);
+    // a stroke's bytes crossed whole
+    expect((await a.fs.ink(PAGE))!.find((x) => x.stroke === 's5')).toEqual(stroke(5));
+  });
+
+  it('a page deleted on one copy and drawn on on the other keeps the drawing, whole; deleted on both it is gone', async () => {
+    const { a, b, storage } = await pair(CORPUS);
+    await a.fs.setInk(PAGE, [stroke(1), stroke(2)]);
+    await settle(storage, [a, b]);
+    await a.fs.remove(PAGE);
+    expect(await keys(a)).toBeNull();
+    b.at.ms += 60_000;
+    await b.fs.setInk(PAGE, [...(await b.fs.ink(PAGE))!, stroke(3)]);
+    await settle(storage, [a, b]);
+    expect(await keys(a)).toEqual(['s1', 's2', 's3']);
+    expect(differences(await a.files(), await b.files())).toEqual([]);
+    await b.fs.remove(PAGE);
+    await settle(storage, [a, b]);
+    expect(await a.fs.stat(PAGE)).toBeNull();
+    expect(await a.fs.stat(PICTURE)).toBeNull();
+    expect(differences(await a.files(), await b.files())).toEqual([]);
+  });
+
+  it('a collection that holds pages takes them to its storage, a drawing kept as a file becomes strokes on both, and a copy made from a snapshot has them', async () => {
+    const opts = { snapAfter: 3, snapWorth: 2 };
+    const storage = memStorage();
+    const a = await copy('a', CORPUS, opts);
+    await a.fs.setInk(PAGE, [stroke(1), stroke(2)]);
+    expect(await a.eng.connect(storage)).toBe('made');
+    await a.eng.sync(storage);
+    const b = await copy('b', undefined, opts);
+    await b.eng.connect(storage);
+    await b.eng.sync(storage);
+    expect(await keys(b)).toEqual(['s1', 's2']);
+    // the corpus's page came in as two files; drawn on, it is strokes, and its picture is no file on either
+    const kept = join(ROOT, 'fleeting/worked-example/ink-01.pkdrawing');
+    expect(await keys(a, kept)).toBeNull();
+    for (let n = 10; n < 16; n++) {
+      a.at.ms += 60_000;
+      await a.fs.setInk(kept, [...((await a.fs.ink(kept)) ?? []), stroke(n)]);
+      await a.eng.sync(storage);
+    }
+    await settle(storage, [a, b]);
+    expect(await keys(b, kept)).toEqual(['s10', 's11', 's12', 's13', 's14', 's15']);
+    expect(await b.fs.readBytes(join(ROOT, 'fleeting/worked-example/ink-01.png'))).toEqual(memPicture([10, 11, 12, 13, 14, 15].map(stroke)));
+    expect(differences(await a.files(), await b.files())).toEqual([]);
+    expect((await storage.list('snapshots/')).length).toBeGreaterThan(0);
+    const c = await copy('c', undefined, opts);
+    await c.eng.connect(storage);
+    const got = await c.eng.sync(storage);
+    expect(got.took).toBeGreaterThan(0);
+    await settle(storage, [a, b, c]);
+    expect(await keys(c)).toEqual(['s1', 's2']);
+    expect(await keys(c, kept)).toEqual(['s10', 's11', 's12', 's13', 's14', 's15']);
+    expect(differences(await a.files(), await c.files())).toEqual([]);
+    // a collection that does not sync keeps strokes and records nothing
+    const alone = await copy('alone', CORPUS);
+    await alone.fs.setInk(PAGE, [stroke(1)]);
+    expect(alone.store.tables.regs.size).toBe(0);
+  });
+});
 
 function rng(seed: number): () => number {
   let s = seed >>> 0;
@@ -1183,6 +1286,7 @@ describe('copies making random edits and syncing in random orders', () => {
       Math.random = ids;
       globalThis.crypto.getRandomValues = ((b: Uint8Array) => { for (let i = 0; i < b.length; i++) b[i] = Math.floor(ids() * 256); return b; }) as typeof globalThis.crypto.getRandomValues;
       const pick = <T,>(list: readonly T[]): T => list[Math.floor(rnd() * list.length)]!;
+      const inked = rng(seed * 104729);
       const storage = memStorage();
       // one seed in three (every one with `ILMI_SNAPS=1`) folds its change files into snapshots as it goes and deletes what they cover a
       // quarter of an hour on: copies read snapshots in place of files, and of files that are gone
@@ -1276,6 +1380,17 @@ describe('copies making random edits and syncing in random orders', () => {
           // a delete: a document, or now and then a folder with all it holds
           if (rnd() < 0.2 && folders.length) await c.fs.remove(join(ROOT, pick(folders)));
           else await c.fs.remove(join(ROOT, rel));
+        }
+        // ink, from a draw of its own so the steps above are the ones they were: a stroke on one of two pages, one
+        // erased, one erased and drawn again, a page thrown away
+        if (inked() < 0.3) {
+          const page = join(ROOT, `ink-0${1 + Math.floor(inked() * 2)}.pkdrawing`);
+          const has = (await c.fs.ink(page)) ?? [];
+          const j = inked();
+          if (j < 0.55 || !has.length) await c.fs.setInk(page, [...has, { stroke: `s${step}${c.name}`, at: step, data: `d${step}` }]);
+          else if (j < 0.8) await c.fs.setInk(page, has.filter((_, i) => i !== Math.floor(inked() * has.length)));
+          else if (j < 0.9) { const back = has[Math.floor(inked() * has.length)]!; await c.fs.setInk(page, has.filter((x) => x !== back)); await c.fs.setInk(page, has); }
+          else await c.fs.remove(page);
         }
         // a sync now and then, of whichever copy
         if (rnd() < 0.35) await pick(copies).eng.sync(storage);

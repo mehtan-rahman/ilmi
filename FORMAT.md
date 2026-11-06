@@ -81,7 +81,8 @@ notes/
   any other file.
 - Any other file in a document's children directory is ignored by the walk.
   A clipped page's images land there (`name/img-01.png` …, §3 `url`) and the
-  document refers to them relatively, `![alt](name/img-01.png)`.
+  document refers to them relatively, `![alt](name/img-01.png)`. A page of
+  ink lands there the same way, with its drawing beside it (§4).
 - A document's display name is its filename without `.md`, unless front-matter
   sets `title`.
 - Folder open/closed state, window layout, and other view state live in
@@ -419,6 +420,15 @@ Blank lines between blocks are not stored; the serializer writes exactly one.
 Whitespace inside a block is verbatim. A file the app has written round-trips
 byte for byte. A file written by hand with, say, two blank lines between
 paragraphs is normalized the first time the app writes it, once.
+
+An image is Markdown's, `![alt](src)`, in a paragraph of its own or inside
+one; a relative `src` is a file in the vault (§1). A page of ink is an
+image like any other, `![working](name/ink-01.png)`, with the drawing it
+was made from beside the picture under the same name,
+`name/ink-01.pkdrawing` (PencilKit's `PKDrawing` data), so the page can be
+drawn on again; the PNG is what every other tool reads. There is no syntax
+for it: a `.png` with a `.pkdrawing` of its name beside it is a page of
+ink, and without the `.pkdrawing` it is a picture.
 
 Nothing inside a block is escaped by this format. Math (`$…$`, `$$…$$`),
 editorial marks (`[like this]`, `#TODO:`), and Markdown emphasis are literal
@@ -929,8 +939,10 @@ fixes the file. That is intended.
 - RemNote's `>>>`, a card whose back is its child items.
 - Cloze hints.
 - Prose block ids for the reading marker (would make `pos` edit-stable).
-- Attachments and images beyond a clipping's downloads (§1): they are just
-  Markdown; the app renders them.
+- Attachments and images beyond a clipping's downloads and a page of ink
+  (§1, §4): they are just Markdown; the app renders them.
+- Ink anywhere but a page of its own under a note: on a PDF's page, in a
+  card's face.
 - Anything written into a PDF: highlights are the extracts' stored text,
   found again on the page; annotations stay in the Markdown.
 

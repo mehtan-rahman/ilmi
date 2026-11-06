@@ -1,0 +1,3 @@
+# what the ink plugin's build writes beside its sources: not a change `tauri dev` rebuilds for
+ink/.tauri/
+ink/ios/.build/

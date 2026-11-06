@@ -25,7 +25,7 @@ export { CODE_LANGS, codeLang, codeTokens, codeHTML, tokensOfHtml, withLang, set
 export { foldKey, foldPlugin, foldedKeys, foldsHiding, isFoldedAway, ruleEndIndex, sections, allSections, itemSections, type FoldMeta, type FoldState, type Section } from './fold.js';
 export { cellAt, cellStart, nextCell, prevCell, cellDown, cellBreak, rowBelow, addRow, addColumn, deleteRow, deleteColumn, alignColumn, tableKey, tablePlugin, type CellAt } from './table.js';
 export { cardText, passage, blockAt, insertCard, setCardText, type CardSpec, type Passage } from './cards.js';
-export { SLASH_ITEMS, slashItems, slashContext, slashKey, slashPlugin, pickSlash, litItem, opensAt, askImageKey, TABLE_SKELETON, type SlashItem, type SlashState, type SlashMeta, type SlashContext } from './slash.js';
+export { SLASH_ITEMS, slashItems, slashContext, slashKey, slashPlugin, pickSlash, litItem, opensAt, askImageKey, askDrawKey, setCanvas, TABLE_SKELETON, type SlashItem, type SlashState, type SlashMeta, type SlashContext } from './slash.js';
 export { findKey, findPlugin, findMatches, findIn, foldText, foldMap, currentMatch, replaceMatch, replaceAll, closeAtMatch, atomFind, markFinds, type AtomFind, type FindState, type FindMeta, type Match } from './find.js';
 export { insertBlocks, insertImages, imageParagraph, caretInto, markdownBlocks, pasteMarkdown, clipboardText, htmlPasteImages } from './insert.js';
 export { strongDir, textDir, blockDirs, dirAttr, charDir, isolatedSpans, markupSpans, marksOnly, baseSplit, withBases, type Dir, type Span, type BasedSeg, type BasedBlank } from './direction.js';

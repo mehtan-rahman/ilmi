@@ -26,6 +26,15 @@
 //   a sync on a device that keeps every file, each when it is opened on
 //   one that keeps what it has opened, and through `Storage.up` and
 //   `down` where the storage has them they never pass through here.
+// - Ink (milestone 58): a page of ink is a set of strokes, each found by
+//   a name that outlives a save, and each stroke is a register
+//   (`~i|<page>|<stroke>`: when it was drawn and its bytes, or nothing
+//   once it is taken away). So strokes two devices add to one page are
+//   all kept, a stroke one of them erased is gone on both, and one
+//   erased and put back is there by the later of the two. A stroke is a
+//   change to its page's row: a page deleted on one device and drawn on
+//   on another keeps the drawing, whole. Nothing made from the strokes
+//   (the drawing as a file, the picture) is a change.
 // - The tree (milestone 62) is what the registers make, by rules that
 //   read nothing but the registers, so every device makes the same one:
 //   a row's parent is the later move. Of moves that together would put a
@@ -85,7 +94,7 @@
 
 import { parse, parseReviews, serialize } from '../format/index.js';
 import { compose, type StateRow } from '../vault/lift.js';
-import { newId, reviewRow, type Content, type DocContent, type Lift, type Place, type Recorder, type Reg, type ReviewRow, type Row, type RowKind, type StoreFs, type StoreOp, type ViewWrite } from '../vault/store.js';
+import { isInk, newId, reviewRow, type InkStroke, type Content, type DocContent, type Lift, type Place, type Recorder, type Reg, type ReviewRow, type Row, type RowKind, type StoreFs, type StoreOp, type ViewWrite } from '../vault/store.js';
 import { clock, msOf, msPart, type Clock } from './clock.js';
 import { blocks, diff3, type Kept } from './merge.js';
 import type { Storage } from './storage.js';
@@ -213,6 +222,23 @@ function randomDevice(): string {
 }
 
 /** The row a register belongs to; null for one that is the collection's (`~…`). */
+const INK = '~i|';
+/** A stroke's register: its page and its name. */
+const inkKey = (page: string, stroke: string): string => `${INK}${page}|${stroke}`;
+const inkOf = (key: string): { page: string; stroke: string } | null => {
+  if (!key.startsWith(INK)) return null;
+  const cut = key.indexOf('|', INK.length);
+  return cut < 0 ? null : { page: key.slice(INK.length, cut), stroke: key.slice(cut + 1) };
+};
+const inkValue = (s: InkStroke): string => JSON.stringify([s.at, s.data]);
+function strokeOf(stroke: string, value: string): InkStroke | null {
+  try {
+    const v = JSON.parse(value) as unknown;
+    if (Array.isArray(v) && typeof v[0] === 'number' && typeof v[1] === 'string') return { stroke, at: v[0], data: v[1] };
+  } catch { /* a register that does not read is no stroke */ }
+  return null;
+}
+
 const rowOf = (key: string): string | null => (key.startsWith('~') ? null : key.slice(0, key.indexOf('|')));
 
 /** A document's body: its text after the front matter, without the blank line that parts them. */
@@ -445,6 +471,17 @@ export function engine(fs: StoreFs, opts: EngineOptions): Engine {
     ];
   };
 
+  /** Strokes added to a page and taken from it: a register each, and a change to the page's row. */
+  const recordInk = (p: Pending, page: string, add: InkStroke[], remove: string[]): void => {
+    if (!add.length && !remove.length) return;
+    const c = clk.tick();
+    for (const [stroke, v] of [...add.map((s): [string, string | null] => [s.stroke, inkValue(s)]), ...remove.map((k): [string, string | null] => [k, null])]) {
+      p.regs.push({ key: inkKey(page, stroke), stamp: c, value: v });
+      p.ops.push({ t: 'g', k: inkKey(page, stroke), v, c });
+    }
+    p.rows.add(page);
+  };
+
   /** `body` as the document's text from here on: the library's update for it and its state after; null when it is the text already. */
   const textChange = async (id: string, body: string): Promise<{ update: string; vv: string; state: string } | null> => {
     const L = await loro();
@@ -636,6 +673,13 @@ export function engine(fs: StoreFs, opts: EngineOptions): Engine {
       }
       return finish(p);
     },
+    async ink(page, rel, add, remove) {
+      await ready;
+      if (!device || skip(rel)) return [];
+      const p = begin();
+      recordInk(p, page, add, remove);
+      return finish(p);
+    },
     async dead(id) {
       await ready;
       if (!device) return false;
@@ -672,6 +716,7 @@ export function engine(fs: StoreFs, opts: EngineOptions): Engine {
             } else content = { front: null, text: await store.text(row.id) };
           }
           await recordPut(p, { at: { id: row.id, parent: row.parent, name: row.name, place: row.place, kind: row.kind }, before: undefined, content, lift, size: row.blob !== null ? row.size : undefined });
+          if (isInk(row)) recordInk(p, row.id, await store.ink(row.id), []);
           if (p.unkeyed) loose.push(rel);
           ops.push(...(await finish(p)));
           if (++n % 40 === 0) await flush();
@@ -794,7 +839,7 @@ export function engine(fs: StoreFs, opts: EngineOptions): Engine {
     const keys = new Set<string>();
     for (const b of batches) {
       for (const o of b.ops) {
-        if (o.t === 'g') { keys.add(o.k); const id = rowOf(o.k); if (id) keys.add(`${id}|e`); }
+        if (o.t === 'g') { keys.add(o.k); const id = rowOf(o.k) ?? inkOf(o.k)?.page; if (id) keys.add(`${id}|e`); }
         else if (o.t === 'x' || o.t === 'e') keys.add(`${o.id}|e`);
         else if (o.t === 'd') keys.add(`${o.id}|d`);
       }
@@ -822,7 +867,8 @@ export function engine(fs: StoreFs, opts: EngineOptions): Engine {
           const had = at(o.k);
           // one stamp, two values: two devices undid one move, each as it saw the tree; the value decides
           if (!had || o.c > had.stamp || (o.c === had.stamp && (o.v ?? '') > (had.value ?? ''))) dirty.set(o.k, { key: o.k, stamp: o.c, value: o.v });
-          const id = rowOf(o.k);
+          // a stroke is a change to its page's row
+          const id = rowOf(o.k) ?? inkOf(o.k)?.page ?? null;
           // in a snapshot a register is what its writer held, not a change of its own: what each row had seen comes beside it (`e`)
           if (id && (o.a || snap)) touched.add(id);
           else if (id) bump(id, b.s);
@@ -1138,6 +1184,30 @@ export function engine(fs: StoreFs, opts: EngineOptions): Engine {
       if (m.state) crdts.push({ op: 'crdt', doc: id, state: m.state });
     }
     if (expects.size) view.expects = [...expects];
+    // the strokes of pages that are rows after this: the ones this merge changed, and every one its registers hold
+    // for a page that was not here (new, or back after a delete that had not seen a stroke)
+    const inks = new Map<string, Map<string, string | null>>();
+    for (const r of dirty.values()) {
+      const k = inkOf(r.key);
+      if (k) inks.set(k.page, (inks.get(k.page) ?? new Map()).set(k.stroke, r.value));
+    }
+    const back = [...show.values()].filter((v) => !door.row(v.id) && isInk({ kind: v.at.kind, blob: v.regs.get('b')?.value ?? null, name: v.name })).map((v) => v.id);
+    for (const r of back.length ? await store.regsUnder(back.map((id) => `${INK}${id}|`)) : []) {
+      const k = inkOf(r.key)!;
+      const page = inks.get(k.page) ?? new Map<string, string | null>();
+      if (!page.has(k.stroke)) page.set(k.stroke, r.value);
+      inks.set(k.page, page);
+    }
+    for (const [page, strokes] of inks) {
+      if (removed.has(page) || !(show.has(page) || door.row(page))) continue;
+      const add: InkStroke[] = [];
+      const remove: string[] = [];
+      for (const [stroke, value] of strokes) {
+        const s = value === null ? null : strokeOf(stroke, value);
+        if (s) add.push(s); else remove.push(stroke);
+      }
+      (view.ink ??= []).push({ page, add, remove });
+    }
     if ([...dirty.keys()].some((k) => k.startsWith('~q|'))) {
       const pairs = new Set(await store.same());
       for (const r of dirty.values()) {
@@ -1148,7 +1218,7 @@ export function engine(fs: StoreFs, opts: EngineOptions): Engine {
       view.pairs = [...pairs].sort();
     }
 
-    if (!file && !view.puts.length && !view.removes.length && !shifted) return;
+    if (!file && !view.puts.length && !view.removes.length && !view.ink?.length && !shifted) return;
     if (undone.length) seq += 1;
     await door.apply(view, [
       ...(dirty.size ? [{ op: 'regs', set: [...dirty.values()] } satisfies StoreOp] : []),

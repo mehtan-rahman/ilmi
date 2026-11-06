@@ -191,6 +191,8 @@
 .md-link:hover { text-decoration-color: var(--accent); }
 .md-img { max-width: 100%; height: auto; vertical-align: middle; }
 .md-img-slot { display: none; }
+/* a page of ink is drawn dark on nothing: on dark paper its strokes are the page's own colour */
+[data-theme="dark"] .md-img[data-ink] { filter: invert(1) hue-rotate(180deg); }
 .md-alt.broken { font-family: var(--mono); font-size: 0.86em; color: var(--fg-3); }
 /* an image alone in a paragraph: the picture, its alt under it as a caption */
 .draft-doc p.dd-img { text-align: center; }

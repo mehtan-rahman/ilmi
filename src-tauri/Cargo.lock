@@ -1978,6 +1978,7 @@ dependencies = [
  "tauri-plugin-dialog",
  "tauri-plugin-fs",
  "tauri-plugin-http",
+ "tauri-plugin-ink",
  "tauri-plugin-log",
  "tauri-plugin-opener",
  "tauri-plugin-single-instance",
@@ -4429,6 +4430,16 @@ dependencies = [
  "tokio",
  "url",
  "urlpattern",
+]
+
+[[package]]
+name = "tauri-plugin-ink"
+version = "0.1.0"
+dependencies = [
+ "cc",
+ "serde",
+ "tauri",
+ "tauri-plugin",
 ]
 
 [[package]]

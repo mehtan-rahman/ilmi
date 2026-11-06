@@ -15,6 +15,7 @@
     "fixture:sm": "tsx src/import/supermemo/__tests__/make-collection.ts",
     "fixture:pdf": "tsx src/format/__tests__/corpus/make-pdf.ts",
     "fixture:anki": "cd src-tauri && ILMI_ANKI_FIXTURE=../src/import/__tests__/anki cargo test anki::tests::reads_the_two_deck_package",
+    "fixture:ink": "cd src-tauri && ILMI_INK_FIXTURE=1 cargo test -p tauri-plugin-ink the_corpus_s_page",
     "fixture:epub": "cd src-tauri && ILMI_EPUB_FIXTURE=../src/import/__tests__/epub cargo test epub::tests::reads_the_three_chapter_book",
     "plugins": "tsx scripts/plugins.ts"
   },

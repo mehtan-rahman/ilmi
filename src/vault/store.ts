@@ -54,6 +54,15 @@
 //   `away` says which paths those are; `pieces` reads a big file a piece
 //   at a time and `take` brings one in from disk, neither through the
 //   renderer's memory; `ref` and `writeRef` move one by its name alone.
+// - Since milestone 58 a page of ink is strokes, not a file: a row named
+//   `ink-01.pkdrawing` that holds no blob, and its strokes rows of the
+//   store's `ink`, each found by a name that outlives a save (`ink`,
+//   `setInk`). Read as a file it is the drawing PencilKit makes of them,
+//   and beside it, under the same name, is `ink-01.png`, the picture
+//   made of them: no row, there while the page is. So a note's image and
+//   an export read both files and neither is kept or merged. A
+//   `.pkdrawing` that came in as a file (an import) is a file like any
+//   other until it is drawn on.
 
 import { formatReview, parseReviews, serialize, type Doc, type Review } from '../format/index.js';
 import type { Fs, FsEntry, FsStat } from './fs.js';
@@ -133,8 +142,22 @@ export interface DocContent {
   original: Original | null;
 }
 
-/** The schema this code reads and writes; a collection below it is brought up when it opens (`storeFs`). 3 is the engine's tables (milestone 61), made by the Rust side as it opens. */
-export const STORE_VERSION = 3;
+/** The schema this code reads and writes; a collection below it is brought up when it opens (`storeFs`). 3 is the engine's tables (milestone 61), 4 the strokes' (milestone 58), both made by the Rust side as it opens. */
+export const STORE_VERSION = 4;
+
+/** One stroke of a page of ink (milestone 58): its name, when it was drawn (seconds since 1970: the order strokes lie in), and its bytes in base64 (a `PKDrawing` of it alone). */
+export interface InkStroke {
+  stroke: string;
+  at: number;
+  data: string;
+}
+
+/** What a page of ink's row is named by, and its picture beside it. */
+export const INK_EXT = '.pkdrawing';
+export const inkPicture = (name: string): string => `${name.slice(0, -INK_EXT.length)}.png`;
+const inkOfPicture = (name: string): string | null => (name.endsWith('.png') ? `${name.slice(0, -4)}${INK_EXT}` : null);
+/** A page of ink: a file's row of that name that holds no blob. Its strokes are the store's. */
+export const isInk = (r: Pick<Row, 'kind' | 'blob' | 'name'>): boolean => r.kind === 'file' && r.blob === null && r.name.endsWith(INK_EXT);
 
 /** A register (milestone 61): a field's value, and the stamp of the write that won it. */
 export interface Reg {
@@ -159,7 +182,9 @@ export type StoreOp =
   | { op: 'out'; seq: number; data: string }
   | { op: 'outDrop'; upTo: number }
   /** A blob a row of this batch names, by hash and size, whether or not its bytes are here. */
-  | { op: 'expect'; hash: string; size: number };
+  | { op: 'expect'; hash: string; size: number }
+  /** Strokes added to a page of ink and taken from it; the page's row comes back with the `put`s'. */
+  | { op: 'ink'; page: string; add: InkStroke[]; remove: string[] };
 
 /** The rows and blobs of one collection. `tauri-store.ts` is the app's, `mem-store.ts` the tests'. */
 export interface Store {
@@ -205,6 +230,10 @@ export interface Store {
   blobHas(hash: string): Promise<boolean>;
   /** The blobs rows name whose bytes are not here, each with its size. */
   blobsAway(): Promise<[hash: string, size: number][]>;
+  /** A page of ink's strokes, in the order they were drawn. */
+  ink(page: string): Promise<InkStroke[]>;
+  /** A page of ink as a file, made from its strokes: the drawing PencilKit opens, or a PNG of them (empty when there are none). */
+  inkFile(page: string, what: 'drawing' | 'picture'): Promise<Uint8Array>;
   /** A file on disk taken in as a blob without its bytes passing through here. The app's only. */
   blobTake?(path: string): Promise<{ hash: string; size: number }>;
   /** The bytes of a blob from `begin` up to `end`. The app's only. */
@@ -234,6 +263,8 @@ export interface Recorder {
   places(changed: [id: string, place: number | null, kept: boolean][]): Promise<StoreOp[]>;
   reviews(rows: ReviewRow[]): Promise<StoreOp[]>;
   same(added: string[], removed: string[]): Promise<StoreOp[]>;
+  /** Strokes added to the page at `rel` and taken from it. */
+  ink(page: string, rel: string, add: InkStroke[], remove: string[]): Promise<StoreOp[]>;
   /** Whether a row is deleted and shown only for what is under it: it goes when nothing is. */
   dead(id: string): Promise<boolean>;
 }
@@ -249,6 +280,8 @@ export interface ViewWrite {
   pairs: string[] | null;
   /** Blobs the rows above name whose bytes are not here: each by its hash and size. */
   expects?: [hash: string, size: number][];
+  /** Strokes added to pages of ink and taken from them: pages that are rows once the `puts` are in. */
+  ink?: { page: string; add: InkStroke[]; remove: string[] }[];
 }
 
 /** The engine's way into the store's `Fs`. */
@@ -404,6 +437,17 @@ export interface StoreFs extends Fs {
   pieces(path: string): Promise<{ size: number; read(begin: number, end: number): Promise<Uint8Array> } | null>;
   /** The file on disk at `from` becomes the file at `path`, copied by the store without passing through here. False when the store cannot (it is then to be written the usual way). */
   take(path: string, from: string): Promise<boolean>;
+  /** The strokes of the page of ink at `path` (its `.pkdrawing`, or the picture beside it); null when no page of strokes is there. */
+  ink(path: string): Promise<InkStroke[] | null>;
+  /**
+   * The page of ink at `path` (a `.pkdrawing`) holds these strokes from
+   * now on: the ones it lacks are added and the ones not among them
+   * taken away, in one transaction; a stroke it has is left as it is. A
+   * page that is not there is made, and a `.pkdrawing` kept as a file
+   * becomes a page of strokes (the picture kept beside it goes: it is
+   * made from the strokes now).
+   */
+  setInk(path: string, strokes: readonly InkStroke[]): Promise<{ added: number; removed: number }>;
 }
 
 const WATCH_DEBOUNCE_MS = 30;
@@ -505,6 +549,15 @@ export function storeFs(store: Store, root: string): StoreFs {
     const doc = first(childrenOf(cur?.id ?? null).filter((r) => r.kind === 'doc' && r.name === last));
     if (doc) return { kind: 'kids', row: doc };
     return { kind: 'none', parent: cur, name: last };
+  };
+
+  /** The page of ink whose picture `abs` names: a path no row has, beside a page's `.pkdrawing`. */
+  const pictureOf = (abs: string): Row | null => {
+    const at = locate(abs);
+    if (at.kind !== 'none' || at.parent === undefined) return null;
+    const name = inkOfPicture(at.name);
+    const page = name === null ? undefined : find(at.parent?.id ?? null, name);
+    return page && isInk(page) ? page : null;
   };
 
   // ── the watcher ────────────────────────────────────────────────
@@ -642,7 +695,14 @@ export function storeFs(store: Store, root: string): StoreFs {
   };
   const textOf = (r: Row): Promise<string> => (r.kind === 'doc' ? docText(r) : store.text(r.id));
   const blobBytes = async (hash: string): Promise<Uint8Array> => { await need(hash); return store.blobGet(hash); };
-  const bytesOf = async (r: Row): Promise<Uint8Array> => (r.blob !== null ? blobBytes(r.blob) : encoder.encode(await textOf(r)));
+  const bytesOf = async (r: Row): Promise<Uint8Array> => (r.blob !== null ? blobBytes(r.blob) : isInk(r) ? store.inkFile(r.id, 'drawing') : encoder.encode(await textOf(r)));
+
+  /** Strokes added to a page and taken from it, the engine told, in one transaction. */
+  const inkWrite = async (page: Row, add: InkStroke[], remove: string[]): Promise<void> => {
+    if (!add.length && !remove.length) return;
+    const extra = recorder ? await recorder.ink(page.id, pathOf(page), add, remove) : [];
+    for (const r of await store.batch([{ op: 'ink', page: page.id, add, remove }, ...extra])) link(r);
+  };
 
   /** Write a row with what `data` is stored as; a document's index and the log lines waiting on it go in the same transaction. */
   const store_ = async (at: Place, rel: string, data: string | Uint8Array | { blob: string }): Promise<Row> => {
@@ -911,7 +971,19 @@ export function storeFs(store: Store, root: string): StoreFs {
       }
     }
     if (at.kind === 'root' || at.kind === 'kids' || (at.kind === 'row' && at.row.kind === 'folder')) throw new Error(`${abs}: is a directory`);
+    // a page's picture is made from its strokes: one written beside it is not kept
+    if (pictureOf(abs)) return;
     if (at.kind === 'row') {
+      if (isInk(at.row)) {
+        // a file written over a page of strokes is that file from now on: the strokes go, and the picture they made stays beside it as a file
+        const picture = join(root, inkPicture(rel));
+        const made = await store.inkFile(at.row.id, 'picture');
+        await inkWrite(at.row, [], (await store.ink(at.row.id)).map((s) => s.stroke));
+        await store_(placeOf(at.row), rel, data);
+        if (made.length && locate(picture).kind === 'none') await writeInner(picture, made);
+        touched(picture);
+        return;
+      }
       await store_(placeOf(at.row), rel, data);
     } else {
       if (at.parent === undefined) throw new Error(`${abs}: no such directory`);
@@ -965,7 +1037,10 @@ export function storeFs(store: Store, root: string): StoreFs {
       if (text === null) throw new Error(`${path}: no such file`);
       return { text };
     }
+    const page = pictureOf(path);
+    if (page) return { bytes: await store.inkFile(page.id, 'picture') };
     if (at.kind !== 'row' || at.row.kind === 'folder') throw new Error(`${path}: no such file`);
+    if (isInk(at.row)) return { bytes: await store.inkFile(at.row.id, 'drawing') };
     return at.row.blob !== null ? { bytes: await blobBytes(at.row.blob) } : { text: await textOf(at.row) };
   };
 
@@ -1006,6 +1081,7 @@ export function storeFs(store: Store, root: string): StoreFs {
       for (const rel of [...(view.reviews.some((r) => r.rows.length) ? view.reviews.map((r) => `${REVIEWS_PATH}/${r.file}`) : []), ...(view.pairs ? [SAME_PATH] : [])]) {
         if (originals.has(rel)) { ops.push({ op: 'original', key: rel, original: null }); originals.delete(rel); }
       }
+      for (const i of view.ink ?? []) ops.push({ op: 'ink', page: i.page, add: i.add, remove: i.remove });
       ops.push(...extra);
       if (!ops.length) return;
       const written = await store.batch(ops);
@@ -1022,6 +1098,12 @@ export function storeFs(store: Store, root: string): StoreFs {
         const old = was.get(r.id);
         if ((old?.place ?? null) !== r.place || (old && (old.name !== r.name || old.parent !== r.parent))) placed = true;
         touched(join(root, rel));
+      }
+      for (const i of view.ink ?? []) {
+        const r = rows.get(i.page);
+        if (!r) continue;
+        const rel = pathOf(r);
+        touched(join(root, rel), join(root, inkPicture(rel)));
       }
       touched(...gonePaths);
       if (placed || view.removes.length) touched(join(root, ORDER_FILE));
@@ -1083,6 +1165,43 @@ export function storeFs(store: Store, root: string): StoreFs {
         await writeInner(path, { blob: kept.hash });
         touched(path);
         return true;
+      }),
+
+    async ink(path) {
+      await ready;
+      const at = locate(path);
+      const page = at.kind === 'row' ? (isInk(at.row) ? at.row : null) : pictureOf(path);
+      return page ? store.ink(page.id) : null;
+    },
+
+    setInk: (path, strokes) =>
+      serial(async () => {
+        const rel = relative(root, path) ?? '';
+        const segs = rel.split('/').filter(Boolean);
+        const seg = segs[segs.length - 1] ?? '';
+        if (!seg.endsWith(INK_EXT)) throw new Error(`${path}: not a page of ink`);
+        let at = locate(path);
+        if (at.kind === 'none' && at.parent === undefined) {
+          await mkdirs(segs.slice(0, -1), path);
+          at = locate(path);
+        }
+        if (at.kind !== 'row' && (at.kind !== 'none' || at.parent === undefined)) throw new Error(`${path}: not a page of ink`);
+        let page: Row;
+        if (at.kind === 'row') {
+          if (at.row.kind !== 'file') throw new Error(`${path}: not a page of ink`);
+          // a drawing kept as a file becomes a page of strokes
+          page = isInk(at.row) ? at.row : await put(placeOf(at.row), { front: null, text: '' });
+        } else page = await put({ id: newId(), parent: at.parent?.id ?? null, name: seg, place: null, kind: 'file' }, { front: null, text: '' });
+        // a picture kept as a file beside it would hide the one the strokes make
+        const kept = find(page.parent, inkPicture(page.name));
+        if (kept && kept.kind === 'file') await drop([kept.id]);
+        const have = new Map((await store.ink(page.id)).map((s) => [s.stroke, s]));
+        const want = new Set(strokes.map((s) => s.stroke));
+        const add = strokes.filter((s) => !have.has(s.stroke));
+        const remove = [...have.keys()].filter((k) => !want.has(k));
+        await inkWrite(page, add, remove);
+        if (add.length || remove.length) touched(path, join(root, inkPicture(rel)));
+        return { added: add.length, removed: remove.length };
       }),
 
     ref: async (path) => {
@@ -1161,6 +1280,12 @@ export function storeFs(store: Store, root: string): StoreFs {
       }
       const have = new Set(out.map((e) => e.name));
       for (const name of await virtualNames(relative(root, path) ?? '')) if (!have.has(name)) out.push({ name, isDir: false, isFile: true });
+      // a page of ink's picture beside it
+      for (const r of childrenOf(parent)) {
+        if (!isInk(r) || find(parent, r.name) !== r) continue;
+        const name = inkPicture(r.name);
+        if (!listed.has(name)) { listed.add(name); out.push({ name, isDir: false, isFile: true }); }
+      }
       return out;
     },
 
@@ -1170,6 +1295,8 @@ export function storeFs(store: Store, root: string): StoreFs {
       if (at.kind === 'root') return { mtimeMs: 0, size: 0, isDir: true };
       if (at.kind === 'kids') return hasKids(at.row) ? { mtimeMs: 0, size: 0, isDir: true } : null;
       if (at.kind === 'none') {
+        const page = pictureOf(path);
+        if (page) return { mtimeMs: page.rev, size: page.size, isDir: false };
         const rel = relative(root, path) ?? '';
         const v = virtualOf(rel);
         if (!v) return null;
@@ -1289,7 +1416,7 @@ export function storeFs(store: Store, root: string): StoreFs {
             const name = doc ?? seg;
             const folder = doc !== null ? dirRow(parent?.id ?? null, doc) : undefined;
             // the content changes shape only when the kind or the place asks: a move keeps the row's `rev`
-            const reshape = src.kind !== kind || (src.blob === null && kind === 'file' && !hidden(toRel));
+            const reshape = src.kind !== kind || (src.blob === null && kind === 'file' && !hidden(toRel) && !(isInk(src) && name.endsWith(INK_EXT)));
             if (src.kind === 'doc' && kind === 'file' && hasKids(src)) {
               // the children stay where they were, as a folder
               await store_({ id: newId(), parent: parent?.id ?? null, name, place: null, kind }, toRel, await bytesOf(src));

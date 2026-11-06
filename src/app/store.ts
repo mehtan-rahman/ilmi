@@ -254,6 +254,8 @@ export interface AppState {
   tweaksOpen: boolean;
   selectedCard: SelectedCard | null;
   reveal: Reveal | null;
+  /** Moves when a page of ink changes (milestone 58): a reader showing its picture reads it again. */
+  inkRev: number;
   caretHeading: CaretHeading | null;
   /** A document with pages opens as its pages beside its notes; ⌘\ hides the notes (and shows them). Not saved. */
   notesHidden: boolean;
@@ -364,6 +366,7 @@ export const useApp = create<AppState>((set, get) => ({
   tweaksOpen: false,
   selectedCard: null,
   reveal: null,
+  inkRev: 0,
   caretHeading: null,
   notesHidden: false,
   inlineBoxes: {},

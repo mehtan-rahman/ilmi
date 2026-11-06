@@ -27,7 +27,8 @@ export type TreeNode = Folder | DocNode;
 
 const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
 
-function byName(a: TreeNode, b: TreeNode): number {
+/** The default order of a directory (FORMAT.md §1): folders first, then documents, by name. */
+export function byName(a: { kind: string; name: string }, b: { kind: string; name: string }): number {
   if (a.kind !== b.kind) return a.kind === 'folder' ? -1 : 1;
   return collator.compare(a.name, b.name) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
 }

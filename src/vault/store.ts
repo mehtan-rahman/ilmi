@@ -25,6 +25,11 @@
 //   `order.json` is the rows' `place`, `reviews/*.jsonl` the review log,
 //   `same.json` the pairs said not the same. Each reads back as the file
 //   that was written, and is written as a file.
+// - A place is a number that sorts a row among its siblings, not its
+//   index (milestone 62): an order written moves only the rows that
+//   changed their place among the others, each to a number between its
+//   new neighbours, so two orders of one directory written on two devices
+//   merge row by row.
 // - A folder made where a document of that name then lands (`a/` before
 //   `a.md`, as a restore writes them) becomes that document; a document
 //   removed while it has children leaves them as a folder.
@@ -40,13 +45,16 @@
 // - A row under a dot-directory is named by its path (`hiddenId`): two
 //   devices that each make `.ilmi/reviews` have made one row. Where two
 //   rows have one name in one place (two devices each made `notes.md`),
-//   the one whose id sorts first is the one a path finds, on every device.
+//   the engine shows the one whose id sorts later as `notes 2` (milestone
+//   62); until it has, the one whose id sorts first is the one a path
+//   finds.
 
 import { formatReview, parseReviews, serialize, type Doc, type Review } from '../format/index.js';
 import type { Fs, FsEntry, FsStat } from './fs.js';
 import { join, relative } from './fs.js';
 import { decompose, digest, recompose, stampOf, type Original, type StateRow } from './lift.js';
 import { ORDER_FILE, cleanOrder, type Order } from './order.js';
+import { byName } from './walk.js';
 
 export type RowKind = 'folder' | 'doc' | 'file';
 
@@ -57,7 +65,7 @@ export interface Row {
   parent: string | null;
   /** A folder's name, a document's without `.md`, a file's whole. */
   name: string;
-  /** Its position among its siblings when one was chosen (`.ilmi/order.json` is a view of these); null follows the placed ones, by name. */
+  /** Where it sorts among its siblings when a place was chosen (`.ilmi/order.json` is a view of these): a number, not an index; null follows the placed ones, by name. */
   place: number | null;
   kind: RowKind;
   /** Bytes of what it holds: its text, or its blob. */
@@ -205,7 +213,8 @@ export interface Store {
 export interface Recorder {
   put(w: { at: Place; before: Row | undefined; rel: string; content: Content | undefined; lift: Lift | undefined }): Promise<StoreOp[]>;
   remove(gone: { row: Row; rel: string }[]): Promise<StoreOp[]>;
-  places(changed: [id: string, place: number | null][]): Promise<StoreOp[]>;
+  /** The rows an order written gave another place. `kept`: the row is where it was shown, and only now has a number for it. */
+  places(changed: [id: string, place: number | null, kept: boolean][]): Promise<StoreOp[]>;
   reviews(rows: ReviewRow[]): Promise<StoreOp[]>;
   same(added: string[], removed: string[]): Promise<StoreOp[]>;
   /** Whether a row is deleted and shown only for what is under it: it goes when nothing is. */
@@ -280,6 +289,26 @@ export function splitFront(input: string): { front: string; text: string } {
     from = after(end);
   }
   return none;
+}
+
+/** The positions of a longest run of `keys` that rises. */
+export function rising(keys: readonly number[]): Set<number> {
+  /** The position that ends the best run of each length, and the one before each position in its run. */
+  const tails: number[] = [];
+  const prev: number[] = keys.map(() => -1);
+  for (let i = 0; i < keys.length; i++) {
+    let lo = 0;
+    let hi = tails.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (keys[tails[mid]!]! < keys[i]!) lo = mid + 1; else hi = mid;
+    }
+    if (lo > 0) prev[i] = tails[lo - 1]!;
+    tails[lo] = i;
+  }
+  const out = new Set<number>();
+  for (let i = tails.length ? tails[tails.length - 1]! : -1; i >= 0; i = prev[i]!) out.add(i);
+  return out;
 }
 
 const docName = (seg: string): string | null => (seg.endsWith('.md') && seg.length > 3 ? seg.slice(0, -3) : null);
@@ -375,13 +404,14 @@ export function storeFs(store: Store, root: string): StoreFs {
   const dirRow = (parent: string | null, seg: string): Row | undefined =>
     first(childrenOf(parent).filter((r) => r.name === seg && r.kind !== 'file'));
   const under = (id: string | null, top: string): boolean => {
-    for (let at = id; at !== null; at = rows.get(at)?.parent ?? null) if (at === top) return true;
+    // the hops are counted: rows that made a ring (the engine undoes the move that would close one) hang nothing
+    for (let at = id, hops = 0; at !== null && hops < 10_000; at = rows.get(at)?.parent ?? null, hops++) if (at === top) return true;
     return false;
   };
   /** The directory a row's children are in, vault-relative: a folder's path, a document's without `.md`. */
   const dirPathOf = (r: Row): string => {
     const segs: string[] = [];
-    for (let at: Row | undefined = r; at; at = at.parent === null ? undefined : rows.get(at.parent)) segs.unshift(at.name);
+    for (let at: Row | undefined = r, hops = 0; at && hops < 10_000; at = at.parent === null ? undefined : rows.get(at.parent), hops++) segs.unshift(at.name);
     return segs.join('/');
   };
   /** A row's own path, vault-relative. */
@@ -573,22 +603,24 @@ export function storeFs(store: Store, root: string): StoreFs {
   };
 
   // ── `.ilmi/order.json`, `same.json`, `reviews/*.jsonl` ─────────
+  /** Placed rows in their order: by place, and where two devices gave two rows one place, by name and then id. */
+  const byPlace = (a: Row, b: Row): number => a.place! - b.place! || (a.name < b.name ? -1 : a.name > b.name ? 1 : a.id < b.id ? -1 : 1);
   const orderNow = (): string => {
     const out: Order = {};
     const dirs: [string, Row[]][] = [];
     for (const [parent, ids] of kids) {
       const placed = [...ids].map((id) => rows.get(id)!).filter((r) => r.place !== null && r.kind !== 'file');
       if (!placed.length) continue;
-      dirs.push([parent === '' ? '' : dirPathOf(rows.get(parent)!), placed.sort((a, b) => a.place! - b.place! || (a.name < b.name ? -1 : 1))]);
+      dirs.push([parent === '' ? '' : dirPathOf(rows.get(parent)!), placed.sort(byPlace)]);
     }
     for (const [dir, placed] of dirs.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))) out[dir] = placed.map((r) => (r.kind === 'doc' ? `${r.name}.md` : `${r.name}/`));
     return Object.keys(out).length ? `${JSON.stringify(out, null, 2)}\n` : '';
   };
-  /** The places an order file asks for, of the rows it names that are here. */
-  const placesOf = (text: string): [string, number][] => {
+  /** The order a file asks for: by directory (its row's id, `''` the top), the rows it names that are here, as listed. */
+  const placesOf = (text: string): Map<string, string[]> => {
     let order: Order = {};
     try { order = cleanOrder(JSON.parse(text)); } catch { /* a file that does not read orders nothing */ }
-    const out: [string, number][] = [];
+    const out = new Map<string, string[]>();
     for (const [dir, names] of Object.entries(order)) {
       let parent: Row | null = null;
       let ok = true;
@@ -598,28 +630,58 @@ export function storeFs(store: Store, root: string): StoreFs {
         parent = next;
       }
       if (!ok) continue;
-      names.forEach((name, i) => {
+      const ids = out.get(key(parent?.id ?? null)) ?? [];
+      for (const name of names) {
         const row = name.endsWith('/')
           ? childrenOf(parent?.id ?? null).find((r) => r.kind === 'folder' && r.name === name.slice(0, -1))
           : name.endsWith('.md') ? childrenOf(parent?.id ?? null).find((r) => r.kind === 'doc' && r.name === name.slice(0, -3)) : undefined;
-        if (row) out.push([row.id, i]);
-      });
+        if (row && !ids.includes(row.id)) ids.push(row.id);
+      }
+      if (ids.length) out.set(key(parent?.id ?? null), ids);
     }
     return out;
   };
-  const setPlaces = async (set: [string, number][]): Promise<boolean> => {
-    const want = new Map(set);
-    let differs = false;
-    for (const r of rows.values()) if ((want.get(r.id) ?? null) !== r.place) { differs = true; break; }
-    if (!differs) return false;
-    // a directory whose order changed is told whole: of two drags of one directory the later stands, not a mix of both
-    const dirs = new Set<string>();
-    for (const r of rows.values()) if ((want.get(r.id) ?? null) !== r.place) dirs.add(key(r.parent));
-    const changed: [string, number | null][] = [];
-    for (const r of rows.values()) {
-      const to = want.get(r.id) ?? null;
-      if (dirs.has(key(r.parent)) && (to !== null || r.place !== null)) changed.push([r.id, to]);
+  /**
+   * The order asked for, made the rows' places. A row keeps its place
+   * when the rows around it in the list are the ones around it now: the
+   * longest run of the list that is already in order stays, and each
+   * other row gets a number between its new neighbours. A row with no
+   * place yet has the one it is shown at (after the placed ones, in the
+   * default order), so the first order written for a directory moves
+   * only the row that was dragged, on every device alike.
+   */
+  const setPlaces = async (lists: Map<string, string[]>): Promise<boolean> => {
+    const want = new Map<string, number>();
+    const changed: [string, number | null, boolean][] = [];
+    for (const [parent, ids] of lists) {
+      const here = childrenOf(parent === '' ? null : parent).filter((r) => r.kind !== 'file' && !r.name.startsWith('.'));
+      const placed = here.filter((r) => r.place !== null).sort(byPlace);
+      const shown = new Map<string, number>(placed.map((r) => [r.id, r.place!]));
+      const after = placed.length ? Math.floor(placed[placed.length - 1]!.place!) + 1 : 0;
+      here.filter((r) => r.place === null).sort(byName).forEach((r, j) => shown.set(r.id, after + j));
+      const keys = ids.map((id) => shown.get(id)!);
+      const stay = rising(keys);
+      const next = [...keys];
+      for (let i = 0; i < ids.length; ) {
+        if (stay.has(i)) { i += 1; continue; }
+        let j = i;
+        while (j < ids.length && !stay.has(j)) j += 1;
+        const lo = i > 0 ? next[i - 1]! : null;
+        const hi = j < ids.length ? keys[j]! : null;
+        const m = j - i;
+        for (let k = 0; k < m; k++) next[i + k] = lo !== null && hi !== null ? lo + ((hi - lo) * (k + 1)) / (m + 1) : hi !== null ? hi - (m - k) : lo !== null ? lo + k + 1 : k;
+        i = j;
+      }
+      // no number left between two neighbours: the directory is numbered afresh
+      const tight = next.some((n, i) => !Number.isFinite(n) || (i > 0 && n <= next[i - 1]!));
+      ids.forEach((id, i) => {
+        const to = tight ? i : next[i]!;
+        want.set(id, to);
+        if (rows.get(id)!.place !== to) changed.push([id, to, !tight && stay.has(i)]);
+      });
     }
+    for (const r of rows.values()) if (r.place !== null && !want.has(r.id)) changed.push([r.id, null, false]);
+    if (!changed.length) return false;
     const extra = recorder ? await recorder.places(changed) : [];
     if (extra.length) await store.batch([{ op: 'places', set: [...want] }, ...extra]);
     else await store.places([...want]);
@@ -693,7 +755,7 @@ export function storeFs(store: Store, root: string): StoreFs {
   };
 
   const virtualRemove = async (rel: string, v: Virtual): Promise<void> => {
-    if (v.kind === 'order') await setPlaces([]);
+    if (v.kind === 'order') await setPlaces(new Map());
     else if (v.kind === 'same') await samePut([]);
     else { await store.reviewsPut(v.file, [], true); logFiles.delete(v.file); }
     if (originals.has(rel)) { await store.originalPut(rel, null); originals.delete(rel); }
@@ -884,11 +946,13 @@ export function storeFs(store: Store, root: string): StoreFs {
         if (!r) continue;
         const rel = pathOf(r);
         if (r.kind === 'doc' && (p.file !== undefined || p.content)) indexed(rel, docs.has(r.id) ? digest(docs.get(r.id)!) : null);
-        if ((was.get(r.id)?.place ?? null) !== r.place) placed = true;
+        // the order's file names rows by their paths: it reads otherwise after a place, a name or a parent changed
+        const old = was.get(r.id);
+        if ((old?.place ?? null) !== r.place || (old && (old.name !== r.name || old.parent !== r.parent))) placed = true;
         touched(join(root, rel));
       }
       touched(...gonePaths);
-      if (placed) touched(join(root, ORDER_FILE));
+      if (placed || view.removes.length) touched(join(root, ORDER_FILE));
       if (view.pairs) { pairs = [...view.pairs]; touched(join(root, SAME_PATH)); }
       if (view.reviews.some((r) => r.rows.length)) {
         logFiles.clear();
@@ -1080,7 +1144,7 @@ export function storeFs(store: Store, root: string): StoreFs {
           if ((b.kind === 'row' || b.kind === 'kids') && hasKids(b.row)) throw new Error(`${to}: already exists`);
           if (b.kind === 'none') {
             if (under(b.parent?.id ?? null, src.id)) throw new Error(`${to}: inside ${from}`);
-            if (a.kind === 'row') await put(placeOf(src, { parent: b.parent?.id ?? null, name: seg }));
+            if (a.kind === 'row') await put(placeOf(src, { parent: b.parent?.id ?? null, name: seg, place: (b.parent?.id ?? null) === src.parent ? src.place : null }));
             else await adopt(src, await put({ id: newId(), parent: b.parent?.id ?? null, name: seg, place: null, kind: 'folder' }));
           } else {
             await adopt(src, b.row);
@@ -1109,7 +1173,8 @@ export function storeFs(store: Store, root: string): StoreFs {
               await store_({ id: newId(), parent: parent?.id ?? null, name, place: null, kind }, toRel, await bytesOf(src));
               await dropDoc(src);
             } else {
-              const at = placeOf(src, { parent: parent?.id ?? null, name, kind });
+              // a place is a place among the rows of one directory: it does not go along to another
+              const at = placeOf(src, { parent: parent?.id ?? null, name, kind, place: (parent?.id ?? null) === src.parent ? src.place : null });
               const moved = reshape ? await store_(at, toRel, await bytesOf(src)) : await put(at);
               // a folder of the document's name where it lands is the document's from now on
               if (folder?.kind === 'folder' && folder.id !== moved.id) {

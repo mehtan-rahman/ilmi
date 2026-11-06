@@ -461,14 +461,20 @@ describe('state in rows', () => {
     const vault = await Vault.open(fs, ROOT);
     expect(vault.order).toEqual(JSON.parse(file));
     const rows = await rowsByPath(store);
-    expect(['courses', 'library', 'arabic', 'physics', 'fleeting'].map((n) => rows.get(n)!.place)).toEqual([0, 1, 2, 3, 4]);
-    expect(rows.get('library/lindqvist-statistical-physics/ch-3-the-canonical-ensemble.md')!.place).toBe(1);
+    // a place is a number that sorts a row among the others (milestone 62), not its index: the listed rows rise in the order listed
+    const rise = (names: string[]): boolean => names.map((n) => rows.get(n)!.place!).every((x, i, all) => Number.isFinite(x) && (i === 0 || all[i - 1]! < x));
+    expect(rise(['courses', 'library', 'arabic', 'physics', 'fleeting'])).toBe(true);
+    expect(rise(['ch-2-microstates-and-entropy.md', 'ch-3-the-canonical-ensemble.md', 'ch-4-ideal-quantum-gases.md'].map((n) => `library/lindqvist-statistical-physics/${n}`))).toBe(true);
+    // a row the list left where the default order had it keeps that number; only the rows the list moved get one between
+    expect(['courses', 'library', 'physics'].map((n) => rows.get(n)!.place)).toEqual([1, 3, 4]);
+    expect(rows.get('arabic')!.place).toBe(3.5);
     // as it came in, byte for byte, while the order is what it was
     expect(await fs.readText(`${ROOT}/.ilmi/order.json`)).toBe(file);
     // a rename keeps the row's place; the file follows
+    const had = rows.get('physics/derivation-drills.md')!.place;
     const to = await vault.rename('physics/derivation-drills.md', 'drills');
     expect(vault.order['physics']).toEqual(['drills.md', 'constants-and-orders-of-magnitude.md']);
-    expect((await fs.rowAt(`${ROOT}/${to}`))!.place).toBe(0);
+    expect((await fs.rowAt(`${ROOT}/${to}`))!.place).toBe(had);
     expect(JSON.parse(await fs.readText(`${ROOT}/.ilmi/order.json`))['physics']).toEqual(['drills.md', 'constants-and-orders-of-magnitude.md']);
     await vault.setOrder('physics', null);
     expect((await fs.rowAt(`${ROOT}/${to}`))!.place).toBeNull();

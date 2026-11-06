@@ -98,8 +98,18 @@ folder. Git sync does not run for a collection that syncs this way. The
 folder holds `format`, `devices/<device>/<n>` (each device's changes, each
 file written once) and `blobs/<sha256>`. `ILMI_SMOKE=crdt` runs the two
 through 53's checks that way (`ILMI_VAULT` a copy of the sample,
-`ILMI_VAULT2` a name, `ILMI_STORAGE` an empty folder; about a minute), its
-`shot:` lines worth a capture of each window.
+`ILMI_VAULT2` a name, `ILMI_STORAGE` an empty folder; about a minute and a
+half), its `shot:` lines worth a capture of each window. Since milestone
+62 it ends with the tree: a drag in each window of one directory, a
+document renamed in one and edited in the other, a folder moved in one
+with a document made in it in the other. How the tree merges is said at
+the top of `src/sync/engine.ts`: a row's place in its directory's order is
+a number between its neighbours' (so a drag writes one row), a move that
+would put a row under itself is undone by a change every device writes
+alike, and of two rows with one name in one place the second is shown as
+`name 2` without being renamed. `ILMI_SEEDS=1-500 npx vitest run
+src/sync/__tests__/engine.test.ts -t "all end the same"` runs the random
+test over more seeds than the suite's 24 (a few hundred a process).
 `ILMI_SMOKE=readme` over a copy of the sample walks the screens the README
 shows and marks each with a `shot:` line; the README's images were captured
 that way, by window id, and scaled to 1600 px wide. Each smoke mode logs `ok:` and `failed:` lines and `shot: <name>` marks
@@ -202,7 +212,7 @@ src/schedule/      ts-fsrs grading, the reading and writing loops, the queue que
 src/import/        text from a paste, a page, a list of cards, an Anki package, a book in EPUB, or a SuperMemo collection, on its way to a file
 src/pdf/           the PDF lens's pure side: a page's text from pdf.js items, finding a passage again
 src/plugins/       the plugin runtime (api.ts is the typed handle, runtime.ts the loader) and its tweaks section
-src/sync/          engine.ts merges a collection's changes by CRDT (registers by a clock, a document's text through Loro, change files in a storage; src/app/crdt.ts runs it); merge.ts is git sync's merge of one file changed on both devices, src/app/sync.ts its policy over the Rust commands
+src/sync/          engine.ts merges a collection's changes by CRDT (registers by a clock, a document's text through Loro, the tree and each directory's order from the registers, change files in a storage; src/app/crdt.ts runs it); merge.ts is git sync's merge of one file changed on both devices, src/app/sync.ts its policy over the Rust commands
 plugins/           the plugins the repo ships, built by `npm run plugins`; ilmi.d.ts is the API; see PLUGINS.md
 scripts/           command-line tools, run with tsx
 src-tauri/         the shell (Tauri v2, fs + dialog + http + deep-link + single-instance + opener + log plugins; store.rs is a collection's SQLite and blobs, anki.rs reads a package, epub.rs a book, plugin.rs a plugin zip, sync.rs a folder as a git repository over libgit2); gen/apple is the iOS project

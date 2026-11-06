@@ -4,7 +4,10 @@
 // is one card with both; one paragraph edited in two places merges by
 // character and is listed; 53's merge cases restated for rows and text;
 // and copies making random edits and syncing in random orders all end the
-// same.
+// same. Milestone 62, the tree: a rename against an edit, a move against a
+// new child, two reorderings merged row by row, a move into its own
+// descendant dropped alike everywhere, two rows of one name both shown;
+// and the random test with renames, moves, reorders and deletes.
 
 import { promises as fsp } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -12,9 +15,10 @@ import { join as joinPath } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { formatReview, meta, parse, serialize, setField, type Card, type Doc, type Review } from '../../format/index.js';
-import { importFolder, join, storeFs, type StoreFs } from '../../vault/index.js';
+import { Vault, importFolder, join, storeFs, type StoreFs } from '../../vault/index.js';
 import { memStore, type MemStore } from '../../vault/mem-store.js';
 import { nodeFs } from '../../vault/node-fs.js';
+import { rising } from '../../vault/store.js';
 import { bothChanged, engine, frontLines, type Engine } from '../engine.js';
 import { clock, msOf } from '../clock.js';
 import { folderStorage, memStorage, type MemStorage } from '../storage.js';
@@ -425,17 +429,20 @@ describe('53\'s merge cases, for rows and text', () => {
     expect(differences(await a.files(), await b.files())).toEqual([]);
   });
 
-  it('the order takes the later drag, the pairs and the log are unioned, a file replaced on both is the later one', async () => {
+  it('the order merges row by row, the pairs and the log are unioned, a file replaced on both is the later one', async () => {
     const { a, b, storage } = await pair(CORPUS);
     const order = (names: string[]) => `${JSON.stringify({ '': names }, null, 2)}\n`;
-    const top = (await a.fs.readDir(ROOT)).filter((e) => !e.name.startsWith('.') && (e.isDir || e.name.endsWith('.md'))).map((e) => (e.isDir ? `${e.name}/` : e.name)).filter((n, i, all) => !(n.endsWith('/') && all.includes(`${n.slice(0, -1)}.md`))).sort();
-    expect(top.length).toBeGreaterThan(2);
-    // the later drag stands whole, though it moved only two of the rows the earlier one moved
-    const swapped = [top[1]!, top[0]!, ...top.slice(2)];
+    // the top as it is shown with no order chosen: folders first, then documents
+    const top = ['books/', 'courses/', 'essays/', 'fleeting/', 'papers/', 'german.md'];
+    expect((await a.fs.readDir(ROOT)).filter((e) => !e.name.startsWith('.')).map((e) => (e.isDir ? `${e.name}/` : e.name)).sort()).toEqual([...top].sort());
+    // one turns the whole directory round; the other, later, takes `papers/` to the front, which puts it before `books/`
+    const fronted = ['papers/', ...top.filter((n) => n !== 'papers/')];
     a.at.ms += 60_000;
     await a.write('.ilmi/order.json', order([...top].reverse()));
     b.at.ms += 120_000;
-    await b.write('.ilmi/order.json', order(swapped));
+    await b.write('.ilmi/order.json', order(fronted));
+    // the row both moved is where the later put it, before `books/`; every other row is where the one that moved it put it
+    const merged = ['german.md', 'fleeting/', 'essays/', 'courses/', 'papers/', 'books/'];
     await a.write('.ilmi/same.json', `${JSON.stringify({ not: ['a|b'] }, null, 2)}\n`);
     await b.write('.ilmi/same.json', `${JSON.stringify({ not: ['c|d'] }, null, 2)}\n`);
     const line = (card: string, at: string): string => formatReview({ at, doc: 'german.md', card, g: 3, st: 'review', elapsed: 1, ivl: 1, next: 2, s: 2, d: 5 } as Review);
@@ -451,7 +458,7 @@ describe('53\'s merge cases, for rows and text', () => {
     await settle(storage, [a, b]);
     const fa = await a.files();
     expect(differences(fa, await b.files())).toEqual([]);
-    expect((JSON.parse(text(fa.get('.ilmi/order.json'))) as Record<string, string[]>)['']).toEqual(swapped);
+    expect((JSON.parse(text(fa.get('.ilmi/order.json'))) as Record<string, string[]>)['']).toEqual(merged);
     expect(JSON.parse(text(fa.get('.ilmi/same.json')))).toEqual({ not: ['a|b', 'c|d'] });
     const log = text(fa.get('.ilmi/reviews/2026-11.jsonl'));
     expect(log).toContain('"card":"one"');
@@ -481,6 +488,250 @@ describe('53\'s merge cases, for rows and text', () => {
     expect((await a.fs.readDir(join(ROOT, '.ilmi/plugins/made-apart'))).map((e) => e.name)).toEqual(['data.json']);
     expect(await a.read('.ilmi/state.json')).toBe('{"tab":"a"}\n');
     expect(await b.read('.ilmi/state.json')).toBe('{"tab":"b"}\n');
+  });
+});
+
+describe('the tree (milestone 62)', () => {
+  const LA = 'courses/linear-algebra';
+  const under = (files: Map<string, string>, dir: string): string[] => [...files.keys()].filter((p) => p.startsWith(dir)).sort();
+  /** A third copy made from the storage now: it reads every change at once, in the storage's order. */
+  const joined = async (storage: MemStorage): Promise<Copy> => {
+    const c = await copy('c');
+    await c.eng.connect(storage);
+    await c.eng.sync(storage);
+    return c;
+  };
+
+  it('a rename on one with an edit and a new child on the other: one document, renamed, its children with it', async () => {
+    const { a, b, storage } = await pair(CORPUS);
+    await a.fs.rename(join(ROOT, `${LA}.md`), join(ROOT, 'courses/algebra.md'));
+    await b.change(`${LA}.md`, (doc) => { doc.blocks.push({ kind: 'paragraph', text: 'edited under its old name' }); });
+    await b.write(`${LA}/made on b.md`, 'Made under the old name.\n');
+    const told: string[] = [];
+    const stop = await b.fs.watch!(ROOT, (paths) => { told.push(...paths); });
+    await settle(storage, [a, b]);
+    const fa = await a.files();
+    expect(differences(fa, await b.files())).toEqual([]);
+    expect(text(fa.get('courses/algebra.md'))).toContain('edited under its old name');
+    // whoever watches is told the order's file reads otherwise: it names rows by their paths (the window check found it stale)
+    await new Promise((r) => setTimeout(r, 80));
+    stop();
+    expect(told).toContain(join(ROOT, '.ilmi/order.json'));
+    expect(told).toContain(join(ROOT, 'courses/algebra.md'));
+    expect(under(fa, 'courses/')).toEqual(['courses/algebra.md', 'courses/algebra/made on b.md', 'courses/algebra/problem-set-1.md', 'courses/algebra/unit-2/eigenvalues.md', 'courses/algebra/vectors.md']);
+    expect(differences(fa, await (await joined(storage)).files())).toEqual([]);
+  });
+
+  it('a move on one with a new child and an edit on the other: one tree, in its new place, nothing twice and nothing lost', async () => {
+    const { a, b, storage } = await pair(CORPUS);
+    const before = (await a.files()).size;
+    // a folder, and a document with a child, each moved on one copy
+    await a.fs.rename(join(ROOT, 'papers/archive'), join(ROOT, 'essays/archive'));
+    await a.fs.rename(join(ROOT, 'papers/wozniak-1990.md'), join(ROOT, 'books/wozniak-1990.md'));
+    // and on the other, where they still are: a new child in each, and an edit under the folder
+    await b.write('papers/archive/made on b.md', 'In the folder, where b has it.\n');
+    await b.write('papers/wozniak-1990/second extract.md', 'Under the document, where b has it.\n');
+    await b.change('papers/archive/sutton-2019.md', (doc) => { doc.blocks.push({ kind: 'paragraph', text: 'edited where it was' }); });
+    await settle(storage, [b, a]);
+    const fa = await a.files();
+    expect(differences(fa, await b.files())).toEqual([]);
+    expect(fa.size).toBe(before + 2);
+    expect(under(fa, 'essays/archive')).toEqual(['essays/archive/made on b.md', 'essays/archive/sutton-2019.md']);
+    expect(text(fa.get('essays/archive/sutton-2019.md'))).toContain('edited where it was');
+    expect(under(fa, 'books/wozniak-1990')).toEqual(['books/wozniak-1990.md', 'books/wozniak-1990/second extract.md', 'books/wozniak-1990/woz-ex1.md']);
+    expect(under(fa, 'papers/archive')).toEqual([]);
+    expect(under(fa, 'papers/wozniak-1990')).toEqual([]);
+    expect(differences(fa, await (await joined(storage)).files())).toEqual([]);
+  });
+
+  it('two reorderings of one directory merge move by move: the first each makes, and the ones after', async () => {
+    const { a, b, storage } = await pair(CORPUS);
+    const shown = async (c: Copy): Promise<string[]> => (JSON.parse(await c.read('.ilmi/order.json')) as Record<string, string[]>)['fleeting'] ?? [];
+    const drag = async (c: Copy, name: string, target: string, mode: 'before' | 'after'): Promise<void> => {
+      const vault = await Vault.open(c.fs, ROOT);
+      await vault.place(`fleeting/${name}.md`, `fleeting/${target}.md`, mode);
+    };
+    // the directory has no order yet: each copy drags one row, and each drag writes the whole list
+    a.at.ms += 60_000;
+    await drag(a, 'office-hours', '2026-05-26', 'before');
+    b.at.ms += 120_000;
+    await drag(b, '2026-05-26', 'lecture-9', 'after');
+    expect(await shown(a)).toEqual(['office-hours.md', '2026-05-26.md', '2026-05-27.md', 'clipped-page.md', 'lecture-9.md', 'markdown-sampler.md']);
+    expect(await shown(b)).toEqual(['2026-05-27.md', 'clipped-page.md', 'lecture-9.md', '2026-05-26.md', 'markdown-sampler.md', 'office-hours.md']);
+    // a row a drag did not move is not a change another device's move of it loses to: one change a drag, beside the places the rest were shown at
+    await settle(storage, [a, b]);
+    const both = ['office-hours.md', '2026-05-27.md', 'clipped-page.md', 'lecture-9.md', '2026-05-26.md', 'markdown-sampler.md'];
+    expect(await shown(a)).toEqual(both);
+    expect(await shown(b)).toEqual(both);
+    // again, now that every row has a place: a drag is one row's change
+    a.at.ms += 60_000;
+    const waiting = await a.eng.waiting();
+    await drag(a, 'markdown-sampler', 'clipped-page', 'before');
+    expect(await a.eng.waiting()).toBe(waiting + 1);
+    const sent = [...a.store.tables.outbox.values()].pop()!;
+    expect((JSON.parse(sent) as { ops: unknown[] }).ops.length).toBe(1);
+    b.at.ms += 60_000;
+    await drag(b, '2026-05-27', 'markdown-sampler', 'after');
+    await settle(storage, [b, a]);
+    const again = ['office-hours.md', 'markdown-sampler.md', 'clipped-page.md', 'lecture-9.md', '2026-05-26.md', '2026-05-27.md'];
+    expect(await shown(a)).toEqual(again);
+    expect(await shown(b)).toEqual(again);
+    // one row dragged on both: where the later drag put it
+    a.at.ms += 60_000;
+    await drag(a, 'lecture-9', 'office-hours', 'before');
+    b.at.ms += 120_000;
+    await drag(b, 'lecture-9', '2026-05-27', 'after');
+    await settle(storage, [a, b]);
+    expect(await shown(a)).toEqual(['office-hours.md', 'markdown-sampler.md', 'clipped-page.md', '2026-05-26.md', '2026-05-27.md', 'lecture-9.md']);
+    expect(differences(await a.files(), await b.files())).toEqual([]);
+    const c = await joined(storage);
+    expect(await shown(c)).toEqual(await shown(a));
+    // a row moved out on one and dragged on the other: it is where it was moved to, with no place there
+    a.at.ms += 60_000;
+    await a.fs.rename(join(ROOT, 'fleeting/clipped-page.md'), join(ROOT, 'essays/clipped-page.md'));
+    b.at.ms += 120_000;
+    await drag(b, 'clipped-page', '2026-05-27', 'after');
+    await settle(storage, [a, b, c]);
+    for (const x of [a, b, c]) {
+      expect(await shown(x), x.name).toEqual(['office-hours.md', 'markdown-sampler.md', '2026-05-26.md', '2026-05-27.md', 'lecture-9.md']);
+      expect(JSON.parse(await x.read('.ilmi/order.json')), x.name).not.toHaveProperty('essays');
+      expect(await x.fs.stat(join(ROOT, 'essays/clipped-page.md')), x.name).not.toBeNull();
+    }
+  });
+
+  it('a move into its own descendant is dropped alike on every device, whichever syncs first', async () => {
+    for (const first of ['a', 'b'] as const) {
+      const { a, b, storage } = await pair(CORPUS);
+      // each puts one folder inside the other; the later move is the one that would close the loop
+      a.at.ms += 60_000;
+      await a.fs.rename(join(ROOT, 'papers'), join(ROOT, 'essays/papers'));
+      b.at.ms += 120_000;
+      await b.fs.rename(join(ROOT, 'essays'), join(ROOT, 'papers/essays'));
+      await settle(storage, first === 'a' ? [a, b] : [b, a]);
+      const fa = await a.files();
+      expect(differences(fa, await b.files())).toEqual([]);
+      // a's stands; b's is dropped, and its folder is where it was moved from
+      expect(fa.has('essays/papers/maxwell.md')).toBe(true);
+      expect(fa.has('essays/marginalia.md')).toBe(true);
+      expect(under(fa, 'papers/')).toEqual([]);
+      const c = await joined(storage);
+      expect(differences(fa, await c.files())).toEqual([]);
+      // dropped is dropped: when the other folder is taken back out, the move does not come back
+      await a.fs.rename(join(ROOT, 'essays/papers'), join(ROOT, 'papers'));
+      await settle(storage, [a, b, c]);
+      for (const x of [a, b, c]) {
+        const f = await x.files();
+        expect(f.has('papers/maxwell.md'), x.name).toBe(true);
+        expect(f.has('essays/marginalia.md'), x.name).toBe(true);
+      }
+      expect(differences(await a.files(), await c.files())).toEqual([]);
+    }
+  });
+
+  it('three moves round a ring: one is dropped, and a row moved from inside a folder goes back into it', async () => {
+    const { a, b, storage } = await pair(CORPUS);
+    const c = await joined(storage);
+    // books → courses → essays → papers/archive → …, and papers/archive is moved under books on the third copy, last
+    a.at.ms += 60_000;
+    await a.fs.rename(join(ROOT, 'books'), join(ROOT, 'courses/books'));
+    b.at.ms += 120_000;
+    await b.fs.rename(join(ROOT, 'courses'), join(ROOT, 'papers/archive/courses'));
+    c.at.ms += 180_000;
+    await c.fs.rename(join(ROOT, 'papers/archive'), join(ROOT, 'books/archive'));
+    await settle(storage, [c, a, b]);
+    const fa = await a.files();
+    expect(differences(fa, await b.files())).toEqual([]);
+    expect(differences(fa, await c.files())).toEqual([]);
+    // the last move is the one dropped: the archive is back in papers, with the other two inside it
+    expect(fa.has('papers/archive/sutton-2019.md')).toBe(true);
+    expect(fa.has('papers/archive/courses/books/james-pluralistic-ch4.md')).toBe(true);
+    expect(fa.has(`papers/archive/${LA}.md`)).toBe(true);
+    expect(differences(fa, await (await joined(storage)).files())).toEqual([]);
+  });
+
+  it('a ring of folders each deleted after its move comes back whole for a document edited under one, and is no ring', async () => {
+    const { a, b, storage } = await pair(CORPUS);
+    const c = await joined(storage);
+    // on a third copy a document under one folder is edited, and that is in the storage before the others look
+    await c.change('books/james-pluralistic-ch4.md', (doc) => { doc.blocks.push({ kind: 'paragraph', text: 'edited while its folder was deleted' }); });
+    await c.eng.sync(storage);
+    // each of the others puts one folder in the other and then deletes the one it moved: two deletes that had each
+    // seen a move, and the moves make a ring of rows that are in no tree when the edit brings them back
+    await a.fs.rename(join(ROOT, 'books'), join(ROOT, 'essays/books'));
+    await a.fs.remove(join(ROOT, 'essays/books'));
+    await b.fs.rename(join(ROOT, 'essays'), join(ROOT, 'books/essays'));
+    await b.fs.remove(join(ROOT, 'books/essays'));
+    await settle(storage, [a, b, c]);
+    const fa = await a.files();
+    expect(differences(fa, await b.files())).toEqual([]);
+    expect(differences(fa, await c.files())).toEqual([]);
+    const kept = [...fa.keys()].filter((p) => p.endsWith('james-pluralistic-ch4.md'));
+    expect(kept.length).toBe(1);
+    expect(kept[0]!.split('/').length).toBeLessThan(5);
+    expect(text(fa.get(kept[0]!))).toContain('edited while its folder was deleted');
+    expect(differences(fa, await (await joined(storage)).files())).toEqual([]);
+  });
+
+  it('two rows made with one name in one place are both shown, the same way on every device, until one is gone', async () => {
+    const { a, b, storage } = await pair(CORPUS);
+    await a.write('essays/notes.md', 'Made on a.\n');
+    await b.write('essays/notes.md', 'Made on b.\n');
+    await a.fs.mkdir(join(ROOT, 'inbox'));
+    await a.write('inbox/from a.md', 'In a\'s inbox.\n');
+    await b.fs.mkdir(join(ROOT, 'inbox'));
+    await b.write('inbox/from b.md', 'In b\'s inbox.\n');
+    await a.fs.writeBytes(join(ROOT, 'papers/figure.png'), new Uint8Array([1, 255]));
+    await b.fs.writeBytes(join(ROOT, 'papers/figure.png'), new Uint8Array([2, 255]));
+    await settle(storage, [a, b]);
+    const fa = await a.files();
+    expect(differences(fa, await b.files())).toEqual([]);
+    expect([text(fa.get('essays/notes.md')), text(fa.get('essays/notes 2.md'))].sort()).toEqual(['Made on a.\n', 'Made on b.\n']);
+    expect(under(fa, 'inbox')).toHaveLength(2);
+    expect(under(fa, 'inbox').map((p) => p.split('/')[0]).sort()).toEqual(['inbox', 'inbox 2']);
+    expect(fa.has('papers/figure.png') && fa.has('papers/figure 2.png')).toBe(true);
+    const c = await joined(storage);
+    expect(differences(fa, await c.files())).toEqual([]);
+    // an edit to the one shown numbered is an edit, not a rename: it is still `notes` underneath
+    const second = text(fa.get('essays/notes 2.md'));
+    await b.change('essays/notes 2.md', (doc) => { doc.blocks.push({ kind: 'paragraph', text: 'More.' }); });
+    await settle(storage, [a, b, c]);
+    expect(await a.read('essays/notes 2.md')).toBe(`${second}\nMore.\n`);
+    // the first renamed away, on a copy that then syncs: the other is shown by its own name again, everywhere
+    await a.fs.rename(join(ROOT, 'essays/notes.md'), join(ROOT, 'essays/first notes.md'));
+    await settle(storage, [a, b, c]);
+    for (const x of [a, b, c]) {
+      expect(await x.read('essays/notes.md'), x.name).toBe(`${second}\nMore.\n`);
+      expect(await x.fs.stat(join(ROOT, 'essays/notes 2.md')), x.name).toBeNull();
+    }
+    expect(differences(await a.files(), await b.files())).toEqual([]);
+    expect(differences(await a.files(), await c.files())).toEqual([]);
+    // a row shown numbered that is moved keeps the name it was shown by
+    const numberedInbox = under(await b.files(), 'inbox 2/')[0]!;
+    await b.fs.rename(join(ROOT, 'inbox 2'), join(ROOT, 'essays/inbox 2'));
+    await settle(storage, [b, a, c]);
+    for (const x of [a, b, c]) expect((await x.files()).has(`essays/${numberedInbox}`), x.name).toBe(true);
+    expect(differences(await a.files(), await c.files())).toEqual([]);
+  });
+
+  it('a rename on one and a new row of that name on the other: both shown', async () => {
+    const { a, b, storage } = await pair(CORPUS);
+    await a.fs.rename(join(ROOT, 'german.md'), join(ROOT, 'deutsch.md'));
+    await b.write('deutsch.md', 'Made on b under the name a chose.\n');
+    await settle(storage, [a, b]);
+    const fa = await a.files();
+    expect(differences(fa, await b.files())).toEqual([]);
+    expect(fa.has('german.md')).toBe(false);
+    const two = [text(fa.get('deutsch.md')), text(fa.get('deutsch 2.md'))];
+    expect(two.some((t) => t === 'Made on b under the name a chose.\n')).toBe(true);
+    expect(two.some((t) => t.includes('cv-wdh'))).toBe(true);
+  });
+
+  it('the longest run that rises stays', () => {
+    expect([...rising([0, 1, 2, 3])].sort()).toEqual([0, 1, 2, 3]);
+    expect([...rising([3, 0, 1, 2])].sort()).toEqual([1, 2, 3]);
+    expect([...rising([1, 2, 0, 3])].sort()).toEqual([0, 1, 3]);
+    expect(rising([2, 2, 2]).size).toBe(1);
+    expect(rising([]).size).toBe(0);
   });
 });
 
@@ -601,10 +852,33 @@ describe('copies making random edits and syncing in random orders', () => {
     Math.random = random.math;
     globalThis.crypto.getRandomValues = random.crypto;
   });
-  for (const seed of Array.from({ length: 24 }, (_, i) => i + 1)) {
+  /** Everything a copy shows: its directories, and its files with a document in the form the format writes (a file written by hand is kept as it came on the copy that took it in, which is 60's rule and not a difference). */
+  const shown = async (c: Copy): Promise<Map<string, string>> => {
+    const out = new Map<string, string>();
+    for (const [path, b] of await c.files()) {
+      if (path.endsWith('.md') && !path.startsWith('.')) out.set(path, Buffer.from(serialize(parse(text(b)).doc)).toString('base64'));
+      // the order is kept as it was written too: its directories are compared in one order
+      else if (path === '.ilmi/order.json') out.set(path, Buffer.from(JSON.stringify(Object.entries(JSON.parse(text(b)) as Record<string, string[]>).sort(([x], [y]) => (x < y ? -1 : 1)), null, 1)).toString('base64'));
+      else out.set(path, b);
+    }
+    const visit = async (rel: string): Promise<void> => {
+      for (const e of await c.fs.readDir(join(ROOT, rel))) {
+        if (!e.isDir) continue;
+        const path = rel ? `${rel}/${e.name}` : e.name;
+        out.set(`${path}/`, '');
+        await visit(path);
+      }
+    };
+    await visit('');
+    return out;
+  };
+  // `ILMI_SEEDS=n` runs n seeds, `ILMI_SEEDS=from-to` those: a wider look than the suite's
+  const [from, to] = (process.env.ILMI_SEEDS ?? '1-24').includes('-') ? (process.env.ILMI_SEEDS ?? '1-24').split('-').map(Number) : [1, Number(process.env.ILMI_SEEDS)];
+  for (const seed of Array.from({ length: to! - from! + 1 }, (_, i) => i + from!)) {
     it(`all end the same (seed ${seed})`, async () => {
       const rnd = rng(seed);
-      // the ids rows and cards are given come from the seed too, so a run that fails fails again
+      // the devices are numbered from the seed, whatever ran before, and the ids rows and cards are given come from it too: a run that fails fails again, alone
+      made = 100 + 3 * seed;
       const ids = rng(seed * 7919);
       Math.random = ids;
       globalThis.crypto.getRandomValues = ((b: Uint8Array) => { for (let i = 0; i < b.length; i++) b[i] = Math.floor(ids() * 256); return b; }) as typeof globalThis.crypto.getRandomValues;
@@ -620,36 +894,42 @@ describe('copies making random edits and syncing in random orders', () => {
         await c.eng.sync(storage);
         copies.push(c);
       }
-      const docs = [...(await first.files()).keys()].filter((p) => p.endsWith('.md') && !p.startsWith('.'));
-      let made = 0;
+      let wrote = 0;
       const WORDS = ['alpha', 'beta', 'gamma', 'delta', 'epsilon', 'zeta', 'eta', 'theta'];
+      const dirOf = (rel: string): string => rel.slice(0, Math.max(0, rel.lastIndexOf('/')));
+      const at = (dir: string, name: string): string => (dir ? `${dir}/${name}` : name);
       for (let step = 0; step < 120; step++) {
         const c = pick(copies);
         c.at.ms += Math.floor(rnd() * 90_000) + 1000;
-        const have = [...(await c.files()).keys()].filter((p) => p.endsWith('.md') && !p.startsWith('.'));
+        const all = await shown(c);
+        const have = [...all.keys()].filter((p) => p.endsWith('.md') && !p.startsWith('.')).sort();
+        /** Every directory that shows, the top first; and the ones that are folders, not a document's children. */
+        const dirs = ['', ...[...all.keys()].filter((p) => p.endsWith('/') && !p.startsWith('.')).map((p) => p.slice(0, -1)).sort()];
+        const folders = dirs.filter((d) => d !== '' && !all.has(`${d}.md`));
+        const there = async (rel: string): Promise<boolean> => (await c.fs.stat(join(ROOT, rel))) !== null;
         const rel = have.length ? pick(have) : null;
         const k = rnd();
-        if (k < 0.3 && rel) {
+        if (k < 0.22 && rel) {
           // a word put into a block, or a block's words changed
           await c.change(rel, (doc) => {
             const blocks = doc.blocks.filter((b) => b.kind === 'paragraph' || b.kind === 'card');
             if (!blocks.length) { doc.blocks.push({ kind: 'paragraph', text: `${pick(WORDS)} ${step}` }); return; }
             const b = pick(blocks);
             const words = b.text.split(' ');
-            const at = Math.floor(rnd() * (words.length + 1));
+            const i = Math.floor(rnd() * (words.length + 1));
             // a word takes the place of one only where that one is a plain word: a card stays a card
-            words.splice(at, rnd() < 0.3 && /^\p{L}+$/u.test(words[at] ?? '') ? 1 : 0, `${pick(WORDS)}${step}`);
+            words.splice(i, rnd() < 0.3 && /^\p{L}+$/u.test(words[i] ?? '') ? 1 : 0, `${pick(WORDS)}${step}`);
             b.text = words.join(' ');
           });
-        } else if (k < 0.42 && rel) {
+        } else if (k < 0.3 && rel) {
           await c.change(rel, (doc) => { doc.blocks.splice(Math.floor(rnd() * (doc.blocks.length + 1)), 0, { kind: 'paragraph', text: `A paragraph ${c.name} added at step ${step}.` }); });
-        } else if (k < 0.5 && rel) {
+        } else if (k < 0.35 && rel) {
           await c.change(rel, (doc) => { const i = doc.blocks.findIndex((b) => b.kind === 'paragraph'); if (i >= 0 && doc.blocks.length > 2) doc.blocks.splice(i, 1); });
-        } else if (k < 0.72 && rel) {
+        } else if (k < 0.5 && rel) {
           // a grade: a card that has an id
           const cards = parse(await c.read(rel)).doc.blocks.filter((b): b is Card => b.kind === 'card' && !!b.id);
           if (cards.length) await grade(c, rel, pick(cards).id!, 1 + Math.floor(rnd() * 4));
-        } else if (k < 0.82 && rel) {
+        } else if (k < 0.57 && rel) {
           await c.change(rel, (doc) => {
             const which = rnd();
             if (which < 0.4) setField(doc, 'pri', Math.floor(rnd() * 100));
@@ -657,23 +937,57 @@ describe('copies making random edits and syncing in random orders', () => {
             else if (which < 0.85) setField(doc, 'frozen', rnd() < 0.5);
             else setField(doc, 'pri', null);
           });
-        } else if (k < 0.9) {
-          await c.write(`made-${c.name}-${++made}.md`, `---\ntype: draft\n---\n\nMade by ${c.name} at step ${step}.\n`);
-        } else if (k < 0.95) {
+        } else if (k < 0.64) {
+          // a new document: its own name, or one of a few any copy may pick, in any directory
+          const name = rnd() < 0.4 ? `shared-${pick(WORDS.slice(0, 3))}.md` : `made-${c.name}-${++wrote}.md`;
+          const to = at(pick(dirs), name);
+          if (!(await there(to))) await c.write(to, `---\ntype: draft\n---\n\nMade by ${c.name} at step ${step}.\n`);
+        } else if (k < 0.67) {
           const pairs = JSON.parse(await c.read('.ilmi/same.json').catch(() => '{"not":[]}')) as { not: string[] };
           await c.write('.ilmi/same.json', `${JSON.stringify({ not: [...new Set([...pairs.not, `${pick(WORDS)}|${pick(WORDS)}`])].sort() }, null, 2)}\n`);
-        } else if (docs.length) {
-          await c.write('.ilmi/order.json', `${JSON.stringify({ '': [pick(docs.filter((d) => !d.includes('/')))] }, null, 2)}\n`);
+        } else if (k < 0.75) {
+          // a drag: one row of a directory taken to another place among the others, the whole list written as the app writes it
+          const dir = pick(dirs);
+          const order = JSON.parse(await c.read('.ilmi/order.json').catch(() => '{}')) as Record<string, string[]>;
+          const names = (await c.fs.readDir(join(ROOT, dir))).filter((e) => !e.name.startsWith('.')).filter((e) => (e.isDir ? !all.has(`${at(dir, e.name)}.md`) : e.name.endsWith('.md'))).map((e) => (e.isDir ? `${e.name}/` : e.name)).sort();
+          const list = [...(order[dir] ?? []).filter((n) => names.includes(n)), ...names.filter((n) => !(order[dir] ?? []).includes(n))];
+          if (list.length > 1) {
+            const [moved] = list.splice(Math.floor(rnd() * list.length), 1);
+            list.splice(Math.floor(rnd() * (list.length + 1)), 0, moved!);
+            await c.write('.ilmi/order.json', `${JSON.stringify({ ...order, [dir]: list }, null, 2)}\n`);
+          }
+        } else if (k < 0.83 && rel) {
+          // a rename: a new name, or one of a few any copy may pick
+          const to = at(dirOf(rel), rnd() < 0.3 ? `shared-${pick(WORDS.slice(0, 3))}.md` : `renamed-${step}.md`);
+          if (!(await there(to)) && !(await there(to.slice(0, -3)))) await c.fs.rename(join(ROOT, rel), join(ROOT, to));
+        } else if (k < 0.92) {
+          // a move: a document (its children with it) or a folder, into another directory
+          const from = rnd() < 0.5 && folders.length ? pick(folders) : rel;
+          const dir = pick(dirs);
+          if (from && dirOf(from) !== dir) {
+            const to = at(dir, from.slice(from.lastIndexOf('/') + 1));
+            const inside = from.endsWith('.md') ? from.slice(0, -3) : from;
+            if (dir !== inside && !dir.startsWith(`${inside}/`) && !(await there(to)) && !(await there(to.replace(/\.md$/, '')))) await c.fs.rename(join(ROOT, from), join(ROOT, to));
+          }
+        } else if (rel) {
+          // a delete: a document, or now and then a folder with all it holds
+          if (rnd() < 0.2 && folders.length) await c.fs.remove(join(ROOT, pick(folders)));
+          else await c.fs.remove(join(ROOT, rel));
         }
         // a sync now and then, of whichever copy
         if (rnd() < 0.35) await pick(copies).eng.sync(storage);
       }
       await settle(storage, [...copies].sort(() => rnd() - 0.5));
-      const files = await Promise.all(copies.map((c) => c.files()));
+      const files = await Promise.all(copies.map((c) => shown(c)));
       expect(differences(files[0]!, files[1]!)).toEqual([]);
       expect(differences(files[0]!, files[2]!)).toEqual([]);
-      // and every document still reads as one: what a copy holds is what the format writes
-      for (const [path, b] of files[0]!) if (path.endsWith('.md')) expect(serialize(parse(text(b)).doc), path).toBe(text(b));
+      // and every document still reads as one: what a copy made from the storage holds is what the format writes
+      for (const [path, b] of await copies[1]!.files()) if (path.endsWith('.md') && !path.startsWith('.')) expect(serialize(parse(text(b)).doc), path).toBe(text(b));
+      // nothing is twice: no two rows of one copy are shown under one path
+      for (const c of copies) {
+        const paths = c.fs.door.rows().map((r) => c.fs.door.pathOf(r));
+        expect(new Set(paths).size, c.name).toBe(paths.length);
+      }
     }, 120_000);
   }
 });

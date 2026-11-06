@@ -196,7 +196,9 @@
 // for the second collection and `ILMI_STORAGE` an empty folder) over
 // `samples/double-major`: this window's collection makes the storage in the
 // folder, the second window's is made from it; then the checks of 53's
-// smoke through the engine (see the function).
+// smoke through the engine, and milestone 62's: two drags merged move by
+// move, a rename against an edit and a new page, a move against a new
+// document (see the function).
 // `ILMI_SMOKE=welcome` runs before any vault opens: it seeds the recents
 // with the scratch vault (`ILMI_VAULT`) and a path that does not exist,
 // turns `reopen the last vault on start` off, reads the welcome's rows and
@@ -8254,6 +8256,15 @@ async function syncSteps(name: string, args: Record<string, unknown>): Promise<u
     }
     case 'orderOf':
       return vault().order[str('dir')] ?? null;
+    // milestone 62: the tree
+    case 'place':
+      return await vault().place(str('path'), str('target'), str('mode') as 'before' | 'after');
+    case 'rename':
+      return await vault().rename(str('path'), str('name'));
+    case 'move':
+      return await vault().move(str('path'), str('dir'));
+    case 'paths':
+      return [...vault().documents()].sort();
     case 'sync':
       // through the storage when the collection has one (milestone 61), else by git
       if (crdtOn()) await crdtNow();
@@ -8528,9 +8539,13 @@ export async function smokeSync(vault: Vault): Promise<void> {
 // reworded in a and graded in b is one card with both; a pass on each
 // lands in both; one paragraph edited in both is one paragraph with both
 // edits, named in a notice, the strip reading `1 conflict` until the file
-// is opened; a drag in both keeps the later; a document made in b is in a;
-// the folder holds `format`, a directory a device, and the PDFs. Light,
-// then dark.
+// is opened; a document made in b is in a; the folder holds `format`, a
+// directory a device, and the PDFs. Milestone 62, the tree: a drag in each
+// of one directory merges move by move, and one row dragged in both is
+// where the later drag put it; a document renamed in a and edited in b,
+// with a page made under it in b, is one document under its new name with
+// its children; a folder moved in a with a document made in it in b is one
+// folder in its new place with the document. Light, then dark.
 export async function smokeCrdt(vault: Vault): Promise<void> {
   const { emitTo, listen } = await import('@tauri-apps/api/event');
   const { meta, parse } = await import('../format/index.js');
@@ -8685,22 +8700,86 @@ export async function smokeCrdt(vault: Vault): Promise<void> {
     q<HTMLElement>('.top .sync')?.click();
     await poll(() => word() === 'synced' && activeTab(useApp.getState().panes)?.id === NOTE, 'a: the click opens the file and the count clears');
 
-    // ── a drag in both keeps the later ──
-    const orderA = ['idea-for-honors-thesis.md', '2026-10-30.md', '2026-10-29.md', '2026-10-27.md', 'clipped-why-perturbation-series-diverge.md'];
-    const orderB = ['clipped-why-perturbation-series-diverge.md', '2026-10-27.md', '2026-10-29.md', '2026-10-30.md', 'idea-for-honors-thesis.md'];
-    await a('order', { dir: FLEETING, names: orderA });
-    await sleep(1200);
-    await b('order', { dir: FLEETING, names: orderB });
+    // ── two drags of one directory merge move by move; one row dragged in both is where the later put it ──
+    const fl = (name: string) => `${FLEETING}/${name}`;
+    const orderIs = async (want: string[], what: string) => {
+      await poll(() => JSON.stringify(vault.order[FLEETING] ?? null) === JSON.stringify(want), `a: ${what}`, 10000).catch((e: unknown) => { throw new Error(`${e instanceof Error ? e.message : String(e)}; a has ${JSON.stringify(vault.order[FLEETING] ?? null)}`); });
+      const inB = JSON.stringify(await b('orderOf', { dir: FLEETING }));
+      must(inB === JSON.stringify(want), `b: ${what} (${inB})`);
+    };
+    must(JSON.stringify(vault.order[FLEETING]) === JSON.stringify(['2026-10-30.md', '2026-10-29.md', '2026-10-27.md', 'clipped-why-perturbation-series-diverge.md', 'idea-for-honors-thesis.md']), `the directory's order before: ${JSON.stringify(vault.order[FLEETING])}`);
+    await a('place', { path: fl('idea-for-honors-thesis.md'), target: fl('2026-10-30.md'), mode: 'before' });
+    await b('place', { path: fl('2026-10-27.md'), target: fl('clipped-why-perturbation-series-diverge.md'), mode: 'after' });
     await round();
-    let orderANow = '';
-    for (let i = 0; i < 25 && orderANow !== JSON.stringify(orderB); i++) {
-      if (i) await sleep(200);
-      orderANow = JSON.stringify(await a('orderOf', { dir: FLEETING }));
-    }
-    must(orderANow === JSON.stringify(orderB), `a takes b's later order: ${orderANow}`);
-    must(JSON.stringify(await b('orderOf', { dir: FLEETING })) === JSON.stringify(orderB), "b's order stands");
+    await orderIs(['idea-for-honors-thesis.md', '2026-10-30.md', '2026-10-29.md', 'clipped-why-perturbation-series-diverge.md', '2026-10-27.md'], "a's drag and b's drag are both in the order");
+    await a('place', { path: fl('2026-10-29.md'), target: fl('2026-10-27.md'), mode: 'after' });
+    await sleep(1200);
+    await b('place', { path: fl('2026-10-29.md'), target: fl('idea-for-honors-thesis.md'), mode: 'before' });
+    await round();
+    const orderB = ['2026-10-29.md', 'idea-for-honors-thesis.md', '2026-10-30.md', 'clipped-why-perturbation-series-diverge.md', '2026-10-27.md'];
+    await orderIs(orderB, 'one row dragged in both is where the later drag put it');
     await poll(() => { const rows = Array.from(document.querySelectorAll<HTMLElement>('.side .row')).map((r) => r.dataset.path ?? '').filter((p) => p.startsWith(`${FLEETING}/`)); return rows.length >= 5 && rows[0] === `${FLEETING}/${orderB[0]}`; }, 'the sidebar draws it').catch(() => log('the sidebar rows were not read (no data-path); the order above stands'));
     await shot('crdt-order');
+
+    // ── a document renamed in a, edited in b with a page made under it: one document, renamed, its children with it ──
+    const POETRY = 'courses/fall-2026/arab-455-abbasid-poetry';
+    const PAPER = `${POETRY}/term-paper.md`;
+    /** Both windows' documents, once they are the same: each window's vault follows a merge a moment after it. */
+    const sameTree = async (what: string) => {
+      let inB: string[] = [];
+      for (let i = 0; i < 50; i++) {
+        if (i) await sleep(200);
+        inB = await b<string[]>('paths');
+        if (JSON.stringify([...vault.documents()].sort()) === JSON.stringify(inB)) { log(`ok: ${what}: a and b hold the same documents (${inB.length})`); return inB; }
+      }
+      const inA = new Set(vault.documents());
+      throw new Error(`${what}: a and b hold the same documents; only in a: ${[...inA].filter((p) => !inB.includes(p)).join(', ') || 'none'}; only in b: ${inB.filter((p) => !inA.has(p)).join(', ') || 'none'}`);
+    };
+    const before62 = (await sameTree('before the rename')).length;
+    const paper = await a<string>('rename', { path: PAPER, name: 'the gift taken back' });
+    must(paper === `${POETRY}/the gift taken back.md`, `a renamed the draft: ${paper}`);
+    await b('edit', { path: PAPER, find: 'Going with the first for now.', replace: 'Going with the second for now.' });
+    await b('make', { dir: `${POETRY}/term-paper`, name: 'a page made under the old name', text: 'Made in b while a renamed its parent.' });
+    await round();
+    const afterRename = await sameTree('after the rename');
+    const under = afterRename.filter((p) => p.startsWith(`${POETRY}/the gift taken back`));
+    must(JSON.stringify(under) === JSON.stringify([`${POETRY}/the gift taken back.md`, `${POETRY}/the gift taken back/a page made under the old name.md`, `${POETRY}/the gift taken back/outline-v1.md`, `${POETRY}/the gift taken back/reading-notes.md`]), `one document under its new name, its two children and b's page with it: ${under.map((p) => p.slice(POETRY.length + 1)).join(' | ')}`);
+    must(!afterRename.some((p) => p.startsWith(`${POETRY}/term-paper`)), 'nothing is left under the old name');
+    must(afterRename.length === before62 + 1, `nothing twice, nothing lost: ${before62} documents and the one b made (${afterRename.length})`);
+    const paperA = await a<string>('text', { path: paper });
+    must(paperA.includes('Going with the second for now.') && paperA === (await b<string>('text', { path: paper })), "b's edit is in the renamed document, the same in both");
+    const orderOfB = async (dir: string): Promise<string> => {
+      let inB = '';
+      for (let i = 0; i < 25; i++) {
+        if (i) await sleep(200);
+        inB = JSON.stringify(await b('orderOf', { dir }));
+        if (inB === JSON.stringify(vault.order[dir] ?? null)) break;
+      }
+      return inB;
+    };
+    const poetryB = await orderOfB(POETRY);
+    must(JSON.stringify(vault.order[POETRY] ?? null) === poetryB && poetryB.includes('"the gift taken back.md"') && !poetryB.includes('term-paper'), `it keeps its place in its directory's order, in both: ${poetryB}`);
+    openNode(paper);
+    await sleep(400);
+    await shot('crdt-renamed');
+
+    // ── a folder moved in a, a document made in it in b: one folder, in its new place, with the document ──
+    const went = await a<string>('move', { path: 'courses/fall-2025', dir: 'library' });
+    must(went === 'library/fall-2025', `a moved the folder: ${went}`);
+    await b('make', { dir: 'courses/fall-2025', name: 'made where the folder was', text: 'Made in b while a moved the folder.' });
+    await b('make', { dir: 'courses/fall-2025/phys-301-classical-mechanics', name: 'a fourth lecture', text: 'Made in b under a document a moved.' });
+    await round();
+    const afterMove = await sameTree('after the move');
+    const inFolder = afterMove.filter((p) => p.startsWith('library/fall-2025/'));
+    must(JSON.stringify(inFolder) === JSON.stringify(['library/fall-2025/made where the folder was.md', 'library/fall-2025/phys-301-classical-mechanics.md', 'library/fall-2025/phys-301-classical-mechanics/a fourth lecture.md', 'library/fall-2025/phys-301-classical-mechanics/central-forces-and-orbits.md', 'library/fall-2025/phys-301-classical-mechanics/hamiltonian-mechanics.md', 'library/fall-2025/phys-301-classical-mechanics/lagrangian-mechanics.md']), `the folder is in its new place with what it held and what b made in it: ${inFolder.map((p) => p.slice('library/fall-2025/'.length)).join(' | ')}`);
+    must(!afterMove.some((p) => p.startsWith('courses/fall-2025')), 'nothing is left where it was');
+    must(afterMove.length === before62 + 3, `nothing twice, nothing lost (${afterMove.length})`);
+    must((await a<string>('text', { path: 'library/fall-2025/made where the folder was.md' })).includes('Made in b while a moved the folder.'), "b's document has its text in a");
+    const coursesB = await orderOfB('courses');
+    must(JSON.stringify(vault.order['courses'] ?? null) === coursesB && !coursesB.includes('fall-2025'), `the directory it left no longer lists it, in both: ${coursesB}`);
+    openNode('library/fall-2025/made where the folder was.md');
+    await sleep(400);
+    await shot('crdt-moved');
 
     // ── a document made in b is in a ──
     const docsB = await b<number>('documents');
@@ -8708,7 +8787,8 @@ export async function smokeCrdt(vault: Vault): Promise<void> {
     await round();
     await poll(() => vault.documents().includes(`${FLEETING}/made on the other device.md`), 'a has the document b made', 10000);
     must((await a<string>('text', { path: `${FLEETING}/made on the other device.md` })).includes('A line written where it was made.'), 'with its text');
-    must(vault.documents().length === docsA + 1 && (await b<number>('documents')) === docsB + 1, 'one more document in each');
+    must(vault.documents().length === before62 + 4 && (await b<number>('documents')) === docsB + 1, 'one more document in each');
+    await sameTree('at the end');
 
     // ── nothing more to say ──
     const quiet = await round();

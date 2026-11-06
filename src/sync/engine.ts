@@ -21,6 +21,25 @@
 //   a delete names the changes it had seen, and only those.
 // - PDFs and images are never merged: a row names one by its hash, and
 //   the bytes go to the storage whole before the change that names them.
+// - The tree (milestone 62) is what the registers make, by rules that
+//   read nothing but the registers, so every device makes the same one:
+//   a row's parent is the later move. Of moves that together would put a
+//   row under itself, the latest is dropped: the device that finds the
+//   loop writes that row's parent back to where it was moved from (the
+//   top, when that is gone or would loop too), as a change stamped just
+//   after the move it undoes, so each device that finds it writes the
+//   same change and a move made since still wins. Of rows with one name
+//   in one place, the one whose id sorts first has the name and the
+//   others are shown as `name 2`, `name 3`: that is never written, the
+//   row's name is still the one it was given, and it is shown by it
+//   again when the other row is gone. A row shown otherwise than its
+//   registers have it is `displaced`, and is looked at again on every
+//   merge and every sync.
+// - A row's place in its directory's order is a register too, a number
+//   between its neighbours' (`src/vault/store.ts`, `setPlaces`), so two
+//   orders of one directory merge row by row. A row that only kept its
+//   place when an order was first written is stamped below every move
+//   (`KEPT`): the other device's move of it wins, whenever it was made.
 //
 // What is kept (the store's `regs`, `crdt`, `outbox`, `sync_meta`): a
 // register per field with the stamp that won it and its value; per
@@ -30,7 +49,9 @@
 // the store's door whenever a merge changes them.
 //
 // A change is one JSON object: `g` a register (`k` its key, `v` its value,
-// `c` its stamp), `x` a text update (`u`, with `vv` the version it was
+// `c` its stamp; `a` when it is not a change a delete has to have seen for
+// the row to go: a dropped move undone, a place a row only kept or lost
+// when its directory's order was written), `x` a text update (`u`, with `vv` the version it was
 // made at), `d` a delete (`e`: the changes to the row it had seen, by
 // device), `r` a line of the review log. A write's changes travel
 // together (`{ s, ops }`, `s` this device's count of them), and a file in
@@ -47,7 +68,7 @@ import type { Storage } from './storage.js';
 export type Loro = Pick<typeof import('loro-crdt'), 'LoroDoc' | 'VersionVector'>;
 
 type Op =
-  | { t: 'g'; k: string; v: string | null; c: string }
+  | { t: 'g'; k: string; v: string | null; c: string; a?: 1 }
   | { t: 'x'; id: string; u: string; vv: string }
   | { t: 'd'; id: string; e: Record<string, number> }
   | { t: 'r'; f: string; l: string };
@@ -102,6 +123,10 @@ const FILE_BYTES = 1_000_000;
 const TEXT = 't';
 const FORMAT = 'format';
 const DEVICE_LEN = 16;
+/** Leads the stamp of a place a row only kept: it sorts below every stamp of a move. */
+const KEPT = '!';
+/** Ends the stamp of a dropped move undone: just after the move's own, before any made since. */
+const UNDONE = '~';
 /** A clock's stamp is the last characters of a schedule's, which leads with its review instant. */
 const CLOCK_LEN = 9 + 3 + DEVICE_LEN;
 
@@ -201,8 +226,23 @@ interface View {
   complete: boolean;
   /** Deleted, and every change to it had been seen by a delete. */
   dead: boolean;
+  /** Where its registers put it and what they name it. */
+  parent: string | null;
+  name: string;
+  /** What it is shown as: elsewhere for a move dropped, under another name where a row before it has this one. */
   at: Place;
   regs: RowRegs;
+}
+
+/** A place as its register holds it, for a row in `parent`: the number, when it is a place in that directory (`[2.5,"<parent>"]`; a bare number, written before 62, is a place wherever the row is). */
+function placeIn(o: string | null, parent: string | null): number | null {
+  if (o === null) return null;
+  try {
+    const v = JSON.parse(o) as unknown;
+    if (typeof v === 'number') return Number.isFinite(v) ? v : null;
+    if (Array.isArray(v) && typeof v[0] === 'number' && Number.isFinite(v[0])) return v[1] === (parent ?? '') ? v[0] : null;
+  } catch { /* a register that does not read is no place */ }
+  return null;
 }
 
 function viewOf(id: string, regs: RowRegs): View {
@@ -212,14 +252,22 @@ function viewOf(id: string, regs: RowRegs): View {
   const p = regs.get('p');
   const e = JSON.parse(v('e') ?? '{}') as Record<string, number>;
   const d = regs.has('d') ? (JSON.parse(v('d') ?? '{}') as Record<string, number>) : null;
-  const o = v('o');
+  const parent = p?.value ? p.value : null;
   return {
     id,
     complete: name !== null && kind !== null && !!p && p.value !== null,
     dead: d !== null && Object.entries(e).every(([dev, n]) => (d[dev] ?? 0) >= n),
-    at: { id, parent: p?.value ? p.value : null, name: name ?? '', place: o === null ? null : Number(o), kind: (kind ?? 'file') as RowKind },
+    parent,
+    name: name ?? '',
+    at: { id, parent, name: name ?? '', place: placeIn(v('o'), parent), kind: (kind ?? 'file') as RowKind },
     regs,
   };
+}
+
+/** `name` as the `k`th row of that name in one place is shown: `notes 2`, `figure 2.png`. */
+function numbered(name: string, kind: RowKind, k: number): string {
+  const dot = kind === 'file' ? name.lastIndexOf('.') : -1;
+  return dot > 0 ? `${name.slice(0, dot)} ${k}${name.slice(dot)}` : `${name} ${k}`;
 }
 
 /** A document's front matter block as its registers have it: the lines in their places. */
@@ -271,6 +319,8 @@ export function engine(fs: StoreFs, opts: EngineOptions): Engine {
   let plan: Plan | null = null;
   /** The last file merged of each other device. */
   const cur = new Map<string, number>();
+  /** Rows shown otherwise than their registers have them: a move dropped for the loop it would make, a name a row before it holds. */
+  let displaced = new Set<string>();
 
   const ready: Promise<void> = (async () => {
     const meta = new Map(await store.meta());
@@ -283,6 +333,7 @@ export function engine(fs: StoreFs, opts: EngineOptions): Engine {
     const p = meta.get('plan');
     plan = p ? (JSON.parse(p) as Plan) : null;
     for (const [k, v] of meta) if (k.startsWith('cur|')) cur.set(k.slice(4), Number(v));
+    try { displaced = new Set(JSON.parse(meta.get('displaced') ?? '[]') as string[]); } catch { /* none */ }
     if (device) clk = clock(device, now, meta.get('hlc') ?? '');
   })();
 
@@ -354,10 +405,17 @@ export function engine(fs: StoreFs, opts: EngineOptions): Engine {
       p.ops.push({ t: 'g', k: `${id}|${k}`, v, c: stamp });
       p.rows.add(id);
     };
-    if (!before || before.name !== at.name) reg('n', at.name);
-    if (!before || before.parent !== at.parent) reg('p', at.parent ?? '');
+    // a displaced row renamed or moved here: the write says where it is and what it is called from now on, as it was shown
+    const settles = !!before && displaced.has(id) && (before.name !== at.name || before.parent !== at.parent);
+    if (!before || before.name !== at.name || settles) reg('n', at.name);
+    if (!before || before.parent !== at.parent || settles) {
+      reg('p', at.parent ?? '');
+      // where it was moved from: where it stays if the move is dropped
+      if (before) reg('q', before.parent ?? '');
+    }
     if (!before || before.kind !== at.kind) reg('k', at.kind);
-    if (before ? before.place !== at.place : at.place !== null) reg('o', at.place === null ? null : String(at.place));
+    // a place is a place in one directory: a move writes it again, kept or none, so a place the row once had where it lands is not taken up again
+    if (before ? before.place !== at.place || before.parent !== at.parent : at.place !== null) reg('o', at.place === null ? null : JSON.stringify([at.place, at.parent ?? '']));
     if (!content) return;
     const blob = content.blob ?? null;
     if (blob !== null) {
@@ -380,7 +438,8 @@ export function engine(fs: StoreFs, opts: EngineOptions): Engine {
     if (!old || old.front !== front) {
       const have = new Map<string, { at: number; line: string }>();
       let block = false;
-      for (const r of old ? await store.regsUnder([`${id}|m|`]) : []) {
+      // a row that was a document before it was a folder (its children kept it) may still hold that document's lines
+      for (const r of before ? await store.regsUnder([`${id}|m|`]) : []) {
         if (r.value === null) continue;
         const lid = r.key.slice(id.length + 3);
         if (lid === '') { block = true; continue; }
@@ -423,8 +482,8 @@ export function engine(fs: StoreFs, opts: EngineOptions): Engine {
     const to = new Map(keyed.map((s) => [`s|${s.kind}|${s.item}|${s.key}`, s.attrs]));
     const changes: [string, string | null][] = [];
     const had = new Map<string, string>();
-    if (moved && old) {
-      // the text changed: every schedule the registers hold that the document no longer carries goes
+    if (moved && before) {
+      // the text changed, or the row is a document again: every schedule the registers hold that the document does not carry goes
       for (const r of await store.regsUnder([`${id}|s|`])) {
         const k = r.key.slice(id.length + 1);
         had.set(k, r.stamp);
@@ -470,11 +529,18 @@ export function engine(fs: StoreFs, opts: EngineOptions): Engine {
       if (!device || !changed.length) return [];
       const p = begin();
       const c = clk.tick();
-      for (const [id, place] of changed) {
-        const v = place === null ? null : String(place);
-        p.regs.push({ key: `${id}|o`, stamp: c, value: v });
-        p.ops.push({ t: 'g', k: `${id}|o`, v, c });
-        p.rows.add(id);
+      // a row that only kept its place yields to any move of it, unless a move is what it had: then this is the later one
+      const kept = changed.filter(([, , k]) => k).map(([id]) => `${id}|o`);
+      const had = new Map((kept.length ? await store.regs(kept) : []).map((r) => [r.key, r.stamp]));
+      for (const [id, place, k] of changed) {
+        const key = `${id}|o`;
+        const was = had.get(key);
+        const stamp = k && (was === undefined || was.startsWith(KEPT)) ? KEPT + c : c;
+        const v = place === null ? null : JSON.stringify([place, door.row(id)?.parent ?? '']);
+        p.regs.push({ key, stamp, value: v });
+        // only a row given a place is a row someone moved: one that kept its place, or lost it with the list, is not kept from a delete by that
+        if (k || place === null) p.ops.push({ t: 'g', k: key, v, c: stamp, a: 1 });
+        else { p.ops.push({ t: 'g', k: key, v, c: stamp }); p.rows.add(id); }
       }
       return finish(p);
     },
@@ -639,18 +705,24 @@ export function engine(fs: StoreFs, opts: EngineOptions): Engine {
 
   const samePlace = (r: Row, at: Place): boolean => r.parent === at.parent && r.name === at.name && r.place === at.place && r.kind === at.kind;
 
-  /** One file of another device, merged: its registers, its texts, and the tree as they make it, in one transaction. */
-  const merge = async (file: FileIn, storage: Storage, out: { kept: Kept[]; changed: Set<string> }): Promise<void> => {
+  /**
+   * One file of another device, merged: its registers, its texts, and the
+   * tree as they make it, in one transaction. With no file, the rows shown
+   * otherwise than their registers have them are looked at again: what was
+   * written here since may have made room for one.
+   */
+  const merge = async (file: FileIn | null, storage: Storage, out: { kept: Kept[]; changed: Set<string> }): Promise<void> => {
     // 1. the registers the file's changes name, as they are here
+    const batches = file?.batches ?? [];
     const keys = new Set<string>();
-    for (const b of file.batches) {
+    for (const b of batches) {
       for (const o of b.ops) {
         if (o.t === 'g') { keys.add(o.k); const id = rowOf(o.k); if (id) keys.add(`${id}|e`); }
         else if (o.t === 'x') keys.add(`${o.id}|e`);
         else if (o.t === 'd') keys.add(`${o.id}|d`);
       }
     }
-    const have = new Map((await store.regs([...keys])).map((r) => [r.key, r]));
+    const have = new Map((keys.size ? await store.regs([...keys]) : []).map((r) => [r.key, r]));
     const dirty = new Map<string, Reg>();
     const at = (k: string): Reg | undefined => dirty.get(k) ?? have.get(k);
     const texts = new Map<string, Extract<Op, { t: 'x' }>[]>();
@@ -660,20 +732,22 @@ export function engine(fs: StoreFs, opts: EngineOptions): Engine {
     const bump = (id: string, s: number): void => {
       const k = `${id}|e`;
       const e = JSON.parse(at(k)?.value ?? '{}') as Record<string, number>;
-      if ((e[file.device] ?? 0) < s) {
-        e[file.device] = s;
+      if ((e[file!.device] ?? 0) < s) {
+        e[file!.device] = s;
         dirty.set(k, { key: k, stamp: '', value: JSON.stringify(e) });
       }
       touched.add(id);
     };
-    for (const b of file.batches) {
+    for (const b of batches) {
       for (const o of b.ops) {
         if (o.t === 'g') {
-          clk.see(o.c.slice(-CLOCK_LEN));
+          if (!o.c.endsWith(UNDONE)) clk.see(o.c.slice(-CLOCK_LEN));
           const had = at(o.k);
-          if (!had || o.c > had.stamp) dirty.set(o.k, { key: o.k, stamp: o.c, value: o.v });
+          // one stamp, two values: two devices undid one move, each as it saw the tree; the value decides
+          if (!had || o.c > had.stamp || (o.c === had.stamp && (o.v ?? '') > (had.value ?? ''))) dirty.set(o.k, { key: o.k, stamp: o.c, value: o.v });
           const id = rowOf(o.k);
-          if (id) bump(id, b.s);
+          if (id && o.a) touched.add(id);
+          else if (id) bump(id, b.s);
         } else if (o.t === 'x') {
           texts.set(o.id, [...(texts.get(o.id) ?? []), o]);
           bump(o.id, b.s);
@@ -691,6 +765,8 @@ export function engine(fs: StoreFs, opts: EngineOptions): Engine {
         }
       }
     }
+    // a row shown otherwise than its registers have it is looked at again with every merge
+    for (const id of displaced) touched.add(id);
 
     // 2. every touched row as its registers have it now
     const ids = [...touched];
@@ -716,58 +792,199 @@ export function engine(fs: StoreFs, opts: EngineOptions): Engine {
       return v;
     };
 
-    // 3. what the tree shows after: a row that is not dead, and whatever such a row is under
+    // 3. moves that together would put a row under itself. Every row's parent is read from its registers (a row
+    // not read here is in the tree where they put it), so each device that holds these registers finds the same
+    // loops and undoes the same move of each: the latest.
+    /** Rows this merge did not read whose place in the tree it changes: shown elsewhere, or under another name. */
+    const side = new Map<string, Place>();
+    /** The rows shown otherwise than their registers have them, after this merge. */
+    const off = new Set<string>();
+    /** Dropped moves undone here: changes of this device's, for the others. */
+    const undone: Op[] = [];
+    const parentOf = (id: string): string | null | undefined => {
+      const v = views.get(id);
+      return v ? (v.complete ? v.parent : undefined) : door.row(id)?.parent;
+    };
+    // a row gone from the tree that a row read here is under is read too: it comes back with what is under it, and a loop may run through it
+    for (const id of ids) {
+      for (let pid = parentOf(id), hops = 0; pid != null && !views.has(pid) && !door.row(pid) && hops < 10_000; hops++) pid = (await fetch(pid)).complete ? views.get(pid)!.parent : null;
+    }
+    const loops: string[][] = [];
+    const clear = new Set<string>();
+    for (const start of [...views.keys()]) {
+      const path: string[] = [];
+      const on = new Set<string>();
+      for (let id: string | null | undefined = start; id != null && !clear.has(id); id = parentOf(id)) {
+        if (on.has(id)) { loops.push(path.slice(path.indexOf(id))); break; }
+        path.push(id);
+        on.add(id);
+      }
+      for (const id of path) clear.add(id);
+    }
+    if (loops.length) {
+      const moveOf = async (id: string): Promise<{ id: string; stamp: string; from: string | null }> => {
+        let regs: RowRegs | undefined = views.get(id)?.regs;
+        if (!regs) {
+          regs = new Map();
+          for (const r of await store.regs([`${id}|p`, `${id}|q`])) regs.set(r.key.slice(id.length + 1), r);
+        }
+        const p = regs.get('p');
+        const q = regs.get('q');
+        // where the move was made from, when the same write said so
+        return { id, stamp: p?.stamp ?? '', from: p && q && q.stamp === p.stamp && q.value ? q.value : null };
+      };
+      const later = (a: { id: string; stamp: string }, b: { id: string; stamp: string }): boolean => a.stamp > b.stamp || (a.stamp === b.stamp && a.id > b.id);
+      const dropped: { id: string; stamp: string; from: string | null }[] = [];
+      for (const loop of loops) {
+        let last = await moveOf(loop[0]!);
+        for (const id of loop.slice(1)) { const m = await moveOf(id); if (later(m, last)) last = m; }
+        dropped.push(last);
+      }
+      dropped.sort((a, b) => (later(a, b) ? 1 : -1));
+      const live = async (id: string): Promise<boolean> => {
+        const v = views.get(id);
+        if (v) return v.complete && !v.dead;
+        if (!door.row(id)) return false;
+        const regs: RowRegs = new Map((await store.regs([`${id}|e`, `${id}|d`])).map((r) => [r.key.slice(id.length + 1), r]));
+        return !viewOf(id, regs).dead;
+      };
+      // the row of a dropped move goes back where it was moved from, when that is still there and not under the row; else to the top
+      const to = new Map<string, string | null>(dropped.map((d) => [d.id, null]));
+      for (const d of dropped) {
+        if (d.from === null || !(await live(d.from))) continue;
+        let ok = true;
+        const seen = new Set<string>();
+        for (let id: string | null | undefined = d.from; id != null; id = to.has(id) ? to.get(id) : parentOf(id)) {
+          if (id === d.id || seen.has(id)) { ok = false; break; }
+          seen.add(id);
+        }
+        if (ok) to.set(d.id, d.from);
+      }
+      for (const d of dropped) {
+        const parent = to.get(d.id) ?? null;
+        const reg: Reg = { key: `${d.id}|p`, stamp: d.stamp + UNDONE, value: parent ?? '' };
+        dirty.set(reg.key, reg);
+        undone.push({ t: 'g', k: reg.key, v: reg.value, c: reg.stamp, a: 1 });
+        const v = views.get(d.id);
+        if (v) {
+          v.regs.set('p', reg);
+          v.parent = parent;
+          v.at = { ...v.at, parent, place: placeIn(v.regs.get('o')?.value ?? null, parent) };
+        } else {
+          const r = door.row(d.id);
+          if (r) side.set(d.id, { id: r.id, parent, name: r.name, place: null, kind: r.kind });
+        }
+      }
+    }
+
+    // 3a. what the tree shows after: a row that is not dead, and a dead one while a row that is shown is under it
+    // (a folder deleted on one device with a document changed under it on another stays for the document).
+    const coming = new Map<string, string[]>();
+    for (const v of views.values()) if (v.complete && v.parent !== null) coming.set(v.parent, [...(coming.get(v.parent) ?? []), v.id]);
+    const held = new Map<string, boolean>();
+    const holds = (id: string): boolean => {
+      const known = held.get(id);
+      if (known !== undefined) return known;
+      // a ring of dead rows holds none of them
+      held.set(id, false);
+      let yes = false;
+      for (const c of new Set([...door.childrenOf(id).map((r) => r.id), ...(coming.get(id) ?? [])])) {
+        const v = views.get(c);
+        const moved = side.get(c);
+        // a row of the tree not read here is shown: it is under this one still
+        if (!v ? !moved || moved.parent === id : v.complete && v.parent === id && (!v.dead || holds(c))) { yes = true; break; }
+      }
+      held.set(id, yes);
+      return yes;
+    };
     const show = new Map<string, View>();
-    const keep = new Set<string>();
-    for (const v of views.values()) if (v.complete && !v.dead) show.set(v.id, v);
+    for (const v of views.values()) if (v.complete && (!v.dead || holds(v.id))) show.set(v.id, v);
     for (const v of [...show.values()]) {
       let child = v;
       for (let hops = 0; hops < 10_000; hops++) {
         const pid = child.at.parent;
-        if (pid === null || show.has(pid)) break;
-        if (door.row(pid)) {
-          for (let r = door.row(pid); r; r = r.parent === null ? undefined : door.row(r.parent)) keep.add(r.id);
-          break;
-        }
+        if (pid === null || show.has(pid) || door.row(pid)) break;
         const pv = await fetch(pid);
         // a parent nothing is known of: the row is shown at the top until it is
-        if (!pv.complete) { child.at = { ...child.at, parent: null }; break; }
+        if (!pv.complete) { child.at = { ...child.at, parent: null, place: null }; break; }
         show.set(pid, pv);
         child = pv;
       }
     }
-    // a move that would put a row under itself is not made: the row is shown at the top (62 settles moves)
-    for (const v of show.values()) {
-      let p = v.at.parent;
-      for (let hops = 0; p !== null && hops < 10_000; hops++) {
-        if (p === v.id) { v.at = { ...v.at, parent: null }; break; }
-        p = show.has(p) ? show.get(p)!.at.parent : door.row(p)?.parent ?? null;
-      }
-    }
-    const moves = (id: string, from: string): boolean => show.has(id) && show.get(id)!.at.parent !== from;
-    const goes = (id: string): boolean => {
-      if (show.has(id) || keep.has(id)) return false;
-      const v = views.get(id);
-      if (!v || (v.complete && !v.dead)) return false;
-      return door.childrenOf(id).every((c) => moves(c.id, id) || goes(c.id));
-    };
+    for (const v of show.values()) if (v.at.parent !== v.parent) off.add(v.id);
+
+    // 3b. what goes: a dead row with nothing shown under it, and then whatever dead row was kept only for it
+    const placeOf = (id: string): Place | undefined => show.get(id)?.at ?? side.get(id);
+    const moves = (id: string, from: string): boolean => { const p = placeOf(id); return !!p && p.parent !== from; };
     const removes: string[] = [];
     const removed = new Set<string>();
-    for (const id of ids) if (door.row(id) && goes(id)) { removes.push(id); removed.add(id); }
-    // a deleted row kept for what was under it goes once nothing is
-    for (const id of [...removes]) {
-      for (let p = door.row(id)?.parent ?? null; p !== null; ) {
+    for (const id of ids) {
+      const v = views.get(id)!;
+      if (door.row(id) && !show.has(id) && v.complete && v.dead) { removes.push(id); removed.add(id); }
+    }
+    // the directories a row left: by going, or by a move
+    const left = new Set<string>();
+    for (const id of removes) { const r = door.row(id); if (r?.parent) left.add(r.parent); }
+    for (const p of [...[...show.values()].map((v) => v.at), ...side.values()]) { const r = door.row(p.id); if (r?.parent && r.parent !== p.parent) left.add(r.parent); }
+    for (const from of left) {
+      for (let p: string | null = from; p !== null; ) {
         const pid: string = p;
         const row = door.row(pid);
-        if (!row || removed.has(pid) || show.has(pid) || keep.has(pid)) break;
-        const left = door.childrenOf(pid).some((c) => !removed.has(c.id) && !moves(c.id, pid));
-        const comes = [...show.values()].some((v) => v.at.parent === pid);
-        if (left || comes || !(await fetch(pid)).dead) break;
+        if (!row || removed.has(pid) || show.has(pid)) break;
+        const stays = door.childrenOf(pid).some((c) => !removed.has(c.id) && !moves(c.id, pid));
+        const comes = [...show.values()].some((v) => v.at.parent === pid) || [...side.values()].some((s) => s.parent === pid);
+        if (stays || comes || !(await fetch(pid)).dead) break;
         removes.push(pid);
         removed.add(pid);
         p = row.parent;
       }
     }
+    for (const id of removed) side.delete(id);
+
+    // 3c. one name in one place: the row whose id sorts first has it, and the others are shown numbered. Looked at
+    // in every directory a row came to, left, or was renamed in, and in every one that holds a displaced row.
+    const dirs = new Set<string>();
+    for (const v of show.values()) {
+      const here = door.row(v.id);
+      if (here && here.parent === v.at.parent && here.name === v.name) continue;
+      if (here) dirs.add(here.parent ?? '');
+      dirs.add(v.at.parent ?? '');
+    }
+    for (const [id, p] of side) { dirs.add(door.row(id)?.parent ?? ''); dirs.add(p.parent ?? ''); }
+    for (const id of displaced) { const r = door.row(id); if (r && !removed.has(id)) dirs.add(r.parent ?? ''); }
+    if (dirs.size) {
+      const into = new Map<string, string[]>();
+      for (const p of [...[...show.values()].map((v) => v.at), ...side.values()]) into.set(p.parent ?? '', [...(into.get(p.parent ?? '') ?? []), p.id]);
+      const nameOf = (id: string): string => { const v = views.get(id); return v?.complete ? v.name : door.row(id)!.name; };
+      for (const dir of dirs) {
+        const members = new Set<string>(into.get(dir) ?? []);
+        for (const r of door.childrenOf(dir === '' ? null : dir)) if (!removed.has(r.id) && !placeOf(r.id)) members.add(r.id);
+        const named = [...members].map((id) => ({ id, name: nameOf(id) }));
+        const first = new Map<string, string>();
+        for (const m of named) { const f = first.get(m.name); if (f === undefined || m.id < f) first.set(m.name, m.id); }
+        const taken = new Set(first.keys());
+        const as = new Map<string, string>();
+        for (const m of named.filter((x) => first.get(x.name) !== x.id).sort((x, y) => (x.name < y.name ? -1 : x.name > y.name ? 1 : x.id < y.id ? -1 : 1))) {
+          const kind = show.get(m.id)?.at.kind ?? door.row(m.id)!.kind;
+          let name = '';
+          for (let k = 2; name === '' || taken.has(name); k++) name = numbered(m.name, kind, k);
+          taken.add(name);
+          as.set(m.id, name);
+        }
+        for (const m of named) {
+          const name = as.get(m.id) ?? m.name;
+          if (name !== m.name) off.add(m.id);
+          const v = show.get(m.id);
+          if (v) { v.at = { ...v.at, name }; continue; }
+          const r = door.row(m.id)!;
+          const s = side.get(m.id);
+          if (s) side.set(m.id, { ...s, name });
+          else if (r.name !== name) side.set(m.id, { id: r.id, parent: r.parent, name, place: r.place, kind: r.kind });
+        }
+      }
+    }
+    const still = [...off].sort();
+    const shifted = still.length !== displaced.size || still.some((id) => !displaced.has(id));
 
     // 4. the rows to write, a parent before what is under it
     const depth = (id: string, seen = new Set<string>()): number => {
@@ -824,9 +1041,10 @@ export function engine(fs: StoreFs, opts: EngineOptions): Engine {
       view.puts.push({ at: v.at, file: compose(bareOf(frontOf(v.regs), body), schedulesOf(v.regs)) });
       wrote.add(id);
     }
-    // a text changed under a row that is not shown is kept all the same
+    for (const [id, p] of side) { const r = door.row(id); if (r && !samePlace(r, p)) view.puts.push({ at: p }); }
+    // a text changed under a row that is not shown, or is shown as a folder now, is kept all the same
     for (const [id, ops] of texts) {
-      if (show.has(id)) continue;
+      if (wrote.has(id)) continue;
       const m = await mergeText(id, ops);
       if (m.state) crdts.push({ op: 'crdt', doc: id, state: m.state });
     }
@@ -840,13 +1058,17 @@ export function engine(fs: StoreFs, opts: EngineOptions): Engine {
       view.pairs = [...pairs].sort();
     }
 
+    if (!file && !view.puts.length && !view.removes.length && !shifted) return;
+    if (undone.length) seq += 1;
     await door.apply(view, [
-      { op: 'regs', set: [...dirty.values()] },
+      ...(dirty.size ? [{ op: 'regs', set: [...dirty.values()] } satisfies StoreOp] : []),
       ...crdts,
-      { op: 'meta', key: `cur|${file.device}`, value: String(file.n) },
-      { op: 'meta', key: 'hlc', value: clk.last() },
+      ...(undone.length ? [{ op: 'out', seq, data: JSON.stringify({ s: seq, ops: undone } satisfies Batch) }, { op: 'meta', key: 'seq', value: String(seq) }] satisfies StoreOp[] : []),
+      ...(shifted ? [{ op: 'meta', key: 'displaced', value: still.length ? JSON.stringify(still) : null } satisfies StoreOp] : []),
+      ...(file ? [{ op: 'meta', key: `cur|${file.device}`, value: String(file.n) }, { op: 'meta', key: 'hlc', value: clk.last() }] satisfies StoreOp[] : []),
     ]);
-    cur.set(file.device, file.n);
+    displaced = off;
+    if (file) cur.set(file.device, file.n);
     for (const id of wrote) { const r = door.row(id); if (r) out.changed.add(door.pathOf(r)); }
     for (const l of listed) {
       const r = door.row(l.id);
@@ -895,6 +1117,8 @@ export function engine(fs: StoreFs, opts: EngineOptions): Engine {
     for (const k of by.get(device!) ?? []) if (k > Math.max(files, plan?.n ?? 0)) throw new Error('this copy of the collection is older than what it has sent');
     const read = new Map<string, FileIn>();
     let merged = 0;
+    // a write made here since the last merge may have made room for a row that is displaced
+    if (displaced.size) await door.run(() => merge(null, storage, out));
     for (let moved = true; moved; ) {
       moved = false;
       for (const [dev, has] of by) {

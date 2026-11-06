@@ -8,7 +8,7 @@ was verified, what was not, and the prompt to resume with.
 
 ## 2026-11-05 — milestone 61: the engine
 
-Done on main: `HASH61`. Every write a collection that syncs makes is
+Done on main: `548b21f`. Every write a collection that syncs makes is
 recorded as a change and merged by CRDT; two collections made from the
 sample sync through a folder. New: `src/sync/engine.ts` (recording,
 merging, a sync), `src/sync/clock.ts` (the hybrid clock),
@@ -67,9 +67,10 @@ passed in the full run after. In vitest: the cases
 listed in PLAN under 61, and three copies making random edits and
 syncing at random, 24 seeds, ending byte for byte the same (150 seeds
 of 220 steps passed before the seeds were fixed; with deletes and
-renames added, 148 of 150). In the Mac's window, from a snapshot of the
-working tree checked out apart (the dev identifier, the app stopped by
-pid, each window captured by id): `ILMI_SMOKE=crdt` over the sample, two
+renames added, 148 of 150). In the Mac's window, from a clean checkout
+of `548b21f` (the dev identifier, the app stopped by pid, each window
+captured by id; the runs before the commit were over a snapshot of the
+working tree checked out apart): `ILMI_SMOKE=crdt` over the sample, two
 windows and an empty folder, 53 checks and 14 captures looked at: the
 first collection became three files of changes and two blobs in the
 folder; the second window's collection was made from them with the same
@@ -83,7 +84,9 @@ thesis § idea for honors thesis` and `1 conflict` in each until opened;
 the later of two drags stood in both and the sidebar drew it; a
 document made in the second was in the first; light and dark. Also
 `store` (34, its folder and zip equal to the sample by `diff -r`),
-`sync` (34), `tour` (23, 45 captures), `nudge` (29): the counts of 60.
+`sync` (34), `tour` (23, 45 captures), `nudge` (29): the counts of 60,
+over the snapshot taken before the last two changes (a collection that
+has synced refused an empty storage; the docs).
 
 ### Not verified
 

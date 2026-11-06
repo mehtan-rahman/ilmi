@@ -6617,7 +6617,7 @@ research's for files (3.5 s to open, 0.95 s a change, 381 MB under
 Node); an export of the sample still equals the sample.
 
 ### [x] 61. The engine — changes merged by CRDT, two copies over a folder
-Done 2026-11-05, commit `HASH61`.
+Done 2026-11-05, commit `548b21f`.
 Notes: **The text library: Loro.** Measured on the sample (66 documents,
 654,042 bytes of text) with `loro-crdt` 1.17.1 and `@automerge/automerge`
 3.5.0 under Node, and the crates `loro` 1.17 and `automerge` 0.12:

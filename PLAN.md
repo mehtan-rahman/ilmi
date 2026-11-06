@@ -6813,7 +6813,121 @@ folder and zip equal to the sample by `diff -r`), `sync` (34), `tour`
 a grade on each lands in the other; a card reworded on one and graded on
 the other is one card with both; the random test passes.
 
-### [ ] 62. The tree and the rest — moves, order, and settings that merge
+### [x] 62. The tree and the rest — moves, order, and settings that merge
+Done 2026-11-06, commit `d60da33`.
+Notes: **The rule under all of it:** the tree is what the registers
+make, by rules that read nothing but the registers, so every device that
+holds the same changes shows the same tree (`src/sync/engine.ts`, its
+header and step 3 of `merge`). `Vault` and the app above did not change.
+**The order.** A row's `place` is a number that sorts it among its
+siblings, no longer its index (the column was `REAL` already; no schema
+change). `setPlaces` in `src/vault/store.ts` takes the list an order
+file asks for and keeps the longest run of it that is already in order
+(`rising`); each other row gets a number between its new neighbours'. A
+row with no place yet has the one it is shown at (after the placed ones,
+in the default order: `byName`, exported from `walk.ts`), so the first
+order written for a directory still moves only the row dragged. The
+engine is told which rows got a number because they moved and which only
+kept where they were (`Recorder.places`, its third field): a kept place
+is stamped below every move (`KEPT`, a `!` before the clock), so two
+first drags of one directory merge move by move, the kept rows having
+the same numbers on both. A drag after that is one register. A place is
+a place in one directory: the register's value is `[number, parent]`,
+and a row moved elsewhere has none there (a bare number, 61's, is read
+as before). A place kept or cleared is marked (`a` on the change) so
+that it is not a change that keeps a deleted row; a place given is.
+When no number is left between two neighbours the directory is numbered
+afresh, every row a move (about fifty drags into one gap). **Moves.** A
+parent is the later move, and the move says where it was made from (`q`,
+written with `p` under one stamp). After a merge's registers are in,
+every row read is walked up through its parents (a row not read is in
+the tree where its registers put it; a row gone from the tree that one
+read is under is read too); where they close a ring, the latest move of
+the ring is undone: its row's parent is written back to where it was
+moved from, or to the top when that is deleted or would make a ring
+again. The undoing is a change of the device that found the ring,
+stamped with the undone move's stamp and a `~`, so every device that
+finds it writes the same change, a move made since still wins, and where
+two devices saw the tree differently and chose two places the value
+decides. So a dropped move stays dropped: taking the other folder back
+out does not bring it back (showing the tree from the registers without
+writing, as the names are shown, would have brought it back, which is
+why this one is written). **Names.** Two rows with one name in one place are both
+shown: the one whose id sorts first has the name, the others are
+`name 2`, `name 3` (`figure 2.png`), skipping names in use. This is
+never written: the row's name is still the one it was given, an edit to
+it is an edit, and when the other row is renamed, moved or deleted it
+is shown by its own name again. Such rows are `displaced` (kept in
+`sync_meta`); they are looked at again on every merge, and at the start
+of every sync for what was written here since. A displaced row renamed
+or moved here settles: the write records the name it was shown by.
+**Found on the way, by the random test.** A deleted folder kept for a
+document changed under it did not follow its registers (a move of it
+seen by the delete left it in two places on two devices) and was never
+removed when a merge moved its last row out; a document deleted over
+its children is a folder, and when a document was written there again
+its old front matter lines and schedules were still registers, and text
+changes that arrived while it was a folder were dropped; a ring of
+folders each deleted after its move came back as a ring when a document
+under one was edited. All four are fixed and the first three have the
+random test over them, the last its own test. **Found by the window.**
+After a merged rename the second window's order still named the old
+file: `door.apply` told the watchers of the order's file only when a
+place changed. It tells them now after a rename, a move or a removal.
+**The store.** A row renamed into another directory leaves its place
+behind; hidden rows are not part of a directory's order; walks up the
+tree count their hops. **Tests** (`src/sync/__tests__/engine.test.ts`,
+56 with the 24 seeds): a rename against an edit and a new child; a move
+of a folder and of a document against new children and an edit; two
+reorderings through `Vault.place` (the first each, then again, then one
+row dragged in both, then a row moved out against a drag of it); a move
+into its own descendant, in either order of sync, and that it stays
+dropped; three moves round a ring; the ring of deleted folders; two
+documents, two folders and two images made under one name, an edit to
+the one shown numbered, the name freed, a numbered row moved; a rename
+against a new row of that name. The random test: three copies, 120
+steps of words, paragraphs, grades, fields, new documents (some under a
+few names any copy may pick, in any directory), pairs, drags, renames,
+moves of documents and folders, and deletes of documents and folders,
+with a sync at random; the devices are numbered from the seed, so a
+seed that fails fails alone. Compared: every directory and file, a
+document in the form the format writes and the order with its
+directories sorted (60's kept-as-it-came files), and no two rows of a
+copy under one path. 24 seeds in the suite; `ILMI_SEEDS=1-2000` passed
+over the commit, 250 a process. **Said plainly: nothing was built for
+"settings that merge".** The title names them and no bullet does. What
+there is: a document's fields (a deck's options, exam days, priorities)
+are front matter and have merged by line since 61; `.ilmi/plugins.json`
+and a plugin's files are hidden rows, the later write of the whole
+file; the Tweaks are each device's own (`localStorage`) and do not
+travel. Whether which plugins are on should merge by plugin, and
+whether any tweak should travel, is the user's to say. **Not done.** *A
+section is still keyed by its heading's text* (60 and 61 said so; no
+bullet of 62 names it, and an id for a section is a FORMAT change). *A
+log line's `doc` and a not-same pair's key are still paths*, and a
+rename on one device does not carry them on the other. *A document
+deleted over its children is a kind changed, not a delete:* the later
+write of `k`, so an edit to its text on the other device is kept in the
+text's state and not shown. **Limits.** The default order is by the
+device's own collation (`Intl.Collator`), so two devices in two locales
+can number a first drag's kept rows differently; they still end the
+same, with a moved row perhaps one off. The same when the two devices
+do not hold the same rows of the directory at their first drags. Which
+of two same-named rows is numbered goes by id, not by which came first.
+Which move of a ring is dropped goes by the clock: a device whose clock
+runs ahead loses. A device that finds a ring while it has read only
+part of the others' changes undoes a move the rest may never have seen
+in a ring; every device takes that undoing. A copy made from the
+storage reads the old files in order and writes the old undoings again
+(the same changes; harmless, and more files). **Not verified.** Nothing
+on the simulated iPad. A release bundle. The size collection through
+the engine, and what the merge's walk costs there (every row read by a
+merge is walked to the top). The timers by hand. Smokes run from a
+clean checkout of `d60da33`: `crdt` (72 ok, 18 captures; it gained the
+two drags, the rename and the move, the steps `place`, `rename`,
+`move`, `paths`), `store` (34, its folder and zip equal to the sample
+by `diff -r`), `sync` (34), `tour` (23, 45 captures), `nudge` (29); no
+other.
 - A rename or a move on one device with an edit, or a new child, on the
   other: one document, in its new place, its children with it. Two
   reorderings of one directory merge move by move. A delete against an
@@ -6940,8 +7054,14 @@ field by a hybrid clock, a document's text through Loro, running as
 WebAssembly in the renderer), change files a device in a storage that is
 a folder chosen by `ILMI_STORAGE`, a second collection made from the
 folder, and `ILMI_SMOKE=crdt` over two windows; no setting yet, and git
-sync as it was. 62, the tree and the rest, is next; 56–58 take their
-places in that section's order.
+sync as it was. 62, the tree, on 2026-11-06: a row's place in its
+directory's order is a number between its neighbours', so two drags
+merge row by row; of moves that would put a row under itself the latest
+is undone by a change every device writes alike; two rows of one name
+in one place are both shown, the second numbered; nothing was built for
+the title's "settings that merge", which no bullet names. 63, big files
+and real storage, is next; 56–58 take their places in that section's
+order.
 
 Refinement (33–41) is complete, 2026-10-30, every milestone's window check
 run and recorded under its BUILD-LOG entry (33 `notes`, 34 `editing`, 35

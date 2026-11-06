@@ -6,6 +6,179 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-11-06 — milestone 62: the tree
+
+Done on main: `d60da33`. The tree two collections make from each other's
+changes is one tree: a rename or a move against an edit or a new child,
+two reorderings of one directory merged row by row, a move into its own
+descendant dropped alike everywhere, two rows of one name both shown.
+Changed: `src/sync/engine.ts` (a place as `[number, parent]`, a kept
+place stamped below a move; `q` beside `p`; step 3 of `merge` rewritten:
+rings found and the latest move undone by a change, deleted rows kept
+for what is under them, names numbered, the `displaced` rows; a merge
+with no file at the start of a sync), `src/vault/store.ts` (`setPlaces`
+moves only the rows that changed place, `rising`; `Recorder.places`
+says which rows only kept theirs; a rename into another directory
+leaves the place behind; `door.apply` tells the watchers of the order's
+file after a rename, a move or a removal; walks up the tree count their
+hops), `src/vault/walk.ts` (`byName` exported),
+`src/sync/__tests__/engine.test.ts` (56: the tree's nine cases, the
+order test restated, the random test widened),
+`src/vault/__tests__/store.test.ts` (places as numbers), `smoke.ts`
+(`crdt` gains the two drags, the rename and the move; the steps `place`,
+`rename`, `move`, `paths`), `docs/development.md`, PLAN (62's notes). No
+Rust changed, no schema, no FORMAT.
+
+### Decided
+
+- **A place is a number between its neighbours'**, not an index, and an
+  order written moves only the rows that left the longest run already in
+  order. `documents.place` was `REAL` already. 61 had found that places
+  merged row by row as indexes gave a mix of two drags; as numbers each
+  row's is its own.
+- **A row that only kept its place is stamped below any move**, so the
+  first drag of a directory on each of two devices (which has to give
+  every row a number) is still one move each.
+- **A dropped move is undone by a written change, alike from every
+  device**: the undone move's stamp and a `~`. Shown from the registers
+  without writing, the move would have come back when the loop was
+  broken another way.
+- **A second row of one name is shown numbered and never renamed.** A
+  rename written by a merge could overrule a rename the user made
+  meanwhile, and would keep a deleted row; shown from the registers it
+  can do neither, and the name comes back when the other row goes.
+- **A deleted folder kept for what is under it is a row of the tree**: it
+  follows its registers, and goes when a merge takes the last row out.
+- **Nothing for "settings that merge".** The title says it and no bullet
+  does; what merges already and what does not is in PLAN under 62, for
+  the user to say.
+
+### Verified
+
+1392 tests in 89 files (1 skipped), typecheck clean, 33 cargo tests (no
+Rust changed). In vitest: the cases listed in PLAN under 62; the random
+test's 24 seeds in the suite, and seeds 1 to 2,000 over the commit, 250
+a process, all ending the same. On the way it found three ways two
+copies came apart that 61 already had, and a fourth turned up beside
+them (PLAN, "Found on the way"); each is fixed. In the Mac's window, from a clean checkout of
+`d60da33` (the dev identifier, the app stopped by pid, each window
+captured by id; the runs before the commit were over a snapshot of the
+working tree checked out apart): `ILMI_SMOKE=crdt`, two windows and an
+empty folder, 72 checks and 18 captures: 61's, then a drag in each
+window of `fleeting` both in the order in both, one row dragged in both
+where the later drag put it and the sidebar drawing it; the term paper
+renamed in one window and edited in the other with a page made under
+it: one document under the new name with the edit, its two children and
+the page, nothing under the old name, 67 documents in each, its place
+in its directory's order kept; `courses/fall-2025` moved into `library`
+in one window with a document made in it and one under its course in
+the other: all six there in each, nothing where it was, 69 in each; 70
+at the end, the same in both. The captures of the renamed draft, the
+moved folder and both sidebars were looked at. The first run stopped
+there: the second window's order still named the old file after the
+rename (fixed in `door.apply`, and a test). Also `store` (34, its folder
+and zip equal to the sample by `diff -r`), `sync` (34), `tour` (23, 45
+captures), `nudge` (29): the counts of 61.
+
+### Not verified
+
+Nothing on the simulated iPad. A release bundle. The 115,000-card
+collection through the engine, and the cost there of walking every row
+a merge reads up to the top. Two devices in two locales. The timers by
+hand. The smokes other than the five above.
+
+### Rig notes
+
+The Mac was on battery behind a locked screen for most of the night and
+slept in the middle of test runs: a test then "fails" with a time of
+minutes (one read 1,047 s) and nothing wrong, and some of those were
+chased as hangs before the cause was seen. Look at the duration and at `pmset -g
+batt` before believing a timeout, and rerun. A window check cannot run
+at all while the screen is locked; a background `until` on
+`CGSSessionScreenIsLocked` says when it is not. Device numbers in the
+random test came from how many copies earlier tests had made, so a seed
+failed only in a full run; they come from the seed now. Hundreds of
+seeds in one process is fine (24 s for 250).
+
+### For the user
+
+Nothing to do, and still nothing to see: the engine runs only when a
+dev run names a folder. One thing to say when you look: 62's title
+promises "settings that merge" and its bullets name none, so none were
+built. Today a document's own fields merge line by line; which plugins
+are on is one file, the later write whole; the Tweaks are each
+device's. Say if plugins should merge one by one, or if any tweak
+should travel. 63 is storage for real (S3, WebDAV) with its rows in
+Tweaks, and a bucket or a server of yours is optional for it.
+
+Handoff prompt for the next session:
+
+```
+Read PLAN.md, FORMAT.md, BUILD-LOG.md, and spec/hashiyah/HANDOFF.md. The
+section of PLAN.md in progress is "A database under the app, synced by
+CRDT to any storage" (59–68); its introduction holds the decisions, and
+59's to 62's notes say how it stands: `Vault` unchanged over an `Fs`
+that src/vault/store.ts makes from a collection's rows
+(src-tauri/src/store.rs); state in rows, taken out and put back by
+src/vault/lift.ts; an engine (src/sync/engine.ts) told of every write
+through `Recorder`, keeping a register a field with a hybrid clock's
+stamp (`regs`), a document's text as Loro keeps it (`crdt`, WebAssembly
+in the renderer), and the changes to send (`outbox`), syncing through a
+storage (src/sync/storage.ts: four verbs; `format`,
+`devices/<device>/<n>`, `blobs/<sha256>`) and writing what it merges
+back through `StoreFs.door`; and since 62 the tree made from the
+registers alike on every device (a place a number between its
+neighbours', a move into its own descendant undone by a written change,
+a second row of one name shown numbered). Do milestone 63 and only that
+one (52 waits for the user; 56–58 come later in that section's order).
+Stop at its "done when". Then tick it, write notes for the next session
+under it, add an entry to BUILD-LOG.md with a fresh handoff prompt, and
+commit. Rules as in PLAN.md's ground rules: export
+PATH=$HOME/.cargo/bin:/opt/homebrew/bin:$PATH; npm test and npm run
+typecheck green before a commit, and cargo test for the Rust side; one
+commit per milestone; ask before a screen, section, or setting the
+section does not name (63's are named in the section's introduction:
+Tweaks gains `storage` (folder · s3 · webdav, the fields each needs,
+kept where 53 kept the token) and `keep files` (all · opened); a row of
+a book whose PDF is not here says so); a FORMAT change needs a corpus
+file and a test. Read 61's "Left" and "Said plainly: blobs travel" and
+62's "Limits" first: blobs already go to the storage whole and eagerly
+through the renderer's memory, change files are never deleted, a
+joining device reads every one (and writes the old undoings of dropped
+moves again), a text's history is kept whole, the dated exports each
+hold every PDF. 63 is those: blobs lazy and streamed (a 200 MB PDF must
+not pass through the web view's memory), `keep files`, the S3 and
+WebDAV storages with loopback servers in debug builds for the smoke (as
+54's nudge server, src-tauri/src/nudge.rs), and snapshots (Loro's
+shallow snapshot; a device that has not merged up to a snapshot's
+version cannot merge with it, so decide what such a device does). The
+user's own bucket or server is optional: without one, record the real
+check as not verified. Keep the random test in
+src/sync/__tests__/engine.test.ts passing (`ILMI_SEEDS=1-500` runs more
+seeds than the suite's 24, a few hundred a process),
+src/vault/__tests__/store.test.ts's round trip of the corpus and the
+sample byte for byte, ILMI_SMOKE=store and ILMI_SMOKE=crdt passing (72
+checks), and git sync working until 66. The engine runs in the app only
+when a dev run sets ILMI_STORAGE=<folder> (two windows with
+ILMI_VAULT2; docs/development.md); 63 gives it its setting. The window
+checks run from a clean checkout of main with the dev identifier
+override: ILMI_VAULT is a folder, imported afresh as a collection on
+each run. Never kill a process on port 1420 that is not yours, stop
+your own app binary by pid when a run ends, capture only by window id;
+a covered window's page runs several times slower, so time nothing in
+one; a locked screen stalls the window, and the Mac on battery sleeps
+in the middle of a test run (a test that "took" minutes slept: rerun
+it). Still unverified since 59: everything on the simulated iPad, the
+engine too. Open from 60: about 600 MB in the Mac's web view for
+115,000 cards. Not measured since 61: the size collection through the
+engine. Open from 62, for the user: its title's "settings that merge"
+(nothing built; PLAN under 62 says what merges now). Ask before
+changing the database's schema in a way an existing collection could
+not open (schema 3 added tables only; 62 changed none).
+```
+
+---
+
 ## 2026-11-05 — milestone 61: the engine
 
 Done on main: `548b21f`. Every write a collection that syncs makes is

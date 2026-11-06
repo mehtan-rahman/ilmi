@@ -7598,7 +7598,234 @@ a grade and a PDF through it.
 device through the storage they chose, and what was measured is in the
 notes.
 
-### [ ] 67. Ink on the page — strokes over a book's pages
+### [x] 67. Ink on the page — strokes over a book's pages
+Done 2026-11-06, commit `70f80e9`.
+Notes: **Decided first, as the handoff asked: what a book's page of ink
+is.** The strokes written on a page are rows of 58's `ink` table under a
+page that is no row: `p.<the PDF's SHA-256>.<the page's number in that
+file>` (`pageKey`, `src/vault/store.ts`). They are the file's by what it
+is, not a row's that names it. So nothing is written into the PDF (its
+hash is what finds them; a PDF written into would be another file); a
+chapter is its pages of the book's PDF, so the book and each chapter
+show one writing on one page, and a second row of the same file shows it
+too; a rename or a move of the book changes nothing. **To a delete:
+nothing.** No row's delete takes a stroke (58's trigger is by row id,
+and these are under none), and a stroke is a change to no row: it does
+not bring a deleted book back, as a stroke on 58's page brings its page
+back. A book deleted on one device and written on on the other is
+deleted on both, and both hold the strokes; the same file put back, or
+brought in again under any name, has its writing. The cost, said
+plainly: the strokes of a book that is gone for good stay in the
+collection, in its registers and in every snapshot, and nothing sweeps
+them (a PDF's own bytes are swept when a collection opens; these are
+not). **To a snapshot: a register like any other.** A stroke is
+`~i|p.<hash>.<n>|<stroke>`, 58's register under the other kind of page
+(`src/sync/engine.ts`): a snapshot carries every register, a merge of
+one writes the strokes whatever rows there are, and a collection's
+first changes carry what was written before it met a storage (they read
+the pages the store holds under `p.`). It is a change to no row, so it
+moves no row's count of what a delete has seen. **No schema change**:
+no table, no column, the version still 4. The store gained two reads:
+`ink_pages` (the pages under a prefix) and `ink_page` (a page's strokes
+as the drawing the canvas opens, or as a picture of the whole page);
+neither keeps anything on disk, since no file is ever compared with
+them. A build of 58's was not tried against a storage that holds such
+strokes.
+**The Pencil writes; a finger scrolls and boxes after its hold; a mouse
+boxes.** That is a change to 57, where the Pencil's drag boxed at once,
+and the user accepted it in those words on 2026-11-06 (told to this
+session by the one that ran it, after it was described to them): it is
+decided, not open. `pagePress` in `src/app/touch.ts` says which a press
+on a page begins; a pen where there is no canvas (the Mac) still boxes.
+57's own question, whether a finger should box after a hold, is still
+the user's. **How the Pencil writes: its touch on a page opens 58's
+canvas over that page**, and `done` closes it. No control was added: the
+canvas, its tool picker and `done` are 58's. Said plainly, it is not
+ink drawn into the scrolling pages themselves: PencilKit's canvas is a
+view of its own, the pages are a web view's, and a canvas that stayed
+over the pages would have to take the Pencil and pass every finger
+through to them, which UIKit decides before it says what touched. So
+the touch that opens the canvas is not itself a stroke, and each page
+is written on in turn. Whether that is close enough to writing on the
+page needs a real Pencil (66). **The canvas over a page**
+(`src-tauri/ink/ios/Sources/InkPlugin.swift`, `open` with `paper`,
+`width`, `height`). The page's picture is a view under the strokes
+inside the canvas, and the canvas is zoomed by the screen's width over
+the page's width in points, with the limits of the zoom set to that, so
+a stroke's points are the page's own points on any screen and in either
+turn (the sample's page is 432 by 648 points; upright on the iPad Air
+the zoom is 1.898). The canvas starts 52 points under the safe area so
+that `done` is over nothing; the appearance is light whatever the
+system's, since a page is white paper; `peek` also says the zoom and
+where the page's corner is on the screen, for a check that touches it.
+The picture is the page drawn by pdf.js at 2.5 pixels a point, a JPEG
+(`pagePaper`, `src/app/bookPdf.ts`), sent with `ink_open`. **In the
+app.** `src/app/ink.ts`: what the canvas is open on is a sheet (where
+its strokes are read from and kept), so 58's page under a note and a
+book's page are one loop; `writeOn(hash, page, paper)` is the book's,
+and `keepPage` keeps a drawing's strokes on a page without a canvas
+(what the Mac's check uses). `StoreFs` gained `pageInk`, `setPageInk`
+(the difference written in one transaction, as `setInk`),
+`pageInkFile`, `inkedPages` and `onPageInk`. **On the page, on every
+device** (`PageInk`, `src/app/Pdf.tsx`): a PNG of the whole page at 2×
+on nothing, made on the Rust side from the strokes (`page_picture`,
+`ilmi_ink_page` in `native/ink.m`, PencilKit on the Mac as on iOS), laid
+over the page under the boxes, taking no press; made when the page
+itself is drawn and again when its strokes change, by a write here or
+by a merge (`onPageInk`); on dark paper turned by the filter that turns
+the page, on e-ink greyed with it. The iPad shows the same picture; the
+canvas is only where it is written. **A notebook.** "A document whose
+blocks are ink pages (58 gives the block)" needed nothing built: `draw`
+in the insert menu puts a page of ink at the end of a note that has no
+headings, `nextPage` numbers them, and a note of several is a notebook.
+No document type, no screen and no command was added, and none is
+named. What 58 left unverified of it was run here instead: `draw`
+picked from the insert menu by a tap, a page on a plain note, a second
+page under one note. (39's notebook, a document shown as tabs, is
+another thing and was not touched.) **Also changed.** A canvas that
+closed waited up to 1.2 s for its next look before the page was kept;
+it is kept at once. FORMAT.md §10 says where a book's writing is and
+that no file of a vault holds it; no syntax changed, so no corpus file.
+**Tests.** Vitest, 1437 in 93 files (+11): `store.test.ts` (a page's
+key; strokes on a page with the PDF, the tree and an export as they
+were; the writing on every row of the file and after every row is
+gone), `engine.test.ts` (two copies writing on one page apart, one
+erasing, erased and written again; a book deleted against one written
+on, and the file brought in again; a collection that holds writing
+meeting its storage, and a copy from a snapshot), the random test with
+strokes written, erased and put back on two pages of one PDF from a
+draw of its own, every copy compared stroke for stroke
+(`ILMI_SEEDS=1-500`, and with `ILMI_SNAPS=1`), `touch.test.ts`
+(`pagePress`), `page-ink.test.ts` (jsdom: the Pencil's press opens the
+canvas with the page and its size and boxes nothing, what comes back is
+the page's strokes, the picture is over the page and made again by a
+merge, a finger and a mouse still box, a pen with no canvas boxes).
+Cargo: 46 in the app (a book's page under its PDF's hash, no row made,
+the PDF's bytes as they were, the strokes there after the row is
+deleted) and 5 in the plugin (a page's picture is the whole page,
+1224×1584 for 612×792 points, strokes or none).
+**Found on the way.** *A made-up stroke is not the same stroke twice*:
+PencilKit gives each stroke it makes a seed of its own, and the name
+hashes the seed, so `sample` with one seed gives other names each call.
+The Mac's run says its strokes' names and the later runs are told them.
+*An app left open on the simulator loads its page again when a dev
+server comes back* and runs the last `smoke.json` from the top: the
+iPad's collection was made anew from the storage under the run that
+was to open it as it was left, and passed its first checks, since a
+collection made from the storage holds the strokes too. The rig stops
+the app after each run now, and the run checks that the device is the
+one that wrote the strokes and that the book it had opened is still
+there. *A note's surface is built again as its pictures come*: a check
+that kept the first one found no pictures in it.
+**Checked,** from a clean checkout of `70f80e9` (`tauri ios dev` run
+over it). `ILMI_SMOKE=pageink`, four runs over one storage folder.
+*The Mac first* (16 ok, the capture looked at): the storage made; then,
+the timers off, six strokes kept on p. 23 of the sample's book through
+`keepPage` (a made-up drawing of PencilKit's, `dev_ink_sample`: a Mac
+has no canvas), rows under the book's hash, no row made, the PDF the
+file it was; drawn over the page in the window; `1 to push`, not sent.
+*A simulated iPad Air 11-inch (M4), iOS 27.2* (56 ok, 6 captures, each
+looked at, under 16 touches the rig made: 10 drags, 5 taps, a flick):
+a collection made from the storage, no page of the book written on
+there; the chapter opened; a press on p. 23 under a pointer that says
+`pen` (an event the smoke makes) boxed nothing and opened the canvas
+over the page, clean, the page filling the width; five drags, each one
+stroke more; left alone, five strokes in the store under the book's
+hash and the page, the canvas still open; `done`; the writing read as a
+picture of the whole page, its ink within a point of where the finger
+went (the finger 112,192 to 311,354 in the page's points, the ink
+111,191 to 312,355); the picture over the page in the pages, exactly;
+nothing in the PDF, no row, the notes as they were; a flick still
+scrolled and opened nothing. Then a new note: `/draw` typed, `draw`
+tapped in the insert menu, two strokes, `done`, the line in the note;
+again with three: the note is `![working](untitled/ink-01.png)` and
+`ink-02.png` in order and both pictures drawn in it. Synced.
+*The Mac again* (23 ok, 3 captures looked at): after a sync p. 23 holds
+the iPad's five strokes and the six written here, each by its name,
+none lost, none twice; what was written here sent; nothing crossed as a
+file; the writing read as a picture the Mac made (864×1296), with ink
+near the top left where the Mac's lines are and where the iPad's finger
+went; over the page in the window, light and on dark paper; the iPad's
+note there with its two pages as pictures. *The iPad again*, its
+collection opened as it was left (25 ok, 2 captures looked at, 2
+touches): the same device, the book it had opened still there; after a
+sync p. 23 holds its five and the Mac's six, the Mac's by their names;
+the picture over the page shows both; the `pen` press opens the canvas
+with all eleven; one more drawn, `done`: one stroke written, none taken
+away, and the Mac's six keep their names through the iPad's canvas and
+its save. **How the "done when"'s last clause was met, exactly.** Two
+collections, the Mac's and the simulator's, each added strokes to p. 23
+of one PDF without having seen the other's: the Mac's were kept and not
+sent before the simulator's collection was made from the storage, and
+the simulator's were written before the Mac synced. After a sync each
+holds all eleven, by name, and shows them on the page. What that
+proves: the store, the engine and a storage folder carry strokes on a
+book's page between two collections on two systems, both ways, with
+neither side's lost, and the iPad's PencilKit reads the Mac's strokes,
+draws them, and saves them under the names they had. What it does not:
+the Mac's strokes were not written on a canvas (a made-up drawing
+through the function the canvas keeps through); the simulator's were a
+finger's; both collections were on one machine and one clock; no two
+canvases were open on one page at once.
+Also from that checkout, nothing else having regressed. The simulator:
+`tour` 23 ok and 45 captures, `touch` 70 and 10 (one more than 57's 69:
+its `pen` step now finds the canvas over the page, `done` tapped by the
+rig, and nothing boxed or written, where it found a box), `ink` 46 and
+6, each on its first run, their captures looked over on sheets. The
+Mac: `store` 34 (its export equal to the sample by `diff -r`), `crdt`
+72 and 18 captures, `storage` over the S3-shaped server 76 and 12 (the
+captures of those three not looked at: their checks are the lines),
+`tour` 23 and 45, `book` 52 and 9, `books` 71 and 8, `touch` 4 before
+the iPad and 9 after, `ink` 4 and 20, the captures looked over on
+sheets. **`books` failed once**, at its 43rd check ("the caret is still
+in the section after the write-up and its save": the caret read in the
+next section), on the chain's run, minutes after the screen was
+unlocked; run twice more on the same commit it passed, 71 each time.
+Nothing of this milestone is on that path and the cause was not found:
+taken for the timing of a window that was not in front, and said here
+in case it is not. The pageink captures were looked at whole in the
+runs before the commit and on sheets from this checkout. The Mac's
+first pageink run before the commit once ran to its end behind a locked
+screen with a blank capture: a locked screen does not always stall the
+window, so a capture has to be looked at.
+**Not done, and limits.** *An export does not write what is on a book's
+pages*, nor does the mirror, a dated export or git's folder: the
+strokes are in the database and the storage only, and an export then an
+import loses them. Where they would go in a vault is a FORMAT change no
+bullet names; it is the user's to say (the log asks). *Nothing sweeps
+the strokes of a book that is gone*, and strokes are held twice in a
+collection that syncs, as 58's are. *The touch that opens the canvas is
+not a stroke*, and the canvas is one page at a time, as said above.
+*Strokes drawn off the page's edge are kept and not shown* (the picture
+is the page). *No zoom on the canvas* (its limits are the fit), no
+pinch; turned on its side the page is wider than upright and scrolls.
+*The tool picker lies over the page's foot* where the page is taller
+than the screen under it; a finger scrolls it up (not on the simulator,
+where the finger draws). *The canvas's page is white in the dark
+theme*; the pages' picture is turned with the page. *A section's boxes
+shown in the notes, and a clip, are cut from the PDF alone*: what is
+written over them is not in the crop. *Every written page of an open
+chapter is read as a whole PNG* (the sample's is 43 KB with eleven
+strokes) when its page is drawn; not timed on a book with many
+written pages. *The eraser, the lasso and undo* are PencilKit's and
+were not driven. *The Mac writes nothing*: there the writing is a
+picture. Not in this milestone, by its list: handwriting search,
+shapes, templates.
+**Not verified, said plainly.** *The Pencil.* Xcode 27.2's runner makes
+fingers only: the press was a `pen` event the smoke made, every stroke
+a finger's on a canvas told to take one. Not seen: the Pencil's own
+touch opening the canvas (whether the web view scrolls or selects under
+it first, hover, the palm), the canvas as a real user gets it (the
+Pencil drawing, a finger scrolling the page under the picker), pressure
+and tilt. *A device.* *Landscape*, a chapter whose pages differ in
+size, a rotated page, a PDF over 16 MB read by the piece, a book that
+is away when the Pencil touches it. *The page written on in the e-ink
+theme* (the dark one was captured). *A reading session over a written
+page.* *S3 and WebDAV with such strokes* (they are registers like any;
+`storage` ran without them). *A release bundle.* Not rerun: `sync`,
+`nudge`, `ipad`, `storage` over WebDAV, `size`.
+**For 64.** Nothing here touches a storage's own code. The rig's
+scripts for this milestone are in the log.
 After 57 and 58 (see the note under 58: ink is rows of strokes, by page).
 - The Pencil writes on a book's page; the strokes are rows keyed by the
   PDF's hash and the page, never written into the PDF; the page shows
@@ -7696,9 +7923,17 @@ stroke, each stroke named by what a save keeps of it, since PencilKit
 gives it no id), the picture and the drawing beside it made from them
 where they are read, on the Mac too (`src-tauri/ink`);
 `ILMI_SMOKE=ink` over a storage folder, the rig's finger for the Pencil
-again. Next in the section's order: 67 (ink on a book's pages), then
-64, 56, 68; 65 and 66 wait for things only the user has, 52 for the
-user's word.
+again. 67, ink on a book's pages, the same day: the Pencil's touch on
+a page opens that canvas over the page, its picture under the strokes
+(the user accepted that the Pencil writes where 57 had it box; a finger
+and the mouse are as they were); the strokes are rows under the PDF's
+hash and the page's number, no row of the tree, never in the PDF, a
+register each as 58's; every device lays a picture of them over the
+page; `ILMI_SMOKE=pageink`, in which the Mac's collection and the
+simulator's each write on one page before seeing the other's and each
+ends with both. An export does not hold them yet. Next in the section's
+order: 64 (Dropbox and Google Drive), then 56 and 68; 65 and 66 wait
+for things only the user has, 52 for the user's word.
 
 Refinement (33–41) is complete, 2026-10-30, every milestone's window check
 run and recorded under its BUILD-LOG entry (33 `notes`, 34 `editing`, 35

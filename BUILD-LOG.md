@@ -6,6 +6,278 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-11-06 — milestone 67: ink on the page
+
+Done on main: `70f80e9`. On an iPad the Pencil's touch on a book's page
+opens PencilKit's canvas over that page, the page's own picture under
+it; what is written there is that page's strokes, and the page shows
+them as a picture laid over it, on the Mac and every other device too.
+The strokes are rows of 58's `ink` table under the PDF's hash and the
+page's number, no row of the tree and never in the PDF; a register a
+stroke in the engine, as 58's. New: the canvas's paper
+(`src-tauri/ink/ios/Sources/InkPlugin.swift`), `ilmi_ink_page` in
+`native/ink.m` and `page_picture` (the strokes as a PNG of the whole
+page), `src/app/__tests__/page-ink.test.ts`, `ILMI_SMOKE=pageink`.
+Changed: `store.rs` (`ink_pages`, `ink_page`; no schema change),
+`lib.rs` (`store_ink_pages`, `store_ink_page`, `dev_ink_sample`,
+`ink_open`'s paper), `src/vault/store.ts` (`pageKey`, `pageInk`,
+`setPageInk`, `pageInkFile`, `inkedPages`, `onPageInk`), `mem-store.ts`,
+`tauri-store.ts`, `src/sync/engine.ts` (a stroke on a book's page is a
+change to no row; a collection's first changes carry them),
+`src/app/ink.ts` (the canvas over a sheet; `writeOn`, `keepPage`),
+`touch.ts` (`pagePress`), `Pdf.tsx` and `pdf.css` (the Pencil's press,
+`PageInk`), `bookPdf.ts` (`pagePaper`), `smoke.ts` and `vault.ts`
+(`pageink`; the touch smoke's `pen` step), FORMAT.md §10,
+`docs/guide.md`, `docs/development.md`, PLAN (67's notes).
+
+### Decided
+
+- **A book's page of ink is the file's, not a row's**: strokes under
+  `p.<the PDF's SHA-256>.<page>`. Nothing is written into the PDF; the
+  book and each of its chapters show one writing on one page; a rename
+  or a move changes nothing.
+- **To a delete it is nothing**: no row's delete takes a stroke, and a
+  stroke keeps no deleted row. A book deleted and put back, or brought
+  in again, has its writing. Nothing sweeps the strokes of a book that
+  is gone for good.
+- **To a snapshot it is a register like any other**, carried and merged
+  as 58's strokes are; a collection's first changes carry what it held.
+- **No schema change**: the same table, the version still 4.
+- **The Pencil writes, a finger scrolls and boxes after its hold, a
+  mouse boxes.** The user accepted this on 2026-11-06, in those words
+  (told to this session by the one that ran it): decided, not open.
+- **The Pencil's touch opens 58's canvas over the page** rather than
+  inking into the scrolling pages: no control was added, and the touch
+  that opens it is not itself a stroke.
+- **A stroke's points are the page's own points**: the canvas is zoomed
+  to fit the page to the screen's width, whatever the screen.
+- **The page's writing is one picture of the whole page**, made from
+  the strokes where it is shown, on the Mac too.
+- **A notebook needed nothing built**: 58's block more than once in a
+  note is one.
+
+### Verified
+
+1437 tests in 93 files (1 skipped), typecheck clean, 46 cargo tests in
+the app and 5 in the plugin, `cargo check` for both iOS targets. The
+random test over `ILMI_SEEDS=1-500`, with and without `ILMI_SNAPS=1`:
+all 500 end the same both ways, over the commit; it writes on a book's
+pages now. From a clean checkout of `70f80e9`, `tauri ios dev` run over
+it. **`ILMI_SMOKE=pageink`, four runs
+over one storage folder.** On the Mac, 16 checks and a capture: the
+storage made, then six strokes kept on p. 23 of the sample's book and
+not sent (a made-up drawing of PencilKit's through `keepPage`: a Mac
+has no canvas), shown over the page. On a simulated iPad Air 11-inch
+(M4), iOS 27.2, 56 checks and 6 captures under 16 touches the rig made
+(10 drags, 5 taps, a flick): a collection made from the storage with no
+page written on; a `pen` press on p. 23 (an event the smoke makes)
+boxed nothing and opened the canvas over the page; five strokes; kept
+while the canvas was open; `done`; the ink within a point of where the
+finger went on the page; the picture over the page in the pages;
+nothing in the PDF; a flick still scrolled; then a new note, `draw`
+tapped in the insert menu twice, two pages of ink in it; synced. On the
+Mac again, 23 checks and 3 captures: p. 23 holds the iPad's five
+strokes and its own six, by name, shown as a picture over the page,
+light and dark; the note's two pages are pictures there. On the iPad
+again, its collection opened as it was left, 25 checks and 2 captures:
+the same device; it holds its five and the Mac's six; the canvas opens
+on all eleven; one more written, and the Mac's keep their names.
+**How the two collections came to write on one page:** each wrote
+before it had seen the other's (the Mac's strokes were kept and unsent
+when the simulator's collection was made, and the Mac synced only after
+the simulator had written), and each ends with all of them. The Mac's
+were not written on a canvas. **Nothing else regressed**, from the same
+checkout. The simulator: `tour` 23 and 45 captures, `touch` 70 and 10
+(69 before: its `pen` step is longer by one), `ink` 46 and 6, each on
+its first run. The Mac: `store` 34 with its export equal to the sample
+by `diff -r`, `crdt` 72 and 18, `storage` over s3 76 and 12, `tour` 23
+and 45, `book` 52 and 9, `books` 71 and 8, `touch` 4 and 9, `ink` 4 and
+20. `books` failed once at its 43rd check (the caret read in the next
+section after a write-up), minutes after the screen was unlocked, and
+passed twice after on the same commit; the cause was not found. The
+captures were looked at: pageink's whole in the runs before the commit
+and on sheets from the checkout, the rest on sheets, but for `store`,
+`crdt` and `storage`, whose checks are their lines.
+
+### Not verified
+
+A Pencil: the runner makes fingers only, so the press that opens the
+canvas was a `pen` event the smoke made and every stroke a finger's on
+a canvas told to take one; the Pencil's own touch on a page (whether
+the web view scrolls or selects under it first, hover, the palm), the
+canvas as a real user gets it, pressure and tilt were not seen. A
+device. Two canvases open on one page at once. The eraser, the lasso
+and undo over a page. Landscape, pages of different sizes, a rotated
+page, a PDF over 16 MB, a book that is away when it is touched. The
+e-ink theme over a written page. A reading session over a written page.
+S3 and WebDAV with such strokes. A build of 58's against a storage that
+holds them. A release bundle. Not rerun: `sync`, `nudge`, `ipad`,
+`storage` over WebDAV, `size`.
+
+### Found
+
+- PencilKit gives each stroke it makes a seed of its own, and a
+  stroke's name hashes it: `sample` with one seed gives other names
+  each call. The Mac's run names its strokes for the runs after.
+- An app left open on the simulator loads its page again when a dev
+  server comes back on 1420 and runs the last `smoke.json` from the
+  top: the collection the last run was to open as it was left had been
+  made anew, and passed its first checks all the same.
+- A note's surface is built again as its pictures come.
+- A canvas that closed waited up to 1.2 s before its page was kept.
+- The Mac's strokes keep their names through the iPad's canvas and its
+  save (58 saw the other way round, the Mac taking the iPad's drawing
+  apart): each system's PencilKit reads the other's strokes as the
+  same strokes.
+
+### Rig notes
+
+Beside the others in the scratchpad's `rig/`: `boot67.sh` (the
+simulator booted once the screen is unlocked), `iosup.sh <log>` (`tauri
+ios dev` from the run tree, waited for until it has deployed),
+`pageink4.sh <tag> [mac1|ipad|mac3|again]` (the pageink smoke's four
+runs, or one of them; the storage is put back as the Mac left it before
+each try of the iPad's, and the app is stopped after each), `all67.sh`
+(every check of this entry in one chain). The Mac's collection for
+these runs is a copy of the sample named `page-major`. The four runs in
+order need a dev server for the simulator's two and none for the Mac's
+two: `tauri ios dev`, stopped, the Mac, then the renderer alone.
+
+### For the user
+
+On the iPad (the simulator for now): touch the Pencil to a page of a
+book; the page comes up to write on; `done`. The writing is on that
+page on the Mac. Things to say when you look:
+- **The Pencil's first touch opens the page to write on, and is not
+  itself a stroke**; each page is written on in turn, under `done`. It
+  is 58's canvas with the page under it, not ink drawn into the
+  scrolling pages. Whether that is right needs your Pencil (66).
+- **An exported folder does not hold what is written on a book's
+  pages**, nor does the mirror, a dated export or git's folder: it is
+  in the collection and its storage only. Where it should go in a vault
+  is a change to FORMAT.md: say where (beside the PDF, as 58's drawing
+  is beside its note, would be the nearest), and it is a piece of its
+  own.
+- **What is written on a book stays when the book is deleted**, and
+  comes back with the book; nothing removes it for good.
+- **A notebook is a note with several pages of ink in it**, each from
+  `draw`. Nothing was added for it: no kind of document, no screen. Say
+  if you meant more (pages without the note between them, a page
+  turned, a template).
+- No Pencil was simulated, as before.
+Decided since the last entry: the Pencil writes on a book's page, a
+finger scrolls and boxes after its hold, a mouse boxes. Still open from
+before: whether a page of ink should be a kind of row of its own (58);
+whether a finger boxes after a hold (57); a way to join a storage on
+the iPad's welcome (these checks, too, named the folder in
+`smoke.json`); where 63 put `join…` and the buttons under the storage's
+fields; 62's "settings that merge".
+
+Handoff prompt for the next session:
+
+```
+Read PLAN.md, FORMAT.md, BUILD-LOG.md, and spec/hashiyah/HANDOFF.md. The
+section of PLAN.md in progress is "A database under the app, synced by
+CRDT to any storage" (59–68); its introduction holds the decisions and
+the order, and 59's to 63's notes say how it stands (a collection is an
+SQLite database, `Vault` unchanged over an `Fs` that src/vault/store.ts
+makes from its rows; an engine, src/sync/engine.ts, told of every write,
+merging registers by a hybrid clock and text through Loro; a storage
+chosen in the tweaks, PDFs and images named by a merge and fetched when
+asked for). After 63 came 57, 58 and 67 (done); the order now is 64,
+then 56 and 68 (65 and 66 wait for things only the user has; 52 waits
+for the user). Do milestone 64, "Dropbox and Google Drive — sign in and
+it syncs", and only that one. Stop at its "done when". Then tick it,
+write notes for the next session under it, add an entry to BUILD-LOG.md
+with a fresh handoff prompt, and commit. Rules as in PLAN.md's ground
+rules: export PATH=$HOME/.cargo/bin:/opt/homebrew/bin:$PATH; npm test
+and npm run typecheck green before a commit, and cargo test in src-tauri
+(the app's 46 and `-p tauri-plugin-ink`'s 5), cargo check for both iOS
+targets when Rust or Swift changes; one commit per milestone; ask before
+a screen, section, or setting the brief does not name (the section's
+introduction names `storage`'s kinds, dropbox and google drive among
+them, "with the fields each needs"); a FORMAT change needs a corpus file
+and a test. Read 63's notes first: a storage is four verbs and two
+optional ones (src/sync/storage.ts; `up` and `down` send and fetch a
+file on the Rust side), the app's are in src/app/storage.ts over
+src-tauri/src/storage.rs (a folder, S3, WebDAV), the debug build carries
+loopback servers shaped like each (src-tauri/src/devstore.rs), the
+settings are Tweaks › storage, kept in `localStorage` by collection, and
+`ILMI_SMOKE=storage` runs two windows over one of them (`ILMI_KIND`).
+64's "done when" has two halves: with the user's keys, two collections
+signed in to each service sync a grade and a large PDF; without them the
+milestone stops at loopback fakes and says so. No Dropbox app key and no
+Google OAuth client has been given (PLAN, "What the user provides"): do
+not ask for them and do not make accounts; build both against loopback
+servers shaped like each service's own API, as 63 did for S3 and WebDAV,
+and record the real services as not verified. To decide and say before
+building: how a sign-in comes back (the bullet says `ilmi://`; macOS
+registers that scheme only from a built bundle, never the dev binary, so
+a dev run's check needs a way back that a dev run has); where a token
+and its refresh are kept (63 keeps a secret in `localStorage` in the
+clear and says so); Dropbox's upload in parts for a file over 150 MB (63
+sends one `PUT` a file); that Google Drive finds a file by an id and not
+by a path, where a storage lists by prefix; that each keeps to a folder
+of its own. What 67 left: a book's page may be written on. On an iPad
+the Pencil's touch on a page opens 58's canvas over that page, its
+picture under the strokes (src/app/ink.ts `writeOn`; `pagePress` in
+src/app/touch.ts; the plugin's `open` with `paper`), and every device
+lays a picture of the strokes over the page (`PageInk` in
+src/app/Pdf.tsx, `store_ink_page`). The strokes are rows of `ink` under
+`p.<the PDF's SHA-256>.<page>` (`pageKey`, `StoreFs.pageInk`,
+`setPageInk`, `inkedPages`, `onPageInk`): no row of the tree, never in
+the PDF, a register each (`~i|p.…|<stroke>`), a change to no row, so no
+delete takes them and none sweeps them. Decided with the user on
+2026-11-06: on a book's page the Pencil writes, a finger scrolls on a
+plain drag and boxes after its hold, a mouse boxes. `ILMI_SMOKE=pageink`
+is four runs over a storage folder (docs/development.md): the Mac writes
+on a page and does not send it, the iPad writes on the same page, the
+Mac holds both, the iPad's collection opened again holds both. Xcode
+27.2's test runner makes fingers only: a simulated Pencil is an event
+the smoke makes and the strokes are the rig's finger on a canvas told to
+take one. The simulator does not finish booting, and `simctl launch`
+does not return, while the Mac's screen is locked; a locked screen
+stalls the Mac's window or leaves it unpainted (a smoke once ran to its
+end there with a blank capture): wait for it, do not skip, and look at
+what a capture shows. The first rig touch after a boot can be dropped:
+run again before believing it. An app left open on the simulator loads
+its page again when a dev server comes back on 1420 and runs the last
+`smoke.json` from the top: stop it (`xcrun simctl terminate booted
+dev.ilmi.app`) after each run. Keep `ILMI_SMOKE=pageink` (16 and 23 on
+the Mac, 56 and 25 on the iPad), `ink` (46 on the iPad, 4 and 20 on the
+Mac), `touch` (70; 4 and 9), `book` (52), `books` (71), `tour` (23, on
+the Mac and the simulator), `crdt` (72), `storage` (76 over s3, 75 over
+webdav), `store` (its export equal to the sample by `diff -r`), `sync`
+and `nudge` passing (`books` failed once in 67's chain, at "the caret is
+still in the section after the write-up", and passed twice after on the
+same commit: run it again before believing either), and the random test
+in src/sync/__tests__/engine.test.ts (`ILMI_SEEDS=1-500`, and with
+`ILMI_SNAPS=1`), which writes on a book's pages now. The Mac's window
+checks run from a clean checkout of main with the dev identifier
+override; ILMI_VAULT is a folder, imported afresh as a collection on
+each run, or a collection's own folder, opened as it is. Never kill a
+process on port 1420 that is not yours, and run the simulator's dev
+server or the Mac's, not both; stop your own app binary by pid when a
+run ends, capture the Mac only by window id; a covered window's page
+runs several times slower. Open for the user, not to be built without
+their word: where what is written on a book's pages goes in an exported
+folder (a FORMAT change; today an export, the mirror, a dated export and
+git's folder do not hold it); whether the Pencil's touch opening the
+canvas, with that touch not a stroke, is how a page should be written on
+(it needs their Pencil); whether a notebook is more than a note with
+several pages of ink; whether a page of ink should be a kind of row of
+its own (the table made again); whether a finger boxes after a hold
+(57); a way to join a storage on the iPad's welcome; whether `join…` and
+the buttons under the storage's fields stay where 63 put them; 62's
+"settings that merge". Not done in 67, said in its notes: no Pencil was
+simulated, nothing ran on a device, the eraser and the lasso were not
+driven, nothing sweeps the strokes of a book that is gone, strokes off
+the page's edge are kept and not shown, the canvas has no zoom, a
+section's crop in the notes does not show what is written over it.
+```
+
+---
+
 ## 2026-11-06 — milestone 58: ink
 
 Done on main: `0e0b3eb`. On an iPad a section's heading's menu and the

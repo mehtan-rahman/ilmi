@@ -224,7 +224,7 @@ which starts the app and ends at the smoke's `done` or `failed` line; about
 two and a half minutes). That runner makes fingers only: Xcode 27.2's
 XCUIAutomation has no stylus among its pointer paths, so the Pencil's path
 (a pointer event whose type is `pen`) is driven by events the smoke makes
-itself. `src/app/touch.ts` holds the three timings (a finger's hold before
+itself; since milestone 67 that press opens the canvas over the page. `src/app/touch.ts` holds the three timings (a finger's hold before
 a box, the long press, how long a touch rests before the system's own
 selection is kept off).
 
@@ -247,6 +247,26 @@ the corpus's page again (PencilKit on the Mac), and `cargo test -p
 tauri-plugin-ink` in `src-tauri` runs what reads a drawing; `-- --ignored
 --nocapture a_page_weighed` prints a made-up page's bytes as strokes and
 as a PNG.
+
+`ILMI_SMOKE=pageink` (milestone 67, ink on a book's page) is four runs
+over one storage folder. The Mac (`ILMI_VAULT`, `ILMI_STORAGE`): the
+storage made, then six strokes kept on p. 23 of the sample's book and not
+sent (a Mac has no canvas: the strokes are a made-up drawing of
+PencilKit's, `dev_ink_sample`, kept through `keepPage` in
+`src/app/ink.ts`, which is what the canvas keeps through). The simulator,
+`{"mode": "pageink", "storage": "<that folder>"}` with
+`TEST_RUNNER_MODE=pageink`: a collection made from the storage, a `pen`
+press on p. 23 (an event the smoke makes), the canvas over the page,
+strokes by the rig's finger, `done`, the writing on the page where the
+finger went; then a note of two pages of ink from `draw` in the insert
+menu; its `pageink:` line says the count, where the strokes lie in the
+page's points, and the note. The Mac again with `ILMI_VAULT=<the
+collection's own folder> ILMI_EXPECT=<the count> ILMI_BOX=<where>
+ILMI_NOTE=<the note>`: both writings on the page, shown as a picture. The
+simulator again with `"again": "1", "expect": "<the count>"` added: the
+collection it made, opened as it was left, holds both too. A stroke
+written on a book's page is a row of `ink` under `p.<the PDF's
+SHA-256>.<page>` (`pageKey`, `src/vault/store.ts`), no row of the tree.
 
 ## Building the installer
 

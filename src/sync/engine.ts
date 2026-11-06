@@ -35,6 +35,14 @@
 //   change to its page's row: a page deleted on one device and drawn on
 //   on another keeps the drawing, whole. Nothing made from the strokes
 //   (the drawing as a file, the picture) is a change.
+// - Ink on a book's page (milestone 67): the same register a stroke,
+//   under a page that is no row but the PDF's hash and the page's number
+//   (`~i|p.<hash>.<n>|<stroke>`). It is a change to no row: it keeps no
+//   deleted row and no delete takes it, so the strokes two devices write
+//   on one page are all there on both whatever became of the rows that
+//   name the PDF, and they go to a new device with everything else (a
+//   collection's first changes carry them, and a snapshot does as it
+//   carries every register).
 // - The tree (milestone 62) is what the registers make, by rules that
 //   read nothing but the registers, so every device makes the same one:
 //   a row's parent is the later move. Of moves that together would put a
@@ -94,7 +102,7 @@
 
 import { parse, parseReviews, serialize } from '../format/index.js';
 import { compose, type StateRow } from '../vault/lift.js';
-import { isInk, newId, reviewRow, type InkStroke, type Content, type DocContent, type Lift, type Place, type Recorder, type Reg, type ReviewRow, type Row, type RowKind, type StoreFs, type StoreOp, type ViewWrite } from '../vault/store.js';
+import { BOOK_PAGE, isBookPage, isInk, newId, reviewRow, type InkStroke, type Content, type DocContent, type Lift, type Place, type Recorder, type Reg, type ReviewRow, type Row, type RowKind, type StoreFs, type StoreOp, type ViewWrite } from '../vault/store.js';
 import { clock, msOf, msPart, type Clock } from './clock.js';
 import { blocks, diff3, type Kept } from './merge.js';
 import type { Storage } from './storage.js';
@@ -229,6 +237,11 @@ const inkOf = (key: string): { page: string; stroke: string } | null => {
   if (!key.startsWith(INK)) return null;
   const cut = key.indexOf('|', INK.length);
   return cut < 0 ? null : { page: key.slice(INK.length, cut), stroke: key.slice(cut + 1) };
+};
+/** The row a stroke's register is a change to: its page's; none for a book's page, which is no row. */
+const inkRow = (key: string): string | null => {
+  const k = inkOf(key);
+  return k && !isBookPage(k.page) ? k.page : null;
 };
 const inkValue = (s: InkStroke): string => JSON.stringify([s.at, s.data]);
 function strokeOf(stroke: string, value: string): InkStroke | null {
@@ -471,7 +484,7 @@ export function engine(fs: StoreFs, opts: EngineOptions): Engine {
     ];
   };
 
-  /** Strokes added to a page and taken from it: a register each, and a change to the page's row. */
+  /** Strokes added to a page and taken from it: a register each, and a change to the page's row when it has one. */
   const recordInk = (p: Pending, page: string, add: InkStroke[], remove: string[]): void => {
     if (!add.length && !remove.length) return;
     const c = clk.tick();
@@ -479,7 +492,7 @@ export function engine(fs: StoreFs, opts: EngineOptions): Engine {
       p.regs.push({ key: inkKey(page, stroke), stamp: c, value: v });
       p.ops.push({ t: 'g', k: inkKey(page, stroke), v, c });
     }
-    p.rows.add(page);
+    if (!isBookPage(page)) p.rows.add(page);
   };
 
   /** `body` as the document's text from here on: the library's update for it and its state after; null when it is the text already. */
@@ -743,6 +756,12 @@ export function engine(fs: StoreFs, opts: EngineOptions): Engine {
       }
       ops.push(...(await finish(p)));
     }
+    // what is written on books' pages: no row holds it, so no row above carried it
+    for (const page of await store.inkPages(BOOK_PAGE)) {
+      const p = begin();
+      recordInk(p, page, await store.ink(page), []);
+      ops.push(...(await finish(p)));
+    }
     ops.push({ op: 'meta', key: 'booted', value: '1' });
     await flush();
     booted = true;
@@ -839,7 +858,7 @@ export function engine(fs: StoreFs, opts: EngineOptions): Engine {
     const keys = new Set<string>();
     for (const b of batches) {
       for (const o of b.ops) {
-        if (o.t === 'g') { keys.add(o.k); const id = rowOf(o.k) ?? inkOf(o.k)?.page; if (id) keys.add(`${id}|e`); }
+        if (o.t === 'g') { keys.add(o.k); const id = rowOf(o.k) ?? inkRow(o.k); if (id) keys.add(`${id}|e`); }
         else if (o.t === 'x' || o.t === 'e') keys.add(`${o.id}|e`);
         else if (o.t === 'd') keys.add(`${o.id}|d`);
       }
@@ -868,7 +887,7 @@ export function engine(fs: StoreFs, opts: EngineOptions): Engine {
           // one stamp, two values: two devices undid one move, each as it saw the tree; the value decides
           if (!had || o.c > had.stamp || (o.c === had.stamp && (o.v ?? '') > (had.value ?? ''))) dirty.set(o.k, { key: o.k, stamp: o.c, value: o.v });
           // a stroke is a change to its page's row
-          const id = rowOf(o.k) ?? inkOf(o.k)?.page ?? null;
+          const id = rowOf(o.k) ?? inkRow(o.k);
           // in a snapshot a register is what its writer held, not a change of its own: what each row had seen comes beside it (`e`)
           if (id && (o.a || snap)) touched.add(id);
           else if (id) bump(id, b.s);
@@ -1199,7 +1218,8 @@ export function engine(fs: StoreFs, opts: EngineOptions): Engine {
       inks.set(k.page, page);
     }
     for (const [page, strokes] of inks) {
-      if (removed.has(page) || !(show.has(page) || door.row(page))) continue;
+      // a book's page is no row: its strokes are written whatever rows there are
+      if (!isBookPage(page) && (removed.has(page) || !(show.has(page) || door.row(page)))) continue;
       const add: InkStroke[] = [];
       const remove: string[] = [];
       for (const [stroke, value] of strokes) {

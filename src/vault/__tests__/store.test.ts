@@ -15,8 +15,8 @@ import { formatReview, parseReviews, setField, type Card, type Doc, type Review 
 import { gradeItem, queueItems, type CardItem } from '../../schedule/index.js';
 import { MIRROR_LIST, Vault, join, exportFolder, importFolder, mirrorDirIn, mirrorFolder, mirrorPass, splitFront, storeFs, takeFiles, type Row, type StoreFs } from '../index.js';
 import { DIGEST_MARK } from '../lift.js';
-import { memDrawing, memPicture, memSplit, memStore, type MemStore } from '../mem-store.js';
-import { STORE_VERSION, isInk, type InkStroke } from '../store.js';
+import { memDrawing, memPagePicture, memPicture, memSplit, memStore, type MemStore } from '../mem-store.js';
+import { STORE_VERSION, bookPageOf, isBookPage, isInk, pageKey, type InkStroke } from '../store.js';
 import { nodeFs } from '../node-fs.js';
 
 const CORPUS = fileURLToPath(new URL('../../format/__tests__/corpus/vault', import.meta.url));
@@ -779,5 +779,79 @@ describe('ink (milestone 58)', () => {
     // put back as the two files an export would have written: the strokes are in the drawing
     expect(memSplit(await fs.readBytes(join(ROOT, PAGE))).map((x) => x.stroke)).toEqual(['s1', 's2']);
     expect(await fs.readBytes(join(ROOT, PICTURE))).toEqual(memPicture([stroke(1), stroke(2)]));
+  });
+});
+
+describe('ink on a book\'s page (milestone 67)', () => {
+  const PDF = 'papers/two-pages.pdf';
+  const stroke = (n: number): InkStroke => ({ stroke: `s${n}`, at: 1000 + n, data: Buffer.from(`stroke ${n}`).toString('base64') });
+
+  it('a page is found by the file\'s hash and its number, and is no row\'s id', () => {
+    const hash = 'ab'.repeat(32);
+    expect(pageKey(hash, 24)).toBe(`p.${hash}.24`);
+    expect(bookPageOf(pageKey(hash, 24))).toEqual({ hash, page: 24 });
+    expect(isBookPage(pageKey(hash, 1))).toBe(true);
+    // a row's id is random hex, or a hidden row's path stamp: never this
+    expect(isBookPage('0123456789abcdef0123456789abcdef') || isBookPage('h.1a2b3c')).toBe(false);
+    expect(bookPageOf('p.nothex.3') ?? bookPageOf(`p.${hash}`) ?? bookPageOf(`p.${hash}.x`)).toBeNull();
+  });
+
+  it('strokes written on a page are rows under the PDF\'s hash: nothing goes into the PDF, no row is made, and no file is', async () => {
+    const { fs, store } = await collection(CORPUS);
+    const abs = join(ROOT, PDF);
+    const hash = fs.blobAt(abs)!;
+    const bytes = await fs.readBytes(abs);
+    const rows = (await store.rows()).length;
+    const before = await tmp('page-before');
+    await exportFolder(fs, ROOT, nodeFs, before);
+    expect(await fs.pageInk(hash, 2)).toEqual([]);
+    expect(await fs.inkedPages(hash)).toEqual([]);
+    const told: number[] = [];
+    const off = fs.onPageInk((h, n) => { if (h === hash) told.push(n); });
+    expect(await fs.setPageInk(hash, 2, [stroke(1), stroke(2)])).toEqual({ added: 2, removed: 0 });
+    expect(await fs.pageInk(hash, 2)).toEqual([stroke(1), stroke(2)]);
+    expect(await store.ink(pageKey(hash, 2))).toEqual([stroke(1), stroke(2)]);
+    expect(await fs.inkedPages(hash)).toEqual([2]);
+    // the canvas gives back what it was opened with and one more: only that one is written
+    const again = [...memSplit(await fs.pageInkFile(hash, 2, 'drawing')), stroke(3)];
+    expect(await fs.setPageInk(hash, 2, again)).toEqual({ added: 1, removed: 0 });
+    expect(await fs.setPageInk(hash, 2, again)).toEqual({ added: 0, removed: 0 });
+    expect(await fs.setPageInk(hash, 2, [stroke(2), stroke(3)])).toEqual({ added: 0, removed: 1 });
+    await fs.setPageInk(hash, 1, [stroke(7)]);
+    expect(told).toEqual([2, 2, 2, 1]);
+    off();
+    expect(await fs.inkedPages(hash)).toEqual([1, 2]);
+    // the picture every device lays over the page: the whole page, from the strokes
+    expect(await fs.pageInkFile(hash, 2, 'picture', 612, 792)).toEqual(memPagePicture([stroke(2), stroke(3)], 612, 792));
+    // the PDF as it was, the tree as it was, and an export what it was
+    expect(fs.blobAt(abs)).toBe(hash);
+    expect(await fs.readBytes(abs)).toEqual(bytes);
+    expect((await store.rows()).length).toBe(rows);
+    const after = await tmp('page-after');
+    await exportFolder(fs, ROOT, nodeFs, after);
+    const [want, got] = [await filesOf(before), await filesOf(after)];
+    expect([...got.keys()].sort()).toEqual([...want.keys()].sort());
+    for (const [p, b] of want) if (b) expect(got.get(p)!.equals(b), p).toBe(true);
+    // not a page of a file
+    await expect(fs.setPageInk('not hex', 1, [stroke(1)])).rejects.toThrow(/not a page/);
+  });
+
+  it('the writing is the file\'s on every row that names it, and outlives the rows: a book copied, moved, deleted and put back has it', async () => {
+    const { fs, store } = await collection(CORPUS);
+    const vault = await Vault.open(fs, ROOT);
+    const hash = fs.blobAt(join(ROOT, PDF))!;
+    await fs.setPageInk(hash, 1, [stroke(1), stroke(2)]);
+    // a second row of the same file: one writing
+    await fs.writeBytes(join(ROOT, 'essays/copy.pdf'), await fs.readBytes(join(ROOT, PDF)));
+    expect(fs.blobAt(join(ROOT, 'essays/copy.pdf'))).toBe(hash);
+    // moved: the hash is the row's still
+    await fs.rename(join(ROOT, PDF), join(ROOT, 'essays/moved.pdf'));
+    expect(await fs.inkedPages(fs.blobAt(join(ROOT, 'essays/moved.pdf'))!)).toEqual([1]);
+    // every row that names it deleted: the strokes stay, in no row
+    await fs.remove(join(ROOT, 'essays/moved.pdf'));
+    await fs.remove(join(ROOT, 'essays/copy.pdf'));
+    expect([...(await rowsByPath(store)).values()].some((r) => r.blob === hash)).toBe(false);
+    expect(await fs.pageInk(hash, 1)).toEqual([stroke(1), stroke(2)]);
+    vault.close();
   });
 });

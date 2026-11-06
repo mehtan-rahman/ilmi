@@ -18,18 +18,26 @@
 // room), dashed once dismissed; the caret's section lights its boxes and
 // the pages scroll to them. Nothing is written into the PDF, ever; every
 // change goes to the Markdown, through the open notes' writer.
+//
+// A page may be written on (milestone 67). On an iPad the Pencil's touch on
+// a page opens the canvas over that page (`ink.ts`), where 57 had it box;
+// a finger still scrolls and boxes after its hold, and the mouse boxes.
+// What is written is strokes in the store, found by the PDF's hash and the
+// page's number, and every device lays the picture made of them over the
+// page (`PageInk`), the Mac too.
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { boxesEnd, formatClip, meta, sectionDismissed, setField, type Box, type Doc } from '../format/index.js';
 import { boxAround, countIn, findAll, findText, jumpTarget, linesOf, refOf, sectionName, type Found, type PageItem } from '../pdf/index.js';
 import { pickPos, type Band } from '../reader/index.js';
 import { addPassage, passagesOf, pointOn, sectionState, type Passage } from '../schedule/index.js';
-import { addToPage, childDirOf } from '../vault/index.js';
+import { addToPage, childDirOf, type StoreFs } from '../vault/index.js';
 import { CueActions } from '../plugins/CueActions.js';
 import { onPluginAction, publishSelection, toPluginSelection, type PluginSelection } from '../plugins/index.js';
 import { titleOf } from './names.js';
 import { TextLayer, pageBits, type PDFDocumentProxy } from './pdfjs.js';
-import { acquirePdf, itemsOf } from './bookPdf.js';
+import { acquirePdf, itemsOf, pagePaper } from './bookPdf.js';
+import { hasCanvas, writeOn } from './ink.js';
 import { Crumbs } from './Crumbs.js';
 import { Reader } from './Reader.js';
 import { StudyButton } from './StudyButton.js';
@@ -42,7 +50,7 @@ import { writeDoc } from './sections.js';
 import { notify } from './land.js';
 import { appNow } from './clock.js';
 import { press } from './platform.js';
-import { HOLD_MS, SLOP, boxStart, onGlass } from './touch.js';
+import { HOLD_MS, SLOP, onGlass, pagePress } from './touch.js';
 import { plainMath } from './chromeText.js';
 import './pdf.css';
 
@@ -181,6 +189,30 @@ export function Pdf({ id, active = true, session = false, readOn = false, onLast
   );
 }
 
+/** The open collection's store, when it is one: where a page's strokes are. */
+const inkStore = (): StoreFs | null => {
+  const vault = currentVault();
+  return vault && 'pageInk' in vault.fs ? (vault.fs as StoreFs) : null;
+};
+
+/** What is written on a page, laid over it: a picture of the whole page made from its strokes, on nothing. `rev` moves when the strokes change. */
+function PageInk({ hash, page, w, h, rev, rect }: { hash: string; page: number; w: number; h: number; rev: number; rect: Rect }) {
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => {
+    const fs = inkStore();
+    if (!fs) return;
+    let live = true;
+    let made: string | null = null;
+    fs.pageInkFile(hash, page, 'picture', w, h).then((bytes) => {
+      if (!live || !bytes.length) return;
+      made = URL.createObjectURL(new Blob([bytes as BlobPart], { type: 'image/png' }));
+      setUrl(made);
+    }, console.error);
+    return () => { live = false; if (made) URL.revokeObjectURL(made); };
+  }, [hash, page, w, h, rev]);
+  return url ? <img className="page-ink" data-page={page} data-rev={rev} src={url} alt="" draggable={false} style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }} /> : null;
+}
+
 /** A passage's boxes on the pages, its heading's name, its cards, its state. */
 interface Drawn {
   passage: Passage;
@@ -240,6 +272,39 @@ function Pages({ id, active, session, readOn, onLast }: Omit<Required<PdfProps>,
   const canEnrol = info?.type === 'source' || info?.type === 'extract' || info?.type === 'note';
   const reading = !!info?.read && info.type !== 'note';
   const rel = info?.pdf;
+
+  // ── what is written on the pages: found by the file's hash and the page ──
+  /** The PDF's SHA-256, once its row is known. */
+  const hash = useMemo(() => {
+    const vault = currentVault();
+    return rel && vault && status !== 'gone' ? inkStore()?.blobAt(vault.abs(rel)) ?? null : null;
+  }, [rel, status]);
+  /** The pages written on, each with a count that moves when its strokes do. */
+  const [inked, setInked] = useState<Record<number, number>>({});
+  useEffect(() => {
+    const fs = inkStore();
+    setInked({});
+    if (!fs || !hash) return;
+    let live = true;
+    const look = (bump?: number) => fs.inkedPages(hash).then((pages) => {
+      if (!live) return;
+      setInked((was) => Object.fromEntries(pages.map((n) => [n, (was[n] ?? 0) + (n === bump || was[n] === undefined ? 1 : 0)])));
+    }, console.error);
+    void look();
+    const off = fs.onPageInk((h, n) => { if (h === hash) void look(n); });
+    return () => { live = false; off(); };
+  }, [hash]);
+  /** The Pencil on a page: the canvas over it, the page's picture under the strokes. */
+  const writing = useRef(false);
+  const writeHere = async (n: number) => {
+    if (!pdf || !hash || writing.current) return;
+    writing.current = true;
+    try {
+      await writeOn(hash, n, await pagePaper(pdf, n));
+    } finally {
+      writing.current = false;
+    }
+  };
 
   // ── the file, shared with the notes' crops ──
   const range = info?.pages;
@@ -619,10 +684,10 @@ function Pages({ id, active, session, readOn, onLast }: Omit<Required<PdfProps>,
   const startReading = () => { if (canEnrol && !info?.read) enrolReading(id).catch(console.error); };
 
   // ── drawing a box: a drag on a page, by pointer events (milestone 57) ──
-  // A mouse's or the Pencil's drag draws at once; a finger's plain drag is
-  // the scroll, so a finger draws after a short hold (`touch.ts`). A double
-  // click or ⌥-drag selects text instead. A tap under a finger or the
-  // Pencil clears the boxes drawn, as esc does.
+  // A mouse's drag draws at once; a finger's plain drag is the scroll, so a
+  // finger draws after a short hold (`touch.ts`). A double click or ⌥-drag
+  // selects text instead. A tap under a finger clears the boxes drawn, as
+  // esc does. The Pencil boxes nothing where it can write (milestone 67).
   const boxing = useRef<{ armed: boolean; abort(): void } | null>(null);
   /** A box is starting: the keys that follow (`e`, `m`) are the pages', not the notes' to type. */
   const settle = () => {
@@ -643,10 +708,17 @@ function Pages({ id, active, session, readOn, onLast }: Omit<Required<PdfProps>,
     const glass = onGlass(e.pointerType);
     const id = e.pointerId;
     const page = Number(pageEl.dataset.page);
+    const begins = pagePress(e.pointerType, hasCanvas() && hash !== null);
+    // the Pencil writes: the canvas comes over this page, and nothing is boxed
+    if (begins === 'write') {
+      settle();
+      void writeHere(page).catch(console.error);
+      return;
+    }
     const x0 = e.clientX;
     const y0 = e.clientY;
     let moved = false;
-    const timer = boxStart(e.pointerType) === 'hold' ? setTimeout(() => {
+    const timer = begins === 'hold' ? setTimeout(() => {
       state.armed = true;
       settle();
       // the hold is up: a mark where the box will start
@@ -711,7 +783,7 @@ function Pages({ id, active, session, readOn, onLast }: Omit<Required<PdfProps>,
     e.preventDefault();
     settle();
   };
-  // a box being drawn under a finger or the Pencil holds the page still: the scroll is the touch's default
+  // a box being drawn under a finger holds the page still: the scroll is the touch's default
   useEffect(() => {
     const col = pagesRef.current;
     if (!col) return;
@@ -969,6 +1041,16 @@ function Pages({ id, active, session, readOn, onLast }: Omit<Required<PdfProps>,
                 style={{ width: s.w * scale, height: s.h * scale, top: tops.at[i + 1] }}
               />
             ))}
+            {hash && Object.keys(inked).length > 0 && (
+              <div className="pdf-ink">
+                {sizes.map((s, i) => {
+                  const n = base + i + 1;
+                  // a page's writing is made when the page itself is drawn, as it comes near
+                  const r = inked[n] !== undefined && rendered.current.has(n) ? pageRect(n) : null;
+                  return r && <PageInk key={n} hash={hash} page={n} w={s.w} h={s.h} rev={inked[n]!} rect={r} />;
+                })}
+              </div>
+            )}
             <div className="pdf-marks">
               {status === 'ok' && drawn.map(({ passage: p, cards: n, dismissed }) => {
                 const cur = lit === p.heading.text;

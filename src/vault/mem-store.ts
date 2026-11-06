@@ -39,6 +39,8 @@ const utf8 = new TextEncoder();
 export const memDrawing = (strokes: readonly InkStroke[]): Uint8Array => utf8.encode(`drawing\n${strokes.map((x) => `${x.stroke} ${x.at} ${x.data}\n`).join('')}`);
 /** The stand-in for their picture: empty for none, as the real one is. */
 export const memPicture = (strokes: readonly InkStroke[]): Uint8Array => utf8.encode(strokes.length ? `picture of ${strokes.map((x) => x.stroke).join(' ')}\n` : '');
+/** The stand-in for the writing on a book's page as a picture of the whole page (milestone 67). */
+export const memPagePicture = (strokes: readonly InkStroke[], w: number, h: number): Uint8Array => utf8.encode(`page ${w}x${h} of ${strokes.map((x) => x.stroke).join(' ')}\n`);
 /** A stand-in drawing taken apart again, as the Rust side takes PencilKit's apart. */
 export function memSplit(drawing: Uint8Array): InkStroke[] {
   const lines = new TextDecoder().decode(drawing).split('\n');
@@ -245,6 +247,8 @@ export function memStore(version = STORE_VERSION): MemStore {
     },
     async ink(page) { return strokesOf(page); },
     async inkFile(page, what) { return what === 'drawing' ? memDrawing(strokesOf(page)) : memPicture(strokesOf(page)); },
+    async inkPages(prefix) { return [...ink].filter(([k, v]) => k.startsWith(prefix) && v.size > 0).map(([k]) => k).sort(); },
+    async inkPage(page, what, w, h) { return what === 'drawing' ? memDrawing(strokesOf(page)) : memPagePicture(strokesOf(page), w, h); },
     async meta() { return [...meta].sort((a, b) => (a[0] < b[0] ? -1 : 1)); },
     async regs(keys) { return keys.flatMap((k) => { const r = regs.get(k); return r ? [{ ...r }] : []; }); },
     async regsUnder(prefixes) {

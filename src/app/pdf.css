@@ -235,6 +235,12 @@ html[data-mobile="1"] .pgut { padding: 8px 8px; margin: -6px -5px; }
 /* the read bar: from the first page to the read point */
 .book .pdf-body .read-bar { left: -20px; width: 3px; }
 
+/* what is written on the pages (milestone 67): a picture of each page's strokes over it, under the boxes; on dark paper it is turned as the page is */
+.pdf-ink { position: absolute; inset: 0; pointer-events: none; z-index: 2; }
+.page-ink { position: absolute; display: block; pointer-events: none; -webkit-user-select: none; user-select: none; }
+[data-theme="dark"] .page-ink { filter: invert(0.92) hue-rotate(180deg); }
+[data-theme="eink"] .page-ink { filter: grayscale(1) contrast(1.1); }
+
 /* what the notes say about the pages: each passage's boxes, its name beside the page or a § in the gutter */
 .pdf-marks { position: absolute; inset: 0; pointer-events: none; z-index: 3; }
 .pbox {

@@ -1,5 +1,6 @@
 // A PencilKit drawing as ilmi keeps it (milestone 58): taken apart into its strokes, each named by what it
-// is; put together again from them; drawn as a PNG. The same code on the Mac and on iOS, called from Rust.
+// is; put together again from them; drawn as a PNG, cut to what the strokes cover or (milestone 67) as they
+// lie on a page of a size. The same code on the Mac and on iOS, called from Rust.
 //
 // PencilKit gives a stroke no name, and a drawing saved twice is not the same bytes twice. What a save
 // keeps of a stroke is when it was made, its seed, and its points; the name here is a hash over those, so a
@@ -142,6 +143,34 @@ int ilmi_ink_picture(const uint8_t *recs, size_t len, double scale, uint8_t **ou
       __block NSData *png = nil;
 #if TARGET_OS_OSX
       // black ink is drawn white under a dark appearance: the picture is always the light one
+      [[NSAppearance appearanceNamed:NSAppearanceNameAqua] performAsCurrentDrawingAppearance:^{
+        NSImage *img = [d imageFromRect:r scale:scale];
+        CGImageRef cg = [img CGImageForProposedRect:NULL context:nil hints:nil];
+        if (cg) png = [[[NSBitmapImageRep alloc] initWithCGImage:cg] representationUsingType:NSBitmapImageFileTypePNG properties:@{}];
+      }];
+#else
+      [[UITraitCollection traitCollectionWithUserInterfaceStyle:UIUserInterfaceStyleLight] performAsCurrentTraitCollection:^{
+        png = UIImagePNGRepresentation([d imageFromRect:r scale:scale]);
+      }];
+#endif
+      if (!png) return 2;
+      return give(png, out, out_len);
+    }
+    return 1;
+  }
+}
+
+/// The strokes as they lie on a page `w` by `h` points, from its top left corner, at `scale`, on nothing: laid over
+/// the page's own picture they are the writing on it (milestone 67). Whatever lies off the page is not drawn.
+int ilmi_ink_page(const uint8_t *recs, size_t len, double w, double h, double scale, uint8_t **out, size_t *out_len) {
+  @autoreleasepool {
+    named();
+    if (INK_AVAILABLE) {
+      PKDrawing *d = joined(recs, len);
+      if (!d || !(w > 0) || !(h > 0)) return 2;
+      CGRect r = CGRectMake(0, 0, ceil(w), ceil(h));
+      __block NSData *png = nil;
+#if TARGET_OS_OSX
       [[NSAppearance appearanceNamed:NSAppearanceNameAqua] performAsCurrentDrawingAppearance:^{
         NSImage *img = [d imageFromRect:r scale:scale];
         CGImageRef cg = [img CGImageForProposedRect:NULL context:nil hints:nil];

@@ -46,6 +46,13 @@
 //! drawing PencilKit opens and the picture a note shows are put together
 //! when they are read (`ink_file`).
 //!
+//! Since milestone 67 a book's page may be written on. Those strokes are
+//! rows of `ink` too, under a page that is no row: `p.<the PDF's
+//! SHA-256>.<the page's number>`. They belong to the file by what it is,
+//! not to a row that names it, so no row's delete takes them, and they
+//! are never written into the PDF. Read, they are a drawing for the
+//! canvas or a picture of the whole page (`ink_page`).
+//!
 //! Nothing here knows the format or what a path is: the renderer's
 //! `src/vault/store.ts` reads the rows once, keeps the tree, takes a file
 //! apart on a write (`src/vault/lift.ts`) and puts it together on a read.
@@ -599,6 +606,24 @@ impl Store {
             })
             .map_err(err)?;
         rows.collect::<rusqlite::Result<Vec<_>>>().map_err(err)
+    }
+
+    /// The pages that hold strokes and whose name starts with `prefix`: a book's pages are named by its PDF's hash and the page's number (milestone 67), and are no rows.
+    pub fn ink_pages(&self, prefix: &str) -> Result<Vec<String>, String> {
+        let mut st = self.conn.prepare("SELECT DISTINCT page FROM ink WHERE substr(page, 1, length(?1)) = ?1 ORDER BY page").map_err(err)?;
+        let rows = st.query_map([prefix], |r| r.get::<_, String>(0)).map_err(err)?;
+        rows.collect::<rusqlite::Result<Vec<_>>>().map_err(err)
+    }
+
+    /// The writing on a book's page, made from its strokes: `drawing` is the `PKDrawing` the canvas opens, `picture` a PNG at 2× of the whole page, `w` by `h` points, on nothing. Nothing is kept: no file is ever compared with it.
+    pub fn ink_page(&self, page: &str, what: &str, w: f64, h: f64) -> Result<Vec<u8>, String> {
+        if !matches!(what, "drawing" | "picture") {
+            return Err(format!("{what}: not something a page's writing is read as"));
+        }
+        let mut st = self.conn.prepare("SELECT data FROM ink WHERE page = ?1 ORDER BY at, stroke").map_err(err)?;
+        let strokes: Vec<Vec<u8>> = st.query_map([page], |r| r.get(0)).map_err(err)?.collect::<rusqlite::Result<_>>().map_err(err)?;
+        let refs: Vec<&[u8]> = strokes.iter().map(Vec::as_slice).collect();
+        if what == "drawing" { tauri_plugin_ink::join(&refs) } else { tauri_plugin_ink::page_picture(&refs, w, h, 2.0) }
     }
 
     /// A page of ink as a file, made from its strokes: `drawing` is the `PKDrawing` PencilKit opens, `picture` a PNG at 2× of what they cover (empty when there are none).
@@ -1175,6 +1200,12 @@ impl Stores {
     pub fn ink_file(&self, dir: &Path, page: &str, what: &str) -> Result<Vec<u8>, String> {
         self.with(dir, |s| s.ink_file(page, what))
     }
+    pub fn ink_pages(&self, dir: &Path, prefix: &str) -> Result<Vec<String>, String> {
+        self.with(dir, |s| s.ink_pages(prefix))
+    }
+    pub fn ink_page(&self, dir: &Path, page: &str, what: &str, w: f64, h: f64) -> Result<Vec<u8>, String> {
+        self.with(dir, |s| s.ink_page(page, what, w, h))
+    }
     pub fn blob_file(&self, dir: &Path, hash: &str) -> Result<Option<PathBuf>, String> {
         self.with(dir, |s| s.blob_file(hash))
     }
@@ -1682,6 +1713,47 @@ mod tests {
         was.batch(&[Op::Put { at: page, content: Some(Content { text: Some(String::new()), ..Default::default() }), lift: None }, Op::Ink { page: "p".into(), add: strokes[..2].to_vec(), remove: vec![] }])
             .unwrap();
         assert_eq!(was.ink("p").unwrap().len(), 2);
+    }
+
+    #[test]
+    fn a_book_s_page_holds_strokes_under_its_pdf_s_hash_and_no_row_s_delete_takes_them() {
+        use base64::Engine as _;
+        let b64 = base64::engine::general_purpose::STANDARD;
+        let dir = scratch("ink-page");
+        let mut s = Store::create(&dir).unwrap();
+        let strokes: Vec<InkStroke> = tauri_plugin_ink::split(&tauri_plugin_ink::sample(2, 6, 67).unwrap())
+            .unwrap()
+            .into_iter()
+            .map(|x| InkStroke { stroke: x.key, at: x.at, data: b64.encode(x.data) })
+            .collect();
+        // the book: a file's row that names a PDF by its hash
+        let pdf = s.blob_put(b"%PDF-1.7 a book").unwrap();
+        s.put(&place("book", None, "book.pdf", "file"), Some(&Content { blob: Some(pdf.hash.clone()), ..Default::default() }), None).unwrap();
+        let (p3, p4) = (format!("p.{}.3", pdf.hash), format!("p.{}.4", pdf.hash));
+        // strokes on two of its pages: no row is written, and none comes back
+        let rows = s.batch(&[Op::Ink { page: p3.clone(), add: strokes[..5].to_vec(), remove: vec![] }, Op::Ink { page: p4.clone(), add: strokes[5..7].to_vec(), remove: vec![] }]).unwrap();
+        assert!(rows.is_empty());
+        assert_eq!(s.rows().unwrap().len(), 1, "a page written on is no row");
+        assert_eq!(s.ink(&p3).unwrap(), strokes[..5].to_vec());
+        assert_eq!(s.ink_pages(&format!("p.{}.", pdf.hash)).unwrap(), vec![p3.clone(), p4.clone()]);
+        assert!(s.ink_pages("p.0000.").unwrap().is_empty());
+        // read: a drawing for the canvas holding those strokes, and a picture of the whole page whatever they cover
+        let names = |d: &[u8]| tauri_plugin_ink::split(d).unwrap().into_iter().map(|x| x.key).collect::<Vec<_>>();
+        assert_eq!(names(&s.ink_page(&p3, "drawing", 0.0, 0.0).unwrap()), strokes[..5].iter().map(|x| x.stroke.clone()).collect::<Vec<_>>());
+        let picture = s.ink_page(&p3, "picture", 612.0, 792.0).unwrap();
+        assert_eq!(&picture[..4], b"\x89PNG");
+        assert_eq!((u32::from_be_bytes(picture[16..20].try_into().unwrap()), u32::from_be_bytes(picture[20..24].try_into().unwrap())), (1224, 1584));
+        assert!(!dir.join(INK_DIR).exists(), "nothing made from them is kept");
+        // one more and one taken away
+        s.batch(&[Op::Ink { page: p3.clone(), add: strokes[7..8].to_vec(), remove: vec![strokes[0].stroke.clone()] }]).unwrap();
+        assert_eq!(s.ink(&p3).unwrap().len(), 5);
+        assert_ne!(s.ink_page(&p3, "picture", 612.0, 792.0).unwrap(), picture);
+        // the PDF is as it was: nothing is written into it
+        assert_eq!(s.blob_get(&pdf.hash).unwrap(), b"%PDF-1.7 a book");
+        // the book's row deleted: the strokes are the file's, by what it is, and stay
+        s.remove(&["book".to_string()]).unwrap();
+        assert_eq!(s.ink(&p3).unwrap().len(), 5);
+        assert_eq!(s.ink(&p4).unwrap().len(), 2);
     }
 
     #[test]

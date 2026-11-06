@@ -3,7 +3,8 @@
 //! Two things, both PencilKit's. On iOS a canvas over the web view, which is the plugin proper: a Swift
 //! package (`ios/`) Tauri builds and links, reached through [`Ink`]. And, on the Mac as on iOS, what reads a
 //! drawing (`native/ink.m`): [`split`] takes one apart into its strokes, each with a name that outlives a
-//! save, [`join`] puts strokes together as the drawing PencilKit writes, and [`picture`] draws them as a PNG.
+//! save, [`join`] puts strokes together as the drawing PencilKit writes, [`picture`] draws them as a PNG, and
+//! [`page_picture`] (milestone 67) draws them as they lie on a page of a size: the writing on a book's page.
 //! The store keeps strokes, a row each; the drawing and the picture are made from them when they are read.
 
 use serde::{Deserialize, Serialize};
@@ -26,6 +27,7 @@ mod native {
         pub fn ilmi_ink_split(data: *const u8, len: usize, out: *mut *mut u8, out_len: *mut usize) -> i32;
         pub fn ilmi_ink_join(recs: *const u8, len: usize, out: *mut *mut u8, out_len: *mut usize) -> i32;
         pub fn ilmi_ink_picture(recs: *const u8, len: usize, scale: f64, out: *mut *mut u8, out_len: *mut usize) -> i32;
+        pub fn ilmi_ink_page(recs: *const u8, len: usize, w: f64, h: f64, scale: f64, out: *mut *mut u8, out_len: *mut usize) -> i32;
         pub fn ilmi_ink_sample(lines: u32, per: u32, seed: u32, out: *mut *mut u8, out_len: *mut usize) -> i32;
         pub fn ilmi_ink_free(p: *mut u8);
     }
@@ -92,6 +94,14 @@ pub fn picture(strokes: &[&[u8]], scale: f64) -> Result<Vec<u8>, String> {
     native::call(|out, len| unsafe { native::ilmi_ink_picture(recs.as_ptr(), recs.len(), scale, out, len) })
 }
 
+/// The strokes as they lie on a page `w` by `h` points, as a PNG of the whole page at `scale`, on nothing (milestone 67).
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+pub fn page_picture(strokes: &[&[u8]], w: f64, h: f64, scale: f64) -> Result<Vec<u8>, String> {
+    let recs = records(strokes);
+    // SAFETY: as in `split`
+    native::call(|out, len| unsafe { native::ilmi_ink_page(recs.as_ptr(), recs.len(), w, h, scale, out, len) })
+}
+
 /// A made-up drawing: `lines` lines of `per` strokes each.
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 pub fn sample(lines: u32, per: u32, seed: u32) -> Result<Vec<u8>, String> {
@@ -112,6 +122,14 @@ pub fn join(strokes: &[&[u8]]) -> Result<Vec<u8>, String> {
 pub fn picture(_strokes: &[&[u8]], _scale: f64) -> Result<Vec<u8>, String> {
     Err("no PencilKit on this system".to_string())
 }
+#[cfg(not(any(target_os = "macos", target_os = "ios")))]
+pub fn page_picture(_strokes: &[&[u8]], _w: f64, _h: f64, _scale: f64) -> Result<Vec<u8>, String> {
+    Err("no PencilKit on this system".to_string())
+}
+#[cfg(not(any(target_os = "macos", target_os = "ios")))]
+pub fn sample(_lines: u32, _per: u32, _seed: u32) -> Result<Vec<u8>, String> {
+    Err("no PencilKit on this system".to_string())
+}
 
 /// What the canvas is opened with.
 #[derive(Serialize, Debug, Clone, Default)]
@@ -120,6 +138,13 @@ pub struct Open {
     pub drawing: Option<String>,
     /// A finger draws too. For a check on a simulator, where there is no Pencil: left false, the canvas is the system's (the Pencil draws).
     pub finger: bool,
+    /// A book's page to write on (milestone 67): its picture, in base64 (a PNG or a JPEG). With it the canvas is that page, `width` by `height` points, fitted to the screen's width, and a stroke is where it lies on the page.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub paper: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub width: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub height: Option<f64>,
 }
 
 /// What the canvas holds: at its close, or while it is open (`peek`).
@@ -132,6 +157,13 @@ pub struct Page {
     /// Whether the canvas is open.
     #[serde(default)]
     pub open: bool,
+    /// Over a book's page: how far the canvas is zoomed to fit it, and where the page's top left corner is on the screen, in points.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub zoom: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub left: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub top: Option<f64>,
 }
 
 #[cfg(target_os = "ios")]
@@ -221,6 +253,21 @@ mod tests {
         assert_eq!(fewer.len(), 21);
         assert!(fewer.iter().all(|s| both.iter().any(|x| x.key == s.key)));
         assert!(!fewer.iter().any(|s| s.key == both[3].key));
+    }
+
+    #[test]
+    fn a_page_s_writing_is_a_png_of_the_whole_page() {
+        let strokes = split(&sample(4, 12, 3).unwrap()).unwrap();
+        // a page of 612 by 792 points at 2×, whatever the strokes cover
+        let png = page_picture(&refs(&strokes), 612.0, 792.0, 2.0).unwrap();
+        assert_eq!(&png[..8], b"\x89PNG\r\n\x1a\n");
+        let size = |p: &[u8]| (u32::from_be_bytes(p[16..20].try_into().unwrap()), u32::from_be_bytes(p[20..24].try_into().unwrap()));
+        assert_eq!(size(&png), (1224, 1584));
+        // with nothing on it, it is still the page: an empty one
+        let none = page_picture(&[], 612.0, 792.0, 2.0).unwrap();
+        assert_eq!(size(&none), (1224, 1584));
+        assert!(none.len() < png.len(), "the strokes are in the one and not the other");
+        assert!(page_picture(&refs(&strokes), 0.0, 792.0, 2.0).is_err());
     }
 
     #[test]

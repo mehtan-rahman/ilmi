@@ -414,8 +414,8 @@ grades are buttons; a passage selected brings `card` and `extract` under it.
 With a keyboard attached the keys are the Mac's.
 
 Reading a book there: a finger scrolls the pages. To box a passage, rest the
-finger on the page a moment and then drag; the Pencil's drag boxes at once.
-Drag again for a second box, tap the page to clear them, and the bar under
+finger on the page a moment and then drag (the Pencil writes on the page,
+below). Drag again for a second box, tap the page to clear them, and the bar under
 the last box makes them a `section` or a `card`. Upright, the notes slide
 in over the pages from the right edge (a swipe in from that edge, or
 anything that goes to a section) and fold at a tap beside them or a swipe
@@ -429,7 +429,16 @@ page. Write, then `done`: the page is under that section as a picture, and
 a tap on the picture opens it again to go on. It is kept as its strokes,
 so the Mac and every other device show the same picture without a file
 crossing, and an export writes it as `name/ink-01.png` with its drawing
-beside it, `name/ink-01.pkdrawing`.
+beside it, `name/ink-01.pkdrawing`. A note may hold as many pages as you
+draw in it, one under another: that is a notebook.
+
+Writing on a book's page: touch the Pencil to the page and the canvas comes
+over that page, the page under it. Write, then `done`: the page shows what
+you wrote, on the Mac and every other device too, as a picture over the
+page. A finger still scrolls the pages and boxes a passage after a hold.
+Nothing is written into the PDF: the strokes are kept in the collection
+with the book they are on, whichever chapter shows that page. An exported
+folder does not hold them yet.
 
 ## Plugins
 

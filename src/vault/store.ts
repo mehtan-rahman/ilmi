@@ -63,6 +63,14 @@
 //   an export read both files and neither is kept or merged. A
 //   `.pkdrawing` that came in as a file (an import) is a file like any
 //   other until it is drawn on.
+// - Since milestone 67 a book's page may be written on. Those strokes are
+//   found by the PDF's SHA-256 and the page's number in it (`pageKey`),
+//   not by a row: they are the file's by what it is, on whatever row
+//   names it. So nothing is written into the PDF, two rows that name one
+//   PDF show one writing, and deleting a row takes no stroke: a book
+//   deleted and put back, or brought in again, has what was written on
+//   it (`pageInk`, `setPageInk`, `pageInkFile`, `inkedPages`). No path
+//   names them and an export does not write them.
 
 import { formatReview, parseReviews, serialize, type Doc, type Review } from '../format/index.js';
 import type { Fs, FsEntry, FsStat } from './fs.js';
@@ -159,6 +167,17 @@ const inkOfPicture = (name: string): string | null => (name.endsWith('.png') ? `
 /** A page of ink: a file's row of that name that holds no blob. Its strokes are the store's. */
 export const isInk = (r: Pick<Row, 'kind' | 'blob' | 'name'>): boolean => r.kind === 'file' && r.blob === null && r.name.endsWith(INK_EXT);
 
+/** What the strokes written on a book's page are found by (milestone 67): the PDF's SHA-256 and the page's number in that file. No row has such an id. */
+export const BOOK_PAGE = 'p.';
+export const pageKey = (hash: string, page: number): string => `${BOOK_PAGE}${hash}.${page}`;
+/** Whether strokes found by `page` are a book's page's, and not a row's. */
+export const isBookPage = (page: string): boolean => page.startsWith(BOOK_PAGE);
+/** The PDF and the page a key names; null for anything else. */
+export function bookPageOf(key: string): { hash: string; page: number } | null {
+  const m = /^p\.([0-9a-f]+)\.(\d+)$/.exec(key);
+  return m ? { hash: m[1]!, page: Number(m[2]) } : null;
+}
+
 /** A register (milestone 61): a field's value, and the stamp of the write that won it. */
 export interface Reg {
   key: string;
@@ -234,6 +253,10 @@ export interface Store {
   ink(page: string): Promise<InkStroke[]>;
   /** A page of ink as a file, made from its strokes: the drawing PencilKit opens, or a PNG of them (empty when there are none). */
   inkFile(page: string, what: 'drawing' | 'picture'): Promise<Uint8Array>;
+  /** The pages that hold strokes and whose name starts with `prefix`, in order. */
+  inkPages(prefix: string): Promise<string[]>;
+  /** The writing on a book's page, made from its strokes: the drawing the canvas opens, or a PNG of the whole page, `w` by `h` points, on nothing. */
+  inkPage(page: string, what: 'drawing' | 'picture', w: number, h: number): Promise<Uint8Array>;
   /** A file on disk taken in as a blob without its bytes passing through here. The app's only. */
   blobTake?(path: string): Promise<{ hash: string; size: number }>;
   /** The bytes of a blob from `begin` up to `end`. The app's only. */
@@ -263,7 +286,7 @@ export interface Recorder {
   places(changed: [id: string, place: number | null, kept: boolean][]): Promise<StoreOp[]>;
   reviews(rows: ReviewRow[]): Promise<StoreOp[]>;
   same(added: string[], removed: string[]): Promise<StoreOp[]>;
-  /** Strokes added to the page at `rel` and taken from it. */
+  /** Strokes added to the page at `rel` and taken from it; a book's page (`isBookPage`) is at no path, and `rel` is empty. */
   ink(page: string, rel: string, add: InkStroke[], remove: string[]): Promise<StoreOp[]>;
   /** Whether a row is deleted and shown only for what is under it: it goes when nothing is. */
   dead(id: string): Promise<boolean>;
@@ -280,7 +303,7 @@ export interface ViewWrite {
   pairs: string[] | null;
   /** Blobs the rows above name whose bytes are not here: each by its hash and size. */
   expects?: [hash: string, size: number][];
-  /** Strokes added to pages of ink and taken from them: pages that are rows once the `puts` are in. */
+  /** Strokes added to pages of ink and taken from them: pages that are rows once the `puts` are in, and books' pages, which are no rows. */
   ink?: { page: string; add: InkStroke[]; remove: string[] }[];
 }
 
@@ -448,6 +471,16 @@ export interface StoreFs extends Fs {
    * made from the strokes now).
    */
   setInk(path: string, strokes: readonly InkStroke[]): Promise<{ added: number; removed: number }>;
+  /** The strokes written on page `page` of the PDF whose SHA-256 is `hash` (milestone 67), in the order they were drawn. */
+  pageInk(hash: string, page: number): Promise<InkStroke[]>;
+  /** That page holds these strokes from now on: as `setInk`, the difference written in one transaction. Nothing is written into the PDF and no row is made. */
+  setPageInk(hash: string, page: number, strokes: readonly InkStroke[]): Promise<{ added: number; removed: number }>;
+  /** That page's writing, made from its strokes: the drawing the canvas opens, or a PNG of the whole page on nothing, the page `w` by `h` points. */
+  pageInkFile(hash: string, page: number, what: 'drawing' | 'picture', w?: number, h?: number): Promise<Uint8Array>;
+  /** The pages of that PDF that are written on, in order. */
+  inkedPages(hash: string): Promise<number[]>;
+  /** Told of each book's page whose strokes changed, here or by a merge. Returns the unsubscribe. */
+  onPageInk(fn: (hash: string, page: number) => void): () => void;
 }
 
 const WATCH_DEBOUNCE_MS = 30;
@@ -578,6 +611,13 @@ export function storeFs(store: Store, root: string): StoreFs {
   const indexers = new Set<(path: string, doc: Doc | null) => void>();
   const indexed = (rel: string, doc: Doc | null): void => {
     for (const fn of [...indexers]) fn(rel, doc);
+  };
+
+  /** Whoever shows a book's pages: told when the strokes on one change. */
+  const pageWatchers = new Set<(hash: string, page: number) => void>();
+  const wrote = (key: string): void => {
+    const at = bookPageOf(key);
+    if (at) for (const fn of [...pageWatchers]) fn(at.hash, at.page);
   };
 
   /** The engine, when the collection has one: told of each write, it answers with what goes into the same transaction. */
@@ -1100,6 +1140,7 @@ export function storeFs(store: Store, root: string): StoreFs {
         touched(join(root, rel));
       }
       for (const i of view.ink ?? []) {
+        if (isBookPage(i.page)) { wrote(i.page); continue; }
         const r = rows.get(i.page);
         if (!r) continue;
         const rel = pathOf(r);
@@ -1203,6 +1244,43 @@ export function storeFs(store: Store, root: string): StoreFs {
         if (add.length || remove.length) touched(path, join(root, inkPicture(rel)));
         return { added: add.length, removed: remove.length };
       }),
+
+    async pageInk(hash, page) {
+      await ready;
+      return store.ink(pageKey(hash, page));
+    },
+
+    setPageInk: (hash, page, strokes) =>
+      serial(async () => {
+        const key = pageKey(hash, page);
+        if (!bookPageOf(key)) throw new Error(`${hash} p. ${page}: not a page of a file`);
+        const have = new Map((await store.ink(key)).map((s) => [s.stroke, s]));
+        const want = new Set(strokes.map((s) => s.stroke));
+        const add = strokes.filter((s) => !have.has(s.stroke));
+        const remove = [...have.keys()].filter((k) => !want.has(k));
+        if (add.length || remove.length) {
+          const extra = recorder ? await recorder.ink(key, '', add, remove) : [];
+          await store.batch([{ op: 'ink', page: key, add, remove }, ...extra]);
+          wrote(key);
+        }
+        return { added: add.length, removed: remove.length };
+      }),
+
+    async pageInkFile(hash, page, what, w = 0, h = 0) {
+      await ready;
+      return store.inkPage(pageKey(hash, page), what, w, h);
+    },
+
+    async inkedPages(hash) {
+      await ready;
+      const prefix = `${BOOK_PAGE}${hash}.`;
+      return (await store.inkPages(prefix)).flatMap((k) => { const at = bookPageOf(k); return at ? [at.page] : []; }).sort((a, b) => a - b);
+    },
+
+    onPageInk(fn) {
+      pageWatchers.add(fn);
+      return () => { pageWatchers.delete(fn); };
+    },
 
     ref: async (path) => {
       await ready;

@@ -7,7 +7,7 @@
 // system's own long press off; what the press focused on its way is let go.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { HOLD_MS, LONG_PRESS_MS, REST_MS, boxStart, installLongPress, onGlass } from '../touch.js';
+import { HOLD_MS, LONG_PRESS_MS, REST_MS, boxStart, installLongPress, onGlass, pagePress } from '../touch.js';
 
 const ptr = (type: string, pointerType: string, x: number, y: number, more: PointerEventInit = {}) =>
   new PointerEvent(type, { bubbles: true, cancelable: true, pointerId: 5, pointerType, isPrimary: true, clientX: x, clientY: y, ...more });
@@ -21,6 +21,17 @@ describe('a press on a page', () => {
     expect(onGlass('touch') && onGlass('pen')).toBe(true);
     expect(onGlass('mouse')).toBe(false);
     expect(HOLD_MS).toBeLessThan(LONG_PRESS_MS);
+  });
+
+  it('writes under the Pencil where there is a canvas (milestone 67), and is a box\'s under anything else', () => {
+    expect(pagePress('pen', true)).toBe('write');
+    // no canvas (the Mac): a pen boxes as the mouse does
+    expect(pagePress('pen', false)).toBe('now');
+    // a finger scrolls and boxes after its hold, a mouse boxes at once, canvas or none
+    expect(pagePress('touch', true)).toBe('hold');
+    expect(pagePress('touch', false)).toBe('hold');
+    expect(pagePress('mouse', true)).toBe('now');
+    expect(pagePress('mouse', false)).toBe('now');
   });
 });
 

@@ -25,7 +25,7 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { formatReview, meta, parse, serialize, setField, type Card, type Doc, type Review } from '../../format/index.js';
 import { Vault, importFolder, join, storeFs, type StoreFs } from '../../vault/index.js';
-import { memPicture, memSplit, memStore, type MemStore } from '../../vault/mem-store.js';
+import { memPagePicture, memPicture, memSplit, memStore, type MemStore } from '../../vault/mem-store.js';
 import { nodeFs } from '../../vault/node-fs.js';
 import { rising, type InkStroke } from '../../vault/store.js';
 import { bothChanged, engine, frontLines, type Engine, type EngineOptions } from '../engine.js';
@@ -944,6 +944,125 @@ describe('ink (milestone 58)', () => {
   });
 });
 
+describe('ink on a book\'s page (milestone 67)', () => {
+  const PDF = join(ROOT, 'papers/two-pages.pdf');
+  const stroke = (n: number): InkStroke => ({ stroke: `s${n}`, at: 1000 + n, data: Buffer.from(`stroke ${n}`).toString('base64') });
+  const keys = async (c: Copy, hash: string, page: number): Promise<string[]> => (await c.fs.pageInk(hash, page)).map((x) => x.stroke);
+
+  it('strokes two copies write on one page of one PDF are all there on both; one erased is gone on both; the PDF is as it was', async () => {
+    const { a, b, storage } = await pair(CORPUS);
+    const hash = a.fs.blobAt(PDF)!;
+    expect(hash).toMatch(/^[0-9a-f]{64}$/);
+    expect(b.fs.blobAt(PDF)).toBe(hash);
+    const rows = a.fs.door.rows().length;
+    const filesWere = await a.files();
+    // each writes on page 2 without having seen the other's
+    a.at.ms += 60_000;
+    expect(await a.fs.setPageInk(hash, 2, [stroke(1), stroke(2)])).toEqual({ added: 2, removed: 0 });
+    b.at.ms += 90_000;
+    await b.fs.setPageInk(hash, 2, [stroke(3)]);
+    await b.fs.setPageInk(hash, 1, [stroke(9)]);
+    const told: string[] = [];
+    const off = a.fs.onPageInk((h, n) => told.push(`${h === hash ? 'pdf' : h} p. ${n}`));
+    await settle(storage, [a, b]);
+    off();
+    expect(await keys(a, hash, 2)).toEqual(['s1', 's2', 's3']);
+    expect(await keys(b, hash, 2)).toEqual(['s1', 's2', 's3']);
+    expect(await keys(a, hash, 1)).toEqual(['s9']);
+    expect(await a.fs.inkedPages(hash)).toEqual([1, 2]);
+    expect(await b.fs.inkedPages(hash)).toEqual([1, 2]);
+    // whoever shows the pages is told of the ones a merge wrote on
+    expect([...new Set(told)].sort()).toEqual(['pdf p. 1', 'pdf p. 2']);
+    // a stroke's bytes crossed whole, and what is read is made from them on each
+    expect((await a.fs.pageInk(hash, 2)).find((x) => x.stroke === 's3')).toEqual(stroke(3));
+    expect(await a.fs.pageInkFile(hash, 2, 'picture', 612, 792)).toEqual(memPagePicture([stroke(1), stroke(2), stroke(3)], 612, 792));
+    expect(memSplit(await b.fs.pageInkFile(hash, 2, 'drawing')).map((x) => x.stroke)).toEqual(['s1', 's2', 's3']);
+    // nothing is written into the PDF, no row is made, and no file is: an export holds what it held
+    expect(a.fs.blobAt(PDF)).toBe(hash);
+    expect(a.fs.door.rows().length).toBe(rows);
+    expect(differences(await a.files(), filesWere)).toEqual([]);
+    expect(differences(await a.files(), await b.files())).toEqual([]);
+    // one erases a stroke while the other writes one: gone on both, and the new one there
+    a.at.ms += 60_000;
+    await a.fs.setPageInk(hash, 2, (await a.fs.pageInk(hash, 2)).filter((x) => x.stroke !== 's1'));
+    b.at.ms += 60_000;
+    await b.fs.setPageInk(hash, 2, [...(await b.fs.pageInk(hash, 2)), stroke(4)]);
+    await settle(storage, [b, a]);
+    expect(await keys(a, hash, 2)).toEqual(['s2', 's3', 's4']);
+    expect(await keys(b, hash, 2)).toEqual(['s2', 's3', 's4']);
+    // erased and written again: there by the later of the two; a page with nothing left on it is not listed
+    a.at.ms += 60_000;
+    await a.fs.setPageInk(hash, 1, []);
+    b.at.ms += 120_000;
+    await b.fs.setPageInk(hash, 2, (await b.fs.pageInk(hash, 2)).filter((x) => x.stroke !== 's2'));
+    b.at.ms += 60_000;
+    await b.fs.setPageInk(hash, 2, [stroke(2), ...(await b.fs.pageInk(hash, 2))]);
+    await settle(storage, [a, b]);
+    expect(await keys(a, hash, 2)).toEqual(['s2', 's3', 's4']);
+    expect(await a.fs.inkedPages(hash)).toEqual([2]);
+    expect(await b.fs.inkedPages(hash)).toEqual([2]);
+  });
+
+  it('the strokes are the file\'s, not a row\'s: the book deleted on one copy and written on on the other is deleted, and has its writing when it is put back', async () => {
+    const { a, b, storage } = await pair(CORPUS);
+    const hash = a.fs.blobAt(PDF)!;
+    const bytes = await a.fs.readBytes(PDF);
+    await a.fs.setPageInk(hash, 1, [stroke(1)]);
+    await settle(storage, [a, b]);
+    // a deletes the PDF; b, not knowing, writes on it
+    a.at.ms += 60_000;
+    await a.fs.remove(PDF);
+    b.at.ms += 90_000;
+    await b.fs.setPageInk(hash, 1, [...(await b.fs.pageInk(hash, 1)), stroke(2)]);
+    await settle(storage, [a, b]);
+    // a stroke is a change to no row: the delete holds on both, and so do the strokes
+    expect(await a.fs.stat(PDF)).toBeNull();
+    expect(await b.fs.stat(PDF)).toBeNull();
+    expect(await keys(a, hash, 1)).toEqual(['s1', 's2']);
+    expect(await keys(b, hash, 1)).toEqual(['s1', 's2']);
+    // the same file brought in again, under another name: what was written on it is on it
+    a.at.ms += 60_000;
+    await a.fs.writeBytes(join(ROOT, 'papers/again.pdf'), bytes);
+    await settle(storage, [a, b]);
+    expect(b.fs.blobAt(join(ROOT, 'papers/again.pdf'))).toBe(hash);
+    expect(await b.fs.inkedPages(b.fs.blobAt(join(ROOT, 'papers/again.pdf'))!)).toEqual([1]);
+    expect(differences(await a.files(), await b.files())).toEqual([]);
+  });
+
+  it('a collection that holds writing takes it to its storage, a copy made from a snapshot has it, and one that does not sync records nothing', async () => {
+    const opts = { snapAfter: 3, snapWorth: 2 };
+    const storage = memStorage();
+    const a = await copy('a', CORPUS, opts);
+    const hash = a.fs.blobAt(PDF)!;
+    // written on before it ever met a storage
+    await a.fs.setPageInk(hash, 2, [stroke(1), stroke(2)]);
+    expect(a.store.tables.regs.size).toBe(0);
+    expect(await a.eng.connect(storage)).toBe('made');
+    await a.eng.sync(storage);
+    const b = await copy('b', undefined, opts);
+    await b.eng.connect(storage);
+    await b.eng.sync(storage);
+    expect(await keys(b, hash, 2)).toEqual(['s1', 's2']);
+    for (let n = 10; n < 16; n++) {
+      a.at.ms += 60_000;
+      await a.fs.setPageInk(hash, 1, [...(await a.fs.pageInk(hash, 1)), stroke(n)]);
+      await a.eng.sync(storage);
+    }
+    await a.fs.setPageInk(hash, 2, [stroke(2)]);
+    await settle(storage, [a, b]);
+    expect((await storage.list('snapshots/')).length).toBeGreaterThan(0);
+    const c = await copy('c', undefined, opts);
+    await c.eng.connect(storage);
+    expect((await c.eng.sync(storage)).took).toBeGreaterThan(0);
+    await settle(storage, [a, b, c]);
+    for (const x of [a, b, c]) {
+      expect(await keys(x, hash, 1), x.name).toEqual(['s10', 's11', 's12', 's13', 's14', 's15']);
+      expect(await keys(x, hash, 2), x.name).toEqual(['s2']);
+    }
+    expect(differences(await a.files(), await c.files())).toEqual([]);
+  });
+});
+
 function rng(seed: number): () => number {
   let s = seed >>> 0;
   return () => {
@@ -1250,6 +1369,8 @@ describe('big files and snapshots (milestone 63)', () => {
 });
 
 describe('copies making random edits and syncing in random orders', () => {
+  /** The PDF whose pages the copies write on: found by what it is, so by no row. */
+  const BOOK_HASH = 'b0'.repeat(32);
   const random = { math: Math.random, crypto: globalThis.crypto.getRandomValues };
   afterEach(() => {
     Math.random = random.math;
@@ -1287,6 +1408,7 @@ describe('copies making random edits and syncing in random orders', () => {
       globalThis.crypto.getRandomValues = ((b: Uint8Array) => { for (let i = 0; i < b.length; i++) b[i] = Math.floor(ids() * 256); return b; }) as typeof globalThis.crypto.getRandomValues;
       const pick = <T,>(list: readonly T[]): T => list[Math.floor(rnd() * list.length)]!;
       const inked = rng(seed * 104729);
+      const paged = rng(seed * 15485863);
       const storage = memStorage();
       // one seed in three (every one with `ILMI_SNAPS=1`) folds its change files into snapshots as it goes and deletes what they cover a
       // quarter of an hour on: copies read snapshots in place of files, and of files that are gone
@@ -1392,6 +1514,16 @@ describe('copies making random edits and syncing in random orders', () => {
           else if (j < 0.9) { const back = has[Math.floor(inked() * has.length)]!; await c.fs.setInk(page, has.filter((x) => x !== back)); await c.fs.setInk(page, has); }
           else await c.fs.remove(page);
         }
+        // ink on a book's pages (milestone 67), from a draw of its own too: a stroke on one of two pages of one PDF, one erased,
+        // one erased and written again; whatever becomes of the rows that name the PDF
+        if (paged() < 0.25) {
+          const n = 1 + Math.floor(paged() * 2);
+          const has = await c.fs.pageInk(BOOK_HASH, n);
+          const j = paged();
+          if (j < 0.6 || !has.length) await c.fs.setPageInk(BOOK_HASH, n, [...has, { stroke: `p${step}${c.name}`, at: step, data: `d${step}` }]);
+          else if (j < 0.85) await c.fs.setPageInk(BOOK_HASH, n, has.filter((_, i) => i !== Math.floor(paged() * has.length)));
+          else { const back = has[Math.floor(paged() * has.length)]!; await c.fs.setPageInk(BOOK_HASH, n, has.filter((x) => x !== back)); await c.fs.setPageInk(BOOK_HASH, n, has); }
+        }
         // a sync now and then, of whichever copy
         if (rnd() < 0.35) await pick(copies).eng.sync(storage);
       }
@@ -1409,6 +1541,10 @@ describe('copies making random edits and syncing in random orders', () => {
       expect(differences(files[0]!, files[1]!)).toEqual([]);
       expect(differences(files[0]!, files[2]!)).toEqual([]);
       if (files[3]) expect(differences(files[0]!, files[3])).toEqual([]);
+      // what is written on the book's pages is in no file: every copy holds the same strokes on each
+      const pagesOf = async (c: Copy): Promise<string> => JSON.stringify(await Promise.all([1, 2].map(async (n) => (await c.fs.pageInk(BOOK_HASH, n)).map((x) => `${x.stroke}@${x.at}:${x.data}`))));
+      const written = await Promise.all(copies.map(pagesOf));
+      for (const w of written) expect(w).toBe(written[0]);
       // and every document still reads as one: what a copy made from the storage holds is what the format writes
       for (const [path, b] of await copies[1]!.files()) if (path.endsWith('.md') && !path.startsWith('.')) expect(serialize(parse(text(b)).doc), path).toBe(text(b));
       // nothing is twice: no two rows of one copy are shown under one path

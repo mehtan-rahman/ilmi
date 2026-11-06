@@ -38,6 +38,7 @@ vi.mock('../bookPdf.js', () => ({
   fillCrops: () => {},
   acquirePdf: () => ({ promise: Promise.resolve({ numPages: 44, getPage: async () => page }), release() {} }),
   itemsOf: async () => [],
+  pagePaper: async () => ({ image: '', width: W, height: H }),
 }));
 vi.mock('../pdfjs.js', () => ({ TextLayer: class { render() { return Promise.resolve(); } }, pageBits: async () => [{ str: 'text' }] }));
 const { Pdf } = await import('../Pdf.js');
@@ -174,6 +175,7 @@ describe('a book\'s pages under a pointer', () => {
     expect(pending()).toBe(0);
   });
 
+  // where there is no canvas (this collection is a folder: nothing to keep strokes in); where there is one the Pencil writes (`page-ink.test.ts`)
   it('the Pencil\'s drag boxes with no hold, and its tap clears', async () => {
     await fire(p41(), ptr('pointerdown', 'pen', 60, 80));
     await fire(window, ptr('pointermove', 'pen', 200, 200));

@@ -941,8 +941,11 @@ fixes the file. That is intended.
 - Prose block ids for the reading marker (would make `pos` edit-stable).
 - Attachments and images beyond a clipping's downloads and a page of ink
   (§1, §4): they are just Markdown; the app renders them.
-- Ink anywhere but a page of its own under a note: on a PDF's page, in a
-  card's face.
+- Ink anywhere but a page of its own under a note: in a card's face, or
+  on a PDF's page. The app keeps what is written on a book's page in the
+  collection, by the PDF's hash and the page, and never in the PDF; no
+  file of a vault holds it, so an export does not write it and an import
+  does not bring it.
 - Anything written into a PDF: highlights are the extracts' stored text,
   found again on the page; annotations stay in the Markdown.
 

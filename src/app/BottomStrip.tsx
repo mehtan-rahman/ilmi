@@ -17,6 +17,7 @@ export function BottomStrip() {
   const kind = id === undefined ? undefined : tabKindOf(id, docs);
   // the session's element is in a document of its own
   const info = id === undefined ? undefined : kind === 'session' && sessionEl ? docs[sessionEl.item.path] : docs[id];
+  const mobile = useApp((s) => s.mobile);
   const base = hintsFor({
     kind,
     el: kind === 'session' ? sessionEl?.kind ?? 'card' : null,
@@ -27,9 +28,9 @@ export function BottomStrip() {
     frozen: !!info?.frozen,
     note: info?.type === 'note' || (kind === 'session' && info?.type === 'extract'),
     marks: info?.type === 'source' && !info.pdf,
+    touch: mobile,
   });
   // a notebook's page: the step keys, ahead of the page's own
-  const mobile = useApp((s) => s.mobile);
   const all = id !== undefined && notebookOf(id, docs) ? [['⌘⌥↑↓', 'tabs'] as const, ...base] : base;
   // an iPad is one pane: ⌘\ splits nothing there
   const hints = mobile ? all.filter(([, what]) => what !== 'split pane') : all;

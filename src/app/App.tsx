@@ -17,6 +17,7 @@ import { ACCENTS, INSP_MAX, INSP_MIN, SIDE_MAX, SIDE_MIN, useApp, ZOOM_STEP } fr
 import { openInitialVault, openNode, rememberTab, setInspector, setSidebar, toggleInspector, toggleSidebar } from './vault.js';
 import { inspectorShown } from './layout.js';
 import { shapeOf } from './platform.js';
+import { installLongPress } from './touch.js';
 import './app.css';
 import './chrome.css';
 
@@ -107,13 +108,14 @@ export function App() {
       document.documentElement.style.removeProperty('--shell-h');
     };
   }, [mobile]);
-  // portrait: a swipe in from the left edge opens the sheet, a swipe left on it closes it
+  // portrait: a swipe in from the left edge opens the sheet, a swipe left on it closes it;
+  // a book's notes are the same from the right edge (`Pdf.tsx`, `pdf.css`)
   useEffect(() => {
     if (!sheet || vault === null) return;
-    let from: { x: number; y: number; edge: boolean } | null = null;
+    let from: { x: number; y: number; edge: boolean; right: boolean; notes: boolean } | null = null;
     const start = (e: TouchEvent) => {
       const t = e.touches[0];
-      from = t && e.touches.length === 1 ? { x: t.clientX, y: t.clientY, edge: t.clientX <= EDGE } : null;
+      from = t && e.touches.length === 1 ? { x: t.clientX, y: t.clientY, edge: t.clientX <= EDGE, right: t.clientX >= window.innerWidth - EDGE, notes: !!(t.target as Element | null)?.closest?.('.book-notes') } : null;
     };
     const move = (e: TouchEvent) => {
       const t = e.touches[0];
@@ -122,8 +124,11 @@ export function App() {
       const dy = Math.abs(t.clientY - from.y);
       if (Math.abs(dx) < SWIPE || dy > Math.abs(dx)) return;
       const open = useApp.getState().sideSheet;
+      const book = document.querySelector<HTMLElement>('.pane[data-active="1"] .book');
       if (dx > 0 && from.edge && !open) useApp.setState({ sideSheet: true });
       else if (dx < 0 && open) useApp.setState({ sideSheet: false });
+      else if (dx < 0 && from.right && book?.dataset.notes === '0') useApp.setState({ notesHidden: false });
+      else if (dx > 0 && from.notes && book?.dataset.notes === '1') useApp.setState({ notesHidden: true });
       from = null;
     };
     window.addEventListener('touchstart', start, { passive: true });
@@ -133,6 +138,9 @@ export function App() {
       window.removeEventListener('touchmove', move);
     };
   }, [sheet, vault]);
+
+  // a touch held and let go is a right-click where it rests (`touch.ts`)
+  useEffect(() => installLongPress(), []);
 
   // the tweaks, as CSS
   useEffect(() => {

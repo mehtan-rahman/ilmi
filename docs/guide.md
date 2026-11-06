@@ -413,6 +413,16 @@ a book's notes start folded. A tap opens; the queue, the session, and its
 grades are buttons; a passage selected brings `card` and `extract` under it.
 With a keyboard attached the keys are the Mac's.
 
+Reading a book there: a finger scrolls the pages. To box a passage, rest the
+finger on the page a moment and then drag; the Pencil's drag boxes at once.
+Drag again for a second box, tap the page to clear them, and the bar under
+the last box makes them a `section` or a `card`. Upright, the notes slide
+in over the pages from the right edge (a swipe in from that edge, or
+anything that goes to a section) and fold at a tap beside them or a swipe
+back. Where the Mac has a right-click, hold: a row, a heading and a deck's
+card open their menus when the finger lifts, and a row held and then moved
+is dragged.
+
 ## Plugins
 
 Plugins live in a vault's `.ilmi/plugins/` and are turned on in tweaks; the

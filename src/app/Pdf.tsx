@@ -1,12 +1,14 @@
 // A document with pages opens as a book (milestone 48): its PDF's pages on
 // the left, rendered by pdf.js with the text layer on, and its body on the
 // right in the full editor: the person's notes on those pages, one
-// continuous document, never frozen. ⌘\ hides the notes and shows them.
+// continuous document, never frozen. ⌘\ hides the notes and shows them; on
+// an iPad held upright they slide in over the pages from the right edge.
 //
 // The pages carry what the notes say about them. A gold bar in the margin
 // runs from the first page to the read point (`pos` and `y` on the `read`
 // line). Boxes drawn on the pages (drag; drag again for another, on any
-// page; a text selection boxes its lines) become a section of the notes
+// page; a text selection boxes its lines; under a finger the drag comes
+// after a short hold, since milestone 57) become a section of the notes
 // with `e`: a `##` heading named from the page, in book order, with its
 // `<!-- read … boxes=… -->` line, back on its cadence until dismissed
 // (FORMAT.md §6.5). `m` makes the section and puts the caret in it to card,
@@ -40,6 +42,7 @@ import { writeDoc } from './sections.js';
 import { notify } from './land.js';
 import { appNow } from './clock.js';
 import { press } from './platform.js';
+import { HOLD_MS, SLOP, boxStart, onGlass } from './touch.js';
 import { plainMath } from './chromeText.js';
 import './pdf.css';
 
@@ -171,6 +174,8 @@ export function Pdf({ id, active = true, session = false, readOn = false, onLast
   return (
     <div className="book" data-notes={hidden ? '0' : '1'} data-path={id}>
       <div className="book-pages"><Pages id={id} active={active} session={session} readOn={readOn} onLast={onLast} /></div>
+      {/* portrait on an iPad: the notes are a sheet from the right over the pages (`pdf.css`), and a tap beside it folds it */}
+      {!hidden && <div className="book-scrim" onClick={() => useApp.setState({ notesHidden: true })} />}
       {!hidden && <div className="book-notes"><Reader key={id} id={id} active={active} notes /></div>}
     </div>
   );
@@ -192,6 +197,7 @@ function Pages({ id, active, session, readOn, onLast }: Omit<Required<PdfProps>,
   const focus = useApp((s) => s.bookFocus);
   const reveal = useApp((s) => s.reveal);
   const notesHidden = useApp((s) => s.notesHidden);
+  const mobile = useApp((s) => s.mobile);
   const info: DocInfo | undefined = docs[id];
   const loaded = useDoc(id);
   const [status, setStatus] = useState<'loading' | 'ok' | 'gone'>('loading');
@@ -311,6 +317,9 @@ function Pages({ id, active, session, readOn, onLast }: Omit<Required<PdfProps>,
   }, [pageRect]);
 
   // ── rendering, as pages come near ──
+  const scaleRef = useRef(scale);
+  scaleRef.current = scale;
+  const renderRef = useRef<(n: number) => Promise<void>>(async () => {});
   const renderPage = useCallback(async (n: number) => {
     const el = pageEls.current.get(n);
     if (!el || !pdf || rendered.current.get(n) === scale || rendering.current.has(n)) return;
@@ -342,7 +351,14 @@ function Pages({ id, active, session, readOn, onLast }: Omit<Required<PdfProps>,
     } finally {
       rendering.current.delete(n);
     }
+    // the column changed width while this page was being drawn (an iPad turned): it is drawn again at the scale there is now
+    if (scaleRef.current !== scale && rendered.current.get(n) === scale) {
+      rendered.current.delete(n);
+      el.replaceChildren();
+      void renderRef.current(n);
+    }
   }, [pdf, scale, id]);
+  renderRef.current = renderPage;
 
   const scroller = () => wrapRef.current?.closest<HTMLElement>('.book-pages, .pane-body') ?? null;
 
@@ -602,31 +618,71 @@ function Pages({ id, active, session, readOn, onLast }: Omit<Required<PdfProps>,
 
   const startReading = () => { if (canEnrol && !info?.read) enrolReading(id).catch(console.error); };
 
-  // ── drawing a box: drag on a page; a double click or ⌥-drag selects text instead ──
-  const onMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (e.button !== 0 || e.altKey || e.detail > 1 || e.metaKey || e.ctrlKey) return;
+  // ── drawing a box: a drag on a page, by pointer events (milestone 57) ──
+  // A mouse's or the Pencil's drag draws at once; a finger's plain drag is
+  // the scroll, so a finger draws after a short hold (`touch.ts`). A double
+  // click or ⌥-drag selects text instead. A tap under a finger or the
+  // Pencil clears the boxes drawn, as esc does.
+  const boxing = useRef<{ armed: boolean; abort(): void } | null>(null);
+  /** A box is starting: the keys that follow (`e`, `m`) are the pages', not the notes' to type. */
+  const settle = () => {
+    (document.activeElement as HTMLElement | null)?.blur?.();
+    window.getSelection()?.removeAllRanges();
+    setRecent(null);
+  };
+  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    boxing.current?.abort();
+    if (e.button !== 0 || e.altKey || e.metaKey || e.ctrlKey) return;
+    // a second finger down: two fingers are the system's, not a box
+    if (e.pointerType === 'touch' && !e.isPrimary) return;
     const t = e.target as HTMLElement;
     if (t.closest('[data-hit]')) return;
     const pageEl = t.closest<HTMLElement>('.pdf-page');
     const col = pagesRef.current;
     if (!pageEl || !col) return;
-    e.preventDefault();
-    // the keys that follow (`e`, `m`) are the pages', not the notes' to type
-    (document.activeElement as HTMLElement | null)?.blur?.();
-    window.getSelection()?.removeAllRanges();
-    setRecent(null);
+    const glass = onGlass(e.pointerType);
+    const id = e.pointerId;
     const page = Number(pageEl.dataset.page);
     const x0 = e.clientX;
     const y0 = e.clientY;
-    const move = (ev: MouseEvent) => {
+    let moved = false;
+    const timer = boxStart(e.pointerType) === 'hold' ? setTimeout(() => {
+      state.armed = true;
+      settle();
+      // the hold is up: a mark where the box will start
+      const c = col.getBoundingClientRect();
+      setGhost({ left: x0 - c.left, top: y0 - c.top, width: 0, height: 0 });
+    }, HOLD_MS) : null;
+    const end = () => {
+      if (timer) clearTimeout(timer);
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', cancel);
+      if (boxing.current === state) boxing.current = null;
+      setGhost(null);
+    };
+    const state = { armed: false, abort: end };
+    const move = (ev: PointerEvent) => {
+      if (ev.pointerId !== id) return;
+      if (!state.armed) {
+        // a finger that moves before its hold is up is scrolling
+        if (Math.hypot(ev.clientX - x0, ev.clientY - y0) > SLOP) end();
+        return;
+      }
+      moved = true;
       const c = col.getBoundingClientRect();
       setGhost({ left: Math.min(x0, ev.clientX) - c.left, top: Math.min(y0, ev.clientY) - c.top, width: Math.abs(ev.clientX - x0), height: Math.abs(ev.clientY - y0) });
     };
-    const up = (ev: MouseEvent) => {
-      window.removeEventListener('mousemove', move);
-      window.removeEventListener('mouseup', up);
-      setGhost(null);
-      if (Math.abs(ev.clientX - x0) < 8 || Math.abs(ev.clientY - y0) < 6) return;
+    const up = (ev: PointerEvent) => {
+      if (ev.pointerId !== id) return;
+      const was = state.armed;
+      end();
+      const small = Math.abs(ev.clientX - x0) < 8 || Math.abs(ev.clientY - y0) < 6;
+      if (!was || small) {
+        // a tap: the boxes drawn and not yet made into anything are let go
+        if (glass && !moved && Math.hypot(ev.clientX - x0, ev.clientY - y0) <= SLOP && st.current.pending.length) setPending([]);
+        return;
+      }
       const pr = pageEl.getBoundingClientRect();
       const clamp = (n: number) => Math.min(1, Math.max(0, n));
       const x = clamp((Math.min(x0, ev.clientX) - pr.left) / pr.width);
@@ -636,9 +692,34 @@ function Pages({ id, active, session, readOn, onLast }: Omit<Required<PdfProps>,
       if (r - x <= 0.005 || b - y <= 0.003) return;
       setPending((p) => [...p, { page, x, y, w: r - x, h: b - y }]);
     };
-    window.addEventListener('mousemove', move);
-    window.addEventListener('mouseup', up);
+    const cancel = (ev: PointerEvent) => { if (ev.pointerId === id) end(); };
+    boxing.current = state;
+    if (!timer) {
+      state.armed = true;
+      // a mouse's press settles at its mouse event, once it is known not to be a double click
+      if (e.pointerType !== 'mouse') settle();
+    }
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', cancel);
   };
+  // the press's own default, a selection begun, is the mouse event's to stop; a double click is left to select its word
+  const onMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    const b = boxing.current;
+    if (!b) return;
+    if (e.detail > 1) { b.abort(); return; }
+    e.preventDefault();
+    settle();
+  };
+  // a box being drawn under a finger or the Pencil holds the page still: the scroll is the touch's default
+  useEffect(() => {
+    const col = pagesRef.current;
+    if (!col) return;
+    const hold = (e: TouchEvent) => { if (boxing.current?.armed && e.cancelable) e.preventDefault(); };
+    col.addEventListener('touchmove', hold, { passive: false });
+    return () => col.removeEventListener('touchmove', hold);
+  }, [status]);
+  useEffect(() => () => boxing.current?.abort(), []);
 
   // ── search and go to page ──
   const runFind = async (q: string, step = 0) => {
@@ -877,7 +958,7 @@ function Pages({ id, active, session, readOn, onLast }: Omit<Required<PdfProps>,
               <div className="read-edge" style={{ top: barHeight }}><span className="read-knob" /></div>
             </>
           )}
-          <div className="pdf-pages" ref={pagesRef} style={{ height: tops.total || undefined, width: pageW }} onMouseDown={onMouseDown}>
+          <div className="pdf-pages" ref={pagesRef} style={{ height: tops.total || undefined, width: pageW }} onPointerDown={onPointerDown} onMouseDown={onMouseDown}>
             {status === 'loading' && <div className="empty">opening</div>}
             {sizes.map((s, i) => (
               <div
@@ -928,7 +1009,7 @@ function Pages({ id, active, session, readOn, onLast }: Omit<Required<PdfProps>,
                 <div data-hit="1" className="pend" style={{ left: lastPending.left, top: lastPending.top + lastPending.height + 6 }}>
                   <button type="button" data-k="e" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); void makeSection(false).catch(console.error); }}><kbd>e</kbd>section{pending.length > 1 ? ` · ${pending.length} boxes` : ''}</button>
                   <button type="button" data-k="m" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); void cardOrClip().catch(console.error); }}><kbd>m</kbd>card</button>
-                  <button type="button" data-k="esc" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); clearBoxes(); }}><kbd>esc</kbd></button>
+                  {!mobile && <button type="button" data-k="esc" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); clearBoxes(); }}><kbd>esc</kbd></button>}
                 </div>
               )}
             </div>

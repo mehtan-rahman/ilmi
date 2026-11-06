@@ -190,9 +190,43 @@ that changed, for the Mac's copy to be compared with. The app's log is
 `Library/Application Support/dev.ilmi.app/logs/ilmi.log` under the same
 container. The app is started again over a new `smoke.json` with
 `xcrun simctl terminate booted dev.ilmi.app` and `xcrun simctl launch booted
-dev.ilmi.app` while `tauri ios dev` keeps serving the renderer. The iPad's
+dev.ilmi.app` while `tauri ios dev` keeps serving the renderer (once the
+app is installed and the Rust side has not changed, `npm run dev` alone on
+1420 serves it as well). The iPad's
 side also draws in the Mac's window, without Xcode:
 `ILMI_MOBILE=1 ILMI_DOCUMENTS=/some/empty/dir npm run tauri dev`.
+
+`ILMI_SMOKE=touch` (milestone 57) is three runs over one storage folder.
+On the Mac, `ILMI_VAULT=<a copy of the sample> ILMI_STORAGE=<an empty
+folder>`: the collection makes the storage. On the simulator, `{"mode":
+"touch", "storage": "<that folder>"}`: a collection is made from the
+storage (a simulator reads the Mac's disk), the chapter is opened and read,
+a passage boxed and made a section, and the section synced; its `section:`
+line names it. On the Mac again, `ILMI_VAULT=<the collection's own folder
+under collections/> ILMI_STORAGE=<the folder> ILMI_EXPECT=<the section's
+name>`: the section is there after a sync. The simulator's run is under
+real touches, which neither `simctl` nor the page can make: the smoke logs
+`do: tap x y`, `do: press x y seconds`, `do: drag x1 y1 x2 y2 hold`, `do:
+flick x1 y1 x2 y2` and `do: turn landscape` (places as fractions of the
+window) and waits for what each does, and an XCUITest bundle reads the
+app's log and makes them (`scripts/touch-rig`: `xcodegen generate` there
+once, then, with the simulator booted, the app installed, a dev server on
+1420, `smoke.json` written and the log emptied,
+
+```
+C=$(xcrun simctl get_app_container booted dev.ilmi.app data)
+TEST_RUNNER_LOG="$C/Library/Application Support/dev.ilmi.app/logs/ilmi.log" TEST_RUNNER_MODE=touch \
+  xcodebuild test -project scripts/touch-rig/TouchRig.xcodeproj -scheme TouchRig \
+  -destination 'id=<the simulator's udid>' -derivedDataPath scripts/touch-rig/dd
+```
+
+which starts the app and ends at the smoke's `done` or `failed` line; about
+two and a half minutes). That runner makes fingers only: Xcode 27.2's
+XCUIAutomation has no stylus among its pointer paths, so the Pencil's path
+(a pointer event whose type is `pen`) is driven by events the smoke makes
+itself. `src/app/touch.ts` holds the three timings (a finger's hold before
+a box, the long press, how long a touch rests before the system's own
+selection is kept off).
 
 ## Building the installer
 

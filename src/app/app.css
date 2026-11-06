@@ -243,9 +243,12 @@
 [data-theme="eink"] .tree .row .asking { color: var(--fg-1); font-weight: 600; }
 /* on hover: `+` (new, inside the row) and `···` (the row's menu) at the end */
 .tree .row .row-acts { display: none; gap: 2px; flex-shrink: 0; margin-left: 2px; }
-.tree .row:hover .row-acts,
 .tree .row[data-selected="1"] .row-acts { display: flex; }
-.tree .row:hover .due { display: none; }
+/* only where a pointer hovers: under a finger, what a hover brings in takes the tap that should have opened the row (iOS sends no click after it) */
+@media (hover: hover) {
+  .tree .row:hover .row-acts { display: flex; }
+  .tree .row:hover .due { display: none; }
+}
 .tree .row .ra {
   font-family: var(--mono);
   font-size: 11px;
@@ -632,8 +635,8 @@
   opacity: 0;
   transition: opacity 80ms;
 }
-.deck-view .card-span:hover .cs-del,
 .deck-view .card-span .cs-del:focus-visible { opacity: 1; }
+@media (hover: hover) { .deck-view .card-span:hover .cs-del { opacity: 1; } }
 .deck-view .card-span .cs-del:hover { color: oklch(0.52 0.16 28); }
 [data-theme="eink"] .deck-view .card-span .cs-del:hover { color: var(--fg-1); }
 .deck-view .deck-add {
@@ -1060,8 +1063,8 @@
 .tab-rail .rail-row.heading:hover { color: var(--fg-1); }
 /* on hover: `+` (a note after this one) and `···` (the tab's menu) */
 .tab-rail .rail-row .row-acts { display: none; gap: 2px; flex-shrink: 0; margin-left: 2px; }
-.tab-rail .rail-row:hover .row-acts,
 .tab-rail .rail-row[data-selected="1"] .row-acts { display: flex; }
+@media (hover: hover) { .tab-rail .rail-row:hover .row-acts { display: flex; } }
 .tab-rail .rail-row .ra {
   font-family: var(--mono);
   font-size: 11px;

@@ -218,6 +218,12 @@
 // folder imported 15 and 152 times over (`ILMI_SIZE`) into collections of
 // their own, each opened and a card graded, the times and the web content
 // process's memory printed (see the function).
+// `ILMI_SMOKE=touch` (`smokeTouch` on an iPad, `smokeTouchMac` on the Mac,
+// milestone 57) over a storage folder both read (`ILMI_STORAGE`): the Mac's
+// collection makes the storage, the iPad's is made from it and a chapter is
+// read there under touches the touch rig makes (a passage boxed by a held
+// finger becomes a section), and the Mac finds the section after a sync
+// (`ILMI_EXPECT`; see the functions).
 // `ILMI_SMOKE=ipad` (`smokeIpad`, milestone 55) starts at the iPad's
 // welcome, on a simulated iPad from `smoke.json` in the app's Documents
 // (`{"mode": "ipad", "remote": "/path/to/bare.git"}`) or in the Mac's
@@ -7184,9 +7190,12 @@ export async function smokeBook(vault: Vault): Promise<void> {
     await sleep(300);
     const r = el.getBoundingClientRect();
     const at = (fx: number, fy: number): MouseEventInit => ({ clientX: r.left + fx * r.width, clientY: r.top + fy * r.height, bubbles: true, cancelable: true, button: 0 });
-    el.dispatchEvent(new MouseEvent('mousedown', at(x, y)));
-    window.dispatchEvent(new MouseEvent('mousemove', at(x + w / 2, y + h / 2)));
-    window.dispatchEvent(new MouseEvent('mouseup', at(x + w, y + h)));
+    // as a mouse sends them since milestone 57: the pointer's press and the mouse's, then the pointer's move and release
+    const mouse = { pointerId: 1, pointerType: 'mouse', isPrimary: true };
+    el.dispatchEvent(new PointerEvent('pointerdown', { ...at(x, y), ...mouse }));
+    el.dispatchEvent(new MouseEvent('mousedown', { ...at(x, y), detail: 1 }));
+    window.dispatchEvent(new PointerEvent('pointermove', { ...at(x + w / 2, y + h / 2), ...mouse }));
+    window.dispatchEvent(new PointerEvent('pointerup', { ...at(x + w, y + h), ...mouse }));
     await sleep(200);
   };
   const near = (a: number, b: number) => Math.abs(a - b) < 0.004;
@@ -7261,7 +7270,7 @@ export async function smokeBook(vault: Vault): Promise<void> {
     // show boxes here draws both crops, a page break between
     const hd = await poll(() => qa<HTMLElement>('.pane[data-active="1"] .book-notes .dd-h').find((h) => h.textContent?.startsWith(NAME)), 'its heading in the notes');
     const chip = q<HTMLElement>('.book-chip', hd)!;
-    must(chip.textContent === 'show in bookshow boxes hereback in 1d', `its chip: "${chip.textContent}"`);
+    must(chip.textContent === 'show in bookshow boxes hereback tomorrow', `its chip: "${chip.textContent}"`);
     down(q('[data-act="show-here"]', chip)!);
     let crops: HTMLCanvasElement[];
     try {
@@ -7420,9 +7429,12 @@ export async function smokeBooks(vault: Vault): Promise<void> {
     await sleep(400);
     const r = el.getBoundingClientRect();
     const at = (fx: number, fy: number): MouseEventInit => ({ clientX: r.left + fx * r.width, clientY: r.top + fy * r.height, bubbles: true, cancelable: true, button: 0 });
-    el.dispatchEvent(new MouseEvent('mousedown', at(x, y)));
-    window.dispatchEvent(new MouseEvent('mousemove', at(x + w / 2, y + h / 2)));
-    window.dispatchEvent(new MouseEvent('mouseup', at(x + w, y + h)));
+    // as a mouse sends them since milestone 57: the pointer's press and the mouse's, then the pointer's move and release
+    const mouse = { pointerId: 1, pointerType: 'mouse', isPrimary: true };
+    el.dispatchEvent(new PointerEvent('pointerdown', { ...at(x, y), ...mouse }));
+    el.dispatchEvent(new MouseEvent('mousedown', { ...at(x, y), detail: 1 }));
+    window.dispatchEvent(new PointerEvent('pointermove', { ...at(x + w / 2, y + h / 2), ...mouse }));
+    window.dispatchEvent(new PointerEvent('pointerup', { ...at(x + w, y + h), ...mouse }));
     await sleep(200);
   };
   const openQuery = async () => {
@@ -9521,6 +9533,362 @@ export async function smokeIpad(): Promise<void> {
   } catch (e) {
     log(`failed: ${e instanceof Error ? e.message : String(e)}`);
     useApp.getState().setTheme('light');
+  }
+}
+
+// `ILMI_SMOKE=touch`: milestone 57's "done when", in three runs over one
+// storage folder (`ILMI_STORAGE`, on the simulator `"storage"` in
+// `smoke.json`; a simulated iPad reads the Mac's disk).
+//  1. The Mac (`ILMI_VAULT` a copy of the sample): its collection makes the
+//     storage. `smokeTouchMac`.
+//  2. The iPad, from its welcome (`smokeTouch`): a collection made from the
+//     storage, which keeps the files it has opened, so the book comes when
+//     its chapter is opened. Everything after is under real touches:
+//     every line `do: <verb> <numbers>` asks the touch rig (an XCUITest
+//     bundle, PLAN 55) for one, in fractions of the window, and the step
+//     waits for what it does. The chapter is opened from the sidebar's
+//     sheet by taps. A flick scrolls the pages and draws nothing; a finger
+//     held and dragged boxes a passage, again for a second, a tap clears;
+//     the same press under a pointer that says `pen` (events made here:
+//     the rig cannot make a Pencil) boxes at once; the bar under the box
+//     offers section and card, and `section` tapped makes the section; the
+//     notes slide in from the right edge and fold at a tap beside them; a
+//     heading, a tree row and a deck's card each give their menu to a long
+//     press, with nothing selected under it; a tree row held and dragged
+//     moves; turned, the notes sit beside the pages. The section's name
+//     and boxes are logged (`section: …`) and synced.
+//  3. The Mac again (`ILMI_VAULT` its collection's own folder,
+//     `ILMI_EXPECT` the section's name): after a sync the section is in its
+//     chapter, boxed on the page.
+export async function smokeTouch(): Promise<void> {
+  let last = { at: Date.now(), what: 'start' };
+  let finished = false;
+  const log = (s: string) => { last = { at: Date.now(), what: s }; void info(`smoke touch: ${s}`); };
+  const dog = setInterval(() => {
+    if (finished) { clearInterval(dog); return; }
+    if (Date.now() - last.at > 90_000) { finished = true; clearInterval(dog); void info(`smoke touch: failed: no progress for 90 s after "${last.what}"`); }
+  }, 2000);
+  const q = <T extends Element>(sel: string, root: ParentNode = document) => root.querySelector<T>(sel);
+  const qa = <T extends Element>(sel: string, root: ParentNode = document) => Array.from(root.querySelectorAll<T>(sel));
+  const shot = async (name: string, ms = 2500) => { await sleep(900); log(`shot: ${name}`); await sleep(ms); };
+  const must = (ok: unknown, what: string) => { if (!ok) throw new Error(what); log(`ok: ${what}`); };
+  const poll = async <T,>(probe: () => T | null | undefined | false | Promise<T | null | undefined | false>, what: string, ms = 8000): Promise<T> => {
+    const t0 = Date.now();
+    for (;;) {
+      const v = await probe();
+      if (v) { log(`ok: ${what}`); return v; }
+      if (Date.now() - t0 > ms) throw new Error(`${what} (waited ${ms} ms)`);
+      await sleep(100);
+    }
+  };
+  /** Ask the rig for a touch; places are window fractions. */
+  const ask = (verb: string, ...n: number[]) => log(`do: ${verb} ${n.map((v) => v.toFixed(4)).join(' ')}`);
+  const fx = (x: number) => x / window.innerWidth;
+  const fy = (y: number) => y / window.innerHeight;
+  const mid = (el: Element): [number, number] => { const r = el.getBoundingClientRect(); return [fx(r.left + r.width / 2), fy(r.top + r.height / 2)]; };
+  try {
+    const { isMobile, shapeOf } = await import('./platform.js');
+    const { devStorage, joinCollection, crdtNow, filesSettled } = await import('./crdt.js');
+    const { syncWord } = await import('./sync.js');
+    const { parse, parseBoxes } = await import('../format/index.js');
+    must(isMobile() && document.documentElement.dataset.mobile === '1', 'the app knows it is on an iPad');
+    const shape = () => shapeOf(true, window.innerWidth, window.innerHeight);
+    const storage = await devStorage();
+    if (!storage || storage.kind !== 'folder') throw new Error('ILMI_STORAGE (smoke.json: "storage") names the folder the Mac\'s collection made its storage in');
+    log(`window ${window.innerWidth}×${window.innerHeight} (${shape()}); pixel ratio ${window.devicePixelRatio}; touch points ${navigator.maxTouchPoints}; storage ${storage.folder}`);
+    must(shape() === 'portrait', 'the iPad is upright');
+    must(!window.matchMedia('(hover: hover)').matches, 'nothing hovers here: a row brings nothing in under a tap');
+
+    // ── a collection made from the storage ──
+    useApp.getState().setReopen(false);
+    useApp.getState().setTheme('light');
+    await startFromRecents();
+    await until(() => q('.welcome'));
+    const t0 = Date.now();
+    const root = await joinCollection(storage, 'double-major', true);
+    const vault = await openVault(root);
+    log(`joined in ${Date.now() - t0} ms: ${vault.documents().length} documents`);
+    must(vault.documents().length === 66, 'the collection is made from the storage: 66 documents');
+    await poll(() => syncWord(useApp.getState().sync) === 'synced', 'the strip says synced', 30000);
+    const BOOK = 'library/lindqvist-statistical-physics/ch-3-the-canonical-ensemble.md';
+    const pdfOf = () => useApp.getState().docs[BOOK]?.pdf ?? '';
+    await poll(() => pdfOf() !== '', 'the chapter is there, with its book');
+    must(useApp.getState().away.length === 2 && useApp.getState().away.includes(pdfOf()), `this device keeps what it has opened: both books are away (${useApp.getState().away.join(', ')})`);
+    const text = () => vault.fs.readText(vault.abs(BOOK));
+    const headings = async () => parse(await text()).doc.blocks.flatMap((b) => (b.kind === 'heading' && b.level === 2 ? [b] : []));
+    const before = (await headings()).map((h) => h.text);
+
+    // ── the chapter opened by taps: its book comes, its pages are drawn, the notes folded ──
+    const sheet = async () => {
+      ask('flick', 0.004, 0.5, 0.45, 0.5);
+      const el = await poll(() => q<HTMLElement>('.side[data-sheet="1"]'), 'a swipe from the left edge brings the sidebar', 20000);
+      await sleep(600);
+      return el;
+    };
+    const trow = (path: string) => q<HTMLElement>(`.side .trow[data-path="${path}"]`);
+    let side = await sheet();
+    for (const dir of ['library', 'library/lindqvist-statistical-physics.md']) {
+      const r = await poll(() => trow(dir), `${dir} has a row`, 10000);
+      if (r.getAttribute('aria-expanded') !== 'true') {
+        ask('tap', ...mid(q('.chev', r)!));
+        await poll(() => trow(dir)?.getAttribute('aria-expanded') === 'true', `a tap on its mark opens ${dir}`, 20000);
+        await sleep(400);
+      }
+    }
+    ask('tap', ...mid(q('.name', (await poll(() => trow(BOOK), 'the chapter has a row'))!)!));
+    await poll(() => activeTab(useApp.getState().panes)?.id === BOOK, 'a tap on the chapter\'s row opens it', 20000);
+    await poll(() => !q('.side'), 'and the sheet goes');
+    const book = await poll(() => q<HTMLElement>('.pane[data-active="1"] .book'), 'the chapter opens as a book', 15000);
+    await poll(() => q('.pdf-page[data-page="23"] canvas', book), 'its book is fetched on opening and the first page drawn', 60000);
+    await filesSettled();
+    must(!useApp.getState().away.includes(pdfOf()) && useApp.getState().away.length === 1, 'the book opened is here now, the other still away');
+    must(book.dataset.notes === '0' && !q('.book-notes', book), 'portrait: the notes are folded');
+    const sc = q<HTMLElement>('.book-pages', book)!;
+    const pending = () => qa('.pbox.pending:not(.ghost)', book).length;
+    await shot('touch-book');
+
+    // ── reading: a finger's drag is the scroll, and draws nothing ──
+    const top0 = sc.scrollTop;
+    ask('flick', 0.5, 0.72, 0.5, 0.3);
+    await poll(() => sc.scrollTop > top0 + 150, 'a flick scrolls the pages', 20000);
+    await sleep(1500);
+    must(pending() === 0 && !q('.pbox.ghost', book), `and boxes nothing (scrolled ${Math.round(sc.scrollTop - top0)} px)`);
+    ask('flick', 0.5, 0.35, 0.5, 0.75);
+    await poll(() => sc.scrollTop < top0 + 100, 'and back', 20000);
+    await sleep(1200);
+
+    // ── a finger held, then dragged: a box; again: a second; a tap: none ──
+    const page = (n: number) => q<HTMLElement>(`.pdf-page[data-page="${n}"]`, book)!;
+    /** A box on page `n`, as fractions of the page, in window fractions: its two corners. */
+    const corners = async (n: number, x: number, y: number, w: number, h: number): Promise<[number, number, number, number]> => {
+      const el = await poll(() => q<HTMLElement>(`.pdf-page[data-page="${n}"] canvas`, book)?.parentElement, `page ${n} is drawn`, 30000);
+      const sr = sc.getBoundingClientRect();
+      // the passage a third of the way down the view, once a flick's own motion has ended and the page stays where it is put
+      const off = () => { const r0 = el.getBoundingClientRect(); return r0.top + (y + h / 2) * r0.height - (sr.top + sr.height / 3); };
+      for (let i = 0; i < 12; i++) {
+        let was = sc.scrollTop;
+        for (let still = 0; still < 4;) { await sleep(120); if (sc.scrollTop === was) still++; else { still = 0; was = sc.scrollTop; } }
+        if (Math.abs(off()) < 2) break;
+        sc.scrollTop += off();
+      }
+      if (Math.abs(off()) >= 2) throw new Error(`page ${n} does not stay where it is scrolled to`);
+      const r = el.getBoundingClientRect();
+      return [fx(r.left + x * r.width), fy(r.top + y * r.height), fx(r.left + (x + w) * r.width), fy(r.top + (y + h) * r.height)];
+    };
+    const PASSAGE: [number, number, number, number, number] = [24, 0.11, 0.67, 0.78, 0.075];
+    let c = await corners(...PASSAGE);
+    const still = sc.scrollTop;
+    ask('drag', c[0], c[1], c[2], c[3], 0.8);
+    await poll(() => pending() === 1, 'a finger held and then dragged draws a box', 25000);
+    must(Math.abs(sc.scrollTop - still) < 4, 'and the page holds still under it');
+    const bar = () => qa<HTMLElement>('.pend button', book).map((b) => b.textContent ?? '');
+    must(bar().length === 2 && /section/.test(bar()[0]!) && /card/.test(bar()[1]!), `the bar under the box offers section and card (${bar().join(' | ')})`);
+    const pr = q<HTMLElement>('.pend button', book)!.getBoundingClientRect();
+    must(pr.height >= 32, `at a finger's size (${Math.round(pr.height)} px tall)`);
+    await shot('touch-boxed');
+    const c2 = await corners(24, 0.11, 0.3, 0.5, 0.08);
+    ask('drag', c2[0], c2[1], c2[2], c2[3], 0.8);
+    await poll(() => pending() === 2 && qa('.pbox.pending .pb-no', book).length === 2, 'a second drag draws another, and they are numbered', 25000);
+    await shot('touch-two-boxes');
+    const blank = page(24).getBoundingClientRect();
+    ask('tap', fx(blank.left + blank.width * 0.5), fy(Math.min(window.innerHeight - 80, blank.top + blank.height * 0.5)));
+    await poll(() => pending() === 0, 'a tap clears them', 20000);
+
+    // ── the Pencil's path: a pointer that says `pen` boxes at once (events made here, not a Pencil) ──
+    c = await corners(...PASSAGE);
+    const px = (i: number) => c[i]! * (i % 2 ? window.innerHeight : window.innerWidth);
+    const pen = (type: string, x: number, y: number) => new PointerEvent(type, { bubbles: true, cancelable: true, pointerId: 77, pointerType: 'pen', isPrimary: true, button: 0, buttons: type === 'pointerup' ? 0 : 1, pressure: type === 'pointerup' ? 0 : 0.4, clientX: x, clientY: y });
+    const target = document.elementFromPoint(px(0), px(1))!;
+    must(target.closest('.pdf-page') === page(24), 'the passage is under the point');
+    target.dispatchEvent(pen('pointerdown', px(0), px(1)));
+    window.dispatchEvent(pen('pointermove', (px(0) + px(2)) / 2, (px(1) + px(3)) / 2));
+    await sleep(60);
+    must(q('.pbox.ghost', book) !== null, 'a pen\'s drag draws from its first move, with no hold');
+    window.dispatchEvent(pen('pointerup', px(2), px(3)));
+    await poll(() => pending() === 1, 'and leaves a box');
+    target.dispatchEvent(pen('pointerdown', px(0) + 20, px(1) - 60));
+    window.dispatchEvent(pen('pointerup', px(0) + 20, px(1) - 60));
+    await poll(() => pending() === 0, 'a pen\'s tap clears it');
+
+    // ── the passage boxed by a finger becomes a section, by the bar's button ──
+    c = await corners(...PASSAGE);
+    ask('drag', c[0], c[1], c[2], c[3], 0.8);
+    await poll(() => pending() === 1, 'the passage is boxed again', 25000);
+    const btn = q<HTMLElement>('.pend button[data-k="e"]', book)!;
+    ask('tap', ...mid(btn));
+    const made = await poll(async () => (await headings()).find((h) => !before.includes(h.text) && h.read?.boxes !== undefined), 'section tapped: the passage is a section of the notes', 25000);
+    const boxes = parseBoxes(made.read?.boxes ?? '') ?? [];
+    must(boxes.length === 1 && boxes[0]!.page === 24, `named from the page, with its box: "${made.text}"`);
+    const b0 = boxes[0]!;
+    must(Math.abs(b0.x - PASSAGE[1]) < 0.03 && Math.abs(b0.y - PASSAGE[2]) < 0.03 && Math.abs(b0.w - PASSAGE[3]) < 0.04 && Math.abs(b0.h - PASSAGE[4]) < 0.04, `the box is where the finger went (${b0.x},${b0.y},${b0.w},${b0.h})`);
+    await poll(() => q(`.pbox[data-section="${CSS.escape(made.text)}"]`, book), 'and is drawn on the page');
+    await shot('touch-section');
+
+    // ── the notes, from the right edge ──
+    ask('flick', 0.996, 0.5, 0.55, 0.5);
+    const notes = await poll(() => (book.dataset.notes === '1' ? q<HTMLElement>('.book-notes', book) : null), 'a swipe in from the right edge brings the notes', 20000);
+    await sleep(500);
+    const nr = notes.getBoundingClientRect();
+    const br = book.getBoundingClientRect();
+    must(Math.abs(nr.right - br.right) < 2 && nr.left > br.left + 60 && Math.abs(sc.getBoundingClientRect().width - br.width) < 2, `over the pages, which keep their width (${Math.round(nr.width)} of ${Math.round(br.width)} px)`);
+    const head = await poll(() => qa<HTMLElement>('.dd-h', notes).find((h) => h.textContent?.includes(made.text.slice(0, 12))), 'the new section is in them', 10000);
+    head.scrollIntoView({ block: 'center' });
+    await shot('touch-notes');
+    // a heading's menu, by a long press on its words
+    await sleep(400);
+    const words = document.createRange();
+    words.selectNodeContents(head.firstChild ?? head);
+    const wr = words.getBoundingClientRect();
+    ask('press', fx(wr.left + Math.min(60, wr.width / 2)), fy(wr.top + wr.height / 2), 0.9);
+    const hm = await poll(() => q<HTMLElement>('.ctx-menu.section-menu'), 'a long press on a heading opens its menu', 20000);
+    log(`heading menu: ${qa('.ci', hm).map((i) => i.textContent).join(' | ')}`);
+    await sleep(700);
+    must((window.getSelection()?.toString() ?? '') === '', 'and the system selected nothing under it');
+    must(!(document.activeElement as HTMLElement | null)?.isContentEditable && Math.abs((window.visualViewport?.height ?? window.innerHeight) - window.innerHeight) < 2, 'nor is the keyboard up under it');
+    await shot('touch-heading-menu');
+    const menuAt = hm.getBoundingClientRect();
+    ask('tap', fx(nr.left + nr.width / 2), fy(Math.min(notes.getBoundingClientRect().bottom - 60, menuAt.bottom + 220)));
+    await poll(() => !q('.ctx-menu.section-menu'), 'a tap elsewhere closes it', 20000);
+    await sleep(600);
+    (document.activeElement as HTMLElement | null)?.blur?.();
+    await sleep(600);
+    ask('tap', fx((br.left + nr.left) / 2), fy(br.top + Math.min(br.height, book.getBoundingClientRect().height) / 2));
+    await poll(() => book.dataset.notes === '0', 'a tap beside the notes folds them', 20000);
+
+    // ── the tree: a row's menu by a long press, a row moved by a hold and a drag ──
+    await sleep(600);
+    side = await sheet();
+    const rows = () => qa<HTMLElement>('.trow:not(.root-row):not(.placeholder)', side).filter((r) => !r.dataset.path!.includes('/'));
+    const names = () => rows().map((r) => r.dataset.path);
+    const order0 = names();
+    log(`top rows: ${order0.join(', ')}`);
+    must(order0.length >= 4, 'the tree\'s top rows are there');
+    ask('press', ...mid(rows()[1]!), 0.9);
+    const tm = await poll(() => q<HTMLElement>('.side ~ .ctx-menu, .tree .ctx-menu, .ctx-menu:not(.section-menu)'), 'a long press on a row opens its menu', 20000);
+    log(`row menu: ${qa('.ci', tm).map((i) => i.textContent).slice(0, 8).join(' | ')}`);
+    await sleep(700);
+    must((window.getSelection()?.toString() ?? '') === '', 'with nothing selected');
+    await shot('touch-row-menu');
+    const sr = side.getBoundingClientRect();
+    ask('tap', fx(sr.left + sr.width / 2), fy(sr.bottom - 30));
+    await poll(() => !q('.ctx-menu'), 'and a tap elsewhere closes it', 20000);
+    await sleep(600);
+    // the first top row, held and dragged below the last one that is closed
+    const from = rows()[0]!;
+    const dest = rows().reverse().find((r) => r !== from && r.getAttribute('aria-expanded') !== 'true')!;
+    const moved = from.dataset.path!;
+    const under = dest.dataset.path!;
+    const to = dest.getBoundingClientRect();
+    ask('drag', ...mid(from), fx(to.left + to.width / 2), fy(to.bottom - 3), 0.9);
+    await poll(() => names().join() !== order0.join() && names().indexOf(moved) === names().indexOf(under) + 1, `a row held and dragged moves: ${moved} below ${under}`, 25000);
+    must(!useApp.getState().sideSheet || q('.side') !== null, 'and the sheet is still there');
+    log(`top rows now: ${names().join(', ')}`);
+    await shot('touch-row-moved');
+
+    // ── a deck: a card's menu by a long press ──
+    const DECK = 'arabic/vocabulary.md';
+    openNode(DECK);
+    const card = await poll(() => (activeTab(useApp.getState().panes)?.id === DECK ? q<HTMLElement>('.pane[data-active="1"] .deck-row') : null), 'a deck opens', 15000);
+    await poll(() => !q('.side'), 'the sheet closed as it opened');
+    await sleep(600);
+    const cards = qa<HTMLElement>('.pane[data-active="1"] .deck-row');
+    ask('tap', ...mid(q('.dr-faces', cards[2]!)!));
+    await poll(() => cards[2]!.isConnected && cards[2]!.classList.contains('selected'), 'a tap on a card selects it', 20000);
+    await sleep(500);
+    ask('press', ...mid(card), 0.9);
+    const cm = await poll(() => q<HTMLElement>('.pane[data-active="1"] .ctx-menu'), 'a long press on a card opens its menu', 20000);
+    log(`card menu: ${qa('.ci', cm).map((i) => i.textContent).join(' | ')}`);
+    await sleep(700);
+    must((window.getSelection()?.toString() ?? '') === '', 'with nothing selected');
+    await shot('touch-card-menu');
+    const dv = q<HTMLElement>('.pane[data-active="1"] .pane-body')!.getBoundingClientRect();
+    ask('tap', fx(dv.left + dv.width / 2), fy(dv.bottom - 40));
+    await poll(() => !q('.ctx-menu'), 'closed by a tap', 20000);
+
+    // ── synced: the section is in the storage ──
+    await crdtNow();
+    await poll(() => { const s = useApp.getState().sync; return syncWord(s) === 'synced' && s.toPush === 0; }, 'synced: nothing left to push', 30000);
+    log(`section: ${made.text} :: ${made.read!.boxes}`);
+
+    // ── turned: the notes beside the pages ──
+    openNode(BOOK);
+    await poll(() => q('.pane[data-active="1"] .book .pdf-page canvas'), 'the chapter again', 20000);
+    ask('turn landscape');
+    await poll(() => shape() === 'landscape', 'the iPad turns', 20000);
+    const land = await poll(() => { const b = q<HTMLElement>('.pane[data-active="1"] .book'); return b?.dataset.notes === '1' ? b : null; }, 'landscape: the notes are shown');
+    await sleep(1500);
+    const ln = q<HTMLElement>('.book-notes', land)!.getBoundingClientRect();
+    const lp = q<HTMLElement>('.book-pages', land)!.getBoundingClientRect();
+    must(Math.abs(ln.left - lp.right) < 2 && getComputedStyle(q<HTMLElement>('.book-scrim', land)!).display === 'none', 'beside the pages, not over them');
+    await shot('touch-landscape');
+    ask('turn portrait');
+    await poll(() => shape() === 'portrait', 'and back upright', 20000);
+    await poll(() => q<HTMLElement>('.pane[data-active="1"] .book')?.dataset.notes === '0', 'the notes folded again');
+    finished = true;
+    log(`done; collection ${vault.root}, storage ${storage.folder}`);
+  } catch (e) {
+    finished = true;
+    log('shot: touch-failed');
+    await sleep(1500);
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+/** The Mac's side of `ILMI_SMOKE=touch` (see `smokeTouch`): the storage made, and after the iPad's run the section found. */
+export async function smokeTouchMac(vault: Vault): Promise<void> {
+  const log = (s: string) => void info(`smoke touch: ${s}`);
+  const q = <T extends Element>(sel: string, root: ParentNode = document) => root.querySelector<T>(sel);
+  const shot = async (name: string, ms = 2500) => { await sleep(900); log(`shot: ${name}`); await sleep(ms); };
+  const must = (ok: unknown, what: string) => { if (!ok) throw new Error(what); log(`ok: ${what}`); };
+  const poll = async <T,>(probe: () => T | null | undefined | false | Promise<T | null | undefined | false>, what: string, ms = 8000): Promise<T> => {
+    const t0 = Date.now();
+    for (;;) {
+      const v = await probe();
+      if (v) { log(`ok: ${what}`); return v; }
+      if (Date.now() - t0 > ms) throw new Error(`${what} (waited ${ms} ms)`);
+      await sleep(100);
+    }
+  };
+  try {
+    const { crdtNow, crdtOn, storageDir } = await import('./crdt.js');
+    const { syncWord } = await import('./sync.js');
+    const { parse, parseBoxes } = await import('../format/index.js');
+    const dir = await storageDir();
+    if (!dir) throw new Error('ILMI_STORAGE names the folder the two devices share');
+    const expect = await invoke<string | null>('dev_env', { name: 'ILMI_EXPECT' });
+    const BOOK = 'library/lindqvist-statistical-physics/ch-3-the-canonical-ensemble.md';
+    const headings = async () => parse(await vault.fs.readText(vault.abs(BOOK))).doc.blocks.flatMap((b) => (b.kind === 'heading' && b.level === 2 ? [b] : []));
+    useApp.getState().setTheme('light');
+    must(window.matchMedia('(hover: hover)').matches, 'a pointer hovers here: a row\'s marks still come under it');
+    await poll(() => crdtOn() && syncWord(useApp.getState().sync) === 'synced', 'the collection syncs through the folder', 60000);
+    if (!expect) {
+      // the first run: the storage is this collection's
+      const { diskFs } = await import('./collections.js');
+      await crdtNow();
+      const names = await diskFs.readDir(dir);
+      must(names.some((n) => n.name === 'format') && names.some((n) => n.name === 'devices') && names.some((n) => n.name === 'blobs'), `the storage is made in ${dir}`);
+      must(!(await headings()).some((h) => (parseBoxes(h.read?.boxes ?? '') ?? []).some((b) => b.page === 24 && Math.abs(b.y - 0.67) < 0.05)), 'no section is boxed there yet');
+      log(`done; collection ${vault.root}, storage ${dir}`);
+      return;
+    }
+    // after the iPad: its section comes with a sync
+    await crdtNow();
+    const made = await poll(async () => { await crdtNow(); return (await headings()).find((h) => h.text === expect); }, `the section made on the iPad is in the chapter here: "${expect}"`, 30000);
+    const boxes = parseBoxes(made.read?.boxes ?? '') ?? [];
+    must(boxes.length === 1 && boxes[0]!.page === 24, `with its box (${made.read?.boxes})`);
+    must(made.read?.due !== undefined, `and its schedule (due ${made.read?.due})`);
+    useApp.setState({ notesHidden: false });
+    openNode(BOOK);
+    const book = await poll(() => q<HTMLElement>('.pane[data-active="1"] .book'), 'the chapter opens', 15000);
+    await poll(() => q('.pdf-page[data-page="24"] canvas', book) ?? (q('.pdf-page[data-page="24"]', book)?.scrollIntoView({ block: 'center' }), null), 'p. 24 is drawn', 30000);
+    const box = await poll(() => q<HTMLElement>(`.pbox[data-section="${CSS.escape(expect)}"]`, book), 'the section\'s box is drawn on the page');
+    box.scrollIntoView({ block: 'center' });
+    const head = await poll(() => Array.from(document.querySelectorAll<HTMLElement>('.pane[data-active="1"] .book-notes .dd-h')).find((h) => h.textContent?.includes(expect.slice(0, 12))), 'and its heading is in the notes');
+    head.scrollIntoView({ block: 'center' });
+    await shot('touch-mac-section');
+    log(`done; collection ${vault.root}, storage ${dir}`);
+  } catch (e) {
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
   }
 }
 

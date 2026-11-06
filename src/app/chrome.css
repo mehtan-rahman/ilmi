@@ -564,6 +564,9 @@ html[data-mobile="1"] .top .right { display: flex; }
 html[data-mobile="1"] .insp-toggle { padding: 9px 10px; margin: 0 -6px; }
 .side-toggle .panel-ico::after { right: auto; left: 0; border-left: 0; border-right: 1px solid var(--fg-4); }
 .side-toggle[data-on="1"] .panel-ico::after { border-right-color: var(--fg-2); }
+/* a touch resting where a menu is (milestone 57, `touch.ts`): the long press is the menu's, so the
+   system selects nothing under it and shows no callout */
+html[data-pressing] body, html[data-pressing] body * { -webkit-user-select: none !important; user-select: none !important; -webkit-touch-callout: none !important; }
 /* portrait: the sidebar over the page, from the left edge; a tap beside it closes it */
 .side[data-sheet="1"] {
   grid-area: canvas;

@@ -192,6 +192,41 @@
   .book-notes { border-left: 0; border-top: 1px solid var(--line-1); }
 }
 
+.book-scrim { display: none; }
+/* an iPad in portrait (milestone 57): the pages keep the whole width, and the
+   notes slide in over them from the right; a tap beside them, or a swipe
+   back to the right, folds them */
+html[data-shape="portrait"] .book { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
+html[data-shape="portrait"] .book-notes {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(86%, 560px);
+  z-index: 6;
+  background: var(--bg);
+  border-left: 1px solid var(--line-1);
+  border-top: 0;
+  animation: notes-in 180ms ease-out;
+}
+html[data-shape="portrait"] .book-scrim {
+  display: block;
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  background: color-mix(in oklab, var(--fg) 12%, transparent);
+}
+[data-theme="eink"] .book-scrim { background: transparent; }
+@keyframes notes-in { from { transform: translateX(100%); } }
+@media (prefers-reduced-motion: reduce) { html[data-shape="portrait"] .book-notes { animation: none; } }
+/* under a finger: the page's text is not the system's to select (a hold
+   there starts a box), and the boxes' bar is a finger's size */
+html[data-mobile="1"] .book .pdf-page,
+html[data-mobile="1"] .book .pdf-page .textLayer :is(span, br) { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+html[data-mobile="1"] .pend { font-size: 13px; gap: 4px; padding: 3px; }
+html[data-mobile="1"] .pend button { padding: 9px 14px; }
+html[data-mobile="1"] .pgut { padding: 8px 8px; margin: -6px -5px; }
+
 /* in a session the bar sits under the book, not over it */
 .doc-session[data-book="1"] { position: absolute; inset: 0; display: flex; flex-direction: column; min-height: 0; }
 .doc-session[data-book="1"] > .book { position: relative; inset: auto; flex: 1 1 0; min-height: 0; }

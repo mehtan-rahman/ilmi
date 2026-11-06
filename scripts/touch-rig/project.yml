@@ -1,0 +1,20 @@
+name: TouchRig
+options:
+  bundleIdPrefix: dev.ilmi
+targets:
+  TouchRig:
+    type: bundle.ui-testing
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources: [Sources]
+    settings:
+      GENERATE_INFOPLIST_FILE: YES
+      PRODUCT_BUNDLE_IDENTIFIER: dev.ilmi.touchrig
+      SWIFT_VERSION: "5.0"
+schemes:
+  TouchRig:
+    build:
+      targets:
+        TouchRig: [test]
+    test:
+      targets: [TouchRig]

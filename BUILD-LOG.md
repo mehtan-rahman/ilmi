@@ -6,6 +6,157 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-11-05 — milestone 61: the engine
+
+Done on main: `HASH61`. Every write a collection that syncs makes is
+recorded as a change and merged by CRDT; two collections made from the
+sample sync through a folder. New: `src/sync/engine.ts` (recording,
+merging, a sync), `src/sync/clock.ts` (the hybrid clock),
+`src/sync/storage.ts` (the four verbs, a folder, one in memory),
+`src/sync/__tests__/engine.test.ts` (47), `src/app/crdt.ts` (the app's
+side: the library's load, `ILMI_STORAGE`, the timers, the strip, a
+collection made from a storage). Changed: `src-tauri/src/store.rs` (four
+tables, `batch`, the reads, the log read by instant; schema 3; 10 cargo
+tests there), `lib.rs` (eight commands), `Cargo.toml` (`base64`, already
+in the lock), `src/vault/store.ts` (`Recorder`, `Door`, `StoreOp`, `Reg`;
+`storeFs` tells the engine of each write and takes a merge's rows; a
+hidden row named by its path; one of two same-named rows chosen alike
+everywhere; a reorder told for its whole directory), `mem-store.ts`,
+`tauri-store.ts`, `src/app/collections.ts` (an engine with each
+collection's `Fs`), `src/app/vault.ts` (the engine before git sync; the
+second window made from the folder), `smoke.ts` (`ILMI_SMOKE=crdt`; the
+steps `join`, `make`, `documents`, `reviews`), `vite.config.ts` (the
+library pre-bundled), `package.json` (`loro-crdt`), `docs/development.md`,
+README's layout line, PLAN (61's notes).
+
+### Decided
+
+- **Loro, as WebAssembly in the renderer.** It loads the sample's
+  documents in 19 ms against Automerge's 554 ms, drops old history, and
+  says what a text was at a version; Automerge's state is less than half
+  the size. Both crates build for iOS; neither is linked, because a merge
+  has to run where the format's parser is, and the tests then run the
+  engine that ships. The numbers are in PLAN under 61.
+- **Registers by a hybrid clock; a schedule's stamp leads with its review
+  instant.** A field is the later write. A schedule is the later review,
+  then the later write, in one order that is total, so any order of
+  merging ends the same.
+- **A delete names what it had seen.** An edit, a grade or a rename the
+  delete had not seen keeps the row, and what it is under.
+- **The record is in the write's transaction** (`Store.batch`), and a
+  merged file is one transaction with the count of how far its device
+  was read. Nothing is recorded for a collection that does not sync.
+- **A file is merged once what its writer had read is merged**, and the
+  next file's contents are settled before it is written.
+- **Blobs travel now, whole**, against the milestone's own list: a copy
+  made from the storage without its PDFs is not the sample.
+- **Ids are still not minted for every card** (as 60 left it, for 66);
+  a card with a schedule gets one when its collection first syncs.
+- **The review log reads by instant**, so the same lines are the same
+  file on every device.
+- **A reorder stamps its directory whole**: the window check showed two
+  drags of one folder coming out as a mix of both; the later now stands.
+
+### Verified
+
+1383 tests in 89 files (1 skipped), typecheck clean, 33 cargo tests,
+`cargo check` for both iOS targets, `vite build` (the `.wasm` is in the
+bundle). The timed deck-browser test failed in two full runs while the
+machine was busy with other work (a load of 6 to 9), passes alone, and
+passed in the full run after. In vitest: the cases
+listed in PLAN under 61, and three copies making random edits and
+syncing at random, 24 seeds, ending byte for byte the same (150 seeds
+of 220 steps passed before the seeds were fixed; with deletes and
+renames added, 148 of 150). In the Mac's window, from a snapshot of the
+working tree checked out apart (the dev identifier, the app stopped by
+pid, each window captured by id): `ILMI_SMOKE=crdt` over the sample, two
+windows and an empty folder, 53 checks and 14 captures looked at: the
+first collection became three files of changes and two blobs in the
+folder; the second window's collection was made from them with the same
+66 documents, 5,144 log lines, order, and the four documents compared
+reading the same; a grade in each landed in both with both lines in the
+log, and the open document's notice; the same card graded in both kept
+the later review in both; a card reworded in one and graded in the
+other was one card with both; a pass each way; one paragraph edited in
+both was one paragraph with both edits, `both edited · idea for honors
+thesis § idea for honors thesis` and `1 conflict` in each until opened;
+the later of two drags stood in both and the sidebar drew it; a
+document made in the second was in the first; light and dark. Also
+`store` (34, its folder and zip equal to the sample by `diff -r`),
+`sync` (34), `tour` (23, 45 captures), `nudge` (29): the counts of 60.
+
+### Not verified
+
+Nothing on the simulated iPad, the engine in its web view included. A
+release bundle. The 115,000-card collection through the engine. A
+folder another program syncs as the storage. The timers by hand (the
+smoke turns them off and syncs by step). The smokes other than the five
+above.
+
+### For the user
+
+Nothing to do, and nothing to see yet: the engine runs only when a dev
+run names a folder (`ILMI_STORAGE`), and git sync is as it was. A
+collection opened by this build is marked for it; the build before
+would refuse it. 62 settles moves and renames; the settings for a real
+storage come with 63.
+
+Handoff prompt for the next session:
+
+```
+Read PLAN.md, FORMAT.md, BUILD-LOG.md, and spec/hashiyah/HANDOFF.md. The
+section of PLAN.md in progress is "A database under the app, synced by
+CRDT to any storage" (59–68); its introduction holds the decisions, and
+59's, 60's and 61's notes say how it stands: `Vault` unchanged over an
+`Fs` that src/vault/store.ts makes from a collection's rows
+(src-tauri/src/store.rs); state in rows, taken out and put back by
+src/vault/lift.ts; and since 61 an engine (src/sync/engine.ts) told of
+every write through `Recorder`, keeping a register a field with a
+hybrid clock's stamp (`regs`), a document's text as Loro keeps it
+(`crdt`, WebAssembly in the renderer), and the changes to send
+(`outbox`), syncing through a storage (src/sync/storage.ts: `format`,
+`devices/<device>/<n>`, `blobs/<sha256>`) and writing what it merges
+back through `StoreFs.door`. Do milestone 62 and only that one (52
+waits for the user; 56–58 come later in that section's order). Stop at
+its "done when". Then tick it, write notes for the next session under
+it, add an entry to BUILD-LOG.md with a fresh handoff prompt, and
+commit. Rules as in PLAN.md's ground rules: export
+PATH=$HOME/.cargo/bin:/opt/homebrew/bin:$PATH; npm test and npm run
+typecheck green before a commit, and cargo test for the Rust side (run
+the tests on a quiet machine: the timed ones fail under load, the deck
+browser's first); one commit per milestone; ask before a screen,
+section, or setting the section does not name; a FORMAT change needs a
+corpus file and a test. Read 61's notes "Not done, against the model"
+and "Left" first: a name, a parent and a place are each the later
+write and nothing more, a loop is only kept from hanging (each device
+may show a different row at the top), two rows of one name in one place
+are both kept and one is not shown, the order is an index a row and a
+reorder stamps its whole directory, a section is keyed by its heading's
+text. 62 is those: a rename or a move against an edit or a new child,
+two reorderings merged move by move, a move into its own descendant
+dropped alike everywhere, and the random test in
+src/sync/__tests__/engine.test.ts gaining renames, moves, reorders and
+deletes (a probe with deletes and renames already ended the same in 148
+of 150 seeds; the two were 60's kept-as-it-came files, so compare what
+the format writes). Keep src/vault/__tests__/store.test.ts's round trip
+of the corpus and the sample byte for byte, ILMI_SMOKE=store and
+ILMI_SMOKE=crdt passing, and git sync working until 66. The engine runs
+in the app only when a dev run sets ILMI_STORAGE=<folder> (two windows
+with ILMI_VAULT2; docs/development.md); there is no setting until 63.
+The window checks run from a clean checkout of main with the dev
+identifier override: ILMI_VAULT is a folder, imported afresh as a
+collection on each run. Never kill a process on port 1420 that is not
+yours, stop your own app binary by pid when a run ends, capture only by
+window id; a covered window's page runs several times slower, so time
+nothing in one. Still unverified since 59: everything on the simulated
+iPad, now the engine too. Open from 60: about 600 MB in the Mac's web
+view for 115,000 cards. Not measured in 61: the size collection through
+the engine. Ask before changing the database's schema in a way an
+existing collection could not open (schema 3 added tables only).
+```
+
+---
+
 ## 2026-11-05 — milestone 60: state in rows
 
 Done on main: `5074b6d`. A document's text is stored without its state;

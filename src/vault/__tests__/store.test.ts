@@ -536,7 +536,7 @@ describe('state in rows', () => {
     await put('r', '2026-10.jsonl', 'file', 'l', log);
     const fs = storeFs(old, ROOT);
     expect(await fs.readText(`${ROOT}/deck.md`)).toBe(deck);
-    expect(await old.version()).toBe(2);
+    expect(await old.version()).toBe(3);
     expect(await old.text('d')).not.toContain('<!-- sr');
     expect(old.tables.state.get('d')!.map((x) => x.kind).sort()).toEqual(['card', 'read']);
     expect((await fs.digests()).get('deck.md')!.blocks[0]).toMatchObject({ kind: 'card', id: 'c1', sched: { due: '2026-11-07' } });
@@ -552,7 +552,20 @@ describe('state in rows', () => {
     expect(files.get('.ilmi/order.json')!.toString()).toBe(order);
     expect(files.get('.ilmi/reviews/2026-10.jsonl')!.toString()).toBe(log);
     // a collection from a newer ilmi is not opened
-    await expect(storeFs(memStore(3), ROOT).readDir(ROOT)).rejects.toThrow('newer');
+    await expect(storeFs(memStore(4), ROOT).readDir(ROOT)).rejects.toThrow('newer');
+  });
+
+  it('a collection of milestone 60 opens as it is: the engine\'s tables are the only thing it lacked', async () => {
+    const was = memStore(2);
+    const first = storeFs(was, ROOT);
+    await importFolder(nodeFs, CORPUS, first, ROOT);
+    await was.setVersion(2);
+    const puts = was.calls.put;
+    const fs = storeFs(was, ROOT);
+    expect(await fs.readText(`${ROOT}/german.md`)).toBe(await fsp.readFile(joinPath(CORPUS, 'german.md'), 'utf8'));
+    expect(await was.version()).toBe(3);
+    // nothing was taken apart again
+    expect(was.calls.put).toBe(puts);
   });
 });
 

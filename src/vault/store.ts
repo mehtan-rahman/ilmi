@@ -30,9 +30,19 @@
 //   removed while it has children leaves them as a folder.
 // - Writes are whole (`atomic`), so the vault writes in place.
 // - `watch` reports this `Fs`'s own writes, a moment later, as a directory
-//   watcher reports an app's own; nothing else writes a collection yet.
+//   watcher reports an app's own, and a merge's the same way.
+// - Since milestone 61 a collection that syncs has an engine
+//   (`src/sync/engine.ts`). It is told of each write before it is made
+//   (`Recorder`) and gives back what goes into the same transaction: the
+//   registers the write won, the change for the other devices. What other
+//   devices changed comes in through `door`, as rows written and removed
+//   in one transaction, the tree, the index and the watchers told.
+// - A row under a dot-directory is named by its path (`hiddenId`): two
+//   devices that each make `.ilmi/reviews` have made one row. Where two
+//   rows have one name in one place (two devices each made `notes.md`),
+//   the one whose id sorts first is the one a path finds, on every device.
 
-import { formatReview, parseReviews, type Doc, type Review } from '../format/index.js';
+import { formatReview, parseReviews, serialize, type Doc, type Review } from '../format/index.js';
 import type { Fs, FsEntry, FsStat } from './fs.js';
 import { join, relative } from './fs.js';
 import { decompose, digest, recompose, stampOf, type Original, type StateRow } from './lift.js';
@@ -109,8 +119,31 @@ export interface DocContent {
   original: Original | null;
 }
 
-/** The schema this code reads and writes; a collection below it is brought up when it opens (`storeFs`). */
-export const STORE_VERSION = 2;
+/** The schema this code reads and writes; a collection below it is brought up when it opens (`storeFs`). 3 is the engine's tables (milestone 61), made by the Rust side as it opens. */
+export const STORE_VERSION = 3;
+
+/** A register (milestone 61): a field's value, and the stamp of the write that won it. */
+export interface Reg {
+  key: string;
+  stamp: string;
+  value: string | null;
+}
+
+/** One write of a batch: the store's own writes, and the engine's record of them. */
+export type StoreOp =
+  | { op: 'put'; at: Place; content?: Content; lift?: Lift }
+  | { op: 'remove'; ids: string[] }
+  | { op: 'places'; set: [id: string, place: number][] }
+  /** `add` the lines, `replace` the file's with them, or `union`: a line the file holds is not added again. */
+  | { op: 'reviews'; file: string; rows: ReviewRow[]; mode: 'add' | 'replace' | 'union' }
+  | { op: 'same'; pairs: string[] }
+  | { op: 'original'; key: string; original: Original | null }
+  | { op: 'meta'; key: string; value: string | null }
+  | { op: 'regs'; set: Reg[] }
+  /** A document's text as the text library keeps it, in base64. */
+  | { op: 'crdt'; doc: string; state: string | null }
+  | { op: 'out'; seq: number; data: string }
+  | { op: 'outDrop'; upTo: number };
 
 /** The rows and blobs of one collection. `tauri-store.ts` is the app's, `mem-store.ts` the tests'. */
 export interface Store {
@@ -140,7 +173,7 @@ export interface Store {
   digests(after: string | null, limit: number): Promise<[id: string, digest: Doc][]>;
   /** The review log's files and how many lines each holds. */
   reviewFiles(): Promise<[file: string, lines: number][]>;
-  /** One file's lines in the order they were written; every line with `null`. */
+  /** One file's lines by their instant, then by the line itself (the same order on every device); every line with `null`. */
   reviews(file: string | null): Promise<string[]>;
   /** Add lines to a file, or with `replace` make them all it holds. */
   reviewsPut(file: string, rows: ReviewRow[], replace: boolean): Promise<void>;
@@ -152,6 +185,63 @@ export interface Store {
   originalPut(key: string, original: Original | null): Promise<void>;
   blobPut(bytes: Uint8Array): Promise<{ hash: string; size: number }>;
   blobGet(hash: string): Promise<Uint8Array>;
+  blobHas(hash: string): Promise<boolean>;
+  /** Several writes as one transaction: all, or none. The rows the `put`s wrote, as they are after it, in order. */
+  batch(ops: StoreOp[]): Promise<Row[]>;
+  /** The engine's own keys and values. */
+  meta(): Promise<[key: string, value: string][]>;
+  /** The registers of these keys that there are. */
+  regs(keys: string[]): Promise<Reg[]>;
+  /** Every register whose key starts with one of `prefixes`. */
+  regsUnder(prefixes: string[]): Promise<Reg[]>;
+  /** A document's text as the text library keeps it, in base64; null when it keeps none. */
+  crdt(doc: string): Promise<string | null>;
+  /** The changes waiting to be written to the storage, after `after`, in order: as many as fit in `bytes`, one at least. */
+  outbox(after: number, bytes: number): Promise<[seq: number, data: string][]>;
+  outboxCount(): Promise<number>;
+}
+
+/** What the engine is told of a write before it is made; what it answers goes into the write's transaction. Nothing, for a collection that does not sync. */
+export interface Recorder {
+  put(w: { at: Place; before: Row | undefined; rel: string; content: Content | undefined; lift: Lift | undefined }): Promise<StoreOp[]>;
+  remove(gone: { row: Row; rel: string }[]): Promise<StoreOp[]>;
+  places(changed: [id: string, place: number | null][]): Promise<StoreOp[]>;
+  reviews(rows: ReviewRow[]): Promise<StoreOp[]>;
+  same(added: string[], removed: string[]): Promise<StoreOp[]>;
+  /** Whether a row is deleted and shown only for what is under it: it goes when nothing is. */
+  dead(id: string): Promise<boolean>;
+}
+
+/** What a merge writes to the tree. */
+export interface ViewWrite {
+  /** Rows as they are now, a parent before its children. `file` is a document's whole text, taken apart here; `content` what any other row holds; neither keeps what the row has. */
+  puts: { at: Place; file?: string; content?: Content }[];
+  removes: string[];
+  /** Lines for the review log, by file: a line a file holds is not added again. */
+  reviews: { file: string; rows: ReviewRow[] }[];
+  /** The pairs said not the same, when they changed. */
+  pairs: string[] | null;
+}
+
+/** The engine's way into the store's `Fs`. */
+export interface Door {
+  /** Run `fn` in the store's one-at-a-time chain, so no write of the app's interleaves with it. */
+  run<T>(fn: () => Promise<T>): Promise<T>;
+  row(id: string): Row | undefined;
+  rows(): Row[];
+  childrenOf(id: string | null): Row[];
+  pathOf(row: Row): string;
+  /** The path the `Fs` knows a vault-relative one by. */
+  abs(rel: string): string;
+  /** A merge's rows and `extra` in one transaction; then the tree, the index and the watchers are told. Call inside `run`. */
+  apply(view: ViewWrite, extra: StoreOp[]): Promise<void>;
+  /** The engine is told of every write from here on. */
+  record(recorder: Recorder | null): void;
+}
+
+/** The id of a row under a dot-directory: its path, so two devices that each make it have made one row. */
+export function hiddenId(rel: string): string {
+  return `h.${stampOf(rel)}`;
 }
 
 /** A fresh row id: 128 random bits in hex. */
@@ -246,6 +336,8 @@ export interface StoreFs extends Fs {
   flushLog(path: string): Promise<void>;
   /** How many lines the review log holds. */
   reviewCount(): Promise<number>;
+  /** The engine's way in (milestone 61). */
+  readonly door: Door;
 }
 
 const WATCH_DEBOUNCE_MS = 30;
@@ -276,10 +368,12 @@ export function storeFs(store: Store, root: string): StoreFs {
   };
   const childrenOf = (parent: string | null): Row[] => [...(kids.get(key(parent)) ?? [])].map((id) => rows.get(id)!);
   const hasKids = (r: Row): boolean => (kids.get(r.id)?.size ?? 0) > 0;
-  const find = (parent: string | null, name: string): Row | undefined => childrenOf(parent).find((r) => fsName(r) === name);
+  /** Of rows with one name in one place, the one whose id sorts first: the same one on every device. */
+  const first = (list: Row[]): Row | undefined => list.reduce<Row | undefined>((a, r) => (!a || r.id < a.id ? r : a), undefined);
+  const find = (parent: string | null, name: string): Row | undefined => first(childrenOf(parent).filter((r) => fsName(r) === name));
   /** The row a path segment descends into: a folder of that name, or the document of that name (its children). */
   const dirRow = (parent: string | null, seg: string): Row | undefined =>
-    childrenOf(parent).find((r) => r.name === seg && r.kind !== 'file');
+    first(childrenOf(parent).filter((r) => r.name === seg && r.kind !== 'file'));
   const under = (id: string | null, top: string): boolean => {
     for (let at = id; at !== null; at = rows.get(at)?.parent ?? null) if (at === top) return true;
     return false;
@@ -322,7 +416,7 @@ export function storeFs(store: Store, root: string): StoreFs {
     const last = segs[segs.length - 1]!;
     const row = find(cur?.id ?? null, last);
     if (row) return { kind: 'row', row };
-    const doc = childrenOf(cur?.id ?? null).find((r) => r.kind === 'doc' && r.name === last);
+    const doc = first(childrenOf(cur?.id ?? null).filter((r) => r.kind === 'doc' && r.name === last));
     if (doc) return { kind: 'kids', row: doc };
     return { kind: 'none', parent: cur, name: last };
   };
@@ -347,15 +441,61 @@ export function storeFs(store: Store, root: string): StoreFs {
     for (const fn of [...indexers]) fn(rel, doc);
   };
 
+  /** The engine, when the collection has one: told of each write, it answers with what goes into the same transaction. */
+  let recorder: Recorder | null = null;
+  const putOp = (at: Place, content?: Content, lift?: Lift): StoreOp => ({ op: 'put', at, ...(content ? { content } : {}), ...(lift ? { lift } : {}) });
+  /** Where a row with this place is, vault-relative. */
+  const relAt = (at: Place): string => {
+    const parent = at.parent === null ? undefined : rows.get(at.parent);
+    const dir = parent ? dirPathOf(parent) : '';
+    const name = at.kind === 'doc' ? `${at.name}.md` : at.name;
+    return dir ? `${dir}/${name}` : name;
+  };
+  /** A row deleted on another device and kept here for what was under it goes once nothing is, and so on up. */
+  const tidy = async (from: string | null): Promise<void> => {
+    for (let pid = from; pid !== null && recorder; ) {
+      const p = rows.get(pid);
+      if (!p || hasKids(p) || !(await recorder.dead(p.id))) return;
+      const path = join(root, pathOf(p));
+      await store.remove([p.id]);
+      unlink(p.id);
+      touched(path);
+      pid = p.parent;
+    }
+  };
   const put = async (at: Place, content?: Content, lift?: Lift): Promise<Row> => {
-    const row = await store.put(at, content, lift);
+    const before = rows.get(at.id);
+    const extra = recorder ? await recorder.put({ at, before, rel: relAt(at), content, lift }) : [];
+    const row = extra.length ? (await store.batch([putOp(at, content, lift), ...extra]))[0]! : await store.put(at, content, lift);
     link(row);
+    if (before && before.parent !== row.parent) await tidy(before.parent);
     return row;
   };
   const drop = async (ids: string[]): Promise<void> => {
     if (!ids.length) return;
-    await store.remove(ids);
+    let extra: StoreOp[] = [];
+    if (recorder) {
+      const gone: { row: Row; rel: string }[] = [];
+      const visit = (id: string): void => {
+        const r = rows.get(id);
+        if (!r) return;
+        gone.push({ row: r, rel: pathOf(r) });
+        for (const c of childrenOf(id)) visit(c.id);
+      };
+      for (const id of ids) visit(id);
+      extra = await recorder.remove(gone);
+    }
+    if (extra.length) await store.batch([{ op: 'remove', ids }, ...extra]);
+    else await store.remove(ids);
+    const parents = new Set(ids.map((id) => rows.get(id)?.parent ?? null));
     for (const id of ids) unlink(id);
+    for (const pid of parents) await tidy(pid);
+  };
+  /** A new row's id: random, or under a dot-directory the path's own, when no row has that yet. */
+  const idFor = (rel: string): string => {
+    if (!hidden(rel)) return newId();
+    const id = hiddenId(rel);
+    return rows.has(id) ? newId() : id;
   };
   const placeOf = (r: Row, patch: Partial<Place> = {}): Place => ({ id: r.id, parent: r.parent, name: r.name, place: r.place, kind: r.kind, ...patch });
 
@@ -367,7 +507,8 @@ export function storeFs(store: Store, root: string): StoreFs {
       const next: Row | undefined = dirRow(cur?.id ?? null, seg);
       if (next) { cur = next; continue; }
       if (find(cur?.id ?? null, seg)) throw new Error(`${path}: not a directory`);
-      cur = await put({ id: newId(), parent: cur?.id ?? null, name: seg, place: null, kind: 'folder' });
+      const rel: string = cur ? `${dirPathOf(cur)}/${seg}` : seg;
+      cur = await put({ id: idFor(rel), parent: cur?.id ?? null, name: seg, place: null, kind: 'folder' });
       made = true;
     }
     return made;
@@ -471,9 +612,37 @@ export function storeFs(store: Store, root: string): StoreFs {
     let differs = false;
     for (const r of rows.values()) if ((want.get(r.id) ?? null) !== r.place) { differs = true; break; }
     if (!differs) return false;
-    await store.places([...want]);
+    // a directory whose order changed is told whole: of two drags of one directory the later stands, not a mix of both
+    const dirs = new Set<string>();
+    for (const r of rows.values()) if ((want.get(r.id) ?? null) !== r.place) dirs.add(key(r.parent));
+    const changed: [string, number | null][] = [];
+    for (const r of rows.values()) {
+      const to = want.get(r.id) ?? null;
+      if (dirs.has(key(r.parent)) && (to !== null || r.place !== null)) changed.push([r.id, to]);
+    }
+    const extra = recorder ? await recorder.places(changed) : [];
+    if (extra.length) await store.batch([{ op: 'places', set: [...want] }, ...extra]);
+    else await store.places([...want]);
     for (const r of rows.values()) r.place = want.get(r.id) ?? null;
     return true;
+  };
+  /** Lines for the log, added to a file or (with `replace`) made all it holds; the engine told of the ones the file did not hold. */
+  const logPut = async (file: string, list: ReviewRow[], replace: boolean): Promise<void> => {
+    let extra: StoreOp[] = [];
+    if (recorder && list.length) {
+      const have = replace ? new Set(await store.reviews(file)) : null;
+      extra = await recorder.reviews(have ? list.filter((r) => !have.has(r.line)) : list);
+    }
+    if (extra.length) await store.batch([{ op: 'reviews', file, rows: list, mode: replace ? 'replace' : 'add' }, ...extra]);
+    else await store.reviewsPut(file, list, replace);
+  };
+  const samePut = async (next: string[]): Promise<void> => {
+    const had = new Set(pairs);
+    const now = new Set(next);
+    const extra = recorder ? await recorder.same(next.filter((p) => !had.has(p)), pairs.filter((p) => !now.has(p))) : [];
+    if (extra.length) await store.batch([{ op: 'same', pairs: next }, ...extra]);
+    else await store.samePut(next);
+    pairs = next;
   };
   const sameNow = (): string => (pairs.length ? `${JSON.stringify({ not: [...pairs].sort() }, null, 2)}\n` : '');
   const keep = async (rel: string, text: string, composed: string): Promise<void> => {
@@ -513,12 +682,11 @@ export function storeFs(store: Store, root: string): StoreFs {
         const not = (JSON.parse(text) as { not?: unknown } | null)?.not;
         if (Array.isArray(not)) next = [...new Set(not.filter((k): k is string => typeof k === 'string'))];
       } catch { /* a file that does not read names no pair */ }
-      await store.samePut(next);
-      pairs = next;
+      await samePut(next);
       await keep(rel, text, sameNow());
     } else {
       const list = parseReviews(text);
-      await store.reviewsPut(v.file, list.map((r) => reviewRow(v.file, r)), true);
+      await logPut(v.file, list.map((r) => reviewRow(v.file, r)), true);
       if (list.length) logFiles.set(v.file, list.length); else logFiles.delete(v.file);
       await keep(rel, text, list.length ? `${list.map(formatReview).join('\n')}\n` : '');
     }
@@ -526,7 +694,7 @@ export function storeFs(store: Store, root: string): StoreFs {
 
   const virtualRemove = async (rel: string, v: Virtual): Promise<void> => {
     if (v.kind === 'order') await setPlaces([]);
-    else if (v.kind === 'same') { await store.samePut([]); pairs = []; }
+    else if (v.kind === 'same') await samePut([]);
     else { await store.reviewsPut(v.file, [], true); logFiles.delete(v.file); }
     if (originals.has(rel)) { await store.originalPut(rel, null); originals.delete(rel); }
   };
@@ -576,7 +744,8 @@ export function storeFs(store: Store, root: string): StoreFs {
     for (const [f, n] of await store.reviewFiles()) logFiles.set(f, n);
     pairs = await store.same();
     if (version < STORE_VERSION) {
-      await upgrade();
+      // below 2 the state is still in the text; 3 added tables the store makes as it opens
+      if (version < 2) await upgrade();
       await store.setVersion(STORE_VERSION);
     }
   })();
@@ -598,7 +767,7 @@ export function storeFs(store: Store, root: string): StoreFs {
       // `a/` was there first: it is this document now, its children the document's
       if (folder?.kind === 'folder') return store_(placeOf(folder, { kind: 'doc' }), rel, data);
     }
-    return store_({ id: newId(), parent: pid, name: doc ?? seg, place: null, kind: doc !== null ? 'doc' : 'file' }, rel, data);
+    return store_({ id: idFor(rel), parent: pid, name: doc ?? seg, place: null, kind: doc !== null ? 'doc' : 'file' }, rel, data);
   };
 
   const writeInner = async (abs: string, data: string | Uint8Array): Promise<void> => {
@@ -673,9 +842,68 @@ export function storeFs(store: Store, root: string): StoreFs {
     return at.row.blob !== null ? { bytes: await store.blobGet(at.row.blob) } : { text: await textOf(at.row) };
   };
 
+  // ── the engine's way in ────────────────────────────────────────
+  const door: Door = {
+    run: (fn) => serial(fn),
+    row: (id) => rows.get(id),
+    rows: () => [...rows.values()],
+    childrenOf: (id) => childrenOf(id),
+    pathOf: (r) => pathOf(r),
+    abs: (rel) => join(root, rel),
+    record(r) { recorder = r; },
+    async apply(view, extra) {
+      const ops: StoreOp[] = [];
+      const docs = new Map<string, Doc>();
+      const was = new Map<string, Row>();
+      for (const p of view.puts) {
+        const old = rows.get(p.at.id);
+        if (old) was.set(old.id, { ...old });
+        if (p.file !== undefined) {
+          const d = decompose(p.file);
+          docs.set(p.at.id, d.doc);
+          // what a merge makes is kept in canonical form: there is no file it came in as
+          const size = encoder.encode(d.original ? serialize(d.doc) : p.file).length;
+          ops.push(putOp(p.at, splitFront(d.bare), { state: d.state.map((r) => ({ kind: r.kind, item: r.item, key: r.key, attrs: JSON.stringify(r.attrs) })), digest: d.digest, original: null, size }));
+        } else ops.push(putOp(p.at, p.content));
+      }
+      const gonePaths = [...was.values(), ...view.removes.flatMap((id) => rows.get(id) ?? [])].map((r) => join(root, pathOf(r)));
+      if (view.removes.length) ops.push({ op: 'remove', ids: view.removes });
+      for (const r of view.reviews) if (r.rows.length) ops.push({ op: 'reviews', file: r.file, rows: r.rows, mode: 'union' });
+      if (view.pairs) ops.push({ op: 'same', pairs: view.pairs });
+      for (const rel of [...(view.reviews.some((r) => r.rows.length) ? view.reviews.map((r) => `${REVIEWS_PATH}/${r.file}`) : []), ...(view.pairs ? [SAME_PATH] : [])]) {
+        if (originals.has(rel)) { ops.push({ op: 'original', key: rel, original: null }); originals.delete(rel); }
+      }
+      ops.push(...extra);
+      if (!ops.length) return;
+      const written = await store.batch(ops);
+      for (const r of written) link(r);
+      for (const id of view.removes) unlink(id);
+      let placed = false;
+      for (const p of view.puts) {
+        const r = rows.get(p.at.id);
+        if (!r) continue;
+        const rel = pathOf(r);
+        if (r.kind === 'doc' && (p.file !== undefined || p.content)) indexed(rel, docs.has(r.id) ? digest(docs.get(r.id)!) : null);
+        if ((was.get(r.id)?.place ?? null) !== r.place) placed = true;
+        touched(join(root, rel));
+      }
+      touched(...gonePaths);
+      if (placed) touched(join(root, ORDER_FILE));
+      if (view.pairs) { pairs = [...view.pairs]; touched(join(root, SAME_PATH)); }
+      if (view.reviews.some((r) => r.rows.length)) {
+        logFiles.clear();
+        for (const [f, n] of await store.reviewFiles()) logFiles.set(f, n);
+        // the log's directory is there for whoever lists it
+        await mkdirs(REVIEWS_PATH.split('/'), REVIEWS_PATH);
+        for (const r of view.reviews) touched(join(root, `${REVIEWS_PATH}/${r.file}`));
+      }
+    },
+  };
+
   return {
     store,
     atomic: true,
+    door,
 
     async rowAt(path) {
       await ready;
@@ -717,7 +945,7 @@ export function storeFs(store: Store, root: string): StoreFs {
         for (const r of waiting) byFile.set(fileOf(r), [...(byFile.get(fileOf(r)) ?? []), r]);
         await mkdirs(REVIEWS_PATH.split('/'), REVIEWS_PATH);
         for (const [file, list] of byFile) {
-          await store.reviewsPut(file, list.map((r) => reviewRow(file, r)), false);
+          await logPut(file, list.map((r) => reviewRow(file, r)), false);
           logFiles.set(file, (logFiles.get(file) ?? 0) + list.length);
           originals.delete(`${REVIEWS_PATH}/${file}`);
           touched(join(root, `${REVIEWS_PATH}/${file}`));
@@ -737,9 +965,13 @@ export function storeFs(store: Store, root: string): StoreFs {
       const parent = at.kind === 'root' ? null : at.kind === 'kids' ? at.row.id : at.kind === 'row' && at.row.kind === 'folder' ? at.row.id : undefined;
       if (parent === undefined) throw new Error(`${path}: no such directory`);
       const out: FsEntry[] = [];
-      for (const r of childrenOf(parent)) {
+      const listed = new Set<string>();
+      // two rows with one name (made apart on two devices): the one a path finds is the one listed
+      for (const r of childrenOf(parent).sort((a, b) => (a.id < b.id ? -1 : 1))) {
+        if (listed.has(fsName(r))) continue;
+        listed.add(fsName(r));
         out.push({ name: fsName(r), isDir: r.kind === 'folder', isFile: r.kind !== 'folder' });
-        if (r.kind === 'doc' && hasKids(r)) out.push({ name: r.name, isDir: true, isFile: false });
+        if (r.kind === 'doc' && hasKids(r) && !listed.has(r.name)) { listed.add(r.name); out.push({ name: r.name, isDir: true, isFile: false }); }
       }
       const have = new Set(out.map((e) => e.name));
       for (const name of await virtualNames(relative(root, path) ?? '')) if (!have.has(name)) out.push({ name, isDir: false, isFile: true });
@@ -787,7 +1019,7 @@ export function storeFs(store: Store, root: string): StoreFs {
           const list = parseReviews(text);
           await mkdirs(rel.split('/').slice(0, -1), path);
           if (list.length) {
-            await store.reviewsPut(v.file, list.map((r) => reviewRow(v.file, r)), false);
+            await logPut(v.file, list.map((r) => reviewRow(v.file, r)), false);
             logFiles.set(v.file, (logFiles.get(v.file) ?? 0) + list.length);
           }
           if (originals.has(rel)) { await store.originalPut(rel, null); originals.delete(rel); }

@@ -88,6 +88,18 @@ hand the launch to it), give the dev build its own identifier:
 starts an ntfy-shaped server on the loopback (`src-tauri/src/nudge.rs`, dev
 builds only), both windows take it as their `nudge` and turn their pull
 timers off, and a grade pushed in one is timed until it lands in the other.
+`ILMI_STORAGE=<a folder>` (milestone 61) makes a dev run sync its
+collection through that folder by the engine (`src/sync/engine.ts`; there
+is no setting for it yet): an empty folder takes the collection that opens
+(everything it holds becomes its first changes), and with `ILMI_VAULT2`
+set the second window makes a collection named as that path's last part
+from what the folder holds, so two windows are two devices over one
+folder. Git sync does not run for a collection that syncs this way. The
+folder holds `format`, `devices/<device>/<n>` (each device's changes, each
+file written once) and `blobs/<sha256>`. `ILMI_SMOKE=crdt` runs the two
+through 53's checks that way (`ILMI_VAULT` a copy of the sample,
+`ILMI_VAULT2` a name, `ILMI_STORAGE` an empty folder; about a minute), its
+`shot:` lines worth a capture of each window.
 `ILMI_SMOKE=readme` over a copy of the sample walks the screens the README
 shows and marks each with a `shot:` line; the README's images were captured
 that way, by window id, and scaled to 1600 px wide. Each smoke mode logs `ok:` and `failed:` lines and `shot: <name>` marks
@@ -190,7 +202,7 @@ src/schedule/      ts-fsrs grading, the reading and writing loops, the queue que
 src/import/        text from a paste, a page, a list of cards, an Anki package, a book in EPUB, or a SuperMemo collection, on its way to a file
 src/pdf/           the PDF lens's pure side: a page's text from pdf.js items, finding a passage again
 src/plugins/       the plugin runtime (api.ts is the typed handle, runtime.ts the loader) and its tweaks section
-src/sync/          the merge of one file changed on both devices, by the format's rules; src/app/sync.ts is the policy over the Rust commands
+src/sync/          engine.ts merges a collection's changes by CRDT (registers by a clock, a document's text through Loro, change files in a storage; src/app/crdt.ts runs it); merge.ts is git sync's merge of one file changed on both devices, src/app/sync.ts its policy over the Rust commands
 plugins/           the plugins the repo ships, built by `npm run plugins`; ilmi.d.ts is the API; see PLUGINS.md
 scripts/           command-line tools, run with tsx
 src-tauri/         the shell (Tauri v2, fs + dialog + http + deep-link + single-instance + opener + log plugins; store.rs is a collection's SQLite and blobs, anki.rs reads a package, epub.rs a book, plugin.rs a plugin zip, sync.rs a folder as a git repository over libgit2); gen/apple is the iOS project

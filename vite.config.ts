@@ -7,6 +7,8 @@ const host = process.env.TAURI_DEV_HOST;
 export default defineConfig({
   plugins: [react()],
   clearScreen: false,
+  // the text library's web build (milestone 61) is found before the first page, so a dev run does not reload when a collection first syncs
+  optimizeDeps: { include: ['loro-crdt/web'] },
   server: {
     port: 1420,
     strictPort: true,

@@ -21,12 +21,23 @@
 //! byte. A document's text, its schedules, its digest, its original and a
 //! grade's line in the log are written in one transaction.
 //!
+//! Since milestone 61 a collection that syncs keeps the engine's state
+//! beside its rows (`src/sync/engine.ts` is the engine): `regs`, a register
+//! a field (a row's name and parent, a line of front matter, a schedule),
+//! each with the stamp of the write that won it; `crdt`, a document's text
+//! as the text library keeps it; `outbox`, the changes made here and not
+//! yet written to the storage; `sync_meta`, the device, its clock and how
+//! far each other device has been read. `batch` writes any of these with
+//! the rows they belong to in one transaction, so a change and its record
+//! are never apart.
+//!
 //! Nothing here knows the format or what a path is: the renderer's
 //! `src/vault/store.ts` reads the rows once, keeps the tree, takes a file
 //! apart on a write (`src/vault/lift.ts`) and puts it together on a read.
 
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
+use base64::Engine as _;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::io::Write;
@@ -89,6 +100,23 @@ CREATE TABLE IF NOT EXISTS reviews (
 CREATE INDEX IF NOT EXISTS reviews_file ON reviews(file, seq);
 CREATE INDEX IF NOT EXISTS reviews_at ON reviews(at);
 CREATE TABLE IF NOT EXISTS not_same (pair TEXT PRIMARY KEY) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS regs (
+  key TEXT PRIMARY KEY,
+  stamp TEXT NOT NULL,
+  value TEXT
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS crdt (
+  doc TEXT PRIMARY KEY,
+  state BLOB NOT NULL
+);
+CREATE TABLE IF NOT EXISTS outbox (
+  seq INTEGER PRIMARY KEY,
+  data TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS sync_meta (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+) WITHOUT ROWID;
 CREATE TRIGGER IF NOT EXISTS documents_gone AFTER DELETE ON documents
 BEGIN
   DELETE FROM originals WHERE key = OLD.id;
@@ -98,7 +126,9 @@ END;
 /// The schema this code writes. A collection made before the state had
 /// tables is 1: it opens, and the renderer takes its documents apart
 /// before anything else reads them (`storeFs` in `src/vault/store.ts`).
-pub const VERSION: i64 = 2;
+/// 3 adds the engine's tables (milestone 61), which are made when a
+/// collection opens; a collection of 2 needs nothing more.
+pub const VERSION: i64 = 3;
 
 /// A row of the tree, without its text.
 #[derive(Serialize, Debug, Clone, PartialEq)]
@@ -182,6 +212,34 @@ pub struct DocContent {
     pub text: String,
     pub state: Vec<Sched>,
     pub original: Option<Original>,
+}
+
+/// A register: a field's value and the stamp of the write that won it.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct Reg {
+    pub key: String,
+    pub stamp: String,
+    pub value: Option<String>,
+}
+
+/// One write of a batch (`Store::batch`): the store's own writes, and the engine's.
+#[derive(Deserialize, Debug, Clone)]
+#[serde(tag = "op", rename_all = "camelCase")]
+pub enum Op {
+    Put { at: Place, content: Option<Content>, lift: Option<Lift> },
+    Remove { ids: Vec<String> },
+    Places { set: Vec<(String, f64)> },
+    /// `mode`: `add` the lines, `replace` the file's with them, or `union` (a line the file holds already is not added).
+    Reviews { file: String, rows: Vec<ReviewRow>, mode: String },
+    Same { pairs: Vec<String> },
+    Original { key: String, original: Option<Original> },
+    Meta { key: String, value: Option<String> },
+    Regs { set: Vec<Reg> },
+    /// A document's text as the text library keeps it, in base64; none forgets it.
+    Crdt { doc: String, state: Option<String> },
+    Out { seq: i64, data: String },
+    #[serde(rename_all = "camelCase")]
+    OutDrop { up_to: i64 },
 }
 
 #[derive(Serialize, Debug, Clone, PartialEq)]
@@ -335,11 +393,154 @@ impl Store {
     /// content without it clears them. Text that is what the row holds
     /// already is not written again.
     pub fn put(&mut self, at: &Place, content: Option<&Content>, lift: Option<&Lift>) -> Result<Row, String> {
+        let mut rev = self.rev;
+        let tx = self.conn.transaction().map_err(err)?;
+        put_tx(&tx, &mut rev, at, content, lift)?;
+        tx.commit().map_err(err)?;
+        self.rev = rev;
+        self.row(&at.id)?.ok_or_else(|| format!("{}: no such row", at.id))
+    }
+
+    /// Several writes as one transaction: all of them, or none. The rows the `put`s wrote, as they are after it, in order.
+    pub fn batch(&mut self, ops: &[Op]) -> Result<Vec<Row>, String> {
+        let mut rev = self.rev;
+        let tx = self.conn.transaction().map_err(err)?;
+        let mut put: Vec<&str> = Vec::new();
+        for op in ops {
+            match op {
+                Op::Put { at, content, lift } => {
+                    put_tx(&tx, &mut rev, at, content.as_ref(), lift.as_ref())?;
+                    put.push(&at.id);
+                }
+                Op::Remove { ids } => remove_tx(&tx, ids)?,
+                Op::Places { set } => places_tx(&tx, set)?,
+                Op::Reviews { file, rows, mode } => reviews_tx(&tx, file, rows, mode)?,
+                Op::Same { pairs } => same_tx(&tx, pairs)?,
+                Op::Original { key, original } => original_tx(&tx, key, original.as_ref())?,
+                Op::Meta { key, value } => match value {
+                    Some(v) => tx.execute("INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?1, ?2)", params![key, v]).map(|_| ()).map_err(err)?,
+                    None => tx.execute("DELETE FROM sync_meta WHERE key = ?1", [key]).map(|_| ()).map_err(err)?,
+                },
+                Op::Regs { set } => {
+                    for r in set {
+                        tx.execute("INSERT OR REPLACE INTO regs (key, stamp, value) VALUES (?1, ?2, ?3)", params![r.key, r.stamp, r.value]).map_err(err)?;
+                    }
+                }
+                Op::Crdt { doc, state } => match state {
+                    Some(b64) => {
+                        let bytes = base64::engine::general_purpose::STANDARD.decode(b64).map_err(err)?;
+                        tx.execute("INSERT OR REPLACE INTO crdt (doc, state) VALUES (?1, ?2)", params![doc, bytes]).map_err(err)?;
+                    }
+                    None => {
+                        tx.execute("DELETE FROM crdt WHERE doc = ?1", [doc]).map_err(err)?;
+                    }
+                },
+                Op::Out { seq, data } => {
+                    tx.execute("INSERT OR REPLACE INTO outbox (seq, data) VALUES (?1, ?2)", params![seq, data]).map_err(err)?;
+                }
+                Op::OutDrop { up_to } => {
+                    tx.execute("DELETE FROM outbox WHERE seq <= ?1", [up_to]).map_err(err)?;
+                }
+            }
+        }
+        let mut rows = Vec::new();
+        for id in put {
+            let row = tx
+                .query_row(&format!("SELECT {ROW_COLUMNS} FROM documents WHERE id = ?1"), [id], read_row)
+                .optional()
+                .map_err(err)?;
+            if let Some(r) = row {
+                rows.push(r);
+            }
+        }
+        tx.commit().map_err(err)?;
+        self.rev = rev;
+        Ok(rows)
+    }
+
+    /// The engine's own keys and values: the device, its clock, how far each device has been read.
+    pub fn meta(&self) -> Result<Vec<(String, String)>, String> {
+        let mut st = self.conn.prepare("SELECT key, value FROM sync_meta ORDER BY key").map_err(err)?;
+        let rows = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?))).map_err(err)?;
+        rows.collect::<rusqlite::Result<Vec<_>>>().map_err(err)
+    }
+
+    /// The registers of these keys that there are.
+    pub fn regs(&self, keys: &[String]) -> Result<Vec<Reg>, String> {
+        let mut st = self.conn.prepare("SELECT key, stamp, value FROM regs WHERE key = ?1").map_err(err)?;
+        let mut out = Vec::new();
+        for k in keys {
+            let got = st
+                .query_row([k], |r| Ok(Reg { key: r.get(0)?, stamp: r.get(1)?, value: r.get(2)? }))
+                .optional()
+                .map_err(err)?;
+            if let Some(r) = got {
+                out.push(r);
+            }
+        }
+        Ok(out)
+    }
+
+    /// Every register whose key starts with one of `prefixes`, by key.
+    pub fn regs_under(&self, prefixes: &[String]) -> Result<Vec<Reg>, String> {
+        let mut st = self.conn.prepare("SELECT key, stamp, value FROM regs WHERE key >= ?1 AND key < ?2 ORDER BY key").map_err(err)?;
+        let mut out = Vec::new();
+        for p in prefixes {
+            // the keys that carry the prefix are those from it up to it with its last character one higher (a prefix ends in ASCII)
+            let mut end = p.clone().into_bytes();
+            match end.last_mut() {
+                Some(b) if *b < 0x7f => *b += 1,
+                _ => return Err(format!("{p}: not a prefix")),
+            }
+            let end = String::from_utf8(end).map_err(err)?;
+            let mut rows = st.query(params![p, end]).map_err(err)?;
+            while let Some(r) = rows.next().map_err(err)? {
+                out.push(Reg { key: r.get(0).map_err(err)?, stamp: r.get(1).map_err(err)?, value: r.get(2).map_err(err)? });
+            }
+        }
+        Ok(out)
+    }
+
+    /// A document's text as the text library keeps it, in base64.
+    pub fn crdt(&self, doc: &str) -> Result<Option<String>, String> {
+        let got: Option<Vec<u8>> = self.conn.query_row("SELECT state FROM crdt WHERE doc = ?1", [doc], |r| r.get(0)).optional().map_err(err)?;
+        Ok(got.map(|b| base64::engine::general_purpose::STANDARD.encode(b)))
+    }
+
+    /// The changes waiting to be written out, after `after`, in order: as many as fit in `bytes` (one at least).
+    pub fn outbox(&self, after: i64, bytes: i64) -> Result<Vec<(i64, String)>, String> {
+        let mut st = self.conn.prepare("SELECT seq, data FROM outbox WHERE seq > ?1 ORDER BY seq").map_err(err)?;
+        let mut rows = st.query([after]).map_err(err)?;
+        let mut out: Vec<(i64, String)> = Vec::new();
+        let mut size: i64 = 0;
+        while let Some(r) = rows.next().map_err(err)? {
+            let data: String = r.get(1).map_err(err)?;
+            size += data.len() as i64;
+            if !out.is_empty() && size > bytes {
+                break;
+            }
+            out.push((r.get(0).map_err(err)?, data));
+        }
+        Ok(out)
+    }
+
+    /// How many changes wait.
+    pub fn outbox_count(&self) -> Result<i64, String> {
+        self.conn.query_row("SELECT COUNT(*) FROM outbox", [], |r| r.get(0)).map_err(err)
+    }
+
+    /// Whether a blob of that hash is kept here.
+    pub fn blob_has(&self, hash: &str) -> Result<bool, String> {
+        self.conn.query_row("SELECT COUNT(*) > 0 FROM blobs WHERE hash = ?1", [hash], |r| r.get(0)).map_err(err)
+    }
+}
+
+fn put_tx(tx: &Connection, rev_at: &mut i64, at: &Place, content: Option<&Content>, lift: Option<&Lift>) -> Result<(), String> {
+    {
         if !matches!(at.kind.as_str(), "folder" | "doc" | "file") {
             return Err(format!("{}: not a kind", at.kind));
         }
-        let mut rev = self.rev;
-        let tx = self.conn.transaction().map_err(err)?;
+        let mut rev = *rev_at;
         let exists: bool = tx
             .query_row("SELECT COUNT(*) > 0 FROM documents WHERE id = ?1", [&at.id], |r| r.get(0))
             .map_err(err)?;
@@ -396,32 +597,83 @@ impl Store {
                         .map_err(err)?;
                 }
                 for r in &l.reviews {
-                    insert_review(&tx, r)?;
+                    insert_review(tx, r)?;
                     tx.execute("DELETE FROM originals WHERE key = ?1", [format!("{REVIEWS_PATH}/{}", r.file)]).map_err(err)?;
                 }
             }
         }
-        tx.commit().map_err(err)?;
-        self.rev = rev;
-        self.row(&at.id)?.ok_or_else(|| format!("{}: no such row", at.id))
+        *rev_at = rev;
+        Ok(())
     }
+}
 
+fn remove_tx(tx: &Connection, ids: &[String]) -> Result<(), String> {
+    for id in ids {
+        tx.execute("DELETE FROM documents WHERE id = ?1", [id]).map_err(err)?;
+    }
+    Ok(())
+}
+
+fn places_tx(tx: &Connection, set: &[(String, f64)]) -> Result<(), String> {
+    tx.execute("UPDATE documents SET place = NULL WHERE place IS NOT NULL", []).map_err(err)?;
+    for (id, place) in set {
+        tx.execute("UPDATE documents SET place = ?2 WHERE id = ?1", params![id, place]).map_err(err)?;
+    }
+    Ok(())
+}
+
+fn reviews_tx(tx: &Connection, file: &str, rows: &[ReviewRow], mode: &str) -> Result<(), String> {
+    if mode == "replace" {
+        tx.execute("DELETE FROM reviews WHERE file = ?1", [file]).map_err(err)?;
+    }
+    for r in rows {
+        if mode == "union" {
+            // found by the instant's index; a line the file holds is not added again
+            let have: bool = tx
+                .query_row("SELECT COUNT(*) > 0 FROM reviews WHERE at = ?1 AND file = ?2 AND line = ?3", params![r.at, file, r.line], |x| x.get(0))
+                .map_err(err)?;
+            if have {
+                continue;
+            }
+        }
+        insert_review(tx, &ReviewRow { file: file.to_string(), ..r.clone() })?;
+    }
+    if mode == "union" && !rows.is_empty() {
+        tx.execute("DELETE FROM originals WHERE key = ?1", [format!("{REVIEWS_PATH}/{file}")]).map_err(err)?;
+    }
+    Ok(())
+}
+
+fn same_tx(tx: &Connection, pairs: &[String]) -> Result<(), String> {
+    tx.execute("DELETE FROM not_same", []).map_err(err)?;
+    for p in pairs {
+        tx.execute("INSERT OR IGNORE INTO not_same (pair) VALUES (?1)", [p]).map_err(err)?;
+    }
+    Ok(())
+}
+
+fn original_tx(tx: &Connection, key: &str, original: Option<&Original>) -> Result<(), String> {
+    match original {
+        Some(o) => tx
+            .execute("INSERT OR REPLACE INTO originals (key, text, stamp) VALUES (?1, ?2, ?3)", params![key, o.text, o.stamp])
+            .map(|_| ())
+            .map_err(err),
+        None => tx.execute("DELETE FROM originals WHERE key = ?1", [key]).map(|_| ()).map_err(err),
+    }
+}
+
+impl Store {
     /// Delete rows; what is under a deleted row goes with it.
     pub fn remove(&mut self, ids: &[String]) -> Result<(), String> {
         let tx = self.conn.transaction().map_err(err)?;
-        for id in ids {
-            tx.execute("DELETE FROM documents WHERE id = ?1", [id]).map_err(err)?;
-        }
+        remove_tx(&tx, ids)?;
         tx.commit().map_err(err)
     }
 
     /// The order chosen: these rows' places, every other row's cleared.
     pub fn places(&mut self, set: &[(String, f64)]) -> Result<(), String> {
         let tx = self.conn.transaction().map_err(err)?;
-        tx.execute("UPDATE documents SET place = NULL WHERE place IS NOT NULL", []).map_err(err)?;
-        for (id, place) in set {
-            tx.execute("UPDATE documents SET place = ?2 WHERE id = ?1", params![id, place]).map_err(err)?;
-        }
+        places_tx(&tx, set)?;
         tx.commit().map_err(err)
     }
 
@@ -458,11 +710,14 @@ impl Store {
         rows.collect::<rusqlite::Result<Vec<_>>>().map_err(err)
     }
 
-    /// One file's lines in the order they were written; every line without a file.
+    /// One file's lines by their instant, then by the line itself: the
+    /// same order on every device that holds the same lines (milestone
+    /// 61; a grade's line is the latest, so it is still the last). Every
+    /// line without a file.
     pub fn reviews(&self, file: Option<&str>) -> Result<Vec<String>, String> {
         let mut st = self
             .conn
-            .prepare("SELECT line FROM reviews WHERE ?1 IS NULL OR file = ?1 ORDER BY seq")
+            .prepare("SELECT line FROM reviews WHERE ?1 IS NULL OR file = ?1 ORDER BY at, line")
             .map_err(err)?;
         let rows = st.query_map([file], |r| r.get(0)).map_err(err)?;
         rows.collect::<rusqlite::Result<Vec<String>>>().map_err(err)
@@ -471,12 +726,7 @@ impl Store {
     /// Add lines to a file of the log, or with `replace` make them all it holds.
     pub fn reviews_put(&mut self, file: &str, rows: &[ReviewRow], replace: bool) -> Result<(), String> {
         let tx = self.conn.transaction().map_err(err)?;
-        if replace {
-            tx.execute("DELETE FROM reviews WHERE file = ?1", [file]).map_err(err)?;
-        }
-        for r in rows {
-            insert_review(&tx, &ReviewRow { file: file.to_string(), ..r.clone() })?;
-        }
+        reviews_tx(&tx, file, rows, if replace { "replace" } else { "add" })?;
         tx.commit().map_err(err)
     }
 
@@ -489,10 +739,7 @@ impl Store {
 
     pub fn same_put(&mut self, pairs: &[String]) -> Result<(), String> {
         let tx = self.conn.transaction().map_err(err)?;
-        tx.execute("DELETE FROM not_same", []).map_err(err)?;
-        for p in pairs {
-            tx.execute("INSERT OR IGNORE INTO not_same (pair) VALUES (?1)", [p]).map_err(err)?;
-        }
+        same_tx(&tx, pairs)?;
         tx.commit().map_err(err)
     }
 
@@ -509,14 +756,7 @@ impl Store {
     }
 
     pub fn original_put(&self, key: &str, original: Option<&Original>) -> Result<(), String> {
-        match original {
-            Some(o) => self
-                .conn
-                .execute("INSERT OR REPLACE INTO originals (key, text, stamp) VALUES (?1, ?2, ?3)", params![key, o.text, o.stamp])
-                .map(|_| ())
-                .map_err(err),
-            None => self.conn.execute("DELETE FROM originals WHERE key = ?1", [key]).map(|_| ()).map_err(err),
-        }
+        original_tx(&self.conn, key, original)
     }
 
     fn blob_path(hash: &str) -> String {
@@ -577,7 +817,7 @@ impl Store {
 /// Where the review log's files are, as the renderer names them.
 const REVIEWS_PATH: &str = ".ilmi/reviews";
 
-fn insert_review(tx: &rusqlite::Transaction<'_>, r: &ReviewRow) -> Result<(), String> {
+fn insert_review(tx: &Connection, r: &ReviewRow) -> Result<(), String> {
     tx.execute(
         "INSERT INTO reviews (file, at, doc, card, key, g, line) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
         params![r.file, r.at, r.doc, r.card, r.key, r.g, r.line],
@@ -669,6 +909,30 @@ impl Stores {
     }
     pub fn blob_put(&self, dir: &Path, bytes: &[u8]) -> Result<BlobInfo, String> {
         self.with(dir, |s| s.blob_put(bytes))
+    }
+    pub fn batch(&self, dir: &Path, ops: &[Op]) -> Result<Vec<Row>, String> {
+        self.with(dir, |s| s.batch(ops))
+    }
+    pub fn meta(&self, dir: &Path) -> Result<Vec<(String, String)>, String> {
+        self.with(dir, |s| s.meta())
+    }
+    pub fn regs(&self, dir: &Path, keys: &[String]) -> Result<Vec<Reg>, String> {
+        self.with(dir, |s| s.regs(keys))
+    }
+    pub fn regs_under(&self, dir: &Path, prefixes: &[String]) -> Result<Vec<Reg>, String> {
+        self.with(dir, |s| s.regs_under(prefixes))
+    }
+    pub fn crdt(&self, dir: &Path, doc: &str) -> Result<Option<String>, String> {
+        self.with(dir, |s| s.crdt(doc))
+    }
+    pub fn outbox(&self, dir: &Path, after: i64, bytes: i64) -> Result<Vec<(i64, String)>, String> {
+        self.with(dir, |s| s.outbox(after, bytes))
+    }
+    pub fn outbox_count(&self, dir: &Path) -> Result<i64, String> {
+        self.with(dir, |s| s.outbox_count())
+    }
+    pub fn blob_has(&self, dir: &Path, hash: &str) -> Result<bool, String> {
+        self.with(dir, |s| s.blob_has(hash))
     }
     pub fn blob_get(&self, dir: &Path, hash: &str) -> Result<Vec<u8>, String> {
         self.with(dir, |s| s.blob_get(hash))
@@ -975,6 +1239,8 @@ mod tests {
             .unwrap();
         }
         let s = Store::open(&dir).unwrap();
+        // the engine's tables are made when it opens, whatever its number
+        assert!(s.meta().unwrap().is_empty());
         assert_eq!(s.version().unwrap(), 1);
         assert_eq!(s.text("a").unwrap(), "q :: a\n<!-- sr due=2026-11-07 -->\n");
         assert!(s.doc("a").unwrap().state.is_empty());
@@ -983,6 +1249,70 @@ mod tests {
         assert_eq!(Store::open(&dir).unwrap().version().unwrap(), VERSION);
         // a new one is the present schema from the start
         assert_eq!(Store::create(&home.join("new")).unwrap().version().unwrap(), VERSION);
+    }
+
+    #[test]
+    fn a_batch_is_one_transaction_and_keeps_the_engine_s_record_with_the_rows() {
+        let dir = scratch("batch");
+        let mut s = Store::memory(&dir);
+        let reg = |key: &str, stamp: &str, value: Option<&str>| Reg { key: key.into(), stamp: stamp.into(), value: value.map(Into::into) };
+        let rows = s
+            .batch(&[
+                Op::Put { at: place("f", None, "papers", "folder"), content: None, lift: None },
+                Op::Put { at: place("a", Some("f"), "maxwell", "doc"), content: Some(text("", "one\n")), lift: None },
+                Op::Regs { set: vec![reg("a|n", "0001", Some("maxwell")), reg("a|p", "0001", Some("f")), reg("b|n", "0002", Some("other")), reg("a}", "0003", None)] },
+                Op::Crdt { doc: "a".into(), state: Some(base64::engine::general_purpose::STANDARD.encode([0u8, 1, 2, 255])) },
+                Op::Out { seq: 1, data: "[1]".into() },
+                Op::Out { seq: 2, data: "[2,2]".into() },
+                Op::Meta { key: "device".into(), value: Some("d1".into()) },
+                Op::Reviews { file: "2026-11.jsonl".into(), rows: vec![review("x", "2026-11-01T08:00:00Z", "a")], mode: "add".into() },
+            ])
+            .unwrap();
+        assert_eq!(rows.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(), vec!["f", "a"]);
+        assert!(rows[1].rev > rows[0].rev);
+        assert_eq!(s.text("a").unwrap(), "one\n");
+        // the registers of a row are found by its prefix, and no other row's with them
+        let under: Vec<String> = s.regs_under(&["a|".to_string()]).unwrap().into_iter().map(|r| r.key).collect();
+        assert_eq!(under, vec!["a|n".to_string(), "a|p".to_string()]);
+        assert_eq!(s.regs(&["b|n".to_string(), "nope".to_string(), "a}".to_string()]).unwrap(), vec![reg("b|n", "0002", Some("other")), reg("a}", "0003", None)]);
+        assert_eq!(base64::engine::general_purpose::STANDARD.decode(s.crdt("a").unwrap().unwrap()).unwrap(), vec![0u8, 1, 2, 255]);
+        assert_eq!(s.crdt("f").unwrap(), None);
+        assert_eq!(s.meta().unwrap(), vec![("device".to_string(), "d1".to_string())]);
+        // the outbox by size: one change at least, then as many as fit
+        assert_eq!(s.outbox(0, 1).unwrap(), vec![(1, "[1]".to_string())]);
+        assert_eq!(s.outbox(0, 100).unwrap().len(), 2);
+        assert_eq!(s.outbox(1, 100).unwrap(), vec![(2, "[2,2]".to_string())]);
+        assert_eq!(s.outbox_count().unwrap(), 2);
+
+        // one write that fails takes the whole batch with it
+        let failed = s.batch(&[
+            Op::Put { at: place("b", None, "b", "doc"), content: Some(text("", "b\n")), lift: None },
+            Op::Meta { key: "device".into(), value: None },
+            Op::Put { at: place("c", Some("nowhere"), "c", "doc"), content: None, lift: None },
+        ]);
+        assert!(failed.is_err());
+        assert!(s.text("b").is_err());
+        assert_eq!(s.meta().unwrap().len(), 1);
+
+        // a line the log holds is not added again by a union; one it does not hold is, and the file's original goes
+        s.original_put(".ilmi/reviews/2026-11.jsonl", Some(&Original { text: "as it came in".into(), stamp: "y".into() })).unwrap();
+        s.batch(&[
+            Op::Reviews { file: "2026-11.jsonl".into(), rows: vec![review("x", "2026-11-01T08:00:00Z", "a"), review("x", "2026-11-02T08:00:00Z", "b")], mode: "union".into() },
+            Op::OutDrop { up_to: 1 },
+            Op::Remove { ids: vec!["f".to_string()] },
+            Op::Crdt { doc: "zz".into(), state: None },
+        ])
+        .unwrap();
+        assert_eq!(s.reviews(Some("2026-11.jsonl")).unwrap().len(), 2);
+        assert!(s.originals().unwrap().is_empty());
+        assert_eq!(s.outbox_count().unwrap(), 1);
+        assert!(s.rows().unwrap().is_empty());
+        // what the engine keeps of a row outlives it: an edit made elsewhere can bring the row back
+        assert!(s.crdt("a").unwrap().is_some());
+        assert_eq!(s.regs_under(&["a|".to_string()]).unwrap().len(), 2);
+        assert!(!s.blob_has("00").unwrap());
+        let info = s.blob_put(b"bytes").unwrap();
+        assert!(s.blob_has(&info.hash).unwrap());
     }
 
     #[test]

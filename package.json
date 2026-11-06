@@ -49,6 +49,7 @@
     "defuddle": "^0.19.5",
     "highlight.js": "11.11.1",
     "katex": "^0.18.7",
+    "loro-crdt": "^1.17.1",
     "pdfjs-dist": "^6.4.299",
     "prosemirror-commands": "^1.7.2",
     "prosemirror-gapcursor": "^1.4.1",

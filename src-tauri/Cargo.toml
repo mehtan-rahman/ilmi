@@ -30,6 +30,8 @@ rusqlite = { version = "0.40", features = ["bundled", "collation"] }
 # percent-encoded in a header beside the raw bytes
 sha2 = "0.10"
 percent-encoding = "2"
+# the engine (milestone 61): a document's text as the text library keeps it crosses to the renderer in base64
+base64 = "0.22"
 # the EPUB reader: the package, navigation, and NCX documents are XML
 quick-xml = "0.42"
 tauri-plugin-deep-link = "2"

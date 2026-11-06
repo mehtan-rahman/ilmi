@@ -10,11 +10,14 @@ import { open as pickDirectory, save as pickSave } from '@tauri-apps/plugin-dial
 import { baseOf, exportFolder, fileName, importFolder, storeFs, type Fs, type StoreFs, type Vault } from '../vault/index.js';
 import { tauriFs } from '../vault/tauri-fs.js';
 import { createCollection, deleteCollection, listCollections, tauriStore } from '../vault/tauri-store.js';
+import { engineFor } from './crdt.js';
 import { vaultName } from './recents.js';
 
-/** The `Fs` over the collection whose folder is `root`. */
+/** The `Fs` over the collection whose folder is `root`, its engine told of every write (`crdt.ts`; it records nothing for a collection that does not sync). */
 export function collectionFs(root: string): StoreFs {
-  return storeFs(tauriStore(root), root);
+  const fs = storeFs(tauriStore(root), root);
+  engineFor(fs);
+  return fs;
 }
 
 const isHidden = (path: string): boolean => baseOf(path).startsWith('.');

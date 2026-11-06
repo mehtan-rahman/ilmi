@@ -430,6 +430,47 @@ fn store_original_put(app: tauri::AppHandle, stores: tauri::State<'_, store::Sto
     stores.original_put(&collection_dir(&app, &root)?, &key, original.as_ref())
 }
 
+/// Several writes as one transaction (milestone 61): a row with the engine's record of it, a merge whole.
+#[tauri::command(async)]
+fn store_batch(app: tauri::AppHandle, stores: tauri::State<'_, store::Stores>, root: String, ops: Vec<store::Op>) -> Result<Vec<store::Row>, String> {
+    stores.batch(&collection_dir(&app, &root)?, &ops)
+}
+
+#[tauri::command(async)]
+fn store_meta(app: tauri::AppHandle, stores: tauri::State<'_, store::Stores>, root: String) -> Result<Vec<(String, String)>, String> {
+    stores.meta(&collection_dir(&app, &root)?)
+}
+
+#[tauri::command(async)]
+fn store_regs(app: tauri::AppHandle, stores: tauri::State<'_, store::Stores>, root: String, keys: Vec<String>) -> Result<Vec<store::Reg>, String> {
+    stores.regs(&collection_dir(&app, &root)?, &keys)
+}
+
+#[tauri::command(async)]
+fn store_regs_under(app: tauri::AppHandle, stores: tauri::State<'_, store::Stores>, root: String, prefixes: Vec<String>) -> Result<Vec<store::Reg>, String> {
+    stores.regs_under(&collection_dir(&app, &root)?, &prefixes)
+}
+
+#[tauri::command(async)]
+fn store_crdt(app: tauri::AppHandle, stores: tauri::State<'_, store::Stores>, root: String, doc: String) -> Result<Option<String>, String> {
+    stores.crdt(&collection_dir(&app, &root)?, &doc)
+}
+
+#[tauri::command(async)]
+fn store_outbox(app: tauri::AppHandle, stores: tauri::State<'_, store::Stores>, root: String, after: i64, bytes: i64) -> Result<Vec<(i64, String)>, String> {
+    stores.outbox(&collection_dir(&app, &root)?, after, bytes)
+}
+
+#[tauri::command(async)]
+fn store_outbox_count(app: tauri::AppHandle, stores: tauri::State<'_, store::Stores>, root: String) -> Result<i64, String> {
+    stores.outbox_count(&collection_dir(&app, &root)?)
+}
+
+#[tauri::command(async)]
+fn store_blob_has(app: tauri::AppHandle, stores: tauri::State<'_, store::Stores>, root: String, hash: String) -> Result<bool, String> {
+    stores.blob_has(&collection_dir(&app, &root)?, &hash)
+}
+
 #[tauri::command(async)]
 fn store_remove(app: tauri::AppHandle, stores: tauri::State<'_, store::Stores>, root: String, ids: Vec<String>) -> Result<(), String> {
     stores.remove(&collection_dir(&app, &root)?, &ids)
@@ -624,7 +665,7 @@ pub fn run() {
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_opener::init())
         .manage(store::Stores::default())
-        .invoke_handler(tauri::generate_handler![allow_vault, allow_hidden, read_dropped, read_dropped_bytes, read_anki_package, read_epub, read_plugin_zip, platform, dev_env, dev_web_memory, dev_nudge_serve, dev_nudge_drop, dev_nudge_listeners, set_recent_vaults, store_list, store_create, store_delete, store_rows, store_text, store_put, store_remove, store_version, store_set_version, store_doc, store_places, store_digests, store_review_files, store_reviews, store_reviews_put, store_same, store_same_put, store_originals, store_original_put, store_blob_put, store_blob_get, zip_folder, sync_status, sync_init, sync_init_bare, sync_set_remote, sync_clone, sync_changes, sync_commit, sync_fetch, sync_merge, sync_resolve, sync_push])
+        .invoke_handler(tauri::generate_handler![allow_vault, allow_hidden, read_dropped, read_dropped_bytes, read_anki_package, read_epub, read_plugin_zip, platform, dev_env, dev_web_memory, dev_nudge_serve, dev_nudge_drop, dev_nudge_listeners, set_recent_vaults, store_list, store_create, store_delete, store_rows, store_text, store_put, store_remove, store_version, store_set_version, store_doc, store_places, store_digests, store_review_files, store_reviews, store_reviews_put, store_same, store_same_put, store_originals, store_original_put, store_blob_put, store_blob_get, store_batch, store_meta, store_regs, store_regs_under, store_crdt, store_outbox, store_outbox_count, store_blob_has, zip_folder, sync_status, sync_init, sync_init_bare, sync_set_remote, sync_clone, sync_changes, sync_commit, sync_fetch, sync_merge, sync_resolve, sync_push])
         .setup(|app| {
             // Windows and Linux learn the scheme at run time; macOS reads it
             // from the bundle's Info.plist, which Tauri writes from the

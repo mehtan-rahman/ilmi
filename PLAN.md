@@ -6616,7 +6616,178 @@ card is graded, with the times and the heap in the notes beside the
 research's for files (3.5 s to open, 0.95 s a change, 381 MB under
 Node); an export of the sample still equals the sample.
 
-### [ ] 61. The engine — changes merged by CRDT, two copies over a folder
+### [x] 61. The engine — changes merged by CRDT, two copies over a folder
+Done 2026-11-05, commit `HASH61`.
+Notes: **The text library: Loro.** Measured on the sample (66 documents,
+654,042 bytes of text) with `loro-crdt` 1.17.1 and `@automerge/automerge`
+3.5.0 under Node, and the crates `loro` 1.17 and `automerge` 0.12:
+
+| | Loro | Automerge |
+| --- | --- | --- |
+| state for the sample's documents | 815,997 bytes (1.25 times the text; 363 KB gzipped) | 302,498 bytes (0.46 times) |
+| all 66 made / loaded | 11 ms / 19 ms | 794 ms / 554 ms |
+| after 200 edits to each of the ten largest (238,662 bytes of text) | 317,082 bytes | 151,343 bytes |
+| one edit: its update, its time (diff, commit, export) | 121 bytes, 0.35 ms | 158 bytes, 1.5 ms |
+| two edits to the largest document merged | 4.9 ms | 16.8 ms |
+| builds for `aarch64-apple-ios` and `-ios-sim` | yes (19 s each, 154 crates) | yes (9 s each, 48 crates) |
+| added to a stripped release binary on the Mac | 3.4 MB | 2.0 MB |
+| as WebAssembly | 3,595 KB (1,214 KB gzipped) | 3,644 KB (1,142 KB gzipped) |
+| old history dropped | a shallow snapshot keeps the state and the history after a version (420,015 bytes for the sample, 0.64 times the text); a device that has not merged up to that version cannot merge with it | not at all: a saved document carries every change, short of starting the document anew |
+
+Loro, for three reasons: a join loads every document, and at the size
+collection's 10,032 documents that is about three seconds against a
+minute and a half; history can be dropped, which 63's snapshots need; and it gives
+the version a text was at (`forkAt`), which is how a paragraph both
+devices changed is found. Automerge's state is less than half the size,
+and that did not outweigh them. **Where it runs: in the renderer, as
+WebAssembly**, not linked into the Rust side. A merge has to put a
+document together and take it apart through the format's parser, which
+is TypeScript, and the tests then run the engine the app runs. The crate
+was measured and is not a dependency: the binary did not grow; the
+bundle gained the 3.6 MB `.wasm` as an asset and 91 KB of glue, fetched
+when a collection that syncs first writes or merges text (`loadLoro`,
+`src/app/crdt.ts`; `loro-crdt/web`, pre-bundled by Vite so a dev run
+does not reload). **The shape chosen** (`src/sync/engine.ts`, its header
+is the summary). `Vault` is still unchanged over `Fs`. `storeFs` tells
+the engine of each write before it makes it (`Recorder` in
+`src/vault/store.ts`: `put`, `remove`, `places`, `reviews`, `same`) and
+puts what the engine answers into the same transaction (`Store.batch`),
+so a change and its record are never apart; for a collection that does
+not sync the answer is nothing, and nothing is kept. What other devices
+changed comes in through `StoreFs.door`: rows written and removed in one
+transaction, then the tree, the index (`onIndex`) and the watchers told,
+so the vault and the app follow a merge as they follow a file changed
+under them. **What merges how.** *A field* is a register: a key, a
+value, and the stamp of the write that won it (`regs`). The keys:
+`<row>|n` `p` `k` `o` `b` `t` (a row's name, parent, kind, place, the
+hash of the file it is, a hidden file's text), `<row>|m|<line>` (a line
+of front matter, found by its key, or by itself when it has none; the
+value is the line and a number that places it among the others, a new
+line halfway between its neighbours), `<row>|s|<kind>|<item>|<key>` (a
+schedule, its attributes as 60 stores them), `~q|<pair>` (a pair said
+not the same). *The clock* (`src/sync/clock.ts`) is a hybrid logical
+clock: milliseconds, a counter, the device, as one string that sorts; a
+device's stamps are later than any it has read. *A schedule's stamp*
+leads with its review instant (`last`), or with the time it was written
+when it has none, never earlier than the one it replaces, then the
+clock: so the later review wins (53's rule), a review wins over a later
+change that is not one (a priority set on the other device), and a
+schedule taken away is a value like any other. *A document's body* (its
+text after the front matter) is a Loro text (`crdt`, a snapshot a
+document); a write is `update(body)`, whose diff is the library's, and
+the change carries the update and the version it was made at. *The
+review log* is a set: a line a change, added where the file does not
+hold it. *A delete* names the changes to the row it had seen, by device;
+a row is gone when a delete had seen every change to it, so a document
+edited (or graded, or renamed) on one device and deleted on the other
+keeps the edit, whoever deleted, and comes back on the device that
+deleted it from what the engine kept of it. A deleted folder with such a
+document under it stays for it, and goes when the document does. *PDFs
+and images* are a hash in a register; the bytes go to the storage as
+`blobs/<sha256>` before the change that names them and are fetched when
+a row that names one is merged. **Two rules that are not merges.** A row
+under a dot-directory is named by its path (`hiddenId`), so two devices
+that each make `.ilmi/reviews` or a plugin's file have made one row;
+`.ilmi/state.json` is each device's own and never a change. Where two
+rows have one name in one place, the one whose id sorts first is the one
+a path finds and a directory lists, on every device. **The storage**
+(`src/sync/storage.ts`: four verbs, `folderStorage` over an `Fs`,
+`memStorage` for the tests): `format` (what it is and which collection,
+written once), `devices/<device>/<n>` (a header line, then a line a
+write: `{ s, ops }`, JSON; about a megabyte a file), `blobs/<sha256>`.
+A file's header says how far its writer had read each other device, and
+a file is merged only once those are (so a parent is there before its
+child and a text's start before its edits, even on a storage slow to
+list a file). Which changes the next file holds is settled and kept
+before it is written, so a write cut short is made again as the same
+file. A file is merged in one transaction with the count of how far its
+device has been read. A collection meets a storage by `connect`: an
+empty storage takes the collection (everything it holds becomes its
+first changes, and a card with a schedule and no `^id` is given one); an
+empty collection takes the storage's; a storage that holds another
+collection is refused, and so is a copy of a collection older than what
+it has sent. **The store.** Schema 3: `regs`, `crdt`, `outbox`,
+`sync_meta`, made as a collection opens (a collection of 60's opens as
+it is and is marked 3; 60's build then refuses it). `batch` and the
+reads (`meta`, `regs`, `regsUnder`, `crdt`, `outbox`, `outboxCount`,
+`blobHas`) in `store.rs`, `mem-store.ts`, `tauri-store.ts`. The review
+log is read by instant and then by line, not in the order written, so
+two devices holding the same lines read the same file (a file that came
+in otherwise is still exported as it came, until a line is added).
+**The app** (`src/app/crdt.ts`). `ILMI_STORAGE=<folder>` is the dev
+environment's choice: the collection that opens meets the folder and
+syncs on open, three seconds after a write, when the window comes back,
+and every half minute; with `ILMI_VAULT2` the second window makes a
+collection from the folder. Git sync does not start for such a
+collection and is otherwise as it was. The strip uses 53's words; a
+paragraph both devices changed is one paragraph with both edits, named
+in a notice (`both edited · <document> § <heading>`) and counted in the
+strip (`1 conflict`) until its file is opened, on each device as it
+merges the other's. **Measured, the sample.** Under Node: made into
+first changes in 77 ms; a second copy made from the storage in 168 ms;
+in the Mac's window about a second each, the library's load included.
+The storage: three files, 2,390,095 bytes (the texts in base64, 5,144
+lines of the log, the schedules), and 334,055 bytes of blobs. Beside the
+rows: 1,500 registers (233 KB) and 743 KB of text states for 581 KB of
+stored text. A grade recorded: 3.6 ms and 302 bytes of change; a word
+changed in a 32,000-byte document: 7.5 ms and 242 bytes; both merged on
+the other copy in 3.7 ms. **Tests** (`src/sync/__tests__/engine.test.ts`,
+47): the clock; a second copy equal to the first, file for file; a
+grade on each; the same card on both, in either order of sync; a review
+against a later priority; a card reworded and graded; one paragraph in
+two places (merged, listed with its heading, not listed for an edit
+made knowing of the other's); fields; passes; 53's cases (a delete
+against an edit and against a grade, a folder deleted over a changed
+document, a new document, a rename against an edit, the order, the
+pairs, the log, a file replaced on both, a hidden file made on both); a
+folder on disk; a write cut short; a file that arrives before what it
+depends on; and three copies making 120 random edits (words, paragraphs
+added and removed, grades, fields, new documents, pairs, the order)
+with a sync at random, 24 seeds, the ids seeded too: all three end
+byte for byte the same and every document is what the format writes.
+The same run with deletes and renames added (62's) ended the same in
+148 of 150 seeds; the two were a hand-shaped file kept as it came on
+the device that wrote it (60's rule), not the engine. **Said plainly:
+blobs travel in this milestone**, though its list put big files in 63:
+a second copy without its PDFs would not be the sample. They go whole,
+through the renderer's memory, eagerly; 63 makes that lazy, streamed,
+and a setting. **Not done, against the model.** *Cards do not all have
+ids:* only a card with a schedule is given one, when its collection
+first meets a storage. A new card graded for the first time on two
+devices before either syncs gets two ids (the text merges to both, one
+schedule orphaned); 66 mints ids when a card is made, which needs the
+editor to take an id the store gave. *A section is still keyed by its
+heading's text:* renamed on one device and read on the other, it keeps
+the schedule it had when renamed. *A log line's `doc` and a not-same
+pair's key are still paths.* *Moves are not settled* (62): a name, a
+parent and a place are each the later write; two moves that would make
+a loop can leave each device showing a different one of the two rows at
+the top; two documents made with one name in one folder are both kept and
+one is not shown. *The order* is still an index a row, so the later
+drag of a directory stands whole (a reorder stamps every placed row of
+its directory) rather than merging move by move. *A document 60 could
+not take apart* (two cards under one id) carries its schedule lines in
+its text, so they merge by character. **Left.** No snapshots: change
+files are never deleted, a joining device reads every one, and a text's
+history is kept whole. A schedule's attributes are held twice (its
+register and 60's table). Nothing guards against a device whose wall
+clock runs ahead: its writes win until the others pass it. A copy older
+than what it sent can only be thrown away and joined again. Two devices
+that each make the storage in one empty folder at once: the later
+`format` stands and the other is refused. What is kept as it came
+(60's `originals`) is not a change: a hand-written file is in canonical
+form on a joined copy, and `order.json` comes out as the app writes it.
+Lines taken out of the log by a whole-file write are not taken out
+elsewhere. The nudge (54) is not wired to the engine. There is no row
+in the tweaks: a release build never syncs this way. **Not verified.**
+Nothing on the simulated iPad, the engine included (WebAssembly in its
+web view is untried). A release bundle (`vite build` carries the
+`.wasm`; `tauri build` was not run). The size collection through the
+engine: how long 115,000 cards take to become first changes, and how
+big. A folder another program syncs (Dropbox, iCloud Drive) as the
+storage. Smokes run: `crdt` (53 ok, 14 captures), `store` (34, its
+folder and zip equal to the sample by `diff -r`), `sync` (34), `tour`
+(23, 45 captures), `nudge` (29); no other.
 - **Choose the text library first**, on the sample: Loro and Automerge
   (both have Rust cores and were active in November 2026). Measured: the
   state's size for the sample's documents, a build for the iOS targets,
@@ -6764,7 +6935,13 @@ document's text stored without them and put together on a read, an index
 written with each document so that opening parses nothing, the mirror
 and the dated exports; the 115,216-card collection opens in about two
 seconds in the Mac's window and its heap is the open item. 61, the
-engine, is next; 56–58 take their places in that section's order.
+engine, the same day: every write recorded as a change (a register a
+field by a hybrid clock, a document's text through Loro, running as
+WebAssembly in the renderer), change files a device in a storage that is
+a folder chosen by `ILMI_STORAGE`, a second collection made from the
+folder, and `ILMI_SMOKE=crdt` over two windows; no setting yet, and git
+sync as it was. 62, the tree and the rest, is next; 56–58 take their
+places in that section's order.
 
 Refinement (33–41) is complete, 2026-10-30, every milestone's window check
 run and recorded under its BUILD-LOG entry (33 `notes`, 34 `editing`, 35

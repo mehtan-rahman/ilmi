@@ -6,7 +6,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import type { Doc } from '../format/index.js';
 import type { Original } from './lift.js';
-import type { DocContent, Row, Store } from './store.js';
+import type { DocContent, Reg, Row, Store } from './store.js';
 
 export function tauriStore(root: string): Store {
   return {
@@ -29,6 +29,14 @@ export function tauriStore(root: string): Store {
     // the bytes go raw as the request's body; a header is ASCII, so the collection's path is percent-encoded
     blobPut: (bytes) => invoke<{ hash: string; size: number }>('store_blob_put', bytes, { headers: { root: encodeURIComponent(root) } }),
     blobGet: async (hash) => new Uint8Array(await invoke<ArrayBuffer>('store_blob_get', { root, hash })),
+    blobHas: (hash) => invoke<boolean>('store_blob_has', { root, hash }),
+    batch: (ops) => invoke<Row[]>('store_batch', { root, ops }),
+    meta: () => invoke<[string, string][]>('store_meta', { root }),
+    regs: (keys) => invoke<Reg[]>('store_regs', { root, keys }),
+    regsUnder: (prefixes) => invoke<Reg[]>('store_regs_under', { root, prefixes }),
+    crdt: (doc) => invoke<string | null>('store_crdt', { root, doc }),
+    outbox: (after, bytes) => invoke<[number, string][]>('store_outbox', { root, after, bytes }),
+    outboxCount: () => invoke<number>('store_outbox_count', { root }),
   };
 }
 

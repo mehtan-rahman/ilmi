@@ -152,7 +152,7 @@ src/schedule/   FSRS grading, the reading and writing loops, the queue
 src/import/     text, pages, card lists, Anki, EPUB, SuperMemo, on their way to files
 src/pdf/        the book lens's pure side
 src/plugins/    the plugin runtime
-src/sync/       the merge of a file changed on two devices, by the format's rules
+src/sync/       the engine that merges two devices' changes by CRDT; git sync's merge of a file, by the format's rules
 src-tauri/      the shell (Tauri v2, Rust); store.rs is a collection's SQLite, anki.rs and epub.rs read packages, sync.rs is git; gen/apple is the iOS project
 docs/           guide, keys, screenshots, development notes
 ```

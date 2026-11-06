@@ -192,6 +192,11 @@
 // pull timers off: a grade pushed in one lands in the other on the nudge
 // alone, timed; the stream dropped and back; the nudge off in one, and the
 // timer is all there is (see the function).
+// `ILMI_SMOKE=crdt` (`smokeCrdt`, milestone 61, with `ILMI_VAULT2` a name
+// for the second collection and `ILMI_STORAGE` an empty folder) over
+// `samples/double-major`: this window's collection makes the storage in the
+// folder, the second window's is made from it; then the checks of 53's
+// smoke through the engine (see the function).
 // `ILMI_SMOKE=welcome` runs before any vault opens: it seeds the recents
 // with the scratch vault (`ILMI_VAULT`) and a path that does not exist,
 // turns `reopen the last vault on start` off, reads the welcome's rows and
@@ -8196,6 +8201,7 @@ async function syncSteps(name: string, args: Record<string, unknown>): Promise<u
   const { appNow } = await import('./clock.js');
   const { cloneCollection, openConflicts, push, saveSettings, setNudgeServer, setPullTimer, setRemote, settingsOf, syncAge, syncNow, syncWord } = await import('./sync.js');
   const { deleteCollection, listCollections } = await import('../vault/tauri-store.js');
+  const { crdtNow, crdtOn, joinCollection, setCrdtTimers } = await import('./crdt.js');
   const vault = () => { const v = currentVault(); if (!v) throw new Error('no vault open'); return v; };
   const text = async (p: string) => vault().fs.readText(vault().abs(p));
   const state = () => {
@@ -8236,6 +8242,11 @@ async function syncSteps(name: string, args: Record<string, unknown>): Promise<u
       });
       return await text(str('path'));
     }
+    case 'make': {
+      const made = await vault().importDoc(str('dir'), { title: str('name'), text: str('text') });
+      await until(() => (useApp.getState().docs[made] ? true : null), 8000);
+      return made;
+    }
     case 'order': {
       const names = args.names as string[];
       await vault().setOrder(str('dir'), names);
@@ -8244,8 +8255,23 @@ async function syncSteps(name: string, args: Record<string, unknown>): Promise<u
     case 'orderOf':
       return vault().order[str('dir')] ?? null;
     case 'sync':
-      await syncNow();
+      // through the storage when the collection has one (milestone 61), else by git
+      if (crdtOn()) await crdtNow();
+      else await syncNow();
       return state();
+    // milestone 61: this window's collection is made from the storage, and opens
+    case 'join': {
+      setCrdtTimers(false);
+      const root = await joinCollection(str('storage'), vaultName(str('dest')), true);
+      await openVault(root);
+      await until(() => (useApp.getState().docs['arabic/vocabulary.md'] ? true : null), 30000);
+      await until(() => (syncWord(useApp.getState().sync) === 'synced' ? true : null), 30000);
+      return { ...state(), documents: vault().documents().length };
+    }
+    case 'documents':
+      return vault().documents().length;
+    case 'reviews':
+      return (await vault().loadReviews()).length;
     case 'state':
       return state();
     case 'text':
@@ -8284,9 +8310,9 @@ async function syncSteps(name: string, args: Record<string, unknown>): Promise<u
  * it waits for the first window's steps, runs each, and answers on
  * `smoke-reply`. Nothing opens until the clone step.
  */
-export async function smokeSyncSecond(path2: string | null): Promise<void> {
+export async function smokeSyncSecond(path2: string | null, mode = 'sync'): Promise<void> {
   const { emitTo, listen } = await import('@tauri-apps/api/event');
-  const log = (s: string) => void info(`smoke sync b: ${s}`);
+  const log = (s: string) => void info(`smoke ${mode === 'crdt' ? 'crdt' : 'sync'} b: ${s}`);
   if (!path2) { log('failed: no ILMI_VAULT2'); return; }
   useApp.setState({ started: true, inspForced: true });
   await listen<SyncStep>('smoke-step', (ev) => {
@@ -8485,6 +8511,221 @@ export async function smokeSync(vault: Vault): Promise<void> {
     finished = true;
     unlisten();
     log(`done; vault ${vault.root}, host ${host}, b ${path2}`);
+  } catch (e) {
+    finished = true;
+    unlisten();
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+// `ILMI_SMOKE=crdt` (`smokeCrdt`) over `samples/double-major`, with
+// `ILMI_STORAGE` an empty folder and `ILMI_VAULT2` a name for the second
+// collection: milestone 61. This window's collection (a) meets the empty
+// folder and becomes its first changes; the second window (b) makes a
+// collection from the folder. Then, each step synced in turn: b holds what
+// a holds; a card graded in each lands in both, with both lines in the
+// log; the same card graded in both keeps the later review; a card
+// reworded in a and graded in b is one card with both; a pass on each
+// lands in both; one paragraph edited in both is one paragraph with both
+// edits, named in a notice, the strip reading `1 conflict` until the file
+// is opened; a drag in both keeps the later; a document made in b is in a;
+// the folder holds `format`, a directory a device, and the PDFs. Light,
+// then dark.
+export async function smokeCrdt(vault: Vault): Promise<void> {
+  const { emitTo, listen } = await import('@tauri-apps/api/event');
+  const { meta, parse } = await import('../format/index.js');
+  const { crdtNow, crdtOn, setCrdtTimers, storageDir } = await import('./crdt.js');
+  const { syncWord } = await import('./sync.js');
+  const { tauriFs } = await import('../vault/tauri-fs.js');
+  let last = { at: Date.now(), what: 'start' };
+  let finished = false;
+  const log = (s: string) => { last = { at: Date.now(), what: s }; void info(`smoke crdt: ${s}`); };
+  const dog = setInterval(() => {
+    if (finished) { clearInterval(dog); return; }
+    if (Date.now() - last.at > 60_000) { finished = true; clearInterval(dog); void info(`smoke crdt: failed: no progress for 60 s after "${last.what}"`); }
+  }, 2000);
+  const shot = async (name: string, ms = 2500) => { await sleep(800); log(`shot: ${name}`); await sleep(ms); };
+  const q = <T extends Element>(sel: string, root: ParentNode = document) => root.querySelector<T>(sel);
+  const must = (ok: unknown, what: string) => { if (!ok) throw new Error(what); log(`ok: ${what}`); };
+  const poll = async <T,>(probe: () => T | null | undefined | false | Promise<T | null | undefined | false>, what: string, ms = 8000): Promise<T> => {
+    const t0 = Date.now();
+    for (;;) {
+      const v = await probe();
+      if (v) { log(`ok: ${what}`); return v; }
+      if (Date.now() - t0 > ms) throw new Error(`${what} (waited ${ms} ms)`);
+      await sleep(100);
+    }
+  };
+  const replies = new Map<number, (r: SyncReply) => void>();
+  let seq = 0;
+  const unlisten = await listen<SyncReply>('smoke-reply', (ev) => { replies.get(ev.payload.id)?.(ev.payload); });
+  const b = async <T,>(name: string, args: Record<string, unknown> = {}, ms = 30000): Promise<T> => {
+    const id = ++seq;
+    const reply = new Promise<SyncReply>((resolve, reject) => {
+      replies.set(id, resolve);
+      setTimeout(() => { replies.delete(id); reject(new Error(`b: ${name} (no answer in ${ms} ms)`)); }, ms);
+    });
+    await emitTo('second', 'smoke-step', { id, name, args } satisfies SyncStep);
+    const r = await reply;
+    replies.delete(id);
+    if (!r.ok) throw new Error(`b: ${name}: ${r.error}`);
+    log(`b: ${name}`);
+    return r.value as T;
+  };
+  const a = <T,>(name: string, args: Record<string, unknown> = {}) => syncSteps(name, args) as Promise<T>;
+  type State = { word: string | null; toPush: number; conflicts: { path: string; heading: string }[]; notice: string | null; log: string[]; root: string | null; documents?: number };
+  const word = () => q('.top .sync')?.textContent ?? null;
+  const VOCAB = 'arabic/vocabulary.md';
+  const MERCHANT = 'library/classical-prose-reader/15-the-merchant-who-was-robbed.md';
+  const QASIDA = 'courses/fall-2026/arab-455-abbasid-poetry/clipped-on-translating-the-qasida.md';
+  const NOTE = 'fleeting/idea-for-honors-thesis.md';
+  const FLEETING = 'fleeting';
+  const srLine = (text: string, id: string) => text.split('\n').find((l, i, ls) => l.startsWith('<!-- sr') && ls[i - 1]?.endsWith(`^${id}`)) ?? null;
+  const canon = (v: unknown) => (v && typeof v === 'object' ? JSON.stringify(v, Object.keys(v).sort()) : JSON.stringify(v ?? null));
+  const readLine = (text: string) => canon(meta(parse(text).doc).read ?? null);
+  /** a's change out, b's merge and its own out, a's merge. */
+  const round = async (): Promise<State> => { await a('sync'); const s = await b<State>('sync'); await a('sync'); return s; };
+  try {
+    const path2 = await invoke<string | null>('dev_env', { name: 'ILMI_VAULT2' });
+    const storage = await storageDir();
+    if (!path2) throw new Error('ILMI_VAULT2 is not set');
+    if (!storage) throw new Error('ILMI_STORAGE is not set');
+    setCrdtTimers(false);
+    useApp.getState().setTheme('light');
+    await poll(() => useApp.getState().docs[VOCAB] && useApp.getState().docs[NOTE], 'the sample is in the collection', 15000);
+
+    // ── a makes the storage, b is made from it ──
+    await poll(() => crdtOn() && word() === 'synced', 'a met the folder and reads synced', 60000);
+    await poll(() => useApp.getState().log.includes('storage made'), 'a: noted');
+    const names = async (rel: string) => (await tauriFs.readDir(`${storage}${rel ? `/${rel}` : ''}`)).map((e) => e.name).filter((n) => !n.startsWith('.')).sort();
+    must(JSON.stringify(await names('')) === JSON.stringify(['blobs', 'devices', 'format']), `the folder holds blobs, devices and format: ${(await names('')).join(' ')}`);
+    const devices = await names('devices');
+    must(devices.length === 1 && /^[0-9a-f]{16}$/.test(devices[0]!), `one device has written: ${devices.join(' ')}`);
+    const filesA = (await names(`devices/${devices[0]}`)).length;
+    must(filesA >= 1, `in ${filesA} file${filesA === 1 ? '' : 's'}`);
+    const docsA = vault.documents().length;
+    const reviewsA = (await vault.loadReviews()).length;
+    const bs = await b<State>('join', { storage, dest: path2 }, 120000);
+    must(vaultName(bs.root ?? '') === vaultName(path2) && bs.word === 'synced', `b was made from the folder as ${vaultName(path2)} and reads synced`);
+    must(bs.documents === docsA, `b holds a's ${docsA} documents (${bs.documents})`);
+    must((await b<number>('reviews')) === reviewsA, `and its ${reviewsA} lines of the log`);
+    for (const p of [VOCAB, NOTE, MERCHANT, 'physics/derivation-drills.md']) must((await b<string>('text', { path: p })) === (await a<string>('text', { path: p })), `${p} reads the same in both`);
+    must(JSON.stringify(await b('orderOf', { dir: FLEETING })) === JSON.stringify(vault.order[FLEETING] ?? null), "b has a's order");
+    must((await names('devices')).length === 1, 'b has written nothing yet: it only read');
+    await shot('crdt-joined');
+
+    // ── a card graded in each lands in both ──
+    const karam = await a<string>('grade', { path: VOCAB, id: 'voc-karam', g: 3 });
+    await poll(() => word() === '1 to push', 'a grade: the strip reads 1 to push');
+    await shot('crdt-pending');
+    const dayf = await b<string>('grade', { path: VOCAB, id: 'voc-dayf', g: 4 });
+    openNode(VOCAB);
+    await sleep(500);
+    const merged = await round();
+    must(merged.word === 'synced' && merged.conflicts.length === 0, `b merged and wrote its own: ${merged.word}`);
+    await poll(() => word() === 'synced', 'a: synced');
+    const tA = await a<string>('text', { path: VOCAB });
+    const tB = await b<string>('text', { path: VOCAB });
+    must(srLine(tA, 'voc-karam') === karam && srLine(tB, 'voc-karam') === karam, "a's grade is in both");
+    must(srLine(tA, 'voc-dayf') === dayf && srLine(tB, 'voc-dayf') === dayf, "b's grade is in both");
+    must(tA === tB, 'the document is the same in both');
+    must((await vault.loadReviews()).length === reviewsA + 2 && (await b<number>('reviews')) === reviewsA + 2, 'the log has both grades, in both');
+    must((await names('devices')).length === 2, 'two devices have written');
+    await poll(() => useApp.getState().notice?.line === 'pulled · arabic vocabulary changed', 'a notice: the open document changed under the merge');
+    await poll(() => useApp.getState().queue.every((i) => !(i.kind === 'card' && i.path === VOCAB && i.id === 'voc-dayf' && i.dueAt.getTime() <= Date.now())), "a's queue no longer holds b's card as due");
+    await shot('crdt-pulled');
+
+    // ── the same card graded in both keeps the later review ──
+    await a('grade', { path: VOCAB, id: 'voc-naqa', g: 2 });
+    await sleep(1200);
+    const naqaB = await b<string>('grade', { path: VOCAB, id: 'voc-naqa', g: 4 });
+    const later = await round();
+    must(later.conflicts.length === 0, 'the same schedule on both is no conflict');
+    must(srLine(await b<string>('text', { path: VOCAB }), 'voc-naqa') === naqaB, 'b keeps its later review');
+    must(srLine(await a<string>('text', { path: VOCAB }), 'voc-naqa') === naqaB, "a takes b's later review");
+
+    // ── a card reworded in a and graded in b is one card with both ──
+    must((await a<string>('text', { path: VOCAB })).split('\n').some((l) => l.endsWith('^voc-akrama') && l.includes('to honour, treat generously')), 'the card voc-akrama is there');
+    await a('edit', { path: VOCAB, find: 'to honour, treat generously', replace: 'to honour, to treat generously' });
+    const akramaB = await b<string>('grade', { path: VOCAB, id: 'voc-akrama', g: 3 });
+    const both = await round();
+    must(both.conflicts.length === 0, 'a rewording and a grade are no conflict');
+    for (const [who, t] of [['a', await a<string>('text', { path: VOCAB })], ['b', await b<string>('text', { path: VOCAB })]] as const) {
+      const lines = t.split('\n').filter((l) => l.endsWith('^voc-akrama'));
+      must(lines.length === 1 && lines[0]!.includes('to honour, to treat generously'), `${who}: one card, reworded`);
+      must(srLine(t, 'voc-akrama') === akramaB, `${who}: with b's grade`);
+    }
+
+    // ── a pass on each ──
+    const mA = canon(await a('pass', { path: MERCHANT }));
+    const qB = canon(await b('pass', { path: QASIDA }));
+    await round();
+    const mB = readLine(await b<string>('text', { path: MERCHANT }));
+    must(mB === mA, `a's pass is in b: ${mB} (a wrote ${mA})`);
+    const qA = readLine(await a<string>('text', { path: QASIDA }));
+    must(qA === qB, `b's pass is in a: ${qA} (b wrote ${qB})`);
+
+    // ── one paragraph edited in both: one paragraph with both, and a notice ──
+    await a('edit', { path: NOTE, find: 'Ask both.', replace: 'Ask both, soon.' });
+    await b('edit', { path: NOTE, find: 'Deadline for the proposal is February.', replace: 'Deadline for the proposal is February, firm.' });
+    await a('sync');
+    const conflict = await b<State>('sync');
+    must(conflict.word === '1 conflict' && conflict.conflicts.length === 1 && conflict.conflicts[0]!.path === NOTE && conflict.conflicts[0]!.heading === 'idea for honors thesis', `b: ${conflict.word}, ${JSON.stringify(conflict.conflicts)}`);
+    must(conflict.notice === 'both edited · idea for honors thesis § idea for honors thesis', `b's notice: ${conflict.notice}`);
+    const noteB = await b<string>('text', { path: NOTE });
+    must(noteB.includes('Ask both, soon.') && noteB.includes('February, firm.') && !/<<<<|>>>>/.test(noteB), 'b has both edits, no markers');
+    must(noteB.split('\n').filter((l) => l.startsWith('Advisors:')).length === 1, 'in one paragraph');
+    const opened = await b<State>('conflicts');
+    must(opened.word === 'synced' && opened.conflicts.length === 0, 'b: the click opens the file and the count clears');
+    await a('sync');
+    must((await a<string>('text', { path: NOTE })) === noteB, 'a has the same paragraph');
+    await poll(() => word() === '1 conflict', 'a: the strip reads 1 conflict');
+    must(useApp.getState().notice?.line === 'both edited · idea for honors thesis § idea for honors thesis', `a's notice: ${useApp.getState().notice?.line}`);
+    await shot('crdt-both');
+    q<HTMLElement>('.top .sync')?.click();
+    await poll(() => word() === 'synced' && activeTab(useApp.getState().panes)?.id === NOTE, 'a: the click opens the file and the count clears');
+
+    // ── a drag in both keeps the later ──
+    const orderA = ['idea-for-honors-thesis.md', '2026-10-30.md', '2026-10-29.md', '2026-10-27.md', 'clipped-why-perturbation-series-diverge.md'];
+    const orderB = ['clipped-why-perturbation-series-diverge.md', '2026-10-27.md', '2026-10-29.md', '2026-10-30.md', 'idea-for-honors-thesis.md'];
+    await a('order', { dir: FLEETING, names: orderA });
+    await sleep(1200);
+    await b('order', { dir: FLEETING, names: orderB });
+    await round();
+    let orderANow = '';
+    for (let i = 0; i < 25 && orderANow !== JSON.stringify(orderB); i++) {
+      if (i) await sleep(200);
+      orderANow = JSON.stringify(await a('orderOf', { dir: FLEETING }));
+    }
+    must(orderANow === JSON.stringify(orderB), `a takes b's later order: ${orderANow}`);
+    must(JSON.stringify(await b('orderOf', { dir: FLEETING })) === JSON.stringify(orderB), "b's order stands");
+    await poll(() => { const rows = Array.from(document.querySelectorAll<HTMLElement>('.side .row')).map((r) => r.dataset.path ?? '').filter((p) => p.startsWith(`${FLEETING}/`)); return rows.length >= 5 && rows[0] === `${FLEETING}/${orderB[0]}`; }, 'the sidebar draws it').catch(() => log('the sidebar rows were not read (no data-path); the order above stands'));
+    await shot('crdt-order');
+
+    // ── a document made in b is in a ──
+    const docsB = await b<number>('documents');
+    await b('make', { dir: FLEETING, name: 'made on the other device', text: 'A line written where it was made.' });
+    await round();
+    await poll(() => vault.documents().includes(`${FLEETING}/made on the other device.md`), 'a has the document b made', 10000);
+    must((await a<string>('text', { path: `${FLEETING}/made on the other device.md` })).includes('A line written where it was made.'), 'with its text');
+    must(vault.documents().length === docsA + 1 && (await b<number>('documents')) === docsB + 1, 'one more document in each');
+
+    // ── nothing more to say ──
+    const quiet = await round();
+    must(quiet.word === 'synced' && syncWord(useApp.getState().sync) === 'synced', 'synced at the end, both');
+    await shot('crdt-synced');
+
+    // ── dark ──
+    useApp.getState().setTheme('dark');
+    await b('theme', { name: 'dark' });
+    await poll(() => document.documentElement.dataset.theme === 'dark', 'dark');
+    await shot('crdt-dark');
+    useApp.getState().setTheme('light');
+    await b('theme', { name: 'light' });
+    await crdtNow();
+    finished = true;
+    unlisten();
+    log(`done; collection ${vault.root}, storage ${storage}, b ${path2}`);
   } catch (e) {
     finished = true;
     unlisten();

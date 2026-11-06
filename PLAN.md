@@ -6177,7 +6177,180 @@ by 53; `ILMI_SMOKE=tour` runs there and its captures are looked at.
 buttons, a card is added to a deck, a page is clipped through the
 Shortcut, and all three reach the Mac.
 
-### [ ] 57. Touch reading — a passage boxed with a finger or the Pencil
+### [x] 57. Touch reading — a passage boxed with a finger or the Pencil
+Done 2026-11-06, commit `8c76b66`.
+Notes: **First, the app on the simulated iPad**, where nothing had run
+since 59. It ran as it was: `tauri ios dev` built and installed it (two
+minutes of Rust, the targets cached), `smoke.json`'s `vault` imported the
+sample from Documents as a collection and `ILMI_SMOKE=tour` passed over
+the store (23 checks); with `"storage": "<a folder on the Mac>"` the
+engine made the storage from the iPad (Loro's WebAssembly loads in its web
+view; three change files and both PDFs, 2.6 MB); a collection made from a
+storage the Mac's collection had made (`joinCollection`, 0.7 to 1.0 s for
+the sample) kept what it had opened, as 63 said an iPad would: both books
+`not here`, and the chapter's PDF fetched by the Rust side when the
+chapter was opened. Nothing in the store, the engine or the storage had
+to change. What did was at the glass, below. **The shape chosen.**
+`src/app/touch.ts` holds what a touch lacks that the mouse had: when a
+press on a page starts a box (`boxStart`), and the long press
+(`installLongPress`, installed once by `App.tsx`). **The pages**
+(`Pdf.tsx`): `onPointerDown` on the column, the move and the release on
+the window by pointer id. A mouse's drag and the Pencil's (`pointerType`
+`pen`) box at once, as the mouse did. **A finger's drag boxes after a
+hold of 320 ms (`HOLD_MS`), not at once**, which is not what the bullet
+says: a finger's plain drag is how an iPad scrolls, and a chapter cannot
+be read under a finger that boxes whatever it touches. A finger that
+moves before the hold is up is scrolling and nothing is drawn; once it
+is up a mark shows where the box will start, and a listener that is not
+passive refuses the touch's own scroll while the box is drawn
+(`touchmove`, the one touch event the pages use), so the page holds
+still. Say if a finger should box some other way (two fingers to scroll
+was the alternative, and loses the system's scrolling). A second drag is
+a second box; a tap under a finger or the Pencil clears them (the mouse
+keeps `esc`: a click there clears nothing, as before). The mouse's press
+still stops the selection it would begin at its `mousedown`, where the
+click count is (a pointer event has none): a double click is left to
+select its word, ⌥-drag its lines. On an iPad the page's text is not the
+system's to select (`user-select: none` on the text layer there: a long
+press on a page would otherwise select a word under the box being
+drawn), so a text selection's boxes are the Mac's alone. **The bar.**
+The bullet's "the selection bar on the notes offers section and card" is
+read as the bar under the last box (`.pend`): on an iPad it offers
+`section` and `card` at a finger's size and no `esc`, since a tap is
+that. The notes' own cue over a selection is as 55 left it (`card`).
+The bottom strip there reads `hold, drag box a passage`. **Long press.**
+A touch (finger or Pencil) held still 480 ms and let go where it rested
+sends the `contextmenu` event a right-click sends, at that point, on
+what was pressed: so every menu there was is there with no code of its
+own (a tree row, the sidebar's empty space, a rail row, a folder's row,
+a heading in the reader, a card in a deck). The menu comes when the
+finger lifts, not while it rests, so that a row held and then moved can
+still be dragged. Three things the system does with a long press had to
+be kept off, each found on the simulator: it selects a word (in the
+sidebar too, whose `user-select: none` did not stop it, and across a
+whole deck), so while a touch rests 200 ms where a menu is (`MENUS`) the
+page carries `data-pressing` and nothing is selectable until 400 ms
+after; in editable text it selects whatever the styles say, so
+`selectstart` is refused then and a selection made is undone for 700 ms
+after a menu opens; and it puts the caret in the page pressed and brings
+the keyboard up under the menu, so what the press focused is let go (a
+field the menu's own choice opens is not). Prose keeps the system's long
+press. **A row's drag is the web view's own.** The bullet's "the tree's
+rows drag after a long press" needed nothing built: on iPadOS the web
+view lifts a `draggable` row after a long press and sends `dragstart` at
+the lift, then `dragover` and `drop` as on the Mac (`drag.ts` unchanged),
+and `pointercancel` once it moves. A hook for a drag by pointer events
+was begun and taken out when the trace showed this. **The notes.** In
+portrait (`html[data-shape="portrait"]`, `pdf.css`) the pages keep the
+whole width and the notes are a sheet over them from the right, 86% of
+the width up to 560 px, slid in over 180 ms, a scrim beside them. A
+swipe in from the right edge (24 px, as the sidebar's from the left)
+brings them, as does whatever went to a section before (a tag beside
+the page, `m`, ⏎ after a section is made: each sets `notesHidden`); a
+tap beside them or a swipe to the right on them folds them. No button:
+the bullet names none. Landscape and the Mac are as they were. **Found
+on the way, and fixed.** *A tap on a deck's card did nothing*: the web
+view sends no click when a tap's hover brings something in, and a card's
+`×` comes on `:hover`. A tree row's `+ ···` and a rail row's come the
+same way and were changed with it, without a tap on one tried first:
+the three rules are under `@media (hover: hover)` now, and the selected
+row shows its marks as before. Real taps had never been made on those
+rows (55's taps were the smoke's clicks). *A page drawn while the iPad turned kept the
+scale it started at* and overlapped the notes: a page whose scale
+changed under it is drawn again. *`ILMI_SMOKE=book` had failed since 51*
+at `back in 1d` where the chip says `back tomorrow`, on the commit
+before this one too: the smoke's word is corrected and it runs to its
+end again. **The smoke and the rig.** `ILMI_SMOKE=touch` is three runs
+over one storage folder (`smokeTouchMac`, `smokeTouch`,
+docs/development.md): the Mac's collection makes the storage, the iPad's
+is made from it and read under touches, the Mac finds the section. The
+iPad's side asks for each touch in its log (`do: tap x y`, `press`,
+`drag … hold`, `flick`, `turn`, places as fractions of the window) and
+waits for what it does; `scripts/touch-rig` (55's two files, now kept:
+an xcodegen `project.yml` and one XCUITest) reads the log and makes
+them. The rig scrolled a flick's own momentum into a later step once:
+a step that boxes waits for the page to rest. **Tests.** 1413 in 91
+files (+13): `touch.test.ts` (the hold and the long press: held and let
+go, the Pencil's, never the mouse's, a tap, a scroll, a cancel, a drag
+that ended elsewhere, a second finger, `data-pressing` and
+`selectstart`, the focus let go), `book-touch.test.ts` (the pages in
+jsdom over a stand-in PDF: a mouse's drag and its `mousedown`, a double
+click and ⌥ left alone, a finger before and after its hold and the
+scroll refused only while a box is drawn, two boxes numbered, a tap
+clearing, the Pencil with no hold, the bar with and without `esc`), a
+line in `chrome.test.ts`. **Checked,** from a clean checkout of
+`8c76b66` (the simulator's app was the build made from `5ff0146` at the
+session's start, the Rust side unchanged since; its renderer served from
+the checkout): on the Mac `ILMI_SMOKE=touch` made the storage (4 ok); on
+a simulated iPad Air 11-inch (M4), iOS 27.2, the iPad's run, 69 ok and
+10 captures, every one looked at, under 24 touches the rig made (10
+taps, 3 long presses, 4 held drags, 5 flicks, 2 turns): the sidebar's
+sheet by an edge swipe, `library` and the book opened by taps on their
+marks, the chapter by a tap on its row, its PDF fetched and drawn, the
+notes folded; a flick scrolled 600-odd px and drew nothing; a finger
+held and dragged over (3.8) on p. 24 drew a box and the page did not
+move; a second, numbered; a tap cleared both; pointer events typed
+`pen`, made by the smoke, boxed at the first move and a pen's tap
+cleared; the passage boxed again by the finger and `section` tapped:
+`## 3.3 · average values (3.8)` with `boxes=24:0.110:0.670:0.780:0.075`,
+named by 48's rule and drawn on the page; the notes in from the right
+edge, 560 of 820 px, the pages' width unchanged, the new heading in
+them; a long press on the heading: its menu (`dismiss`), nothing
+selected, no keyboard; a tap beside the notes folded them; a long press
+on `library`'s row: its menu, nothing selected; the first top row held
+and dragged below the last (`courses` under `fleeting`); a tap selected
+a deck's card and a long press opened its menu; synced; turned: the
+notes beside the pages, and back. Then the Mac again
+(`ILMI_VAULT=<its collection> ILMI_EXPECT=…`): after a sync the section
+is in its chapter with the same box and its schedule, boxed on p. 24 and
+in the notes (9 ok, the capture looked at; the row dragged on the iPad
+is last on the Mac too). **How the section reached the Mac: the engine,
+through a storage folder on the Mac's disk** named in `smoke.json`
+(`"storage"`), which is the one way an iPad can meet a storage until its
+welcome has one. Git was tried as well, since it is the way the app
+offers there: `ILMI_SMOKE=ipad` over a bare repository ran to its end on
+the simulator for the first time since 59 (30 ok where 55 counted 31,
+not compared line by line; 12 captures looked at on a sheet; the six
+grades were in the remote as `6 reviews`). Also from
+that checkout, the Mac: `book` 52 ok and 9 captures, `books` 71 and 8,
+`tour` 23 and 45, the Mac's layout and its boxing as they were; the
+simulator: `tour` 23 and 45, looked over on sheets.
+**Not verified, said plainly.** *The Pencil.* This Xcode's XCUIAutomation
+has no stylus among its pointer paths (`XCPointerEventPath` has
+`initForTouchAtPoint:`, mouse, text input, touch bar and an event stream;
+the rig writes the list), and `simctl` touches nothing, so no Pencil was
+simulated: the `pen` path is covered by events the page makes itself, in
+jsdom and on the simulator. Unknown until there is one: whether the web
+view starts its scroll under the Pencil before the first `touchmove` can
+refuse it, Scribble over the notes, hover, the palm. *A device*: the
+hold's 320 ms and the long press's 480 ms under a real finger, the edge
+swipes against the system's own edges. *On the simulator but not
+driven*: the long press on a rail row, a folder's row and the sidebar's
+empty space (one listener serves them all); a row dragged into a folder
+or onto a document (the spring and the dwell under a finger); `card` on
+the bar (the smoke taps `section`); a swipe to the right folding the
+notes; a tap placing the caret in a heading after these changes; a
+selection in the notes with the sheet open; a session over a book in
+portrait; the Mac's `sync`, `nudge`, `crdt`, `storage` and `store`
+smokes (none of what they run changed; they were not rerun). S3 and
+WebDAV from the simulator; `keep files` set by hand there; a release
+bundle. `cargo check` for the iOS targets was not run: the Rust side
+did not change. A remote made by hand without the app's `.gitignore`
+left the iPad's strip short of `synced` after the clone; with the file
+it synced, and the difference was not chased.
+**Not done, and limits.** A page's text cannot be selected on an iPad,
+by a finger or a trackpad. The long press's menu comes at the lift.
+A swipe to the right anywhere on the notes folds them, over a wide
+table too. No pinch on the pages. Rows, tabs and strips are still the
+Mac's size (56). The strips keep their key hints (55). The bar sits
+over the lines under the box, as on the Mac. **For 58 and 67:** the
+Pencil cannot be driven here, but PencilKit takes a finger when its
+canvas is told to (`drawingPolicy = .anyInput`), and the rig's drag
+is then a stroke; a page under ink will want the Pencil to write and
+the finger to scroll, which is this milestone's rule (`boxStart`) with
+ink in place of the box, so decide there which of the two the Pencil
+does on a book's page. The rig needs a dev server on 1420, which the
+Mac's own run wants too: one or the other.
 - The pages take pointer events: a finger or Pencil drag boxes a passage,
   a second drag another, a tap clears; the selection bar on the notes
   offers section and card. Long-press where right-click was, on rows,
@@ -7254,9 +7427,19 @@ an S3-compatible bucket, a WebDAV folder), PDFs and images sent and
 fetched as streams on the Rust side and only when asked for (`keep
 files`), snapshots that any device can merge and the change files they
 cover deleted thirty days on, loopback servers for the smoke; no real
-bucket or server was given, so that check is not made. Next in the
-section's order: 57, 58, 67 (the iPad, touch and ink), then 64, 56, 68;
-65 and 66 wait for things only the user has, 52 for the user's word.
+bucket or server was given, so that check is not made. 57, touch
+reading, the same day, and the first run on the simulated iPad since
+59 (the store, the engine and a collection made from a storage all ran
+there as they were): a book's pages take pointer events, the mouse's and
+the Pencil's drag boxing at once and a finger's after a short hold,
+since its plain drag is the scroll; a touch held and let go is a
+right-click where it rests; a row is dragged by the web view's own drag;
+a book's notes slide in from the right in portrait; `ILMI_SMOKE=touch`
+under touches an XCUITest bundle makes (`scripts/touch-rig`), the
+section made on the iPad found on the Mac through a storage folder. No
+Pencil could be simulated. Next in the section's order: 58, 67 (ink),
+then 64, 56, 68; 65 and 66 wait for things only the user has, 52 for
+the user's word.
 
 Refinement (33–41) is complete, 2026-10-30, every milestone's window check
 run and recorded under its BUILD-LOG entry (33 `notes`, 34 `editing`, 35

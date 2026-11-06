@@ -6,6 +6,236 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-11-06 — milestone 57: touch reading
+
+Done on main: `8c76b66`. A book's pages take pointer events: a mouse's
+or the Pencil's drag boxes a passage at once, a finger's after a short
+hold (its plain drag is the scroll), a second drag is a second box, a
+tap clears, and the bar under the last box offers section and card. A
+touch held still and let go is a right-click where it rests, so rows,
+headings and cards open the menus they had; a row held and then moved is
+dragged by the web view's own drag. Upright on an iPad a book's notes
+slide in over the pages from the right edge. It was also the first run
+on the simulated iPad since 59, and the store, the engine and a
+collection made from a storage all ran there as they were. New:
+`src/app/touch.ts` (the hold, the long press), `scripts/touch-rig` (the
+XCUITest bundle that makes the touches a smoke asks for),
+`touch.test.ts`, `book-touch.test.ts`. Changed: `Pdf.tsx` (the pointer
+drag, the tap, the bar, the notes' scrim, a page drawn again when its
+scale changed under it), `App.tsx` (the long press installed, the right
+edge's swipe), `pdf.css` (the notes' sheet in portrait, the page's text
+not selectable under touch, the bar at a finger's size), `chrome.css`
+(`data-pressing`), `app.css` (what a hover brings in, for a hovering
+pointer only), `chrome.ts` and `BottomStrip.tsx` (`hold, drag` on an
+iPad), `smoke.ts` (`touch`; `book` and `books` box by pointer events;
+`book`'s stale chip word), `vault.ts` (the mode), `docs/guide.md`,
+`docs/development.md`, PLAN (57's notes). No Rust change, no schema
+change, no FORMAT change.
+
+### Decided
+
+- **A finger boxes after a hold of 320 ms; the Pencil and the mouse at
+  once.** The bullet says a finger's drag boxes. A finger's plain drag
+  is how an iPad scrolls, and the "done when" has a chapter read there.
+  See *For the user*.
+- **A long press is a right-click, sent as one.** The same
+  `contextmenu` event at the same place, when the finger lifts: every
+  menu there was is there, and none was written again. At the lift, not
+  during the hold, so a held row can still be dragged.
+- **A row's drag was not built.** The web view on iPadOS lifts a
+  `draggable` row after a long press and sends the Mac's drag events;
+  the trace on the simulator showed it and `drag.ts` is unchanged.
+- **The system's own long press is kept off where a menu is**, not
+  everywhere: prose keeps its word selection. In editable text the
+  styles do not stop it, so a selection is refused and undone around
+  the press, and the focus it took is let go.
+- **"The selection bar on the notes" is read as the bar under the
+  boxes.** It offers `section` and `card`; on an iPad it has no `esc`,
+  since a tap is that. A page's text is not selectable under touch.
+- **The notes' sheet has no button.** A swipe from the right edge, or
+  whatever went to a section before; a tap beside it or a swipe back
+  folds it.
+- **The rig is in the repository now** (`scripts/touch-rig`), and a
+  smoke asks it for touches through its own log (`do: tap x y`).
+
+### Verified
+
+1413 tests in 91 files (1 skipped), typecheck clean, 44 cargo tests (the
+Rust side did not change; `cargo check` for the iOS targets not run).
+From a clean checkout of `8c76b66`, the simulator's app being the build
+made from `5ff0146` at the session's start with its renderer served from
+the checkout. **On a simulated iPad Air 11-inch (M4), iOS 27.2:**
+`ILMI_SMOKE=touch`, 69 checks and 10 captures, each looked at, under 24
+touches the rig made (10 taps, 3 long presses, 4 held drags, 5 flicks, 2
+turns): a collection made from the storage the Mac's had made, both
+books away; the chapter reached by taps in the sidebar's sheet and its
+PDF fetched on opening; a flick scrolling and drawing nothing; a held
+finger's drag boxing (3.8) on p. 24 with the page still; a second box; a
+tap clearing; `pen` pointer events (made by the smoke) boxing with no
+hold; `section` tapped: `## 3.3 · average values (3.8)`,
+`boxes=24:0.110:0.670:0.780:0.075`; the notes in from the right edge
+over the pages; the heading's, a tree row's and a card's menus by long
+press with nothing selected and no keyboard; a row held and dragged to
+the end of the tree; synced; turned and back. `ILMI_SMOKE=tour` there:
+23 and 45 captures, looked over on three sheets. `ILMI_SMOKE=ipad` (git,
+a bare repository): 30 and 12, the six grades in the remote. **On the
+Mac:** `touch` before the iPad (the storage made, 4) and after it with
+`ILMI_EXPECT` (9, one capture looked at): the section in the chapter
+after a sync, the same box, boxed on p. 24 and in the notes; `book` 52
+and 9 captures, `books` 71 and 8, `tour` 23 and 45. **The section
+reached the Mac by the engine through a storage folder** on the Mac's
+disk, named for the simulator in `smoke.json`. The runs before the
+commit were over snapshots of the working tree.
+
+### Not verified
+
+A Pencil: this Xcode's XCUIAutomation synthesizes touches, a mouse and
+keys, and no stylus, so the Pencil's path was driven only by pointer
+events the page made itself. A device, and with it the two timings
+under a real finger and the edge swipes beside the system's. On the
+simulator: the long press on a rail row, a folder's row and the
+sidebar's empty space; a row dragged into a folder; `card` on the bar;
+the swipe that folds the notes; a tap for the caret in a heading; a
+session over a book in portrait; S3 and WebDAV; `keep files` by hand.
+On the Mac: `sync`, `nudge`, `crdt`, `storage`, `store` and the other
+smokes were not rerun (nothing they run changed). A release bundle.
+
+### Found
+
+- The app needed nothing to run on the simulator after 59 to 63: the
+  import from Documents, the store, the engine's WebAssembly, a storage
+  made, a collection joined in under a second, a PDF fetched when its
+  chapter opened.
+- A tap on a deck's card sent no click: its `×` came on hover, which the
+  web view takes for the tap's answer. The tree's and the rail's rows
+  bring their marks the same way and were changed with it.
+- A long press selects text in the sidebar and across a deck although
+  the sidebar says `user-select: none`, selects a word in a heading
+  whatever the styles say, and raises the keyboard there.
+- A page being drawn while the iPad turned stayed at its old scale.
+- `ILMI_SMOKE=book` had failed at one stale word since 51, on
+  `5ff0146` as well.
+- A bare repository made by hand without the app's `.gitignore` left
+  the iPad's strip short of `synced` after the clone; not chased.
+
+### Rig notes
+
+Beside the Mac's scripts in the scratchpad's `rig/`: `ios.sh <log>`
+(`tauri ios dev` from the run tree, left running), `vite.sh <log>` (the
+renderer alone on 1420, enough once the app is installed and the Rust
+side is unchanged; the app's container then stays where it is),
+`stopios.sh` (either of those by pid and cwd, freeing 1420 for a Mac
+run), `sim.sh '<json>' [mode] [secs]` (`smoke.json`, the log emptied,
+terminate, launch, wait), `simshots.sh <dir> <mode>` (`simctl io
+screenshot` at each `shot:` line), `simrun.sh` (those three for a smoke
+that needs no touches), `touch.sh '<json>' <mode> <dir>` (the same with
+`xcodebuild test` over the touch rig, which launches the app itself),
+`mac57.sh` (the Mac's four runs in a row, each waiting for an unlocked
+screen), `sheet.py` (captures laid out on sheets). A foreground command
+past three minutes is moved to the background and its `nohup` children
+went with it once (a run left with one capture of eight): start a long
+chain in the background. Programmatic scrolling during a flick's
+momentum is undone by it. The screen locked once mid-session; the
+simulator went on behind it.
+
+### For the user
+
+On the iPad (the simulator for now): a finger scrolls a book's pages;
+rest it a moment, then drag, to box; tap the page to clear; `section`
+or `card` under the box. Hold a row, a heading or a card and lift for
+its menu. Swipe in from the right edge for the notes. Things to say
+when you look:
+- **A finger boxes after a hold, not by a plain drag** as 57's line had
+  it, because a plain drag has to scroll. If you would rather box with a
+  plain drag and scroll with two fingers, say so; the Pencil boxes at
+  once either way.
+- No Pencil could be simulated on this Xcode, so its drag is covered by
+  made-up pointer events only. It needs your iPad (66).
+- Text on a book's page cannot be selected on the iPad now; boxing is
+  the way there.
+Still open from before: a way to join a storage on the iPad's welcome
+(this milestone's check named the folder in `smoke.json`); where 63 put
+`join…` and the buttons under the storage's fields; 62's "settings that
+merge".
+
+Handoff prompt for the next session:
+
+```
+Read PLAN.md, FORMAT.md, BUILD-LOG.md, and spec/hashiyah/HANDOFF.md. The
+section of PLAN.md in progress is "A database under the app, synced by
+CRDT to any storage" (59–68); its introduction holds the decisions and
+the order, and 59's to 63's notes say how it stands (a collection is an
+SQLite database, `Vault` unchanged over an `Fs` that src/vault/store.ts
+makes from its rows; an engine, src/sync/engine.ts, told of every
+write, merging registers by a hybrid clock and text through Loro; a
+storage chosen in the tweaks, PDFs and images named by a merge and
+fetched when asked for). The order after 63 is 57 (done), 58, 67, then
+64, 56, 68 (65 and 66 wait for things only the user has; 52 waits for
+the user). Do milestone 58, "Ink — a page of working under the section
+being read", in the section "Beyond the Mac", and only that one, as
+revised by the paragraph under it (the strokes are the ink, rows in the
+store by page; the picture is made from them and never merged; one
+drawing a page; saved when the page closes or goes quiet; two devices'
+strokes on one page all kept by stroke id with the removals recorded;
+measure a page's bytes as strokes and as a PNG, and whether a stroke's
+id survives a save, before building on either). Stop at its "done
+when". Then tick it, write notes for the next session under it, add an
+entry to BUILD-LOG.md with a fresh handoff prompt, and commit. Rules as
+in PLAN.md's ground rules: export
+PATH=$HOME/.cargo/bin:/opt/homebrew/bin:$PATH; npm test and npm run
+typecheck green before a commit, and cargo test for the Rust side
+(cargo check for both iOS targets if Rust changes, which it will: 58 is
+the first native code, a Tauri plugin in Swift over PencilKit); one
+commit per milestone; ask before a screen, section, or setting the
+brief does not name; a FORMAT change needs a corpus file and a test
+(58 names one line under images, §4, and a corpus note). Read 55's and
+57's notes first: the iOS target, the simulator (`tauri ios dev` left
+running from a clean checkout, or `npm run dev` alone on 1420 once the
+app is installed and the Rust side unchanged; a Swift or Rust change
+redeploys and the app's container moves; `smoke.json` in its
+Documents; the log under Library/Application Support/dev.ilmi.app/logs;
+`simctl io booted screenshot`), and the touch rig, which is in the
+repository now (scripts/touch-rig, docs/development.md "The iPad"): a
+smoke asks for touches in its log (`do: tap x y`, `press`, `drag … hold`,
+`flick`, `turn`) and an XCUITest bundle makes them; `ILMI_SMOKE=touch`
+is the model (src/app/smoke.ts, `smokeTouch` and `smokeTouchMac`: the
+Mac's collection makes a storage folder, the iPad's is made from it by
+`"storage"` in `smoke.json`, the Mac finds what the iPad did after a
+sync). That runner makes fingers only: Xcode 27.2 has no stylus to
+synthesize, so a simulated Pencil is a finger, and a PencilKit canvas
+has to be told to take one (`drawingPolicy = .anyInput` in a dev run)
+for a stroke to be drawn at all; say plainly what the Pencil itself was
+not seen to do. 57's rule for a book's page is src/app/touch.ts: the
+Pencil and the mouse act at once, a finger after a hold, a long press
+is a right-click. Ink is rows by page and has to cross to the Mac
+through the engine (61–63), where it shows as a picture: a new table
+or register kind is a schema matter, so ask before changing the
+database in a way an existing collection could not open, and say how
+strokes merge (a set by id, removals recorded) with a test beside the
+engine's. Keep `ILMI_SMOKE=touch` (69 on the iPad, 4 and 9 on the
+Mac), `book` (52), `books` (71), `tour` (23, on the Mac and on the
+simulator), `crdt` (72), `storage` (76 over s3, 75 over webdav), `store`,
+`sync` and `nudge` passing, and the random test in
+src/sync/__tests__/engine.test.ts (`ILMI_SEEDS=1-500`, and with
+`ILMI_SNAPS=1`). The Mac's window checks run from a clean checkout of
+main with the dev identifier override; ILMI_VAULT is a folder, imported
+afresh as a collection on each run, or a collection's own folder,
+opened as it is. Never kill a process on port 1420 that is not yours,
+and run the simulator's dev server or the Mac's, not both; stop your
+own app binary by pid when a run ends, capture the Mac only by window
+id; a covered window's page runs several times slower; a locked screen
+stalls the Mac's window (the simulator goes on); the Mac on battery
+sleeps in the middle of a test run. Open for the user, not to be built
+without their word: whether a finger boxes after a hold (57 chose it,
+the bullet said a drag); a way to join a storage on the iPad's welcome;
+whether `join…` and the buttons under the storage's fields stay where
+63 put them; 62's "settings that merge". Not done in 57, said in its
+notes: no Pencil was simulated, nothing ran on a device, a page's text
+is not selectable on the iPad, the long press's menu comes at the lift.
+```
+
+---
+
 ## 2026-11-06 — milestone 63: big files and real storage
 
 Done on main: `f6a5925`. A collection syncs through a storage chosen in

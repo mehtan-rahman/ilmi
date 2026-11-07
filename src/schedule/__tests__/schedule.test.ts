@@ -147,10 +147,10 @@ describe('reading', () => {
     await fsp.cp(CORPUS, root, { recursive: true });
     const vault = await Vault.open(nodeFs, root);
     try {
-      const topics = (await queue(vault, NOW, 'reading')).map((i) => i.path).sort();
-      // milestone 15 added the PDF pair and its extract to the corpus; 33 a note revisited
+      const topics = (await queue(vault, NOW, 'reading')).filter((i) => i.kind === 'read').map((i) => i.path).sort();
+      // milestone 15 added the PDF pair and its extract to the corpus; 33 a note revisited; 70 a PDF on its own, read by its own line
       expect(topics).toEqual([
-        'fleeting/office-hours.md', 'papers/archive/sutton-2019.md', 'papers/crick-1995.md', 'papers/two-pages.md', 'papers/two-pages/the ruler in the margin.md',
+        'books/alone.pdf', 'fleeting/office-hours.md', 'papers/archive/sutton-2019.md', 'papers/crick-1995.md', 'papers/two-pages.md', 'papers/two-pages/the ruler in the margin.md',
         'papers/wozniak-1990.md', 'papers/wozniak-1990/woz-ex1.md',
       ]);
       const landed: Record<string, string> = {};
@@ -172,10 +172,14 @@ describe('reading', () => {
         const page = before.page === undefined ? '' : ` page=${before.page}`;
         // a note keeps no place
         const pos = meta(loaded.doc).type === 'note' ? '' : ` pos=${before.pos ?? 0}`;
-        expect((await fsp.readFile(join(root, path), 'utf8'))).toContain(`read: due=${addDays(TODAY, ivl)} ivl=${ivl} reps=${(before.reps ?? 0) + 1}${pos}${page} af=2\n`);
+        const line = `due=${addDays(TODAY, ivl)} ivl=${ivl} reps=${(before.reps ?? 0) + 1}${pos}${page} af=2`;
+        // a PDF on its own keeps its line in `.ilmi/reading.json`, with its `y`; nothing is written into the file
+        if (path.endsWith('.pdf')) expect(vault.pdfState(path)?.read).toBe(line.replace(` pos=${before.pos ?? 0}`, ` pos=${before.pos ?? 0} y=${(before.y ?? 1).toFixed(3)}`));
+        else expect((await fsp.readFile(join(root, path), 'utf8'))).toContain(`read: ${line}\n`);
       }
       // the sources with reading left (at priority 50: every other day) land on the cadence; the note, the extracts and wozniak, read to its end, grow
       expect(landed).toEqual({
+        'books/alone.pdf': 'cadence 2',
         'fleeting/office-hours.md': 'grown 8', 'papers/archive/sutton-2019.md': 'cadence 2', 'papers/crick-1995.md': 'cadence 2', 'papers/two-pages.md': 'cadence 2',
         'papers/two-pages/the ruler in the margin.md': 'grown 4', 'papers/wozniak-1990.md': 'grown 18', 'papers/wozniak-1990/woz-ex1.md': 'grown 2',
       });
@@ -295,14 +299,15 @@ describe('queue over the sample vault', () => {
     // milestone 33 adds a note revisited, after the day (upcoming 23 → 24, reading 6 → 7)
     // milestone 44 asks each of the eight both-ways cards both ways: eight reverse items, two due today (a forward
     // not due yet, a reverse new), five buried till tomorrow beside a forward due or reviewed today (today 17 → 19, upcoming 24 → 30, cards 32 → 40)
-    expect(counts(all, NOW)).toEqual({ today: 19, upcoming: 30, cards: 40, reading: 7, writing: 2 });
+    // milestone 70 adds a PDF on its own (its line due 06-02), and a note attached to it with a section (06-03) and a card (06-05)
+    expect(counts(all, NOW)).toEqual({ today: 19, upcoming: 33, cards: 41, reading: 9, writing: 2 });
     const today = await queue(vault, NOW, 'today');
     expect(today.filter((i) => i.kind === 'card')).toHaveLength(15);
     expect(today.filter((i) => i.kind === 'read').map((i) => i.path).sort()).toEqual([
       'papers/archive/sutton-2019.md', 'papers/crick-1995.md', 'papers/wozniak-1990/woz-ex1.md',
     ]);
     expect(today.filter((i) => i.kind === 'write').map((i) => i.path)).toEqual(['essays/spaced-composition.md']);
-    expect(await queue(vault, NOW, 'upcoming')).toHaveLength(30);
+    expect(await queue(vault, NOW, 'upcoming')).toHaveLength(33);
   });
 
   it('expands a multi-blank cloze into one item per group with its own schedule', async () => {

@@ -19,11 +19,11 @@ describe('key hints', () => {
     expect(keys(hintsFor({ kind: 'source', el: null, scope: null, canEnrol: true }))).toContain('r');
     expect(keys(hintsFor({ kind: 'source', el: null, scope: null, canEnrol: false }))).not.toContain('r');
     expect(keys(hintsFor({ kind: 'deck', el: null, scope: null, canEnrol: false }))).toEqual(['j k', '⏎', '/', '⌫', 'm', '⌘k']);
-    // a book: box, section, card; the sections stepped; ⌘\ hides the notes, and says so once hidden
-    expect(hintsFor({ kind: 'source', el: null, scope: null, canEnrol: false, pages: true })).toEqual([['drag', 'box a passage'], ['e', 'section'], ['m', 'card'], ['[ ]', 'sections'], ['/', 'search'], ['⌘\\', 'hide notes']]);
+    // a book: box, section, card; the sections stepped; ⌘\ brings its notes in over the pages and folds them, one word for both (milestone 70)
+    expect(hintsFor({ kind: 'source', el: null, scope: null, canEnrol: false, pages: true })).toEqual([['drag', 'box a passage'], ['e', 'section'], ['m', 'card'], ['[ ]', 'sections'], ['/', 'search'], ['⌘\\', 'notes']]);
     // on an iPad a finger's drag is the scroll: the box comes after a hold
     expect(hintsFor({ kind: 'source', el: null, scope: null, canEnrol: false, pages: true, touch: true })[0]).toEqual(['hold, drag', 'box a passage']);
-    expect(hintsFor({ kind: 'source', el: null, scope: null, canEnrol: false, pages: true, notesHidden: true }).at(-1)).toEqual(['⌘\\', 'show notes']);
+    expect(hintsFor({ kind: 'session', el: 'read', scope: null, canEnrol: false, pages: true })).toContainEqual(['⌘\\', 'notes']);
     expect(keys(hintsFor({ kind: 'session', el: 'section', scope: null, canEnrol: false, pages: true }))).toEqual(['⏎', 'p', 'd', 'drag', 'e', 'm', '⌘\\', '[ ]']);
     expect(keys(hintsFor({ kind: 'intake', el: null, scope: null, canEnrol: false }))).toEqual(['⌘v']);
     expect(keys(hintsFor({ kind: undefined, el: null, scope: null, canEnrol: false }))).toEqual(['⌘k', '⌘\\']);

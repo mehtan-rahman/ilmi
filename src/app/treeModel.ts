@@ -39,8 +39,8 @@ export interface TreeRow extends FlatRow {
 
 const kidsOf = (n: TreeNode): TreeNode[] => (n.kind === 'folder' ? n.children : n.children ?? []);
 
-/** How a node takes a drop in its middle: a folder or a document with something under it at once, a bare document after a rest. */
-export const nestOf = (n: TreeNode): Nest => (n.kind === 'folder' || kidsOf(n).length > 0 ? 'now' : 'dwell');
+/** How a node takes a drop in its middle: a folder or a document with something under it at once, a bare document after a rest; a PDF on its own holds nothing, and never. */
+export const nestOf = (n: TreeNode): Nest => (n.kind === 'doc' && n.bare ? 'never' : n.kind === 'folder' || kidsOf(n).length > 0 ? 'now' : 'dwell');
 
 /**
  * The rows drawn: the root row (or the hoisted node's), then every open

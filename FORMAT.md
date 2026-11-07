@@ -45,6 +45,9 @@ notes/
       woz-ex1.md
     crick-1995.md
     crick-1995.pdf           its pages, read in place (§3 `pdf`)
+  books/
+    alone.pdf                a PDF on its own: a document of its pages, no `.md` of its name
+    notes-on-alone.md        a note attached to it (§3 `pdf: alone.pdf`)
   german.md                  a deck (type: deck in front-matter)
   fleeting/
     lecture-9.md             a note: no type, your own writing
@@ -59,6 +62,7 @@ notes/
         eigenvalues.md
   .ilmi/                     app-private state, never required
     order.json               the order chosen for a directory's children
+    reading.json             the reading state of the PDFs on their own
     reviews/                 the review log, one file a month
       2026-10.jsonl
     same.json                pairs of cards said not to be the same fact
@@ -77,8 +81,31 @@ notes/
   the document: its type, schedule, priority, cards, and extract backrefs
   live there; the PDF is read in place and never written. The pairing is by
   stem whether or not the document names the file; a `pdf` field (§3) that
-  names another file wins. A `.pdf` with no `.md` beside it is ignored like
-  any other file.
+  names another file wins.
+- **A `.pdf` with no `.md` of its name beside it is a document of its own**
+  (since milestone 70): its pages, and nothing else. It is in the tree by
+  its file name without the extension, a source, and opens as its pages. It
+  is never written. Its reading state (a `read` line as §3 has it for a
+  document with pages, and a `pri`) is kept apart, since there is no front
+  matter to hold it, in `.ilmi/reading.json`:
+
+  ```
+  {
+    "books/alone.pdf": { "read": "due=2026-06-02 ivl=2 reps=1 pos=2 y=0.250", "pri": 30 }
+  }
+  ```
+
+  keyed by the file's vault-relative path, the keys sorted, `read` the
+  attributes exactly as the front matter would write them, `pri` an int
+  0–100; either may be absent, a key with neither is not written, and the
+  file goes when nothing is left to hold. Without the file no PDF on its own
+  is enrolled. A rename or a move of the file takes its entry with it; a
+  PDF that gains an `.md` of its name becomes that document's pages (the
+  document's own `read` line is its state from then; the entry is left and
+  means nothing). A note is attached to a PDF on its own by naming it in its
+  `pdf` field (§3, *Pages*): that note is the PDF's notes, and need not be
+  named after it. Before milestone 70 such a file was ignored like any
+  other; a vault from then opens with its unpaired PDFs as documents.
 - Any other file in a document's children directory is ignored by the walk.
   A clipped page's images land there (`name/img-01.png` …, §3 `url`) and the
   document refers to them relatively, `![alt](name/img-01.png)`. A page of
@@ -234,11 +261,23 @@ from a page of its parent's PDF and names that page; it means nothing on
 any other line and is kept as written.
 
 **Pages.** `pdf` names a file relative to the document, written plain or
-quoted like `title`. A document with pages opens as its pages beside its
-body, and the body is the person's notes on those pages: never frozen,
-whatever `frozen` says (`frozen` locks only a text source's text). A
-passage boxed on the pages is a section of the notes (§6.5, `boxes`); a
-box clipped into the notes is a clip line (§6.6). Older work kept what
+quoted like `title`. What the field means turns on the document's type
+(since milestone 70). **A source** (`type: source`) naming a PDF is that
+PDF's pages, or a range of them (`pages`, below): it opens as its pages,
+and its body is the person's notes on those pages: never frozen, whatever
+`frozen` says (`frozen` locks only a text source's text). A passage boxed
+on the pages is a section of the notes (§6.5, `boxes`); a box clipped into
+the notes is a clip line (§6.6). **A note** (no `type`) naming a PDF that
+stands on its own (§1) is attached to it: the note is that PDF's notes, and
+opens as the note it is; the PDF opens as its pages, with that note beside
+them when asked, and what is kept from the pages (a boxed section, a clip)
+goes into the note. A note need not be named after the file, and may sit in
+any folder; of several notes naming one PDF the first in path order is the
+one the PDF shows. The note's own `read` line, if it has one, is a note's
+(revisited); the PDF's reading state is its own (§1, `reading.json`). A
+note naming a PDF that is not on its own (one with an `.md` of its name)
+is a document with pages as before: it opens as those pages, its body their
+notes. Older work kept what
 came out of the pages in the body under one heading per page, `## p. <n>`, which the app adds the
 first time something lands on that page: a card made from the page goes
 under it, and an extract carved from the page leaves the passage there as a

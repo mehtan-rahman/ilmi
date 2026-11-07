@@ -15,7 +15,7 @@ import { Welcome } from './Welcome.js';
 import { activeTab, closeTab, splitPane } from './panes.js';
 import { ACCENTS, INSP_MAX, INSP_MIN, SIDE_MAX, SIDE_MIN, useApp, ZOOM_STEP } from './store.js';
 import { openInitialVault, openNode, rememberTab, setInspector, setSidebar, toggleInspector, toggleSidebar } from './vault.js';
-import { inspectorShown } from './layout.js';
+import { bookShown, inspectorShown } from './layout.js';
 import { shapeOf } from './platform.js';
 import { installLongPress } from './touch.js';
 import { watchInk } from './ink.js';
@@ -68,6 +68,8 @@ export function App() {
   const started = useApp((s) => s.started);
   const setPanes = useApp((s) => s.setPanes);
   const inspForced = useApp((s) => s.inspForced);
+  const bookInsp = useApp((s) => s.bookInsp);
+  const sessionEl = useApp((s) => s.sessionEl);
   const docs = useApp((s) => s.docs);
   const railFolded = useApp((s) => s.railFolded);
   const railWidth = useApp((s) => s.railWidth);
@@ -87,10 +89,6 @@ export function App() {
   const activeId = activeTab(panes)?.id;
   // the sheet is for one choice: it closes once something opens, and when the iPad turns
   useEffect(() => { useApp.setState({ sideSheet: false }); }, [activeId, shape]);
-  // portrait folds a book's notes; landscape has them beside the pages again
-  useEffect(() => {
-    if (shape !== 'desktop') useApp.setState({ notesHidden: shape === 'portrait' });
-  }, [shape]);
   useEffect(() => { document.documentElement.dataset.shape = shape; }, [shape]);
   // the keyboard on the glass covers the bottom of the page: the shell is as tall as what is left
   useEffect(() => {
@@ -109,14 +107,14 @@ export function App() {
       document.documentElement.style.removeProperty('--shell-h');
     };
   }, [mobile]);
-  // portrait: a swipe in from the left edge opens the sheet, a swipe left on it closes it;
-  // a book's notes are the same from the right edge (`Pdf.tsx`, `pdf.css`)
+  // portrait: a swipe in from the left edge opens the sheet, a swipe left on it closes it
   useEffect(() => {
     if (!sheet || vault === null) return;
-    let from: { x: number; y: number; edge: boolean; right: boolean; notes: boolean } | null = null;
+    let from: { x: number; y: number; edge: boolean } | null = null;
     const start = (e: TouchEvent) => {
       const t = e.touches[0];
-      from = t && e.touches.length === 1 ? { x: t.clientX, y: t.clientY, edge: t.clientX <= EDGE, right: t.clientX >= window.innerWidth - EDGE, notes: !!(t.target as Element | null)?.closest?.('.book-notes') } : null;
+      if (!t || e.touches.length !== 1) { from = null; return; }
+      from = { x: t.clientX, y: t.clientY, edge: t.clientX <= EDGE };
     };
     const move = (e: TouchEvent) => {
       const t = e.touches[0];
@@ -125,11 +123,8 @@ export function App() {
       const dy = Math.abs(t.clientY - from.y);
       if (Math.abs(dx) < SWIPE || dy > Math.abs(dx)) return;
       const open = useApp.getState().sideSheet;
-      const book = document.querySelector<HTMLElement>('.pane[data-active="1"] .book');
       if (dx > 0 && from.edge && !open) useApp.setState({ sideSheet: true });
       else if (dx < 0 && open) useApp.setState({ sideSheet: false });
-      else if (dx < 0 && from.right && book?.dataset.notes === '0') useApp.setState({ notesHidden: false });
-      else if (dx > 0 && from.notes && book?.dataset.notes === '1') useApp.setState({ notesHidden: true });
       from = null;
     };
     window.addEventListener('touchstart', start, { passive: true });
@@ -174,8 +169,13 @@ export function App() {
   }), []);
   const startInspResize = useCallback(dragHandle((x) => {
     const w = window.innerWidth - x;
-    if (w < INSP_COLLAPSE) setInspector({ open: false });
-    else setInspector({ open: true, width: Math.min(INSP_MAX, Math.max(INSP_MIN, w)) });
+    const width = Math.min(INSP_MAX, Math.max(INSP_MIN, w));
+    // over a book the inspector is that book's to show (`layout.ts`): the saved state keeps only the width
+    if (bookShown(useApp.getState())) {
+      useApp.setState({ bookInsp: w >= INSP_COLLAPSE });
+      if (w >= INSP_COLLAPSE) setInspector({ width });
+    } else if (w < INSP_COLLAPSE) setInspector({ open: false });
+    else setInspector({ open: true, width });
   }), []);
 
   // the global keys: ⌘K palette, ⌘\ split, ⌘W close tab, ⌃⌘S sidebar (macOS's own; ⌘⇧E is the
@@ -240,7 +240,7 @@ export function App() {
   // the sidebar is a column beside the page, or in portrait a sheet over it that takes no room
   const sideOn = sheet ? sideSheet : !sidebar.hidden;
   const sideW = sideOn && !sheet ? sidebar.width : 0;
-  const inspOn = inspectorShown({ sidebar: sheet ? { ...sidebar, hidden: true } : sidebar, inspector, inspForced, panes, docs, railFolded, railWidth }, win);
+  const inspOn = inspectorShown({ sidebar: sheet ? { ...sidebar, hidden: true } : sidebar, inspector, inspForced, bookInsp, sessionEl, panes, docs, railFolded, railWidth }, win);
   const inspW = inspOn ? inspector.width : 0;
   const active = activeId;
   return (

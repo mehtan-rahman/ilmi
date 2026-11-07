@@ -3,7 +3,8 @@
 
 import type { NodeType } from '../format/index.js';
 import { whenToDate } from '../schedule/index.js';
-import { baseOf, childDirOf, dirOf, isDoc, nameOf, ordered, within, type Order, type TreeNode } from '../vault/index.js';
+import { baseOf, childDirOf, dirOf, isDoc, isPdfPath, nameOf, ordered, within, type Order, type TreeNode } from '../vault/index.js';
+import type { Panes } from './panes.js';
 import type { DocInfo } from './store.js';
 
 export type NodeKind = 'folder' | NodeType;
@@ -21,6 +22,63 @@ export const INTAKE = ':intake';
 /** The session tab's id: one session at a time. */
 export const SESSION = ':session';
 const QUEUE = ':queue/';
+/**
+ * The body of a document with pages, shown as the notes on them (milestone
+ * 70): the tab the other pane holds while the pages are open. A note of its
+ * own attached to a PDF on its own needs no such id; it is the ordinary tab
+ * it is.
+ */
+const NOTES = ':notes/';
+
+export const notesId = (path: string): string => NOTES + path;
+/** The document a `:notes/` tab shows, or null for any other id. */
+export const notesPath = (id: string): string | null => (id.startsWith(NOTES) ? id.slice(NOTES.length) : null);
+
+/**
+ * The pages a node is read by: a document with pages, or a PDF on its own,
+ * is its own; a note attached to a PDF on its own (`of`) is read by that
+ * PDF; anything else by none.
+ */
+export function pagesOf(path: string, docs: Record<string, DocInfo>): string | null {
+  const info = docs[path];
+  if (!info) return null;
+  return info.pdf !== undefined ? path : info.of ?? null;
+}
+
+/**
+ * The note on a node's pages: a document with pages is its own notes; a PDF
+ * on its own shows the first note that names it (`note`), or none yet.
+ */
+export function noteOf(path: string, docs: Record<string, DocInfo>): string | null {
+  const info = docs[path];
+  if (!info) return null;
+  if (isPdfPath(path)) return info.note ?? null;
+  if (info.pdf !== undefined) return path;
+  return info.of !== undefined ? path : null;
+}
+
+/** The tab that shows the note on the pages at `path`: a note of its own as itself, a document with pages as its `:notes/` tab; null with no note. */
+export function notesTabOf(path: string, docs: Record<string, DocInfo>): string | null {
+  const note = noteOf(path, docs);
+  if (note === null) return null;
+  return docs[note]?.pdf !== undefined ? notesId(note) : note;
+}
+
+/**
+ * Whether two panes are a PDF's pages and the note on them, either way
+ * round (a session's pages counted by what it is on, `sessionPath`): the one
+ * second pane an iPad keeps (milestone 70).
+ */
+export function notesPair(panes: Panes, docs: Record<string, DocInfo>, sessionPath?: string): boolean {
+  if (panes.panes.length !== 2) return false;
+  const [a, b] = panes.panes.map((p) => p.tabs[p.active]?.id);
+  const pairs = (x: string | undefined, y: string | undefined): boolean => {
+    const at = x === SESSION ? sessionPath : x;
+    const pages = at === undefined ? null : pagesOf(at, docs);
+    return pages !== null && y !== undefined && notesTabOf(pages, docs) === y;
+  };
+  return pairs(a, b) || pairs(b, a);
+}
 
 export const queueId = (scope: QueueScope): string => QUEUE + scope;
 /** The scope of a saved-query tab id, or null for anything else. */
@@ -56,6 +114,8 @@ export const GLYPH: Record<TabKind, string> = {
 };
 
 export function kindOf(path: string, docs: Record<string, DocInfo>): NodeKind {
+  // a PDF on its own is a source: someone else's pages (milestone 70)
+  if (isPdfPath(path)) return docs[path]?.type ?? 'source';
   return isDoc(path) ? docs[path]?.type ?? 'note' : 'folder';
 }
 
@@ -63,6 +123,8 @@ export function tabKindOf(id: string, docs: Record<string, DocInfo>): TabKind {
   if (id === INTAKE) return 'intake';
   if (id === SESSION) return 'session';
   if (queueScope(id)) return 'queue';
+  // the notes on a document's pages are the person's own
+  if (notesPath(id) !== null) return 'note';
   return kindOf(id, docs);
 }
 
@@ -73,7 +135,9 @@ export function titleOf(path: string, docs: Record<string, DocInfo>, vaultRoot: 
   if (path === SESSION) return 'session';
   const scope = queueScope(path);
   if (scope) return QUEUE_TITLE[scope];
-  if (!isDoc(path) && docs[`${path}.md`]) return docs[`${path}.md`]?.title ?? slugName(nameOf(path));
+  const notes = notesPath(path);
+  if (notes !== null) return titleOf(notes, docs, vaultRoot);
+  if (!isDoc(path) && !isPdfPath(path) && docs[`${path}.md`]) return docs[`${path}.md`]?.title ?? slugName(nameOf(path));
   return docs[path]?.title ?? slugName(nameOf(path));
 }
 
@@ -137,8 +201,8 @@ export function moveTargets(nodes: TreeNode[], id: string, order: Order = {}): M
   add('', '', 0);
   const visit = (list: TreeNode[], dir: string, depth: number) => {
     for (const n of ordered(list, order[dir])) {
-      // a node's own subtree is no place to move it to
-      if (n.path === id) continue;
+      // a node's own subtree is no place to move it to; a PDF on its own holds nothing
+      if (n.path === id || (n.kind === 'doc' && n.bare)) continue;
       const kids = n.kind === 'folder' ? n.children : n.children;
       add(n.path, childDirOf(n.path), depth);
       if (kids) visit(kids, childDirOf(n.path), depth + 1);

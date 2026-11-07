@@ -1,6 +1,8 @@
-// Writes the corpus's PDF, `vault/papers/two-pages.pdf`: two US-letter pages
-// of Helvetica text, nobody's paper, made here so it can be regenerated and
-// so the test can hold the file on disk to these bytes. The text is written
+// Writes the corpus's PDFs: `vault/papers/two-pages.pdf`, two US-letter pages
+// of Helvetica text, nobody's paper, and `vault/books/alone.pdf`, three pages
+// that stand on their own with no `.md` of their name (milestone 70), both
+// made here so they can be regenerated and so the tests can hold the files
+// on disk to these bytes. The text is written
 // with text operators and a standard Type1 font, so pdf.js (and any reader)
 // gets a real text layer out of it. No dates, no ids: the bytes never change.
 //
@@ -28,6 +30,25 @@ export const PAGES: string[][] = [
     'Figure 1. A ruler drawn in the margin of a page.',
     'References',
     '[1] Nobody. A paper that does not exist. 2026.',
+  ],
+];
+
+/** The pages of the PDF on its own: a short chapter, so a passage boxed in it can be named from its heading. */
+export const ALONE: string[][] = [
+  [
+    '1 The ruler',
+    'A PDF may stand in a collection on its own, with no note of its name.',
+    'Its pages are read in place, and its reading state is kept apart.',
+    'A note is attached to it by naming the file, and need not be named after it.',
+  ],
+  [
+    '2 The gap',
+    'The gap between passes grows with each pass made on time.',
+    'A passage boxed on this page becomes a section of the attached note.',
+  ],
+  [
+    '3 The end',
+    'Nothing is ever written into this file.',
   ],
 ];
 
@@ -72,8 +93,11 @@ export function makePdf(pages: string[][] = PAGES): Uint8Array {
 }
 
 export const PDF_PATH = fileURLToPath(new URL('./vault/papers/two-pages.pdf', import.meta.url));
+export const ALONE_PATH = fileURLToPath(new URL('./vault/books/alone.pdf', import.meta.url));
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   writeFileSync(PDF_PATH, makePdf());
   console.log(`${PDF_PATH}: ${makePdf().length} bytes, ${PAGES.length} pages`);
+  writeFileSync(ALONE_PATH, makePdf(ALONE));
+  console.log(`${ALONE_PATH}: ${makePdf(ALONE).length} bytes, ${ALONE.length} pages`);
 }

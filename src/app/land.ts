@@ -79,7 +79,8 @@ export interface DropHit {
 export function dropTarget(hit: DropHit | null, tab: string | undefined): string {
   if (hit) return hit.folder ? hit.path : dirOf(hit.path);
   if (tab === undefined || tab.startsWith(':')) return '';
-  return isDoc(tab) ? dirOf(tab) : tab;
+  // a document's folder; a PDF on its own is a file too (milestone 70)
+  return isDoc(tab) || /\.pdf$/i.test(tab) ? dirOf(tab) : tab;
 }
 
 /** The row an element is part of: the nearest `[data-path]`, a folder when its `data-kind` says so. */

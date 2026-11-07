@@ -110,19 +110,28 @@ into the active tab's folder and opened.
 
 ### A PDF
 
-A PDF dropped on the intake lands as a pair, `name.pdf` beside `name.md`: the
-Markdown is the document (schedule, priority, cards, notes), the PDF its
-pages, read in place through pdf.js and never written. It opens as a book:
-the pages on the left, the Markdown's body on the right as your notes on
-them, one continuous document. A passage boxed on the pages becomes a
-section of the notes, named from the page (`3.3 · average values (3.12)`),
-placed in book order, and comes back in the day's queue until you dismiss
-it; its boxes are drawn on the page with its name, lit while the caret is
-in it, dashed once dismissed. Under its heading a chip shows it in the
-book, draws its boxes inline, and says when it is next. The gold bar in the
-margin runs to the read point (`pos` and `y` on the `read` line); done for
-today records the bottom of the view. An older extract's passage is still
-drawn on the page as a highlight when it is found there again.
+A PDF dropped on the intake lands on its own: the file, in the tree by its
+name, read in place through pdf.js and never written, in the reading queue
+from that day. It opens as its pages across the pane, nothing beside them
+(the inspector comes only by its toggle). Your notes on it are a note
+attached to it: the first time you keep something from the pages, or press
+`notes` among the words over them, you pick a note that is there or make a
+new one, named as you like, in a folder of your choosing; the note names the
+file in its `pdf` field, and from then on everything kept from that PDF goes
+into it. `notes` (⌘\) opens that note in the pane beside the pages, the
+ordinary tab it is, and closes it again; nothing slides over the pages. A
+PDF with a `.md` of its name beside it (a book's chapters, or anything
+from before) opens the same way, that document's body being its notes. A
+passage boxed on the pages becomes a section of the note, named from the
+page (`3.3 · average values (3.12)`), placed in book order, and comes back
+in the day's queue until you dismiss it; its boxes are drawn on the page
+with its name, lit while the caret is in it, dashed once dismissed. Under
+its heading a chip shows it in the book (the pages opened beside the note
+if they are not), draws its boxes inline, and says when it is next. The
+gold bar in the margin runs to the read point (`pos` and `y` on the `read`
+line, or in `.ilmi/reading.json` for a PDF on its own); done for today
+records the bottom of the view. An older extract's passage is still drawn
+on the page as a highlight when it is found there again.
 
 ### A book in EPUB
 
@@ -408,18 +417,19 @@ Mac's: a card graded on the iPad is on the Mac after its next pull.
 Held sideways the iPad is a narrow Mac window: one pane, the sidebar and
 the inspector hidden until the toggles at the two ends of the top strip are
 tapped. Upright, the sidebar comes over the page from the left edge (its
-toggle, or a swipe in from the edge) and goes once something is opened, and
-a book's notes start folded. A tap opens; the queue, the session, and its
-grades are buttons; a passage selected brings `card` and `extract` under it.
-With a keyboard attached the keys are the Mac's.
+toggle, or a swipe in from the edge) and goes once something is opened. A
+tap opens; the queue, the session, and its grades are buttons; a passage
+selected brings `card` and `extract` under it. With a keyboard attached the
+keys are the Mac's.
 
 Reading a book there: a finger scrolls the pages. To box a passage, rest the
 finger on the page a moment and then drag (the Pencil writes on the page,
 below). Drag again for a second box, tap the page to clear them, and the bar under
-the last box makes them a `section` or a `card`. Upright, the notes slide
-in over the pages from the right edge (a swipe in from that edge, or
-anything that goes to a section) and fold at a tap beside them or a swipe
-back. Where the Mac has a right-click, hold: a row, a heading and a deck's
+the last box makes them a `section` or a `card`. `notes` among the words
+over the pages opens the note beside them and closes it again, as on the
+Mac; upright, the two panes lie one above the other, the pages above and
+the note below, since half the width cannot hold a page. Where the Mac has
+a right-click, hold: a row, a heading and a deck's
 card open their menus when the finger lifts, and a row held and then moved
 is dragged.
 

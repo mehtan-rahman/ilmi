@@ -12,12 +12,12 @@ import {
   type Block, type Card, type CardForm, type CardSchedule, type Doc, type ReadSchedule, type WriteSchedule,
 } from '../format/index.js';
 import { activeExam, addDays, advanceWrite, cadence, cadenceWords, dayOf, elapsedBase, examKey, examLeft, inScope, nextIntervals, passagesOf, readPri, readingLeft, sectionState, type CardItem, type OptionKey } from '../schedule/index.js';
-import { baseOf, childDirOf, childrenAt, dirOf, isDoc, pageOfBlock, type TreeNode } from '../vault/index.js';
+import { baseOf, childDirOf, childrenAt, dirOf, isDoc, isPdfPath, pageOfBlock, type TreeNode } from '../vault/index.js';
 import { cardName, formLabel } from './chrome.js';
 import { breakdown, countsUnder, dueItems, plainMath } from './chromeText.js';
 import { MathText } from './MathText.js';
 import { FORM_LABEL, dueLabel, dueWhen, examDay, examName, examWhen, fmtDays, leftLines, standsWords } from './items.js';
-import { INTAKE, QUEUE_TITLE, SESSION, findNode, queueScope, titleOf } from './names.js';
+import { INTAKE, QUEUE_TITLE, SESSION, findNode, noteOf, notesPath, queueScope, titleOf } from './names.js';
 import { activeTab } from './panes.js';
 import { useApp, type CaretHeading, type DocInfo } from './store.js';
 import { useDoc } from './useDoc.js';
@@ -29,6 +29,7 @@ import { goToHeading } from './headings.js';
 import { headingOf, moveAction, sectionActions, statusOf, writeDoc } from './sections.js';
 import { appNow } from './clock.js';
 import { chipWhen } from './bookNotes.js';
+import { openNotes } from './book.js';
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 const words = (blocks: Block[]) => blocks.reduce((n, b) => (b.kind === 'card' ? n : n + b.text.split(/\s+/).filter(Boolean).length), 0);
@@ -484,12 +485,17 @@ function DocInspector({ id, info, doc, now }: { id: string; info: DocInfo; doc: 
   const rows: [string, ReactNode][] = [];
   if (parent && docs[parent]) rows.push(['of', titleOf(parent, docs, null)]);
   rows.push(['path', <span className="mono">{id}</span>]);
-  if (info.pdf) rows.push(['pages', <span className="mono">{baseOf(info.pdf)}{info.pages ? (info.pages.first === info.pages.last ? `, p. ${info.pages.first}` : `, pp. ${info.pages.first}–${info.pages.last}`) : ''}</span>]);
+  // a PDF on its own (milestone 70): its pages are itself; the note attached to it, when one is
+  const pdfAlone = isPdfPath(id);
+  if (info.pdf && !pdfAlone) rows.push(['pages', <span className="mono">{baseOf(info.pdf)}{info.pages ? (info.pages.first === info.pages.last ? `, p. ${info.pages.first}` : `, pp. ${info.pages.first}–${info.pages.last}`) : ''}</span>]);
+  if (pdfAlone && info.note) rows.push(['notes', titleOf(info.note, docs, null)]);
+  // a note attached to a PDF on its own: the PDF it is the notes of
+  if (info.of) rows.push(['notes on', titleOf(info.of, docs, null)]);
   if (m.imported) rows.push(['imported', m.imported]);
   if (m.url) rows.push(['url', <UrlLink key="url" url={m.url} />]);
   if (m.author) rows.push(['author', m.author]);
   if (m.published) rows.push(['published', m.published.slice(0, 10)]);
-  rows.push(['length', plural(words(doc.blocks), 'word')]);
+  if (!pdfAlone) rows.push(['length', plural(words(doc.blocks), 'word')]);
   if (cards) rows.push(cardsRow);
   if (m.read && info.type === 'note') rows.push(['revisit', `${m.read.reps ? `pass ${m.read.reps + 1}` : 'first pass'}, ${dueLabel(m.read.due, now)}`]);
   else if (m.read && info.pdf) rows.push(['reading', `${m.read.pos ? `to p. ${m.read.pos}${m.read.y !== undefined && m.read.y < 1 ? `, ${Math.round(m.read.y * 100)}% down` : ''}` : 'not started'}, ${dueLabel(m.read.due, now)}`]);
@@ -518,7 +524,7 @@ function DocInspector({ id, info, doc, now }: { id: string; info: DocInfo; doc: 
           </div>
         </Block>
       )}
-      {info.pdf && <PassagesBlock id={id} doc={doc} now={now} />}
+      {info.pdf && (pdfAlone ? (info.note !== undefined && <WithDoc id={info.note} render={(nd) => <PassagesBlock id={id} note={info.note!} doc={nd} now={now} />} />) : <PassagesBlock id={id} note={id} doc={doc} now={now} />)}
       <ExamBlock path={id} />
       {(cards > 0 || hasCardsUnder(id)) && <OptionsBlock path={id} />}
       {!info.pdf && <Outline id={id} doc={doc} />}
@@ -546,11 +552,12 @@ function DocInspector({ id, info, doc, now }: { id: string; info: DocInfo; doc: 
 // ── a book's passages ───────────────────────────────────────────
 
 /**
- * A document with pages: its passages (sections tied to boxes on its
- * pages), in book order, each with its pages and when it is next; a click
- * puts the caret at its heading, and the pages follow.
+ * A document with pages: its passages (sections of its note tied to boxes
+ * on its pages), in book order, each with its pages and when it is next; a
+ * click opens the note beside the pages, puts the caret at its heading, and
+ * the pages follow. `note` is the note's path, `doc` its text.
  */
-function PassagesBlock({ id, doc, now }: { id: string; doc: Doc; now: Date }) {
+function PassagesBlock({ id, note, doc, now }: { id: string; note: string; doc: Doc; now: Date }) {
   const caret = useApp((s) => s.caretHeading);
   const list = passagesOf(doc.blocks);
   return (
@@ -562,9 +569,9 @@ function PassagesBlock({ id, doc, now }: { id: string; doc: Doc; now: Date }) {
           {list.map((p) => {
             const read = p.heading.read!;
             const when = chipWhen(read, now);
-            const cur = caret?.path === id && caret.text === p.heading.text;
+            const cur = caret?.path === note && caret.text === p.heading.text;
             return (
-              <li key={`${p.index}:${p.heading.text}`} data-due={when === 'due today' ? '1' : '0'} data-cur={cur ? '1' : '0'} data-dismissed={when === 'dismissed' ? '1' : '0'} onClick={() => useApp.setState({ notesHidden: false, reveal: { path: id, index: p.index, heading: p.heading.text } })}>
+              <li key={`${p.index}:${p.heading.text}`} data-due={when === 'due today' ? '1' : '0'} data-cur={cur ? '1' : '0'} data-dismissed={when === 'dismissed' ? '1' : '0'} onClick={() => { useApp.setState({ reveal: { path: note, index: p.index, heading: p.heading.text } }); void openNotes(id).catch(console.error); }}>
                 <MathText className="cl-t" dir="auto" text={p.heading.text} />
                 <span className="cl-due" title={pagesLabel(p.boxes)}>{when === 'due today' ? 'today' : when.replace(/^back /, '')}</span>
               </li>
@@ -772,16 +779,18 @@ export function Inspector() {
       const at: CaretHeading | null = caret?.path === cur.path ? caret : cur.kind === 'section' ? { path: cur.path, nth: -1, text: cur.heading } : null;
       body = <WithDoc id={cur.path} render={(doc, info) => <>{at && <SectionBlock path={cur.path} doc={doc} at={at} now={now} />}<DocInspector id={cur.path} info={info} doc={doc} now={now} /></>} />;
     }
-  } else if (!isDoc(id)) body = <FolderInspector id={id} />;
+  } else if (!isDoc(id) && !isPdfPath(id) && notesPath(id) === null) body = <FolderInspector id={id} />;
   else {
+    // the notes on a document's pages, in their own tab: the document's own inspector
+    const own = notesPath(id) ?? id;
     body = (
-      <WithDoc id={id} render={(doc, info) => (
+      <WithDoc id={own} render={(doc, info) => (
         <>
-          {selected && selected.path === id && doc.blocks[selected.index]?.kind === 'card' && (
-            <CardBlock path={id} index={selected.index} doc={doc} group={undefined} now={now} />
+          {selected && selected.path === own && doc.blocks[selected.index]?.kind === 'card' && (
+            <CardBlock path={own} index={selected.index} doc={doc} group={undefined} now={now} />
           )}
-          {caret?.path === id && info.type !== 'deck' && <SectionBlock path={id} doc={doc} at={caret} now={now} />}
-          <DocInspector id={id} info={info} doc={doc} now={now} />
+          {caret?.path === own && info.type !== 'deck' && <SectionBlock path={own} doc={doc} at={caret} now={now} />}
+          <DocInspector id={own} info={info} doc={doc} now={now} />
         </>
       )} />
     );

@@ -13,14 +13,21 @@ export interface Folder {
 
 export interface DocNode {
   kind: 'doc';
-  /** Filename without `.md`. Front-matter `title` is applied by the UI, not here. */
+  /** Filename without `.md` (or without `.pdf`, for a PDF on its own). Front-matter `title` is applied by the UI, not here. */
   name: string;
-  /** Vault-relative path including `.md`. */
+  /** Vault-relative path including `.md`; a PDF on its own is its own path, `.pdf` included. */
   path: string;
   /** Contents of the sibling `name/` directory, when there is one. */
   children?: TreeNode[];
-  /** Vault-relative path of the sibling `name.pdf`, the document's pages, when there is one. */
+  /** Vault-relative path of the sibling `name.pdf`, the document's pages, when there is one; a PDF on its own names itself. */
   pdf?: string;
+  /**
+   * A PDF with no `.md` of its name beside it (FORMAT.md §1, milestone 70):
+   * a document of its own, its pages and nothing else. Its reading state is
+   * the vault's (`.ilmi/reading.json`), and a note names it to be its notes
+   * (§3 `pdf`).
+   */
+  bare?: true;
 }
 
 export type TreeNode = Folder | DocNode;
@@ -72,22 +79,42 @@ export async function walk(fs: Fs, root: string, rel = ''): Promise<TreeNode[]> 
     }
     // `name.pdf` beside `name.md` is the document's pages (FORMAT.md §1)
     const pdf = pdfs.get(d.name);
-    if (pdf !== undefined) d.pdf = pdf;
+    if (pdf !== undefined) {
+      d.pdf = pdf;
+      pdfs.delete(d.name);
+    }
     out.push(d);
   }
+  // a PDF with no `.md` of its name is a document of its own: its pages (milestone 70)
+  for (const [name, path] of pdfs) out.push({ kind: 'doc', name, path, pdf: path, bare: true });
   for (const [name, path] of dirs) {
     out.push({ kind: 'folder', name, path, children: await walk(fs, root, path) });
   }
   return out.sort(byName);
 }
 
-/** Every document path in the tree, depth first, in tree order. */
+/** Every document path in the tree, depth first, in tree order: the `.md` files; a PDF on its own is listed by `pdfs`. */
 export function documents(nodes: TreeNode[]): string[] {
   const out: string[] = [];
   const visit = (list: TreeNode[]) => {
     for (const n of list) {
       if (n.kind === 'doc') {
-        out.push(n.path);
+        if (!n.bare) out.push(n.path);
+        if (n.children) visit(n.children);
+      } else visit(n.children);
+    }
+  };
+  visit(nodes);
+  return out;
+}
+
+/** Every PDF on its own in the tree (`bare`), depth first, in tree order. */
+export function pdfs(nodes: TreeNode[]): string[] {
+  const out: string[] = [];
+  const visit = (list: TreeNode[]) => {
+    for (const n of list) {
+      if (n.kind === 'doc') {
+        if (n.bare) out.push(n.path);
         if (n.children) visit(n.children);
       } else visit(n.children);
     }

@@ -39,7 +39,7 @@ function TabBar({ pane, index, canClosePane }: TabBarProps) {
   const root = useApp((s) => s.vault);
   const sessionEl = useApp((s) => s.sessionEl);
   const setPanes = useApp((s) => s.setPanes);
-  // an iPad is one pane: no split to ask for
+  // an iPad is one pane, but for a PDF's pages and its note (`notesPair`): no split to ask for
   const mobile = useApp((s) => s.mobile);
   const after = () => rememberTab();
   return (

@@ -928,5 +928,6 @@ mark.find-hit { color: inherit; padding: 0; }
 .book-chip .bc-btn:hover { border-color: var(--accent); color: var(--accent); }
 .book-chip .bc-when[data-when="due"] { color: var(--accent); }
 .book-chip .bc-when[data-when="dismissed"] { color: var(--fg-4); }
-/* the chip says it; the quiet § after the heading would say it twice */
-.book-notes-doc .draft-doc .dd-h[data-read]::after { content: none; }
+/* the chip says it; the quiet § after the heading would say it twice (a note attached to a PDF on its own has the chips too, milestone 70) */
+.book-notes-doc .draft-doc .dd-h[data-read]::after,
+.reader-wrap[data-pdf] .draft-doc .dd-h[data-read]::after { content: none; }

@@ -17,7 +17,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState, type Dispatch, type MouseEvent, type SetStateAction } from 'react';
 import type { NodeType } from '../format/index.js';
-import { childDirOf, isDoc } from '../vault/index.js';
+import { childDirOf, isDoc, isPdfPath } from '../vault/index.js';
 import { hasCards, studyDeck } from './deckOps.js';
 import { importFiles } from './land.js';
 import { GLYPH, descendants, findNode, kindOf, moveTargets, titleOf, type NodeKind } from './names.js';
@@ -96,6 +96,7 @@ export function NodeMenu({ at, set, onCreated, onRename, onSubtab }: Props) {
   const found = at.id === '' ? undefined : findNode(tree, at.id);
   if (at.id !== '' && !found) return null;
   const kind: NodeKind = at.id === '' ? 'folder' : kindOf(at.id, docs);
+  const pdfAlone = isPdfPath(at.id);
   // new items, imports, and the intake land in the folder, or inside the document (its children directory)
   const dir = childDirOf(at.id);
   const act = (fn: () => void) => (e: MouseEvent) => { e.stopPropagation(); fn(); set(null); };
@@ -148,18 +149,23 @@ export function NodeMenu({ at, set, onCreated, onRename, onSubtab }: Props) {
         </>
       ) : !at.sub ? (
         <>
-          {NEW_KINDS.map(([k, label]) => (
+          {/* a PDF on its own holds nothing (milestone 70): nothing is made under it */}
+          {!pdfAlone && NEW_KINDS.map(([k, label]) => (
             <div key={k} className="ci" onClick={act(() => create(k))}>
               <span className="cg">{GLYPH[k]}</span>{label}
             </div>
           ))}
-          <div className="cd" />
-          <div className="ci" onClick={act(() => { void importFiles(dir).catch(fail); })}>
-            <span className="cg">↧</span>import a file…
-          </div>
-          <div className="ci" onClick={act(() => openIntake(dir))}>
-            <span className="cg">{GLYPH.intake}</span>add from text or a link
-          </div>
+          {!pdfAlone && <div className="cd" />}
+          {!pdfAlone && (
+            <div className="ci" onClick={act(() => { void importFiles(dir).catch(fail); })}>
+              <span className="cg">↧</span>import a file…
+            </div>
+          )}
+          {!pdfAlone && (
+            <div className="ci" onClick={act(() => openIntake(dir))}>
+              <span className="cg">{GLYPH.intake}</span>add from text or a link
+            </div>
+          )}
           {node && kind === 'note' && !docs[at.id]?.read && (
             <div className="ci" data-act="revisit" onClick={act(() => { enrolReading(at.id).catch(fail); })}>
               <span className="cg">▤</span>revisit
@@ -191,7 +197,7 @@ export function NodeMenu({ at, set, onCreated, onRename, onSubtab }: Props) {
               </div>
             </>
           )}
-          {node && !isDoc(at.id) && onSubtab && (
+          {node && !isDoc(at.id) && !pdfAlone && onSubtab && (
             <>
               <div className="cd" />
               <div className="ci" onClick={act(() => onSubtab(at.id))}>
@@ -201,7 +207,7 @@ export function NodeMenu({ at, set, onCreated, onRename, onSubtab }: Props) {
           )}
           {node && (
             <>
-              <div className="cd" />
+              {!pdfAlone && <div className="cd" />}
               <div className="ci" onClick={act(() => onRename(at.id))}>
                 <span className="cg">✎</span>rename<span className="ck">F2</span>
               </div>

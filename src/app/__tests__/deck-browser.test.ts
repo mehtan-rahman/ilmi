@@ -234,6 +234,7 @@ describe('under a folder or a document', () => {
     const targets = docTargets(vault.tree, vault.order);
     expect(targets.find((t) => t.path === PSET)).toEqual({ path: PSET, depth: 2 });
     expect(targets.find((t) => t.path === DECK)).toEqual({ path: DECK, depth: 0 });
+    // a PDF on its own holds no cards: no target
     expect(targets.every((t) => t.path.endsWith('.md'))).toBe(true);
   });
 });

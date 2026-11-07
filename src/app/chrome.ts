@@ -22,10 +22,8 @@ export interface HintContext {
   scope: QueueScope | null;
   /** A note, source, or extract not yet enrolled in reading. */
   canEnrol: boolean;
-  /** A document with pages, open as its pages beside its notes: the book's own keys apply. */
+  /** A document with pages, open as its pages: the book's own keys apply. */
   pages?: boolean;
-  /** Its notes hidden (⌘\). */
-  notesHidden?: boolean;
   /** The document's prose is locked: bare `e` and `m` act, since nothing is typed there. */
   frozen?: boolean;
   /** The document (or the session's element) is a note, or an extract: what comes back until dismissed, not a book. */
@@ -39,7 +37,8 @@ export interface HintContext {
 const PALETTE: Hint = ['⌘k', 'palette'];
 /** A book's pages: drag a box (again for another), then `e` a section of the notes or `m` a card or a clip. On an iPad a finger's plain drag is the scroll: it boxes after a hold (`touch.ts`). */
 const book = (c: HintContext): Hint[] => [[c.touch ? 'hold, drag' : 'drag', 'box a passage'], ['e', 'section'], ['m', 'card']];
-const notesKey = (c: HintContext): Hint => ['⌘\\', c.notesHidden ? 'show notes' : 'hide notes'];
+/** A book's notes come in over its pages and fold away again: the word over the pages, and this key. */
+const NOTES: Hint = ['⌘\\', 'notes'];
 const NAV: Hint = ['[ ]', 'prev / next'];
 
 /** Extract and card: bare letters in a frozen page, ⌘⇧ in editable text, where the letters type. */
@@ -58,9 +57,9 @@ export function hintsFor(c: HintContext): Hint[] {
         : [['⏎', 'open'], ['j k', 'move'], PALETTE];
     case 'session':
       // the same three everywhere: a book's ⏎ is done for today, everything else's next
-      if (c.el === 'read' && c.pages) return [['⏎', c.note ? 'next' : 'done for today'], ['p', 'later'], ['d', 'dismiss'], ...book(c), notesKey(c), NAV];
+      if (c.el === 'read' && c.pages) return [['⏎', c.note ? 'next' : 'done for today'], ['p', 'later'], ['d', 'dismiss'], ...book(c), NOTES, NAV];
       if (c.el === 'read') return [['⏎', c.note ? 'next' : 'done for today'], ['p', 'later'], ['d', 'dismiss'], ...selKeys(c.frozen, true, word), NAV];
-      if (c.el === 'section' && c.pages) return [['⏎', 'next'], ['p', 'later'], ['d', 'dismiss'], ...book(c), notesKey(c), NAV];
+      if (c.el === 'section' && c.pages) return [['⏎', 'next'], ['p', 'later'], ['d', 'dismiss'], ...book(c), NOTES, NAV];
       if (c.el === 'section') return [['⏎', 'next'], ['p', 'later'], ['d', 'dismiss'], ...selKeys(c.frozen), NAV];
       if (c.el === 'write') return [['⏎', 'next'], ['p', 'later'], ['d', 'dismiss'], ...selKeys(c.frozen, false), NAV];
       return [['space', 'reveal'], ['1 2 3 4', 'grade'], ['o', 'go to source'], NAV];
@@ -68,7 +67,7 @@ export function hintsFor(c: HintContext): Hint[] {
     case 'source':
     case 'extract': {
       const enrol: Hint[] = c.canEnrol ? [['r', c.kind === 'note' ? 'revisit' : 'start reading']] : [];
-      if (c.pages) return [...book(c), ...enrol, ['[ ]', 'sections'], ['/', 'search'], notesKey(c)];
+      if (c.pages) return [...book(c), ...enrol, ['[ ]', 'sections'], ['/', 'search'], NOTES];
       return [...selKeys(c.frozen, true, word), ...enrol, ['⌘F', 'find'], ['⌘\\', 'split pane']];
     }
     case 'draft':

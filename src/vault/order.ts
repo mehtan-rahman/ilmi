@@ -8,7 +8,7 @@
 // next write. Pure: the vault reads and writes the file.
 
 import { baseOf, childDirOf, dirOf, isDoc, rekey, within } from './paths.js';
-import type { TreeNode } from './walk.js';
+import { isPdfPath, type TreeNode } from './walk.js';
 
 export type Order = Record<string, string[]>;
 
@@ -16,7 +16,8 @@ export const ORDER_FILE = '.ilmi/order.json';
 
 /** A node's entry in its directory's order: `name.md` for a document, `name/` for a folder. */
 export function entryOf(path: string): string {
-  return isDoc(path) ? baseOf(path) : `${baseOf(path)}/`;
+  // a document by its file name, a PDF on its own by its (milestone 70), a folder by its name and a slash
+  return isDoc(path) || isPdfPath(path) ? baseOf(path) : `${baseOf(path)}/`;
 }
 
 /** `nodes` (one directory's children, in the walk's order) in the order `list` gives: listed first, the rest after as they were. */

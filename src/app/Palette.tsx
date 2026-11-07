@@ -10,7 +10,9 @@ import { activeTab, closePane, splitPane } from './panes.js';
 import { useApp } from './store.js';
 import { MENU_ID, runMenu } from './menu.js';
 import { hasCards, studyDeck } from './deckOps.js';
-import { SESSION, folderPaths } from './names.js';
+import { SESSION, folderPaths, slugName, titleOf } from './names.js';
+import { nameOf } from '../vault/index.js';
+import { attachCancelled, attachNewNote, attachNote } from './book.js';
 import { canMove, moveAction, moveSection, sectionActions, statusOf } from './sections.js';
 import { plainMath } from './chromeText.js';
 import type { CaretHeading } from './store.js';
@@ -125,9 +127,13 @@ export function Palette() {
   const [studying, setStudying] = useState(false);
   // `move to…` on a section (milestone 50): the list is the notes it can go to
   const moving = useApp((s) => s.sectionMove);
+  // the note for a PDF on its own (milestone 70): one that is there, or a new one named as typed, then the folder it goes in
+  const attaching = useApp((s) => s.noteAttach);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
-  const close = () => useApp.setState({ paletteOpen: false, sectionMove: null });
+  const close = () => useApp.setState({ paletteOpen: false, sectionMove: null, noteAttach: null });
+  // closed with nothing picked: whoever asked for a note is told
+  const dismiss = () => { if (attaching) attachCancelled(); close(); };
 
   // `postpone the rest` is offered only while there is a backlog (reading or writing due before today)
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -155,16 +161,31 @@ export function Palette() {
       .filter(([path, info]) => info.type === 'note' && path !== moving.path)
       .map(([path, info]) => ({ key: `mv:${path}`, title: info.title ?? path.replace(/\.md$/, '').split('/').pop() ?? path, sub: path.replace(/\.md$/, ''), tag: 'note' as const, target: { command: `move:${path}` } }));
   }, [moving, docs]);
-  const results = useMemo(() => search(moving ? moveIndex : studying ? studyIndex : index, q), [moving, moveIndex, studying, studyIndex, index, q]);
+  const attachIndex = useMemo((): Entry[] => {
+    if (!attaching) return [];
+    if (attaching.step === 'place') {
+      return folderPaths(tree).map((f) => ({ key: `in:${f}`, title: f === '' ? titleOf('', docs, vault) : f, sub: '', tag: 'folder' as const, target: { command: `attach-in:${f}` } }));
+    }
+    // notes that are there and are no PDF's yet, nor a document with pages
+    return Object.entries(docs)
+      .filter(([path, info]) => info.type === 'note' && info.of === undefined && info.pdf === undefined && path.endsWith('.md'))
+      .map(([path, info]) => ({ key: `at:${path}`, title: info.title ?? slugName(nameOf(path)), sub: path.replace(/\.md$/, ''), tag: 'note' as const, target: { command: `attach:${path}` } }));
+  }, [attaching, tree, docs, vault]);
+  /** The new note's name: as typed, else after the PDF. */
+  const newName = attaching ? (attaching.step === 'place' ? attaching.name ?? '' : q.trim() || `${titleOf(attaching.pdf, docs, vault)} notes`) : '';
+  const results = useMemo(() => {
+    if (attaching?.step === 'pick') return [{ key: 'at:new', title: 'new note', sub: newName, tag: 'note' as const, target: { command: 'attach-new' } }, ...search(attachIndex, q)];
+    return search(attaching ? attachIndex : moving ? moveIndex : studying ? studyIndex : index, q);
+  }, [attaching, attachIndex, newName, moving, moveIndex, studying, studyIndex, index, q]);
 
   useEffect(() => { inputRef.current?.focus(); }, []);
   // esc closes from anywhere, not only from the field
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); close(); } };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); dismiss(); } };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, []);
-  useEffect(() => { setSel(0); }, [q, studying, moving]);
+  }, [attaching]);
+  useEffect(() => { setSel(0); }, [q, studying, moving, attaching]);
   useEffect(() => {
     const list = listRef.current;
     const el = list?.querySelector<HTMLElement>('[data-sel="1"]');
@@ -179,6 +200,12 @@ export function Palette() {
     if ('command' in t && t.command === 'study') { setStudying(true); setQ(''); inputRef.current?.focus(); return; }
     if ('command' in t && t.command.startsWith('study:')) { close(); studyDeck(t.command.slice(6)); return; }
     if ('command' in t && t.command.startsWith('move:') && moving) { close(); void moveSection(moving, t.command.slice(5)).catch(console.error); return; }
+    if (attaching && 'command' in t) {
+      const pdf = attaching.pdf;
+      if (t.command === 'attach-new') { useApp.setState({ noteAttach: { pdf, step: 'place', name: newName } }); setQ(''); inputRef.current?.focus(); return; }
+      if (t.command.startsWith('attach:')) { close(); void attachNote(pdf, t.command.slice(7)).catch(console.error); return; }
+      if (t.command.startsWith('attach-in:')) { close(); void attachNewNote(pdf, newName, t.command.slice(10)).catch(console.error); return; }
+    }
     close();
     if ('command' in t) runCommand(t.command);
     else if ('vault' in t) void openVault(t.vault).catch(console.error);
@@ -194,11 +221,11 @@ export function Palette() {
   };
 
   return (
-    <div className="palette-overlay" onMouseDown={close}>
+    <div className="palette-overlay" onMouseDown={dismiss}>
       <div className="palette-panel" onMouseDown={(e) => e.stopPropagation()}>
         <div className="palette-input">
           <span className="g">⌕</span>
-          <input dir="auto" ref={inputRef} value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={onKey} placeholder={moving ? `move § ${plainMath(moving.text).slice(0, 40)} to…` : studying ? 'study…' : 'open or run'} spellCheck={false} />
+          <input dir="auto" ref={inputRef} value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={onKey} placeholder={attaching?.step === 'place' ? `${newName} in…` : attaching ? `notes on ${titleOf(attaching.pdf, docs, vault).slice(0, 40)}` : moving ? `move § ${plainMath(moving.text).slice(0, 40)} to…` : studying ? 'study…' : 'open or run'} spellCheck={false} />
           <kbd>esc</kbd>
         </div>
         <div className="palette-list" ref={listRef}>

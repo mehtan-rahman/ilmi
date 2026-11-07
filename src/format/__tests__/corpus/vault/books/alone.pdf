@@ -1,0 +1,67 @@
+%PDF-1.4
+%‚„œ”
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [5 0 R 7 0 R 9 0 R] /Count 3 /MediaBox [0 0 612 792] >>
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>
+endobj
+4 0 obj
+<< /Length 308 >>
+stream
+BT /F1 20 Tf 72 700 Td (1 The ruler) Tj ET
+BT /F1 12 Tf 16 TL 72 660 Td
+(A PDF may stand in a collection on its own, with no note of its name.) Tj
+T* (Its pages are read in place, and its reading state is kept apart.) Tj
+T* (A note is attached to it by naming the file, and need not be named after it.) Tj
+ET
+endstream
+endobj
+5 0 obj
+<< /Type /Page /Parent 2 0 R /Contents 4 0 R /Resources << /Font << /F1 3 0 R >> >> >>
+endobj
+6 0 obj
+<< /Length 212 >>
+stream
+BT /F1 20 Tf 72 700 Td (2 The gap) Tj ET
+BT /F1 12 Tf 16 TL 72 660 Td
+(The gap between passes grows with each pass made on time.) Tj
+T* (A passage boxed on this page becomes a section of the attached note.) Tj
+ET
+endstream
+endobj
+7 0 obj
+<< /Type /Page /Parent 2 0 R /Contents 6 0 R /Resources << /Font << /F1 3 0 R >> >> >>
+endobj
+8 0 obj
+<< /Length 117 >>
+stream
+BT /F1 20 Tf 72 700 Td (3 The end) Tj ET
+BT /F1 12 Tf 16 TL 72 660 Td
+(Nothing is ever written into this file.) Tj
+ET
+endstream
+endobj
+9 0 obj
+<< /Type /Page /Parent 2 0 R /Contents 8 0 R /Resources << /Font << /F1 3 0 R >> >> >>
+endobj
+xref
+0 10
+0000000000 65535 f 
+0000000015 00000 n 
+0000000064 00000 n 
+0000000157 00000 n 
+0000000254 00000 n 
+0000000613 00000 n 
+0000000715 00000 n 
+0000000978 00000 n 
+0000001080 00000 n 
+0000001248 00000 n 
+trailer
+<< /Size 10 /Root 1 0 R >>
+startxref
+1350
+%%EOF

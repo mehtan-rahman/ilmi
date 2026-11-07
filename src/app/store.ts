@@ -3,6 +3,7 @@ import type { NodeType, ReadSchedule, Review, SectionSchedule, WriteSchedule } f
 import type { QueueItem } from '../schedule/index.js';
 import type { Order, TreeNode } from '../vault/index.js';
 import type { DeckView } from './deck.js';
+import { notesPair } from './names.js';
 import { emptyPanes, type Panes } from './panes.js';
 import { onePane } from './platform.js';
 import { cleanRecents, type Recent } from './recents.js';
@@ -117,8 +118,16 @@ export interface DocInfo {
   write?: WriteSchedule;
   /** The `pri` field; absent means the default. */
   pri?: number;
-  /** Vault-relative path of the document's pages, when it has a PDF beside it (or names one). */
+  /**
+   * Vault-relative path of the document's pages, when it opens as them: a
+   * PDF beside it (or one it names, when that PDF is not a document of its
+   * own), or, for a PDF on its own, itself (milestone 70).
+   */
   pdf?: string;
+  /** A note attached to a PDF on its own (its `pdf` field names one): that PDF's path. The note opens as itself and is the PDF's notes. */
+  of?: string;
+  /** A PDF on its own: the note that is its notes (the first in path order naming it), when one does. */
+  note?: string;
   /** `tabs: true`: its children are tabs in a rail beside its page (`tabs.ts`). */
   tabs?: true;
   /** The `pages` field: which pages of its PDF it is (a chapter of a book that landed as a notebook). */
@@ -158,7 +167,7 @@ export interface Reveal {
   write?: true;
 }
 
-/** A book's notes asked to show a section on the pages: its boxes lit and scrolled to, flashed (`seq` changes each time). Transient. */
+/** A book's note asked to show a section on the pages (`path` the pages'): its boxes lit and scrolled to, flashed (`seq` changes each time). Transient. */
 export interface BookFocus {
   path: string;
   text: string;
@@ -247,18 +256,24 @@ export interface AppState {
   inspector: Inspector;
   /** The inspector asked for (⌘⇧I, the toggle) while the window has no room for it: shown anyway (`layout.ts`). Not saved. */
   inspForced: boolean;
+  /** The inspector asked for over a book, which opens without it (milestone 70); closed again when a book next opens. Not saved. */
+  bookInsp: boolean;
   panes: Panes;
   paletteOpen: boolean;
   /** The palette is choosing a note to move this section to (milestone 50); null otherwise. */
   sectionMove: CaretHeading | null;
+  /**
+   * The palette is choosing the note for a PDF on its own (milestone 70): a
+   * note that is there, or a new one, named as typed, in a folder picked
+   * next (`place`, the name chosen). `book.ts` holds who asked. Null otherwise.
+   */
+  noteAttach: { pdf: string; step: 'pick' | 'place'; name?: string } | null;
   tweaksOpen: boolean;
   selectedCard: SelectedCard | null;
   reveal: Reveal | null;
   /** Moves when a page of ink changes (milestone 58): a reader showing its picture reads it again. */
   inkRev: number;
   caretHeading: CaretHeading | null;
-  /** A document with pages opens as its pages beside its notes; ⌘\ hides the notes (and shows them). Not saved. */
-  notesHidden: boolean;
   /** The sections whose boxes are drawn inline in a book's notes (`show boxes here`), by document, by heading text. Not saved. */
   inlineBoxes: Record<string, string[]>;
   bookFocus: BookFocus | null;
@@ -360,15 +375,16 @@ export const useApp = create<AppState>((set, get) => ({
   sidebar: { width: SIDE_DEFAULT, hidden: false },
   inspector: { width: INSP_DEFAULT, open: true },
   inspForced: false,
+  bookInsp: false,
   panes: emptyPanes(),
   paletteOpen: false,
   sectionMove: null,
+  noteAttach: null,
   tweaksOpen: false,
   selectedCard: null,
   reveal: null,
   inkRev: 0,
   caretHeading: null,
-  notesHidden: false,
   inlineBoxes: {},
   bookFocus: null,
   intakeDir: '',
@@ -416,9 +432,10 @@ export const useApp = create<AppState>((set, get) => ({
   setPanes: (next) => set({ panes: typeof next === 'function' ? next(get().panes) : next }),
 }));
 
-// an iPad shows one pane: whatever asks for a second (a split, ⌘⇧-click) is folded back into the first
+// an iPad shows one pane: whatever asks for a second (a split, ⌘⇧-click) is folded back into the first;
+// but for a PDF's pages and the note on them, which are the split `notes` asks for (milestone 70, `book.ts`)
 useApp.subscribe((s) => {
-  if (s.mobile && s.panes.panes.length > 1) useApp.setState({ panes: onePane(s.panes) });
+  if (s.mobile && s.panes.panes.length > 1 && !notesPair(s.panes, s.docs, s.sessionEl?.item.path)) useApp.setState({ panes: onePane(s.panes) });
 });
 
 const persist = (s: AppState) => saveTweaks({ theme: s.theme, accent: s.accent, density: s.density, zoom: s.zoom, reopen: s.reopen, clipImages: s.clipImages, remoteImages: s.remoteImages, queueTitles: s.queueTitles, backlog: s.backlog });

@@ -9,7 +9,7 @@ import { nestOf } from './treeModel.js';
 import { DeckBrowser } from './DeckBrowser.js';
 import { NumbersView } from './NumbersLens.js';
 import { Intake } from './Intake.js';
-import { GLYPH, INTAKE, SESSION, findNode, kindOf, queueScope, titleOf, type NodeKind } from './names.js';
+import { GLYPH, INTAKE, SESSION, findNode, kindOf, notesPath, queueScope, titleOf, type NodeKind } from './names.js';
 import { countWords, countsUnder } from './chromeText.js';
 import type { OpenOpts } from './panes.js';
 import { Pdf } from './Pdf.js';
@@ -37,6 +37,9 @@ export function Lens({ id, active, onOpen }: LensProps) {
   if (id === SESSION) return <Session active={active} onOpen={onOpen} />;
   const scope = queueScope(id);
   if (scope) return <Queue scope={scope} active={active} />;
+  // the notes on a document's pages (milestone 70): its body in the reader, in the pane beside the pages
+  const notes = notesPath(id);
+  if (notes !== null) return <Reader key={id} id={notes} active={active} notes />;
   // a notebook's page: its tab rail beside it (`Rail.tsx`)
   const nb = notebookOf(id, docs);
   if (nb) return <Notebook nb={nb} page={id} active={active} onOpen={onOpen}><PageLens id={id} active={active} onOpen={onOpen} /></Notebook>;
@@ -49,7 +52,7 @@ function PageLens({ id, active, onOpen }: LensProps) {
   const kind = kindOf(id, docs);
   if (kind === 'folder') return <FolderLens id={id} active={active} onOpen={onOpen} />;
   if (kind === 'deck') return <DeckLens id={id} active={active} />;
-  // a source whose pages exist opens as pages
+  // a source whose pages exist opens as pages; a PDF on its own is its pages (milestone 70)
   if (docs[id]?.pdf) return <Pdf key={id} id={id} active={active} />;
   return <Reader key={id} id={id} active={active} />;
 }

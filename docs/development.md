@@ -24,7 +24,7 @@ npm run dev            # renderer only, in a browser at http://localhost:1420
 npm test               # format round-trip and vault tests
 npm run typecheck
 npm run import-sm -- <collection.kno> <vault-dir>   # a SuperMemo collection, once
-npm run fixture:pdf    # regenerate the corpus's two-page PDF
+npm run fixture:pdf    # regenerate the corpus's PDFs (two-pages.pdf, and alone.pdf, a PDF on its own)
 npm run fixture:anki   # regenerate the two-deck Anki package and its JSON (cargo)
 npm run fixture:epub   # regenerate the three-chapter EPUB and its JSON (cargo)
 npm run plugins        # build the plugins under plugins/ (esbuild) and refresh plugins/ilmi.d.ts
@@ -65,9 +65,13 @@ installed app's.
 `ILMI_SMOKE=welcome` runs before any vault opens and walks the welcome instead,
 seeding its rows with `ILMI_VAULT`; the other modes are listed at the top of
 `src/app/smoke.ts`. `ILMI_SMOKE=book` (a scratch copy of `samples/double-major`,
-with `ILMI_BOOKS=<this repo>/design/books`) walks a book beside its notes on
+with `ILMI_BOOKS=<this repo>/design/books`) walks a book and its notes on
 `design/books/ch3-book.pdf`, the sample's Lindqvist ch. 3 at pp. 41–44 of its
-book (`pdflatex ch3-book.tex` after `ch3.tex` rebuilds it). `ILMI_SMOKE=books`
+book (`pdflatex ch3-book.tex` after `ch3.tex` rebuilds it): the pages across
+the pane, the note opened beside them by `notes` and closed, and, since
+milestone 70, a PDF on its own dropped in (`books/alone.pdf`, the same file),
+read in the queue by its own line in `.ilmi/reading.json`, asked for a note
+when a passage is kept, the note made in `fleeting` through the palette. `ILMI_SMOKE=books`
 walks the sample's own two books, typeset from the text the sample held before
 milestone 49 (`design/books/lindqvist.py` and `reader.py` write the `.tex`
 files from `design/books/text/`; `pdflatex lindqvist.tex`, `xelatex reader.tex`
@@ -202,9 +206,13 @@ folder>`: the collection makes the storage. On the simulator, `{"mode":
 "touch", "storage": "<that folder>"}`: a collection is made from the
 storage (a simulator reads the Mac's disk), the chapter is opened and read,
 a passage boxed and made a section, and the section synced; its `section:`
-line names it. On the Mac again, `ILMI_VAULT=<the collection's own folder
-under collections/> ILMI_STORAGE=<the folder> ILMI_EXPECT=<the section's
-name>`: the section is there after a sync. The simulator's run is under
+line names it. Since milestone 70 the Mac's first run also puts a PDF on
+its own in the storage (`library/alone.pdf`), which the iPad opens, boxes,
+and makes a note for in `fleeting` (its `alone note:` line names it). On
+the Mac again, `ILMI_VAULT=<the collection's own folder under
+collections/> ILMI_STORAGE=<the folder> ILMI_EXPECT=<the section's name>
+ILMI_ALONE_NOTE=<that note's path>`: the section and the note are there
+after a sync. The simulator's run is under
 real touches, which neither `simctl` nor the page can make: the smoke logs
 `do: tap x y`, `do: press x y seconds`, `do: drag x1 y1 x2 y2 hold`, `do:
 flick x1 y1 x2 y2` and `do: turn landscape` (places as fractions of the

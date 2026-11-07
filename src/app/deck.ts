@@ -125,7 +125,9 @@ export function docsUnder(tree: TreeNode[], id: string, order: Order, files: rea
   const dirs = directories(tree);
   const visit = (dir: string) => {
     for (const n of ordered(dirs.get(dir) ?? [], order[dir])) {
-      if (n.kind === 'doc') out.push(n.path);
+      if (n.kind !== 'doc') { visit(n.path); continue; }
+      // a PDF on its own holds no cards
+      if (!n.bare) out.push(n.path);
       visit(childDirOf(n.path));
     }
   };
@@ -141,7 +143,8 @@ export function docTargets(tree: TreeNode[], order: Order): { path: string; dept
   const dirs = directories(tree);
   const visit = (dir: string, depth: number) => {
     for (const n of ordered(dirs.get(dir) ?? [], order[dir])) {
-      if (n.kind === 'doc') out.push({ path: n.path, depth });
+      // a PDF on its own holds no cards: no target
+      if (n.kind === 'doc' && !n.bare) out.push({ path: n.path, depth });
       visit(childDirOf(n.path), depth + 1);
     }
   };

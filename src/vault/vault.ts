@@ -11,7 +11,7 @@ import { join, relative, sameStamp, type Fs, type Stamp } from './fs.js';
 import { ORDER_FILE, childrenAt, cleanOrder, entryOf, followMove, forget, ordered, placeEntry, pruneOrder, restoreOrder, type Order } from './order.js';
 import { addToPage } from './pages.js';
 import { baseOf, childDirOf, cleanName, dirOf, fileName, isDoc, joinRel, nameOf, normRel, pdfOf, rekey, relFrom, within } from './paths.js';
-import { documents, isDocPath, isHidden, isPdfPath, walk, type DocNode, type TreeNode } from './walk.js';
+import { documents, isDocPath, isHidden, isPdfPath, pdfs, walk, type DocNode, type TreeNode } from './walk.js';
 
 export interface Loaded {
   path: string;
@@ -66,6 +66,8 @@ export interface Removed {
   files: { path: string; bytes: Uint8Array; ref?: string }[];
   dirs: string[];
   order: Order;
+  /** A PDF on its own: its reading state, put back with it. */
+  reading?: PdfState;
 }
 
 /** Default file names for new nodes, by type. */
@@ -216,6 +218,55 @@ export interface PdfChapterSpec {
 
 const STATE_DIR = '.ilmi';
 const STATE_FILE = `${STATE_DIR}/state.json`;
+/**
+ * The reading state of the PDFs that stand on their own (FORMAT.md §1,
+ * milestone 70): `{ "<path>.pdf": { "read": "<the read line's attributes>",
+ * "pri": <int> } }`, keys sorted. A PDF with a note named after it keeps
+ * its state in that note's front matter, as before.
+ */
+export const READING_FILE = `${STATE_DIR}/reading.json`;
+
+/** What `reading.json` keeps for one PDF: its `read` line and its priority, each as the front matter would write it. */
+export interface PdfState {
+  read?: string;
+  pri?: number;
+}
+
+/** The front matter a PDF on its own reads as: a source whose pages are itself, with its reading state. */
+export function pdfFront(path: string, st: PdfState | undefined): string {
+  const lines = ['---', 'type: source', `pdf: ${baseOf(path)}`];
+  if (st?.read !== undefined) lines.push(`read: ${st.read}`);
+  if (st?.pri !== undefined) lines.push(`pri: ${st.pri}`);
+  lines.push('---', '');
+  return lines.join('\n');
+}
+
+/** The reading state a document's text holds for a PDF on its own: its `read` and `pri` lines, nothing else; null when it holds neither. */
+export function pdfStateOf(text: string): PdfState | null {
+  const front = /^---\n([\s\S]*?)\n---(?:\n|$)/.exec(text)?.[1] ?? '';
+  const out: PdfState = {};
+  for (const line of front.split('\n')) {
+    const m = /^(read|pri): (.*)$/.exec(line);
+    if (!m) continue;
+    if (m[1] === 'read') out.read = m[2]!.trim();
+    else { const n = Number(m[2]); if (Number.isInteger(n)) out.pri = n; }
+  }
+  return out.read === undefined && out.pri === undefined ? null : out;
+}
+
+function cleanReading(raw: unknown): Record<string, PdfState> {
+  const out: Record<string, PdfState> = {};
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (!isPdfPath(k) || !v || typeof v !== 'object') continue;
+    const st: PdfState = {};
+    const { read, pri } = v as { read?: unknown; pri?: unknown };
+    if (typeof read === 'string' && read.trim()) st.read = read.trim();
+    if (typeof pri === 'number' && Number.isInteger(pri) && pri >= 0 && pri <= 100) st.pri = pri;
+    if (st.read !== undefined || st.pri !== undefined) out[k] = st;
+  }
+  return out;
+}
 /** Pairs of cards said not to be the same fact (milestone 45): `{ "not": ["a|b", …] }`, each pair's two keys in order. */
 export const SAME_FILE = `${STATE_DIR}/same.json`;
 const TMP_SUFFIX = '.ilmi-tmp';
@@ -266,6 +317,8 @@ export class Vault {
   tree: TreeNode[] = [];
   /** The order chosen for each directory, as `.ilmi/order.json` holds it (`order.ts`). */
   order: Order = {};
+  /** The reading state of the PDFs on their own, as `.ilmi/reading.json` holds it (milestone 70). */
+  private reading: Record<string, PdfState> = {};
   private cache = new Map<string, Loaded>();
   private listeners = new Set<(ev: VaultEvent) => void>();
   private pending: Promise<void> = Promise.resolve();
@@ -280,6 +333,7 @@ export class Vault {
     const v = new Vault(fs, root);
     v.tree = await walk(fs, root);
     v.order = await v.loadOrder();
+    v.reading = await v.loadReading();
     return v;
   }
 
@@ -287,8 +341,14 @@ export class Vault {
     return join(this.root, rel);
   }
 
+  /** Every document (`.md`) in the tree, depth first. */
   documents(): string[] {
     return documents(this.tree);
+  }
+
+  /** Every PDF on its own in the tree (FORMAT.md §1, milestone 70), depth first: each reads as a document whose pages are itself. */
+  pdfs(): string[] {
+    return pdfs(this.tree);
   }
 
   /** The tree node of a document, when it is in the tree. */
@@ -310,6 +370,7 @@ export class Vault {
    * null. Vault-relative.
    */
   async pagesOf(path: string): Promise<string | null> {
+    if (isPdfPath(path)) return this.node(path)?.bare ? path : null;
     if (!isDoc(path)) return null;
     const named = meta((await this.read(path)).doc).pdf;
     if (named !== undefined) {
@@ -337,11 +398,29 @@ export class Vault {
     if (hit && !fresh) return hit;
     const abs = this.abs(path);
     const stamp = await this.fs.stat(abs);
+    // a PDF on its own reads as a document: a source whose pages are itself, its reading state from `reading.json`, no body
+    if (isPdfPath(path)) {
+      if (!stamp || stamp.isDir) throw new Error(`${path}: no such file`);
+      return this.cachePdf(path, stamp);
+    }
     const text = await this.fs.readText(abs);
     const { doc, diagnostics } = parse(text);
     const loaded: Loaded = { path, text, doc, diagnostics, stamp };
     this.cache.set(path, loaded);
     return loaded;
+  }
+
+  private cachePdf(path: string, stamp: Stamp | null): Loaded {
+    const text = pdfFront(path, this.reading[path]);
+    const { doc, diagnostics } = parse(text);
+    const loaded: Loaded = { path, text, doc, diagnostics, stamp };
+    this.cache.set(path, loaded);
+    return loaded;
+  }
+
+  /** The reading state of the PDF on its own at `path`, as `reading.json` holds it; undefined for none. */
+  pdfState(path: string): PdfState | undefined {
+    return this.reading[path];
   }
 
   diagnostics(path: string): Diagnostic[] {
@@ -376,7 +455,26 @@ export class Vault {
     return this.commit(path, serialize(doc));
   }
 
+  /**
+   * A write to a PDF on its own: nothing is written into the file, ever;
+   * its `read` and `pri` lines go to `reading.json`, and the rest of what
+   * was written is dropped. Reported as a change to the document it reads
+   * as, so its row and its queue items follow.
+   */
+  private async commitPdf(path: string, text: string): Promise<Loaded> {
+    const st = pdfStateOf(text);
+    const was = this.reading[path];
+    if (JSON.stringify(st) !== JSON.stringify(was ?? null)) {
+      if (st) this.reading[path] = st; else delete this.reading[path];
+      await this.writeReading();
+    }
+    const loaded = this.cachePdf(path, await this.fs.stat(this.abs(path)));
+    this.emit({ kind: 'doc', path, loaded });
+    return loaded;
+  }
+
   private async commit(path: string, text: string): Promise<Loaded> {
+    if (isPdfPath(path)) return this.commitPdf(path, text);
     const abs = this.abs(path);
     await this.atomicWrite(abs, text);
     const stamp = await this.fs.stat(abs);
@@ -483,7 +581,87 @@ export class Vault {
         this.emit({ kind: 'order', order });
       }
     }
+    // the reading state of the PDFs on their own changed under us (a sync): each whose state moved reads anew
+    if (hidden.includes(READING_FILE)) await this.reloadReading();
     if (hidden.length) this.emit({ kind: 'hidden', paths: hidden });
+  }
+
+  /** `reading.json` read again: every PDF on its own whose state differs from what was held is reported as changed. */
+  private async reloadReading(): Promise<void> {
+    const next = await this.loadReading();
+    const was = this.reading;
+    this.reading = next;
+    for (const path of this.pdfs()) {
+      if (JSON.stringify(was[path] ?? null) === JSON.stringify(next[path] ?? null)) continue;
+      const stamp = await this.fs.stat(this.abs(path));
+      this.emit({ kind: 'doc', path, loaded: this.cachePdf(path, stamp) });
+    }
+  }
+
+  async loadReading(): Promise<Record<string, PdfState>> {
+    const abs = this.abs(READING_FILE);
+    if (!(await this.fs.stat(abs))) return {};
+    try {
+      return cleanReading(JSON.parse(await this.fs.readText(abs)));
+    } catch {
+      return {};
+    }
+  }
+
+  /** `reading.json` written as held, keys sorted; with nothing to hold, the file goes. */
+  private async writeReading(): Promise<void> {
+    const keys = Object.keys(this.reading).sort();
+    const abs = this.abs(READING_FILE);
+    if (!keys.length) {
+      if (await this.fs.stat(abs)) await this.fs.remove(abs);
+      return;
+    }
+    const out: Record<string, PdfState> = {};
+    for (const k of keys) out[k] = this.reading[k]!;
+    await this.fs.mkdir(this.abs(STATE_DIR));
+    await this.atomicWrite(abs, `${JSON.stringify(out, null, 2)}\n`);
+  }
+
+  /** The reading state of a PDF on its own moved with it (a rename, a move): its entry follows. */
+  private async rekeyReading(from: string, to: string): Promise<void> {
+    const st = this.reading[from];
+    if (!st) return;
+    delete this.reading[from];
+    this.reading[to] = st;
+    await this.writeReading();
+  }
+
+  /**
+   * After a PDF on its own moved from `oldPdf` to `newPdf`: every note whose
+   * `pdf` field named it names the new file (FORMAT.md §3). Every document
+   * is looked at, which is the cost of a PDF that any note may name.
+   */
+  private async retargetNotes(oldPdf: string, newPdf: string): Promise<void> {
+    for (const path of this.documents()) {
+      const named = meta((await this.read(path)).doc).pdf;
+      if (named === undefined || normRel(joinRel(dirOf(path), named)) !== oldPdf) continue;
+      await this.update(path, (doc) => setField(doc, 'pdf', relFrom(dirOf(path), newPdf)));
+    }
+  }
+
+  /**
+   * A PDF on its own, new in `dir` (milestone 70): the file as `name.pdf`
+   * and no `.md` beside it, enrolled in reading from today on the cadence
+   * of the default priority, as an imported source is. Resolves to its path.
+   */
+  addPdf(dir: string, spec: { title: string; bytes: Uint8Array; today?: string }): Promise<string> {
+    return this.serial(async () => {
+      if (!spec.bytes.length) throw new Error('nothing to import');
+      const title = spec.title.trim() || NEW_NAMES.source;
+      await this.ensureDir(dir);
+      const name = await this.freeName(dir, fileName(title));
+      const path = `${joinRel(dir, name)}.pdf`;
+      await this.atomicWriteBytes(this.abs(path), spec.bytes);
+      this.reading[path] = { read: `due=${spec.today ?? localDay(new Date())} ivl=${firstGap(undefined)} reps=0 pos=0` };
+      await this.writeReading();
+      await this.rewalk();
+      return path;
+    });
   }
 
 
@@ -806,8 +984,13 @@ export class Vault {
       if (!clean) throw new Error(`"${name}" is not a name`);
       if (clean === nameOf(path)) return path;
       const dir = dirOf(path);
-      const to = isDoc(path) ? `${joinRel(dir, clean)}.md` : joinRel(dir, clean);
+      const to = isDoc(path) ? `${joinRel(dir, clean)}.md` : isPdfPath(path) ? `${joinRel(dir, clean)}.pdf` : joinRel(dir, clean);
       const pagesMoved = await this.relocate(path, to);
+      // a PDF on its own: its reading state follows, and the notes that name it name the new file
+      if (isPdfPath(path)) {
+        await this.rekeyReading(path, to);
+        await this.retargetNotes(path, to);
+      }
       if (isDoc(path)) {
         await this.retargetBackrefs(dir, nameOf(path), clean);
         if (pagesMoved && meta((await this.read(to)).doc).pdf === `${nameOf(path)}.pdf`) {
@@ -839,6 +1022,10 @@ export class Vault {
       // a `pdf` field naming a sibling that is not the stem's pages: it goes along, so the name still resolves
       const named = isDoc(path) ? meta((await this.read(path)).doc).pdf : undefined;
       await this.relocate(path, to);
+      if (isPdfPath(path)) {
+        await this.rekeyReading(path, to);
+        await this.retargetNotes(path, to);
+      }
       if (named !== undefined && !named.includes('/') && named !== baseOf(pdfOf(path))) {
         const from = joinRel(dirOf(path), named);
         const dest = joinRel(dir, named);
@@ -1022,6 +1209,12 @@ export class Vault {
         await this.fs.remove(this.abs(childDirOf(path)));
         await this.fs.remove(this.abs(pdfOf(path)));
       }
+      // a PDF on its own takes its reading state with it
+      if (isPdfPath(path) && this.reading[path]) {
+        removed.reading = this.reading[path];
+        delete this.reading[path];
+        await this.writeReading();
+      }
       for (const key of [...this.cache.keys()]) {
         if (rekey(key, path, path) !== null) {
           this.cache.delete(key);
@@ -1052,6 +1245,10 @@ export class Vault {
         else await this.atomicWriteBytes(this.abs(f.path), f.bytes);
         this.cache.delete(f.path);
       }
+      if (r.reading) {
+        this.reading[r.path] = r.reading;
+        await this.writeReading();
+      }
       await this.rewalk();
       await this.writeOrder(restoreOrder(this.order, r.order, r.path));
     });
@@ -1066,7 +1263,7 @@ export class Vault {
     return this.serial(async () => {
       const dir = dirOf(path);
       const name = await this.freeName(dir, `${nameOf(path)} copy`);
-      const to = isDoc(path) ? `${joinRel(dir, name)}.md` : joinRel(dir, name);
+      const to = isDoc(path) ? `${joinRel(dir, name)}.md` : isPdfPath(path) ? `${joinRel(dir, name)}.pdf` : joinRel(dir, name);
       const copy = async (from: string, dest: string): Promise<void> => {
         const st = await this.fs.stat(this.abs(from));
         if (!st) return;

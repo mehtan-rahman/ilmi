@@ -1342,7 +1342,12 @@ export function Reader({ id, active = true, onPages, notes = false }: ReaderProp
   const canExtractRef = useRef(false);
   canExtractRef.current = canExtract;
   // a text source (a clipping, an EPUB chapter): a marked passage is a section of its note, not an extract (milestone 50)
-  const marks = info?.type === 'source' && !info.pdf && !notes;
+  const marks = info?.type === 'source' && !info.pdf && !info.of && !notes;
+  // the pages this document is the notes on (milestone 70): its own, or the PDF on its own it is attached to; the chips and crops are drawn for either
+  const pagesRel = info?.pdf ?? info?.of;
+  const booked = notes || info?.of !== undefined;
+  const bookedRef = useRef(booked);
+  bookedRef.current = booked;
   const marksRef = useRef(false);
   marksRef.current = marks;
   // the section just made: ⏎ right after opens the note at it, to write there
@@ -1484,7 +1489,7 @@ export function Reader({ id, active = true, onPages, notes = false }: ReaderProp
         pos: m.type === 'note' || notes ? null : m.read?.pos ?? null,
         images: images.load,
         folds: useApp.getState().folds[id] ?? [],
-        ...(notes ? { book: bookOptions(id) } : {}),
+        ...(bookedRef.current ? { book: bookOptions(id) } : {}),
       });
       const view = viewRef.current;
       if (view) {
@@ -1629,21 +1634,21 @@ export function Reader({ id, active = true, onPages, notes = false }: ReaderProp
   }, [id, measure, hookBlocks]);
 
   // a book's notes: crops (a clip, a section's boxes shown here) drawn as they appear, and the chips redrawn when asked
-  const shownHere = useApp((s) => (notes ? s.inlineBoxes[id] : undefined));
+  const shownHere = useApp((s) => (booked ? s.inlineBoxes[id] : undefined));
   useEffect(() => {
     const view = viewRef.current;
-    if (!notes || !view || status !== 'ok') return;
+    if (!booked || !view || status !== 'ok') return;
     view.dispatch(view.state.tr.setMeta(bookKey, 'redraw'));
-  }, [notes, shownHere, status, info?.pdf]);
+  }, [booked, shownHere, status, pagesRel]);
   useEffect(() => {
     const mount = mountRef.current;
-    const rel = info?.pdf;
-    if (!notes || !mount || !rel || status !== 'ok') return;
+    const rel = pagesRel;
+    if (!booked || !mount || !rel || status !== 'ok') return;
     fillCrops(mount, rel);
     const mo = new MutationObserver(() => fillCrops(mount, rel));
     mo.observe(mount, { childList: true, subtree: true });
     return () => mo.disconnect();
-  }, [notes, info?.pdf, status]);
+  }, [booked, pagesRel, status]);
 
   // frozen or thawed: the view re-reads `editable`, and the decorations are drawn again
   useEffect(() => {
@@ -2157,7 +2162,7 @@ export function Reader({ id, active = true, onPages, notes = false }: ReaderProp
   const notesLine = [passages ? plural(passages, 'passage') : '', plural(cards, 'card')].join(passages ? ' · ' : '');
 
   return (
-    <div className="reader-wrap" ref={rootRef} {...(notes && info?.pdf ? { 'data-pdf': info.pdf } : {})}>
+    <div className="reader-wrap" ref={rootRef} {...(booked && pagesRel ? { 'data-pdf': pagesRel } : {})}>
       <div className={`reader doc-view${reading ? ' reading' : ''}${notes ? ' book-notes-doc' : ''}`} data-frozen={frozen ? '1' : '0'}>
         {find && (
           <div className="find-bar">

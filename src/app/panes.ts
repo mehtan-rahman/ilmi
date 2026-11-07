@@ -5,6 +5,15 @@
 // the store holds the value.
 
 import { rekey } from '../vault/index.js';
+import { notesId, notesPath } from './names.js';
+
+/** A tab's path under a rename or a delete: a `:notes/` tab follows the document it shows. */
+function rekeyTab(id: string, from: string, to: string): string | null {
+  const notes = notesPath(id);
+  if (notes === null) return rekey(id, from, to);
+  const next = rekey(notes, from, to);
+  return next === null ? null : notesId(next);
+}
 
 export interface Tab {
   /** React key; survives re-targeting. */
@@ -95,6 +104,60 @@ export function openTab(s: Panes, id: string, opts: OpenOpts = {}, same?: (tabId
   return next;
 }
 
+/**
+ * Where `id` is open in a pane other than the active one (milestone 70:
+ * the note beside a document's pages), or null.
+ */
+export function besideAt(s: Panes, id: string): { pane: number; index: number } | null {
+  for (let pi = 0; pi < s.panes.length; pi++) {
+    if (pi === s.active) continue;
+    const ti = s.panes[pi]!.tabs.findIndex((t) => t.id === id);
+    if (ti >= 0) return { pane: pi, index: ti };
+  }
+  return null;
+}
+
+/**
+ * Open `id` in the pane beside the active one, the active pane kept: shown
+ * where it is open already; else as a tab in the pane to the right (to the
+ * left when the active pane is the last), a pane made when there is one
+ * pane. An `id` the active pane shows is left where it is; one behind
+ * its tab there (an iPad's fold left it so) moves beside.
+ */
+export function openBeside(s: Panes, id: string): Panes {
+  if (activeTab(s)?.id === id) return s;
+  const next = clone(s);
+  const from = next.active;
+  const own = next.panes[from]!;
+  const behind = own.tabs.findIndex((t) => t.id === id);
+  const moved = behind >= 0 ? own.tabs.splice(behind, 1)[0]! : null;
+  if (moved && own.active > behind) own.active -= 1;
+  const at = besideAt(next, id);
+  if (at) {
+    next.panes[at.pane]!.active = at.index;
+    return next;
+  }
+  if (next.panes.length === 1) next.panes.push({ tabs: [], active: 0 });
+  const target = from + 1 < next.panes.length ? from + 1 : from - 1;
+  const pane = next.panes[target]!;
+  pane.tabs.push(moved ?? tab(id));
+  pane.active = pane.tabs.length - 1;
+  next.active = from;
+  return next;
+}
+
+/** Close `id` where it is open beside the active pane; a pane left empty closes with it (`closeTab`). The active pane is kept. */
+export function closeBeside(s: Panes, id: string): Panes {
+  const at = besideAt(s, id);
+  if (!at) return s;
+  const activeId = activeTab(s)?.id;
+  let next = closeTab(s, at.pane, at.index);
+  // the active pane by its content, since closing a pane renumbers them
+  const pi = next.panes.findIndex((p) => p.tabs[p.active]?.id === activeId);
+  if (pi >= 0) next = { ...next, active: pi };
+  return next;
+}
+
 export function selectTab(s: Panes, pane: number, index: number): Panes {
   const next = clone(s);
   const p = next.panes[pane];
@@ -142,7 +205,7 @@ export function retarget(s: Panes, from: string, to: string): Panes {
   const panes = s.panes.map((p) => ({
     ...p,
     tabs: p.tabs.map((t) => {
-      const id = rekey(t.id, from, to);
+      const id = rekeyTab(t.id, from, to);
       if (id === null) return t;
       touched = true;
       return { ...t, id };
@@ -157,7 +220,7 @@ export function dropTabs(s: Panes, path: string): Panes {
   for (let pi = next.panes.length - 1; pi >= 0; pi--) {
     const p = next.panes[pi]!;
     for (let ti = p.tabs.length - 1; ti >= 0; ti--) {
-      if (rekey(p.tabs[ti]!.id, path, path) !== null) next = closeTab(next, pi, ti);
+      if (rekeyTab(p.tabs[ti]!.id, path, path) !== null) next = closeTab(next, pi, ti);
     }
   }
   return next;

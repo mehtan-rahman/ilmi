@@ -90,14 +90,14 @@ beforeAll(async () => {
   vault = await Vault.open(fs, ROOT);
   hash = fs.blobAt(`${ROOT}/${PDF}`)!;
   const docs: Record<string, DocInfo> = { [CH3]: { type: 'source', frozen: false, cards: 0, due: 0, pdf: PDF, pages: { first: 41, last: 42 } } };
-  useApp.setState({ vault: ROOT, tree: vault.tree, files: vault.documents(), docs, inlineBoxes: {}, bookFocus: null, reveal: null, notesHidden: true });
+  useApp.setState({ vault: ROOT, tree: vault.tree, files: vault.documents(), docs, inlineBoxes: {}, bookFocus: null, reveal: null });
 });
 beforeEach(async () => {
   opened.length = 0;
   drawn = [];
   await fs.setPageInk(hash, 41, []);
   await fs.setPageInk(hash, 42, []);
-  useApp.setState({ mobile: true, notesHidden: true });
+  useApp.setState({ mobile: true });
   host = document.body.appendChild(document.createElement('div'));
   root = createRoot(host);
   await act(async () => { root.render(createElement(Pdf, { id: CH3 })); });

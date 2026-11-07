@@ -26,6 +26,7 @@ import { useApp, type El } from './store.js';
 import { useDoc } from './useDoc.js';
 import { studyHeader } from './study.js';
 import { activeExamAt, currentVault, note, openNode, optionsAt } from './vault.js';
+import { openNotes } from './book.js';
 import { sessionEnded } from './sync.js';
 import { gradeCard } from './grading.js';
 import './session.css';
@@ -301,8 +302,10 @@ function DocSession({ item, active, onAct, ...nav }: DocProps) {
   const docs = useApp((s) => s.docs);
   const reading = item.kind === 'read';
   const section = item.kind === 'section';
-  // a document with pages opens as its book, a section of it at its boxes (`Pdf.tsx`)
-  const pages = !!info?.pdf;
+  // a document with pages opens as its book, a section of it at its boxes (`Pdf.tsx`); a section of a note attached to a
+  // PDF on its own opens that PDF's pages, the note beside them (milestone 70, `book.ts`)
+  const pages = !!info?.pdf || (section && info?.of !== undefined);
+  const pagesId = info?.of ?? item.path;
   // a note's pass keeps no place (FORMAT.md §3)
   const note = item.kind === 'read' && !!item.note;
   const pri = section ? item.pri : info ? info.pri ?? (reading ? info.read?.pri : info.write?.pri) ?? PRI_DEFAULT : item.pri;
@@ -318,9 +321,11 @@ function DocSession({ item, active, onAct, ...nav }: DocProps) {
   };
   const words = actionWords(item, appNow(), atEnd);
 
-  // a section opens at its heading, the caret in it and the heading marked
+  // a section opens at its heading, the caret in it and the heading marked; on pages, the note opens beside them
   useEffect(() => {
-    if (item.kind === 'section') useApp.setState({ reveal: { path: item.path, index: item.block, heading: item.heading } });
+    if (item.kind !== 'section') return;
+    useApp.setState({ reveal: { path: item.path, index: item.block, heading: item.heading } });
+    if (pages) void openNotes(pagesId).catch(console.error);
   }, [item]);
 
   useKeys(active, (key) => {
@@ -334,7 +339,7 @@ function DocSession({ item, active, onAct, ...nav }: DocProps) {
   const what = plainMath(section ? `${docs[item.path]?.title ?? sourceLabel(item, docs)} › ${item.heading}` : sourceLabel(item, docs));
   return (
     <div className="doc-session" ref={barRef} data-el={item.kind} data-book={pages ? '1' : '0'}>
-      {pages ? <Pdf id={item.path} active={active} session readOn={item.kind === 'read'} onLast={setLast} /> : <Reader id={item.path} active={active} />}
+      {pages ? <Pdf id={pagesId} active={active} session readOn={item.kind === 'read'} onLast={setLast} /> : <Reader id={item.path} active={active} />}
       <SessionBar kind={markOf(item)} {...(word ? { word } : {})} pri={pri} what={what} stands={standing(item, appNow(), info?.pages?.first)} glyph={glyphOf(item)} {...nav}>
         <button type="button" data-act="on" onClick={on}><span className="ra-l">{words.on}</span><kbd>⏎</kbd></button>
         <button type="button" data-act="postpone" onClick={() => onAct('postpone')}><span className="ra-l">{words.postpone}</span><kbd>p</kbd></button>

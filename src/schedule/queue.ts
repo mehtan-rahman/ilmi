@@ -363,7 +363,8 @@ export function inScope(item: QueueItem, scope: Scope, now: Date): boolean {
 /** The queue over a whole vault. Reads every document through the vault's cache. */
 export async function queue(vault: Vault, now: Date, scope: Scope = 'all'): Promise<QueueItem[]> {
   const docs: [string, Doc][] = [];
-  for (const path of vault.documents()) docs.push([path, (await vault.read(path)).doc]);
+  // the documents, and the PDFs on their own, which read as documents with pages (milestone 70)
+  for (const path of [...vault.documents(), ...vault.pdfs()]) docs.push([path, (await vault.read(path)).doc]);
   return queueItems(docs, now).filter((i) => inScope(i, scope, now));
 }
 

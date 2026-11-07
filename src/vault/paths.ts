@@ -30,10 +30,10 @@ export function pdfOf(path: string): string {
   return `${childDirOf(path)}.pdf`;
 }
 
-/** Display name: the file name without `.md`. */
+/** Display name: the file name without `.md`; a PDF on its own (milestone 70) without `.pdf`. */
 export function nameOf(path: string): string {
   const base = baseOf(path);
-  return base.endsWith('.md') ? base.slice(0, -3) : base;
+  return base.endsWith('.md') ? base.slice(0, -3) : /\.pdf$/i.test(base) ? base.slice(0, -4) : base;
 }
 
 /** True when `path` is `dir` itself or inside it. `dir` may be `''`. */

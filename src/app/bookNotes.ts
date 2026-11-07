@@ -1,13 +1,16 @@
-// A book's notes (milestone 48), the right side of a document with pages:
-// what the reader draws under each section heading that comes back. The
-// chip: `show in book` (the pages scroll to its boxes and flash them),
-// `show boxes here` (its crops drawn under the heading, page breaks
-// marked), and when it is next (`due today`, `back in 4d`, `dismissed`).
+// A book's notes (milestone 48): the note attached to a document's pages,
+// open in the pane beside them (milestone 70, `book.ts`). What the reader
+// draws under each section heading that comes back. The chip: `show in
+// book` (the pages, opened beside the note if they are not, scroll to its
+// boxes and flash them), `show boxes here` (its crops drawn under the
+// heading, page breaks marked), and when it is next (`due today`, `back in
+// 4d`, `dismissed`).
 
 import { formatBox, parseBoxes, sectionDismissed, type SectionSchedule } from '../format/index.js';
 import type { BookOptions } from '../reader/index.js';
 import { dayOf, dayStart, whenToDate } from '../schedule/index.js';
 import { appNow } from './clock.js';
+import { openPagesBeside } from './book.js';
 import { useApp } from './store.js';
 
 /** When a section is next, in the chip's words: `due today`, `back in 4d`, `dismissed`. */
@@ -31,9 +34,10 @@ export function toggleShown(path: string, text: string): void {
 }
 
 let focusSeq = 0;
-/** `show in book`: the pages beside the notes scroll to the section's boxes and flash them. */
+/** `show in book` from the note at `path`: its pages, opened beside it if they are not, scroll to the section's boxes and flash them. */
 export function showInBook(path: string, text: string): void {
-  useApp.setState({ bookFocus: { path, text, seq: ++focusSeq } });
+  const pages = openPagesBeside(path);
+  if (pages !== null) useApp.setState({ bookFocus: { path: pages, text, seq: ++focusSeq } });
 }
 
 function button(label: string, act: string, run: () => void): HTMLButtonElement {

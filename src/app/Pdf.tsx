@@ -1,8 +1,18 @@
-// A document with pages opens as a book (milestone 48): its PDF's pages on
-// the left, rendered by pdf.js with the text layer on, and its body on the
-// right in the full editor: the person's notes on those pages, one
-// continuous document, never frozen. ⌘\ hides the notes and shows them; on
-// an iPad held upright they slide in over the pages from the right edge.
+// A document with pages opens as a book (milestone 48): its PDF's pages,
+// rendered by pdf.js with the text layer on. Since milestone 70 a PDF is a
+// thing of its own: a book open is its pages across the whole pane, a page
+// drawn to the pane's width up to `PAGE_MAX` and centred past it, the
+// inspector closed as it opens (`layout.ts`), nothing beside them. The
+// notes on the pages are a note attached to the PDF (`book.ts`): a document
+// with pages is its own notes, as 48 had it; a PDF with no `.md` of its
+// name shows the first note that names it in its `pdf` field, or none yet.
+// The note opens in the pane beside the pages when asked (`notes` among the
+// words over the pages, ⌘\) as the ordinary tab it is, and closes again;
+// what goes to a place in it (a box made a section, a section's name beside
+// its box, ⏎ after a section is made) opens it beside the pages if it is
+// not. Nothing slides over the pages. A PDF with no note yet asks for one
+// the first time something is kept from it, or at `notes`: a note that is
+// there, or a new one in a folder of the person's choosing.
 //
 // The pages carry what the notes say about them. A gold bar in the margin
 // runs from the first page to the read point (`pos` and `y` on the `read`
@@ -17,7 +27,7 @@
 // on its pages, tagged with its name (a § in the gutter when there is no
 // room), dashed once dismissed; the caret's section lights its boxes and
 // the pages scroll to them. Nothing is written into the PDF, ever; every
-// change goes to the Markdown, through the open notes' writer.
+// change goes to the Markdown, through the open note's writer.
 //
 // A page may be written on (milestone 67). On an iPad the Pencil's touch on
 // a page opens the canvas over that page (`ink.ts`), where 57 had it box;
@@ -31,15 +41,16 @@ import { boxesEnd, formatClip, meta, sectionDismissed, setField, type Box, type 
 import { boxAround, countIn, findAll, findText, jumpTarget, linesOf, refOf, sectionName, type Found, type PageItem } from '../pdf/index.js';
 import { pickPos, type Band } from '../reader/index.js';
 import { addPassage, passagesOf, pointOn, sectionState, type Passage } from '../schedule/index.js';
-import { addToPage, childDirOf, type StoreFs } from '../vault/index.js';
+import { addToPage, childDirOf, isPdfPath, type StoreFs } from '../vault/index.js';
 import { CueActions } from '../plugins/CueActions.js';
 import { onPluginAction, publishSelection, toPluginSelection, type PluginSelection } from '../plugins/index.js';
-import { titleOf } from './names.js';
+import { noteOf, notesTabOf, titleOf } from './names.js';
+import { besideAt } from './panes.js';
+import { ensureNote, openNotes, toggleNotes } from './book.js';
 import { TextLayer, pageBits, type PDFDocumentProxy } from './pdfjs.js';
 import { acquirePdf, itemsOf, pagePaper } from './bookPdf.js';
 import { hasCanvas, writeOn } from './ink.js';
 import { Crumbs } from './Crumbs.js';
-import { Reader } from './Reader.js';
 import { StudyButton } from './StudyButton.js';
 import { ExamTag } from './ExamTag.js';
 import { TabsToggle } from './TabsToggle.js';
@@ -62,12 +73,10 @@ const AHEAD = 900;
 const PROBE = 3;
 /** Room beside a page for the sections' names; less than this and they are a § in the gutter. */
 const TAG_ROOM = 210;
-/** The narrowest a page is drawn while names still sit beside it. */
-const PAGE_MIN = 420;
-/** The widest a page is drawn. */
-const PAGE_MAX = 860;
-/** Room at the page's right for the gutter's §. */
-const GUTTER = 18;
+/** The widest a page is drawn, the width a page is still read at: past it the page is centred in the pane. */
+const PAGE_MAX = 960;
+/** How far down the view the place kept across a change of scale is, px: under the words over the pages. */
+const PLACE_AT = 60;
 /** How far back from a passage the lens reads pages for a heading to name it. */
 const NAME_BACK = 30;
 
@@ -152,7 +161,7 @@ export function pointInView(from: HTMLElement): { page: number; y: number } | un
   return page >= 1 && Number.isFinite(y) ? { page, y } : undefined;
 }
 
-// ── the book: pages beside notes ─────────────────────────────────
+// ── the book: its pages, the note beside them when asked ──
 
 interface PdfProps {
   id: string;
@@ -166,25 +175,30 @@ interface PdfProps {
   onLast?: ((page: number) => void) | undefined;
 }
 
+/** Whether the note on the pages at `id` is open in the pane beside (a selector over the store). */
+const notesBeside = (id: string) => (s: { docs: Record<string, DocInfo>; panes: Parameters<typeof besideAt>[0] }): boolean => {
+  const tab = notesTabOf(id, s.docs);
+  return tab !== null && besideAt(s.panes, tab) !== null;
+};
+
 export function Pdf({ id, active = true, session = false, readOn = false, onLast }: PdfProps) {
-  const hidden = useApp((s) => s.notesHidden);
-  // ⌘\ hides the notes and shows them, ahead of the app's split (it checks `defaultPrevented`)
+  const open = useApp(notesBeside(id));
+  // a book open is its pages (milestone 70): the inspector closed until its toggle asks for it over this book
+  useLayoutEffect(() => { useApp.setState({ bookInsp: false }); }, [id]);
+  // ⌘\ opens the note beside the pages and closes it, ahead of the app's split (it checks `defaultPrevented`)
   useEffect(() => {
     if (!active) return;
     const onKey = (e: KeyboardEvent) => {
       if (!(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey || e.key !== '\\') return;
       e.preventDefault();
-      useApp.setState((s) => ({ notesHidden: !s.notesHidden }));
+      toggleNotes(id);
     };
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
-  }, [active]);
+  }, [active, id]);
   return (
-    <div className="book" data-notes={hidden ? '0' : '1'} data-path={id}>
-      <div className="book-pages"><Pages id={id} active={active} session={session} readOn={readOn} onLast={onLast} /></div>
-      {/* portrait on an iPad: the notes are a sheet from the right over the pages (`pdf.css`), and a tap beside it folds it */}
-      {!hidden && <div className="book-scrim" onClick={() => useApp.setState({ notesHidden: true })} />}
-      {!hidden && <div className="book-notes"><Reader key={id} id={id} active={active} notes /></div>}
+    <div className="book" data-notes={open ? '1' : '0'} data-path={id}>
+      <div className="book-pages"><Pages id={id} active={active} session={session} readOn={readOn} onLast={onLast} notesOpen={open} /></div>
     </div>
   );
 }
@@ -220,23 +234,24 @@ interface Drawn {
   dismissed: boolean;
 }
 
-function Pages({ id, active, session, readOn, onLast }: Omit<Required<PdfProps>, 'onLast'> & { onLast: PdfProps['onLast'] }) {
+function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required<PdfProps>, 'onLast'> & { onLast: PdfProps['onLast']; notesOpen: boolean }) {
   const lastRef = useRef(onLast);
   lastRef.current = onLast;
   const docs = useApp((s) => s.docs);
   const root = useApp((s) => s.vault);
   const caret = useApp((s) => s.caretHeading);
   const focus = useApp((s) => s.bookFocus);
-  const reveal = useApp((s) => s.reveal);
-  const notesHidden = useApp((s) => s.notesHidden);
   const mobile = useApp((s) => s.mobile);
   const info: DocInfo | undefined = docs[id];
-  const loaded = useDoc(id);
+  /** The note on these pages: the document itself when it has pages, the note attached to a PDF on its own, or none yet (`book.ts`). */
+  const note = noteOf(id, docs);
+  const loaded = useDoc(note);
   const [status, setStatus] = useState<'loading' | 'ok' | 'gone'>('loading');
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
   const [sizes, setSizes] = useState<Size[]>([]);
   const [textless, setTextless] = useState(false);
-  const [colW, setColW] = useState(0);
+  /** The room the pages have: the pane's width inside its padding, and that padding. */
+  const [room, setRoom] = useState({ w: 0, pad: 0 });
   const [tick, setTick] = useState(0);
   const [sel, setSel] = useState<Sel | null>(null);
   const [current, setCurrent] = useState(1);
@@ -258,6 +273,7 @@ function Pages({ id, active, session, readOn, onLast }: Omit<Required<PdfProps>,
   const peekCanvas = useRef<HTMLCanvasElement>(null);
   const lines = useRef(new Map<number, ReturnType<typeof linesOf>>());
   const wrapRef = useRef<HTMLDivElement>(null);
+  const outerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<HTMLDivElement>(null);
   const pagesRef = useRef<HTMLDivElement>(null);
   const findRef = useRef<HTMLInputElement>(null);
@@ -346,19 +362,28 @@ function Pages({ id, active, session, readOn, onLast }: Omit<Required<PdfProps>,
     };
   }, [id, rel, range?.first, range?.last]);
 
-  // the column's width sets the scale: a page fits it, with room for the names beside it when there is room
+  // the pane's width sets the scale (milestone 70): a page is drawn across it, up to the width a page is still
+  // read at, and centred past that; the read bar and the gutter's § hang in the pane's padding
   useLayoutEffect(() => {
-    const el = wrapRef.current;
+    const el = outerRef.current;
     if (!el) return;
-    const ro = new ResizeObserver(() => setColW(el.clientWidth));
+    const measure = () => {
+      const cs = getComputedStyle(el);
+      const pad = parseFloat(cs.paddingRight) || 0;
+      const w = el.clientWidth - (parseFloat(cs.paddingLeft) || 0) - pad;
+      setRoom((r) => (r.w === w && r.pad === pad ? r : { w, pad }));
+    };
+    const ro = new ResizeObserver(measure);
     ro.observe(el);
-    setColW(el.clientWidth);
+    measure();
     return () => ro.disconnect();
   }, [status]);
 
+  const colW = room.w;
   const maxW = sizes.reduce((m, s) => Math.max(m, s.w), 0) || 612;
-  const roomy = colW >= PAGE_MIN + TAG_ROOM;
-  const pageW = Math.max(120, Math.min(PAGE_MAX, roomy ? colW - TAG_ROOM : colW - GUTTER));
+  const pageW = Math.max(120, Math.min(PAGE_MAX, colW));
+  /** The sections' names sit beside the page only where a centred page leaves them the room. */
+  const roomy = (colW - pageW) / 2 + room.pad >= TAG_ROOM;
   const scale = colW > 0 ? pageW / maxW : 1;
   /** Each page's top, px from the top of the column, and the column's height. */
   const tops = useMemo(() => {
@@ -426,6 +451,7 @@ function Pages({ id, active, session, readOn, onLast }: Omit<Required<PdfProps>,
   renderRef.current = renderPage;
 
   const scroller = () => wrapRef.current?.closest<HTMLElement>('.book-pages, .pane-body') ?? null;
+  const place = useRef<{ page: number; y: number } | null>(null);
 
   useEffect(() => {
     if (!pdf || !sizes.length) return;
@@ -454,6 +480,13 @@ function Pages({ id, active, session, readOn, onLast }: Omit<Required<PdfProps>,
         if (pr.top <= bottom && (!at || k > at.page)) at = { page: k, y: Math.min(1, Math.max(0, (bottom - pr.top) / pr.height)) };
       }
       setCurrent(n);
+      // the place at the top of the view, for when the pages are drawn at another scale
+      const from = r.top + PLACE_AT;
+      place.current = null;
+      for (const [k, el] of pageEls.current) {
+        const pr = el.getBoundingClientRect();
+        if (pr.top <= from && pr.bottom > from) place.current = { page: k, y: (from - pr.top) / pr.height };
+      }
       // the pages near the view drawn here too: a covered window may hold the observer's callbacks back
       for (const [k, el] of pageEls.current) {
         const pr = el.getBoundingClientRect();
@@ -466,6 +499,16 @@ function Pages({ id, active, session, readOn, onLast }: Omit<Required<PdfProps>,
     sc.addEventListener('scroll', onScroll, { passive: true });
     return () => sc.removeEventListener('scroll', onScroll);
   }, [status, sizes, base, scale, renderPage]);
+
+  // a new scale (the note opened beside, an iPad turned) leaves the same text at the top of the view, not the same pixels
+  useLayoutEffect(() => {
+    const sc = scroller();
+    const at = place.current;
+    const el = at ? pageEls.current.get(at.page) : undefined;
+    if (!sc || !at || !el) return;
+    const pr = el.getBoundingClientRect();
+    sc.scrollTop += pr.top + at.y * pr.height - (sc.getBoundingClientRect().top + PLACE_AT);
+  }, [scale]);
 
   const scrollTo = (n: number) => {
     const el = pageEls.current.get(Math.max(first, Math.min(last, n)));
@@ -492,13 +535,25 @@ function Pages({ id, active, session, readOn, onLast }: Omit<Required<PdfProps>,
     sc.scrollTo({ top: Math.max(0, sc.scrollTop + top - sr.top - 60) });
   }, []);
 
-  // the caret's section in the notes lights its boxes, and the pages scroll to them
+  // the caret's section in the note lights its boxes, and the pages scroll to them; only a caret someone put there:
+  // a note just opened beside the pages has one at its top, and the reader's place is not to move for it (milestone 70)
   useEffect(() => {
-    if (caret?.path !== id) return;
+    if (note === null || caret?.path !== note || !document.activeElement?.closest('.draft-doc')) return;
     const text = drawnRef.current.some((d) => d.passage.heading.text === caret.text) ? caret.text : null;
     setLit(text);
     if (text) scrollToPassage(text);
-  }, [caret?.path, caret?.text, caret?.nth, id, status, sizes.length, scrollToPassage]);
+  }, [caret?.path, caret?.text, caret?.nth, note, status, sizes.length, scrollToPassage]);
+  // what goes to a section of the note goes to its boxes too, once the pages are there: a session's come after the note has landed
+  const going = useRef<string | null>(null);
+  const reveal = useApp((s) => s.reveal);
+  useEffect(() => {
+    if (note !== null && reveal?.path === note && reveal.heading !== undefined) going.current = reveal.heading;
+    const text = going.current;
+    if (text === null || status !== 'ok' || !sizes.length || !drawn.some((d) => d.passage.heading.text === text)) return;
+    going.current = null;
+    setLit(text);
+    scrollToPassage(text);
+  }, [reveal, note, status, sizes.length, drawn, scrollToPassage]);
   // reading on: the pages land once at the read point, the bar's end a third of the way down the view
   const landedAt = useRef<string | null>(null);
   useEffect(() => {
@@ -520,18 +575,12 @@ function Pages({ id, active, session, readOn, onLast }: Omit<Required<PdfProps>,
     const t = setTimeout(() => setFlash((f) => (f?.seq === focus.seq ? null : f)), 2200);
     return () => clearTimeout(t);
   }, [focus, id, scrollToPassage]);
-  // a section opened from the queue with the notes hidden: nothing else lands it, so the pages do
-  useEffect(() => {
-    if (!notesHidden || !reveal || reveal.path !== id || reveal.heading === undefined || status !== 'ok') return;
-    setLit(reveal.heading);
-    scrollToPassage(reveal.heading, true);
-    useApp.setState({ reveal: null });
-  }, [notesHidden, reveal, id, status, scrollToPassage]);
-
-  /** Go to a passage's section in the notes (shown, if hidden): the caret at its heading. */
+  /** Go to a passage's section in the note (opened beside the pages, if it is not): the caret at its heading. */
   const goToSection = (p: Passage) => {
+    if (note === null) return;
     setLit(p.heading.text);
-    useApp.setState({ notesHidden: false, reveal: { path: id, index: p.index, heading: p.heading.text } });
+    useApp.setState({ reveal: { path: note, index: p.index, heading: p.heading.text } });
+    void openNotes(id).catch(console.error);
   };
 
   // older work: extracts carved from a page (milestone 15) keep their highlights
@@ -635,50 +684,67 @@ function Pages({ id, active, session, readOn, onLast }: Omit<Required<PdfProps>,
     return sectionName((n) => items.get(n), lo, boxes);
   };
 
-  /** `e`: the boxes become a section of the notes, in book order; the read point moves past them. `write`: the caret goes in it. */
+  /**
+   * `e`: the boxes become a section of the note, in book order (a PDF with
+   * no note yet asks for one first), the read point moves past them, and
+   * the note opens beside the pages with the section in it. `write`: the
+   * caret goes in it.
+   */
   const makeSection = async (write: boolean, known?: { name: string }) => {
     const boxes = boxesNow();
     if (!boxes.length) return;
+    const to = await ensureNote(id);
+    if (to === null) return;
     clearBoxes();
     const { name } = known ?? await nameOf(boxes);
     let made: { index: number; text: string; ivl: number } | null = null;
-    await writeDoc(id, (d) => {
-      made = addPassage(d, name, boxes, appNow());
+    const end = boxesEnd(boxes);
+    /** The read point moves past the last box; on a document with pages in the same write as its section. */
+    const point = (d: Doc) => {
       const r = meta(d).read;
-      const end = boxesEnd(boxes);
       if (r && end && meta(d).type !== 'note') {
         const { pos: _p, y: _y, ...rest } = r;
         setField(d, 'read', { ...rest, ...pointOn(r, end.page, end.y) });
       }
+    };
+    await writeDoc(to, (d) => {
+      made = addPassage(d, name, boxes, appNow());
+      if (to === id) point(d);
     });
+    if (to !== id) await writeDoc(id, point);
     const m = made as { index: number; text: string; ivl: number } | null;
     if (!m) return;
     const text = m.text;
     setLit(text);
     setRecent(write ? null : m);
     notify(`§ ${plainMath(text)} · back in ${m.ivl}d, until dismissed${write ? '' : ' · ⏎ to write in it'}`, null, async () => {
-      await writeDoc(id, (d) => {
+      await writeDoc(to, (d) => {
         const at = d.blocks.findIndex((b) => b.kind === 'heading' && b.text === text && b.read?.boxes !== undefined);
         if (at >= 0) d.blocks.splice(at, 1);
       });
     });
-    if (write) useApp.setState({ notesHidden: false, reveal: { path: id, index: m.index, heading: text, write: true } });
+    // the note opens beside the pages with the section in it; `write` puts the caret in it
+    useApp.setState({ reveal: write ? { path: to, index: m.index, heading: text, write: true } : { path: to, index: m.index, heading: text } });
+    await openNotes(id);
   };
 
-  /** `m`: on a page that names its sections, the section with the caret in it; otherwise each box clipped under its page, the caret below. */
+  /** `m`: on a page that names its sections, the section with the caret in it; otherwise each box clipped under its page in the note, the caret below. */
   const cardOrClip = async () => {
     const boxes = boxesNow();
     if (!boxes.length) return;
     const named = await nameOf(boxes);
     if (named.named) { await makeSection(true, named); return; }
+    const to = await ensureNote(id);
+    if (to === null) return;
     clearBoxes();
     let at = -1;
-    await writeDoc(id, (d) => {
+    await writeDoc(to, (d) => {
       for (const b of boxes) at = addToPage(d, b.page, { kind: 'raw', text: formatClip(b) });
     });
     if (at < 0) return;
     notify(`clipped · ${boxes.length === 1 ? `p. ${boxes[0]!.page}` : `${boxes.length} boxes`} · the card goes below it: word ::: meaning`);
-    useApp.setState({ notesHidden: false, reveal: { path: id, index: at, write: true } });
+    useApp.setState({ reveal: { path: to, index: at, write: true } });
+    await openNotes(id);
   };
 
   const startReading = () => { if (canEnrol && !info?.read) enrolReading(id).catch(console.error); };
@@ -889,11 +955,12 @@ function Pages({ id, active, session, readOn, onLast }: Omit<Required<PdfProps>,
     if (have && e.key === 'm') { take(); void cardOrClip().catch(console.error); return; }
     // a reference under the selection: its target in a peek
     if (s.sel && e.key === 'Enter' && refOf(s.sel.text)) { take(); void doJump(); return; }
-    if (s.recent && e.key === 'Enter' && !have) {
+    if (s.recent && e.key === 'Enter' && !have && note !== null) {
       take();
       const r = s.recent;
       setRecent(null);
-      useApp.setState({ notesHidden: false, reveal: { path: id, index: r.index, heading: r.text, write: true } });
+      useApp.setState({ reveal: { path: note, index: r.index, heading: r.text, write: true } });
+      void openNotes(id).catch(console.error);
       return;
     }
     if (s.recent && e.key !== 'Shift') setRecent(null);
@@ -970,11 +1037,12 @@ function Pages({ id, active, session, readOn, onLast }: Omit<Required<PdfProps>,
   const lastPending = pending.length ? boxRect(pending[pending.length - 1]!) : null;
 
   return (
-    <div className="reader-wrap">
-      <div ref={viewRef} className={`reader doc-view pdf-view${reading ? ' reading' : ''}`} data-page={current} data-roomy={roomy ? '1' : '0'}>
+    <div className="reader-wrap" ref={outerRef}>
+      <div ref={viewRef} className={`reader doc-view pdf-view${reading ? ' reading' : ''}`} data-page={current} data-roomy={roomy ? '1' : '0'} style={colW > 0 ? { width: pageW } : undefined}>
         <div className="meta">
           <Crumbs path={id} />
-          <TabsToggle path={id} />
+          <button type="button" className="frozen-tag notes-toggle" data-on={notesOpen ? '1' : '0'} aria-pressed={notesOpen} title={'notes ⌘\\'} onClick={() => toggleNotes(id)}>notes</button>
+          {!isPdfPath(id) && <TabsToggle path={id} />}
           <StudyButton path={id} />
           <ExamTag path={id} />
           {info && canEnrol && !info.read && (

@@ -11,15 +11,15 @@ import { info } from '@tauri-apps/plugin-log';
 import { REVIEWS_DIR, meta, setField, type Doc, type Meta, type NodeType, type Review } from '../format/index.js';
 import type { Chapter, MappedDeck } from '../import/index.js';
 import { activeExam, addDays, buryLinked, cadence, cardsById, dayOf, dayStart, docItems, examQueue, examsAt, isDue, itemKey, meterQueue, postponeOverflow, readPri, resolveOptions, spentToday, whenToDate, type ExamAt, type QueueItem, type Resolved } from '../schedule/index.js';
-import { SAME_FILE, Vault, childDirOf, childrenAt, cleanName, dirOf, entryOf, fileName, isDoc, joinRel, normRel, ordered, placeEntry, rekey, type DocNode, type ExtractSpec, type SectionSpec, type ImportDeckSpec, type ImportPdfSpec, type ImportSpec, type PdfChapterSpec, type StoreFs, type TreeNode, type VaultEvent, type VaultState } from '../vault/index.js';
+import { SAME_FILE, Vault, childDirOf, childrenAt, cleanName, dirOf, entryOf, fileName, isDoc, isPdfPath, joinRel, normRel, ordered, placeEntry, rekey, relFrom, type DocNode, type ExtractSpec, type SectionSpec, type ImportDeckSpec, type ImportPdfSpec, type ImportSpec, type PdfChapterSpec, type StoreFs, type TreeNode, type VaultEvent, type VaultState } from '../vault/index.js';
 import { createCollection, listCollections } from '../vault/tauri-store.js';
 import { startPlugins, stopPlugins } from '../plugins/index.js';
 import { cleanClipDir } from './clip.js';
 import { collectionFs, importCollection } from './collections.js';
 import { cleanViews, type DeckView } from './deck.js';
 import { cleanBudget, dueToday, sessionItems } from './items.js';
-import { INTAKE, SESSION, queueId, queueScope } from './names.js';
-import { inspectorShown } from './layout.js';
+import { INTAKE, SESSION, notesPath, queueId, queueScope } from './names.js';
+import { bookShown, inspectorShown } from './layout.js';
 import { activeTab, dropTabs, emptyPanes, openTab, retarget, type OpenOpts, type Panes } from './panes.js';
 import { setCanvas } from '../reader/slash.js';
 import { NEVER, collectionRows, collectionsHome, isMobile, loadPlatform, setCollectionsHome } from './platform.js';
@@ -262,10 +262,47 @@ function withDue(docs: Record<string, DocInfo>, queue: QueueItem[], now: Date): 
   return out;
 }
 
+/**
+ * A note attached to a PDF on its own (milestone 70): a note (a document
+ * with no `type`) whose `pdf` field names a PDF that is a document of its
+ * own opens as the note it is, not as pages (`of`), and the PDF shows the
+ * first such note in path order (`note`). A source naming a PDF is that
+ * PDF's pages, or a range of them (a chapter), and opens as pages whether
+ * or not the PDF stands on its own, as 48 had it.
+ */
+export function attach(docs: Record<string, DocInfo>): Record<string, DocInfo> {
+  let out = docs;
+  const notes = new Map<string, string[]>();
+  for (const path of Object.keys(docs).sort()) {
+    const info = docs[path]!;
+    if (isPdfPath(path) || info.type !== 'note') continue;
+    // attached already (`of`), or naming a PDF that is a document of its own
+    const target = info.of ?? (info.pdf !== undefined && isPdfPath(info.pdf) && docs[info.pdf] ? info.pdf : undefined);
+    if (target === undefined) continue;
+    if (info.pdf !== undefined) {
+      if (out === docs) out = { ...docs };
+      const { pdf, ...rest } = info;
+      out[path] = { ...rest, of: pdf };
+    }
+    notes.set(target, [...(notes.get(target) ?? []), path]);
+  }
+  // each PDF on its own shows the first note naming it, or none; said again on every pass, since its own info may have been made anew
+  for (const path of Object.keys(docs)) {
+    if (!isPdfPath(path)) continue;
+    const info = out[path]!;
+    const first = notes.get(path)?.[0];
+    if (info.note === first) continue;
+    if (out === docs) out = { ...docs };
+    const { note: _n, ...rest } = info;
+    out[path] = first === undefined ? rest : { ...rest, note: first };
+  }
+  return out;
+}
+
 /** The queue for the present moment (a card in learning steps may have come due), and each document's due count with it. */
 function publishQueue(docs: Record<string, DocInfo>, now: Date): { queue: QueueItem[]; queueAt: Date; docs: Record<string, DocInfo> } {
   const queue = buildQueue(now);
-  return { queue, queueAt: now, docs: withDue(docs, queue, now) };
+  return { queue, queueAt: now, docs: attach(withDue(docs, queue, now)) };
 }
 
 /** Rebuild the queue for the present moment: a card in learning steps may have come due. */
@@ -385,7 +422,8 @@ let indexed: Vault | null = null;
  */
 async function publishDocs(vault: Vault): Promise<void> {
   const now = appNow();
-  const paths = vault.documents();
+  // the documents, and the PDFs on their own, each read as the document it stands for (milestone 70)
+  const paths = [...vault.documents(), ...vault.pdfs()];
   if (indexed !== vault) {
     bodies.clear();
     metas.clear();
@@ -424,13 +462,13 @@ function publishDoc(vault: Vault, path: string, doc: Doc): void {
   const now = appNow();
   setBody(path, doc);
   // the pages stay what they were until the vault has looked: a changed `pdf` field lands a moment later
-  useApp.setState(publishQueue({ ...s.docs, [path]: infoOf(doc, derivedOf(path, now).items, now, s.docs[path]?.pdf ?? null) }, now));
+  useApp.setState(publishQueue({ ...s.docs, [path]: infoOf(doc, derivedOf(path, now).items, now, s.docs[path]?.pdf ?? s.docs[path]?.of ?? null) }, now));
   void pagesFor(vault, path, nodesByPath(vault.tree).get(path)).then((pdf) => {
     const cur = useApp.getState().docs[path];
-    if (current !== vault || !cur || (cur.pdf ?? null) === pdf) return;
-    const next = { ...cur };
-    if (pdf === null) delete next.pdf; else next.pdf = pdf;
-    useApp.setState((st) => ({ docs: { ...st.docs, [path]: next } }));
+    if (current !== vault || !cur || (cur.pdf ?? cur.of ?? null) === pdf) return;
+    const { of: _of, pdf: _pdf, ...rest } = cur;
+    const next: DocInfo = pdf === null ? rest : { ...rest, pdf };
+    useApp.setState((st) => ({ docs: attach({ ...st.docs, [path]: next }) }));
   });
 }
 
@@ -509,8 +547,9 @@ function onEvent(vault: Vault, ev: VaultEvent): void {
       void publishDocs(vault);
       break;
     case 'doc':
-      // over a store the write itself was reported with the document's digest (`onIndexed`); a directory has only this
-      if (!storeOf(vault)) publishDoc(vault, ev.path, ev.loaded.doc);
+      // over a store the write itself was reported with the document's digest (`onIndexed`); a directory has only this,
+      // and a PDF on its own (its state is the vault's, not a row's) has only this anywhere
+      if (!storeOf(vault) || isPdfPath(ev.path)) publishDoc(vault, ev.path, ev.loaded.doc);
       break;
     case 'gone': {
       const docs = { ...s.docs };
@@ -580,7 +619,7 @@ export async function openVault(path: string): Promise<Vault> {
   // the last tab comes back, except a session; nothing remembered opens the day
   let panes = emptyPanes();
   const tab = state.tab;
-  if (tab !== undefined && tab !== SESSION && (tab === '' || tab === INTAKE || queueScope(tab) || vault.documents().includes(tab) || (await vault.fs.stat(vault.abs(tab)))?.isDir)) {
+  if (tab !== undefined && tab !== SESSION && (tab === '' || tab === INTAKE || queueScope(tab) || vault.documents().includes(tab) || vault.pdfs().includes(tab) || (await vault.fs.stat(vault.abs(tab)))?.isDir)) {
     panes = openTab(panes, tab);
   } else {
     panes = openTab(panes, queueId('today'));
@@ -947,10 +986,15 @@ export function setInspector(patch: Partial<Inspector>): void {
 /**
  * ⌘⇧I, the top strip's toggle, the palette: hide the inspector when it is
  * drawn, else show it, past the room rule (`layout.ts`) when the window is
- * narrow; closed, it is closed in the saved state too.
+ * narrow; closed, it is closed in the saved state too. Over a book it is
+ * shown and hidden for that book only: the saved state is not the book's.
  */
 export function toggleInspector(): void {
   const s = useApp.getState();
+  if (bookShown(s)) {
+    useApp.setState({ bookInsp: !s.bookInsp });
+    return;
+  }
   if (inspectorShown(s, window.innerWidth)) {
     useApp.setState({ inspForced: false });
     setInspector({ open: false });
@@ -1162,9 +1206,10 @@ export async function importNode(dir: string, spec: ImportSpec): Promise<string>
   return path;
 }
 
-/** A frozen source with pages: the PDF copied beside its Markdown in `dir`; the folder opens. Resolves to the document's path. */
+/** A PDF on its own in `dir` (milestone 70): the file, in the reading queue from today, no note beside it; the folder opens. Resolves to its path. */
 export async function importPdfNode(dir: string, spec: ImportPdfSpec): Promise<string> {
-  const path = await need().importPdf(dir, spec);
+  // a PDF lands on its own (milestone 70): the file, enrolled in reading, and no note until one is attached
+  const path = await need().addPdf(dir, { title: spec.title, bytes: spec.bytes, today: spec.today ?? dayOf(appNow()) });
   openDir(dir);
   return path;
 }
@@ -1274,5 +1319,5 @@ export async function enrolReading(path: string): Promise<void> {
 
 /** Where a new sibling of `path` goes: a folder itself, else its directory. */
 export function containerOf(path: string): string {
-  return isDoc(path) ? dirOf(path) : childDirOf(path);
+  return isDoc(path) || isPdfPath(path) ? dirOf(path) : childDirOf(path);
 }

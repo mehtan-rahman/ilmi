@@ -3,7 +3,7 @@
 
 import { Fragment } from 'react';
 import { hintsFor } from './chrome.js';
-import { queueScope, tabKindOf } from './names.js';
+import { notesPath, queueScope, tabKindOf } from './names.js';
 import { activeTab } from './panes.js';
 import { useApp } from './store.js';
 import { notebookOf } from './tabs.js';
@@ -12,22 +12,21 @@ export function BottomStrip() {
   const panes = useApp((s) => s.panes);
   const docs = useApp((s) => s.docs);
   const sessionEl = useApp((s) => s.sessionEl);
-  const notesHidden = useApp((s) => s.notesHidden);
   const id = activeTab(panes)?.id;
   const kind = id === undefined ? undefined : tabKindOf(id, docs);
   // the session's element is in a document of its own
-  const info = id === undefined ? undefined : kind === 'session' && sessionEl ? docs[sessionEl.item.path] : docs[id];
+  const info = id === undefined ? undefined : kind === 'session' && sessionEl ? docs[sessionEl.item.path] : docs[notesPath(id) ?? id];
   const mobile = useApp((s) => s.mobile);
   const base = hintsFor({
     kind,
     el: kind === 'session' ? sessionEl?.kind ?? 'card' : null,
     scope: id === undefined ? null : queueScope(id),
     canEnrol: kind !== 'session' && !!info && (info.type === 'note' || info.type === 'source' || info.type === 'extract') && !info.read,
-    pages: !!info?.pdf,
-    notesHidden,
+    // a section of a note attached to a PDF on its own is read on that PDF's pages (milestone 70); the notes' own tab is the editor's
+    pages: (!!info?.pdf && (id === undefined || notesPath(id) === null)) || (kind === 'session' && sessionEl?.kind === 'section' && info?.of !== undefined),
     frozen: !!info?.frozen,
     note: info?.type === 'note' || (kind === 'session' && info?.type === 'extract'),
-    marks: info?.type === 'source' && !info.pdf,
+    marks: info?.type === 'source' && !info.pdf && !info.of,
     touch: mobile,
   });
   // a notebook's page: the step keys, ahead of the page's own

@@ -443,6 +443,11 @@
   position: relative;
 }
 .pane + .pane { border-left: 1px solid var(--line-2); }
+/* an iPad held upright (milestone 70): half its width cannot hold a page, so two panes lie one above the other,
+   the pages above and the note below; on its side they sit side by side as on the Mac */
+html[data-shape="portrait"] .canvas { flex-direction: column; }
+html[data-shape="portrait"] .pane { flex: 1 1 0; min-height: 0; }
+html[data-shape="portrait"] .pane + .pane { border-left: 0; border-top: 1px solid var(--line-2); }
 .pane[data-active="1"] .tabbar { background: var(--bg); }
 .pane[data-active="0"] .tabbar { background: transparent; }
 

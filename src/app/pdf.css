@@ -171,54 +171,32 @@
 .pdf-peek canvas { display: block; background: #fff; outline: 1px solid var(--line-2); }
 [data-theme="dark"] .pdf-peek canvas { filter: invert(0.92) hue-rotate(180deg); }
 
-/* ── the book (milestone 48): pages on the left, the notes on the right,
-      each scrolling on its own; ⌘\ hides the notes ── */
+/* ── the book (milestone 48; 70): its pages across the whole pane, a page
+      drawn to the pane's width up to the width it is still read at and
+      centred past that (`Pdf.tsx`). The note on the pages is a tab in the
+      pane beside them (`book.ts`), never a layer over them ── */
 .book {
   position: absolute;
   inset: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);
 }
-.book[data-notes="0"] { grid-template-columns: minmax(0, 1fr); }
-.book-pages, .book-notes { overflow: auto; min-height: 0; min-width: 0; position: relative; }
-.book-notes { border-left: 1px solid var(--line-1); }
-.book .book-pages .reader-wrap { padding: 22px 20px 80px 36px; align-items: stretch; }
+.book-pages { overflow: auto; min-height: 0; min-width: 0; position: relative; }
+/* the read bar hangs in the left padding and the gutter's § in the right */
+.book .book-pages .reader-wrap { padding: 22px 30px 80px; align-items: center; }
 .book .reader.pdf-view { max-width: none; }
 .book .pdf-body { display: block; position: relative; }
+/* the read bar hangs in the padding: the pages sit under the title, read or not */
+.book .pdf-body.reading { padding-left: 0; }
 .book .pdf-pages { position: relative; }
-@media (max-width: 760px) {
-  .book { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); }
-  .book-notes { border-left: 0; border-top: 1px solid var(--line-1); }
-}
+/* the words over the pages stay at the pane's top as the pages scroll: `notes` is the iPad's one way to the note and back */
+.book .pdf-view > .meta { position: sticky; top: 0; z-index: 6; background: var(--paper); margin-top: -22px; padding-top: 22px; padding-bottom: 8px; }
+.book .pdf-page { scroll-margin-top: 52px; }
+/* `notes` among the words over the pages: lit while the note is open beside them */
+.reader .meta .notes-toggle[data-on="1"] { color: var(--accent); }
+html[data-mobile="1"] .reader .meta .notes-toggle { padding: 12px 8px; margin: -12px -8px; }
 
-.book-scrim { display: none; }
-/* an iPad in portrait (milestone 57): the pages keep the whole width, and the
-   notes slide in over them from the right; a tap beside them, or a swipe
-   back to the right, folds them */
-html[data-shape="portrait"] .book { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
-html[data-shape="portrait"] .book-notes {
-  position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: min(86%, 560px);
-  z-index: 6;
-  background: var(--bg);
-  border-left: 1px solid var(--line-1);
-  border-top: 0;
-  animation: notes-in 180ms ease-out;
-}
-html[data-shape="portrait"] .book-scrim {
-  display: block;
-  position: absolute;
-  inset: 0;
-  z-index: 5;
-  background: color-mix(in oklab, var(--fg) 12%, transparent);
-}
-[data-theme="eink"] .book-scrim { background: transparent; }
-@keyframes notes-in { from { transform: translateX(100%); } }
-@media (prefers-reduced-motion: reduce) { html[data-shape="portrait"] .book-notes { animation: none; } }
 /* under a finger: the page's text is not the system's to select (a hold
    there starts a box), and the boxes' bar is a finger's size */
 html[data-mobile="1"] .book .pdf-page,

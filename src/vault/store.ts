@@ -77,7 +77,7 @@ import type { Fs, FsEntry, FsStat } from './fs.js';
 import { join, relative } from './fs.js';
 import { decompose, digest, recompose, stampOf, type Original, type StateRow } from './lift.js';
 import { ORDER_FILE, cleanOrder, type Order } from './order.js';
-import { byName } from './walk.js';
+import { byName, isPdfPath } from './walk.js';
 
 export type RowKind = 'folder' | 'doc' | 'file';
 
@@ -773,11 +773,12 @@ export function storeFs(store: Store, root: string): StoreFs {
     const out: Order = {};
     const dirs: [string, Row[]][] = [];
     for (const [parent, ids] of kids) {
-      const placed = [...ids].map((id) => rows.get(id)!).filter((r) => r.place !== null && r.kind !== 'file');
+      // a folder, a document, or a PDF on its own (a file row the tree shows, milestone 70); other files have no place in the tree
+      const placed = [...ids].map((id) => rows.get(id)!).filter((r) => r.place !== null && (r.kind !== 'file' || isPdfPath(r.name)));
       if (!placed.length) continue;
       dirs.push([parent === '' ? '' : dirPathOf(rows.get(parent)!), placed.sort(byPlace)]);
     }
-    for (const [dir, placed] of dirs.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))) out[dir] = placed.map((r) => (r.kind === 'doc' ? `${r.name}.md` : `${r.name}/`));
+    for (const [dir, placed] of dirs.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))) out[dir] = placed.map((r) => (r.kind === 'doc' ? `${r.name}.md` : r.kind === 'file' ? r.name : `${r.name}/`));
     return Object.keys(out).length ? `${JSON.stringify(out, null, 2)}\n` : '';
   };
   /** The order a file asks for: by directory (its row's id, `''` the top), the rows it names that are here, as listed. */
@@ -798,7 +799,8 @@ export function storeFs(store: Store, root: string): StoreFs {
       for (const name of names) {
         const row = name.endsWith('/')
           ? childrenOf(parent?.id ?? null).find((r) => r.kind === 'folder' && r.name === name.slice(0, -1))
-          : name.endsWith('.md') ? childrenOf(parent?.id ?? null).find((r) => r.kind === 'doc' && r.name === name.slice(0, -3)) : undefined;
+          : name.endsWith('.md') ? childrenOf(parent?.id ?? null).find((r) => r.kind === 'doc' && r.name === name.slice(0, -3))
+            : isPdfPath(name) ? childrenOf(parent?.id ?? null).find((r) => r.kind === 'file' && r.name === name) : undefined;
         if (row && !ids.includes(row.id)) ids.push(row.id);
       }
       if (ids.length) out.set(key(parent?.id ?? null), ids);

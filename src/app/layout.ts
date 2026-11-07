@@ -6,8 +6,14 @@
 // when the window widens or the rail folds; ⌘⇧I (or the top strip's toggle)
 // shows it anyway, until it is closed again. The sidebar and the rail are
 // the user's own, and never close by themselves.
+//
+// A book is the exception (milestone 70): a document with pages opens as
+// its pages across the pane, so the inspector is not drawn over one unless
+// its toggle asked for it there (`bookInsp`), whatever the saved state says;
+// the saved state is the other documents', and is as they left it.
 
-import type { Panes } from './panes.js';
+import { SESSION } from './names.js';
+import { activeTab, type Panes } from './panes.js';
 import type { DocInfo } from './store.js';
 import { notebookOf } from './tabs.js';
 
@@ -37,14 +43,29 @@ interface LayoutState {
   sidebar: { width: number; hidden: boolean };
   inspector: { width: number; open: boolean };
   inspForced: boolean;
+  /** The inspector asked for over a book. */
+  bookInsp?: boolean;
   panes: Panes;
   docs: Record<string, DocInfo>;
   railFolded: Record<string, true>;
   railWidth: number;
+  /** What the session is on, when the active tab is the session. */
+  sessionEl?: { item: { path: string; kind: string } } | null;
 }
 
-/** Whether the inspector is drawn: open, and it fits or was asked for. */
+/** Whether the active tab shows a book: a document with pages or a PDF on its own, or the session on one (a section of a note attached to a PDF reads on its pages). */
+export function bookShown(s: Pick<LayoutState, 'panes' | 'docs' | 'sessionEl'>): boolean {
+  const id = activeTab(s.panes)?.id;
+  if (id === SESSION) {
+    const item = s.sessionEl?.item;
+    return !!item && (!!s.docs[item.path]?.pdf || (item.kind === 'section' && s.docs[item.path]?.of !== undefined));
+  }
+  return id !== undefined && !!s.docs[id]?.pdf;
+}
+
+/** Whether the inspector is drawn: open, and it fits or was asked for; over a book, only when asked for there. */
 export function inspectorShown(s: LayoutState, win: number): boolean {
+  if (bookShown(s)) return !!s.bookInsp;
   if (!s.inspector.open) return false;
   if (s.inspForced) return true;
   const side = s.sidebar.hidden ? 0 : s.sidebar.width;

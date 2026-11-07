@@ -79,14 +79,14 @@ beforeAll(async () => {
   await fsp.writeFile(join(dir, 'library/lindqvist.pdf'), '%PDF-1.7\n');
   vault = await Vault.open(nodeFs, dir);
   const docs: Record<string, DocInfo> = { [CH3]: { type: 'source', frozen: false, cards: 0, due: 0, pdf: 'library/lindqvist.pdf', pages: { first: 41, last: 42 } } };
-  useApp.setState({ vault: dir, tree: vault.tree, files: vault.documents(), docs, inlineBoxes: {}, bookFocus: null, reveal: null, notesHidden: true });
+  useApp.setState({ vault: dir, tree: vault.tree, files: vault.documents(), docs, inlineBoxes: {}, bookFocus: null, reveal: null });
 });
 afterAll(async () => {
   vault.close();
   await fsp.rm(dir, { recursive: true, force: true });
 });
 beforeEach(async () => {
-  useApp.setState({ mobile: false, notesHidden: true });
+  useApp.setState({ mobile: false });
   host = document.body.appendChild(document.createElement('div'));
   root = createRoot(host);
   await act(async () => { root.render(createElement(Pdf, { id: CH3 })); });

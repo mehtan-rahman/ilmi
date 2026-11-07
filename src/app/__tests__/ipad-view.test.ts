@@ -10,7 +10,8 @@
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { emptyPanes, openTab, splitPane } from '../panes.js';
+import { emptyPanes, openBeside, openTab, splitPane } from '../panes.js';
+import { SESSION, notesId } from '../names.js';
 import { DESKTOP, NEVER, setPlatform } from '../platform.js';
 import { useApp } from '../store.js';
 
@@ -191,5 +192,37 @@ describe("the iPad's shell", () => {
     expect(useApp.getState().panes.panes).toHaveLength(1);
     expect(useApp.getState().panes.panes[0]!.tabs).toHaveLength(2);
     expect(qa('.pane')).toHaveLength(1);
+  });
+
+  it('keeps a second pane for a PDF\'s pages and the note on them, and for nothing else (milestone 70)', async () => {
+    const CH = 'library/ch-3.md';
+    const P = 'library/alone.pdf';
+    const N = 'fleeting/on-alone.md';
+    const OTHER = 'fleeting/other.md';
+    const info = { type: 'note' as const, frozen: false, cards: 0, due: 0 };
+    const docs = { [CH]: { ...info, type: 'source' as const, pdf: 'library/book.pdf' }, [P]: { ...info, type: 'source' as const, pdf: P, note: N }, [N]: { ...info, of: P }, [OTHER]: info };
+    const two = (a: string, b: string) => openBeside(openTab(emptyPanes(), a), b);
+    const held = async (panes: ReturnType<typeof two>) => {
+      await act(async () => { useApp.setState({ docs, panes }); });
+      return useApp.getState().panes.panes.length;
+    };
+    // a document with pages and its `:notes/` tab; a PDF on its own and its note, either way round
+    expect(await held(two(CH, notesId(CH)))).toBe(2);
+    expect(await held(two(P, N))).toBe(2);
+    expect(await held(two(N, P))).toBe(2);
+    // a session on the pages counts as them
+    await act(async () => { useApp.setState({ sessionEl: { kind: 'section', label: '', item: { path: N, kind: 'section' } as never } }); });
+    expect(await held(two(SESSION, N))).toBe(2);
+    await act(async () => { useApp.setState({ sessionEl: null }); });
+    expect(useApp.getState().panes.panes).toHaveLength(1);
+    // anything else folds, and the pair folds when the pages' tab moves on; the note is then a tab, which `notes` moves beside again
+    expect(await held(two(CH, OTHER))).toBe(1);
+    expect(await held(two(P, notesId(CH)))).toBe(1);
+    await held(two(P, N));
+    await act(async () => { useApp.getState().setPanes((s) => openTab(s, OTHER)); });
+    expect(useApp.getState().panes.panes).toHaveLength(1);
+    expect(useApp.getState().panes.panes[0]!.tabs.map((t) => t.id)).toEqual([OTHER, N]);
+    await act(async () => { useApp.getState().setPanes((s) => openBeside(openTab(s, P), N)); });
+    expect(useApp.getState().panes.panes.map((p) => p.tabs.map((t) => t.id))).toEqual([[P], [N]]);
   });
 });

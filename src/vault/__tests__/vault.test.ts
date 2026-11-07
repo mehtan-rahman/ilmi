@@ -63,6 +63,71 @@ describe('walk', () => {
     expect(woz?.kind === 'doc' && woz.children && names(woz.children)).toEqual(['woz-ex1']);
   });
 
+  it('a PDF with no `.md` of its name is a document of its own: its pages, a note attached by `pdf`, its state in reading.json (milestone 70)', async () => {
+    const books = vault.tree.find((n) => n.name === 'books');
+    if (books?.kind !== 'folder') throw new Error('no books/');
+    expect(names(books.children)).toEqual(['alone', 'james-pluralistic-ch4', 'notes-on-alone']);
+    expect(books.children.find((n) => n.name === 'alone')).toEqual({ kind: 'doc', name: 'alone', path: 'books/alone.pdf', pdf: 'books/alone.pdf', bare: true });
+    // listed apart from the `.md` documents, and its pages are itself
+    expect(vault.documents()).not.toContain('books/alone.pdf');
+    expect(vault.pdfs()).toEqual(['books/alone.pdf']);
+    expect(await vault.pagesOf('books/alone.pdf')).toBe('books/alone.pdf');
+    // it reads as a source whose pages are itself, with the state `.ilmi/reading.json` holds; nothing is read from the PDF
+    const loaded = await vault.read('books/alone.pdf');
+    expect(meta(loaded.doc)).toMatchObject({ type: 'source', pdf: 'alone.pdf', read: { due: '2026-06-02', ivl: 2, reps: 1, pos: 2, y: 0.25 } });
+    expect(loaded.doc.blocks).toEqual([]);
+    expect(vault.pdfState('books/alone.pdf')).toEqual({ read: 'due=2026-06-02 ivl=2 reps=1 pos=2 y=0.250' });
+    // the note beside it is attached by naming the file, and is not named after it
+    expect(meta((await vault.read('books/notes-on-alone.md')).doc).pdf).toBe('alone.pdf');
+    expect(await vault.pagesOf('books/notes-on-alone.md')).toBe('books/alone.pdf');
+  });
+
+  it('a write to a PDF on its own goes to reading.json, never into the file; a rename and a delete take the state along (milestone 70)', async () => {
+    const PDF = 'books/alone.pdf';
+    const bytes = await vault.fs.readBytes(vault.abs(PDF));
+    const events: string[] = [];
+    const off = vault.subscribe((ev) => { if (ev.kind === 'doc') events.push(ev.path); });
+    await vault.update(PDF, (doc) => { setField(doc, 'read', { due: '2026-06-09', ivl: 2, reps: 2, pos: 3, y: 0.5 }); setField(doc, 'pri', 30); });
+    expect(events).toEqual([PDF]);
+    expect(JSON.parse(await vault.fs.readText(vault.abs('.ilmi/reading.json')))).toEqual({ [PDF]: { read: 'due=2026-06-09 ivl=2 reps=2 pos=3 y=0.500', pri: 30 } });
+    expect(Buffer.from(await vault.fs.readBytes(vault.abs(PDF))).equals(Buffer.from(bytes))).toBe(true);
+    expect(meta((await vault.read(PDF)).doc)).toMatchObject({ pri: 30, read: { due: '2026-06-09', pos: 3, y: 0.5 } });
+    // the body is not kept: a PDF has none
+    await vault.update(PDF, (doc) => { doc.blocks.push({ kind: 'paragraph', text: 'x' }); });
+    expect((await vault.read(PDF)).doc.blocks).toEqual([]);
+    // renamed: the state follows, and the note that named it names the new file
+    const to = await vault.rename(PDF, 'standing alone');
+    expect(to).toBe('books/standing alone.pdf');
+    expect(vault.pdfs()).toEqual([to]);
+    expect(vault.pdfState(PDF)).toBeUndefined();
+    expect(vault.pdfState(to)).toMatchObject({ pri: 30 });
+    expect(meta((await vault.read('books/notes-on-alone.md')).doc).pdf).toBe('standing alone.pdf');
+    // moved into a folder: the same
+    const moved = await vault.move(to, 'papers/archive');
+    expect(moved).toBe('papers/archive/standing alone.pdf');
+    expect(meta((await vault.read('books/notes-on-alone.md')).doc).pdf).toBe('../papers/archive/standing alone.pdf');
+    expect(await vault.pagesOf('books/notes-on-alone.md')).toBe(moved);
+    // deleted: the file and its state go; restored, both are back
+    const removed = await vault.remove(moved);
+    expect(vault.pdfs()).toEqual([]);
+    expect(await vault.fs.stat(vault.abs('.ilmi/reading.json'))).toBeNull();
+    await vault.restore(removed);
+    expect(vault.pdfs()).toEqual([moved]);
+    expect(vault.pdfState(moved)).toMatchObject({ pri: 30 });
+    // and back where the corpus has it, its state as the corpus has it
+    await vault.move(moved, 'books');
+    await vault.rename('books/standing alone.pdf', 'alone');
+    await vault.update(PDF, (doc) => { setField(doc, 'read', { due: '2026-06-02', ivl: 2, reps: 1, pos: 2, y: 0.25 }); setField(doc, 'pri', null); });
+    expect(meta((await vault.read('books/notes-on-alone.md')).doc).pdf).toBe('alone.pdf');
+    off();
+    // its place in its directory's order is kept by its file name, as a document's is
+    await vault.setOrder('books', ['notes-on-alone.md', 'alone.pdf', 'james-pluralistic-ch4.md']);
+    expect(vault.order['books']).toEqual(['notes-on-alone.md', 'alone.pdf', 'james-pluralistic-ch4.md']);
+    expect(ordered(childrenAt(vault.tree, 'books')!, vault.order['books']).map((n) => n.name)).toEqual(['notes-on-alone', 'alone', 'james-pluralistic-ch4']);
+    await vault.setOrder('books', null);
+    expect(vault.order['books']).toBeUndefined();
+  });
+
   it('ignores dot-directories and non-markdown files', async () => {
     await disk.mkdir('.obsidian');
     await disk.write('.obsidian/workspace.md', 'x\n');
@@ -78,6 +143,7 @@ describe('walk', () => {
   it('lists every document in tree order', () => {
     expect(vault.documents()).toEqual([
       'books/james-pluralistic-ch4.md',
+      'books/notes-on-alone.md',
       'courses/linear-algebra.md',
       'courses/linear-algebra/unit-2/eigenvalues.md',
       'courses/linear-algebra/problem-set-1.md',

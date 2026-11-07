@@ -20,10 +20,12 @@ import { Vault, type TreeNode } from '../../vault/index.js';
 import { bodyRepeatsTitle, breakdown, countWords, countsUnder, foldTitle, groupOf, hasMath, inlineMathHTML, pathParts, plainMath, shortTitle } from '../chromeText.js';
 import { keptCrumbs } from '../Crumbs.js';
 import { FORM_LABEL, dayLabel, dueWhen, kindTag } from '../items.js';
-import { MEASURE_MIN, inspectorFits, inspectorShown, railsOf } from '../layout.js';
+import { MEASURE_MIN, bookShown, inspectorFits, inspectorShown, railsOf } from '../layout.js';
 import { emptyPanes, openTab } from '../panes.js';
-import { queueId } from '../names.js';
+import { SESSION, kindOf, noteOf, notesId, notesTabOf, pagesOf, queueId, tabKindOf, titleOf } from '../names.js';
+import { attach } from '../vault.js';
 import { useApp, type DocInfo } from '../store.js';
+import { notebookOf } from '../tabs.js';
 
 const SAMPLE = join(import.meta.dirname, '../../../samples/double-major');
 const NOW = new Date('2026-10-30T09:00:00');
@@ -278,6 +280,102 @@ describe('the room rule', () => {
     expect(inspectorShown({ ...base, panes, inspForced: true }, 1280)).toBe(true);
     expect(inspectorShown({ ...base, panes, inspector: { width: 280, open: false }, inspForced: true }, 1600)).toBe(false);
     expect(inspectorShown({ ...base, panes: openTab(emptyPanes(), queueId('today')) }, 1280)).toBe(true);
+  });
+
+  it('a book opens without the inspector, which comes only when asked for there (milestone 70)', () => {
+    // the sample's chapter 3, with its pages as the app's index has them (this file's `docs` leaves `pdf` out)
+    const chapter = Object.keys(docs).find((p) => p.endsWith('/ch-3-the-canonical-ensemble.md'))!;
+    const books = { ...docs, [chapter]: { ...docs[chapter]!, pdf: 'library/lindqvist-statistical-physics.pdf', pages: { first: 23, last: 28 } } };
+    const base = { sidebar: { width: 232, hidden: false }, inspector: { width: 280, open: true }, inspForced: false, docs: books, railFolded: {} as Record<string, true>, railWidth: 200 };
+    const note = Object.keys(docs).find((p) => docs[p]?.type === 'note' && !notebookOf(p, docs))!;
+    const book = openTab(emptyPanes(), chapter);
+    expect(bookShown({ panes: book, docs: books })).toBe(true);
+    expect(bookShown({ panes: openTab(emptyPanes(), note), docs: books })).toBe(false);
+    // open in the saved state, room to spare, even forced: not over a book
+    expect(inspectorShown({ ...base, panes: book }, 1600)).toBe(false);
+    expect(inspectorShown({ ...base, panes: book, inspForced: true }, 1600)).toBe(false);
+    // its own toggle: shown, whatever the saved state and the room
+    expect(inspectorShown({ ...base, panes: book, bookInsp: true }, 1600)).toBe(true);
+    expect(inspectorShown({ ...base, panes: book, bookInsp: true, inspector: { width: 280, open: false } }, 900)).toBe(true);
+    // another kind of document is as it was, asked for over a book or not
+    expect(inspectorShown({ ...base, panes: openTab(emptyPanes(), note) }, 1600)).toBe(true);
+    expect(inspectorShown({ ...base, panes: openTab(emptyPanes(), note), bookInsp: true, inspector: { width: 280, open: false } }, 1600)).toBe(false);
+    // a session over a book reads the same way; over anything else it is as it was
+    const session = openTab(emptyPanes(), SESSION);
+    expect(inspectorShown({ ...base, panes: session, sessionEl: { item: { path: chapter, kind: 'read' } } }, 1600)).toBe(false);
+    expect(inspectorShown({ ...base, panes: session, sessionEl: { item: { path: chapter, kind: 'read' } }, bookInsp: true }, 1600)).toBe(true);
+    expect(inspectorShown({ ...base, panes: session, sessionEl: { item: { path: note, kind: 'read' } } }, 1600)).toBe(true);
+  });
+});
+
+describe('a PDF on its own and its note (milestone 70)', () => {
+  const P = 'library/alone.pdf';
+  const N = 'fleeting/on-alone.md';
+  const N2 = 'library/zz-also.md';
+  const CH = 'library/book/ch-3.md';
+  const base: Record<string, DocInfo> = {
+    [P]: { type: 'source', frozen: false, cards: 0, due: 0, pdf: P },
+    // two notes name the PDF: the first in path order is the one it shows
+    [N2]: { type: 'note', frozen: false, cards: 0, due: 0, pdf: P },
+    [N]: { type: 'note', frozen: false, cards: 0, due: 0, pdf: P },
+    // a chapter of a book whose PDF has its `.md`: a document with pages, as before
+    [CH]: { type: 'source', frozen: false, cards: 0, due: 0, pdf: 'library/book.pdf', pages: { first: 23, last: 28 } },
+    'library/book.md': { type: 'source', frozen: false, cards: 0, due: 0, pdf: 'library/book.pdf' },
+    // a source naming the PDF on its own (a chapter of it, 48's way): its pages, not a note
+    'library/alone-ch-2.md': { type: 'source', frozen: false, cards: 0, due: 0, pdf: P, pages: { first: 2, last: 2 } },
+    'german.md': { type: 'deck', frozen: false, cards: 3, due: 0 },
+  };
+
+  it('attach: a note naming a PDF on its own is its notes (`of`), not pages; the PDF shows the first; a source naming it, and a chapter, keep their pages', () => {
+    const docs = attach(base);
+    expect(docs[N]).toEqual({ type: 'note', frozen: false, cards: 0, due: 0, of: P });
+    expect(docs[N2]).toMatchObject({ of: P });
+    expect(docs[P]).toEqual({ type: 'source', frozen: false, cards: 0, due: 0, pdf: P, note: N });
+    expect(docs[CH]).toEqual(base[CH]);
+    expect(docs['library/book.md']).toEqual(base['library/book.md']);
+    expect(docs['library/alone-ch-2.md']).toEqual(base['library/alone-ch-2.md']);
+    expect(pagesOf('library/alone-ch-2.md', docs)).toBe('library/alone-ch-2.md');
+    // nothing to attach: the same object back
+    const plain = { 'german.md': base['german.md']! };
+    expect(attach(plain)).toBe(plain);
+    // a second pass over its own result changes nothing; the PDF's info made anew (a write of its line) is told its note again
+    expect(attach(docs)).toBe(docs);
+    const again = attach({ ...docs, [P]: { type: 'source', frozen: false, cards: 0, due: 0, pdf: P } });
+    expect(again[P]).toMatchObject({ note: N });
+    // the note gone: the PDF shows none
+    const { [N]: _n, [N2]: _n2, ...without } = docs;
+    expect(attach(without)[P]).not.toHaveProperty('note');
+  });
+
+  it('pagesOf, noteOf, notesTabOf: what each node is read by and where its notes are', () => {
+    const docs = attach(base);
+    expect(pagesOf(P, docs)).toBe(P);
+    expect(pagesOf(N, docs)).toBe(P);
+    expect(pagesOf(CH, docs)).toBe(CH);
+    expect(pagesOf('german.md', docs)).toBeNull();
+    expect(noteOf(P, docs)).toBe(N);
+    expect(noteOf(N, docs)).toBe(N);
+    expect(noteOf(CH, docs)).toBe(CH);
+    expect(noteOf('german.md', docs)).toBeNull();
+    // a note of its own is the ordinary tab; a document with pages shows its body in its `:notes/` tab
+    expect(notesTabOf(P, docs)).toBe(N);
+    expect(notesTabOf(CH, docs)).toBe(notesId(CH));
+    expect(notesTabOf('library/book.md', docs)).toBe(notesId('library/book.md'));
+    // a PDF with no note yet
+    const bare = attach({ [P]: base[P]! });
+    expect(noteOf(P, bare)).toBeNull();
+    expect(notesTabOf(P, bare)).toBeNull();
+  });
+
+  it('a PDF on its own is a source by kind, named without its extension; a `:notes/` tab is a note titled as its document', () => {
+    const docs = attach(base);
+    expect(kindOf(P, docs)).toBe('source');
+    expect(kindOf('x/y.pdf', {})).toBe('source');
+    expect(tabKindOf(P, docs)).toBe('source');
+    expect(titleOf(P, docs, null)).toBe('alone');
+    expect(tabKindOf(notesId(CH), docs)).toBe('note');
+    expect(titleOf(notesId(CH), { ...docs, [CH]: { ...docs[CH]!, title: 'ch. 3' } }, null)).toBe('ch. 3');
+    expect(titleOf(notesId(CH), docs, null)).toBe('ch 3');
   });
 });
 

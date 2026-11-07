@@ -6,6 +6,157 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-11-07 — milestone 56: the phone
+
+Done on main: `ba9e505`, then `059358a` (`phone.css` alone: a book's pages in a phone's session, seen in a capture from the clean checkout) and
+`0b839eb` (`smoke.ts` alone: it waits for the bar when the keyboard has it).
+On a simulated iPhone the day's cards were reviewed with the buttons, cards added to decks, a page clipped through the Shortcut's link, and
+all three reached the Mac. **A link that itself starts the app is lost** (a dependency's gap, below), so the README's Shortcut starts the
+app first. New: `src/app/PhoneBar.tsx`, `QuickCard.tsx`, `quick.ts`, `phone.css`, `__tests__/phone-view.test.ts`. Changed: `platform.ts`,
+`App.tsx`, `Canvas.tsx`, `Lenses.tsx`, `TopStrip.tsx`, `Palette.tsx`, `Queue.tsx`, `Session.tsx`, `Composer.tsx`, `DeckBrowser.tsx`, `Pdf.tsx`,
+`Reader.tsx`, `book.ts`, `deckOps.ts`, `store.ts`, `vault.ts`, `src/vault/vault.ts` (`lastDeck` in the view state), `smoke.ts`,
+`scripts/touch-rig`, the README, the guide, docs/development.md; PLAN (56's notes). The format, the store, the engine, the schema and the
+native code did not change.
+
+### Decided
+
+- **Where 56's words gave way.** Sync is the engine through a storage folder, as 57 and 69 did it. 70's split has no room on a phone: **`notes`
+  puts the note in the pages' place, `pages` comes back**; in a session the word is gone and a section stays on its pages at its boxes.
+- **A phone either way up**: under 600 on the shorter side, not the width alone. Half an iPad's screen is a phone too.
+- **⏎ `p` `d` on a topic row is on the day's row itself**, acting without opening, with `undo` on the notice; in a session they are at the foot.
+- **The bar**: `≡` (the tree, the palette's field at its foot), the day, `+`. The middle button enters the queue on the day and comes back
+  to it elsewhere. One `+`, the deck's own gone: it starts on the deck in front.
+- **`reveal`, one button where the grades will be**, not four dimmed. **`×`** out of a session, there being no tab to close.
+- **The composer takes the deck's `default-card`**, its fields read front and back; no priority; `blank` for ⌘B; `no deck yet` with no deck.
+- **`lastDeck` in `.ilmi/state.json`**, which never syncs.
+
+### Verified
+
+1498 tests in 97 files (+19; 1 skipped), typecheck clean, 64 cargo tests in the app and 6 in the plugin. No native code changed: the iOS
+`cargo check`s were not rerun. On an iPhone 18 Pro simulator, 402×874, from a clean checkout of `ba9e505`, new: `phone`, the Mac 3, the phone 196
+and 24 captures, the Mac 8 and 2. From `0b839eb` the same again, 3, 196 and 24, 8 and 2, each to its `done`. **One run failed between them**, from `059358a`, at a touch asked for at 0 0:
+the bar hidden while the keyboard went, the smoke's fault. Same checkout, old counts in brackets, all equal: the Mac `store` 34 (34), its export equal
+to the sample by `diff -r`; `tour` 24 and 45 (24, 45); `book` 131 and 18 (131, 18); `books` 81 and 9 (81, 9). The iPad, built afresh by
+`tauri ios dev`: `tour` 24 and 45 (24), `touch` 7, 133 and 24, 14 and 1 (7, 133, 14). `phone.css` and `smoke.ts` are all the last two touched, and neither
+reaches these: not rerun after them.
+
+**The "done when", as run**, under real touches and real keys: 24 cards (a budget of 24 over the sample's 476) walked by `reveal` and the four
+grades; two cards in a deck chosen and then started on, one in the deck in front; `XCUIDevice.shared.system.open` with `ilmi://new?url=` of a
+page on the Mac's loopback. On the Mac after a sync: the page, the card, 16 documents the same by digest, the 24 reviews in the log.
+
+### What the phone looks like
+
+Looked at on sheets, thumb in mind. **The day**: a thin strip with the collection and sync, `due today`, rows in 17 px serif with their kind
+and path over them, the bar at the foot. **A session**: the card at the top, the rest empty, `reveal` then `again hard good easy` edge to edge
+at the very foot with their gaps. **A topic row**: `done for today / back in 2d`, `later`, `dismiss` under its text. **The tree and palette**: the
+tree across the screen, `open or run` at its foot; the palette the whole screen over the keyboard. **A document**: one page, the book's PDF
+342 of 402 wide. **The composer**: front and back, the deck and three buttons sitting on the keyboard.
+
+### Not verified
+
+**The Shortcut itself**: the Shortcuts app was not driven; `system.open` is taken for its Open URLs, and its actions in the README are from
+memory. Safari's share sheet. **A device.** A small phone. The e-ink theme. `blank` under a real selection. `notes` on a bare PDF with no note.
+`join…` on a phone. A fetch off the loopback. Not rerun: `crdt`, `storage`, `sync`, `nudge`, `open`, `ink`, `pageink`, the random test.
+
+### Found
+
+- **A link that starts the app is lost.** tao 0.37.2's `scene:willConnectToSession:options:` does not read `URLContexts`; only a scene already
+  there sends `Opened`. Run: the app came up on the day, no page in the database. A link a second after the launch landed. Not fixed: it is
+  native code in a dependency. iOS kills suspended apps, so without Open App first a bare `Open URLs` would lose clips at random.
+- `:hover` sticks after a tap on a phone. A list with `justify-content: flex-end` cannot scroll to its top. The keyboard coming up moves the
+  fields under a tap already asked for: the smoke's, not the app's.
+- The whole sample's day is 476: a run cannot walk it under a finger, so the smoke sets a budget.
+
+### Rig notes
+
+Beside the others: `bootphone.sh`, `iosphone.sh`, `iosupphone.sh` (the iPad's for the iPhone), `page56.sh` (a page on 127.0.0.1:8756), `it56.sh <tag>
+[mac3]` (the three runs), `cold56.sh <tag> [wait]` (a link starting the app, or that long after it), `plog.sh`, `all56.sh <tag>`. The rig: `do: type
+<text>`, `do: open <link>`, `TEST_RUNNER_LINK`, `TEST_RUNNER_WAIT`. The keyboard on the iPhone simulator is real, and `typeText` goes through it. A
+foreground wait past 180 s is moved to the background: wait in pieces. Two booted simulators confuse `booted`: shut one down.
+
+### For the user
+
+Things to say:
+- **The Shortcut has four actions, not one**, for the cold link. Fixing it properly is a patch to tao or a little native code: say if you want it.
+- **`notes` on a phone swaps the page**; the middle button's two jobs; the three acting from a topic's row, with `undo`; `reveal` in place of
+  dimmed grades. None was named exactly.
+- **A phone joins a storage only by `join…` in the tweaks**, untried: the same open question as the iPad's welcome.
+Still open from before: as in the handoff below.
+
+Handoff prompt for the next session:
+
+```
+Read PLAN.md, FORMAT.md, BUILD-LOG.md, and spec/hashiyah/HANDOFF.md. The
+section of PLAN.md that holds the sync work is "A database under the app,
+synced by CRDT to any storage" (59–70); its introduction holds the decisions
+and the order. 56 is done; the order now is 68, the last the loop can do (65
+and 66 wait for things only the user has; 52 waits for the user). Do
+milestone 68, "Search across everything", and only that one. Stop at its
+"done when". Then tick it, write notes for the next session under it, add an
+entry to BUILD-LOG.md with a fresh handoff prompt, and commit. Rules as in
+PLAN.md's ground rules: export PATH=$HOME/.cargo/bin:/opt/homebrew/bin:$PATH;
+npm test and npm run typecheck green before a commit, and cargo test in
+src-tauri (the app's 64 and `-p tauri-plugin-ink`'s 6), cargo check for both
+iOS targets when Rust or Swift changes; one commit per milestone; ask before a
+screen, section, or setting the brief does not name; a FORMAT change needs a
+corpus file and a test; a schema change must let an existing collection open.
+Read 59's and 60's notes first (the store, its tables, the index, and what
+the size smoke's 115,000-card collection is: ILMI_SMOKE=size), then the deck
+search's fold (`fold` in src/app/deck.ts) and the palette (`buildIndex`,
+`search` in src/app/chrome.ts, src/app/Palette.tsx): 68 says the index is in
+the same database, so it is Rust and SQLite (src-tauri/src/store.rs, reached
+only through src/vault/store.ts), and a merged change from the engine must
+reach it as a local write does. The palette is the only place named; on a
+phone it is behind the bar's `≡` and takes the screen (56), and its rows must
+stay a finger's size. What has come since 69 and carries: 64 added Dropbox and
+Google Drive, against fakes only; 56 made the phone a shape of its own
+(`shapeOf` is `phone` under 600 on the shorter side, `phone` in the store,
+`phone.css`, `PhoneBar.tsx`, `quick.ts`). Keep ILMI_SMOKE=phone (the Mac 3, the
+iPhone 196 and 24, the Mac 8 and 2; three runs over one storage), pageink
+(16 and 23 on the Mac, 48 and 24 on the iPad), `ink` (63 on the iPad, 4 and 18
+on the Mac; its third run's `ILMI_EXPECT` is the two paragraphs of its `ink:`
+line), `touch` (133 on the iPad; 7 and 14 on the Mac, its third run given
+`ILMI_ALONE_NOTE`), `book` (131), `books` (81; it failed once in 67's chain at
+"the caret is still in the section after the write-up" and passed since: run
+it again before believing a failure there), `tour` (24 on the Mac, 24 on the
+simulator), `crdt` (72), `storage` (90 over dropbox, 91 over drive, 77 over
+s3, 76 over webdav), `store` (34, its export equal to the sample by `diff -r`),
+`sync` and `nudge` passing, and the random test in
+src/sync/__tests__/engine.test.ts (`ILMI_SEEDS=1-500`, and with
+`ILMI_SNAPS=1`). Xcode 27.2's test runner makes fingers only: a dev run's
+`dev_ink_pen` makes the rig's finger a Pencil. The simulator does not finish
+booting, and `simctl launch` does not return, while the Mac's screen is
+locked; a locked screen stalls the Mac's window or leaves it unpainted: wait
+for it, do not skip, and look at what a capture shows. The first rig touch
+after a boot can be dropped: run again before believing it. An app left open
+on the simulator loads its page again when a dev server comes back on 1420 and
+runs the last `smoke.json` from the top: stop it (`xcrun simctl terminate
+booted dev.ilmi.app`) after each run. The Mac's window checks run from a clean
+checkout of main with the dev identifier override; ILMI_VAULT is a folder,
+imported afresh as a collection on each run, or a collection's own folder,
+opened as it is. Never kill a process on port 1420 that is not yours, and run
+the simulator's dev server or the Mac's, not both; stop your own app binary by
+pid when a run ends, capture the Mac only by window id; a covered window's
+page runs several times slower. Open for the user, not to be built without
+their word: from 56, a link that starts the app is lost (tao reads no
+`URLContexts`; the Shortcut starts the app first), `notes` swapping the page
+on a phone, the bar's middle button, the three acting from a topic's row, a
+share extension; from 64, whether the Mac's sign-in stays on the loopback,
+whether `sign in`, the `account` row and the keys as typed fields stay, a
+sign-out; whether the eraser works with a real Pencil (69: the rig's finger
+erases nothing, and it is the first thing to try on a device); where what is
+written on a book's pages goes in an exported folder (a FORMAT change; today an
+export, the mirror, a dated export and git's folder do not hold it); whether a
+page of ink should be a kind of row of its own; whether a finger boxes after a
+hold (57); a way to join a storage on the welcome of an iPad or a phone; whether
+`join…` and the buttons under the storage's fields stay where 63 put them; 62's
+"settings that merge"; from 70, a dropped PDF with chapters, a 48-era source
+naming a PDF, and `.ilmi/reading.json` merging as one file; from 69, Scribble
+off throughout the app.
+```
+
+---
+
 ## 2026-11-07 — milestone 64: Dropbox and Google Drive, against fakes
 
 Done on main: `1efb9ee`, then `77ad60e` (the web view weighed by process, the smoke's check of it, fake tokens that run out in a

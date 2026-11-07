@@ -6159,7 +6159,78 @@ locked screen stalls the Mac's window but not the simulator.
 repository, opens; the queue walks; a card graded there lands on the Mac
 by 53; `ILMI_SMOKE=tour` runs there and its captures are looked at.
 
-### [ ] 56. The phone — cards and clipping
+### [x] 56. The phone — cards and clipping
+Done 2026-11-07, commits `ba9e505`, `059358a` (`phone.css` alone: a book's pages in a phone's session) and `0b839eb` (`smoke.ts` alone).
+Notes: **Read against what exists now.** Written before 59–70, so three things gave way, and the later decision stands in each. *Sync*: "all
+three reach the Mac" went as 57's and 69's did, the engine through a storage folder on the Mac's disk named in `smoke.json`; a
+phone, like an iPad, meets a storage no other way yet from its welcome (still git's `connect`, open for the user). *A book and its
+note* are separate objects with the note in a split pane (70), and a phone has one page: **`notes` over the pages puts the note in their
+place, `pages` over the note comes back** (`book.ts`, `backToPages` in `Reader.tsx`). A section kept from the pages does the same. In a
+session the word is gone and a section stays on its pages at its boxes, since a swap there would lose the session; if something still
+opens the note there it goes on top with the session behind it. That is as far as reading goes, by 56's own list. *Where a phone's
+settings live*: `lastDeck` is in `.ilmi/state.json`, which the engine skips, so it is this device's without a new store.
+**The shape.** `shapeOf` says `phone` when the shorter side is under 600 (`PHONE_MAX`): the bullet says "under 600 px wide", read as
+either way up, because a phone on its side (874×402) would otherwise be a narrow Mac on 402 points of height. So half an iPad's screen is a
+phone too (590×820 was `portrait`; the test says so now). A Mac's window never is. App sets `phone` in the store and `data-shape`;
+`isPhone()` is for the launch, which opens the day whatever tab was last. Every style is in `phone.css`, under
+`html[data-shape="phone"]` or a class only a phone draws, so nothing reaches the iPad or the Mac. **The face.** The top strip is the
+collection and sync. The foot is `PhoneBar.tsx`, 56 px, under the thumb: `≡`, the day, `+`. **The tree and the palette behind one button**: `≡`
+brings 57's sheet at the screen's width with the palette's field at its foot (`.side-find`); the palette then takes the screen. No tabs
+(`Canvas`), no rail (`Lens`), no inspector (`inspOn`), no key hints; the palette leaves out `sidebar` and `inspector`. **The middle
+button is two things**, and this was not named: on the day, `enter queue` with the count (the Mac's row at the top of the list gives way
+to it, out of the thumb's reach up there); anywhere else `today`, which comes back. **A session** is the whole screen: `.top` and the bar go,
+the canvas keeps clear of the clock. A card shows `reveal` across the foot, one button where the grades will be, not the Mac's four dimmed:
+a dim button that reveals is a hidden rule. `×` goes back, the tab it would close being out of sight, added to the `‹ ›` (`onOut`). A
+topic in a session has its page and the three across the foot, ⏎'s words on two lines (`twoLines`).
+**⏎ `p` `d` on a topic row is read as on the day's row itself** (`TopicActs`, `Queue.tsx`): acting from the row, nothing opened, since
+reading is not the phone's point; a tap on the row's text opens it in the session. The write is the session's, moved to `actOnDoc`
+and `docLine` in `Session.tsx`. A row is thumbed past, so unlike the session each of the three has `undo` on its notice (`restore`).
+A book's ⏎ from the row keeps its place, passing on the cadence. **A quick card.** `+` is the bar's, so it is on the queue and on a
+deck at once, and the deck's own `+ card` goes on a phone. `quick.ts`: the deck in front, else `lastDeck`, else the first in the
+tree. `QuickCard.tsx` lays `Composer` (`quick`) over everything to the keyboard's edge: fields above, the deck's name and `cancel`,
+`save, another`, `save` at the foot. The form is the deck's own `default-card`, so a both-ways deck opens both ways; its fields read
+front and back too. No priority, no keys named; `blank` stands in for ⌘B on a cloze. A tap on the name lists the decks. With no deck in
+the collection `+` says `no deck yet`: making one in passing was not named. **The keyboard**: `data-keyboard` when the visual viewport
+is 120 px short; the bar gives it the room. Fields are 16 px or more, or the system zooms the page. **Clipping** needed nothing new
+for a running app: `ilmi://new?url=` through 22's handler. The README has the Shortcut, the guide the bookmarklet as before.
+**Found, and it changes the Shortcut.** ***A link that itself starts the app is lost.*** The app came up on the day and the database had no
+page. tao's `scene:willConnectToSession:options:` hands the options on and nothing reads their `URLContexts` (read in tao 0.37.2's
+source; only `scene:openURLContexts:` sends `Opened`, for a scene already there). So the renderer never hears, and iOS kills suspended
+apps, so a bare `Open URLs` would lose clips at random. Not fixed: it needs native code in a dependency, or a swizzle, which 56 does not
+name. **The README's Shortcut starts the app first** (Open App, Wait 1 second, Open URLs): run as that, the link a second after
+`app.launch()`, with no smoke, the page landed and opened (`cold page`, in the database, the capture looked at). *Also found:* on a
+phone `:hover` sticks after a tap, so the grades' and rows' hover rules are off there; `onMouseEnter` on a queue row is off there too, by
+57's finding, not by a failure seen. `justify-content: flex-end` on the deck list made its top unreachable.
+**Tests** 1498 in 97 files (+19, 1 skipped): `phone-view.test.ts` (jsdom: the bar, the strips, the palette's commands, a topic's row and its
+undo, the reveal, `×`, the composer and the deck chosen, `notes` swapped, over a session), `platform.test.ts`. Cargo 64 and the plugin's 6.
+No native code changed (the rig's Swift is not the app's), so `cargo check` for iOS was not rerun.
+**Checked,** from clean checkouts, an iPhone 18 Pro simulator, iOS 27.2, 402×874, the build `tauri ios dev` made there (first ever). *From
+`ba9e505`:* `ILMI_SMOKE=phone`, new, the Mac 3, the phone 196 and 24 captures, the Mac 8 and 2; from `0b839eb` the same again, 3, 196 and 24, 8 and 2. Between them, from `059358a`, one run failed at a touch asked for at 0 0: the bar is hidden until the keyboard has gone, and the composer had just been cancelled; the smoke's fault, it waits now. *The "done when", as run*, under real touches and
+real keys on the system's keyboard: a collection joined from the storage; the day's 24 (a budget of 24 folds the sample's 476) walked by
+`reveal` and the four grades, each grade used, none of them a topic; two cards in `arabic vocabulary`, chosen from the list and then
+started on by default, and one in `root families`, the deck in front; `XCUIDevice.shared.system.open` with `ilmi://new?url=` of a page on
+the Mac's loopback landed a frozen source with its `url` and text, opened as a page. Then on the Mac after a sync: the page, the card, all
+16 documents written the same by digest, schedules and all, and the 24 reviews in the log (5168 in all). Also driven: `later` on a
+row, its `undo`, `later` again; a topic opened from its row, its three, `×`; the tree, `≡` closing it; a chapter's PDF fetched and drawn at
+342 of 402; `notes`, `pages`; the palette found `wkb`; dark; on its side. *Nothing regressed*, same checkout: the Mac `store` 34 and its
+export equal to the sample by `diff -r`, `tour` 24 and 45, `book` 131 and 18, `books` 81 and 9; the iPad, built afresh by `tauri ios dev`, `tour` 24 and 45, and `touch` the Mac 7, the iPad 133 and 24, the Mac 14 and 1. `059358a` and `0b839eb` touched `phone.css` and `smoke.ts` alone: those were not rerun after them.
+**The captures** were looked at on sheets, one-handed in mind, and these were changed for it: ⏎'s words breaking at `back in / 2d`,
+`start reading r` naming a key, a page scrolling under the clock in a session, a section's line truncated to nothing, a deck's faces
+pushed in by a column for the form, a book's pages stopping 190 px short of the bar.
+**Not done, and limits.** *The cold link*, above. *A phone's first collection*: `connect` is git's; a storage is joined only by `join…` in
+the tweaks, never tried on a phone. *No card editing beyond the Mac's*: a card double-tapped in a deck opens the editor sized as it was.
+*Keys in what a phone seldom opens* (the deck's `/`, the intake, the tweaks' rows): looked at in neither capture nor smoke, beyond the
+tweaks' panel being sized. *The system's keyboard stays light in dark.* The accessory bar over the keyboard is the system's and costs 44
+points. *A left-edge swipe* still brings the sheet, in a session too. *The ink layer* is there on a phone and has no Pencil to hear; `watchLayout`
+still sends scenes. Not in this milestone, by its list: reading beyond a page, ink, the watch; and a share extension.
+**Not verified, said plainly.** ***The Shortcut itself.*** The Shortcuts app was not driven: `system.open` is what its Open URLs is taken to
+do; the four actions in the README are from memory, and `Open App` then `Wait` was run as a launch and a sleep. *Safari's share sheet*,
+the bookmarklet on a phone. *A device*: a real thumb, the safe areas of another model, a real keyboard's timing, a fetch over a
+network rather than the loopback, https, memory on a phone with a large collection. *`blank` on a cloze, `save, another` on a cloze*:
+jsdom has the button, not the selection. *iPhone 18 Pro only*: no small phone (the grades at 320 points). *The e-ink theme.* *Half an
+iPad's screen as a phone*: from the rule, not run. *`notes` on a bare PDF with no note* (the picker on a phone). A second phone
+syncing; the nudge. Not rerun: `crdt`, `storage`, `sync`, `nudge`, `open`, `ink`, `pageink`, the random test (nothing of sync changed).
+The rig's scripts are in the log.
 - Under 600 px wide the app's face is the day: the queue as rows, the
   session full screen with the four grades as buttons across the bottom,
   ⏎ `p` `d` as buttons on a topic row. The tree and the palette behind one
@@ -8507,8 +8578,11 @@ view and taking the Pencil only, the first touch a stroke in a note and on
 a book's page, 58's `draw` and both full-screen canvases gone; the eraser
 is unverified. 64, Dropbox and Google Drive, the same day: two more storages,
 signed in to, against loopback fakes only; neither real service has been
-touched, and it waits on the user's keys. Next: 56 (the phone), then 68; 65 and
-66 wait for things only the user has, 52 for the user's word.
+touched, and it waits on the user's keys. 56, the phone, the same day: the day
+as its face, the session and a quick card under the thumb, a page clipped by
+the Shortcut's link, all on the Mac; a link that itself starts the app is lost.
+Next: 68, the last the loop can do; 65 and 66 wait for things only the user
+has, 52 for the user's word.
 
 Refinement (33–41) is complete, 2026-10-30, every milestone's window check
 run and recorded under its BUILD-LOG entry (33 `notes`, 34 `editing`, 35

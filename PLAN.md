@@ -6761,8 +6761,9 @@ iPhone on a cable for 66 (a free team's seven-day install is enough).
 
 Order: 59 → 60 → 61 → 62 → 63, on the Mac. Then the iPad, because ink is
 what GoodNotes is: 57 → 58 → 67, then the user's two of 2026-11-06:
-70 (a book's pages fill the window) and 69 (ink where the Pencil lands),
-70 first, since 69 lays live ink over pages whose width 70 changes.
+70 (a PDF on its own, a note attached, the split pane when asked) and
+69 (ink where the Pencil lands), 70 first, since 69 lays live ink over
+pages whose width 70 changes.
 Then 64, the phone (56), and 68. 65
 when the Developer Program is joined. 66 as soon after 63 as the user
 has a device to plug in; nothing real is kept on the engine before it.
@@ -7901,47 +7902,75 @@ is a stroke on that page and the pages scroll with it; both are on the
 Mac, the one between the same two paragraphs and the other on the same
 page; and `draw` and `done` are nowhere.
 
-### [ ] 70. A book's pages fill the window
+### [ ] 70. A PDF on its own, a note attached — split pane when asked
 Asked for by the user on 2026-11-06, the same afternoon as 69: "Is it not
 possible to have the pdf reader also be a little seamless as well? I
 would kinda like if the pdf window was fuller / no rightside bar or
-aything (both mobile and desktop)". Shown three layouts, they chose the
-pages alone, with the tree as it is and the notes on demand (not the
-notes kept beside the pages, and not the tree folded away as well).
-- **A book open is its pages.** On the Mac and on the iPad, upright or on
-  its side, a document with pages opens with the pages across the whole
-  pane: no notes beside them and no inspector. The pages are drawn to the
-  pane's width, up to a width a page is still read at, and centred past
-  it. The tree keeps its place and its fold, as now.
-- **The notes come in over the pages from the right** when they are asked
-  for, and fold away again. The user, when shown this: "Should have
-  option to open notes though". So there is something to press, on the
-  Mac and the iPad alike: `notes` among the words over the pages (where
-  `tabs` and `study` are), which opens them and, pressed again, folds
-  them. Beside it, as now: the key that shows and hides them on the Mac,
-  the edge swipe 57 built on the iPad, and whatever goes to a section (a
-  box made a section, `show in book` and `show boxes here` from the
-  other side, a queue's item that is a section of the book). A tap or a
-  click beside them, the same key, or the swipe back folds them. This is
-  57's portrait behaviour made the one behaviour.
-- **The inspector is closed when a book opens.** Its own toggle still
-  opens it, for the book's fields and its passages in book order; it is
-  not shown otherwise, and opening another kind of document leaves it as
-  that document had it.
-- A session over a book reads the same way: the pages, and the notes in
-  over them when the item is a section.
-- Not in this milestone: a text source's layout, the tree's, a reader
-  with no chrome at all (the choice not taken); zoom; two pages side by
-  side.
+aything (both mobile and desktop)", then "Should have option to open
+notes though", and then, when the first draft of this milestone had the
+book's notes sliding in over its pages: "I think naybe the architecture
+here is misunderstood a little bit. It'd be nice if the notes were
+separate from the pdf and you can jsut 'attach' whenever you incremental
+read something but not inherently there by default. part of hte reaosn i
+liked having split pane was so that i acn have pdf on one side and my
+notes on another but fundamentally distinct if that makes sense". Asked
+three things, they chose: what is kept from a PDF goes into one note
+attached to that PDF, picked or made the first time; the note opens in
+the split pane when asked, nothing slides over the pages; and a PDF can
+be in the collection with no note at all. So 48's rule, that a PDF is
+the pages of the document named after it, gives way to this.
+- **A PDF is a thing of its own.** It is in the tree, opens as its pages
+  across the whole pane (no column beside them, the inspector closed as
+  it opens and opened only by its toggle; the tree as it is), keeps the
+  reader's place, and comes back in the reading queue by its own `read`
+  schedule, a note or no note. On the Mac and on the iPad either way up.
+- **A note is attached to a PDF**, and that is what makes it the PDF's
+  notes: the note names the file in its front matter (`pdf:`, the field
+  there is today), and a PDF has at most one note that it shows (of
+  several naming it, the first in path order, as a linked card's partner
+  is found). Attaching happens the first time something is kept from the
+  PDF (a passage boxed and made a section or an extract, a card made on
+  a page), or from `notes` over the pages: pick a note that is there, or
+  make a new one, named as the user likes, in the place they pick; from
+  then on everything kept from that PDF goes into it. A note named after
+  the PDF beside it, as 48 made them, is attached already: the sample's
+  books open as they did, their notes in the other pane when asked.
+- **The note opens in the split pane when asked**: `notes` among the
+  words over the pages (the user: "Should have option to open notes
+  though"), or the split pane's key, opens the attached note in the other
+  pane as the ordinary tab it is; closed, the PDF is alone again. Nothing
+  slides over the pages on either side; 57's portrait sheet on the iPad
+  goes the same way, unless a split on an upright iPad cannot hold a
+  page: then say what is done there instead. What goes to a section of
+  the note (`show in book`, a queue item that is a section, a passage
+  kept) opens the note beside the PDF if it is not open.
+- **The pages are drawn to the pane's width**, up to a width a page is
+  still read at, and centred past it (the stopped first draft of this
+  milestone, uncommitted on main, has the pages across the pane, the
+  inspector closed on open, the `notes` word, and the page width; keep
+  what fits and drop its sheet).
+- **FORMAT.md** changes, with a corpus file and a test: a PDF may stand
+  alone in a folder, with no `.md` of its name; a note's `pdf:` field is
+  how a note is a PDF's notes, and the note need not be named after it;
+  where a bare PDF's `read` schedule and place are kept (state rows in
+  the store; in an export, said in §1 beside `.ilmi/`'s other files, or
+  wherever the agent finds right and says). The corpus and the sample
+  still round-trip byte for byte.
+- A session over a PDF reads the same way: the pages, and the note
+  beside them when the item is a section of it.
+- Not in this milestone: a text source's layout; several notes shown for
+  one PDF; moving sections between notes; zoom; two pages side by side;
+  the tree folding away (the choice not taken).
 
 *Done when:* on the Mac and on a simulated iPad, upright and on its side,
-a chapter of the sample's book opens with its pages across the pane and
-nothing beside them; `notes` over the pages opens the notes and folds
-them; a passage boxed and made a section brings the notes in over the
-pages with the section in them, and they fold away again;
-the inspector opens only by its toggle; and the smokes that read a book
-(`book`, `books`, `touch`, `pageink`, `tour`) pass, rewritten where they
-looked for the notes beside the pages.
+a PDF dropped into the sample with no note opens with its pages across
+the pane and nothing beside them, and is in the reading queue; a passage
+boxed in it and kept asks for a note, a new one made in a folder of the
+user's choosing takes the section, and `notes` opens that note in the
+other pane and closes it again; a chapter of the sample's book opens the
+same way with its old notes attached; the format's tests and the smokes
+that read a book (`book`, `books`, `touch`, `pageink`, `ink`, `tour`)
+pass, rewritten where they looked for the notes beside the pages.
 
 ## Notes for the next session
 

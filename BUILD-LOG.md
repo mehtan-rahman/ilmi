@@ -6,6 +6,128 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-11-06 — the user on the reader again; milestone 70 rewritten
+
+No code committed. The first draft of 70 had the book's notes sliding
+in over its pages. While an agent was building it the user said: "I
+think naybe the architecture here is misunderstood a little bit. It'd
+be nice if the notes were separate from the pdf and you can jsut
+'attach' whenever you incremental read something but not inherently
+there by default. part of hte reaosn i liked having split pane was so
+that i acn have pdf on one side and my notes on another but
+fundamentally distinct if that makes sense". The agent was stopped with
+its work uncommitted on main (pages across the pane, the inspector
+closed on open, a `notes` word, the page width, and a sliding sheet;
+its own account is in the entry's handoff). Asked three things, the
+user chose: what is kept from a PDF goes into one note attached to it,
+picked or made the first time; the note opens in the split pane when
+asked and nothing slides over the pages; a PDF can be in the collection
+with no note. 70 in PLAN.md is rewritten to that, and it is a change to
+the format (48's rule that a PDF is the pages of the document named
+after it gives way; a note's `pdf:` field is the attachment; a bare PDF
+is allowed). Still before 69.
+
+Handoff prompt for the next session:
+
+```
+Read PLAN.md, FORMAT.md, BUILD-LOG.md, and spec/hashiyah/HANDOFF.md. The
+section of PLAN.md in progress is "A database under the app, synced by
+CRDT to any storage" (59–70); its introduction holds the decisions and
+the order. After 63 came 57, 58 and 67 (done); the order now is 70, then
+69, then 64, 56 and 68 (65 and 66 wait for things only the user has; 52
+waits for the user). Do milestone 70, "A PDF on its own, a note attached
+— split pane when asked", and only that one. Stop at its "done when".
+Then tick it, write notes for the next session under it, add an entry
+to BUILD-LOG.md with a fresh handoff prompt (for 69: the prompt in the
+entry "the user on ink; milestone 69 written" is the one to carry
+forward, brought up to date with what 70 changed about a PDF, its note
+and the smokes' counts), and commit. Rules as in PLAN.md's ground rules:
+export PATH=$HOME/.cargo/bin:/opt/homebrew/bin:$PATH; npm test and npm
+run typecheck green before a commit, and cargo test in src-tauri (the
+app's 46 and `-p tauri-plugin-ink`'s 5), cargo check for both iOS
+targets if Rust or Swift changes; one commit per milestone; ask before
+a screen, section, or setting the brief does not name (70 names: the
+`notes` word over the pages; a way to pick a note that is there or make
+a new one in a place of the user's choosing, the first time something
+is kept from a PDF or from `notes`); a FORMAT change needs a corpus
+file and a test, and 70 is one: read FORMAT.md §1 (what a PDF beside a
+note is today, 48) and §3 (`pdf:`), and say in FORMAT.md what a bare
+PDF is, that a note's `pdf:` field attaches it, and where a bare PDF's
+`read` schedule and place are kept. Read 70's own text first: it quotes
+the user three times and records their choices and what is not to be
+built. Then 48's and 49's notes (the book beside its notes:
+src/app/Pdf.tsx, the notes column, `show in book`, `show boxes here`,
+src/app/bookNotes.ts), 47's (sections that come back), 57's (the iPad,
+the portrait sheet, the touch rig), 60's (state in rows: a `read`
+schedule is a row of `schedules` keyed by its document; a bare PDF's
+needs a row with a file's id, or what you find right) and 67's
+(`PageInk` over a page; strokes keyed by the PDF's hash, so they do not
+care whether a note is attached). The working tree holds the stopped
+first draft, uncommitted: src/app/store.ts (`notesHidden` defaults
+true; `bookInsp`), layout.ts (`bookShown`, `inspectorShown` over a
+book), vault.ts (`toggleInspector` over a book), App.tsx (the swipes;
+no shape effect), Pdf.tsx (a mount effect folding the notes; a reveal
+bringing them in; the `notes` word in the `.meta` row; page width from
+`.reader-wrap`, `PAGE_MAX = 960`, centred), pdf.css (`.book` one
+column; `.book-notes` a sheet over the pages; `.reader-wrap` padding),
+chrome.ts and BottomStrip.tsx (the hint `⌘\ notes`), bookNotes.ts
+(`showInBook` folds the sheet), tests (chrome.test, pass.test, a new
+book-open.test.ts) and smoke.ts (`book` rewritten, 75 ok on the working
+tree; `books`, `tour`, `open`, `touch`, `ink` and `pageink` edited and
+not run). Keep from it what 70 keeps (the pages across the pane, the
+inspector closed on open and opened by its toggle, the `notes` word,
+the page width) and drop the sheet: in 70 the note is a tab in the
+other pane of the split (src/app/panes, `⌘\`), not a layer over the
+pages. The draft's author noted: `notesHidden` is one global flag read
+by the strip, App's swipes, the inspector's passages list, tests and
+smokes; a book remounts on every tab switch and session item (Lenses
+keys `<Pdf key={id}>`), so a mount effect is where "opens as pages"
+belongs, and child effects run before the parent's; the old Pages
+effect that consumed a heading reveal with the notes hidden must stay
+removed if a reveal opens the note; the 180 ms slide does not advance
+in a window that is not in front (smokes finish animations before
+measuring). To decide and say before building: how a PDF with no note
+is shown in the tree and opened (today the walk pairs `name.pdf` with
+`name.md` and shows no PDF alone); where a bare PDF's reading state
+lives in the store and in an export; what `notes` does on a PDF with
+no note (the picker); what a section kept from a PDF with no note does
+(the picker, then the section); what the split does on an upright iPad
+when a pane cannot hold a page; and that the sample's two books, whose
+notes are named after them, open as before with their notes attached.
+The smokes that read a book look for the notes beside the pages:
+rewrite them, keep what they prove, and say their new counts beside
+the old: `book` (52), `books` (71; it failed once in 67's chain at "the
+caret is still in the section after the write-up" and passed twice
+after: run it again before believing either), `touch` (70 on the iPad;
+4 and 9 on the Mac), `pageink` (56 and 25 on the iPad, 16 and 23 on
+the Mac), `ink` (46; 4 and 20), `tour` (23, on the Mac and the
+simulator), and the format's tests (src/format/__tests__, the corpus
+round trip byte for byte, src/vault/__tests__/store.test.ts's round
+trip of the corpus and the sample). Keep `crdt` (72), `storage` (76
+over s3) and `store` (its export equal to the sample by `diff -r`)
+passing. The simulator's checks need the touch rig (scripts/touch-rig;
+57's notes): Xcode 27.2's test runner makes fingers only. The simulator
+does not finish booting, and `simctl launch` does not return, while the
+Mac's screen is locked; a locked screen stalls the Mac's window or
+leaves it unpainted: wait for it, do not skip, and look at what a
+capture shows. The first rig touch after a boot can be dropped: run
+again before believing it. An app left open on the simulator loads its
+page again when a dev server comes back on 1420 and runs the last
+`smoke.json` from the top: stop it after each run. The Mac's window
+checks run from a clean checkout of main with the dev identifier
+override. Never kill a process on port 1420 that is not yours, and run
+the simulator's dev server or the Mac's, not both; stop your own app
+binary by pid when a run ends, capture the Mac only by window id. Open
+for the user, not to be built without their word: where what is
+written on a book's pages goes in an exported folder; whether a page
+of ink should be a kind of row of its own; whether a finger boxes
+after a hold (57); a way to join a storage on the iPad's welcome;
+whether `join…` and the buttons under the storage's fields stay where
+63 put them; 62's "settings that merge".
+```
+
+---
+
 ## 2026-11-06 — the user on the reader; milestone 70 written, before 69
 
 No code. The user, the same afternoon: "Is it not possible to have the

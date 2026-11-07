@@ -866,8 +866,8 @@ export async function smokeDeck(vault: Vault): Promise<void> {
     const viaPalette = async (label: string) => {
       press('k', { metaKey: true });
       const input = await until(() => q<HTMLInputElement>('.palette-input input'));
-      // a card is found through the search index, by what it says: a label cut to fit is typed up to its cut
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, label.replace(/…$/, ''));
+      // a card is found through the search index, by what it says: a label cut to fit is typed up to its cut, and `⇄` is the row's, not the card's
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, label.replace(/…$/, '').split(' ⇄ ')[0]!);
       input.dispatchEvent(new Event('input', { bubbles: true }));
       const isIt = (r: HTMLElement) => r.dataset.t === 'card' && r.querySelector('.pt')?.textContent === label;
       await until(() => Array.from(document.querySelectorAll<HTMLElement>('.palette-row')).find(isIt));
@@ -12216,6 +12216,8 @@ export async function smokeStore(vault: Vault): Promise<void> {
 async function search152(root: string, log: (s: string) => void): Promise<{ kind: string; q: string; ok: boolean; under: boolean; drawn: number }[]> {
   const { collectionFs } = await import('./collections.js');
   const ms = (n: number) => `${n.toFixed(1)} ms`;
+  // the next frame, or half a second when the window is covered and is given none
+  const frame = () => Promise.race([new Promise<void>((r) => requestAnimationFrame(() => r())), sleep(500)]);
   const fs = collectionFs(root);
   const set = (el: HTMLInputElement, text: string) => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(el, text);
@@ -12240,7 +12242,8 @@ async function search152(root: string, log: (s: string) => void): Promise<{ kind
   const t2 = performance.now();
   const input = await until(() => document.querySelector<HTMLInputElement>('.palette-input input'));
   const t3 = performance.now();
-  await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+  await frame();
+  await frame();
   log(`the palette open and drawn in ${ms(performance.now() - t0)} (set ${ms(t1 - t0)}, turn ${ms(t2 - t1)}, found ${ms(t3 - t2)}, frames ${ms(performance.now() - t3)})`);
   const asks: [kind: string, q: string, under: boolean, hits: boolean][] = [
     ['a word', 'lagrangian', true, true], ['a word inside words', 'ation', false, true], ['a common word', 'the', false, true],
@@ -12267,12 +12270,12 @@ async function search152(root: string, log: (s: string) => void): Promise<{ kind
       if (hits) {
         // until the rows are on the page, then the frame they are drawn in
         for (let n = 0; !answered(q) && n < 20000; n++) await new Promise((r) => setTimeout(r, 0));
-        await new Promise<void>((r) => requestAnimationFrame(() => r()));
+        await frame();
         drawn.push(performance.now() - d0);
         rows = textRows();
       } else {
         for (let n = 0; !answered(q) && n < 20000; n++) await new Promise((r) => setTimeout(r, 0));
-        await new Promise<void>((r) => requestAnimationFrame(() => r()));
+        await frame();
         drawn.push(performance.now() - d0);
       }
       ok = ok && got.length > 0 === hits;
@@ -12289,7 +12292,7 @@ async function search152(root: string, log: (s: string) => void): Promise<{ kind
   for (let i = 1; i <= word.length; i++) {
     const k0 = performance.now();
     set(input, word.slice(0, i));
-    await new Promise<void>((r) => requestAnimationFrame(() => r()));
+    await frame();
     worst = Math.max(worst, performance.now() - k0);
     await sleep(100);
   }

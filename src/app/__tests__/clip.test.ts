@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cleanClipDir, clipTitle, openCandidates, parseClipUri, vaultMatches } from '../clip.js';
+import { cleanClipDir, clipTitle, isSignInBack, openCandidates, parseClipUri, vaultMatches } from '../clip.js';
 
 const enc = encodeURIComponent;
 
@@ -76,5 +76,16 @@ describe('ilmi:// links', () => {
     expect(cleanClipDir('/a//b/')).toBe('a/b');
     expect(cleanClipDir(undefined)).toBe('');
     expect(cleanClipDir(3)).toBe('');
+  });
+});
+
+describe('a sign-in coming back', () => {
+  it('is told from a clip by its shape', () => {
+    expect(isSignInBack('ilmi://auth?code=1&state=2')).toBe(true);
+    expect(isSignInBack(' ilmi://auth?error=access_denied ')).toBe(true);
+    expect(isSignInBack('com.googleusercontent.apps.1-a:/oauth2redirect?code=1&state=2')).toBe(true);
+    expect(isSignInBack('ilmi://author?x=1')).toBe(false);
+    expect(isSignInBack('ilmi://new?content=x')).toBe(false);
+    expect(isSignInBack('ilmi://open?path=a')).toBe(false);
   });
 });

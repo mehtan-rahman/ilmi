@@ -54,6 +54,9 @@ export function cleanClipDir(s: unknown): string {
     .join('/');
 }
 
+/** A sign-in coming back (milestone 64): `ilmi://auth?…`, or Google's client id turned round, the one scheme it allows on a device. */
+export const isSignInBack = (uri: string): boolean => /^ilmi:\/\/auth\b/i.test(uri.trim()) || uri.trim().startsWith('com.googleusercontent.apps.');
+
 /**
  * Parse one link. Accepts `ilmi://new?…`, `ilmi:new?…`, and `ilmi:///new?…`
  * alike (the verb is the host, else the first path segment). Anything that

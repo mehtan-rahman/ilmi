@@ -408,7 +408,7 @@ export const useApp = create<AppState>((set, get) => ({
   sync: { on: false, repo: false, busy: null, offline: false, toPush: 0, conflicts: [], at: null },
   syncSettings: { url: '', token: '', server: NUDGE_SERVER },
   mirror: '',
-  storage: { on: false, kind: 'folder', folder: '', endpoint: '', bucket: '', key: '', secret: '', address: '', user: '', password: '', keep: null },
+  storage: { on: false, kind: 'folder', folder: '', endpoint: '', bucket: '', key: '', secret: '', address: '', user: '', password: '', appKey: '', clientId: '', clientSecret: '', place: '', account: '', dev: '', keep: null },
   away: [],
   session: null,
   sessionEl: null,

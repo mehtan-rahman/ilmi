@@ -1,11 +1,12 @@
 //! A storage over the network (milestone 63): where a collection's changes
 //! and files are kept for its other devices (`src/sync/storage.ts` says
 //! what a storage is: `format`, `devices/<device>/<n>`,
-//! `snapshots/<name>/…`, `blobs/<sha256>`, each file written once). Three
+//! `snapshots/<name>/…`, `blobs/<sha256>`, each file written once). Five
 //! kinds, all with the same verbs: a folder, an S3-compatible bucket
 //! (Cloudflare R2, MinIO, AWS; requests signed by Signature Version 4,
-//! addressed by path: `<endpoint>/<bucket>/<key>`), and a WebDAV folder
-//! (Nextcloud, a Synology; basic auth).
+//! addressed by path: `<endpoint>/<bucket>/<key>`), a WebDAV folder
+//! (Nextcloud, a Synology; basic auth), and since milestone 64 Dropbox and
+//! Google Drive, which are `cloud.rs` over a sign-in of `oauth.rs`.
 //!
 //! The small files (a device's changes, a few hundred kilobytes each) cross
 //! to the renderer whole, since the engine there is what reads them. A blob
@@ -15,9 +16,9 @@
 //! this process a quarter megabyte at a time and through the web view not
 //! at all.
 //!
-//! What is not here: an upload in parts (S3 takes one `PUT` up to 5 GB,
-//! which is the limit this has), and resuming a transfer cut short (it
-//! starts again).
+//! What is not here, for a bucket and a WebDAV folder: an upload in parts
+//! (S3 takes one `PUT` up to 5 GB, which is the limit this has), and resuming
+//! a transfer cut short (it starts again). Dropbox and Drive have both.
 
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
@@ -47,6 +48,16 @@ pub enum Config {
         user: String,
         password: String,
     },
+    /// `account` names a sign-in (`oauth.rs`), which holds the tokens; `folder` is the collection's, in the app's folder.
+    Dropbox {
+        account: String,
+        folder: String,
+    },
+    /// `account` as Dropbox's; `folder` is the collection's, under `ilmi` in My Drive.
+    Drive {
+        account: String,
+        folder: String,
+    },
 }
 
 fn err<E: std::fmt::Display>(e: E) -> String {
@@ -62,6 +73,24 @@ fn client() -> &'static reqwest::Client {
             .build()
             .expect("an http client")
     })
+}
+
+/// The client for everything but a long upload.
+pub fn http() -> &'static reqwest::Client {
+    client()
+}
+
+/// The client for a request whose body takes as long as it takes. `read_timeout` runs from a request's start until
+/// its answer's head, not from the last byte read, so on `client()` a body still going after a minute is cut off.
+fn sender() -> &'static reqwest::Client {
+    static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+    CLIENT.get_or_init(|| reqwest::Client::builder().connect_timeout(Duration::from_secs(15)).tcp_keepalive(Duration::from_secs(30)).build().expect("an http client"))
+}
+
+/// `req` sent as a long upload.
+pub async fn send_long(req: reqwest::RequestBuilder) -> Result<reqwest::Response, String> {
+    let (_, built) = req.build_split();
+    sender().execute(built.map_err(err)?).await.map_err(err)
 }
 
 /// A path inside a storage: segments of plain names, nothing that climbs out.
@@ -423,6 +452,8 @@ pub async fn list(cfg: &Config, prefix: &str) -> Result<Vec<String>, String> {
     let prefix = clean(prefix)?;
     let mut out = Vec::new();
     match cfg {
+        Config::Dropbox { account, folder } => out = crate::cloud::Dropbox::new(account, folder)?.list(prefix).await?,
+        Config::Drive { account, folder } => out = crate::cloud::Drive::new(account, folder)?.list(prefix).await?,
         Config::Folder { folder } => {
             fn walk(root: &Path, rel: &str, out: &mut Vec<String>) {
                 let Ok(entries) = std::fs::read_dir(if rel.is_empty() { root.to_path_buf() } else { root.join(rel) }) else { return };
@@ -490,6 +521,15 @@ pub async fn list(cfg: &Config, prefix: &str) -> Result<Vec<String>, String> {
     Ok(out)
 }
 
+/// A signed-in service's answer for a file, to read as any other's; none when it does not hold it.
+async fn cloud_get(cfg: &Config, path: &str) -> Result<Option<reqwest::Response>, String> {
+    match cfg {
+        Config::Dropbox { account, folder } => crate::cloud::Dropbox::new(account, folder)?.get(path).await,
+        Config::Drive { account, folder } => crate::cloud::Drive::new(account, folder)?.get(path).await,
+        _ => Err("not a service".to_string()),
+    }
+}
+
 /// A file's bytes; none when it is not there.
 pub async fn read(cfg: &Config, path: &str) -> Result<Option<Vec<u8>>, String> {
     let path = clean(path)?;
@@ -503,6 +543,10 @@ pub async fn read(cfg: &Config, path: &str) -> Result<Option<Vec<u8>>, String> {
         }
         Config::S3 { endpoint, bucket, key, secret } => S3::new(endpoint, bucket, key, secret)?.request(reqwest::Method::GET, Some(path), &[], EMPTY_SHA).send().await.map_err(err)?,
         Config::Webdav { address, user, password } => Dav::new(address, user, password)?.request("GET", path).send().await.map_err(err)?,
+        Config::Dropbox { .. } | Config::Drive { .. } => match cloud_get(cfg, path).await? {
+            Some(res) => res,
+            None => return Ok(None),
+        },
     };
     if res.status().as_u16() == 404 {
         return Ok(None);
@@ -541,6 +585,8 @@ pub async fn write(cfg: &Config, path: &str, bytes: Vec<u8>) -> Result<(), Strin
                 first
             }
         }
+        Config::Dropbox { account, folder } => return crate::cloud::Dropbox::new(account, folder)?.write(path, bytes).await,
+        Config::Drive { account, folder } => return crate::cloud::Drive::new(account, folder)?.write(path, bytes).await,
     };
     if !res.status().is_success() {
         return Err(refused("write", res).await);
@@ -565,6 +611,8 @@ pub async fn remove(cfg: &Config, path: &str) -> Result<(), String> {
         }
         Config::S3 { endpoint, bucket, key, secret } => S3::new(endpoint, bucket, key, secret)?.request(reqwest::Method::DELETE, Some(path), &[], EMPTY_SHA).send().await.map_err(err)?,
         Config::Webdav { address, user, password } => Dav::new(address, user, password)?.request("DELETE", path).send().await.map_err(err)?,
+        Config::Dropbox { account, folder } => return crate::cloud::Dropbox::new(account, folder)?.remove(path).await,
+        Config::Drive { account, folder } => return crate::cloud::Drive::new(account, folder)?.remove(path).await,
     };
     if !(res.status().is_success() || res.status().as_u16() == 404) {
         return Err(refused("remove", res).await);
@@ -576,7 +624,7 @@ pub async fn remove(cfg: &Config, path: &str) -> Result<(), String> {
 const PIECE: usize = 256 * 1024;
 
 /// A request's body read from `file` a piece at a time, `progress` told how much has gone.
-fn body_of(file: std::fs::File, progress: impl Fn(u64) + Send + Sync + 'static) -> reqwest::Body {
+pub fn body_of(file: impl Read + Send + 'static, progress: impl Fn(u64) + Send + Sync + 'static) -> reqwest::Body {
     let stream = futures_util::stream::unfold((file, 0u64), move |(mut file, done)| {
         let mut buf = vec![0u8; PIECE];
         let got = file.read(&mut buf);
@@ -608,13 +656,10 @@ pub async fn upload(cfg: &Config, path: &str, file: &Path, sha: &str, progress: 
             })?;
             return std::fs::rename(&part, &dest).map_err(err);
         }
-        Config::S3 { endpoint, bucket, key, secret } => S3::new(endpoint, bucket, key, secret)?
-            .request(reqwest::Method::PUT, Some(path), &[], sha)
-            .header("content-length", size)
-            .body(body_of(std::fs::File::open(file).map_err(err)?, progress))
-            .send()
-            .await
-            .map_err(err)?,
+        Config::S3 { endpoint, bucket, key, secret } => {
+            let req = S3::new(endpoint, bucket, key, secret)?.request(reqwest::Method::PUT, Some(path), &[], sha).header("content-length", size).body(body_of(std::fs::File::open(file).map_err(err)?, progress));
+            send_long(req).await?
+        }
         Config::Webdav { address, user, password } => {
             let dav = Dav::new(address, user, password)?;
             let progress = std::sync::Arc::new(progress);
@@ -622,14 +667,16 @@ pub async fn upload(cfg: &Config, path: &str, file: &Path, sha: &str, progress: 
                 let p = progress.clone();
                 Ok(dav.request("PUT", path).header("content-length", size).body(body_of(std::fs::File::open(file).map_err(err)?, move |n| p(n))))
             };
-            let first = put()?.send().await.map_err(err)?;
+            let first = send_long(put()?).await?;
             if missing_parent(&first) {
                 dav.parents(path).await?;
-                put()?.send().await.map_err(err)?
+                send_long(put()?).await?
             } else {
                 first
             }
         }
+        Config::Dropbox { account, folder } => return crate::cloud::Dropbox::new(account, folder)?.upload(path, file, size, std::sync::Arc::new(progress)).await,
+        Config::Drive { account, folder } => return crate::cloud::Drive::new(account, folder)?.upload(path, file, size, std::sync::Arc::new(progress)).await,
     };
     if !res.status().is_success() {
         return Err(refused("send", res).await);
@@ -651,6 +698,10 @@ pub async fn download(cfg: &Config, path: &str, dest: &Path, progress: impl Fn(u
         }
         Config::S3 { endpoint, bucket, key, secret } => S3::new(endpoint, bucket, key, secret)?.request(reqwest::Method::GET, Some(path), &[], EMPTY_SHA).send().await.map_err(err)?,
         Config::Webdav { address, user, password } => Dav::new(address, user, password)?.request("GET", path).send().await.map_err(err)?,
+        Config::Dropbox { .. } | Config::Drive { .. } => match cloud_get(cfg, path).await? {
+            Some(res) => res,
+            None => return Ok(None),
+        },
     };
     if res.status().as_u16() == 404 {
         return Ok(None);

@@ -8550,6 +8550,11 @@ async function syncSteps(name: string, args: Record<string, unknown>): Promise<u
       await until(() => (syncWord(useApp.getState().sync) === 'synced' ? true : null), 30000);
       return { ...state(), documents: vault().documents().length, took: (await import('./crdt.js')).lastJoin?.took ?? 0 };
     }
+    // milestone 64: a sign-in of this window's own, back by a link
+    case 'signIn': {
+      const { signIn } = await import('./storage.js');
+      return signIn(args.settings as import('./storage.js').StorageSettings, true);
+    }
     // milestone 63: the files
     case 'away':
       return sfs().away();
@@ -9158,8 +9163,8 @@ export async function smokeCrdt(vault: Vault): Promise<void> {
 
 
 // `ILMI_SMOKE=storage` (`smokeStorage`) over `samples/double-major`, with
-// `ILMI_KIND=s3` or `webdav` (the loopback server a debug build carries,
-// shaped like a bucket or a WebDAV folder, over `ILMI_STORAGE_DIR`),
+// `ILMI_KIND=s3`, `webdav`, `dropbox` or `drive` (the loopback server a debug
+// build carries, shaped like each, over `ILMI_STORAGE_DIR`),
 // `ILMI_VAULT2` a name for the second collection, `ILMI_BIG` a PDF of 200 MB
 // on disk and `ILMI_SNAP=4`: milestone 63. Nothing names the storage but
 // the tweaks: in this window (a) the kind is chosen, its fields typed,
@@ -9174,11 +9179,17 @@ export async function smokeCrdt(vault: Vault): Promise<void> {
 // file. An image made in b is in a after a sync, unopened. The change
 // files pass the count: a snapshot is in the storage, and a third
 // collection made from it holds what the others hold, and no file until
-// its `keep files` is set to all.
+// its `keep files` is set to all. Over Dropbox or Drive (milestone 64) a
+// presses `sign in` and it comes back to the loopback, a plain client
+// playing the browser; b signs in apart, as another device would, and comes
+// back by a link through the deep-link event; no token is in `localStorage`;
+// the big PDF goes in a session and the servers say so; at the end the
+// service lets go of the sign-ins, the sync says `sign in again`, and a
+// sign-in from the row has it syncing again.
 export async function smokeStorage(vault: Vault): Promise<void> {
   const { emitTo, listen } = await import('@tauri-apps/api/event');
   const { crdtOn, filesSettled, setCrdtTimers } = await import('./crdt.js');
-  const { devStorages, storageFor, storageOf } = await import('./storage.js');
+  const { devStorages, signsIn, storageFor, storageOf } = await import('./storage.js');
   type StoreFs = import('../vault/index.js').StoreFs;
   let last = { at: Date.now(), what: 'start' };
   let finished = false;
@@ -9237,9 +9248,12 @@ export async function smokeStorage(vault: Vault): Promise<void> {
     const big = await invoke<string | null>('dev_env', { name: 'ILMI_BIG' });
     const kind = await invoke<string | null>('dev_env', { name: 'ILMI_KIND' });
     if (!path2) throw new Error('ILMI_VAULT2 is not set');
-    if (kind !== 's3' && kind !== 'webdav') throw new Error('ILMI_KIND is not s3 or webdav');
+    if (kind !== 's3' && kind !== 'webdav' && kind !== 'dropbox' && kind !== 'drive') throw new Error('ILMI_KIND is not s3, webdav, dropbox or drive');
     if (!big) throw new Error('ILMI_BIG is not set');
-    const settings = (await devStorages())[kind];
+    let settings = (await devStorages())[kind];
+    const cloud = signsIn(kind);
+    type Cloud = Record<string, number>;
+    const cloudStats = async (): Promise<Cloud> => (await invoke<Record<string, Cloud>>('dev_cloud_stats'))[kind]!;
     setCrdtTimers(false);
     useApp.getState().setTheme('light');
     await poll(() => useApp.getState().docs[VOCAB] && useApp.getState().docs[NOTE], 'the sample is in the collection', 15000);
@@ -9257,10 +9271,10 @@ export async function smokeStorage(vault: Vault): Promise<void> {
       await sleep(80);
     };
     const storageRow = await poll(() => rowOf('storage'), 'a: the tweaks have a storage row');
-    must(storageRow.querySelector('.tw-val')?.textContent === 'off' && [...storageRow.querySelectorAll('button')].map((x) => x.textContent).join(' ') === 'folder s3 webdav', 'it reads off, and offers folder, s3 and webdav');
+    must(storageRow.querySelector('.tw-val')?.textContent === 'off' && [...storageRow.querySelectorAll('button')].map((x) => x.textContent).join(' ') === 'folder s3 webdav dropbox google drive', 'it reads off, and offers the five kinds');
     const actions = () => [...document.querySelectorAll<HTMLElement>('.tweaks .tw-row')].find((r) => [...r.querySelectorAll('button')].some((x) => x.textContent === 'connect' && r.querySelector('.tw-lbl') === null));
     must(rowOf('keep files')?.querySelector('button[data-active="1"]')?.textContent === 'all', 'keep files reads all');
-    press(storageRow, kind);
+    press(storageRow, kind === 'drive' ? 'google drive' : kind);
     await sleep(150);
     must([...(actions()?.querySelectorAll<HTMLButtonElement>('button') ?? [])].every((x) => x.disabled), 'connect and join wait for the fields');
     if (kind === 's3') {
@@ -9269,14 +9283,36 @@ export async function smokeStorage(vault: Vault): Promise<void> {
       await type('key', settings.key);
       await type('secret', settings.secret);
       must(rowOf('secret')?.querySelector('input')?.type === 'password', 'the secret is not shown');
-    } else {
+    } else if (kind === 'webdav') {
       await type('address', settings.address);
       await type('user', settings.user);
       await type('password', settings.password);
       must(rowOf('password')?.querySelector('input')?.type === 'password', 'the password is not shown');
+    } else {
+      must(rowOf('account')?.querySelector('button')?.disabled, 'sign in waits for the client');
+      if (kind === 'dropbox') await type('app key', settings.appKey);
+      else {
+        await type('client id', settings.clientId);
+        await type('client secret', settings.clientSecret);
+        must(rowOf('client secret')?.querySelector('input')?.type === 'password', 'the client secret is not shown');
+      }
+      await type('folder', settings.place);
+      must([...(actions()?.querySelectorAll<HTMLButtonElement>('button') ?? [])].every((x) => x.disabled), 'connect and join wait for a sign-in');
+      (await import('./crdt.js')).setStorage({ dev: settings.dev });
+      await sleep(80);
+      const signedBefore = (await cloudStats()).sign_ins ?? 0;
+      press(rowOf('account'), 'sign in');
+      await poll(() => rowOf('account')?.querySelector('.tw-val')?.textContent === 'signed in', 'a: signed in, back by the loopback', 20000);
+      must(((await cloudStats()).sign_ins ?? 0) === signedBefore + 1, 'the service saw one sign-in');
+      const held = globalThis.localStorage.getItem('ilmi.storage') ?? '';
+      const accountId = storageOf(vault.root).account;
+      must(accountId !== '' && !/refresh|access_token|"token"/.test(held), 'the settings name the sign-in and hold no token');
+      must(await invoke<boolean>('oauth_signed_in', { account: accountId }), 'and the sign-in is held on the Rust side');
+      await shot('storage-signed-in');
+      settings = { ...settings, account: accountId };
     }
     const kept = storageOf(vault.root);
-    must(kept.kind === kind && !kept.on && (kind === 's3' ? kept.secret === settings.secret && kept.bucket === settings.bucket : kept.password === settings.password && kept.address === settings.address), 'the fields are kept with the tweaks');
+    must(kept.kind === kind && !kept.on && (kind === 's3' ? kept.secret === settings.secret && kept.bucket === settings.bucket : kind === 'webdav' ? kept.password === settings.password && kept.address === settings.address : kept.place === settings.place && kept.account === settings.account), 'the fields are kept with the tweaks');
     press(actions(), 'connect');
 
     // ── a makes the storage on the server, b is made from it and keeps what it opens ──
@@ -9293,7 +9329,10 @@ export async function smokeStorage(vault: Vault): Promise<void> {
     must((await a<string[]>('settle')).length === 0, 'a keeps every file: none is away');
     const docsA = vault.documents().length;
     const reviewsA = (await vault.loadReviews()).length;
-    const bs = await b<State>('join', { dest: path2, settings: { ...settings, keep: 'opened' } }, 120000);
+    // another device signs in for itself; on a device it comes back by a link
+    const bSettings = cloud ? { ...settings, account: await b<string>('signIn', { settings: { ...settings, account: '' } }, 30000) } : settings;
+    if (cloud) must(bSettings.account !== settings.account && (await cloudStats()).sign_ins! >= 2, 'b: signed in apart, back by a link');
+    const bs = await b<State>('join', { dest: path2, settings: { ...bSettings, keep: 'opened' } }, 120000);
     must(vaultName(bs.root ?? '') === vaultName(path2) && bs.word === 'synced', `b was made from the storage as ${vaultName(path2)} and reads synced`);
     must(bs.documents === docsA, `b holds a's ${docsA} documents (${bs.documents})`);
     must((await b<number>('reviews')) === reviewsA, `and its ${reviewsA} lines of the log`);
@@ -9350,6 +9389,18 @@ export async function smokeStorage(vault: Vault): Promise<void> {
     must(up.words?.some((w) => /^pushing \d+%$/.test(w)), 'a: the strip said how far the file was on its way up');
     must(up.word === 'synced', 'a: synced');
     must((await st.list('blobs/')).length === 3, 'the storage holds it, under its hash');
+    if (kind === 'dropbox') {
+      const c = await cloudStats();
+      log(`dropbox: ${JSON.stringify(c)}`);
+      must(c.sessions === 1 && c.finished === 1 && c.appends! >= 12 && c.largest_append! <= 16 * 1048576, `it went in a session of ${c.appends} appends, none over 16 MiB`);
+      must(c.largest_whole! < 150 * 1048576, 'and no upload of it whole');
+      must(c.dropped_replies === 1 && c.offsets_said === 1, 'a reply lost on the way, and the session said where it stood');
+    } else if (kind === 'drive') {
+      const c = await cloudStats();
+      log(`drive: ${JSON.stringify(c)}`);
+      must(c.sessions! >= 1 && c.finished! >= 1 && c.chunks! >= 12 && c.largest_chunk! <= 16 * 1048576, `it went in a session of ${c.chunks} chunks, none over 16 MiB`);
+      must(c.failed_chunks! >= 1 && c.asked! >= 1, 'a chunk failed, and the session was asked how far it had got');
+    }
     const got = await b<State>('sync');
     await sameDocs('b has the book');
     must(got.word === 'synced', 'b: synced');
@@ -9391,7 +9442,7 @@ export async function smokeStorage(vault: Vault): Promise<void> {
     must(snaps.some((p) => /^snapshots\/[0-9a-f]{16}\/1\/head$/.test(p)) && snaps.some((p) => /\/1\/1$/.test(p)), `a snapshot is in the storage (${snaps.length} files)`);
     await round();
     const third = `${path2}-c`;
-    const cs = await b<State>('join', { dest: third, settings: { ...settings, keep: 'opened' } }, 120000);
+    const cs = await b<State>('join', { dest: third, settings: { ...bSettings, keep: 'opened' } }, 120000);
     must(vaultName(cs.root ?? '') === vaultName(third) && cs.word === 'synced', `a third collection was made from the storage as ${vaultName(third)}`);
     must((cs.took ?? 0) >= 1, 'from the snapshot, in place of the files it covers');
     await sameDocs('it holds the documents a holds');
@@ -9404,6 +9455,24 @@ export async function smokeStorage(vault: Vault): Promise<void> {
     const all = await b<OnDisk>('blobFiles');
     must(all.length === 4 && all.some((f) => f.size === bigSize), `four files on disk, the big one whole (${all.map((f) => mb(f.size)).join(', ')})`);
     await b('rowAway', { path: BIG });
+
+    // ── the service lets go of the sign-ins: said once, and signed in again from the row ──
+    if (cloud) {
+      const c = await cloudStats();
+      log(`${kind}: ${JSON.stringify(c)}`);
+      must(c.refreshes! >= 1 && c.limited! >= 1, `tokens ran out ${c.refreshes} times and rate limits were waited out ${c.limited} times, and nothing above failed`);
+      await invoke('dev_cloud_revoke', { client: kind === 'dropbox' ? settings.appKey : settings.clientId });
+      await a('sync').catch((e: unknown) => log(`a's sync: ${String(e)}`));
+      await poll(() => storageOf(vault.root).account === '', 'a: the service let go, and the settings no longer name a sign-in');
+      must(q('.notice .nl')?.textContent === 'sign in again', 'a: it says sign in again');
+      useApp.setState({ tweaksOpen: true });
+      await poll(() => rowOf('account')?.querySelector('.tw-val')?.textContent === '', 'the row no longer reads signed in');
+      await shot('storage-sign-in-again');
+      press(rowOf('account'), 'sign in');
+      await poll(() => rowOf('account')?.querySelector('.tw-val')?.textContent === 'signed in', 'a: signed in again', 20000);
+      await poll(() => crdtOn() && word() === 'synced', 'a: and synced again', 60000);
+      useApp.setState({ tweaksOpen: false });
+    }
 
     useApp.getState().setTheme('dark');
     await b('theme', { name: 'dark' });

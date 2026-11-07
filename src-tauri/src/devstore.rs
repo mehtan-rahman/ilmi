@@ -1,7 +1,8 @@
-//! Dev only: two small servers on the loopback, one shaped like an S3
-//! bucket and one like a WebDAV folder, for the storage smoke (milestone
-//! 63), so two collections can sync through each with no network and no
-//! account. One listener serves both over a folder on disk:
+//! Dev only: small servers on the loopback, one shaped like an S3 bucket and
+//! one like a WebDAV folder, for the storage smoke (milestone 63), so two
+//! collections can sync through each with no network and no account; since
+//! 64 Dropbox's and Google Drive's are here too (`devcloud.rs`). One listener
+//! serves them all over a folder on disk:
 //!
 //! - `/s3/<bucket>/<key>`: `PUT`, `GET`, `DELETE`, and `GET
 //!   /s3/<bucket>?list-type=2&prefix=…` answered as S3's XML, a thousand
@@ -32,6 +33,12 @@ pub const PASSWORD: &str = "dev-password";
 
 static SERVER: OnceLock<(String, PathBuf)> = OnceLock::new();
 
+/// The folder the running server is over (the tests set files down in it).
+#[cfg(test)]
+pub fn folder() -> PathBuf {
+    SERVER.get().expect("a server").1.clone()
+}
+
 /// Start the server over `root` if it is not running; its address either way (the first root stands).
 pub fn serve(root: &Path) -> Result<String, String> {
     if let Some((url, _)) = SERVER.get() {
@@ -53,26 +60,26 @@ pub fn serve(root: &Path) -> Result<String, String> {
     Ok(SERVER.get_or_init(|| (format!("http://127.0.0.1:{port}"), root.to_path_buf())).0.clone())
 }
 
-struct Request {
-    method: String,
+pub struct Request {
+    pub method: String,
     /// The path as it was sent, still encoded.
-    raw_path: String,
-    query: Vec<(String, String)>,
-    headers: Vec<(String, String)>,
-    length: Option<u64>,
+    pub raw_path: String,
+    pub query: Vec<(String, String)>,
+    pub headers: Vec<(String, String)>,
+    pub length: Option<u64>,
 }
 
 impl Request {
-    fn header(&self, name: &str) -> Option<&str> {
+    pub fn header(&self, name: &str) -> Option<&str> {
         self.headers.iter().find(|(k, _)| k == name).map(|(_, v)| v.as_str())
     }
 }
 
-fn decode(s: &str) -> String {
+pub fn decode(s: &str) -> String {
     percent_encoding::percent_decode_str(s).decode_utf8_lossy().into_owned()
 }
 
-fn respond(stream: &mut TcpStream, status: &str, kind: &str, body: &[u8]) -> std::io::Result<()> {
+pub fn respond(stream: &mut TcpStream, status: &str, kind: &str, body: &[u8]) -> std::io::Result<()> {
     stream.write_all(format!("HTTP/1.1 {status}\r\nContent-Type: {kind}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len()).as_bytes())?;
     stream.write_all(body)?;
     stream.flush()
@@ -83,7 +90,7 @@ fn s3_error(stream: &mut TcpStream, status: &str, code: &str) -> std::io::Result
 }
 
 /// The file a path names under `base`, when the path stays inside it.
-fn inside(base: &Path, rel: &str) -> Option<PathBuf> {
+pub fn inside(base: &Path, rel: &str) -> Option<PathBuf> {
     let mut out = base.to_path_buf();
     for seg in rel.split('/').filter(|s| !s.is_empty()) {
         if seg == "." || seg == ".." {
@@ -95,7 +102,7 @@ fn inside(base: &Path, rel: &str) -> Option<PathBuf> {
 }
 
 /// A request's body written to `dest` as it arrives; its SHA-256 in hex.
-fn receive(reader: &mut impl Read, length: u64, dest: &Path) -> std::io::Result<String> {
+pub fn receive(reader: &mut impl Read, length: u64, dest: &Path) -> std::io::Result<String> {
     let tmp = dest.with_file_name(format!(".{}.in", dest.file_name().unwrap_or_default().to_string_lossy()));
     let mut out = std::fs::File::create(&tmp)?;
     let mut hasher = Sha256::new();
@@ -119,11 +126,11 @@ fn receive(reader: &mut impl Read, length: u64, dest: &Path) -> std::io::Result<
     Ok(sha)
 }
 
-fn got(dest: &Path) -> PathBuf {
+pub fn got(dest: &Path) -> PathBuf {
     dest.with_file_name(format!(".{}.got", dest.file_name().unwrap_or_default().to_string_lossy()))
 }
 
-fn send_file(stream: &mut TcpStream, path: &Path) -> std::io::Result<()> {
+pub fn send_file(stream: &mut TcpStream, path: &Path) -> std::io::Result<()> {
     let mut f = std::fs::File::open(path)?;
     let len = f.metadata()?.len();
     stream.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: {len}\r\nConnection: close\r\n\r\n").as_bytes())?;
@@ -146,7 +153,8 @@ fn handle(stream: TcpStream, root: &Path) -> std::io::Result<()> {
         .split('&')
         .filter(|s| !s.is_empty())
         .map(|kv| match kv.split_once('=') {
-            Some((k, v)) => (decode(k), decode(v)),
+            // a client's query may say a space as `+` (reqwest's does)
+            Some((k, v)) => (decode(k), decode(&v.replace('+', " "))),
             None => (decode(kv), String::new()),
         })
         .collect();
@@ -171,6 +179,10 @@ fn handle(stream: TcpStream, root: &Path) -> std::io::Result<()> {
         s3(&mut stream, &mut reader, &req, &root.join("s3"), rest)
     } else if let Some(rest) = path.strip_prefix("/dav/").or(if path == "/dav" { Some("") } else { None }) {
         dav(&mut stream, &mut reader, &req, &root.join("dav"), rest)
+    } else if let Some(rest) = path.strip_prefix("/dropbox/") {
+        crate::devcloud::dropbox(&mut stream, &mut reader, &req, &root.join("dropbox"), rest)
+    } else if let Some(rest) = path.strip_prefix("/drive/") {
+        crate::devcloud::drive(&mut stream, &mut reader, &req, &root.join("drive"), rest)
     } else {
         respond(&mut stream, "404 Not Found", "text/plain", b"")
     }
@@ -368,19 +380,21 @@ fn dav(stream: &mut TcpStream, reader: &mut impl Read, req: &Request, base: &Pat
 /// What the smoke hands the renderer: each server's settings, as the tweaks would hold them.
 pub fn settings(url: &str) -> serde_json::Value {
     serde_json::json!({
+        "dropbox": { "kind": "dropbox", "appKey": crate::devcloud::DROPBOX_KEY, "place": "ilmi-dev", "dev": url },
+        "drive": { "kind": "drive", "clientId": crate::devcloud::DRIVE_CLIENT, "clientSecret": crate::devcloud::DRIVE_SECRET, "place": "ilmi-dev", "dev": url },
         "s3": { "kind": "s3", "endpoint": format!("{url}/s3"), "bucket": BUCKET, "key": KEY, "secret": SECRET },
         "webdav": { "kind": "webdav", "address": format!("{url}/dav/ilmi"), "user": USER, "password": PASSWORD },
     })
 }
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use super::*;
     use crate::storage::{self, Config};
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::sync::Arc;
 
-    fn scratch(name: &str) -> PathBuf {
+    pub fn scratch(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("ilmi-devstore-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
@@ -388,12 +402,12 @@ mod tests {
     }
 
     /// One server for the tests of this process, its folder made once.
-    fn server() -> String {
+    pub fn server() -> String {
         static URL: OnceLock<String> = OnceLock::new();
         URL.get_or_init(|| serve(&scratch("server")).unwrap()).clone()
     }
 
-    fn block<T>(f: impl std::future::Future<Output = T>) -> T {
+    pub fn block<T>(f: impl std::future::Future<Output = T>) -> T {
         tauri::async_runtime::block_on(f)
     }
 
@@ -449,7 +463,7 @@ mod tests {
         }
     }
 
-    fn verbs(kind: &str, cfg: &Config) {
+    pub fn verbs(kind: &str, cfg: &Config) {
         {
             block(async {
                 assert_eq!(storage::list(cfg, "").await.unwrap(), Vec::<String>::new(), "{kind}: empty");

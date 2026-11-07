@@ -24,6 +24,8 @@ tauri-plugin-dialog = "2"
 # big file sent and taken as a stream
 tauri-plugin-http = { version = "2", features = ["stream"] }
 futures-util = { version = "0.3", default-features = false }
+# a sign-in's state and PKCE verifier (milestone 64)
+getrandom = "0.3"
 # the Anki package reader: a zip holding an SQLite database, zstd-compressed in newer exports
 zip = { version = "9", default-features = false, features = ["deflate"] }
 zstd = "0.14"

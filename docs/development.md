@@ -117,7 +117,8 @@ test over more seeds than the suite's 24 (a few hundred a process); with
 `ILMI_SNAPS=1` every seed folds its change files into snapshots as it goes
 and deletes what they cover (one seed in three does without it).
 Since milestone 63 the storage is a setting (Tweaks › storage: a folder, an
-S3-compatible bucket, a WebDAV folder; `src/app/storage.ts`), and
+S3-compatible bucket, a WebDAV folder, since 64 Dropbox and Google Drive;
+`src/app/storage.ts`), and
 `ILMI_STORAGE` may also be `s3` or `webdav`: a debug build carries a
 loopback server shaped like each (`src-tauri/src/devstore.rs`, over
 `ILMI_STORAGE_DIR` or a temporary folder; the S3 side checks every
@@ -133,6 +134,25 @@ storage's verbs against both servers; with `ILMI_TEST_S3=endpoint,bucket,key,sec
 or `ILMI_TEST_WEBDAV=address,user,password` in the environment, `cargo test
 a_server_the_environment_names` runs them against a bucket or a WebDAV
 folder of yours too (an empty one; it removes what it writes).
+Since milestone 64 `ILMI_KIND` may also be `dropbox` or `drive`, servers
+shaped like each service's own API (`src-tauri/src/devcloud.rs`, behind the
+same listener; its head says what they check, and they are written to be
+stricter than the guides where they can be). A sign-in in a dev run is what
+ships on a desk: `http://localhost:51764/auth` (Google: `127.0.0.1`), a
+listener the app opens, since a dev binary owns no `ilmi://`. On a device it
+comes back by a link, which `clipper.ts` hands to `oauth_back`. With the
+settings' `dev` set (a debug build alone reads it) a plain client plays the
+browser (`devcloud::browse`): nothing opens the system's. The smoke's second
+window signs in by the link, told through the deep-link plugin's own
+`deep-link://new-url`, so the path up to the OS is run; the OS's part is
+not. Tokens last 60 requests there, and one request in 97 is rate-limited, a
+session's third reply is lost, so a smoke goes through all of that;
+`dev_cloud_stats` says what the servers saw and `dev_cloud_revoke` lets a
+client's sign-ins go. `ILMI_TEST_DROPBOX=app key,refresh token,folder` or
+`ILMI_TEST_DRIVE=client id,client secret,refresh token,folder` and `cargo test
+a_service_the_environment_names` run the verbs and 20 MB up and down against
+the real thing; a refresh token is in `oauth.json` in the app's data folder
+after a sign-in in the app.
 `ILMI_SMOKE=readme` over a copy of the sample walks the screens the README
 shows and marks each with a `shot:` line; the README's images were captured
 that way, by window id, and scaled to 1600 px wide. Each smoke mode logs `ok:` and `failed:` lines and `shot: <name>` marks
@@ -326,7 +346,7 @@ src/plugins/       the plugin runtime (api.ts is the typed handle, runtime.ts th
 src/sync/          engine.ts merges a collection's changes by CRDT (registers by a clock, a document's text through Loro, the tree and each directory's order from the registers, change files and snapshots in a storage, the PDFs fetched when asked for; src/app/crdt.ts runs it, src/app/storage.ts makes the storages); merge.ts is git sync's merge of one file changed on both devices, src/app/sync.ts its policy over the Rust commands
 plugins/           the plugins the repo ships, built by `npm run plugins`; ilmi.d.ts is the API; see PLUGINS.md
 scripts/           command-line tools, run with tsx
-src-tauri/         the shell (Tauri v2, fs + dialog + http + deep-link + single-instance + opener + log plugins, and ink/, its own: the PencilKit canvases on iOS and a drawing read as strokes; store.rs is a collection's SQLite and blobs, storage.rs an S3 bucket or a WebDAV folder as a storage (and a blob sent or fetched as a stream), devstore.rs the debug build's loopback servers shaped like each, anki.rs reads a package, epub.rs a book, plugin.rs a plugin zip, sync.rs a folder as a git repository over libgit2); gen/apple is the iOS project
+src-tauri/         the shell (Tauri v2, fs + dialog + http + deep-link + single-instance + opener + log plugins, and ink/, its own: the PencilKit canvases on iOS and a drawing read as strokes; store.rs is a collection's SQLite and blobs, storage.rs an S3 bucket or a WebDAV folder as a storage (and a blob sent or fetched as a stream), cloud.rs Dropbox and Google Drive as storages, oauth.rs the sign-in to them and its tokens, devstore.rs and devcloud.rs the debug build's loopback servers shaped like each, anki.rs reads a package, epub.rs a book, plugin.rs a plugin zip, sync.rs a folder as a git repository over libgit2); gen/apple is the iOS project
 ```
 
 ## The documents

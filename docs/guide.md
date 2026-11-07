@@ -379,11 +379,12 @@ collection. SSH remotes and large files are not supported.
 ### Through a storage
 
 The other way to sync needs no repository: a storage, which is a folder (a
-disk, a NAS), an S3-compatible bucket (Cloudflare R2, MinIO, AWS), or a
-WebDAV folder (Nextcloud, a Synology). In the tweaks, `storage` takes the
-kind and the fields it needs: a folder; or `endpoint`, `bucket` (a prefix
-may follow the bucket's name after a `/`), `key` and `secret`; or the
-folder's `address`, `user` and `password`. `connect` puts the open
+disk, a NAS), an S3-compatible bucket (Cloudflare R2, MinIO, AWS), a
+WebDAV folder (Nextcloud, a Synology), Dropbox or Google Drive. In the
+tweaks, `storage` takes the kind and the fields it needs: a folder; or
+`endpoint`, `bucket` (a prefix may follow the bucket's name after a `/`),
+`key` and `secret`; or the folder's `address`, `user` and `password`; or,
+for Dropbox and Google Drive, what is below. `connect` puts the open
 collection in an empty storage, or meets the storage that already holds
 it; `join…` makes a new collection from what a storage holds and opens it,
 which is how a second device starts. `off` stops; what is in the storage
@@ -404,6 +405,37 @@ here` on its row and fetches it when it is opened, the strip reading
 piece at a time, and a book over 16 MB is read from disk as its pages are
 turned to. The fields are kept with the tweaks on each device, never in
 the collection.
+
+### Dropbox and Google Drive
+
+These two are signed in to. Each needs an app of your own at the service:
+ilmi has none, so `app key` (Dropbox) or `client id` and `client secret`
+(Google) say whose it is. `folder` is the collection's name there, the same
+on every device. `sign in` opens your browser; say yes there and come back,
+and the row reads `signed in`. Then `connect` or `join…`, as for any
+storage. Each device signs in for itself.
+
+Dropbox keeps a collection in the app's own folder, `Apps/<your app>/<folder>`.
+Google Drive keeps it in `ilmi/<folder>` in My Drive, and ilmi sees nothing
+else of your Drive. There each file's whole path is its name, in one folder:
+it is a storage, not something to tidy by hand.
+
+If the service lets go of the sign-in, the app says `sign in again` and the
+strip reads `offline`; press `sign in`, and the sync goes on where it was.
+An app of Google's still in testing does this every seven days.
+
+To make the app, in the [Dropbox App Console](https://www.dropbox.com/developers/apps):
+Scoped access, App folder; under Permissions tick `files.metadata.read`,
+`files.content.read` and `files.content.write`; under OAuth 2 add the
+redirect URI `http://localhost:51764/auth` (and `ilmi://auth` for a device)
+and allow public clients. The app key is on that page. In the
+[Google Cloud Console](https://console.cloud.google.com/): enable the Drive
+API, set up the consent screen with the scope `drive.file`, and make an
+OAuth client of the type Desktop app, whose id and secret go in the fields.
+
+The tokens are kept in `oauth.json` in the app's own data folder, readable
+by your user alone; they are in no collection, export or storage, and not
+in the web view. They are not encrypted there.
 
 ### On an iPad
 

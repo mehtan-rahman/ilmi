@@ -8,11 +8,12 @@
 // one: `url`, `author`, `published`, and the images beside the file; with a
 // selection as the content the address is still kept as `url`.
 
+import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { getCurrent, onOpenUrl } from '@tauri-apps/plugin-deep-link';
 import { cleanText } from '../import/index.js';
 import type { ImportSpec } from '../vault/index.js';
-import { type ClipNew, clipTitle, openCandidates, parseClipUri, vaultMatches } from './clip.js';
+import { type ClipNew, clipTitle, isSignInBack, openCandidates, parseClipUri, vaultMatches } from './clip.js';
 import { importClipNode } from './clipping.js';
 import { fetchReadable, type PageInfo } from './fetch.js';
 import { folderPaths } from './names.js';
@@ -91,6 +92,11 @@ function toFront(): void {
  * lands when one opens.
  */
 export async function handleUri(uri: string): Promise<void> {
+  if (isSignInBack(uri)) {
+    // the sign-in waiting for it takes it, by its state; a second window's copy finds nothing waiting
+    if (await invoke<boolean>('oauth_back', { url: uri.trim() }).catch(() => false)) toFront();
+    return;
+  }
   const a = parseClipUri(uri);
   if (a.kind === 'refused') {
     note(a.reason);

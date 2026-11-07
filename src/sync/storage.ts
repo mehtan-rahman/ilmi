@@ -21,7 +21,7 @@
 //
 // `folderStorage` is a directory, over an `Fs`; `memStorage` is the
 // tests'. The app's storages (`src/app/storage.ts`) are a folder, an
-// S3-compatible bucket and a WebDAV folder; theirs are the two optional
+// S3-compatible bucket, a WebDAV folder, Dropbox and Google Drive; theirs are the two optional
 // verbs, by which a PDF goes between the collection and the storage on the
 // Rust side and never through the engine's memory.
 

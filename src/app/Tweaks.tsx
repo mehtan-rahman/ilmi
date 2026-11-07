@@ -15,8 +15,8 @@ import { ACCENTS, DENSITY_MAX, DENSITY_MIN, THEMES, useApp, type Accent, type Th
 import { notify } from './land.js';
 import { cloneCollection, connect, setNudgeServer, setRemote, syncWord } from './sync.js';
 import { chooseMirror, mirrorOff } from './keep.js';
-import { connectStorage, joinStorage, setStorage, storageOff } from './crdt.js';
-import { keepOf, storageReady, type StorageKind } from './storage.js';
+import { connectStorage, joinStorage, setStorage, signInStorage, storageOff } from './crdt.js';
+import { clientOf, keepOf, signsIn, storageReady, type StorageKind } from './storage.js';
 import { open as pickDirectory } from '@tauri-apps/plugin-dialog';
 import { currentVault, openVault, setBudget, setClipDir } from './vault.js';
 
@@ -157,14 +157,16 @@ function SyncRows() {
   );
 }
 
-const KINDS: StorageKind[] = ['folder', 's3', 'webdav'];
+const KINDS: StorageKind[] = ['folder', 's3', 'webdav', 'dropbox', 'drive'];
+const KIND_WORD: Partial<Record<StorageKind, string>> = { drive: 'google drive' };
 
 /**
  * Storage (milestone 63): where the collection's changes and files are
  * kept for its other devices. The kind, the fields that kind needs,
  * `connect` (this collection syncs through it from now on: an empty
  * storage takes it) or `join…` (what the storage holds as a new
- * collection, opened), and `off`. Then what this device keeps of the
+ * collection, opened), and `off`. Dropbox and Google Drive (milestone 64)
+ * are signed in to, in the browser, before either. Then what this device keeps of the
  * PDFs and images: every one, or the ones it has opened. The fields are
  * kept with the tweaks, as sync's remote and token are.
  */
@@ -173,6 +175,7 @@ function StorageRows() {
   const sync = useApp((s) => s.sync);
   const mobile = useApp((s) => s.mobile);
   const [busy, setBusy] = useState(false);
+  const [signing, setSigning] = useState(false);
   const fail = (what: string) => (e: unknown) => { notify(`${what} · ${e instanceof Error ? e.message : String(e)}`); };
   const ready = storageReady(st);
   const locked = st.on || busy;
@@ -196,7 +199,12 @@ function StorageRows() {
     const dir = await pickDirectory({ directory: true, recursive: true, multiple: false });
     if (dir) setStorage({ folder: dir });
   };
-  const field = (label: string, key: 'endpoint' | 'bucket' | 'key' | 'secret' | 'address' | 'user' | 'password', secret = false) => (
+  // a second press starts again: the browser may have been closed
+  const doSignIn = () => {
+    setSigning(true);
+    signInStorage().catch(fail('storage')).finally(() => setSigning(false));
+  };
+  const field = (label: string, key: 'endpoint' | 'bucket' | 'key' | 'secret' | 'address' | 'user' | 'password' | 'appKey' | 'clientId' | 'clientSecret' | 'place', secret = false) => (
     <div className="tw-row" key={key}>
       <span className="tw-lbl">{label}</span>
       <TextField value={st[key]} type={secret ? 'password' : 'text'} disabled={locked} onCommit={(v) => setStorage({ [key]: v })} />
@@ -207,9 +215,9 @@ function StorageRows() {
     <>
       <div className="tw-row">
         <span className="tw-lbl">storage <span className="tw-val">{st.on ? (syncWord(sync) ?? 'off') : 'off'}</span></span>
-        <div className="tw-seg">
+        <div className="tw-seg wrap">
           {KINDS.filter((k) => !(mobile && k === 'folder')).map((k) => (
-            <button key={k} type="button" data-active={st.kind === k ? '1' : '0'} disabled={locked} onClick={() => setStorage({ kind: k })}>{k}</button>
+            <button key={k} type="button" data-active={st.kind === k ? '1' : '0'} disabled={locked} onClick={() => setStorage({ kind: k })}>{KIND_WORD[k] ?? k}</button>
           ))}
         </div>
       </div>
@@ -223,6 +231,16 @@ function StorageRows() {
       )}
       {st.kind === 's3' && [field('endpoint', 'endpoint'), field('bucket', 'bucket'), field('key', 'key'), field('secret', 'secret', true)]}
       {st.kind === 'webdav' && [field('address', 'address'), field('user', 'user'), field('password', 'password', true)]}
+      {st.kind === 'dropbox' && [field('app key', 'appKey'), field('folder', 'place')]}
+      {st.kind === 'drive' && [field('client id', 'clientId'), field('client secret', 'clientSecret', true), field('folder', 'place')]}
+      {signsIn(st.kind) && (
+        <div className="tw-row">
+          <span className="tw-lbl">account <span className="tw-val">{signing ? 'waiting' : st.account ? 'signed in' : ''}</span></span>
+          <div className="tw-seg">
+            <button type="button" disabled={clientOf(st) === ''} onClick={doSignIn}>sign in</button>
+          </div>
+        </div>
+      )}
       <div className="tw-row">
         <div className="tw-seg">
           {st.on

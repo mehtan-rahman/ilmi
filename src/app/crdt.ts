@@ -1,7 +1,7 @@
 // The engine in the app (milestones 61 and 63): the open collection synced
 // through a storage (`src/sync/engine.ts` merges, `src/sync/storage.ts`
 // says what a storage is, `storage.ts` here makes the app's: a folder, an
-// S3-compatible bucket, a WebDAV folder). Which one is the collection's
+// S3-compatible bucket, a WebDAV folder, Dropbox, Google Drive). Which one is the collection's
 // setting (Tweaks › storage); a dev run may name one instead
 // (`ILMI_STORAGE=/a/folder`, or `s3` or `webdav` for the loopback servers a
 // debug build carries). A collection that has one is connected to it (an
@@ -20,6 +20,7 @@
 // whose PDF is not here says so on its row (`away` in the store).
 
 import { invoke } from '@tauri-apps/api/core';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { SNAP_AFTER, SNAP_WORTH, engine, type Engine, type Loro, type Storage, type Synced } from '../sync/index.js';
 import type { Fs, StoreFs, Vault } from '../vault/index.js';
 import { createCollection, deleteCollection, listCollections } from '../vault/tauri-store.js';
@@ -27,7 +28,7 @@ import { collectionFs, freeName } from './collections.js';
 import { notify } from './land.js';
 import { titleOf } from './names.js';
 import { activeTab } from './panes.js';
-import { NO_STORAGE, devStorages, keepOf, saveStorage, storageFor, storageName, storageOf, storageReady, type Keep, type StorageSettings } from './storage.js';
+import { NO_STORAGE, devStorages, keepOf, saveStorage, signIn, storageFor, storageName, storageOf, storageReady, type Keep, type StorageSettings } from './storage.js';
 import { useApp } from './store.js';
 import { SYNC_OFF, startSync, stopSync } from './sync.js';
 import { currentVault, note } from './vault.js';
@@ -90,6 +91,8 @@ let listening = false;
 let timers = true;
 /** The files being fetched after a sync, one run at a time. */
 let fetching: Promise<unknown> | null = null;
+/** What the Rust side says when a service has let go of a sign-in (`oauth.rs`, `GONE`). */
+const SIGN_IN_AGAIN = 'sign in again';
 /** Why the last `startCrdt` did not reach its storage; null when it did. */
 let failed: string | null = null;
 
@@ -177,6 +180,11 @@ export async function crdtNow(): Promise<Synced | null> {
     console.error('crdt sync', e);
     failed = e instanceof Error ? e.message : String(e);
     if (open === at) patch({ offline: true });
+    // the service let go of the sign-in (revoked, or Google's week for an app in testing): said once, and the row offers it again
+    if (failed === SIGN_IN_AGAIN && storageOf(at.vault.root).account) {
+      saveStorage(at.vault.root, { ...storageOf(at.vault.root), account: '' });
+      if (open === at) notify(SIGN_IN_AGAIN);
+    }
     throw e;
   } finally {
     if (open === at) patch({ busy: null, progress: null });
@@ -341,6 +349,20 @@ export async function connectStorage(): Promise<void> {
     saveStorage(vault.root, { ...s, on: false });
     await startSync(vault);
     throw new Error(why);
+  }
+}
+
+/** `sign in`: the browser sent to the service; the sign-in kept. A collection already syncing through it starts again with it. */
+export async function signInStorage(): Promise<void> {
+  const vault = currentVault();
+  if (!vault) return;
+  const account = await signIn(storageOf(vault.root));
+  const s = { ...storageOf(vault.root), account };
+  saveStorage(vault.root, s);
+  getCurrentWindow().setFocus().catch(() => { /* the sign-in is kept all the same */ });
+  if (s.on) {
+    stopCrdt();
+    await startCrdt(vault);
   }
 }
 

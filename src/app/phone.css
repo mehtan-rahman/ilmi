@@ -177,7 +177,9 @@ html[data-shape="phone"] .session-bar .sb-actions button { min-height: 52px; pad
 html[data-shape="phone"] .session-bar .sb-actions .ra-l { font-size: 14px; line-height: 1.2; text-align: center; }
 html[data-shape="phone"] .session-bar .sb-actions kbd { display: none; }
 html[data-shape="phone"] .doc-session .reader-wrap { padding-top: 6px; padding-bottom: 190px; }
-html[data-shape="phone"] .doc-session[data-book="1"] .book { padding-bottom: 190px; }
+/* a book's pages stand above the bar, not under it */
+html[data-shape="phone"] .doc-session[data-book="1"] .reader-wrap { padding-bottom: 24px; }
+html[data-shape="phone"] .doc-session[data-book="1"] > .session-bar { padding: 0; margin: 0; max-width: none; }
 
 /* ── the tree and the palette, behind the one button ──────────── */
 html[data-shape="phone"] .side[data-sheet="1"] {

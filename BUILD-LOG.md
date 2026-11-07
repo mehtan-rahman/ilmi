@@ -6,6 +6,286 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-11-07 — milestone 70: a PDF on its own, a note attached
+
+Done on main: `dafe6ce`, then `6047d7b` and `70da483` (`smoke.ts` alone: one line of a check of mine that was wrong, and the walk on the iPad's side that 70's "done when" names, which my first version left out). A PDF is a thing of its own: it opens as its pages
+across the whole pane, nothing beside them, the inspector closed until
+its toggle; a PDF with no `.md` of its name is a document in the tree,
+read in the queue by a line of its own, and may have no note at all. A
+note is attached to a PDF by naming it in its `pdf` field, picked or
+made in a folder of the person's choosing the first time something is
+kept from the pages, and opens in the pane beside the pages when asked
+(`notes` among the words over them, ⌘\) as the ordinary tab it is;
+closed, the pages are alone again. Nothing slides over the pages; 57's
+portrait sheet is gone, and on an upright iPad the two panes lie one
+above the other. The stopped first draft's pages across the pane, its
+inspector rule and its `notes` word were kept; its sheet was dropped.
+New: `src/app/book.ts` (the split and the picker), `books/alone.pdf`,
+`books/notes-on-alone.md` and `.ilmi/reading.json` in the corpus.
+Changed: `src/vault/walk.ts` (a PDF on its own is a node), `vault.ts`
+(`pdfs`, `reading.json`, a PDF read as a document, `addPdf`, rename,
+move, delete and restore for a `.pdf`), `paths.ts`, `order.ts`,
+`store.ts` (a PDF's place in the order), `index.ts`; `src/schedule/
+queue.ts`; `src/app/names.ts` (`:notes/`, `pagesOf`, `noteOf`,
+`notesTabOf`), `panes.ts` (`openBeside`, `closeBeside`), `vault.ts`
+(`attach`, the PDFs published, a drop lands a PDF on its own), `store.ts`
+(`of`, `note`, `noteAttach`; `notesHidden` gone), `Pdf.tsx`, `Reader.tsx`,
+`Lenses.tsx`, `Session.tsx`, `Palette.tsx`, `Inspector.tsx`,
+`BottomStrip.tsx`, `NodeMenu.tsx`, `App.tsx`, `bookNotes.ts`, `layout.ts`,
+`land.ts`, `deck.ts`, `treeModel.ts`, `chrome.ts`, `pdf.css`, `app.css`,
+`reader.css`, `smoke.ts`; `make-pdf.ts`; FORMAT.md §1 and §3; the
+guide and docs/development.md; PLAN (70's notes).
+
+### Decided
+
+- **A `.pdf` with no `.md` of its name is a document**: its pages, a
+  source by kind, named without its extension, opened as pages, in the
+  queue by its own `read` line.
+- **Its state is `.ilmi/reading.json`**, one file keyed by path, each
+  entry the `read` line's attributes and a `pri`; the vault gives the
+  PDF a document to read as (a front matter and no body), so every
+  schedule path runs unchanged and a write keeps only those lines.
+  Exported and imported as the file it is; synced as one register, so
+  the later write of the whole file wins. Nothing is written into the
+  PDF.
+- **What attaches is decided by the note's type**: a note (no `type`)
+  naming a PDF on its own is its notes and opens as a note; a source
+  naming a PDF is that PDF's pages or a range of them, as 48 had it,
+  and opens as pages. A document with pages is its own notes.
+- **The note's tab**: a note of its own as itself; a document with
+  pages as `:notes/<path>`, the one tab id added.
+- **The pane beside**: to the right of the active one, made when there
+  is one pane, the active pane kept; closed by `notes` or ⌘\ again, a
+  pane left empty going with it, a pane holding other tabs staying.
+- **What goes to a place in the note opens it beside**; `show in book`
+  opens the pages beside the note.
+- **Upright on an iPad the panes stack**, pages above, note below.
+- **A dropped PDF without an outline lands on its own**, enrolled that
+  day; one with an outline still lands as 48's notebook of chapters.
+- **The picker is the palette**: `new note · <title> notes` first (the
+  name as typed), then the notes that are no PDF's yet, then the
+  folders; cancelled, nothing is written and the boxes stay pending.
+
+### Verified
+
+1460 tests in 94 files (1 skipped), typecheck clean, 46 cargo tests in
+the app (no native code changed, so `cargo check` for iOS and the
+plugin's 5 were not rerun). From a clean checkout of `dafe6ce`, in one
+chain (`all70.sh`), each run to its `done`, old counts in brackets: on
+the Mac `store` 34 with its export equal to the sample by `diff -r`,
+`crdt` 72 and 18 captures, `storage` over s3 76 and 12, `tour` 24 (23)
+and 45, `book` 131 (52) and 18 (9), `books` 81 (71) and 9 (8), `ink` 4
+and 21 (20), `pageink` 16 and 23. On a simulated iPad Air 11-inch (M4),
+iOS 27.2, the renderer served from the checkout over the build 67
+installed: `tour` 24 (23) and 45, `ink` 46 and 6, `pageink` 56 and 25,
+each on its first try. `touch`, from a clean checkout of `70da483`, three
+runs over one storage: the Mac 7 (4), the iPad 130 (70) and 23 captures
+(10), the Mac 13 (9). The chain's own third `touch` failed at my check
+of the note's path; it was corrected and all three runs repeated.
+
+**The "done when", as run.** A PDF put in the sample with no note, as a
+drop lands it, on the Mac and on the iPad upright and on its side: its
+pages across the pane (960 of 1035 px on the Mac, 760 of 820 upright),
+nothing beside them, in the reading queue. A passage boxed and kept
+asks for a note; a new one in `fleeting` takes the section; `notes` opens
+it in the other pane and closes it. A chapter of the sample's book the
+same way, its old notes as its `:notes/` tab. The format's tests and the
+store's round trips hold the new corpus byte for byte.
+
+**What the captures show**, looked at whole on the Mac and on sheets and
+whole on the iPad. The Mac: a chapter or a bare PDF is one wide page
+under its title, a gold read bar in the margin, the words `books notes
+study` over it; pressed, two equal panes, the page redrawn at 451 px
+beside the note. A bare PDF's note reads as any note, its title on the
+page and a chip by its section. The picker is the palette, dimming the
+page, `new note · alone notes` first. The inspector comes by its toggle
+and takes its column. Dark reads the same. The iPad: upright, the page
+fills the window, and `notes` puts the note in the lower half with the
+page at full width; on its side, two halves, as on the Mac.
+
+### Not verified
+
+A device and a Pencil. The keyboard up over the picker and over the
+stacked panes. Two devices reading one bare PDF apart. E-ink over the
+split. A bare PDF over 16 MB or away at `notes`; S3 or WebDAV with one. A
+real Finder drag (the smokes call `importPdfNode`). A collection from
+before 70 holding unpaired PDFs. Not rerun: `open` (edited, unrun since
+48), `sync`, `nudge`, `ipad`, `storage` over WebDAV, `size`,
+`textsections`. The captures of `tour`, `crdt`, `storage` and `store`
+were not looked at. **The engine's random test fails at seed 248** of
+`ILMI_SEEDS=1-500`, with and without `ILMI_SNAPS=1`: see Found.
+
+### Found
+
+- **Seed 248, not fixed.** With the new corpus one seed of 1,500 ends
+  with an emptied folder on one copy and not the other. The code before
+  70 with only the corpus files added fails the same seed the same way,
+  and the test never writes a PDF, so it is not 70's code; the corpus
+  changed every draw. The old corpus passes seeds 1–2000. Cause not
+  found. It is the tree's merge, and a real if rare failure to converge.
+- The `book` smoke's own fixture (`ch-3…md` with `pdf: lindqvist.pdf`
+  and no `lindqvist.md`) was the case that decided attachment by type:
+  under a first rule (any document naming a PDF on its own is its
+  note) the chapter stopped opening as pages.
+- `attach` must say a PDF's note again on every pass: a write of the
+  PDF's own line makes its info anew, and a note already attached no
+  longer carries the field that named it.
+- 55's rule folded every second pane on an iPad, so `notes` there made
+  a tab behind the pages and no split at all: only the simulator's run
+  showed it, since jsdom's panes have `mobile` off. The pair is kept now
+  (`notesPair`), and a note left behind the pages by a fold moves beside.
+- A note opened beside the pages published the caret at its top, and the
+  pages scrolled to its first section: the reader lost their place at
+  every press of `notes`, and on the iPad the word went off the screen.
+  A capture of the Mac's showed it too (p. 24 where the session had landed
+  on p. 26). A caret moves the pages only under focus now.
+- The row of words scrolled away with the pages, which leaves an iPad no
+  way to the note on any page but the first: it stays at the pane's top.
+- Opening the note halves the pages' width on the Mac, so the same
+  `scrollTop` was another page: the place is kept across a change of
+  scale now, which an iPad's turn wanted too.
+- A scroller's rect includes its scrollbar: a page centred in the
+  client width reads as off-centre against the rect.
+- The palette's ⏎ is its field's, not the window's: a smoke that
+  presses it on the window chooses nothing.
+
+### Rig notes
+
+Beside the others in the scratchpad's `rig/`: `all70.sh` (every check
+of this entry in one chain, the Mac's six others first: the Mac's three first runs, the simulator
+booted and the run tree's renderer served alone, the simulator's four
+runs, the Mac's three second runs, the simulator's pageink collection
+opened again; the touch chain's third Mac run is given
+`ILMI_ALONE_NOTE` from the iPad's `alone note:` line), `it70.sh <tag>
+[touch|ink]` (one storage and one simulator run) and `touch70.sh <tag>`
+(touch's three runs).
+
+### For the user
+
+Drop a PDF in: it stands alone, and `notes` over its pages (or ⌘\)
+offers a note that is there or a new one. Things to say when you look:
+- **Upright on the iPad the note is below the pages, not beside them**:
+  half of 820 px cannot hold a page. Say if you would rather it were
+  otherwise.
+- **The row of words over the pages now stays at the top** as they
+  scroll, about 60 px of the pane, since on an iPad it is the only way
+  to the note. 70 did not ask for this.
+- **A PDF with chapters in its outline still lands as 48's chapters**,
+  each a source, and only one without an outline lands on its own. Say
+  if it should stand alone too.
+- **A source from before that names a PDF** stays its pages, and a PDF
+  with no `.md` of its name is now also a row of its own beside it. Say
+  if such a source should become the PDF's note.
+- **Reading state of bare PDFs merges as one file**: two devices reading
+  two of them apart keep one device's places. A row per PDF is the fix,
+  and needs the Rust side.
+- **A rare sync bug was found and left** (seed 248, above).
+Still open from before: where what is written on a book's pages goes in
+an export; whether a page of ink should be a row of its own; whether a
+finger boxes after a hold; a way to join a storage on the iPad's welcome;
+where 63 put `join…`; 62's "settings that merge".
+
+Handoff prompt for the next session:
+
+```
+Read PLAN.md, FORMAT.md, BUILD-LOG.md, and spec/hashiyah/HANDOFF.md. The
+section of PLAN.md in progress is "A database under the app, synced by
+CRDT to any storage" (59–70); its introduction holds the decisions and
+the order, and 59's to 63's notes say how it stands (a collection is an
+SQLite database, `Vault` unchanged over an `Fs` that src/vault/store.ts
+makes from its rows; an engine, src/sync/engine.ts, told of every write,
+merging registers by a hybrid clock and text through Loro; a storage
+chosen in the tweaks). After 63 came 57, 58, 67 and 70 (done); the order
+now is 69, then 64, 56 and 68 (65 and 66 wait for things only the user
+has; 52 waits for the user). Do milestone 69, "Ink where the Pencil
+lands — writing with nothing to open", and only that one. Stop at its
+"done when". Then tick it, write notes for the next session under it,
+add an entry to BUILD-LOG.md with a fresh handoff prompt (for 64: the
+prompt in 67's entry is the one to carry forward, brought up to date
+with 70 and 69), and commit. Rules as in PLAN.md's ground rules: export
+PATH=$HOME/.cargo/bin:/opt/homebrew/bin:$PATH; npm test and npm run
+typecheck green before a commit, and cargo test in src-tauri (the app's
+46 and `-p tauri-plugin-ink`'s 5), cargo check for both iOS targets when
+Rust or Swift changes; one commit per milestone; ask before a screen,
+section, or setting the brief does not name; a FORMAT change needs a
+corpus file and a test (69 names none). Read 69's own text first: it is
+the user's words and their choices, and it says what is not to be built
+(ink over a note's text, blank notebook pages). Then 58's and 67's
+notes, 70's (what a PDF is now: a thing of its own, its pages across the
+pane, a note attached by `pdf:` opened in the pane beside by `notes` or
+⌘\, nothing over the pages; a PDF with no `.md` of its name is a
+document of its own whose state is `.ilmi/reading.json`; src/app/book.ts
+holds the split and the picker, src/app/Pdf.tsx the pages alone), and
+57's and 55's for the simulator and the touch rig. What is there to
+change: 58's canvas is a full-screen `PKCanvasView` over the web view
+(src-tauri/ink/ios, `open` and `peek`; src/app/ink.ts runs it: `draw` in
+a heading's long-press menu and the insert menu, a tap on a page's
+picture reopens it, kept when quiet 2.5 s and at `done`); 67 opens the
+same canvas over a book's page at the Pencil's first touch, the page's
+picture under it (`writeOn` in src/app/ink.ts, `pagePress` in
+src/app/touch.ts, the plugin's `open` with `paper`), and lays a picture
+of a page's strokes over the page everywhere (`PageInk` in
+src/app/Pdf.tsx). Since 70 a page is drawn to the pane's width up to 960
+px and centred past it, and the pane may be half the window (the note
+beside it, side by side on the Mac and an iPad on its side, one above
+the other on an upright iPad), so a canvas that follows the page follows
+that width too. What stays: a page of ink is its strokes (the store's
+`ink` table, by a note's page or by `p.<the PDF's SHA-256>.<page>`; a
+register a stroke in the engine; a stroke named by a hash), the note's
+line `![working](name/ink-NN.png)`, the Mac making its pictures from the
+strokes. The work is the interaction: ink live in place, in a web view
+that scrolls. Decide and say before building how a canvas stays where
+its area or its page is while the web view scrolls and the text reflows
+(a native view that follows the page's layout, one for what is on
+screen; or something else), measure what a stroke's first touch costs
+(the time from the Pencil's touch to ink, the first touch not lost), and
+say plainly what could only be judged with a real Pencil. Xcode 27.2's
+test runner makes fingers only: a simulated Pencil is an event the smoke
+makes or the rig's finger on a canvas told to take one for the run; the
+Pencil itself is not exercised, and that has to be said. The simulator
+does not finish booting, and `simctl launch` does not return, while the
+Mac's screen is locked; a locked screen stalls the Mac's window or
+leaves it unpainted: wait for it, do not skip, and look at what a
+capture shows. The first rig touch after a boot can be dropped: run
+again before believing it. An app left open on the simulator loads its
+page again when a dev server comes back on 1420 and runs the last
+`smoke.json` from the top: stop it after each run. The smokes `ink`
+(46 on the iPad, 4 and 21 on the Mac) and `pageink`
+(56 and 25 on the iPad, 16 and 23 on the Mac)
+assert the canvas, `draw` and `done` that 69 removes: rewrite them for
+what 69 builds, keep what they prove about the strokes crossing between
+two collections, and say their new counts. Keep `touch` (130
+on the iPad; 7 and 13 on the Mac: since 70 its Mac run puts a
+two PDFs on their own in the storage and the iPad makes a note for each, the first named by
+its `alone note:` line and given to the Mac's third run as
+`ILMI_ALONE_NOTE`), `book` (131), `books` (81; it failed once in
+67's chain at "the caret is still in the section after the write-up"
+and passed since: run it again before believing a failure there), `tour`
+(24 on the Mac, 24 on the simulator), `crdt` (72), `storage`
+(76 over s3), `store` (34, its export equal to the sample by `diff -r`)
+passing, and the random test in src/sync/__tests__/engine.test.ts
+(`ILMI_SEEDS=1-500`, and with `ILMI_SNAPS=1`), which since 70's corpus
+fails at seed 248 and at no other: an emptied folder on one copy and not
+the other, in the tree's merge, failing the same way on the code before
+70 (70's notes). It is not 69's to fix: say if any other seed fails. The Mac's window checks
+run from a clean checkout of main with the dev identifier override.
+Never kill a process on port 1420 that is not yours, and run the
+simulator's dev server or the Mac's, not both; stop your own app binary
+by pid when a run ends, capture the Mac only by window id. Open for the
+user, not to be built without their word: where what is written on a
+book's pages goes in an exported folder; whether a page of ink should be
+a kind of row of its own; whether a finger boxes after a hold (57); a
+way to join a storage on the iPad's welcome; whether `join…` and the
+buttons under the storage's fields stay where 63 put them; 62's
+"settings that merge"; from 70, whether a dropped PDF with chapters in
+its outline should land on its own too, whether a 48-era source naming a
+PDF should be that PDF's note, and `.ilmi/reading.json` merging as one
+file (a `schedules` row under the file's row is the fix, and needs the
+Rust side).
+```
+
+---
+
 ## 2026-11-06 — the user on the reader again; milestone 70 rewritten
 
 No code committed. The first draft of 70 had the book's notes sliding

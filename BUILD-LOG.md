@@ -6,6 +6,201 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-11-07 — milestone 69: ink where the Pencil lands
+
+Done on main: `7e1a3a3`, then `4e933aa` (`smoke.ts` alone: pageink's strokes moved clear of the Mac's). The Pencil's first
+touch on a note or a book's page is a stroke, with nothing to open, enter or leave. In a note the text moves apart at
+the place between two blocks nearest it, the area grows as the writing goes down, and a finger scrolls and taps as
+before; on a page, a bare PDF's too, it writes where the page stands among the others. The tools are the system's, up
+while writing. 58's `draw`, its full-screen canvas and 67's canvas over the page are gone; a tap on a picture opens
+nothing. New: `src/app/noteInk.ts`, `src/reader/inkArea.ts`, `note-ink.test.ts`. Changed: `InkPlugin.swift` (rewritten),
+`src-tauri/ink/src/lib.rs`, `native/ink.m` (`bounds`), `src-tauri/src/lib.rs`, `src/app/ink.ts` (rewritten), `Pdf.tsx`,
+`Reader.tsx`, `App.tsx`, `touch.ts`, `sections.ts`, `vault.ts`, `bookPdf.ts`, `reader.css`, `pdf.css`,
+`src/reader/plugins.ts`, `slash.ts`, `index.ts`, `smoke.ts`, the two ink tests, the guide and docs/development.md; PLAN
+(69's notes). The format, the store, the engine and the schema did not change.
+
+### Decided
+
+- **A canvas is there before the Pencil is.** A layer over the web view takes no touch; each canvas's recogniser is on
+  the web view and takes the Pencil only, so fingers are the web view's. 67 took that for impossible.
+- **The layer's `hitTest` picks the canvas**: it is told where every touch lands first, and turns on one.
+- **A scroll never crosses the bridge.** The page says where sheets lie in a scroller's own content when the layout
+  changes; the layer watches that scroller's real `UIScrollView`.
+- **Between strokes the page shows the picture** and the canvas hides, holding its drawing.
+- **A new area opens at the place between two blocks nearest the Pencil**, the text moving away from a stroke that does
+  not move; on a block, well above that place, the note moves up.
+- **The first keep writes the line**, in the same step as the gap goes.
+- **Erased whole, an area leaves no line and no page**; its name is free again.
+- **Scribble is off in the web view**, or the Pencil on editable text would be typing.
+
+### Verified
+
+1472 tests in 95 files (1 skipped), typecheck clean, 46 cargo tests in the app and 6 in the plugin, `cargo check` for both
+iOS targets; `ILMI_SEEDS=1-247` and `249-500`, with and without `ILMI_SNAPS=1`, all pass (248 is another agent's). From clean
+checkouts on the Mac and on a simulated iPad Air 11-inch (M4), iOS 27.2, built by `tauri ios dev`, each to its `done`, old
+counts in brackets. The Mac: `store` 34, its export equal to the sample by `diff -r`; `crdt` 72 and 18 captures; `storage`
+over s3 76 and 12, twice (see Found); `tour` 24 and 45; `book` 131 and 18; `books` 81 and 9; `touch` 7, then 14 (13) and 1;
+`ink` 4, then 18 (21) and 2; `pageink` 16 and 1, then 23 and 3. The iPad: `tour` 24; `touch` 133 (130) and 24 (23); `ink` 63 (46)
+and 8 (6); `pageink` 48 (56) and 5, then 24 (25) and 3.
+
+**The "done when", as run**, the rig's finger told to stand in for the Pencil. A stroke between two paragraphs with nothing
+chosen: the upper moved 0.0 px, the lower 190.8; the area grew twice; a finger's drag from on the area moved it 207 px, the
+canvas with it to a point, writing nothing. On p. 23 the first touch was a stroke, the ink within two points of the finger,
+and the pages scrolled with it. Both on the Mac, between the same two paragraphs and on the same page. A bare PDF's page, on
+its side at 960 px, too. `draw` and `done` are nowhere.
+
+**Measured.** Touch to PencilKit beginning the stroke: after a launch's first stroke 1.3 to 37 ms, the middle 8 to 17.5. **The
+first stroke of a launch varies, 13 to 334 ms over 18 runs**, half of them from 188 up; cause not found, nothing done for it.
+No web round trip is in it. The first point of every stroke 0.00 pt from the touch: none lost, slow or not. To the text moving
+apart: 248 ms for the first area after a launch, 52 for the next, a debug build.
+
+**What the captures show.** In a note the writing lies in the flow, the text parted round it, nothing else on the screen but
+the system's tools at the foot, and it scrolls as the text does; the Mac has the picture centred under `working`, between
+the same paragraphs, light and dark. On a page the strokes lie over the print with the page among the others. Dark, canvas
+and picture cannot be told apart.
+
+### Not verified
+
+**The eraser**: selected in the picker by the rig, it takes nothing under the rig's finger, through the moved recogniser or
+with the canvas taking the touch itself. The stand-in, or a fault a real Pencil would share: not known from here. What
+follows an erasure ran through a dev call. The lasso, ruler, undo. **The Pencil**: fingers only; `.pencilOnly` on the web view,
+WebKit leaving it alone, the palm, hover, pressure, latency. A device. Frame by frame through a fling (at rest, to a point).
+Writing in two panes at once; turned while writing; the keyboard up. Something over a note taking the Pencil back. A merge
+during writing and leaving in mid-writing (jsdom). A 58 page wider than the column. E-ink. Frozen notes (from the code). S3 and
+WebDAV with strokes. A release bundle. Not rerun: `open`, `sync`, `nudge`, `ipad`, `storage` over WebDAV, `size`, `textsections`.
+The captures of `tour`, `crdt`, `storage` and `store` were not looked at.
+
+### Found
+
+- PencilKit turns its recogniser back on: a spare canvas took strokes from the area, so every canvas is said at every touch.
+- A frame does not name a scroller: a short note bound to the book's behind it, strokes 660 px off. Its content's height too.
+- `didBeginUsingTool` may come before the touch is seen by a recogniser beside it: read the wrong way it said 320 ms.
+- The tool picker keeps its tool across launches.
+- **`storage` over s3 failed once** at "its peak grew by 207 MB" (limit 100), then passed twice with no growth. No code of 69
+  runs on the Mac there; not explained.
+- The rig takes about twenty seconds a touch, longer than the tools stay: under the stand-in they wait 50 s.
+
+### Rig notes
+
+Beside the others in the scratchpad's `rig/`: `all69.sh` (all70.sh with the native build and the paragraphs given to `ink`'s
+third run), `rebuild69.sh <tag> [mode]`, `try69.sh <mode> <tag>`, `m69store.sh`, `page69.sh`, `re69.sh`, `seeds69.sh`. A path with
+`rig/..` in it is refused by the fs scope. A rig touch begun off a sheet is nobody's: start an eraser's drag inside.
+
+### For the user
+
+Put the Pencil to a note or a page and write. **First try the eraser** (and the lasso and undo): the simulator could not
+show it working, and if it does not on your iPad that is the first thing to fix. Then say how it feels: nothing here has
+touched a real Pencil. The first stroke after opening the app may start late (up to a third of a second on the simulator); nothing of
+it is lost, but say if you feel it. Things to say when you look:
+- **Scribble is off throughout the app**, the palette's field too. Say if you want it back where nothing is written.
+- **A tap on written ink puts an invisible caret** in its line, as a picture's does; backspace takes the line.
+- **On the Mac the writing is centred under the word `working`**, as now, not where it was written.
+- **Written ink closes up when a note is opened again**, to its strokes and 40 px.
+Still open from before: where what is written on a book's pages goes in an export; whether a page of ink should be a row of its
+own; whether a finger boxes after a hold; a way to join a storage on the iPad's welcome; where 63 put `join…`; 62's "settings
+that merge"; from 70, a dropped PDF with chapters, a 48-era source naming a PDF, `reading.json` merging as one file.
+
+Handoff prompt for the next session:
+
+```
+Read PLAN.md, FORMAT.md, BUILD-LOG.md, and spec/hashiyah/HANDOFF.md. The
+section of PLAN.md in progress is "A database under the app, synced by
+CRDT to any storage" (59–70); its introduction holds the decisions and
+the order, and 59's to 63's notes say how it stands (a collection is an
+SQLite database, `Vault` unchanged over an `Fs` that src/vault/store.ts
+makes from its rows; an engine, src/sync/engine.ts, told of every write,
+merging registers by a hybrid clock and text through Loro; a storage
+chosen in the tweaks, PDFs and images named by a merge and fetched when
+asked for). After 63 came 57, 58, 67, 70 and 69 (done); the order now is
+64, then 56 and 68 (65 and 66 wait for things only the user has; 52
+waits for the user). Do milestone 64, "Dropbox and Google Drive — sign
+in and it syncs", and only that one. Stop at its "done when". Then tick
+it, write notes for the next session under it, add an entry to
+BUILD-LOG.md with a fresh handoff prompt, and commit. Rules as in
+PLAN.md's ground rules: export
+PATH=$HOME/.cargo/bin:/opt/homebrew/bin:$PATH; npm test and npm run
+typecheck green before a commit, and cargo test in src-tauri (the app's
+46 and `-p tauri-plugin-ink`'s 6), cargo check for both iOS targets when
+Rust or Swift changes; one commit per milestone; ask before a screen,
+section, or setting the brief does not name (the section's introduction
+names `storage`'s kinds, dropbox and google drive among them, "with the
+fields each needs"); a FORMAT change needs a corpus file and a test.
+Read 63's notes first: a storage is four verbs and two optional ones
+(src/sync/storage.ts; `up` and `down` send and fetch a file on the Rust
+side), the app's are in src/app/storage.ts over src-tauri/src/storage.rs
+(a folder, S3, WebDAV), the debug build carries loopback servers shaped
+like each (src-tauri/src/devstore.rs), the settings are Tweaks › storage,
+kept in `localStorage` by collection, and `ILMI_SMOKE=storage` runs two
+windows over one of them (`ILMI_KIND`). 64's "done when" has two halves:
+with the user's keys, two collections signed in to each service sync a
+grade and a large PDF; without them the milestone stops at loopback fakes
+and says so. No Dropbox app key and no Google OAuth client has been given
+(PLAN, "What the user provides"): do not ask for them and do not make
+accounts; build both against loopback servers shaped like each service's
+own API, as 63 did for S3 and WebDAV, and record the real services as not
+verified. To decide and say before building: how a sign-in comes back
+(the bullet says `ilmi://`; macOS registers that scheme only from a built
+bundle, never the dev binary, so a dev run's check needs a way back that
+a dev run has); where a token and its refresh are kept (63 keeps a secret
+in `localStorage` in the clear and says so); Dropbox's upload in parts
+for a file over 150 MB (63 sends one `PUT` a file); that Google Drive
+finds a file by an id and not by a path, where a storage lists by prefix;
+that each keeps to a folder of its own. What has come since 63, which
+storage carries and does not change: since 70 a PDF with no `.md` of its
+name is a document of its own, its reading state `.ilmi/reading.json`,
+synced as one register; a note attaches to it by `pdf:`. Ink: a note's
+page and a book's page are strokes, rows of `ink` (a book's under
+`p.<the PDF's SHA-256>.<page>`, no row of the tree), a register each
+(`~i|<page>|<stroke>`). Since 69 the Pencil writes where it lands: a layer
+of PencilKit canvases over the web view (src-tauri/ink/ios), each
+recogniser on the web view, the page saying where sheets lie
+(src/app/ink.ts, src/app/noteInk.ts, `Pdf.tsx`); nothing in 64 should
+touch it. Xcode 27.2's test runner makes fingers only: a dev run's
+`dev_ink_pen` makes the rig's finger a Pencil. The simulator does not
+finish booting, and `simctl launch` does not return, while the Mac's
+screen is locked; a locked screen stalls the Mac's window or leaves it
+unpainted: wait for it, do not skip, and look at what a capture shows.
+The first rig touch after a boot can be dropped: run again before
+believing it. An app left open on the simulator loads its page again when
+a dev server comes back on 1420 and runs the last `smoke.json` from the
+top: stop it (`xcrun simctl terminate booted dev.ilmi.app`) after each
+run. Keep `ILMI_SMOKE=pageink` (16 and 23 on the Mac, 48 and 24 on the
+iPad), `ink` (63 on the iPad, 4 and 18 on the Mac; its third run's
+`ILMI_EXPECT` is the two paragraphs of its `ink:` line), `touch` (133 on
+the iPad; 7 and 14 on the Mac, its third run given `ILMI_ALONE_NOTE`),
+`book` (131), `books` (81; it failed once in 67's chain at "the caret is
+still in the section after the write-up" and passed since: run it again
+before believing a failure there), `tour` (24 on the Mac, 24 on the
+simulator), `crdt` (72), `storage` (76 over s3, 75 over webdav; over s3 it
+failed once in 69's chain at "its peak grew by 207 MB" and passed twice
+after: run it again, and look into it if it comes back, since 64 sends
+large files too), `store` (34, its export equal to the sample by
+`diff -r`), `sync` and `nudge` passing, and the random test in
+src/sync/__tests__/engine.test.ts (`ILMI_SEEDS=1-500`, and with
+`ILMI_SNAPS=1`), which since 70's corpus failed at seed 248 and at no
+other (an emptied folder on one copy, in the tree's merge; being fixed
+apart from this work: check whether it is before saying so). The Mac's
+window checks run from a clean checkout of main with the dev identifier
+override; ILMI_VAULT is a folder, imported afresh as a collection on each
+run, or a collection's own folder, opened as it is. Never kill a process
+on port 1420 that is not yours, and run the simulator's dev server or the
+Mac's, not both; stop your own app binary by pid when a run ends, capture
+the Mac only by window id; a covered window's page runs several times
+slower. Open for the user, not to be built without their word: whether
+the eraser works with a real Pencil (69: the rig's finger erases nothing,
+and it is the first thing to try on a device); where what is written on a
+book's pages goes in an exported folder (a FORMAT change; today an
+export, the mirror, a dated export and git's folder do not hold it);
+whether a page of ink should be a kind of row of its own; whether a
+finger boxes after a hold (57); a way to join a storage on the iPad's
+welcome; whether `join…` and the buttons under the storage's fields stay
+where 63 put them; 62's "settings that merge"; from 70, a dropped PDF
+with chapters, a 48-era source naming a PDF, and `.ilmi/reading.json`
+merging as one file; from 69, Scribble off throughout the app.
+```
+
+---
+
 ## 2026-11-07 — milestone 70: a PDF on its own, a note attached
 
 Done on main: `dafe6ce`, then `6047d7b` and `70da483` (`smoke.ts` alone: one line of a check of mine that was wrong, and the walk on the iPad's side that 70's "done when" names, which my first version left out). A PDF is a thing of its own: it opens as its pages

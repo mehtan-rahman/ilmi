@@ -7853,7 +7853,114 @@ two collections are all there on both.
 word, and a phrase are each found in under a tenth of a second, and the
 sample's five files holding كرم are all found.
 
-### [ ] 69. Ink where the Pencil lands — writing with nothing to open
+### [x] 69. Ink where the Pencil lands — writing with nothing to open
+Done 2026-11-07, commits `7e1a3a3` and `4e933aa` (the second `smoke.ts` alone: where pageink's strokes lie on the page).
+Notes: **How a canvas stays with its area or page, said first.** Nothing opens: the canvases are there before the
+Pencil is. A layer lies over the web view and takes no touch (`InkLayer`, `src-tauri/ink/ios/Sources/InkPlugin.swift`). In
+it is a `PKCanvasView` per sheet, a sheet being an ink area or a book's page within 900 px of the screen, and for a note's
+column one empty canvas, the catcher. Each canvas's `drawingGestureRecognizer` is moved onto the web view, so it sees
+whatever the web view is touched by, and its policy is `.pencilOnly`: a finger goes to the web view as it always did.
+That answers what 67 said could not be done, that UIKit decides who gets a touch before it says what touched: a
+recogniser on an ancestor does not need the hit test. *Which canvas:* the layer's `hitTest` returns nil but hears of
+every touch first, with its place and no type, and `arm` turns on the one recogniser under it (all the others off, every
+time: see Found) and takes the Pencil out of `allowedTouchTypes` of every recogniser in the web view there, so no caret,
+scroll, selection or tap comes of it; off every sheet they are given it back and the Pencil is a finger. *While the
+web view scrolls:* the page says where things lie only when the layout changes (`ink_scene`: each scroller's frame, its
+content's height, each sheet in that scroller's own content coordinates; `src/app/ink.ts`). An `overflow` scroller on iOS
+is a real `UIScrollView` inside the web view; the layer finds it by frame and content height and watches its
+`contentOffset` by KVO, moving a view that holds that scroller's canvases in the same turn of the main thread. A scroll
+never crosses to the page and back. *As the text reflows:* a `ResizeObserver` on the column and the scroller, the
+app's state, and each document change send a new scene. *Between strokes* a canvas is hidden and the page shows the picture of
+the same strokes, so what the page lays over a note lies over its ink, and the canvas comes back at the next touch
+with its drawing already in it. So the native view is on the screen only from a stroke until 2.5 s of quiet and the new
+picture. A scroller the web view has no scroll view for (a short note) cannot scroll, and `top` from the scene is used.
+**In a note** (`src/app/noteInk.ts`, `src/reader/inkArea.ts`). The stroke is on the catcher before the page hears of
+it. `begin` comes through `evaluateJavaScript`; the place between blocks nearest the Pencil (top-level blocks, halfway
+across what lies between two) gets a gap, a widget 180 px tall, and the note's lower part moves down; the catcher is
+pinned on the screen meanwhile and a new catcher takes its place. If the Pencil came down well above that place (more than
+24 px, on a block) the note moves up by that much too, so the Pencil is in the area. It grows by 160 px when the Pencil
+is within 72 px of its foot; the canvas is taller than the area already, so a stroke going on is never resized. At the
+first keep the line goes in at the gap's place in the same transaction as the gap goes, and the paragraph is the area
+(`Decoration.node`, its height and its picture's place in CSS variables). A picture is cut to what its strokes cover, so
+the page learns the bounds (`ink_bounds`, new in `native/ink.m`) and lays the picture where the strokes lie, left and
+top; `dy` is how far the drawing's origin hangs from the area's top. An area read from the store starts at its picture's
+top with 40 px of room under it. On the iPad the caption and the line's markers are hidden. Between strokes in the same
+place the picture and the canvas are the same to a stroke's width. **On a book's page** every page near the screen is a
+sheet at the page's rect, zoomed by the page's scale, its strokes in the page's own points as 67 had them, so a page
+drawn to the pane's width follows 70's width; a bare PDF's pages are the same (`Pdf.tsx`); the picture stands aside
+(`data-live`) until the new one has loaded. **The tools** are `PKToolPicker` on the layer as first responder: up with the
+first stroke, gone when the web view takes the first responder back (a tap) or 8 s after the last stroke. **Kept**: 2.5 s
+quiet (native, then `ink_take`), when a note is left, when the app goes to the back. `keepOn` writes the difference as 58
+did, but now against what the canvas started from (`mergeStrokes`): strokes a merge brought while it was being written
+on stay. An area with every stroke erased loses its line and its row, and its name is free again. **Removed:** `draw` in
+the heading's menu and the insert menu, `askDrawKey`, `setCanvas`, `drawAction`, `canDraw`, `redraw` and the tap on a
+picture, `writeOn`, `pagePaper`, `insertUnder`, `InkController`, `done`, `open`, `peek`, the paper. New commands:
+`ink_scene`, `ink_fill`, `ink_take`, `ink_rest`, `ink_bounds`, `dev_ink_pen`, `dev_ink_wipe`, `dev_ink_state`. The format,
+the store, the engine and the schema are as they were; no corpus file.
+**Measured** on the simulated iPad, from `UITouch.timestamp`, the rig's finger taken for the Pencil. Touch to PencilKit
+starting the stroke. *After the first stroke of a launch*: 1.3 to 37 ms in the two whole runs that had none slower, the
+middle 8 and 17.5. *The first stroke of a launch varies*, and that is not settled: over 18 runs, 13 to 334 ms, nine of them
+under 81 and nine from 188 up, and one later stroke of a run at 246. PencilKit's first use is the likely cost; the cause was
+not found and nothing was done for it (a canvas warmed at launch would be the thing to try). Early runs read 320 ms for a
+different reason as well, a stamp taken in the wrong order, which is fixed; the spread above is after that. No web round
+trip is in any of it. **Not one touch lost:** in every
+touch the stroke's first point was 0.00 pt from where it came down. Touch to the page's answer (the area open and the
+canvas told): 248 ms for the first area after a launch, 52 for the next; that is the text moving apart, not the ink, and
+it is a debug build on a simulator. The ink's own first pixel is PencilKit's and was not measured: no capture is that
+fine, and the number that counts is on a device.
+**Tests**: 1472 in 95 files (+12): `note-ink.test.ts` (new: a real editor over a store in memory), `ink.test.ts`,
+`page-ink.test.ts` (both rewritten). Cargo 46 and the plugin's 6 (`bounds`). `ILMI_SEEDS=1-247` and `249-500`, with and
+without `ILMI_SNAPS=1`, all pass; seed 248 is another agent's.
+**Checked,** from clean checkouts, `tauri ios dev` built over them, a simulated iPad Air 11-inch (M4), iOS 27.2. *From
+`7e1a3a3`:* the Mac `store` 34 and its export equal to the sample by `diff -r`, `crdt` 72 and 18, `tour` 24 and 45,
+`book` 131 and 18, `books` 81 and 9, `touch` 7 then 14 (was 13) and 1, `ink` 4 then 18 (was 21) and 2; the iPad `tour` 24,
+`touch` 133 (was 130) and 24 (23), `ink` 63 (46) and 8 (6). *From `4e933aa`:* `pageink` 16 and 1, the iPad 48 (56) and 5, the
+Mac 23 and 3, the iPad again 24 (25) and 3; `storage` over s3 76 and 12, twice. **`storage` failed once**, in the chain, at
+"the web view never held the file: its peak grew by 207 MB" (the limit 100); twice after it passed with no growth, on the
+code that differs only in a smoke's numbers. Nothing of 69 runs on the Mac there: taken for the moment's memory and said
+in case it is not. *The "done when", as run.* Upright, nothing chosen: a drag between two paragraphs of
+`canonical-ensemble` was a stroke at once, the upper paragraph moved 0.0 px and the lower 190.8, and the area grew twice
+as the strokes went down; kept, the line is between the same two in the file; a finger's drag from on the area moved it
+207 px, the canvas to a point with it, and a flick likewise, and wrote nothing; a tap put the caret in the text and the
+tools went. A stroke in the area added to it, 5 of 5 names as they were; a stroke in the text opened `ink-02`. On p. 23 of
+the sample's book the first touch was a stroke, the ink within two points of where the finger went, and the pages
+scrolled with it. Both on the Mac: the page between the same two paragraphs, the writing on the same page. A bare PDF's
+page written on with the iPad on its side, 960 px wide, was on that page on the Mac (`touch`). Written on a page the Mac
+had written on, dark, the canvas and the picture after it were the same. `draw` and `done` are nowhere in the code but
+for this note's history. What 58's and 67's smokes proved of strokes crossing still runs: each collection wrote before
+seeing the other's and ends with both; the Mac's strokes keep their names through the iPad's save. **The captures** were
+looked at whole or on sheets: `ink`, `pageink`, the two Mac ones, the side of `touch`; not `tour`, `crdt`, `storage`, `store`.
+**Found on the way.** *PencilKit turns its recogniser back on*: a canvas new to the window takes the stroke beside the one
+armed and the stroke is lost, so `arm` says every canvas's state at every touch. *A frame does not name a scroller*: the
+tab behind has a scroll view in the same place, and a short note was bound to the book's and every stroke was 660 px off;
+the content's height is asked for too. *`canvasViewDidBeginUsingTool` may come before the watcher sees the touch.* *The
+picker remembers its tool across launches*, so a run after an eraser wrote nothing. *A keep waiting for a picture* held up
+the next keep 3 s.
+**Not done, and limits.** *A tap in an area* puts a caret in its hidden line, which is invisible; backspace there takes the
+line, and its strokes stay as a row. *Text is not typed in an area.* *A stroke above an area's top*, in the time before the
+next read, overflows it. *An area read again* closes up to its strokes and 40 px. *A Pencil on a page in the moment after a
+fling*, before the page's sheets are told, is a finger. *Scribble is off in the web view as a whole*: one interaction
+taken away, or the Pencil on editable text would be typing; a Pencil cannot write into the palette's field either. *On
+the Mac* the picture is centred under its caption, as now, not where it was written. *The tool picker lies over the
+foot of the screen*; a finger brings what is under it up. Not in this milestone, by its list: ink over a note's text,
+blank notebook pages, ink by finger, where a book's page ink goes in an export.
+**Not verified, said plainly.** ***The eraser.*** The rig selects it in the tool picker (`PKEraserTool`, by the picker's own
+word) and the finger drawn across two strokes from inside the area erases nothing. A second way was tried and did no better:
+with a non-inking tool chosen the canvas under the touch took the touch itself, its recogniser home; it was taken out again.
+Whether that is the stand-in finger or a fault of the moved recogniser cannot be told here, and if it is the latter the
+Pencil cannot erase. **This is the first thing to try on a device.** What follows an erasure was run: `dev_ink_wipe` empties
+a canvas as an eraser would, and the line and the page go. *The lasso, the ruler, undo and redo in the picker* were not driven.
+***The Pencil.*** Xcode 27.2's runner makes fingers only, so every stroke was a finger the layer was told to take for one
+(`.anyInput`, `.direct` among the Pencil's types). Only a real Pencil can show: `.pencilOnly` on a recogniser on the web view;
+that taking it from WebKit's recognisers leaves no caret or scroll; that the fingers around it are not taken; the palm while
+writing (the web view may scroll under it); hover; pressure and tilt; double-tap; true latency; Scribble staying off.
+*Frame by frame through a fling*: the canvas was checked at rest, to a point, after a drag and a flick; what it does between
+frames was not captured, and a canvas is shown in a scroll only within seconds of writing. *A device.* *Writing with the note
+beside the pages* (two scrollers at once), either way up; turned while writing; the keyboard up. *Something over a note*
+(`covered`, a menu or the tree's sheet taking the Pencil back): from the code. *A merge during writing and a note left in
+mid-writing*: jsdom only. *A 58 page* as an area on the iPad, wider than the column (the zoom is written, not run). *The
+e-ink theme.* *A frozen note* (no canvases; from the code). *S3 and WebDAV with such strokes. A release bundle.* Not rerun:
+`open`, `sync`, `nudge`, `ipad`, `storage` over WebDAV, `size`, `textsections`. The rig's scripts are in the log.
 Asked for by the user on 2026-11-06, after 58 and 67: "This impelmentation
 looks weird? like i'd rather have it feel like goodnotes where i can just
 write ink wherever vs having to insert ink image or smthn". Asked which of
@@ -8226,9 +8333,13 @@ on 2026-11-07, from the user's words of the day before: a PDF with no
 or made in a folder of the user's choosing the first time something is
 kept; the note opens in the pane beside the pages when asked and closes
 again, nothing over the pages; the panes lie one above the other on an
-upright iPad. Next in the section's order: 69 (ink where the Pencil
-lands), then 64 (Dropbox and Google Drive), 56 and 68; 65 and 66 wait
-for things only the user has, 52 for the user's word.
+upright iPad. 69, ink where the Pencil lands, the same day: canvases lying
+over the web view with nothing to open, each recogniser moved onto the web
+view and taking the Pencil only, the first touch a stroke in a note and on
+a book's page, 58's `draw` and both full-screen canvases gone; the eraser
+is unverified. Next in the section's order: 64 (Dropbox and Google Drive),
+56 and 68; 65 and 66 wait for things only the user has, 52 for the user's
+word.
 
 Refinement (33–41) is complete, 2026-10-30, every milestone's window check
 run and recorded under its BUILD-LOG entry (33 `notes`, 34 `editing`, 35

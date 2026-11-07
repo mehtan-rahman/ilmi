@@ -15,8 +15,9 @@ import { ACCENTS, DENSITY_MAX, DENSITY_MIN, THEMES, useApp, type Accent, type Th
 import { notify } from './land.js';
 import { cloneCollection, connect, setNudgeServer, setRemote, syncWord } from './sync.js';
 import { chooseMirror, mirrorOff } from './keep.js';
-import { connectStorage, joinStorage, setStorage, signInStorage, storageOff } from './crdt.js';
-import { clientOf, keepOf, signsIn, storageReady, type StorageKind } from './storage.js';
+import { connectStorage, joinStorage, setStorage, signInStorage, signOutStorage, storageOff } from './crdt.js';
+import { StorageFields, TextField } from './StorageFields.js';
+import { keepOf, storageReady } from './storage.js';
 import { open as pickDirectory } from '@tauri-apps/plugin-dialog';
 import { currentVault, openVault, setBudget, setClipDir } from './vault.js';
 
@@ -69,31 +70,6 @@ function ClipDirPick({ value }: { value: string }) {
         <option key={f} value={f}>{f === '' ? titleOf('', docs, vault) : f}</option>
       ))}
     </select>
-  );
-}
-
-/** A text field that commits on blur or ⏎; escape restores. */
-function TextField({ value, type = 'text', disabled = false, onCommit }: { value: string; type?: 'text' | 'password'; disabled?: boolean; onCommit: (v: string) => void }) {
-  const [text, setText] = useState(value);
-  useEffect(() => { setText(value); }, [value]);
-  const commit = () => { if (text !== value) onCommit(text); };
-  return (
-    <input
-      className="tw-text"
-      type={type}
-      spellCheck={false}
-      autoCapitalize="off"
-      autoCorrect="off"
-      disabled={disabled}
-      value={text}
-      onChange={(e) => setText(e.target.value)}
-      onBlur={commit}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter') { e.preventDefault(); commit(); e.currentTarget.blur(); }
-        else if (e.key === 'Escape') { e.preventDefault(); setText(value); e.currentTarget.blur(); }
-        e.stopPropagation();
-      }}
-    />
   );
 }
 
@@ -157,9 +133,6 @@ function SyncRows() {
   );
 }
 
-const KINDS: StorageKind[] = ['folder', 's3', 'webdav', 'dropbox', 'drive'];
-const KIND_WORD: Partial<Record<StorageKind, string>> = { drive: 'google drive' };
-
 /**
  * Storage (milestone 63): where the collection's changes and files are
  * kept for its other devices. The kind, the fields that kind needs,
@@ -204,43 +177,10 @@ function StorageRows() {
     setSigning(true);
     signInStorage().catch(fail('storage')).finally(() => setSigning(false));
   };
-  const field = (label: string, key: 'endpoint' | 'bucket' | 'key' | 'secret' | 'address' | 'user' | 'password' | 'appKey' | 'clientId' | 'clientSecret' | 'place', secret = false) => (
-    <div className="tw-row" key={key}>
-      <span className="tw-lbl">{label}</span>
-      <TextField value={st[key]} type={secret ? 'password' : 'text'} disabled={locked} onCommit={(v) => setStorage({ [key]: v })} />
-    </div>
-  );
   const keep = keepOf(st);
   return (
     <>
-      <div className="tw-row">
-        <span className="tw-lbl">storage <span className="tw-val">{st.on ? (syncWord(sync) ?? 'off') : 'off'}</span></span>
-        <div className="tw-seg wrap">
-          {KINDS.filter((k) => !(mobile && k === 'folder')).map((k) => (
-            <button key={k} type="button" data-active={st.kind === k ? '1' : '0'} disabled={locked} onClick={() => setStorage({ kind: k })}>{KIND_WORD[k] ?? k}</button>
-          ))}
-        </div>
-      </div>
-      {st.kind === 'folder' && (
-        <div className="tw-row">
-          <span className="tw-lbl">folder <span className="tw-val" title={st.folder || undefined}>{st.folder ? st.folder.slice(st.folder.lastIndexOf('/', st.folder.lastIndexOf('/') - 1) + 1) : ''}</span></span>
-          <div className="tw-seg">
-            <button type="button" disabled={locked} onClick={() => void choose()}>choose…</button>
-          </div>
-        </div>
-      )}
-      {st.kind === 's3' && [field('endpoint', 'endpoint'), field('bucket', 'bucket'), field('key', 'key'), field('secret', 'secret', true)]}
-      {st.kind === 'webdav' && [field('address', 'address'), field('user', 'user'), field('password', 'password', true)]}
-      {st.kind === 'dropbox' && [field('app key', 'appKey'), field('folder', 'place')]}
-      {st.kind === 'drive' && [field('client id', 'clientId'), field('client secret', 'clientSecret', true), field('folder', 'place')]}
-      {signsIn(st.kind) && (
-        <div className="tw-row">
-          <span className="tw-lbl">account <span className="tw-val">{signing ? 'waiting' : st.account ? 'signed in' : ''}</span></span>
-          <div className="tw-seg">
-            <button type="button" disabled={clientOf(st) === ''} onClick={doSignIn}>sign in</button>
-          </div>
-        </div>
-      )}
+      <StorageFields st={st} word={st.on ? (syncWord(sync) ?? 'off') : 'off'} locked={locked} mobile={mobile} signing={signing} set={setStorage} onChoose={() => void choose()} onSignIn={doSignIn} onSignOut={() => { signOutStorage().catch(fail('storage')); }} />
       <div className="tw-row">
         <div className="tw-seg">
           {st.on
@@ -312,7 +252,7 @@ export function Tweaks() {
   }, []);
 
   return (
-    <div className="tweaks">
+    <div className="tweaks tw-rows">
       <div className="tw-hd">
         <span>tweaks</span>
         <button type="button" className="tw-x" onClick={close}>×</button>

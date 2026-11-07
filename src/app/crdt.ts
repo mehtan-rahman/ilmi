@@ -28,7 +28,7 @@ import { collectionFs, freeName } from './collections.js';
 import { notify } from './land.js';
 import { titleOf } from './names.js';
 import { activeTab } from './panes.js';
-import { NO_STORAGE, devStorages, keepOf, saveStorage, signIn, storageFor, storageName, storageOf, storageReady, type Keep, type StorageSettings } from './storage.js';
+import { signOut, NO_STORAGE, devStorages, keepOf, saveStorage, signIn, storageFor, storageName, storageOf, storageReady, type Keep, type StorageSettings } from './storage.js';
 import { useApp } from './store.js';
 import { SYNC_OFF, startSync, stopSync } from './sync.js';
 import { currentVault, note } from './vault.js';
@@ -364,6 +364,17 @@ export async function signInStorage(): Promise<void> {
     stopCrdt();
     await startCrdt(vault);
   }
+}
+
+/** `sign out`: the tokens forgotten on this device, and the collection no longer syncs through a service it cannot reach. What is there stays. */
+export async function signOutStorage(): Promise<void> {
+  const vault = currentVault();
+  if (!vault) return;
+  const s = storageOf(vault.root);
+  if (!s.account) return;
+  if (s.on) await storageOff();
+  await signOut(s);
+  saveStorage(vault.root, { ...storageOf(vault.root), account: '' });
 }
 
 /** `off`: the collection no longer syncs through its storage; what is there stays. */

@@ -863,6 +863,12 @@ export function openInitialVault(): Promise<void> {
         await smokeSize(path);
         return;
       }
+      // joining a storage starts at the welcome of an iPad or a phone (milestone 71)
+      if (mode === 'join') {
+        const { smokeJoin } = await import('./smoke.js');
+        await smokeJoin();
+        return;
+      }
       // the iPad's own smoke starts at its welcome: the clone is its first step
       if (mode === 'ipad') {
         const { smokeIpad } = await import('./smoke.js');

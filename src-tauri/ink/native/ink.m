@@ -32,6 +32,37 @@ static int give(NSData *d, uint8_t **out, size_t *out_len) {
 
 void ilmi_ink_free(uint8_t *p) { free(p); }
 
+/// The app's iCloud folder, its `Documents`: nothing unless the app is signed with an iCloud container and the person is signed in to iCloud.
+int ilmi_icloud_folder(uint8_t **out, size_t *out_len) {
+  @autoreleasepool {
+    NSURL *c = [NSFileManager.defaultManager URLForUbiquityContainerIdentifier:nil];
+    if (!c) return give([NSData data], out, out_len);
+    NSURL *docs = [c URLByAppendingPathComponent:@"Documents" isDirectory:YES];
+    [NSFileManager.defaultManager createDirectoryAtURL:docs withIntermediateDirectories:YES attributes:nil error:nil];
+    return give([docs.path dataUsingEncoding:NSUTF8StringEncoding], out, out_len);
+  }
+}
+
+/// A file of the iCloud folder asked down, and waited for up to `seconds`. 0: it is here, or is no file iCloud holds; 1: it did not come in time.
+int ilmi_icloud_down(const uint8_t *path, size_t len, uint32_t seconds) {
+  @autoreleasepool {
+    NSString *p = [[NSString alloc] initWithBytes:path length:len encoding:NSUTF8StringEncoding];
+    if (!p) return 0;
+    NSURL *url = [NSURL fileURLWithPath:p];
+    NSFileManager *fm = NSFileManager.defaultManager;
+    if (![fm isUbiquitousItemAtURL:url]) return 0;
+    [fm startDownloadingUbiquitousItemAtURL:url error:nil];
+    for (uint32_t i = 0; i < seconds * 10; i++) {
+      NSString *status = nil;
+      NSURL *fresh = [NSURL fileURLWithPath:p];
+      [fresh getResourceValue:&status forKey:NSURLUbiquitousItemDownloadingStatusKey error:nil];
+      if ([status isEqualToString:NSURLUbiquitousItemDownloadingStatusCurrent]) return 0;
+      usleep(100000);
+    }
+    return 1;
+  }
+}
+
 /// PencilKit keeps a preference under the process's bundle identifier and traps where there is none: a bare
 /// binary (a test's, a script's) is given one. The app has its own and this does nothing.
 static void named(void) {

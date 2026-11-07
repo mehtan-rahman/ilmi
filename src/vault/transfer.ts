@@ -7,6 +7,7 @@
 import type { Fs } from './fs.js';
 import { join } from './fs.js';
 import { stampOf } from './lift.js';
+import type { StoreFs } from './store.js';
 
 /** What never goes in or out: a repository's own folder, the Finder's file, a half-written file. */
 export const skipped = (name: string): boolean => name === '.git' || name === '.DS_Store' || name.endsWith('.ilmi-tmp');
@@ -82,8 +83,11 @@ export async function mirrorFolder(from: Fs, root: string, to: Fs, dir: string):
         if (st && !st.isDir) await to.remove(join(dir, path));
         await visit(path);
       } else if (e.isFile) {
-        const bytes = await from.readBytes(join(root, path));
         const st = await to.stat(join(dir, path));
+        // what is written on a book's page is the same strokes in new bytes every time it is read: only its strokes can say
+        const sameInk = (from as Partial<StoreFs>).sameInk;
+        if (sameInk && st && !st.isDir && path.startsWith('.ilmi/ink/') && await sameInk(join(root, path), await to.readBytes(join(dir, path)))) continue;
+        const bytes = await from.readBytes(join(root, path));
         if (st?.isDir) await to.remove(join(dir, path));
         if (st && !st.isDir && st.size === bytes.length && same(await to.readBytes(join(dir, path)), bytes)) continue;
         await to.writeBytes(join(dir, path), bytes);

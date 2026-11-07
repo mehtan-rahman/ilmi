@@ -95,6 +95,8 @@
 .welcome-name .welcome-problem { color: var(--fg-4); font-size: 10.5px; white-space: nowrap; }
 /* the iPad's `connect`: a remote and a token, two rows of the name field's kind */
 .welcome-connect .welcome-name { cursor: text; }
+.welcome-join { display: flex; flex-direction: column; gap: 12px; padding: 14px 18px 4px; }
+.welcome-join .welcome-name { padding: 0; justify-content: space-between; }
 .welcome-connect .welcome-name .psub { width: 48px; flex: 0 0 auto; }
 .welcome-connect .welcome-problem { max-width: 50%; overflow: hidden; text-overflow: ellipsis; }
 .welcome-go {

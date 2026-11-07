@@ -39,8 +39,13 @@ export interface MemStore extends Store {
 
 // PencilKit is not here: a drawing in the tests is its strokes, a line each, and a picture names them.
 const utf8 = new TextEncoder();
+const FOREIGN = 'foreign-';
 /** The stand-in for the drawing PencilKit makes of `strokes`. */
-export const memDrawing = (strokes: readonly InkStroke[]): Uint8Array => utf8.encode(`drawing\n${strokes.map((x) => `${x.stroke} ${x.at} ${x.data}\n`).join('')}`);
+export const memDrawing = (strokes: readonly InkStroke[]): Uint8Array => {
+  // a real drawing that came in, one stroke here: out as it went in
+  if (strokes.length === 1 && strokes[0]!.stroke.startsWith(FOREIGN)) return Buffer.from(strokes[0]!.data, 'base64');
+  return utf8.encode(`drawing\n${strokes.map((x) => `${x.stroke} ${x.at} ${x.data}\n`).join('')}`);
+};
 /** The stand-in for their picture: empty for none, as the real one is. */
 export const memPicture = (strokes: readonly InkStroke[]): Uint8Array => utf8.encode(strokes.length ? `picture of ${strokes.map((x) => x.stroke).join(' ')}\n` : '');
 /** The stand-in for the writing on a book's page as a picture of the whole page (milestone 67). */
@@ -48,7 +53,7 @@ export const memPagePicture = (strokes: readonly InkStroke[], w: number, h: numb
 /** A stand-in drawing taken apart again, as the Rust side takes PencilKit's apart. */
 export function memSplit(drawing: Uint8Array): InkStroke[] {
   const lines = new TextDecoder().decode(drawing).split('\n');
-  if (lines[0] !== 'drawing') throw new Error('not a drawing');
+  if (lines[0] !== 'drawing') return [{ stroke: `${FOREIGN}${drawing.length}`, at: 0, data: Buffer.from(drawing).toString('base64') }];
   return lines.slice(1).filter(Boolean).map((l) => { const [stroke, at, data] = l.split(' '); return { stroke: stroke!, at: Number(at), data: data ?? '' }; });
 }
 
@@ -279,6 +284,7 @@ export function memStore(version = STORE_VERSION): MemStore {
     },
     async ink(page) { return strokesOf(page); },
     async inkFile(page, what) { return what === 'drawing' ? memDrawing(strokesOf(page)) : memPicture(strokesOf(page)); },
+    async inkSplit(drawing) { return memSplit(drawing); },
     async inkPages(prefix) { return [...ink].filter(([k, v]) => k.startsWith(prefix) && v.size > 0).map(([k]) => k).sort(); },
     async inkPage(page, what, w, h) { return what === 'drawing' ? memDrawing(strokesOf(page)) : memPagePicture(strokesOf(page), w, h); },
     async meta() { return [...meta].sort((a, b) => (a[0] < b[0] ? -1 : 1)); },

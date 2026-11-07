@@ -283,6 +283,8 @@ export interface Store {
   blobsAway(): Promise<[hash: string, size: number][]>;
   /** A page of ink's strokes, in the order they were drawn. */
   ink(page: string): Promise<InkStroke[]>;
+  /** A drawing taken apart into its strokes, as a canvas's is (an import's `.ilmi/ink/`). */
+  inkSplit(drawing: Uint8Array): Promise<InkStroke[]>;
   /** A page of ink as a file, made from its strokes: the drawing PencilKit opens, or a PNG of them (empty when there are none). */
   inkFile(page: string, what: 'drawing' | 'picture'): Promise<Uint8Array>;
   /** The pages that hold strokes and whose name starts with `prefix`, in order. */
@@ -458,6 +460,20 @@ function virtualOf(rel: string): Virtual | null {
   return null;
 }
 
+/**
+ * What is written on books' pages, as an export holds it (milestone 71):
+ * `.ilmi/ink/<the PDF's SHA-256>/<page>.pkdrawing`. It is a view of the `ink`
+ * table: nothing here is a row, and a drawing written here is taken apart
+ * into strokes.
+ */
+const INK_FILES = '.ilmi/ink';
+const inkFileOf = (rel: string): { hash: string; page?: number } | 'all' | null => {
+  if (rel === INK_FILES) return 'all';
+  const m = /^\.ilmi\/ink\/([0-9a-f]{64})(?:\/([1-9]\d*)\.pkdrawing)?$/.exec(rel);
+  if (!m) return null;
+  return m[2] === undefined ? { hash: m[1]! } : { hash: m[1]!, page: Number(m[2]) };
+};
+
 /** A review as the log's row. */
 export const reviewRow = (file: string, r: Review): ReviewRow => ({ file, at: r.at, doc: r.doc, card: r.card, key: r.key ?? null, g: r.g, line: formatReview(r) });
 
@@ -515,6 +531,8 @@ export interface StoreFs extends Fs {
   pageInkFile(hash: string, page: number, what: 'drawing' | 'picture', w?: number, h?: number): Promise<Uint8Array>;
   /** The pages of that PDF that are written on, in order. */
   inkedPages(hash: string): Promise<number[]>;
+  /** Whether a drawing is what the file at `path` under `.ilmi/ink/` holds, stroke for stroke: PencilKit's bytes differ on every save, so bytes cannot say. */
+  sameInk(path: string, drawing: Uint8Array): Promise<boolean>;
   /** Told of each book's page whose strokes changed, here or by a merge. Returns the unsubscribe. */
   onPageInk(fn: (hash: string, page: number) => void): () => void;
 }
@@ -781,6 +799,22 @@ export function storeFs(store: Store, root: string): StoreFs {
   const bytesOf = async (r: Row): Promise<Uint8Array> => (r.blob !== null ? blobBytes(r.blob) : isInk(r) ? store.inkFile(r.id, 'drawing') : encoder.encode(await textOf(r)));
 
   /** Strokes added to a page and taken from it, the engine told, in one transaction. */
+  /** A book's page holds these strokes from now on: the difference, in one transaction. */
+  const pageInkWrite = async (hash: string, page: number, strokes: readonly InkStroke[]): Promise<{ added: number; removed: number }> => {
+    const key = pageKey(hash, page);
+    if (!bookPageOf(key)) throw new Error(`${hash} p. ${page}: not a page of a file`);
+    const have = new Map((await store.ink(key)).map((s) => [s.stroke, s]));
+    const want = new Set(strokes.map((s) => s.stroke));
+    const add = strokes.filter((s) => !have.has(s.stroke));
+    const remove = [...have.keys()].filter((k) => !want.has(k));
+    if (add.length || remove.length) {
+      const extra = recorder ? await recorder.ink(key, '', add, remove) : [];
+      await store.batch([{ op: 'ink', page: key, add, remove }, ...extra]);
+      wrote(key);
+    }
+    return { added: add.length, removed: remove.length };
+  };
+
   const inkWrite = async (page: Row, add: InkStroke[], remove: string[]): Promise<void> => {
     if (!add.length && !remove.length) return;
     const extra = recorder ? await recorder.ink(page.id, pathOf(page), add, remove) : [];
@@ -1055,6 +1089,11 @@ export function storeFs(store: Store, root: string): StoreFs {
         return;
       }
     }
+    const pageFile = inkFileOf(rel);
+    if (pageFile && pageFile !== 'all' && pageFile.page !== undefined && at.kind !== 'row') {
+      await pageInkWrite(pageFile.hash, pageFile.page, await store.inkSplit(typeof data === 'string' ? encoder.encode(data) : data as Uint8Array));
+      return;
+    }
     if (at.kind === 'root' || at.kind === 'kids' || (at.kind === 'row' && at.row.kind === 'folder')) throw new Error(`${abs}: is a directory`);
     // a page's picture is made from its strokes: one written beside it is not kept
     if (pictureOf(abs)) return;
@@ -1083,6 +1122,13 @@ export function storeFs(store: Store, root: string): StoreFs {
     }
   };
 
+  /** What `.ilmi/ink/` lists: the books written on, or the pages of one. */
+  const inkEntries = async (view: { hash: string } | 'all'): Promise<FsEntry[]> => {
+    const pages = (await store.inkPages(view === 'all' ? BOOK_PAGE : `${BOOK_PAGE}${view.hash}.`)).flatMap((k) => bookPageOf(k) ?? []);
+    if (view === 'all') return [...new Set(pages.map((p) => p.hash))].sort().map((name) => ({ name, isDir: true, isFile: false }));
+    return pages.sort((a, b) => a.page - b.page).map((p) => ({ name: `${p.page}${INK_EXT}`, isDir: false, isFile: true }));
+  };
+
   const write = (abs: string, data: string | Uint8Array): Promise<void> =>
     serial(async () => {
       await writeInner(abs, data);
@@ -1098,6 +1144,8 @@ export function storeFs(store: Store, root: string): StoreFs {
   const removeInner = async (path: string): Promise<void> => {
     const rel = relative(root, path) ?? '';
     const at = locate(path);
+    const pageFile = inkFileOf(rel);
+    if (pageFile && pageFile !== 'all' && pageFile.page !== undefined && at.kind !== 'row') { await pageInkWrite(pageFile.hash, pageFile.page, []); return; }
     const v = virtualOf(rel);
     if (v && at.kind !== 'row') { await virtualRemove(rel, v); return; }
     if (at.kind === 'none') return;
@@ -1122,6 +1170,8 @@ export function storeFs(store: Store, root: string): StoreFs {
       if (text === null) throw new Error(`${path}: no such file`);
       return { text };
     }
+    const pageFile = inkFileOf(rel);
+    if (pageFile && pageFile !== 'all' && pageFile.page !== undefined && at.kind !== 'row') return { bytes: await store.inkPage(pageKey(pageFile.hash, pageFile.page), 'drawing', 0, 0) };
     const page = pictureOf(path);
     if (page) return { bytes: await store.inkFile(page.id, 'picture') };
     if (at.kind !== 'row' || at.row.kind === 'folder') throw new Error(`${path}: no such file`);
@@ -1295,25 +1345,20 @@ export function storeFs(store: Store, root: string): StoreFs {
       return store.ink(pageKey(hash, page));
     },
 
-    setPageInk: (hash, page, strokes) =>
-      serial(async () => {
-        const key = pageKey(hash, page);
-        if (!bookPageOf(key)) throw new Error(`${hash} p. ${page}: not a page of a file`);
-        const have = new Map((await store.ink(key)).map((s) => [s.stroke, s]));
-        const want = new Set(strokes.map((s) => s.stroke));
-        const add = strokes.filter((s) => !have.has(s.stroke));
-        const remove = [...have.keys()].filter((k) => !want.has(k));
-        if (add.length || remove.length) {
-          const extra = recorder ? await recorder.ink(key, '', add, remove) : [];
-          await store.batch([{ op: 'ink', page: key, add, remove }, ...extra]);
-          wrote(key);
-        }
-        return { added: add.length, removed: remove.length };
-      }),
+    setPageInk: (hash, page, strokes) => serial(() => pageInkWrite(hash, page, strokes)),
 
     async pageInkFile(hash, page, what, w = 0, h = 0) {
       await ready;
       return store.inkPage(pageKey(hash, page), what, w, h);
+    },
+
+    async sameInk(path, drawing) {
+      await ready;
+      const at = inkFileOf(relative(root, path) ?? '');
+      if (!at || at === 'all' || at.page === undefined) return false;
+      const have = (await store.ink(pageKey(at.hash, at.page))).map((s) => s.stroke);
+      const there = await store.inkSplit(drawing).catch(() => null);
+      return there !== null && there.length === have.length && there.every((s, i) => s.stroke === have[i]);
     },
 
     async inkedPages(hash) {
@@ -1427,6 +1472,8 @@ export function storeFs(store: Store, root: string): StoreFs {
     async readDir(path): Promise<FsEntry[]> {
       await ready;
       const at = locate(path);
+      const view = inkFileOf(relative(root, path) ?? '');
+      if (view && at.kind !== 'row') return inkEntries(view);
       const parent = at.kind === 'root' ? null : at.kind === 'kids' ? at.row.id : at.kind === 'row' && at.row.kind === 'folder' ? at.row.id : undefined;
       if (parent === undefined) throw new Error(`${path}: no such directory`);
       const out: FsEntry[] = [];
@@ -1440,6 +1487,7 @@ export function storeFs(store: Store, root: string): StoreFs {
       }
       const have = new Set(out.map((e) => e.name));
       for (const name of await virtualNames(relative(root, path) ?? '')) if (!have.has(name)) out.push({ name, isDir: false, isFile: true });
+      if (relative(root, path) === '.ilmi' && !have.has('ink') && (await inkEntries('all')).length) out.push({ name: 'ink', isDir: true, isFile: false });
       // a page of ink's picture beside it
       for (const r of childrenOf(parent)) {
         if (!isInk(r) || find(parent, r.name) !== r) continue;
@@ -1458,6 +1506,11 @@ export function storeFs(store: Store, root: string): StoreFs {
         const page = pictureOf(path);
         if (page) return { mtimeMs: page.rev, size: page.size, isDir: false };
         const rel = relative(root, path) ?? '';
+        const view = inkFileOf(rel);
+        if (view) {
+          if (view === 'all' || view.page === undefined) return (await inkEntries(view)).length ? { mtimeMs: 0, size: 0, isDir: true } : null;
+          return (await store.ink(pageKey(view.hash, view.page))).length ? { mtimeMs: 0, size: 0, isDir: false } : null;
+        }
         const v = virtualOf(rel);
         if (!v) return null;
         // a view has no stamp of its own; nothing compares one
@@ -1508,6 +1561,7 @@ export function storeFs(store: Store, root: string): StoreFs {
       serial(async () => {
         const segs = segsOf(path);
         if (segs === null) throw new Error(`${path}: outside the collection`);
+        if (inkFileOf(segs.join('/'))) { await mkdirs(['.ilmi'], join(root, '.ilmi')); return; }
         if (await mkdirs(segs, path)) touched(path);
       }),
 

@@ -9508,6 +9508,23 @@ export async function smokeStorage(vault: Vault): Promise<void> {
       press(rowOf('account'), 'sign in');
       await poll(() => rowOf('account')?.querySelector('.tw-val')?.textContent === 'signed in', 'a: signed in again', 20000);
       await poll(() => crdtOn() && word() === 'synced', 'a: and synced again', 60000);
+      // milestone 71: sign out forgets the tokens here, and the collection stops syncing through a service it cannot reach
+      const account = storageOf(vault.root).account;
+      must(Array.from(rowOf('account')?.querySelectorAll('button') ?? []).map((x) => x.textContent).join(' ') === 'sign in sign out', 'the account row offers sign in and sign out');
+      press(rowOf('account'), 'sign out');
+      await poll(() => storageOf(vault.root).account === '' && !crdtOn(), 'a: signed out, and no longer syncing');
+      must(!(await invoke<boolean>('oauth_signed_in', { account })), 'and the Rust side holds no sign-in by that name');
+      must(Array.from(rowOf('account')?.querySelectorAll('button') ?? []).map((x) => x.textContent).join(' ') === 'sign in' && rowOf('account')?.querySelector('.tw-val')?.textContent === '', 'the row offers sign in alone');
+      await shot('storage-signed-out');
+      press(rowOf('account'), 'sign in');
+      await poll(() => rowOf('account')?.querySelector('.tw-val')?.textContent === 'signed in', 'a: signed in once more', 20000);
+      // the storage's connect, beside its join… (sync by git has a connect of its own)
+      const connectBtn = [...document.querySelectorAll<HTMLButtonElement>('.tweaks button')].find((x) => x.textContent === 'connect' && x.nextElementSibling?.textContent === 'join…');
+      if (!connectBtn || connectBtn.disabled) throw new Error('no connect to press');
+      connectBtn.click();
+      try { await poll(() => crdtOn() && word() === 'synced', 'a: connected and synced again', 60000); } catch (e) {
+        throw new Error(`${e instanceof Error ? e.message : String(e)}: the strip "${word()}", crdt ${crdtOn()}, the notice "${q('.notice')?.textContent ?? ''}", settings ${JSON.stringify({ ...storageOf(vault.root), secret: undefined, password: undefined })}`);
+      }
       useApp.setState({ tweaksOpen: false });
     }
 
@@ -9725,7 +9742,7 @@ export async function smokeIpad(): Promise<void> {
     await sleep(400);
     const buttons = qa('.welcome-acts button').map((b) => b.textContent);
     log(`welcome: buttons ${buttons.join(', ')}; foot "${q('.welcome .palette-foot')?.textContent}"; rows ${qa('.welcome-row .pt').map((r) => r.textContent).join(', ') || '(none)'}`);
-    must(buttons.length === 1 && buttons[0] === 'connect', 'the welcome offers connect alone');
+    must(buttons.join(', ') === 'connect, join', 'the welcome offers connect and join');
     await shot('ipad-welcome');
 
     const name = nameFromRemote(remote);
@@ -12059,6 +12076,34 @@ export async function smokeStore(vault: Vault): Promise<void> {
     await deleteCollection(copy);
     must(!(await listCollections()).names.includes(`${name}-roundtrip`), 'the second collection is deleted');
 
+    // ── milestone 71: what is written on a book's pages goes out with an export and comes back with an import ──
+    {
+      const { mirrorFolder } = await import('../vault/index.js');
+      const inkRoot = await importCollection(src, { name: `${name}-ink`, replace: true });
+      const ifs = collectionFs(inkRoot);
+      // its rows are read before a path names one
+      await ifs.readDir(inkRoot);
+      const pdf = source.find((p) => p.endsWith('.pdf') && !p.startsWith('.'))!;
+      const hash = ifs.blobAt(`${inkRoot}/${pdf}`)!;
+      const strokes = await invoke<{ stroke: string; at: number; data: string }[]>('ink_split', { drawing: await invoke<string>('dev_ink_sample', { lines: 2, per: 4, seed: 71 }) });
+      await ifs.setPageInk(hash, 2, strokes);
+      const inkOut = `${src}-ink-export`;
+      await exportToFolder(ifs, inkRoot, inkOut);
+      const drawn = `${inkOut}/.ilmi/ink/${hash}/2.pkdrawing`;
+      must((await tauriFs.stat(drawn))?.size, `the export wrote what is written on page 2 of ${pdf} as .ilmi/ink/${hash.slice(0, 8)}…/2.pkdrawing`);
+      const back = await importCollection(inkOut, { name: `${name}-ink-back`, replace: true });
+      const got = (await collectionFs(back).pageInk(hash, 2)).map((x) => x.stroke);
+      must(got.length === strokes.length && got.every((k, i) => k === strokes[i]!.stroke), `an import of that folder holds the same ${got.length} strokes on that page`);
+      must(!(await collectionFs(back).rowAt(`${back}/.ilmi/ink`)), 'and no row: the strokes are rows of the ink table');
+      const mir = `${src}-ink-mirror`;
+      await invoke('allow_vault', { path: mir });
+      await mirrorFolder(ifs, inkRoot, diskFs, mir);
+      const again = await mirrorFolder(ifs, inkRoot, diskFs, mir);
+      must(again.length === 0, `a second pass of the mirror writes nothing (${again.join(', ')}): the strokes, not the bytes, are compared`);
+      await deleteCollection(inkRoot);
+      await deleteCollection(back);
+    }
+
     // ── on disk a collection is a database and blobs ──
     await invoke('allow_vault', { path: vault.root });
     const top = (await tauriFs.readDir(vault.root)).map((e) => e.name).sort();
@@ -12331,6 +12376,18 @@ export async function smokeSize(src: string | null): Promise<void> {
     await sleep(1500);
     const empty = await memory();
     log(`memory with no collection open: ${mb(empty?.now ?? null)}`);
+    // what the web view holds, at its most, in each phase of a run (milestone 71): the import, the open, the index's walk, the queries
+    let phase = 'import';
+    const most = new Map<string, number>();
+    let sampling = true;
+    void (async () => {
+      while (sampling) {
+        const now = Math.max(0, ...(await invoke<[number, number, number][]>('dev_web_processes', { collect: false }).catch(() => [])).map(([, x]) => x));
+        if (now > (most.get(phase) ?? 0)) most.set(phase, now);
+        await sleep(500);
+      }
+    })();
+    const phases = () => [...most].map(([k, v]) => `${k} ${mb(v)}`).join(', ');
     // the folder without `.ilmi/`: what each copy is
     const copyFs: typeof diskFs = { ...diskFs, readDir: async (path) => (await diskFs.readDir(path)).filter((e) => path !== from || e.name !== '.ilmi') };
     for (const n of sizes) {
@@ -12360,6 +12417,7 @@ export async function smokeSize(src: string | null): Promise<void> {
         log(`${name}: ${n} copies, ${files} files imported in ${ms(imported)}`);
       }
 
+      phase = 'open';
       // two frames on, or half a second when the window is covered and is given none
       const frame = () => Promise.race([new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r()))), sleep(500)]);
       let seen = document.visibilityState === 'visible';
@@ -12393,7 +12451,14 @@ export async function smokeSize(src: string | null): Promise<void> {
       // the search index (milestone 68). A collection from before it is walked as it stays open, from a moment after it opened:
       // the longest the page goes without a frame, and a grade made meanwhile
       if (useApp.getState().searchShare < 1 || !(await collectionFs(root).store.searchState()).done) {
+        phase = 'walk';
         const w0 = performance.now();
+        // what the web view holds while the walk goes (milestone 71): its most, and the share walked then
+        const heldNow = async () => Math.max(0, ...(await invoke<[number, number, number][]>('dev_web_processes', { collect: false })).map(([, now]) => now));
+        const atOpen = await heldNow();
+        let most = { mb: atOpen, share: 0 };
+        let sampling = true;
+        void (async () => { while (sampling) { const n = await heldNow(); if (n > most.mb) most = { mb: n, share: useApp.getState().searchShare }; await sleep(1000); } })();
         let longest = 0;
         let frames = true;
         const beat = (at: number) => { if (!frames) return; requestAnimationFrame((t) => { longest = Math.max(longest, t - at); beat(t); }); };
@@ -12409,6 +12474,10 @@ export async function smokeSize(src: string | null): Promise<void> {
         const askedDuring = performance.now() - t7;
         await until(() => (useApp.getState().searchShare === 1 ? true : null), 300000);
         frames = false;
+        sampling = false;
+        log(`${name}: the web view at its most, by phase, to the walk's end: ${phases()}; the page ${document.visibilityState}, frames ${longest > 0 ? 'drawn' : 'none (covered)'}`);
+        phase = 'queries';
+        log(`${name}: the web view held ${Math.round(atOpen / 1048576)} MB as the walk began and ${Math.round(most.mb / 1048576)} MB at its most during it, at ${Math.round(most.share * 100)}% walked`);
         log(`${name}: the index made by the walk in ${ms(performance.now() - w0 + 1500)} from the open; the longest the page went without a frame ${ms(longest)}; at ${Math.round(share * 100)}% a grade took ${ms(gradedDuring)} and a search ${ms(askedDuring)} (${partial.length} found so far)`);
       }
       // each query through the palette as a person's would go: the field set, until the rows are on the page; the store's answer alone beside it
@@ -12428,6 +12497,7 @@ export async function smokeSize(src: string | null): Promise<void> {
       // a covered window's page is slowed by the system: its times are not the app's
       if (document.visibilityState !== 'visible' || !seen) log(`${name}: the window was covered during this run; the times below are a throttled page's`);
       log(`${name}: open ${ms(opened)}, the day's page drawn at ${ms(drawn)} (the index read alone ${ms(index)}) · grade ${ms(graded)}, drawn again at ${ms(redrawn)} (a queue rebuild alone ${ms(rebuilt)}) · memory ${mb(held?.now ?? null)}${held && empty ? `, ${mb(held.now - empty.now)} over none open; ${mb(held.peak)} at its most` : ''} · ${rows} rows drawn of ${useApp.getState().queue.filter((i) => isDue(i, new Date())).length} due`);
+      log(`${name}: the web view at its most, by phase: ${phases()}`);
       // `ILMI_SIZE_PARSED=1`: every document read and parsed into the vault's cache as well, which is what opening
       // did before the index (milestone 59), weighed in the same page for a like-for-like figure
       if (await invoke<string | null>('dev_env', { name: 'ILMI_SIZE_PARSED' })) {
@@ -12442,6 +12512,7 @@ export async function smokeSize(src: string | null): Promise<void> {
       closeVault();
       await sleep(1500);
     }
+    sampling = false;
     log('done');
   } catch (e) {
     log(`failed: ${e instanceof Error ? e.message : String(e)}`);
@@ -12657,6 +12728,85 @@ export async function smokeFinish(vault: Vault): Promise<void> {
   } catch (e) {
     finished = true;
     setClockDay(null);
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+// `ILMI_SMOKE=join` (`smokeJoin`, milestone 71) on a simulated iPad or iPhone,
+// from its welcome: a collection made from the sample in Documents is put
+// into the loopback WebDAV server's storage and deleted here; then `join`,
+// `webdav`, the address, user and password typed into the welcome's rows,
+// and `join` again makes the collection from the storage and opens it,
+// syncing through it. Light, then dark.
+export async function smokeJoin(): Promise<void> {
+  const log = (s: string) => info(`smoke join: ${s}`);
+  const q = <T extends Element>(sel: string, root: ParentNode = document) => root.querySelector<T>(sel);
+  const qa = <T extends Element>(sel: string, root: ParentNode = document) => Array.from(root.querySelectorAll<T>(sel));
+  const shot = async (name: string, ms = 3500) => { await sleep(1200); log(`shot: ${name}`); await sleep(ms); };
+  const must = (ok: unknown, what: string) => { if (!ok) throw new Error(what); log(`ok: ${what}`); };
+  const poll = async <T,>(probe: () => T | null | undefined | false | Promise<T | null | undefined | false>, what: string, ms = 15000): Promise<T> => {
+    const t0 = Date.now();
+    for (;;) {
+      const v = await probe();
+      if (v) { log(`ok: ${what}`); return v; }
+      if (Date.now() - t0 > ms) throw new Error(`${what} (waited ${ms} ms)`);
+      await sleep(150);
+    }
+  };
+  const tap = (el: Element | null | undefined) => { if (!el) throw new Error('nothing to tap'); (el as HTMLElement).click(); };
+  try {
+    const { documentsDir, isMobile } = await import('./platform.js');
+    const { collectionFs, importCollection } = await import('./collections.js');
+    const { deleteCollection } = await import('../vault/tauri-store.js');
+    const { devStorages, storageFor, storageOf } = await import('./storage.js');
+    const { engineFor } = await import('./crdt.js');
+    must(isMobile() && useApp.getState().mobile, `the app knows it is on an iPad or a phone (${window.innerWidth}×${window.innerHeight})`);
+    const sample = `${documentsDir()}/double-major`;
+    // ── a storage that holds a collection, made here and let go ──
+    const dav = (await devStorages()).webdav;
+    const made = await importCollection(sample, { name: 'join-source', replace: true });
+    const docs = collectionFs(made);
+    const count = (await docs.digests()).size;
+    const eng = engineFor(docs, made);
+    must((await eng.connect(await storageFor(dav, made))) === 'made', `a collection of the sample (${count} documents) made the loopback WebDAV storage`);
+    await eng.sync(await storageFor(dav, made));
+    await deleteCollection(made);
+    // ── the welcome ──
+    useApp.getState().setReopen(false);
+    useApp.getState().setTheme('light');
+    await startFromRecents();
+    await poll(() => q('.welcome'), 'the welcome');
+    tap(qa('.welcome-acts button').find((b) => b.textContent === 'join'));
+    await poll(() => q('.welcome-join'), 'join opens a storage\'s rows');
+    const kinds = qa('.welcome-join .tw-seg.wrap button').map((b) => b.textContent);
+    must(kinds.join(' ') === 's3 webdav dropbox google drive', `the kinds of Tweaks, no folder and no icloud drive: ${kinds.join(', ')}`);
+    tap(qa('.welcome-join .tw-seg button').find((b) => b.textContent === 'webdav'));
+    const fill = async (label: string, text: string) => {
+      const row = await poll(() => qa<HTMLElement>('.welcome-join .tw-row').find((r) => r.querySelector('.tw-lbl')?.textContent === label), `the ${label} row`);
+      const el = row.querySelector<HTMLInputElement>('input')!;
+      el.focus();
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(el, text);
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.blur();
+    };
+    await fill('address', dav.address);
+    await fill('user', dav.user);
+    await fill('password', dav.password);
+    const go = await poll(() => { const b = q<HTMLButtonElement>('.welcome-join .welcome-go'); return b && !b.disabled ? b : null; }, 'join is ready once the address is there');
+    await shot('join-fields');
+    tap(go);
+    const root = await poll(() => useApp.getState().vault, 'the collection made from the storage opens', 60000);
+    await poll(() => useApp.getState().files.length > 0, 'its documents are in the tree', 30000);
+    const got = (await collectionFs(root).digests()).size;
+    must(got === count, `it holds the ${got} documents the storage held`);
+    const st = storageOf(root);
+    must(st.on && st.kind === 'webdav' && st.address === dav.address, 'and syncs through that storage from now on');
+    await shot('join-opened');
+    useApp.getState().setTheme('dark');
+    await shot('join-dark');
+    useApp.getState().setTheme('light');
+    log('done');
+  } catch (e) {
     log(`failed: ${e instanceof Error ? e.message : String(e)}`);
   }
 }

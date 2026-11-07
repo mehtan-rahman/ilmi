@@ -27,7 +27,7 @@ import { diskFs } from './collections.js';
 import { vaultKey } from './platform.js';
 import { useApp } from './store.js';
 
-export type StorageKind = 'folder' | 's3' | 'webdav' | 'dropbox' | 'drive';
+export type StorageKind = 'folder' | 's3' | 'webdav' | 'dropbox' | 'drive' | 'icloud';
 export type Keep = 'all' | 'opened';
 
 export interface StorageSettings {
@@ -63,7 +63,16 @@ export const NO_STORAGE: StorageSettings = { on: false, kind: 'folder', folder: 
 
 const KEY = 'ilmi.storage';
 const TEXTS = ['folder', 'endpoint', 'bucket', 'key', 'secret', 'address', 'user', 'password', 'appKey', 'clientId', 'clientSecret', 'place', 'account', 'dev'] as const;
-const KINDS: readonly StorageKind[] = ['folder', 's3', 'webdav', 'dropbox', 'drive'];
+export const KINDS: readonly StorageKind[] = ['folder', 's3', 'webdav', 'dropbox', 'drive', 'icloud'];
+/** A kind's word where it is not its name. */
+export const KIND_WORD: Partial<Record<StorageKind, string>> = { drive: 'google drive', icloud: 'icloud drive' };
+
+let icloudAt: Promise<string | null> | null = null;
+/** The app's iCloud folder (milestone 65): null where the app has no iCloud container, which is everywhere until it is signed with one. */
+export const icloudFolder = (): Promise<string | null> => (icloudAt ??= invoke<string | null>('icloud_folder').catch(() => null));
+
+/** The kinds to offer: no folder to pick on an iPad or a phone, and iCloud only where the app has it. */
+export const kindsHere = (mobile: boolean, icloud: boolean): StorageKind[] => KINDS.filter((k) => !(mobile && k === 'folder') && (icloud || k !== 'icloud'));
 
 function loadAll(): Record<string, StorageSettings> {
   try {
@@ -118,13 +127,14 @@ export function storageReady(s: StorageSettings): boolean {
   if (s.kind === 'folder') return s.folder.trim() !== '';
   if (s.kind === 's3') return [s.endpoint, s.bucket, s.key, s.secret].every((v) => v.trim() !== '');
   if (signsIn(s.kind)) return s.account !== '' && s.place.trim() !== '';
+  if (s.kind === 'icloud') return s.place.trim() !== '';
   return s.address.trim() !== '';
 }
 
 /** A name for the collection a storage holds, when one is made from it: the folder's, the bucket's (its prefix's), the address's last part, the service's folder. */
 export function storageName(s: StorageSettings): string {
   const last = (v: string): string => v.trim().replace(/\/+$/, '').split('/').pop() ?? '';
-  const name = s.kind === 'folder' ? last(s.folder) : s.kind === 's3' ? last(s.bucket) : signsIn(s.kind) ? last(s.place) : decodeURIComponent(last(s.address.replace(/^[a-z]+:\/\//i, '')));
+  const name = s.kind === 'folder' ? last(s.folder) : s.kind === 's3' ? last(s.bucket) : signsIn(s.kind) || s.kind === 'icloud' ? last(s.place) : decodeURIComponent(last(s.address.replace(/^[a-z]+:\/\//i, '')));
   return name || 'collection';
 }
 
@@ -145,12 +155,20 @@ export function signIn(s: StorageSettings, link = useApp.getState().mobile): Pro
   return invoke<string>('oauth_sign_in', { request: { service: s.kind, client: clientOf(s), secret: s.kind === 'drive' ? s.clientSecret.trim() : '', account: s.account || null, link, dev: s.dev || null } });
 }
 
+/** Forget the tokens of the sign-in `s` names. Nothing is said to the service; it is let go there from its own account page. */
+export const signOut = (s: StorageSettings): Promise<void> => invoke<void>('oauth_sign_out', { account: s.account });
+
 /**
  * The storage `s` names, for the collection whose folder is `root`: its
  * four verbs, and the two by which that collection's files go up and come
  * down without passing through here.
  */
 export async function storageFor(s: StorageSettings, root: string): Promise<Storage> {
+  if (s.kind === 'icloud') {
+    const base = await icloudFolder();
+    if (!base) throw new Error('icloud drive is not here');
+    return icloudStorage(await storageFor({ ...s, kind: 'folder', folder: `${base}/${s.place.trim().replace(/^\/+|\/+$/g, '')}` }, root), `${base}/${s.place.trim().replace(/^\/+|\/+$/g, '')}`, (path) => invoke<boolean>('icloud_down', { path }));
+  }
   const config = configOf(s);
   const files: Pick<Storage, 'up' | 'down'> = {
     up: (hash) => invoke<void>('storage_blob_up', { root, config, hash }),
@@ -173,6 +191,33 @@ export async function storageFor(s: StorageSettings, root: string): Promise<Stor
     write: (path, bytes) => invoke<void>('storage_write', bytes, { headers: { config: header, path: encodeURIComponent(path) } }),
     remove: (path) => invoke<void>('storage_remove', { config, path }),
     ...files,
+  };
+}
+
+/**
+ * A folder iCloud keeps (milestone 65): the OS carries the files, and no
+ * device overwrites another's, so nothing is a conflict copy. What is new
+ * here is that a file may be named and not here: it is listed under a
+ * `.name.icloud` stand-in, and is asked down before it is read.
+ */
+export function icloudStorage(folder: Storage, dir: string, down: (path: string) => Promise<boolean>): Storage {
+  const fetched = (path: string): Promise<boolean> => down(`${dir}/${path}`);
+  return {
+    ...folder,
+    async list(prefix) {
+      const here = new Set(await folder.list(prefix));
+      const entries = await diskFs.readDir(`${dir}/${prefix.replace(/\/+$/, '')}`).catch(() => []);
+      for (const e of entries) {
+        const away = /^\.(.+)\.icloud$/.exec(e.name);
+        if (away) here.add(`${prefix.replace(/\/+$/, '')}/${away[1]}`);
+      }
+      return [...here].sort();
+    },
+    async read(path) {
+      await fetched(path);
+      return folder.read(path);
+    },
+    ...(folder.down ? { down: async (hash: string, size: number) => { await fetched(`blobs/${hash}`); return folder.down!(hash, size); } } : {}),
   };
 }
 

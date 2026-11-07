@@ -418,8 +418,10 @@ tweaks, `storage` takes the kind and the fields it needs: a folder; or
 for Dropbox and Google Drive, what is below. `connect` puts the open
 collection in an empty storage, or meets the storage that already holds
 it; `join…` makes a new collection from what a storage holds and opens it,
-which is how a second device starts. `off` stops; what is in the storage
-stays. A collection that syncs this way does not sync by git.
+which is how a second device starts. On an iPad or a phone the welcome has
+`join` beside `connect`, with the same kinds and fields, so a device with no
+collection yet can start from the storage. `off` stops; what is in the
+storage stays. A collection that syncs this way does not sync by git.
 
 Each device writes its own changes to the storage and reads the others',
 on open, a few seconds after a change, when the window comes back, and
@@ -453,7 +455,10 @@ it is a storage, not something to tidy by hand.
 
 If the service lets go of the sign-in, the app says `sign in again` and the
 strip reads `offline`; press `sign in`, and the sync goes on where it was.
-An app of Google's still in testing does this every seven days.
+An app of Google's still in testing does this every seven days. `sign out`
+beside it forgets the sign-in on this device and stops the sync through it;
+what is in the storage stays, and the service still lists the app on your
+account until you remove it there.
 
 To make the app, in the [Dropbox App Console](https://www.dropbox.com/developers/apps):
 Scoped access, App folder; under Permissions tick `files.metadata.read`,
@@ -518,7 +523,9 @@ finger with the writing on them. A finger still boxes a passage after a
 hold. The Mac and every other device show what you wrote as a picture over
 the page. Nothing is written into the PDF: the strokes are kept in the
 collection with the book they are on, whichever chapter shows that page.
-An exported folder does not hold them yet.
+An export, the mirror and the dated exports write them as
+`.ilmi/ink/<the PDF's fingerprint>/<page>.pkdrawing`, and an import takes them
+back.
 
 ### On a phone
 
@@ -552,7 +559,9 @@ since a link that itself starts the app is lost.
 
 ## Plugins
 
-Plugins live in a vault's `.ilmi/plugins/` and are turned on in tweaks; the
+Plugins live in a vault's `.ilmi/plugins/` and are turned on in tweaks (through a
+storage, each one on or off on its own, so two devices that each turn one on
+both keep both); the
 API, how to write one, and how to package one are in `PLUGINS.md`. The repo
 ships two under `plugins/`: the sample, and a dictionary that looks a selected
 word up (Wiktionary by default, Arabic clitics stripped on the way) and adds

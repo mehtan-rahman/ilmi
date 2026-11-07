@@ -63,6 +63,7 @@ notes/
   .ilmi/                     app-private state, never required
     order.json               the order chosen for a directory's children
     reading.json             the reading state of the PDFs on their own
+    ink/<sha256>/<page>.pkdrawing   what is written on a PDF's pages
     reviews/                 the review log, one file a month
       2026-10.jsonl
     same.json                pairs of cards said not to be the same fact
@@ -106,6 +107,18 @@ notes/
   `pdf` field (§3, *Pages*): that note is the PDF's notes, and need not be
   named after it. Before milestone 70 such a file was ignored like any
   other; a vault from then opens with its unpaired PDFs as documents.
+- **What is written on a book's pages** is in `.ilmi/ink/<sha256>/<page>.pkdrawing`:
+  a folder named by the SHA-256 of the PDF's bytes (lower case), and in it a
+  PencilKit `PKDrawing` a page, named by the page's number in the PDF, from 1.
+  Nothing is ever written into the PDF, and the writing follows the file's
+  bytes, not its name: a renamed book keeps it, and writing on a book deleted
+  stays until the same bytes come back. An export, the mirror and a dated
+  export write these; an import takes each drawing apart into its strokes.
+  Coordinates are the page's points from its top left. PencilKit gives a
+  drawing new ids on every save, so two exports of one page hold the same
+  strokes in different bytes. A page with nothing written has no file. Without
+  these files a book is unwritten; an older export has none and imports as it
+  did. Added by milestone 71.
 - Any other file in a document's children directory is ignored by the walk.
   A clipped page's images land there (`name/img-01.png` …, §3 `url`) and the
   document refers to them relatively, `![alt](name/img-01.png)`. A page of

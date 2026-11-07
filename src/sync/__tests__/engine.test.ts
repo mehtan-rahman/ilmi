@@ -539,6 +539,65 @@ describe('53\'s merge cases, for rows and text', () => {
     expect(JSON.parse(await b.read('.ilmi/same.json'))).toEqual({ not: ['c|d'] });
   });
 
+  describe('which plugins are on (milestone 71)', () => {
+    const PLUGINS = '.ilmi/plugins.json';
+    const on = (...ids: string[]) => `${JSON.stringify(ids, null, 2)}\n`;
+    const list = async (c: { read(p: string): Promise<string> }) => JSON.parse(await c.read(PLUGINS)) as string[];
+
+    it('one turned on on each device apart: both are on on both, whichever wrote last', async () => {
+      const { a, b, storage } = await pair(CORPUS);
+      a.at.ms += 1000;
+      await a.write(PLUGINS, on('hello', 'dictionary'));
+      b.at.ms += 2000;
+      await b.write(PLUGINS, on('hello', 'clip'));
+      await settle(storage, [a, b]);
+      expect((await list(a)).sort()).toEqual(['clip', 'dictionary', 'hello']);
+      expect(await a.read(PLUGINS)).toBe(await b.read(PLUGINS));
+    });
+
+    it('one turned off here and another on there: each stands, and the later of two on one plugin wins', async () => {
+      const { a, b, storage } = await pair(CORPUS);
+      a.at.ms += 1000;
+      await a.write(PLUGINS, on('dictionary', 'hello'));
+      await settle(storage, [a, b]);
+      expect((await list(b)).sort()).toEqual(['dictionary', 'hello']);
+      a.at.ms += 1000;
+      await a.write(PLUGINS, on('hello'));
+      b.at.ms += 2000;
+      await b.write(PLUGINS, on('dictionary', 'hello', 'clip'));
+      await settle(storage, [a, b]);
+      expect((await list(a)).sort()).toEqual(['clip', 'hello']);
+      expect(await a.read(PLUGINS)).toBe(await b.read(PLUGINS));
+      a.at.ms += 1000;
+      await a.write(PLUGINS, on('hello', 'clip'));
+      b.at.ms += 2000;
+      await b.write(PLUGINS, on('hello'));
+      await settle(storage, [a, b]);
+      expect(await list(a)).toEqual(['hello']);
+      expect(await list(b)).toEqual(['hello']);
+    });
+
+    it('a list from before: what it held and no register said stays on', async () => {
+      const { a, b, storage } = await pair(CORPUS);
+      a.at.ms += 1000;
+      await a.fs.door.run(async () => undefined);
+      await a.write(PLUGINS, on('old'));
+      await settle(storage, [a, b]);
+      b.at.ms += 2000;
+      await b.write(PLUGINS, on('old', 'new'));
+      await settle(storage, [a, b]);
+      expect((await list(a)).sort()).toEqual(['new', 'old']);
+    });
+
+    it('a list that is not one is left to the later write', async () => {
+      const { a, b, storage } = await pair(CORPUS);
+      a.at.ms += 1000;
+      await a.write(PLUGINS, 'not json\n');
+      await settle(storage, [a, b]);
+      expect(await b.read(PLUGINS)).toBe('not json\n');
+    });
+  });
+
   it('two devices that each make the same hidden file have made one', async () => {
     const { a, b, storage } = await pair(CORPUS);
     a.at.ms += 1000;
@@ -1037,10 +1096,10 @@ describe('ink on a book\'s page (milestone 67)', () => {
     expect((await a.fs.pageInk(hash, 2)).find((x) => x.stroke === 's3')).toEqual(stroke(3));
     expect(await a.fs.pageInkFile(hash, 2, 'picture', 612, 792)).toEqual(memPagePicture([stroke(1), stroke(2), stroke(3)], 612, 792));
     expect(memSplit(await b.fs.pageInkFile(hash, 2, 'drawing')).map((x) => x.stroke)).toEqual(['s1', 's2', 's3']);
-    // nothing is written into the PDF, no row is made, and no file is: an export holds what it held
+    // nothing is written into the PDF and no row is made: an export holds what it held, and the pages under `.ilmi/ink/` (milestone 71)
     expect(a.fs.blobAt(PDF)).toBe(hash);
     expect(a.fs.door.rows().length).toBe(rows);
-    expect(differences(await a.files(), filesWere)).toEqual([]);
+    expect(differences(await a.files(), filesWere).filter((d) => !d.includes(`.ilmi/ink/${hash}/`))).toEqual([]);
     expect(differences(await a.files(), await b.files())).toEqual([]);
     // one erases a stroke while the other writes one: gone on both, and the new one there
     a.at.ms += 60_000;
@@ -1094,7 +1153,8 @@ describe('ink on a book\'s page (milestone 67)', () => {
     const storage = memStorage();
     const a = await copy('a', CORPUS, opts);
     const hash = a.fs.blobAt(PDF)!;
-    // written on before it ever met a storage
+    // written on before it ever met a storage (the corpus's own page 1 rubbed out, to count this test's alone)
+    await a.fs.setPageInk(hash, 1, []);
     await a.fs.setPageInk(hash, 2, [stroke(1), stroke(2)]);
     expect(a.store.tables.regs.size).toBe(0);
     expect(await a.eng.connect(storage)).toBe('made');

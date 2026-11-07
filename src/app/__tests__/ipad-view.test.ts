@@ -33,6 +33,18 @@ vi.mock('../vault.js', async (orig) => {
   };
 });
 
+vi.mock('../crdt.js', async (orig) => {
+  const real = await orig<typeof import('../crdt.js')>();
+  return {
+    ...real,
+    joinCollection: vi.fn(async (s: { kind: string; address: string }, name: string) => {
+      calls.push(`join ${s.kind} ${s.address} as ${name}`);
+      if (cloneFails) throw new Error(cloneFails);
+      return `${DOCS}/${name}`;
+    }),
+  };
+});
+
 const { Welcome } = await import('../Welcome.js');
 const { TopStrip } = await import('../TopStrip.js');
 const { Canvas } = await import('../Canvas.js');
@@ -86,10 +98,56 @@ afterEach(async () => {
   useApp.setState({ ...initial, mobile: false });
 });
 
-describe("the iPad's welcome", () => {
-  it('offers connect alone, and lists the collections by name', async () => {
+describe("joining a storage from the welcome (milestone 71)", () => {
+  const seg = (word: string) => qa<HTMLButtonElement>('.welcome-join .tw-seg button').find((b) => b.textContent === word)!;
+  const go = () => q<HTMLButtonElement>('.welcome-join .welcome-go')!;
+  const fill = async (label: string, text: string) => {
+    const row = qa<HTMLElement>('.welcome-join .tw-row').find((r) => r.querySelector('.tw-lbl')?.textContent === label)!;
+    const el = row.querySelector<HTMLInputElement>('input')!;
+    await type(el, text);
+    await act(async () => { el.dispatchEvent(new FocusEvent('focusout', { bubbles: true })); });
+  };
+  const openJoin = async () => {
     await draw(createElement(Welcome));
-    expect(qa('.welcome-acts button').map((b) => b.textContent)).toEqual(['connect']);
+    await click(qa('.welcome-acts button').find((b) => b.textContent === 'join')!);
+  };
+
+  it('offers Tweaks\' kinds with no folder to pick and no icloud without its container, the fields each wants, and joins when they are filled', async () => {
+    await openJoin();
+    expect(qa('.welcome-join .tw-seg.wrap button').map((b) => b.textContent)).toEqual(['s3', 'webdav', 'dropbox', 'google drive']);
+    expect(go().disabled).toBe(true);
+    await click(seg('webdav'));
+    await fill('address', 'https://dav.example.org/notes/');
+    expect(go().disabled).toBe(false);
+    await click(go());
+    expect(calls).toEqual(['join webdav https://dav.example.org/notes/ as notes', `open ${DOCS}/notes`]);
+  });
+
+  it('a join that fails says why and stays', async () => {
+    await openJoin();
+    await click(seg('webdav'));
+    await fill('address', 'https://dav.example.org/notes');
+    cloneFails = 'the storage holds nothing to join';
+    await click(go());
+    expect(q('.welcome-join .welcome-problem')?.textContent).toBe('the storage holds nothing to join');
+    expect(calls).toEqual(['join webdav https://dav.example.org/notes as notes']);
+  });
+
+  it('a service asks for a sign-in before it can join', async () => {
+    await openJoin();
+    await click(seg('dropbox'));
+    await fill('app key', 'k');
+    await fill('folder', 'notes');
+    expect(go().disabled).toBe(true);
+    expect(qa('.welcome-join .tw-row').some((r) => r.textContent?.includes('sign in'))).toBe(true);
+    expect(qa('.welcome-join button').some((b) => b.textContent === 'sign out')).toBe(false);
+  });
+});
+
+describe("the iPad's welcome", () => {
+  it('offers connect and join, and lists the collections by name', async () => {
+    await draw(createElement(Welcome));
+    expect(qa('.welcome-acts button').map((b) => b.textContent)).toEqual(['connect', 'join']);
     expect(q('.palette-foot')?.textContent).toContain('connect');
     expect(q('.palette-foot')?.textContent).not.toContain('new collection');
     const rows = qa('.welcome-row');

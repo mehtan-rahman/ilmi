@@ -189,6 +189,14 @@ pub fn signed_in(account: &str) -> bool {
     entry(account).is_some()
 }
 
+/// `sign out`: what is kept for an account gone, here and in `oauth.json`. A collection that names it then says to sign in again.
+pub fn forget(account: &str) -> Result<(), String> {
+    kept(|k| {
+        k.live.remove(account);
+        if k.entries.remove(account).is_some() { save(&k.entries) } else { Ok(()) }
+    })
+}
+
 /// A refresh token got by other means kept as an account (the tests' `ILMI_TEST_DROPBOX`).
 #[cfg(test)]
 pub fn adopt(e: Entry) -> String {
@@ -486,6 +494,15 @@ pub fn spoil(account: &str, token: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn signing_out_forgets_the_account() {
+        let id = adopt(Entry { service: Service::Dropbox, client: "k".to_string(), secret: String::new(), refresh: "r".to_string(), dev: None });
+        assert!(signed_in(&id));
+        forget(&id).unwrap();
+        assert!(!signed_in(&id));
+        forget(&id).unwrap();
+    }
 
     #[test]
     fn a_way_back_for_each_service() {

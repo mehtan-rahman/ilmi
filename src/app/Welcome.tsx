@@ -17,6 +17,9 @@ import { dropRoutes } from './land.js';
 import { NEVER } from './platform.js';
 import { GONE, openedLabel } from './recents.js';
 import { useApp } from './store.js';
+import { joinCollection } from './crdt.js';
+import { NO_STORAGE, signIn, signOut, storageName, storageReady, type StorageSettings } from './storage.js';
+import { StorageFields } from './StorageFields.js';
 import { connectClone, forgetVault, importVault, importVaultFrom, nameNewVault, newVault, openVault } from './vault.js';
 
 /** The README's first two sentences: what the app is, and what a collection is. */
@@ -33,6 +36,11 @@ export function Welcome() {
   const [drag, setDrag] = useState(false);
   // the iPad's `connect`: its two fields shown, what they hold, and a clone under way
   const [connecting, setConnecting] = useState(false);
+  // `join`: a storage's fields, as Tweaks has them, kept here until a collection holds them
+  const [joining, setJoining] = useState(false);
+  const [storage, setJoinStorage] = useState<StorageSettings>({ ...NO_STORAGE, kind: 's3' });
+  const [joinBusy, setJoinBusy] = useState(false);
+  const [signing, setSigning] = useState(false);
   const [remote, setRemote] = useState('');
   const [token, setToken] = useState('');
   const [cloning, setCloning] = useState(false);
@@ -92,6 +100,18 @@ export function Welcome() {
       setProblem(e instanceof Error ? e.message : String(e));
     });
   };
+  const fail = (e: unknown) => { setProblem(e instanceof Error ? e.message : String(e)); };
+  // what a storage holds, as a collection here, opened: the same as Tweaks' `join…`, with nothing open to hold the settings
+  const join = () => {
+    setJoinBusy(true);
+    setProblem(null);
+    void joinCollection(storage, storageName(storage)).then(openVault).catch(fail).finally(() => setJoinBusy(false));
+  };
+  const signInHere = () => {
+    setSigning(true);
+    signIn(storage).then((account) => setJoinStorage((was) => ({ ...was, account }))).catch(fail).finally(() => setSigning(false));
+  };
+  const signOutHere = () => { signOut(storage).then(() => setJoinStorage((was) => ({ ...was, account: '' }))).catch(fail); };
   const cancelConnect = () => {
     if (cloning) return;
     setConnecting(false);
@@ -150,7 +170,8 @@ export function Welcome() {
         </div>
         {mobile ? (
           <div className="welcome-acts">
-            <button type="button" onClick={() => setConnecting(true)}>connect</button>
+            <button type="button" onClick={() => { setJoining(false); setConnecting(true); }}>connect</button>
+            <button type="button" onClick={() => { setConnecting(false); setJoining(true); setProblem(null); }}>join</button>
           </div>
         ) : (
           <div className="welcome-acts">
@@ -187,6 +208,15 @@ export function Welcome() {
               <span className="welcome-problem">{cloning ? 'cloning…' : problem ?? ''}</span>
               <button type="button" className="welcome-go" disabled={cloning || !remote.trim()} onClick={clone}>clone</button>
             </label>
+          </div>
+        )}
+        {mobile && joining && (
+          <div className="welcome-join tw-rows">
+            <StorageFields st={storage} locked={joinBusy} mobile signing={signing} set={(p) => { setJoinStorage((was) => ({ ...was, ...p })); setProblem(null); }} onSignIn={signInHere} onSignOut={signOutHere} />
+            <div className="welcome-name">
+              <span className="welcome-problem">{joinBusy ? 'joining…' : problem ?? ''}</span>
+              <button type="button" className="welcome-go" disabled={joinBusy || !storageReady(storage)} onClick={join}>join</button>
+            </div>
           </div>
         )}
         {naming && (

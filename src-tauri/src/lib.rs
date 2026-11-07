@@ -774,6 +774,23 @@ fn oauth_back(url: String) -> bool {
 }
 
 /// Whether a sign-in is still held.
+/// The app's iCloud folder, where it has one (milestone 65; PLAN.md says what signing it takes).
+#[tauri::command(async)]
+fn icloud_folder() -> Option<String> {
+    tauri_plugin_ink::icloud_folder()
+}
+
+/// A file of that folder asked down, and waited for a minute at most.
+#[tauri::command(async)]
+fn icloud_down(path: String) -> bool {
+    tauri_plugin_ink::icloud_down(&path, 60)
+}
+
+#[tauri::command]
+fn oauth_sign_out(account: String) -> Result<(), String> {
+    oauth::forget(&account)
+}
+
 #[tauri::command]
 fn oauth_signed_in(account: String) -> bool {
     oauth::signed_in(&account)
@@ -1000,7 +1017,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_ink::init())
         .manage(store::Stores::default())
-        .invoke_handler(tauri::generate_handler![allow_vault, allow_hidden, read_dropped, read_dropped_bytes, read_anki_package, read_epub, read_plugin_zip, platform, dev_env, dev_web_memory, dev_web_processes, dev_nudge_serve, dev_nudge_drop, dev_nudge_listeners, set_recent_vaults, store_list, store_create, store_delete, store_rows, store_text, store_put, store_remove, store_version, store_set_version, store_doc, store_places, store_digests, store_search, store_search_state, store_search_walk, store_review_files, store_reviews, store_reviews_put, store_same, store_same_put, store_originals, store_original_put, store_blob_put, store_blob_get, store_batch, store_meta, store_regs, store_regs_under, store_crdt, store_outbox, store_outbox_count, store_blob_has, store_regs_page, store_blobs_away, store_blob_take, store_blob_range, store_ink, store_ink_file, store_ink_pages, store_ink_page, dev_ink_sample, ink_split, ink_bounds, ink_scene, ink_fill, ink_take, ink_rest, dev_ink_pen, dev_ink_wipe, dev_ink_state, storage_list, storage_read, storage_write, storage_remove, storage_blob_up, storage_blob_down, dev_storage_serve, oauth_sign_in, oauth_back, oauth_signed_in, dev_cloud_stats, dev_cloud_revoke, zip_folder, sync_status, sync_init, sync_init_bare, sync_set_remote, sync_clone, sync_changes, sync_commit, sync_fetch, sync_merge, sync_resolve, sync_push])
+        .invoke_handler(tauri::generate_handler![allow_vault, allow_hidden, read_dropped, read_dropped_bytes, read_anki_package, read_epub, read_plugin_zip, platform, dev_env, dev_web_memory, dev_web_processes, dev_nudge_serve, dev_nudge_drop, dev_nudge_listeners, set_recent_vaults, store_list, store_create, store_delete, store_rows, store_text, store_put, store_remove, store_version, store_set_version, store_doc, store_places, store_digests, store_search, store_search_state, store_search_walk, store_review_files, store_reviews, store_reviews_put, store_same, store_same_put, store_originals, store_original_put, store_blob_put, store_blob_get, store_batch, store_meta, store_regs, store_regs_under, store_crdt, store_outbox, store_outbox_count, store_blob_has, store_regs_page, store_blobs_away, store_blob_take, store_blob_range, store_ink, store_ink_file, store_ink_pages, store_ink_page, dev_ink_sample, ink_split, ink_bounds, ink_scene, ink_fill, ink_take, ink_rest, dev_ink_pen, dev_ink_wipe, dev_ink_state, storage_list, storage_read, storage_write, storage_remove, storage_blob_up, storage_blob_down, dev_storage_serve, icloud_folder, icloud_down, oauth_sign_in, oauth_sign_out, oauth_back, oauth_signed_in, dev_cloud_stats, dev_cloud_revoke, zip_folder, sync_status, sync_init, sync_init_bare, sync_set_remote, sync_clone, sync_changes, sync_commit, sync_fetch, sync_merge, sync_resolve, sync_push])
         .setup(|app| {
             // the sign-ins to Dropbox and Google Drive are kept in the app's own folder, not a collection's
             if let Ok(dir) = app.path().app_data_dir() {

@@ -32,6 +32,8 @@ mod native {
         pub fn ilmi_ink_bounds(data: *const u8, len: usize, out: *mut *mut u8, out_len: *mut usize) -> i32;
         pub fn ilmi_ink_sample(lines: u32, per: u32, seed: u32, out: *mut *mut u8, out_len: *mut usize) -> i32;
         pub fn ilmi_ink_free(p: *mut u8);
+        pub fn ilmi_icloud_folder(out: *mut *mut u8, out_len: *mut usize) -> i32;
+        pub fn ilmi_icloud_down(path: *const u8, len: usize, seconds: u32) -> i32;
     }
 
     pub fn call(f: impl FnOnce(*mut *mut u8, *mut usize) -> i32) -> Result<Vec<u8>, String> {
@@ -156,6 +158,29 @@ pub struct Taken {
     pub strokes: u32,
     /// The drawing in base64, when it has changed since the last one given.
     pub drawing: Option<String>,
+}
+
+/// The app's iCloud folder (milestone 65): none unless the app is signed with an iCloud container, so none anywhere yet.
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+pub fn icloud_folder() -> Option<String> {
+    // SAFETY: the callee fills `out` and `len` with bytes `call` copies and frees
+    let bytes = native::call(|out, len| unsafe { native::ilmi_icloud_folder(out, len) }).ok()?;
+    String::from_utf8(bytes).ok().filter(|s| !s.is_empty())
+}
+#[cfg(not(any(target_os = "macos", target_os = "ios")))]
+pub fn icloud_folder() -> Option<String> {
+    None
+}
+
+/// A file of that folder asked down and waited for; false if it did not come in `seconds`.
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+pub fn icloud_down(path: &str, seconds: u32) -> bool {
+    // SAFETY: the bytes are read during the call
+    unsafe { native::ilmi_icloud_down(path.as_ptr(), path.len(), seconds) == 0 }
+}
+#[cfg(not(any(target_os = "macos", target_os = "ios")))]
+pub fn icloud_down(_path: &str, _seconds: u32) -> bool {
+    true
 }
 
 #[cfg(target_os = "ios")]
@@ -332,6 +357,13 @@ mod tests {
         assert_eq!(again.iter().map(|s| &s.key).collect::<Vec<_>>(), strokes.iter().map(|s| &s.key).collect::<Vec<_>>());
     }
 
+    /// Not signed with an iCloud container, as nothing here is: no folder, and a file that is no iCloud file is simply here.
+    #[test]
+    fn no_icloud_without_its_container() {
+        assert_eq!(icloud_folder(), None);
+        assert!(icloud_down("/tmp/no-such-file", 1));
+    }
+
     /// `cargo test -p tauri-plugin-ink -- --ignored --nocapture a_page_weighed`: a page of working as strokes and as a PNG (PLAN.md, 58).
     #[test]
     #[ignore]
@@ -351,5 +383,15 @@ mod tests {
                 strokes.len(), whole.len(), rows, rows / strokes.len(), w, h, png.len(), drawn, t.elapsed()
             );
         }
+    }
+
+    /// A corpus file: `.ilmi/ink/<hash>/<page>.pkdrawing` comes out of an export with the strokes it went into an import with. PencilKit draws new ids on every save, so never the same bytes.
+    #[test]
+    fn corpus_drawing_keeps_its_strokes() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../src/format/__tests__/corpus/vault/.ilmi/ink/e62fd1f4eb0a178c36c48f6bd48151a80de36f4a29eb880195aa9e58a61e61d1/1.pkdrawing");
+        let strokes = split(&std::fs::read(path).unwrap()).unwrap();
+        assert_eq!(strokes.len(), 6);
+        let again = split(&join(&refs(&strokes)).unwrap()).unwrap();
+        assert_eq!(again.iter().map(|s| &s.key).collect::<Vec<_>>(), strokes.iter().map(|s| &s.key).collect::<Vec<_>>());
     }
 }

@@ -782,6 +782,65 @@ describe('ink (milestone 58)', () => {
   });
 });
 
+describe('what is written on a book\'s pages, in and out as files (milestone 71)', () => {
+  const HASH = 'a'.repeat(64);
+  const CORPUS_PAGE = '.ilmi/ink/e62fd1f4eb0a178c36c48f6bd48151a80de36f4a29eb880195aa9e58a61e61d1/1.pkdrawing';
+  const stroke = (s: string, at = 1): InkStroke => ({ stroke: s, at, data: 'eA==' });
+  const out = async (fs: StoreFs) => { const dir = await fsp.mkdtemp(joinPath(tmpdir(), 'ilmi-ink-out-')); await exportFolder(fs, ROOT, nodeFs, dir); return dir; };
+
+  it('an export writes each written page, an import takes it apart, and a third copy holds the same strokes', async () => {
+    const { fs } = await collection(SAMPLE);
+    await fs.setPageInk(HASH, 12, [stroke('s1'), stroke('s2', 2)]);
+    await fs.setPageInk(HASH, 3, [stroke('s3')]);
+    const dir = await out(fs);
+    expect((await fsp.readdir(joinPath(dir, `.ilmi/ink/${HASH}`))).sort()).toEqual(['12.pkdrawing', '3.pkdrawing']);
+    expect(memSplit(await fsp.readFile(joinPath(dir, `.ilmi/ink/${HASH}/12.pkdrawing`))).map((s) => s.stroke)).toEqual(['s1', 's2']);
+    const store = memStore();
+    const again = storeFs(store, ROOT);
+    await importFolder(nodeFs, dir, again, ROOT);
+    expect(await again.inkedPages(HASH)).toEqual([3, 12]);
+    expect((await again.pageInk(HASH, 12)).map((s) => s.stroke)).toEqual(['s1', 's2']);
+    // nothing of it is a row: the table holds it
+    expect(await again.rowAt(`${ROOT}/.ilmi/ink`)).toBeNull();
+    expect(await again.rowAt(`${ROOT}/.ilmi/ink/${HASH}/3.pkdrawing`)).toBeNull();
+    await fsp.rm(dir, { recursive: true });
+  });
+
+  it('nothing written, no folder: the sample comes out as it was', async () => {
+    const { fs } = await collection(SAMPLE);
+    expect((await fs.readDir(`${ROOT}/.ilmi`)).map((e) => e.name)).not.toContain('ink');
+    expect(await fs.stat(`${ROOT}/.ilmi/ink`)).toBeNull();
+  });
+
+  it('the corpus\'s page is read in and comes out to the byte', async () => {
+    const { fs } = await collection(CORPUS);
+    expect(await fs.inkedPages('e62fd1f4eb0a178c36c48f6bd48151a80de36f4a29eb880195aa9e58a61e61d1')).toEqual([1]);
+    const dir = await out(fs);
+    expect((await fsp.readFile(joinPath(dir, CORPUS_PAGE))).equals(await fsp.readFile(joinPath(CORPUS, CORPUS_PAGE)))).toBe(true);
+    await fsp.rm(dir, { recursive: true });
+  });
+
+  it('the mirror rewrites a page only when its strokes changed, and takes away a page rubbed out', async () => {
+    const { fs } = await collection(SAMPLE);
+    await fs.setPageInk(HASH, 2, [stroke('s1')]);
+    const dir = await fsp.mkdtemp(joinPath(tmpdir(), 'ilmi-ink-mirror-'));
+    await mirrorFolder(fs, ROOT, nodeFs, dir);
+    expect(await mirrorFolder(fs, ROOT, nodeFs, dir)).toEqual([]);
+    await fs.setPageInk(HASH, 2, [stroke('s1'), stroke('s2')]);
+    expect(await mirrorFolder(fs, ROOT, nodeFs, dir)).toEqual([`.ilmi/ink/${HASH}/2.pkdrawing`]);
+    await fs.setPageInk(HASH, 2, []);
+    expect(await mirrorFolder(fs, ROOT, nodeFs, dir)).toEqual(['.ilmi/ink']);
+    await fsp.rm(dir, { recursive: true });
+  });
+
+  it('a file taken back removes what it no longer holds', async () => {
+    const { fs } = await collection(SAMPLE);
+    await fs.setPageInk(HASH, 2, [stroke('s1')]);
+    await fs.remove(`${ROOT}/.ilmi/ink/${HASH}/2.pkdrawing`);
+    expect(await fs.inkedPages(HASH)).toEqual([]);
+  });
+});
+
 describe('ink on a book\'s page (milestone 67)', () => {
   const PDF = 'papers/two-pages.pdf';
   const stroke = (n: number): InkStroke => ({ stroke: `s${n}`, at: 1000 + n, data: Buffer.from(`stroke ${n}`).toString('base64') });
@@ -802,6 +861,8 @@ describe('ink on a book\'s page (milestone 67)', () => {
     const hash = fs.blobAt(abs)!;
     const bytes = await fs.readBytes(abs);
     const rows = (await store.rows()).length;
+    // the corpus has its first page written on (milestone 71): rubbed out, to count this test's alone
+    await fs.setPageInk(hash, 1, []);
     const before = await tmp('page-before');
     await exportFolder(fs, ROOT, nodeFs, before);
     expect(await fs.pageInk(hash, 2)).toEqual([]);
@@ -829,7 +890,7 @@ describe('ink on a book\'s page (milestone 67)', () => {
     expect((await store.rows()).length).toBe(rows);
     const after = await tmp('page-after');
     await exportFolder(fs, ROOT, nodeFs, after);
-    const [want, got] = [await filesOf(before), await filesOf(after)];
+    const [want, got] = [await filesOf(before), new Map([...(await filesOf(after))].filter(([k]) => !k.startsWith('.ilmi/ink/')))];
     expect([...got.keys()].sort()).toEqual([...want.keys()].sort());
     for (const [p, b] of want) if (b) expect(got.get(p)!.equals(b), p).toBe(true);
     // not a page of a file

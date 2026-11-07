@@ -102,7 +102,7 @@
 
 import { parse, parseReviews, serialize } from '../format/index.js';
 import { compose, type StateRow } from '../vault/lift.js';
-import { BOOK_PAGE, isBookPage, isInk, newId, reviewRow, type InkStroke, type Content, type DocContent, type Lift, type Place, type Recorder, type Reg, type ReviewRow, type Row, type RowKind, type StoreFs, type StoreOp, type ViewWrite } from '../vault/store.js';
+import { BOOK_PAGE, hiddenId, isBookPage, isInk, newId, reviewRow, type InkStroke, type Content, type DocContent, type Lift, type Place, type Recorder, type Reg, type ReviewRow, type Row, type RowKind, type StoreFs, type StoreOp, type ViewWrite } from '../vault/store.js';
 import { clock, msOf, msPart, type Clock } from './clock.js';
 import { blocks, diff3, type Kept } from './merge.js';
 import type { Storage } from './storage.js';
@@ -191,6 +191,13 @@ export const SNAP_KEEP_MS = 30 * 24 * 60 * 60 * 1000;
 /** The app's view state: this device's own, never a change. */
 const STATE_FILE = '.ilmi/state.json';
 const skip = (rel: string): boolean => rel === STATE_FILE || rel.endsWith('.ilmi-tmp');
+
+/** Which plugins are on (milestone 71): the file, and a register a plugin (`~p|<id>`, `1` or nothing). */
+const PLUGINS_FILE = '.ilmi/plugins.json';
+const PLUGIN = '~p|';
+const pluginList = (text: string | null): string[] | null => {
+  try { const v: unknown = JSON.parse(text ?? ''); return Array.isArray(v) && v.every((x) => typeof x === 'string') ? v as string[] : null; } catch { return null; }
+};
 
 /** About how much of the outbox goes into one file of the storage. */
 const FILE_BYTES = 1_000_000;
@@ -551,7 +558,10 @@ export function engine(fs: StoreFs, opts: EngineOptions): Engine {
     if (at.kind === 'file' || !lift) {
       const text = (content.front ?? '') + (content.text ?? '');
       const was = before && before.blob === null && before.kind !== 'folder' ? await store.text(id) : null;
-      if (was !== text) reg('t', text);
+      if (was !== text) {
+        reg('t', text);
+        if (id === hiddenId(PLUGINS_FILE)) recordPlugins(p, pluginList(was) ?? [], pluginList(text));
+      }
       return;
     }
 
@@ -623,6 +633,17 @@ export function engine(fs: StoreFs, opts: EngineOptions): Engine {
     }
     for (const [k, a] of changes) reg(k, a, schedStamp(a, c, had.get(k)));
     for (const r of lift.reviews ?? []) p.ops.push({ t: 'r', f: r.file, l: r.line });
+  };
+
+  /** Each plugin the list turned on or off, a register of its own: two devices that change different ones both stand. */
+  const recordPlugins = (p: Pending, was: string[], now: string[] | null): void => {
+    if (!now) return;
+    const c = clk.tick();
+    const ids = new Set(now);
+    for (const [id, v] of [...now.filter((x) => !was.includes(x)).map((x): [string, string | null] => [x, '1']), ...was.filter((x) => !ids.has(x)).map((x): [string, string | null] => [x, null])]) {
+      p.regs.push({ key: `${PLUGIN}${id}`, stamp: c, value: v });
+      p.ops.push({ t: 'g', k: `${PLUGIN}${id}`, v, c });
+    }
   };
 
   /** Whether a row is dead, by the registers as they are stored: for a row a merge has not read. */
@@ -1241,6 +1262,26 @@ export function engine(fs: StoreFs, opts: EngineOptions): Engine {
         else pairs.add(r.key.slice(3));
       }
       view.pairs = [...pairs].sort();
+    }
+    // which plugins are on: the file as the later write left it, then each plugin as its own register says
+    const pluginsId = hiddenId(PLUGINS_FILE);
+    if ([...dirty.keys()].some((k) => k.startsWith(PLUGIN) || k === `${pluginsId}|t`)) {
+      const put = view.puts.find((x) => x.at.id === pluginsId);
+      const row = door.row(pluginsId);
+      const text = put ? put.content?.text ?? null : row ? await store.text(pluginsId) : null;
+      const base = pluginList(text);
+      if (base && (put || row)) {
+        const on = new Set(base);
+        const regs = new Map((await store.regsUnder([PLUGIN])).map((r) => [r.key, r.value]));
+        for (const r of dirty.values()) if (r.key.startsWith(PLUGIN)) regs.set(r.key, r.value);
+        for (const [k, v] of regs) { if (v === null) on.delete(k.slice(PLUGIN.length)); else on.add(k.slice(PLUGIN.length)); }
+        // the same plugins leave the file as it is, in the order it has
+        if ([...on].sort().join() !== [...base].sort().join()) {
+          const merged = `${JSON.stringify([...on].sort(), null, 2)}\n`;
+          if (put) put.content = { front: null, text: merged };
+          else view.puts.push({ at: row!, content: { front: null, text: merged } });
+        }
+      }
     }
 
     if (!file && !view.puts.length && !view.removes.length && !view.ink?.length && !shifted) return;

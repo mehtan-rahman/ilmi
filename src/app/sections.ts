@@ -12,7 +12,6 @@ import { doneLine } from './items.js';
 import { popMenu, type PopItem } from './popMenu.js';
 import { useApp, type CaretHeading } from './store.js';
 import { currentVault, note } from './vault.js';
-import { canDraw, drawAction } from './ink.js';
 
 /** How a write reaches a document: the reader's writer when one is open on it (`Reader.tsx` registers it). */
 type WriteThrough = (path: string, mutate: (doc: Doc) => void) => Promise<unknown> | null;
@@ -118,5 +117,5 @@ export function sectionActions(status: SectionStatus, at: CaretHeading, read?: S
 /** The heading's context menu, at the pointer. */
 export function sectionMenu(x: number, y: number, at: CaretHeading, read: SectionSchedule | undefined): HTMLElement {
   // on an iPad: a page of working under it (milestone 58)
-  return popMenu({ left: x, top: y, bottom: y }, [...sectionActions(statusOf(read), at, read), ...(canMove(at.path) ? [moveAction(at)] : []), ...(canDraw(at.path) ? [drawAction(at)] : [])], 'section-menu');
+  return popMenu({ left: x, top: y, bottom: y }, [...sectionActions(statusOf(read), at, read), ...(canMove(at.path) ? [moveAction(at)] : [])], 'section-menu');
 }

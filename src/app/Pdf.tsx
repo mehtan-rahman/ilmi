@@ -29,27 +29,29 @@
 // the pages scroll to them. Nothing is written into the PDF, ever; every
 // change goes to the Markdown, through the open note's writer.
 //
-// A page may be written on (milestone 67). On an iPad the Pencil's touch on
-// a page opens the canvas over that page (`ink.ts`), where 57 had it box;
-// a finger still scrolls and boxes after its hold, and the mouse boxes.
-// What is written is strokes in the store, found by the PDF's hash and the
-// page's number, and every device lays the picture made of them over the
-// page (`PageInk`), the Mac too.
+// A page may be written on (milestones 67, 69). On an iPad the Pencil writes
+// where it lands, its first touch a stroke, on a canvas lying over the page
+// and scrolling with it (`ink.ts`); the pages are a surface, each one near
+// the screen a sheet. A finger still scrolls and boxes after its hold, and
+// the mouse boxes. What is written is strokes in the store, found by the
+// PDF's hash and the page's number, and every device lays the picture made
+// of them over the page (`PageInk`), the Mac too; while a canvas lies over a
+// page its picture stands aside, the same strokes twice otherwise.
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { boxesEnd, formatClip, meta, sectionDismissed, setField, type Box, type Doc } from '../format/index.js';
 import { boxAround, countIn, findAll, findText, jumpTarget, linesOf, refOf, sectionName, type Found, type PageItem } from '../pdf/index.js';
 import { pickPos, type Band } from '../reader/index.js';
 import { addPassage, passagesOf, pointOn, sectionState, type Passage } from '../schedule/index.js';
-import { addToPage, childDirOf, isPdfPath, type StoreFs } from '../vault/index.js';
+import { addToPage, childDirOf, isPdfPath, type InkStroke, type StoreFs } from '../vault/index.js';
 import { CueActions } from '../plugins/CueActions.js';
 import { onPluginAction, publishSelection, toPluginSelection, type PluginSelection } from '../plugins/index.js';
 import { noteOf, notesTabOf, titleOf } from './names.js';
 import { besideAt } from './panes.js';
 import { ensureNote, openNotes, toggleNotes } from './book.js';
 import { TextLayer, pageBits, type PDFDocumentProxy } from './pdfjs.js';
-import { acquirePdf, itemsOf, pagePaper } from './bookPdf.js';
-import { hasCanvas, writeOn } from './ink.js';
+import { acquirePdf, itemsOf } from './bookPdf.js';
+import { addSurface, afterScene, covered, fillSheet, hasCanvas, inContent, pagePaper, portOf, restSheet, sceneSoon, type PenEvent, type SheetSpec, type Surface } from './ink.js';
 import { Crumbs } from './Crumbs.js';
 import { StudyButton } from './StudyButton.js';
 import { ExamTag } from './ExamTag.js';
@@ -210,7 +212,7 @@ const inkStore = (): StoreFs | null => {
 };
 
 /** What is written on a page, laid over it: a picture of the whole page made from its strokes, on nothing. `rev` moves when the strokes change. */
-function PageInk({ hash, page, w, h, rev, rect }: { hash: string; page: number; w: number; h: number; rev: number; rect: Rect }) {
+function PageInk({ hash, page, w, h, rev, rect, live, onShown }: { hash: string; page: number; w: number; h: number; rev: number; rect: Rect; live: boolean; onShown(page: number): void }) {
   const [url, setUrl] = useState<string | null>(null);
   useEffect(() => {
     const fs = inkStore();
@@ -224,7 +226,7 @@ function PageInk({ hash, page, w, h, rev, rect }: { hash: string; page: number; 
     }, console.error);
     return () => { live = false; if (made) URL.revokeObjectURL(made); };
   }, [hash, page, w, h, rev]);
-  return url ? <img className="page-ink" data-page={page} data-rev={rev} src={url} alt="" draggable={false} style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }} /> : null;
+  return url ? <img className="page-ink" data-page={page} data-rev={rev} data-live={live ? '1' : undefined} src={url} alt="" draggable={false} onLoad={() => onShown(page)} style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }} /> : null;
 }
 
 /** A passage's boxes on the pages, its heading's name, its cards, its state. */
@@ -310,18 +312,78 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     const off = fs.onPageInk((h, n) => { if (h === hash) void look(n); });
     return () => { live = false; off(); };
   }, [hash]);
-  /** The Pencil on a page: the canvas over it, the page's picture under the strokes. */
-  const writing = useRef(false);
-  const writeHere = async (n: number) => {
-    if (!pdf || !hash || writing.current) return;
-    writing.current = true;
-    try {
-      await writeOn(hash, n, await pagePaper(pdf, n));
-    } finally {
-      writing.current = false;
-    }
-  };
+  /** The pages a canvas lies over just now: their pictures stand aside. */
+  const [liveInk, setLiveInk] = useState<ReadonlySet<number>>(new Set());
+  const inkedRef = useRef(inked);
+  inkedRef.current = inked;
+  /** Waiting for a page's picture to be on the screen. */
+  const shownWaits = useRef(new Map<number, () => void>());
+  const pictureShown = useCallback((n: number) => { shownWaits.current.get(n)?.(); shownWaits.current.delete(n); }, []);
 
+  // ── written on where the Pencil lands: the pages near the screen are sheets, each lying where its page lies ──
+  useEffect(() => {
+    const fs = inkStore();
+    const sc = wrapRef.current?.closest<HTMLElement>('.book-pages, .pane-body');
+    if (!hash || !fs || !sc || !hasCanvas() || status !== 'ok') return;
+    const hostId = `pages:${id}`;
+    const sheetOf = (n: number) => `p.${hash}.${n}`;
+    const pageOfSheet = (sheet: string): number | null => (sheet.startsWith(`p.${hash}.`) ? Number(sheet.slice(hash.length + 3)) : null);
+    /** What each sheet was last filled at: the count a page's strokes move by. */
+    const filled = new Map<number, number>();
+    const fill = (n: number) => {
+      const rev = inkedRef.current[n];
+      if (rev === undefined || filled.get(n) === rev) return;
+      filled.set(n, rev);
+      afterScene(() => void fillSheet(sheetOf(n), pagePaper(fs, hash, n), () => fs.pageInkFile(hash, n, 'drawing')).catch((e: unknown) => { filled.delete(n); console.error(e); }));
+    };
+    const surface: Surface = {
+      host() {
+        if (!sc.isConnected || !sc.getClientRects().length) return null;
+        const { view, port, top, height } = portOf(sc, viewRef.current?.querySelector('.meta'));
+        if (port.w <= 0 || port.h <= 0 || covered(sc, port)) return { id: hostId, view, port: { ...port, h: 0 }, top, height, open: null, sheets: [] };
+        const sheets: SheetSpec[] = [];
+        for (const [n, el] of pageEls.current) {
+          const r = inContent(sc, el);
+          if (r.y + r.h < top - AHEAD || r.y > top + view.h + AHEAD) continue;
+          sheets.push({ id: sheetOf(n), frame: r, hit: r, zoom: scaleRef.current });
+          fill(n);
+        }
+        return { id: hostId, view, port, top, height, open: null, sheets };
+      },
+      made(sheet) {
+        const n = pageOfSheet(sheet);
+        if (n === null) return;
+        filled.delete(n);
+        fill(n);
+      },
+      paper(sheet) {
+        const n = pageOfSheet(sheet);
+        return n === null ? null : pagePaper(fs, hash, n);
+      },
+      began(e: PenEvent) {
+        const n = pageOfSheet(e.sheet);
+        if (n === null) return;
+        // the Pencil writes: whatever a finger was about here is let go, and the keys are the pages'
+        (document.activeElement as HTMLElement | null)?.blur?.();
+        setLiveInk((s) => new Set(s).add(n));
+      },
+      async kept(sheet: string, strokes: InkStroke[]) {
+        const n = pageOfSheet(sheet);
+        if (n === null) return;
+        // not waited for: the next keep does not stand behind a picture
+        void (async () => {
+          if (strokes.length) await new Promise<void>((done) => { shownWaits.current.set(n, done); setTimeout(done, 3000); });
+          setLiveInk((s) => { const next = new Set(s); next.delete(n); return next; });
+          await new Promise((r) => setTimeout(r, 34));
+          await restSheet(sheet);
+        })();
+      },
+    };
+    const off = addSurface(surface);
+    const onScroll = () => sceneSoon();
+    sc.addEventListener('scroll', onScroll, { passive: true });
+    return () => { sc.removeEventListener('scroll', onScroll); off(); };
+  }, [hash, status, id]);
   // ── the file, shared with the notes' crops ──
   const range = info?.pages;
   useEffect(() => {
@@ -405,6 +467,9 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     const p = pageRect(b.page);
     return p && { left: p.left + b.x * p.width, top: p.top + b.y * p.height, width: b.w * p.width, height: b.h * p.height };
   }, [pageRect]);
+
+  // a new scale, or strokes come by a merge: the canvases are told
+  useEffect(() => { sceneSoon(); }, [scale, sizes, inked, room]);
 
   // ── rendering, as pages come near ──
   const scaleRef = useRef(scale);
@@ -753,7 +818,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
   // A mouse's drag draws at once; a finger's plain drag is the scroll, so a
   // finger draws after a short hold (`touch.ts`). A double click or ⌥-drag
   // selects text instead. A tap under a finger clears the boxes drawn, as
-  // esc does. The Pencil boxes nothing where it can write (milestone 67).
+  // esc does. The Pencil boxes nothing where it can write (milestones 67, 69).
   const boxing = useRef<{ armed: boolean; abort(): void } | null>(null);
   /** A box is starting: the keys that follow (`e`, `m`) are the pages', not the notes' to type. */
   const settle = () => {
@@ -775,12 +840,8 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     const id = e.pointerId;
     const page = Number(pageEl.dataset.page);
     const begins = pagePress(e.pointerType, hasCanvas() && hash !== null);
-    // the Pencil writes: the canvas comes over this page, and nothing is boxed
-    if (begins === 'write') {
-      settle();
-      void writeHere(page).catch(console.error);
-      return;
-    }
+    // the Pencil writes, and that is the canvas's: nothing is boxed
+    if (begins === 'write') return;
     const x0 = e.clientX;
     const y0 = e.clientY;
     let moved = false;
@@ -1115,7 +1176,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
                   const n = base + i + 1;
                   // a page's writing is made when the page itself is drawn, as it comes near
                   const r = inked[n] !== undefined && rendered.current.has(n) ? pageRect(n) : null;
-                  return r && <PageInk key={n} hash={hash} page={n} w={s.w} h={s.h} rev={inked[n]!} rect={r} />;
+                  return r && <PageInk key={n} hash={hash} page={n} w={s.w} h={s.h} rev={inked[n]!} rect={r} live={liveInk.has(n)} onShown={pictureShown} />;
                 })}
               </div>
             )}

@@ -188,6 +188,22 @@ int ilmi_ink_page(const uint8_t *recs, size_t len, double w, double h, double sc
   }
 }
 
+/// What a drawing's strokes cover, in its points: four little-endian doubles (left, top, width, height), or nothing for none (milestone 69).
+int ilmi_ink_bounds(const uint8_t *data, size_t len, uint8_t **out, size_t *out_len) {
+  @autoreleasepool {
+    named();
+    if (INK_AVAILABLE) {
+      PKDrawing *d = [[PKDrawing alloc] initWithData:[NSData dataWithBytes:data length:len] error:nil];
+      if (!d) return 2;
+      if (!d.strokes.count) return give([NSData data], out, out_len);
+      CGRect r = d.bounds;
+      double b[4] = {r.origin.x, r.origin.y, r.size.width, r.size.height};
+      return give([NSData dataWithBytes:b length:sizeof b], out, out_len);
+    }
+    return 1;
+  }
+}
+
 /// A drawing of `lines` lines of handwriting-sized strokes, `per` a line, made up from `seed`: what the tests and a measurement draw on.
 int ilmi_ink_sample(uint32_t lines, uint32_t per, uint32_t seed, uint8_t **out, size_t *out_len) {
   @autoreleasepool {

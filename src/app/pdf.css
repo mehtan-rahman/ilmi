@@ -216,6 +216,8 @@ html[data-mobile="1"] .pgut { padding: 8px 8px; margin: -6px -5px; }
 /* what is written on the pages (milestone 67): a picture of each page's strokes over it, under the boxes; on dark paper it is turned as the page is */
 .pdf-ink { position: absolute; inset: 0; pointer-events: none; z-index: 2; }
 .page-ink { position: absolute; display: block; pointer-events: none; -webkit-user-select: none; user-select: none; }
+/* a canvas lies over this page: the same strokes */
+.page-ink[data-live] { visibility: hidden; }
 [data-theme="dark"] .page-ink { filter: invert(0.92) hue-rotate(180deg); }
 [data-theme="eink"] .page-ink { filter: grayscale(1) contrast(1.1); }
 

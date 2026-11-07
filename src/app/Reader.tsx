@@ -15,7 +15,7 @@ import {
   blockAt, blocksEqual, cardDue, cardsKey, cellLines, classifyRaw, insertCardItem, editorialRanges, flatRanges, fromDoc, frozenKey, imagesKey, indentWidth, inlineRanges, insertCard, isMathEdit,
   linkTarget, literalSpans, makeState, markerKey, markerNumber, markerPos, markerRanges, mathEditKey, mathSplit, passage, pickPos, pressed, schema, setLink,
   setReadPos, splitBlocks, atomFind, markFinds, toggleInline, toggleTask, type Band, type InlineRange, type InlineToggle, type LinkTarget, type Passage, type RawShape,
-  askImageKey, askDrawKey, closeAtMatch, dirAttr, strongDir, withBases, type Dir, findKey, insertImages, pickSlash, replaceAll, replaceMatch, slashContext, slashItems, slashKey, htmlPasteImages,
+  askImageKey, closeAtMatch, dirAttr, strongDir, withBases, type Dir, findKey, insertImages, pickSlash, replaceAll, replaceMatch, slashContext, slashItems, slashKey, htmlPasteImages,
   type FindMeta, type FindState, type SlashItem, type SlashState, textOf,
   bookKey, CODE_LANGS, addColumn, addRow, cellAt, alignColumn, codeHTML, codeLang, deleteColumn, deleteRow, foldKey, foldedKeys, foldsHiding, ruleEndIndex, langOf, setCodeLang, type Align, type FoldMeta,
 } from '../reader/index.js';
@@ -25,7 +25,9 @@ import { CueActions } from '../plugins/CueActions.js';
 import { onPluginAction, publishSelection as publishPluginSelection, runBlockHooks, toPluginSelection, usePlugins, wantsBlocks, type PluginSelection } from '../plugins/index.js';
 import { Composer } from './Composer.js';
 import { imageLoader } from './images.js';
-import { draw, redraw } from './ink.js';
+import { addSurface } from './ink.js';
+import { noteInk, type NoteInk } from './noteInk.js';
+import { inkLines } from '../reader/inkArea.js';
 import { imagePicker, pageDrops, readImagePath, type ImageFile } from './pageImages.js';
 import { dueLabel } from './items.js';
 import { titleOf } from './names.js';
@@ -1329,8 +1331,8 @@ export function Reader({ id, active = true, onPages, notes = false }: ReaderProp
   const findRef = useRef<HTMLInputElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const landRef = useRef<(files: ImageFile[], at?: { x: number; y: number }) => void>(() => {});
+  const inkRef = useRef<NoteInk | null>(null);
   const askImageRef = useRef<() => void>(() => {});
-  const askDrawRef = useRef<() => void>(() => {});
   const openLinkRef = useRef<(target: LinkTarget) => void>(() => {});
   const selRef = useRef<Sel | null>(null);
   selRef.current = sel;
@@ -1480,6 +1482,9 @@ export function Reader({ id, active = true, onPages, notes = false }: ReaderProp
     let live = true;
     // the images the text names, from the vault as blob URLs, let go with the view
     const images = imageLoader(vault, id, () => useApp.getState().remoteImages);
+    // where there is a canvas the note is written on where the Pencil lands (milestone 69)
+    const ink = useApp.getState().mobile ? noteInk(id, addSurface) : null;
+    inkRef.current = ink;
 
     const build = (loaded: Loaded) => {
       const m = meta(loaded.doc);
@@ -1490,6 +1495,7 @@ export function Reader({ id, active = true, onPages, notes = false }: ReaderProp
         images: images.load,
         folds: useApp.getState().folds[id] ?? [],
         ...(bookedRef.current ? { book: bookOptions(id) } : {}),
+        ...(ink ? { ink: () => ink.boxes } : {}),
       });
       const view = viewRef.current;
       if (view) {
@@ -1500,6 +1506,7 @@ export function Reader({ id, active = true, onPages, notes = false }: ReaderProp
         view.updateState(next);
         followSlash(view, next);
         followFind(view, next);
+        ink?.changed();
       } else {
         viewRef.current = new EditorView(mount, {
           state,
@@ -1525,11 +1532,11 @@ export function Reader({ id, active = true, onPages, notes = false }: ReaderProp
             }
             if (tr.docChanged || tr.getMeta(markerKey) !== undefined) measure();
             if (tr.docChanged) hookBlocks();
+            if (tr.docChanged || tr.getMeta(imagesKey) !== undefined) ink?.changed();
             if (tr.selectionSet || tr.docChanged) publishSelection(next);
             followSlash(this, next);
             followFind(this, next);
             if (tr.getMeta(askImageKey)) askImageRef.current();
-            if (tr.getMeta(askDrawKey)) askDrawRef.current();
           },
           handleClickOn,
           handleClick,
@@ -1580,6 +1587,7 @@ export function Reader({ id, active = true, onPages, notes = false }: ReaderProp
         pageDrops.set(dom, (paths, x, y) => {
           void Promise.all(paths.map(readImagePath)).then((got) => landRef.current(got, { x, y }), (e: unknown) => console.error(e));
         });
+        ink?.attach(viewRef.current);
       }
       setBlocks(loaded.doc.blocks);
       measure();
@@ -1622,6 +1630,8 @@ export function Reader({ id, active = true, onPages, notes = false }: ReaderProp
     return () => {
       live = false;
       off();
+      ink?.destroy();
+      inkRef.current = null;
       writer.flush();
       if (viewRef.current) pageDrops.delete(viewRef.current.dom);
       viewRef.current?.destroy();
@@ -1668,30 +1678,17 @@ export function Reader({ id, active = true, onPages, notes = false }: ReaderProp
     if (view) view.dispatch(view.state.tr.setMeta(imagesKey, 'reset'));
   }, [remoteImages]);
 
-  // a page of ink changed (drawn on, or merged): its picture is made again, so every image is looked at again
+  // a page of ink changed (written on, or merged): its picture is made again, and the other images stay as they are
   const inkRev = useApp((s) => s.inkRev);
   const inkWas = useRef(inkRev);
   useEffect(() => {
     if (inkWas.current === inkRev) return;
     inkWas.current = inkRev;
     const view = viewRef.current;
-    if (view) view.dispatch(view.state.tr.setMeta(imagesKey, 'reset'));
+    if (!view) return;
+    for (const { src } of inkLines(view.state.doc)) view.dispatch(view.state.tr.setMeta(imagesKey, { again: src }));
+    inkRef.current?.reread();
   }, [inkRev]);
-
-  // on an iPad a tap on a page of ink's picture opens the canvas on it again (milestone 58)
-  const canvasHere = useApp((s) => s.mobile);
-  useEffect(() => {
-    const mount = mountRef.current;
-    if (!mount || !canvasHere) return;
-    const onTap = (e: MouseEvent) => {
-      const img = (e.target as HTMLElement | null)?.closest<HTMLImageElement>('img.md-img');
-      const src = img?.dataset.src;
-      if (!img || !src || !mount.contains(img)) return;
-      void redraw(id, src).catch(console.error);
-    };
-    mount.addEventListener('click', onTap);
-    return () => mount.removeEventListener('click', onTap);
-  }, [id, canvasHere]);
 
   // a card opened from the palette or a query: once the document is built,
   // its node is selected (the inspector follows) and scrolled to; a card
@@ -1926,13 +1923,6 @@ export function Reader({ id, active = true, onPages, notes = false }: ReaderProp
       (paths) => Promise.all(paths.map(readImagePath)).then((got) => landRef.current(got)),
       (e: unknown) => console.error(e),
     );
-  };
-  // `draw` picked from the insert menu (an iPad): a page of working under the heading the caret is under
-  askDrawRef.current = () => {
-    const view = viewRef.current;
-    if (!view) return;
-    const at = headingBefore(view.state.doc, view.state.selection.$from.index(0));
-    void draw(id, at ? { nth: at.nth, text: at.text } : null).catch(console.error);
   };
   const pickRow = (item: SlashItem) => {
     const view = viewRef.current;

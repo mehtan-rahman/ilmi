@@ -12,6 +12,7 @@
 // view adds node views on top.
 
 import { bookPlugin, type BookOptions } from './book.js';
+import { inkAreas, type InkBoxes } from './inkArea.js';
 import { baseKeymap, chainCommands, exitCode } from 'prosemirror-commands';
 import { gapCursor } from 'prosemirror-gapcursor';
 import { history, redo, undo } from 'prosemirror-history';
@@ -152,7 +153,7 @@ export type ImageLoader = (src: string) => Promise<Exclude<ImageState, 'pending'
 export const imagesKey = new PluginKey<Map<string, ImageState>>('images');
 
 /** `tr.setMeta(imagesKey, …)`: one source's state, or `'reset'` to forget them all and look again. */
-export type ImagesMeta = { src: string; state: ImageState } | 'reset';
+export type ImagesMeta = { src: string; state: ImageState } | { again: string } | 'reset';
 
 /** Every image source in the document, with its range and the text node's position. */
 function imagesIn(doc: PMNode): { src: string; alt: string }[] {
@@ -179,6 +180,7 @@ const images = (load: ImageLoader | undefined): Plugin<Map<string, ImageState>> 
         if (meta === undefined) return cur;
         if (meta === 'reset') return new Map();
         const next = new Map(cur);
+        if ('again' in meta) { next.delete(meta.again); return next; }
         next.set(meta.src, meta.state);
         return next;
       },
@@ -192,6 +194,8 @@ const images = (load: ImageLoader | undefined): Plugin<Map<string, ImageState>> 
         if (!load) return;
         const known = imagesKey.getState(view.state) ?? new Map<string, ImageState>();
         if (known.size === 0 && was.size > 0) asked = new Set();
+        // one source asked for again (a page of ink written on): the others stay drawn
+        for (const src of was.keys()) if (!known.has(src)) asked.delete(src);
         was = known;
         for (const { src } of imagesIn(view.state.doc)) {
           if (known.has(src) || asked.has(src)) continue;
@@ -680,6 +684,8 @@ export interface StateOptions {
   folds?: readonly string[];
   /** A book's notes: the chips under its sections' headings and their inline crops (`book.ts`). */
   book?: BookOptions;
+  /** The ink areas, where there is a canvas (milestone 69): how each stands, by its line's source. */
+  ink?: () => InkBoxes;
 }
 
 export function makeState(blocks: Block[], opts: StateOptions): EditorState {
@@ -687,7 +693,7 @@ export function makeState(blocks: Block[], opts: StateOptions): EditorState {
   const state = EditorState.create({
     doc: toDoc(blocks),
     // images before marks: the marks read the images' state as it is after the same transaction
-    plugins: [frozenPlugin(opts.frozen), slashPlugin({ openMath: (tr, pos) => tr.setMeta(mathEditKey, pos) }), findPlugin, rules, enterRules, formatKeys, keys, keymap(baseKeymap), history(), gapCursor(), mathReform, mathEdit, images(opts.images), marks, marker, direction, codeColours, foldPlugin, tablePlugin, ...(opts.book ? [bookPlugin(opts.book)] : [])],
+    plugins: [...(opts.ink ? [inkAreas(opts.ink)] : []), frozenPlugin(opts.frozen), slashPlugin({ openMath: (tr, pos) => tr.setMeta(mathEditKey, pos) }), findPlugin, rules, enterRules, formatKeys, keys, keymap(baseKeymap), history(), gapCursor(), mathReform, mathEdit, images(opts.images), marks, marker, direction, codeColours, foldPlugin, tablePlugin, ...(opts.book ? [bookPlugin(opts.book)] : [])],
   });
   const read = opts.pos === null ? state : state.apply(state.tr.setMeta(markerKey, opts.pos));
   return folds.length ? read.apply(read.tr.setMeta(foldKey, { keys: folds } satisfies FoldMeta)) : read;

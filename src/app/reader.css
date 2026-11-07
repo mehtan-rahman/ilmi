@@ -193,6 +193,13 @@
 .md-img-slot { display: none; }
 /* a page of ink is drawn dark on nothing: on dark paper its strokes are the page's own colour */
 [data-theme="dark"] .md-img[data-ink] { filter: invert(1) hue-rotate(180deg); }
+/* an ink area (an iPad, milestone 69): writing in the flow, as tall as it is, where it was written. Nothing of
+   its line shows; on the Mac it is the picture under its caption as any image is */
+.draft-doc p.dd-img.ink-area { position: relative; margin: 0; text-align: left; font-size: 0; color: transparent; caret-color: transparent; }
+.draft-doc p.dd-img.ink-area .md-img { position: absolute; left: var(--ink-l); top: var(--ink-t); width: var(--ink-w) !important; max-width: none; max-height: none; margin: 0; }
+.draft-doc p.dd-img.ink-area.ink-live .md-img { visibility: hidden; }
+.draft-doc p.dd-img.ink-area .md-alt, .draft-doc p.dd-img.ink-area .md-mark { font-size: 0; color: transparent; }
+.draft-doc .ink-gap { display: block; }
 .md-alt.broken { font-family: var(--mono); font-size: 0.86em; color: var(--fg-3); }
 /* an image alone in a paragraph: the picture, its alt under it as a caption */
 .draft-doc p.dd-img { text-align: center; }

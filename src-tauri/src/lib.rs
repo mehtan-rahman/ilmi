@@ -537,16 +537,60 @@ fn ink_split(drawing: String) -> Result<Vec<store::InkStroke>, String> {
     Ok(tauri_plugin_ink::split(&bytes)?.into_iter().map(|s| store::InkStroke { stroke: s.key, at: s.at, data: b64.encode(s.data) }).collect())
 }
 
-/// The canvas over the web view (iOS), until `done`: the drawing it held. `finger` lets a finger draw, for a check on a simulator. With `paper` (a picture in base64) and its `width` and `height` in points, the canvas is that page of a book (milestone 67).
+/// What a drawing's strokes cover, in its own points (milestone 69): where a picture cut to them lies.
 #[tauri::command]
-async fn ink_open(ink: tauri::State<'_, tauri_plugin_ink::Ink<tauri::Wry>>, drawing: Option<String>, finger: Option<bool>, paper: Option<String>, width: Option<f64>, height: Option<f64>) -> Result<tauri_plugin_ink::Page, String> {
-    ink.open(tauri_plugin_ink::Open { drawing, finger: finger.unwrap_or(false), paper, width, height }).await
+fn ink_bounds(drawing: String) -> Result<Option<[f64; 4]>, String> {
+    use base64::Engine as _;
+    let bytes = base64::engine::general_purpose::STANDARD.decode(drawing).map_err(|e| e.to_string())?;
+    tauri_plugin_ink::bounds(&bytes)
 }
 
-/// The open canvas: how many strokes it holds, and its drawing once it has changed and been left alone for `quiet_ms`.
+/// Where the sheets lie now, in each scroller's content: the canvases over the web view follow.
 #[tauri::command]
-async fn ink_peek(ink: tauri::State<'_, tauri_plugin_ink::Ink<tauri::Wry>>, quiet_ms: u32) -> Result<tauri_plugin_ink::Page, String> {
-    ink.peek(quiet_ms).await
+async fn ink_scene(ink: tauri::State<'_, tauri_plugin_ink::Ink<tauri::Wry>>, scene: serde_json::Value) -> Result<serde_json::Value, String> {
+    ink.scene(scene).await
+}
+
+/// What a sheet holds, from the store.
+#[tauri::command]
+async fn ink_fill(ink: tauri::State<'_, tauri_plugin_ink::Ink<tauri::Wry>>, sheet: String, drawing: Option<String>) -> Result<serde_json::Value, String> {
+    ink.fill(&sheet, drawing.as_deref()).await
+}
+
+/// A sheet's drawing, when it has changed.
+#[tauri::command]
+async fn ink_take(ink: tauri::State<'_, tauri_plugin_ink::Ink<tauri::Wry>>, sheet: String) -> Result<tauri_plugin_ink::Taken, String> {
+    ink.take(&sheet).await
+}
+
+/// A sheet's canvas hidden: the page is showing its picture.
+#[tauri::command]
+async fn ink_rest(ink: tauri::State<'_, tauri_plugin_ink::Ink<tauri::Wry>>, sheet: String) -> Result<(), String> {
+    ink.rest(&sheet).await
+}
+
+/// A dev run's: a finger stands in for the Pencil, which no simulator has.
+#[tauri::command]
+async fn dev_ink_pen(ink: tauri::State<'_, tauri_plugin_ink::Ink<tauri::Wry>>, on: bool) -> Result<(), String> {
+    if !cfg!(debug_assertions) {
+        return Err("a dev run's".to_string());
+    }
+    ink.pen(on).await
+}
+
+/// A dev run's: a sheet's canvas emptied as an eraser would.
+#[tauri::command]
+async fn dev_ink_wipe(ink: tauri::State<'_, tauri_plugin_ink::Ink<tauri::Wry>>, sheet: String) -> Result<(), String> {
+    if !cfg!(debug_assertions) {
+        return Err("a dev run's".to_string());
+    }
+    ink.wipe(&sheet).await
+}
+
+/// How the canvases stand, for the checks.
+#[tauri::command]
+async fn dev_ink_state(ink: tauri::State<'_, tauri_plugin_ink::Ink<tauri::Wry>>) -> Result<serde_json::Value, String> {
+    ink.state().await
 }
 
 #[tauri::command(async)]
@@ -870,7 +914,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_ink::init())
         .manage(store::Stores::default())
-        .invoke_handler(tauri::generate_handler![allow_vault, allow_hidden, read_dropped, read_dropped_bytes, read_anki_package, read_epub, read_plugin_zip, platform, dev_env, dev_web_memory, dev_nudge_serve, dev_nudge_drop, dev_nudge_listeners, set_recent_vaults, store_list, store_create, store_delete, store_rows, store_text, store_put, store_remove, store_version, store_set_version, store_doc, store_places, store_digests, store_review_files, store_reviews, store_reviews_put, store_same, store_same_put, store_originals, store_original_put, store_blob_put, store_blob_get, store_batch, store_meta, store_regs, store_regs_under, store_crdt, store_outbox, store_outbox_count, store_blob_has, store_regs_page, store_blobs_away, store_blob_take, store_blob_range, store_ink, store_ink_file, store_ink_pages, store_ink_page, dev_ink_sample, ink_split, ink_open, ink_peek, storage_list, storage_read, storage_write, storage_remove, storage_blob_up, storage_blob_down, dev_storage_serve, zip_folder, sync_status, sync_init, sync_init_bare, sync_set_remote, sync_clone, sync_changes, sync_commit, sync_fetch, sync_merge, sync_resolve, sync_push])
+        .invoke_handler(tauri::generate_handler![allow_vault, allow_hidden, read_dropped, read_dropped_bytes, read_anki_package, read_epub, read_plugin_zip, platform, dev_env, dev_web_memory, dev_nudge_serve, dev_nudge_drop, dev_nudge_listeners, set_recent_vaults, store_list, store_create, store_delete, store_rows, store_text, store_put, store_remove, store_version, store_set_version, store_doc, store_places, store_digests, store_review_files, store_reviews, store_reviews_put, store_same, store_same_put, store_originals, store_original_put, store_blob_put, store_blob_get, store_batch, store_meta, store_regs, store_regs_under, store_crdt, store_outbox, store_outbox_count, store_blob_has, store_regs_page, store_blobs_away, store_blob_take, store_blob_range, store_ink, store_ink_file, store_ink_pages, store_ink_page, dev_ink_sample, ink_split, ink_bounds, ink_scene, ink_fill, ink_take, ink_rest, dev_ink_pen, dev_ink_wipe, dev_ink_state, storage_list, storage_read, storage_write, storage_remove, storage_blob_up, storage_blob_down, dev_storage_serve, zip_folder, sync_status, sync_init, sync_init_bare, sync_set_remote, sync_clone, sync_changes, sync_commit, sync_fetch, sync_merge, sync_resolve, sync_push])
         .setup(|app| {
             // Windows and Linux learn the scheme at run time; macOS reads it
             // from the bundle's Info.plist, which Tauri writes from the

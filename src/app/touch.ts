@@ -5,9 +5,10 @@
 //    once. A finger's plain drag is the scroll, as it is everywhere on an
 //    iPad, so a finger boxes after a short hold (`HOLD_MS`); `boxStart`
 //    says which, `Pdf.tsx` draws.
-//  · the Pencil writes on a book's page (milestone 67): where there is a
-//    canvas its touch opens it over that page (`pagePress`, `ink.ts`). 57
-//    had it box at once, as a pen still does where there is no canvas.
+//  · the Pencil writes on a book's page (milestones 67, 69): where there
+//    is a canvas the press is the canvas's, never reaching the page, and
+//    boxes nothing (`pagePress`, `ink.ts`). 57 had it box at once, as a pen
+//    still does where there is no canvas.
 //  · a right-click opens a row's, a heading's or a card's menu. A touch
 //    held still for `LONG_PRESS_MS` and let go is that right-click: the
 //    same `contextmenu` event at the same place, so every menu there was

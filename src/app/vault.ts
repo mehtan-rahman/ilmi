@@ -21,7 +21,6 @@ import { cleanBudget, dueToday, sessionItems } from './items.js';
 import { INTAKE, SESSION, notesPath, queueId, queueScope } from './names.js';
 import { bookShown, inspectorShown } from './layout.js';
 import { activeTab, dropTabs, emptyPanes, openTab, retarget, type OpenOpts, type Panes } from './panes.js';
-import { setCanvas } from '../reader/slash.js';
 import { NEVER, collectionRows, collectionsHome, isMobile, loadPlatform, setCollectionsHome } from './platform.js';
 import { addRecent, decideStart, forgetRecent, vaultName } from './recents.js';
 import { STARTER_TEXT, STARTER_TITLE } from './starter.js';
@@ -814,8 +813,6 @@ export function openInitialVault(): Promise<void> {
   initial ??= (async () => {
     // where the app runs, before anything is drawn by it (`platform.ts`)
     useApp.setState({ mobile: (await loadPlatform()).mobile });
-    // `draw` is among the insert menu's rows where there is a canvas (milestone 58)
-    setCanvas(useApp.getState().mobile);
     if (import.meta.env.DEV) {
       const path = await invoke<string | null>('dev_env', { name: 'ILMI_VAULT' });
       const mode = await invoke<string | null>('dev_env', { name: 'ILMI_SMOKE' });

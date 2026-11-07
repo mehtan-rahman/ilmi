@@ -18,7 +18,7 @@ import { openInitialVault, openNode, rememberTab, setInspector, setSidebar, togg
 import { bookShown, inspectorShown } from './layout.js';
 import { shapeOf } from './platform.js';
 import { installLongPress } from './touch.js';
-import { watchInk } from './ink.js';
+import { watchInk, watchLayout } from './ink.js';
 import './app.css';
 import './chrome.css';
 
@@ -140,6 +140,7 @@ export function App() {
 
   // a page of ink changed in the open collection: the readers showing its picture look again (`ink.ts`)
   useEffect(() => { void watchInk(); }, [vault]);
+  useEffect(() => (mobile ? watchLayout() : undefined), [mobile]);
 
   // the tweaks, as CSS
   useEffect(() => {

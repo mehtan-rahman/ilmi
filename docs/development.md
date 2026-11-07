@@ -231,49 +231,59 @@ TEST_RUNNER_LOG="$C/Library/Application Support/dev.ilmi.app/logs/ilmi.log" TEST
 which starts the app and ends at the smoke's `done` or `failed` line; about
 two and a half minutes). That runner makes fingers only: Xcode 27.2's
 XCUIAutomation has no stylus among its pointer paths, so the Pencil's path
-(a pointer event whose type is `pen`) is driven by events the smoke makes
-itself; since milestone 67 that press opens the canvas over the page. `src/app/touch.ts` holds the three timings (a finger's hold before
+never reaches the page; a dev run says a finger stands in for it
+(`dev_ink_pen`) and the `touch` smoke's one `pen` press is an event it
+makes itself, which boxes nothing. `src/app/touch.ts` holds the three timings (a finger's hold before
 a box, the long press, how long a touch rests before the system's own
 selection is kept off).
 
-`ILMI_SMOKE=ink` (milestone 58) is three runs over one storage folder in
-the same way. The Mac first (`ILMI_VAULT`, `ILMI_STORAGE`), then the
-simulator with `{"mode": "ink", "storage": "<that folder>"}` and
-`TEST_RUNNER_MODE=ink`: a long press on a section's heading in a book's
-notes, `draw`, strokes on the canvas, `done`, a tap on the picture, two
-more strokes, `done`; its `page:` lines say what the page weighs as strokes
-and as a PNG, and its `ink:` line the heading and the count. Then the Mac
-again with `ILMI_VAULT=<the collection's own folder> ILMI_EXPECT=<the
-heading> ILMI_STROKES=<the count>`: the page is under the heading as a
-picture the Mac made from the strokes. The canvas is PencilKit's
-(`src-tauri/ink`: `ios/` is the Swift package Tauri builds into the app,
-`native/ink.m` what reads a drawing as strokes and draws them, on the Mac
-too). A simulator has no Pencil, and the canvas takes a finger only when a
-dev run's smoke is what opened it (`finger`, `src/app/ink.ts`); otherwise
-it is the system's, where the Pencil draws. `npm run fixture:ink` writes
-the corpus's page again (PencilKit on the Mac), and `cargo test -p
-tauri-plugin-ink` in `src-tauri` runs what reads a drawing; `-- --ignored
---nocapture a_page_weighed` prints a made-up page's bytes as strokes and
-as a PNG.
+Ink lies over the web view (milestone 69; `src-tauri/ink`: `ios/` is the
+Swift package Tauri builds into the app, `native/ink.m` what reads a drawing
+as strokes and draws them, on the Mac too). Nothing opens: a layer above the
+web view takes no touch and holds a PencilKit canvas per sheet (an ink area
+or a book's page near the screen), each canvas's drawing recogniser moved
+onto the web view and taking the Pencil only. The layer's `hitTest` hears of
+every touch first and enables the one canvas under it, and takes the Pencil
+from the web view's own recognisers there. `src/app/ink.ts` says where
+things lie (`ink_scene`, in each scroller's content, only when the layout
+changes); the layer finds the scroller's own `UIScrollView` inside the web
+view by its frame and follows its `contentOffset`, so a scroll crosses no
+bridge. `src/app/noteInk.ts` is a note's side, `Pdf.tsx` a book's;
+`src/reader/inkArea.ts` draws an area in the flow. A simulator has no Pencil,
+and `dev_ink_pen` makes a finger one until told otherwise: the same
+canvases and recognisers, with `.direct` among the Pencil's touch types
+(`dev_ink_state` says how everything stands).
 
-`ILMI_SMOKE=pageink` (milestone 67, ink on a book's page) is four runs
-over one storage folder. The Mac (`ILMI_VAULT`, `ILMI_STORAGE`): the
-storage made, then six strokes kept on p. 23 of the sample's book and not
-sent (a Mac has no canvas: the strokes are a made-up drawing of
-PencilKit's, `dev_ink_sample`, kept through `keepPage` in
-`src/app/ink.ts`, which is what the canvas keeps through). The simulator,
-`{"mode": "pageink", "storage": "<that folder>"}` with
-`TEST_RUNNER_MODE=pageink`: a collection made from the storage, a `pen`
-press on p. 23 (an event the smoke makes), the canvas over the page,
-strokes by the rig's finger, `done`, the writing on the page where the
-finger went; then a note of two pages of ink from `draw` in the insert
-menu; its `pageink:` line says the count, where the strokes lie in the
-page's points, and the note. The Mac again with `ILMI_VAULT=<the
-collection's own folder> ILMI_EXPECT=<the count> ILMI_BOX=<where>
-ILMI_NOTE=<the note>`: both writings on the page, shown as a picture. The
-simulator again with `"again": "1", "expect": "<the count>"` added: the
-collection it made, opened as it was left, holds both too. A stroke
-written on a book's page is a row of `ink` under `p.<the PDF's
+`ILMI_SMOKE=ink` is three runs over one storage folder in the same way. The
+Mac first (`ILMI_VAULT`, `ILMI_STORAGE`), then the simulator with
+`{"mode": "ink", "storage": "<that folder>"}` and `TEST_RUNNER_MODE=ink`: a
+stroke between two paragraphs of a long note, the area opening and growing,
+kept when quiet; a finger scrolling it; a tap, the tools gone; a stroke in
+the area and one in the text elsewhere. Its `touch:` and `touches:` lines say
+what a touch cost, `page:` what the page weighs, and `ink:` the two
+paragraphs and the count. Then the Mac again with `ILMI_VAULT=<the
+collection's own folder> ILMI_EXPECT=<the paragraphs> ILMI_STROKES=<the
+count>`: the page is between them as a picture the Mac made from the
+strokes. `npm run fixture:ink` writes the corpus's page again (PencilKit on
+the Mac), and `cargo test -p tauri-plugin-ink` in `src-tauri` runs what reads
+a drawing; `-- --ignored --nocapture a_page_weighed` prints a made-up page's
+bytes as strokes and as a PNG.
+
+`ILMI_SMOKE=pageink` (ink on a book's page) is four runs over one storage
+folder. The Mac (`ILMI_VAULT`, `ILMI_STORAGE`): the storage made, then six
+strokes kept on p. 23 of the sample's book and not sent (a Mac has no canvas:
+the strokes are a made-up drawing of PencilKit's, `dev_ink_sample`, kept
+through `keepPage` in `src/app/ink.ts`). The simulator, `{"mode": "pageink",
+"storage": "<that folder>"}` with `TEST_RUNNER_MODE=pageink`: a collection
+made from the storage, strokes on p. 23 from the first touch, the writing on
+the page where the finger went, the pages scrolled with it; then a note of
+two pages of ink, each opened where the stand-in landed; its `pageink:` line
+says the count, where the strokes lie in the page's points, and the note.
+The Mac again with `ILMI_VAULT=<the collection's own folder> ILMI_EXPECT=<the
+count> ILMI_BOX=<where> ILMI_NOTE=<the note>`: both writings on the page,
+shown as a picture. The simulator again with `"again": "1", "expect": "<the
+count>"` added: the collection it made, opened as it was left, holds both
+too. A stroke written on a book's page is a row of `ink` under `p.<the PDF's
 SHA-256>.<page>` (`pageKey`, `src/vault/store.ts`), no row of the tree.
 
 ## Building the installer
@@ -316,7 +326,7 @@ src/plugins/       the plugin runtime (api.ts is the typed handle, runtime.ts th
 src/sync/          engine.ts merges a collection's changes by CRDT (registers by a clock, a document's text through Loro, the tree and each directory's order from the registers, change files and snapshots in a storage, the PDFs fetched when asked for; src/app/crdt.ts runs it, src/app/storage.ts makes the storages); merge.ts is git sync's merge of one file changed on both devices, src/app/sync.ts its policy over the Rust commands
 plugins/           the plugins the repo ships, built by `npm run plugins`; ilmi.d.ts is the API; see PLUGINS.md
 scripts/           command-line tools, run with tsx
-src-tauri/         the shell (Tauri v2, fs + dialog + http + deep-link + single-instance + opener + log plugins, and ink/, its own: the PencilKit canvas on iOS and a drawing read as strokes; store.rs is a collection's SQLite and blobs, storage.rs an S3 bucket or a WebDAV folder as a storage (and a blob sent or fetched as a stream), devstore.rs the debug build's loopback servers shaped like each, anki.rs reads a package, epub.rs a book, plugin.rs a plugin zip, sync.rs a folder as a git repository over libgit2); gen/apple is the iOS project
+src-tauri/         the shell (Tauri v2, fs + dialog + http + deep-link + single-instance + opener + log plugins, and ink/, its own: the PencilKit canvases on iOS and a drawing read as strokes; store.rs is a collection's SQLite and blobs, storage.rs an S3 bucket or a WebDAV folder as a storage (and a blob sent or fetched as a stream), devstore.rs the debug build's loopback servers shaped like each, anki.rs reads a package, epub.rs a book, plugin.rs a plugin zip, sync.rs a folder as a git repository over libgit2); gen/apple is the iOS project
 ```
 
 ## The documents

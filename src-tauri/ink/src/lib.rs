@@ -1,7 +1,8 @@
-//! ilmi's ink (milestone 58).
+//! ilmi's ink (milestones 58, 69).
 //!
-//! Two things, both PencilKit's. On iOS a canvas over the web view, which is the plugin proper: a Swift
-//! package (`ios/`) Tauri builds and links, reached through [`Ink`]. And, on the Mac as on iOS, what reads a
+//! Two things, both PencilKit's. On iOS the canvases over the web view that the Pencil writes on where it
+//! lands, which is the plugin proper: a Swift package (`ios/`) Tauri builds and links, reached through
+//! [`Ink`]. And, on the Mac as on iOS, what reads a
 //! drawing (`native/ink.m`): [`split`] takes one apart into its strokes, each with a name that outlives a
 //! save, [`join`] puts strokes together as the drawing PencilKit writes, [`picture`] draws them as a PNG, and
 //! [`page_picture`] (milestone 67) draws them as they lie on a page of a size: the writing on a book's page.
@@ -28,6 +29,7 @@ mod native {
         pub fn ilmi_ink_join(recs: *const u8, len: usize, out: *mut *mut u8, out_len: *mut usize) -> i32;
         pub fn ilmi_ink_picture(recs: *const u8, len: usize, scale: f64, out: *mut *mut u8, out_len: *mut usize) -> i32;
         pub fn ilmi_ink_page(recs: *const u8, len: usize, w: f64, h: f64, scale: f64, out: *mut *mut u8, out_len: *mut usize) -> i32;
+        pub fn ilmi_ink_bounds(data: *const u8, len: usize, out: *mut *mut u8, out_len: *mut usize) -> i32;
         pub fn ilmi_ink_sample(lines: u32, per: u32, seed: u32, out: *mut *mut u8, out_len: *mut usize) -> i32;
         pub fn ilmi_ink_free(p: *mut u8);
     }
@@ -102,6 +104,18 @@ pub fn page_picture(strokes: &[&[u8]], w: f64, h: f64, scale: f64) -> Result<Vec
     native::call(|out, len| unsafe { native::ilmi_ink_page(recs.as_ptr(), recs.len(), w, h, scale, out, len) })
 }
 
+/// What the strokes of a drawing cover, in its own points: left, top, width, height. None for no strokes (milestone 69).
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+pub fn bounds(drawing: &[u8]) -> Result<Option<[f64; 4]>, String> {
+    // SAFETY: as in `split`
+    let b = native::call(|out, len| unsafe { native::ilmi_ink_bounds(drawing.as_ptr(), drawing.len(), out, len) })?;
+    if b.len() < 32 {
+        return Ok(None);
+    }
+    let at = |i: usize| f64::from_le_bytes(b[i * 8..i * 8 + 8].try_into().unwrap());
+    Ok(Some([at(0), at(1), at(2), at(3)]))
+}
+
 /// A made-up drawing: `lines` lines of `per` strokes each.
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 pub fn sample(lines: u32, per: u32, seed: u32) -> Result<Vec<u8>, String> {
@@ -127,49 +141,27 @@ pub fn page_picture(_strokes: &[&[u8]], _w: f64, _h: f64, _scale: f64) -> Result
     Err("no PencilKit on this system".to_string())
 }
 #[cfg(not(any(target_os = "macos", target_os = "ios")))]
+pub fn bounds(_drawing: &[u8]) -> Result<Option<[f64; 4]>, String> {
+    Err("no PencilKit on this system".to_string())
+}
+#[cfg(not(any(target_os = "macos", target_os = "ios")))]
 pub fn sample(_lines: u32, _per: u32, _seed: u32) -> Result<Vec<u8>, String> {
     Err("no PencilKit on this system".to_string())
 }
 
-/// What the canvas is opened with.
-#[derive(Serialize, Debug, Clone, Default)]
-pub struct Open {
-    /// The drawing to go on with, in base64; none for a clean page.
-    pub drawing: Option<String>,
-    /// A finger draws too. For a check on a simulator, where there is no Pencil: left false, the canvas is the system's (the Pencil draws).
-    pub finger: bool,
-    /// A book's page to write on (milestone 67): its picture, in base64 (a PNG or a JPEG). With it the canvas is that page, `width` by `height` points, fitted to the screen's width, and a stroke is where it lies on the page.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub paper: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub width: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub height: Option<f64>,
-}
-
-/// What the canvas holds: at its close, or while it is open (`peek`).
+/// A sheet's drawing, to or from its canvas.
 #[derive(Deserialize, Serialize, Debug, Clone, Default)]
-pub struct Page {
+pub struct Taken {
     /// How many strokes it holds.
     pub strokes: u32,
-    /// The drawing in base64. From `peek`, only when it has changed since the last one given and has been left alone for as long as was asked.
+    /// The drawing in base64, when it has changed since the last one given.
     pub drawing: Option<String>,
-    /// Whether the canvas is open.
-    #[serde(default)]
-    pub open: bool,
-    /// Over a book's page: how far the canvas is zoomed to fit it, and where the page's top left corner is on the screen, in points.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub zoom: Option<f64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub left: Option<f64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub top: Option<f64>,
 }
 
 #[cfg(target_os = "ios")]
 tauri::ios_plugin_binding!(init_plugin_ink);
 
-/// The canvas. On iOS it is there; anywhere else `open` says it is not.
+/// The canvases over the web view (milestone 69). On iOS they are there; anywhere else each call says they are not.
 pub struct Ink<R: Runtime> {
     #[cfg(target_os = "ios")]
     handle: tauri::plugin::PluginHandle<R>,
@@ -177,26 +169,52 @@ pub struct Ink<R: Runtime> {
     _none: std::marker::PhantomData<fn() -> R>,
 }
 
+#[derive(Serialize)]
+struct Sheet<'a> {
+    sheet: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    drawing: Option<&'a str>,
+}
+
 impl<R: Runtime> Ink<R> {
-    /// The canvas over the web view until `done`: what it held then.
-    #[cfg(target_os = "ios")]
-    pub async fn open(&self, with: Open) -> Result<Page, String> {
-        self.handle.run_mobile_plugin_async("open", with).await.map_err(|e| e.to_string())
+    /// Where the sheets lie now: `{ hosts, dark }`, as `InkPlugin.swift` reads it.
+    /// Answers with the sheets it made anew, whose canvases hold nothing yet.
+    pub async fn scene(&self, scene: serde_json::Value) -> Result<serde_json::Value, String> {
+        self.call("scene", scene).await
     }
-    /// The open canvas, looked at: its strokes, and its drawing once it has been quiet for `quiet_ms`.
-    #[cfg(target_os = "ios")]
-    pub async fn peek(&self, quiet_ms: u32) -> Result<Page, String> {
+    /// What a sheet holds, from the store. Answers whether it took it: a sheet being written on keeps what it has.
+    pub async fn fill(&self, sheet: &str, drawing: Option<&str>) -> Result<serde_json::Value, String> {
+        self.call("fill", Sheet { sheet, drawing }).await
+    }
+    /// A sheet's drawing, when it has changed.
+    pub async fn take(&self, sheet: &str) -> Result<Taken, String> {
+        self.call("take", Sheet { sheet, drawing: None }).await
+    }
+    /// A sheet's canvas hidden: the page is showing its picture.
+    pub async fn rest(&self, sheet: &str) -> Result<(), String> {
+        self.call::<_, serde_json::Value>("rest", Sheet { sheet, drawing: None }).await.map(|_| ())
+    }
+    /// A dev run's: a finger stands in for the Pencil.
+    pub async fn pen(&self, on: bool) -> Result<(), String> {
         #[derive(Serialize)]
-        #[serde(rename_all = "camelCase")]
-        struct Peek { quiet_ms: u32 }
-        self.handle.run_mobile_plugin_async("peek", Peek { quiet_ms }).await.map_err(|e| e.to_string())
+        struct Pen { on: bool }
+        self.call::<_, serde_json::Value>("pen", Pen { on }).await.map(|_| ())
+    }
+    /// A dev run's: a sheet's canvas emptied as an eraser would.
+    pub async fn wipe(&self, sheet: &str) -> Result<(), String> {
+        self.call::<_, serde_json::Value>("wipe", Sheet { sheet, drawing: None }).await.map(|_| ())
+    }
+    /// How the canvases stand, for the checks.
+    pub async fn state(&self) -> Result<serde_json::Value, String> {
+        self.call("state", serde_json::json!({})).await
+    }
+
+    #[cfg(target_os = "ios")]
+    async fn call<A: Serialize, T: serde::de::DeserializeOwned>(&self, name: &str, args: A) -> Result<T, String> {
+        self.handle.run_mobile_plugin_async(name, args).await.map_err(|e| e.to_string())
     }
     #[cfg(not(target_os = "ios"))]
-    pub async fn open(&self, _with: Open) -> Result<Page, String> {
-        Err("no canvas on this system".to_string())
-    }
-    #[cfg(not(target_os = "ios"))]
-    pub async fn peek(&self, _quiet_ms: u32) -> Result<Page, String> {
+    async fn call<A: Serialize, T: serde::de::DeserializeOwned>(&self, _name: &str, _args: A) -> Result<T, String> {
         Err("no canvas on this system".to_string())
     }
 }
@@ -268,6 +286,15 @@ mod tests {
         assert_eq!(size(&none), (1224, 1584));
         assert!(none.len() < png.len(), "the strokes are in the one and not the other");
         assert!(page_picture(&refs(&strokes), 0.0, 792.0, 2.0).is_err());
+    }
+
+    #[test]
+    fn a_drawing_says_what_it_covers() {
+        let drawing = sample(2, 3, 5).unwrap();
+        let [x, y, w, h] = bounds(&drawing).unwrap().unwrap();
+        assert!(x > 20.0 && y > 30.0 && w > 40.0 && h > 40.0, "{x} {y} {w} {h}");
+        assert_eq!(bounds(&join(&[]).unwrap()).unwrap(), None, "nothing drawn covers nothing");
+        assert!(bounds(b"not a drawing").is_err());
     }
 
     #[test]

@@ -77,24 +77,6 @@ export function itemsOf(rel: string, pdf: PDFDocumentProxy, page: number): Promi
   return p;
 }
 
-/** How many pixels a point of a page written on is drawn at, for the canvas's paper. */
-const PAPER_SCALE = 2.5;
-
-/** Page `page` of `pdf` as the canvas's paper (milestone 67): its picture as a JPEG in base64, and its size in points. */
-export async function pagePaper(pdf: PDFDocumentProxy, page: number): Promise<{ image: string; width: number; height: number }> {
-  const pg = await pdf.getPage(page);
-  const v1 = pg.getViewport({ scale: 1 });
-  const vp = pg.getViewport({ scale: PAPER_SCALE });
-  const full = document.createElement('canvas');
-  full.width = Math.ceil(vp.width);
-  full.height = Math.ceil(vp.height);
-  // a JPEG has no see-through: the paper is white under what the page draws
-  const cx = full.getContext('2d');
-  if (cx) { cx.fillStyle = '#fff'; cx.fillRect(0, 0, full.width, full.height); }
-  await pg.render({ canvas: full, viewport: vp, intent: 'print' }).promise;
-  return { image: full.toDataURL('image/jpeg', 0.85).replace(/^data:image\/jpeg;base64,/, ''), width: v1.width, height: v1.height };
-}
-
 /** How large a crop may be drawn against the page's own size. */
 const MAX_SCALE = 2.5;
 /** Room kept around a crop, in PDF units. */

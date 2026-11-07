@@ -433,22 +433,27 @@ a right-click, hold: a row, a heading and a deck's
 card open their menus when the finger lifts, and a row held and then moved
 is dragged.
 
-A page of working: hold a section's heading in the notes and choose `draw`
-(or `/draw` where the caret is), and the Pencil's canvas comes over the
-page. Write, then `done`: the page is under that section as a picture, and
-a tap on the picture opens it again to go on. It is kept as its strokes,
-so the Mac and every other device show the same picture without a file
-crossing, and an export writes it as `name/ink-01.png` with its drawing
-beside it, `name/ink-01.pkdrawing`. A note may hold as many pages as you
-draw in it, one under another: that is a notebook.
+Writing with the Pencil: there is nothing to open. Put it to a note and it
+writes there: the text moves apart at the nearest place between two blocks
+and what you write lies in the space, which grows as the writing nears its
+foot. A finger scrolls the note and taps a caret into it as always; the
+Pencil in writing that is there adds to it, and in the text elsewhere it
+opens another. The system's tools come up while you write and go when the
+caret is back in the text or the Pencil has been away a while; erase
+everything in a piece of writing and it is gone from the note. It is kept
+as its strokes when you stop, so the Mac and every other device show the
+same picture without a file crossing, and an export writes it as
+`name/ink-01.png` with its drawing beside it, `name/ink-01.pkdrawing`. A
+note may hold as many pieces of writing as you like: a note of nothing else
+is a notebook.
 
-Writing on a book's page: touch the Pencil to the page and the canvas comes
-over that page, the page under it. Write, then `done`: the page shows what
-you wrote, on the Mac and every other device too, as a picture over the
-page. A finger still scrolls the pages and boxes a passage after a hold.
-Nothing is written into the PDF: the strokes are kept in the collection
-with the book they are on, whichever chapter shows that page. An exported
-folder does not hold them yet.
+On a book's page it is the same: the Pencil's first touch is a stroke on
+that page, where it stands among the others, and the pages scroll under a
+finger with the writing on them. A finger still boxes a passage after a
+hold. The Mac and every other device show what you wrote as a picture over
+the page. Nothing is written into the PDF: the strokes are kept in the
+collection with the book they are on, whichever chapter shows that page.
+An exported folder does not hold them yet.
 
 ## Plugins
 

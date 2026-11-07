@@ -3,7 +3,7 @@
 // selection, and the bulk actions, each one write per file. The view is
 // `DeckLens` in Lenses.tsx; the session over a deck is `study.ts`.
 
-import { PRI_DEFAULT, cardFields, meta, type Card, type CardForm, type CardSchedule, type Doc } from '../format/index.js';
+import { PRI_DEFAULT, cardFields, faceText, fold, meta, type Card, type CardForm, type CardSchedule, type Doc } from '../format/index.js';
 import { cardGroups, isSuspended, newId, whenToDate, type GroupKey } from '../schedule/index.js';
 import { childDirOf, directories, ordered, type Order, type TreeNode } from '../vault/index.js';
 
@@ -53,18 +53,7 @@ export interface DeckRow extends CardRef {
   reverse?: { sched?: CardSchedule; dueAt: Date; isDue: boolean; suspended: boolean };
 }
 
-/** Case and accents folded, so `Lucke` finds `Lücke` and Arabic without its vowel marks finds the voweled word. */
-export function fold(s: string): string {
-  return s.normalize('NFKD').replace(/[\p{M}ـ]/gu, '').toLowerCase();
-}
-
-/** The text a card's search looks through: both faces, a cloze's answers in place. */
-export function faceText(text: string): string {
-  const f = cardFields(text);
-  if (!f) return text;
-  if (f.form === 'cloze') return f.parts.map((p) => (typeof p === 'string' ? p : p.answer)).join('');
-  return f.form === 'qa' ? `${f.front}\n${f.back}` : `${f.left}\n${f.right}`;
-}
+export { fold, faceText };
 
 const groupSched = (card: Card, g: GroupKey): CardSchedule | undefined =>
   ('n' in g ? card.blanks?.[g.n] : undefined) ?? card.sched;

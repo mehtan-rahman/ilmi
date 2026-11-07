@@ -1,9 +1,10 @@
 // The shell's pure side: what the bottom strip says for each surface, what
-// a card is called in a list, the palette's index and its fuzzy match.
+// a card is called in a list, the palette's index and its fuzzy match, and
+// what it makes of the search index's hits (milestone 68).
 // The components are TopStrip, BottomStrip, Inspector, Palette, Tweaks.
 
-import { cardFields, type Block, type CardForm } from '../format/index.js';
-import { nameOf, type TreeNode } from '../vault/index.js';
+import { cardFields, faceText, findIn, fold, type Block, type CardForm } from '../format/index.js';
+import { hayOf, nameOf, searchQuery, type TextHit, type TreeNode } from '../vault/index.js';
 import { hasMath, plainMath } from './chromeText.js';
 import { FORM_LABEL } from './items.js';
 import { GLYPH, QUEUE_TITLE, slugName, SCOPES, queueId, type QueueScope, type TabKind } from './names.js';
@@ -148,7 +149,7 @@ export function fuzzy(query: string, text: string): number | null {
   return qi === query.length ? score - run * 0.2 : null;
 }
 
-export type EntryTag = 'query' | 'folder' | 'note' | 'source' | 'extract' | 'deck' | 'draft' | 'card' | 'command' | 'vault';
+export type EntryTag = 'query' | 'folder' | 'note' | 'source' | 'extract' | 'deck' | 'draft' | 'card' | 'text' | 'command' | 'vault';
 
 export interface Entry {
   key: string;
@@ -158,10 +159,10 @@ export interface Entry {
   tag: EntryTag;
   /** The row's name with its formulas as `$…$`, drawn by KaTeX (a card's whole name, cut by the row's width); `title` stays what search reads. */
   math?: string;
-  /** What search reads, when it is more than `title`: a card's whole name as plain text (its title is cut to fit). */
-  find?: string;
-  /** A vault path or special tab id to open, a card in a document, a command id, or another vault to switch to. */
-  target: { open: string } | { open: string; index: number; id?: string } | { command: string } | { vault: string };
+  /** Where in `title` what was found is, for a row of text. */
+  mark?: [from: number, to: number];
+  /** A vault path or special tab id to open, a card in a document, a block of a document, a command id, or another vault to switch to. */
+  target: { open: string } | { open: string; index: number; id?: string } | { open: string; block: number } | { command: string } | { vault: string };
 }
 
 export interface Command {
@@ -177,19 +178,11 @@ export interface VaultRef {
 
 export const ENTRY_GLYPH: Record<EntryTag, string> = {
   // the kinds' marks are the tree's (`GLYPH`), so the palette and the sidebar agree
-  query: '≡', folder: GLYPH.folder, note: GLYPH.note, source: GLYPH.source, extract: GLYPH.extract, deck: GLYPH.deck, draft: GLYPH.draft, card: '◆', command: '›', vault: '⌂',
+  query: '≡', folder: GLYPH.folder, note: GLYPH.note, source: GLYPH.source, extract: GLYPH.extract, deck: GLYPH.deck, draft: GLYPH.draft, card: '◆', text: '⌕', command: '›', vault: '⌂',
 };
 
-/** A card the palette can name, from any document's blocks. */
-export interface CardRef {
-  path: string;
-  index: number;
-  id?: string;
-  text: string;
-}
-
-/** Everything the palette can open: saved queries, folders, documents, cards, commands, and the other vaults under `vaults`. */
-export function buildIndex(tree: TreeNode[], docs: Record<string, DocInfo>, cards: CardRef[], commands: Command[], vaults: VaultRef[] = []): Entry[] {
+/** Everything the palette can open by name: saved queries, folders, documents, commands, and the other vaults under `vaults`. Cards are found by their words, through the search index. */
+export function buildIndex(tree: TreeNode[], docs: Record<string, DocInfo>, commands: Command[], vaults: VaultRef[] = []): Entry[] {
   const out: Entry[] = [];
   for (const scope of SCOPES) out.push({ key: `q:${scope}`, title: QUEUE_TITLE[scope], sub: 'saved query', tag: 'query', target: { open: queueId(scope) } });
   const title = (path: string) => docs[path]?.title ?? slugName(nameOf(path));
@@ -207,25 +200,105 @@ export function buildIndex(tree: TreeNode[], docs: Record<string, DocInfo>, card
     }
   };
   visit(tree, '');
-  for (const c of cards) {
-    const target: Entry['target'] = c.id === undefined ? { open: c.path, index: c.index } : { open: c.path, index: c.index, id: c.id };
-    const name = cardName(c.text);
-    out.push({ key: `c:${c.path}:${c.index}`, title: cardLabel(c.text), ...(hasMath(name) ? { math: name } : {}), find: plainMath(name), sub: title(c.path), tag: 'card', target });
-  }
   for (const c of commands) out.push({ key: `x:${c.id}`, title: c.title, sub: '', tag: 'command', target: { command: c.id } });
   for (const v of vaults) out.push({ key: `v:${v.path}`, title: v.name, sub: 'collections', tag: 'vault', target: { vault: v.path } });
   return out;
 }
 
+/** What a row's name is matched by, folded once: an index is built when the tree changes, not at each key. */
+const hays = new WeakMap<Entry, string>();
+const hayOfEntry = (it: Entry): string => {
+  let hay = hays.get(it);
+  if (hay === undefined) hays.set(it, (hay = fold(`${it.title} ${it.sub}`)));
+  return hay;
+};
+
 /** The best forty for a query; the first forty when there is none. */
 export function search(index: Entry[], q: string): Entry[] {
-  if (!q.trim()) return index.slice(0, 40);
+  const query = fold(q.trim());
+  if (!query) return index.slice(0, 40);
   return index
-    .map((it) => ({ it, score: fuzzy(q.trim(), `${it.find ?? it.title} ${it.sub}`) }))
+    .map((it) => ({ it, score: fuzzy(query, hayOfEntry(it)) }))
     .filter((r): r is { it: Entry; score: number } => r.score !== null)
     .sort((a, b) => a.score - b.score)
     .slice(0, 40)
     .map((r) => r.it);
+}
+
+// ── text found ───────────────────────────────────────────────────
+
+const WORD = /[\p{L}\p{N}\p{M}ـ]/u;
+/** How much of a row comes before what was found, and in all. */
+const LEAD = 18;
+const LINE = 120;
+/** Rows of text a palette shows, and the loose matches by name that stay above them. */
+const TEXT_ROWS = 40;
+const LOOSE_FIRST = 4;
+
+/**
+ * Text found, best first: the phrase as written before the words apart, a
+ * whole word before one inside a longer word (Arabic's prefixes and
+ * suffixes are found, but the word itself comes first), then a heading
+ * before a card before the rest.
+ */
+export function rankHits(hits: TextHit[], q: string): TextHit[] {
+  const { phrase, words } = searchQuery(q);
+  const score = (h: TextHit): number => {
+    const hay = hayOf(h.kind === 'card' ? faceText(h.text) : h.text);
+    const at = hay.indexOf(phrase);
+    const whole = at >= 0 && !WORD.test(hay[at - 1] ?? '') && !WORD.test(hay[at + phrase.length] ?? '');
+    return (at >= 0 ? 0 : words.length > 1 ? 8 : 0) + (whole ? 0 : 4) + (h.kind === 'heading' ? 0 : h.kind === 'card' ? 1 : 2);
+  };
+  return hits.map((h) => ({ h, s: score(h) })).sort((a, b) => a.s - b.s).map((r) => r.h);
+}
+
+/**
+ * A line of `text` around what was found, and where in it to mark. The
+ * mark takes the whole word: a mark that begins inside an Arabic word cuts
+ * the word's letters apart when it is drawn. Formulas read as characters;
+ * what is found only in a formula's TeX is looked for in the TeX.
+ */
+export function textLine(text: string, q: string): { line: string; mark?: [number, number] } {
+  const { phrase, words } = searchQuery(q);
+  const longest = [...words].sort((a, b) => b.length - a.length)[0] ?? '';
+  const flat = (s: string): string => s.replace(/\s+/g, ' ').trim();
+  const at = (s: string) => findIn(s, phrase)[0] ?? findIn(s, longest)[0];
+  let line = flat(plainMath(text));
+  let hit = at(line);
+  if (!hit) {
+    const raw = flat(text);
+    const there = at(raw);
+    if (there) { line = raw; hit = there; }
+  }
+  if (!hit) return { line: line.length > LINE ? `${line.slice(0, LINE - 1)}…` : line };
+  let { from, to } = hit;
+  while (from > 0 && WORD.test(line[from - 1]!)) from--;
+  while (to < line.length && WORD.test(line[to]!)) to++;
+  let start = Math.max(0, from - LEAD);
+  // from the start of a word, when there is one close by
+  if (start > 0) { const sp = line.indexOf(' ', start); if (sp >= 0 && sp < from) start = sp + 1; }
+  const end = Math.min(line.length, Math.max(start + LINE, to));
+  const pre = start > 0 ? '…' : '';
+  return { line: `${pre}${line.slice(start, end)}${end < line.length ? '…' : ''}`, mark: [pre.length + from - start, pre.length + to - start] };
+}
+
+/** A palette's row for a block found. A card is named as a card is; prose is the line it was found in. */
+export function textEntry(h: TextHit, q: string, docs: Record<string, DocInfo>): Entry {
+  const sub = docs[h.path]?.title ?? slugName(nameOf(h.path));
+  if (h.kind === 'card') {
+    const name = cardName(h.text);
+    return { key: `c:${h.path}:${h.block}`, title: cardLabel(h.text), ...(hasMath(name) ? { math: name } : {}), sub, tag: 'card', target: h.card === null ? { open: h.path, index: h.block } : { open: h.path, index: h.block, id: h.card } };
+  }
+  const { line, mark } = textLine(h.text, q);
+  return { key: `t:${h.path}:${h.block}`, title: line, ...(mark ? { mark } : {}), sub, tag: 'text', target: { open: h.path, block: h.block } };
+}
+
+/** Names that hold the query as typed, a few looser ones, the text found, then the rest of the names. */
+export function withText(names: Entry[], text: Entry[], q: string): Entry[] {
+  const query = fold(q.trim());
+  const close = names.filter((it) => hayOfEntry(it).includes(query));
+  const loose = names.filter((it) => !hayOfEntry(it).includes(query));
+  return [...close, ...loose.slice(0, LOOSE_FIRST), ...text.slice(0, TEXT_ROWS), ...loose.slice(LOOSE_FIRST)];
 }
 
 // ── landing on a card ────────────────────────────────────────────

@@ -5,21 +5,21 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { pluginCommands, runPluginCommand, usePlugins } from '../plugins/index.js';
 import { overflow } from '../schedule/index.js';
-import { ENTRY_GLYPH, buildIndex, search, type CardRef, type Command, type Entry } from './chrome.js';
+import { ENTRY_GLYPH, buildIndex, rankHits, search, textEntry, withText, type Command, type Entry } from './chrome.js';
 import { activeTab, closePane, splitPane } from './panes.js';
 import { useApp } from './store.js';
 import { MENU_ID, runMenu } from './menu.js';
 import { hasCards, studyDeck } from './deckOps.js';
 import { SESSION, folderPaths, slugName, titleOf } from './names.js';
-import { nameOf } from '../vault/index.js';
-import { attachCancelled, attachNewNote, attachNote } from './book.js';
+import { nameOf, type TextHit } from '../vault/index.js';
+import { attachCancelled, attachNewNote, attachNote, openNotes } from './book.js';
 import { canMove, moveAction, moveSection, sectionActions, statusOf } from './sections.js';
 import { plainMath } from './chromeText.js';
 import type { CaretHeading } from './store.js';
 import { MathText } from './MathText.js';
 import { exportCollection } from './collections.js';
 import { notify } from './land.js';
-import { containerOf, currentVault, openCard, openIntake, openNode, openVault, postponeRest, startSession, toggleInspector, toggleSidebar } from './vault.js';
+import { containerOf, currentVault, openBlock, openCard, openIntake, openNode, openVault, postponeRest, searchText, startSession, toggleInspector, toggleSidebar } from './vault.js';
 import { appNow } from './clock.js';
 
 const COMMANDS: Command[] = [
@@ -103,18 +103,9 @@ function runCommand(id: string): void {
   }
 }
 
-/** Every card in the vault, from the queue's view of it (one entry per card, not per blank). */
-function cardRefs(): CardRef[] {
-  const seen = new Set<string>();
-  const out: CardRef[] = [];
-  for (const i of useApp.getState().queue) {
-    if (i.kind !== 'card') continue;
-    const k = `${i.path}:${i.block}`;
-    if (seen.has(k)) continue;
-    seen.add(k);
-    out.push(i.id === undefined ? { path: i.path, index: i.block, text: i.text } : { path: i.path, index: i.block, id: i.id, text: i.text });
-  }
-  return out;
+/** A row's name with what was found marked. */
+function Marked({ title, mark }: { title: string; mark: [number, number] }) {
+  return <span className="pt" dir="auto">{title.slice(0, mark[0])}<mark>{title.slice(mark[0], mark[1])}</mark>{title.slice(mark[1])}</span>;
 }
 
 export function Palette() {
@@ -148,7 +139,7 @@ export function Palette() {
   const commands = useMemo(() => [...sectionCommand(), ...COMMANDS.filter((c) => (c.id !== 'postpone' || overflow(queue, appNow()).length > 0) && !(mobile && DESKTOP_ONLY.has(c.id)) && !(phone && NOT_ON_A_PHONE.has(c.id))), ...pluginCommands()], [queue, plugins?.version, caret, mobile, phone]);
   // the other vaults opened before, under `vaults`, so switching is two keys
   const vaults = useMemo(() => recents.filter((r) => r.path !== vault).map((r) => ({ path: r.path, name: r.name })), [recents, vault]);
-  const index = useMemo(() => buildIndex(tree, docs, cardRefs(), commands, vaults), [tree, docs, commands, vaults]);
+  const index = useMemo(() => buildIndex(tree, docs, commands, vaults), [tree, docs, commands, vaults]);
   const studyIndex = useMemo((): Entry[] => {
     if (!studying) return [];
     const out: Entry[] = [];
@@ -177,10 +168,23 @@ export function Palette() {
   }, [attaching, tree, docs, vault]);
   /** The new note's name: as typed, else after the PDF. */
   const newName = attaching ? (attaching.step === 'place' ? attaching.name ?? '' : q.trim() || `${titleOf(attaching.pdf, docs, vault)} notes`) : '';
+  // words in the documents and the cards, for the palette's own list; the last answer stays until the next, so the rows do not blink
+  const asking = !attaching && !moving && !studying ? q.trim() : '';
+  const [found, setFound] = useState<{ q: string; hits: TextHit[] } | null>(null);
+  useEffect(() => {
+    if (!asking) { setFound(null); return; }
+    let live = true;
+    void searchText(asking).then((hits) => { if (live) setFound({ q: asking, hits }); }).catch(console.error);
+    return () => { live = false; };
+  }, [asking, vault]);
+  const texts = useMemo(() => (found ? rankHits(found.hits, found.q).map((h) => textEntry(h, found.q, docs)) : []), [found, docs]);
   const results = useMemo(() => {
     if (attaching?.step === 'pick') return [{ key: 'at:new', title: 'new note', sub: newName, tag: 'note' as const, target: { command: 'attach-new' } }, ...search(attachIndex, q)];
-    return search(attaching ? attachIndex : moving ? moveIndex : studying ? studyIndex : index, q);
-  }, [attaching, attachIndex, newName, moving, moveIndex, studying, studyIndex, index, q]);
+    const names = search(attaching ? attachIndex : moving ? moveIndex : studying ? studyIndex : index, q);
+    return asking ? withText(names, texts, q) : names;
+  }, [attaching, attachIndex, newName, moving, moveIndex, studying, studyIndex, index, q, asking, texts]);
+  // `nothing` is said once the index has answered, and until it has been through every document it may yet
+  const reading = useApp((s) => s.searchShare);
 
   useEffect(() => { inputRef.current?.focus(); }, []);
   // esc closes from anywhere, not only from the field
@@ -214,8 +218,12 @@ export function Palette() {
     if ('command' in t) runCommand(t.command);
     else if ('vault' in t) void openVault(t.vault).catch(console.error);
     else if (!currentVault()) return;
-    else if ('index' in t) openCard(t.open, t.index, t.id);
-    else openNode(t.open);
+    else if ('block' in t || 'index' in t) {
+      if ('block' in t) openBlock(t.open, t.block);
+      else openCard(t.open, t.index, t.id);
+      // a document with pages opens on its pages: what was found is in its text, beside them
+      if (useApp.getState().docs[t.open]?.pdf !== undefined) void openNotes(t.open).catch(console.error);
+    } else openNode(t.open);
   };
 
   const onKey = (e: React.KeyboardEvent) => {
@@ -232,12 +240,12 @@ export function Palette() {
           <input dir="auto" ref={inputRef} value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={onKey} placeholder={attaching?.step === 'place' ? `${newName} in…` : attaching ? `notes on ${titleOf(attaching.pdf, docs, vault).slice(0, 40)}` : moving ? `move § ${plainMath(moving.text).slice(0, 40)} to…` : studying ? 'study…' : 'open or run'} spellCheck={false} />
           <kbd>esc</kbd>
         </div>
-        <div className="palette-list" ref={listRef}>
-          {results.length === 0 && <div className="palette-empty">nothing</div>}
+        <div className="palette-list" ref={listRef} data-found={found?.q}>
+          {results.length === 0 && (!asking || found?.q === asking) && <div className="palette-empty">{asking && reading < 1 ? 'nothing yet' : 'nothing'}</div>}
           {results.map((it, i) => (
             <div key={it.key} className="palette-row" data-sel={i === sel ? '1' : '0'} data-t={it.tag} onMouseEnter={() => setSel(i)} onClick={() => run(it)}>
               <span className="pg" data-t={it.tag}>{ENTRY_GLYPH[it.tag]}</span>
-              <MathText className="pt" dir="auto" text={it.math ?? it.title} />
+              {it.mark ? <Marked title={it.title} mark={it.mark} /> : <MathText className="pt" dir="auto" text={it.math ?? it.title} />}
               <MathText className="psub" dir="auto" text={it.sub} />
               <span className="ptag">{it.tag}</span>
             </div>
@@ -248,6 +256,7 @@ export function Palette() {
           <span><kbd>↵</kbd> open</span><span className="dot" />
           <span><kbd>esc</kbd> close</span>
           <span className="grow" />
+          {reading < 1 && <span>{Math.round(reading * 100)}% read</span>}
           <span>{results.length}</span>
         </div>
       </div>

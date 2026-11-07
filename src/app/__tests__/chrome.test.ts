@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import type { TreeNode } from '../../vault/index.js';
 import type { Block } from '../../format/index.js';
-import { buildIndex, cardLabel, fuzzy, hintsFor, revealIndex, search } from '../chrome.js';
+import { buildIndex, cardLabel, fuzzy, hintsFor, rankHits, revealIndex, search, textEntry, textLine, withText, type Entry } from '../chrome.js';
 import { queueId } from '../names.js';
 import { ACCENTS, THEMES, useApp, ZOOM_MAX, ZOOM_MIN } from '../store.js';
 
@@ -55,20 +55,19 @@ describe('the palette', () => {
     'papers/wozniak-1990/woz-ex1.md': { type: 'extract' as const, frozen: false, cards: 0, due: 0 },
     'german.md': { type: 'deck' as const, frozen: false, cards: 7, due: 3, title: 'german · A1' },
   };
-  const cards = [{ path: 'german.md', index: 3, id: 'cv-vorsatz', text: 'der Vorsatz ::: resolution' }, { path: 'papers/wozniak-1990.md', index: 5, text: 'what is memory? :: a forest' }];
-  const index = buildIndex(tree, docs, cards, [{ id: 'split', title: 'split pane' }]);
+  const index = buildIndex(tree, docs, [{ id: 'split', title: 'split pane' }]);
 
-  it('indexes queries, folders, documents by title, cards, and commands', () => {
-    expect(index.map((e) => e.tag)).toEqual(['query', 'query', 'query', 'query', 'query', 'folder', 'source', 'extract', 'deck', 'card', 'card', 'command']);
+  it('indexes queries, folders, documents by title, and commands; cards come through the search index', () => {
+    expect(index.map((e) => e.tag)).toEqual(['query', 'query', 'query', 'query', 'query', 'folder', 'source', 'extract', 'deck', 'command']);
     expect(index.find((e) => e.key === 'p:german.md')).toMatchObject({ title: 'german · A1', sub: 'deck', target: { open: 'german.md' } });
     expect(index.find((e) => e.tag === 'extract')).toMatchObject({ sub: 'wozniak 1990' });
-    expect(index.find((e) => e.tag === 'card')).toMatchObject({ title: 'der Vorsatz ⇄ resolution', sub: 'german · A1' });
     expect(index.find((e) => e.tag === 'command')).toMatchObject({ target: { command: 'split' } });
   });
 
   it('names a card by its document, block index, and id, so opening lands on it', () => {
-    expect(index.find((e) => e.key === 'c:german.md:3')!.target).toEqual({ open: 'german.md', index: 3, id: 'cv-vorsatz' });
-    expect(index.find((e) => e.key === 'c:papers/wozniak-1990.md:5')!.target).toEqual({ open: 'papers/wozniak-1990.md', index: 5 });
+    const card = (path: string, block: number, id: string | null, text: string) => textEntry({ path, block, kind: 'card', card: id, text }, 'x', docs);
+    expect(card('german.md', 3, 'cv-vorsatz', 'der Vorsatz ::: resolution')).toMatchObject({ key: 'c:german.md:3', title: 'der Vorsatz ⇄ resolution', sub: 'german · A1', tag: 'card', target: { open: 'german.md', index: 3, id: 'cv-vorsatz' } });
+    expect(card('papers/wozniak-1990.md', 5, null, 'what is memory? :: a forest').target).toEqual({ open: 'papers/wozniak-1990.md', index: 5 });
     // documents and queries still open by path alone
     expect(index.find((e) => e.key === 'p:german.md')!.target).toEqual({ open: 'german.md' });
     expect(index.find((e) => e.key === 'q:today')!.target).toEqual({ open: queueId('today') });
@@ -83,11 +82,66 @@ describe('the palette', () => {
 
   it('searches titles and where they live', () => {
     expect(search(index, '').length).toBe(index.length);
-    // the source, its extract, and a card that lives in the source
-    expect(search(index, 'woz').map((e) => e.key)).toEqual(['p:papers/wozniak-1990.md', 'p:papers/wozniak-1990/woz-ex1.md', 'c:papers/wozniak-1990.md:5']);
+    // the source and its extract
+    expect(search(index, 'woz').map((e) => e.key)).toEqual(['p:papers/wozniak-1990.md', 'p:papers/wozniak-1990/woz-ex1.md']);
     expect(search(index, 'split')[0]).toMatchObject({ tag: 'command' });
     expect(search(index, 'due')[0]).toMatchObject({ title: 'due today' });
     expect(search(index, 'qqq')).toEqual([]);
+  });
+});
+
+describe('text found, in the palette (milestone 68)', () => {
+  const row = (key: string, title: string): Entry => ({ key, title, sub: '', tag: 'note', target: { open: key } });
+  const hit = (kind: 'heading' | 'card' | 'text', text: string, block = 0) => ({ path: 'a.md', block, kind, card: null, text });
+
+  it('a name folds as text does: an unvoweled query finds a voweled title', () => {
+    const named = buildIndex([{ kind: 'doc', name: 'x', path: 'x.md' }], { 'x.md': { type: 'note' as const, frozen: false, cards: 0, due: 0, title: 'الكَرَم وَالجُود' } }, []);
+    expect(search(named, 'الكرم')[0]?.key).toBe('p:x.md');
+    expect(search(named, 'الكرم')).toHaveLength(1);
+  });
+
+  it('says the line it was found in, the whole word marked, the voweled text as written', () => {
+    const { line, mark } = textLine('وَالكَرَمُ فِي العَرَبِ كَثِيرٌ', 'كرم');
+    expect(line.slice(mark![0], mark![1])).toBe('وَالكَرَمُ');
+    const long = `${'lead '.repeat(40)}the action integral ${'tail '.repeat(40)}`;
+    const far = textLine(long, 'action');
+    expect(far.line.startsWith('…')).toBe(true);
+    expect(far.line.endsWith('…')).toBe(true);
+    expect(far.line.slice(far.mark![0], far.mark![1])).toBe('action');
+    expect(far.line.length).toBeLessThan(130);
+    // a word typed inside a longer one marks the word
+    const part = textLine('Hamiltonians are nice', 'ilton');
+    expect(part.line.slice(part.mark![0], part.mark![1])).toBe('Hamiltonians');
+  });
+
+  it('reads a formula as characters, and when the find is in the TeX looks there', () => {
+    expect(textLine('so $\\alpha = 1$ holds', 'holds').line).toBe('so α = 1 holds');
+    const tex = textLine('so $\\alpha = 1$ holds', 'alpha');
+    expect(tex.line.slice(tex.mark![0], tex.mark![1])).toBe('alpha');
+  });
+
+  it('a block with no match to mark is said plainly', () => {
+    expect(textLine('nothing here', 'other').mark).toBeUndefined();
+  });
+
+  it('opens at its block', () => {
+    expect(textEntry(hit('text', 'a line of prose', 7), 'prose', {})).toMatchObject({ key: 't:a.md:7', tag: 'text', sub: 'a', target: { open: 'a.md', block: 7 } });
+    expect(textEntry(hit('heading', 'a heading', 2), 'head', {}).target).toEqual({ open: 'a.md', block: 2 });
+  });
+
+  it('puts the phrase before the words apart, the word before a longer one, a heading before prose', () => {
+    const texts = (q: string, ...hits: ReturnType<typeof hit>[]) => rankHits(hits, q).map((h) => h.text);
+    expect(texts('red fox', hit('heading', 'fox and red'), hit('text', 'the red fox'))).toEqual(['the red fox', 'fox and red']);
+    expect(texts('كرم', hit('heading', 'بالكرم'), hit('text', 'كَرَم الضيف'))).toEqual(['كَرَم الضيف', 'بالكرم']);
+    expect(texts('fox', hit('text', 'a fox'), hit('card', 'fox :: x'), hit('heading', 'the fox'))).toEqual(['the fox', 'fox :: x', 'a fox']);
+  });
+
+  it('keeps names that hold the query above the text, loose ones after a few', () => {
+    const names = ['energy', 'a-b-c1', 'a-b-c2', 'a-b-c3', 'a-b-c4', 'a-b-c5'].map((k) => row(k, k === 'energy' ? 'on energy' : `e n e r g y ${k}`));
+    const out = withText(names, [row('t', 'text')], 'energy').map((e) => e.key);
+    expect(out[0]).toBe('energy');
+    expect(out.indexOf('t')).toBe(5);
+    expect(out[out.length - 1]).toBe('a-b-c5');
   });
 });
 

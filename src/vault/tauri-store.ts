@@ -6,7 +6,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import type { Doc } from '../format/index.js';
 import type { Original } from './lift.js';
-import type { DocContent, InkStroke, Reg, Row, Store } from './store.js';
+import type { DocContent, InkStroke, Reg, Row, SearchHit, Store } from './store.js';
 
 export function tauriStore(root: string): Store {
   return {
@@ -19,6 +19,9 @@ export function tauriStore(root: string): Store {
     remove: (ids) => invoke<void>('store_remove', { root, ids }),
     places: (set) => invoke<void>('store_places', { root, set }),
     digests: (after, limit) => invoke<[string, Doc][]>('store_digests', { root, after, limit }),
+    search: (phrase, words, limit) => invoke<SearchHit[]>('store_search', { root, phrase, words, limit }),
+    searchState: () => invoke<{ done: boolean; after: string | null }>('store_search_state', { root }),
+    searchWalk: (after, limit) => invoke<[string, string][]>('store_search_walk', { root, after, limit }),
     reviewFiles: () => invoke<[string, number][]>('store_review_files', { root }),
     reviews: (file) => invoke<string[]>('store_reviews', { root, file }),
     reviewsPut: (file, rows, replace) => invoke<void>('store_reviews_put', { root, file, rows, replace }),

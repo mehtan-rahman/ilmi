@@ -71,12 +71,20 @@
 //   deleted and put back, or brought in again, has what was written on
 //   it (`pageInk`, `setPageInk`, `pageInkFile`, `inkedPages`). No path
 //   names them and an export does not write them.
+// - Since milestone 68 a document's text and its cards can be searched
+//   (`search.ts`, `search`). The rows go with the document's write, so a
+//   merge brings them as a local write does; they are found by the row's
+//   id, so a rename leaves them; a delete takes them. They are this
+//   device's: the engine is never told, and each device makes its own.
+//   A collection from before them is walked a page at a time, the app
+//   open meanwhile (`searchBuild`); it goes on from where it stopped.
 
-import { formatReview, parseReviews, serialize, type Doc, type Review } from '../format/index.js';
+import { formatReview, parse, parseReviews, serialize, type Doc, type Review } from '../format/index.js';
 import type { Fs, FsEntry, FsStat } from './fs.js';
 import { join, relative } from './fs.js';
-import { decompose, digest, recompose, stampOf, type Original, type StateRow } from './lift.js';
+import { decompose, digest, recompose, stampOf, type Decomposed, type Original, type StateRow } from './lift.js';
 import { ORDER_FILE, cleanOrder, type Order } from './order.js';
+import { searchQuery, searchRows, type SearchRow } from './search.js';
 import { byName, isPdfPath } from './walk.js';
 
 export type RowKind = 'folder' | 'doc' | 'file';
@@ -140,7 +148,21 @@ export interface Lift {
   size: number;
   /** Lines for the review log: a grade's, written with the schedule it made. */
   reviews?: ReviewRow[];
+  /** Its rows of the search index: they replace the ones it had when its text changed. */
+  search?: SearchRow[];
 }
+
+/** A block the search index found, in the document whose row is `doc`. */
+export interface SearchHit {
+  doc: string;
+  block: number;
+  kind: SearchRow['kind'];
+  card: string | null;
+  text: string;
+}
+
+/** A block found, by the path of its document. */
+export type TextHit = Omit<SearchHit, 'doc'> & { path: string };
 
 /** A document as the store holds it. */
 export interface DocContent {
@@ -150,8 +172,8 @@ export interface DocContent {
   original: Original | null;
 }
 
-/** The schema this code reads and writes; a collection below it is brought up when it opens (`storeFs`). 3 is the engine's tables (milestone 61), 4 the strokes' (milestone 58), both made by the Rust side as it opens. */
-export const STORE_VERSION = 4;
+/** The schema this code reads and writes; a collection below it is brought up when it opens (`storeFs`). 3 is the engine's tables (milestone 61), 4 the strokes' (milestone 58), 5 the search index's (milestone 68), all made by the Rust side as it opens. */
+export const STORE_VERSION = 5;
 
 /** One stroke of a page of ink (milestone 58): its name, when it was drawn (seconds since 1970: the order strokes lie in), and its bytes in base64 (a `PKDrawing` of it alone). */
 export interface InkStroke {
@@ -203,7 +225,11 @@ export type StoreOp =
   /** A blob a row of this batch names, by hash and size, whether or not its bytes are here. */
   | { op: 'expect'; hash: string; size: number }
   /** Strokes added to a page of ink and taken from it; the page's row comes back with the `put`s'. */
-  | { op: 'ink'; page: string; add: InkStroke[]; remove: string[] };
+  | { op: 'ink'; page: string; add: InkStroke[]; remove: string[] }
+  /** A document's rows of the search index, in place of the ones it has. */
+  | { op: 'search'; doc: string; rows: SearchRow[] }
+  /** The walk has been through every document up to `after`; null: through them all. */
+  | { op: 'searchWalked'; after: string | null };
 
 /** The rows and blobs of one collection. `tauri-store.ts` is the app's, `mem-store.ts` the tests'. */
 export interface Store {
@@ -231,6 +257,12 @@ export interface Store {
   places(set: [id: string, place: number][]): Promise<void>;
   /** The index, a page at a time by id: each document's digest. */
   digests(after: string | null, limit: number): Promise<[id: string, digest: Doc][]>;
+  /** The blocks holding `phrase` as written and then every one of `words` anywhere, folded both, `limit` at most. */
+  search(phrase: string, words: string[], limit: number): Promise<SearchHit[]>;
+  /** How far the walk of a collection from before the index has come. */
+  searchState(): Promise<{ done: boolean; after: string | null }>;
+  /** The documents after `after`, by id, each with its text without its state. */
+  searchWalk(after: string | null, limit: number): Promise<[id: string, text: string][]>;
   /** The review log's files and how many lines each holds. */
   reviewFiles(): Promise<[file: string, lines: number][]>;
   /** One file's lines by their instant, then by the line itself (the same order on every device); every line with `null`. */
@@ -444,6 +476,10 @@ export interface StoreFs extends Fs {
   flushLog(path: string): Promise<void>;
   /** How many lines the review log holds. */
   reviewCount(): Promise<number>;
+  /** The blocks of every document that hold `query`, folded: as written first, then every word of it anywhere. */
+  search(query: string, limit?: number): Promise<TextHit[]>;
+  /** The rows of a collection from before the index made, a page at a time, the app open meanwhile; `told` hears how much is done, 1 at the end, at once when nothing is left to do. Returns the stop; a stopped walk goes on from there at the next open. */
+  searchBuild(told: (share: number) => void): () => void;
   /** The engine's way in (milestone 61). */
   readonly door: Door;
   /** The files whose bytes are not here (milestone 63), by vault-relative path. */
@@ -485,6 +521,10 @@ export interface StoreFs extends Fs {
 
 const WATCH_DEBOUNCE_MS = 30;
 const DIGEST_PAGE = 2000;
+/** What a search asks for: more than a palette shows, so the best can be picked. */
+const SEARCH_HITS = 100;
+/** Documents the walk takes between two turns of the page: few enough that no write waits long behind it. */
+const WALK_PAGE = 24;
 
 /** The `Fs` over `store` for the vault whose root path is `root` (the collection's own folder; nothing under it is read from disk). */
 export function storeFs(store: Store, root: string): StoreFs {
@@ -699,6 +739,15 @@ export function storeFs(store: Store, root: string): StoreFs {
   const pendingLog = new Map<string, Review[]>();
   const fileOf = (r: Review): string => `${r.at.slice(0, 7)}.jsonl`;
 
+  /** What goes with a document's text in its transaction. `original` and `size` differ between a write and a merge. */
+  const liftOf = (d: Decomposed, original: Original | null, size: number): Lift => ({
+    state: d.state.map((r) => ({ kind: r.kind, item: r.item, key: r.key, attrs: JSON.stringify(r.attrs) })),
+    digest: d.digest,
+    original,
+    size,
+    search: d.search,
+  });
+
   /** What `data` is stored as at vault-relative `rel`: a document's text taken apart, a hidden file's text in its row, anything else a blob. */
   const contentFor = async (rel: string, isDoc: boolean, data: string | Uint8Array, asText = false): Promise<{ content: Content; lift?: Lift; doc?: Doc }> => {
     if (isDoc || asText || hidden(rel)) {
@@ -710,13 +759,7 @@ export function storeFs(store: Store, root: string): StoreFs {
       if (text !== null && !isDoc) return { content: { front: null, text } };
       if (text !== null) {
         const d = decompose(text);
-        const lift: Lift = {
-          state: d.state.map((r) => ({ kind: r.kind, item: r.item, key: r.key, attrs: JSON.stringify(r.attrs) })),
-          digest: d.digest,
-          original: d.original,
-          size: typeof data === 'string' ? encoder.encode(text).length : data.length,
-        };
-        return { content: splitFront(d.bare), lift, doc: d.doc };
+        return { content: splitFront(d.bare), lift: liftOf(d, d.original, typeof data === 'string' ? encoder.encode(text).length : data.length), doc: d.doc };
       }
     }
     const bytes = typeof data === 'string' ? encoder.encode(data) : data;
@@ -1113,7 +1156,7 @@ export function storeFs(store: Store, root: string): StoreFs {
           docs.set(p.at.id, d.doc);
           // what a merge makes is kept in canonical form: there is no file it came in as
           const size = encoder.encode(d.original ? serialize(d.doc) : p.file).length;
-          ops.push(putOp(p.at, splitFront(d.bare), { state: d.state.map((r) => ({ kind: r.kind, item: r.item, key: r.key, attrs: JSON.stringify(r.attrs) })), digest: d.digest, original: null, size }));
+          ops.push(putOp(p.at, splitFront(d.bare), liftOf(d, null, size)));
         } else ops.push(putOp(p.at, p.content));
       }
       const gonePaths = [...was.values(), ...view.removes.flatMap((id) => rows.get(id) ?? [])].map((r) => join(root, pathOf(r)));
@@ -1342,6 +1385,43 @@ export function storeFs(store: Store, root: string): StoreFs {
       let n = 0;
       for (const k of logFiles.values()) n += k;
       return n;
+    },
+
+    async search(query, limit = SEARCH_HITS) {
+      await ready;
+      const { phrase, words } = searchQuery(query);
+      if (!words.length) return [];
+      return (await store.search(phrase, words, limit)).flatMap(({ doc, ...hit }) => {
+        const r = rows.get(doc);
+        if (r?.kind !== 'doc') return [];
+        const path = pathOf(r);
+        return hidden(path) ? [] : [{ ...hit, path }];
+      });
+    },
+
+    searchBuild(told) {
+      let stopped = false;
+      void (async () => {
+        await ready;
+        let { done, after } = await store.searchState();
+        const docs = [...rows.values()].filter((r) => r.kind === 'doc');
+        let seen = after === null ? 0 : docs.filter((r) => r.id <= after!).length;
+        while (!done && !stopped) {
+          told(docs.length ? Math.min(0.99, seen / docs.length) : 0);
+          // in the chain, so no write comes between what is read and what is written
+          await serial(async () => {
+            const page = await store.searchWalk(after, WALK_PAGE);
+            const last = page[page.length - 1]?.[0] ?? after;
+            done = page.length < WALK_PAGE;
+            after = done ? null : last;
+            seen += page.length;
+            await store.batch([...page.map(([doc, text]): StoreOp => ({ op: 'search', doc, rows: searchRows(parse(text).doc) })), { op: 'searchWalked', after }]);
+          });
+          await new Promise((r) => setTimeout(r, 0));
+        }
+        if (done && !stopped) told(1);
+      })().catch((e: unknown) => console.error('search index', e));
+      return () => { stopped = true; };
     },
 
     async readDir(path): Promise<FsEntry[]> {

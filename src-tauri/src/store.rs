@@ -53,6 +53,15 @@
 //! are never written into the PDF. Read, they are a drawing for the
 //! canvas or a picture of the whole page (`ink_page`).
 //!
+//! Since milestone 68 every document's text and every card can be searched.
+//! `search` holds a row a block, its text as it is shown and folded
+//! (`hay`), and `search_grams` is FTS5's three-letter pieces of `hay`. The
+//! folding is the renderer's (`src/format/fold.ts`), so nothing here folds:
+//! the rows come with the document's write and go by its row's delete, a
+//! rename touches neither, and they are this device's alone: nothing of
+//! them reaches `regs`, `crdt` or `outbox`. A collection from before them
+//! is walked by the renderer as it opens; `search_meta` says how far.
+//!
 //! Nothing here knows the format or what a path is: the renderer's
 //! `src/vault/store.ts` reads the rows once, keeps the tree, takes a file
 //! apart on a write (`src/vault/lift.ts`) and puts it together on a read.
@@ -61,7 +70,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use base64::Engine as _;
 use sha2::{Digest, Sha256};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -156,6 +165,29 @@ CREATE TRIGGER IF NOT EXISTS documents_gone_ink AFTER DELETE ON documents
 BEGIN
   DELETE FROM ink WHERE page = OLD.id;
 END;
+CREATE TABLE IF NOT EXISTS search (
+  id INTEGER PRIMARY KEY,
+  doc TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+  block INTEGER NOT NULL,
+  kind TEXT NOT NULL CHECK (kind IN ('heading', 'card', 'text')),
+  card TEXT,
+  hay TEXT NOT NULL,
+  text TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS search_doc ON search(doc);
+CREATE VIRTUAL TABLE IF NOT EXISTS search_grams USING fts5(hay, content = 'search', content_rowid = 'id', tokenize = 'trigram case_sensitive 1');
+CREATE TRIGGER IF NOT EXISTS search_in AFTER INSERT ON search
+BEGIN
+  INSERT INTO search_grams (rowid, hay) VALUES (NEW.id, NEW.hay);
+END;
+CREATE TRIGGER IF NOT EXISTS search_out AFTER DELETE ON search
+BEGIN
+  INSERT INTO search_grams (search_grams, rowid, hay) VALUES ('delete', OLD.id, OLD.hay);
+END;
+CREATE TABLE IF NOT EXISTS search_meta (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+) WITHOUT ROWID;
 ";
 
 /// The schema this code writes. A collection made before the state had
@@ -164,7 +196,14 @@ END;
 /// 3 adds the engine's tables (milestone 61), which are made when a
 /// collection opens; a collection of 2 needs nothing more. 4 adds `ink`
 /// (milestone 58), made the same way: a collection of 3 opens as it is.
-pub const VERSION: i64 = 4;
+/// 5 adds the search index's tables (milestone 68), made the same way;
+/// the rows of a collection of 4 are made by a walk, the app open meanwhile.
+pub const VERSION: i64 = 5;
+/// What FTS5's three-letter pieces cannot find: anything shorter is looked for by reading `hay`.
+const GRAM: usize = 3;
+/// The key of `search_meta` that says how far the walk has come; its value when no document is left.
+const WALKED: &str = "walked";
+const WALKED_ALL: &str = "all";
 
 /// A row of the tree, without its text.
 #[derive(Serialize, Debug, Clone, PartialEq)]
@@ -230,6 +269,33 @@ pub struct ReviewRow {
     pub line: String,
 }
 
+/// A block as the search index holds it: where it is, what is shown, and `hay`, that text folded, the only thing looked through.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct SearchRow {
+    pub block: i64,
+    pub kind: String,
+    pub card: Option<String>,
+    pub hay: String,
+    pub text: String,
+}
+
+/// A block found: the row of the document that holds it, and what `SearchRow` says of it.
+#[derive(Serialize, Debug, Clone, PartialEq)]
+pub struct SearchHit {
+    pub doc: String,
+    pub block: i64,
+    pub kind: String,
+    pub card: Option<String>,
+    pub text: String,
+}
+
+/// How far the walk of a collection from before the index has come. `after`: the last document's id it has been through.
+#[derive(Serialize, Debug, Clone, PartialEq)]
+pub struct SearchState {
+    pub done: bool,
+    pub after: Option<String>,
+}
+
 /// What goes with a document's text in the transaction that writes it.
 #[derive(Deserialize, Debug, Clone, Default)]
 pub struct Lift {
@@ -239,6 +305,9 @@ pub struct Lift {
     pub size: i64,
     #[serde(default)]
     pub reviews: Vec<ReviewRow>,
+    /// The document's rows of the search index. Text that is what the row holds already keeps the ones it has.
+    #[serde(default)]
+    pub search: Option<Vec<SearchRow>>,
 }
 
 /// A document as it is stored: its text without its state, its schedules, its original.
@@ -288,6 +357,10 @@ pub enum Op {
     Expect { hash: String, size: i64 },
     /// Strokes added to a page of ink and taken from it. The page's row says how many bytes its strokes are, and its `rev` moves.
     Ink { page: String, add: Vec<InkStroke>, remove: Vec<String> },
+    /// A document's rows of the search index, in place of the ones it has.
+    Search { doc: String, rows: Vec<SearchRow> },
+    /// The walk has been through every document up to `after`; none says it has been through them all.
+    SearchWalked { after: Option<String> },
 }
 
 #[derive(Serialize, Debug, Clone, PartialEq)]
@@ -352,6 +425,8 @@ impl Store {
         // a new collection is the present schema; an older one keeps its number until the renderer has brought it up
         if fresh {
             conn.pragma_update(None, "user_version", VERSION).map_err(err)?;
+            // nothing in it to walk: whatever comes in brings its rows
+            conn.execute("INSERT OR REPLACE INTO search_meta (key, value) VALUES (?1, ?2)", params![WALKED, WALKED_ALL]).map_err(err)?;
         }
         let rev: i64 = conn
             .query_row("SELECT COALESCE(MAX(rev), 0) FROM documents", [], |r| r.get(0))
@@ -368,6 +443,7 @@ impl Store {
         conn.pragma_update(None, "foreign_keys", "ON").unwrap();
         conn.execute_batch(SCHEMA).unwrap();
         conn.pragma_update(None, "user_version", VERSION).unwrap();
+        conn.execute("INSERT OR REPLACE INTO search_meta (key, value) VALUES (?1, ?2)", params![WALKED, WALKED_ALL]).unwrap();
         Store { conn, dir: dir.to_path_buf(), rev: 0 }
     }
 
@@ -493,6 +569,10 @@ impl Store {
                 Op::Ink { page, add, remove } => {
                     ink_tx(&tx, &mut rev, page, add, remove)?;
                     put.push(page);
+                }
+                Op::Search { doc, rows } => search_tx(&tx, doc, rows)?,
+                Op::SearchWalked { after } => {
+                    tx.execute("INSERT OR REPLACE INTO search_meta (key, value) VALUES (?1, ?2)", params![WALKED, after.as_deref().unwrap_or(WALKED_ALL)]).map_err(err)?;
                 }
             }
         }
@@ -779,11 +859,13 @@ fn put_tx(tx: &Connection, rev_at: &mut i64, at: &Place, content: Option<&Conten
             };
             rev += 1;
             // the text is written when it differs: a grade changes a schedule's row, not the document's text
-            tx.execute(
-                "UPDATE documents SET front = ?2, text = ?3 WHERE id = ?1 AND (front IS NOT ?2 OR text IS NOT ?3)",
-                params![at.id, c.front, c.text],
-            )
-            .map_err(err)?;
+            let rewritten = tx
+                .execute(
+                    "UPDATE documents SET front = ?2, text = ?3 WHERE id = ?1 AND (front IS NOT ?2 OR text IS NOT ?3)",
+                    params![at.id, c.front, c.text],
+                )
+                .map_err(err)?
+                > 0;
             tx.execute("UPDATE documents SET blob = ?2, size = ?3, rev = ?4 WHERE id = ?1", params![at.id, c.blob, size, rev])
                 .map_err(err)?;
             tx.execute("DELETE FROM schedules WHERE doc = ?1", [&at.id]).map_err(err)?;
@@ -801,6 +883,13 @@ fn put_tx(tx: &Connection, rev_at: &mut i64, at: &Place, content: Option<&Conten
                     .map_err(err)?;
                 }
                 tx.execute("INSERT INTO digests (doc, data) VALUES (?1, ?2)", params![at.id, l.digest]).map_err(err)?;
+                // the rows are made from the text alone, so a grade rewrites none of them; one that has none may be new to the text it holds
+                if let Some(rows) = &l.search {
+                    let none = || tx.query_row("SELECT NOT EXISTS (SELECT 1 FROM search WHERE doc = ?1)", [&at.id], |r| r.get::<_, bool>(0)).map_err(err);
+                    if rewritten || none()? {
+                        search_tx(tx, &at.id, rows)?;
+                    }
+                }
                 if let Some(o) = &l.original {
                     tx.execute("INSERT INTO originals (key, text, stamp) VALUES (?1, ?2, ?3)", params![at.id, o.text, o.stamp])
                         .map_err(err)?;
@@ -810,10 +899,24 @@ fn put_tx(tx: &Connection, rev_at: &mut i64, at: &Place, content: Option<&Conten
                     tx.execute("DELETE FROM originals WHERE key = ?1", [format!("{REVIEWS_PATH}/{}", r.file)]).map_err(err)?;
                 }
             }
+            // content with no rows for it: a document no more, or text on its way to being one
+            if lift.is_none_or(|l| l.search.is_none()) {
+                search_tx(tx, &at.id, &[])?;
+            }
         }
         *rev_at = rev;
         Ok(())
     }
+}
+
+/// A document's rows of the index replaced. The triggers keep `search_grams` with them.
+fn search_tx(tx: &Connection, doc: &str, rows: &[SearchRow]) -> Result<(), String> {
+    tx.execute("DELETE FROM search WHERE doc = ?1", [doc]).map_err(err)?;
+    let mut st = tx.prepare_cached("INSERT INTO search (doc, block, kind, card, hay, text) VALUES (?1, ?2, ?3, ?4, ?5, ?6)").map_err(err)?;
+    for r in rows {
+        st.execute(params![doc, r.block, r.kind, r.card, r.hay, r.text]).map_err(err)?;
+    }
+    Ok(())
 }
 
 fn ink_tx(tx: &Connection, rev_at: &mut i64, page: &str, add: &[InkStroke], remove: &[String]) -> Result<(), String> {
@@ -927,6 +1030,81 @@ impl Store {
         }
         out.push(']');
         Ok(out)
+    }
+
+    /// The blocks that hold what was asked, `limit` at most. `words` and
+    /// `phrase` are folded already, `phrase` being `words` joined by a space:
+    /// the blocks that hold it as written come first, then those that hold
+    /// every word of it anywhere. A word of three letters or more is found
+    /// by its pieces (a run of three-letter pieces in order is the text
+    /// itself, so nothing found needs checking); a shorter one by reading
+    /// `hay`, and a query of nothing but those reads every row until
+    /// `limit` are found.
+    pub fn search(&self, phrase: &str, words: &[String], limit: i64) -> Result<Vec<SearchHit>, String> {
+        let long = |w: &str| w.chars().count() >= GRAM;
+        let quote = |w: &str| format!("\"{}\"", w.replace('"', "\"\""));
+        let mut seen: HashSet<i64> = HashSet::new();
+        let mut out: Vec<SearchHit> = Vec::new();
+        if words.len() > 1 && long(phrase) {
+            self.search_pass(Some(&quote(phrase)), &[], limit, &mut seen, &mut out)?;
+        }
+        if words.is_empty() || out.len() as i64 >= limit {
+            return Ok(out);
+        }
+        let pieces: Vec<String> = words.iter().filter(|w| long(w)).map(|w| quote(w)).collect();
+        let short: Vec<&String> = words.iter().filter(|w| !long(w)).collect();
+        let found = if pieces.is_empty() { None } else { Some(pieces.join(" AND ")) };
+        self.search_pass(found.as_deref(), &short, limit, &mut seen, &mut out)?;
+        Ok(out)
+    }
+
+    /// One way of looking: by `pieces` if any, every row otherwise; a row must hold each of `read` too. Rows already in `seen` are not found twice.
+    fn search_pass(&self, pieces: Option<&str>, read: &[&String], limit: i64, seen: &mut HashSet<i64>, out: &mut Vec<SearchHit>) -> Result<(), String> {
+        let mut args: Vec<&str> = Vec::new();
+        let mut sql = String::from("SELECT s.id, s.doc, s.block, s.kind, s.card, s.text FROM ");
+        match pieces {
+            Some(p) => {
+                sql.push_str("search_grams g JOIN search s ON s.id = g.rowid WHERE search_grams MATCH ?1");
+                args.push(p);
+            }
+            None => sql.push_str("search s WHERE 1"),
+        }
+        for w in read {
+            args.push(w);
+            sql.push_str(&format!(" AND instr(s.hay, ?{}) > 0", args.len()));
+        }
+        let want = limit - out.len() as i64 + seen.len() as i64;
+        sql.push_str(&format!(" LIMIT {want}"));
+        let mut st = self.conn.prepare_cached(&sql).map_err(err)?;
+        let mut rows = st.query(rusqlite::params_from_iter(args)).map_err(err)?;
+        while let Some(r) = rows.next().map_err(err)? {
+            if (out.len() as i64) >= limit {
+                break;
+            }
+            if seen.insert(r.get(0).map_err(err)?) {
+                out.push(SearchHit { doc: r.get(1).map_err(err)?, block: r.get(2).map_err(err)?, kind: r.get(3).map_err(err)?, card: r.get(4).map_err(err)?, text: r.get(5).map_err(err)? });
+            }
+        }
+        Ok(())
+    }
+
+    /// How far the walk has come. No row at all is a collection from before the index that has not been started on.
+    pub fn search_state(&self) -> Result<SearchState, String> {
+        let at: Option<String> = self.conn.query_row("SELECT value FROM search_meta WHERE key = ?1", [WALKED], |r| r.get(0)).optional().map_err(err)?;
+        Ok(match at.as_deref() {
+            Some(WALKED_ALL) => SearchState { done: true, after: None },
+            _ => SearchState { done: false, after: at },
+        })
+    }
+
+    /// The documents after `after` by id, `limit` at most, each with its text (front matter, then the rest): what the walk reads.
+    pub fn search_walk(&self, after: Option<&str>, limit: i64) -> Result<Vec<(String, String)>, String> {
+        let mut st = self
+            .conn
+            .prepare("SELECT id, COALESCE(front, '') || COALESCE(text, '') FROM documents WHERE id > ?1 AND kind = 'doc' AND blob IS NULL ORDER BY id LIMIT ?2")
+            .map_err(err)?;
+        let rows = st.query_map(params![after.unwrap_or(""), limit], |r| Ok((r.get(0)?, r.get(1)?))).map_err(err)?;
+        rows.collect::<rusqlite::Result<Vec<_>>>().map_err(err)
     }
 
     /// The review log's files, and how many lines each holds.
@@ -1133,6 +1311,15 @@ impl Stores {
     }
     pub fn digests(&self, dir: &Path, after: Option<&str>, limit: i64) -> Result<String, String> {
         self.with(dir, |s| s.digests(after, limit))
+    }
+    pub fn search(&self, dir: &Path, phrase: &str, words: &[String], limit: i64) -> Result<Vec<SearchHit>, String> {
+        self.with(dir, |s| s.search(phrase, words, limit))
+    }
+    pub fn search_state(&self, dir: &Path) -> Result<SearchState, String> {
+        self.with(dir, |s| s.search_state())
+    }
+    pub fn search_walk(&self, dir: &Path, after: Option<&str>, limit: i64) -> Result<Vec<(String, String)>, String> {
+        self.with(dir, |s| s.search_walk(after, limit))
     }
     pub fn review_files(&self, dir: &Path) -> Result<Vec<(String, i64)>, String> {
         self.with(dir, |s| s.review_files())
@@ -1424,6 +1611,7 @@ mod tests {
         let dir = scratch("lift");
         let mut s = Store::memory(&dir);
         let lift = Lift {
+            search: None,
             state: vec![
                 sched("card", "ca", "", r#"{"due":"2026-11-07","last":"2026-11-01T08:00:00Z","stability":4.5}"#),
                 sched("read", "", "", r#"{"due":"2026-11-06","ivl":2}"#),
@@ -1447,6 +1635,7 @@ mod tests {
         // a grade: the same text, another schedule, a line in the log, one transaction; the text is not written again
         let changes = |s: &Store| -> i64 { s.conn.query_row("SELECT total_changes()", [], |r| r.get(0)).unwrap() };
         let graded = Lift {
+            search: None,
             state: vec![sched("card", "ca", "", r#"{"due":"2026-11-20","last":"2026-11-05T09:00:00Z"}"#)],
             digest: "{}".into(),
             original: None,
@@ -1502,7 +1691,7 @@ mod tests {
 
         // a file kept as it came in is found by its path; a document's goes with its row, and with what its row is under
         s.original_put(".ilmi/order.json", Some(&Original { text: "{}".into(), stamp: "s".into() })).unwrap();
-        let lift = Lift { state: vec![], digest: "{}".into(), original: Some(Original { text: "b\r\n".into(), stamp: "t".into() }), size: 3, reviews: vec![] };
+        let lift = Lift { state: vec![], digest: "{}".into(), search: None, original: Some(Original { text: "b\r\n".into(), stamp: "t".into() }), size: 3, reviews: vec![] };
         s.put(&place("b", Some("f"), "b", "doc"), Some(&text("", "b\n")), Some(&lift)).unwrap();
         assert_eq!(s.originals().unwrap().len(), 1);
         s.remove(&["f".to_string()]).unwrap();
@@ -1774,5 +1963,129 @@ mod tests {
         let mut text = String::new();
         std::io::Read::read_to_string(&mut zip.by_name("my notes/papers/b.md").unwrap(), &mut text).unwrap();
         assert_eq!(text, "b\n");
+    }
+
+    fn found(s: &Store, q: &str) -> Vec<(String, i64)> {
+        let words: Vec<String> = q.split_whitespace().map(str::to_string).collect();
+        s.search(&words.join(" "), &words, 50).unwrap().into_iter().map(|h| (h.doc, h.block)).collect()
+    }
+
+    fn hit_row(block: i64, hay: &str) -> SearchRow {
+        SearchRow { block, kind: "text".to_string(), card: None, hay: hay.to_string(), text: hay.to_string() }
+    }
+
+    fn lifted(rows: Vec<SearchRow>) -> Lift {
+        Lift { search: Some(rows), ..Lift::default() }
+    }
+
+    fn grams(s: &Store, q: &str) -> i64 {
+        s.conn.query_row("SELECT COUNT(*) FROM search_grams WHERE search_grams MATCH ?1", [q], |r| r.get(0)).unwrap()
+    }
+
+    #[test]
+    fn search_finds_by_pieces_and_by_reading() {
+        let dir = scratch("search-find");
+        let mut s = Store::memory(&dir);
+        s.put(&place("a", None, "a", "doc"), Some(&text("", "x")), Some(&lifted(vec![hit_row(0, "the kingdom of heaven"), hit_row(2, "heaven is a kingdom"), hit_row(3, "بالكرم والجود")]))).unwrap();
+        s.put(&place("b", None, "b", "doc"), Some(&text("", "y")), Some(&lifted(vec![hit_row(1, "he said \"so\" 100%")]))).unwrap();
+        // a word, inside a word, across a word's end
+        assert_eq!(found(&s, "kingdom"), vec![("a".to_string(), 0), ("a".to_string(), 2)]);
+        assert_eq!(found(&s, "ngdo"), vec![("a".to_string(), 0), ("a".to_string(), 2)]);
+        // three letters of Arabic with its prefix and its joined word
+        assert_eq!(found(&s, "كرم"), vec![("a".to_string(), 3)]);
+        // the phrase as written first, then every word anywhere
+        assert_eq!(found(&s, "kingdom of heaven"), vec![("a".to_string(), 0)]);
+        assert_eq!(found(&s, "heaven kingdom"), vec![("a".to_string(), 0), ("a".to_string(), 2)]);
+        assert_eq!(found(&s, "a kingdom"), vec![("a".to_string(), 2), ("a".to_string(), 0)]);
+        // under three letters: read, not looked up
+        assert_eq!(found(&s, "ki"), vec![("a".to_string(), 0), ("a".to_string(), 2)]);
+        assert_eq!(found(&s, "كر"), vec![("a".to_string(), 3)]);
+        assert_eq!(found(&s, "is he"), vec![("a".to_string(), 2)]);
+        // what FTS5's own syntax would take as an operator is only text
+        assert_eq!(found(&s, "\"so\""), vec![("b".to_string(), 1)]);
+        assert_eq!(found(&s, "100%"), vec![("b".to_string(), 1)]);
+        assert_eq!(found(&s, "and OR not"), vec![]);
+        assert_eq!(found(&s, "nothing"), vec![]);
+        assert_eq!(found(&s, ""), vec![]);
+    }
+
+    #[test]
+    fn search_follows_the_row() {
+        let dir = scratch("search-row");
+        let mut s = Store::memory(&dir);
+        let at = place("a", None, "a", "doc");
+        s.put(&at, Some(&text("", "one")), Some(&lifted(vec![hit_row(0, "first words")]))).unwrap();
+        let id: i64 = s.conn.query_row("SELECT id FROM search WHERE doc = 'a'", [], |r| r.get(0)).unwrap();
+        // the same text (a grade): nothing is written, whatever rows came
+        s.put(&at, Some(&text("", "one")), Some(&lifted(vec![hit_row(0, "not what the text says")]))).unwrap();
+        assert_eq!(s.conn.query_row::<i64, _, _>("SELECT id FROM search WHERE doc = 'a'", [], |r| r.get(0)).unwrap(), id);
+        assert_eq!(found(&s, "first"), vec![("a".to_string(), 0)]);
+        // a rename or a move: the row keeps its id, so the index has nothing to do
+        s.put(&place("f", None, "f", "folder"), None, None).unwrap();
+        s.put(&place("a", Some("f"), "renamed", "doc"), None, None).unwrap();
+        assert_eq!(found(&s, "first"), vec![("a".to_string(), 0)]);
+        // other text: the old words are gone from the rows and the pieces
+        s.put(&at, Some(&text("", "two")), Some(&lifted(vec![hit_row(1, "second thoughts")]))).unwrap();
+        assert_eq!(found(&s, "first"), vec![]);
+        assert_eq!(grams(&s, "\"first\""), 0);
+        assert_eq!(found(&s, "second"), vec![("a".to_string(), 1)]);
+        // text with none for it, a document that became its children's folder
+        s.put(&place("a", None, "a", "folder"), Some(&Content::default()), None).unwrap();
+        assert_eq!(found(&s, "second"), vec![]);
+        // a delete takes them, and those of what is under it
+        s.put(&place("k", Some("f"), "k", "doc"), Some(&text("", "three")), Some(&lifted(vec![hit_row(0, "third time")]))).unwrap();
+        assert_eq!(found(&s, "third"), vec![("k".to_string(), 0)]);
+        s.remove(&["f".to_string()]).unwrap();
+        assert_eq!(found(&s, "third"), vec![]);
+        assert_eq!(grams(&s, "\"third\""), 0);
+        assert_eq!(s.conn.query_row::<i64, _, _>("SELECT COUNT(*) FROM search", [], |r| r.get(0)).unwrap(), 0);
+        // the engine's tables hold nothing of it
+        let (regs, out): (i64, i64) = s.conn.query_row("SELECT (SELECT COUNT(*) FROM regs), (SELECT COUNT(*) FROM outbox)", [], |r| Ok((r.get(0)?, r.get(1)?))).unwrap();
+        assert_eq!((regs, out), (0, 0));
+    }
+
+    #[test]
+    fn a_collection_from_before_the_index_is_walked() {
+        let dir = scratch("search-walk");
+        {
+            let conn = Connection::open(dir.join(DB_FILE)).unwrap();
+            // what 4 was: the same tables but for the index's
+            conn.execute_batch(&SCHEMA[..SCHEMA.find("CREATE TABLE IF NOT EXISTS search (").unwrap()]).unwrap();
+            conn.pragma_update(None, "user_version", 4).unwrap();
+            for id in ["a", "b", "c"] {
+                conn.execute("INSERT INTO documents (id, name, kind, front, text) VALUES (?1, ?1, 'doc', '---\n---\n', 'the text of ' || ?1)", [id]).unwrap();
+            }
+            conn.execute("INSERT INTO documents (id, name, kind) VALUES ('f', 'f', 'folder')", []).unwrap();
+        }
+        let mut s = Store::open(&dir).unwrap();
+        // it opens, tables added, nothing else touched
+        assert_eq!(s.version().unwrap(), 4);
+        assert_eq!(s.rows().unwrap().len(), 4);
+        assert_eq!(s.search_state().unwrap(), SearchState { done: false, after: None });
+        assert_eq!(found(&s, "text"), vec![]);
+        let first = s.search_walk(None, 2).unwrap();
+        assert_eq!(first, vec![("a".to_string(), "---\n---\nthe text of a".to_string()), ("b".to_string(), "---\n---\nthe text of b".to_string())]);
+        s.batch(&[Op::Search { doc: "a".to_string(), rows: vec![hit_row(0, "the text of a")] }, Op::Search { doc: "b".to_string(), rows: vec![hit_row(0, "the text of b")] }, Op::SearchWalked { after: Some("b".to_string()) }]).unwrap();
+        assert_eq!(s.search_state().unwrap(), SearchState { done: false, after: Some("b".to_string()) });
+        drop(s);
+        // closed half way: the next open goes on from there
+        let mut s = Store::open(&dir).unwrap();
+        assert_eq!(s.search_state().unwrap().after.as_deref(), Some("b"));
+        assert_eq!(found(&s, "text").len(), 2);
+        let rest = s.search_walk(Some("b"), 2).unwrap();
+        assert_eq!(rest.len(), 1);
+        s.batch(&[Op::Search { doc: "c".to_string(), rows: vec![hit_row(0, "the text of c")] }, Op::SearchWalked { after: None }]).unwrap();
+        assert_eq!(s.search_state().unwrap(), SearchState { done: true, after: None });
+        assert_eq!(found(&s, "text").len(), 3);
+        // a walk again finds what it found, once
+        s.batch(&[Op::Search { doc: "c".to_string(), rows: vec![hit_row(0, "the text of c")] }]).unwrap();
+        assert_eq!(found(&s, "text").len(), 3);
+    }
+
+    #[test]
+    fn a_new_collection_has_nothing_to_walk() {
+        let dir = scratch("search-new");
+        let s = Store::create(&dir.join("c")).unwrap();
+        assert_eq!(s.search_state().unwrap(), SearchState { done: true, after: None });
     }
 }

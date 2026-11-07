@@ -688,12 +688,30 @@ export interface StateOptions {
   ink?: () => InkBoxes;
 }
 
+/** Which block a result of the search index landed on, by its place among the top-level nodes; null when it has faded. */
+export const landKey = new PluginKey<DecorationSet>('landed');
+/** The fill on a block landed on, kept as a decoration: the page redraws a block as the caret comes into it, and a class set by hand goes with what is redrawn. */
+const landed = new Plugin<DecorationSet>({
+  key: landKey,
+  state: {
+    init: () => DecorationSet.empty,
+    apply(tr, set, _old, state) {
+      const at = tr.getMeta(landKey) as number | null | undefined;
+      if (at === null) return DecorationSet.empty;
+      if (at === undefined) return set.map(tr.mapping, tr.doc);
+      const node = state.doc.nodeAt(at);
+      return node ? DecorationSet.create(state.doc, [Decoration.node(at, at + node.nodeSize, { class: 'landed' })]) : DecorationSet.empty;
+    },
+  },
+  props: { decorations: (state) => landKey.getState(state) },
+});
+
 export function makeState(blocks: Block[], opts: StateOptions): EditorState {
   const folds = opts.folds ?? [];
   const state = EditorState.create({
     doc: toDoc(blocks),
     // images before marks: the marks read the images' state as it is after the same transaction
-    plugins: [...(opts.ink ? [inkAreas(opts.ink)] : []), frozenPlugin(opts.frozen), slashPlugin({ openMath: (tr, pos) => tr.setMeta(mathEditKey, pos) }), findPlugin, rules, enterRules, formatKeys, keys, keymap(baseKeymap), history(), gapCursor(), mathReform, mathEdit, images(opts.images), marks, marker, direction, codeColours, foldPlugin, tablePlugin, ...(opts.book ? [bookPlugin(opts.book)] : [])],
+    plugins: [...(opts.ink ? [inkAreas(opts.ink)] : []), frozenPlugin(opts.frozen), slashPlugin({ openMath: (tr, pos) => tr.setMeta(mathEditKey, pos) }), findPlugin, rules, enterRules, formatKeys, keys, keymap(baseKeymap), history(), gapCursor(), mathReform, mathEdit, images(opts.images), marks, marker, direction, codeColours, foldPlugin, tablePlugin, landed, ...(opts.book ? [bookPlugin(opts.book)] : [])],
   });
   const read = opts.pos === null ? state : state.apply(state.tr.setMeta(markerKey, opts.pos));
   return folds.length ? read.apply(read.tr.setMeta(foldKey, { keys: folds } satisfies FoldMeta)) : read;

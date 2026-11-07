@@ -17,7 +17,7 @@ import {
   setReadPos, splitBlocks, atomFind, markFinds, toggleInline, toggleTask, type Band, type InlineRange, type InlineToggle, type LinkTarget, type Passage, type RawShape,
   askImageKey, closeAtMatch, dirAttr, strongDir, withBases, type Dir, findKey, insertImages, pickSlash, replaceAll, replaceMatch, slashContext, slashItems, slashKey, htmlPasteImages,
   type FindMeta, type FindState, type SlashItem, type SlashState, textOf,
-  bookKey, CODE_LANGS, addColumn, addRow, cellAt, alignColumn, codeHTML, codeLang, deleteColumn, deleteRow, foldKey, foldedKeys, foldsHiding, ruleEndIndex, langOf, setCodeLang, type Align, type FoldMeta,
+  bookKey, CODE_LANGS, addColumn, addRow, cellAt, alignColumn, codeHTML, codeLang, deleteColumn, deleteRow, foldKey, foldedKeys, foldsHiding, landKey, ruleEndIndex, langOf, setCodeLang, type Align, type FoldMeta,
 } from '../reader/index.js';
 import { advanceWrite, sectionSpan, whenToDate } from '../schedule/index.js';
 import { dirOf, nameOf, type Loaded, type Vault } from '../vault/index.js';
@@ -1136,6 +1136,14 @@ function cardPos(doc: PMNode, at: { index: number; id?: string }): number | null
   return byId;
 }
 
+/** Where child `index` of the document is; null when it has fewer. */
+function blockPos(doc: PMNode, index: number): number | null {
+  if (index >= doc.childCount) return null;
+  let off = 0;
+  for (let i = 0; i < index; i++) off += doc.child(i).nodeSize;
+  return off;
+}
+
 /**
  * The heading at or above top-level node `index`: its place among the
  * page's headings that have text (as the file's blocks count them), its
@@ -1734,6 +1742,27 @@ export function Reader({ id, active = true, onPages, notes = false }: ReaderProp
         for (let i = 0; i <= reveal.index; i++) end += view.state.doc.child(i).nodeSize;
         writeAfter(view, end);
         (view.nodeDOM(end - view.state.doc.child(reveal.index).nodeSize) as HTMLElement | null)?.scrollIntoView({ block: 'center' });
+      }
+      useApp.setState({ reveal: null });
+      return;
+    }
+    // a block the search index found: at the middle of the page, marked, the caret in it
+    if (reveal.block) {
+      const pos = blockPos(view.state.doc, reveal.index);
+      if (pos !== null) {
+        const hiding = foldsHiding(view.state, pos).map((f) => f.pos);
+        if (hiding.length) view.dispatch(view.state.tr.setMeta(foldKey, { open: hiding } satisfies FoldMeta));
+        view.dispatch(view.state.tr.setSelection(Selection.near(view.state.doc.resolve(pos))));
+        // the page can be built again as a document's first read comes back: it lands on the page that is there once it has settled
+        const { index } = reveal;
+        setTimeout(() => {
+          const now = viewRef.current;
+          const at = now ? blockPos(now.state.doc, index) : null;
+          if (!now || at === null) return;
+          now.dispatch(now.state.tr.setMeta(landKey, at));
+          (now.nodeDOM(at) as HTMLElement | null)?.scrollIntoView({ block: 'center' });
+          setTimeout(() => { if (!now.isDestroyed) now.dispatch(now.state.tr.setMeta(landKey, null)); }, 2400);
+        }, 120);
       }
       useApp.setState({ reveal: null });
       return;

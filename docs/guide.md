@@ -338,6 +338,29 @@ pushes on is only held over to tomorrow, its cadence kept, where `p` on it
 still grows the interval. The bottom strip shows the keys that work where you are. `ilmi.theme('dark')`
 and friends still work from the devtools console.
 
+## Finding
+
+The palette (⌘K) finds words as well as names. Type and the rows are, in
+order: names that hold what you typed, then cards and lines of text that
+hold it, then looser matches among the names. A card shows as a card; a line
+of text shows the words around what was found, the word itself marked, and
+the document it is in. `⏎` opens it there: a card selected, a heading or a
+paragraph in the middle of the page with a fill that fades.
+
+It looks through every document's text and every card, both faces, a cloze's
+answers in place. Case, accents, Arabic's vowel marks and the tatweel do not
+count: `كرم` finds `كَرَمٌ`, `lucke` finds `Lücke`, and أ إ آ are all ا.
+It finds letters, not roots: `كرم` finds `بالكرم` and `أكرمه` because
+the three letters are there in a row, and not `كرام`, where they are not.
+Several words find the lines that hold them as you wrote them first, then
+the lines that hold all of them anywhere. Text in a formula is found as its
+TeX is written. A PDF's pages and handwriting are not searched: only what is
+text in the collection.
+
+A collection from before this reads itself in the first time it opens, while
+you go on working. Until it has, the palette's foot says how far it has come,
+and anything it has not reached is not found.
+
 ## Sync
 
 A collection syncs between devices as a git repository. In the tweaks (⌘,),

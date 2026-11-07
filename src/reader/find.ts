@@ -1,8 +1,7 @@
-// Find in the page, and replace. Matching folds case and marks the way the
-// deck search does (`fold` in src/app/deck.ts: NFKD, combining marks and
-// the tatweel dropped, lower case), so an unvoweled Arabic word finds the
-// voweled one and `Lucke` finds `Lücke`; the fold is taken a character at a
-// time so every match maps back to the text it stands for, the marks after
+// Find in the page, and replace. Matching folds as the deck search and the
+// search index do (`src/format/fold.ts`), so an unvoweled Arabic word finds
+// the voweled one and `Lucke` finds `Lücke`; the fold is taken a character at
+// a time so every match maps back to the text it stands for, the marks after
 // its last letter included. A textblock's matches are drawn as inline
 // decorations; a card or a drawn atom (a table) that holds one is marked as
 // a whole and counted once per match. Replace writes only into textblocks:
@@ -11,47 +10,12 @@
 import type { Node as PMNode } from 'prosemirror-model';
 import { Plugin, PluginKey, TextSelection, type EditorState, type Transaction } from 'prosemirror-state';
 import { Decoration, DecorationSet } from 'prosemirror-view';
+import { findIn, fold, foldMap } from '../format/index.js';
 import { flatText } from './commands.js';
 
-/** One character folded: what it searches as (`''` for a mark). */
-const foldChar = (c: string): string => c.normalize('NFKD').replace(/[\p{M}ـ]/gu, '').toLowerCase();
-
+export { findIn, foldMap };
 /** `s` folded as the deck search folds it. */
-export const foldText = (s: string): string => Array.from(s, foldChar).join('');
-
-/** `text` folded, with the offset in `text` of each folded character. */
-export function foldMap(text: string): { folded: string; at: number[] } {
-  let folded = '';
-  const at: number[] = [];
-  let off = 0;
-  for (const c of text) {
-    const f = foldChar(c);
-    for (let k = 0; k < f.length; k++) at.push(off);
-    folded += f;
-    off += c.length;
-  }
-  return { folded, at };
-}
-
-const isMark = (c: string): boolean => /^[\p{M}ـ]$/u.test(c);
-
-/** Every match of `query` in `text`, folded, as offsets into `text`; a match takes the marks right after it. */
-export function findIn(text: string, query: string): { from: number; to: number }[] {
-  const q = foldText(query);
-  if (!q.trim()) return [];
-  const { folded, at } = foldMap(text);
-  const out: { from: number; to: number }[] = [];
-  for (let i = folded.indexOf(q); i >= 0; i = folded.indexOf(q, i + q.length)) {
-    const from = at[i]!;
-    const last = at[i + q.length - 1]!;
-    let to = last + (text.codePointAt(last)! > 0xffff ? 2 : 1);
-    while (to < text.length && isMark(text[to]!)) to++;
-    // a fold that spread one character over several (a ligature) can end a match inside it
-    if (out.length && from < out[out.length - 1]!.to) continue;
-    out.push({ from, to });
-  }
-  return out;
-}
+export const foldText = fold;
 
 /** A match: its range in the document; `atom` when it is inside a card or a drawn block, which is marked whole. */
 export interface Match {

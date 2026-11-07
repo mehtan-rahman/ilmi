@@ -7,6 +7,7 @@
 import { createHash } from 'node:crypto';
 import type { Doc } from '../format/index.js';
 import type { Original } from './lift.js';
+import type { SearchRow } from './search.js';
 import { STORE_VERSION, type Content, type DocContent, type InkStroke, type Lift, type Place, type Reg, type ReviewRow, type Row, type Sched, type Store, type StoreOp } from './store.js';
 
 type Call = 'rows' | 'text' | 'doc' | 'put' | 'remove' | 'places' | 'digests' | 'reviews' | 'reviewsPut' | 'blobPut' | 'blobGet';
@@ -30,6 +31,9 @@ export interface MemStore extends Store {
     crdt: Map<string, string>;
     outbox: Map<number, string>;
     meta: Map<string, string>;
+    /** The search index (milestone 68): each document's rows, and how many times a document's were written. */
+    search: Map<string, SearchRow[]>;
+    searchWrites: number;
   };
 }
 
@@ -50,6 +54,9 @@ export function memSplit(drawing: Uint8Array): InkStroke[] {
 
 /** A collection in memory; `version` is the schema it claims to have been written by (a test of the upgrade starts below the present one). */
 export function memStore(version = STORE_VERSION): MemStore {
+  const search = new Map<string, SearchRow[]>();
+  /** How far the walk has come: `all` for a collection made with the index. */
+  let walked: string | null = version >= STORE_VERSION ? 'all' : null;
   const rows = new Map<string, Row>();
   const texts = new Map<string, { front: string; text: string }>();
   const state = new Map<string, Sched[]>();
@@ -67,7 +74,7 @@ export function memStore(version = STORE_VERSION): MemStore {
   const meta = new Map<string, string>();
   const ink = new Map<string, Map<string, InkStroke>>();
   const strokesOf = (page: string): InkStroke[] => [...(ink.get(page)?.values() ?? [])].sort((a, b) => a.at - b.at || (a.stroke < b.stroke ? -1 : 1)).map((x) => ({ ...x }));
-  const tables = { texts, state, digests, originals, reviews, textWrites: 0, regs, crdt, outbox, meta };
+  const tables = { texts, state, digests, originals, reviews, textWrites: 0, regs, crdt, outbox, meta, search, searchWrites: 0 };
   let rev = 0;
   let schema = version;
   const bytes = (s: string): number => Buffer.byteLength(s, 'utf8');
@@ -81,7 +88,13 @@ export function memStore(version = STORE_VERSION): MemStore {
     rows.delete(id);
     texts.delete(id);
     ink.delete(id);
+    search.delete(id);
     forget(id);
+  };
+  const searchNow = (doc: string, list: SearchRow[]): void => {
+    tables.searchWrites++;
+    if (list.length) search.set(doc, list.map((r) => ({ ...r })));
+    else search.delete(doc);
   };
   const putNow = (at: Place, content?: Content, lift?: Lift): Row => {
     if (at.parent !== null && !rows.has(at.parent)) throw new Error(`${at.parent}: no such row`);
@@ -90,6 +103,7 @@ export function memStore(version = STORE_VERSION): MemStore {
       ? { ...old, parent: at.parent, name: at.name, place: at.place, kind: at.kind }
       : { id: at.id, parent: at.parent, name: at.name, place: at.place, kind: at.kind, size: 0, rev: ++rev, blob: null };
     if (content) {
+      let rewritten = false;
       const blob = content.blob ?? null;
       if (blob !== null) {
         const b = blobs.get(blob);
@@ -99,7 +113,8 @@ export function memStore(version = STORE_VERSION): MemStore {
       } else {
         const t = { front: content.front ?? '', text: content.text ?? '' };
         const was = texts.get(at.id);
-        if (!was || was.front !== t.front || was.text !== t.text) {
+        rewritten = !was || was.front !== t.front || was.text !== t.text;
+        if (rewritten) {
           texts.set(at.id, t);
           tables.textWrites++;
         }
@@ -114,6 +129,9 @@ export function memStore(version = STORE_VERSION): MemStore {
         if (lift.original) originals.set(at.id, { ...lift.original });
         for (const r of lift.reviews ?? []) reviews.push({ ...r });
       }
+      // the rows are made from the text alone: a grade writes none of them
+      if (lift?.search) { if (rewritten || !search.has(at.id)) searchNow(at.id, lift.search); }
+      else search.delete(at.id);
     }
     rows.set(at.id, row);
     return { ...row };
@@ -167,6 +185,18 @@ export function memStore(version = STORE_VERSION): MemStore {
     async digests(after, limit) {
       calls.digests++;
       return [...digests.keys()].sort().filter((id) => after === null || id > after).slice(0, limit).map((id): [string, Doc] => [id, JSON.parse(digests.get(id)!) as Doc]);
+    },
+    async search(phrase, words, limit) {
+      const all = [...search].flatMap(([doc, list]) => list.map((r) => ({ doc, ...r })));
+      const asWritten = words.length > 1 ? all.filter((r) => r.hay.includes(phrase)) : [];
+      const anywhere = all.filter((r) => words.every((w) => r.hay.includes(w)) && !asWritten.includes(r));
+      return [...asWritten, ...anywhere].slice(0, limit).map(({ doc, block, kind, card, text }) => ({ doc, block, kind, card, text }));
+    },
+    async searchState() {
+      return walked === 'all' ? { done: true, after: null } : { done: false, after: walked };
+    },
+    async searchWalk(after, limit) {
+      return [...rows.values()].filter((r) => r.kind === 'doc' && r.blob === null && (after === null || r.id > after)).sort((a, b) => (a.id < b.id ? -1 : 1)).slice(0, limit).map((r): [string, string] => { const t = texts.get(r.id); return [r.id, t ? t.front + t.text : '']; });
     },
     async reviewFiles() {
       const n = new Map<string, number>();
@@ -232,6 +262,8 @@ export function memStore(version = STORE_VERSION): MemStore {
           case 'out': outbox.set(o.seq, o.data); break;
           case 'outDrop': for (const k of [...outbox.keys()]) if (k <= o.upTo) outbox.delete(k); break;
           case 'expect': if (!expected.get(o.hash)) expected.set(o.hash, o.size); break;
+          case 'search': searchNow(o.doc, o.rows); break;
+          case 'searchWalked': walked = o.after ?? 'all'; break;
           case 'ink': {
             const page = ink.get(o.page) ?? new Map<string, InkStroke>();
             ink.set(o.page, page);

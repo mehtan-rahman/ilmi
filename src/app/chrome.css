@@ -384,6 +384,9 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.palette-row[data-t="text"] .pt { max-width: 66%; }
+/* what was found: the whole word, so an Arabic word keeps its letters joined */
+.palette-row mark { background: var(--accent-soft); color: inherit; border-radius: 2px; }
 .palette-row .psub {
   font-family: var(--mono);
   font-size: 10px;

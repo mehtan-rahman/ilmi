@@ -8,7 +8,7 @@ export { toDoc, fromDoc, textOf, inline, mathSplit, blocksEqual, cardDue, type M
 export { editorialRanges, type MarkRange } from './marks.js';
 export { proseIndices, cursorIndex, pickPos, setReadPos, isProse, type Band } from './marker.js';
 export {
-  makeState, codeDecorations, codeKey, directionDecorations, directionKey, markerKey, markerPos, cardsKey, frozenPlugin, frozenKey, imagesKey, mathEditKey, isMathEdit, openMath, revealKey, revealBackward, revealForward,
+  landKey, makeState, codeDecorations, codeKey, directionDecorations, directionKey, markerKey, markerPos, cardsKey, frozenPlugin, frozenKey, imagesKey, mathEditKey, isMathEdit, openMath, revealKey, revealBackward, revealForward,
   FORMAT_KEYS, pasteInto, type Edge, type StateOptions, type ImageLoader, type ImageState, type ImagesMeta,
 } from './plugins.js';
 export {

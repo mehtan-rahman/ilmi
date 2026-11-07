@@ -165,6 +165,8 @@ export interface Reveal {
   heading?: string;
   /** The caret in a fresh line after it (a heading: after its section) instead of on it, to write there: a passage just boxed, a clip. */
   write?: true;
+  /** A block of any kind, found by the search index: landed on where it is. */
+  block?: true;
 }
 
 /** A book's note asked to show a section on the pages (`path` the pages'): its boxes lit and scrolled to, flashed (`seq` changes each time). Transient. */
@@ -277,6 +279,8 @@ export interface AppState {
   tweaksOpen: boolean;
   selectedCard: SelectedCard | null;
   reveal: Reveal | null;
+  /** How much of a collection from before the search index has been read into it: 1 is all of it. */
+  searchShare: number;
   /** Moves when a page of ink changes (milestone 58): a reader showing its picture reads it again. */
   inkRev: number;
   caretHeading: CaretHeading | null;
@@ -392,6 +396,7 @@ export const useApp = create<AppState>((set, get) => ({
   tweaksOpen: false,
   selectedCard: null,
   reveal: null,
+  searchShare: 1,
   inkRev: 0,
   caretHeading: null,
   inlineBoxes: {},

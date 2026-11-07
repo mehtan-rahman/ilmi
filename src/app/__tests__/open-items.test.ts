@@ -12,7 +12,7 @@ import { NodeSelection, TextSelection } from 'prosemirror-state';
 import { describe, expect, it } from 'vitest';
 import { parse, serialize, type Block } from '../../format/index.js';
 import { flatText, foldKey, fromDoc, makeState, sections, textOf, type FoldMeta } from '../../reader/index.js';
-import { buildIndex, search } from '../chrome.js';
+import { textEntry } from '../chrome.js';
 import { cardHTML, handleClickOn, linesHTML, nodeViews, withSelectionOf } from '../Reader.js';
 import { foldedHeadings, headingKeys } from '../tabs.js';
 
@@ -172,17 +172,15 @@ describe('the outline marks folded headings', () => {
 
 describe('formulas in the palette', () => {
   it('a card row carries its whole name with the formula, drawn by KaTeX; search reads the plain title', () => {
-    const index = buildIndex([], {}, [{ path: 'n.md', index: 0, text: 'the action $J = \\oint p\\,dq$ :: adiabatic invariant' }, { path: 'n.md', index: 1, text: 'plain :: words' }], []);
-    const cards = index.filter((e) => e.tag === 'card');
-    expect(cards[0]!.math).toBe('the action $J = \\oint p\\,dq$');
-    expect(cards[0]!.title).not.toContain('$');
-    expect(cards[1]!.math).toBeUndefined();
-    // search reads the whole name: words past where the title is cut still find the card (the window's run 3)
-    const long = buildIndex([], {}, [{ path: 'h.md', index: 0, text: 'time evolution of a phase-space function $f(q,p,t)$ in Poisson-bracket form :: $\\dfrac{df}{dt} = \\{f,H\\}$' }], []);
-    const card = long.find((e) => e.tag === 'card')!;
-    expect(card.title).not.toContain('Poisson-bracket form');
-    expect(search(long, 'Poisson-bracket form')[0]?.key).toBe(card.key);
-    expect(card.math).toContain('$f(q,p,t)$');
+    const entry = (text: string) => textEntry({ path: 'n.md', block: 0, kind: 'card', card: null, text }, 'x', {});
+    const first = entry('the action $J = \\oint p\\,dq$ :: adiabatic invariant');
+    expect(first.math).toBe('the action $J = \\oint p\\,dq$');
+    expect(first.title).not.toContain('$');
+    expect(entry('plain :: words').math).toBeUndefined();
+    // the whole name is drawn: the row's width cuts it, not the title (the window's run 3)
+    const long = entry('time evolution of a phase-space function $f(q,p,t)$ in Poisson-bracket form :: $\\dfrac{df}{dt} = \\{f,H\\}$');
+    expect(long.title).not.toContain('Poisson-bracket form');
+    expect(long.math).toContain('$f(q,p,t)$');
   });
 });
 

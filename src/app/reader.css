@@ -905,6 +905,9 @@ mark.find-hit { color: inherit; padding: 0; }
 /* where a section from the queue opened: a quiet fill that fades */
 .draft-doc .dd-h { transition: background 1.2s ease-out; }
 .draft-doc .dd-h.landed { background: var(--accent-soft); }
+/* a block the search index found (milestone 68): the same fill */
+.draft-doc p { transition: background 1.2s ease-out; }
+.draft-doc .landed { background: var(--accent-soft); }
 
 /* ── a book's notes (milestone 48): the chip at the end of a section's heading ── */
 .book-notes-doc .notes-meta { margin-bottom: 18px; }

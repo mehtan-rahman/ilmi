@@ -11,7 +11,7 @@ import { info } from '@tauri-apps/plugin-log';
 import { REVIEWS_DIR, meta, setField, type Doc, type Meta, type NodeType, type Review } from '../format/index.js';
 import type { Chapter, MappedDeck } from '../import/index.js';
 import { activeExam, addDays, buryLinked, cadence, cardsById, dayOf, dayStart, docItems, examQueue, examsAt, isDue, itemKey, meterQueue, postponeOverflow, readPri, resolveOptions, spentToday, whenToDate, type ExamAt, type QueueItem, type Resolved } from '../schedule/index.js';
-import { SAME_FILE, Vault, childDirOf, childrenAt, cleanName, dirOf, entryOf, fileName, isDoc, isPdfPath, joinRel, normRel, ordered, placeEntry, rekey, relFrom, type DocNode, type ExtractSpec, type SectionSpec, type ImportDeckSpec, type ImportPdfSpec, type ImportSpec, type PdfChapterSpec, type StoreFs, type TreeNode, type VaultEvent, type VaultState } from '../vault/index.js';
+import { SAME_FILE, Vault, childDirOf, childrenAt, cleanName, dirOf, entryOf, fileName, isDoc, isPdfPath, joinRel, normRel, ordered, placeEntry, rekey, relFrom, type DocNode, type ExtractSpec, type SectionSpec, type ImportDeckSpec, type ImportPdfSpec, type ImportSpec, type PdfChapterSpec, type StoreFs, type TextHit, type TreeNode, type VaultEvent, type VaultState } from '../vault/index.js';
 import { createCollection, listCollections } from '../vault/tauri-store.js';
 import { startPlugins, stopPlugins } from '../plugins/index.js';
 import { cleanClipDir } from './clip.js';
@@ -597,6 +597,7 @@ export async function openVault(path: string): Promise<Vault> {
   stopSync();
   stopMirror();
   stopDated();
+  stopSearch();
   current?.close();
   const vault = await Vault.open(collectionFs(path), path);
   current = vault;
@@ -654,8 +655,27 @@ export async function openVault(path: string): Promise<Vault> {
   // the copies kept outside the database (`keep.ts`): the mirror, when one is set, and the day's export
   void startMirror(vault).catch((e: unknown) => console.error('mirror', e));
   void keepsDated().then((on) => { if (on && current === vault) keepDatedSoon(vault, currentVault); });
+  startSearch(vault);
   if (import.meta.env.DEV) void info(`vault ${path}: ${vault.documents().join(', ')}`);
   return vault;
+}
+
+/** How long after a collection opens its walk begins: the day is on the screen first. */
+const SEARCH_AFTER_MS = 1500;
+let searchTimer: ReturnType<typeof setTimeout> | null = null;
+let searchWalk: (() => void) | null = null;
+/** A collection from before the search index gets it once the day is on the screen; it goes on from where a last walk stopped. */
+function startSearch(vault: Vault): void {
+  const fs = vault.fs as StoreFs;
+  const told = (share: number): void => { if (Math.round(share * 100) !== Math.round(useApp.getState().searchShare * 100)) useApp.setState({ searchShare: share }); };
+  searchTimer = setTimeout(() => { searchTimer = null; searchWalk = fs.searchBuild(told); }, SEARCH_AFTER_MS);
+}
+function stopSearch(): void {
+  if (searchTimer) clearTimeout(searchTimer);
+  searchTimer = null;
+  searchWalk?.();
+  searchWalk = null;
+  useApp.setState({ searchShare: 1 });
 }
 
 /** Whether the day's export is made on its own: always, but for a dev run of a smoke, which makes its own when it checks them. */
@@ -674,6 +694,7 @@ export function closeVault(): void {
   stopSync();
   stopMirror();
   stopDated();
+  stopSearch();
   current?.close();
   current = null;
   bodies.clear();
@@ -872,8 +893,8 @@ export function openInitialVault(): Promise<void> {
       if (path) {
         const vault = await openVault(await devCollection(path));
         if (mode) {
-          const { smoke, smokeReader, smokeCards, smokeIntake, smokeQueue, smokeLoop, smokeShots, smokeDeck, smokePri, smokeGrowth, smokeOverload, smokeFaces, smokeCardsText, smokeAnki, smokeMath, smokeEpub, smokeClip, smokeClipping, smokePlugins, smokeDictionary, smokeRender, smokeLive, smokeBlocks, smokeUse, smokeLand, smokeNest, smokeTabs, smokeDecks, smokeTour, smokeNotes, smokeEditing, smokeTree, smokeInsert, smokeTabs2, smokeListCards, smokeArabic, smokeRest, smokeBothWays, smokeNumbers, smokeOpen, smokeExam, smokeSame, smokeSections, smokeBook, smokeBooks, smokeTextSections, smokeZoom, smokeCadence, smokeReadme, smokeSync, smokeNudge, smokeStore, smokeCrdt, smokeStorage, smokeTouchMac, smokePhoneMac, smokeInkMac, smokePageInkMac } = await import('./smoke.js');
-          const run = { reader: smokeReader, cards: smokeCards, intake: smokeIntake, queue: smokeQueue, loop: smokeLoop, shots: smokeShots, deck: smokeDeck, pri: smokePri, growth: smokeGrowth, overload: smokeOverload, faces: smokeFaces, 'cards-text': smokeCardsText, anki: smokeAnki, math: smokeMath, epub: smokeEpub, clip: smokeClip, clipping: smokeClipping, plugins: smokePlugins, dictionary: smokeDictionary, render: smokeRender, live: smokeLive, blocks: smokeBlocks, use: smokeUse, land: smokeLand, nest: smokeNest, tabs: smokeTabs, decks: smokeDecks, tour: smokeTour, notes: smokeNotes, editing: smokeEditing, tree: smokeTree, insert: smokeInsert, tabs2: smokeTabs2, listcards: smokeListCards, arabic: smokeArabic, rest: smokeRest, bothways: smokeBothWays, numbers: smokeNumbers, open: smokeOpen, exam: smokeExam, same: smokeSame, sections: smokeSections, book: smokeBook, books: smokeBooks, textsections: smokeTextSections, zoom: smokeZoom, cadence: smokeCadence, readme: smokeReadme, sync: smokeSync, nudge: smokeNudge, store: smokeStore, crdt: smokeCrdt, storage: smokeStorage, touch: smokeTouchMac, phone: smokePhoneMac, ink: smokeInkMac, pageink: smokePageInkMac }[mode] ?? smoke;
+          const { smoke, smokeReader, smokeCards, smokeIntake, smokeQueue, smokeLoop, smokeShots, smokeDeck, smokePri, smokeGrowth, smokeOverload, smokeFaces, smokeCardsText, smokeAnki, smokeMath, smokeEpub, smokeClip, smokeClipping, smokePlugins, smokeDictionary, smokeRender, smokeLive, smokeBlocks, smokeUse, smokeLand, smokeNest, smokeTabs, smokeDecks, smokeTour, smokeNotes, smokeEditing, smokeTree, smokeInsert, smokeTabs2, smokeListCards, smokeArabic, smokeRest, smokeBothWays, smokeNumbers, smokeOpen, smokeExam, smokeSame, smokeSections, smokeBook, smokeBooks, smokeTextSections, smokeZoom, smokeCadence, smokeReadme, smokeSync, smokeNudge, smokeStore, smokeCrdt, smokeStorage, smokeSearch, smokeTouchMac, smokePhoneMac, smokeInkMac, smokePageInkMac } = await import('./smoke.js');
+          const run = { reader: smokeReader, cards: smokeCards, intake: smokeIntake, queue: smokeQueue, loop: smokeLoop, shots: smokeShots, deck: smokeDeck, pri: smokePri, growth: smokeGrowth, overload: smokeOverload, faces: smokeFaces, 'cards-text': smokeCardsText, anki: smokeAnki, math: smokeMath, epub: smokeEpub, clip: smokeClip, clipping: smokeClipping, plugins: smokePlugins, dictionary: smokeDictionary, render: smokeRender, live: smokeLive, blocks: smokeBlocks, use: smokeUse, land: smokeLand, nest: smokeNest, tabs: smokeTabs, decks: smokeDecks, tour: smokeTour, notes: smokeNotes, editing: smokeEditing, tree: smokeTree, insert: smokeInsert, tabs2: smokeTabs2, listcards: smokeListCards, arabic: smokeArabic, rest: smokeRest, bothways: smokeBothWays, numbers: smokeNumbers, open: smokeOpen, exam: smokeExam, same: smokeSame, sections: smokeSections, book: smokeBook, books: smokeBooks, textsections: smokeTextSections, zoom: smokeZoom, cadence: smokeCadence, readme: smokeReadme, sync: smokeSync, nudge: smokeNudge, store: smokeStore, crdt: smokeCrdt, storage: smokeStorage, search: smokeSearch, touch: smokeTouchMac, phone: smokePhoneMac, ink: smokeInkMac, pageink: smokePageInkMac }[mode] ?? smoke;
           // the smokes before 40 expect the inspector wherever they open it: the room rule is the tour's to check
           if (mode !== 'tour') useApp.setState({ inspForced: true });
           await run(vault);
@@ -906,6 +927,15 @@ export function openCard(path: string, index: number, id?: string, opts: OpenOpt
   useApp.setState({ reveal: id === undefined ? { path, index } : { path, index, id } });
   openNode(path, opts);
 }
+
+/** Open the document at a block found by the search index. */
+export function openBlock(path: string, index: number, opts: OpenOpts = {}): void {
+  useApp.setState({ reveal: { path, index, block: true } });
+  openNode(path, opts);
+}
+
+/** The blocks of the collection that hold `q`: nothing in a vault that is not a collection. */
+export const searchText = async (q: string): Promise<TextHit[]> => (current ? (current.fs as StoreFs).search(q) : []);
 
 /** The intake, placing into `dir` (a folder path; `''` for the root). One tab, wherever it is. */
 export function openIntake(dir = '', opts: OpenOpts = {}): void {

@@ -12,6 +12,18 @@ over an `Fs`: `src/vault/store.ts` gives it the database as one (a path is
 made from rows' names and parents), and the vault's own tests run over both
 a directory and a store in memory.
 
+The search index (`search` and `search_grams`, FTS5's trigram tokenizer, in
+the same database) is folded in TypeScript and only there: `src/format/fold.ts`
+is the one rule, for the deck search, find in the page, and the index, and
+Rust stores what it is given. `src/vault/search.ts` makes a document's rows from
+its parsed text, in `decompose`, so they go with every write and every merge
+in that write's transaction. Rust skips them when the text did not change,
+which is what keeps a grade cheap. They are keyed by the row's id, so a rename
+touches nothing, and a delete cascades. They are each device's own: nothing of
+them reaches the engine. To change what is indexed for existing collections,
+clear `search` and `search_meta`, and the walk (`searchBuild` in
+`src/vault/store.ts`, started by `openVault`) makes them again.
+
 ## Running
 
 Requires node (Homebrew: `/opt/homebrew/bin`) and a Rust toolchain
@@ -48,11 +60,17 @@ then writes, an image, a rename and a move read back from the database, and
 the collection closed and reopened from the welcome; since milestone 60 it
 also grades a card and reads the database to see that only a schedule's row
 and the log changed, mirrors the collection to `<folder>-mirror/` and
-watches a write follow, and makes the day's dated export. `ILMI_SMOKE=size`
+watches a write follow, and makes the day's dated export. `ILMI_SMOKE=search` is
+the palette over the sample on whichever shape it runs (the Mac, or
+`smoke.json` on a simulated iPad or iPhone): the five files that hold كرم,
+a word, a phrase, under three letters, light and dark; a result opened at its
+place; a write, a rename and a delete followed in the database. `ILMI_SMOKE=size`
 (over the same copy, with `ILMI_SIZE=15,152` by default) imports the folder
 that many times over into collections `size-15` and `size-152` (about
-11,000 and 115,000 cards), opens each, grades a card, and prints the open,
-the grade, and the memory of the window's web content process (a dev-only
+11,000 and 115,000 cards), opens each, grades a card, times fifteen kinds of
+query through the palette (it fails if a word, an unvoweled Arabic word or a
+phrase takes a tenth of a second), and prints the open, the grade, and the
+memory of the window's web content process (a dev-only
 command reads its footprint, after posting WebKit's own low-memory
 notification so that garbage is collected first, in every WebKit process of
 the session; the page cannot weigh itself in WebKit). It

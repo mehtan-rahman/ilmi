@@ -225,6 +225,10 @@ html[data-shape="phone"] .palette-input kbd { display: none; }
 html[data-shape="phone"] .palette-row { align-items: center; min-height: 48px; padding: 8px 10px; }
 html[data-shape="phone"] .palette-row .pt { font-size: 17px; }
 html[data-shape="phone"] .palette-row .ptag { display: none; }
+/* a line of text has the row's whole width, or what was found is cut off: its document under it */
+html[data-shape="phone"] .palette-row[data-t="text"] { flex-wrap: wrap; row-gap: 2px; }
+html[data-shape="phone"] .palette-row[data-t="text"] .pt { max-width: calc(100% - 22px); }
+html[data-shape="phone"] .palette-row[data-t="text"] .psub { flex-basis: 100%; padding-inline-start: 22px; }
 html[data-shape="phone"] .palette-foot { display: none; }
 
 html[data-shape="phone"] .tweaks { left: 8px; right: 8px; bottom: calc(8px + var(--safe-b)); width: auto; max-height: calc(var(--shell-h, 100dvh) - var(--safe-t) - var(--safe-b) - 24px); overflow: auto; font-size: 14px; }

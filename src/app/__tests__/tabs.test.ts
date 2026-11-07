@@ -123,7 +123,7 @@ describe('the rail', () => {
   it('indexes a tab in the palette under its notebook', () => {
     expect(notebookTrail(TREE, EIGEN, DOCS, null)).toBe('linear algebra › unit 2');
     expect(notebookTrail(TREE, NB, DOCS, null)).toBeNull();
-    const index = buildIndex(TREE, DOCS, [], []);
+    const index = buildIndex(TREE, DOCS, []);
     expect(index.find((e) => e.key === `p:${EIGEN}`)).toMatchObject({ sub: 'linear algebra › unit 2', target: { open: EIGEN } });
     expect(index.find((e) => e.key === `p:${PSET}`)).toMatchObject({ sub: 'linear algebra' });
     expect(index.find((e) => e.key === 'p:german.md')).toMatchObject({ sub: 'deck' });

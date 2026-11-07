@@ -17,6 +17,9 @@
 // two copies add to one page are all kept, each by its name, one erased
 // is gone on both, a page deleted on one and drawn on on the other keeps
 // the drawing; and the random test draws, erases and deletes pages.
+// Milestone 68: the search index follows a merge as a write of its own, on
+// a joined copy and one made from a snapshot, and the random test ends with
+// every copy's rows what its text says. Nothing of it goes to the storage.
 
 import { promises as fsp } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -24,7 +27,7 @@ import { join as joinPath } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { formatReview, meta, parse, serialize, setField, type Card, type Doc, type Review } from '../../format/index.js';
-import { Vault, importFolder, join, storeFs, type StoreFs } from '../../vault/index.js';
+import { Vault, importFolder, join, searchRows, storeFs, type StoreFs } from '../../vault/index.js';
 import { memPagePicture, memPicture, memSplit, memStore, type MemStore } from '../../vault/mem-store.js';
 import { nodeFs } from '../../vault/node-fs.js';
 import { rising, type InkStroke } from '../../vault/store.js';
@@ -148,6 +151,18 @@ async function pair(from = SAMPLE): Promise<{ a: Copy; b: Copy; storage: MemStor
   expect(await b.eng.connect(storage)).toBe('joined');
   await b.eng.sync(storage);
   return { a, b, storage };
+}
+
+/** Whether a copy's search index is what its files say, document by document: what the rows hold is made from the text alone. */
+async function indexed(c: Copy): Promise<void> {
+  for (const r of c.fs.door.rows()) {
+    if (r.kind !== 'doc') { expect(c.store.tables.search.has(r.id), c.fs.door.pathOf(r)).toBe(false); continue; }
+    const d = await c.store.doc(r.id);
+    const want = searchRows(parse(d.front + d.text).doc);
+    expect(c.store.tables.search.get(r.id) ?? [], `${c.name}: ${c.fs.door.pathOf(r)}`).toEqual(want);
+  }
+  const ids = new Set(c.fs.door.rows().map((r) => r.id));
+  for (const id of c.store.tables.search.keys()) expect(ids.has(id), id).toBe(true);
 }
 
 describe('the clock', () => {
@@ -1119,6 +1134,90 @@ function rng(seed: number): () => number {
   };
 }
 
+describe('the search index follows a merge (milestone 68)', () => {
+  const found = async (c: Copy, q: string): Promise<string[]> => [...new Set((await c.fs.search(q, 1000)).map((h) => h.path))].sort();
+
+  it('a joined copy has the rows of everything it was given, and finds what the first finds', async () => {
+    const { a, b } = await pair();
+    await indexed(b);
+    expect(await found(b, 'كرم')).toEqual(await found(a, 'كرم'));
+    expect(await found(b, 'كرم')).toHaveLength(5);
+  });
+
+  it('a write, a rename, a move and a delete on one copy are found on the other as a write of its own', async () => {
+    const { a, b, storage } = await pair();
+    await a.write(NOTE, 'a thought about wombats\n');
+    await settle(storage, [a, b]);
+    expect(await found(b, 'wombats')).toEqual([NOTE]);
+    expect(await found(b, 'honors thesis idea that was here')).toEqual([]);
+    await a.fs.rename(join(ROOT, NOTE), join(ROOT, 'fleeting/renamed.md'));
+    await settle(storage, [a, b]);
+    expect(await found(b, 'wombats')).toEqual(['fleeting/renamed.md']);
+    await a.fs.rename(join(ROOT, 'fleeting'), join(ROOT, 'physics/fleeting'));
+    await settle(storage, [a, b]);
+    expect(await found(b, 'wombats')).toEqual(['physics/fleeting/renamed.md']);
+    await b.fs.remove(join(ROOT, 'physics/fleeting/renamed.md'));
+    await settle(storage, [a, b]);
+    expect(await found(a, 'wombats')).toEqual([]);
+    await indexed(a);
+    await indexed(b);
+  });
+
+  it('text merged by character is found as merged, and a grade from the other copy writes no row', async () => {
+    const { a, b, storage } = await pair();
+    await a.write(NOTE, 'one line of text\n');
+    await settle(storage, [a, b]);
+    await a.write(NOTE, 'one line of text about quolls\n');
+    await b.write(NOTE, 'and numbats: one line of text\n');
+    await settle(storage, [a, b]);
+    expect(await a.read(NOTE)).toBe(await b.read(NOTE));
+    expect(await found(a, 'quolls')).toEqual([NOTE]);
+    expect(await found(a, 'numbats')).toEqual([NOTE]);
+    expect(await found(b, 'quolls')).toEqual([NOTE]);
+    expect(await found(b, 'numbats')).toEqual([NOTE]);
+    a.at.ms += 60_000;
+    await grade(a, VOCAB, 'voc-karam', 3);
+    const n = b.store.tables.searchWrites;
+    await settle(storage, [a, b]);
+    expect(b.store.tables.searchWrites).toBe(n);
+    await indexed(b);
+  });
+
+  it('a copy made from a snapshot has its rows, and one that was away takes them with it', async () => {
+    const opts = { snapAfter: 6, snapWorth: 3 };
+    const storage = memStorage();
+    const a = await copy('a', SAMPLE, opts);
+    await a.eng.connect(storage);
+    await a.eng.sync(storage);
+    let snapped = 0;
+    for (let i = 0; i < 8 && !snapped; i++) {
+      a.at.ms += 60_000;
+      await a.change('arabic/roots.md', (doc) => { doc.blocks.push({ kind: 'paragraph', text: `a quokka, ${i}` }); });
+      if ((await a.eng.sync(storage)).snapped) snapped += 1;
+    }
+    expect(snapped).toBe(1);
+    const c = await copy('c', undefined, opts);
+    c.at.ms = a.at.ms;
+    await c.eng.connect(storage);
+    expect((await c.eng.sync(storage)).took).toBe(1);
+    expect(await found(c, 'quokka')).toEqual(['arabic/roots.md']);
+    await indexed(c);
+  });
+
+  it('is never a change: nothing of it goes to the storage, or into the registers', async () => {
+    const { a, storage } = await pair();
+    await a.write(NOTE, 'the word zyzzyva, once\n');
+    await a.eng.sync(storage);
+    const out = [...storage.files.values()].map((b) => Buffer.from(b).toString('latin1')).join('\n');
+    expect(out).not.toContain('"hay"');
+    expect(out).not.toContain('searchWalked');
+    expect([...a.store.tables.regs.keys()].some((k) => k.startsWith('search'))).toBe(false);
+    // two copies' rows are not compared, and each has its own: forgetting them here changes nothing there
+    a.store.tables.search.clear();
+    expect(await a.eng.sync(storage)).toMatchObject({ wrote: 0 });
+  });
+});
+
 describe('big files and snapshots (milestone 63)', () => {
   const BOOK = 'library/classical-prose-reader.pdf';
   const OTHER = 'library/lindqvist-statistical-physics.pdf';
@@ -1590,6 +1689,8 @@ describe('copies making random edits and syncing in random orders', () => {
       const pagesOf = async (c: Copy): Promise<string> => JSON.stringify(await Promise.all([1, 2].map(async (n) => (await c.fs.pageInk(BOOK_HASH, n)).map((x) => `${x.stroke}@${x.at}:${x.data}`))));
       const written = await Promise.all(copies.map(pagesOf));
       for (const w of written) expect(w).toBe(written[0]);
+      // each copy's search index is what its own text says, however the text came
+      for (const c of copies) await indexed(c);
       // and every document still reads as one: what a copy made from the storage holds is what the format writes
       for (const [path, b] of await copies[1]!.files()) if (path.endsWith('.md') && !path.startsWith('.')) expect(serialize(parse(text(b)).doc), path).toBe(text(b));
       // nothing is twice: no two rows of one copy are shown under one path

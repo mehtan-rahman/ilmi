@@ -214,6 +214,10 @@
 // `start here.md`, switches back through the palette's `vaults` group,
 // turns the toggle on, and reloads the page; the second run (a
 // sessionStorage marker) only checks that the vault opened itself.
+// `ILMI_SMOKE=search` (`smokeSearch`, milestone 68): the palette over the
+// sample on any of the three shapes, by word, unvoweled Arabic, phrase and
+// under three letters, light and dark; a result opens at its place; a write,
+// a rename and a delete followed in the database itself.
 // `ILMI_SMOKE=size` (`smokeSize`, milestone 60) runs from the welcome: the
 // folder imported 15 and 152 times over (`ILMI_SIZE`) into collections of
 // their own, each opened and a card graded, the times and the web content
@@ -862,11 +866,13 @@ export async function smokeDeck(vault: Vault): Promise<void> {
     const viaPalette = async (label: string) => {
       press('k', { metaKey: true });
       const input = await until(() => q<HTMLInputElement>('.palette-input input'));
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, label);
+      // a card is found through the search index, by what it says: a label cut to fit is typed up to its cut
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, label.replace(/…$/, ''));
       input.dispatchEvent(new Event('input', { bubbles: true }));
-      await sleep(100);
+      const isIt = (r: HTMLElement) => r.dataset.t === 'card' && r.querySelector('.pt')?.textContent === label;
+      await until(() => Array.from(document.querySelectorAll<HTMLElement>('.palette-row')).find(isIt));
       const rowsNow = Array.from(document.querySelectorAll<HTMLElement>('.palette-row'));
-      const at = rowsNow.findIndex((r) => r.dataset.t === 'card' && r.querySelector('.pt')?.textContent === label);
+      const at = rowsNow.findIndex(isIt);
       log(`palette "${label}": ${rowsNow.length} rows, card at ${at}: ${rowsNow.slice(0, 3).map((r) => `[${r.dataset.t}] ${r.querySelector('.pt')?.textContent}`).join(' / ')}`);
       const key = (k: string) => input.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));
       for (let i = 0; i < at; i++) key('ArrowDown');
@@ -8606,6 +8612,8 @@ async function syncSteps(name: string, args: Record<string, unknown>): Promise<u
       return sfs().away();
     case 'size':
       return (await vault().fs.stat(vault().abs(str('path'))))?.size ?? null;
+    case 'search':
+      return [...new Set((await sfs().search(str('q'), 1000)).map((h) => h.path))].sort();
     case 'sha': {
       const bytes = await vault().fs.readBytes(vault().abs(str('path')));
       const hash = await crypto.subtle.digest('SHA-256', bytes as BufferSource);
@@ -8979,6 +8987,10 @@ export async function smokeCrdt(vault: Vault): Promise<void> {
     for (const p of [VOCAB, NOTE, MERCHANT, 'physics/derivation-drills.md']) must((await b<string>('text', { path: p })) === (await a<string>('text', { path: p })), `${p} reads the same in both`);
     must(JSON.stringify(await b('orderOf', { dir: FLEETING })) === JSON.stringify(vault.order[FLEETING] ?? null), "b has a's order");
     must((await names('devices')).length === 1, 'b has written nothing yet: it only read');
+    // the search index (milestone 68): b's is its own, made as the rows came in, and nothing of it was written to the storage
+    const found = (who: typeof a, text: string) => who<string[]>('search', { q: text });
+    const krm = await found(b, 'كرم');
+    must(krm.length === 5 && JSON.stringify(krm) === JSON.stringify(await found(a, 'كرم')), `b's own index finds the five files that hold كرم, as a's does: ${krm.join(' ')}`);
     await shot('crdt-joined');
 
     // ── a card graded in each lands in both ──
@@ -9033,6 +9045,14 @@ export async function smokeCrdt(vault: Vault): Promise<void> {
     must(qA === qB, `b's pass is in a: ${qA} (b wrote ${qB})`);
 
     // ── one paragraph edited in both: one paragraph with both, and a notice ──
+    // a word written on one is found on the other once it has merged; gone from there once it is taken out
+    await a('edit', { path: NOTE, find: 'Ask both.', replace: 'Ask both, zyzzyva.' });
+    must((await found(b, 'zyzzyva')).length === 0, 'a word a has just written: not found on b yet');
+    await round();
+    must(JSON.stringify(await found(b, 'zyzzyva')) === JSON.stringify([NOTE]), 'found on b once merged');
+    await a('edit', { path: NOTE, find: 'Ask both, zyzzyva.', replace: 'Ask both.' });
+    await round();
+    must((await found(b, 'zyzzyva')).length === 0 && (await found(a, 'zyzzyva')).length === 0, 'and gone from both when it is taken out');
     await a('edit', { path: NOTE, find: 'Ask both.', replace: 'Ask both, soon.' });
     await b('edit', { path: NOTE, find: 'Deadline for the proposal is February.', replace: 'Deadline for the proposal is February, firm.' });
     await a('sync');
@@ -11783,6 +11803,197 @@ export async function smokePageInkMac(vault: Vault): Promise<void> {
 // palette has the two export commands and `import folder…`; closed, the
 // welcome lists it with `new collection` and `import folder`, and its row
 // opens it again as it was left.
+export async function smokeSearch(vault: Vault): Promise<void> {
+  const log = (s: string) => void info(`smoke search: ${s}`);
+  const shot = async (name: string, ms = 2500) => { await sleep(800); log(`shot: ${name}`); await sleep(ms); };
+  const q = <T extends Element>(sel: string, root: ParentNode = document) => root.querySelector<T>(sel);
+  const qa = <T extends Element>(sel: string, root: ParentNode = document) => Array.from(root.querySelectorAll<T>(sel));
+  const must = (ok: unknown, what: string) => { if (!ok) throw new Error(what); log(`ok: ${what}`); };
+  const key = (el: Element, k: string) => el.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));
+  const type = (el: HTMLInputElement, text: string) => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(el, text);
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  };
+  const rowsOf = () => qa<HTMLElement>('.palette-row');
+  const say = (r: HTMLElement) => `[${r.dataset.t}] ${r.querySelector('.pt')?.textContent} · ${r.querySelector('.psub')?.textContent}`;
+  const palette = async (text: string) => {
+    useApp.setState({ paletteOpen: true });
+    const input = await until(() => q<HTMLInputElement>('.palette-input input'));
+    type(input, text);
+    return input;
+  };
+  const closed = async () => { useApp.setState({ paletteOpen: false }); await until(() => (q('.palette-overlay') ? null : true)); };
+  /** Until the list is the index's answer to `text`: the last answer stays until the next. */
+  const answered = async (text: string) => { await until(() => (q<HTMLElement>('.palette-list')?.dataset.found === text ? true : null)); await sleep(60); };
+  /** Moves to the row and opens it, as the keys do. */
+  const pick = async (input: HTMLInputElement, row: HTMLElement) => {
+    const at = rowsOf().indexOf(row);
+    for (let i = 0; i < at; i++) key(input, 'ArrowDown');
+    await sleep(30);
+    key(input, 'Enter');
+    await until(() => (q('.palette-overlay') ? null : true));
+  };
+  const inView = (el: Element) => { const b = el.getBoundingClientRect(); return b.top >= 0 && b.bottom <= window.innerHeight; };
+  try {
+    const { faceText, fold } = await import('../format/index.js');
+    const { hayOf } = await import('../vault/index.js');
+    const { collectionFs } = await import('./collections.js');
+    const { setCrdtTimers } = await import('./crdt.js');
+    setCrdtTimers(false);
+    const fs = collectionFs(vault.root);
+    const phone = useApp.getState().phone;
+    useApp.getState().setTheme('light');
+    await until(() => vault.documents().length > 0);
+    await sleep(600);
+    // a collection from before the index (one a simulator already holds) is walked first
+    const w0 = performance.now();
+    await until(() => (useApp.getState().searchShare === 1 ? true : null), 60000);
+    for (let i = 0; i < 200 && !(await fs.store.searchState()).done; i++) await sleep(250);
+    must((await fs.store.searchState()).done, `the index is there (${Math.round(performance.now() - w0)} ms waited for)`);
+
+    // ── the five files ──
+    const want: string[] = [];
+    for (const path of vault.documents()) if (fold(await fs.readText(vault.abs(path))).includes('كرم')) want.push(path);
+    want.sort();
+    must(want.length === 5, `the sample holds كرم in five files, by the fold over the whole text: ${want.join(' ')}`);
+    const paths = async (text: string) => [...new Set((await fs.search(text, 1000)).map((h) => h.path))].sort();
+    must(JSON.stringify(await paths('كرم')) === JSON.stringify(want), 'the index finds all five');
+    must(JSON.stringify(await paths('كَرَمٌ')) === JSON.stringify(want), 'and voweled as typed, the same five');
+    must(JSON.stringify(await paths('كـــرم')) === JSON.stringify(want), 'and with a tatweel, the same five');
+
+    // ── the palette ──
+    let input = await palette('كرم');
+    await answered('كرم');
+    log(`palette "كرم": ${rowsOf().length} rows: ${rowsOf().slice(0, 6).map(say).join(' / ')}`);
+    must(rowsOf().some((r) => r.dataset.t === 'card') && rowsOf().some((r) => r.dataset.t === 'text'), 'cards and text in the palette');
+    must(new Set(rowsOf().map((r) => r.querySelector('.psub')?.textContent)).size === 5, 'its rows come from the five files');
+    must(qa('.palette-row[data-t="text"] mark').every((m) => /[\u064B-\u0652]/.test(m.textContent ?? '') || /كرم/.test(m.textContent ?? '')), 'each marks the word, as written');
+    if (phone) must(rowsOf().every((r) => r.offsetHeight >= 44), `every row stays a finger's size (${Math.min(...rowsOf().map((r) => r.offsetHeight))} px at the least)`);
+    // what was found is on the screen, not cut off by the row
+    const seen = () => qa<HTMLElement>('.palette-row mark').filter((m) => { const b = m.getBoundingClientRect(); const p = m.closest('.pt')!.getBoundingClientRect(); return b.left >= p.left - 1 && b.right <= p.right + 1; }).length;
+    must(seen() === qa('.palette-row mark').length, `every word found shows whole in its row (${seen()} of ${qa('.palette-row mark').length})`);
+    await shot('search-arabic-light');
+    useApp.getState().setTheme('dark');
+    await shot('search-arabic-dark');
+    useApp.getState().setTheme('light');
+    type(input, 'lagrangian');
+    await answered('lagrangian');
+    log(`palette "lagrangian": ${rowsOf().length} rows: ${rowsOf().slice(0, 6).map(say).join(' / ')}`);
+    must(seen() === qa('.palette-row mark').length, `and in English (${seen()} of ${qa('.palette-row mark').length})`);
+    await shot('search-word-light');
+    useApp.getState().setTheme('dark');
+    await shot('search-word-dark');
+    useApp.getState().setTheme('light');
+    type(input, 'equations of motion');
+    await answered('equations of motion');
+    log(`palette "equations of motion": ${rowsOf().length} rows: ${rowsOf().slice(0, 4).map(say).join(' / ')}`);
+    must(rowsOf().filter((r) => r.dataset.t === 'text').every((r) => fold(r.querySelector('.pt')?.textContent ?? '').includes('equations of motion') || !r.querySelector('mark')), 'a phrase: the rows hold it as written');
+    await shot('search-phrase');
+    // under three letters: read, not looked up
+    type(input, 'كر');
+    await answered('كر');
+    must((await fs.search('كر')).length > 0, 'under three letters: found by reading');
+    await shot('search-short');
+    // a name still comes first
+    type(input, 'vocabulary');
+    await answered('vocabulary');
+    must(rowsOf()[0]?.dataset.t !== 'text' && rowsOf()[0]?.dataset.t !== 'card', `a document's name is above the text: ${say(rowsOf()[0]!)}`);
+    // nothing to find
+    type(input, 'zyzzyvaqua');
+    await answered('zyzzyvaqua');
+    await until(() => q('.palette-empty'));
+    must(q('.palette-empty')?.textContent === 'nothing', 'and nothing is nothing');
+    await closed();
+
+    // ── a result opens at its place ──
+    const HOST = 'library/classical-prose-reader/03-the-generous-host.md';
+    input = await palette('كرم');
+    await answered('كرم');
+    const hit = (await fs.search('كرم', 1000)).find((h) => h.path === HOST && h.kind === 'text');
+    if (!hit) throw new Error('the host holds no text with the word');
+    const prose = await until(() => rowsOf().find((r) => r.dataset.t === 'text' && r.querySelector('.psub')?.textContent === (useApp.getState().docs[HOST]?.title ?? '')));
+    await pick(input, prose);
+    const landed = await until(() => q<HTMLElement>('.doc-view .draft-doc .landed'), 8000);
+    must(activeTab(useApp.getState().panes)?.id === HOST || useApp.getState().phone, 'text: the document opens');
+    must(fold(landed.textContent ?? '').includes('كرم'), `at the block that holds it, marked: "${landed.textContent?.slice(0, 40)}"`);
+    await sleep(300);
+    must(inView(landed), 'in view');
+    await shot('search-landed-text');
+    await sleep(2600);
+    // a heading deep in a long note, then a card in a note, then a deck's card
+    const LAG = 'courses/fall-2025/phys-301-classical-mechanics/lagrangian-mechanics.md';
+    const { openBlock } = await import('./vault.js');
+    const top = (await fs.search('lagrangian', 1000)).find((h) => h.path === LAG && h.block === 0);
+    if (!top) throw new Error('no heading at the top of the note');
+    openBlock(top.path, top.block);
+    const topAt = await until(() => q<HTMLElement>('.doc-view .draft-doc .landed'), 8000);
+    must(topAt.tagName.startsWith('H'), `a heading: "${topAt.textContent?.slice(0, 40)}", marked`);
+    await sleep(2800);
+    openNode(queueId('today'));
+    await until(() => q('.queue'));
+    const deep = (await fs.search('lagrangian', 1000)).filter((h) => h.path === LAG).pop();
+    if (!deep) throw new Error('no block of the note to land on');
+    openBlock(deep.path, deep.block);
+    log(`to ${deep.kind} ${deep.block} of ${deep.path}: "${deep.text.slice(0, 40)}"`);
+    const deepAt = await until(() => q<HTMLElement>('.doc-view .draft-doc .landed'), 8000);
+    await sleep(300);
+    must(fold(deepAt.textContent ?? '').includes('lagrangian') && inView(deepAt), `a block far down a note: "${deepAt.textContent?.slice(0, 40)}", in view`);
+    await sleep(2600);
+    const card = (await fs.search('كرم', 1000)).find((h) => h.kind === 'card' && h.path === 'arabic/vocabulary.md');
+    if (!card) throw new Error('no card of the vocabulary holds the word');
+    input = await palette('كرم');
+    const cardRow = await until(() => rowsOf().find((r) => r.dataset.t === 'card' && r.querySelector('.psub')?.textContent === useApp.getState().docs['arabic/vocabulary.md']?.title));
+    await pick(input, cardRow);
+    const selected = await until(() => q<HTMLElement>('.deck-view .card-span.selected'), 8000);
+    await sleep(300);
+    must(fold(selected.textContent ?? '').includes('كرم'), `a card: the deck opens with it selected: "${selected.textContent?.slice(0, 30)}"`);
+    await shot('search-landed-card');
+    // a document with pages: its text comes in beside them, at the place
+    const BEDOUIN = 'library/classical-prose-reader/12-the-grammarian-and-the-bedouin.md';
+    input = await palette('sirhan');
+    await answered('sirhan');
+    const paged = rowsOf().find((r) => r.dataset.t === 'text' && r.querySelector('.psub')?.textContent === useApp.getState().docs[BEDOUIN]?.title);
+    if (!paged) throw new Error(`no row of the document with pages: ${rowsOf().map(say).join(' / ')}`);
+    must(useApp.getState().docs[BEDOUIN]?.pdf !== undefined, 'a document with pages is found');
+    await pick(input, paged);
+    const beside = await until(() => q<HTMLElement>('.draft-doc .landed'), 15000);
+    must(fold(beside.textContent ?? '').includes('sirhan'), `its text comes in at the place: "${beside.textContent?.slice(0, 40)}"`);
+    await shot('search-landed-pages');
+    await sleep(2600);
+    // a deck's prose has no page of its own: the deck opens
+    const intro = (await fs.search('root maps', 1000)).find((h) => h.path === 'arabic/roots.md');
+    must(intro?.kind === 'text', 'a deck\'s prose is found');
+    openBlock(intro!.path, intro!.block);
+    await until(() => (useApp.getState().reveal ? null : true), 8000);
+    await sleep(400);
+    log(`a deck's prose lands on: ${q('.deck-view') ? 'the deck' : q('.doc-view') ? 'the page' : 'nothing'}`);
+
+    // ── the index follows the text, in the database itself ──
+    const NOTE = 'fleeting/search-smoke.md';
+    const abs = (rel: string) => vault.abs(rel);
+    await fs.writeText(abs(NOTE), 'a thought about the numbat, *written* in haste\n');
+    must(JSON.stringify(await paths('numbat')) === JSON.stringify([NOTE]), 'a write: found');
+    must(JSON.stringify(await paths('written in haste')) === JSON.stringify([NOTE]), 'a phrase across a mark: found');
+    await fs.writeText(abs(NOTE), 'a thought about the quoll\n');
+    must((await paths('numbat')).length === 0 && (await paths('quoll')).length === 1, 'written over: the old word gone, the new found');
+    await fs.rename(abs(NOTE), abs('fleeting/renamed-by-search.md'));
+    must(JSON.stringify(await paths('quoll')) === JSON.stringify(['fleeting/renamed-by-search.md']), 'a rename: found at its new path');
+    await fs.remove(abs('fleeting/renamed-by-search.md'));
+    must((await paths('quoll')).length === 0, 'a delete: gone');
+    // a grade writes the document with the same text: it stays found, at the same block
+    const before = await fs.search('كرم', 1000);
+    const { gradeCard } = await import('./grading.js');
+    const { isDue } = await import('../schedule/index.js');
+    const due = useApp.getState().queue.find((i): i is CardItem => i.kind === 'card' && i.path === 'arabic/vocabulary.md' && i.id !== undefined && isDue(i, new Date()));
+    if (due) await gradeCard(due, 3, new Date());
+    must(JSON.stringify(await fs.search('كرم', 1000)) === JSON.stringify(before), `a grade${due ? '' : ' (none due)'}: the same found`);
+    must(hayOf(faceText('a :: b')) === 'a b', 'and the fold is the deck search\'s');
+    log('done');
+  } catch (e) {
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
 export async function smokeStore(vault: Vault): Promise<void> {
   const log = (s: string) => void info(`smoke store: ${s}`);
   const shot = async (name: string, ms = 2500) => { await sleep(800); log(`shot: ${name}`); await sleep(ms); };
@@ -11993,12 +12204,101 @@ export async function smokeStore(vault: Vault): Promise<void> {
 // ILMI_SMOKE=size (milestone 60): the sample imported many times over into
 // collections of their own (`ILMI_SIZE`, copies, `15,152` by default: about
 // 11,000 and 115,000 cards), each opened, a card graded, and the times and
-// the web content process's memory printed. Each copy is the folder
+// the web content process's memory printed; since 68, each kind of query
+// timed through the palette, and a walk of the index timed when the
+// collection is one from before it. Each copy is the folder
 // `ILMI_VAULT` names under `cNNN/`, through the same import a person's
 // folder takes; `.ilmi/` (the order, the review log) goes in once. Runs
 // from the welcome: no collection is opened before the first. With
 // `ILMI_SIZE_KEEP=1` a collection the run before made is opened as it is:
 // the memory read then is a page's that has only opened it.
+/** What each kind of query costs at this size, through the palette, in the window. */
+async function search152(root: string, log: (s: string) => void): Promise<{ kind: string; q: string; ok: boolean; under: boolean; drawn: number }[]> {
+  const { collectionFs } = await import('./collections.js');
+  const ms = (n: number) => `${n.toFixed(1)} ms`;
+  const fs = collectionFs(root);
+  const set = (el: HTMLInputElement, text: string) => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(el, text);
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  };
+  const textRows = () => document.querySelectorAll('.palette-row[data-t="text"], .palette-row[data-t="card"]').length;
+  const answered = (q: string) => document.querySelector<HTMLElement>('.palette-list')?.dataset.found === q;
+  {
+    const { overflow } = await import('../schedule/index.js');
+    const { buildIndex } = await import('./chrome.js');
+    const s = useApp.getState();
+    const p0 = performance.now();
+    overflow(s.queue, new Date());
+    const p1 = performance.now();
+    buildIndex(s.tree, s.docs, []);
+    log(`the palette's parts: the backlog's check ${ms(p1 - p0)}, the names ${ms(performance.now() - p1)}`);
+  }
+  const t0 = performance.now();
+  useApp.setState({ paletteOpen: true });
+  const t1 = performance.now();
+  await new Promise((r) => setTimeout(r, 0));
+  const t2 = performance.now();
+  const input = await until(() => document.querySelector<HTMLInputElement>('.palette-input input'));
+  const t3 = performance.now();
+  await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+  log(`the palette open and drawn in ${ms(performance.now() - t0)} (set ${ms(t1 - t0)}, turn ${ms(t2 - t1)}, found ${ms(t3 - t2)}, frames ${ms(performance.now() - t3)})`);
+  const asks: [kind: string, q: string, under: boolean, hits: boolean][] = [
+    ['a word', 'lagrangian', true, true], ['a word inside words', 'ation', false, true], ['a common word', 'the', false, true],
+    ['an unvoweled Arabic word', 'كرم', true, true], ['Arabic, voweled as typed', 'كَرَم', false, true], ['a longer Arabic word', 'الكتاب', false, true],
+    ['a phrase', 'perturbation theory', true, true], ['words apart', 'energy conservation', false, true], ['an Arabic phrase', 'في الدار', false, true],
+    ['a word in no document', 'zyzzyvaqua', false, false], ['a phrase in no document', 'conservation of nothing whatsoever', false, false],
+    ['two letters, common', 'of', false, true], ['two Arabic letters', 'كر', false, true], ['one letter', 'x', false, true], ['two letters in no document', 'qz', false, false],
+  ];
+  const out: { kind: string; q: string; ok: boolean; under: boolean; drawn: number }[] = [];
+  for (const [kind, q, under, hits] of asks) {
+    const drawn: number[] = [];
+    const alone: number[] = [];
+    let rows = 0;
+    let ok = true;
+    for (let i = 0; i < 5; i++) {
+      set(input, '');
+      await sleep(120);
+      const a0 = performance.now();
+      const got = await fs.search(q);
+      alone.push(performance.now() - a0);
+      await sleep(40);
+      const d0 = performance.now();
+      set(input, q);
+      if (hits) {
+        // until the rows are on the page, then the frame they are drawn in
+        for (let n = 0; !answered(q) && n < 20000; n++) await new Promise((r) => setTimeout(r, 0));
+        await new Promise<void>((r) => requestAnimationFrame(() => r()));
+        drawn.push(performance.now() - d0);
+        rows = textRows();
+      } else {
+        for (let n = 0; !answered(q) && n < 20000; n++) await new Promise((r) => setTimeout(r, 0));
+        await new Promise<void>((r) => requestAnimationFrame(() => r()));
+        drawn.push(performance.now() - d0);
+      }
+      ok = ok && got.length > 0 === hits;
+    }
+    const mid = (l: number[]) => [...l].sort((x, y) => x - y)[Math.floor(l.length / 2)]!;
+    log(`${kind} "${q}": on the page ${ms(mid(drawn))} (most ${ms(Math.max(...drawn))}), the store alone ${ms(mid(alone))} (most ${ms(Math.max(...alone))}), ${rows} rows`);
+    out.push({ kind, q, ok, under, drawn: mid(drawn) });
+  }
+  // typed a letter at a time, ten letters a second: what the page does between two keys
+  set(input, '');
+  await sleep(200);
+  const word = 'hamiltonian';
+  let worst = 0;
+  for (let i = 1; i <= word.length; i++) {
+    const k0 = performance.now();
+    set(input, word.slice(0, i));
+    await new Promise<void>((r) => requestAnimationFrame(() => r()));
+    worst = Math.max(worst, performance.now() - k0);
+    await sleep(100);
+  }
+  log(`"${word}" typed a letter at a time: the longest a key took to the next frame ${ms(worst)}`);
+  useApp.setState({ paletteOpen: false });
+  await sleep(300);
+  return out;
+}
+
 export async function smokeSize(src: string | null): Promise<void> {
   const log = (s: string) => void info(`smoke size: ${s}`);
   const shot = async (name: string, ms = 2500) => { await sleep(800); log(`shot: ${name}`); await sleep(ms); };
@@ -12087,6 +12387,31 @@ export async function smokeSize(src: string | null): Promise<void> {
       const after = useApp.getState().queue.find((i) => i.kind === 'card' && i.path === item.path && i.id === item.id && (i.dir ?? 'f') === (item.dir ?? 'f') && JSON.stringify(i.group ?? null) === JSON.stringify(item.group ?? null));
       must(after && after.kind === 'card' && after.sched?.last !== item.sched?.last && !isDue(after, now), `${name}: a card of ${item.path} graded; the queue has it with its new schedule`);
       must(useApp.getState().reviews.length === lines + 1 && (await collectionFs(root).reviewCount()) === lines + 1, `${name}: and the log has its line`);
+      // the search index (milestone 68). A collection from before it is walked as it stays open, from a moment after it opened:
+      // the longest the page goes without a frame, and a grade made meanwhile
+      if (useApp.getState().searchShare < 1 || !(await collectionFs(root).store.searchState()).done) {
+        const w0 = performance.now();
+        let longest = 0;
+        let frames = true;
+        const beat = (at: number) => { if (!frames) return; requestAnimationFrame((t) => { longest = Math.max(longest, t - at); beat(t); }); };
+        requestAnimationFrame(beat);
+        const during = useApp.getState().queue.find((i): i is CardItem => i.kind === 'card' && isDue(i, new Date()) && i.id !== undefined);
+        await until(() => (useApp.getState().searchShare > 0.1 ? true : null), 120000);
+        const share = useApp.getState().searchShare;
+        const t6 = performance.now();
+        if (during) await gradeCard(during, 3, new Date());
+        const gradedDuring = performance.now() - t6;
+        const t7 = performance.now();
+        const partial = await collectionFs(root).search('كرم');
+        const askedDuring = performance.now() - t7;
+        await until(() => (useApp.getState().searchShare === 1 ? true : null), 300000);
+        frames = false;
+        log(`${name}: the index made by the walk in ${ms(performance.now() - w0 + 1500)} from the open; the longest the page went without a frame ${ms(longest)}; at ${Math.round(share * 100)}% a grade took ${ms(gradedDuring)} and a search ${ms(askedDuring)} (${partial.length} found so far)`);
+      }
+      // each query through the palette as a person's would go: the field set, until the rows are on the page; the store's answer alone beside it
+      const seconds = await search152(root, log);
+      must(seconds.every((s) => s.ok), `${name}: ${seconds.filter((s) => s.ok).length} of ${seconds.length} queries found what they were asked`);
+      for (const s of seconds.filter((x) => x.under)) must(s.drawn < 100, `${name}: ${s.kind} found in under a tenth of a second (${ms(s.drawn)})`);
       // weighed as the app left it: nothing else has been read into the page
       const held = await memory();
       // each part alone, once the window is at rest

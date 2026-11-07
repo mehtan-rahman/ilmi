@@ -21,6 +21,7 @@
 //   place among the document's cards until the app gives it one, at its
 //   first grade, as FORMAT.md §6.1 has it.
 
+import { searchRows, type SearchRow } from './search.js';
 import { isField, parse, serialize, type Block, type Card, type CardSchedule, type Doc, type ReadSchedule, type SectionSchedule, type WriteSchedule } from '../format/index.js';
 
 export type StateKind = 'card' | 'section' | 'read' | 'write';
@@ -195,6 +196,8 @@ export interface Decomposed {
   original: Original | null;
   /** The parsed document, state and all: what a reader of the file gets. */
   doc: Doc;
+  /** Its rows of the search index. */
+  search: SearchRow[];
 }
 
 /** The text a document's row and state rows make: the file, in canonical form. */
@@ -221,6 +224,7 @@ export function decompose(text: string): Decomposed {
     digest: JSON.stringify(digest(doc)),
     original: canon === text ? null : { text, stamp: stampOf(canon) },
     doc,
+    search: searchRows(doc),
   };
 }
 

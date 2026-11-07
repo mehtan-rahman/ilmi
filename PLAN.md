@@ -8167,8 +8167,9 @@ they appear as new rows when it opens. *Not rerun:* `open` (edited, not
 run since 48), `sync`, `nudge`, `ipad`, `storage` over WebDAV, `size`,
 `textsections`, `cargo test -p tauri-plugin-ink`. The `tour`, `crdt`,
 `storage` and `store` captures were not looked at: their checks are the
-lines. **The engine's random test does not pass whole**: `ILMI_SEEDS=1-500`
-fails at seed 248, with and without `ILMI_SNAPS=1` (an emptied folder,
+lines. **The engine's random test did not pass whole (fixed after 69 at
+`9fce8e8`: `holds` took an unread dead row as shown)**: `ILMI_SEEDS=1-500`
+failed at seed 248, with and without `ILMI_SNAPS=1` (an emptied folder,
 `courses/books/papers/`, on one copy and not the other, and its entry in
 the order). It is not 70's code: the commit before 70 with only the three
 corpus files added fails the same seed the same way; seeds 501–1500 pass

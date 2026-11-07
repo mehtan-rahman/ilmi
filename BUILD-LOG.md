@@ -6,6 +6,21 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-11-07 — seed 248 fixed, beside 69
+
+`9fce8e8`, on main after 69. The random test's seed 248 (an emptied
+folder on one copy, found after 70's corpus changed the seeds' paths) was
+a real bug in the tree's merge, from 62: step 3a's `holds` took any row
+the merge had not read as shown, even a dead one, so a dead folder was
+kept for a dead folder under it; 3b then removed the inner one and its
+walk stopped at the outer, which no later merge touched. `holds` now
+reads whether an unread row is dead from its registers (`deadRow`). Two
+tests added. No schema change; a folder already stranded goes when a
+merge next touches it. 1474 tests in 95 files; seeds 1–1000 with and
+without `ILMI_SNAPS=1` on main, 1–2000 both ways on the fix's branch.
+
+---
+
 ## 2026-11-07 — milestone 69: ink where the Pencil lands
 
 Done on main: `7e1a3a3`, then `4e933aa` (`smoke.ts` alone: pageink's strokes moved clear of the Mac's). The Pencil's first
@@ -177,9 +192,8 @@ after: run it again, and look into it if it comes back, since 64 sends
 large files too), `store` (34, its export equal to the sample by
 `diff -r`), `sync` and `nudge` passing, and the random test in
 src/sync/__tests__/engine.test.ts (`ILMI_SEEDS=1-500`, and with
-`ILMI_SNAPS=1`), which since 70's corpus failed at seed 248 and at no
-other (an emptied folder on one copy, in the tree's merge; being fixed
-apart from this work: check whether it is before saying so). The Mac's
+`ILMI_SNAPS=1`; seed 248, which failed after 70's corpus, is fixed
+since `9fce8e8`). The Mac's
 window checks run from a clean checkout of main with the dev identifier
 override; ILMI_VAULT is a folder, imported afresh as a collection on each
 run, or a collection's own folder, opened as it is. Never kill a process

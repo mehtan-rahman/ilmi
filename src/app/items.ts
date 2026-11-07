@@ -3,7 +3,7 @@
 // Pure; the model is src/schedule, the views are Queue.tsx and Session.tsx.
 
 import type { CardForm, CardSchedule, Exam } from '../format/index.js';
-import { capForExam, dayOf, dayStart, fold, isDue, preview, sameItem, whenToDate, type CardItem, type Grade, type QueueItem } from '../schedule/index.js';
+import { capForExam, dayOf, dayStart, daysFrom, fold, isDue, passesLeft, preview, sameItem, whenToDate, type CardItem, type Grade, type QueueItem } from '../schedule/index.js';
 import { nameOf } from '../vault/index.js';
 import type { QueueScope } from './names.js';
 import type { DocInfo, El } from './store.js';
@@ -204,6 +204,23 @@ export function standing(item: QueueItem, now: Date, firstPage?: number): string
     case 'card':
       return '';
   }
+}
+
+/**
+ * How a source with a finish day stands, after its standing: `on pace · 9
+ * passes left` while a pass a day from its next would still finish by the
+ * day, `behind · 14 passes left` once it would not. Nothing with no day
+ * set, past the day, or with nothing left.
+ */
+export function paceWords(item: QueueItem, now: Date): string {
+  if (item.kind !== 'read' || !item.finish) return '';
+  const { day, left, perPass } = item.finish;
+  const today = dayOf(now);
+  if (day < today || left <= 0) return '';
+  const passes = passesLeft(left, perPass);
+  const next = dayOf(item.dueAt);
+  const room = daysFrom(next > today ? next : today, day) + 1;
+  return `${passes <= room ? 'on pace' : 'behind'} · ${passes} ${passes === 1 ? 'pass' : 'passes'} left`;
 }
 
 /** A scheduled card's interval, under its due; nothing for a new one. */

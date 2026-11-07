@@ -11,7 +11,7 @@ import {
   AF_MIN, PRI_DEFAULT, PRI_MAX, PRI_MIN, READ_AF, RETENTION_MAX, RETENTION_MIN, WRITE_AF, cardForm, docPri, meta, pagesLabel, parse, parseAf, parseCount, parsePri, parseRetention, setField,
   type Block, type Card, type CardForm, type CardSchedule, type Doc, type ReadSchedule, type WriteSchedule,
 } from '../format/index.js';
-import { activeExam, addDays, advanceWrite, cadence, cadenceWords, dayOf, elapsedBase, examKey, examLeft, inScope, nextIntervals, passagesOf, readPri, readingLeft, sectionState, type CardItem, type OptionKey } from '../schedule/index.js';
+import { activeExam, addDays, advanceWrite, cadence, cadenceWords, dayOf, elapsedBase, examKey, examLeft, finishes, inScope, nextIntervals, passagesOf, readPri, readingLeft, sectionState, type CardItem, type OptionKey } from '../schedule/index.js';
 import { baseOf, childDirOf, childrenAt, dirOf, isDoc, isPdfPath, pageOfBlock, type TreeNode } from '../vault/index.js';
 import { cardName, formLabel } from './chrome.js';
 import { breakdown, countsUnder, dueItems, plainMath } from './chromeText.js';
@@ -165,6 +165,37 @@ const parseIvl = (t: string): number | null => { const n = Math.floor(Number(t))
  */
 function ivlField(key: string, ivl: number | undefined, write: (n: number) => void): ReactNode {
   return <NumField key={key} className="pri-field ivl-field" value={ivl} fallback={ivl ?? 1} min={1} step={1} parse={parseIvl} onCommit={(n) => { if (n !== null) write(n); }} />;
+}
+
+/**
+ * A day as a date field, empty for none. A day ahead is written as it is
+ * picked; anything else (a year half typed is a day long past) waits for
+ * blur or ⏎. Escape puts back what was there.
+ */
+export function DayField({ value, today, onCommit }: { value: string | undefined; today: string; onCommit(day: string | null): void }) {
+  const shown = value ?? '';
+  const [text, setText] = useState(shown);
+  useEffect(() => { setText(shown); }, [shown]);
+  const commit = (v: string) => { if (v !== shown) onCommit(v || null); };
+  return (
+    <input
+      className="pri-field day-field"
+      type="date"
+      value={text}
+      onChange={(e) => { setText(e.target.value); if (e.target.value > today) commit(e.target.value); }}
+      onBlur={() => commit(text)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur(); }
+        else if (e.key === 'Escape') { e.preventDefault(); setText(shown); }
+      }}
+    />
+  );
+}
+
+/** A source's `finish by` row: the field, written through `setField`; empty clears it. */
+function finishRow(path: string, m: ReturnType<typeof meta>, now: Date): [string, ReactNode] {
+  const write = (day: string | null) => currentVault()?.update(path, (d) => setField(d, 'finish', day)).catch(console.error);
+  return ['finish by', <DayField key={path} value={m.finish} today={dayOf(now)} onCommit={write} />];
 }
 
 /** The interval row of a document's `read` / `write` line: the field, written through `setField`. */
@@ -501,6 +532,7 @@ function DocInspector({ id, info, doc, now }: { id: string; info: DocInfo; doc: 
   else if (m.read && info.pdf) rows.push(['reading', `${m.read.pos ? `to p. ${m.read.pos}${m.read.y !== undefined && m.read.y < 1 ? `, ${Math.round(m.read.y * 100)}% down` : ''}` : 'not started'}, ${dueLabel(m.read.due, now)}`]);
   else if (m.read) rows.push(['reading', `${m.read.pos ?? 0} of ${doc.blocks.filter((b) => b.kind !== 'card').length}, ${dueLabel(m.read.due, now)}`]);
   if (m.read) rows.push(ivlRow(id, 'read', m.read, now));
+  if (m.read && finishes(m)) rows.push(finishRow(id, m, now));
   rows.push(docPriRow(id, m));
   // a source with reading left comes back on its cadence; the rest grow
   if (m.read) rows.push(growthRow(id, 'read', m.read, now, readingLeft(m, m.read.pos, doc.blocks.filter((b) => b.kind !== 'card').length) ? cadence(readPri(m)) : undefined));

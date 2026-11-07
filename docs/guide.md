@@ -335,7 +335,15 @@ today, and leaves what is first due today alone; cards stay where they are;
 `postpone the backlog when the day starts`, a tweak off by default, runs
 it at the day's first queue build; a source with reading left that it
 pushes on is only held over to tomorrow, its cadence kept, where `p` on it
-still grows the interval. The bottom strip shows the keys that work where you are. `ilmi.theme('dark')`
+still grows the interval. A source you must have read by a day takes it in
+`finish by`, under the interval in the inspector: its passes are spread over
+the days left, sooner than its cadence when they have to be, and its queue row
+and the session's bar say `on pace · 9 passes left`, or `behind · 14 passes
+left` once a pass a day would no longer make it. Empty the field and it is back
+on its cadence; past the day nothing changes and the field stays as it was. An
+exam that comes first still wins. A chapter counts its pages; a PDF that is
+one whole file has no `finish by`, since its length is not known until it is
+opened. The bottom strip shows the keys that work where you are. `ilmi.theme('dark')`
 and friends still work from the devtools console.
 
 ## Finding

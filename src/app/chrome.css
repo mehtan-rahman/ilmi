@@ -164,6 +164,7 @@
 .insp .kv .af-field::-webkit-inner-spin-button, .insp .kv .af-field::-webkit-outer-spin-button { appearance: none; margin: 0; }
 .insp .kv .pri-field::placeholder, .insp .kv .af-field::placeholder { color: var(--fg-5); }
 .insp .kv .pri-field:focus, .insp .kv .af-field:focus { border-bottom-color: var(--accent); }
+.insp .kv .day-field { width: 104px; }
 .insp .kv .af-next { margin-left: 8px; white-space: nowrap; }
 .insp .kv .insp-link {
   appearance: none;

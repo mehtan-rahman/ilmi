@@ -24,6 +24,10 @@
 //   left: its next pass is brought to the finish day unless it was made in
 //   the last week.
 // The day after the exam none of this applies; intervals grow as before.
+//
+// A source's own `finish` day (FORMAT.md §3, *finish*) paces its reading by
+// the same code with the day itself as the target, no lead (`readTarget`
+// says which of the two paces it; `ReadItem.finish` is what it counts).
 
 import { forgetting_curve, generatorParameters } from 'ts-fsrs';
 import type { CardSchedule, Exam, Meta } from '../format/index.js';
@@ -115,22 +119,36 @@ export function capForExam(next: CardSchedule, now: Date, exam: Exam, key: strin
   return { ...next, due: day, ivl: daysFrom(today, day) };
 }
 
+/** The passes `left` blocks or pages take at `perPass` a pass. */
+export const passesLeft = (left: number, perPass: number): number => Math.ceil(left / Math.max(1, perPass));
+
 /**
  * Days to a reading's next pass under an exam, from the day of the pass
  * (`from`): the passes left (`left` blocks at `perPass` a pass) spaced over
- * the days to the finish, `READ_LEAD` before the exam; a day at a time once
- * that is past. `left` null: a note revisited or a document read by its
- * pages, one pass toward the exam, brought to the finish day unless made in
- * the last week. Null: no pacing (nothing left, or the exam's last day).
+ * the days to the finish, `lead` before the exam (a finish day's own target
+ * has none); a day at a time once that is past. `left` null: a note revisited
+ * or a document read by its pages, one pass toward the exam, brought to the
+ * finish day unless made in the last week. Null: no pacing (nothing left, or
+ * the exam's last day).
  */
-export function pacedInterval(from: string, exam: Exam, left: number | null, perPass: number): number | null {
-  const finish = addDays(exam.day, -READ_LEAD);
+export function pacedInterval(from: string, exam: Exam, left: number | null, perPass: number, lead = READ_LEAD): number | null {
+  const finish = addDays(exam.day, -lead);
   if (left === null) return from < examWindow(exam).start ? daysFrom(from, finish) : null;
   if (left <= 0) return null;
   const d = daysFrom(from, finish);
   if (d <= 0) return from < addDays(exam.day, -1) ? 1 : null;
-  const passes = Math.ceil(left / Math.max(1, perPass));
-  return Math.max(1, Math.floor(d / passes));
+  return Math.max(1, Math.floor(d / passesLeft(left, perPass)));
+}
+
+/**
+ * What paces a reading today: an exam ahead (to `READ_LEAD` before it) or a
+ * finish day ahead (to the day itself), the nearer target of the two, the
+ * exam when they fall together. `lead` is 0 for a finish day and only then.
+ */
+export function readTarget(exam: Exam | undefined, finish: string | undefined, today: string): { exam: Exam; lead: number } | undefined {
+  const ahead = finish !== undefined && finish > today ? finish : undefined;
+  if (ahead === undefined) return exam && { exam, lead: READ_LEAD };
+  return exam && addDays(exam.day, -READ_LEAD) <= ahead ? { exam, lead: READ_LEAD } : { exam: { day: ahead }, lead: 0 };
 }
 
 /** Blocks a pass reads, from the passes made so far. */
@@ -149,9 +167,8 @@ export function examQueue(items: QueueItem[], now: Date, examsOf: (path: string)
   const pairs = new Map<string, CardItem[]>();
   for (const i of items) {
     const exam = activeExam(examsOf(i.path), now);
-    if (!exam) continue;
-    i.exam = exam;
-    if (i.kind === 'card') {
+    if (exam) i.exam = exam;
+    if (i.kind === 'card' && exam) {
       if (i.dir) { const k = `${i.path}#${i.block}`; pairs.set(k, [...(pairs.get(k) ?? []), i]); }
       const s = i.sched;
       if (i.buried || !s || s.state !== 'review' || !s.due) continue;
@@ -163,17 +180,20 @@ export function examQueue(items: QueueItem[], now: Date, examsOf: (path: string)
       i.dueAt = dayStart(day > today ? day : today);
     } else if (i.kind === 'read') {
       const s = i.sched;
-      if (!s.due) continue;
+      const by = readTarget(exam, i.finish?.day, today);
+      if (!s.due || !by) continue;
       const due = dayOf(whenToDate(s.due));
       // the pass the line was written at: its due less its interval
       const from = s.ivl !== undefined ? addDays(due, -s.ivl) : today;
-      const left = i.note || i.pdf ? null : i.total - i.pos;
-      const ivl = pacedInterval(from, exam, left, perPassOf(s.pos, s.reps));
+      const counted = by.lead === 0 ? i.finish : undefined;
+      const left = counted ? counted.left : i.note || i.pdf ? null : i.total - i.pos;
+      const ivl = pacedInterval(from, by.exam, left, counted ? counted.perPass : perPassOf(s.pos, s.reps), by.lead);
       if (ivl === null) continue;
       const day = addDays(from, ivl);
       if (day >= due) continue;
       // a pace that would have come before today is due today, never in the past
       i.pulled = s.due;
+      if (counted) i.byFinish = true;
       i.dueAt = dayStart(day > today ? day : today);
     }
   }

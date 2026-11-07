@@ -9,9 +9,9 @@
 // `pos`: it starts over at the top, or at a heading, each time, since the
 // note's own edits would move it.
 
-import { PRI_DEFAULT, READ_AF, meta, setField, type Doc, type Exam, type ReadSchedule } from '../format/index.js';
+import { PRI_DEFAULT, READ_AF, meta, setField, type Doc, type Exam, type PageRange, type ReadSchedule } from '../format/index.js';
 import { addDays, dayOf } from './dates.js';
-import { pacedInterval, perPassOf } from './exams.js';
+import { pacedInterval, perPassOf, readTarget } from './exams.js';
 import { cadence, grownAt, postponed } from './growth.js';
 
 /**
@@ -24,30 +24,26 @@ import { cadence, grownAt, postponed } from './growth.js';
 export type ReadAction = 'on' | 'postpone' | 'done' | 'backlog';
 
 /**
- * Under an exam ahead (`exams.ts`): the exam, and the document's prose
- * blocks (`total`), or null when what is left is not counted (a note
- * revisited, a document read by its pages).
+ * Under a day ahead (`exams.ts`): the days to the next pass given where a
+ * pass leaves the marker and the passes made with it, or null for no pacing.
  */
-export interface Pace { exam: Exam; total: number | null }
+export type Pace = (at: number | undefined, reps: number) => number | null;
 
 /**
  * One pass made (a section's too, FORMAT.md §6.5: its line has no `pos`);
  * `pos` moves the marker forward, never back. The next interval grows from
  * the elapsed time (`grownAt`), or is `onCadence` days when given: a source
  * with reading left comes back on its cadence and does not grow. Under an
- * exam the next pass comes no later than the pacing says (`pacedInterval`):
- * the interval written is the shorter, so the line's due less its interval
- * is still the day of the pass.
+ * exam or a finish day the next pass comes no later than the pacing says
+ * (`pacedInterval`): the interval written is the shorter, so the line's due
+ * less its interval is still the day of the pass.
  */
 export function readOn<T extends ReadSchedule>(r: T, now: Date, pos?: number, pace?: Pace, onCadence?: number): T & { due: string; ivl: number; reps: number } {
   let ivl = onCadence ?? grownAt(r, now, r.af ?? READ_AF);
   const reps = (r.reps ?? 0) + 1;
   const at = pos !== undefined ? Math.max(r.pos ?? 0, pos) : r.pos;
-  if (pace) {
-    const left = pace.total === null ? null : pace.total - (at ?? 0);
-    const paced = pacedInterval(dayOf(now), pace.exam, left, perPassOf(at, reps));
-    if (paced !== null) ivl = Math.min(ivl, paced);
-  }
+  const paced = pace?.(at, reps) ?? null;
+  if (paced !== null) ivl = Math.min(ivl, paced);
   const out = { ...r, due: addDays(dayOf(now), ivl), ivl, reps };
   if (pos !== undefined) out.pos = at!;
   return out;
@@ -89,9 +85,35 @@ export function readingLeft(m: { type?: string; pdf?: string }, at: number | und
 }
 
 /**
+ * Whether a finish day can pace a document: a source, where what is left can
+ * be counted, its prose or its `pages`. On anything else the field means
+ * nothing (FORMAT.md §3, *finish*): nothing says how long a whole PDF is
+ * until it is opened.
+ */
+export const finishes = (m: { type?: string; pdf?: string; pages?: PageRange }): boolean =>
+  m.type === 'source' && (m.pdf === undefined || m.pages !== undefined);
+
+/** The day a document's `finish` field paces it to, where it can. */
+export const finishOf = (m: { type?: string; pdf?: string; pages?: PageRange; finish?: string }): string | undefined =>
+  finishes(m) ? m.finish : undefined;
+
+/**
+ * What is left of a source with a finish day when its marker is at `pos`,
+ * in what it is counted by (blocks, or a chapter's pages), what is read of
+ * it, and what a pass has read so far.
+ */
+export function leftToFinish(m: { pdf?: string; pages?: PageRange }, pos: number | undefined, total: number, reps: number | undefined): { left: number; read: number; perPass: number } {
+  if (m.pdf === undefined || !m.pages) return { left: total - (pos ?? 0), read: pos ?? 0, perPass: perPassOf(pos, reps) };
+  const { first, last } = m.pages;
+  const read = Math.max(0, Math.min(pos ?? 0, last) - first + 1);
+  return { left: last - first + 1 - read, read, perPass: perPassOf(read, reps) };
+}
+
+/**
  * Apply an action to a document's `read` field in place. Throws if it is
  * not enrolled. On a note, `pos` is never kept. `exam`: the exam ahead the
- * document is studied toward, which paces a pass. On a document with pages
+ * document is studied toward, which paces a pass, as a source's own finish
+ * day does when that comes first (`readTarget`). On a document with pages
  * `pos` is a page and `y` how far down it (FORMAT.md §3), the point moved
  * forward only. A source with reading left after the pass lands on its
  * cadence; anything else grows from the elapsed time. The backlog holds a
@@ -105,8 +127,16 @@ export function advanceRead(doc: Doc, action: ReadAction, now: Date, pos?: numbe
   let r = m.read;
   if (note && r.pos !== undefined) { const { pos: _, ...rest } = r; r = rest; }
   const total = doc.blocks.filter((b) => b.kind !== 'card').length;
-  const pace: Pace | undefined = exam && { exam, total: note || m.pdf !== undefined ? null : total };
   const marker = note || y !== undefined ? undefined : pos;
+  const point = !note && pos !== undefined && y !== undefined ? pointOn(r, pos, y).pos : undefined;
+  const today = dayOf(now);
+  const finish = finishOf(m);
+  const by = readTarget(exam, finish, today);
+  const pace: Pace | undefined = by && ((at, reps) => {
+    if (by.lead !== 0) return pacedInterval(today, by.exam, note || m.pdf !== undefined ? null : total - (at ?? 0), perPassOf(at, reps));
+    const { left, perPass } = leftToFinish(m, point ?? at, total, reps);
+    return pacedInterval(today, by.exam, left, perPass, 0);
+  });
   const after = marker !== undefined ? Math.max(r.pos ?? 0, marker) : r.pos;
   const onCadence = readingLeft(m, after, total) ? cadence(readPri(m)) : undefined;
   let next: ReadSchedule | null = action === 'done' ? null

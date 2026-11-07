@@ -13,8 +13,8 @@
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { emitDocAction, emitGrade, runBlockHooks, usePlugins } from '../plugins/index.js';
 import { PRI_DEFAULT, READ_AF, WRITE_AF, blanks, cardFields, type Block, type Card } from '../format/index.js';
-import { GRADES, advanceRead, advanceSection, cadence, grownAt, lineKey, advanceWrite, dirPri, nextGap, postponed, scheduleOf, type CardItem, type Grade, type QueueItem, type ReadItem, type SectionItem, type WriteItem } from '../schedule/index.js';
-import { EL_WORD, FORM_LABEL, doneLine, dueLabel, gapLabels, glyphOf, markOf, ownBlank, sourceLabel, standing, trailParts } from './items.js';
+import { GRADES, advanceRead, advanceSection, cadence, dayOf, grownAt, lineKey, advanceWrite, dirPri, nextGap, pacedInterval, perPassOf, postponed, readTarget, scheduleOf, type CardItem, type Grade, type QueueItem, type ReadItem, type SectionItem, type WriteItem } from '../schedule/index.js';
+import { EL_WORD, FORM_LABEL, doneLine, dueLabel, gapLabels, glyphOf, markOf, ownBlank, paceWords, sourceLabel, standing, trailParts } from './items.js';
 import { writeDoc } from './sections.js';
 import { queueId } from './names.js';
 import type { OpenOpts } from './panes.js';
@@ -98,12 +98,14 @@ interface BarProps extends NavProps {
   /** What the element is, and where it stands (the queue row's words). */
   what: string;
   stands: string;
+  /** How a source with a finish day stands (`paceWords`), after that. */
+  pace?: string;
   glyph: string;
   children: ReactNode;
 }
 
 /** The control bar at the foot of a reading, writing, or section element. */
-function SessionBar({ idx, total, kind, word, pri, what, stands, glyph, children, onPrev, onNext, onOut }: BarProps) {
+function SessionBar({ idx, total, kind, word, pri, what, stands, pace, glyph, children, onPrev, onNext, onOut }: BarProps) {
   return (
     <div className="session-bar">
       <div className="sb-inner">
@@ -117,6 +119,7 @@ function SessionBar({ idx, total, kind, word, pri, what, stands, glyph, children
           <span className="sb-g" data-el={kind}>{glyph}</span>
           <bdi className="sb-what"><MathText text={what} title={false} /></bdi>
           {stands && <span className="sb-where">{stands}</span>}
+          {pace && <span className="sb-where" data-pace="1">{pace}</span>}
         </div>
         <div className="sb-actions">{children}</div>
       </div>
@@ -275,12 +278,21 @@ export const readingOn = (item: ReadItem): boolean => isBook(item) && (!!item.pd
 
 /**
  * How many days ⏎ sends an element out at `now`: a source with reading
- * left on its cadence; a section, a note revisited or an extract grown
+ * left on its cadence, or sooner if its finish day needs it (`at`: where
+ * the pass ended, once known); a section, a note revisited or an extract grown
  * from the time elapsed, a draft the same.
  */
-export function nextDays(item: ReadItem | WriteItem | SectionItem, now: Date): number {
+export function nextDays(item: ReadItem | WriteItem | SectionItem, now: Date, at?: number): number {
   if (item.kind === 'section') return nextGap(item.sched, now);
-  if (item.kind === 'read') return readingOn(item) ? cadence(item.pri) : grownAt(item.sched, now, item.sched.af ?? READ_AF);
+  if (item.kind === 'read') {
+    if (!readingOn(item)) return grownAt(item.sched, now, item.sched.af ?? READ_AF);
+    const by = readTarget(item.exam, item.finish?.day, dayOf(now));
+    if (by?.lead !== 0 || !item.finish) return cadence(item.pri);
+    // its finish day: the pacing after this pass, of the usual size until ⏎ says where it ended (`at`)
+    const { left, read, perPass } = item.finish;
+    const moved = at === undefined ? perPass : Math.max(0, at - item.pos);
+    return Math.min(cadence(item.pri), pacedInterval(dayOf(now), by.exam, left - moved, perPassOf(read + moved, (item.sched.reps ?? 0) + 1), 0) ?? Infinity);
+  }
   return grownAt(item.sched, now, item.sched.af ?? WRITE_AF);
 }
 
@@ -289,8 +301,8 @@ export function nextDays(item: ReadItem | WriteItem | SectionItem, now: Date): n
  * back in Nd`; `dismiss` once the marker is at or past its end, `atEnd`),
  * `later`, `dismiss`.
  */
-export function actionWords(item: ReadItem | WriteItem | SectionItem, now: Date, atEnd = false): { on: string; postpone: string; done: string } {
-  const on = atEnd ? 'dismiss' : `${isBook(item) ? 'done for today' : 'next'} · back in ${nextDays(item, now)}d`;
+export function actionWords(item: ReadItem | WriteItem | SectionItem, now: Date, atEnd = false, at?: number): { on: string; postpone: string; done: string } {
+  const on = atEnd ? 'dismiss' : `${isBook(item) ? 'done for today' : 'next'} · back in ${nextDays(item, now, at)}d`;
   return { on, postpone: 'later', done: 'dismiss' };
 }
 
@@ -312,10 +324,10 @@ export function twoLines(word: string): ReactNode {
 }
 
 /** What one of the three did, as a line: a section by its heading, anything else by its document. */
-export function docLine(item: ReadItem | WriteItem | SectionItem, action: DocAction, now: Date): string {
+export function docLine(item: ReadItem | WriteItem | SectionItem, action: DocAction, now: Date, at?: number): string {
   const docs = useApp.getState().docs;
   const name = plainMath(item.kind === 'section' ? item.heading : docs[item.path]?.title ?? sourceLabel(item, docs));
-  const word = action === 'postpone' ? `later · back in ${postponed(item.sched.ivl)}d` : action === 'done' ? 'dismissed' : actionWords(item, now).on;
+  const word = action === 'postpone' ? `later · back in ${postponed(item.sched.ivl)}d` : action === 'done' ? 'dismissed' : actionWords(item, now, false, at).on;
   return doneLine(glyphOf(item), name, word);
 }
 
@@ -377,7 +389,7 @@ function DocSession({ item, active, onAct, ...nav }: DocProps) {
   return (
     <div className="doc-session" ref={barRef} data-el={item.kind} data-book={pages ? '1' : '0'}>
       {pages ? <Pdf id={pagesId} active={active} session readOn={item.kind === 'read'} onLast={setLast} /> : <Reader id={item.path} active={active} />}
-      <SessionBar kind={markOf(item)} {...(word ? { word } : {})} pri={pri} what={what} stands={standing(item, appNow(), info?.pages?.first)} glyph={glyphOf(item)} {...nav}>
+      <SessionBar kind={markOf(item)} {...(word ? { word } : {})} pri={pri} what={what} stands={standing(item, appNow(), info?.pages?.first)} pace={paceWords(item, appNow())} glyph={glyphOf(item)} {...nav}>
         <button type="button" data-act="on" onClick={on}><span className="ra-l">{phone ? twoLines(words.on) : words.on}</span><kbd>⏎</kbd></button>
         <button type="button" data-act="postpone" onClick={() => onAct('postpone')}><span className="ra-l">{words.postpone}</span><kbd>p</kbd></button>
         <button type="button" data-act="done" onClick={() => onAct('done')}><span className="ra-l">{words.done}</span><kbd>d</kbd></button>
@@ -464,7 +476,7 @@ export function Session({ active, onOpen }: Props) {
   const onDoc = (item: ReadItem | WriteItem | SectionItem, action: DocAction, pos?: number, y?: number) => {
     if (!currentVault()) return;
     actOnDoc(item, action, pos, y).catch(fail);
-    note(docLine(item, action, appNow()));
+    note(docLine(item, action, appNow(), pos));
     advance();
   };
 

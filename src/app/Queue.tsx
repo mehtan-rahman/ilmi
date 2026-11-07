@@ -10,7 +10,7 @@
 import { Fragment, useEffect, useState, type MouseEvent } from 'react';
 import { PRI_DEFAULT, cardFields } from '../format/index.js';
 import { counts, dayOf, examKey, inScope, overflow, type ExamAt, type QueueItem } from '../schedule/index.js';
-import { QUEUE_EMPTY, QUEUE_LEGEND, dayLabel, dueWhen, examName, examWhen, forExam, glyphOf, intervalLabel, isFresh, kindTag, markOf, snippetOf, standing } from './items.js';
+import { QUEUE_EMPTY, QUEUE_LEGEND, dayLabel, dueWhen, examName, examWhen, forExam, glyphOf, intervalLabel, isFresh, kindTag, markOf, paceWords, snippetOf, standing } from './items.js';
 import { pathParts, plainMath } from './chromeText.js';
 import { MathText } from './MathText.js';
 import type { DocInfo } from './store.js';
@@ -209,6 +209,7 @@ export function Queue({ scope, active }: Props) {
         <ol className="qlist">
           {items.slice(0, drawn).map((item, i) => {
             const ref = standing(item, now, docs[item.path]?.pages?.first);
+            const pace = paceWords(item, now);
             const ivl = item.kind === 'card' ? intervalLabel(item) : '';
             const row = (
               <li
@@ -228,7 +229,8 @@ export function Queue({ scope, active }: Props) {
                   </span>
                   <Body item={item} />
                   {ref && <span className="ref-line">{ref}</span>}
-                  {item.pulled && item.exam && <span className="for-exam" title={`brought forward from ${dueWhen(item.pulled, now)}`}>{forExam(item.exam)}</span>}
+                  {pace && <span className="for-exam" data-pace="1">{pace}</span>}
+                  {item.pulled && item.exam && !(item.kind === 'read' && item.byFinish) && <span className="for-exam" title={`brought forward from ${dueWhen(item.pulled, now)}`}>{forExam(item.exam)}</span>}
                 </span>
                 <span className="pri">{item.pri !== PRI_DEFAULT && <b>p {item.pri}</b>}</span>
                 <span className="due" title={ivl ? `interval ${ivl}` : undefined}>{item.kind === 'card' && (item.buried || item.held) ? 'tomorrow' : item.pulled ? dueWhen(dayOf(item.dueAt), now) : dueWhen(item.due, now)}</span>

@@ -8,11 +8,11 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { meta, parse } from '../../format/index.js';
-import { advanceRead, advanceWrite, gradeItem, queue, sameItem, type CardItem, type QueueItem } from '../../schedule/index.js';
+import { advanceRead, advanceWrite, gradeItem, queue, sameItem, type CardItem, type QueueItem, type ReadItem } from '../../schedule/index.js';
 import { nodeFs } from '../../vault/node-fs.js';
 import { Vault } from '../../vault/index.js';
 import {
-  cleanBudget, dayLabel, dueLabel, dueToday, firstWords, gapLabels, intervalLabel, isFresh, kindTag, ownBlank, pathLabel, refLine, sessionItems, snippetOf, sourceLabel, doneLine,
+  cleanBudget, dayLabel, dueLabel, dueToday, firstWords, gapLabels, intervalLabel, isFresh, kindTag, ownBlank, paceWords, pathLabel, refLine, sessionItems, snippetOf, sourceLabel, doneLine,
 } from '../items.js';
 import { INTAKE, SESSION, queueId, queueScope, tabKindOf, titleOf } from '../names.js';
 
@@ -204,5 +204,25 @@ describe('a session over the sample vault', () => {
     expect(meta((await vault.read(item.path)).doc).read?.pos).toBe(2);
     await vault.update(item.path, (doc) => { advanceRead(doc, 'on', NOW, 5); });
     expect(meta((await vault.read(item.path)).doc).read).toMatchObject({ pos: 5, reps: (item.sched.reps ?? 0) + 2 });
+  });
+});
+
+describe('a source with a finish day (milestone 52)', () => {
+  const at = new Date('2026-11-03T12:00:00');
+  const read = (finish: { day: string; left: number; perPass: number; read?: number } | undefined, dueAt = at): ReadItem => ({ kind: 'read', path: 'a.md', sched: {}, pos: 6, total: 40, dueAt, pri: 50, ...(finish ? { finish: { read: 6, ...finish } } : {}) } as ReadItem);
+
+  it('on pace while a pass a day from its next would finish by the day, behind once it would not; nothing else says anything', () => {
+    expect(paceWords(read({ day: '2026-11-24', left: 27, perPass: 3 }), at)).toBe('on pace · 9 passes left');
+    expect(paceWords(read({ day: '2026-11-10', left: 42, perPass: 3 }), at)).toBe('behind · 14 passes left');
+    // eight days, the 3rd to the 10th, hold eight passes and no more
+    expect(paceWords(read({ day: '2026-11-10', left: 8, perPass: 1 }), at)).toBe('on pace · 8 passes left');
+    expect(paceWords(read({ day: '2026-11-10', left: 9, perPass: 1 }), at)).toBe('behind · 9 passes left');
+    // a next pass further off has fewer days left to it
+    expect(paceWords(read({ day: '2026-11-10', left: 8, perPass: 1 }, new Date('2026-11-05T00:00:00')), at)).toBe('behind · 8 passes left');
+    expect(paceWords(read({ day: '2026-11-03', left: 1, perPass: 2 }), at)).toBe('on pace · 1 pass left');
+    expect(paceWords(read(undefined), at)).toBe('');
+    expect(paceWords(read({ day: '2026-11-02', left: 8, perPass: 1 }), at)).toBe('');
+    expect(paceWords(read({ day: '2026-11-24', left: 0, perPass: 1 }), at)).toBe('');
+    expect(paceWords(card({ sched: { ivl: 12 } }), at)).toBe('');
   });
 });

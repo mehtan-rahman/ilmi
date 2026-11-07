@@ -164,7 +164,9 @@ export type Field =
   /** Which pages of its PDF the document is: a chapter of a book whose pages are another document's file. */
   | { key: 'pages'; value: PageRange }
   /** The exams everything under the document is studied toward, in the order written. */
-  | { key: 'exam'; value: Exam[] };
+  | { key: 'exam'; value: Exam[] }
+  /** The day a source's reading is paced to finish by (§3, *finish*): a source's own, not inherited. */
+  | { key: 'finish'; value: string };
 
 /** One exam (§3, *exams*): its day, and what it is called (`midterm 2`), when it says. */
 export interface Exam {
@@ -207,7 +209,7 @@ export interface Diagnostic {
 
 export const FIELD_KEYS: readonly FieldKey[] = [
   'type', 'title', 'frozen', 'imported', 'started', 'read', 'write', 'default-card', 'pri', 'pdf', 'url', 'author', 'published', 'tabs',
-  'new-per-day', 'reviews-per-day', 'retention', 'leech', 'leech-action', 'pages', 'exam',
+  'new-per-day', 'reviews-per-day', 'retention', 'leech', 'leech-action', 'pages', 'exam', 'finish',
 ];
 
 export function isField(e: FmEntry): e is Field {

@@ -212,15 +212,15 @@ function buildQueue(now: Date): QueueItem[] {
     all.push(d);
   }
   const out: QueueItem[] = [];
-  // the steps below mark items in place, so what one may mark is a copy: an item under an exam ahead (tagged, brought
-  // forward), a card due that an allowance may hold, and with a link anywhere any card (its twin may be buried)
+  // the steps below mark items in place, so what one may mark is a copy: an item under an exam ahead or with a finish day
+  // (tagged, brought forward), a card due that an allowance may hold, and with a link anywhere any card (its twin may be buried)
   const from = new Map<QueueItem, QueueItem>();
   const examOf = (p: string) => activeExam(examsAtPath(p), now);
   for (const d of all) {
     if (!d.items.length) continue;
     const under = examOf(d.items[0]!.path) !== undefined;
     for (const base of d.items) {
-      const marked = under || (base.kind === 'card' && (links > 0 || base.dueAt.getTime() <= t));
+      const marked = under || (base.kind === 'read' && base.finish !== undefined) || (base.kind === 'card' && (links > 0 || base.dueAt.getTime() <= t));
       if (!marked) { out.push(base); continue; }
       const item = { ...base };
       from.set(item, base);
@@ -893,8 +893,8 @@ export function openInitialVault(): Promise<void> {
       if (path) {
         const vault = await openVault(await devCollection(path));
         if (mode) {
-          const { smoke, smokeReader, smokeCards, smokeIntake, smokeQueue, smokeLoop, smokeShots, smokeDeck, smokePri, smokeGrowth, smokeOverload, smokeFaces, smokeCardsText, smokeAnki, smokeMath, smokeEpub, smokeClip, smokeClipping, smokePlugins, smokeDictionary, smokeRender, smokeLive, smokeBlocks, smokeUse, smokeLand, smokeNest, smokeTabs, smokeDecks, smokeTour, smokeNotes, smokeEditing, smokeTree, smokeInsert, smokeTabs2, smokeListCards, smokeArabic, smokeRest, smokeBothWays, smokeNumbers, smokeOpen, smokeExam, smokeSame, smokeSections, smokeBook, smokeBooks, smokeTextSections, smokeZoom, smokeCadence, smokeReadme, smokeSync, smokeNudge, smokeStore, smokeCrdt, smokeStorage, smokeSearch, smokeTouchMac, smokePhoneMac, smokeInkMac, smokePageInkMac } = await import('./smoke.js');
-          const run = { reader: smokeReader, cards: smokeCards, intake: smokeIntake, queue: smokeQueue, loop: smokeLoop, shots: smokeShots, deck: smokeDeck, pri: smokePri, growth: smokeGrowth, overload: smokeOverload, faces: smokeFaces, 'cards-text': smokeCardsText, anki: smokeAnki, math: smokeMath, epub: smokeEpub, clip: smokeClip, clipping: smokeClipping, plugins: smokePlugins, dictionary: smokeDictionary, render: smokeRender, live: smokeLive, blocks: smokeBlocks, use: smokeUse, land: smokeLand, nest: smokeNest, tabs: smokeTabs, decks: smokeDecks, tour: smokeTour, notes: smokeNotes, editing: smokeEditing, tree: smokeTree, insert: smokeInsert, tabs2: smokeTabs2, listcards: smokeListCards, arabic: smokeArabic, rest: smokeRest, bothways: smokeBothWays, numbers: smokeNumbers, open: smokeOpen, exam: smokeExam, same: smokeSame, sections: smokeSections, book: smokeBook, books: smokeBooks, textsections: smokeTextSections, zoom: smokeZoom, cadence: smokeCadence, readme: smokeReadme, sync: smokeSync, nudge: smokeNudge, store: smokeStore, crdt: smokeCrdt, storage: smokeStorage, search: smokeSearch, touch: smokeTouchMac, phone: smokePhoneMac, ink: smokeInkMac, pageink: smokePageInkMac }[mode] ?? smoke;
+          const { smoke, smokeReader, smokeCards, smokeIntake, smokeQueue, smokeLoop, smokeShots, smokeDeck, smokePri, smokeGrowth, smokeOverload, smokeFaces, smokeCardsText, smokeAnki, smokeMath, smokeEpub, smokeClip, smokeClipping, smokePlugins, smokeDictionary, smokeRender, smokeLive, smokeBlocks, smokeUse, smokeLand, smokeNest, smokeTabs, smokeDecks, smokeTour, smokeNotes, smokeEditing, smokeTree, smokeInsert, smokeTabs2, smokeListCards, smokeArabic, smokeRest, smokeBothWays, smokeNumbers, smokeOpen, smokeExam, smokeSame, smokeSections, smokeBook, smokeBooks, smokeTextSections, smokeZoom, smokeCadence, smokeReadme, smokeSync, smokeNudge, smokeStore, smokeCrdt, smokeStorage, smokeSearch, smokeFinish, smokeTouchMac, smokePhoneMac, smokeInkMac, smokePageInkMac } = await import('./smoke.js');
+          const run = { reader: smokeReader, cards: smokeCards, intake: smokeIntake, queue: smokeQueue, loop: smokeLoop, shots: smokeShots, deck: smokeDeck, pri: smokePri, growth: smokeGrowth, overload: smokeOverload, faces: smokeFaces, 'cards-text': smokeCardsText, anki: smokeAnki, math: smokeMath, epub: smokeEpub, clip: smokeClip, clipping: smokeClipping, plugins: smokePlugins, dictionary: smokeDictionary, render: smokeRender, live: smokeLive, blocks: smokeBlocks, use: smokeUse, land: smokeLand, nest: smokeNest, tabs: smokeTabs, decks: smokeDecks, tour: smokeTour, notes: smokeNotes, editing: smokeEditing, tree: smokeTree, insert: smokeInsert, tabs2: smokeTabs2, listcards: smokeListCards, arabic: smokeArabic, rest: smokeRest, bothways: smokeBothWays, numbers: smokeNumbers, open: smokeOpen, exam: smokeExam, same: smokeSame, sections: smokeSections, book: smokeBook, books: smokeBooks, textsections: smokeTextSections, zoom: smokeZoom, cadence: smokeCadence, readme: smokeReadme, sync: smokeSync, nudge: smokeNudge, store: smokeStore, crdt: smokeCrdt, storage: smokeStorage, search: smokeSearch, finish: smokeFinish, touch: smokeTouchMac, phone: smokePhoneMac, ink: smokeInkMac, pageink: smokePageInkMac }[mode] ?? smoke;
           // the smokes before 40 expect the inspector wherever they open it: the room rule is the tour's to check
           if (mode !== 'tour') useApp.setState({ inspForced: true });
           await run(vault);

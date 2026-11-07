@@ -218,6 +218,8 @@
 // sample on any of the three shapes, by word, unvoweled Arabic, phrase and
 // under three letters, light and dark; a result opens at its place; a write,
 // a rename and a delete followed in the database itself.
+// `ILMI_SMOKE=finish` (`smokeFinish`, milestone 52): a finish day on a half-read
+// source of the sample, set and cleared from the inspector (see the function).
 // `ILMI_SMOKE=size` (`smokeSize`, milestone 60) runs from the welcome: the
 // folder imported 15 and 152 times over (`ILMI_SIZE`) into collections of
 // their own, each opened and a card graded, the times and the web content
@@ -12444,6 +12446,219 @@ export async function smokeSize(src: string | null): Promise<void> {
     }
     log('done');
   } catch (e) {
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+// `ILMI_SMOKE=finish` (`smokeFinish`, milestone 52) over a fresh copy of
+// `samples/double-major`, 2026-11-03 by the app's clock. The merchant passage,
+// half read, at priority 70, its cadence every third day: the inspector's
+// `finish by` set three weeks out; the row says `on pace · N passes left`; the
+// session's ⏎ reads and writes the pacing's day, not the cadence's; a day too
+// close to make reads `behind`; empty clears it, the words go and the next pass is
+// on the cadence again. A line on its cadence with a day set after it is
+// brought forward by the queue with nothing written, and goes back when the
+// day is cleared; past the day the words go and the line stands as written.
+// A chapter of a book counts its pages. Light, then dark.
+export async function smokeFinish(vault: Vault): Promise<void> {
+  type ReadItem = import('../schedule/index.js').ReadItem;
+  type QueueItem = import('../schedule/index.js').QueueItem;
+  let last = { at: Date.now(), what: 'start' };
+  let finished = false;
+  const log = (s: string) => { last = { at: Date.now(), what: s }; void info(`smoke finish: ${s}`); };
+  const dog = setInterval(() => {
+    if (finished) { clearInterval(dog); return; }
+    if (Date.now() - last.at > 30_000) { finished = true; clearInterval(dog); void info(`smoke finish: failed: no progress for 30 s after "${last.what}"`); }
+  }, 2000);
+  const shot = async (name: string, ms = 2500) => { await sleep(800); log(`shot: ${name}`); await sleep(ms); };
+  const q = <T extends Element>(sel: string, root: ParentNode = document) => root.querySelector<T>(sel);
+  const qa = <T extends Element>(sel: string, root: ParentNode = document) => Array.from(root.querySelectorAll<T>(sel));
+  const must = (ok: unknown, what: string) => { if (!ok) throw new Error(what); log(`ok: ${what}`); };
+  const poll = async <T,>(probe: () => T | null | undefined | false | Promise<T | null | undefined | false>, what: string, ms = 8000): Promise<T> => {
+    const t0 = Date.now();
+    for (;;) {
+      const v = await probe();
+      if (v) { log(`ok: ${what}`); return v; }
+      if (Date.now() - t0 > ms) throw new Error(`${what} (waited ${ms} ms)`);
+      await sleep(100);
+    }
+  };
+  const key = (k: string) => window.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));
+  const { parse, meta, setField } = await import('../format/index.js');
+  const { addDays, dayOf, isDue, pacedInterval, passesLeft, sameItem } = await import('../schedule/index.js');
+  const { refreshQueue } = await import('./vault.js');
+  const { setClockDay, appNow } = await import('./clock.js');
+  const { doneLine } = await import('./items.js');
+  const MERCHANT = 'library/classical-prose-reader/15-the-merchant-who-was-robbed.md';
+  const CHAPTER = 'library/lindqvist-statistical-physics/ch-3-the-canonical-ensemble.md';
+  const NAME = 'passage 15 · the merchant who was robbed';
+  const DAY1 = '2026-11-03';
+  const WEEKS3 = addDays(DAY1, 21);
+  const text = (p: string) => vault.fs.readText(vault.abs(p));
+  const lineOf = (t: string) => t.split('\n').find((l) => l.startsWith('read:')) ?? '';
+  const readOf = (p: string) => useApp.getState().queue.find((i): i is ReadItem => i.kind === 'read' && i.path === p);
+  const sessionAt = async (it: QueueItem) => {
+    // the pane's scroll carries into the session, and ⏎ reads the read point off it
+    const body = q<HTMLElement>('.pane[data-active="1"] .pane-body');
+    if (body) body.scrollTop = 0;
+    openSession(it);
+    await poll(() => { const el = useApp.getState().sessionEl; return el && sameItem(el.item, it) && q('.pane[data-active="1"] .doc-session .session-bar') ? true : null; }, `the session opens at ${it.path}`, 20000);
+    await sleep(500);
+  };
+  const bar = () => q<HTMLElement>('.pane[data-active="1"] .session-bar')!;
+  const actions = () => qa<HTMLElement>('.sb-actions button .ra-l', bar()).map((b) => b.textContent).join(' / ');
+  const changed = (p: string, before: string, what: string) => poll(async () => { const t = await text(p); return t !== before ? t : null; }, what);
+  const field = () => q<HTMLInputElement>('.insp .day-field');
+  const setDay = async (p: string, day: string) => {
+    const el = await poll(field, 'the inspector has its finish by row');
+    const before = await text(p);
+    el.focus();
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(el, day);
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.blur();
+    return changed(p, before, day ? `finish by ${day} written` : 'finish by cleared');
+  };
+  // a book opens with the inspector closed: its toggle
+  const bookRow = async () => {
+    openNode(CHAPTER);
+    await poll(() => { useApp.setState({ bookInsp: true }); return field(); }, 'the chapter\'s inspector, by its toggle', 20000);
+  };
+  const today = async () => {
+    openNode(queueId('today'));
+    await poll(() => q('.pane[data-active="1"] .queue h1')?.firstChild?.textContent === 'due today', 'the day\'s query is drawn');
+  };
+  const rowOf = (name: string) => qa<HTMLElement>('.pane[data-active="1"] .qlist li').find((li) => li.textContent?.includes(name) && q('.kindtag', li)?.textContent === 'read');
+  const paceOf = (name: string) => { const r = rowOf(name); return r ? q('[data-pace]', r)?.textContent ?? '' : null; };
+  try {
+    setClockDay(DAY1);
+    useApp.getState().setTheme('light');
+    await poll(() => document.documentElement.dataset.theme === 'light', 'light');
+    useApp.getState().setBacklog(false);
+    setInspector({ open: true });
+    await poll(() => useApp.getState().docs[MERCHANT] && useApp.getState().docs[CHAPTER], 'the sample is in the collection', 15000);
+    await vault.update(MERCHANT, (d) => setField(d, 'pri', 70));
+    refreshQueue();
+    const merchant = await poll(() => { const r = readOf(MERCHANT); return r && r.pri === 70 && isDue(r, appNow()) ? r : null; }, 'the merchant is due, at priority 70');
+    must(merchant.pos === 6 && merchant.pos < merchant.total && merchant.sched.reps === 2, `half read: ${merchant.pos} of ${merchant.total} in ${merchant.sched.reps} passes`);
+
+    // ── nothing set: nothing said ──
+    await today();
+    await poll(() => rowOf('merchant who was robbed'), 'its row is drawn');
+    must(paceOf('merchant who was robbed') === '', 'no day set, the row says no pace');
+
+    // ── the row, three weeks out ──
+    openNode(MERCHANT);
+    const set1 = await setDay(MERCHANT, WEEKS3);
+    must(set1.includes(`\nfinish: ${WEEKS3}\n`), `the front matter says finish: ${WEEKS3}`);
+    must(field()?.value === WEEKS3, 'the field shows the day');
+    await shot('finish-row');
+    refreshQueue();
+    const paced = await poll(() => { const r = readOf(MERCHANT); return r?.finish ? r : null; }, 'the queue knows the day');
+    const passes = passesLeft(merchant.total - 6, 3);
+    await today();
+    const words1 = await poll(() => paceOf('merchant who was robbed'), 'the row says how it stands');
+    must(words1 === `on pace · ${passes} passes left`, `the row: "${words1}"`);
+    must(paced.finish?.day === WEEKS3, 'the item carries the day');
+    rowOf('merchant who was robbed')?.scrollIntoView({ block: 'center' });
+    await shot('finish-queue');
+
+    // ── a pass lands on the pacing's day, not the cadence's ──
+    await sessionAt(paced);
+    const barWords = q('.sb-where[data-pace]', bar())?.textContent;
+    must(barWords === `on pace · ${passes} passes left`, `the session bar: "${barWords}"`);
+    must(actions() === 'done for today · back in 2d / later / dismiss', `sooner than the cadence of three: ${actions()}`);
+    await shot('finish-session');
+    let before = await text(MERCHANT);
+    key('Enter');
+    let after = await changed(MERCHANT, before, 'done for today wrote the file');
+    const r1 = meta(parse(after).doc).read!;
+    log(`the line: ${lineOf(after)}`);
+    const next = pacedInterval(DAY1, { day: WEEKS3 }, merchant.total - r1.pos!, r1.pos! / 3, 0)!;
+    must(next < 3 && r1.ivl === next && r1.due === addDays(DAY1, next) && r1.reps === 3, `the pass landed on the pacing's day, ${next} days on, not three: ${lineOf(after)}`);
+    must(useApp.getState().log[0] === doneLine('“', NAME, `done for today · back in ${next}d`), `the done row: "${useApp.getState().log[0]}"`);
+    const DAY2 = r1.due!;
+
+    // ── too close to make: behind ──
+    openNode(MERCHANT);
+    await setDay(MERCHANT, addDays(DAY2, 1));
+    setClockDay(DAY2);
+    refreshQueue();
+    await today();
+    const words2 = await poll(() => { const w = paceOf('merchant who was robbed'); return w?.startsWith('behind') ? w : null; }, 'a day too close reads behind');
+    must(/^behind · \d+ passes left$/.test(words2), `the row: "${words2}"`);
+    rowOf('merchant who was robbed')?.scrollIntoView({ block: 'center' });
+    await shot('finish-behind');
+
+    // ── empty clears it, and the next pass is on its cadence ──
+    openNode(MERCHANT);
+    const cleared = await setDay(MERCHANT, '');
+    must(!cleared.includes('\nfinish:'), 'the field is gone from the front matter');
+    refreshQueue();
+    await poll(() => { const r = readOf(MERCHANT); return r && !r.finish ? r : null; }, 'the queue has let the day go');
+    await today();
+    await poll(() => paceOf('merchant who was robbed') === '', 'the row says nothing again');
+    const back = readOf(MERCHANT)!;
+    await sessionAt(back);
+    must(!q('.sb-where[data-pace]', bar()), 'the session bar says nothing again');
+    must(actions() === 'done for today · back in 3d / later / dismiss', `on its cadence: ${actions()}`);
+    before = await text(MERCHANT);
+    key('Enter');
+    after = await changed(MERCHANT, before, 'done for today wrote the file');
+    const r2 = meta(parse(after).doc).read!;
+    must(r2.ivl === 3 && r2.due === addDays(DAY2, 3), `the pass landed on its cadence: ${lineOf(after)}`);
+
+    // ── a line already out on its cadence is brought forward, nothing written ──
+    openNode(MERCHANT);
+    const left = readOf(MERCHANT)!.total - (r2.pos ?? 0);
+    const close = addDays(DAY2, passesLeft(left, (r2.pos ?? 0) / (r2.reps ?? 1)));
+    await setDay(MERCHANT, close);
+    refreshQueue();
+    const pulled = await poll(() => { const r = readOf(MERCHANT); return r?.finish && r.pulled ? r : null; }, 'the queue brings the pass forward');
+    must(pulled.pulled === r2.due && dayOf(pulled.dueAt) < r2.due!, `from ${pulled.pulled} to ${dayOf(pulled.dueAt)}, the line still ${r2.ivl} days`);
+    must(lineOf(await text(MERCHANT)) === lineOf(after), 'the read line is as it was');
+    await setDay(MERCHANT, '');
+    refreshQueue();
+    await poll(() => { const r = readOf(MERCHANT); return r && !r.pulled && dayOf(r.dueAt) === r2.due ? r : null; }, 'cleared, it is back on its cadence\'s day');
+
+    // ── after the day it means nothing and is left as written ──
+    await setDay(MERCHANT, WEEKS3);
+    const past = addDays(WEEKS3, 1);
+    setClockDay(past);
+    refreshQueue();
+    await today();
+    await poll(() => rowOf('merchant who was robbed'), 'its row, the day past');
+    must(paceOf('merchant who was robbed') === '', 'past the day the row says nothing');
+    must((await text(MERCHANT)).includes(`\nfinish: ${WEEKS3}\n`), 'and the field is left as written');
+    const late = readOf(MERCHANT)!;
+    await sessionAt(late);
+    must(actions() === 'done for today · back in 3d / later / dismiss', `on its cadence: ${actions()}`);
+    await today();
+
+    // ── a chapter counts its pages ──
+    setClockDay(DAY1);
+    await bookRow();
+    await setDay(CHAPTER, WEEKS3);
+    refreshQueue();
+    const ch = await poll(() => { const r = readOf(CHAPTER); return r?.finish ? r : null; }, 'the chapter has the day');
+    must(ch.finish!.left === 2 && ch.finish!.perPass === 1, `pages 23-28, read to 26 in four passes: ${ch.finish!.left} left at ${ch.finish!.perPass} a pass`);
+    await today();
+    const words3 = await poll(() => paceOf('canonical ensemble'), 'its row says how it stands');
+    must(words3 === 'on pace · 2 passes left', `the row: "${words3}"`);
+
+    // ── dark ──
+    useApp.getState().setTheme('dark');
+    await poll(() => document.documentElement.dataset.theme === 'dark', 'dark');
+    rowOf('canonical ensemble')?.scrollIntoView({ block: 'center' });
+    await shot('finish-dark-queue');
+    await bookRow();
+    await shot('finish-dark-row');
+    useApp.getState().setTheme('light');
+    setClockDay(null);
+    finished = true;
+    log(`done; vault ${vault.root}`);
+  } catch (e) {
+    finished = true;
+    setClockDay(null);
     log(`failed: ${e instanceof Error ? e.message : String(e)}`);
   }
 }

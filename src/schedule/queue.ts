@@ -19,7 +19,7 @@ import { capForExam, lineKey, type ExamAt } from './exams.js';
 import type { Exam, LeechAction } from '../format/index.js';
 import { addDays, dayOf, dayStart, whenToDate } from './dates.js';
 import { sampleKey } from './growth.js';
-import { advanceRead } from './read.js';
+import { advanceRead, finishOf, leftToFinish } from './read.js';
 import { advanceWrite } from './write.js';
 import { advanceSection, sectionInQueue, sectionState } from './section.js';
 import { buryLinked, cardsById } from './links.js';
@@ -99,6 +99,10 @@ export interface ReadItem extends ItemBase {
   note?: true;
   /** A document read by its pages: `pos` is a page, and what is left is not counted. */
   pdf?: true;
+  /** A source's finish day (`finishOf`), whatever day it is, and what is left to it in blocks or pages. */
+  finish?: { day: string; left: number; read: number; perPass: number };
+  /** Brought forward (`pulled`) by its finish day, not by an exam. */
+  byFinish?: true;
   /** An extract: it comes back as a section does, and says where it stands in the same words. */
   extract?: true;
   /** On a note revisited or an extract: anything written in it, and its cards. */
@@ -266,6 +270,8 @@ export function docItems(path: string, doc: Doc, now: Date): QueueItem[] {
     if (m.pdf !== undefined && pos > 0) item.page = pos;
     if (note) item.note = true;
     if (m.pdf !== undefined) item.pdf = true;
+    const finish = finishOf(m);
+    if (finish !== undefined) item.finish = { day: finish, ...leftToFinish(m, pos, total, m.read.reps) };
     if (m.type === 'extract') item.extract = true;
     if (note || m.type === 'extract') {
       item.written = prose.some((b) => b.kind !== 'heading' && b.text.trim() !== '');

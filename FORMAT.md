@@ -227,6 +227,7 @@ dropped, with a diagnostic.
 | `leech-action` | `suspend` `tag`             | `tag`     | what a leech does: suspended (`sus=1`), or only marked             |
 | `pages`        | `n` or `n-m`                |           | which pages of its PDF the document is, numbered as the PDF numbers them |
 | `exam`         | `day label`, `, ` between   |           | the exams everything under the document is studied toward (exams, below) |
+| `finish`       | day                         |           | the day a source's reading is paced to end by (finish, below)      |
 
 **Type.** A `note` is the person's own writing: editable, cards anywhere in
 it, no schedule unless asked. A `source` is what someone else wrote, read
@@ -425,6 +426,26 @@ next pass brought forward, the interval written the shorter of growth and
 pacing, so the line's `due` less its `ivl` is still the day of the pass);
 new cards under it come in early enough to be reviewed a few times, unless
 `new-per-day` is set. The day after the exam none of it applies.
+
+**Finish.** `finish: 2026-11-24` on a source says its reading should end by
+that day: a textbook that follows lectures, a reading group, a deadline. A
+day, plain or quoted like `title`, written plain; anything else is a raw line
+with a diagnostic. It is the document's own and is not inherited. While the
+day is ahead a pass is paced as under an exam, to the day itself with no
+lead: the passes left (what is left, at what a pass has read so far, as
+`pos` over `reps`, four before any) are spread over the days left, and the
+interval written is the shorter of that and the cadence, so the line's `due`
+less its `ivl` is still the day of the pass. The queue brings a line written
+before the day was set forward the same way, nothing written; a clear puts it
+back. The backlog holds it over to tomorrow as any book. An exam ahead whose
+own target (three days before it) is no later than the day paces it instead.
+What is left is counted in prose blocks, or on a chapter in its `pages`
+(from the page after `pos` to the range's last). After the day the field
+means nothing and is left as written. It means nothing on a note, a draft, a
+deck or an extract, on a source with no `read` line, and on a document read
+by all of a PDF's pages with no `pages`, since nothing says how long a PDF is
+until it is opened. So a PDF on its own (§1) has none: `reading.json` holds no
+`finish`, and a `finish` given there is dropped.
 
 **title** is written plain when it can be and as a double-quoted JSON string
 otherwise (when it starts with a YAML-significant character, contains `: ` or

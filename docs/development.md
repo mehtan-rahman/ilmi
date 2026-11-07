@@ -80,6 +80,9 @@ app's. Delete the collections afterwards. Give a dev run its own
 identifier (below) and its collections are under
 `~/Library/Application Support/<identifier>/collections/`, apart from the
 installed app's.
+`ILMI_SMOKE=finish` (a scratch copy of the sample) sets a finish day on the
+merchant passage from the inspector, reads the row's words, makes a pass on the
+pacing's day, reads `behind`, clears it, and counts a chapter's pages.
 `ILMI_SMOKE=welcome` runs before any vault opens and walks the welcome instead,
 seeding its rows with `ILMI_VAULT`; the other modes are listed at the top of
 `src/app/smoke.ts`. `ILMI_SMOKE=book` (a scratch copy of `samples/double-major`,

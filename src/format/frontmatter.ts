@@ -178,6 +178,12 @@ function parseValue(key: FieldKey, raw: string, warn: Warn): Field | null {
       const v = t === null ? null : parseExams(t);
       return v === null ? null : { key, value: v };
     }
+    case 'finish': {
+      // a day, plain or quoted like a title; a day holds no `#`, so a comment goes first
+      const t = parseTitle(stripComment(raw), warn);
+      const v = t === null ? null : parseDay(t.trim());
+      return v === null ? null : { key, value: v };
+    }
   }
 }
 
@@ -308,6 +314,7 @@ export function formatField(f: Field): string {
     case 'retention': return `retention: ${formatNumber(f.value)}`;
     case 'pages': return `pages: ${formatPages(f.value)}`;
     case 'exam': return `exam: ${formatExams(f.value)}`;
+    case 'finish': return `finish: ${f.value}`;
   }
 }
 
@@ -351,6 +358,8 @@ export interface Meta {
   pages?: PageRange;
   /** The `exam` field: the exams set here, as written; what applies after inheritance is `schedule/exams.ts`. */
   exams?: Exam[];
+  /** The `finish` field: the day a source's reading is paced to finish by, as written; `finishOf` in `schedule/read.ts` says when it counts. */
+  finish?: string;
 }
 
 /**
@@ -385,6 +394,7 @@ export function meta(doc: Doc): Meta {
       case 'leech-action': out.leechAction = e.value; break;
       case 'pages': out.pages = e.value; break;
       case 'exam': out.exams = e.value; break;
+      case 'finish': out.finish = e.value; break;
     }
   }
   if (!typed && out.imported !== undefined) out.type = 'source';

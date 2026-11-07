@@ -10536,6 +10536,9 @@ export async function smokePhone(): Promise<void> {
   const ask = (verb: string, ...n: number[]) => log(`do: ${verb} ${n.map((v) => v.toFixed(4)).join(' ')}`);
   /** A finger on `el`, until `then` holds; the first touch after a boot can be dropped, so it is asked for again. */
   const tap = async <T,>(el: Element, then: () => T | null | undefined | false | Promise<T | null | undefined | false>, what: string, ms = 20000): Promise<T> => {
+    // the bar gives way to the keyboard, and comes back a moment after a field goes
+    for (let w = 0; w < 100 && !el.getBoundingClientRect().width; w++) await sleep(80);
+    if (!el.getBoundingClientRect().width) throw new Error(`nothing to touch for: ${what} (keyboard ${document.documentElement.hasAttribute('data-keyboard')})`);
     const at = mid(el);
     ask('tap', ...at);
     const t0 = Date.now();

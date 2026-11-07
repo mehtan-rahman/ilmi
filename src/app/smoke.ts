@@ -10315,7 +10315,7 @@ export async function smokeTouchMac(vault: Vault): Promise<void> {
     const aloneNote = await invoke<string | null>('dev_env', { name: 'ILMI_ALONE_NOTE' });
     if (aloneNote) {
       const noteText = await poll(async () => { await crdtNow(); try { return await vault.fs.readText(vault.abs(aloneNote)); } catch { return null; } }, `the note made on the iPad for the PDF on its own is here: ${aloneNote}`, 30000);
-      must(/^---\npdf: alone\.pdf\n---\n/.test(noteText) && /\n## .+\n<!-- read [^\n]*boxes=129:/.test(noteText), 'it names the PDF and holds the section boxed on p. 129');
+      must(/^---\npdf: \.\.\/library\/alone\.pdf\n---\n/.test(noteText) && /\n## .+\n<!-- read [^\n]*boxes=129:/.test(noteText), 'it names the PDF and holds the section boxed on p. 129');
       must(useApp.getState().docs['library/alone.pdf']?.note === aloneNote && useApp.getState().docs[aloneNote]?.of === 'library/alone.pdf', 'the PDF shows it as its notes here too');
       const reading = JSON.parse(await vault.fs.readText(vault.abs('.ilmi/reading.json'))) as Record<string, { read?: string }>;
       must(/pos=1\d\d y=0\.\d{3}/.test(reading['library/alone.pdf']?.read ?? ''), `the PDF's own reading line came through reading.json (${reading['library/alone.pdf']?.read})`);

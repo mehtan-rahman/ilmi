@@ -420,6 +420,51 @@ describe('53\'s merge cases, for rows and text', () => {
     expect(await b.fs.stat(join(ROOT, 'papers'))).toBeNull();
   });
 
+  it('a deleted folder kept only for a deleted folder under it goes with the last row, though the merge read the one and not the other', async () => {
+    const { a, b, storage } = await pair(CORPUS);
+    await a.fs.mkdir(join(ROOT, 'box/top/mid'));
+    await a.write('box/aa.md', 'One.\n');
+    await a.write('box/top/mid/note.md', 'Two.\n');
+    await a.write('box/zz.md', 'Three.\n');
+    await settle(storage, [a, b]);
+    // `top` and `mid` deleted on one with the note changed under them on the other: both stay, for the note
+    await b.change('box/top/mid/note.md', (doc) => { doc.blocks.push({ kind: 'paragraph', text: 'still here' }); });
+    await b.eng.sync(storage);
+    await a.fs.remove(join(ROOT, 'box/top'));
+    await settle(storage, [a, b]);
+    expect(await a.read('box/top/mid/note.md')).toContain('still here');
+    // the note goes, and in the same file a drag beside `top`, which only keeps its place: a merge of that file reads
+    // `top` and not `mid`, which no change names (it goes on `b` with the note, by no change of its own)
+    await b.write('.ilmi/order.json', `${JSON.stringify({ box: ['top/', 'zz.md', 'aa.md'] }, null, 2)}\n`);
+    await b.fs.remove(join(ROOT, 'box/top/mid/note.md'));
+    expect(await b.fs.stat(join(ROOT, 'box/top'))).toBeNull();
+    await settle(storage, [b, a]);
+    expect(await a.fs.stat(join(ROOT, 'box/top'))).toBeNull();
+    expect(differences(await a.files(), await b.files())).toEqual([]);
+  });
+
+  it('a deleted folder stays for a live row under a deleted folder under it, though the merge read the one and not the other', async () => {
+    const { a, b, storage } = await pair(CORPUS);
+    await a.fs.mkdir(join(ROOT, 'box/top/mid'));
+    await a.write('box/aa.md', 'One.\n');
+    await a.write('box/top/mid/note.md', 'Two.\n');
+    await a.write('box/top/mid/other.md', 'Three.\n');
+    await a.write('box/zz.md', 'Four.\n');
+    await settle(storage, [a, b]);
+    await b.change('box/top/mid/note.md', (doc) => { doc.blocks.push({ kind: 'paragraph', text: 'still here' }); });
+    await b.change('box/top/mid/other.md', (doc) => { doc.blocks.push({ kind: 'paragraph', text: 'here too' }); });
+    await b.eng.sync(storage);
+    await a.fs.remove(join(ROOT, 'box/top'));
+    await settle(storage, [a, b]);
+    // one of the two goes: the other still holds both folders over it
+    await b.write('.ilmi/order.json', `${JSON.stringify({ box: ['top/', 'zz.md', 'aa.md'] }, null, 2)}\n`);
+    await b.fs.remove(join(ROOT, 'box/top/mid/note.md'));
+    await settle(storage, [b, a]);
+    expect(await a.read('box/top/mid/other.md')).toContain('here too');
+    expect(await a.fs.stat(join(ROOT, 'box/top/mid/note.md'))).toBeNull();
+    expect(differences(await a.files(), await b.files())).toEqual([]);
+  });
+
   it('a new document, a new folder, a rename and a move each land', async () => {
     const { a, b, storage } = await pair(CORPUS);
     await a.fs.mkdir(join(ROOT, 'new folder'));

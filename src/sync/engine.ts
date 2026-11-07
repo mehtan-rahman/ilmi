@@ -625,6 +625,12 @@ export function engine(fs: StoreFs, opts: EngineOptions): Engine {
     for (const r of lift.reviews ?? []) p.ops.push({ t: 'r', f: r.file, l: r.line });
   };
 
+  /** Whether a row is dead, by the registers as they are stored: for a row a merge has not read. */
+  const deadRow = async (id: string): Promise<boolean> => {
+    const regs: RowRegs = new Map((await store.regs([`${id}|e`, `${id}|d`])).map((r) => [r.key.slice(id.length + 1), r]));
+    return viewOf(id, regs).dead;
+  };
+
   const recorder: Recorder = {
     async put(w) {
       await ready;
@@ -696,8 +702,7 @@ export function engine(fs: StoreFs, opts: EngineOptions): Engine {
     async dead(id) {
       await ready;
       if (!device) return false;
-      const regs: RowRegs = new Map((await store.regs([`${id}|e`, `${id}|d`])).map((r) => [r.key.slice(id.length + 1), r]));
-      return viewOf(id, regs).dead;
+      return deadRow(id);
     },
   };
   door.record(recorder);
@@ -995,9 +1000,7 @@ export function engine(fs: StoreFs, opts: EngineOptions): Engine {
       const live = async (id: string): Promise<boolean> => {
         const v = views.get(id);
         if (v) return v.complete && !v.dead;
-        if (!door.row(id)) return false;
-        const regs: RowRegs = new Map((await store.regs([`${id}|e`, `${id}|d`])).map((r) => [r.key.slice(id.length + 1), r]));
-        return !viewOf(id, regs).dead;
+        return !!door.row(id) && !(await deadRow(id));
       };
       // the row of a dropped move goes back where it was moved from, when that is still there and not under the row; else to the top
       const to = new Map<string, string | null>(dropped.map((d) => [d.id, null]));
@@ -1033,7 +1036,7 @@ export function engine(fs: StoreFs, opts: EngineOptions): Engine {
     const coming = new Map<string, string[]>();
     for (const v of views.values()) if (v.complete && v.parent !== null) coming.set(v.parent, [...(coming.get(v.parent) ?? []), v.id]);
     const held = new Map<string, boolean>();
-    const holds = (id: string): boolean => {
+    const holds = async (id: string): Promise<boolean> => {
       const known = held.get(id);
       if (known !== undefined) return known;
       // a ring of dead rows holds none of them
@@ -1042,14 +1045,16 @@ export function engine(fs: StoreFs, opts: EngineOptions): Engine {
       for (const c of new Set([...door.childrenOf(id).map((r) => r.id), ...(coming.get(id) ?? [])])) {
         const v = views.get(c);
         const moved = side.get(c);
-        // a row of the tree not read here is shown: it is under this one still
-        if (!v ? !moved || moved.parent === id : v.complete && v.parent === id && (!v.dead || holds(c))) { yes = true; break; }
+        // a row of the tree not read here is under this one still; it holds this one if it is alive, and if it is dead
+        // only while something holds it: the last row under it may be going in this merge, and no later merge would
+        // look at this row again
+        if (v ? v.complete && v.parent === id && (!v.dead || (await holds(c))) : (!moved || moved.parent === id) && (!(await deadRow(c)) || (await holds(c)))) { yes = true; break; }
       }
       held.set(id, yes);
       return yes;
     };
     const show = new Map<string, View>();
-    for (const v of views.values()) if (v.complete && (!v.dead || holds(v.id))) show.set(v.id, v);
+    for (const v of views.values()) if (v.complete && (!v.dead || (await holds(v.id)))) show.set(v.id, v);
     for (const v of [...show.values()]) {
       let child = v;
       for (let hops = 0; hops < 10_000; hops++) {

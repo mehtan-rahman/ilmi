@@ -9767,7 +9767,8 @@ export async function smokeIpad(): Promise<void> {
     must(vault.root === `${collectionsHome()}/${name}`, `the clone is a collection under the remote's name (${name})`);
     await poll(() => vault.documents().length > 0 && useApp.getState().queue.length > 0, `the sample is there (${vault.documents().length} documents)`, 20000);
     await poll(() => useApp.getState().sync.on, 'the clone is a repository with its remote');
-    await poll(() => syncWord(useApp.getState().sync) === 'synced', 'the strip says synced', 20000);
+    // since 51 an open writes the day it started into `.ilmi/state.json`, which git's sync commits and pushes a minute later (`PUSH_AFTER_MS`)
+    await poll(() => syncWord(useApp.getState().sync) === 'synced', 'the strip says synced', 90000);
 
     // ── the shell's shape ──
     await until(() => q('.queue .qlist li'), 10000);

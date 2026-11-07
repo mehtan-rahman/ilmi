@@ -9859,7 +9859,7 @@ export async function smokeTouch(): Promise<void> {
     const pdfOf = () => useApp.getState().docs[BOOK]?.pdf ?? '';
     await poll(() => pdfOf() !== '', 'the chapter is there, with its book');
     const ALONE = 'library/alone.pdf';
-    must(useApp.getState().away.length === 3 && useApp.getState().away.includes(pdfOf()) && useApp.getState().away.includes(ALONE), `this device keeps what it has opened: both books and the PDF on its own are away (${useApp.getState().away.join(', ')})`);
+    must(useApp.getState().away.length === 4 && useApp.getState().away.includes(pdfOf()) && useApp.getState().away.includes(ALONE), `this device keeps what it has opened: both books and the PDFs on their own are away (${useApp.getState().away.join(', ')})`);
     must(useApp.getState().docs[ALONE]?.pdf === ALONE && !useApp.getState().docs[ALONE]?.note && !!useApp.getState().docs[ALONE]?.read, 'the PDF on its own came through the storage: its pages itself, no note, its reading line');
     const text = () => vault.fs.readText(vault.abs(BOOK));
     const headings = async () => parse(await text()).doc.blocks.flatMap((b) => (b.kind === 'heading' && b.level === 2 ? [b] : []));
@@ -9888,7 +9888,7 @@ export async function smokeTouch(): Promise<void> {
     const book = await poll(() => q<HTMLElement>('.pane[data-active="1"] .book'), 'the chapter opens as a book', 15000);
     await poll(() => q('.pdf-page[data-page="23"] canvas', book), 'its book is fetched on opening and the first page drawn', 60000);
     await filesSettled();
-    must(!useApp.getState().away.includes(pdfOf()) && useApp.getState().away.length === 2, 'the book opened is here now, the others still away');
+    must(!useApp.getState().away.includes(pdfOf()) && useApp.getState().away.length === 3, 'the book opened is here now, the others still away');
     const sc = q<HTMLElement>('.book-pages', book)!;
     const pending = () => qa('.pbox.pending:not(.ghost)', book).length;
     // ── a book open is its pages (milestone 70): across the pane, nothing beside them; `notes` among the words over them ──
@@ -10241,6 +10241,57 @@ export async function smokeTouch(): Promise<void> {
     ask('tap', ...mid(q<HTMLElement>('.meta .notes-toggle', land)!));
     await poll(() => lalone(), 'closed', 20000);
     useApp.getState().setTheme('light');
+
+    // ── a PDF on its own, on its side: its pages, a passage kept asks for a note, made in a folder picked, beside the pages ──
+    const SIDE = 'library/sideways.pdf';
+    ask('turn landscape');
+    await poll(() => shape() === 'landscape', 'on its side again', 20000);
+    await sleep(1200);
+    openNode(SIDE);
+    const sbook = await poll(() => q<HTMLElement>(`.pane[data-active="1"] .book[data-path="${CSS.escape(SIDE)}"]`), 'the second PDF on its own opens as a book', 15000);
+    await poll(() => q('.pdf-page[data-page="129"] canvas', sbook) ?? (q('.pdf-page[data-page="129"]', sbook)?.scrollIntoView({ block: 'start' }), null), 'its file is fetched and p. 129 drawn', 60000);
+    await filesSettled();
+    const ssc = q<HTMLElement>('.book-pages', sbook)!;
+    const sacross = () => {
+      const pr = q<HTMLElement>('.pdf-page[data-page="129"]', sbook)!.getBoundingClientRect();
+      const sr = ssc.getBoundingClientRect();
+      const [left, right] = [pr.left - sr.left, sr.left + ssc.clientWidth - pr.right];
+      return { ok: pr.width >= Math.min(960, ssc.clientWidth - 62) - 2 && Math.abs(left - right) < 3, line: `${Math.round(pr.width)} of ${ssc.clientWidth} px, ${Math.round(left)} and ${Math.round(right)} beside it` };
+    };
+    must(sbook.dataset.notes === '0' && qa('.pane').length === 1 && !q('.insp') && sacross().ok, `on its side: its pages alone, across the pane (${sacross().line})`);
+    must(!!useApp.getState().queue.find((i) => i.kind === 'read' && i.path === SIDE), 'in the reading queue by its own line');
+    await shot('touch-side-alone');
+    {
+      const pr = q<HTMLElement>('.pdf-page[data-page="129"]', sbook)!;
+      pr.scrollIntoView({ block: 'start' });
+      await sleep(600);
+      const r = pr.getBoundingClientRect();
+      ask('drag', fx(r.left + 0.12 * r.width), fy(r.top + 0.275 * r.height), fx(r.left + 0.9 * r.width), fy(r.top + 0.347 * r.height), 0.9);
+      await poll(() => qa('.pbox.pending:not(.ghost)', sbook).length === 1, 'a finger held and dragged boxes a passage', 20000);
+      await sleep(500);
+      ask('tap', ...mid(q<HTMLElement>('.pend [data-k="e"]', sbook)!));
+      const pick3 = await poll(() => q<HTMLInputElement>('.palette-input input'), 'section tapped asks for a note', 20000);
+      await sleep(300);
+      pick3.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+      await poll(() => useApp.getState().noteAttach?.step === 'place', 'new note, named after the PDF: then where', 8000);
+      const row = await poll(() => qa<HTMLElement>('.palette-row').find((r) => r.querySelector('.pt')?.textContent === 'fleeting'), 'fleeting is among the folders', 8000);
+      await shot('touch-side-place');
+      ask('tap', ...mid(row));
+      const SNOTE = 'fleeting/sideways notes.md';
+      await poll(() => useApp.getState().docs[SIDE]?.note === SNOTE && useApp.getState().docs[SNOTE]?.of === SIDE, 'the note is made in fleeting and is the PDF\'s notes', 20000);
+      await poll(() => sbook.dataset.notes === '1' && !!notesPane() && qa<HTMLElement>('.dd-h', notesPane()!).some((h) => !!h.querySelector('.book-chip')), 'it opens beside the pages with the section in it', 15000);
+      await sleep(800);
+      const a = sbook.closest('.pane')!.getBoundingClientRect();
+      const b = notesPane()!.getBoundingClientRect();
+      must(Math.abs(b.left - a.right) < 3 && Math.abs(a.width - b.width) < 3, `side by side (pages ${Math.round(a.left)}–${Math.round(a.right)}, note ${Math.round(b.left)}–${Math.round(b.right)})`);
+      await shot('touch-side-notes');
+      ask('tap', ...mid(q<HTMLElement>('.meta .notes-toggle', sbook)!));
+      await poll(() => sbook.dataset.notes === '0' && !notesPane() && qa('.pane').length === 1, 'a tap on notes closes it', 20000);
+    }
+    ask('turn portrait');
+    await poll(() => shape() === 'portrait', 'upright', 20000);
+    await sleep(800);
+    useApp.getState().setTheme('light');
     finished = true;
     log(`done; collection ${vault.root}, storage ${storage.folder}`);
   } catch (e) {
@@ -10290,6 +10341,9 @@ export async function smokeTouchMac(vault: Vault): Promise<void> {
       const ALONE = 'library/alone.pdf';
       await importPdfNode('library', { title: 'alone', bytes: await vault.fs.readBytes(vault.abs('library/classical-prose-reader.pdf')), text: '' });
       await poll(() => useApp.getState().docs[ALONE]?.pdf === ALONE && !!useApp.getState().docs[ALONE]?.read && !useApp.getState().docs[ALONE]?.note, 'a PDF on its own is in the collection, enrolled, with no note', 15000);
+      // and another, for the iPad on its side
+      await importPdfNode('library', { title: 'sideways', bytes: await vault.fs.readBytes(vault.abs('library/classical-prose-reader.pdf')), text: '' });
+      await poll(() => useApp.getState().docs['library/sideways.pdf']?.pdf === 'library/sideways.pdf', 'and a second, for the iPad on its side', 15000);
       await crdtNow();
       await poll(() => syncWord(useApp.getState().sync) === 'synced' && useApp.getState().sync.toPush === 0, 'and in the storage', 30000);
       log(`done; collection ${vault.root}, storage ${dir}`);

@@ -8080,7 +8080,56 @@ After 57 and 58 (see the note under 58: ink is rows of strokes, by page).
 on, the writing is there on the Mac, and strokes added to one page on
 two collections are all there on both.
 
-### [ ] 68. Search across everything
+### [x] 68. Search across everything
+Done 2026-11-07, commits `0e4f354` and `bf4cf23` (`smoke.ts` alone: a card asked for by its words, a covered window timed without hanging).
+Notes: **The shape chosen.** Two tables beside the rest: `search (id, doc, block, kind, card, hay, text)`, a row a block, and
+`search_grams`, FTS5 with its `trigram` tokenizer (`case_sensitive 1`) over `hay`, external content, kept by two triggers. Those are the
+three-letter pieces; a run of pieces in order is the text itself, so nothing found needs checking. `search_meta` says how far a walk has come.
+`user_version` 5; the tables are made as a collection opens and nothing that was there changes. **The fold is one implementation**, so there is
+nothing to keep the same: `src/format/fold.ts` is the deck search's `fold`, moved, and `find.ts`'s copy of it (a second one was there, a character
+at a time) is gone into the same file. Rust never folds: `hay` comes with the write and the query comes folded. That is possible because
+every text change already passes through `decompose`, so `search.ts`'s `searchRows` sits there. One rule changed: a final sigma folds to a sigma, in
+both forms, because `toLowerCase` looking at a neighbour was the one thing that made a text folded whole differ from one folded a character at a
+time; a test over the corpus and the sample holds the two equal. **What is indexed:** a row per block. A card's `hay` is the deck search's
+own (`faceText`: both faces, a cloze's answers in place); `text` is the card as written, so a row is named as a card is. A heading, a paragraph
+or a raw block (a list, a quote, a table) without its inline marks, so `the **big** idea` is found as a phrase, a table's rule and pipes gone.
+Comments (a box's line) are not text. Not indexed: front matter (a title is a name, and names now fold), a PDF's pages, handwriting, anything
+under a dot-directory (kept out when asked). **A query.** Folded, split on white space. With several words the phrase as written comes first, then every
+word anywhere; a word of three letters or more goes by its pieces, a shorter one by `instr` over `hay`, and a query of nothing shorter than
+that reads every row until 100 are found. The palette takes those 100 and ranks them: the phrase before words apart, a whole word before one inside a
+longer word, a heading before a card before prose. Unranked SQL with a `LIMIT` is what keeps a common word cheap: `bm25` would have to read every hit.
+**Arabic with prefixes and suffixes:** `كرم` finds `بالكرم`, `فأكرمه`, `مكرمة`: any word with the three letters in a row. It is letters, not roots: `كرامة` and `كرام`, an alif between them, are not found by `كرم`,
+and the hyphened `ك-ر-م` is not either. أ إ آ fold to ا by decomposition; ة and ى stay what they are, as the deck search
+has them. **How it follows the text.** A write, an upgrade and a merge through the door: the rows are in `Lift`, so they are in that write's transaction. Rust
+replaces them when the text changed, or when the document has none; **a grade writes none** (Rust test; `searchWrites` in the mem store; a merged grade too). A
+rename or a move: the rows hold the row's id, a path is made when a result is shown. A delete: `ON DELETE CASCADE`, which fires the trigger (Rust test);
+content with no rows for it clears them (a document left as its children's folder). A snapshot and a joined collection are door writes like any other, and
+a new collection starts with nothing to walk. **It is never a change:** the engine ignores `lift.search`; a test reads the storage's files for it. `engine.test.ts`'s random
+test now ends with every copy's rows equal to what its own text makes, 500 seeds with and without snapshots. **A collection from before 68** opens at once and is walked,
+1.5 s after the day is on the screen (`searchBuild`, 24 documents a page, each in the store's one-at-a-time chain so no write comes between a read and its rows, the
+page given a turn between). A stopped walk goes on from `search_meta`; a write ahead of the walk is indexed by the write and again by the walk, with the same rows.
+Made from a real database 4: the pre-68 build made `size-152`, kept, and the new build opened it (it is 4 until the renderer says 5). Meanwhile everything works,
+search finds what has been read, the palette's foot says `43% read`, and an empty list says `nothing yet`. **The palette.** Names (now folded, so an unvoweled query
+finds a voweled title), then cards and text, then the looser names: `withText` keeps names that hold the query as typed on top and four loose ones, and the rest
+after the text, because forty loose fuzzy matches would otherwise bury every text row. **Cards left the name list.** Each opening walked 165,000 queue items and parsed
+every card; they come from the index now, by their words. A card's row is what it was; text is `⌕`, the line around the match, the whole word marked (a mark that began inside
+a word cut an Arabic word's letters apart in WebKit, so it never does; checked on captures), the document in small type. The last answer stays until the next, so rows do not blink.
+On a phone a text row stacks: the line across the row, the document under it (the first cut hid the word itself; the smoke now asserts every mark shows whole).
+**A result opens at its place.** A card as a card opens. Prose and headings: `Reveal.block`, the block at the middle of the page with a fill that fades. The fill is a decoration (`landKey`), not 37's class.
+A document with pages opens its pages with its text beside them at the place (`openNotes`), the phone's as a page. **A deck's prose has no page of its own**: it opens the deck, at the top.
+**Measured, in the Mac's window, in front** (dev build, WebKit, `size-152`: 10,032 documents, 115,216 cards, 426,208 rows; from a clean checkout; the median of five, the field set until the rows are on the page and drawn, worst in brackets; on a normal open):
+a word `lagrangian` **43 ms** (46); unvoweled `كرم` **55 ms** (59); a phrase `perturbation theory` **37 ms** (39). Again from `bf4cf23`: 41 (45), 61 (94), 36 (40). The store's own answer is 3–8 ms of that; the rest is React and the frame. Also: `ation` 45, `the` 43,
+`كَرَم` as typed 49, `الكتاب` 51, words apart `energy conservation` 43 (the store 23), `في الدار` 59, a word in no document 26, a phrase in none 29. **Over the runs one of five was
+slower now and then**, the store's answer not: `كرم` 222 ms (right after a walk), `كر` 211, `x` 181, `في الدار` 224. So *typically* under a tenth, not *always*. A letter at a time: the longest a key took to the next frame 17–23 ms.
+**Under three letters:** `of` 43 ms, `كر` 66, `x` 37: rows are found early and the read stops. A pair in no document (`qz`) reads all 426,208: **233–239 ms**, the store alone 232 (worst 627), during which a write waits behind it. The rows on the page stay usable meanwhile.
+**The sample's five files holding كرم:** `arabic/roots.md`, `arabic/vocabulary.md`, `.../conditional-sentences.md`, `.../03-the-generous-host.md`, `.../11-the-judge-and-the-two-litigants.md`, all found, the same five voweled and with a tatweel, by the
+index against the fold over each whole file; on the Mac, the iPad and the iPhone. **What it costs.** The database 208 MB → **663 MB** (in the rows 84 MB of text and 77 MB of it folded, the pieces 220 MB, the rest what holds them). A fresh import 28.3 s → **96.6–98.9 s**. Open, grade and memory: as before (open 1.4–1.5 s
+against 1.8; grade 522–552 ms against 573; 653–724 MB against 660; one run read 1,144 MB and 2.7 s open and the next did not). **The walk at this size: 67 s** (two runs, 67.1 and 67.5), the longest the page went without a frame 490–507 ms; at 11% a grade took 856–878 ms and a search 305–335 ms. **Its memory is the
+weak figure:** the page held 1,475–1,482 MB after it, 2.5 GB at its most, against 660 MB, all gone at the next open. It happens once, but a phone may not survive that at this size (not tried). **The palette opening at this size is 716–746 ms from the day's page:** names 80, the backlog check 58, and about 420 ms is the day's page itself rendering again under it
+(`covered` changes `active`, and `Queue` filters 165,376 items each render). Not 68's, not changed; before 68 it did all that and the cards too (not measured). **Found.** An H1 at the top of a note lost a class set on it: the page redraws it as the caret comes in, and `nodeDOM` then gives an element no longer in the page (why it is drawn anew was not found). So: a decoration, set 120 ms on, on whichever view is there, since a first read can rebuild the view.
+`ILMI_SMOKE=deck` and `open` were already broken: each stops at the same line at `ea068e6`, `open` (60 ok) reading a fixture from disk that is in the database since 59, `deck` over the corpus at the inspector's schedule block. Neither fixed. `open`'s palette step passes; `deck`'s is not reached.
+**Not done.** Finding a card by letters in order (`mxwl`): names only now. A formula by its characters: it is found as its TeX is written, `alpha` and not `α`. A second connection for reads, so a scan need not hold the store. **Not verified.** A device. The walk or a query at size on the iPad or iPhone (the sample only, 66 documents); the walk at size on a phone's memory. Typing with a real keyboard: the smokes set the field (⌘K itself, an Arabic keyboard, a finger on a row).
+The e-ink theme. `sync`, `nudge`, `touch`, `ink`, `pageink`, `phone`, `storage` over webdav, dropbox and drive not rerun. An export while a walk runs.
 - An index in the same database over every document's text and every
   card: folded as the deck search folds (case, combining marks, the
   tatweel), in three-letter pieces so Arabic with its prefixes and
@@ -8581,7 +8630,10 @@ signed in to, against loopback fakes only; neither real service has been
 touched, and it waits on the user's keys. 56, the phone, the same day: the day
 as its face, the session and a quick card under the thumb, a page clipped by
 the Shortcut's link, all on the Mac; a link that itself starts the app is lost.
-Next: 68, the last the loop can do; 65 and 66 wait for things only the user
+68, search across everything, the same day: every document's text and every
+card in three-letter pieces in the database, the palette finding them; a word,
+unvoweled Arabic and a phrase in 37–55 ms at 115,000 cards in the window.
+Nothing is left that the loop can do: 65 and 66 wait for things only the user
 has, 52 for the user's word.
 
 Refinement (33–41) is complete, 2026-10-30, every milestone's window check

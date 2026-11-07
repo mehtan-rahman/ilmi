@@ -6,6 +6,165 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-11-07 — milestone 68: search across everything
+
+Done on main: `0e4f354`, then `bf4cf23` (`smoke.ts` alone: a card asked for by its words, a covered window timed without hanging). In the
+115,000-card collection, in the Mac's window in front, a word is on the page in 43 ms, unvoweled `كرم` in 55 ms, a phrase in 37 ms; the sample's five files
+holding كرم are all found on the Mac, the iPad and the iPhone. **It costs**: a database of 663 MB where it was 208, a fresh import of 97 s where it was 28, and an
+old collection's walk of 67 s that holds 2.5 GB at its most. New: `src/format/fold.ts`, `src/vault/search.ts`, `search.test.ts`. Changed: `store.rs` (the
+tables, schema 5), `lib.rs`, `store.ts`, `lift.ts`, `mem-store.ts`, `tauri-store.ts`, `deck.ts`, `find.ts`, `plugins.ts` (`landKey`), `chrome.ts`, `Palette.tsx`, `Reader.tsx`, `vault.ts`,
+`chrome.css`, `reader.css`, `phone.css`, `smoke.ts`, the tests, the guide, docs/development.md; PLAN (68's notes). The format did not change; an export is as it was.
+
+### Decided
+
+- **The fold is in TypeScript only.** Rust stores what it is given. Every text change passes through `decompose`, so the rows are made there, and there
+  is no second rule to keep the same. A second copy did exist, in `find.ts`: it is gone into the same file. One rule moved: ς folds to σ, the only thing that
+  made a text folded whole differ from one folded by the character. A test holds the two equal over the corpus and the sample.
+- **FTS5's trigram tokenizer, over a row a block.** Tried first at full size outside the app: under a millisecond a word, 5 ms a phrase, so nothing of ilmi's own was written.
+- **A row holds what is shown and what is folded.** The text a result shows has its vowels.
+- **`LIMIT` without `ORDER BY`, then the palette ranks 100.** A common word stays cheap; `bm25` would read every hit.
+- **Cards left the palette's name list.** Each opening walked 165,000 items. They are found by their words now, so letters-in-order (`mxwl`) finds names only.
+- **Names, then text, then loose names**, or forty loose matches would bury every text row. Names fold too.
+- **The mark takes the whole word**, or an Arabic word's letters come apart.
+- **`nothing yet` and `43% read`** during a walk: the only words added.
+- **A phone's text row stacks.** The first cut hid the word found.
+
+### Verified
+
+1532 tests in 98 files (+34; 1 skipped), typecheck clean, 68 cargo tests in the app (+4) and 6 in the plugin, `cargo check` for both iOS targets. The random test, `ILMI_SEEDS=1-500`, 552 passed
+with and 552 without `ILMI_SNAPS=1`, each now ending with every copy's index what its own text says. From a clean checkout of `0e4f354`, old counts in brackets: the Mac `store` 34 (34), its export equal to the
+sample by `diff -r`; `crdt` 76 (72: four added, b's own index, a word merged, a word gone); `storage` over s3 77 (77); `tour` 24 and 45 (24, 45); `book` 131 and 18 (131, 18); `books` 81 and 9 (81, 9); `search`, new, 30 and 9.
+The iPad, built afresh by `tauri ios dev`: `search` 30 and 9, `tour` 24. The iPhone, built afresh: `search` 31 and 9, its rows at least 48 px. From `bf4cf23`, which touched `smoke.ts` alone: `size` 7 (3), and the iPhone's captures again. The sample's and
+corpus's byte-for-byte round trips are in the tests.
+
+**The "done when", as run** (`ILMI_SMOKE=size`, `size-152`: 10,032 documents, 115,216 cards, 426,208 rows; median of five; the field set until the rows are on the page and drawn; worst in brackets; no run said covered):
+
+| | on the page | the store alone |
+| --- | --- | --- |
+| a word, `lagrangian` | 43 ms (46); again 41 (45) | 4–5 ms |
+| unvoweled Arabic, `كرم` | 55 ms (59); again 61 (94) | 3–4 ms |
+| a phrase, `perturbation theory` | 37 ms (39); again 36 (40) | 8 ms |
+| two letters found, `of`, `كر` | 43, 66 ms | 4, 10 ms |
+| two letters in no document, `qz` | 233–239 ms | 232 ms (627) |
+
+**Not every one of five was under a tenth**: over the runs `كرم` once 222 ms just after a walk, `كر` 211, `x` 181, `في الدار` 224, the store's answer 3–13 ms each time. Typed a letter at a time, a key's longest to the next frame was 17–23 ms.
+**An old collection:** a database 4 written by the pre-68 build, kept and restored, opened by the new one: open as ever, the walk done in 67.1 and 67.5 s from the open, the longest the page went without a frame 490–507 ms; at 11% a grade took
+856–878 ms and a search 305–335 ms. Memory after it 1,475–1,482 MB, at its most 2.5 GB, gone by the next open. **Once built:** open 1.4–1.5 s (1.8 before), a grade 522–552 ms (573), memory 653–724 MB (660); one run read 1,144 MB with a 2.7 s open and the next did not, unexplained.
+
+### What the palette looks like
+
+Looked at on captures, as a reader, Arabic and English, light and dark, on all three. Names as ever. A card's row as ever. A text row: `⌕`, the line from a few words before the match, the word with a soft fill and its vowels whole, the
+document in mono after it, on a phone under it. In dark the fill is a warm brown, quiet. Right-to-left lines read right to left in a row that starts at the left, as cards do. Landing: the paragraph or heading in the middle of the page with the fill fading; a card selected in its deck; a chapter of a book with its pages and its note beside them, the heading filled.
+
+### Not verified
+
+**A device.** The walk or a query at size on the iPad or iPhone: the sample only, and a phone's memory under a walk at size is the open risk. A real keyboard: the smokes set the field, so no ⌘K, no Arabic keyboard, no finger on a row. The e-ink theme. Not rerun:
+`sync`, `nudge`, `touch`, `ink`, `pageink`, `phone`, `storage` over webdav, dropbox and drive. **`deck` and `open` fail, and failed before**: each stops on the same line at `ea068e6` (`open` 60 ok, reading a fixture from disk that is in the database since 59; `deck`, over the corpus, at the inspector's schedule block). Neither fixed. So `deck`'s palette step, which I edited, has not run; `search-landed-card` covers the same landing.
+
+### Found
+
+- **A class set on a heading is lost**: the top heading of a note is drawn anew as the caret comes in, and `nodeDOM` then gives an element not in the page. Why was not found. The fill is a decoration now. 37's and 47's landings still set a class.
+- **A view can be built again just after it opens**, so a landing waits 120 ms and uses the view that is there.
+- **The palette's opening is 716–746 ms from the day's page at this size**, about 420 of it `Queue` filtering 165,376 items because `active` changed under it. Not 68's, not changed.
+- A deck's prose has no page to land on: the deck opens at the top.
+- On a phone a selected deck row's bar lies over its first letter (`oth ways`). 56's, not changed.
+- A first seed run printed nothing and was not counted; the same script with its log kept passed. Why was not found.
+
+### Rig notes
+
+Beside the others: `all68.sh <tag>`, `after68.sh <hash>`, `seeds68.sh`. A `size-152` written by a build before a schema change is worth keeping: `cp -cR` it, and restore it for an upgrade. `simshots.sh` reads the log from the top: empty the log before starting it, or it spends its shots on the last run's lines. The iPhone has no sample in Documents: `cp -R` it there for a `vault` run. `deck` wants `ILMI_VAULT=` the corpus. A covered window gives no `requestAnimationFrame`: race it.
+
+### For the user
+
+Type in the palette. Things to say:
+- **The database is about three times what it was**, and a big import takes three times as long. 450 MB of it at 115,000 cards.
+- **An old collection reads itself in on first open**: about a minute at that size, and it takes a lot of memory while it does. Fine on the Mac; on a phone at that size it may not finish. Say if it should wait for a Mac, or if a phone's should come from the storage some other way.
+- **Cards are found by their words, no longer by letters in order.**
+- **`كرم` finds the letters in a row, not the root**: `كرامة` is not found. A real root search is a piece of its own.
+- **`43% read` and `nothing yet` are new words**, and `⌕` a new mark, none named.
+- **A PDF's pages and handwriting are not searched.**
+Still open from before: as in the handoff below.
+
+Handoff prompt for the next session:
+
+```
+Read PLAN.md, FORMAT.md, BUILD-LOG.md, and spec/hashiyah/HANDOFF.md. The
+section of PLAN.md that holds the sync work is "A database under the app,
+synced by CRDT to any storage" (59–70). 68 is done, and with it everything
+the loop can do alone. What is left waits on the user: 65, iCloud Drive, on
+the Developer Program; 66, a real iPad or iPhone on a cable, and git let go; 52,
+Finish by, on the user's word. Real Dropbox and Google Drive (64) wait on their
+keys, a real bucket or server (63) on one of theirs. Do not start any of these, or anything on the list at the end of this
+prompt, without their word: ask what they want next, and if they name a
+milestone do that one only, stop at its "done when", tick it, write notes under
+it, add an entry to BUILD-LOG.md with a fresh handoff prompt, and commit. Rules
+as in PLAN.md's ground rules: export PATH=$HOME/.cargo/bin:/opt/homebrew/bin:$PATH;
+npm test and npm run typecheck green before a commit, and cargo test in
+src-tauri (the app's 68 and `-p tauri-plugin-ink`'s 6), cargo check for both
+iOS targets when Rust or Swift changes; ask before a screen, section, or setting
+the brief does not name; a FORMAT change needs a corpus file and a test; a
+schema change must let an existing collection open. What 68 leaves that carries:
+the fold is `src/format/fold.ts` and only there; Rust never folds; a document's
+search rows come from `decompose` (`src/vault/search.ts`) in that write's
+transaction, and anything that writes a document's text without a `Lift` clears
+them; to change what is indexed, clear `search` and `search_meta` and the walk
+(`searchBuild`) makes them again; schema 5. Keep ILMI_SMOKE=search (30 on the
+Mac and the iPad, 31 on the iPhone), size (7; it fails if a word, unvoweled
+Arabic or a phrase takes a tenth of a second), phone (the Mac 3, the iPhone 196
+and 24, the Mac 8 and 2; three runs over one storage), pageink (16 and 23 on the
+Mac, 48 and 24 on the iPad), `ink` (63 on the iPad, 4 and 18 on the Mac; its
+third run's `ILMI_EXPECT` is the two paragraphs of its `ink:` line), `touch` (133
+on the iPad; 7 and 14 on the Mac, its third run given `ILMI_ALONE_NOTE`), `book`
+(131), `books` (81; it failed once in 67's chain at "the caret is still in the
+section after the write-up" and passed since: run it again before believing a
+failure there), `tour` (24 on the Mac, 24 on the simulator), `crdt` (76),
+`storage` (90 over dropbox, 91 over drive, 77 over s3, 76 over webdav), `store`
+(34, its export equal to the sample by `diff -r`), `sync` and `nudge` passing,
+and the random test in src/sync/__tests__/engine.test.ts (`ILMI_SEEDS=1-500`, and
+with `ILMI_SNAPS=1`). `deck` and `open` fail at lines older than 68: `open` reads
+a fixture from disk that is in the database since 59, `deck` over the corpus stops
+at the inspector's schedule block; mending them is a small job nobody has
+asked for. Xcode 27.2's test runner makes fingers only: a dev run's `dev_ink_pen`
+makes the rig's finger a Pencil. The simulator does not finish booting, and
+`simctl launch` does not return, while the Mac's screen is locked; a locked screen
+stalls the Mac's window or leaves it unpainted: wait for it, do not skip, and look
+at what a capture shows. The first rig touch after a boot can be dropped: run
+again before believing it. An app left open on the simulator loads its page again
+when a dev server comes back on 1420 and runs the last `smoke.json` from the top:
+stop it (`xcrun simctl terminate booted dev.ilmi.app`) after each run. The Mac's
+window checks run from a clean checkout of main with the dev identifier override;
+ILMI_VAULT is a folder, imported afresh as a collection on each run, or a
+collection's own folder, opened as it is. Never kill a process on port 1420 that
+is not yours, and run the simulator's dev server or the Mac's, not both; stop your
+own app binary by pid when a run ends, capture the Mac only by window id; a covered
+window's page runs several times slower and gets no animation frames. Open for the
+user, not to be built without their word: from 68, whether a phone should walk a
+big old collection at all (2.5 GB at its most at 115,000 cards), the database at
+three times its size and an import at three times as long, cards no longer found by
+letters in order, a search by root, PDFs' text and handwriting in the index, the
+day's page making the palette slow to open at that size; from 56, a link that
+starts the app is lost (tao reads no `URLContexts`; the Shortcut starts the app
+first), `notes` swapping the page on a phone, the bar's middle button, the three
+acting from a topic's row, `reveal` in place of dimmed grades, a share extension;
+from 64, whether the Mac's sign-in stays on the loopback, whether `sign in`, the
+`account` row and the keys as typed fields stay, a sign-out; from 69, whether the
+eraser works with a real Pencil (the rig's finger erases nothing, and it is the
+first thing to try on a device), Scribble off throughout the app, the caret a tap
+puts in written ink, where ink lies on the Mac, ink closing up when a note is
+opened again; from 67, where what is written on a book's pages goes in an exported
+folder (a FORMAT change; today an export, the mirror, a dated export and git's
+folder do not hold it), what is written on a deleted book staying, what a notebook
+should be beyond a note with pages of ink; from 58, whether a page of ink should be
+a kind of row of its own; from 57, whether a finger boxes after a hold; from 70, the
+note below the pages on an upright iPad, the row of words staying at the top, a
+dropped PDF with chapters, a 48-era source naming a PDF, `.ilmi/reading.json`
+merging as one file; from 63, a way to join a storage on the welcome of an iPad or a
+phone, whether `join…` and the buttons under the storage's fields stay where they
+are; from 62, "settings that merge".
+```
+
+---
+
 ## 2026-11-07 — milestone 56: the phone
 
 Done on main: `ba9e505`, then `059358a` (`phone.css` alone: a book's pages in a phone's session, seen in a capture from the clean checkout) and

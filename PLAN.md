@@ -7574,7 +7574,174 @@ PDF added on one opens on the other once fetched, and a collection set
 to `opened` holds no PDF until one is opened; the same against a real
 bucket or server of the user's, or that recorded as not verified.
 
-### [ ] 64. Dropbox and Google Drive — sign in and it syncs
+### [x] 64. Dropbox and Google Drive — sign in and it syncs
+Done 2026-11-07 against loopback fakes only, commits `1efb9ee`, `77ad60e`.
+**Neither real service has been touched**: no app key and no OAuth client
+exists, so this stops at the second half of the "done when".
+Notes: **How a sign-in comes back, and the bullet changed.** The bullet says
+`ilmi://`. **On the Mac it is a listener on the loopback instead**:
+`http://localhost:51764/auth` for Dropbox, `http://127.0.0.1:51764/auth` for
+Google, one fixed port because Dropbox matches a redirect exactly. Two
+reasons: a dev binary owns no `ilmi://`, so the path checked here is the one
+that ships; and Google's guide gives a desktop app the loopback and no custom
+scheme, and `ilmi://` on no client (the only scheme it names is the client id
+turned round). On iOS the app is not
+running while the browser is in front, so a link: `ilmi://auth` for Dropbox,
+`com.googleusercontent.apps.<id>:/oauth2redirect` for Google, both through
+`clipper.ts` to `oauth_back`. The code flow with PKCE (S256) and a `state`
+either way, in the system browser (`opener`), ten minutes to answer; a second
+press of `sign in` starts again. **Where tokens are kept.** Better than 63's:
+on the Rust side, in `oauth.json` in the app's data folder, mode 0600, in no
+collection, export or storage, and never in the web view, where a plugin
+could read them. The renderer holds `account`, a random name for an entry.
+The refresh token is in that file **in the clear**; an access token is in
+memory only. Not the Keychain: an unsigned dev binary's signature changes at
+each build, which should mean the system asking every time (reasoned, not
+tried), and nothing here has a signing identity. On iOS the file is in what
+a backup takes. The app key, client id and client secret are in `localStorage`
+with the other settings, in the clear; Google says a desktop client's secret
+is no secret. **Dropbox's parts.** Up to 150 MiB one `files/upload`; above,
+`upload_session/start`, `append_v2` at 16 MiB a request (a multiple of its
+4 MiB, read from disk as it goes), `finish`, each empty but the appends, as its
+performance guide has it. A connection lost in an append sends the same
+request again, and `incorrect_offset`'s `correct_offset` puts it right; no
+`close: true` on the last append, since a lost reply would then be a closed
+session to explain. **Drive's ids and paths.** A collection is one folder,
+`ilmi/<folder>` in My Drive, and its files lie flat in it, each *named* its
+whole path (`devices/0a1b…/3`). So the only things found by name are two
+folders, once a run; a listing is one paged walk filtered by prefix here, and
+no folders between for two devices to make twice. A listing leaves a
+path-to-id table for the reads after it (in memory); a path not in it, or
+whose id has gone, is asked for by name. Names are not unique in Drive: a file
+sent twice is two files, the later by `modifiedTime` is the file, `remove`
+takes both. Two devices making the folder at once settle on the older by
+`createdTime`. Up to 5 MB multipart; above, a resumable session at 16 MiB,
+the offset from each `308`'s `Range`, and asked for (`bytes */total`) after a
+failure. Scope `drive.file`: the app sees only what it made. **Each to a
+folder of its own**: Dropbox's root is the app's folder (an App folder app);
+`folder` is a name under it. **The shape.** `src-tauri/src/oauth.rs` (the
+sign-in, the tokens), `cloud.rs` (the verbs), `devcloud.rs` (the fakes, behind
+63's listener, debug builds only). `storage.rs`'s `Config` gains `Dropbox` and
+`Drive` (`account`, `folder`); `up`, `down` and the four verbs are as they
+were. One new direct dependency, `getrandom`, already in the tree. No schema
+change, no format change. A `401` gets a fresh token and one more try; `429`,
+a `5xx` and Drive's rate-limit `403`s wait as `Retry-After` says or by
+doubling, five times, then fail to the next sync. When a refresh is refused
+(`invalid_grant`: revoked, or Google's seven days) the entry goes, the
+settings lose `account`, a notice says `sign in again`, the strip `offline`;
+`sign in` starts the sync again, `off` not needed.
+**For the user to accept, built without their word.** The section names the
+kinds "with the fields each needs" and 64 says sign-in, so these were built as
+the storage rows' own: **the `sign in` button; the `account` row** (`signed
+in`, `waiting`); **and the keys as typed fields** (`app key`; `client id`,
+`client secret`; `folder`). Typed, each device and each collection is told
+them again; built in, the user would never see them, but a key would be in the
+binary and in this public repository. Say which. The loopback on the Mac
+above is theirs to accept too. A folder of files named by whole paths in Drive
+is not pleasant to look at: `drive.appdata` would hide it, and it would hide
+it from the person too.
+**What the fakes are checked against.** The published guides, read on the day
+(Dropbox's OAuth guide, performance guide and error handling; Google's
+native-app OAuth, OAuth overview, manage-uploads, search-files and scopes
+pages), nothing fetched with a key. Dropbox's HTTP reference did not load, so
+its routes and JSON are from memory. Stricter than the guides where they
+could be: a redirect not registered, a code without its verifier, a route on
+the wrong host, a header not ASCII, `error_summary` with dots so it cannot be
+matched whole, `fields` obeyed so a listing not asking for `nextPageToken` does
+not page, unknown `q` refused, chunks not multiples of 256 KiB, each client
+seeing only its own files, pages shorter than asked. Tokens last 30 requests;
+one request in 97 is rate-limited; a session's third reply is lost.
+**Assumed, not in what was read:** that Dropbox's console takes
+`http://localhost:51764/auth` and `ilmi://auth` (its guide does not say which
+schemes it takes: the second is the likelier to be refused); the exact shape
+of `incorrect_offset` and `413` on an oversized `upload`; that Google refuses
+a Desktop client's exchange without its secret (the guide marks it optional);
+that `drive.file` shows a second device, signed in with the same client, what
+the first made (the page does not say; everything on Drive depends on it); that
+Drive takes `/` in a name; that `path_lower` lower-cases as Rust does beyond
+ASCII; that `files.list` shows a file as soon as it is written (a late one
+only waits for the next sync). **What a fake cannot prove:** real consent
+screens, real token lifetimes and refusals, real rate limits and how long they
+last, real upload sessions and their limits, https (still nothing here has
+spoken it to a storage), quota, a service's outages. **What the user must
+provide and do.** *Dropbox:* an app in the App Console: Scoped access, App
+folder; `files.metadata.read`, `files.content.read`, `files.content.write`
+ticked; redirect `http://localhost:51764/auth` (and `ilmi://auth` for a
+device); public clients allowed. Then in Tweaks › storage › dropbox the app
+key and a `folder`, `sign in`, `connect`; on the second device the same, and
+`join…`. *Google:* a Cloud project, the Drive API on, a consent screen with
+`drive.file`, an OAuth client of the type Desktop app; `client id`,
+`client secret`, `folder`, as above. While the project is in Testing the
+sign-in ends every seven days (the OAuth overview says so of any scope beyond
+name and email); `drive.file` is non-sensitive, so publishing it should not
+need a review, which is not tried. *Google on an iPad* needs more: a client of
+the type iOS and its id turned round added as a URL scheme to the Info.plist;
+that is not in the code, and the plugin's passing such a link on is unverified.
+Then `ILMI_TEST_DROPBOX=app key,refresh token,folder` or
+`ILMI_TEST_DRIVE=client id,client secret,refresh token,folder` and `cargo test
+a_service_the_environment_names` runs the verbs and 20 MB up and down, the
+token from `oauth.json`; two collections and a 200 MB PDF is the "done when".
+**Found.** *`read_timeout` runs from a request's start to its answer's head*
+(reqwest 0.12.28, read in its source; my probe of it failed for another reason,
+so it is not measured): 63's client would have cut any upload still going
+after a minute, a 200 MB `PUT` under 27 Mbit/s. Uploads, S3's and WebDAV's
+too, now go by a client without it. *`storage`'s memory failure, 69's open
+one, was the measure.* It came back on `1efb9ee`, over s3 (+167 MB) and WebDAV
+(+185). `dev_web_memory` read the lifetime peak of whichever web process was
+largest at that moment, and there are two windows, so a before and an after
+could be two processes. Logged by process over four runs (2 s3, 2 WebDAV):
+**neither process's peak moved at all** while the file came, in any, and the
+old rule on those figures reads +119, +163, 0 and 0, the same pattern; one run
+before had even read a peak going *down* (548 to 465). Not the second window
+and not 64's code: the fault is from 63, and only a coin toss of which window
+was larger hid it. It now reads the most of each process; the limit is still
+half the file. **But the peak was the wrong measure too**: a rise below an
+earlier high does not show, and the windows have highs of 450 to 690 MB from
+before the file. So the smoke now reads each process five times a second while
+the file comes and asserts no process rose by the file: the most was 96 to 139
+MB on 200 MB, and 150 on a 400 MB file (120 on 200 MB in the same pair of
+runs), so it does not grow with the file. What that hundred is was not looked
+into; the smoke's line says drawing the page, which is a guess. *A fake's
+query decoded `+`* as a plus; reqwest says a space so: the fake, not the client,
+was wrong. *A session complete at its last failed chunk*: the client would have
+sent an empty chunk; it now asks again. `google drive` overflowed the row of
+kinds: they wrap, three and two.
+**Tests.** Rust 64 (46): the verbs over both (a folder's name in Arabic with an
+apostrophe), a sign-in by the loopback and by a link, a link with another state
+refused, the file's mode, tokens running out and a revoked sign-in, 150 MiB + 4
+KiB in parts and exactly 150 MiB whole, a lost reply, a failed chunk, a write
+over 5 MB, names twice, another client seeing nothing, 1,203 files paged on
+each, rate limits waited out, the fakes' own refusals. Vitest 1479 in 96 files,
+1 skipped (`storage-kinds.test.ts`, the link's shape in `clip.test.ts`); the
+ink plugin's 6; `cargo check` for both iOS targets and `--release`. From a clean
+checkout of `77ad60e`: `storage` over Dropbox (90 ok, 16 captures), Google Drive
+(91, 16), s3 (77, 12), WebDAV (76, 12), each to its `done`; `crdt` (72, 18);
+`store` (34, its export equal to the sample by `diff -r`); `tour` (24, 45);
+`ILMI_SEEDS=1-500` with and without `ILMI_SNAPS=1`, 547 each. Over the two
+services the smoke presses `sign in` in Tweaks (back by the loopback), a second
+collection signs in apart (back by a link through `deep-link://new-url`), a
+grade each way, the 200 MB PDF in 13 appends or chunks and fetched and drawn, a
+snapshot and a third collection from it, tokens refreshed 2 and 3 times, a
+rate limit each; then the service lets go, `sign in again`, and a sign-in from
+the row is syncing again. Over the loopback, a debug build: 200 MB up in 2.3 s
+(6.7 over S3 and WebDAV, whose fakes hash it), down and drawn in 7.3 s. The
+Tweaks captures since the wrap were looked at: Dropbox and Drive's rows, and
+`sign in again`. **Not verified.** Both real services, all of the above. The
+system browser: a plain client played it in every run, so `opener` opening a
+real page, the page the listener answers with, and coming back to the window
+have run nowhere. The OS handing over a link. Nothing ran on the simulator or
+a device: the rows and `ilmi://auth` on iOS are from the code (`cargo check`
+only), and no native code changed. A release bundle. `sign in` pressed twice;
+ten minutes passing; the port taken; a token file written by another version.
+Not rerun: `book`, `books`, `touch`, `ink`, `pageink`, `sync`, `nudge`, `open`,
+`size` (one window, so its figure should not change). **Said plainly, not
+done.** No sign-out: `off` leaves the sign-in, an entry stays in `oauth.json`
+until it is signed in over, and revoking is at the service. Each collection
+signs in for itself, on each device. Keys go on being typed. Uploads resume
+within a run, not across one. Files one after another, and a listing of Drive
+walks every file of the collection each sync. Snapshots' many small writes meet
+Drive's write limits unmeasured. The app's window comes forward when a sign-in
+ends, and the browser's tab stays. OneDrive and Box are not in it.
 - Sign-in in the system browser, back by `ilmi://`; the app keeps to a
   folder of its own in each. Dropbox sends a file over 150 MB in parts.
 - Not in this milestone: OneDrive, Box.
@@ -8338,9 +8505,10 @@ upright iPad. 69, ink where the Pencil lands, the same day: canvases lying
 over the web view with nothing to open, each recogniser moved onto the web
 view and taking the Pencil only, the first touch a stroke in a note and on
 a book's page, 58's `draw` and both full-screen canvases gone; the eraser
-is unverified. Next in the section's order: 64 (Dropbox and Google Drive),
-56 and 68; 65 and 66 wait for things only the user has, 52 for the user's
-word.
+is unverified. 64, Dropbox and Google Drive, the same day: two more storages,
+signed in to, against loopback fakes only; neither real service has been
+touched, and it waits on the user's keys. Next: 56 (the phone), then 68; 65 and
+66 wait for things only the user has, 52 for the user's word.
 
 Refinement (33–41) is complete, 2026-10-30, every milestone's window check
 run and recorded under its BUILD-LOG entry (33 `notes`, 34 `editing`, 35

@@ -6,6 +6,151 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-11-07 — milestone 64: Dropbox and Google Drive, against fakes
+
+Done on main: `1efb9ee`, then `77ad60e` (the web view weighed by process, the smoke's check of it, fake tokens that run out in a
+Dropbox run). **Neither real service has been touched**: no key exists, so 64 stops at its "done when"'s second half, loopback
+fakes, and says so. `storage` has `dropbox` and `google drive`; each is signed in to in the browser, with a folder of its own. New:
+`src-tauri/src/oauth.rs`, `cloud.rs`, `devcloud.rs`, `storage-kinds.test.ts`. Changed: `storage.rs`, `devstore.rs`, `lib.rs`,
+`Cargo.toml` (`getrandom`), `src/app/storage.ts`, `crdt.ts`, `clip.ts`, `clipper.ts`, `Tweaks.tsx`, `store.ts`, `smoke.ts`, the guide
+and docs/development.md; PLAN (64's notes). The format, the store, the engine and the schema did not change.
+
+### Decided
+
+- **On the Mac a sign-in comes back to the loopback, not `ilmi://` as the bullet says**: port 51764, fixed, as Dropbox matches a
+  redirect exactly. A dev binary owns no scheme; Google names none for a desktop app and never `ilmi://`. On iOS, by a link.
+- **Tokens on the Rust side**, `oauth.json`, 0600, in the clear; access tokens in memory; the web view holds a name. Not the Keychain.
+- **Dropbox over 150 MiB in a session**, 16 MiB a request; a lost reply put right by `correct_offset`.
+- **Drive's files lie flat in one folder, named by their whole paths**: two folders found by name, once a run; a listing one walk;
+  duplicates of a name read as the later.
+- **Scopes**: an App folder app; `drive.file`.
+- **`sign in`, the `account` row and the keys as typed fields are the user's to accept** (see below).
+
+### Verified
+
+1479 tests in 96 files (1 skipped), typecheck clean, 64 cargo tests in the app and 6 in the plugin, `cargo check` for both iOS targets
+and `--release`. From a clean checkout of `77ad60e`, each to its `done`, old counts in brackets: `storage` over Dropbox 90 and 16
+captures, Google Drive 91 and 16, s3 77 (76) and 12, WebDAV 76 (75) and 12; `crdt` 72 and 18; `store` 34, its export equal to the
+sample by `diff -r`; `tour` 24 and 45; `ILMI_SEEDS=1-500` with and without `ILMI_SNAPS=1`, 547 passed each.
+
+**The "done when", as run, against the fakes**: two collections signed in apart, one back by the loopback and one by a link, a grade
+each way, a 200 MB PDF up in a session of 13 and fetched and drawn in the other; tokens refreshed, rate limits waited out, a reply
+lost and a chunk failed on the way, none seen above; the service letting go, `sign in again`, and a sign-in from the row syncing
+again. Tweaks captures looked at: both kinds' rows after the wrap, and `sign in again`.
+
+### Not verified
+
+**Both real services.** A fake cannot show real consent screens, token lifetimes, rate limits, upload sessions, https or quota. Assumed,
+from nothing read: that Dropbox's console takes these redirects (`ilmi://auth` the likelier to be refused); that a second device with
+the same client sees what `drive.file` let the first make, on which all of Drive here depends; that Drive takes `/` in a name; the shape of
+`incorrect_offset`. Dropbox's HTTP reference would not load: routes from memory. **The system browser**: a plain client played it
+every time. The OS handing over a link. Nothing on the simulator or a device (no native code changed; `cargo check` only). A release
+bundle. Not rerun: `book`, `books`, `touch`, `ink`, `pageink`, `sync`, `nudge`, `open`, `size`.
+
+### Found
+
+- **`storage`'s memory failure was the measure.** It came back on `1efb9ee`, s3 +167 MB, WebDAV +185. Logged by process over four runs,
+  neither window's peak moved at all; the old rule, the largest process's own peak, reads +119, +163, 0 and 0 on those figures, a
+  coin toss of which window was larger. From 63; not the second window, not 64's code. The limit is unchanged.
+- **The peak could not have caught it anyway**: it shows nothing below an earlier high. The smoke now samples each process while the
+  file comes. The most rose 96 to 139 MB on 200 MB and 150 on 400 MB, so not with the file; what the hundred is was not looked
+  into, and the check's words "drawing the page" are a guess.
+- `read_timeout` runs from a request's start to its answer's head (read in reqwest's source, not measured): any upload past a minute
+  would have been cut, 63's too. Uploads no longer run under it.
+- A session complete at a failed last chunk would have sent an empty chunk. `google drive` overflowed the row of kinds.
+
+### Rig notes
+
+Beside the others: `all64.sh [tag]` (the four storages, `crdt`, `store` with its `diff -r`, `tour`, the seeds, from the run tree),
+`storagebig.sh` (`storage.sh`, the PDF from `BIGPDF`). `storage.sh <tag> <s3|webdav|dropbox|drive>`. A dev run's `oauth.json` is in
+`dev.ilmi.check/`: fake tokens, delete it after. Nothing opens a browser in a smoke.
+
+### For the user
+
+To try the real ones (the guide has the steps): **Dropbox**, an App folder app with three scopes, the redirect
+`http://localhost:51764/auth`, public clients allowed; the app key and a `folder` in Tweaks, `sign in`, `connect`, and on the second
+device `join…`. **Google**, a Cloud project with the Drive API, `drive.file` on the consent screen, a Desktop client; its id and secret.
+In Testing its sign-in ends every seven days. Try Drive across two devices first: that is the assumption everything there rests on.
+Things to say:
+- **The Mac's sign-in comes back to the loopback**, not `ilmi://` as 64 said.
+- **`sign in`, the `account` row and the keys as typed fields** were not named: keep them, or have the keys built in (they would then be
+  in a public repository).
+- **Drive's folder is a flat list of files named by paths**, not for tidying by hand.
+- **There is no sign-out**; revoke at the service. Tokens are in a file only your user reads, unencrypted.
+Still open from before: as in the handoff below.
+
+Handoff prompt for the next session:
+
+```
+Read PLAN.md, FORMAT.md, BUILD-LOG.md, and spec/hashiyah/HANDOFF.md. The
+section of PLAN.md that holds the sync work is "A database under the app,
+synced by CRDT to any storage" (59–70); its introduction holds the decisions
+and the order. 64 is done against loopback fakes; the order now is 56, then
+68 (65 and 66 wait for things only the user has; 52 waits for the user). Do
+milestone 56, "The phone — cards and clipping", in the section "Beyond the
+Mac", and only that one. Stop at its "done when". Then tick it, write notes
+for the next session under it, add an entry to BUILD-LOG.md with a fresh
+handoff prompt, and commit. Rules as in PLAN.md's ground rules: export
+PATH=$HOME/.cargo/bin:/opt/homebrew/bin:$PATH; npm test and npm run
+typecheck green before a commit, and cargo test in src-tauri (the app's 64
+and `-p tauri-plugin-ink`'s 6), cargo check for both iOS targets when Rust
+or Swift changes; one commit per milestone; ask before a screen, section, or
+setting the brief does not name; a FORMAT change needs a corpus file and a
+test. Read 55's notes first (the iOS target: the same app on an iPad, what
+was left unchecked for glass), then 57's, 58's, 67's and 69's for touch and
+ink, and read what 56's bullets say against what the app has become since it
+was written: a collection is an SQLite database (`Vault` over a `StoreFs`),
+synced by an engine through a storage, `keep files` is `opened` on a phone or
+an iPad until chosen; git's connect is still the iPad welcome's one button.
+What has come since 69 and carries: 64 added Dropbox and Google Drive
+(src-tauri/src/oauth.rs, cloud.rs, devcloud.rs). A sign-in comes back to the
+loopback on the Mac and by a link on iOS; tokens are in `oauth.json` on the
+Rust side, the settings name an `account`. Neither real service has been
+touched and no key exists: do not ask for them. On iOS the link is unverified,
+and nothing of 64 ran on the simulator: if a storage's rows matter to the
+phone, say so rather than assume. `dev_web_memory` now reads the most of each
+web process, and `dev_web_processes` each one. Keep ILMI_SMOKE=pageink (16 and
+23 on the Mac, 48 and 24 on the iPad), `ink` (63 on the iPad, 4 and 18 on the
+Mac; its third run's `ILMI_EXPECT` is the two paragraphs of its `ink:` line),
+`touch` (133 on the iPad; 7 and 14 on the Mac, its third run given
+`ILMI_ALONE_NOTE`), `book` (131), `books` (81; it failed once in 67's chain at
+"the caret is still in the section after the write-up" and passed since: run
+it again before believing a failure there), `tour` (24 on the Mac, 24 on the
+simulator), `crdt` (72), `storage` (90 over dropbox, 91 over drive, 77 over
+s3, 76 over webdav), `store` (34, its export equal to the sample by `diff -r`),
+`sync` and `nudge` passing, and the random test in
+src/sync/__tests__/engine.test.ts (`ILMI_SEEDS=1-500`, and with
+`ILMI_SNAPS=1`). Xcode 27.2's test runner makes fingers only: a dev run's
+`dev_ink_pen` makes the rig's finger a Pencil. The simulator does not finish
+booting, and `simctl launch` does not return, while the Mac's screen is
+locked; a locked screen stalls the Mac's window or leaves it unpainted: wait
+for it, do not skip, and look at what a capture shows. The first rig touch
+after a boot can be dropped: run again before believing it. An app left open
+on the simulator loads its page again when a dev server comes back on 1420 and
+runs the last `smoke.json` from the top: stop it (`xcrun simctl terminate
+booted dev.ilmi.app`) after each run. The Mac's window checks run from a clean
+checkout of main with the dev identifier override; ILMI_VAULT is a folder,
+imported afresh as a collection on each run, or a collection's own folder,
+opened as it is. Never kill a process on port 1420 that is not yours, and run
+the simulator's dev server or the Mac's, not both; stop your own app binary by
+pid when a run ends, capture the Mac only by window id; a covered window's
+page runs several times slower. Open for the user, not to be built without
+their word: from 64, whether the Mac's sign-in stays on the loopback, whether
+`sign in`, the `account` row and the keys as typed fields stay, a sign-out;
+whether the eraser works with a real Pencil (69: the rig's finger erases
+nothing, and it is the first thing to try on a device); where what is written
+on a book's pages goes in an exported folder (a FORMAT change; today an export,
+the mirror, a dated export and git's folder do not hold it); whether a page of
+ink should be a kind of row of its own; whether a finger boxes after a hold
+(57); a way to join a storage on the iPad's welcome; whether `join…` and the
+buttons under the storage's fields stay where 63 put them; 62's "settings that
+merge"; from 70, a dropped PDF with chapters, a 48-era source naming a PDF, and
+`.ilmi/reading.json` merging as one file; from 69, Scribble off throughout the
+app.
+```
+
+---
+
 ## 2026-11-07 — seed 248 fixed, beside 69
 
 `9fce8e8`, on main after 69. The random test's seed 248 (an emptied

@@ -432,6 +432,8 @@ and allow public clients. The app key is on that page. In the
 [Google Cloud Console](https://console.cloud.google.com/): enable the Drive
 API, set up the consent screen with the scope `drive.file`, and make an
 OAuth client of the type Desktop app, whose id and secret go in the fields.
+On an iPad Google wants a client of the type iOS, and its id turned round
+added to the app as a URL scheme, which is a build of your own.
 
 The tokens are kept in `oauth.json` in the app's own data folder, readable
 by your user alone; they are in no collection, export or storage, and not

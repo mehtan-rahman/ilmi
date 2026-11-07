@@ -152,7 +152,9 @@ client's sign-ins go. `ILMI_TEST_DROPBOX=app key,refresh token,folder` or
 `ILMI_TEST_DRIVE=client id,client secret,refresh token,folder` and `cargo test
 a_service_the_environment_names` run the verbs and 20 MB up and down against
 the real thing; a refresh token is in `oauth.json` in the app's data folder
-after a sign-in in the app.
+after a sign-in in the app. The smoke weighs each web process
+(`dev_web_processes`), since two windows are two of them, and reads each while
+the big file comes: a lifetime peak shows nothing below an earlier high.
 `ILMI_SMOKE=readme` over a copy of the sample walks the screens the README
 shows and marks each with a `shot:` line; the README's images were captured
 that way, by window id, and scaled to 1600 px wide. Each smoke mode logs `ok:` and `failed:` lines and `shot: <name>` marks

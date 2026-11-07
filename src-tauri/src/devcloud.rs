@@ -7,7 +7,7 @@
 //! - **Sign-in, both.** The code flow with S256: `authorize` answers `302`
 //!   straight off (there is no consent screen); it refuses a redirect the
 //!   client has not registered. A code goes once, and only with the verifier
-//!   that hashes to its challenge and the same redirect. A token lasts 60
+//!   that hashes to its challenge and the same redirect. A token lasts 30
 //!   requests (a client with `short` in its name, 5), not hours, so runs go
 //!   through refreshes. `revoke` ends a client's tokens: `invalid_grant`.
 //! - **Dropbox.** `/dropbox/www`, `/dropbox/api`, `/dropbox/content`, as its
@@ -292,7 +292,7 @@ fn oauth_error(stream: &mut TcpStream, what: &str) -> std::io::Result<()> {
 
 fn grant(svc: Svc, client: &str) -> (String, u64) {
     let token = rnd(32);
-    let left = if client.contains("short") { 5 } else { 60 };
+    let left = if client.contains("short") { 5 } else { 30 };
     fake(|f| f.access.insert(token.clone(), Token { client: client.to_string(), left }));
     (token, if svc == Svc::Dropbox { 14_400 } else { 3_599 })
 }

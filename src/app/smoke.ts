@@ -9376,18 +9376,22 @@ export async function smokeStorage(vault: Vault): Promise<void> {
     await invoke('allow_vault', { path: big.slice(0, big.lastIndexOf('/')) });
     const bigSize = (await tauriFs.stat(big))?.size ?? 0;
     must(bigSize >= 200 * 1048576, `the big PDF is ${mb(bigSize)} on disk`);
+    const weigh = async (when: string) => log(`each web process, ${when}: ${(await invoke<[number, number, number][]>('dev_web_processes', { collect: false })).map(([pid, now, peak]) => `${pid} ${mb(now)} (most ${mb(peak)})`).join(', ')}`);
+    await weigh('before');
     const mem0 = await a<[number, number] | null>('memory');
     const t0 = Date.now();
     must(await (vault.fs as StoreFs).take(vault.abs(BIG_PDF), big), 'a: taken in as a file, not through the window');
     await vault.fs.writeText(vault.abs(BIG), '---\ntitle: a big book\ntype: source\n---\n\nTwo hundred megabytes of pages.\n');
     await poll(() => useApp.getState().docs[BIG], 'a: the book is in the tree');
     log(`took: ${Date.now() - t0} ms`);
+    await weigh('taken in');
     must((await a<number>('size', { path: BIG_PDF })) === bigSize, `a: its row says ${mb(bigSize)}`);
     const t1 = Date.now();
     const up = await a<State>('syncWords');
     log(`up: ${Date.now() - t1} ms · ${up.words?.join(', ')}`);
     must(up.words?.some((w) => /^pushing \d+%$/.test(w)), 'a: the strip said how far the file was on its way up');
     must(up.word === 'synced', 'a: synced');
+    await weigh('sent');
     must((await st.list('blobs/')).length === 3, 'the storage holds it, under its hash');
     if (kind === 'dropbox') {
       const c = await cloudStats();
@@ -9409,9 +9413,18 @@ export async function smokeStorage(vault: Vault): Promise<void> {
     must((await b<OnDisk>('blobFiles')).length === 1, 'b still holds one PDF on disk');
     must((await b<string | null>('rowAway', { path: BIG })) === 'not here', "b: the big book's row says not here");
     await shot('storage-big-away');
+    await weigh('b has merged');
     const t2 = Date.now();
-    const down = await b<State>('openBook', { path: BIG, ms: 120000 }, 150000);
+    // the lifetime peak cannot see a rise below an earlier high, so what each process holds is read while the file comes
+    const held0 = new Map((await invoke<[number, number, number][]>('dev_web_processes', { collect: false })).map(([pid, now]) => [pid, now]));
+    const most = new Map<number, number>();
+    const sample = setInterval(() => { void invoke<[number, number, number][]>('dev_web_processes', { collect: false }).then((ps) => { for (const [pid, now] of ps) most.set(pid, Math.max(most.get(pid) ?? 0, now)); }); }, 200);
+    const down = await b<State>('openBook', { path: BIG, ms: 120000 }, 150000).finally(() => clearInterval(sample));
+    log(`each web process, the most it held while the file came and was drawn: ${[...most].map(([pid, n]) => `${pid} ${mb(n)}`).join(', ')}`);
+    const rise = Math.max(0, ...[...most].map(([pid, n]) => n - (held0.get(pid) ?? n)));
+    must(rise < bigSize, `no web process rose by the file while it came: the most was ${mb(rise)}, drawing the page`);
     log(`down and drawn: ${Date.now() - t2} ms · ${down.words?.join(', ')}`);
+    await weigh('fetched and drawn');
     must(down.drawn, 'b: the big book opens, its first page drawn');
     must(down.words?.some((w) => /^pulling \d+%$/.test(w)), 'b: the strip said how far the file was on its way down');
     const onDisk = await b<OnDisk>('blobFiles');

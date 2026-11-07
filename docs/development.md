@@ -145,7 +145,7 @@ settings' `dev` set (a debug build alone reads it) a plain client plays the
 browser (`devcloud::browse`): nothing opens the system's. The smoke's second
 window signs in by the link, told through the deep-link plugin's own
 `deep-link://new-url`, so the path up to the OS is run; the OS's part is
-not. Tokens last 60 requests there, and one request in 97 is rate-limited, a
+not. Tokens last 30 requests there, and one request in 97 is rate-limited, a
 session's third reply is lost, so a smoke goes through all of that;
 `dev_cloud_stats` says what the servers saw and `dev_cloud_revoke` lets a
 client's sign-ins go. `ILMI_TEST_DROPBOX=app key,refresh token,folder` or

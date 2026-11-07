@@ -182,7 +182,9 @@ fn dev_env(app: tauri::AppHandle, name: String) -> Option<String> {
 /// what it holds now, and the most it has held. The process is the
 /// `com.apple.WebKit.WebContent` whose responsible process is this one (or
 /// the terminal this one answers to, for a `tauri dev` run), started after
-/// it, the largest when there are several; what is read is its physical
+/// it; of several (two windows), the most any of them holds and has held,
+/// not the largest's own peak, which changes process between two readings
+/// (what `storage` over s3 tripped on in 69, and in 64 until this). What is read is the physical
 /// footprint, the figure Activity Monitor shows. With `collect`, WebKit is
 /// first told memory is low (`org.WebKit.lowMemory`, the notification its
 /// own tests post: every WebKit process of the session drops its caches
@@ -191,6 +193,14 @@ fn dev_env(app: tauri::AppHandle, name: String) -> Option<String> {
 /// other systems, and in release.
 #[tauri::command(async)]
 fn dev_web_memory(collect: bool) -> Option<(u64, u64)> {
+    let got = dev_web_processes(collect);
+    let now = got.iter().map(|p| p.1).max()?;
+    Some((now, got.iter().map(|p| p.2).max()?))
+}
+
+/// Dev only, macOS: each of this app's web content processes: its pid, what it holds now, the most it has held.
+#[tauri::command(async)]
+fn dev_web_processes(collect: bool) -> Vec<(i32, u64, u64)> {
     #[cfg(all(debug_assertions, target_os = "macos"))]
     {
         use std::os::raw::{c_char, c_int, c_void};
@@ -214,10 +224,10 @@ fn dev_web_memory(collect: bool) -> Option<(u64, u64)> {
         };
         let me = std::process::id() as c_int;
         let mine = [me, unsafe { responsibility_get_pid_responsible_for_pid(me) }];
-        let started = usage(me)?[10];
+        let Some(started) = usage(me).map(|u| u[10]) else { return Vec::new() };
         let mut pids = vec![0 as c_int; 8192];
         let n = unsafe { proc_listallpids(pids.as_mut_ptr().cast(), (pids.len() * std::mem::size_of::<c_int>()) as c_int) };
-        let mut best: Option<(u64, u64)> = None;
+        let mut out = Vec::new();
         for &pid in pids.iter().take(n.max(0) as usize) {
             let mut name = [0u8; 256];
             let len = unsafe { proc_name(pid, name.as_mut_ptr().cast(), name.len() as u32) };
@@ -229,17 +239,16 @@ fn dev_web_memory(collect: bool) -> Option<(u64, u64)> {
             }
             // one started before this app is another app's
             if let Some(u) = usage(pid).filter(|u| u[10] >= started) {
-                if best.is_none_or(|b| u[9] > b.0) {
-                    best = Some((u[9], u[30]));
-                }
+                out.push((pid, u[9], u[30]));
             }
         }
-        best
+        out.sort();
+        out
     }
     #[cfg(not(all(debug_assertions, target_os = "macos")))]
     {
         let _ = collect;
-        None
+        Vec::new()
     }
 }
 
@@ -976,7 +985,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_ink::init())
         .manage(store::Stores::default())
-        .invoke_handler(tauri::generate_handler![allow_vault, allow_hidden, read_dropped, read_dropped_bytes, read_anki_package, read_epub, read_plugin_zip, platform, dev_env, dev_web_memory, dev_nudge_serve, dev_nudge_drop, dev_nudge_listeners, set_recent_vaults, store_list, store_create, store_delete, store_rows, store_text, store_put, store_remove, store_version, store_set_version, store_doc, store_places, store_digests, store_review_files, store_reviews, store_reviews_put, store_same, store_same_put, store_originals, store_original_put, store_blob_put, store_blob_get, store_batch, store_meta, store_regs, store_regs_under, store_crdt, store_outbox, store_outbox_count, store_blob_has, store_regs_page, store_blobs_away, store_blob_take, store_blob_range, store_ink, store_ink_file, store_ink_pages, store_ink_page, dev_ink_sample, ink_split, ink_bounds, ink_scene, ink_fill, ink_take, ink_rest, dev_ink_pen, dev_ink_wipe, dev_ink_state, storage_list, storage_read, storage_write, storage_remove, storage_blob_up, storage_blob_down, dev_storage_serve, oauth_sign_in, oauth_back, oauth_signed_in, dev_cloud_stats, dev_cloud_revoke, zip_folder, sync_status, sync_init, sync_init_bare, sync_set_remote, sync_clone, sync_changes, sync_commit, sync_fetch, sync_merge, sync_resolve, sync_push])
+        .invoke_handler(tauri::generate_handler![allow_vault, allow_hidden, read_dropped, read_dropped_bytes, read_anki_package, read_epub, read_plugin_zip, platform, dev_env, dev_web_memory, dev_web_processes, dev_nudge_serve, dev_nudge_drop, dev_nudge_listeners, set_recent_vaults, store_list, store_create, store_delete, store_rows, store_text, store_put, store_remove, store_version, store_set_version, store_doc, store_places, store_digests, store_review_files, store_reviews, store_reviews_put, store_same, store_same_put, store_originals, store_original_put, store_blob_put, store_blob_get, store_batch, store_meta, store_regs, store_regs_under, store_crdt, store_outbox, store_outbox_count, store_blob_has, store_regs_page, store_blobs_away, store_blob_take, store_blob_range, store_ink, store_ink_file, store_ink_pages, store_ink_page, dev_ink_sample, ink_split, ink_bounds, ink_scene, ink_fill, ink_take, ink_rest, dev_ink_pen, dev_ink_wipe, dev_ink_state, storage_list, storage_read, storage_write, storage_remove, storage_blob_up, storage_blob_down, dev_storage_serve, oauth_sign_in, oauth_back, oauth_signed_in, dev_cloud_stats, dev_cloud_revoke, zip_folder, sync_status, sync_init, sync_init_bare, sync_set_remote, sync_clone, sync_changes, sync_commit, sync_fetch, sync_merge, sync_resolve, sync_push])
         .setup(|app| {
             // the sign-ins to Dropbox and Google Drive are kept in the app's own folder, not a collection's
             if let Ok(dir) = app.path().app_data_dir() {

@@ -276,6 +276,27 @@ and `dev_ink_pen` makes a finger one until told otherwise: the same
 canvases and recognisers, with `.direct` among the Pencil's touch types
 (`dev_ink_state` says how everything stands).
 
+An iPhone is the same build on another simulator (`npm run tauri ios dev
+"iPhone 18 Pro"`), and everything of a phone is the renderer's: `shapeOf`
+says `phone` when the shorter side is under 600 (`PHONE_MAX`), App sets
+`phone` in the store and `data-shape="phone"` on the page, and `phone.css` is
+all its styles. `PhoneBar.tsx` is the foot; `QuickCard.tsx` and `quick.ts` the
+composer; `lastDeck` is in `.ilmi/state.json`, which never syncs. `book.ts`
+puts a note in the pages' place there instead of beside them.
+
+`ILMI_SMOKE=phone` is three runs over one storage folder, as `touch` is. The
+Mac (`ILMI_VAULT`, `ILMI_STORAGE`) makes the storage. The simulator, with
+`{"mode": "phone", "storage": "<that folder>", "clip": "<a page's address>"}`
+and `TEST_RUNNER_MODE=phone`: a day folded to 24, a topic's row, the session
+walked by its buttons, quick cards, the page clipped, the tree, a chapter,
+the palette, dark, on its side. The page is any server on the Mac's loopback
+(a simulator shares it) holding prose with `page's second paragraph`
+in it. The rig has two verbs more for this, `do: type <text>` into what has
+the caret and `do: open <link>`, which is `XCUIDevice.shared.system.open`, the
+way a Shortcut's "open URL" arrives. Its `reached:` line is the Mac's third
+run's `ILMI_EXPECT`, with `ILMI_VAULT=<the collection's own folder>`: every
+document it names has the same digest there, and the reviews are in the log.
+
 `ILMI_SMOKE=ink` is three runs over one storage folder in the same way. The
 Mac first (`ILMI_VAULT`, `ILMI_STORAGE`), then the simulator with
 `{"mode": "ink", "storage": "<that folder>"}` and `TEST_RUNNER_MODE=ink`: a

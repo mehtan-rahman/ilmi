@@ -2,7 +2,8 @@
 // forms, ⌘B for a blank, ⌘↵ to save, and the prototype's priority picker as
 // a number. It hands back the card's text as the format will read it, and
 // a priority only when it differs from the document's; where the card goes
-// is the caller's business.
+// is the caller's business. On a phone (`quick`, milestone 56) it has no keys
+// to name: buttons at its foot, `blank` for ⌘B, front and back, no priority.
 
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { PRI_MAX, PRI_MIN, clozeParts, mathSpanEnd, nextGroup, parsePri, type CardForm } from '../format/index.js';
@@ -15,6 +16,8 @@ interface Props {
   pri: number;
   onSave(text: string, again: boolean, pri?: number): void;
   onClose(): void;
+  /** A quick card: what goes over its buttons (the deck it lands in). */
+  quick?: ReactNode;
 }
 
 const FORMS: [CardForm, string][] = [['cloze', 'cloze'], ['qa', 'q&a'], ['bidir', 'both ways']];
@@ -38,7 +41,7 @@ export function withBlank(text: string, from: number, to: number): { text: strin
   return { text: `${text.slice(0, from)}${open}${text.slice(from, to)}}}${text.slice(to)}`, open };
 }
 
-export function Composer({ seed, form: initial, pri: docPri, onSave, onClose }: Props) {
+export function Composer({ seed, form: initial, pri: docPri, onSave, onClose, quick }: Props) {
   const [form, setForm] = useState<CardForm>(initial ?? 'cloze');
   const [pri, setPri] = useState(String(docPri));
   const [text, setText] = useState(seed);
@@ -102,7 +105,7 @@ export function Composer({ seed, form: initial, pri: docPri, onSave, onClose }: 
         <div className="type-toggle">
           {FORMS.map(([key, label], i) => (
             <button key={key} type="button" data-active={form === key ? '1' : '0'} onClick={() => setForm(key)}>
-              {label}<sup className="tt-num">{i + 1}</sup>
+              {label}{quick === undefined && <sup className="tt-num">{i + 1}</sup>}
             </button>
           ))}
         </div>
@@ -111,22 +114,34 @@ export function Composer({ seed, form: initial, pri: docPri, onSave, onClose }: 
       {form === 'cloze' && (
         <>
           <textarea dir="auto" ref={ref} value={text} onChange={(e) => setText(e.target.value)} placeholder="passage" />
-          <div className="preview"><span className="preview-tag">preview</span>{preview}</div>
+          {quick === undefined
+            ? <div className="preview"><span className="preview-tag">preview</span>{preview}</div>
+            : <button type="button" className="quick-blank" onMouseDown={(e) => e.preventDefault()} onClick={wrapBlank}>blank</button>}
         </>
       )}
       {form === 'qa' && (
         <div className="qa-fields">
-          <textarea dir="auto" ref={ref} value={front} onChange={(e) => setFront(e.target.value)} placeholder="question" />
-          <textarea dir="auto" value={back} onChange={(e) => setBack(e.target.value)} placeholder="answer" />
+          <textarea dir="auto" ref={ref} value={front} onChange={(e) => setFront(e.target.value)} placeholder={quick === undefined ? 'question' : 'front'} />
+          <textarea dir="auto" value={back} onChange={(e) => setBack(e.target.value)} placeholder={quick === undefined ? 'answer' : 'back'} />
         </div>
       )}
       {form === 'bidir' && (
         <div className="qa-fields">
-          <input dir="auto" ref={ref} value={left} onChange={(e) => setLeft(e.target.value)} placeholder="term a" />
-          <input dir="auto" value={right} onChange={(e) => setRight(e.target.value)} placeholder="term b" />
+          <input dir="auto" ref={ref} value={left} onChange={(e) => setLeft(e.target.value)} placeholder={quick === undefined ? 'term a' : 'front'} />
+          <input dir="auto" value={right} onChange={(e) => setRight(e.target.value)} placeholder={quick === undefined ? 'term b' : 'back'} />
         </div>
       )}
 
+      {quick !== undefined ? (
+        <div className="quick-ft">
+          {quick}
+          <div className="qf-acts">
+            <button type="button" data-act="cancel" onMouseDown={(e) => e.preventDefault()} onClick={onClose}>cancel</button>
+            <button type="button" data-act="again" disabled={!out} onMouseDown={(e) => e.preventDefault()} onClick={() => save(true)}>save, another</button>
+            <button type="button" data-act="save" disabled={!out} onMouseDown={(e) => e.preventDefault()} onClick={() => save(false)}>save</button>
+          </div>
+        </div>
+      ) : (
       <div className="ft">
         <label className="pri-pick">
           priority
@@ -139,6 +154,7 @@ export function Composer({ seed, form: initial, pri: docPri, onSave, onClose }: 
         <span>·</span>
         <span className="act" onClick={onClose}><kbd>esc</kbd> cancel</span>
       </div>
+      )}
     </div>
   );
 }

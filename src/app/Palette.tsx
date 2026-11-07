@@ -46,6 +46,9 @@ const COMMANDS: Command[] = [
 /** What an iPad's palette leaves out: a second pane, and what goes through a folder picker (a folder in, a new collection, an export). */
 const DESKTOP_ONLY: ReadonlySet<string> = new Set(['split', 'close-pane', MENU_ID.open, MENU_ID.new, 'export-folder', 'export-zip']);
 
+/** What a phone's leaves out beside those: the tree is behind the same button as the palette, and there is no inspector (milestone 56). */
+const NOT_ON_A_PHONE: ReadonlySet<string> = new Set(['sidebar', 'inspector']);
+
 /** The heading the caret is under on the page in front (a tab, or the session's element), when there is one. */
 function caretHere(): CaretHeading | null {
   const s = useApp.getState();
@@ -141,7 +144,8 @@ export function Palette() {
   const caret = useApp((s) => s.caretHeading);
   // an iPad has one pane and no folder to pick: its commands leave those out (`platform.ts`)
   const mobile = useApp((s) => s.mobile);
-  const commands = useMemo(() => [...sectionCommand(), ...COMMANDS.filter((c) => (c.id !== 'postpone' || overflow(queue, appNow()).length > 0) && !(mobile && DESKTOP_ONLY.has(c.id))), ...pluginCommands()], [queue, plugins?.version, caret, mobile]);
+  const phone = useApp((s) => s.phone);
+  const commands = useMemo(() => [...sectionCommand(), ...COMMANDS.filter((c) => (c.id !== 'postpone' || overflow(queue, appNow()).length > 0) && !(mobile && DESKTOP_ONLY.has(c.id)) && !(phone && NOT_ON_A_PHONE.has(c.id))), ...pluginCommands()], [queue, plugins?.version, caret, mobile, phone]);
   // the other vaults opened before, under `vaults`, so switching is two keys
   const vaults = useMemo(() => recents.filter((r) => r.path !== vault).map((r) => ({ path: r.path, name: r.name })), [recents, vault]);
   const index = useMemo(() => buildIndex(tree, docs, cardRefs(), commands, vaults), [tree, docs, commands, vaults]);

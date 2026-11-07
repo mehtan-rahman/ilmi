@@ -244,6 +244,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
   const caret = useApp((s) => s.caretHeading);
   const focus = useApp((s) => s.bookFocus);
   const mobile = useApp((s) => s.mobile);
+  const phone = useApp((s) => s.phone);
   const info: DocInfo | undefined = docs[id];
   /** The note on these pages: the document itself when it has pages, the note attached to a PDF on its own, or none yet (`book.ts`). */
   const note = noteOf(id, docs);
@@ -1102,7 +1103,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
       <div ref={viewRef} className={`reader doc-view pdf-view${reading ? ' reading' : ''}`} data-page={current} data-roomy={roomy ? '1' : '0'} style={colW > 0 ? { width: pageW } : undefined}>
         <div className="meta">
           <Crumbs path={id} />
-          <button type="button" className="frozen-tag notes-toggle" data-on={notesOpen ? '1' : '0'} aria-pressed={notesOpen} title={'notes ⌘\\'} onClick={() => toggleNotes(id)}>notes</button>
+          {!(phone && session) && <button type="button" className="frozen-tag notes-toggle" data-on={notesOpen ? '1' : '0'} aria-pressed={notesOpen} title={'notes ⌘\\'} onClick={() => toggleNotes(id)}>notes</button>}
           {!isPdfPath(id) && <TabsToggle path={id} />}
           <StudyButton path={id} />
           <ExamTag path={id} />

@@ -6,8 +6,10 @@
 // the welcome is `connect` and the collections, and the shell is one pane, a
 // landscape iPad a narrow Mac with the sidebar and the inspector hidden,
 // portrait the same with the sidebar a sheet from the left edge and a
-// book's notes folded. The pure parts are here; `vault.ts` asks the Rust
-// side once at launch, `App.tsx` draws by the shape.
+// book's notes folded. Under 600 px the shell is a phone's (milestone 56): the
+// day is its face, one page at a time, a bar at the foot. The pure parts are
+// here; `vault.ts` asks the Rust side once at launch, `App.tsx` draws by the
+// shape.
 
 import { invoke } from '@tauri-apps/api/core';
 import type { Panes } from './panes.js';
@@ -46,13 +48,20 @@ export async function loadPlatform(): Promise<Platform> {
   return platform;
 }
 
-/** The shell's shape: the Mac's, or on an iPad the window wider than tall or not. */
-export type Shape = 'desktop' | 'landscape' | 'portrait';
+/** The shell's shape: the Mac's; on an iPad the window wider than tall or not; a phone's. */
+export type Shape = 'desktop' | 'landscape' | 'portrait' | 'phone';
+
+/** Under this a window is a phone's, either way up: a phone on its side is still a phone, and no narrow Mac. */
+export const PHONE_MAX = 600;
 
 export function shapeOf(mobile: boolean, width: number, height: number): Shape {
   if (!mobile) return 'desktop';
+  if (Math.min(width, height) < PHONE_MAX) return 'phone';
   return width > height ? 'landscape' : 'portrait';
 }
+
+/** Whether the shell is a phone's now. What draws reads `phone` in the store; this is for the launch, before anything has. */
+export const isPhone = (): boolean => platform.mobile && shapeOf(true, window.innerWidth, window.innerHeight) === 'phone';
 
 /** Where the collections live (`collections/` under the app's data directory); null until the Rust side has said. */
 let home: string | null = null;

@@ -30,7 +30,8 @@ import { noteInk, type NoteInk } from './noteInk.js';
 import { inkLines } from '../reader/inkArea.js';
 import { imagePicker, pageDrops, readImagePath, type ImageFile } from './pageImages.js';
 import { dueLabel } from './items.js';
-import { titleOf } from './names.js';
+import { pagesOf, titleOf } from './names.js';
+import { openPagesBeside } from './book.js';
 import { useApp, type DocInfo } from './store.js';
 import { currentVault, enrolReading, extractNode, openNode, sectionNode, setFolds } from './vault.js';
 import { popMenu, type PopItem } from './popMenu.js';
@@ -2136,6 +2137,7 @@ export function Reader({ id, active = true, onPages, notes = false }: ReaderProp
   const frozen = !notes && (info?.frozen ?? false);
   // the selection's cue: above it when there is room, below under a finger (`CUE_TOUCH_GAP`)
   const touch = useApp.getState().mobile;
+  const phone = useApp.getState().phone;
   const cueBelow = sel !== null && (touch || sel.rect.top < CUE_ROOM);
   const cards = info?.cards ?? 0;
   const due = info?.due ?? 0;
@@ -2144,6 +2146,10 @@ export function Reader({ id, active = true, onPages, notes = false }: ReaderProp
   const right = due ? `${due} due` : cards ? plural(cards, 'card') : '';
   const rightTip = info?.type === 'draft' ? [plural(words(blocks), 'word'), counts].filter(Boolean).join(', ') : counts;
   const title = titleOf(id, docs, root);
+  // a phone's note is the page, in place of the pages: this word goes back to them (milestone 56, `book.ts`)
+  const backToPages = phone && pagesOf(id, docs) !== null
+    ? <button type="button" className="frozen-tag pages-toggle" onClick={() => openPagesBeside(id)}>pages</button>
+    : null;
   // a body that opens with its own title as a heading (an imported chapter) is not titled twice
   const titled = !bodyRepeatsTitle(title, blocks);
 
@@ -2196,11 +2202,13 @@ export function Reader({ id, active = true, onPages, notes = false }: ReaderProp
         {notes ? (
           <div className="meta notes-meta">
             <span className="crumb">notes</span>
+            {backToPages}
             <span className="right" title={rightTip}>{notesLine}</span>
           </div>
         ) : (
         <div className="meta">
           <Crumbs path={id} />
+          {backToPages}
           <TabsToggle path={id} />
           <StudyButton path={id} />
           <ExamTag path={id} />

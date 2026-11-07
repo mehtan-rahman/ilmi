@@ -76,11 +76,14 @@ interface NavProps {
   total: number;
   onPrev(): void;
   onNext(): void;
+  /** Back to where the session began: a phone's, which has no tab to close (milestone 56). */
+  onOut?: (() => void) | undefined;
 }
 
-function Nav({ idx, total, onPrev, onNext }: NavProps) {
+function Nav({ idx, total, onPrev, onNext, onOut }: NavProps) {
   return (
     <span className="sess-nav">
+      {onOut && <button type="button" className="sn-btn sn-out" aria-label="back" onClick={onOut}>×</button>}
       <button type="button" className="sn-btn" onClick={onPrev} disabled={idx === 0}>‹</button>
       <button type="button" className="sn-btn" onClick={onNext} disabled={idx >= total - 1}>›</button>
     </span>
@@ -100,12 +103,12 @@ interface BarProps extends NavProps {
 }
 
 /** The control bar at the foot of a reading, writing, or section element. */
-function SessionBar({ idx, total, kind, word, pri, what, stands, glyph, children, onPrev, onNext }: BarProps) {
+function SessionBar({ idx, total, kind, word, pri, what, stands, glyph, children, onPrev, onNext, onOut }: BarProps) {
   return (
     <div className="session-bar">
       <div className="sb-inner">
         <div className="sb-meta">
-          <Nav idx={idx} total={total} onPrev={onPrev} onNext={onNext} />
+          <Nav idx={idx} total={total} onPrev={onPrev} onNext={onNext} onOut={onOut} />
           <span className="sb-count">{idx + 1} / {total}</span>
           <span className="sb-kind" data-el={kind}>{word ?? EL_WORD[kind]}</span>
           {pri !== PRI_DEFAULT && <span className="sb-count">p {pri}</span>}
@@ -143,6 +146,7 @@ function CardElement({ item, active, onGrade }: CardProps) {
   const docPri = useApp((s) => s.docs[item.path]?.pri);
   const [revealed, setRevealed] = useState(false);
   const plugins = usePlugins();
+  const phone = useApp((s) => s.phone);
   const cardRef = useRef<HTMLDivElement>(null);
   const now = appNow();
   const card = liveCard(loaded?.doc.blocks, item);
@@ -221,14 +225,19 @@ function CardElement({ item, active, onGrade }: CardProps) {
         {pri !== PRI_DEFAULT && <span>p {pri}</span>}
         <span className="cm-due" data-due={!sched?.due || item.dueAt <= now ? '1' : '0'}>{dueWord(sched?.due, now)}</span>
       </div>
-      <div className="grades" data-revealed={revealed ? '1' : '0'}>
-        {GRADES.map((g) => (
-          <button key={g} type="button" onClick={() => grade(g)}>
-            <span className="label">{GRADE_WORD[g]}<kbd>{g}</kbd></span>
-            <span className="gap">{gaps[g]}</span>
-          </button>
-        ))}
-      </div>
+      {phone && !revealed
+        // under the thumb, where the grades will be
+        ? <button type="button" className="reveal-all" onClick={() => setRevealed(true)}>reveal</button>
+        : (
+          <div className="grades" data-revealed={revealed ? '1' : '0'}>
+            {GRADES.map((g) => (
+              <button key={g} type="button" onClick={() => grade(g)}>
+                <span className="label">{GRADE_WORD[g]}<kbd>{g}</kbd></span>
+                <span className="gap">{gaps[g]}</span>
+              </button>
+            ))}
+          </div>
+        )}
     </>
   );
 }
@@ -249,7 +258,7 @@ function blocksAbove(from: HTMLElement): number | undefined {
   return n;
 }
 
-type DocAction = 'on' | 'postpone' | 'done';
+export type DocAction = 'on' | 'postpone' | 'done';
 
 interface DocProps extends NavProps {
   item: ReadItem | WriteItem | SectionItem;
@@ -296,10 +305,37 @@ export function atEndOf(item: ReadItem | WriteItem | SectionItem, pages: boolean
   return item.total > 0 && item.pos >= item.total;
 }
 
+/** ⏎'s words where a third of a phone has to hold them: `done for today`, under it `back in 2d`. */
+export function twoLines(word: string): ReactNode {
+  const [what, when] = word.split(' · ');
+  return when === undefined ? what : <>{what}<span className="ra-when">{when}</span></>;
+}
+
+/** What one of the three did, as a line: a section by its heading, anything else by its document. */
+export function docLine(item: ReadItem | WriteItem | SectionItem, action: DocAction, now: Date): string {
+  const docs = useApp.getState().docs;
+  const name = plainMath(item.kind === 'section' ? item.heading : docs[item.path]?.title ?? sourceLabel(item, docs));
+  const word = action === 'postpone' ? `later · back in ${postponed(item.sched.ivl)}d` : action === 'done' ? 'dismissed' : actionWords(item, now).on;
+  return doneLine(glyphOf(item), name, word);
+}
+
+/** One of the three on a topic: written to its document, through its page when it is open, so what was just typed there is written first. */
+export function actOnDoc(item: ReadItem | WriteItem | SectionItem, action: DocAction, pos?: number, y?: number): Promise<unknown> {
+  const now = appNow();
+  const run = writeDoc(item.path, (doc) => {
+    if (item.kind === 'read') advanceRead(doc, action, now, pos, activeExamAt(item.path, now), y);
+    else if (item.kind === 'section') advanceSection(doc, item.block, item.heading, action, now);
+    else advanceWrite(doc, action, now);
+  });
+  if (action === 'on') emitDocAction(item);
+  return run;
+}
+
 function DocSession({ item, active, onAct, ...nav }: DocProps) {
   const barRef = useRef<HTMLDivElement>(null);
   const info = useApp((s) => s.docs[item.path]);
   const docs = useApp((s) => s.docs);
+  const phone = useApp((s) => s.phone);
   const reading = item.kind === 'read';
   const section = item.kind === 'section';
   // a document with pages opens as its book, a section of it at its boxes (`Pdf.tsx`); a section of a note attached to a
@@ -325,7 +361,8 @@ function DocSession({ item, active, onAct, ...nav }: DocProps) {
   useEffect(() => {
     if (item.kind !== 'section') return;
     useApp.setState({ reveal: { path: item.path, index: item.block, heading: item.heading } });
-    if (pages) void openNotes(pagesId).catch(console.error);
+    // a phone's one page stays the pages, at the section's boxes: there is no pane beside them
+    if (pages && !useApp.getState().phone) void openNotes(pagesId).catch(console.error);
   }, [item]);
 
   useKeys(active, (key) => {
@@ -341,7 +378,7 @@ function DocSession({ item, active, onAct, ...nav }: DocProps) {
     <div className="doc-session" ref={barRef} data-el={item.kind} data-book={pages ? '1' : '0'}>
       {pages ? <Pdf id={pagesId} active={active} session readOn={item.kind === 'read'} onLast={setLast} /> : <Reader id={item.path} active={active} />}
       <SessionBar kind={markOf(item)} {...(word ? { word } : {})} pri={pri} what={what} stands={standing(item, appNow(), info?.pages?.first)} glyph={glyphOf(item)} {...nav}>
-        <button type="button" data-act="on" onClick={on}><span className="ra-l">{words.on}</span><kbd>⏎</kbd></button>
+        <button type="button" data-act="on" onClick={on}><span className="ra-l">{phone ? twoLines(words.on) : words.on}</span><kbd>⏎</kbd></button>
         <button type="button" data-act="postpone" onClick={() => onAct('postpone')}><span className="ra-l">{words.postpone}</span><kbd>p</kbd></button>
         <button type="button" data-act="done" onClick={() => onAct('done')}><span className="ra-l">{words.done}</span><kbd>d</kbd></button>
       </SessionBar>
@@ -354,6 +391,7 @@ function DocSession({ item, active, onAct, ...nav }: DocProps) {
 export function Session({ active, onOpen }: Props) {
   const session = useApp((s) => s.session);
   const docs = useApp((s) => s.docs);
+  const phone = useApp((s) => s.phone);
   const [idx, setIdx] = useState(0);
   const items = session?.items ?? [];
   const total = items.length;
@@ -425,19 +463,8 @@ export function Session({ active, onOpen }: Props) {
 
   const onDoc = (item: ReadItem | WriteItem | SectionItem, action: DocAction, pos?: number, y?: number) => {
     if (!currentVault()) return;
-    const now = appNow();
-    // through the page when it is open, so what was just typed in it is written first
-    const run = writeDoc(item.path, (doc) => {
-      if (item.kind === 'read') advanceRead(doc, action, now, pos, activeExamAt(item.path, now), y);
-      else if (item.kind === 'section') advanceSection(doc, item.block, item.heading, action, now);
-      else advanceWrite(doc, action, now);
-    });
-    run.catch(fail);
-    if (action === 'on') emitDocAction(item);
-    // the done row names what it was: a section by its heading, anything else by its document
-    const name = plainMath(item.kind === 'section' ? item.heading : docs[item.path]?.title ?? sourceLabel(item, docs));
-    const word = action === 'postpone' ? `later · back in ${postponed(item.sched.ivl)}d` : action === 'done' ? 'dismissed' : actionWords(item, now).on;
-    note(doneLine(glyphOf(item), name, word));
+    actOnDoc(item, action, pos, y).catch(fail);
+    note(docLine(item, action, appNow()));
     advance();
   };
 
@@ -450,8 +477,9 @@ export function Session({ active, onOpen }: Props) {
   }
 
   const key = `${session?.seq}:${idx}`;
+  const onOut = phone ? () => openNode(deck?.id ?? queueId('today')) : undefined;
   if (el.kind !== 'card') {
-    return <DocSession key={key} item={el} active={active} idx={idx} total={total} onPrev={goPrev} onNext={goNext} onAct={(a, pos, y) => onDoc(el, a, pos, y)} />;
+    return <DocSession key={key} item={el} active={active} idx={idx} total={total} onPrev={goPrev} onNext={goNext} onOut={onOut} onAct={(a, pos, y) => onDoc(el, a, pos, y)} />;
   }
 
   const openSource = (e: MouseEvent) => goToSource({ cmdClick: e.metaKey || e.ctrlKey, shiftClick: e.shiftKey });
@@ -460,7 +488,7 @@ export function Session({ active, onOpen }: Props) {
   return (
     <div className="recall-wrap">
       <div className="recall-meta">
-        <Nav idx={idx} total={total} onPrev={goPrev} onNext={goNext} />
+        <Nav idx={idx} total={total} onPrev={goPrev} onNext={goNext} onOut={onOut} />
         {deck
           ? <span className="sess-count sess-deck">{studyHeader(deck.title, total - idx)}</span>
           : <span className="sess-count">{idx + 1} / {total}</span>}

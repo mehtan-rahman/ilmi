@@ -46,11 +46,11 @@ export async function saveCardEdit(ref: CardRef, text: string, pri: number | nul
 }
 
 /** A new card in `path`, after the card `after` names, or at the end. Resolves to its block index. */
-export async function newCardAt(path: string, after: CardRef | null, text: string, pri: number | null): Promise<number> {
+export async function newCardAt(path: string, after: CardRef | null, text: string, pri: number | null, said: (line: string) => void = note): Promise<number> {
   const docPri = await docPriOf(path);
   let at = -1;
   await need().update(path, (doc) => { at = insertCard(doc, after, text, pri === null || pri === docPri ? undefined : pri); });
-  note('added · card');
+  said(`added · ${said === note ? 'card' : titleOf(path, useApp.getState().docs, useApp.getState().vault)}`);
   return at;
 }
 

@@ -33,6 +33,8 @@ const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 export function Lens({ id, active, onOpen }: LensProps) {
   const docs = useApp((s) => s.docs);
+  // a phone opens a document as a single page: no rail beside it
+  const phone = useApp((s) => s.phone);
   if (id === INTAKE) return <Intake active={active} onOpen={onOpen} />;
   if (id === SESSION) return <Session active={active} onOpen={onOpen} />;
   const scope = queueScope(id);
@@ -42,7 +44,7 @@ export function Lens({ id, active, onOpen }: LensProps) {
   if (notes !== null) return <Reader key={id} id={notes} active={active} notes />;
   // a notebook's page: its tab rail beside it (`Rail.tsx`)
   const nb = notebookOf(id, docs);
-  if (nb) return <Notebook nb={nb} page={id} active={active} onOpen={onOpen}><PageLens id={id} active={active} onOpen={onOpen} /></Notebook>;
+  if (nb && !phone) return <Notebook nb={nb} page={id} active={active} onOpen={onOpen}><PageLens id={id} active={active} onOpen={onOpen} /></Notebook>;
   return <PageLens id={id} active={active} onOpen={onOpen} />;
 }
 

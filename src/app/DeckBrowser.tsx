@@ -341,6 +341,8 @@ export function DeckBrowser({ home, active }: BrowserProps) {
   const reveal = useApp((s) => s.reveal);
   const view: DeckView = useApp((s) => s.deckViews[home]) ?? DEFAULT_VIEW;
   const plugins = usePlugins();
+  // a phone's `+` is at its foot, and starts on the deck in front (`quick.ts`)
+  const phone = useApp((s) => s.phone);
   const [q, setQ] = useState('');
   const [sel, setSel] = useState<Selection>(NO_SELECTION);
   const [editing, setEditing] = useState<Editing>(null);
@@ -564,7 +566,7 @@ export function DeckBrowser({ home, active }: BrowserProps) {
           include not due
         </label>
         <span className="grow" />
-        <button type="button" className="deck-add" onClick={newCard}>+ card <kbd className="kbd">m</kbd></button>
+        {!phone && <button type="button" className="deck-add" onClick={newCard}>+ card <kbd className="kbd">m</kbd></button>}
       </div>
       <div className="deck-bar">
         <div className="db-row">

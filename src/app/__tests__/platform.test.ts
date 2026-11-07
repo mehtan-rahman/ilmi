@@ -22,8 +22,13 @@ describe('the platform', () => {
     expect(shapeOf(false, 800, 1200)).toBe('desktop');
     expect(shapeOf(true, 1180, 820)).toBe('landscape');
     expect(shapeOf(true, 820, 1180)).toBe('portrait');
-    // half the screen in landscape is taller than wide: the sheet again
-    expect(shapeOf(true, 590, 820)).toBe('portrait');
+    // under 600 px it is a phone's (milestone 56), on its side too, and half an iPad's screen with it
+    expect(shapeOf(true, 402, 874)).toBe('phone');
+    expect(shapeOf(true, 874, 402)).toBe('phone');
+    expect(shapeOf(true, 590, 820)).toBe('phone');
+    expect(shapeOf(true, 600, 820)).toBe('portrait');
+    // a Mac's window is never a phone, however narrow
+    expect(shapeOf(false, 400, 800)).toBe('desktop');
   });
 });
 

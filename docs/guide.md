@@ -489,6 +489,36 @@ the page. Nothing is written into the PDF: the strokes are kept in the
 collection with the book they are on, whichever chapter shows that page.
 An exported folder does not hold them yet.
 
+### On a phone
+
+Under 600 points wide, either way up, the app is a phone's: the day is its
+face, and reading is possible there, not the point. A bar sits at the foot,
+under the thumb. Its left button has the tree behind it, with the palette's
+field at the sheet's foot; its right, `+`, is a new card; the middle one enters
+the queue on the day, with the count beside it, and anywhere else comes back
+to the day. There are no tabs, no inspector, no second pane, and no keys named.
+
+A row of the day opens the session there. A topic's row (a source, a section,
+a note revisited) has its three on the row: `next`, `later`, `dismiss`, acting
+without opening it, and the notice can take any of them back. The session is
+the whole screen: a card shows `reveal` across the foot and then, in the same
+place, the four grades; a topic shows its page with the three at the foot. `×`
+at the top goes back to the day.
+
+`+` opens the composer with front and back and names the deck at its foot,
+over the buttons: the deck in front, else the one you chose last on this
+phone. A tap on the name lists the others. `save, another` keeps it open; on a
+cloze, `blank` makes a blank of the selection.
+
+A document opens as a single page, a notebook's page with no rail. A book opens
+as its pages, and with no pane to put it in `notes` shows the note in their
+place; `pages` over the note comes back. In a session the pages stay, at the
+section's boxes.
+
+To clip a page, make the Shortcut the README describes; the link it opens is
+the one above, `ilmi://new?url=`. It starts the app first and waits a second,
+since a link that itself starts the app is lost.
+
 ## Plugins
 
 Plugins live in a vault's `.ilmi/plugins/` and are turned on in tweaks; the

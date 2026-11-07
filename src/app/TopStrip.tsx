@@ -43,20 +43,24 @@ export function TopStrip() {
   const now = useTick(sync.at);
   const age = syncAge(sync, now);
   const mobile = useApp((s) => s.mobile);
+  // a phone's strip names the collection and where sync stands; what the rest does is at its foot (`PhoneBar.tsx`)
+  const phone = useApp((s) => s.phone);
   // lit while the sidebar is drawn: the column, or in portrait the sheet (App draws this strip again on a turn)
   const sideOn = useApp((s) => (shapeOf(s.mobile, window.innerWidth, window.innerHeight) === 'portrait' ? s.sideSheet : !s.sidebar.hidden));
   return (
     <div className="top">
-      {mobile && (
+      {mobile && !phone && (
         <button type="button" className="insp-toggle side-toggle" data-on={sideOn ? '1' : '0'} aria-pressed={sideOn} aria-label="sidebar" onClick={toggleSidebar}>
           <span className="panel-ico" />
         </button>
       )}
       <div className="ws"><b>{baseOf(root ?? '') || 'collection'}</b></div>
-      <button type="button" className="palette" onClick={() => useApp.setState({ paletteOpen: true })}>
-        <span className="g">⌕</span>
-        <kbd>⌘k</kbd>
-      </button>
+      {!phone && (
+        <button type="button" className="palette" onClick={() => useApp.setState({ paletteOpen: true })}>
+          <span className="g">⌕</span>
+          <kbd>⌘k</kbd>
+        </button>
+      )}
       <div className="right">
         <span data-due={due ? '1' : '0'}>{due} due</span>
         <span>{dayLabel(appNow())}</span>
@@ -65,9 +69,11 @@ export function TopStrip() {
           : <span className="sync" data-sync={sync.busy ?? (sync.offline ? 'offline' : sync.toPush ? 'pending' : 'synced')}>{word}</span>)}
         {age !== null && <span className="ago">{age}</span>}
       </div>
-      <button type="button" className="insp-toggle" data-on={shown ? '1' : '0'} aria-pressed={shown} title="inspector ⌘⇧I" onClick={toggleInspector}>
-        <span className="panel-ico" />
-      </button>
+      {!phone && (
+        <button type="button" className="insp-toggle" data-on={shown ? '1' : '0'} aria-pressed={shown} title="inspector ⌘⇧I" onClick={toggleInspector}>
+          <span className="panel-ico" />
+        </button>
+      )}
     </div>
   );
 }

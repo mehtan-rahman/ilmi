@@ -240,6 +240,12 @@ export interface AppState {
   started: boolean;
   /** On an iPad (`platform.ts`): the welcome is `connect` and the clones, the shell one pane. Set once at launch. */
   mobile: boolean;
+  /** The shell is a phone's (milestone 56, `platform.ts`): set by App from the window. */
+  phone: boolean;
+  /** The quick card's composer, open on the deck it will land in (`quick.ts`). */
+  quickCard: { deck: string } | null;
+  /** The deck the last quick card went to, on this device. */
+  lastDeck: string | null;
   /** The sidebar drawn as a sheet over the page (an iPad in portrait), open. Not saved. */
   sideSheet: boolean;
   /** A new collection is being named, on the welcome. */
@@ -365,6 +371,9 @@ export const useApp = create<AppState>((set, get) => ({
   gone: [],
   started: false,
   mobile: false,
+  phone: false,
+  quickCard: null,
+  lastDeck: null,
   sideSheet: false,
   namingVault: false,
   vault: null,
@@ -435,7 +444,7 @@ export const useApp = create<AppState>((set, get) => ({
 // an iPad shows one pane: whatever asks for a second (a split, ⌘⇧-click) is folded back into the first;
 // but for a PDF's pages and the note on them, which are the split `notes` asks for (milestone 70, `book.ts`)
 useApp.subscribe((s) => {
-  if (s.mobile && s.panes.panes.length > 1 && !notesPair(s.panes, s.docs, s.sessionEl?.item.path)) useApp.setState({ panes: onePane(s.panes) });
+  if (s.mobile && s.panes.panes.length > 1 && (s.phone || !notesPair(s.panes, s.docs, s.sessionEl?.item.path))) useApp.setState({ panes: onePane(s.panes) });
 });
 
 const persist = (s: AppState) => saveTweaks({ theme: s.theme, accent: s.accent, density: s.density, zoom: s.zoom, reopen: s.reopen, clipImages: s.clipImages, remoteImages: s.remoteImages, queueTitles: s.queueTitles, backlog: s.backlog });

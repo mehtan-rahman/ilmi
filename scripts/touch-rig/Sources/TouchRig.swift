@@ -7,8 +7,10 @@ import ObjectiveC
 // system's own synthesized touch, in order, until the smoke's `done` or
 // `failed` line. The environment (each as `TEST_RUNNER_<NAME>` to
 // xcodebuild): LOG the app's log on the Mac's disk, MODE the smoke's name,
-// MAX seconds to wait (600), OUT a folder for `runner-methods.txt`.
+// MAX seconds to wait (600), OUT a folder for `runner-methods.txt`, LINK a link
+// to start the app with instead of a smoke, WAIT seconds to start it before.
 //   tap x y · press x y seconds · drag x1 y1 x2 y2 hold · flick x1 y1 x2 y2 · turn portrait|landscape
+//   · type <text> (into what has the caret) · open <link> (as a Shortcut's "open URL" arrives)
 final class TouchRig: XCTestCase {
   func testDrive() throws {
     let env = ProcessInfo.processInfo.environment
@@ -33,6 +35,15 @@ final class TouchRig: XCTestCase {
       try? lines.joined(separator: "\n").write(toFile: out + "/runner-methods.txt", atomically: true, encoding: .utf8)
     }
     let app = XCUIApplication(bundleIdentifier: "dev.ilmi.app")
+    // LINK: the app not running, a link starts it, as a Shortcut does; with WAIT the app is started
+    // that many seconds before it (Shortcut's Open App, Wait, Open URLs); a capture to OUT after 25 s
+    if let link = env["LINK"], let url = URL(string: link) {
+      if let wait = env["WAIT"].flatMap(Double.init) { app.launch(); Thread.sleep(forTimeInterval: wait) }
+      XCUIDevice.shared.system.open(url)
+      Thread.sleep(forTimeInterval: 25)
+      if let out = env["OUT"] { try? XCUIScreen.main.screenshot().pngRepresentation.write(to: URL(fileURLWithPath: out + "/cold.png")) }
+      return
+    }
     app.launch()
     let at = { (x: Double, y: Double) in app.coordinate(withNormalizedOffset: CGVector(dx: x, dy: y)) }
     let marker = "smoke \(mode): "
@@ -56,6 +67,8 @@ final class TouchRig: XCTestCase {
         case "press" where n.count >= 3: at(n[0], n[1]).press(forDuration: n[2])
         case "drag" where n.count >= 5: at(n[0], n[1]).press(forDuration: n[4], thenDragTo: at(n[2], n[3]), withVelocity: .slow, thenHoldForDuration: 0.15)
         case "flick" where n.count >= 4: at(n[0], n[1]).press(forDuration: 0.02, thenDragTo: at(n[2], n[3]), withVelocity: .fast, thenHoldForDuration: 0)
+        case "type": app.typeText(String(ask.dropFirst(9)))
+        case "open": XCUIDevice.shared.system.open(URL(string: String(ask.dropFirst(9)))!)
         case "turn": XCUIDevice.shared.orientation = parts.last == "landscape" ? .landscapeLeft : .portrait
         default: print("rig: not understood: \(ask)")
         }

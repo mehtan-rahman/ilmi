@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useState } from 'react';
 import { BottomStrip } from './BottomStrip.js';
 import { Canvas } from './Canvas.js';
 import { listenForClips } from './clipper.js';
@@ -7,12 +7,15 @@ import { listenForDrops, listenForPaste } from './land.js';
 import { listenForMenu } from './menu.js';
 import { Notice } from './Notice.js';
 import { Palette } from './Palette.js';
+import { PhoneBar } from './PhoneBar.js';
+import { QuickCard } from './QuickCard.js';
 import { SavedQueries } from './Queue.js';
 import { TopStrip } from './TopStrip.js';
 import { Tree } from './Tree.js';
 import { Tweaks } from './Tweaks.js';
 import { Welcome } from './Welcome.js';
 import { activeTab, closeTab, splitPane } from './panes.js';
+import { SESSION } from './names.js';
 import { ACCENTS, INSP_MAX, INSP_MIN, SIDE_MAX, SIDE_MIN, useApp, ZOOM_STEP } from './store.js';
 import { openInitialVault, openNode, rememberTab, setInspector, setSidebar, toggleInspector, toggleSidebar } from './vault.js';
 import { bookShown, inspectorShown } from './layout.js';
@@ -21,6 +24,7 @@ import { installLongPress } from './touch.js';
 import { watchInk, watchLayout } from './ink.js';
 import './app.css';
 import './chrome.css';
+import './phone.css';
 
 /** Narrower than this and a drag on the handle hides the sidebar. */
 const SIDE_COLLAPSE = 80;
@@ -30,6 +34,8 @@ const INSP_COLLAPSE = 120;
 const EDGE = 24;
 /** How far a finger travels sideways before it is a swipe. */
 const SWIPE = 36;
+/** A visual viewport this much shorter than the window has the keyboard up. */
+const KEYBOARD = 120;
 
 const inField = (t: EventTarget | null) => {
   const tag = (t as HTMLElement | null)?.tagName?.toLowerCase();
@@ -85,17 +91,24 @@ export function App() {
   }, []);
   // an iPad's shape (`platform.ts`): landscape is a narrow Mac, portrait draws the sidebar as a sheet
   const shape = shapeOf(mobile, win, winH);
-  const sheet = shape === 'portrait';
+  // a phone's (milestone 56): the day its face, one page, the bar at the foot, and the tree and the palette behind one of its buttons
+  const phone = shape === 'phone';
+  const sheet = shape === 'portrait' || phone;
   const activeId = activeTab(panes)?.id;
   // the sheet is for one choice: it closes once something opens, and when the iPad turns
   useEffect(() => { useApp.setState({ sideSheet: false }); }, [activeId, shape]);
-  useEffect(() => { document.documentElement.dataset.shape = shape; }, [shape]);
+  useLayoutEffect(() => {
+    document.documentElement.dataset.shape = shape;
+    useApp.setState({ phone });
+  }, [shape, phone]);
   // the keyboard on the glass covers the bottom of the page: the shell is as tall as what is left
   useEffect(() => {
     const vv = window.visualViewport;
     if (!mobile || !vv) return;
     const fit = () => {
       document.documentElement.style.setProperty('--shell-h', `${Math.round(vv.height)}px`);
+      // the keyboard up: what sits at the foot of a phone gives it the room
+      document.documentElement.toggleAttribute('data-keyboard', window.innerHeight - vv.height > KEYBOARD);
       if (window.scrollY !== 0) window.scrollTo(0, 0);
     };
     fit();
@@ -105,6 +118,7 @@ export function App() {
       vv.removeEventListener('resize', fit);
       vv.removeEventListener('scroll', fit);
       document.documentElement.style.removeProperty('--shell-h');
+      document.documentElement.removeAttribute('data-keyboard');
     };
   }, [mobile]);
   // portrait: a swipe in from the left edge opens the sheet, a swipe left on it closes it
@@ -241,30 +255,34 @@ export function App() {
   // the sidebar is a column beside the page, or in portrait a sheet over it that takes no room
   const sideOn = sheet ? sideSheet : !sidebar.hidden;
   const sideW = sideOn && !sheet ? sidebar.width : 0;
-  const inspOn = inspectorShown({ sidebar: sheet ? { ...sidebar, hidden: true } : sidebar, inspector, inspForced, bookInsp, sessionEl, panes, docs, railFolded, railWidth }, win);
+  const inspOn = !phone && inspectorShown({ sidebar: sheet ? { ...sidebar, hidden: true } : sidebar, inspector, inspForced, bookInsp, sessionEl, panes, docs, railFolded, railWidth }, win);
   const inspW = inspOn ? inspector.width : 0;
   const active = activeId;
+  // on a phone a tree row tapped goes to the page, the one in front too
+  const onTreeOpen: typeof openNode = (path, opts) => { openNode(path, opts); if (phone) useApp.setState({ sideSheet: false }); };
   return (
     <>
-      <div className="shell" style={{ '--side-w': `${sideW}px`, '--insp-w': `${inspW}px` } as React.CSSProperties}>
+      <div className="shell" data-session={phone && activeId === SESSION ? '1' : undefined} style={{ '--side-w': `${sideW}px`, '--insp-w': `${inspW}px` } as React.CSSProperties}>
         <TopStrip />
         {sheet && sideOn && <div className="side-scrim" onClick={() => useApp.setState({ sideSheet: false })} />}
         {sideOn && (
           <div className="side" data-sheet={sheet ? '1' : undefined} style={sheet ? ({ '--sheet-w': `${Math.min(sidebar.width, Math.round(win * 0.84))}px` } as React.CSSProperties) : undefined}>
             <h6>workspace</h6>
-            <Tree activeId={active} onOpen={openNode} />
+            <Tree activeId={active} onOpen={onTreeOpen} />
             <SavedQueries activeId={active} />
+            {phone && <button type="button" className="side-find" onClick={() => useApp.setState({ paletteOpen: true, sideSheet: false })}><span className="g">⌕</span>open or run</button>}
           </div>
         )}
         {!mobile && <div className="side-resize" data-hidden={sidebar.hidden ? '1' : '0'} onMouseDown={startSideResize} />}
         <Canvas />
         {inspOn && <Inspector />}
         {inspOn && !mobile && <div className="insp-resize" onMouseDown={startInspResize} />}
-        <BottomStrip />
+        {phone ? activeId !== SESSION && <PhoneBar /> : <BottomStrip />}
         <Notice />
       </div>
       {paletteOpen && <Palette />}
       {tweaksOpen && <Tweaks />}
+      {phone && <QuickCard />}
     </>
   );
 }

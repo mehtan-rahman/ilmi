@@ -11,11 +11,15 @@
 // note, or from `notes` there: the palette picks a note that is there, or
 // makes a new one, named as typed, in a folder picked next. From then on
 // everything kept from that PDF goes into it.
+//
+// A phone has no second pane (milestone 56): the note is the page, in place of
+// the pages, and `pages` over it comes back. Over a session it goes on top, so
+// the session is still there.
 
 import { setField } from '../format/index.js';
 import { dirOf, relFrom } from '../vault/index.js';
-import { noteOf, notesTabOf, pagesOf } from './names.js';
-import { activeTab, besideAt, closeBeside, openBeside } from './panes.js';
+import { noteOf, notesTabOf, pagesOf, SESSION } from './names.js';
+import { activeTab, besideAt, closeBeside, openBeside, openTab } from './panes.js';
 import { useApp } from './store.js';
 import { currentVault } from './vault.js';
 
@@ -33,7 +37,7 @@ export async function openNotes(pagesId: string): Promise<string | null> {
   const s = useApp.getState();
   const tab = notesTabOf(pagesId, s.docs);
   if (tab === null) return null;
-  useApp.setState({ panes: openBeside(s.panes, tab) });
+  useApp.setState({ panes: s.phone ? openTab(s.panes, tab, { newTab: activeTab(s.panes)?.id === SESSION }) : openBeside(s.panes, tab) });
   return tab;
 }
 
@@ -60,7 +64,7 @@ export function openPagesBeside(note: string): string | null {
   const s = useApp.getState();
   const pages = pagesOf(note, s.docs);
   if (pages === null) return null;
-  if (activeTab(s.panes)?.id !== pages) useApp.setState({ panes: openBeside(s.panes, pages) });
+  if (activeTab(s.panes)?.id !== pages) useApp.setState({ panes: s.phone ? openTab(s.panes, pages) : openBeside(s.panes, pages) });
   return pages;
 }
 

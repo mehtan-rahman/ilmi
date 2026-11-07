@@ -224,6 +224,10 @@
 // read there under touches the touch rig makes (a passage boxed by a held
 // finger becomes a section), and the Mac finds the section after a sync
 // (`ILMI_EXPECT`; see the functions).
+// `ILMI_SMOKE=phone` (`smokePhone` on a simulated iPhone, `smokePhoneMac` on
+// the Mac, milestone 56): three runs over one storage folder, as `touch` is:
+// the day's cards reviewed by the buttons, a quick card, a page clipped by an
+// `ilmi://new?url=` link, all three on the Mac. See `smokePhone`.
 // `ILMI_SMOKE=ink` (`smokeInk` on an iPad, `smokeInkMac` on the Mac,
 // milestones 58, 69), over a storage folder as `touch` is: a note is written
 // on where the rig's finger, standing in for the Pencil, lands, with nothing
@@ -251,7 +255,7 @@ import { info } from '@tauri-apps/plugin-log';
 import { queue, type CardItem } from '../schedule/index.js';
 import type { Vault } from '../vault/index.js';
 import { cardLabel } from './chrome.js';
-import { GLYPH, SESSION, notesId, queueId, titleOf } from './names.js';
+import { GLYPH, SESSION, notesId, notesPath, queueId, titleOf } from './names.js';
 import { vaultName } from './recents.js';
 import { useApp } from './store.js';
 import { runMenu } from './menu.js';
@@ -10473,6 +10477,433 @@ export async function smokeTouchMac(vault: Vault): Promise<void> {
       await poll(async () => { await crdtNow(); return (await sfs.pageInk(ahash, 129)).length === 1; }, 'what the Pencil wrote on a bare PDF\'s page on the iPad is on that page here', 20000);
     }
     await shot('touch-mac-section');
+    log(`done; collection ${vault.root}, storage ${dir}`);
+  } catch (e) {
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+// `ILMI_SMOKE=phone`: milestone 56's "done when", in three runs over one
+// storage folder (`ILMI_STORAGE`; on the simulator `"storage"` in `smoke.json`,
+// with `"clip"` the address of a page a server on the Mac's loopback holds).
+//  1. The Mac (`ILMI_VAULT` a copy of the sample): its collection makes the
+//     storage. `smokePhoneMac`.
+//  2. The phone, from its welcome (`smokePhone`): a collection made from the
+//     storage, and everything after under touches the rig makes (`do: …`, as
+//     `touch`), keys by the rig's `type` and the link by its `open`, the way
+//     a Shortcut's "open URL" arrives. The day is the face; a topic's row
+//     puts its later, and the notice takes it back; the bar enters the queue;
+//     the session is the whole screen and every element of it is walked by
+//     its buttons, the four grades each used; `+` opens the composer on the
+//     last deck, a deck is chosen, a card saved there, the next starts on it,
+//     and a deck in front is the one `+` starts on; the link lands the page
+//     and opens it; the one button has the tree and the palette; a document
+//     is a single page; `notes` on a chapter puts the note in the pages'
+//     place and `pages` comes back; dark, and on its side. What it wrote is
+//     named on a `reached:` line and synced.
+//  3. The Mac again (`ILMI_VAULT` its collection's own folder, `ILMI_EXPECT`
+//     that line): after a sync every document named is the same to the byte.
+const digest = (s: string): string => {
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = (Math.imul(h, 33) ^ s.charCodeAt(i)) >>> 0;
+  return h.toString(36);
+};
+
+export async function smokePhone(): Promise<void> {
+  let last = { at: Date.now(), what: 'start' };
+  let finished = false;
+  const log = (s: string) => { last = { at: Date.now(), what: s }; void info(`smoke phone: ${s}`); };
+  const dog = setInterval(() => {
+    if (finished) { clearInterval(dog); return; }
+    if (Date.now() - last.at > 90_000) { finished = true; clearInterval(dog); void info(`smoke phone: failed: no progress for 90 s after "${last.what}"`); }
+  }, 2000);
+  const q = <T extends Element>(sel: string, root: ParentNode = document) => root.querySelector<T>(sel);
+  const qa = <T extends Element>(sel: string, root: ParentNode = document) => Array.from(root.querySelectorAll<T>(sel));
+  const shot = async (name: string, ms = 1500) => { await sleep(700); log(`shot: ${name}`); await sleep(ms); };
+  const must = (ok: unknown, what: string) => { if (!ok) throw new Error(what); log(`ok: ${what}`); };
+  const poll = async <T,>(probe: () => T | null | undefined | false | Promise<T | null | undefined | false>, what: string, ms = 8000): Promise<T> => {
+    const t0 = Date.now();
+    for (;;) {
+      const v = await probe();
+      if (v) { log(`ok: ${what}`); return v; }
+      if (Date.now() - t0 > ms) throw new Error(`${what} (waited ${ms} ms)`);
+      await sleep(80);
+    }
+  };
+  const fx = (x: number) => x / window.innerWidth;
+  const fy = (y: number) => y / window.innerHeight;
+  const mid = (el: Element): [number, number] => { const r = el.getBoundingClientRect(); return [fx(r.left + r.width / 2), fy(r.top + r.height / 2)]; };
+  const ask = (verb: string, ...n: number[]) => log(`do: ${verb} ${n.map((v) => v.toFixed(4)).join(' ')}`);
+  /** A finger on `el`, until `then` holds; the first touch after a boot can be dropped, so it is asked for again. */
+  const tap = async <T,>(el: Element, then: () => T | null | undefined | false | Promise<T | null | undefined | false>, what: string, ms = 20000): Promise<T> => {
+    const at = mid(el);
+    ask('tap', ...at);
+    const t0 = Date.now();
+    for (let again = false; ;) {
+      const v = await then();
+      if (v) { log(`ok: ${what}`); return v; }
+      if (!again && Date.now() - t0 > 6000) { again = true; ask('tap', ...at); }
+      if (Date.now() - t0 > ms) throw new Error(`${what} (waited ${ms} ms)`);
+      await sleep(80);
+    }
+  };
+  const keys = (text: string) => log(`do: type ${text}`);
+  const tall = (sel: string, min = 44) => { const h = qa(sel).map((e) => e.getBoundingClientRect().height); return h.length > 0 && h.every((x) => x >= min); };
+  const at = () => activeTab(useApp.getState().panes)?.id;
+  try {
+    const { isMobile, shapeOf } = await import('./platform.js');
+    const { devStorage, joinCollection, crdtNow, filesSettled } = await import('./crdt.js');
+    const { syncWord } = await import('./sync.js');
+    const { parse } = await import('../format/index.js');
+    const { reviewLog, setBudget } = await import('./vault.js');
+    must(isMobile() && document.documentElement.dataset.mobile === '1', 'the app knows it is on a phone');
+    const shape = () => shapeOf(true, window.innerWidth, window.innerHeight);
+    const storage = await devStorage();
+    if (!storage || storage.kind !== 'folder') throw new Error('ILMI_STORAGE (smoke.json: "storage") names the folder the Mac\'s collection made its storage in');
+    const clip = await invoke<string | null>('dev_env', { name: 'ILMI_CLIP' });
+    if (!clip) throw new Error('ILMI_CLIP (smoke.json: "clip") is the address of a local page');
+    log(`window ${window.innerWidth}×${window.innerHeight} (${shape()}); pixel ratio ${window.devicePixelRatio}; storage ${storage.folder}`);
+    must(shape() === 'phone' && window.innerWidth < 600, 'under 600 px the shell is a phone\'s');
+
+    // ── a collection made from the storage ──
+    useApp.getState().setReopen(false);
+    useApp.getState().setTheme('light');
+    await startFromRecents();
+    await until(() => q('.welcome'));
+    await shot('phone-welcome');
+    const root = await joinCollection(storage, 'double-major', true);
+    const vault = await openVault(root);
+    must(vault.documents().length === 66, 'the collection is made from the storage: 66 documents');
+    await poll(() => syncWord(useApp.getState().sync) === 'synced', 'the strip says synced', 30000);
+
+    // the sample's whole backlog is 476 elements: a day's budget folds it to what a run can walk under a finger
+    setBudget(24);
+    // ── the day is the face ──
+    const TODAY = queueId('today');
+    await poll(() => at() === TODAY && q('.queue li[data-el]'), 'the day is what opens, its rows drawn', 20000);
+    must(useApp.getState().phone && document.documentElement.dataset.shape === 'phone', 'the page knows it');
+    must(!q('.tabbar') && !q('.insp') && !q('.bot') && !q('.top .palette') && !q('.top .insp-toggle'), 'no tabs, no inspector, no key hints, nothing at the top but the name and sync');
+    const bar = q<HTMLElement>('.phone-bar')!;
+    must(bar && bar.getBoundingClientRect().bottom >= window.innerHeight - 1, 'the bar is at the foot');
+    must(tall('.phone-bar button') && qa('.phone-bar button').length === 3, 'three buttons on it, each a finger\'s size');
+    must(q('.pb-day')!.textContent!.startsWith('enter queue') && q('.pb-day')!.getAttribute('data-go') === '1', 'on the day the middle one enters the queue');
+    must(!qa('.queue button, .queue kbd').some((e) => (e as HTMLElement).offsetParent !== null && e.classList.contains('enter-queue')), 'and the row that says so on the Mac gives way to it');
+    must(tall('.qlist li[data-el]', 48), 'rows a finger can take');
+    const scroller = q<HTMLElement>('.pane-body')!;
+    must(scroller.scrollWidth <= scroller.clientWidth + 1, `nothing wider than the screen (${scroller.scrollWidth} of ${scroller.clientWidth})`);
+    const dayRows = qa('.qlist li[data-el]').length;
+    log(`the day: ${dayRows} rows, ${qa('.qlist li[data-el="card"]').length} cards`);
+    await shot('phone-day');
+
+    // ── a topic's row: its three as buttons, acting from the row ──
+    const row = await poll(() => q<HTMLElement>('.qlist li[data-el="read"] .topic-acts, .qlist li[data-el="section"] .topic-acts')?.closest('li'), 'a topic\'s row in the day');
+    must(tall('.topic-acts button') && qa('button', row).length === 3, 'it has its three as buttons');
+    must(!q('.qlist li[data-el="card"] .topic-acts'), 'a card\'s row has none: a card is graded');
+    row.scrollIntoView({ block: 'center' });
+    await sleep(500);
+    await shot('phone-topic');
+    const items = useApp.getState().queue;
+    const topicPath = (() => {
+      const key = row.querySelector('.qpath')?.getAttribute('title') ?? '';
+      return items.find((i) => i.kind !== 'card' && key.includes(useApp.getState().docs[i.path]?.title ?? '\u0000'))?.path ?? null;
+    })();
+    const before = qa('.qlist li[data-el]').length;
+    await tap(q('[data-act="postpone"]', row)!, () => qa('.qlist li[data-el]').length === before - 1, 'later, tapped on the row: the topic leaves the day, nothing opened');
+    must(at() === TODAY, 'and the day is still in front');
+    const undo = await poll(() => qa<HTMLElement>('.notice .na').find((b) => b.textContent === 'undo'), 'the notice can take it back', 8000);
+    await shot('phone-topic-later');
+    await tap(undo, () => qa('.qlist li[data-el]').length === before, 'undo: the topic is back', 8000);
+    const row2 = await poll(() => q<HTMLElement>('.qlist li[data-el="read"] .topic-acts, .qlist li[data-el="section"] .topic-acts')?.closest('li'), 'the row is there again');
+    row2.scrollIntoView({ block: 'center' });
+    await sleep(400);
+    await tap(q('[data-act="postpone"]', row2)!, () => qa('.qlist li[data-el]').length === before - 1, 'later again, for good');
+    scroller.scrollTo({ top: 0 });
+    await sleep(400);
+
+    // ── the session: the whole screen, walked by its buttons ──
+    await tap(q('.pb-day')!, () => at() === SESSION && (q('.recall-wrap') || q('.doc-session')), 'the middle button enters the queue');
+    must(!q('.phone-bar') && !q('.tabbar') && getComputedStyle(q('.top')!).display === 'none', 'a session is the whole screen: no strip, no bar');
+    const graded: { path: string; block: number; grade: number }[] = [];
+    const topics: string[] = [];
+    const counter = () => (q('.sess-count') ?? q('.sb-count'))?.textContent ?? '';
+    let shots = 0;
+    let n = 0;
+    for (; n < 400; n++) {
+      await poll(() => q('.session-end') || q('.reveal-all') || q('.grades') || q('.doc-session .sb-actions'), 'the next element is up', 30000);
+      if (q('.session-end')) break;
+      const was = counter();
+      const el = useApp.getState().sessionEl?.item;
+      if (q('.reveal-all')) {
+        if (!shots) {
+          must(!q('.grades') && !q('.face-hint:not([hidden])')?.getBoundingClientRect().height, 'before the answer: one button, where the grades will be');
+          must(q('.reveal-all')!.getBoundingClientRect().bottom >= window.innerHeight - 1 && tall('.reveal-all', 64), 'at the very foot, across it');
+          await shot('phone-card');
+        }
+        await tap(q('.reveal-all')!, () => q('.grades'), 'reveal');
+      }
+      if (q('.grades')) {
+        const buttons = qa<HTMLElement>('.grades button');
+        if (!shots++) {
+          must(buttons.length === 4 && tall('.grades button', 64), 'the four grades as buttons');
+          const r = buttons.map((b) => b.getBoundingClientRect());
+          must(Math.abs(r[0]!.left) < 2 && Math.abs(r[3]!.right - window.innerWidth) < 2 && r.every((x) => Math.abs(x.bottom - window.innerHeight) < 2 && Math.abs(x.top - r[0]!.top) < 1), 'across the bottom, edge to edge');
+          must(buttons.every((b) => !!b.querySelector('.gap')?.textContent), `each says when it comes back (${buttons.map((b) => b.querySelector('.gap')?.textContent).join(' ')})`);
+          await shot('phone-card-answer');
+        }
+        const g = graded.length % 4;
+        graded.push({ path: el!.path, block: (el as CardItem).block, grade: g + 1 });
+        await tap(buttons[g]!, () => q('.session-end') || counter() !== was, `graded ${g + 1}: ${el!.path}`);
+      } else {
+        const bar2 = q<HTMLElement>('.doc-session .sb-actions')!;
+        topics.push(el!.path);
+        await tap(q('[data-act="postpone"]', bar2)!, () => q('.session-end') || counter() !== was, `later: ${el!.path}`);
+      }
+    }
+    must(graded.length > 0, `the day's cards graded by the buttons: ${graded.length}, ${topics.length} topics put later`);
+    must([1, 2, 3, 4].every((g) => graded.some((c) => c.grade === g)), 'each of the four grades was used');
+    await poll(() => at() === TODAY && q('.phone-bar'), 'the session ends on the day', 8000);
+    await sleep(600);
+    await shot('phone-day-after');
+
+    // ── a topic in a session: a row tapped opens it there, its page and its three; × is the way back ──
+    const tRow = await poll(() => q<HTMLElement>('.qlist li[data-el="read"] .topic-acts, .qlist li[data-el="section"] .topic-acts')?.closest('li'), 'a topic on the day');
+    tRow.scrollIntoView({ block: 'center' });
+    await sleep(500);
+    await tap(q('.body', tRow)!, () => at() === SESSION && q('.doc-session .sb-actions'), 'a tap on its row opens it in the session');
+    must(tall('.doc-session .sb-actions button', 50) && !qa('.sb-actions kbd').some((k) => (k as HTMLElement).offsetParent !== null), 'its page, and its three as buttons, no keys named');
+    must(!q('.phone-bar') && q('.session-bar')!.getBoundingClientRect().bottom >= window.innerHeight - 1, 'across the foot of the whole screen');
+    await sleep(1500);
+    await shot('phone-session-topic');
+    await tap(q('.sn-out')!, () => at() === TODAY && q('.phone-bar'), '× goes back to the day');
+    await sleep(500);
+
+    // ── a quick card ──
+    const DECKS = Object.entries(useApp.getState().docs).filter(([, i]) => i.type === 'deck').map(([p]) => p);
+    const VOCAB = 'arabic/vocabulary.md';
+    const ROOTS = 'arabic/roots.md';
+    must(DECKS.includes(VOCAB) && DECKS.includes(ROOTS), `the sample's decks are here (${DECKS.length})`);
+    const typeIn = async (field: HTMLElement, text: string, value: () => string) => {
+      // the keyboard coming up moves the fields: a place is taken once it is up
+      await poll(() => document.documentElement.hasAttribute('data-keyboard'), 'the keyboard is up', 15000);
+      await sleep(500);
+      if (document.activeElement !== field) await tap(field, () => document.activeElement === field, 'the field has the caret');
+      keys(text);
+      const t0 = Date.now();
+      while (value() !== text && Date.now() - t0 < 12000) await sleep(100);
+      if (value() !== text) await shot('phone-typed-otherwise');
+      must(value() === text, `typed: ${text} (the field holds "${value()}")`);
+    };
+    const fields = () => qa<HTMLTextAreaElement>('.quick textarea, .quick input');
+    await tap(q('.pb-add')!, () => q('.quick'), '+ on the day opens the composer');
+    await poll(() => fields().length === 2 && fields()[0]!.placeholder === 'front' && fields()[1]!.placeholder === 'back', 'front and back');
+    must(document.activeElement === fields()[0], 'the caret in the front');
+    must(!q('.quick .pri-pick') && !q('.quick kbd') && tall('.qf-acts button', 50), 'nothing to set, no keys named, the buttons a finger\'s size');
+    await poll(() => document.documentElement.hasAttribute('data-keyboard'), 'the keyboard is up', 15000);
+    await sleep(600);
+    const vh = window.visualViewport?.height ?? 0;
+    must(q('.qf-acts')!.getBoundingClientRect().bottom <= vh + 1, `its buttons sit on the keyboard (${Math.round(q('.qf-acts')!.getBoundingClientRect().bottom)} of ${Math.round(vh)} shown, ${window.innerHeight} in all)`);
+    await shot('phone-composer');
+    await tap(q('.quick-deck')!, () => q('.quick-decks'), 'a tap on the deck lists them');
+    await shot('phone-composer-decks');
+    const deckRow = await poll(() => q<HTMLElement>(`.qd-row[data-path="${VOCAB}"]`), 'the deck has a row');
+    deckRow.scrollIntoView({ block: 'center' });
+    await sleep(400);
+    await tap(deckRow, () => !q('.quick-decks') && q('.qd-t')?.textContent === useApp.getState().docs[VOCAB]?.title, 'a deck chosen');
+    const CARD = ['phone front one', 'phone back one'] as const;
+    await typeIn(fields()[0]!, CARD[0], () => fields()[0]!.value);
+    await typeIn(fields()[1]!, CARD[1], () => fields()[1]!.value);
+    await shot('phone-composer-typed');
+    const textOf = (p: string) => vault.fs.readText(vault.abs(p));
+    const cardsIn = async (p: string) => parse(await textOf(p)).doc.blocks.flatMap((b) => (b.kind === 'card' ? [b.text] : []));
+    const has = async (p: string, front: string) => (await cardsIn(p)).some((c) => c.includes(front));
+    await tap(q('.qf-acts [data-act="save"]')!, () => !q('.quick'), 'saved, the composer gone');
+    await poll(() => has(VOCAB, CARD[0]), 'the card is in the deck chosen');
+    await poll(() => q('.notice'), 'and says where');
+    await shot('phone-card-added');
+    await tap(q('.pb-add')!, () => q('.quick'), '+ again');
+    must(q('.qd-t')?.textContent === useApp.getState().docs[VOCAB]?.title, 'it starts on the deck chosen last');
+    await typeIn(fields()[0]!, 'phone front two', () => fields()[0]!.value);
+    await typeIn(fields()[1]!, 'phone back two', () => fields()[1]!.value);
+    await tap(q('.qf-acts [data-act="again"]')!, async () => (await has(VOCAB, 'phone front two')) && fields()[0]!.value === '' && q('.quick'), 'save, another: saved, and the composer empty for the next');
+    await typeIn(fields()[0]!, 'phone front three', () => fields()[0]!.value);
+    await tap(q('.qf-acts [data-act="cancel"]')!, () => !q('.quick'), 'cancel: nothing kept');
+    must(!(await has(VOCAB, 'phone front three')), 'nothing written');
+
+    // ── the one button: the tree and the palette ──
+    const trow = (path: string) => q<HTMLElement>(`.side .trow[data-path="${path}"]`);
+    const sheet = () => tap(q('.pb-more')!, () => q<HTMLElement>('.side[data-sheet="1"]'), 'the one button brings the tree');
+    await sheet();
+    must(q('.side-find')?.textContent?.includes('open or run') && tall('.side-find', 50), 'and the palette\'s field at its foot');
+    must(tall('.side .tree .row'), 'rows a finger can take');
+    await sleep(500);
+    await shot('phone-tree');
+    for (const dir of ['arabic']) {
+      const r = await poll(() => trow(dir), `${dir} has a row`, 10000);
+      if (r.getAttribute('aria-expanded') !== 'true') await tap(q('.chev', r)!, () => trow(dir)?.getAttribute('aria-expanded') === 'true', `a tap on its mark opens ${dir}`);
+    }
+    await sleep(300);
+    await tap(q('.name', (await poll(() => trow(ROOTS), 'a deck has a row'))!)!, () => at() === ROOTS && !q('.side'), 'a tap on a deck opens it, and the sheet goes');
+    await poll(() => q('.deck-browser'), 'the deck');
+    must(!q('.deck-add'), 'no second + on it: the one at the foot');
+    await shot('phone-deck');
+    await tap(q('.pb-add')!, () => q('.quick'), '+ on a deck');
+    must(q('.qd-t')?.textContent === useApp.getState().docs[ROOTS]?.title, 'starts on that deck');
+    await typeIn(fields()[0]!, 'phone root front', () => fields()[0]!.value);
+    await typeIn(fields()[1]!, 'phone root back', () => fields()[1]!.value);
+    await tap(q('.qf-acts [data-act="save"]')!, () => !q('.quick'), 'saved');
+    await poll(() => has(ROOTS, 'phone root front'), 'the card is in the deck in front');
+
+    // ── a page clipped by the Shortcut's link ──
+    const countDocs = vault.documents().length;
+    const link = `ilmi://new?url=${encodeURIComponent(clip)}`;
+    log(`do: open ${link}`);
+    const clipped = await poll(() => {
+      const id = at();
+      return id && id !== ROOTS && id.endsWith('.md') && !useApp.getState().docs[ROOTS] === false && vault.documents().length === countDocs + 1 ? id : null;
+    }, 'the link lands a page and opens it', 30000);
+    await poll(() => q('.doc-view .draft-doc'), 'as a page');
+    const clipText = await textOf(clipped);
+    must(clipText.includes(`url: ${clip}`), `the address is kept (${clipped})`);
+    must(/page.s second paragraph/.test(clipText), 'with the page\'s text');
+    must(useApp.getState().docs[clipped]?.type === 'source' && useApp.getState().docs[clipped]?.frozen, 'a frozen source, as the clipper lands one');
+    await sleep(600);
+    const page = q<HTMLElement>('.doc-view')!.getBoundingClientRect();
+    must(!q('.tabbar') && !q('.tab-rail') && !q('.insp') && page.left >= 0 && page.right <= window.innerWidth + 1, `a document is a single page (${Math.round(page.left)}–${Math.round(page.right)})`);
+    await shot('phone-clip');
+
+    // ── a notebook's page, a chapter, and what `notes` does with no second pane ──
+    await sheet();
+    const CH = 'library/lindqvist-statistical-physics/ch-3-the-canonical-ensemble.md';
+    for (const dir of ['library', 'library/lindqvist-statistical-physics.md']) {
+      const r = await poll(() => trow(dir), `${dir} has a row`, 10000);
+      r.scrollIntoView({ block: 'center' });
+      await sleep(200);
+      if (r.getAttribute('aria-expanded') !== 'true') await tap(q('.chev', r)!, () => trow(dir)?.getAttribute('aria-expanded') === 'true', `a tap on its mark opens ${dir}`);
+    }
+    const chRow = await poll(() => trow(CH), 'the chapter has a row');
+    chRow.scrollIntoView({ block: 'center' });
+    await sleep(300);
+    await tap(q('.name', chRow)!, () => at() === CH && !q('.side'), 'the chapter opens');
+    const book = await poll(() => q<HTMLElement>('.book'), 'as its pages', 15000);
+    await poll(() => q('.pdf-page[data-page="23"] canvas', book), 'its book fetched and the first page drawn', 60000);
+    await filesSettled();
+    const pageRect = q<HTMLElement>('.pdf-page[data-page="23"]', book)!.getBoundingClientRect();
+    must(pageRect.left >= 0 && pageRect.right <= window.innerWidth + 1, `the page fits the screen (${Math.round(pageRect.width)} of ${window.innerWidth})`);
+    await shot('phone-book');
+    const word = await poll(() => q<HTMLElement>('.meta .notes-toggle'), 'notes is among the words over the pages');
+    await tap(word, () => notesPath(at() ?? '') === CH && q('.draft-doc'), 'notes: the note is the page, in the pages\' place');
+    must(qa('.pane').length === 1 && !q('.book'), 'one pane, no pages');
+    await sleep(500);
+    await shot('phone-notes');
+    await tap(await poll(() => q<HTMLElement>('.meta .pages-toggle'), 'pages over the note'), () => at() === CH && q('.book'), 'pages: back to the pages');
+
+    // ── the palette ──
+    await sheet();
+    await tap(q('.side-find')!, () => q('.palette-panel'), 'the field at the sheet\'s foot opens the palette');
+    must(!q('.side'), 'the tree gives it the screen');
+    const input = q<HTMLInputElement>('.palette-input input')!;
+    must(document.activeElement === input, 'the caret in its field');
+    await sleep(600);
+    await shot('phone-palette');
+    keys('wkb');
+    await poll(() => input.value === 'wkb', 'typed in the palette', 30000);
+    const hit = await poll(() => q<HTMLElement>('.palette-row'), 'a row found');
+    await shot('phone-palette-found');
+    await tap(hit, () => !q('.palette-panel') && at()?.endsWith('.md') && at() !== CH, 'a tap opens it', 10000);
+    await poll(() => q('.doc-view .draft-doc') || q('.book'), 'a page');
+    await sleep(800);
+    await shot('phone-document');
+    await tap(q('.pb-day')!, () => at() === TODAY && q('.queue'), 'today comes back to the day from anywhere');
+
+    // ── dark, and on its side ──
+    useApp.getState().setTheme('dark');
+    await sleep(500);
+    await shot('phone-day-dark');
+    await sheet();
+    await shot('phone-tree-dark');
+    await tap(q('.pb-more')!, () => !q('.side'), 'the one button closes it too');
+    await tap(q('.pb-add')!, () => q('.quick'), 'the composer, dark');
+    await shot('phone-composer-dark');
+    await tap(q('.qf-acts [data-act="cancel"]')!, () => !q('.quick'), 'cancelled');
+    useApp.getState().setTheme('light');
+    log('do: turn landscape');
+    await poll(() => window.innerWidth > window.innerHeight, 'turned on its side', 20000);
+    await sleep(800);
+    must(useApp.getState().phone && document.documentElement.dataset.shape === 'phone' && q('.phone-bar'), `a phone on its side is still a phone (${window.innerWidth}×${window.innerHeight})`);
+    await shot('phone-side');
+    log('do: turn portrait');
+    await poll(() => window.innerWidth < window.innerHeight, 'upright again', 20000);
+    await sleep(600);
+
+    // ── all of it to the storage ──
+    await crdtNow();
+    await poll(async () => { await crdtNow(); return syncWord(useApp.getState().sync) === 'synced' && useApp.getState().sync.toPush === 0; }, 'all of it is in the storage', 30000);
+    const paths = [...new Set([...graded.map((c) => c.path), ...topics, ...(topicPath ? [topicPath] : []), VOCAB, ROOTS, clipped])];
+    const docs: Record<string, string> = {};
+    for (const p of paths) docs[p] = digest(await textOf(p));
+    useApp.getState().setReopen(true);
+    log(`reached: ${JSON.stringify({ graded: graded.length, reviews: reviewLog().length, clipped, url: clip, vocab: CARD, docs })}`);
+    finished = true;
+    log(`done; collection ${vault.root}`);
+  } catch (e) {
+    finished = true;
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+/** The Mac's side of `ILMI_SMOKE=phone` (see `smokePhone`): the storage made, and after the phone's run all it wrote found. */
+export async function smokePhoneMac(vault: Vault): Promise<void> {
+  const log = (s: string) => void info(`smoke phone: ${s}`);
+  const q = <T extends Element>(sel: string, root: ParentNode = document) => root.querySelector<T>(sel);
+  const must = (ok: unknown, what: string) => { if (!ok) throw new Error(what); log(`ok: ${what}`); };
+  const poll = async <T,>(probe: () => T | null | undefined | false | Promise<T | null | undefined | false>, what: string, ms = 8000): Promise<T> => {
+    const t0 = Date.now();
+    for (;;) {
+      const v = await probe();
+      if (v) { log(`ok: ${what}`); return v; }
+      if (Date.now() - t0 > ms) throw new Error(`${what} (waited ${ms} ms)`);
+      await sleep(100);
+    }
+  };
+  try {
+    const { crdtNow, crdtOn, storageDir } = await import('./crdt.js');
+    const { syncWord } = await import('./sync.js');
+    const { parse } = await import('../format/index.js');
+    const { reviewLog } = await import('./vault.js');
+    const dir = await storageDir();
+    if (!dir) throw new Error('ILMI_STORAGE names the folder the two devices share');
+    useApp.getState().setTheme('light');
+    must(!useApp.getState().phone && document.documentElement.dataset.shape === 'desktop' && !q('.phone-bar') && !!q('.bot'), 'the Mac\'s shell is the Mac\'s');
+    await poll(() => crdtOn() && syncWord(useApp.getState().sync) === 'synced', 'the collection syncs through the folder', 60000);
+    const raw = await invoke<string | null>('dev_env', { name: 'ILMI_EXPECT' });
+    if (!raw) {
+      await crdtNow();
+      await poll(() => syncWord(useApp.getState().sync) === 'synced' && useApp.getState().sync.toPush === 0, 'the storage is made', 30000);
+      log(`done; collection ${vault.root}, storage ${dir}`);
+      return;
+    }
+    const want = JSON.parse(raw) as { graded: number; reviews: number; clipped: string; url: string; vocab: [string, string]; docs: Record<string, string> };
+    const text = (p: string) => vault.fs.readText(vault.abs(p));
+    await poll(async () => { await crdtNow(); try { return (await text(want.clipped)).includes(want.url); } catch { return false; } }, `the page clipped on the phone is here: ${want.clipped}`, 30000);
+    const cards = parse(await text('arabic/vocabulary.md')).doc.blocks.flatMap((b) => (b.kind === 'card' ? [b.text] : []));
+    must(cards.some((c) => c.includes(want.vocab[0]) && c.includes(want.vocab[1])), 'the card added on the phone is in its deck');
+    const paths = Object.keys(want.docs);
+    await poll(async () => {
+      await crdtNow();
+      for (const p of paths) if (digest(await text(p)) !== want.docs[p]) return false;
+      return true;
+    }, `all ${paths.length} documents it wrote are the same here, schedules and all`, 30000);
+    await poll(() => reviewLog().length === want.reviews, `the ${want.graded} reviews are in the log here (${want.reviews} in all)`, 15000);
+    openNode(want.clipped);
+    await poll(() => q('.doc-view .draft-doc'), 'the clipped page opens');
+    await sleep(900);
+    log('shot: phone-mac-clip');
+    await sleep(2500);
+    openNode('arabic/vocabulary.md');
+    await poll(() => q('.deck-browser'), 'the deck opens');
+    await sleep(900);
+    log('shot: phone-mac-deck');
+    await sleep(2500);
     log(`done; collection ${vault.root}, storage ${dir}`);
   } catch (e) {
     log(`failed: ${e instanceof Error ? e.message : String(e)}`);

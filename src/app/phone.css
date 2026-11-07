@@ -1,0 +1,371 @@
+/* A phone (milestone 56). `data-shape="phone"` is set by App under 600 px
+   either way up, on top of the iPad's rules in `chrome.css`. The day is the
+   face: a thin strip over it for the collection and sync, one page at a
+   time, and at the foot, where a thumb is, the bar. A session is the whole
+   screen with its buttons across the foot. Everything here is a finger's
+   size; nothing here reaches the Mac or an iPad. Fields are 16 px or more:
+   anything less and the system zooms the page in to type. */
+
+html[data-shape="phone"] {
+  --safe-t: env(safe-area-inset-top, 0px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-l: env(safe-area-inset-left, 0px);
+  --safe-r: env(safe-area-inset-right, 0px);
+  --finger: 44px;
+  --pb-h: 56px;
+}
+
+/* ── the shell ────────────────────────────────────────────────── */
+html[data-shape="phone"] .shell {
+  grid-template-columns: 0 minmax(0, 1fr) 0;
+  grid-template-rows: calc(24px + var(--safe-t)) 1fr calc(var(--pb-h) + var(--safe-b));
+}
+html[data-shape="phone"] .shell[data-session="1"] { grid-template-rows: 0 1fr 0; }
+html[data-shape="phone"] .shell[data-session="1"] .top { display: none; }
+/* nothing scrolls under the clock */
+html[data-shape="phone"] .shell[data-session="1"] .canvas { padding-top: var(--safe-t); }
+html[data-shape="phone"][data-keyboard] .shell { grid-template-rows: calc(24px + var(--safe-t)) 1fr 0; }
+html[data-shape="phone"][data-keyboard] .phone-bar { display: none; }
+html[data-shape="phone"] .top { border-bottom: 0; justify-content: space-between; gap: 12px; }
+html[data-shape="phone"] .top .right > :not(.sync):not(.ago) { display: none; }
+html[data-shape="phone"] .pane-body { -webkit-overflow-scrolling: touch; }
+
+/* the bar: the one button, the day, a new card */
+.phone-bar {
+  grid-area: bot;
+  display: grid;
+  grid-template-columns: 72px 1fr 72px;
+  align-items: stretch;
+  gap: 0;
+  padding: 0 var(--safe-r) var(--safe-b) var(--safe-l);
+  border-top: 1px solid var(--line-2);
+  background: var(--bg);
+  user-select: none;
+  z-index: 53;
+}
+.phone-bar button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--fg-2);
+  padding: 0;
+  margin: 0;
+  font-family: var(--sans);
+}
+.phone-bar .pb-more, .phone-bar .pb-add { font-size: 24px; line-height: 1; color: var(--fg-2); }
+.phone-bar .pb-more[data-on="1"] { color: var(--accent); }
+.phone-bar .pb-day { font-size: 15px; letter-spacing: 0.01em; display: flex; align-items: center; justify-content: center; gap: 9px; }
+.phone-bar .pb-day[data-go="1"] { color: var(--fg-1); font-weight: 500; }
+.phone-bar .pb-n { font-family: var(--mono); font-size: 12.5px; color: var(--accent); font-variant-numeric: tabular-nums; font-weight: 400; }
+[data-theme="eink"] .phone-bar .pb-n, [data-theme="eink"] .phone-bar .pb-more[data-on="1"] { color: var(--fg); }
+
+/* a notice clears the bar, or the buttons of a session */
+html[data-shape="phone"] .notice { left: 12px; right: 12px; max-width: none; bottom: calc(var(--pb-h) + var(--safe-b) + 10px); padding: 11px 12px; font-size: 12px; }
+html[data-shape="phone"] .notice[data-session="1"] { bottom: calc(100px + var(--safe-b)); }
+html[data-shape="phone"] .notice .nl { flex: 1; }
+html[data-shape="phone"] .notice .na { padding: 0 6px; font-size: 12.5px; }
+
+/* ── the day ──────────────────────────────────────────────────── */
+html[data-shape="phone"] .queue { padding: 10px max(16px, var(--safe-l)) 24px; max-width: none; }
+html[data-shape="phone"] .queue h1 { font-size: 26px; }
+html[data-shape="phone"] .queue h1 .day { font-size: 12px; }
+html[data-shape="phone"] .queue .legend { font-size: 12px; margin-top: 6px; }
+/* what the marks mean is the Mac's to say: each row here carries its word */
+html[data-shape="phone"] .queue .legend > span { display: none; }
+html[data-shape="phone"] .queue .enter-queue { display: none; }
+html[data-shape="phone"] .queue .exam-filter button { min-height: 32px; font-size: 13px; }
+html[data-shape="phone"] .queue .qlog-line { font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+html[data-shape="phone"] .qlist { margin-top: 12px; }
+html[data-shape="phone"] .qlist li:not(.fold) {
+  grid-template-columns: 16px minmax(0, 1fr);
+  grid-template-areas: "mark body" ". acts";
+  column-gap: 10px;
+  padding: 13px 0;
+  min-height: 56px;
+}
+html[data-shape="phone"] .qlist li:hover { background: transparent; }
+html[data-shape="phone"] .qlist li:active { background: var(--line-3); }
+html[data-shape="phone"] .qlist li[data-active="1"]::before { content: none; }
+html[data-shape="phone"] .qlist li .mark { grid-area: mark; }
+html[data-shape="phone"] .qlist li .body { grid-area: body; font-size: 17px; line-height: 1.35; }
+html[data-shape="phone"] .qlist li .due { display: none; }
+html[data-shape="phone"] .qlist li .pri { display: none; }
+html[data-shape="phone"] .qlist .body .src { font-size: 12px; margin-bottom: 3px; }
+html[data-shape="phone"] .qlist .body .kindtag { font-size: 11px; }
+html[data-shape="phone"] .qlist .body .ref-line { font-size: 11.5px; }
+html[data-shape="phone"] .qlist li.fold { padding: 12px 0; font-size: 12px; min-height: var(--finger); align-items: center; }
+html[data-shape="phone"] .qlist li.fold .fold-what { display: none; }
+
+/* ⏎'s words, a line each */
+.ra-when { display: block; margin-top: 1px; font-family: var(--mono); font-size: 11px; color: var(--fg-3); }
+
+/* a topic's row: ⏎ p d as buttons */
+.topic-acts { grid-area: acts; display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 6px; margin-top: 10px; }
+.topic-acts button {
+  appearance: none;
+  min-height: var(--finger);
+  padding: 4px 8px;
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--fg-2);
+  font-family: var(--sans);
+  font-size: 13px;
+  line-height: 1.2;
+}
+.topic-acts button:first-child { color: var(--fg-1); border-color: color-mix(in oklab, var(--accent) 40%, transparent); }
+.topic-acts button:active { background: var(--line-2); }
+[data-theme="eink"] .topic-acts button:first-child { border-color: var(--fg); }
+
+/* ── a session: the whole screen ──────────────────────────────── */
+html[data-shape="phone"] .recall-wrap {
+  padding: 4px max(12px, var(--safe-r)) 0 max(12px, var(--safe-l));
+  align-items: stretch;
+}
+html[data-shape="phone"] .recall-meta { margin-bottom: 8px; gap: 10px; font-size: 12px; min-height: var(--finger); flex-shrink: 0; }
+html[data-shape="phone"] .sess-nav { gap: 0; margin-right: 0; flex-shrink: 0; }
+html[data-shape="phone"] .sess-nav .sn-btn { width: 40px; height: var(--finger); font-size: 20px; border: 0; color: var(--fg-3); }
+html[data-shape="phone"] .sess-nav .sn-btn:hover:not(:disabled) { color: var(--fg-3); }
+html[data-shape="phone"] .recall-wrap .card { flex: 0 1 auto; font-size: 21px; max-width: none; }
+html[data-shape="phone"] .recall-wrap .card .face { padding: 18px 16px; }
+html[data-shape="phone"] .recall-wrap .card .face-hint { display: none; }
+html[data-shape="phone"] .recall-wrap .card-meta { max-width: none; margin-top: 10px; gap: 10px; font-size: 11px; }
+/* the buttons across the foot: the space goes above them */
+html[data-shape="phone"] .recall-wrap .card-meta { margin-bottom: auto; }
+html[data-shape="phone"] .grades,
+html[data-shape="phone"] .reveal-all { margin: 10px calc(-1 * max(12px, var(--safe-r))) 0 calc(-1 * max(12px, var(--safe-l))); width: auto; max-width: none; }
+html[data-shape="phone"] .grades button {
+  min-height: calc(84px + var(--safe-b));
+  padding: 12px 0 calc(10px + var(--safe-b));
+  border-width: 1px 0 0 1px;
+  border-radius: 0;
+  margin-left: 0;
+  font-size: 16px;
+}
+html[data-shape="phone"] .grades button:first-child { border-left: 0; }
+html[data-shape="phone"] .grades button:hover { background: transparent; color: var(--fg-2); }
+html[data-shape="phone"] .grades button:active { background: var(--line-2); }
+html[data-shape="phone"] .grades button kbd { display: none; }
+html[data-shape="phone"] .grades button .gap { font-size: 12.5px; margin-top: 5px; color: var(--fg-3); }
+.reveal-all {
+  appearance: none;
+  flex-shrink: 0;
+  min-height: calc(84px + var(--safe-b));
+  padding: 0 0 var(--safe-b);
+  border: 0;
+  border-top: 1px solid var(--line-1);
+  background: transparent;
+  color: var(--fg-1);
+  font-family: var(--sans);
+  font-size: 16px;
+  font-weight: 500;
+}
+.reveal-all:active { background: var(--line-2); }
+
+/* a topic in a session: its page, the bar across the foot */
+html[data-shape="phone"] .session-bar { position: sticky; bottom: 0; max-width: none; padding: 0; margin: -150px 0 0; }
+html[data-shape="phone"] .session-bar .sb-inner { border-width: 1px 0 0; border-radius: 0; padding: 2px max(10px, var(--safe-r)) calc(10px + var(--safe-b)) max(10px, var(--safe-l)); }
+html[data-shape="phone"] .session-bar .sb-meta { margin-bottom: 2px; gap: 8px; }
+html[data-shape="phone"] .session-bar .sb-count { font-size: 12px; }
+html[data-shape="phone"] .session-bar .sb-kind { font-size: 11.5px; }
+html[data-shape="phone"] .session-bar .sb-stands { margin-bottom: 8px; flex-wrap: wrap; row-gap: 1px; white-space: normal; }
+html[data-shape="phone"] .session-bar .sb-what { flex: 1 1 calc(100% - 24px); white-space: nowrap; }
+html[data-shape="phone"] .session-bar .sb-what { font-size: 15px; }
+html[data-shape="phone"] .session-bar .sb-where { font-size: 11.5px; flex: 1 1 100%; flex-shrink: 1; }
+html[data-shape="phone"] .session-bar .sb-actions { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 6px; }
+html[data-shape="phone"] .session-bar .sb-actions button { min-height: 52px; padding: 4px 8px; justify-content: center; }
+html[data-shape="phone"] .session-bar .sb-actions .ra-l { font-size: 14px; line-height: 1.2; text-align: center; }
+html[data-shape="phone"] .session-bar .sb-actions kbd { display: none; }
+html[data-shape="phone"] .doc-session .reader-wrap { padding-top: 6px; padding-bottom: 190px; }
+html[data-shape="phone"] .doc-session[data-book="1"] .book { padding-bottom: 190px; }
+
+/* ── the tree and the palette, behind the one button ──────────── */
+html[data-shape="phone"] .side[data-sheet="1"] {
+  width: 100%;
+  border-right: 0;
+  padding: 10px max(10px, var(--safe-r)) 0 max(10px, var(--safe-l));
+  display: flex;
+  flex-direction: column;
+}
+html[data-shape="phone"] .side h6 { font-size: 12px; }
+html[data-shape="phone"] .tree { font-size: 16px; }
+html[data-shape="phone"] .tree .row { min-height: var(--finger); padding-top: 6px; padding-bottom: 6px; }
+html[data-shape="phone"] .tree .row .chev { width: 30px; height: var(--finger); margin: -6px 0; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+html[data-shape="phone"] .tree .row .due { font-size: 12px; }
+html[data-shape="phone"] .tree .row .away { font-size: 11px; }
+/* the palette's field at the sheet's foot, under the thumb that opened it */
+.side-find {
+  appearance: none;
+  position: sticky;
+  bottom: 0;
+  flex-shrink: 0;
+  margin: auto -10px 0;
+  padding: 0 16px;
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 0;
+  border-top: 1px solid var(--line-1);
+  background: var(--bg);
+  color: var(--fg-3);
+  font-family: var(--mono);
+  font-size: 14px;
+  text-align: start;
+}
+.side-find .g { color: var(--fg-4); font-size: 16px; }
+
+html[data-shape="phone"] .palette-overlay { padding: calc(var(--safe-t) + 8px) 8px 8px; height: var(--shell-h, 100dvh); bottom: auto; background: var(--bg); }
+html[data-shape="phone"] .palette-panel { width: 100%; max-height: 100%; }
+html[data-shape="phone"] .palette-input { padding: 0 14px; min-height: 52px; }
+html[data-shape="phone"] .palette-input input { font-size: 16px; }
+html[data-shape="phone"] .palette-input kbd { display: none; }
+html[data-shape="phone"] .palette-row { align-items: center; min-height: 48px; padding: 8px 10px; }
+html[data-shape="phone"] .palette-row .pt { font-size: 17px; }
+html[data-shape="phone"] .palette-row .ptag { display: none; }
+html[data-shape="phone"] .palette-foot { display: none; }
+
+html[data-shape="phone"] .tweaks { left: 8px; right: 8px; bottom: calc(8px + var(--safe-b)); width: auto; max-height: calc(var(--shell-h, 100dvh) - var(--safe-t) - var(--safe-b) - 24px); overflow: auto; font-size: 14px; }
+html[data-shape="phone"] .tweaks .tw-text, html[data-shape="phone"] .tweaks .tw-num, html[data-shape="phone"] .tweaks .tw-sel { font-size: 16px; padding: 7px 8px; }
+html[data-shape="phone"] .tweaks .tw-seg button { min-height: 38px; font-size: 13px; }
+html[data-shape="phone"] .tweaks .tw-x { font-size: 22px; padding: 4px 10px; margin: -4px -10px; }
+
+/* the welcome, before any of it */
+html[data-shape="phone"] .welcome-row { min-height: 48px; }
+html[data-shape="phone"] .welcome-acts button { min-height: var(--finger); font-size: 15px; padding: 4px 14px; }
+html[data-shape="phone"] .welcome input { font-size: 16px; }
+
+/* ── a document: a single page ────────────────────────────────── */
+html[data-shape="phone"] .reader-wrap { padding-left: max(16px, var(--safe-l)); padding-right: max(16px, var(--safe-r)); }
+html[data-shape="phone"] .reader .meta { flex-wrap: wrap; row-gap: 6px; font-size: 12px; }
+html[data-shape="phone"] .reader .meta .frozen-tag { min-height: 32px; font-size: 13px; }
+html[data-shape="phone"] .reader .meta .kbd { display: none; }
+html[data-shape="phone"] .notes-toggle, html[data-shape="phone"] .pages-toggle { color: var(--fg-2); }
+html[data-shape="phone"] .fv-new button { min-height: var(--finger); font-size: 14px; }
+html[data-shape="phone"] .fv-row { min-height: 48px; font-size: 16px; }
+html[data-shape="phone"] .fv-view button { min-height: var(--finger); font-size: 14px; }
+html[data-shape="phone"] .deck-study .ds-study { min-height: var(--finger); font-size: 15px; }
+html[data-shape="phone"] .deck-bar .db-search { font-size: 16px; }
+html[data-shape="phone"] .deck-bar .db-row kbd { display: none; }
+html[data-shape="phone"] .deck-bar .chip { min-height: 36px; font-size: 13px; }
+/* a card's row: its form over its faces, the faces the width of the page */
+html[data-shape="phone"] .deck-view .card-span.deck-row { grid-template-columns: minmax(0, 1fr) auto; row-gap: 2px; padding-top: 10px; padding-bottom: 10px; }
+html[data-shape="phone"] .deck-row .dr-form { grid-column: 1 / -1; padding-left: 0; font-size: 11px; }
+html[data-shape="phone"] .deck-row .dr-when { font-size: 11.5px; }
+
+/* ── a quick card ─────────────────────────────────────────────── */
+.quick {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--shell-h, 100dvh);
+  z-index: 65;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  padding: calc(var(--safe-t) + 6px) 0 0;
+}
+.quick .composer {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  padding: 0 16px;
+}
+.quick .composer .hd { padding: 8px 0 10px; font-size: 13px; border-bottom: 0; flex-shrink: 0; }
+.quick .composer .type-toggle button { min-height: 36px; padding: 0 10px; font-size: 14px; }
+.quick .composer textarea, .quick .composer input { font-size: 19px; line-height: 1.35; }
+.quick .composer > textarea { flex: 1; min-height: 0; }
+.quick .composer .qa-fields { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 10px; }
+.quick .composer .qa-fields textarea { flex: 1; min-height: 0; }
+.quick-blank {
+  appearance: none;
+  align-self: flex-start;
+  min-height: 36px;
+  margin: 6px 0;
+  padding: 0 12px;
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--fg-2);
+  font-family: var(--sans);
+  font-size: 14px;
+}
+.quick-ft { flex-shrink: 0; margin: 0 -16px; padding-bottom: var(--safe-b); border-top: 1px solid var(--line-2); }
+html[data-keyboard] .quick-ft { padding-bottom: 0; }
+.quick-deck {
+  appearance: none;
+  width: 100%;
+  min-height: var(--finger);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 16px;
+  border: 0;
+  border-bottom: 1px solid var(--line-3);
+  background: transparent;
+  color: var(--fg-1);
+  font-family: var(--sans);
+  font-size: 15px;
+  text-align: start;
+}
+.quick-deck .qd-w { color: var(--fg-4); font-family: var(--mono); font-size: 12px; }
+.quick-deck .qd-t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.quick-deck .qd-c { color: var(--fg-4); font-size: 11px; }
+.qf-acts { display: grid; grid-template-columns: 1fr 1.4fr 1fr; }
+.qf-acts button {
+  appearance: none;
+  min-height: 52px;
+  border: 0;
+  border-left: 1px solid var(--line-3);
+  background: transparent;
+  color: var(--fg-2);
+  font-family: var(--sans);
+  font-size: 15px;
+}
+.qf-acts button:first-child { border-left: 0; }
+.qf-acts button[data-act="save"] { color: var(--fg-1); font-weight: 500; }
+.qf-acts button:disabled { color: var(--fg-5); }
+.qf-acts button:active:not(:disabled) { background: var(--line-2); }
+/* the other decks, over the fields; the deck's row and the buttons stay under the thumb */
+.quick-decks {
+  position: absolute;
+  top: calc(var(--safe-t) + 6px);
+  left: 0;
+  right: 0;
+  bottom: calc(96px + var(--safe-b));
+  z-index: 2;
+  overflow: auto;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+}
+/* the list sits low, under the thumb, and still scrolls to its top */
+.quick-decks > :first-child { margin-top: auto; }
+html[data-keyboard] .quick-decks { bottom: 96px; }
+.quick-decks .qd-row {
+  appearance: none;
+  flex-shrink: 0;
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 16px;
+  border: 0;
+  border-top: 1px solid var(--line-3);
+  background: transparent;
+  color: var(--fg-1);
+  font-family: var(--sans);
+  font-size: 16px;
+  text-align: start;
+}
+.quick-decks .qd-row[data-on="1"] { background: var(--line-3); }
+.quick-decks .qd-at { color: var(--fg-4); font-family: var(--mono); font-size: 11.5px; flex-shrink: 0; }
+
+/* a phone on its side: the same, the sides clear of the notch */
+html[data-shape="phone"] .top { padding-left: max(14px, var(--safe-l)); padding-right: max(14px, var(--safe-r)); }

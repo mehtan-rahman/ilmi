@@ -77,7 +77,9 @@ function TabBar({ pane, index, canClosePane }: TabBarProps) {
 export function Canvas() {
   const panes = useApp((s) => s.panes);
   const setPanes = useApp((s) => s.setPanes);
-  const covered = useApp((s) => s.paletteOpen || s.tweaksOpen);
+  const covered = useApp((s) => s.paletteOpen || s.tweaksOpen || s.quickCard !== null);
+  // a phone draws one page: no tabs (milestone 56)
+  const phone = useApp((s) => s.phone);
   const onOpen = (path: string, opts: OpenOpts) => openNode(path, opts);
   return (
     <div className="canvas">
@@ -90,7 +92,7 @@ export function Canvas() {
             data-active={pi === panes.active ? '1' : '0'}
             onMouseDown={() => { if (pi !== panes.active) { setPanes((s) => activatePane(s, pi)); rememberTab(); } }}
           >
-            <TabBar pane={pane} index={pi} canClosePane={panes.panes.length > 1} />
+            {!phone && <TabBar pane={pane} index={pi} canClosePane={panes.panes.length > 1} />}
             <div className="pane-body">
               {tab && <Lens key={tab.key} id={tab.id} active={pi === panes.active && !covered} onOpen={onOpen} />}
             </div>

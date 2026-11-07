@@ -21,7 +21,7 @@ import { cleanBudget, dueToday, sessionItems } from './items.js';
 import { INTAKE, SESSION, notesPath, queueId, queueScope } from './names.js';
 import { bookShown, inspectorShown } from './layout.js';
 import { activeTab, dropTabs, emptyPanes, openTab, retarget, type OpenOpts, type Panes } from './panes.js';
-import { NEVER, collectionRows, collectionsHome, isMobile, loadPlatform, setCollectionsHome } from './platform.js';
+import { NEVER, collectionRows, collectionsHome, isMobile, isPhone, loadPlatform, setCollectionsHome } from './platform.js';
 import { addRecent, decideStart, forgetRecent, vaultName } from './recents.js';
 import { STARTER_TEXT, STARTER_TITLE } from './starter.js';
 import { RAIL_DEFAULT, addTab, clampRail, notebookOf } from './tabs.js';
@@ -615,10 +615,10 @@ export async function openVault(path: string): Promise<Vault> {
     width: Math.min(INSP_MAX, Math.max(INSP_MIN, state.inspector?.width ?? INSP_DEFAULT)),
     open: state.inspector?.open ?? (!mobile && window.innerWidth > 1180),
   };
-  // the last tab comes back, except a session; nothing remembered opens the day
+  // the last tab comes back, except a session; nothing remembered opens the day, and on a phone the day is the face
   let panes = emptyPanes();
   const tab = state.tab;
-  if (tab !== undefined && tab !== SESSION && (tab === '' || tab === INTAKE || queueScope(tab) || vault.documents().includes(tab) || vault.pdfs().includes(tab) || (await vault.fs.stat(vault.abs(tab)))?.isDir)) {
+  if (!isPhone() && tab !== undefined && tab !== SESSION && (tab === '' || tab === INTAKE || queueScope(tab) || vault.documents().includes(tab) || vault.pdfs().includes(tab) || (await vault.fs.stat(vault.abs(tab)))?.isDir)) {
     panes = openTab(panes, tab);
   } else {
     panes = openTab(panes, queueId('today'));
@@ -633,7 +633,7 @@ export async function openVault(path: string): Promise<Vault> {
   const s0 = useApp.getState();
   useApp.setState({
     open, sidebar, inspector, panes, docs: {}, queue: [], budget: cleanBudget(state.budget), clipDir: cleanClipDir(state.clippings), log: [], session: null, sessionEl: null, selectedCard: null, reveal: null,
-    started: true, sideSheet: false, namingVault: false, gone: s0.gone.filter((p) => p !== path), notice: null, fileOver: null, intakeFiles: [], order: vault.order, railFolded, railWidth: clampRail(state.railWidth ?? RAIL_DEFAULT), deckViews: cleanViews(state.decks),
+    started: true, sideSheet: false, namingVault: false, gone: s0.gone.filter((p) => p !== path), notice: null, fileOver: null, intakeFiles: [], order: vault.order, railFolded, railWidth: clampRail(state.railWidth ?? RAIL_DEFAULT), deckViews: cleanViews(state.decks), lastDeck: typeof state.lastDeck === 'string' ? state.lastDeck : null, quickCard: null,
     folds: cleanFolds(state.folds), reviews, lensViews: {}, examFilter: null,
     notSame: await vault.loadNotSame().catch(() => []),
   });
@@ -859,6 +859,11 @@ export function openInitialVault(): Promise<void> {
         await smokePageInk();
         return;
       }
+      if (mode === 'phone' && isMobile()) {
+        const { smokePhone } = await import('./smoke.js');
+        await smokePhone();
+        return;
+      }
       if (mode === 'touch' && isMobile()) {
         const { smokeTouch } = await import('./smoke.js');
         await smokeTouch();
@@ -867,8 +872,8 @@ export function openInitialVault(): Promise<void> {
       if (path) {
         const vault = await openVault(await devCollection(path));
         if (mode) {
-          const { smoke, smokeReader, smokeCards, smokeIntake, smokeQueue, smokeLoop, smokeShots, smokeDeck, smokePri, smokeGrowth, smokeOverload, smokeFaces, smokeCardsText, smokeAnki, smokeMath, smokeEpub, smokeClip, smokeClipping, smokePlugins, smokeDictionary, smokeRender, smokeLive, smokeBlocks, smokeUse, smokeLand, smokeNest, smokeTabs, smokeDecks, smokeTour, smokeNotes, smokeEditing, smokeTree, smokeInsert, smokeTabs2, smokeListCards, smokeArabic, smokeRest, smokeBothWays, smokeNumbers, smokeOpen, smokeExam, smokeSame, smokeSections, smokeBook, smokeBooks, smokeTextSections, smokeZoom, smokeCadence, smokeReadme, smokeSync, smokeNudge, smokeStore, smokeCrdt, smokeStorage, smokeTouchMac, smokeInkMac, smokePageInkMac } = await import('./smoke.js');
-          const run = { reader: smokeReader, cards: smokeCards, intake: smokeIntake, queue: smokeQueue, loop: smokeLoop, shots: smokeShots, deck: smokeDeck, pri: smokePri, growth: smokeGrowth, overload: smokeOverload, faces: smokeFaces, 'cards-text': smokeCardsText, anki: smokeAnki, math: smokeMath, epub: smokeEpub, clip: smokeClip, clipping: smokeClipping, plugins: smokePlugins, dictionary: smokeDictionary, render: smokeRender, live: smokeLive, blocks: smokeBlocks, use: smokeUse, land: smokeLand, nest: smokeNest, tabs: smokeTabs, decks: smokeDecks, tour: smokeTour, notes: smokeNotes, editing: smokeEditing, tree: smokeTree, insert: smokeInsert, tabs2: smokeTabs2, listcards: smokeListCards, arabic: smokeArabic, rest: smokeRest, bothways: smokeBothWays, numbers: smokeNumbers, open: smokeOpen, exam: smokeExam, same: smokeSame, sections: smokeSections, book: smokeBook, books: smokeBooks, textsections: smokeTextSections, zoom: smokeZoom, cadence: smokeCadence, readme: smokeReadme, sync: smokeSync, nudge: smokeNudge, store: smokeStore, crdt: smokeCrdt, storage: smokeStorage, touch: smokeTouchMac, ink: smokeInkMac, pageink: smokePageInkMac }[mode] ?? smoke;
+          const { smoke, smokeReader, smokeCards, smokeIntake, smokeQueue, smokeLoop, smokeShots, smokeDeck, smokePri, smokeGrowth, smokeOverload, smokeFaces, smokeCardsText, smokeAnki, smokeMath, smokeEpub, smokeClip, smokeClipping, smokePlugins, smokeDictionary, smokeRender, smokeLive, smokeBlocks, smokeUse, smokeLand, smokeNest, smokeTabs, smokeDecks, smokeTour, smokeNotes, smokeEditing, smokeTree, smokeInsert, smokeTabs2, smokeListCards, smokeArabic, smokeRest, smokeBothWays, smokeNumbers, smokeOpen, smokeExam, smokeSame, smokeSections, smokeBook, smokeBooks, smokeTextSections, smokeZoom, smokeCadence, smokeReadme, smokeSync, smokeNudge, smokeStore, smokeCrdt, smokeStorage, smokeTouchMac, smokePhoneMac, smokeInkMac, smokePageInkMac } = await import('./smoke.js');
+          const run = { reader: smokeReader, cards: smokeCards, intake: smokeIntake, queue: smokeQueue, loop: smokeLoop, shots: smokeShots, deck: smokeDeck, pri: smokePri, growth: smokeGrowth, overload: smokeOverload, faces: smokeFaces, 'cards-text': smokeCardsText, anki: smokeAnki, math: smokeMath, epub: smokeEpub, clip: smokeClip, clipping: smokeClipping, plugins: smokePlugins, dictionary: smokeDictionary, render: smokeRender, live: smokeLive, blocks: smokeBlocks, use: smokeUse, land: smokeLand, nest: smokeNest, tabs: smokeTabs, decks: smokeDecks, tour: smokeTour, notes: smokeNotes, editing: smokeEditing, tree: smokeTree, insert: smokeInsert, tabs2: smokeTabs2, listcards: smokeListCards, arabic: smokeArabic, rest: smokeRest, bothways: smokeBothWays, numbers: smokeNumbers, open: smokeOpen, exam: smokeExam, same: smokeSame, sections: smokeSections, book: smokeBook, books: smokeBooks, textsections: smokeTextSections, zoom: smokeZoom, cadence: smokeCadence, readme: smokeReadme, sync: smokeSync, nudge: smokeNudge, store: smokeStore, crdt: smokeCrdt, storage: smokeStorage, touch: smokeTouchMac, phone: smokePhoneMac, ink: smokeInkMac, pageink: smokePageInkMac }[mode] ?? smoke;
           // the smokes before 40 expect the inspector wherever they open it: the room rule is the tour's to check
           if (mode !== 'tour') useApp.setState({ inspForced: true });
           await run(vault);
@@ -944,6 +949,12 @@ export function note(line: string): void {
   useApp.setState((s) => ({ log: [line, ...s.log].slice(0, 6) }));
 }
 
+/** The deck a quick card went to is the one the next starts on, here. */
+export function rememberDeck(path: string): void {
+  useApp.setState({ lastDeck: path });
+  queueSave({ lastDeck: path });
+}
+
 export function rememberTab(): void {
   queueSave({ tab: activeTab(useApp.getState().panes)?.id ?? '' });
 }
@@ -970,7 +981,7 @@ export function setSidebar(patch: Partial<Sidebar>): void {
  */
 export function toggleSidebar(): void {
   const s = useApp.getState();
-  if (s.mobile && window.innerWidth <= window.innerHeight) useApp.setState({ sideSheet: !s.sideSheet });
+  if (s.phone || (s.mobile && window.innerWidth <= window.innerHeight)) useApp.setState({ sideSheet: !s.sideSheet });
   else setSidebar({ hidden: !s.sidebar.hidden });
 }
 

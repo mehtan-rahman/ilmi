@@ -19,7 +19,11 @@ import type { OpenOpts } from './panes.js';
 import { clozeHTML, faceDir, richHTML } from './Reader.js';
 import { dirAttr } from '../reader/index.js';
 import { useApp } from './store.js';
-import { openCard, openNode, openSession, postponeRest, refreshQueue, startSession } from './vault.js';
+import { currentVault, openCard, openNode, openSession, postponeRest, refreshQueue, startSession } from './vault.js';
+import { actOnDoc, actionWords, atEndOf, docLine, twoLines, type DocAction } from './Session.js';
+import { notify } from './land.js';
+import { restore } from './deck.js';
+import type { ReadItem, SectionItem, WriteItem } from '../schedule/index.js';
 import './queue.css';
 import { appNow } from './clock.js';
 
@@ -84,6 +88,30 @@ export function QueuePath({ item, docs, by }: { item: QueueItem; docs: Record<st
   );
 }
 
+/** A topic's row on a phone (milestone 56): ⏎ `p` `d` as buttons, acting from the row. What was written can be undone from the notice. */
+function TopicActs({ item, now }: { item: ReadItem | WriteItem | SectionItem; now: Date }) {
+  const pages = useApp((s) => !!s.docs[item.path]?.pdf);
+  const atEnd = atEndOf(item, pages, null);
+  const words = actionWords(item, now, atEnd);
+  const act = (e: MouseEvent, action: DocAction) => {
+    e.stopPropagation();
+    const vault = currentVault();
+    if (!vault) return;
+    const line = docLine(item, action, now);
+    void vault.read(item.path).then(({ doc }) => {
+      const before = structuredClone(doc);
+      return actOnDoc(item, action).then(() => notify(line, null, () => restore(vault, [{ path: item.path, doc: before }])));
+    }).catch(console.error);
+  };
+  return (
+    <span className="topic-acts">
+      <button type="button" data-act="on" onClick={(e) => act(e, atEnd ? 'done' : 'on')}>{twoLines(words.on)}</button>
+      <button type="button" data-act="postpone" onClick={(e) => act(e, 'postpone')}>{words.postpone}</button>
+      <button type="button" data-act="done" onClick={(e) => act(e, 'done')}>{words.done}</button>
+    </span>
+  );
+}
+
 export function Queue({ scope, active }: Props) {
   const all = useApp((s) => s.queue);
   const docs = useApp((s) => s.docs);
@@ -92,6 +120,7 @@ export function Queue({ scope, active }: Props) {
   // the row names its file by its path; the tweak brings the title back
   const by = useApp((s) => (s.queueTitles ? 'title' : 'path'));
   const examFilter = useApp((s) => s.examFilter);
+  const phone = useApp((s) => s.phone);
   const [cursor, setCursor] = useState(0);
   const [rows, setRows] = useState(QUEUE_ROWS);
   const now = appNow();
@@ -188,7 +217,7 @@ export function Queue({ scope, active }: Props) {
                 data-el={item.kind}
                 data-fresh={isFresh(item) ? '1' : '0'}
                 data-below={i >= foldAt ? '1' : '0'}
-                onMouseEnter={() => setCursor(i)}
+                onMouseEnter={phone ? undefined : () => setCursor(i)}
                 onClick={(e) => open(item, clickOpts(e))}
               >
                 <span className="mark" data-el={markOf(item)}>{glyphOf(item)}</span>
@@ -203,6 +232,7 @@ export function Queue({ scope, active }: Props) {
                 </span>
                 <span className="pri">{item.pri !== PRI_DEFAULT && <b>p {item.pri}</b>}</span>
                 <span className="due" title={ivl ? `interval ${ivl}` : undefined}>{item.kind === 'card' && (item.buried || item.held) ? 'tomorrow' : item.pulled ? dueWhen(dayOf(item.dueAt), now) : dueWhen(item.due, now)}</span>
+                {phone && item.kind !== 'card' && <TopicActs item={item} now={now} />}
               </li>
             );
             if (i !== foldAt) return row;

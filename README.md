@@ -117,6 +117,29 @@ Arabic with two typeset books, to open and try.
 `design/sim/` holds the simulation this was tuned on: at forty-five minutes
 a day, three textbooks a semester finish.
 
+## Clipping from a phone
+
+On an iPhone the app is the day's cards and a quick card (`docs/guide.md`,
+*On a phone*). Safari's share sheet needs native code the app does not have
+yet, so a page is clipped through a Shortcut. In the Shortcuts app make a new
+shortcut, turn on *Show in Share Sheet* and have it receive URLs and Safari
+web pages, and give it four actions:
+
+1. **URL Encode** the *Shortcut Input*.
+2. **Open App**, ilmi.
+3. **Wait**, 1 second.
+4. **Open URLs**, with `ilmi://new?url=` followed by the *URL Encoded Text*.
+
+The second and third are there because a link that itself starts the app is
+lost: the windowing library under the app does not pass one on. A link to an
+app that is running lands.
+
+Then Share, your shortcut, in Safari: ilmi opens, fetches the page, lands it
+as a frozen source and opens it, in the folder `clippings go to` in the tweaks.
+Add `&folder=` to the link for another folder. The bookmarklet in
+`docs/guide.md` does the same from Safari's bookmarks, with the selection as
+the text.
+
 ## Documentation
 
 - `docs/guide.md`: using the app, from the collection to the queue.
@@ -160,9 +183,9 @@ docs/           guide, keys, screenshots, development notes
 ## Status
 
 Version 0.1, built for one person's semester and in daily use. macOS, and
-the same app on an iPad from source (`docs/development.md`, *The iPad*; run
-in the simulator so far, not on a device); no other platform has been built
-or tried. A collection is an SQLite database under the app's data
+the same app on an iPad and an iPhone from source (`docs/development.md`,
+*The iPad*; run in the simulator so far, not on a device); no other platform
+has been built or tried. A collection is an SQLite database under the app's data
 directory, exported as files on request, and syncs between devices as a git
 repository over such an export (`docs/guide.md`, *Sync*). Around twelve hundred tests
 cover the format, the vault, and the schedule; the window is checked by the

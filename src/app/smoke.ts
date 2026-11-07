@@ -11017,7 +11017,8 @@ export async function smokePageInk(): Promise<void> {
     must(Math.abs(s0.at.y - pr.top) < 1.5 && Math.abs(s0.at.x - pr.left) < 1.5 && Math.abs(s0.at.w - pr.width) < 1.5, `the canvas lies on the page, to a point (${s0.at.x.toFixed(1)},${s0.at.y.toFixed(1)} and ${pr.left.toFixed(1)},${pr.top.toFixed(1)})`);
     await pen(true);
     const DRAGS: [number, number, number, number][] = [
-      [0.20, 0.22, 0.62, 0.20], [0.20, 0.30, 0.62, 0.31], [0.26, 0.38, 0.52, 0.46], [0.70, 0.22, 0.74, 0.44], [0.16, 0.52, 0.80, 0.50],
+      // low enough on the page to lie clear of the Mac's made-up lines, which its third run tells apart from these
+      [0.20, 0.30, 0.62, 0.28], [0.20, 0.38, 0.62, 0.39], [0.26, 0.46, 0.52, 0.54], [0.70, 0.30, 0.74, 0.52], [0.16, 0.60, 0.80, 0.58],
     ];
     const px = (f: number, side: 'x' | 'y') => (side === 'x' ? pr.left + f * pr.width : pr.top + f * pr.height);
     const sheetNow = async () => (await state()).sheets.find((x) => x.id === sheet);

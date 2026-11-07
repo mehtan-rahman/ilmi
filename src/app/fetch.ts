@@ -36,7 +36,11 @@ export interface FetchedPdf extends Fetched {
 export async function readDroppedPdf(path: string): Promise<FetchedPdf> {
   const name = path.slice(path.lastIndexOf('/') + 1);
   if (!PDF_EXT.test(name)) throw new Error('not a pdf');
-  const bytes = new Uint8Array(await invoke<ArrayBuffer>('read_dropped_bytes', { path }));
+  return pdfOf(new Uint8Array(await invoke<ArrayBuffer>('read_dropped_bytes', { path })), name);
+}
+
+/** A PDF's bytes as an intake reads them. */
+export async function pdfOf(bytes: Uint8Array, name: string): Promise<FetchedPdf> {
   const r = await pdfText(bytes);
   return { title: r.title || titleFromFileName(name.replace(PDF_EXT, '')), text: r.text, bytes, pages: r.pages, chapters: r.chapters };
 }

@@ -815,7 +815,7 @@ export async function smokeDeck(vault: Vault): Promise<void> {
     await shot('deck-keys');
 
     // select the first row (still scheduled), reset it from the inspector, and watch its sr line go
-    const schedBlock = () => Array.from(document.querySelectorAll<HTMLElement>('.insp .block')).find((b) => b.querySelector('h6')?.textContent === 'schedule');
+    const schedBlock = () => Array.from(document.querySelectorAll<HTMLElement>('.insp .block')).find((b) => ['schedule', 'front to back'].includes(b.querySelector('h6')?.textContent ?? ''));
     const resetBtn = () => Array.from(document.querySelectorAll<HTMLButtonElement>('.insp .fr-toggle')).find((b) => b.textContent === 'reset');
     const row = rows()[0]!;
     const rowId = (await vault.read(DECK)).doc.blocks.find((b) => b.kind === 'card')?.id ?? '';
@@ -6426,12 +6426,10 @@ export async function smokeOpen(vault: Vault): Promise<void> {
       { title: 'Quantum statistics', pages: [['Bosons and fermions fill their states differently.']] },
     ];
     const BOOK = 'A short book of statistical physics';
-    const fixture = vault.abs('.ilmi/smoke-book.pdf');
-    await vault.fs.writeBytes(fixture, makeBookPdf(CH, BOOK));
     openIntake('library');
     await poll(() => q('.intake textarea'), 'the intake');
     const { intakeHooks } = await import('./Intake.js');
-    await intakeHooks.ingestFile!(fixture);
+    await intakeHooks.ingestPdf!(makeBookPdf(CH, BOOK), 'smoke-book.pdf');
     const detail = await poll(() => q<HTMLElement>('.intake-detail'), 'the book read', 15000);
     must(detail.querySelector('.stats')?.textContent?.includes('3 chapters'), `the intake counts its chapters ("${detail.querySelector('.stats')?.textContent}")`);
     await shot('open-pdf-intake');

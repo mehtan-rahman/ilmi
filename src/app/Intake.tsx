@@ -34,7 +34,7 @@ import {
 import { NEW_NAMES } from '../vault/index.js';
 import { CardText } from './CardText.js';
 import { importClipNode } from './clipping.js';
-import { APKG_EXT, EPUB_EXT, PDF_EXT, fetchReadable, readAnkiPackage, readDropped, readDroppedPdf, readEpub, type PageInfo } from './fetch.js';
+import { APKG_EXT, EPUB_EXT, PDF_EXT, fetchReadable, readAnkiPackage, readDropped, pdfOf, readDroppedPdf, readEpub, type PageInfo } from './fetch.js';
 import { PICK_EXT, dropRoutes } from './land.js';
 import { folderPaths, titleOf } from './names.js';
 import type { OpenOpts } from './panes.js';
@@ -51,7 +51,7 @@ interface PendingPdf {
 }
 
 /** Dev only: the smoke drops a file on the intake through here, since the OS drop cannot be faked. */
-export const intakeHooks: { ingestFile?: (path: string) => Promise<void> } = {};
+export const intakeHooks: { ingestFile?: (path: string) => Promise<void>; ingestPdf?: (bytes: Uint8Array, name: string) => Promise<void> } = {};
 
 /** The default name of a deck landed from text. */
 const DECK_NAME = 'cards';
@@ -225,7 +225,12 @@ export function Intake({ active, onOpen }: Props) {
   useEffect(() => {
     if (!import.meta.env.DEV) return;
     intakeHooks.ingestFile = ingestFile;
-    return () => { delete intakeHooks.ingestFile; };
+    // a smoke's fixture: since 59 nothing it makes in the collection is a file a drop could read
+    intakeHooks.ingestPdf = async (bytes, name) => {
+      const r = await pdfOf(bytes, name);
+      take(r.text, r.title, { bytes: r.bytes, pages: r.pages, ...(r.chapters?.length ? { chapters: r.chapters } : {}) }, null, true);
+    };
+    return () => { delete intakeHooks.ingestFile; delete intakeHooks.ingestPdf; };
   });
 
   // a pasted address into an empty field is fetched; pasted text is just text

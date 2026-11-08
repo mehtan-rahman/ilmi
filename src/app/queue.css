@@ -185,7 +185,7 @@
   margin-bottom: 3px;
 }
 .qlist li[data-fresh="1"] .body .src::after {
-  content: "New";
+  content: "new";
   flex-shrink: 0;
   margin-left: var(--s-2);
   font-family: var(--sans);

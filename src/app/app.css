@@ -633,9 +633,9 @@ html[data-shape="portrait"] .pane + .pane { border-left: 0; border-top: 1px soli
   border-bottom: 1px solid var(--accent-soft);
 }
 .card-span .cs-q { color: var(--fg-1); }
-.card-span .cs-q::before { content: "Q"; display: inline-block; width: 1.4em; font-family: var(--sans); font-size: 0.68em; font-weight: 600; color: var(--fg-4); vertical-align: 0.1em; }
+.card-span .cs-q::before { content: "q"; display: inline-block; width: 1.4em; font-family: var(--sans); font-size: 0.68em; font-weight: 600; color: var(--fg-4); vertical-align: 0.1em; }
 .card-span .cs-a { display: block; margin-top: 4px; color: var(--fg-3); font-style: italic; }
-.card-span .cs-a::before { content: "A"; display: inline-block; width: 1.4em; font-family: var(--sans); font-size: 0.68em; font-weight: 600; color: var(--fg-4); font-style: normal; vertical-align: 0.1em; }
+.card-span .cs-a::before { content: "a"; display: inline-block; width: 1.4em; font-family: var(--sans); font-size: 0.68em; font-weight: 600; color: var(--fg-4); font-style: normal; vertical-align: 0.1em; }
 .card-span .cs-arrow { font-family: var(--sans); font-size: 0.8em; color: var(--fg-4); }
 .deck-view .card-span:first-of-type { border-top: 0; }
 .deck-view .card-span {

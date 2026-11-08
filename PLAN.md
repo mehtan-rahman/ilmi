@@ -52,8 +52,20 @@ Done 2026-09-16.
 Notes: Vite root is the repo root (`index.html` → `src/app/main.tsx`);
 `vite.config.ts` doubles as the vitest config, so import `defineConfig` from
 `vitest/config` there. Vite 8 has no esbuild; keep `minify` boolean. Tokens in
-`src/app/tokens.css` (gold baked in as the accent, `--radius: 2px`, no
-shadows; eink strips shadows/transitions globally). Fonts are bundled via
+`src/app/tokens.css` (gold baked in as the accent, `--radius: 2px`; docked
+surfaces flat, and since the look pass of 2026-11-07 floating ones (the
+palette, menus, popovers, the welcome panel, a notice) carry one soft
+shadow, `--shadow-float`, with their hairline; the session card stays
+shadowless; eink strips shadows/transitions globally). Type roles since that
+pass: Source Serif 4 for reading and a document's title, IBM Plex Sans for
+all chrome (labels, tags, statuses, counts with tabular figures,
+placeholders), IBM Plex Mono only for key caps and code; six sizes
+(`--t-xs` 11 … `--t-2xl` 28) and a 4px spacing scale as tokens; fixed UI
+words stay lowercase in the source (the brief's copy rule) and are set in
+sentence case by CSS, never a user's names; icons are `icons.tsx`, one
+16px stroke set (a kind's old mark kept hidden in the text as `.gch`);
+status colours by meaning (`dueTone`: `--late` brick, due the accent, new
+`--fg-3`, later `--fg-4`). Fonts are bundled via
 `@fontsource`, no CDN. Store is `src/app/store.ts`; `window.ilmi.theme(name)`
 and `ilmi.cycleTheme()` are the console toggle until milestone 9. Rust was
 installed with rustup (minimal profile, `~/.cargo/bin`, not on the login

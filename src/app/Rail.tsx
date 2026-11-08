@@ -48,6 +48,7 @@ import { RAIL_INDENT, RAIL_PAD, TAB_DEPTH, foldedHeadings, notebookPages, outlin
 import { treeKey, typeahead } from './treeModel.js';
 import { useDoc } from './useDoc.js';
 import { createTab, noteAfter, placeNode, renameNode, setRailFolded, setRailWidth } from './vault.js';
+import { Glyph, Icon, Plus } from './icons.js';
 
 interface Props {
   /** The notebook's path. */
@@ -280,7 +281,7 @@ export function Notebook({ nb, page, active, onOpen, children }: Props) {
         {...rowDrag(geoms[i]!, surf, { draggable: false })}
         onClick={(e: MouseEvent) => onOpen(r.path, { cmdClick: e.metaKey || e.ctrlKey, shiftClick: e.shiftKey })}
       >
-        <span className="glyph" data-t="extract">{GLYPH.extract}</span>
+        <span className="glyph" data-t="extract"><Glyph g={GLYPH.extract} /></span>
         <span className="name">{plural(r.extracts ?? 0, 'extract')}</span>
       </div>
     );
@@ -324,9 +325,9 @@ export function Notebook({ nb, page, active, onOpen, children }: Props) {
             if (r.has && !r.overview) setOpen((o) => { const n = { ...o }; if (n[r.path]) delete n[r.path]; else n[r.path] = true; return n; });
           }}
         >
-          {r.has && !r.overview ? (r.open ? '▾' : '▸') : ''}
+          {r.has && !r.overview ? <Glyph g={r.open ? '▾' : '▸'} /> : ''}
         </span>
-        <span className="glyph" data-t={kind}>{GLYPH[kind]}</span>
+        <span className="glyph" data-t={kind}><Glyph g={GLYPH[kind]} /></span>
         {editingThis ? (
           <input
             className="rename"
@@ -349,8 +350,8 @@ export function Notebook({ nb, page, active, onOpen, children }: Props) {
         {asked > 0 && <span className="asking">delete with {asked} inside? ⌘⌫</span>}
         {!r.overview && !editingThis && !asked && (
           <span className="row-acts" onMouseDown={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
-            <span className="ra add" title="a note after this one" onClick={(e) => { e.stopPropagation(); after(r.path); }}>+</span>
-            <span className="ra more" title="more" onClick={(e) => rowMenu(e, r.path, true)}>···</span>
+            <span className="ra add" title="a note after this one" onClick={(e) => { e.stopPropagation(); after(r.path); }}><Glyph g="+" /></span>
+            <span className="ra more" title="more" onClick={(e) => rowMenu(e, r.path, true)}><Icon name="more" /><span className="gch">···</span></span>
           </span>
         )}
       </div>
@@ -382,21 +383,21 @@ export function Notebook({ nb, page, active, onOpen, children }: Props) {
     <div className="notebook" data-folded={folded ? '1' : '0'}>
       {folded ? (
         <nav className="tab-rail folded" aria-label="tabs">
-          <button type="button" className="rail-fold" title="show the tabs ⌃⌘T" onClick={() => setRailFolded(nb, false)}>»</button>
+          <button type="button" className="rail-fold" title="show the tabs ⌃⌘T" onClick={() => setRailFolded(nb, false)}><Glyph g="»" /></button>
           <span className="rail-count" title={plural(rows.filter((r) => !r.overview && !r.placeholder).length, 'tab')}>{rows.filter((r) => !r.overview && !r.placeholder).length}</span>
         </nav>
       ) : (
         <nav className="tab-rail" aria-label="tabs" ref={navRef} style={{ width }}>
           <div className="rail-head">
-            <button type="button" className="rail-add" title="a new note as a tab" onClick={() => add(childDirOf(nb), 'note', 'untitled')}>+ add tab</button>
+            <button type="button" className="rail-add" title="a new note as a tab" onClick={() => add(childDirOf(nb), 'note', 'untitled')}><Plus text="+ add tab" /></button>
             <button
               type="button"
               className="rail-more"
               title="a note, a source, a deck, a draft, or a file"
               onMouseDown={(e) => e.stopPropagation()}
               onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); setPlus(plus ? null : { x: r.left, y: r.bottom + 2 }); }}
-            >▾</button>
-            <button type="button" className="rail-fold" title="fold the tabs ⌃⌘T" onClick={() => setRailFolded(nb, true)}>«</button>
+            ><Icon name="caret" /><span className="gch">▾</span></button>
+            <button type="button" className="rail-fold" title="fold the tabs ⌃⌘T" onClick={() => setRailFolded(nb, true)}><Glyph g="«" /></button>
           </div>
           <div className="rail-rows" ref={boxRef} tabIndex={0} role="tree" aria-label="tabs" onKeyDown={onKey}>
             {rows.map((r, i) => (r.extracts !== undefined ? extractsRow(r, i) : <Fragment key={r.path}>{tabRow(r, i)}{outlineRows(r)}</Fragment>))}
@@ -418,12 +419,12 @@ export function Notebook({ nb, page, active, onOpen, children }: Props) {
         <div className="ctx-menu rail-menu" ref={plusRef} style={{ left: plus.x, top: plus.y }} onMouseDown={(e) => e.stopPropagation()} onContextMenu={(e) => e.preventDefault()}>
           {ADD.map(([type, label]) => (
             <div key={type} className="ci" onClick={() => { setPlus(null); add(childDirOf(nb), type); }}>
-              <span className="cg">{GLYPH[type]}</span>{label}
+              <span className="cg"><Glyph g={GLYPH[type]} /></span>{label}
             </div>
           ))}
           <div className="cd" />
           <div className="ci" onClick={() => { setPlus(null); void importFiles(childDirOf(nb)).catch(fail); }}>
-            <span className="cg">↧</span>import a file…
+            <span className="cg"><Glyph g="↧" /></span>import a file…
           </div>
         </div>
       )}

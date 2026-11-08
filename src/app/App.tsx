@@ -25,6 +25,7 @@ import { watchInk, watchLayout } from './ink.js';
 import './app.css';
 import './chrome.css';
 import './phone.css';
+import { Glyph } from './icons.js';
 
 /** Narrower than this and a drag on the handle hides the sidebar. */
 const SIDE_COLLAPSE = 80;
@@ -270,7 +271,7 @@ export function App() {
             <h6>workspace</h6>
             <Tree activeId={active} onOpen={onTreeOpen} />
             <SavedQueries activeId={active} />
-            {phone && <button type="button" className="side-find" onClick={() => useApp.setState({ paletteOpen: true, sideSheet: false })}><span className="g">⌕</span>open or run</button>}
+            {phone && <button type="button" className="side-find" onClick={() => useApp.setState({ paletteOpen: true, sideSheet: false })}><span className="g"><Glyph g="⌕" /></span><span className="lbl">open or run</span></button>}
           </div>
         )}
         {!mobile && <div className="side-resize" data-hidden={sidebar.hidden ? '1' : '0'} onMouseDown={startSideResize} />}

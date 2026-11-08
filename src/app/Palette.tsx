@@ -21,6 +21,7 @@ import { exportCollection } from './collections.js';
 import { notify } from './land.js';
 import { containerOf, currentVault, openBlock, openCard, openIntake, openNode, openVault, postponeRest, searchText, startSession, toggleInspector, toggleSidebar } from './vault.js';
 import { appNow } from './clock.js';
+import { Glyph } from './icons.js';
 
 const COMMANDS: Command[] = [
   { id: 'enter', title: 'enter queue' },
@@ -236,7 +237,7 @@ export function Palette() {
     <div className="palette-overlay" onMouseDown={dismiss}>
       <div className="palette-panel" onMouseDown={(e) => e.stopPropagation()}>
         <div className="palette-input">
-          <span className="g">⌕</span>
+          <span className="g"><Glyph g="⌕" /></span>
           <input dir="auto" ref={inputRef} value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={onKey} placeholder={attaching?.step === 'place' ? `${newName} in…` : attaching ? `notes on ${titleOf(attaching.pdf, docs, vault).slice(0, 40)}` : moving ? `move § ${plainMath(moving.text).slice(0, 40)} to…` : studying ? 'study…' : 'open or run'} spellCheck={false} />
           <kbd>esc</kbd>
         </div>
@@ -244,7 +245,7 @@ export function Palette() {
           {results.length === 0 && (!asking || found?.q === asking) && <div className="palette-empty">{asking && reading < 1 ? 'nothing yet' : 'nothing'}</div>}
           {results.map((it, i) => (
             <div key={it.key} className="palette-row" data-sel={i === sel ? '1' : '0'} data-t={it.tag} onMouseEnter={() => setSel(i)} onClick={() => run(it)}>
-              <span className="pg" data-t={it.tag}>{ENTRY_GLYPH[it.tag]}</span>
+              <span className="pg" data-t={it.tag}><Glyph g={ENTRY_GLYPH[it.tag]} /></span>
               {it.mark ? <Marked title={it.title} mark={it.mark} /> : <MathText className="pt" dir="auto" text={it.math ?? it.title} />}
               <MathText className="psub" dir="auto" text={it.sub} />
               <span className="ptag">{it.tag}</span>
@@ -252,9 +253,9 @@ export function Palette() {
           ))}
         </div>
         <div className="palette-foot">
-          <span><kbd>↑↓</kbd> move</span><span className="dot" />
-          <span><kbd>↵</kbd> open</span><span className="dot" />
-          <span><kbd>esc</kbd> close</span>
+          <span className="hint"><kbd>↑↓</kbd> <span className="hw">move</span></span>
+          <span className="hint"><kbd>↵</kbd> <span className="hw">open</span></span>
+          <span className="hint"><kbd>esc</kbd> <span className="hw">close</span></span>
           <span className="grow" />
           {reading < 1 && <span>{Math.round(reading * 100)}% read</span>}
           <span>{results.length}</span>

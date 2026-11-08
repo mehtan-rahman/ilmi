@@ -20,6 +20,7 @@ import { StorageFields, TextField } from './StorageFields.js';
 import { keepOf, storageReady } from './storage.js';
 import { open as pickDirectory } from '@tauri-apps/plugin-dialog';
 import { currentVault, openVault, setBudget, setClipDir } from './vault.js';
+import { Glyph } from './icons.js';
 
 const THEME_LABEL: Record<Theme, string> = { light: 'light', dark: 'dark', eink: 'e-ink' };
 
@@ -255,7 +256,7 @@ export function Tweaks() {
     <div className="tweaks tw-rows">
       <div className="tw-hd">
         <span>tweaks</span>
-        <button type="button" className="tw-x" onClick={close}>×</button>
+        <button type="button" className="tw-x" onClick={close}><Glyph g="×" /></button>
       </div>
       <div className="tw-row">
         <span className="tw-lbl">theme</span>

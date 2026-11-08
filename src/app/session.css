@@ -14,19 +14,21 @@
   position: relative;
 }
 .recall-meta {
-  font-family: var(--mono);
-  font-size: 10.5px;
-  color: var(--fg-4);
-  letter-spacing: 0.08em;
-  margin-bottom: 14px;
+  font-family: var(--sans);
+  font-size: var(--t-xs);
+  color: var(--fg-3);
+  margin-bottom: var(--s-4);
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: var(--s-3);
   max-width: var(--card-w);
   width: 100%;
   white-space: nowrap;
   overflow: hidden;
+  font-variant-numeric: tabular-nums;
 }
+.recall-meta .el-tag { display: inline-block; font-weight: 500; }
+.recall-meta .el-tag::first-letter, .recall-wrap .card-meta .cm-type::first-letter { text-transform: uppercase; }
 .recall-meta .sess-count { flex-shrink: 0; }
 .recall-meta .el-tag[data-el="card"] { color: var(--el-card); }
 .recall-meta .meta-srclink {
@@ -44,9 +46,9 @@
   white-space: nowrap;
   min-width: 0;
 }
-.recall-meta .meta-srclink .ms-arrow { color: var(--fg-5); font-size: 9px; }
+.recall-meta .meta-srclink .ms-arrow { color: var(--fg-5); font-size: var(--t-xs); }
 .recall-meta .meta-srclink:hover,
-.recall-meta .meta-srclink:hover .ms-arrow { color: var(--accent); }
+.recall-meta .meta-srclink:hover .ms-arrow { color: var(--fg-1); }
 
 /* ‹ › through the queue */
 .sess-nav { display: inline-flex; gap: 2px; margin-right: 4px; }
@@ -55,17 +57,17 @@
   background: transparent;
   border: 1px solid var(--line-1);
   border-radius: var(--radius);
-  width: 18px;
-  height: 18px;
+  width: 22px;
+  height: 22px;
   display: grid;
   place-items: center;
   cursor: pointer;
-  color: var(--fg-3);
-  font-size: 12px;
-  line-height: 1;
+  color: var(--fg-2);
   padding: 0;
+  --ic: 12px;
 }
-.sess-nav .sn-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.sess-nav .sn-btn .ic-flip { transform: scaleX(-1); }
+.sess-nav .sn-btn:hover:not(:disabled) { border-color: color-mix(in oklab, var(--fg) calc(30% * var(--chrome)), transparent); color: var(--fg-1); }
 .sess-nav .sn-btn:disabled { opacity: 0.32; cursor: default; }
 
 /* the card: sized to what it holds, the question and, once revealed, the
@@ -104,19 +106,18 @@
   background: transparent;
   border: 0;
   border-top: 1px solid var(--line-3);
-  padding: 7px 28px 8px;
+  padding: 8px 28px 9px;
   text-align: start;
   cursor: pointer;
   display: flex;
   align-items: center;
-  gap: 6px;
-  color: var(--fg-5);
-  font-family: var(--mono);
-  font-size: 10.5px;
+  gap: 8px;
+  color: var(--fg-4);
+  font-family: var(--sans);
+  font-size: var(--t-xs);
   white-space: nowrap;
 }
-.recall-wrap .card .face-hint .kbd { color: var(--fg-4); }
-.recall-wrap .card .face-hint:hover, .recall-wrap .card .face-hint:hover .kbd { color: var(--accent); }
+.recall-wrap .card .face-hint:hover { color: var(--fg-2); }
 
 /* a cloze: the blank stays hidden in the question until revealed */
 .recall-wrap .card .cloze {
@@ -156,24 +157,24 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 14px;
+  gap: var(--s-4);
   width: 100%;
   max-width: var(--card-w);
-  margin-top: 12px;
+  margin-top: var(--s-3);
   flex-shrink: 0;
-  font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.04em;
-  color: var(--fg-4);
+  font-family: var(--sans);
+  font-size: var(--t-xs);
+  color: var(--fg-3);
+  font-variant-numeric: tabular-nums;
 }
-.recall-wrap .card-meta .cm-type { color: var(--fg-3); letter-spacing: 0.08em; }
-.recall-wrap .card-meta .cm-due[data-due="1"] { color: var(--accent); }
+.recall-wrap .card-meta .cm-type { color: var(--fg-2); font-weight: 500; display: inline-block; }
+.recall-wrap .card-meta .cm-due[data-due="1"] { color: var(--accent); font-weight: 500; }
 
 /* the four grades */
 .grades {
   display: flex;
-  gap: 1px;
-  margin-top: 12px;
+  gap: var(--s-2);
+  margin-top: var(--s-3);
   width: 100%;
   max-width: var(--card-w);
   flex-shrink: 0;
@@ -182,36 +183,28 @@
   flex: 1;
   appearance: none;
   border: 1px solid var(--line-1);
-  border-radius: 0;
-  background: transparent;
-  color: var(--fg-2);
+  border-radius: var(--radius);
+  background: var(--paper);
+  color: var(--fg-1);
   font-family: var(--sans);
-  font-size: 12.5px;
-  padding: 12px 0 10px;
+  font-size: var(--t-md);
+  padding: 11px 0 10px;
   cursor: default;
   text-align: center;
-  margin-left: -1px;
 }
-.grades button:first-child { margin-left: 0; border-top-left-radius: var(--radius); border-bottom-left-radius: var(--radius); }
-.grades button:last-child { border-top-right-radius: var(--radius); border-bottom-right-radius: var(--radius); }
-.grades button:hover { background: var(--line-3); color: var(--fg-1); }
+.grades button:hover { border-color: color-mix(in oklab, var(--fg) calc(30% * var(--chrome)), transparent); }
 .grades[data-revealed="0"] button { opacity: 0.4; }
 .grades button .label { display: block; font-weight: 500; }
+.grades button .label::first-letter { text-transform: uppercase; }
 .grades button .gap {
   display: block;
-  font-family: var(--mono);
-  font-size: 10px;
-  color: var(--fg-4);
-  margin-top: 4px;
+  font-family: var(--sans);
+  font-size: var(--t-xs);
+  color: var(--fg-3);
+  margin-top: 3px;
   font-variant-numeric: tabular-nums;
 }
-.grades button kbd {
-  font-family: var(--mono);
-  font-size: 9.5px;
-  color: var(--fg-4);
-  margin-left: 4px;
-  vertical-align: 0.15em;
-}
+.grades button kbd { margin-left: 6px; vertical-align: 1px; }
 [data-theme="eink"] .grades button:active { background: var(--fg); color: var(--paper); }
 
 /* a reading or writing element: the document, then the bar at the foot */
@@ -231,7 +224,7 @@
   background: var(--paper);
   border: 1px solid var(--line-1);
   border-radius: var(--radius);
-  padding: 9px 10px 10px;
+  padding: 10px;
 }
 .session-bar .sb-meta {
   display: flex;
@@ -240,8 +233,9 @@
   margin-bottom: 8px;
   padding: 0 3px;
 }
-.session-bar .sb-count { font-family: var(--mono); font-size: 10px; color: var(--fg-4); }
-.session-bar .sb-kind { font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.08em; }
+.session-bar .sb-count { font-size: var(--t-xs); color: var(--fg-3); font-variant-numeric: tabular-nums; }
+.session-bar .sb-kind { font-size: var(--t-xs); font-weight: 500; display: inline-block; }
+.session-bar .sb-kind::first-letter { text-transform: uppercase; }
 .session-bar .sb-kind[data-el="read"] { color: var(--el-read); }
 .session-bar .sb-kind[data-el="write"] { color: var(--el-write); }
 .session-bar .sb-kind[data-el="section"] { color: var(--el-write); }
@@ -255,11 +249,11 @@
   min-width: 0;
   white-space: nowrap;
 }
-.session-bar .sb-g { font-family: var(--serif); font-size: 13px; color: var(--fg-4); flex-shrink: 0; }
+.session-bar .sb-g { color: var(--fg-4); flex-shrink: 0; display: inline-flex; align-self: center; --ic: 13px; }
 .session-bar .sb-g[data-el="read"] { color: var(--el-read); }
 .session-bar .sb-g[data-el="section"] { color: var(--el-write); }
 .session-bar .sb-what { font-family: var(--serif); font-size: 13.5px; color: var(--fg-1); overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-.session-bar .sb-where { font-family: var(--mono); font-size: 10px; color: var(--fg-4); flex-shrink: 0; }
+.session-bar .sb-where { font-size: var(--t-xs); color: var(--fg-3); flex-shrink: 0; }
 .session-bar .sb-actions { display: flex; gap: 8px; }
 .session-bar .sb-actions button {
   display: flex;
@@ -267,24 +261,17 @@
   justify-content: space-between;
   gap: 8px;
   flex: 1;
-  padding: 9px 13px;
-  background: transparent;
+  padding: 9px 12px;
+  background: var(--paper);
   border: 1px solid var(--line-1);
   border-radius: var(--radius);
   cursor: pointer;
 }
-.session-bar .sb-actions button:hover { border-color: var(--fg-4); }
+.session-bar .sb-actions button:hover { border-color: color-mix(in oklab, var(--fg) calc(30% * var(--chrome)), transparent); }
 .session-bar .sb-actions button:first-child { border-color: color-mix(in oklab, var(--accent) 30%, transparent); }
 .session-bar .sb-actions button:first-child:hover { border-color: var(--accent); background: var(--accent-soft); }
-.session-bar .sb-actions .ra-l { font-family: var(--sans); font-size: 13px; color: var(--fg-1); }
-.session-bar .sb-actions button kbd {
-  font-family: var(--mono);
-  font-size: 9.5px;
-  border: 1px solid var(--line-1);
-  border-radius: var(--radius);
-  padding: 0 4px;
-  color: var(--fg-4);
-}
+.session-bar .sb-actions .ra-l { font-family: var(--sans); font-size: var(--t-sm); color: var(--fg-1); }
+.session-bar .sb-actions .ra-l::first-letter { text-transform: uppercase; }
 
 /* an Arabic face: taller lines for the ḥarakāt, upright, no letter-spacing */
 .recall-wrap .card [dir="rtl"] { line-height: 1.9; letter-spacing: 0; font-synthesis: weight; }
@@ -298,3 +285,4 @@
 }
 .recall-wrap .card .cloze.on-letter.revealed { background: var(--accent-soft); border-bottom-color: var(--accent); }
 .recall-wrap .card .cloze-answer .cz-a .on-letter { padding: 0; }
+.recall-meta .el-tag[data-form="qa"], .recall-wrap .card-meta .cm-type[data-form="qa"] { text-transform: uppercase; }

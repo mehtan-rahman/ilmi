@@ -1219,8 +1219,8 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
               {ghost && <div className="pbox pending ghost" style={ghost} />}
               {lastPending && !sel && (
                 <div data-hit="1" className="pend" style={{ left: lastPending.left, top: lastPending.top + lastPending.height + 6 }}>
-                  <button type="button" data-k="e" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); void makeSection(false).catch(console.error); }}><kbd>e</kbd>section{pending.length > 1 ? ` · ${pending.length} boxes` : ''}</button>
-                  <button type="button" data-k="m" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); void cardOrClip().catch(console.error); }}><kbd>m</kbd>card</button>
+                  <button type="button" data-k="e" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); void makeSection(false).catch(console.error); }}><kbd>e</kbd><span className="pe-l">section{pending.length > 1 ? ` · ${pending.length} boxes` : ''}</span></button>
+                  <button type="button" data-k="m" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); void cardOrClip().catch(console.error); }}><kbd>m</kbd><span className="pe-l">card</span></button>
                   {!mobile && <button type="button" data-k="esc" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); clearBoxes(); }}><kbd>esc</kbd></button>}
                 </div>
               )}

@@ -9,6 +9,7 @@ import { activeTab } from './panes.js';
 import { openQuickCard } from './quick.js';
 import { useApp } from './store.js';
 import { openNode, startSession, toggleSidebar } from './vault.js';
+import { Glyph, Icon } from './icons.js';
 
 const TODAY = queueId('today');
 
@@ -24,11 +25,11 @@ export function PhoneBar() {
   };
   return (
     <nav className="phone-bar">
-      <button type="button" className="pb-more" data-on={sheet ? '1' : '0'} aria-pressed={sheet} aria-label="everything" onClick={toggleSidebar}>≡</button>
+      <button type="button" className="pb-more" data-on={sheet ? '1' : '0'} aria-pressed={sheet} aria-label="everything" onClick={toggleSidebar}><Icon name="menu" /><span className="gch">≡</span></button>
       <button type="button" className="pb-day" data-go={home && due ? '1' : '0'} onClick={day}>
-        {home && due ? 'enter queue' : 'today'}{due > 0 && <span className="pb-n">{due}</span>}
+        <span className="pb-w">{home && due ? 'enter queue' : 'today'}</span>{due > 0 && <span className="pb-n">{due}</span>}
       </button>
-      <button type="button" className="pb-add" aria-label="new card" onClick={openQuickCard}>+</button>
+      <button type="button" className="pb-add" aria-label="new card" onClick={openQuickCard}><Glyph g="+" /></button>
     </nav>
   );
 }

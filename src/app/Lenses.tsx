@@ -21,6 +21,7 @@ import { useApp, type DocInfo, type LensView } from './store.js';
 import { NodeMenu, menuAt, type MenuAt } from './NodeMenu.js';
 import { createNode, openIntake, renameNode } from './vault.js';
 import { notebookOf } from './tabs.js';
+import { Glyph, Plus } from './icons.js';
 
 interface LensProps {
   id: string;
@@ -135,7 +136,7 @@ function FolderLens({ id, active, onOpen }: LensProps) {
         {cards ? <DeckBrowser home={id} active={active} /> : view === 'numbers' ? <NumbersView home={id} /> : <>
         <div className="fv-new">
           {NEW.map(([kind, label]) => (
-            <button key={kind} type="button" onClick={() => add(kind)}>{label}</button>
+            <button key={kind} type="button" onClick={() => add(kind)}><Plus text={label} /></button>
           ))}
         </div>
         {children.length > 0 ? (
@@ -155,7 +156,7 @@ function FolderLens({ id, active, onOpen }: LensProps) {
                   onClick={(e) => { if (!editingThis) onOpen(n.path, { cmdClick: e.metaKey || e.ctrlKey, shiftClick: e.shiftKey }); }}
                   onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setMenu(menuAt(e, n.path)); }}
                 >
-                  <span className="fv-g" data-t={kind}>{GLYPH[kind]}</span>
+                  <span className="fv-g" data-t={kind}><Glyph g={GLYPH[kind]} /></span>
                   {editingThis ? (
                     <input
                       className="rename fv-rename"

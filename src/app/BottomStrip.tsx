@@ -35,10 +35,9 @@ export function BottomStrip() {
   const hints = mobile ? all.filter(([, what]) => what !== 'split pane') : all;
   return (
     <div className="bot">
-      {hints.map(([keys, what], i) => (
+      {hints.map(([keys, what]) => (
         <Fragment key={keys}>
-          <span><kbd>{keys}</kbd> {what}</span>
-          {i < hints.length - 1 && <span className="dot" />}
+          <span className="hint"><kbd>{keys}</kbd> <span className="hw">{what}</span></span>
         </Fragment>
       ))}
       <span className="grow" />

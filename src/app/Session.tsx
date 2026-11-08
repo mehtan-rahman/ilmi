@@ -32,6 +32,7 @@ import { gradeCard } from './grading.js';
 import './session.css';
 import './incontext.css';
 import { appNow } from './clock.js';
+import { Glyph, Icon } from './icons.js';
 
 interface Props {
   active: boolean;
@@ -83,9 +84,9 @@ interface NavProps {
 function Nav({ idx, total, onPrev, onNext, onOut }: NavProps) {
   return (
     <span className="sess-nav">
-      {onOut && <button type="button" className="sn-btn sn-out" aria-label="back" onClick={onOut}>×</button>}
-      <button type="button" className="sn-btn" onClick={onPrev} disabled={idx === 0}>‹</button>
-      <button type="button" className="sn-btn" onClick={onNext} disabled={idx >= total - 1}>›</button>
+      {onOut && <button type="button" className="sn-btn sn-out" aria-label="back" onClick={onOut}><Glyph g="×" /></button>}
+      <button type="button" className="sn-btn" onClick={onPrev} disabled={idx === 0}><Icon name="chevron" className="ic-flip" /><span className="gch">‹</span></button>
+      <button type="button" className="sn-btn" onClick={onNext} disabled={idx >= total - 1}><Icon name="chevron" /><span className="gch">›</span></button>
     </span>
   );
 }
@@ -116,7 +117,7 @@ function SessionBar({ idx, total, kind, word, pri, what, stands, pace, glyph, ch
           {pri !== PRI_DEFAULT && <span className="sb-count">p {pri}</span>}
         </div>
         <div className="sb-stands">
-          <span className="sb-g" data-el={kind}>{glyph}</span>
+          <span className="sb-g" data-el={kind}><Glyph g={glyph} /></span>
           <bdi className="sb-what"><MathText text={what} title={false} /></bdi>
           {stands && <span className="sb-where">{stands}</span>}
           {pace && <span className="sb-where" data-pace="1">{pace}</span>}
@@ -220,7 +221,7 @@ function CardElement({ item, active, onGrade }: CardProps) {
         )}
       </div>
       <div className="card-meta">
-        <span className="cm-type">{f ? FORM_LABEL[f.form] : 'card'}</span>
+        <span className="cm-type" data-form={f?.form}>{f ? FORM_LABEL[f.form] : 'card'}</span>
         {groupNo !== null && <span>blank {groupNo} of {item.groups}</span>}
         {item.dir === 'r' && <span className="cm-dir">back to front</span>}
         <span>{plural(sched?.reps ?? 0, 'review')}</span>
@@ -504,7 +505,7 @@ export function Session({ active, onOpen }: Props) {
         {deck
           ? <span className="sess-count sess-deck">{studyHeader(deck.title, total - idx)}</span>
           : <span className="sess-count">{idx + 1} / {total}</span>}
-        <span className="el-tag" data-el="card">{FORM_LABEL[el.form]}</span>
+        <span className="el-tag" data-el="card" data-form={el.form}>{FORM_LABEL[el.form]}</span>
         <button type="button" className="meta-srclink card-trail" onClick={openSource} title={`${plainMath(trail.join(' › '))}  o`}>
           {trail.map((t, i) => <bdi key={i} className={i ? 'ct-h' : 'ct-doc'}><MathText text={t} title={false} /></bdi>)}
           <span className="ms-arrow">↗</span>

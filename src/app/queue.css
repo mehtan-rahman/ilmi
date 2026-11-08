@@ -10,45 +10,48 @@
 .queue header { margin-bottom: 18px; }
 .queue h1 {
   font-family: var(--serif);
-  font-weight: 420;
+  font-weight: 500;
   text-wrap: balance;
-  font-size: 22px;
-  letter-spacing: -0.01em;
+  font-size: var(--t-2xl);
+  letter-spacing: -0.015em;
   margin: 0;
   line-height: 1.1;
 }
+.queue h1::first-letter { text-transform: uppercase; }
 .queue h1 .day {
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--fg-4);
-  letter-spacing: 0.1em;
-  margin-left: 12px;
-  vertical-align: 0.25em;
+  font-family: var(--sans);
+  font-size: var(--t-sm);
+  font-weight: 400;
+  color: var(--fg-3);
+  letter-spacing: 0;
+  margin-left: var(--s-3);
+  vertical-align: 0.3em;
+  text-transform: capitalize;
 }
 /* what the marks mean, one line with the count: the order is priority's, every kind mixed, never split by kind */
 .queue .legend b { color: var(--fg-2); font-weight: 500; font-variant-numeric: tabular-nums; }
 .queue .legend {
-  font-family: var(--mono);
-  font-size: 10.5px;
-  color: var(--fg-4);
-  margin-top: 4px;
-  line-height: 1.5;
+  font-family: var(--sans);
+  font-size: var(--t-sm);
+  color: var(--fg-3);
+  margin-top: 6px;
+  line-height: 1.6;
 }
-.queue .legend .lg-sep { color: var(--fg-5); }
+.queue .legend .lg-sep { color: var(--fg-4); }
 .queue .legend .lg-g { font-family: var(--serif); }
 .queue .legend .lg-g[data-el="read"] { color: var(--el-read); }
 .queue .legend .lg-g[data-el="section"] { color: var(--el-write); }
-.queue .legend .lg-g[data-el="card"] { color: var(--el-card); font-size: 9px; }
+.queue .legend .lg-g[data-el="card"] { color: var(--el-card); }
 
 /* enter queue: a row, not a banner */
 .queue .enter-queue {
   appearance: none;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--s-3);
   width: 100%;
-  margin: 16px 0 4px;
-  padding: 8px 0;
+  margin: var(--s-5) 0 var(--s-1);
+  padding: 10px 0;
   background: transparent;
   border: 0;
   border-top: 1px solid var(--line-1);
@@ -59,17 +62,14 @@
 }
 .queue .enter-queue .eq-main {
   font-family: var(--sans);
-  font-size: 13px;
+  font-size: var(--t-md);
+  font-weight: 500;
   color: var(--fg-1);
-  letter-spacing: 0.01em;
+  display: inline-block;
 }
+.queue .enter-queue .eq-main::first-letter { text-transform: uppercase; }
 .queue .enter-queue:hover .eq-main { color: var(--accent); }
-.queue .enter-queue kbd {
-  margin-left: auto;
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--fg-4);
-}
+.queue .enter-queue kbd { margin-left: auto; }
 [data-theme="eink"] .queue .enter-queue:hover .eq-main,
 [data-theme="eink"] .queue .enter-queue kbd { color: var(--fg); }
 
@@ -80,26 +80,25 @@
   gap: 2px;
 }
 .queue .qlog-line {
-  font-family: var(--mono);
-  font-size: 10.5px;
-  color: var(--fg-4);
-  letter-spacing: 0.02em;
+  font-size: var(--t-xs);
+  color: var(--fg-3);
 }
+.queue .qlog-line::first-letter { text-transform: uppercase; }
 
 /* the fold: the day's budget ends here; what is below is dimmed */
 .qlist li.fold {
   display: flex;
   align-items: baseline;
-  gap: 16px;
-  padding: 6px 0;
+  gap: var(--s-4);
+  padding: var(--s-2) 0;
   border-top: 1px solid var(--line-1);
   border-bottom: 0;
-  font-family: var(--mono);
-  font-size: 10.5px;
-  color: var(--fg-4);
-  letter-spacing: 0.04em;
+  font-size: var(--t-xs);
+  color: var(--fg-3);
   cursor: default;
 }
+.qlist li.fold .fold-n::first-letter, .qlist li.fold .fold-act::first-letter { text-transform: uppercase; }
+.qlist li.fold .fold-n { display: inline-block; }
 .qlist li.fold:hover { background: transparent; }
 .qlist li.fold .fold-n { font-variant-numeric: tabular-nums; }
 .qlist li.fold .fold-act {
@@ -109,10 +108,11 @@
   background: transparent;
   padding: 0;
   font: inherit;
-  color: var(--fg-3);
+  color: var(--fg-2);
   cursor: pointer;
+  display: inline-block;
 }
-.qlist li.fold .fold-act:hover { color: var(--accent); }
+.qlist li.fold .fold-act:hover { color: var(--fg-1); text-decoration: underline; text-decoration-color: var(--accent); text-underline-offset: 3px; }
 .qlist li.fold .fold-what { margin-left: 10px; color: var(--fg-5); }
 [data-theme="eink"] .qlist li.fold .fold-act:hover { color: var(--fg); }
 .qlist li[data-below="1"] .body,
@@ -129,10 +129,10 @@
 }
 .qlist li {
   display: grid;
-  grid-template-columns: 14px 1fr auto auto;
+  grid-template-columns: 16px 1fr auto auto;
   align-items: baseline;
-  gap: 12px;
-  padding: calc(var(--gap-y) - 2px) 0;
+  gap: var(--s-3);
+  padding: calc(var(--gap-y) + 1px) 0;
   border-bottom: 1px solid var(--line-3);
   cursor: default;
   position: relative;
@@ -158,14 +158,16 @@
   background: var(--accent);
 }
 .qlist .mark {
-  font-family: var(--mono);
-  font-size: 11px;
   color: var(--fg-4);
-  text-align: center;
+  display: flex;
+  justify-content: center;
+  align-self: start;
+  padding-top: 3px;
+  --ic: 13px;
 }
-.qlist .mark[data-el="read"] { color: var(--el-read); font-family: var(--serif); font-size: 15px; }
+.qlist .mark[data-el="read"] { color: var(--el-read); }
 .qlist .mark[data-el="write"] { color: var(--el-write); }
-.qlist .mark[data-el="section"] { color: var(--el-write); font-family: var(--serif); font-size: 13px; }
+.qlist .mark[data-el="section"] { color: var(--el-write); }
 .qlist .mark[data-el="card"] { color: var(--el-card); }
 .qlist .body {
   font-family: var(--serif);
@@ -178,30 +180,34 @@
 .qlist li[data-el="write"] .body { color: var(--fg-3); }
 .qlist .body .src {
   font-family: var(--sans);
-  font-size: 11px;
-  color: var(--fg-4);
+  font-size: var(--t-xs);
+  color: var(--fg-3);
   display: flex;
   align-items: baseline;
   min-width: 0;
   white-space: nowrap;
-  margin-bottom: 2px;
+  margin-bottom: 3px;
 }
 .qlist li[data-fresh="1"] .body .src::after {
-  content: "new";
+  content: "New";
   flex-shrink: 0;
-  margin-left: 8px;
-  font-family: var(--mono);
-  font-size: 10px;
-  color: var(--accent);
+  margin-left: var(--s-2);
+  font-family: var(--sans);
+  font-size: var(--t-xs);
+  font-weight: 500;
+  color: var(--st-new);
 }
 /* the kind: a small lowercase word, as every other label */
 .qlist .body .kindtag {
   flex-shrink: 0;
-  font-family: var(--mono);
-  font-size: 10px;
-  color: var(--fg-4);
-  margin-right: 8px;
+  font-size: var(--t-xs);
+  font-weight: 500;
+  color: var(--fg-2);
+  margin-right: var(--s-2);
+  display: inline-block;
 }
+.qlist .body .kindtag::first-letter { text-transform: uppercase; }
+.qlist .body .kindtag[data-tag="q&a"] { text-transform: uppercase; }
 /* the path of titles on one line: the parent gives way first, then the heading, then the document */
 .qlist .qpath { display: flex; align-items: baseline; min-width: 0; overflow: hidden; }
 .qlist .qpath > bdi { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -216,34 +222,31 @@
   color: transparent;
   -webkit-text-fill-color: transparent;
 }
-.qlist .body .cs-arrow { font-family: var(--mono); font-size: 11px; color: var(--fg-4); }
+.qlist .body .cs-arrow { font-family: var(--sans); font-size: var(--t-xs); color: var(--fg-4); }
 .qlist .read-snip { font-style: italic; color: var(--fg-3); }
 .qlist .sec-title { color: var(--fg-1); }
 .qlist .read-snip .read-ell { color: var(--fg-5); font-style: normal; }
 .qlist .body .ref-line {
   display: block;
-  font-family: var(--mono);
-  font-size: 10px;
-  color: var(--fg-4);
-  letter-spacing: 0.02em;
+  font-size: var(--t-xs);
+  color: var(--fg-3);
   margin-top: 4px;
 }
 .qlist .pri {
-  font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: var(--t-xs);
   color: var(--fg-3);
   font-variant-numeric: tabular-nums;
-  letter-spacing: 0.04em;
 }
 .qlist .pri b { color: var(--fg-2); font-weight: 500; }
 .qlist .due {
-  font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: var(--t-xs);
+  font-weight: 500;
   color: var(--fg-4);
   font-variant-numeric: tabular-nums;
   text-align: right;
   min-width: 70px;
 }
+.qlist .due::first-letter { text-transform: uppercase; }
 .qlist .due .ivl { color: var(--fg-5); margin-top: 1px; }
 /* an Arabic row: taller for the marks, upright; a case ending's blank shows its letter */
 .qlist .body [dir="rtl"] { line-height: 1.75; letter-spacing: 0; font-synthesis: weight; }
@@ -266,12 +269,12 @@
   appearance: none;
   background: transparent;
   border: 0;
-  border-bottom: 1px solid transparent;
+  border-bottom: 1.5px solid transparent;
   border-radius: 0;
-  padding: 0 0 1px;
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--fg-4);
+  padding: 0 0 2px;
+  font-family: var(--sans);
+  font-size: var(--t-sm);
+  color: var(--fg-3);
   cursor: pointer;
 }
 .queue .exam-filter button:hover { color: var(--fg-2); }
@@ -279,10 +282,8 @@
 [data-theme="eink"] .queue .exam-filter button[data-active="1"] { border-bottom-color: var(--fg); }
 .qlist .body .for-exam {
   display: block;
-  font-family: var(--mono);
-  font-size: 9.5px;
-  color: var(--fg-4);
-  letter-spacing: 0.02em;
+  font-size: var(--t-xs);
+  color: var(--fg-3);
   margin-top: 4px;
 }
 .qlist .body .ref-line + .for-exam { margin-top: 1px; }

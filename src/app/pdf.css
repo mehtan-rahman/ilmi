@@ -84,10 +84,9 @@
 .pdf-rail .rail-page { position: absolute; left: 0; right: 0; }
 .pdf-rail h6 {
   margin: 0 0 4px;
-  font-family: var(--mono);
-  font-size: 10px;
+  font-family: var(--sans);
+  font-size: var(--t-xs);
   font-weight: 500;
-  letter-spacing: 0.06em;
   color: var(--fg-4);
 }
 .rail-item {
@@ -104,7 +103,7 @@
 }
 .rail-item:hover { color: var(--fg-1); }
 .rail-item.selected { background: var(--line-3); }
-.rail-item .g { font-family: var(--mono); font-size: 10px; flex-shrink: 0; }
+.rail-item .g { font-family: var(--sans); font-size: var(--t-xs); flex-shrink: 0; }
 .rail-item .g[data-el="card"] { color: var(--el-card); }
 .rail-item .g[data-el="read"] { color: var(--el-read); }
 .rail-item .t {
@@ -126,8 +125,8 @@
   margin: -8px 0 14px;
   background: var(--paper);
   border-bottom: 1px solid var(--line-2);
-  font-family: var(--mono);
-  font-size: 11px;
+  font-family: var(--sans);
+  font-size: var(--t-xs);
   color: var(--fg-3);
 }
 .pdf-bar .pb-k { color: var(--fg-4); }
@@ -154,6 +153,7 @@
   background: var(--paper);
   border: 1px solid var(--line-1);
   border-radius: var(--radius);
+  box-shadow: var(--shadow-float);
   padding: 6px;
   cursor: pointer;
 }
@@ -162,8 +162,8 @@
   align-items: baseline;
   gap: 10px;
   margin: 0 2px 6px;
-  font-family: var(--mono);
-  font-size: 10.5px;
+  font-family: var(--sans);
+  font-size: var(--t-xs);
   color: var(--fg-3);
   max-width: 480px;
 }
@@ -194,14 +194,14 @@
 .book .pdf-view > .meta { position: sticky; top: 0; z-index: 6; background: var(--paper); margin-top: -22px; padding-top: 22px; padding-bottom: 8px; }
 .book .pdf-page { scroll-margin-top: 52px; }
 /* `notes` among the words over the pages: lit while the note is open beside them */
-.reader .meta .notes-toggle[data-on="1"] { color: var(--accent); }
+.reader .meta .notes-toggle[data-on="1"] { color: var(--fg-1); text-decoration: underline; text-decoration-color: var(--accent); text-decoration-thickness: 1.5px; text-underline-offset: 4px; }
 html[data-mobile="1"] .reader .meta .notes-toggle { padding: 12px 8px; margin: -12px -8px; }
 
 /* under a finger: the page's text is not the system's to select (a hold
    there starts a box), and the boxes' bar is a finger's size */
 html[data-mobile="1"] .book .pdf-page,
 html[data-mobile="1"] .book .pdf-page .textLayer :is(span, br) { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
-html[data-mobile="1"] .pend { font-size: 13px; gap: 4px; padding: 3px; }
+html[data-mobile="1"] .pend { font-size: var(--t-sm); gap: 4px; padding: 3px; }
 html[data-mobile="1"] .pend button { padding: 9px 14px; }
 html[data-mobile="1"] .pgut { padding: 8px 8px; margin: -6px -5px; }
 
@@ -235,7 +235,7 @@ html[data-mobile="1"] .pgut { padding: 8px 8px; margin: -6px -5px; }
 .pbox.ghost { pointer-events: none; }
 .pbox .pb-no {
   position: absolute; top: -16px; left: -1px; padding: 0 4px;
-  font: 10.5px var(--mono); color: var(--accent); background: var(--paper);
+  font: 500 var(--t-xs) var(--sans); color: var(--accent); background: var(--paper); font-variant-numeric: tabular-nums;
 }
 .pbox.flash { animation: pbox-flash 1s ease 2; }
 @keyframes pbox-flash { 50% { background: color-mix(in oklab, var(--accent) 35%, transparent); } }
@@ -249,23 +249,23 @@ html[data-mobile="1"] .pgut { padding: 8px 8px; margin: -6px -5px; }
   text-overflow: ellipsis;
   white-space: nowrap;
   font-family: var(--sans);
-  font-size: 11.5px;
+  font-size: var(--t-xs);
   line-height: 1.35;
   color: var(--fg-2);
   cursor: pointer;
 }
 .pdf-view .ptag:hover, .pdf-view .ptag.cur { color: var(--fg-1); }
-.pdf-view .ptag:hover { color: var(--accent); }
+.pdf-view .ptag:hover { color: var(--fg-1); text-decoration: underline; text-decoration-color: var(--accent); text-underline-offset: 2px; }
 .pdf-view .ptag.cont, .pdf-view .ptag.dis { color: var(--fg-4); }
 .pdf-view .ptag .pt-g { font-family: var(--serif); color: var(--accent); margin-right: 3px; }
 .pdf-view .ptag.dis .pt-g { color: var(--fg-4); }
-.pdf-view .ptag .pt-c { font-family: var(--mono); font-size: 10px; color: var(--accent); margin-left: 4px; }
+.pdf-view .ptag .pt-c { font-family: var(--sans); font-size: var(--t-xs); color: var(--accent); margin-left: 4px; }
 .pgut {
   position: absolute;
   pointer-events: auto;
   cursor: pointer;
   font-family: var(--serif);
-  font-size: 13px;
+  font-size: var(--t-sm);
   line-height: 1;
   padding: 2px 3px;
   color: color-mix(in oklab, var(--accent) 70%, transparent);
@@ -283,13 +283,16 @@ html[data-mobile="1"] .pgut { padding: 8px 8px; margin: -6px -5px; }
   background: var(--paper);
   border: 1px solid var(--line-1);
   border-radius: var(--radius);
-  font-family: var(--mono);
-  font-size: 11.5px;
+  box-shadow: var(--shadow-float);
+  font-family: var(--sans);
+  font-size: var(--t-sm);
   white-space: nowrap;
 }
 .pend button { padding: 3px 8px; color: var(--fg-2); border-radius: var(--radius); background: none; border: 0; font: inherit; cursor: pointer; }
 .pend button:hover { background: color-mix(in oklab, var(--accent) 9%, transparent); color: var(--fg-1); }
-.pend kbd { margin-right: 4px; color: var(--accent); font: inherit; }
+.pend kbd { margin-right: 6px; }
+.pend .pe-l { display: inline-block; }
+.pend .pe-l::first-letter { text-transform: uppercase; }
 .book .pdf-page { cursor: crosshair; }
 .book .pdf-page .textLayer :is(span, br) { cursor: crosshair; }
 [data-theme="eink"] .pbox.cur { border-color: var(--fg-1); }
@@ -302,9 +305,9 @@ html[data-mobile="1"] .pgut { padding: 8px 8px; margin: -6px -5px; }
 [data-theme="dark"] .crop canvas { filter: invert(0.92) hue-rotate(180deg); }
 [data-theme="eink"] .crop canvas { filter: grayscale(1) contrast(1.1); }
 .inline-boxes { margin: 0 0 14px; user-select: none; }
-.pbreak { font-family: var(--mono); font-size: 10.5px; color: var(--fg-4); text-align: center; padding: 5px 0; letter-spacing: .04em; }
+.pbreak { font-family: var(--sans); font-size: var(--t-xs); color: var(--fg-4); text-align: center; padding: 5px 0; }
 .pbreak::before, .pbreak::after { content: ""; display: inline-block; width: 60px; height: 1px; background: var(--line-1); vertical-align: middle; margin: 0 10px; }
 .draft-doc .raw.clip .raw-view { margin: 0; }
-.draft-doc .raw.clip .clip-cap { font-family: var(--mono); font-size: 10px; color: var(--fg-4); margin-top: 3px; }
+.draft-doc .raw.clip .clip-cap { font-family: var(--sans); font-size: var(--t-xs); color: var(--fg-4); margin-top: 3px; }
 .draft-doc .raw.clip .raw-src { display: none; }
 .draft-doc .raw.clip.selected .raw-src { display: block; }

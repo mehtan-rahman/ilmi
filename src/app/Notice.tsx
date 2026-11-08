@@ -9,6 +9,7 @@ import { dismissNotice, undoNotice } from './land.js';
 import { activeTab } from './panes.js';
 import { useApp } from './store.js';
 import { openNode } from './vault.js';
+import { Glyph } from './icons.js';
 
 /** How long a notice stays, unless the pointer is on it. */
 const NOTICE_MS = 12000;
@@ -36,7 +37,7 @@ export function Notice() {
       <span className="nl">{n.line}</span>
       {n.undo && <button type="button" className="na" onClick={() => void undoNotice().catch(console.error)}>undo</button>}
       {open !== null && <button type="button" className="na" onClick={() => { openNode(open); dismissNotice(n.seq); }}>open</button>}
-      <button type="button" className="na nx" aria-label="dismiss" onClick={() => dismissNotice(n.seq)}>×</button>
+      <button type="button" className="na nx" aria-label="dismiss" onClick={() => dismissNotice(n.seq)}><Glyph g="×" /></button>
     </div>
   );
 }

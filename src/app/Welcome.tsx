@@ -21,6 +21,7 @@ import { joinCollection } from './crdt.js';
 import { NO_STORAGE, signIn, signOut, storageName, storageReady, type StorageSettings } from './storage.js';
 import { StorageFields } from './StorageFields.js';
 import { connectClone, forgetVault, importVault, importVaultFrom, nameNewVault, newVault, openVault } from './vault.js';
+import { Glyph } from './icons.js';
 
 /** The README's first two sentences: what the app is, and what a collection is. */
 const LINE = 'incremental reading, spaced-repetition cards, and incremental writing over notes in Markdown. A collection is a database on this device; a folder of plain Markdown files is what goes in and what comes out.';
@@ -251,7 +252,7 @@ export function Welcome() {
                   onMouseEnter={() => setSel(i)}
                   onClick={() => open(r.path)}
                 >
-                  <span className="pg">{ENTRY_GLYPH.vault}</span>
+                  <span className="pg"><Glyph g={ENTRY_GLYPH.vault} /></span>
                   <span className="pt">{r.name}</span>
                   <span className="psub" />
                   <span className="ptag">{missing ? GONE : r.opened === NEVER ? '' : openedLabel(r.opened, now)}</span>
@@ -266,14 +267,14 @@ export function Welcome() {
         <div className="palette-foot">
           {recents.length > 0 && (
             <>
-              <span><kbd>↵</kbd> open</span><span className="dot" />
-              <span><kbd>j k</kbd> move</span><span className="dot" />
+              <span className="hint"><kbd>↵</kbd> <span className="hw">open</span></span>
+              <span className="hint"><kbd>j k</kbd> <span className="hw">move</span></span>
             </>
           )}
-          {mobile ? <span><kbd>c</kbd> connect</span> : (
+          {mobile ? <span className="hint"><kbd>c</kbd> <span className="hw">connect</span></span> : (
             <>
-              <span><kbd>n</kbd> new collection</span><span className="dot" />
-              <span><kbd>i</kbd> import folder</span>
+              <span className="hint"><kbd>n</kbd> <span className="hw">new collection</span></span>
+              <span className="hint"><kbd>i</kbd> <span className="hw">import folder</span></span>
             </>
           )}
         </div>

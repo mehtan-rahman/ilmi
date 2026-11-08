@@ -24,6 +24,7 @@ import { GLYPH, descendants, findNode, kindOf, moveTargets, titleOf, type NodeKi
 import { useApp } from './store.js';
 import { deleteNode } from './remove.js';
 import { createNode, duplicateNode, enrolReading, moveNode, openIntake, setTabs, sortByName } from './vault.js';
+import { Glyph } from './icons.js';
 
 export const MENU_W = 190;
 
@@ -125,26 +126,26 @@ export function NodeMenu({ at, set, onCreated, onRename, onSubtab }: Props) {
         <>
           {onSubtab && (
             <div className="ci" data-act="subtab" onClick={act(() => onSubtab(at.id))}>
-              <span className="cg">+</span>add subtab
+              <span className="cg"><Glyph g="+" /></span>add subtab
             </div>
           )}
           {hasCards(at.id) && (
             <div className="ci" data-act="study" onClick={act(() => { studyDeck(at.id); })}>
-              <span className="cg">{GLYPH.session}</span>study
+              <span className="cg"><Glyph g={GLYPH.session} /></span>study
             </div>
           )}
           <div className="ci" data-act="rename" onClick={act(() => onRename(at.id))}>
-            <span className="cg">✎</span>rename<span className="ck">F2</span>
+            <span className="cg"><Glyph g="✎" /></span>rename<span className="ck">F2</span>
           </div>
           <div className="ci" data-act="duplicate" onClick={act(() => { duplicateNode(at.id).catch(fail); })}>
-            <span className="cg">⧉</span>duplicate
+            <span className="cg"><Glyph g="⧉" /></span>duplicate
           </div>
           <div className="ci has-sub" data-act="move" onClick={sub(true)}>
-            <span className="cg">→</span>move to…<span className="ck">▸</span>
+            <span className="cg"><Glyph g="→" /></span>move to…<span className="ck"><Glyph g="▸" /></span>
           </div>
           <div className="cd" />
           <div className={`ci danger${asking ? ' asking' : ''}`} data-act="delete" onClick={del}>
-            <span className="cg">⌫</span>{asking ? `delete with ${under} inside?` : 'delete'}
+            <span className="cg"><Glyph g="⌫" /></span>{asking ? `delete with ${under} inside?` : 'delete'}
           </div>
         </>
       ) : !at.sub ? (
@@ -152,35 +153,35 @@ export function NodeMenu({ at, set, onCreated, onRename, onSubtab }: Props) {
           {/* a PDF on its own holds nothing (milestone 70): nothing is made under it */}
           {!pdfAlone && NEW_KINDS.map(([k, label]) => (
             <div key={k} className="ci" onClick={act(() => create(k))}>
-              <span className="cg">{GLYPH[k]}</span>{label}
+              <span className="cg"><Glyph g={GLYPH[k]} /></span>{label}
             </div>
           ))}
           {!pdfAlone && <div className="cd" />}
           {!pdfAlone && (
             <div className="ci" onClick={act(() => { void importFiles(dir).catch(fail); })}>
-              <span className="cg">↧</span>import a file…
+              <span className="cg"><Glyph g="↧" /></span>import a file…
             </div>
           )}
           {!pdfAlone && (
             <div className="ci" onClick={act(() => openIntake(dir))}>
-              <span className="cg">{GLYPH.intake}</span>add from text or a link
+              <span className="cg"><Glyph g={GLYPH.intake} /></span>add from text or a link
             </div>
           )}
           {node && kind === 'note' && !docs[at.id]?.read && (
             <div className="ci" data-act="revisit" onClick={act(() => { enrolReading(at.id).catch(fail); })}>
-              <span className="cg">▤</span>revisit
+              <span className="cg"><Glyph g="▤" /></span>revisit
             </div>
           )}
           {!at.plus && hasCards(at.id) && (
             <div className="ci" data-act="study" onClick={act(() => { studyDeck(at.id); })}>
-              <span className="cg">{GLYPH.session}</span>study
+              <span className="cg"><Glyph g={GLYPH.session} /></span>study
             </div>
           )}
           {order[dir] && (
             <>
               <div className="cd" />
               <div className="ci" onClick={act(() => { sortByName(dir).catch(fail); })}>
-                <span className="cg">↕</span>sort by name
+                <span className="cg"><Glyph g="↕" /></span>sort by name
               </div>
             </>
           )}
@@ -189,11 +190,11 @@ export function NodeMenu({ at, set, onCreated, onRename, onSubtab }: Props) {
               <div className="cd" />
               {onSubtab && (
                 <div className="ci" onClick={act(() => onSubtab(at.id))}>
-                  <span className="cg">+</span>add subtab
+                  <span className="cg"><Glyph g="+" /></span>add subtab
                 </div>
               )}
               <div className="ci" onClick={act(() => { setTabs(at.id, !docs[at.id]?.tabs).catch(fail); })}>
-                <span className="cg">{docs[at.id]?.tabs ? '⋮' : '⊞'}</span>{docs[at.id]?.tabs ? 'show as tree' : 'show as tabs'}
+                <span className="cg"><Glyph g={docs[at.id]?.tabs ? '⋮' : '⊞'} /></span>{docs[at.id]?.tabs ? 'show as tree' : 'show as tabs'}
               </div>
             </>
           )}
@@ -201,7 +202,7 @@ export function NodeMenu({ at, set, onCreated, onRename, onSubtab }: Props) {
             <>
               <div className="cd" />
               <div className="ci" onClick={act(() => onSubtab(at.id))}>
-                <span className="cg">+</span>add subtab
+                <span className="cg"><Glyph g="+" /></span>add subtab
               </div>
             </>
           )}
@@ -209,17 +210,17 @@ export function NodeMenu({ at, set, onCreated, onRename, onSubtab }: Props) {
             <>
               {!pdfAlone && <div className="cd" />}
               <div className="ci" onClick={act(() => onRename(at.id))}>
-                <span className="cg">✎</span>rename<span className="ck">F2</span>
+                <span className="cg"><Glyph g="✎" /></span>rename<span className="ck">F2</span>
               </div>
               <div className="ci" data-act="duplicate" onClick={act(() => { duplicateNode(at.id).catch(fail); })}>
-                <span className="cg">⧉</span>duplicate
+                <span className="cg"><Glyph g="⧉" /></span>duplicate
               </div>
               <div className="ci has-sub" onClick={sub(true)}>
-                <span className="cg">→</span>move to…<span className="ck">▸</span>
+                <span className="cg"><Glyph g="→" /></span>move to…<span className="ck"><Glyph g="▸" /></span>
               </div>
               <div className="cd" />
               <div className={`ci danger${asking ? ' asking' : ''}`} onClick={del}>
-                <span className="cg">⌫</span>{asking ? `delete with ${under} inside?` : `delete ${kind}`}
+                <span className="cg"><Glyph g="⌫" /></span>{asking ? `delete with ${under} inside?` : `delete ${kind}`}
               </div>
             </>
           )}
@@ -227,7 +228,7 @@ export function NodeMenu({ at, set, onCreated, onRename, onSubtab }: Props) {
       ) : (
         <div className="sub-wrap">
           <div className="ci back" onClick={sub(false)}>
-            <span className="cg">◂</span>move to…
+            <span className="cg"><Glyph g="◂" /></span>move to…
           </div>
           <div className="cd" />
           <div className="sub-scroll">
@@ -235,7 +236,7 @@ export function NodeMenu({ at, set, onCreated, onRename, onSubtab }: Props) {
               const k: NodeKind = t.path === '' ? 'folder' : kindOf(t.path, docs);
               return (
                 <div key={t.path} className="ci" data-path={t.path} style={{ paddingLeft: 10 + t.depth * 12 }} onClick={act(() => { moveNode(at.id, t.dir).catch(fail); })}>
-                  <span className="cg">{GLYPH[k]}</span>{titleOf(t.path, docs, root)}
+                  <span className="cg"><Glyph g={GLYPH[k]} /></span>{titleOf(t.path, docs, root)}
                 </div>
               );
             })}

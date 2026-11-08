@@ -5,11 +5,31 @@
    flattening block. No component rules live here. */
 
 :root {
-  /* type: Source Serif 4 for reading; IBM Plex Sans for chrome; IBM Plex Mono
-     for key hints and tabular numerals. Never Inter or system-ui. */
+  /* type roles: Source Serif 4 for reading and for a document's title; IBM
+     Plex Sans for all chrome (labels, tags, statuses, counts with tabular
+     figures, placeholders); IBM Plex Mono only for key caps and for code.
+     Never Inter or system-ui. */
   --serif: "Source Serif 4 Variable", "Source Serif 4", "Ilmi Naskh", "Iowan Old Style", "Charter", Georgia, serif;
   --sans: "IBM Plex Sans", "Ilmi Plex Arabic", system-ui, -apple-system, sans-serif;
   --mono: "IBM Plex Mono", "Ilmi Plex Arabic", ui-monospace, "JetBrains Mono", monospace;
+
+  /* the type scale: chrome uses these six sizes and no others */
+  --t-xs: 11px;     /* key caps' neighbours, statuses, counts */
+  --t-sm: 12.5px;   /* chrome's body: rows, labels, buttons */
+  --t-md: 14px;     /* a field you type into, a list's first line */
+  --t-lg: 16px;
+  --t-xl: 22px;     /* a lens's title */
+  --t-2xl: 28px;
+  /* weights with intent: 400 text, 500 a name or a value that matters, 600 a section's title */
+
+  /* the spacing scale: 4px steps */
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 20px;
+  --s-6: 24px;
+  --s-8: 32px;
 
   /* shell columns */
   --side-w: 220px;
@@ -40,9 +60,12 @@
   --gap-y: calc(10px * var(--rho));
   --gap-x: 12px;
 
-  /* flat: hairlines over shadows, corners 0–2px */
+  /* flat: hairlines over shadows, corners 0–2px. Docked surfaces carry no
+     shadow; a floating one (the palette, a menu, a popover, the welcome
+     panel) carries this one, with its hairline. */
   --radius: 2px;
   --shadow: none;
+  --shadow-float: 0 8px 24px -8px rgb(0 0 0 / 0.18), 0 1px 2px rgb(0 0 0 / 0.04);
 
   /* derived mutes: fg mixed into bg by stepped amounts, modulated by contrast */
   --fg-1: var(--fg);
@@ -59,6 +82,15 @@
   --accent: oklch(var(--accent-l-light) var(--accent-c) var(--accent-h));
   --accent-soft: color-mix(in oklab, var(--accent) 18%, transparent);
   --selection: color-mix(in oklab, var(--accent) 22%, transparent);
+
+  /* status, by meaning: due today is the accent; overdue a muted brick; new
+     the third ink; later the fourth. Never the accent for everything. */
+  --late: oklch(0.53 0.085 38);
+  --st-due: var(--accent);
+  --st-new: var(--fg-3);
+  --st-later: var(--fg-4);
+  /* a destructive word: delete, and a delete that asks */
+  --danger: oklch(0.52 0.16 28);
 
   /* element types: reading / writing / card */
   --el-read: oklch(0.55 0.07 250);
@@ -87,6 +119,9 @@
   --accent: oklch(var(--accent-l-dark) var(--accent-c) var(--accent-h));
   --el-read: oklch(0.75 0.08 250);
   --el-write: oklch(0.74 0.08 150);
+  --late: oklch(0.72 0.075 40);
+  --danger: oklch(0.70 0.13 28);
+  --shadow-float: 0 12px 32px -8px rgb(0 0 0 / 0.6), 0 1px 2px rgb(0 0 0 / 0.3);
 }
 
 /* e-ink: grayscale only, solid hairlines, no depth, no motion. "Due" and
@@ -105,6 +140,8 @@
   --el-read: var(--fg-2);
   --el-write: var(--fg-2);
   --el-card: var(--fg-1);
+  --late: var(--fg-1);
+  --danger: var(--fg-1);
   /* grey and weight only */
   --code-keyword: var(--fg-1);
   --code-string: var(--fg-2);
@@ -131,13 +168,46 @@ html, body {
   background: var(--bg);
   color: var(--fg-1);
   font-family: var(--sans);
-  font-size: 13.5px;
+  font-size: var(--t-sm);
   line-height: 1.45;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
   font-feature-settings: "ss01", "cv01";
 }
 #root { height: 100%; }
+
+/* a key cap: the one place Plex Mono is chrome. A hairline box, the key in
+   the second ink; the action beside it is sans. */
+kbd {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 400;
+  line-height: 14px;
+  min-width: 16px;
+  padding: 0 4px;
+  text-align: center;
+  color: var(--fg-2);
+  background: var(--paper);
+  border: 1px solid var(--line-1);
+  border-bottom-color: color-mix(in oklab, var(--fg) calc(22% * var(--chrome)), transparent);
+  border-radius: var(--radius);
+  letter-spacing: 0;
+  white-space: nowrap;
+  vertical-align: 1px;
+}
+[data-theme="eink"] kbd { border-color: var(--line-1); background: transparent; color: var(--fg-1); }
+
+/* an icon from icons.tsx: a 16px grid, one stroke, the ink around it */
+.ic {
+  display: block;
+  width: var(--ic, 14px);
+  height: var(--ic, 14px);
+  flex-shrink: 0;
+  overflow: visible;
+}
+/* the mark an icon stands for, kept in the text for what reads it */
+.gch { display: none; }
 ::selection { background: var(--selection); }
 
 .shell {

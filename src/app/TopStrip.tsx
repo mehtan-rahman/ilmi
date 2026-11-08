@@ -17,6 +17,7 @@ import { shapeOf } from './platform.js';
 import { inspectorShown } from './layout.js';
 import { appNow } from './clock.js';
 import { openConflicts, syncAge, syncWord } from './sync.js';
+import { Glyph, Icon } from './icons.js';
 
 /** A re-render each second while the age is in seconds, each half minute after. */
 function useTick(at: number | null): number {
@@ -51,13 +52,14 @@ export function TopStrip() {
     <div className="top">
       {mobile && !phone && (
         <button type="button" className="insp-toggle side-toggle" data-on={sideOn ? '1' : '0'} aria-pressed={sideOn} aria-label="sidebar" onClick={toggleSidebar}>
-          <span className="panel-ico" />
+          <Icon name="panel-left" />
         </button>
       )}
       <div className="ws"><b>{baseOf(root ?? '') || 'collection'}</b></div>
       {!phone && (
         <button type="button" className="palette" onClick={() => useApp.setState({ paletteOpen: true })}>
-          <span className="g">⌕</span>
+          <span className="g"><Glyph g="⌕" /></span>
+          <span className="ph">open or run</span>
           <kbd>⌘k</kbd>
         </button>
       )}
@@ -71,7 +73,7 @@ export function TopStrip() {
       </div>
       {!phone && (
         <button type="button" className="insp-toggle" data-on={shown ? '1' : '0'} aria-pressed={shown} title="inspector ⌘⇧I" onClick={toggleInspector}>
-          <span className="panel-ico" />
+          <Icon name="panel" />
         </button>
       )}
     </div>

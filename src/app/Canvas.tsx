@@ -10,6 +10,7 @@ import { useApp } from './store.js';
 import { notebookOf, tabLabel } from './tabs.js';
 import { openNode, rememberTab } from './vault.js';
 import { plainMath } from './chromeText.js';
+import { Glyph } from './icons.js';
 
 /**
  * A tab's title in the sans, one line. A notebook's page (`notebook ›
@@ -61,15 +62,15 @@ function TabBar({ pane, index, canClosePane }: TabBarProps) {
             onClick={() => { setPanes((s) => selectTab(s, index, ti)); after(); }}
             onAuxClick={(e) => { if (e.button === 1) { setPanes((s) => closeTab(s, index, ti)); after(); } }}
           >
-            <span className="glyph" data-t={kind} data-el={session?.kind}>{glyph}</span>
+            <span className="glyph" data-t={kind} data-el={session?.kind}><Glyph g={glyph} /></span>
             <TabTitle title={plainMath(title)} />
-            <span className="close" onClick={(e) => { e.stopPropagation(); setPanes((s) => closeTab(s, index, ti)); after(); }}>×</span>
+            <span className="close" onClick={(e) => { e.stopPropagation(); setPanes((s) => closeTab(s, index, ti)); after(); }}><Glyph g="×" /></span>
           </div>
         );
       })}
       <div className="spacer" />
-      {!mobile && <div className="ctl" onClick={() => setPanes((s) => splitPane(s, index))}>⊟</div>}
-      {canClosePane && <div className="ctl" onClick={() => { setPanes((s) => closePane(s, index)); after(); }}>×</div>}
+      {!mobile && <div className="ctl" onClick={() => setPanes((s) => splitPane(s, index))} title="split pane"><Glyph g="⊟" /></div>}
+      {canClosePane && <div className="ctl" onClick={() => { setPanes((s) => closePane(s, index)); after(); }} title="close pane"><Glyph g="×" /></div>}
     </div>
   );
 }

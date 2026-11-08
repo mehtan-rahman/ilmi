@@ -19,7 +19,7 @@ import {
   findCard, selectAll, selectedRows, sortRows, type BulkAction, type CardRef, type DeckRow, type DeckSort, type DeckView, type Selection, type StateChip,
 } from './deck.js';
 import { bulkCards, newCardAt, saveCardEdit, studyDeck } from './deckOps.js';
-import { FORM_LABEL, dueWhen, fmtDays, pathLabel } from './items.js';
+import { FORM_LABEL, dueWhen, fmtDays, pathLabel, dueTone } from './items.js';
 import { MENU_W, placeMenu } from './NodeMenu.js';
 import { GLYPH, kindOf, titleOf } from './names.js';
 import { blankAnswers, clozeHTML, faceDir, handleClickOn, nodeViews, richHTML } from './Reader.js';
@@ -30,6 +30,7 @@ import { currentPairs, linkCards, mergeCards, notTheSame } from './sameOps.js';
 import './session.css';
 import './deck.css';
 import { appNow } from './clock.js';
+import { Glyph, Plus } from './icons.js';
 
 const inField = (t: EventTarget | null) => {
   const el = t as HTMLElement | null;
@@ -258,7 +259,7 @@ function SameSide({ c, card, now, onKeep }: { c: SameCard; card: Card | null; no
   return (
     <div className="sp-side" data-key={c.key} data-path={c.path} data-block={c.block}>
       <div className="sp-head">
-        <span className="dr-form">{form ? FORM_LABEL[form] : ''}</span>
+        <span className="dr-form" data-form={form}>{form ? FORM_LABEL[form] : ''}</span>
         <button type="button" className="sp-path" title="open the card" onClick={() => openCard(c.path, c.block, c.id)}>{pathLabel(c.path)}</button>
       </div>
       <div className="cs-body dr-faces">
@@ -266,7 +267,7 @@ function SameSide({ c, card, now, onKeep }: { c: SameCard; card: Card | null; no
         {f.back && <span className="dr-back" dir={f.backDir} dangerouslySetInnerHTML={{ __html: f.back }} />}
       </div>
       <div className="sp-sched">
-        <span className="dr-due" data-due={!suspended && (!s?.due || whenToDate(s.due) <= now) ? '1' : '0'}>{suspended ? 'suspended' : dueWhen(s?.due, now)}</span>
+        <span className="dr-due" data-due={!suspended && (!s?.due || whenToDate(s.due) <= now) ? '1' : '0'} data-st={dueTone(suspended ? 'suspended' : dueWhen(s?.due, now))}>{suspended ? 'suspended' : dueWhen(s?.due, now)}</span>
         {s?.ivl !== undefined && s.ivl >= 1 && <span>{fmtDays(s.ivl)}</span>}
         <span>{plural(s?.reps ?? 0, 'review')}</span>
         {(s?.lapses ?? 0) > 0 && <span>{plural(s!.lapses!, 'lapse')}</span>}
@@ -566,11 +567,11 @@ export function DeckBrowser({ home, active }: BrowserProps) {
           include not due
         </label>
         <span className="grow" />
-        {!phone && <button type="button" className="deck-add" onClick={newCard}>+ card <kbd className="kbd">m</kbd></button>}
+        {!phone && <button type="button" className="deck-add" onClick={newCard}><Plus text="+ card" /> <kbd className="kbd">m</kbd></button>}
       </div>
       <div className="deck-bar">
         <div className="db-row">
-          <span className="db-g">⌕</span>
+          <span className="db-g"><Glyph g="⌕" /></span>
           <input
             ref={search}
             className="db-search"
@@ -636,7 +637,7 @@ export function DeckBrowser({ home, active }: BrowserProps) {
               <div className="db-move sub-scroll">
                 {targets.map((t) => (
                   <div key={t.path} className="ci" data-path={t.path} style={{ paddingLeft: 10 + t.depth * 12 }} onClick={() => run(chosen.map(refOf), { kind: 'move', to: t.path })}>
-                    <span className="cg">{GLYPH[kindOf(t.path, docs)]}</span>{titleIn(t.path)}
+                    <span className="cg"><Glyph g={GLYPH[kindOf(t.path, docs)]} /></span>{titleIn(t.path)}
                   </div>
                 ))}
               </div>
@@ -676,7 +677,7 @@ export function DeckBrowser({ home, active }: BrowserProps) {
                 setMenu({ x: Math.min(e.clientX, window.innerWidth - MENU_W), y: e.clientY, key: r.key, sub: false });
               }}
             >
-              <span className="dr-form">{FORM_LABEL[r.form]}</span>
+              <span className="dr-form" data-form={r.form}>{FORM_LABEL[r.form]}</span>
               <span className="cs-body dr-faces">
                 <span className="dr-front" dir={f.frontDir} dangerouslySetInnerHTML={{ __html: f.front }} />
                 {f.back && <span className="dr-back" dir={f.backDir} dangerouslySetInnerHTML={{ __html: f.back }} />}
@@ -685,17 +686,17 @@ export function DeckBrowser({ home, active }: BrowserProps) {
               {r.reverse && !r.suspended ? (
                 // both ways: each direction's due on a line of its own, front to back first
                 <span className="dr-when" data-dirs="2">
-                  <span className="dr-due" data-dir="f" data-due={r.sched?.due === undefined || r.dueAt <= now ? '1' : '0'} title={ivl ? `front to back, interval ${ivl}` : 'front to back'}>→ {when}</span>
-                  <span className="dr-due" data-dir="r" data-due={r.reverse.isDue ? '1' : '0'} title={r.reverse.sched?.ivl && r.reverse.sched.ivl >= 1 ? `back to front, interval ${fmtDays(r.reverse.sched.ivl)}` : 'back to front'}>
-                    ← {r.reverse.suspended ? 'suspended' : dueWhen(r.reverse.sched?.due, now)}
+                  <span className="dr-due" data-dir="f" data-due={r.sched?.due === undefined || r.dueAt <= now ? '1' : '0'} title={ivl ? `front to back, interval ${ivl}` : 'front to back'} data-st={dueTone(when)}><span className="dr-dir">→</span> <span className="dw">{when}</span></span>
+                  <span className="dr-due" data-dir="r" data-due={r.reverse.isDue ? '1' : '0'} title={r.reverse.sched?.ivl && r.reverse.sched.ivl >= 1 ? `back to front, interval ${fmtDays(r.reverse.sched.ivl)}` : 'back to front'} data-st={dueTone(r.reverse.suspended ? 'suspended' : dueWhen(r.reverse.sched?.due, now))}>
+                    <span className="dr-dir">←</span> <span className="dw">{r.reverse.suspended ? 'suspended' : dueWhen(r.reverse.sched?.due, now)}</span>
                   </span>
                 </span>
               ) : (
                 <span className="dr-when" title={ivl && !r.suspended ? `interval ${ivl}` : undefined}>
-                  <span className="dr-due" data-due={r.isDue ? '1' : '0'}>{when}</span>
+                  <span className="dr-due" data-due={r.isDue ? '1' : '0'} data-st={dueTone(when)}><span className="dw">{when}</span></span>
                 </span>
               )}
-              <button type="button" className="cs-del" title="delete card" aria-label="delete card" onClick={(e) => { e.stopPropagation(); removeOne(r); }}>×</button>
+              <button type="button" className="cs-del" title="delete card" aria-label="delete card" onClick={(e) => { e.stopPropagation(); removeOne(r); }}><Glyph g="×" /></button>
             </div>
             {editingNew && newAfterKey === r.key && newEditor(editingNew)}
           </div>
@@ -707,20 +708,20 @@ export function DeckBrowser({ home, active }: BrowserProps) {
         <div className="ctx-menu" ref={menuRef} style={{ left: menu.x, top: menu.y }} onMouseDown={(e) => e.stopPropagation()} onContextMenu={(e) => e.preventDefault()}>
           {!menu.sub ? (
             <>
-              <div className="ci" onClick={() => { setMenu(null); setEditing({ key: menuRow.key }); }}><span className="cg">✎</span>edit<span className="ck">⏎</span></div>
-              <div className="ci has-sub" onClick={(e) => { e.stopPropagation(); setMenu({ ...menu, sub: true }); }}><span className="cg">→</span>move to…<span className="ck">▸</span></div>
-              <div className="ci" onClick={() => run([refOf(menuRow)], { kind: menuRow.suspended ? 'unsuspend' : 'suspend' })}><span className="cg">‖</span>{menuRow.suspended ? 'unsuspend' : 'suspend'}</div>
+              <div className="ci" onClick={() => { setMenu(null); setEditing({ key: menuRow.key }); }}><span className="cg"><Glyph g="✎" /></span>edit<span className="ck">⏎</span></div>
+              <div className="ci has-sub" onClick={(e) => { e.stopPropagation(); setMenu({ ...menu, sub: true }); }}><span className="cg"><Glyph g="→" /></span>move to…<span className="ck"><Glyph g="▸" /></span></div>
+              <div className="ci" onClick={() => run([refOf(menuRow)], { kind: menuRow.suspended ? 'unsuspend' : 'suspend' })}><span className="cg"><Glyph g="‖" /></span>{menuRow.suspended ? 'unsuspend' : 'suspend'}</div>
               <div className="cd" />
-              <div className="ci danger" onClick={() => { setMenu(null); removeOne(menuRow); }}><span className="cg">⌫</span>delete card</div>
+              <div className="ci danger" onClick={() => { setMenu(null); removeOne(menuRow); }}><span className="cg"><Glyph g="⌫" /></span>delete card</div>
             </>
           ) : (
             <div className="sub-wrap">
-              <div className="ci back" onClick={(e) => { e.stopPropagation(); setMenu({ ...menu, sub: false }); }}><span className="cg">◂</span>move to…</div>
+              <div className="ci back" onClick={(e) => { e.stopPropagation(); setMenu({ ...menu, sub: false }); }}><span className="cg"><Glyph g="◂" /></span>move to…</div>
               <div className="cd" />
               <div className="sub-scroll">
                 {targets.filter((t) => t.path !== menuRow.path).map((t) => (
                   <div key={t.path} className="ci" data-path={t.path} style={{ paddingLeft: 10 + t.depth * 12 }} onClick={() => run([refOf(menuRow)], { kind: 'move', to: t.path })}>
-                    <span className="cg">{GLYPH[kindOf(t.path, docs)]}</span>{titleIn(t.path)}
+                    <span className="cg"><Glyph g={GLYPH[kindOf(t.path, docs)]} /></span>{titleIn(t.path)}
                   </div>
                 ))}
               </div>

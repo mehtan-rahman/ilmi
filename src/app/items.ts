@@ -63,6 +63,19 @@ export function dueWhen(due: string | undefined, now: Date): string {
   return dueLabel(due, now).replace(/^\+/, 'in ');
 }
 
+/**
+ * What a when-label means, for its colour: `late` (overdue), `due` (today,
+ * or due today), `new`, `off` (suspended, dismissed), `later` (anything ahead).
+ */
+export type DueTone = 'late' | 'due' | 'new' | 'off' | 'later';
+export function dueTone(label: string): DueTone {
+  if (label.startsWith('overdue')) return 'late';
+  if (label === 'today' || label === 'due today' || label === 'now') return 'due';
+  if (label === 'new') return 'new';
+  if (label === 'suspended' || label === 'dismissed') return 'off';
+  return 'later';
+}
+
 /** How long ago a day or instant was, in the same words looking back: `today`, `yesterday`, `3d ago`, `2mo ago`. */
 export function agoLabel(when: string, now: Date): string {
   const d = Math.round((dayStart(dayOf(now)).getTime() - dayStart(dayOf(whenToDate(when))).getTime()) / 86400000);

@@ -36,6 +36,7 @@ import { TREE_INDENT, TREE_PAD, keyPlace, revealRows, treeKey, treeRows, typeahe
 import { deleteNode } from './remove.js';
 import { placeNode, renameNode, toggleOpen } from './vault.js';
 import { appNow } from './clock.js';
+import { Glyph, Icon } from './icons.js';
 
 export { MENU_W, placeMenu } from './NodeMenu.js';
 
@@ -280,9 +281,9 @@ export function Tree({ activeId, onOpen }: Props) {
             else if (r.has && !(isRoot && hoisted !== null)) toggleOpen(id);
           }}
         >
-          {r.has ? (r.open ? '▾' : '▸') : ''}
+          {r.has ? <Glyph g={r.open ? '▾' : '▸'} /> : ''}
         </span>
-        <span className={`glyph ${kind}${id === '' ? ' root' : ''}`}>{GLYPH[kind]}</span>
+        <span className={`glyph ${kind}${id === '' ? ' root' : ''}`}><Glyph g={GLYPH[kind]} /></span>
         {editingThis ? (
           <input
             className="rename"
@@ -305,12 +306,12 @@ export function Tree({ activeId, onOpen }: Props) {
         {!asked && notHere && <span className="away">not here</span>}
         {!asked && counts.due > 0 && <span className="due">{counts.due}</span>}
         {id === '' && (
-          <span className="side-add" title="new, import, or add" onMouseDown={(e) => e.stopPropagation()} onClick={(e) => menuFrom(e, plusDir, true)}>+</span>
+          <span className="side-add" title="new, import, or add" onMouseDown={(e) => e.stopPropagation()} onClick={(e) => menuFrom(e, plusDir, true)}><Glyph g="+" /></span>
         )}
         {!isRoot && !editingThis && (
           <span className="row-acts" onMouseDown={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}>
-            <span className="ra add" title="new inside" onClick={(e) => { setSelected(id); menuFrom(e, id, true); }}>+</span>
-            <span className="ra more" title="more" onClick={(e) => { setSelected(id); menuFrom(e, id, false); }}>···</span>
+            <span className="ra add" title="new inside" onClick={(e) => { setSelected(id); menuFrom(e, id, true); }}><Glyph g="+" /></span>
+            <span className="ra more" title="more" onClick={(e) => { setSelected(id); menuFrom(e, id, false); }}><Icon name="more" /><span className="gch">···</span></span>
           </span>
         )}
       </div>

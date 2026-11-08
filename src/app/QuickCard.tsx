@@ -11,6 +11,7 @@ import { titleOf } from './names.js';
 import { decksNow } from './quick.js';
 import { useApp } from './store.js';
 import { docsOf, rememberDeck } from './vault.js';
+import { Icon } from './icons.js';
 
 export function QuickCard() {
   const quick = useApp((s) => s.quickCard);
@@ -30,7 +31,7 @@ export function QuickCard() {
   const form: CardForm = (body && meta(body).defaultCard) || 'qa';
   const where = (
     <button type="button" className="quick-deck" aria-expanded={choosing} onMouseDown={(e) => e.preventDefault()} onClick={() => setChoosing(!choosing)}>
-      <span className="qd-w">to</span><bdi className="qd-t">{title(deck)}</bdi><span className="qd-c">{choosing ? '▴' : '▾'}</span>
+      <span className="qd-w">to</span><bdi className="qd-t">{title(deck)}</bdi><span className="qd-c" data-open={choosing ? '1' : '0'}><Icon name="caret" /><span className="gch">{choosing ? '▴' : '▾'}</span></span>
     </button>
   );
   return (

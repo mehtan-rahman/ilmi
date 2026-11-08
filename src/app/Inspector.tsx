@@ -16,7 +16,7 @@ import { baseOf, childDirOf, childrenAt, dirOf, isDoc, isPdfPath, pageOfBlock, t
 import { cardName, formLabel } from './chrome.js';
 import { breakdown, countsUnder, dueItems, plainMath } from './chromeText.js';
 import { MathText } from './MathText.js';
-import { FORM_LABEL, dueLabel, dueWhen, examDay, examName, examWhen, fmtDays, leftLines, standsWords } from './items.js';
+import { FORM_LABEL, dueLabel, dueWhen, examDay, examName, examWhen, fmtDays, leftLines, standsWords, dueTone } from './items.js';
 import { INTAKE, QUEUE_TITLE, SESSION, findNode, noteOf, notesPath, queueScope, titleOf } from './names.js';
 import { activeTab } from './panes.js';
 import { useApp, type CaretHeading, type DocInfo } from './store.js';
@@ -341,7 +341,7 @@ function CardList({ title, doc, now }: { title: string; doc: Doc; now: Date }) {
           return (
             <li key={c.id ?? i} data-due={isDueNow ? '1' : '0'}>
               <MathText className="cl-t" text={cardName(c.text)} dir="auto" />
-              <span className="cl-due">{dueWhen(d, now)}</span>
+              <span className="cl-due" data-st={dueTone(dueWhen(d, now))}>{dueWhen(d, now)}</span>
             </li>
           );
         })}
@@ -472,7 +472,7 @@ function DocInspector({ id, info, doc, now }: { id: string; info: DocInfo; doc: 
             <span className="fr-state">new cards</span>
             <div className="deck-default">
               {(Object.keys(FORM_LABEL) as CardForm[]).map((f) => (
-                <button key={f} type="button" data-active={(m.defaultCard ?? 'cloze') === f ? '1' : '0'} onClick={() => void setDefault(f)}>{FORM_LABEL[f]}</button>
+                <button key={f} type="button" data-form={f} data-active={(m.defaultCard ?? 'cloze') === f ? '1' : '0'} onClick={() => void setDefault(f)}>{FORM_LABEL[f]}</button>
               ))}
             </div>
           </div>
@@ -569,7 +569,7 @@ function DocInspector({ id, info, doc, now }: { id: string; info: DocInfo; doc: 
               return (
                 <li key={ex.path} data-due={due ? '1' : '0'}>
                   <MathText className="cl-t" dir="auto" text={titleOf(ex.path, docs, null)} />
-                  <span className="cl-due">{r ? dueWhen(r.due, now) : ''}</span>
+                  <span className="cl-due" data-st={r ? dueTone(dueWhen(r.due, now)) : undefined}>{r ? dueWhen(r.due, now) : ''}</span>
                 </li>
               );
             })}
@@ -605,7 +605,7 @@ function PassagesBlock({ id, note, doc, now }: { id: string; note: string; doc: 
             return (
               <li key={`${p.index}:${p.heading.text}`} data-due={when === 'due today' ? '1' : '0'} data-cur={cur ? '1' : '0'} data-dismissed={when === 'dismissed' ? '1' : '0'} onClick={() => { useApp.setState({ reveal: { path: note, index: p.index, heading: p.heading.text } }); void openNotes(id).catch(console.error); }}>
                 <MathText className="cl-t" dir="auto" text={p.heading.text} />
-                <span className="cl-due" title={pagesLabel(p.boxes)}>{when === 'due today' ? 'today' : when.replace(/^back /, '')}</span>
+                <span className="cl-due" data-st={dueTone(when)} title={pagesLabel(p.boxes)}>{when === 'due today' ? 'today' : when.replace(/^back /, '')}</span>
               </li>
             );
           })}

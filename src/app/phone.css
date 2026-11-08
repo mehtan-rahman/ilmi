@@ -52,29 +52,32 @@ html[data-shape="phone"] .pane-body { -webkit-overflow-scrolling: touch; }
   margin: 0;
   font-family: var(--sans);
 }
-.phone-bar .pb-more, .phone-bar .pb-add { font-size: 24px; line-height: 1; color: var(--fg-2); }
-.phone-bar .pb-more[data-on="1"] { color: var(--accent); }
-.phone-bar .pb-day { font-size: 15px; letter-spacing: 0.01em; display: flex; align-items: center; justify-content: center; gap: 9px; }
+.phone-bar .pb-more, .phone-bar .pb-add { display: flex; align-items: center; justify-content: center; color: var(--fg-2); --ic: 22px; }
+.phone-bar .pb-w { display: inline-block; }
+.phone-bar .pb-w::first-letter, .qf-acts button::first-letter, .reveal-all::first-letter, .quick-deck .qd-w::first-letter, .topic-acts button::first-letter, .quick-blank::first-letter { text-transform: uppercase; }
+.quick-deck .qd-w { display: inline-block; }
+.phone-bar .pb-more[data-on="1"] { color: var(--fg-1); }
+.phone-bar .pb-day { font-size: 15px; display: flex; align-items: center; justify-content: center; gap: 9px; }
 .phone-bar .pb-day[data-go="1"] { color: var(--fg-1); font-weight: 500; }
-.phone-bar .pb-n { font-family: var(--mono); font-size: 12.5px; color: var(--accent); font-variant-numeric: tabular-nums; font-weight: 400; }
+.phone-bar .pb-n { font-family: var(--sans); font-size: var(--t-sm); color: var(--accent); font-variant-numeric: tabular-nums; font-weight: 500; }
 [data-theme="eink"] .phone-bar .pb-n, [data-theme="eink"] .phone-bar .pb-more[data-on="1"] { color: var(--fg); }
 
 /* a notice clears the bar, or the buttons of a session */
-html[data-shape="phone"] .notice { left: 12px; right: 12px; max-width: none; bottom: calc(var(--pb-h) + var(--safe-b) + 10px); padding: 11px 12px; font-size: 12px; }
+html[data-shape="phone"] .notice { left: 12px; right: 12px; max-width: none; bottom: calc(var(--pb-h) + var(--safe-b) + 10px); padding: 11px 12px; font-size: var(--t-sm); }
 html[data-shape="phone"] .notice[data-session="1"] { bottom: calc(100px + var(--safe-b)); }
 html[data-shape="phone"] .notice .nl { flex: 1; }
-html[data-shape="phone"] .notice .na { padding: 0 6px; font-size: 12.5px; }
+html[data-shape="phone"] .notice .na { padding: 0 6px; font-size: var(--t-sm); }
 
 /* ── the day ──────────────────────────────────────────────────── */
 html[data-shape="phone"] .queue { padding: 10px max(16px, var(--safe-l)) 24px; max-width: none; }
 html[data-shape="phone"] .queue h1 { font-size: 26px; }
-html[data-shape="phone"] .queue h1 .day { font-size: 12px; }
-html[data-shape="phone"] .queue .legend { font-size: 12px; margin-top: 6px; }
+html[data-shape="phone"] .queue h1 .day { font-size: var(--t-sm); }
+html[data-shape="phone"] .queue .legend { font-size: var(--t-sm); margin-top: 6px; }
 /* what the marks mean is the Mac's to say: each row here carries its word */
 html[data-shape="phone"] .queue .legend > span { display: none; }
 html[data-shape="phone"] .queue .enter-queue { display: none; }
-html[data-shape="phone"] .queue .exam-filter button { min-height: 32px; font-size: 13px; }
-html[data-shape="phone"] .queue .qlog-line { font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+html[data-shape="phone"] .queue .exam-filter button { min-height: 32px; font-size: var(--t-sm); }
+html[data-shape="phone"] .queue .qlog-line { font-size: var(--t-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 html[data-shape="phone"] .qlist { margin-top: 12px; }
 html[data-shape="phone"] .qlist li:not(.fold) {
   grid-template-columns: 16px minmax(0, 1fr);
@@ -90,14 +93,14 @@ html[data-shape="phone"] .qlist li .mark { grid-area: mark; }
 html[data-shape="phone"] .qlist li .body { grid-area: body; font-size: 17px; line-height: 1.35; }
 html[data-shape="phone"] .qlist li .due { display: none; }
 html[data-shape="phone"] .qlist li .pri { display: none; }
-html[data-shape="phone"] .qlist .body .src { font-size: 12px; margin-bottom: 3px; }
-html[data-shape="phone"] .qlist .body .kindtag { font-size: 11px; }
-html[data-shape="phone"] .qlist .body .ref-line { font-size: 11.5px; }
-html[data-shape="phone"] .qlist li.fold { padding: 12px 0; font-size: 12px; min-height: var(--finger); align-items: center; }
+html[data-shape="phone"] .qlist .body .src { font-size: var(--t-sm); margin-bottom: 3px; }
+html[data-shape="phone"] .qlist .body .kindtag { font-size: var(--t-xs); }
+html[data-shape="phone"] .qlist .body .ref-line { font-size: var(--t-xs); }
+html[data-shape="phone"] .qlist li.fold { padding: 12px 0; font-size: var(--t-sm); min-height: var(--finger); align-items: center; }
 html[data-shape="phone"] .qlist li.fold .fold-what { display: none; }
 
 /* ⏎'s words, a line each */
-.ra-when { display: block; margin-top: 1px; font-family: var(--mono); font-size: 11px; color: var(--fg-3); }
+.ra-when { display: block; margin-top: 1px; font-family: var(--sans); font-size: var(--t-xs); color: var(--fg-3); }
 
 /* a topic's row: ⏎ p d as buttons */
 .topic-acts { grid-area: acts; display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 6px; margin-top: 10px; }
@@ -110,7 +113,7 @@ html[data-shape="phone"] .qlist li.fold .fold-what { display: none; }
   background: transparent;
   color: var(--fg-2);
   font-family: var(--sans);
-  font-size: 13px;
+  font-size: var(--t-sm);
   line-height: 1.2;
 }
 .topic-acts button:first-child { color: var(--fg-1); border-color: color-mix(in oklab, var(--accent) 40%, transparent); }
@@ -122,14 +125,14 @@ html[data-shape="phone"] .recall-wrap {
   padding: 4px max(12px, var(--safe-r)) 0 max(12px, var(--safe-l));
   align-items: stretch;
 }
-html[data-shape="phone"] .recall-meta { margin-bottom: 8px; gap: 10px; font-size: 12px; min-height: var(--finger); flex-shrink: 0; }
+html[data-shape="phone"] .recall-meta { margin-bottom: 8px; gap: 10px; font-size: var(--t-sm); min-height: var(--finger); flex-shrink: 0; }
 html[data-shape="phone"] .sess-nav { gap: 0; margin-right: 0; flex-shrink: 0; }
-html[data-shape="phone"] .sess-nav .sn-btn { width: 40px; height: var(--finger); font-size: 20px; border: 0; color: var(--fg-3); }
+html[data-shape="phone"] .sess-nav .sn-btn { width: 40px; height: var(--finger); border: 0; color: var(--fg-2); --ic: 18px; }
 html[data-shape="phone"] .sess-nav .sn-btn:hover:not(:disabled) { color: var(--fg-3); }
 html[data-shape="phone"] .recall-wrap .card { flex: 0 1 auto; font-size: 21px; max-width: none; }
 html[data-shape="phone"] .recall-wrap .card .face { padding: 18px 16px; }
 html[data-shape="phone"] .recall-wrap .card .face-hint { display: none; }
-html[data-shape="phone"] .recall-wrap .card-meta { max-width: none; margin-top: 10px; gap: 10px; font-size: 11px; }
+html[data-shape="phone"] .recall-wrap .card-meta { max-width: none; margin-top: 10px; gap: 10px; font-size: var(--t-xs); }
 /* the buttons across the foot: the space goes above them */
 html[data-shape="phone"] .recall-wrap .card-meta { margin-bottom: auto; }
 html[data-shape="phone"] .grades,
@@ -146,7 +149,7 @@ html[data-shape="phone"] .grades button:first-child { border-left: 0; }
 html[data-shape="phone"] .grades button:hover { background: transparent; color: var(--fg-2); }
 html[data-shape="phone"] .grades button:active { background: var(--line-2); }
 html[data-shape="phone"] .grades button kbd { display: none; }
-html[data-shape="phone"] .grades button .gap { font-size: 12.5px; margin-top: 5px; color: var(--fg-3); }
+html[data-shape="phone"] .grades button .gap { font-size: var(--t-sm); margin-top: 5px; color: var(--fg-3); }
 .reveal-all {
   appearance: none;
   flex-shrink: 0;
@@ -166,12 +169,12 @@ html[data-shape="phone"] .grades button .gap { font-size: 12.5px; margin-top: 5p
 html[data-shape="phone"] .session-bar { position: sticky; bottom: 0; max-width: none; padding: 0; margin: -150px 0 0; }
 html[data-shape="phone"] .session-bar .sb-inner { border-width: 1px 0 0; border-radius: 0; padding: 2px max(10px, var(--safe-r)) calc(10px + var(--safe-b)) max(10px, var(--safe-l)); }
 html[data-shape="phone"] .session-bar .sb-meta { margin-bottom: 2px; gap: 8px; }
-html[data-shape="phone"] .session-bar .sb-count { font-size: 12px; }
-html[data-shape="phone"] .session-bar .sb-kind { font-size: 11.5px; }
+html[data-shape="phone"] .session-bar .sb-count { font-size: var(--t-sm); }
+html[data-shape="phone"] .session-bar .sb-kind { font-size: var(--t-xs); }
 html[data-shape="phone"] .session-bar .sb-stands { margin-bottom: 8px; flex-wrap: wrap; row-gap: 1px; white-space: normal; }
 html[data-shape="phone"] .session-bar .sb-what { flex: 1 1 calc(100% - 24px); white-space: nowrap; }
 html[data-shape="phone"] .session-bar .sb-what { font-size: 15px; }
-html[data-shape="phone"] .session-bar .sb-where { font-size: 11.5px; flex: 1 1 100%; flex-shrink: 1; }
+html[data-shape="phone"] .session-bar .sb-where { font-size: var(--t-xs); flex: 1 1 100%; flex-shrink: 1; }
 html[data-shape="phone"] .session-bar .sb-actions { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 6px; }
 html[data-shape="phone"] .session-bar .sb-actions button { min-height: 52px; padding: 4px 8px; justify-content: center; }
 html[data-shape="phone"] .session-bar .sb-actions .ra-l { font-size: 14px; line-height: 1.2; text-align: center; }
@@ -189,12 +192,13 @@ html[data-shape="phone"] .side[data-sheet="1"] {
   display: flex;
   flex-direction: column;
 }
-html[data-shape="phone"] .side h6 { font-size: 12px; }
+html[data-shape="phone"] .side h6 { font-size: var(--t-sm); }
 html[data-shape="phone"] .tree { font-size: 16px; }
 html[data-shape="phone"] .tree .row { min-height: var(--finger); padding-top: 6px; padding-bottom: 6px; }
-html[data-shape="phone"] .tree .row .chev { width: 30px; height: var(--finger); margin: -6px 0; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
-html[data-shape="phone"] .tree .row .due { font-size: 12px; }
-html[data-shape="phone"] .tree .row .away { font-size: 11px; }
+html[data-shape="phone"] .tree .row .chev { width: 30px; height: var(--finger); margin: -6px 0; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; --ic: 14px; }
+html[data-shape="phone"] .tree .row .glyph { --ic: 17px; width: 18px; }
+html[data-shape="phone"] .tree .row .due { font-size: var(--t-sm); }
+html[data-shape="phone"] .tree .row .away { font-size: var(--t-xs); }
 /* the palette's field at the sheet's foot, under the thumb that opened it */
 .side-find {
   appearance: none;
@@ -211,11 +215,11 @@ html[data-shape="phone"] .tree .row .away { font-size: 11px; }
   border-top: 1px solid var(--line-1);
   background: var(--bg);
   color: var(--fg-3);
-  font-family: var(--mono);
+  font-family: var(--sans);
   font-size: 14px;
   text-align: start;
 }
-.side-find .g { color: var(--fg-4); font-size: 16px; }
+.side-find .g { color: var(--fg-3); display: flex; --ic: 17px; }
 
 html[data-shape="phone"] .palette-overlay { padding: calc(var(--safe-t) + 8px) 8px 8px; height: var(--shell-h, 100dvh); bottom: auto; background: var(--bg); }
 html[data-shape="phone"] .palette-panel { width: 100%; max-height: 100%; }
@@ -233,8 +237,8 @@ html[data-shape="phone"] .palette-foot { display: none; }
 
 html[data-shape="phone"] .tweaks { left: 8px; right: 8px; bottom: calc(8px + var(--safe-b)); width: auto; max-height: calc(var(--shell-h, 100dvh) - var(--safe-t) - var(--safe-b) - 24px); overflow: auto; font-size: 14px; }
 html[data-shape="phone"] .tw-rows .tw-text, html[data-shape="phone"] .tw-rows .tw-num, html[data-shape="phone"] .tw-rows .tw-sel { font-size: 16px; padding: 7px 8px; }
-html[data-shape="phone"] .tw-rows .tw-seg button { min-height: 38px; font-size: 13px; }
-html[data-shape="phone"] .tw-rows .tw-x { font-size: 22px; padding: 4px 10px; margin: -4px -10px; }
+html[data-shape="phone"] .tw-rows .tw-seg button { min-height: 38px; font-size: var(--t-sm); }
+html[data-shape="phone"] .tw-rows .tw-x { width: 40px; height: 40px; margin: -10px -12px; --ic: 16px; }
 
 /* the welcome, before any of it */
 html[data-shape="phone"] .welcome-row { min-height: 48px; }
@@ -243,8 +247,8 @@ html[data-shape="phone"] .welcome input { font-size: 16px; }
 
 /* ── a document: a single page ────────────────────────────────── */
 html[data-shape="phone"] .reader-wrap { padding-left: max(16px, var(--safe-l)); padding-right: max(16px, var(--safe-r)); }
-html[data-shape="phone"] .reader .meta { flex-wrap: wrap; row-gap: 6px; font-size: 12px; }
-html[data-shape="phone"] .reader .meta .frozen-tag { min-height: 32px; font-size: 13px; }
+html[data-shape="phone"] .reader .meta { flex-wrap: wrap; row-gap: 6px; font-size: var(--t-sm); }
+html[data-shape="phone"] .reader .meta .frozen-tag { min-height: 32px; font-size: var(--t-sm); }
 html[data-shape="phone"] .reader .meta .kbd { display: none; }
 html[data-shape="phone"] .notes-toggle, html[data-shape="phone"] .pages-toggle { color: var(--fg-2); }
 html[data-shape="phone"] .fv-new button { min-height: var(--finger); font-size: 14px; }
@@ -253,11 +257,11 @@ html[data-shape="phone"] .fv-view button { min-height: var(--finger); font-size:
 html[data-shape="phone"] .deck-study .ds-study { min-height: var(--finger); font-size: 15px; }
 html[data-shape="phone"] .deck-bar .db-search { font-size: 16px; }
 html[data-shape="phone"] .deck-bar .db-row kbd { display: none; }
-html[data-shape="phone"] .deck-bar .chip { min-height: 36px; font-size: 13px; }
+html[data-shape="phone"] .deck-bar .chip { min-height: 36px; font-size: var(--t-sm); }
 /* a card's row: its form over its faces, the faces the width of the page */
 html[data-shape="phone"] .deck-view .card-span.deck-row { grid-template-columns: minmax(0, 1fr) auto; row-gap: 2px; padding-top: 10px; padding-bottom: 10px; }
-html[data-shape="phone"] .deck-row .dr-form { grid-column: 1 / -1; padding-left: 0; font-size: 11px; }
-html[data-shape="phone"] .deck-row .dr-when { font-size: 11.5px; }
+html[data-shape="phone"] .deck-row .dr-form { grid-column: 1 / -1; padding-left: 0; font-size: var(--t-xs); }
+html[data-shape="phone"] .deck-row .dr-when { font-size: var(--t-xs); }
 
 /* ── a quick card ─────────────────────────────────────────────── */
 .quick {
@@ -282,7 +286,7 @@ html[data-shape="phone"] .deck-row .dr-when { font-size: 11.5px; }
   background: transparent;
   padding: 0 16px;
 }
-.quick .composer .hd { padding: 8px 0 10px; font-size: 13px; border-bottom: 0; flex-shrink: 0; }
+.quick .composer .hd { padding: 8px 0 10px; font-size: var(--t-sm); border-bottom: 0; flex-shrink: 0; }
 .quick .composer .type-toggle button { min-height: 36px; padding: 0 10px; font-size: 14px; }
 .quick .composer textarea, .quick .composer input { font-size: 19px; line-height: 1.35; }
 .quick .composer > textarea { flex: 1; min-height: 0; }
@@ -319,9 +323,10 @@ html[data-keyboard] .quick-ft { padding-bottom: 0; }
   font-size: 15px;
   text-align: start;
 }
-.quick-deck .qd-w { color: var(--fg-4); font-family: var(--mono); font-size: 12px; }
+.quick-deck .qd-w { color: var(--fg-4); font-family: var(--sans); font-size: var(--t-sm); }
 .quick-deck .qd-t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.quick-deck .qd-c { color: var(--fg-4); font-size: 11px; }
+.quick-deck .qd-c { color: var(--fg-3); display: flex; --ic: 14px; }
+.quick-deck .qd-c[data-open="1"] .ic { transform: rotate(180deg); }
 .qf-acts { display: grid; grid-template-columns: 1fr 1.4fr 1fr; }
 .qf-acts button {
   appearance: none;
@@ -371,7 +376,7 @@ html[data-keyboard] .quick-decks { bottom: 96px; }
   text-align: start;
 }
 .quick-decks .qd-row[data-on="1"] { background: var(--line-3); }
-.quick-decks .qd-at { color: var(--fg-4); font-family: var(--mono); font-size: 11.5px; flex-shrink: 0; }
+.quick-decks .qd-at { color: var(--fg-4); font-family: var(--sans); font-size: var(--t-xs); flex-shrink: 0; }
 
 /* a phone on its side: the same, the sides clear of the notch */
 html[data-shape="phone"] .top { padding-left: max(14px, var(--safe-l)); padding-right: max(14px, var(--safe-r)); }

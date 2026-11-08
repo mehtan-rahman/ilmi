@@ -29,7 +29,7 @@ import { addSurface } from './ink.js';
 import { noteInk, type NoteInk } from './noteInk.js';
 import { inkLines } from '../reader/inkArea.js';
 import { imagePicker, pageDrops, readImagePath, type ImageFile } from './pageImages.js';
-import { dueLabel } from './items.js';
+import { dueLabel, dueTone } from './items.js';
 import { pagesOf, titleOf } from './names.js';
 import { openPagesBeside } from './book.js';
 import { useApp, type DocInfo } from './store.js';
@@ -430,7 +430,7 @@ class CardView implements NodeView {
     const isDue = due === undefined || whenToDate(due) <= now;
     const inner =
       `<div class="cs-body">${cardHTML(card)}</div>` +
-      `<div class="cs-foot"><span class="cs-state" data-due="${isDue ? '1' : '0'}">${escapeHtml(dueLabel(due, now))}</span></div>`;
+      `<div class="cs-foot"><span class="cs-state" data-due="${isDue ? '1' : '0'}" data-st="${dueTone(dueLabel(due, now))}">${escapeHtml(dueLabel(due, now))}</span></div>`;
     if (card.item === undefined) {
       ownClasses(this.dom, `card-span${isDue ? ' due' : ''}`);
       this.dom.style.removeProperty('--indent');

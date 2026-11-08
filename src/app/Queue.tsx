@@ -10,7 +10,7 @@
 import { Fragment, useEffect, useState, type MouseEvent } from 'react';
 import { PRI_DEFAULT, cardFields } from '../format/index.js';
 import { counts, dayOf, examKey, inScope, overflow, type ExamAt, type QueueItem } from '../schedule/index.js';
-import { QUEUE_EMPTY, QUEUE_LEGEND, dayLabel, dueWhen, examName, examWhen, forExam, glyphOf, intervalLabel, isFresh, kindTag, markOf, paceWords, snippetOf, standing } from './items.js';
+import { QUEUE_EMPTY, QUEUE_LEGEND, dayLabel, dueWhen, examName, examWhen, forExam, glyphOf, intervalLabel, isFresh, kindTag, markOf, paceWords, snippetOf, standing, dueTone } from './items.js';
 import { pathParts, plainMath } from './chromeText.js';
 import { MathText } from './MathText.js';
 import type { DocInfo } from './store.js';
@@ -26,6 +26,7 @@ import { restore } from './deck.js';
 import type { ReadItem, SectionItem, WriteItem } from '../schedule/index.js';
 import './queue.css';
 import { appNow } from './clock.js';
+import { Glyph } from './icons.js';
 
 interface Props {
   scope: QueueScope;
@@ -177,7 +178,7 @@ export function Queue({ scope, active }: Props) {
         {scope === 'today' && (
           <div className="legend">
             <b>{items.length}</b> due, in priority order
-            {QUEUE_LEGEND.map(([g, el, what]) => <span key={el}><span className="lg-sep"> · </span><span className="lg-g" data-el={el}>{g}</span> {what}</span>)}
+            {QUEUE_LEGEND.map(([g, el, what]) => <span key={el}><span className="lg-sep"> · </span><span className="lg-g" data-el={el}><Glyph g={g} /></span> {what}</span>)}
           </div>
         )}
         {scope === 'today' && items.length > 0 && (
@@ -221,10 +222,10 @@ export function Queue({ scope, active }: Props) {
                 onMouseEnter={phone ? undefined : () => setCursor(i)}
                 onClick={(e) => open(item, clickOpts(e))}
               >
-                <span className="mark" data-el={markOf(item)}>{glyphOf(item)}</span>
+                <span className="mark" data-el={markOf(item)}><Glyph g={glyphOf(item)} /></span>
                 <span className="body">
                   <span className="src" data-by={by}>
-                    <span className="kindtag" data-el={item.kind}>{kindTag(item)}</span>
+                    <span className="kindtag" data-el={item.kind} data-tag={kindTag(item)}>{kindTag(item)}</span>
                     <QueuePath item={item} docs={docs} by={by} />
                   </span>
                   <Body item={item} />
@@ -233,7 +234,7 @@ export function Queue({ scope, active }: Props) {
                   {item.pulled && item.exam && !(item.kind === 'read' && item.byFinish) && <span className="for-exam" title={`brought forward from ${dueWhen(item.pulled, now)}`}>{forExam(item.exam)}</span>}
                 </span>
                 <span className="pri">{item.pri !== PRI_DEFAULT && <b>p {item.pri}</b>}</span>
-                <span className="due" title={ivl ? `interval ${ivl}` : undefined}>{item.kind === 'card' && (item.buried || item.held) ? 'tomorrow' : item.pulled ? dueWhen(dayOf(item.dueAt), now) : dueWhen(item.due, now)}</span>
+                <span className="due" title={ivl ? `interval ${ivl}` : undefined} data-st={dueTone(item.kind === 'card' && (item.buried || item.held) ? 'tomorrow' : item.pulled ? dueWhen(dayOf(item.dueAt), now) : dueWhen(item.due, now))}>{item.kind === 'card' && (item.buried || item.held) ? 'tomorrow' : item.pulled ? dueWhen(dayOf(item.dueAt), now) : dueWhen(item.due, now)}</span>
                 {phone && item.kind !== 'card' && <TopicActs item={item} now={now} />}
               </li>
             );
@@ -281,7 +282,7 @@ export function SavedQueries({ activeId }: { activeId: string | undefined }) {
               onClick={(e) => openNode(id, { newTab: !(e.metaKey || e.ctrlKey), cmdClick: e.metaKey || e.ctrlKey, shiftClick: e.shiftKey })}
             >
               <span className="chev"> </span>
-              <span className="glyph">≡</span>
+              <span className="glyph"><Glyph g="≡" /></span>
               <span className="name">{QUEUE_TITLE[scope]}</span>
               <span className="meta">{c[scope]}</span>
             </div>

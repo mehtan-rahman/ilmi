@@ -6,6 +6,159 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-11-07 — milestones 52 and 71: finish by, and the open questions settled; the whole set on one commit
+
+Done on main: 52 at `bd92a2c` (finish by) and `e18f419` (the `deck` and `open` smokes mended); 71 at `6b5fe03` and `b753e2c` (the `ipad` smoke's wait), written into PLAN this
+session from the coordinator's word, the user's "Can you not just make reasonable decisions for all of these?". Every check below ran
+from a clean checkout of `b753e2c`. The user said to finish 52 ("Please go thorugh andfinish"), so the front-matter field is built.
+
+### 52, finish by
+
+A source's `finish: <day>` paces its passes to end on that day, as an exam paces them to three days before one; the interval written
+is the shorter of the cadence and the pacing, an exam whose target comes first still wins, and the day after it means nothing and is
+left as written. The inspector has `finish by`, a date field, under `interval`; the queue row and the session's bar say `on pace · 10
+passes left` or `behind · 15 passes left` in the standing's small grey. **A chapter counts its pages** (not in 52's text: without it the
+sample's books, which are chapters, would show nothing). **A PDF on its own has no `finish`**: its state is in `.ilmi/reading.json`
+since 70, and a day there would take a third key (a FORMAT §1 change) and a count of pages nothing outside its lens knows; more than
+the inspector row 52 names, so that part was stopped, and FORMAT §3 says so. Corpus `mangled/finish.md`, a `finish:` on the corpus's
+`papers/crick-1995.md`, 17 new tests, `ILMI_SMOKE=finish`.
+
+**`deck` and `open`** were stale smokes, not app bugs. `open` dropped a PDF it had written into the collection by its path, which a
+drop reads from disk (since 59 the collection is a database, so the file was never on disk); the intake gained a test seam,
+`intakeHooks.ingestPdf(bytes, name)`, and the smoke hands it the bytes. `deck` looked for the inspector's `schedule` block on the
+corpus deck's first card, which is a both-ways card (`default-card: bidir`) whose blocks are `front to back` and `back to front`.
+
+### 71, the open questions settled
+
+- **What is written on a book's pages goes out**: `.ilmi/ink/<sha256>/<page>.pkdrawing` in an export, the mirror and a dated export,
+  taken back into strokes by an import; a view of the `ink` table in `storeFs`, never rows. PencilKit writes new ids into every save,
+  so the mirror compares strokes, not bytes, or it would rewrite each written page on every pass. FORMAT §1, a corpus page, tests,
+  and four lines of `store`.
+- **Which plugins are on merges plugin by plugin**: a register each, laid over the file as the later write left it.
+- **Join from the welcome of an iPad or a phone**: the storage's rows (one component now for Tweaks and the welcome), `join`, the
+  collection opened. `ILMI_SMOKE=join`, new.
+- **The walk, measured by phase** at the size collection, in the window in front: the open 985 MB, the walk 1,312 MB at its most, the
+  palette's queries after it 2,634 MB. The 2.5 GB 68 reported was the lifetime peak, which is the queries, not the walk. Nothing in
+  the walk changed. A worker for its parsing was tried and taken out: 1,675 MB.
+- **Sign out** in the `account` row: the tokens forgotten, the sync through that storage stopped. Six lines of `storage` over the
+  loopback Dropbox and Drive.
+- **65's code, unshown**: an `icloud drive` kind, a folder in the app's iCloud container, offered only where the app has one, which is
+  nowhere until it is signed with an iCloud container. The native calls are Objective-C in the ink plugin's `ink.m`, not a Swift
+  plugin as decided, since the Mac needs them too. The entitlements are not added (a free team cannot sign them); 71's notes say which.
+- **Decided as they stand**, nothing built: see 71 in PLAN. Git sync stays (66).
+- **The `ipad` smoke** (55's, not run since 59) waited 20 s for `synced` after its clone; since 51 an open writes `.ilmi/state.json`,
+  which git's sync commits and pushes a minute later. It waits 90 s now (`b753e2c`, `smoke.ts` alone).
+
+### The whole set, one commit (`b753e2c`, a clean checkout)
+
+| where | check | result |
+| --- | --- | --- |
+| Mac | `store` | 38 ok, its export equal to `samples/double-major` by `diff -r` (0 lines) (34 before; 4 for 71's page ink) |
+| Mac | `crdt` | 76 ok, 18 captures |
+| Mac | `storage` over s3 / webdav / dropbox / drive | 77 / 76 / 96 / 97 ok (dropbox and drive 90 and 91 before; 6 each for sign out) |
+| Mac | `sync` | 34 ok |
+| Mac | `nudge` | 29 ok |
+| Mac | `tour` | 24 ok |
+| Mac | `book` | 131 ok |
+| Mac | `books` | 81 ok |
+| Mac | `deck` (over the corpus) | done: it asserts nothing, 32 log lines, 8 captures (failed before) |
+| Mac | `open` | 83 ok (failed at 60 before) |
+| Mac | `search` | 30 ok |
+| Mac | `finish` (new) | 65 ok, 6 captures |
+| Mac | `touch` 1 and 3 | 7 and 14 ok |
+| Mac | `ink` 1 and 3 | 4 and 18 ok |
+| Mac | `pageink` 1 and 3 | 16 and 23 ok |
+| Mac | `phone` 1 and 3 | 3 and 8 ok |
+| iPad (built afresh) | `tour` | 24 ok |
+| iPad | `touch` | 133 ok, on the first try |
+| iPad | `ink` | 63 ok |
+| iPad | `pageink`, then opened again | 48 and 24 ok |
+| iPad | `search` | 30 ok |
+| iPad | `ipad` | 30 ok (not run since 59; mended in `b753e2c`, below) |
+| iPad | `join` (new) | 13 ok |
+| iPhone (built afresh) | `phone` | 196 ok, on the first try |
+| iPhone | `search` | 31 ok |
+| iPhone | `join` (new) | 13 ok |
+| — | `ILMI_SEEDS=1-500`, without and with `ILMI_SNAPS=1` | 556 passed, 556 passed |
+| — | `npm test` | 1567 passed, 1 skipped, in 101 files |
+| — | typecheck | clean |
+| — | `cargo test` (the app; `-p tauri-plugin-ink`) | 69 passed; 8 passed, 1 ignored |
+| — | `cargo check` for both iOS targets | clean (run on `6b5fe03`'s Rust, which `b753e2c` does not touch) |
+
+Nothing failed on `b753e2c`. On the way there, from `6b5fe03`: `ipad` failed (a stale wait, mended), and `touch` 3 and the iPad's
+`pageink` reopening failed because the chain's order let another run remake the collection between a run's two halves (the Mac's
+`phone`, and the iPad's `search`); the same runs passed in order on `6b5fe03`, and the chain (`all71.sh`) was reordered before the run
+above.
+
+### Found
+
+- **A session opened from a scrolled queue starts at the queue's scroll** in the same pane, and ⏎ reads the read point off it: one
+  run's pass wrote `pos=32` of 36 with nothing read. Not fixed (not 52's or 71's); the `finish` smoke scrolls the pane to its top first.
+- **The palette's queries at 115,000 cards take the web view to 2.6 GB** (the size smoke's fifteen kinds, five times each). Not changed.
+- The first `finish` row capture showed the queue's top, not the row: the smoke now scrolls the row into view before its shots.
+- **On a phone the welcome's panel clips** the collections' rows under `join`'s fields (seen in the iPhone's capture); they are in the
+  panel, under its fold. Not changed.
+- Run in one chain, two-device smokes share collection names (`double-major`) with single runs: a run between a pair's halves remakes
+  the collection and the second half fails. `all71.sh` keeps them apart.
+
+### Not verified
+
+The iPad and the iPhone with a finish day (a native date field there, untried). iCloud at all (65). Real Dropbox and Drive, a real
+bucket or WebDAV server. The welcome's `join` with a service that signs in (only WebDAV was joined through it). Two real devices turning
+plugins on apart (the engine's tests alone). The walk and the palette at size on a phone. The e-ink theme. A real device and a Pencil,
+as before. Not rerun this time: `size` as a pass/fail (it was run for its measure; its time thresholds fail in a covered window),
+`cadence`, `exam`, `textsections`.
+
+### For the user
+
+Nothing is open but hardware and accounts. 65 waits on the Apple Developer Program (this Mac has no Apple account in Xcode and no
+signing identity); 66 on a real iPad or iPhone, and git sync is removed only once the engine has passed there; real Dropbox and Google
+Drive on keys of your own; a real bucket or WebDAV server on one of yours.
+
+Handoff prompt for the next session:
+
+```
+Read PLAN.md, FORMAT.md, BUILD-LOG.md, and spec/hashiyah/HANDOFF.md. Every
+milestone the build can do alone is done: 0–64 and 67–71 ticked (13 was dropped). What is left
+waits on hardware and accounts, and nothing else is open for the user:
+65, iCloud Drive, waits on the Apple Developer Program (this Mac has no Apple
+account in Xcode and no signing identity; 71 wrote the code, shown nowhere
+until the app is signed with an iCloud container, and its notes say which
+entitlements to add then); 66, a real iPad or iPhone on a cable, and git let
+go — do NOT remove git sync before the engine has passed on a real device,
+per the introduction of "A database under the app, synced by CRDT to any
+storage"; real Dropbox and Google Drive (64) on keys of the user's own; a
+real bucket or WebDAV server (63) on one of theirs. If the user names one,
+do that only, stop at its "done when", tick it, write notes under it, add an
+entry to BUILD-LOG.md with a fresh handoff prompt, and commit. Rules as in
+PLAN.md's ground rules: export PATH=$HOME/.cargo/bin:/opt/homebrew/bin:$PATH;
+npm test and npm run typecheck green before a commit, cargo test in src-tauri
+(the app's 69 and `-p tauri-plugin-ink`'s 8), cargo check for
+both iOS targets when Rust or native code changes; ask before a screen,
+section, or setting the brief does not name; a FORMAT change needs a corpus
+file and a test; a schema change must let an existing collection open (the
+schema is 5). What 52 and 71 leave that carries: `finish:` paces a source
+whose reading is counted (prose, or a chapter's `pages`; `finishOf`,
+`readTarget`, `paceWords`), never a bare PDF; `.ilmi/ink/` is a view of the
+ink table in `storeFs`, compared by strokes; plugins on are `~p|<id>`
+registers over `.ilmi/plugins.json`; the storage's rows are
+`StorageFields.tsx` for Tweaks and the welcome alike; the size smoke says the
+web view's most by phase. Keep the whole set passing on one commit, as the
+table at the top of BUILD-LOG.md has it: `store` 38, `crdt` 76, `storage` 77 s3 / 76 webdav / 96 dropbox / 97 drive, `sync` 34, `nudge` 29, `tour` 24 (Mac and iPad), `book` 131, `books` 81, `deck` done (it asserts nothing), `open` 83, `search` 30 (Mac and iPad) and 31 (iPhone), `finish` 65, `touch` 7/133/14, `ink` 4/63/18, `pageink` 16/48/23/24, `phone` 3/196/8, `ipad` 30, `join` 13 (iPad and iPhone), the random test 556 and 556 with snapshots. The rig's chain is
+`all71.sh <tag> [mac|ipad|mac3|iphone|tests]` in the scratchpad rig folder.
+The simulator does not finish booting, and `simctl launch` does not return,
+while the Mac's screen is locked; a locked or covered window stalls or slows
+the Mac's: wait, do not skip, look at what a capture shows. The first rig
+touch after a boot can be dropped: run again. Stop the app on the simulator
+after each run. Never kill a process on port 1420 that is not yours, run one
+dev server at a time, stop your own app binary by pid, capture the Mac only by
+window id. Found and not fixed: a session opened from a scrolled queue starts
+at the queue's scroll and ⏎ reads the read point off it; the palette's
+queries at 115,000 cards take the web view to 2.6 GB.
+```
+
+---
+
 ## 2026-11-07 — milestone 68: search across everything
 
 Done on main: `0e4f354`, then `bf4cf23` (`smoke.ts` alone: a card asked for by its words, a covered window timed without hanging). In the

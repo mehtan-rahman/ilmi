@@ -5679,7 +5679,85 @@ cadence and the file says so; a section passed sixty days late lands past
 dismisses it; and `design/sim/irsim.py` with the shipped constants still
 finishes the semester's three textbooks (`ILMI_SMOKE=cadence`).
 
-### [ ] 52. Finish by — a day on a source that paces its reading
+### [x] 52. Finish by — a day on a source that paces its reading
+Done 2026-11-07, commits `bd92a2c` (the code) and `e18f419` (the `deck` and `open` smokes).
+Notes: **Decided.** The user, 2026-11-07, to the coordinator: "Please go
+thorugh andfinish". So the front-matter field is built as 52 had it.
+**The field** (FORMAT §3, *finish*, and the table): `finish: <day>`, plain
+or quoted like `title`, written plain; a comment after a quoted day is
+dropped first, since a day holds no `#`. Not a day, it is a raw line with a
+diagnostic, and given twice the later wins, as any key. `Meta.finish`.
+**Where it means something** (`finishes`, `finishOf` in `read.ts`): a
+source (`type: source`, or the old `imported` rule) whose reading can be
+counted: its prose, or a chapter's `pages`. A chapter counts its pages
+(`leftToFinish`: the pages after `pos` to the range's last; what a pass has
+read is the pages from the first to `pos` over `reps`). This was not in
+52's text: the exam's pacing never counts a PDF's pages (43's open item),
+and without it a finish day on the sample's books, which are chapters, would
+do nothing a reader could see. The exam's own pacing is unchanged. On a
+note, a draft, a deck, an extract, a source with no `read` line, and a
+document read by all of a PDF with no `pages`, the field means nothing and
+the inspector has no row. **A bare PDF has no `finish`.** Since 70 its
+`read` line is in `.ilmi/reading.json`; giving it a day would take a third
+key there (a FORMAT §1 change) and, more, a count of its pages, which
+nothing outside its lens knows until the PDF is opened: neither is the
+inspector row 52 names, so that part was stopped, as the brief said to.
+FORMAT §3 says so. **Pacing** (`readTarget` in `exams.ts`, used by
+`advanceRead`, `examQueue` and the session's words): `pacedInterval` took a
+`lead` (3 for an exam, 0 for a finish day); the nearer target paces, an
+exam's being three days before it, the exam on a tie. While the day is
+ahead (`finish > today`) a pass writes the shorter of the cadence and the
+pacing; the queue brings a line written before the day was set forward
+(`pulled`, `byFinish`, nothing written) and a clear puts it back; the
+backlog holds it over to tomorrow as any book; postpone is unchanged and
+the queue paces it back. On the day and after nothing is paced and the
+field is left. `Pace` in `read.ts` is now a function of where a pass leaves
+the marker. **The words** (`paceWords` in `items.ts`): `on pace · N passes
+left` while a pass a day from the next pass's day would still finish by
+the day (passes ≤ days from then to the day, both counted), `behind · N
+passes left` once it would not; nothing with no day, past the day, or with
+nothing left. In the queue row they are a line of their own under the
+standing (`.for-exam`'s style, `data-pace`), and in the session's bar a
+second quiet span after it, not chained to it with another `·`; `for the
+midterm` is not shown on a row a finish day brought forward. ⏎'s `back in
+Nd` takes the pacing too (`nextDays`): before the press it assumes a pass
+of the usual size, and the done row uses where the pass ended. **The
+inspector**: `finish by` under `interval` on such a source, a date field
+(`DayField`): a day ahead is written as it is picked, a half-typed year (a
+day long past) waits for blur or ⏎, empty clears, escape puts it back.
+**Corpus**: `mangled/finish.md` (the day quoted with a comment, three bad
+lines, a body line that looks like one; its pass lands on the pacing's two
+days, not the cadence's three), and `finish: 2026-07-01` on the corpus
+vault's `papers/crick-1995.md`. Tests: `format/__tests__/finish.test.ts`
+3, `schedule/__tests__/finish.test.ts` 11 (the corpus pass, the cadence
+kept, a walk to the day, after the day, where it means nothing, a chapter's
+pages, the backlog, the nearer exam, the queue's pull and clear, a paced
+line left as written), `app/__tests__/finish-view.test.ts` 3 (the field),
+`items.test.ts` (the words). **`ILMI_SMOKE=finish`** (65 ok, 6 captures):
+the merchant passage at priority 70 (cadence three), half read (6 of 36 in
+2 passes); no words with no day; `finish by` three weeks out written to the
+front matter; the row and the bar `on pace · 10 passes left`; ⏎ reads
+`back in 2d`, and the pass, which did not move the marker, lands `ivl=1`
+tomorrow (the done row says `1d`); a day two days out reads `behind · 15
+passes left`; empty clears it, the words go, and the next pass lands on the
+cadence, `ivl=3`; a line out on its cadence is brought forward by the queue
+with the file untouched, and goes back when cleared; past the day no words
+and the field kept; the chapter `ch. 3` counts 2 pages left at 1 a pass.
+Looked at as a reader, light and dark: the row is a quiet date field in the
+inspector's mono, `11/24/2026` in this Mac's locale; the queue row's words
+sit under `read on, 17% read` in the same small grey; the bar reads `read
+on, 17% read  on pace · 10 passes left`.
+**Found.** A session opened from a scrolled queue starts at the queue's
+scroll in the same pane, and ⏎ then reads the read point off that: one
+run's pass wrote `pos=32` of 36 having read nothing. Not 52's and not
+fixed; the smoke scrolls the pane to its top before a session. **Not done.**
+A bare PDF's `finish` (above). A finish day on a folder or a notebook, and
+a per-pass size, as 52 said. The inspector's growth row still reads `every
+third day while reading` on a source a finish day is pacing faster. Words
+are counted as blocks, not words, as 43's pacing is. **Not verified.** The
+iPad and the iPhone were not run with a finish day (the field is a native
+date input there, untried); the e-ink theme. Checked with the whole set from a clean
+checkout of `b753e2c` (71's last commit): the table is in BUILD-LOG.
 From the conversation of 2026-11-03 on how reading actually works: a
 textbook usually follows something external (lectures, a reading group,
 a deadline), so priority is a stand-in for "how soon do I need this", and
@@ -7828,6 +7906,10 @@ at loopback fakes and says so.
 
 *Done when:* a Mac and a simulated or real iPad on one Apple account sync
 a grade and a PDF through it.
+Since 71 (`6b5fe03`) the code is there and shows nothing: the `icloud`
+kind, `icloudStorage`, and `ilmi_icloud_folder` / `ilmi_icloud_down` in the
+ink plugin's `native/ink.m`; what to add to sign the app with an iCloud
+container is in 71's notes. Unticked: nothing of it has run.
 
 ### [ ] 66. The device — a real iPad or iPhone, and git let go
 - The app on the user's device: the open and the heap with their own
@@ -8531,6 +8613,160 @@ other pane and closes it again; a chapter of the sample's book opens the
 same way with its old notes attached; the format's tests and the smokes
 that read a book (`book`, `books`, `touch`, `pageink`, `ink`, `tour`)
 pass, rewritten where they looked for the notes beside the pages.
+
+### [x] 71. The open questions, settled
+Done 2026-11-07, commits `6b5fe03` and `b753e2c` (the `ipad` smoke).
+Notes: **What is written on a book's pages, in an export.** `storeFs`
+shows the `ink` table's book pages as files under `.ilmi/ink/<sha256>/<page>.pkdrawing`
+(`inkFileOf`, `inkEntries`, `pageInkWrite` in `src/vault/store.ts`):
+listed and read like any file, written by taking the drawing apart into
+strokes (`Store.inkSplit`: the Rust `ink_split` in the app, `memSplit` in
+the tests), removed by rubbing the page out, never a row. So the export,
+the mirror, the dated export and the git sync's folder hold them with no
+change of their own, and an import takes them back. One thing did not
+come free: PencilKit gives a drawing new ids on every save, so the bytes
+of one page differ every time it is read (the plugin's own test says
+"the same strokes, though not the same bytes"); the mirror would have
+rewritten every written page on every pass, and the git sync committed
+each. `mirrorFolder` now asks `sameInk` (stroke for stroke) before it
+writes a file under `.ilmi/ink/`. The corpus round trip is byte for byte
+only through the tests' stand-in (`memDrawing` hands a foreign drawing back
+as it came); through the app it is stroke for stroke, and the plugin's
+test `corpus_drawing_keeps_its_strokes` holds the corpus file to that.
+FORMAT §1 says all of this. Corpus: `.ilmi/ink/e62fd1f4…/1.pkdrawing`
+(six strokes of `sample(2, 3, 71)`, page 1 of `papers/two-pages.pdf`).
+Tests: the store's five (export, import and a third copy; nothing written,
+no folder; the corpus page to the byte; the mirror only on a change; a
+file taken back rubs out); the engine's and the store's 67-era tests count
+the corpus page out. `ILMI_SMOKE=store` gained four lines (38 ok): a page of
+`classical-prose-reader.pdf` written on, exported, imported into another
+collection with the same 8 strokes and no row, and a second mirror pass
+writing nothing.
+**Plugins on, a register each** (`~p|<id>`, `src/sync/engine.ts`): a write
+of `.ilmi/plugins.json` records each plugin it turned on or off; a merge
+lays every such register over the file as the later write left it, so the
+file a device reads holds both devices' changes; a list from before 71
+with no registers stands as it was, and a list that is not one is left to
+the later write. Sorted when a merge has to write it, in its own order
+otherwise. Four engine tests. Tweaks stay each device's own.
+**Join from the welcome.** `src/app/StorageFields.tsx` holds the storage's
+rows (kind, fields, account), and Tweaks and the welcome both draw them;
+the styles are scoped `.tw-rows` now, not `.tweaks`. The welcome of an iPad
+or a phone has `join` beside `connect`: the rows (no folder to pick), and
+`join`, which is `joinCollection` with the settings typed there, then the
+collection opened. Views tests in `ipad-view.test.ts` (3); `ILMI_SMOKE=join`
+(new) on a simulated iPad and iPhone: a collection of the sample in
+Documents made into the app's loopback WebDAV server and deleted, then
+the welcome's `join`, `webdav`, address, user and password, `join`.
+**The walk, measured by phase.** The size smoke now samples the web view's
+footprint every half second and says its most in each phase. At the size
+collection (10,032 documents, 115,216 cards; its search tables emptied to
+make it a collection from before 68), in the window in front: the open
+985 MB, the walk 1,312 MB at its most (68 s), and the palette's queries
+after it 2,634 MB. The 2.5 GB 68 reported was the lifetime peak, which is
+those queries, not the walk. The walk was already in batches of 24
+documents with a turn of the event loop between; it is left as it was.
+Tried and taken out: the parsing in a Web Worker let go every 40 pages,
+which raised the walk's peak to 1,675 MB (a worker's heap on top of the
+page's) for no gain in time. A covered window walks in 287–307 s and peaks
+at 1,130–1,309 MB. No phone case was added: the walk adds a third to what
+the open holds. What the palette's queries cost at this size is not 71's
+and was not changed.
+**Sign out** (`signOutStorage`, `oauth_sign_out`, `oauth::forget`): beside
+`sign in` once an account is named; it stops the sync through the storage
+(it cannot be reached without the sign-in), forgets the tokens in
+`oauth.json`, and clears the account. Nothing is said to the service. A
+Rust test, and over the loopback Dropbox and Drive six more lines of
+`ILMI_SMOKE=storage`: the row offers both, sign out leaves no sign-in on the
+Rust side and the storage off, the row offers sign in alone, and sign in and
+the storage's connect bring the sync back.
+**65's code** (65 stays unticked): an `icloud` storage kind (`icloud
+drive`), a folder in the app's iCloud container (`place`), offered only
+where `icloud_folder` answers (`kindsHere`); `icloudStorage` lists a
+file iCloud has not brought down (its `.name.icloud` stand-in) and asks
+one down before it is read (`icloud_down`, a minute at most).
+The native side is Objective-C in the ink plugin's `native/ink.m`
+(`ilmi_icloud_folder`, `ilmi_icloud_down`), not a Swift plugin as the
+decision said: the Mac needs the same two calls and a Swift plugin runs on
+iOS alone, and `ink.m` is already compiled for both. With no iCloud
+container in the signature `URLForUbiquityContainerIdentifier` answers
+nothing, so nothing shows anywhere today; the plugin's test says so. Not
+added, and what to add once the Developer Program is joined: the
+entitlements `com.apple.developer.icloud-container-identifiers` and
+`com.apple.developer.ubiquity-container-identifiers` (`iCloud.dev.ilmi.app`),
+`com.apple.developer.icloud-services` = `CloudDocuments`, in
+`src-tauri/gen/apple/ilmi_iOS/ilmi_iOS.entitlements` and a macOS
+entitlements file named in `tauri.conf.json`'s `bundle.macOS.entitlements`,
+and the container enabled for the App ID in the developer account. A
+free team cannot sign those, so they would break every build here.
+**The `ipad` smoke** (55's, not run since 59) was stale, not broken: since
+51 an open writes the day it started into `.ilmi/state.json`, git's sync
+commits that and pushes it a minute later (`PUSH_AFTER_MS`), and the smoke
+waited 20 s for `synced`; it waits 90 now. Its remote must be named apart
+from the sample (`ipad-major.git`), or the iPad's `double-major`, which the
+`tour` and `search` runs import, is opened from its row instead of cloned.
+**Decided as they stand** (above): nothing built. Git sync stays.
+**Not verified.** iCloud itself (no container; 65's "done when" is untried).
+Real Dropbox and Drive, a real bucket. The welcome's `join` with a service
+that signs in (only WebDAV was joined through it). Two real devices turning
+plugins on apart (the engine's tests alone). The walk on a phone at size.
+**Checked** with the whole set from a clean checkout of `b753e2c`, nothing
+failing: `store` 38, `storage` 77/76/96/97, `join` 13 on the iPad and the
+iPhone, `ipad` 30; the rest and the counts are in BUILD-LOG's table.
+The user, 2026-11-07, of the open questions the handoffs had carried: "Can
+you not just make reasonable decisions for all of these?" Decided by the
+coordinator on their behalf the same day; built where it was decided to
+build, recorded where it was decided to leave a thing as it is.
+- **What is written on a book's pages goes out with an export.** An export,
+  the mirror and a dated export write `.ilmi/ink/<the PDF's SHA-256>/<page>.pkdrawing`,
+  and an import reads them back into strokes. FORMAT.md §1 says so, with a
+  corpus file and a test. Dated exports are the person's backup, so this is
+  the one that protects data.
+  *Done when:* the sample with a page written on exports that file, a fresh
+  import of the export holds the same strokes, and a second mirror pass
+  writes nothing (`ILMI_SMOKE=store`).
+- **Which plugins are on merges plugin by plugin**: a register each, not
+  `.ilmi/plugins.json` whole. Tweaks stay each device's own: they are about
+  the device.
+  *Done when:* two copies that turn different plugins on apart both have
+  both on after a sync, and the later of two changes to one plugin wins
+  (the engine's tests).
+- **Join a storage from the welcome of an iPad or a phone**: a `join` beside
+  `connect`, with the kinds and fields Tweaks › storage has, by 63's and
+  64's code. This is what makes a device usable at all.
+  *Done when:* on a simulated iPad and a simulated iPhone, the welcome's
+  `join` over the loopback WebDAV server opens the collection the storage
+  holds, syncing through it (`ILMI_SMOKE=join`).
+- **The index's walk at size must not reach 2.5 GB**: read and indexed in
+  bounded batches, freeing as it goes, on every device, so a phone needs no
+  case of its own; the peak measured at the size collection and said. If it
+  cannot be bounded well, a phone puts the walk off until the app has been
+  idle, and says so.
+  *Done when:* the size collection's walk is measured by phase in the
+  window and the peak said (`ILMI_SMOKE=size`).
+- **`sign out`** in the storage's `account` row: the tokens in `oauth.json`
+  forgotten. A sign-in with no way out is a gap.
+  *Done when:* over the loopback Dropbox and Drive, sign out leaves no
+  sign-in on the Rust side and the collection no longer syncing, and sign
+  in and connect bring it back (`ILMI_SMOKE=storage`).
+- **65's code, left unticked**: an `icloud drive` storage kind and native
+  code for the folder's address and for asking a file down, shown only
+  where the app has an iCloud container, so nothing appears until the
+  Developer Program is joined. It cannot be run here; 65 stays unticked.
+  An entitlement that would break a free-team or simulator build is kept
+  out, and the notes say what to add.
+  *Done when:* the kind is in the code and its tests, and absent from every
+  storage row on the Mac, the iPad and the iPhone.
+- **Decided as they stand, nothing built**: a finger boxes after a hold
+  (57); `join…` and the buttons under the storage's fields stay where 63
+  put them; a page of ink stays a file row, no new kind of row (58); a PDF
+  with an outline still lands as chapters, since they are the units of
+  incremental reading, and a 48-era source keeps its pages (70); Scribble
+  stays off (69); on the phone, the middle button, `notes` swapping the
+  page and `reveal` all stay (56); the Mac's loopback sign-in and the typed
+  keys stay (64); no search by root, and no PDF text or handwriting in the
+  index yet (68); ink on the Mac stays centred under its caption (69). Git
+  sync stays until the engine has passed on a real device (66).
 
 ## Notes for the next session
 

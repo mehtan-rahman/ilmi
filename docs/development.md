@@ -157,7 +157,10 @@ the other (about a minute and a half). The Rust side's own tests run the
 storage's verbs against both servers; with `ILMI_TEST_S3=endpoint,bucket,key,secret`
 or `ILMI_TEST_WEBDAV=address,user,password` in the environment, `cargo test
 a_server_the_environment_names` runs them against a bucket or a WebDAV
-folder of yours too (an empty one; it removes what it writes).
+folder of yours too (an empty one; it removes what it writes). With
+`ILMI_S3=endpoint,bucket,key,secret` a dev run's s3 row reaches that bucket
+instead of the loopback server, so the storage smoke runs against a real
+one (a local MinIO passed it, 2026-11-07).
 Since milestone 64 `ILMI_KIND` may also be `dropbox` or `drive`, servers
 shaped like each service's own API (`src-tauri/src/devcloud.rs`, behind the
 same listener; its head says what they check, and they are written to be

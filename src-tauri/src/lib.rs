@@ -835,7 +835,16 @@ fn dev_storage_serve() -> Result<serde_json::Value, String> {
             .filter(|s| !s.is_empty())
             .map(std::path::PathBuf::from)
             .unwrap_or_else(|| std::env::temp_dir().join(format!("ilmi-devstore-{}", std::process::id())));
-        devstore::serve(&root).map(|url| devstore::settings(&url))
+        let mut settings = devstore::serve(&root).map(|url| devstore::settings(&url))?;
+        // `ILMI_S3=endpoint,bucket,key,secret`: the s3 row reaches a bucket of yours instead (an empty one).
+        if let Some(v) = std::env::var("ILMI_S3").ok().filter(|s| !s.is_empty()) {
+            let f: Vec<&str> = v.splitn(4, ',').collect();
+            if f.len() != 4 {
+                return Err("ILMI_S3=endpoint,bucket,key,secret".to_string());
+            }
+            settings["s3"] = serde_json::json!({ "kind": "s3", "endpoint": f[0], "bucket": f[1], "key": f[2], "secret": f[3] });
+        }
+        Ok(settings)
     }
     #[cfg(not(debug_assertions))]
     {

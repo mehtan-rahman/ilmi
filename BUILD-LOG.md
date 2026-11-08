@@ -6,6 +6,17 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-11-07 — the S3 client against a real server (MinIO)
+
+No milestone. `b8e7620` from a clean checkout: typecheck clean, npm test 1567 passed (1 skipped), cargo test 69 passed.
+Then against MinIO (Homebrew's, on `127.0.0.1:9100`, an empty bucket), a real S3 server and not the loopback one:
+- `ILMI_TEST_S3=http://127.0.0.1:9100,ilmi-test,<key>,<secret> cargo test a_server_the_environment_names`: passed (the four verbs, a 3 MB file up and down in pieces, the bucket left empty).
+- `ILMI_SMOKE=storage` with `ILMI_KIND=s3` and the new dev-only `ILMI_S3=endpoint,bucket,key,secret` (it points the s3 row at that bucket instead of the loopback server): 77 ok lines, as on the loopback; the 200 MB PDF taken in on one window, sent, named `not here` on the other, opened there with its first page drawn, the web view's peak up by 0 MB; the loopback server's folder held nothing and the bucket 205 MiB in 16 objects; 12 captures.
+
+Not verified: a hosted bucket (AWS, R2, B2) with its latency and its own reading of signatures; Dropbox, Drive and a WebDAV server of anyone's wait for the user's keys (steps in `docs/guide.md`).
+
+---
+
 ## 2026-11-07 — milestones 52 and 71: finish by, and the open questions settled; the whole set on one commit
 
 Done on main: 52 at `bd92a2c` (finish by) and `e18f419` (the `deck` and `open` smokes mended); 71 at `6b5fe03` and `b753e2c` (the `ipad` smoke's wait), written into PLAN this

@@ -161,6 +161,19 @@ folder of yours too (an empty one; it removes what it writes). With
 `ILMI_S3=endpoint,bucket,key,secret` a dev run's s3 row reaches that bucket
 instead of the loopback server, so the storage smoke runs against a real
 one (a local MinIO passed it, 2026-11-07).
+
+Leaving the app sends what was written at once (`src/app/away.ts`): when
+the page is hidden, the storage's sync (if anything was written since its
+last) and git's commit and push (if one waits) run now, and on iOS the
+app asks the system for background time while they do (the ink plugin's
+`hold`, behind `app_hold`; a grace of six seconds starts with the move to
+the background). A smoke that stops the timers stops this too, but for
+`ILMI_SMOKE=away` on a simulated iPad: smoke.json gives `vault` (a copy of
+the sample) and `storage` (an empty folder); a card is graded with the
+timers off, the touch rig's `away <seconds>` sends the app home and back,
+and the grade must have gone out while it was away. A simulator suspends
+nothing (it says no limit to the time in the background), so whether the
+hold outlasts a real suspension is a device's check (66).
 Since milestone 64 `ILMI_KIND` may also be `dropbox` or `drive`, servers
 shaped like each service's own API (`src-tauri/src/devcloud.rs`, behind the
 same listener; its head says what they check, and they are written to be

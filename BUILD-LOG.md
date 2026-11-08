@@ -6,6 +6,16 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-11-07 — leaving the app sends what was written
+
+Asked by the user: "so if i got some cards done on ipad or phone while out and came back home it'd update when i hop on laptop right?" It did, but a grade made in the last three seconds (the storage's sync) or the last minute (git's push) before the app was left waited on the phone until it was next opened; asked whether to fix that: "Yeah". `fe14026`, `61a03c4`: `src/app/away.ts` sends on `visibilitychange` to hidden, both syncs hook into it, and the ink plugin (the app's one native iOS code) begins a background task on the move to the background and while the page's send runs (`app_hold`).
+
+From a clean checkout of `61a03c4`: typecheck clean, npm test 1567 passed (1 skipped), cargo check for the Mac and the iOS simulator. On the Mac, the checks a send on hiding could disturb (a covered second window is hidden): crdt 76 ok, storage over s3 77, sync 34, nudge 29, all `done`, the same counts as before. On the simulated iPad, `ILMI_SMOKE=away` (new; the touch rig gained `away <seconds>`): 10 ok, twice (on `fe14026` and `61a03c4`): the grade sent 1.9–2.2 s after the app went home and before it came back at about 21 s, nothing left in the outbox.
+
+Not verified: a real suspension. The simulator gives an app in the background unlimited time, so the run proves the send starts and ends on leaving, not that iOS's half minute is enough on a device, nor what a device does with no network (the grade waits for the next open, as before). The Mac's hiding (a minimised window) sends too and was not checked by a run.
+
+---
+
 ## 2026-11-07 — the S3 client against a real server (MinIO)
 
 No milestone. `b8e7620` from a clean checkout: typecheck clean, npm test 1567 passed (1 skipped), cargo test 69 passed.

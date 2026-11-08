@@ -72,7 +72,6 @@
   cursor: default;
   display: inline-block;
 }
-.welcome-acts button::first-letter, .welcome-go::first-letter { text-transform: uppercase; }
 .welcome-acts button:hover { border-color: var(--fg-4); color: var(--fg-1); }
 /* a folder on its way in, or why it did not come: the name field's problem line, beside the buttons */
 .welcome-acts .welcome-problem { align-self: center; margin-left: 4px; color: var(--fg-4); font-family: var(--sans); font-size: var(--t-xs); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -160,8 +159,7 @@
 .side h6 + .tree + h6 { margin-top: var(--s-6); }
 .tree.queries .row { padding-left: 6px; }
 .tree.queries .row .glyph { color: var(--fg-4); }
-/* the saved queries are the app's own, named by it: sentence case */
-.tree.queries .row .name::first-letter { text-transform: uppercase; }
+/* the saved queries are the app's own, named by it, lowercase like the rest */
 
 .side-resize {
   position: absolute;
@@ -393,7 +391,7 @@
   user-select: none;
 }
 /* a row: its icon and its keys hang outside the words, so the words are the
-   row's first letters (and set in sentence case) */
+   row's first letters */
 .ctx-menu .ci {
   display: block;
   position: relative;
@@ -407,7 +405,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.ctx-menu .ci::first-letter { text-transform: uppercase; }
 .ctx-menu .ci:has(.ck) { padding-right: 44px; }
 .ctx-menu .ci:hover { background: var(--line-2); color: var(--fg-1); }
 .ctx-menu .ci .cg {
@@ -502,7 +499,6 @@ html[data-shape="portrait"] .pane + .pane { border-left: 0; border-top: 1px soli
 }
 .tabbar .tab .glyph { color: var(--fg-4); flex-shrink: 0; display: flex; --ic: 13px; }
 .tabbar .tab[data-active="1"] .glyph { color: var(--fg-3); }
-.tabbar .tab[data-t="queue"] .title > span::first-letter, .tabbar .tab[data-t="intake"] .title > span::first-letter { text-transform: uppercase; }
 .tabbar .tab[data-t="queue"] .title > span, .tabbar .tab[data-t="intake"] .title > span { display: inline-block; }
 .tabbar .tab .title { display: flex; min-width: 0; color: var(--fg-3); font-family: var(--sans); font-size: var(--t-sm); white-space: nowrap; }
 .tabbar .tab .title > span { overflow: hidden; text-overflow: ellipsis; }
@@ -691,7 +687,6 @@ html[data-shape="portrait"] .pane + .pane { border-left: 0; border-top: 1px soli
   --ic: 13px;
 }
 .lbl { display: inline-block; }
-.lbl::first-letter { text-transform: uppercase; }
 .deck-view .deck-add:hover { color: var(--fg-1); }
 
 /* folder lens */
@@ -987,7 +982,6 @@ html[data-shape="portrait"] .pane + .pane { border-left: 0; border-top: 1px soli
   text-decoration-color: var(--accent);
   text-underline-offset: 3px;
 }
-.notice .na::first-letter { text-transform: uppercase; }
 .notice .na { display: inline-block; }
 .notice .na:hover { color: var(--accent); }
 .notice .nx { color: var(--fg-4); text-decoration: none; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; --ic: 12px; }

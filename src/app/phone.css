@@ -54,7 +54,6 @@ html[data-shape="phone"] .pane-body { -webkit-overflow-scrolling: touch; }
 }
 .phone-bar .pb-more, .phone-bar .pb-add { display: flex; align-items: center; justify-content: center; color: var(--fg-2); --ic: 22px; }
 .phone-bar .pb-w { display: inline-block; }
-.phone-bar .pb-w::first-letter, .qf-acts button::first-letter, .reveal-all::first-letter, .quick-deck .qd-w::first-letter, .topic-acts button::first-letter, .quick-blank::first-letter { text-transform: uppercase; }
 .quick-deck .qd-w { display: inline-block; }
 .phone-bar .pb-more[data-on="1"] { color: var(--fg-1); }
 .phone-bar .pb-day { font-size: 15px; display: flex; align-items: center; justify-content: center; gap: 9px; }

@@ -90,7 +90,6 @@
   font-weight: 500;
   display: inline-block;
 }
-.draft-doc .card-span .cs-state::first-letter { text-transform: uppercase; }
 .draft-doc .card-span .cs-state[data-due="1"] { color: var(--accent); }
 
 /* math chips: atomic, the source kept on the node */
@@ -509,9 +508,7 @@
   color: var(--fg-3);
   display: inline-block;
 }
-.reader .meta .frozen-tag:not(select)::first-letter, .reader .meta .crumb.lbl-word::first-letter { text-transform: uppercase; }
 .reader.deck-view .meta .crumb, .reader .meta.notes-meta .crumb { display: block; }
-.reader.deck-view .meta .crumb::first-letter, .reader .meta.notes-meta .crumb::first-letter { text-transform: uppercase; }
 .reader .meta .frozen-tag:hover { color: var(--fg-1); }
 /* a revisited note: where the pass starts, a heading or the top */
 .reader .meta .from-heading { max-width: 64px; text-overflow: ellipsis; }
@@ -533,7 +530,6 @@
   font-size: var(--t-sm);
   color: var(--fg-2);
 }
-.draft-sched .ds-state::first-letter, .draft-sched .ds-toggle::first-letter { text-transform: uppercase; }
 .draft-sched .ds-toggle {
   appearance: none;
   background: var(--paper);
@@ -959,7 +955,4 @@ mark.find-hit { color: inherit; padding: 0; }
 .reader-wrap[data-pdf] .draft-doc .dd-h[data-read]::after { content: none; }
 
 .book-chip .bc-btn, .book-chip .bc-when { display: inline-block; }
-.book-chip .bc-btn::first-letter, .book-chip .bc-when::first-letter { text-transform: uppercase; }
 .composer .hd > span:first-child { display: inline-block; }
-.composer .hd > span:first-child::first-letter, .composer .type-toggle button::first-letter { text-transform: uppercase; }
-.composer .type-toggle button[data-form="qa"] { text-transform: uppercase; }

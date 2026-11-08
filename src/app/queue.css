@@ -17,7 +17,6 @@
   margin: 0;
   line-height: 1.1;
 }
-.queue h1::first-letter { text-transform: uppercase; }
 .queue h1 .day {
   font-family: var(--sans);
   font-size: var(--t-sm);
@@ -27,9 +26,7 @@
   margin-left: var(--s-3);
   vertical-align: 0.3em;
   display: inline-block;
-  text-transform: capitalize;
 }
-.queue h1 .day::first-letter { text-transform: uppercase; }
 /* what the marks mean, one line with the count: the order is priority's, every kind mixed, never split by kind */
 .queue .legend b { color: var(--fg-2); font-weight: 500; font-variant-numeric: tabular-nums; }
 .queue .legend {
@@ -69,7 +66,6 @@
   color: var(--fg-1);
   display: inline-block;
 }
-.queue .enter-queue .eq-main::first-letter { text-transform: uppercase; }
 .queue .enter-queue:hover .eq-main { color: var(--accent); }
 .queue .enter-queue kbd { margin-left: auto; }
 [data-theme="eink"] .queue .enter-queue:hover .eq-main,
@@ -85,7 +81,6 @@
   font-size: var(--t-xs);
   color: var(--fg-3);
 }
-.queue .qlog-line::first-letter { text-transform: uppercase; }
 
 /* the fold: the day's budget ends here; what is below is dimmed */
 .qlist li.fold {
@@ -99,7 +94,6 @@
   color: var(--fg-3);
   cursor: default;
 }
-.qlist li.fold .fold-n::first-letter, .qlist li.fold .fold-act::first-letter { text-transform: uppercase; }
 .qlist li.fold .fold-n { display: inline-block; }
 .qlist li.fold:hover { background: transparent; }
 .qlist li.fold .fold-n { font-variant-numeric: tabular-nums; }
@@ -208,8 +202,6 @@
   margin-right: var(--s-2);
   display: inline-block;
 }
-.qlist .body .kindtag::first-letter { text-transform: uppercase; }
-.qlist .body .kindtag[data-tag="q&a"] { text-transform: uppercase; }
 /* the path of titles on one line: the parent gives way first, then the heading, then the document */
 .qlist .qpath { display: flex; align-items: baseline; min-width: 0; overflow: hidden; }
 .qlist .qpath > bdi { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -248,7 +240,6 @@
   text-align: right;
   min-width: 70px;
 }
-.qlist .due::first-letter { text-transform: uppercase; }
 .qlist .due .ivl { color: var(--fg-5); margin-top: 1px; }
 /* an Arabic row: taller for the marks, upright; a case ending's blank shows its letter */
 .qlist .body [dir="rtl"] { line-height: 1.75; letter-spacing: 0; font-synthesis: weight; }

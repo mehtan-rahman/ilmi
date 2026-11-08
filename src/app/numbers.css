@@ -40,6 +40,5 @@
 .numbers .nb-time { border-top: 1px solid var(--line-2); padding-top: 12px; }
 
 [data-theme="eink"] .numbers .nb-days td[data-today="1"] { text-decoration-color: currentColor; }
-.numbers h6::first-letter, .numbers tbody th::first-letter, .numbers thead th::first-letter, .numbers .nb-tag::first-letter { text-transform: uppercase; }
 .numbers .nb-sec { padding: var(--s-4) 0 var(--s-5); }
 .numbers td { font-size: var(--t-sm); }

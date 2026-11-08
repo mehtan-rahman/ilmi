@@ -292,7 +292,6 @@ html[data-mobile="1"] .pgut { padding: 8px 8px; margin: -6px -5px; }
 .pend button:hover { background: color-mix(in oklab, var(--accent) 9%, transparent); color: var(--fg-1); }
 .pend kbd { margin-right: 6px; }
 .pend .pe-l { display: inline-block; }
-.pend .pe-l::first-letter { text-transform: uppercase; }
 .book .pdf-page { cursor: crosshair; }
 .book .pdf-page .textLayer :is(span, br) { cursor: crosshair; }
 [data-theme="eink"] .pbox.cur { border-color: var(--fg-1); }

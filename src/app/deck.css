@@ -31,7 +31,6 @@
   white-space: nowrap;
   display: inline-block;
 }
-.deck-study .ds-study::first-letter { text-transform: uppercase; }
 .deck-study .ds-study:hover { background: color-mix(in oklab, var(--fg-1) 86%, var(--paper)); }
 .deck-study .ds-study[data-able="0"] { opacity: 0.4; }
 .deck-study .ds-n { font-size: var(--t-sm); font-weight: 400; color: color-mix(in oklab, var(--paper) 70%, transparent); margin-left: 6px; font-variant-numeric: tabular-nums; }
@@ -94,8 +93,6 @@
   cursor: default;
   display: inline-block;
 }
-.deck-bar .chip::first-letter { text-transform: uppercase; }
-.deck-bar .chip[data-chip="qa"] { text-transform: uppercase; }
 .deck-bar .chip:hover { color: var(--fg-1); }
 .deck-bar .chip[data-on="1"] { color: var(--fg-1); border-bottom-color: var(--accent); }
 [data-theme="eink"] .deck-bar .chip[data-on="1"] { border-bottom-color: var(--fg-1); font-weight: 600; }
@@ -104,7 +101,6 @@
 .deck-bar .db-actions { position: relative; color: var(--fg-1); }
 .deck-bar .db-actions .db-sel { font-size: var(--t-sm); font-weight: 500; color: var(--fg-1); margin-right: 4px; display: inline-block; }
 .deck-bar .db-actions button { display: inline-block; }
-.deck-bar .db-actions button::first-letter { text-transform: uppercase; }
 .deck-bar .db-actions button {
   appearance: none;
   border: 0;
@@ -152,8 +148,6 @@
   user-select: none;
 }
 .deck-row .dr-form { padding-left: var(--s-2); font-size: var(--t-xs); font-weight: 500; color: var(--fg-3); padding-top: 4px; display: block; }
-.deck-row .dr-form::first-letter, .same-pair .sp-head .dr-form::first-letter { text-transform: uppercase; }
-.dr-form[data-form="qa"] { text-transform: uppercase; }
 /* front over back, both from the row's start: each face keeps its own direction inside its own box */
 .deck-row .dr-faces { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; }
 .deck-row .dr-faces > span { max-width: 100%; text-align: start; }
@@ -163,7 +157,6 @@
 .deck-row .dr-when { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; font-size: var(--t-xs); font-weight: 500; color: var(--fg-4); padding-top: 4px; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .deck-row .dr-dir { color: var(--fg-4); font-weight: 400; margin-right: 2px; }
 .deck-row .dw, .same-pair .dr-due { display: inline-block; }
-.deck-row .dw::first-letter, .same-pair .dr-due::first-letter { text-transform: uppercase; }
 .deck-row .dr-ivl { color: var(--fg-5); }
 .deck-row.cursor { box-shadow: inset 2px 0 0 var(--accent); }
 .deck-row[data-suspended="1"] .dr-faces,
@@ -195,7 +188,6 @@
 
 .folder-view .fv-view { display: flex; gap: var(--s-4); margin: 2px 0 var(--s-2); font-family: var(--sans); font-size: var(--t-sm); }
 .folder-view .fv-view button { appearance: none; border: 0; border-bottom: 1.5px solid transparent; background: transparent; padding: 0 0 2px; color: var(--fg-3); cursor: default; font: inherit; display: inline-block; }
-.folder-view .fv-view button::first-letter { text-transform: uppercase; }
 .folder-view .fv-view button[data-on="1"] { color: var(--fg-1); border-bottom-color: var(--accent); }
 
 /* similar (milestone 45): pairs that seem to test the same fact, side by side */
@@ -221,7 +213,6 @@
   appearance: none; border: 0; background: transparent; cursor: default;
   font-family: var(--sans); font-size: var(--t-sm); color: var(--fg-2); padding: 1px 4px; display: inline-block;
 }
-.same-pair button[data-act]::first-letter { text-transform: uppercase; }
 .same-pair button[data-act]:hover { color: var(--fg-1); text-decoration: underline; text-underline-offset: 3px; }
 .same-pair .sp-acts { display: flex; justify-content: center; gap: 14px; padding-top: 4px; }
 .same-more {

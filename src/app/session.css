@@ -28,7 +28,6 @@
   font-variant-numeric: tabular-nums;
 }
 .recall-meta .el-tag { display: inline-block; font-weight: 500; }
-.recall-meta .el-tag::first-letter, .recall-wrap .card-meta .cm-type::first-letter { text-transform: uppercase; }
 .recall-meta .sess-count { flex-shrink: 0; }
 .recall-meta .el-tag[data-el="card"] { color: var(--el-card); }
 .recall-meta .meta-srclink {
@@ -195,7 +194,6 @@
 .grades button:hover { border-color: color-mix(in oklab, var(--fg) calc(30% * var(--chrome)), transparent); }
 .grades[data-revealed="0"] button { opacity: 0.4; }
 .grades button .label { display: block; font-weight: 500; }
-.grades button .label::first-letter { text-transform: uppercase; }
 .grades button .gap {
   display: block;
   font-family: var(--sans);
@@ -235,7 +233,6 @@
 }
 .session-bar .sb-count { font-size: var(--t-xs); color: var(--fg-3); font-variant-numeric: tabular-nums; }
 .session-bar .sb-kind { font-size: var(--t-xs); font-weight: 500; display: inline-block; }
-.session-bar .sb-kind::first-letter { text-transform: uppercase; }
 .session-bar .sb-kind[data-el="read"] { color: var(--el-read); }
 .session-bar .sb-kind[data-el="write"] { color: var(--el-write); }
 .session-bar .sb-kind[data-el="section"] { color: var(--el-write); }
@@ -271,7 +268,6 @@
 .session-bar .sb-actions button:first-child { border-color: color-mix(in oklab, var(--accent) 30%, transparent); }
 .session-bar .sb-actions button:first-child:hover { border-color: var(--accent); background: var(--accent-soft); }
 .session-bar .sb-actions .ra-l { font-family: var(--sans); font-size: var(--t-sm); color: var(--fg-1); }
-.session-bar .sb-actions .ra-l::first-letter { text-transform: uppercase; }
 
 /* an Arabic face: taller lines for the ḥarakāt, upright, no letter-spacing */
 .recall-wrap .card [dir="rtl"] { line-height: 1.9; letter-spacing: 0; font-synthesis: weight; }
@@ -285,6 +281,4 @@
 }
 .recall-wrap .card .cloze.on-letter.revealed { background: var(--accent-soft); border-bottom-color: var(--accent); }
 .recall-wrap .card .cloze-answer .cz-a .on-letter { padding: 0; }
-.recall-meta .el-tag[data-form="qa"], .recall-wrap .card-meta .cm-type[data-form="qa"] { text-transform: uppercase; }
 .recall-wrap .card-meta .cm-due { display: inline-block; }
-.recall-wrap .card-meta .cm-due::first-letter { text-transform: uppercase; }

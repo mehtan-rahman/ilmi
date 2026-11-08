@@ -61,8 +61,8 @@ pass: Source Serif 4 for reading and a document's title, IBM Plex Sans for
 all chrome (labels, tags, statuses, counts with tabular figures,
 placeholders), IBM Plex Mono only for key caps and code; six sizes
 (`--t-xs` 11 … `--t-2xl` 28) and a 4px spacing scale as tokens; fixed UI
-words stay lowercase in the source (the brief's copy rule) and are set in
-sentence case by CSS, never a user's names; icons are `icons.tsx`, one
+words are lowercase throughout (the user chose it over sentence case,
+2026-11-08); icons are `icons.tsx`, one
 16px stroke set (a kind's old mark kept hidden in the text as `.gch`);
 status colours by meaning (`dueTone`: `--late` brick, due the accent, new
 `--fg-3`, later `--fg-4`). Fonts are bundled via

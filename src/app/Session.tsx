@@ -217,7 +217,7 @@ function CardElement({ item, active, onGrade }: CardProps) {
         <div className="face front">{front}</div>
         {back && revealed && <div className="face back"><div className="face-body">{back}</div></div>}
         {!revealed && (
-          <button type="button" className="face-hint" onClick={() => setRevealed(true)}><kbd className="kbd">space</kbd> reveal</button>
+          <button type="button" className="face-hint" onClick={() => setRevealed(true)}><kbd className="kbd">space</kbd> <span className="lbl">reveal</span></button>
         )}
       </div>
       <div className="card-meta">

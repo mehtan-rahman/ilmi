@@ -753,6 +753,7 @@ html[data-shape="portrait"] .pane + .pane { border-left: 0; border-top: 1px soli
   white-space: nowrap;
 }
 .folder-view .fv-row .fv-meta {
+  font-family: var(--sans);
   font-size: var(--t-xs);
   color: var(--fg-4);
   font-variant-numeric: tabular-nums;
@@ -1173,3 +1174,8 @@ textarea[dir="auto"] { unicode-bidi: plaintext; }
 .chrome-math .katex-display { margin: 0; display: inline; }
 /* the active tab's outline under it stays compact */
 .tab-rail .rail-row.heading, .tab-rail .rail-row.extracts { min-height: 0; padding-top: 3px; padding-bottom: 3px; }
+/* the open row's marks come up with its name; on e-ink every mark is the second ink, never a faint grey */
+.tree .row[data-active="1"] .glyph, .tree .row[data-active="1"] .chev { color: var(--fg-2); }
+[data-theme="eink"] .tree .row .glyph, [data-theme="eink"] .tree .row .chev,
+[data-theme="eink"] .tab-rail .rail-row .glyph, [data-theme="eink"] .tab-rail .rail-row .chev,
+[data-theme="eink"] .folder-view .fv-row .fv-g, [data-theme="eink"] .qlist .mark, [data-theme="eink"] .palette-row .pg { color: var(--fg-2); }

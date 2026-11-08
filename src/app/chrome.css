@@ -168,7 +168,7 @@
 .insp .kv .pri-field::placeholder, .insp .kv .af-field::placeholder { color: var(--fg-4); }
 .insp .kv .pri-field:focus, .insp .kv .af-field:focus { border-color: var(--accent); background: var(--paper); }
 .insp .kv .day-field { width: 120px; text-align: left; }
-.insp .kv .af-next { margin-left: var(--s-2); white-space: nowrap; }
+.insp .kv .af-next { display: block; margin-top: 6px; font-size: var(--t-xs); }
 .insp .kv .insp-link {
   appearance: none;
   border: 0;

@@ -24,13 +24,6 @@ export function glyphOf(item: QueueItem): string {
 /** What a row's mark is drawn as: a note revisited and an extract are drawn as sections are. */
 export const markOf = (item: QueueItem): El => (item.kind === 'read' && (item.note || item.extract) ? 'section' : item.kind);
 
-/** The queue's head, one line: what the marks mean, and that the order is priority's. */
-export const QUEUE_LEGEND: [glyph: string, el: El, what: string][] = [
-  ['“', 'read', 'read on in a book'],
-  ['§', 'section', 'a passage or section, back until you dismiss it'],
-  ['◆', 'card', 'a card'],
-];
-
 /** One quiet line when a saved query has nothing. */
 export const QUEUE_EMPTY: Record<QueueScope, string> = {
   today: 'nothing due', upcoming: 'nothing ahead', reading: 'nothing enrolled', writing: 'no drafts', cards: 'no cards',

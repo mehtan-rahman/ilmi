@@ -27,7 +27,7 @@
   vertical-align: 0.3em;
   display: inline-block;
 }
-/* what the marks mean, one line with the count: the order is priority's, every kind mixed, never split by kind */
+/* the count, one line: the order is priority's, every kind mixed */
 .queue .legend b { color: var(--fg-2); font-weight: 500; font-variant-numeric: tabular-nums; }
 .queue .legend {
   font-family: var(--sans);
@@ -36,11 +36,6 @@
   margin-top: 6px;
   line-height: 1.6;
 }
-.queue .legend .lg-sep { color: var(--fg-4); }
-.queue .legend .lg-g { display: inline-flex; vertical-align: -2px; margin-right: 2px; --ic: 13px; }
-.queue .legend .lg-g[data-el="read"] { color: var(--el-read); }
-.queue .legend .lg-g[data-el="section"] { color: var(--el-write); }
-.queue .legend .lg-g[data-el="card"] { color: var(--el-card); }
 
 /* enter queue: a row, not a banner */
 .queue .enter-queue {

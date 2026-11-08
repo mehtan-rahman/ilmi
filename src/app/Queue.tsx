@@ -10,7 +10,7 @@
 import { Fragment, useEffect, useState, type MouseEvent } from 'react';
 import { PRI_DEFAULT, cardFields } from '../format/index.js';
 import { counts, dayOf, examKey, inScope, overflow, type ExamAt, type QueueItem } from '../schedule/index.js';
-import { QUEUE_EMPTY, QUEUE_LEGEND, dayLabel, dueWhen, examName, examWhen, forExam, glyphOf, intervalLabel, isFresh, kindTag, markOf, paceWords, snippetOf, standing, dueTone } from './items.js';
+import { QUEUE_EMPTY, dayLabel, dueWhen, examName, examWhen, forExam, glyphOf, intervalLabel, isFresh, kindTag, markOf, paceWords, snippetOf, standing, dueTone } from './items.js';
 import { pathParts, plainMath } from './chromeText.js';
 import { MathText } from './MathText.js';
 import type { DocInfo } from './store.js';
@@ -178,7 +178,6 @@ export function Queue({ scope, active }: Props) {
         {scope === 'today' && (
           <div className="legend">
             <b>{items.length}</b> due, in priority order
-            {QUEUE_LEGEND.map(([g, el, what]) => <span key={el}><span className="lg-sep"> · </span><span className="lg-g" data-el={el}><Glyph g={g} /></span> {what}</span>)}
           </div>
         )}
         {scope === 'today' && items.length > 0 && (

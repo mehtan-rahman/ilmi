@@ -73,10 +73,10 @@ afterAll(async () => {
 });
 
 describe('the day\'s queue', () => {
-  it('says what its marks mean, in one line', async () => {
+  it('says its count and order in one line, no legend of marks', async () => {
     await mount(createElement(Queue, { scope: 'today', active: false }));
     const n = host.querySelectorAll('.qlist li:not(.fold)').length;
-    expect(host.querySelector('.queue .legend')?.textContent).toBe(`${n} due, in priority order · “ read on in a book · § a passage or section, back until you dismiss it · ◆ a card`);
+    expect(host.querySelector('.queue .legend')?.textContent).toBe(`${n} due, in priority order`);
     // one line, never split by kind
     expect(host.querySelector('.queue .summary')).toBeNull();
     unmount();

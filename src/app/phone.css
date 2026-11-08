@@ -72,8 +72,6 @@ html[data-shape="phone"] .queue { padding: 10px max(16px, var(--safe-l)) 24px; m
 html[data-shape="phone"] .queue h1 { font-size: 26px; }
 html[data-shape="phone"] .queue h1 .day { font-size: var(--t-sm); }
 html[data-shape="phone"] .queue .legend { font-size: var(--t-sm); margin-top: 6px; }
-/* what the marks mean is the Mac's to say: each row here carries its word */
-html[data-shape="phone"] .queue .legend > span { display: none; }
 html[data-shape="phone"] .queue .enter-queue { display: none; }
 html[data-shape="phone"] .queue .exam-filter button { min-height: 32px; font-size: var(--t-sm); }
 html[data-shape="phone"] .queue .qlog-line { font-size: var(--t-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -13,7 +13,7 @@ import { docItems, type ReadItem, type SectionItem } from '../../schedule/index.
 import { fromDoc, schema, toDoc } from '../../reader/index.js';
 import { hintsFor } from '../chrome.js';
 import { headingAtPos } from '../Reader.js';
-import { QUEUE_LEGEND, glyphOf, isFresh, kindTag, nth, shortDay, standing, standsWords } from '../items.js';
+import { glyphOf, isFresh, kindTag, nth, shortDay, standing, standsWords } from '../items.js';
 import { rowCounts } from '../names.js';
 import { actionWords, isBook } from '../Session.js';
 import { headingOf, sectionActions, statusOf } from '../sections.js';
@@ -73,10 +73,6 @@ describe('the marks', () => {
     expect(isFresh(section())).toBe(false);
   });
 
-  it('the queue\'s head in one line', () => {
-    expect(['in priority order', ...QUEUE_LEGEND.map(([g, , w]) => `${g} ${w}`)].join(' · '))
-      .toBe('in priority order · “ read on in a book · § a passage or section, back until you dismiss it · ◆ a card');
-  });
 });
 
 describe('the three actions', () => {

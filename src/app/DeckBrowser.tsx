@@ -564,7 +564,7 @@ export function DeckBrowser({ home, active }: BrowserProps) {
         </button>
         <label className="ds-cram">
           <input type="checkbox" checked={cram} onChange={(e) => setCram(e.target.checked)} />
-          include not due
+          <span className="lbl">include not due</span>
         </label>
         <span className="grow" />
         {!phone && <button type="button" className="deck-add" onClick={newCard}><Plus text="+ card" /> <kbd className="kbd">m</kbd></button>}

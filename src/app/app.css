@@ -1171,3 +1171,5 @@ textarea[dir="auto"] { unicode-bidi: plaintext; }
    queue row's path): KaTeX at the line's own size, never a block */
 .chrome-math .katex { font-size: 1em; white-space: nowrap; }
 .chrome-math .katex-display { margin: 0; display: inline; }
+/* the active tab's outline under it stays compact */
+.tab-rail .rail-row.heading, .tab-rail .rail-row.extracts { min-height: 0; padding-top: 3px; padding-bottom: 3px; }

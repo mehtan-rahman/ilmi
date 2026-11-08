@@ -510,8 +510,8 @@
   display: inline-block;
 }
 .reader .meta .frozen-tag:not(select)::first-letter, .reader .meta .crumb.lbl-word::first-letter { text-transform: uppercase; }
-.deck-view .meta .crumb, .notes-meta .crumb { display: block; }
-.deck-view .meta .crumb::first-letter, .notes-meta .crumb::first-letter { text-transform: uppercase; }
+.reader.deck-view .meta .crumb, .reader .notes-meta .crumb { display: block; }
+.reader.deck-view .meta .crumb::first-letter, .reader .notes-meta .crumb::first-letter { text-transform: uppercase; }
 .reader .meta .frozen-tag:hover { color: var(--fg-1); }
 /* a revisited note: where the pass starts, a heading or the top */
 .reader .meta .from-heading { max-width: 64px; text-overflow: ellipsis; }

@@ -26,8 +26,9 @@
   letter-spacing: 0;
   margin-left: var(--s-3);
   vertical-align: 0.3em;
-  text-transform: capitalize;
+  display: inline-block;
 }
+.queue h1 .day::first-letter { text-transform: uppercase; }
 /* what the marks mean, one line with the count: the order is priority's, every kind mixed, never split by kind */
 .queue .legend b { color: var(--fg-2); font-weight: 500; font-variant-numeric: tabular-nums; }
 .queue .legend {
@@ -38,7 +39,7 @@
   line-height: 1.6;
 }
 .queue .legend .lg-sep { color: var(--fg-4); }
-.queue .legend .lg-g { font-family: var(--serif); }
+.queue .legend .lg-g { display: inline-flex; vertical-align: -2px; margin-right: 2px; --ic: 13px; }
 .queue .legend .lg-g[data-el="read"] { color: var(--el-read); }
 .queue .legend .lg-g[data-el="section"] { color: var(--el-write); }
 .queue .legend .lg-g[data-el="card"] { color: var(--el-card); }

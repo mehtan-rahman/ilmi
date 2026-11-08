@@ -95,7 +95,8 @@
   /* element types: reading / writing / card */
   --el-read: oklch(0.55 0.07 250);
   --el-write: oklch(0.52 0.07 150);
-  --el-card: var(--accent);
+  /* a card is the common case: a quiet ink, not the accent */
+  --el-card: var(--fg-3);
 
   /* code colouring: muted, low-chroma hues that sit under the gold, never beside it */
   --code-keyword: oklch(0.45 0.09 25);

@@ -286,3 +286,5 @@
 .recall-wrap .card .cloze.on-letter.revealed { background: var(--accent-soft); border-bottom-color: var(--accent); }
 .recall-wrap .card .cloze-answer .cz-a .on-letter { padding: 0; }
 .recall-meta .el-tag[data-form="qa"], .recall-wrap .card-meta .cm-type[data-form="qa"] { text-transform: uppercase; }
+.recall-wrap .card-meta .cm-due { display: inline-block; }
+.recall-wrap .card-meta .cm-due::first-letter { text-transform: uppercase; }

@@ -104,7 +104,7 @@ export function Composer({ seed, form: initial, pri: docPri, onSave, onClose, qu
         <span>new card</span>
         <div className="type-toggle">
           {FORMS.map(([key, label], i) => (
-            <button key={key} type="button" data-active={form === key ? '1' : '0'} onClick={() => setForm(key)}>
+            <button key={key} type="button" data-form={key} data-active={form === key ? '1' : '0'} onClick={() => setForm(key)}>
               {label}{quick === undefined && <sup className="tt-num">{i + 1}</sup>}
             </button>
           ))}

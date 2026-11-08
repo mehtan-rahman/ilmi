@@ -960,3 +960,6 @@ mark.find-hit { color: inherit; padding: 0; }
 
 .book-chip .bc-btn, .book-chip .bc-when { display: inline-block; }
 .book-chip .bc-btn::first-letter, .book-chip .bc-when::first-letter { text-transform: uppercase; }
+.composer .hd > span:first-child { display: inline-block; }
+.composer .hd > span:first-child::first-letter, .composer .type-toggle button::first-letter { text-transform: uppercase; }
+.composer .type-toggle button[data-form="qa"] { text-transform: uppercase; }

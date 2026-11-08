@@ -219,6 +219,13 @@ impl<R: Runtime> Ink<R> {
     pub async fn rest(&self, sheet: &str) -> Result<(), String> {
         self.call::<_, serde_json::Value>("rest", Sheet { sheet, drawing: None }).await.map(|_| ())
     }
+    /// The app kept awake in the background while the page sends what was written (`on`), or let go.
+    /// What the system says: whether it is held, and the seconds left to it in the background (-1 in front).
+    pub async fn hold(&self, on: bool) -> Result<serde_json::Value, String> {
+        #[derive(Serialize)]
+        struct Hold { on: bool }
+        self.call("hold", Hold { on }).await
+    }
     /// A dev run's: a finger stands in for the Pencil.
     pub async fn pen(&self, on: bool) -> Result<(), String> {
         #[derive(Serialize)]

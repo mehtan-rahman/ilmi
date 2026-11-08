@@ -12811,3 +12811,75 @@ export async function smokeJoin(): Promise<void> {
     log(`failed: ${e instanceof Error ? e.message : String(e)}`);
   }
 }
+
+// `ILMI_SMOKE=away` on a simulated iPad (`away.ts`): smoke.json gives `vault`
+// (a copy of the sample on the Mac's disk) and `storage` (an empty folder
+// there). The collection is made from the sample and makes the storage; the
+// timers are stopped, so nothing is sent but by leaving. A card is graded,
+// the rig sends the app home (`do: away <seconds>`) and brings it back; the
+// grade must have gone out while the app was in the background.
+export async function smokeAway(): Promise<void> {
+  let last = { at: Date.now(), what: 'start' };
+  let finished = false;
+  const log = (s: string) => { last = { at: Date.now(), what: s }; void info(`smoke away: ${s}`); };
+  const dog = setInterval(() => {
+    if (finished) { clearInterval(dog); return; }
+    if (Date.now() - last.at > 120_000) { finished = true; clearInterval(dog); void info(`smoke away: failed: no progress for 120 s after "${last.what}"`); }
+  }, 2000);
+  const must = (ok: unknown, what: string) => { if (!ok) throw new Error(what); log(`ok: ${what}`); };
+  const poll = async <T,>(probe: () => T | null | undefined | false | Promise<T | null | undefined | false>, what: string, ms = 8000): Promise<T> => {
+    const t0 = Date.now();
+    for (;;) {
+      const v = await probe();
+      if (v) { log(`ok: ${what}`); return v; }
+      if (Date.now() - t0 > ms) throw new Error(`${what} (waited ${ms} ms)`);
+      await sleep(100);
+    }
+  };
+  try {
+    const { isMobile } = await import('./platform.js');
+    const { devStorage, crdtOn, setCrdtTimers } = await import('./crdt.js');
+    const { syncWord } = await import('./sync.js');
+    const { devCollection } = await import('./vault.js');
+    const { forceLeave, lastLeave } = await import('./away.js');
+    const { gradeCard } = await import('./grading.js');
+    const { appNow } = await import('./clock.js');
+    must(isMobile(), 'the app knows it is on an iPad');
+    const path = await invoke<string | null>('dev_env', { name: 'ILMI_VAULT' });
+    const storage = await devStorage();
+    if (!path) throw new Error('ILMI_VAULT (smoke.json: "vault") names a copy of the sample');
+    if (!storage || storage.kind !== 'folder') throw new Error('ILMI_STORAGE (smoke.json: "storage") names an empty folder');
+    useApp.getState().setReopen(false);
+    useApp.getState().setTheme('light');
+    const vault = await openVault(await devCollection(path));
+    setCrdtTimers(false);
+    forceLeave(true);
+    await poll(() => crdtOn() && syncWord(useApp.getState().sync) === 'synced', 'the collection made the storage and reads synced', 90000);
+    const outbox = () => invoke<number>('store_outbox_count', { root: vault.root });
+    must((await outbox()) === 0, 'nothing waits to be sent');
+
+    // ── a grade, and the app left at once ──
+    const item = await poll(() => useApp.getState().queue.find((i): i is CardItem => i.kind === 'card'), 'a card is due', 15000);
+    await gradeCard(item, 3, appNow());
+    const waiting = await poll(async () => { const n = await outbox(); return n > 0 ? n : null; }, `${item.path} graded: it waits to be sent`);
+    log(`waiting: ${waiting}`);
+    let back = 0;
+    const watch = () => { if (document.visibilityState === 'visible' && !back) back = Date.now(); };
+    document.addEventListener('visibilitychange', watch);
+    const left = Date.now();
+    log('do: away 20');
+    await poll(() => back > 0 && lastLeave.ended > 0, 'the app was sent home and brought back', 120000);
+    document.removeEventListener('visibilitychange', watch);
+    const t = (n: number) => `${((n - left) / 1000).toFixed(1)} s`;
+    log(`leave: started ${t(lastLeave.started)}, ended ${t(lastLeave.ended)}, back ${t(back)}; time left in the background when held: ${lastLeave.left === null ? 'none said' : `${lastLeave.left.toFixed(0)} s`}`);
+    must(lastLeave.started >= left && lastLeave.failed === null && lastLeave.sent >= 1, `leaving sent it (${lastLeave.sent} sync${lastLeave.sent === 1 ? '' : 's'} had something)`);
+    must(lastLeave.ended < back, `and it was sent while the app was away: done ${t(lastLeave.ended)}, back ${t(back)}`);
+    must(lastLeave.left !== null && lastLeave.left > 0, `held in the background: the system gave it ${lastLeave.left?.toFixed(0)} s`);
+    must((await outbox()) === 0, 'nothing waits to be sent now');
+    finished = true;
+    log(`done; storage ${storage.folder}`);
+  } catch (e) {
+    finished = true;
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}

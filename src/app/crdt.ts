@@ -28,6 +28,7 @@ import { collectionFs, freeName } from './collections.js';
 import { notify } from './land.js';
 import { titleOf } from './names.js';
 import { activeTab } from './panes.js';
+import { leaveForced, onLeave } from './away.js';
 import { signOut, NO_STORAGE, devStorages, keepOf, saveStorage, signIn, storageFor, storageName, storageOf, storageReady, type Keep, type StorageSettings } from './storage.js';
 import { useApp } from './store.js';
 import { SYNC_OFF, startSync, stopSync } from './sync.js';
@@ -87,6 +88,9 @@ let writeTimer: ReturnType<typeof setTimeout> | null = null;
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 let unsubscribe: (() => void) | null = null;
 let lastSync = 0;
+/** Writes seen, and how many of them the last sync to start had seen: a leave sends only when they differ. */
+let writes = 0;
+let sentWrites = 0;
 let listening = false;
 let timers = true;
 /** The files being fetched after a sync, one run at a time. */
@@ -153,6 +157,7 @@ export async function crdtNow(): Promise<Synced | null> {
   const at = open;
   if (!at) return null;
   if (writeTimer) { clearTimeout(writeTimer); writeTimer = null; }
+  sentWrites = writes;
   patch({ busy: 'pulling' });
   try {
     if (!at.met) {
@@ -194,6 +199,7 @@ export async function crdtNow(): Promise<Synced | null> {
 }
 
 function onWrite(): void {
+  writes++;
   void refresh().catch(() => {});
   if (!timers) return;
   if (writeTimer) clearTimeout(writeTimer);
@@ -203,6 +209,13 @@ function onWrite(): void {
 /** A write the vault does not announce (a page of ink's strokes, milestone 58): synced as any write is, once it has been quiet. */
 export function crdtWrote(): void {
   if (open) onWrite();
+}
+
+/** The app is left (`away.ts`): what was written since the last sync goes out now. Resolves to whether there was any. */
+async function crdtLeave(): Promise<boolean> {
+  if (!open || (!timers && !leaveForced()) || writes === sentWrites) return false;
+  await crdtNow();
+  return true;
 }
 
 function onFocus(): void {
@@ -256,6 +269,7 @@ export async function startCrdt(vault: Vault): Promise<boolean> {
       listening = true;
       window.addEventListener('focus', onFocus);
       document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') onFocus(); });
+      onLeave(crdtLeave);
       await listenProgress().catch((e: unknown) => console.error('progress', e));
     }
     unsubscribe = vault.subscribe(onWrite);

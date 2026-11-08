@@ -11,6 +11,7 @@ import ObjectiveC
 // to start the app with instead of a smoke, WAIT seconds to start it before.
 //   tap x y · press x y seconds · drag x1 y1 x2 y2 hold · flick x1 y1 x2 y2 · turn portrait|landscape
 //   · type <text> (into what has the caret) · open <link> (as a Shortcut's "open URL" arrives)
+//   · away <seconds> (the app sent home, and brought back after that long)
 final class TouchRig: XCTestCase {
   func testDrive() throws {
     let env = ProcessInfo.processInfo.environment
@@ -69,6 +70,7 @@ final class TouchRig: XCTestCase {
         case "flick" where n.count >= 4: at(n[0], n[1]).press(forDuration: 0.02, thenDragTo: at(n[2], n[3]), withVelocity: .fast, thenHoldForDuration: 0)
         case "type": app.typeText(String(ask.dropFirst(9)))
         case "open": XCUIDevice.shared.system.open(URL(string: String(ask.dropFirst(9)))!)
+        case "away" where n.count >= 1: XCUIDevice.shared.press(.home); Thread.sleep(forTimeInterval: n[0]); app.activate()
         case "turn": XCUIDevice.shared.orientation = parts.last == "landscape" ? .landscapeLeft : .portrait
         default: print("rig: not understood: \(ask)")
         }

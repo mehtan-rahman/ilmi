@@ -28,6 +28,7 @@ import { titleOf } from './names.js';
 import { ago, NUDGE_SERVER, publishNudge, subscribeNudge, type Subscription } from './nudge.js';
 import { nameFromRemote, vaultKey } from './platform.js';
 import { forgetStorage } from './storage.js';
+import { leaveForced, onLeave } from './away.js';
 import { note, openNode } from './vault.js';
 
 /** The remote, its token, and the nudge's server, per vault path, in the webview's storage. */
@@ -367,6 +368,15 @@ export function sessionEnded(): void {
   schedulePush(QUIET_MS);
 }
 
+/** The app is left (`away.ts`): what is written is committed and pushed now, not a minute on. Resolves to whether anything was waiting. */
+async function gitLeave(): Promise<boolean> {
+  if (!root || !useApp.getState().sync.on || (!timers && !leaveForced())) return false;
+  if (!unwritten && !commitTimer && !pushTimer) return false;
+  if (commitTimer) { clearTimeout(commitTimer); commitTimer = null; }
+  await push();
+  return true;
+}
+
 function onFocus(): void {
   if (!root || !useApp.getState().sync.on) return;
   if (Date.now() - lastPull < FOCUS_GAP_MS) return;
@@ -434,6 +444,7 @@ export async function startSync(vault: Vault): Promise<void> {
     listening = true;
     window.addEventListener('focus', onFocus);
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') onFocus(); });
+    onLeave(gitLeave);
   }
   const st = await refreshSync();
   if (root !== vault.root) return;

@@ -73,6 +73,16 @@ struct SheetArgs: Decodable {
   var drawing: String?
 }
 
+struct HoldArgs: Decodable {
+  var on: Bool
+}
+
+struct Held: Encodable {
+  /// Whether the app is held awake now, and the seconds the system says are left to it in the background (-1 in front).
+  var held: Bool
+  var left: Double
+}
+
 struct PenArgs: Decodable {
   var on: Bool
 }
@@ -302,6 +312,49 @@ class InkPlugin: Plugin {
 
   override func load(webview: WKWebView) {
     web = webview
+    NotificationCenter.default.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in self?.wentAway() }
+  }
+
+  // ── Going to the background (not ink's: the plugin is the app's one piece of native iOS code) ──
+  //
+  // iOS suspends an app a moment after it leaves the screen, and with it the page and its sync. What was written in
+  // the last seconds before the app was left would wait on the device until it is next opened. So when the app
+  // goes, it asks the system for time (`beginBackgroundTask`, half a minute or so): a grace of a few seconds in
+  // which the page hears it is hidden and starts its send, and the page's own hold (`hold`) while the send runs.
+  // Each ends when it is done or when the system says time is up, whichever is first.
+  private var grace: UIBackgroundTaskIdentifier = .invalid
+  private var holding: UIBackgroundTaskIdentifier = .invalid
+  private let graceFor = 6.0
+
+  private func wentAway() {
+    endTask(&grace)
+    grace = UIApplication.shared.beginBackgroundTask(withName: "ilmi: the page hears it is hidden") { [weak self] in self?.endGrace() }
+    DispatchQueue.main.asyncAfter(deadline: .now() + graceFor) { [weak self] in self?.endGrace() }
+  }
+
+  private func endGrace() { endTask(&grace) }
+  private func endHold() { endTask(&holding) }
+
+  private func endTask(_ task: inout UIBackgroundTaskIdentifier) {
+    guard task != .invalid else { return }
+    UIApplication.shared.endBackgroundTask(task)
+    task = .invalid
+  }
+
+  /// The page's send has started (`on`) or ended: the app is kept awake for it in the background, as long as the system allows.
+  @objc public func hold(_ invoke: Invoke) throws {
+    let args = try invoke.parseArgs(HoldArgs.self)
+    DispatchQueue.main.async {
+      if args.on {
+        if self.holding == .invalid {
+          self.holding = UIApplication.shared.beginBackgroundTask(withName: "ilmi: what was written goes out") { [weak self] in self?.endHold() }
+        }
+      } else {
+        self.endHold()
+      }
+      let left = UIApplication.shared.applicationState == .background ? UIApplication.shared.backgroundTimeRemaining : -1
+      invoke.resolve(Held(held: self.holding != .invalid, left: left.isFinite ? left : -1))
+    }
   }
 
   private func prepare() {

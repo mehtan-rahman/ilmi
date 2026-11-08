@@ -891,6 +891,12 @@ export function openInitialVault(): Promise<void> {
         await smokePhone();
         return;
       }
+      // the app left with a grade unsent, and brought back (`away.ts`)
+      if (mode === 'away' && isMobile()) {
+        const { smokeAway } = await import('./smoke.js');
+        await smokeAway();
+        return;
+      }
       if (mode === 'touch' && isMobile()) {
         const { smokeTouch } = await import('./smoke.js');
         await smokeTouch();

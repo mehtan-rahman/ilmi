@@ -12871,10 +12871,12 @@ export async function smokeAway(): Promise<void> {
     await poll(() => back > 0 && lastLeave.ended > 0, 'the app was sent home and brought back', 120000);
     document.removeEventListener('visibilitychange', watch);
     const t = (n: number) => `${((n - left) / 1000).toFixed(1)} s`;
-    log(`leave: started ${t(lastLeave.started)}, ended ${t(lastLeave.ended)}, back ${t(back)}; time left in the background when held: ${lastLeave.left === null ? 'none said' : `${lastLeave.left.toFixed(0)} s`}`);
+    // a simulator under the rig sets no limit (the largest double): a device says half a minute or so
+    const given = lastLeave.left === null ? 'none said' : lastLeave.left > 1e6 ? 'no limit (a simulator suspends nothing)' : `${lastLeave.left.toFixed(0)} s`;
+    log(`leave: started ${t(lastLeave.started)}, ended ${t(lastLeave.ended)}, back ${t(back)}; time in the background when held: ${given}`);
     must(lastLeave.started >= left && lastLeave.failed === null && lastLeave.sent >= 1, `leaving sent it (${lastLeave.sent} sync${lastLeave.sent === 1 ? '' : 's'} had something)`);
     must(lastLeave.ended < back, `and it was sent while the app was away: done ${t(lastLeave.ended)}, back ${t(back)}`);
-    must(lastLeave.left !== null && lastLeave.left > 0, `held in the background: the system gave it ${lastLeave.left?.toFixed(0)} s`);
+    must(lastLeave.left !== null && lastLeave.left > 0, `held in the background: ${given}`);
     must((await outbox()) === 0, 'nothing waits to be sent now');
     finished = true;
     log(`done; storage ${storage.folder}`);

@@ -13,7 +13,7 @@
 //  · ⌥⌘← ⌥⌘→        outdents it (after its parent) / nests it (into the row above)
 //  · a letter       the next row whose name starts with what was typed
 
-import { childDirOf, dirOf, ordered, within, type Order, type TreeNode } from '../vault/index.js';
+import { childDirOf, dirOf, ordered, rekey, within, type Order, type TreeNode } from '../vault/index.js';
 import type { FlatRow, Mode, Nest } from './dnd.js';
 import { findNode } from './names.js';
 
@@ -51,6 +51,35 @@ export const cardsRowPath = (doc: string): string => `:cards/${doc}`;
 
 /** A row that is a node of the vault: not a placeholder, a card, or a document's `n cards`. */
 export const isNodeRow = (r: TreeRow): boolean => !r.placeholder && !r.card && !r.cards;
+
+/** The node a row is drawn for: its own, or for a card's row and `n cards` the document whose cards they are. */
+const nodeOfRow = (r: TreeRow): string => r.card?.doc ?? r.cards?.doc ?? r.path;
+
+/** Row `r` is node `id`'s or drawn under it: its descendants, and the cards listed under it or under them. */
+export const rowWithin = (r: TreeRow, id: string): boolean => {
+  const p = nodeOfRow(r);
+  return p === id || p.startsWith(`${childDirOf(id)}/`);
+};
+
+/** The row selected once `id` is deleted: the next row not under it (its cards' rows are), else the one above it. */
+export function afterDelete(rows: readonly TreeRow[], id: string): string | null {
+  const real = rows.filter((r) => !r.placeholder);
+  const i = real.findIndex((r) => r.path === id);
+  return (real.slice(i + 1).find((r) => !rowWithin(r, id)) ?? real[i - 1])?.path ?? null;
+}
+
+/** A selected row's path once node `from` is moved or renamed to `to`: the node, anything under it, and their cards' rows follow; anything else stays. */
+export function followMove(sel: string | null, from: string, to: string): string | null {
+  if (sel === null || from === to) return sel;
+  if (sel.startsWith(':cards/')) {
+    const rest = sel.slice(':cards/'.length);
+    const block = /#\d+$/.exec(rest);
+    const doc = block ? rest.slice(0, block.index) : rest;
+    const moved = rekey(doc, from, to);
+    return moved === null ? sel : `:cards/${moved}${block?.[0] ?? ''}`;
+  }
+  return rekey(sel, from, to) ?? sel;
+}
 
 /** A document's cards, for the tree to list under it: its block, id, text, in document order. */
 export type TreeCards = (doc: string) => readonly { block: number; id?: string; text: string }[];

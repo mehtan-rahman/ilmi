@@ -32,7 +32,7 @@ import { MathText } from './MathText.js';
 import { NodeMenu, menuAt, type MenuAt } from './NodeMenu.js';
 import type { OpenOpts } from './panes.js';
 import { useApp } from './store.js';
-import { TREE_INDENT, TREE_PAD, isNodeRow, keyPlace, revealRows, treeKey, treeRows, typeahead, type TreeCards, type TreeRow } from './treeModel.js';
+import { TREE_INDENT, TREE_PAD, afterDelete, followMove, isNodeRow, keyPlace, revealRows, treeKey, treeRows, typeahead, type TreeCards, type TreeRow } from './treeModel.js';
 import { cardSet, frontLine } from './cardSet.js';
 import { deleteNode } from './remove.js';
 import { docsOf, placeNode, renameNode, toggleOpen } from './vault.js';
@@ -73,7 +73,12 @@ export function Tree({ activeId, onOpen }: Props) {
   const awayList = useApp((s) => s.away);
   const away = useMemo(() => new Set(awayList), [awayList]);
   const drag = useDrag();
-  const [editing, setEditing] = useState<Editing | null>(null);
+  const [editing, setEditingState] = useState<Editing | null>(null);
+  // the rename as of now: Enter (or Escape) and the blur that moving the focus
+  // off the field then makes are one end of it, not two (the blur's handler is
+  // the last render's, which still has the rename)
+  const editNow = useRef<Editing | null>(null);
+  const setEditing = (e: Editing | null) => { editNow.current = e; setEditingState(e); };
   const [menu, setMenu] = useState<MenuAt | null>(null);
   const [selected, setSelectedState] = useState<string | null>(null);
   // the selection as of now, not as of the last render: a key pressed right
@@ -82,6 +87,12 @@ export function Tree({ activeId, onOpen }: Props) {
   const setSelected = (p: string | null) => { selRef.current = p; setSelectedState(p); };
   const [hoist, setHoist] = useState<string | null>(null);
   const [asking, setAsking] = useState<string | null>(null);
+  // a row asked about that is gone (moved or deleted meanwhile) is asked about no more: a node later at its path is not
+  useEffect(() => { if (asking !== null && !findNode(tree, asking)) setAsking(null); }, [tree, asking]);
+  /** The selected row follows a node moved or renamed (it, or a row under it). */
+  const follow = (from: string, to: string) => { const s = followMove(selRef.current, from, to); if (s !== selRef.current) setSelected(s); };
+  // the drag's surface: a drop that moves the selected row takes the selection with it
+  const surf = useMemo<Surface>(() => ({ ...SURF, landed: (_d, to, from) => follow(from, to) }), []);
   const typed = useRef({ buf: '', at: 0 });
   const editRef = useRef<HTMLInputElement>(null);
   const boxRef = useRef<HTMLDivElement>(null);
@@ -125,6 +136,15 @@ export function Tree({ activeId, onOpen }: Props) {
     }
   }, [editing?.id]);
 
+  // a rename whose node goes away (moved or deleted meanwhile) ends, renaming nothing, and the keys are the
+  // tree's again; one for a node not in the tree yet (just made, its row still to come) waits for it
+  const editSeen = useRef<string | null>(null);
+  useEffect(() => {
+    if (!editing) { editSeen.current = null; return; }
+    if (findNode(tree, editing.id)) editSeen.current = editing.id;
+    else if (editSeen.current === editing.id) setEditing(null);
+  }, [tree, editing?.id]);
+
   // the open document revealed: the rows above it opened, its row scrolled into view (not focused)
   const ready = tree.length > 0;
   useEffect(() => {
@@ -149,10 +169,13 @@ export function Tree({ activeId, onOpen }: Props) {
   };
 
   const commitRename = () => {
-    if (!editing) return;
-    const { id, value } = editing;
+    const at = editNow.current;
+    if (!at) return;
+    const { id, value } = at;
     setEditing(null);
-    if (value.trim() && value.trim() !== title(id)) renameNode(id, value).then((to) => { if (selected === id) setSelected(to); }).catch(fail);
+    // a node moved or deleted while its name was being edited is not renamed (its path is another's now, or nothing's)
+    const here = findNode(useApp.getState().tree, id);
+    if (here && value.trim() && value.trim() !== title(id)) renameNode(id, value).then((to) => follow(id, to)).catch(fail);
     boxRef.current?.focus();
   };
 
@@ -161,10 +184,8 @@ export function Tree({ activeId, onOpen }: Props) {
     if (!node) return;
     if (descendants(node) > 0 && asking !== id) { setAsking(id); return; }
     setAsking(null);
-    const real = rows.filter((r) => !r.placeholder);
-    const i = real.findIndex((r) => r.path === id);
-    const next = real.slice(i + 1).find((r) => !r.path.startsWith(`${childDirOf(id)}/`)) ?? real[i - 1];
-    setSelected(next?.path ?? null);
+    // the next row not under it: not its cards' rows either, which go with it
+    setSelected(afterDelete(rows, id));
     deleteNode(id).catch(fail);
   };
 
@@ -255,7 +276,7 @@ export function Tree({ activeId, onOpen }: Props) {
 
   const placeholder = (r: TreeRow, i: number) => {
     const key = r.key ?? r.path;
-    const m = rowMark(drag, key, r.path, SURF);
+    const m = rowMark(drag, key, r.path, surf);
     return (
       <div
         key={key}
@@ -264,7 +285,7 @@ export function Tree({ activeId, onOpen }: Props) {
         data-path={r.path}
         data-kind={r.path === '' ? 'folder' : kindOf(r.path, docs)}
         role="none"
-        {...rowDrag(geoms.get(r)!, SURF, { draggable: false })}
+        {...rowDrag(geoms.get(r)!, surf, { draggable: false })}
       >
         {guides(r.depth)}
         <span className="name">empty</span>
@@ -332,7 +353,7 @@ export function Tree({ activeId, onOpen }: Props) {
     const kind: NodeKind = id === '' || node?.kind === 'folder' ? 'folder' : kindOf(id, docs);
     const editingThis = editing?.id === id;
     const counts = node ? rowCounts(node, docs[id], now) : { due: 0, full: '' };
-    const m = rowMark(drag, id, id, SURF);
+    const m = rowMark(drag, id, id, surf);
     // a drag resting on a closed row opens it only for nodes under it: a deck's card list would push the rows under the pointer away
     const springs = r.has && !r.open && (kind === 'folder' || (node?.kind === 'doc' && (node.children?.length ?? 0) > 0));
     const cls = ['row', 'trow', m.className, fileOver === id && !m.className.includes('drop-') ? 'drop-into' : '', isRoot ? 'root-row' : ''].filter(Boolean).join(' ');
@@ -358,7 +379,7 @@ export function Tree({ activeId, onOpen }: Props) {
         aria-selected={selected === id}
         aria-expanded={r.has ? r.open : undefined}
         title={counts.full || undefined}
-        {...rowDrag(geoms.get(r)!, SURF, { draggable: !isRoot && !editingThis, folded: springs })}
+        {...rowDrag(geoms.get(r)!, surf, { draggable: !isRoot && !editingThis, folded: springs })}
         onContextMenu={(e) => openMenu(e, id)}
         onMouseDown={() => { setSelected(id); setAsking(null); }}
         onDoubleClick={(e) => { e.stopPropagation(); beginRename(id); }}
@@ -434,7 +455,7 @@ export function Tree({ activeId, onOpen }: Props) {
       {crumb}
       {rows.map((r, i) => (r.card ? cardRow(r) : r.cards ? cardsRow(r) : r.placeholder ? placeholder(r, i) : row(r, i)))}
 
-      {menu && <NodeMenu at={menu} set={setMenu} onCreated={(path) => setEditing({ id: path, value: title(path) })} onRename={beginRename} />}
+      {menu && <NodeMenu at={menu} set={setMenu} onCreated={(path) => setEditing({ id: path, value: title(path) })} onRename={beginRename} onMoved={follow} />}
     </div>
   );
 }

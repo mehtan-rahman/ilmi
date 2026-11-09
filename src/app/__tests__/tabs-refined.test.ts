@@ -332,6 +332,25 @@ describe('the rail in the canvas', () => {
     expect(calls[2]).toBe(`delete ${WKB}`);
   });
 
+  it('a tab\'s rename ends once: Escape renames nothing, Enter renames once (the blur after either is not a commit)', () => {
+    mouse(rowOf(WKB), 'mousedown');
+    const typeIn = (value: string) => {
+      const field = host.querySelector<HTMLInputElement>('.tab-rail input.rename')!;
+      act(() => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(field, value);
+        field.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+      return () => host.querySelector<HTMLInputElement>('.tab-rail input.rename')!;
+    };
+    keyOn(box(), { key: 'F2' });
+    keyOn(typeIn('semiclassics')(), { key: 'Escape' });
+    expect(host.querySelector('.tab-rail input.rename')).toBeNull();
+    expect(calls).toEqual([]);
+    keyOn(box(), { key: 'F2' });
+    keyOn(typeIn('semiclassics')(), { key: 'Enter' });
+    expect(calls).toEqual([`rename ${WKB}|semiclassics`]);
+  });
+
   it('hover `+` makes a note after the row; `···` is the tab\'s menu', () => {
     mouse(rowOf(WKB).querySelector('.row-acts .add')!, 'click');
     expect(calls).toEqual([`after ${WKB}`]);

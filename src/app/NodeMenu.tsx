@@ -68,6 +68,8 @@ interface Props {
   onRename(id: string): void;
   /** On a tab rail's row (`Rail.tsx`): `add subtab` shows, and makes one under the row. */
   onSubtab?(id: string): void;
+  /** `move to…` moved the node: it is at `to` now. */
+  onMoved?(from: string, to: string): void;
 }
 
 /** Marks and case off, so `arabi` finds `ʿarabī`. */
@@ -140,7 +142,7 @@ function MoveList({ targets, back, move }: { targets: MoveTarget[]; back(e: Mous
   );
 }
 
-export function NodeMenu({ at, set, onCreated, onRename, onSubtab }: Props) {
+export function NodeMenu({ at, set, onCreated, onRename, onSubtab, onMoved }: Props) {
   const tree = useApp((s) => s.tree);
   const docs = useApp((s) => s.docs);
   const root = useApp((s) => s.vault);
@@ -165,6 +167,8 @@ export function NodeMenu({ at, set, onCreated, onRename, onSubtab }: Props) {
   useLayoutEffect(() => { placeMenu(ref.current); }, [at]);
 
   const found = at.id === '' ? undefined : findNode(tree, at.id);
+  // its node moved or deleted meanwhile: the menu is closed, not only hidden (a node later at that path would bring it back)
+  useEffect(() => { if (at.id !== '' && !found) set(null); }, [at.id, found, set]);
   if (at.id !== '' && !found) return null;
   const kind: NodeKind = at.id === '' ? 'folder' : kindOf(at.id, docs);
   const pdfAlone = isPdfPath(at.id);
@@ -296,7 +300,7 @@ export function NodeMenu({ at, set, onCreated, onRename, onSubtab }: Props) {
           )}
         </>
       ) : (
-        <MoveList targets={targets} back={sub(false)} move={(dir) => { moveNode(at.id, dir).catch(fail); set(null); }} />
+        <MoveList targets={targets} back={sub(false)} move={(dir) => { const from = at.id; moveNode(from, dir).then((to) => onMoved?.(from, to)).catch(fail); set(null); }} />
       )}
     </div>
   );

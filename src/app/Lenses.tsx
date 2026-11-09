@@ -91,7 +91,10 @@ function FolderLens({ id, active, onOpen }: LensProps) {
   const fileOver = useApp((s) => s.fileOver);
   const [menu, setMenu] = useState<MenuAt | null>(null);
   const drag = useDrag();
-  const [editing, setEditing] = useState<{ id: string; value: string } | null>(null);
+  const [editing, setEditingState] = useState<{ id: string; value: string } | null>(null);
+  // the rename as of now: Enter (or Escape) and the blur that moving the focus off the field makes are one end of it, not two
+  const editNow = useRef<{ id: string; value: string } | null>(null);
+  const setEditing = (e: { id: string; value: string } | null) => { editNow.current = e; setEditingState(e); };
   // the folder's items, every card under it in the deck browser, or their numbers
   const view = useApp((s) => s.lensViews[id]) ?? 'items';
   const cards = view === 'cards';
@@ -114,8 +117,9 @@ function FolderLens({ id, active, onOpen }: LensProps) {
   const title = (path: string) => titleOf(path, docs, root);
   const beginRename = (path: string) => { if (path !== '') setEditing({ id: path, value: title(path) }); };
   const commitRename = () => {
-    if (!editing) return;
-    const { id: at, value } = editing;
+    const now = editNow.current;
+    if (!now) return;
+    const { id: at, value } = now;
     setEditing(null);
     if (value.trim() && value.trim() !== title(at)) renameNode(at, value).catch(console.error);
   };

@@ -13,6 +13,8 @@
 //               so a still pointer that sends no more dragovers still gets them
 //  · edges      the surface's scroller scrolls near its top and bottom
 //  · Esc        cancels: nothing is drawn and the drop does nothing
+//  · lost       the window's blur, a move with no button down (the letting go
+//               missed), or a new press ends a mouse drag where it is, landing nowhere
 //  · leaving    a row for another row keeps the mark until the next
 //               dragover, so crossing a row's text never flickers
 
@@ -39,8 +41,8 @@ export interface Surface {
   scroller?: string;
   /** A folded row with something under it was rested on: open it. */
   spring?(path: string): void;
-  /** A drop landed (after `placeNode` was asked). */
-  landed?(drop: Drop, to: string): void;
+  /** A drop landed (after `placeNode` was asked): the node `from` is at `to` now. */
+  landed?(drop: Drop, to: string, from: string): void;
 }
 
 // the row the pointer is resting on and since when (for the spring and the
@@ -51,6 +53,8 @@ export interface Surface {
 // it), and a covered WebKit window holds animation frames back, so nothing
 // here waits on one.
 interface Hover {
+  /** The row's element: the tree, a notebook's rail and the folder lens draw the same node's row (the same key) at once. */
+  el: Element;
   key: string;
   since: number;
   mid: number | null;
@@ -94,8 +98,9 @@ const onEsc = (e: KeyboardEvent) => {
   cancelled = true;
   clearTimers();
   useDrag.setState({ drop: null });
-  // a mouse drag ends here; its letting go then does nothing
-  if (press?.started) { e.preventDefault(); e.stopPropagation(); ghost?.remove(); ghost = null; delete document.documentElement.dataset.nodeDrag; }
+  // a mouse drag ends here, the row it took no longer dimmed and nothing ticking;
+  // the press is kept until the letting go, which then does nothing (its click swallowed)
+  if (press?.started) { e.preventDefault(); e.stopPropagation(); stopTicking(); endDrag(); }
 };
 
 /** Start dragging `path` (also for a smoke or a test that drives the drag without a DataTransfer). */
@@ -125,8 +130,15 @@ export function cancelDrag(): void {
 /** One drawn row as the drag last saw it: its geometry, its surface, whether it is folded. */
 interface Live { g: RowGeom; s: Surface; folded: boolean }
 
-/** Every drawn row by its `data-drop-row` key, as of its last render: a mouse drag finds the row under the pointer here. */
-const live = new Map<string, Live>();
+/**
+ * Every drawn row by its element, as of its last render (`rowDrag`'s `ref`):
+ * a mouse drag finds the row under the pointer here. By the element, not its
+ * `data-drop-row` key: the tree, a notebook's rail and the folder lens draw the
+ * same node's row at once, each with its own geometry, and a key would hold
+ * whichever rendered last (a tree row dropped on as the rail's row, at the
+ * rail's depth). A row no longer drawn is not under the pointer, and is let go.
+ */
+const live = new WeakMap<Element, Live>();
 
 /**
  * The pointer over row `el` (`at`, as last drawn) at `x, y`: the hover kept,
@@ -143,9 +155,9 @@ function overRow(el: HTMLElement, key: string, at: Live, x: number, y0: number):
   const h = r.height || 1;
   const inMid = y >= h / 4 && y < (h * 3) / 4;
   const p: Pointer = { x: x - r.left, y, h, pad: s.pad, indent: s.indent };
-  if (!hover || hover.key !== key) {
+  if (!hover || hover.el !== el) {
     clearTimers();
-    hover = { key, since: now, mid: inMid ? now : null, g, s, p, folded };
+    hover = { el, key, since: now, mid: inMid ? now : null, g, s, p, folded };
     // a folded row rested on opens, whether or not more dragovers come
     if (folded && s.spring && !sprung.has(g.path)) springTimer = setTimeout(springNow, SPRING_MS);
   } else {
@@ -185,17 +197,18 @@ function offRows(): void {
   if (useDrag.getState().drop) useDrag.setState({ drop: null });
 }
 
-/** Let go over row `key`: the node is placed where the mark said (or nests, after a rest on a bare document's middle). */
-function dropOnRow(key: string, g: RowGeom, s: Surface): void {
+/** Let go over row `el`: the node is placed where the mark said (or nests, after a rest on a bare document's middle). */
+function dropOnRow(el: Element, g: RowGeom, s: Surface): void {
   const { dragging } = useDrag.getState();
   let { drop } = useDrag.getState();
   // a drop after a rest on this row's middle nests, even when no timer or dragover has drawn it yet
-  if (!cancelled && dragging !== null && hover?.key === key && g.nest === 'dwell' && restedOn(hover, Date.now())) {
+  if (!cancelled && dragging !== null && hover?.el === el && g.nest === 'dwell' && restedOn(hover, Date.now())) {
     drop = dropAt(hover.g, hover.p, dragging, true) ?? drop;
   }
   if (!cancelled && dragging !== null && drop) {
     const d = drop;
-    placeNode(dragging, d.target, d.mode).then((to) => s.landed?.(d, to)).catch((err) => console.error(err));
+    const from = dragging;
+    placeNode(from, d.target, d.mode).then((to) => s.landed?.(d, to, from)).catch((err) => console.error(err));
   }
   endDrag();
 }
@@ -226,7 +239,7 @@ let ticker: ReturnType<typeof setInterval> | null = null;
 function rowUnder(x: number, y: number): { el: HTMLElement; key: string; at: Live } | null {
   const el = document.elementFromPoint(x, y)?.closest<HTMLElement>('[data-drop-row]') ?? null;
   const key = el?.dataset.dropRow;
-  const at = key !== undefined ? live.get(key) : undefined;
+  const at = el ? live.get(el) : undefined;
   return el && key !== undefined && at ? { el, key, at } : null;
 }
 
@@ -254,20 +267,28 @@ function startPointerDrag(p: Press): void {
   ticker = setInterval(() => { if (press?.started) moveTo(press.lastX, press.lastY); }, TICK_MS);
 }
 
-function finishPointer(): void {
-  window.removeEventListener('pointermove', onMove, true);
-  window.removeEventListener('pointerup', onUp, true);
-  window.removeEventListener('pointercancel', onCancel, true);
+/** Nothing of a mouse drag is drawn or ticking: the ghost, the cursor, the ticker. */
+function stopTicking(): void {
   if (ticker) clearInterval(ticker);
   ticker = null;
   ghost?.remove();
   ghost = null;
   delete document.documentElement.dataset.nodeDrag;
+}
+
+function finishPointer(): void {
+  window.removeEventListener('pointermove', onMove, true);
+  window.removeEventListener('pointerup', onUp, true);
+  window.removeEventListener('pointercancel', onCancel, true);
+  window.removeEventListener('blur', onBlur);
+  stopTicking();
   press = null;
 }
 
 const onMove = (e: PointerEvent) => {
   if (!press) return;
+  // no button down: the letting go was missed (outside the window, or while it was not ours), so the press is over and lands nowhere
+  if (e.buttons === 0) { onCancel(); return; }
   if (!press.started) {
     if (Math.hypot(e.clientX - press.x, e.clientY - press.y) < SLOP) return;
     startPointerDrag(press);
@@ -287,35 +308,42 @@ const onUp = (e: PointerEvent) => {
     if (!cancelled) moveTo(e.clientX, e.clientY);
     const hit = cancelled ? null : rowUnder(e.clientX, e.clientY);
     finishPointer();
-    if (hit) dropOnRow(hit.key, hit.at.g, hit.at.s);
+    if (hit) dropOnRow(hit.el, hit.at.g, hit.at.s);
     else endDrag();
     return;
   }
   finishPointer();
 };
 
+/** The press is over without a letting go: a drag it started ends and lands nowhere. */
 const onCancel = () => {
   const started = press?.started;
   finishPointer();
   if (started) endDrag();
 };
 
+/** The window lost focus mid-press (⌘-tab): its letting go will not come here. */
+const onBlur = (e: FocusEvent) => { if (!(e.target instanceof Node)) onCancel(); };
+
 /** A mouse pressed on a row that can be dragged: watched until it moves past `SLOP` (a drag) or lets go (a click). */
 function armPointer(path: string, label: string, x: number, y: number): void {
-  finishPointer();
+  // a press while one is under way (its letting go missed): that one ends first, its drag with it
+  onCancel();
   press = { path, label, x, y, started: false, lastX: x, lastY: y };
   window.addEventListener('pointermove', onMove, true);
   window.addEventListener('pointerup', onUp, true);
   window.addEventListener('pointercancel', onCancel, true);
+  window.addEventListener('blur', onBlur);
 }
 
 /** The props a row on `s` takes to be dragged and dropped on. `folded`: it has something under it and is closed (the spring opens it). */
 export function rowDrag(g: RowGeom, s: Surface, opts: { draggable: boolean; folded?: boolean }) {
   const key = g.key ?? g.path;
   const folded = !!opts.folded;
-  live.set(key, { g, s, folded });
   return {
     'data-drop-row': key,
+    // the row's geometry as of this render, for a mouse drag's hit test
+    ref: (el: HTMLElement | null) => { if (el) live.set(el, { g, s, folded }); },
     draggable: opts.draggable && nativeDrag(),
     onPointerDown: (e: RPointerEvent<HTMLElement>) => {
       if (!opts.draggable || e.button !== 0 || e.pointerType === 'touch') return;
@@ -349,13 +377,13 @@ export function rowDrag(g: RowGeom, s: Surface, opts: { draggable: boolean; fold
       const to = e.relatedTarget as Element | null;
       // into the row's own text, or onto another row: the next dragover redraws
       if (to && (e.currentTarget.contains(to) || to.closest?.('[data-drop-row]'))) return;
-      if (hover?.key === key) { hover = null; clearTimers(); }
+      if (hover?.el === e.currentTarget) { hover = null; clearTimers(); }
       if (useDrag.getState().drop?.row === key) useDrag.setState({ drop: null });
     },
     onDrop: (e: DragEvent) => {
       e.preventDefault();
       e.stopPropagation();
-      dropOnRow(key, g, s);
+      dropOnRow(e.currentTarget, g, s);
     },
     onDragEnd: () => endDrag(),
   };

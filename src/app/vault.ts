@@ -611,6 +611,8 @@ function onEvent(vault: Vault, ev: VaultEvent): void {
 /** Open the collection whose folder is `path` (its database read through the store), watch it, and publish its tree. */
 export async function openVault(path: string): Promise<Vault> {
   stopPlugins();
+  // the collection before this one stops syncing to its storage too, as `closeVault` does: its poll and write timers ran on against a closed collection
+  stopCrdt();
   stopSync();
   stopMirror();
   stopDated();

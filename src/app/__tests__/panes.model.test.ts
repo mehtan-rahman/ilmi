@@ -225,7 +225,8 @@ describe('tabs and panes, against their statechart', () => {
 const ROOT = '/collections/panes';
 let fs: StoreFs;
 vi.mock('../collections.js', async (orig) => ({ ...(await orig<typeof import('../collections.js')>()), collectionFs: () => fs }));
-vi.mock('../crdt.js', async (orig) => ({ ...(await orig<typeof import('../crdt.js')>()), startCrdt: async () => true, stopCrdt: () => {} }));
+const stopCrdt = vi.fn();
+vi.mock('../crdt.js', async (orig) => ({ ...(await orig<typeof import('../crdt.js')>()), startCrdt: async () => true, stopCrdt: () => stopCrdt() }));
 vi.mock('../keep.js', async (orig) => ({ ...(await orig<typeof import('../keep.js')>()), startMirror: async () => {}, stopMirror: () => {}, keepDatedSoon: () => {}, stopDated: () => {} }));
 vi.mock('@tauri-apps/plugin-log', async (orig) => ({ ...(await orig<typeof import('@tauri-apps/plugin-log')>()), info: async () => {} }));
 vi.mock('../../plugins/index.js', async (orig) => ({ ...(await orig<typeof import('../../plugins/index.js')>()), startPlugins: async () => ({}), stopPlugins: () => {} }));
@@ -362,5 +363,15 @@ describe('tabs and panes, through the app\'s wiring', () => {
     await runOp('outside delete c');
     expect(useApp.getState().panes.panes.flatMap((p) => p.tabs.map((t) => t.id))).not.toContain('c.md');
     expect(wiringBad()).toEqual([]);
+  });
+});
+
+describe('opening another collection', () => {
+  it('stops the one before syncing to its storage, as closing it does', async () => {
+    await world();
+    stopCrdt.mockClear();
+    await openVault(ROOT);
+    expect(stopCrdt).toHaveBeenCalledTimes(1);
+    closeVault();
   });
 });

@@ -154,14 +154,23 @@ notes/
   `next` the interval before and after, in days (0 in learning steps); `s`,
   `d` stability and difficulty after; `ms` the time on the card, at most a
   minute, when known; `src` where the line came from when not a session in
-  the app (`anki` for an imported revlog). Keys are written in that order;
-  unknown keys are ignored on read. It is built for sync: lines are only
-  appended, never rewritten, so two devices add theirs to the same month;
+  the app (`anki` for an imported revlog); `over` on a grade given again in
+  the session it was first given in (‹ back to a card already graded), the
+  `at` of the line it replaces, of the same `card` and `key`. Keys are
+  written in that order; unknown keys are ignored on read. It is built for
+  sync: lines are only appended, never rewritten, so two devices add theirs
+  to the same month;
   every `.jsonl` in the directory is read (a sync tool's conflict copy
   too); a line seen twice (the same `at`, `card`, `key`, and `g`) counts
   once; a line that does not read as one (torn by a crash, junk) is
-  skipped. A card moved to another document is found again by its id when
-  its old document is gone.
+  skipped. A line some `over` names is replaced: it does not count, the
+  replacing line does, so a card graded again counts once, with its last
+  grade (the card's `sr` line went back to before the grade replaced and
+  was graded from there). A replacing line's `at` is always after the
+  line's it replaces, a second after when the grade came within the same
+  second, so no two lines replace each other; an `over` not before its
+  line's `at` is ignored. An app without `over` counts both. A card moved to
+  another document is found again by its id when its old document is gone.
 - **Not the same** is app-private too: `.ilmi/same.json`,
   `{ "not": ["<key>|<key>", …] }`, the pairs of cards the person said do
   not test the same fact, so the app never offers them again (milestone

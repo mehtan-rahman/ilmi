@@ -195,6 +195,11 @@
 }
 .grades button:hover { border-color: color-mix(in oklab, var(--fg) calc(30% * var(--chrome)), transparent); }
 .grades[data-revealed="0"] button { opacity: 0.4; }
+/* a card graded in this session, come back to: the grade it was given; a card gone has only its skip */
+.grades button[data-given="1"] { border-color: var(--fg-2); background: color-mix(in oklab, var(--fg) 6%, var(--paper)); }
+.recall-wrap .card-meta .cm-given { color: var(--fg-2); }
+.grades[data-gone="1"] { justify-content: center; }
+.grades[data-gone="1"] button { flex: 0 1 25%; }
 .grades button .label { display: block; font-weight: 500; }
 .grades button .gap {
   display: block;

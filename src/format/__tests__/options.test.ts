@@ -1,12 +1,13 @@
 // Milestone 42 in the format: the study options as front-matter fields
 // (FORMAT.md §3, *options*) on the corpus's deck and notebook and on a
 // mangled file, and the review log's line (`reviews.ts`, FORMAT.md §1) read
-// the way sync leaves it: interleaved devices, duplicates, torn lines.
+// the way sync leaves it: interleaved devices, duplicates, torn lines, and
+// grades given again in their session (`over`, the corpus's month).
 
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { formatReview, meta, mergeReviews, parse, parseReviews, reviewFile, serialize, setField, type Review } from '../index.js';
+import { formatReview, meta, mergeReviews, overAt, parse, parseReviews, reviewFile, serialize, setField, type Review } from '../index.js';
 
 const CORPUS = join(import.meta.dirname, 'corpus');
 const read = (rel: string) => readFileSync(join(CORPUS, rel), 'utf8');
@@ -74,5 +75,24 @@ describe('the review log', () => {
     const conflict = [R({ at: '2026-10-30T08:00:00Z' })];
     const log = mergeReviews([laptop, phone, conflict]);
     expect(log.map((r) => `${r.at.slice(11, 16)} ${r.card}`)).toEqual(['08:00 voc-karam', '08:30 c', '09:00 b']);
+  });
+
+  // a card graded, gone back to, and graded again, twice (cv-wort); a reverse given again names
+  // an instant only the bare line has (cv-haus); an `over` not before its own line's instant (cv-tag)
+  it('a grade given again in its session replaces the line it names, in whatever order the lines are read', () => {
+    const month = read('reviews/2026-11.jsonl');
+    const lines = parseReviews(month);
+    expect(lines.map((r) => r.over ?? null)).toEqual([null, null, '2026-11-09T08:00:00Z', '2026-11-09T08:00:40Z', '2026-11-09T08:00:10Z', null]);
+    const counted = (log: Review[]) => log.map((r) => `${r.at.slice(11, 19)} ${r.card}${r.key ? ` ${r.key}` : ''} ${r.g}`);
+    const want = ['08:00:10 cv-haus 1', '08:00:41 cv-wort 2', '08:02:00 cv-haus r 3', '08:03:00 cv-tag 4'];
+    expect(counted(mergeReviews([lines]))).toEqual(want);
+    // read backwards (a store orders a second's lines by their text), and with a conflict copy holding the first grade read last
+    expect(counted(mergeReviews([[...lines].reverse(), lines.slice(0, 1)]))).toEqual(want);
+    expect(counted(mergeReviews([lines.slice(3), lines.slice(0, 3)]))).toEqual(want);
+    // written back as read, `over` last
+    expect(lines.slice(0, 5).map(formatReview).join('\n')).toBe(month.split('\n').slice(0, 5).join('\n'));
+    // a grade given again within the second of the one it replaces is logged a second after it
+    expect(overAt('2026-11-09T08:00:00Z', '2026-11-09T08:00:00Z')).toBe('2026-11-09T08:00:01Z');
+    expect(overAt('2026-11-09T08:00:05Z', '2026-11-09T08:00:00Z')).toBe('2026-11-09T08:00:05Z');
   });
 });

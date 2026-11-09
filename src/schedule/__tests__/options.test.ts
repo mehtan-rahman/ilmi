@@ -5,7 +5,7 @@
 // marked at its threshold. The tests walk days.
 
 import { describe, expect, it } from 'vitest';
-import { meta, parse, type Card, type Doc, type Meta } from '../../format/index.js';
+import { meta, parse, type Card, type CardSchedule, type Doc, type Meta } from '../../format/index.js';
 import {
   OPTION_DEFAULTS, addDays, becomesLeech, dayOf, docItems, gradeItem, isDue, meterQueue, ownersOf, resolveOptions, sortQueue, spentToday,
   type CardItem, type QueueItem, type Resolved,
@@ -193,5 +193,32 @@ describe('grading under the options', () => {
     const rev = docItems('x.md', doc, at('2026-11-02')).find((i): i is CardItem => i.kind === 'card' && i.dir === 'r')!;
     gradeItem(doc, rev, 3, at('2026-11-02'), { report: (r) => got.push(r) });
     expect(got.map((r) => [r.id, r.key ?? null, r.prev === undefined])).toEqual([['cz1', 'c2', true], ['fg', null, true], ['fg', 'r', true]]);
+  });
+  // ‹ back to a card graded in the session, and graded again: once, from before the grade it replaces
+  it('a grade given again: the line goes back to before the one it replaces, unless the line has changed since', () => {
+    const text = 'f ::: g ^fg\n<!-- sr due=2026-10-28 st=review s=20 d=5 r=5 l=1 ivl=20 last=2026-10-08T09:00:00Z -->\n';
+    const once = (g: 1 | 3 | 4, d: Doc, when: Date, over?: { prev?: CardSchedule; next: CardSchedule }) => {
+      let r: { prev?: CardSchedule; next: CardSchedule } | null = null;
+      for (const item of docItems('x.md', d, when).filter((i): i is CardItem => i.kind === 'card' && i.dir !== 'r')) gradeItem(d, item, g, when, { ...(over ? { over } : {}), report: (x) => { r = x; } });
+      return r!;
+    };
+    const card = (d: Doc) => d.blocks.find((b): b is Card => b.kind === 'card')!;
+    const { doc } = parse(text);
+    const first = once(3, doc, now);
+    const later = new Date(now.getTime() + 40_000);
+    const again = once(1, doc, later, first);
+    const { doc: fresh } = parse(text);
+    once(1, fresh, later);
+    expect(card(doc).sched).toEqual(card(fresh).sched);
+    expect([again.prev?.reps, card(doc).sched?.reps, card(doc).sched?.lapses]).toEqual([5, 6, 2]);
+    // three times: still from before the first
+    once(4, doc, new Date(later.getTime() + 40_000), again);
+    expect(card(doc).sched?.reps).toBe(6);
+    // a line changed since (another device's grade synced in): graded as it is
+    const { doc: synced } = parse(text);
+    const mine = once(3, synced, now);
+    card(synced).sched = { ...card(synced).sched!, last: '2026-10-29T08:00:00Z', reps: 7 };
+    once(1, synced, later, mine);
+    expect(card(synced).sched?.reps).toBe(8);
   });
 });

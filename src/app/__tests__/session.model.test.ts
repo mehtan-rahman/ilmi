@@ -8,14 +8,18 @@
 //
 //   question --space|1|a grade's button|a press on the hint--> answer
 //   question|answer --e--> editing (the boxes; an edit kept from before comes back, asking)
-//   answer   --space|1|a grade's button--> graded: the next item's question (after the last, the end)
+//   answer   --space|1|a grade's button--> graded: the next item (after the last, the end)
+//   graded   (an item graded in this session, come back to): its answer, the grade given marked
+//   graded   --space|1|a grade's button--> given again: the line as the grade before left it
+//            goes back to before it and is graded from there, its log line in that one's place
 //   editing  --space|1--> editing (the keys are the boxes')
 //   editing  --⌘⏎ [clean|written]--> answer          --⌘⏎ [drops a reviewed schedule]--> asking
 //   asking   --⌘⏎|save anyway--> answer (written)     --esc--> editing
 //   editing  --esc--> answer (put back)
 //   editing  --a grade's button--> the press outside saves (or asks), then the grade: graded
-//   any      --‹|›--> the item before or after, its question (the boxes let go: written, or kept)
-//   gone     (the card, or the line the item asks, is no longer in the file): no grades, ‹ › only
+//   any      --‹|›--> the item before or after, its question or, graded, its answer (the boxes let go: written, or kept)
+//   gone     (the card, or the line the item asks, is no longer in the file): no grades, a skip
+//   gone     --space|skip|›--> the next item, or from the last the end   --1--> gone (nothing)
 //
 // and the writes: `settle` lets every write sent land. Between, the user
 // may go on (grade the next card, go back) with writes in flight; `e` only
@@ -23,17 +27,21 @@
 // event the view (which item, question, answer, the boxes: form, what is
 // typed, dirty, asking; or gone, or the end) is compared with the model,
 // and once the writes land, the file: each card's text, its id, the reviews
-// on each of its lines. Invariants, by the comparison: every grade given
-// is written, once, to the line the item asks, and only to a card whose
-// answer was up; an edit is written, held, or kept, unless put back with
-// esc; a reviewed schedule goes only when asked and answered; no reverse
-// line on a card that is not both ways.
+// on each of its lines, each line's schedule, the review log's lines. Invariants,
+// by the comparison: every grade given is written, once, to the line the
+// item asks, and only to a card whose answer was up; a card is counted and
+// logged once in a session however often it is graded again, the line's
+// schedule the one grading it once with the last grade, from the schedule it
+// had before the session (none, for a line made since); no grade reaches an
+// item that is gone; an edit is written, held, or kept, unless put back
+// with esc; a reviewed schedule goes only when asked and answered; no
+// reverse line on a card that is not both ways.
 
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { parse, type Card, type Doc } from '../../format/index.js';
-import { docItems, type CardItem } from '../../schedule/index.js';
+import { parse, type Card, type CardSchedule, type Doc, type Review } from '../../format/index.js';
+import { docItems, grade as fsrsGrade, type CardItem } from '../../schedule/index.js';
 import { Vault, storeFs } from '../../vault/index.js';
 import { memStore } from '../../vault/mem-store.js';
 import { faceViews } from '../FaceField.js';
@@ -71,6 +79,11 @@ interface Disk {
   reps: [number, number, number | null];
 }
 type Show = 'Q' | 'A' | 'E';
+/** The grades the events give: space good, 1 again, the easy button. */
+type G = 1 | 3 | 4;
+type Three<T> = [T, T, T];
+/** What a line was graded from before the session: the file's schedule, or none (a new card, a reverse dropped since and made again). */
+type Pre = 'file' | 'none';
 interface S {
   /** The item on show; 3 is the end. */
   idx: number;
@@ -82,6 +95,18 @@ interface S {
   seen: Disk;
   kept: [Faces | null, Faces | null];
   pending: boolean;
+  /** The grade each item was given in this session, as ‹ back to it shows it. */
+  given: Three<G | null>;
+  /** The grade in effect on each item's line and in the log, and the reviews it left on the line: one given again replaces it while the line holds them. */
+  landed: Three<G | null>;
+  wrote: Three<number | null>;
+  pre: Three<Pre>;
+  /**
+   * How often each item was given again, to two: a grade given again reaches
+   * the state its first grade did, and the walk, knowing it, would not go on
+   * from it (to the writes landing, to a third grade).
+   */
+  again: Three<number>;
 }
 
 const EVENTS = ['space', 'again', 'e', 'type', 'form', 'save', 'esc', 'anyway', 'easy', 'next', 'prev', 'settle'] as const;
@@ -99,8 +124,8 @@ const drops = (d: Disk, c: 0 | 1, f: Faces) => c === 1 && f.form !== 'bidir' && 
 function write(s: S, c: 0 | 1, f: Faces, sure: boolean): void {
   if (drops(s.disk, c, f) && !sure) throw new Error('the model drops a reviewed schedule unasked');
   s.disk.cards[c] = faces0(f);
-  // a card no longer both ways has no reverse
-  if (c === 1 && f.form !== 'bidir') s.disk.reps[2] = null;
+  // a card no longer both ways has no reverse; one made again is new
+  if (c === 1 && f.form !== 'bidir') { s.disk.reps[2] = null; s.pre[2] = 'none'; }
   s.pending = true;
 }
 
@@ -114,10 +139,17 @@ function flush(s: S, sure: boolean): boolean {
 }
 
 /** A grade sent: written to the line the item asks, once the writes before it have landed; a reverse of a card no longer both ways is not there. */
-function grade(s: S): void {
+function grade(s: S, g: G): void {
+  if (gone(s)) throw new Error('a grade reached an item that is gone');
   const line = s.idx;
-  if (!(line === 2 && s.disk.cards[1].form !== 'bidir')) s.disk.reps[line] = (s.disk.reps[line] ?? 0) + 1;
+  if (s.given[line] !== null) s.again[line] = Math.min(2, s.again[line]! + 1);
+  s.given[line] = g;
   s.pending = true;
+  if (line === 2 && s.disk.cards[1].form !== 'bidir') return;
+  // given again while the line holds what the grade before wrote: that grade's place, not one more review
+  if (s.landed[line] === null || s.disk.reps[line] !== s.wrote[line]) s.disk.reps[line] = (s.disk.reps[line] ?? 0) + 1;
+  s.landed[line] = g;
+  s.wrote[line] = s.disk.reps[line]!;
 }
 
 /** The boxes let go: written when they can be, else kept for the card's return. */
@@ -133,7 +165,7 @@ function leave(s: S): void {
 function goTo(s: S, idx: number): void {
   leave(s);
   s.idx = idx;
-  s.show = 'Q';
+  s.show = idx < TOTAL && s.given[idx] !== null ? 'A' : 'Q';
 }
 
 /** A press outside the boxes (a grade's button, ‹ ›): what is unsaved is saved, or the question asked. */
@@ -142,10 +174,16 @@ function pressOutside(s: S): void {
   if (flush(s, false)) { s.show = 'A'; s.ed = null; }
 }
 
+/** Each line's reviews before the session: the file's, or none. */
+const PRE_REPS: Record<Pre, number[]> = { file: [0, 4, 2], none: [0, 0, 0] };
+
 const model: Machine<S, E> = {
   init: (() => {
     const d: Disk = { cards: [{ form: 'qa', n: 0 }, { form: 'bidir', n: 0 }], reps: [0, 4, 2] };
-    return { idx: 0, show: 'Q', ed: null, disk: d, seen: structuredClone(d), kept: [null, null], pending: false };
+    return {
+      idx: 0, show: 'Q', ed: null, disk: d, seen: structuredClone(d), kept: [null, null], pending: false,
+      given: [null, null, null], landed: [null, null, null], wrote: [null, null, null], pre: ['none', 'file', 'file'], again: [0, 0, 0],
+    };
   })(),
   events: EVENTS,
   key: (s) => JSON.stringify(s),
@@ -156,15 +194,17 @@ const model: Machine<S, E> = {
     const ed = s.ed;
     switch (e) {
       case 'space': case 'again':
+        // an item that is gone: space skips it, a grade's key does nothing
+        if (gone(s)) { if (e === 'space') goTo(s, s.idx + 1); return s; }
         if (s.show === 'Q') s.show = 'A';
-        else if (s.show === 'A') { grade(s); goTo(s, s.idx + 1); }
+        else if (s.show === 'A') { grade(s, e === 'space' ? 3 : 1); goTo(s, s.idx + 1); }
         return s;
       case 'easy':
         // no grades on a card that is gone
         if (gone(s)) return null;
         pressOutside(s);
         if (s.show === 'Q') s.show = 'A';
-        else { grade(s); goTo(s, s.idx + 1); }
+        else { grade(s, 4); goTo(s, s.idx + 1); }
         return s;
       case 'e': {
         // the boxes open on the file as it is
@@ -187,7 +227,8 @@ const model: Machine<S, E> = {
         else { s.show = 'A'; s.ed = null; }
         return s;
       case 'anyway': if (!ed?.asking) return null; flush(s, true); s.show = 'A'; s.ed = null; return s;
-      case 'next': if (s.idx >= TOTAL - 1) return null; pressOutside(s); goTo(s, s.idx + 1); return s;
+      // › on the last item only when it is gone: nothing else moves on from it
+      case 'next': if (s.idx >= TOTAL - 1 && !gone(s)) return null; pressOutside(s); goTo(s, s.idx + 1); return s;
       case 'prev': if (s.idx === 0) return null; pressOutside(s); goTo(s, s.idx - 1); return s;
     }
     return null;
@@ -196,6 +237,9 @@ const model: Machine<S, E> = {
     if (s.ed?.asking && !(dirty(s) && drops(s.disk, cardOf(s.idx), s.ed))) return 'asking with nothing to ask about';
     if ((s.show === 'E') !== !!s.ed) return 'boxes without editing';
     if (s.disk.cards[1].form !== 'bidir' && s.disk.reps[2] !== null) return 'a reverse line on a card not both ways';
+    // counted once: a line has at most one review more than it had before the session
+    for (let i = 0; i < TOTAL; i++) if ((s.disk.reps[i] ?? 0) > PRE_REPS[s.pre[i]!][i]! + 1) return `item ${i} counted twice`;
+    for (let i = 0; i < TOTAL; i++) if ((s.landed[i] === null) !== (s.wrote[i] === null)) return 'a grade in effect without its line';
     return null;
   },
 };
@@ -207,12 +251,39 @@ const textOf = (f: Faces, c: 0 | 1) => `${c ? 'w1' : 'q0'} ${f.form === 'qa' ? '
 interface Seen {
   idx: number;
   view: string;
+  /** An item graded in this session: the quiet line, and the grade button lit. */
+  given?: string | null;
+  lit?: number | null;
   form?: string | null;
   back?: string;
   dirty?: string | null;
   asking?: boolean;
   file?: unknown;
+  /** Each line's schedule, and the grades the log holds for each item. */
+  lines?: (CardSchedule | null)[];
+  log?: number[][];
 }
+
+/** A line's schedule as the scheduler writes it. */
+const schedOf = (c: CardSchedule | undefined): CardSchedule | null => {
+  if (!c) return null;
+  const { pri: _p, suspended: _s, link: _l, extra: _x, ...rest } = c;
+  return rest;
+};
+const linesOf = (doc: Doc): (CardSchedule | null)[] => {
+  const [a, b] = doc.blocks.filter((x): x is Card => x.kind === 'card');
+  return [schedOf(a?.sched), schedOf(b?.sched), schedOf(b?.reverse)];
+};
+/** The file's lines before the session. */
+const PRE_LINES = linesOf(parse(FILE).doc);
+const GRADE_WORD: Record<G, string> = { 1: 'again', 3: 'good', 4: 'easy' };
+
+/** The log's lines, by the item they grade: `k1`'s bare line, its reverse, else `q0` (its id minted when first graded). */
+const logOf = (log: readonly Review[]): number[][] => {
+  const out: number[][] = [[], [], []];
+  for (const r of log) out[r.card !== 'k1' ? 0 : r.key === 'r' ? 2 : 1]!.push(r.g);
+  return out;
+};
 
 function fileOf(doc: Doc): unknown {
   const [a, b] = doc.blocks.filter((x): x is Card => x.kind === 'card');
@@ -225,6 +296,10 @@ function fileOf(doc: Doc): unknown {
 function expected(s: S): Seen {
   const out: Seen = { idx: Math.min(s.idx, TOTAL - 1), view: s.idx >= TOTAL ? 'end' : gone(s) ? 'gone' : s.show };
   if (s.idx >= TOTAL) out.idx = -1;
+  if (s.idx < TOTAL && !gone(s)) {
+    const g = s.given[s.idx] ?? null;
+    Object.assign(out, { given: g === null ? null : `graded ${GRADE_WORD[g]}`, lit: g });
+  }
   if (s.ed && !gone(s)) {
     const c = cardOf(s.idx);
     Object.assign(out, { form: s.ed.form, back: `${c ? 'v1' : 'a0'}${'+'.repeat(s.ed.n)}`, dirty: dirty(s) ? '1' : '0', asking: s.ed.asking });
@@ -234,6 +309,16 @@ function expected(s: S): Seen {
       { text: textOf(s.disk.cards[0], 0), id: s.disk.reps[0] > 0, reps: s.disk.reps[0], reverse: null },
       { text: textOf(s.disk.cards[1], 1), id: 'k1', reps: s.disk.reps[1], reverse: s.disk.reps[2] },
     ];
+    // a line graded in the session: graded once, with the grade in effect, from what it had before (at the instant the file says it was)
+    const now = linesOf(parse(fileText).doc);
+    out.lines = [0, 1, 2].map((i) => {
+      const g = s.landed[i]!;
+      const pre = s.pre[i] === 'file' ? PRE_LINES[i] ?? undefined : undefined;
+      if (s.disk.reps[i] === null || (i === 0 && s.disk.reps[0] === 0)) return null;
+      if (s.landed[i] === null) return pre ?? null;
+      return now[i]?.last ? schedOf(fsrsGrade(pre, g, new Date(now[i]!.last!))) : null;
+    });
+    out.log = s.landed.map((g) => (g === null ? [] : [g]));
   }
   return out;
 }
@@ -304,7 +389,12 @@ async function fire(e: E): Promise<void> {
     case 'esc': await key('Escape', boxes()[0]!.querySelector('.ProseMirror')!); break;
     case 'anyway': await act(async () => { Array.from(host.querySelectorAll<HTMLButtonElement>('.cm-act')).find((b) => b.textContent?.includes('save anyway'))!.click(); }); break;
     case 'easy': await press(host.querySelectorAll<HTMLButtonElement>('.grades button')[3]!); break;
-    case 'next': await press(host.querySelectorAll<HTMLButtonElement>('.sess-nav .sn-btn')[1]!); break;
+    case 'next': {
+      const next = host.querySelectorAll<HTMLButtonElement>('.sess-nav .sn-btn')[1]!;
+      if (next.disabled) throw new Error('› is disabled');
+      await press(next);
+      break;
+    }
     case 'prev': await press(host.querySelectorAll<HTMLButtonElement>('.sess-nav .sn-btn')[0]!); break;
     case 'settle': await settle(); break;
   }
@@ -319,6 +409,10 @@ function seen(s: S): Seen {
   else if (host.querySelector('.recall-wrap > .empty')?.textContent === 'no longer in the collection') out.view = 'gone';
   else if (edit) out.view = 'E';
   else if (card) out.view = card.dataset.revealed === '1' ? 'A' : 'Q';
+  if (out.view !== 'end' && out.view !== 'gone') {
+    const lit = Array.from(host.querySelectorAll<HTMLElement>('.grades button')).findIndex((b) => b.dataset.given === '1');
+    Object.assign(out, { given: host.querySelector('.cm-given')?.textContent ?? null, lit: lit < 0 ? null : ([1, 2, 3, 4] as const)[lit]! });
+  }
   if (edit) {
     Object.assign(out, {
       form: edit.querySelector('.cm-forms [data-active="1"]')?.getAttribute('data-form') ?? null,
@@ -328,14 +422,20 @@ function seen(s: S): Seen {
     });
   }
   // the file, once the model says every write has landed
-  if (!s.pending) out.file = fileOf(parse(fileText).doc);
+  if (!s.pending) {
+    out.file = fileOf(parse(fileText).doc);
+    out.lines = linesOf(parse(fileText).doc);
+    out.log = logOf(logLines);
+  }
   return out;
 }
 
 let fileText = '';
+let logLines: Review[] = [];
 async function readFile(): Promise<void> {
   gate.hold(false);
   fileText = (await vault.read(DECK)).text;
+  logLines = await vault.loadReviews();
   gate.hold(true);
 }
 
@@ -363,10 +463,12 @@ async function play(road: readonly E[]): Promise<number> {
 // Depth 7. The grades' counts make the state space unbounded, so the walk
 // is cut by length. Every road that broke is seven events or fewer but one
 // (the reverse graded back onto a card made q&a, eight, played on its own
-// below); seven plays every mix of the others: 575 states, 1487 roads,
-// about half a minute. Each event more about doubles it; MODEL_DEPTH=8
-// (1075 states, 2833 roads) passes too.
+// below); seven plays every mix of the others: 1837 states, 3460 roads,
+// about a minute. Each event more about doubles it. An item is gone seven
+// events in at the soonest (the reverse dropped is asked about, then
+// written), so what follows it is walked from there, three events more.
 const DEPTH = Number(process.env.MODEL_DEPTH ?? 7);
+const TO_GONE: E[] = ['next', 'e', 'form', 'next', 'e', 'save', 'settle'];
 
 describe('the session, every road of up to seven events', () => {
   beforeAll(() => { host = document.body.appendChild(document.createElement('div')); });
@@ -382,9 +484,24 @@ describe('the session, every road of up to seven events', () => {
     ['no reverse graded onto a card no longer both ways', ['next', 'e', 'form', 'next', 'e', 'save', 'space', 'settle']],
     // the q&a switch's question pending and the session moved on: the edit was gone when the card came back
     ['an edit that asks, let go, comes back asking', ['next', 'e', 'form', 'next', 'space', 'e']],
+    // ‹ to a card graded: its question again, and a second grade on top of the first, counted and logged twice
+    ['a card graded again counts once, graded from before', ['space', 'space', 'prev', 'again', 'settle']],
+    ['a card graded again once its grade has landed', ['next', 'space', 'space', 'settle', 'prev', 'easy', 'settle']],
+    ['a card graded three times counts once, with the last', ['space', 'space', 'prev', 'again', 'prev', 'space', 'settle']],
+    // a gone item: space and 1 reached the hidden card and tried a grade; › was off on the last item
+    ['a gone item: 1 does nothing, space skips it', [...TO_GONE, 'again', 'space']],
+    ['a gone last item: › ends the session', [...TO_GONE, 'next']],
   ] as [string, E[]][])('%s', async (_, road) => {
     await play(road);
   });
+
+  it('from an item gone, every road of three events more', async () => {
+    let init = model.init;
+    for (const e of TO_GONE) init = model.step(init, e)!;
+    if (!gone(init)) throw new Error('the road does not reach a gone item');
+    const roads = leaves(transitions({ ...model, init }, 3).all);
+    for (const t of roads) await play([...TO_GONE, ...t.path]);
+  }, 120_000);
 
   it('the view and the file are what the model says after every event', async () => {
     const { all, states } = transitions(model, DEPTH);

@@ -8,7 +8,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { open as pickDirectory } from '@tauri-apps/plugin-dialog';
 import { info } from '@tauri-apps/plugin-log';
-import { REVIEWS_DIR, meta, setField, type Doc, type Meta, type NodeType, type Review } from '../format/index.js';
+import { REVIEWS_DIR, meta, replaces, setField, type Doc, type Meta, type NodeType, type Review } from '../format/index.js';
 import type { Chapter, MappedDeck } from '../import/index.js';
 import { activeExam, addDays, buryLinked, cadence, cardsById, dayOf, dayStart, docItems, examQueue, examsAt, isDue, itemKey, meterQueue, postponeOverflow, readPri, resolveOptions, spentToday, whenToDate, type ExamAt, type QueueItem, type Resolved } from '../schedule/index.js';
 import { SAME_FILE, Vault, childDirOf, childrenAt, cleanName, dirOf, entryOf, fileName, isDoc, isPdfPath, joinRel, normRel, ordered, placeEntry, rekey, relFrom, type DocNode, type ExtractSpec, type SectionSpec, type ImportDeckSpec, type ImportPdfSpec, type ImportSpec, type PdfChapterSpec, type StoreFs, type TextHit, type TreeNode, type VaultEvent, type VaultState } from '../vault/index.js';
@@ -358,6 +358,8 @@ export function dropReview(r: Review): void {
 export async function recordReview(r: Review, logged = false): Promise<void> {
   const vault = current;
   if (!vault) return;
+  // a grade given again in its session takes the place of the line it replaces
+  if (r.over !== undefined) reviews = reviews.filter((x) => !replaces(r, x));
   if (!reviews.includes(r)) reviews = [...reviews, r];
   if (logged) {
     // the write that carried it rebuilt the queue with it counted

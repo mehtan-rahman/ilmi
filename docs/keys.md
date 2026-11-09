@@ -55,7 +55,9 @@ in a deck        j k move, ⌫ delete the selected card, m make a card;
                  × on a row, or right-click, also deletes one; right-click moves it to another deck
 in the queue     j k move, ⏎ enter, o open one; a row names its file by its
                  path (`queue shows titles` in the tweaks brings the title back)
-in a session     [ ] prev / next; space reveal, 1-4 grade; ⏎ next (a
+in a session     [ ] prev / next; space reveal, 1-4 grade (a card graded,
+                 come back to: graded again in its grade's place); a card no
+                 longer there: space or ] skip; ⏎ next (a
                  book's: done for today; at its end: dismiss), p later, d dismiss
 on a heading     right-click: come back (its section returns until you
                  dismiss it), dismiss, or bring back; the inspector and

@@ -38,6 +38,8 @@ export interface Review {
   ms?: number;
   /** Where the line came from when not a session here: `anki` for an imported revlog. */
   src?: string;
+  /** A grade given again in the session it was given in: the `at` of the line it replaces (the same `card` and `key`, an earlier instant). */
+  over?: string;
 }
 
 const STATES: readonly SrState[] = ['new', 'learning', 'review', 'relearning'];
@@ -50,6 +52,12 @@ export const reviewFile = (at: string): string => `${REVIEWS_DIR}/${at.slice(0, 
 /** What makes two lines the same review: the same card graded the same way at the same second. */
 export const reviewKey = (r: Review): string => `${r.at} ${r.card} ${r.key ?? ''} ${r.g}`;
 
+/** Whether `r` takes the place of `x`: a grade given again of the line `x` graded, at the instant `r.over` names. */
+export const replaces = (r: Review, x: Review): boolean => r.over === x.at && r.card === x.card && r.key === x.key;
+
+/** The instant a grade given again is logged at: its own, but always after the line it replaces, so a line never replaces one of its own second. */
+export const overAt = (at: string, over: string): string => (at > over ? at : `${new Date(Date.parse(over) + 1000).toISOString().slice(0, 19)}Z`);
+
 /** One line, no newline, keys in a fixed order. */
 export function formatReview(r: Review): string {
   const o: Record<string, unknown> = { at: r.at, doc: r.doc, card: r.card };
@@ -59,6 +67,7 @@ export function formatReview(r: Review): string {
   if (r.d !== undefined) o.d = r.d;
   if (r.ms !== undefined) o.ms = r.ms;
   if (r.src !== undefined) o.src = r.src;
+  if (r.over !== undefined) o.over = r.over;
   return JSON.stringify(o);
 }
 
@@ -82,6 +91,7 @@ function readLine(line: string): Review | null {
   if (num(x.d)) r.d = x.d;
   if (num(x.ms)) r.ms = x.ms;
   if (typeof x.src === 'string') r.src = x.src;
+  if (typeof x.over === 'string' && INSTANT.test(x.over) && x.over < x.at) r.over = x.over;
   return r;
 }
 
@@ -96,10 +106,10 @@ export function parseReviews(text: string): Review[] {
   return out;
 }
 
-/** Several files' reviews as one log: duplicates collapsed (the first kept), oldest first. */
+/** Several files' reviews as one log: duplicates collapsed (the first kept), a line a grade given again replaces left out, oldest first. */
 export function mergeReviews(lists: Iterable<readonly Review[]>): Review[] {
   const seen = new Set<string>();
-  const out: Review[] = [];
+  let out: Review[] = [];
   for (const list of lists) {
     for (const r of list) {
       const k = reviewKey(r);
@@ -108,6 +118,9 @@ export function mergeReviews(lists: Iterable<readonly Review[]>): Review[] {
       out.push(r);
     }
   }
+  // whichever file each is in, and in whatever order: a replacing line is always the later instant, so no two replace each other
+  const over = new Set(out.flatMap((r) => (r.over === undefined ? [] : [`${r.over} ${r.card} ${r.key ?? ''}`])));
+  if (over.size) out = out.filter((x) => !over.has(`${x.at} ${x.card} ${x.key ?? ''}`));
   // a stable sort: one second's reviews keep the order they were read in
   return out.sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
 }

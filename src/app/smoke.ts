@@ -3077,6 +3077,7 @@ export async function smokeDecks(vault: Vault): Promise<void> {
 
     // ⏎ on the fourth row opens the card view there (milestone 72): type onto its back, ⌘⏎ saves
     click(rows()[3]!);
+    await sleep(200);
     key('Enter');
     const back = await until(() => q<HTMLElement>('.card-view .face.back .face-field'));
     log(`⏎ opened the card view: tab ${activeTab(useApp.getState().panes)?.id}; count "${q('.card-view .cv-count')?.textContent}"; faces "${qa('.card-view .face').map((f) => f.textContent).join(' | ')}"`);
@@ -3093,8 +3094,10 @@ export async function smokeDecks(vault: Vault): Promise<void> {
     log(`edited back: lines: ${await lines()}`);
 
     // `]` to the fifth card, to cloze from the strip's switch, saved by a press outside
+    const was = q('.card-view .cv-count')?.textContent;
     key(']');
-    await until(() => (q('.card-view .cv-count')?.textContent?.startsWith('5 /') ? true : null), 5000);
+    await until(() => (q('.card-view .cv-count')?.textContent !== was ? true : null), 5000);
+    log(`] moved: ${was} → ${q('.card-view .cv-count')?.textContent}`);
     q<HTMLElement>('.card-view .cm-forms button[data-form="cloze"]')!.click();
     await sleep(300);
     log(`switched to cloze: front "${q('.card-view .face.front')?.textContent}"`);

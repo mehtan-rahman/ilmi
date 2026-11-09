@@ -205,7 +205,7 @@ describe('the card view', () => {
     expect(host.querySelector('.cv-count')?.textContent).toBe('1 / 7');
     expect(faces().map((f) => f.textContent)).toEqual(['der Vorsatz', 'resolution; intention']);
     expect(faces().every((f) => f.querySelector('.ProseMirror[contenteditable="true"]'))).toBe(true);
-    expect(host.querySelector('.card-meta .cm-forms [data-active="1"]')?.textContent).toBe('both ways');
+    expect(host.querySelector('.card-meta .cm-forms [data-active="1"]')?.textContent).toBe('bidir');
     expect(host.querySelector('.card-meta')?.textContent).toContain('6 reviews');
     expect(useApp.getState().selectedCard).toEqual({ path: DECK, index: 0 });
   });

@@ -240,7 +240,7 @@ async function fire(e: E, s: S): Promise<void> {
       break;
     }
     case 'qa': await act(() => { button('q&a').click(); }); break;
-    case 'bidir': await act(() => { button('both ways').click(); }); break;
+    case 'bidir': await act(() => { button('bidir').click(); }); break;
     case 'save': await key('Enter', pm(0), { metaKey: true }); break;
     case 'esc': await key('Escape', pm(0)); break;
     case 'anyway': await act(() => { button('save anyway').click(); }); break;

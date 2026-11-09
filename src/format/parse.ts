@@ -337,7 +337,7 @@ function attach(prev: Block | undefined, adjacent: boolean, tag: string, rest: s
     prev.sched = sched;
   } else if (key === 'r') {
     // kept on any card, so a form changed by hand loses nothing; it means something on a both-ways card alone
-    if (cardForm(prev.text) !== 'bidir') warn('a reverse schedule on a card that is not both ways');
+    if (cardForm(prev.text) !== 'bidir') warn('a reverse schedule on a card that is not bidir');
     // a link joins bare lines: the reverse keeps its own schedule
     if (sched.link !== undefined) { warn('"link" on a reverse line is ignored'); delete sched.link; }
     if (prev.reverse) warn('card has two reverse schedules; later wins');

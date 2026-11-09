@@ -4481,7 +4481,7 @@ export async function smokeInsert(vault: Vault): Promise<void> {
     await slash('both', 'both');
     await enter();
     await type('pen');
-    await expectLines('/both ways', ['qalam ::: pen']);
+    await expectLines('/bidir', ['qalam ::: pen']);
     await until(() => qa('.pane-body .card-span').find((c) => c.textContent?.includes('qalam')), 5000).catch(() => fail('both ways never became a card'));
     const t1 = await text();
     const cards = (await vault.read(NOTE, true)).doc.blocks.filter((b) => b.kind === 'card').map((b) => b.text);
@@ -5923,7 +5923,7 @@ export async function smokeBothWays(vault: Vault): Promise<void> {
 
     openNode(queueId('today'));
     const qrow = await poll(() => qa<HTMLElement>('.qlist li').find((li) => q(`[data-dir="r"]`, li)), 'the queue draws a reverse row', 8000);
-    must(q('.cs-arrow', qrow)?.textContent === '→' && q('.kindtag', qrow)?.textContent === 'both ways', 'a reverse row reads its asked side first, an arrow to the answer, tagged both ways');
+    must(q('.cs-arrow', qrow)?.textContent === '→' && q('.kindtag', qrow)?.textContent === 'bidir', 'a reverse row reads its asked side first, an arrow to the answer, tagged both ways');
     qrow.scrollIntoView({ block: 'center' });
     await shot('bothways-queue');
 

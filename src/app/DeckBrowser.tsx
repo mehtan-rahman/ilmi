@@ -74,7 +74,7 @@ export function facesHTML(text: string): RowFaces {
 
 // ── the editor ───────────────────────────────────────────────────
 
-const FORMS: [CardForm, string][] = [['qa', 'q&a'], ['bidir', 'both ways'], ['cloze', 'cloze']];
+const FORMS: [CardForm, string][] = [['qa', 'q&a'], ['bidir', 'bidir'], ['cloze', 'cloze']];
 
 interface EditorProps {
   /** The card as it is in the file; absent for a new one. */

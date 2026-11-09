@@ -30,7 +30,7 @@ export const QUEUE_EMPTY: Record<QueueScope, string> = {
 };
 
 /** The forms in the user's words, everywhere they are named. */
-export const FORM_LABEL: Record<CardForm, string> = { cloze: 'cloze', qa: 'q&a', bidir: 'both ways' };
+export const FORM_LABEL: Record<CardForm, string> = { cloze: 'cloze', qa: 'q&a', bidir: 'bidir' };
 
 const DAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];

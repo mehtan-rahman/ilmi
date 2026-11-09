@@ -118,9 +118,9 @@ describe('front-matter', () => {
     expect(cards[6]!.reverse).toEqual({ suspended: true });
     expect(diagnostics.map((d) => d.message)).toEqual([
       'card has two reverse schedules; later wins',
-      'a reverse schedule on a card that is not both ways',
+      'a reverse schedule on a card that is not bidir',
       'unexpected token "c2"',
-      'a reverse schedule on a card that is not both ways',
+      'a reverse schedule on a card that is not bidir',
     ]);
     const out = serialize(doc);
     expect(out).toContain('the reverse before the bare line ::: read in any order ^bw-order\n<!-- sr due=2026-06-01 st=review s=9 r=5 -->\n<!-- sr r due=2026-06-02 st=review s=5 r=3 -->\n');

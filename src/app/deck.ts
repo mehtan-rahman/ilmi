@@ -12,7 +12,7 @@ import { childDirOf, directories, ordered, type Order, type TreeNode } from '../
 /** What a row's state chip tests: `learning` holds relearning too; `due` and the three states leave suspended cards out. */
 export type StateChip = 'new' | 'learning' | 'review' | 'due' | 'suspended';
 export const STATE_CHIPS: readonly StateChip[] = ['new', 'learning', 'review', 'due', 'suspended'];
-export const FORM_CHIPS: readonly [CardForm, string][] = [['qa', 'q&a'], ['cloze', 'cloze'], ['bidir', 'both ways']];
+export const FORM_CHIPS: readonly [CardForm, string][] = [['qa', 'q&a'], ['cloze', 'cloze'], ['bidir', 'bidir']];
 
 export type DeckSort = 'order' | 'due' | 'interval' | 'difficulty' | 'lapses' | 'last' | 'created';
 export const SORTS: readonly [DeckSort, string][] = [

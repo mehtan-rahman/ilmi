@@ -18,7 +18,7 @@ import type { Card, CardForm } from '../format/index.js';
 import { asks, facesOf, facesText, planEdit, switchForm, type Faces, type Plan } from './cardEdit.js';
 import { FaceField } from './FaceField.js';
 
-const FORMS: [CardForm, string][] = [['qa', 'q&a'], ['bidir', 'both ways'], ['cloze', 'cloze']];
+const FORMS: [CardForm, string][] = [['qa', 'q&a'], ['bidir', 'bidir'], ['cloze', 'cloze']];
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 

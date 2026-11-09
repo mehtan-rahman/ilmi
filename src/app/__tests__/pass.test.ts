@@ -195,8 +195,7 @@ describe("the queue's rows", () => {
     }
     const tags = new Set(Array.from(host.querySelectorAll('.qlist .kindtag')).map((t) => t.textContent));
     for (const t of tags) expect(t).toBe(t!.toLowerCase());
-    expect(tags.has('bidir')).toBe(false);
-    expect([...tags]).toContain('both ways');
+    expect([...tags]).toContain('bidir');
     unmount();
   });
 
@@ -381,9 +380,9 @@ describe('a PDF on its own and its note (milestone 70)', () => {
 
 describe('words', () => {
   it('the forms in the user\'s words, the due read as words, the day without a middot', () => {
-    expect(FORM_LABEL.bidir).toBe('both ways');
+    expect(FORM_LABEL.bidir).toBe('bidir');
     const bidir = queue.find((i) => i.kind === 'card' && i.form === 'bidir')!;
-    expect(kindTag(bidir)).toBe('both ways');
+    expect(kindTag(bidir)).toBe('bidir');
     expect(dueWhen('2027-04-01', NOW)).toBe('in 5mo');
     expect(dueWhen('2026-10-27', NOW)).toBe('overdue 3d');
     expect(dueWhen('2026-10-30', NOW)).toBe('today');
@@ -436,7 +435,7 @@ describe('the inspector', () => {
     await mount(createElement(Inspector), 'shell');
     await settle(() => host.querySelector('.insp .block'));
     expect(host.querySelector('.insp-cards')).toBeNull();
-    expect(Array.from(host.querySelectorAll('.deck-default button')).map((b) => b.textContent)).toEqual(['cloze', 'q&a', 'both ways']);
+    expect(Array.from(host.querySelectorAll('.deck-default button')).map((b) => b.textContent)).toEqual(['cloze', 'q&a', 'bidir']);
     unmount();
   });
 

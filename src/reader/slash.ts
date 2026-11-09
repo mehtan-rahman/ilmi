@@ -54,7 +54,7 @@ export const SLASH_ITEMS: SlashItem[] = [
   { id: 'image', label: 'image', md: '![]()', aliases: ['picture', 'img', 'figure', 'photo'], where: ALL },
   { id: 'cloze', label: 'cloze', md: '{{c1::}}', aliases: ['blank', 'card', 'gap'], where: ['paragraph'] },
   { id: 'qa', label: 'q&a', md: '::', aliases: ['question', 'answer', 'card', 'qa', 'front', 'back'], where: ['paragraph'] },
-  { id: 'both', label: 'both ways', md: ':::', aliases: ['reverse', 'bidirectional', 'card', 'two ways'], where: ['paragraph'] },
+  { id: 'both', label: 'bidir', md: ':::', aliases: ['both ways', 'reverse', 'bidirectional', 'card', 'two ways'], where: ['paragraph'] },
 ];
 
 /** How well `q` names `item`: lower is better, null when it does not. */

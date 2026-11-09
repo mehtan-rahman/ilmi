@@ -20,7 +20,7 @@ interface Props {
   quick?: ReactNode;
 }
 
-const FORMS: [CardForm, string][] = [['cloze', 'cloze'], ['qa', 'q&a'], ['bidir', 'both ways']];
+const FORMS: [CardForm, string][] = [['cloze', 'cloze'], ['qa', 'q&a'], ['bidir', 'bidir']];
 
 /** Whether `[from, to]` sits inside a math span of `text`, its delimiters excluded. */
 export function insideMath(text: string, from: number, to: number): boolean {

@@ -3938,10 +3938,14 @@ export async function smokeTree(vault: Vault): Promise<void> {
     // a still pointer: the drag reads it again on its own (no more moves sent)
     if (opts.rest) await sleep(opts.rest);
     await sleep(120);
-    const d = useDrag.getState().drop;
+    const d0 = useDrag.getState().drop;
     const accepted = document.documentElement.dataset.nodeDrag === 'move';
-    log(`${name}: ${moving} over the ${where} of ${to.dataset.path}${opts.x !== undefined ? ` (x ${opts.x})` : ''}${opts.rest ? ` resting ${opts.rest} ms` : ''}: accepted ${accepted}, ghost ${q('.drag-ghost')?.textContent ?? 'none'}, drawn ${mark()}, drop ${d ? `${d.mode} ${d.target}` : 'none (refused)'}`);
+    const under = document.elementFromPoint(x, y)?.closest<HTMLElement>('[data-drop-row]')?.dataset.dropRow ?? 'no row';
+    log(`${name}: ${moving} over the ${where} of ${to.dataset.path}${opts.x !== undefined ? ` (x ${opts.x})` : ''}${opts.rest ? ` resting ${opts.rest} ms` : ''}: under the pointer ${under}, accepted ${accepted}, ghost ${q('.drag-ghost')?.textContent ?? 'none'}, drawn ${mark()}, drop ${d0 ? `${d0.mode} ${d0.target}` : 'none (refused)'}`);
     if (opts.shot) await shot(opts.shot, 2500);
+    // what the mark says at the let-go (a still pointer on a bare document's middle nests meanwhile, as it should)
+    const d = opts.esc ? d0 : useDrag.getState().drop;
+    if (!opts.esc && (d?.mode !== d0?.mode || d?.target !== d0?.target)) log(`${name}: at the let-go the mark says ${d ? `${d.mode} ${d.target}` : 'nothing'} (${mark()})`);
     if (opts.esc) {
       window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
       await sleep(80);

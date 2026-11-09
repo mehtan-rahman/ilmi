@@ -3233,7 +3233,7 @@ export async function smokeTour(vault: Vault): Promise<void> {
     log(`fall 2026 rows: ${qa<HTMLElement>('.fv-row').map((r) => `${r.querySelector('.fv-name')?.textContent} [${r.querySelector('.fv-meta')?.textContent}]`).join(' | ')}`);
     must(Number(/(\d+) cards/.exec(qmRow)?.[1] ?? 0) > 20, `quantum II counts the cards under it (${qmRow})`);
 
-    // the session: a one-line cloze is a short card, answered in place
+    // the session: even a one-line cloze fills the pane, answered in place
     openNode(queueId('today'));
     await until(() => q('.queue'));
     press('Enter');
@@ -3247,7 +3247,8 @@ export async function smokeTour(vault: Vault): Promise<void> {
     if (found) {
       const card = q<HTMLElement>('.recall-wrap .card')!;
       log(`one-line cloze: card ${Math.round(card.getBoundingClientRect().height)}px "${card.textContent?.slice(0, 80)}"`);
-      must(card.getBoundingClientRect().height < 220, 'a one-line cloze is a short card');
+      const wrap = q<HTMLElement>('.recall-wrap')!.getBoundingClientRect().height;
+      must(card.getBoundingClientRect().height > wrap * 0.6, `the card fills the pane (${Math.round(card.getBoundingClientRect().height)} of ${Math.round(wrap)}px)`);
       noRawTex("the session's path", q('.recall-meta .card-trail'));
       await shot('fix-session-cloze');
       press(' ');

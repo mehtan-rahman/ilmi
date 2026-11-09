@@ -145,6 +145,7 @@ export function CardPane({ path, active, onOpen }: Props) {
           key={`${path}#${line.id ?? line.block}`}
           card={card}
           handle={handle}
+          keep={`${path}#${line.id ?? line.block}`}
           onSave={(text, was) => {
             const ref = line.id === undefined ? { path, block: line.block, text: was } : { path, block: line.block, id: line.id, text: was };
             saveCardEdit(ref, text, card.sched?.pri ?? null).catch((e: unknown) => console.error(e));

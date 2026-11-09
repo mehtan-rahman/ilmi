@@ -6,7 +6,12 @@
 // editor's (`cardEdit.ts`, PLAN 32): the card's lines change, its id and
 // `sr` lines stay, a form change that would drop a reviewed schedule asks
 // first. ⌘⏎ or a press outside saves, Escape puts the faces back as saved,
-// and the parent saves what is left (`flush`) before it moves on.
+// and the parent saves what is left (`flush`) before it moves on. Boxes let
+// go without that (another tab, another card picked in the tree, the
+// session moving on) write what they can; an edit that would drop a
+// reviewed schedule, or that the format would not read back, is kept for
+// the card's return (`keep`), the question asked again there: an edit goes
+// unwritten only by Escape.
 
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MutableRefObject, type ReactNode } from 'react';
 import type { Card, CardForm } from '../format/index.js';
@@ -22,6 +27,9 @@ export interface FacesHandle {
   /** Save what is unsaved; false when it cannot yet (the editor is asking first). `sure` saves past the asking. */
   flush(sure?: boolean): boolean;
 }
+
+/** Edits let go unwritten, by the card's `keep`, until its boxes are drawn again. */
+export const keptEdits = new Map<string, Faces>();
 
 /** The faces a card's text opens as: a paragraph that is no card (it should not be one here) as a q&a front. */
 const facesFor = (text: string): Faces => facesOf(text) ?? { form: 'qa', front: text, back: '' };
@@ -44,12 +52,21 @@ interface Props {
   handle?: MutableRefObject<FacesHandle | null>;
   /** The strip's own words after the form switch (the schedule). */
   children?: ReactNode;
+  /** The card's name for an edit kept while its boxes are away (`keptEdits`): its document and its id, else its block. */
+  keep?: string;
 }
 
-export function CardFaces({ card, onSave, onDone, autoFocus, handle, children }: Props) {
-  const [faces, setFaces] = useState<Faces>(() => facesFor(card.text));
+export function CardFaces({ card, onSave, onDone, autoFocus, handle, children, keep }: Props) {
+  // an edit kept from the last time comes back as it was left, asking again when it asked
+  const [faces, setFaces] = useState<Faces>(() => (keep !== undefined && keptEdits.get(keep)) || facesFor(card.text));
   const [gen, setGen] = useState(0);
-  const [asking, setAsking] = useState<string | null>(null);
+  const [asking, setAsking] = useState<string | null>(() => {
+    const kept = keep === undefined ? undefined : keptEdits.get(keep);
+    const t = kept && facesText(kept);
+    if (!t || t === facesText(facesFor(card.text))) return null;
+    const p = planEdit(card, t);
+    return asks(p) ? askLine(p) : null;
+  });
   // the text the faces were saved as (or opened as), as the editor writes it: what dirty is measured from
   const [base, setBase] = useState<string | null>(() => facesText(facesFor(card.text)));
   // the card's text in the file, for the save to find it by
@@ -90,8 +107,8 @@ export function CardFaces({ card, onSave, onDone, autoFocus, handle, children }:
     onSave(text, was);
     return true;
   };
-  const latest = useRef({ flush, asking, dirty, text, plan, onSave });
-  latest.current = { flush, asking, dirty, text, plan, onSave };
+  const latest = useRef({ flush, asking, dirty, text, plan, onSave, faces });
+  latest.current = { flush, asking, dirty, text, plan, onSave, faces };
   if (handle) handle.current = { flush: (sure) => latest.current.flush(sure) };
 
   // a press outside saves, unless the editor is asking
@@ -108,11 +125,17 @@ export function CardFaces({ card, onSave, onDone, autoFocus, handle, children }:
     return () => window.removeEventListener('mousedown', onDown, true);
   }, [onDone]);
 
-  // leaving (another card, another tab): what is unsaved is written, unless it would drop a reviewed schedule unasked
-  useEffect(() => () => {
-    const st = latest.current;
-    if (!st.dirty || st.text === null || (st.plan && asks(st.plan))) return;
-    st.onSave(st.text, fileText.current);
+  // leaving (another card, another tab): what is unsaved is written, unless it would drop a reviewed
+  // schedule unasked or cannot be read back; then it is kept for the card's return
+  useEffect(() => {
+    if (keep !== undefined) keptEdits.delete(keep);
+    return () => {
+      const st = latest.current;
+      if (!st.dirty) return;
+      if (st.text === null || (st.plan && asks(st.plan))) { if (keep !== undefined) keptEdits.set(keep, st.faces); return; }
+      st.onSave(st.text, fileText.current);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const to = (form: CardForm) => {

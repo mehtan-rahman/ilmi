@@ -227,7 +227,8 @@ async function commitNow(at: string): Promise<string | null> {
   if (changes.length === 0) return null;
   const id = await invoke<string | null>('sync_commit', { root: repoOf(at), message: describeChanges(changes) });
   lastCommit = Date.now();
-  if (id) schedulePush();
+  // a commit made for a collection since closed goes with the close's push, not on a timer of the next one's
+  if (id && root === at) schedulePush();
   return id;
 }
 
@@ -242,7 +243,7 @@ function touched(): void {
     if (Date.now() - lastWrite < QUIET_MS) { touched(); return; }
     const at = root;
     if (!at || !useApp.getState().sync.on) return;
-    void serial(() => commitNow(at)).then(() => scheduleStatus(0)).catch((e: unknown) => console.error('sync commit', e));
+    void serial(() => commitNow(at)).then(() => { if (root === at) scheduleStatus(0); }).catch((e: unknown) => console.error('sync commit', e));
   }, Math.max(0, due - Date.now()));
 }
 
@@ -265,18 +266,22 @@ const nameOf = (path: string): string => { const s = useApp.getState(); return t
 
 /** Fetch and merge: what the other side changed lands in the repository's folder and is taken into the collection; two versions of one file meet by the format's rules. */
 async function pullNow(at: string): Promise<void> {
-  if (!useApp.getState().sync.on) return;
+  // asked for while `at` was open, and it is not now: the strip and the settings are another collection's
+  if (root !== at || !useApp.getState().sync.on) return;
+  const s = settings();
   patch({ busy: 'pulling' });
+  let reached = false;
   try {
     await commitNow(at);
     try {
-      await invoke<Status>('sync_fetch', { root: repoOf(at), token: settings().token || null });
+      await invoke<Status>('sync_fetch', { root: repoOf(at), token: s.token || null });
     } catch (e) {
       if (!isNetwork(e)) throw e;
-      patch({ offline: true });
+      if (root === at) patch({ offline: true });
       return;
     }
-    patch({ offline: false, at: Date.now() });
+    reached = true;
+    if (root === at) patch({ offline: false, at: Date.now() });
     lastPull = Date.now();
     const m = await invoke<Merge>('sync_merge', { root: repoOf(at) });
     const changed = [...m.pulled];
@@ -307,11 +312,14 @@ async function pullNow(at: string): Promise<void> {
   } finally {
     if (root === at) patch({ busy: null });
     await refreshSync().catch(() => {});
+    // commits a push left for want of the network go a minute after the remote is reached again
+    if (reached && root === at && !pushTimer && useApp.getState().sync.toPush) schedulePush();
   }
 }
 
 async function pushNow(at: string, retry = true): Promise<void> {
-  if (!useApp.getState().sync.on) return;
+  if (root !== at || !useApp.getState().sync.on) return;
+  const s = settings();
   patch({ busy: 'pushing' });
   try {
     await commitNow(at);
@@ -319,9 +327,9 @@ async function pushNow(at: string, retry = true): Promise<void> {
     // nothing to send says nothing about the remote: `offline` stands as the pull left it
     if (st.ahead === 0 && !st.dirty.length) return;
     try {
-      await invoke<Status>('sync_push', { root: repoOf(at), token: settings().token || null });
-      patch({ offline: false, at: Date.now() });
-      void publishNudge(settings().server, settings().url);
+      await invoke<Status>('sync_push', { root: repoOf(at), token: s.token || null });
+      void publishNudge(s.server, s.url);
+      if (root === at) patch({ offline: false, at: Date.now() });
     } catch (e) {
       // behind the remote: bring it in, then once more
       if (retry) {
@@ -332,7 +340,7 @@ async function pushNow(at: string, retry = true): Promise<void> {
         return;
       }
       if (!isNetwork(e)) throw e;
-      patch({ offline: true });
+      if (root === at) patch({ offline: true });
     }
   } finally {
     if (root === at) patch({ busy: null });
@@ -371,7 +379,8 @@ export function sessionEnded(): void {
 /** The app is left (`away.ts`): what is written is committed and pushed now, not a minute on. Resolves to whether anything was waiting. */
 async function gitLeave(): Promise<boolean> {
   if (!root || !useApp.getState().sync.on || (!timers && !leaveForced())) return false;
-  if (!unwritten && !commitTimer && !pushTimer) return false;
+  // commits a failed push left count: they are what is waiting
+  if (!unwritten && !commitTimer && !pushTimer && !useApp.getState().sync.toPush) return false;
   if (commitTimer) { clearTimeout(commitTimer); commitTimer = null; }
   await push();
   return true;

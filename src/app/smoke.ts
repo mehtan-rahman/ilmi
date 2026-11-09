@@ -12998,8 +12998,11 @@ export async function smokeCardView(vault: Vault): Promise<void> {
     key('3', front);
     await sleep(300);
     must(q('.recall-wrap .card.editing') && q('.recall-meta .sess-deck')?.textContent === head, 'space and 3 pressed in a face grade nothing');
-    typeAtEnd(front, ' ≈');
-    key('Enter', front, { metaKey: true });
+    // the back: a front ending in a formula chip has no text at its end for a synthetic caret
+    const sback = q<HTMLElement>('.recall-wrap .card.editing .face.back .face-field') ?? front;
+    typeAtEnd(sback, ' ≈');
+    await poll(() => q('.recall-wrap .card-edit')?.getAttribute('data-dirty') === '1', 'typed into the session\'s card');
+    key('Enter', sback, { metaKey: true });
     await poll(() => !q('.recall-wrap .card.editing') && q('.recall-wrap .card[data-revealed="1"]'), '⌘⏎ saves and goes back to the revealed card');
     await sleep(1500);
     const line = (await vault.read(item.path, true)).text.split('\n').find((l) => (item.id !== undefined && l.includes(`^${item.id}`)) || l.startsWith(item.text.slice(0, 12))) ?? '';

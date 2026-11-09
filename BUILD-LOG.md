@@ -6,6 +6,24 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-11-09 — milestone 72: the card view, the tree's card rows, and the table menus
+
+Asked by the user, from SuperMemo's element window: "I like how in supermemo you can edit cards in this window as well, maybe we should have a drop down for each deck or even note where you can go in and edit the cards like this"; then "can you also make a table editor, something like a right click option to insert table and then within the table all the usual ctx menu options". The coordinator settled the shape; this session built it on main (`f572409` … the commit of this entry; PLAN 72 has the notes).
+
+What it does:
+- The card view, a tab per document (`:cards/<path>`, `CardPane.tsx`): the session's two boxes (question over answer, a cloze one box) filling the pane, both live editors (`CardFaces.tsx` over `FaceField.tsx`, the faces the deck's editor had); the count `3 / 12`, the session's ‹ ›, `[` `]`, `o` to the card in its document; the form switch and the schedule in the session's quiet strip. ⌘⏎, a press outside, moving to another card and leaving the tab save; Escape puts the faces back. The write is the deck editor's one `vault.update` (`saveCardEdit`): the card's lines change, its id and `sr` lines stay, a form change that would drop a reviewed schedule asks first and `]` waits for the answer. The inspector shows the document and the card on show.
+- The tree: a document with cards opens to list them after its children, one quiet line each (the front, math drawn, cut short, the card icon); a document with children lists them under an `n cards` row, so opening one to reach a child shows one row, not every card. Closed by default, remembered with the tree's other rows. A card's row opens the card view at that card and is lit while it is on show; the keys walk the rows, and rename, delete and the moves pass over them (`treeModel.ts`).
+- ⏎, a double-click and the menu's `edit` on a deck row open the card view (the inline editor is left for a new card, `m`); a double-click on a card in a note does too.
+- In a session, `e` or a press on a revealed box turns the boxes into the same editors; ⌘⏎ goes back to the revealed card, and space and 1–4 do nothing while the caret is in a face.
+- Tables: a right-click in a cell opens the cell's menu at the pointer (the `···`'s, with `delete table` added); elsewhere in editable text, cut, copy, paste and `insert table` (a 2×2 with a header row after the block pressed on, or in place of an empty paragraph, the caret in its first cell). Headings, cards, images and formulas keep their own menus; a frozen page keeps the system's. A face's pipe lines open as a table in the card view and the deck's editor, with the same menus; untouched they are written back byte for byte, changed as the normalized pipe table; a cloze's face holds no table and offers no `insert table`. ⌘⏎ in a face's cell saves the card rather than adding a row. No FORMAT change.
+
+Checks at the commit of this entry: typecheck clean, npm test 1586 passed (1 skipped). New tests: `insertTable` and `deleteTable` (`rest.test.ts`); the right-click menus in a cell and in text (`rest-view.test.ts`); `card-view.test.ts` (the set, the index and the step, the tree's card rows and keys, the sarf faces round trip and a cell edited to valid pipe lines, and the view drawn in jsdom: a face edited and saved with its id and both `sr` lines kept, Escape writing nothing, the switch asking, `]` saving first).
+Window checks from clean run trees: `cardview` (new) 31 ok and `done`, 6 captures; `tour` 24 ok, `deck` and `tree` `done` (all four on `05396d0`); `decks` `done` on `4ceb72c`. `cardview`'s first runs (`f572409`…`d549a0b`) found the smoke's own waits short and a synthetic caret after a front's formula chip typing nowhere, so the session's edit is typed into the back. `decks` edits its two cards through the card view now; its first run timed out on the smoke's assumption of which card `]` reached (⏎ right after a row's click read the row before it, a race the old editor had too), mended with a pause and a count that moves.
+
+Not verified: a real iPad's long press on a cell or in text (the menus are the same `contextmenu`, `touch.ts`); the phone's width by a capture (the boxes stack as the session's do); `paste` from the text menu reads the clipboard through `navigator.clipboard`, which WebKit may answer with its own paste button.
+
+---
+
 ## 2026-11-07 — the look: sentence case, sans chrome, one icon set, status by meaning
 
 No milestone. Asked by the user: "Can you please also make the frontend look less AI and everything? more intentionally designed". The coordinator set the direction; this session built it on main (`34e4bff`, `1a1179d`, `ead8db9`, `3f882ec`).

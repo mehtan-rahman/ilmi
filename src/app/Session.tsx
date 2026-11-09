@@ -12,7 +12,7 @@
 
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { emitDocAction, emitGrade, runBlockHooks, usePlugins } from '../plugins/index.js';
-import { PRI_DEFAULT, READ_AF, WRITE_AF, blanks, cardFields, type Block, type Card } from '../format/index.js';
+import { PRI_DEFAULT, READ_AF, WRITE_AF, blanks, cardFields, cardForm, type Block, type Card } from '../format/index.js';
 import { GRADES, advanceRead, advanceSection, cadence, dayOf, grownAt, lineKey, advanceWrite, dirPri, nextGap, pacedInterval, perPassOf, postponed, readTarget, scheduleOf, type CardItem, type Grade, type QueueItem, type ReadItem, type SectionItem, type WriteItem } from '../schedule/index.js';
 import { EL_WORD, FORM_LABEL, doneLine, dueLabel, gapLabels, glyphOf, markOf, ownBlank, paceWords, sourceLabel, standing, trailParts, dueTone } from './items.js';
 import { writeDoc } from './sections.js';
@@ -136,19 +136,23 @@ function SessionBar({ idx, total, kind, word, pri, what, stands, pace, glyph, ch
 function liveCard(blocks: Block[] | undefined, item: CardItem, edited?: string): Card | null {
   if (!blocks) return null;
   const at = blocks[item.block];
+  let card: Card | null = null;
   // a card with no id edited here is found by its new text too
-  if (at?.kind === 'card' && (item.id !== undefined ? at.id === item.id : at.text === item.text || at.text === edited)) return at;
-  if (item.id !== undefined) return blocks.find((b): b is Card => b.kind === 'card' && b.id === item.id) ?? null;
-  return null;
+  if (at?.kind === 'card' && (item.id !== undefined ? at.id === item.id : at.text === item.text || at.text === edited)) card = at;
+  else if (item.id !== undefined) card = blocks.find((b): b is Card => b.kind === 'card' && b.id === item.id) ?? null;
+  // a reverse asked of a card edited since to no longer both ways: the line it tests is gone
+  return card && item.dir === 'r' && cardForm(card.text) !== 'bidir' ? null : card;
 }
 
 interface CardProps {
   item: CardItem;
   active: boolean;
   onGrade(g: Grade): void;
+  /** An edit being written: a grade after it waits for it, so it finds the card as edited. */
+  onEdit(run: Promise<unknown>): void;
 }
 
-function CardElement({ item, active, onGrade }: CardProps) {
+function CardElement({ item, active, onGrade, onEdit }: CardProps) {
   const loaded = useDoc(item.path);
   const docPri = useApp((s) => s.docs[item.path]?.pri);
   const [revealed, setRevealed] = useState(false);
@@ -183,12 +187,12 @@ function CardElement({ item, active, onGrade }: CardProps) {
     if (!card) return;
     setEdited(text);
     const ref = card.id === undefined ? { path: item.path, block: item.block, text: was } : { path: item.path, block: item.block, id: card.id, text: was };
-    saveCardEdit(ref, text, card.sched?.pri ?? null).then(() => {
+    onEdit(saveCardEdit(ref, text, card.sched?.pri ?? null).then(() => {
       if (card.id !== undefined) return;
       useApp.setState((s) => (s.session ? {
         session: { ...s.session, items: s.session.items.map((i) => (i.kind === 'card' && i.path === item.path && i.block === item.block && i.text === was ? { ...i, text } as CardItem : i)) },
       } : {}));
-    }).catch((e: unknown) => console.error(e));
+    }).catch((e: unknown) => console.error(e)));
   };
 
   // the faces, drawn: every plugin's block hook sees each
@@ -247,7 +251,7 @@ function CardElement({ item, active, onGrade }: CardProps) {
   return (
     <>
       {editing && card ? (
-        <CardFaces card={card} autoFocus onSave={saveEdit} onDone={() => setEditing(false)}>{schedule}</CardFaces>
+        <CardFaces card={card} autoFocus keep={`${item.path}#${card.id ?? item.block}`} onSave={saveEdit} onDone={() => setEditing(false)}>{schedule}</CardFaces>
       ) : (<>
       <div className="card" ref={cardRef} data-revealed={revealed ? '1' : '0'} data-faces={back ? '2' : '1'} data-plugins={plugins?.version ?? 0}>
         <div className="face front" onClick={editOnPress}>{front}</div>
@@ -485,11 +489,24 @@ export function Session({ active, onOpen }: Props) {
 
   const fail = (e: unknown) => console.error(e);
 
-  const onGrade = (item: CardItem, g: Grade) => {
+  // the edits this session has sent to be written; a grade waits for them
+  const edits = useRef<Promise<unknown>>(Promise.resolve());
+  const onEdit = (run: Promise<unknown>) => { const before = edits.current; edits.current = before.then(() => run); };
+
+  const onGrade = (shown: CardItem, g: Grade) => {
     const vault = currentVault();
     if (!vault) return;
     const now = appNow();
-    gradeCard(item, g, now, now.getTime() - shownAt.current).then((loaded) => {
+    const ms = now.getTime() - shownAt.current;
+    const seq = session?.seq;
+    const place = idx;
+    // once an edit of the card is written, the item as it is then: a card with no id is found by its new text
+    edits.current.then(() => {
+      const s = useApp.getState().session;
+      const live = s?.seq === seq ? s?.items[place] : undefined;
+      const item = live?.kind === 'card' && live.path === shown.path && live.block === shown.block ? live : shown;
+      return gradeCard(item, g, now, ms).then((loaded) => ({ item, loaded }));
+    }).then(({ item, loaded }) => {
       if (!loaded) return;
       // a card that had no id has one now, and a blank it numbered is numbered:
       // later items of the same card in this session follow
@@ -543,7 +560,7 @@ export function Session({ active, onOpen }: Props) {
           <span className="ms-arrow">↗</span>
         </button>
       </div>
-      <CardElement key={key} item={el} active={active} onGrade={(g) => onGrade(el, g)} />
+      <CardElement key={key} item={el} active={active} onGrade={(g) => onGrade(el, g)} onEdit={onEdit} />
     </div>
   );
 }

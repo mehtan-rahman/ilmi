@@ -445,12 +445,12 @@ function usedIds(doc: Doc): Set<string> {
 /** The item's card in `doc`: by id when it has one, else by position and text. */
 function locate(doc: Doc, item: CardItem): Card {
   const at = doc.blocks[item.block];
-  if (at?.kind === 'card' && (item.id !== undefined ? at.id === item.id : at.text === item.text)) return at;
-  if (item.id !== undefined) {
-    const hit = doc.blocks.find((b): b is Card => b.kind === 'card' && b.id === item.id);
-    if (hit) return hit;
-  }
-  throw new Error(`${item.path}: card ${item.id ?? `#${item.block}`} not found`);
+  let card: Card | undefined;
+  if (at?.kind === 'card' && (item.id !== undefined ? at.id === item.id : at.text === item.text)) card = at;
+  else if (item.id !== undefined) card = doc.blocks.find((b): b is Card => b.kind === 'card' && b.id === item.id);
+  // a reverse asked of a card no longer both ways (edited since the item was made) is not there: no `sr r` line on it
+  if (card && (item.dir !== 'r' || cardForm(card.text) === 'bidir')) return card;
+  throw new Error(`${item.path}: card ${item.id ?? `#${item.block}`}${item.dir === 'r' ? ' reverse' : ''} not found`);
 }
 
 /** `{{x}}` → `{{cN::x}}` for the blank at `index` in `blanks(text)` order. */

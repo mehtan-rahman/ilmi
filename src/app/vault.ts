@@ -532,7 +532,8 @@ const rekeyOpen = (open: Record<string, true>, from: string, to: string): Record
  */
 function tabsIn(panes: Panes, present: Set<string>, docs: Record<string, DocInfo>): Panes {
   for (;;) {
-    const lost = panes.panes.flatMap((p) => p.tabs).map((t) => tabNode(t.id)).find((n) => n !== null && !present.has(n));
+    // a document's children directory is no node of its own: it is there while its document is (a folder lens on a course)
+    const lost = panes.panes.flatMap((p) => p.tabs).map((t) => tabNode(t.id)).find((n) => n !== null && !present.has(n) && !present.has(`${n}.md`));
     if (lost === undefined || lost === null) return panes;
     panes = dropTabs(pagesToNotebook(panes, lost, docs), lost);
   }

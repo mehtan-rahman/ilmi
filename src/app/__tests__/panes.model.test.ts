@@ -375,3 +375,20 @@ describe('opening another collection', () => {
     closeVault();
   });
 });
+
+describe('a tab on a document\'s children (a folder lens on a course)', () => {
+  it('stays open as the tree changes, and closes with its document', async () => {
+    await world();
+    await fs.writeText(`${ROOT}/n.md`, 'a course\n');
+    await fs.mkdir(`${ROOT}/n`);
+    await fs.writeText(`${ROOT}/n/k.md`, 'a unit\n');
+    await openVault(ROOT);
+    openNode('n', { cmdClick: true });
+    const tabs = () => useApp.getState().panes.panes.flatMap((p) => p.tabs.map((t) => t.id));
+    expect(tabs()).toContain('n');
+    await renameNode('c.md', 'see');
+    await new Promise((r) => setTimeout(r, 50));
+    expect(tabs()).toContain('n');
+    closeVault();
+  });
+});

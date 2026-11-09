@@ -324,6 +324,8 @@ export class Vault {
   private cache = new Map<string, Loaded>();
   private listeners = new Set<(ev: VaultEvent) => void>();
   private pending: Promise<void> = Promise.resolve();
+  /** Each file's last write asked for, for the next to wait on (`inTurn`). */
+  private writing = new Map<string, Promise<void>>();
   private unwatch: (() => void) | null = null;
 
   private constructor(readonly fs: Fs, readonly root: string) {}
@@ -436,25 +438,43 @@ export class Vault {
    * moved on disk since it was read, it is re-read and `mutate` runs again on
    * the fresh copy, so an external edit and this one both land.
    */
-  async update(path: string, mutate: (doc: Doc) => void): Promise<Loaded> {
-    let cur = await this.read(path);
-    for (let attempt = 0; ; attempt++) {
-      const doc = structuredClone(cur.doc);
-      mutate(doc);
-      const text = serialize(doc);
-      const now = await this.fs.stat(this.abs(path));
-      if (sameStamp(now, cur.stamp)) return this.commit(path, text);
-      if (attempt >= MAX_RETRIES) throw new VaultConflict(path);
-      cur = await this.read(path, true);
-    }
+  update(path: string, mutate: (doc: Doc) => void): Promise<Loaded> {
+    return this.inTurn(path, async () => {
+      let cur = await this.read(path);
+      for (let attempt = 0; ; attempt++) {
+        const doc = structuredClone(cur.doc);
+        mutate(doc);
+        const text = serialize(doc);
+        const now = await this.fs.stat(this.abs(path));
+        if (sameStamp(now, cur.stamp)) return this.commit(path, text);
+        if (attempt >= MAX_RETRIES) throw new VaultConflict(path);
+        cur = await this.read(path, true);
+      }
+    });
   }
 
   /** Overwrite with `doc`. Throws `VaultConflict` if the file moved since it was read. */
-  async write(path: string, doc: Doc): Promise<Loaded> {
-    const cur = await this.read(path);
-    const now = await this.fs.stat(this.abs(path));
-    if (!sameStamp(now, cur.stamp)) throw new VaultConflict(path);
-    return this.commit(path, serialize(doc));
+  write(path: string, doc: Doc): Promise<Loaded> {
+    return this.inTurn(path, async () => {
+      const cur = await this.read(path);
+      const now = await this.fs.stat(this.abs(path));
+      if (!sameStamp(now, cur.stamp)) throw new VaultConflict(path);
+      return this.commit(path, serialize(doc));
+    });
+  }
+
+  /**
+   * One write to a file at a time, in the order asked: the next reads what
+   * the last one wrote. Two at once (a grade while an edit is written, two
+   * grades in one deck a keypress apart) both saw the file's stamp before
+   * either wrote, and the second wrote over the first.
+   */
+  private inTurn<T>(path: string, fn: () => Promise<T>): Promise<T> {
+    const run = (this.writing.get(path) ?? Promise.resolve()).then(fn);
+    const done = run.then(() => {}, () => {});
+    this.writing.set(path, done);
+    void done.then(() => { if (this.writing.get(path) === done) this.writing.delete(path); });
+    return run;
   }
 
   /**

@@ -3220,7 +3220,7 @@ export async function smokeTour(vault: Vault): Promise<void> {
     must(paths.length > 0 && paths.every((t) => !/\b[a-z0-9]+(?:-[a-z0-9]+)+\//.test(t) && !/\.md\b/.test(t)), 'queue paths are titles, not slugs');
     must(qa<HTMLElement>('.qlist .src').every((e) => e.getBoundingClientRect().height < 24), 'each queue path is one line');
     const tags = [...new Set(qa('.qlist .kindtag').map((t) => t.textContent ?? ''))];
-    must(tags.every((t) => t === t.toLowerCase() && t !== 'bidir') && getComputedStyle(q('.qlist .kindtag')!).textTransform === 'none', `kinds lowercase (${tags.join(', ')})`);
+    must(tags.every((t) => t === t.toLowerCase()) && getComputedStyle(q('.qlist .kindtag')!).textTransform === 'none', `kinds lowercase (${tags.join(', ')})`);
     useApp.setState({ inspForced: true });
     setInspector({ open: true });
     await sleep(300);

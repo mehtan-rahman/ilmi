@@ -295,6 +295,13 @@
   --ic: 14px;
 }
 .edit-tree:focus { outline: none; }
+/* a document's cards under its row (and `n cards` under one with children):
+   quieter than the nodes, a line each, the front cut short */
+.tree .row.card-row, .tree .row.cards-row { min-height: 24px; color: var(--fg-3); font-size: 12.5px; }
+.tree .row.card-row .glyph, .tree .row.cards-row .glyph { color: var(--fg-5); --ic: 12px; }
+.tree .row.card-row .name { font-family: var(--serif); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.tree .row.card-row[data-active="1"] { color: var(--fg-1); }
+.tree .row.card-row[data-active="1"] .glyph { color: var(--el-card); }
 .tree .row .glyph.root { color: var(--fg-3); }
 .tree .row .glyph.note,
 .tree .row .glyph.source,

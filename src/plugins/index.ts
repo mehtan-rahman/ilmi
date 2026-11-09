@@ -9,7 +9,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { fetch as httpFetch } from '@tauri-apps/plugin-http';
 import { useSyncExternalStore } from 'react';
 import { dueToday } from '../app/items.js';
-import { tabKindOf } from '../app/names.js';
+import { cardsPath, kindOf, tabKindOf } from '../app/names.js';
 import { activeTab } from '../app/panes.js';
 import { useApp } from '../app/store.js';
 import { note, openNode } from '../app/vault.js';
@@ -69,7 +69,10 @@ function lensOf(): A.Lens | null {
   const s = useApp.getState();
   const id = activeTab(s.panes)?.id;
   if (id === undefined) return null;
-  return { path: id, kind: tabKindOf(id, s.docs) };
+  // the card view is its document's to a plugin: the lens kinds are the API's (`api.ts`)
+  const cards = cardsPath(id);
+  if (cards !== null) return { path: cards, kind: kindOf(cards, s.docs) };
+  return { path: id, kind: tabKindOf(id, s.docs) as A.LensKind };
 }
 
 const bridge: Bridge = {

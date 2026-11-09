@@ -195,6 +195,14 @@ the real thing; a refresh token is in `oauth.json` in the app's data folder
 after a sign-in in the app. The smoke weighs each web process
 (`dev_web_processes`), since two windows are two of them, and reads each while
 the big file comes: a lifetime peak shows nothing below an earlier high.
+`ILMI_SMOKE=cardview` (milestone 72) over a copy of the sample opens the
+physics constants deck in the sidebar's tree to list its cards, opens the
+card view from a card's row, types into its back and saves with ⌘⏎ (one
+line of the file changes, the id and the `sr` line kept), moves on with
+`]`, right-clicks a face for its menu, edits a session's card in place with
+`e` and grades it, then right-clicks a cell of the verb forms note's table,
+adds a row below, and reads the new row in the file. `ILMI_SMOKE=decks`
+(over the corpus vault) edits two cards through the card view since then.
 `ILMI_SMOKE=readme` over a copy of the sample walks the screens the README
 shows and marks each with a `shot:` line; the README's images were captured
 that way, by window id, and scaled to 1600 px wide. Each smoke mode logs `ok:` and `failed:` lines and `shot: <name>` marks

@@ -12,7 +12,7 @@ import { parse, serialize } from '../../format/index.js';
 import { flatText, fromDoc, makeState } from '../../reader/index.js';
 import { goToHeading, registerHeadings } from '../headings.js';
 import { closePopMenu, popMenuOpen } from '../popMenu.js';
-import { nodeViews } from '../Reader.js';
+import { editorMenu, nodeViews } from '../Reader.js';
 
 // jsdom draws no boxes: ProseMirror's scroll to the caret asks a range for its rects
 for (const proto of [Node.prototype, Range.prototype] as unknown as { getClientRects?: () => DOMRect[]; getBoundingClientRect?: () => DOMRect }[]) {
@@ -152,7 +152,7 @@ describe('a table in the page', () => {
     press(more);
     const menu = popMenuOpen()!;
     expect(Array.from(menu.querySelectorAll('.ci')).map((r) => r.getAttribute('data-act'))).toEqual([
-      'row-above', 'row-below', 'col-before', 'col-after', 'align-left', 'align-center', 'align-right', 'delete-row', 'delete-col',
+      'row-above', 'row-below', 'col-before', 'col-after', 'align-left', 'align-center', 'align-right', 'delete-row', 'delete-col', 'delete-table',
     ]);
     menu.querySelector<HTMLElement>('[data-act="align-right"]')!.click();
     expect(written(view)).toBe('| form | perfect |\n| ---: | --- |\n| II | فَعَّلَ |');
@@ -165,6 +165,48 @@ describe('a table in the page', () => {
     popMenuOpen()!.querySelector<HTMLElement>('[data-act="delete-row"]')!.click();
     expect(written(view)).toBe('| perfect |\n| --- |');
     view.destroy();
+  });
+
+  const rightClick = (view: EditorView, el: Element, opts: { table?: boolean } = {}): boolean => {
+    const e = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 10, clientY: 10 });
+    Object.defineProperty(e, 'target', { value: el });
+    return editorMenu(view, e, opts);
+  };
+
+  it('a right-click in a cell opens the cell\'s menu there: a row added under it, then the whole table deleted', () => {
+    const view = mount(`Before.\n\n${TABLE}\n\nAfter.`);
+    const td = Array.from(view.dom.querySelectorAll('.dd-table td')).find((c) => c.textContent === 'II')!;
+    expect(rightClick(view, td)).toBe(true);
+    const menu = popMenuOpen()!;
+    expect(menu.classList.contains('table-menu')).toBe(true);
+    menu.querySelector<HTMLElement>('[data-act="row-below"]')!.click();
+    expect(written(view)).toBe(`Before.\n\n${TABLE}\n|  |  |\n\nAfter.`);
+    const again = view.dom.querySelector('.dd-table td')!;
+    expect(rightClick(view, again)).toBe(true);
+    popMenuOpen()!.querySelector<HTMLElement>('[data-act="delete-table"]')!.click();
+    expect(written(view)).toBe('Before.\n\nAfter.');
+    view.destroy();
+  });
+
+  it('a right-click in the text offers cut, copy, paste and insert table, which goes after the block pressed on; a heading keeps its own menu', () => {
+    const view = mount('## a heading\n\nBefore.\n\nAfter.');
+    const p = Array.from(view.dom.querySelectorAll('p')).find((x) => x.textContent === 'Before.')!;
+    expect(rightClick(view, p)).toBe(true);
+    const menu = popMenuOpen()!;
+    expect(Array.from(menu.querySelectorAll('.ci')).map((r) => r.getAttribute('data-act'))).toEqual(['cut', 'copy', 'paste', 'insert-table']);
+    menu.querySelector<HTMLElement>('[data-act="insert-table"]')!.click();
+    view.dispatch(view.state.tr.insertText('x'));
+    expect(written(view)).toBe('## a heading\n\nBefore.\n\n| x |  |\n| --- | --- |\n|  |  |\n\nAfter.');
+    closePopMenu();
+    expect(rightClick(view, view.dom.querySelector('.dd-h')!)).toBe(false);
+    // a cloze's face: no table offered
+    expect(rightClick(view, p, { table: false })).toBe(true);
+    expect(Array.from(popMenuOpen()!.querySelectorAll('.ci')).map((r) => r.getAttribute('data-act'))).toEqual(['cut', 'copy', 'paste']);
+    view.destroy();
+    // a frozen page keeps the system's menu
+    const frozen = mount('Before.', true);
+    expect(rightClick(frozen, frozen.dom.querySelector('p')!)).toBe(false);
+    frozen.destroy();
   });
 
   it('offers no controls on a frozen page', () => {

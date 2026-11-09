@@ -18,7 +18,7 @@ import { cleanClipDir } from './clip.js';
 import { collectionFs, importCollection } from './collections.js';
 import { cleanViews, type DeckView } from './deck.js';
 import { cleanBudget, dueToday, sessionItems } from './items.js';
-import { INTAKE, SESSION, notesPath, queueId, queueScope } from './names.js';
+import { INTAKE, SESSION, cardsId, cardsPath, notesPath, queueId, queueScope } from './names.js';
 import { bookShown, inspectorShown } from './layout.js';
 import { activeTab, dropTabs, emptyPanes, openTab, retarget, type OpenOpts, type Panes } from './panes.js';
 import { NEVER, collectionRows, collectionsHome, isMobile, isPhone, loadPlatform, setCollectionsHome } from './platform.js';
@@ -492,7 +492,8 @@ function publishTree(vault: Vault): void {
   visit(vault.tree);
   const was = useApp.getState().open;
   const open: Record<string, true> = {};
-  for (const k of Object.keys(was)) if (present.has(k)) open[k] = true;
+  // a document's `n cards` row (`:cards/<doc>`) is kept while the document is
+  for (const k of Object.keys(was)) if (present.has(cardsPath(k) ?? k)) open[k] = true;
   useApp.setState({ vault: vault.root, files: vault.documents(), tree: vault.tree, open });
   if (Object.keys(open).length !== Object.keys(was).length) queueSave({ folders: Object.keys(open) });
 }
@@ -619,7 +620,7 @@ export async function openVault(path: string): Promise<Vault> {
   // the last tab comes back, except a session; nothing remembered opens the day, and on a phone the day is the face
   let panes = emptyPanes();
   const tab = state.tab;
-  if (!isPhone() && tab !== undefined && tab !== SESSION && (tab === '' || tab === INTAKE || queueScope(tab) || vault.documents().includes(tab) || vault.pdfs().includes(tab) || (await vault.fs.stat(vault.abs(tab)))?.isDir)) {
+  if (!isPhone() && tab !== undefined && tab !== SESSION && (tab === '' || tab === INTAKE || queueScope(tab) || vault.documents().includes(cardsPath(tab) ?? tab) || vault.pdfs().includes(tab) || (await vault.fs.stat(vault.abs(tab)))?.isDir)) {
     panes = openTab(panes, tab);
   } else {
     panes = openTab(panes, queueId('today'));
@@ -633,7 +634,7 @@ export async function openVault(path: string): Promise<Vault> {
   reviews = await vault.loadReviews().catch((e: unknown) => { console.error('reviews', e); return []; });
   const s0 = useApp.getState();
   useApp.setState({
-    open, sidebar, inspector, panes, docs: {}, queue: [], budget: cleanBudget(state.budget), clipDir: cleanClipDir(state.clippings), log: [], session: null, sessionEl: null, selectedCard: null, reveal: null,
+    open, sidebar, inspector, panes, docs: {}, queue: [], budget: cleanBudget(state.budget), clipDir: cleanClipDir(state.clippings), log: [], session: null, sessionEl: null, selectedCard: null, cardAt: {}, reveal: null,
     started: true, sideSheet: false, namingVault: false, gone: s0.gone.filter((p) => p !== path), notice: null, fileOver: null, intakeFiles: [], order: vault.order, railFolded, railWidth: clampRail(state.railWidth ?? RAIL_DEFAULT), deckViews: cleanViews(state.decks), lastDeck: typeof state.lastDeck === 'string' ? state.lastDeck : null, quickCard: null,
     folds: cleanFolds(state.folds), reviews, lensViews: {}, examFilter: null,
     notSame: await vault.loadNotSame().catch(() => []),
@@ -706,7 +707,7 @@ export function closeVault(): void {
   reviews = [];
   if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; savePatch = {}; }
   void listVaults().catch(console.error);
-  useApp.setState({ vault: null, sideSheet: false, files: [], tree: [], docs: {}, open: { '': true }, panes: emptyPanes(), queue: [], log: [], session: null, sessionEl: null, selectedCard: null, reveal: null, paletteOpen: false, intakeDir: '', notice: null, fileOver: null, intakeFiles: [], order: {}, railFolded: {}, deckViews: {}, folds: {}, reviews: [], lensViews: {}, examFilter: null });
+  useApp.setState({ vault: null, sideSheet: false, files: [], tree: [], docs: {}, open: { '': true }, panes: emptyPanes(), queue: [], log: [], session: null, sessionEl: null, selectedCard: null, cardAt: {}, reveal: null, paletteOpen: false, intakeDir: '', notice: null, fileOver: null, intakeFiles: [], order: {}, railFolded: {}, deckViews: {}, folds: {}, reviews: [], lensViews: {}, examFilter: null });
   setWindowTitle(null);
 }
 
@@ -905,8 +906,8 @@ export function openInitialVault(): Promise<void> {
       if (path) {
         const vault = await openVault(await devCollection(path));
         if (mode) {
-          const { smoke, smokeReader, smokeCards, smokeIntake, smokeQueue, smokeLoop, smokeShots, smokeDeck, smokePri, smokeGrowth, smokeOverload, smokeFaces, smokeCardsText, smokeAnki, smokeMath, smokeEpub, smokeClip, smokeClipping, smokePlugins, smokeDictionary, smokeRender, smokeLive, smokeBlocks, smokeUse, smokeLand, smokeNest, smokeTabs, smokeDecks, smokeTour, smokeNotes, smokeEditing, smokeTree, smokeInsert, smokeTabs2, smokeListCards, smokeArabic, smokeRest, smokeBothWays, smokeNumbers, smokeOpen, smokeExam, smokeSame, smokeSections, smokeBook, smokeBooks, smokeTextSections, smokeZoom, smokeCadence, smokeReadme, smokeSync, smokeNudge, smokeStore, smokeCrdt, smokeStorage, smokeSearch, smokeFinish, smokeTouchMac, smokePhoneMac, smokeInkMac, smokePageInkMac } = await import('./smoke.js');
-          const run = { reader: smokeReader, cards: smokeCards, intake: smokeIntake, queue: smokeQueue, loop: smokeLoop, shots: smokeShots, deck: smokeDeck, pri: smokePri, growth: smokeGrowth, overload: smokeOverload, faces: smokeFaces, 'cards-text': smokeCardsText, anki: smokeAnki, math: smokeMath, epub: smokeEpub, clip: smokeClip, clipping: smokeClipping, plugins: smokePlugins, dictionary: smokeDictionary, render: smokeRender, live: smokeLive, blocks: smokeBlocks, use: smokeUse, land: smokeLand, nest: smokeNest, tabs: smokeTabs, decks: smokeDecks, tour: smokeTour, notes: smokeNotes, editing: smokeEditing, tree: smokeTree, insert: smokeInsert, tabs2: smokeTabs2, listcards: smokeListCards, arabic: smokeArabic, rest: smokeRest, bothways: smokeBothWays, numbers: smokeNumbers, open: smokeOpen, exam: smokeExam, same: smokeSame, sections: smokeSections, book: smokeBook, books: smokeBooks, textsections: smokeTextSections, zoom: smokeZoom, cadence: smokeCadence, readme: smokeReadme, sync: smokeSync, nudge: smokeNudge, store: smokeStore, crdt: smokeCrdt, storage: smokeStorage, search: smokeSearch, finish: smokeFinish, touch: smokeTouchMac, phone: smokePhoneMac, ink: smokeInkMac, pageink: smokePageInkMac }[mode] ?? smoke;
+          const { smoke, smokeReader, smokeCards, smokeIntake, smokeQueue, smokeLoop, smokeShots, smokeDeck, smokePri, smokeGrowth, smokeOverload, smokeFaces, smokeCardsText, smokeAnki, smokeMath, smokeEpub, smokeClip, smokeClipping, smokePlugins, smokeDictionary, smokeRender, smokeLive, smokeBlocks, smokeUse, smokeLand, smokeNest, smokeTabs, smokeDecks, smokeTour, smokeNotes, smokeEditing, smokeTree, smokeInsert, smokeTabs2, smokeListCards, smokeArabic, smokeRest, smokeBothWays, smokeNumbers, smokeOpen, smokeExam, smokeSame, smokeSections, smokeBook, smokeBooks, smokeTextSections, smokeZoom, smokeCadence, smokeReadme, smokeSync, smokeNudge, smokeStore, smokeCrdt, smokeStorage, smokeSearch, smokeFinish, smokeTouchMac, smokePhoneMac, smokeInkMac, smokePageInkMac, smokeCardView } = await import('./smoke.js');
+          const run = { reader: smokeReader, cards: smokeCards, intake: smokeIntake, queue: smokeQueue, loop: smokeLoop, shots: smokeShots, deck: smokeDeck, pri: smokePri, growth: smokeGrowth, overload: smokeOverload, faces: smokeFaces, 'cards-text': smokeCardsText, anki: smokeAnki, math: smokeMath, epub: smokeEpub, clip: smokeClip, clipping: smokeClipping, plugins: smokePlugins, dictionary: smokeDictionary, render: smokeRender, live: smokeLive, blocks: smokeBlocks, use: smokeUse, land: smokeLand, nest: smokeNest, tabs: smokeTabs, decks: smokeDecks, tour: smokeTour, notes: smokeNotes, editing: smokeEditing, tree: smokeTree, insert: smokeInsert, tabs2: smokeTabs2, listcards: smokeListCards, arabic: smokeArabic, rest: smokeRest, bothways: smokeBothWays, numbers: smokeNumbers, open: smokeOpen, exam: smokeExam, same: smokeSame, sections: smokeSections, book: smokeBook, books: smokeBooks, textsections: smokeTextSections, zoom: smokeZoom, cadence: smokeCadence, readme: smokeReadme, sync: smokeSync, nudge: smokeNudge, store: smokeStore, crdt: smokeCrdt, storage: smokeStorage, search: smokeSearch, finish: smokeFinish, touch: smokeTouchMac, phone: smokePhoneMac, ink: smokeInkMac, pageink: smokePageInkMac, cardview: smokeCardView }[mode] ?? smoke;
           // the smokes before 40 expect the inspector wherever they open it: the room rule is the tour's to check
           if (mode !== 'tour') useApp.setState({ inspForced: true });
           await run(vault);
@@ -938,6 +939,16 @@ export function openNode(path: string, opts: OpenOpts = {}): void {
 export function openCard(path: string, index: number, id?: string, opts: OpenOpts = {}): void {
   useApp.setState({ reveal: id === undefined ? { path, index } : { path, index, id } });
   openNode(path, opts);
+}
+
+/**
+ * The card view on `path`'s cards (one tab per document), standing at the
+ * card at block `block` (its `id` when it has one, so it is found again
+ * after the blocks move).
+ */
+export function openCards(path: string, block: number, id?: string, opts: OpenOpts = {}): void {
+  useApp.setState((s) => ({ cardAt: { ...s.cardAt, [path]: id === undefined ? { block } : { block, id } } }));
+  openNode(cardsId(path), opts);
 }
 
 /** Open the document at a block found by the search index. */

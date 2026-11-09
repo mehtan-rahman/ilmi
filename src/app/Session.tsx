@@ -29,6 +29,8 @@ import { activeExamAt, currentVault, note, openNode, optionsAt } from './vault.j
 import { openNotes } from './book.js';
 import { sessionEnded } from './sync.js';
 import { gradeCard } from './grading.js';
+import { CardFaces } from './CardFaces.js';
+import { saveCardEdit } from './deckOps.js';
 import './session.css';
 import './incontext.css';
 import { appNow } from './clock.js';
@@ -81,7 +83,7 @@ interface NavProps {
   onOut?: (() => void) | undefined;
 }
 
-function Nav({ idx, total, onPrev, onNext, onOut }: NavProps) {
+export function Nav({ idx, total, onPrev, onNext, onOut }: NavProps) {
   return (
     <span className="sess-nav">
       {onOut && <button type="button" className="sn-btn sn-out" aria-label="back" onClick={onOut}><Glyph g="×" /></button>}
@@ -131,10 +133,11 @@ function SessionBar({ idx, total, kind, word, pri, what, stands, pace, glyph, ch
 // ── a card ───────────────────────────────────────────────────────
 
 /** The item's card in the document as it is now: where it was, else by id. */
-function liveCard(blocks: Block[] | undefined, item: CardItem): Card | null {
+function liveCard(blocks: Block[] | undefined, item: CardItem, edited?: string): Card | null {
   if (!blocks) return null;
   const at = blocks[item.block];
-  if (at?.kind === 'card' && (item.id !== undefined ? at.id === item.id : at.text === item.text)) return at;
+  // a card with no id edited here is found by its new text too
+  if (at?.kind === 'card' && (item.id !== undefined ? at.id === item.id : at.text === item.text || at.text === edited)) return at;
   if (item.id !== undefined) return blocks.find((b): b is Card => b.kind === 'card' && b.id === item.id) ?? null;
   return null;
 }
@@ -149,11 +152,14 @@ function CardElement({ item, active, onGrade }: CardProps) {
   const loaded = useDoc(item.path);
   const docPri = useApp((s) => s.docs[item.path]?.pri);
   const [revealed, setRevealed] = useState(false);
+  // `e`, or a press on a revealed box: the two boxes live in place (`CardFaces.tsx`)
+  const [editing, setEditing] = useState(false);
+  const [edited, setEdited] = useState<string | undefined>(undefined);
   const plugins = usePlugins();
   const phone = useApp((s) => s.phone);
   const cardRef = useRef<HTMLDivElement>(null);
   const now = appNow();
-  const card = liveCard(loaded?.doc.blocks, item);
+  const card = liveCard(loaded?.doc.blocks, item, edited);
   // the card's own, else the document's, live: the inspector may change either mid-session
   const pri = card ? dirPri(card, item.dir, docPri ?? PRI_DEFAULT) : item.pri;
   const text = card?.text ?? item.text;
@@ -165,10 +171,25 @@ function CardElement({ item, active, onGrade }: CardProps) {
   const grade = (g: Grade) => { if (revealed) onGrade(g); else setRevealed(true); };
 
   useKeys(active, (key) => {
+    if (editing) return false;
     if (key === ' ') { grade(3); return true; }
     if (key >= '1' && key <= '4') { grade(Number(key) as Grade); return true; }
+    if (key === 'e' && card) { setRevealed(true); setEditing(true); return true; }
     return false;
-  }, [revealed, item]);
+  }, [revealed, item, editing, card]);
+
+  // an edit written: the card's text in the file, and this session's other items of it, follow
+  const saveEdit = (text: string, was: string) => {
+    if (!card) return;
+    setEdited(text);
+    const ref = card.id === undefined ? { path: item.path, block: item.block, text: was } : { path: item.path, block: item.block, id: card.id, text: was };
+    saveCardEdit(ref, text, card.sched?.pri ?? null).then(() => {
+      if (card.id !== undefined) return;
+      useApp.setState((s) => (s.session ? {
+        session: { ...s.session, items: s.session.items.map((i) => (i.kind === 'card' && i.path === item.path && i.block === item.block && i.text === was ? { ...i, text } as CardItem : i)) },
+      } : {}));
+    }).catch((e: unknown) => console.error(e));
+  };
 
   // the faces, drawn: every plugin's block hook sees each
   useEffect(() => {
@@ -211,24 +232,35 @@ function CardElement({ item, active, onGrade }: CardProps) {
 
   const groupNo = item.group && item.groups > 1 ? ('n' in item.group ? item.group.n : item.group.blank + 1) : null;
 
+  const schedule = (
+    <>
+      {groupNo !== null && <span>blank {groupNo} of {item.groups}</span>}
+      {item.dir === 'r' && <span className="cm-dir">back to front</span>}
+      <span>{plural(sched?.reps ?? 0, 'review')}</span>
+      {sched?.stability !== undefined && <span>stability {Math.round(sched.stability)}d</span>}
+      {pri !== PRI_DEFAULT && <span>p {pri}</span>}
+      <span className="cm-due" data-due={!sched?.due || item.dueAt <= now ? '1' : '0'} data-st={dueTone(dueWord(sched?.due, now))}>{dueWord(sched?.due, now)}</span>
+    </>
+  );
+  // a press on a box once the answer is up edits it there
+  const editOnPress = () => { if (revealed && card && !editing) setEditing(true); };
   return (
     <>
+      {editing && card ? (
+        <CardFaces card={card} autoFocus onSave={saveEdit} onDone={() => setEditing(false)}>{schedule}</CardFaces>
+      ) : (<>
       <div className="card" ref={cardRef} data-revealed={revealed ? '1' : '0'} data-faces={back ? '2' : '1'} data-plugins={plugins?.version ?? 0}>
-        <div className="face front">{front}</div>
-        {back && revealed && <div className="face back"><div className="face-body">{back}</div></div>}
+        <div className="face front" onClick={editOnPress}>{front}</div>
+        {back && revealed && <div className="face back" onClick={editOnPress}><div className="face-body">{back}</div></div>}
         {!revealed && (
           <button type="button" className="face-hint" onClick={() => setRevealed(true)}><kbd className="kbd">space</kbd> <span className="lbl">reveal</span></button>
         )}
       </div>
       <div className="card-meta">
         <span className="cm-type" data-form={f?.form}>{f ? FORM_LABEL[f.form] : 'card'}</span>
-        {groupNo !== null && <span>blank {groupNo} of {item.groups}</span>}
-        {item.dir === 'r' && <span className="cm-dir">back to front</span>}
-        <span>{plural(sched?.reps ?? 0, 'review')}</span>
-        {sched?.stability !== undefined && <span>stability {Math.round(sched.stability)}d</span>}
-        {pri !== PRI_DEFAULT && <span>p {pri}</span>}
-        <span className="cm-due" data-due={!sched?.due || item.dueAt <= now ? '1' : '0'} data-st={dueTone(dueWord(sched?.due, now))}>{dueWord(sched?.due, now)}</span>
+        {schedule}
       </div>
+      </>)}
       {phone && !revealed
         // under the thumb, where the grades will be
         ? <button type="button" className="reveal-all" onClick={() => setRevealed(true)}>reveal</button>

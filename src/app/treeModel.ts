@@ -33,9 +33,27 @@ export interface TreeRow extends FlatRow {
   /** It can open: a folder, or a document with something under it. */
   has: boolean;
   open: boolean;
-  /** The node; a placeholder row has none. */
+  /** The node; a placeholder row has none, nor does a card's. */
   node?: TreeNode;
+  /**
+   * A card of the document `doc` (`path` is `:cards/<doc>#<block>`): the
+   * document's cards are listed under its row, after its children, when it
+   * is open (milestone 72). Not a node: no drag, rename, move, or delete.
+   */
+  card?: { doc: string; block: number; id?: string; text: string };
+  /** The `n cards` row under a document with children (`path` is `:cards/<doc>`): it opens to list the cards. */
+  cards?: { doc: string; n: number };
 }
+
+/** A card's row's path, and the `n cards` row's: never a vault path (a colon is not in a file name). */
+export const cardRowPath = (doc: string, block: number): string => `:cards/${doc}#${block}`;
+export const cardsRowPath = (doc: string): string => `:cards/${doc}`;
+
+/** A row that is a node of the vault: not a placeholder, a card, or a document's `n cards`. */
+export const isNodeRow = (r: TreeRow): boolean => !r.placeholder && !r.card && !r.cards;
+
+/** A document's cards, for the tree to list under it: its block, id, text, in document order. */
+export type TreeCards = (doc: string) => readonly { block: number; id?: string; text: string }[];
 
 const kidsOf = (n: TreeNode): TreeNode[] => (n.kind === 'folder' ? n.children : n.children ?? []);
 
@@ -47,17 +65,33 @@ export const nestOf = (n: TreeNode): Nest => (n.kind === 'doc' && n.bare ? 'neve
  * row's children in their order, depth first; an open folder or document
  * with nothing in it shows one placeholder row under it.
  */
-export function treeRows(tree: TreeNode[], open: Record<string, true>, order: Order, hoist?: string): TreeRow[] {
+export function treeRows(tree: TreeNode[], open: Record<string, true>, order: Order, hoist?: string, cardsOf?: TreeCards): TreeRow[] {
   const out: TreeRow[] = [];
+  const cardRows = (doc: string, list: ReturnType<TreeCards>, depth: number, parent: string) => {
+    for (const c of list) {
+      const card = c.id === undefined ? { doc, block: c.block, text: c.text } : { doc, block: c.block, id: c.id, text: c.text };
+      out.push({ path: cardRowPath(doc, c.block), depth, nest: 'never', parent, has: false, open: false, card });
+    }
+  };
   const visit = (list: TreeNode[], dir: string, depth: number, parent: string) => {
     for (const n of ordered(list, order[dir])) {
       const kids = kidsOf(n);
-      const has = n.kind === 'folder' || kids.length > 0;
+      // a document's cards: listed under it once it is open (a PDF on its own holds none)
+      const cards = n.kind === 'doc' && !n.bare && cardsOf ? cardsOf(n.path) : [];
+      const has = n.kind === 'folder' || kids.length > 0 || cards.length > 0;
       const shown = has && !!open[n.path];
       out.push({ path: n.path, depth, nest: nestOf(n), parent, has, open: shown, node: n });
       if (shown) {
         if (kids.length) visit(kids, childDirOf(n.path), depth + 1, n.path);
-        else out.push({ path: n.path, key: `${n.path}\u0000empty`, depth: depth + 1, nest: 'only', parent: n.path, has: false, open: false, placeholder: true });
+        else if (!cards.length) out.push({ path: n.path, key: `${n.path}\u0000empty`, depth: depth + 1, nest: 'only', parent: n.path, has: false, open: false, placeholder: true });
+        if (cards.length && !kids.length) cardRows(n.path, cards, depth + 1, n.path);
+        else if (cards.length) {
+          // under its children, one `n cards` row that opens to the cards: opening a document to reach a child shows one row, not every card
+          const at = cardsRowPath(n.path);
+          const more = !!open[at];
+          out.push({ path: at, depth: depth + 1, nest: 'never', parent: n.path, has: true, open: more, cards: { doc: n.path, n: cards.length } });
+          if (more) cardRows(n.path, cards, depth + 2, at);
+        }
       }
     }
   };
@@ -115,9 +149,10 @@ export function treeKey(rows: readonly TreeRow[], focus: string | null, e: KeyLi
   if (!real.length) return null;
   const i = focus === null ? -1 : real.findIndex((r) => r.path === focus);
   const at = i < 0 ? undefined : real[i];
+  const node = !!at && isNodeRow(at);
   const cmd = !!(e.metaKey || e.ctrlKey);
-  if (cmd && e.altKey && MOVES[e.key]) return at && at.depth > 0 && at.parent !== null ? { kind: 'move', path: at.path, to: MOVES[e.key]! } : null;
-  if (cmd && (e.key === 'Backspace' || e.key === 'Delete')) return at && at.depth > 0 ? { kind: 'delete', path: at.path } : null;
+  if (cmd && e.altKey && MOVES[e.key]) return at && node && at.depth > 0 && at.parent !== null ? { kind: 'move', path: at.path, to: MOVES[e.key]! } : null;
+  if (cmd && (e.key === 'Backspace' || e.key === 'Delete')) return at && node && at.depth > 0 ? { kind: 'delete', path: at.path } : null;
   if (cmd || e.altKey) return null;
   switch (e.key) {
     case 'ArrowDown':
@@ -144,7 +179,7 @@ export function treeKey(rows: readonly TreeRow[], focus: string | null, e: KeyLi
     case 'Enter':
       return at ? { kind: 'activate', path: at.path } : null;
     case 'F2':
-      return at && at.depth > 0 ? { kind: 'rename', path: at.path } : null;
+      return at && node && at.depth > 0 ? { kind: 'rename', path: at.path } : null;
     default:
       if (e.key.length === 1 && /\S/.test(e.key)) return { kind: 'type', char: e.key };
       return null;
@@ -180,7 +215,7 @@ export function typeahead(rows: readonly TreeRow[], from: string | null, typed: 
  * there is nowhere to go (the first sibling up, a top row out).
  */
 export function keyPlace(rows: readonly TreeRow[], path: string, to: 'up' | 'down' | 'out' | 'in'): { target: string; mode: Mode } | null {
-  const real = rows.filter((r) => !r.placeholder);
+  const real = rows.filter(isNodeRow);
   const at = real.find((r) => r.path === path);
   if (!at || at.parent === null) return null;
   const sibs = real.filter((r) => r.parent === at.parent && r.depth === at.depth);

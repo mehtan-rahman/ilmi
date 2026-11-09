@@ -278,6 +278,8 @@ export interface AppState {
   noteAttach: { pdf: string; step: 'pick' | 'place'; name?: string } | null;
   tweaksOpen: boolean;
   selectedCard: SelectedCard | null;
+  /** Where each document's card view stands (`:cards/` tabs): the card's block, and its id when it has one. Not saved. */
+  cardAt: Record<string, { block: number; id?: string }>;
   reveal: Reveal | null;
   /** How much of a collection from before the search index has been read into it: 1 is all of it. */
   searchShare: number;
@@ -395,6 +397,7 @@ export const useApp = create<AppState>((set, get) => ({
   noteAttach: null,
   tweaksOpen: false,
   selectedCard: null,
+  cardAt: {},
   reveal: null,
   searchShare: 1,
   inkRev: 0,

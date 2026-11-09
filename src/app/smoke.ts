@@ -254,6 +254,10 @@
 // `connect` clones the remote into Documents, the shell is one pane with
 // the sidebar and the inspector hidden, the queue is walked by its buttons,
 // a card graded there is pushed (see the function).
+// `ILMI_SMOKE=cardview` (`smokeCardView`, milestone 72) over a copy of
+// `samples/double-major`: a deck's cards listed in the tree, the card view
+// opened from a row, a face edited and saved, `]`, a session's card edited
+// with `e`, and a cell's right-click menu adding a row (see the function).
 
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -3071,10 +3075,11 @@ export async function smokeDecks(vault: Vault): Promise<void> {
     log(`suspended again; german in the queue ${useApp.getState().queue.filter((i) => i.path === DECK).length}`);
     await shot('decks-suspended');
 
-    // ⏎ on the fourth row: type onto its back, ⌘⏎ saves
+    // ⏎ on the fourth row opens the card view there (milestone 72): type onto its back, ⌘⏎ saves
     click(rows()[3]!);
     key('Enter');
-    const back = await until(() => q<HTMLElement>('.deck-edit .face.back .face-field'));
+    const back = await until(() => q<HTMLElement>('.card-view .face.back .face-field'));
+    log(`⏎ opened the card view: tab ${activeTab(useApp.getState().panes)?.id}; count "${q('.card-view .cv-count')?.textContent}"; faces "${qa('.card-view .face').map((f) => f.textContent).join(' | ')}"`);
     await shot('decks-editor', 4000);
     back.focus();
     const sel = window.getSelection()!;
@@ -3083,22 +3088,23 @@ export async function smokeDecks(vault: Vault): Promise<void> {
     document.execCommand('insertText', false, '; to lose');
     await sleep(200);
     back.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', metaKey: true, bubbles: true, cancelable: true }));
-    await until(() => (!q('.deck-edit') ? true : null), 5000);
+    await until(() => (q('.card-view .card-edit')?.getAttribute('data-dirty') === '0' ? true : null), 5000);
     await sleep(600);
     log(`edited back: lines: ${await lines()}`);
 
-    // the fifth row to cloze from the editor's switch, saved by a press outside
-    click(rows()[4]!);
-    key('Enter');
-    await until(() => q('.deck-edit'));
-    qa<HTMLElement>('.deck-edit .type-toggle button').find((b) => b.textContent?.startsWith('cloze'))?.click();
+    // `]` to the fifth card, to cloze from the strip's switch, saved by a press outside
+    key(']');
+    await until(() => (q('.card-view .cv-count')?.textContent?.startsWith('5 /') ? true : null), 5000);
+    q<HTMLElement>('.card-view .cm-forms button[data-form="cloze"]')!.click();
     await sleep(300);
-    log(`switched to cloze: front "${q('.deck-edit .face.front')?.textContent}"`);
-    q<HTMLElement>('.deck-view h1')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
-    await until(() => (!q('.deck-edit') ? true : null), 5000);
+    log(`switched to cloze: front "${q('.card-view .face.front')?.textContent}"`);
+    q<HTMLElement>('.card-view .recall-meta')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+    await until(() => (q('.card-view .card-edit')?.getAttribute('data-dirty') === '0' ? true : null), 5000);
     await sleep(600);
     log(`to cloze: lines: ${await lines()}`);
     await shot('decks-edited');
+    openNode(DECK);
+    await until(() => (rows().length ? true : null));
 
     // study the deck: two grades, the header counting down
     q<HTMLElement>('.deck-study .ds-study')!.click();
@@ -12883,6 +12889,139 @@ export async function smokeAway(): Promise<void> {
     log(`done; storage ${storage.folder}`);
   } catch (e) {
     finished = true;
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+// `ILMI_SMOKE=cardview` over `samples/double-major` (milestone 72): the
+// physics constants deck opened in the sidebar's tree to list its cards, a
+// card's row opening the card view there, its back typed into and saved
+// with ⌘⏎ (the file's card line changed, its id and `sr` line kept, one
+// line of the file and no other), `]` to the next card, the tree's row of
+// the card on show lit, a right-click in a face offering `insert table`;
+// a session's card edited in place with `e` and graded after; then the
+// verb forms note, a right-click in its table's `II` cell, `row below`, and
+// the file holding the new empty row under it. Each check an `ok:` line,
+// the first miss `failed:`; `shot:` lines for a capture.
+export async function smokeCardView(vault: Vault): Promise<void> {
+  const log = (s: string) => void info(`smoke cardview: ${s}`);
+  const shot = async (name: string, ms = 2500) => { await sleep(800); log(`shot: ${name}`); await sleep(ms); };
+  const q = <T extends Element>(sel: string, root: ParentNode = document) => root.querySelector<T>(sel);
+  const qa = <T extends Element>(sel: string) => Array.from(document.querySelectorAll<T>(sel));
+  const must = (ok: unknown, what: string) => { if (!ok) throw new Error(what); log(`ok: ${what}`); };
+  const poll = async <T,>(probe: () => T | null | undefined | false, what: string, ms = 6000): Promise<T> => {
+    const t0 = Date.now();
+    for (;;) {
+      const v = probe();
+      if (v) { log(`ok: ${what}`); return v; }
+      if (Date.now() - t0 > ms) throw new Error(`${what} (waited ${ms} ms)`);
+      await sleep(100);
+    }
+  };
+  const key = (k: string, target: EventTarget = window, init: KeyboardEventInit = {}) => target.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true, ...init }));
+  const typeAtEnd = (el: HTMLElement, text: string) => {
+    el.focus();
+    const sel = window.getSelection()!;
+    sel.selectAllChildren(el);
+    sel.collapseToEnd();
+    document.execCommand('insertText', false, text);
+  };
+  const rightClick = (el: Element) => {
+    const r = el.getBoundingClientRect();
+    el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, clientX: r.left + Math.min(12, r.width / 2), clientY: r.top + r.height / 2 }));
+  };
+  const DECK = 'physics/constants-and-orders-of-magnitude.md';
+  const NOTE = 'courses/spring-2026/arab-302-morphology/verb-forms.md';
+  const trow = (path: string) => q<HTMLElement>(`.edit-tree .trow[data-path="${CSS.escape(path)}"]`);
+  try {
+    useApp.getState().setTheme('light');
+    setSidebar({ hidden: false });
+    toggleOpen('', true);
+    toggleOpen('physics', true);
+    const deckRow = await poll(() => trow(DECK), 'the deck\'s row is in the tree', 10000);
+    must(deckRow.getAttribute('aria-expanded') === 'false', 'a deck with cards can open, closed by default');
+    deckRow.querySelector<HTMLElement>('.chev')!.click();
+    const cardRows = await poll(() => { const r = qa<HTMLElement>(`.edit-tree .card-row[data-doc="${CSS.escape(DECK)}"]`); return r.length ? r : null; }, 'its chevron lists its cards under it');
+    const body = (await vault.read(DECK, true)).doc;
+    const cards = body.blocks.filter((b) => b.kind === 'card');
+    must(cardRows.length === cards.length, `one row a card: ${cardRows.length} rows, ${cards.length} cards`);
+    log(`rows: ${cardRows.slice(0, 3).map((r) => `"${r.querySelector('.name')?.textContent}"`).join(', ')}…`);
+    must(useApp.getState().open[DECK], 'the open deck is remembered with the tree\'s other rows');
+    await shot('cardview-tree');
+
+    // the second card's row: the card view at that card
+    cardRows[1]!.click();
+    await poll(() => q('.card-view .cv-count')?.textContent === `2 / ${cards.length}`, `the card view opens at the row's card: 2 / ${cards.length}`);
+    must(activeTab(useApp.getState().panes)?.id === `:cards/${DECK}`, 'it is a tab of its own, one per document');
+    const faces = qa<HTMLElement>('.card-view .card .face');
+    must(faces.length === 2 && faces.every((f) => f.querySelector('.ProseMirror[contenteditable="true"]')), 'both boxes are live editors');
+    log(`faces: ${faces.map((f) => `"${f.textContent}"`).join(' / ')}`);
+    must(trow(`:cards/${DECK}#${body.blocks.indexOf(cards[1]!)}`)?.dataset.active === '1', 'the tree\'s row of the card on show is lit');
+    const before = (await vault.read(DECK, true)).text;
+    const back = q<HTMLElement>('.card-view .face.back .face-field')!;
+    typeAtEnd(back, ' (checked)');
+    await poll(() => q('.card-view .card-edit')?.getAttribute('data-dirty') === '1', 'typing in the back marks the card edited');
+    await shot('cardview-editing');
+    key('Enter', back, { metaKey: true });
+    await poll(() => q('.card-view .card-edit')?.getAttribute('data-dirty') === '0', '⌘⏎ saves');
+    let text = '';
+    await poll(() => { void vault.read(DECK, true).then((l) => { text = l.text; }); return text.includes('eV·nm (checked) ^dr-hc') ? true : null; }, 'the file has the edit, the card\'s id after it', 8000);
+    const a = before.split('\n');
+    const b = text.split('\n');
+    const changed = a.map((l, i) => (l === b[i] ? -1 : i)).filter((i) => i >= 0);
+    must(a.length === b.length && changed.length === 1, `one line of the file changed (${changed.map((i) => i + 1).join(', ')})`);
+    must(b[changed[0]! + 1] === a[changed[0]! + 1] && b[changed[0]! + 1]!.startsWith('<!-- sr '), `its sr line kept: ${b[changed[0]! + 1]}`);
+    key(']');
+    await poll(() => q('.card-view .cv-count')?.textContent === `3 / ${cards.length}`, '] moves to the next card');
+    // a right-click in a face: cut, copy, paste and insert table
+    rightClick(q('.card-view .face.front .face-field p')!);
+    const menu = await poll(() => q<HTMLElement>('.pop-menu.text-menu'), 'a right-click in a face opens the text menu');
+    must(qa('.pop-menu.text-menu .ci').map((c) => c.getAttribute('data-act')).join(',') === 'cut,copy,paste,insert-table', `with ${qa('.pop-menu.text-menu .ci').map((c) => c.textContent).join(', ')}`);
+    await shot('cardview-face-menu');
+    key('Escape');
+    await poll(() => !menu.isConnected, 'Escape closes it');
+
+    // a session's card edited in place: `e`, a word typed, ⌘⏎, then graded
+    openNode(DECK);
+    await poll(() => q('.deck-study .ds-study'), 'the deck lens');
+    q<HTMLElement>('.ds-cram input')!.click();
+    await sleep(200);
+    q<HTMLElement>('.deck-study .ds-study')!.click();
+    await poll(() => q('.recall-wrap .card .face.front'), 'a session over the deck');
+    const item = useApp.getState().session!.items[0] as CardItem;
+    const head = q('.recall-meta .sess-deck')?.textContent;
+    key('e');
+    const front = await poll(() => q<HTMLElement>('.recall-wrap .card.editing .face.front .face-field'), '`e` turns the boxes into editors in place');
+    key(' ', front);
+    key('3', front);
+    await sleep(300);
+    must(q('.recall-wrap .card.editing') && q('.recall-meta .sess-deck')?.textContent === head, 'space and 3 pressed in a face grade nothing');
+    typeAtEnd(front, ' ≈');
+    key('Enter', front, { metaKey: true });
+    await poll(() => !q('.recall-wrap .card.editing') && q('.recall-wrap .card[data-revealed="1"]'), '⌘⏎ saves and goes back to the revealed card');
+    let st = '';
+    await poll(() => { void vault.read(item.path, true).then((l) => { st = l.text; }); return st.includes(' ≈ :: ') || st.includes(' ≈ ::') ? true : null; }, 'the session\'s edit is in the file', 8000);
+    await shot('cardview-session-edited');
+    key('3');
+    await poll(() => q('.recall-meta .sess-deck')?.textContent !== head, `the grades still work after (${head} → ${q('.recall-meta .sess-deck')?.textContent ?? 'ended'})`);
+
+    // a note's table: a right-click in a cell, row below, the file has the row
+    openNode(NOTE);
+    const cell = await poll(() => qa<HTMLElement>('.pane[data-active="1"] .draft-doc .dd-table td').find((c) => c.textContent?.trim() === 'II'), 'the verb forms table is drawn', 10000);
+    const was = (await vault.read(NOTE, true)).text;
+    rightClick(cell);
+    const tm = await poll(() => q<HTMLElement>('.pop-menu.table-menu'), 'a right-click in a cell opens the table\'s menu at the pointer');
+    log(`table menu: ${Array.from(tm.querySelectorAll('.ci')).map((c) => c.textContent).join(', ')}`);
+    await shot('cardview-table-menu');
+    tm.querySelector<HTMLElement>('[data-act="row-below"]')!.click();
+    let now = was;
+    await poll(() => { void vault.read(NOTE, true).then((l) => { now = l.text; }); return now !== was ? true : null; }, 'row below is written', 8000);
+    const nl = now.split('\n');
+    const at = nl.findIndex((l) => l.startsWith('| II |'));
+    must(at >= 0 && /^\|(\s*\|)+$/.test(nl[at + 1]!) && nl[at + 2]!.startsWith('| III |'), `the file has the new empty row under II: "${nl[at + 1]}"`);
+    await shot('cardview-table-row');
+    log('done');
+  } catch (e) {
     log(`failed: ${e instanceof Error ? e.message : String(e)}`);
   }
 }

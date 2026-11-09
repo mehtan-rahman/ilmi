@@ -9,7 +9,7 @@ import { nestOf } from './treeModel.js';
 import { DeckBrowser } from './DeckBrowser.js';
 import { NumbersView } from './NumbersLens.js';
 import { Intake } from './Intake.js';
-import { GLYPH, INTAKE, SESSION, findNode, kindOf, notesPath, queueScope, titleOf, type NodeKind } from './names.js';
+import { GLYPH, INTAKE, SESSION, cardsPath, findNode, kindOf, notesPath, queueScope, titleOf, type NodeKind } from './names.js';
 import { countWords, countsUnder } from './chromeText.js';
 import type { OpenOpts } from './panes.js';
 import { Pdf } from './Pdf.js';
@@ -17,6 +17,7 @@ import { Queue } from './Queue.js';
 import { Notebook } from './Rail.js';
 import { Reader } from './Reader.js';
 import { Session } from './Session.js';
+import { CardPane } from './CardPane.js';
 import { useApp, type DocInfo, type LensView } from './store.js';
 import { NodeMenu, menuAt, type MenuAt } from './NodeMenu.js';
 import { createNode, openIntake, renameNode } from './vault.js';
@@ -40,6 +41,9 @@ export function Lens({ id, active, onOpen }: LensProps) {
   if (id === SESSION) return <Session active={active} onOpen={onOpen} />;
   const scope = queueScope(id);
   if (scope) return <Queue scope={scope} active={active} />;
+  // a document's cards one at a time, both boxes live (`CardPane.tsx`)
+  const cards = cardsPath(id);
+  if (cards !== null) return <CardPane key={id} path={cards} active={active} onOpen={onOpen} />;
   // the notes on a document's pages (milestone 70): its body in the reader, in the pane beside the pages
   const notes = notesPath(id);
   if (notes !== null) return <Reader key={id} id={notes} active={active} notes />;

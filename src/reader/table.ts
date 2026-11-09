@@ -244,3 +244,39 @@ export const tablePlugin = new Plugin<DecorationSet>({
     },
   },
 });
+
+/** The table at `tablePos` taken out, an empty paragraph with the caret where it was (the menu's `delete table`). */
+export function deleteTable(tablePos: number): Command {
+  return (state, dispatch) => {
+    if (state.doc.nodeAt(tablePos)?.type !== table) return false;
+    return dropTable(state, tablePos, dispatch);
+  };
+}
+
+/**
+ * A `rows` × `cols` table (its first row the header), empty, the caret in
+ * its first cell: in place of the caret's paragraph when that is empty,
+ * else as a block of its own after the top-level block the caret is in.
+ * False inside a table (a table holds no table) or where no block goes.
+ */
+export function insertTable(rows = 2, cols = 2): Command {
+  return (state, dispatch) => {
+    if (cellAt(state) !== null) return false;
+    const $from = state.selection.$from;
+    const cells = Array.from({ length: Math.max(1, rows) }, () => Array.from({ length: Math.max(1, cols) }, () => emptyCell(null)));
+    const t = table.create({ src: null }, cells.map((r) => tableRow.create(null, r)));
+    const top = $from.depth >= 1 ? $from.node(1) : null;
+    let at: number;
+    let tr: Transaction;
+    if (top && top.type === paragraph && top.content.size === 0) {
+      at = $from.before(1);
+      tr = state.tr.replaceWith(at, at + top.nodeSize, t);
+    } else {
+      at = $from.depth >= 1 ? $from.after(1) : state.doc.content.size;
+      tr = state.tr.insert(at, t);
+    }
+    if (!dispatch) return true;
+    dispatch(tr.setSelection(TextSelection.create(tr.doc, cellStart(t, at, 0, 0))).scrollIntoView());
+    return true;
+  };
+}

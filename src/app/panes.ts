@@ -5,10 +5,15 @@
 // the store holds the value.
 
 import { rekey } from '../vault/index.js';
-import { notesId, notesPath } from './names.js';
+import { cardsId, cardsPath, notesId, notesPath } from './names.js';
 
-/** A tab's path under a rename or a delete: a `:notes/` tab follows the document it shows. */
+/** A tab's path under a rename or a delete: a `:notes/` or `:cards/` tab follows the document it shows. */
 function rekeyTab(id: string, from: string, to: string): string | null {
+  const cards = cardsPath(id);
+  if (cards !== null) {
+    const next = rekey(cards, from, to);
+    return next === null ? null : cardsId(next);
+  }
   const notes = notesPath(id);
   if (notes === null) return rekey(id, from, to);
   const next = rekey(notes, from, to);

@@ -302,3 +302,38 @@
 }
 .recall-wrap .card th { font-weight: 500; color: var(--fg-3); border-bottom-color: var(--line-1); }
 .recall-wrap .card th:empty, .recall-wrap .card td:first-child:not([dir="rtl"]) { color: var(--fg-3); }
+
+/* the two boxes live (`CardFaces.tsx`): the card view's always, the
+   session's on `e`; the same boxes, a caret in them, the box with it lit */
+.recall-wrap .card-edit {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.recall-wrap .card.editing .face { cursor: text; }
+.recall-wrap .card.editing .face:focus-within { border-color: color-mix(in oklab, var(--accent) 60%, var(--line-1)); }
+.recall-wrap .card .face-host { min-height: 100%; }
+.recall-wrap .card .face-field { outline: none; min-height: 1.5em; white-space: pre-wrap; }
+.recall-wrap .card .face-field p { margin: 0; }
+.recall-wrap .card .face-field .dd-table { margin: 0.4em 0; }
+.recall-wrap .card-meta .grow { flex: 1; }
+/* the form switch: three quiet words, the card's underlined */
+.recall-wrap .card-meta .cm-forms { display: inline-flex; gap: var(--s-3); }
+.recall-wrap .card-meta .cm-forms button,
+.recall-wrap .card-meta .cm-act {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  padding: 0 0 1px;
+  font: inherit;
+  color: var(--fg-3);
+  cursor: pointer;
+  border-bottom: 1px solid transparent;
+}
+.recall-wrap .card-meta .cm-forms button:hover,
+.recall-wrap .card-meta .cm-act:hover { color: var(--fg-1); }
+.recall-wrap .card-meta .cm-forms button[data-active="1"] { color: var(--fg-1); border-bottom-color: var(--accent); }
+.recall-wrap .card-meta .cm-act kbd { margin-right: 4px; }
+.recall-wrap .card-meta .cm-ask { color: var(--danger); }

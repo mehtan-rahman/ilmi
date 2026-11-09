@@ -1,15 +1,15 @@
 // The deck lens: a browser over every card under a deck, a folder, or a
 // document with children (each row its form, its faces, its due and
 // interval, and its file's path when there is more than one file), with a
-// search, chips, a sort, a selection with bulk actions, a card edited in
-// place in the session's two-face look, and `study`. The model is deck.ts,
+// search, chips, a sort, a selection with bulk actions, a card opened in
+// the card view by a double-click or ⏎ (`CardPane.tsx`), a new card written
+// in place in the session's two-face look, and `study`. The model is deck.ts,
 // cardEdit.ts, and study.ts; the writes are deckOps.ts.
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
-import { EditorView } from 'prosemirror-view';
-import type { Node as PMNode } from 'prosemirror-model';
 import { PRI_DEFAULT, PRI_MAX, PRI_MIN, cardFields, meta, parsePri, type Card, type CardForm } from '../format/index.js';
-import { makeState, textOf, type Dir } from '../reader/index.js';
+import type { Dir } from '../reader/index.js';
+import { FaceField } from './FaceField.js';
 import { whenToDate } from '../schedule/index.js';
 import { runBlockHooks, usePlugins } from '../plugins/index.js';
 import { revealIndex } from './chrome.js';
@@ -22,9 +22,9 @@ import { bulkCards, newCardAt, saveCardEdit, studyDeck } from './deckOps.js';
 import { FORM_LABEL, dueWhen, fmtDays, pathLabel, dueTone } from './items.js';
 import { MENU_W, placeMenu } from './NodeMenu.js';
 import { GLYPH, kindOf, titleOf } from './names.js';
-import { blankAnswers, clozeHTML, faceDir, handleClickOn, nodeViews, richHTML } from './Reader.js';
+import { blankAnswers, clozeHTML, faceDir, richHTML } from './Reader.js';
 import { useApp } from './store.js';
-import { docsOf, openCard, removeCard, setDeckView } from './vault.js';
+import { docsOf, openCard, openCards, removeCard, setDeckView } from './vault.js';
 import { canLink, cardFaces, type SameCard } from './same.js';
 import { currentPairs, linkCards, mergeCards, notTheSame } from './sameOps.js';
 import './session.css';
@@ -70,63 +70,6 @@ export function facesHTML(text: string): RowFaces {
     facesCache.set(text, f);
   }
   return f;
-}
-
-// ── one face, live ───────────────────────────────────────────────
-
-/** Every textblock's text, a line each: what a face field holds. */
-function fieldText(doc: PMNode): string {
-  const lines: string[] = [];
-  doc.descendants((n) => {
-    if (n.isTextblock) { lines.push(textOf(n)); return false; }
-    return true;
-  });
-  return lines.join('\n').replace(/\n{2,}/g, '\n');
-}
-
-interface FaceProps {
-  value: string;
-  placeholder: string;
-  autoFocus?: boolean;
-  /** ⌘B makes a blank of the selection (a cloze's face). */
-  blanks?: boolean;
-  onChange(text: string): void;
-}
-
-/** A face as the reader edits text: inline Markdown and math chips (26's rules), one paragraph. */
-function FaceField({ value, placeholder, autoFocus, blanks, onChange }: FaceProps) {
-  const host = useRef<HTMLDivElement>(null);
-  const view = useRef<EditorView | null>(null);
-  const change = useRef(onChange);
-  change.current = onChange;
-  useEffect(() => {
-    const mount = host.current;
-    if (!mount) return;
-    const v = new EditorView(mount, {
-      state: makeState([{ kind: 'paragraph', text: value }], { frozen: () => false, pos: null }),
-      nodeViews,
-      handleClickOn,
-      attributes: { class: 'draft-doc face-field', 'data-placeholder': placeholder },
-      dispatchTransaction(tr) {
-        const next = v.state.apply(tr);
-        v.updateState(next);
-        if (tr.docChanged) change.current(fieldText(next.doc));
-      },
-    });
-    view.current = v;
-    if (autoFocus) v.focus();
-    return () => { v.destroy(); view.current = null; };
-  // the field is remounted (by key) when the form switch rewrites it
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  const onKeyDown = (e: ReactKeyboardEvent) => {
-    const v = view.current;
-    if (!blanks || !v || !(e.metaKey || e.ctrlKey) || (e.key !== 'b' && e.key !== 'B')) return;
-    e.preventDefault();
-    const { from, to } = v.state.selection;
-    v.dispatch(v.state.tr.insertText('}}', to).insertText('{{', from));
-  };
-  return <div className="face-host" ref={host} onKeyDown={onKeyDown} />;
 }
 
 // ── the editor ───────────────────────────────────────────────────
@@ -190,12 +133,18 @@ export function CardEditor({ card, initial, pri: initialPri, onSave, onCancel }:
   const onKeyDown = (e: ReactKeyboardEvent) => {
     const mod = e.metaKey || e.ctrlKey;
     if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); if (asking !== null) setAsking(null); else onCancel(); }
-    else if (e.key === 'Enter' && mod) { e.preventDefault(); e.stopPropagation(); save(e.shiftKey, asking !== null); }
     else if (mod && (e.key === '1' || e.key === '2' || e.key === '3')) { e.preventDefault(); to(FORMS[Number(e.key) - 1]![0]); }
+  };
+  // ⌘⏎ before the face sees it: in a table's cell it would add a row
+  const onKeyDownCapture = (e: ReactKeyboardEvent) => {
+    if (e.key !== 'Enter' || !(e.metaKey || e.ctrlKey)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    save(e.shiftKey, asking !== null);
   };
   const two = faces.form !== 'cloze';
   return (
-    <div className="composer deck-edit" ref={ref} onKeyDown={onKeyDown} data-form={faces.form}>
+    <div className="composer deck-edit" ref={ref} onKeyDownCapture={onKeyDownCapture} onKeyDown={onKeyDown} data-form={faces.form}>
       <div className="hd">
         <span>{card ? 'edit card' : 'new card'}</span>
         <div className="type-toggle">
@@ -324,7 +273,8 @@ function SimilarList({ paths, q, now }: { paths: readonly string[]; q: string; n
 /** A right-click on a row: where, and whether the move list shows. */
 interface RowMenu { x: number; y: number; key: string; sub: boolean }
 
-type Editing = { key: string } | { after: CardRef | null; path: string } | null;
+/** A new card's editor open in the list (a card that is there is edited in the card view). */
+type Editing = { after: CardRef | null; path: string } | null;
 
 interface BrowserProps {
   /** The lens: a document, a folder, a document's children directory, `''` the root. */
@@ -459,6 +409,9 @@ export function DeckBrowser({ home, active }: BrowserProps) {
     else if (homeDoc ?? paths[0]) setEditing({ after: null, path: (homeDoc ?? paths[0])! });
   };
 
+  /** A row edited: the card view on its document's cards, at this one (`CardPane.tsx`). */
+  const editIn = (r: DeckRow) => openCards(r.path, r.block, r.id);
+
   const study = (only?: ReadonlySet<string>) => {
     studyDeck(home, { cram, ...(only ? { only } : {}) });
   };
@@ -483,7 +436,7 @@ export function DeckBrowser({ home, active }: BrowserProps) {
       else if (similar) return;
       else if (e.key === 'j' || e.key === 'ArrowDown') { e.preventDefault(); go(at < 0 ? 0 : Math.min(shown.length - 1, at + 1)); }
       else if (e.key === 'k' || e.key === 'ArrowUp') { e.preventDefault(); go(at < 0 ? 0 : Math.max(0, at - 1)); }
-      else if (e.key === 'Enter' && at >= 0) { e.preventDefault(); setEditing({ key: shown[at]!.key }); }
+      else if (e.key === 'Enter' && at >= 0) { e.preventDefault(); editIn(shown[at]!); }
       else if (e.key === 'm') { e.preventDefault(); newCard(); }
       else if (e.key === 'Backspace' || e.key === 'Delete') {
         if (chosen.length > 1) { e.preventDefault(); run(chosen.map(refOf), { kind: 'delete' }); }
@@ -505,27 +458,6 @@ export function DeckBrowser({ home, active }: BrowserProps) {
   const docPri = (path: string) => docs[path]?.pri ?? PRI_DEFAULT;
   const titleIn = (p: string) => titleOf(p, docs, root);
 
-  const editorFor = (r: DeckRow) => {
-    const body = bodies.find(([p]) => p === r.path)?.[1];
-    const card = body ? findCard(body, refOf(r)) : null;
-    const faces = facesOf(r.text);
-    if (!card || !faces) return null;
-    return (
-      <CardEditor
-        key={`e:${r.key}`}
-        card={card}
-        initial={faces}
-        pri={card.sched?.pri ?? docPri(r.path)}
-        onCancel={() => setEditing(null)}
-        onSave={(text, pri, again) => {
-          const changed = text !== card.text || (pri ?? docPri(r.path)) !== (card.sched?.pri ?? docPri(r.path));
-          setEditing(again ? { after: { ...refOf(r), text }, path: r.path } : null);
-          if (changed) saveCardEdit(refOf(r), text, pri).catch(fail);
-        }}
-      />
-    );
-  };
-
   const newEditor = (e: { after: CardRef | null; path: string }) => {
     const body = bodies.find(([p]) => p === e.path)?.[1];
     const form = (body && meta(body).defaultCard) || 'qa';
@@ -546,8 +478,7 @@ export function DeckBrowser({ home, active }: BrowserProps) {
     );
   };
 
-  const editingNew = editing && 'after' in editing ? editing : null;
-  const editingKey = editing && 'key' in editing ? editing.key : null;
+  const editingNew = editing;
   // the new card's editor sits under the row it goes after, else above the list
   const newAfterKey = editingNew?.after ? `${editingNew.after.path}#${editingNew.after.block}` : null;
   const allSuspended = chosen.length > 0 && chosen.every((r) => r.suspended);
@@ -651,7 +582,6 @@ export function DeckBrowser({ home, active }: BrowserProps) {
       {!similar && rows.length === 0 && !editingNew && <div className="empty">no cards</div>}
       {!similar && rows.length > 0 && shown.length === 0 && <div className="empty">nothing matches</div>}
       {!similar && shown.slice(0, drawnTo).map((r) => {
-        if (editingKey === r.key) return <div key={r.key}>{editorFor(r)}</div>;
         const f = facesHTML(r.text);
         const ivl = r.sched?.ivl && r.sched.ivl >= 1 ? fmtDays(r.sched.ivl) : '';
         const when = r.suspended ? 'suspended' : dueWhen(r.sched?.due, now);
@@ -669,7 +599,7 @@ export function DeckBrowser({ home, active }: BrowserProps) {
               data-menu={menu?.key === r.key ? '1' : '0'}
               onMouseDown={(e) => { if (e.shiftKey) e.preventDefault(); }}
               onClick={(e) => onRowClick(r, e)}
-              onDoubleClick={() => setEditing({ key: r.key })}
+              onDoubleClick={() => editIn(r)}
               onContextMenu={(e) => {
                 e.preventDefault();
                 if (!sel.keys.includes(r.key)) setSel({ keys: [r.key], anchor: r.key });
@@ -708,7 +638,7 @@ export function DeckBrowser({ home, active }: BrowserProps) {
         <div className="ctx-menu" ref={menuRef} style={{ left: menu.x, top: menu.y }} onMouseDown={(e) => e.stopPropagation()} onContextMenu={(e) => e.preventDefault()}>
           {!menu.sub ? (
             <>
-              <div className="ci" onClick={() => { setMenu(null); setEditing({ key: menuRow.key }); }}><span className="cg"><Glyph g="✎" /></span>edit<span className="ck">⏎</span></div>
+              <div className="ci" onClick={() => { setMenu(null); editIn(menuRow); }}><span className="cg"><Glyph g="✎" /></span>edit<span className="ck">⏎</span></div>
               <div className="ci has-sub" onClick={(e) => { e.stopPropagation(); setMenu({ ...menu, sub: true }); }}><span className="cg"><Glyph g="→" /></span>move to…<span className="ck"><Glyph g="▸" /></span></div>
               <div className="ci" onClick={() => run([refOf(menuRow)], { kind: menuRow.suspended ? 'unsuspend' : 'suspend' })}><span className="cg"><Glyph g="‖" /></span>{menuRow.suspended ? 'unsuspend' : 'suspend'}</div>
               <div className="cd" />

@@ -17,7 +17,7 @@ import {
   setReadPos, splitBlocks, atomFind, markFinds, toggleInline, toggleTask, type Band, type InlineRange, type InlineToggle, type LinkTarget, type Passage, type RawShape,
   askImageKey, closeAtMatch, dirAttr, strongDir, withBases, type Dir, findKey, insertImages, pickSlash, replaceAll, replaceMatch, slashContext, slashItems, slashKey, htmlPasteImages,
   type FindMeta, type FindState, type SlashItem, type SlashState, textOf,
-  bookKey, CODE_LANGS, addColumn, addRow, cellAt, alignColumn, codeHTML, codeLang, deleteColumn, deleteRow, foldKey, foldedKeys, foldsHiding, landKey, ruleEndIndex, langOf, setCodeLang, type Align, type FoldMeta,
+  bookKey, CODE_LANGS, addColumn, addRow, cellAt, alignColumn, codeHTML, codeLang, deleteColumn, deleteRow, deleteTable, insertTable, foldKey, foldedKeys, foldsHiding, landKey, ruleEndIndex, langOf, setCodeLang, type Align, type FoldMeta,
 } from '../reader/index.js';
 import { advanceWrite, sectionSpan, whenToDate } from '../schedule/index.js';
 import { dirOf, nameOf, type Loaded, type Vault } from '../vault/index.js';
@@ -33,7 +33,7 @@ import { dueLabel, dueTone } from './items.js';
 import { pagesOf, titleOf } from './names.js';
 import { openPagesBeside } from './book.js';
 import { useApp, type DocInfo } from './store.js';
-import { currentVault, enrolReading, extractNode, openNode, sectionNode, setFolds } from './vault.js';
+import { currentVault, enrolReading, extractNode, openCards, openNode, sectionNode, setFolds } from './vault.js';
 import { popMenu, type PopItem } from './popMenu.js';
 import { registerHeadings } from './headings.js';
 import { sectionMenu, setWriteThrough, writeDoc } from './sections.js';
@@ -938,20 +938,8 @@ class TableView implements NodeView {
   }
 
   private menu(anchor: HTMLElement, row: number, col: number): void {
-    if (!this.view.editable) return;
-    const align = (this.node.child(0).maybeChild(col)?.attrs.align as Align) ?? null;
-    const items: PopItem[] = [
-      { label: 'row above', glyph: '+', act: 'row-above', run: () => this.run((p) => addRow(p, row, col)) },
-      { label: 'row below', glyph: '+', act: 'row-below', run: () => this.run((p) => addRow(p, row + 1, col)) },
-      { label: 'column before', glyph: '+', act: 'col-before', run: () => this.run((p) => addColumn(p, col, row)) },
-      { label: 'column after', glyph: '+', act: 'col-after', run: () => this.run((p) => addColumn(p, col + 1, row)) },
-      { label: '-' },
-      ...ALIGNS.map(([a, label]): PopItem => ({ label, on: align === a, act: `align-${a}`, run: () => this.run((p) => alignColumn(p, col, align === a ? null : a)) })),
-      { label: '-' },
-      { label: 'delete row', glyph: '⌫', danger: true, act: 'delete-row', run: () => this.run((p) => deleteRow(p, row)) },
-      { label: 'delete column', glyph: '⌫', danger: true, act: 'delete-col', run: () => this.run((p) => deleteColumn(p, col)) },
-    ];
-    popMenu(anchor.getBoundingClientRect(), items, 'table-menu');
+    const pos = this.getPos();
+    if (pos !== undefined) tableMenu(this.view, pos, row, col, anchor.getBoundingClientRect());
   }
 
   update(node: PMNode): boolean {
@@ -968,6 +956,86 @@ class TableView implements NodeView {
   ignoreMutation(m: MutationRecord | { type: 'selection'; target: Node }): boolean {
     return !this.contentDOM.contains(m.target);
   }
+}
+
+/**
+ * A table cell's menu, from its `···` or a right-click in the cell: rows
+ * and columns put in around the cell, the column aligned, the row, the
+ * column, or the whole table deleted. `at` is the box it opens under.
+ */
+export function tableMenu(view: EditorView, tablePos: number, row: number, col: number, at: { left: number; top: number; bottom: number }): void {
+  const node = view.state.doc.nodeAt(tablePos);
+  if (!view.editable || node?.type !== schema.nodes.table) return;
+  const run = (cmd: (pos: number) => (state: EditorState, dispatch?: (tr: Transaction) => void) => boolean) => {
+    cmd(tablePos)(view.state, view.dispatch.bind(view));
+    view.focus();
+  };
+  const align = (node.child(0).maybeChild(col)?.attrs.align as Align) ?? null;
+  const items: PopItem[] = [
+    { label: 'row above', glyph: '+', act: 'row-above', run: () => run((p) => addRow(p, row, col)) },
+    { label: 'row below', glyph: '+', act: 'row-below', run: () => run((p) => addRow(p, row + 1, col)) },
+    { label: 'column before', glyph: '+', act: 'col-before', run: () => run((p) => addColumn(p, col, row)) },
+    { label: 'column after', glyph: '+', act: 'col-after', run: () => run((p) => addColumn(p, col + 1, row)) },
+    { label: '-' },
+    ...ALIGNS.map(([a, label]): PopItem => ({ label, on: align === a, act: `align-${a}`, run: () => run((p) => alignColumn(p, col, align === a ? null : a)) })),
+    { label: '-' },
+    { label: 'delete row', glyph: '⌫', danger: true, act: 'delete-row', run: () => run((p) => deleteRow(p, row)) },
+    { label: 'delete column', glyph: '⌫', danger: true, act: 'delete-col', run: () => run((p) => deleteColumn(p, col)) },
+    { label: 'delete table', glyph: '⌫', danger: true, act: 'delete-table', run: () => run((p) => deleteTable(p)) },
+  ];
+  popMenu(at, items, 'table-menu');
+}
+
+/** A point as the box a menu opens under. */
+const pointBox = (e: MouseEvent) => ({ left: e.clientX, top: e.clientY, bottom: e.clientY });
+
+/**
+ * A right-click in editable text: in a table's cell, the cell's menu
+ * (`tableMenu`); elsewhere cut, copy, paste and `insert table` (`table`
+ * false leaves it out: a cloze's face holds none). A heading, a card, an
+ * image, a formula and anything outside the text keep their own menus (or
+ * the system's). True when it opened one.
+ */
+export function editorMenu(view: EditorView, e: MouseEvent, opts: { table?: boolean } = {}): boolean {
+  if (!view.editable) return false;
+  const t = e.target as HTMLElement | null;
+  if (!t || t.closest('.dd-h, .card-span, img, .math, .tb-add, .tb-more, .raw')) return false;
+  // where the press was: the point, else the start of what was pressed on (a page not laid out has no points)
+  const domPos = (el: Node): number | null => { try { return view.posAtDOM(el, 0); } catch { return null; } };
+  let hit: number | null = null;
+  try { hit = view.posAtCoords({ left: e.clientX, top: e.clientY })?.pos ?? null; } catch { hit = null; }
+  const cellEl = t.closest('td, th');
+  if (cellEl && view.dom.contains(cellEl)) {
+    const inCell = domPos(cellEl);
+    const at = inCell === null ? null : cellAt(view.state, inCell);
+    if (at && inCell !== null) {
+      e.preventDefault();
+      // the caret goes to the cell first, so what the menu does reads as done there
+      const now = cellAt(view.state);
+      if (!now || now.tablePos !== at.tablePos || now.row !== at.row || now.col !== at.col) view.dispatch(view.state.tr.setSelection(Selection.near(view.state.doc.resolve(inCell))));
+      tableMenu(view, at.tablePos, at.row, at.col, pointBox(e));
+      return true;
+    }
+  }
+  hit ??= domPos(t);
+  e.preventDefault();
+  const sel = view.state.selection;
+  const some = !sel.empty;
+  const items: PopItem[] = [
+    { label: 'cut', act: 'cut', glyph: '', run: () => { if (some) { view.focus(); document.execCommand('cut'); } } },
+    { label: 'copy', act: 'copy', glyph: '', run: () => { if (some) { view.focus(); document.execCommand('copy'); } } },
+    { label: 'paste', act: 'paste', glyph: '', run: () => {
+      view.focus();
+      void navigator.clipboard?.readText?.().then((text) => { if (text) view.pasteText(text); }, () => document.execCommand('paste'));
+    } },
+  ];
+  if (opts.table !== false) {
+    // the table goes after the block pressed on
+    if (hit !== null && sel.empty) view.dispatch(view.state.tr.setSelection(Selection.near(view.state.doc.resolve(hit))));
+    items.push({ label: '-' }, { label: 'insert table', glyph: '⊞', act: 'insert-table', run: () => { insertTable()(view.state, view.dispatch.bind(view)); view.focus(); } });
+  }
+  popMenu(pointBox(e), items, 'text-menu');
+  return true;
 }
 
 export const nodeViews = {
@@ -1614,6 +1682,14 @@ export function Reader({ id, active = true, onPages, notes = false }: ReaderProp
           },
           handleDOMEvents: {
             blur: () => { writer.flush(); return false; },
+            contextmenu: (view, event) => editorMenu(view, event),
+          },
+          // a card double-clicked opens in the card view, its document's cards around it
+          handleDoubleClickOn(view, _pos, node, nodePos, _event, direct) {
+            if (!direct || node.type !== schema.nodes.card) return false;
+            const card = node.attrs.card as Card;
+            openCards(id, view.state.doc.resolve(nodePos).index(), card.id);
+            return true;
           },
         });
         // an image dropped from the Finder over this page comes through the window's drop router

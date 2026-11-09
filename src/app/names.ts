@@ -9,7 +9,7 @@ import type { DocInfo } from './store.js';
 
 export type NodeKind = 'folder' | NodeType;
 /** What a tab can show: a node, the intake, a saved query, or the session. */
-export type TabKind = NodeKind | 'intake' | 'queue' | 'session';
+export type TabKind = NodeKind | 'intake' | 'queue' | 'session' | 'cards';
 
 /** Every scope a saved query can have. */
 export type QueueScope = 'today' | 'upcoming' | 'reading' | 'writing' | 'cards';
@@ -29,6 +29,16 @@ const QUEUE = ':queue/';
  * it is.
  */
 const NOTES = ':notes/';
+
+/**
+ * A document's cards one at a time (the card view, `CardPane.tsx`): one tab
+ * per document, at the card `cardAt` names.
+ */
+const CARDS = ':cards/';
+
+export const cardsId = (path: string): string => CARDS + path;
+/** The document a `:cards/` tab shows, or null for any other id. */
+export const cardsPath = (id: string): string | null => (id.startsWith(CARDS) ? id.slice(CARDS.length) : null);
 
 export const notesId = (path: string): string => NOTES + path;
 /** The document a `:notes/` tab shows, or null for any other id. */
@@ -111,6 +121,7 @@ export const GLYPH: Record<TabKind, string> = {
   intake: '＋',
   queue: '≡',
   session: '◆',
+  cards: '◆',
 };
 
 export function kindOf(path: string, docs: Record<string, DocInfo>): NodeKind {
@@ -123,6 +134,7 @@ export function tabKindOf(id: string, docs: Record<string, DocInfo>): TabKind {
   if (id === INTAKE) return 'intake';
   if (id === SESSION) return 'session';
   if (queueScope(id)) return 'queue';
+  if (cardsPath(id) !== null) return 'cards';
   // the notes on a document's pages are the person's own
   if (notesPath(id) !== null) return 'note';
   return kindOf(id, docs);
@@ -137,6 +149,8 @@ export function titleOf(path: string, docs: Record<string, DocInfo>, vaultRoot: 
   if (scope) return QUEUE_TITLE[scope];
   const notes = notesPath(path);
   if (notes !== null) return titleOf(notes, docs, vaultRoot);
+  const cards = cardsPath(path);
+  if (cards !== null) return `${titleOf(cards, docs, vaultRoot)} › cards`;
   if (!isDoc(path) && !isPdfPath(path) && docs[`${path}.md`]) return docs[`${path}.md`]?.title ?? slugName(nameOf(path));
   return docs[path]?.title ?? slugName(nameOf(path));
 }

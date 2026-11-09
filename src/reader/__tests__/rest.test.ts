@@ -11,7 +11,7 @@ import { EditorState, NodeSelection, TextSelection, type Command } from 'prosemi
 import { describe, expect, it } from 'vitest';
 import { parse, serialize } from '../../format/index.js';
 import {
-  addColumn, addRow, alignColumn, cellAt, cellDown, codeDecorations, codeLang, codeTokens, deleteColumn, deleteRow, directionDecorations, findKey, flatText, foldKey,
+  addColumn, addRow, alignColumn, cellAt, cellDown, codeDecorations, codeLang, codeTokens, deleteColumn, deleteRow, deleteTable, directionDecorations, insertTable, findKey, flatText, foldKey,
   foldedKeys, foldsHiding, ruleEndIndex, fromDoc, makeState, nextCell, nodeToRaw, pasteInto, prevCell, rawToNode, readTable, rowBelow, schema, sections, setCodeLang, tableOf,
   toDoc, tokensOfHtml, withLang, writeTable, type FoldMeta,
 } from '../index.js';
@@ -182,6 +182,31 @@ describe('tables edited as tables', () => {
       if (node?.type === schema.nodes.table_cell) dirs.push(`${node.textContent}:${(d as unknown as { type: { attrs: { dir: string } } }).type.attrs.dir}`);
     });
     expect(dirs).toEqual(['form:ltr', 'perfect:ltr', 'n:ltr', 'II:ltr', 'فَعَّلَ:rtl', '2:ltr']);
+  });
+
+  it('insert table: a 2×2 with a header after the caret\'s block, or in place of an empty paragraph, the caret in its first cell; none inside a table', () => {
+    let s = run(caret(ed('Before.\n\nAfter.'), 'Bef', 2), insertTable());
+    expect(cellAt(s)).toMatchObject({ row: 0, col: 0, rows: 2, cols: 2 });
+    s = type(s, 'h');
+    expect(md(s)).toBe('Before.\n\n| h |  |\n| --- | --- |\n|  |  |\n\nAfter.');
+    expect(insertTable()(s, undefined)).toBe(false);
+    // an empty paragraph is taken by the table
+    let e = ed('Before.');
+    e = e.apply(e.tr.insert(e.doc.content.size, schema.nodes.paragraph!.create()));
+    e = e.apply(e.tr.setSelection(TextSelection.create(e.doc, e.doc.content.size - 1)));
+    e = run(e, insertTable(3, 2));
+    expect(e.doc.childCount).toBe(2);
+    expect(cellAt(e)).toMatchObject({ row: 0, col: 0, rows: 3, cols: 2 });
+  });
+
+  it('delete table: the table out, the caret in an empty paragraph where it was, nothing else touched', () => {
+    let s = ed(SIMPLE);
+    const pos = s.doc.child(0).nodeSize;
+    expect(deleteTable(0)(s, undefined)).toBe(false);
+    s = run(s, deleteTable(pos));
+    expect(md(s)).toBe('Before.\n\nAfter.');
+    expect(s.selection.$from.parent.type).toBe(schema.nodes.paragraph);
+    expect(s.doc.childCount).toBe(3);
   });
 
   it('a paste into a cell goes in as one line', () => {

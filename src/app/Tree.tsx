@@ -32,9 +32,11 @@ import { MathText } from './MathText.js';
 import { NodeMenu, menuAt, type MenuAt } from './NodeMenu.js';
 import type { OpenOpts } from './panes.js';
 import { useApp } from './store.js';
-import { TREE_INDENT, TREE_PAD, keyPlace, revealRows, treeKey, treeRows, typeahead, type TreeRow } from './treeModel.js';
+import { TREE_INDENT, TREE_PAD, isNodeRow, keyPlace, revealRows, treeKey, treeRows, typeahead, type TreeCards, type TreeRow } from './treeModel.js';
+import { cardSet, frontLine } from './cardSet.js';
 import { deleteNode } from './remove.js';
-import { placeNode, renameNode, toggleOpen } from './vault.js';
+import { docsOf, placeNode, renameNode, toggleOpen } from './vault.js';
+import { cardsPath, cardsId } from './names.js';
 import { appNow } from './clock.js';
 import { Glyph, Icon } from './icons.js';
 
@@ -88,8 +90,33 @@ export function Tree({ activeId, onOpen }: Props) {
   const title = (path: string) => titleOf(path, docs, root);
   const fail = (e: unknown) => console.error(e);
   const hoisted = hoist !== null && findNode(tree, hoist) ? hoist : null;
-  const rows = useMemo(() => treeRows(tree, open, order, hoisted ?? undefined), [tree, open, order, hoisted]);
-  const geoms = useMemo(() => geometry(rows, 1), [rows]);
+  // a document's cards, listed under its row once it is open; read again with every write the vault reports (`docs`)
+  const cardsOf = useMemo<TreeCards>(() => {
+    const memo = new Map<string, ReturnType<TreeCards>>();
+    return (doc) => {
+      if (!docs[doc]?.cards) return [];
+      let got = memo.get(doc);
+      if (!got) { got = cardSet(docsOf([doc])[0]?.[1]); memo.set(doc, got); }
+      return got;
+    };
+  }, [docs]);
+  const rows = useMemo(() => treeRows(tree, open, order, hoisted ?? undefined, cardsOf), [tree, open, order, hoisted, cardsOf]);
+  // the drag's geometry is the nodes' alone: a card's row takes no drop and moves nothing
+  const geoms = useMemo(() => {
+    const nodes = rows.filter((r) => !r.card && !r.cards);
+    const g = geometry(nodes, 1);
+    const by = new Map<TreeRow, (typeof g)[number]>();
+    nodes.forEach((r, k) => by.set(r, g[k]!));
+    return by;
+  }, [rows]);
+  const cardAt = useApp((s) => s.cardAt);
+  /** A row's name: a node's title, a card's front, a document's cards counted. */
+  const rowName = (path: string) => {
+    const r = rows.find((x) => x.path === path);
+    if (r?.card) return frontLine(r.card.text);
+    if (r?.cards) return `${r.cards.n} cards`;
+    return title(path);
+  };
 
   useEffect(() => {
     if (editing && editRef.current) {
@@ -159,6 +186,9 @@ export function Tree({ activeId, onOpen }: Props) {
       case 'focus': setSelected(act.path); break;
       case 'fold': toggleOpen(act.path, act.open); break;
       case 'activate': {
+        const r = rows.find((x) => x.path === act.path);
+        if (r?.card) { openCardRow(r, {}); break; }
+        if (r?.cards) { toggleOpen(act.path); break; }
         const node = findNode(tree, act.path);
         if (node?.kind === 'folder' || act.path === '') toggleOpen(act.path, true);
         onOpen(act.path, {});
@@ -174,7 +204,7 @@ export function Tree({ activeId, onOpen }: Props) {
       case 'type': {
         const t = Date.now();
         typed.current = { buf: t - typed.current.at < 700 ? typed.current.buf + act.char : act.char, at: t };
-        const hit = typeahead(rows, focus, typed.current.buf, title);
+        const hit = typeahead(rows, focus, typed.current.buf, rowName);
         if (hit !== null) setSelected(hit);
         break;
       }
@@ -211,6 +241,14 @@ export function Tree({ activeId, onOpen }: Props) {
     setMenu(menuAt({ clientX: r.left, clientY: r.bottom + 2 }, id, plus));
   };
 
+  /** A card's row: the card view on its document's cards, at this one. */
+  const openCardRow = (r: TreeRow, opts: OpenOpts) => {
+    if (!r.card) return;
+    const { doc, block, id } = r.card;
+    useApp.setState((st) => ({ cardAt: { ...st.cardAt, [doc]: id === undefined ? { block } : { block, id } } }));
+    onOpen(cardsId(doc), opts);
+  };
+
   // ── one row ──────────────────────────────────────────────────
   const guides = (depth: number) =>
     Array.from({ length: Math.max(0, depth - 1) }, (_, l) => <span key={l} className="guide" style={{ left: PAD + (l + 1) * INDENT + 4 }} />);
@@ -226,13 +264,66 @@ export function Tree({ activeId, onOpen }: Props) {
         data-path={r.path}
         data-kind={r.path === '' ? 'folder' : kindOf(r.path, docs)}
         role="none"
-        {...rowDrag(geoms[i]!, SURF, { draggable: false })}
+        {...rowDrag(geoms.get(r)!, SURF, { draggable: false })}
       >
         {guides(r.depth)}
         <span className="name">empty</span>
       </div>
     );
   };
+
+  /** A card under its document: its front on one line, quiet; the card view's card lit while it is on show. */
+  const cardRow = (r: TreeRow) => {
+    const c = r.card!;
+    const at = cardAt[c.doc];
+    const on = activeId !== undefined && cardsPath(activeId) === c.doc && (at?.id !== undefined ? at.id === c.id : at?.block === c.block);
+    return (
+      <div
+        key={r.path}
+        className="row trow card-row"
+        style={{ paddingLeft: PAD + r.depth * INDENT }}
+        data-path={r.path}
+        data-kind="card"
+        data-doc={c.doc}
+        data-block={c.block}
+        data-active={on ? '1' : '0'}
+        data-selected={selected === r.path ? '1' : '0'}
+        role="treeitem"
+        aria-level={r.depth + 1}
+        aria-selected={selected === r.path}
+        title={frontLine(c.text, 400)}
+        onMouseDown={() => { setSelected(r.path); setAsking(null); }}
+        onClick={(e) => openCardRow(r, clickOpts(e))}
+      >
+        {guides(r.depth)}
+        <span className="chev" />
+        <span className="glyph card"><Icon name="card" /></span>
+        <MathText className="name" dir="auto" text={frontLine(c.text)} />
+      </div>
+    );
+  };
+
+  /** Under a document with children: `n cards`, which opens to list them. */
+  const cardsRow = (r: TreeRow) => (
+    <div
+      key={r.path}
+      className="row trow cards-row"
+      style={{ paddingLeft: PAD + r.depth * INDENT }}
+      data-path={r.path}
+      data-kind="cards"
+      data-selected={selected === r.path ? '1' : '0'}
+      role="treeitem"
+      aria-level={r.depth + 1}
+      aria-expanded={r.open}
+      onMouseDown={() => { setSelected(r.path); setAsking(null); }}
+      onClick={() => toggleOpen(r.path)}
+    >
+      {guides(r.depth)}
+      <span className="chev"><Glyph g={r.open ? '▾' : '▸'} /></span>
+      <span className="glyph card"><Icon name="card" /></span>
+      <span className="name">{r.cards!.n} cards</span>
+    </div>
+  );
 
   const row = (r: TreeRow, i: number) => {
     const id = r.path;
@@ -265,7 +356,7 @@ export function Tree({ activeId, onOpen }: Props) {
         aria-selected={selected === id}
         aria-expanded={r.has ? r.open : undefined}
         title={counts.full || undefined}
-        {...rowDrag(geoms[i]!, SURF, { draggable: !isRoot && !editingThis, folded: r.has && !r.open })}
+        {...rowDrag(geoms.get(r)!, SURF, { draggable: !isRoot && !editingThis, folded: r.has && !r.open })}
         onContextMenu={(e) => openMenu(e, id)}
         onMouseDown={() => { setSelected(id); setAsking(null); }}
         onDoubleClick={(e) => { e.stopPropagation(); beginRename(id); }}
@@ -339,7 +430,7 @@ export function Tree({ activeId, onOpen }: Props) {
       onKeyDown={onKey}
     >
       {crumb}
-      {rows.map((r, i) => (r.placeholder ? placeholder(r, i) : row(r, i)))}
+      {rows.map((r, i) => (r.card ? cardRow(r) : r.cards ? cardsRow(r) : r.placeholder ? placeholder(r, i) : row(r, i)))}
 
       {menu && <NodeMenu at={menu} set={setMenu} onCreated={(path) => setEditing({ id: path, value: title(path) })} onRename={beginRename} />}
     </div>

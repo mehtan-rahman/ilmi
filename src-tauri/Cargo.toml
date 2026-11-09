@@ -1,6 +1,6 @@
 [package]
 name = "ilmi"
-version = "0.1.1"
+version = "0.1.2"
 description = "incremental reading, cards, and writing over a directory of markdown"
 edition = "2021"
 rust-version = "1.90"
@@ -44,17 +44,15 @@ tauri-plugin-deep-link = "2"
 tauri-plugin-opener = "2"
 # ink (milestone 58): the PencilKit canvas on iOS, and a drawing read as strokes and drawn as a picture on the Mac too
 tauri-plugin-ink = { path = "ink" }
-# sync (milestone 53): the vault as a git repository, libgit2 built in; HTTPS with a token, no SSH, no git binary
-git2 = { version = "0.20", default-features = false, features = ["https", "vendored-libgit2"] }
+# sync (milestone 53): the vault as a git repository, libgit2 built in; HTTPS with a token, no SSH, no git binary.
+# OpenSSL is built in too: git2's https names openssl-sys on every target, the Mac included, and
+# otherwise the app links whatever OpenSSL the build machine has (Homebrew's, absent on other Macs)
+# and a universal build finds no Intel copy to link at all
+git2 = { version = "0.20", default-features = false, features = ["https", "vendored-libgit2", "vendored-openssl"] }
 
 # a second launch hands its link to the running app; iOS runs one instance by itself (milestone 55)
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
-
-# iOS: libgit2 speaks TLS through the system there as on the Mac, but git2 still names
-# openssl-sys for every unix that is not macOS and a cross build finds none, so it is built in
-[target.'cfg(target_os = "ios")'.dependencies]
-git2 = { version = "0.20", default-features = false, features = ["https", "vendored-libgit2", "vendored-openssl"] }
 
 # Paste and Match Style: the menu item sends the WKWebView `pasteAsPlainText:` (lib.rs)
 [target.'cfg(target_os = "macos")'.dependencies]

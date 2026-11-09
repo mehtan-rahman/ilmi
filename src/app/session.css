@@ -1,11 +1,11 @@
-/* The session: a card centred in the pane with its grades under it; a
+/* The session: a card filling the pane with its grades under it; a
    reading or writing element as the whole document with a control bar at
    the foot. Ported from the prototype's recall and session-bar rules with
    the flattening pass folded in: hairlines, 2px, no shadows; blur only on
    the unrevealed answer. */
 
 .recall-wrap {
-  --card-w: 920px;
+  --card-w: none;
   height: 100%;
   display: flex;
   flex-direction: column;
@@ -69,54 +69,56 @@
 .sess-nav .sn-btn:hover:not(:disabled) { border-color: color-mix(in oklab, var(--fg) calc(30% * var(--chrome)), transparent); color: var(--fg-1); }
 .sess-nav .sn-btn:disabled { opacity: 0.32; cursor: default; }
 
-/* the card: sized to what it holds, the question and, once revealed, the
-   answer under a hairline; a short card is a short box (a floor so a
-   one-line cloze still reads as a card), a long one scrolls inside. No
-   blur, no shadow: before the reveal the answer is simply not there, one
-   quiet line in its place. */
+/* the card fills the pane: the question in a box over the top half, the
+   answer in a box under it, the same size whether shown yet or not (before
+   the reveal its box holds only the hint). A cloze is one box, answered in
+   place. Each box scrolls on its own; the grades sit at the foot. */
 .recall-wrap .card {
-  flex: 0 1 auto;
+  flex: 1 1 auto;
   min-height: 0;
-  max-height: 100%;
-  overflow: auto;
   width: 100%;
-  max-width: var(--card-w);
   display: flex;
   flex-direction: column;
-  background: var(--paper);
-  border: 1px solid var(--line-1);
-  border-radius: var(--radius);
+  gap: var(--s-4);
   font-family: var(--serif);
-  font-size: 19px;
+  font-size: 24px;
   line-height: 1.5;
   color: var(--fg-1);
   text-align: start;
   font-weight: 420;
   white-space: pre-wrap;
 }
-.recall-wrap .card .face {
+.recall-wrap .card .face,
+.recall-wrap .card .face-hint {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: auto;
   position: relative;
-  padding: 22px 28px;
+  background: var(--paper);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius);
+  padding: 24px 32px;
 }
-.recall-wrap .card .face.front { min-height: 88px; display: flex; flex-direction: column; justify-content: center; }
-.recall-wrap .card .face.back { border-top: 1px solid var(--line-2); }
 .recall-wrap .card .face-hint {
   appearance: none;
-  background: transparent;
-  border: 0;
-  border-top: 1px solid var(--line-3);
-  padding: 8px 28px 9px;
   text-align: start;
   cursor: pointer;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
   color: var(--fg-4);
   font-family: var(--sans);
-  font-size: var(--t-xs);
+  font-size: var(--t-sm);
   white-space: nowrap;
 }
 .recall-wrap .card .face-hint:hover { color: var(--fg-2); }
+/* a cloze: one box, the hint a quiet line under it */
+.recall-wrap .card[data-faces="1"] .face-hint {
+  flex: 0 0 auto;
+  border: 0;
+  background: transparent;
+  padding: 0 4px;
+}
 
 /* a cloze: the blank stays hidden in the question until revealed */
 .recall-wrap .card .cloze {

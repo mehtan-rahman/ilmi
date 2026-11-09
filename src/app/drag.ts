@@ -41,8 +41,8 @@ export interface Surface {
   scroller?: string;
   /** A folded row with something under it was rested on: open it. */
   spring?(path: string): void;
-  /** A drop landed (after `placeNode` was asked). */
-  landed?(drop: Drop, to: string): void;
+  /** A drop landed (after `placeNode` was asked): the node `from` is at `to` now. */
+  landed?(drop: Drop, to: string, from: string): void;
 }
 
 // the row the pointer is resting on and since when (for the spring and the
@@ -207,7 +207,8 @@ function dropOnRow(el: Element, g: RowGeom, s: Surface): void {
   }
   if (!cancelled && dragging !== null && drop) {
     const d = drop;
-    placeNode(dragging, d.target, d.mode).then((to) => s.landed?.(d, to)).catch((err) => console.error(err));
+    const from = dragging;
+    placeNode(from, d.target, d.mode).then((to) => s.landed?.(d, to, from)).catch((err) => console.error(err));
   }
   endDrag();
 }

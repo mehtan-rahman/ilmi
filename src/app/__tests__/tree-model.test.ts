@@ -11,7 +11,7 @@ import { describe, expect, it } from 'vitest';
 import type { TreeNode } from '../../vault/index.js';
 import { GLYPH, rowCounts, slugName } from '../names.js';
 import type { DocInfo } from '../store.js';
-import { keyPlace, revealRows, treeKey, treeRows, typeahead, type TreeRow } from '../treeModel.js';
+import { afterDelete, followMove, keyPlace, revealRows, treeKey, treeRows, typeahead, type TreeRow } from '../treeModel.js';
 
 const TREE: TreeNode[] = [
   { kind: 'folder', name: 'courses', path: 'courses', children: [
@@ -210,5 +210,28 @@ describe('the kinds\' marks', () => {
     const face = cmapOf(join(import.meta.dirname, '../../../node_modules/@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-400-normal.woff'));
     expect(face.size).toBeGreaterThan(100);
     expect(marks.filter((m) => !face.has(m.codePointAt(0)!))).toEqual([]);
+  });
+});
+
+describe('the selection after a delete or a move', () => {
+  const tree: TreeNode[] = [
+    { kind: 'doc', name: 'd.md', path: 'd.md' },
+    { kind: 'doc', name: 'n.md', path: 'n.md' },
+  ];
+  const rows = treeRows(tree, { '': true, 'd.md': true }, {}, undefined, (doc) => (doc === 'd.md' ? [{ block: 0, text: 'q' }, { block: 1, text: 'r' }] : []));
+
+  it('a deleted document\'s cards go with it: the next row is past them', () => {
+    expect(rows.map((r) => r.path)).toEqual(['', 'd.md', ':cards/d.md#0', ':cards/d.md#1', 'n.md']);
+    expect(afterDelete(rows, 'd.md')).toBe('n.md');
+    expect(afterDelete(rows, 'n.md')).toBe(':cards/d.md#1');
+  });
+
+  it('the selection follows a node moved or renamed, anything under it, and their cards\' rows', () => {
+    expect(followMove('a/b.md', 'a/b.md', 'c/b.md')).toBe('c/b.md');
+    expect(followMove('a/b/x.md', 'a/b.md', 'c/b.md')).toBe('c/b/x.md');
+    expect(followMove(':cards/a/b.md#3', 'a/b.md', 'c/b.md')).toBe(':cards/c/b.md#3');
+    expect(followMove(':cards/a/b/x.md', 'a/b.md', 'c/b.md')).toBe(':cards/c/b/x.md');
+    expect(followMove('a/bb.md', 'a/b.md', 'c/b.md')).toBe('a/bb.md');
+    expect(followMove(null, 'a/b.md', 'c/b.md')).toBeNull();
   });
 });

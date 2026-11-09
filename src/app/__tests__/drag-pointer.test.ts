@@ -155,6 +155,17 @@ describe('a mouse drag of a row', () => {
     await vi.waitFor(() => expect(calls).toEqual(['place a.md after b.md']));
   });
 
+  it('a drop tells the surface where the node it moved went, and which node that was (the tree\'s selection follows it)', async () => {
+    const { els, props } = rows();
+    const landed = vi.fn();
+    const props2 = rowDrag({ path: 'c.md', depth: 1, nest: 'dwell', tail: ['c.md'] }, { ...surf, landed }, { draggable: true });
+    props2.ref(els[2]!);
+    down(props[0]!, els[0]!, 50, 12);
+    ptr('pointermove', 50, 2 * H + 3);
+    ptr('pointerup', 50, 2 * H + 3);
+    await vi.waitFor(() => expect(landed).toHaveBeenCalledWith(expect.objectContaining({ target: 'c.md', mode: 'before' }), 'a.md', 'a.md'));
+  });
+
   it('Esc ends the drag at once (the row no longer dimmed, nothing ticking), and the let-go and its click after it do nothing', () => {
     vi.useFakeTimers();
     const { els, props } = rows();

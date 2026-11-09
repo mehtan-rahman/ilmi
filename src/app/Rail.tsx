@@ -84,7 +84,10 @@ export function Notebook({ nb, page, active, onOpen, children }: Props) {
   const [open, setOpen] = useState<Record<string, true>>({});
   const [menu, setMenu] = useState<MenuAt | null>(null);
   const [plus, setPlus] = useState<{ x: number; y: number } | null>(null);
-  const [editing, setEditing] = useState<{ id: string; value: string } | null>(null);
+  const [editing, setEditingState] = useState<{ id: string; value: string } | null>(null);
+  // the rename as of now: Enter (or Escape) and the blur that moving the focus off the field makes are one end of it, not two
+  const editNow = useRef<{ id: string; value: string } | null>(null);
+  const setEditing = (e: { id: string; value: string } | null) => { editNow.current = e; setEditingState(e); };
   const [selected, setSelectedState] = useState<string | null>(null);
   const selRef = useRef<string | null>(null);
   const setSelected = (p: string | null) => { selRef.current = p; setSelectedState(p); };
@@ -155,8 +158,9 @@ export function Notebook({ nb, page, active, onOpen, children }: Props) {
     setEditing({ id: path, value: title(path) });
   };
   const commitRename = () => {
-    if (!editing) return;
-    const { id, value } = editing;
+    const at = editNow.current;
+    if (!at) return;
+    const { id, value } = at;
     setEditing(null);
     if (value.trim() && value.trim() !== title(id)) renameNode(id, value).then((to) => { if (selRef.current === id) setSelected(to); }).catch(fail);
     boxRef.current?.focus();

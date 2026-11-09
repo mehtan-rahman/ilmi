@@ -7,7 +7,10 @@
 // debug build carries). A collection that has one is connected to it (an
 // empty storage takes the collection, an empty collection takes the
 // storage's) and synced: on open, three seconds after a write, when the
-// window comes back, and every half minute. The strip says what 53's
+// window comes back, and every half minute. A storage that cannot be made
+// at the open (a folder not mounted, no iCloud, no network) is tried again
+// as often, and when the window comes back; a sign-in the service has let
+// go of stops the syncing until it is signed in again. The strip says what 53's
 // said; a paragraph both devices changed is merged by character, named in
 // a notice, and counted in the strip until its file is opened. Git sync
 // (`sync.ts`) does not run for a collection that syncs this way.
@@ -86,12 +89,17 @@ export async function storageDir(): Promise<string | null> {
  * `met`: the collection and the storage have met (`connect`); until then each sync tries again, so a device that opens with no network meets its storage when there is one.
  * `run`: the sync under way, done or failed; `next`: the one asked for while it runs, which every ask meanwhile is. One sync at a time, then, however many
  * the poll, a write, the focus and a leave ask for while a storage is slow, and the strip says pulling until the last of them is done.
+ * `gone`: the service let go of the sign-in; nothing goes to the storage until it is signed in again (a new opening), and what is written waits in the engine.
  */
-interface Open { vault: Vault; eng: Engine; storage: Storage; met: boolean; syncing: boolean; run: Promise<void> | null; next: Promise<Synced | null> | null }
+interface Open { vault: Vault; eng: Engine; storage: Storage; met: boolean; syncing: boolean; run: Promise<void> | null; next: Promise<Synced | null> | null; gone: boolean }
 let open: Open | null = null;
+/** A start whose storage could not be made: tried again by the poll's timer and the focus, one try at a time (`trying`), until it is made or the collection closes. */
+interface Broken { vault: Vault; fs: StoreFs; eng: Engine; settings: StorageSettings; mine: number; trying: boolean }
+let broken: Broken | null = null;
 /** Counts each start and stop: a start whose storage comes after the collection closed, or after a start since, lets it go. */
 let opening = 0;
 let writeTimer: ReturnType<typeof setTimeout> | null = null;
+/** The poll while open; while broken, the try at the storage again. */
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 let unsubscribe: (() => void) | null = null;
 let lastSync = 0;
@@ -139,7 +147,7 @@ async function listenProgress(): Promise<void> {
 /** The files this device keeps and does not hold yet, fetched one after another; the strip says how far each is. */
 function fetchFiles(): Promise<unknown> {
   const at = open;
-  if (!at || keepFor(at.vault.root) !== 'all') return Promise.resolve();
+  if (!at || at.gone || keepFor(at.vault.root) !== 'all') return Promise.resolve();
   fetching ??= (async () => {
     try {
       if (!(await at.eng.away()).length) return;
@@ -168,11 +176,15 @@ export const filesSettled = (): Promise<unknown> => fetching ?? Promise.resolve(
 export function crdtNow(): Promise<Synced | null> {
   const at = open;
   if (!at) return Promise.resolve(null);
+  if (at.gone) return Promise.reject(new Error(SIGN_IN_AGAIN));
   if (at.next) return at.next;
   if (!at.run) return runSync(at);
   const next = at.run.then(() => {
     at.next = null;
-    return open === at ? runSync(at) : null;
+    if (open !== at) return null;
+    // the one before it found the sign-in gone: this one does not go
+    if (at.gone) { quiet(at); throw new Error(SIGN_IN_AGAIN); }
+    return runSync(at);
   });
   at.next = next;
   return next;
@@ -225,6 +237,13 @@ async function syncOnce(at: Open): Promise<Synced | null> {
       saveStorage(at.vault.root, { ...storageOf(at.vault.root), account: '' });
       if (open === at) notify(SIGN_IN_AGAIN);
     }
+    // and nothing tries again until it is signed in: the timers stop, and the strip says sign in again
+    if (failed === SIGN_IN_AGAIN && open === at) {
+      at.gone = true;
+      if (writeTimer) { clearTimeout(writeTimer); writeTimer = null; }
+      if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+      patch({ gone: true });
+    }
     throw e;
   } finally {
     at.syncing = false;
@@ -237,7 +256,7 @@ async function syncOnce(at: Open): Promise<Synced | null> {
 function onWrite(): void {
   writes++;
   void refresh().catch(() => {});
-  if (!timers) return;
+  if (!timers || open?.gone) return;
   if (writeTimer) clearTimeout(writeTimer);
   writeTimer = setTimeout(() => { writeTimer = null; void crdtNow().catch(() => {}); }, WRITE_QUIET_MS);
 }
@@ -249,13 +268,15 @@ export function crdtWrote(): void {
 
 /** The app is left (`away.ts`): what was written since the last sync goes out now. Resolves to whether there was any. */
 async function crdtLeave(): Promise<boolean> {
-  if (!open || (!timers && !leaveForced()) || writes === sentWrites) return false;
+  if (!open || open.gone || (!timers && !leaveForced()) || writes === sentWrites) return false;
   await crdtNow();
   return true;
 }
 
 function onFocus(): void {
-  if (!open || !timers || Date.now() - lastSync < FOCUS_GAP_MS) return;
+  if (!timers) return;
+  if (broken) { void retry(); return; }
+  if (!open || open.gone || Date.now() - lastSync < FOCUS_GAP_MS) return;
   void crdtNow().catch(() => {});
 }
 
@@ -265,8 +286,13 @@ export function setCrdtTimers(on: boolean): void {
   if (!on) {
     if (writeTimer) { clearTimeout(writeTimer); writeTimer = null; }
     if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
-  } else if (open && !pollTimer) pollTimer = setInterval(() => { void crdtNow().catch(() => {}); }, POLL_MS);
+  } else if (!pollTimer) {
+    if (open && !open.gone) pollTimer = setInterval(poll, POLL_MS);
+    else if (broken) pollTimer = setInterval(() => void retry(), POLL_MS);
+  }
 }
+
+const poll = (): void => { void crdtNow().catch(() => {}); };
 
 /** Whether the open collection syncs through a storage. */
 export const crdtOn = (): boolean => open !== null;
@@ -290,47 +316,86 @@ export async function startCrdt(vault: Vault): Promise<boolean> {
   failed = null;
   const eng = engineFor(fs, vault.root);
   useApp.setState({ sync: { ...SYNC_OFF, on: true, busy: 'pushing' } });
+  let storage: Storage;
   try {
-    const storage = await storageFor(settings, vault.root);
-    if (mine !== opening) return true;
-    const at: Open = { vault, eng, storage, met: false, syncing: false, run: null, next: null };
-    open = at;
-    // a file that is not here is asked of the storage by whoever reads it: the PDF lens, an image in a note, an export
-    fs.door.fetcher(async (hash) => {
-      if (open === at) patch({ busy: 'pulling' });
-      try {
-        await eng.fetch(storage, hash);
-      } finally {
-        quiet(at);
-        publishAway(vault);
-      }
-    });
-    if (!listening) {
-      listening = true;
-      window.addEventListener('focus', onFocus);
-      document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') onFocus(); });
-      onLeave(crdtLeave);
-      await listenProgress().catch((e: unknown) => console.error('progress', e));
-      if (open !== at) return true;
-    }
-    unsubscribe = vault.subscribe(onWrite);
-    if (timers) pollTimer = setInterval(() => { void crdtNow().catch(() => {}); }, POLL_MS);
-    // the two meet, and sync; a storage that is not reached now is tried again by the timers
-    await crdtNow().catch(() => { if (open === at) note(failed ?? 'offline'); });
+    storage = await storageFor(settings, vault.root);
   } catch (e) {
     console.error('crdt', e);
     if (mine !== opening) return true;
     failed = e instanceof Error ? e.message : String(e);
     patch({ on: true, busy: null, offline: true });
     note(failed);
+    // tried again with the poll's cadence, and when the window comes back
+    broken = { vault, fs, eng, settings, mine, trying: false };
+    void listen();
+    if (timers) pollTimer = setInterval(() => void retry(), POLL_MS);
+    return true;
   }
+  if (mine !== opening) return true;
+  await meet(vault, fs, eng, storage);
   return true;
+}
+
+/** The storage of a broken start, tried again: one try at a time; one made after the collection closed or started again is let go, and one made in time opens it as a first start would. The strip says offline until a sync reaches it. */
+async function retry(): Promise<void> {
+  const b = broken;
+  if (!b || b.trying) return;
+  b.trying = true;
+  let storage: Storage;
+  try {
+    storage = await storageFor(b.settings, b.vault.root);
+  } catch (e) {
+    if (b.mine === opening) { b.trying = false; failed = e instanceof Error ? e.message : String(e); }
+    return;
+  }
+  if (b.mine !== opening) return;
+  broken = null;
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  failed = null;
+  await meet(b.vault, b.fs, b.eng, storage);
+}
+
+/** The window's focus and the leave, listened for once; resolves when the files' progress is listened for too, null when it was already. */
+function listen(): Promise<void> | null {
+  if (listening) return null;
+  listening = true;
+  window.addEventListener('focus', onFocus);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') onFocus(); });
+  onLeave(crdtLeave);
+  return listenProgress().catch((e: unknown) => console.error('progress', e));
+}
+
+/** The storage made: the collection syncs through it from now on, and the two meet. */
+async function meet(vault: Vault, fs: StoreFs, eng: Engine, storage: Storage): Promise<void> {
+  const at: Open = { vault, eng, storage, met: false, syncing: false, run: null, next: null, gone: false };
+  open = at;
+  // a file that is not here is asked of the storage by whoever reads it: the PDF lens, an image in a note, an export
+  fs.door.fetcher(async (hash) => {
+    if (at.gone) throw new Error(SIGN_IN_AGAIN);
+    if (open === at) patch({ busy: 'pulling' });
+    try {
+      await eng.fetch(storage, hash);
+    } finally {
+      quiet(at);
+      publishAway(vault);
+    }
+  });
+  const progress = listen();
+  if (progress) {
+    await progress;
+    if (open !== at) return;
+  }
+  unsubscribe = vault.subscribe(onWrite);
+  if (timers) pollTimer = setInterval(poll, POLL_MS);
+  // the two meet, and sync; a storage that is not reached now is tried again by the timers
+  await crdtNow().catch(() => { if (open === at) note(failed ?? 'offline'); });
 }
 
 /** The collection is closing: what was written goes out, best effort, and the timers stop. */
 export function stopCrdt(): void {
   const at = open;
   open = null;
+  broken = null;
   opening += 1;
   unsubscribe?.();
   unsubscribe = null;
@@ -341,7 +406,8 @@ export function stopCrdt(): void {
   if (at) {
     storeOf(at.vault)?.door.fetcher(null);
     useApp.setState({ sync: SYNC_OFF });
-    void at.eng.sync(at.storage, { files: false }).catch(() => { /* the next open sends it */ });
+    // not to a service that let go of the sign-in: what is written waits in the engine for the next sign-in
+    if (!at.gone) void at.eng.sync(at.storage, { files: false }).catch(() => { /* the next open sends it */ });
   }
 }
 

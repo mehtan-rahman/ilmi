@@ -12,12 +12,17 @@
 // The chart, `CHART` below, says what the controller should do. Its
 // states: `closed` (no collection syncs through a storage), `starting`
 // (the storage being made), `open` with no sync, one, or one and one more
-// asked for (`run` 0, 1, 2), and `broken` (the storage could not be made:
-// the strip says offline and nothing tries again until the next open).
+// asked for (`run` 0, 1, 2), `broken` (the storage could not be made: the
+// strip says offline, and it is tried again every half minute and on a
+// focus, one try at a time, `trying`; one made opens it as a first start
+// does), and `revoked` (a sync found the sign-in gone: nothing goes to the
+// storage, no timer runs, and the strip says sign in again until a sign-in
+// starts it afresh; what was written meanwhile goes with that one's sync).
 // What it holds beside: whether the strip says offline, the write timer
-// and the poll, how long since a sync reached the storage (a focus syncs
-// only past ten seconds), and the writes the last sync to start had seen
-// (a leave sends only when there are more).
+// and the poll (the retry's timer while broken), how long since a sync
+// reached the storage (a focus syncs only past ten seconds), and the
+// writes the last sync to start had seen (a leave sends only when there
+// are more).
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { StorageSettings } from '../storage.js';
@@ -26,7 +31,8 @@ import type { SyncState } from '../sync.js';
 const h = vi.hoisted(() => {
   /** A sync asked of the engine: which opening of the collection asked (`epoch`), whether it is the last one a close sends, and what it carries once it runs. */
   interface Job { id: number; epoch: number; final: boolean; granted: boolean; settled: boolean; carry: number; res: (v: unknown) => void; rej: (e: unknown) => void }
-  interface Made { id: number; epoch: number; settled: boolean; res: (v: unknown) => void; rej: (e: unknown) => void }
+  /** A storage being made: `again` when its opening made one before (a broken start's try again). */
+  interface Made { id: number; epoch: number; again: boolean; settled: boolean; res: (v: unknown) => void; rej: (e: unknown) => void }
   const state = {
     epoch: 0,
     jobs: [] as Job[],
@@ -107,7 +113,7 @@ vi.mock('../storage.js', () => {
     devStorages: async () => ({}),
     signIn: async () => 'me@example.com',
     signOut: async () => {},
-    storageFor: () => new Promise((res, rej) => { h.state.storages.push({ id: ++h.state.ids, epoch: h.state.epoch, settled: false, res, rej }); }),
+    storageFor: () => new Promise((res, rej) => { h.state.storages.push({ id: ++h.state.ids, epoch: h.state.epoch, again: h.state.storages.some((s) => s.epoch === h.state.epoch), settled: false, res, rej }); }),
   };
 });
 
@@ -120,7 +126,7 @@ const GONE = 'sign in again';
 
 // ── the chart ─────────────────────────────────────────────────────
 
-type Phase = 'closed' | 'starting' | 'open' | 'broken';
+type Phase = 'closed' | 'starting' | 'open' | 'broken' | 'revoked';
 interface M {
   phase: Phase;
   /** The opening of the collection the controller is on: the test's count of opens and sign-ins. */
@@ -130,8 +136,10 @@ interface M {
   offline: boolean;
   /** The write timer, ms to go; null when none. */
   armed: number | null;
-  /** The poll, ms to go. */
+  /** The poll, ms to go; while broken, the retry's timer. */
   poll: number;
+  /** Broken, and its storage being made again. */
+  trying: boolean;
   /** Since a sync last reached the storage, ms. */
   since: number;
   /** Writes the controller has been told of, and how many of them the last sync to start had seen (the one before it, for a sync that fails). */
@@ -167,6 +175,8 @@ const done = (m: M, ok: boolean): M => {
 /** Time passes: the write timer and the poll fire when due. */
 function tick(m: M, ms: number): M {
   let n: M = { ...m, since: Math.min(m.since + ms, 1e9) };
+  // broken: the retry's timer, which tries unless a try is under way
+  if (n.phase === 'broken') return n.poll > ms ? { ...n, poll: n.poll - ms } : { ...n, poll: n.poll + POLL_MS - ms, trying: true };
   if (n.phase !== 'open') return n;
   const write = n.armed !== null && n.armed <= ms;
   const poll = n.poll <= ms;
@@ -178,25 +188,29 @@ function tick(m: M, ms: number): M {
 
 interface Transition { from: Phase[]; on: Ev['e']; guard?: (m: M, ev: Ev, env: Env) => boolean; to: (m: M, ev: Ev, env: Env) => M; says: string }
 const current = (m: M, _ev: Ev, env: Env) => env.head !== null && !env.head.final && env.head.epoch === m.epoch && m.phase === 'open';
-const mine = (m: M, ev: Ev, env: Env) => 'i' in ev && env.storage(ev.i)?.epoch === m.epoch && m.phase === 'starting';
+const mine = (m: M, ev: Ev, env: Env) => 'i' in ev && env.storage(ev.i)?.epoch === m.epoch && (m.phase === 'starting' || (m.phase === 'broken' && m.trying));
 
 /** The statechart, as data: the first transition whose phase, event and guard match is taken; an event none takes changes nothing. */
 const CHART: Transition[] = [
-  { from: ['closed', 'broken'], on: 'open', to: (m) => ({ ...m, phase: 'starting', epoch: m.epoch + 1, run: 0, offline: false, armed: null, account: true }), says: 'starting' },
-  { from: ['starting'], on: 'storageOk', guard: mine, to: (m) => ask({ ...m, phase: 'open', poll: POLL_MS }), says: 'open, its first sync running' },
-  { from: ['starting'], on: 'storageFail', guard: mine, to: (m) => ({ ...m, phase: 'broken', offline: true }), says: 'broken' },
-  { from: ['starting', 'open', 'broken'], on: 'close', to: (m) => ({ ...m, phase: 'closed', run: 0, offline: false, armed: null }), says: 'closed' },
-  { from: ['starting', 'open', 'broken'], on: 'signIn', to: (m) => ({ ...m, phase: 'starting', epoch: m.epoch + 1, run: 0, offline: false, armed: null, account: true }), says: 'starting again' },
-  { from: ['starting', 'open', 'broken'], on: 'signOut', guard: (m) => m.account, to: (m) => ({ ...m, phase: 'closed', run: 0, offline: false, armed: null, account: false }), says: 'closed (git may sync)' },
+  { from: ['closed', 'broken'], on: 'open', to: (m) => ({ ...m, phase: 'starting', epoch: m.epoch + 1, run: 0, offline: false, armed: null, trying: false, account: true }), says: 'starting' },
+  // made at the open, or by a try again from broken (the strip offline until its first sync reaches it)
+  { from: ['starting', 'broken'], on: 'storageOk', guard: mine, to: (m) => ask({ ...m, phase: 'open', poll: POLL_MS, trying: false }), says: 'open, its first sync running' },
+  { from: ['starting'], on: 'storageFail', guard: mine, to: (m) => ({ ...m, phase: 'broken', offline: true, poll: POLL_MS }), says: 'broken, the retry timer set' },
+  { from: ['broken'], on: 'storageFail', guard: mine, to: (m) => ({ ...m, trying: false }), says: 'still broken' },
+  { from: ['broken'], on: 'focus', guard: (m) => !m.trying, to: (m) => ({ ...m, trying: true }), says: 'the storage tried again' },
+  { from: ['starting', 'open', 'broken', 'revoked'], on: 'close', to: (m) => ({ ...m, phase: 'closed', run: 0, offline: false, armed: null, trying: false }), says: 'closed' },
+  { from: ['starting', 'open', 'broken', 'revoked'], on: 'signIn', to: (m) => ({ ...m, phase: 'starting', epoch: m.epoch + 1, run: 0, offline: false, armed: null, trying: false, account: true }), says: 'starting again' },
+  { from: ['starting', 'open', 'broken'], on: 'signOut', guard: (m) => m.account, to: (m) => ({ ...m, phase: 'closed', run: 0, offline: false, armed: null, trying: false, account: false }), says: 'closed (git may sync)' },
   { from: ['open'], on: 'write', to: (m) => ({ ...m, writes: m.writes + 1, armed: WRITE_QUIET_MS }), says: 'the write timer set' },
+  { from: ['revoked'], on: 'write', to: (m) => ({ ...m, writes: m.writes + 1 }), says: 'kept in the engine, no timer' },
   { from: ['open'], on: 'focus', guard: (m) => m.since >= FOCUS_GAP_MS, to: ask, says: 'a sync asked for' },
   { from: ['open'], on: 'leave', guard: (m) => m.writes !== m.mark, to: ask, says: 'a sync asked for' },
-  { from: ['closed', 'starting', 'open', 'broken'], on: 'tick', to: (m, ev) => tick(m, (ev as { ms: number }).ms), says: 'the timers fire when due' },
+  { from: ['closed', 'starting', 'open', 'broken', 'revoked'], on: 'tick', to: (m, ev) => tick(m, (ev as { ms: number }).ms), says: 'the timers fire when due' },
   { from: ['open'], on: 'syncOk', guard: current, to: (m) => done(m, true), says: 'synced; the next, if asked for' },
   { from: ['open'], on: 'syncFail', guard: current, to: (m) => done(m, false), says: 'offline; the next, if asked for' },
-  { from: ['open'], on: 'syncGone', guard: current, to: (m) => ({ ...done(m, false), account: false }), says: 'offline, signed out; the next, if asked for' },
+  { from: ['open'], on: 'syncGone', guard: current, to: (m) => ({ ...m, phase: 'revoked', run: 0, offline: true, armed: null, mark: m.prev, account: false }), says: 'revoked: no timer, and the one after it does not go' },
   // a sync of an earlier opening, or a close's last: only the clock it reached the storage by
-  { from: ['closed', 'starting', 'open', 'broken'], on: 'syncOk', guard: (_m, _e, env) => env.head !== null && !env.head.final, to: (m) => ({ ...m, since: 0 }), says: 'nothing (an earlier sync done)' },
+  { from: ['closed', 'starting', 'open', 'broken', 'revoked'], on: 'syncOk', guard: (_m, _e, env) => env.head !== null && !env.head.final, to: (m) => ({ ...m, since: 0 }), says: 'nothing (an earlier sync done)' },
 ];
 
 function step(m: M, ev: Ev, env: Env): M {
@@ -204,7 +218,7 @@ function step(m: M, ev: Ev, env: Env): M {
   return t ? t.to(m, ev, env) : m;
 }
 
-const M0: M = { phase: 'closed', epoch: 0, run: 0, offline: false, armed: null, poll: POLL_MS, since: 1e9, writes: 0, mark: 0, prev: 0, account: true };
+const M0: M = { phase: 'closed', epoch: 0, run: 0, offline: false, armed: null, poll: POLL_MS, trying: false, since: 1e9, writes: 0, mark: 0, prev: 0, account: true };
 
 // ── the real controller under the chart ───────────────────────────
 
@@ -278,6 +292,8 @@ const SYNCED = { read: 0, wrote: 1, kept: [], changed: [], took: 0, snapped: fal
 async function apply(r: Run, ev: Ev): Promise<void> {
   const before = env();
   const next = step(r.m, ev, before);
+  const revoked = r.m.phase === 'revoked';
+  const calls = h.state.jobs.length + h.state.storages.length;
   switch (ev.e) {
     case 'open':
       h.state.epoch += 1;
@@ -300,7 +316,7 @@ async function apply(r: Run, ev: Ev): Promise<void> {
       void r.crdt.signOutStorage();
       break;
     case 'write':
-      if (r.m.phase === 'open' || r.m.phase === 'starting' || r.m.phase === 'broken') r.vault.write();
+      if (r.m.phase !== 'closed') r.vault.write();
       break;
     case 'tick':
       vi.advanceTimersByTime(ev.ms);
@@ -332,6 +348,8 @@ async function apply(r: Run, ev: Ev): Promise<void> {
   }
   r.m = next;
   await flush();
+  // revoked, nothing is asked of the storage (a close's last sync neither) until a sign-in starts afresh
+  if (revoked && next.phase !== 'starting') expect(h.state.jobs.length + h.state.storages.length - calls, `${name(ev)} while revoked: calls to the storage`).toBe(0);
 }
 
 /** The chart's invariants, held against the real controller. */
@@ -342,9 +360,12 @@ function check(r: Run, path: string): void {
   const live = h.state.jobs.filter((j) => !j.settled && !j.final && j.epoch === m.epoch && m.phase === 'open').length;
   // at most one sync of the open collection asked of the engine, and one exactly while the chart has one running
   expect(live, `${at}: syncs of the open collection in the engine`).toBe(m.run > 0 ? 1 : 0);
-  expect(r.crdt.crdtOn(), `${at}: crdtOn`).toBe(m.phase === 'open');
-  // the timers: the poll and the write timer while open, none otherwise
-  expect(vi.getTimerCount(), `${at}: timers`).toBe(m.phase === 'open' ? 1 + (m.armed !== null ? 1 : 0) : 0);
+  // revoked, the collection is still the storage's (not one for the other sync to start on), waiting for a sign-in
+  expect(r.crdt.crdtOn(), `${at}: crdtOn`).toBe(m.phase === 'open' || m.phase === 'revoked');
+  // the timers: the poll and the write timer while open, the retry's while broken, none otherwise
+  expect(vi.getTimerCount(), `${at}: timers`).toBe(m.phase === 'open' ? 1 + (m.armed !== null ? 1 : 0) : m.phase === 'broken' ? 1 : 0);
+  // at most one storage being made for this opening: while it starts, and while broken and trying again
+  if (m.phase !== 'closed') expect(h.state.storages.filter((s) => !s.settled && s.epoch === m.epoch).length, `${at}: storages being made`).toBe(m.phase === 'starting' || (m.phase === 'broken' && m.trying) ? 1 : 0);
   // the strip
   if (m.phase === 'closed') expect(sync.on, `${at}: strip on`).toBe(false);
   else {
@@ -352,6 +373,7 @@ function check(r: Run, path: string): void {
     const busy = m.phase === 'starting' ? 'pushing' : m.phase === 'open' && m.run > 0 ? 'pulling' : null;
     expect(sync.busy, `${at}: strip busy`).toBe(busy);
     expect(sync.offline, `${at}: strip offline`).toBe(m.offline);
+    expect(sync.gone === true, `${at}: strip says sign in again`).toBe(m.phase === 'revoked');
     if (m.phase === 'open' && m.run === 0) expect(sync.toPush, `${at}: strip to push`).toBe(h.state.written - h.state.sent);
   }
 }
@@ -374,8 +396,8 @@ const name = (ev: Ev): string => ev.e + ('ms' in ev ? `(${ev.ms / 1000}s)` : 'i'
 function key(r: Run): string {
   const m = r.m;
   const jobs = h.state.jobs.filter((j) => !j.settled).map((j) => `${j.final ? 'f' : j.epoch === m.epoch ? 'c' : 'o'}${j.granted ? '!' : ''}${j.carry === h.state.written ? '' : '<'}`).join(',');
-  const st = h.state.storages.map((s, i) => (s.settled ? '' : `${i}${s.epoch === m.epoch ? 'c' : 'o'}`)).join(',');
-  return JSON.stringify([m.phase, m.run, m.offline, m.armed, m.poll, Math.min(m.since, FOCUS_GAP_MS), m.writes - m.mark, m.writes - m.prev, m.account, h.state.written - h.state.sent, jobs, st]);
+  const st = h.state.storages.map((s, i) => (s.settled ? '' : `${i}${s.epoch === m.epoch ? 'c' : 'o'}${s.again ? 'r' : ''}`)).join(',');
+  return JSON.stringify([m.phase, m.run, m.offline, m.armed, m.poll, m.trying, Math.min(m.since, FOCUS_GAP_MS), m.writes - m.mark, m.writes - m.prev, m.account, h.state.written - h.state.sent, jobs, st]);
 }
 
 async function replay(path: Ev[]): Promise<Run> {
@@ -469,6 +491,78 @@ describe('the storage sync, against its chart', () => {
     it('leaving after a sync that did not reach the storage sends what was written', async () => {
       const r = await run([{ e: 'open' }, { e: 'storageOk', i: 0 }, { e: 'syncOk' }, { e: 'write' }, { e: 'tick', ms: WRITE_QUIET_MS }, { e: 'syncFail' }, { e: 'leave' }]);
       expect(h.state.jobs.filter((j) => !j.settled).length).toBe(1);
+      teardown(r);
+    });
+  });
+
+  describe('a storage that could not be made, and a sign-in let go of', () => {
+    const run = async (path: Ev[]): Promise<Run> => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] });
+      return replay(path);
+    };
+    const word = async (r: Run): Promise<string | null> => (await vi.importActual<Git>('../sync.js')).syncWord(r.store.useApp.getState().sync);
+
+    it('broken: tried again every half minute, one try at a time; one made opens it as a first start does, and what was written goes', async () => {
+      const r = await run([{ e: 'open' }, { e: 'storageFail', i: 0 }, { e: 'write' }, { e: 'tick', ms: POLL_MS }, { e: 'tick', ms: POLL_MS }, { e: 'focus' }]);
+      // the first try still under way: the timer and the focus since made no second
+      expect(h.state.storages.length).toBe(2);
+      expect(await word(r)).toBe('offline');
+      await apply(r, { e: 'storageOk', i: 1 });
+      check(r, 'made');
+      expect(r.crdt.crdtOn()).toBe(true);
+      // the poll, not the retry's timer
+      expect(vi.getTimerCount()).toBe(1);
+      await apply(r, { e: 'syncOk' });
+      check(r, 'synced');
+      expect(await word(r)).toBe('synced');
+      expect(h.state.sent).toBe(h.state.written);
+      teardown(r);
+    });
+
+    it('broken: a focus tries again at once, and a try that failed waits for the next', async () => {
+      const r = await run([{ e: 'open' }, { e: 'storageFail', i: 0 }, { e: 'focus' }, { e: 'storageFail', i: 1 }]);
+      expect(h.state.storages.length).toBe(2);
+      expect(vi.getTimerCount()).toBe(1);
+      await apply(r, { e: 'focus' });
+      expect(h.state.storages.length).toBe(3);
+      teardown(r);
+    });
+
+    it('broken: a try that comes after a close, or after a sign-in, is let go', async () => {
+      const r = await run([{ e: 'open' }, { e: 'storageFail', i: 0 }, { e: 'focus' }, { e: 'close' }, { e: 'storageOk', i: 1 }]);
+      expect(r.crdt.crdtOn()).toBe(false);
+      expect(vi.getTimerCount()).toBe(0);
+      expect(h.state.jobs.length).toBe(0);
+      teardown(r);
+      const s = await run([{ e: 'open' }, { e: 'storageFail', i: 0 }, { e: 'focus' }, { e: 'signIn' }, { e: 'storageOk', i: 1 }]);
+      expect(s.crdt.crdtOn()).toBe(false);
+      expect(h.state.jobs.length).toBe(0);
+      await apply(s, { e: 'storageOk', i: 2 });
+      check(s, 'the sign-in\'s made');
+      expect(h.state.jobs.filter((j) => !j.settled).length).toBe(1);
+      teardown(s);
+    });
+
+    it('revoked: nothing goes to the storage, no timer runs, the strip says sign in again; a sign-in sends what was written meanwhile', async () => {
+      const r = await run([{ e: 'open' }, { e: 'storageOk', i: 0 }, { e: 'tick', ms: POLL_MS }, { e: 'syncGone' }]);
+      expect(r.store.useApp.getState().sync.busy).toBe(null);
+      expect(await word(r)).toBe('sign in again');
+      expect(vi.getTimerCount()).toBe(0);
+      const asked = h.state.jobs.length;
+      for (const ev of [{ e: 'write' }, { e: 'tick', ms: WRITE_QUIET_MS }, { e: 'tick', ms: POLL_MS }, { e: 'tick', ms: POLL_MS }, { e: 'focus' }, { e: 'leave' }] as Ev[]) {
+        await apply(r, ev);
+        check(r, name(ev));
+      }
+      await expect(r.crdt.crdtNow()).rejects.toThrow(GONE);
+      expect(h.state.jobs.length).toBe(asked);
+      expect(await word(r)).toBe('sign in again');
+      await apply(r, { e: 'signIn' });
+      await apply(r, { e: 'storageOk', i: 1 });
+      check(r, 'signed in again');
+      while (headOf()) await apply(r, { e: 'syncOk' });
+      check(r, 'synced');
+      expect(await word(r)).toBe('synced');
+      expect(h.state.sent).toBe(h.state.written);
       teardown(r);
     });
   });

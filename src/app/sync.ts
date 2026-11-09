@@ -57,6 +57,8 @@ export interface SyncState {
   at: number | null;
   /** A file on its way to or from the storage (`crdt.ts`, milestone 63): which way, and how much of it has gone, 0 to 1. */
   progress?: { up: boolean; part: number } | null;
+  /** The storage's service let go of the sign-in (`crdt.ts`): nothing syncs until it is signed in again, and the strip says so. */
+  gone?: boolean;
 }
 
 export const SYNC_OFF: SyncState = { on: false, repo: false, busy: null, offline: false, toPush: 0, conflicts: [], at: null, progress: null };
@@ -108,6 +110,7 @@ export function syncWord(s: SyncState): string | null {
   if (s.progress) return `${s.progress.up ? 'pushing' : 'pulling'} ${Math.min(99, Math.floor(s.progress.part * 100))}%`;
   if (s.busy === 'pulling') return 'pulling…';
   if (s.busy === 'pushing') return 'pushing…';
+  if (s.gone) return 'sign in again';
   if (s.offline) return 'offline';
   if (s.toPush) return `${s.toPush} to push`;
   return 'synced';

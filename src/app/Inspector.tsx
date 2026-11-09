@@ -17,7 +17,7 @@ import { cardName, formLabel } from './chrome.js';
 import { breakdown, countsUnder, dueItems, plainMath } from './chromeText.js';
 import { MathText } from './MathText.js';
 import { FORM_LABEL, dueLabel, dueWhen, examDay, examName, examWhen, fmtDays, leftLines, standsWords, dueTone } from './items.js';
-import { INTAKE, QUEUE_TITLE, SESSION, findNode, noteOf, notesPath, queueScope, titleOf } from './names.js';
+import { INTAKE, QUEUE_TITLE, SESSION, cardsPath, findNode, noteOf, notesPath, queueScope, titleOf } from './names.js';
 import { activeTab } from './panes.js';
 import { useApp, type CaretHeading, type DocInfo } from './store.js';
 import { useDoc } from './useDoc.js';
@@ -811,10 +811,10 @@ export function Inspector() {
       const at: CaretHeading | null = caret?.path === cur.path ? caret : cur.kind === 'section' ? { path: cur.path, nth: -1, text: cur.heading } : null;
       body = <WithDoc id={cur.path} render={(doc, info) => <>{at && <SectionBlock path={cur.path} doc={doc} at={at} now={now} />}<DocInspector id={cur.path} info={info} doc={doc} now={now} /></>} />;
     }
-  } else if (!isDoc(id) && !isPdfPath(id) && notesPath(id) === null) body = <FolderInspector id={id} />;
+  } else if (!isDoc(id) && !isPdfPath(id) && notesPath(id) === null && cardsPath(id) === null) body = <FolderInspector id={id} />;
   else {
-    // the notes on a document's pages, in their own tab: the document's own inspector
-    const own = notesPath(id) ?? id;
+    // the notes on a document's pages, or its cards one at a time, in their own tab: the document's own inspector (the card on show first)
+    const own = notesPath(id) ?? cardsPath(id) ?? id;
     body = (
       <WithDoc id={own} render={(doc, info) => (
         <>

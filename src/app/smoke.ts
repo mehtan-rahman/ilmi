@@ -12990,6 +12990,8 @@ export async function smokeCardView(vault: Vault): Promise<void> {
     await poll(() => q('.recall-wrap .card .face.front'), 'a session over the deck');
     const item = useApp.getState().session!.items[0] as CardItem;
     const head = q('.recall-meta .sess-deck')?.textContent;
+    // the card's document read (the boxes edit the card as the file holds it)
+    await sleep(800);
     key('e');
     const front = await poll(() => q<HTMLElement>('.recall-wrap .card.editing .face.front .face-field'), '`e` turns the boxes into editors in place');
     key(' ', front);

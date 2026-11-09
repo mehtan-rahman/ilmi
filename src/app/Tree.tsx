@@ -114,7 +114,7 @@ export function Tree({ activeId, onOpen }: Props) {
   const rowName = (path: string) => {
     const r = rows.find((x) => x.path === path);
     if (r?.card) return frontLine(r.card.text);
-    if (r?.cards) return `${r.cards.n} cards`;
+    if (r?.cards) return `${r.cards.n} card${r.cards.n === 1 ? '' : 's'}`;
     return title(path);
   };
 
@@ -321,7 +321,7 @@ export function Tree({ activeId, onOpen }: Props) {
       {guides(r.depth)}
       <span className="chev"><Glyph g={r.open ? '▾' : '▸'} /></span>
       <span className="glyph card"><Icon name="card" /></span>
-      <span className="name">{r.cards!.n} cards</span>
+      <span className="name">{r.cards!.n} card{r.cards!.n === 1 ? '' : 's'}</span>
     </div>
   );
 

@@ -20,6 +20,13 @@ function rekeyTab(id: string, from: string, to: string): string | null {
   return next === null ? null : notesId(next);
 }
 
+/** The vault path a tab shows (a `:notes/` or `:cards/` tab's document), or null for a lens of the app's own (the intake, a session, a queue). */
+export function tabNode(id: string): string | null {
+  const own = cardsPath(id) ?? notesPath(id);
+  if (own !== null) return own;
+  return id.startsWith(':') ? null : id;
+}
+
 export interface Tab {
   /** React key; survives re-targeting. */
   key: number;

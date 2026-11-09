@@ -20,7 +20,7 @@ import { cleanViews, type DeckView } from './deck.js';
 import { cleanBudget, dueToday, sessionItems } from './items.js';
 import { INTAKE, SESSION, cardsId, cardsPath, notesPath, queueId, queueScope } from './names.js';
 import { bookShown, inspectorShown } from './layout.js';
-import { activeTab, dropTabs, emptyPanes, openTab, retarget, type OpenOpts, type Panes } from './panes.js';
+import { activeTab, dropTabs, emptyPanes, openTab, retarget, tabNode, type OpenOpts, type Panes } from './panes.js';
 import { NEVER, collectionRows, collectionsHome, isMobile, isPhone, loadPlatform, setCollectionsHome } from './platform.js';
 import { addRecent, decideStart, forgetRecent, vaultName } from './recents.js';
 import { STARTER_TEXT, STARTER_TITLE } from './starter.js';
@@ -490,11 +490,12 @@ function publishTree(vault: Vault): void {
     }
   };
   visit(vault.tree);
-  const was = useApp.getState().open;
+  const s = useApp.getState();
+  const was = s.open;
   const open: Record<string, true> = {};
   // a document's `n cards` row (`:cards/<doc>`) is kept while the document is
   for (const k of Object.keys(was)) if (present.has(cardsPath(k) ?? k)) open[k] = true;
-  useApp.setState({ vault: vault.root, files: vault.documents(), tree: vault.tree, open });
+  useApp.setState({ vault: vault.root, files: vault.documents(), tree: vault.tree, open, panes: tabsIn(s.panes, present, s.docs) });
   if (Object.keys(open).length !== Object.keys(was).length) queueSave({ folders: Object.keys(open) });
 }
 
@@ -521,6 +522,21 @@ const rekeyOpen = (open: Record<string, true>, from: string, to: string): Record
   for (const k of Object.keys(open)) out[rekey(k, from, to) ?? k] = true;
   return out;
 };
+
+/**
+ * The tabs on nodes the tree has: one on a node that went closes, as on
+ * `gone` (a page of a notebook goes back to the notebook's overview). The
+ * vault reports `gone` only for a document a page has read; a folder, a
+ * deck, a document's cards, or a tab behind another were never read, and
+ * went with their tabs still open.
+ */
+function tabsIn(panes: Panes, present: Set<string>, docs: Record<string, DocInfo>): Panes {
+  for (;;) {
+    const lost = panes.panes.flatMap((p) => p.tabs).map((t) => tabNode(t.id)).find((n) => n !== null && !present.has(n));
+    if (lost === undefined || lost === null) return panes;
+    panes = dropTabs(pagesToNotebook(panes, lost, docs), lost);
+  }
+}
 
 /** A notebook's page deleted under a tab that shows it: the tab goes back to the notebook's overview, when the notebook is still there. */
 function pagesToNotebook(panes: Panes, gone: string, docs: Record<string, DocInfo>): Panes {

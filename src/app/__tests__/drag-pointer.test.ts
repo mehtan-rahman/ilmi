@@ -29,7 +29,8 @@ function rows() {
     return el;
   });
   const geoms = paths.map((p) => ({ path: p, depth: 1, nest: 'dwell' as const, tail: [p, ''] }));
-  const props = geoms.map((g) => rowDrag(g, surf, { draggable: true }));
+  // each row rendered: its props, and its element handed to the props' ref as React does
+  const props = geoms.map((g, i) => { const p = rowDrag(g, surf, { draggable: true }); p.ref(els[i]!); return p; });
   // the hit test: the row whose band holds y
   document.elementFromPoint = (_x: number, y: number) => els[Math.floor(y / H)] ?? null;
   return { els, props };
@@ -135,6 +136,84 @@ describe('a mouse drag of a row', () => {
     props[0]!.onPointerDown({ button: 0, pointerType: 'mouse', target: acts, currentTarget: els[0], clientX: 50, clientY: 12 } as never);
     ptr('pointermove', 50, 40);
     expect(useDrag.getState().dragging).toBeNull();
+  });
+
+  // found by the drag's statechart (`drag.model.test.ts`)
+  it('a row drawn by two surfaces at once (the tree\'s and a notebook rail\'s, one key) is hit-tested as the one under the pointer', async () => {
+    const { els, props } = rows();
+    // the rail draws b.md too, deeper and nesting at once, rendered after the tree
+    const rail = document.createElement('div');
+    rail.dataset.dropRow = 'b.md';
+    rail.getBoundingClientRect = () => ({ top: 5 * H, height: H, left: 0, bottom: 6 * H, right: 200, width: 200, x: 0, y: 5 * H, toJSON() {} });
+    document.body.appendChild(rail);
+    rowDrag({ path: 'b.md', depth: 3, nest: 'now', tail: ['b.md'] }, { pad: 20, indent: 14 }, { draggable: true }).ref(rail);
+    down(props[0]!, els[0]!, 50, 12);
+    ptr('pointermove', 50, H + 21);
+    // the tree's b.md: after it at depth 1, not the rail's `into` at depth 4
+    expect(useDrag.getState().drop).toMatchObject({ target: 'b.md', mode: 'after', depth: 1 });
+    ptr('pointerup', 50, H + 21);
+    await vi.waitFor(() => expect(calls).toEqual(['place a.md after b.md']));
+  });
+
+  it('Esc ends the drag at once (the row no longer dimmed, nothing ticking), and the let-go and its click after it do nothing', () => {
+    vi.useFakeTimers();
+    const { els, props } = rows();
+    const clicked = vi.fn();
+    els[2]!.addEventListener('click', clicked);
+    down(props[0]!, els[0]!, 50, 12);
+    ptr('pointermove', 50, 2 * H + 3);
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    expect(useDrag.getState()).toEqual({ dragging: null, drop: null });
+    expect(document.querySelector('.drag-ghost')).toBeNull();
+    expect(vi.getTimerCount()).toBe(0);
+    ptr('pointermove', 50, 2 * H + 12);
+    expect(useDrag.getState().drop).toBeNull();
+    ptr('pointerup', 50, 2 * H + 12);
+    els[2]!.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    expect(clicked).not.toHaveBeenCalled();
+    expect(calls).toEqual([]);
+  });
+
+  it('a move with no button down (the let-go missed, outside the window) ends the press: no drag starts, a drag under way lands nowhere', () => {
+    const { els, props } = rows();
+    down(props[0]!, els[0]!, 50, 12);
+    window.dispatchEvent(Object.assign(new Event('pointermove'), { clientX: 50, clientY: 2 * H + 3, buttons: 0 }));
+    expect(useDrag.getState().dragging).toBeNull();
+    down(props[0]!, els[0]!, 50, 12);
+    ptr('pointermove', 50, 2 * H + 3);
+    expect(useDrag.getState().dragging).toBe('a.md');
+    window.dispatchEvent(Object.assign(new Event('pointermove'), { clientX: 50, clientY: 2 * H + 3, buttons: 0 }));
+    expect(useDrag.getState()).toEqual({ dragging: null, drop: null });
+    expect(document.querySelector('.drag-ghost')).toBeNull();
+    ptr('pointerup', 50, 2 * H + 3);
+    expect(calls).toEqual([]);
+  });
+
+  it('the window losing focus mid-drag (⌘-tab) ends it, landing nowhere', () => {
+    const { els, props } = rows();
+    down(props[0]!, els[0]!, 50, 12);
+    ptr('pointermove', 50, 2 * H + 3);
+    // an element's blur is not the window's
+    els[1]!.dispatchEvent(new FocusEvent('blur'));
+    expect(useDrag.getState().dragging).toBe('a.md');
+    window.dispatchEvent(new FocusEvent('blur'));
+    expect(useDrag.getState()).toEqual({ dragging: null, drop: null });
+    expect(document.querySelector('.drag-ghost')).toBeNull();
+    expect(document.documentElement.dataset.nodeDrag).toBeUndefined();
+    ptr('pointerup', 50, 2 * H + 3);
+    expect(calls).toEqual([]);
+  });
+
+  it('a press while a drag is under way (its let-go missed) ends that drag first, so a click after it leaves nothing dragged', () => {
+    const { els, props } = rows();
+    down(props[0]!, els[0]!, 50, 12);
+    ptr('pointermove', 50, 2 * H + 3);
+    expect(useDrag.getState().dragging).toBe('a.md');
+    down(props[1]!, els[1]!, 50, H + 12);
+    expect(useDrag.getState()).toEqual({ dragging: null, drop: null });
+    ptr('pointerup', 50, H + 12);
+    expect(useDrag.getState().dragging).toBeNull();
+    expect(calls).toEqual([]);
   });
 
   it('a row is not the system\'s draggable on a fine pointer (the Mac), so WebKit starts no drag of its own', () => {

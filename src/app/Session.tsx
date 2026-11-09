@@ -13,7 +13,7 @@
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { emitDocAction, emitGrade, runBlockHooks, usePlugins } from '../plugins/index.js';
 import { PRI_DEFAULT, READ_AF, WRITE_AF, blanks, cardFields, cardForm, type Block, type Card } from '../format/index.js';
-import { GRADES, advanceRead, advanceSection, cadence, dayOf, grownAt, lineKey, advanceWrite, dirPri, nextGap, pacedInterval, perPassOf, postponed, readTarget, scheduleOf, type CardItem, type Grade, type QueueItem, type ReadItem, type SectionItem, type WriteItem } from '../schedule/index.js';
+import { GRADES, advanceRead, advanceSection, cadence, dayOf, grownAt, lineKey, advanceWrite, dirPri, nextGap, pacedInterval, perPassOf, postponed, readTarget, regradeFrom, scheduleOf, type CardItem, type Grade, type QueueItem, type ReadItem, type SectionItem, type WriteItem } from '../schedule/index.js';
 import { EL_WORD, FORM_LABEL, doneLine, dueLabel, gapLabels, glyphOf, markOf, ownBlank, paceWords, sourceLabel, standing, trailParts, dueTone } from './items.js';
 import { writeDoc } from './sections.js';
 import { queueId } from './names.js';
@@ -28,7 +28,7 @@ import { studyHeader } from './study.js';
 import { activeExamAt, currentVault, note, openNode, optionsAt } from './vault.js';
 import { openNotes } from './book.js';
 import { sessionEnded } from './sync.js';
-import { gradeCard } from './grading.js';
+import { gradeCard, type Graded } from './grading.js';
 import { CardFaces } from './CardFaces.js';
 import { saveCardEdit } from './deckOps.js';
 import './session.css';
@@ -79,16 +79,18 @@ interface NavProps {
   total: number;
   onPrev(): void;
   onNext(): void;
+  /** › past the last element too, to the end: an item that is gone has nothing else to move it on. */
+  past?: boolean | undefined;
   /** Back to where the session began: a phone's, which has no tab to close (milestone 56). */
   onOut?: (() => void) | undefined;
 }
 
-export function Nav({ idx, total, onPrev, onNext, onOut }: NavProps) {
+export function Nav({ idx, total, onPrev, onNext, onOut, past }: NavProps) {
   return (
     <span className="sess-nav">
       {onOut && <button type="button" className="sn-btn sn-out" aria-label="back" onClick={onOut}><Glyph g="×" /></button>}
       <button type="button" className="sn-btn" onClick={onPrev} disabled={idx === 0}><Icon name="chevron" className="ic-flip" /><span className="gch">‹</span></button>
-      <button type="button" className="sn-btn" onClick={onNext} disabled={idx >= total - 1}><Icon name="chevron" /><span className="gch">›</span></button>
+      <button type="button" className="sn-btn" onClick={onNext} disabled={!past && idx >= total - 1}><Icon name="chevron" /><span className="gch">›</span></button>
     </span>
   );
 }
@@ -144,18 +146,31 @@ function liveCard(blocks: Block[] | undefined, item: CardItem, edited?: string):
   return card && item.dir === 'r' && cardForm(card.text) !== 'bidir' ? null : card;
 }
 
+/** A grade given to an item in this session: shown again on ‹, and what a grade there replaces (`written` once it is). */
+interface Given {
+  g: Grade;
+  run: Promise<Graded | null>;
+  written?: Graded | null;
+}
+
 interface CardProps {
   item: CardItem;
   active: boolean;
+  /** The grade this item was given in this session, when it was. */
+  given?: Given | undefined;
   onGrade(g: Grade): void;
+  /** On past an item that is gone, and whether it is. */
+  onSkip(): void;
+  onGone(gone: boolean): void;
   /** An edit being written: a grade after it waits for it, so it finds the card as edited. */
   onEdit(run: Promise<unknown>): void;
 }
 
-function CardElement({ item, active, onGrade, onEdit }: CardProps) {
+function CardElement({ item, active, given, onGrade, onSkip, onGone, onEdit }: CardProps) {
   const loaded = useDoc(item.path);
   const docPri = useApp((s) => s.docs[item.path]?.pri);
-  const [revealed, setRevealed] = useState(false);
+  // a card graded in this session comes back answered, its grade marked
+  const [revealed, setRevealed] = useState(!!given);
   // `e`, or a press on a revealed box: the two boxes live in place (`CardFaces.tsx`)
   const [editing, setEditing] = useState(false);
   const [edited, setEdited] = useState<string | undefined>(undefined);
@@ -171,16 +186,25 @@ function CardElement({ item, active, onGrade, onEdit }: CardProps) {
   // the item's schedule stands in only until the document is loaded; a card reset since reads as new
   const sched = !card ? item.sched : scheduleOf(card, item.group, item.dir);
   const exam = activeExamAt(item.path, now);
-  const gaps = gapLabels(sched, now, optionsAt(item.path).opts.retention, exam && { exam, key: lineKey(card?.id ?? item.id, text, item.group, item.dir) });
+  // a grade given again is given from before the one it replaces: so are its hints
+  const from = given?.written ? regradeFrom(sched, given.written) : sched;
+  const gaps = gapLabels(from, now, optionsAt(item.path).opts.retention, exam && { exam, key: lineKey(card?.id ?? item.id, text, item.group, item.dir) });
   const grade = (g: Grade) => { if (revealed) onGrade(g); else setRevealed(true); };
+  // the card, or the line it asks, no longer in the file: no grade reaches it, space moves on
+  const gone = !!loaded && !card;
+  useEffect(() => { onGone(gone); }, [gone]);
 
   useKeys(active, (key) => {
+    if (gone) {
+      if (key === ' ') { onSkip(); return true; }
+      return false;
+    }
     if (editing) return false;
     if (key === ' ') { grade(3); return true; }
     if (key >= '1' && key <= '4') { grade(Number(key) as Grade); return true; }
     if (key === 'e' && card) { setRevealed(true); setEditing(true); return true; }
     return false;
-  }, [revealed, item, editing, card]);
+  }, [revealed, item, editing, card, gone]);
 
   // an edit written: the card's text in the file, and this session's other items of it, follow
   const saveEdit = (text: string, was: string) => {
@@ -202,7 +226,14 @@ function CardElement({ item, active, onGrade, onEdit }: CardProps) {
     for (const face of el.querySelectorAll<HTMLElement>('.face')) runBlockHooks(face, { path: item.path, block: item.block, where: 'face' });
   });
 
-  if (loaded && !card) return <div className="empty center">no longer in the collection</div>;
+  if (gone) {
+    return (<>
+      <div className="empty center">no longer in the collection</div>
+      <div className="grades" data-revealed="1" data-gone="1">
+        <button type="button" data-act="skip" onClick={onSkip}><span className="label">skip<kbd>space</kbd></span></button>
+      </div>
+    </>);
+  }
 
   // The card sized to what it holds: the question, then on reveal the
   // answer under a hairline (before it, one quiet line). A cloze is
@@ -243,6 +274,7 @@ function CardElement({ item, active, onGrade, onEdit }: CardProps) {
       <span>{plural(sched?.reps ?? 0, 'review')}</span>
       {sched?.stability !== undefined && <span>stability {Math.round(sched.stability)}d</span>}
       {pri !== PRI_DEFAULT && <span>p {pri}</span>}
+      {given && <span className="cm-given">graded {GRADE_WORD[given.g]}</span>}
       <span className="cm-due" data-due={!sched?.due || item.dueAt <= now ? '1' : '0'} data-st={dueTone(dueWord(sched?.due, now))}>{dueWord(sched?.due, now)}</span>
     </>
   );
@@ -271,7 +303,7 @@ function CardElement({ item, active, onGrade, onEdit }: CardProps) {
         : (
           <div className="grades" data-revealed={revealed ? '1' : '0'}>
             {GRADES.map((g) => (
-              <button key={g} type="button" onClick={() => grade(g)}>
+              <button key={g} type="button" data-given={given?.g === g ? '1' : '0'} onClick={() => grade(g)}>
                 <span className="label">{GRADE_WORD[g]}<kbd>{g}</kbd></span>
                 <span className="gap">{gaps[g]}</span>
               </button>
@@ -469,8 +501,13 @@ export function Session({ active, onOpen }: Props) {
     return () => clearTimeout(t);
   }, [deck, idx, total]);
 
+  // the item on show is gone (`CardElement`): › moves on from it to the end too
+  const [goneAt, setGoneAt] = useState<string | null>(null);
+  const key = `${session?.seq}:${idx}`;
+  const past = goneAt === key;
+
   const goPrev = () => setIdx((i) => Math.max(0, i - 1));
-  const goNext = () => setIdx((i) => Math.min(total - 1, i + 1));
+  const goNext = () => setIdx((i) => Math.min(past ? total : total - 1, i + 1));
   const advance = () => setIdx((i) => i + 1);
 
   // go to source: the card's document, scrolled to the card and the card marked (the reader's `reveal`)
@@ -485,13 +522,16 @@ export function Session({ active, onOpen }: Props) {
     if (key === ']') { goNext(); return true; }
     if (key === 'o' && el?.kind === 'card') { goToSource(); return true; }
     return false;
-  }, [total, el]);
+  }, [total, el, past]);
 
   const fail = (e: unknown) => console.error(e);
 
   // the edits this session has sent to be written; a grade waits for them
   const edits = useRef<Promise<unknown>>(Promise.resolve());
   const onEdit = (run: Promise<unknown>) => { const before = edits.current; edits.current = before.then(() => run); };
+
+  // the grades given in this session, by item: ‹ back to one shows it, and a grade there takes its place
+  const given = useRef(new Map<string, Given>());
 
   const onGrade = (shown: CardItem, g: Grade) => {
     const vault = currentVault();
@@ -500,18 +540,30 @@ export function Session({ active, onOpen }: Props) {
     const ms = now.getTime() - shownAt.current;
     const seq = session?.seq;
     const place = idx;
+    const was = given.current.get(key);
+    let told = null as Graded | null;
     // once an edit of the card is written, the item as it is then: a card with no id is found by its new text
-    edits.current.then(() => {
+    const run = edits.current.then(async () => {
+      // given again: once the grade it replaces is written (a card it gave an id has it), from before it, its log line in that one's place
+      const over = was ? await was.run : null;
       const s = useApp.getState().session;
       const live = s?.seq === seq ? s?.items[place] : undefined;
       const item = live?.kind === 'card' && live.path === shown.path && live.block === shown.block ? live : shown;
-      return gradeCard(item, g, now, ms).then((loaded) => ({ item, loaded }));
+      const loaded = await gradeCard(item, g, now, ms, over, (w) => { told = w; });
+      return { item, loaded };
     }).then(({ item, loaded }) => {
       if (!loaded) return;
       // a card that had no id has one now, and a blank it numbered is numbered:
       // later items of the same card in this session follow
       const at = loaded.doc.blocks[item.block];
       emitGrade(item, g, at?.kind === 'card' ? at : null);
+      // the blank this item numbered is its group now, so a grade given again finds its line
+      const n = told?.line.key?.startsWith('c') ? Number(told.line.key.slice(1)) : null;
+      if (n !== null && item.group && 'blank' in item.group && at?.kind === 'card') {
+        useApp.setState((s) => (s.session && s.session.seq === seq ? {
+          session: { ...s.session, items: s.session.items.map((i, k) => (k === place && i.kind === 'card' ? { ...i, group: { n }, text: at.text } as CardItem : i)) },
+        } : {}));
+      }
       if (at?.kind !== 'card' || item.id !== undefined) return;
       useApp.setState((s) => (s.session ? {
         session: {
@@ -519,7 +571,12 @@ export function Session({ active, onOpen }: Props) {
           items: s.session.items.map((i) => (i.kind === 'card' && i.path === item.path && i.block === item.block && i.id === undefined ? { ...i, id: at.id, text: at.text } as CardItem : i)),
         },
       } : {}));
-    }).catch(fail);
+    });
+    run.catch(fail);
+    // what a grade after this one replaces: this one once written, else (it did not land) the one before it
+    const mine: Given = { g, run: run.then(() => told, () => told ?? was?.run ?? null) };
+    void mine.run.then((w) => { mine.written = w; });
+    given.current.set(key, mine);
     advance();
   };
 
@@ -538,7 +595,6 @@ export function Session({ active, onOpen }: Props) {
     );
   }
 
-  const key = `${session?.seq}:${idx}`;
   const onOut = phone ? () => openNode(deck?.id ?? queueId('today')) : undefined;
   if (el.kind !== 'card') {
     return <DocSession key={key} item={el} active={active} idx={idx} total={total} onPrev={goPrev} onNext={goNext} onOut={onOut} onAct={(a, pos, y) => onDoc(el, a, pos, y)} />;
@@ -550,7 +606,7 @@ export function Session({ active, onOpen }: Props) {
   return (
     <div className="recall-wrap">
       <div className="recall-meta">
-        <Nav idx={idx} total={total} onPrev={goPrev} onNext={goNext} onOut={onOut} />
+        <Nav idx={idx} total={total} onPrev={goPrev} onNext={goNext} onOut={onOut} past={past} />
         {deck
           ? <span className="sess-count sess-deck">{studyHeader(deck.title, total - idx)}</span>
           : <span className="sess-count">{idx + 1} / {total}</span>}
@@ -560,7 +616,7 @@ export function Session({ active, onOpen }: Props) {
           <span className="ms-arrow">↗</span>
         </button>
       </div>
-      <CardElement key={key} item={el} active={active} onGrade={(g) => onGrade(el, g)} onEdit={onEdit} />
+      <CardElement key={key} item={el} active={active} given={given.current.get(key)} onGrade={(g) => onGrade(el, g)} onSkip={advance} onGone={(g) => setGoneAt((was) => (g ? key : was === key ? null : was))} onEdit={onEdit} />
     </div>
   );
 }

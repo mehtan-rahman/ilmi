@@ -13001,8 +13001,10 @@ export async function smokeCardView(vault: Vault): Promise<void> {
     typeAtEnd(front, ' ≈');
     key('Enter', front, { metaKey: true });
     await poll(() => !q('.recall-wrap .card.editing') && q('.recall-wrap .card[data-revealed="1"]'), '⌘⏎ saves and goes back to the revealed card');
-    let st = '';
-    await poll(() => { void vault.read(item.path, true).then((l) => { st = l.text; }); return st.includes(' ≈ :: ') || st.includes(' ≈ ::') ? true : null; }, 'the session\'s edit is in the file', 8000);
+    await sleep(1500);
+    const line = (await vault.read(item.path, true)).text.split('\n').find((l) => (item.id !== undefined && l.includes(`^${item.id}`)) || l.startsWith(item.text.slice(0, 12))) ?? '';
+    log(`the session's card was "${item.text}", the file's line now "${line}"`);
+    must(line.includes('≈') && line !== item.text, 'the session\'s edit is in the file');
     await shot('cardview-session-edited');
     key('3');
     await poll(() => q('.recall-meta .sess-deck')?.textContent !== head, `the grades still work after (${head} → ${q('.recall-meta .sess-deck')?.textContent ?? 'ended'})`);

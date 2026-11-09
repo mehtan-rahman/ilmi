@@ -8780,6 +8780,38 @@ build, recorded where it was decided to leave a thing as it is.
   index yet (68); ink on the Mac stays centred under its caption (69). Git
   sync stays until the engine has passed on a real device (66).
 
+### [x] 72. The card view — a card edited in its two boxes, a deck's cards in the tree
+Done 2026-11-09 (asked by the user, from SuperMemo's element window: "maybe
+we should have a drop down for each deck or even note where you can go in
+and edit the cards like this"; and "a table editor … insert column/row,
+delete column/row").
+Notes: **The card view** is a tab per document, `:cards/<path>`
+(`cardsId`/`cardsPath` in `names.ts`; a rename or delete follows it as a
+`:notes/` tab does), drawn by `CardPane.tsx`: the session's two boxes
+(question over answer, a cloze one box) holding `CardFaces.tsx`, both live
+`FaceField`s (now `FaceField.tsx`, shared with the deck's new-card editor).
+The set is the document's cards in document order (`cardSet.ts`); where it
+stands is the store's `cardAt` (block and id; by id first). `[` `]` and
+‹ › move, saving first; ⌘⏎, a press outside, leaving the card or the tab
+save; Escape puts the faces back. The write is the deck editor's
+(`saveCardEdit`, `planEdit`): id and `sr` lines kept, a reviewed schedule
+asked about before it goes. The form switch and the schedule sit in the
+session's quiet strip. **Entries:** a card's row in the tree (a document
+with cards opens to list them after its children; one with children shows
+an `n cards` row that opens to them, so revealing a child does not list
+every card); ⏎, a double-click and the menu's `edit` on a deck row (the
+inline editor is only for a new card now); a double-click on a card in a
+note. In a session `e`, or a press on a revealed box, makes the boxes the
+same editors in place; ⌘⏎ goes back to the revealed card, the grades after.
+**Tables:** a right-click in a cell opens the cell's menu (`tableMenu`,
+also the `···`; `delete table` added); elsewhere in editable text a menu of
+cut, copy, paste and `insert table` (`insertTable`, a 2×2 with a header
+after the block, or in place of an empty paragraph); headings, cards,
+images and formulas keep theirs, a frozen page the system's. A face's pipe
+lines open as a table (`faceFieldBlocks`/`faceFieldText`): untouched they
+write back byte for byte, changed as the normalized pipe table; a cloze's
+face holds none. No FORMAT change. Smoke: `ILMI_SMOKE=cardview`.
+
 ## Notes for the next session
 
 Studying (42–46) is complete, 2026-10-31: every milestone's window check

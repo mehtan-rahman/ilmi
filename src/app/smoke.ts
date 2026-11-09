@@ -13009,8 +13009,14 @@ export async function smokeCardView(vault: Vault): Promise<void> {
     log(`the session's card was "${item.text}", the file's line now "${line}"`);
     must(line.includes('≈') && line !== item.text, 'the session\'s edit is in the file');
     await shot('cardview-session-edited');
+    const srOf = async () => { const ls = (await vault.read(item.path, true)).text.split('\n'); return ls[ls.findIndex((l) => l.includes(`^${item.id}`)) + 1] ?? ''; };
+    const sr0 = await srOf();
     key('3');
-    await poll(() => q('.recall-meta .sess-deck')?.textContent !== head, `the grades still work after (${head} → ${q('.recall-meta .sess-deck')?.textContent ?? 'ended'})`);
+    await poll(() => q('.recall-meta .sess-deck')?.textContent !== head && q('.recall-meta .sess-deck')?.textContent, 'the next card is up after a grade');
+    await sleep(1200);
+    const sr1 = await srOf();
+    log(`header ${head} → ${q('.recall-meta .sess-deck')?.textContent}; sr ${sr0} → ${sr1}`);
+    must(sr1 !== sr0, 'the grades still work after an edit: the card\'s sr line moved');
 
     // a note's table: a right-click in a cell, row below, the file has the row
     openNode(NOTE);

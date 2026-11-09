@@ -324,6 +324,8 @@ export class Vault {
   private cache = new Map<string, Loaded>();
   private listeners = new Set<(ev: VaultEvent) => void>();
   private pending: Promise<void> = Promise.resolve();
+  /** Every rename and move made, in order: a write asked for before one follows it (`follow`). */
+  private moves: { from: string; to: string }[] = [];
   private unwatch: (() => void) | null = null;
 
   private constructor(readonly fs: Fs, readonly root: string) {}
@@ -436,11 +438,26 @@ export class Vault {
    * moved on disk since it was read, it is re-read and `mutate` runs again on
    * the fresh copy, so an external edit and this one both land.
    */
-  async update(path: string, mutate: (doc: Doc) => void): Promise<Loaded> {
+  update(path: string, mutate: (doc: Doc) => void): Promise<Loaded> {
+    // in turn with the tree's operations and the watcher's work, so a write never lands
+    // between a rename's checks and its move (the old name made again) or under a delete;
+    // one asked for before a rename or a move lands where the file went
+    const since = this.moves.length;
+    return this.serial(() => this.change(this.follow(path, since), mutate));
+  }
+
+  /** `update` for the vault's own operations, already in turn (`serial`). */
+  private async change(path: string, mutate: (doc: Doc) => void): Promise<Loaded> {
     let cur = await this.read(path);
     for (let attempt = 0; ; attempt++) {
       const doc = structuredClone(cur.doc);
-      mutate(doc);
+      try {
+        mutate(doc);
+      } catch (e) {
+        // the write gives way to a change found under it: that change is reported, since the watcher will find nothing new
+        if (attempt > 0) this.emit({ kind: 'doc', path, loaded: cur });
+        throw e;
+      }
       const text = serialize(doc);
       const now = await this.fs.stat(this.abs(path));
       if (sameStamp(now, cur.stamp)) return this.commit(path, text);
@@ -450,11 +467,22 @@ export class Vault {
   }
 
   /** Overwrite with `doc`. Throws `VaultConflict` if the file moved since it was read. */
-  async write(path: string, doc: Doc): Promise<Loaded> {
-    const cur = await this.read(path);
-    const now = await this.fs.stat(this.abs(path));
-    if (!sameStamp(now, cur.stamp)) throw new VaultConflict(path);
-    return this.commit(path, serialize(doc));
+  write(path: string, doc: Doc): Promise<Loaded> {
+    const since = this.moves.length;
+    return this.serial(async () => {
+      const at = this.follow(path, since);
+      const cur = await this.read(at);
+      const now = await this.fs.stat(this.abs(at));
+      if (!sameStamp(now, cur.stamp)) throw new VaultConflict(at);
+      return this.commit(at, serialize(doc));
+    });
+  }
+
+  /** Where `path` is now, after the renames and moves made since the `since`-th. */
+  private follow(path: string, since: number): string {
+    let at = path;
+    for (const m of this.moves.slice(since)) at = rekey(at, m.from, m.to) ?? at;
+    return at;
   }
 
   /**
@@ -642,7 +670,7 @@ export class Vault {
     for (const path of this.documents()) {
       const named = meta((await this.read(path)).doc).pdf;
       if (named === undefined || normRel(joinRel(dirOf(path), named)) !== oldPdf) continue;
-      await this.update(path, (doc) => setField(doc, 'pdf', relFrom(dirOf(path), newPdf)));
+      await this.change(path, (doc) => setField(doc, 'pdf', relFrom(dirOf(path), newPdf)));
     }
   }
 
@@ -996,7 +1024,7 @@ export class Vault {
       if (isDoc(path)) {
         await this.retargetBackrefs(dir, nameOf(path), clean);
         if (pagesMoved && meta((await this.read(to)).doc).pdf === `${nameOf(path)}.pdf`) {
-          await this.update(to, (doc) => setField(doc, 'pdf', `${clean}.pdf`));
+          await this.change(to, (doc) => setField(doc, 'pdf', `${clean}.pdf`));
         }
         // the chapters under it that name its pages (`../old.pdf`) name the new file
         if (pagesMoved) await this.retargetPages(childDirOf(path), childDirOf(to), pdfOf(path), pdfOf(to));
@@ -1038,7 +1066,7 @@ export class Vault {
         const target = normRel(joinRel(dirOf(path), named));
         if (target && !within(target, childDirOf(path)) && (await this.fs.stat(this.abs(target)))?.isDir === false) {
           const next = relFrom(dir, target);
-          if (next !== named) await this.update(to, (doc) => setField(doc, 'pdf', next));
+          if (next !== named) await this.change(to, (doc) => setField(doc, 'pdf', next));
         }
       }
       await this.dropIfEmpty(dirOf(path));
@@ -1156,7 +1184,7 @@ export class Vault {
       // read fresh: the cache may trail an edit the watcher has not delivered yet
       const card = structuredClone(cardIn((await this.read(from, true)).doc, from, index, id, text));
       delete card.extracts;
-      const dest = await this.update(to, (doc) => {
+      const dest = await this.change(to, (doc) => {
         const moved = structuredClone(card);
         // a list item lands as a card of its own at the end (FORMAT.md §5.2)
         delete moved.item;
@@ -1167,7 +1195,7 @@ export class Vault {
         }
         doc.blocks.push(moved);
       });
-      await this.update(from, (doc) => {
+      await this.change(from, (doc) => {
         const cur = cardIn(doc, from, index, id, text);
         const seen = { ...cur };
         delete seen.extracts;
@@ -1284,7 +1312,7 @@ export class Vault {
         await copy(childDirOf(path), childDirOf(to));
         await copy(pdfOf(path), pdfOf(to));
         const t = meta((await this.read(to, true)).doc).title;
-        if (t !== undefined) await this.update(to, (doc) => setField(doc, 'title', `${t} copy`));
+        if (t !== undefined) await this.change(to, (doc) => setField(doc, 'title', `${t} copy`));
       }
       await this.rewalk();
       const shown = ordered(childrenAt(this.tree, dir) ?? [], this.order[dir]).map((n) => entryOf(n.path));
@@ -1326,7 +1354,7 @@ export class Vault {
       const ivl = firstGap(pri);
       setField(doc, 'read', spec.page === undefined ? { due: today, ivl, reps: 0, pos: 0 } : { due: today, ivl, reps: 0, pos: 0, page: spec.page });
       await this.commit(path, serialize(doc));
-      await this.update(parent, (d) => {
+      await this.change(parent, (d) => {
         if (spec.page !== undefined) {
           addToPage(d, spec.page, { kind: 'paragraph', text: text.replace(/\n[ \t]*\n+/g, '\n'), extracts: [name] });
           return;
@@ -1387,7 +1415,7 @@ export class Vault {
       const pri = pm.pri ?? pm.read?.pri;
       const ivl = firstGap(pri);
       let made = { index: 0, text: '', ivl };
-      await this.update(note, (d) => {
+      await this.change(note, (d) => {
         const heading = freeHeading(d.blocks, extractName(text));
         made = { index: d.blocks.length, text: heading, ivl };
         d.blocks.push(
@@ -1396,7 +1424,7 @@ export class Vault {
           ...text.split(/\n[ \t]*\n+/).map((t) => t.trim()).filter(Boolean).map((t): Block => ({ kind: 'paragraph', text: t })),
         );
       });
-      await this.update(source, (d) => {
+      await this.change(source, (d) => {
         let last = -1;
         let prose = 0;
         d.blocks.forEach((b, i) => {
@@ -1431,7 +1459,7 @@ export class Vault {
       const note = await this.notesFor(source);
       const name = nameOf(extract);
       let made = { index: 0, text: '' };
-      await this.update(note, (d) => {
+      await this.change(note, (d) => {
         const heading = freeHeading(d.blocks, em.title ?? name);
         made = { index: d.blocks.length, text: heading };
         const r = em.read;
@@ -1444,7 +1472,7 @@ export class Vault {
         for (const b of body) if ((b.kind === 'paragraph' || b.kind === 'card') && b.extracts) delete b.extracts;
         d.blocks.push({ kind: 'heading', level: 2, text: heading, read: line }, { kind: 'paragraph', text: `from: ${pm.title ?? nameOf(source)}` }, ...body);
       });
-      await this.update(source, (d) => {
+      await this.change(source, (d) => {
         for (const b of d.blocks) {
           if ((b.kind === 'paragraph' || b.kind === 'card') && b.extracts?.includes(name)) {
             const rest = b.extracts.filter((n) => n !== name);
@@ -1484,6 +1512,7 @@ export class Vault {
       this.cache.delete(key);
       this.cache.set(next, { ...loaded, path: next });
     }
+    this.moves.push({ from, to });
     this.emit({ kind: 'moved', from, to });
     return pages;
   }
@@ -1509,7 +1538,7 @@ export class Vault {
       if (named === undefined || !named.includes('/')) continue;
       const was = joinRel(oldDir, path.slice(newDir.length + 1));
       if (normRel(joinRel(dirOf(was), named)) !== oldPdf) continue;
-      await this.update(path, (doc) => setField(doc, 'pdf', relFrom(dirOf(path), newPdf)));
+      await this.change(path, (doc) => setField(doc, 'pdf', relFrom(dirOf(path), newPdf)));
     }
   }
 
@@ -1520,7 +1549,7 @@ export class Vault {
     if (!(await this.fs.stat(this.abs(parent)))) return;
     const cur = await this.read(parent);
     if (!cur.doc.blocks.some((b) => 'extracts' in b && b.extracts?.includes(old))) return;
-    await this.update(parent, (doc) => {
+    await this.change(parent, (doc) => {
       for (const b of doc.blocks) {
         if ('extracts' in b && b.extracts) b.extracts = b.extracts.map((n) => (n === old ? next : n));
       }

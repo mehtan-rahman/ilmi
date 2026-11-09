@@ -51,81 +51,9 @@ import { StudyButton } from './StudyButton.js';
 import { ExamTag } from './ExamTag.js';
 import { appNow } from './clock.js';
 import { press } from './platform.js';
-
-/** How long after the last keystroke the file is written. */
-const WRITE_DELAY = 500;
+import { Writer } from './writer.js';
 
 // ── writing ──────────────────────────────────────────────────────
-
-/**
- * Writes for one document, one at a time, a little after the last change.
- * Remembers the text each write will produce, so the vault's report of it
- * can be told from an external change.
- */
-class Writer {
-  private own = new Map<string, number>();
-  private chain: Promise<unknown> = Promise.resolve();
-  private timer: ReturnType<typeof setTimeout> | null = null;
-  private pending: (() => Block[]) | null = null;
-  /** Bumped by the caller on every document change; each write records the value it saw. */
-  version = 0;
-
-  constructor(private readonly vault: Vault, private readonly path: string) {}
-
-  /** The version a write of `text` saw, if `text` is ours; the entry is consumed. */
-  claim(text: string): number | undefined {
-    const v = this.own.get(text);
-    if (v !== undefined) this.own.delete(text);
-    return v;
-  }
-
-  update(mutate: (doc: Doc) => void): Promise<Loaded | null> {
-    const version = this.version;
-    const run = this.chain.then(async () => {
-      const cur = await this.vault.read(this.path);
-      const next = structuredClone(cur.doc);
-      mutate(next);
-      const text = serialize(next);
-      if (text === cur.text) return null;
-      this.own.set(text, version);
-      return this.vault.update(this.path, mutate);
-    });
-    this.chain = run.catch((e: unknown) => console.error(this.path, e));
-    return run;
-  }
-
-  /** Write the body `blocks()` gives, after a pause; the latest call wins. */
-  schedule(blocks: () => Block[]): void {
-    this.pending = blocks;
-    if (this.timer) clearTimeout(this.timer);
-    this.timer = setTimeout(() => this.flush(), WRITE_DELAY);
-  }
-
-  flush(): void {
-    if (this.timer) clearTimeout(this.timer);
-    this.timer = null;
-    const pending = this.pending;
-    this.pending = null;
-    if (!pending) return;
-    const blocks = pending();
-    void this.update((doc) => { doc.blocks = blocks; });
-  }
-
-  /** Run `fn` once everything scheduled so far has been written. */
-  run<T>(fn: () => Promise<T>): Promise<T> {
-    this.flush();
-    const run = this.chain.then(fn);
-    this.chain = run.catch((e: unknown) => console.error(this.path, e));
-    return run;
-  }
-
-  /** Drop what has not been written yet: the file changed under us and wins. */
-  cancel(): void {
-    if (this.timer) clearTimeout(this.timer);
-    this.timer = null;
-    this.pending = null;
-  }
-}
 
 /** The writer of each open page, so a session's action on it is written after what was typed there, never over it. */
 const openWriters = new Map<string, Writer>();
@@ -1578,7 +1506,7 @@ export function Reader({ id, active = true, onPages, notes = false }: ReaderProp
     const vault = currentVault();
     const mount = mountRef.current;
     if (!vault || !mount) return;
-    const writer = new Writer(vault, id);
+    const writer = new Writer(vault, id, (line) => notify(line));
     writerRef.current = writer;
     openWriters.set(id, writer);
     let live = true;
@@ -1589,6 +1517,7 @@ export function Reader({ id, active = true, onPages, notes = false }: ReaderProp
     inkRef.current = ink;
 
     const build = (loaded: Loaded) => {
+      writer.saw(loaded);
       const m = meta(loaded.doc);
       // the folds the page had when it was last seen (view state, never the file's)
       const state = makeState(loaded.doc.blocks, {
@@ -1708,17 +1637,8 @@ export function Reader({ id, active = true, onPages, notes = false }: ReaderProp
     const onDoc = (loaded: Loaded) => {
       const view = viewRef.current;
       if (!view) { build(loaded); return; }
-      const version = writer.claim(loaded.text);
-      if (version === undefined) {
-        // someone else changed the file: it wins over anything unwritten
-        writer.cancel();
-        build(loaded);
-        return;
-      }
-      // our own write, read back. If nothing was typed since and the file
-      // says something other than what the editor holds (a line that became
-      // a card, a heading), the file is right.
-      if (version === writer.version && !blocksEqual(fromDoc(view.state.doc), loaded.doc.blocks)) build(loaded);
+      // someone else's change, or our own read back saying more than the editor holds (`Writer.heard`)
+      if (writer.heard(loaded, () => fromDoc(view.state.doc))) build(loaded);
       else setBlocks(loaded.doc.blocks);
     };
 
@@ -1729,6 +1649,8 @@ export function Reader({ id, active = true, onPages, notes = false }: ReaderProp
     const off = vault.subscribe((ev) => {
       if (!live) return;
       if (ev.kind === 'doc' && ev.path === id) onDoc(ev.loaded);
+      // the tab follows on the next render; what is still to be written goes to the new path already
+      else if (ev.kind === 'moved') writer.follow(ev.from, ev.to);
       else if (ev.kind === 'gone' && ev.path === id) {
         writer.cancel();
         if (viewRef.current) pageDrops.delete(viewRef.current.dom);
@@ -1743,6 +1665,7 @@ export function Reader({ id, active = true, onPages, notes = false }: ReaderProp
       ink?.destroy();
       inkRef.current = null;
       writer.flush();
+      writer.close();
       if (viewRef.current) pageDrops.delete(viewRef.current.dom);
       viewRef.current?.destroy();
       viewRef.current = null;

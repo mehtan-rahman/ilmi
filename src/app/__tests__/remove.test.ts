@@ -19,6 +19,7 @@ vi.mock('../vault.js', async (orig) => {
 
 const { deleteNode } = await import('../remove.js');
 const { undoNotice } = await import('../land.js');
+const { Writer } = await import('../writer.js');
 
 const CORPUS = join(import.meta.dirname, '../../format/__tests__/corpus/vault');
 const EIGEN = 'courses/linear-algebra/unit-2/eigenvalues.md';
@@ -45,5 +46,16 @@ describe('a delete', () => {
     expect(await fsp.readFile(join(dir, EIGEN), 'utf8')).toBe(text);
     expect(vault.documents()).toContain(EIGEN);
     expect(useApp.getState().log[0]).toBe('undone · eigenvalues');
+  });
+
+  it('writes what was typed on its page first, so undo puts back the last of it', async () => {
+    // a page on it with an edit still in its pause (the menu's click took the focus a moment ago)
+    const page = new Writer(vault, EIGEN);
+    page.saw(await vault.read(EIGEN));
+    page.schedule(() => [{ kind: 'paragraph', text: 'typed just before the delete' }]);
+    await deleteNode(EIGEN);
+    page.close();
+    await undoNotice();
+    expect(await fsp.readFile(join(dir, EIGEN), 'utf8')).toContain('typed just before the delete');
   });
 });

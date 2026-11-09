@@ -162,7 +162,7 @@
 .qlist .mark[data-el="card"] { color: var(--el-card); }
 .qlist .body {
   font-family: var(--serif);
-  font-size: 14.5px;
+  font-size: calc(14.5px * var(--zoom));
   line-height: 1.32;
   color: var(--fg-1);
   min-width: 0;

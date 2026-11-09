@@ -21,7 +21,7 @@ import type { OpenOpts } from './panes.js';
 import { Pdf, pointInView } from './Pdf.js';
 import { MathText } from './MathText.js';
 import { plainMath } from './chromeText.js';
-import { Reader, clozeHTML, faceDir, richHTML } from './Reader.js';
+import { Reader, clozeHTML, faceDir, faceHTML } from './Reader.js';
 import { useApp, type El } from './store.js';
 import { useDoc } from './useDoc.js';
 import { studyHeader } from './study.js';
@@ -185,7 +185,7 @@ function CardElement({ item, active, onGrade }: CardProps) {
   // below it.
   let front: ReactNode;
   let back: ReactNode = null;
-  if (!f) front = <div dir={faceDir(text)} dangerouslySetInnerHTML={{ __html: richHTML(text) }} />;
+  if (!f) front = <div dir={faceDir(text)} dangerouslySetInnerHTML={{ __html: faceHTML(text) }} />;
   else if (f.form === 'cloze') {
     // which blanks this item tests, in `blanks(text)` order; the rest are context
     const mine = blanks(text).map((b, i) => ownBlank(item, b.n, i));
@@ -200,13 +200,13 @@ function CardElement({ item, active, onGrade }: CardProps) {
     };
     front = <div className="cloze-text" dir={faceDir(text)} onClick={onFront} dangerouslySetInnerHTML={{ __html: html }} />;
   } else if (f.form === 'qa') {
-    front = <div className="qa-q" dir={faceDir(f.front)} dangerouslySetInnerHTML={{ __html: richHTML(f.front) }} />;
-    back = <div className="qa-a" dir={faceDir(f.back)} dangerouslySetInnerHTML={{ __html: richHTML(f.back) }} />;
+    front = <div className="qa-q" dir={faceDir(f.front)} dangerouslySetInnerHTML={{ __html: faceHTML(f.front) }} />;
+    back = <div className="qa-a" dir={faceDir(f.back)} dangerouslySetInnerHTML={{ __html: faceHTML(f.back) }} />;
   } else {
     // both ways: the reverse asks the right side and answers with the left
     const [ask, answer] = item.dir === 'r' ? [f.right, f.left] : [f.left, f.right];
-    front = <div className="bidir-a" data-dir={item.dir ?? 'f'} dir={faceDir(ask)} dangerouslySetInnerHTML={{ __html: richHTML(ask) }} />;
-    back = <div className="bidir-b" dir={faceDir(answer)} dangerouslySetInnerHTML={{ __html: richHTML(answer) }} />;
+    front = <div className="bidir-a" data-dir={item.dir ?? 'f'} dir={faceDir(ask)} dangerouslySetInnerHTML={{ __html: faceHTML(ask) }} />;
+    back = <div className="bidir-b" dir={faceDir(answer)} dangerouslySetInnerHTML={{ __html: faceHTML(answer) }} />;
   }
 
   const groupNo = item.group && item.groups > 1 ? ('n' in item.group ? item.group.n : item.group.blank + 1) : null;

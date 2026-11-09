@@ -252,6 +252,30 @@ function shapeHTML(shape: RawShape, text: string): string {
   }
 }
 
+/** Does a face hold a table, a line of pipes? */
+const hasTable = (text: string): boolean => /^ {0,3}\|/m.test(text);
+
+/**
+ * A card's face (FORMAT.md §5): its text, with any run of pipe lines drawn
+ * as the table it is, so a sarf chart sits on the card as it does in the
+ * note. The text around a table, and a face with none, is `rest`'s
+ * (`richHTML`, or `linesHTML` where a face's lines are kept).
+ */
+export function faceHTML(text: string, rest: (t: string) => string = richHTML): string {
+  if (!hasTable(text)) return rest(text);
+  const runs: string[] = [];
+  let cur: string[] = [];
+  let table = false;
+  for (const line of text.split('\n')) {
+    const t = /^ {0,3}\|/.test(line);
+    if (cur.length && t !== table) { runs.push(cur.join('\n')); cur = []; }
+    table = t;
+    cur.push(line);
+  }
+  if (cur.length) runs.push(cur.join('\n'));
+  return runs.map((r) => (/^ {0,3}\|/.test(r) ? (rawHTML(r)?.html ?? rest(r)) : `<div>${rest(r)}</div>`)).join('');
+}
+
 /** A raw block as its element, or null when it is one the reader keeps as mono source (an HTML block, a comment). */
 export function rawHTML(text: string): { kind: Exclude<RawShape['kind'], 'other'>; html: string } | null {
   const shape = classifyRaw(text);
@@ -394,10 +418,11 @@ export function cardHTML(card: Card): string {
     case 'cloze':
       return clozeHTML(card.text, () => 'revealed', () => 'cz');
     case 'qa':
-      return `<span class="cs-q"${dirAttr(f.front)}>${linesHTML(f.front)}</span><span class="cs-a"${dirAttr(f.back)}>${linesHTML(f.back)}</span>`;
+      // a face's lines kept, a table in it drawn
+      return `<span class="cs-q"${dirAttr(f.front)}>${faceHTML(f.front, linesHTML)}</span><span class="cs-a"${dirAttr(f.back)}>${faceHTML(f.back, linesHTML)}</span>`;
     case 'bidir':
       // each face isolated its own way, the arrow between them
-      return `<span><bdi${dirAttr(f.left)}>${richHTML(f.left)}</bdi> <span class="cs-arrow">⇄</span> <bdi${dirAttr(f.right)}>${richHTML(f.right)}</bdi></span>`;
+      return `<span><bdi${dirAttr(f.left)}>${faceHTML(f.left)}</bdi> <span class="cs-arrow">⇄</span> <bdi${dirAttr(f.right)}>${faceHTML(f.right)}</bdi></span>`;
   }
 }
 

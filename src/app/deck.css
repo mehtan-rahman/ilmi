@@ -169,7 +169,7 @@
   grid-template-columns: 1fr 1fr;
   gap: 10px;
   font-family: var(--serif);
-  font-size: 15.5px;
+  font-size: calc(var(--serif-size) * 0.86);
   line-height: 1.5;
   color: var(--fg-1);
 }

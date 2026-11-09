@@ -555,6 +555,21 @@ derive ⟨E⟩ for the two-level system
 2. $= \epsilon / (e^{\beta\epsilon} + 1)$
 ```
 
+**Tables in a face.** A pipe line does not end a paragraph, so a face on
+lines around `?` or `??` can hold a GFM table, written as it is anywhere
+else, and the app draws it as one (a conjugation chart, a sarf table).
+Nothing new is parsed: the table is the face's text, verbatim. The corpus
+file is `faces/sarf.md`.
+
+```
+the past of كَتَبَ, third person
+?
+| | singular | dual | plural |
+|---|---|---|---|
+| m | كَتَبَ | كَتَبَا | كَتَبُوا |
+| f | كَتَبَتْ | كَتَبَتَا | كَتَبْنَ |
+```
+
 Cards live in paragraphs and in list items (§5.2). `{{c1::x}}` inside a
 table, a block quote, a heading, or a code block is literal text.
 

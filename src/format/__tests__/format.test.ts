@@ -356,6 +356,21 @@ describe('cards', () => {
     });
   });
 
+  it('a face can hold a table or a list: a sarf chart is the back, as written', () => {
+    const text = read('faces/sarf.md');
+    const { doc, diagnostics } = parse(text);
+    expect(diagnostics).toEqual([]);
+    expect(serialize(doc)).toBe(text);
+    const cs = cards(text);
+    expect(cs.map((c) => cardForm(c.text))).toEqual(['qa', 'bidir', 'qa']);
+    const past = cardFields(cs[0]!.text);
+    expect(past?.form === 'qa' && past.back.split('\n')).toEqual(['| | singular | dual | plural |', '|---|---|---|---|', '| m | كَتَبَ | كَتَبَا | كَتَبُوا |', '| f | كَتَبَتْ | كَتَبَتَا | كَتَبْنَ |']);
+    const present = cardFields(cs[1]!.text);
+    expect(present?.form === 'bidir' && present.right.startsWith('| | singular | plural |')).toBe(true);
+    const masdar = cardFields(cs[2]!.text);
+    expect(masdar?.form === 'qa' && masdar.back).toBe('كِتَابَة, on:\n- فِعَالَة');
+  });
+
   it('attaches extract backrefs to prose', () => {
     const { doc } = parse(read('vault/papers/wozniak-1990.md'));
     const p = doc.blocks.find((b): b is Paragraph => b.kind === 'paragraph' && b.text.startsWith('Atomicity sounds easy'));

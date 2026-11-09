@@ -81,7 +81,7 @@
   flex-direction: column;
   gap: var(--s-4);
   font-family: var(--serif);
-  font-size: 24px;
+  font-size: calc(var(--serif-size) * 1.33);
   line-height: 1.5;
   color: var(--fg-1);
   text-align: start;
@@ -284,3 +284,21 @@
 .recall-wrap .card .cloze.on-letter.revealed { background: var(--accent-soft); border-bottom-color: var(--accent); }
 .recall-wrap .card .cloze-answer .cz-a .on-letter { padding: 0; }
 .recall-wrap .card-meta .cm-due { display: inline-block; }
+
+/* a face's table (a sarf chart), drawn as
+   the reader draws it, at the card's size */
+.recall-wrap .card table {
+  border-collapse: collapse;
+  margin: 0.4em 0;
+  white-space: normal;
+  font-size: 0.9em;
+}
+.recall-wrap .card th,
+.recall-wrap .card td {
+  padding: 0.3em 0.8em;
+  border-bottom: 1px solid var(--line-2);
+  vertical-align: top;
+  text-align: start;
+}
+.recall-wrap .card th { font-weight: 500; color: var(--fg-3); border-bottom-color: var(--line-1); }
+.recall-wrap .card th:empty, .recall-wrap .card td:first-child:not([dir="rtl"]) { color: var(--fg-3); }

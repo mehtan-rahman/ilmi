@@ -87,7 +87,7 @@ html[data-shape="phone"] .qlist li:hover { background: transparent; }
 html[data-shape="phone"] .qlist li:active { background: var(--line-3); }
 html[data-shape="phone"] .qlist li[data-active="1"]::before { content: none; }
 html[data-shape="phone"] .qlist li .mark { grid-area: mark; }
-html[data-shape="phone"] .qlist li .body { grid-area: body; font-size: 17px; line-height: 1.35; }
+html[data-shape="phone"] .qlist li .body { grid-area: body; font-size: calc(17px * var(--zoom)); line-height: 1.35; }
 html[data-shape="phone"] .qlist li .due { display: none; }
 html[data-shape="phone"] .qlist li .pri { display: none; }
 html[data-shape="phone"] .qlist .body .src { font-size: var(--t-sm); margin-bottom: 3px; }
@@ -126,7 +126,7 @@ html[data-shape="phone"] .recall-meta { margin-bottom: 8px; gap: 10px; font-size
 html[data-shape="phone"] .sess-nav { gap: 0; margin-right: 0; flex-shrink: 0; }
 html[data-shape="phone"] .sess-nav .sn-btn { width: 40px; height: var(--finger); border: 0; color: var(--fg-2); --ic: 18px; }
 html[data-shape="phone"] .sess-nav .sn-btn:hover:not(:disabled) { color: var(--fg-3); }
-html[data-shape="phone"] .recall-wrap .card { font-size: 21px; gap: 10px; }
+html[data-shape="phone"] .recall-wrap .card { font-size: calc(21px * var(--zoom)); gap: 10px; }
 html[data-shape="phone"] .recall-wrap .card .face { padding: 18px 16px; }
 html[data-shape="phone"] .recall-wrap .card .face-hint { display: none; }
 html[data-shape="phone"] .recall-wrap .card-meta { max-width: none; margin-top: 10px; gap: 10px; font-size: var(--t-xs); }

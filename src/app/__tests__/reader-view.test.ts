@@ -15,7 +15,7 @@ import { classifyRaw, fromDoc, frozenKey, imageOnly, inlineRanges, makeState, ma
 import { insideMath, withBlank } from '../Composer.js';
 import { imagePath, isRemote, mimeOf } from '../images.js';
 import { dueLabel } from '../items.js';
-import { answerHTML, cardHTML, clozeHTML, handleClickOn, nodeViews, rawHTML, richHTML, selectionBox, type BlankState } from '../Reader.js';
+import { answerHTML, cardHTML, clozeHTML, faceHTML, handleClickOn, nodeViews, rawHTML, richHTML, selectionBox, type BlankState } from '../Reader.js';
 
 const CORPUS = join(dirname(fileURLToPath(import.meta.url)), '../../format/__tests__/corpus/vault/papers');
 const WOZ = join(CORPUS, 'wozniak-1990.md');
@@ -1033,5 +1033,25 @@ describe('a formula started by `$$` ⏎', () => {
     expect(fromDoc(other.state.doc)).toEqual([]);
     view.destroy();
     other.destroy();
+  });
+});
+
+describe('a card face with a table', () => {
+  it('draws a sarf chart as a table, the text around it kept', async () => {
+    const text = await fsp.readFile(join(dirname(fileURLToPath(import.meta.url)), '../../format/__tests__/corpus/faces/sarf.md'), 'utf8');
+    const cs = parse(text).doc.blocks.filter((b): b is Card => b.kind === 'card');
+    const back = cs[0]!.text.split('\n?\n')[1]!;
+    const el = document.createElement('div');
+    el.innerHTML = faceHTML(back);
+    expect([...el.querySelectorAll('th')].map((t) => t.textContent)).toEqual(['', 'singular', 'dual', 'plural']);
+    expect([...el.querySelectorAll('tbody tr')].map((r) => r.children[1]!.textContent)).toEqual(['كَتَبَ', 'كَتَبَتْ']);
+    el.innerHTML = faceHTML('the forms:\n| m | f |\n|---|---|\n| كَتَبَ | كَتَبَتْ |\nand that is all');
+    expect(el.querySelectorAll('table')).toHaveLength(1);
+    expect(el.textContent?.startsWith('the forms:')).toBe(true);
+    expect(el.textContent?.endsWith('and that is all')).toBe(true);
+    el.innerHTML = faceHTML('a plain face');
+    expect(el.innerHTML).toBe(richHTML('a plain face'));
+    el.innerHTML = cardHTML(cs[0]!);
+    expect(el.querySelector('.cs-a table')).not.toBeNull();
   });
 });

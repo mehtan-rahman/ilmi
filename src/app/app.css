@@ -1173,3 +1173,8 @@ textarea[dir="auto"] { unicode-bidi: plaintext; }
 [data-theme="eink"] .tree .row .glyph, [data-theme="eink"] .tree .row .chev,
 [data-theme="eink"] .tab-rail .rail-row .glyph, [data-theme="eink"] .tab-rail .rail-row .chev,
 [data-theme="eink"] .folder-view .fv-row .fv-g, [data-theme="eink"] .qlist .mark, [data-theme="eink"] .palette-row .pg { color: var(--fg-2); }
+
+/* a card's table in a note or a deck (a sarf chart) */
+.card-span table { border-collapse: collapse; margin: 0.3em 0; white-space: normal; font-size: 0.95em; }
+.card-span th, .card-span td { padding: 0.2em 0.7em; border-bottom: 1px solid var(--line-2); vertical-align: top; text-align: start; font-style: normal; }
+.card-span th { font-family: var(--sans); font-size: 0.75em; font-weight: 600; color: var(--fg-3); border-bottom-color: var(--line-1); }

@@ -3109,6 +3109,32 @@ export async function smokeDecks(vault: Vault): Promise<void> {
     openNode(DECK);
     await until(() => (rows().length ? true : null));
 
+    // `m`: a new card in a sheet over the window, its faces the session's two boxes, saved by ⌘⏎
+    {
+      const before = rows().length;
+      await sleep(300);
+      key('m');
+      const sheet = await until(() => q<HTMLElement>('.card-sheet .deck-edit'), 5000);
+      const [front, backF] = qa<HTMLElement>('.card-sheet .face .face-field');
+      const typeIn = async (el: HTMLElement | undefined, t: string) => {
+        if (!el) return;
+        el.focus();
+        await sleep(60);
+        document.execCommand('insertText', false, t);
+        await sleep(120);
+      };
+      await typeIn(front, 'sheet test front');
+      await typeIn(backF, 'sheet test back');
+      const r = sheet.getBoundingClientRect();
+      const boxes = qa<HTMLElement>('.card-sheet .face').map((f) => Math.round(f.getBoundingClientRect().height));
+      log(`new card sheet: ${Math.round(r.width)}×${Math.round(r.height)} of ${innerWidth}×${innerHeight}; boxes ${boxes.join(' over ')}; faces "${qa('.card-sheet .face').map((f) => f.textContent).join(' | ')}"`);
+      await shot('decks-new-card', 3000);
+      (front ?? sheet).dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', metaKey: true, bubbles: true, cancelable: true }));
+      await until(() => (q('.card-sheet') ? null : true), 5000);
+      await until(() => (rows().length > before ? true : null), 5000).catch(() => null);
+      log(`new card saved: sheet gone ${q('.card-sheet') ? 'NO' : 'yes'}; rows ${before} → ${rows().length}; in the list ${rows().some((x) => x.textContent?.includes('sheet test front')) ? 'yes' : 'NO'}`);
+    }
+
     // study the deck: two grades, the header counting down
     q<HTMLElement>('.deck-study .ds-study')!.click();
     await until(() => q('.recall-meta .sess-deck'));

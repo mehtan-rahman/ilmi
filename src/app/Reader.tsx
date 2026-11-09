@@ -33,7 +33,7 @@ import { dueLabel, dueTone } from './items.js';
 import { pagesOf, titleOf } from './names.js';
 import { openPagesBeside } from './book.js';
 import { useApp, type DocInfo } from './store.js';
-import { currentVault, enrolReading, extractNode, openCards, openNode, sectionNode, setFolds } from './vault.js';
+import { currentVault, enrolReading, extractNode, openCards, openNode, renameNode, sectionNode, setFolds } from './vault.js';
 import { popMenu, type PopItem } from './popMenu.js';
 import { registerHeadings } from './headings.js';
 import { sectionMenu, setWriteThrough, writeDoc } from './sections.js';
@@ -2279,7 +2279,7 @@ export function Reader({ id, active = true, onPages, notes = false }: ReaderProp
           {right && <span className="right" title={rightTip}>{right}</span>}
         </div>
         )}
-        {titled && !notes && <h1>{title}</h1>}
+        {titled && !notes && <TitleField key={id} path={id} title={title} onDone={() => viewRef.current?.focus()} />}
         {w && (
           <div className="draft-sched" data-done={w.done ? '1' : '0'}>
             <span className="ds-state">{writeState}</span>
@@ -2370,5 +2370,50 @@ export function Reader({ id, active = true, onPages, notes = false }: ReaderProp
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * A note's title, edited where it stands (as the tree's rename does: the
+ * file renamed, its `title:` field with it, `renameNode`). ⏎ or leaving it
+ * renames and ⏎ goes on into the text; Escape puts the title back; an empty
+ * title renames nothing.
+ */
+function TitleField({ path, title, onDone }: { path: string; title: string; onDone(): void }) {
+  const ref = useRef<HTMLHeadingElement>(null);
+  const done = useRef(false);
+  const put = (t: string) => { if (ref.current && ref.current.textContent !== t) ref.current.textContent = t; };
+  // the title as the vault has it, unless it is being typed
+  useLayoutEffect(() => { if (document.activeElement !== ref.current) put(title); }, [title]);
+  const commit = () => {
+    const el = ref.current;
+    if (!el || done.current) return;
+    done.current = true;
+    const name = (el.textContent ?? '').replace(/\s+/g, ' ').trim();
+    if (!name || name === title) { put(title); return; }
+    renameNode(path, name).catch((e: unknown) => { console.error(e); put(title); });
+  };
+  return (
+    <h1
+      ref={ref}
+      className="doc-title"
+      contentEditable="plaintext-only"
+      suppressContentEditableWarning
+      spellCheck={false}
+      dir="auto"
+      role="textbox"
+      aria-label="title"
+      onFocus={() => { done.current = false; }}
+      onBlur={commit}
+      onPaste={(e) => {
+        // one line of plain text
+        e.preventDefault();
+        document.execCommand('insertText', false, e.clipboardData.getData('text/plain').replace(/\s+/g, ' '));
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') { e.preventDefault(); commit(); ref.current?.blur(); onDone(); }
+        else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done.current = true; put(title); ref.current?.blur(); }
+      }}
+    />
   );
 }

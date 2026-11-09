@@ -3,7 +3,7 @@
 // interval, and its file's path when there is more than one file), with a
 // search, chips, a sort, a selection with bulk actions, a card opened in
 // the card view by a double-click or ⏎ (`CardPane.tsx`), a new card written
-// in place in the session's two-face look, and `study`. The model is deck.ts,
+// in a sheet over the window in the session's two boxes, and `study`. The model is deck.ts,
 // cardEdit.ts, and study.ts; the writes are deckOps.ts.
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
@@ -479,8 +479,6 @@ export function DeckBrowser({ home, active }: BrowserProps) {
   };
 
   const editingNew = editing;
-  // the new card's editor sits under the row it goes after, else above the list
-  const newAfterKey = editingNew?.after ? `${editingNew.after.path}#${editingNew.after.block}` : null;
   const allSuspended = chosen.length > 0 && chosen.every((r) => r.suspended);
   const anySuspended = chosen.some((r) => r.suspended);
   const due = rows.filter((r) => r.isDue).length;
@@ -578,7 +576,8 @@ export function DeckBrowser({ home, active }: BrowserProps) {
       </div>
 
       {similar && <SimilarList paths={paths} q={q} now={now} />}
-      {!similar && editingNew && newAfterKey === null && newEditor(editingNew)}
+      {/* a new card is written in a sheet over the window, its two faces the session's two boxes (the user's ask) */}
+      {!similar && editingNew && <div className="card-sheet" role="dialog" aria-label="new card"><div className="card-sheet-in">{newEditor(editingNew)}</div></div>}
       {!similar && rows.length === 0 && !editingNew && <div className="empty">no cards</div>}
       {!similar && rows.length > 0 && shown.length === 0 && <div className="empty">nothing matches</div>}
       {!similar && shown.slice(0, drawnTo).map((r) => {
@@ -628,11 +627,9 @@ export function DeckBrowser({ home, active }: BrowserProps) {
               )}
               <button type="button" className="cs-del" title="delete card" aria-label="delete card" onClick={(e) => { e.stopPropagation(); removeOne(r); }}><Glyph g="×" /></button>
             </div>
-            {editingNew && newAfterKey === r.key && newEditor(editingNew)}
           </div>
         );
       })}
-      {!similar && editingNew && newAfterKey !== null && !keys.includes(newAfterKey) && newEditor(editingNew)}
 
       {menu && menuRow && (
         <div className="ctx-menu" ref={menuRef} style={{ left: menu.x, top: menu.y }} onMouseDown={(e) => e.stopPropagation()} onContextMenu={(e) => e.preventDefault()}>

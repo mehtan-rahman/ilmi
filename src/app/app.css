@@ -1216,3 +1216,7 @@ textarea[dir="auto"] { unicode-bidi: plaintext; }
 .ctx-menu .ci .mv-where { margin-left: auto; padding-left: 10px; color: var(--fg-3); font-size: 11.5px; white-space: nowrap; max-width: 45%; overflow: hidden; text-overflow: ellipsis; }
 .ctx-menu .ci.none { color: var(--fg-3); cursor: default; }
 .ctx-menu .sub-scroll .ci { display: flex; align-items: center; }
+/* the title, edited where it stands (Reader.tsx `TitleField`) */
+.reader h1.doc-title { outline: none; border-radius: var(--radius); cursor: text; }
+.reader h1.doc-title:hover { box-shadow: 0 0 0 4px var(--line-2); background: var(--line-2); }
+.reader h1.doc-title:focus { box-shadow: 0 0 0 4px color-mix(in oklab, var(--accent) 14%, transparent); background: color-mix(in oklab, var(--accent) 14%, transparent); }

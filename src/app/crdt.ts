@@ -82,8 +82,15 @@ export async function storageDir(): Promise<string | null> {
   return s?.kind === 'folder' ? s.folder : null;
 }
 
-/** `met`: the collection and the storage have met (`connect`); until then each sync tries again, so a device that opens with no network meets its storage when there is one. */
-let open: { vault: Vault; eng: Engine; storage: Storage; met: boolean } | null = null;
+/**
+ * `met`: the collection and the storage have met (`connect`); until then each sync tries again, so a device that opens with no network meets its storage when there is one.
+ * `run`: the sync under way, done or failed; `next`: the one asked for while it runs, which every ask meanwhile is. One sync at a time, then, however many
+ * the poll, a write, the focus and a leave ask for while a storage is slow, and the strip says pulling until the last of them is done.
+ */
+interface Open { vault: Vault; eng: Engine; storage: Storage; met: boolean; syncing: boolean; run: Promise<void> | null; next: Promise<Synced | null> | null }
+let open: Open | null = null;
+/** Counts each start and stop: a start whose storage comes after the collection closed, or after a start since, lets it go. */
+let opening = 0;
 let writeTimer: ReturnType<typeof setTimeout> | null = null;
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 let unsubscribe: (() => void) | null = null;
@@ -142,28 +149,55 @@ function fetchFiles(): Promise<unknown> {
       console.error('files', e);
     } finally {
       fetching = null;
-      if (open === at) patch({ busy: null, progress: null });
+      quiet(at);
       publishAway(at.vault);
     }
   })();
   return fetching;
 }
 
+/** The strip stops saying pulling once no sync runs or waits its turn, and no file is on its way. */
+function quiet(at: Open): void {
+  if (open === at && !at.syncing && !at.next && !fetching) patch({ busy: null, progress: null });
+}
+
 /** Every file this device keeps is here: what a sync left to fetch has come, or could not. */
 export const filesSettled = (): Promise<unknown> => fetching ?? Promise.resolve();
 
-/** Sync now: what the other devices wrote is merged, what was written here goes out. Null when the open collection has no storage. */
-export async function crdtNow(): Promise<Synced | null> {
+/** Sync now: what the other devices wrote is merged, what was written here goes out. Null when the open collection has no storage. While a sync runs, the one after it, which has seen everything written before it was asked for. */
+export function crdtNow(): Promise<Synced | null> {
   const at = open;
-  if (!at) return null;
+  if (!at) return Promise.resolve(null);
+  if (at.next) return at.next;
+  if (!at.run) return runSync(at);
+  const next = at.run.then(() => {
+    at.next = null;
+    return open === at ? runSync(at) : null;
+  });
+  at.next = next;
+  return next;
+}
+
+function runSync(at: Open): Promise<Synced | null> {
+  const run = syncOnce(at);
+  const settled: Promise<void> = run.then(() => {}, () => {}).then(() => { if (at.run === settled) at.run = null; });
+  at.run = settled;
+  return run;
+}
+
+async function syncOnce(at: Open): Promise<Synced | null> {
   if (writeTimer) { clearTimeout(writeTimer); writeTimer = null; }
+  const before = sentWrites;
   sentWrites = writes;
+  at.syncing = true;
   patch({ busy: 'pulling' });
   try {
     if (!at.met) {
       const how = await at.eng.connect(at.storage);
       at.met = true;
-      if (how === 'made' && open === at) note('storage made');
+      // closed while it waited its turn: the close's own sync sends what there is
+      if (open !== at) return null;
+      if (how === 'made') note('storage made');
     }
     // the files come after, on their own: a sync does not wait on a PDF
     const r = await at.eng.sync(at.storage, { files: false });
@@ -184,7 +218,8 @@ export async function crdtNow(): Promise<Synced | null> {
   } catch (e) {
     console.error('crdt sync', e);
     failed = e instanceof Error ? e.message : String(e);
-    if (open === at) patch({ offline: true });
+    // what it had seen did not reach the storage: a leave sends it
+    if (open === at) { patch({ offline: true }); sentWrites = before; }
     // the service let go of the sign-in (revoked, or Google's week for an app in testing): said once, and the row offers it again
     if (failed === SIGN_IN_AGAIN && storageOf(at.vault.root).account) {
       saveStorage(at.vault.root, { ...storageOf(at.vault.root), account: '' });
@@ -192,7 +227,8 @@ export async function crdtNow(): Promise<Synced | null> {
     }
     throw e;
   } finally {
-    if (open === at) patch({ busy: null, progress: null });
+    at.syncing = false;
+    quiet(at);
     await refresh().catch(() => {});
     if (open === at) void fetchFiles();
   }
@@ -239,21 +275,25 @@ export const crdtOn = (): boolean => open !== null;
  * The collection opened: when it has a storage (its setting, or the one a
  * dev run names), the two meet and sync, and the timers start. Resolves
  * to whether they did; without a storage nothing happens here and git
- * sync may run.
+ * sync may run. A collection closed or started again while its storage is
+ * being made is left to whatever came since (true: not git's to start).
  */
 export async function startCrdt(vault: Vault): Promise<boolean> {
   stopCrdt();
+  const mine = opening;
   const fs = storeOf(vault);
   const own = storageOf(vault.root);
   useApp.setState({ storage: own, away: fs?.away() ?? [] });
   const settings = (await devStorage()) ?? (own.on && storageReady(own) ? own : null);
+  if (mine !== opening) return true;
   if (!settings || !fs) return false;
   failed = null;
   const eng = engineFor(fs, vault.root);
   useApp.setState({ sync: { ...SYNC_OFF, on: true, busy: 'pushing' } });
   try {
     const storage = await storageFor(settings, vault.root);
-    const at: NonNullable<typeof open> = { vault, eng, storage, met: false };
+    if (mine !== opening) return true;
+    const at: Open = { vault, eng, storage, met: false, syncing: false, run: null, next: null };
     open = at;
     // a file that is not here is asked of the storage by whoever reads it: the PDF lens, an image in a note, an export
     fs.door.fetcher(async (hash) => {
@@ -261,7 +301,7 @@ export async function startCrdt(vault: Vault): Promise<boolean> {
       try {
         await eng.fetch(storage, hash);
       } finally {
-        if (open === at && !fetching) patch({ busy: null, progress: null });
+        quiet(at);
         publishAway(vault);
       }
     });
@@ -271,6 +311,7 @@ export async function startCrdt(vault: Vault): Promise<boolean> {
       document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') onFocus(); });
       onLeave(crdtLeave);
       await listenProgress().catch((e: unknown) => console.error('progress', e));
+      if (open !== at) return true;
     }
     unsubscribe = vault.subscribe(onWrite);
     if (timers) pollTimer = setInterval(() => { void crdtNow().catch(() => {}); }, POLL_MS);
@@ -278,6 +319,7 @@ export async function startCrdt(vault: Vault): Promise<boolean> {
     await crdtNow().catch(() => { if (open === at) note(failed ?? 'offline'); });
   } catch (e) {
     console.error('crdt', e);
+    if (mine !== opening) return true;
     failed = e instanceof Error ? e.message : String(e);
     patch({ on: true, busy: null, offline: true });
     note(failed);
@@ -289,6 +331,7 @@ export async function startCrdt(vault: Vault): Promise<boolean> {
 export function stopCrdt(): void {
   const at = open;
   open = null;
+  opening += 1;
   unsubscribe?.();
   unsubscribe = null;
   if (writeTimer) clearTimeout(writeTimer);

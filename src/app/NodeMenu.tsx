@@ -3,7 +3,7 @@
 // the document, its children directory made on demand), import a file…, add
 // from text or a link (the intake), `sort by name` when the directory has an
 // order of its own, and for a node rename, move to… (a list of folders and
-// documents opened on a click), `study` on anything with cards under it
+// documents opened on a click, filtered as you type), `study` on anything with cards under it
 // (a session over them, deckOps.ts), `revisit` on a note not yet enrolled
 // (its reading line, no marker), and delete (asking first when there is
 // something under it). A document's menu has `show as tabs` / `show as
@@ -17,10 +17,10 @@
 
 import { useEffect, useLayoutEffect, useRef, useState, type Dispatch, type MouseEvent, type SetStateAction } from 'react';
 import type { NodeType } from '../format/index.js';
-import { childDirOf, isDoc, isPdfPath } from '../vault/index.js';
+import { childDirOf, dirOf, isDoc, isPdfPath } from '../vault/index.js';
 import { hasCards, studyDeck } from './deckOps.js';
 import { importFiles } from './land.js';
-import { GLYPH, descendants, findNode, kindOf, moveTargets, titleOf, type NodeKind } from './names.js';
+import { GLYPH, descendants, findNode, kindOf, moveTargets, titleOf, type MoveTarget, type NodeKind } from './names.js';
 import { useApp } from './store.js';
 import { deleteNode } from './remove.js';
 import { createNode, duplicateNode, enrolReading, moveNode, openIntake, setTabs, sortByName } from './vault.js';
@@ -68,6 +68,76 @@ interface Props {
   onRename(id: string): void;
   /** On a tab rail's row (`Rail.tsx`): `add subtab` shows, and makes one under the row. */
   onSubtab?(id: string): void;
+}
+
+/** Marks and case off, so `arabi` finds `ʿarabī`. */
+const fold = (s: string) => s.normalize('NFD').replace(/[\p{M}ʻʼʾʿ']/gu, '').toLowerCase();
+
+/**
+ * `move to…`'s list: a field that filters it as you type (the whole
+ * collection's folders and documents can be hundreds of rows), ↑ ↓ to pick,
+ * ⏎ to move. Unfiltered it is the tree, indented; filtered, the matches flat,
+ * each with the place it is in.
+ */
+function MoveList({ targets, back, move }: { targets: MoveTarget[]; back(e: MouseEvent): void; move(dir: string): void }) {
+  const docs = useApp((s) => s.docs);
+  const root = useApp((s) => s.vault);
+  const [q, setQ] = useState('');
+  const [pick, setPick] = useState(0);
+  const listRef = useRef<HTMLDivElement>(null);
+  const name = (p: string) => titleOf(p, docs, root);
+  const want = fold(q.trim());
+  const shown = want ? targets.filter((t) => fold(name(t.path)).includes(want)) : targets;
+  const k = Math.min(pick, Math.max(0, shown.length - 1));
+  // the picked row kept in view as the keys move it
+  useEffect(() => { listRef.current?.querySelector<HTMLElement>('.ci.picked')?.scrollIntoView?.({ block: 'nearest' }); }, [k, want]);
+  const where = (p: string) => {
+    const d = dirOf(p);
+    if (d === '') return '';
+    const up = findNode(useApp.getState().tree, d) ? d : `${d}.md`;
+    return name(up);
+  };
+  return (
+    <div className="sub-wrap">
+      <div className="ci back" onClick={back}>
+        <span className="cg"><Glyph g="◂" /></span>move to…
+      </div>
+      <input
+        className="move-filter"
+        placeholder="find a folder or note"
+        value={q}
+        autoFocus
+        spellCheck={false}
+        onChange={(e) => { setQ(e.target.value); setPick(0); }}
+        onKeyDown={(e) => {
+          if (e.key === 'ArrowDown') { e.preventDefault(); setPick(Math.min(shown.length - 1, k + 1)); }
+          else if (e.key === 'ArrowUp') { e.preventDefault(); setPick(Math.max(0, k - 1)); }
+          else if (e.key === 'Enter') { e.preventDefault(); const t = shown[k]; if (t) move(t.dir); }
+        }}
+      />
+      <div className="cd" />
+      <div className="sub-scroll" ref={listRef}>
+        {shown.map((t, i) => {
+          const kind: NodeKind = t.path === '' ? 'folder' : kindOf(t.path, docs);
+          return (
+            <div
+              key={t.path}
+              className={`ci${i === k ? ' picked' : ''}`}
+              data-path={t.path}
+              style={{ paddingLeft: want ? 10 : 10 + t.depth * 12 }}
+              onMouseEnter={() => setPick(i)}
+              onClick={(e) => { e.stopPropagation(); move(t.dir); }}
+            >
+              <span className="cg"><Glyph g={GLYPH[kind]} /></span>
+              <span className="mv-name">{name(t.path)}</span>
+              {want && where(t.path) && <span className="mv-where">{where(t.path)}</span>}
+            </div>
+          );
+        })}
+        {shown.length === 0 && <div className="ci none">nothing called that</div>}
+      </div>
+    </div>
+  );
 }
 
 export function NodeMenu({ at, set, onCreated, onRename, onSubtab }: Props) {
@@ -226,22 +296,7 @@ export function NodeMenu({ at, set, onCreated, onRename, onSubtab }: Props) {
           )}
         </>
       ) : (
-        <div className="sub-wrap">
-          <div className="ci back" onClick={sub(false)}>
-            <span className="cg"><Glyph g="◂" /></span>move to…
-          </div>
-          <div className="cd" />
-          <div className="sub-scroll">
-            {targets.map((t) => {
-              const k: NodeKind = t.path === '' ? 'folder' : kindOf(t.path, docs);
-              return (
-                <div key={t.path} className="ci" data-path={t.path} style={{ paddingLeft: 10 + t.depth * 12 }} onClick={act(() => { moveNode(at.id, t.dir).catch(fail); })}>
-                  <span className="cg"><Glyph g={GLYPH[k]} /></span>{titleOf(t.path, docs, root)}
-                </div>
-              );
-            })}
-          </div>
-        </div>
+        <MoveList targets={targets} back={sub(false)} move={(dir) => { moveNode(at.id, dir).catch(fail); set(null); }} />
       )}
     </div>
   );

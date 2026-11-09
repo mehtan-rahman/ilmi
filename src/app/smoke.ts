@@ -3909,7 +3909,6 @@ export async function smokeTree(vault: Vault): Promise<void> {
     const depth = Number.isFinite(x) ? ` at depth ${Math.round((x - pad) / ind)}` : '';
     return `${kind === 'into' ? 'box around' : `line ${kind === 'top' ? 'above' : 'below'}`} ${el.dataset.path || '/'}${depth}`;
   };
-  const dragEv = (type: string, dt: DataTransfer, x: number, y: number) => new DragEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, dataTransfer: dt });
   type Where = 'top' | 'mid' | 'bottom';
   /**
    * A drag as a pointer would make it: dragstart on `from`, dragenter and
@@ -3920,32 +3919,37 @@ export async function smokeTree(vault: Vault): Promise<void> {
   const drag = async (name: string, from: HTMLElement | null, to: HTMLElement | null, where: Where, opts: { x?: number; rest?: number; shot?: string; esc?: boolean } = {}) => {
     if (!from || !to) { log(`${name}: a row is missing (${from ? '' : 'from '}${to ? '' : 'to'})`); return; }
     const moving = from.dataset.path ?? '';
-    const dt = new DataTransfer();
+    // the mouse's drag (`drag.ts`): on the Mac the page never sees a native drag's dragover or drop
+    // (Tauri's window takes them, for files), so a row is dragged by the pointer and hit-tested
+    const ptr = (target: EventTarget, type: string, x: number, y: number) =>
+      target.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, button: 0, buttons: type === 'pointerup' ? 0 : 1, pointerType: 'mouse', isPrimary: true, clientX: x, clientY: y }));
+    const fr = from.getBoundingClientRect();
+    const fx = fr.left + Math.min(60, fr.width / 2);
+    const fy = fr.top + fr.height / 2;
+    ptr(from.querySelector('.name') ?? from, 'pointerdown', fx, fy);
+    ptr(window, 'pointermove', fx + 8, fy + 8);
     // the target in the middle of its scroller, so the edge scroll does not move it under the pointer during a rest (39)
     to.scrollIntoView({ block: 'center' });
     await sleep(100);
-    from.dispatchEvent(dragEv('dragstart', dt, 0, 0));
-    await sleep(60);
     const r = to.getBoundingClientRect();
     const y = r.top + r.height * (where === 'top' ? 0.12 : where === 'mid' ? 0.5 : 0.88);
     const x = r.left + (opts.x ?? r.width - 40);
-    to.dispatchEvent(dragEv('dragenter', dt, x, y));
-    const over = dragEv('dragover', dt, x, y);
-    to.dispatchEvent(over);
-    if (opts.rest) {
-      for (let t = 0; t < opts.rest; t += 100) { await sleep(100); to.dispatchEvent(dragEv('dragover', dt, x, y)); }
-    }
+    ptr(window, 'pointermove', x, y);
+    // a still pointer: the drag reads it again on its own (no more moves sent)
+    if (opts.rest) await sleep(opts.rest);
     await sleep(120);
     const d = useDrag.getState().drop;
-    log(`${name}: ${moving} over the ${where} of ${to.dataset.path}${opts.x !== undefined ? ` (x ${opts.x})` : ''}${opts.rest ? ` resting ${opts.rest} ms` : ''}: accepted ${over.defaultPrevented}, drawn ${mark()}, drop ${d ? `${d.mode} ${d.target}` : 'none (refused)'}`);
+    const accepted = document.documentElement.dataset.nodeDrag === 'move';
+    log(`${name}: ${moving} over the ${where} of ${to.dataset.path}${opts.x !== undefined ? ` (x ${opts.x})` : ''}${opts.rest ? ` resting ${opts.rest} ms` : ''}: accepted ${accepted}, ghost ${q('.drag-ghost')?.textContent ?? 'none'}, drawn ${mark()}, drop ${d ? `${d.mode} ${d.target}` : 'none (refused)'}`);
     if (opts.shot) await shot(opts.shot, 2500);
     if (opts.esc) {
       window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
       await sleep(80);
       log(`${name}: Esc, drawn ${mark()}`);
     }
-    to.dispatchEvent(dragEv('drop', dt, x, y));
-    from.dispatchEvent(dragEv('dragend', dt, x, y));
+    ptr(window, 'pointerup', x, y);
+    // the click a real let-go makes, which the drag swallows
+    to.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, clientX: x, clientY: y }));
     if (!d || opts.esc) {
       await sleep(600);
       log(`${name}: nothing moved: ${vault.documents().includes(moving) || !moving.endsWith('.md') ? 'yes' : 'NO'}`);
@@ -4013,11 +4017,20 @@ export async function smokeTree(vault: Vault): Promise<void> {
       side.scrollTop = 0;
       const sb = side.getBoundingClientRect();
       const low = qa<HTMLElement>('.edit-tree .trow').reverse().find((r) => { const rr = r.getBoundingClientRect(); return rr.bottom <= sb.bottom && rr.bottom > sb.bottom - 40; });
-      const dt = new DataTransfer();
-      trow('fleeting/2026-10-30.md')?.dispatchEvent(dragEv('dragstart', dt, 0, 0));
-      for (let k = 0; k < 6 && low; k++) { low.dispatchEvent(dragEv('dragover', dt, sb.left + 60, sb.bottom - 4)); await sleep(40); }
+      // the mouse held still near the edge: the drag reads it again on its own and keeps scrolling
+      const ptr = (target: EventTarget, type: string, x: number, y: number) =>
+        target.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, button: 0, buttons: 1, pointerType: 'mouse', isPrimary: true, clientX: x, clientY: y }));
+      const src = trow('fleeting/2026-10-30.md');
+      const fr = src?.getBoundingClientRect();
+      if (src && fr) {
+        ptr(src, 'pointerdown', fr.left + 40, fr.top + fr.height / 2);
+        ptr(window, 'pointermove', fr.left + 50, fr.top + fr.height / 2 + 8);
+        ptr(window, 'pointermove', sb.left + 60, sb.bottom - 4);
+        await sleep(300);
+      }
       log(`edge scroll: the sidebar scrolled from 0 to ${side.scrollTop} (${low ? `over ${low.dataset.path}` : 'no row at the edge'})`);
-      trow('fleeting/2026-10-30.md')?.dispatchEvent(dragEv('dragend', dt, 0, 0));
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+      ptr(window, 'pointerup', sb.left + 60, sb.bottom - 4);
       side.scrollTop = 0;
     }
     // an empty folder: one quiet row, taking a drop into the folder

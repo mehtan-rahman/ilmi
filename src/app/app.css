@@ -1185,3 +1185,34 @@ textarea[dir="auto"] { unicode-bidi: plaintext; }
 .card-span table { border-collapse: collapse; margin: 0.3em 0; white-space: normal; font-size: 0.95em; }
 .card-span th, .card-span td { padding: 0.2em 0.7em; border-bottom: 1px solid var(--line-2); vertical-align: top; text-align: start; font-style: normal; }
 .card-span th { font-family: var(--sans); font-size: 0.75em; font-weight: 600; color: var(--fg-3); border-bottom-color: var(--line-1); }
+
+/* ── a mouse's drag of a row (drag.ts): the name under the pointer, nothing selected meanwhile ── */
+.drag-ghost {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 200;
+  pointer-events: none;
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 3px 8px;
+  font-family: var(--sans);
+  font-size: 12.5px;
+  color: var(--fg-1);
+  background: var(--paper);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-float);
+  opacity: 0.94;
+}
+:root[data-node-drag], :root[data-node-drag] * { user-select: none !important; -webkit-user-select: none !important; cursor: grabbing !important; }
+:root[data-node-drag="none"], :root[data-node-drag="none"] * { cursor: not-allowed !important; }
+.ctx-menu .move-filter { display: block; width: calc(100% - 12px); margin: 4px 6px 2px; padding: 4px 6px; font: inherit; font-size: 12.5px; color: var(--fg-1); background: var(--paper); border: 1px solid var(--line-1); border-radius: var(--radius); outline: none; }
+.ctx-menu .move-filter:focus { border-color: var(--accent); }
+.ctx-menu .ci.picked { background: var(--line-2); }
+.ctx-menu .ci .mv-name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ctx-menu .ci .mv-where { margin-left: auto; padding-left: 10px; color: var(--fg-3); font-size: 11.5px; white-space: nowrap; max-width: 45%; overflow: hidden; text-overflow: ellipsis; }
+.ctx-menu .ci.none { color: var(--fg-3); cursor: default; }
+.ctx-menu .sub-scroll .ci { display: flex; align-items: center; }

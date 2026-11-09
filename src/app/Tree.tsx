@@ -333,6 +333,8 @@ export function Tree({ activeId, onOpen }: Props) {
     const editingThis = editing?.id === id;
     const counts = node ? rowCounts(node, docs[id], now) : { due: 0, full: '' };
     const m = rowMark(drag, id, id, SURF);
+    // a drag resting on a closed row opens it only for nodes under it: a deck's card list would push the rows under the pointer away
+    const springs = r.has && !r.open && (kind === 'folder' || (node?.kind === 'doc' && (node.children?.length ?? 0) > 0));
     const cls = ['row', 'trow', m.className, fileOver === id && !m.className.includes('drop-') ? 'drop-into' : '', isRoot ? 'root-row' : ''].filter(Boolean).join(' ');
     const asked = asking === id && node ? descendants(node) : 0;
     const notHere = node?.kind === 'doc' && node.pdf !== undefined && away.has(node.pdf);
@@ -356,7 +358,7 @@ export function Tree({ activeId, onOpen }: Props) {
         aria-selected={selected === id}
         aria-expanded={r.has ? r.open : undefined}
         title={counts.full || undefined}
-        {...rowDrag(geoms.get(r)!, SURF, { draggable: !isRoot && !editingThis, folded: r.has && !r.open })}
+        {...rowDrag(geoms.get(r)!, SURF, { draggable: !isRoot && !editingThis, folded: springs })}
         onContextMenu={(e) => openMenu(e, id)}
         onMouseDown={() => { setSelected(id); setAsking(null); }}
         onDoubleClick={(e) => { e.stopPropagation(); beginRename(id); }}

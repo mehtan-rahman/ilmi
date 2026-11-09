@@ -250,6 +250,31 @@ describe('nesting in the tree', () => {
     mouse(items[1]!, 'click');
     expect(calls).toEqual(['move notes.md → papers/wozniak-1990']);
   });
+
+  it('filters move to… as you type: the matches flat with where each is, ↓ and ⏎ to move', () => {
+    mouse(row('notes.md'), 'contextmenu', { clientX: 60, clientY: 120 });
+    mouse(side.querySelector('.ctx-menu .ci.has-sub')!, 'click');
+    const field = side.querySelector<HTMLInputElement>('.ctx-menu .move-filter')!;
+    expect(document.activeElement).toBe(field);
+    const type = (v: string) => act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(field, v);
+      field.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    const shown = () => Array.from(side.querySelectorAll<HTMLElement>('.ctx-menu .sub-scroll .ci')).map((e) => e.textContent);
+    type('s');
+    expect(shown()).toEqual(['/papers', '/sources']);
+    type('wozn');
+    // flat, with the place it is in
+    expect(shown()).toEqual(['“wozniak 1990papers']);
+    type('zzz');
+    expect(shown()).toEqual(['nothing called that']);
+    type('s');
+    act(() => { field.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })); });
+    expect(side.querySelector('.ctx-menu .ci.picked')?.textContent).toBe('/sources');
+    act(() => { field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); });
+    expect(calls).toEqual(['move notes.md → sources']);
+    expect(side.querySelector('.ctx-menu')).toBeNull();
+  });
 });
 
 describe('F2', () => {

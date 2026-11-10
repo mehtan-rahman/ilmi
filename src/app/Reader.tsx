@@ -1002,6 +1002,30 @@ export function handleClick(_view: EditorView, _pos: number, event: MouseEvent):
   return true;
 }
 
+/**
+ * A press in the page's empty room below the text puts the caret on the
+ * text's last line: at the end of a closing paragraph, else on a new empty
+ * one after what closes it (a table, a list, a heading, a card), which a save
+ * drops again if nothing is typed there (`blocksFromDoc`). False when the
+ * press is not below the text or the page cannot be edited.
+ */
+export function caretBelow(view: EditorView, y: number): boolean {
+  if (!view.editable) return false;
+  if (y <= view.dom.getBoundingClientRect().bottom) return false;
+  const { doc } = view.state;
+  const last = doc.lastChild;
+  let tr = view.state.tr;
+  if (last && last.type === schema.nodes.paragraph) {
+    tr = tr.setSelection(TextSelection.create(doc, doc.content.size - 1));
+  } else {
+    tr = tr.insert(doc.content.size, schema.nodes.paragraph.create());
+    tr = tr.setSelection(TextSelection.create(tr.doc, tr.doc.content.size - 1));
+  }
+  view.dispatch(tr.scrollIntoView());
+  view.focus();
+  return true;
+}
+
 // ── the component ────────────────────────────────────────────────
 
 interface Rule {
@@ -2211,7 +2235,19 @@ export function Reader({ id, active = true, onPages, notes = false }: ReaderProp
   const notesLine = [passages ? plural(passages, 'passage') : '', plural(cards, 'card')].join(passages ? ' · ' : '');
 
   return (
-    <div className="reader-wrap" ref={rootRef} {...(booked && pagesRel ? { 'data-pdf': pagesRel } : {})}>
+    <div
+      className="reader-wrap"
+      ref={rootRef}
+      {...(booked && pagesRel ? { 'data-pdf': pagesRel } : {})}
+      onMouseDown={(e) => {
+        // the empty room below the text: the caret on its last line (`caretBelow`)
+        if (e.button !== 0 || reading) return;
+        const t = e.target as HTMLElement;
+        if (t !== e.currentTarget && !t.matches('.reader, .doc-wrap, .doc-mount')) return;
+        const view = viewRef.current;
+        if (view && caretBelow(view, e.clientY)) e.preventDefault();
+      }}
+    >
       <div className={`reader doc-view${reading ? ' reading' : ''}${notes ? ' book-notes-doc' : ''}`} data-frozen={frozen ? '1' : '0'}>
         {find && (
           <div className="find-bar">

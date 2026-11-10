@@ -566,6 +566,8 @@ html[data-shape="portrait"] .pane + .pane { border-left: 0; border-top: 1px soli
   align-items: center;
   position: relative;
 }
+/* a document's page fills its pane, so a press anywhere below the text lands on it (`caretBelow`) */
+.pane-body > .reader-wrap { min-height: 100%; box-sizing: border-box; }
 .reader {
   width: 100%;
   max-width: min(var(--reading-width), 100%);

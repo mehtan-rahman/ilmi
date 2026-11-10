@@ -164,13 +164,22 @@ interface CardProps {
   onGone(gone: boolean): void;
   /** An edit being written: a grade after it waits for it, so it finds the card as edited. */
   onEdit(run: Promise<unknown>): void;
+  /** It may come up to learn: never tested, the tweak on, not learnt already in this session (`learnsFirst`). */
+  learnable?: boolean;
+  /** Learnt (space, ⏎): it is tested at the session's end; nothing is written. */
+  onLearnt?: () => void;
 }
 
-function CardElement({ item, active, given, onGrade, onSkip, onGone, onEdit }: CardProps) {
+/** A schedule never tested: a card new, with no review. */
+export const neverTested = (s: { state?: string; reps?: number } | undefined): boolean => (s?.state ?? 'new') === 'new' && !s?.reps;
+
+function CardElement({ item, active, given, onGrade, onSkip, onGone, onEdit, learnable, onLearnt }: CardProps) {
   const loaded = useDoc(item.path);
   const docPri = useApp((s) => s.docs[item.path]?.pri);
+  // a card never tested comes up answered, to learn: its test is at the session's end (the `learnNew` tweak)
+  const [learning] = useState(() => !given && !!learnable && neverTested(item.sched));
   // a card graded in this session comes back answered, its grade marked
-  const [revealed, setRevealed] = useState(!!given);
+  const [revealed, setRevealed] = useState(!!given || learning);
   // `e`, or a press on a revealed box: the two boxes live in place (`CardFaces.tsx`)
   const [editing, setEditing] = useState(false);
   // the press that opened the boxes, for the caret to land where it was
@@ -202,11 +211,12 @@ function CardElement({ item, active, given, onGrade, onSkip, onGone, onEdit }: C
       return false;
     }
     if (editing) return false;
+    if (learning && (key === ' ' || key === 'Enter')) { onLearnt?.(); return true; }
     if (key === ' ') { grade(3); return true; }
     if (key >= '1' && key <= '4') { grade(Number(key) as Grade); return true; }
     if (key === 'e' && card) { setRevealed(true); setPressAt(undefined); setEditing(true); return true; }
     return false;
-  }, [revealed, item, editing, card, gone]);
+  }, [revealed, item, editing, card, gone, learning]);
 
   // an edit written: the card's text in the file, and this session's other items of it, follow
   const saveEdit = (text: string, was: string) => {
@@ -277,6 +287,7 @@ function CardElement({ item, active, given, onGrade, onSkip, onGone, onEdit }: C
       {sched?.stability !== undefined && <span>stability {Math.round(sched.stability)}d</span>}
       {pri !== PRI_DEFAULT && <span>p {pri}</span>}
       {given && <span className="cm-given">graded {GRADE_WORD[given.g]}</span>}
+      {learning && <span className="cm-learn">first time · learn it</span>}
       <span className="cm-due" data-due={!sched?.due || item.dueAt <= now ? '1' : '0'} data-st={dueTone(dueWord(sched?.due, now))}>{dueWord(sched?.due, now)}</span>
     </>
   );
@@ -305,7 +316,14 @@ function CardElement({ item, active, given, onGrade, onSkip, onGone, onEdit }: C
         {schedule}
       </div>
       </>)}
-      {phone && !revealed
+      {learning ? (
+        <div className="grades learn" data-revealed="1" data-learn="1">
+          <button type="button" data-act="learnt" onClick={() => onLearnt?.()}>
+            <span className="label">got it<kbd>space</kbd></span>
+            <span className="gap">tested at the end · 1–4 grade it now</span>
+          </button>
+        </div>
+      ) : phone && !revealed
         // under the thumb, where the grades will be
         ? <button type="button" className="reveal-all" onClick={() => setRevealed(true)}>reveal</button>
         : (
@@ -540,6 +558,21 @@ export function Session({ active, onOpen }: Props) {
 
   // the grades given in this session, by item: ‹ back to one shows it, and a grade there takes its place
   const given = useRef(new Map<string, Given>());
+  // cards learnt in this session (`learnNew`): each is tested once more at the end, and not learnt again
+  const learnNew = useApp((s) => s.learnNew);
+  const learnt = useRef(new Map<string, string>());
+  useEffect(() => { learnt.current = new Map(); }, [session?.seq]);
+  const learnKey = (c: CardItem) => `${c.path}#${c.id ?? c.block}#${c.group ? JSON.stringify(c.group) : ''}#${c.dir ?? ''}`;
+  const onLearnt = (shown: CardItem) => {
+    const k = learnKey(shown);
+    const seq = session?.seq;
+    if (!learnt.current.has(k)) {
+      // where it was learnt: ‹ back there shows it to learn again, its test still the one at the end
+      learnt.current.set(k, key);
+      useApp.setState((s) => (s.session && s.session.seq === seq ? { session: { ...s.session, items: [...s.session.items, shown] } } : {}));
+    }
+    advance();
+  };
 
   const onGrade = (shown: CardItem, g: Grade) => {
     const vault = currentVault();
@@ -624,7 +657,7 @@ export function Session({ active, onOpen }: Props) {
           <span className="ms-arrow">↗</span>
         </button>
       </div>
-      <CardElement key={key} item={el} active={active} given={given.current.get(key)} onGrade={(g) => onGrade(el, g)} onSkip={advance} onGone={(g) => setGoneAt((was) => (g ? key : was === key ? null : was))} onEdit={onEdit} />
+      <CardElement key={key} item={el} active={active} given={given.current.get(key)} onGrade={(g) => onGrade(el, g)} onSkip={advance} onGone={(g) => setGoneAt((was) => (g ? key : was === key ? null : was))} onEdit={onEdit} learnable={learnNew && (learnt.current.get(learnKey(el)) ?? key) === key} onLearnt={() => onLearnt(el)} />
     </div>
   );
 }

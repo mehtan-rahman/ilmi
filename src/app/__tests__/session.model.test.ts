@@ -345,7 +345,7 @@ async function start(): Promise<void> {
   const items = docItems(DECK, doc, new Date()).filter((i): i is CardItem => i.kind === 'card');
   const order = [items.find((i) => i.id === undefined), items.find((i) => i.id === 'k1' && i.dir !== 'r'), items.find((i) => i.id === 'k1' && i.dir === 'r')];
   if (order.some((i) => !i)) throw new Error(`the deck's items: ${JSON.stringify(items)}`);
-  useApp.setState({ docs: { [DECK]: { type: 'deck', frozen: false, cards: 2, due: 3 } }, files: [DECK], vault: '/v', phone: false, reveal: null, session: { seq: 1, items: order as CardItem[] } });
+  useApp.setState({ learnNew: false, docs: { [DECK]: { type: 'deck', frozen: false, cards: 2, due: 3 } }, files: [DECK], vault: '/v', phone: false, reveal: null, session: { seq: 1, items: order as CardItem[] } });
   root = createRoot(host);
   await act(async () => { root!.render(createElement(Session, { active: true, onOpen: () => {} })); });
   await settle();

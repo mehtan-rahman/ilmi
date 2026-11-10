@@ -8294,6 +8294,67 @@ export async function smokeBelow(vault: Vault): Promise<void> {
   }
 }
 
+// `ILMI_SMOKE=learn` (`smokeLearn`) over a copy of `samples/double-major`: a
+// session of two cards never tested comes up with the first answered, to
+// learn (one action, got it), space writes nothing and the card is tested at
+// the session's end; a grade there writes it; the tweaks row reads learn.
+export async function smokeLearn(vault: Vault): Promise<void> {
+  const log = (s: string) => void info(`smoke learn: ${s}`);
+  const shot = async (name: string, ms = 2000) => { await sleep(600); log(`shot: ${name}`); await sleep(ms); };
+  const q = <T extends Element>(sel: string, root: ParentNode = document) => root.querySelector<T>(sel);
+  const must = (ok: unknown, what: string) => { if (!ok) throw new Error(what); log(`ok: ${what}`); };
+  const poll = async <T,>(probe: () => T | null | undefined | false, what: string, ms = 5000): Promise<T> => {
+    const t0 = Date.now();
+    for (;;) {
+      const v = probe();
+      if (v) { log(`ok: ${what}`); return v; }
+      if (Date.now() - t0 > ms) throw new Error(`${what} (waited ${ms} ms)`);
+      await sleep(100);
+    }
+  };
+  const key = (k: string) => window.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));
+  const text = async (p: string) => (await vault.read(p)).text;
+  try {
+    useApp.getState().setTheme('light');
+    must(useApp.getState().learnNew, 'the tweak is on by default');
+    const fresh = useApp.getState().queue.filter((i): i is CardItem => i.kind === 'card' && i.form === 'qa' && (i.sched?.state ?? 'new') === 'new' && !i.sched?.reps);
+    must(fresh.length >= 2, `cards never tested in the queue (${fresh.length})`);
+    const [a, b] = [fresh[0]!, fresh[1]!];
+    const before = await text(a.path);
+    useApp.setState({ session: null });
+    openSession(a);
+    useApp.setState((s) => (s.session ? { session: { ...s.session, items: [a, b] } } : {}));
+    await poll(() => q('.recall-wrap .card[data-revealed="1"] .face.back'), 'the first comes up answered', 8000);
+    must(q('.grades[data-learn="1"] button[data-act="learnt"]'), `one action: ${q('.grades[data-learn="1"]')?.textContent}`);
+    must(q('.cm-learn')?.textContent === 'first time · learn it', 'the strip says learn it');
+    await shot('learn-first');
+    (document.activeElement as HTMLElement | null)?.blur?.();
+    key(' ');
+    await poll(() => q('.sess-count')?.textContent === '2 / 3', `got it: on to the second, one more at the end (${q('.sess-count')?.textContent})`);
+    await sleep(500);
+    must((await text(a.path)) === before, 'nothing written to the first card\'s file');
+    key(' ');
+    await poll(() => q('.sess-count')?.textContent === '3 / 4', 'the second learnt too');
+    await poll(() => q('.recall-wrap .card[data-revealed="0"]') && !q('.grades[data-learn="1"]'), 'the first again, as a test: the question alone');
+    await shot('learn-then-test');
+    key(' ');
+    await poll(() => q('.recall-wrap .card[data-revealed="1"]'), 'revealed');
+    key('3');
+    await poll(() => q('.sess-count')?.textContent === '4 / 4', 'graded: on to the second\'s test');
+    let after = before;
+    for (let i = 0; i < 40 && after === before; i++) { await sleep(100); after = await text(a.path); }
+    must(after !== before && /<!-- sr [^>]*r=1/.test(after), 'the grade is written: one review');
+    useApp.setState({ tweaksOpen: true });
+    const row = await poll(() => q<HTMLElement>('[data-tw="learn-new"]'), 'the tweaks have the row');
+    must(q('button[data-active="1"]', row)?.textContent === 'learn', `it reads ${q('button[data-active="1"]', row)?.textContent}`);
+    await shot('learn-tweak');
+    useApp.setState({ tweaksOpen: false });
+    log(`done; vault ${vault.root}`);
+  } catch (e) {
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
 export async function smokeZoom(vault: Vault): Promise<void> {
   const log = (s: string) => void info(`smoke zoom: ${s}`);
   const shot = async (name: string, ms = 2500) => { await sleep(800); log(`shot: ${name}`); await sleep(ms); };

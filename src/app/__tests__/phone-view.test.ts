@@ -92,6 +92,7 @@ beforeEach(() => {
   ];
   useApp.setState({
     ...initial,
+    learnNew: false,
     vault: '/collections/double-major',
     mobile: true,
     phone: true,

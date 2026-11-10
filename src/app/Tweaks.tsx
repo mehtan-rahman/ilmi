@@ -1,8 +1,9 @@
 // The tweaks panel: theme, accent, density, text size, whether the last
 // vault reopens on start, whether a clipped page's images are downloaded,
 // whether images from the web are shown, whether the queue names documents
-// by title, whether the backlog is postponed when the day starts, the
-// day's budget, and where clippings land. ⌘, opens it. The first nine live
+// by title, whether the backlog is postponed when the day starts, whether
+// a card never tested is first shown to learn, the
+// day's budget, and where clippings land. ⌘, opens it. The first ten live
 // in the webview's storage, not in any vault; the budget and the clippings
 // folder are the open vault's, in its `.ilmi/state.json`. Under the sync
 // rows, the storage the collection syncs through (a folder, an S3 bucket, a
@@ -240,6 +241,7 @@ export function Tweaks() {
   const remoteImages = useApp((s) => s.remoteImages);
   const queueTitles = useApp((s) => s.queueTitles);
   const backlog = useApp((s) => s.backlog);
+  const learnNew = useApp((s) => s.learnNew);
   const vault = useApp((s) => s.vault);
   const budget = useApp((s) => s.budget);
   const clipDir = useApp((s) => s.clipDir);
@@ -335,6 +337,13 @@ export function Tweaks() {
         <div className="tw-seg">
           <button type="button" data-active={backlog ? '1' : '0'} onClick={() => useApp.getState().setBacklog(true)}>on</button>
           <button type="button" data-active={backlog ? '0' : '1'} onClick={() => useApp.getState().setBacklog(false)}>off</button>
+        </div>
+      </div>
+      <div className="tw-row" data-tw="learn-new">
+        <span className="tw-lbl">new cards <span className="tw-val">first time seen</span></span>
+        <div className="tw-seg">
+          <button type="button" data-active={learnNew ? '1' : '0'} onClick={() => useApp.getState().setLearnNew(true)}>learn</button>
+          <button type="button" data-active={learnNew ? '0' : '1'} onClick={() => useApp.getState().setLearnNew(false)}>test</button>
         </div>
       </div>
       {vault !== null && (

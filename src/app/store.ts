@@ -50,6 +50,8 @@ export interface Tweaks {
   queueTitles: boolean;
   /** Postpone the backlog (reading and writing due before today, below the fold) when the day starts. Off by default. */
   backlog: boolean;
+  /** A card never tested comes up answered first, to learn, and is tested at the session's end. On by default. */
+  learnNew: boolean;
 }
 export const DENSITY_MIN = 0.6;
 export const DENSITY_MAX = 1.6;
@@ -57,7 +59,7 @@ export const ZOOM_MIN = 0.7;
 export const ZOOM_MAX = 1.8;
 export const ZOOM_STEP = 0.1;
 const TWEAKS_KEY = 'ilmi.tweaks';
-const DEFAULT_TWEAKS: Tweaks = { theme: 'light', accent: 'gold', density: 1, zoom: 1, reopen: true, clipImages: true, remoteImages: true, queueTitles: false, backlog: false };
+const DEFAULT_TWEAKS: Tweaks = { theme: 'light', accent: 'gold', density: 1, zoom: 1, reopen: true, clipImages: true, remoteImages: true, queueTitles: false, backlog: false, learnNew: true };
 
 function loadTweaks(): Tweaks {
   try {
@@ -74,6 +76,7 @@ function loadTweaks(): Tweaks {
       remoteImages: typeof t.remoteImages === 'boolean' ? t.remoteImages : DEFAULT_TWEAKS.remoteImages,
       queueTitles: typeof t.queueTitles === 'boolean' ? t.queueTitles : DEFAULT_TWEAKS.queueTitles,
       backlog: typeof t.backlog === 'boolean' ? t.backlog : DEFAULT_TWEAKS.backlog,
+      learnNew: typeof t.learnNew === 'boolean' ? t.learnNew : DEFAULT_TWEAKS.learnNew,
     };
   } catch {
     return DEFAULT_TWEAKS;
@@ -234,6 +237,8 @@ export interface AppState {
   queueTitles: boolean;
   /** Postpone the backlog when the day starts (`vault.ts`'s `dayStarted`). A tweak, kept with the others, off by default. */
   backlog: boolean;
+  /** A card never tested comes up answered first, to learn (`Session.tsx`). A tweak, kept with the others, on by default. */
+  learnNew: boolean;
   /** The collections there are, the last opened first (the welcome's rows, Open Recent); in the webview's storage. */
   recents: Recent[];
   /** Collections that did not open when last tried. */
@@ -347,6 +352,7 @@ export interface AppState {
   setRemoteImages(on: boolean): void;
   setQueueTitles(on: boolean): void;
   setBacklog(on: boolean): void;
+  setLearnNew(on: boolean): void;
   /** Replace the recents list; it is saved as the tweaks are. */
   setRecents(list: Recent[]): void;
   setPanes(next: Panes | ((cur: Panes) => Panes)): void;
@@ -373,6 +379,7 @@ export const useApp = create<AppState>((set, get) => ({
   remoteImages: tweaks.remoteImages,
   queueTitles: tweaks.queueTitles,
   backlog: tweaks.backlog,
+  learnNew: tweaks.learnNew,
   recents: loadRecents(),
   gone: [],
   started: false,
@@ -445,6 +452,7 @@ export const useApp = create<AppState>((set, get) => ({
   setRemoteImages: (remoteImages) => { set({ remoteImages }); persist(get()); },
   setQueueTitles: (queueTitles) => { set({ queueTitles }); persist(get()); },
   setBacklog: (backlog) => { set({ backlog }); persist(get()); },
+  setLearnNew: (learnNew) => { set({ learnNew }); persist(get()); },
   setRecents: (recents) => { set({ recents }); saveRecents(recents); },
   setPanes: (next) => set({ panes: typeof next === 'function' ? next(get().panes) : next }),
 }));
@@ -455,7 +463,7 @@ useApp.subscribe((s) => {
   if (s.mobile && s.panes.panes.length > 1 && (s.phone || !notesPair(s.panes, s.docs, s.sessionEl?.item.path))) useApp.setState({ panes: onePane(s.panes) });
 });
 
-const persist = (s: AppState) => saveTweaks({ theme: s.theme, accent: s.accent, density: s.density, zoom: s.zoom, reopen: s.reopen, clipImages: s.clipImages, remoteImages: s.remoteImages, queueTitles: s.queueTitles, backlog: s.backlog });
+const persist = (s: AppState) => saveTweaks({ theme: s.theme, accent: s.accent, density: s.density, zoom: s.zoom, reopen: s.reopen, clipImages: s.clipImages, remoteImages: s.remoteImages, queueTitles: s.queueTitles, backlog: s.backlog, learnNew: s.learnNew });
 
 declare global {
   interface Window {

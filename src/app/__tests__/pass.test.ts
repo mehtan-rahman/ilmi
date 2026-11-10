@@ -77,7 +77,7 @@ beforeAll(async () => {
     if (m.tabs) docs[p]!.tabs = true;
   }
   queue = sortQueue(queue, NOW);
-  useApp.setState({ vault: dir, tree: vault.tree, files: vault.documents(), docs, order: vault.order, queue, deckViews: {}, selectedCard: null, reveal: null, folds: {}, railFolded: {}, budget: 0 });
+  useApp.setState({ learnNew: false, vault: dir, tree: vault.tree, files: vault.documents(), docs, order: vault.order, queue, deckViews: {}, selectedCard: null, reveal: null, folds: {}, railFolded: {}, budget: 0 });
 });
 afterAll(async () => {
   vault.close();

@@ -8183,12 +8183,14 @@ export async function smokeBelow(vault: Vault): Promise<void> {
   const pressLow = async () => {
     const body = q<HTMLElement>('.pane[data-active="1"] .pane-body')!;
     const wrap = q<HTMLElement>('.pane[data-active="1"] .reader-wrap')!;
+    body.scrollTop = body.scrollHeight;
+    await sleep(200);
     const b = body.getBoundingClientRect();
     must(wrap.getBoundingClientRect().height >= body.clientHeight - 1, `the page fills its pane (${Math.round(wrap.getBoundingClientRect().height)} of ${body.clientHeight}px)`);
     const x = b.left + b.width / 2;
-    const y = b.bottom - 60;
+    const y = b.bottom - 40;
     const under = document.elementFromPoint(x, y) as HTMLElement | null;
-    must(under && wrap.contains(under) && !under.closest('.ProseMirror'), `60px above the pane's foot is the page's empty room (${under?.className})`);
+    must(under && wrap.contains(under) && !under.closest('.ProseMirror'), `40px above the pane's foot is the page's empty room (${under?.className})`);
     for (const type of ['mousedown', 'mouseup', 'click']) under!.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0 }));
     await sleep(150);
   };

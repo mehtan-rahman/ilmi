@@ -8165,6 +8165,70 @@ export async function smokeTextSections(vault: Vault): Promise<void> {
 // size of its paragraphs, and the headings with it), ⌘− smaller, ⌘0 back
 // to 18px; it works with the caret in the editor; the tweaks panel shows
 // `text size 120%` and its slider sets it; the size is kept in the tweaks.
+export async function smokeBelow(vault: Vault): Promise<void> {
+  const log = (s: string) => void info(`smoke below: ${s}`);
+  const shot = async (name: string, ms = 2000) => { await sleep(600); log(`shot: ${name}`); await sleep(ms); };
+  const q = <T extends Element>(sel: string, root: ParentNode = document) => root.querySelector<T>(sel);
+  const must = (ok: unknown, what: string) => { if (!ok) throw new Error(what); log(`ok: ${what}`); };
+  const poll = async <T,>(probe: () => T | null | undefined | false, what: string, ms = 5000): Promise<T> => {
+    const t0 = Date.now();
+    for (;;) {
+      const v = probe();
+      if (v) { log(`ok: ${what}`); return v; }
+      if (Date.now() - t0 > ms) throw new Error(`${what} (waited ${ms} ms)`);
+      await sleep(100);
+    }
+  };
+  // a press low in the pane, where the eye sees only empty page: what is under it, and the press there
+  const pressLow = async () => {
+    const body = q<HTMLElement>('.pane[data-active="1"] .pane-body')!;
+    const wrap = q<HTMLElement>('.pane[data-active="1"] .reader-wrap')!;
+    const b = body.getBoundingClientRect();
+    must(wrap.getBoundingClientRect().height >= body.clientHeight - 1, `the page fills its pane (${Math.round(wrap.getBoundingClientRect().height)} of ${body.clientHeight}px)`);
+    const x = b.left + b.width / 2;
+    const y = b.bottom - 60;
+    const under = document.elementFromPoint(x, y) as HTMLElement | null;
+    must(under && wrap.contains(under) && !under.closest('.ProseMirror'), `60px above the pane's foot is the page's empty room (${under?.className})`);
+    for (const type of ['mousedown', 'mouseup', 'click']) under!.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0 }));
+    await sleep(150);
+  };
+  const editor = () => q<HTMLElement>('.pane[data-active="1"] .draft-doc');
+  const typed = (t: string) => document.execCommand('insertText', false, t);
+  try {
+    useApp.getState().setTheme('light');
+    // an empty note: the press puts the caret on its one line
+    const path = await createNode('fleeting', 'note');
+    openNode(path);
+    await poll(() => editor(), 'a new note is open', 10000);
+    await sleep(400);
+    (document.activeElement as HTMLElement | null)?.blur?.();
+    await shot('below-empty');
+    await pressLow();
+    must(document.activeElement === editor(), 'the note has the focus');
+    typed('typed low on the page');
+    await poll(() => editor()!.textContent?.includes('typed low on the page'), 'what is typed is in the note');
+    await shot('below-empty-typed');
+    let disk = '';
+    await poll(() => { void vault.read(path).then((l) => { disk = l.text; }); return disk.includes('typed low on the page'); }, `the file has it (${path})`, 6000);
+    // a note that ends in a paragraph: the caret at that paragraph's end
+    const NOTE = 'fleeting/2026-10-30.md';
+    openNode(NOTE);
+    await poll(() => editor()?.textContent?.includes('can I move a card'), 'the note that ends in a paragraph is open', 10000);
+    await sleep(400);
+    (document.activeElement as HTMLElement | null)?.blur?.();
+    const blocks = editor()!.children.length;
+    await pressLow();
+    must(document.activeElement === editor(), 'the note has the focus');
+    typed(' — yes, by drag');
+    await poll(() => editor()!.lastElementChild?.textContent?.endsWith('without retyping it?] — yes, by drag'), `typed at the end of the last line (${editor()!.lastElementChild?.textContent?.slice(-50)})`);
+    must(editor()!.children.length === blocks, `no line added (${editor()!.children.length} blocks, ${blocks} before)`);
+    await shot('below-end-typed');
+    log(`done; vault ${vault.root}`);
+  } catch (e) {
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
 export async function smokeZoom(vault: Vault): Promise<void> {
   const log = (s: string) => void info(`smoke zoom: ${s}`);
   const shot = async (name: string, ms = 2500) => { await sleep(800); log(`shot: ${name}`); await sleep(ms); };

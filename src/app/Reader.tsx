@@ -1026,6 +1026,28 @@ export function caretBelow(view: EditorView, y: number): boolean {
   return true;
 }
 
+/**
+ * A press on the room around a text (a card's face, its padding, the space
+ * beside or under its lines) puts the caret where the press was, as near as
+ * the text allows: below the text on its last line (`caretBelow`), above it
+ * at its start, beside a line at that line's nearest end.
+ */
+export function caretToPress(view: EditorView, x: number, y: number): boolean {
+  if (!view.editable) return false;
+  const r = view.dom.getBoundingClientRect();
+  if (y > r.bottom) return caretBelow(view, y);
+  const { doc } = view.state;
+  let sel: Selection;
+  if (y < r.top) sel = Selection.atStart(doc);
+  else {
+    const hit = view.posAtCoords({ left: Math.min(Math.max(x, r.left + 1), r.right - 1), top: Math.min(Math.max(y, r.top + 1), r.bottom - 1) });
+    sel = hit ? Selection.near(doc.resolve(hit.pos)) : Selection.atEnd(doc);
+  }
+  view.dispatch(view.state.tr.setSelection(sel));
+  view.focus();
+  return true;
+}
+
 // ── the component ────────────────────────────────────────────────
 
 interface Rule {
@@ -2240,12 +2262,13 @@ export function Reader({ id, active = true, onPages, notes = false }: ReaderProp
       ref={rootRef}
       {...(booked && pagesRel ? { 'data-pdf': pagesRel } : {})}
       onMouseDown={(e) => {
-        // the empty room below the text: the caret on its last line (`caretBelow`)
+        // the empty room beside or below the text: the caret on the nearest line (`caretToPress`)
         if (e.button !== 0 || reading) return;
         const t = e.target as HTMLElement;
         if (t !== e.currentTarget && !t.matches('.reader, .doc-wrap, .doc-mount')) return;
         const view = viewRef.current;
-        if (view && caretBelow(view, e.clientY)) e.preventDefault();
+        if (!view || e.clientY < view.dom.getBoundingClientRect().top) return;
+        if (caretToPress(view, e.clientX, e.clientY)) e.preventDefault();
       }}
     >
       <div className={`reader doc-view${reading ? ' reading' : ''}${notes ? ' book-notes-doc' : ''}`} data-frozen={frozen ? '1' : '0'}>

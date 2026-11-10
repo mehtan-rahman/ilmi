@@ -278,4 +278,12 @@ describe('the editor', () => {
     expect(onSave).not.toHaveBeenCalled();
     expect(onCancel).not.toHaveBeenCalled();
   });
+
+  it('a press on a face\'s box off its text types in that face', async () => {
+    await mount({ initial: { form: 'qa', front: 'q', back: 'a' }, pri: 40, onSave: vi.fn(), onCancel: () => {} });
+    const back = host.querySelector<HTMLElement>('.deck-edit .face.back')!;
+    await act(() => { back.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, clientX: 10, clientY: 80, button: 0 })); });
+    expect(document.activeElement).toBe(back.querySelector('.ProseMirror'));
+    expect(window.getSelection()?.anchorNode?.textContent).toBe('a');
+  });
 });

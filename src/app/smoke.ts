@@ -8225,6 +8225,69 @@ export async function smokeBelow(vault: Vault): Promise<void> {
     await poll(() => editor()!.lastElementChild?.textContent?.endsWith('without retyping it?] — yes, by drag'), `typed at the end of the last line (${editor()!.lastElementChild?.textContent?.slice(-50)})`);
     must(editor()!.children.length === blocks, `no line added (${editor()!.children.length} blocks, ${blocks} before)`);
     await shot('below-end-typed');
+    // the margin beside a line: the caret on that line
+    {
+      const firstP = editor()!.querySelector<HTMLElement>('p')!;
+      firstP.scrollIntoView({ block: 'center' });
+      await sleep(200);
+      (document.activeElement as HTMLElement | null)?.blur?.();
+      const pr = firstP.getBoundingClientRect();
+      const x = q<HTMLElement>('.pane[data-active="1"] .pane-body')!.getBoundingClientRect().left + 20;
+      const y = pr.top + Math.min(12, pr.height / 2);
+      const under = document.elementFromPoint(x, y) as HTMLElement | null;
+      must(under && !under.closest('.ProseMirror'), `20px in from the pane's edge, beside the first line, is margin (${under?.className})`);
+      under!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0 }));
+      await sleep(150);
+      const at = window.getSelection()?.anchorNode;
+      must(document.activeElement === editor() && at && firstP.contains(at), 'the caret is in the first paragraph');
+      await shot('below-margin');
+    }
+    const fire = (el: Element, type: string, x: number, y: number) => el.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0 }));
+    // the new card sheet: a press low in the answer's box types in the answer
+    {
+      openNode('arabic/vocabulary.md');
+      await poll(() => q('.pane[data-active="1"] .deck-view'), 'the deck is open', 10000);
+      await sleep(500);
+      (document.activeElement as HTMLElement | null)?.blur?.();
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'm', bubbles: true, cancelable: true }));
+      await poll(() => q('.card-sheet .deck-edit'), 'm opens the new card sheet');
+      await sleep(300);
+      const back = q<HTMLElement>('.card-sheet .face.back')!;
+      const r = back.getBoundingClientRect();
+      const x = r.left + r.width / 2;
+      const y = r.bottom - 30;
+      const under = document.elementFromPoint(x, y) as HTMLElement | null;
+      must(under && back.contains(under), `low in the answer's box is the box (${under?.className}, box ${Math.round(r.height)}px)`);
+      fire(under!, 'mousedown', x, y); fire(under!, 'mouseup', x, y); fire(under!, 'click', x, y);
+      await sleep(150);
+      must(back.querySelector('.ProseMirror') === document.activeElement, 'the answer has the focus');
+      typed('typed in the answer');
+      await poll(() => back.textContent?.includes('typed in the answer'), 'what is typed is in the answer');
+      await shot('below-sheet');
+      document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+      await poll(() => !q('.card-sheet'), 'esc lets the sheet go');
+    }
+    // a card in review, its answer up: a press on the answer's box edits the answer there
+    {
+      const item = useApp.getState().queue.find((i) => i.kind === 'card' && i.path === 'arabic/vocabulary.md') ?? useApp.getState().queue.find((i) => i.kind === 'card');
+      if (!item) throw new Error('no card in the queue');
+      openSession(item);
+      await poll(() => q('.recall-wrap .card'), 'a card in review', 8000);
+      await sleep(400);
+      (document.activeElement as HTMLElement | null)?.blur?.();
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true }));
+      const backFace = await poll(() => q<HTMLElement>('.recall-wrap .card .face.back') ?? (q('.recall-wrap .card[data-revealed="1"]') && q<HTMLElement>('.recall-wrap .card .face.front')), 'the answer is up');
+      const which = backFace.classList.contains('back') ? 'back' : 'front';
+      const r = backFace.getBoundingClientRect();
+      const x = r.right - 24;
+      const y = r.bottom - 16;
+      fire(backFace, 'click', x, y);
+      const box = await poll(() => q<HTMLElement>(`.recall-wrap .card-edit .face.${which}`), 'the boxes open');
+      await sleep(200);
+      must(box.querySelector('.ProseMirror') === document.activeElement, `the caret is in the ${which === 'back' ? 'answer' : 'card'}'s box, where the press was`);
+      await shot('below-review');
+      document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    }
     log(`done; vault ${vault.root}`);
   } catch (e) {
     log(`failed: ${e instanceof Error ? e.message : String(e)}`);

@@ -173,6 +173,8 @@ function CardElement({ item, active, given, onGrade, onSkip, onGone, onEdit }: C
   const [revealed, setRevealed] = useState(!!given);
   // `e`, or a press on a revealed box: the two boxes live in place (`CardFaces.tsx`)
   const [editing, setEditing] = useState(false);
+  // the press that opened the boxes, for the caret to land where it was
+  const [pressAt, setPressAt] = useState<{ face: 'front' | 'back'; x: number; y: number } | undefined>(undefined);
   const [edited, setEdited] = useState<string | undefined>(undefined);
   const plugins = usePlugins();
   const phone = useApp((s) => s.phone);
@@ -202,7 +204,7 @@ function CardElement({ item, active, given, onGrade, onSkip, onGone, onEdit }: C
     if (editing) return false;
     if (key === ' ') { grade(3); return true; }
     if (key >= '1' && key <= '4') { grade(Number(key) as Grade); return true; }
-    if (key === 'e' && card) { setRevealed(true); setEditing(true); return true; }
+    if (key === 'e' && card) { setRevealed(true); setPressAt(undefined); setEditing(true); return true; }
     return false;
   }, [revealed, item, editing, card, gone]);
 
@@ -279,15 +281,21 @@ function CardElement({ item, active, given, onGrade, onSkip, onGone, onEdit }: C
     </>
   );
   // a press on a box once the answer is up edits it there
-  const editOnPress = () => { if (revealed && card && !editing) setEditing(true); };
+  const editOnPress = (face: 'front' | 'back') => (e: MouseEvent) => {
+    if (!revealed || !card || editing) return;
+    // a selection made in the face is for copying, not an edit
+    if (!window.getSelection()?.isCollapsed) return;
+    setPressAt({ face, x: e.clientX, y: e.clientY });
+    setEditing(true);
+  };
   return (
     <>
       {editing && card ? (
-        <CardFaces card={card} autoFocus keep={`${item.path}#${card.id ?? item.block}`} onSave={saveEdit} onDone={() => setEditing(false)}>{schedule}</CardFaces>
+        <CardFaces card={card} autoFocus keep={`${item.path}#${card.id ?? item.block}`} onSave={saveEdit} onDone={() => { setEditing(false); setPressAt(undefined); }} at={pressAt}>{schedule}</CardFaces>
       ) : (<>
       <div className="card" ref={cardRef} data-revealed={revealed ? '1' : '0'} data-faces={back ? '2' : '1'} data-plugins={plugins?.version ?? 0}>
-        <div className="face front" onClick={editOnPress}>{front}</div>
-        {back && revealed && <div className="face back" onClick={editOnPress}><div className="face-body">{back}</div></div>}
+        <div className="face front" onClick={editOnPress('front')}>{front}</div>
+        {back && revealed && <div className="face back" onClick={editOnPress('back')}><div className="face-body">{back}</div></div>}
         {!revealed && (
           <button type="button" className="face-hint" onClick={() => setRevealed(true)}><kbd className="kbd">space</kbd> <span className="lbl">reveal</span></button>
         )}

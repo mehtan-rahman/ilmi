@@ -6,12 +6,12 @@
 // typed, an untouched table as it was read, a changed one as the normalized
 // pipe table. A cloze's face holds no table: its text stays one paragraph.
 
-import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react';
 import { EditorView } from 'prosemirror-view';
 import type { Node as PMNode } from 'prosemirror-model';
 import type { Block } from '../format/index.js';
 import { makeState, nodeToRaw, schema, textOf } from '../reader/index.js';
-import { editorMenu, handleClickOn, nodeViews } from './Reader.js';
+import { caretToPress, editorMenu, handleClickOn, nodeViews } from './Reader.js';
 
 const pipe = (line: string): boolean => /^ {0,3}\|/.test(line);
 
@@ -51,6 +51,27 @@ export function faceFieldText(doc: PMNode): string {
 
 /** Each face's editor by its `.face-host`: for a test or a smoke to type into. */
 export const faceViews = new WeakMap<Element, EditorView>();
+
+/**
+ * A press on a face's box anywhere off its text (its padding, the room under
+ * or beside its lines) types there: the caret as near the press as the text
+ * allows (`caretToPress`). A press on the text is the editor's own.
+ */
+export function pressIntoFace(e: ReactMouseEvent<HTMLElement>): void {
+  if (e.button !== 0) return;
+  const t = e.target as HTMLElement;
+  if (t.closest('.ProseMirror, button, input, select, textarea, a')) return;
+  const host = e.currentTarget.querySelector('.face-host');
+  const v = host ? faceViews.get(host) : undefined;
+  if (v && caretToPress(v, e.clientX, e.clientY)) e.preventDefault();
+}
+
+/** The caret put in a face's box at a point, once it is drawn (a press that opened the editor). */
+export function caretInFace(face: Element | null | undefined, x: number, y: number): boolean {
+  const host = face?.querySelector('.face-host');
+  const v = host ? faceViews.get(host) : undefined;
+  return !!v && caretToPress(v, x, y);
+}
 
 interface FaceProps {
   value: string;

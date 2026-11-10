@@ -9,7 +9,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { PRI_DEFAULT, PRI_MAX, PRI_MIN, cardFields, meta, parsePri, type Card, type CardForm } from '../format/index.js';
 import type { Dir } from '../reader/index.js';
-import { FaceField } from './FaceField.js';
+import { FaceField, pressIntoFace } from './FaceField.js';
 import { whenToDate } from '../schedule/index.js';
 import { runBlockHooks, usePlugins } from '../plugins/index.js';
 import { revealIndex } from './chrome.js';
@@ -158,7 +158,7 @@ export function CardEditor({ card, initial, pri: initialPri, onSave, onCancel }:
         </div>
       </div>
       <div className="card" data-faces={two ? '2' : '1'}>
-        <div className="face front">
+        <div className="face front" onMouseDown={pressIntoFace}>
           <FaceField
             key={`f${gen}`}
             value={faces.front}
@@ -169,7 +169,7 @@ export function CardEditor({ card, initial, pri: initialPri, onSave, onCancel }:
           />
         </div>
         {two && (
-          <div className="face back">
+          <div className="face back" onMouseDown={pressIntoFace}>
             <FaceField key={`b${gen}`} value={faces.back} placeholder="back" onChange={(back) => { setFaces((f) => ({ ...f, back })); setAsking(null); }} />
           </div>
         )}

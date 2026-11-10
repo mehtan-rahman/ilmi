@@ -10,7 +10,7 @@ import { parse } from '../../format/index.js';
 import { fromDoc, toDoc } from '../../reader/convert.js';
 
 vi.mock('../bookPdf.js', () => ({ fillCrops() {}, acquirePdf: () => ({ promise: new Promise(() => {}), release() {} }), itemsOf: async () => [] }));
-const { caretBelow } = await import('../Reader.js');
+const { caretBelow, caretToPress } = await import('../Reader.js');
 
 let view: EditorView;
 afterEach(() => { view.destroy(); });
@@ -57,5 +57,30 @@ describe('a press below the text', () => {
     open('# kāna\n', false);
     expect(caretBelow(view, 400)).toBe(false);
     expect(view.state.doc.childCount).toBe(1);
+  });
+});
+
+describe('a press beside or above the text (`caretToPress`)', () => {
+  it('above it: the caret at its start', () => {
+    open('first\n\nsecond\n');
+    view.dom.getBoundingClientRect = () => ({ top: 50, bottom: 100, left: 0, right: 600, width: 600, height: 50, x: 0, y: 50, toJSON() {} });
+    expect(caretToPress(view, 300, 10)).toBe(true);
+    expect(caret()).toBe(1);
+  });
+
+  it('beside a line: the place the editor finds nearest, the press held inside the text', () => {
+    open('first\n\nsecond\n');
+    const asked: { left: number; top: number }[] = [];
+    view.posAtCoords = (c) => { asked.push(c); return { pos: 9, inside: -1 }; };
+    expect(caretToPress(view, 900, 60)).toBe(true);
+    expect(asked).toEqual([{ left: 599, top: 60 }]);
+    expect(caret()).toBe(9);
+  });
+
+  it('below it: as `caretBelow`', () => {
+    open('# kāna\n');
+    expect(caretToPress(view, 300, 400)).toBe(true);
+    expect(view.state.doc.childCount).toBe(2);
+    expect(caret()).toBe(view.state.doc.content.size - 1);
   });
 });

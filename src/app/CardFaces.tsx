@@ -16,7 +16,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MutableRefObject, type ReactNode } from 'react';
 import type { Card, CardForm } from '../format/index.js';
 import { asks, facesOf, facesText, planEdit, switchForm, type Faces, type Plan } from './cardEdit.js';
-import { FaceField } from './FaceField.js';
+import { FaceField, caretInFace, pressIntoFace } from './FaceField.js';
 
 const FORMS: [CardForm, string][] = [['qa', 'q&a'], ['bidir', 'bidir'], ['cloze', 'cloze']];
 
@@ -54,9 +54,11 @@ interface Props {
   children?: ReactNode;
   /** The card's name for an edit kept while its boxes are away (`keptEdits`): its document and its id, else its block. */
   keep?: string;
+  /** The press that opened the boxes: the caret goes in that box, as near the press as its text allows. */
+  at?: { face: 'front' | 'back'; x: number; y: number } | undefined;
 }
 
-export function CardFaces({ card, onSave, onDone, autoFocus, handle, children, keep }: Props) {
+export function CardFaces({ card, onSave, onDone, autoFocus, handle, children, keep, at }: Props) {
   // an edit kept from the last time comes back as it was left, asking again when it asked
   const [faces, setFaces] = useState<Faces>(() => (keep !== undefined && keptEdits.get(keep)) || facesFor(card.text));
   const [gen, setGen] = useState(0);
@@ -110,6 +112,14 @@ export function CardFaces({ card, onSave, onDone, autoFocus, handle, children, k
   const latest = useRef({ flush, asking, dirty, text, plan, onSave, faces });
   latest.current = { flush, asking, dirty, text, plan, onSave, faces };
   if (handle) handle.current = { flush: (sure) => latest.current.flush(sure) };
+
+  // the press that opened the boxes types where it was
+  useEffect(() => {
+    if (!at) return;
+    const face = root.current?.querySelector(`.face.${at.face}`) ?? root.current?.querySelector('.face.front');
+    caretInFace(face, at.x, at.y);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // a press outside saves, unless the editor is asking
   useEffect(() => {
@@ -165,16 +175,11 @@ export function CardFaces({ card, onSave, onDone, autoFocus, handle, children, k
     }
   };
   // a press on a box's padding puts the caret in its text
-  const intoFace = (e: React.MouseEvent<HTMLElement>) => {
-    if (e.target !== e.currentTarget) return;
-    e.preventDefault();
-    (e.currentTarget.querySelector('.ProseMirror') as HTMLElement | null)?.focus();
-  };
   const two = faces.form !== 'cloze';
   return (
     <div className="card-edit" ref={root} data-dirty={dirty ? '1' : '0'} data-form={faces.form} onKeyDownCapture={onKeyDownCapture} onKeyDown={onKeyDown}>
       <div className="card editing" data-faces={two ? '2' : '1'}>
-        <div className="face front" onMouseDown={intoFace}>
+        <div className="face front" onMouseDown={pressIntoFace}>
           <FaceField
             key={`f${gen}`}
             value={faces.front}
@@ -185,7 +190,7 @@ export function CardFaces({ card, onSave, onDone, autoFocus, handle, children, k
           />
         </div>
         {two && (
-          <div className="face back" onMouseDown={intoFace}>
+          <div className="face back" onMouseDown={pressIntoFace}>
             <FaceField key={`b${gen}`} value={faces.back} placeholder="back" onChange={(back) => { setFaces((f) => ({ ...f, back })); setAsking(null); }} />
           </div>
         )}

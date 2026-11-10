@@ -1,6 +1,6 @@
 [package]
 name = "ilmi"
-version = "0.1.3"
+version = "0.1.4"
 description = "incremental reading, cards, and writing over a directory of markdown"
 edition = "2021"
 rust-version = "1.90"

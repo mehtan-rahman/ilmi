@@ -117,6 +117,8 @@ export function CardEditor({ card, initial, pri: initialPri, onSave, onCancel }:
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
       if (ref.current?.contains(e.target as Node)) return;
+      // a menu of a face's own (a table's, the text's, insert table) is not outside
+      if ((e.target as HTMLElement | null)?.closest?.('.pop-menu')) return;
       if (asking !== null) return;
       if (facesText(faces) === null) onCancel();
       else saveRef.current(false);

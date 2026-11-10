@@ -265,4 +265,17 @@ describe('the editor', () => {
     await act(() => { document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })); });
     expect(onSave).toHaveBeenCalledWith('q :: a', 40, false);
   });
+
+  it('a press on a face\'s own menu (insert table, a table\'s) is not outside: nothing saved or let go', async () => {
+    const onSave = vi.fn();
+    const onCancel = vi.fn();
+    await mount({ initial: { form: 'qa', front: '', back: '' }, pri: 40, onSave, onCancel });
+    const menu = document.body.appendChild(document.createElement('div'));
+    menu.className = 'ctx-menu pop-menu';
+    const item = menu.appendChild(document.createElement('div'));
+    await act(() => { item.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })); });
+    menu.remove();
+    expect(onSave).not.toHaveBeenCalled();
+    expect(onCancel).not.toHaveBeenCalled();
+  });
 });

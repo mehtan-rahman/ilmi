@@ -4240,7 +4240,8 @@ export async function smokeInsert(vault: Vault): Promise<void> {
   const { findIn, foldText } = await import('../reader/index.js');
   const NOTE = 'fleeting/2026-10-30.md';
   const KANA = 'courses/fall-2026/arab-401-advanced-grammar/kana-and-its-sisters.md';
-  const SOURCE = 'library/lindqvist-statistical-physics/ch-3-the-canonical-ensemble.md';
+  // a frozen source that is text: the Lindqvist chapter has been its PDF's pages since milestone 49
+  const SOURCE = 'fleeting/clipped-why-perturbation-series-diverge.md';
   const ANCHOR = 'can I move a card without retyping it?]';
   const text = (path = NOTE) => vault.fs.readText(vault.abs(path));
   const fail = (msg: string): never => { throw new Error(msg); };
@@ -4437,9 +4438,8 @@ export async function smokeInsert(vault: Vault): Promise<void> {
     await enter();
     fresh('after the table');
     // an image from the picker (stubbed with a file outside the notes)
-    const pickPath = vault.abs('.ilmi/smoke-pick.png');
-    await vault.fs.mkdir(vault.abs('.ilmi'));
-    await vault.fs.writeBytes(pickPath, PNG);
+    // a file on the disk, as a picker gives: since milestone 59 the collection's own files are rows, not files, so the rig leaves one beside the sample's copy (`smoke-pick.png`)
+    const pickPath = `${(await sourceDir()).replace(/\/[^/]+$/, '')}/smoke-pick.png`;
     const realPick = imagePicker.pick;
     imagePicker.pick = async () => [pickPath];
     await slash('image', 'image');
@@ -4519,8 +4519,8 @@ export async function smokeInsert(vault: Vault): Promise<void> {
     expect('a paste with a file', pasted, 'sent');
     await expectLines('pasted image', ['![](2026-10-30/img-02.png)']);
     expect('img-02 beside the note', (await imgBytes(2)) === PNG.length, `${IMG_DIR}/img-02.png ${await imgBytes(2)} bytes`);
-    const dropPath = vault.abs('.ilmi/smoke-drop.png');
-    await vault.fs.writeBytes(dropPath, PNG);
+    // the same file on the disk, dropped
+    const dropPath = pickPath;
     const target = await until(() => block('see this page now'));
     const tr = target.getBoundingClientRect();
     await dropAt([dropPath], tr.right - 4, tr.top + tr.height / 2);
@@ -5590,7 +5590,8 @@ export async function smokeRest(vault: Vault): Promise<void> {
   const NB = 'courses/fall-2026/phys-415-stat-mech.md';
   const CANON = 'courses/fall-2026/phys-415-stat-mech/canonical-ensemble.md';
   const LECTURE9 = 'lecture 9 — $Z$ does everything (Wed 9/23)';
-  const SOURCE = 'library/lindqvist-statistical-physics/ch-3-the-canonical-ensemble.md';
+  // a source that is text: the Lindqvist chapter has been its PDF's pages since milestone 49
+  const SOURCE = 'fleeting/clipped-why-perturbation-series-diverge.md';
   const FORMS = 'courses/spring-2026/arab-302-morphology/verb-forms.md';
   const CODE = 'fleeting/numerics.md';
   const text = (path: string) => vault.fs.readText(vault.abs(path));
@@ -5677,15 +5678,15 @@ export async function smokeRest(vault: Vault): Promise<void> {
     await open(SOURCE);
     const loaded = await vault.read(SOURCE, true);
     const blocks = loaded.doc.blocks;
-    const hi = blocks.findIndex((b) => b.kind === 'heading' && b.text.startsWith('3.7'));
+    const hi = blocks.findIndex((b) => b.kind === 'heading' && b.text.startsWith('How far to trust'));
     let end = blocks.length;
     for (let i = hi + 1; i < blocks.length; i++) { const b = blocks[i]!; if (b.kind === 'heading' && b.level <= 2) { end = i; break; } }
     const want = blocks.slice(0, end).filter((b) => b.kind !== 'card').length;
-    const h37 = heading('3.7')!;
+    const h37 = heading('How far to trust')!;
     down(q<HTMLElement>('.fold-chev', h37)!);
-    await poll(() => heading('3.7')?.classList.contains('fold-head'), '3.7 two-level systems folds in the frozen source');
+    await poll(() => heading('How far to trust')?.classList.contains('fold-head'), 'a section folds in the frozen source');
     const g = q<HTMLElement>('.read-gutter', surface().closest('.doc-wrap')!)!;
-    const hr = heading('3.7')!.getBoundingClientRect();
+    const hr = heading('How far to trust')!.getBoundingClientRect();
     const opts = { bubbles: true, clientY: hr.bottom - 2, pointerId: 1 };
     g.dispatchEvent(new PointerEvent('pointerdown', opts));
     g.dispatchEvent(new PointerEvent('pointerup', opts));
@@ -5699,16 +5700,16 @@ export async function smokeRest(vault: Vault): Promise<void> {
     const rel = (el: Element) => { const r = el.getBoundingClientRect(); return { top: Math.round(r.top - wtop()), bottom: Math.round(r.bottom - wtop()) }; };
     const kids = Array.from(surface().children) as HTMLElement[];
     const at = kids.map((el, i) => ({ el, i })).filter(({ el }) => el.getClientRects().length && Math.abs(rel(el).bottom - ruleEnd()) < 4).pop();
-    log(`rule: pos ${meta((await vault.read(SOURCE, true)).doc).read?.pos}; style ends at ${Math.round(ruleEnd())} (painted ${rel(rule).bottom}); ends at block ${at ? `${at.i} "${(at.el.textContent ?? '').slice(0, 40)}" ${JSON.stringify(rel(at.el))}` : '(none)'}; folded heading ${JSON.stringify(rel(heading('3.7')!))}; rules in the page ${qa('.read-rule').length}, readers ${qa('.doc-wrap').length}`);
+    log(`rule: pos ${meta((await vault.read(SOURCE, true)).doc).read?.pos}; style ends at ${Math.round(ruleEnd())} (painted ${rel(rule).bottom}); ends at block ${at ? `${at.i} "${(at.el.textContent ?? '').slice(0, 40)}" ${JSON.stringify(rel(at.el))}` : '(none)'}; folded heading ${JSON.stringify(rel(heading('How far to trust')!))}; rules in the page ${qa('.read-rule').length}, readers ${qa('.doc-wrap').length}`);
     await shot('rest-folded-rule');
     let gap = Infinity;
     await poll(() => {
-      gap = Math.abs(ruleEnd() - rel(heading('3.7')!).bottom);
+      gap = Math.abs(ruleEnd() - rel(heading('How far to trust')!).bottom);
       return gap < 4;
     }, 'the rule ends under the folded heading', 3000).catch((e: unknown) => { throw new Error(`${e instanceof Error ? e.message : String(e)}; off by ${gap.toFixed(0)} px`); });
     await shot('rest-folded-source');
-    down(q<HTMLElement>('.fold-chev', heading('3.7')!)!);
-    await poll(() => !heading('3.7')?.classList.contains('fold-head'), '3.7 opens again');
+    down(q<HTMLElement>('.fold-chev', heading('How far to trust')!)!);
+    await poll(() => !heading('How far to trust')?.classList.contains('fold-head'), 'it opens again');
 
     // ── code coloured ──
     const fence = '```';

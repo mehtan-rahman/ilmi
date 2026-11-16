@@ -93,7 +93,8 @@ export function wordCount(text: string): number {
  * What reads an item's place (`transform[4]`, `[5]`) then reads it where
  * the page shows it.
  */
-export function uprightItems<T>(items: readonly T[], view: readonly number[], height: number): T[] {
+export function uprightItems<T>(items: readonly T[], view: readonly number[] | undefined, height: number): T[] {
+  if (!Array.isArray(view) || view.length < 6) return items as T[];
   const [a, b, c, d, e, f] = view as [number, number, number, number, number, number];
   if (a === 1 && b === 0 && c === 0 && d === -1 && e === 0 && f === height) return items as T[];
   return items.map((it) => {

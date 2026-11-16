@@ -1376,7 +1376,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
   /** A page's height in PDF units: one of the book's own from its size, another of the file's (a chapter's link out of it) from the file. */
   const heightOf = async (n: number): Promise<number> => sizes[n - base - 1]?.h ?? (pdf ? (await pdf.getPage(n)).getViewport({ scale: 1 }).height : 0);
   /** The height a destination's `top` is measured against: a turned page's is not its height as shown, so a destination there is the page's top (0 says so to `downPage`). */
-  const destHeight = async (n: number): Promise<number> => (pdf && ((await pdf.getPage(n)).rotate % 360 !== 0) ? 0 : heightOf(n));
+  const destHeight = async (n: number): Promise<number> => (pdf && (((await pdf.getPage(n)).rotate ?? 0) % 360 !== 0) ? 0 : heightOf(n));
   /** Where the reference `text`, read on `page`, points: its line, and the place a jump to it goes. Null when it names nothing found, or a later question took its place. */
   const seekRef = async (text: string, page: number): Promise<{ page: number; y: number; height: number; text: string; at: { page: number; y: number } } | null> => {
     const ref = refOf(text);
@@ -1758,7 +1758,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     const key = newMarkId('h');
     void setMark(hash, key, made).catch(console.error);
     clearBoxes();
-    notify(`highlighted · 1–${INKS} choose its ink`, null, () => setMark(hash, key, null));
+    notify(mobile ? 'highlighted · hold it for its inks' : `highlighted · 1–${INKS} choose its ink`, null, () => setMark(hash, key, null));
     setLastHl({ id: key, seq: useApp.getState().notice?.seq ?? 0 });
   };
 

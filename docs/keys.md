@@ -92,8 +92,10 @@ in a book        a document with pages: its pages beside its notes (the
                  right-click on a selection: section, card, search the web,
                  search scholar (in the browser);
                  ⌘= ⌘− zoom the pages in and out (fit, 125%, 150%, 200%,
-                 250%, 300%), ⌘0 back to fit, a pinch on a trackpad steps
-                 once; with the caret in the notes they are the text size;
+                 250%, 300%), ⌘0 back to fit, a pinch on a trackpad or of
+                 two fingers on the glass steps once; a book's zoom is kept
+                 for the device; with the caret in the notes they are the
+                 text size;
                  b a bookmark at the place in view: name it in the bar,
                  ⏎ keeps it, esc does not (a small mark in the left gutter;
                  right-click it to remove);
@@ -101,8 +103,11 @@ in a book        a document with pages: its pages beside its notes (the
                  letter goes to it; a lowercase letter is the book's, a
                  capital the collection's (it opens its book); any other
                  key lets the wait go;
-                 h highlights the selection; h with the selection, or the
-                 last press, inside a highlight clears it; 1 2 3 4 right
+                 h highlights the selection, or with none the words under
+                 the boxes drawn (the box's bar has highlight too, and under
+                 a finger look up: a held drag is a finger's box); h with
+                 the selection, a box, or the last press inside a highlight
+                 clears it; 1 2 3 4 right
                  after choose its ink (a band, a rule, a dashed rule, a
                  dotted rule); right-click on a highlight: section, card,
                  clear, the four inks;
@@ -117,8 +122,9 @@ in a book        a document with pages: its pages beside its notes (the
                  r sets the read point to it; v or esc lets it go
 in the palette   over a book: contents ·, bookmarks ·, highlights · (its
                  own), portals beside · (the book again in the pane
-                 beside, following the portals of the page being read;
-                 run again, or close that pane, to stop); anywhere:
+                 beside, following the portals of the page being read, into
+                 another book when a portal leads there; run again, or
+                 close that pane, to stop); anywhere:
                  bookmarks (every book's), marks (by letter)
 in the intake    ⌘⏎ place & open, ⌘⇧⏎ place & leave it
 in a deck        j k (or ↑ ↓) move, ⏎ or a double-click opens the card in the

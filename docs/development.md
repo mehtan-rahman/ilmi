@@ -237,7 +237,12 @@ outline and links: `pdflatex around.tex`, three times) as a PDF on its own
 and walks getting around it (the contents, ⌫ and ⇧⌫, a link, a reference's
 peek, the letters of `f`, `n` and `N`) and what is left on it (a bookmark,
 a mark, a highlight at fit, zoomed and in e-ink, the ruler, a portal and
-the pane beside following it), reading `.ilmi/marks/<hash>.json` after
+the pane beside following it, into a second book and back; a box's
+words highlighted from its bar, which is how a touch shape highlights; a
+pinch by a wheel and by gesture events; the zoom kept across the
+collection closed and opened; `turned.pdf`, the same paper with its second
+page laid on its side and turned back by `/Rotate`, for the ruler, a link
+and the letters on a turned page), reading `.ilmi/marks/<hash>.json` after
 each. `ILMI_SMOKE=collections` makes a scratch collection from the welcome,
 renames it, and deletes it; it renames and deletes nothing it did not make.
 `deck` and `decks` run over the corpus vault

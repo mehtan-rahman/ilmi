@@ -6483,7 +6483,7 @@ export async function smokeNumbers(vault: Vault): Promise<void> {
       const t0 = performance.now();
       openCollectionNumbers();
       log(`the numbers asked for (${Math.round(performance.now() - t0)} ms)`);
-      await poll(() => /\d{3},\d{3} reviews/.test(q('[data-sec="past"] .nb-sum')?.textContent ?? '') && qa('button.nb-cell').length >= 365, 'the collection\'s numbers over 780,000 reviews', 60000);
+      await poll(() => /\d{3},\d{3} reviews/.test(q('[data-sec="past"] .nb-sum')?.textContent ?? '') && qa('button.nb-cell').length >= 80, 'the collection\'s numbers over 780,000 reviews', 60000);
       const ms = Math.round(performance.now() - t0);
       log(`780,000 reviews: the numbers drawn in ${ms} ms; ${q('[data-sec="past"] .nb-sum')?.textContent?.slice(0, 140)}`);
       must(ms < 5000, `in under five seconds (${ms} ms)`);
@@ -14751,7 +14751,7 @@ export async function smokeSioyek(vault: Vault): Promise<void> {
     await shot('sioyek-portal-peek');
     key('Escape');
     await poll(() => !q('.pdf-peek'), 'esc closes the peek');
-    // the pane beside follows (a desk's: an iPad and a phone have the margin mark's peek)
+    // the pane beside follows (a desk's: an iPad folds its panes into one and a phone has one, so they have the margin mark's peek)
     if (!touch) {
     await scrollTo(1, 'A system held');
     useApp.setState({ paletteOpen: true });

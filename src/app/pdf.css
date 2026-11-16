@@ -215,6 +215,8 @@ html[data-mobile="1"] .book .pdf-page,
 html[data-mobile="1"] .book .pdf-page .textLayer :is(span, br) { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 html[data-mobile="1"] .pend { font-size: var(--t-sm); gap: 4px; padding: 3px; }
 html[data-mobile="1"] .pend button { padding: 9px 14px; }
+/* a phone has no keys to name */
+html[data-shape="phone"] .pend kbd { display: none; }
 html[data-mobile="1"] .pgut { padding: 8px 8px; margin: -6px -5px; }
 
 /* in a session the bar sits under the book, not over it */

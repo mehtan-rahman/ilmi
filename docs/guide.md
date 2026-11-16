@@ -148,11 +148,11 @@ on the page as a highlight when it is found there again.
 
 The pages are fitted to the pane. ⌘= draws them larger, a step at a time
 (125%, 150%, 200%, 250%, 300%), ⌘− smaller, ⌘0 fitted again; a pinch on a
-trackpad steps once. The same text stays under the top of the view, pages
+trackpad, or of two fingers on an iPad or a phone, steps once. The same text stays under the top of the view, pages
 wider than the pane scroll sideways, and the boxes, what is written on the
 pages, and the read bar grow with them. The zoom is said beside the page
-(`p. 37 / 212 · 150%`), is the book's own, and is kept while the app is
-open. With the caret in the notes, and everywhere else, those keys are the
+(`p. 37 / 212 · 150%`), is the book's own, and is kept for the device: it
+is there when the app is opened again. With the caret in the notes, and everywhere else, those keys are the
 text size.
 
 Getting around a book is by the keyboard as much as by the scroll. `/`
@@ -221,7 +221,12 @@ collection` until then.
   rule. Each has its own tint, and they are told apart without colour, so
   they read on an e-ink screen; the next highlight is made in the ink you
   chose last. `h` with the selection (or your last click) inside a
-  highlight clears it, and the notice undoes that. A right-click on a
+  highlight clears it, and the notice undoes that. With nothing selected,
+  `h` highlights the words under the boxes you have drawn, and the box's
+  bar has `highlight` beside `section` and `card`. That is how a finger
+  highlights, since a page's text is not selected under one: hold, drag a
+  box around the words, and press `highlight` (or `look up`, which
+  searches the web for them). A right-click on a
   highlight (a long press under a finger) offers `section` and `card`, as
   a selection does, `clear`, and the four inks. `highlights · <book>` in
   the palette lists them by their words; type to search them, ⏎ goes. The
@@ -238,8 +243,9 @@ collection` until then.
   `following portals`: as you read past a portal's source in the first
   pane, the pane beside moves to its destination, and stays on the nearest
   one above your place. Close that pane, or run the command again, to
-  stop. A portal into another book is not followed there. An iPad and a
-  phone have the mark and its peek only.
+  stop. A portal into another book is followed too: the pane beside shows
+  that book at the place, and the first book again once you read past one
+  of its own portals. An iPad and a phone have the mark and its peek only.
 - **The ruler.** `v` holds the line a third of the way down the view under
   a rule: a soft band over the line and a hairline under it. A click in a
   page's left margin, beside a line, does the same for that line. ↓ and ↑

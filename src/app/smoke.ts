@@ -13547,7 +13547,8 @@ export async function smokeSweep(vault: Vault): Promise<void> {
     useApp.setState({ session: null });
 
     // ── a book ──
-    const book = Object.keys(useApp.getState().docs).find((p) => useApp.getState().docs[p]?.pdf !== undefined && /lindqvist/i.test(p));
+    // the chapter, whose pages hold print (the whole book's first pages in the sample are blank leaves)
+    const book = Object.keys(useApp.getState().docs).find((p) => useApp.getState().docs[p]?.pdf !== undefined && /ch-3-the-canonical/.test(p));
     must(book, `a book in the sample: ${book}`);
     openNode(book!);
     const page = await poll(() => q<HTMLElement>('.pdf-page canvas, .pdf-page img') && q<HTMLElement>('.pdf-page'), 'its pages are drawn', 45000);
@@ -13556,13 +13557,34 @@ export async function smokeSweep(vault: Vault): Promise<void> {
     must(scroller, 'the pages scroll');
     await sleep(800);
     const start = scroller!.scrollTop;
-    scroller!.scrollTop = start + 9000;
+    const pageOf = () => /p\. (\d+) \/ (\d+)/.exec(q('.meta .right')?.textContent ?? '')?.[1];
+    const page0 = pageOf();
+    scroller!.scrollTop = start + 2400;
     scroller!.dispatchEvent(new Event('scroll'));
-    const said = await poll(() => { const m = /p\. (\d+) \/ (\d+)/.exec(q('.reader .meta .right, .pdf-bar .right, .meta .right')?.textContent ?? ''); return m && Number(m[1]) > 1 ? m[0] : null; }, 'the book says which page is in view', 8000);
+    const said = await poll(() => { const m = /p\. (\d+) \/ (\d+)/.exec(q('.reader .meta .right, .pdf-bar .right, .meta .right')?.textContent ?? ''); return m && m[1] !== page0 ? m[0] : null; }, 'the book says which page is in view, and it moves with the scroll', 8000);
     await sleep(600);
     const left = scroller!.scrollTop;
     log(`the book at ${said}, scrolled to ${Math.round(left)}`);
-    await sleep(2500);
+    {
+      // the page in view is drawn: a canvas of its size, and what ink it holds told (a page may be a blank one)
+      const n = Number(/p\. (\d+)/.exec(said)![1]);
+      const inkOf = (k: number): number | null => {
+        const c = q<HTMLCanvasElement>(`.pdf-page[data-page="${k}"] canvas`);
+        if (!c || !c.width) return null;
+        const small = document.createElement('canvas');
+        small.width = 120; small.height = 160;
+        const g = small.getContext('2d')!;
+        g.drawImage(c, 0, 0, 120, 160);
+        const d = g.getImageData(0, 0, 120, 160).data;
+        let dark = 0;
+        for (let i = 0; i < d.length; i += 4) if (d[i]! + d[i + 1]! + d[i + 2]! < 600) dark++;
+        return dark / (d.length / 4);
+      };
+      await poll(() => inkOf(n) !== null, `page ${n} is drawn`, 20000);
+      const inks = [n - 1, n, n + 1, n + 2].map((k) => `${k}: ${inkOf(k) === null ? 'not drawn' : `${(100 * inkOf(k)!).toFixed(1)}%`}`);
+      log(`ink on the pages near the view: ${inks.join(', ')}`);
+      must([n - 1, n, n + 1, n + 2].some((k) => (inkOf(k) ?? 0) > 0.005), 'the pages near the view hold their print');
+    }
     await shot('sweep-book-page');
     openNode(NOTE);
     await poll(() => tab() === NOTE && !q('.pdf-page'), 'the book\'s tab left');
@@ -13573,7 +13595,7 @@ export async function smokeSweep(vault: Vault): Promise<void> {
       while (sc && !(sc.scrollHeight > sc.clientHeight + 50 && /auto|scroll/.test(getComputedStyle(sc).overflowY))) sc = sc.parentElement;
       return sc && Math.abs(sc.scrollTop - left) < 200 ? sc : null;
     }, `come back to, the book is where it was left (${Math.round(left)})`, 45000);
-    must(/p\. (\d+) \/ (\d+)/.exec(q('.meta .right')?.textContent ?? '')?.[0] === said, `and says the same page (${said})`);
+    must((q('.meta .right')?.textContent ?? '').startsWith(said), `and says the same page (${said})`);
 
     // ── tabs ──
     const open0 = tabs();

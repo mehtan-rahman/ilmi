@@ -11,7 +11,7 @@ import { OPTION_DEFAULTS, addDays, dayOf, type Resolved } from '../../schedule/i
 import { Vault, type Fs } from '../../vault/index.js';
 import { nodeFs } from '../../vault/node-fs.js';
 import { REVIEW_MS_CAP, reviewOf } from '../grading.js';
-import { linesOf, mondayOf, numbersOf, rateLabel, reviewsUnder, spanLabel, weekLabel } from '../numbers.js';
+import { FORECAST_WEEKS, HEAT_WEEKS, dayLabel, daysOf, heatOf, linesDue, linesOf, mondayOf, numbersOf, rateLabel, reviewsOn, reviewsUnder, spanLabel, summaryOf, weekLabel } from '../numbers.js';
 
 const at = (day: string, hour = 12) => new Date(`${day}T${String(hour).padStart(2, '0')}:00:00`);
 const NOW = at('2026-10-30');
@@ -115,6 +115,119 @@ describe('the numbers', () => {
     expect(mondayOf('2026-10-26')).toBe('2026-10-26');
     expect(mondayOf('2026-11-01')).toBe('2026-10-26');
     expect(weekLabel('2026-10-05')).toBe('oct 5');
+  });
+});
+
+describe('the year of days', () => {
+  const doc = parse(DECK).doc;
+  const lines = linesOf([['deck.md', doc]]);
+  const log = [
+    R('2026-06-01', 'ab', 3, 'new', { ivl: 0, next: 0 }), R('2026-06-02', 'ab', 3, 'learning', { ivl: 0, next: 2 }),
+    R('2026-10-20', 'ab', 3, 'review', { ivl: 12, next: 30 }), R('2026-10-21', 'cd', 1),
+    R('2026-10-27', 'ab', 3), R('2026-10-27', 'cd', 2), R('2026-10-27', 'ef', 4, 'review', { key: 'c2', ms: 2000 }),
+    R('2026-10-28', 'cd', 3), R('2026-10-29', 'ef', 1, 'relearning'), R('2026-10-30', 'ab', 3),
+  ].sort((a, b) => (a.at < b.at ? -1 : 1));
+
+  it('the log is counted by day once: reviews, time, the answers, what was due and passed, started and matured, and where the day lies in the log', () => {
+    const c = daysOf(log);
+    expect(c.days).toEqual(['2026-06-01', '2026-06-02', '2026-10-20', '2026-10-21', '2026-10-27', '2026-10-27', '2026-10-27', '2026-10-28', '2026-10-29', '2026-10-30']);
+    expect(c.byDay.get('2026-10-27')).toEqual({ n: 3, ms: 14000, grades: [0, 1, 1, 1], due: 3, passed: 3, started: 0, matured: 0, from: 4, to: 7 });
+    expect(c.byDay.get('2026-06-01')).toMatchObject({ n: 1, started: 1, due: 0 });
+    // 12 days to 30: over the line of three weeks
+    expect(c.byDay.get('2026-10-20')).toMatchObject({ matured: 1, due: 1, passed: 1 });
+    expect(c.byDay.get('2026-10-21')).toMatchObject({ grades: [1, 0, 0, 0], due: 1, passed: 0 });
+    expect(c.byDay.has('2026-10-22')).toBe(false);
+    // a day's reviews are read from where the count says they lie
+    expect(reviewsOn(log, c, '2026-10-27').map((r) => r.card)).toEqual(['ab', 'cd', 'ef']);
+    expect(reviewsOn(log, c, '2026-10-22')).toEqual([]);
+  });
+
+  it('the heatmap: fifty-three weeks of Mondays ending this week, a cell a day, none before the log or after today, months named where they begin', () => {
+    const n = numbersOf(lines, log, NOW, opts(), '2026-06-01');
+    const h = n.heat!;
+    expect(h.weeks).toHaveLength(HEAT_WEEKS);
+    expect(h.weeks.at(-1)!.start).toBe('2026-10-26');
+    expect(h.weeks[0]!.start).toBe('2025-10-27');
+    expect(h.weeks.every((w) => w.days.length === 7 && mondayOf(w.start) === w.start)).toBe(true);
+    // before the log began there is no day, nor after today
+    expect(h.weeks[0]!.days.every((d) => d === null)).toBe(true);
+    expect(h.weeks.at(-1)!.days.map((d) => d?.n ?? null)).toEqual([0, 3, 1, 1, 1, null, null]);
+    expect(h.weeks.at(-1)!.days[1]).toEqual({ day: '2026-10-27', n: 3, level: 4 });
+    const june1 = h.weeks.find((w) => w.start === '2026-06-01')!;
+    expect(june1.days[0]).toEqual({ day: '2026-06-01', n: 1, level: 2 });
+    expect(h.months.find((m) => h.weeks[m.week]!.start === '2026-06-01')?.label).toBe('jun');
+    // one label a month, in order
+    expect(h.months.map((m) => m.week)).toEqual([...h.months.map((m) => m.week)].sort((a, b) => a - b));
+    expect(new Set(h.months.map((m) => h.weeks[m.week]!.start.slice(0, 7))).size).toBe(h.months.length);
+  });
+
+  it('the levels are set against the busy days, so one outlier leaves the rest their shades; nothing is level 0', () => {
+    const counts: Record<string, number> = { '2026-10-05': 500 };
+    for (let i = 6; i <= 25; i++) counts[`2026-10-${String(i).padStart(2, '0')}`] = 10 + i;
+    const h = heatOf((d) => counts[d] ?? 0, '2026-10-05', 4);
+    const cell = (d: string) => h.weeks.flatMap((w) => w.days).find((c) => c?.day === d)!;
+    expect(cell('2026-10-05').level).toBe(4);
+    expect(cell('2026-10-06').level).toBeLessThan(cell('2026-10-25').level);
+    expect(cell('2026-10-25').level).toBe(4);
+    expect(cell('2026-10-26').level).toBe(0);
+    // the steps name the least count of each level
+    expect(h.steps[0]).toBe(1);
+    expect(h.steps).toEqual([...h.steps].sort((a, b) => a - b));
+    const lone = heatOf((d) => (d === '2026-10-07' ? 1 : 0), '2026-10-05', 1);
+    expect(lone.weeks[0]!.days[2]!.level).toBe(4);
+  });
+
+  it('the lines beside it: days studied of days in range, the best day, the runs, the answers, retention, and this week, month and year', () => {
+    const c = daysOf(log);
+    const s = summaryOf(log, c, '2026-06-01', '2026-10-30');
+    expect([s.studied, s.days]).toEqual([8, 152]);
+    expect(s.reviews).toBe(10);
+    expect(s.best).toEqual({ day: '2026-10-27', n: 3 });
+    // 10-27 … 10-30 in a row, today among them; the longest the same four
+    expect([s.run, s.longest]).toEqual([4, 4]);
+    expect(s.mix).toEqual([2, 1, 6, 1]);
+    expect([s.rate.passed, s.rate.due]).toEqual([6, 7]);
+    const [week, month, year] = s.periods;
+    expect([week!.label, week!.from, week!.reviews, week!.ms]).toEqual(['this week', '2026-10-26', 6, 32000]);
+    expect([month!.from, month!.reviews, month!.matured]).toEqual(['2026-10-01', 8, 1]);
+    expect([year!.from, year!.reviews, year!.started]).toEqual(['2026-01-01', 10, 1]);
+    // the reviews were at nine in the morning
+    expect(s.byHour.map((p) => [p.label, p.due])).toEqual([['morning', 7]]);
+    // a day without a review yet does not end the run: it stands through yesterday
+    expect(summaryOf(log, c, '2026-06-01', '2026-10-31').run).toBe(4);
+    expect(summaryOf(log, c, '2026-06-01', '2026-11-01').run).toBe(0);
+    // the range a year at most, from the log's first day when that is later
+    const n = numbersOf(lines, log, NOW, opts(), '2026-06-01');
+    expect([n.summary!.from, n.summary!.to]).toEqual(['2026-06-01', '2026-10-30']);
+    expect(numbersOf(lines, log, NOW, opts(), '2024-01-01').summary!.days).toBe(365);
+    expect(numbersOf(lines, [], NOW, opts()).summary).toBeUndefined();
+  });
+
+  it('the days ahead in the same cells: what comes due a day, the overdue on today, and the lines of a day', () => {
+    const n = numbersOf(lines, [], NOW, opts());
+    expect(n.forecast.weeks).toHaveLength(FORECAST_WEEKS);
+    expect(n.forecast.weeks[0]!.start).toBe('2026-10-26');
+    expect(n.forecast.weeks[0]!.days.map((d) => d?.n ?? null)).toEqual([null, null, null, null, 2, 0, 0]);
+    expect(n.forecast.weeks[1]!.days.slice(0, 3).map((d) => d!.n)).toEqual([1, 0, 1]);
+    // c1 was due on the 20th: it is today's, and overdue
+    expect(n.coming).toEqual({ today: 2, overdue: 1, tomorrow: 0, week: 4, month: 4, heaviest: { day: '2026-11-02', n: 1 } });
+    expect(linesDue(lines, '2026-10-30', '2026-10-30').map((l) => `${l.card.id} ${l.key ?? ''}`)).toEqual(['ab ', 'ef c1']);
+    expect(linesDue(lines, '2026-11-04', '2026-10-30').map((l) => l.card.id)).toEqual(['cd']);
+    // the suspended card's day holds nothing
+    expect(linesDue(lines, '2026-11-01', '2026-10-30')).toEqual([]);
+    expect([dayLabel('2026-10-30'), dayLabel('2026-10-30', true)]).toEqual(['oct 30', 'fri, oct 30']);
+  });
+
+  it('a hundred thousand reviews are counted in one pass, quickly', () => {
+    const big: Review[] = [];
+    const t0 = Date.parse('2025-01-01T08:00:00Z');
+    for (let i = 0; i < 120_000; i++) big.push({ at: `${new Date(t0 + i * 240_000).toISOString().slice(0, 19)}Z`, doc: 'deck.md', card: `c${i % 5000}`, g: ((i % 4) + 1) as Review['g'], st: 'review', elapsed: 3, ivl: 3, next: 5, ms: 5000 });
+    const t = performance.now();
+    const n = numbersOf(lines, big, new Date(t0 + 120_000 * 240_000), opts(), '2025-01-01');
+    const took = performance.now() - t;
+    expect(n.heat!.weeks.flatMap((w) => w.days).filter((c) => c && c.n > 0).length).toBeGreaterThan(300);
+    expect(n.summary!.reviews).toBeGreaterThan(100_000);
+    expect(took).toBeLessThan(1500);
   });
 });
 

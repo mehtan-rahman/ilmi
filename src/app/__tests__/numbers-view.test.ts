@@ -74,7 +74,7 @@ afterAll(async () => {
 const texts = (sel: string) => Array.from(host.querySelectorAll(sel)).map((e) => e.textContent ?? '');
 
 describe('numbers', () => {
-  it('the vocab deck: cards · numbers, the history from the log as tables, nothing drawn', async () => {
+  it('the vocab deck: cards · numbers, a year of days and the days ahead as cells, the rest as tables', async () => {
     useApp.setState({ lensViews: { [VOCAB]: 'numbers' } });
     await mount(createElement(Lens, { id: VOCAB, active: true, onOpen: () => {} }));
     expect(texts('.fv-view button')).toEqual(['cards', 'numbers']);
@@ -86,17 +86,60 @@ describe('numbers', () => {
     const [, all, fresh, sus] = /^(\d+) cards, (\d+) never seen(?:, (\d+) suspended)?/.exec(line)!;
     expect(Number(fresh) + Number(sus ?? 0)).toBeLessThanOrEqual(Number(all));
     expect(line).toContain('logged since 2025-09-');
-    // four weeks back and four ahead, Monday first, a total each
-    expect(host.querySelectorAll('.nb-days[data-of="past"] tbody tr')).toHaveLength(4);
+    // a year of days behind, Monday-first weeks as columns, a cell a day; the days ahead in the same cells
+    const past = host.querySelector('.nb-heat[data-of="past"]')!;
+    expect(past.querySelectorAll('.nb-grid > *')).toHaveLength(53 * 7);
+    const cells = Array.from(past.querySelectorAll<HTMLElement>('button.nb-cell'));
+    expect(cells.length).toBeGreaterThan(300);
+    expect(cells.every((c) => /^[0-4]$/.test(c.dataset.l!) && /^\d{4}-\d\d-\d\d$/.test(c.dataset.day!))).toBe(true);
+    // each says its date and counts, to the pointer and to a reader
+    const busy = cells.filter((c) => Number(c.dataset.n) > 0);
+    expect(busy.length).toBeGreaterThan(100);
+    expect(busy[0]!.title).toMatch(/^[a-z]{3}, [a-z]{3} \d+ · \d+ reviews?/);
+    expect(busy[0]!.getAttribute('aria-label')).toBe(busy[0]!.title);
+    // one stop for Tab, the arrows walk from it
+    expect(cells.filter((c) => c.tabIndex === 0)).toHaveLength(1);
+    expect(host.querySelectorAll('.nb-heat[data-of="ahead"] .nb-grid > *')).toHaveLength(26 * 7);
     expect(host.querySelectorAll('.nb-days[data-of="ahead"] tbody tr')).toHaveLength(4);
-    expect(texts('.nb-days[data-of="past"] thead th').slice(1)).toEqual(['m', 't', 'w', 't', 'f', 's', 's', 'week']);
-    const pastTotal = texts('.nb-days[data-of="past"] .nb-total').slice(1).map(Number).reduce((a, b) => a + b, 0);
-    expect(pastTotal).toBeGreaterThan(50);
+    // the lines beside it
+    const sums = Object.fromEntries(Array.from(host.querySelectorAll<HTMLElement>('.nb-sum [data-sum]')).map((e) => [e.dataset.sum, e.querySelector('dd')!.textContent!]));
+    expect(sums.studied).toMatch(/^\d+ of \d+ days$/);
+    expect(sums.best).toMatch(/^[a-z]{3} \d+, \d+ reviews$/);
+    expect(sums.run).toMatch(/^\d+ days?, longest \d+$/);
+    expect(sums.retention).toMatch(/^\d+% of [\d,]+ reviews$/);
+    expect(sums.answers).toMatch(/^again \d+%, hard \d+%, good \d+%, easy \d+%$/);
+    expect(sums.today).toMatch(/^\d+/);
+    expect(texts('.nb-periods tbody th')).toEqual(['this week', 'this month', 'this year']);
+    // a day pressed lists its reviews, a row a card, each with the grades it got; pressed again it closes
+    const top = busy.reduce((a, b) => (Number(b.dataset.n) > Number(a.dataset.n) ? b : a));
+    await act(async () => { top.click(); });
+    const panel = host.querySelector<HTMLElement>('.nb-day[data-of="past"]')!;
+    expect(panel.dataset.day).toBe(top.dataset.day);
+    expect(panel.querySelector('.nb-day-head')!.textContent).toContain(`${top.dataset.n} review`);
+    const rows = Array.from(panel.querySelectorAll('.nb-rows li'));
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows.every((r) => /^(again|hard|good|easy)(, (again|hard|good|easy))*$/.test(r.querySelector('.nb-note')!.textContent!))).toBe(true);
+    expect(host.querySelector('button.nb-cell[data-on="1"]')).toBe(host.querySelector(`.nb-heat[data-of="past"] [data-day="${top.dataset.day}"]`));
+    // the arrows move the focus a day and a week
+    const grid = past.querySelector<HTMLElement>('.nb-grid')!;
+    const at = host.querySelector<HTMLElement>(`.nb-heat[data-of="past"] [data-day="${top.dataset.day}"]`)!;
+    at.focus();
+    await act(async () => { at.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true, cancelable: true })); });
+    expect(grid.contains(document.activeElement)).toBe(true);
+    expect((document.activeElement as HTMLElement).dataset.day).not.toBe(top.dataset.day);
+    expect(host.querySelector('.nb-hot')!.textContent).toMatch(/^[a-z]{3}, [a-z]{3} \d+ · /);
+    await act(async () => { host.querySelector<HTMLElement>(`.nb-heat[data-of="past"] [data-day="${top.dataset.day}"]`)!.click(); });
+    expect(host.querySelector('.nb-day')).toBeNull();
+    // a day ahead lists what comes due on it
+    const due = Array.from(host.querySelectorAll<HTMLElement>('.nb-heat[data-of="ahead"] button.nb-cell')).find((c) => Number(c.dataset.n) > 0)!;
+    await act(async () => { due.click(); });
+    expect(host.querySelectorAll('.nb-day[data-of="ahead"] .nb-rows li').length).toBe(Math.min(100, Number(due.dataset.n)));
+    await act(async () => { due.click(); });
     // retention by week and by age, as percentages
     expect(texts('.nb-rates .nb-rate').some((t) => /^\d+%$/.test(t))).toBe(true);
     expect(texts('.nb-spread tbody th')).toEqual(['stability', 'difficulty']);
     expect(host.querySelector('[data-sec="time"]')!.textContent).toMatch(/\d+ s a review/);
-    // the brief's bans: no canvas, no svg chart, no stat tiles
+    // cells and type: no canvas, no svg chart, no stat tiles
     expect(host.querySelector('canvas, svg:not(.katex svg)')).toBeNull();
     unmount();
   });
@@ -108,7 +151,8 @@ describe('numbers', () => {
     const n = Number(/^(\d+) cards/.exec(host.querySelector('.nb-counts')!.textContent!)![1]);
     const under = vault.documents().filter((p) => p === `${QM}.md` || p.startsWith(`${QM}/`)).reduce((k, p) => k + docs[p]!.cards, 0);
     expect(n).toBe(under);
-    expect(host.querySelectorAll('.nb-days tbody tr').length).toBe(8);
+    expect(host.querySelectorAll('.nb-days tbody tr').length).toBe(4);
+    expect(host.querySelectorAll('.nb-heat')).toHaveLength(2);
     unmount();
   });
 

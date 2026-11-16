@@ -1,16 +1,20 @@
-// A lens's numbers, set as type: quiet tables under small lowercase
-// labels, tabular figures, hairlines; today underlined in the one accent.
-// No charts, no tiles. The model is numbers.ts.
+// A lens's numbers: a year of days shaded by the reviews done on each, the
+// days ahead shaded by what comes due, and the rest set as type beside
+// them (quiet tables under small lowercase labels, tabular figures,
+// hairlines; today ringed in the one accent). A day pressed lists its
+// reviews, or what comes due on it, each row opening its card. No tiles,
+// no badges. The model is numbers.ts.
 
-import { useMemo } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState, type CSSProperties, type KeyboardEvent, type ReactElement } from 'react';
 import { dayOf, whenToDate, type Resolved } from '../schedule/index.js';
 import { docsUnder } from './deck.js';
 import { fmtDays, pathLabel } from './items.js';
 import { facesHTML } from './DeckBrowser.js';
 import { titleOf } from './names.js';
-import { linesOf, numbersOf, rateLabel, reviewsUnder, spanLabel, weekLabel, type Rate, type Spread, type Week } from './numbers.js';
+import { FORECAST_WEEKS, dayLabel, linesDue, linesOf, numbersOf, rateLabel, reviewsOn, reviewsUnder, spanLabel, weekLabel, type Cell, type Heat, type Line, type Numbers, type Rate, type Spread, type Week } from './numbers.js';
+import type { Review } from '../format/index.js';
 import { useApp } from './store.js';
-import { docsOf, openCard, optionsAt } from './vault.js';
+import { docsOf, openCard, openNode, optionsAt } from './vault.js';
 import './numbers.css';
 import { appNow } from './clock.js';
 
@@ -35,6 +39,107 @@ function Days({ weeks, today, label }: { weeks: Week[]; today: string; label: st
         ))}
       </tbody>
     </table>
+  );
+}
+
+/** The weeks a phone's width holds. */
+const PHONE_WEEKS = 26;
+/** The most rows a pressed day lists. */
+const DAY_ROWS = 100;
+const GRADES = ['again', 'hard', 'good', 'easy'];
+const count = (k: number): string => k.toLocaleString('en');
+const plural = (k: number, w: string) => `${count(k)} ${w}${k === 1 ? '' : 's'}`;
+
+type Pick = { of: 'past' | 'ahead'; day: string };
+
+interface HeatProps {
+  heat: Heat;
+  of: Pick['of'];
+  today: string;
+  picked: string | null;
+  /** What a day says of itself: its date and its counts. */
+  say(c: Cell): string;
+  onHot(of: Pick['of'], c: Cell | null): void;
+  onPick(of: Pick['of'], day: string): void;
+}
+
+/**
+ * Weeks as columns, Monday at the top, one cell a day, shaded in four
+ * steps (in e-ink a square that grows, since a shade is not told apart
+ * there). Each cell is a button: it says its date and counts on hover and
+ * on focus, the arrows walk the days (↑ ↓ a day, ← → a week), and a press
+ * picks the day. Drawn once: what is hovered is the caption's, not the grid's.
+ */
+const HeatGrid = memo(function HeatGrid({ heat, of, today, picked, say, onHot, onPick }: HeatProps) {
+  const stop = picked ?? today;
+  const move = (e: KeyboardEvent<HTMLDivElement>) => {
+    const by = { ArrowUp: -1, ArrowDown: 1, ArrowLeft: -7, ArrowRight: 7 }[e.key];
+    const at = (e.target as HTMLElement).dataset.day;
+    if (!by || !at) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.currentTarget.querySelector<HTMLElement>(`[data-day="${addDay(at, by)}"]`)?.focus();
+  };
+  return (
+    <div className="nb-heat" data-of={of} style={{ '--weeks': heat.weeks.length } as CSSProperties}>
+      <div className="nb-months" aria-hidden="true">
+        {heat.months.map((m) => <span key={m.week} style={{ gridColumnStart: m.week + 1 }}>{m.label}</span>)}
+      </div>
+      <div className="nb-wd" aria-hidden="true">{['m', '', 'w', '', 'f', '', ''].map((d, i) => <span key={i}>{d}</span>)}</div>
+      <div className="nb-grid" role="grid" aria-label={of === 'past' ? 'reviews a day, the past year' : 'reviews coming due'} onKeyDown={move} onMouseLeave={() => onHot(of, null)}>
+        {heat.weeks.flatMap((w) => w.days.map((c, i) => (c ? (
+          <button
+            key={c.day}
+            type="button"
+            className="nb-cell"
+            data-day={c.day}
+            data-l={c.level}
+            data-n={c.n}
+            data-today={c.day === today ? '1' : undefined}
+            data-on={c.day === picked ? '1' : undefined}
+            aria-pressed={c.day === picked}
+            aria-label={say(c)}
+            title={say(c)}
+            tabIndex={c.day === stop ? 0 : -1}
+            onClick={() => onPick(of, c.day)}
+            onMouseEnter={() => onHot(of, c)}
+            onFocus={() => onHot(of, c)}
+            onBlur={() => onHot(of, null)}
+          />
+        ) : <span key={`${w.start}${i}`} className="nb-void" />)))}
+      </div>
+    </div>
+  );
+});
+
+/** The scale under a grid: nothing to the most, in the cells' own steps. */
+function Legend({ heat, unit }: { heat: Heat; unit: string }) {
+  return (
+    <span className="nb-legend" title={heat.steps.map((s, i) => `${s}${i === 3 ? ' or more' : `–${heat.steps[i + 1]! - 1}`}`).join(', ') + ` ${unit}`}>
+      <span>less</span>
+      {[0, 1, 2, 3, 4].map((l) => <i key={l} className="nb-cell" data-l={l} />)}
+      <span>more</span>
+    </span>
+  );
+}
+
+/** The last `k` weeks of a year of days, for a width that holds no more. */
+function lastWeeks(h: Heat, k: number): Heat {
+  if (h.weeks.length <= k) return h;
+  const cut = h.weeks.length - k;
+  return { ...h, weeks: h.weeks.slice(cut), months: h.months.filter((m) => m.week >= cut).map((m) => ({ ...m, week: m.week - cut })) };
+}
+
+/** One row of a pressed day: a card as the failed-most list draws it, with what the day holds of it. */
+function CardRow({ line, where, note, open }: { line: Line; where: string; note: string; open(): void }) {
+  return (
+    <li data-path={line.path} data-block={line.block}>
+      <button type="button" className="nb-card" title={pathLabel(line.path)} onClick={open}>
+        <LeechFaces text={line.card.text} />
+        <span className="nb-where" dir="auto">{where}</span>
+      </button>
+      <span className="nb-note">{note}</span>
+    </li>
   );
 }
 
@@ -78,6 +183,38 @@ function LeechFaces({ text }: { text: string }) {
   );
 }
 
+interface Rows { all: number; gone: number; rows: ReactElement[] }
+
+const dueOf = (l: Line): string => { const d = l.sched!.due!; return d.length === 10 ? d : dayOf(whenToDate(d)); };
+
+/** A past day in words: `thu, nov 12 · 43 reviews · 12 min`. */
+function pastWords(n: Numbers, day: string): string {
+  const a = n.counted.byDay.get(day);
+  return [dayLabel(day, true), a?.n ? plural(a.n, 'review') : 'no reviews', a?.ms ? spanLabel(a.ms) : ''].filter(Boolean).join(' · ');
+}
+
+/** A day ahead in words: `thu, nov 19 · 12 due`; today says what of it is overdue. */
+function aheadWords(n: Numbers, c: Cell): string {
+  const late = c.day === n.today.day && n.coming.overdue ? `${count(n.coming.overdue)} overdue` : '';
+  return [c.day === n.today.day ? `today, ${dayLabel(c.day)}` : dayLabel(c.day, true), c.n ? `${count(c.n)} due` : 'nothing due', late].filter(Boolean).join(' · ');
+}
+
+/** A pressed day, opened under its grid: what it holds in words, then its cards. */
+function DayPanel({ of, day, words, rows, close }: { of: Pick['of']; day: string; words: string; rows: Rows; close(): void }) {
+  const more = rows.all - rows.rows.length;
+  return (
+    <div className="nb-day" data-of={of} data-day={day} onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); close(); } }}>
+      <p className="nb-day-head">
+        <span>{words}</span>
+        <button type="button" className="nb-go" onClick={close}>close</button>
+      </p>
+      {rows.rows.length > 0 && <ul className="nb-rows">{rows.rows}</ul>}
+      {more > 0 && <p className="nb-more">and {plural(more, 'card')} more</p>}
+      {rows.gone > 0 && <p className="nb-more">{plural(rows.gone, 'review')} of cards no longer here</p>}
+    </div>
+  );
+}
+
 /** The numbers over the lens `home`: a deck, a folder, a document's children, `''` the collection. */
 export function NumbersView({ home }: { home: string }) {
   const tree = useApp((s) => s.tree);
@@ -85,22 +222,64 @@ export function NumbersView({ home }: { home: string }) {
   const files = useApp((s) => s.files);
   const docs = useApp((s) => s.docs);
   const log = useApp((s) => s.reviews);
+  const phone = useApp((s) => s.phone);
   const day = dayOf(appNow());
-  const n = useMemo(() => {
+  const { n, lines, mine } = useMemo(() => {
     const now = appNow();
     const lines = linesOf(docsOf(docsUnder(tree, home, order, files)));
     const mine = reviewsUnder(log, lines, new Set(files));
     const cache = new Map<string, Resolved>();
     const optionsOf = (p: string) => { let r = cache.get(p); if (!r) { r = optionsAt(p); cache.set(p, r); } return r; };
-    return numbersOf(lines, mine, now, optionsOf, log.length ? dayOf(whenToDate(log[0]!.at)) : undefined);
+    return { n: numbersOf(lines, mine, now, optionsOf, log.length ? dayOf(whenToDate(log[0]!.at)) : undefined), lines, mine };
     // `docs` changes whenever a document under the lens does
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tree, order, files, docs, log, home, day]);
-  const plural = (k: number, w: string) => `${k} ${w}${k === 1 ? '' : 's'}`;
+  // the day pressed, and the day under the pointer or the focus
+  const [picked, setPicked] = useState<Pick | null>(null);
+  const [hot, setHot] = useState<{ of: Pick['of']; cell: Cell } | null>(null);
+  useEffect(() => { setPicked(null); setHot(null); }, [home]);
+  const onHot = useCallback((of: Pick['of'], cell: Cell | null) => setHot(cell ? { of, cell } : null), []);
+  const onPick = useCallback((of: Pick['of'], d: string) => setPicked((p) => (p && p.of === of && p.day === d ? null : { of, day: d })), []);
+  const sayPast = useCallback((c: Cell) => pastWords(n, c.day), [n]);
+  const sayAhead = useCallback((c: Cell) => aheadWords(n, c), [n]);
+  const heat = useMemo(() => (n.heat && phone ? lastWeeks(n.heat, PHONE_WEEKS) : n.heat), [n.heat, phone]);
   const root = useApp((s) => s.vault);
   // where a card lives: its document's title, and the line when a card has several
   const LINE_WORD: Record<string, string> = { r: 'back to front' };
   const whereOf = (path: string, key?: string) => [titleOf(path, docs, root), key ? LINE_WORD[key] ?? `blank ${key.slice(1)}` : ''].filter(Boolean).join(', ');
+  const open = (l: { path: string; block: number; card: { id?: string } }) => {
+    // a deck's lens showing its numbers turns to its cards, where the card is
+    useApp.setState((s) => ({ lensViews: { ...s.lensViews, [l.path]: 'cards' } }));
+    openCard(l.path, l.block, l.card.id);
+  };
+  /** The cards reviewed on a day, one row a line, the grades it was given in order; reviews of cards no longer under the lens are counted, not listed. */
+  const dayRows = (d: string): Rows => {
+    const byKey = new Map<string, Line>();
+    for (const l of lines) if (l.card.id) byKey.set(`${l.card.id} ${l.key ?? ''}`, l);
+    const got = new Map<Line, Review[]>();
+    let gone = 0;
+    for (const r of reviewsOn(mine, n.counted, d)) {
+      // a line's own key, else the card's bare line (a cloze of one blank is logged without its key)
+      const l = byKey.get(`${r.card} ${r.key ?? ''}`) ?? byKey.get(`${r.card} `) ?? [...byKey.values()].find((x) => x.card.id === r.card);
+      if (!l) { gone++; continue; }
+      got.set(l, [...(got.get(l) ?? []), r]);
+    }
+    const all = [...got];
+    return {
+      all: all.length,
+      gone,
+      rows: all.slice(0, DAY_ROWS).map(([l, rs]) => <CardRow key={`${l.path}#${l.block}#${l.key ?? ''}`} line={l} where={whereOf(l.path, l.key)} note={rs.map((r) => GRADES[r.g - 1]).join(', ')} open={() => open(l)} />),
+    };
+  };
+  const dueRows = (d: string): Rows => {
+    const all = linesDue(lines, d, n.today.day);
+    return {
+      all: all.length,
+      gone: 0,
+      rows: all.slice(0, DAY_ROWS).map((l) => <CardRow key={`${l.path}#${l.block}#${l.key ?? ''}`} line={l} where={whereOf(l.path, l.key)} note={l.sched?.due && d === n.today.day && dueOf(l) < d ? `since ${dayLabel(dueOf(l))}` : ''} open={() => open(l)} />),
+    };
+  };
+  const sum = n.summary;
   if (!n.cards) return <div className="numbers"><p className="empty">no cards</p></div>;
   const counts = [plural(n.cards, 'card'), n.fresh ? `${n.fresh} never seen` : '', n.suspended ? `${n.suspended} suspended` : ''].filter(Boolean).join(', ');
   return (
@@ -110,15 +289,60 @@ export function NumbersView({ home }: { home: string }) {
         <span className="nb-since">{n.since ? `logged since ${n.since}` : 'no reviews logged'}</span>
       </p>
 
-      {n.since && (
+      {heat && sum && (
         <section className="nb-sec" data-sec="past">
           <h6>reviews a day</h6>
-          <Days weeks={n.past} today={n.today.day} label="past" />
+          <HeatGrid heat={heat} of="past" today={n.today.day} picked={picked?.of === 'past' ? picked.day : null} say={sayPast} onHot={onHot} onPick={onPick} />
+          <p className="nb-cap">
+            <span className="nb-hot" aria-live="polite">{hot?.of === 'past' ? pastWords(n, hot.cell.day) : picked?.of === 'past' ? pastWords(n, picked.day) : 'press a day for its reviews'}</span>
+            <Legend heat={heat} unit="reviews" />
+          </p>
+          {picked?.of === 'past' && <DayPanel of="past" day={picked.day} words={pastWords(n, picked.day)} rows={dayRows(picked.day)} close={() => setPicked(null)} />}
+          <dl className="nb-sum">
+            <div data-sum="studied"><dt>studied</dt><dd>{count(sum.studied)} of {plural(sum.days, 'day')}</dd></div>
+            <div data-sum="average"><dt>a day</dt><dd>{count(Math.round(sum.reviews / sum.days))}{sum.studied > 0 && Math.round(sum.reviews / sum.studied) !== Math.round(sum.reviews / sum.days) ? `, ${count(Math.round(sum.reviews / sum.studied))} on a day studied` : ''}</dd></div>
+            {sum.best && <div data-sum="best"><dt>best day</dt><dd><button type="button" className="nb-go" onClick={() => setPicked({ of: 'past', day: sum.best!.day })}>{dayLabel(sum.best.day)}</button>, {plural(sum.best.n, 'review')}</dd></div>}
+            <div data-sum="run"><dt>in a row</dt><dd>{plural(sum.run, 'day')}, longest {count(sum.longest)}</dd></div>
+            {sum.rate.due > 0 && <div data-sum="retention"><dt>retention</dt><dd title="of the reviews of cards already in review, those not answered again">{rateLabel(sum.rate)} of {plural(sum.rate.due, 'review')}</dd></div>}
+            {sum.reviews > 0 && <div data-sum="answers"><dt>answers</dt><dd>{GRADES.map((g, i) => `${g} ${Math.round((100 * sum.mix[i]!) / sum.reviews)}%`).join(', ')}</dd></div>}
+          </dl>
+          <table className="nb-periods">
+            <thead><tr><th /><th>reviews</th><th>time</th><th>started</th><th>matured</th><th>retention</th></tr></thead>
+            <tbody>
+              {sum.periods.map((p) => (
+                <tr key={p.label} data-period={p.label}>
+                  <th>{p.label}</th>
+                  <td>{count(p.reviews)}</td>
+                  <td>{p.ms ? spanLabel(p.ms) : ''}</td>
+                  <td>{count(p.started)}</td>
+                  <td>{count(p.matured)}</td>
+                  <td className="nb-rate">{rateLabel(p.rate)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </section>
       )}
 
       <section className="nb-sec" data-sec="ahead">
         <h6>reviews due</h6>
+        <div className="nb-beside">
+          <div>
+            <HeatGrid heat={n.forecast} of="ahead" today={n.today.day} picked={picked?.of === 'ahead' ? picked.day : null} say={sayAhead} onHot={onHot} onPick={onPick} />
+            <p className="nb-cap">
+              <span className="nb-hot" aria-live="polite">{hot?.of === 'ahead' ? aheadWords(n, hot.cell) : picked?.of === 'ahead' ? aheadWords(n, { day: picked.day, n: dueRows(picked.day).all, level: 0 }) : 'press a day for what comes due'}</span>
+              <Legend heat={n.forecast} unit="due" />
+            </p>
+          </div>
+          <dl className="nb-sum" data-of="coming">
+            <div data-sum="today"><dt>today</dt><dd>{count(n.coming.today)}{n.coming.overdue ? `, ${count(n.coming.overdue)} of them overdue` : ''}</dd></div>
+            <div data-sum="tomorrow"><dt>tomorrow</dt><dd>{count(n.coming.tomorrow)}</dd></div>
+            <div data-sum="week"><dt>next 7 days</dt><dd>{count(n.coming.week)}, {count(Math.round(n.coming.week / 7))} a day</dd></div>
+            <div data-sum="month"><dt>next 30 days</dt><dd>{count(n.coming.month)}, {count(Math.round(n.coming.month / 30))} a day</dd></div>
+            {n.coming.heaviest && <div data-sum="heaviest"><dt>heaviest</dt><dd><button type="button" className="nb-go" onClick={() => setPicked({ of: 'ahead', day: n.coming.heaviest!.day })}>{dayLabel(n.coming.heaviest.day)}</button>, {count(n.coming.heaviest.n)}</dd></div>}
+          </dl>
+        </div>
+        {picked?.of === 'ahead' && <DayPanel of="ahead" day={picked.day} words={aheadWords(n, { day: picked.day, n: dueRows(picked.day).all, level: 0 })} rows={dueRows(picked.day)} close={() => setPicked(null)} />}
         <Days weeks={n.ahead} today={n.today.day} label="ahead" />
       </section>
 
@@ -128,6 +352,7 @@ export function NumbersView({ home }: { home: string }) {
           <div className="nb-cols">
             <Rates rows={n.byWeek} head="week of" label={(r) => weekLabel(r.label)} />
             {n.byAge.length > 0 && <Rates rows={n.byAge} head="studied for" label={(r) => r.label} />}
+            {sum && sum.byHour.length > 1 && <Rates rows={sum.byHour} head="time of day" label={(r) => r.label} />}
           </div>
         </section>
       )}
@@ -142,11 +367,7 @@ export function NumbersView({ home }: { home: string }) {
                   type="button"
                   className="nb-card"
                   title={pathLabel(l.path)}
-                  onClick={() => {
-                    // a deck's lens showing its numbers turns to its cards, where the card is
-                    useApp.setState((s) => ({ lensViews: { ...s.lensViews, [l.path]: 'cards' } }));
-                    openCard(l.path, l.block, l.id);
-                  }}
+                  onClick={() => open({ path: l.path, block: l.block, card: l.id === undefined ? {} : { id: l.id } })}
                 >
                   <LeechFaces text={l.text} />
                   <span className="nb-where" dir="auto">{whereOf(l.path, l.key)}</span>
@@ -180,4 +401,10 @@ export function NumbersView({ home }: { home: string }) {
       )}
     </div>
   );
+}
+
+/** The whole collection's numbers: its root as a lens, turned to them. */
+export function openCollectionNumbers(): void {
+  useApp.setState((s) => ({ lensViews: { ...s.lensViews, '': 'numbers' } }));
+  openNode('');
 }

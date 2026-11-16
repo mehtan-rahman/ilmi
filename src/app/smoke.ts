@@ -6092,27 +6092,135 @@ export async function smokeNumbers(vault: Vault): Promise<void> {
     log(`vocab: ${vocabNew.length} new reverses, ${dueNew.length} due today, ${held.length} held for tomorrow, ${spent} new graded today, allowance ${allowance}`);
     must(allowance === 20 && optionsAt(VOCAB).from.newPerDay === undefined, 'the vocab deck sets nothing: the default twenty new a day');
     must(dueNew.length + spent <= 20 && dueNew.length === Math.max(0, 20 - spent - cards().filter((i) => i.path === VOCAB && i.dir !== 'r' && isNew(i) && isDue(i, t)).length), `new cards a day meters the reverses: ${dueNew.length} due today, the rest held`);
-    must(held.length >= 85 && held.every((i) => dayOf(i.dueAt) !== today), `${held.length} new reverses wait for tomorrow`);
+    // how many are held by the allowance and how many by the day's budget moves with the sample's backlog: the rest is told, not pinned
+    log(`of the rest: ${[...new Set(vocabNew.filter((i) => !dueNew.includes(i)).map((i) => i.held ?? 'not held'))].join(', ')}`);
+    must(held.length >= 40 && held.every((i) => dayOf(i.dueAt) !== today), `${held.length} new reverses wait for tomorrow`);
 
     // ── the vocab deck's numbers ──
     openNode(VOCAB);
     setLensView(VOCAB, 'numbers');
-    const past = await poll(() => q('.numbers .nb-days[data-of="past"]'), 'the vocab deck shows its numbers', 10000);
+    const past = await poll(() => q('.numbers .nb-heat[data-of="past"]'), 'the vocab deck shows its numbers', 10000);
     // the screen first, so a run that fails below still shows it
     await shot('numbers-vocab');
     const line = q('.numbers .nb-line')?.textContent ?? '';
     log(`vocab line: ${line}`);
     must(/^178 cards/.test(line) && /logged since 20\d\d-\d\d-\d\d/.test(line), 'the counts line, and since when the log was kept');
-    const weekTotals = qa('tbody .nb-total', past).map((e) => e.textContent);
-    log(`reviews a day, week totals: ${weekTotals.join(' ')}; today ${q('.nb-days[data-of="ahead"] td[data-today="1"]')?.textContent} due`);
-    must(weekTotals.length === 4 && weekTotals.some((x) => Number(x) > 0), 'four weeks of reviews a day from the log');
+    // ── the year of days ──
+    const cellsOf = (of: string) => qa<HTMLElement>(`.nb-heat[data-of="${of}"] button.nb-cell`);
+    const cells = cellsOf('past');
+    const busy = cells.filter((c) => Number(c.dataset.n) > 0);
+    log(`the year: ${qa('.nb-grid > *', past).length} places, ${cells.length} days, ${busy.length} with reviews, levels ${[0, 1, 2, 3, 4].map((l) => cells.filter((c) => c.dataset.l === String(l)).length).join('/')}`);
+    must(qa('.nb-grid > *', past).length === 53 * 7 && cells.length > 300, 'a year of days: fifty-three weeks of seven, a cell a day the log knows');
+    must(busy.length > 100 && [1, 2, 3, 4].every((l) => cells.some((c) => c.dataset.l === String(l))), 'the days shaded in four steps by their reviews');
+    must(cells.every((c, i) => i === 0 || cells[i - 1]!.dataset.day! < c.dataset.day!), 'the days in order, oldest first');
+    {
+      // Monday at the top: the first place of a column is a Monday
+      const col = cells.find((c) => new Date(`${c.dataset.day}T12:00`).getDay() === 1)!;
+      const top = Math.min(...cells.map((c) => c.getBoundingClientRect().top));
+      must(Math.abs(col.getBoundingClientRect().top - top) < 1, 'weeks are columns, Monday at the top');
+      const sizes = cells.slice(0, 40).map((c) => c.getBoundingClientRect());
+      must(sizes.every((r) => r.width >= 6 && Math.abs(r.width - r.height) < 1.5), `cells are squares (${sizes[0]!.width.toFixed(1)} px)`);
+      const grid = q('.nb-grid', past)!.getBoundingClientRect();
+      const pane = q('.numbers')!.getBoundingClientRect();
+      must(grid.right <= pane.right + 1 && grid.left >= pane.left - 1, `the year fits its pane (${Math.round(grid.width)} of ${Math.round(pane.width)} px)`);
+    }
+    must(/^[a-z]{3}, [a-z]{3} \d+ · \d+ reviews?/.test(busy[0]!.title) && busy[0]!.getAttribute('aria-label') === busy[0]!.title, `a day says its date and counts: ${busy[0]!.title}`);
+    must(cells.filter((c) => c.tabIndex === 0).length === 1, 'one stop for Tab in the year');
+    const sums = () => Object.fromEntries(qa<HTMLElement>('.nb-sum [data-sum]').map((e) => [e.dataset.sum!, e.querySelector('dd')?.textContent ?? '']));
+    const sm = sums();
+    log(`the lines: ${Object.entries(sm).map(([k, v]) => `${k}: ${v}`).join(' | ')}`);
+    must(/^\d+ of \d+ days$/.test(sm.studied ?? '') && /^[a-z]{3} \d+, [\d,]+ reviews$/.test(sm.best ?? '') && /^\d+ days?, longest \d+$/.test(sm.run ?? ''), 'days studied of days in range, the best day, the run and the longest');
+    must(/^\d+% of [\d,]+ reviews/.test(sm.retention ?? '') && /^again \d+%, hard \d+%, good \d+%, easy \d+%$/.test(sm.answers ?? ''), 'retention over the year and the answers given');
+    {
+      // the lines agree with the cells: days studied is the cells with reviews in the last 365 days
+      const from = new Date(Date.now() - 364 * 86_400_000);
+      const lo = dayOf(from);
+      const inYear = busy.filter((c) => c.dataset.day! >= lo).length;
+      must(Number(/^(\d+)/.exec(sm.studied!)![1]) === inYear, `days studied (${sm.studied}) is the shaded cells of the year (${inYear})`);
+      const best = busy.reduce((a, b) => (Number(b.dataset.n) > Number(a.dataset.n) ? b : a));
+      must(sm.best!.endsWith(`, ${Number(best.dataset.n).toLocaleString('en')} reviews`), `the best day is the busiest cell (${best.dataset.day}, ${best.dataset.n})`);
+    }
+    const periods = qa('.nb-periods tbody tr').map((r) => qa('th, td', r).map((c) => c.textContent).join(' '));
+    log(`periods: ${periods.join(' | ')}`);
+    must(periods.length === 3 && periods[0]!.startsWith('this week') && periods[2]!.startsWith('this year'), 'this week, this month, this year: reviews, time, started, matured, retention');
+    await shot('numbers-heat');
+
+    // a day by the keyboard: focused it says itself under the grid, the arrows walk, ⏎ lists its reviews
+    const pick = busy.reduce((a, b) => (Number(b.dataset.n) > Number(a.dataset.n) ? b : a));
+    pick.focus();
+    await poll(() => (q('.nb-hot')?.textContent ?? '').includes(`${Number(pick.dataset.n)} review`), `a focused day is told under the grid: ${q('.nb-hot')?.textContent}`);
+    pick.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }));
+    await sleep(100);
+    const next = document.activeElement as HTMLElement;
+    {
+      const d = new Date(`${pick.dataset.day}T12:00`); d.setDate(d.getDate() + 7);
+      const d2 = new Date(`${pick.dataset.day}T12:00`); d2.setDate(d2.getDate() - 7);
+      must(next.dataset.day === dayOf(d) || (!q(`.nb-heat[data-of="past"] [data-day="${dayOf(d)}"]`) && next === pick), `→ moves a week on (${pick.dataset.day} to ${next.dataset.day})`);
+      next.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true, cancelable: true }));
+      await sleep(100);
+      must((document.activeElement as HTMLElement).dataset.day === pick.dataset.day, '← moves it back');
+      void d2;
+    }
+    click(pick);
+    const panel = await poll(() => q<HTMLElement>(`.nb-day[data-of="past"][data-day="${pick.dataset.day}"]`), 'a pressed day opens under the grid');
+    const dayRows = qa<HTMLElement>('.nb-rows li', panel);
+    log(`the day ${pick.dataset.day}: ${q('.nb-day-head span', panel)?.textContent}; ${dayRows.length} rows; first: ${dayRows[0]?.querySelector('.nb-front')?.textContent?.slice(0, 24)} (${dayRows[0]?.querySelector('.nb-note')?.textContent})`);
+    must(dayRows.length > 0 && dayRows.every((r) => /^(again|hard|good|easy)(, (again|hard|good|easy))*$/.test(r.querySelector('.nb-note')?.textContent ?? '')), 'it lists the day\'s cards, each with the grades it got');
+    {
+      const grades = dayRows.reduce((k, r) => k + (r.querySelector('.nb-note')!.textContent!.split(', ').length), 0);
+      const gone = Number(/(\d+) reviews? of cards no longer here/.exec(panel.textContent ?? '')?.[1] ?? 0);
+      const more = /and \d+ cards? more/.test(panel.textContent ?? '');
+      must(more || grades + gone === Number(pick.dataset.n), `the rows' grades are the day's count (${grades}${gone ? ` + ${gone} gone` : ''} of ${pick.dataset.n})`);
+    }
+    must(pick.dataset.on === '1' || q(`.nb-heat[data-of="past"] [data-day="${pick.dataset.day}"]`)?.getAttribute('data-on') === '1', 'the pressed day is marked');
+    panel.scrollIntoView({ block: 'center' });
+    await shot('numbers-day');
+
+    // ── the days ahead, in the same cells ──
+    const ahead = cellsOf('ahead');
+    const dueCells = ahead.filter((c) => Number(c.dataset.n) > 0);
+    log(`ahead: ${ahead.length} days, ${dueCells.length} with something due; today ${ahead[0]?.dataset.n}`);
+    must(qa('.nb-heat[data-of="ahead"] .nb-grid > *').length === 26 * 7 && ahead[0]!.dataset.day === today && ahead[0]!.dataset.today === '1', 'twenty-six weeks ahead, from today');
+    must(dueCells.length > 10, 'the days ahead shaded by what comes due');
+    const tableToday = q('.nb-days[data-of="ahead"] td[data-today="1"]')?.textContent;
+    must(tableToday === ahead[0]!.dataset.n && (sums().today ?? '').startsWith(Number(ahead[0]!.dataset.n).toLocaleString('en')), `today's cell, its line and the table agree (${tableToday})`);
+    const later = dueCells.find((c) => c.dataset.day! > today)!;
+    click(later);
+    const duePanel = await poll(() => q<HTMLElement>(`.nb-day[data-of="ahead"][data-day="${later.dataset.day}"]`), 'a day ahead pressed lists what comes due on it');
+    must(qa('.nb-rows li', duePanel).length === Math.min(100, Number(later.dataset.n)), `${later.dataset.n} due on ${later.dataset.day}, a row each`);
+    must(!q('.nb-day[data-of="past"]'), 'one day open at a time');
+    duePanel.scrollIntoView({ block: 'center' });
+    await shot('numbers-ahead');
+    for (const theme of ['dark', 'eink'] as const) {
+      useApp.getState().setTheme(theme);
+      await sleep(300);
+      // e-ink tells a count by the size of its square, not a shade
+      const l4 = cellsOf('past').find((c) => c.dataset.l === '4')!;
+      const l1 = cellsOf('past').find((c) => c.dataset.l === '1')!;
+      const cs = (e: Element) => getComputedStyle(e);
+      if (theme === 'eink') must(cs(l4).backgroundSize !== cs(l1).backgroundSize && cs(l4).backgroundImage !== 'none', `e-ink: a day's count is its square's size (${cs(l1).backgroundSize} to ${cs(l4).backgroundSize})`);
+      else must(cs(l4).backgroundColor !== cs(l1).backgroundColor && cs(l1).backgroundColor !== cs(cellsOf('past').find((c) => c.dataset.l === '0')!).backgroundColor, `${theme}: the steps are told apart (${cs(l1).backgroundColor} to ${cs(l4).backgroundColor})`);
+      q('.numbers')!.scrollIntoView({ block: 'start' });
+      await shot(`numbers-heat-${theme}`);
+    }
+    useApp.getState().setTheme('light');
+    // a row of the day opens its card where it lives
+    {
+      const row = q<HTMLElement>('.nb-day .nb-rows li')!;
+      const block = Number(row.dataset.block);
+      click(q('button', row)!);
+      await poll(() => useApp.getState().lensViews[VOCAB] === 'cards' && useApp.getState().selectedCard?.index === block, `a day's row opens its card in the deck (block ${block})`, 8000);
+      setLensView(VOCAB, 'numbers');
+      await poll(() => q('.numbers .nb-heat'), 'back at the numbers');
+    }
+    log(`today ${q('.nb-days[data-of="ahead"] td[data-today="1"]')?.textContent} due`);
     must(qa('.nb-days[data-of="ahead"] tbody tr').length === 4, 'four weeks coming due');
     const rates = qa('.nb-rates .nb-rate').map((e) => e.textContent);
     log(`retention: ${rates.join(' ')}`);
     must(rates.some((r) => /^\d+%$/.test(r ?? '')), 'true retention by week and by age');
     must(qa('.nb-spread tbody th').map((e) => e.textContent).join() === 'stability,difficulty', 'the spread of stability and difficulty, a line each');
     must(/s a review/.test(q('[data-sec="time"]')?.textContent ?? ''), `time a review: ${q('[data-sec="time"]')?.textContent}`);
-    must(!q('.numbers canvas, .numbers svg:not(.katex svg)'), 'type, not charts');
+    must(!q('.numbers canvas, .numbers svg:not(.katex svg)'), 'cells and type: no canvas, no drawn chart');
     const leechRows = qa<HTMLElement>('.nb-leeches li');
     log(`failed most: ${leechRows.map((r) => `${r.querySelector('.nb-front')?.textContent?.slice(0, 24)} (${r.querySelector('.nb-where')?.textContent}) ${r.querySelector('.nb-lapses')?.textContent} ${r.querySelector('.nb-tag')?.textContent}`).join(' | ')}`);
     must(leechRows.every((r) => (r.querySelector('.nb-front')?.textContent ?? '').trim() && (r.querySelector('.nb-where')?.textContent ?? '').trim()), 'each failed-most row names its card: its front and where it lives');
@@ -6138,12 +6246,53 @@ export async function smokeNumbers(vault: Vault): Promise<void> {
     openNode(QM);
     setLensView(QM, 'numbers');
     await poll(() => q('.folder-view .numbers .nb-days'), 'the quantum notebook\'s children show their numbers', 10000);
+    {
+      // scoped to the lens: the notebook's year holds fewer reviews than the deck's did, and its cells are its own
+      const mine = qa<HTMLElement>('.nb-heat[data-of="past"] button.nb-cell').reduce((k, c) => k + Number(c.dataset.n), 0);
+      const under = new Set(docsUnder(useApp.getState().tree, QM, useApp.getState().order, useApp.getState().files));
+      const lo = qa<HTMLElement>('.nb-heat[data-of="past"] button.nb-cell')[0]!.dataset.day!;
+      const want = reviewLog().filter((r) => under.has(r.doc) && dayOf(whenToDate(r.at)) >= lo).length;
+      must(mine > 0 && mine === want, `the notebook's year is its own reviews: ${mine} in the cells, ${want} in the log under it`);
+    }
     must(qa('.fv-view button').map((b) => b.textContent).join(' ') === 'items cards numbers', 'the lens reads items · cards · numbers');
     log(`quantum line: ${q('.numbers .nb-line')?.textContent}`);
     await shot('numbers-notebook');
     useApp.getState().setTheme('dark');
     await shot('numbers-notebook-dark');
     useApp.getState().setTheme('light');
+
+    // ── the whole collection ──
+    {
+      const { openCollectionNumbers } = await import('./NumbersLens.js');
+      openCollectionNumbers();
+      await poll(() => activeTab(useApp.getState().panes)?.id === '' && q('.folder-view .numbers .nb-heat[data-of="past"]'), 'the collection\'s numbers open as its own lens', 10000);
+      const all = qa<HTMLElement>('.nb-heat[data-of="past"] button.nb-cell');
+      const lo = all[0]!.dataset.day!;
+      const total = all.reduce((k, c) => k + Number(c.dataset.n), 0);
+      const want = reviewLog().filter((r) => dayOf(whenToDate(r.at)) >= lo).length;
+      log(`collection line: ${q('.numbers .nb-line')?.textContent}; ${total} reviews in the year's cells, ${want} in the log`);
+      must(total === want && total > 3000, `the collection's year is every review of the year (${total})`);
+      await shot('numbers-collection');
+      // a phone's width: half a year of weeks, the cells still squares a finger finds, nothing past the edge
+      const host = q<HTMLElement>('.numbers')!;
+      useApp.setState({ phone: true });
+      document.documentElement.dataset.shape = 'phone';
+      host.style.width = '343px';
+      await sleep(400);
+      const grid = q('.nb-heat[data-of="past"] .nb-grid')!;
+      const pc = qa<HTMLElement>('button.nb-cell', grid);
+      const box = host.getBoundingClientRect();
+      const wide = qa<HTMLElement>('.numbers *').filter((e) => e.getBoundingClientRect().right > box.right + 1).map((e) => e.className || e.tagName);
+      log(`phone: ${qa('.nb-grid > *', grid.parentElement!).length} places, cell ${pc[0]!.getBoundingClientRect().width.toFixed(1)} px, past the edge: ${[...new Set(wide)].join(' ') || 'nothing'}`);
+      must(qa(':scope > *', grid).length === 26 * 7 && pc[0]!.getBoundingClientRect().width >= 9, 'at a phone\'s width: twenty-six weeks, cells of nine pixels or more');
+      must(wide.length === 0, 'nothing of the numbers runs past a phone\'s width');
+      host.scrollIntoView({ block: 'start' });
+      await shot('numbers-phone-width');
+      host.style.width = '';
+      delete document.documentElement.dataset.shape;
+      useApp.setState({ phone: false });
+      await sleep(200);
+    }
 
     // ── options on the notebook change the day's queue for its cards ──
     const qmPaths = under(QM);

@@ -16,7 +16,10 @@
 // the pages, and `pages` over it comes back. Over a session it goes on top, so
 // the session is still there.
 
+import { useSyncExternalStore } from 'react';
+import { openUrl } from '@tauri-apps/plugin-opener';
 import { setField } from '../format/index.js';
+import { emptyTrail, type ContentsEntry, type Trail } from '../pdf/index.js';
 import { dirOf, relFrom } from '../vault/index.js';
 import { noteOf, notesTabOf, pagesOf, SESSION } from './names.js';
 import { activeTab, besideAt, closeBeside, openBeside, openTab } from './panes.js';
@@ -124,4 +127,95 @@ function settled(pdf: string, note: string): Promise<void> {
     const s = useApp.getState();
     if (s.docs[pdf]?.note === note && s.docs[note]?.of === pdf) done();
   });
+}
+
+// ── getting around (milestone 76) ──
+// What the lens over a book's pages shares with the rest of the shell: the
+// trail of places its jumps left (⌫ back, ⇧⌫ forward; kept by the book's id
+// for as long as the app runs, as its place and its zoom are), and the lens
+// itself, for the palette's `contents` list to ask and to send a place to.
+
+const trails = new Map<string, Trail>();
+const subs = new Set<() => void>();
+const tell = () => { for (const f of [...subs]) f(); };
+const subscribe = (f: () => void) => { subs.add(f); return () => { subs.delete(f); }; };
+const NONE = emptyTrail();
+
+/** The places a book's jumps left. */
+export const trailOf = (id: string): Trail => trails.get(id) ?? NONE;
+export function setTrail(id: string, t: Trail): void {
+  trails.set(id, t);
+  tell();
+}
+/** A book's trail, as it changes. */
+export const useTrail = (id: string): Trail => useSyncExternalStore(subscribe, () => trailOf(id));
+
+/** A book's contents as the palette lists them: the PDF's outline, else the sections boxed on its pages, and the entry that holds the place in view. */
+export interface BookContents {
+  entries: ContentsEntry[];
+  here: number;
+  from: 'outline' | 'sections' | 'none';
+}
+
+/** The lens over a book's pages, as the palette reaches it. */
+export interface BookLens {
+  /** In the pane in front. */
+  active(): boolean;
+  contents(): Promise<BookContents>;
+  /** Go to an entry's place: a jump, with the way back. */
+  go(entry: ContentsEntry): void;
+}
+
+const lenses = new Map<string, BookLens[]>();
+
+/** A lens over the book at `id` is there; the undoing takes it away again. */
+export function addLens(id: string, lens: BookLens): () => void {
+  lenses.set(id, [...(lenses.get(id) ?? []), lens]);
+  tell();
+  return () => {
+    const rest = (lenses.get(id) ?? []).filter((l) => l !== lens);
+    if (rest.length) lenses.set(id, rest); else lenses.delete(id);
+    tell();
+  };
+}
+
+/** A lens moved to the pane in front, or out of it. */
+export const lensChanged = (): void => tell();
+
+/** The lens over the book at `id`: the one in the pane in front when two show it. */
+export function lensOf(id: string): BookLens | null {
+  const list = lenses.get(id) ?? [];
+  return list.find((l) => l.active()) ?? list[list.length - 1] ?? null;
+}
+
+/** The book whose pages are in the pane in front, when a book is. */
+export function bookInFront(): string | null {
+  for (const [id, list] of lenses) if (list.some((l) => l.active())) return id;
+  return null;
+}
+
+/** Whether the book in front has somewhere to go back to: the bottom strip says `⌫ back` only then. */
+export const useBackInFront = (): boolean => useSyncExternalStore(subscribe, () => {
+  const id = bookInFront();
+  return id !== null && trailOf(id).back.length > 0;
+});
+
+let wanted: string | null = null;
+
+/** `t` over a book's pages: the palette opens on that book's contents. */
+export function openContents(id: string): void {
+  wanted = id;
+  useApp.setState({ paletteOpen: true });
+}
+/** The book whose contents the palette was opened for, once. */
+export function takeContents(): string | null {
+  const id = wanted;
+  wanted = null;
+  return id;
+}
+
+/** A web address in the system's browser; outside Tauri, in a new tab. Nothing is fetched by the app. */
+export function openWeb(url: string): void {
+  if (!/^(?:https?:|mailto:)/i.test(url)) return;
+  openUrl(url).catch(() => { window.open(url, '_blank', 'noopener'); });
 }

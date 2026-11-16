@@ -14,6 +14,14 @@ F2 / dbl-click   rename                 right-click  new, import, rename, move t
 in the sidebar   ↑ ↓ → ← move and fold, ⏎ open, F2 rename, ⌘⌫ delete, a letter
                  jumps to a name (one no name starts with is the page's key); a
                  click that opens a row gives the keys back to the page
+                 ⇧F10 (or the Menu key) opens the selected row's menu at the row;
+                 the same on a tab rail's row and on a folder lens's row (Tab
+                 reaches one, ⏎ opens it)
+in a menu        ↓ ↑ move (round the ends), Home End, ⏎ or space runs the item,
+                 → opens move to… and ← or esc leaves it (in its filter ← leaves
+                 once nothing is typed), esc closes, a letter jumps to the next
+                 item starting with it; while a menu is open every key is its
+                 own, none the page's; closed, the focus is back where it was
 ⌘⇧N              new collection         ⌘O           import a folder as a collection
 ⌘⇧O              import…                ⌘⇧W          close collection
 ⌘V               an address, with nothing focused: clipped into the active tab's folder
@@ -22,6 +30,7 @@ in the sidebar   ↑ ↓ → ← move and fold, ⏎ open, F2 rename, ⌘⌫ dele
 ⌘⇧T              the tab closed last, open again (as long as the collection stays open)
 ⌃⌘S              sidebar                ⌘⇧I          inspector
 ⌘= ⌘−            text size, bigger and smaller (⌘0 back to 100%); kept with the tweaks
+                 (over a book's pages they zoom the pages: see in a book)
 ⌘,               tweaks: theme, accent, density, text size, reopen the last vault on start,
                  download images when clipping, show remote images, queue
                  shows titles, postpone the backlog when the day starts
@@ -30,6 +39,9 @@ in the sidebar   ↑ ↓ → ← move and fold, ⏎ open, F2 rename, ⌘⌫ dele
 
 on the welcome   ⏎ open the selected collection, j k move, n new collection,
                  i import folder; a folder dropped on it is imported as a collection
+                 F2 rename the selected collection (⏎ commits, Esc cancels), ⌘⌫ delete
+                 it (asked on the row: Esc keeps); right-click, a long press, or the
+                 row's ··· for the same two
 ⌘K               export collection · folder, export collection · zip: the collection
                  out as a folder of Markdown files, or as one zip
 
@@ -58,9 +70,30 @@ in a book        a document with pages: its pages beside its notes (the
                  card in (or, where the page names no sections, a clip
                  under ## p. N), esc clears; ⏎ right after writes in it;
                  [ ] step the sections; ⌘\ hides the notes; / search
-                 (⏎ the next hit, ⇧⏎ the one before, counted n / m),
-                 g go to a page; ⏎ on a selected reference such as (3.12)
-                 peeks at its target; drag the margin to move the read point
+                 (⏎ the next hit, ⇧⏎ the one before, counted n / m;
+                 n and N the same once the caret has left the field; the
+                 hits stay lit until esc), g go to a page; ⏎ on a selected
+                 reference such as (3.12) peeks at its target, and ⏎ again
+                 or a press in the peek goes there; drag the margin to move
+                 the read point;
+                 a press on one of the PDF's own links follows it (a web
+                 address opens in the browser); ⌥-press, or right-click
+                 then peek, on a link or on a word that names something
+                 ((3.12), Fig. 4, Theorem 2, Section 3.2, §3.2, [17]) peeks
+                 at where it points without going;
+                 f letters every link and reference in view: the letters
+                 typed follow that one, with ⇧ on the last they peek, esc
+                 or any other key lets them go;
+                 t the PDF's contents in the palette (type to narrow, ⏎
+                 goes);
+                 ⌫ back to where the last jump was made from (a search's
+                 first hit, g, the contents, a link, a reference, a section
+                 more than a screen away), ⇧⌫ forward again;
+                 right-click on a selection: section, card, search the web,
+                 search scholar (in the browser);
+                 ⌘= ⌘− zoom the pages in and out (fit, 125%, 150%, 200%,
+                 250%, 300%), ⌘0 back to fit, a pinch on a trackpad steps
+                 once; with the caret in the notes they are the text size
 in the intake    ⌘⏎ place & open, ⌘⇧⏎ place & leave it
 in a deck        j k (or ↑ ↓) move, ⏎ or a double-click opens the card in the
                  card view, / search, m make a card; click selects, ⇧-click

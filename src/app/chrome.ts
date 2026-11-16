@@ -33,6 +33,8 @@ export interface HintContext {
   marks?: boolean;
   /** On an iPad: what the mouse does by a drag a finger does after a hold. */
   touch?: boolean;
+  /** A book whose jumps left somewhere to go back to (milestone 76): `⌫ back` is said only then. */
+  back?: boolean;
 }
 
 const PALETTE: Hint = ['⌘k', 'palette'];
@@ -41,6 +43,8 @@ const book = (c: HintContext): Hint[] => [[c.touch ? 'hold, drag' : 'drag', 'box
 /** A book's notes come in over its pages and fold away again: the word over the pages, and this key. */
 const NOTES: Hint = ['⌘\\', 'notes'];
 const NAV: Hint = ['[ ]', 'prev / next'];
+/** A book with somewhere to go back to. */
+const back = (c: HintContext): Hint[] => (c.back ? [['⌫', 'back']] : []);
 
 /** Extract and card: bare letters in a frozen page, ⌘⇧ in editable text, where the letters type. */
 const selKeys = (frozen: boolean | undefined, extract = true, word = 'extract'): Hint[] => [
@@ -58,9 +62,9 @@ export function hintsFor(c: HintContext): Hint[] {
         : [['⏎', 'open'], ['j k', 'move'], PALETTE];
     case 'session':
       // the same three everywhere: a book's ⏎ is done for today, everything else's next
-      if (c.el === 'read' && c.pages) return [['⏎', c.note ? 'next' : 'done for today'], ['p', 'later'], ['d', 'dismiss'], ...book(c), NOTES, NAV];
+      if (c.el === 'read' && c.pages) return [['⏎', c.note ? 'next' : 'done for today'], ['p', 'later'], ['d', 'dismiss'], ...book(c), ...back(c), NOTES, NAV];
       if (c.el === 'read') return [['⏎', c.note ? 'next' : 'done for today'], ['p', 'later'], ['d', 'dismiss'], ...selKeys(c.frozen, true, word), NAV];
-      if (c.el === 'section' && c.pages) return [['⏎', 'next'], ['p', 'later'], ['d', 'dismiss'], ...book(c), NOTES, NAV];
+      if (c.el === 'section' && c.pages) return [['⏎', 'next'], ['p', 'later'], ['d', 'dismiss'], ...book(c), ...back(c), NOTES, NAV];
       if (c.el === 'section') return [['⏎', 'next'], ['p', 'later'], ['d', 'dismiss'], ...selKeys(c.frozen), NAV];
       if (c.el === 'write') return [['⏎', 'next'], ['p', 'later'], ['d', 'dismiss'], ...selKeys(c.frozen, false), NAV];
       return [['space', 'reveal'], ['1 2 3 4', 'grade'], ['s', 'suspend'], ['o', 'go to source'], NAV];
@@ -68,7 +72,7 @@ export function hintsFor(c: HintContext): Hint[] {
     case 'source':
     case 'extract': {
       const enrol: Hint[] = c.canEnrol ? [['r', c.kind === 'note' ? 'revisit' : 'start reading']] : [];
-      if (c.pages) return [...book(c), ...enrol, ['[ ]', 'sections'], ['/', 'search'], NOTES];
+      if (c.pages) return [...book(c), ...enrol, ['[ ]', 'sections'], ['/', 'search'], ...back(c), NOTES];
       return [...selKeys(c.frozen, true, word), ...enrol, ['⌘F', 'find'], ['⌘\\', 'split pane']];
     }
     case 'draft':
@@ -176,7 +180,7 @@ export function fuzzy(query: string, text: string): number | null {
   return found === null ? null : found - query.length * 0.2;
 }
 
-export type EntryTag = 'query' | 'folder' | 'note' | 'source' | 'extract' | 'deck' | 'draft' | 'card' | 'text' | 'command' | 'vault';
+export type EntryTag = 'query' | 'folder' | 'note' | 'source' | 'extract' | 'deck' | 'draft' | 'card' | 'text' | 'command' | 'vault' | 'place';
 
 export interface Entry {
   key: string;
@@ -188,6 +192,10 @@ export interface Entry {
   math?: string;
   /** Where in `title` what was found is, for a row of text. */
   mark?: [from: number, to: number];
+  /** A place in a book (its contents): how deep in the outline, its page, and whether it holds the place in view. */
+  depth?: number;
+  page?: number;
+  here?: boolean;
   /** A vault path or special tab id to open, a card in a document, a block of a document, a command id, or another vault to switch to. */
   target: { open: string } | { open: string; index: number; id?: string } | { open: string; block: number } | { command: string } | { vault: string };
 }
@@ -205,8 +213,18 @@ export interface VaultRef {
 
 export const ENTRY_GLYPH: Record<EntryTag, string> = {
   // the kinds' marks are the tree's (`GLYPH`), so the palette and the sidebar agree
-  query: '≡', folder: GLYPH.folder, note: GLYPH.note, source: GLYPH.source, extract: GLYPH.extract, deck: GLYPH.deck, draft: GLYPH.draft, card: '◆', text: '⌕', command: '›', vault: '⌂',
+  query: '≡', folder: GLYPH.folder, note: GLYPH.note, source: GLYPH.source, extract: GLYPH.extract, deck: GLYPH.deck, draft: GLYPH.draft, card: '◆', text: '⌕', command: '›', vault: '⌂', place: '§',
 };
+
+/** A book's contents as the palette's rows (milestone 76): each entry a place, in the outline's order, the one that holds the place in view said so. `⏎` on one is the command `toc:<its index>`. */
+export function contentsRows(entries: readonly { title: string; depth: number; page: number }[], here: number): Entry[] {
+  return entries.map((e, i) => ({ key: `toc:${i}`, title: e.title, sub: '', tag: 'place' as const, depth: e.depth, page: e.page, ...(i === here ? { here: true } : {}), target: { command: `toc:${i}` } }));
+}
+
+/** The contents narrowed by what was typed, by the palette's own ranking; with nothing typed, every entry in the book's order (not the first forty). */
+export function searchContents(rows: Entry[], q: string): Entry[] {
+  return q.trim() ? search(rows, q) : rows;
+}
 
 /** Everything the palette can open by name: saved queries, folders, documents, commands, and the other vaults under `vaults`. Cards are found by their words, through the search index. */
 export function buildIndex(tree: TreeNode[], docs: Record<string, DocInfo>, commands: Command[], vaults: VaultRef[] = []): Entry[] {

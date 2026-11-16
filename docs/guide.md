@@ -155,6 +155,42 @@ pages, and the read bar grow with them. The zoom is said beside the page
 open. With the caret in the notes, and everywhere else, those keys are the
 text size.
 
+Getting around a book is by the keyboard as much as by the scroll. `/`
+searches it (⏎ and ⇧⏎ step the hits from the field, `n` and `N` once the
+caret has left it; the hits stay lit until esc), `g` goes to a page, and
+`t` lists the PDF's own contents in the palette: its outline, indented as
+it is nested, each entry's page at the right, the one you are in marked;
+type to narrow it, ⏎ goes. A PDF with no outline says so and lists the
+sections you have boxed instead; a chapter cut from a book lists what lies
+in its own pages. The palette offers the same list as `contents · <book>`.
+
+The PDF's own links work: a press on a citation, an equation's number or a
+line of a contents page goes where it points, and a web address opens in
+your browser. A press that moves is still a box, or a selection, as
+anywhere on the page. With ⌥ held, or from a right-click's `peek`, the
+destination is shown in a small window over the page instead, without
+leaving your place; a press in it, or ⏎, goes there, esc closes it. The
+same ⌥-press and right-click work on words the PDF did not make links of:
+`(3.12)`, `Fig. 4`, `Table 2`, `Theorem 2`, `Section 3.2`, `§3.2`, `[17]`,
+`Eq. 5`. ilmi looks for the equation, the caption, the heading or the
+bibliography's entry the word names, as it does when you select one and
+press ⏎.
+
+`f` puts a letter on every link and reference in view. Type the letter (two
+when there are more than 26) and that one is followed; hold ⇧ on the last
+letter to peek at it instead; esc, or any other key, lets the letters go.
+
+Every jump remembers where you were: a search's first hit, `g`, the
+contents, a link, a reference, a section more than a screen away. ⌫ goes
+back to that place exactly, and again to the one before; ⇧⌫ goes forward.
+Scrolling by hand after going back keeps the way forward until the next
+jump. The strip at the bottom says `⌫ back` while there is somewhere to go
+back to. The trail is the book's own and is kept while the app is open.
+
+A right-click on a selection offers `section` and `card` as the two buttons
+under it do, and `search the web` and `search scholar`, which open your
+browser on the selected words; ilmi itself fetches nothing.
+
 ### A book in EPUB
 
 A book in EPUB dropped on the intake is read on the Rust side too

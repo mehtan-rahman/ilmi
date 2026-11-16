@@ -318,3 +318,45 @@ html[data-mobile="1"] .pgut { padding: 8px 8px; margin: -6px -5px; }
 .draft-doc .raw.clip .clip-cap { font-family: var(--sans); font-size: var(--t-xs); color: var(--fg-4); margin-top: 3px; }
 .draft-doc .raw.clip .raw-src { display: none; }
 .draft-doc .raw.clip.selected .raw-src { display: block; }
+
+/* ── getting around (milestone 76) ── */
+/* the PDF's own links, where they lie on the pages: nothing is drawn and nothing a pointer meets (`Pdf.tsx` reads a
+   press by where it falls); the pointer over one is a pointing hand */
+.pdf-links { position: absolute; inset: 0; pointer-events: none; z-index: 2; }
+.plink { position: absolute; }
+.book .pdf-pages[data-over="link"] .pdf-page,
+.book .pdf-pages[data-over="link"] .pdf-page .textLayer :is(span, br) { cursor: pointer; }
+/* `f`: a letter on every link and reference in view, drawn as a key is */
+.pdf-hints { position: absolute; inset: 0; pointer-events: none; z-index: 5; }
+.pdf-hints .phint {
+  position: absolute;
+  transform: translate(-6px, -7px);
+  padding: 0 4px;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  white-space: nowrap;
+  color: var(--fg-1);
+  background: var(--paper);
+  border: 1px solid var(--fg-3);
+  border-radius: 4px;
+  box-shadow: var(--shadow-float);
+}
+.pdf-hints .phint[data-off] { opacity: 0.25; }
+.pdf-hints .phint .ph-t { color: var(--accent); }
+[data-theme="eink"] .pdf-hints .phint { border-color: var(--fg-1); box-shadow: none; font-weight: 700; }
+[data-theme="eink"] .pdf-hints .phint[data-off] { opacity: 1; color: var(--fg-4); border-style: dashed; }
+[data-theme="eink"] .pdf-hints .phint .ph-t { color: var(--fg-4); }
+[data-theme="eink"] .pdf-peek canvas { filter: grayscale(1) contrast(1.1); }
+/* the contents in the palette: a place a row, indented by its depth in the outline, its page at the right, the one
+   that holds the place in view marked */
+.palette-row[data-t="place"] .pt { padding-left: calc(var(--depth, 0) * 16px); }
+.palette-row[data-t="place"] .pg { color: var(--accent); font-size: 11px; }
+.palette-row[data-t="place"][data-here="1"] .pt { font-weight: 600; }
+.palette-row[data-t="place"] .ptag { font-variant-numeric: tabular-nums; margin-left: auto; }
+.palette-row[data-t="place"] .psub { display: none; }
+[data-theme="eink"] .palette-row[data-t="place"] .pg { color: var(--fg-1); }
+.palette-empty.palette-note { padding: 8px 10px 6px; font-size: 13px; }

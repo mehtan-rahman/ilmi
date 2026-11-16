@@ -11,7 +11,9 @@ export type Ref =
   | { kind: 'figure'; type: string; n: string }
   | { kind: 'cite'; key: string }
   | { kind: 'author'; name: string; year?: string }
-  | { kind: 'equation'; n: string };
+  | { kind: 'equation'; n: string }
+  /** A numbered section or chapter: `Section 3.2`, `§3.2`, `Chapter 3`. */
+  | { kind: 'section'; n: string };
 
 export interface Target {
   /** 1-based. */
@@ -23,6 +25,7 @@ export interface Target {
 const FIGURE = /^([A-Za-z]{3,})\.?\s+(\d+(?:\.\d+)*)[.,;:]?$/;
 const CITE = /^\[\s*(\d+)(?:\s*[,–-]\s*\d+)*\s*\]$/;
 const EQUATION = /^(?:\(\s*(\d+(?:\.\d+)*)\s*\)|(?:[Ee]q(?:uation)?\.?)\s+\(?(\d+(?:\.\d+)*)\)?)$/;
+const SECTION = /^(?:§\s*|(?:[Ss]ec(?:tions?|t)?|[Cc]h(?:apters?|ap)?)\.?\s+)(\d+(?:\.\d+)*)[.,;:]?$/;
 const AUTHOR = /^([A-Z][\p{L}'-]+)(?:\s+(?:et\s+al\.?|and\s+[A-Z][\p{L}'-]+|&\s+[A-Z][\p{L}'-]+))?,?\s*(?:\(?\s*(\d{4})[a-z]?\s*\)?)?[.,;:]?$/u;
 const HEADING = /^\s*(?:\d+\.?\s*)?(references|bibliography|works cited|literature cited)\b/i;
 
@@ -34,6 +37,8 @@ export function refOf(text: string): Ref | null {
   if (eq) return { kind: 'equation', n: (eq[1] ?? eq[2])! };
   const cite = CITE.exec(t);
   if (cite) return { kind: 'cite', key: cite[1]! };
+  const sec = SECTION.exec(t);
+  if (sec) return { kind: 'section', n: sec[1]! };
   const au = AUTHOR.exec(t);
   const author: Ref | null = au ? (au[2] === undefined ? { kind: 'author', name: au[1]! } : { kind: 'author', name: au[1]!, year: au[2] }) : null;
   const fig = FIGURE.exec(t);
@@ -63,6 +68,9 @@ export function bibliographyStart(pages: string[][]): number {
 
 /** A caption proper: the type, the number, then a period, colon or dash; a bare mention at a line's start is not one. */
 const captioned = (line: string, n: string): boolean => new RegExp(`^[A-Za-z]{3,}\\.?\\s+${escapeRe(n)}\\s*[.:—–-]`).test(line.trim());
+
+/** A section's heading proper: its number (a word before it or not), then a title that starts with a capital, and no page number at the line's end as a line of the contents has. */
+const headed = (line: string, n: string): boolean => new RegExp(`^(?:(?:[Cc]hapter|[Ss]ection|[Ss]ec\\.?|§)\\s*)?${escapeRe(n)}\\.?\\s+\\p{Lu}`, 'u').test(line.trim()) && !/\d\s*$/.test(line);
 
 /** Candidates ranked: closest page to `from` wins, then the earlier line. */
 function nearest(hits: Target[], from: number): Target | null {
@@ -110,6 +118,14 @@ export function jumpTarget(pages: string[][], ref: Ref, from: number): Target | 
       if (!hits.length) each((l) => name.test(l) && (ref.year === undefined || l.includes(ref.year)));
       return hits.length ? nearest(hits, pages.length) : null;
     }
+    case 'section': {
+      // a heading opens with the number: `3.2 The partition function`, `Chapter 3`; `3.2.1` and `3.25` are other numbers
+      const open = new RegExp(`^(?:(?:chapter|section|sec\\.?|§)\\s*)?${escapeRe(ref.n)}\\.?(?:\\s+\\S|$)`, 'i');
+      const named = new RegExp(`^(?:chapter|section|sec\\.?|§)\\s*${escapeRe(ref.n)}\\.?$`, 'i');
+      each((l) => open.test(l) && (l.length > ref.n.length + 1 || named.test(l)));
+      const strong = hits.filter((h) => headed(pages[h.page - 1]![h.line]!, ref.n));
+      return nearest(strong.length ? strong : hits.filter((h) => named.test(pages[h.page - 1]![h.line]!.trim())), from);
+    }
     case 'equation': {
       const tail = new RegExp(`\\(\\s*${escapeRe(ref.n)}\\s*\\)$`);
       each((l) => tail.test(l) && l.length > ref.n.length + 2);
@@ -121,7 +137,7 @@ export function jumpTarget(pages: string[][], ref: Ref, from: number): Target | 
 /**
  * `jumpTarget` without reading the whole document first: `read` gives a
  * page's lines when asked, and no more pages are asked for than the answer
- * needs. An equation or a caption is looked for outward from `from`, a page
+ * needs. An equation or a caption is looked for outward from `from` (a section's heading too), a page
  * each side at a time, and the first found is the nearest, which is the one
  * `jumpTarget` picks (a figure's bare mention does not stop the walk: a
  * caption proper further off outranks it). A citation or an author is
@@ -159,7 +175,7 @@ export async function seekTarget(
       await load(from + d);
       if (!live()) return null;
       const hit = jumpTarget(pages, ref, from);
-      if (hit && (ref.kind === 'equation' || captioned(pages[hit.page - 1]![hit.line]!, n))) return hit;
+      if (hit && (ref.kind === 'equation' || (ref.kind === 'section' ? headed : captioned)(pages[hit.page - 1]![hit.line]!, n))) return hit;
     }
   }
   for (let p = 1; p <= count; p++) {

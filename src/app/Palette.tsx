@@ -5,14 +5,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { pluginCommands, runPluginCommand, usePlugins } from '../plugins/index.js';
 import { overflow } from '../schedule/index.js';
-import { ENTRY_GLYPH, buildIndex, rankHits, search, textEntry, withText, type Command, type Entry } from './chrome.js';
+import { ENTRY_GLYPH, buildIndex, contentsRows, rankHits, search, searchContents, textEntry, withText, type Command, type Entry } from './chrome.js';
 import { activeTab, closePane, splitPane } from './panes.js';
 import { useApp } from './store.js';
 import { MENU_ID, runMenu } from './menu.js';
 import { hasCards, studyDeck } from './deckOps.js';
 import { SESSION, folderPaths, slugName, titleOf } from './names.js';
 import { nameOf, type TextHit } from '../vault/index.js';
-import { attachCancelled, attachNewNote, attachNote, openNotes } from './book.js';
+import { attachCancelled, attachNewNote, attachNote, bookInFront, lensOf, openNotes, takeContents, type BookContents } from './book.js';
 import { canMove, moveAction, moveSection, sectionActions, statusOf } from './sections.js';
 import { plainMath } from './chromeText.js';
 import type { CaretHeading } from './store.js';
@@ -68,6 +68,14 @@ function sectionCommand(): Command[] {
   const act = sectionActions(statusOf(at.read), at, at.read)[0]!;
   const mv = moveAction(at);
   return [{ id: `section:${act.act}`, title: `${act.label} · ${plainMath(at.text)}` }, ...(canMove(at.path) ? [{ id: `section:${mv.act}`, title: `${mv.label} · ${plainMath(at.text)}` }] : [])];
+}
+
+/** `contents · <book>`, while a book's pages are in the pane in front (milestone 76): its outline as a list, as `t` there opens it. */
+function contentsCommand(): Command[] {
+  const book = bookInFront();
+  if (book === null) return [];
+  const s = useApp.getState();
+  return [{ id: 'contents', title: `contents · ${titleOf(book, s.docs, s.vault)}` }];
 }
 
 function runCommand(id: string): void {
@@ -129,6 +137,24 @@ export function Palette() {
   const moving = useApp((s) => s.sectionMove);
   // the note for a PDF on its own (milestone 70): one that is there, or a new one named as typed, then the folder it goes in
   const attaching = useApp((s) => s.noteAttach);
+  // a book's contents (milestone 76): opened here by `t` over its pages, or by the command; the list is the PDF's outline
+  const [contents, setContents] = useState<string | null>(() => (useApp.getState().noteAttach || useApp.getState().sectionMove ? null : takeContents()));
+  const [toc, setToc] = useState<BookContents | null>(null);
+  useEffect(() => {
+    setToc(null);
+    if (contents === null) return;
+    let live = true;
+    const lens = lensOf(contents);
+    const none: BookContents = { entries: [], here: -1, from: 'none' };
+    void (lens ? lens.contents() : Promise.resolve(none)).then((c) => {
+      if (!live) return;
+      setToc(c);
+      // the entry that holds the place in view is the one picked as the list opens
+      if (c.here >= 0) setSel(c.here);
+    }, () => { if (live) setToc(none); });
+    return () => { live = false; };
+  }, [contents]);
+  const contentsIndex = useMemo(() => (toc ? contentsRows(toc.entries, toc.here) : []), [toc]);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const close = () => useApp.setState({ paletteOpen: false, sectionMove: null, noteAttach: null });
@@ -142,7 +168,7 @@ export function Palette() {
   // an iPad has one pane and no folder to pick: its commands leave those out (`platform.ts`)
   const mobile = useApp((s) => s.mobile);
   const phone = useApp((s) => s.phone);
-  const commands = useMemo(() => [...sectionCommand(), ...COMMANDS.filter((c) => (c.id !== 'postpone' || overflow(queue, appNow()).length > 0) && !(mobile && DESKTOP_ONLY.has(c.id)) && !(phone && NOT_ON_A_PHONE.has(c.id))), ...pluginCommands()], [queue, plugins?.version, caret, mobile, phone]);
+  const commands = useMemo(() => [...sectionCommand(), ...contentsCommand(), ...COMMANDS.filter((c) => (c.id !== 'postpone' || overflow(queue, appNow()).length > 0) && !(mobile && DESKTOP_ONLY.has(c.id)) && !(phone && NOT_ON_A_PHONE.has(c.id))), ...pluginCommands()], [queue, plugins?.version, caret, mobile, phone]);
   // the other vaults opened before, under `vaults`, so switching is two keys
   // (one that is not where it was is the welcome's to show, with its `forget`)
   const vaults = useMemo(() => recents.filter((r) => r.path !== vault && !gone.includes(r.path)).map((r) => ({ path: r.path, name: r.name })), [recents, gone, vault]);
@@ -176,7 +202,7 @@ export function Palette() {
   /** The new note's name: as typed, else after the PDF. */
   const newName = attaching ? (attaching.step === 'place' ? attaching.name ?? '' : q.trim() || `${titleOf(attaching.pdf, docs, vault)} notes`) : '';
   // words in the documents and the cards, for the palette's own list; the last answer stays until the next, so the rows do not blink
-  const asking = !attaching && !moving && !studying ? q.trim() : '';
+  const asking = !attaching && !moving && !studying && contents === null ? q.trim() : '';
   const [found, setFound] = useState<{ q: string; hits: TextHit[] } | null>(null);
   useEffect(() => {
     if (!asking) { setFound(null); return; }
@@ -187,9 +213,10 @@ export function Palette() {
   const texts = useMemo(() => (found ? rankHits(found.hits, found.q).map((h) => textEntry(h, found.q, docs)) : []), [found, docs]);
   const results = useMemo(() => {
     if (attaching?.step === 'pick') return [{ key: 'at:new', title: 'new note', sub: newName, tag: 'note' as const, target: { command: 'attach-new' } }, ...search(attachIndex, q)];
+    if (!attaching && !moving && contents !== null) return searchContents(contentsIndex, q);
     const names = search(attaching ? attachIndex : moving ? moveIndex : studying ? studyIndex : index, q);
     return asking ? withText(names, texts, q) : names;
-  }, [attaching, attachIndex, newName, moving, moveIndex, studying, studyIndex, index, q, asking, texts]);
+  }, [attaching, attachIndex, newName, moving, moveIndex, studying, studyIndex, contents, contentsIndex, index, q, asking, texts]);
   // `nothing` is said once the index has answered, and until it has been through every document it may yet
   const reading = useApp((s) => s.searchShare);
 
@@ -200,7 +227,7 @@ export function Palette() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [attaching]);
-  useEffect(() => { setSel(0); }, [q, studying, moving, attaching]);
+  useEffect(() => { setSel(0); }, [q, studying, moving, attaching, contents]);
   useEffect(() => {
     const list = listRef.current;
     const el = list?.querySelector<HTMLElement>('[data-sel="1"]');
@@ -214,6 +241,13 @@ export function Palette() {
     const t = it.target;
     if ('command' in t && t.command === 'study') { setStudying(true); setQ(''); inputRef.current?.focus(); return; }
     if ('command' in t && t.command.startsWith('study:')) { close(); studyDeck(t.command.slice(6)); return; }
+    if ('command' in t && t.command === 'contents') { setContents(bookInFront()); setQ(''); inputRef.current?.focus(); return; }
+    if ('command' in t && t.command.startsWith('toc:')) {
+      const entry = toc?.entries[Number(t.command.slice(4))];
+      close();
+      if (entry && contents !== null) lensOf(contents)?.go(entry);
+      return;
+    }
     if ('command' in t && t.command.startsWith('move:') && moving) { close(); void moveSection(moving, t.command.slice(5)).catch(failed('that')); return; }
     if (attaching && 'command' in t) {
       const pdf = attaching.pdf;
@@ -234,6 +268,9 @@ export function Palette() {
     } else openNode(t.open);
   };
 
+  /** The list is a book's contents. */
+  const inContents = !attaching && !moving && contents !== null;
+
   const onKey = (e: React.KeyboardEvent) => {
     if (e.key === 'ArrowDown' || (e.ctrlKey && e.key === 'n')) { e.preventDefault(); setSel((s) => Math.min(results.length - 1, s + 1)); }
     else if (e.key === 'ArrowUp' || (e.ctrlKey && e.key === 'p')) { e.preventDefault(); setSel((s) => Math.max(0, s - 1)); }
@@ -245,9 +282,10 @@ export function Palette() {
       run(it);
     }
     // ⌫ in an empty field of a list within the list (`study…`, `move to…`, the folder for a new note): back a step
-    else if (e.key === 'Backspace' && q === '' && (studying || moving || attaching?.step === 'place')) {
+    else if (e.key === 'Backspace' && q === '' && (studying || moving || attaching?.step === 'place' || contents !== null)) {
       e.preventDefault();
-      if (attaching?.step === 'place') useApp.setState({ noteAttach: { pdf: attaching.pdf, step: 'pick' } });
+      if (!attaching && !moving && contents !== null) setContents(null);
+      else if (attaching?.step === 'place') useApp.setState({ noteAttach: { pdf: attaching.pdf, step: 'pick' } });
       else if (moving) useApp.setState({ sectionMove: null });
       else setStudying(false);
     }
@@ -260,17 +298,19 @@ export function Palette() {
       <div className="palette-panel" onMouseDown={(e) => e.stopPropagation()}>
         <div className="palette-input">
           <span className="g"><Glyph g="⌕" /></span>
-          <input dir="auto" ref={inputRef} value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={onKey} placeholder={attaching?.step === 'place' ? `${newName} in…` : attaching ? `notes on ${titleOf(attaching.pdf, docs, vault).slice(0, 40)}` : moving ? `move § ${plainMath(moving.text).slice(0, 40)} to…` : studying ? 'study…' : 'open or run'} spellCheck={false} />
+          <input dir="auto" ref={inputRef} value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={onKey} placeholder={attaching?.step === 'place' ? `${newName} in…` : attaching ? `notes on ${titleOf(attaching.pdf, docs, vault).slice(0, 40)}` : moving ? `move § ${plainMath(moving.text).slice(0, 40)} to…` : contents !== null ? `contents · ${titleOf(contents, docs, vault).slice(0, 40)}` : studying ? 'study…' : 'open or run'} spellCheck={false} />
           <kbd>esc</kbd>
         </div>
         <div className="palette-list" ref={listRef} data-found={found?.q}>
-          {results.length === 0 && (!asking || found?.q === asking) && <div className="palette-empty">{asking && reading < 1 ? 'nothing yet' : 'nothing'}</div>}
+          {inContents && toc && toc.from !== 'outline' && <div className="palette-empty palette-note" data-contents={toc.from}>this pdf has no contents{toc.from === 'sections' ? ' · its sections' : ''}</div>}
+          {results.length === 0 && !(inContents && (!toc || (toc.from === 'none' && !q.trim()))) && (!asking || found?.q === asking) && <div className="palette-empty">{asking && reading < 1 ? 'nothing yet' : 'nothing'}</div>}
           {results.map((it, i) => (
-            <div key={it.key} className="palette-row" data-sel={i === sel ? '1' : '0'} data-t={it.tag} onMouseEnter={() => setSel(i)} onClick={() => run(it)}>
-              <span className="pg" data-t={it.tag}><Glyph g={ENTRY_GLYPH[it.tag]} /></span>
+            <div key={it.key} className="palette-row" data-sel={i === sel ? '1' : '0'} data-t={it.tag} data-here={it.here ? '1' : undefined} data-depth={it.depth} style={it.depth ? { '--depth': it.depth } as React.CSSProperties : undefined} onMouseEnter={() => setSel(i)} onClick={() => run(it)}>
+              {/* a place in a book: no mark of a kind, only the one that holds the place in view is marked */}
+              <span className="pg" data-t={it.tag}>{it.tag === 'place' ? (it.here ? '▸' : '') : <Glyph g={ENTRY_GLYPH[it.tag]} />}</span>
               {it.mark ? <Marked title={it.title} mark={it.mark} /> : <MathText className="pt" dir="auto" text={it.math ?? it.title} />}
               <MathText className="psub" dir="auto" text={it.sub} />
-              <span className="ptag">{it.tag}</span>
+              <span className="ptag">{it.page !== undefined ? `p. ${it.page}` : it.tag}</span>
             </div>
           ))}
         </div>

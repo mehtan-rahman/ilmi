@@ -44,10 +44,28 @@
 // out by, so boxes, writing, highlights and the read bar follow; pages wider
 // than the pane scroll sideways in the scroller that scrolls them down. Kept
 // by the book's id for as long as the app runs, as its place is.
+//
+// Getting around (milestone 76, after sioyek's reader). Every jump (a
+// search's first hit, `g` to a page, the contents, a link, a reference, a
+// section gone to with `[ ]` when it lies more than a screen away) leaves the
+// place it was made from on the book's trail (`book.ts`, `pdf/around.ts`): ⌫
+// goes back to it, ⇧⌫ forward again. The PDF's own links are followed by a
+// press that does not move (a press that moves is the box's or the
+// selection's, as ever): an inside one is a jump, a web one opens in the
+// system's browser. `t` lists the contents in the palette. A press with ⌥,
+// or a right-click's `peek`, on a link or on a word that names something
+// (`(3.12)`, `Fig. 4`, `Section 3.2`, `[17]`; `pdf/refs.ts`) shows where it
+// points in the peek a selection's ⏎ shows. `f` letters every link and
+// reference in view; the letters typed follow one, with ⇧ they peek. `n` and
+// `N` step a search's hits. A selection's right-click looks it up on the web.
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { boxesEnd, formatClip, meta, sectionDismissed, setField, type Box, type Doc } from '../format/index.js';
-import { boxAround, countIn, findAll, findText, linesOf, refOf, sectionName, seekTarget, type Found, type PageItem } from '../pdf/index.js';
+import {
+  actionPage, boxAround, contentsHere, contentsWithin, countIn, downPage, findAll, findText, flatOutline, flipRect, hintLabels, hintStep, linesOf, linkAt, lookupUrl, pageLinks,
+  pushPlace, refOf, referenceTokens, resolveDest, sectionName, seekTarget, stepBack, stepForward, textBoxes, tokenAt,
+  type ContentsEntry, type ContentsPdf, type Found, type PageItem, type PageLink, type Place, type RefToken,
+} from '../pdf/index.js';
 import { pickPos, type Band } from '../reader/index.js';
 import { addPassage, passagesOf, pointOn, sectionState, type Passage } from '../schedule/index.js';
 import { addToPage, childDirOf, isPdfPath, type InkStroke, type StoreFs } from '../vault/index.js';
@@ -55,7 +73,8 @@ import { CueActions } from '../plugins/CueActions.js';
 import { onPluginAction, publishSelection, toPluginSelection, type PluginSelection } from '../plugins/index.js';
 import { noteOf, notesTabOf, titleOf } from './names.js';
 import { besideAt } from './panes.js';
-import { ensureNote, openNotes, toggleNotes } from './book.js';
+import { addLens, ensureNote, lensChanged, openContents, openNotes, openWeb, setTrail, toggleNotes, trailOf, useTrail, type BookContents } from './book.js';
+import { popMenu, popMenuOpen, type PopItem } from './popMenu.js';
 import { TextLayer, pageBits, type PDFDocumentProxy } from './pdfjs.js';
 import { acquirePdf, itemsOf } from './bookPdf.js';
 import { addSurface, afterScene, covered, fillSheet, hasCanvas, inContent, pagePaper, portOf, restSheet, sceneSoon, type PenEvent, type SheetSpec, type Surface } from './ink.js';
@@ -97,6 +116,11 @@ const PINCH_GAP = 260;
 /** How far back from a passage the lens reads pages for a heading to name it. */
 const NAME_BACK = 30;
 
+/** Room left over what a jump goes to, px: a heading gone to lies a line under the words over the pages. */
+const JUMP_ROOM = 16;
+/** How far a mouse's press may move and still be a press, px (a finger's is `SLOP`). */
+const PRESS_SLOP = 3;
+
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 const inField = (t: EventTarget | null) => {
@@ -123,8 +147,24 @@ interface Peek {
   y: number;
   height: number;
   text: string;
-  rect: DOMRect;
+  /** What the peek hangs under, on the screen. */
+  rect: { left: number; bottom: number };
+  /** Where a press in the peek goes: the page and how far down it. */
+  at: { page: number; y: number };
 }
+
+/** What `f` letters: a link, or a word that names something, on a page (fractions of it). */
+interface HintTarget {
+  label: string;
+  page: number;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  link?: PageLink;
+  text?: string;
+}
+interface Hints { targets: HintTarget[]; typed: string }
 
 /** How much of the target page the peek shows, css px at the page's scale. */
 /** A hit nearer than this to the view's top or bottom is brought a third of the way down, css px. */
@@ -324,6 +364,18 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
   /** A reference's target is being looked for: said where the search says `searching`. */
   const [looking, setLooking] = useState(false);
   const jumpSeq = useRef(0);
+  /** Each drawn page's links (`pdf/links.ts`), read as the page is drawn. */
+  const links = useRef(new Map<number, PageLink[]>());
+  /** Each page's references (`pdf/refs.ts`), read when one is asked for. */
+  const tokens = useRef(new Map<number, Promise<RefToken[]>>());
+  /** The PDF's outline, read when the contents are first asked for. */
+  const outline = useRef<Promise<ContentsEntry[]> | null>(null);
+  /** `f`: the letters on what can be followed in view, and those typed so far. */
+  const [hints, setHints] = useState<Hints | null>(null);
+  /** The places this book's jumps left. */
+  const trail = useTrail(id);
+  /** Where the press now down began: a press that does not move follows a link. */
+  const pressAt = useRef<{ x: number; y: number; t: number; type: string } | null>(null);
   /** The hit shown is to be brought into view once its page's text is there. */
   const wantHit = useRef(false);
   /** Boxes drawn and not yet made into anything, in the order drawn. */
@@ -347,8 +399,8 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
   const rendering = useRef(new Set<number>());
   const texts = useRef(new Map<number, string>());
   const dragRef = useRef(false);
-  const st = useRef({ sel, pending, recent, find, goto, peek, looking });
-  st.current = { sel, pending, recent, find, goto, peek, looking };
+  const st = useRef({ sel, pending, recent, find, goto, peek, looking, hints });
+  st.current = { sel, pending, recent, find, goto, peek, looking, hints };
   const canEnrol = info?.type === 'source' || info?.type === 'extract' || info?.type === 'note';
   const reading = !!info?.read && info.type !== 'note';
   const rel = info?.pdf;
@@ -455,6 +507,9 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     rendered.current.clear();
     texts.current.clear();
     lines.current.clear();
+    links.current.clear();
+    tokens.current.clear();
+    outline.current = null;
     (async () => {
       const doc = await held.promise;
       if (!live) return;
@@ -572,6 +627,19 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
       const tl = new TextLayer({ textContentSource: page.streamTextContent(), container: layer, viewport });
       el.replaceChildren(canvas, layer);
       await tl.render();
+      // the page's own links, read once, as it is drawn (never for the whole book)
+      if (!links.current.has(n)) {
+        try {
+          const v1 = page.getViewport({ scale: 1 });
+          // pdf.js turns a point of the page into one of the view (it knows a turned page); a rectangle is its two corners
+          const toView = typeof v1.convertToViewportPoint === 'function'
+            ? (r: number[]) => [...v1.convertToViewportPoint(r[0]!, r[1]!), ...v1.convertToViewportPoint(r[2]!, r[3]!)] as number[]
+            : flipRect([0, 0, v1.width, v1.height]);
+          links.current.set(n, pageLinks(await page.getAnnotations(), toView, v1.width, v1.height));
+        } catch {
+          links.current.set(n, []);
+        }
+      }
       const end = document.createElement('div');
       end.className = 'endOfContent';
       layer.append(end);
@@ -654,6 +722,8 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
       }
       const v = viewRef.current;
       if (v && at) { v.dataset.atPage = String(at.page); v.dataset.atY = at.y.toFixed(3); }
+      // the place under the top of the view, as the trail keeps it
+      if (v && place.current) { v.dataset.topPage = String(place.current.page); v.dataset.topY = place.current.y.toFixed(4); }
     };
     onScroll();
     sc.addEventListener('scroll', onScroll, { passive: true });
@@ -698,6 +768,59 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     el?.scrollIntoView({ block: 'start' });
     // a page wider than the view is not moved sideways for it
     if (sc && x !== undefined && sc.scrollLeft !== x) sc.scrollLeft = x;
+  };
+
+  // ── back and forth: the places the jumps left (milestone 76) ──
+  /** The place in view: the page under the top of the view and how far down it, and across the pages when they are zoomed. */
+  const here = (): Place => {
+    let at = place.current;
+    const sc = scroller();
+    if (!at && sc) {
+      // no page under the top of the view (the title over the first page, the room between two): the place is the next page's, a little above it
+      const from = sc.getBoundingClientRect().top + PLACE_AT;
+      for (const [k, el] of [...pageEls.current].sort((a, b) => a[0] - b[0])) {
+        const pr = el.getBoundingClientRect();
+        if (pr.height > 0 && pr.bottom > from) { at = { page: k, y: (from - pr.top) / pr.height }; break; }
+      }
+    }
+    return { page: at?.page ?? current, y: at?.y ?? 0, x: zoomRef.current > 1 ? placeX.current : null };
+  };
+  /** The pages moved so a place is under the top of the view, `room` px left over it. */
+  const goPlace = (p: { page: number; y: number; x?: number | null }, room = 0) => {
+    const sc = scroller();
+    const n = Math.max(first, Math.min(last, p.page));
+    const el = pageEls.current.get(n);
+    if (!sc || !el) return;
+    const pr = el.getBoundingClientRect();
+    landed.current = true;
+    sc.scrollTop += pr.top + p.y * pr.height - (sc.getBoundingClientRect().top + PLACE_AT + room);
+    if (p.x !== null && p.x !== undefined) centreOn(sc, p.x);
+    // where the view is now, before its scroll says so: a ⌫ straight after goes from here
+    place.current = { page: n, y: pr.height > 0 ? p.y - room / pr.height : p.y };
+    if (p.x !== null && p.x !== undefined) placeX.current = p.x;
+  };
+  /** A jump is about to be made from here: here is where ⌫ comes back to. */
+  const leave = () => setTrail(id, pushPlace(trailOf(id), here()));
+  /** A jump: here goes on the trail, the pages go to the place. */
+  const jump = (to: { page: number; y: number }) => { leave(); goPlace(to, JUMP_ROOM); };
+  /** A jump to a place that may lie outside these pages (a chapter cut from a book): said, not made. */
+  const goTo = (to: { page: number; y: number }) => {
+    if (to.page < first || to.page > last) { notify(`p. ${to.page} is not among these pages`); return; }
+    jump(to);
+  };
+  const goBack = (): boolean => {
+    const r = stepBack(trailOf(id), here());
+    if (!r) return false;
+    setTrail(id, r.trail);
+    goPlace(r.to);
+    return true;
+  };
+  const goForward = (): boolean => {
+    const r = stepForward(trailOf(id), here());
+    if (!r) return false;
+    setTrail(id, r.trail);
+    goPlace(r.to);
+    return true;
   };
 
   // ── what the notes say about the pages: the passages, in book order ──
@@ -985,6 +1108,8 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     setRecent(null);
   };
   const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    // where the press began, for the click after it: one that did not move follows a link (`onPress`)
+    pressAt.current = e.button === 0 ? { x: e.clientX, y: e.clientY, t: e.timeStamp, type: e.pointerType } : null;
     boxing.current?.abort();
     if (e.button !== 0 || e.altKey || e.metaKey || e.ctrlKey) return;
     // a second finger down: two fingers are the system's, not a box
@@ -1106,6 +1231,8 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     // what was typed, or the bar closed, while the pages were read stands: this answer is to an older question
     if (st.current.find?.q !== q) return;
     setFind({ q, pages, at, did: 'done', go: 0 });
+    // a search's first hit is a jump, with the way back; the steps through its hits are not
+    if (pages.length) leave();
     goHit(pages, at);
   };
   /** Bring a hit into view: its page if that is not drawn yet (the highlights' effect goes on to the hit once it is). */
@@ -1125,25 +1252,236 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     }
     return l ?? [];
   };
-  const doJump = async () => {
-    const s = st.current.sel;
-    if (!s || !pdf) return;
-    const ref = refOf(s.text);
-    if (!ref) return;
+  /** A page's height in PDF units: one of the book's own from its size, another of the file's (a chapter's link out of it) from the file. */
+  const heightOf = async (n: number): Promise<number> => sizes[n - base - 1]?.h ?? (pdf ? (await pdf.getPage(n)).getViewport({ scale: 1 }).height : 0);
+  /** Where the reference `text`, read on `page`, points: its line, and the place a jump to it goes. Null when it names nothing found, or a later question took its place. */
+  const seekRef = async (text: string, page: number): Promise<{ page: number; y: number; height: number; text: string; at: { page: number; y: number } } | null> => {
+    const ref = refOf(text);
+    if (!ref || !pdf) return null;
     // outward from the page the reference is on, no further than its target; a later ⏎ or esc leaves this one unanswered
     const mine = ++jumpSeq.current;
     setLooking(true);
     try {
-      const hit = await seekTarget(pdf.numPages, async (n) => (await pageLines(n)).map((l) => l.text), ref, s.page, () => jumpSeq.current === mine);
-      if (jumpSeq.current !== mine) return;
-      if (!hit) { setPeek(null); return; }
+      const hit = await seekTarget(pdf.numPages, async (n) => (await pageLines(n)).map((l) => l.text), ref, page, () => jumpSeq.current === mine);
+      if (jumpSeq.current !== mine || !hit) return null;
       const line = (await pageLines(hit.page))[hit.line];
-      if (!line || jumpSeq.current !== mine) return;
-      setPeek({ page: hit.page, y: line.y, height: line.height, text: line.text, rect: s.rect });
+      const height = await heightOf(hit.page);
+      if (!line || jumpSeq.current !== mine) return null;
+      return { page: hit.page, y: line.y, height: line.height, text: line.text, at: { page: hit.page, y: downPage(line.y + line.height, height) } };
     } finally {
       if (jumpSeq.current === mine) setLooking(false);
     }
   };
+  /** The peek at what a reference points to, hung under `rect`. `say`: one that points nowhere is said (a press, a hint); a selection's ⏎ is quiet. */
+  const peekRef = async (text: string, page: number, rect: Peek['rect'], say = false) => {
+    const mine = jumpSeq.current + 1;
+    const hit = await seekRef(text, page);
+    if (jumpSeq.current !== mine) return;
+    if (!hit) { setPeek(null); if (say) notify(`nothing found for ${text}`); return; }
+    setPeek({ page: hit.page, y: hit.y, height: hit.height, text: hit.text, rect, at: hit.at });
+  };
+  /** Straight to what a reference points to: a jump. */
+  const followRef = async (text: string, page: number) => {
+    const mine = jumpSeq.current + 1;
+    const hit = await seekRef(text, page);
+    if (jumpSeq.current !== mine) return;
+    if (!hit) { notify(`nothing found for ${text}`); return; }
+    goTo(hit.at);
+  };
+  const doJump = async () => {
+    const s = st.current.sel;
+    if (s) await peekRef(s.text, s.page, s.rect);
+  };
+  /** A press in the peek, or ⏎ while it shows: the pages go where it looks, with the way back. */
+  const followPeek = () => {
+    const p = st.current.peek;
+    if (!p) return;
+    setPeek(null);
+    goTo(p.at);
+  };
+
+  // ── the PDF's own links, and a reference under a point (milestone 76) ──
+  /** The page under a point of the screen, and where on it (fractions from its top left). */
+  const pagePoint = (clientX: number, clientY: number, target?: EventTarget | null): { page: number; x: number; y: number } | null => {
+    const under = (target as HTMLElement | null)?.closest?.<HTMLElement>('.pdf-page');
+    const list: [number, HTMLElement][] = under ? [[Number(under.dataset.page), under]] : [...pageEls.current];
+    for (const [n, el] of list) {
+      const pr = el.getBoundingClientRect();
+      if (pr.width <= 0 || pr.height <= 0 || clientX < pr.left || clientX > pr.right || clientY < pr.top || clientY > pr.bottom) continue;
+      return { page: n, x: (clientX - pr.left) / pr.width, y: (clientY - pr.top) / pr.height };
+    }
+    return null;
+  };
+  /** Where a box on a page (fractions of it) is on the screen: what a peek hangs under. */
+  const onScreen = (page: number, b: { x: number; y: number; w: number; h: number }): Peek['rect'] => {
+    const pr = pageEls.current.get(page)?.getBoundingClientRect();
+    return pr ? { left: pr.left + b.x * pr.width, bottom: pr.top + (b.y + b.h) * pr.height } : { left: 0, bottom: 0 };
+  };
+  /** A page's references, read once, when first asked for. */
+  const tokensOf = (n: number): Promise<RefToken[]> => {
+    let t = tokens.current.get(n);
+    if (!t && pdf) {
+      t = (async () => {
+        const pg = await pdf.getPage(n);
+        const v = pg.getViewport({ scale: 1 });
+        return referenceTokens(textBoxes((await pg.getTextContent()).items, v.width, v.height));
+      })().catch((): RefToken[] => []);
+      tokens.current.set(n, t);
+    }
+    return t ?? Promise.resolve([]);
+  };
+  /** Where an inside link goes: the page and how far down it; null for one that names no page. */
+  const linkPlace = async (l: PageLink, from: number): Promise<{ page: number; y: number } | null> => {
+    if (!pdf) return null;
+    if (l.action !== undefined) {
+      const p = actionPage(l.action, from, first, last);
+      return p === null ? null : { page: p, y: 0 };
+    }
+    const d = await resolveDest(pdf as unknown as ContentsPdf, l.dest);
+    return d && { page: d.page, y: d.top === null ? 0 : downPage(d.top, await heightOf(d.page)) };
+  };
+  /** A link followed: a web one in the system's browser, an inside one a jump with the way back. */
+  const followLink = async (l: PageLink, from: number) => {
+    if (l.url !== undefined) { openWeb(l.url); return; }
+    const to = await linkPlace(l, from);
+    if (!to) { notify('this link goes nowhere in this pdf'); return; }
+    goTo(to);
+  };
+  /** A link's destination in the peek, without going; a web one's address is said. */
+  const peekLink = async (l: PageLink, from: number) => {
+    if (l.url !== undefined) { notify(l.url); return; }
+    const to = await linkPlace(l, from);
+    if (!to) { notify('this link goes nowhere in this pdf'); return; }
+    const height = await heightOf(to.page);
+    // the line the destination names at the peek's top: ten units of it, as a line of text is
+    setPeek({ page: to.page, y: (1 - to.y) * height - 10, height: 10, text: '', rect: onScreen(from, l), at: to });
+  };
+  /** A press on a page that did not move (the click after it): a link is followed, with ⌥ peeked at; ⌥ on a word that names something peeks at what it names. */
+  const onPress = (e: React.MouseEvent<HTMLDivElement>) => {
+    const p = pressAt.current;
+    pressAt.current = null;
+    if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.detail > 1 || (e.target as HTMLElement).closest('[data-hit]')) return;
+    if (p) {
+      // a press that moved is the box's, the selection's or the scroll's; a finger's hold is the box's
+      if (Math.hypot(e.clientX - p.x, e.clientY - p.y) > (onGlass(p.type) ? SLOP : PRESS_SLOP)) return;
+      if (p.type === 'touch' && e.timeStamp - p.t >= HOLD_MS) return;
+    }
+    const hit = pagePoint(e.clientX, e.clientY, e.target);
+    if (!hit) return;
+    const link = linkAt(links.current.get(hit.page) ?? [], hit.x, hit.y);
+    if (link) {
+      e.preventDefault();
+      void (e.altKey ? peekLink(link, hit.page) : followLink(link, hit.page)).catch(console.error);
+      return;
+    }
+    if (!e.altKey) return;
+    void tokensOf(hit.page).then((list) => {
+      const tok = tokenAt(list, hit.x, hit.y);
+      if (tok) return peekRef(tok.text, hit.page, onScreen(hit.page, tok), true);
+    }).catch(console.error);
+  };
+  /** The pointer over a link is a pointing hand (the styles read `data-over`). */
+  const onHover = (e: React.PointerEvent<HTMLDivElement>) => {
+    const col = pagesRef.current;
+    if (!col || e.pointerType !== 'mouse') return;
+    // a book with no links (most pages of most books) is not measured for it
+    const hit = e.buttons === 0 && links.current.size > 0 ? pagePoint(e.clientX, e.clientY, e.target) : null;
+    const over = !!hit && linkAt(links.current.get(hit.page) ?? [], hit.x, hit.y) !== null;
+    if (over) col.dataset.over = 'link';
+    else if (col.dataset.over) delete col.dataset.over;
+  };
+  /** A right-click on a page: `peek` first on a link or a reference; a selection's rows, and looking it up. */
+  const onMenu = (e: React.MouseEvent<HTMLDivElement>) => {
+    if ((e.target as HTMLElement).closest('[data-hit]')) return;
+    const hit = pagePoint(e.clientX, e.clientY, e.target);
+    if (!hit) return;
+    // the page's own menu, or none: the web view's has nothing for a page
+    e.preventDefault();
+    const at = { left: e.clientX, top: e.clientY, bottom: e.clientY };
+    const link = linkAt(links.current.get(hit.page) ?? [], hit.x, hit.y);
+    const live = window.getSelection();
+    const picked = st.current.sel?.text ?? (live && !live.isCollapsed && pagesRef.current?.contains(live.anchorNode) ? live.toString().replace(/\s+/g, ' ').trim() : '');
+    const selRows: PopItem[] = picked ? [
+      ...(st.current.sel ? [
+        { label: 'section', act: 'section', run: () => void makeSection(false).catch(console.error) },
+        { label: 'card', act: 'card', run: () => void cardOrClip().catch(console.error) },
+        { label: '-' },
+      ] : []),
+      { label: 'search the web', act: 'web', run: () => openWeb(lookupUrl('web', picked)) },
+      { label: 'search scholar', act: 'scholar', run: () => openWeb(lookupUrl('scholar', picked)) },
+    ] : [];
+    const show = (first: PopItem[]) => {
+      const rows = [...first, ...(first.length && selRows.length ? [{ label: '-' }] : []), ...selRows];
+      if (rows.length) popMenu(at, rows, 'book-menu');
+    };
+    if (link) {
+      show([
+        { label: 'peek', act: 'peek', run: () => void peekLink(link, hit.page).catch(console.error) },
+        { label: link.url !== undefined ? 'open in the browser' : 'go there', act: 'follow', run: () => void followLink(link, hit.page).catch(console.error) },
+      ]);
+      return;
+    }
+    void tokensOf(hit.page).then((list) => {
+      const tok = tokenAt(list, hit.x, hit.y);
+      show(tok ? [
+        { label: 'peek', act: 'peek', run: () => void peekRef(tok.text, hit.page, onScreen(hit.page, tok), true).catch(console.error) },
+        { label: 'go there', act: 'follow', run: () => void followRef(tok.text, hit.page).catch(console.error) },
+      ] : []);
+    }).catch(console.error);
+  };
+
+  // ── link hints: `f` letters what can be followed in view ──
+  const showHints = async () => {
+    const sc = scroller();
+    if (!sc || !pdf) return;
+    const sr = sc.getBoundingClientRect();
+    const found: Omit<HintTarget, 'label'>[] = [];
+    for (const [n, el] of [...pageEls.current].sort((a, b) => a[0] - b[0])) {
+      const pr = el.getBoundingClientRect();
+      if (pr.height <= 0 || pr.bottom < sr.top || pr.top > sr.bottom) continue;
+      // in view: its middle between the words over the pages and the view's bottom
+      const seen = (b: { y: number; h: number }) => { const mid = pr.top + (b.y + b.h / 2) * pr.height; return mid >= sr.top + PLACE_AT - 20 && mid <= sr.bottom; };
+      const on = (links.current.get(n) ?? []).filter(seen);
+      // a reference the PDF made a link of is the link's
+      const refs = (await tokensOf(n)).filter((t) => seen(t) && linkAt(on, t.x + t.w / 2, t.y + t.h / 2) === null);
+      const onPage = [...on.map((l) => ({ page: n, x: l.x, y: l.y, w: l.w, h: l.h, link: l })), ...refs.map((t) => ({ page: n, x: t.x, y: t.y, w: t.w, h: t.h, text: t.text }))];
+      // in reading order: down the page a line at a time, then across
+      onPage.sort((a, b) => (Math.abs(a.y + a.h / 2 - (b.y + b.h / 2)) > Math.max(a.h, b.h) / 2 ? a.y - b.y : a.x - b.x));
+      found.push(...onPage);
+    }
+    if (!found.length) { notify('nothing to follow in view'); return; }
+    const labels = hintLabels(found.length);
+    setHints({ targets: found.map((t, i) => ({ ...t, label: labels[i]! })), typed: '' });
+  };
+  /** A hint's letters typed: followed, or with ⇧ peeked at. */
+  const followHint = (t: HintTarget, peekIt: boolean) => {
+    if (t.link) void (peekIt ? peekLink(t.link, t.page) : followLink(t.link, t.page)).catch(console.error);
+    else if (t.text !== undefined) void (peekIt ? peekRef(t.text, t.page, onScreen(t.page, t), true) : followRef(t.text, t.page)).catch(console.error);
+  };
+  // the letters are let go with the pane
+  useEffect(() => { if (!active) setHints(null); }, [active]);
+
+  // ── the contents: the palette asks this lens for them, and sends a place back (`book.ts`) ──
+  const lensNow = useRef<{ contents(): Promise<BookContents>; go(e: ContentsEntry): void }>({ contents: async () => ({ entries: [], here: -1, from: 'none' }), go: () => {} });
+  lensNow.current = {
+    async contents() {
+      const at = here();
+      if (pdf) {
+        outline.current ??= flatOutline(pdf as unknown as ContentsPdf, heightOf).catch((): ContentsEntry[] => []);
+        // a chapter cut from a book lists what lies in its own pages
+        const entries = contentsWithin(await outline.current, first, last);
+        if (entries.length) return { entries, here: contentsHere(entries, at.page, at.y), from: 'outline' };
+      }
+      // no outline: the sections boxed on the pages, in the book's order
+      const entries = drawnRef.current.flatMap((d): ContentsEntry[] => { const b = d.passage.boxes[0]; return b ? [{ title: plainMath(d.passage.heading.text), depth: 0, page: b.page, y: b.y }] : []; });
+      return { entries, here: contentsHere(entries, at.page, at.y), from: entries.length ? 'sections' : 'none' };
+    },
+    go: (e) => goTo(e),
+  };
+  const activeRef = useRef(active);
+  activeRef.current = active;
+  useEffect(() => addLens(id, { active: () => activeRef.current, contents: () => lensNow.current.contents(), go: (e) => lensNow.current.go(e) }), [id]);
+  useEffect(() => { lensChanged(); }, [active]);
   useEffect(() => {
     const canvas = peekCanvas.current;
     if (!peek || !pdf || !canvas) return;
@@ -1190,14 +1528,28 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     const have = s.pending.length > 0 || (s.sel?.boxes.length ?? 0) > 0;
     const take = () => { e.preventDefault(); e.stopPropagation(); };
     if (e.key === 'Escape') {
-      if (s.pending.length || s.find || s.goto || s.peek || s.recent || s.looking) {
-        setPending([]); setFind(null); setGoto(false); setPeek(null); setRecent(null);
+      if (s.pending.length || s.find || s.goto || s.peek || s.recent || s.looking || s.hints) {
+        setPending([]); setFind(null); setGoto(false); setPeek(null); setRecent(null); setHints(null);
         jumpSeq.current++; setLooking(false);
         take();
       }
       return;
     }
+    // the hints' letters: the ones typed follow a target (with ⇧ on the last, peek at it); any other key lets the labels go
+    if (s.hints && e.key !== 'Shift') {
+      setHints(null);
+      if (inField(e.target)) return;
+      take();
+      const ch = e.key.length === 1 ? e.key.toLowerCase() : '';
+      const typed = s.hints.typed + ch;
+      const step = /^[a-z]$/.test(ch) ? hintStep(s.hints.targets.map((t) => t.label), typed) : null;
+      if (step && 'left' in step) setHints({ ...s.hints, typed });
+      else if (step) followHint(s.hints.targets[step.hit]!, e.shiftKey);
+      return;
+    }
     if (inField(e.target)) return;
+    // the peek shows where a reference points: ⏎ goes there
+    if (active && s.peek && e.key === 'Enter') { take(); followPeek(); return; }
     if (have && e.key === 'e') { take(); void makeSection(false).catch(console.error); return; }
     if (have && e.key === 'm') { take(); void cardOrClip().catch(console.error); return; }
     // a reference under the selection: its target in a peek
@@ -1212,6 +1564,13 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     }
     if (s.recent && e.key !== 'Shift') setRecent(null);
     if (!active) return;
+    // a menu or the palette over the pages has the keys
+    const free = !useApp.getState().paletteOpen && popMenuOpen() === null && document.querySelector('.ctx-menu') === null;
+    if (free && e.key === 'Backspace') { if (e.shiftKey ? goForward() : goBack()) take(); return; }
+    if (free && !e.shiftKey && e.key === 't' && status === 'ok') { take(); openContents(id); return; }
+    if (free && !e.shiftKey && e.key === 'f' && status === 'ok') { take(); void showHints().catch(console.error); return; }
+    // `n` and `N` step the search's hits, as ⏎ and ⇧⏎ do in its field
+    if (free && (e.key === 'n' || e.key === 'N') && s.find?.q && s.find.pages.length) { take(); void runFind(s.find.q, e.key === 'n' ? 1 : -1).catch(console.error); return; }
     if (e.key === 'r' && canEnrol && !info?.read) { take(); startReading(); }
     else if (e.key === '/') { take(); setFind((f) => f ?? { q: '', pages: [], at: 0 }); findRef.current?.focus(); }
     else if (e.key === 'g') { take(); setGoto(true); }
@@ -1222,7 +1581,17 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
       const at = list.findIndex((p) => p.heading.text === lit);
       const next = list[at < 0 ? (e.key === ']' ? 0 : list.length - 1) : at + (e.key === ']' ? 1 : -1)];
       take();
-      if (next) goToSection(next);
+      if (next) {
+        // a section more than a screen away is a jump, with the way back; one in view or just out of it is a step
+        const b = next.boxes[0];
+        const pr = b ? pageEls.current.get(b.page)?.getBoundingClientRect() : undefined;
+        const sr = scroller()?.getBoundingClientRect();
+        if (b && pr && sr && sr.height > 0) {
+          const top = pr.top + b.y * pr.height;
+          if (top < sr.top - sr.height || top > sr.bottom + sr.height) leave();
+        }
+        goToSection(next);
+      }
     }
   };
   useEffect(() => {
@@ -1290,7 +1659,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
 
   return (
     <div className="reader-wrap" ref={outerRef} data-wide={wide ? '1' : undefined}>
-      <div ref={viewRef} className={`reader doc-view pdf-view${reading ? ' reading' : ''}`} data-page={current} data-roomy={roomy ? '1' : '0'} data-zoom={zoom} style={colW > 0 ? { width: pageW, ...(wide ? { '--fit-w': `${colW}px`, '--fit-left': `${room.left}px` } as React.CSSProperties : null) } : undefined}>
+      <div ref={viewRef} className={`reader doc-view pdf-view${reading ? ' reading' : ''}`} data-page={current} data-roomy={roomy ? '1' : '0'} data-zoom={zoom} data-back={trail.back.length} data-fwd={trail.forward.length} style={colW > 0 ? { width: pageW, ...(wide ? { '--fit-w': `${colW}px`, '--fit-left': `${room.left}px` } as React.CSSProperties : null) } : undefined}>
         <div className="meta">
           <Crumbs path={id} />
           {!(phone && session) && <button type="button" className="frozen-tag notes-toggle" data-on={notesOpen ? '1' : '0'} aria-pressed={notesOpen} title={'notes ⌘\\'} onClick={() => toggleNotes(id)}>notes</button>}
@@ -1333,7 +1702,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
                     if (e.key !== 'Enter') return;
                     e.preventDefault();
                     const n = Number(e.currentTarget.value);
-                    if (n >= 1) scrollTo(n);
+                    if (n >= 1) { leave(); scrollTo(n); }
                     setGoto(false);
                   }}
                   onBlur={() => setGoto(false)}
@@ -1351,7 +1720,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
               <div className="read-edge" style={{ top: barHeight }}><span className="read-knob" /></div>
             </>
           )}
-          <div className="pdf-pages" ref={pagesRef} style={{ height: tops.total || undefined, width: pageW }} onPointerDown={onPointerDown} onMouseDown={onMouseDown}>
+          <div className="pdf-pages" ref={pagesRef} style={{ height: tops.total || undefined, width: pageW }} onPointerDown={onPointerDown} onMouseDown={onMouseDown} onClick={onPress} onPointerMove={onHover} onContextMenu={onMenu}>
             {status === 'loading' && <div className="empty">opening</div>}
             {sizes.map((s, i) => (
               <div
@@ -1369,6 +1738,26 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
                   // a page's writing is made when the page itself is drawn, as it comes near
                   const r = inked[n] !== undefined && rendered.current.has(n) ? pageRect(n) : null;
                   return r && <PageInk key={n} hash={hash} page={n} w={s.w} h={s.h} rev={inked[n]!} rect={r} live={liveInk.has(n)} onShown={pictureShown} />;
+                })}
+              </div>
+            )}
+            {/* the PDF's own links, where they lie: nothing a pointer meets (a press is read by where it falls), so a box or a selection begins on one as anywhere */}
+            <div className="pdf-links">
+              {status === 'ok' && [...rendered.current.keys()].map((n) => (links.current.get(n) ?? []).map((l, i) => {
+                const p = pageRect(n);
+                return p && <div key={`${n}:${i}`} className="plink" data-page={n} data-kind={l.url !== undefined ? 'web' : 'inside'} data-href={l.url} style={{ left: p.left + l.x * p.width, top: p.top + l.y * p.height, width: l.w * p.width, height: l.h * p.height }} />;
+              }))}
+            </div>
+            {hints && (
+              <div className="pdf-hints" data-typed={hints.typed}>
+                {hints.targets.map((t) => {
+                  const p = pageRect(t.page);
+                  const on = t.label.startsWith(hints.typed);
+                  return p && (
+                    <kbd key={t.label} className="phint" data-label={t.label} data-kind={t.link ? (t.link.url !== undefined ? 'web' : 'link') : 'ref'} data-page={t.page} data-off={on ? undefined : '1'} title={t.text ?? t.link?.url} style={{ left: p.left + t.x * p.width, top: p.top + t.y * p.height }}>
+                      {on && hints.typed ? <><span className="ph-t">{hints.typed}</span>{t.label.slice(hints.typed.length)}</> : t.label}
+                    </kbd>
+                  );
                 })}
               </div>
             )}
@@ -1432,7 +1821,8 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
             <div
               className="pdf-peek"
               style={{ top: Math.max(60, Math.min(peek.rect.bottom + 8, window.innerHeight - 220)), left: Math.max(8, Math.min(peek.rect.left, window.innerWidth - PEEK_W - 40)) }}
-              onClick={() => { scrollTo(peek.page); setPeek(null); }}
+              data-page={peek.page}
+              onClick={followPeek}
             >
               <div className="pk-hd"><span>p. {peek.page}</span><span className="pk-t">{peek.text}</span><span className="kbd">esc</span></div>
               <canvas ref={peekCanvas} />

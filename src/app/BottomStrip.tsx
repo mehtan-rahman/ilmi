@@ -7,6 +7,7 @@ import { notesPath, queueScope, tabKindOf } from './names.js';
 import { activeTab } from './panes.js';
 import { useApp } from './store.js';
 import { notebookOf } from './tabs.js';
+import { useBackInFront } from './book.js';
 
 export function BottomStrip() {
   const panes = useApp((s) => s.panes);
@@ -17,6 +18,8 @@ export function BottomStrip() {
   // the session's element is in a document of its own
   const info = id === undefined ? undefined : kind === 'session' && sessionEl ? docs[sessionEl.item.path] : docs[notesPath(id) ?? id];
   const mobile = useApp((s) => s.mobile);
+  // the book in front has somewhere to go back to (milestone 76)
+  const back = useBackInFront();
   const base = hintsFor({
     kind,
     el: kind === 'session' ? sessionEl?.kind ?? 'card' : null,
@@ -28,6 +31,7 @@ export function BottomStrip() {
     note: info?.type === 'note' || (kind === 'session' && info?.type === 'extract'),
     marks: info?.type === 'source' && !info.pdf && !info.of,
     touch: mobile,
+    back,
   });
   // a notebook's page: the step keys, ahead of the page's own
   const all = id !== undefined && notebookOf(id, docs) ? [['⌘⌥↑↓', 'tabs'] as const, ...base] : base;

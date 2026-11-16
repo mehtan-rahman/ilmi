@@ -54,7 +54,7 @@ export interface Parsed {
 
 /**
  * Land it, or ask: a package with several decks and a text that reads as
- * two or more cards need the intake's choices (which decks, the
+ * two or more cards need the intake's choices (which decks: each a toggle there, the
  * delimiters); everything else lands with the defaults. A page from HTML is
  * prose by nature, as a fetched page is.
  */

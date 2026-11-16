@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bibliographyStart, countIn, documentText, findAll, findText, jumpTarget, linesOf, pageText, refOf, stemShared, wordCount, type TextBit } from '../index.js';
+import { bibliographyStart, countIn, documentText, findAll, findText, jumpTarget, linesOf, pageText, refOf, seekTarget, stemShared, wordCount, type TextBit } from '../index.js';
 
 const bit = (str: string, y: number, height = 12, eol = true): TextBit => ({ str, eol, y, height });
 
@@ -100,5 +100,52 @@ describe('smart jump', () => {
     const many: string[][] = [['Figure 2 in passing'], ['Figure 2. The real caption.'], ['Figure 2. A second caption, further off.'], ['Figure 2 again']];
     expect(jumpTarget(many, refOf('Figure 2')!, 4)).toEqual({ page: 3, line: 0 });
     expect(jumpTarget(many, refOf('Figure 2')!, 1)).toEqual({ page: 2, line: 0 });
+  });
+});
+
+describe('smart jump, reading no more than it needs', () => {
+  const body = (n: number) => [`page ${n} of the text`];
+  const seek = async (pages: string[][], sel: string, from: number) => {
+    const read: number[] = [];
+    const hit = await seekTarget(pages.length, async (p) => { read.push(p); return pages[p - 1]!; }, refOf(sel)!, from);
+    expect(hit).toEqual(jumpTarget(pages, refOf(sel)!, from));
+    return { hit, read: read.sort((a, b) => a - b) };
+  };
+
+  it('an equation is found outward from the page, and the walk stops there', async () => {
+    const pages = Array.from({ length: 40 }, (_, i) => body(i + 1));
+    pages[21] = ['S = k ln W (3.12)'];
+    pages[2] = ['an older S = k ln W (3.12)'];
+    const { hit, read } = await seek(pages, '(3.12)', 20);
+    expect(hit).toEqual({ page: 22, line: 0 });
+    expect(read).toEqual([18, 19, 20, 21, 22]);
+  });
+
+  it('a bare mention of a figure does not stop the walk short of its caption', async () => {
+    const pages = Array.from({ length: 12 }, (_, i) => body(i + 1));
+    pages[4] = ['Figure 2 shows the isotherms of the gas'];
+    pages[8] = ['Figure 2. Isotherms of a van der Waals gas'];
+    const { hit, read } = await seek(pages, 'Fig. 2', 5);
+    expect(hit).toEqual({ page: 9, line: 0 });
+    expect(read).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+  });
+
+  it('a citation is read back from the end to the references, no further', async () => {
+    const pages = Array.from({ length: 30 }, (_, i) => body(i + 1));
+    pages[27] = ['References', '[1] Callen, Thermodynamics'];
+    pages[28] = ['[7] Kittel, Thermal Physics'];
+    const { hit, read } = await seek(pages, '[7]', 3);
+    expect(hit).toEqual({ page: 29, line: 0 });
+    expect(read).toEqual([28, 29, 30]);
+  });
+
+  it('nothing found is nothing, after every page; a walk told to stop reads no more', async () => {
+    const pages = Array.from({ length: 6 }, (_, i) => body(i + 1));
+    const { hit, read } = await seek(pages, '(9.9)', 3);
+    expect(hit).toBeNull();
+    expect(read).toEqual([1, 2, 3, 4, 5, 6]);
+    let n = 0;
+    expect(await seekTarget(6, async (p) => { n++; return pages[p - 1]!; }, refOf('(9.9)')!, 3, () => n < 1)).toBeNull();
+    expect(n).toBe(1);
   });
 });

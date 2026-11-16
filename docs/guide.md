@@ -161,8 +161,12 @@ under `## not cards`.
 
 An Anki package (`.apkg`) dropped on the intake is read on the Rust side
 (`src-tauri/src/anki.rs`: the zip, the SQLite collection, zstd when it is
-compressed) and listed deck by deck; `place` writes one deck file per Anki
-deck, `Parent::Child` as `Parent/Child.md`. A basic note is `front :: back`,
+compressed) and listed deck by deck. With several decks each row is a
+toggle, all on to start: a deck turned off (a click, or space / ⏎ on the
+row) is left out, the count follows, and `place` needs one on. A deck holds
+its own cards only, so a sub-deck left on under a parent turned off still
+lands in the parent's folder, without the parent's deck. `place` writes one
+deck file per Anki deck that is on, `Parent::Child` as `Parent/Child.md`. A basic note is `front :: back`,
 a reversed note `:::`, a cloze note its text with the blanks kept; a review
 card's progress seeds the card's `sr` line (due, interval, reps, lapses, a
 difficulty from the ease). Hints, sounds, images, a reversed note's second

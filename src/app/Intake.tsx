@@ -96,6 +96,8 @@ export function Intake({ active, onOpen }: Props) {
   const [fromFile, setFromFile] = useState(false);
   /** An Anki package waiting on the intake: its decks, listed where the text would be. */
   const [anki, setAnki] = useState<Mapped | null>(null);
+  /** The package's decks turned off, by their Anki names: left out at place. A package read in starts with all on. */
+  const [off, setOff] = useState<ReadonlySet<string>>(new Set());
   /** A book waiting on the intake: its chapters, listed where the text would be. */
   const [book, setBook] = useState<MappedBook | null>(null);
   /** The delimiters the user chose over the detected ones; `null` follows detection. */
@@ -128,10 +130,13 @@ export function Intake({ active, onOpen }: Props) {
   const deck = useMemo(() => (split ? toCards(split, both) : null), [split, both]);
   const dropped = split ? droppedLabel(split.dropped) : '';
   const ankiDropped = anki ? droppedLabel(anki.dropped, [[anki.dropped.schedules, 'schedule'], [anki.dropped.notes, 'empty note']]) : '';
-  const ankiCards = anki ? anki.decks.reduce((n, d) => n + d.cards, 0) : 0;
+  // each deck holds its own cards only (a parent's are not its children's), so one left out takes nothing from another:
+  // a child on under a parent off still lands in the parent's folder, without the parent's own deck
+  const picked = useMemo(() => (anki ? anki.decks.filter((d) => !off.has(d.name)) : []), [anki, off]);
+  const ankiCards = picked.reduce((n, d) => n + d.cards, 0);
 
   // a PDF lands even without a text layer: it opens as pages, nothing to select
-  const can = (book ? book.chapters.length > 0 : anki ? anki.decks.length > 0 : deck ? deck.cards.length > 0 : st.words > 0 || !!pdf) && !busy;
+  const can = (book ? book.chapters.length > 0 : anki ? picked.length > 0 : deck ? deck.cards.length > 0 : st.words > 0 || !!pdf) && !busy;
   // pasted or typed text is the user's own: a note
   const asNote = !fromFile && !pdf && !page && !book && !anki;
   /** The name it lands under when the title is left alone, or emptied. */
@@ -223,6 +228,7 @@ export function Intake({ active, onOpen }: Props) {
         setFromFile(false);
         setBook(null);
         setAnki(m);
+        setOff(new Set());
         setNote('');
         fresh();
         retitle();
@@ -352,8 +358,8 @@ export function Intake({ active, onOpen }: Props) {
         return;
       }
       if (anki) {
-        const paths = await importAnkiNode(chosen, anki.decks);
-        for (const d of anki.decks) notice(`placed · ${plural(d.cards, 'card')} in ${d.title}`);
+        const paths = await importAnkiNode(chosen, picked);
+        for (const d of picked) notice(`placed · ${plural(d.cards, 'card')} in ${d.title}`);
         clear();
         if (open && paths[0]) onOpen(paths[0], {});
         return;
@@ -411,7 +417,7 @@ export function Intake({ active, onOpen }: Props) {
         <div className="meta">
           <span className="crumb">intake</span>
         </div>
-        <h1>{book ? 'Add a book' : anki ? (anki.decks.length === 1 ? 'Add a deck' : 'Add decks') : cardsMode ? 'Add a deck' : asNote && text ? 'Add a note' : 'Add a source'}</h1>
+        <h1>{book ? 'Add a book' : anki ? (picked.length === 1 ? 'Add a deck' : 'Add decks') : cardsMode ? 'Add a deck' : asNote && text ? 'Add a note' : 'Add a source'}</h1>
 
         {book ? (
           <div className="book-list">
@@ -427,12 +433,25 @@ export function Intake({ active, onOpen }: Props) {
           </div>
         ) : anki ? (
           <div className="deck-list">
-            {anki.decks.map((d) => (
-              <div key={d.name} className="deck-row">
-                <span className="dname">{deckLabel(d)}</span>
-                <span className="dcount">{plural(d.cards, 'card')}{d.scheduled > 0 && `, ${d.scheduled} scheduled`}</span>
-              </div>
-            ))}
+            {anki.decks.map((d) => {
+              const count = <span className="dcount">{plural(d.cards, 'card')}{d.scheduled > 0 && `, ${d.scheduled} scheduled`}</span>;
+              // one deck is the package: nothing to choose
+              if (anki.decks.length === 1) return <div key={d.name} className="deck-row"><span className="dname">{deckLabel(d)}</span>{count}</div>;
+              const on = !off.has(d.name);
+              return (
+                <button
+                  key={d.name}
+                  type="button"
+                  className="deck-row deck-pick"
+                  aria-pressed={on}
+                  data-on={on ? '1' : '0'}
+                  onClick={() => setOff((s) => { const next = new Set(s); if (!next.delete(d.name)) next.add(d.name); return next; })}
+                >
+                  <span className="dname">{deckLabel(d)}</span>
+                  {count}
+                </button>
+              );
+            })}
           </div>
         ) : (
         <div className="paste-field">
@@ -492,7 +511,7 @@ export function Intake({ active, onOpen }: Props) {
             )}
             {anki && (
               <div className="stats">
-                <span><b>{ankiCards.toLocaleString()}</b> {ankiCards === 1 ? 'card' : 'cards'} in {plural(anki.decks.length, 'deck')}</span>
+                <span><b>{ankiCards.toLocaleString()}</b> {ankiCards === 1 ? 'card' : 'cards'} in {picked.length === anki.decks.length ? plural(picked.length, 'deck') : `${picked.length} of ${plural(anki.decks.length, 'deck')}`}</span>
                 {anki.empty > 0 && (
                   <>
                     <span className="dot" />

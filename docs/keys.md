@@ -57,8 +57,10 @@ in a book        a document with pages: its pages beside its notes (the
                  lines), e makes it a section of the notes, m a section to
                  card in (or, where the page names no sections, a clip
                  under ## p. N), esc clears; ⏎ right after writes in it;
-                 [ ] step the sections; ⌘\ hides the notes; / search,
-                 g go to a page; drag the margin to move the read point
+                 [ ] step the sections; ⌘\ hides the notes; / search
+                 (⏎ the next hit, ⇧⏎ the one before, counted n / m),
+                 g go to a page; ⏎ on a selected reference such as (3.12)
+                 peeks at its target; drag the margin to move the read point
 in the intake    ⌘⏎ place & open, ⌘⇧⏎ place & leave it
 in a deck        j k (or ↑ ↓) move, ⏎ or a double-click opens the card in the
                  card view, / search, m make a card; click selects, ⇧-click

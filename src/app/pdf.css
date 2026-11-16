@@ -77,6 +77,9 @@
 /* highlights: an extract's passage found again; a search hit */
 ::highlight(ilmi-extract) { background-color: color-mix(in oklab, var(--accent) 30%, transparent); }
 ::highlight(ilmi-hit) { background-color: color-mix(in oklab, var(--el-read) 32%, transparent); }
+/* the hit the count names: the same ink, heavier */
+::highlight(ilmi-at) { background-color: color-mix(in oklab, var(--el-read) 62%, transparent); }
+[data-theme="eink"] ::highlight(ilmi-at) { background-color: color-mix(in oklab, var(--fg) 45%, transparent); }
 [data-theme="eink"] ::highlight(ilmi-extract) { background-color: color-mix(in oklab, var(--fg) 22%, transparent); }
 
 /* the rail: what the Markdown holds for each page, at the page's top */

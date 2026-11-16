@@ -2,29 +2,41 @@
 // The sweep of the intake, the book's pages, and sections: each test says what
 // should happen, and fails until it does.
 
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 interface Page { title: string; text: string; page?: unknown }
 const fetches: { url: string; resolve(r: Page): void; reject(e: unknown): void }[] = [];
-const writes = { fail: false, specs: [] as { title: string }[] };
+const writes = { fail: false, specs: [] as { title: string }[], decks: [] as string[] };
+/** The Anki package a `.apkg` path reads as: the import's own two-deck fixture. */
+const TWO_DECKS = JSON.parse(readFileSync(join(import.meta.dirname, '../../import/__tests__/anki/two-decks.json'), 'utf8')) as unknown;
 
 vi.mock('@tauri-apps/plugin-dialog', () => ({ open: async () => null }));
-/** The stand-in book: three pages, each with a line of text; `slow` holds a page's text back until let go. */
-const book = { slow: null as Promise<void> | null, fail: false };
+/** The stand-in book: three pages, each with a line of text (the second with more); `slow` holds a page's text back until let go; `read` is the pages whose text was asked for. */
+const book = { slow: null as Promise<void> | null, fail: false, read: [] as number[] };
+const linesOn = (n: number): string[] => [
+  `entropy on page ${n}`,
+  ...(n === 1 ? ['as (3.12) shows'] : n === 2 ? ['heat is not work, heat is a transfer', 'S = k ln W (3.12)'] : []),
+];
 const fakePage = (n: number) => ({
   n,
   getViewport: ({ scale }: { scale: number }) => ({ width: 600 * scale, height: 800 * scale }),
   render: () => ({ promise: Promise.resolve() }),
-  streamTextContent: () => ({}),
+  streamTextContent: () => ({ n }),
   getTextContent: async () => ({ items: [] }),
 });
 const fakePdf = { numPages: 3, getPage: async (n: number) => fakePage(n) };
 vi.mock('../pdfjs.js', () => ({
   pdfText: async () => ({ pages: 1, text: '', title: '', chapters: [] }),
-  TextLayer: class { async render() {} },
-  pageBits: async (page: { n: number }) => { if (book.slow) await book.slow; return [{ str: `entropy on page ${page.n}`, eol: true, y: 700, height: 10 }]; },
+  // the text layer as pdf.js lays it: a span a line
+  TextLayer: class {
+    constructor(private o: { textContentSource: { n: number }; container: HTMLElement }) {}
+    async render() { for (const l of linesOn(this.o.textContentSource.n)) { const sp = document.createElement('span'); sp.textContent = l; this.o.container.append(sp); } }
+  },
+  pageBits: async (page: { n: number }) => { book.read.push(page.n); if (book.slow) await book.slow; return linesOn(page.n).map((str, i) => ({ str, eol: true, y: 700 - 20 * i, height: 10 })); },
   loadPdf: () => ({}), loadPdfPieces: () => ({}),
 }));
 vi.mock('../bookPdf.js', () => ({
@@ -35,7 +47,7 @@ vi.mock('../fetch.js', () => ({
   PDF_EXT: /\.pdf$/i, APKG_EXT: /\.apkg$/i, EPUB_EXT: /\.epub$/i,
   fetchReadable: (url: string) => new Promise<Page>((resolve, reject) => { fetches.push({ url, resolve, reject }); }),
   fetchImage: async () => null,
-  readAnkiPackage: async () => { throw new Error('no'); },
+  readAnkiPackage: async () => TWO_DECKS,
   readDropped: async () => { throw new Error('not a text file'); },
   readDroppedPdf: async () => { throw new Error('no'); },
   readEpub: async () => { throw new Error('no'); },
@@ -48,7 +60,8 @@ vi.mock('../vault.js', async (orig) => {
     writes.specs.push(spec);
     return `${spec.title}.md`;
   };
-  return { ...real, currentVault: () => null, importNode, importDeckNode: importNode };
+  const importAnkiNode = async (_dir: string, decks: { name: string }[]) => { writes.decks.push(...decks.map((d) => d.name)); return decks.map((d) => `${d.name}.md`); };
+  return { ...real, currentVault: () => null, importNode, importDeckNode: importNode, importAnkiNode };
 });
 
 const { Intake } = await import('../Intake.js');
@@ -98,6 +111,7 @@ const mountIntake = async () => {
   fetches.length = 0;
   writes.fail = false;
   writes.specs.length = 0;
+  writes.decks.length = 0;
   useApp.setState({ vault: '/v', tree: [], docs: {}, intakeDir: '', intakeFiles: [] });
   host = document.body.appendChild(document.createElement('div'));
   root = createRoot(host);
@@ -159,9 +173,52 @@ describe('the intake keeps to what is in the field', () => {
   });
 });
 
+describe('an anki package with several decks', () => {
+  const rows = () => Array.from(host.querySelectorAll<HTMLButtonElement>('button.deck-pick'));
+  const placeBtn = () => Array.from(host.querySelectorAll('button')).find((x) => x.textContent?.includes('place'))!;
+  const drop = async () => {
+    await mountIntake();
+    await act(async () => { useApp.setState({ intakeFiles: ['/x/two.apkg'] }); });
+    await settle();
+  };
+
+  it('lists each deck as a toggle, all on', async () => {
+    await drop();
+    expect(rows().map((r) => [r.querySelector('.dname')!.textContent, r.getAttribute('aria-pressed')])).toEqual([['Languages / German', 'true'], ['Science', 'true']]);
+    expect(host.querySelector('.stats')!.textContent).toContain('4 cards in 2 decks');
+  });
+
+  it('a deck turned off is left out of the count and of what is placed', async () => {
+    await drop();
+    await act(async () => { rows()[1]!.click(); });
+    expect(rows()[1]!.getAttribute('aria-pressed')).toBe('false');
+    expect(host.querySelector('.stats')!.textContent).toContain('2 cards in 1 of 2 decks');
+    await act(async () => { placeBtn().click(); });
+    await settle();
+    // the sub-deck alone: its parent has no deck of its own in the package, and its folder is made for it
+    expect(writes.decks).toEqual(['Languages::German']);
+  });
+
+  it('turned on again it is placed; with none on there is nothing to place', async () => {
+    await drop();
+    await act(async () => { rows()[0]!.click(); });
+    await act(async () => { rows()[1]!.click(); });
+    expect(placeBtn().disabled).toBe(true);
+    await act(async () => { placeBtn().click(); });
+    await settle();
+    expect(writes.decks).toEqual([]);
+    await act(async () => { rows()[1]!.click(); });
+    expect(placeBtn().disabled).toBe(false);
+    await act(async () => { placeBtn().click(); });
+    await settle();
+    expect(writes.decks).toEqual(['Science']);
+  });
+});
+
 const BOOK = 'library/stat.pdf';
 async function mountBook() {
   book.slow = null;
+  book.read.length = 0;
   useApp.setState({ vault: '/v', tree: [], docs: { [BOOK]: { type: 'source', frozen: true, cards: 0, due: 0, pdf: BOOK } } as never });
   host = document.body.appendChild(document.createElement('div'));
   root = createRoot(host);
@@ -186,6 +243,79 @@ describe("a book's pages", () => {
     await enter(findField());
     await settle();
     expect(host.querySelector('.pb-n')!.textContent).toContain('1 / 3');
+  });
+
+  it('search counts hits, not pages, and steps hit by hit', async () => {
+    await mountBook();
+    await key('/');
+    await type(findField(), 'HEAT');
+    await enter(findField());
+    await settle();
+    const n = () => host.querySelector('.pb-n')!.textContent;
+    expect(n()).toBe('p. 2, 1 / 2');
+    await enter(findField());
+    expect(n()).toBe('p. 2, 2 / 2');
+    await enter(findField());
+    expect(n()).toBe('p. 2, 1 / 2');
+    await act(async () => { findField().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', shiftKey: true, bubbles: true, cancelable: true })); });
+    expect(n()).toBe('p. 2, 2 / 2');
+    await type(findField(), 'page');
+    await enter(findField());
+    await settle();
+    expect(n()).toBe('p. 1, 1 / 3');
+    await type(findField(), 'enthalpy');
+    await enter(findField());
+    await settle();
+    expect(n()).toBe('none');
+  });
+
+  it('search brings the hit into view, not the top of its page', async () => {
+    // jsdom lays nothing out: the hit's range says where it is, and the scroll asked for is read
+    const rp = Range.prototype as unknown as { getBoundingClientRect?: () => unknown };
+    const ep = Element.prototype as unknown as { scrollTo(o: { top?: number }): void };
+    const was = { rect: rp.getBoundingClientRect, scroll: ep.scrollTo };
+    const asked: { text: string; top: number }[] = [];
+    let cur = '';
+    rp.getBoundingClientRect = function (this: Range) { cur = this.toString(); return { top: 2000, bottom: 2012, left: 0, right: 40, width: 40, height: 12 }; };
+    ep.scrollTo = function (o) { if (o?.top !== undefined) asked.push({ text: cur, top: o.top }); };
+    try {
+      await mountBook();
+      await key('/');
+      await type(findField(), 'heat');
+      await enter(findField());
+      await settle();
+      expect(asked).toEqual([{ text: 'heat', top: 2000 }]);
+      await enter(findField());
+      await settle();
+      expect(asked.length).toBe(2);
+    } finally { if (was.rect) rp.getBoundingClientRect = was.rect; else delete rp.getBoundingClientRect; ep.scrollTo = was.scroll; }
+  });
+
+  it('a reference is looked for outward from its page, and says so while it looks', async () => {
+    const rp = Range.prototype as unknown as { getBoundingClientRect?: () => unknown; getClientRects?: () => unknown[] };
+    const was = { rect: rp.getBoundingClientRect, rects: rp.getClientRects };
+    rp.getBoundingClientRect = () => ({ top: 10, bottom: 20, left: 0, right: 40, width: 40, height: 10 });
+    rp.getClientRects = () => [];
+    try {
+      await mountBook();
+      // "(3.12)" selected on page 1
+      const span = Array.from(host.querySelectorAll('.pdf-page[data-page="1"] .textLayer span')).find((x) => x.textContent?.includes('(3.12)'))!;
+      const r = document.createRange();
+      r.setStart(span.firstChild!, 3);
+      r.setEnd(span.firstChild!, 9);
+      await act(async () => { const s = window.getSelection()!; s.removeAllRanges(); s.addRange(r); document.dispatchEvent(new Event('selectionchange')); });
+      let go!: () => void;
+      book.slow = new Promise<void>((res) => { go = res; });
+      book.read.length = 0;
+      await key('Enter');
+      expect(host.querySelector('.pdf-bar .pb-n')?.textContent).toBe('looking');
+      await act(async () => { go(); });
+      await settle();
+      expect(host.querySelector('.pdf-bar')).toBeNull();
+      expect(host.querySelector('.pdf-peek .pk-hd')!.textContent).toContain('p. 2');
+      // the page past the target was never read
+      expect(book.read).toEqual([1, 2]);
+    } finally { if (was.rect) rp.getBoundingClientRect = was.rect; else delete rp.getBoundingClientRect; if (was.rects) rp.getClientRects = was.rects; else delete rp.getClientRects; window.getSelection()?.removeAllRanges(); }
   });
 
   it('what is typed while a search runs stays in the field', async () => {

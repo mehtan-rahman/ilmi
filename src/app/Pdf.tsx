@@ -40,7 +40,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { boxesEnd, formatClip, meta, sectionDismissed, setField, type Box, type Doc } from '../format/index.js';
-import { boxAround, countIn, findAll, findText, jumpTarget, linesOf, refOf, sectionName, type Found, type PageItem } from '../pdf/index.js';
+import { boxAround, countIn, findAll, findText, linesOf, refOf, sectionName, seekTarget, type Found, type PageItem } from '../pdf/index.js';
 import { pickPos, type Band } from '../reader/index.js';
 import { addPassage, passagesOf, pointOn, sectionState, type Passage } from '../schedule/index.js';
 import { addToPage, childDirOf, isPdfPath, type InkStroke, type StoreFs } from '../vault/index.js';
@@ -112,6 +112,8 @@ interface Peek {
 }
 
 /** How much of the target page the peek shows, css px at the page's scale. */
+/** A hit nearer than this to the view's top or bottom is brought a third of the way down, css px. */
+const HIT_EDGE = 90;
 const PEEK_H = 150;
 const PEEK_W = 480;
 
@@ -119,20 +121,34 @@ interface Find {
   q: string;
   /** Pages with a hit, in order, and how many on each. */
   pages: { page: number; n: number }[];
-  /** Index into `pages` of the one shown. */
+  /** The hit shown, counted through the book: 0 is the first on the first of `pages`. */
   at: number;
+  /** Moves with every step, so a step that lands on the hit already shown still brings it into view. */
+  go?: number;
   /** Whether `q` has been looked for: not yet, while it is, or done. */
   did?: 'searching' | 'done';
 }
 
 /** Where each book was left, by its id: the page and the place on it at the top of the view, and the scroll itself. A tab shown again comes back to it. */
+/** How many hits a search found, over all its pages. */
+const hitCount = (pages: Find['pages']): number => pages.reduce((n, p) => n + p.n, 0);
+/** The page the `at`th hit is on, and which of that page's hits it is. */
+function hitAt(pages: Find['pages'], at: number): { page: number; k: number } | null {
+  let k = at;
+  for (const p of pages) {
+    if (k < p.n) return { page: p.page, k };
+    k -= p.n;
+  }
+  return null;
+}
+
 const places = new Map<string, { top: number; at: { page: number; y: number } | null }>();
 
 interface Rect { left: number; top: number; width: number; height: number }
 
 // ── highlights: the CSS Custom Highlight API, one registry for every lens ──
 
-type HighlightKind = 'ilmi-extract' | 'ilmi-hit';
+type HighlightKind = 'ilmi-extract' | 'ilmi-hit' | 'ilmi-at';
 const ranges = new Map<string, Range[]>();
 
 /** Replace what `owner` contributes to `kind` and redraw the merged highlight. A webview without the API draws nothing. */
@@ -270,6 +286,11 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
   const [goto, setGoto] = useState(false);
   const [extracts, setExtracts] = useState<{ path: string; page: number; text: string }[]>([]);
   const [peek, setPeek] = useState<Peek | null>(null);
+  /** A reference's target is being looked for: said where the search says `searching`. */
+  const [looking, setLooking] = useState(false);
+  const jumpSeq = useRef(0);
+  /** The hit shown is to be brought into view once its page's text is there. */
+  const wantHit = useRef(false);
   /** Boxes drawn and not yet made into anything, in the order drawn. */
   const [pending, setPending] = useState<Box[]>([]);
   const [ghost, setGhost] = useState<Rect | null>(null);
@@ -291,8 +312,8 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
   const rendering = useRef(new Set<number>());
   const texts = useRef(new Map<number, string>());
   const dragRef = useRef(false);
-  const st = useRef({ sel, pending, recent, find, goto, peek });
-  st.current = { sel, pending, recent, find, goto, peek };
+  const st = useRef({ sel, pending, recent, find, goto, peek, looking });
+  st.current = { sel, pending, recent, find, goto, peek, looking };
   const canEnrol = info?.type === 'source' || info?.type === 'extract' || info?.type === 'note';
   const reading = !!info?.read && info.type !== 'note';
   const rel = info?.pdf;
@@ -703,6 +724,8 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
   useEffect(() => {
     const own: Range[] = [];
     const hits: Range[] = [];
+    const cur = find?.q && find.pages.length ? hitAt(find.pages, find.at) : null;
+    let now: Range | null = null;
     for (const [n] of rendered.current) {
       const layer = pageEls.current.get(n)?.querySelector('.textLayer');
       if (!layer) continue;
@@ -713,12 +736,28 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
         const f = findText(strs, e.text);
         if (f) own.push(rangeOf(nodes, f));
       }
-      if (find?.q) for (const f of findAll(strs, find.q, true)) hits.push(rangeOf(nodes, f));
+      if (!find?.q) continue;
+      const found = findAll(strs, find.q, true);
+      // the hit shown is lit apart from the rest; a text layer that reads fewer than the count shows its last
+      const k = cur?.page === n ? Math.min(cur.k, found.length - 1) : -1;
+      found.forEach((f, i) => { if (i === k) now = rangeOf(nodes, f); else hits.push(rangeOf(nodes, f)); });
     }
     setHighlight(id, 'ilmi-extract', own);
     setHighlight(id, 'ilmi-hit', hits);
-  }, [tick, extracts, find?.q, id]);
-  useEffect(() => () => { setHighlight(id, 'ilmi-extract', []); setHighlight(id, 'ilmi-hit', []); }, [id]);
+    setHighlight(id, 'ilmi-at', now ? [now] : []);
+    // the hit itself into view, a third of the way down, once its page's text is there; one in plain sight stays put
+    const sc = scroller();
+    const at = now as Range | null;
+    if (!wantHit.current || !at || !sc) return;
+    wantHit.current = false;
+    if (typeof at.getBoundingClientRect !== 'function') return;
+    const r = at.getBoundingClientRect();
+    const sr = sc.getBoundingClientRect();
+    landed.current = true;
+    if (r.top >= sr.top + HIT_EDGE && r.bottom <= sr.bottom - HIT_EDGE) return;
+    sc.scrollTo({ top: Math.max(0, sc.scrollTop + r.top - sr.top - sr.height / 3) });
+  }, [tick, extracts, find?.q, find?.pages, find?.at, find?.go, id]);
+  useEffect(() => () => { for (const k of ['ilmi-extract', 'ilmi-hit', 'ilmi-at'] as const) setHighlight(id, k, []); }, [id]);
 
   // ── the selection, read from the DOM: a text selection on a page boxes its lines ──
   useEffect(() => {
@@ -956,9 +995,10 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
   const runFind = async (q: string, step = 0) => {
     const cur = st.current.find;
     if (cur && cur.q === q && cur.pages.length) {
-      const at = (cur.at + step + cur.pages.length) % cur.pages.length;
-      setFind({ ...cur, at });
-      scrollTo(cur.pages[at]!.page);
+      const total = hitCount(cur.pages);
+      const at = (cur.at + step + total) % total;
+      setFind({ ...cur, at, go: (cur.go ?? 0) + 1 });
+      goHit(cur.pages, at);
       return;
     }
     if (!pdf || !q.trim()) { setFind(q ? { q, pages: [], at: 0 } : null); return; }
@@ -973,13 +1013,20 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
       const k = countIn(text, q);
       if (k) pages.push({ page: n, n: k });
     }
-    let at = pages.findIndex((p) => p.page >= current);
-    if (at < 0) at = 0;
+    // the first hit on the page in view or after it, else the book's first
+    const from = pages.findIndex((p) => p.page >= current);
+    const at = from < 0 ? 0 : hitCount(pages.slice(0, from));
     // what was typed, or the bar closed, while the pages were read stands: this answer is to an older question
     if (st.current.find?.q !== q) return;
-    setFind({ q, pages, at, did: 'done' });
-    const hit = pages[at];
-    if (hit) scrollTo(hit.page);
+    setFind({ q, pages, at, did: 'done', go: 0 });
+    goHit(pages, at);
+  };
+  /** Bring a hit into view: its page if that is not drawn yet (the highlights' effect goes on to the hit once it is). */
+  const goHit = (pages: Find['pages'], at: number) => {
+    const hit = hitAt(pages, at);
+    if (!hit) return;
+    wantHit.current = true;
+    if (rendered.current.get(hit.page) !== scale) scrollTo(hit.page);
   };
 
   // ── smart jump: ⏎ on a selected reference peeks at its target ──
@@ -996,13 +1043,19 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     if (!s || !pdf) return;
     const ref = refOf(s.text);
     if (!ref) return;
-    const all: string[][] = [];
-    for (let n = 1; n <= pdf.numPages; n++) all.push((await pageLines(n)).map((l) => l.text));
-    const hit = jumpTarget(all, ref, s.page);
-    if (!hit) { setPeek(null); return; }
-    const line = (await pageLines(hit.page))[hit.line];
-    if (!line) return;
-    setPeek({ page: hit.page, y: line.y, height: line.height, text: line.text, rect: s.rect });
+    // outward from the page the reference is on, no further than its target; a later ⏎ or esc leaves this one unanswered
+    const mine = ++jumpSeq.current;
+    setLooking(true);
+    try {
+      const hit = await seekTarget(pdf.numPages, async (n) => (await pageLines(n)).map((l) => l.text), ref, s.page, () => jumpSeq.current === mine);
+      if (jumpSeq.current !== mine) return;
+      if (!hit) { setPeek(null); return; }
+      const line = (await pageLines(hit.page))[hit.line];
+      if (!line || jumpSeq.current !== mine) return;
+      setPeek({ page: hit.page, y: line.y, height: line.height, text: line.text, rect: s.rect });
+    } finally {
+      if (jumpSeq.current === mine) setLooking(false);
+    }
   };
   useEffect(() => {
     const canvas = peekCanvas.current;
@@ -1040,8 +1093,9 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     const have = s.pending.length > 0 || (s.sel?.boxes.length ?? 0) > 0;
     const take = () => { e.preventDefault(); e.stopPropagation(); };
     if (e.key === 'Escape') {
-      if (s.pending.length || s.find || s.goto || s.peek || s.recent) {
+      if (s.pending.length || s.find || s.goto || s.peek || s.recent || s.looking) {
         setPending([]); setFind(null); setGoto(false); setPeek(null); setRecent(null);
+        jumpSeq.current++; setLooking(false);
         take();
       }
       return;
@@ -1050,7 +1104,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     if (have && e.key === 'e') { take(); void makeSection(false).catch(console.error); return; }
     if (have && e.key === 'm') { take(); void cardOrClip().catch(console.error); return; }
     // a reference under the selection: its target in a peek
-    if (s.sel && e.key === 'Enter' && refOf(s.sel.text)) { take(); void doJump(); return; }
+    if (s.sel && e.key === 'Enter' && refOf(s.sel.text)) { take(); void doJump().catch(console.error); return; }
     if (s.recent && e.key === 'Enter' && !have && note !== null) {
       take();
       const r = s.recent;
@@ -1152,7 +1206,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
           {shown && <span className="right" title={rightTip}>{shown}</span>}
         </div>
         <h1>{titleOf(id, docs, root)}</h1>
-        {(find || goto) && (
+        {(find || goto || looking) && (
           <div className="pdf-bar">
             {find && (
               <>
@@ -1166,7 +1220,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
                   onChange={(e) => setFind((f) => (f ? { q: e.target.value, pages: [], at: 0 } : f))}
                   onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void runFind(find.q, find.pages.length ? (e.shiftKey ? -1 : 1) : 0); } }}
                 />
-                <span className="pb-n">{find.pages.length ? `p. ${find.pages[find.at]?.page}, ${find.at + 1} / ${find.pages.length}` : find.did === 'searching' ? 'searching' : find.did === 'done' && find.q ? 'none' : ''}</span>
+                <span className="pb-n">{find.pages.length ? `p. ${hitAt(find.pages, find.at)?.page}, ${find.at + 1} / ${hitCount(find.pages)}` : find.did === 'searching' ? 'searching' : find.did === 'done' && find.q ? 'none' : ''}</span>
               </>
             )}
             {goto && (
@@ -1189,6 +1243,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
                 />
               </>
             )}
+            {looking && <span className="pb-n" role="status">looking</span>}
           </div>
         )}
         <div className={`doc-wrap pdf-body${reading ? ' reading' : ''}`} ref={wrapRef}>

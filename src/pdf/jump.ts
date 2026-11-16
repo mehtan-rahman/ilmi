@@ -61,6 +61,9 @@ export function bibliographyStart(pages: string[][]): number {
   return Math.max(1, Math.ceil(pages.length * 0.8));
 }
 
+/** A caption proper: the type, the number, then a period, colon or dash; a bare mention at a line's start is not one. */
+const captioned = (line: string, n: string): boolean => new RegExp(`^[A-Za-z]{3,}\\.?\\s+${escapeRe(n)}\\s*[.:—–-]`).test(line.trim());
+
 /** Candidates ranked: closest page to `from` wins, then the earlier line. */
 function nearest(hits: Target[], from: number): Target | null {
   let best: Target | null = null;
@@ -91,7 +94,7 @@ export function jumpTarget(pages: string[][], ref: Ref, from: number): Target | 
         return !!m && stemShared(m[1]!, ref.type) >= 3 && l.length > m[0].length;
       });
       // a caption with a period or colon after the number outranks a bare mention
-      const strong = hits.filter((h) => new RegExp(`^[A-Za-z]{3,}\\.?\\s+${num}\\s*[.:—–-]`).test(pages[h.page - 1]![h.line]!.trim()));
+      const strong = hits.filter((h) => captioned(pages[h.page - 1]![h.line]!, ref.n));
       return nearest(strong.length ? strong : hits, from);
     }
     case 'cite': {
@@ -113,4 +116,55 @@ export function jumpTarget(pages: string[][], ref: Ref, from: number): Target | 
       return nearest(hits, from);
     }
   }
+}
+
+/**
+ * `jumpTarget` without reading the whole document first: `read` gives a
+ * page's lines when asked, and no more pages are asked for than the answer
+ * needs. An equation or a caption is looked for outward from `from`, a page
+ * each side at a time, and the first found is the nearest, which is the one
+ * `jumpTarget` picks (a figure's bare mention does not stop the walk: a
+ * caption proper further off outranks it). A citation or an author is
+ * looked for from the last page back to the references' heading. Only when
+ * that finds nothing is the rest read, and the answer is `jumpTarget`'s over
+ * every page. `live` turning false stops the reading; the answer is null.
+ */
+export async function seekTarget(
+  count: number,
+  read: (page: number) => Promise<string[]>,
+  ref: Ref,
+  from: number,
+  live: () => boolean = () => true,
+): Promise<Target | null> {
+  const pages: string[][] = Array.from({ length: count }, () => []);
+  const have = new Set<number>();
+  const load = async (p: number) => {
+    if (p < 1 || p > count || have.has(p)) return;
+    have.add(p);
+    pages[p - 1] = await read(p);
+  };
+  if (ref.kind === 'cite' || ref.kind === 'author') {
+    for (let p = count; p >= 1; p--) {
+      await load(p);
+      if (!live()) return null;
+      if (!pages[p - 1]!.some((l) => HEADING.test(l))) continue;
+      const hit = jumpTarget(pages, ref, from);
+      if (hit) return hit;
+      break;
+    }
+  } else {
+    const n = ref.n;
+    for (let d = 0; from - d >= 1 || from + d <= count; d++) {
+      await load(from - d);
+      await load(from + d);
+      if (!live()) return null;
+      const hit = jumpTarget(pages, ref, from);
+      if (hit && (ref.kind === 'equation' || captioned(pages[hit.page - 1]![hit.line]!, n))) return hit;
+    }
+  }
+  for (let p = 1; p <= count; p++) {
+    await load(p);
+    if (!live()) return null;
+  }
+  return jumpTarget(pages, ref, from);
 }

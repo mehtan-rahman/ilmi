@@ -14301,3 +14301,104 @@ export async function smokeSioyek(vault: Vault): Promise<void> {
     log(`failed: ${e instanceof Error ? e.message : String(e)}`);
   }
 }
+
+// `ILMI_SMOKE=collections` (`smokeCollections`) over a copy of
+// `samples/double-major` (milestone 75): from the welcome, a scratch
+// collection made, renamed from its row's menu (a taken name and a bad one
+// refused where they are typed; the folder moved), asked about on ⌘⌫ with
+// the focus on `keep` and kept on esc, then deleted; the collection that
+// was open cannot be renamed while a window holds it. Only collections this
+// run makes are renamed or deleted. Every step asserts.
+export async function smokeCollections(vault: Vault): Promise<void> {
+  const log = (s: string) => void info(`smoke collections: ${s}`);
+  const shot = async (name: string, ms = 1500) => { await sleep(500); log(`shot: ${name}`); await sleep(ms); };
+  const q = <T extends Element>(sel: string, root: ParentNode = document) => root.querySelector<T>(sel);
+  const qa = <T extends Element>(sel: string, root: ParentNode = document) => Array.from(root.querySelectorAll<T>(sel));
+  const must = (ok: unknown, what: string) => { if (!ok) throw new Error(what); log(`ok: ${what}`); };
+  const poll = async <T,>(probe: () => T | null | undefined | false | Promise<T | null | undefined | false>, what: string, ms = 8000): Promise<T> => {
+    const t0 = Date.now();
+    for (;;) {
+      const v = await probe();
+      if (v) { log(`ok: ${what}`); return v; }
+      if (Date.now() - t0 > ms) throw new Error(`${what} (waited ${ms} ms)`);
+      await sleep(100);
+    }
+  };
+  const { listCollections } = await import('../vault/tauri-store.js');
+  const { closeVault } = await import('./vault.js');
+  const names = async () => (await listCollections()).names;
+  const rowOf = (name: string) => qa<HTMLElement>('.welcome-row').find((r) => r.querySelector('.pt')?.textContent === name);
+  const setValue = (el: HTMLInputElement, v: string) => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(el, v); el.dispatchEvent(new Event('input', { bubbles: true })); };
+  const stamp = new Date().toISOString().slice(11, 19).replace(/:/g, '');
+  const A = `sweep-scratch-${stamp}`;
+  const B = `sweep-renamed-${stamp}`;
+  const mine = vault.root.split('/').pop()!;
+  try {
+    useApp.getState().setTheme('light');
+    must(!A.includes(mine) && !B.includes(mine), `the names this run makes (${A}, ${B}) are not the open collection's (${mine})`);
+    closeVault();
+    await poll(() => q('.welcome') && rowOf(mine), 'closed: the welcome lists the collection that was open');
+    // a scratch collection, named on the welcome
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', bubbles: true, cancelable: true }));
+    const field = await poll(() => q<HTMLInputElement>('.welcome-name input'), 'n names a new collection');
+    setValue(field, A);
+    field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    await poll(() => (useApp.getState().vault ?? '').endsWith(`/${A}`) && useApp.getState().files.length > 0, 'it is made and opens', 20000);
+    await sleep(600);
+    closeVault();
+    const row = await poll(() => q('.welcome') && rowOf(A), 'closed again: its row is on the welcome', 10000);
+    await sleep(500);
+    must((await names()).includes(A), 'and it is among the collections on the disk');
+
+    // ── rename, from the row's menu ──
+    row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: row.getBoundingClientRect().left + 40, clientY: row.getBoundingClientRect().top + 10 }));
+    const menu = await poll(() => q<HTMLElement>('.ctx-menu'), 'a right-click on the row opens its menu');
+    log(`the row's menu: ${qa<HTMLElement>('[data-act]', menu).map((e) => e.dataset.act).join(' ')}`);
+    must(q('[data-act="rename"]', menu) && q('[data-act="delete"]', menu), 'rename… and delete…');
+    await shot('collections-menu');
+    q<HTMLElement>('[data-act="rename"]', menu)!.click();
+    const rn = await poll(() => q<HTMLInputElement>('.welcome-row .welcome-rename'), 'rename… makes the name a field');
+    must(rn.value === A, 'holding the name');
+    setValue(rn, mine);
+    rn.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    await poll(() => /already there/.test(q('.welcome')?.textContent ?? '') && q('.welcome-row .welcome-rename'), `a name that is taken is refused where it was typed (${mine})`);
+    must((await names()).includes(A), 'nothing was renamed');
+    const rn2 = q<HTMLInputElement>('.welcome-row .welcome-rename')!;
+    setValue(rn2, 'a/b');
+    rn2.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    await poll(() => /not a name/.test(q('.welcome')?.textContent ?? ''), 'and one that is not a name');
+    const rn3 = q<HTMLInputElement>('.welcome-row .welcome-rename')!;
+    setValue(rn3, B);
+    rn3.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    await poll(async () => { const n = await names(); return n.includes(B) && !n.includes(A); }, 'a free name: the collection\'s folder is moved', 10000);
+    const rowB = await poll(() => !rowOf(A) && rowOf(B), 'the row reads the new name');
+    must(useApp.getState().recents.some((r) => r.name === B) && !useApp.getState().recents.some((r) => r.name === A), 'the recents follow it');
+    await shot('collections-renamed');
+
+    // ── delete asks, on the row ──
+    void rowB;
+    const pressDelete = () => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', metaKey: true, bubbles: true, cancelable: true }));
+    // the row selected by the keys (a press on it would open it): the welcome's list walks by ↓ ↑
+    for (const k of ['ArrowUp', 'ArrowDown']) for (let i = 0; i < 12 && rowOf(B)?.dataset.sel !== '1'; i++) { window.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true })); await sleep(80); }
+    must(rowOf(B)?.dataset.sel === '1', 'the renamed collection\'s row is the one selected');
+    pressDelete();
+    const ask = await poll(() => q<HTMLElement>('.welcome-row[data-ask="1"] .welcome-ask, .welcome-ask'), '⌘⌫ asks on the row');
+    log(`the ask: ${ask.textContent}`);
+    must(ask.textContent?.includes(B) && /cannot be undone/.test(ask.textContent ?? ''), 'naming the collection, and that it cannot be undone');
+    must(document.activeElement?.classList.contains('welcome-keep'), 'the focus is on keep');
+    await shot('collections-ask');
+    document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    await poll(() => !q('.welcome-ask'), 'esc keeps it');
+    must((await names()).includes(B), 'it is still there');
+    pressDelete();
+    const del = await poll(() => q<HTMLElement>('.welcome-del'), 'asked again');
+    del.click();
+    await poll(async () => !(await names()).includes(B), 'delete: the collection is gone from the disk', 10000);
+    await poll(() => !rowOf(B) && !useApp.getState().recents.some((r) => r.name === B), 'its row and its place among the recents too');
+    must((await names()).includes(mine) && rowOf(mine), 'the collection that was open is untouched');
+    await shot('collections-after');
+    log(`done; vault ${vault.root}`);
+  } catch (e) {
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}

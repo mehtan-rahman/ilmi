@@ -131,6 +131,8 @@ export const ZOOMS = [1, 1.25, 1.5, 2, 2.5, 3];
 const CANVAS_MAX = 16_000_000;
 /** Zoomed, a page this far outside the view gives its canvas back, px. */
 const FAR = AHEAD * 3;
+/** How far two fingers spread (or, inverted, close) before the zoom steps. */
+const PINCH_OUT = 1.25;
 /** A pinch's wheel events closer together than this are one gesture, ms. */
 const PINCH_GAP = 260;
 /** How far back from a passage the lens reads pages for a heading to name it. */
@@ -803,16 +805,33 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     const sc = scroller();
     if (!sc) return;
     let last = -Infinity;
+    /** When the zoom last stepped for a pinch: a web view that says one pinch both ways (a wheel and a gesture) steps once. */
+    let steppedAt = -Infinity;
     const onWheel = (e: WheelEvent) => {
       if (!e.ctrlKey) return;
       e.preventDefault();
       const fresh = e.timeStamp - last > PINCH_GAP;
       // a gesture's first event that says which way is the step; the rest of it only keeps the gesture alive
       if (!fresh || e.deltaY !== 0) last = e.timeStamp;
-      if (fresh && e.deltaY !== 0) zoomBy(e.deltaY < 0 ? 1 : -1);
+      if (fresh && e.deltaY !== 0 && e.timeStamp - steppedAt > PINCH_GAP) { steppedAt = e.timeStamp; zoomBy(e.deltaY < 0 ? 1 : -1); }
     };
     sc.addEventListener('wheel', onWheel, { passive: false });
-    return () => sc.removeEventListener('wheel', onWheel);
+    // two fingers on the glass (an iPad, a phone): WebKit's own gesture events say how far they have spread; a pinch
+    // steps the zoom once, as the trackpad's does, and the page is not the system's to magnify
+    let stepped = false;
+    const scaleOf = (e: Event): number => (e as Event & { scale?: number }).scale ?? 1;
+    const onGesture = (e: Event) => {
+      e.preventDefault();
+      if (e.type === 'gesturestart') { stepped = false; return; }
+      if (stepped) return;
+      const k = scaleOf(e);
+      if (k > PINCH_OUT || k < 1 / PINCH_OUT) { stepped = true; if (e.timeStamp - steppedAt > PINCH_GAP) { steppedAt = e.timeStamp; zoomBy(k > 1 ? 1 : -1); } }
+    };
+    for (const name of ['gesturestart', 'gesturechange', 'gestureend']) sc.addEventListener(name, onGesture, { passive: false });
+    return () => {
+      sc.removeEventListener('wheel', onWheel);
+      for (const name of ['gesturestart', 'gesturechange', 'gestureend']) sc.removeEventListener(name, onGesture);
+    };
   }, [status, zoomBy]);
 
   const scrollTo = (n: number) => {

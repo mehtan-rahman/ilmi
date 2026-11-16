@@ -6454,6 +6454,51 @@ export async function smokeNumbers(vault: Vault): Promise<void> {
       click(layer('cards')!);
       await poll(() => q('[data-sec="past"] .nb-sum')?.textContent === cardsSum, 'the cards\' lines are as they were: reading is not counted among reviews');
     }
+    // ── a log of 780,000 reviews (years of a large collection): the numbers still draw at once ──
+    {
+      const real = useApp.getState().reviews;
+      const seen = real.slice(0, 4000);
+      must(seen.length > 0, 'reviews to multiply');
+      const big: typeof real = [];
+      const day = 86_400_000;
+      const end = Date.now();
+      const N = 780_000;
+      for (let k = 0; k < N; k++) {
+        const from = seen[k % seen.length]!;
+        // spread over three years, some days busier than others
+        const at = new Date(end - Math.floor(((k * 7919) % (1095 * 24)) * (day / 24)) - (k % 3600) * 1000).toISOString().slice(0, 19) + 'Z';
+        big.push({ ...from, at, card: `${from.card}-${k % 115_000}`, g: ((k % 11 === 0 ? 1 : k % 5 === 0 ? 2 : k % 13 === 0 ? 4 : 3) as 1 | 2 | 3 | 4) });
+      }
+      const { openCollectionNumbers } = await import('./NumbersLens.js');
+      openNode(useApp.getState().files[0]!);
+      await sleep(500);
+      // the log is kept in the order it was written
+      big.sort((x, y) => (x.at < y.at ? -1 : x.at > y.at ? 1 : 0));
+      log(`780,000 lines made`);
+      await sleep(50);
+      const ts = performance.now();
+      useApp.setState({ reviews: big });
+      log(`the store took them in ${Math.round(performance.now() - ts)} ms`);
+      await sleep(50);
+      const t0 = performance.now();
+      openCollectionNumbers();
+      log(`the numbers asked for (${Math.round(performance.now() - t0)} ms)`);
+      await poll(() => /\d{3},\d{3} reviews/.test(q('[data-sec="past"] .nb-sum')?.textContent ?? '') && qa('button.nb-cell').length >= 365, 'the collection\'s numbers over 780,000 reviews', 60000);
+      const ms = Math.round(performance.now() - t0);
+      log(`780,000 reviews: the numbers drawn in ${ms} ms; ${q('[data-sec="past"] .nb-sum')?.textContent?.slice(0, 140)}`);
+      must(ms < 5000, `in under five seconds (${ms} ms)`);
+      const busy = qa<HTMLElement>('button.nb-cell').find((c) => Number(c.dataset.n) > 100);
+      must(busy, 'a busy day to press');
+      const t1 = performance.now();
+      busy!.click();
+      await poll(() => q('.nb-day'), 'a day pressed lists its reviews', 20000);
+      const ms2 = Math.round(performance.now() - t1);
+      log(`a day of ${busy!.dataset.n} reviews listed in ${ms2} ms, ${qa('.nb-day [data-card], .nb-day li, .nb-day tr').length} rows in the page`);
+      must(ms2 < 3000, `in under three seconds (${ms2} ms)`);
+      await shot('numbers-780k');
+      useApp.setState({ reviews: real });
+      await sleep(400);
+    }
     log(`done; vault ${vault.root}`);
   } catch (e) {
     log(`failed: ${e instanceof Error ? e.message : String(e)}`);
@@ -14777,6 +14822,26 @@ export async function smokeSioyek(vault: Vault): Promise<void> {
     const kinds = Object.values(await marksFile()).map((m) => m.kind).sort().join(' ');
     must(kinds === 'bookmark highlight mark portal', `the file holds them (${kinds})`);
     (document.activeElement as HTMLElement | null)?.blur?.();
+
+    // ── a pinch steps the zoom: a trackpad's (a wheel with ctrl) and two fingers' (the web view's gesture events) ──
+    {
+      const scNow = (() => { let e: HTMLElement | null = q<HTMLElement>('.pdf-page'); while (e && !(e.scrollHeight > e.clientHeight + 50 && /auto|scroll/.test(getComputedStyle(e).overflowY))) e = e.parentElement; return e!; })();
+      const zoomIs = (z: string) => (view().dataset.zoom ?? '1') === z;
+      scNow.dispatchEvent(new WheelEvent('wheel', { bubbles: true, cancelable: true, ctrlKey: true, deltaY: -4 }));
+      scNow.dispatchEvent(new WheelEvent('wheel', { bubbles: true, cancelable: true, ctrlKey: true, deltaY: -9 }));
+      await poll(() => zoomIs('1.25'), 'a trackpad\'s pinch out steps in once, however many events it sends');
+      await sleep(700);
+      const gesture = (name: string, scale: number) => { const e = new Event(name, { bubbles: true, cancelable: true }); Object.defineProperty(e, 'scale', { value: scale }); scNow.dispatchEvent(e); };
+      gesture('gesturestart', 1); gesture('gesturechange', 1.1); gesture('gesturechange', 1.4); gesture('gesturechange', 1.9); gesture('gestureend', 1.9);
+      await poll(() => zoomIs('1.5'), 'two fingers spread step in once');
+      await sleep(700);
+      gesture('gesturestart', 1); gesture('gesturechange', 0.9); gesture('gesturechange', 0.6); gesture('gestureend', 0.5);
+      await poll(() => zoomIs('1.25'), 'two fingers closed step out once');
+      await sleep(700);
+      gesture('gesturestart', 1); gesture('gesturechange', 0.5); gesture('gestureend', 0.5);
+      await poll(() => zoomIs('1'), 'and again, back to fit');
+      await sleep(700);
+    }
 
     // ── its zoom is there after the collection is closed and opened again ──
     {

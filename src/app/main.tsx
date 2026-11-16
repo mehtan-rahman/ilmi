@@ -12,6 +12,7 @@ import './fonts.css';
 import './tokens.css';
 import { App } from './App.js';
 import { exposeConsole } from './store.js';
+import { installComposing } from './compose.js';
 
 exposeConsole();
 
@@ -24,6 +25,8 @@ if (import.meta.env.DEV) {
 }
 
 // a promise nobody caught is still something that did not happen: say so, in a release build too
+// a word being composed (an input method, a dead key): its keys never reach the app's handlers
+installComposing();
 window.addEventListener('unhandledrejection', (e) => {
   const why = e.reason instanceof Error ? e.reason.message : String(e.reason);
   console.error(e.reason);

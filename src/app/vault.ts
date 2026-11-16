@@ -437,7 +437,8 @@ export function unlogReading(doc: string, sec?: string): void {
   if (!r) return;
   loggedHere.splice(i, 1);
   tookBack.add(spot(r));
-  readings = readings.filter((x) => x !== r);
+  // by the line it is, not the object: a sync that read the log again made new ones
+  readings = readings.filter((x) => !(x.read === r.read && spot(x) === spot(r)));
   logLines += 1;
   useApp.setState({ readings });
   void vault.appendReadings([{ at: instant(appNow()), doc, read: 'undo', ...(r.sec === undefined ? {} : { sec: r.sec }), of: r.at }]).catch((e: unknown) => console.error('reading', e));

@@ -1415,6 +1415,26 @@ export async function smokeAnki(vault: Vault): Promise<void> {
     await sleep(300);
     log(`dropped ${apkg.slice(apkg.lastIndexOf('/') + 1)}: h1 "${q('.intake h1')?.textContent}"; decks ${qa('.deck-list .deck-row').map((r) => `${r.querySelector('.dname')?.textContent} (${r.querySelector('.dcount')?.textContent})`).join(' | ')}; count "${q('.intake-detail .stats')?.textContent}"; title field ${q('.intake .field input') ? 'shown' : 'none'}; textarea ${q('.intake textarea') ? 'shown' : 'none'}`);
     await shot('anki-intake');
+    // each deck is a toggle (milestone 73's leftovers): one off is left out of the count, none on and nothing can be placed
+    {
+      const want = (ok: unknown, what: string) => { if (!ok) throw new Error(what); log(`ok: ${what}`); };
+      const picks = () => qa('.deck-list button.deck-pick') as HTMLButtonElement[];
+      const sci = () => picks().find((b) => /Science/.test(b.textContent ?? ''))!;
+      const ger = () => picks().find((b) => /German/.test(b.textContent ?? ''))!;
+      want(picks().length === 2 && picks().every((b) => b.getAttribute('aria-pressed') === 'true'), 'two decks, both on to start');
+      sci().click();
+      await sleep(250);
+      want(sci().getAttribute('aria-pressed') === 'false' && /2 cards in 1 of 2 decks/.test(q('.intake')?.textContent ?? ''), 'Science pressed off: 2 cards in 1 of 2 decks');
+      ger().focus();
+      ger().dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true }));
+      ger().click();
+      await sleep(250);
+      want(ger().getAttribute('aria-pressed') === 'false' && q<HTMLButtonElement>('.intake .place.primary')!.disabled, 'both off: place is disabled');
+      await shot('anki-none');
+      ger().click(); sci().click();
+      await sleep(250);
+      want(picks().every((b) => b.getAttribute('aria-pressed') === 'true') && !q<HTMLButtonElement>('.intake .place.primary')!.disabled && /4 cards in 2 decks/.test(q('.intake')?.textContent ?? ''), 'both on again: 4 cards in 2 decks, place enabled');
+    }
     q<HTMLButtonElement>('.intake .place.primary')!.click();
     const german = await until(() => vault.documents().find((d) => d.startsWith('Languages/German')), 10000);
     const science = await until(() => vault.documents().find((d) => d.startsWith('Science')), 10000);
@@ -9085,6 +9105,32 @@ async function syncSteps(name: string, args: Record<string, unknown>): Promise<u
     }
     case 'documents':
       return vault().documents().length;
+    // milestones 75 and 77: what was read, and what is left on a book's pages, as this window has them
+    case 'read': {
+      const v = await import('./vault.js');
+      if (args.undo) v.unlogReading(str('doc')); else v.logReading(str('doc'), 'pass');
+      await sleep(300);
+      return useApp.getState().readings.length;
+    }
+    case 'readings':
+      return useApp.getState().readings.map((r) => `${r.read} ${r.doc}`);
+    case 'mark': {
+      const bk = await import('./book.js');
+      const hash = bk.pdfHashOf(str('book'));
+      if (!hash) throw new Error(`${str('book')}: no pages`);
+      await bk.setMark(hash, str('id'), args.name === undefined ? null : { kind: 'bookmark', name: str('name'), page: Number(args.page ?? 1), y: 0.25, at: Date.now() });
+      await sleep(300);
+      return hash;
+    }
+    case 'marks': {
+      const bk = await import('./book.js');
+      const hash = bk.pdfHashOf(str('book'));
+      if (!hash) throw new Error(`${str('book')}: no pages`);
+      let onDisk: string[] = [];
+      try { onDisk = Object.keys(JSON.parse(await vault().fs.readText(vault().abs(`.ilmi/marks/${hash}.json`))) as object).sort(); } catch { /* none yet */ }
+      // held: what an open book of this window would draw
+      return { file: onDisk, held: Object.keys(bk.marksOf(hash)).sort() };
+    }
     case 'reviews':
       return (await vault().loadReviews()).length;
     case 'state':
@@ -9605,6 +9651,42 @@ export async function smokeCrdt(vault: Vault): Promise<void> {
     must((await a<string>('text', { path: `${FLEETING}/made on the other device.md` })).includes('A line written where it was made.'), 'with its text');
     must(vault.documents().length === before62 + 4 && (await b<number>('documents')) === docsB + 1, 'one more document in each');
     await sameTree('at the end');
+
+    // ── what was read on each is counted on both; a reading taken back on one is not counted on the other ──
+    {
+      const ra = await a<number>('read', { doc: MERCHANT });
+      const rb = await b<number>('read', { doc: QASIDA });
+      log(`readings: a ${ra}, b ${rb}`);
+      await round();
+      await poll(async () => (await a<string[]>('readings')).includes(`pass ${QASIDA}`), 'a has the pass b made', 10000);
+      await poll(async () => (await b<string[]>('readings')).includes(`pass ${MERCHANT}`), 'b has the pass a made', 10000);
+      await a('read', { doc: MERCHANT, undo: true });
+      must(!(await a<string[]>('readings')).includes(`pass ${MERCHANT}`), 'taken back on a');
+      await round();
+      await poll(async () => !(await b<string[]>('readings')).includes(`pass ${MERCHANT}`), 'and after a sync b does not count it either', 10000);
+      must((await a<string[]>('readings')).includes(`pass ${QASIDA}`) && (await b<string[]>('readings')).includes(`pass ${QASIDA}`), 'b\'s own pass stands on both');
+    }
+
+    // ── a bookmark left on a book's page in each is on both; one removed is gone from both ──
+    {
+      const BOOK = 'library/lindqvist-statistical-physics/ch-3-the-canonical-ensemble.md';
+      type Marks = { file: string[]; held: string[] };
+      const ha = await a<string>('mark', { book: BOOK, id: 'b-smokeaaaaaaa', name: 'left by a', page: 23 });
+      const hb = await b<string>('mark', { book: BOOK, id: 'b-smokebbbbbbb', name: 'left by b', page: 24 });
+      must(ha === hb && /^[0-9a-f]{64}$/.test(ha), 'the book is the same file on both, by its hash');
+      await round();
+      const both = ['b-smokeaaaaaaa', 'b-smokebbbbbbb'];
+      await poll(async () => (await a<Marks>('marks', { book: BOOK })).file.join() === both.join(), 'a\'s file holds both bookmarks', 10000);
+      await poll(async () => (await b<Marks>('marks', { book: BOOK })).file.join() === both.join(), 'b\'s file holds both', 10000);
+      await poll(async () => (await a<Marks>('marks', { book: BOOK })).held.join() === both.join() && (await b<Marks>('marks', { book: BOOK })).held.join() === both.join(), 'and each window holds both as an open book would draw them', 10000);
+      await b('mark', { book: BOOK, id: 'b-smokeaaaaaaa' });
+      await round();
+      await poll(async () => (await a<Marks>('marks', { book: BOOK })).file.join() === 'b-smokebbbbbbb' && (await a<Marks>('marks', { book: BOOK })).held.join() === 'b-smokebbbbbbb', 'removed on b, it is gone from a', 10000);
+      must((await b<Marks>('marks', { book: BOOK })).file.join() === 'b-smokebbbbbbb', 'and b keeps its own');
+      openNode(BOOK);
+      await poll(() => q<HTMLElement>('.pdf-view')?.dataset.bookmarks === '1' && q('.bmark'), 'the book opened on a shows b\'s bookmark in its gutter', 45000);
+      await shot('crdt-marks');
+    }
 
     // ── nothing more to say ──
     const quiet = await round();

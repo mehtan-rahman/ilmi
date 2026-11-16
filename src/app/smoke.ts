@@ -14797,6 +14797,56 @@ export async function smokeSioyek(vault: Vault): Promise<void> {
       await sleep(500);
     }
 
+    // ── a page turned a quarter (a landscape table in a portrait book): what is read from its text lies where the page shows it ──
+    {
+      await importPdfNode('library', { title: 'turned', bytes: new Uint8Array(await invoke<ArrayBuffer>('read_dropped_bytes', { path: `${books}/turned.pdf` })), text: '' });
+      const T = 'library/turned.pdf';
+      await poll(() => useApp.getState().docs[T], 'a paper with a turned page is in the collection', 30000);
+      openNode(T);
+      await poll(() => activeTab(useApp.getState().panes)?.id === T && q('.pdf-page[data-page="1"] .textLayer span'), 'it opens', 30000);
+      await sleep(800);
+      const p2 = await poll(() => q<HTMLElement>('.pdf-page[data-page="2"]'), 'its second page');
+      p2.scrollIntoView({ block: 'start' });
+      await poll(() => rectOf(2, 'fluctuation'), 'the turned page is drawn with its text', 30000);
+      await sleep(600);
+      const pr = p2.getBoundingClientRect();
+      const word = rectOf(2, 'fluctuation')!;
+      must(q('.textLayer', p2)?.getAttribute('data-main-rotation') === '90' && word.width > word.height * 2, `the page is turned, and its words read level (${Math.round(word.width)} × ${Math.round(word.height)})`);
+      must(word.left >= pr.left && word.right <= pr.right && word.top >= pr.top && word.bottom <= pr.bottom, 'its words are on it');
+      // its link lies on the address it is the link of
+      const addr = rectOf(2, 'wikipedia');
+      const lk = qa<HTMLElement>('.pdf-page[data-page="2"] .plink, .pdf-links .plink').map((e) => e.getBoundingClientRect()).find((r) => addr && r.left <= addr.left + 4 && r.right >= addr.right - 4 && r.top <= addr.top + 6 && r.bottom >= addr.bottom - 6);
+      log(`turned: address ${addr ? `${Math.round(addr.left)},${Math.round(addr.top)}` : 'none'}; links ${qa<HTMLElement>('.plink').map((e) => { const r = e.getBoundingClientRect(); return `${Math.round(r.left)},${Math.round(r.top)} ${Math.round(r.width)}×${Math.round(r.height)}`; }).join(' | ')}`);
+      must(addr && lk, 'the page\'s link lies on its address');
+      // the ruler holds a line of it
+      (document.activeElement as HTMLElement | null)?.blur?.();
+      key('v');
+      const rule2 = await poll(() => q<HTMLElement>('.pdf-rule'), 'v holds a line of the turned page');
+      const rr = rule2.getBoundingClientRect();
+      const spans = qa<HTMLElement>('.pdf-page .textLayer span').map((e) => e.getBoundingClientRect()).filter((r) => r.width > 20);
+      const on = spans.filter((r) => { const cy = r.top + r.height / 2; return cy > rr.top && cy < rr.bottom && r.left >= rr.left - 4 && r.right <= rr.right + 4; });
+      log(`turned: rule ${Math.round(rr.left)},${Math.round(rr.top)} ${Math.round(rr.width)}×${Math.round(rr.height)}; ${on.length} runs of text on it`);
+      must(on.length > 0 && rr.height < 60, 'the rule lies on a line of text, a line high');
+      await shot('sioyek-turned');
+      key('Escape');
+      await poll(() => !q('.pdf-rule'), 'esc lets it go');
+      // a reference on it is lettered where it is shown
+      {
+        const ref = rectOf(2, '(2)');
+        must(ref, 'a reference on the turned page');
+        key('f');
+        await poll(() => q('.phint'), 'f letters what can be followed on the turned page');
+        const near = qa<HTMLElement>('.phint').map((e) => e.getBoundingClientRect()).filter((r) => Math.abs(r.left - ref!.left) < 40 && Math.abs(r.top - ref!.top) < 40);
+        log(`turned: reference at ${Math.round(ref!.left)},${Math.round(ref!.top)}; letters ${qa<HTMLElement>('.phint').map((e) => { const r = e.getBoundingClientRect(); return `${Math.round(r.left)},${Math.round(r.top)}`; }).join(' ')}`);
+        must(near.length > 0, 'the reference has its letters beside it');
+        key('Escape');
+        await poll(() => !q('.phint'), 'esc lets them go');
+      }
+      openNode(BOOK);
+      await poll(() => activeTab(useApp.getState().panes)?.id === BOOK && q('.pdf-page .textLayer span'), 'back on the paper', 30000);
+      await sleep(600);
+    }
+
     // ── dark ──
     useApp.getState().setTheme('dark');
     key('f');

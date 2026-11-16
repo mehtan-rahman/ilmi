@@ -4,7 +4,7 @@
 
 import * as pdfjs from 'pdfjs-dist';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
-import { chapterRanges, documentText, outlineEntries, pageText, type OutlinePdf, type TextBit } from '../pdf/index.js';
+import { chapterRanges, documentText, outlineEntries, pageText, uprightItems, type OutlinePdf, type TextBit } from '../pdf/index.js';
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
 
@@ -37,8 +37,10 @@ export function loadPdf(bytes: Uint8Array): pdfjs.PDFDocumentLoadingTask {
 /** A page's text items as the pure side reads them. */
 export async function pageBits(page: pdfjs.PDFPageProxy): Promise<TextBit[]> {
   const content = await page.getTextContent();
+  const v = page.getViewport({ scale: 1 });
   const out: TextBit[] = [];
-  for (const it of content.items) {
+  // a turned page's items where the page shows them (`uprightItems`)
+  for (const it of uprightItems(content.items, v.transform, v.height)) {
     if (!('str' in it)) continue;
     out.push({ str: it.str, eol: it.hasEOL, y: it.transform[5] ?? 0, height: it.height });
   }

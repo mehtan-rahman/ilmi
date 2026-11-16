@@ -80,7 +80,7 @@ import { boxesEnd, formatClip, meta, sectionDismissed, setField, type Box, type 
 import {
   actionPage, bandNear, bookmarksOf, boxAround, contentsHere, contentsWithin, countIn, downPage, findAll, findText, flatOutline, flipRect, headingAbove, highlightAt, highlightHolding, highlightOf,
   highlightsOf, hintLabels, hintStep, isCollectionMark, letterId, lineBands, lineQuads, linesOf, linkAt, lookupUrl, newMarkId, pageLinks, placeOf, portalAbove, portalsOf,
-  pushPlace, quadBoxes, refOf, referenceTokens, resolveDest, sectionName, seekTarget, stepBack, stepForward, stepLine, textBoxes, tokenAt,
+  pushPlace, quadBoxes, refOf, referenceTokens, resolveDest, sectionName, seekTarget, stepBack, stepForward, stepLine, textBoxes, tokenAt, uprightItems,
   type ContentsEntry, type ContentsPdf, type Found, type LineBand, type PageItem, type PageLink, type Place, type RefToken,
 } from '../pdf/index.js';
 import { pickPos, type Band } from '../reader/index.js';
@@ -1356,6 +1356,8 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
   };
   /** A page's height in PDF units: one of the book's own from its size, another of the file's (a chapter's link out of it) from the file. */
   const heightOf = async (n: number): Promise<number> => sizes[n - base - 1]?.h ?? (pdf ? (await pdf.getPage(n)).getViewport({ scale: 1 }).height : 0);
+  /** The height a destination's `top` is measured against: a turned page's is not its height as shown, so a destination there is the page's top (0 says so to `downPage`). */
+  const destHeight = async (n: number): Promise<number> => (pdf && ((await pdf.getPage(n)).rotate % 360 !== 0) ? 0 : heightOf(n));
   /** Where the reference `text`, read on `page`, points: its line, and the place a jump to it goes. Null when it names nothing found, or a later question took its place. */
   const seekRef = async (text: string, page: number): Promise<{ page: number; y: number; height: number; text: string; at: { page: number; y: number } } | null> => {
     const ref = refOf(text);
@@ -1426,7 +1428,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
       t = (async () => {
         const pg = await pdf.getPage(n);
         const v = pg.getViewport({ scale: 1 });
-        return referenceTokens(textBoxes((await pg.getTextContent()).items, v.width, v.height));
+        return referenceTokens(textBoxes(uprightItems((await pg.getTextContent()).items, v.transform, v.height), v.width, v.height));
       })().catch((): RefToken[] => []);
       tokens.current.set(n, t);
     }
@@ -1440,7 +1442,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
       return p === null ? null : { page: p, y: 0 };
     }
     const d = await resolveDest(pdf as unknown as ContentsPdf, l.dest);
-    return d && { page: d.page, y: d.top === null ? 0 : downPage(d.top, await heightOf(d.page)) };
+    return d && { page: d.page, y: d.top === null ? 0 : downPage(d.top, await destHeight(d.page)) };
   };
   /** A link followed: a web one in the system's browser, an inside one a jump with the way back. */
   const followLink = async (l: PageLink, from: number) => {
@@ -1584,7 +1586,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     async contents() {
       const at = here();
       if (pdf) {
-        outline.current ??= flatOutline(pdf as unknown as ContentsPdf, heightOf).catch((): ContentsEntry[] => []);
+        outline.current ??= flatOutline(pdf as unknown as ContentsPdf, destHeight).catch((): ContentsEntry[] => []);
         // a chapter cut from a book lists what lies in its own pages
         const entries = contentsWithin(await outline.current, first, last);
         if (entries.length) return { entries, here: contentsHere(entries, at.page, at.y), from: 'outline' };

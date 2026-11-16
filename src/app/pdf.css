@@ -45,6 +45,10 @@
   --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
   --min-font-size-inv: calc(1 / var(--min-font-size));
 }
+/* a page the PDF turns (/Rotate): pdf.js lays the layer out unturned and names the turn, the turning is the style's */
+.textLayer[data-main-rotation="90"] { inset: 0 auto auto 0; transform: rotate(90deg) translateY(-100%); }
+.textLayer[data-main-rotation="180"] { inset: 0 auto auto 0; transform: rotate(180deg) translate(-100%, -100%); }
+.textLayer[data-main-rotation="270"] { inset: 0 auto auto 0; transform: rotate(270deg) translateX(-100%); }
 .textLayer :is(span, br) {
   color: transparent;
   position: absolute;

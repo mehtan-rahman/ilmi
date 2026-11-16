@@ -84,3 +84,24 @@ export function wordCount(text: string): number {
   const t = text.trim();
   return t ? t.split(/\s+/).length : 0;
 }
+
+/**
+ * pdf.js's text items as they would be on an upright page of the view's
+ * size: each item's transform taken through the page's own (`viewport.transform`
+ * at scale 1, which knows a turned page and a crop box that does not start
+ * at 0) and back through an upright page's. On a plain page nothing moves.
+ * What reads an item's place (`transform[4]`, `[5]`) then reads it where
+ * the page shows it.
+ */
+export function uprightItems<T>(items: readonly T[], view: readonly number[], height: number): T[] {
+  const [a, b, c, d, e, f] = view as [number, number, number, number, number, number];
+  if (a === 1 && b === 0 && c === 0 && d === -1 && e === 0 && f === height) return items as T[];
+  return items.map((it) => {
+    const tr = (it as { transform?: unknown }).transform;
+    if (!Array.isArray(tr) || tr.length < 6) return it;
+    const [p, q, r, s, x, y] = tr as number[] as [number, number, number, number, number, number];
+    // the view's matrix times the item's, then an upright page's flip (y from the foot)
+    const m = [a * p + c * q, b * p + d * q, a * r + c * s, b * r + d * s, a * x + c * y + e, b * x + d * y + f];
+    return { ...it, transform: [m[0]!, -m[1]!, m[2]!, -m[3]!, m[4]!, height - m[5]!] };
+  });
+}

@@ -5,7 +5,7 @@
 // it twice. Crops are drawn from a page rendered at the crop's own scale.
 
 import { parseBox, type Box } from '../format/index.js';
-import { pageItems, type PageItem } from '../pdf/index.js';
+import { pageItems, uprightItems, type PageItem } from '../pdf/index.js';
 import type { StoreFs } from '../vault/index.js';
 import { loadPdf, loadPdfPieces, type PDFDocumentProxy } from './pdfjs.js';
 import { currentVault } from './vault.js';
@@ -71,7 +71,7 @@ export function itemsOf(rel: string, pdf: PDFDocumentProxy, page: number): Promi
   const p = (async () => {
     const pg = await pdf.getPage(page);
     const v = pg.getViewport({ scale: 1 });
-    return pageItems((await pg.getTextContent()).items, v.width, v.height);
+    return pageItems(uprightItems((await pg.getTextContent()).items, v.transform, v.height), v.width, v.height);
   })();
   h?.items.set(page, p);
   return p;

@@ -8420,7 +8420,9 @@ export async function smokeBelow(vault: Vault): Promise<void> {
     }
     // a card in review, its answer up: a press on the answer's box edits the answer there
     {
-      const item = useApp.getState().queue.find((i) => i.kind === 'card' && i.path === 'arabic/vocabulary.md') ?? useApp.getState().queue.find((i) => i.kind === 'card');
+      // one already tested: a card never tested comes up answered, to learn, and space there is `got it`
+      const tested = (i: (typeof useApp extends { getState(): { queue: (infer Q)[] } } ? Q : never)) => i.kind === 'card' && !!i.sched?.reps;
+      const item = useApp.getState().queue.find((i) => tested(i) && i.path === 'arabic/vocabulary.md') ?? useApp.getState().queue.find(tested);
       if (!item) throw new Error('no card in the queue');
       openSession(item);
       await poll(() => q('.recall-wrap .card'), 'a card in review', 8000);
@@ -13528,8 +13530,18 @@ export async function smokeSweep(vault: Vault): Promise<void> {
     openNode(':session');
     await poll(() => q('.sess-count')?.textContent === '2 / 3', 'come back to, the session is where it was');
     must((await text(three[0]!.path)) === file1, 'the first card is not asked or graded again');
+    // s suspends the card in front without grading it, and can be undone
+    const file2 = await text(three[1]!.path);
+    const logged = (await import('./vault.js')).reviewLog().length;
+    key('s');
+    await poll(() => q('.sess-count')?.textContent === '3 / 3' && (q('.notice .nl')?.textContent ?? '').startsWith('suspended'), 's suspends the card and moves on, with a notice');
+    await poll(async () => /sus=1/.test(await text(three[1]!.path)) && (await text(three[1]!.path)) !== file2, 'its line says suspended');
+    must((await import('./vault.js')).reviewLog().length === logged, 'nothing is added to the review log');
+    await shot('sweep-suspended');
+    qa<HTMLButtonElement>('.notice button.na').find((b) => b.textContent === 'undo')!.click();
+    await poll(async () => (await text(three[1]!.path)) === file2, 'undo puts its file back as it was');
     key('o');
-    await poll(() => tab() === three[1]!.path, 'o opens the card\'s document');
+    await poll(() => tab() === three[2]!.path, 'o opens the card\'s document');
     must(tabs().includes(':session'), 'in a tab beside the session, which stays');
     await shot('sweep-session-source');
     useApp.setState({ session: null });

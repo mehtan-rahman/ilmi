@@ -72,7 +72,8 @@ in a new card    ⌘1 q&a, ⌘2 bidir, ⌘3 cloze (the same in every card
                  start another, esc cancel (in a deck, what was typed
                  comes back on the next m)
 in the card view [ ] the card before and the next, o the card in its
-                 document; in a face ⌘⏎ save, esc revert, ⌘1 ⌘2 ⌘3 the form
+                 document, s suspend the card or bring it back (undone from
+                 its notice); in a face ⌘⏎ save, esc revert, ⌘1 ⌘2 ⌘3 the form
 in a card's face Tab the other face (⇧Tab back); in a cell or a list it is the
                  editor's
 in the numbers   on a day: ↑ ↓ a day, ← → a week, ⏎ or space its reviews (or
@@ -82,8 +83,10 @@ in the queue     j k move (the row is brought into view), ⏎ enter (narrowed
                  path (`queue shows titles` in the tweaks brings the title back)
 in a session     [ ] prev / next; space reveal, 1-4 grade (a card graded,
                  come back to: graded again in its grade's place); a card no
-                 longer there: space or ] skip; o the card's source, in a tab
-                 of its own; ⏎ next (a book's: done for today; at its end:
+                 longer there: space or ] skip; s suspend the card (not
+                 graded, on to the next, undone from its notice; come back
+                 to, it says suspended, space is next and s brings it back);
+                 o the card's source, in a tab of its own; ⏎ next (a book's: done for today; at its end:
                  dismiss), p later, d dismiss (both can be undone from the
                  notice; come back to, an element says what was done and ⏎
                  is on to the next); a key held down acts once

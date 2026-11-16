@@ -23,7 +23,8 @@ import { useApp, type CaretHeading, type DocInfo } from './store.js';
 import { useDoc } from './useDoc.js';
 import { absorbExtractNode, currentVault, examsAtPath, openCard, openNode, optionsAt, resetCard } from './vault.js';
 import { currentCards, linkedTo, pairsOf, unlinkCards } from './sameOps.js';
-import { docsUnder, restore } from './deck.js';
+import { cardRef, cardSuspended, docsUnder, restore } from './deck.js';
+import { bulkCards } from './deckOps.js';
 import { failed, notify } from './land.js';
 import { foldedHeadings, notebookOf, outline } from './tabs.js';
 import { goToHeading } from './headings.js';
@@ -752,6 +753,9 @@ function CardBlock({ path, index, doc, group, dir, now }: { path: string; index:
       return resetCard(path, index, b.id, b.text, true).then(() => notify('reset · card', null, () => restore(vault, [{ path, doc: before }])));
     }).catch(failed('reset'));
   };
+  // out of the queue: the card, or the line on show; the deck's suspend, its notice's undo
+  const off = cardSuspended(b, group, dir);
+  const suspend = () => { bulkCards([cardRef(path, index, b)], { kind: off ? 'unsuspend' : 'suspend' }).catch(failed(off ? 'unsuspend' : 'suspend')); };
   return (
     <>
       <Block title="card">
@@ -763,10 +767,11 @@ function CardBlock({ path, index, doc, group, dir, now }: { path: string; index:
           {d === null
             ? <SchedKV sched={sched} none={scheduled ? 'per blank' : 'new'} now={now} />
             : <SchedKV sched={d === 'f' ? sched : reverse} none={d === 'r' && b.reverse?.suspended ? 'new, suspended' : 'new'} now={now} />}
-          {scheduled && k === all.length - 1 && (
+          {k === all.length - 1 && (
             <div className="frozen-row">
-              <span className="fr-state">scheduled</span>
-              <button type="button" className="fr-toggle" onClick={reset}>reset</button>
+              <span className="fr-state">{off ? 'suspended' : scheduled ? 'scheduled' : 'not scheduled'}</span>
+              {scheduled && <button type="button" className="fr-toggle" data-act="reset" onClick={reset}>reset</button>}
+              <button type="button" className="fr-toggle" data-act={off ? 'unsuspend' : 'suspend'} onClick={suspend}>{off ? 'unsuspend' : 'suspend'}</button>
             </div>
           )}
         </Block>

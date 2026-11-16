@@ -11,7 +11,8 @@ import { whenToDate } from '../schedule/index.js';
 import { cardDue } from '../reader/index.js';
 import { CardFaces, type FacesHandle } from './CardFaces.js';
 import { cardIndex, cardOf, cardSet, countOf, stepIn, type CardLine } from './cardSet.js';
-import { saveCardEdit } from './deckOps.js';
+import { bulkCards, saveCardEdit } from './deckOps.js';
+import { cardRef, cardSuspended } from './deck.js';
 import { FORM_LABEL, dueLabel, dueTone } from './items.js';
 import { failed } from './land.js';
 import { MathText } from './MathText.js';
@@ -45,13 +46,14 @@ function Schedule({ card, docPri }: { card: Card; docPri: number }) {
   const stab = card.sched?.stability;
   const pri = card.sched?.pri ?? docPri;
   const due = cardDue(card);
-  const when = card.sched?.suspended ? 'suspended' : dueWord(due, now);
+  const off = cardSuspended(card);
+  const when = off ? 'suspended' : dueWord(due, now);
   return (
     <>
       <span>{plural(reps, 'review')}</span>
       {stab !== undefined && <span>stability {Math.round(stab)}d</span>}
       {pri !== PRI_DEFAULT && <span>p {pri}</span>}
-      <span className="cm-due" data-due={due === undefined || whenToDate(due) <= now ? '1' : '0'} data-st={dueTone(when)}>{when}</span>
+      <span className="cm-due" data-due={!off && (due === undefined || whenToDate(due) <= now) ? '1' : '0'} data-st={dueTone(when)}>{when}</span>
     </>
   );
 }
@@ -102,6 +104,14 @@ export function CardPane({ path, active, onOpen }: Props) {
     onOpen(path, opts);
   };
 
+  // s: the card on show out of the queue, or back in it (the deck's suspend, its notice's undo)
+  const suspend = () => {
+    if (!line || !card) return;
+    if (handle.current && !handle.current.flush()) return;
+    const off = cardSuspended(card);
+    bulkCards([cardRef(path, line.block, card)], { kind: off ? 'unsuspend' : 'suspend' }).catch(failed(off ? 'unsuspend' : 'suspend'));
+  };
+
   // the inspector shows the card on show
   useEffect(() => {
     if (!active || !line) return;
@@ -112,7 +122,7 @@ export function CardPane({ path, active, onOpen }: Props) {
     if (useApp.getState().selectedCard?.path === path) useApp.setState({ selectedCard: null });
   }, [path]);
 
-  // [ ] through the cards, o to the source, while no face has the caret
+  // [ ] through the cards, o to the source, s suspends, while no face has the caret
   useEffect(() => {
     if (!active) return;
     const onKey = (e: KeyboardEvent) => {
@@ -120,6 +130,7 @@ export function CardPane({ path, active, onOpen }: Props) {
       if (e.key === '[') { e.preventDefault(); go(-1); }
       else if (e.key === ']') { e.preventDefault(); go(1); }
       else if (e.key === 'o') { e.preventDefault(); toSource(); }
+      else if (e.key === 's') { e.preventDefault(); if (!e.repeat) suspend(); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);

@@ -31,8 +31,8 @@ import { openNotes } from './book.js';
 import { sessionEnded } from './sync.js';
 import { gradeCard, type Graded } from './grading.js';
 import { CardFaces } from './CardFaces.js';
-import { saveCardEdit } from './deckOps.js';
-import { restore } from './deck.js';
+import { bulkCards, saveCardEdit } from './deckOps.js';
+import { cardRef as refOfCard, cardSuspended, restore, type CardRef } from './deck.js';
 import { failed, notify } from './land.js';
 import './session.css';
 import './incontext.css';
@@ -173,6 +173,8 @@ interface CardProps {
   learnable?: boolean;
   /** Learnt (space, ⏎): it is tested at the session's end; nothing is written. */
   onLearnt?: () => void;
+  /** `s`: the card suspended (the session moves on, nothing graded), or one come back to brought back. */
+  onSuspend(ref: CardRef, on: boolean): void;
 }
 
 /** One card's line, however often it is in the walk (learnt, then tested). */
@@ -181,7 +183,7 @@ const learnKey = (c: CardItem) => `${c.path}#${c.id ?? c.block}#${c.group ? JSON
 /** A schedule never tested: a card new, with no review. */
 export const neverTested = (s: { state?: string; reps?: number } | undefined): boolean => (s?.state ?? 'new') === 'new' && !s?.reps;
 
-function CardElement({ item, active, given, onGrade, onSkip, onGone, onEdit, learnable, onLearnt }: CardProps) {
+function CardElement({ item, active, given, onGrade, onSkip, onGone, onEdit, learnable, onLearnt, onSuspend }: CardProps) {
   const loaded = useDoc(item.path);
   const docPri = useApp((s) => s.docs[item.path]?.pri);
   // a card never tested comes up answered, to learn: its test is at the session's end (the `learnNew` tweak)
@@ -212,21 +214,29 @@ function CardElement({ item, active, given, onGrade, onSkip, onGone, onEdit, lea
   // the card, or the line it asks, no longer in the file: no grade reaches it, space moves on
   const gone = !!loaded && !card;
   useEffect(() => { onGone(gone); }, [gone]);
+  // suspended (here with `s`, or anywhere since): it is not graded, space is on to the next, `s` brings it back
+  const suspended = !!card && cardSuspended(card, item.group, item.dir);
 
   useKeys(active, (key, e) => {
     // a key held down: the system repeats it, and it does nothing more (not the page's scroll either)
-    if (e.repeat) return !editing && (key === ' ' || key === 'Enter' || (key >= '1' && key <= '4') || key === 'e');
+    if (e.repeat) return !editing && (key === ' ' || key === 'Enter' || (key >= '1' && key <= '4') || key === 'e' || key === 's');
     if (gone) {
       if (key === ' ') { onSkip(); return true; }
       return false;
     }
     if (editing) return false;
-    if (learning && (key === ' ' || key === 'Enter')) { onLearnt?.(); return true; }
-    if (key === ' ') { grade(3); return true; }
-    if (key >= '1' && key <= '4') { grade(Number(key) as Grade); return true; }
+    if (key === 's' && card) { onSuspend(refOfCard(item.path, item.block, card), !suspended); return true; }
+    if (suspended) {
+      if (key === ' ' || key === 'Enter') { onSkip(); return true; }
+      if (key >= '1' && key <= '4') return true;
+    } else {
+      if (learning && (key === ' ' || key === 'Enter')) { onLearnt?.(); return true; }
+      if (key === ' ') { grade(3); return true; }
+      if (key >= '1' && key <= '4') { grade(Number(key) as Grade); return true; }
+    }
     if (key === 'e' && card) { setRevealed(true); setPressAt(undefined); setEditing(true); return true; }
     return false;
-  }, [revealed, item, editing, card, gone, learning]);
+  }, [revealed, item, editing, card, gone, learning, suspended]);
 
   // an edit written: the card's text in the file, and this session's other items of it, follow
   const saveEdit = (text: string, was: string) => {
@@ -298,7 +308,9 @@ function CardElement({ item, active, given, onGrade, onSkip, onGone, onEdit, lea
       {pri !== PRI_DEFAULT && <span>p {pri}</span>}
       {given && <span className="cm-given">graded {GRADE_WORD[given.g]}</span>}
       {learning && <span className="cm-learn">first time · learn it</span>}
-      <span className="cm-due" data-due={!sched?.due || item.dueAt <= now ? '1' : '0'} data-st={dueTone(dueWord(sched?.due, now))}>{dueWord(sched?.due, now)}</span>
+      {suspended
+        ? <span className="cm-due" data-due="0" data-st={dueTone('suspended')}>suspended</span>
+        : <span className="cm-due" data-due={!sched?.due || item.dueAt <= now ? '1' : '0'} data-st={dueTone(dueWord(sched?.due, now))}>{dueWord(sched?.due, now)}</span>}
     </>
   );
   // a press on a box once the answer is up edits it there
@@ -326,7 +338,14 @@ function CardElement({ item, active, given, onGrade, onSkip, onGone, onEdit, lea
         {schedule}
       </div>
       </>)}
-      {learning ? (
+      {suspended ? (
+        <div className="grades" data-revealed="1" data-gone="1" data-suspended="1">
+          <button type="button" data-act="pass" onClick={onSkip}>
+            <span className="label">next<kbd>space</kbd></span>
+            <span className="gap">suspended</span>
+          </button>
+        </div>
+      ) : learning ? (
         <div className="grades learn" data-revealed="1" data-learn="1">
           <button type="button" data-act="learnt" onClick={() => onLearnt?.()}>
             <span className="label">got it<kbd>space</kbd></span>
@@ -664,6 +683,14 @@ export function Session({ active, onOpen }: Props) {
     advance();
   };
 
+  // `s`: the card out of the queue (the deck's suspend, its notice's undo), ungraded, and on to the next;
+  // on one come back to, it is brought back and stays up to be graded. After what this session is still writing.
+  const onSuspend = (ref: CardRef, on: boolean) => {
+    const writes = Promise.all([edits.current, ...[...given.values()].map((g) => g.run)]);
+    void writes.then(() => bulkCards([ref], { kind: on ? 'suspend' : 'unsuspend' })).catch(failed(on ? 'suspend' : 'unsuspend'));
+    if (on) advance();
+  };
+
   // what was done to a topic in this session, by where it is: come back to, it is shown, and nothing is written twice
   const acted = marks.acted;
   const unmark = (at: string) => {
@@ -727,7 +754,7 @@ export function Session({ active, onOpen }: Props) {
           <span className="ms-arrow">↗</span>
         </button>
       </div>
-      <CardElement key={key} item={el} active={active} given={given.get(key)} onGrade={(g) => onGrade(el, g)} onSkip={advance} onGone={(g) => setGoneAt((was) => (g ? key : was === key ? null : was))} onEdit={onEdit} learnable={learnNew && (learnt.get(learnKey(el)) ?? key) === key} onLearnt={() => onLearnt(el)} />
+      <CardElement key={key} item={el} active={active} given={given.get(key)} onGrade={(g) => onGrade(el, g)} onSkip={advance} onGone={(g) => setGoneAt((was) => (g ? key : was === key ? null : was))} onEdit={onEdit} learnable={learnNew && (learnt.get(learnKey(el)) ?? key) === key} onLearnt={() => onLearnt(el)} onSuspend={onSuspend} />
     </div>
   );
 }

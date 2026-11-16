@@ -3,7 +3,7 @@
 // selection, and the bulk actions, each one write per file. The view is
 // `DeckLens` in Lenses.tsx; the session over a deck is `study.ts`.
 
-import { PRI_DEFAULT, cardFields, faceText, fold, meta, type Card, type CardForm, type CardSchedule, type Doc } from '../format/index.js';
+import { PRI_DEFAULT, cardFields, cardForm, faceText, fold, meta, type Card, type CardForm, type CardSchedule, type Doc } from '../format/index.js';
 import { cardGroups, isSuspended, newId, whenToDate, type GroupKey } from '../schedule/index.js';
 import { childDirOf, directories, ordered, type Order, type TreeNode } from '../vault/index.js';
 
@@ -290,6 +290,21 @@ export function followSelection(sel: Selection, was: readonly DeckRow[], now: re
   const keys = sel.keys.map(to).filter((k): k is string => k !== null);
   const anchor = sel.anchor === null ? null : to(sel.anchor);
   return keys.length === sel.keys.length && keys.every((k, i) => k === sel.keys[i]) && anchor === sel.anchor ? sel : { keys, anchor };
+}
+
+/** The card at `block` of `path`, as an action names it. */
+export const cardRef = (path: string, block: number, card: Card): CardRef =>
+  (card.id === undefined ? { path, block, text: card.text } : { path, block, id: card.id, text: card.text });
+
+/**
+ * Whether the card is out of the queue: its bare line suspended, or every
+ * blank of a cloze (the deck row's `suspended`), or the one line asked
+ * (`group`, `dir`) when one is.
+ */
+export function cardSuspended(card: Card, group?: GroupKey, dir?: 'f' | 'r'): boolean {
+  if (isSuspended(card, group, dir)) return true;
+  const groups = cardForm(card.text) === 'cloze' ? cardGroups(card.text) : [];
+  return groups.length > 0 && groups.every((g) => isSuspended(card, g));
 }
 
 /** The card `ref` names in `doc`: at its block when it is still the same card there, else by id, else by text. */

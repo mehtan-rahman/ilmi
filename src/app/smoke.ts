@@ -14449,7 +14449,7 @@ export async function smokeSioyek(vault: Vault): Promise<void> {
     // ── look it up ──
     // a page's text is not selected on an iPad or a phone (a finger's drag is the scroll and the box): what begins with a selection is the desk's
     const touch = useApp.getState().mobile;
-    if (touch) log('on a touch device: no selection on a page, so no look-up and no highlight; skipped');
+    if (touch) log('on a touch device: no selection on a page; the look-up and the highlight are a box\'s (below)');
     sc.scrollTop = 0; sc.dispatchEvent(new Event('scroll'));
     await sleep(400);
     if (!touch) {
@@ -14608,6 +14608,60 @@ export async function smokeSioyek(vault: Vault): Promise<void> {
 
     }
 
+    // ── a highlight from a box: what a finger has, its drag being the scroll and no text selected under it ──
+    {
+      await scrollTo(1, 'reservoir');
+      await sleep(300);
+      const before = qa('.pdf-hls .hl').length;
+      const w = rectOf(1, 'reservoir')!;
+      must(w, 'a word to box');
+      const type = touch ? 'touch' : 'mouse';
+      const drawBox = async () => {
+        const x0 = w.left - 3, y0 = w.top - 2, x1 = w.right + 3, y1 = w.bottom + 2;
+        const el = document.elementFromPoint(x0, y0) ?? q('.pdf-pages')!;
+        const ev = (name: string, x: number, y: number) => new PointerEvent(name, { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0, pointerType: type, pointerId: 7, isPrimary: true });
+        el.dispatchEvent(ev('pointerdown', x0, y0));
+        // a finger's box starts after its hold
+        await sleep(touch ? 420 : 30);
+        window.dispatchEvent(ev('pointermove', (x0 + x1) / 2, (y0 + y1) / 2));
+        window.dispatchEvent(ev('pointermove', x1, y1));
+        await sleep(60);
+        window.dispatchEvent(ev('pointerup', x1, y1));
+        return poll(() => q<HTMLElement>('.pend'), `a ${touch ? 'held ' : ''}drag around a word boxes it, and its bar offers what to make`);
+      };
+      const bar = await drawBox();
+      const ks = qa<HTMLElement>('button', bar).map((x) => x.dataset.k);
+      log(`the box's bar: ${ks.join(' ')}`);
+      must(ks.includes('e') && ks.includes('m') && ks.includes('h') && ks.includes('web') === touch, touch ? 'section, card, highlight and look up' : 'section, card and highlight');
+      {
+        const r = bar.getBoundingClientRect();
+        must(r.left >= 0 && r.right <= window.innerWidth + 1, `the bar is inside the window (${Math.round(r.left)}–${Math.round(r.right)} of ${window.innerWidth})`);
+      }
+      await shot('sioyek-box-bar');
+      q<HTMLElement>('.pend [data-k="h"]')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0 }));
+      await poll(() => qa('.pdf-hls .hl').length === before + 1 && !q('.pend') && !q('.pbox.pending'), 'highlight on the bar highlights the words under the box, the box gone');
+      const over2 = (a: DOMRect, c: DOMRect) => Math.abs(a.left - c.left) < 6 && Math.abs(a.right - c.right) < 6 && a.top <= c.top + 4 && a.bottom >= c.bottom - 4;
+      const made = qa<HTMLElement>('.pdf-hls .hl').find((x) => over2(x.getBoundingClientRect(), w));
+      must(made, 'the band lies on the word, not on its whole line');
+      await poll(async () => Object.values(await marksFile()).some((m) => m.kind === 'highlight' && m.text === 'reservoir'), 'written with its word');
+      await shot('sioyek-box-highlight');
+      // a long press (a right-click) on it: its inks and its end
+      const menuOn = async () => {
+        const at = { clientX: w.left + w.width / 2, clientY: w.top + w.height / 2 };
+        (document.elementFromPoint(at.clientX, at.clientY) ?? q('.pdf-pages')!).dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, ...at }));
+        return poll(() => q<HTMLElement>('.ctx-menu'), 'its menu opens');
+      };
+      const pick = async (act: string) => { const m = await menuOn(); const it = qa<HTMLElement>('[data-act]', m).find((x) => x.dataset.act === act); must(it, `the menu has ${act}`); it!.click(); };
+      await pick('ink-2');
+      await poll(async () => Object.values(await marksFile()).some((m) => m.kind === 'highlight' && m.text === 'reservoir' && m.ink === 2), 'its menu changes its ink');
+      // h on a box drawn inside it clears it; on the desk it is cleared, a finger's stays for what follows
+      if (!touch) {
+        await drawBox();
+        key('h');
+        await poll(() => qa('.pdf-hls .hl').length === before && !q('.pend'), 'h with a box drawn inside a highlight clears it');
+      }
+    }
+
     // ── the ruler ──
     (document.activeElement as HTMLElement | null)?.blur?.();
     must(key('v'), 'v is taken');
@@ -14675,12 +14729,42 @@ export async function smokeSioyek(vault: Vault): Promise<void> {
       leadSc.scrollTop += p1.top + 0.9 * p1.height - (lr2.top + lr2.height / 3);
       leadSc.dispatchEvent(new Event('scroll'));
     }
+    const scrollToIn = async (page: number, frac: number) => {
+      const el = await poll(() => q<HTMLElement>(`.pdf-page[data-page="${page}"]`, lead), `page ${page} of the paper being read`);
+      const pr = el.getBoundingClientRect();
+      const lr = leadSc.getBoundingClientRect();
+      leadSc.scrollTop += pr.top + frac * pr.height - (lr.top + lr.height / 3);
+      leadSc.dispatchEvent(new Event('scroll'));
+      await sleep(700);
+    };
     await sleep(1500);
     { const b = await import('./book.js'); log(`following: sent ${JSON.stringify(b.followingAt(BOOK))}, followed ${b.followed(BOOK)}; lead p. ${lead.dataset.topPage} y ${lead.dataset.topY} portals ${lead.dataset.portals} following=${lead.dataset.following}; follower p. ${follower.dataset.topPage} portal ${follower.dataset.portal} connected ${follower.isConnected}; views now ${qa<HTMLElement>('.pdf-view').map((v) => `${v.dataset.following ?? '-'}:${v.dataset.topPage}:${v.dataset.portal ?? '-'}`).join(' ')}; marks ${JSON.stringify(Object.values(await marksFile()).filter((m) => m.kind === 'portal'))}`); }
     await poll(() => !!follower.dataset.portal && Number(follower.dataset.topPage) === 2, `read past the source, the pane beside goes to its destination (p. ${follower.dataset.topPage})`, 15000);
     void dest;
     await shot('sioyek-portal-beside');
-    useApp.getState().setPanes((p) => closePane(p, p.panes.length - 1));
+    // a portal into another book: the pane beside shows that book there, and the paper again once its own portal is read past
+    {
+      const bk = await import('./book.js');
+      await importPdfNode('library', { title: 'second', bytes: new Uint8Array(await invoke<ArrayBuffer>('read_dropped_bytes', { path: `${books}/ch3.pdf` })), text: '' });
+      const OTHER = 'library/second.pdf';
+      const otherHash = await poll(() => bk.pdfHashOf(OTHER), 'a second book is in the collection', 30000);
+      const own = Object.values(await marksFile()).find((m) => m.kind === 'portal')!;
+      await bk.setMark(hash, 'p-across', { ...(own as unknown as { at: string }), kind: 'portal', page: 2, y: 0.3, to: { page: 2, y: 0.25, pdf: otherHash } } as never);
+      await poll(() => lead.dataset.portals === '2', 'a portal into the second book is on page 2', 10000);
+      await scrollToIn(2, 0.5);
+      const besidePane = () => { const ps = useApp.getState().panes; const pn = ps.panes.find((_, i) => i !== ps.active)!; return pn.tabs[pn.active]?.id; };
+      await poll(() => besidePane() === OTHER, 'read past it, the pane beside shows the second book', 15000);
+      const ov = await poll(() => qa<HTMLElement>('.pdf-view').find((v) => v !== lead && v.dataset.portal === 'p-across'), 'gone to the portal\'s place there', 30000);
+      await poll(() => Number(ov.dataset.topPage) === 2, `on its page 2 (p. ${ov.dataset.topPage})`, 15000);
+      must(activeTab(useApp.getState().panes)?.id === BOOK && bk.followed(BOOK), 'the paper stays in front, still followed');
+      await shot('sioyek-portal-across');
+      await scrollToIn(1, 0.95);
+      await poll(() => besidePane() === BOOK, 'read back past the paper\'s own portal, the pane beside shows the paper again', 15000);
+      await poll(() => { const f = qa<HTMLElement>('.pdf-view').find((v) => v.dataset.following === '1'); return f && Number(f.dataset.topPage) === 2; }, 'at that portal\'s destination', 15000);
+      await bk.setMark(hash, 'p-across', null);
+      await sleep(400);
+    }
+    while (useApp.getState().panes.panes.length > 1) useApp.getState().setPanes((p) => closePane(p, p.panes.length - 1));
     await poll(() => useApp.getState().panes.panes.length === 1 && qa('.pdf-view').length === 1, 'the pane beside closed, the following ends');
 
     }
@@ -14689,10 +14773,29 @@ export async function smokeSioyek(vault: Vault): Promise<void> {
     openNode('fleeting/idea-for-honors-thesis.md');
     await poll(() => activeTab(useApp.getState().panes)?.id !== BOOK && !q('.pdf-view'), 'the paper\'s tab left');
     openNode(BOOK);
-    await poll(() => { const v = q<HTMLElement>('.pdf-view'); return v && v.dataset.bookmarks === '1' && v.dataset.portals === '1' && (touch || (v.dataset.highlights === '1' && q('.pdf-hls .hl'))) && q('.bmark'); }, 'opened again, its bookmark, highlight and portal are on the page', 30000);
+    await poll(() => { const v = q<HTMLElement>('.pdf-view'); return v && v.dataset.bookmarks === '1' && v.dataset.portals === '1' && v.dataset.highlights === '1' && q('.pdf-hls .hl') && q('.bmark'); }, 'opened again, its bookmark, highlight and portal are on the page', 30000);
     const kinds = Object.values(await marksFile()).map((m) => m.kind).sort().join(' ');
-    must(kinds === (touch ? 'bookmark mark portal' : 'bookmark highlight mark portal'), `the file holds them (${kinds})`);
+    must(kinds === 'bookmark highlight mark portal', `the file holds them (${kinds})`);
     (document.activeElement as HTMLElement | null)?.blur?.();
+
+    // ── its zoom is there after the collection is closed and opened again ──
+    {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: '=', metaKey: true, bubbles: true, cancelable: true }));
+      await poll(() => view().dataset.zoom === '1.25', 'the pages at 125%');
+      const root = vault.root;
+      const { closeVault } = await import('./vault.js');
+      await sleep(600);
+      closeVault();
+      await poll(() => !useApp.getState().vault, 'the collection closed');
+      await openVault(root);
+      await poll(() => useApp.getState().files.length > 0, 'and opened again', 30000);
+      openNode(BOOK);
+      await poll(() => q<HTMLElement>('.pdf-view')?.dataset.zoom === '1.25', 'the paper is at 125% as it was left', 30000);
+      await poll(() => q('.pdf-page .textLayer span'), 'its pages drawn', 30000);
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: '0', metaKey: true, bubbles: true, cancelable: true }));
+      await poll(() => (q<HTMLElement>('.pdf-view')?.dataset.zoom ?? '1') === '1', 'back to fit');
+      await sleep(500);
+    }
 
     // ── dark ──
     useApp.getState().setTheme('dark');

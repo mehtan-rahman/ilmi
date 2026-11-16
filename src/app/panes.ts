@@ -181,6 +181,18 @@ export function openTwin(s: Panes, id: string): Panes {
   return next;
 }
 
+/** In the pane where `twin` is open beside the active one, show `id` (a tab of that pane, made when it has none); the active pane kept. Unchanged when `twin` is not beside. */
+export function openWhereBeside(s: Panes, twin: string, id: string): Panes {
+  const at = besideAt(s, twin);
+  if (!at) return s;
+  const next = clone(s);
+  const pane = next.panes[at.pane]!;
+  let ti = pane.tabs.findIndex((t) => t.id === id);
+  if (ti < 0) { pane.tabs.push(tab(id)); ti = pane.tabs.length - 1; }
+  pane.active = ti;
+  return next;
+}
+
 /** Close `id` where it is open beside the active pane; a pane left empty closes with it (`closeTab`). The active pane is kept. */
 export function closeBeside(s: Panes, id: string): Panes {
   const at = besideAt(s, id);

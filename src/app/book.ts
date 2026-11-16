@@ -22,7 +22,7 @@ import { setField } from '../format/index.js';
 import { bookmarksOf, collectionMark, collectionMarks, emptyTrail, highlightsOf, isCollectionMark, letterId, lettersOf, type ContentsEntry, type Trail } from '../pdf/index.js';
 import { MARKS_DIR, dirOf, join, marksHashOf, marksMap, marksPath, parseMarks, relFrom, serializeMarks, type Mark, type Marks, type StoreFs } from '../vault/index.js';
 import { noteOf, notesTabOf, pagesOf, SESSION, titleOf } from './names.js';
-import { activeTab, besideAt, closeBeside, openBeside, openTab, openTwin } from './panes.js';
+import { activeTab, besideAt, closeBeside, openBeside, openTab, openTwin, openWhereBeside } from './panes.js';
 import { useApp } from './store.js';
 import { notify } from './land.js';
 import { currentVault, onHiddenChange, openNode } from './vault.js';
@@ -180,7 +180,8 @@ export function addLens(id: string, lens: BookLens): () => void {
     if (rest.length) lenses.set(id, rest); else lenses.delete(id);
     // the pane beside closed, or the one it followed: nothing follows any more. Looked at a moment later, since a lens
     // taken down and put straight back (a pane drawn again, a development build's second mount) has closed nothing
-    if (rest.length < 2) setTimeout(() => { if ((lenses.get(id)?.length ?? 0) < 2 && following.delete(id)) { sentTo.delete(id); tell(); } }, 0);
+    // (nor has one whose pane shows another book for a while: a portal into it, `away`)
+    if (rest.length < 2) setTimeout(() => { if ((lenses.get(id)?.length ?? 0) < 2 && !stillAway(id) && following.delete(id)) { sentTo.delete(id); away.delete(id); tell(); } }, 0);
     tell();
   };
 }
@@ -427,11 +428,29 @@ export const isFollower = (id: string, lens: BookLens): boolean => {
 };
 export const useFollower = (id: string, lens: BookLens): boolean => useSyncExternalStore(subscribe, () => isFollower(id, lens));
 /** Whether a pane beside follows the book at `id`. */
-export const followed = (id: string): boolean => following.has(id) && (lenses.get(id)?.length ?? 0) > 1;
+export const followed = (id: string): boolean => following.has(id) && ((lenses.get(id)?.length ?? 0) > 1 || stillAway(id));
 export const useFollowed = (id: string): boolean => useSyncExternalStore(subscribe, () => followed(id));
 /** What the pane that follows was last sent to: it goes there once its pages are there. */
 const sentTo = new Map<string, { portal: string; to: { page: number; y: number } }>();
 export const followingAt = (id: string): { portal: string; to: { page: number; y: number } } | null => (following.has(id) ? sentTo.get(id) ?? null : null);
+/** The other book the pane beside shows for now: the last portal passed led into it. The book's own tab waits behind it there. */
+const away = new Map<string, string>();
+/** Whether the pane beside still shows that other book: its tab in front there, the book's own behind it. */
+function stillAway(id: string): boolean {
+  const other = away.get(id);
+  if (other === undefined) return false;
+  const panes = useApp.getState().panes;
+  const at = besideAt(panes, id);
+  return at !== null && panes.panes[at.pane]!.tabs[panes.panes[at.pane]!.active]?.id === other;
+}
+const besidePlace = new Map<string, { place: { page: number; y: number }; portal: string }>();
+/** A place the book at `id` is to show beside (a portal of another book's led into it); its lens there takes it. */
+export const useBesidePlace = (id: string): { place: { page: number; y: number }; portal: string } | null => useSyncExternalStore(subscribe, () => besidePlace.get(id) ?? null);
+export function takeBesidePlace(id: string): { place: { page: number; y: number }; portal: string } | null {
+  const p = besidePlace.get(id) ?? null;
+  besidePlace.delete(id);
+  return p;
+}
 /** `portals beside`: the book in the pane beside too, following; asked again, that pane's tab closes. A phone has no pane beside. */
 export function togglePortalsBeside(id: string): void {
   const s = useApp.getState();
@@ -439,6 +458,7 @@ export function togglePortalsBeside(id: string): void {
   if (followed(id)) {
     following.delete(id);
     sentTo.delete(id);
+    away.delete(id);
     useApp.setState({ panes: closeBeside(s.panes, id) });
     tell();
     return;
@@ -448,10 +468,27 @@ export function togglePortalsBeside(id: string): void {
   useApp.setState({ panes: openTwin(s.panes, id) });
   tell();
 }
-/** The page being read passed a portal's source: the pane that follows shows its destination. */
-export function followTo(id: string, from: BookLens, portal: string, to: { page: number; y: number }): void {
+/** The page being read passed a portal's source: the pane that follows shows its destination, in another book when the portal leads into one. */
+export function followTo(id: string, from: BookLens, portal: string, to: { page: number; y: number; pdf?: string }): void {
   if (!following.has(id)) return;
+  const s = useApp.getState();
+  if (to.pdf !== undefined) {
+    const other = bookFor(to.pdf, to.page);
+    if (other === null || other === id || !besideAt(s.panes, id)) return;
+    sentTo.delete(id);
+    away.set(id, other);
+    besidePlace.set(other, { place: { page: to.page, y: to.y }, portal });
+    useApp.setState({ panes: openWhereBeside(s.panes, id, other) });
+    tell();
+    return;
+  }
   sentTo.set(id, { portal, to: { page: to.page, y: to.y } });
+  if (away.delete(id)) {
+    // back in the book itself: its own tab in front again beside, which goes there as its pages come
+    useApp.setState({ panes: openWhereBeside(s.panes, id, id) });
+    tell();
+    return;
+  }
   for (const l of lenses.get(id) ?? []) if (l !== from && isFollower(id, l)) l.show?.(to, portal);
 }
 

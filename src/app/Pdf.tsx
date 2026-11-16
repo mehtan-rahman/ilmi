@@ -92,7 +92,7 @@ import { noteOf, notesTabOf, titleOf } from './names.js';
 import { besideAt } from './panes.js';
 import {
   addLens, ensureNote, findCollectionMark, followTo, followed, goToMark, lensChanged, openContents, openNotes, openWeb, portalPending, setCollectionMark, setMark, setPortalPending, setTrail,
-  takePlace, toggleNotes, trailOf, useFollowed, useFollower, followingAt, useMarks, usePlaceWanted, usePortalPending, useTrail, type BookContents, type BookLens,
+  takeBesidePlace, takePlace, toggleNotes, trailOf, useFollowed, useFollower, followingAt, useBesidePlace, useMarks, usePlaceWanted, usePortalPending, useTrail, type BookContents, type BookLens,
 } from './book.js';
 import { popMenu, popMenuOpen, type PopItem } from './popMenu.js';
 import { TextLayer, pageBits, type PDFDocumentProxy } from './pdfjs.js';
@@ -104,7 +104,7 @@ import { ExamTag } from './ExamTag.js';
 import { TabsToggle } from './TabsToggle.js';
 import { useApp, type DocInfo } from './store.js';
 import { useDoc } from './useDoc.js';
-import { currentVault, enrolReading, logReading, unlogReading } from './vault.js';
+import { currentVault, enrolReading, logReading, setBookZoom, unlogReading } from './vault.js';
 import { writeDoc } from './sections.js';
 import { failed, notify } from './land.js';
 import { appNow } from './clock.js';
@@ -231,8 +231,6 @@ function hitAt(pages: Find['pages'], at: number): { page: number; k: number } | 
 }
 
 const places = new Map<string, { top: number; at: { page: number; y: number } | null; x: number | null }>();
-/** Each book's zoom, by its id, where it is not 1: kept as its place is, until the app closes. */
-const zooms = new Map<string, number>();
 /** The zoom one step in (`dir` 1) or out (-1) from `z`; 0 is fit. */
 export function zoomStep(z: number, dir: number): number {
   if (dir === 0) return 1;
@@ -372,17 +370,13 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
   const [textless, setTextless] = useState(false);
   /** The room the pages have: the pane's width inside its padding, and that padding (`left` the padding before them). */
   const [room, setRoom] = useState({ w: 0, pad: 0, left: 0 });
-  /** Moves when this book's zoom does (`zooms`). */
-  const [, setZoomRev] = useState(0);
-  const zoom = zooms.get(id) ?? 1;
+  /** This book's zoom: kept for the device with the collection's view state (`setBookZoom`), so it is there after a restart. */
+  const zoom = useApp((s) => s.bookZooms[id] ?? 1);
   const zoomRef = useRef(zoom);
   zoomRef.current = zoom;
   /** One step in or out, or (0) back to fit. */
   const zoomBy = useCallback((dir: number) => {
-    const next = zoomStep(zooms.get(id) ?? 1, dir);
-    if (next === (zooms.get(id) ?? 1)) return;
-    if (next === 1) zooms.delete(id); else zooms.set(id, next);
-    setZoomRev((n) => n + 1);
+    setBookZoom(id, zoomStep(useApp.getState().bookZooms[id] ?? 1, dir));
   }, [id]);
   const [tick, setTick] = useState(0);
   const [sel, setSel] = useState<Sel | null>(null);
@@ -1083,6 +1077,49 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     window.getSelection()?.removeAllRanges();
   };
 
+  /**
+   * The words under the boxes drawn, as a selection would hold them: each
+   * word whose middle lies in a box, its lines a quad each. What a
+   * highlight and a look-up take where no text is selected (under a finger
+   * a page's text never is: its drag is the scroll, its held drag the box).
+   */
+  const wordsUnder = (boxes: readonly Box[]): { text: string; quads: Quad[] } => {
+    const words: string[] = [];
+    const quads: Quad[] = [];
+    const range = document.createRange();
+    for (const b of boxes) {
+      const el = pageEls.current.get(b.page);
+      const layer = el?.querySelector('.textLayer');
+      if (!el || !layer) continue;
+      const pr = el.getBoundingClientRect();
+      if (pr.width <= 0 || pr.height <= 0) continue;
+      const left = pr.left + b.x * pr.width;
+      const top = pr.top + b.y * pr.height;
+      const right = left + b.w * pr.width;
+      const bottom = top + b.h * pr.height;
+      const rects: { x: number; y: number; w: number; h: number }[] = [];
+      const walker = document.createTreeWalker(layer, NodeFilter.SHOW_TEXT);
+      for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+        const span = n.parentElement;
+        if (!span) continue;
+        const sr = span.getBoundingClientRect();
+        if (sr.bottom < top || sr.top > bottom || sr.right < left || sr.left > right) continue;
+        for (const m of (n.textContent ?? '').matchAll(/\S+/g)) {
+          range.setStart(n, m.index);
+          range.setEnd(n, m.index + m[0].length);
+          const r = range.getBoundingClientRect();
+          const cx = r.left + r.width / 2;
+          const cy = r.top + r.height / 2;
+          if (r.width <= 0 || r.height <= 0 || cx < left || cx > right || cy < top || cy > bottom) continue;
+          words.push(m[0]);
+          rects.push({ x: (r.left - pr.left) / pr.width, y: (r.top - pr.top) / pr.height, w: r.width / pr.width, h: r.height / pr.height });
+        }
+      }
+      quads.push(...lineQuads(b.page, rects));
+    }
+    return { text: words.join(' '), quads };
+  };
+
   /** The passage's name from its pages: the heading above it and the equations in it (`pdf/name.ts`). */
   const nameOf = async (boxes: Box[]): Promise<{ name: string; named: boolean }> => {
     if (!pdf || !rel) return { name: `p. ${boxes[0]!.page}`, named: false };
@@ -1588,6 +1625,15 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wanted, active, status, sizes.length, id]);
 
+  // a place this book is to show beside another (a portal of that book's leads here): shown, no jump, by the lens that is not in front
+  const beside = useBesidePlace(id);
+  useEffect(() => {
+    if (!beside || active || status !== 'ok' || !sizes.length) return;
+    const p = takeBesidePlace(id);
+    if (p) lensNow.current.show(p.place, p.portal);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [beside, active, status, sizes.length, id]);
+
   // ── what you leave on the page (milestone 77) ──
   const stamp = () => appNow().getTime();
   /** The marks are kept by the PDF's hash: a PDF with none (a collection that is no store) keeps none. */
@@ -1665,10 +1711,19 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     lastInk = ink;
     if (was.ink !== ink) void setMark(hash, key, { ...was, ink }).catch(console.error);
   };
+  /** The words under the boxes drawn, searched for on the web (a finger's look-up: the desk's is a selection's right-click). */
+  const lookUnder = () => {
+    const { text } = wordsUnder(st.current.pending);
+    if (!text) { notify('no words under the box to look up'); return; }
+    openWeb(lookupUrl('web', text));
+    clearBoxes();
+  };
   const doHighlight = () => {
     if (marked() === null || !hash) return;
-    const s = st.current.sel;
+    // a selection's words, or with none the words under the boxes drawn
+    const s: { text: string; quads: Quad[] } | null = st.current.sel ?? (st.current.pending.length ? wordsUnder(st.current.pending) : null);
     if (!s?.quads.length) {
+      if (st.current.pending.length) { notify('no words under the box to highlight'); return; }
       const p = lastPoint.current;
       const under = p ? highlightAt(marksRef.current, p.page, p.x, p.y) : null;
       if (under !== null) clearHighlight(under);
@@ -1729,7 +1784,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
       const pr = el.getBoundingClientRect();
       if (pr.height > 0 && pr.top <= line && (!at || k > at.page)) at = { page: k, y: Math.min(1, (line - pr.top) / pr.height) };
     }
-    const p = at ? portalAbove(portals.filter(([, m]) => m.to.pdf === undefined), at) : null;
+    const p = at ? portalAbove(portals, at) : null;
     if (!p || sent.current === p[0]) return;
     sent.current = p[0];
     followTo(id, lens, p[0], p[1].to);
@@ -2178,9 +2233,11 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
               })}
               {ghost && <div className="pbox pending ghost" style={ghost} />}
               {lastPending && !sel && (
-                <div data-hit="1" className="pend" style={{ left: lastPending.left, top: lastPending.top + lastPending.height + 6 }}>
+                <div data-hit="1" className="pend" style={{ left: Math.max(0, Math.min(lastPending.left, (pagesRef.current?.clientWidth ?? 9999) - (mobile ? 340 : 280))), top: lastPending.top + lastPending.height + 6 }}>
                   <button type="button" data-k="e" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); void makeSection(false).catch(console.error); }}><kbd>e</kbd><span className="pe-l">section{pending.length > 1 ? ` · ${pending.length} boxes` : ''}</span></button>
                   <button type="button" data-k="m" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); void cardOrClip().catch(console.error); }}><kbd>m</kbd><span className="pe-l">card</span></button>
+                  <button type="button" data-k="h" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); doHighlight(); }}><kbd>h</kbd><span className="pe-l">highlight</span></button>
+                  {mobile && <button type="button" data-k="web" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); lookUnder(); }}><span className="pe-l">look up</span></button>}
                   {!mobile && <button type="button" data-k="esc" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); clearBoxes(); }}><kbd>esc</kbd></button>}
                 </div>
               )}

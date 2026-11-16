@@ -360,6 +360,8 @@ export interface AppState {
   examFilter: string | null;
   /** The day's queue narrowed to one thing to do (`items.ts`'s `Focus`): this device's, kept in `.ilmi/state.json`. */
   queueFocus: Focus;
+  /** Each book's zoom, by its id, where it is not fit (1): this device's, kept with the collection's view state. */
+  bookZooms: Record<string, number>;
   /** Sync by git (`sync.ts`): where the open vault stands with its remote. */
   sync: SyncState;
   /** The open vault's remote and token, kept with the tweaks (`sync.ts`); empty when none. */
@@ -463,6 +465,7 @@ export const useApp = create<AppState>((set, get) => ({
   numbersLayer: 'cards',
   examFilter: null,
   queueFocus: 'all',
+  bookZooms: {},
   notSame: [],
   lensViews: {},
   sync: { on: false, repo: false, busy: null, offline: false, toPush: 0, conflicts: [], at: null },

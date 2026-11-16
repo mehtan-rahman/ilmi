@@ -689,6 +689,12 @@ function onEvent(vault: Vault, ev: VaultEvent): void {
       for (const [k, v] of Object.entries(s.folds)) folds[rekey(k, ev.from, ev.to) ?? k] = v;
       useApp.setState({ docs, open: rekeyOpen(s.open, ev.from, ev.to), panes: retarget(s.panes, ev.from, ev.to), railFolded, deckViews: views, folds });
       if (Object.keys(s.folds).some((k) => rekey(k, ev.from, ev.to) !== null)) queueSave({ folds });
+      if (Object.keys(s.bookZooms).some((k) => rekey(k, ev.from, ev.to) !== null)) {
+        const zooms: Record<string, number> = {};
+        for (const [k, v] of Object.entries(s.bookZooms)) zooms[rekey(k, ev.from, ev.to) ?? k] = v;
+        useApp.setState({ bookZooms: zooms });
+        queueSave({ zooms });
+      }
       if (Object.keys(s.railFolded).some((k) => rekey(k, ev.from, ev.to) !== null)) queueSave({ rails: Object.keys(railFolded) });
       break;
     }
@@ -761,7 +767,7 @@ export async function openVault(path: string): Promise<Vault> {
   useApp.setState({
     open, sidebar, inspector, panes, docs: {}, queue: [], budget: cleanBudget(state.budget), clipDir: cleanClipDir(state.clippings), log: [], session: null, sessionEl: null, selectedCard: null, cardAt: {}, reveal: null,
     started: true, sideSheet: false, namingVault: false, gone: s0.gone.filter((p) => p !== path), notice: null, fileOver: null, intakeFiles: [], order: vault.order, railFolded, railWidth: clampRail(state.railWidth ?? RAIL_DEFAULT), deckViews: cleanViews(state.decks), lastDeck: typeof state.lastDeck === 'string' ? state.lastDeck : null, quickCard: null,
-    folds: cleanFolds(state.folds), reviews, readings, lensViews: {}, examFilter: null, queueFocus: cleanFocus(state.focus), closedTabs: [],
+    folds: cleanFolds(state.folds), reviews, readings, lensViews: {}, examFilter: null, queueFocus: cleanFocus(state.focus), bookZooms: cleanZooms(state.zooms), closedTabs: [],
     notSame: await vault.loadNotSame().catch(() => []),
   });
   s0.setRecents(addRecent(s0.recents, path, new Date()));
@@ -850,7 +856,7 @@ export function closeVault(): void {
   loggedHere = [];
   tookBack.clear();
   void listVaults().catch(console.error);
-  useApp.setState({ vault: null, sideSheet: false, files: [], tree: [], docs: {}, open: { '': true }, panes: emptyPanes(), closedTabs: [], queue: [], log: [], session: null, sessionEl: null, selectedCard: null, cardAt: {}, reveal: null, paletteOpen: false, intakeDir: '', notice: null, fileOver: null, intakeFiles: [], order: {}, railFolded: {}, deckViews: {}, folds: {}, reviews: [], readings: [], lensViews: {}, examFilter: null });
+  useApp.setState({ vault: null, sideSheet: false, files: [], tree: [], docs: {}, open: { '': true }, panes: emptyPanes(), closedTabs: [], queue: [], log: [], session: null, sessionEl: null, selectedCard: null, cardAt: {}, reveal: null, paletteOpen: false, intakeDir: '', notice: null, fileOver: null, intakeFiles: [], order: {}, railFolded: {}, deckViews: {}, folds: {}, reviews: [], readings: [], lensViews: {}, examFilter: null, bookZooms: {} });
   setWindowTitle(null);
 }
 
@@ -1133,6 +1139,24 @@ export function openSession(item: QueueItem, opts: OpenOpts = {}, only: string |
 export function startSession(opts: OpenOpts = {}, only: string | null = null, focus: Focus = 'all'): void {
   const first = sessionQueue(only, focus)[0];
   if (first) openSession(first, opts, only, focus);
+}
+
+/** A saved zoom is a number over 1 and no more than 8; anything else is dropped. */
+export function cleanZooms(raw: unknown): Record<string, number> {
+  const out: Record<string, number> = {};
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) if (typeof v === 'number' && v > 1 && v <= 8) out[k] = v;
+  return out;
+}
+
+/** A book's zoom (1 is its pages fitted to the pane): remembered here, on this device, for this collection. */
+export function setBookZoom(id: string, zoom: number): void {
+  const cur = useApp.getState().bookZooms;
+  if ((cur[id] ?? 1) === zoom) return;
+  const zooms = { ...cur };
+  if (zoom > 1) zooms[id] = zoom; else delete zooms[id];
+  useApp.setState({ bookZooms: zooms });
+  queueSave({ zooms });
 }
 
 /** Narrow the day's queue to one thing to do, or back to all of it: remembered here, on this device, for this collection. */

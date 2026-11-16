@@ -59,6 +59,8 @@ export interface VaultState {
   lastDeck?: string;
   /** What the day's queue is narrowed to on this device (`recall`, `read`, `write`); absent, everything. */
   focus?: string;
+  /** Each book's zoom on this device, by its path, where its pages are not fitted to the pane (1.25 to 3). */
+  zooms?: Record<string, number>;
   /** The last day the queue was built on, so the day's start is known once (the backlog tweak runs then). */
   lastDay?: string;
 }

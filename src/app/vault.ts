@@ -10,17 +10,17 @@ import { open as pickDirectory } from '@tauri-apps/plugin-dialog';
 import { info } from '@tauri-apps/plugin-log';
 import { REVIEWS_DIR, meta, replaces, setField, type Doc, type Meta, type NodeType, type Review } from '../format/index.js';
 import type { Chapter, MappedDeck } from '../import/index.js';
-import { activeExam, addDays, buryLinked, cadence, cardsById, dayOf, dayStart, docItems, examQueue, examsAt, isDue, itemKey, meterQueue, postponeOverflow, readPri, resolveOptions, spentToday, whenToDate, type ExamAt, type QueueItem, type Resolved } from '../schedule/index.js';
+import { activeExam, addDays, buryLinked, cadence, cardsById, dayOf, dayStart, docItems, examKey, examQueue, examsAt, isDue, itemKey, meterQueue, postponeOverflow, readPri, resolveOptions, spentToday, whenToDate, type ExamAt, type QueueItem, type Resolved } from '../schedule/index.js';
 import { SAME_FILE, Vault, childDirOf, childrenAt, cleanName, dirOf, entryOf, fileName, isDoc, isPdfPath, joinRel, normRel, ordered, placeEntry, rekey, relFrom, type DocNode, type ExtractSpec, type SectionSpec, type ImportDeckSpec, type ImportPdfSpec, type ImportSpec, type PdfChapterSpec, type StoreFs, type TextHit, type TreeNode, type VaultEvent, type VaultState } from '../vault/index.js';
 import { createCollection, listCollections } from '../vault/tauri-store.js';
 import { startPlugins, stopPlugins } from '../plugins/index.js';
 import { cleanClipDir } from './clip.js';
 import { collectionFs, importCollection } from './collections.js';
 import { cleanViews, type DeckView } from './deck.js';
-import { cleanBudget, dueToday, sessionItems } from './items.js';
+import { cleanBudget, dueNow, dueToday, sessionItems } from './items.js';
 import { INTAKE, SESSION, cardsId, cardsPath, notesPath, queueId, queueScope } from './names.js';
 import { bookShown, inspectorShown } from './layout.js';
-import { activeTab, dropTabs, emptyPanes, openTab, retarget, tabNode, type OpenOpts, type Panes } from './panes.js';
+import { activeTab, closedBy, dropTabs, emptyPanes, openTab, restorePanes, retarget, savedPanes, tabNode, type OpenOpts, type Panes } from './panes.js';
 import { NEVER, collectionRows, collectionsHome, isMobile, isPhone, loadPlatform, setCollectionsHome } from './platform.js';
 import { addRecent, decideStart, forgetRecent, vaultName } from './recents.js';
 import { STARTER_TEXT, STARTER_TITLE } from './starter.js';
@@ -505,19 +505,33 @@ function publishTree(vault: Vault): void {
 
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
 let savePatch: VaultState = {};
+/** The collection `savePatch` is for: the one open when it was asked, whichever is open when the timer runs. */
+let saveFor: Vault | null = null;
 
 /** Merge `patch` into `.ilmi/state.json`, a little later, so a drag does not write on every pixel. */
 function queueSave(patch: VaultState): void {
+  if (!current) return;
+  if (saveFor !== current) void flushSave();
+  saveFor = current;
   savePatch = { ...savePatch, ...patch };
   if (saveTimer) clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-    saveTimer = null;
-    const vault = current;
-    const p = savePatch;
-    savePatch = {};
-    if (vault) vault.saveState(p).catch((e: unknown) => console.error(e));
-  }, 300);
+  saveTimer = setTimeout(() => { void flushSave(); }, 300);
 }
+
+/** What waits to be saved, written now, to the collection it was asked for: a close or a switch keeps the last change (a tab closed, a width dragged) and never hands it to the next collection. */
+function flushSave(): Promise<void> {
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = null;
+  const vault = saveFor;
+  const p = savePatch;
+  saveFor = null;
+  savePatch = {};
+  if (!vault || !Object.keys(p).length) return Promise.resolve();
+  return vault.saveState(p).then(() => {}, (e: unknown) => console.error(e));
+}
+
+/** The view as it is kept: the tab in front (what an older run reads), and every pane's tabs and which is in front; a session is not one to come back to. */
+const viewOf = (panes: Panes): VaultState => ({ tab: activeTab(panes)?.id ?? '', panes: savedPanes(panes, (id) => id !== SESSION) } as VaultState);
 
 const rekeyOpen = (open: Record<string, true>, from: string, to: string): Record<string, true> => {
   const out: Record<string, true> = {};
@@ -613,17 +627,16 @@ function onEvent(vault: Vault, ev: VaultEvent): void {
 
 /** Open the collection whose folder is `path` (its database read through the store), watch it, and publish its tree. */
 export async function openVault(path: string): Promise<Vault> {
-  stopPlugins();
-  // the collection before this one stops syncing to its storage too, as `closeVault` does: its poll and write timers ran on against a closed collection
-  stopCrdt();
-  stopSync();
-  stopMirror();
-  stopDated();
-  stopSearch();
-  current?.close();
+  // what the open collection has waiting to be saved is written to it first (the same one opened again reads it back)
+  await flushSave();
+  // the one asked for is opened before the open one is let go: one that does not open leaves the window as it was,
+  // its collection still syncing, mirrored and watched (the same collection again is closed first: one reader of it)
+  const again = current !== null && current.root === path;
+  if (again) leaveVault();
   const vault = await Vault.open(collectionFs(path), path);
-  current = vault;
   const state = await vault.loadState();
+  if (!again) { await flushSave(); leaveVault(); }
+  current = vault;
   const open: Record<string, true> = { '': true };
   for (const f of state.folders ?? []) open[f] = true;
   const railFolded: Record<string, true> = {};
@@ -638,10 +651,18 @@ export async function openVault(path: string): Promise<Vault> {
     width: Math.min(INSP_MAX, Math.max(INSP_MIN, state.inspector?.width ?? INSP_DEFAULT)),
     open: state.inspector?.open ?? (!mobile && window.innerWidth > 1180),
   };
-  // the last tab comes back, except a session; nothing remembered opens the day, and on a phone the day is the face
+  // the panes and their tabs come back as they were left, those still there (a session never); from a run before
+  // they were kept, the last tab; nothing remembered opens the day, and on a phone the day is the face
+  const there = async (tab: string): Promise<boolean> => tab !== SESSION && (tab === '' || tab === INTAKE || !!queueScope(tab) || vault.documents().includes(cardsPath(tab) ?? notesPath(tab) ?? tab) || vault.pdfs().includes(tab) || !!(await vault.fs.stat(vault.abs(tab)))?.isDir);
   let panes = emptyPanes();
   const tab = state.tab;
-  if (!isPhone() && tab !== undefined && tab !== SESSION && (tab === '' || tab === INTAKE || queueScope(tab) || vault.documents().includes(cardsPath(tab) ?? tab) || vault.pdfs().includes(tab) || (await vault.fs.stat(vault.abs(tab)))?.isDir)) {
+  const kept = (state as { panes?: { panes?: { tabs?: unknown[] }[] } }).panes;
+  const keptIds = new Set<string>();
+  for (const p of Array.isArray(kept?.panes) ? kept.panes : []) for (const id of Array.isArray(p?.tabs) ? p.tabs : []) if (typeof id === 'string' && !keptIds.has(id) && (await there(id).catch(() => false))) keptIds.add(id);
+  const back = isPhone() ? null : restorePanes(kept, (id) => keptIds.has(id));
+  if (back) {
+    panes = back;
+  } else if (!isPhone() && tab !== undefined && (await there(tab))) {
     panes = openTab(panes, tab);
   } else {
     panes = openTab(panes, queueId('today'));
@@ -657,7 +678,7 @@ export async function openVault(path: string): Promise<Vault> {
   useApp.setState({
     open, sidebar, inspector, panes, docs: {}, queue: [], budget: cleanBudget(state.budget), clipDir: cleanClipDir(state.clippings), log: [], session: null, sessionEl: null, selectedCard: null, cardAt: {}, reveal: null,
     started: true, sideSheet: false, namingVault: false, gone: s0.gone.filter((p) => p !== path), notice: null, fileOver: null, intakeFiles: [], order: vault.order, railFolded, railWidth: clampRail(state.railWidth ?? RAIL_DEFAULT), deckViews: cleanViews(state.decks), lastDeck: typeof state.lastDeck === 'string' ? state.lastDeck : null, quickCard: null,
-    folds: cleanFolds(state.folds), reviews, lensViews: {}, examFilter: null,
+    folds: cleanFolds(state.folds), reviews, lensViews: {}, examFilter: null, closedTabs: [],
     notSame: await vault.loadNotSame().catch(() => []),
   });
   s0.setRecents(addRecent(s0.recents, path, new Date()));
@@ -710,8 +731,23 @@ async function keepsDated(): Promise<boolean> {
   }
 }
 
+/** The open collection let go: its plugins, its sync, its mirror, its day's export, its search walk and its watcher stop. */
+function leaveVault(): void {
+  stopPlugins();
+  // it stops syncing to its storage too: its poll and write timers ran on against a closed collection
+  stopCrdt();
+  stopSync();
+  stopMirror();
+  stopDated();
+  stopSearch();
+  current?.close();
+  current = null;
+}
+
 /** Back to the welcome: the watcher stops, the store forgets the vault's data; the recents keep it. */
 export function closeVault(): void {
+  // what waits to be saved is written, not dropped: the tab closed just before is closed next time too
+  void flushSave();
   stopCrdt();
   stopSync();
   stopMirror();
@@ -726,9 +762,8 @@ export function closeVault(): void {
   indexed = null;
   lastDay = null;
   reviews = [];
-  if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; savePatch = {}; }
   void listVaults().catch(console.error);
-  useApp.setState({ vault: null, sideSheet: false, files: [], tree: [], docs: {}, open: { '': true }, panes: emptyPanes(), queue: [], log: [], session: null, sessionEl: null, selectedCard: null, cardAt: {}, reveal: null, paletteOpen: false, intakeDir: '', notice: null, fileOver: null, intakeFiles: [], order: {}, railFolded: {}, deckViews: {}, folds: {}, reviews: [], lensViews: {}, examFilter: null });
+  useApp.setState({ vault: null, sideSheet: false, files: [], tree: [], docs: {}, open: { '': true }, panes: emptyPanes(), closedTabs: [], queue: [], log: [], session: null, sessionEl: null, selectedCard: null, cardAt: {}, reveal: null, paletteOpen: false, intakeDir: '', notice: null, fileOver: null, intakeFiles: [], order: {}, railFolded: {}, deckViews: {}, folds: {}, reviews: [], lensViews: {}, examFilter: null });
   setWindowTitle(null);
 }
 
@@ -949,7 +984,7 @@ export function openNode(path: string, opts: OpenOpts = {}): void {
   const nb = notebookOf(path, s.docs);
   const panes = openTab(s.panes, path, opts, nb ? (id) => notebookOf(id, s.docs) === nb : undefined);
   useApp.setState({ panes });
-  queueSave({ tab: activeTab(panes)?.id ?? '' });
+  queueSave(viewOf(panes));
 }
 
 /**
@@ -987,23 +1022,28 @@ export function openIntake(dir = '', opts: OpenOpts = {}): void {
   openNode(INTAKE, opts);
 }
 
+/** What a session walks: the day's work, or with the queue narrowed to an exam (`only`, its `examKey`) what is due toward it, as the queue shows it. */
+function sessionQueue(only: string | null): QueueItem[] {
+  const s = useApp.getState();
+  return only === null ? dueToday(s.queue, appNow(), s.budget) : dueNow(s.queue, appNow()).filter((i) => i.exam && examKey(i.exam) === only);
+}
+
 /**
  * Start a session at `item`: today's queue rotated to begin there, or the
  * item alone when it is not due. The one session tab opens, or comes to
- * the front and starts over.
+ * the front and starts over. `only`: the exam the queue is narrowed to.
  */
-export function openSession(item: QueueItem, opts: OpenOpts = {}): void {
+export function openSession(item: QueueItem, opts: OpenOpts = {}, only: string | null = null): void {
   const s = useApp.getState();
-  const items = sessionItems(dueToday(s.queue, appNow(), s.budget), item);
+  const items = sessionItems(sessionQueue(only), item);
   useApp.setState({ session: { seq: (s.session?.seq ?? 0) + 1, items } });
   openNode(SESSION, opts);
 }
 
-/** Enter the queue: a session over everything due, from the top. */
-export function startSession(opts: OpenOpts = {}): void {
-  const s = useApp.getState();
-  const first = dueToday(s.queue, appNow(), s.budget)[0];
-  if (first) openSession(first, opts);
+/** Enter the queue: a session over everything due, from the top; narrowed to an exam (`only`), over what is due toward it. */
+export function startSession(opts: OpenOpts = {}, only: string | null = null): void {
+  const first = sessionQueue(only)[0];
+  if (first) openSession(first, opts, only);
 }
 
 /**
@@ -1011,10 +1051,10 @@ export function startSession(opts: OpenOpts = {}): void {
  * key first; what is first due today is left alone, cards untouched; one
  * line per file. Resolves to how many.
  */
-export async function postponeRest(): Promise<number> {
+export async function postponeRest(quiet = false): Promise<number> {
   const s = useApp.getState();
   const done = await postponeOverflow(need(), s.queue, appNow());
-  if (done.length) note(`postponed · ${done.length} element${done.length === 1 ? '' : 's'}`);
+  if (done.length && !quiet) note(`postponed · ${done.length} element${done.length === 1 ? '' : 's'}`);
   return done.length;
 }
 
@@ -1029,8 +1069,43 @@ export function rememberDeck(path: string): void {
   queueSave({ lastDeck: path });
 }
 
+/** The panes as they are now, kept for the next run (`viewOf`): after a tab is opened, chosen or closed, a pane split or closed. */
 export function rememberTab(): void {
-  queueSave({ tab: activeTab(useApp.getState().panes)?.id ?? '' });
+  queueSave(viewOf(useApp.getState().panes));
+}
+
+/** How many closed tabs ⌘⇧T remembers. */
+const CLOSED_MAX = 20;
+
+/**
+ * A change to the panes that may close tabs (a tab's ×, ⌘W, a pane's ×):
+ * what it closed is remembered for ⌘⇧T, for this run of the collection,
+ * and the panes are kept as they are now. A session is not one to open again.
+ */
+export function closeTabs(change: (s: Panes) => Panes): void {
+  const st = useApp.getState();
+  const next = change(st.panes);
+  if (next === st.panes) return;
+  const shut = closedBy(st.panes, next).filter((id) => id !== SESSION);
+  useApp.setState({ panes: next, ...(shut.length ? { closedTabs: [...st.closedTabs.filter((id) => !shut.includes(id)), ...shut].slice(-CLOSED_MAX) } : {}) });
+  rememberTab();
+}
+
+/** ⌘⇧T: the tab closed last, open again as a tab of the active pane; one whose node went meanwhile is passed over. */
+export function reopenClosed(): void {
+  const st = useApp.getState();
+  const closed = [...st.closedTabs];
+  const has = (p: string): boolean => p === '' || st.files.includes(p) || st.files.includes(`${p}.md`) || !!current?.pdfs().includes(p) || childrenAt(st.tree, p) !== undefined;
+  while (closed.length) {
+    const id = closed.pop()!;
+    const node = tabNode(id);
+    if (node === null || has(node)) {
+      useApp.setState({ closedTabs: closed });
+      openNode(id, { newTab: true });
+      return;
+    }
+  }
+  if (st.closedTabs.length) useApp.setState({ closedTabs: [] });
 }
 
 export function toggleOpen(path: string, force?: boolean): void {
@@ -1268,9 +1343,9 @@ export async function removeCard(path: string, index: number, id?: string, text?
 }
 
 /** Forget one card's schedule so it comes up as new again; the card and its selection stay. */
-export async function resetCard(path: string, index: number, id?: string, text?: string): Promise<void> {
+export async function resetCard(path: string, index: number, id?: string, text?: string, quiet = false): Promise<void> {
   await need().resetCard(path, index, id, text);
-  note('reset · card');
+  if (!quiet) note('reset · card');
 }
 
 /** Move one card to another document; its schedule goes with it, and a selection on it clears. */

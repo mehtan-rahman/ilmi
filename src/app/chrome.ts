@@ -1,5 +1,5 @@
 // The shell's pure side: what the bottom strip says for each surface, what
-// a card is called in a list, the palette's index and its fuzzy match, and
+// a card is called in a list, the palette's index and how near a name is to what was typed, and
 // what it makes of the search index's hits (milestone 68).
 // The components are TopStrip, BottomStrip, Inspector, Palette, Tweaks.
 
@@ -122,31 +122,58 @@ export const formLabel = (text: string): string => { const f = formOf(text); ret
 
 // ── the palette ──────────────────────────────────────────────────
 
+/** Where a word starts: the start, or after a space or a mark that parts names (`a-b`, `a · b`, `a/b`, `a.b`, `a › b`). */
+const SEP = /[\s\-·/._›:,()]/;
+/** The letters a loose match may pass over between two it takes, inside a word. */
+const GAP_MAX = 2;
+
 /**
- * The prototype's fuzzy match: every character of `query` in order in
- * `text`; lower is better, gaps cost, a match at a word start is cheaper,
- * null when it does not match. Empty query matches everything at 0. (The
- * prototype returned -1 for a miss and then kept only scores ≥ 0, which
- * dropped its best matches; a miss is null here.)
+ * A loose match, for a name typed short or with a letter missing: every
+ * character of `query` in order in `text`, each one right after the one
+ * before it, at the start of a word (`qm` is `quantum mechanics`, `linalg`
+ * `linear algebra`), or a letter or two further on (`quntum`). Lower is
+ * better: a word jumped to costs 1, a letter passed over 2, a start inside
+ * a word 2. Null when it does not match, or matches only by more of that
+ * than half its length allows, unless every letter starts a word: letters
+ * spread over a long name are no match (`unit` in `quantum … integrals`).
+ * Empty query matches everything at 0.
  */
 export function fuzzy(query: string, text: string): number | null {
   query = query.toLowerCase();
   text = text.toLowerCase();
   if (!query) return 0;
-  let qi = 0;
-  let score = 0;
-  let prev = -2;
-  let run = 0;
-  for (let ti = 0; ti < text.length && qi < query.length; ti++) {
-    if (text[ti] === query[qi]) {
-      if (prev >= 0) score += ti - prev === 1 ? 0 : ti - prev;
-      if (ti === 0 || /[\s\-·/.]/.test(text[ti - 1]!)) score -= 2;
-      prev = ti;
-      qi++;
-      run++;
+  const n = text.length;
+  const starts = Array.from({ length: n }, (_, i) => i === 0 || SEP.test(text[i - 1]!));
+  // the cheapest way to have taken the query so far with its last character at each place, and whether every one began a word
+  let cost: number[] = new Array<number>(n).fill(Infinity);
+  let initials: boolean[] = new Array<boolean>(n).fill(false);
+  for (let i = 0; i < n; i++) if (text[i] === query[0]) { cost[i] = starts[i] ? 0 : 2; initials[i] = starts[i]!; }
+  for (let qi = 1; qi < query.length; qi++) {
+    const next: number[] = new Array<number>(n).fill(Infinity);
+    const nextInit: boolean[] = new Array<boolean>(n).fill(false);
+    // the cheapest place before each one, for a jump to a word's start
+    let best = Infinity;
+    let bestInit = false;
+    for (let i = 0; i < n; i++) {
+      if (text[i] === query[qi]) {
+        const take = (c: number, init: boolean) => { if (c < next[i]! || (c === next[i] && init && !nextInit[i])) { next[i] = c; nextInit[i] = init; } };
+        if (i > 0 && cost[i - 1]! < Infinity) take(cost[i - 1]!, false);
+        if (starts[i] && best < Infinity) take(best + 1, bestInit);
+        for (let g = 1; g <= GAP_MAX && i - 1 - g >= 0; g++) if (cost[i - 1 - g]! < Infinity) take(cost[i - 1 - g]! + 2 * g, false);
+      }
+      if (cost[i]! < best || (cost[i] === best && initials[i] && !bestInit)) { best = cost[i]!; bestInit = initials[i]!; }
     }
+    cost = next;
+    initials = nextInit;
   }
-  return qi === query.length ? score - run * 0.2 : null;
+  const bound = Math.max(1, Math.floor(query.length / 2));
+  let found: number | null = null;
+  for (let i = 0; i < n; i++) {
+    const c = cost[i]!;
+    if (c === Infinity || (c > bound && !initials[i])) continue;
+    if (found === null || c < found) found = c;
+  }
+  return found === null ? null : found - query.length * 0.2;
 }
 
 export type EntryTag = 'query' | 'folder' | 'note' | 'source' | 'extract' | 'deck' | 'draft' | 'card' | 'text' | 'command' | 'vault';
@@ -205,22 +232,51 @@ export function buildIndex(tree: TreeNode[], docs: Record<string, DocInfo>, comm
   return out;
 }
 
-/** What a row's name is matched by, folded once: an index is built when the tree changes, not at each key. */
-const hays = new WeakMap<Entry, string>();
-const hayOfEntry = (it: Entry): string => {
+/** What a row is matched by, folded once: an index is built when the tree changes, not at each key. */
+interface Hay { title: string; sub: string; all: string }
+const hays = new WeakMap<Entry, Hay>();
+const hayOfEntry = (it: Entry): Hay => {
   let hay = hays.get(it);
-  if (hay === undefined) hays.set(it, (hay = fold(`${it.title} ${it.sub}`)));
+  if (hay === undefined) {
+    const title = fold(it.title);
+    const sub = fold(it.sub);
+    hays.set(it, (hay = { title, sub, all: `${title} ${sub}` }));
+  }
   return hay;
 };
 
-/** The best forty for a query; the first forty when there is none. */
+/** `query` begins a word of `text`. */
+function startsWord(text: string, query: string): boolean {
+  for (let at = text.indexOf(query); at >= 0; at = text.indexOf(query, at + 1)) if (at === 0 || SEP.test(text[at - 1]!)) return true;
+  return false;
+}
+
+/**
+ * How near a row is to what was typed, lower nearer, null when it is not
+ * it: named exactly that; its name begins with it; a word of its name
+ * does; its name holds it; where it lives does; the words typed are all
+ * there, apart; then a loose match of its name (`fuzzy`).
+ */
+function nearness(hay: Hay, query: string, words: string[]): [tier: number, cost: number] | null {
+  if (hay.title === query) return [0, 0];
+  if (hay.title.startsWith(query)) return [1, 0];
+  if (startsWord(hay.title, query)) return [2, 0];
+  if (hay.title.includes(query)) return [3, 0];
+  if (hay.all.includes(query)) return [4, 0];
+  if (words.length > 1 && words.every((w) => hay.all.includes(w))) return [5, 0];
+  const loose = fuzzy(query, hay.title);
+  return loose === null ? null : [6, loose];
+}
+
+/** The best forty for a query, nearest first (`nearness`), rows as near as each other in the index's order; the first forty when there is none. */
 export function search(index: Entry[], q: string): Entry[] {
   const query = fold(q.trim());
   if (!query) return index.slice(0, 40);
+  const words = query.split(/\s+/).filter(Boolean);
   return index
-    .map((it) => ({ it, score: fuzzy(query, hayOfEntry(it)) }))
-    .filter((r): r is { it: Entry; score: number } => r.score !== null)
-    .sort((a, b) => a.score - b.score)
+    .map((it, at) => ({ it, at, near: nearness(hayOfEntry(it), query, words) }))
+    .filter((r): r is { it: Entry; at: number; near: [number, number] } => r.near !== null)
+    .sort((a, b) => a.near[0] - b.near[0] || a.near[1] - b.near[1] || a.at - b.at)
     .slice(0, 40)
     .map((r) => r.it);
 }
@@ -296,8 +352,8 @@ export function textEntry(h: TextHit, q: string, docs: Record<string, DocInfo>):
 /** Names that hold the query as typed, a few looser ones, the text found, then the rest of the names. */
 export function withText(names: Entry[], text: Entry[], q: string): Entry[] {
   const query = fold(q.trim());
-  const close = names.filter((it) => hayOfEntry(it).includes(query));
-  const loose = names.filter((it) => !hayOfEntry(it).includes(query));
+  const close = names.filter((it) => hayOfEntry(it).all.includes(query));
+  const loose = names.filter((it) => !hayOfEntry(it).all.includes(query));
   return [...close, ...loose.slice(0, LOOSE_FIRST), ...text.slice(0, TEXT_ROWS), ...loose.slice(LOOSE_FIRST)];
 }
 

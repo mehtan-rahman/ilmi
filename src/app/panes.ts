@@ -237,3 +237,59 @@ export function dropTabs(s: Panes, path: string): Panes {
   }
   return next;
 }
+
+/** The active pane's next tab (`by` 1) or the one before (-1), round the ends. Unchanged with fewer than two. */
+export function cycleTab(s: Panes, by: 1 | -1): Panes {
+  const p = s.panes[s.active];
+  if (!p || p.tabs.length < 2) return s;
+  return selectTab(s, s.active, (p.active + by + p.tabs.length) % p.tabs.length);
+}
+
+/** The tabs `before` had that `after` has not, by id, in the order they were: what a close took, for ⌘⇧T. */
+export function closedBy(before: Panes, after: Panes): string[] {
+  const left = new Set(after.panes.flatMap((p) => p.tabs.map((t) => t.id)));
+  return before.panes.flatMap((p) => p.tabs.map((t) => t.id)).filter((id) => !left.has(id));
+}
+
+/** The panes as they are kept between runs (`.ilmi/state.json`): each pane's tab ids and which is in front. */
+export interface SavedPanes {
+  panes: { tabs: string[]; active: number }[];
+  active: number;
+}
+
+/** What is kept of `s`: every tab `keep` passes (a session is not one to come back to), the actives moved to match; a pane left with none is not kept. */
+export function savedPanes(s: Panes, keep: (id: string) => boolean = () => true): SavedPanes {
+  const out: SavedPanes = { panes: [], active: 0 };
+  s.panes.forEach((p, pi) => {
+    const tabs = p.tabs.filter((t) => keep(t.id));
+    if (!tabs.length) return;
+    const front = p.tabs[p.active];
+    const at = front ? tabs.indexOf(front) : -1;
+    // the tab in front was not kept: the nearest kept one before it, else the first
+    const before = p.tabs.slice(0, p.active).filter((t) => keep(t.id)).length;
+    if (pi === s.active) out.active = out.panes.length;
+    out.panes.push({ tabs: tabs.map((t) => t.id), active: at >= 0 ? at : Math.max(0, before - 1) });
+  });
+  return out;
+}
+
+/**
+ * The panes a run left, back: what was kept, read as it is found (anything
+ * may be in the file), with only the tabs `there` passes; null when none is
+ * left, or nothing was kept.
+ */
+export function restorePanes(saved: unknown, there: (id: string) => boolean): Panes | null {
+  const from = saved as Partial<SavedPanes> | null;
+  if (!from || typeof from !== 'object' || !Array.isArray(from.panes)) return null;
+  const out: Panes = { panes: [], active: 0 };
+  const seen = new Set<string>();
+  from.panes.forEach((p, pi) => {
+    if (!p || !Array.isArray(p.tabs) || out.panes.length >= MAX_PANES) return;
+    const front = typeof p.active === 'number' ? p.tabs[p.active] : undefined;
+    const ids = p.tabs.filter((id): id is string => typeof id === 'string' && !seen.has(id) && there(id) && !!seen.add(id));
+    if (!ids.length) return;
+    if (pi === from.active) out.active = out.panes.length;
+    out.panes.push({ tabs: ids.map(tab), active: Math.max(0, ids.indexOf(front as string)) });
+  });
+  return out.panes.length ? out : null;
+}

@@ -96,6 +96,18 @@ export function FaceField({ value, placeholder, autoFocus, blanks, onChange }: F
       nodeViews,
       handleClickOn,
       attributes: { class: 'draft-doc face-field', 'data-placeholder': placeholder },
+      // Tab in a face's plain text goes to the card's other face (⇧Tab back), as a form's fields do; in a cell or a list it is the editor's
+      handleKeyDown(ev, e) {
+        if (e.key !== 'Tab' || e.metaKey || e.ctrlKey || e.altKey) return false;
+        const { $from } = ev.state.selection;
+        if ($from.depth !== 1 || $from.parent.type.name !== 'paragraph') return false;
+        const faces = Array.from(document.querySelectorAll<HTMLElement>('.face-field'));
+        const other = faces[faces.indexOf(ev.dom as HTMLElement) + (e.shiftKey ? -1 : 1)];
+        if (!other) return false;
+        e.preventDefault();
+        other.focus();
+        return true;
+      },
       handleDOMEvents: {
         // a cell's menu, or cut, copy, paste and `insert table` (not in a cloze)
         contextmenu: (ev, e) => editorMenu(ev, e, { table: !blanks }),

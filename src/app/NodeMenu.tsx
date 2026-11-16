@@ -19,7 +19,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type Dispatch, type Mouse
 import type { NodeType } from '../format/index.js';
 import { childDirOf, dirOf, isDoc, isPdfPath } from '../vault/index.js';
 import { hasCards, studyDeck } from './deckOps.js';
-import { importFiles } from './land.js';
+import { importFiles, failed } from './land.js';
 import { GLYPH, descendants, findNode, kindOf, moveTargets, titleOf, type MoveTarget, type NodeKind } from './names.js';
 import { useApp } from './store.js';
 import { deleteNode } from './remove.js';
@@ -149,7 +149,7 @@ export function NodeMenu({ at, set, onCreated, onRename, onSubtab, onMoved }: Pr
   const order = useApp((s) => s.order);
   const [asking, setAsking] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
-  const fail = (e: unknown) => console.error(e);
+  const fail = failed('that');
 
   // the menu closes on any outside press or escape
   useEffect(() => {
@@ -174,7 +174,10 @@ export function NodeMenu({ at, set, onCreated, onRename, onSubtab, onMoved }: Pr
   const pdfAlone = isPdfPath(at.id);
   // new items, imports, and the intake land in the folder, or inside the document (its children directory)
   const dir = childDirOf(at.id);
-  const act = (fn: () => void) => (e: MouseEvent) => { e.stopPropagation(); fn(); set(null); };
+  // an item run gives the keys back to the page: the press that opened the menu left the focus on the tree, whose
+  // jump-to-a-name would take the page's bare keys (a session's grades after `study`); a rename's field takes it after
+  const toPage = () => { const on = document.activeElement; if (on instanceof HTMLElement && on.matches('.tree')) on.blur(); };
+  const act = (fn: () => void) => (e: MouseEvent) => { e.stopPropagation(); fn(); set(null); toPage(); };
   const create = (k: NodeKind) => { createNode(dir, k as NodeType | 'folder').then(onCreated).catch(fail); };
   const sub = (on: boolean) => (e: MouseEvent) => { e.stopPropagation(); set((m) => (m ? { ...m, sub: on } : m)); };
   const targets = moveTargets(tree, at.id, order);
@@ -184,8 +187,9 @@ export function NodeMenu({ at, set, onCreated, onRename, onSubtab, onMoved }: Pr
   const del = (e: MouseEvent) => {
     e.stopPropagation();
     if (under > 0 && !asking) { setAsking(true); return; }
-    deleteNode(at.id).catch(fail);
+    deleteNode(at.id).catch(failed('delete'));
     set(null);
+    toPage();
   };
 
   return (
@@ -211,7 +215,7 @@ export function NodeMenu({ at, set, onCreated, onRename, onSubtab, onMoved }: Pr
           <div className="ci" data-act="rename" onClick={act(() => onRename(at.id))}>
             <span className="cg"><Glyph g="✎" /></span>rename<span className="ck">F2</span>
           </div>
-          <div className="ci" data-act="duplicate" onClick={act(() => { duplicateNode(at.id).catch(fail); })}>
+          <div className="ci" data-act="duplicate" onClick={act(() => { duplicateNode(at.id).catch(failed('duplicate')); })}>
             <span className="cg"><Glyph g="⧉" /></span>duplicate
           </div>
           <div className="ci has-sub" data-act="move" onClick={sub(true)}>
@@ -232,7 +236,7 @@ export function NodeMenu({ at, set, onCreated, onRename, onSubtab, onMoved }: Pr
           ))}
           {!pdfAlone && <div className="cd" />}
           {!pdfAlone && (
-            <div className="ci" onClick={act(() => { void importFiles(dir).catch(fail); })}>
+            <div className="ci" onClick={act(() => { void importFiles(dir).catch(failed('import')); })}>
               <span className="cg"><Glyph g="↧" /></span>import a file…
             </div>
           )}
@@ -286,7 +290,7 @@ export function NodeMenu({ at, set, onCreated, onRename, onSubtab, onMoved }: Pr
               <div className="ci" onClick={act(() => onRename(at.id))}>
                 <span className="cg"><Glyph g="✎" /></span>rename<span className="ck">F2</span>
               </div>
-              <div className="ci" data-act="duplicate" onClick={act(() => { duplicateNode(at.id).catch(fail); })}>
+              <div className="ci" data-act="duplicate" onClick={act(() => { duplicateNode(at.id).catch(failed('duplicate')); })}>
                 <span className="cg"><Glyph g="⧉" /></span>duplicate
               </div>
               <div className="ci has-sub" onClick={sub(true)}>
@@ -300,7 +304,7 @@ export function NodeMenu({ at, set, onCreated, onRename, onSubtab, onMoved }: Pr
           )}
         </>
       ) : (
-        <MoveList targets={targets} back={sub(false)} move={(dir) => { const from = at.id; moveNode(from, dir).then((to) => onMoved?.(from, to)).catch(fail); set(null); }} />
+        <MoveList targets={targets} back={sub(false)} move={(dir) => { const from = at.id; moveNode(from, dir).then((to) => onMoved?.(from, to)).catch(failed('move')); set(null); }} />
       )}
     </div>
   );

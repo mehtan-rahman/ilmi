@@ -6,10 +6,17 @@
 import { useEffect, useState } from 'react';
 import { KIND_WORD, clientOf, icloudFolder, kindsHere, signsIn, type StorageSettings } from './storage.js';
 
-/** A text field that commits on blur or ⏎; escape restores. */
-export function TextField({ value, type = 'text', disabled = false, onCommit }: { value: string; type?: 'text' | 'password'; disabled?: boolean; onCommit: (v: string) => void }) {
-  const [text, setText] = useState(value);
-  useEffect(() => { setText(value); }, [value]);
+/**
+ * A text field that commits on blur or ⏎; escape restores. `onType` hears
+ * what it holds at each key (and what escape put back): a button beside it
+ * is pressable for what is typed, not only once the field loses the focus
+ * (a press on a disabled button takes no focus in WebKit, so the field
+ * never committed and the button never woke).
+ */
+export function TextField({ value, type = 'text', disabled = false, onCommit, onType }: { value: string; type?: 'text' | 'password'; disabled?: boolean; onCommit: (v: string) => void; onType?: (v: string) => void }) {
+  const [text, setTextState] = useState(value);
+  const setText = (v: string) => { setTextState(v); onType?.(v); };
+  useEffect(() => { setTextState(value); }, [value]);
   const commit = () => { if (text !== value) onCommit(text); };
   return (
     <input
@@ -33,7 +40,7 @@ export function TextField({ value, type = 'text', disabled = false, onCommit }: 
 
 type Key = 'endpoint' | 'bucket' | 'key' | 'secret' | 'address' | 'user' | 'password' | 'appKey' | 'clientId' | 'clientSecret' | 'place';
 
-export function StorageFields({ st, word, locked, mobile, signing, set, onChoose, onSignIn, onSignOut }: {
+export function StorageFields({ st, word, locked, mobile, signing, set, onType, onChoose, onSignIn, onSignOut }: {
   st: StorageSettings;
   /** Where the storage stands, beside its label. */
   word?: string;
@@ -41,16 +48,22 @@ export function StorageFields({ st, word, locked, mobile, signing, set, onChoose
   mobile: boolean;
   signing: boolean;
   set(p: Partial<StorageSettings>): void;
+  /** What a field holds while it is typed in, before it is committed: for what is enabled by it. */
+  onType?(p: Partial<StorageSettings>): void;
   onChoose?(): void;
   onSignIn(): void;
   onSignOut(): void;
 }) {
   const [icloud, setIcloud] = useState(false);
   useEffect(() => { void icloudFolder().then((at) => setIcloud(at !== null)); }, []);
+  // what the fields hold before they commit: `sign in` is pressable for a client typed, and keeps it first
+  const [typed, setTyped] = useState<Partial<StorageSettings>>({});
+  useEffect(() => { setTyped({}); }, [st]);
+  const typing = (p: Partial<StorageSettings>) => { setTyped((t) => ({ ...t, ...p })); onType?.(p); };
   const field = (label: string, key: Key, secret = false) => (
     <div className="tw-row" key={key}>
       <span className="tw-lbl">{label}</span>
-      <TextField value={st[key]} type={secret ? 'password' : 'text'} disabled={locked} onCommit={(v) => set({ [key]: v })} />
+      <TextField value={st[key]} type={secret ? 'password' : 'text'} disabled={locked} onCommit={(v) => set({ [key]: v })} onType={(v) => typing({ [key]: v })} />
     </div>
   );
   return (
@@ -80,7 +93,7 @@ export function StorageFields({ st, word, locked, mobile, signing, set, onChoose
         <div className="tw-row">
           <span className="tw-lbl">account <span className="tw-val">{signing ? 'waiting' : st.account ? 'signed in' : ''}</span></span>
           <div className="tw-seg">
-            <button type="button" disabled={clientOf(st) === ''} onClick={onSignIn}>sign in</button>
+            <button type="button" disabled={clientOf({ ...st, ...typed }) === ''} onClick={() => { if (Object.keys(typed).length) set(typed); onSignIn(); }}>sign in</button>
             {st.account !== '' && <button type="button" disabled={signing} onClick={onSignOut}>sign out</button>}
           </div>
         </div>

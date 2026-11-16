@@ -8479,7 +8479,7 @@ export async function smokeLearn(vault: Vault): Promise<void> {
     await shot('learn-first');
     (document.activeElement as HTMLElement | null)?.blur?.();
     key(' ');
-    await poll(() => q('.sess-count')?.textContent === '2 / 3', `got it: on to the second, one more at the end (${q('.sess-count')?.textContent})`);
+    await poll(() => q('.sess-count')?.textContent === '2 / 4', `got it: on to the second, the total told from the start (${q('.sess-count')?.textContent})`);
     await sleep(500);
     must((await text(a.path)) === before, 'nothing written to the first card\'s file');
     key(' ');

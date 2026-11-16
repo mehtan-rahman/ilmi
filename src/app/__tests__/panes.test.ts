@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  activatePane, activeTab, besideAt, closeBeside, closePane, closeTab, dropTabs, emptyPanes, openBeside, openTab, retarget, selectTab, splitPane,
+  activatePane, activeTab, besideAt, closeBeside, closePane, closeTab, closedBy, cycleTab, dropTabs, emptyPanes, openBeside, openTab, restorePanes, retarget, savedPanes, selectTab, splitPane,
 } from '../panes.js';
 import { notesId } from '../names.js';
 
@@ -151,5 +151,47 @@ describe('the pane beside (milestone 70)', () => {
     expect(ids(s)).toEqual([['library/chapter-3.md'], [notesId('library/chapter-3.md')]]);
     s = dropTabs(s, 'library/chapter-3.md');
     expect(ids(s)).toEqual([[]]);
+  });
+
+  it('⌃Tab and ⌃⇧Tab step the active pane\'s tabs, round the ends; one tab stays', () => {
+    let s = openTab(openTab(openTab(emptyPanes(), 'a.md'), 'b.md', { newTab: true }), 'c.md', { newTab: true });
+    s = cycleTab(s, 1);
+    expect(activeTab(s)?.id).toBe('a.md');
+    s = cycleTab(s, -1);
+    expect(activeTab(s)?.id).toBe('c.md');
+    s = cycleTab(s, -1);
+    expect(activeTab(s)?.id).toBe('b.md');
+    // the other pane's tabs are not stepped through
+    s = openTab(s, 'd.md', { cmdClick: true, shiftClick: true });
+    expect(cycleTab(s, 1)).toBe(s);
+    expect(cycleTab(emptyPanes(), 1).panes[0]!.tabs).toEqual([]);
+  });
+
+  it('says what a close took: a tab, or a pane\'s tabs; a tab open elsewhere still is not one', () => {
+    const s = openTab(openTab(openTab(emptyPanes(), 'a.md'), 'b.md', { newTab: true }), 'c.md', { cmdClick: true, shiftClick: true });
+    expect(closedBy(s, closeTab(s, 0, 0))).toEqual(['a.md']);
+    expect(closedBy(s, closePane(s, 0))).toEqual(['a.md', 'b.md']);
+    expect(closedBy(s, selectTab(s, 0, 0))).toEqual([]);
+  });
+
+  it('keeps the panes between runs: every tab and which is in front, a session left out, and back only what is still there', () => {
+    let s = openTab(openTab(openTab(emptyPanes(), 'a.md'), ':session', { newTab: true }), 'b.md', { newTab: true });
+    s = openTab(s, 'c.md', { cmdClick: true, shiftClick: true });
+    s = selectTab(s, 0, 1);
+    const kept = savedPanes(s, (id) => id !== ':session');
+    // the session was in front: the kept tab before it is
+    expect(kept).toEqual({ panes: [{ tabs: ['a.md', 'b.md'], active: 0 }, { tabs: ['c.md'], active: 0 }], active: 0 });
+    const back = restorePanes(JSON.parse(JSON.stringify(savedPanes(selectTab(s, 0, 2), (id) => id !== ':session'))), () => true)!;
+    expect(ids(back)).toEqual([['a.md', 'b.md'], ['c.md']]);
+    expect(activeTab(back)?.id).toBe('b.md');
+    // a tab whose node went is not back; a pane left with none is not either, and the active pane is the one that was
+    const less = restorePanes({ panes: [{ tabs: ['a.md', 'b.md'], active: 1 }, { tabs: ['c.md'], active: 0 }], active: 1 }, (id) => id === 'c.md')!;
+    expect(ids(less)).toEqual([['c.md']]);
+    expect(less.active).toBe(0);
+    expect(restorePanes({ panes: [{ tabs: ['a.md'], active: 0 }] }, () => false)).toBeNull();
+    // whatever the file holds
+    expect(restorePanes(undefined, () => true)).toBeNull();
+    expect(restorePanes({ panes: 'x' }, () => true)).toBeNull();
+    expect(ids(restorePanes({ panes: [null, { tabs: ['a.md', 7, 'a.md'], active: 9 }], active: 5 }, () => true)!)).toEqual([['a.md']]);
   });
 });

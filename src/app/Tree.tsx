@@ -9,7 +9,15 @@
 //  · ⌥-click          hoist the row: the tree shows only what is under it, a crumb to go back
 //  · dbl-click / F2   inline rename; F2 only while the tree has focus (a click on a row gives it)
 //  · keys             ↑↓ → ← ⏎, ⌘⌫ delete, ⌥⌘↑↓ move among siblings, ⌥⌘← → outdent / nest,
-//                     a letter jumps to the next name starting with it (`treeModel.ts`)
+//                     a letter jumps to the next name starting with it (`treeModel.ts`); a
+//                     letter no name starts with is left to the page (unless it follows a
+//                     jump at once: the name going on), and so is every letter while a
+//                     session is in front (its 1–4, its p and d)
+//  · the page's keys  a click that opens a row gives the focus back to the page: its
+//                     bare keys (a deck's j k, a reader's r) are the page's again;
+//                     the row stays selected, and a press on the tree's own keys
+//                     (↑↓, F2) wants the focus here first (Tab, or a press on a
+//                     chevron or the sidebar)
 //  · hover            `+` (the new menu, inside the row) and `···` (the row's menu) at its end;
 //                     the selected row shows them too, for the keyboard and the eye
 //  · right-click      the node's menu (`NodeMenu.tsx`, shared with the folder lens);
@@ -27,10 +35,11 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEve
 import { childDirOf } from '../vault/index.js';
 import { geometry } from './dnd.js';
 import { rowDrag, rowMark, useDrag, type Surface } from './drag.js';
-import { GLYPH, descendants, findNode, kindOf, rowCounts, titleOf, type NodeKind } from './names.js';
+import { GLYPH, SESSION, descendants, findNode, kindOf, rowCounts, titleOf, type NodeKind } from './names.js';
 import { MathText } from './MathText.js';
 import { NodeMenu, menuAt, type MenuAt } from './NodeMenu.js';
 import type { OpenOpts } from './panes.js';
+import { failed } from './land.js';
 import { useApp } from './store.js';
 import { TREE_INDENT, TREE_PAD, afterDelete, followMove, isNodeRow, keyPlace, revealRows, treeKey, treeRows, typeahead, type TreeCards, type TreeRow } from './treeModel.js';
 import { cardSet, frontLine } from './cardSet.js';
@@ -99,7 +108,7 @@ export function Tree({ activeId, onOpen }: Props) {
   const now = appNow();
 
   const title = (path: string) => titleOf(path, docs, root);
-  const fail = (e: unknown) => console.error(e);
+  const fail = failed('that');
   const hoisted = hoist !== null && findNode(tree, hoist) ? hoist : null;
   // a document's cards, listed under its row once it is open; read again with every write the vault reports (`docs`)
   const cardsOf = useMemo<TreeCards>(() => {
@@ -175,7 +184,7 @@ export function Tree({ activeId, onOpen }: Props) {
     setEditing(null);
     // a node moved or deleted while its name was being edited is not renamed (its path is another's now, or nothing's)
     const here = findNode(useApp.getState().tree, id);
-    if (here && value.trim() && value.trim() !== title(id)) renameNode(id, value).then((to) => follow(id, to)).catch(fail);
+    if (here && value.trim() && value.trim() !== title(id)) renameNode(id, value).then((to) => follow(id, to)).catch(failed('rename'));
     boxRef.current?.focus();
   };
 
@@ -186,7 +195,7 @@ export function Tree({ activeId, onOpen }: Props) {
     setAsking(null);
     // the next row not under it: not its cards' rows either, which go with it
     setSelected(afterDelete(rows, id));
-    deleteNode(id).catch(fail);
+    deleteNode(id).catch(failed('delete'));
   };
 
   // the tree's keys, while it has focus (`treeModel.ts`); in the page they are the page's
@@ -200,6 +209,19 @@ export function Tree({ activeId, onOpen }: Props) {
       // F2 on a tab whose row is folded away still renames it
       if (e.key === 'F2' && activeId && findNode(tree, activeId)) { e.preventDefault(); beginRename(activeId); }
       return;
+    }
+    // a letter is the tree's only when a name starts with what was typed: any other is the page's (a deck's j k m,
+    // a reader's r), and with a session in front every one is (its grades, p, d, o)
+    let typedHit: string | null = null;
+    if (act.kind === 'type') {
+      if (activeId === SESSION) return;
+      const t = Date.now();
+      // letters typed quickly are one word: one that follows a jump is the name going on, and the tree's whether or not a name goes on so
+      const going = t - typed.current.at < 700;
+      const buf = going ? typed.current.buf + act.char : act.char;
+      typedHit = typeahead(rows, focus, buf, rowName);
+      if (typedHit === null && !going) return;
+      typed.current = { buf, at: t };
     }
     e.preventDefault();
     e.stopPropagation();
@@ -219,16 +241,10 @@ export function Tree({ activeId, onOpen }: Props) {
       case 'delete': del(act.path); break;
       case 'move': {
         const to = keyPlace(rows, act.path, act.to);
-        if (to) placeNode(act.path, to.target, to.mode).then(setSelected).catch(fail);
+        if (to) placeNode(act.path, to.target, to.mode).then(setSelected).catch(failed('move'));
         break;
       }
-      case 'type': {
-        const t = Date.now();
-        typed.current = { buf: t - typed.current.at < 700 ? typed.current.buf + act.char : act.char, at: t };
-        const hit = typeahead(rows, focus, typed.current.buf, rowName);
-        if (hit !== null) setSelected(hit);
-        break;
-      }
+      case 'type': if (typedHit !== null) setSelected(typedHit); break;
     }
   };
 
@@ -261,6 +277,9 @@ export function Tree({ activeId, onOpen }: Props) {
     const r = e.currentTarget.getBoundingClientRect();
     setMenu(menuAt({ clientX: r.left, clientY: r.bottom + 2 }, id, plus));
   };
+
+  /** A press that opened something gives the keys back to the page: the tree keeps its selection, not the focus. */
+  const toPage = () => { if (document.activeElement === boxRef.current) boxRef.current?.blur(); };
 
   /** A card's row: the card view on its document's cards, at this one. */
   const openCardRow = (r: TreeRow, opts: OpenOpts) => {
@@ -314,7 +333,7 @@ export function Tree({ activeId, onOpen }: Props) {
         aria-selected={selected === r.path}
         title={frontLine(c.text, 400)}
         onMouseDown={() => { setSelected(r.path); setAsking(null); }}
-        onClick={(e) => openCardRow(r, clickOpts(e))}
+        onClick={(e) => { openCardRow(r, clickOpts(e)); toPage(); }}
       >
         {guides(r.depth)}
         <span className="chev" />
@@ -364,6 +383,7 @@ export function Tree({ activeId, onOpen }: Props) {
       if (e.altKey && !isRoot && r.has) { setHoist(id); setSelected(id); return; }
       if (kind === 'folder') toggleOpen(id, true);
       onOpen(id, clickOpts(e));
+      toPage();
     };
     return (
       <div

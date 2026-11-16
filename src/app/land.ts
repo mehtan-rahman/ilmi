@@ -247,6 +247,15 @@ export function notify(line: string, open: string | null = null, undo?: () => Pr
   useApp.setState({ notice: { seq, line, open, undo: !!undo } });
 }
 
+/**
+ * What a user's action ends in when it fails: a notice that says what did
+ * not happen and why, and the error on the console. `x().catch(failed('rename'))`.
+ */
+export const failed = (what: string) => (e: unknown): void => {
+  console.error(e);
+  notify(`${what} did not happen · ${e instanceof Error ? e.message : String(e)}`);
+};
+
 export function dismissNotice(at?: number): void {
   const n = useApp.getState().notice;
   if (n && (at === undefined || n.seq === at)) useApp.setState({ notice: null });

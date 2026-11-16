@@ -18,6 +18,7 @@ import { Notebook } from './Rail.js';
 import { Reader } from './Reader.js';
 import { Session } from './Session.js';
 import { CardPane } from './CardPane.js';
+import { failed } from './land.js';
 import { useApp, type DocInfo, type LensView } from './store.js';
 import { NodeMenu, menuAt, type MenuAt } from './NodeMenu.js';
 import { createNode, openIntake, renameNode } from './vault.js';
@@ -121,12 +122,12 @@ function FolderLens({ id, active, onOpen }: LensProps) {
     if (!now) return;
     const { id: at, value } = now;
     setEditing(null);
-    if (value.trim() && value.trim() !== title(at)) renameNode(at, value).catch(console.error);
+    if (value.trim() && value.trim() !== title(at)) renameNode(at, value).catch(failed('that'));
   };
   // `+ source` opens the intake for this folder (paste, a link, a drop, a pick); `new source` on the menu makes an empty one
   const add = (kind: NodeKind) => {
     if (kind === 'source') openIntake(id);
-    else void createNode(id, kind).then(beginRename).catch(console.error);
+    else void createNode(id, kind).then(beginRename).catch(failed('that'));
   };
   return (
     <div

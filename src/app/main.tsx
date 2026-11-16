@@ -23,6 +23,13 @@ if (import.meta.env.DEV) {
   });
 }
 
+// a promise nobody caught is still something that did not happen: say so, in a release build too
+window.addEventListener('unhandledrejection', (e) => {
+  const why = e.reason instanceof Error ? e.reason.message : String(e.reason);
+  console.error(e.reason);
+  void import('./land.js').then(({ notify }) => notify(`something did not happen · ${why}`));
+});
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <App />

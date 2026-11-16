@@ -92,14 +92,19 @@ function SyncRows() {
   const stored = useApp((s) => s.storage.on);
   const word = stored ? null : syncWord(sync);
   const fail = (what: string) => (e: unknown) => { notify(`${what} · ${e instanceof Error ? e.message : String(e)}`); };
+  // the remote and the token as typed, before their fields commit: `connect` and `clone…` are pressable for them, and take them
+  const [typed, setTyped] = useState<{ url?: string; token?: string }>({});
+  useEffect(() => { setTyped({}); }, [settings]);
+  const url = typed.url ?? settings.url;
+  const token = typed.token ?? settings.token;
   const doConnect = () => {
     setBusy(true);
-    connect(settings.url, settings.token).catch(fail('connect')).finally(() => setBusy(false));
+    connect(url, token).catch(fail('connect')).finally(() => setBusy(false));
   };
   const doClone = async () => {
     setBusy(true);
     try {
-      const dest = await cloneCollection(settings.url, settings.token);
+      const dest = await cloneCollection(url, token);
       useApp.setState({ tweaksOpen: false });
       await openVault(dest);
     } catch (e) {
@@ -114,18 +119,18 @@ function SyncRows() {
         <span className="tw-lbl">sync <span className="tw-val">{word ?? 'off'}</span></span>
         {(!sync.on || stored) && (
           <div className="tw-seg">
-            <button type="button" disabled={busy || stored || !settings.url.trim()} onClick={doConnect}>connect</button>
-            {!mobile && <button type="button" disabled={busy || !settings.url.trim()} onClick={() => void doClone()}>clone…</button>}
+            <button type="button" disabled={busy || stored || !url.trim()} onClick={doConnect}>connect</button>
+            {!mobile && <button type="button" disabled={busy || !url.trim()} onClick={() => void doClone()}>clone…</button>}
           </div>
         )}
       </div>
       <div className="tw-row">
         <span className="tw-lbl">remote</span>
-        <TextField value={settings.url} onCommit={(url) => void setRemote(url, settings.token).catch(fail('remote'))} />
+        <TextField value={settings.url} onType={(v) => setTyped((t) => ({ ...t, url: v }))} onCommit={(v) => void setRemote(v, token).catch(fail('remote'))} />
       </div>
       <div className="tw-row">
         <span className="tw-lbl">token</span>
-        <TextField value={settings.token} type="password" onCommit={(token) => void setRemote(settings.url, token).catch(fail('token'))} />
+        <TextField value={settings.token} type="password" onType={(v) => setTyped((t) => ({ ...t, token: v }))} onCommit={(v) => void setRemote(url, v).catch(fail('token'))} />
       </div>
       <div className="tw-row">
         <span className="tw-lbl">nudge</span>
@@ -152,15 +157,21 @@ function StorageRows() {
   const [busy, setBusy] = useState(false);
   const [signing, setSigning] = useState(false);
   const fail = (what: string) => (e: unknown) => { notify(`${what} · ${e instanceof Error ? e.message : String(e)}`); };
-  const ready = storageReady(st);
+  // the fields as typed, before they commit: `connect` and `join…` are pressable for them, and keep them first
+  const [typed, setTyped] = useState<Partial<typeof st>>({});
+  useEffect(() => { setTyped({}); }, [st]);
+  const ready = storageReady({ ...st, ...typed });
+  const keepTyped = () => { if (Object.keys(typed).length) setStorage(typed); };
   const locked = st.on || busy;
   const doConnect = () => {
     setBusy(true);
+    keepTyped();
     connectStorage().catch(fail('storage')).finally(() => setBusy(false));
   };
   const doJoin = async () => {
     setBusy(true);
     try {
+      keepTyped();
       const dest = await joinStorage();
       useApp.setState({ tweaksOpen: false });
       await openVault(dest);
@@ -182,7 +193,7 @@ function StorageRows() {
   const keep = keepOf(st);
   return (
     <>
-      <StorageFields st={st} word={st.on ? (syncWord(sync) ?? 'off') : 'off'} locked={locked} mobile={mobile} signing={signing} set={setStorage} onChoose={() => void choose()} onSignIn={doSignIn} onSignOut={() => { signOutStorage().catch(fail('storage')); }} />
+      <StorageFields st={st} word={st.on ? (syncWord(sync) ?? 'off') : 'off'} locked={locked} mobile={mobile} signing={signing} set={setStorage} onType={(p) => setTyped((t) => ({ ...t, ...p }))} onChoose={() => void choose()} onSignIn={doSignIn} onSignOut={() => { signOutStorage().catch(fail('storage')); }} />
       <div className="tw-row">
         <div className="tw-seg">
           {st.on
@@ -258,7 +269,7 @@ export function Tweaks() {
     <div className="tweaks tw-rows">
       <div className="tw-hd">
         <span>tweaks</span>
-        <button type="button" className="tw-x" onClick={close}><Glyph g="×" /></button>
+        <button type="button" className="tw-x" aria-label="close" onClick={close}><Glyph g="×" /></button>
       </div>
       <div className="tw-row">
         <span className="tw-lbl">theme</span>

@@ -206,6 +206,17 @@ export interface Session {
   items: QueueItem[];
   /** Studying one deck (`study`): the lens it came from and its title; the header names it and the end goes back to it. */
   deck?: { id: string; title: string };
+  /** The element it is on: kept here, not in the lens, so its tab left and come back to goes on from where it was. */
+  at?: number;
+  /** What was done to each element so far (`Session.tsx`): kept with the session for the same reason. */
+  marks?: SessionMarks;
+}
+
+/** A session's record of itself, by `seq:index`: grades given, cards learnt, what was done to a topic. Held by reference, changed in place. */
+export interface SessionMarks {
+  given: Map<string, unknown>;
+  learnt: Map<string, string>;
+  acted: Map<string, { action: string; word: string }>;
 }
 
 export const SIDE_MIN = 160;
@@ -272,6 +283,8 @@ export interface AppState {
   /** The inspector asked for over a book, which opens without it (milestone 70); closed again when a book next opens. Not saved. */
   bookInsp: boolean;
   panes: Panes;
+  /** The tabs closed in this run of the open collection, the last closed last: ⌘⇧T opens them again. Not saved. */
+  closedTabs: string[];
   paletteOpen: boolean;
   /** The palette is choosing a note to move this section to (milestone 50); null otherwise. */
   sectionMove: CaretHeading | null;
@@ -399,6 +412,7 @@ export const useApp = create<AppState>((set, get) => ({
   inspForced: false,
   bookInsp: false,
   panes: emptyPanes(),
+  closedTabs: [],
   paletteOpen: false,
   sectionMove: null,
   noteAttach: null,

@@ -66,7 +66,8 @@
 .top .right .ago::before { content: '· '; }
 .top .right .sync[data-sync="conflicts"] { color: var(--late); font-weight: 500; cursor: pointer; }
 .top .right .sync[data-sync="conflicts"]:hover { text-decoration: underline; text-underline-offset: 3px; }
-@media (max-width: 1000px) { .top .right { display: none; } }
+/* a narrow window drops the day and the due count, never where sync stands: `n conflicts` is the one way to them */
+@media (max-width: 1000px) { .top .right > :not(.sync):not(.ago) { display: none; } }
 .insp-toggle {
   appearance: none;
   background: transparent;
@@ -435,6 +436,9 @@
   position: fixed;
   right: 16px;
   bottom: 36px;
+  /* taller than the window, it scrolls inside it */
+  max-height: calc(100vh - 36px - 38px);
+  overflow-y: auto;
   z-index: 70;
   width: 260px;
   background: var(--paper);

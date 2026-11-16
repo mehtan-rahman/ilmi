@@ -18,15 +18,18 @@ import { plainMath } from './chromeText.js';
 import type { CaretHeading } from './store.js';
 import { MathText } from './MathText.js';
 import { exportCollection } from './collections.js';
-import { notify } from './land.js';
-import { containerOf, currentVault, openBlock, openCard, openIntake, openNode, openVault, postponeRest, searchText, startSession, toggleInspector, toggleSidebar } from './vault.js';
+import { notify, failed } from './land.js';
+import { closeTabs, containerOf, currentVault, openBlock, openCard, openIntake, openNode, openVault, postponeRest, rememberTab, searchText, startSession, toggleInspector, toggleSidebar } from './vault.js';
 import { appNow } from './clock.js';
+import { openCollectionNumbers } from './NumbersLens.js';
 import { Glyph } from './icons.js';
 
 const COMMANDS: Command[] = [
   { id: 'enter', title: 'enter queue' },
   { id: 'study', title: 'study…' },
   { id: 'postpone', title: 'postpone the rest' },
+  // the whole collection's year of days and what is coming (`NumbersLens.tsx`)
+  { id: 'numbers', title: 'numbers · the whole collection' },
   { id: 'intake', title: 'add from text or a link' },
   { id: 'split', title: 'split pane' },
   { id: 'close-pane', title: 'close pane' },
@@ -79,14 +82,15 @@ function runCommand(id: string): void {
   }
   switch (id) {
     case 'enter': startSession(); break;
-    case 'postpone': void postponeRest().catch(console.error); break;
+    case 'postpone': void postponeRest().catch(failed('that')); break;
     case 'intake': openIntake(tab === undefined || tab.startsWith(':') ? '' : containerOf(tab)); break;
-    case 'split': s.setPanes((p) => splitPane(p, p.active)); break;
-    case 'close-pane': s.setPanes((p) => closePane(p, p.active)); break;
+    case 'split': s.setPanes((p) => splitPane(p, p.active)); rememberTab(); break;
+    case 'close-pane': closeTabs((p) => closePane(p, p.active)); break;
     case 'sidebar': toggleSidebar(); break;
     case 'inspector': toggleInspector(); break;
     case 'theme': s.cycleTheme(); break;
     case 'tweaks': useApp.setState({ tweaksOpen: true }); break;
+    case 'numbers': openCollectionNumbers(); break;
     case 'export-folder':
     case 'export-zip': {
       const vault = currentVault();
@@ -99,7 +103,7 @@ function runCommand(id: string): void {
     case MENU_ID.open:
     case MENU_ID.new:
     case MENU_ID.close:
-    case MENU_ID.import: void runMenu(id).catch(console.error); break;
+    case MENU_ID.import: void runMenu(id).catch(failed('that')); break;
     default: runPluginCommand(id);
   }
 }
@@ -115,6 +119,7 @@ export function Palette() {
   const queue = useApp((s) => s.queue);
   const plugins = usePlugins();
   const recents = useApp((s) => s.recents);
+  const gone = useApp((s) => s.gone);
   const vault = useApp((s) => s.vault);
   const [q, setQ] = useState('');
   const [sel, setSel] = useState(0);
@@ -139,7 +144,8 @@ export function Palette() {
   const phone = useApp((s) => s.phone);
   const commands = useMemo(() => [...sectionCommand(), ...COMMANDS.filter((c) => (c.id !== 'postpone' || overflow(queue, appNow()).length > 0) && !(mobile && DESKTOP_ONLY.has(c.id)) && !(phone && NOT_ON_A_PHONE.has(c.id))), ...pluginCommands()], [queue, plugins?.version, caret, mobile, phone]);
   // the other vaults opened before, under `vaults`, so switching is two keys
-  const vaults = useMemo(() => recents.filter((r) => r.path !== vault).map((r) => ({ path: r.path, name: r.name })), [recents, vault]);
+  // (one that is not where it was is the welcome's to show, with its `forget`)
+  const vaults = useMemo(() => recents.filter((r) => r.path !== vault && !gone.includes(r.path)).map((r) => ({ path: r.path, name: r.name })), [recents, gone, vault]);
   const index = useMemo(() => buildIndex(tree, docs, commands, vaults), [tree, docs, commands, vaults]);
   const studyIndex = useMemo((): Entry[] => {
     if (!studying) return [];
@@ -175,7 +181,7 @@ export function Palette() {
   useEffect(() => {
     if (!asking) { setFound(null); return; }
     let live = true;
-    void searchText(asking).then((hits) => { if (live) setFound({ q: asking, hits }); }).catch(console.error);
+    void searchText(asking).then((hits) => { if (live) setFound({ q: asking, hits }); }).catch(failed('that'));
     return () => { live = false; };
   }, [asking, vault]);
   const texts = useMemo(() => (found ? rankHits(found.hits, found.q).map((h) => textEntry(h, found.q, docs)) : []), [found, docs]);
@@ -208,29 +214,45 @@ export function Palette() {
     const t = it.target;
     if ('command' in t && t.command === 'study') { setStudying(true); setQ(''); inputRef.current?.focus(); return; }
     if ('command' in t && t.command.startsWith('study:')) { close(); studyDeck(t.command.slice(6)); return; }
-    if ('command' in t && t.command.startsWith('move:') && moving) { close(); void moveSection(moving, t.command.slice(5)).catch(console.error); return; }
+    if ('command' in t && t.command.startsWith('move:') && moving) { close(); void moveSection(moving, t.command.slice(5)).catch(failed('that')); return; }
     if (attaching && 'command' in t) {
       const pdf = attaching.pdf;
       if (t.command === 'attach-new') { useApp.setState({ noteAttach: { pdf, step: 'place', name: newName } }); setQ(''); inputRef.current?.focus(); return; }
-      if (t.command.startsWith('attach:')) { close(); void attachNote(pdf, t.command.slice(7)).catch(console.error); return; }
-      if (t.command.startsWith('attach-in:')) { close(); void attachNewNote(pdf, newName, t.command.slice(10)).catch(console.error); return; }
+      if (t.command.startsWith('attach:')) { close(); void attachNote(pdf, t.command.slice(7)).catch(failed('that')); return; }
+      if (t.command.startsWith('attach-in:')) { close(); void attachNewNote(pdf, newName, t.command.slice(10)).catch(failed('that')); return; }
     }
     close();
     if ('command' in t) runCommand(t.command);
-    else if ('vault' in t) void openVault(t.vault).catch(console.error);
+    // one that does not open leaves this one open (`openVault`), and says why
+    else if ('vault' in t) void openVault(t.vault).catch(failed('open'));
     else if (!currentVault()) return;
     else if ('block' in t || 'index' in t) {
       if ('block' in t) openBlock(t.open, t.block);
       else openCard(t.open, t.index, t.id);
       // a document with pages opens on its pages: what was found is in its text, beside them
-      if (useApp.getState().docs[t.open]?.pdf !== undefined) void openNotes(t.open).catch(console.error);
+      if (useApp.getState().docs[t.open]?.pdf !== undefined) void openNotes(t.open).catch(failed('that'));
     } else openNode(t.open);
   };
 
   const onKey = (e: React.KeyboardEvent) => {
     if (e.key === 'ArrowDown' || (e.ctrlKey && e.key === 'n')) { e.preventDefault(); setSel((s) => Math.min(results.length - 1, s + 1)); }
     else if (e.key === 'ArrowUp' || (e.ctrlKey && e.key === 'p')) { e.preventDefault(); setSel((s) => Math.max(0, s - 1)); }
-    else if (e.key === 'Enter') { e.preventDefault(); run(results[sel]); }
+    else if (e.key === 'Enter') {
+      e.preventDefault();
+      const it = results[sel];
+      // a row of text found for what was typed before (it stays until the next answer, so the rows do not blink) is not what ⏎ asks for
+      if (it && (it.tag === 'text' || it.tag === 'card') && asking && found?.q !== asking) return;
+      run(it);
+    }
+    // ⌫ in an empty field of a list within the list (`study…`, `move to…`, the folder for a new note): back a step
+    else if (e.key === 'Backspace' && q === '' && (studying || moving || attaching?.step === 'place')) {
+      e.preventDefault();
+      if (attaching?.step === 'place') useApp.setState({ noteAttach: { pdf: attaching.pdf, step: 'pick' } });
+      else if (moving) useApp.setState({ sectionMove: null });
+      else setStudying(false);
+    }
+    // the field is the palette's one stop: Tab walks the results, never out to the page behind
+    else if (e.key === 'Tab') { e.preventDefault(); setSel((s) => (e.shiftKey ? Math.max(0, s - 1) : Math.min(results.length - 1, s + 1))); }
   };
 
   return (

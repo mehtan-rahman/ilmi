@@ -8,7 +8,7 @@ import { GLYPH, tabKindOf } from './names.js';
 import { activatePane, closePane, closeTab, selectTab, splitPane, type OpenOpts, type Pane } from './panes.js';
 import { useApp } from './store.js';
 import { notebookOf, tabLabel } from './tabs.js';
-import { openNode, rememberTab } from './vault.js';
+import { closeTabs, openNode, rememberTab } from './vault.js';
 import { plainMath } from './chromeText.js';
 import { Glyph } from './icons.js';
 
@@ -60,17 +60,17 @@ function TabBar({ pane, index, canClosePane }: TabBarProps) {
             data-t={kind}
             data-nb={nb && nb !== tab.id ? '1' : undefined}
             onClick={() => { setPanes((s) => selectTab(s, index, ti)); after(); }}
-            onAuxClick={(e) => { if (e.button === 1) { setPanes((s) => closeTab(s, index, ti)); after(); } }}
+            onAuxClick={(e) => { if (e.button === 1) closeTabs((s) => closeTab(s, index, ti)); }}
           >
             <span className="glyph" data-t={kind} data-el={session?.kind}><Glyph g={glyph} /></span>
             <TabTitle title={plainMath(title)} />
-            <span className="close" onClick={(e) => { e.stopPropagation(); setPanes((s) => closeTab(s, index, ti)); after(); }}><Glyph g="×" /></span>
+            <span className="close" onClick={(e) => { e.stopPropagation(); closeTabs((s) => closeTab(s, index, ti)); }}><Glyph g="×" /></span>
           </div>
         );
       })}
       <div className="spacer" />
-      {!mobile && <div className="ctl" onClick={() => setPanes((s) => splitPane(s, index))} title="split pane"><Glyph g="⊟" /></div>}
-      {canClosePane && <div className="ctl" onClick={() => { setPanes((s) => closePane(s, index)); after(); }} title="close pane"><Glyph g="×" /></div>}
+      {!mobile && <div className="ctl" onClick={() => { setPanes((s) => splitPane(s, index)); after(); }} title="split pane"><Glyph g="⊟" /></div>}
+      {canClosePane && <div className="ctl" onClick={() => closeTabs((s) => closePane(s, index))} title="close pane"><Glyph g="×" /></div>}
     </div>
   );
 }
@@ -81,6 +81,7 @@ export function Canvas() {
   const covered = useApp((s) => s.paletteOpen || s.tweaksOpen || s.quickCard !== null);
   // a phone draws one page: no tabs (milestone 56)
   const phone = useApp((s) => s.phone);
+  const mobile = useApp((s) => s.mobile);
   const onOpen = (path: string, opts: OpenOpts) => openNode(path, opts);
   return (
     <div className="canvas">
@@ -88,14 +89,18 @@ export function Canvas() {
         const tab = pane.tabs[pane.active];
         return (
           <div
-            key={pi}
+            // a pane is the page it shows: the pane beside one that closes keeps its page as it is (its scroll, its caret, its find),
+            // where a key by position drew it again from nothing
+            key={tab ? `t${tab.key}` : `e${pi}`}
             className="pane"
             data-active={pi === panes.active ? '1' : '0'}
             onMouseDown={() => { if (pi !== panes.active) { setPanes((s) => activatePane(s, pi)); rememberTab(); } }}
           >
             {!phone && <TabBar pane={pane} index={pi} canClosePane={panes.panes.length > 1} />}
             <div className="pane-body">
-              {tab && <Lens key={tab.key} id={tab.id} active={pi === panes.active && !covered} onOpen={onOpen} />}
+              {tab
+                ? <Lens key={tab.key} id={tab.id} active={pi === panes.active && !covered} onOpen={onOpen} />
+                : <div className="empty center pane-empty"><span>{mobile ? 'nothing open · press a row in the sidebar' : <><kbd>⌘k</kbd> to open · or press a row in the sidebar</>}</span></div>}
             </div>
           </div>
         );

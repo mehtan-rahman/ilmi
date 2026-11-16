@@ -17,6 +17,7 @@ import { dropRoutes } from './land.js';
 import { NEVER } from './platform.js';
 import { GONE, openedLabel } from './recents.js';
 import { useApp } from './store.js';
+import { listCollections } from '../vault/tauri-store.js';
 import { joinCollection } from './crdt.js';
 import { NO_STORAGE, signIn, signOut, storageName, storageReady, type StorageSettings } from './storage.js';
 import { StorageFields } from './StorageFields.js';
@@ -34,6 +35,8 @@ export function Welcome() {
   const [sel, setSel] = useState(0);
   const [name, setName] = useState('');
   const [problem, setProblem] = useState<string | null>(null);
+  // the collections that are there and did not open, each with what the failure said
+  const [unopened, setUnopened] = useState<Record<string, string>>({});
   const [drag, setDrag] = useState(false);
   // the iPad's `connect`: its two fields shown, what they hold, and a clone under way
   const [connecting, setConnecting] = useState(false);
@@ -52,14 +55,18 @@ export function Welcome() {
   const remoteField = useRef<HTMLInputElement>(null);
   const now = new Date();
 
-  // a collection that fails to open joins the dimmed rows
+  // a collection that does not open says why on its row; one that is not there any more joins the dimmed rows, with `forget`
   const open = (path: string) => {
     if (busy.current) return;
     busy.current = true;
-    openVault(path).catch((e: unknown) => {
+    setUnopened((u) => { const { [path]: _, ...rest } = u; return rest; });
+    openVault(path).catch(async (e: unknown) => {
       console.error(e);
       busy.current = false;
-      useApp.setState((s) => ({ gone: s.gone.includes(path) ? s.gone : [...s.gone, path] }));
+      // there or not is asked of the collections there are, not read off the failure: a database that is locked or damaged is still there
+      const there = await listCollections().then(({ home, names }) => names.some((n) => `${home.replace(/\/+$/, '')}/${n}` === path), () => true);
+      if (there) setUnopened((u) => ({ ...u, [path]: e instanceof Error ? e.message : String(e) }));
+      else useApp.setState((s) => ({ gone: s.gone.includes(path) ? s.gone : [...s.gone, path] }));
     });
   };
 
@@ -127,6 +134,8 @@ export function Welcome() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
+      // the tweaks are over it: its keys are not the welcome's
+      if (useApp.getState().tweaksOpen) return;
       const tag = (e.target as HTMLElement | null)?.tagName?.toLowerCase();
       if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
       if (e.key === 'j' || e.key === 'ArrowDown') { e.preventDefault(); setSel((s) => Math.min(recents.length - 1, s + 1)); }
@@ -213,7 +222,7 @@ export function Welcome() {
         )}
         {mobile && joining && (
           <div className="welcome-join tw-rows">
-            <StorageFields st={storage} locked={joinBusy} mobile signing={signing} set={(p) => { setJoinStorage((was) => ({ ...was, ...p })); setProblem(null); }} onSignIn={signInHere} onSignOut={signOutHere} />
+            <StorageFields st={storage} locked={joinBusy} mobile signing={signing} set={(p) => { setJoinStorage((was) => ({ ...was, ...p })); setProblem(null); }} onType={(p) => setJoinStorage((was) => ({ ...was, ...p }))} onSignIn={signInHere} onSignOut={signOutHere} />
             <div className="welcome-name">
               <span className="welcome-problem">{joinBusy ? 'joining…' : problem ?? ''}</span>
               <button type="button" className="welcome-go" disabled={joinBusy || !storageReady(storage)} onClick={join}>join</button>
@@ -243,6 +252,7 @@ export function Welcome() {
           <div className="welcome-list">
             {recents.map((r, i) => {
               const missing = gone.includes(r.path);
+              const why = missing ? undefined : unopened[r.path];
               return (
                 <div
                   key={r.path}
@@ -254,7 +264,7 @@ export function Welcome() {
                 >
                   <span className="pg"><Glyph g={ENTRY_GLYPH.vault} /></span>
                   <span className="pt">{r.name}</span>
-                  <span className="psub" />
+                  <span className="psub" title={why}>{why !== undefined ? `did not open · ${why}` : ''}</span>
                   <span className="ptag">{missing ? GONE : r.opened === NEVER ? '' : openedLabel(r.opened, now)}</span>
                   {missing && (
                     <button type="button" className="welcome-forget" onClick={(e) => { e.stopPropagation(); forgetVault(r.path); }}>forget</button>

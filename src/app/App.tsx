@@ -14,10 +14,10 @@ import { TopStrip } from './TopStrip.js';
 import { Tree } from './Tree.js';
 import { Tweaks } from './Tweaks.js';
 import { Welcome } from './Welcome.js';
-import { activeTab, closeTab, splitPane } from './panes.js';
+import { activeTab, closeTab, cycleTab, splitPane } from './panes.js';
 import { SESSION } from './names.js';
 import { ACCENTS, INSP_MAX, INSP_MIN, SIDE_MAX, SIDE_MIN, useApp, ZOOM_STEP } from './store.js';
-import { openInitialVault, openNode, rememberTab, setInspector, setSidebar, toggleInspector, toggleSidebar } from './vault.js';
+import { closeTabs, openInitialVault, openNode, rememberTab, reopenClosed, setInspector, setSidebar, toggleInspector, toggleSidebar } from './vault.js';
 import { bookShown, inspectorShown } from './layout.js';
 import { shapeOf } from './platform.js';
 import { installLongPress } from './touch.js';
@@ -194,8 +194,8 @@ export function App() {
     else setInspector({ open: true, width });
   }), []);
 
-  // the global keys: ⌘K palette, ⌘\ split, ⌘W close tab, ⌃⌘S sidebar (macOS's own; ⌘⇧E is the
-  // reader's extract), ⌘⇧I inspector, ⌘, tweaks
+  // the global keys: ⌘K palette, ⌘\ split, ⌘W close tab, ⌃Tab ⌃⇧Tab (⌘⇧] ⌘⇧[) the next tab and the one
+  // before, ⌘⇧T the closed tab back, ⌃⌘S sidebar (macOS's own; ⌘⇧E is the reader's extract), ⌘⇧I inspector, ⌘, tweaks
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!(e.metaKey || e.ctrlKey)) return;
@@ -215,28 +215,50 @@ export function App() {
       }
       // ⌘= ⌘− ⌘0: the page's text size, from anywhere, the editor included
       if (!e.shiftKey && !e.altKey && (e.key === '=' || e.key === '+' || e.key === '-' || e.key === '0')) {
+        // ⌘0 in a note is a paragraph (the editor took it): the text size stays
+        if (e.defaultPrevented) return;
         e.preventDefault();
         const s = useApp.getState();
         s.setZoom(e.key === '0' ? 1 : s.zoom + (e.key === '-' ? -ZOOM_STEP : ZOOM_STEP));
         return;
       }
-      if (inField(e.target)) return;
-      if (e.key === '\\') {
+      // the tabs' and the inspector's keys work with the caret in a field of the page (a card's face, a title, a
+      // filter); a field of the palette, the tweaks, a menu or the welcome keeps its keys to itself
+      const field = inField(e.target);
+      if (field && (e.target as HTMLElement).closest('.palette-panel, .tweaks, .ctx-menu, .welcome')) return;
+      const open = useApp.getState().vault !== null;
+      // ⌃Tab ⌃⇧Tab, ⌘⇧] ⌘⇧[: the active pane's next tab and the one before
+      const step = e.code === 'Tab' && e.ctrlKey && !e.metaKey && !e.altKey ? (e.shiftKey ? -1 : 1)
+        : e.metaKey && e.shiftKey && !e.altKey && !e.ctrlKey && (e.code === 'BracketRight' || e.code === 'BracketLeft') ? (e.code === 'BracketLeft' ? -1 : 1)
+        : 0;
+      if (step !== 0) {
+        if (e.defaultPrevented || !open) return;
+        e.preventDefault();
+        setPanes((s) => cycleTab(s, step));
+        rememberTab();
+      } else if (k === 't' && e.metaKey && e.shiftKey && !e.altKey && !e.ctrlKey) {
+        // ⌘⇧T: the tab closed last, back
+        if (e.defaultPrevented || !open) return;
+        e.preventDefault();
+        reopenClosed();
+      } else if (k === 'w' && !e.shiftKey && !e.altKey) {
+        // ⌘⇧W is the File menu's Close Collection
+        e.preventDefault();
+        closeTabs((s) => closeTab(s, s.active, s.panes[s.active]?.active ?? 0));
+      } else if (e.shiftKey && k === 'i') {
+        e.preventDefault();
+        toggleInspector();
+      } else if (field) {
+        return;
+      } else if (e.key === '\\') {
         // a book's ⌘\ hides its notes (`Pdf.tsx`)
         if (e.defaultPrevented) return;
         e.preventDefault();
         setPanes((s) => splitPane(s, s.active));
-      } else if (k === 'w' && !e.shiftKey) {
-        // ⌘⇧W is the File menu's Close Collection
-        e.preventDefault();
-        setPanes((s) => closeTab(s, s.active, s.panes[s.active]?.active ?? 0));
         rememberTab();
       } else if (e.metaKey && e.ctrlKey && !e.shiftKey && k === 's') {
         e.preventDefault();
         toggleSidebar();
-      } else if (e.shiftKey && k === 'i') {
-        e.preventDefault();
-        toggleInspector();
       }
     };
     window.addEventListener('keydown', onKey);

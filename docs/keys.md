@@ -11,10 +11,15 @@ F2 / dbl-click   rename                 right-click  new, import, rename, move t
                                                      the same in the sidebar and the folder lens;
                                                      anywhere else there, the folder's own
 +                beside the vault's name: new, import, or add, into the selected folder
+in the sidebar   ↑ ↓ → ← move and fold, ⏎ open, F2 rename, ⌘⌫ delete, a letter
+                 jumps to a name (one no name starts with is the page's key); a
+                 click that opens a row gives the keys back to the page
 ⌘⇧N              new collection         ⌘O           import a folder as a collection
 ⌘⇧O              import…                ⌘⇧W          close collection
 ⌘V               an address, with nothing focused: clipped into the active tab's folder
 ⌘W               close tab              ⌘\           split pane
+⌃Tab ⌃⇧Tab       the active pane's next tab and the one before (⌘⇧] ⌘⇧[ the same)
+⌘⇧T              the tab closed last, open again (as long as the collection stays open)
 ⌃⌘S              sidebar                ⌘⇧I          inspector
 ⌘= ⌘−            text size, bigger and smaller (⌘0 back to 100%); kept with the tweaks
 ⌘,               tweaks: theme, accent, density, text size, reopen the last vault on start,
@@ -35,7 +40,10 @@ in a note        ⌘B bold, ⌘I italic, ⌘E code, ⌘⇧X strike, ⌘K link (o
                  selection; with none it is the palette), ⌘1–⌘6 heading, ⌘0
                  paragraph, ⌘⇧8 bullets, ⌘⇧7 numbers, ⌘⇧9 tasks, ⌘⇧. quote; in
                  a list Tab ⇧Tab ⌥⇧↑ ⌥⇧↓ move an item with its children, ⌘⏎
-                 ticks a task; with a selection ⌘⇧E extract, ⌘⇧M make a card;
+                 ticks a task; in code ⌘⏎ leaves the block, and so does ⏎
+                 after its closing ``` typed on a line of its own; ⌘-click
+                 opens a link or a bare address; with a selection ⌘⇧E
+                 extract, ⌘⇧M make a card;
                  / at a block's start or after a space: insert (a heading,
                  a list, a quote, code, a formula, a rule, a table, an image,
                  a cloze, q&a, both ways), ↑↓ ⏎, esc keeps the /; ⌘⇧V paste
@@ -51,14 +59,30 @@ in a book        a document with pages: its pages beside its notes (the
                  under ## p. N), esc clears; ⏎ right after writes in it;
                  [ ] step the sections; ⌘\ hides the notes; / search,
                  g go to a page; drag the margin to move the read point
-in a deck        j k move, ⌫ delete the selected card, m make a card;
-                 × on a row, or right-click, also deletes one; right-click moves it to another deck
-in the queue     j k move, ⏎ enter, o open one; a row names its file by its
+in the intake    ⌘⏎ place & open, ⌘⇧⏎ place & leave it
+in a deck        j k (or ↑ ↓) move, ⏎ or a double-click opens the card in the
+                 card view, / search, m make a card; click selects, ⇧-click
+                 a range, ⌘-click adds or drops one, ⌘A all shown, esc lets
+                 the selection go; ⌫ deletes what is selected (with nothing
+                 selected, the cursor's row), × on a row or right-click
+                 deletes one, and a delete can be undone from its notice;
+                 right-click moves a card to another deck
+in a new card    ⌘1 q&a, ⌘2 both ways, ⌘3 cloze (the same in every card
+                 editor), ⌘B a blank in a cloze; ⌘⏎ save, ⇧⌘⏎ save and
+                 start another, esc cancel (in a deck, what was typed
+                 comes back on the next m)
+in the card view [ ] the card before and the next, o the card in its
+                 document; in a face ⌘⏎ save, esc revert, ⌘1 ⌘2 ⌘3 the form
+in the queue     j k move (the row is brought into view), ⏎ enter (narrowed
+                 to an exam: what is shown), o open one; a row names its file by its
                  path (`queue shows titles` in the tweaks brings the title back)
 in a session     [ ] prev / next; space reveal, 1-4 grade (a card graded,
                  come back to: graded again in its grade's place); a card no
-                 longer there: space or ] skip; ⏎ next (a
-                 book's: done for today; at its end: dismiss), p later, d dismiss
+                 longer there: space or ] skip; o the card's source, in a tab
+                 of its own; ⏎ next (a book's: done for today; at its end:
+                 dismiss), p later, d dismiss (both can be undone from the
+                 notice; come back to, an element says what was done and ⏎
+                 is on to the next); a key held down acts once
 on a heading     right-click: come back (its section returns until you
                  dismiss it), dismiss, or bring back; the inspector and
                  the palette have the same

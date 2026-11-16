@@ -35,7 +35,7 @@ import type { NodeType } from '../format/index.js';
 import { childDirOf, isDoc } from '../vault/index.js';
 import { geometry } from './dnd.js';
 import { rowDrag, rowMark, useDrag, type Surface } from './drag.js';
-import { importFiles } from './land.js';
+import { importFiles, failed } from './land.js';
 import { GLYPH, descendants, findNode, kindOf, titleOf, type NodeKind } from './names.js';
 import { NodeMenu, menuAt, placeMenu, type MenuAt } from './NodeMenu.js';
 import type { OpenOpts } from './panes.js';
@@ -99,7 +99,7 @@ export function Notebook({ nb, page, active, onOpen, children }: Props) {
   const plusRef = useRef<HTMLDivElement>(null);
   const boxRef = useRef<HTMLDivElement>(null);
   const navRef = useRef<HTMLElement>(null);
-  const fail = (e: unknown) => console.error(e);
+  const fail = failed('that');
   const title = (path: string) => titleOf(path, docs, root);
 
   // the page's own tabs above it open, so the row that is showing is in view
@@ -162,7 +162,7 @@ export function Notebook({ nb, page, active, onOpen, children }: Props) {
     if (!at) return;
     const { id, value } = at;
     setEditing(null);
-    if (value.trim() && value.trim() !== title(id)) renameNode(id, value).then((to) => { if (selRef.current === id) setSelected(to); }).catch(fail);
+    if (value.trim() && value.trim() !== title(id)) renameNode(id, value).then((to) => { if (selRef.current === id) setSelected(to); }).catch(failed('rename'));
     boxRef.current?.focus();
   };
   const add = (dir: string, type: NodeType, name?: string) => { createTab(dir, type, name).then((p) => { setSelected(p); beginRename(p); }).catch(fail); };
@@ -207,7 +207,7 @@ export function Notebook({ nb, page, active, onOpen, children }: Props) {
     const i = real.findIndex((r) => r.path === id);
     const next = real.slice(i + 1).find((r) => !r.path.startsWith(`${childDirOf(id)}/`)) ?? real[i - 1];
     setSelected(next?.path ?? null);
-    deleteNode(id).catch(fail);
+    deleteNode(id).catch(failed('delete'));
   };
   const onKey = (e: ReactKeyboardEvent<HTMLDivElement>) => {
     if (editing || inField(e.target)) return;
@@ -228,7 +228,7 @@ export function Notebook({ nb, page, active, onOpen, children }: Props) {
         const to = railKeyPlace(rows, act.path, act.to);
         if (to) {
           if (to.mode === 'into') setOpen((o) => ({ ...o, [to.target]: true }));
-          placeNode(act.path, to.target, to.mode).then(setSelected).catch(fail);
+          placeNode(act.path, to.target, to.mode).then(setSelected).catch(failed('move'));
         }
         break;
       }
@@ -427,7 +427,7 @@ export function Notebook({ nb, page, active, onOpen, children }: Props) {
             </div>
           ))}
           <div className="cd" />
-          <div className="ci" onClick={() => { setPlus(null); void importFiles(childDirOf(nb)).catch(fail); }}>
+          <div className="ci" onClick={() => { setPlus(null); void importFiles(childDirOf(nb)).catch(failed('import')); }}>
             <span className="cg"><Glyph g="↧" /></span>import a file…
           </div>
         </div>

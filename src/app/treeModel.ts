@@ -12,6 +12,8 @@
 //  · ⌥⌘↑ ⌥⌘↓        moves the row before / after its neighbour
 //  · ⌥⌘← ⌥⌘→        outdents it (after its parent) / nests it (into the row above)
 //  · a letter       the next row whose name starts with what was typed
+//                   (`Tree.tsx` takes the key only when one does, and never with a
+//                   session in front: the page's bare keys stay the page's)
 
 import { childDirOf, dirOf, ordered, rekey, within, type Order, type TreeNode } from '../vault/index.js';
 import type { FlatRow, Mode, Nest } from './dnd.js';

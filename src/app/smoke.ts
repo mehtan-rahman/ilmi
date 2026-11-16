@@ -13649,3 +13649,125 @@ export async function smokeSweep(vault: Vault): Promise<void> {
     log(`failed: ${e instanceof Error ? e.message : String(e)}`);
   }
 }
+
+// `ILMI_SMOKE=sweepedit` (`smokeSweepEdit`) over a copy of `samples/double-major`:
+// milestone 73's editor fixes under real WebKit keys, on lines added to the
+// honors-thesis note. Backspace at the start of the paragraph after a card
+// selects the card and deletes nothing, and a space typed over it leaves it;
+// Delete at the end of the paragraph before a list joins the first item;
+// Tab in a paragraph is taken and types nothing; a closing fence closes its
+// block and what is typed next is below it; ⌘B on an empty line, left for the
+// autosave, writes no rule; a bare address is drawn as a link. The file is
+// read after each. Every step asserts.
+export async function smokeSweepEdit(vault: Vault): Promise<void> {
+  const log = (s: string) => void info(`smoke sweepedit: ${s}`);
+  const shot = async (name: string, ms = 1500) => { await sleep(500); log(`shot: ${name}`); await sleep(ms); };
+  const q = <T extends Element>(sel: string, root: ParentNode = document) => root.querySelector<T>(sel);
+  const qa = <T extends Element>(sel: string, root: ParentNode = document) => Array.from(root.querySelectorAll<T>(sel));
+  const must = (ok: unknown, what: string) => { if (!ok) throw new Error(what); log(`ok: ${what}`); };
+  const poll = async <T,>(probe: () => T | null | undefined | false | Promise<T | null | undefined | false>, what: string, ms = 6000): Promise<T> => {
+    const t0 = Date.now();
+    for (;;) {
+      const v = await probe();
+      if (v) { log(`ok: ${what}`); return v; }
+      if (Date.now() - t0 > ms) throw new Error(`${what} (waited ${ms} ms)`);
+      await sleep(100);
+    }
+  };
+  const NOTE = 'fleeting/idea-for-honors-thesis.md';
+  const text = () => vault.fs.readText(vault.abs(NOTE));
+  /** The file's lines from the first added one on. */
+  const tail = async () => { const all = (await text()).split('\n'); return all.slice(all.findIndex((l) => l === 'sweep intro')); };
+  const surface = () => q<HTMLElement>('.pane-body .doc-view .draft-doc')!;
+  const BLOCKS = 'p.dd-p, .dd-h, .dd-li .li-text, .dd-ql, pre.dd-code code';
+  const block = (needle: string) => (surface() ? qa<HTMLElement>(BLOCKS, surface()).filter((p) => p.textContent?.includes(needle)).pop() : undefined);
+  const at = async (needle: string, offset: number) => { const b = await until(() => block(needle)); surface().focus(); caret(b, needle, offset); await sleep(100); };
+  const key = async (k: string, init: KeyboardEventInit = {}) => {
+    const ev = new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true, ...init });
+    surface().dispatchEvent(ev);
+    await sleep(120);
+    return ev.defaultPrevented;
+  };
+  const type = async (t: string) => { for (const ch of t) { document.execCommand('insertText', false, ch); await sleep(25); } await sleep(80); };
+  try {
+    useApp.getState().setTheme('light');
+    const { parse } = await import('../format/index.js');
+    await vault.update(NOTE, (doc) => { doc.blocks.push(...parse('sweep intro\n\nsweep question :: sweep answer\n\nsweep after\n\nsweep before the list\n\n- sweep one\n- sweep two\n\nsweep last\n').doc.blocks); });
+    openNode(NOTE);
+    await poll(() => activeTab(useApp.getState().panes)?.id === NOTE && block('sweep last'), 'the note with its added lines', 10000);
+    await sleep(600);
+    const cardLine = (await tail()).find((l) => l.startsWith('sweep question'))!;
+
+    // ── Backspace after a card ──
+    await at('sweep after', 0);
+    await key('Backspace', { code: 'Backspace' });
+    await sleep(700);
+    must((await tail()).includes(cardLine) && block('sweep after'), 'Backspace at the start of the paragraph after a card deletes nothing');
+    const picked = q('.draft-doc .card-span.selected, .draft-doc .ProseMirror-selectednode');
+    must(picked && /sweep question/.test(picked.textContent ?? ''), 'the card is selected instead, and shows it');
+    await shot('sweepedit-card-selected');
+    await type(' ');
+    await type('x');
+    await sleep(900);
+    must((await tail()).includes(cardLine) && qa('.draft-doc .card-span').some((c) => /sweep question/.test(c.textContent ?? '')), 'a space and a letter typed over the selected card leave it');
+    must(!(await tail()).some((l) => l === ' x' || l === 'x'), 'and write nothing in its place');
+
+    // ── Delete before a list ──
+    await at('sweep before the list', 'sweep before the list'.length);
+    await key('Delete', { code: 'Delete' });
+    await poll(async () => (await tail()).includes('sweep before the listsweep one'), 'Delete at the end of the paragraph before a list joins its first item');
+    must((await tail()).includes('- sweep two'), 'the rest of the list stays a list');
+
+    // ── Tab in a paragraph ──
+    await at('sweep last', 3);
+    const took = await key('Tab', { code: 'Tab' });
+    await sleep(700);
+    must(took && !(await text()).includes('\t') && surface().contains(document.activeElement ?? null) || document.activeElement === surface(), 'Tab in a paragraph is taken: no tab typed, the focus stays');
+
+    // ── a closing fence ──
+    await at('sweep last', 'sweep last'.length);
+    await key('Enter', { code: 'Enter' });
+    await type('```');
+    await key('Enter', { code: 'Enter' });
+    await type('x = 1');
+    await key('Enter', { code: 'Enter' });
+    await type('```');
+    await key('Enter', { code: 'Enter' });
+    await type('sweep below the code');
+    await poll(async () => {
+      const t = await tail();
+      const i = t.indexOf('x = 1');
+      return i > 0 && t[i - 1] === '```' && t[i + 1] === '```' && t.includes('sweep below the code') && t.indexOf('sweep below the code') > i + 1;
+    }, 'a closing fence closes its block, and what is typed next is a paragraph below it');
+    must(block('sweep below the code')?.matches('p.dd-p'), 'drawn as a paragraph, not code');
+    await shot('sweepedit-fence');
+
+    // ── ⌘B on an empty line, left for the autosave ──
+    await at('sweep below the code', 'sweep below the code'.length);
+    await key('Enter', { code: 'Enter' });
+    must(await key('b', { code: 'KeyB', metaKey: true }) && qa<HTMLElement>(BLOCKS, surface()).pop()?.textContent === '****', '⌘B on an empty line makes the pair, the caret inside it');
+    await sleep(1500);
+    must(qa<HTMLElement>(BLOCKS, surface()).pop()?.textContent === '****', 'the pair is still on the page after the autosave\'s wait');
+    const afterB = await tail();
+    must(!afterB.includes('****') && afterB.includes('sweep below the code') && !afterB.includes('---'), 'an empty ⌘B pair, left for the autosave, writes no rule');
+    log(`after ⌘B: the page's last blocks ${qa<HTMLElement>(BLOCKS, surface()).slice(-2).map((b) => JSON.stringify(b.textContent)).join(' ')}; caret in ${JSON.stringify((document.getSelection()?.anchorNode?.parentElement?.closest(BLOCKS) as HTMLElement | null)?.textContent)} at ${document.getSelection()?.anchorOffset}`);
+    await type('bold now');
+    await sleep(1200);
+    log(`typed: the page's last blocks ${qa<HTMLElement>(BLOCKS, surface()).slice(-2).map((b) => JSON.stringify(b.textContent)).join(' ')}; the file's last lines ${JSON.stringify((await tail()).slice(-4))}`);
+    await poll(async () => (await tail()).includes('**bold now**'), 'and what is typed in it is bold');
+
+    // ── a bare address ──
+    await key('ArrowRight'); await key('ArrowRight');
+    await at('bold now', 'bold now'.length);
+    await key('Enter', { code: 'Enter' });
+    await type('see https://example.org/sweep now');
+    const link = await poll(() => qa<HTMLElement>('.draft-doc .md-link').find((l) => l.textContent === 'https://example.org/sweep'), 'a bare address is drawn as a link, without the word after it');
+    must(getComputedStyle(link).textDecorationLine.includes('underline') || getComputedStyle(link).color !== getComputedStyle(block('see https')!).color, 'and looks like one');
+    await poll(async () => (await tail()).some((l) => l.includes('see https://example.org/sweep now')), 'written as typed');
+    await shot('sweepedit-link');
+    log(`the added lines: ${(await tail()).join(' ⏎ ')}`);
+    log(`done; vault ${vault.root}`);
+  } catch (e) {
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}

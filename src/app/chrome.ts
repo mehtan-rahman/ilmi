@@ -147,6 +147,13 @@ export function fuzzy(query: string, text: string): number | null {
   text = text.toLowerCase();
   if (!query) return 0;
   const n = text.length;
+  // most names do not hold the letters in order at all: said by one pass, before anything is weighed (a palette over
+  // ten thousand names asks this of each at every key)
+  let from = 0;
+  for (let qi = 0; qi < query.length; qi++) {
+    from = text.indexOf(query[qi]!, from) + 1;
+    if (from === 0) return null;
+  }
   const starts = Array.from({ length: n }, (_, i) => i === 0 || SEP.test(text[i - 1]!));
   // the cheapest way to have taken the query so far with its last character at each place, and whether every one began a word
   let cost: number[] = new Array<number>(n).fill(Infinity);

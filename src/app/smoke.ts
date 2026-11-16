@@ -13046,6 +13046,50 @@ export async function smokeSize(src: string | null): Promise<void> {
         const all = await memory();
         log(`${name}: with every document read and parsed too, as an open was before the index: ${ms(parsed)} more, memory ${mb(all?.now ?? null)}${all && empty ? `, ${mb(all.now - empty.now)} over none open` : ''}`);
       }
+      // the numbers and every card as one list, at this size (milestones 74 and 75)
+      {
+        const { openCollectionNumbers } = await import('./NumbersLens.js');
+        const { setLensView } = await import('./Lenses.js');
+        const q1 = <T extends Element>(sel: string) => document.querySelector<T>(sel);
+        const t8 = performance.now();
+        openCollectionNumbers();
+        await until(() => q1('.numbers .nb-heat[data-of="past"] button.nb-cell'), 120000);
+        const numbers = performance.now() - t8;
+        const cells = Array.from(document.querySelectorAll<HTMLElement>('.nb-heat[data-of="past"] button.nb-cell'));
+        const inCells = cells.reduce((k, c) => k + Number(c.dataset.n), 0);
+        const t9 = performance.now();
+        cells.find((c) => Number(c.dataset.n) > 0)?.click();
+        await until(() => q1('.nb-day'), 30000);
+        const day = performance.now() - t9;
+        log(`${name}: the collection's numbers drawn in ${ms(numbers)} (${cards} cards, ${useApp.getState().reviews.length} reviews, ${inCells} of them in the year's cells); a day pressed lists its reviews in ${ms(day)}`);
+        must(inCells > 0 && cells.length > 300, `${name}: the year of days is drawn from the whole log`);
+        if (n >= 100) must(numbers < 6000 && day < 1500, `${name}: the numbers come in under six seconds and a day in under a second and a half at this size`);
+        await shot(`${name}-numbers`);
+        const t10 = performance.now();
+        setLensView('', 'cards');
+        await until(() => q1('.deck-view .deck-row'), 120000);
+        const list = performance.now() - t10;
+        await sleep(600);
+        const drawnRows = document.querySelectorAll('.deck-view .deck-row').length;
+        const total = Number((q1('.db-count')?.textContent ?? '').replace(/\D/g, '') || 0);
+        const pane = q1<HTMLElement>('.deck-view')!.closest<HTMLElement>('.pane-body')!;
+        const t11 = performance.now();
+        pane.scrollTop = pane.scrollHeight * 0.6;
+        pane.dispatchEvent(new Event('scroll'));
+        await sleep(300);
+        const there = document.elementFromPoint(pane.getBoundingClientRect().left + pane.clientWidth / 2, pane.getBoundingClientRect().top + pane.clientHeight / 2)?.closest('.deck-row');
+        const jumped = performance.now() - t11 - 300;
+        const t12 = performance.now();
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', metaKey: true, bubbles: true, cancelable: true }));
+        await until(() => (q1('.db-sel')?.textContent ?? '').replace(/\D/g, '') === String(total) ? true : null, 30000);
+        const all = performance.now() - t12;
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+        log(`${name}: every card as one list in ${ms(list)}: ${total} cards, ${drawnRows} rows drawn, the list ${Math.round(pane.scrollHeight)} px tall; a jump to its middle ${ms(jumped)}, rows there ${there ? 'yes' : 'no'}; ⌘A over all of them ${ms(all)}`);
+        must(total === cards && drawnRows < 200 && !!there, `${name}: all ${total} cards listed with ${drawnRows} rows in the page, and rows wherever the list is scrolled to`);
+        if (n >= 100) must(list < 8000 && all < 3000, `${name}: the list in under eight seconds and ⌘A in under three at this size`);
+        await shot(`${name}-cards`);
+        setLensView('', 'items');
+      }
       document.removeEventListener('visibilitychange', watch);
       await shot(name);
       closeVault();

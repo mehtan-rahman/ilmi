@@ -6,6 +6,26 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-11-16, later — milestone 80: blanks made, not typed; nested blanks; 0.2.0
+
+Asked by the user: a setting for the budget under a focus, plainer words ("tweaks is very ai language"), a GitHub release, and then, over a conjugation paradigm to recite, blanks without the braces and blanks inside blanks.
+
+**Done.** The setting `focus stays within daily budget`. `settings`, `items`, `failed` and shorter setting labels where the app speaks. `v0.2.0` tagged, built by the workflow (unsigned: no signing secrets) and published with notes. Nested blanks in the format, the parser, the schedule's numbering and the card's drawing. Blanks made with ⌘B or the right-click menu in every cloze editor, shown marked with their group's number and no braces; the new card's passage is the reader's editor.
+
+**Checks.** typecheck clean; npm test 2054 passed, 1 skipped, 143 files (nine new for blanks). On the Mac from a clean run tree: `blanks` 29 (made by ⌘B and the menu, nested, backspace at the start, saved as `{{c4::… {{c1::…}} …}}`, the whole asked and a part asked), `cardview` 31, `sweep` 130, `open` 83, `sweepedit` 28. Captures looked at: the nested passage, the whole and a part asked.
+
+**Found.** ⌘B in a cloze also made the line bold when the selection was the whole line (the editor's bold key ran too); the blank is the editor's own key there now. The smokes that type through the system's text input (`sweepedit`, `listcards`, `notes`) fail when another app is in front: `sweepedit` failed twice so, on this code and on the commit before it, and passed with its window brought forward. `listcards` and `notes` were not run again with the window forward.
+
+**Not verified.** Blanks on the simulators (the editor is the same; a touch has no ⌘B, so the long press's menu is the way, untried). The caret among hidden braces with the arrow keys by hand, in Arabic above all (the test puts the caret there; nobody pressed ←). cargo test was not rerun (no Rust changed). 0.2.0's DMG was not opened; it was cut before this entry's blanks, which are on main after it.
+
+**Left.** The inspector's raw box for a card. A blank's braces can still be typed and read in a note's paragraph before it becomes a card.
+
+```
+Read PLAN.md (80's notes) and this entry. Blanks are in src/format/cloze.ts (the tree), src/reader/blanksDeco.ts (the editor), Reader.tsx (clozeHTML, the menu). Run a smoke that types (sweepedit, listcards, notes, editing) only with the app's window in front. Verify with typecheck, npm test, and blanks, cardview, sweep, sweepedit.
+```
+
+---
+
 ## 2026-11-16 — milestone 79: what 78 left open
 
 Asked by the user: "Continue. pleaes go in a loop until ther is nothing open anymore".

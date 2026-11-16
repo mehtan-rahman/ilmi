@@ -9,6 +9,6 @@ export { parseBox, formatBox, parseBoxes, formatBoxes, normalizeBoxes, boxesAt, 
 export { REVIEWS_DIR, reviewFile, formatReview, parseReviews, mergeReviews, reviewKey, replaces, overAt, type Review } from './reviews.js';
 export { formatReading, parseReadings, mergeReadings, parseLog, formatLogLine, isReading, readingKey, type Reading, type ReadingLine, type ReadingUndo, type ReadKind } from './reviews.js';
 export {
-  cardForm, cardFields, clozeParts, clozeSegments, blanks, clozeGroups, nextGroup, mathSpanEnd,
+  cardForm, cardFields, clozeParts, clozeSegments, blanks, blanksIn, clozeGroups, nextGroup, mathSpanEnd,
   type Blank, type ClozePart, type MathSeg, type CardSeg, type CardFields,
 } from './cloze.js';

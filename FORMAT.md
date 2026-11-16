@@ -699,9 +699,17 @@ table, a block quote, a heading, or a code block is literal text.
 {{answer}}          unnumbered blank
 ```
 
-- A blank opens at `{{` and closes at the **first** `}}` after it. The text
+- A blank opens at `{{` and closes at the `}}` that is its own: the first
+  `}}` after it that does not close a blank opened inside it. The text
   between is the inner text; it must contain a non-whitespace character or the
   braces are literal.
+- A blank may hold blanks: `{{c9::a {{c1::b}} c}}` is the blank 9 over
+  `a b c` and, inside it, the blank 1 over `b`. Braces pair from the inside
+  out, so with one `}}` for two `{{` the inner pair is the blank and the
+  outer `{{` is text. Asked, a blank hides everything in it, the blanks it
+  holds included; while a blank inside is asked, the one around it is shown.
+  Where blanks are counted (an unnumbered blank's place), one that holds
+  others comes before them.
 - If the inner text starts with `c` or nothing, then digits, then `::`, the
   digits are the group number and the rest is the answer. Otherwise the whole
   inner text is the answer (so `{{std::vector}}` is an unnumbered blank whose

@@ -136,7 +136,12 @@ in a deck        j k (or ↑ ↓) move, ⏎ or a double-click opens the card in 
                  deletes one, and a delete can be undone from its notice;
                  right-click moves a card to another deck
 in a new card    ⌘1 q&a, ⌘2 bidir, ⌘3 cloze (the same in every card
-                 editor), ⌘B a blank in a cloze; ⌘⏎ save, ⇧⌘⏎ save and
+                 editor); in a cloze ⌘B makes the selection (or the word at
+                 the caret) a blank, shown marked with its group's number and
+                 no braces; a selection around blanks makes a blank that
+                 holds them; right-click: blank, blank with a group there
+                 is, move to group, remove blank; backspace at a blank's
+                 start takes the blank away and leaves its words; ⌘⏎ save, ⇧⌘⏎ save and
                  start another, esc cancel (in a deck, what was typed
                  comes back on the next m)
 in the card view [ ] the card before and the next, o the card in its

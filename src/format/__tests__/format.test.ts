@@ -457,13 +457,13 @@ describe('cards', () => {
 
 describe('cloze', () => {
   it('splits blanks and numbers groups', () => {
-    expect(clozeParts('the {{c1::a}} and {{2::b}} and {{c}} end')).toEqual([
+    expect(clozeParts('the {{c1::a}} and {{2::b}} and {{c}} end')).toMatchObject([
       'the ', { n: 1, answer: 'a', raw: '{{c1::a}}' }, ' and ', { n: 2, answer: 'b', raw: '{{2::b}}' }, ' and ', { n: null, answer: 'c', raw: '{{c}}' }, ' end',
     ]);
     expect(clozeGroups('{{c3::x}} {{c1::y}} {{c3::z}} {{w}}')).toEqual([3, 1]);
     expect(nextGroup('{{c1::a}} {{c3::b}}')).toBe(2);
-    expect(clozeParts('{{std::vector}}')).toEqual([{ n: null, answer: 'std::vector', raw: '{{std::vector}}' }]);
-    expect(clozeParts('{{}} {{ }} {{c1::}}')).toEqual(['{{}} {{ }} ', { n: 1, answer: '', raw: '{{c1::}}' }]);
+    expect(clozeParts('{{std::vector}}')).toMatchObject([{ n: null, answer: 'std::vector', raw: '{{std::vector}}' }]);
+    expect(clozeParts('{{}} {{ }} {{c1::}}')).toMatchObject(['{{}} {{ }} ', { n: 1, answer: '', raw: '{{c1::}}' }]);
   });
 
   it('sees math spans, and outside them the first }} closes a blank', () => {
@@ -472,28 +472,33 @@ describe('cloze', () => {
     expect(mathSpanEnd('$ x$', 0)).toBe(-1);
     expect(mathSpanEnd('$$a\nb$$', 0)).toBe(7);
     expect(mathSpanEnd('$a\nb$', 0)).toBe(-1);
-    expect(clozeParts('{{c1::$x^{a^{b}}$}}')).toEqual([{ n: 1, answer: '$x^{a^{b}}$', raw: '{{c1::$x^{a^{b}}$}}' }]);
-    expect(clozeParts('nested {{c1::{{x}}}} braces')).toEqual(['nested ', { n: 1, answer: '{{x', raw: '{{c1::{{x}}' }, '}} braces']);
-    expect(clozeParts('{{c2::a} }} then {{c3::open')).toEqual([{ n: 2, answer: 'a} ', raw: '{{c2::a} }}' }, ' then {{c3::open']);
+    expect(clozeParts('{{c1::$x^{a^{b}}$}}')).toMatchObject([{ n: 1, answer: '$x^{a^{b}}$', raw: '{{c1::$x^{a^{b}}$}}' }]);
+    // a blank inside a blank: the outer closes at the }} that is its own, and holds the inner in its parts
+    expect(clozeParts('nested {{c1::{{x}}}} braces')).toMatchObject(['nested ', { n: 1, answer: 'x', raw: '{{c1::{{x}}}}', parts: [{ n: null, answer: 'x', raw: '{{x}}' }] }, ' braces']);
+    expect(blanks('{{c9::a {{c1::b}} c {{c2::d {{e}}}}}} f').map((x) => [x.n, x.answer, x.at, x.open])).toEqual([[9, 'a b c d e', 0, 6], [1, 'b', 8, 6], [2, 'd e', 20, 6], [null, 'e', 28, 2]]);
+    expect(clozeGroups('{{c9::a {{c1::b}} {{c9::c}}}}')).toEqual([9, 1]);
+    // braces pair from the inside out: with one }} for two {{, the inner pair is the blank and the outer {{ is text
+    expect(clozeParts('{{c1::a {{ b}} c')).toMatchObject(['{{c1::a ', { n: null, answer: ' b', raw: '{{ b}}' }, ' c']);
+    expect(clozeParts('{{c2::a} }} then {{c3::open')).toMatchObject([{ n: 2, answer: 'a} ', raw: '{{c2::a} }}' }, ' then {{c3::open']);
   });
 
   it('inside math a numbered blank closes at the balanced }}; the unnumbered and the unbalanced stay TeX', () => {
     // the balanced close: the answer keeps its own braces
-    expect(clozeParts('so $y = {{c1::x^{2}}}$ holds')).toEqual(['so $y = ', { n: 1, answer: 'x^{2}', raw: '{{c1::x^{2}}}', math: true }, '$ holds']);
-    expect(blanks('$$ {{c1::\\frac{a}{b}}} $$')).toEqual([{ n: 1, answer: '\\frac{a}{b}', raw: '{{c1::\\frac{a}{b}}}', math: true }]);
-    expect(blanks('${{2::\\{a\\}}}$')).toEqual([{ n: 2, answer: '\\{a\\}', raw: '{{2::\\{a\\}}}', math: true }]);
+    expect(clozeParts('so $y = {{c1::x^{2}}}$ holds')).toMatchObject(['so $y = ', { n: 1, answer: 'x^{2}', raw: '{{c1::x^{2}}}', math: true }, '$ holds']);
+    expect(blanks('$$ {{c1::\\frac{a}{b}}} $$')).toMatchObject([{ n: 1, answer: '\\frac{a}{b}', raw: '{{c1::\\frac{a}{b}}}', math: true }]);
+    expect(blanks('${{2::\\{a\\}}}$')).toMatchObject([{ n: 2, answer: '\\{a\\}', raw: '{{2::\\{a\\}}}', math: true }]);
     // the unnumbered form is TeX
-    expect(clozeParts('$\\{\\{x\\}\\}$ and $$\\binom{n}{{k}}$$ and $x^{{a}}$')).toEqual(['$\\{\\{x\\}\\}$ and $$\\binom{n}{{k}}$$ and $x^{{a}}$']);
+    expect(clozeParts('$\\{\\{x\\}\\}$ and $$\\binom{n}{{k}}$$ and $x^{{a}}$')).toMatchObject(['$\\{\\{x\\}\\}$ and $$\\binom{n}{{k}}$$ and $x^{{a}}$']);
     // unbalanced: a brace too many, a close never reached, an answer that closes the math early
-    expect(clozeParts('$a = {{c1::\\frac{1}{2}}$ half')).toEqual(['$a = {{c1::\\frac{1}{2}}$ half']);
-    expect(clozeParts('$a {{c1::b$ and {{c2::c}}')).toEqual(['$a {{c1::b$ and ', { n: 2, answer: 'c', raw: '{{c2::c}}' }]);
-    expect(clozeParts('$E = {{c1::m$ c^2}}$')).toEqual(['$E = {{c1::m$ c^2}}$']);
+    expect(clozeParts('$a = {{c1::\\frac{1}{2}}$ half')).toMatchObject(['$a = {{c1::\\frac{1}{2}}$ half']);
+    expect(clozeParts('$a {{c1::b$ and {{c2::c}}')).toMatchObject(['$a {{c1::b$ and ', { n: 2, answer: 'c', raw: '{{c2::c}}' }]);
+    expect(clozeParts('$E = {{c1::m$ c^2}}$')).toMatchObject(['$E = {{c1::m$ c^2}}$']);
     // a blank spanning an align line, alignment mark and all
     const align = '$$\\begin{align}\na &= {{c1::b}} \\\\\n{{c2::c &= d}}\n\\end{align}$$';
     expect(cardForm(align)).toBe('cloze');
-    expect(blanks(align)).toEqual([{ n: 1, answer: 'b', raw: '{{c1::b}}', math: true }, { n: 2, answer: 'c &= d', raw: '{{c2::c &= d}}', math: true }]);
+    expect(blanks(align)).toMatchObject([{ n: 1, answer: 'b', raw: '{{c1::b}}', math: true }, { n: 2, answer: 'c &= d', raw: '{{c2::c &= d}}', math: true }]);
     // segments: a formula holding blanks is one piece, a formula without is text
-    expect(clozeSegments('so $y = {{c1::x^{2}}}$ is $1/3$, {{c2::t}}')).toEqual([
+    expect(clozeSegments('so $y = {{c1::x^{2}}}$ is $1/3$, {{c2::t}}')).toMatchObject([
       'so ', { span: '$y = {{c1::x^{2}}}$', display: false, parts: ['y = ', { n: 1, answer: 'x^{2}', raw: '{{c1::x^{2}}}', math: true }] }, ' is $1/3$, ', { n: 2, answer: 't', raw: '{{c2::t}}' },
     ]);
     // the corpus files

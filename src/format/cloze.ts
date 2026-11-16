@@ -33,11 +33,17 @@ export function mathSpanEnd(text: string, i: number): number {
 export interface Blank {
   /** Group number, or null for an unnumbered blank. */
   n: number | null;
+  /** What the blank hides, as plain text: a blank inside it reads as its own answer. */
   answer: string;
   /** The whole `{{…}}` as written. */
   raw: string;
   /** Set when the blank sits inside a math span: the answer is TeX. */
   math?: true;
+  /** Where the blank opens in the card's text, and how long its opening is (`{{`, or `{{c3::`). */
+  at: number;
+  open: number;
+  /** A blank that holds blanks: what is inside it, text and blanks in order. Absent when it holds none. */
+  parts?: CardSeg[];
 }
 
 export type ClozePart = string | Blank;
@@ -52,19 +58,34 @@ export interface MathSeg {
 /** A card's text as renderers want it: text, blanks in text, and formulas that hold blanks. */
 export type CardSeg = string | Blank | MathSeg;
 
-const GROUP = /^c?(\d+)::([\s\S]*)$/;
+const GROUP = /^c?(\d+)::/;
 /** Inside math only the numbered form opens a blank; `{{` alone is TeX (`\binom{n}{{k}}`). */
 const MATH_OPEN = /\{\{c?(\d+)::/y;
 
-/** Find the `}}` that closes a blank opened at `open`, skipping math. */
-function blankEnd(text: string, open: number): number {
+/** A math span opened at `i` that ends by `hi`: the index just past it; else -1. */
+function mathEndIn(text: string, i: number, hi: number): number {
+  const e = mathSpanEnd(text, i);
+  return e > 0 && e <= hi ? e : -1;
+}
+
+/**
+ * Find the `}}` that closes a blank opened at `open`, before `hi`, skipping
+ * math and the blanks inside it: a `{{` in the answer that itself closes
+ * (with something in it) is a blank within the blank, and its `}}` is its
+ * own. One that never closes is text, as it always was.
+ */
+function blankEnd(text: string, open: number, hi: number): number {
   let j = open + 2;
-  while (j < text.length) {
+  while (j < hi) {
     if (text[j] === '$') {
-      const e = mathSpanEnd(text, j);
+      const e = mathEndIn(text, j, hi);
       if (e > 0) { j = e; continue; }
     }
-    if (text[j] === '}' && text[j + 1] === '}') return j;
+    if (text[j] === '}' && text[j + 1] === '}' && j + 1 < hi) return j;
+    if (text[j] === '{' && text[j + 1] === '{') {
+      const inner = blankEnd(text, j, hi);
+      if (inner > 0 && text.slice(j + 2, inner).trim()) { j = inner + 2; continue; }
+    }
     j++;
   }
   return -1;
@@ -94,16 +115,19 @@ function mathBlank(text: string, open: number, limit: number): { n: number; star
   return null;
 }
 
-/** Split text into literal runs, blanks, and formulas holding blanks. */
-export function clozeSegments(text: string): CardSeg[] {
+/** What segments read as with every blank's braces gone. */
+const plainOf = (segs: readonly CardSeg[]): string => segs.map((s) => (typeof s === 'string' ? s : 'span' in s ? s.span.replace(/\{\{c?\d+::/g, '').replace(/\}\}/g, '') : s.answer)).join('');
+
+/** The text from `lo` to `hi` as literal runs, blanks (a blank's own blanks inside it), and formulas holding blanks. */
+function segments(text: string, lo: number, hi: number): CardSeg[] {
   const segs: CardSeg[] = [];
   let lit = '';
   const flush = () => { if (lit) { segs.push(lit); lit = ''; } };
-  let i = 0;
-  while (i < text.length) {
+  let i = lo;
+  while (i < hi) {
     const c = text[i];
     if (c === '$') {
-      const e = mathSpanEnd(text, i);
+      const e = mathEndIn(text, i, hi);
       if (e > 0) {
         const display = text[i + 1] === '$';
         const d = display ? 2 : 1;
@@ -118,7 +142,7 @@ export function clozeSegments(text: string): CardSeg[] {
               const answer = text.slice(b.start, b.close);
               if (answer.trim()) {
                 if (tex) { inner.push(tex); tex = ''; }
-                inner.push({ n: b.n, answer, raw: text.slice(j, b.close + 2), math: true });
+                inner.push({ n: b.n, answer, raw: text.slice(j, b.close + 2), math: true, at: j, open: b.start - j });
                 j = b.close + 2;
                 continue;
               }
@@ -137,14 +161,16 @@ export function clozeSegments(text: string): CardSeg[] {
       }
     }
     if (c === '{' && text[i + 1] === '{') {
-      const close = blankEnd(text, i);
+      const close = blankEnd(text, i, hi);
       if (close > 0) {
         const inner = text.slice(i + 2, close);
         if (inner.trim()) {
           flush();
           const m = GROUP.exec(inner);
-          segs.push(m ? { n: Number(m[1]), answer: m[2]!, raw: text.slice(i, close + 2) }
-                      : { n: null, answer: inner, raw: text.slice(i, close + 2) });
+          const start = i + 2 + (m ? m[0].length : 0);
+          const parts = segments(text, start, close);
+          const nested = parts.some((p) => typeof p !== 'string');
+          segs.push({ n: m ? Number(m[1]) : null, answer: nested ? plainOf(parts) : text.slice(start, close), raw: text.slice(i, close + 2), at: i, open: start - i, ...(nested ? { parts } : {}) });
           i = close + 2;
           continue;
         }
@@ -157,7 +183,12 @@ export function clozeSegments(text: string): CardSeg[] {
   return segs;
 }
 
-/** Split text into literal runs and blanks; a formula's delimiters and TeX are literal runs around its blanks. */
+/** Split text into literal runs, blanks, and formulas holding blanks. A blank that holds blanks carries them in its `parts`. */
+export function clozeSegments(text: string): CardSeg[] {
+  return segments(text, 0, text.length);
+}
+
+/** Split text into literal runs and blanks; a formula's delimiters and TeX are literal runs around its blanks. The outermost blanks: one inside another is in that one's `parts`. */
 export function clozeParts(text: string): ClozePart[] {
   const parts: ClozePart[] = [];
   let lit = '';
@@ -177,8 +208,21 @@ export function clozeParts(text: string): ClozePart[] {
   return parts;
 }
 
+/** Every blank of segments, a blank before the blanks inside it: the order a blank's index counts in. */
+export function blanksIn(segs: readonly CardSeg[]): Blank[] {
+  const out: Blank[] = [];
+  for (const s of segs) {
+    if (typeof s === 'string') continue;
+    if ('span' in s) { for (const p of s.parts) if (typeof p !== 'string') out.push(p); continue; }
+    out.push(s);
+    if (s.parts) out.push(...blanksIn(s.parts));
+  }
+  return out;
+}
+
+/** Every blank of the text, in order, one that holds others before them. */
 export function blanks(text: string): Blank[] {
-  return clozeParts(text).filter((p): p is Blank => typeof p !== 'string');
+  return blanksIn(clozeSegments(text));
 }
 
 /** Numbered groups in order of first appearance. */

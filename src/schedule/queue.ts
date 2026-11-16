@@ -455,10 +455,10 @@ function locate(doc: Doc, item: CardItem): Card {
 
 /** `{{x}}` → `{{cN::x}}` for the blank at `index` in `blanks(text)` order. */
 export function numberBlank(text: string, index: number, n: number): string {
-  let i = 0;
-  return clozeParts(text)
-    .map((p) => (typeof p === 'string' ? p : i++ === index ? `{{c${n}::${p.answer}}}` : p.raw))
-    .join('');
+  const b = blanks(text)[index];
+  if (!b || b.n !== null) return text;
+  // its `{{` is followed by its group; what it holds (blanks of its own too) stays as written
+  return `${text.slice(0, b.at + 2)}c${n}::${text.slice(b.at + 2)}`;
 }
 
 export interface GradeOptions {

@@ -259,6 +259,7 @@
 // opened from a row, a face edited and saved, `]`, a session's card edited
 // with `e`, and a cell's right-click menu adding a row (see the function).
 
+import { faceFieldText, faceViews } from './FaceField.js';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { info } from '@tauri-apps/plugin-log';
@@ -311,6 +312,17 @@ function changedLines(a: string, b: string): number[] {
   const lb = b.split('\n');
   if (la.length !== lb.length) return [-1];
   return la.flatMap((l, i) => (l === lb[i] ? [] : [i + 1]));
+}
+
+/** The new card's passage, the reader's editor (`FaceField`): what it holds, and a text put in its place. Null until it is drawn. */
+function composerPassage(): { value: string; set(text: string): void } | null {
+  const host = document.querySelector('.composer .composer-face .face-host');
+  const v = host ? faceViews.get(host) : undefined;
+  if (!v) return null;
+  return {
+    get value() { return faceFieldText(v.state.doc); },
+    set(text: string) { v.dispatch(v.state.tr.insertText(text, 1, v.state.doc.content.size - 1)); },
+  };
 }
 
 export async function smokeReader(vault: Vault): Promise<void> {
@@ -442,11 +454,9 @@ export async function smokeCards(vault: Vault): Promise<void> {
     select(choose, 'Each successful recall pushes the curve out further than the last.');
     await until(() => document.querySelector('.sel-cue'));
     press('m');
-    const ta = await until(() => document.querySelector<HTMLTextAreaElement>('.composer textarea'));
+    const ta = await until(() => composerPassage());
     log(`composer: seed "${ta.value}"; forms ${Array.from(document.querySelectorAll('.composer .type-toggle button')).map((b) => b.textContent).join(' ')}; able ${document.querySelector('.composer .act')?.getAttribute('data-able')}`);
-    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!;
-    setter.call(ta, 'Each successful recall pushes the curve {{out further}} than the last.');
-    ta.dispatchEvent(new Event('input', { bubbles: true }));
+    ta.set('Each successful recall pushes the curve {{out further}} than the last.');
     await sleep(100);
     log(`preview blanks ${document.querySelectorAll('.composer .cloze-mark').length}; able ${document.querySelector('.composer .act')?.getAttribute('data-able')}`);
     press('Enter', { metaKey: true });
@@ -627,10 +637,8 @@ export async function smokeLoop(vault: Vault): Promise<void> {
     select(p3, 'A good system spends your attention the way a careful gardener spends water');
     await until(() => q('.sel-cue'));
     press('m');
-    const ta = await until(() => q<HTMLTextAreaElement>('.composer textarea'));
-    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!;
-    setter.call(ta, 'A good system spends your attention the way a careful {{gardener}} spends water');
-    ta.dispatchEvent(new Event('input', { bubbles: true }));
+    const ta = await until(() => composerPassage());
+    ta.set('A good system spends your attention the way a careful {{gardener}} spends water');
     await sleep(100);
     press('Enter', { metaKey: true });
     await until(() => (q('.composer') ? null : true));
@@ -649,7 +657,7 @@ export async function smokeLoop(vault: Vault): Promise<void> {
     const ce = q<HTMLTextAreaElement>('.insp .ce-field');
     log(`selected card: ${JSON.stringify(useApp.getState().selectedCard)}; editor "${ce?.value.slice(0, 40)}"; note ${q('.insp .ce-note')?.textContent}`);
     if (ce) {
-      setter.call(ce, 'A good system spends your {{attention}} the way a careful {{gardener}} spends water');
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(ce, 'A good system spends your {{attention}} the way a careful {{gardener}} spends water');
       ce.dispatchEvent(new Event('input', { bubbles: true }));
       await sleep(900);
       const edited = await vault.read(path, true);
@@ -2150,11 +2158,9 @@ export async function smokeRender(vault: Vault): Promise<void> {
     select(p2, 'and `a code span`');
     await until(() => q('.sel-cue'));
     press('m');
-    const ta = await until(() => q<HTMLTextAreaElement>('.composer textarea'));
+    const ta = await until(() => composerPassage());
     log(`composer seed: "${ta.value}"`);
-    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!;
-    setter.call(ta, 'inline code is written with {{backticks}}, as in `a code span`');
-    ta.dispatchEvent(new Event('input', { bubbles: true }));
+    ta.set('inline code is written with {{backticks}}, as in `a code span`');
     await sleep(100);
     press('Enter', { metaKey: true });
     await until(() => (q('.composer') ? null : true));
@@ -3480,11 +3486,10 @@ export async function smokeNotes(vault: Vault): Promise<void> {
     select(gold, 'Valid while');
     await until(() => q('.sel-cue'));
     const takenM = keyOn(surface(), { key: 'M', code: 'KeyM', metaKey: true, shiftKey: true });
-    const ta = await until(() => q<HTMLTextAreaElement>('.composer textarea'), 5000);
+    const ta = await until(() => composerPassage(), 5000);
     log(`⌘⇧M: taken ${takenM}; composer seed "${ta.value}"`);
     await shot('notes-composer');
-    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(ta, 'first-order time-dependent PT is {{c1::valid while the amplitude stays small}}');
-    ta.dispatchEvent(new Event('input', { bubbles: true }));
+    ta.set('first-order time-dependent PT is {{c1::valid while the amplitude stays small}}');
     await sleep(150);
     press('Enter', { metaKey: true });
     await until(() => (q('.composer') ? null : true), 5000);
@@ -6667,10 +6672,9 @@ export async function smokeOpen(vault: Vault): Promise<void> {
     select(cav, 'multiple occupancy is negligible');
     await poll(() => q('.sel-cue'), 'the selection cue');
     surface().dispatchEvent(new KeyboardEvent('keydown', { key: 'M', code: 'KeyM', metaKey: true, shiftKey: true, bubbles: true, cancelable: true }));
-    const ta = await poll(() => q<HTMLTextAreaElement>('.composer textarea'), 'the composer opens on it');
+    const ta = await poll(() => composerPassage(), 'the composer opens on it');
     const CARD = '$Z_1^N/N!$ holds while {{c1::multiple occupancy}} is negligible';
-    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(ta, CARD);
-    ta.dispatchEvent(new Event('input', { bubbles: true }));
+    ta.set(CARD);
     await sleep(150);
     await shot('open-composer-in-list');
     press('Enter', { metaKey: true });
@@ -14950,6 +14954,148 @@ export async function smokeSioyek(vault: Vault): Promise<void> {
     await shot('sioyek-hints-dark');
     key('Escape');
     useApp.getState().setTheme('light');
+    log(`done; vault ${vault.root}`);
+  } catch (e) {
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+// `ILMI_SMOKE=blanks` (`smokeBlanks`) over a copy of `samples/double-major`
+// (milestone 80): a cloze's blanks made from a selection in the new card's
+// passage, never typed: ⌘B and the right-click menu, the braces not drawn,
+// a blank around blanks (nested), one taken away by backspace at its start;
+// saved, the file holds `{{cN::…}}` nested; asked in a session, the whole
+// hides everything and a part hides itself inside the whole shown.
+export async function smokeBlanks(vault: Vault): Promise<void> {
+  const log = (s: string) => void info(`smoke blanks: ${s}`);
+  const shot = async (name: string, ms = 1500) => { await sleep(500); log(`shot: ${name}`); await sleep(ms); };
+  const q = <T extends Element>(sel: string, root: ParentNode = document) => root.querySelector<T>(sel);
+  const qa = <T extends Element>(sel: string, root: ParentNode = document) => Array.from(root.querySelectorAll<T>(sel));
+  const must = (ok: unknown, what: string) => { if (!ok) throw new Error(what); log(`ok: ${what}`); };
+  const poll = async <T,>(probe: () => T | null | undefined | false | Promise<T | null | undefined | false>, what: string, ms = 6000): Promise<T> => {
+    const t0 = Date.now();
+    for (;;) {
+      const v = await probe();
+      if (v) { log(`ok: ${what}`); return v; }
+      if (Date.now() - t0 > ms) throw new Error(`${what} (waited ${ms} ms)`);
+      await sleep(100);
+    }
+  };
+  const NOTE = 'fleeting/idea-for-honors-thesis.md';
+  const LINE = 'نَصَرَ يَنْصُرُ نَصْرًا فهو نَاصِرٌ الامر منه اُنْصُرْ والنهي عنه لَا تَنْصُرْ';
+  const A = 'يَنْصُرُ نَصْرًا فهو نَاصِرٌ';
+  const B = 'اُنْصُرْ';
+  const C = 'لَا تَنْصُرْ';
+  try {
+    useApp.getState().setTheme('light');
+    const { parse, blanks: blanksOfText, clozeGroups } = await import('../format/index.js');
+    const { TextSelection } = await import('prosemirror-state');
+    await vault.update(NOTE, (doc) => { doc.blocks.push(...parse(`${LINE}\n`).doc.blocks); });
+    openNode(NOTE);
+    const surface = () => q<HTMLElement>('.pane-body .doc-view .draft-doc')!;
+    const para = await poll(() => (surface() ? qa<HTMLElement>('p.dd-p', surface()).find((p) => p.textContent?.includes(B)) : null), 'the note with the paradigm\'s line', 10000);
+    await sleep(500);
+    surface().focus();
+    select(para, LINE);
+    await poll(() => q('.sel-cue'), 'the line selected');
+    surface().dispatchEvent(new KeyboardEvent('keydown', { key: 'M', code: 'KeyM', metaKey: true, shiftKey: true, bubbles: true, cancelable: true }));
+    await poll(() => composerPassage(), 'the new card opens on it');
+    const host = q<HTMLElement>('.composer .composer-face .face-host')!;
+    const view = faceViews.get(host)!;
+    const field = q<HTMLElement>('.composer .face-field')!;
+    const text = () => faceFieldText(view.state.doc);
+    must(text() === LINE && !q('.composer textarea'), 'the passage is the line, in the reader\'s editor (no plain text box)');
+    const pick = (word: string) => { const at = text().indexOf(word); view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 1 + at, 1 + at + word.length))); view.focus(); };
+    const cmdB = () => view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'b', code: 'KeyB', metaKey: true, bubbles: true, cancelable: true }));
+
+    // ── ⌘B on a selection ──
+    pick(A);
+    cmdB();
+    await poll(() => text().includes(`{{c1::${A}}}`), '⌘B makes the selection a blank, numbered');
+    const mark = await poll(() => q<HTMLElement>('.bl', field), 'the answer is marked');
+    must(mark.textContent === A, 'the mark is on the answer\'s words');
+    {
+      const open = q<HTMLElement>('.bl-open', field)!;
+      const close = q<HTMLElement>('.bl-close', field)!;
+      const chip = getComputedStyle(open, '::before');
+      log(`braces: open font ${getComputedStyle(open).fontSize}, close width ${Math.round(close.getBoundingClientRect().width)}; chip ${chip.content} ${chip.fontSize}`);
+      must(getComputedStyle(open).fontSize === '0px' && close.getBoundingClientRect().width < 1, 'its braces are not drawn');
+      must(chip.content.includes('1') && parseFloat(chip.fontSize) > 6, 'a small 1 says where it opens and which group it is');
+    }
+
+    // ── the right-click menu ──
+    pick(B);
+    {
+      const r = view.coordsAtPos(view.state.selection.from + 1);
+      field.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, clientX: r.left + 2, clientY: (r.top + r.bottom) / 2 }));
+    }
+    const menu = await poll(() => q<HTMLElement>('.ctx-menu'), 'a right-click on a selection opens the menu');
+    const acts = qa<HTMLElement>('[data-act]', menu).map((e) => e.dataset.act);
+    log(`the menu: ${acts.join(' ')}`);
+    must(acts.includes('blank') && acts.includes('blank-1') && !acts.includes('unblank') && !acts.includes('insert-table'), 'blank, and blank with the group there is; no table in a cloze');
+    await shot('blanks-menu');
+    q<HTMLElement>('[data-act="blank"]', menu)!.click();
+    await poll(() => text().includes(`{{c2::${B}}}`), 'blank on the menu makes the second, a group of its own');
+    pick(C);
+    cmdB();
+    await poll(() => text().includes(`{{c3::${C}}}`), 'and a third');
+
+    // ── a blank around blanks ──
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 1, view.state.doc.content.size - 1)));
+    cmdB();
+    await sleep(400);
+    log(`after ⌘B on the whole line: ${text()}`);
+    await poll(() => text().startsWith('{{c4::') && text().endsWith('}}}}') && clozeGroups(text()).join() === '4,1,2,3', 'the whole line selected, ⌘B makes a blank that holds the three');
+    must(qa('.bl-d1', field).length === 3 && qa('.bl-d0', field).length >= 1, 'the three inside are marked as inside it');
+    { const chips = qa<HTMLElement>('.bl-open', field).map((e) => getComputedStyle(e, '::before').content.replace(/"/g, '')).join(' '); must(chips === '4 1 2 3', `each opening says its own group (${chips})`); }
+    must(!/[{}]/.test(field.innerText.replace(/\u200b/g, '')) || qa<HTMLElement>('.bl-open, .bl-close', field).every((e) => getComputedStyle(e).fontSize === '0px'), 'no brace of any of them is drawn');
+    await shot('blanks-nested');
+
+    // ── backspace at a blank's start takes the blank away, its words left ──
+    {
+      const at = text().indexOf(`{{c2::${B}`) + 6;
+      view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 1 + at)));
+      view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', code: 'Backspace', bubbles: true, cancelable: true }));
+      await poll(() => !text().includes('{{c2::') && text().includes(` ${B} `), 'backspace at a blank\'s start: the blank gone, the word still there');
+      pick(B);
+      cmdB();
+      await poll(() => text().includes(`{{c2::${B}}}`), 'made again, it takes the number left free');
+    }
+    // the caret does not rest among the braces
+    {
+      const open = text().indexOf('{{c1::');
+      view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 1 + open + 3)));
+      await sleep(100);
+      const p = view.state.selection.from - 1;
+      must(p <= open || p >= open + 6, `a caret put inside the braces is moved out of them (${p}, the braces ${open}–${open + 6})`);
+    }
+
+    // ── saved ──
+    const CARD = text();
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', metaKey: true, bubbles: true, cancelable: true }));
+    await poll(() => !q('.composer'), 'saved');
+    await poll(async () => (await vault.fs.readText(vault.abs(NOTE))).includes(CARD), 'the file holds the card as written: {{c4::… {{c1::…}} …}}', 8000);
+    const doc = parse(await vault.fs.readText(vault.abs(NOTE))).doc;
+    const card = doc.blocks.find((b) => b.kind === 'card' && b.text === CARD);
+    must(card && blanksOfText(CARD).map((b) => b.n).join() === '4,1,2,3', 'read back as one cloze of four groups, the whole first');
+    await shot('blanks-saved');
+
+    // ── asked ──
+    const { refreshQueue } = await import('./vault.js');
+    refreshQueue();
+    const item = (n: number) => useApp.getState().queue.find((i) => i.kind === 'card' && i.path === NOTE && i.text === CARD && i.group && 'n' in i.group && i.group.n === n);
+    const whole = await poll(() => item(4), 'the whole is an element of the queue', 10000);
+    must(item(1) && item(2) && item(3), 'and each part');
+    openSession(whole);
+    const front = await poll(() => q<HTMLElement>('.recall-wrap .card .cloze-text'), 'the whole asked', 10000);
+    must(qa('.cloze:not(.ctx)', front).length === 1 && q<HTMLElement>('.cloze:not(.ctx)', front)!.textContent!.includes(A) && q<HTMLElement>('.cloze:not(.ctx)', front)!.textContent!.includes(C), 'one hidden run over the whole line');
+    await shot('blanks-ask-whole');
+    useApp.setState({ session: null });
+    openSession(item(2)!);
+    const part = await poll(() => { const f = q<HTMLElement>('.recall-wrap .card .cloze-text'); return f && qa('.cloze:not(.ctx)', f).length === 1 && q<HTMLElement>('.cloze:not(.ctx)', f)!.textContent === B ? f : null; }, 'a part asked: only it is hidden', 10000);
+    must(qa('.cloze.ctx', part).some((e) => e.textContent?.includes(A)), 'the rest shown around it, the other parts as context');
+    await shot('blanks-ask-part');
+    useApp.setState({ session: null });
     log(`done; vault ${vault.root}`);
   } catch (e) {
     log(`failed: ${e instanceof Error ? e.message : String(e)}`);

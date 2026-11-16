@@ -5,6 +5,8 @@
 // is the caller's business. On a phone (`quick`, milestone 56) it has no keys
 // to name: buttons at its foot, `blank` for ⌘B, front and back, no priority.
 
+import { makeBlank } from '../reader/index.js';
+import { FaceField, faceViews, pressIntoFace } from './FaceField.js';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { PRI_MAX, PRI_MIN, clozeParts, mathSpanEnd, nextGroup, parsePri, type CardForm } from '../format/index.js';
 import { cardText, type CardSpec } from '../reader/index.js';
@@ -51,6 +53,9 @@ export function Composer({ seed, form: initial, pri: docPri, onSave, onClose, qu
   const [left, setLeft] = useState(seed);
   const [right, setRight] = useState('');
   const ref = useRef<HTMLTextAreaElement & HTMLInputElement>(null);
+  /** The passage's editor, and a count that starts it afresh (save, another). */
+  const faceRef = useRef<HTMLDivElement>(null);
+  const [gen, setGen] = useState(0);
 
   useEffect(() => { ref.current?.focus(); }, [form]);
 
@@ -64,19 +69,20 @@ export function Composer({ seed, form: initial, pri: docPri, onSave, onClose, qu
     if (own !== null && own !== docPri) onSave(out, again, own); else onSave(out, again);
     if (again) {
       setText(''); setFront(''); setBack(''); setLeft(''); setRight('');
+      setGen((g) => g + 1);
       ref.current?.focus();
     }
   };
 
   // wrap the selection, or the caret, in {{ }}; inside a formula, in {{cN:: }}
   const wrapBlank = () => {
-    const el = ref.current;
-    if (!el || form !== 'cloze') return;
-    const s = el.selectionStart ?? 0;
-    const e = el.selectionEnd ?? s;
-    const next = withBlank(text, s, e);
-    setText(next.text);
-    requestAnimationFrame(() => { el.focus(); el.setSelectionRange(s + next.open.length, e + next.open.length); });
+    if (form !== 'cloze') return;
+    // the passage is the reader's editor (`FaceField`): the selection, or the word at the caret, a blank of a group of its own
+    const host = faceRef.current?.querySelector('.face-host');
+    const v = host ? faceViews.get(host) : undefined;
+    if (!v) return;
+    makeBlank()(v.state, v.dispatch.bind(v));
+    v.focus();
   };
 
   useEffect(() => {
@@ -84,20 +90,16 @@ export function Composer({ seed, form: initial, pri: docPri, onSave, onClose, qu
       const mod = e.metaKey || e.ctrlKey;
       if (e.key === 'Escape') { e.preventDefault(); onClose(); }
       else if (e.key === 'Enter' && mod) { e.preventDefault(); save(e.shiftKey); }
-      else if (mod && (e.key === 'b' || e.key === 'B')) { e.preventDefault(); wrapBlank(); }
+      else if (mod && (e.key === 'b' || e.key === 'B')) { if (!e.defaultPrevented) { e.preventDefault(); wrapBlank(); } }
       else if (mod && (e.key === '1' || e.key === '2' || e.key === '3')) { e.preventDefault(); setForm(FORMS[Number(e.key) - 1]![0]); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   });
 
-  let preview: ReactNode;
-  if (form === 'cloze') {
-    const parts = clozeParts(text);
-    preview = parts.some((p) => typeof p !== 'string')
-      ? parts.map((p, i) => (typeof p === 'string' ? <span key={i}>{p}</span> : <span key={i} className="cloze-mark">{p.answer}</span>))
-      : <span className="hint"><kbd className="kbd">⌘B</kbd> blank</span>;
-  }
+  // the passage shows its own blanks; with none yet, how one is made
+  const hasBlank = form === 'cloze' && clozeParts(text).some((p) => typeof p !== 'string');
+  const preview: ReactNode = <span className="hint">select the words, then <kbd className="kbd">⌘B</kbd> or right-click · blank</span>;
 
   return (
     <div className="composer">
@@ -114,9 +116,11 @@ export function Composer({ seed, form: initial, pri: docPri, onSave, onClose, qu
 
       {form === 'cloze' && (
         <>
-          <textarea dir="auto" ref={ref} value={text} onChange={(e) => setText(e.target.value)} placeholder="passage" />
+          <div className="composer-face" dir="auto" ref={faceRef} onMouseDown={pressIntoFace}>
+            <FaceField key={gen} value={text} placeholder="passage" autoFocus blanks onChange={setText} />
+          </div>
           {quick === undefined
-            ? <div className="preview"><span className="preview-tag">preview</span>{preview}</div>
+            ? (hasBlank ? null : <div className="preview">{preview}</div>)
             : <button type="button" className="quick-blank" onMouseDown={(e) => e.preventDefault()} onClick={wrapBlank}>blank</button>}
         </>
       )}

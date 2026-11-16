@@ -7,10 +7,10 @@
 
 import katex from 'katex';
 import type { Node as PMNode } from 'prosemirror-model';
-import { NodeSelection, Selection, TextSelection, type EditorState, type Transaction } from 'prosemirror-state';
+import { NodeSelection, Selection, TextSelection, type Command, type EditorState, type Transaction } from 'prosemirror-state';
 import { EditorView, type Decoration, type NodeView } from 'prosemirror-view';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { PRI_DEFAULT, cardFields, clozeSegments, formatBody, formatBox, mathSpanEnd, meta, parse, parseClip, serialize, setField, type Blank, type Block, type Card, type Doc, type MathSeg, type SectionSchedule } from '../format/index.js';
+import { PRI_DEFAULT, blanksIn, cardFields, clozeSegments, formatBody, formatBox, mathSpanEnd, meta, parse, parseClip, serialize, setField, type Blank, type CardSeg, type Block, type Card, type Doc, type MathSeg, type SectionSchedule } from '../format/index.js';
 import {
   blockAt, blocksEqual, cardDue, cardsKey, cellLines, classifyRaw, insertCardItem, editorialRanges, flatRanges, fromDoc, frozenKey, imagesKey, indentWidth, inlineRanges, insertCard, isMathEdit,
   linkTarget, literalSpans, makeState, markerKey, markerNumber, markerPos, markerRanges, mathEditKey, mathSplit, passage, pickPos, pressed, schema, setLink,
@@ -19,6 +19,7 @@ import {
   type FindMeta, type FindState, type SlashItem, type SlashState, textOf,
   bookKey, CODE_LANGS, addColumn, addRow, cellAt, alignColumn, codeHTML, codeLang, deleteColumn, deleteRow, deleteTable, insertTable, foldKey, foldedKeys, foldsHiding, landKey, ruleEndIndex, langOf, setCodeLang, type Align, type FoldMeta,
   fileKey, isHistoryTransaction, refit, schedulesKept, toDoc,
+  blankAround, groupsHere, makeBlank, regroupBlank, removeBlank,
 } from '../reader/index.js';
 import { advanceWrite, sectionSpan, whenToDate } from '../schedule/index.js';
 import { dirOf, nameOf, type Loaded, type Vault } from '../vault/index.js';
@@ -281,31 +282,41 @@ export function mathBlanksHTML(seg: MathSeg, stateOf: (b: Blank) => BlankState, 
   }
 }
 
-/** A cloze card's text: blanks in text as spans of `cls(state)`, formulas holding blanks through KaTeX. */
+/** A cloze card's text: blanks in text as spans of `cls(state)`, formulas holding blanks through KaTeX. A blank that holds blanks is drawn whole while it is hidden; shown, each blank inside it has its own state. */
 export function clozeHTML(text: string, stateOf: (b: Blank, index: number) => BlankState, cls: (s: BlankState) => string): string {
   let index = -1;
-  return withBases(clozeSegments(text)).map((seg) => {
+  const draw = (segs: CardSeg[]): string => withBases(segs).map((seg) => {
     if (typeof seg === 'string') return richHTML(seg);
     if ('span' in seg) return mathBlanksHTML(seg, (b) => stateOf(b, ++index), cls);
     const state = stateOf(seg, ++index);
+    if (seg.parts) {
+      // hidden, what is inside is hidden with it (its blanks are counted, not asked); else each of them is its own
+      if (state === 'hidden') { index += blanksIn(seg.parts).length; return `<span class="${cls(state)}">${richHTML(seg.answer)}</span>`; }
+      return `<span class="${cls(state)}">${draw(seg.parts)}</span>`;
+    }
     if (seg.base === undefined) return `<span class="${cls(state)}">${richHTML(seg.answer)}</span>`;
     // a case ending: the blank is its letter, the mark shown only once revealed
     return `<span class="${cls(state)} on-letter">${escapeHtml(seg.base)}${state === 'hidden' ? '' : escapeHtml(seg.answer)}</span>`;
   }).join('');
+  return draw(clozeSegments(text));
 }
 
 /** A face's `dir` for React: its majority script's way (`strongDir`), undefined (inherit) when it has no letter. */
 export const faceDir = (text: string): Dir | undefined => strongDir(text) ?? undefined;
 
-/** A blank's answer as the answer face shows it: a case ending on its letter, else the answer alone. */
+/** A blank's answer as the answer face shows it: a case ending on its letter, else the answer alone. Counted as `blanks(text)` counts: a blank before the blanks inside it. */
 export function blankAnswers(text: string, keep: (index: number) => boolean): string[] {
   const out: string[] = [];
   let k = 0;
-  for (const seg of withBases(clozeSegments(text))) {
-    if (typeof seg === 'string') continue;
-    if ('span' in seg) { for (const p of seg.parts) if (typeof p !== 'string' && keep(k++)) out.push(answerHTML(p, seg.display)); }
-    else if (keep(k++)) out.push(seg.base === undefined ? answerHTML(seg) : `<span class="on-letter">${escapeHtml(seg.base + seg.answer)}</span>`);
-  }
+  const walk = (segs: CardSeg[]) => {
+    for (const seg of withBases(segs)) {
+      if (typeof seg === 'string') continue;
+      if ('span' in seg) { for (const p of seg.parts) if (typeof p !== 'string' && keep(k++)) out.push(answerHTML(p, seg.display)); continue; }
+      if (keep(k++)) out.push(seg.base === undefined ? answerHTML(seg) : `<span class="on-letter">${escapeHtml(seg.base + seg.answer)}</span>`);
+      if (seg.parts) walk(seg.parts);
+    }
+  };
+  walk(clozeSegments(text));
   return out;
 }
 
@@ -925,7 +936,7 @@ const pointBox = (e: MouseEvent) => ({ left: e.clientX, top: e.clientY, bottom: 
  * image, a formula and anything outside the text keep their own menus (or
  * the system's). True when it opened one.
  */
-export function editorMenu(view: EditorView, e: MouseEvent, opts: { table?: boolean } = {}): boolean {
+export function editorMenu(view: EditorView, e: MouseEvent, opts: { table?: boolean; blanks?: boolean } = {}): boolean {
   if (!view.editable) return false;
   const t = e.target as HTMLElement | null;
   if (!t || t.closest('.dd-h, .card-span, img, .math, .tb-add, .tb-more, .raw')) return false;
@@ -962,6 +973,24 @@ export function editorMenu(view: EditorView, e: MouseEvent, opts: { table?: bool
     // the table goes after the block pressed on
     if (hit !== null && sel.empty) view.dispatch(view.state.tr.setSelection(Selection.near(view.state.doc.resolve(hit))));
     items.push({ label: '-' }, { label: 'insert table', glyph: '⊞', act: 'insert-table', run: () => { insertTable()(view.state, view.dispatch.bind(view)); view.focus(); } });
+  }
+  if (opts.blanks) {
+    // a cloze's face: the selection (or the word pressed on) made a blank, of a group of its own or of one there is; the blank pressed in, taken away
+    if (hit !== null && sel.empty) view.dispatch(view.state.tr.setSelection(Selection.near(view.state.doc.resolve(hit))));
+    const run = (cmd: Command) => () => { cmd(view.state, view.dispatch.bind(view)); view.focus(); };
+    const groups = groupsHere(view.state);
+    const inside = blankAround(view.state);
+    const can = makeBlank()(view.state);
+    items.push({ label: '-' });
+    if (can) {
+      items.push({ label: 'blank', act: 'blank', run: run(makeBlank()) });
+      for (const g of groups.slice(0, 9)) items.push({ label: `blank · with ${g}`, act: `blank-${g}`, run: run(makeBlank(g)) });
+    }
+    if (inside) {
+      for (const g of groups.filter((g) => g !== inside.n).slice(0, 9)) items.push({ label: `move to group ${g}`, act: `regroup-${g}`, run: run(regroupBlank(g)) });
+      items.push({ label: 'remove blank', act: 'unblank', run: run(removeBlank) });
+    }
+    if (items[items.length - 1]!.label === '-') items.pop();
   }
   popMenu(pointBox(e), items, 'text-menu');
   return true;

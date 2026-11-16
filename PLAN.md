@@ -9225,6 +9225,32 @@ off as it comes (a focus walks everything due of its kind, as under an
 exam); on, the narrowed list folds where the day's does and ⏎ walks only
 what is above the fold of that kind (`focusBudget`, `walkOf`'s `keep`).
 
+### [x] 80. Blanks made, not typed; a blank inside a blank
+Asked by the user, 2026-11-16, over a paradigm to recite whole and in
+parts: "Can we get rid of the {{}} thing? I think we should support it but
+our default should be something else … right click context menu … I'd
+rather support nested then the whole card ask."
+Done 2026-11-16.
+Notes: **Nested blanks** (FORMAT.md §5.1): a blank closes at the `}}` that
+is its own, so `{{c9::a {{c1::b}} c}}` is the blank 9 over `a b c` holding
+the blank 1. `Blank` carries `at`, `open` and, when it holds blanks,
+`parts`; `blanks(text)` lists a blank before the ones inside it, which is
+the order an unnumbered blank's index counts in (`numberBlank` writes at
+the blank's place). Asked, a blank hides all it holds; a blank inside
+asked, the one around it is shown (`clozeHTML` draws the tree). One `}}`
+for two `{{` now pairs from the inside (the outer `{{` is text): the one
+reading that changed. **Made, not typed** (`reader/blanksDeco.ts`, on in a
+cloze's `FaceField`): ⌘B makes the selection, or the word at the caret, a
+blank of a group of its own, numbered; the answer is marked, a small
+number says the group where it opens, the braces are text the page does
+not draw and the caret does not rest in; a selection that cuts a blank is
+widened to hold it; backspace at a blank's start takes the blank away;
+the right-click menu has blank, blank with a group there is, move to
+group, remove blank. ⌘B is the plugin's own key there, so it is never
+bold. The new card's passage is that editor now (it was a plain text box
+with a preview under it). **Left as it was:** the inspector's box for a
+selected card shows the file's text, braces and all.
+
 ## Notes for the next session
 
 Studying (42–46) is complete, 2026-10-31: every milestone's window check

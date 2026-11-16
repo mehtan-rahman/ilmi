@@ -10,7 +10,7 @@ import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent, type Mouse
 import { EditorView } from 'prosemirror-view';
 import type { Node as PMNode } from 'prosemirror-model';
 import type { Block } from '../format/index.js';
-import { makeState, nodeToRaw, schema, textOf } from '../reader/index.js';
+import { makeBlank, makeState, nodeToRaw, schema, textOf } from '../reader/index.js';
 import { caretToPress, editorMenu, handleClickOn, nodeViews } from './Reader.js';
 
 const pipe = (line: string): boolean => /^ {0,3}\|/.test(line);
@@ -92,7 +92,7 @@ export function FaceField({ value, placeholder, autoFocus, blanks, onChange }: F
     const mount = host.current;
     if (!mount) return;
     const v = new EditorView(mount, {
-      state: makeState(faceFieldBlocks(value, !blanks), { frozen: () => false, pos: null }),
+      state: makeState(faceFieldBlocks(value, !blanks), { frozen: () => false, pos: null, blanks: !!blanks }),
       nodeViews,
       handleClickOn,
       attributes: { class: 'draft-doc face-field', 'data-placeholder': placeholder },
@@ -110,7 +110,7 @@ export function FaceField({ value, placeholder, autoFocus, blanks, onChange }: F
       },
       handleDOMEvents: {
         // a cell's menu, or cut, copy, paste and `insert table` (not in a cloze)
-        contextmenu: (ev, e) => editorMenu(ev, e, { table: !blanks }),
+        contextmenu: (ev, e) => editorMenu(ev, e, { table: !blanks, blanks: !!blanks }),
       },
       dispatchTransaction(tr) {
         const next = v.state.apply(tr);
@@ -127,10 +127,11 @@ export function FaceField({ value, placeholder, autoFocus, blanks, onChange }: F
   }, []);
   const onKeyDown = (e: ReactKeyboardEvent) => {
     const v = view.current;
-    if (!blanks || !v || !(e.metaKey || e.ctrlKey) || (e.key !== 'b' && e.key !== 'B')) return;
+    // the editor's own key made the blank already (`blanksDeco.ts`); this is for a press that did not reach it
+    if (!blanks || !v || e.defaultPrevented || !(e.metaKey || e.ctrlKey) || (e.key !== 'b' && e.key !== 'B')) return;
     e.preventDefault();
-    const { from, to } = v.state.selection;
-    v.dispatch(v.state.tr.insertText('}}', to).insertText('{{', from));
+    // the selection (or the word at the caret) a blank of a group of its own
+    makeBlank()(v.state, v.dispatch.bind(v));
   };
   return <div className="face-host" ref={host} onKeyDown={onKeyDown} />;
 }

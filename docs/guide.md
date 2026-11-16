@@ -406,6 +406,27 @@ the web when it is an address and `show remote images` is on; one that
 cannot be had is its alt in mono. A passage selected over emphasis carries
 the markers into the extract or card made from it.
 
+### Blanks
+
+A cloze's blanks are made, not typed. In a new card's passage, or a cloze
+opened in a deck or the card view, select the words and press ⌘B (with
+nothing selected, the word at the caret), or right-click and choose
+`blank`. The answer is marked and a small number where it opens says which
+group it is; the braces the file keeps (`{{c1::…}}`) are not drawn. Each ⌘B
+is a group of its own, asked separately. `blank · with 2` on the menu puts
+the selection in a group there already is (asked together with it), `move to
+group` moves the blank you pressed in, `remove blank` takes it away. So does
+backspace at a blank's start: the blank goes, its words stay. Typed braces
+still work, and become a blank as they close.
+
+A blank can hold blanks. Select a stretch that has blanks in it and press
+⌘B: the new blank is the whole stretch, the ones inside keep their own
+groups. Asked, the whole hides everything in it; when one inside is asked,
+the rest is shown around it. A line to recite whole and also piece by
+piece is one card: blank each piece, then select all of it and blank that.
+The inspector's box for a selected card still shows the text as the file
+has it, braces and all.
+
 ### Formulas with blanks
 
 A blank can sit inside a formula: `$y = {{c1::x^{2}}}$`, or a whole line of

@@ -174,10 +174,10 @@ describe('blanks inside math', () => {
     const [b] = blanks(card.text);
     expect(answerHTML(b!)).toMatch(/^<span class="math"><span class="katex">/);
     expect(answerHTML(b!)).not.toContain('katex-error');
-    const aligned = answerHTML({ n: 2, answer: '\\nabla \\times \\mathbf{E} &= -\\frac{\\partial \\mathbf{B}}{\\partial t}', raw: '', math: true }, true);
+    const aligned = answerHTML({ n: 2, answer: '\\nabla \\times \\mathbf{E} &= -\\frac{\\partial \\mathbf{B}}{\\partial t}', raw: '', math: true, at: 0, open: 6 }, true);
     expect(aligned).toContain('class="katex"');
     expect(aligned).not.toContain('katex-error');
-    expect(answerHTML({ n: 1, answer: 'plain [a note]', raw: '{{c1::plain [a note]}}' })).toBe('plain <span class="ed-mark note">[a note]</span>');
+    expect(answerHTML({ n: 1, answer: 'plain [a note]', raw: '{{c1::plain [a note]}}', at: 0, open: 6 })).toBe('plain <span class="ed-mark note">[a note]</span>');
   });
 
   it('falls back to the source as text when KaTeX refuses the TeX, the blank still hidden', () => {
@@ -974,7 +974,7 @@ describe('the read-only text: rows and faces', () => {
     expect(hidden).toBe('the <span class="cloze">answer</span> is <span class="md-mark hidden">`</span><span class="md-code" dir="ltr">code</span><span class="md-mark hidden">`</span>, and <span class="md-mark hidden">*</span><span class="md-em">so</span><span class="md-mark hidden">*</span>');
     expect(cardHTML({ kind: 'card', text: '**bold** question :: `a` answer' })).toBe('<span class="cs-q" dir="ltr"><span class="md-mark hidden">**</span><span class="md-strong">bold</span><span class="md-mark hidden">**</span> question</span><span class="cs-a" dir="ltr"><span class="md-mark hidden">`</span><span class="md-code" dir="ltr">a</span><span class="md-mark hidden">`</span> answer</span>');
     // the answer face of a blank holding emphasis
-    expect(answerHTML({ n: 1, answer: '*em*', raw: '{{c1::*em*}}' })).toBe('<span class="md-mark hidden">*</span><span class="md-em">em</span><span class="md-mark hidden">*</span>');
+    expect(answerHTML({ n: 1, answer: '*em*', raw: '{{c1::*em*}}', at: 0, open: 6 })).toBe('<span class="md-mark hidden">*</span><span class="md-em">em</span><span class="md-mark hidden">*</span>');
   });
 });
 

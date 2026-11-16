@@ -11,6 +11,7 @@
 // changes, and the marker's settled blocks are dimmed. All state-level; the
 // view adds node views on top.
 
+import { blanksPlugin } from './blanksDeco.js';
 import { bookPlugin, type BookOptions } from './book.js';
 import { inkAreas, type InkBoxes } from './inkArea.js';
 import { baseKeymap, chainCommands, exitCode } from 'prosemirror-commands';
@@ -764,6 +765,8 @@ export interface StateOptions {
   book?: BookOptions;
   /** The ink areas, where there is a canvas (milestone 69): how each stands, by its line's source. */
   ink?: () => InkBoxes;
+  /** A cloze's face: its blanks shown marked, their braces hidden (`blanksDeco.ts`). */
+  blanks?: boolean;
 }
 
 /** Which block a result of the search index landed on, by its place among the top-level nodes; null when it has faded. */
@@ -789,7 +792,7 @@ export function makeState(blocks: Block[], opts: StateOptions): EditorState {
   const state = EditorState.create({
     doc: toDoc(blocks),
     // images before marks: the marks read the images' state as it is after the same transaction
-    plugins: [...(opts.ink ? [inkAreas(opts.ink)] : []), frozenPlugin(opts.frozen), slashPlugin({ openMath: (tr, pos) => tr.setMeta(mathEditKey, pos) }), findPlugin, guards, rules, enterRules, formatKeys, keys, keymap(baseKeymap), history(), gapCursor(), mathReform, mathEdit, images(opts.images), marks, marker, direction, codeColours, foldPlugin, tablePlugin, landed, ...(opts.book ? [bookPlugin(opts.book)] : [])],
+    plugins: [...(opts.ink ? [inkAreas(opts.ink)] : []), ...(opts.blanks ? [blanksPlugin] : []), frozenPlugin(opts.frozen), slashPlugin({ openMath: (tr, pos) => tr.setMeta(mathEditKey, pos) }), findPlugin, guards, rules, enterRules, formatKeys, keys, keymap(baseKeymap), history(), gapCursor(), mathReform, mathEdit, images(opts.images), marks, marker, direction, codeColours, foldPlugin, tablePlugin, landed, ...(opts.book ? [bookPlugin(opts.book)] : [])],
   });
   const read = opts.pos === null ? state : state.apply(state.tr.setMeta(markerKey, opts.pos));
   return folds.length ? read.apply(read.tr.setMeta(foldKey, { keys: folds } satisfies FoldMeta)) : read;

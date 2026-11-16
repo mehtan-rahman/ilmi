@@ -961,3 +961,33 @@ mark.find-hit { color: inherit; padding: 0; }
 
 .book-chip .bc-btn, .book-chip .bc-when { display: inline-block; }
 .composer .hd > span:first-child { display: inline-block; }
+
+/* ── a cloze's blanks where they are written (`blanksDeco.ts`): the answer marked, a small number where the blank
+   opens, the braces not drawn. One inside another is tinted over it and underlined lower ── */
+.ProseMirror .bl { background: color-mix(in oklab, var(--accent) 13%, transparent); border-bottom: 1.5px solid var(--accent); border-radius: 2px 2px 0 0; padding: 1px 0; }
+.ProseMirror .bl-d1 { background: color-mix(in oklab, var(--accent) 27%, transparent); }
+.ProseMirror .bl-d2 { background: color-mix(in oklab, var(--accent) 40%, transparent); }
+.ProseMirror .bl-d3 { background: color-mix(in oklab, var(--accent) 52%, transparent); }
+[data-theme="eink"] .ProseMirror :is(.bl-d1, .bl-d2, .bl-d3) { border-bottom-width: 3px; }
+.ProseMirror .bl-open, .ProseMirror .bl-close { font-size: 0; }
+.ProseMirror .bl-open::before {
+  content: attr(data-n);
+  font-family: var(--sans);
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--accent);
+  vertical-align: super;
+  padding: 0 1px;
+  unicode-bidi: isolate;
+}
+.ProseMirror .bl-open[data-n=""]::before { content: '·'; }
+[data-theme="eink"] .ProseMirror .bl { background: none; border-bottom-color: var(--fg-1); }
+[data-theme="eink"] .ProseMirror .bl-open::before { color: var(--fg-1); }
+
+/* the new card's passage: the reader's editor where the textarea was, its blanks marked as they are made */
+.composer .composer-face { min-height: 96px; padding: 4px 0; font-family: var(--serif); font-size: 16px; line-height: 1.6; color: var(--fg-1); cursor: text; }
+.composer .composer-face .face-field { outline: none; white-space: pre-wrap; min-height: 1.5em; }
+.composer .composer-face .face-field p { margin: 0; }
+.composer .composer-face .face-field > p:only-child:has(> br:only-child)::before { content: 'passage'; color: var(--fg-5); font-style: italic; pointer-events: none; float: left; height: 0; }
+.quick .composer .composer-face { flex: 1; min-height: 0; overflow: auto; font-size: 19px; line-height: 1.5; }

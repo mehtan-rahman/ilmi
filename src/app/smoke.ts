@@ -3135,17 +3135,18 @@ export async function smokeDecks(vault: Vault): Promise<void> {
       log(`new card saved: sheet gone ${q('.card-sheet') ? 'NO' : 'yes'}; rows ${before} → ${rows().length}; in the list ${rows().some((x) => x.textContent?.includes('sheet test front')) ? 'yes' : 'NO'}`);
     }
 
-    // study the deck: two grades, the header counting down
+    // study the deck: two grades, the session moving on at each
     q<HTMLElement>('.deck-study .ds-study')!.click();
     await until(() => q('.recall-meta .sess-deck'));
     log(`study: "${q('.recall-meta .sess-deck')?.textContent}"; items ${useApp.getState().session?.items.length}`);
     await shot('decks-study', 4000);
     for (let i = 0; i < 2; i++) {
-      const before = q('.recall-meta .sess-deck')?.textContent;
+      // the session moves on at a grade; the header counts down unless the grade leaves the card in its steps, when it comes back and one more is in fact left
+      const before = useApp.getState().session?.at;
       key(' ');
       await sleep(250);
       key('3');
-      await until(() => (q('.recall-meta .sess-deck')?.textContent !== before ? true : null), 5000);
+      await until(() => (useApp.getState().session?.at !== before ? true : null), 5000);
       await sleep(400);
       log(`grade ${i + 1}: header "${q('.recall-meta .sess-deck')?.textContent ?? 'ended'}"; tab ${activeTab(useApp.getState().panes)?.id}; lines: ${await lines()}`);
     }
@@ -5099,6 +5100,8 @@ export async function smokeListCards(vault: Vault): Promise<void> {
     await shot('listcards-queue');
 
     // ── reviewed in a session: the heading path above it, the sr line under the item ──
+    // tested at once, as before a card never tested was learnt first (the tweak, off for this walk)
+    useApp.setState({ learnNew: false });
     openSession(item);
     const trail = await poll(() => q<HTMLElement>('.recall-wrap .card-trail'), 'the session shows the card', 8000);
     // a heading's formula is drawn in the trail (since 46), so its text is the formula's letters, not its `$…$`

@@ -251,6 +251,7 @@ export function Tweaks() {
   const clipImages = useApp((s) => s.clipImages);
   const remoteImages = useApp((s) => s.remoteImages);
   const queueTitles = useApp((s) => s.queueTitles);
+  const focusBudget = useApp((s) => s.focusBudget);
   const backlog = useApp((s) => s.backlog);
   const learnNew = useApp((s) => s.learnNew);
   const vault = useApp((s) => s.vault);
@@ -341,6 +342,13 @@ export function Tweaks() {
         <div className="tw-seg">
           <button type="button" data-active={queueTitles ? '1' : '0'} onClick={() => useApp.getState().setQueueTitles(true)}>on</button>
           <button type="button" data-active={queueTitles ? '0' : '1'} onClick={() => useApp.getState().setQueueTitles(false)}>off</button>
+        </div>
+      </div>
+      <div className="tw-row">
+        <span className="tw-lbl">a queue focus keeps to the day's budget</span>
+        <div className="tw-seg" data-tweak="focus-budget">
+          <button type="button" data-active={focusBudget ? '1' : '0'} onClick={() => useApp.getState().setFocusBudget(true)}>on</button>
+          <button type="button" data-active={focusBudget ? '0' : '1'} onClick={() => useApp.getState().setFocusBudget(false)}>off</button>
         </div>
       </div>
       <div className="tw-row">

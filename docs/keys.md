@@ -33,7 +33,8 @@ in a menu        ↓ ↑ move (round the ends), Home End, ⏎ or space runs the 
                  (over a book's pages they zoom the pages: see in a book)
 ⌘,               tweaks: theme, accent, density, text size, reopen the last vault on start,
                  download images when clipping, show remote images, queue
-                 shows titles, postpone the backlog when the day starts
+                 shows titles, a queue focus keeps to the day's budget,
+                 postpone the backlog when the day starts
                  (kept outside the vault); the day's budget,
                  where clippings go, and plugins (kept in the vault's .ilmi)
 

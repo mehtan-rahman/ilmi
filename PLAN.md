@@ -9219,8 +9219,11 @@ after, at an hour the screen was most likely locked (the rig's known
 limit); it passed three times since and nothing in the read path waits on
 a lock. **Measured:** the numbers over a log of 780,000 reviews draw in
 2.0 s on the Mac and 2.6 s on the simulated phone, a day of 712 reviews
-lists in 0.25 s. **Decided, kept:** under a focus the session walks
-everything due of its kind (as under an exam).
+lists in 0.25 s. **The budget under a focus** is a tweak, asked by the user ("should be
+an option in the setting"): `a queue focus keeps to the day's budget`,
+off as it comes (a focus walks everything due of its kind, as under an
+exam); on, the narrowed list folds where the day's does and ⏎ walks only
+what is above the fold of that kind (`focusBudget`, `walkOf`'s `keep`).
 
 ## Notes for the next session
 

@@ -1118,7 +1118,7 @@ export function openIntake(dir = '', opts: OpenOpts = {}): void {
 /** What a session walks: the day's work, or with the queue narrowed to an exam (`only`, its `examKey`) or to a focus what is due of that, as the queue shows it. */
 function sessionQueue(only: string | null, focus: Focus): QueueItem[] {
   const s = useApp.getState();
-  return walkOf(s.queue, appNow(), s.budget, only, focus);
+  return walkOf(s.queue, appNow(), s.budget, only, focus, s.focusBudget);
 }
 
 /**

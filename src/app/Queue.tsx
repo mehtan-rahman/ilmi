@@ -122,6 +122,7 @@ export function Queue({ scope, active }: Props) {
   const budget = useApp((s) => s.budget);
   // the row names its file by its path; the tweak brings the title back
   const by = useApp((s) => (s.queueTitles ? 'title' : 'path'));
+  const focusBudget = useApp((s) => s.focusBudget);
   const examFilter = useApp((s) => s.examFilter);
   const phone = useApp((s) => s.phone);
   // the day narrowed to one thing to do; the other scopes are lists, whole
@@ -139,7 +140,9 @@ export function Queue({ scope, active }: Props) {
   for (const i of toward) tally[focusOf(i)]++;
   const items = focus === 'all' ? toward : toward.filter((i) => inFocus(i, focus));
   // the fold: where the day's budget ends; under it, the backlog (due before today) can be postponed. The budget is the whole day's: narrowed, the list has no fold
-  const foldAt = scope === 'today' && filter === null && focus === 'all' && budget > 0 && items.length > budget ? budget : items.length;
+  // (unless the tweak keeps a focus to the budget: then the fold is where the day's falls among the focus's rows)
+  const dayFold = scope === 'today' && filter === null && budget > 0 && toward.length > budget;
+  const foldAt = !dayFold ? items.length : focus === 'all' ? budget : focusBudget ? toward.slice(0, budget).filter((i) => inFocus(i, focus)).length : items.length;
   const rest = foldAt < items.length ? overflow(all, now) : [];
   const restWord = [rest.filter((i) => i.kind !== 'write').length, rest.filter((i) => i.kind === 'write').length]
     .map((n, i) => (n ? `${n} to ${i ? 'write' : 'read'}` : ''))

@@ -18,6 +18,7 @@ Asked by the user: "Continue. pleaes go in a loop until ther is nothing open any
 - *A page the PDF turns:* its text layer is turned with it, and lines, references and passage names are read through the page's transform. Before, on such a page the words lay off the picture.
 - *A word being composed* keeps its ⏎ and esc from the app (rename fields, the palette, a card's save).
 - The bottom strip names a book's newer keys.
+- *The budget under a queue focus is a tweak* (asked after the report: "should be an option in the setting"): `a queue focus keeps to the day's budget`, off by default. On, the narrowed list folds where the day's budget falls and ⏎ walks only what is above it of that kind. Mac `sweep` 130 with it (a budget of 40: 39 cards above the fold, the session those 39); not rerun on the simulators.
 
 **Found on the way.** The turned page's misplaced text layer (a real fault, since 47). My own 780,000-review check twice blamed the app for what the check had wrong (it waited for a number the past-year summary never says, then for a year of cells a phone does not draw).
 

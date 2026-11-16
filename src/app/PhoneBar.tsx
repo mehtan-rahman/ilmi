@@ -20,7 +20,7 @@ export function PhoneBar() {
   const due = useApp((s) => dueToday(s.queue, appNow(), s.budget).length);
   const focus = useApp((s) => s.queueFocus);
   // what entering would walk: the day, or the one thing to do it is narrowed to
-  const walk = useApp((s) => walkOf(s.queue, appNow(), s.budget, null, s.queueFocus).length);
+  const walk = useApp((s) => walkOf(s.queue, appNow(), s.budget, null, s.queueFocus, s.focusBudget).length);
   const home = tab === TODAY && !sheet;
   const go = home && walk > 0;
   const day = () => {

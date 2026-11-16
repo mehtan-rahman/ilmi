@@ -13868,6 +13868,37 @@ export async function smokeSweep(vault: Vault): Promise<void> {
       await poll(() => useApp.getState().queueFocus === 'read' && shown().length > 0 && shown().every((r) => r.dataset.el === 'read' || r.dataset.el === 'section'), 'a press on read: only what is to be read');
       await shot('sweep-focus-read');
       await poll(async () => { try { return (JSON.parse(await vault.fs.readText(vault.abs('.ilmi/state.json'))) as { focus?: string }).focus === 'read'; } catch { return false; } }, 'the focus is kept with the collection\'s view state on this device', 8000);
+      // the tweak: a focus keeps to the day's budget (off as it comes: a focus walks everything due of its kind)
+      {
+        const { setBudget } = await import('./vault.js');
+        const was = { budget: useApp.getState().budget, keep: useApp.getState().focusBudget };
+        try {
+          must(!was.keep, 'the tweak is off as it comes');
+          setBudget(40);
+          setFocus('all');
+          await poll(() => q('.qlist li.fold'), 'a budget of 40 folds the day');
+          const above = shown().filter((r) => r.dataset.below !== '1');
+          const cardsAbove = above.filter((r) => r.dataset.el === 'card').length;
+          log(`budget 40: ${above.length} rows above the fold, ${cardsAbove} of them cards`);
+          must(above.length === 40 && cardsAbove > 0 && cardsAbove < n('recall'), 'forty above the fold, some of them cards, fewer than all the cards due');
+          setFocus('recall');
+          await sleep(400);
+          must(!q('.qlist li.fold[data-fold="day"]') && !shown().some((r) => r.dataset.below === '1'), 'the tweak off: recall has no fold');
+          useApp.getState().setFocusBudget(true);
+          await poll(() => shown().filter((r) => r.dataset.below !== '1').length === cardsAbove && shown().some((r) => r.dataset.below === '1'), `the tweak on: recall folds after the ${cardsAbove} cards the day's budget holds`);
+          await shot('sweep-focus-budget');
+          key('Enter');
+          await poll(() => activeTab(useApp.getState().panes)?.id === ':session' && useApp.getState().session, 'enter walks the focus', 8000);
+          const got = useApp.getState().session!.items;
+          must(got.length === cardsAbove && got.every((it) => it.kind === 'card'), `the session is those ${cardsAbove} cards (${got.length})`);
+          useApp.setState({ session: null });
+          openNode(queueId('today'));
+          await poll(() => q('.queue .focus-row'), 'back at the queue');
+        } finally {
+          useApp.getState().setFocusBudget(was.keep);
+          setBudget(was.budget);
+        }
+      }
       setFocus('all');
       await poll(() => q<HTMLElement>('.queue .focus-row')?.dataset.focus === 'all' && shown().some((r) => r.dataset.el !== shown()[0]!.dataset.el || true), 'and back to all');
     }

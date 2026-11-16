@@ -123,6 +123,9 @@ describe('the focus, as a model', () => {
     const now = appNow();
     expect(walkOf(queue, now, 5, null, 'all')).toHaveLength(5);
     expect(walkOf(queue, now, 5, null, 'recall')).toEqual(of('recall'));
+    // the tweak keeps a focus to the day's budget: what is above the fold, of that kind
+    expect(walkOf(queue, now, 5, null, 'recall', true)).toEqual(walkOf(queue, now, 5, null, 'all').filter((i) => focusOf(i) === 'recall'));
+    expect(walkOf(queue, now, 5, null, 'recall', true).length).toBeLessThanOrEqual(5);
     expect(walkOf(queue, now, 0, null, 'read')).toEqual(of('read'));
   });
 });

@@ -456,7 +456,11 @@ shows that kind only, still in priority order, and ⏎ (or a row pressed, or
 composes with an exam's chip: `recall` and `midterm 2` together is the cards
 studied toward it. The focus is this device's, kept per collection and never
 synced: a phone left on `recall` stays there while the Mac shows everything.
-The budget is the whole day's: a narrowed list has no fold.
+The budget is the whole day's: a narrowed list has no fold, and a focus
+walks everything due of its kind. To have a focus keep to the budget, turn
+on `a queue focus keeps to the day's budget` in the tweaks (⌘,): the
+narrowed list then folds where the day's does, and ⏎ walks only what is
+above the fold of that kind.
 
 ### Priority, growth, and the budget
 

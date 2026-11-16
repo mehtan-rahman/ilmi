@@ -336,10 +336,13 @@ export const FOCUS_EMPTY: Record<Focus, string> = {
 /**
  * What a session walks, as the queue shows it: the day's work (above the
  * fold); narrowed to an exam (`only`, its `examKey`) or to a focus, what is
- * due of that, the budget not counted against it.
+ * due of that, the budget not counted against it; with `keep` (the tweak
+ * `a focus keeps to the day's budget`) a focus is what is above the fold
+ * of its kind.
  */
-export function walkOf(items: QueueItem[], now: Date, budget: number, only: string | null, focus: Focus): QueueItem[] {
+export function walkOf(items: QueueItem[], now: Date, budget: number, only: string | null, focus: Focus, keep = false): QueueItem[] {
   if (only === null && focus === 'all') return dueToday(items, now, budget);
+  if (only === null && keep) return dueToday(items, now, budget).filter((i) => inFocus(i, focus));
   return dueNow(items, now).filter((i) => (only === null || (!!i.exam && examKey(i.exam) === only)) && inFocus(i, focus));
 }
 

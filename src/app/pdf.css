@@ -141,7 +141,7 @@
   padding: 1px 0;
   width: 200px;
 }
-.pdf-bar input:focus { border-bottom-color: var(--accent-soft); }
+.pdf-bar input:focus { border-bottom-color: var(--accent); }
 .pdf-bar input[type="number"] { width: 64px; -moz-appearance: textfield; }
 .pdf-bar input::-webkit-outer-spin-button, .pdf-bar input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 .pdf-bar .pb-n { color: var(--fg-4); }

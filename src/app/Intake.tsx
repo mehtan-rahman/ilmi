@@ -108,6 +108,12 @@ export function Intake({ active, onOpen }: Props) {
   // what the drop listener, subscribed once, needs to read at the time of the drop
   const titleRef = useRef(title);
   titleRef.current = title;
+  /** The title was typed by the user: what arrives next keeps it. One the intake set follows what is in the field. */
+  const [typed, setTyped] = useState(false);
+  const typedRef = useRef(typed);
+  typedRef.current = typed;
+  /** Moves with everything that changes what is in the field: a link that answers after it has moved is not taken. */
+  const turn = useRef(0);
 
   const folders = folderPaths(tree);
   const text = raw.trim();
@@ -128,7 +134,9 @@ export function Intake({ active, onOpen }: Props) {
   const can = (book ? book.chapters.length > 0 : anki ? anki.decks.length > 0 : deck ? deck.cards.length > 0 : st.words > 0 || !!pdf) && !busy;
   // pasted or typed text is the user's own: a note
   const asNote = !fromFile && !pdf && !page && !book && !anki;
-  const titleShown = title || (book ? book.title || BOOK_NAME : cardsMode ? DECK_NAME : deriveTitle(raw));
+  /** The name it lands under when the title is left alone, or emptied. */
+  const titleDefault = book ? book.title || BOOK_NAME : cardsMode ? DECK_NAME : deriveTitle(raw);
+  const titleShown = typed ? title : title || titleDefault;
   const setSide = (side: SideDelim) => { if (used) setDelims({ ...used, side }); };
   const setCard = (card: CardDelim) => { if (used) setDelims({ ...used, card }); };
   const customOf = (d: SideDelim | CardDelim) => (typeof d === 'object' ? d.custom : '');
@@ -150,7 +158,29 @@ export function Intake({ active, onOpen }: Props) {
     setAsCards(null);
   };
 
+  /** The title follows what is in the field, unless the user typed one. */
+  const retitle = (name = '') => {
+    if (typedRef.current && titleRef.current) return;
+    setTitle(name);
+    setTyped(false);
+  };
+  /** Nothing waits on the intake: the field as it opens. */
+  const clear = () => {
+    turn.current++;
+    setRaw('');
+    setPdf(null);
+    setPage(null);
+    setFromFile(false);
+    setAnki(null);
+    setBook(null);
+    setTitle('');
+    setTyped(false);
+    setNote('');
+    fresh();
+  };
+
   const take = (body: string, name?: string, pages: PendingPdf | null = null, info: PageInfo | null = null, file = false) => {
+    turn.current++;
     setRaw(cleanText(body));
     setFromFile(file || !!pages);
     setPdf(pages);
@@ -159,16 +189,18 @@ export function Intake({ active, onOpen }: Props) {
     setBook(null);
     setNote('');
     fresh();
-    if (name && !titleRef.current) setTitle(name);
+    retitle(name);
   };
 
+  // a link is taken only while it is the last thing asked for: one pasted after it, text typed, a file dropped, each moves the turn
   const fetchUrl = async (url: string) => {
+    const mine = ++turn.current;
     setNote('fetching');
     try {
       const r = await fetchReadable(url.trim());
-      take(r.text, r.title, null, r.page ?? null);
+      if (turn.current === mine) take(r.text, r.title, null, r.page ?? null);
     } catch (e) {
-      fail(e, 'nothing readable at that link');
+      if (turn.current === mine) fail(e, 'nothing readable at that link');
     }
   };
 
@@ -184,24 +216,32 @@ export function Intake({ active, onOpen }: Props) {
         setNote('reading');
         const m = mapPackage(await readAnkiPackage(path));
         if (!m.decks.length) throw new Error('no cards in that package');
+        turn.current++;
         setRaw('');
         setPdf(null);
+        setPage(null);
+        setFromFile(false);
         setBook(null);
         setAnki(m);
         setNote('');
         fresh();
+        retitle();
         return;
       }
       if (EPUB_EXT.test(path)) {
         setNote('reading');
         const b = mapBook(await readEpub(path));
         if (!b.chapters.length) throw new Error('no chapters in that book');
+        turn.current++;
         setRaw('');
         setPdf(null);
+        setPage(null);
+        setFromFile(false);
         setAnki(null);
         setBook(b);
         setNote('');
         fresh();
+        retitle();
         return;
       }
       if (PDF_EXT.test(path)) {
@@ -304,33 +344,26 @@ export function Intake({ active, onOpen }: Props) {
     setBusy(true);
     try {
       if (book) {
-        const name = (titleShown || BOOK_NAME).trim();
+        const name = titleShown.trim() || titleDefault.trim() || BOOK_NAME;
         const { paths } = await importBookNode(chosen, { title: name, chapters: book.chapters });
         notice(`placed · ${plural(book.chapters.length, 'chapter')} in ${name}`);
-        setBook(null);
-        setTitle('');
-        setNote('');
+        clear();
         if (open && paths[0]) onOpen(paths[0], {});
         return;
       }
       if (anki) {
         const paths = await importAnkiNode(chosen, anki.decks);
         for (const d of anki.decks) notice(`placed · ${plural(d.cards, 'card')} in ${d.title}`);
-        setAnki(null);
-        setNote('');
+        clear();
         if (open && paths[0]) onOpen(paths[0], {});
         return;
       }
-      const title = (titleShown || (deck ? DECK_NAME : NEW_NAMES.source)).trim();
+      const title = titleShown.trim() || titleDefault.trim() || (deck ? DECK_NAME : NEW_NAMES.source);
       // a PDF with chapters in its outline: a notebook, a chapter per tab
       if (pdf?.chapters && pdf.chapters.length > 1) {
         const { paths } = await importPdfBookNode(chosen, { title, bytes: pdf.bytes, text: raw, chapters: pdf.chapters });
         notice(`placed · ${plural(pdf.chapters.length, 'chapter')} in ${title}`);
-        setRaw('');
-        setPdf(null);
-        setFromFile(false);
-        setTitle('');
-        setNote('');
+        clear();
         if (open && paths[0]) onOpen(paths[0], {});
         return;
       }
@@ -341,13 +374,7 @@ export function Intake({ active, onOpen }: Props) {
           : page
             ? (await importClipNode(chosen, { title, text: raw, url: page.url, author: page.author, published: page.published }, page.images)).path
             : await importNode(chosen, { title, text: raw, note: asNote });
-      setRaw('');
-      setPdf(null);
-      setPage(null);
-      setFromFile(false);
-      setTitle('');
-      setNote('');
-      fresh();
+      clear();
       if (open) onOpen(path, {});
     } catch (e) {
       fail(e, 'could not write the file');
@@ -355,6 +382,22 @@ export function Intake({ active, onOpen }: Props) {
       setBusy(false);
     }
   };
+
+  // ⌘⏎ places and opens, ⌘⇧⏎ places and leaves it: from the field, or with nothing focused
+  const placeRef = useRef(place);
+  placeRef.current = place;
+  useEffect(() => {
+    if (!active) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Enter' || !(e.metaKey || e.ctrlKey) || e.altKey || e.defaultPrevented) return;
+      const at = document.activeElement;
+      if (at && at !== document.body && !wrapRef.current?.contains(at)) return;
+      e.preventDefault();
+      void placeRef.current(!e.shiftKey);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [active]);
 
   return (
     <div
@@ -398,7 +441,13 @@ export function Intake({ active, onOpen }: Props) {
             dir="auto"
             value={raw}
             spellCheck={false}
-            onChange={(e) => { setRaw(e.target.value); if (!e.target.value.trim()) { if (!pdf?.pages) setPdf(null); setPage(null); setFromFile(false); } if (note) setNote(''); }}
+            onChange={(e) => {
+              turn.current++;
+              setRaw(e.target.value);
+              // emptied: what it was is gone, and the title the intake gave it with it
+              if (!e.target.value.trim()) { if (!pdf?.pages) { setPdf(null); retitle(); } setPage(null); setFromFile(false); }
+              if (note) setNote('');
+            }}
             onPaste={onPaste}
             placeholder={pdf ? 'no text' : 'paste text or a link'}
           />
@@ -413,6 +462,7 @@ export function Intake({ active, onOpen }: Props) {
               <button type="button" className="link" onClick={() => ingestText(INTAKE_SAMPLE)}>use a sample →</button>
             </div>
           )}
+          {note && raw && !(st.words > 0 || pdf) && <div className="paste-hint"><span className="note">{note}</span></div>}
         </div>
         )}
 
@@ -437,7 +487,7 @@ export function Intake({ active, onOpen }: Props) {
                     <span>{plural(book.dropped.images, 'image')} dropped</span>
                   </>
                 )}
-                <button type="button" className="link" onClick={() => setBook(null)}>not this →</button>
+                <button type="button" className="link" onClick={clear}>not this →</button>
               </div>
             )}
             {anki && (
@@ -461,7 +511,7 @@ export function Intake({ active, onOpen }: Props) {
                     <span>{ankiDropped}</span>
                   </>
                 )}
-                <button type="button" className="link" onClick={() => setAnki(null)}>not this →</button>
+                <button type="button" className="link" onClick={clear}>not this →</button>
               </div>
             )}
             {page && !deck && (
@@ -494,7 +544,7 @@ export function Intake({ active, onOpen }: Props) {
                     <span>via {page.via === 'defuddle' ? 'defuddle' : 'the fallback'}</span>
                   </>
                 )}
-                {detected && <button type="button" className="link" onClick={() => setAsCards(true)}>as cards →</button>}
+                {pdf ? <button type="button" className="link" onClick={clear}>not this →</button> : detected && <button type="button" className="link" onClick={() => setAsCards(true)}>as cards →</button>}
               </div>
             )}
 
@@ -580,7 +630,7 @@ export function Intake({ active, onOpen }: Props) {
             {!anki && (
               <label className="field">
                 <span className="flbl">title</span>
-                <input dir="auto" value={titleShown} onChange={(e) => setTitle(e.target.value)} spellCheck={false} />
+                <input dir="auto" value={titleShown} placeholder={titleDefault} onChange={(e) => { setTitle(e.target.value); setTyped(true); }} spellCheck={false} />
               </label>
             )}
 
@@ -595,9 +645,11 @@ export function Intake({ active, onOpen }: Props) {
               </div>
             </div>
 
+            {note && <div className="paste-hint"><span className="note">{note}</span></div>}
+
             <div className="place-row">
-              <button type="button" className="place primary" disabled={!can} onClick={() => void place(true)}>place &amp; open</button>
-              <button type="button" className="place" disabled={!can} onClick={() => void place(false)}>place &amp; leave it</button>
+              <button type="button" className="place primary" disabled={!can} onClick={() => void place(true)}>place &amp; open <kbd>⌘↵</kbd></button>
+              <button type="button" className="place" disabled={!can} onClick={() => void place(false)}>place &amp; leave it <kbd>⇧⌘↵</kbd></button>
             </div>
           </div>
         )}

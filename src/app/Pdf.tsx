@@ -121,7 +121,12 @@ interface Find {
   pages: { page: number; n: number }[];
   /** Index into `pages` of the one shown. */
   at: number;
+  /** Whether `q` has been looked for: not yet, while it is, or done. */
+  did?: 'searching' | 'done';
 }
+
+/** Where each book was left, by its id: the page and the place on it at the top of the view, and the scroll itself. A tab shown again comes back to it. */
+const places = new Map<string, { top: number; at: { page: number; y: number } | null }>();
 
 interface Rect { left: number; top: number; width: number; height: number }
 
@@ -249,7 +254,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
   /** The note on these pages: the document itself when it has pages, the note attached to a PDF on its own, or none yet (`book.ts`). */
   const note = noteOf(id, docs);
   const loaded = useDoc(note);
-  const [status, setStatus] = useState<'loading' | 'ok' | 'gone'>('loading');
+  const [status, setStatus] = useState<'loading' | 'ok' | 'gone' | 'unreadable'>('loading');
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
   const [sizes, setSizes] = useState<Size[]>([]);
   const [textless, setTextless] = useState(false);
@@ -296,7 +301,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
   /** The PDF's SHA-256, once its row is known. */
   const hash = useMemo(() => {
     const vault = currentVault();
-    return rel && vault && status !== 'gone' ? inkStore()?.blobAt(vault.abs(rel)) ?? null : null;
+    return rel && vault && status !== 'gone' && status !== 'unreadable' ? inkStore()?.blobAt(vault.abs(rel)) ?? null : null;
   }, [rel, status]);
   /** The pages written on, each with a count that moves when its strokes do. */
   const [inked, setInked] = useState<Record<number, number>>({});
@@ -415,7 +420,13 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
       setSizes(out);
       setTextless(!hasText);
       setStatus('ok');
-    })().catch((e: unknown) => { console.error(id, e); if (live) setStatus('gone'); });
+    })().catch(async (e: unknown) => {
+      console.error(id, e);
+      // a file that is there and will not open is not one that has gone
+      const vault = currentVault();
+      const there = vault ? await vault.fs.stat(vault.abs(rel)).then((s) => s !== null, () => false) : true;
+      if (live) setStatus(there ? 'unreadable' : 'gone');
+    });
     return () => {
       live = false;
       held.release();
@@ -518,6 +529,8 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
 
   const scroller = () => wrapRef.current?.closest<HTMLElement>('.book-pages, .pane-body') ?? null;
   const place = useRef<{ page: number; y: number } | null>(null);
+  /** The pages have landed where they open (the place left, the read point, a section gone to): from here a scroll is the reader's, and remembered. */
+  const landed = useRef(false);
 
   useEffect(() => {
     if (!pdf || !sizes.length) return;
@@ -542,7 +555,8 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
       let at: { page: number; y: number } | null = null;
       for (const [k, el] of pageEls.current) {
         const pr = el.getBoundingClientRect();
-        if (pr.top <= top) n = Math.max(n, k);
+        // a page not laid out (its tab hidden) is not the one in view
+        if (pr.height > 0 && pr.top <= top) n = Math.max(n, k);
         if (pr.top <= bottom && (!at || k > at.page)) at = { page: k, y: Math.min(1, Math.max(0, (bottom - pr.top) / pr.height)) };
       }
       setCurrent(n);
@@ -553,6 +567,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
         const pr = el.getBoundingClientRect();
         if (pr.top <= from && pr.bottom > from) place.current = { page: k, y: (from - pr.top) / pr.height };
       }
+      if (landed.current) places.set(id, { top: sc.scrollTop, at: place.current });
       // the pages near the view drawn here too: a covered window may hold the observer's callbacks back
       for (const [k, el] of pageEls.current) {
         const pr = el.getBoundingClientRect();
@@ -564,7 +579,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     onScroll();
     sc.addEventListener('scroll', onScroll, { passive: true });
     return () => sc.removeEventListener('scroll', onScroll);
-  }, [status, sizes, base, scale, renderPage]);
+  }, [status, sizes, base, scale, renderPage, id]);
 
   // a new scale (the note opened beside, an iPad turned) leaves the same text at the top of the view, not the same pixels
   useLayoutEffect(() => {
@@ -597,6 +612,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     const sr = sc.getBoundingClientRect();
     const pr = el.getBoundingClientRect();
     const top = pr.top + b.y * pr.height;
+    landed.current = true;
     if (!always && top >= sr.top + 30 && top <= sr.bottom - 120) return;
     sc.scrollTo({ top: Math.max(0, sc.scrollTop + top - sr.top - 60) });
   }, []);
@@ -620,17 +636,32 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     setLit(text);
     scrollToPassage(text);
   }, [reveal, note, status, sizes.length, drawn, scrollToPassage]);
-  // reading on: the pages land once at the read point, the bar's end a third of the way down the view
+  // the pages land once where they open. Reading on in a session: at the read point, the bar's end a third of the
+  // way down the view. A tab shown again (the pane draws only the tab in front): where it was left, the same text
+  // at the top of the view. A book opened for the first time: at its read point, when it has one.
   const landedAt = useRef<string | null>(null);
+  useEffect(() => { landed.current = false; }, [id]);
   useEffect(() => {
-    if (!readOn || status !== 'ok' || !sizes.length || landedAt.current === id) return;
+    if (status !== 'ok' || !sizes.length || landedAt.current === id) return;
     const sc = scroller();
-    const rp = info?.read?.pos !== undefined ? { pos: info.read.pos, y: info.read.y ?? 1 } : null;
-    if (!sc || !rp || rp.pos < first || rp.pos > last) return;
-    const r = pageRect(rp.pos);
-    if (!r) return;
+    if (!sc) return;
     landedAt.current = id;
-    sc.scrollTo({ top: Math.max(0, r.top + rp.y * r.height - sc.clientHeight / 3) });
+    const was = readOn || landed.current ? undefined : places.get(id);
+    // a section gone to as the pages opened is where they are
+    const went = landed.current && !readOn;
+    landed.current = true;
+    if (went) return;
+    if (was) {
+      const pr = was.at ? pageEls.current.get(was.at.page)?.getBoundingClientRect() : undefined;
+      // a page laid out: the same text under the words over the pages, whatever the scale is now; else the scroll as it was
+      if (was.at && pr && pr.height > 0) sc.scrollTop += pr.top + was.at.y * pr.height - (sc.getBoundingClientRect().top + PLACE_AT);
+      else sc.scrollTop = was.top;
+      return;
+    }
+    const rp = info?.read?.pos !== undefined ? { pos: info.read.pos, y: info.read.y ?? 1 } : null;
+    const r = rp && rp.pos >= first && rp.pos <= last ? pageRect(rp.pos) : null;
+    if (!rp || !r) return;
+    sc.scrollTop = Math.max(0, r.top + rp.y * r.height - sc.clientHeight / 3);
   }, [readOn, status, sizes.length, id, first, last, info?.read?.pos, info?.read?.y, pageRect]);
   // show in book: scrolled to and flashed
   useEffect(() => {
@@ -931,6 +962,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
       return;
     }
     if (!pdf || !q.trim()) { setFind(q ? { q, pages: [], at: 0 } : null); return; }
+    setFind((f) => (f && f.q === q ? { ...f, did: 'searching' } : f));
     const pages: Find['pages'] = [];
     for (let n = first; n <= last; n++) {
       let text = texts.current.get(n);
@@ -943,7 +975,9 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     }
     let at = pages.findIndex((p) => p.page >= current);
     if (at < 0) at = 0;
-    setFind({ q, pages, at });
+    // what was typed, or the bar closed, while the pages were read stands: this answer is to an older question
+    if (st.current.find?.q !== q) return;
+    setFind({ q, pages, at, did: 'done' });
     const hit = pages[at];
     if (hit) scrollTo(hit.page);
   };
@@ -1083,7 +1117,10 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     }).finally(() => setPoint(null)).catch(console.error);
   };
 
-  if (status === 'gone' || (status === 'ok' && !info)) {
+  if (status === 'unreadable' && info) {
+    return <div className="reader-wrap"><div className="reader"><div className="empty">could not open this pdf</div></div></div>;
+  }
+  if (status === 'gone' || status === 'unreadable' || (status === 'ok' && !info)) {
     return <div className="reader-wrap"><div className="reader"><div className="empty">no longer in the collection</div></div></div>;
   }
 
@@ -1093,8 +1130,10 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
   const counts = cards ? `${plural(cards, 'card')}${due ? `, ${due} due` : ''}` : '';
   const span = !sizes.length ? '' : !base && !range ? plural(sizes.length, 'page') : first === last ? `p. ${first}` : `pp. ${first}–${last}`;
   const readTo = info?.read?.pos ? `read to p. ${info.read.pos}` : '';
-  const rightTip = [status === 'ok' ? span : '', textless ? 'no text' : '', counts].filter(Boolean).join(', ');
-  const shown = readTo || (due ? `${due} due` : cards ? plural(cards, 'card') : '') || (textless && status === 'ok' ? 'no text' : '');
+  const rightTip = [status === 'ok' ? span : '', readTo, textless ? 'no text' : '', counts].filter(Boolean).join(', ');
+  // the page in view of the last, and what is due beside it; the rest in the tooltip
+  const where = status === 'ok' && sizes.length ? `p. ${current} / ${last}` : '';
+  const shown = [where, due ? `${due} due` : ''].filter(Boolean).join(' · ') || readTo || (cards ? plural(cards, 'card') : '') || (textless && status === 'ok' ? 'no text' : '');
   const shownPending = [...pending, ...(sel?.boxes ?? [])];
   const lastPending = pending.length ? boxRect(pending[pending.length - 1]!) : null;
 
@@ -1124,10 +1163,10 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
                   value={find.q}
                   spellCheck={false}
                   placeholder="search"
-                  onChange={(e) => setFind((f) => (f ? { ...f, q: e.target.value, pages: [], at: 0 } : f))}
+                  onChange={(e) => setFind((f) => (f ? { q: e.target.value, pages: [], at: 0 } : f))}
                   onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void runFind(find.q, find.pages.length ? (e.shiftKey ? -1 : 1) : 0); } }}
                 />
-                <span className="pb-n">{find.pages.length ? `p. ${find.pages[find.at]?.page}, ${find.at + 1} / ${find.pages.length}` : find.q ? 'none' : ''}</span>
+                <span className="pb-n">{find.pages.length ? `p. ${find.pages[find.at]?.page}, ${find.at + 1} / ${find.pages.length}` : find.did === 'searching' ? 'searching' : find.did === 'done' && find.q ? 'none' : ''}</span>
               </>
             )}
             {goto && (

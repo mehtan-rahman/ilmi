@@ -73,6 +73,8 @@ interface HeatProps {
 const HeatGrid = memo(function HeatGrid({ heat, of, today, picked, say, onHot, onPick }: HeatProps) {
   const stop = picked ?? today;
   const move = (e: KeyboardEvent<HTMLDivElement>) => {
+    // esc on the grid closes the day it has open
+    if (e.key === 'Escape' && picked) { e.preventDefault(); e.stopPropagation(); onPick(of, picked); return; }
     const by = { ArrowUp: -1, ArrowDown: 1, ArrowLeft: -7, ArrowRight: 7 }[e.key];
     const at = (e.target as HTMLElement).dataset.day;
     if (!by || !at) return;

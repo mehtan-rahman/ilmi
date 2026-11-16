@@ -3532,7 +3532,8 @@ export async function smokeEditing(vault: Vault): Promise<void> {
   const qa = <T extends Element>(sel: string, root: ParentNode = document) => Array.from(root.querySelectorAll<T>(sel));
   const shot = async (name: string, ms = 2600) => { await sleep(600); log(`shot: ${name}`); await sleep(ms); };
   const NOTE = 'fleeting/2026-10-29.md';
-  const SOURCE = 'library/lindqvist-statistical-physics/ch-3-the-canonical-ensemble.md';
+  // a frozen source that is text: the Lindqvist chapter has been its PDF's pages since milestone 49
+  const SOURCE = 'fleeting/clipped-why-perturbation-series-diverge.md';
   const ANCHOR = 'Back has too much on it.';
   const text = () => vault.fs.readText(vault.abs(NOTE));
   let last = '';
@@ -13543,12 +13544,13 @@ export async function smokeSweep(vault: Vault): Promise<void> {
     must(scroller, 'the pages scroll');
     await sleep(800);
     const start = scroller!.scrollTop;
-    scroller!.scrollTop = start + 2600;
+    scroller!.scrollTop = start + 9000;
     scroller!.dispatchEvent(new Event('scroll'));
     const said = await poll(() => { const m = /p\. (\d+) \/ (\d+)/.exec(q('.reader .meta .right, .pdf-bar .right, .meta .right')?.textContent ?? ''); return m && Number(m[1]) > 1 ? m[0] : null; }, 'the book says which page is in view', 8000);
     await sleep(600);
     const left = scroller!.scrollTop;
     log(`the book at ${said}, scrolled to ${Math.round(left)}`);
+    await sleep(2500);
     await shot('sweep-book-page');
     openNode(NOTE);
     await poll(() => tab() === NOTE && !q('.pdf-page'), 'the book\'s tab left');

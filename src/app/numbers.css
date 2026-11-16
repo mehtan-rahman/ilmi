@@ -103,3 +103,15 @@
 html[data-shape="phone"] .numbers .nb-sum { grid-template-columns: minmax(0, 1fr); }
 html[data-shape="phone"] .numbers .nb-periods td, html[data-shape="phone"] .numbers .nb-periods thead th:not(:first-child) { width: auto; padding-left: 10px; }
 html[data-shape="phone"] .numbers .nb-days td, html[data-shape="phone"] .numbers .nb-days thead th:not(:first-child) { width: auto; padding-left: 8px; }
+
+/* cards · reading over the year of days: the lens's own switch, a size down, beside the section's label */
+.numbers .nb-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin: 0 0 8px; max-width: calc(53 * 14px + 20px); }
+.numbers .nb-head h6 { margin: 0; }
+.numbers .nb-layer { display: flex; gap: var(--s-3); font-family: var(--sans); font-size: var(--t-xs); }
+.numbers .nb-layer button { appearance: none; border: 0; border-bottom: 1.5px solid transparent; background: transparent; padding: 0 0 2px; color: var(--fg-3); cursor: default; font: inherit; }
+.numbers .nb-layer button[data-on="1"] { color: var(--fg-1); border-bottom-color: var(--accent); }
+.numbers .nb-layer button:disabled { color: var(--fg-5); }
+.numbers .nb-layer button:focus-visible { outline: 2px solid var(--fg-1); outline-offset: 2px; }
+[data-theme="eink"] .numbers .nb-layer button[data-on="1"] { border-bottom-color: currentColor; }
+.numbers .nb-rows .nb-faces .nb-front { font-family: var(--sans); font-size: var(--t-sm); }
+html[data-shape="phone"] .numbers .nb-layer button { min-height: var(--finger); font-size: 14px; }

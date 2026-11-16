@@ -11,7 +11,7 @@ import { plainMath } from './chromeText.js';
 import { doneLine } from './items.js';
 import { popMenu, type PopItem } from './popMenu.js';
 import { useApp, type CaretHeading } from './store.js';
-import { currentVault, note } from './vault.js';
+import { currentVault, logReading, note } from './vault.js';
 
 /** How a write reaches a document: the reader's writer when one is open on it (`Reader.tsx` registers it). */
 type WriteThrough = (path: string, mutate: (doc: Doc) => void) => Promise<unknown> | null;
@@ -64,7 +64,7 @@ export function dismissSection(at: CaretHeading): Promise<unknown> {
     const next = dismissed(h.heading.read);
     if (next) h.heading.read = next;
     else delete h.heading.read;
-  });
+  }).then((x) => { logReading(at.path, 'done', { sec: at.text }); return x; });
 }
 
 /** Bring a dismissed section back: due on its cadence, the rest of its line kept. */

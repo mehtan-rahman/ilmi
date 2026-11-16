@@ -6,6 +6,12 @@
 // it: two devices appending to one month's file, a conflict copy beside it
 // (every `.jsonl` in the directory is read), a line seen twice (collapsed),
 // a line torn by a crash or written by a newer app (skipped).
+//
+// The same files hold what was read (FORMAT.md §1, *a reading line*): a
+// line with `read` and no `card`, one per pass on a source, a section or a
+// draft, per postponement, per dismissal, per extract or section made. A
+// reader of reviews skips it as a line it does not know; `parseReadings`
+// reads those and skips the reviews.
 
 import type { SrState } from './model.js';
 
@@ -123,4 +129,119 @@ export function mergeReviews(lists: Iterable<readonly Review[]>): Review[] {
   if (over.size) out = out.filter((x) => !over.has(`${x.at} ${x.card} ${x.key ?? ''}`));
   // a stable sort: one second's reviews keep the order they were read in
   return out.sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
+}
+
+// --- what was read ---------------------------------------------------------
+
+/** What was done: read on (`pass`), postponed, dismissed or finished (`done`), an extract or a section made of it. */
+export type ReadKind = 'pass' | 'later' | 'done' | 'extract' | 'section';
+
+/** One reading event. Optional fields are absent, never undefined. */
+export interface Reading {
+  /** When, a UTC instant to the second. */
+  at: string;
+  /** The document read, vault-relative, when it was; for a section, the document its heading is in. */
+  doc: string;
+  read: ReadKind;
+  /** The section's heading text, when it was a section's (or the section made). */
+  sec?: string;
+  /** Where it was read to (a block of a text, a page of a book), when known. */
+  to?: number;
+  /** Time spent on it, in milliseconds, when known. */
+  ms?: number;
+}
+
+/** A reading taken back (a notice's undo): the line of `doc` (and `sec`) at the instant `of` does not count. */
+export interface ReadingUndo {
+  at: string;
+  doc: string;
+  read: 'undo';
+  sec?: string;
+  of: string;
+}
+
+export type ReadingLine = Reading | ReadingUndo;
+
+const READ_KINDS: readonly ReadKind[] = ['pass', 'later', 'done', 'extract', 'section'];
+
+/** What makes two lines the same reading: the same thing done to the same document (and section) at the same second. */
+export const readingKey = (r: ReadingLine): string => `${r.at} ${r.read} ${r.doc}\n${r.sec ?? ''}${r.read === 'undo' ? `\n${r.of}` : ''}`;
+
+/** What an undo names, and what a reading is named by. */
+const undoKey = (at: string, doc: string, sec: string | undefined): string => `${at} ${doc}\n${sec ?? ''}`;
+
+/** One line, no newline, keys in a fixed order. */
+export function formatReading(r: ReadingLine): string {
+  const o: Record<string, unknown> = { at: r.at, doc: r.doc, read: r.read };
+  if (r.sec !== undefined) o.sec = r.sec;
+  if (r.read === 'undo') o.of = r.of;
+  else {
+    if (r.to !== undefined) o.to = r.to;
+    if (r.ms !== undefined) o.ms = r.ms;
+  }
+  return JSON.stringify(o);
+}
+
+/** A line as a reading (or one taken back), or null when it is not one. Unknown keys are ignored; a `read` word not known is not one. */
+function readReading(line: string): ReadingLine | null {
+  let o: unknown;
+  try { o = JSON.parse(line); } catch { return null; }
+  if (!o || typeof o !== 'object' || Array.isArray(o)) return null;
+  const x = o as Record<string, unknown>;
+  if (typeof x.at !== 'string' || !INSTANT.test(x.at)) return null;
+  if (typeof x.doc !== 'string' || !x.doc) return null;
+  if (x.sec !== undefined && (typeof x.sec !== 'string' || !x.sec)) return null;
+  if (x.read === 'undo') {
+    if (typeof x.of !== 'string' || !INSTANT.test(x.of)) return null;
+    const u: ReadingUndo = { at: x.at, doc: x.doc, read: 'undo', of: x.of };
+    if (typeof x.sec === 'string') u.sec = x.sec;
+    return u;
+  }
+  if (!READ_KINDS.includes(x.read as ReadKind)) return null;
+  const r: Reading = { at: x.at, doc: x.doc, read: x.read as ReadKind };
+  if (typeof x.sec === 'string') r.sec = x.sec;
+  if (num(x.to)) r.to = x.to;
+  if (num(x.ms)) r.ms = x.ms;
+  return r;
+}
+
+/** Every reading line a file holds, in file order; reviews and lines that are not readings are skipped. */
+export function parseReadings(text: string): ReadingLine[] {
+  return parseLog(text).filter(isReading);
+}
+
+/** Whether a line of the log is a reading's (or one taken back), not a grade's. */
+export const isReading = (x: Review | ReadingLine): x is ReadingLine => 'read' in x;
+
+/** Every line of a file that is a review or a reading, in file order: what a store keeps of it. A line that reads as a review is one. */
+export function parseLog(text: string): (Review | ReadingLine)[] {
+  const out: (Review | ReadingLine)[] = [];
+  for (const raw of text.split(/\r\n|\n|\r/)) {
+    const line = raw.trim();
+    if (!line) continue;
+    const r = readLine(line) ?? readReading(line);
+    if (r) out.push(r);
+  }
+  return out;
+}
+
+/** A line of the log as it is written, whichever it is. */
+export const formatLogLine = (x: Review | ReadingLine): string => (isReading(x) ? formatReading(x) : formatReview(x));
+
+/** Several files' readings as one log: duplicates collapsed, a line taken back left out (and the line that took it back), oldest first. */
+export function mergeReadings(lists: Iterable<readonly ReadingLine[]>): Reading[] {
+  const seen = new Set<string>();
+  const undone = new Set<string>();
+  const out: Reading[] = [];
+  for (const list of lists) {
+    for (const r of list) {
+      const k = readingKey(r);
+      if (seen.has(k)) continue;
+      seen.add(k);
+      if (r.read === 'undo') undone.add(undoKey(r.of, r.doc, r.sec));
+      else out.push(r);
+    }
+  }
+  const kept = undone.size ? out.filter((x) => !undone.has(undoKey(x.at, x.doc, x.sec))) : out;
+  return kept.sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
 }

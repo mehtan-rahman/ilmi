@@ -171,6 +171,39 @@ notes/
   second, so no two lines replace each other; an `over` not before its
   line's `at` is ignored. An app without `over` counts both. A card moved to
   another document is found again by its id when its old document is gone.
+- **A reading line** is a line of the same month files that says something
+  was read, not graded: a pass on a source, a section or a draft leaves its
+  `read` line where the last one was, so nothing else says a document was
+  read on, or when an extract was made of it. One line each time:
+
+  ```
+  {"at":"2026-12-01T08:05:00Z","doc":"papers/wozniak-1990.md","read":"pass","to":14,"ms":412000}
+  {"at":"2026-12-01T08:07:00Z","doc":"books/notes-on-alone.md","read":"section","sec":"the first night"}
+  {"at":"2026-12-01T08:11:05Z","doc":"papers/crick-1995.md","read":"undo","of":"2026-12-01T08:11:00Z"}
+  ```
+
+  `at` and `doc` as a grade's (the document read; for a section the
+  document its heading is in); `read` what was done: `pass` (read on: ⏎ on
+  it in a session or a queue, a book's done for today), `later`
+  (postponed), `done` (dismissed, finished), `extract` or `section` (one
+  made of it, from a selection or from boxes; a section's `doc` and `sec`
+  are where it was made); `sec` the heading's text when it is a section's;
+  `to` where it was read to (a block of a text, a page of a book) and `ms`
+  the time on it, each when known. A line has no `card` and no `g`: that
+  is what tells it from a grade, and why an app that reads only grades
+  skips it, as it skips any line it does not know; a reader of reading
+  lines skips the grades the same way, and a `read` word it does not know.
+  Keys are written in that order, optional ones absent, never null;
+  unknown keys are ignored. The rules of the log hold: lines are only
+  added, every `.jsonl` is read, a line seen twice (the same `at`, `doc`,
+  `read`, and `sec`) counts once. A line taken back (a notice's undo that
+  put the document back) is not removed: `"read":"undo"` with `of`, the
+  `at` of the line it takes back, of the same `doc` and `sec`, is added,
+  and neither counts. A writer gives no two lines of one document and
+  section the same second (the later is logged a second after), so an undo
+  names one line. Nothing is derived for the days before the first line:
+  the reading's history starts when it is first logged. The corpus month
+  `reviews/2026-12.jsonl` holds both kinds mixed (`readings.test.ts`).
 - **Not the same** is app-private too: `.ilmi/same.json`,
   `{ "not": ["<key>|<key>", …] }`, the pairs of cards the person said do
   not test the same fact, so the app never offers them again (milestone

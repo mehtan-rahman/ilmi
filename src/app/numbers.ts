@@ -4,9 +4,11 @@
 // difficulty), and the review log in `.ilmi/reviews/`, which holds the
 // history (reviews a day, true retention, time a review). Without a log
 // the history is simply not there, and what needs it says since when it
-// has been kept.
+// has been kept. What was read is the same log's other lines (a `Reading`:
+// a pass, an extract or a section made), counted on their own at the end
+// of this file and never added into the cards' figures.
 
-import { cardForm, type Card, type CardSchedule, type Doc, type Review } from '../format/index.js';
+import { cardForm, type Card, type CardSchedule, type Doc, type Reading, type Review } from '../format/index.js';
 import { addDays, cardGroups, dayOf, dayStart, isSuspended, whenToDate, type Resolved } from '../schedule/index.js';
 
 export const PAST_WEEKS = 4;
@@ -529,4 +531,145 @@ export function spanLabel(ms: number): string {
 export function weekLabel(day: string): string {
   const d = dayStart(day);
   return `${d.toLocaleString('en', { month: 'short' }).toLowerCase()} ${d.getDate()}`;
+}
+
+// --- what was read: its own layer -----------------------------------------
+
+/** The readings of the lens `home` (a folder, a document and its children, `''` the collection): logged under one of its documents (`docs`), or under a path that lies in it (a PDF on its own, a document since gone). */
+export function readingsUnder(log: readonly Reading[], home: string, docs: ReadonlySet<string>): Reading[] {
+  if (home === '') return [...log];
+  const dir = `${home.replace(/\.md$/, '')}/`;
+  return log.filter((r) => docs.has(r.doc) || r.doc === home || r.doc.startsWith(dir));
+}
+
+/** One day of reading, counted. */
+export interface ReadDay {
+  /** Elements read on. */
+  passes: number;
+  extracts: number;
+  sections: number;
+  /** Postponed, dismissed: listed on the day, not counted into its shade. */
+  later: number;
+  done: number;
+  /** The time the log has for it, in ms. */
+  ms: number;
+  /** Where its lines lie in the log: from `from` up to `to`. */
+  from: number;
+  to: number;
+}
+
+/** What a day's cell is shaded by: what was read on, and what was made of it. */
+export const readCount = (a: ReadDay | undefined): number => (a ? a.passes + a.extracts + a.sections : 0);
+
+/** The readings counted by day, in one pass; `days[i]` is the day of `log[i]` (the scheduler's: the local calendar day). */
+export function readingDaysOf(log: readonly Reading[]): { byDay: Map<string, ReadDay>; days: string[] } {
+  const byDay = new Map<string, ReadDay>();
+  const days: string[] = new Array(log.length);
+  for (let i = 0; i < log.length; i++) {
+    const r = log[i]!;
+    const day = dayOf(whenToDate(r.at));
+    days[i] = day;
+    let a = byDay.get(day);
+    if (!a) { a = { passes: 0, extracts: 0, sections: 0, later: 0, done: 0, ms: 0, from: i, to: i }; byDay.set(day, a); }
+    a.to = i + 1;
+    if (i < a.from) a.from = i;
+    if (r.read === 'pass') a.passes++;
+    else if (r.read === 'extract') a.extracts++;
+    else if (r.read === 'section') a.sections++;
+    else if (r.read === 'later') a.later++;
+    else a.done++;
+    if (r.ms !== undefined) a.ms += r.ms;
+  }
+  return { byDay, days };
+}
+
+export interface ReadPeriod { label: string; from: string; passes: number; extracts: number; sections: number; ms: number }
+
+export interface ReadSummary {
+  from: string;
+  to: string;
+  days: number;
+  /** Days with something read on or made. */
+  read: number;
+  passes: number;
+  extracts: number;
+  sections: number;
+  ms: number;
+  best: { day: string; n: number } | null;
+  periods: ReadPeriod[];
+}
+
+export interface ReadingNumbers {
+  /** The first day anything read was logged in the collection; absent when nothing has been: before it nothing is known, and none of it can be derived. */
+  since?: string;
+  /** How many lines the lens has. */
+  n: number;
+  today: string;
+  /** The year of days behind, shaded by passes and by extracts and sections made; a day before `since` is no day. With nothing logged, today alone. */
+  heat: Heat;
+  summary: ReadSummary;
+  counted: ReturnType<typeof readingDaysOf>;
+}
+
+/** The reading layer over a lens: its readings (`readingsUnder`) at `now`; `logStart` the day the collection's reading log begins, when it has. */
+export function readingNumbersOf(log: readonly Reading[], now: Date, logStart?: string): ReadingNumbers {
+  const today = dayOf(now);
+  const counted = readingDaysOf(log);
+  const since = logStart ?? today;
+  const start = addDays(mondayOf(today), -7 * (HEAT_WEEKS - 1));
+  const yearAgo = addDays(today, -364);
+  const from = since > yearAgo ? since : yearAgo;
+  const sum = (lo: string, label: string): ReadPeriod => {
+    const p: ReadPeriod = { label, from: lo, passes: 0, extracts: 0, sections: 0, ms: 0 };
+    for (let d = lo; d <= today; d = addDays(d, 1)) {
+      const a = counted.byDay.get(d);
+      if (!a) continue;
+      p.passes += a.passes; p.extracts += a.extracts; p.sections += a.sections; p.ms += a.ms;
+    }
+    return p;
+  };
+  const all = sum(from, 'range');
+  let read = 0;
+  let span = 0;
+  let best: ReadSummary['best'] = null;
+  for (let d = from; d <= today; d = addDays(d, 1)) {
+    span++;
+    const k = readCount(counted.byDay.get(d));
+    if (!k) continue;
+    read++;
+    if (!best || k > best.n) best = { day: d, n: k };
+  }
+  const out: ReadingNumbers = {
+    n: log.length,
+    today,
+    heat: heatOf((d) => (d > today || d < since ? null : readCount(counted.byDay.get(d))), start, HEAT_WEEKS),
+    summary: {
+      from, to: today, days: span, read, passes: all.passes, extracts: all.extracts, sections: all.sections, ms: all.ms, best,
+      periods: [sum(mondayOf(today), 'this week'), sum(`${today.slice(0, 7)}-01`, 'this month'), sum(`${today.slice(0, 4)}-01-01`, 'this year')],
+    },
+    counted,
+  };
+  if (logStart !== undefined) out.since = logStart;
+  return out;
+}
+
+/** The readings of `day`, oldest first. */
+export function readingsOn(log: readonly Reading[], counted: { byDay: ReadonlyMap<string, ReadDay>; days: readonly string[] }, day: string): Reading[] {
+  const a = counted.byDay.get(day);
+  if (!a) return [];
+  const out: Reading[] = [];
+  for (let i = a.from; i < a.to; i++) if (counted.days[i] === day) out.push(log[i]!);
+  return out;
+}
+
+/** What a reading is called on a day's list. */
+export const READ_WORD: Record<Reading['read'], string> = { pass: 'read on', later: 'later', done: 'done', extract: 'extract', section: 'section' };
+
+/** A day's reading in words: `3 read, 2 made`; with nothing counted, what else it holds (`1 later`), else `nothing read`. */
+export function readDayWords(a: ReadDay | undefined): string {
+  if (!a) return 'nothing read';
+  const made = a.extracts + a.sections;
+  const parts = [a.passes ? `${a.passes} read` : '', made ? `${made} made` : ''].filter(Boolean);
+  if (!parts.length) parts.push(...[a.later ? `${a.later} later` : '', a.done ? `${a.done} done` : ''].filter(Boolean));
+  return parts.join(', ') || 'nothing read';
 }

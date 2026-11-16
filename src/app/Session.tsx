@@ -33,7 +33,7 @@ import { Reader, clozeHTML, faceDir, faceHTML } from './Reader.js';
 import { useApp, type El, type SessionMarks } from './store.js';
 import { useDoc } from './useDoc.js';
 import { studyHeader } from './study.js';
-import { activeExamAt, currentVault, note, openNode, optionsAt } from './vault.js';
+import { activeExamAt, currentVault, logDocAction, note, openNode, optionsAt, unlogReading } from './vault.js';
 import { openNotes } from './book.js';
 import { sessionEnded } from './sync.js';
 import { gradeAhead, gradeCard, inSteps, type Graded } from './grading.js';
@@ -499,6 +499,7 @@ export function actOnDoc(item: ReadItem | WriteItem | SectionItem, action: DocAc
     else advanceWrite(doc, action, now);
   });
   if (action === 'on') emitDocAction(item);
+  void run.then(() => logDocAction(item, action, pos), () => {});
   return run;
 }
 
@@ -799,6 +800,7 @@ export function Session({ active, onOpen }: Props) {
     else {
       void run.then(() => notify(line, null, before ? async () => {
         await restore(vault, [{ path: item.path, doc: before! }]);
+        unlogReading(item.path, item.kind === 'section' ? item.heading : undefined);
         unmark(at);
       } : undefined), () => {});
     }

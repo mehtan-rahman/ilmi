@@ -8,7 +8,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { open as pickDirectory } from '@tauri-apps/plugin-dialog';
 import { info } from '@tauri-apps/plugin-log';
-import { REVIEWS_DIR, meta, replaces, setField, type Doc, type Meta, type NodeType, type Review } from '../format/index.js';
+import { REVIEWS_DIR, meta, replaces, setField, type Doc, type Meta, type NodeType, type ReadKind, type Reading, type Review } from '../format/index.js';
 import type { Chapter, MappedDeck } from '../import/index.js';
 import { activeExam, addDays, buryLinked, cadence, cardsById, dayOf, dayStart, docItems, examKey, examQueue, examsAt, isDue, itemKey, meterQueue, postponeOverflow, readPri, resolveOptions, spentToday, whenToDate, type ExamAt, type QueueItem, type Resolved } from '../schedule/index.js';
 import { SAME_FILE, Vault, childDirOf, childrenAt, cleanName, dirOf, entryOf, fileName, isDoc, isPdfPath, joinRel, normRel, ordered, placeEntry, rekey, relFrom, type DocNode, type ExtractSpec, type SectionSpec, type ImportDeckSpec, type ImportPdfSpec, type ImportSpec, type PdfChapterSpec, type StoreFs, type TextHit, type TreeNode, type VaultEvent, type VaultState } from '../vault/index.js';
@@ -160,6 +160,13 @@ function infoOf(doc: Doc, items: QueueItem[], now: Date, pdf: string | null): Do
 
 /** Every review logged in the open vault (`.ilmi/reviews/`), oldest first; empty without a log. */
 let reviews: Review[] = [];
+/** Every reading logged there and not taken back, oldest first (`logReading`). */
+let readings: Reading[] = [];
+/** How many lines of either the log held when read, and the ones added here since: what a store's count is held against. */
+let logLines = 0;
+/** The readings logged here since the vault opened (an undo takes back one of these), and where the ones taken back were (`spot`). */
+let loggedHere: Reading[] = [];
+const tookBack = new Set<string>();
 
 /** The reviews of `now`'s local day: the log is in order, so they are its tail. */
 function reviewsToday(now: Date): Review[] {
@@ -361,6 +368,7 @@ export async function recordReview(r: Review, logged = false): Promise<void> {
   // a grade given again in its session takes the place of the line it replaces
   if (r.over !== undefined) reviews = reviews.filter((x) => !replaces(r, x));
   if (!reviews.includes(r)) reviews = [...reviews, r];
+  logLines += 1;
   if (logged) {
     // the write that carried it rebuilt the queue with it counted
     useApp.setState({ reviews });
@@ -368,6 +376,64 @@ export async function recordReview(r: Review, logged = false): Promise<void> {
   }
   useApp.setState((s) => ({ reviews, ...publishQueue(s.docs, appNow()) }));
   await vault.appendReviews([r]);
+}
+
+const instant = (d: Date): string => `${d.toISOString().slice(0, 19)}Z`;
+/** What an undo finds a reading by. */
+const spot = (r: Reading): string => `${r.at} ${r.doc}\n${r.sec ?? ''}`;
+
+/**
+ * Log something read: a pass on a source, a section or a draft, a
+ * postponement, a dismissal, an extract or a section made (FORMAT.md §1,
+ * *a reading line*). One line in the month's file of `.ilmi/reviews/`,
+ * beside the grades and never counted with them; the numbers' reading
+ * layer reads `readings`. Called where the thing is done (`actOnDoc`,
+ * `sectionNode`, `extractNode`, a book's section, a section dismissed), so
+ * each way of doing it logs once.
+ */
+export function logReading(doc: string, read: ReadKind, more: { sec?: string | undefined; to?: number | undefined; ms?: number | undefined } = {}): void {
+  const vault = current;
+  if (!vault) return;
+  const r: Reading = { at: instant(appNow()), doc, read };
+  if (more.sec) r.sec = more.sec;
+  if (more.to !== undefined && Number.isFinite(more.to) && more.to >= 0) r.to = more.to;
+  if (more.ms !== undefined && Number.isFinite(more.ms) && more.ms >= 0) r.ms = Math.round(more.ms);
+  // an undo names a line by its document, its section and its second: no two of them share one (a section made and
+  // dismissed at once, a thing done again within the second of one taken back), the later a second after
+  const held = new Set(readings.map(spot));
+  while (tookBack.has(spot(r)) || held.has(spot(r))) r.at = instant(new Date(Date.parse(r.at) + 1000));
+  const last = readings[readings.length - 1];
+  readings = last && last.at > r.at ? [...readings, r].sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0)) : [...readings, r];
+  loggedHere.push(r);
+  logLines += 1;
+  useApp.setState({ readings });
+  void vault.appendReadings([r]).catch((e: unknown) => console.error('reading', e));
+}
+
+/** One of the three done to a queue's topic, as its reading: ⏎ a pass, `p` later, `d` done; a section's by its heading; a pass with where it was read to. */
+export function logDocAction(item: { kind: string; path: string; heading?: string }, action: 'on' | 'postpone' | 'done', to?: number): void {
+  logReading(item.path, action === 'on' ? 'pass' : action === 'postpone' ? 'later' : 'done', { sec: item.kind === 'section' ? item.heading : undefined, to: action === 'on' ? to : undefined });
+}
+
+/**
+ * A notice's undo put the document back: the reading logged here last for
+ * it (and its section) is taken back. The log is only added to, so a line
+ * says so (`"read":"undo"`, the `at` of the line it takes back); nothing
+ * when no reading of it was logged since the vault opened.
+ */
+export function unlogReading(doc: string, sec?: string): void {
+  const vault = current;
+  if (!vault) return;
+  let i = loggedHere.length - 1;
+  while (i >= 0 && !(loggedHere[i]!.doc === doc && (loggedHere[i]!.sec ?? '') === (sec ?? ''))) i--;
+  const r = loggedHere[i];
+  if (!r) return;
+  loggedHere.splice(i, 1);
+  tookBack.add(spot(r));
+  readings = readings.filter((x) => x !== r);
+  logLines += 1;
+  useApp.setState({ readings });
+  void vault.appendReadings([{ at: instant(appNow()), doc, read: 'undo', ...(r.sec === undefined ? {} : { sec: r.sec }), of: r.at }]).catch((e: unknown) => console.error('reading', e));
 }
 
 /** Read the log again: another device's lines synced in. Our own appends come back the same. */
@@ -379,10 +445,16 @@ function reloadReviews(vault: Vault): void {
     void (async () => {
       // over a store the count says whether anything came in, without reading a line
       const store = storeOf(vault);
-      if (store && (await store.reviewCount()) === reviews.length) return;
-      const log = await vault.loadReviews();
-      if (current !== vault || log.length === reviews.length) return;
-      reviews = log;
+      if (store && (await store.reviewCount()) === logLines) return;
+      const log = await vault.loadLog();
+      if (current !== vault) return;
+      logLines = log.lines;
+      if (log.readings.length !== readings.length) {
+        readings = log.readings;
+        useApp.setState({ readings });
+      }
+      if (log.reviews.length === reviews.length) return;
+      reviews = log.reviews;
       useApp.setState((s) => ({ reviews, ...publishQueue(s.docs, appNow()) }));
     })().catch((e: unknown) => console.error('reviews', e));
   }, 500);
@@ -673,12 +745,14 @@ export async function openVault(path: string): Promise<Vault> {
   forgetInherited();
   indexed = null;
   lastDay = typeof state.lastDay === 'string' ? state.lastDay : null;
-  reviews = await vault.loadReviews().catch((e: unknown) => { console.error('reviews', e); return []; });
+  ({ reviews, readings, lines: logLines } = await vault.loadLog().catch((e: unknown) => { console.error('reviews', e); return { reviews: [], readings: [], lines: 0 }; }));
+  loggedHere = [];
+  tookBack.clear();
   const s0 = useApp.getState();
   useApp.setState({
     open, sidebar, inspector, panes, docs: {}, queue: [], budget: cleanBudget(state.budget), clipDir: cleanClipDir(state.clippings), log: [], session: null, sessionEl: null, selectedCard: null, cardAt: {}, reveal: null,
     started: true, sideSheet: false, namingVault: false, gone: s0.gone.filter((p) => p !== path), notice: null, fileOver: null, intakeFiles: [], order: vault.order, railFolded, railWidth: clampRail(state.railWidth ?? RAIL_DEFAULT), deckViews: cleanViews(state.decks), lastDeck: typeof state.lastDeck === 'string' ? state.lastDeck : null, quickCard: null,
-    folds: cleanFolds(state.folds), reviews, lensViews: {}, examFilter: null, closedTabs: [],
+    folds: cleanFolds(state.folds), reviews, readings, lensViews: {}, examFilter: null, closedTabs: [],
     notSame: await vault.loadNotSame().catch(() => []),
   });
   s0.setRecents(addRecent(s0.recents, path, new Date()));
@@ -762,8 +836,12 @@ export function closeVault(): void {
   indexed = null;
   lastDay = null;
   reviews = [];
+  readings = [];
+  logLines = 0;
+  loggedHere = [];
+  tookBack.clear();
   void listVaults().catch(console.error);
-  useApp.setState({ vault: null, sideSheet: false, files: [], tree: [], docs: {}, open: { '': true }, panes: emptyPanes(), closedTabs: [], queue: [], log: [], session: null, sessionEl: null, selectedCard: null, cardAt: {}, reveal: null, paletteOpen: false, intakeDir: '', notice: null, fileOver: null, intakeFiles: [], order: {}, railFolded: {}, deckViews: {}, folds: {}, reviews: [], lensViews: {}, examFilter: null });
+  useApp.setState({ vault: null, sideSheet: false, files: [], tree: [], docs: {}, open: { '': true }, panes: emptyPanes(), closedTabs: [], queue: [], log: [], session: null, sessionEl: null, selectedCard: null, cardAt: {}, reveal: null, paletteOpen: false, intakeDir: '', notice: null, fileOver: null, intakeFiles: [], order: {}, railFolded: {}, deckViews: {}, folds: {}, reviews: [], readings: [], lensViews: {}, examFilter: null });
   setWindowTitle(null);
 }
 
@@ -1409,6 +1487,7 @@ export async function importAnkiNode(dir: string, decks: MappedDeck[]): Promise<
       const lines = d.reviews.map((r) => ({ ...r, doc: path }));
       await vault.appendReviews(lines);
       reviews = [...reviews, ...lines].sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
+      logLines += lines.length;
       useApp.setState((s) => ({ reviews, ...publishQueue(s.docs, appNow()) }));
     }
   }
@@ -1440,7 +1519,9 @@ export async function importBookNode(dir: string, book: { title: string; chapter
 
 /** Mark a passage of a text source: a section of the source's note (milestone 50); the source's row opens so the note is visible. */
 export async function sectionNode(source: string, spec: SectionSpec): Promise<{ note: string; index: number; text: string; ivl: number }> {
-  const made = await need().section(source, spec);
+  // the app's day, as a pass and a grade take it
+  const made = await need().section(source, { today: dayOf(appNow()), ...spec });
+  logReading(made.note, 'section', { sec: made.text });
   toggleOpen(source, true);
   return made;
 }
@@ -1454,7 +1535,8 @@ export async function absorbExtractNode(extract: string): Promise<{ note: string
 
 /** Carve a passage of `parent` into a child extract; the parent's row opens so the child is visible. */
 export async function extractNode(parent: string, spec: ExtractSpec): Promise<string> {
-  const path = await need().extract(parent, spec);
+  const path = await need().extract(parent, { today: dayOf(appNow()), ...spec });
+  logReading(parent, 'extract');
   toggleOpen(parent, true);
   return path;
 }

@@ -21,6 +21,19 @@ you have) and makes a collection named after it, every file in it included;
 a folder dropped on the welcome does the same. The folder is left as it is
 and is not read again.
 
+A row on the welcome has a menu (right-click, a long press on an iPad, or
+the `···` at its end): `rename…` and `delete…`. Rename makes the name a
+field in place (F2 on the selected row; ⏎ commits, Esc cancels); a name
+another collection has, or one a folder cannot have, is refused and the row
+says why. A renamed collection is the same one everywhere it is known: it
+keeps its place in the list and reopens on start as before, and its
+storage, its remote and its mirror go on under the new name (the mirror's
+folder keeps the name it was made with). Delete (⌘⌫) asks on the row,
+saying how many cards and documents go, and `keep` has the focus: the
+collection is removed from this device with its daily exports, there is no
+undo, and what was sent to a storage or pushed to a remote stays there.
+Neither is done to a collection a window has open (`close it first`).
+
 A collection lives under the app's data directory as one database file, with
 its PDFs and images beside it. To get files back, `export collection ·
 folder` in the palette writes it to a place you choose as a folder of
@@ -132,6 +145,15 @@ gold bar in the margin runs to the read point (`pos` and `y` on the `read`
 line, or in `.ilmi/reading.json` for a PDF on its own); done for today
 records the bottom of the view. An older extract's passage is still drawn
 on the page as a highlight when it is found there again.
+
+The pages are fitted to the pane. ⌘= draws them larger, a step at a time
+(125%, 150%, 200%, 250%, 300%), ⌘− smaller, ⌘0 fitted again; a pinch on a
+trackpad steps once. The same text stays under the top of the view, pages
+wider than the pane scroll sideways, and the boxes, what is written on the
+pages, and the read bar grow with them. The zoom is said beside the page
+(`p. 37 / 212 · 150%`), is the book's own, and is kept while the app is
+open. With the caret in the notes, and everywhere else, those keys are the
+text size.
 
 ### A book in EPUB
 
@@ -372,6 +394,19 @@ days in a row now and the longest run, retention (of the reviews of cards
 already in review, those not answered `again`), the answers given, and for
 this week, month and year the reviews, the time, the cards started and the
 cards matured (an interval past three weeks).
+
+Over the year is `cards · reading`. `reading` shades the same days by what
+was read instead: each time you read on in a source, a section or a draft
+(⏎ on it, a book's done for today), and each extract or section you made.
+A day says `3 read, 2 made`; pressed, it lists them with the document, the
+section's heading when it was a section's, and what was done (`read on`,
+`later`, `done`, `extract`, `section`), each opening its document. Under
+it: the days read of the days in range, the times read on, the extracts
+and sections made, and the same for this week, month and year. Reading is
+never added into the reviews: the two are one grid shown two ways. It is
+logged from the day this was added, so the days before are empty, and a
+folder of sources with no cards has its reading alone. An undo from a
+notice takes its line back.
 
 Under it the days ahead are drawn in the same cells for half a year, by
 what comes due; what is overdue counts today. A day pressed lists what

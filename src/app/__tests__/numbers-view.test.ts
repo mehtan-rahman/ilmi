@@ -189,6 +189,78 @@ describe('a failed-most row', () => {
   });
 });
 
+describe('the reading layer', () => {
+  const click = async (el: Element) => { await act(async () => { (el as HTMLElement).click(); }); };
+  const layer = () => texts('.nb-layer button[data-on="1"]');
+
+  it('cards · reading over the year: off by default, its own grid and lines, the cards\' figures not shown twice and not added to', async () => {
+    useApp.setState({ lensViews: { [VOCAB]: 'numbers' }, readings: [], numbersLayer: 'cards' });
+    await mount(createElement(Lens, { id: VOCAB, active: true, onOpen: () => {} }));
+    expect(texts('.nb-layer button')).toEqual(['cards', 'reading']);
+    expect(layer()).toEqual(['cards']);
+    const reviews = host.querySelector('[data-sec="past"] .nb-sum')!.textContent;
+    expect(host.querySelector('[data-sec="reading"]')).toBeNull();
+    await click(host.querySelector('.nb-layer button[data-layer="reading"]')!);
+    expect(layer()).toEqual(['reading']);
+    expect(useApp.getState().numbersLayer).toBe('reading');
+    // nothing logged yet: the toggle is there, the grid is today alone and says so
+    expect(host.querySelector('[data-sec="past"]')).toBeNull();
+    const sec = host.querySelector('[data-sec="reading"]')!;
+    expect(sec.querySelector('.nb-hot')!.textContent).toBe('no reading logged yet');
+    expect(sec.querySelectorAll('button.nb-cell')).toHaveLength(1);
+    expect(sec.querySelector('[data-sum="made"] dd')!.textContent).toBe('nothing yet');
+    // the forecast and the rest are the cards', as they were
+    expect(host.querySelector('[data-sec="ahead"]')).not.toBeNull();
+    expect(host.querySelector('.nb-line')!.textContent).toMatch(/^178 cards/);
+    await click(host.querySelector('.nb-layer button[data-layer="cards"]')!);
+    expect(host.querySelector('[data-sec="past"] .nb-sum')!.textContent).toBe(reviews);
+    unmount();
+  });
+
+  it('a folder of documents without cards has its reading: a day says what was read and made, pressed it lists them, a row opens its document at the section', async () => {
+    // a document with no cards and nothing under it, as its own lens
+    const bare = Object.keys(docs).find((p) => docs[p]!.cards === 0 && !Object.keys(docs).some((q) => q.startsWith(`${p.replace(/\.md$/, '')}/`)) && bodies.get(p)!.blocks.some((b) => b.kind === 'heading'))!;
+    const heading = bodies.get(bare)!.blocks.find((b) => b.kind === 'heading')!;
+    const sec = heading.kind === 'heading' ? heading.text : '';
+    const now = new Date();
+    const iso = (h: number) => `${new Date(now.getFullYear(), now.getMonth(), now.getDate(), h).toISOString().slice(0, 19)}Z`;
+    const day = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    useApp.setState({
+      lensViews: { [bare]: 'numbers' }, numbersLayer: 'cards', panes: emptyPanes(), reveal: null,
+      readings: [
+        { at: iso(0), doc: bare, read: 'pass', to: 3 },
+        { at: iso(0).replace(':00Z', ':20Z'), doc: bare, read: 'section', sec },
+        { at: iso(0).replace(':00Z', ':40Z'), doc: bare, read: 'later' },
+        // another document's reading is not this lens's
+        { at: iso(0).replace(':00Z', ':50Z'), doc: VOCAB, read: 'pass' },
+      ],
+    });
+    const { NumbersView } = await import('../NumbersLens.js');
+    await mount(createElement(NumbersView, { home: bare }));
+    expect(host.querySelector('.empty')).toBeNull();
+    expect(host.querySelector('.nb-counts')!.textContent).toBe('no cards');
+    expect(layer()).toEqual(['reading']);
+    expect(host.querySelector<HTMLButtonElement>('.nb-layer button[data-layer="cards"]')!.disabled).toBe(true);
+    expect(host.querySelector('[data-sec="ahead"]')).toBeNull();
+    const cell = host.querySelector<HTMLElement>(`[data-sec="reading"] button.nb-cell[data-day="${day}"]`)!;
+    expect(cell.dataset.n).toBe('2');
+    expect(cell.title).toMatch(/^[a-z]{3}, [a-z]{3} \d+ · 1 read, 1 made$/);
+    expect(host.querySelector('[data-sum="read"] dd')!.textContent).toMatch(/^1 of 1 day, logged since /);
+    expect(host.querySelector('[data-sum="passes"] dd')!.textContent).toBe('1 time');
+    expect(host.querySelector('[data-sum="made"] dd')!.textContent).toBe('1 section');
+    expect(texts('.nb-periods[data-of="reading"] tr[data-period="this week"] td')).toEqual(['1', '0', '1', '']);
+    await click(cell);
+    const rows = Array.from(host.querySelectorAll<HTMLElement>('.nb-day[data-of="reading"] .nb-rows li'));
+    expect(rows.map((r) => [r.dataset.read, r.querySelector('.nb-note')!.textContent, r.querySelector('.nb-where')?.textContent ?? null])).toEqual([['pass', 'read on', null], ['section', 'section', sec], ['later', 'later', null]]);
+    await click(rows[1]!.querySelector('button')!);
+    expect(useApp.getState().reveal).toMatchObject({ path: bare, heading: sec });
+    const panes = useApp.getState().panes;
+    expect(panes.panes.flatMap((p) => p.tabs.map((t) => t.id))).toContain(bare);
+    unmount();
+    useApp.setState({ readings: [], numbersLayer: 'cards', reveal: null });
+  });
+});
+
 describe('the inspector\'s options', () => {
   it('on a notebook, set there; on a page under it, inherited and said where from; on a deck elsewhere, the defaults', async () => {
     // the notebook sets two options in its front-matter

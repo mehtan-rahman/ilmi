@@ -100,9 +100,9 @@
 // together (`{ s, ops }`, `s` this device's count of them), and a file in
 // the storage is a header line and then one such line a write.
 
-import { parse, parseReviews, serialize } from '../format/index.js';
+import { parse, serialize } from '../format/index.js';
 import { compose, type StateRow } from '../vault/lift.js';
-import { BOOK_PAGE, hiddenId, isBookPage, isInk, newId, reviewRow, type InkStroke, type Content, type DocContent, type Lift, type Place, type Recorder, type Reg, type ReviewRow, type Row, type RowKind, type StoreFs, type StoreOp, type ViewWrite } from '../vault/store.js';
+import { BOOK_PAGE, hiddenId, isBookPage, isInk, lineRow, newId, type InkStroke, type Content, type DocContent, type Lift, type Place, type Recorder, type Reg, type ReviewRow, type Row, type RowKind, type StoreFs, type StoreOp, type ViewWrite } from '../vault/store.js';
 import { clock, msOf, msPart, type Clock } from './clock.js';
 import { blocks, diff3, type Kept } from './merge.js';
 import type { Storage } from './storage.js';
@@ -937,8 +937,9 @@ export function engine(fs: StoreFs, opts: EngineOptions): Engine {
           if (moved) dirty.set(k, { key: k, stamp: '', value: JSON.stringify(d) });
           touched.add(o.id);
         } else {
-          const r = parseReviews(o.l)[0];
-          if (r) lines.set(o.f, [...(lines.get(o.f) ?? []), { ...reviewRow(o.f, r), line: o.l }]);
+          // a grade's line or a reading's: kept by its text either way
+          const r = lineRow(o.f, o.l);
+          if (r) lines.set(o.f, [...(lines.get(o.f) ?? []), r]);
         }
       }
     }

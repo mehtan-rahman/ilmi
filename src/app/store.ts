@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { NodeType, ReadSchedule, Review, SectionSchedule, WriteSchedule } from '../format/index.js';
+import type { NodeType, ReadSchedule, Reading, Review, SectionSchedule, WriteSchedule } from '../format/index.js';
 import type { QueueItem } from '../schedule/index.js';
 import type { Order, TreeNode } from '../vault/index.js';
 import type { DeckView } from './deck.js';
@@ -304,6 +304,8 @@ export interface AppState {
    */
   noteAttach: { pdf: string; step: 'pick' | 'place'; name?: string } | null;
   tweaksOpen: boolean;
+  /** A context menu is open (`popMenu.ts` sets it): the keys are its own, and the canvas counts its panes as covered. Not saved. */
+  menuOpen: boolean;
   selectedCard: SelectedCard | null;
   /** Where each document's card view stands (`:cards/` tabs): the card's block, and its id when it has one. Not saved. */
   cardAt: Record<string, { block: number; id?: string }>;
@@ -345,6 +347,10 @@ export interface AppState {
   folds: Record<string, string[]>;
   /** Every review logged (`.ilmi/reviews/`), oldest first, for the numbers. Empty without a log. */
   reviews: Review[];
+  /** Everything read that was logged (the same files, a reading's lines), oldest first, for the numbers' reading layer. Empty until something is. */
+  readings: Reading[];
+  /** What the numbers' year of days is of: the cards' reviews, or what was read. Not remembered past the session. */
+  numbersLayer: 'cards' | 'reading';
   /** Pairs of cards said not to be the same fact (`.ilmi/same.json`, `same.ts`'s `pairKey`): never listed again. */
   notSame: string[];
   /** What a folder's or a deck's lens shows: its items, its cards, or its numbers. Not remembered. */
@@ -426,6 +432,7 @@ export const useApp = create<AppState>((set, get) => ({
   sectionMove: null,
   noteAttach: null,
   tweaksOpen: false,
+  menuOpen: false,
   selectedCard: null,
   cardAt: {},
   reveal: null,
@@ -449,6 +456,8 @@ export const useApp = create<AppState>((set, get) => ({
   deckViews: {},
   folds: {},
   reviews: [],
+  readings: [],
+  numbersLayer: 'cards',
   examFilter: null,
   notSame: [],
   lensViews: {},

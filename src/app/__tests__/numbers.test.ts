@@ -12,6 +12,8 @@ import { Vault, type Fs } from '../../vault/index.js';
 import { nodeFs } from '../../vault/node-fs.js';
 import { REVIEW_MS_CAP, reviewOf } from '../grading.js';
 import { FORECAST_WEEKS, HEAT_WEEKS, dayLabel, daysOf, heatOf, linesDue, linesOf, mondayOf, numbersOf, rateLabel, reviewsOn, reviewsUnder, spanLabel, summaryOf, weekLabel } from '../numbers.js';
+import { readCount, readDayWords, readingDaysOf, readingNumbersOf, readingsOn, readingsUnder } from '../numbers.js';
+import type { Reading } from '../../format/index.js';
 
 const at = (day: string, hour = 12) => new Date(`${day}T${String(hour).padStart(2, '0')}:00:00`);
 const NOW = at('2026-10-30');
@@ -313,5 +315,65 @@ describe('the sample', () => {
       checked++;
     }
     expect(checked).toBeGreaterThan(600);
+  });
+});
+
+describe('what was read, its own layer', () => {
+  const at = (day: string, hm: string) => `${new Date(`${day}T${hm}:00`).toISOString().slice(0, 19)}Z`;
+  const R = (day: string, hm: string, read: Reading['read'], doc: string, more: Partial<Reading> = {}): Reading => ({ at: at(day, hm), doc, read, ...more });
+  const log: Reading[] = [
+    R('2026-11-10', '08:00', 'pass', 'papers/a.md', { to: 4, ms: 300_000 }),
+    R('2026-11-10', '08:10', 'extract', 'papers/a.md'),
+    R('2026-11-10', '08:20', 'section', 'papers/a/notes.md', { sec: 'one' }),
+    R('2026-11-10', '09:00', 'later', 'books/b.md'),
+    R('2026-11-11', '09:00', 'done', 'books/b.md'),
+    R('2026-11-12', '07:00', 'pass', 'books/b.md', { ms: 60_000 }),
+    R('2026-11-12', '07:30', 'pass', 'papers/a/notes.md', { sec: 'one' }),
+    R('2026-11-12', '23:30', 'pass', 'gone/c.md'),
+  ];
+  const NOW = new Date('2026-11-12T23:45:00');
+
+  it('the readings under a lens: by its documents, and by its path for what is not one of them', () => {
+    expect(readingsUnder(log, '', new Set()).length).toBe(8);
+    expect(readingsUnder(log, 'papers', new Set(['papers/a.md', 'papers/a/notes.md'])).length).toBe(4);
+    // a document's lens holds its children; a PDF on its own or a document gone is found by where it lay
+    expect(readingsUnder(log, 'papers/a.md', new Set()).map((r) => r.read)).toEqual(['pass', 'extract', 'section', 'pass']);
+    expect(readingsUnder(log, 'gone', new Set()).length).toBe(1);
+    expect(readingsUnder(log, 'pap', new Set())).toEqual([]);
+  });
+
+  it('counted by day once: passes, what was made, the time; later and done are on the day and not in its shade', () => {
+    const c = readingDaysOf(log);
+    expect(c.byDay.get('2026-11-10')).toMatchObject({ passes: 1, extracts: 1, sections: 1, later: 1, done: 0, ms: 300_000 });
+    expect([10, 11, 12].map((d) => readCount(c.byDay.get(`2026-11-${d}`)))).toEqual([3, 0, 3]);
+    expect(readCount(undefined)).toBe(0);
+    expect(readingsOn(log, c, '2026-11-12').map((r) => r.doc)).toEqual(['books/b.md', 'papers/a/notes.md', 'gone/c.md']);
+    expect(readingsOn(log, c, '2026-11-09')).toEqual([]);
+    expect(readDayWords(c.byDay.get('2026-11-10'))).toBe('1 read, 2 made');
+    expect(readDayWords(c.byDay.get('2026-11-11'))).toBe('1 done');
+    expect(readDayWords(c.byDay.get('2026-11-12'))).toBe('3 read');
+    expect(readDayWords(undefined)).toBe('nothing read');
+  });
+
+  it('the same year of days: a day before the log began is no day, the lines are the reading\'s', () => {
+    const n = readingNumbersOf(log, NOW, '2026-11-10');
+    expect(n.heat.weeks).toHaveLength(HEAT_WEEKS);
+    const cells = n.heat.weeks.flatMap((w) => w.days).filter((c) => c !== null);
+    expect(cells.map((c) => [c.day, c.n])).toEqual([['2026-11-10', 3], ['2026-11-11', 0], ['2026-11-12', 3]]);
+    expect(cells.map((c) => c.level)).toEqual([4, 0, 4]);
+    expect(n.summary).toMatchObject({ from: '2026-11-10', to: '2026-11-12', days: 3, read: 2, passes: 4, extracts: 1, sections: 1, ms: 360_000, best: { day: '2026-11-10', n: 3 } });
+    expect(n.summary.periods.map((p) => [p.label, p.from, p.passes, p.extracts, p.sections])).toEqual([
+      ['this week', '2026-11-09', 4, 1, 1], ['this month', '2026-11-01', 4, 1, 1], ['this year', '2026-01-01', 4, 1, 1],
+    ]);
+    expect(n.since).toBe('2026-11-10');
+    // a lens with nothing read, in a collection whose log began: its days are there, empty
+    const none = readingNumbersOf([], NOW, '2026-11-10');
+    expect(none.heat.weeks.flatMap((w) => w.days).filter((c) => c !== null).map((c) => c.n)).toEqual([0, 0, 0]);
+    expect(none.summary).toMatchObject({ days: 3, read: 0, passes: 0, best: null });
+    // nothing logged anywhere: today alone, and no day it is said to have begun
+    const never = readingNumbersOf([], NOW);
+    expect(never.since).toBeUndefined();
+    expect(never.heat.weeks.flatMap((w) => w.days).filter((c) => c !== null).map((c) => c.day)).toEqual(['2026-11-12']);
+    expect(never.summary.days).toBe(1);
   });
 });

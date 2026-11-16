@@ -19,7 +19,7 @@ import type { OpenOpts } from './panes.js';
 import { clozeHTML, faceDir, richHTML } from './Reader.js';
 import { dirAttr } from '../reader/index.js';
 import { useApp } from './store.js';
-import { currentVault, openCard, openNode, openSession, postponeRest, refreshQueue, startSession } from './vault.js';
+import { currentVault, openCard, openNode, openSession, postponeRest, refreshQueue, startSession, unlogReading } from './vault.js';
 import { actOnDoc, actionWords, atEndOf, docLine, twoLines, type DocAction } from './Session.js';
 import { failed, notify } from './land.js';
 import { restore } from './deck.js';
@@ -101,7 +101,7 @@ function TopicActs({ item, now }: { item: ReadItem | WriteItem | SectionItem; no
     const line = docLine(item, action, now);
     void vault.read(item.path).then(({ doc }) => {
       const before = structuredClone(doc);
-      return actOnDoc(item, action).then(() => notify(line, null, () => restore(vault, [{ path: item.path, doc: before }])));
+      return actOnDoc(item, action).then(() => notify(line, null, () => restore(vault, [{ path: item.path, doc: before }]).then(() => unlogReading(item.path, item.kind === 'section' ? item.heading : undefined))));
     }).catch(failed(action === 'on' ? 'next' : action === 'postpone' ? 'later' : 'dismiss'));
   };
   return (

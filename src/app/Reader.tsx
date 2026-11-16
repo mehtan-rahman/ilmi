@@ -34,7 +34,7 @@ import { dueLabel, dueTone } from './items.js';
 import { pagesOf, titleOf } from './names.js';
 import { openPagesBeside } from './book.js';
 import { useApp, type DocInfo } from './store.js';
-import { currentVault, enrolReading, extractNode, openCards, openNode, removeNode, renameNode, sectionNode, setFolds } from './vault.js';
+import { currentVault, enrolReading, extractNode, openCards, openNode, removeNode, renameNode, sectionNode, setFolds, unlogReading } from './vault.js';
 import { popMenu, type PopItem } from './popMenu.js';
 import { registerHeadings } from './headings.js';
 import { sectionMenu, setWriteThrough, writeDoc } from './sections.js';
@@ -1994,6 +1994,7 @@ export function Reader({ id, active = true, onPages, notes = false }: ReaderProp
         recentRef.current = made;
         notify(`§ ${plainMath(made.text)} · back in ${made.ivl}d, until dismissed · in its notes · ⏎ to write in it`, made.note, async () => {
           recentRef.current = null;
+          unlogReading(made.note, made.text);
           await writeDoc(made.note, (d) => {
             const at = d.blocks.findIndex((b) => b.kind === 'heading' && b.text === made.text);
             if (at < 0) return;
@@ -2010,6 +2011,7 @@ export function Reader({ id, active = true, onPages, notes = false }: ReaderProp
       // as a section says so: where it went, and a way back (the extract gone, the passage no longer marked as taken)
       notify(`extract ${name} · under this page, due today`, made, async () => {
         await removeNode(made);
+        unlogReading(id);
         await writeDoc(id, (d) => {
           for (const b of d.blocks) {
             if ((b.kind !== 'paragraph' && b.kind !== 'card') || !b.extracts?.includes(name)) continue;

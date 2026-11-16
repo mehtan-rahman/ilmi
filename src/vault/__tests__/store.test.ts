@@ -11,7 +11,7 @@ import { join as joinPath, relative as relPath } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { parse } from '../../format/index.js';
-import { formatReview, parseReviews, setField, type Card, type Doc, type Review } from '../../format/index.js';
+import { formatLogLine, formatReview, parseLog, parseReadings, parseReviews, setField, type Card, type Doc, type Review } from '../../format/index.js';
 import { gradeItem, queueItems, type CardItem } from '../../schedule/index.js';
 import { MIRROR_LIST, Vault, join, exportFolder, importFolder, mirrorDirIn, mirrorFolder, mirrorPass, splitFront, storeFs, takeFiles, type Row, type StoreFs } from '../index.js';
 import { DIGEST_MARK } from '../lift.js';
@@ -507,6 +507,45 @@ describe('state in rows', () => {
     await fs.remove(`${ROOT}/.ilmi/reviews/2026-10.jsonl`);
     expect(await fs.stat(`${ROOT}/.ilmi/reviews/2026-10.jsonl`)).toBeNull();
     expect((await vault.loadReviews()).map((x) => x.card)).toEqual(['d', 'e', 'b']);
+  });
+
+  it('reading lines are rows of the log too: a month with both comes in and goes out to the byte, and a line added keeps them all', async () => {
+    const month = await fsp.readFile(fileURLToPath(new URL('../../format/__tests__/corpus/reviews/2026-12.jsonl', import.meta.url)), 'utf8');
+    const dir = await tmp('readings');
+    await fsp.mkdir(joinPath(dir, '.ilmi/reviews'), { recursive: true });
+    await fsp.writeFile(joinPath(dir, '.ilmi/reviews/2026-12.jsonl'), month);
+    await fsp.writeFile(joinPath(dir, 'a.md'), 'plain\n');
+    const { store, fs } = await collection(dir);
+    // a reading's row has no card and no grade, and is its line
+    const rows = store.tables.reviews;
+    expect(rows.length).toBe(parseLog(month).length);
+    expect(rows.filter((r) => r.card === '').map((r) => r.g)).toEqual(rows.filter((r) => r.card === '').map(() => 0));
+    expect(rows.find((r) => r.at === '2026-12-01T08:07:00Z')).toEqual({ file: '2026-12.jsonl', at: '2026-12-01T08:07:00Z', doc: 'books/notes-on-alone.md', card: '', key: null, g: 0, line: '{"at":"2026-12-01T08:07:00Z","doc":"books/notes-on-alone.md","read":"section","sec":"the first night"}' });
+    // as it came in, byte for byte: the torn line and the line of a newer app too
+    const out = joinPath(await tmp('readings-out'), 'export');
+    await exportFolder(fs, ROOT, nodeFs, out);
+    expect((await fsp.readFile(joinPath(out, '.ilmi/reviews/2026-12.jsonl'), 'utf8'))).toBe(month);
+    const vault = await Vault.open(fs, ROOT);
+    const log = await vault.loadLog();
+    expect([log.reviews.length, log.readings.length, log.lines]).toEqual([2, 6, 13]);
+    expect(await vault.loadReadings()).toEqual(log.readings);
+    // a line added: the file is its rows from here on, the readings among them, in the log's order
+    await vault.appendReadings([{ at: '2026-12-03T07:00:00Z', doc: 'a.md', read: 'pass', to: 2 }]);
+    await vault.appendReviews([{ at: '2026-12-03T07:01:00Z', doc: 'german.md', card: 'cv-tag', g: 3, st: 'review', elapsed: 2, ivl: 2, next: 5 }]);
+    const text = await fs.readText(`${ROOT}/.ilmi/reviews/2026-12.jsonl`);
+    expect(parseLog(text).map(formatLogLine).join('\n') + '\n').toBe(text);
+    expect(parseReadings(text).length).toBe(parseReadings(month).length + 1);
+    expect(parseReviews(text).map((r) => r.card)).toEqual(['cv-wort', 'cv-haus', 'cv-tag']);
+    expect((await vault.loadReadings()).at(-1)).toEqual({ at: '2026-12-03T07:00:00Z', doc: 'a.md', read: 'pass', to: 2 });
+    // exported and brought in again, the same file goes out
+    const again = joinPath(await tmp('readings-again'), 'export');
+    await exportFolder(fs, ROOT, nodeFs, again);
+    expect(await fsp.readFile(joinPath(again, '.ilmi/reviews/2026-12.jsonl'), 'utf8')).toBe(text);
+    const second = await collection(again);
+    const third = joinPath(await tmp('readings-third'), 'export');
+    await exportFolder(second.fs, ROOT, nodeFs, third);
+    expect(await fsp.readFile(joinPath(third, '.ilmi/reviews/2026-12.jsonl'), 'utf8')).toBe(text);
+    vault.close();
   });
 
   it('the pairs said not the same are rows, read and written as `.ilmi/same.json`', async () => {

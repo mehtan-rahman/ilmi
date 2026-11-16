@@ -79,7 +79,7 @@
 //   A collection from before them is walked a page at a time, the app
 //   open meanwhile (`searchBuild`); it goes on from where it stopped.
 
-import { formatReview, parse, parseReviews, serialize, type Doc, type Review } from '../format/index.js';
+import { formatLogLine, formatReview, isReading, parse, parseLog, serialize, type Doc, type ReadingLine, type Review } from '../format/index.js';
 import type { Fs, FsEntry, FsStat } from './fs.js';
 import { join, relative } from './fs.js';
 import { decompose, digest, recompose, stampOf, type Decomposed, type Original, type StateRow } from './lift.js';
@@ -476,6 +476,16 @@ const inkFileOf = (rel: string): { hash: string; page?: number } | 'all' | null 
 
 /** A review as the log's row. */
 export const reviewRow = (file: string, r: Review): ReviewRow => ({ file, at: r.at, doc: r.doc, card: r.card, key: r.key ?? null, g: r.g, line: formatReview(r) });
+
+/** A line of the log as its row, a grade's or a reading's: a reading's has no card and no grade (`card` empty, `g` 0), and is found by its line. */
+export const logRow = (file: string, x: Review | ReadingLine): ReviewRow =>
+  isReading(x) ? { file, at: x.at, doc: x.doc, card: '', key: null, g: 0, line: formatLogLine(x) } : reviewRow(file, x);
+
+/** A line as it came (from another device) as its row, kept by its own text; null when it is neither a review nor a reading. */
+export const lineRow = (file: string, line: string): ReviewRow | null => {
+  const x = parseLog(line)[0];
+  return x ? { ...logRow(file, x), line } : null;
+};
 
 export interface StoreFs extends Fs {
   readonly store: Store;
@@ -990,10 +1000,10 @@ export function storeFs(store: Store, root: string): StoreFs {
       await samePut(next);
       await keep(rel, text, sameNow());
     } else {
-      const list = parseReviews(text);
-      await logPut(v.file, list.map((r) => reviewRow(v.file, r)), true);
+      const list = parseLog(text);
+      await logPut(v.file, list.map((r) => logRow(v.file, r)), true);
       if (list.length) logFiles.set(v.file, list.length); else logFiles.delete(v.file);
-      await keep(rel, text, list.length ? `${list.map(formatReview).join('\n')}\n` : '');
+      await keep(rel, text, list.length ? `${list.map(formatLogLine).join('\n')}\n` : '');
     }
   };
 
@@ -1542,10 +1552,10 @@ export function storeFs(store: Store, root: string): StoreFs {
         const v = virtualOf(rel);
         if (v?.kind === 'reviews' && locate(path).kind !== 'row') {
           // a file kept as it came in holds lines the rows may not: it is read as rows from here on
-          const list = parseReviews(text);
+          const list = parseLog(text);
           await mkdirs(rel.split('/').slice(0, -1), path);
           if (list.length) {
-            await logPut(v.file, list.map((r) => reviewRow(v.file, r)), false);
+            await logPut(v.file, list.map((r) => logRow(v.file, r)), false);
             logFiles.set(v.file, (logFiles.get(v.file) ?? 0) + list.length);
           }
           if (originals.has(rel)) { await store.originalPut(rel, null); originals.delete(rel); }

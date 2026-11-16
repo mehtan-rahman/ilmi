@@ -1,0 +1,15 @@
+{"at":"2026-12-01T08:00:00Z","doc":"german.md","card":"cv-wort","g":3,"st":"review","elapsed":5,"ivl":5,"next":12,"s":12.1,"d":5.2,"ms":4200}
+{"at":"2026-12-01T08:05:00Z","doc":"papers/wozniak-1990.md","read":"pass","to":14,"ms":412000}
+{"at":"2026-12-01T08:06:10Z","doc":"papers/wozniak-1990.md","read":"extract"}
+{"at":"2026-12-01T08:07:00Z","doc":"books/notes-on-alone.md","read":"section","sec":"the first night"}
+{"at":"2026-12-01T08:09:00Z","doc":"books/notes-on-alone.md","read":"pass","sec":"the first night"}
+{"at":"2026-12-01T08:10:00Z","doc":"german.md","card":"cv-haus","g":1,"st":"review","elapsed":3,"ivl":3,"next":0,"s":1.4,"d":7.1,"ms":9000}
+{"at":"2026-12-01T08:11:00Z","doc":"papers/crick-1995.md","read":"later"}
+{"at":"2026-12-01T08:11:05Z","doc":"papers/crick-1995.md","read":"undo","of":"2026-12-01T08:11:00Z"}
+{"at":"2026-12-02T09:00:00Z","doc":"essays/marginalia.md","read":"pass"}
+{"at":"2026-12-02T09:00:00Z","doc":"essays/marginalia.md","read":"pass"}
+{"at":"2026-12-02T09:30:00Z","doc":"books/notes-on-alone.md","read":"done","sec":"the first night"}
+{"at":"2026-12-02T09:31:00Z","doc":"books/notes-on-alone.md","read":"undo","sec":"the first night","of":"2026-12-02T09:30:00Z"}
+{"at":"2026-12-02T09:40:00Z","doc":"papers/maxwell.md","read":"skim","to":2}
+{"at":"2026-12-02T09:41:00Z","doc":"papers/maxwell.md","read":"done","device":"phone"}
+{"at":"2026-12-02T09:4

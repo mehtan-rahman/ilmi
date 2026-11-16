@@ -5,7 +5,7 @@
 // Either is the store of record; this class is a cache with a conflict
 // rule: never overwrite a file whose stamp moved since we read it.
 
-import { PRI_DEFAULT, REVIEWS_DIR, formatReview, mergeReviews, parseReviews, reviewFile, meta, parse, serialize, setField, type Block, type Card, type Diagnostic, type Doc, type NodeType, type Review } from '../format/index.js';
+import { PRI_DEFAULT, REVIEWS_DIR, formatLogLine, isReading, mergeReadings, mergeReviews, parseLog, reviewFile, meta, parse, serialize, setField, type Block, type Card, type Diagnostic, type Doc, type NodeType, type Reading, type ReadingLine, type Review } from '../format/index.js';
 import { cadence } from '../schedule/growth.js';
 import { join, relative, sameStamp, type Fs, type Stamp } from './fs.js';
 import { ORDER_FILE, childrenAt, cleanOrder, entryOf, followMove, forget, ordered, placeEntry, pruneOrder, restoreOrder, type Order } from './order.js';
@@ -1561,15 +1561,26 @@ export class Vault {
   // `.ilmi/reviews/<yyyy-mm>.jsonl` (format/reviews.ts): appended to, never
   // rewritten, so two devices syncing the folder each add their lines; read
   // whole, every `.jsonl` there (a sync tool's conflict copy too), with
-  // duplicates collapsed and lines that are not reviews skipped.
+  // duplicates collapsed and lines that are not reviews skipped. The same
+  // files hold what was read, a line each (a `Reading`), told apart by
+  // their shape.
 
   /** Add reviews to their months' files, one line each. Nothing is read back. */
   appendReviews(reviews: readonly Review[]): Promise<void> {
+    return this.appendLog(reviews);
+  }
+
+  /** Add reading lines (and ones taking a reading back) to their months' files. */
+  appendReadings(readings: readonly ReadingLine[]): Promise<void> {
+    return this.appendLog(readings);
+  }
+
+  private appendLog(reviews: readonly (Review | ReadingLine)[]): Promise<void> {
     if (!reviews.length) return Promise.resolve();
     return this.serial(async () => {
       await this.fs.mkdir(this.abs(REVIEWS_DIR));
       const byFile = new Map<string, string[]>();
-      for (const r of reviews) byFile.set(reviewFile(r.at), [...(byFile.get(reviewFile(r.at)) ?? []), formatReview(r)]);
+      for (const r of reviews) byFile.set(reviewFile(r.at), [...(byFile.get(reviewFile(r.at)) ?? []), formatLogLine(r)]);
       for (const [rel, lines] of byFile) {
         const abs = this.abs(rel);
         const text = `${lines.join('\n')}\n`;
@@ -1585,18 +1596,33 @@ export class Vault {
 
   /** Every review logged, oldest first; none when there is no log. */
   async loadReviews(): Promise<Review[]> {
+    return (await this.loadLog()).reviews;
+  }
+
+  /** Every reading logged and not taken back, oldest first; none when there is no log. */
+  async loadReadings(): Promise<Reading[]> {
+    return (await this.loadLog()).readings;
+  }
+
+  /** The log read once: its reviews and its readings, each merged, and how many lines of either the files hold (what a store counts). */
+  async loadLog(): Promise<{ reviews: Review[]; readings: Reading[]; lines: number }> {
     const dir = this.abs(REVIEWS_DIR);
-    if (!(await this.fs.stat(dir))?.isDir) return [];
+    if (!(await this.fs.stat(dir))?.isDir) return { reviews: [], readings: [], lines: 0 };
     const names = (await this.fs.readDir(dir)).filter((e) => e.isFile && e.name.endsWith('.jsonl')).map((e) => e.name).sort();
-    const lists: Review[][] = [];
+    const reviews: Review[][] = [];
+    const readings: ReadingLine[][] = [];
+    let lines = 0;
     for (const name of names) {
       try {
-        lists.push(parseReviews(await this.fs.readText(join(dir, name))));
+        const all = parseLog(await this.fs.readText(join(dir, name)));
+        lines += all.length;
+        reviews.push(all.filter((x): x is Review => !isReading(x)));
+        readings.push(all.filter(isReading));
       } catch {
         // a file that cannot be read is a file without reviews
       }
     }
-    return mergeReviews(lists);
+    return { reviews: mergeReviews(reviews), readings: mergeReadings(readings), lines };
   }
 
   // --- state --------------------------------------------------------------

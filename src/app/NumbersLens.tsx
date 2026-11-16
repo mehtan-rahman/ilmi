@@ -3,7 +3,10 @@
 // them (quiet tables under small lowercase labels, tabular figures,
 // hairlines; today ringed in the one accent). A day pressed lists its
 // reviews, or what comes due on it, each row opening its card. No tiles,
-// no badges. The model is numbers.ts.
+// no badges. The model is numbers.ts. The year of days has a second
+// layer, `cards · reading`: the same grid shaded by what was read on and
+// what was made of it (the log's reading lines), with its own lines under
+// it; the two are never added together.
 
 import { memo, useCallback, useEffect, useMemo, useState, type CSSProperties, type KeyboardEvent, type ReactElement } from 'react';
 import { dayOf, whenToDate, type Resolved } from '../schedule/index.js';
@@ -11,8 +14,8 @@ import { docsUnder } from './deck.js';
 import { fmtDays, pathLabel } from './items.js';
 import { facesHTML } from './DeckBrowser.js';
 import { titleOf } from './names.js';
-import { FORECAST_WEEKS, dayLabel, linesDue, linesOf, numbersOf, rateLabel, reviewsOn, reviewsUnder, spanLabel, weekLabel, type Cell, type Heat, type Line, type Numbers, type Rate, type Spread, type Week } from './numbers.js';
-import type { Review } from '../format/index.js';
+import { FORECAST_WEEKS, READ_WORD, dayLabel, linesDue, linesOf, numbersOf, rateLabel, readDayWords, readingNumbersOf, readingsOn, readingsUnder, reviewsOn, reviewsUnder, spanLabel, weekLabel, type Cell, type Heat, type Line, type Numbers, type Rate, type ReadingNumbers, type Spread, type Week } from './numbers.js';
+import type { Reading, Review } from '../format/index.js';
 import { useApp } from './store.js';
 import { docsOf, openCard, openNode, optionsAt } from './vault.js';
 import './numbers.css';
@@ -59,6 +62,8 @@ interface HeatProps {
   picked: string | null;
   /** What a day says of itself: its date and its counts. */
   say(c: Cell): string;
+  /** What the grid is of, said aloud; the reviews' when absent. */
+  label?: string;
   onHot(of: Pick['of'], c: Cell | null): void;
   onPick(of: Pick['of'], day: string): void;
 }
@@ -70,7 +75,7 @@ interface HeatProps {
  * on focus, the arrows walk the days (↑ ↓ a day, ← → a week), and a press
  * picks the day. Drawn once: what is hovered is the caption's, not the grid's.
  */
-const HeatGrid = memo(function HeatGrid({ heat, of, today, picked, say, onHot, onPick }: HeatProps) {
+const HeatGrid = memo(function HeatGrid({ heat, of, today, picked, say, label, onHot, onPick }: HeatProps) {
   const stop = picked ?? today;
   const move = (e: KeyboardEvent<HTMLDivElement>) => {
     // esc on the grid closes the day it has open
@@ -88,7 +93,7 @@ const HeatGrid = memo(function HeatGrid({ heat, of, today, picked, say, onHot, o
         {heat.months.map((m) => <span key={m.week} style={{ gridColumnStart: m.week + 1 }}>{m.label}</span>)}
       </div>
       <div className="nb-wd" aria-hidden="true">{['m', '', 'w', '', 'f', '', ''].map((d, i) => <span key={i}>{d}</span>)}</div>
-      <div className="nb-grid" role="grid" aria-label={of === 'past' ? 'reviews a day, the past year' : 'reviews coming due'} onKeyDown={move} onMouseLeave={() => onHot(of, null)}>
+      <div className="nb-grid" role="grid" aria-label={label ?? (of === 'past' ? 'reviews a day, the past year' : 'reviews coming due')} onKeyDown={move} onMouseLeave={() => onHot(of, null)}>
         {heat.weeks.flatMap((w) => w.days.map((c, i) => (c ? (
           <button
             key={c.day}
@@ -201,6 +206,39 @@ function aheadWords(n: Numbers, c: Cell): string {
   return [c.day === n.today.day ? `today, ${dayLabel(c.day)}` : dayLabel(c.day, true), c.n ? `${count(c.n)} due` : 'nothing due', late].filter(Boolean).join(' · ');
 }
 
+/** A past day's reading in words: `thu, nov 12 · 3 read, 2 made · 12 min`. */
+function readWords(rn: ReadingNumbers, day: string): string {
+  const a = rn.counted.byDay.get(day);
+  return [dayLabel(day, true), readDayWords(a), a?.ms ? spanLabel(a.ms) : ''].filter(Boolean).join(' · ');
+}
+
+/** A pressed day of the reading layer: what was read on it, oldest first, each row opening its document (at the section, when it names one). */
+function ReadDayPanel({ day, words, rows, title, open, close }: { day: string; words: string; rows: Reading[]; title(path: string): string; open(r: Reading): void; close(): void }) {
+  const more = rows.length - DAY_ROWS;
+  return (
+    <div className="nb-day" data-of="reading" data-day={day} onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); close(); } }}>
+      <p className="nb-day-head">
+        <span>{words}</span>
+        <button type="button" className="nb-go" onClick={close}>close</button>
+      </p>
+      {rows.length > 0 && (
+        <ul className="nb-rows">
+          {rows.slice(0, DAY_ROWS).map((r, i) => (
+            <li key={`${r.at} ${r.read} ${r.doc} ${r.sec ?? ''} ${i}`} data-path={r.doc} data-read={r.read}>
+              <button type="button" className="nb-card" title={pathLabel(r.doc)} onClick={() => open(r)}>
+                <span className="nb-faces"><span className="nb-front" dir="auto">{title(r.doc)}</span></span>
+                {r.sec !== undefined && <span className="nb-where" dir="auto">{r.sec}</span>}
+              </button>
+              <span className="nb-note">{READ_WORD[r.read]}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {more > 0 && <p className="nb-more">and {count(more)} more</p>}
+    </div>
+  );
+}
+
 /** A pressed day, opened under its grid: what it holds in words, then its cards. */
 function DayPanel({ of, day, words, rows, close }: { of: Pick['of']; day: string; words: string; rows: Rows; close(): void }) {
   const more = rows.all - rows.rows.length;
@@ -224,27 +262,40 @@ export function NumbersView({ home }: { home: string }) {
   const files = useApp((s) => s.files);
   const docs = useApp((s) => s.docs);
   const log = useApp((s) => s.reviews);
+  const readLog = useApp((s) => s.readings);
+  const layer = useApp((s) => s.numbersLayer);
   const phone = useApp((s) => s.phone);
   const day = dayOf(appNow());
-  const { n, lines, mine } = useMemo(() => {
+  const { n, lines, mine, under } = useMemo(() => {
     const now = appNow();
-    const lines = linesOf(docsOf(docsUnder(tree, home, order, files)));
+    const under = docsUnder(tree, home, order, files);
+    const lines = linesOf(docsOf(under));
     const mine = reviewsUnder(log, lines, new Set(files));
     const cache = new Map<string, Resolved>();
     const optionsOf = (p: string) => { let r = cache.get(p); if (!r) { r = optionsAt(p); cache.set(p, r); } return r; };
-    return { n: numbersOf(lines, mine, now, optionsOf, log.length ? dayOf(whenToDate(log[0]!.at)) : undefined), lines, mine };
+    return { n: numbersOf(lines, mine, now, optionsOf, log.length ? dayOf(whenToDate(log[0]!.at)) : undefined), lines, mine, under };
     // `docs` changes whenever a document under the lens does
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tree, order, files, docs, log, home, day]);
+  // what was read under the lens, counted on its own
+  const { rn, reads } = useMemo(() => {
+    const reads = readingsUnder(readLog, home, new Set(under));
+    return { rn: readingNumbersOf(reads, appNow(), readLog.length ? dayOf(whenToDate(readLog[0]!.at)) : undefined), reads };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [readLog, under, home, day]);
+  // a lens without cards has its reading alone
+  const show = n.cards ? layer : 'reading';
   // the day pressed, and the day under the pointer or the focus
   const [picked, setPicked] = useState<Pick | null>(null);
   const [hot, setHot] = useState<{ of: Pick['of']; cell: Cell } | null>(null);
-  useEffect(() => { setPicked(null); setHot(null); }, [home]);
+  useEffect(() => { setPicked(null); setHot(null); }, [home, show]);
   const onHot = useCallback((of: Pick['of'], cell: Cell | null) => setHot(cell ? { of, cell } : null), []);
   const onPick = useCallback((of: Pick['of'], d: string) => setPicked((p) => (p && p.of === of && p.day === d ? null : { of, day: d })), []);
   const sayPast = useCallback((c: Cell) => pastWords(n, c.day), [n]);
   const sayAhead = useCallback((c: Cell) => aheadWords(n, c), [n]);
+  const sayRead = useCallback((c: Cell) => readWords(rn, c.day), [rn]);
   const heat = useMemo(() => (n.heat && phone ? lastWeeks(n.heat, PHONE_WEEKS) : n.heat), [n.heat, phone]);
+  const readHeat = useMemo(() => (phone ? lastWeeks(rn.heat, PHONE_WEEKS) : rn.heat), [rn.heat, phone]);
   const root = useApp((s) => s.vault);
   // where a card lives: its document's title, and the line when a card has several
   const LINE_WORD: Record<string, string> = { r: 'back to front' };
@@ -281,19 +332,76 @@ export function NumbersView({ home }: { home: string }) {
       rows: all.slice(0, DAY_ROWS).map((l) => <CardRow key={`${l.path}#${l.block}#${l.key ?? ''}`} line={l} where={whereOf(l.path, l.key)} note={l.sched?.due && d === n.today.day && dueOf(l) < d ? `since ${dayLabel(dueOf(l))}` : ''} open={() => open(l)} />),
     };
   };
+  /** A reading's document, at the section when it names one that is still there. */
+  const openRead = (r: Reading) => {
+    if (!files.includes(r.doc)) return;
+    const at = r.sec === undefined ? -1 : (docsOf([r.doc])[0]?.[1].blocks.findIndex((b) => b.kind === 'heading' && b.text === r.sec) ?? -1);
+    if (at >= 0) useApp.setState({ reveal: { path: r.doc, index: at, heading: r.sec! } });
+    // a deck's lens showing these numbers would open on them again: its cards, as a card's row does
+    if (r.doc === home) useApp.setState((s) => ({ lensViews: { ...s.lensViews, [r.doc]: 'cards' } }));
+    openNode(r.doc);
+  };
   const sum = n.summary;
-  if (!n.cards) return <div className="numbers"><p className="empty">no cards</p></div>;
-  const counts = [plural(n.cards, 'card'), n.fresh ? `${n.fresh} never seen` : '', n.suspended ? `${n.suspended} suspended` : ''].filter(Boolean).join(', ');
+  const rs = rn.summary;
+  // a lens with nothing under it and nothing read has no numbers; one with documents has its reading
+  if (!n.cards && !under.length && !reads.length) return <div className="numbers"><p className="empty">no cards</p></div>;
+  const counts = n.cards ? [plural(n.cards, 'card'), n.fresh ? `${n.fresh} never seen` : '', n.suspended ? `${n.suspended} suspended` : ''].filter(Boolean).join(', ') : 'no cards';
+  const made = [rs.extracts ? plural(rs.extracts, 'extract') : '', rs.sections ? plural(rs.sections, 'section') : ''].filter(Boolean).join(', ');
+  const layers = (
+    <div className="nb-layer" role="group" aria-label="the days are shaded by">
+      {(['cards', 'reading'] as const).map((v) => (
+        <button key={v} type="button" data-layer={v} data-on={show === v ? '1' : '0'} aria-pressed={show === v} disabled={v === 'cards' && !n.cards} onClick={() => useApp.setState({ numbersLayer: v })}>{v}</button>
+      ))}
+    </div>
+  );
   return (
     <div className="numbers">
       <p className="nb-line">
         <span className="nb-counts">{counts}</span>
-        <span className="nb-since">{n.since ? `logged since ${n.since}` : 'no reviews logged'}</span>
+        {n.cards > 0 && <span className="nb-since">{n.since ? `logged since ${n.since}` : 'no reviews logged'}</span>}
       </p>
 
-      {heat && sum && (
+      {show === 'reading' && (
+        <section className="nb-sec" data-sec="reading">
+          <div className="nb-head"><h6>reading a day</h6>{layers}</div>
+          <HeatGrid heat={readHeat} of="past" today={rn.today} picked={picked?.of === 'past' ? picked.day : null} say={sayRead} label="reading a day, the past year" onHot={onHot} onPick={onPick} />
+          <p className="nb-cap">
+            <span className="nb-hot" aria-live="polite">{hot?.of === 'past' ? readWords(rn, hot.cell.day) : picked?.of === 'past' ? readWords(rn, picked.day) : rn.since === undefined ? 'no reading logged yet' : rn.n ? 'press a day for what was read' : 'nothing read here yet'}</span>
+            <Legend heat={readHeat} unit="read or made" />
+          </p>
+          {picked?.of === 'past' && <ReadDayPanel day={picked.day} words={readWords(rn, picked.day)} rows={readingsOn(reads, rn.counted, picked.day)} title={(p) => titleOf(p, docs, root)} open={openRead} close={() => setPicked(null)} />}
+          <dl className="nb-sum" data-of="reading">
+            <div data-sum="read"><dt>read</dt><dd>{count(rs.read)} of {plural(rs.days, 'day')}{rn.since ? `, logged since ${rn.since}` : ''}</dd></div>
+            <div data-sum="passes"><dt>read on</dt><dd>{plural(rs.passes, 'time')}{rs.ms ? `, ${spanLabel(rs.ms)}` : ''}</dd></div>
+            <div data-sum="made"><dt>made</dt><dd>{made || 'nothing yet'}</dd></div>
+            {rs.best && <div data-sum="best"><dt>best day</dt><dd><button type="button" className="nb-go" onClick={() => setPicked({ of: 'past', day: rs.best!.day })}>{dayLabel(rs.best.day)}</button>, {readDayWords(rn.counted.byDay.get(rs.best.day))}</dd></div>}
+          </dl>
+          <table className="nb-periods" data-of="reading">
+            <thead><tr><th /><th>read on</th><th>extracts</th><th>sections</th><th>time</th></tr></thead>
+            <tbody>
+              {rs.periods.map((p) => (
+                <tr key={p.label} data-period={p.label}>
+                  <th>{p.label}</th>
+                  <td>{count(p.passes)}</td>
+                  <td>{count(p.extracts)}</td>
+                  <td>{count(p.sections)}</td>
+                  <td>{p.ms ? spanLabel(p.ms) : ''}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      )}
+
+      {show === 'cards' && (!heat || !sum) && (
         <section className="nb-sec" data-sec="past">
-          <h6>reviews a day</h6>
+          <div className="nb-head"><h6>reviews a day</h6>{layers}</div>
+        </section>
+      )}
+
+      {show === 'cards' && heat && sum && (
+        <section className="nb-sec" data-sec="past">
+          <div className="nb-head"><h6>reviews a day</h6>{layers}</div>
           <HeatGrid heat={heat} of="past" today={n.today.day} picked={picked?.of === 'past' ? picked.day : null} say={sayPast} onHot={onHot} onPick={onPick} />
           <p className="nb-cap">
             <span className="nb-hot" aria-live="polite">{hot?.of === 'past' ? pastWords(n, hot.cell.day) : picked?.of === 'past' ? pastWords(n, picked.day) : 'press a day for its reviews'}</span>
@@ -326,7 +434,7 @@ export function NumbersView({ home }: { home: string }) {
         </section>
       )}
 
-      <section className="nb-sec" data-sec="ahead">
+      {n.cards > 0 && <section className="nb-sec" data-sec="ahead">
         <h6>reviews due</h6>
         <div className="nb-beside">
           <div>
@@ -346,7 +454,7 @@ export function NumbersView({ home }: { home: string }) {
         </div>
         {picked?.of === 'ahead' && <DayPanel of="ahead" day={picked.day} words={aheadWords(n, { day: picked.day, n: dueRows(picked.day).all, level: 0 })} rows={dueRows(picked.day)} close={() => setPicked(null)} />}
         <Days weeks={n.ahead} today={n.today.day} label="ahead" />
-      </section>
+      </section>}
 
       {n.since && n.byWeek.some((w) => w.due) && (
         <section className="nb-sec nb-pair" data-sec="retention">

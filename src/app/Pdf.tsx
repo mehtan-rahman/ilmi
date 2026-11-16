@@ -862,11 +862,15 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
   /** A jump is about to be made from here: here is where ⌫ comes back to. */
   const leave = () => setTrail(id, pushPlace(trailOf(id), here()));
   /** A jump: here goes on the trail, the pages go to the place. */
-  const jump = (to: { page: number; y: number }) => { leave(); goPlace(to, JUMP_ROOM); };
-  /** A jump to a place that may lie outside these pages (a chapter cut from a book): said, not made. */
-  const goTo = (to: { page: number; y: number }) => {
+  const jump = (to: { page: number; y: number }, exact = false) => { leave(); goPlace(to, exact ? 0 : JUMP_ROOM); };
+  /**
+   * A jump to a place that may lie outside these pages (a chapter cut from a book): said, not made. `exact`: a place
+   * that was the top of the view when it was kept (a bookmark, a mark, a portal's end) comes back as it was; a
+   * heading, a link's end or a hit is given a little room over it.
+   */
+  const goTo = (to: { page: number; y: number }, exact = false) => {
     if (to.page < first || to.page > last) { notify(`p. ${to.page} is not among these pages`); return; }
-    jump(to);
+    jump(to, exact);
   };
   const goBack = (): boolean => {
     const r = stepBack(trailOf(id), here());
@@ -1538,7 +1542,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
   useEffect(() => { if (!active) setHints(null); }, [active]);
 
   // ── the contents: the palette asks this lens for them, and sends a place back (`book.ts`) ──
-  const lensNow = useRef<{ contents(): Promise<BookContents>; go(p: { page: number; y: number }): void; show(p: { page: number; y: number }, portal: string): void }>({ contents: async () => ({ entries: [], here: -1, from: 'none' }), go: () => {}, show: () => {} });
+  const lensNow = useRef<{ contents(): Promise<BookContents>; go(p: { page: number; y: number }, exact?: boolean): void; show(p: { page: number; y: number }, portal: string): void }>({ contents: async () => ({ entries: [], here: -1, from: 'none' }), go: () => {}, show: () => {} });
   lensNow.current = {
     async contents() {
       const at = here();
@@ -1552,7 +1556,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
       const entries = drawnRef.current.flatMap((d): ContentsEntry[] => { const b = d.passage.boxes[0]; return b ? [{ title: plainMath(d.passage.heading.text), depth: 0, page: b.page, y: b.y }] : []; });
       return { entries, here: contentsHere(entries, at.page, at.y), from: entries.length ? 'sections' : 'none' };
     },
-    go: (e) => goTo(e),
+    go: (e, exact) => goTo(e, exact),
     // beside the page being read: moved to a portal's destination, no jump made of it
     show: (p, portal) => {
       // pages not there yet: shown once they are (below)
@@ -1563,7 +1567,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
   };
   const activeRef = useRef(active);
   activeRef.current = active;
-  const lens = useMemo((): BookLens => ({ active: () => activeRef.current, contents: () => lensNow.current.contents(), go: (p) => lensNow.current.go(p), show: (p, portal) => lensNow.current.show(p, portal) }), []);
+  const lens = useMemo((): BookLens => ({ active: () => activeRef.current, contents: () => lensNow.current.contents(), go: (p, exact) => lensNow.current.go(p, exact), show: (p, portal) => lensNow.current.show(p, portal) }), []);
   useEffect(() => addLens(id, lens), [id, lens]);
   /** This pane is the one beside that follows the portals of the page being read. */
   const follower = useFollower(id, lens);
@@ -1580,7 +1584,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
   useEffect(() => {
     if (!wanted || !active || status !== 'ok' || !sizes.length) return;
     const p = takePlace(id);
-    if (p) goTo(p);
+    if (p) goTo(p, true);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wanted, active, status, sizes.length, id]);
 
@@ -1646,7 +1650,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     }
     const m = marksRef.current[letterId(letter)];
     if (!m) { notify(`no mark ${letter} in this pdf`); return; }
-    goTo(m);
+    goTo(m, true);
   };
 
   // highlights: `h` on a selection; `h` in one clears it; 1–4 choose its ink
@@ -1706,7 +1710,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     e.preventDefault();
     e.stopPropagation();
     popMenu({ left: e.clientX, top: e.clientY, bottom: e.clientY }, [
-      { label: 'go there', act: 'portal-go', run: () => (p.to.pdf !== undefined ? goToMark(p.to.pdf, p.to, id) : goTo(p.to)) },
+      { label: 'go there', act: 'portal-go', run: () => (p.to.pdf !== undefined ? goToMark(p.to.pdf, p.to, id) : goTo(p.to, true)) },
       { label: 'remove', act: 'portal-remove', run: () => dropMark(key, `portal removed · p. ${p.page}`) },
     ], 'book-menu');
   };

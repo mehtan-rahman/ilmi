@@ -6139,7 +6139,10 @@ export async function smokeNumbers(vault: Vault): Promise<void> {
     const cells = cellsOf('past');
     const busy = cells.filter((c) => Number(c.dataset.n) > 0);
     log(`the year: ${qa('.nb-grid > *', past).length} places, ${cells.length} days, ${busy.length} with reviews, levels ${[0, 1, 2, 3, 4].map((l) => cells.filter((c) => c.dataset.l === String(l)).length).join('/')}`);
-    must(qa('.nb-grid > *', past).length === 53 * 7 && cells.length > 300, 'a year of days: fifty-three weeks of seven, a cell a day the log knows');
+    // a phone's width holds half a year of weeks
+    const phone = useApp.getState().phone;
+    const WEEKS = phone ? 26 : 53;
+    must(qa('.nb-grid > *', past).length === WEEKS * 7 && cells.length > (phone ? 150 : 300), `${WEEKS} weeks of seven, a cell a day the log knows`);
     must(busy.length > 100 && [1, 2, 3, 4].every((l) => cells.some((c) => c.dataset.l === String(l))), 'the days shaded in four steps by their reviews');
     must(cells.every((c, i) => i === 0 || cells[i - 1]!.dataset.day! < c.dataset.day!), 'the days in order, oldest first');
     {
@@ -6165,9 +6168,10 @@ export async function smokeNumbers(vault: Vault): Promise<void> {
       const from = new Date(Date.now() - 364 * 86_400_000);
       const lo = dayOf(from);
       const inYear = busy.filter((c) => c.dataset.day! >= lo).length;
-      must(Number(/^(\d+)/.exec(sm.studied!)![1]) === inYear, `days studied (${sm.studied}) is the shaded cells of the year (${inYear})`);
+      // the lines are the year's on a phone too, where the cells are half of it
+      must(phone ? Number(/^(\d+)/.exec(sm.studied!)![1]) >= inYear : Number(/^(\d+)/.exec(sm.studied!)![1]) === inYear, `days studied (${sm.studied}) is the shaded cells of the year (${inYear})`);
       const best = busy.reduce((a, b) => (Number(b.dataset.n) > Number(a.dataset.n) ? b : a));
-      must(sm.best!.endsWith(`, ${Number(best.dataset.n).toLocaleString('en')} reviews`), `the best day is the busiest cell (${best.dataset.day}, ${best.dataset.n})`);
+      must(phone || sm.best!.endsWith(`, ${Number(best.dataset.n).toLocaleString('en')} reviews`), `the best day is the busiest cell (${best.dataset.day}, ${best.dataset.n})`);
     }
     const periods = qa('.nb-periods tbody tr').map((r) => qa('th, td', r).map((c) => c.textContent).join(' '));
     log(`periods: ${periods.join(' | ')}`);
@@ -6302,11 +6306,13 @@ export async function smokeNumbers(vault: Vault): Promise<void> {
       log(`collection line: ${q('.numbers .nb-line')?.textContent}; ${total} reviews in the year's cells, ${want} in the log`);
       must(total === want && total > 3000, `the collection's year is every review of the year (${total})`);
       await shot('numbers-collection');
-      // a phone's width: half a year of weeks, the cells still squares a finger finds, nothing past the edge
+      // a phone's width (a phone's own, or the lens narrowed to one on a desk): half a year of weeks, the cells still squares a finger finds, nothing past the edge
       const host = q<HTMLElement>('.numbers')!;
-      useApp.setState({ phone: true });
-      document.documentElement.dataset.shape = 'phone';
-      host.style.width = '343px';
+      if (!phone) {
+        useApp.setState({ phone: true });
+        document.documentElement.dataset.shape = 'phone';
+        host.style.width = '343px';
+      }
       await sleep(400);
       const grid = q('.nb-heat[data-of="past"] .nb-grid')!;
       const pc = qa<HTMLElement>('button.nb-cell', grid);
@@ -6318,12 +6324,16 @@ export async function smokeNumbers(vault: Vault): Promise<void> {
       must(wide.length === 0, 'nothing of the numbers runs past a phone\'s width');
       host.scrollIntoView({ block: 'start' });
       await shot('numbers-phone-width');
-      host.style.width = '';
-      delete document.documentElement.dataset.shape;
-      useApp.setState({ phone: false });
+      if (!phone) {
+        host.style.width = '';
+        delete document.documentElement.dataset.shape;
+        useApp.setState({ phone: false });
+      }
       await sleep(200);
     }
 
+    // the inspector and its options are the desk's and the iPad's: a phone has none
+    if (!phone) {
     // ── options on the notebook change the day's queue for its cards ──
     const qmPaths = under(QM);
     const newUnder = () => { refreshQueue(); const now = new Date(); return cards().filter((i) => qmPaths.has(i.path) && isNew(i) && isDue(i, now)); };
@@ -6402,6 +6412,8 @@ export async function smokeNumbers(vault: Vault): Promise<void> {
     useApp.getState().setTheme('dark');
     await shot('numbers-leech-dark');
     useApp.getState().setTheme('light');
+    }
+
     // ── reading, its own layer over the same year ──
     {
       const { openCollectionNumbers } = await import('./NumbersLens.js');
@@ -13595,6 +13607,9 @@ export async function smokeSweep(vault: Vault): Promise<void> {
 
     // ── the tree hands the focus to the page ──
     useApp.setState((s) => ({ open: { ...s.open, arabic: true } }));
+    // an upright iPad and a phone keep the tree in a sheet
+    const touch = useApp.getState().mobile;
+    if (touch && !q('.tree .trow')) useApp.setState({ sideSheet: true });
     const row = await poll(() => q<HTMLElement>(`.tree .trow[data-path="${VOCAB}"]:not(.card-row):not(.cards-row)`), 'the vocabulary deck\'s row in the tree');
     row.focus();
     row.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
@@ -13960,11 +13975,14 @@ export async function smokeSweep(vault: Vault): Promise<void> {
     useApp.setState({ paletteOpen: false });
 
     // ── an empty pane, and the tweaks inside the window ──
-    key('\\', { metaKey: true });
-    const empty = await poll(() => q<HTMLElement>('.pane-empty'), 'a second pane, empty, says what to do');
-    log(`empty pane: ${empty.textContent}`);
-    await shot('sweep-empty-pane');
-    key('\\', { metaKey: true });
+    // a second pane is a desk's: an iPad and a phone have one
+    if (!touch) {
+      key('\\', { metaKey: true });
+      const empty = await poll(() => q<HTMLElement>('.pane-empty'), 'a second pane, empty, says what to do');
+      log(`empty pane: ${empty.textContent}`);
+      await shot('sweep-empty-pane');
+      key('\\', { metaKey: true });
+    }
     useApp.setState({ tweaksOpen: true });
     const tw = await poll(() => q<HTMLElement>('.tweaks'), 'the tweaks');
     await sleep(300);
@@ -14207,6 +14225,7 @@ export async function smokeSioyek(vault: Vault): Promise<void> {
     await sleep(400);
     const home = at();
     log(`at the start: p. ${home.page} y ${home.y}, back ${home.back}, forward ${home.fwd}; ${qa('.pdf-page').length} pages`);
+    const phone = useApp.getState().phone;
     must(home.back === 0 && !/⌫ back/.test(strip()), 'no way back yet, and the strip does not offer one');
 
     // ── the contents ──
@@ -14240,7 +14259,7 @@ export async function smokeSioyek(vault: Vault): Promise<void> {
       const v = sc.getBoundingClientRect();
       must(h.top >= v.top && h.top < v.top + v.height * 0.5, `its heading is near the top of the view (${Math.round(h.top - v.top)} px down)`);
     }
-    must(/⌫\s*back/.test(strip()), `the strip now says ⌫ back (${strip().slice(0, 120)})`);
+    must(phone || /⌫\s*back/.test(strip()), `the strip now says ⌫ back (${strip().slice(0, 120)})`);
     const there = at();
 
     // ── back and forth ──
@@ -14350,9 +14369,12 @@ export async function smokeSioyek(vault: Vault): Promise<void> {
     await sleep(300);
 
     // ── look it up ──
+    // a page's text is not selected on an iPad or a phone (a finger's drag is the scroll and the box): what begins with a selection is the desk's
+    const touch = useApp.getState().mobile;
+    if (touch) log('on a touch device: no selection on a page, so no look-up and no highlight; skipped');
     sc.scrollTop = 0; sc.dispatchEvent(new Event('scroll'));
     await sleep(400);
-    {
+    if (!touch) {
       const layer = q(`.pdf-page[data-page="1"] .textLayer`)!;
       const walker = document.createTreeWalker(layer, NodeFilter.SHOW_TEXT);
       let node: Node | null = null;
@@ -14387,21 +14409,26 @@ export async function smokeSioyek(vault: Vault): Promise<void> {
     window.getSelection()?.removeAllRanges();
 
     // ── a bookmark ──
-    await scrollTo(1, 'occupies a microstate');
+    // far enough under the top that the section's heading is above the place on a small page too
+    await scrollTo(1, 'occupies a microstate', 30);
     const placeA = at();
     must(key('b'), 'b is taken');
     const name = await poll(() => q<HTMLInputElement>('.pdf-bar input.pb-name'), 'b opens a field for the place\'s name');
     log(`the name offered: "${name.value}"`);
-    must(/partition function/i.test(name.value) && document.activeElement === name, 'filled with the heading the place is under, the caret in it');
+    must(/partition function/i.test(name.value), 'filled with the heading the place is under');
+    log(`the caret: in ${(document.activeElement as HTMLElement | null)?.tagName}.${(document.activeElement as HTMLElement | null)?.className}`);
+    must(document.activeElement === name, 'the caret is in the field');
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(name, 'where z begins');
     name.dispatchEvent(new Event('input', { bubbles: true }));
     name.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
     await poll(() => view().dataset.bookmarks === '1' && q('.bmark'), '⏎ keeps it: a mark in the gutter');
     must(same(at(), placeA), 'the page has not moved');
     await poll(async () => Object.values(await marksFile()).some((m) => m.kind === 'bookmark' && m.name === 'where z begins' && m.page === 1), 'it is written under the paper\'s hash in .ilmi/marks/');
-    // a book's inspector opens only by its toggle
-    if (!q('.insp')) q<HTMLElement>('.top .insp-toggle:not(.side-toggle)')!.click();
-    await poll(() => qa('[data-marks="bookmarks"] li').some((l) => /where z begins/.test(l.textContent ?? '')), 'the inspector lists it');
+    // a book's inspector opens only by its toggle; a phone has none
+    if (!phone) {
+      if (!q('.insp')) q<HTMLElement>('.top .insp-toggle:not(.side-toggle)')!.click();
+      await poll(() => qa('[data-marks="bookmarks"] li').some((l) => /where z begins/.test(l.textContent ?? '')), 'the inspector lists it');
+    }
     await shot('sioyek-bookmark');
     if (q('.insp')) q<HTMLElement>('.top .insp-toggle:not(.side-toggle)')!.click();
     await sleep(400);
@@ -14428,7 +14455,10 @@ export async function smokeSioyek(vault: Vault): Promise<void> {
     const far = at();
     key("'");
     await poll(() => q('.pdf-bar [data-chord="go"]'), '\' waits for a letter');
+    const markAt = Object.values(await marksFile()).find((m) => m.kind === 'mark')!;
     key('a');
+    await sleep(1500);
+    log(`after ' a: at p. ${at().page} y ${at().y}; the mark p. ${markAt.page} y ${markAt.y}; where it was set p. ${placeA.page} y ${placeA.y}; chord ${q<HTMLElement>('.pdf-bar [data-chord]')?.dataset.chord ?? 'none'}`);
     await poll(() => same(at(), placeA), 'and a goes back to it');
     key('Backspace');
     await poll(() => same(at(), far), '⌫ returns from the mark');
@@ -14440,6 +14470,7 @@ export async function smokeSioyek(vault: Vault): Promise<void> {
     must(!q('.pdf-bar [data-chord]') && same(at(), far), 'a key that is no letter lets the mark go, and does nothing else');
 
     // ── a highlight ──
+    if (!touch) {
     await scrollTo(1, 'occupies a microstate');
     const selectWord = (page: number, word: string): DOMRect => {
       const layer = q(`.pdf-page[data-page="${page}"] .textLayer`)!;
@@ -14497,6 +14528,8 @@ export async function smokeSioyek(vault: Vault): Promise<void> {
     await poll(() => q('.pdf-hls .hl'), 'undo brings it back');
     window.getSelection()?.removeAllRanges();
 
+    }
+
     // ── the ruler ──
     (document.activeElement as HTMLElement | null)?.blur?.();
     must(key('v'), 'v is taken');
@@ -14541,7 +14574,8 @@ export async function smokeSioyek(vault: Vault): Promise<void> {
     await shot('sioyek-portal-peek');
     key('Escape');
     await poll(() => !q('.pdf-peek'), 'esc closes the peek');
-    // the pane beside follows
+    // the pane beside follows (a desk's: an iPad and a phone have the margin mark's peek)
+    if (!touch) {
     await scrollTo(1, 'A system held');
     useApp.setState({ paletteOpen: true });
     const pf2 = await poll(() => q<HTMLInputElement>('.palette-input input'), 'the palette');
@@ -14571,13 +14605,15 @@ export async function smokeSioyek(vault: Vault): Promise<void> {
     useApp.getState().setPanes((p) => closePane(p, p.panes.length - 1));
     await poll(() => useApp.getState().panes.panes.length === 1 && qa('.pdf-view').length === 1, 'the pane beside closed, the following ends');
 
+    }
+
     // ── they are there when the paper is opened again ──
     openNode('fleeting/idea-for-honors-thesis.md');
     await poll(() => activeTab(useApp.getState().panes)?.id !== BOOK && !q('.pdf-view'), 'the paper\'s tab left');
     openNode(BOOK);
-    await poll(() => { const v = q<HTMLElement>('.pdf-view'); return v && v.dataset.bookmarks === '1' && v.dataset.highlights === '1' && v.dataset.portals === '1' && q('.pdf-hls .hl') && q('.bmark'); }, 'opened again, its bookmark, highlight and portal are on the page', 30000);
+    await poll(() => { const v = q<HTMLElement>('.pdf-view'); return v && v.dataset.bookmarks === '1' && v.dataset.portals === '1' && (touch || (v.dataset.highlights === '1' && q('.pdf-hls .hl'))) && q('.bmark'); }, 'opened again, its bookmark, highlight and portal are on the page', 30000);
     const kinds = Object.values(await marksFile()).map((m) => m.kind).sort().join(' ');
-    must(kinds === 'bookmark highlight mark portal', `the file holds the four (${kinds})`);
+    must(kinds === (touch ? 'bookmark mark portal' : 'bookmark highlight mark portal'), `the file holds them (${kinds})`);
     (document.activeElement as HTMLElement | null)?.blur?.();
 
     // ── dark ──
@@ -14630,11 +14666,19 @@ export async function smokeCollections(vault: Vault): Promise<void> {
     closeVault();
     await poll(() => q('.welcome') && rowOf(mine), 'closed: the welcome lists the collection that was open');
     // a scratch collection, named on the welcome
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', bubbles: true, cancelable: true }));
-    const field = await poll(() => q<HTMLInputElement>('.welcome-name input'), 'n names a new collection');
-    setValue(field, A);
-    field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
-    await poll(() => (useApp.getState().vault ?? '').endsWith(`/${A}`) && useApp.getState().files.length > 0, 'it is made and opens', 20000);
+    if (useApp.getState().mobile) {
+      // a device's welcome makes no collection from nothing (it connects or joins): the scratch one is the sample's folder taken in again under the scratch name
+      const { importCollection } = await import('./collections.js');
+      const root = await importCollection(await sourceDir(), { name: A });
+      log(`taken in as ${root.split('/').pop()}`);
+      await openVault(root);
+    } else {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', bubbles: true, cancelable: true }));
+      const field = await poll(() => q<HTMLInputElement>('.welcome-name input'), 'n names a new collection');
+      setValue(field, A);
+      field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    }
+    await poll(() => (useApp.getState().vault ?? '').endsWith(`/${A}`) && useApp.getState().files.length > 0, 'it is made and opens', 30000);
     await sleep(600);
     closeVault();
     const row = await poll(() => q('.welcome') && rowOf(A), 'closed again: its row is on the welcome', 10000);

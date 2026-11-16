@@ -164,7 +164,7 @@ export interface BookLens {
   active(): boolean;
   contents(): Promise<BookContents>;
   /** Go to a place (an entry of the contents, a bookmark, a highlight): a jump, with the way back; one outside the pages shown is said. */
-  go(place: { page: number; y: number }): void;
+  go(place: { page: number; y: number }, exact?: boolean): void;
   /** Shown beside the page being read: moved to a portal's destination, no jump (milestone 77). */
   show?(place: { page: number; y: number }, portal: string): void;
 }
@@ -391,7 +391,7 @@ export function takePlace(id: string): { page: number; y: number } | null {
 /** Go to a place in the PDF `hash` from anywhere: in the book in front when it has those pages, else the document that has them opened there. */
 export function goToMark(hash: string, place: { page: number; y: number }, from?: string): void {
   const front = from ?? bookInFront();
-  if (front !== null && pdfHashOf(front) === hash) { lensOf(front)?.go(place); return; }
+  if (front !== null && pdfHashOf(front) === hash) { lensOf(front)?.go(place, true); return; }
   const id = bookFor(hash, place.page);
   if (id === null) { notify('that pdf is no longer in the collection · its marks are kept'); return; }
   openBookAt(id, place);

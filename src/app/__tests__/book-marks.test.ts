@@ -248,7 +248,7 @@ describe('bookmarks', () => {
     expect(rows().map((r) => r.querySelector('.pt')!.textContent)).toEqual(['ensembles']);
     await key('Enter', {}, palInput());
     expect(useApp.getState().paletteOpen).toBe(false);
-    expect(sc().scrollTop).toBeCloseTo(scrollFor(4, 0.5, 16));
+    expect(sc().scrollTop).toBeCloseTo(scrollFor(4, 0.5, 0));
     expect(back()).toBe(1);
   });
 
@@ -316,7 +316,8 @@ describe('marks', () => {
     await key("'");
     expect(bar()!.querySelector('[data-chord="go"]')!.textContent).toBe('go to mark…');
     await key('a');
-    expect(sc().scrollTop).toBeCloseTo(scrollFor(3, 0.5, 16));
+    // a place kept comes back as it was: no room over it
+    expect(sc().scrollTop).toBeCloseTo(scrollFor(3, 0.5, 0));
     expect(back()).toBe(1);
     await scrolled(scrollFor(1, 0.2));
     await key('M', { shiftKey: true });
@@ -366,7 +367,7 @@ describe('marks', () => {
     await scrolled(0);
     await key("'");
     await key('Q', { shiftKey: true });
-    expect(sc().scrollTop).toBeCloseTo(scrollFor(4, 0.3, 16));
+    expect(sc().scrollTop).toBeCloseTo(scrollFor(4, 0.3, 0));
     // from another book: the first is opened there
     for (const m of mounts.splice(0)) { act(() => m.root.unmount()); m.host.remove(); }
     await mountBook({ id: 'library/second.pdf', hash: OTHER, keep: true });
@@ -387,7 +388,7 @@ describe('marks', () => {
     await mountBook({ id: 'library/opened.pdf' });
     await act(async () => { openBookAt('library/opened.pdf', { page: 3, y: 0.25 }); });
     await settle();
-    expect(sc().scrollTop).toBeCloseTo(scrollFor(3, 0.25, 16));
+    expect(sc().scrollTop).toBeCloseTo(scrollFor(3, 0.25, 0));
     expect(back()).toBe(1);
     expect(takePlace('library/opened.pdf')).toBeNull();
   });
@@ -510,7 +511,7 @@ describe('highlights', () => {
     await typeIn(palInput(), 'canon');
     expect(rows().length).toBe(1);
     await key('Enter', {}, palInput());
-    expect(sc().scrollTop).toBeCloseTo(scrollFor(4, 0.6, 16));
+    expect(sc().scrollTop).toBeCloseTo(scrollFor(4, 0.6, 0));
     expect(back()).toBe(1);
   });
 

@@ -3875,7 +3875,7 @@ export async function smokeEditing(vault: Vault): Promise<void> {
     select(sp, sp.textContent!.split(/\s+/).slice(0, 4).join(' '));
     const fcue = await until(() => q<HTMLElement>('.pane-body .sel-cue'), 3000).catch(() => null);
     const fb = fcue ? qa<HTMLElement>('button', fcue).map((b) => b.textContent?.trim()).join(' | ') : 'none';
-    expect('frozen source toolbar', fb === 'card m | extract e', `${fb}; editable ${surface().isContentEditable}`);
+    expect('frozen source toolbar', fb === 'card m | section e', `${fb}; editable ${surface().isContentEditable}`);
     await shot('editing-frozen-toolbar');
     window.getSelection()?.removeAllRanges();
 

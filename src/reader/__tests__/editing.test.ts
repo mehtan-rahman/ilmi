@@ -301,7 +301,11 @@ describe('block rules, as typed', () => {
     const u = typer(para('~~~'), '~~~', 3);
     u.key('Enter');
     expect(u.key('Backspace')).toBe(true);
-    expect(fromDoc(u.view.state.doc)).toEqual([{ kind: 'paragraph', text: '~~~' }]);
+    expect(u.view.state.doc.childCount).toBe(1);
+    expect(u.view.state.doc.firstChild!.type).toBe(schema.nodes.paragraph);
+    expect(u.view.state.doc.textContent).toBe('~~~');
+    // the line is on the page, and not in what is written until it is entered: a file would read it as an open fence
+    expect(fromDoc(u.view.state.doc)).toEqual([]);
     expect(u.view.state.selection.from).toBe(4);
     // a fence in a paragraph with more text after the caret is a paragraph's ⏎
     const js = makeState(para('```js'), live);

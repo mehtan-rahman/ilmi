@@ -814,10 +814,11 @@ describe('live blocks', () => {
     view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, itemStart(view, 0, 0), itemEnd(view, 0, 1))));
     key(view.dom, 'Tab');
     expect(raw(view, 0)).toBe('- a\n  - b\n1. c');
-    // in a paragraph, Tab is not taken
+    // in a paragraph, Tab is taken and changes nothing (left to the webview it types a tab, which at a line's start reads back as code)
     const p = mount([{ kind: 'paragraph', text: 'plain' }]);
     caretAt(p, 1);
-    expect(key(p.dom, 'Tab')).toBe(false);
+    expect(key(p.dom, 'Tab')).toBe(true);
+    expect(p.state.doc.textContent).toBe('plain');
     // the list the file reads back is the one the editor holds
     const text = raw(view, 0);
     expect(fromDoc(toDoc(parse(`${text}\n`).doc.blocks))).toEqual([{ kind: 'raw', text }]);

@@ -4,18 +4,26 @@
 
 import { Fragment, type Node as PMNode } from 'prosemirror-model';
 import { cardForm, mathSpanEnd, type Block, type Card, type Heading, type Paragraph, type Raw, type SectionSchedule } from '../format/index.js';
+import { flatRanges, inlineRanges } from './inline.js';
 import { nodeToRaw, rawToNode } from './raw.js';
 import { schema } from './schema.js';
 
 export type MathPart = string | { math: string };
 
-/** Split text into literal runs and math spans, by the format's own rules. */
+/** The code spans of `text`: a `$` inside one is a dollar sign, never a formula's. */
+export function codeSpans(text: string): { from: number; to: number }[] {
+  if (!text.includes('`')) return [];
+  return flatRanges(inlineRanges(text)).filter((r) => r.kind === 'code').map((r) => ({ from: r.from, to: r.to }));
+}
+
+/** Split text into literal runs and math spans, by the format's own rules; a `$` inside a code span opens none. */
 export function mathSplit(text: string): MathPart[] {
   const out: MathPart[] = [];
+  const codes = text.includes('$') ? codeSpans(text) : [];
   let lit = '';
   let i = 0;
   while (i < text.length) {
-    if (text[i] === '$') {
+    if (text[i] === '$' && !codes.some((c) => c.from < i && i < c.to)) {
       const e = mathSpanEnd(text, i);
       if (e > 0) {
         if (lit) { out.push(lit); lit = ''; }
@@ -75,10 +83,21 @@ export function textOf(node: PMNode): string {
 }
 
 /**
+ * A paragraph that cannot be written as it stands, because the file would
+ * read it as something else and take what follows with it: a fence line
+ * typed and not yet entered (the rest of the note would be its code), or
+ * the empty `****` ⌘B leaves on an empty line (a rule; ⌘⇧X's `~~~~` is a
+ * fence). No file's paragraph is one of these (the parser reads such a
+ * line as the fence or the rule), so only an unfinished one typed here is.
+ */
+const UNFINISHED = /^ {0,3}(?:\*{4}|`{3,}[^`\n]*|~{3,}[^\n]*)[ \t]*$/;
+
+/**
  * Blocks from the editor's document. Empty prose is dropped (a blank line
  * is a separator, not a block). A paragraph split in two by Enter carries
  * its id to both halves; the first keeps it, later ones lose it, since an
- * id names one block.
+ * id names one block. An unfinished fence line or empty marker pair is
+ * left out until it is something (`UNFINISHED`).
  */
 export function fromDoc(doc: PMNode): Block[] {
   const out: Block[] = [];
@@ -103,6 +122,7 @@ export function fromDoc(doc: PMNode): Block[] {
         if (!text.trim()) return;
         const p: Paragraph = { kind: 'paragraph', text };
         const id = node.attrs.id as string | null;
+        if (id === null && !(node.attrs.extracts as string[] | null)?.length && UNFINISHED.test(text)) return;
         if (id !== null && !ids.has(id)) { p.id = id; ids.add(id); }
         const extracts = node.attrs.extracts as string[] | null;
         if (extracts?.length) p.extracts = [...extracts];

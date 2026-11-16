@@ -54,7 +54,7 @@ export function isolatedSpans(text: string): Span[] {
   for (const r of flatRanges(inlineRanges(blanked))) {
     if (r.kind === 'code') out.push({ from: r.from, to: r.to });
     // `](address)`: past the text, to the range's end
-    else if ((r.kind === 'link' || r.kind === 'image') && r.href) out.push({ from: r.inner.to, to: r.to });
+    else if ((r.kind === 'link' || r.kind === 'image') && r.href && r.to > r.inner.to) out.push({ from: r.inner.to, to: r.to });
   }
   return out.sort((a, b) => a.from - b.from);
 }

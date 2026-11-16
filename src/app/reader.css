@@ -405,6 +405,10 @@
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M2 5.2l2 2 4-4.4' fill='none' stroke='white' stroke-width='1.6'/%3E%3C/svg%3E");
   background-size: 100% 100%;
 }
+/* dark: the accent is a light gold, so the tick is drawn dark on it */
+[data-theme="dark"] .draft-doc .li-task[data-checked="1"] {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M2 5.2l2 2 4-4.4' fill='none' stroke='%231d1d20' stroke-width='1.6'/%3E%3C/svg%3E");
+}
 .draft-doc .li-task[data-checked="1"] ~ .li-text { color: var(--fg-3); }
 .draft-doc .li-text { flex: 1; min-width: 0; }
 /* a heading inside a list item (milestone 46): set as a heading, its chevron
@@ -767,7 +771,7 @@
 .composer .qa-fields input { border-bottom: 1px solid var(--line-2); }
 .composer .qa-fields textarea { min-height: 38px; }
 .composer .qa-fields textarea:focus,
-.composer .qa-fields input:focus { border-bottom-color: var(--accent-soft); }
+.composer .qa-fields input:focus { border-bottom-color: var(--accent); }
 .composer .ft {
   display: flex;
   align-items: center;

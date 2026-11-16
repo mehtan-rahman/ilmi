@@ -33,11 +33,11 @@ import { dueLabel, dueTone } from './items.js';
 import { pagesOf, titleOf } from './names.js';
 import { openPagesBeside } from './book.js';
 import { useApp, type DocInfo } from './store.js';
-import { currentVault, enrolReading, extractNode, openCards, openNode, renameNode, sectionNode, setFolds } from './vault.js';
+import { currentVault, enrolReading, extractNode, openCards, openNode, removeNode, renameNode, sectionNode, setFolds } from './vault.js';
 import { popMenu, type PopItem } from './popMenu.js';
 import { registerHeadings } from './headings.js';
 import { sectionMenu, setWriteThrough, writeDoc } from './sections.js';
-import { notify } from './land.js';
+import { failed, notify } from './land.js';
 import { bookOptions } from './bookNotes.js';
 import { fillCrops } from './bookPdf.js';
 import 'katex/dist/katex.min.css';
@@ -1957,7 +1957,21 @@ export function Reader({ id, active = true, onPages, notes = false }: ReaderProp
       }).catch(console.error);
       return;
     }
-    writer.run(() => extractNode(id, { text: s.text, blocks: s.blocks })).catch(console.error);
+    writer.run(async () => {
+      const made = await extractNode(id, { text: s.text, blocks: s.blocks });
+      const name = made.slice(made.lastIndexOf('/') + 1).replace(/\.md$/, '');
+      // as a section says so: where it went, and a way back (the extract gone, the passage no longer marked as taken)
+      notify(`extract ${name} · under this page, due today`, made, async () => {
+        await removeNode(made);
+        await writeDoc(id, (d) => {
+          for (const b of d.blocks) {
+            if ((b.kind !== 'paragraph' && b.kind !== 'card') || !b.extracts?.includes(name)) continue;
+            b.extracts = b.extracts.filter((n) => n !== name);
+            if (!b.extracts.length) delete b.extracts;
+          }
+        });
+      });
+    }).catch(failed('extract'));
   };
 
   // ── formatting from the toolbar, and the link field ──
@@ -2450,7 +2464,8 @@ function TitleField({ path, title, onDone }: { path: string; title: string; onDo
     done.current = true;
     const name = (el.textContent ?? '').replace(/\s+/g, ' ').trim();
     if (!name || name === title) { put(title); return; }
-    renameNode(path, name).catch((e: unknown) => { console.error(e); put(title); });
+    // a rename that did not happen says why, and the title goes back to the file's
+    renameNode(path, name).catch((e: unknown) => { put(title); failed('rename')(e); });
   };
   return (
     <h1

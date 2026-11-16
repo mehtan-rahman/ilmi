@@ -12,11 +12,11 @@ export {
   FORMAT_KEYS, pasteInto, type Edge, type StateOptions, type ImageLoader, type ImageState, type ImagesMeta,
 } from './plugins.js';
 export {
-  continueBlock, leaveBlock, joinBlock, joinIntoList, indentBlock, outdentBlock, moveItem, toggleTask, toggleTasks, renumberList,
+  continueBlock, leaveBlock, joinBlock, joinIntoList, joinListForward, indentBlock, outdentBlock, moveItem, toggleTask, toggleTasks, renumberList,
   subtreeEnd, prevSibling, nextSibling, parentItem, runAt, runNodes, insertCardItem, entryParts, type ListRun, type RunEntry,
 } from './lists.js';
 export {
-  toggleInline, setHeading, toggleList, toggleQuote, linkTarget, setLink, pasteLink, fenceRule, displayMathRule, flatText, pressed,
+  toggleInline, setHeading, toggleList, toggleQuote, linkTarget, setLink, pasteLink, fenceRule, closeFence, displayMathRule, flatText, pressed,
   type InlineToggle, type ListKind, type LinkTarget, type KeySpec,
 } from './commands.js';
 export { inlineRanges, markerRanges, flatRanges, imageOnly, literalSpans, type InlineRange, type InlineKind } from './inline.js';

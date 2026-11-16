@@ -695,6 +695,35 @@ export const joinIntoList: Command = (state, dispatch) => {
   return true;
 };
 
+/**
+ * Delete at the end of a paragraph or heading right before a list: the
+ * first item's text comes onto the line and the item goes (the list with
+ * it when it was the only one), as Backspace at that item's start and then
+ * at the paragraph's would have it. Never the whole list.
+ */
+export const joinListForward: Command = (state, dispatch) => {
+  const sel = state.selection;
+  if (!sel.empty || !(sel instanceof TextSelection)) return false;
+  const { $from } = sel;
+  const block = $from.parent;
+  if ($from.depth !== 1 || !block.isTextblock || isCode(block) || $from.parentOffset !== block.content.size) return false;
+  const index = $from.index(0);
+  if (index + 1 >= state.doc.childCount) return false;
+  const l = state.doc.child(index + 1);
+  if (l.type !== list) return false;
+  if (!dispatch) return true;
+  const listPos = $from.after(1);
+  const item = l.child(0);
+  const tr = state.tr;
+  if (l.childCount === 1) tr.delete(listPos, listPos + l.nodeSize);
+  else tr.delete(listPos + 1, listPos + 1 + item.nodeSize);
+  tr.insert($from.pos, item.content);
+  tr.setSelection(TextSelection.create(tr.doc, $from.pos));
+  if (l.childCount > 1) renumberList(tr, listPos + item.content.size);
+  dispatch(tr.scrollIntoView());
+  return true;
+};
+
 /** The task box at the item at `pos` ticked or cleared; false when the item has none. */
 export function toggleTask(state: EditorState, dispatch: ((tr: Transaction) => void) | undefined, pos: number): boolean {
   const item = state.doc.nodeAt(pos);

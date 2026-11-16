@@ -7,11 +7,13 @@
 // another lands as the same blocks.
 
 import { Fragment, Slice, type Node as PMNode, type NodeType } from 'prosemirror-model';
-import { Selection, TextSelection, type EditorState, type Transaction } from 'prosemirror-state';
+import { NodeSelection, Selection, TextSelection, type EditorState, type Transaction } from 'prosemirror-state';
 import { formatBody, parse, type Block } from '../format/index.js';
 import { fromDoc, toDoc } from './convert.js';
 import { htmlMarkdown } from '../import/paste.js';
-import { schema } from './schema.js';
+import { renumberList, subtreeEnd } from './lists.js';
+import { markerNumber } from './raw.js';
+import { indentWidth, schema } from './schema.js';
 
 const { paragraph, list, list_item, quote, quote_line, doc: docType } = schema.nodes as Record<'paragraph' | 'list' | 'list_item' | 'quote' | 'quote_line' | 'doc', NodeType>;
 
@@ -77,19 +79,72 @@ export function markdownBlocks(md: string): Block[] {
 }
 
 /**
- * Markdown pasted at the selection. In code it is the text as it is. Read
- * as a single paragraph, it is typed in where the caret is; otherwise its
- * blocks go in, a paragraph at either end running into the text around
- * the caret. Null when there is nothing to paste.
+ * A pasted list's items put into the list the caret is in: in place of an
+ * empty item, else after the item and its children; at that item's
+ * indentation (their own nesting kept under it), its kind of marker on the
+ * ones at the top, the numbers following on. The caret ends the last one.
+ * Null when the caret is not in one item.
+ */
+function pasteItems(state: EditorState, pasted: PMNode): Transaction | null {
+  const { $from, $to } = state.selection;
+  if (!(state.selection instanceof TextSelection) || $from.parent.type !== list_item || !$from.sameParent($to)) return null;
+  const tr = state.tr;
+  if (!state.selection.empty) tr.deleteSelection();
+  const $at = tr.selection.$from;
+  const item = $at.parent;
+  const l = $at.node(-1);
+  const listPos = $at.before(-1);
+  const index = $at.index(-1);
+  let min = Infinity;
+  pasted.forEach((it) => { min = Math.min(min, indentWidth(it.attrs.indent as string)); });
+  const ordered = markerNumber(item.attrs.marker as string) !== null;
+  const items: PMNode[] = [];
+  pasted.forEach((it) => {
+    const deeper = indentWidth(it.attrs.indent as string) - min;
+    const own = it.attrs.marker as string;
+    const marker = deeper === 0 && (markerNumber(own) !== null) !== ordered ? item.attrs.marker as string : own;
+    items.push(list_item.create({ ...it.attrs, indent: (item.attrs.indent as string) + ' '.repeat(deeper), marker }, it.content));
+  });
+  const size = items.reduce((n, it) => n + it.nodeSize, 0);
+  let at: number;
+  if (item.content.size === 0) {
+    at = $at.before();
+    tr.replaceWith(at, at + item.nodeSize, items);
+  } else {
+    at = listPos + 1;
+    for (let k = 0; k < subtreeEnd(l, index); k++) at += l.child(k).nodeSize;
+    tr.insert(at, items);
+  }
+  tr.setSelection(TextSelection.create(tr.doc, at + size - 1));
+  renumberList(tr, listPos);
+  return tr.scrollIntoView();
+}
+
+/**
+ * Markdown pasted at the selection. In code it is the text as it is. Over
+ * a selected card (or any block selected whole) it goes in after the block,
+ * which stays. Read as a single paragraph, it is typed in where the caret
+ * is; a list pasted into a list item joins that list; otherwise its blocks
+ * go in, a paragraph at either end running into the text around the caret.
+ * Null when there is nothing to paste.
  */
 export function pasteMarkdown(state: EditorState, md: string): Transaction | null {
   const sel = state.selection;
   if (sel.$from.parent.type.spec.code === true) return md ? state.tr.insertText(md).scrollIntoView() : null;
   const blocks = markdownBlocks(md);
   if (!blocks.length) return null;
+  if (sel instanceof NodeSelection && sel.node.isBlock && sel.$from.depth === 0) {
+    const nodes = toDoc(blocks).content;
+    const tr = state.tr.insert(sel.to, nodes);
+    return tr.setSelection(Selection.near(tr.doc.resolve(sel.to + nodes.size), -1)).scrollIntoView();
+  }
   const one = blocks.length === 1 ? blocks[0]! : null;
   if (one?.kind === 'paragraph' && one.id === undefined && !one.extracts?.length) return state.tr.insertText(one.text).scrollIntoView();
   const content = toDoc(blocks).content;
+  if (content.childCount === 1 && content.firstChild!.type === list) {
+    const tr = pasteItems(state, content.firstChild!);
+    if (tr) return tr;
+  }
   const open = (n: PMNode | null) => (n?.type === paragraph ? 1 : 0);
   const slice = new Slice(content, open(content.firstChild), open(content.lastChild));
   return state.tr.replaceSelection(slice).scrollIntoView();

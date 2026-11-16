@@ -16,18 +16,18 @@ import { inkAreas, type InkBoxes } from './inkArea.js';
 import { baseKeymap, chainCommands, exitCode } from 'prosemirror-commands';
 import { gapCursor } from 'prosemirror-gapcursor';
 import { history, redo, undo } from 'prosemirror-history';
-import { InputRule, inputRules, textblockTypeInputRule } from 'prosemirror-inputrules';
+import { InputRule, inputRules } from 'prosemirror-inputrules';
 import { keymap } from 'prosemirror-keymap';
 import type { Node as PMNode } from 'prosemirror-model';
 import { EditorState, NodeSelection, Plugin, PluginKey, Selection, TextSelection, type Command, type Transaction } from 'prosemirror-state';
 import { Decoration, DecorationSet } from 'prosemirror-view';
 import { mathSpanEnd, type Block } from '../format/index.js';
-import { mathSplit, toDoc } from './convert.js';
+import { codeSpans, mathSplit, toDoc } from './convert.js';
 import { flatRanges, imageOnly, inlineRanges, literalSpans, markerRanges, type InlineRange } from './inline.js';
 import { editorialRanges } from './marks.js';
 import { cursorIndex, proseIndices } from './marker.js';
-import { blockRules, displayMathRule, enterRules, fenceRule, pasteLink, pressed, setHeading, toggleInline, toggleList, toggleQuote, undoRule, type KeySpec } from './commands.js';
-import { continueBlock, indentBlock, joinBlock, joinIntoList, moveItem, outdentBlock, toggleTasks } from './lists.js';
+import { anchored, blockRules, closeFence, displayMathRule, enterRules, fenceRule, flatText, pasteLink, pressed, setHeading, toggleInline, toggleList, toggleQuote, undoRule, type KeySpec } from './commands.js';
+import { continueBlock, indentBlock, joinBlock, joinIntoList, joinListForward, moveItem, outdentBlock, toggleTasks } from './lists.js';
 import { schema } from './schema.js';
 import { findPlugin } from './find.js';
 import { clipboardText, pasteMarkdown } from './insert.js';
@@ -44,13 +44,35 @@ const isCode = (node: PMNode): boolean => node.type.spec.code === true;
 
 // ── input rules ──────────────────────────────────────────────────
 
-const headingRule = textblockTypeInputRule(/^(#{1,6})\s$/, schema.nodes.heading!, (m) => ({ level: m[1]!.length }));
+/** `# ` at a block's start: a heading. Not of a paragraph with an id or extracts, which a heading cannot carry. */
+const headingRule = new InputRule(/^(#{1,6})\s$/, (state, match, start, end) => {
+  const $start = state.doc.resolve(start);
+  if (anchored($start.parent)) return null;
+  if (!$start.node(-1).canReplaceWith($start.index(-1), $start.indexAfter(-1), schema.nodes.heading!)) return null;
+  return state.tr.delete(start, end).setBlockType(start, start, schema.nodes.heading!, { level: match[1]!.length });
+});
 
-/** Typing the closing `$` of a valid span turns it into a chip. */
+/** Is offset `off` of a textblock's text code: inside a code span, or after a backtick whose twin is not typed yet? */
+function inCode(text: string, off: number): boolean {
+  const codes = codeSpans(text);
+  if (codes.some((c) => c.from < off && off < c.to)) return true;
+  for (let i = 0; i < off; i++) {
+    if (text[i] === '\\') { i++; continue; }
+    if (text[i] !== '`') continue;
+    const span = codes.find((c) => c.from <= i && i < c.to);
+    if (!span) return true;
+    i = span.to - 1;
+  }
+  return false;
+}
+
+/** Typing the closing `$` of a valid span turns it into a chip; not when the span starts in code (`` `$HOME` and `$PATH` ``). */
 function mathRule(re: RegExp): InputRule {
   return new InputRule(re, (state, match, start, end) => {
     const raw = match[0];
     if (mathSpanEnd(raw, 0) !== raw.length) return null;
+    const $start = state.doc.resolve(start);
+    if (inCode(flatText($start.parent), start - $start.start())) return null;
     return state.tr.replaceWith(start, end, schema.nodes.math!.create({ raw }));
   });
 }
@@ -361,7 +383,7 @@ function redrawMarkers(set: DecorationSet, doc: PMNode, blocks: Iterable<number>
   return set;
 }
 
-/** The ranges of the textblock around a collapsed caret, with their absolute positions. */
+/** The ranges of the textblock around a collapsed caret that have markers (a bare address has none), with their absolute positions. */
 function rangesAround(sel: Selection): Edge[] {
   if (!sel.empty || !(sel instanceof TextSelection)) return [];
   const $from = sel.$from;
@@ -370,7 +392,7 @@ function rangesAround(sel: Selection): Edge[] {
   $from.parent.forEach((child, off) => {
     if (!child.isText || !child.text) return;
     const base = $from.start() + off;
-    for (const r of flatRanges(inlineRanges(child.text))) out.push({ from: base + r.from, to: base + r.to });
+    for (const r of flatRanges(inlineRanges(child.text))) if (markerRanges(r).length) out.push({ from: base + r.from, to: base + r.to });
   });
   return out;
 }
@@ -590,18 +612,74 @@ const lineBreak: Command = (state, dispatch) => {
   return true;
 };
 
+/** A block that is one thing to the keys: a card, a raw block the page does not edit as itself. */
+const blockAtom = (node: PMNode): boolean => node.isBlock && node.isAtom;
+
+/**
+ * Backspace (`dir` -1) at the start of a block right after a card, or
+ * Delete (1) at the end of the one right before it: the card is selected,
+ * not deleted, so the press that takes it is the next one, on a card seen
+ * selected. The same for a raw block, and for Delete before a table. An
+ * empty paragraph is left to the default, which takes the paragraph and
+ * selects what it stood beside.
+ */
+function selectNeighbour(dir: -1 | 1): Command {
+  return (state, dispatch) => {
+    const sel = state.selection;
+    if (!sel.empty || !(sel instanceof TextSelection)) return false;
+    const { $from } = sel;
+    const block = $from.parent;
+    if ($from.depth !== 1 || !block.isTextblock) return false;
+    if ($from.parentOffset !== (dir < 0 ? 0 : block.content.size)) return false;
+    const index = $from.index(0) + dir;
+    if (index < 0 || index >= state.doc.childCount) return false;
+    const node = state.doc.child(index);
+    const table = dir > 0 && node.type === schema.nodes.table;
+    if (!table && !(blockAtom(node) && block.content.size > 0)) return false;
+    const pos = dir < 0 ? $from.before(1) - node.nodeSize : $from.after(1);
+    dispatch?.(state.tr.setSelection(NodeSelection.create(state.doc, pos)).scrollIntoView());
+    return true;
+  };
+}
+
+/** Is a whole block selected as one node: a card, a raw block, a table? (A formula's chip is inline, and typed over as text is.) */
+const blockSelected = (state: EditorState): boolean => state.selection instanceof NodeSelection && state.selection.node.isBlock;
+
+/**
+ * A selected block is not typed over: a character typed while a card is
+ * selected (space, as in review; a letter meant for a shortcut) is dropped,
+ * and Backspace or Delete held down stops at a block it has just selected
+ * instead of going on through it. `# ` at the start of a paragraph with an
+ * id or extracts does not take its space: written as it stands, the line
+ * would be read back as a heading and the id lost.
+ */
+const guards = new Plugin({
+  props: {
+    handleTextInput(view, from, to, text) {
+      if (blockSelected(view.state)) return true;
+      if (text !== ' ' || from !== to) return false;
+      const $from = view.state.doc.resolve(from);
+      return anchored($from.parent) && /^#{1,6}$/.test($from.parent.textBetween(0, $from.parentOffset, undefined, '\ufffc'));
+    },
+    handleKeyDown(view, event) {
+      return event.repeat && (event.key === 'Backspace' || event.key === 'Delete') && blockSelected(view.state);
+    },
+  },
+});
+
 const keys = keymap({
   'Mod-z': undo,
   'Shift-Mod-z': redo,
   'Mod-y': redo,
   'Shift-Enter': chainCommands(cellBreak, lineBreak),
-  Enter: chainCommands(cellDown, openMath, fenceRule, displayMathRule((tr, pos) => tr.setMeta(mathEditKey, pos)), continueBlock),
+  Enter: chainCommands(cellDown, openMath, closeFence, fenceRule, displayMathRule((tr, pos) => tr.setMeta(mathEditKey, pos)), continueBlock),
   'Mod-Enter': chainCommands(rowBelow, toggleTasks, exitCode),
   // a rule just fired: Backspace puts the typed text back
-  Backspace: chainCommands(undoRule, revealBackward, joinBlock, joinIntoList),
-  Delete: revealForward,
-  Tab: chainCommands(nextCell, indentBlock),
-  'Shift-Tab': chainCommands(prevCell, outdentBlock),
+  Backspace: chainCommands(undoRule, revealBackward, joinBlock, joinIntoList, selectNeighbour(-1)),
+  Delete: chainCommands(revealForward, joinListForward, selectNeighbour(1)),
+  // Tab is the page's everywhere: left to the webview it types a tab, which at a line's start reads back as code
+  Tab: chainCommands(nextCell, indentBlock, () => true),
+  'Shift-Tab': chainCommands(prevCell, outdentBlock, () => true),
 });
 
 /**
@@ -711,7 +789,7 @@ export function makeState(blocks: Block[], opts: StateOptions): EditorState {
   const state = EditorState.create({
     doc: toDoc(blocks),
     // images before marks: the marks read the images' state as it is after the same transaction
-    plugins: [...(opts.ink ? [inkAreas(opts.ink)] : []), frozenPlugin(opts.frozen), slashPlugin({ openMath: (tr, pos) => tr.setMeta(mathEditKey, pos) }), findPlugin, rules, enterRules, formatKeys, keys, keymap(baseKeymap), history(), gapCursor(), mathReform, mathEdit, images(opts.images), marks, marker, direction, codeColours, foldPlugin, tablePlugin, landed, ...(opts.book ? [bookPlugin(opts.book)] : [])],
+    plugins: [...(opts.ink ? [inkAreas(opts.ink)] : []), frozenPlugin(opts.frozen), slashPlugin({ openMath: (tr, pos) => tr.setMeta(mathEditKey, pos) }), findPlugin, guards, rules, enterRules, formatKeys, keys, keymap(baseKeymap), history(), gapCursor(), mathReform, mathEdit, images(opts.images), marks, marker, direction, codeColours, foldPlugin, tablePlugin, landed, ...(opts.book ? [bookPlugin(opts.book)] : [])],
   });
   const read = opts.pos === null ? state : state.apply(state.tr.setMeta(markerKey, opts.pos));
   return folds.length ? read.apply(read.tr.setMeta(foldKey, { keys: folds } satisfies FoldMeta)) : read;

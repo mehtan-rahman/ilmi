@@ -84,7 +84,8 @@ function bracketed(text: string, i: number, end: number): InlineRange | null {
   const dest = destination(text, close, end);
   if (!dest) return null;
   const inner = { from: open + 1, to: close - 1 };
-  const children = image ? [] : parseSeq(text, inner.from, inner.to).ranges;
+  // a link's text holds no bare address of its own
+  const children = image ? [] : parseSeq(text, inner.from, inner.to, undefined, false).ranges;
   return { from: i, to: dest.end, kind: image ? 'image' : 'link', inner, href: dest.href, children };
 }
 
@@ -100,6 +101,30 @@ function codeSpan(text: string, i: number, end: number): InlineRange | null {
     } else j++;
   }
   return null;
+}
+
+const ADDRESS = /https?:\/\/[^\s<>]+/iy;
+
+/**
+ * A bare address starting at `i` (`http://` or `https://`, not inside a
+ * word): a link with no markers, its address the text. Punctuation at its
+ * end is the sentence's (a closing bracket only when it has no opener in
+ * the address), and so are emphasis marks.
+ */
+function bareLink(text: string, i: number, end: number): InlineRange | null {
+  if (isWord(text[i - 1])) return null;
+  ADDRESS.lastIndex = i;
+  const m = ADDRESS.exec(text);
+  if (!m) return null;
+  let url = m[0].slice(0, end - i);
+  const count = (c: string) => url.split(c).length - 1;
+  for (;;) {
+    const last = url[url.length - 1]!;
+    if (/[.,;:!?'"*_~`]/.test(last) || (last === ')' && count(')') > count('(')) || (last === ']' && count(']') > count('['))) url = url.slice(0, -1);
+    else break;
+  }
+  if (!/^https?:\/\/[^/]/i.test(url)) return null;
+  return { from: i, to: i + url.length, kind: 'link', inner: { from: i, to: i + url.length }, href: url, children: [] };
 }
 
 /** Can a run of `ch` at `i` open emphasis? */
@@ -119,9 +144,10 @@ function closes(text: string, i: number, n: number, ch: string): boolean {
 /**
  * Inline ranges from `start` to `end`, stopping at a `closer` when one is
  * sought and found; nested constructs are parsed by recursion, so a closer
- * inside a nested one belongs to it.
+ * inside a nested one belongs to it. A bare address is a link too, unless
+ * `bare` is off (inside a link's text).
  */
-function parseSeq(text: string, start: number, end: number, closer?: Closer): Seq {
+function parseSeq(text: string, start: number, end: number, closer?: Closer, bare = true): Seq {
   const ranges: InlineRange[] = [];
   let i = start;
   while (i < end) {
@@ -147,7 +173,7 @@ function parseSeq(text: string, start: number, end: number, closer?: Closer): Se
       // GFM's strikethrough: two tildes each side, flanking as emphasis
       const n = runLength(text, i, c);
       if (n === 2 && opens(text, i, n, c)) {
-        const inner = parseSeq(text, i + 2, end, { ch: c, n: 2 });
+        const inner = parseSeq(text, i + 2, end, { ch: c, n: 2 }, bare);
         if (inner.at < end) {
           ranges.push({ from: i, to: inner.at + 2, kind: 'strike', inner: { from: i + 2, to: inner.at }, children: inner.ranges });
           i = inner.at + 2;
@@ -161,14 +187,14 @@ function parseSeq(text: string, start: number, end: number, closer?: Closer): Se
       const n = runLength(text, i, c);
       if (opens(text, i, n, c)) {
         if (n >= 2) {
-          const inner = parseSeq(text, i + 2, end, { ch: c, n: 2 });
+          const inner = parseSeq(text, i + 2, end, { ch: c, n: 2 }, bare);
           if (inner.at < end) {
             ranges.push({ from: i, to: inner.at + 2, kind: 'strong', inner: { from: i + 2, to: inner.at }, children: inner.ranges });
             i = inner.at + 2;
             continue;
           }
         }
-        const inner = parseSeq(text, i + 1, end, { ch: c, n: 1 });
+        const inner = parseSeq(text, i + 1, end, { ch: c, n: 1 }, bare);
         if (inner.at < end) {
           ranges.push({ from: i, to: inner.at + 1, kind: 'em', inner: { from: i + 1, to: inner.at }, children: inner.ranges });
           i = inner.at + 1;
@@ -177,6 +203,10 @@ function parseSeq(text: string, start: number, end: number, closer?: Closer): Se
       }
       i += n;
       continue;
+    }
+    if (bare && (c === 'h' || c === 'H')) {
+      const r = bareLink(text, i, end);
+      if (r) { ranges.push(r); i = r.to; continue; }
     }
     i++;
   }

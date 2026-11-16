@@ -28,7 +28,7 @@ export function flatText(node: PMNode): string {
 const isCode = (node: PMNode): boolean => node.type.spec.code === true;
 
 /** A paragraph that names itself (`^id`) or holds extracts: turned into anything else it would lose them. */
-const anchored = (node: PMNode): boolean => node.type === paragraph && (node.attrs.id !== null || !!(node.attrs.extracts as string[] | null)?.length);
+export const anchored = (node: PMNode): boolean => node.type === paragraph && (node.attrs.id !== null || !!(node.attrs.extracts as string[] | null)?.length);
 
 // ── inline: markers in and out ───────────────────────────────────
 
@@ -179,6 +179,12 @@ export function setLink(state: EditorState, target: LinkTarget, href: string): T
   const node = $start.parent;
   const link = flatRanges(inlineRanges(flatText(node))).find((r) => r.kind === 'link' && start + r.from === target.from && start + r.to === target.to);
   if (!link) return null;
+  if (link.inner.from === link.from && link.inner.to === link.to) {
+    // a bare address is its own text: a new address takes its place; with none it stays as it is
+    if (!dest) return null;
+    tr.insertText(dest, target.from, target.to);
+    return tr.setSelection(TextSelection.create(tr.doc, target.from, target.from + dest.length));
+  }
   if (!dest) {
     tr.delete(start + link.inner.to, start + link.to).delete(start + link.from, start + link.inner.from);
     return tr.setSelection(TextSelection.create(tr.doc, start + link.from, start + link.inner.to - 1));
@@ -516,6 +522,34 @@ export const fenceRule: Command = (state, dispatch) => {
     return true;
   }
   return false;
+};
+
+/**
+ * ⏎ at the end of a code block whose last line is its closing fence, typed:
+ * the line goes (the block closes there already, or does now if its fence
+ * never closed) and the caret goes on in a paragraph below the block.
+ */
+export const closeFence: Command = (state, dispatch) => {
+  const sel = state.selection;
+  if (!sel.empty) return false;
+  const { $from } = sel;
+  const block = $from.parent;
+  if (block.type !== code_block || $from.depth !== 1 || $from.parentOffset !== block.content.size) return false;
+  const mark = /^ {0,3}(`{3,}|~{3,})/.exec(block.attrs.fence as string)?.[1];
+  if (!mark) return false;
+  const text = block.textContent;
+  const cut = text.lastIndexOf('\n');
+  const last = text.slice(cut + 1);
+  if (!new RegExp(`^ {0,3}${mark[0]}{${mark.length},}[ \\t]*$`).test(last)) return false;
+  if (!dispatch) return true;
+  const pos = $from.before();
+  const tr = state.tr.delete(pos + 1 + Math.max(cut, 0), pos + 1 + text.length);
+  if (block.attrs.close === null) tr.setNodeMarkup(pos, undefined, { ...block.attrs, close: last });
+  const after = pos + tr.doc.nodeAt(pos)!.nodeSize;
+  tr.insert(after, paragraph.create());
+  tr.setSelection(TextSelection.create(tr.doc, after + 1));
+  dispatch(tr.scrollIntoView());
+  return true;
 };
 
 /** `$$` alone in a paragraph, then ⏎: an empty display formula with its editor open. */

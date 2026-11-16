@@ -213,9 +213,10 @@ export function App() {
         useApp.setState((s) => ({ tweaksOpen: !s.tweaksOpen }));
         return;
       }
-      // ⌘= ⌘− ⌘0: the page's text size, from anywhere, the editor included
+      // ⌘= ⌘− ⌘0: the page's text size, from anywhere, the editor included; over a book's pages they are the
+      // pages' zoom (`Pdf.tsx` took them, its default prevented)
       if (!e.shiftKey && !e.altKey && (e.key === '=' || e.key === '+' || e.key === '-' || e.key === '0')) {
-        // ⌘0 in a note is a paragraph (the editor took it): the text size stays
+        // ⌘0 in a note is a paragraph (the editor took it), any of them a book's zoom: the text size stays
         if (e.defaultPrevented) return;
         e.preventDefault();
         const s = useApp.getState();

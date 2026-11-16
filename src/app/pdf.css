@@ -196,6 +196,11 @@
 /* the words over the pages stay at the pane's top as the pages scroll: `notes` is the iPad's one way to the note and back */
 .book .pdf-view > .meta { position: sticky; top: 0; z-index: 6; background: var(--paper); margin-top: -22px; padding-top: 22px; padding-bottom: 8px; }
 .book .pdf-page { scroll-margin-top: 52px; }
+/* zoomed past the pane (`Pdf.tsx`): the pages start at the pane's left and scroll sideways in the scroller that scrolls
+   them down (centred, their left would be out of reach); the words over them, the title and the search stay in the
+   pane, as wide as it is */
+.book .book-pages .reader-wrap[data-wide="1"] { align-items: flex-start; }
+.book .reader-wrap[data-wide="1"] .pdf-view > :is(.meta, h1, .pdf-bar) { position: sticky; left: var(--fit-left, 0px); width: var(--fit-w, auto); max-width: none; box-sizing: border-box; }
 /* `notes` among the words over the pages: lit while the note is open beside them */
 .reader .meta .notes-toggle[data-on="1"] { color: var(--fg-1); text-decoration: underline; text-decoration-color: var(--accent); text-decoration-thickness: 1.5px; text-underline-offset: 4px; }
 html[data-mobile="1"] .reader .meta .notes-toggle { padding: 12px 8px; margin: -12px -8px; }

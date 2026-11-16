@@ -37,6 +37,13 @@
 // PDF's hash and the page's number, and every device lays the picture made
 // of them over the page (`PageInk`), the Mac too; while a canvas lies over a
 // page its picture stands aside, the same strokes twice otherwise.
+//
+// The pages may be drawn larger than they fit: ⌘= ⌘− step a book's zoom
+// (`ZOOMS`, fit the floor), ⌘0 is fit again, a pinch on a trackpad steps
+// once. The zoom multiplies the one scale everything on the pages is laid
+// out by, so boxes, writing, highlights and the read bar follow; pages wider
+// than the pane scroll sideways in the scroller that scrolls them down. Kept
+// by the book's id for as long as the app runs, as its place is.
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { boxesEnd, formatClip, meta, sectionDismissed, setField, type Box, type Doc } from '../format/index.js';
@@ -58,7 +65,7 @@ import { ExamTag } from './ExamTag.js';
 import { TabsToggle } from './TabsToggle.js';
 import { useApp, type DocInfo } from './store.js';
 import { useDoc } from './useDoc.js';
-import { currentVault, enrolReading } from './vault.js';
+import { currentVault, enrolReading, logReading, unlogReading } from './vault.js';
 import { writeDoc } from './sections.js';
 import { notify } from './land.js';
 import { appNow } from './clock.js';
@@ -79,6 +86,14 @@ const TAG_ROOM = 210;
 const PAGE_MAX = 960;
 /** How far down the view the place kept across a change of scale is, px: under the words over the pages. */
 const PLACE_AT = 60;
+/** The zooms a book's pages step through: 1 is the pages fitted to the pane, the least there is. */
+export const ZOOMS = [1, 1.25, 1.5, 2, 2.5, 3];
+/** The most pixels a page's canvas is drawn with: past it the page is drawn coarser, not larger (a canvas over WebKit's limit draws nothing). */
+const CANVAS_MAX = 16_000_000;
+/** Zoomed, a page this far outside the view gives its canvas back, px. */
+const FAR = AHEAD * 3;
+/** A pinch's wheel events closer together than this are one gesture, ms. */
+const PINCH_GAP = 260;
 /** How far back from a passage the lens reads pages for a heading to name it. */
 const NAME_BACK = 30;
 
@@ -142,7 +157,15 @@ function hitAt(pages: Find['pages'], at: number): { page: number; k: number } | 
   return null;
 }
 
-const places = new Map<string, { top: number; at: { page: number; y: number } | null }>();
+const places = new Map<string, { top: number; at: { page: number; y: number } | null; x: number | null }>();
+/** Each book's zoom, by its id, where it is not 1: kept as its place is, until the app closes. */
+const zooms = new Map<string, number>();
+/** The zoom one step in (`dir` 1) or out (-1) from `z`; 0 is fit. */
+export function zoomStep(z: number, dir: number): number {
+  if (dir === 0) return 1;
+  const at = ZOOMS.reduce((best, v, i) => (Math.abs(v - z) < Math.abs(ZOOMS[best]! - z) ? i : best), 0);
+  return ZOOMS[Math.max(0, Math.min(ZOOMS.length - 1, at + Math.sign(dir)))]!;
+}
 
 interface Rect { left: number; top: number; width: number; height: number }
 
@@ -274,8 +297,20 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
   const [sizes, setSizes] = useState<Size[]>([]);
   const [textless, setTextless] = useState(false);
-  /** The room the pages have: the pane's width inside its padding, and that padding. */
-  const [room, setRoom] = useState({ w: 0, pad: 0 });
+  /** The room the pages have: the pane's width inside its padding, and that padding (`left` the padding before them). */
+  const [room, setRoom] = useState({ w: 0, pad: 0, left: 0 });
+  /** Moves when this book's zoom does (`zooms`). */
+  const [, setZoomRev] = useState(0);
+  const zoom = zooms.get(id) ?? 1;
+  const zoomRef = useRef(zoom);
+  zoomRef.current = zoom;
+  /** One step in or out, or (0) back to fit. */
+  const zoomBy = useCallback((dir: number) => {
+    const next = zoomStep(zooms.get(id) ?? 1, dir);
+    if (next === (zooms.get(id) ?? 1)) return;
+    if (next === 1) zooms.delete(id); else zooms.set(id, next);
+    setZoomRev((n) => n + 1);
+  }, [id]);
   const [tick, setTick] = useState(0);
   const [sel, setSel] = useState<Sel | null>(null);
   const [current, setCurrent] = useState(1);
@@ -465,8 +500,9 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     const measure = () => {
       const cs = getComputedStyle(el);
       const pad = parseFloat(cs.paddingRight) || 0;
-      const w = el.clientWidth - (parseFloat(cs.paddingLeft) || 0) - pad;
-      setRoom((r) => (r.w === w && r.pad === pad ? r : { w, pad }));
+      const left = parseFloat(cs.paddingLeft) || 0;
+      const w = el.clientWidth - left - pad;
+      setRoom((r) => (r.w === w && r.pad === pad && r.left === left ? r : { w, pad, left }));
     };
     const ro = new ResizeObserver(measure);
     ro.observe(el);
@@ -476,7 +512,11 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
 
   const colW = room.w;
   const maxW = sizes.reduce((m, s) => Math.max(m, s.w), 0) || 612;
-  const pageW = Math.max(120, Math.min(PAGE_MAX, colW));
+  /** The width a page is fitted to; the zoom is of this, so it is of the pane as it is (a note beside narrows it). */
+  const fitW = Math.max(120, Math.min(PAGE_MAX, colW));
+  const pageW = fitW * zoom;
+  /** Zoomed past the pane: the pages scroll sideways, the words over them stay. */
+  const wide = colW > 0 && pageW > colW;
   /** The sections' names sit beside the page only where a centred page leaves them the room. */
   const roomy = (colW - pageW) / 2 + room.pad >= TAG_ROOM;
   const scale = colW > 0 ? pageW / maxW : 1;
@@ -507,6 +547,8 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
   // ── rendering, as pages come near ──
   const scaleRef = useRef(scale);
   scaleRef.current = scale;
+  /** The scale the pages have at fit. */
+  const fit = scale / zoom;
   const renderRef = useRef<(n: number) => Promise<void>>(async () => {});
   const renderPage = useCallback(async (n: number) => {
     const el = pageEls.current.get(n);
@@ -515,7 +557,8 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     try {
       const page = await pdf.getPage(n);
       const viewport = page.getViewport({ scale });
-      const dpr = window.devicePixelRatio || 1;
+      // zoomed far in, a page is drawn with fewer pixels to the point than the screen has, never with more than a canvas holds
+      const dpr = Math.min(window.devicePixelRatio || 1, Math.max(0.5, Math.sqrt(CANVAS_MAX / Math.max(1, viewport.width * viewport.height))));
       const canvas = document.createElement('canvas');
       canvas.width = Math.floor(viewport.width * dpr);
       canvas.height = Math.floor(viewport.height * dpr);
@@ -550,6 +593,14 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
 
   const scroller = () => wrapRef.current?.closest<HTMLElement>('.book-pages, .pane-body') ?? null;
   const place = useRef<{ page: number; y: number } | null>(null);
+  /** What of the pages' width is at the middle of the view, 0 to 1 across them: kept across a change of scale. */
+  const placeX = useRef<number | null>(null);
+  /** The pages' column moved so `x` of its width is at the middle of the view (as far as the scroll goes). */
+  const centreOn = (sc: HTMLElement, x: number) => {
+    const pr = pagesRef.current?.getBoundingClientRect();
+    const sr = sc.getBoundingClientRect();
+    if (pr && pr.width > 0) sc.scrollLeft += pr.left + x * pr.width - (sr.left + sr.width / 2);
+  };
   /** The pages have landed where they open (the place left, the read point, a section gone to): from here a scroll is the reader's, and remembered. */
   const landed = useRef(false);
 
@@ -588,11 +639,18 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
         const pr = el.getBoundingClientRect();
         if (pr.top <= from && pr.bottom > from) place.current = { page: k, y: (from - pr.top) / pr.height };
       }
-      if (landed.current) places.set(id, { top: sc.scrollTop, at: place.current });
+      const cr = pagesRef.current?.getBoundingClientRect();
+      placeX.current = cr && cr.width > 0 ? (r.left + r.width / 2 - cr.left) / cr.width : null;
+      if (landed.current) places.set(id, { top: sc.scrollTop, at: place.current, x: placeX.current });
       // the pages near the view drawn here too: a covered window may hold the observer's callbacks back
       for (const [k, el] of pageEls.current) {
         const pr = el.getBoundingClientRect();
         if (pr.bottom >= r.top - AHEAD && pr.top <= r.bottom + AHEAD) void renderPage(k);
+        // zoomed, a page is many times the canvas it is at fit: one far from the view gives it back, and draws again as it comes near
+        else if (zoomRef.current > 1 && pr.height > 0 && (pr.bottom < r.top - FAR || pr.top > r.bottom + FAR) && rendered.current.has(k) && !rendering.current.has(k)) {
+          rendered.current.delete(k);
+          el.replaceChildren();
+        }
       }
       const v = viewRef.current;
       if (v && at) { v.dataset.atPage = String(at.page); v.dataset.atY = at.y.toFixed(3); }
@@ -602,19 +660,44 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     return () => sc.removeEventListener('scroll', onScroll);
   }, [status, sizes, base, scale, renderPage, id]);
 
-  // a new scale (the note opened beside, an iPad turned) leaves the same text at the top of the view, not the same pixels
+  // a new scale (a zoom, the note opened beside, an iPad turned) leaves the same text at the top of the view, not the
+  // same pixels, and what was at the middle of the view across the pages at the middle
   useLayoutEffect(() => {
     const sc = scroller();
+    if (!sc) return;
     const at = place.current;
     const el = at ? pageEls.current.get(at.page) : undefined;
-    if (!sc || !at || !el) return;
-    const pr = el.getBoundingClientRect();
-    sc.scrollTop += pr.top + at.y * pr.height - (sc.getBoundingClientRect().top + PLACE_AT);
+    if (at && el) {
+      const pr = el.getBoundingClientRect();
+      sc.scrollTop += pr.top + at.y * pr.height - (sc.getBoundingClientRect().top + PLACE_AT);
+    }
+    if (placeX.current !== null) centreOn(sc, placeX.current);
   }, [scale]);
+
+  // a pinch on a trackpad (WebKit sends it as a wheel with ctrl held) steps the zoom once a gesture
+  useEffect(() => {
+    const sc = scroller();
+    if (!sc) return;
+    let last = -Infinity;
+    const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey) return;
+      e.preventDefault();
+      const fresh = e.timeStamp - last > PINCH_GAP;
+      // a gesture's first event that says which way is the step; the rest of it only keeps the gesture alive
+      if (!fresh || e.deltaY !== 0) last = e.timeStamp;
+      if (fresh && e.deltaY !== 0) zoomBy(e.deltaY < 0 ? 1 : -1);
+    };
+    sc.addEventListener('wheel', onWheel, { passive: false });
+    return () => sc.removeEventListener('wheel', onWheel);
+  }, [status, zoomBy]);
 
   const scrollTo = (n: number) => {
     const el = pageEls.current.get(Math.max(first, Math.min(last, n)));
+    const sc = scroller();
+    const x = sc?.scrollLeft;
     el?.scrollIntoView({ block: 'start' });
+    // a page wider than the view is not moved sideways for it
+    if (sc && x !== undefined && sc.scrollLeft !== x) sc.scrollLeft = x;
   };
 
   // ── what the notes say about the pages: the passages, in book order ──
@@ -677,6 +760,8 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
       // a page laid out: the same text under the words over the pages, whatever the scale is now; else the scroll as it was
       if (was.at && pr && pr.height > 0) sc.scrollTop += pr.top + was.at.y * pr.height - (sc.getBoundingClientRect().top + PLACE_AT);
       else sc.scrollTop = was.top;
+      // zoomed past the pane: across the pages where it was left too
+      if (was.x !== null) centreOn(sc, was.x);
       return;
     }
     const rp = info?.read?.pos !== undefined ? { pos: info.read.pos, y: info.read.y ?? 1 } : null;
@@ -851,9 +936,11 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     const m = made as { index: number; text: string; ivl: number } | null;
     if (!m) return;
     const text = m.text;
+    logReading(to, 'section', { sec: text });
     setLit(text);
     setRecent(write ? null : m);
     notify(`§ ${plainMath(text)} · back in ${m.ivl}d, until dismissed${write ? '' : ' · ⏎ to write in it'}`, null, async () => {
+      unlogReading(to, text);
       await writeDoc(to, (d) => {
         const at = d.blocks.findIndex((b) => b.kind === 'heading' && b.text === text && b.read?.boxes !== undefined);
         if (at >= 0) d.blocks.splice(at, 1);
@@ -1063,6 +1150,8 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     let live = true;
     (async () => {
       const page = await pdf.getPage(peek.page);
+      // the peek is drawn as the pages are at fit, whatever their zoom: it is a look at a line, the size it always is
+      const scale = fit;
       const vp = page.getViewport({ scale });
       const dpr = window.devicePixelRatio || 1;
       const full = document.createElement('canvas');
@@ -1080,7 +1169,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
       canvas.getContext('2d')?.drawImage(full, 0, top * dpr, vp.width * dpr, PEEK_H * dpr, 0, 0, w * dpr, h * dpr);
     })().catch(console.error);
     return () => { live = false; };
-  }, [peek, pdf, scale]);
+  }, [peek, pdf, fit]);
 
   useEffect(() => { if (find) findRef.current?.focus(); }, [find !== null]);
   useEffect(() => { if (goto) gotoRef.current?.focus(); }, [goto]);
@@ -1088,6 +1177,14 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
   // ── keys: in the capture phase, so the boxes' keys come before the session's and the notes' ──
   const keyRef = useRef<(e: KeyboardEvent) => void>(() => {});
   keyRef.current = (e: KeyboardEvent) => {
+    // ⌘= (⌘+) ⌘− ⌘0 over a book's pages are the pages' zoom, taken ahead of the app's text size (it checks
+    // `defaultPrevented`); with the caret in a field, or in another pane, they are the text size as anywhere
+    if ((e.metaKey || e.ctrlKey) && !e.altKey && (e.key === '+' || (!e.shiftKey && (e.key === '=' || e.key === '-' || e.key === '0')))) {
+      if (!active || e.defaultPrevented || inField(e.target) || status !== 'ok' || !sizes.length) return;
+      e.preventDefault();
+      zoomBy(e.key === '0' ? 0 : e.key === '-' ? -1 : 1);
+      return;
+    }
     if (e.metaKey || e.ctrlKey || e.altKey) return;
     const s = st.current;
     const have = s.pending.length > 0 || (s.sel?.boxes.length ?? 0) > 0;
@@ -1186,14 +1283,14 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
   const readTo = info?.read?.pos ? `read to p. ${info.read.pos}` : '';
   const rightTip = [status === 'ok' ? span : '', readTo, textless ? 'no text' : '', counts].filter(Boolean).join(', ');
   // the page in view of the last, and what is due beside it; the rest in the tooltip
-  const where = status === 'ok' && sizes.length ? `p. ${current} / ${last}` : '';
+  const where = status === 'ok' && sizes.length ? `p. ${current} / ${last}${zoom !== 1 ? ` · ${Math.round(zoom * 100)}%` : ''}` : '';
   const shown = [where, due ? `${due} due` : ''].filter(Boolean).join(' · ') || readTo || (cards ? plural(cards, 'card') : '') || (textless && status === 'ok' ? 'no text' : '');
   const shownPending = [...pending, ...(sel?.boxes ?? [])];
   const lastPending = pending.length ? boxRect(pending[pending.length - 1]!) : null;
 
   return (
-    <div className="reader-wrap" ref={outerRef}>
-      <div ref={viewRef} className={`reader doc-view pdf-view${reading ? ' reading' : ''}`} data-page={current} data-roomy={roomy ? '1' : '0'} style={colW > 0 ? { width: pageW } : undefined}>
+    <div className="reader-wrap" ref={outerRef} data-wide={wide ? '1' : undefined}>
+      <div ref={viewRef} className={`reader doc-view pdf-view${reading ? ' reading' : ''}`} data-page={current} data-roomy={roomy ? '1' : '0'} data-zoom={zoom} style={colW > 0 ? { width: pageW, ...(wide ? { '--fit-w': `${colW}px`, '--fit-left': `${room.left}px` } as React.CSSProperties : null) } : undefined}>
         <div className="meta">
           <Crumbs path={id} />
           {!(phone && session) && <button type="button" className="frozen-tag notes-toggle" data-on={notesOpen ? '1' : '0'} aria-pressed={notesOpen} title={'notes ⌘\\'} onClick={() => toggleNotes(id)}>notes</button>}

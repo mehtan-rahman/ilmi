@@ -13762,8 +13762,8 @@ export async function smokeSweepEdit(vault: Vault): Promise<void> {
       const cardsNow = () => qa('.draft-doc .card-span').length;
       const undo = () => key('z', { code: 'KeyZ', metaKey: true });
       const redo = () => key('z', { code: 'KeyZ', metaKey: true, shiftKey: true });
-      await at('bold now', 'bold now'.length);
-      await key('ArrowRight'); await key('ArrowRight');
+      // past the closing pair, so the next line is plain
+      await at('**bold now**', '**bold now**'.length);
       await key('Enter', { code: 'Enter' });
       await type('sweep typed first');
       await poll(async () => (await tail()).includes('sweep typed first'), 'a line typed and written');

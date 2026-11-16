@@ -13757,9 +13757,40 @@ export async function smokeSweepEdit(vault: Vault): Promise<void> {
     log(`typed: the page's last blocks ${qa<HTMLElement>(BLOCKS, surface()).slice(-2).map((b) => JSON.stringify(b.textContent)).join(' ')}; the file's last lines ${JSON.stringify((await tail()).slice(-4))}`);
     await poll(async () => (await tail()).includes('**bold now**'), 'and what is typed in it is bold');
 
+    // ── undo across the page's own rebuild: a typed line becomes a card, and ⌘Z still goes back through what was typed before it ──
+    {
+      const cardsNow = () => qa('.draft-doc .card-span').length;
+      const undo = () => key('z', { code: 'KeyZ', metaKey: true });
+      const redo = () => key('z', { code: 'KeyZ', metaKey: true, shiftKey: true });
+      await at('bold now', 'bold now'.length);
+      await key('ArrowRight'); await key('ArrowRight');
+      await key('Enter', { code: 'Enter' });
+      await type('sweep typed first');
+      await poll(async () => (await tail()).includes('sweep typed first'), 'a line typed and written');
+      await key('Enter', { code: 'Enter' });
+      const before = cardsNow();
+      await type('sweep word :: sweep meaning');
+      await poll(() => cardsNow() === before + 1, 'a line typed as a card becomes one when the page reads its own write back', 8000);
+      await poll(async () => (await tail()).includes('sweep word :: sweep meaning'), 'and is in the file');
+      await sleep(400);
+      await undo();
+      await poll(() => cardsNow() === before && !block('sweep word'), '⌘Z after the rebuild takes the card and its line away');
+      must(block('sweep typed first'), 'the line typed before it is still there');
+      const sel = document.getSelection();
+      const here = (sel?.anchorNode?.nodeType === 1 ? (sel.anchorNode as HTMLElement) : sel?.anchorNode?.parentElement)?.closest('.draft-doc');
+      must(here === surface(), 'the caret is still in the page');
+      await undo();
+      await poll(() => !block('sweep typed first'), '⌘Z again takes the earlier line: the history lived through the rebuild');
+      await poll(async () => !(await tail()).some((l) => l.includes('sweep typed first') || l.includes('sweep word')), 'and the file follows');
+      must(block('bold now') && block('sweep below the code'), 'nothing above was touched');
+      await redo(); await redo();
+      await poll(() => !!block('sweep typed first') && cardsNow() === before + 1, '⇧⌘Z twice brings both back, the card drawn', 8000);
+      await poll(async () => { const t = await tail(); return t.includes('sweep typed first') && t.includes('sweep word :: sweep meaning'); }, 'and they are in the file again');
+      await shot('sweepedit-undo');
+    }
+
     // ── a bare address ──
-    await key('ArrowRight'); await key('ArrowRight');
-    await at('bold now', 'bold now'.length);
+    await at('sweep typed first', 'sweep typed first'.length);
     await key('Enter', { code: 'Enter' });
     await type('see https://example.org/sweep now');
     const link = await poll(() => qa<HTMLElement>('.draft-doc .md-link').find((l) => l.textContent === 'https://example.org/sweep'), 'a bare address is drawn as a link, without the word after it');

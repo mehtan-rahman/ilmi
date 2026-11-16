@@ -18,6 +18,7 @@ import {
   askImageKey, closeAtMatch, dirAttr, strongDir, withBases, type Dir, findKey, insertImages, pickSlash, replaceAll, replaceMatch, slashContext, slashItems, slashKey, htmlPasteImages,
   type FindMeta, type FindState, type SlashItem, type SlashState, textOf,
   bookKey, CODE_LANGS, addColumn, addRow, cellAt, alignColumn, codeHTML, codeLang, deleteColumn, deleteRow, deleteTable, insertTable, foldKey, foldedKeys, foldsHiding, landKey, ruleEndIndex, langOf, setCodeLang, type Align, type FoldMeta,
+  fileKey, isHistoryTransaction, refit, schedulesKept, toDoc,
 } from '../reader/index.js';
 import { advanceWrite, sectionSpan, whenToDate } from '../schedule/index.js';
 import { dirOf, nameOf, type Loaded, type Vault } from '../vault/index.js';
@@ -51,7 +52,7 @@ import { StudyButton } from './StudyButton.js';
 import { ExamTag } from './ExamTag.js';
 import { appNow } from './clock.js';
 import { press } from './platform.js';
-import { Writer } from './writer.js';
+import { Writer, type Heard } from './writer.js';
 
 // ── writing ──────────────────────────────────────────────────────
 
@@ -1289,30 +1290,38 @@ export function writeAfter(view: EditorView, pos: number): void {
   view.focus();
 }
 
+/** Each page's editor by its surface, for the tests (as `faceViews` is for a card's faces). */
+export const pageViews = new WeakMap<Element, EditorView>();
+
 /** Keep the caret where it was, as far as the new document allows. */
 export function withSelectionOf(prev: EditorState | null, state: EditorState): EditorState {
   if (!prev) return state;
+  return state.apply(state.tr.setSelection(selectionIn(prev, state.doc)));
+}
+
+/** `prev`'s selection as it stands in `doc`, the document its page is built again with. */
+export function selectionIn(prev: EditorState, doc: PMNode): Selection {
   // a selected card stays selected: the same card (by id, else at the same place) in the new document
   const was = prev.selection;
   if (was instanceof NodeSelection && was.node.type === schema.nodes.card) {
     const card = was.node.attrs.card as Card;
     let at: number | null = null;
-    state.doc.forEach((n, pos) => {
+    doc.forEach((n, pos) => {
       if (at !== null || n.type !== schema.nodes.card) return;
       const c = n.attrs.card as Card;
       if (card.id !== undefined ? c.id === card.id : pos === was.from && c.text === card.text) at = pos;
     });
-    if (at !== null) return state.apply(state.tr.setSelection(NodeSelection.create(state.doc, at)));
+    if (at !== null) return NodeSelection.create(doc, at);
   }
   // the caret stays in its textblock at its place in the block's verbatim
   // text: a rebuild from the file turns typed `$…$` into chips of size one,
   // so the same absolute position would land further on (49: the third line
   // of a write-up went into the next heading)
   const at = caretAt(prev.doc, prev.selection.head);
-  const found = at === null ? null : caretPos(state.doc, at);
-  if (typeof found === 'object' && found !== null) return state.apply(state.tr.setSelection(NodeSelection.create(state.doc, found.card)));
-  const head = found ?? Math.min(prev.selection.head, state.doc.content.size);
-  return state.apply(state.tr.setSelection(Selection.near(state.doc.resolve(head))));
+  const found = at === null ? null : caretPos(doc, at);
+  if (typeof found === 'object' && found !== null) return NodeSelection.create(doc, found.card);
+  const head = found ?? Math.min(prev.selection.head, doc.content.size);
+  return Selection.near(doc.resolve(head));
 }
 
 /** The textblocks of a document, in order, each with the position of its content. */
@@ -1562,29 +1571,63 @@ export function Reader({ id, active = true, onPages, notes = false }: ReaderProp
     const ink = useApp.getState().mobile ? noteInk(id, addSurface) : null;
     inkRef.current = ink;
 
-    const build = (loaded: Loaded) => {
+    /**
+     * What last changed the document here: something done (`edit`), ⌘Z or
+     * its redo (`history`), or neither (a change the history never held, a
+     * fresh state). A line read back as a card is undone with the typing
+     * that made it only when that typing was the last thing done.
+     */
+    let lastChange: 'edit' | 'history' | null = null;
+
+    /**
+     * The page from the file. `how` says whose text it is (`Writer.how`):
+     * the editor's state is kept, the document replaced where it differs
+     * (`refit`), when the text is the body the editor wrote, read back as
+     * something else (a line that became a card: undone with the typing
+     * that made it, or, after ⌘Z, not undoable, so ⌘Z goes on back instead
+     * of making the card again); when it is a change this page made to the
+     * file that left every schedule as it was (an extract taken: not
+     * undoable, the notice has its undo); or when the document is the one
+     * the editor holds. Anything else (someone else's change, a merge, a
+     * grade written through) starts a fresh state, its history with it.
+     */
+    const build = (loaded: Loaded, how: Heard = 'theirs') => {
       writer.saw(loaded);
       const m = meta(loaded.doc);
+      const pos = m.type === 'note' || notes ? null : m.read?.pos ?? null;
       // the folds the page had when it was last seen (view state, never the file's)
-      const state = makeState(loaded.doc.blocks, {
+      const folds = useApp.getState().folds[id] ?? [];
+      const fresh = () => makeState(loaded.doc.blocks, {
         frozen: () => frozenRef.current,
-        pos: m.type === 'note' || notes ? null : m.read?.pos ?? null,
+        pos,
         images: images.load,
-        folds: useApp.getState().folds[id] ?? [],
+        folds,
         ...(bookedRef.current ? { book: bookOptions(id) } : {}),
         ...(ink ? { ink: () => ink.boxes } : {}),
       });
       const view = viewRef.current;
       if (view) {
-        // an open find bar stays open over the new text
-        const was = findKey.getState(view.state);
-        let next = withSelectionOf(view.state, state);
-        if (was?.open) next = next.apply(next.tr.setMeta(findKey, { query: was.query, from: next.selection.from } satisfies FindMeta));
-        view.updateState(next);
-        followSlash(view, next);
-        followFind(view, next);
+        const prev = view.state;
+        const doc = toDoc(loaded.doc.blocks);
+        // the same plugins as a fresh state would have (a book's chips come and go with its pages)
+        const keep = !!bookKey.get(prev) === !!bookedRef.current
+          && (doc.eq(prev.doc) || how === 'typed' || (how === 'ours' && schedulesKept(fromDoc(prev.doc), loaded.doc.blocks)));
+        const tr = keep ? refit(prev, doc, { undoable: how === 'typed' && lastChange === 'edit', pos, folds, select: (d) => selectionIn(prev, d) }) : null;
+        if (tr) view.dispatch(tr);
+        // not reached that way (or refused): a fresh state, as the page is first built
+        if (!tr || !view.state.doc.eq(doc)) {
+          // an open find bar stays open over the new text
+          const was = findKey.getState(view.state);
+          let next = withSelectionOf(view.state, fresh());
+          if (was?.open) next = next.apply(next.tr.setMeta(findKey, { query: was.query, from: next.selection.from } satisfies FindMeta));
+          view.updateState(next);
+          lastChange = null;
+          followSlash(view, next);
+          followFind(view, next);
+        }
         ink?.changed();
       } else {
+        const state = fresh();
         viewRef.current = new EditorView(mount, {
           state,
           nodeViews,
@@ -1603,10 +1646,13 @@ export function Reader({ id, active = true, onPages, notes = false }: ReaderProp
               // and again once the page has laid out without the hidden blocks (a timer: WebKit holds frames back when covered)
               setTimeout(measure, 0);
             }
-            if (tr.docChanged) {
+            // the file's own text brought in (`build`) is not written back, unless a rule changed it further on its way in
+            const fromFile = tr.getMeta(fileKey) === true;
+            if (tr.docChanged && !(fromFile && next.doc.eq(tr.doc))) {
               writer.version++;
               writer.schedule(() => fromDoc(this.state.doc));
             }
+            if (tr.docChanged && !fromFile) lastChange = isHistoryTransaction(tr) ? 'history' : tr.getMeta('addToHistory') === false ? null : 'edit';
             if (tr.docChanged || tr.getMeta(markerKey) !== undefined) measure();
             if (tr.docChanged) hookBlocks();
             if (tr.docChanged || tr.getMeta(imagesKey) !== undefined) ink?.changed();
@@ -1672,6 +1718,7 @@ export function Reader({ id, active = true, onPages, notes = false }: ReaderProp
         pageDrops.set(dom, (paths, x, y) => {
           void Promise.all(paths.map(readImagePath)).then((got) => landRef.current(got, { x, y }), (e: unknown) => console.error(e));
         });
+        pageViews.set(dom, viewRef.current);
         ink?.attach(viewRef.current);
       }
       setBlocks(loaded.doc.blocks);
@@ -1684,7 +1731,7 @@ export function Reader({ id, active = true, onPages, notes = false }: ReaderProp
       const view = viewRef.current;
       if (!view) { build(loaded); return; }
       // someone else's change, or our own read back saying more than the editor holds (`Writer.heard`)
-      if (writer.heard(loaded, () => fromDoc(view.state.doc))) build(loaded);
+      if (writer.heard(loaded, () => fromDoc(view.state.doc))) build(loaded, writer.how);
       else setBlocks(loaded.doc.blocks);
     };
 
@@ -1942,7 +1989,7 @@ export function Reader({ id, active = true, onPages, notes = false }: ReaderProp
     setSel(null);
     window.getSelection()?.removeAllRanges();
     if (marksRef.current) {
-      writer.run(async () => {
+      writer.op(async () => {
         const made = await sectionNode(id, { text: s.text, blocks: s.blocks });
         recentRef.current = made;
         notify(`§ ${plainMath(made.text)} · back in ${made.ivl}d, until dismissed · in its notes · ⏎ to write in it`, made.note, async () => {
@@ -1957,7 +2004,7 @@ export function Reader({ id, active = true, onPages, notes = false }: ReaderProp
       }).catch(console.error);
       return;
     }
-    writer.run(async () => {
+    writer.op(async () => {
       const made = await extractNode(id, { text: s.text, blocks: s.blocks });
       const name = made.slice(made.lastIndexOf('/') + 1).replace(/\.md$/, '');
       // as a section says so: where it went, and a way back (the extract gone, the passage no longer marked as taken)
@@ -2035,7 +2082,7 @@ export function Reader({ id, active = true, onPages, notes = false }: ReaderProp
   askImageRef.current = () => {
     void imagePicker.pick().then(
       (paths) => Promise.all(paths.map(readImagePath)).then((got) => landRef.current(got)),
-      (e: unknown) => console.error(e),
+    ).catch(failed('image'),
     );
   };
   const pickRow = (item: SlashItem) => {

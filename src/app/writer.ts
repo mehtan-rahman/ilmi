@@ -16,6 +16,9 @@ export const DROPPED = 'changed elsewhere · the last edit here was not kept';
 /** A body write made from a body the file no longer has: someone else's change came first and wins. */
 class Superseded extends Error {}
 
+/** Whose text a report of the file is (`Writer.how`). */
+export type Heard = 'typed' | 'ours' | 'theirs';
+
 /** Every page's writer, from its page's mount until it is closed and its last write is done. */
 const writers = new Set<Writer>();
 
@@ -34,6 +37,16 @@ export async function written(path: string): Promise<void> {
  */
 export class Writer {
   private own = new Map<string, number>();
+  /** The texts of `own` that a write of the editor's body made (`flush`): the rest are changes made to the file itself. */
+  private typed = new Set<string>();
+  /** The page's own vault operations under way (`op`): what the vault reports meanwhile is theirs. */
+  private ops = 0;
+  /**
+   * Whose text `heard` last heard: the editor's body written and read back
+   * (`typed`), a change this page made to the file itself (`ours`: a grade
+   * written through, an extract taken), or someone else's (`theirs`).
+   */
+  how: Heard = 'theirs';
   private chain: Promise<unknown> = Promise.resolve();
   private timer: ReturnType<typeof setTimeout> | null = null;
   private pending: (() => Block[]) | null = null;
@@ -85,6 +98,8 @@ export class Writer {
    */
   heard(loaded: Loaded, shown: () => Block[]): boolean {
     const version = this.claim(loaded.text);
+    const typed = this.typed.delete(loaded.text);
+    this.how = version === undefined ? (this.ops > 0 ? 'ours' : 'theirs') : typed ? 'typed' : 'ours';
     if (version === undefined) {
       if (this.pending) this.told(DROPPED);
       this.epoch++;
@@ -94,7 +109,8 @@ export class Writer {
     return version === this.version && !blocksEqual(shown(), loaded.doc.blocks);
   }
 
-  update(mutate: (doc: Doc) => void): Promise<Loaded | null> {
+  /** `body`: the write is the editor's body (`flush`), not a change made to the file itself. */
+  update(mutate: (doc: Doc) => void, body = false): Promise<Loaded | null> {
     const version = this.version;
     const run = this.chain.then(async () => {
       try {
@@ -110,8 +126,9 @@ export class Writer {
           const text = serialize(doc);
           tried.push(text);
           this.own.set(text, version);
+          if (body) this.typed.add(text); else this.typed.delete(text);
         });
-        for (const t of tried) if (t !== loaded.text) this.own.delete(t);
+        for (const t of tried) if (t !== loaded.text) { this.own.delete(t); this.typed.delete(t); }
         this.base = loaded.doc.blocks;
         return loaded;
       } catch (e) {
@@ -144,7 +161,7 @@ export class Writer {
       // (`heard` builds the page from it; one found under the write is reported by the vault)
       if (this.epoch !== epoch || (this.base && !blocksEqual(doc.blocks, this.base))) throw new Superseded();
       doc.blocks = blocks;
-    });
+    }, true);
   }
 
   /** Run `fn` once everything scheduled so far has been written. */
@@ -153,6 +170,19 @@ export class Writer {
     const run = this.chain.then(fn);
     this.chain = run.catch((e: unknown) => console.error(this.path, e));
     return run;
+  }
+
+  /**
+   * `run` for an operation of the vault's that writes this page's file
+   * itself (an extract, a section taken from a selection): what the vault
+   * reports while it runs is heard as the page's own change (`how`), and
+   * otherwise as any change from elsewhere is.
+   */
+  op<T>(fn: () => Promise<T>): Promise<T> {
+    return this.run(async () => {
+      this.ops++;
+      try { return await fn(); } finally { this.ops--; }
+    });
   }
 
   /** Drop what has not been written yet: the file changed under us and wins. */

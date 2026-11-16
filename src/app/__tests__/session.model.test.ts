@@ -20,6 +20,9 @@
 //   any      --‹|›--> the item before or after, its question or, graded, its answer (the boxes let go: written, or kept)
 //   gone     (the card, or the line the item asks, is no longer in the file): no grades, a skip
 //   gone     --space|skip|›--> the next item, or from the last the end   --1--> gone (nothing)
+//   any      --away (its tab left for another and come back to: the lens drawn anew)--> the same item, as ‹ › come to it:
+//            its question or, graded, its answer and grade (where it is and what was given are the session's, in the store);
+//            played on the roads named below, not in the walk
 //
 // and the writes: `settle` lets every write sent land. Between, the user
 // may go on (grade the next card, go back) with writes in flight; `e` only
@@ -110,7 +113,8 @@ interface S {
 }
 
 const EVENTS = ['space', 'again', 'e', 'type', 'form', 'save', 'esc', 'anyway', 'easy', 'next', 'prev', 'settle'] as const;
-type E = (typeof EVENTS)[number];
+/** `away`: the session's tab left and come back to. On named roads only: in the walk it would double it. */
+type E = (typeof EVENTS)[number] | 'away';
 const TOTAL = 3;
 
 const cardOf = (idx: number): 0 | 1 => (idx === 0 ? 0 : 1);
@@ -190,6 +194,8 @@ const model: Machine<S, E> = {
   step(s0, e) {
     const s = structuredClone(s0);
     if (e === 'settle') { if (!s.pending) return null; s.pending = false; s.seen = structuredClone(s.disk); return s; }
+    // the lens drawn anew: the end stays the end, an item is come to as ‹ › come to it
+    if (e === 'away') { if (s.idx < TOTAL) goTo(s, s.idx); return s; }
     if (s.idx >= TOTAL) return null;
     const ed = s.ed;
     switch (e) {
@@ -397,6 +403,11 @@ async function fire(e: E): Promise<void> {
     }
     case 'prev': await press(host.querySelectorAll<HTMLButtonElement>('.sess-nav .sn-btn')[0]!); break;
     case 'settle': await settle(); break;
+    case 'away':
+      await act(async () => { root!.unmount(); });
+      root = createRoot(host);
+      await act(async () => { root!.render(createElement(Session, { active: true, onOpen: () => {} })); });
+      break;
   }
 }
 
@@ -491,6 +502,11 @@ describe('the session, every road of up to seven events', () => {
     // a gone item: space and 1 reached the hidden card and tried a grade; › was off on the last item
     ['a gone item: 1 does nothing, space skips it', [...TO_GONE, 'again', 'space']],
     ['a gone last item: › ends the session', [...TO_GONE, 'next']],
+    // the session's tab left and come back to: it began again at its first item, and a card graded was asked again
+    ['left and come back to, it goes on from where it was', ['space', 'space', 'away', 'space', 'easy', 'settle']],
+    ['left and come back to, a card graded shows its grade and is graded again in its place', ['space', 'space', 'away', 'prev', 'again', 'settle']],
+    ['left with the boxes open, the edit is written', ['e', 'type', 'away', 'settle']],
+    ['left at its end, it is at its end', ['space', 'space', 'space', 'space', 'space', 'space', 'away', 'settle']],
   ] as [string, E[]][])('%s', async (_, road) => {
     await play(road);
   });

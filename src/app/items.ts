@@ -29,6 +29,35 @@ export const QUEUE_EMPTY: Record<QueueScope, string> = {
   today: 'nothing due', upcoming: 'nothing ahead', reading: 'nothing enrolled', writing: 'no drafts', cards: 'no cards',
 };
 
+/**
+ * Under `nothing due`, what is next, from the queue as it is: cards in
+ * their learning steps back within the day (`3 in learning, back in 6m`),
+ * else the next day anything comes up and how many (`next: 14 tomorrow`).
+ * Empty when nothing is ahead.
+ */
+export function nextUp(items: QueueItem[], now: Date): string {
+  const ahead = items.filter((i) => !isDue(i, now));
+  if (!ahead.length) return '';
+  const first = ahead.reduce((a, b) => (b.dueAt < a.dueAt ? b : a));
+  const day = dayOf(first.dueAt);
+  const n = ahead.filter((i) => dayOf(i.dueAt) === day).length;
+  if (day !== dayOf(now)) return `next: ${n} ${dueWhen(day, now)}`;
+  const m = Math.max(1, Math.ceil((first.dueAt.getTime() - now.getTime()) / 60000));
+  return `${n} in learning, back in ${m < 60 ? `${m}m` : `${Math.round(m / 60)}h`}`;
+}
+
+/**
+ * How long until the queue should be looked at again while it stays open:
+ * the soonest instant anything ahead comes due (a card in its learning
+ * steps), or the day's turn, whichever is first; never under a second.
+ */
+export function nextLook(items: QueueItem[], now: Date): number {
+  const turn = dayStart(dayOf(new Date(dayStart(dayOf(now)).getTime() + 26 * 3600000))).getTime();
+  let at = turn;
+  for (const i of items) { const t = i.dueAt.getTime(); if (t > now.getTime() && t < at) at = t; }
+  return Math.max(1000, at - now.getTime() + 50);
+}
+
 /** The forms in the user's words, everywhere they are named. */
 export const FORM_LABEL: Record<CardForm, string> = { cloze: 'cloze', qa: 'q&a', bidir: 'bidir' };
 

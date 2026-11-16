@@ -13,6 +13,7 @@
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { emitDocAction, emitGrade, runBlockHooks, usePlugins } from '../plugins/index.js';
 import { PRI_DEFAULT, READ_AF, WRITE_AF, blanks, cardFields, cardForm, type Block, type Card } from '../format/index.js';
+import type { Doc } from '../format/index.js';
 import { GRADES, advanceRead, advanceSection, cadence, dayOf, grownAt, lineKey, advanceWrite, dirPri, nextGap, pacedInterval, perPassOf, postponed, readTarget, regradeFrom, scheduleOf, type CardItem, type Grade, type QueueItem, type ReadItem, type SectionItem, type WriteItem } from '../schedule/index.js';
 import { EL_WORD, FORM_LABEL, doneLine, dueLabel, gapLabels, glyphOf, markOf, ownBlank, paceWords, sourceLabel, standing, trailParts, dueTone } from './items.js';
 import { writeDoc } from './sections.js';
@@ -22,7 +23,7 @@ import { Pdf, pointInView } from './Pdf.js';
 import { MathText } from './MathText.js';
 import { plainMath } from './chromeText.js';
 import { Reader, clozeHTML, faceDir, faceHTML } from './Reader.js';
-import { useApp, type El } from './store.js';
+import { useApp, type El, type SessionMarks } from './store.js';
 import { useDoc } from './useDoc.js';
 import { studyHeader } from './study.js';
 import { activeExamAt, currentVault, note, openNode, optionsAt } from './vault.js';
@@ -31,6 +32,8 @@ import { sessionEnded } from './sync.js';
 import { gradeCard, type Graded } from './grading.js';
 import { CardFaces } from './CardFaces.js';
 import { saveCardEdit } from './deckOps.js';
+import { restore } from './deck.js';
+import { failed, notify } from './land.js';
 import './session.css';
 import './incontext.css';
 import { appNow } from './clock.js';
@@ -106,17 +109,19 @@ interface BarProps extends NavProps {
   /** How a source with a finish day stands (`paceWords`), after that. */
   pace?: string;
   glyph: string;
+  /** The walk's length as counted: the tests still to come of cards learnt first are in it. */
+  of?: number | undefined;
   children: ReactNode;
 }
 
 /** The control bar at the foot of a reading, writing, or section element. */
-function SessionBar({ idx, total, kind, word, pri, what, stands, pace, glyph, children, onPrev, onNext, onOut }: BarProps) {
+function SessionBar({ idx, total, of, kind, word, pri, what, stands, pace, glyph, children, onPrev, onNext, onOut }: BarProps) {
   return (
     <div className="session-bar">
       <div className="sb-inner">
         <div className="sb-meta">
           <Nav idx={idx} total={total} onPrev={onPrev} onNext={onNext} onOut={onOut} />
-          <span className="sb-count">{idx + 1} / {total}</span>
+          <span className="sb-count">{idx + 1} / {of ?? total}</span>
           <span className="sb-kind" data-el={kind}>{word ?? EL_WORD[kind]}</span>
           {pri !== PRI_DEFAULT && <span className="sb-count">p {pri}</span>}
         </div>
@@ -170,6 +175,9 @@ interface CardProps {
   onLearnt?: () => void;
 }
 
+/** One card's line, however often it is in the walk (learnt, then tested). */
+const learnKey = (c: CardItem) => `${c.path}#${c.id ?? c.block}#${c.group ? JSON.stringify(c.group) : ''}#${c.dir ?? ''}`;
+
 /** A schedule never tested: a card new, with no review. */
 export const neverTested = (s: { state?: string; reps?: number } | undefined): boolean => (s?.state ?? 'new') === 'new' && !s?.reps;
 
@@ -205,7 +213,9 @@ function CardElement({ item, active, given, onGrade, onSkip, onGone, onEdit, lea
   const gone = !!loaded && !card;
   useEffect(() => { onGone(gone); }, [gone]);
 
-  useKeys(active, (key) => {
+  useKeys(active, (key, e) => {
+    // a key held down: the system repeats it, and it does nothing more (not the page's scroll either)
+    if (e.repeat) return !editing && (key === ' ' || key === 'Enter' || (key >= '1' && key <= '4') || key === 'e');
     if (gone) {
       if (key === ' ') { onSkip(); return true; }
       return false;
@@ -228,7 +238,7 @@ function CardElement({ item, active, given, onGrade, onSkip, onGone, onEdit, lea
       useApp.setState((s) => (s.session ? {
         session: { ...s.session, items: s.session.items.map((i) => (i.kind === 'card' && i.path === item.path && i.block === item.block && i.text === was ? { ...i, text } as CardItem : i)) },
       } : {}));
-    }).catch((e: unknown) => console.error(e)));
+    }).catch(failed('edit')));
   };
 
   // the faces, drawn: every plugin's block hook sees each
@@ -361,8 +371,12 @@ export type DocAction = 'on' | 'postpone' | 'done';
 interface DocProps extends NavProps {
   item: ReadItem | WriteItem | SectionItem;
   active: boolean;
+  of?: number | undefined;
   /** `pos`: blocks read, or on a document with pages the page at the bottom of the view, `y` how far down it. */
   onAct(action: DocAction, pos?: number, y?: number): void;
+  /** What was done to it in this session, come back to: it is shown, and ⏎ is on to the next, nothing written. */
+  done?: { action: string; word: string } | undefined;
+  onPass(): void;
 }
 
 /** A book or source read on: its ⏎ is done for today, not next. */
@@ -426,10 +440,21 @@ export function docLine(item: ReadItem | WriteItem | SectionItem, action: DocAct
   return doneLine(glyphOf(item), name, word);
 }
 
-/** One of the three on a topic: written to its document, through its page when it is open, so what was just typed there is written first. */
-export function actOnDoc(item: ReadItem | WriteItem | SectionItem, action: DocAction, pos?: number, y?: number): Promise<unknown> {
+/** What one of the three did, as the session says it of an element come back to: `passed · back in 5d`, `done for today · back in 2d`, `later · back in 3d`, `dismissed`. */
+export function doneWord(item: ReadItem | WriteItem | SectionItem, action: DocAction, now: Date, at?: number): string {
+  if (action === 'postpone') return `later · back in ${postponed(item.sched.ivl)}d`;
+  if (action === 'done') return 'dismissed';
+  return actionWords(item, now, false, at).on.replace(/^next/, 'passed');
+}
+
+/**
+ * One of the three on a topic: written to its document, through its page when it is open, so what was just typed there is written first.
+ * `seen` is given the document as it was just before, for an undo.
+ */
+export function actOnDoc(item: ReadItem | WriteItem | SectionItem, action: DocAction, pos?: number, y?: number, seen?: (before: Doc) => void): Promise<unknown> {
   const now = appNow();
   const run = writeDoc(item.path, (doc) => {
+    seen?.(structuredClone(doc));
     if (item.kind === 'read') advanceRead(doc, action, now, pos, activeExamAt(item.path, now), y);
     else if (item.kind === 'section') advanceSection(doc, item.block, item.heading, action, now);
     else advanceWrite(doc, action, now);
@@ -438,7 +463,7 @@ export function actOnDoc(item: ReadItem | WriteItem | SectionItem, action: DocAc
   return run;
 }
 
-function DocSession({ item, active, onAct, ...nav }: DocProps) {
+function DocSession({ item, active, onAct, done, onPass, ...nav }: DocProps) {
   const barRef = useRef<HTMLDivElement>(null);
   const info = useApp((s) => s.docs[item.path]);
   const docs = useApp((s) => s.docs);
@@ -469,15 +494,19 @@ function DocSession({ item, active, onAct, ...nav }: DocProps) {
     if (item.kind !== 'section') return;
     useApp.setState({ reveal: { path: item.path, index: item.block, heading: item.heading } });
     // a phone's one page stays the pages, at the section's boxes: there is no pane beside them
-    if (pages && !useApp.getState().phone) void openNotes(pagesId).catch(console.error);
+    if (pages && !useApp.getState().phone) void openNotes(pagesId).catch(failed('open the notes'));
   }, [item]);
 
-  useKeys(active, (key) => {
+  useKeys(active, (key, e) => {
+    // a key held down does nothing more
+    if (e.repeat) return key === 'Enter';
+    // done already in this session: ⏎ is on to the next, and nothing is written twice
+    if (done) { if (key === 'Enter') { onPass(); return true; } return false; }
     if (key === 'Enter') { on(); return true; }
     if (key === 'p') { onAct('postpone'); return true; }
     if (key === 'd') { onAct('done'); return true; }
     return false;
-  }, [item]);
+  }, [item, done, atEnd]);
 
   const word = note ? 'note' : item.kind === 'read' && item.extract ? 'extract' : undefined;
   const what = plainMath(section ? `${docs[item.path]?.title ?? sourceLabel(item, docs)} › ${item.heading}` : sourceLabel(item, docs));
@@ -485,9 +514,14 @@ function DocSession({ item, active, onAct, ...nav }: DocProps) {
     <div className="doc-session" ref={barRef} data-el={item.kind} data-book={pages ? '1' : '0'}>
       {pages ? <Pdf id={pagesId} active={active} session readOn={item.kind === 'read'} onLast={setLast} /> : <Reader id={item.path} active={active} />}
       <SessionBar kind={markOf(item)} {...(word ? { word } : {})} pri={pri} what={what} stands={standing(item, appNow(), info?.pages?.first)} pace={paceWords(item, appNow())} glyph={glyphOf(item)} {...nav}>
-        <button type="button" data-act="on" onClick={on}><span className="ra-l">{phone ? twoLines(words.on) : words.on}</span><kbd>⏎</kbd></button>
-        <button type="button" data-act="postpone" onClick={() => onAct('postpone')}><span className="ra-l">{words.postpone}</span><kbd>p</kbd></button>
-        <button type="button" data-act="done" onClick={() => onAct('done')}><span className="ra-l">{words.done}</span><kbd>d</kbd></button>
+        {done ? (<>
+          <span className="sb-done" data-done={done.action}>{done.word}</span>
+          <button type="button" data-act="pass" onClick={onPass}><span className="ra-l">next</span><kbd>⏎</kbd></button>
+        </>) : (<>
+          <button type="button" data-act="on" onClick={on}><span className="ra-l">{phone ? twoLines(words.on) : words.on}</span><kbd>⏎</kbd></button>
+          <button type="button" data-act="postpone" onClick={() => onAct('postpone')}><span className="ra-l">{words.postpone}</span><kbd>p</kbd></button>
+          <button type="button" data-act="done" onClick={() => onAct('done')}><span className="ra-l">{words.done}</span><kbd>d</kbd></button>
+        </>)}
       </SessionBar>
     </div>
   );
@@ -499,13 +533,25 @@ export function Session({ active, onOpen }: Props) {
   const session = useApp((s) => s.session);
   const docs = useApp((s) => s.docs);
   const phone = useApp((s) => s.phone);
-  const [idx, setIdx] = useState(0);
+  const seq = session?.seq;
+  // where it is, kept with the session (not here: the pane draws its active tab only, so this lens is drawn anew
+  // each time its tab is come back to); a new session starts from its first element
+  const idx = session?.at ?? 0;
+  const setIdx = (to: (i: number) => number) => useApp.setState((s) => (s.session && s.session.seq === seq ? { session: { ...s.session, at: to(s.session.at ?? 0) } } : {}));
   const items = session?.items ?? [];
   const total = items.length;
   const el = items[idx];
-
-  // a new session starts from its first element
-  useEffect(() => { setIdx(0); }, [session?.seq]);
+  // what was done to each element, kept with the session for the same reason
+  const spare = useRef<{ seq: number | undefined; marks: SessionMarks; kept: boolean } | null>(null);
+  if (!spare.current || spare.current.seq !== seq || (spare.current.kept && session && !session.marks)) {
+    spare.current = { seq, marks: { given: new Map(), learnt: new Map(), acted: new Map() }, kept: false };
+  }
+  const marks = session?.marks ?? spare.current.marks;
+  useEffect(() => {
+    if (!session || session.marks) return;
+    spare.current!.kept = true;
+    useApp.setState((s) => (s.session && s.session.seq === seq && !s.session.marks ? { session: { ...s.session, marks } } : {}));
+  }, [session, marks, seq]);
   // how long the element has been up: a review's time, for the log
   const shownAt = useRef(Date.now());
   useEffect(() => { shownAt.current = Date.now(); }, [session?.seq, idx]);
@@ -536,39 +582,37 @@ export function Session({ active, onOpen }: Props) {
   const goNext = () => setIdx((i) => Math.min(past ? total : total - 1, i + 1));
   const advance = () => setIdx((i) => i + 1);
 
-  // go to source: the card's document, scrolled to the card and the card marked (the reader's `reveal`)
+  // go to source: the card's document, scrolled to the card and the card marked (the reader's `reveal`),
+  // in a tab of its own: the session's stays, and goes on from here when it is come back to
   const goToSource = (opts: OpenOpts = {}) => {
     if (el?.kind !== 'card') return;
     useApp.setState({ reveal: el.id === undefined ? { path: el.path, index: el.block } : { path: el.path, index: el.block, id: el.id } });
-    onOpen(el.path, opts);
+    onOpen(el.path, { newTab: true, ...opts });
   };
 
-  useKeys(active, (key) => {
+  useKeys(active, (key, e) => {
     if (key === '[') { goPrev(); return true; }
     if (key === ']') { goNext(); return true; }
-    if (key === 'o' && el?.kind === 'card') { goToSource(); return true; }
+    if (key === 'o' && el?.kind === 'card') { if (!e.repeat) goToSource(); return true; }
     return false;
-  }, [total, el, past]);
+  }, [total, el, past, seq]);
 
-  const fail = (e: unknown) => console.error(e);
+  const fail = failed('grade');
 
   // the edits this session has sent to be written; a grade waits for them
   const edits = useRef<Promise<unknown>>(Promise.resolve());
   const onEdit = (run: Promise<unknown>) => { const before = edits.current; edits.current = before.then(() => run); };
 
   // the grades given in this session, by item: ‹ back to one shows it, and a grade there takes its place
-  const given = useRef(new Map<string, Given>());
+  const given = marks.given as Map<string, Given>;
   // cards learnt in this session (`learnNew`): each is tested once more at the end, and not learnt again
   const learnNew = useApp((s) => s.learnNew);
-  const learnt = useRef(new Map<string, string>());
-  useEffect(() => { learnt.current = new Map(); }, [session?.seq]);
-  const learnKey = (c: CardItem) => `${c.path}#${c.id ?? c.block}#${c.group ? JSON.stringify(c.group) : ''}#${c.dir ?? ''}`;
+  const learnt = marks.learnt;
   const onLearnt = (shown: CardItem) => {
     const k = learnKey(shown);
-    const seq = session?.seq;
-    if (!learnt.current.has(k)) {
+    if (!learnt.has(k)) {
       // where it was learnt: ‹ back there shows it to learn again, its test still the one at the end
-      learnt.current.set(k, key);
+      learnt.set(k, key);
       useApp.setState((s) => (s.session && s.session.seq === seq ? { session: { ...s.session, items: [...s.session.items, shown] } } : {}));
     }
     advance();
@@ -579,9 +623,8 @@ export function Session({ active, onOpen }: Props) {
     if (!vault) return;
     const now = appNow();
     const ms = now.getTime() - shownAt.current;
-    const seq = session?.seq;
     const place = idx;
-    const was = given.current.get(key);
+    const was = given.get(key);
     let told = null as Graded | null;
     // once an edit of the card is written, the item as it is then: a card with no id is found by its new text
     const run = edits.current.then(async () => {
@@ -617,28 +660,55 @@ export function Session({ active, onOpen }: Props) {
     // what a grade after this one replaces: this one once written, else (it did not land) the one before it
     const mine: Given = { g, run: run.then(() => told, () => told ?? was?.run ?? null) };
     void mine.run.then((w) => { mine.written = w; });
-    given.current.set(key, mine);
+    given.set(key, mine);
     advance();
   };
 
+  // what was done to a topic in this session, by where it is: come back to, it is shown, and nothing is written twice
+  const acted = marks.acted;
+  const unmark = (at: string) => {
+    acted.delete(at);
+    useApp.setState((s) => (s.session && s.session.seq === seq ? { session: { ...s.session } } : {}));
+  };
   const onDoc = (item: ReadItem | WriteItem | SectionItem, action: DocAction, pos?: number, y?: number) => {
-    if (!currentVault()) return;
-    actOnDoc(item, action, pos, y).catch(fail);
-    note(docLine(item, action, appNow(), pos));
+    const vault = currentVault();
+    if (!vault) return;
+    if (acted.has(key)) { advance(); return; }
+    const now = appNow();
+    const at = key;
+    const line = docLine(item, action, now, pos);
+    acted.set(at, { action, word: doneWord(item, action, now, pos) });
+    let before = null as Doc | null;
+    const run = actOnDoc(item, action, pos, y, (doc) => { before = doc; });
+    // later and dismiss can be taken back from the notice: the document as it was, and the element to act on again
+    if (action === 'on') note(line);
+    else {
+      void run.then(() => notify(line, null, before ? async () => {
+        await restore(vault, [{ path: item.path, doc: before! }]);
+        unmark(at);
+      } : undefined), () => {});
+    }
+    run.catch((e: unknown) => { unmark(at); failed(action === 'on' ? 'next' : action === 'postpone' ? 'later' : 'dismiss')(e); });
     advance();
   };
+
+  // a card learnt and then tested is in the walk twice: one element
+  const distinct = new Set(items.map((i) => (i.kind === 'card' ? learnKey(i) : `${i.kind}#${i.path}#${i.kind === 'section' ? `${i.block}#${i.heading}` : ''}`))).size;
+  // the tests still to come of cards that will be learnt first: counted from the start, so the total does not grow underfoot
+  const ahead = learnNew ? items.filter((c, i) => c.kind === 'card' && neverTested(c.sched) && !learnt.has(learnKey(c)) && !given.has(`${seq}:${i}`)).length : 0;
+  const shownTotal = total + ahead;
 
   if (!el) {
     return (
       <div className="recall-wrap">
-        <div className="empty center session-end">{total === 0 ? 'nothing due' : `all done, ${plural(total, 'element')} · back to the queue`}</div>
+        <div className="empty center session-end">{total === 0 ? 'nothing due' : `all done, ${plural(distinct, 'element')} · back to the queue`}</div>
       </div>
     );
   }
 
   const onOut = phone ? () => openNode(deck?.id ?? queueId('today')) : undefined;
   if (el.kind !== 'card') {
-    return <DocSession key={key} item={el} active={active} idx={idx} total={total} onPrev={goPrev} onNext={goNext} onOut={onOut} onAct={(a, pos, y) => onDoc(el, a, pos, y)} />;
+    return <DocSession key={key} item={el} active={active} idx={idx} total={total} of={shownTotal} onPrev={goPrev} onNext={goNext} onOut={onOut} onAct={(a, pos, y) => onDoc(el, a, pos, y)} done={acted.get(key)} onPass={advance} />;
   }
 
   const openSource = (e: MouseEvent) => goToSource({ cmdClick: e.metaKey || e.ctrlKey, shiftClick: e.shiftKey });
@@ -649,15 +719,15 @@ export function Session({ active, onOpen }: Props) {
       <div className="recall-meta">
         <Nav idx={idx} total={total} onPrev={goPrev} onNext={goNext} onOut={onOut} past={past} />
         {deck
-          ? <span className="sess-count sess-deck">{studyHeader(deck.title, total - idx)}</span>
-          : <span className="sess-count">{idx + 1} / {total}</span>}
+          ? <span className="sess-count sess-deck">{studyHeader(deck.title, shownTotal - idx)}</span>
+          : <span className="sess-count">{idx + 1} / {shownTotal}</span>}
         <span className="el-tag" data-el="card" data-form={el.form}>{FORM_LABEL[el.form]}</span>
         <button type="button" className="meta-srclink card-trail" onClick={openSource} title={`${plainMath(trail.join(' › '))}  o`}>
           {trail.map((t, i) => <bdi key={i} className={i ? 'ct-h' : 'ct-doc'}><MathText text={t} title={false} /></bdi>)}
           <span className="ms-arrow">↗</span>
         </button>
       </div>
-      <CardElement key={key} item={el} active={active} given={given.current.get(key)} onGrade={(g) => onGrade(el, g)} onSkip={advance} onGone={(g) => setGoneAt((was) => (g ? key : was === key ? null : was))} onEdit={onEdit} learnable={learnNew && (learnt.current.get(learnKey(el)) ?? key) === key} onLearnt={() => onLearnt(el)} />
+      <CardElement key={key} item={el} active={active} given={given.get(key)} onGrade={(g) => onGrade(el, g)} onSkip={advance} onGone={(g) => setGoneAt((was) => (g ? key : was === key ? null : was))} onEdit={onEdit} learnable={learnNew && (learnt.get(learnKey(el)) ?? key) === key} onLearnt={() => onLearnt(el)} />
     </div>
   );
 }

@@ -278,6 +278,10 @@
 .session-bar .sb-actions button:hover { border-color: color-mix(in oklab, var(--fg) calc(30% * var(--chrome)), transparent); }
 .session-bar .sb-actions button:first-child { border-color: color-mix(in oklab, var(--accent) 30%, transparent); }
 .session-bar .sb-actions button:first-child:hover { border-color: var(--accent); background: var(--accent-soft); }
+/* an element done already in this session, come back to: what was done, and ⏎ on */
+.session-bar .sb-actions .sb-done { align-self: center; font-family: var(--sans); font-size: var(--t-sm); color: var(--fg-3); }
+.session-bar .sb-actions button[data-act="pass"] { border-color: color-mix(in oklab, var(--accent) 30%, transparent); }
+.session-bar .sb-actions button[data-act="pass"]:hover { border-color: var(--accent); background: var(--accent-soft); }
 .session-bar .sb-actions .ra-l { font-family: var(--sans); font-size: var(--t-sm); color: var(--fg-1); }
 
 /* an Arabic face: taller lines for the ḥarakāt, upright, no letter-spacing */

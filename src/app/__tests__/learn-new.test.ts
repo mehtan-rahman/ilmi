@@ -74,14 +74,15 @@ describe('a card never tested', () => {
     const before = await fsp.readFile(join(dir, a.path), 'utf8');
     useApp.setState({ learnNew: true, session: { seq: 10, items: [a, b] } });
     await mount();
+    expect(count()).toBe('1 / 4');
     expect(card().dataset.revealed).toBe('1');
     expect(card().querySelector('.face.back')).not.toBeNull();
     expect(learnBar()).not.toBeNull();
     expect(host.querySelectorAll('.grades button')).toHaveLength(1);
     expect(host.querySelector('.cm-learn')?.textContent).toBe('first time · learn it');
     await press(' ');
-    // the second, then the first again at the end: one more in the session
-    expect(count()).toBe('2 / 3');
+    // the walk counts both cards' tests from the start (`1 / 4`): the total does not grow as they are learnt
+    expect(count()).toBe('2 / 4');
     expect(useApp.getState().session!.items[2]).toBe(a);
     expect(await fsp.readFile(join(dir, a.path), 'utf8')).toBe(before);
     // the second is new too: learnt, and tested after the first

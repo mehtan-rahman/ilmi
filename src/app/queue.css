@@ -275,3 +275,6 @@
   margin-top: 4px;
 }
 .qlist .body .ref-line + .for-exam { margin-top: 1px; }
+
+/* under `nothing due`: what is next, one quiet line */
+.queue .empty .empty-next { margin-top: 6px; font-family: var(--sans); font-size: var(--t-sm); font-style: normal; color: var(--fg-3); }

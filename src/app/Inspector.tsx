@@ -11,7 +11,7 @@ import {
   AF_MIN, PRI_DEFAULT, PRI_MAX, PRI_MIN, READ_AF, RETENTION_MAX, RETENTION_MIN, WRITE_AF, cardForm, docPri, meta, pagesLabel, parse, parseAf, parseCount, parsePri, parseRetention, setField,
   type Block, type Card, type CardForm, type CardSchedule, type Doc, type ReadSchedule, type WriteSchedule,
 } from '../format/index.js';
-import { activeExam, addDays, advanceWrite, cadence, cadenceWords, dayOf, elapsedBase, examKey, examLeft, finishes, inScope, nextIntervals, passagesOf, readPri, readingLeft, sectionState, type CardItem, type OptionKey } from '../schedule/index.js';
+import { activeExam, addDays, advanceWrite, cadence, cadenceWords, cardGroups, isSuspended, scheduleOf, dayOf, elapsedBase, examKey, examLeft, finishes, inScope, nextIntervals, passagesOf, readPri, readingLeft, sectionState, type CardItem, type OptionKey } from '../schedule/index.js';
 import { baseOf, childDirOf, childrenAt, dirOf, isDoc, isPdfPath, pageOfBlock, type TreeNode } from '../vault/index.js';
 import { cardName, formLabel } from './chrome.js';
 import { breakdown, countsUnder, dueItems, plainMath } from './chromeText.js';
@@ -23,7 +23,8 @@ import { useApp, type CaretHeading, type DocInfo } from './store.js';
 import { useDoc } from './useDoc.js';
 import { absorbExtractNode, currentVault, examsAtPath, openCard, openNode, optionsAt, resetCard } from './vault.js';
 import { currentCards, linkedTo, pairsOf, unlinkCards } from './sameOps.js';
-import { docsUnder } from './deck.js';
+import { docsUnder, restore } from './deck.js';
+import { failed, notify } from './land.js';
 import { foldedHeadings, notebookOf, outline } from './tabs.js';
 import { goToHeading } from './headings.js';
 import { headingOf, moveAction, sectionActions, statusOf, writeDoc } from './sections.js';
@@ -124,7 +125,7 @@ function PriField({ value, fallback, onCommit }: { value: number | undefined; fa
 
 /** The document's priority row: the field, written through `setField`; empty clears it. */
 function docPriRow(path: string, m: ReturnType<typeof meta>): [string, ReactNode] {
-  const write = (n: number | null) => currentVault()?.update(path, (d) => setField(d, 'pri', n)).catch(console.error);
+  const write = (n: number | null) => currentVault()?.update(path, (d) => setField(d, 'pri', n)).catch(failed('priority'));
   // with no field, a `pri=` left on a read / write line is what the queue uses for that loop
   const fallback = m.read?.pri ?? m.write?.pri ?? PRI_DEFAULT;
   return ['priority', <PriField key={path} value={m.pri} fallback={fallback} onCommit={write} />];
@@ -145,7 +146,7 @@ function growthRow(path: string, key: 'read' | 'write', s: ReadSchedule | WriteS
     if (!cur) return;
     const { af: _, ...rest } = cur;
     setField(d, key, n === null ? rest : { ...rest, af: n });
-  }).catch(console.error);
+  }).catch(failed('growth'));
   const preview = onCadence !== undefined ? `${cadenceWords(onCadence)} while reading` : nextIntervals(elapsedBase(s, now), s.af ?? def).map(fmtDays).join(', ');
   return ['growth', (
     <>
@@ -194,7 +195,7 @@ export function DayField({ value, today, onCommit }: { value: string | undefined
 
 /** A source's `finish by` row: the field, written through `setField`; empty clears it. */
 function finishRow(path: string, m: ReturnType<typeof meta>, now: Date): [string, ReactNode] {
-  const write = (day: string | null) => currentVault()?.update(path, (d) => setField(d, 'finish', day)).catch(console.error);
+  const write = (day: string | null) => currentVault()?.update(path, (d) => setField(d, 'finish', day)).catch(failed('finish day'));
   return ['finish by', <DayField key={path} value={m.finish} today={dayOf(now)} onCommit={write} />];
 }
 
@@ -205,7 +206,7 @@ function ivlRow(path: string, key: 'read' | 'write', s: ReadSchedule | WriteSche
     const cur = key === 'read' ? m.read : m.write;
     if (!cur) return;
     setField(d, key, { ...cur, ivl: n, due: addDays(dayOf(now), n) });
-  }).catch(console.error);
+  }).catch(failed('interval'));
   return ['interval', ivlField(`${path}:${key}`, s.ivl, write)];
 }
 
@@ -235,7 +236,7 @@ export function OptionsBlock({ path }: { path: string }) {
   };
   const isOwn = (k: OptionKey) => own && from[k] === path;
   const write = (field: 'new-per-day' | 'reviews-per-day' | 'retention' | 'leech' | 'leech-action', v: number | string | null) =>
-    currentVault()?.update(path, (d) => setField(d, field as 'leech', v as number | null)).catch(console.error);
+    currentVault()?.update(path, (d) => setField(d, field as 'leech', v as number | null)).catch(failed('option'));
   const num = (k: Exclude<OptionKey, 'leechAction'>, label: string, min: number, max: number | undefined, step: number, parse: (t: string) => number | null, unit?: string): [string, ReactNode] => {
     const value = opts[k];
     const shown = value === null ? 'none' : String(value);
@@ -328,8 +329,15 @@ const hasSchedule = (s: CardSchedule | undefined): boolean => !!s && Object.keys
 function CardList({ title, doc, now }: { title: string; doc: Doc; now: Date }) {
   const cards = doc.blocks.filter((b): b is Card => b.kind === 'card');
   if (!cards.length) return null;
+  const at = (d: string | undefined): number => (d === undefined ? now.getTime() : new Date(d.length === 10 ? `${d}T00:00` : d).getTime());
   const due = (c: Card): string | undefined => {
-    const dues = c.blanks ? Object.values(c.blanks).map((b) => b.due ?? c.sched?.due) : cardForm(c.text) === 'bidir' ? [c.sched?.due, c.reverse?.due] : [c.sched?.due];
+    // a cloze: the soonest of its blanks still in the queue (one never graded is due now), else of all, as the deck's row has it (`deck.ts`)
+    const groups = cardForm(c.text) === 'cloze' ? cardGroups(c.text) : [];
+    if (groups.length) {
+      const live = groups.filter((g) => !isSuspended(c, g));
+      return (live.length ? live : groups).map((g) => scheduleOf(c, g)?.due).sort((x, y) => at(x) - at(y))[0];
+    }
+    const dues = cardForm(c.text) === 'bidir' ? [c.sched?.due, c.reverse?.due] : [c.sched?.due];
     return dues.some((d) => d === undefined) ? undefined : [...(dues as string[])].sort()[0];
   };
   return (
@@ -375,7 +383,7 @@ function CardEditor({ path, index, card }: { path: string; index: number; card: 
       currentVault()?.update(path, (doc) => {
         const b = cardAt(doc, index, card);
         if (b && b.text !== next) b.text = next;
-      }).catch(console.error);
+      }).catch(failed('edit'));
     }, 400);
   };
 
@@ -452,7 +460,7 @@ function childrenRow(id: string, tree: TreeNode[]): [string, ReactNode][] {
 }
 
 function toggleField(path: string, key: 'frozen', value: boolean) {
-  currentVault()?.update(path, (doc) => setField(doc, key, value)).catch(console.error);
+  currentVault()?.update(path, (doc) => setField(doc, key, value)).catch(failed('option'));
 }
 
 function DocInspector({ id, info, doc, now }: { id: string; info: DocInfo; doc: Doc; now: Date }) {
@@ -463,7 +471,7 @@ function DocInspector({ id, info, doc, now }: { id: string; info: DocInfo; doc: 
   const cardsRow: [string, ReactNode] = ['cards', info.due ? `${cards}, ${info.due} due` : cards];
 
   if (info.type === 'deck') {
-    const setDefault = (form: CardForm) => currentVault()?.update(id, (d) => setField(d, 'default-card', form)).catch(console.error);
+    const setDefault = (form: CardForm) => currentVault()?.update(id, (d) => setField(d, 'default-card', form)).catch(failed('default card'));
     return (
       <>
         <Block title="deck">
@@ -486,7 +494,7 @@ function DocInspector({ id, info, doc, now }: { id: string; info: DocInfo; doc: 
   if (info.type === 'draft') {
     const w = m.write;
     const state = !w ? 'not enrolled' : w.done ? 'done' : w.reps ? `pass ${w.reps + 1}` : 'first pass';
-    const toggle = () => { if (w) currentVault()?.update(id, (d) => { advanceWrite(d, w.done ? 'on' : 'done', appNow()); }).catch(console.error); };
+    const toggle = () => { if (w) currentVault()?.update(id, (d) => { advanceWrite(d, w.done ? 'on' : 'done', appNow()); }).catch(failed('done')); };
     return (
       <>
         <Block title="draft">
@@ -552,7 +560,7 @@ function DocInspector({ id, info, doc, now }: { id: string; info: DocInfo; doc: 
         <Block title="extract">
           <div className="frozen-row">
             <span className="fr-state">an extract document, from before sections</span>
-            <button type="button" className="fr-toggle" data-act="absorb" onClick={() => void absorbExtractNode(id).then((made) => { useApp.setState({ reveal: { path: made.note, index: made.index, heading: made.text } }); openNode(made.note); }).catch(console.error)}>into the note</button>
+            <button type="button" className="fr-toggle" data-act="absorb" onClick={() => void absorbExtractNode(id).then((made) => { useApp.setState({ reveal: { path: made.note, index: made.index, heading: made.text } }); openNode(made.note); }).catch(failed('into the note'))}>into the note</button>
           </div>
         </Block>
       )}
@@ -603,7 +611,7 @@ function PassagesBlock({ id, note, doc, now }: { id: string; note: string; doc: 
             const when = chipWhen(read, now);
             const cur = caret?.path === note && caret.text === p.heading.text;
             return (
-              <li key={`${p.index}:${p.heading.text}`} data-due={when === 'due today' ? '1' : '0'} data-cur={cur ? '1' : '0'} data-dismissed={when === 'dismissed' ? '1' : '0'} onClick={() => { useApp.setState({ reveal: { path: note, index: p.index, heading: p.heading.text } }); void openNotes(id).catch(console.error); }}>
+              <li key={`${p.index}:${p.heading.text}`} data-due={when === 'due today' ? '1' : '0'} data-cur={cur ? '1' : '0'} data-dismissed={when === 'dismissed' ? '1' : '0'} onClick={() => { useApp.setState({ reveal: { path: note, index: p.index, heading: p.heading.text } }); void openNotes(id).catch(failed('open the notes')); }}>
                 <MathText className="cl-t" dir="auto" text={p.heading.text} />
                 <span className="cl-due" data-st={dueTone(when)} title={pagesLabel(p.boxes)}>{when === 'due today' ? 'today' : when.replace(/^back /, '')}</span>
               </li>
@@ -645,7 +653,7 @@ export function SectionBlock({ path, doc, at, now }: { path: string; doc: Doc; a
         if (!h?.read) return;
         h.read.ivl = n;
         h.read.due = addDays(dayOf(now), n);
-      }).catch(console.error);
+      }).catch(failed('interval'));
       rows.push(['interval', ivlField(`${path}:${heading.text}:ivl`, read.ivl, setIvl)]);
     }
     const setPri = (n: number | null) => void writeDoc(path, (d) => {
@@ -653,7 +661,7 @@ export function SectionBlock({ path, doc, at, now }: { path: string; doc: Doc; a
       if (!h?.read) return;
       if (n === null) delete h.read.pri;
       else h.read.pri = n;
-    }).catch(console.error);
+    }).catch(failed('priority'));
     rows.push(['priority', <PriField key={`${path}:${heading.text}`} value={read.pri} fallback={docPri(meta(doc))} onCommit={setPri} />]);
   }
   const act = sectionActions(status, here, read)[0]!;
@@ -709,7 +717,7 @@ function CardBlock({ path, index, doc, group, dir, now }: { path: string; index:
     if (!c) return;
     if (n !== null) c.sched = { ...c.sched, pri: n };
     else if (c.sched) { delete c.sched.pri; if (!Object.keys(c.sched).length) delete c.sched; }
-  }).catch(console.error);
+  }).catch(failed('priority'));
   rows.push(['priority', <PriField key={`${path}:${b.id ?? index}`} value={b.sched?.pri} fallback={docPri(meta(doc))} onCommit={setPri} />]);
   // the same fact elsewhere: the card it is linked to, else the likeliest other card (same.ts)
   const linked = b.sched?.link !== undefined ? linkedTo(b.sched.link) : undefined;
@@ -725,7 +733,7 @@ function CardBlock({ path, index, doc, group, dir, now }: { path: string; index:
   );
   if (linked) {
     const me = currentCards().find((c) => c.path === path && c.block === index);
-    const unlink = () => { if (me) unlinkCards(me, linked).catch(console.error); };
+    const unlink = () => { if (me) unlinkCards(me, linked).catch(failed('unlink')); };
     rows.push(['linked to', (
       <span key="linked" className="insp-same">
         {other(linked, 'linked')}
@@ -735,7 +743,15 @@ function CardBlock({ path, index, doc, group, dir, now }: { path: string; index:
   } else if (alike.length) {
     rows.push(['also in', <span key="alike" className="insp-same">{other(alike[0]!.other, 'alike', alike.length - 1)}</span>]);
   }
-  const reset = () => { resetCard(path, index, b.id, b.text).catch(console.error); };
+  // the schedule forgotten can be had back from the notice: the document as it was
+  const reset = () => {
+    const vault = currentVault();
+    if (!vault) return;
+    void vault.read(path).then(({ doc: was }) => {
+      const before = structuredClone(was);
+      return resetCard(path, index, b.id, b.text, true).then(() => notify('reset · card', null, () => restore(vault, [{ path, doc: before }])));
+    }).catch(failed('reset'));
+  };
   return (
     <>
       <Block title="card">

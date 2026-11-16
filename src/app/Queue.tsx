@@ -7,10 +7,10 @@
 // above the fold are the day's work, the rest sit dimmed below a rule, and
 // `postpone the rest` pushes the backlog among the reading and writing out.
 
-import { Fragment, useEffect, useState, type MouseEvent } from 'react';
+import { Fragment, useEffect, useRef, useState, type MouseEvent } from 'react';
 import { PRI_DEFAULT, cardFields } from '../format/index.js';
 import { counts, dayOf, examKey, inScope, overflow, type ExamAt, type QueueItem } from '../schedule/index.js';
-import { QUEUE_EMPTY, dayLabel, dueWhen, examName, examWhen, forExam, glyphOf, intervalLabel, isFresh, kindTag, markOf, paceWords, snippetOf, standing, dueTone } from './items.js';
+import { QUEUE_EMPTY, nextLook, nextUp, dayLabel, dueWhen, examName, examWhen, forExam, glyphOf, intervalLabel, isFresh, kindTag, markOf, paceWords, snippetOf, standing, dueTone } from './items.js';
 import { pathParts, plainMath } from './chromeText.js';
 import { MathText } from './MathText.js';
 import type { DocInfo } from './store.js';
@@ -21,7 +21,7 @@ import { dirAttr } from '../reader/index.js';
 import { useApp } from './store.js';
 import { currentVault, openCard, openNode, openSession, postponeRest, refreshQueue, startSession } from './vault.js';
 import { actOnDoc, actionWords, atEndOf, docLine, twoLines, type DocAction } from './Session.js';
-import { notify } from './land.js';
+import { failed, notify } from './land.js';
 import { restore } from './deck.js';
 import type { ReadItem, SectionItem, WriteItem } from '../schedule/index.js';
 import './queue.css';
@@ -102,7 +102,7 @@ function TopicActs({ item, now }: { item: ReadItem | WriteItem | SectionItem; no
     void vault.read(item.path).then(({ doc }) => {
       const before = structuredClone(doc);
       return actOnDoc(item, action).then(() => notify(line, null, () => restore(vault, [{ path: item.path, doc: before }])));
-    }).catch(console.error);
+    }).catch(failed(action === 'on' ? 'next' : action === 'postpone' ? 'later' : 'dismiss'));
   };
   return (
     <span className="topic-acts">
@@ -140,6 +140,19 @@ export function Queue({ scope, active }: Props) {
 
   // a card in learning steps comes due by the minute; look again when shown
   useEffect(() => { if (active) refreshQueue(); }, [active, scope]);
+  // and while it stays open: when the window is come back to, when the next element ahead comes due, at the day's turn
+  useEffect(() => {
+    if (!active) return;
+    const look = () => { if (document.visibilityState !== 'hidden') refreshQueue(); };
+    window.addEventListener('focus', look);
+    document.addEventListener('visibilitychange', look);
+    const t = setTimeout(look, Math.min(nextLook(all, appNow()), 2 ** 31 - 1));
+    return () => {
+      window.removeEventListener('focus', look);
+      document.removeEventListener('visibilitychange', look);
+      clearTimeout(t);
+    };
+  }, [active, all]);
 
   useEffect(() => {
     if (cursor > items.length - 1) setCursor(Math.max(0, items.length - 1));
@@ -151,7 +164,26 @@ export function Queue({ scope, active }: Props) {
   // the cards query opens the card where it lives; the other scopes review it
   const open = (item: QueueItem, opts: OpenOpts = {}) => {
     if (scope === 'cards' && item.kind === 'card') openCard(item.path, item.block, item.id, opts);
-    else openSession(item, opts);
+    else openSession(item, opts, filter);
+  };
+
+  // the cursor moved by a key is brought into view; under the pointer it is there already
+  const listRef = useRef<HTMLOListElement>(null);
+  const byKey = useRef(false);
+  useEffect(() => {
+    if (!byKey.current) return;
+    byKey.current = false;
+    listRef.current?.querySelector('li[data-active="1"]')?.scrollIntoView({ block: 'nearest' });
+  }, [cursor]);
+
+  // the backlog postponed, each file as it was kept for the notice's undo
+  const postpone = () => {
+    const vault = currentVault();
+    if (!vault) return;
+    const paths = [...new Set(rest.map((i) => i.path))];
+    void Promise.all(paths.map((path) => vault.read(path).then(({ doc }) => ({ path, doc: structuredClone(doc) }))))
+      .then((before) => postponeRest(true).then((n) => { if (n) notify(`postponed · ${plural(n, 'element')}`, null, () => restore(vault, before)); }))
+      .catch(failed('postpone'));
   };
 
   useEffect(() => {
@@ -159,14 +191,15 @@ export function Queue({ scope, active }: Props) {
     const onKey = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey || inField(e.target)) return;
       const it = items[cursor];
-      if (e.key === 'j' || e.key === 'ArrowDown') { e.preventDefault(); setCursor((c) => Math.min(items.length - 1, c + 1)); }
-      else if (e.key === 'k' || e.key === 'ArrowUp') { e.preventDefault(); setCursor((c) => Math.max(0, c - 1)); }
-      else if (e.key === 'Enter') { e.preventDefault(); if (scope === 'today') startSession(); else if (it) open(it); }
-      else if (e.key === 'o' && it) { e.preventDefault(); open(it); }
+      if (e.key === 'j' || e.key === 'ArrowDown') { e.preventDefault(); byKey.current = true; setCursor((c) => Math.min(items.length - 1, c + 1)); }
+      else if (e.key === 'k' || e.key === 'ArrowUp') { e.preventDefault(); byKey.current = true; setCursor((c) => Math.max(0, c - 1)); }
+      // a key held down enters once: its repeats are not the session's keys
+      else if (e.key === 'Enter') { e.preventDefault(); if (e.repeat) return; if (scope === 'today') startSession({}, filter); else if (it) open(it); }
+      else if (e.key === 'o' && it) { e.preventDefault(); if (!e.repeat) open(it); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [active, items, cursor, scope]);
+  }, [active, items, cursor, scope, filter]);
 
   return (
     <div className="queue">
@@ -181,7 +214,7 @@ export function Queue({ scope, active }: Props) {
           </div>
         )}
         {scope === 'today' && items.length > 0 && (
-          <button type="button" className="enter-queue" onClick={() => startSession()}>
+          <button type="button" className="enter-queue" onClick={() => startSession({}, filter)}>
             <span className="eq-main">enter queue</span>
             <kbd>⏎</kbd>
           </button>
@@ -204,9 +237,12 @@ export function Queue({ scope, active }: Props) {
       </header>
 
       {items.length === 0 ? (
-        <div className="empty">{QUEUE_EMPTY[scope]}</div>
+        <div className="empty">
+          {QUEUE_EMPTY[scope]}
+          {scope === 'today' && nextUp(all, now) && <div className="empty-next">{nextUp(all, now)}</div>}
+        </div>
       ) : (
-        <ol className="qlist">
+        <ol className="qlist" ref={listRef}>
           {items.slice(0, drawn).map((item, i) => {
             const ref = standing(item, now, docs[item.path]?.pages?.first);
             const pace = paceWords(item, now);
@@ -243,7 +279,7 @@ export function Queue({ scope, active }: Props) {
                 <li className="fold" data-below="0">
                   <span className="fold-n">{items.length - foldAt} more</span>
                   {rest.length > 0 && (
-                    <button type="button" className="fold-act" onClick={() => void postponeRest().catch(console.error)}>
+                    <button type="button" className="fold-act" onClick={postpone}>
                       postpone the rest<span className="fold-what">{restWord}</span>
                     </button>
                   )}

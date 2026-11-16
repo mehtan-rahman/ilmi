@@ -140,7 +140,9 @@ in a card's face Tab the other face (⇧Tab back); in a cell or a list it is the
 in the numbers   on a day: ↑ ↓ a day, ← → a week, ⏎ or space its reviews (or
                  what comes due), esc closes them
 in the queue     j k move (the row is brought into view), ⏎ enter (narrowed
-                 to an exam: what is shown), o open one; a row names its file by its
+                 to an exam: what is shown), o open one; f the focus, round
+                 (all, recall, read, write; ⇧F back): the day narrowed to one
+                 thing to do, ⏎ walking only that; a row names its file by its
                  path (`queue shows titles` in the tweaks brings the title back)
 in a session     [ ] prev / next; space reveal, 1-4 grade (a card graded,
                  come back to: graded again in its grade's place); a card

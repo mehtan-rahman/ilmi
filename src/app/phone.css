@@ -73,6 +73,11 @@ html[data-shape="phone"] .queue h1 { font-size: 26px; }
 html[data-shape="phone"] .queue h1 .day { font-size: var(--t-sm); }
 html[data-shape="phone"] .queue .legend { font-size: var(--t-sm); margin-top: 6px; }
 html[data-shape="phone"] .queue .enter-queue { display: none; }
+html[data-shape="phone"] .queue .focus-row { gap: 0 var(--s-5); margin-top: 2px; }
+/* a finger's height each, the underline kept close under the word */
+html[data-shape="phone"] .queue .focus-row button { min-height: var(--finger); padding: 0; border-bottom: 0; display: inline-flex; align-items: center; }
+html[data-shape="phone"] .queue .focus-row button[data-on="1"] { background: linear-gradient(var(--accent), var(--accent)) left calc(50% + 12px) / 100% 1.5px no-repeat; }
+[data-theme="eink"][data-shape="phone"] .queue .focus-row button[data-on="1"] { background-image: linear-gradient(var(--fg), var(--fg)); }
 html[data-shape="phone"] .queue .exam-filter button { min-height: 32px; font-size: var(--t-sm); }
 html[data-shape="phone"] .queue .qlog-line { font-size: var(--t-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 html[data-shape="phone"] .qlist { margin-top: 12px; }

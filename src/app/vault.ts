@@ -17,7 +17,7 @@ import { startPlugins, stopPlugins } from '../plugins/index.js';
 import { cleanClipDir } from './clip.js';
 import { collectionFs, importCollection } from './collections.js';
 import { cleanViews, type DeckView } from './deck.js';
-import { cleanBudget, dueNow, dueToday, sessionItems } from './items.js';
+import { cleanBudget, cleanFocus, sessionItems, walkOf, type Focus } from './items.js';
 import { INTAKE, SESSION, cardsId, cardsPath, notesPath, queueId, queueScope } from './names.js';
 import { bookShown, inspectorShown } from './layout.js';
 import { activeTab, closedBy, dropTabs, emptyPanes, openTab, restorePanes, retarget, savedPanes, tabNode, type OpenOpts, type Panes } from './panes.js';
@@ -760,7 +760,7 @@ export async function openVault(path: string): Promise<Vault> {
   useApp.setState({
     open, sidebar, inspector, panes, docs: {}, queue: [], budget: cleanBudget(state.budget), clipDir: cleanClipDir(state.clippings), log: [], session: null, sessionEl: null, selectedCard: null, cardAt: {}, reveal: null,
     started: true, sideSheet: false, namingVault: false, gone: s0.gone.filter((p) => p !== path), notice: null, fileOver: null, intakeFiles: [], order: vault.order, railFolded, railWidth: clampRail(state.railWidth ?? RAIL_DEFAULT), deckViews: cleanViews(state.decks), lastDeck: typeof state.lastDeck === 'string' ? state.lastDeck : null, quickCard: null,
-    folds: cleanFolds(state.folds), reviews, readings, lensViews: {}, examFilter: null, closedTabs: [],
+    folds: cleanFolds(state.folds), reviews, readings, lensViews: {}, examFilter: null, queueFocus: cleanFocus(state.focus), closedTabs: [],
     notSame: await vault.loadNotSame().catch(() => []),
   });
   s0.setRecents(addRecent(s0.recents, path, new Date()));
@@ -1108,28 +1108,37 @@ export function openIntake(dir = '', opts: OpenOpts = {}): void {
   openNode(INTAKE, opts);
 }
 
-/** What a session walks: the day's work, or with the queue narrowed to an exam (`only`, its `examKey`) what is due toward it, as the queue shows it. */
-function sessionQueue(only: string | null): QueueItem[] {
+/** What a session walks: the day's work, or with the queue narrowed to an exam (`only`, its `examKey`) or to a focus what is due of that, as the queue shows it. */
+function sessionQueue(only: string | null, focus: Focus): QueueItem[] {
   const s = useApp.getState();
-  return only === null ? dueToday(s.queue, appNow(), s.budget) : dueNow(s.queue, appNow()).filter((i) => i.exam && examKey(i.exam) === only);
+  return walkOf(s.queue, appNow(), s.budget, only, focus);
 }
 
 /**
  * Start a session at `item`: today's queue rotated to begin there, or the
  * item alone when it is not due. The one session tab opens, or comes to
- * the front and starts over. `only`: the exam the queue is narrowed to.
+ * the front and starts over. `only`: the exam the queue is narrowed to;
+ * `focus`: the one thing to do it is narrowed to. A session keeps to them
+ * to its end: what comes back in it is one of its own cards.
  */
-export function openSession(item: QueueItem, opts: OpenOpts = {}, only: string | null = null): void {
+export function openSession(item: QueueItem, opts: OpenOpts = {}, only: string | null = null, focus: Focus = 'all'): void {
   const s = useApp.getState();
-  const items = sessionItems(sessionQueue(only), item);
+  const items = sessionItems(sessionQueue(only, focus), item);
   useApp.setState({ session: { seq: (s.session?.seq ?? 0) + 1, items } });
   openNode(SESSION, opts);
 }
 
-/** Enter the queue: a session over everything due, from the top; narrowed to an exam (`only`), over what is due toward it. */
-export function startSession(opts: OpenOpts = {}, only: string | null = null): void {
-  const first = sessionQueue(only)[0];
-  if (first) openSession(first, opts, only);
+/** Enter the queue: a session over everything due, from the top; narrowed to an exam (`only`) or a focus, over what is due of that. */
+export function startSession(opts: OpenOpts = {}, only: string | null = null, focus: Focus = 'all'): void {
+  const first = sessionQueue(only, focus)[0];
+  if (first) openSession(first, opts, only, focus);
+}
+
+/** Narrow the day's queue to one thing to do, or back to all of it: remembered here, on this device, for this collection. */
+export function setFocus(focus: Focus): void {
+  if (useApp.getState().queueFocus === focus) return;
+  useApp.setState({ queueFocus: focus });
+  queueSave({ focus });
 }
 
 /**

@@ -11,7 +11,7 @@ import { ACCENTS, THEMES, useApp, ZOOM_MAX, ZOOM_MIN } from '../store.js';
 describe('key hints', () => {
   it('names only the keys bound on each surface', () => {
     const keys = (h: ReturnType<typeof hintsFor>) => h.map(([k]) => k);
-    expect(keys(hintsFor({ kind: 'queue', el: null, scope: 'today', canEnrol: false }))).toEqual(['⏎', 'j k', 'o', '⌘k']);
+    expect(keys(hintsFor({ kind: 'queue', el: null, scope: 'today', canEnrol: false }))).toEqual(['⏎', 'j k', 'o', 'f', '⌘k']);
     expect(keys(hintsFor({ kind: 'queue', el: null, scope: 'cards', canEnrol: false }))).toEqual(['⏎', 'j k', '⌘k']);
     expect(keys(hintsFor({ kind: 'session', el: 'card', scope: null, canEnrol: false }))).toEqual(['space', '1 2 3 4', 's', 'o', '[ ]']);
     expect(hintsFor({ kind: 'session', el: 'read', scope: null, canEnrol: false })[0]).toEqual(['⏎', 'done for today']);

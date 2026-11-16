@@ -441,6 +441,17 @@ once everything else has had its turn, and again until a grade moves it out
 of today; the count grows by one each time. A deck studied ahead (`cram`)
 asks each card once.
 
+The day is one list, every kind mixed, in priority order. Under its count a
+row of words narrows it to one thing to do: `all · recall · read · write`,
+each with how many are due. `recall` is the cards, `read` the sources and
+sections, `write` the drafts. `f` goes round them, ⇧F back. Narrowed, the list
+shows that kind only, still in priority order, and ⏎ (or a row pressed, or
+`enter queue` in the palette) walks only that, to the session's end. It
+composes with an exam's chip: `recall` and `midterm 2` together is the cards
+studied toward it. The focus is this device's, kept per collection and never
+synced: a phone left on `recall` stays there while the Mac shows everything.
+The budget is the whole day's: a narrowed list has no fold.
+
 ### Priority, growth, and the budget
 
 The inspector sets a priority, 0 first and 100 last, on a document or on the
@@ -695,7 +706,8 @@ face, and reading is possible there, not the point. A bar sits at the foot,
 under the thumb. Its left button has the tree behind it, with the palette's
 field at the sheet's foot; its right, `+`, is a new card; the middle one enters
 the queue on the day, with the count beside it, and anywhere else comes back
-to the day. There are no tabs, no inspector, no second pane, and no keys named.
+to the day. The day's row of words (`all · recall · read · write`) narrows it
+to one thing to do, and the middle button then enters that, with its count. There are no tabs, no inspector, no second pane, and no keys named.
 
 A row of the day opens the session there. A topic's row (a source, a section,
 a note revisited) has its three on the row: `next`, `later`, `dismiss`, acting

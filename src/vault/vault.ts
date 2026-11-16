@@ -57,6 +57,8 @@ export interface VaultState {
   folds?: Record<string, string[]>;
   /** The deck the last quick card went to (milestone 56): this device's, as the rest of this file is. */
   lastDeck?: string;
+  /** What the day's queue is narrowed to on this device (`recall`, `read`, `write`); absent, everything. */
+  focus?: string;
   /** The last day the queue was built on, so the day's start is known once (the backlog tweak runs then). */
   lastDay?: string;
 }

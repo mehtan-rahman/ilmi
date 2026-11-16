@@ -3,7 +3,7 @@
 // Pure; the model is src/schedule, the views are Queue.tsx and Session.tsx.
 
 import type { CardForm, CardSchedule, Exam } from '../format/index.js';
-import { capForExam, dayOf, dayStart, daysFrom, fold, isDue, passesLeft, preview, sameItem, whenToDate, type CardItem, type Grade, type QueueItem } from '../schedule/index.js';
+import { capForExam, examKey, dayOf, dayStart, daysFrom, fold, isDue, passesLeft, preview, sameItem, whenToDate, type CardItem, type Grade, type QueueItem } from '../schedule/index.js';
 import { nameOf } from '../vault/index.js';
 import type { QueueScope } from './names.js';
 import type { DocInfo, El } from './store.js';
@@ -307,6 +307,41 @@ export const dueNow = (items: QueueItem[], now: Date): QueueItem[] => items.filt
 
 /** The day's work: what is due, above the fold. With no budget, everything due. */
 export const dueToday = (items: QueueItem[], now: Date, budget: number): QueueItem[] => fold(dueNow(items, now), budget).above;
+
+// ── the focus ────────────────────────────────────────────────────
+
+/**
+ * The day narrowed to one thing to do: `recall` its cards, `read` its
+ * reading (sources, a book's pages, sections that come back), `write` its
+ * drafts; `all`, the day as it is. One list still, in priority order.
+ */
+export type Focus = 'all' | 'recall' | 'read' | 'write';
+export const FOCUSES: readonly Focus[] = ['all', 'recall', 'read', 'write'];
+
+/** What is done with an element: a card is recalled, a section read. */
+export const focusOf = (item: QueueItem): Exclude<Focus, 'all'> => (item.kind === 'card' ? 'recall' : item.kind === 'write' ? 'write' : 'read');
+export const inFocus = (item: QueueItem, focus: Focus): boolean => focus === 'all' || focusOf(item) === focus;
+
+/** A focus as stored (`.ilmi/state.json`): anything else is `all`. */
+export const cleanFocus = (x: unknown): Focus => (FOCUSES.includes(x as Focus) ? (x as Focus) : 'all');
+
+/** The focus after `focus` (`f`), or before it (`⇧F`), round. */
+export const nextFocus = (focus: Focus, by: 1 | -1 = 1): Focus => FOCUSES[(FOCUSES.indexOf(focus) + by + FOCUSES.length) % FOCUSES.length]!;
+
+/** One quiet line when the day has nothing of the focus. */
+export const FOCUS_EMPTY: Record<Focus, string> = {
+  all: QUEUE_EMPTY.today, recall: 'nothing to recall today', read: 'nothing to read today', write: 'nothing to write today',
+};
+
+/**
+ * What a session walks, as the queue shows it: the day's work (above the
+ * fold); narrowed to an exam (`only`, its `examKey`) or to a focus, what is
+ * due of that, the budget not counted against it.
+ */
+export function walkOf(items: QueueItem[], now: Date, budget: number, only: string | null, focus: Focus): QueueItem[] {
+  if (only === null && focus === 'all') return dueToday(items, now, budget);
+  return dueNow(items, now).filter((i) => (only === null || (!!i.exam && examKey(i.exam) === only)) && inFocus(i, focus));
+}
 
 /** A budget as stored: a whole number of elements, 0 for none. */
 export function cleanBudget(n: unknown): number {

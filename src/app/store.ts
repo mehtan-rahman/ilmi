@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { NodeType, ReadSchedule, Reading, Review, SectionSchedule, WriteSchedule } from '../format/index.js';
 import type { QueueItem } from '../schedule/index.js';
+import type { Focus } from './items.js';
 import type { Order, TreeNode } from '../vault/index.js';
 import type { DeckView } from './deck.js';
 import { notesPair } from './names.js';
@@ -357,6 +358,8 @@ export interface AppState {
   lensViews: Record<string, LensView>;
   /** The queue shown for one exam only (`examKey`); null, everything. Not remembered. */
   examFilter: string | null;
+  /** The day's queue narrowed to one thing to do (`items.ts`'s `Focus`): this device's, kept in `.ilmi/state.json`. */
+  queueFocus: Focus;
   /** Sync by git (`sync.ts`): where the open vault stands with its remote. */
   sync: SyncState;
   /** The open vault's remote and token, kept with the tweaks (`sync.ts`); empty when none. */
@@ -459,6 +462,7 @@ export const useApp = create<AppState>((set, get) => ({
   readings: [],
   numbersLayer: 'cards',
   examFilter: null,
+  queueFocus: 'all',
   notSame: [],
   lensViews: {},
   sync: { on: false, repo: false, busy: null, offline: false, toPush: 0, conflicts: [], at: null },

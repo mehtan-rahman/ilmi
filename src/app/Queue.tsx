@@ -3,14 +3,16 @@
 // drafts, cards), each row saying where it stands under its title.
 // `today` is the outstanding queue and enters a session; the other scopes
 // are lists that open one element at a time. `j` `k` move, `⏎` enters,
-// `o` opens the one under the cursor. A budget folds the day: the rows
+// `o` opens the one under the cursor. The day can be narrowed to one thing
+// to do (`all · recall · read · write`, `f` round them): the same list, that
+// kind only, and ⏎ walks it. A budget folds the day: the rows
 // above the fold are the day's work, the rest sit dimmed below a rule, and
 // `postpone the rest` pushes the backlog among the reading and writing out.
 
 import { Fragment, useEffect, useRef, useState, type MouseEvent } from 'react';
 import { PRI_DEFAULT, cardFields } from '../format/index.js';
 import { counts, dayOf, examKey, inScope, overflow, type ExamAt, type QueueItem } from '../schedule/index.js';
-import { QUEUE_EMPTY, nextLook, nextUp, dayLabel, dueWhen, examName, examWhen, forExam, glyphOf, intervalLabel, isFresh, kindTag, markOf, paceWords, snippetOf, standing, dueTone } from './items.js';
+import { FOCUSES, FOCUS_EMPTY, QUEUE_EMPTY, focusOf, inFocus, nextFocus, nextLook, nextUp, dayLabel, dueWhen, examName, examWhen, forExam, glyphOf, intervalLabel, isFresh, kindTag, markOf, paceWords, snippetOf, standing, dueTone } from './items.js';
 import { pathParts, plainMath } from './chromeText.js';
 import { MathText } from './MathText.js';
 import type { DocInfo } from './store.js';
@@ -19,7 +21,7 @@ import type { OpenOpts } from './panes.js';
 import { clozeHTML, faceDir, richHTML } from './Reader.js';
 import { dirAttr } from '../reader/index.js';
 import { useApp } from './store.js';
-import { currentVault, openCard, openNode, openSession, postponeRest, refreshQueue, startSession, unlogReading } from './vault.js';
+import { currentVault, openCard, openNode, openSession, postponeRest, refreshQueue, setFocus, startSession, unlogReading } from './vault.js';
 import { actOnDoc, actionWords, atEndOf, docLine, twoLines, type DocAction } from './Session.js';
 import { failed, notify } from './land.js';
 import { restore } from './deck.js';
@@ -122,6 +124,8 @@ export function Queue({ scope, active }: Props) {
   const by = useApp((s) => (s.queueTitles ? 'title' : 'path'));
   const examFilter = useApp((s) => s.examFilter);
   const phone = useApp((s) => s.phone);
+  // the day narrowed to one thing to do; the other scopes are lists, whole
+  const focus = useApp((s) => (scope === 'today' ? s.queueFocus : 'all'));
   const [cursor, setCursor] = useState(0);
   const [rows, setRows] = useState(QUEUE_ROWS);
   const now = appNow();
@@ -129,9 +133,13 @@ export function Queue({ scope, active }: Props) {
   // the exams ahead the scope's elements are studied toward, soonest first; the queue can be narrowed to one
   const exams = [...new Map(scoped.filter((i) => i.exam).map((i) => [examKey(i.exam!), i.exam!] as [string, ExamAt])).values()].sort((a, b) => (a.day < b.day ? -1 : 1));
   const filter = examFilter !== null && exams.some((e) => examKey(e) === examFilter) ? examFilter : null;
-  const items = filter === null ? scoped : scoped.filter((i) => i.exam && examKey(i.exam) === filter);
-  // the fold: where the day's budget ends; under it, the backlog (due before today) can be postponed
-  const foldAt = scope === 'today' && filter === null && budget > 0 && items.length > budget ? budget : items.length;
+  const toward = filter === null ? scoped : scoped.filter((i) => i.exam && examKey(i.exam) === filter);
+  // how many of each thing to do, of what the exam leaves; the focus shows one
+  const tally = { all: toward.length, recall: 0, read: 0, write: 0 };
+  for (const i of toward) tally[focusOf(i)]++;
+  const items = focus === 'all' ? toward : toward.filter((i) => inFocus(i, focus));
+  // the fold: where the day's budget ends; under it, the backlog (due before today) can be postponed. The budget is the whole day's: narrowed, the list has no fold
+  const foldAt = scope === 'today' && filter === null && focus === 'all' && budget > 0 && items.length > budget ? budget : items.length;
   const rest = foldAt < items.length ? overflow(all, now) : [];
   const restWord = [rest.filter((i) => i.kind !== 'write').length, rest.filter((i) => i.kind === 'write').length]
     .map((n, i) => (n ? `${n} to ${i ? 'write' : 'read'}` : ''))
@@ -164,7 +172,7 @@ export function Queue({ scope, active }: Props) {
   // the cards query opens the card where it lives; the other scopes review it
   const open = (item: QueueItem, opts: OpenOpts = {}) => {
     if (scope === 'cards' && item.kind === 'card') openCard(item.path, item.block, item.id, opts);
-    else openSession(item, opts, filter);
+    else openSession(item, opts, filter, focus);
   };
 
   // the cursor moved by a key is brought into view; under the pointer it is there already
@@ -194,12 +202,14 @@ export function Queue({ scope, active }: Props) {
       if (e.key === 'j' || e.key === 'ArrowDown') { e.preventDefault(); byKey.current = true; setCursor((c) => Math.min(items.length - 1, c + 1)); }
       else if (e.key === 'k' || e.key === 'ArrowUp') { e.preventDefault(); byKey.current = true; setCursor((c) => Math.max(0, c - 1)); }
       // a key held down enters once: its repeats are not the session's keys
-      else if (e.key === 'Enter') { e.preventDefault(); if (e.repeat) return; if (scope === 'today') startSession({}, filter); else if (it) open(it); }
+      else if (e.key === 'Enter') { e.preventDefault(); if (e.repeat) return; if (scope === 'today') startSession({}, filter, focus); else if (it) open(it); }
       else if (e.key === 'o' && it) { e.preventDefault(); if (!e.repeat) open(it); }
+      // the focus, round: all, recall, read, write; ⇧F back
+      else if ((e.key === 'f' || e.key === 'F') && scope === 'today') { e.preventDefault(); if (!e.repeat) { setCursor(0); setFocus(nextFocus(focus, e.shiftKey ? -1 : 1)); } }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [active, items, cursor, scope, filter]);
+  }, [active, items, cursor, scope, filter, focus]);
 
   return (
     <div className="queue">
@@ -210,11 +220,20 @@ export function Queue({ scope, active }: Props) {
         </h1>
         {scope === 'today' && (
           <div className="legend">
-            <b>{items.length}</b> due, in priority order
+            <b>{items.length}</b> due, {focus !== 'all' && <span className="legend-focus">{focus} only, </span>}in priority order
+          </div>
+        )}
+        {scope === 'today' && (
+          <div className="focus-row" role="group" aria-label="focus" data-focus={focus}>
+            {FOCUSES.map((f) => (
+              <button key={f} type="button" data-focus={f} data-on={focus === f ? '1' : '0'} data-none={tally[f] ? '0' : '1'} aria-pressed={focus === f} title={f === 'all' ? 'everything due, every kind mixed' : `only what there is to ${f}`} onClick={() => { setCursor(0); setFocus(f); }}>
+                {f}<span className="focus-n">{tally[f]}</span>
+              </button>
+            ))}
           </div>
         )}
         {scope === 'today' && items.length > 0 && (
-          <button type="button" className="enter-queue" onClick={() => startSession({}, filter)}>
+          <button type="button" className="enter-queue" onClick={() => startSession({}, filter, focus)}>
             <span className="eq-main">enter queue</span>
             <kbd>⏎</kbd>
           </button>
@@ -238,8 +257,8 @@ export function Queue({ scope, active }: Props) {
 
       {items.length === 0 ? (
         <div className="empty">
-          {QUEUE_EMPTY[scope]}
-          {scope === 'today' && nextUp(all, now) && <div className="empty-next">{nextUp(all, now)}</div>}
+          {scope === 'today' ? FOCUS_EMPTY[focus] : QUEUE_EMPTY[scope]}
+          {scope === 'today' && nextUp(all.filter((i) => inFocus(i, focus)), now) && <div className="empty-next">{nextUp(all.filter((i) => inFocus(i, focus)), now)}</div>}
         </div>
       ) : (
         <ol className="qlist" ref={listRef}>

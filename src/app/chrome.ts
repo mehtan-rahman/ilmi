@@ -58,7 +58,7 @@ export function hintsFor(c: HintContext): Hint[] {
   switch (c.kind) {
     case 'queue':
       return c.scope === 'today'
-        ? [['⏎', 'enter queue'], ['j k', 'move'], ['o', 'open one'], PALETTE]
+        ? [['⏎', 'enter queue'], ['j k', 'move'], ['o', 'open one'], ['f', 'focus'], PALETTE]
         : [['⏎', 'open'], ['j k', 'move'], PALETTE];
     case 'session':
       // the same three everywhere: a book's ⏎ is done for today, everything else's next

@@ -1,9 +1,10 @@
 // The phone's foot (milestone 56), under the thumb: the one button with the
 // tree and the palette behind it, the day, and `+` for a quick card. On the
-// day the middle button enters the queue; anywhere else it comes back to it.
+// day the middle button enters the queue (what it shows: the focus, when
+// one is on); anywhere else it comes back to it.
 
 import { appNow } from './clock.js';
-import { dueToday } from './items.js';
+import { dueToday, walkOf } from './items.js';
 import { queueId } from './names.js';
 import { activeTab } from './panes.js';
 import { openQuickCard } from './quick.js';
@@ -17,17 +18,21 @@ export function PhoneBar() {
   const tab = useApp((s) => activeTab(s.panes)?.id);
   const sheet = useApp((s) => s.sideSheet);
   const due = useApp((s) => dueToday(s.queue, appNow(), s.budget).length);
+  const focus = useApp((s) => s.queueFocus);
+  // what entering would walk: the day, or the one thing to do it is narrowed to
+  const walk = useApp((s) => walkOf(s.queue, appNow(), s.budget, null, s.queueFocus).length);
   const home = tab === TODAY && !sheet;
+  const go = home && walk > 0;
   const day = () => {
     useApp.setState({ sideSheet: false });
-    if (!home || !due) openNode(TODAY);
-    else startSession();
+    if (!go) openNode(TODAY);
+    else startSession({}, null, focus);
   };
   return (
     <nav className="phone-bar">
       <button type="button" className="pb-more" data-on={sheet ? '1' : '0'} aria-pressed={sheet} aria-label="everything" onClick={toggleSidebar}><Icon name="menu" /><span className="gch">≡</span></button>
-      <button type="button" className="pb-day" data-go={home && due ? '1' : '0'} onClick={day}>
-        <span className="pb-w">{home && due ? 'enter queue' : 'today'}</span>{due > 0 && <span className="pb-n">{due}</span>}
+      <button type="button" className="pb-day" data-go={go ? '1' : '0'} onClick={day}>
+        <span className="pb-w">{go ? 'enter queue' : 'today'}</span>{(go ? walk : due) > 0 && <span className="pb-n">{go ? walk : due}</span>}
       </button>
       <button type="button" className="pb-add" aria-label="new card" onClick={openQuickCard}><Glyph g="+" /></button>
     </nav>

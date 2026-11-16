@@ -280,3 +280,31 @@
 
 /* under `nothing due`: what is next, one quiet line */
 .queue .empty .empty-next { margin-top: 6px; font-family: var(--sans); font-size: var(--t-sm); font-style: normal; color: var(--fg-3); }
+
+/* the focus: the day narrowed to one thing to do, in the lens's switch's words (.fv-view) */
+.queue .focus-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px var(--s-4);
+  margin-top: 6px;
+  font-family: var(--sans);
+  font-size: var(--t-sm);
+}
+.queue .focus-row button {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  border-bottom: 1.5px solid transparent;
+  border-radius: 0;
+  padding: 0 0 2px;
+  font: inherit;
+  color: var(--fg-3);
+  cursor: default;
+  display: inline-block;
+}
+.queue .focus-row button:hover { color: var(--fg-2); }
+.queue .focus-row button[data-on="1"] { color: var(--fg-1); border-bottom-color: var(--accent); }
+.queue .focus-row .focus-n { margin-left: 5px; color: var(--fg-4); font-variant-numeric: tabular-nums; }
+.queue .focus-row button[data-none="1"]:not([data-on="1"]) { color: var(--fg-5); }
+.queue .focus-row button[data-none="1"] .focus-n { color: var(--fg-5); }
+[data-theme="eink"] .queue .focus-row button[data-on="1"] { border-bottom-color: var(--fg); }

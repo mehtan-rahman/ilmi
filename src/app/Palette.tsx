@@ -109,7 +109,7 @@ function runCommand(id: string): void {
     return;
   }
   switch (id) {
-    case 'enter': startSession(); break;
+    case 'enter': startSession({}, null, useApp.getState().queueFocus); break;
     case 'postpone': void postponeRest().catch(failed('that')); break;
     case 'intake': openIntake(tab === undefined || tab.startsWith(':') ? '' : containerOf(tab)); break;
     case 'split': s.setPanes((p) => splitPane(p, p.active)); rememberTab(); break;

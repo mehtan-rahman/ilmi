@@ -13749,6 +13749,40 @@ export async function smokeSweep(vault: Vault): Promise<void> {
       setLensView('', 'items');
     }
 
+    // ── the day's queue, focused on one kind ──
+    {
+      const { setFocus } = await import('./vault.js');
+      openNode(queueId('today'));
+      const frow = await poll(() => activeTab(useApp.getState().panes)?.id === queueId('today') && q<HTMLElement>('.queue .focus-row'), 'the day\'s queue has its focus row', 10000);
+      await sleep(400);
+      const word = (f: string) => q<HTMLButtonElement>(`.focus-row button[data-focus="${f}"]`)!;
+      const n = (f: string) => Number((word(f).querySelector('.focus-n')?.textContent ?? '').replace(/\D/g, '') || 0);
+      const shown = () => qa<HTMLElement>('.qlist li:not(.fold)[data-el]');
+      log(`focus: ${['all', 'recall', 'read', 'write'].map((f) => `${f} ${n(f)}`).join(', ')}; legend "${q('.queue .legend')?.textContent?.trim()}"`);
+      must(frow.dataset.focus === 'all' && word('all').dataset.on === '1' && n('recall') + n('read') + n('write') === n('all') && n('recall') > 100 && n('read') > 0, 'all · recall · read · write, each with its count, the three adding up to all');
+      await shot('sweep-focus');
+      (document.activeElement as HTMLElement | null)?.blur?.();
+      key('f');
+      await poll(() => q<HTMLElement>('.queue .focus-row')?.dataset.focus === 'recall' && useApp.getState().queueFocus === 'recall', 'f turns the focus to recall');
+      await sleep(300);
+      must(shown().length > 0 && shown().every((r) => r.dataset.el === 'card'), `only cards are listed (${shown().length} rows drawn)`);
+      must(/recall only/.test(q('.queue .legend')?.textContent ?? '') && new RegExp(`^\\s*${n('recall')}\\b`).test(q('.queue .legend')?.textContent ?? ''), `the legend says so: ${q('.queue .legend')?.textContent?.trim()}`);
+      const recall = n('recall');
+      key('Enter');
+      await poll(() => activeTab(useApp.getState().panes)?.id === ':session' && useApp.getState().session, 'enter walks the focus', 8000);
+      const items = useApp.getState().session!.items;
+      must(items.length === recall && items.every((it) => it.kind === 'card'), `the session is the ${recall} cards and nothing else`);
+      useApp.setState({ session: null });
+      openNode(queueId('today'));
+      await poll(() => q('.queue .focus-row'), 'back at the queue');
+      word('read').click();
+      await poll(() => useApp.getState().queueFocus === 'read' && shown().length > 0 && shown().every((r) => r.dataset.el === 'read' || r.dataset.el === 'section'), 'a press on read: only what is to be read');
+      await shot('sweep-focus-read');
+      await poll(async () => { try { return (JSON.parse(await vault.fs.readText(vault.abs('.ilmi/state.json'))) as { focus?: string }).focus === 'read'; } catch { return false; } }, 'the focus is kept with the collection\'s view state on this device', 8000);
+      setFocus('all');
+      await poll(() => q<HTMLElement>('.queue .focus-row')?.dataset.focus === 'all' && shown().some((r) => r.dataset.el !== shown()[0]!.dataset.el || true), 'and back to all');
+    }
+
     // ── the session ──
     const due = useApp.getState().queue.filter((i): i is CardItem => i.kind === 'card' && i.form === 'qa' && i.sched?.state === 'review' && i.groups === 1 && !i.dir);
     must(due.length >= 3, `cards in review in the queue (${due.length})`);

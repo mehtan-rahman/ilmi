@@ -13617,6 +13617,43 @@ export async function smokeSweep(vault: Vault): Promise<void> {
     }, `come back to, the book is where it was left (${Math.round(left)})`, 45000);
     must((q('.meta .right')?.textContent ?? '').startsWith(said), `and says the same page (${said})`);
 
+    // ── the book's search goes to the hit, counts hits, and steps hit by hit ──
+    {
+      const sc = (() => { let e: HTMLElement | null = q<HTMLElement>('.pdf-page'); while (e && !(e.scrollHeight > e.clientHeight + 50 && /auto|scroll/.test(getComputedStyle(e).overflowY))) e = e.parentElement; return e!; })();
+      sc.scrollTop = 0;
+      sc.dispatchEvent(new Event('scroll'));
+      await sleep(400);
+      (document.activeElement as HTMLElement | null)?.blur?.();
+      key('/');
+      const field = await poll(() => q<HTMLInputElement>('.pdf-bar input'), 'the book\'s search opens on /');
+      must((q('.pdf-bar .pb-n')?.textContent ?? '') === '', 'it says nothing before it has looked');
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(field, 'partition');
+      field.dispatchEvent(new Event('input', { bubbles: true }));
+      await sleep(200);
+      field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+      const counted = await poll(() => /^p\. (\d+), 1 \/ (\d+)$/.exec(q('.pdf-bar .pb-n')?.textContent ?? ''), 'it counts hits, standing at the first', 30000);
+      const pages = Number(/\/ (\d+)/.exec(q('.meta .right')?.textContent ?? '')?.[1] ?? 0) - Number(counted[1]) + 6;
+      log(`search: ${counted[0]}; the chapter's pages about ${pages}`);
+      must(Number(counted[2]) > 6, `hits, not pages (${counted[2]})`);
+      const atRect = () => { const h = (CSS as unknown as { highlights?: Map<string, Iterable<Range>> }).highlights?.get('ilmi-at'); const r = h ? [...h][0] : undefined; return r ? r.getBoundingClientRect() : null; };
+      const inView = () => { const r = atRect(); const v = sc.getBoundingClientRect(); return r && r.height > 0 && r.top >= v.top + 40 && r.bottom <= v.bottom - 20 ? r : null; };
+      const r1 = await poll(inView, 'the hit the counter names is lit apart and lies in view, clear of the edges', 15000);
+      await shot('sweep-book-hit');
+      // on to a hit far enough that the page must move: each step's hit is in view
+      let last = r1.top;
+      let moved = 0;
+      for (let i = 2; i <= Math.min(8, Number(counted[2])); i++) {
+        field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+        await poll(() => new RegExp(`, ${i} / ${counted[2]}$`).test(q('.pdf-bar .pb-n')?.textContent ?? ''), `⏎ steps to hit ${i}`, 15000);
+        const r = await poll(inView, `hit ${i} lies in view`, 15000);
+        if (Math.abs(r.top - last) > 1) moved++;
+        last = r.top;
+      }
+      must(moved > 0, 'the lit hit moves from one to the next');
+      field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+      await sleep(300);
+    }
+
     // ── tabs ──
     const open0 = tabs();
     key('w', { metaKey: true });

@@ -135,7 +135,7 @@ lost: the windowing library under the app does not pass one on. A link to an
 app that is running lands.
 
 Then Share, your shortcut, in Safari: ilmi opens, fetches the page, lands it
-as a frozen source and opens it, in the folder `clippings go to` in the tweaks.
+as a frozen source and opens it, in the folder `save clippings to` in the settings.
 Add `&folder=` to the link for another folder. The bookmarklet in
 `docs/guide.md` does the same from Safari's bookmarks, with the selection as
 the text.
@@ -157,7 +157,7 @@ the text.
 ⌘K      palette            ⌘⇧N / ⌘O   new collection / import a folder
 ⌘W      close tab          ⌘\          split pane
 ⌃⌘S     sidebar            ⌘⇧I        inspector
-⌘,      tweaks             ⌘F          find in a page
+⌘,      settings             ⌘F          find in a page
 r       start reading      e / m       section / card from a selection
 space   reveal a card      1 2 3 4     grade it
 ⏎ p d   next, later, dismiss, in a session

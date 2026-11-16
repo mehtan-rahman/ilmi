@@ -875,7 +875,7 @@ export function Inspector() {
     ) : null;
   } else if (id === SESSION) {
     const cur = sessionEl?.item;
-    if (!cur) body = <Block title="session"><p className="insp-line">{plural(session?.items.length ?? 0, 'element')}</p></Block>;
+    if (!cur) body = <Block title="session"><p className="insp-line">{plural(session?.items.length ?? 0, 'item')}</p></Block>;
     else if (cur.kind === 'card') {
       body = <WithDoc id={cur.path} render={(doc) => { const i = cardIndex(doc, cur); return i < 0 ? <Gone kind="card" /> : <CardBlock path={cur.path} index={i} doc={doc} group={cur.group} {...(cur.dir ? { dir: cur.dir } : {})} now={now} />; }} />;
     } else {

@@ -30,7 +30,7 @@ installComposing();
 window.addEventListener('unhandledrejection', (e) => {
   const why = e.reason instanceof Error ? e.reason.message : String(e.reason);
   console.error(e.reason);
-  void import('./land.js').then(({ notify }) => notify(`something did not happen · ${why}`));
+  void import('./land.js').then(({ notify }) => notify(`something went wrong · ${why}`));
 });
 
 createRoot(document.getElementById('root')!).render(

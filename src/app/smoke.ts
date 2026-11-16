@@ -57,7 +57,7 @@
 // `ILMI_SMOKE=clip` hands `ilmi://` links to the clipper's handler as the
 // OS would: `new` with content, with a folder, with an address (fetched),
 // `open`, a foreign vault, and garbage, logging the file written, the tab,
-// and the notice each left; then sets `clippings go to` from the tweaks
+// and the notice each left; then sets `save clippings to` from the tweaks
 // panel and clips once more.
 // `ILMI_SMOKE=clipping` pastes a real address on the intake (`ILMI_URL=…`,
 // else the Wikipedia page on spaced repetition; offline it logs and stops),
@@ -101,7 +101,7 @@
 // end of the quote and typing, ⏎ twice to leave; ⏎, Tab, and typing in the
 // code block, ⌘⏎ to step out; the file's lines logged after each write.
 // `ILMI_SMOKE=use` opens the day's queue and logs its first three rows'
-// source lines (the path after the kind tag), turns `queue shows titles` on
+// source lines (the path after the kind tag), turns `show titles in queue` on
 // from the tweaks panel and logs them again, right-clicks the sidebar's
 // empty space and logs the root menu's entries, right-clicks a row, hovers
 // `move to…` (nothing opens), clicks it and logs the list, steps back with
@@ -1614,7 +1614,7 @@ export async function smokeClip(vault: Vault): Promise<void> {
     log(`empty new: ${notice()}; documents ${vault.documents().length} (was ${n}; one more, the own-vault clip)`);
     await shot('clip-notices');
 
-    // the setting: clippings go to a folder, then a link with no folder lands there
+    // the setting: save clippings to a folder, then a link with no folder lands there
     useApp.setState({ tweaksOpen: true });
     const sel = await until(() => q<HTMLSelectElement>('.tweaks .tw-sel'));
     log(`tweaks: options ${Array.from(sel.options).map((o) => o.textContent).join(' | ')}; chosen "${sel.selectedOptions[0]?.textContent}"`);
@@ -2513,7 +2513,7 @@ export async function smokeUse(vault: Vault): Promise<void> {
     log(`queue rows ${qa('.qlist li[data-el]').length}; titles ${useApp.getState().queueTitles}; ${srcLines()}`);
     await shot('use-queue-paths');
     useApp.setState({ tweaksOpen: true });
-    const row = await tweakRow('queue shows titles');
+    const row = await tweakRow('show titles in queue');
     const buttons = Array.from(row.querySelectorAll<HTMLButtonElement>('button'));
     log(`tweaks row "${row.querySelector('.tw-lbl')?.textContent}": ${buttons.map((b) => `${b.textContent}${b.dataset.active === '1' ? '*' : ''}`).join(' ')}`);
     buttons.find((b) => b.textContent === 'on')?.click();

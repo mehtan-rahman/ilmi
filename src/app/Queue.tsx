@@ -193,7 +193,7 @@ export function Queue({ scope, active }: Props) {
     if (!vault) return;
     const paths = [...new Set(rest.map((i) => i.path))];
     void Promise.all(paths.map((path) => vault.read(path).then(({ doc }) => ({ path, doc: structuredClone(doc) }))))
-      .then((before) => postponeRest(true).then((n) => { if (n) notify(`postponed · ${plural(n, 'element')}`, null, () => restore(vault, before)); }))
+      .then((before) => postponeRest(true).then((n) => { if (n) notify(`postponed · ${plural(n, 'item')}`, null, () => restore(vault, before)); }))
       .catch(failed('postpone'));
   };
 
@@ -219,7 +219,7 @@ export function Queue({ scope, active }: Props) {
       <header>
         <h1>
           {QUEUE_TITLE[scope]}
-          <span className="day">{scope === 'today' ? dayLabel(now) : plural(items.length, 'element')}</span>
+          <span className="day">{scope === 'today' ? dayLabel(now) : plural(items.length, 'item')}</span>
         </h1>
         {scope === 'today' && (
           <div className="legend">

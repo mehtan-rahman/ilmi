@@ -256,7 +256,7 @@ function SimilarList({ paths, q, now }: { paths: readonly string[]; q: string; n
     const body = docsOf([c.path])[0]?.[1];
     return body ? findCard(body, c.id === undefined ? { path: c.path, block: c.block, text: c.text } : { path: c.path, block: c.block, id: c.id, text: c.text }) : null;
   };
-  if (!pairs.length) return <div className="empty">nothing alike</div>;
+  if (!pairs.length) return <div className="empty">no similar cards</div>;
   return (
     <div className="same-list">
       {pairs.slice(0, limit).map((p) => {
@@ -846,7 +846,7 @@ export function DeckBrowser({ home, active }: BrowserProps) {
         onCancel={(draft) => {
           // Escape with something written: kept for the next `m` in this deck
           mem.draft = draft && written(draft) ? draft : null;
-          if (mem.draft) note('kept · the new card, m opens it again');
+          if (mem.draft) note('draft kept · m reopens it');
           setEditing(null);
         }}
         onSave={(text, pri, again) => {

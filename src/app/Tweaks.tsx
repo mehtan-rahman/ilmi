@@ -269,7 +269,7 @@ export function Tweaks() {
   return (
     <div className="tweaks tw-rows">
       <div className="tw-hd">
-        <span>tweaks</span>
+        <span>settings</span>
         <button type="button" className="tw-x" aria-label="close" onClick={close}><Glyph g="×" /></button>
       </div>
       <div className="tw-row">
@@ -317,7 +317,7 @@ export function Tweaks() {
         />
       </div>
       <div className="tw-row">
-        <span className="tw-lbl">reopen the last collection on start</span>
+        <span className="tw-lbl">reopen last collection on launch</span>
         <div className="tw-seg">
           <button type="button" data-active={reopen ? '1' : '0'} onClick={() => useApp.getState().setReopen(true)}>on</button>
           <button type="button" data-active={reopen ? '0' : '1'} onClick={() => useApp.getState().setReopen(false)}>off</button>
@@ -338,21 +338,21 @@ export function Tweaks() {
         </div>
       </div>
       <div className="tw-row">
-        <span className="tw-lbl">queue shows titles</span>
+        <span className="tw-lbl">show titles in queue</span>
         <div className="tw-seg">
           <button type="button" data-active={queueTitles ? '1' : '0'} onClick={() => useApp.getState().setQueueTitles(true)}>on</button>
           <button type="button" data-active={queueTitles ? '0' : '1'} onClick={() => useApp.getState().setQueueTitles(false)}>off</button>
         </div>
       </div>
       <div className="tw-row">
-        <span className="tw-lbl">a queue focus keeps to the day's budget</span>
+        <span className="tw-lbl">focus stays within daily budget</span>
         <div className="tw-seg" data-tweak="focus-budget">
           <button type="button" data-active={focusBudget ? '1' : '0'} onClick={() => useApp.getState().setFocusBudget(true)}>on</button>
           <button type="button" data-active={focusBudget ? '0' : '1'} onClick={() => useApp.getState().setFocusBudget(false)}>off</button>
         </div>
       </div>
       <div className="tw-row">
-        <span className="tw-lbl">postpone the backlog when the day starts</span>
+        <span className="tw-lbl">postpone backlog at start of day</span>
         <div className="tw-seg">
           <button type="button" data-active={backlog ? '1' : '0'} onClick={() => useApp.getState().setBacklog(true)}>on</button>
           <button type="button" data-active={backlog ? '0' : '1'} onClick={() => useApp.getState().setBacklog(false)}>off</button>
@@ -373,7 +373,7 @@ export function Tweaks() {
       )}
       {vault !== null && (
         <div className="tw-row">
-          <span className="tw-lbl">clippings go to</span>
+          <span className="tw-lbl">save clippings to</span>
           <ClipDirPick value={clipDir} />
         </div>
       )}

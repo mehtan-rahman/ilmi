@@ -127,7 +127,7 @@ describe('a card graded again', () => {
     expect(host.querySelector('.cm-given')).toBeNull();
     await grade(3);
     // each card once
-    expect(end()).toContain('all done, 3 elements');
+    expect(end()).toContain('all done, 3 items');
     // two reviews of it, each its own line in the log, in the order given, though given in one second
     const now = await line(a!);
     expect(now).toMatchObject({ state: 'review', reps: reps + 2 });
@@ -151,7 +151,7 @@ describe('a card graded again', () => {
     await grade(1);
     expect(count()).toBe('5 / 5');
     await grade(3);
-    expect(end()).toContain('all done, 2 elements');
+    expect(end()).toContain('all done, 2 items');
     expect(await line(a!)).toMatchObject({ state: 'review', reps: reps + 4 });
     const mine = logged.filter((r) => r.card === a!.id);
     expect(mine.map((r) => r.g)).toEqual([1, 1, 1, 3]);
@@ -166,7 +166,7 @@ describe('a card graded again', () => {
     expect(end()).toBeUndefined();
     expect(count()).toBe('2 / 2');
     await grade(4);
-    expect(end()).toContain('all done, 1 element');
+    expect(end()).toContain('all done, 1 item');
   });
 
   it('‹ back to its return, a grade there takes that grade\'s place: one review, one line', async () => {
@@ -182,7 +182,7 @@ describe('a card graded again', () => {
     // good in its place: out of today, so the return that grade brought is not asked, nor counted
     await key('3');
     await settle();
-    expect(end()).toContain('all done, 1 element');
+    expect(end()).toContain('all done, 1 item');
     expect(await line(a!)).toMatchObject({ state: 'review', reps: reps + 2 });
     const mine = logged.filter((r) => r.card === a!.id);
     expect(mine.map((r) => r.g)).toEqual([1, 1, 3]);
@@ -211,7 +211,7 @@ describe('a card graded again', () => {
     await settle();
     expect(count()).toBe('2 / 2');
     await grade(3);
-    expect(end()).toContain('all done, 2 elements');
+    expect(end()).toContain('all done, 2 items');
     // graded once, with the last
     expect(await line(a!)).toMatchObject({ state: 'review', reps: reps + 1, grade: 4 });
   });
@@ -250,7 +250,7 @@ describe('a card graded again', () => {
     expect(count()).toBe('3 / 3');
     expect(revealed()).toBe('0');
     await grade(3);
-    expect(end()).toContain('all done, 2 elements');
+    expect(end()).toContain('all done, 2 items');
   });
 });
 
@@ -293,7 +293,7 @@ describe('a card that is waiting to come back', () => {
     expect(count()).toBe('2 / 2');
     await key('s');
     await settle(80);
-    expect(end()).toContain('all done, 1 element');
+    expect(end()).toContain('all done, 1 item');
     expect((await line(a!))?.suspended).toBe(true);
     expect(logged.filter((r) => r.card === a!.id)).toHaveLength(1);
   });
@@ -306,7 +306,7 @@ describe('what does not bring a card back', () => {
     await grade(2);
     expect(count()).toBe('2 / 2');
     await grade(4);
-    expect(end()).toContain('all done, 2 elements');
+    expect(end()).toContain('all done, 2 items');
   });
 
   it('a session studied ahead (a cram): again is written, and each card is asked once', async () => {
@@ -316,7 +316,7 @@ describe('what does not bring a card back', () => {
     expect(count()).toBe('2 / 2');
     expect(inSteps(await line(a!))).toBe(true);
     await grade(1);
-    expect(end()).toContain('all done, 2 elements');
+    expect(end()).toContain('all done, 2 items');
     expect(useApp.getState().session!.items).toHaveLength(2);
   });
 });

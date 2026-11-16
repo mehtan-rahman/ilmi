@@ -13,8 +13,8 @@ file format in `FORMAT.md`, and plugins in `PLUGINS.md`.
 
 The app opens on the collection it had open last; the welcome (the wordmark,
 `new collection`, `import folder`, and the collections there are as rows)
-shows when there is none or when `reopen the last collection on start` is
-off in the tweaks. A new collection is named on the welcome and starts with
+shows when there is none or when `reopen last collection on launch` is
+off in the settings. A new collection is named on the welcome and starts with
 `start here.md`, one short source with a card in it. `import folder` takes a
 folder of Markdown files (a vault as `FORMAT.md` describes it, or any notes
 you have) and makes a collection named after it, every file in it included;
@@ -43,7 +43,7 @@ another editor, a script, or a backup works on; what is changed there comes
 back by importing that folder as a collection. Nothing else changes the live
 collection.
 
-Two copies are kept without asking for an export. `mirror` in the tweaks
+Two copies are kept without asking for an export. `mirror` in the settings
 (off until you choose a folder; the Mac's) keeps a folder of the
 collection's name inside the one you pick as the collection is, a moment
 after each change, for other tools to read: the same files an export
@@ -304,7 +304,7 @@ title, the author and the date, the count with the image count, and `via
 defuddle` or `via the fallback` (Readability, else the whole page, when
 Defuddle finds nothing). The file carries `url`, `author`, and `published`;
 the inspector shows them, the address as a link that opens in the browser.
-With `download images when clipping` on in the tweaks (it is by default)
+With `download images when clipping` on in the settings (it is by default)
 the page's images are downloaded into the document's own folder,
 `name/img-01.png` …, and the links pointed at them; one that does not
 answer keeps its address. Anything the format would read as a card is
@@ -317,8 +317,8 @@ its own name, so a browser can hand it a page: `ilmi://new?name=&content=&
 folder=&url=` lands a frozen source (the content as the text, else the page
 at the address fetched and read as the intake reads one, with the same
 `url`, `author`, and `published` fields and its images; the name as the
-title, else the page's) in the folder named, else the one `clippings go to`
-in the tweaks panel (the vault root until set), opens it, and leaves a
+title, else the page's) in the folder named, else the one `save clippings to`
+in the settings panel (the vault root until set), opens it, and leaves a
 notice; `ilmi://open?path=` opens a document, `.md` or not. `vault=` must
 name the open vault when it is given; a link that asks for nothing is a
 notice. A bookmarklet clips the selection with the page's address:
@@ -458,7 +458,7 @@ studied toward it. The focus is this device's, kept per collection and never
 synced: a phone left on `recall` stays there while the Mac shows everything.
 The budget is the whole day's: a narrowed list has no fold, and a focus
 walks everything due of its kind. To have a focus keep to the budget, turn
-on `a queue focus keeps to the day's budget` in the tweaks (⌘,): the
+on `focus stays within daily budget` in the settings (⌘,): the
 narrowed list then folds where the day's does, and ⏎ walks only what is
 above the fold of that kind.
 
@@ -476,7 +476,7 @@ the day at that many elements: the top strip counts what is above the fold
 and a session walks it. `postpone the rest`, a row under the fold or a
 palette command, postpones the backlog, the reading and writing due before
 today, and leaves what is first due today alone; cards stay where they are;
-`postpone the backlog when the day starts`, a tweak off by default, runs
+`postpone backlog at start of day`, a setting off by default, runs
 it at the day's first queue build; a source with reading left that it
 pushes on is only held over to tomorrow, its cadence kept, where `p` on it
 still grows the interval. A source you must have read by a day takes it in
@@ -553,7 +553,7 @@ and anything it has not reached is not found.
 
 ## Sync
 
-A collection syncs between devices as a git repository. In the tweaks (⌘,),
+A collection syncs between devices as a git repository. In the settings (⌘,),
 `remote` takes a repository's HTTPS address (a private GitHub repository, a
 bare repository on a machine of yours) and `token` what it asks for;
 `connect` gives the open collection a repository on that remote and brings
@@ -570,7 +570,7 @@ or `2 conflicts`. Offline is quiet; commits wait.
 A push also nudges the other devices, so a change crosses in seconds rather
 than waiting for the timer: the app announces "changed" on a topic named by
 a hash of the remote's address (nothing of the collection goes out), over
-the ntfy server in the tweaks' `nudge` field, `https://ntfy.sh` unless you
+the ntfy server in the settings' `nudge` field, `https://ntfy.sh` unless you
 run your own; every open copy of the collection listens there and pulls at
 once. The age beside `synced` is how long since the remote was last
 reached. Clear the field and the timers are all there is.
@@ -586,7 +586,7 @@ the review log is unioned. Every merge is one commit in the history.
 PDFs included. A folder that was a repository before it was imported does
 not bring its history: `connect` the collection to the same remote and the
 two are merged. The
-remote and the token live with the tweaks on each device, never in the
+remote and the token live with the settings on each device, never in the
 collection. SSH remotes and large files are not supported.
 
 ### Through a storage
@@ -594,7 +594,7 @@ collection. SSH remotes and large files are not supported.
 The other way to sync needs no repository: a storage, which is a folder (a
 disk, a NAS), an S3-compatible bucket (Cloudflare R2, MinIO, AWS), a
 WebDAV folder (Nextcloud, a Synology), Dropbox or Google Drive. In the
-tweaks, `storage` takes the kind and the fields it needs: a folder; or
+settings, `storage` takes the kind and the fields it needs: a folder; or
 `endpoint`, `bucket` (a prefix may follow the bucket's name after a `/`),
 `key` and `secret`; or the folder's `address`, `user` and `password`; or,
 for Dropbox and Google Drive, what is below. `connect` puts the open
@@ -618,7 +618,7 @@ moved on one and edited on the other is one document in its new place.
 here` on its row and fetches it when it is opened, the strip reading
 `pulling 40%` as it comes. A large PDF goes to and from the storage a
 piece at a time, and a book over 16 MB is read from disk as its pages are
-turned to. The fields are kept with the tweaks on each device, never in
+turned to. The fields are kept with the settings on each device, never in
 the collection.
 
 ### Dropbox and Google Drive
@@ -742,7 +742,7 @@ since a link that itself starts the app is lost.
 
 ## Plugins
 
-Plugins live in a vault's `.ilmi/plugins/` and are turned on in tweaks (through a
+Plugins live in a vault's `.ilmi/plugins/` and are turned on in settings (through a
 storage, each one on or off on its own, so two devices that each turn one on
 both keep both); the
 API, how to write one, and how to package one are in `PLUGINS.md`. The repo

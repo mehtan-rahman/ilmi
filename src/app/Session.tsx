@@ -818,7 +818,7 @@ export function Session({ active, onOpen }: Props) {
   if (!el) {
     return (
       <div className="recall-wrap">
-        <div className="empty center session-end">{total === 0 ? 'nothing due' : `all done, ${plural(distinct, 'element')} · back to the queue`}</div>
+        <div className="empty center session-end">{total === 0 ? 'nothing due' : `all done, ${plural(distinct, 'item')} · back to the queue`}</div>
       </div>
     );
   }

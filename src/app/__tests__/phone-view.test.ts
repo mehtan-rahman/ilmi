@@ -160,7 +160,7 @@ describe('the strips', () => {
     useApp.setState({ paletteOpen: true });
     await draw(createElement(Palette));
     const titles = qa('.palette-row .pt').map((e) => e.textContent);
-    expect(titles).toContain('tweaks');
+    expect(titles).toContain('settings');
     for (const gone of ['inspector', 'sidebar', 'split pane', 'export collection · zip']) expect(titles).not.toContain(gone);
   });
 });

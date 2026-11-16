@@ -29,12 +29,12 @@ in a menu        ↓ ↑ move (round the ends), Home End, ⏎ or space runs the 
 ⌃Tab ⌃⇧Tab       the active pane's next tab and the one before (⌘⇧] ⌘⇧[ the same)
 ⌘⇧T              the tab closed last, open again (as long as the collection stays open)
 ⌃⌘S              sidebar                ⌘⇧I          inspector
-⌘= ⌘−            text size, bigger and smaller (⌘0 back to 100%); kept with the tweaks
+⌘= ⌘−            text size, bigger and smaller (⌘0 back to 100%); kept with the settings
                  (over a book's pages they zoom the pages: see in a book)
-⌘,               tweaks: theme, accent, density, text size, reopen the last vault on start,
+⌘,               settings: theme, accent, density, text size, reopen the last vault on start,
                  download images when clipping, show remote images, queue
-                 shows titles, a queue focus keeps to the day's budget,
-                 postpone the backlog when the day starts
+                 shows titles, focus stays within daily budget,
+                 postpone backlog at start of day
                  (kept outside the vault); the day's budget,
                  where clippings go, and plugins (kept in the vault's .ilmi)
 
@@ -150,7 +150,7 @@ in the queue     j k move (the row is brought into view), ⏎ enter (narrowed
                  to an exam: what is shown), o open one; f the focus, round
                  (all, recall, read, write; ⇧F back): the day narrowed to one
                  thing to do, ⏎ walking only that; a row names its file by its
-                 path (`queue shows titles` in the tweaks brings the title back)
+                 path (`show titles in queue` in the settings brings the title back)
 in a session     [ ] prev / next; space reveal, 1-4 grade (a card graded,
                  come back to: graded again in its grade's place); a card
                  graded into its steps (again; a new card good: due in

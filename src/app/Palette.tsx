@@ -36,7 +36,7 @@ const COMMANDS: Command[] = [
   { id: 'sidebar', title: 'sidebar' },
   { id: 'inspector', title: 'inspector' },
   { id: 'theme', title: 'next theme' },
-  { id: 'tweaks', title: 'tweaks' },
+  { id: 'tweaks', title: 'settings' },
   // the File menu's four, by the same ids, so there is a path without the native menu
   { id: MENU_ID.open, title: 'import folder…' },
   { id: MENU_ID.new, title: 'new collection…' },

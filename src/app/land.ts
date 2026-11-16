@@ -253,7 +253,7 @@ export function notify(line: string, open: string | null = null, undo?: () => Pr
  */
 export const failed = (what: string) => (e: unknown): void => {
   console.error(e);
-  notify(`${what} did not happen · ${e instanceof Error ? e.message : String(e)}`);
+  notify(`${what} failed · ${e instanceof Error ? e.message : String(e)}`);
 };
 
 export function dismissNotice(at?: number): void {

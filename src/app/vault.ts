@@ -329,7 +329,7 @@ let lastDay: string | null = null;
 
 /**
  * The first queue build of a day: the day is recorded (`VaultState.lastDay`),
- * and with the `postpone the backlog when the day starts` tweak on, what was
+ * and with the `postpone backlog at start of day` tweak on, what was
  * due before today is postponed (`postponeRest`). Nothing on the day the
  * vault is first opened, which has no day before it.
  */
@@ -1174,7 +1174,7 @@ export function setFocus(focus: Focus): void {
 export async function postponeRest(quiet = false): Promise<number> {
   const s = useApp.getState();
   const done = await postponeOverflow(need(), s.queue, appNow());
-  if (done.length && !quiet) note(`postponed · ${done.length} element${done.length === 1 ? '' : 's'}`);
+  if (done.length && !quiet) note(`postponed · ${done.length} item${done.length === 1 ? '' : 's'}`);
   return done.length;
 }
 

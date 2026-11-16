@@ -1467,14 +1467,14 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
   const followLink = async (l: PageLink, from: number) => {
     if (l.url !== undefined) { openWeb(l.url); return; }
     const to = await linkPlace(l, from);
-    if (!to) { notify('this link goes nowhere in this pdf'); return; }
+    if (!to) { notify('this link\'s target is not in this pdf'); return; }
     goTo(to);
   };
   /** A link's destination in the peek, without going; a web one's address is said. */
   const peekLink = async (l: PageLink, from: number) => {
     if (l.url !== undefined) { notify(l.url); return; }
     const to = await linkPlace(l, from);
-    if (!to) { notify('this link goes nowhere in this pdf'); return; }
+    if (!to) { notify('this link\'s target is not in this pdf'); return; }
     const height = await heightOf(to.page);
     // the line the destination names at the peek's top: ten units of it, as a line of text is
     setPeek({ page: to.page, y: (1 - to.y) * height - 10, height: 10, text: '', rect: onScreen(from, l), at: to });
@@ -1833,7 +1833,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     let to: { page: number; line: number } | null = bands.length ? { page: at.page, line: bandNear(bands, at.y) } : await stepLine({ page: at.page, line: -1 }, 1, async (n) => (await bandsOf(n)).length, first, last);
     if (to && to.line < 0) to = null;
     const band = to ? (await bandsOf(to.page))[to.line] : undefined;
-    if (!to || !band) { notify('no lines of text to hold here'); return; }
+    if (!to || !band) { notify('no text here for the ruler'); return; }
     setRuler({ ...to, band });
   };
   const ruling = useRef<Promise<void>>(Promise.resolve());

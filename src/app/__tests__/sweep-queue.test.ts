@@ -143,7 +143,7 @@ describe('a session', () => {
     await key(' '); await key('3'); // a again
     await key(' '); await key('3'); // b again
     await settle();
-    expect(host.querySelector('.session-end')?.textContent).toContain('2 elements');
+    expect(host.querySelector('.session-end')?.textContent).toContain('2 items');
   });
 
   it('a section passed with ⏎, gone back to with ‹ and passed again counts one pass', async () => {

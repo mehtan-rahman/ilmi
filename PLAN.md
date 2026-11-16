@@ -8920,11 +8920,9 @@ from the welcome; arrow keys in context menus and buttons for the div
 controls; narrow panes by container queries; a windowed deck list.
 
 Done 2026-11-15 (`b53f4c9` … `4e0cda0`).
-Notes: every item of the list is done but 22 (a card graded `again` coming
-back before the session ends: the session's statechart fixes its walk's
-length, and appending re-asked cards means rewriting the model, not
-extending it; the queue now shows such a card the moment it comes due,
-which closes most of the gap). The audits' failing tests are kept as the
+Notes: every item of the list is done; 22 (a card graded `again` coming
+back before the session ends) followed the same night once the session's
+model was rewritten on a walk that grows (see the later notes below). The audits' failing tests are kept as the
 fixes' tests (`sweep-intake`, `sweep-cards`, `sweep-queue`, `sweep-shapes`,
 `sweep-shell` under `src/app/__tests__`, `sweep-editor` under
 `src/reader/__tests__`), and `ILMI_SMOKE=sweep` walks what only a window
@@ -8941,10 +8939,29 @@ the inspector has `suspend` beside `reset`; a shared `failed(what)`
 notice (`land.ts`) and a handler for a promise nobody caught (`main.tsx`).
 Smokes found stale and mended: `numbers` (how many new reverses are held),
 `books` and `sections` (the legend's trailing space), `editing` (its
-frozen source, `section e`), `below` (a card already tested). Still
-stale, as before today: `rest` (wants the Lindqvist chapter as text; it
-has been its PDF's pages since 49), `insert` (its picked image is written
-through the store and read from disk), `deck`, `open`.
+frozen source, `section e`), `below` (a card already tested). `rest` and `insert`
+were mended later the same night (a text source again; the picked and
+dropped image a file on the disk, `smoke-pick.png`, that the rig leaves
+beside the sample's copy). Still stale, each failing the same way on the
+commit before the sweep: `listcards` (a trail's words), `textsections`
+(a date), `deck`, `open`.
+Later the same night, from "Found and left": a card graded into its
+steps comes back before the session ends (`Session.tsx`, `grading.ts`
+`inSteps`/`gradeAhead`; the return is told at the grade, each return its
+own log line, a regrade takes it out or puts it back, an asking whose
+return has been graded is locked, `session.cram` does not re-ask; a new
+card graded good is on a ten-minute step, so with learn-first it is
+seen three times); the editor keeps its undo history across the page's
+own rebuilds (`src/reader/rebuild.ts`: the file's document brought in by
+the smallest replace on the state there is; a grade, a suspend, a reset
+or a change from outside still starts afresh, since an old step could
+put a schedule back); a book's search goes to the hit, counts hits and
+lights the one the counter names (`ilmi-at`), and a jump to an equation
+looks outward from the page and says `looking`; an Anki package's decks
+are toggles. New smoke: `ILMI_SMOKE=sweepedit` (the editor's fixes and
+undo under WebKit's keys). Left still: zoom on a book's pages, a
+collection renamed or deleted from the welcome, menus' arrow keys,
+narrow panes, a windowed deck list, a reading log.
 
 ### [x] 74. A year of days — the heatmap, the forecast, and the lines beside them
 Asked by the user, 2026-11-15: "I now want this, so it replaces the plan's

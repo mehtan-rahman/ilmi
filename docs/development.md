@@ -213,6 +213,13 @@ the tweaks inside the window. `ILMI_SMOKE=numbers` since milestone 74 reads
 the year of days: the cells against the log under each lens, a day by the
 keyboard and pressed, the days ahead, dark and e-ink, the whole collection,
 and a phone's width (the lens narrowed to 343 px with the phone's shape set).
+`ILMI_SMOKE=sweepedit` types into the honors-thesis note under WebKit's own
+keys and reads the file after each step: a card kept by Backspace and by
+typing over it, Delete joining a list's first item, a closing fence, an
+empty ⌘B pair across the autosave, undo and redo across the page's own
+rebuild, a bare address. `ILMI_SMOKE=insert` wants a small PNG on the disk
+beside the sample's copy, `smoke-pick.png` (any picker or drop gives a path
+on the disk, and a collection's own files are rows).
 `ILMI_SMOKE=readme` over a copy of the sample walks the screens the README
 shows and marks each with a `shot:` line; the README's images were captured
 that way, by window id, and scaled to 1600 px wide. Each smoke mode logs `ok:` and `failed:` lines and `shot: <name>` marks

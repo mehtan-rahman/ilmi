@@ -6,6 +6,35 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-11-15, later — the sweep's leftovers: returns, undo, a book's search, Anki's decks
+
+Asked by the user after the entry below: "Please continue working". Four of that entry's "Found and not fixed" were built, by three agents on disjoint files and the coordinator on the smokes (`ec27f47` … the commit of this entry).
+
+- **A card graded into its steps comes back before the session ends**, asked though its minutes have not passed, as often as it takes; the count grows by one at the grade and the end still counts a card once. Each return is its own review in the log. `‹` to the latest asking regrades it as before (and takes the return out, or puts it back); an asking whose return was already graded is locked (`asked again since`). A cram session does not re-ask. The session's model was rewritten on a walk that grows: going on only with two agains a line it closes at 1,920 states, with `‹ ›` and one again at 32,197; `‹ ›` with two agains did not close in 400,000 states and is covered by named roads.
+- **Undo history lives through the page's own rebuilds**: a line typed as a card and read back as one, a formula turned to a chip, an extract or a section taken. ⌘Z after the rebuild removes the card and its line, ⌘Z again what was typed before. A grade, a suspend, a reset and any change from outside still reset it: schedules live in the nodes, and an older step could put an old one back.
+- **A book's search** lands on the hit (a third down the view), counts hits (`p. 23, 1 / 18`), steps hit by hit, and lights the one it names; a jump to an equation looks outward from the page and says `looking`.
+- **An Anki package's decks are chosen**: each row a toggle, all on to start; a child on under a parent off still lands in its folder.
+- A failed image pick is a notice, not a console line.
+
+Decisions made for the user: a new card graded `good` is on FSRS's ten-minute step, so it too returns (with learn-first: learnt, tested, asked once more), as Anki's does; a card opened alone that was not due does come back, since its grade is real; the rebuild after a typed card joins the typing in one undo step.
+
+Checks on the commit of this entry's code (`f6bf849`'s tree, then smoke-only commits): typecheck clean; npm test 1837 passed, 1 skipped, 127 files; cargo untouched since 69 passed. Window checks from clean run trees over fresh copies of the sample, each `done`:
+- `sweep` 78 ok, 11 captures: now also `again` growing the session by one, the card back as its question, `good` ending it with one more log line; the chapter's search counting 18 hits, each of the first eight stepped to lying in view.
+- `sweepedit` (new) 28 ok, 4 captures, under WebKit's own keys with the file read after each: Backspace after a card selects it and deletes nothing, a space and a letter typed over it leave it, Delete before a list joins its first item, Tab is taken, a closing fence closes and the next line is a paragraph, an empty ⌘B pair survives the autosave and what is typed in it is bold, a line typed as a card becomes one and ⌘Z, ⌘Z, ⇧⌘Z, ⇧⌘Z go back through the rebuild and forward again with the file following, a bare address is a link.
+- `learn` 14, `cardview` 31 on the same tree; on the tree before the returns went in (the editor's code as it is now): `editing`, `insert` and `below` done, `rest` 74.
+- `numbers` 76 again with the iPad's shape drawn in the Mac's window (`ILMI_MOBILE=1`), and `anki` done over the sample with both decks on.
+- `rest` and `insert` were mended (PLAN 73's notes). `listcards` and `textsections` fail, and fail the same way on `448a82c`: stale, not mended.
+
+Not verified: a real iPad or iPhone, or a simulator (the iPad's shape was only drawn in the Mac's window); an Anki deck toggled off, in the window (jsdom tests only); the session's late correction when a written schedule differs from what the grade foretold (no test reaches it); an IME composing while a rebuild lands; the numbers at 115,000 cards in the window.
+
+Still not fixed: zoom on a book's pages; a collection renamed or deleted from the welcome (destructive, the user's); arrow keys in context menus and buttons for the div controls; narrow panes; a windowed deck list; a reading layer in the numbers (wants a log of its own).
+
+```
+Read PLAN.md (73 and 74's notes), BUILD-LOG.md's top two entries, and docs/development.md. What is left that a session can do alone is the "Still not fixed" list of the top entry; take them in the order the user gives. Verify as these entries did: typecheck, npm test, cargo test, and the window smokes of every surface touched (sweep, sweepedit, numbers, and the surface's own) from a clean run tree over samples/double-major.
+```
+
+---
+
 ## 2026-11-15 — milestones 73 and 74: the sweep, and a year of days
 
 Asked by the user: "get ilmi into a really good state by tonight. Three parts, in this order: an audit, the fixes, and a stats/heatmap view." One coordinating session on main (`1c2d149` … the commit of this entry); six read-only audit agents, then five fix agents on disjoint files, the coordinator on the numbers, the shapes and the window checks. PLAN 73 has the ranked list and 74 the heatmap's notes. The user's message had a line "Constraints that hold:" with nothing under it; the plan's ground rules and the standing notes were followed in its place.

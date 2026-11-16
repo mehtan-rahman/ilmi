@@ -4,9 +4,11 @@
 // search, chips, a sort, a selection with bulk actions, a card opened in
 // the card view by a double-click or ⏎ (`CardPane.tsx`), a new card written
 // in a sheet over the window in the session's two boxes, and `study`. The model is deck.ts,
-// cardEdit.ts, and study.ts; the writes are deckOps.ts.
+// cardEdit.ts, and study.ts; the writes are deckOps.ts. A list of more than 200 rows is
+// drawn through a window (windowed.ts): the cursor, a range, a reveal go by a row's place
+// in the list, never by its being in the DOM.
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type RefObject } from 'react';
 import { PRI_DEFAULT, PRI_MAX, PRI_MIN, cardFields, meta, parsePri, type Card, type CardForm } from '../format/index.js';
 import type { Dir } from '../reader/index.js';
 import { FaceField, pressIntoFace } from './FaceField.js';
@@ -32,6 +34,7 @@ import './session.css';
 import './deck.css';
 import { appNow } from './clock.js';
 import { Glyph, Plus } from './icons.js';
+import { Heights, WHOLE, anchorAt, clampWin, holds, probe, topFor, topOf, windowOf, type Anchor, type Win } from './windowed.js';
 
 const inField = (t: EventTarget | null) => {
   const el = t as HTMLElement | null;
@@ -42,9 +45,6 @@ const inField = (t: EventTarget | null) => {
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 const refOf = (r: DeckRow): CardRef => (r.id === undefined ? { path: r.path, block: r.block, text: r.text } : { path: r.path, block: r.block, id: r.id, text: r.text });
-
-/** Rows drawn at first, and added per timer tick after. */
-const ROW_CHUNK = 200;
 
 type RowFaces = { front: string; back: string; frontDir?: Dir | undefined; backDir?: Dir | undefined };
 
@@ -76,6 +76,9 @@ export function facesHTML(text: string): RowFaces {
 // ── the editor ───────────────────────────────────────────────────
 
 const FORMS = CARD_FORMS;
+
+/** A press on a button of the editor's foot leaves the caret in its face, as a press on the span it was did. */
+const keepFocus = (e: { preventDefault(): void }) => e.preventDefault();
 
 /** Whether anything is written in either face. */
 const written = (f: Faces): boolean => f.front.trim() !== '' || f.back.trim() !== '';
@@ -190,15 +193,15 @@ export function CardEditor({ card, initial, pri: initialPri, onSave, onCancel }:
         {asking !== null ? (
           <>
             <span className="de-ask">{asking}</span>
-            <span className="act" onClick={() => save(false, true)}><kbd>⌘↵</kbd> save anyway</span>
+            <button type="button" className="act" onMouseDown={keepFocus} onClick={() => save(false, true)}><kbd>⌘↵</kbd> save anyway</button>
             <span>·</span>
-            <span className="act" onClick={() => setAsking(null)}><kbd>esc</kbd> back</span>
+            <button type="button" className="act" onMouseDown={keepFocus} onClick={() => setAsking(null)}><kbd>esc</kbd> back</button>
           </>
         ) : (
           <>
-            <span className="act" data-able={text ? '1' : '0'} onClick={() => save(false)}><kbd>⌘↵</kbd> save</span>
+            <button type="button" className="act" data-able={text ? '1' : '0'} onMouseDown={keepFocus} onClick={() => save(false)}><kbd>⌘↵</kbd> save</button>
             <span>·</span>
-            <span className="act" onClick={() => onCancel(faces)}><kbd>esc</kbd> cancel</span>
+            <button type="button" className="act" onMouseDown={keepFocus} onClick={() => onCancel(faces)}><kbd>esc</kbd> cancel</button>
           </>
         )}
       </div>
@@ -276,6 +279,245 @@ function SimilarList({ paths, q, now }: { paths: readonly string[]; q: string; n
   );
 }
 
+// ── the rows, through a window ───────────────────────────────────
+
+/** What a row does, the same functions for the life of the browser (so a row is drawn again only when it changes). */
+interface RowActs {
+  click(r: DeckRow, e: ReactMouseEvent): void;
+  open(r: DeckRow): void;
+  menu(r: DeckRow, e: ReactMouseEvent): void;
+  remove(r: DeckRow): void;
+}
+
+interface RowProps {
+  r: DeckRow;
+  selected: boolean;
+  cursor: boolean;
+  menu: boolean;
+  /** More than one file under the lens: each row says its own. */
+  multi: boolean;
+  now: Date;
+  /** The plugins' version: every plugin's block hook sees the row again when it changes. */
+  hooks: unknown;
+  acts: RowActs;
+  put(key: string, el: HTMLDivElement | null): void;
+}
+
+const Row = memo(function Row({ r, selected, cursor, menu, multi, now, hooks, acts, put }: RowProps) {
+  const own = useRef<HTMLDivElement | null>(null);
+  // the row, drawn: every plugin's block hook sees it
+  useEffect(() => {
+    if (own.current) runBlockHooks(own.current, { path: r.path, block: r.block, where: 'deck' });
+  }, [r, hooks]);
+  const f = facesHTML(r.text);
+  const ivl = r.sched?.ivl && r.sched.ivl >= 1 ? fmtDays(r.sched.ivl) : '';
+  const when = r.suspended ? 'suspended' : dueWhen(r.sched?.due, now);
+  return (
+    <div>
+      <div
+        ref={(el) => { own.current = el; put(r.key, el); }}
+        className={`card-span deck-row${selected ? ' selected' : ''}${cursor ? ' cursor' : ''}`}
+        data-key={r.key}
+        data-path={r.path}
+        data-block={r.block}
+        data-form={r.form}
+        data-suspended={r.suspended ? '1' : '0'}
+        data-menu={menu ? '1' : '0'}
+        onMouseDown={(e) => { if (e.shiftKey) e.preventDefault(); }}
+        onClick={(e) => acts.click(r, e)}
+        onDoubleClick={() => acts.open(r)}
+        onContextMenu={(e) => acts.menu(r, e)}
+      >
+        <span className="dr-form" data-form={r.form}>{FORM_LABEL[r.form]}</span>
+        <span className="cs-body dr-faces">
+          <span className="dr-front" dir={f.frontDir} dangerouslySetInnerHTML={{ __html: f.front }} />
+          {f.back && <span className="dr-back" dir={f.backDir} dangerouslySetInnerHTML={{ __html: f.back }} />}
+          {multi && <span className="dr-path">{pathLabel(r.path)}</span>}
+        </span>
+        {r.reverse && !r.suspended ? (
+          // both ways: each direction's due on a line of its own, front to back first
+          <span className="dr-when" data-dirs="2">
+            <span className="dr-due" data-dir="f" data-due={r.sched?.due === undefined || r.dueAt <= now ? '1' : '0'} title={ivl ? `front to back, interval ${ivl}` : 'front to back'} data-st={dueTone(when)}><span className="dr-dir">→</span> <span className="dw">{when}</span></span>
+            <span className="dr-due" data-dir="r" data-due={r.reverse.isDue ? '1' : '0'} title={r.reverse.sched?.ivl && r.reverse.sched.ivl >= 1 ? `back to front, interval ${fmtDays(r.reverse.sched.ivl)}` : 'back to front'} data-st={dueTone(r.reverse.suspended ? 'suspended' : dueWhen(r.reverse.sched?.due, now))}>
+              <span className="dr-dir">←</span> <span className="dw">{r.reverse.suspended ? 'suspended' : dueWhen(r.reverse.sched?.due, now)}</span>
+            </span>
+          </span>
+        ) : (
+          <span className="dr-when" title={ivl && !r.suspended ? `interval ${ivl}` : undefined}>
+            <span className="dr-due" data-due={r.isDue ? '1' : '0'} data-st={dueTone(when)}><span className="dw">{when}</span></span>
+          </span>
+        )}
+        <button type="button" className="cs-del" title="delete card" aria-label="delete card" onClick={(e) => { e.stopPropagation(); acts.remove(r); }}><Glyph g="×" /></button>
+      </div>
+    </div>
+  );
+});
+
+/** What the browser asks of its rows. */
+interface RowsHandle {
+  /**
+   * The row `key` into view, as `scrollIntoView` would: at once when it is
+   * drawn, else the window is moved to where it is reckoned to be and the
+   * row brought in once it is there. False when the row is not in the list.
+   */
+  bring(key: string, block: 'nearest' | 'center'): boolean;
+}
+
+interface RowsProps {
+  shown: DeckRow[];
+  /** Each shown row's place, by key. */
+  index: ReadonlyMap<string, number>;
+  selSet: ReadonlySet<string>;
+  cursorKey: string | null;
+  menuKey: string | null;
+  multi: boolean;
+  now: Date;
+  hooks: unknown;
+  acts: RowActs;
+  mem: DeckMemory;
+  handle: RefObject<RowsHandle | null>;
+}
+
+/**
+ * The rows near the view, in a box padded above and below to the height of
+ * the whole list (windowed.ts). Each row drawn is measured after every
+ * draw; the rest stand at the average. A list of up to `WHOLE` rows is
+ * drawn whole, unmeasured, as every list was before.
+ */
+const DeckRows = memo(function DeckRows({ shown, index, selSet, cursorKey, menuKey, multi, now, hooks, acts, mem, handle }: RowsProps) {
+  const box = useRef<HTMLDivElement>(null);
+  const paneRef = useRef<HTMLElement | null>(null);
+  const els = useRef(new Map<string, HTMLDivElement>());
+  const put = useCallback((key: string, el: HTMLDivElement | null) => { if (el) els.current.set(key, el); else els.current.delete(key); }, []);
+  // the heights of this list: made again when the list is (read again, searched, sorted), from what was measured before
+  const made = useRef<{ shown: DeckRow[]; model: Heights } | null>(null);
+  if (made.current?.shown !== shown) made.current = { shown, model: new Heights(shown.length, mem.guess, (i) => mem.heights.get(shown[i]!.key)) };
+  const model = made.current.model;
+  // back in front: the window opens on the row that was under the top of the view
+  const cameTo = (): number | undefined => {
+    const a = model.count <= WHOLE ? null : mem.at;
+    const i = !a ? undefined : shown[a.index]?.key === a.key ? a.index : index.get(a.key);
+    return i === undefined ? undefined : topOf(model, { index: i, into: a!.into });
+  };
+  const [win, setWin] = useState<Win>(() => windowOf(model, cameTo() ?? 0, window.innerHeight || 800));
+  const [, redraw] = useReducer((n: number) => n + 1, 0);
+  const w = clampWin(model, win);
+  const winNow = useRef(w);
+  winNow.current = w;
+  /** A row to bring into view once it is drawn. */
+  const want = useRef<{ key: string; block: 'nearest' | 'center' } | null>(null);
+
+  /** The window for where the view is now, and the row under its top remembered. */
+  const sync = () => {
+    const pane = paneRef.current;
+    const list = box.current;
+    if (!pane || !list) return;
+    const vp = probe.viewport(pane);
+    const top = probe.scrollTop(pane) - probe.listTop(list, pane);
+    if (!holds(model, winNow.current, top, vp)) {
+      const next = windowOf(model, top, vp);
+      winNow.current = next;
+      setWin(next);
+    }
+    // a list drawn whole comes back by the pane's own offset, as it always did
+    const a = model.count <= WHOLE ? null : anchorAt(model, top);
+    mem.at = a ? { ...a, key: shown[a.index]!.key } : null;
+  };
+  const syncNow = useRef(sync);
+  syncNow.current = sync;
+
+  const bring = (key: string, block: 'nearest' | 'center'): boolean => {
+    const i = index.get(key);
+    const pane = paneRef.current;
+    const list = box.current;
+    if (i === undefined || !pane || !list) return false;
+    const el = els.current.get(key);
+    if (el) { el.scrollIntoView({ block }); return true; }
+    // not drawn: by its place in the list, then exactly once it is there
+    const vp = probe.viewport(pane);
+    const above = probe.listTop(list, pane);
+    const y = topFor(model, i, probe.scrollTop(pane) - above, vp, block);
+    probe.scrollTo(pane, above + y);
+    want.current = { key, block };
+    const next = windowOf(model, y, vp);
+    winNow.current = next;
+    setWin(next);
+    return true;
+  };
+
+  useLayoutEffect(() => {
+    const list = box.current;
+    const pane = list?.closest<HTMLElement>('.pane-body') ?? list?.parentElement?.parentElement ?? null;
+    paneRef.current = pane;
+    if (!list || !pane) return;
+    const y = cameTo();
+    if (y !== undefined) probe.scrollTo(pane, probe.listTop(list, pane) + y);
+    const onScroll = () => syncNow.current();
+    pane.addEventListener('scroll', onScroll, { passive: true });
+    // a row grown (an image in, the pane narrower) or the view taller: measured again
+    const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => redraw());
+    ro?.observe(list);
+    ro?.observe(pane);
+    return () => { pane.removeEventListener('scroll', onScroll); ro?.disconnect(); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mem]);
+
+  // after every draw: the rows there are measured, the scroll held where it was, the window set for the view
+  useLayoutEffect(() => {
+    handle.current = { bring };
+    const pane = paneRef.current;
+    const list = box.current;
+    if (!pane || !list) return;
+    // a list drawn whole needs no heights: every row is there
+    const whole = model.count <= WHOLE;
+    // the row under the top of the view, by the heights as they were drawn
+    const held = whole ? null : anchorAt(model, probe.scrollTop(pane) - probe.listTop(list, pane));
+    let changed = false;
+    const fresh = model.measured === 0;
+    const width = whole ? 0 : probe.width(list);
+    if (width > 0 && width !== mem.width) {
+      // every row wraps anew at another width
+      if (mem.width > 0) { mem.heights.clear(); model.clear(); changed = true; }
+      mem.width = width;
+    }
+    for (let i = whole ? w.end : w.start; i < w.end; i++) {
+      const key = shown[i]!.key;
+      const el = els.current.get(key)?.parentElement;
+      if (!el) continue;
+      const px = probe.height(el);
+      if (model.set(i, px)) { mem.heights.set(key, px); changed = true; }
+    }
+    // the estimate follows the average only when that moves nothing in view: the first rows measured, or no row above the view
+    if (changed && (fresh || !held) && model.settle()) changed = true;
+    if (changed) {
+      mem.guess = model.average;
+      if (held) {
+        const top = probe.scrollTop(pane) - probe.listTop(list, pane);
+        const by = topOf(model, held) - top;
+        if (Math.abs(by) >= 1) probe.scrollTo(pane, probe.scrollTop(pane) + by);
+      }
+      // drawn again with the padding the heights now give; the row asked for waits for that
+      redraw();
+    }
+    sync();
+    const p = want.current;
+    if (p && !changed) {
+      const el = els.current.get(p.key);
+      if (el) { want.current = null; el.scrollIntoView({ block: p.block }); sync(); }
+      else if (!index.has(p.key)) want.current = null;
+    }
+  });
+  useEffect(() => () => { handle.current = null; }, [handle]);
+
+  return (
+    <div className="deck-rows" ref={box} style={{ paddingTop: model.offset(w.start), paddingBottom: model.total - model.offset(w.end) }}>
+      {shown.slice(w.start, w.end).map((r) => (
+        <Row key={r.key} r={r} selected={selSet.has(r.key)} cursor={cursorKey === r.key} menu={menuKey === r.key} multi={multi} now={now} hooks={hooks} acts={acts} put={put} />
+      ))}
+    </div>
+  );
+});
+
 // ── the browser ──────────────────────────────────────────────────
 
 /** A right-click on a row: where, and whether the move list shows. */
@@ -287,15 +529,29 @@ type Editing = { after: CardRef | null; path: string } | null;
 /**
  * What a deck keeps while its tab is away (the canvas draws only the tab in
  * front, so the lens is unmounted behind another): its search, the card
- * under the cursor, how far it was scrolled and drawn, and a new card let
- * go by Escape with something written. For the session, per collection and lens.
+ * under the cursor, how far it was scrolled (`top` the pane's own offset,
+ * for a view still above the rows; `at` the row under the top of the view
+ * and how far into it, which is what the window comes back to), the row
+ * heights measured so far and the width they were measured at, and a new
+ * card let go by Escape with something written. For the session, per
+ * collection and lens.
  */
-interface DeckMemory { q: string; cursor: CardRef | null; top: number; limit: number; draft: Faces | null }
+interface DeckMemory {
+  q: string;
+  cursor: CardRef | null;
+  top: number;
+  at: (Anchor & { key: string }) | null;
+  heights: Map<string, number>;
+  width: number;
+  /** The average height of the rows measured, for those that are not. */
+  guess: number;
+  draft: Faces | null;
+}
 const memories = new Map<string, DeckMemory>();
 function memoryOf(root: string | null, home: string): DeckMemory {
   const k = `${root ?? ''}\n${home}`;
   let m = memories.get(k);
-  if (!m) { m = { q: '', cursor: null, top: 0, limit: 0, draft: null }; memories.set(k, m); }
+  if (!m) { m = { q: '', cursor: null, top: 0, at: null, heights: new Map(), width: 0, guess: 0, draft: null }; memories.set(k, m); }
   return m;
 }
 
@@ -327,7 +583,7 @@ export function DeckBrowser({ home, active }: BrowserProps) {
   const [bulkMenu, setBulkMenu] = useState<'move' | 'pri' | 'reset' | null>(null);
   const [priText, setPriText] = useState('');
   const search = useRef<HTMLInputElement>(null);
-  const rowEls = useRef(new Map<string, HTMLDivElement>());
+  const list = useRef<RowsHandle | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const top = useRef<HTMLDivElement>(null);
   const byKey = useRef(false);
@@ -341,24 +597,17 @@ export function DeckBrowser({ home, active }: BrowserProps) {
   const rows = useMemo(() => deckRows(bodies, now), [bodies, now]);
   const shown = useMemo(() => sortRows(filterRows(rows, q, view), view.sort), [rows, q, view]);
   const keys = useMemo(() => shown.map((r) => r.key), [shown]);
-  // rows drawn in chunks on timers (never frames: a covered window holds them back), so a lens over
-  // the whole collection opens at once and fills in; the cursor's row is always among those drawn
-  const [limit, setLimit] = useState(Math.max(ROW_CHUNK, mem.limit));
-  const drawnFor = useRef({ home, q, view });
+  // the rows by key, and each shown row's place: the cursor, a range and a reveal go by these, not by what is drawn
+  const index = useMemo(() => { const m = new Map<string, number>(); keys.forEach((k, i) => m.set(k, i)); return m; }, [keys]);
+  const rowOf = useMemo(() => new Map(rows.map((r) => [r.key, r])), [rows]);
+  // another lens, search, chips or sort: a card on its way into view is let go
+  const listFor = useRef({ home, q, view });
   useEffect(() => {
-    // the first draw keeps what the deck remembers having drawn (its scroll needs the rows there)
-    const d = drawnFor.current;
+    const d = listFor.current;
     if (d.home === home && d.q === q && d.view === view) return;
-    drawnFor.current = { home, q, view };
-    setLimit(ROW_CHUNK);
+    listFor.current = { home, q, view };
     arrive.current = null;
   }, [home, q, view]);
-  useEffect(() => { mem.limit = limit; }, [mem, limit]);
-  useEffect(() => {
-    if (limit >= shown.length) return;
-    const t = setTimeout(() => setLimit((l) => l + ROW_CHUNK), 0);
-    return () => clearTimeout(t);
-  }, [limit, shown.length]);
   const multi = paths.length > 1;
   // the selection is held by `path#block`, and follows its cards when the files are read again
   // (a card gone above moves every block after it)
@@ -367,22 +616,19 @@ export function DeckBrowser({ home, active }: BrowserProps) {
   if (held.rows !== rows) setHeld((h) => (h.rows === rows ? h : { sel: followSelection(h.sel, h.rows, rows), rows }));
   const setSel = (next: Selection | ((s: Selection) => Selection)) => setHeld((h) => ({ ...h, sel: typeof next === 'function' ? next(h.sel) : next }));
   const selSet = useMemo(() => new Set(sel.keys), [sel]);
-  const chosen = similar ? [] : selectedRows(sel, shown);
+  const chosen = useMemo(() => (similar ? [] : selectedRows(sel, shown)), [similar, sel, shown]);
   const cursorKey = cursor && paths.includes(cursor.path) ? `${cursor.path}#${cursor.index}` : null;
-  const drawnTo = Math.max(limit, cursorKey === null ? 0 : keys.indexOf(cursorKey) + 1);
-  // a revealed row not drawn yet when it was selected: scrolled to once it is
+  // a revealed row not in the list yet when it was selected: scrolled to once it is
   const pendingReveal = useRef<string | null>(null);
   // a card just written from the sheet: brought into view once its row is drawn (the row there before
   // the files are read again is another card's)
   const arrive = useRef<{ key: string; text: string } | null>(null);
   useLayoutEffect(() => {
     const k = pendingReveal.current;
-    const el = k === null ? undefined : rowEls.current.get(k);
-    if (el) { pendingReveal.current = null; el.scrollIntoView({ block: 'center' }); }
+    if (k !== null && list.current?.bring(k, 'center')) pendingReveal.current = null;
     const a = arrive.current;
-    const row = a && shown.find((r) => r.key === a.key && r.text === a.text);
-    const rowEl = row && rowEls.current.get(row.key);
-    if (rowEl) { arrive.current = null; rowEl.scrollIntoView({ block: 'nearest' }); }
+    const at = a ? index.get(a.key) : undefined;
+    if (a && at !== undefined && shown[at]!.text === a.text && list.current?.bring(a.key, 'nearest')) arrive.current = null;
   });
   const homeDoc = home.endsWith('.md') ? home : files.includes(`${home}.md`) ? `${home}.md` : null;
 
@@ -403,7 +649,8 @@ export function DeckBrowser({ home, active }: BrowserProps) {
   useLayoutEffect(() => {
     const pane = top.current?.closest<HTMLElement>('.pane-body') ?? top.current?.parentElement ?? null;
     if (!pane) return;
-    if (mem.top > 0) pane.scrollTop = mem.top;
+    // the rows have come back to the row that was under the top of the view (`DeckRows`); a view still above them, to its offset
+    if (mem.at === null && mem.top > 0) pane.scrollTop = mem.top;
     const onScroll = () => { mem.top = pane.scrollTop; };
     pane.addEventListener('scroll', onScroll, { passive: true });
     return () => pane.removeEventListener('scroll', onScroll);
@@ -432,19 +679,11 @@ export function DeckBrowser({ home, active }: BrowserProps) {
       }
     }
     if (!f.held) {
-      const at = cursorKey === null ? undefined : rows.find((r) => r.key === cursorKey);
+      const at = cursorKey === null ? undefined : rowOf.get(cursorKey);
       f.ref = at ? refOf(at) : null;
     }
     mem.cursor = f.ref;
   });
-
-  // the rows, drawn: every plugin's block hook sees each
-  useEffect(() => {
-    for (const r of shown) {
-      const el = rowEls.current.get(r.key);
-      if (el) runBlockHooks(el, { path: r.path, block: r.block, where: 'deck' });
-    }
-  }, [shown, plugins?.version]);
 
   // the cursor goes with the lens
   useEffect(() => () => {
@@ -457,7 +696,7 @@ export function DeckBrowser({ home, active }: BrowserProps) {
   useEffect(() => {
     if (!byKey.current || cursorKey === null) return;
     byKey.current = false;
-    rowEls.current.get(cursorKey)?.scrollIntoView({ block: 'nearest' });
+    list.current?.bring(cursorKey, 'nearest');
   }, [cursorKey]);
 
   // a card opened from the palette or a query lands selected, in view
@@ -471,9 +710,7 @@ export function DeckBrowser({ home, active }: BrowserProps) {
       follow.current.held = false;
       useApp.setState({ selectedCard: { path: reveal.path, index: i } });
       setSel({ keys: [key], anchor: key });
-      const el = rowEls.current.get(key);
-      if (el) el.scrollIntoView({ block: 'center' });
-      else pendingReveal.current = key;
+      if (!list.current?.bring(key, 'center')) pendingReveal.current = key;
     }
     useApp.setState({ reveal: null });
   }, [reveal, bodies, paths]);
@@ -504,7 +741,7 @@ export function DeckBrowser({ home, active }: BrowserProps) {
       setSel((s) => ({ keys: s.keys.filter((k) => !out.has(k)), anchor: s.anchor !== null && out.has(s.anchor) ? null : s.anchor }));
       const f = follow.current;
       if (was !== null && out.has(was)) {
-        const at = keys.indexOf(was);
+        const at = index.get(was) ?? -1;
         const next = at < 0 ? undefined : shown.slice(at + 1).find((r) => !out.has(r.key)) ?? shown.slice(0, at).reverse().find((r) => !out.has(r.key));
         f.ref = next ? refOf(next) : null;
       }
@@ -513,7 +750,7 @@ export function DeckBrowser({ home, active }: BrowserProps) {
     }
     bulkCards(refs, action).catch((e: unknown) => {
       failed(action.kind === 'pri' ? 'priority' : action.kind)(e);
-      if (gone && was !== null) point(rows.find((r) => r.key === was));
+      if (gone && was !== null) point(rowOf.get(was));
     });
   };
   /** One card deleted (×, ⌫, the menu): as two are, with the undo. */
@@ -521,7 +758,7 @@ export function DeckBrowser({ home, active }: BrowserProps) {
 
   /** Where `m` puts a new card: after the cursor's row in its file, else at the end of the lens's own document (or its first). */
   const newCard = () => {
-    const at = shown.find((r) => r.key === cursorKey);
+    const at = cursorKey === null ? undefined : shown[index.get(cursorKey) ?? -1];
     if (at) setEditing({ after: refOf(at), path: at.path });
     else if (homeDoc ?? paths[0]) setEditing({ after: null, path: (homeDoc ?? paths[0])! });
   };
@@ -540,7 +777,7 @@ export function DeckBrowser({ home, active }: BrowserProps) {
       if (e.defaultPrevented || inField(e.target) || useApp.getState().paletteOpen) return;
       if ((e.metaKey || e.ctrlKey) && (e.key === 'a' || e.key === 'A')) { e.preventDefault(); if (!similar) setSel(selectAll(keys)); return; }
       if (e.metaKey || e.ctrlKey || e.altKey) return;
-      const at = cursorKey === null ? -1 : keys.indexOf(cursorKey);
+      const at = cursorKey === null ? -1 : index.get(cursorKey) ?? -1;
       const go = (i: number) => {
         const r = shown[i];
         if (!r) return;
@@ -572,6 +809,26 @@ export function DeckBrowser({ home, active }: BrowserProps) {
     setSel((s) => clickSelect(s, r.key, { shift: e.shiftKey, meta: e.metaKey || e.ctrlKey }, keys));
     point(r);
   };
+
+  // the rows' own functions, the same ones for good: each calls what this draw of the browser would
+  const live = useRef<RowActs | null>(null);
+  live.current = {
+    click: onRowClick,
+    open: editIn,
+    menu: (r, e) => {
+      e.preventDefault();
+      if (!selSet.has(r.key)) setSel({ keys: [r.key], anchor: r.key });
+      point(r);
+      setMenu({ x: Math.min(e.clientX, window.innerWidth - MENU_W), y: e.clientY, key: r.key, sub: false });
+    },
+    remove: removeOne,
+  };
+  const acts = useMemo<RowActs>(() => ({
+    click: (r, e) => live.current!.click(r, e),
+    open: (r) => live.current!.open(r),
+    menu: (r, e) => live.current!.menu(r, e),
+    remove: (r) => live.current!.remove(r),
+  }), []);
 
   const docPri = (path: string) => docs[path]?.pri ?? PRI_DEFAULT;
   const titleIn = (p: string) => titleOf(p, docs, root);
@@ -609,17 +866,16 @@ export function DeckBrowser({ home, active }: BrowserProps) {
   };
 
   const editingNew = editing;
-  const allSuspended = chosen.length > 0 && chosen.every((r) => r.suspended);
-  const anySuspended = chosen.some((r) => r.suspended);
-  const due = rows.filter((r) => r.isDue).length;
-  const menuRow = menu ? rows.find((r) => r.key === menu.key) : undefined;
+  const [allSuspended, anySuspended] = useMemo(() => [chosen.length > 0 && chosen.every((r) => r.suspended), chosen.some((r) => r.suspended)], [chosen]);
+  const [due, notSuspended] = useMemo(() => [rows.filter((r) => r.isDue).length, rows.filter((r) => !r.suspended).length], [rows]);
+  const menuRow = menu ? rowOf.get(menu.key) : undefined;
   const targets = bulkMenu === 'move' || menu?.sub ? docTargets(tree, order) : [];
 
   return (
     <div className="deck-browser" ref={top}>
       <div className="deck-study">
         <button type="button" className="ds-study" data-able={rows.length ? '1' : '0'} onClick={() => study()}>
-          study <span className="ds-n">{cram ? rows.filter((r) => !r.suspended).length : due}</span>
+          study <span className="ds-n">{cram ? notSuspended : due}</span>
         </button>
         <label className="ds-cram">
           <input type="checkbox" checked={cram} onChange={(e) => setCram(e.target.checked)} />
@@ -710,56 +966,9 @@ export function DeckBrowser({ home, active }: BrowserProps) {
       {!similar && editingNew && <div className="card-sheet" role="dialog" aria-label="new card"><div className="card-sheet-in">{newEditor(editingNew)}</div></div>}
       {!similar && rows.length === 0 && !editingNew && <div className="empty">no cards</div>}
       {!similar && rows.length > 0 && shown.length === 0 && <div className="empty">nothing matches</div>}
-      {!similar && shown.slice(0, drawnTo).map((r) => {
-        const f = facesHTML(r.text);
-        const ivl = r.sched?.ivl && r.sched.ivl >= 1 ? fmtDays(r.sched.ivl) : '';
-        const when = r.suspended ? 'suspended' : dueWhen(r.sched?.due, now);
-        const isSel = selSet.has(r.key);
-        return (
-          <div key={r.key}>
-            <div
-              ref={(el) => { if (el) rowEls.current.set(r.key, el); else rowEls.current.delete(r.key); }}
-              className={`card-span deck-row${isSel ? ' selected' : ''}${cursorKey === r.key ? ' cursor' : ''}`}
-              data-key={r.key}
-              data-path={r.path}
-              data-block={r.block}
-              data-form={r.form}
-              data-suspended={r.suspended ? '1' : '0'}
-              data-menu={menu?.key === r.key ? '1' : '0'}
-              onMouseDown={(e) => { if (e.shiftKey) e.preventDefault(); }}
-              onClick={(e) => onRowClick(r, e)}
-              onDoubleClick={() => editIn(r)}
-              onContextMenu={(e) => {
-                e.preventDefault();
-                if (!selSet.has(r.key)) setSel({ keys: [r.key], anchor: r.key });
-                point(r);
-                setMenu({ x: Math.min(e.clientX, window.innerWidth - MENU_W), y: e.clientY, key: r.key, sub: false });
-              }}
-            >
-              <span className="dr-form" data-form={r.form}>{FORM_LABEL[r.form]}</span>
-              <span className="cs-body dr-faces">
-                <span className="dr-front" dir={f.frontDir} dangerouslySetInnerHTML={{ __html: f.front }} />
-                {f.back && <span className="dr-back" dir={f.backDir} dangerouslySetInnerHTML={{ __html: f.back }} />}
-                {multi && <span className="dr-path">{pathLabel(r.path)}</span>}
-              </span>
-              {r.reverse && !r.suspended ? (
-                // both ways: each direction's due on a line of its own, front to back first
-                <span className="dr-when" data-dirs="2">
-                  <span className="dr-due" data-dir="f" data-due={r.sched?.due === undefined || r.dueAt <= now ? '1' : '0'} title={ivl ? `front to back, interval ${ivl}` : 'front to back'} data-st={dueTone(when)}><span className="dr-dir">→</span> <span className="dw">{when}</span></span>
-                  <span className="dr-due" data-dir="r" data-due={r.reverse.isDue ? '1' : '0'} title={r.reverse.sched?.ivl && r.reverse.sched.ivl >= 1 ? `back to front, interval ${fmtDays(r.reverse.sched.ivl)}` : 'back to front'} data-st={dueTone(r.reverse.suspended ? 'suspended' : dueWhen(r.reverse.sched?.due, now))}>
-                    <span className="dr-dir">←</span> <span className="dw">{r.reverse.suspended ? 'suspended' : dueWhen(r.reverse.sched?.due, now)}</span>
-                  </span>
-                </span>
-              ) : (
-                <span className="dr-when" title={ivl && !r.suspended ? `interval ${ivl}` : undefined}>
-                  <span className="dr-due" data-due={r.isDue ? '1' : '0'} data-st={dueTone(when)}><span className="dw">{when}</span></span>
-                </span>
-              )}
-              <button type="button" className="cs-del" title="delete card" aria-label="delete card" onClick={(e) => { e.stopPropagation(); removeOne(r); }}><Glyph g="×" /></button>
-            </div>
-          </div>
-        );
-      })}
+      {!similar && (
+        <DeckRows handle={list} shown={shown} index={index} selSet={selSet} cursorKey={cursorKey} menuKey={menu?.key ?? null} multi={multi} now={now} hooks={plugins?.version} acts={acts} mem={mem} />
+      )}
 
       {menu && menuRow && (
         <div className="ctx-menu" ref={menuRef} style={{ left: menu.x, top: menu.y }} onMouseDown={(e) => e.stopPropagation()} onContextMenu={(e) => e.preventDefault()}>

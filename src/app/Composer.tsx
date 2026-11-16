@@ -149,11 +149,11 @@ export function Composer({ seed, form: initial, pri: docPri, onSave, onClose, qu
           <input type="number" inputMode="numeric" min={PRI_MIN} max={PRI_MAX} step={1} value={pri} onChange={(e) => setPri(e.target.value)} onBlur={() => { if (parsePri(pri.trim()) === null) setPri(String(docPri)); }} />
         </label>
         <span className="grow" />
-        <span className="act" data-able={out ? '1' : '0'} onClick={() => save(false)}><kbd>⌘↵</kbd> save</span>
+        <button type="button" className="act" data-able={out ? '1' : '0'} onMouseDown={(e) => e.preventDefault()} onClick={() => save(false)}><kbd>⌘↵</kbd> save</button>
         <span>·</span>
-        <span className="act" data-able={out ? '1' : '0'} onClick={() => save(true)}><kbd>⇧⌘↵</kbd> save, another</span>
+        <button type="button" className="act" data-able={out ? '1' : '0'} onMouseDown={(e) => e.preventDefault()} onClick={() => save(true)}><kbd>⇧⌘↵</kbd> save, another</button>
         <span>·</span>
-        <span className="act" onClick={onClose}><kbd>esc</kbd> cancel</span>
+        <button type="button" className="act" onMouseDown={(e) => e.preventDefault()} onClick={onClose}><kbd>esc</kbd> cancel</button>
       </div>
       )}
     </div>

@@ -180,12 +180,13 @@ describe.skipIf(!!process.env.CI)('the sample, measured', () => {
     const btn = Array.from(all.host.querySelectorAll<HTMLElement>('.fv-view button')).find((b) => b.textContent === 'cards')!;
     const t1 = performance.now();
     await act(async () => { btn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
-    const took = log('deck browser, every card (first rows drawn)', ms(t1));
-    // the rest are drawn in chunks on timers
-    for (let k = 0; k < 200 && all.host.querySelectorAll('.deck-row').length < 700; k++) await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
-    log('deck browser, every card (all drawn)', ms(t1));
+    const took = log('deck browser, every card', ms(t1));
+    // more than 700 cards, and only the rows near the view drawn (jsdom lays nothing out: a view a window tall, rows at
+    // the guess; `deck-window.test.ts` has 100,000 rows with heights and a scroll stood in)
+    expect(Number(all.host.querySelector('.db-count')?.textContent)).toBeGreaterThan(700);
     const rows = all.host.querySelectorAll<HTMLElement>('.deck-row');
-    expect(rows.length).toBeGreaterThan(700);
+    expect(rows.length).toBeGreaterThan(10);
+    expect(rows.length).toBeLessThan(100);
     const t2 = performance.now();
     await act(async () => { rows[10]!.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
     log('deck browser, every card, a row clicked', ms(t2));

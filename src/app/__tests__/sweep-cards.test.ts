@@ -223,4 +223,21 @@ describe('the forms, one order everywhere', () => {
     const labels = (sel: string) => Array.from(host.querySelectorAll(`${sel} .type-toggle button`)).map((b) => b.firstChild?.textContent);
     expect(labels('#a')).toEqual(labels('#b'));
   });
+
+  it('save and cancel are buttons, reached by Tab after the faces, and a click on one acts', async () => {
+    const said: string[] = [];
+    await mount(createElement('div', null,
+      createElement('div', { id: 'a' }, createElement(Composer, { seed: 'a ::: b', pri: 50, onSave: () => { said.push('saved'); }, onClose: () => { said.push('closed'); } })),
+      createElement('div', { id: 'b' }, createElement(CardEditor, { initial: { form: 'qa', front: '', back: '' }, pri: 50, onSave: () => {}, onCancel: () => { said.push('cancelled'); } })),
+    ));
+    const acts = (sel: string) => Array.from(host.querySelectorAll<HTMLElement>(`${sel} .ft .act`));
+    for (const el of [...acts('#a'), ...acts('#b')]) expect([el.tagName, el.getAttribute('type'), el.tabIndex]).toEqual(['BUTTON', 'button', 0]);
+    expect(acts('#a').map((e) => e.textContent)).toEqual(['⌘↵ save', '⇧⌘↵ save, another', 'esc cancel']);
+    expect(acts('#b').map((e) => e.textContent)).toEqual(['⌘↵ save', 'esc cancel']);
+    // nothing written: the sheet's save is shown as it was, dimmed by `data-able`, not disabled
+    expect([acts('#b')[0]!.dataset.able, (acts('#b')[0] as HTMLButtonElement).disabled]).toEqual(['0', false]);
+    await click(acts('#b')[1]!);
+    await click(acts('#a')[2]!);
+    expect(said).toEqual(['cancelled', 'closed']);
+  });
 });

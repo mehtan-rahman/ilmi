@@ -802,7 +802,8 @@
 .composer .ft .pri-pick input::-webkit-inner-spin-button, .composer .ft .pri-pick input::-webkit-outer-spin-button { appearance: none; margin: 0; }
 .composer .ft .pri-pick input:focus { border-bottom-color: var(--accent); }
 .composer .ft kbd { margin-left: 2px; }
-.composer .ft .act { cursor: pointer; }
+/* a button that looks as the span it was: reached by Tab after the faces */
+.composer .ft .act { appearance: none; border: 0; border-radius: 0; background: transparent; padding: 0; margin: 0; font: inherit; letter-spacing: inherit; color: inherit; text-align: inherit; cursor: pointer; }
 .composer .ft .act[data-able="0"] { opacity: 0.45; cursor: default; }
 .composer .ft .act[data-able="1"]:hover { color: var(--fg-1); }
 

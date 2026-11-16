@@ -147,6 +147,8 @@
   grid-template-columns: 72px minmax(0, 1fr) auto auto;
   user-select: none;
 }
+/* the rows near the view, in a box padded to the whole list's height (windowed.ts); the scroll is held by hand as heights are measured */
+.deck-rows { overflow-anchor: none; }
 .deck-row .dr-form { padding-left: var(--s-2); font-size: var(--t-xs); font-weight: 500; color: var(--fg-3); padding-top: 4px; display: block; }
 /* front over back, both from the row's start: each face keeps its own direction inside its own box */
 .deck-row .dr-faces { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; }
@@ -250,7 +252,9 @@
 .card-sheet .deck-edit .face { flex: 1 1 0; min-height: 0; overflow: auto; padding: 24px 32px; }
 .card-sheet .deck-edit .face .face-field { min-height: 100%; }
 .card-sheet .deck-edit .ft { margin-top: 12px; }
-@media (max-width: 600px) {
+/* narrow: by the pane the deck is in (`.pane-body` is a size container, app.css), so a deck in a split pane
+   and a phone, whose one pane is its window, are the same case */
+@container (max-width: 600px) {
   .card-sheet { padding: 8px max(8px, env(safe-area-inset-right, 0px)) 8px max(8px, env(safe-area-inset-left, 0px)); }
   .card-sheet .deck-edit .card { font-size: calc(19px * var(--zoom)); }
   .card-sheet .deck-edit .face { padding: 14px 16px; }

@@ -1,0 +1,83 @@
+% A short paper with what a reader gets around by: an outline, links inside
+% (equations, a figure, sections, citations) and one to the web. Typeset with
+% `pdflatex around.tex` twice; `ILMI_SMOKE=sioyek` reads around.pdf.
+\documentclass[11pt]{article}
+\usepackage[a5paper,margin=18mm]{geometry}
+\usepackage{amsmath}
+\usepackage[colorlinks=false,pdfborder={0 0 0},bookmarksnumbered=true]{hyperref}
+\title{Fluctuations in the canonical ensemble}
+\author{H. Lindqvist}
+\date{}
+\begin{document}
+\maketitle
+\tableofcontents
+
+\section{The partition function}\label{sec:z}
+A system held at temperature $T$ by a reservoir occupies a microstate $s$ of
+energy $E_s$ with probability
+\begin{equation}\label{eq:p}
+  P_s = \frac{e^{-\beta E_s}}{Z}, \qquad Z = \sum_s e^{-\beta E_s},
+\end{equation}
+where $\beta = 1/kT$. Everything below follows from $Z$ by differentiation;
+the entropy of the reservoir has already been spent in deriving
+\eqref{eq:p}, as Gibbs first argued~\cite{gibbs}. The mean energy is
+\begin{equation}\label{eq:u}
+  U = -\frac{\partial \ln Z}{\partial \beta}.
+\end{equation}
+The sketch in Fig.~\ref{fig:well} shows the two levels used in
+Section~\ref{sec:two}; the heat capacity of that system is derived there
+and the general result in Section~\ref{sec:fluct}.
+
+\newpage
+\section{Energy fluctuations}\label{sec:fluct}
+Differentiating \eqref{eq:u} once more gives the variance of the energy,
+\begin{equation}\label{eq:var}
+  \sigma_E^2 = \frac{\partial^2 \ln Z}{\partial \beta^2} = kT^2 C_V ,
+\end{equation}
+so a heat capacity is a measure of fluctuation. The entropy is extensive,
+and so is $C_V$; the relative width $\sigma_E / U$ therefore falls as
+$N^{-1/2}$. Einstein used exactly this to argue that entropy is
+statistical~\cite{einstein}. A fuller account is in Pathria's
+text~\cite{pathria}, and a readable summary is kept at
+\url{https://en.wikipedia.org/wiki/Canonical_ensemble}.
+
+\begin{figure}[b]
+\centering
+\setlength{\unitlength}{1mm}
+\begin{picture}(60,24)
+\put(5,4){\line(1,0){50}}
+\put(5,18){\line(1,0){50}}
+\put(30,4){\vector(0,1){14}}
+\put(57,3){$0$}
+\put(57,17){$\epsilon$}
+\end{picture}
+\caption{The two-level system: a ground state and one excited state at
+energy $\epsilon$.}\label{fig:well}
+\end{figure}
+
+\newpage
+\section{A two-level system}\label{sec:two}
+For the system of Fig.~\ref{fig:well} the sum has two terms,
+$Z = 1 + e^{-\beta\epsilon}$, and \eqref{eq:u} gives
+\begin{equation}\label{eq:two}
+  U = \frac{\epsilon}{e^{\beta\epsilon} + 1}.
+\end{equation}
+Its heat capacity, from \eqref{eq:var}, rises to a peak near
+$kT \approx 0.42\,\epsilon$ and falls again: the Schottky anomaly. The
+entropy climbs from zero to $k \ln 2$ across the same range.
+
+\newpage
+\section{Many systems}
+Independent systems multiply their partition functions, so their
+entropy and their energy add, and \eqref{eq:var} adds too. This is why
+the fluctuations of Section~\ref{sec:fluct} are invisible in bulk matter.
+
+\begin{thebibliography}{9}
+\bibitem{gibbs} J.~W. Gibbs, \emph{Elementary Principles in Statistical
+Mechanics}. Scribner, 1902.
+\bibitem{einstein} A. Einstein, ``Zur allgemeinen molekularen Theorie der
+W\"arme.'' \emph{Annalen der Physik} 14, 1904.
+\bibitem{pathria} R.~K. Pathria, \emph{Statistical Mechanics}, 2nd ed.
+Butterworth-Heinemann, 1996.
+\end{thebibliography}
+\end{document}

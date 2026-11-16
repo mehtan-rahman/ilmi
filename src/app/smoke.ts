@@ -14046,3 +14046,255 @@ export async function smokeSweepEdit(vault: Vault): Promise<void> {
     log(`failed: ${e instanceof Error ? e.message : String(e)}`);
   }
 }
+
+// `ILMI_SMOKE=sioyek` (`smokeSioyek`) over a copy of `samples/double-major`,
+// with `ILMI_BOOKS=<repo>/design/books`: milestone 76, getting around a book
+// as sioyek does, on `around.pdf` (a short paper typeset with an outline,
+// links inside and one to the web; `pdflatex around.tex`). The contents by
+// `t`, narrowed and gone to; ⌫ back and ⇧⌫ forward to the exact place; a
+// link inside followed by a press, a web one named and not followed; ⌥ on a
+// reference showing the peek, ⏎ going there; `f` lettering what is in view
+// and the letters following; `n` and `N` stepping a search; a selection's
+// menu offering the web and scholar; the strip saying `⌫ back` only when
+// there is a way back; dark. Every step asserts.
+export async function smokeSioyek(vault: Vault): Promise<void> {
+  const log = (s: string) => void info(`smoke sioyek: ${s}`);
+  const shot = async (name: string, ms = 1500) => { await sleep(500); log(`shot: ${name}`); await sleep(ms); };
+  const q = <T extends Element>(sel: string, root: ParentNode = document) => root.querySelector<T>(sel);
+  const qa = <T extends Element>(sel: string, root: ParentNode = document) => Array.from(root.querySelectorAll<T>(sel));
+  const must = (ok: unknown, what: string) => { if (!ok) throw new Error(what); log(`ok: ${what}`); };
+  const poll = async <T,>(probe: () => T | null | undefined | false | Promise<T | null | undefined | false>, what: string, ms = 8000): Promise<T> => {
+    const t0 = Date.now();
+    for (;;) {
+      const v = await probe();
+      if (v) { log(`ok: ${what}`); return v; }
+      if (Date.now() - t0 > ms) throw new Error(`${what} (waited ${ms} ms)`);
+      await sleep(100);
+    }
+  };
+  const key = (k: string, more: KeyboardEventInit = {}) => { const e = new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true, ...more }); window.dispatchEvent(e); return e.defaultPrevented; };
+  const view = () => q<HTMLElement>('.pdf-view')!;
+  const at = () => ({ page: Number(view().dataset.topPage), y: Number(view().dataset.topY), back: Number(view().dataset.back), fwd: Number(view().dataset.fwd) });
+  const same = (a: { page: number; y: number }, b: { page: number; y: number }) => a.page === b.page && Math.abs(a.y - b.y) < 0.02;
+  const strip = () => qa('.bot span, .bot kbd').map((e) => e.textContent).join(' ');
+  /** The rectangle of `text` on a drawn page's text layer. */
+  const rectOf = (page: number, text: string): DOMRect | null => {
+    const layer = q(`.pdf-page[data-page="${page}"] .textLayer`);
+    if (!layer) return null;
+    const walker = document.createTreeWalker(layer, NodeFilter.SHOW_TEXT);
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      const i = (n.textContent ?? '').indexOf(text);
+      if (i < 0) continue;
+      const r = document.createRange();
+      r.setStart(n, i); r.setEnd(n, i + text.length);
+      const b = r.getBoundingClientRect();
+      if (b.width > 0) return b;
+    }
+    return null;
+  };
+  const clickAt = (x: number, y: number, more: MouseEventInit = {}) => {
+    const el = document.elementFromPoint(x, y) ?? q('.pdf-pages')!;
+    const init = { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0, ...more };
+    el.dispatchEvent(new PointerEvent('pointerdown', { ...init, pointerType: 'mouse', pointerId: 1 }));
+    el.dispatchEvent(new MouseEvent('mousedown', init));
+    el.dispatchEvent(new PointerEvent('pointerup', { ...init, pointerType: 'mouse', pointerId: 1 }));
+    el.dispatchEvent(new MouseEvent('mouseup', init));
+    el.dispatchEvent(new MouseEvent('click', init));
+  };
+  try {
+    useApp.getState().setTheme('light');
+    const books = await invoke<string | null>('dev_env', { name: 'ILMI_BOOKS' });
+    if (!books) throw new Error('ILMI_BOOKS is not set: point it at the repository\'s design/books');
+    const { importPdfNode } = await import('./vault.js');
+    await importPdfNode('library', { title: 'around', bytes: new Uint8Array(await invoke<ArrayBuffer>('read_dropped_bytes', { path: `${books}/around.pdf` })), text: '' });
+    const BOOK = 'library/around.pdf';
+    await poll(() => useApp.getState().docs[BOOK]?.pdf === BOOK, 'the paper is in the collection, a PDF on its own', 15000);
+    useApp.setState({ session: null });
+    openNode(BOOK);
+    await poll(() => activeTab(useApp.getState().panes)?.id === BOOK && q('.pdf-page[data-page="1"] canvas') && q('.pdf-page[data-page="1"] .textLayer span'), 'its first page is drawn, with its text', 45000);
+    await sleep(1200);
+    (document.activeElement as HTMLElement | null)?.blur?.();
+    const sc = (() => { let e: HTMLElement | null = q<HTMLElement>('.pdf-page'); while (e && !(e.scrollHeight > e.clientHeight + 50 && /auto|scroll/.test(getComputedStyle(e).overflowY))) e = e.parentElement; return e!; })();
+    sc.scrollTop = 0; sc.dispatchEvent(new Event('scroll'));
+    await sleep(400);
+    const home = at();
+    log(`at the start: p. ${home.page} y ${home.y}, back ${home.back}, forward ${home.fwd}; ${qa('.pdf-page').length} pages`);
+    must(home.back === 0 && !/⌫ back/.test(strip()), 'no way back yet, and the strip does not offer one');
+
+    // ── the contents ──
+    key('t');
+    const rows = await poll(() => { const r = qa<HTMLElement>('.palette-row[data-t="place"]'); return r.length >= 4 ? r : null; }, 't lists the paper\'s contents in the palette');
+    log(`contents: ${rows.map((r) => `${'·'.repeat(Number(r.dataset.depth ?? 0))}${r.textContent}`).join(' | ')}`);
+    must(rows.some((r) => /Energy fluctuations/.test(r.textContent ?? '')) && rows.every((r) => /p\. \d+/.test(r.querySelector('.ptag')?.textContent ?? r.textContent ?? '')), 'its sections, each with its page');
+    must(qa('.palette-row[data-here="1"]').length === 0, 'above the first section (the title, the contents) no entry holds the place');
+    useApp.setState({ paletteOpen: false });
+    await sleep(200);
+    // further down the page, inside section 1
+    { const h = rectOf(1, 'occupies a microstate')!; sc.scrollTop += h.top - sc.getBoundingClientRect().top - 20; sc.dispatchEvent(new Event('scroll')); await sleep(400); }
+    key('t');
+    await poll(() => qa('.palette-row[data-t="place"]').length >= 4, 'the contents again, from inside section 1');
+    must(qa('.palette-row[data-here="1"]').length === 1 && /The partition function/.test(q('.palette-row[data-here="1"]')?.textContent ?? '') && q('.palette-row[data-here="1"]')?.getAttribute('data-sel') === '1', 'the section holding the place is marked, and is the row selected');
+    await shot('sioyek-contents');
+    useApp.setState({ paletteOpen: false });
+    sc.scrollTop = 0; sc.dispatchEvent(new Event('scroll'));
+    await sleep(400);
+    key('t');
+    await poll(() => qa('.palette-row[data-t="place"]').length >= 4, 'and from the top');
+    const field = q<HTMLInputElement>('.palette-input input')!;
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(field, 'two-level');
+    field.dispatchEvent(new Event('input', { bubbles: true }));
+    await poll(() => { const r = qa('.palette-row[data-t="place"]'); return r.length >= 1 && r.length < rows.length && /two-level/i.test(r[0]!.textContent ?? ''); }, 'typing narrows it to the section named');
+    field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    await poll(() => !useApp.getState().paletteOpen && at().page === 3 && at().back === 1, '⏎ goes to it: page 3, one step of the way back kept', 10000);
+    await poll(() => rectOf(3, 'two-level'), 'the section\'s heading is drawn');
+    {
+      const h = rectOf(3, 'two-level')!;
+      const v = sc.getBoundingClientRect();
+      must(h.top >= v.top && h.top < v.top + v.height * 0.5, `its heading is near the top of the view (${Math.round(h.top - v.top)} px down)`);
+    }
+    must(/⌫\s*back/.test(strip()), `the strip now says ⌫ back (${strip().slice(0, 120)})`);
+    const there = at();
+
+    // ── back and forth ──
+    must(key('Backspace'), '⌫ is taken');
+    await poll(() => same(at(), home) && at().back === 0 && at().fwd === 1, `back where it was (p. ${at().page} y ${at().y})`);
+    must(key('Backspace', { shiftKey: true }), '⇧⌫ is taken');
+    await poll(() => same(at(), there) && at().back === 1 && at().fwd === 0, 'and forward again, to the same place');
+    key('Backspace');
+    await poll(() => same(at(), home), 'back once more');
+    // a scroll by hand does not drop the way forward
+    sc.scrollTop += 120; sc.dispatchEvent(new Event('scroll'));
+    await sleep(300);
+    must(at().fwd === 1, 'a scroll by hand keeps the way forward');
+    sc.scrollTop = 0; sc.dispatchEvent(new Event('scroll'));
+    await sleep(300);
+
+    // ── the PDF's own links ──
+    const links = await poll(() => { const l = qa<HTMLElement>('.plink[data-page="1"]'); return l.length >= 4 ? l : null; }, 'the first page\'s links are laid over it');
+    log(`links on p. 1: ${links.length} (${links.filter((l) => l.dataset.kind === 'inside').length} inside)`);
+    await poll(() => q('.pdf-page[data-page="2"] canvas'), 'the second page is drawn too', 20000);
+    const web = await poll(() => qa<HTMLElement>('.plink[data-kind="web"]')[0], 'a link to the web is among the second page\'s');
+    must(/^https:\/\/en\.wikipedia\.org\/wiki\/Canonical_ensemble/.test(web.dataset.href ?? ''), `named by its address: ${web.dataset.href}`);
+    // the contents line for section 3, on the first page: a press follows it
+    const toc = rectOf(1, 'A two-level system');
+    must(toc, 'the contents line for section 3 on the first page');
+    const tocLink = links.find((l) => { const r = l.getBoundingClientRect(); return r.top <= toc!.top + toc!.height / 2 && r.bottom >= toc!.top + toc!.height / 2 && l.dataset.kind === 'inside'; });
+    must(tocLink, 'a link lies over it');
+    const lr = tocLink!.getBoundingClientRect();
+    {
+      const hand = new PointerEvent('pointermove', { bubbles: true, pointerType: 'mouse', pointerId: 1, buttons: 0, clientX: lr.left + lr.width / 2, clientY: lr.top + lr.height / 2 });
+      (document.elementFromPoint(lr.left + lr.width / 2, lr.top + lr.height / 2) ?? q('.pdf-pages')!).dispatchEvent(hand);
+      await sleep(150);
+      must(q<HTMLElement>('.pdf-pages')?.dataset.over === 'link', 'the pointer over it is a pointing hand');
+    }
+    clickAt(lr.left + lr.width / 2, lr.top + lr.height / 2);
+    await poll(() => at().page === 3 && at().back === 1, 'a press on it goes to page 3, with the way back', 10000);
+    must(!window.getSelection()?.toString(), 'and leaves no selection behind');
+    key('Backspace');
+    await poll(() => same(at(), home), '⌫ comes back from it');
+
+    // ── a reference without selecting ──
+    const fig = await poll(() => rectOf(1, 'Fig.'), 'the words Fig. 1 on the first page');
+    clickAt(fig.left + fig.width / 2, fig.top + fig.height / 2, { altKey: true });
+    const peek = await poll(() => q<HTMLElement>('.pdf-peek'), '⌥ on the reference shows the peek', 15000);
+    log(`peek: page ${peek.dataset.page}, ${Math.round(peek.getBoundingClientRect().width)}×${Math.round(peek.getBoundingClientRect().height)}`);
+    must(peek.dataset.page === '2', 'of the figure, on page 2');
+    must(same(at(), home), 'and the page has not moved');
+    await shot('sioyek-peek');
+    key('Enter');
+    await poll(() => at().page === 2 && !q('.pdf-peek') && at().back === 1, '⏎ goes to the figure, the peek gone, the way back kept', 10000);
+    key('Backspace');
+    await poll(() => same(at(), home), 'and ⌫ comes back');
+    // a plain press on the same words does nothing
+    clickAt(fig.left + fig.width / 2, fig.top + fig.height / 2);
+    await sleep(500);
+    must(!q('.pdf-peek') && same(at(), home), 'a plain press on a reference does nothing');
+
+    // ── link hints ──
+    (document.activeElement as HTMLElement | null)?.blur?.();
+    window.getSelection()?.removeAllRanges();
+    // the contents' last lines and the first section's text in view
+    { const h = rectOf(1, 'Energy fluctuations')!; sc.scrollTop += h.top - sc.getBoundingClientRect().top - 90; sc.dispatchEvent(new Event('scroll')); await sleep(500); }
+    const spot = at();
+    must(key('f'), 'f is taken');
+    const hints = await poll(() => { const h = qa<HTMLElement>('.phint'); return h.length >= 5 ? h : null; }, 'f letters the links and references in view');
+    const labels = hints.map((h) => h.dataset.label!);
+    log(`hints: ${hints.map((h) => `${h.dataset.label}:${h.dataset.kind}`).join(' ')}`);
+    must(new Set(labels).size === labels.length && labels.every((l) => /^[a-z]{1,2}$/.test(l)), 'each its own letters');
+    must(hints.some((h) => h.dataset.kind === 'link'), 'the links among them');
+    {
+      const v = sc.getBoundingClientRect();
+      must(hints.every((h) => { const r = h.getBoundingClientRect(); return r.bottom > v.top && r.top < v.bottom; }), 'only what is in view is lettered');
+      const cs = getComputedStyle(hints[0]!);
+      must(cs.backgroundColor !== 'rgba(0, 0, 0, 0)' && parseFloat(cs.fontSize) >= 9, `a label is a key cap that reads (${cs.backgroundColor}, ${cs.fontSize})`);
+    }
+    await shot('sioyek-hints');
+    // the one over the contents line for section 2
+    const toc2 = rectOf(1, 'Energy fluctuations')!;
+    const pick = hints.filter((h) => h.dataset.kind === 'link').map((h) => ({ h, r: h.getBoundingClientRect() })).sort((a, b) => Math.abs(a.r.top - toc2.top) - Math.abs(b.r.top - toc2.top))[0]!.h;
+    for (const ch of pick.dataset.label!) key(ch);
+    await poll(() => at().page === 2 && !q('.phint') && at().back === 1, `typing ${pick.dataset.label} follows that link: page 2, the letters gone`, 10000);
+    key('Backspace');
+    await poll(() => same(at(), spot), 'and back');
+    key('f');
+    await poll(() => q('.phint'), 'f again');
+    key('Escape');
+    await poll(() => !q('.phint') && same(at(), spot), 'esc lets the letters go, nothing followed');
+
+    // ── a search by n and N ──
+    key('/');
+    const find = await poll(() => q<HTMLInputElement>('.pdf-bar input'), 'the search');
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(find, 'entropy');
+    find.dispatchEvent(new Event('input', { bubbles: true }));
+    await sleep(200);
+    find.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    const n1 = await poll(() => /, 1 \/ (\d+)$/.exec(q('.pdf-bar .pb-n')?.textContent ?? ''), 'entropy is found', 30000);
+    must(Number(n1[1]) >= 4, `${n1[1]} times`);
+    find.blur();
+    await sleep(200);
+    key('n');
+    await poll(() => new RegExp(`, 2 / ${n1[1]}$`).test(q('.pdf-bar .pb-n')?.textContent ?? ''), 'n steps to the second, the caret out of the field');
+    key('N', { shiftKey: true });
+    await poll(() => new RegExp(`, 1 / ${n1[1]}$`).test(q('.pdf-bar .pb-n')?.textContent ?? ''), 'N steps back to the first');
+    key('Escape');
+    await sleep(300);
+
+    // ── look it up ──
+    sc.scrollTop = 0; sc.dispatchEvent(new Event('scroll'));
+    await sleep(400);
+    {
+      const layer = q(`.pdf-page[data-page="1"] .textLayer`)!;
+      const walker = document.createTreeWalker(layer, NodeFilter.SHOW_TEXT);
+      let node: Node | null = null;
+      for (let n = walker.nextNode(); n; n = walker.nextNode()) if ((n.textContent ?? '').includes('reservoir')) { node = n; break; }
+      must(node, 'a word to look up');
+      const i = node!.textContent!.indexOf('reservoir');
+      const r = document.createRange();
+      r.setStart(node!, i); r.setEnd(node!, i + 'reservoir'.length);
+      const selection = window.getSelection()!;
+      selection.removeAllRanges(); selection.addRange(r);
+      await sleep(200);
+      const b = r.getBoundingClientRect();
+      (document.elementFromPoint(b.left + 4, b.top + b.height / 2) ?? layer).dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: b.left + 4, clientY: b.top + b.height / 2, button: 2 }));
+      const menu = await poll(() => q<HTMLElement>('.ctx-menu'), 'a right-click on a selection opens its menu');
+      const acts = qa<HTMLElement>('[data-act]', menu).map((e) => e.dataset.act);
+      log(`the selection's menu: ${acts.join(' ')}`);
+      must(acts.includes('web') && acts.includes('scholar') && acts.includes('card') && acts.includes('section'), 'section, card, search the web, search scholar');
+      await shot('sioyek-lookup');
+      (document.activeElement ?? document.body).dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+      await poll(() => !q('.ctx-menu'), 'esc closes it; nothing was opened');
+      selection.removeAllRanges();
+    }
+
+    // ── dark ──
+    useApp.getState().setTheme('dark');
+    key('f');
+    await poll(() => q('.phint'), 'the letters in dark');
+    await shot('sioyek-hints-dark');
+    key('Escape');
+    useApp.getState().setTheme('light');
+    log(`done; vault ${vault.root}`);
+  } catch (e) {
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}

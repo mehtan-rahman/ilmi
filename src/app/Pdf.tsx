@@ -201,6 +201,8 @@ interface Hints { targets: HintTarget[]; typed: string }
 /** A hit nearer than this to the view's top or bottom is brought a third of the way down, css px. */
 const HIT_EDGE = 90;
 const PEEK_H = 150;
+/** A figure's peek: room for the picture over its caption. */
+const PEEK_FIG_H = 330;
 const PEEK_W = 480;
 
 interface Find {
@@ -1603,7 +1605,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     if (pdf && rel) {
       for (let n = at.page; n >= Math.max(first, at.page - NAME_BACK); n--) {
         const items = await itemsOf(rel, pdf, n);
-        const head = headingAbove(() => items, n, n, n === at.page ? at.y + NAME_UNDER : Infinity);
+        const head = headingAbove(() => items, n, n, n === at.page ? at.y + NAME_UNDER : Infinity, true);
         if (head !== null) return head;
       }
     }
@@ -1803,14 +1805,17 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
       full.height = Math.floor(vp.height * dpr);
       await page.render({ canvas: full, viewport: vp, intent: 'print', transform: [dpr, 0, 0, dpr, 0, 0] }).promise;
       if (!live) return;
-      const top = Math.max(0, Math.min(vp.height - PEEK_H, vp.height - (peek.y + peek.height) * scale - 24));
+      // a figure's caption lies under its picture: its peek is taller and ends just under the caption; anything else begins just above its line
+      const fig = /^fig/i.test(peek.text.trim());
+      const H = fig ? PEEK_FIG_H : PEEK_H;
+      const top = Math.max(0, Math.min(vp.height - H, fig ? vp.height - peek.y * scale + 20 - H : vp.height - (peek.y + peek.height) * scale - 24));
       const w = Math.min(PEEK_W, vp.width);
-      const h = PEEK_H * (w / vp.width);
+      const h = H * (w / vp.width);
       canvas.width = Math.floor(w * dpr);
       canvas.height = Math.floor(h * dpr);
       canvas.style.width = `${w}px`;
       canvas.style.height = `${h}px`;
-      canvas.getContext('2d')?.drawImage(full, 0, top * dpr, vp.width * dpr, PEEK_H * dpr, 0, 0, w * dpr, h * dpr);
+      canvas.getContext('2d')?.drawImage(full, 0, top * dpr, vp.width * dpr, H * dpr, 0, 0, w * dpr, h * dpr);
     })().catch(console.error);
     return () => { live = false; };
   }, [peek, pdf, fit]);
@@ -2190,7 +2195,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
           {peek && (
             <div
               className="pdf-peek"
-              style={{ top: Math.max(60, Math.min(peek.rect.bottom + 8, window.innerHeight - 220)), left: Math.max(8, Math.min(peek.rect.left, window.innerWidth - PEEK_W - 40)) }}
+              style={{ top: Math.max(60, Math.min(peek.rect.bottom + 8, window.innerHeight - (/^fig/i.test(peek.text.trim()) ? PEEK_FIG_H + 70 : 220))), left: Math.max(8, Math.min(peek.rect.left, window.innerWidth - PEEK_W - 40)) }}
               data-page={peek.page}
               onClick={followPeek}
             >

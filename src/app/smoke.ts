@@ -14202,7 +14202,9 @@ export async function smokeSioyek(vault: Vault): Promise<void> {
     const peek = await poll(() => q<HTMLElement>('.pdf-peek'), '⌥ on the reference shows the peek', 15000);
     log(`peek: page ${peek.dataset.page}, ${Math.round(peek.getBoundingClientRect().width)}×${Math.round(peek.getBoundingClientRect().height)}`);
     must(peek.dataset.page === '2', 'of the figure, on page 2');
+    await poll(() => (q<HTMLElement>('.pdf-peek')?.getBoundingClientRect().height ?? 0) > 170, `once drawn, tall enough for the picture over its caption (${Math.round(q<HTMLElement>('.pdf-peek')?.getBoundingClientRect().height ?? 0)} px)`, 10000);
     must(same(at(), home), 'and the page has not moved');
+    must(q<HTMLElement>('.pdf-peek')!.getBoundingClientRect().bottom <= window.innerHeight - 4, 'the peek lies inside the window');
     await shot('sioyek-peek');
     key('Enter');
     await poll(() => at().page === 2 && !q('.pdf-peek') && at().back === 1, '⏎ goes to the figure, the peek gone, the way back kept', 10000);
@@ -14288,6 +14290,210 @@ export async function smokeSioyek(vault: Vault): Promise<void> {
       await poll(() => !q('.ctx-menu'), 'esc closes it; nothing was opened');
       selection.removeAllRanges();
     }
+
+    // ══ what is left on the page (milestone 77) ══
+    const hash = view().dataset.hash!;
+    must(/^[0-9a-f]{64}$/.test(hash), 'the paper is known by its hash');
+    const marksFile = async (): Promise<Record<string, { kind: string; page: number; y: number; name?: string; letter?: string; text?: string; ink?: number; to?: { page: number } }>> => {
+      try { return JSON.parse(await vault.fs.readText(vault.abs(`.ilmi/marks/${hash}.json`))); } catch { return {}; }
+    };
+    const scrollTo = async (page: number, text: string, down = 120) => { await poll(() => rectOf(page, text) ?? (q<HTMLElement>(`.pdf-page[data-page="${page}"]`)?.scrollIntoView({ block: 'start' }), null), `page ${page} is drawn to "${text}"`, 30000); const h = rectOf(page, text)!; sc.scrollTop += h.top - sc.getBoundingClientRect().top - down; sc.dispatchEvent(new Event('scroll')); await sleep(500); };
+    (document.activeElement as HTMLElement | null)?.blur?.();
+    window.getSelection()?.removeAllRanges();
+
+    // ── a bookmark ──
+    await scrollTo(1, 'occupies a microstate');
+    const placeA = at();
+    must(key('b'), 'b is taken');
+    const name = await poll(() => q<HTMLInputElement>('.pdf-bar input.pb-name'), 'b opens a field for the place\'s name');
+    log(`the name offered: "${name.value}"`);
+    must(/partition function/i.test(name.value) && document.activeElement === name, 'filled with the heading the place is under, the caret in it');
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(name, 'where z begins');
+    name.dispatchEvent(new Event('input', { bubbles: true }));
+    name.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    await poll(() => view().dataset.bookmarks === '1' && q('.bmark'), '⏎ keeps it: a mark in the gutter');
+    must(same(at(), placeA), 'the page has not moved');
+    await poll(async () => Object.values(await marksFile()).some((m) => m.kind === 'bookmark' && m.name === 'where z begins' && m.page === 1), 'it is written under the paper\'s hash in .ilmi/marks/');
+    // a book's inspector opens only by its toggle
+    if (!q('.insp')) q<HTMLElement>('.top .insp-toggle:not(.side-toggle)')!.click();
+    await poll(() => qa('[data-marks="bookmarks"] li').some((l) => /where z begins/.test(l.textContent ?? '')), 'the inspector lists it');
+    await shot('sioyek-bookmark');
+    if (q('.insp')) q<HTMLElement>('.top .insp-toggle:not(.side-toggle)')!.click();
+    await sleep(400);
+    // gone to from the palette, from elsewhere in the paper
+    await scrollTo(3, 'Schottky');
+    useApp.setState({ paletteOpen: true });
+    const pf = await poll(() => q<HTMLInputElement>('.palette-input input'), 'the palette');
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(pf, 'bookmarks');
+    pf.dispatchEvent(new Event('input', { bubbles: true }));
+    await sleep(500);
+    log(`palette rows for bookmarks: ${qa('.palette-row').slice(0, 6).map((r) => `[${(r as HTMLElement).dataset.t}] ${r.textContent?.slice(0, 40)}`).join(' | ')}`);
+    const cmd = await poll(() => qa<HTMLElement>('.palette-row').find((r) => /^\W*bookmarks · around/.test((r.querySelector('.pt')?.textContent ?? r.textContent ?? '').trim())), 'it offers this paper\'s bookmarks');
+    cmd.click();
+    const brow = await poll(() => qa<HTMLElement>('.palette-row[data-t="place"]').find((r) => /where z begins/.test(r.textContent ?? '')), 'and lists the one made');
+    brow.click();
+    await poll(() => !useApp.getState().paletteOpen && same(at(), placeA) && at().back >= 1, 'chosen, it goes to the place, with the way back', 10000);
+
+    // ── a mark ──
+    key('M', { shiftKey: true });
+    await poll(() => q('.pdf-bar [data-chord="set"]'), '⇧M waits for a letter');
+    key('a');
+    await poll(async () => Object.values(await marksFile()).some((m) => m.kind === 'mark' && m.letter === 'a'), 'a marks the place');
+    await scrollTo(4, 'Independent systems');
+    const far = at();
+    key("'");
+    await poll(() => q('.pdf-bar [data-chord="go"]'), '\' waits for a letter');
+    key('a');
+    await poll(() => same(at(), placeA), 'and a goes back to it');
+    key('Backspace');
+    await poll(() => same(at(), far), '⌫ returns from the mark');
+    key("'");
+    await poll(() => q('.pdf-bar [data-chord="go"]'), 'waiting for a letter again');
+    key('Enter');
+    await sleep(400);
+    log(`after a key that is no letter: chord ${q<HTMLElement>('.pdf-bar [data-chord]')?.dataset.chord ?? 'none'}, at p. ${at().page} y ${at().y} (was p. ${far.page} y ${far.y}), peek ${!!q('.pdf-peek')}`);
+    must(!q('.pdf-bar [data-chord]') && same(at(), far), 'a key that is no letter lets the mark go, and does nothing else');
+
+    // ── a highlight ──
+    await scrollTo(1, 'occupies a microstate');
+    const selectWord = (page: number, word: string): DOMRect => {
+      const layer = q(`.pdf-page[data-page="${page}"] .textLayer`)!;
+      const walker = document.createTreeWalker(layer, NodeFilter.SHOW_TEXT);
+      for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+        const k = (n.textContent ?? '').indexOf(word);
+        if (k < 0) continue;
+        const r = document.createRange();
+        r.setStart(n, k); r.setEnd(n, k + word.length);
+        const selection = window.getSelection()!;
+        selection.removeAllRanges(); selection.addRange(r);
+        return r.getBoundingClientRect();
+      }
+      throw new Error(`no "${word}" on page ${page}`);
+    };
+    const word = selectWord(1, 'microstate');
+    await sleep(250);
+    must(key('h'), 'h on a selection is taken');
+    const hl = await poll(() => q<HTMLElement>('.pdf-hls .hl'), 'the selection is highlighted');
+    const over = (a: DOMRect, b: DOMRect) => Math.abs(a.left - b.left) < 6 && Math.abs(a.right - b.right) < 6 && a.top <= b.top + 4 && a.bottom >= b.bottom - 4;
+    must(over(hl.getBoundingClientRect(), word), `the band lies on the word (${Math.round(hl.getBoundingClientRect().left)}–${Math.round(hl.getBoundingClientRect().right)} for ${Math.round(word.left)}–${Math.round(word.right)})`);
+    must(hl.dataset.ink === '1' && view().dataset.highlights === '1', 'in the first ink');
+    key('3');
+    await poll(() => q<HTMLElement>('.pdf-hls .hl')?.dataset.ink === '3', '3, while the notice shows, changes its ink');
+    await poll(async () => Object.values(await marksFile()).some((m) => m.kind === 'highlight' && m.text === 'microstate' && m.ink === 3), 'written with its words and its ink');
+    window.getSelection()?.removeAllRanges();
+    // at a zoom it is still on its word
+    const zk = (k: string) => window.dispatchEvent(new KeyboardEvent('keydown', { key: k, metaKey: true, bubbles: true, cancelable: true }));
+    zk('='); zk('=');
+    await poll(() => view().dataset.zoom === '1.5', 'the pages at 150%');
+    await sleep(900);
+    await poll(() => { const w = rectOf(1, 'microstate'); const h2 = q<HTMLElement>('.pdf-hls .hl'); return w && h2 && over(h2.getBoundingClientRect(), w); }, 'zoomed, the highlight is still on its word', 10000);
+    await shot('sioyek-highlight-zoomed');
+    zk('0');
+    await poll(() => (view().dataset.zoom ?? '1') === '1', 'back to fit');
+    await sleep(600);
+    // the four inks are told apart without colour
+    {
+      const el = q<HTMLElement>('.pdf-hls .hl')!;
+      const styles: string[] = [];
+      useApp.getState().setTheme('eink');
+      for (const ink of ['1', '2', '3', '4']) { el.dataset.ink = ink; await sleep(60); const cs = getComputedStyle(el); styles.push(`${cs.borderBottomStyle}/${cs.borderBottomWidth}/${cs.backgroundColor}`); }
+      el.dataset.ink = '3';
+      log(`e-ink, the four inks: ${styles.join(' | ')}`);
+      must(new Set(styles.map((x) => x.split('/').slice(0, 2).join('/'))).size >= 3 && new Set(styles).size === 4, 'in e-ink each ink has its own rule or band, not only its tint');
+      await shot('sioyek-highlight-eink');
+      useApp.getState().setTheme('light');
+    }
+    // h inside it clears it, and that can be undone
+    selectWord(1, 'microstate');
+    await sleep(250);
+    key('h');
+    await poll(() => !q('.pdf-hls .hl') && (q('.notice .nl')?.textContent ?? '').length > 0, 'h on it again clears it, with a notice');
+    qa<HTMLButtonElement>('.notice button.na').find((b) => b.textContent === 'undo')!.click();
+    await poll(() => q('.pdf-hls .hl'), 'undo brings it back');
+    window.getSelection()?.removeAllRanges();
+
+    // ── the ruler ──
+    (document.activeElement as HTMLElement | null)?.blur?.();
+    must(key('v'), 'v is taken');
+    const rule = await poll(() => q<HTMLElement>('.pdf-rule'), 'a rule under a line of the page');
+    const line0 = view().dataset.ruler!;
+    {
+      const r = rule.getBoundingClientRect();
+      const v = sc.getBoundingClientRect();
+      must(r.top > v.top && r.bottom < v.bottom && r.height > 4 && r.width > 100, `in view, a line's height (${Math.round(r.height)} px, ${Math.round(r.top - v.top)} px down)`);
+    }
+    key('j');
+    await poll(() => view().dataset.ruler !== line0, `j moves it a line down (${line0} to ${view().dataset.ruler})`);
+    const line1 = view().dataset.ruler!;
+    must(Number(line1.split(':')[1]) === Number(line0.split(':')[1]) + 1 || line1.split(':')[0] !== line0.split(':')[0], 'the next line');
+    key('ArrowDown'); key('ArrowDown');
+    await sleep(300);
+    await shot('sioyek-ruler');
+    key('k'); key('k'); key('k');
+    await poll(() => view().dataset.ruler === line0, 'k, three times, is back where it began');
+    key('Escape');
+    await poll(() => !q('.pdf-rule'), 'esc lets it go');
+
+    // ── a portal ──
+    await scrollTo(1, 'The sketch in');
+    key('P', { shiftKey: true });
+    await poll(() => q('.pdf-bar [data-portal="pending"]'), '⇧P starts a portal, and says so');
+    await scrollTo(2, 'The two-level system');
+    const dest = at();
+    key('P', { shiftKey: true });
+    await poll(() => view().dataset.portals === '1' && !q('.pdf-bar [data-portal="pending"]'), '⇧P again ties the two places');
+    await poll(async () => Object.values(await marksFile()).some((m) => m.kind === 'portal' && m.page === 1 && m.to?.page === 2), 'written: from page 1 to page 2');
+    await scrollTo(1, 'The sketch in', 260);
+    const pm = await poll(() => q<HTMLElement>('.pmark'), 'its source has a mark in the margin');
+    {
+      const r = pm.getBoundingClientRect();
+      const pg = q<HTMLElement>('.pdf-page[data-page="1"]')!.getBoundingClientRect();
+      must(r.left > pg.left + pg.width * 0.8 && r.right <= pg.right + 24, 'at the page\'s right edge');
+    }
+    pm.click();
+    const pk = await poll(() => q<HTMLElement>('.pdf-peek'), 'a press on it peeks at the destination');
+    must(pk.dataset.page === '2', 'page 2');
+    await shot('sioyek-portal-peek');
+    key('Escape');
+    await poll(() => !q('.pdf-peek'), 'esc closes the peek');
+    // the pane beside follows
+    await scrollTo(1, 'A system held');
+    useApp.setState({ paletteOpen: true });
+    const pf2 = await poll(() => q<HTMLInputElement>('.palette-input input'), 'the palette');
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(pf2, 'portals beside');
+    pf2.dispatchEvent(new Event('input', { bubbles: true }));
+    (await poll(() => qa<HTMLElement>('.palette-row').find((r) => /portals beside/.test(r.textContent ?? '')), 'portals beside is a command')).click();
+    await sleep(2500);
+    log(`after portals beside: panes ${useApp.getState().panes.panes.map((p) => p.tabs.map((t) => t.id).join(',')).join(' | ')}; views ${qa<HTMLElement>('.pdf-view').map((v) => `following=${v.dataset.following} hash=${v.dataset.hash?.slice(0, 6)}`).join(' ; ')}; palette ${useApp.getState().paletteOpen}; notice ${q('.notice .nl')?.textContent}`);
+    const follower = await poll(() => qa<HTMLElement>('.pdf-view').find((v) => v.dataset.following === '1'), 'the paper opens again in the pane beside, following', 15000);
+    must(useApp.getState().panes.panes.length === 2 && qa('.pdf-view').length === 2, 'two panes on the one paper');
+    await sleep(1200);
+    // read on in the first pane, past the portal's source
+    const lead = qa<HTMLElement>('.pdf-view').find((v) => v.dataset.following !== '1')!;
+    const leadSc = (() => { let e: HTMLElement | null = q<HTMLElement>('.pdf-page', lead); while (e && !(e.scrollHeight > e.clientHeight + 50 && /auto|scroll/.test(getComputedStyle(e).overflowY))) e = e.parentElement; return e!; })();
+    {
+      // to the foot of the first page: past the line the portal starts at
+      const p1 = q<HTMLElement>('.pdf-page[data-page="1"]', lead)!.getBoundingClientRect();
+      const lr2 = leadSc.getBoundingClientRect();
+      leadSc.scrollTop += p1.top + 0.9 * p1.height - (lr2.top + lr2.height / 3);
+      leadSc.dispatchEvent(new Event('scroll'));
+    }
+    await sleep(1500);
+    { const b = await import('./book.js'); log(`following: sent ${JSON.stringify(b.followingAt(BOOK))}, followed ${b.followed(BOOK)}; lead p. ${lead.dataset.topPage} y ${lead.dataset.topY} portals ${lead.dataset.portals} following=${lead.dataset.following}; follower p. ${follower.dataset.topPage} portal ${follower.dataset.portal} connected ${follower.isConnected}; views now ${qa<HTMLElement>('.pdf-view').map((v) => `${v.dataset.following ?? '-'}:${v.dataset.topPage}:${v.dataset.portal ?? '-'}`).join(' ')}; marks ${JSON.stringify(Object.values(await marksFile()).filter((m) => m.kind === 'portal'))}`); }
+    await poll(() => !!follower.dataset.portal && Number(follower.dataset.topPage) === 2, `read past the source, the pane beside goes to its destination (p. ${follower.dataset.topPage})`, 15000);
+    void dest;
+    await shot('sioyek-portal-beside');
+    useApp.getState().setPanes((p) => closePane(p, p.panes.length - 1));
+    await poll(() => useApp.getState().panes.panes.length === 1 && qa('.pdf-view').length === 1, 'the pane beside closed, the following ends');
+
+    // ── they are there when the paper is opened again ──
+    openNode('fleeting/idea-for-honors-thesis.md');
+    await poll(() => activeTab(useApp.getState().panes)?.id !== BOOK && !q('.pdf-view'), 'the paper\'s tab left');
+    openNode(BOOK);
+    await poll(() => { const v = q<HTMLElement>('.pdf-view'); return v && v.dataset.bookmarks === '1' && v.dataset.highlights === '1' && v.dataset.portals === '1' && q('.pdf-hls .hl') && q('.bmark'); }, 'opened again, its bookmark, highlight and portal are on the page', 30000);
+    const kinds = Object.values(await marksFile()).map((m) => m.kind).sort().join(' ');
+    must(kinds === 'bookmark highlight mark portal', `the file holds the four (${kinds})`);
+    (document.activeElement as HTMLElement | null)?.blur?.();
 
     // ── dark ──
     useApp.getState().setTheme('dark');

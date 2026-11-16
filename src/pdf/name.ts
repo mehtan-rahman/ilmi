@@ -37,9 +37,10 @@ function bodySize(items: readonly PageItem[]): number {
 }
 
 /** The nearest numbered heading at or above `at` on `items` (larger than the body), with the rest of its line. */
-function headingOn(items: readonly PageItem[], limit: number): string | null {
+function headingOn(items: readonly PageItem[], limit: number, plain = false): string | null {
   const body = bodySize(items);
-  const hs = items.filter((it) => HEADING_NO.test(it.s.trim()) && it.h > body + 0.5 && it.y <= limit);
+  // `plain`: a paper's `1 Title` too, when it is set clearly larger than the text (a page's own number is not)
+  const hs = items.filter((it) => (HEADING_NO.test(it.s.trim()) ? it.h > body + 0.5 : plain && /^\d+\.?$/.test(it.s.trim()) && it.h > body * 1.15) && it.y <= limit);
   if (!hs.length) return null;
   const h = hs.reduce((a, b) => (b.y > a.y ? b : a));
   const rest = items
@@ -69,12 +70,12 @@ export function equationsIn(itemsOf: (page: number) => readonly PageItem[] | und
 }
 
 /** The nearest numbered heading at or above a place (`y` down `page`), read back as far as `first`: what a passage and a bookmark are named from. Null when the pages name none. */
-export function headingAbove(itemsOf: (page: number) => readonly PageItem[] | undefined, first: number, page: number, y: number): string | null {
+export function headingAbove(itemsOf: (page: number) => readonly PageItem[] | undefined, first: number, page: number, y: number, plain = false): string | null {
   let head: string | null = null;
   for (let n = page; n >= first && head === null; n--) {
     const items = itemsOf(n);
     if (!items) continue;
-    head = headingOn(items, n === page ? y : Infinity);
+    head = headingOn(items, n === page ? y : Infinity, plain);
   }
   return head;
 }

@@ -178,8 +178,9 @@ export function addLens(id: string, lens: BookLens): () => void {
   return () => {
     const rest = (lenses.get(id) ?? []).filter((l) => l !== lens);
     if (rest.length) lenses.set(id, rest); else lenses.delete(id);
-    // the pane beside closed, or the one it followed: nothing follows any more
-    if (rest.length < 2) { following.delete(id); sentTo.delete(id); }
+    // the pane beside closed, or the one it followed: nothing follows any more. Looked at a moment later, since a lens
+    // taken down and put straight back (a pane drawn again, a development build's second mount) has closed nothing
+    if (rest.length < 2) setTimeout(() => { if ((lenses.get(id)?.length ?? 0) < 2 && following.delete(id)) { sentTo.delete(id); tell(); } }, 0);
     tell();
   };
 }
@@ -196,7 +197,10 @@ export function lensOf(id: string): BookLens | null {
 /** The book whose pages are in the pane in front, when a book is. */
 export function bookInFront(): string | null {
   for (const [id, list] of lenses) if (list.some((l) => l.active())) return id;
-  return null;
+  // under the palette (or the tweaks) no lens is active: the book is the one in the tab in front
+  const st = useApp.getState();
+  const front = st.panes.panes[st.panes.active]?.tabs[st.panes.panes[st.panes.active]?.active ?? 0]?.id;
+  return front !== undefined && lenses.has(front) && (lenses.get(front)?.length ?? 0) > 0 ? front : null;
 }
 
 /** Whether the book in front has somewhere to go back to: the bottom strip says `⌫ back` only then. */

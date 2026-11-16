@@ -6,6 +6,38 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-11-15, late — milestone 78: the queue's focus, and what had not been verified
+
+Asked by the user: "Please verify / continue.", and mid-run: "can you add a thing in enter queue to focus on particular type? like select from cards read write or smthn so i can isolate what i wanna do (e.g., if im on phone and just want to do cards) (pick a better name for cards tho)". `4c7d135` … the commit of this entry; PLAN 78 has the notes.
+
+**The focus.** The day's queue has `all · recall · read · write` under its legend, each with its count (`recall` is the cards). It is still one queue in priority order, narrowed: the list, `enter`, ⏎, a pressed row, the palette's `enter queue` and the phone's bar walk only that kind; `f` cycles it; it is kept per device in the collection's view state, so a phone can stay on `recall`.
+
+**Verified, of the last entry's "Not verified":**
+- *An iPad and an iPhone, simulated* (iPad Air 11-inch, iPhone 18 Pro; one simulator build, the run tree's renderer): `tour` 24; `numbers` 89 on the iPad and 66 on the phone; `sioyek` 99 and 98; `sweep` 110 and 121 (the phone's with the focus); `sweepedit` 28 and 28; `collections` 25 and 25. Captures by `simctl`, looked at: the year of days at both widths, the focus row on one line on the phone and its bar reading `enter queue 560`, the ruler, the hints.
+- *Two devices in the window*: `crdt` 88: a pass logged on each is counted on both, one taken back is gone from both; a bookmark left in each is in both files and both windows, one removed is gone from both, and the book opened on one shows the other's.
+- *An Anki deck pressed off and on* in the window (`anki`: one of two decks, none, both).
+- *115,216 cards in the window* (`size`): the collection's numbers drawn in 1.2 s, every card as one list in 1.5 s with 35 rows in the page, a jump to its middle 3 ms, ⌘A 53 ms; at 11,370 cards 0.27 s and 0.24 s.
+
+**Found on the way, each fixed:**
+- A bookmark, a mark or a portal's end came back a little off: 16 px of landing room meant for headings and links, and, for a mark, the height of the bar's `go to mark…` line (38 px on the Mac). A kept place returns exactly now; the smoke compares to four decimals' worth.
+- A reading taken back after a sync had read the log again stayed in the numbers until the next read.
+- The palette's ranking from the sweep had slowed a word at 115,000 cards to 161–264 ms on the page (the size smoke's own threshold caught it); a name that does not hold the letters in order is now refused in one pass: 37 ms.
+- The smokes themselves: `listcards` left a tweak off in the dev profile (it uses the setter now); several steps assumed a desk and are skipped on a touch shape, saying so.
+
+**A limit, said and not mended:** a page's text cannot be selected on an iPad or a phone (a finger's drag has been the scroll and the box since 57), so a highlight (`h`) and `search the web` are a desk's, as are the pane that follows portals and, on a phone, the inspector's lists of bookmarks and highlights. Bookmarks, marks, the ruler, portals with their margin peek, links, the contents, references and hints all pass on both.
+
+**Checks** on the commit of this entry: typecheck clean; npm test 2038 passed, 1 skipped, 139 files; cargo test 70 passed. On the Mac, from a clean run tree of the last code commit: `sioyek` 123, `sweep` 122, `numbers` 89, `sweepedit` 28, `collections` 26, `search` 30, `learn` 14, `book` 155, `cardview` 31 (it timed out once in the batch with nine steps done and passed alone straight after; no cause found), `crdt` 88, `anki` done, `size` done.
+
+**Not verified.** A real device (65 and 66 are the user's). Real fingers: the simulator runs drove the page, not touches, so a long press on a highlight or a welcome row, a finger on a link, and a flick through a long deck while its rows are measured are untried (the touch rig of 57 would do them). The numbers over a log as long as 780,000 reviews in the window (the large collection multiplies cards, not the log; node's figure of 0.45 s stands). An IME; a pinch; rotated pages.
+
+**Left.** Text selection on a page under touch, which highlights and the look-up wait on. Zoom across a restart. Cross-book portals in the pane beside. Under a focus the session walks everything due of its kind rather than stopping at the day's budget (as under an exam): say if a focus should keep to the budget.
+
+```
+Read PLAN.md (78's notes), BUILD-LOG.md's top entry, and docs/development.md ("The iPad" has the simulator recipe). What is open is under "Not verified" and "Left" in the top entry; the largest is selecting a page's text under touch. Verify anything touched on the Mac and on both simulators: sweep, sweepedit, numbers, sioyek, collections, and the surface's own smoke.
+```
+
+---
+
 ## 2026-11-15, night — milestones 75, 76 and 77: what the sweep left, and a book read as sioyek reads one
 
 Asked by the user: "please continue and go in a loop until done", and then, mid-run, "If possible, i'd like a lot of the PDF features from here built for our app: https://github.com/ahrm/sioyek". One coordinating session on main (`df98de8` … the commit of this entry); seven agents on disjoint files, the coordinator on the smokes, the plan and what the window found. PLAN 75, 76 and 77 hold the notes.

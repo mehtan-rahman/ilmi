@@ -9151,6 +9151,42 @@ moment between ended the following; a bookmark took no name from a plain
 (the engine's tests cover the merge; the `hidden` re-read is untested),
 a finger's long press on a highlight, an IME.
 
+### [x] 78. The day's queue focused on a kind, and what had not been verified
+Asked by the user, 2026-11-15: "can you add a thing in enter queue to focus
+on particular type? like select from cards read write … (e.g., if im on
+phone and just want to do cards) (pick a better name for cards tho)", and
+"Please verify / continue."
+Done 2026-11-15 (`4c7d135` … `0883d0c`).
+Notes: **The focus** is `all · recall · read · write` under the day's
+legend (`recall` is the cards; `read` is sources and sections), each with
+its count; it is still one queue by priority, narrowed. The list, `enter`,
+⏎, a pressed row, the palette's `enter queue` and the phone's bar walk
+only that kind; `f` and ⇧F cycle it; it composes with the exam chip; it is
+kept in `.ilmi/state.json` (`focus`), so a phone set to `recall` stays so
+and the Mac stays on `all` (`items.ts`: `Focus`, `inFocus`, `walkOf`;
+`setFocus` in `vault.ts`). As under an exam, a focus shows no fold and
+walks everything due of its kind, not only what is above the day's
+budget. **Verified since 75–77:** the simulated iPad (Air 11-inch) and
+iPhone (18 Pro), from a clean run tree: `tour` 24, `numbers` 89 and 66,
+`sioyek` 99 and 98, `sweep` 110 and 121, `sweepedit` 28 and 28,
+`collections` 25 and 25; two devices in the window exchanging reading
+lines and bookmarks (`crdt` 88); an Anki deck pressed off and on; the
+numbers and the windowed list at 115,216 cards (the numbers 1.2 s, every
+card as one list 1.5 s with 35 rows drawn, ⌘A 53 ms). **Found on the
+way:** a bookmark, a mark or a portal's end came back 16 px off each time
+(a heading's landing room; a kept place lands exactly now); a reading
+taken back after a sync stayed in the numbers until the log was next
+read; the palette's new ranking had slowed a word at 115,000 cards to
+161 ms on the page (37 ms now: a name that does not hold the letters in
+order is refused in one pass). **A limit said, not mended:** a page's
+text is not selected on an iPad or a phone (since 57 a finger's drag is
+the scroll and the box), so a highlight and the look-up are the desk's;
+so are the pane beside that follows portals, and the inspector's lists
+on a phone. The smokes skip those steps on a touch shape and say so. The
+rig for a simulator (`sim.sh`: the sample copied into the app's
+Documents, `smoke.json`, the app's own log read, captures by `simctl`)
+is described in docs/development.md.
+
 ## Notes for the next session
 
 Studying (42–46) is complete, 2026-10-31: every milestone's window check

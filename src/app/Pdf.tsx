@@ -106,7 +106,7 @@ import { useApp, type DocInfo } from './store.js';
 import { useDoc } from './useDoc.js';
 import { currentVault, enrolReading, logReading, unlogReading } from './vault.js';
 import { writeDoc } from './sections.js';
-import { notify } from './land.js';
+import { failed, notify } from './land.js';
 import { appNow } from './clock.js';
 import { press } from './platform.js';
 import { HOLD_MS, SLOP, onGlass, pagePress } from './touch.js';
@@ -1870,7 +1870,8 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
       setChord(null);
       if (inField(e.target)) return;
       take();
-      if (/^[A-Za-z]$/.test(e.key)) void (s.chord === 'set' ? setLetter(e.key) : goLetter(e.key)).catch(console.error);
+      // once the word in the bar is gone and the pages lie as they will: the bar's line moves them, and a place read or gone to under it would be off by its height
+      if (/^[A-Za-z]$/.test(e.key)) { const letter = e.key; const was = s.chord; setTimeout(() => void (was === 'set' ? setLetter(letter) : goLetter(letter)).catch(failed('mark')), 0); }
       return;
     }
     if (inField(e.target)) return;

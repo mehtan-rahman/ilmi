@@ -309,6 +309,20 @@ app is installed and the Rust side has not changed, `npm run dev` alone on
 side also draws in the Mac's window, without Xcode:
 `ILMI_MOBILE=1 ILMI_DOCUMENTS=/some/empty/dir npm run tauri dev`.
 
+Any smoke that drives the page itself (no finger needed) runs on a
+simulator as it does on the Mac: with the app installed and a dev server on
+1420 (`tauri ios dev` left running, or `npm run dev` once the Rust side is
+built), copy the sample into the app's Documents, write `smoke.json`
+(`{"mode": "sweep", "vault": "double-major"}`; `"books": "<repo>/design/books"`
+for `sioyek`), `simctl terminate` and `launch`, and read the app's own log
+for `done` or `failed`; `simctl io booted screenshot` after each `shot:`
+line. A second simulator takes the same build (`simctl install booted
+<DerivedData>/…/debug-iphonesimulator/ilmi.app`). `sweep`, `sweepedit`,
+`numbers`, `sioyek`, `collections` and `tour` pass on an iPad Air and an
+iPhone 18 Pro (milestone 78); they skip what is the desk's on a touch shape
+(a selection on a book's page, a second pane, the inspector on a phone, the
+bottom strip) and log that they did.
+
 `ILMI_SMOKE=touch` (milestone 57) is three runs over one storage folder.
 On the Mac, `ILMI_VAULT=<a copy of the sample> ILMI_STORAGE=<an empty
 folder>`: the collection makes the storage. On the simulator, `{"mode":

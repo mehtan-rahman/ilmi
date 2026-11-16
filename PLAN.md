@@ -9187,6 +9187,41 @@ rig for a simulator (`sim.sh`: the sample copied into the app's
 Documents, `smoke.json`, the app's own log read, captures by `simctl`)
 is described in docs/development.md.
 
+### [x] 79. What 78 left: a finger's highlight, the pane beside across books, a kept zoom, turned pages
+Asked by the user, 2026-11-16: "Continue. pleaes go in a loop until ther
+is nothing open anymore".
+Done 2026-11-16 (`71c3100` … this entry's commit).
+Notes: **A highlight under a finger.** A page's text is still not
+selected under touch (a finger's drag is the scroll, its held drag the
+box); the box is what a finger has, so the box now highlights: `h`, or
+`highlight` on the box's bar, highlights the words whose middle lies in
+the boxes drawn (`wordsUnder` in `Pdf.tsx`: words, not whole runs), and
+under touch the bar has `look up` (the web search). The desk has the same
+`h` on a box. A long press on the highlight has its inks and `clear`, as
+before. **Portals across books** are followed in the pane beside: that
+pane shows the other book at the place, and the first book again once one
+of its own portals is read past (`away`, `besidePlace`, `openWhereBeside`).
+An iPad folds its panes into one, so the pane beside stays a desk's
+(tried on the simulator, put back). **A book's zoom** is kept per device
+in `.ilmi/state.json` (`zooms`, by path, rekeyed on a rename). **Two
+fingers' pinch** steps the zoom (WebKit's gesture events), once a pinch
+however it is reported. **A page the PDF turns** (`/Rotate`): the text
+layer was never turned with the page (the words lay off the page's
+picture: selection, search hits and boxes of words were wrong there), and
+the lines, references and names read from text items ignored the turn;
+both mended (`uprightItems`, the layer's rotation styles), a destination
+on a turned page goes to its top. **A word being composed** (an input
+method, a dead key) keeps its ⏎ and esc from the app's handlers
+(`compose.ts`). The strip names a book's newer keys (contents, links,
+bookmark, highlight, ruler). **Looked into:** the one `cardview` timeout
+of 78's batch stopped inside a read of the store with nothing logged
+after, at an hour the screen was most likely locked (the rig's known
+limit); it passed three times since and nothing in the read path waits on
+a lock. **Measured:** the numbers over a log of 780,000 reviews draw in
+2.0 s on the Mac and 2.6 s on the simulated phone, a day of 712 reviews
+lists in 0.25 s. **Decided, kept:** under a focus the session walks
+everything due of its kind (as under an exam).
+
 ## Notes for the next session
 
 Studying (42–46) is complete, 2026-10-31: every milestone's window check

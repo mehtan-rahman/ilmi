@@ -6,6 +6,33 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-11-16 — milestone 79: what 78 left open
+
+Asked by the user: "Continue. pleaes go in a loop until ther is nothing open anymore".
+
+**Done.**
+- *A highlight and a look-up under a finger.* The box a held drag draws now highlights the words under it: `highlight` on the box's bar (and `h` on the desk, with nothing selected), `look up` beside it under touch. Words whose middle is in the box, not their whole runs. A long press on the highlight has `clear` and the inks; the notice says so under touch.
+- *A portal into another book* is followed in the pane beside: the other book there at the place, the first book again when one of its own portals is read past.
+- *A book's zoom* is kept for the device (`.ilmi/state.json`, `zooms`), there after the collection is closed and opened.
+- *Two fingers' pinch* steps the zoom; a pinch reported both as a wheel and as a gesture steps once.
+- *A page the PDF turns:* its text layer is turned with it, and lines, references and passage names are read through the page's transform. Before, on such a page the words lay off the picture.
+- *A word being composed* keeps its ⏎ and esc from the app (rename fields, the palette, a card's save).
+- The bottom strip names a book's newer keys.
+
+**Found on the way.** The turned page's misplaced text layer (a real fault, since 47). My own 780,000-review check twice blamed the app for what the check had wrong (it waited for a number the past-year summary never says, then for a year of cells a phone does not draw).
+
+**Checks** on the code of this entry: typecheck clean; npm test 2045 passed, 1 skipped, 142 files; cargo test 70 passed. On the Mac from a clean run tree: `sioyek` 171, `sweep` 122, `numbers` 95, `book` 155, `sweepedit` 28, `collections` 26, `cardview` 31 (twice), `search` 30, `learn` 14, `tour` 20. Simulated iPad Air 11-inch: `sioyek` 135, `sweep` 121, `numbers` 95, `sweepedit` 28, `collections` 25. Simulated iPhone 18 Pro: `sioyek` 134, `sweep` 121, `numbers` 72, `sweepedit` 28, `collections` 25. Captures looked at: the box's bar and its highlight on all three shapes, the pane beside on the second book, the turned page under the ruler. After the last two small changes (the touch notice's words, a stand-in PDF read as upright) the Mac's `sioyek` and `numbers` and the unit tests were run again; the simulators were not.
+
+**Not verified.** A real device and real fingers (65, 66 are the user's): the held drag, the pinch and the long press were sent as events, not touched. A real input method: the guard is tested with composition events in jsdom, not by typing Japanese in the window. `look up` was seen on the bar, not pressed (it opens the browser). A page turned 180° or 270° (the styles are pdf.js's own; only 90° is in the fixture).
+
+**Left.** Nothing a session can do alone. The pane beside on an iPad would need panes side by side there, which the iPad's shape folds away by design.
+
+```
+Read PLAN.md (79's notes), BUILD-LOG.md's top entry, and docs/development.md. Nothing is open but "Not verified", which needs a device in hand; 65 and 66 wait for the user. Verify anything touched as the top entry did: typecheck, npm test, cargo test, and sweep, sweepedit, numbers, sioyek, collections on the Mac and both simulators (install the build tauri ios dev just made: the newest DerivedData, not the first found).
+```
+
+---
+
 ## 2026-11-15, late — milestone 78: the queue's focus, and what had not been verified
 
 Asked by the user: "Please verify / continue.", and mid-run: "can you add a thing in enter queue to focus on particular type? like select from cards read write or smthn so i can isolate what i wanna do (e.g., if im on phone and just want to do cards) (pick a better name for cards tho)". `4c7d135` … the commit of this entry; PLAN 78 has the notes.

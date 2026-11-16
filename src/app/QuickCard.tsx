@@ -6,7 +6,7 @@ import { useState } from 'react';
 import { meta, type CardForm } from '../format/index.js';
 import { Composer } from './Composer.js';
 import { newCardAt } from './deckOps.js';
-import { notify } from './land.js';
+import { failed, notify } from './land.js';
 import { titleOf } from './names.js';
 import { decksNow } from './quick.js';
 import { useApp } from './store.js';
@@ -24,7 +24,7 @@ export function QuickCard() {
   const close = () => { setChoosing(false); useApp.setState({ quickCard: null }); };
   const save = (text: string, again: boolean) => {
     rememberDeck(deck);
-    newCardAt(deck, null, text, null, (line) => notify(line)).catch(console.error);
+    newCardAt(deck, null, text, null, (line) => notify(line)).catch(failed('new card'));
     if (!again) close();
   };
   const body = docsOf([deck])[0]?.[1];

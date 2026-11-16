@@ -15,10 +15,11 @@
 
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MutableRefObject, type ReactNode } from 'react';
 import type { Card, CardForm } from '../format/index.js';
+import { CARD_FORMS } from './deck.js';
 import { asks, facesOf, facesText, planEdit, switchForm, type Faces, type Plan } from './cardEdit.js';
 import { FaceField, caretInFace, pressIntoFace } from './FaceField.js';
 
-const FORMS: [CardForm, string][] = [['qa', 'q&a'], ['bidir', 'bidir'], ['cloze', 'cloze']];
+const FORMS = CARD_FORMS;
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 

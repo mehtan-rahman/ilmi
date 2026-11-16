@@ -13,6 +13,7 @@ import { CardFaces, type FacesHandle } from './CardFaces.js';
 import { cardIndex, cardOf, cardSet, countOf, stepIn, type CardLine } from './cardSet.js';
 import { saveCardEdit } from './deckOps.js';
 import { FORM_LABEL, dueLabel, dueTone } from './items.js';
+import { failed } from './land.js';
 import { MathText } from './MathText.js';
 import { titleOf } from './names.js';
 import type { OpenOpts } from './panes.js';
@@ -148,7 +149,7 @@ export function CardPane({ path, active, onOpen }: Props) {
           keep={`${path}#${line.id ?? line.block}`}
           onSave={(text, was) => {
             const ref = line.id === undefined ? { path, block: line.block, text: was } : { path, block: line.block, id: line.id, text: was };
-            saveCardEdit(ref, text, card.sched?.pri ?? null).catch((e: unknown) => console.error(e));
+            saveCardEdit(ref, text, card.sched?.pri ?? null).catch(failed('edit'));
           }}
         >
           <Schedule card={card} docPri={docPri} />

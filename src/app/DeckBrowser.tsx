@@ -13,18 +13,19 @@ import { FaceField, pressIntoFace } from './FaceField.js';
 import { whenToDate } from '../schedule/index.js';
 import { runBlockHooks, usePlugins } from '../plugins/index.js';
 import { revealIndex } from './chrome.js';
-import { asks, facesOf, facesText, planEdit, switchForm, type Faces } from './cardEdit.js';
+import { asks, facesText, planEdit, switchForm, type Faces } from './cardEdit.js';
 import {
-  DEFAULT_VIEW, FORM_CHIPS, NO_SELECTION, SORTS, STATE_CHIPS, clickSelect, countLabel, deckRows, docTargets, docsUnder, filterRows, fold,
-  findCard, selectAll, selectedRows, sortRows, type BulkAction, type CardRef, type DeckRow, type DeckSort, type DeckView, type Selection, type StateChip,
+  CARD_FORMS, DEFAULT_VIEW, FORM_CHIPS, NO_SELECTION, SORTS, STATE_CHIPS, clickSelect, countLabel, deckRows, docTargets, docsUnder, filterRows, fold,
+  findCard, followSelection, rowFinder, selectAll, selectedRows, sortRows, type BulkAction, type CardRef, type DeckRow, type DeckSort, type DeckView, type Selection, type StateChip,
 } from './deck.js';
-import { bulkCards, newCardAt, saveCardEdit, studyDeck } from './deckOps.js';
+import { bulkCards, newCardAt, studyDeck } from './deckOps.js';
 import { FORM_LABEL, dueWhen, fmtDays, pathLabel, dueTone } from './items.js';
 import { MENU_W, placeMenu } from './NodeMenu.js';
 import { GLYPH, kindOf, titleOf } from './names.js';
 import { blankAnswers, clozeHTML, faceDir, richHTML } from './Reader.js';
 import { useApp } from './store.js';
-import { docsOf, openCard, openCards, removeCard, setDeckView } from './vault.js';
+import { failed } from './land.js';
+import { docsOf, note, openCard, openCards, setDeckView } from './vault.js';
 import { canLink, cardFaces, type SameCard } from './same.js';
 import { currentPairs, linkCards, mergeCards, notTheSame } from './sameOps.js';
 import './session.css';
@@ -74,7 +75,10 @@ export function facesHTML(text: string): RowFaces {
 
 // ── the editor ───────────────────────────────────────────────────
 
-const FORMS: [CardForm, string][] = [['qa', 'q&a'], ['bidir', 'bidir'], ['cloze', 'cloze']];
+const FORMS = CARD_FORMS;
+
+/** Whether anything is written in either face. */
+const written = (f: Faces): boolean => f.front.trim() !== '' || f.back.trim() !== '';
 
 interface EditorProps {
   /** The card as it is in the file; absent for a new one. */
@@ -83,14 +87,16 @@ interface EditorProps {
   /** The card's own priority, else the document's. */
   pri: number;
   onSave(text: string, pri: number | null, again: boolean): void;
-  onCancel(): void;
+  /** Let go, by Escape or `cancel`: `draft` is what the faces held then. */
+  onCancel(draft?: Faces): void;
 }
 
 /**
  * A card open in the list: the two faces live, the form switch, the
  * priority. ⌘⏎ or a click outside saves, ⇧⌘⏎ saves and opens a new card
- * after it, Escape cancels. A save that would drop a reviewed blank's
- * schedule asks first.
+ * after it, Escape cancels (handing back what was typed). A press outside
+ * faces that are no card yet lets them go only when both are empty. A save
+ * that would drop a reviewed blank's schedule asks first.
  */
 export function CardEditor({ card, initial, pri: initialPri, onSave, onCancel }: EditorProps) {
   const [faces, setFaces] = useState<Faces>(initial);
@@ -113,15 +119,16 @@ export function CardEditor({ card, initial, pri: initialPri, onSave, onCancel }:
   const saveRef = useRef(save);
   saveRef.current = save;
 
-  // a press outside saves, unless the editor is asking; an edit the format would not read as a card is let go
+  // a press outside saves, unless the editor is asking; faces that are no card yet stay as they are,
+  // and are let go only when nothing is written in them
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
       if (ref.current?.contains(e.target as Node)) return;
       // a menu of a face's own (a table's, the text's, insert table) is not outside
       if ((e.target as HTMLElement | null)?.closest?.('.pop-menu')) return;
       if (asking !== null) return;
-      if (facesText(faces) === null) onCancel();
-      else saveRef.current(false);
+      if (facesText(faces) !== null) saveRef.current(false);
+      else if (!written(faces)) onCancel();
     };
     window.addEventListener('mousedown', onDown, true);
     return () => window.removeEventListener('mousedown', onDown, true);
@@ -134,7 +141,7 @@ export function CardEditor({ card, initial, pri: initialPri, onSave, onCancel }:
   };
   const onKeyDown = (e: ReactKeyboardEvent) => {
     const mod = e.metaKey || e.ctrlKey;
-    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); if (asking !== null) setAsking(null); else onCancel(); }
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); if (asking !== null) setAsking(null); else onCancel(faces); }
     else if (mod && (e.key === '1' || e.key === '2' || e.key === '3')) { e.preventDefault(); to(FORMS[Number(e.key) - 1]![0]); }
   };
   // ⌘⏎ before the face sees it: in a table's cell it would add a row
@@ -191,7 +198,7 @@ export function CardEditor({ card, initial, pri: initialPri, onSave, onCancel }:
           <>
             <span className="act" data-able={text ? '1' : '0'} onClick={() => save(false)}><kbd>⌘↵</kbd> save</span>
             <span>·</span>
-            <span className="act" onClick={onCancel}><kbd>esc</kbd> cancel</span>
+            <span className="act" onClick={() => onCancel(faces)}><kbd>esc</kbd> cancel</span>
           </>
         )}
       </div>
@@ -246,7 +253,6 @@ function SimilarList({ paths, q, now }: { paths: readonly string[]; q: string; n
     const body = docsOf([c.path])[0]?.[1];
     return body ? findCard(body, c.id === undefined ? { path: c.path, block: c.block, text: c.text } : { path: c.path, block: c.block, id: c.id, text: c.text }) : null;
   };
-  const fail = (e: unknown) => console.error(e);
   if (!pairs.length) return <div className="empty">nothing alike</div>;
   return (
     <div className="same-list">
@@ -255,12 +261,12 @@ function SimilarList({ paths, q, now }: { paths: readonly string[]; q: string; n
         return (
           <div key={`${p.a.key}|${p.b.key}`} className="same-pair" data-a={p.a.key} data-b={p.b.key} data-score={p.score.toFixed(3)}>
             <div className="sp-sides">
-              <SameSide c={p.a} card={ca} now={now} onKeep={() => { mergeCards(p.a, p.b).catch(fail); }} />
-              <SameSide c={p.b} card={cb} now={now} onKeep={() => { mergeCards(p.b, p.a).catch(fail); }} />
+              <SameSide c={p.a} card={ca} now={now} onKeep={() => { mergeCards(p.a, p.b).catch(failed('merge')); }} />
+              <SameSide c={p.b} card={cb} now={now} onKeep={() => { mergeCards(p.b, p.a).catch(failed('merge')); }} />
             </div>
             <div className="sp-acts">
-              {ca && cb && canLink(ca, cb) && <button type="button" data-act="link" title="one schedule for both, one of them a day" onClick={() => { linkCards(p.a, p.b).catch(fail); }}>link</button>}
-              <button type="button" data-act="not-same" onClick={() => { notTheSame(p.a, p.b).catch(fail); }}>not the same</button>
+              {ca && cb && canLink(ca, cb) && <button type="button" data-act="link" title="one schedule for both, one of them a day" onClick={() => { linkCards(p.a, p.b).catch(failed('link')); }}>link</button>}
+              <button type="button" data-act="not-same" onClick={() => { notTheSame(p.a, p.b).catch(failed('not the same')); }}>not the same</button>
             </div>
           </div>
         );
@@ -277,6 +283,21 @@ interface RowMenu { x: number; y: number; key: string; sub: boolean }
 
 /** A new card's editor open in the list (a card that is there is edited in the card view). */
 type Editing = { after: CardRef | null; path: string } | null;
+
+/**
+ * What a deck keeps while its tab is away (the canvas draws only the tab in
+ * front, so the lens is unmounted behind another): its search, the card
+ * under the cursor, how far it was scrolled and drawn, and a new card let
+ * go by Escape with something written. For the session, per collection and lens.
+ */
+interface DeckMemory { q: string; cursor: CardRef | null; top: number; limit: number; draft: Faces | null }
+const memories = new Map<string, DeckMemory>();
+function memoryOf(root: string | null, home: string): DeckMemory {
+  const k = `${root ?? ''}\n${home}`;
+  let m = memories.get(k);
+  if (!m) { m = { q: '', cursor: null, top: 0, limit: 0, draft: null }; memories.set(k, m); }
+  return m;
+}
 
 interface BrowserProps {
   /** The lens: a document, a folder, a document's children directory, `''` the root. */
@@ -296,8 +317,9 @@ export function DeckBrowser({ home, active }: BrowserProps) {
   const plugins = usePlugins();
   // a phone's `+` is at its foot, and starts on the deck in front (`quick.ts`)
   const phone = useApp((s) => s.phone);
-  const [q, setQ] = useState('');
-  const [sel, setSel] = useState<Selection>(NO_SELECTION);
+  const mem = useMemo(() => memoryOf(root, home), [root, home]);
+  const [q, setQText] = useState(mem.q);
+  const setQ = (v: string) => { mem.q = v; setQText(v); };
   const [editing, setEditing] = useState<Editing>(null);
   const [cram, setCram] = useState(false);
   const [similar, setSimilar] = useState(false);
@@ -307,7 +329,10 @@ export function DeckBrowser({ home, active }: BrowserProps) {
   const search = useRef<HTMLInputElement>(null);
   const rowEls = useRef(new Map<string, HTMLDivElement>());
   const menuRef = useRef<HTMLDivElement>(null);
+  const top = useRef<HTMLDivElement>(null);
   const byKey = useRef(false);
+  /** A new card's write on its way: a second save waits for it. */
+  const saving = useRef(false);
 
   const paths = useMemo(() => docsUnder(tree, home, order, files), [tree, home, order, files]);
   // `docs` changes with every write the vault reports: the bodies are read again then
@@ -318,29 +343,100 @@ export function DeckBrowser({ home, active }: BrowserProps) {
   const keys = useMemo(() => shown.map((r) => r.key), [shown]);
   // rows drawn in chunks on timers (never frames: a covered window holds them back), so a lens over
   // the whole collection opens at once and fills in; the cursor's row is always among those drawn
-  const [limit, setLimit] = useState(ROW_CHUNK);
-  useEffect(() => { setLimit(ROW_CHUNK); }, [home, q, view]);
+  const [limit, setLimit] = useState(Math.max(ROW_CHUNK, mem.limit));
+  const drawnFor = useRef({ home, q, view });
+  useEffect(() => {
+    // the first draw keeps what the deck remembers having drawn (its scroll needs the rows there)
+    const d = drawnFor.current;
+    if (d.home === home && d.q === q && d.view === view) return;
+    drawnFor.current = { home, q, view };
+    setLimit(ROW_CHUNK);
+    arrive.current = null;
+  }, [home, q, view]);
+  useEffect(() => { mem.limit = limit; }, [mem, limit]);
   useEffect(() => {
     if (limit >= shown.length) return;
     const t = setTimeout(() => setLimit((l) => l + ROW_CHUNK), 0);
     return () => clearTimeout(t);
   }, [limit, shown.length]);
   const multi = paths.length > 1;
-  const chosen = selectedRows(sel, shown);
+  // the selection is held by `path#block`, and follows its cards when the files are read again
+  // (a card gone above moves every block after it)
+  const [held, setHeld] = useState<{ sel: Selection; rows: DeckRow[] }>(() => ({ sel: NO_SELECTION, rows }));
+  const sel = held.rows === rows ? held.sel : followSelection(held.sel, held.rows, rows);
+  if (held.rows !== rows) setHeld((h) => (h.rows === rows ? h : { sel: followSelection(h.sel, h.rows, rows), rows }));
+  const setSel = (next: Selection | ((s: Selection) => Selection)) => setHeld((h) => ({ ...h, sel: typeof next === 'function' ? next(h.sel) : next }));
+  const selSet = useMemo(() => new Set(sel.keys), [sel]);
+  const chosen = similar ? [] : selectedRows(sel, shown);
   const cursorKey = cursor && paths.includes(cursor.path) ? `${cursor.path}#${cursor.index}` : null;
   const drawnTo = Math.max(limit, cursorKey === null ? 0 : keys.indexOf(cursorKey) + 1);
   // a revealed row not drawn yet when it was selected: scrolled to once it is
   const pendingReveal = useRef<string | null>(null);
+  // a card just written from the sheet: brought into view once its row is drawn (the row there before
+  // the files are read again is another card's)
+  const arrive = useRef<{ key: string; text: string } | null>(null);
   useLayoutEffect(() => {
     const k = pendingReveal.current;
     const el = k === null ? undefined : rowEls.current.get(k);
     if (el) { pendingReveal.current = null; el.scrollIntoView({ block: 'center' }); }
+    const a = arrive.current;
+    const row = a && shown.find((r) => r.key === a.key && r.text === a.text);
+    const rowEl = row && rowEls.current.get(row.key);
+    if (rowEl) { arrive.current = null; rowEl.scrollIntoView({ block: 'nearest' }); }
   });
   const homeDoc = home.endsWith('.md') ? home : files.includes(`${home}.md`) ? `${home}.md` : null;
 
   const setView = (patch: Partial<DeckView>) => setDeckView(home, { ...view, ...patch });
   const toggle = <T,>(list: T[], x: T): T[] => (list.includes(x) ? list.filter((y) => y !== x) : [...list, x]);
-  const point = (r: DeckRow | undefined) => useApp.setState({ selectedCard: r ? { path: r.path, index: r.block } : null });
+  /**
+   * The card the cursor is on, to find again when the files are read anew: the store names it by
+   * `path` and block, which is another card once one above has gone. `held` while the deck itself
+   * has said where the cursor goes next (the row that took a deleted card's place, a card just made).
+   */
+  const follow = useRef<{ rows: DeckRow[]; ref: CardRef | null; held: boolean }>({ rows, ref: null, held: false });
+  const point = (r: DeckRow | undefined) => {
+    follow.current.held = false;
+    useApp.setState({ selectedCard: r ? { path: r.path, index: r.block } : null });
+  };
+
+  // back in front: the cursor where it was left, and the scroll (the search came back with the state)
+  useLayoutEffect(() => {
+    const pane = top.current?.closest<HTMLElement>('.pane-body') ?? top.current?.parentElement ?? null;
+    if (!pane) return;
+    if (mem.top > 0) pane.scrollTop = mem.top;
+    const onScroll = () => { mem.top = pane.scrollTop; };
+    pane.addEventListener('scroll', onScroll, { passive: true });
+    return () => pane.removeEventListener('scroll', onScroll);
+  }, [mem]);
+  useEffect(() => {
+    if (!active || !mem.cursor || useApp.getState().reveal) return;
+    const r = rowFinder(rows)(mem.cursor);
+    if (r) point(r);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mem]);
+
+  // the cursor follows its card
+  useEffect(() => {
+    const f = follow.current;
+    // the store as it is now: an effect before this one may have just moved the cursor
+    const cur = useApp.getState().selectedCard;
+    const cursorKey = cur && paths.includes(cur.path) ? `${cur.path}#${cur.index}` : null;
+    if (f.rows !== rows) {
+      f.rows = rows;
+      const r = f.ref ? rowFinder(rows)(f.ref) : undefined;
+      if (r) {
+        f.held = false;
+        f.ref = refOf(r);
+        mem.cursor = f.ref;
+        if (r.key !== cursorKey) { useApp.setState({ selectedCard: { path: r.path, index: r.block } }); return; }
+      }
+    }
+    if (!f.held) {
+      const at = cursorKey === null ? undefined : rows.find((r) => r.key === cursorKey);
+      f.ref = at ? refOf(at) : null;
+    }
+    mem.cursor = f.ref;
+  });
 
   // the rows, drawn: every plugin's block hook sees each
   useEffect(() => {
@@ -372,6 +468,7 @@ export function DeckBrowser({ home, active }: BrowserProps) {
     const i = revealIndex(body[1].blocks, reveal);
     if (i >= 0) {
       const key = `${reveal.path}#${i}`;
+      follow.current.held = false;
       useApp.setState({ selectedCard: { path: reveal.path, index: i } });
       setSel({ keys: [key], anchor: key });
       const el = rowEls.current.get(key);
@@ -392,17 +489,35 @@ export function DeckBrowser({ home, active }: BrowserProps) {
     return () => { window.removeEventListener('mousedown', close); window.removeEventListener('keydown', onKey); };
   }, [menu]);
 
-  const fail = (e: unknown) => console.error(e);
+  /**
+   * A bulk action, its notice holding the undo. Cards that go (deleted, moved) leave the selection,
+   * the rest of it staying on its own cards, and the cursor on one of them goes to the row that
+   * takes its place (the next one shown, else the one before); anything else keeps the selection.
+   */
   const run = (refs: CardRef[], action: BulkAction) => {
     setBulkMenu(null);
     setMenu(null);
-    setSel(NO_SELECTION);
-    bulkCards(refs, action).catch(fail);
+    const gone = action.kind === 'delete' || action.kind === 'move';
+    const was = cursorKey;
+    if (gone) {
+      const out = new Set(refs.filter((r) => action.kind !== 'move' || r.path !== action.to).map((r) => `${r.path}#${r.block}`));
+      setSel((s) => ({ keys: s.keys.filter((k) => !out.has(k)), anchor: s.anchor !== null && out.has(s.anchor) ? null : s.anchor }));
+      const f = follow.current;
+      if (was !== null && out.has(was)) {
+        const at = keys.indexOf(was);
+        const next = at < 0 ? undefined : shown.slice(at + 1).find((r) => !out.has(r.key)) ?? shown.slice(0, at).reverse().find((r) => !out.has(r.key));
+        f.ref = next ? refOf(next) : null;
+      }
+      // the store lets the cursor go with the write; it comes back on `f.ref` when the files are read again
+      f.held = f.ref !== null;
+    }
+    bulkCards(refs, action).catch((e: unknown) => {
+      failed(action.kind === 'pri' ? 'priority' : action.kind)(e);
+      if (gone && was !== null) point(rows.find((r) => r.key === was));
+    });
   };
-  const removeOne = (r: DeckRow) => {
-    setSel((s) => ({ ...s, keys: s.keys.filter((k) => k !== r.key) }));
-    removeCard(r.path, r.block, r.id, r.text).catch(fail);
-  };
+  /** One card deleted (×, ⌫, the menu): as two are, with the undo. */
+  const removeOne = (r: DeckRow) => run([refOf(r)], { kind: 'delete' });
 
   /** Where `m` puts a new card: after the cursor's row in its file, else at the end of the lens's own document (or its first). */
   const newCard = () => {
@@ -418,12 +533,12 @@ export function DeckBrowser({ home, active }: BrowserProps) {
     studyDeck(home, { cram, ...(only ? { only } : {}) });
   };
 
-  // keys while no field has focus: / search, j k move, ⏎ edit, m new, ⌫ delete, ⌘A all, escape lets go
+  // keys while no field has focus: / search, j k move, ⏎ edit, m new, ⌫ delete (the selection, else the cursor's row), ⌘A all, escape lets go
   useEffect(() => {
     if (!active || editing) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented || inField(e.target) || useApp.getState().paletteOpen) return;
-      if ((e.metaKey || e.ctrlKey) && (e.key === 'a' || e.key === 'A')) { e.preventDefault(); setSel(selectAll(keys)); return; }
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'a' || e.key === 'A')) { e.preventDefault(); if (!similar) setSel(selectAll(keys)); return; }
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       const at = cursorKey === null ? -1 : keys.indexOf(cursorKey);
       const go = (i: number) => {
@@ -441,7 +556,8 @@ export function DeckBrowser({ home, active }: BrowserProps) {
       else if (e.key === 'Enter' && at >= 0) { e.preventDefault(); editIn(shown[at]!); }
       else if (e.key === 'm') { e.preventDefault(); newCard(); }
       else if (e.key === 'Backspace' || e.key === 'Delete') {
-        if (chosen.length > 1) { e.preventDefault(); run(chosen.map(refOf), { kind: 'delete' }); }
+        // what is shown as selected is what goes; with nothing selected, the cursor's row
+        if (chosen.length) { e.preventDefault(); run(chosen.map(refOf), { kind: 'delete' }); }
         else if (at >= 0) { e.preventDefault(); removeOne(shown[at]!); }
       } else if (e.key === 'Escape' && !menu) {
         if (sel.keys.length || cursorKey) { e.preventDefault(); setSel(NO_SELECTION); point(undefined); }
@@ -466,15 +582,27 @@ export function DeckBrowser({ home, active }: BrowserProps) {
     return (
       <CardEditor
         key={`n:${e.path}:${e.after?.block ?? 'end'}:${e.after?.text ?? ''}`}
-        initial={{ form, front: '', back: '' }}
+        initial={mem.draft ?? { form, front: '', back: '' }}
         pri={docPri(e.path)}
-        onCancel={() => setEditing(null)}
+        onCancel={(draft) => {
+          // Escape with something written: kept for the next `m` in this deck
+          mem.draft = draft && written(draft) ? draft : null;
+          if (mem.draft) note('kept · the new card, m opens it again');
+          setEditing(null);
+        }}
         onSave={(text, pri, again) => {
+          // the sheet stays until the write lands (a failure leaves what was typed); one write at a time
+          if (saving.current) return;
+          saving.current = true;
           newCardAt(e.path, e.after, text, pri).then((block) => {
+            mem.draft = null;
+            const made: CardRef = { path: e.path, block, text };
+            follow.current.ref = made;
+            follow.current.held = true;
+            arrive.current = { key: `${e.path}#${block}`, text };
             useApp.setState({ selectedCard: { path: e.path, index: block } });
-            setEditing(again ? { after: { path: e.path, block, text }, path: e.path } : null);
-          }).catch(fail);
-          if (!again) setEditing(null);
+            setEditing(again ? { after: made, path: e.path } : null);
+          }).catch(failed('new card')).finally(() => { saving.current = false; });
         }}
       />
     );
@@ -488,7 +616,7 @@ export function DeckBrowser({ home, active }: BrowserProps) {
   const targets = bulkMenu === 'move' || menu?.sub ? docTargets(tree, order) : [];
 
   return (
-    <div className="deck-browser">
+    <div className="deck-browser" ref={top}>
       <div className="deck-study">
         <button type="button" className="ds-study" data-able={rows.length ? '1' : '0'} onClick={() => study()}>
           study <span className="ds-n">{cram ? rows.filter((r) => !r.suspended).length : due}</span>
@@ -530,7 +658,7 @@ export function DeckBrowser({ home, active }: BrowserProps) {
           <span className="chip-gap" />
           <button type="button" className="chip" data-on={similar ? '1' : '0'} data-chip="similar" title="cards that seem to test the same fact" onClick={() => { setSimilar(!similar); setSel(NO_SELECTION); }}>similar</button>
         </div>
-        {chosen.length > 0 && (
+        {!similar && chosen.length > 0 && (
           <div className="db-row db-actions">
             <span className="db-sel">{chosen.length} selected</span>
             <button type="button" data-act="move" onClick={() => setBulkMenu(bulkMenu === 'move' ? null : 'move')}>move to…</button>
@@ -586,7 +714,7 @@ export function DeckBrowser({ home, active }: BrowserProps) {
         const f = facesHTML(r.text);
         const ivl = r.sched?.ivl && r.sched.ivl >= 1 ? fmtDays(r.sched.ivl) : '';
         const when = r.suspended ? 'suspended' : dueWhen(r.sched?.due, now);
-        const isSel = sel.keys.includes(r.key);
+        const isSel = selSet.has(r.key);
         return (
           <div key={r.key}>
             <div
@@ -603,7 +731,7 @@ export function DeckBrowser({ home, active }: BrowserProps) {
               onDoubleClick={() => editIn(r)}
               onContextMenu={(e) => {
                 e.preventDefault();
-                if (!sel.keys.includes(r.key)) setSel({ keys: [r.key], anchor: r.key });
+                if (!selSet.has(r.key)) setSel({ keys: [r.key], anchor: r.key });
                 point(r);
                 setMenu({ x: Math.min(e.clientX, window.innerWidth - MENU_W), y: e.clientY, key: r.key, sub: false });
               }}

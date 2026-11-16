@@ -12,7 +12,9 @@ import { childDirOf, directories, ordered, type Order, type TreeNode } from '../
 /** What a row's state chip tests: `learning` holds relearning too; `due` and the three states leave suspended cards out. */
 export type StateChip = 'new' | 'learning' | 'review' | 'due' | 'suspended';
 export const STATE_CHIPS: readonly StateChip[] = ['new', 'learning', 'review', 'due', 'suspended'];
-export const FORM_CHIPS: readonly [CardForm, string][] = [['qa', 'q&a'], ['cloze', 'cloze'], ['bidir', 'bidir']];
+/** The three forms in the one order every surface lists them in: the switches, ⌘1 ⌘2 ⌘3, the deck's chips. */
+export const CARD_FORMS: readonly [CardForm, string][] = [['qa', 'q&a'], ['bidir', 'bidir'], ['cloze', 'cloze']];
+export const FORM_CHIPS: readonly [CardForm, string][] = CARD_FORMS;
 
 export type DeckSort = 'order' | 'due' | 'interval' | 'difficulty' | 'lapses' | 'last' | 'created';
 export const SORTS: readonly [DeckSort, string][] = [
@@ -242,6 +244,53 @@ export function selectedRows(sel: Selection, shown: readonly DeckRow[]): DeckRow
 }
 
 // ── finding a card again ─────────────────────────────────────────
+
+/**
+ * Finds a card's row again among rows read anew: at its block when it is
+ * still the same card there, else by id, else by text (the nearest block of
+ * its file). `path#block` names another card once a card above has gone.
+ */
+export function rowFinder(rows: readonly DeckRow[]): (ref: CardRef) => DeckRow | undefined {
+  let byKey: Map<string, DeckRow> | null = null;
+  let byId: Map<string, DeckRow> | null = null;
+  let byText: Map<string, DeckRow[]> | null = null;
+  return (ref) => {
+    if (!byKey) {
+      byKey = new Map();
+      byId = new Map();
+      byText = new Map();
+      for (const r of rows) {
+        byKey.set(r.key, r);
+        if (r.id !== undefined) byId.set(`${r.path}\n${r.id}`, r);
+        const k = `${r.path}\n${r.text}`;
+        const list = byText.get(k);
+        if (list) list.push(r); else byText.set(k, [r]);
+      }
+    }
+    const at = byKey.get(`${ref.path}#${ref.block}`);
+    if (at && (ref.id !== undefined ? at.id === ref.id : at.text === ref.text)) return at;
+    if (ref.id !== undefined) return byId!.get(`${ref.path}\n${ref.id}`);
+    let best: DeckRow | undefined;
+    for (const r of byText!.get(`${ref.path}\n${ref.text}`) ?? []) if (!best || Math.abs(r.block - ref.block) < Math.abs(best.block - ref.block)) best = r;
+    return best;
+  };
+}
+
+const refOfRow = (r: DeckRow): CardRef => (r.id === undefined ? { path: r.path, block: r.block, text: r.text } : { path: r.path, block: r.block, id: r.id, text: r.text });
+
+/** The selection over `was` carried to `now`, the files read again: each key follows its card; a card gone drops out. */
+export function followSelection(sel: Selection, was: readonly DeckRow[], now: readonly DeckRow[]): Selection {
+  if (!sel.keys.length && sel.anchor === null) return sel;
+  const old = new Map(was.map((r) => [r.key, r]));
+  const find = rowFinder(now);
+  const to = (key: string): string | null => {
+    const r = old.get(key);
+    return (r && find(refOfRow(r))?.key) ?? null;
+  };
+  const keys = sel.keys.map(to).filter((k): k is string => k !== null);
+  const anchor = sel.anchor === null ? null : to(sel.anchor);
+  return keys.length === sel.keys.length && keys.every((k, i) => k === sel.keys[i]) && anchor === sel.anchor ? sel : { keys, anchor };
+}
 
 /** The card `ref` names in `doc`: at its block when it is still the same card there, else by id, else by text. */
 export function findCard(doc: Doc, ref: CardRef): Card | null {

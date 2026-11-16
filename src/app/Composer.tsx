@@ -8,6 +8,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { PRI_MAX, PRI_MIN, clozeParts, mathSpanEnd, nextGroup, parsePri, type CardForm } from '../format/index.js';
 import { cardText, type CardSpec } from '../reader/index.js';
+import { CARD_FORMS } from './deck.js';
 
 interface Props {
   seed: string;
@@ -20,7 +21,7 @@ interface Props {
   quick?: ReactNode;
 }
 
-const FORMS: [CardForm, string][] = [['cloze', 'cloze'], ['qa', 'q&a'], ['bidir', 'bidir']];
+const FORMS = CARD_FORMS;
 
 /** Whether `[from, to]` sits inside a math span of `text`, its delimiters excluded. */
 export function insideMath(text: string, from: number, to: number): boolean {

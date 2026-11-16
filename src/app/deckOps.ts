@@ -24,10 +24,12 @@ function need() {
 export async function bulkCards(refs: readonly CardRef[], action: BulkAction): Promise<void> {
   if (!refs.length) return;
   const vault = need();
+  // the inspector's card may be one that went: let go before the write, so a cursor the deck puts on the
+  // row that took a card's place (when the files are read again) is not taken away after
+  const sel = useApp.getState().selectedCard;
+  if ((action.kind === 'delete' || action.kind === 'move') && sel && refs.some((r) => r.path === sel.path)) useApp.setState({ selectedCard: null });
   const snaps = await applyBulk(vault, refs, action);
   const s = useApp.getState();
-  // the inspector's card may be one that went
-  if ((action.kind === 'delete' || action.kind === 'move') && s.selectedCard && refs.some((r) => r.path === s.selectedCard!.path)) useApp.setState({ selectedCard: null });
   const to = action.kind === 'move' ? titleOf(action.to, s.docs, s.vault) : undefined;
   const n = action.kind === 'move' ? refs.filter((r) => r.path !== action.to).length : refs.length;
   notify(bulkLine(action, n, to), null, () => restore(vault, snaps));

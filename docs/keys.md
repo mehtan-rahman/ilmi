@@ -67,12 +67,16 @@ in a deck        j k (or ↑ ↓) move, ⏎ or a double-click opens the card in 
                  selected, the cursor's row), × on a row or right-click
                  deletes one, and a delete can be undone from its notice;
                  right-click moves a card to another deck
-in a new card    ⌘1 q&a, ⌘2 both ways, ⌘3 cloze (the same in every card
+in a new card    ⌘1 q&a, ⌘2 bidir, ⌘3 cloze (the same in every card
                  editor), ⌘B a blank in a cloze; ⌘⏎ save, ⇧⌘⏎ save and
                  start another, esc cancel (in a deck, what was typed
                  comes back on the next m)
 in the card view [ ] the card before and the next, o the card in its
                  document; in a face ⌘⏎ save, esc revert, ⌘1 ⌘2 ⌘3 the form
+in a card's face Tab the other face (⇧Tab back); in a cell or a list it is the
+                 editor's
+in the numbers   on a day: ↑ ↓ a day, ← → a week, ⏎ or space its reviews (or
+                 what comes due), esc closes them
 in the queue     j k move (the row is brought into view), ⏎ enter (narrowed
                  to an exam: what is shown), o open one; a row names its file by its
                  path (`queue shows titles` in the tweaks brings the title back)

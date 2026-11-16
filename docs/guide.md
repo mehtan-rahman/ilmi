@@ -346,6 +346,31 @@ one whole file has no `finish by`, since its length is not known until it is
 opened. The bottom strip shows the keys that work where you are. `ilmi.theme('dark')`
 and friends still work from the devtools console.
 
+### The numbers
+
+A deck's lens reads `cards · numbers`, a folder's or a notebook's `items ·
+cards · numbers`, and `numbers` in the palette (⌘K) opens the whole
+collection's. The numbers are of the cards under the lens and no others.
+
+At the top is a year of days: weeks as columns, Monday at the top, a cell a
+day, shaded in four steps by the reviews done that day (the day turns at
+your midnight, as a card's due day does). In e-ink a day is a square that
+grows with its count. Point at a day, or walk the days with the arrows (↑ ↓
+a day, ← → a week), and the line under the grid says its date, its reviews
+and the time on them; press it (or ⏎) and its cards are listed under the
+grid, each with the grades it got, each opening its card. Beside the year:
+the days studied of the days in range, the average a day, the best day, the
+days in a row now and the longest run, retention (of the reviews of cards
+already in review, those not answered `again`), the answers given, and for
+this week, month and year the reviews, the time, the cards started and the
+cards matured (an interval past three weeks).
+
+Under it the days ahead are drawn in the same cells for half a year, by
+what comes due; what is overdue counts today. A day pressed lists what
+comes due on it. Then retention by week, by how long a card has been
+studied and by the time of day, the cards failed most, and the spread of
+stability and difficulty.
+
 ## Finding
 
 The palette (⌘K) finds words as well as names. Type and the rows are, in

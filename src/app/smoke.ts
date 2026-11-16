@@ -7203,7 +7203,7 @@ export async function smokeSections(vault: Vault): Promise<void> {
     const l13 = await poll(() => sectionOf('lecture 13'), 'lecture 13 is enrolled');
     must(!isDue(l13, appNow()) && l13.cards === 4 && dayOfStr(l13.due) === '2026-11-09', `with its 4 cards, due later (${l13.due})`);
     await openQuery('today');
-    must(/^\d+ due, in priority order $/.test(q('.queue .legend')?.textContent ?? '') && !q('.queue .summary'), `the head's one line, no counts by kind: "${q('.queue .legend')?.textContent}"`);
+    must(/^\d+ due, in priority order\s*$/.test(q('.queue .legend')?.textContent ?? '') && !q('.queue .summary'), `the head's one line, no counts by kind: "${q('.queue .legend')?.textContent}"`);
     const rows = qa<HTMLElement>('.pane[data-active="1"] .qlist li:not(.fold)');
     const at = rows.findIndex((r) => r.dataset.el === 'section' && r.textContent?.includes('pset 4 #5'));
     must(at >= 0, `the derivation's row (${at + 1} of ${rows.length})`);
@@ -7914,7 +7914,7 @@ export async function smokeBooks(vault: Vault): Promise<void> {
     const ch3 = await poll(() => readOf(CH3), 'ch. 3 is in the day\'s queue to read on');
     await poll(() => readOf(P12), 'and so is the Arabic passage');
     await openQuery();
-    must(/^\d+ due, in priority order $/.test(q('.queue .legend')?.textContent ?? ''), 'the head\'s one line');
+    must(/^\d+ due, in priority order\s*$/.test(q('.queue .legend')?.textContent ?? ''), 'the head\'s one line');
     const rows = qa<HTMLElement>('.pane[data-active="1"] .qlist li:not(.fold)');
     const kinds = rows.map((r) => r.dataset.el);
     must(where(rowOf('why the Boltzmann factor')) === 'written, 2 cards · back for the 4th time', `the Boltzmann section's row: "${where(rowOf('why the Boltzmann factor'))}"`);
@@ -13455,7 +13455,7 @@ export async function smokeSweep(vault: Vault): Promise<void> {
   const tab = () => activeTab(useApp.getState().panes)?.id;
   const tabs = () => useApp.getState().panes.panes.flatMap((p) => p.tabs.map((t) => t.id));
   const VOCAB = 'arabic/vocabulary.md';
-  const NOTE = 'arabic/roots.md';
+  const NOTE = 'fleeting/idea-for-honors-thesis.md';
   try {
     useApp.getState().setTheme('light');
     setSidebar({ hidden: false });

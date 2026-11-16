@@ -419,6 +419,9 @@ group` moves the blank you pressed in, `remove blank` takes it away. So does
 backspace at a blank's start: the blank goes, its words stay. Typed braces
 still work, and become a blank as they close.
 
+A card of several lines is one text: a blank can start on one line and end
+on another, and ⌘A then ⌘B blanks all of it.
+
 A blank can hold blanks. Select a stretch that has blanks in it and press
 ⌘B: the new blank is the whole stretch, the ones inside keep their own
 groups. Asked, the whole hides everything in it; when one inside is asked,

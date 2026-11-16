@@ -32,4 +32,4 @@ export { findKey, findPlugin, findMatches, findIn, foldText, foldMap, currentMat
 export { insertBlocks, insertImages, imageParagraph, caretInto, markdownBlocks, pasteMarkdown, clipboardText, htmlPasteImages } from './insert.js';
 export { strongDir, textDir, blockDirs, dirAttr, charDir, isolatedSpans, markupSpans, marksOnly, baseSplit, withBases, type Dir, type Span, type BasedSeg, type BasedBlank } from './direction.js';
 export { bookKey, bookPlugin, type BookOptions } from './book.js';
-export { blanksPlugin, blanksKey, blanksOf, blankAround, blankSpans, groupsHere, makeBlank, removeBlank, regroupBlank, type BlankSpan } from './blanksDeco.js';
+export { blanksPlugin, blanksKey, blanksOf, blankAround, blankSpans, faceText, groupsHere, makeBlank, removeBlank, regroupBlank, type BlankSpan } from './blanksDeco.js';

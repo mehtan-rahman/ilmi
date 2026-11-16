@@ -9248,7 +9248,12 @@ widened to hold it; backspace at a blank's start takes the blank away;
 the right-click menu has blank, blank with a group there is, move to
 group, remove blank. ⌘B is the plugin's own key there, so it is never
 bold. The new card's passage is that editor now (it was a plain text box
-with a preview under it). **Left as it was:** the inspector's box for a
+with a preview under it). **Over lines** (the user: "the whole thing should be connected,
+not just within a line"): the editor read blanks a line at a time, each
+line being a block of its own, so a blank over several lines showed its
+braces and ⌘B refused a selection across lines; blanks are read over the
+whole card's text now (`faceText`), and all of it selected is one blank.
+**Left as it was:** the inspector's box for a
 selected card shows the file's text, braces and all.
 
 ## Notes for the next session

@@ -3,8 +3,8 @@
 // from a selection, one inside another, taken away again; and a nested
 // blank as a card draws it (`clozeHTML`).
 import { describe, expect, it } from 'vitest';
-import { TextSelection, type EditorState } from 'prosemirror-state';
-import { blankAround, blanksOf, flatText, makeBlank, makeState, regroupBlank, removeBlank } from '../../reader/index.js';
+import { AllSelection, TextSelection, type EditorState } from 'prosemirror-state';
+import { blankAround, blanksOf, faceText, flatText, makeBlank, makeState, regroupBlank, removeBlank } from '../../reader/index.js';
 import { blankAnswers, clozeHTML } from '../Reader.js';
 import { blanks } from '../../format/index.js';
 import { cardGroups, numberBlank } from '../../schedule/index.js';
@@ -58,6 +58,37 @@ describe('a blank is made from a selection, not typed', () => {
     let s = stateOf('{{c2::a {{c1::b}} c}}');
     s = on(s, [14, 14], removeBlank);
     expect(textOf(s)).toBe('{{c2::a b c}}');
+  });
+});
+
+describe('a card of several lines is one text', () => {
+  const lines = (...ls: string[]): EditorState => makeState(ls.map((text) => ({ kind: 'paragraph' as const, text })), { frozen: () => false, pos: null, blanks: true });
+  const whole = (s: EditorState) => faceText(s.doc).text;
+  it('a blank made over lines opens on the first and closes on the last, and is read as one', () => {
+    let s = lines('nasara {{c1::yansuru}}', 'wa nusira {{c2::yunsaru}}', 'al-amr {{c3::unsur}}');
+    // everything selected, as ⌘A selects it
+    s = s.apply(s.tr.setSelection(new AllSelection(s.doc)));
+    let next = s;
+    expect(makeBlank()(s, (tr) => { next = s.apply(tr); })).toBe(true);
+    expect(whole(next)).toBe('{{c4::nasara {{c1::yansuru}}\nwa nusira {{c2::yunsaru}}\nal-amr {{c3::unsur}}}}');
+    expect(blanksOf(next).map((b) => [b.n, b.depth])).toEqual([[4, 0], [1, 1], [2, 1], [3, 1]]);
+    // its opening is on the first line, its closing on the last
+    const outer = blanksOf(next)[0]!;
+    expect(next.doc.resolve(outer.from).index(0)).toBe(0);
+    expect(next.doc.resolve(outer.to).index(0)).toBe(2);
+    // and taken away again, the lines are as they were
+    next = next.apply(next.tr.setSelection(TextSelection.create(next.doc, outer.inner)));
+    let back = next;
+    expect(removeBlank(next, (tr) => { back = next.apply(tr); })).toBe(true);
+    expect(whole(back)).toBe('nasara {{c1::yansuru}}\nwa nusira {{c2::yunsaru}}\nal-amr {{c3::unsur}}');
+  });
+  it('a selection from the middle of one line to the middle of the next is one blank; the groups are counted over all the lines', () => {
+    let s = lines('one two', 'three {{c1::four}}');
+    s = s.apply(s.tr.setSelection(TextSelection.create(s.doc, 5, 15)));
+    let next = s;
+    expect(makeBlank()(s, (tr) => { next = s.apply(tr); })).toBe(true);
+    expect(whole(next)).toBe('one {{c2::two\nthree}} {{c1::four}}');
+    expect(blanksOf(next).length).toBe(2);
   });
 });
 

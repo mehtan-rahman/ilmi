@@ -15005,8 +15005,18 @@ export async function smokeBlanks(vault: Vault): Promise<void> {
     const field = q<HTMLElement>('.composer .face-field')!;
     const text = () => faceFieldText(view.state.doc);
     must(text() === LINE && !q('.composer textarea'), 'the passage is the line, in the reader\'s editor (no plain text box)');
-    const pick = (word: string) => { const at = text().indexOf(word); view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 1 + at, 1 + at + word.length))); view.focus(); };
+    /** A place in the passage's text as a place in the page: each line is a block of its own, a line break none. */
+    const posOf = (offset: number): number => { let at = 0; let pos = 1; let out = 1; view.state.doc.forEach((n, p) => { if (at <= offset) out = p + 1 + Math.min(n.content.size, offset - at); at += n.content.size + 1; pos = p; }); void pos; return out; };
+    const pick = (word: string) => { const at = text().indexOf(word); view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, posOf(at), posOf(at + word.length)))); view.focus(); };
     const cmdB = () => view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'b', code: 'KeyB', metaKey: true, bubbles: true, cancelable: true }));
+
+    // the passage on two lines, as a paradigm is written: ⏎ before the second half
+    {
+      const at = text().indexOf(' الامر');
+      view.dispatch(view.state.tr.delete(1 + at, 2 + at).split(1 + at));
+      await sleep(200);
+      must(view.state.doc.childCount === 2 && text().split('\n').length === 2, 'the passage is two lines');
+    }
 
     // ── ⌘B on a selection ──
     pick(A);
@@ -15045,7 +15055,8 @@ export async function smokeBlanks(vault: Vault): Promise<void> {
     cmdB();
     await sleep(400);
     log(`after ⌘B on the whole line: ${text()}`);
-    await poll(() => text().startsWith('{{c4::') && text().endsWith('}}}}') && clozeGroups(text()).join() === '4,1,2,3', 'the whole line selected, ⌘B makes a blank that holds the three');
+    await poll(() => text().startsWith('{{c4::') && text().endsWith('}}}}') && text().split('\n').length === 2 && clozeGroups(text()).join() === '4,1,2,3', 'both lines selected, ⌘B makes one blank over them that holds the three');
+    must(qa('.bl-d0', field).length >= 2 && new Set(qa<HTMLElement>('.bl-d0', field).map((e) => e.closest('p'))).size === 2 && qa<HTMLElement>('.bl-open, .bl-close', field).length >= 8 && qa<HTMLElement>('.bl-open, .bl-close', field).every((e) => getComputedStyle(e).fontSize === '0px'), 'it is marked on both lines, and no brace is drawn on either');
     must(qa('.bl-d1', field).length === 3 && qa('.bl-d0', field).length >= 1, 'the three inside are marked as inside it');
     { const chips = qa<HTMLElement>('.bl-open', field).map((e) => getComputedStyle(e, '::before').content.replace(/"/g, '')).join(' '); must(chips === '4 1 2 3', `each opening says its own group (${chips})`); }
     must(!/[{}]/.test(field.innerText.replace(/\u200b/g, '')) || qa<HTMLElement>('.bl-open, .bl-close', field).every((e) => getComputedStyle(e).fontSize === '0px'), 'no brace of any of them is drawn');
@@ -15054,7 +15065,7 @@ export async function smokeBlanks(vault: Vault): Promise<void> {
     // ── backspace at a blank's start takes the blank away, its words left ──
     {
       const at = text().indexOf(`{{c2::${B}`) + 6;
-      view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 1 + at)));
+      view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, posOf(at))));
       view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', code: 'Backspace', bubbles: true, cancelable: true }));
       await poll(() => !text().includes('{{c2::') && text().includes(` ${B} `), 'backspace at a blank\'s start: the blank gone, the word still there');
       pick(B);
@@ -15064,9 +15075,9 @@ export async function smokeBlanks(vault: Vault): Promise<void> {
     // the caret does not rest among the braces
     {
       const open = text().indexOf('{{c1::');
-      view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 1 + open + 3)));
+      view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, posOf(open + 3))));
       await sleep(100);
-      const p = view.state.selection.from - 1;
+      const p = view.state.selection.from - posOf(0);
       must(p <= open || p >= open + 6, `a caret put inside the braces is moved out of them (${p}, the braces ${open}–${open + 6})`);
     }
 

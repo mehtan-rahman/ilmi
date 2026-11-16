@@ -26,29 +26,47 @@ export interface BlankSpan {
   depth: number;
 }
 
-/** The blanks of one textblock at `pos` (the position before it), outer before inner. */
-export function blankSpans(node: PMNode, pos: number): BlankSpan[] {
-  const text = flatText(node);
+/**
+ * A face's text as the card holds it: its lines (each a textblock) joined
+ * by a line break, and where each line starts in the page. A card is one
+ * text, so a blank may open on one line and close on another.
+ */
+export function faceText(doc: PMNode): { text: string; lines: { at: number; pos: number; len: number }[] } {
+  const lines: { at: number; pos: number; len: number }[] = [];
+  let text = '';
+  doc.descendants((node, pos) => {
+    if (!node.isTextblock) return true;
+    if (node.type.spec.code === true) return false;
+    if (lines.length) text += '\n';
+    const t = flatText(node);
+    lines.push({ at: text.length, pos: pos + 1, len: t.length });
+    text += t;
+    return false;
+  });
+  return { text, lines };
+}
+
+/** Every blank of the document, outer before inner: read over the whole text, so one may run over several lines. */
+export function blankSpans(doc: PMNode): BlankSpan[] {
+  const { text, lines } = faceText(doc);
   if (!text.includes('{{')) return [];
+  // an offset of the text as a place in the page (a line break has none: nothing of a blank's braces lies on one)
+  const posOf = (offset: number): number => {
+    let line = lines[0]!;
+    for (const l of lines) if (l.at <= offset) line = l;
+    return line.pos + Math.min(line.len, offset - line.at);
+  };
   const out: BlankSpan[] = [];
   for (const b of blanks(text)) {
-    const from = pos + 1 + b.at;
-    const to = from + b.raw.length;
-    out.push({ from, inner: from + b.open, close: to - 2, to, n: b.n, depth: out.filter((o) => o.from < from && o.to >= to).length });
+    const end = b.at + b.raw.length;
+    const from = posOf(b.at);
+    const to = posOf(end);
+    out.push({ from, inner: posOf(b.at + b.open), close: posOf(end - 2), to, n: b.n, depth: out.filter((o) => o.from < from && o.to >= to).length });
   }
   return out;
 }
 
-/** Every blank of the document. */
-function allSpans(doc: PMNode): BlankSpan[] {
-  const out: BlankSpan[] = [];
-  doc.descendants((node, pos) => {
-    if (!node.isTextblock) return true;
-    if (node.type.spec.code !== true) out.push(...blankSpans(node, pos));
-    return false;
-  });
-  return out;
-}
+const allSpans = blankSpans;
 
 /** The runs the caret cannot rest in: every opening and closing. */
 const hiddenOf = (spans: readonly BlankSpan[]): { from: number; to: number }[] => spans.flatMap((s) => [{ from: s.from, to: s.inner }, { from: s.close, to: s.to }]);
@@ -80,23 +98,28 @@ export function blankAround(state: EditorState, from = state.selection.from, to 
 
 /** The groups the caret's block already has, in order. */
 export function groupsHere(state: EditorState): number[] {
-  const { $from } = state.selection;
-  return $from.parent.isTextblock ? clozeGroups(flatText($from.parent)) : [];
+  return clozeGroups(faceText(state.doc).text);
 }
 
 /**
  * The selection made a blank: of the group `n`, or of a new one (the lowest
  * number the block does not use). With nothing selected, the word at the
- * caret. The selection must lie in one block. The caret ends after the
+ * caret. The selection may run over lines. The caret ends after the
  * blank's last word, inside it.
  */
 export function makeBlank(n?: number): Command {
   return (state, dispatch) => {
-    const sel = state.selection;
+    // the selection may run over several lines (the card is one text); all of it selected is from the first letter to the last
+    const sel = state.selection.empty ? state.selection : TextSelection.between(state.selection.$from, state.selection.$to);
     const { $from, $to } = sel;
-    if (!$from.parent.isTextblock || !$from.sameParent($to) || $from.parent.type.spec.code === true) return false;
+    if (!$from.parent.isTextblock || !$to.parent.isTextblock || $from.parent.type.spec.code === true || $to.parent.type.spec.code === true) return false;
     let from = sel.from;
     let to = sel.to;
+    // a selection that ends before a line's first letter ends with the line above
+    if (to > from && $to.parentOffset === 0 && $to.depth > 0) {
+      const before = state.doc.resolve($to.before()).nodeBefore;
+      if (before?.isTextblock) to = $to.before() - 1;
+    }
     if (from === to) {
       // the word at the caret
       const text = flatText($from.parent);
@@ -117,7 +140,7 @@ export function makeBlank(n?: number): Command {
       if (cuts(to) || (to >= s.inner && to <= s.close && from < s.inner)) to = Math.max(to, s.to);
     }
     if (!dispatch) return true;
-    const group = n ?? nextGroup(flatText($from.parent));
+    const group = n ?? nextGroup(faceText(state.doc).text);
     const open = `{{c${group}::`;
     const tr = state.tr.insertText('}}', to).insertText(open, from);
     tr.setSelection(TextSelection.create(tr.doc, to + open.length));

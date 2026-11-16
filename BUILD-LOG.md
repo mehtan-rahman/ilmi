@@ -6,6 +6,67 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-11-15 — milestones 73 and 74: the sweep, and a year of days
+
+Asked by the user: "get ilmi into a really good state by tonight. Three parts, in this order: an audit, the fixes, and a stats/heatmap view." One coordinating session on main (`1c2d149` … the commit of this entry); six read-only audit agents, then five fix agents on disjoint files, the coordinator on the numbers, the shapes and the window checks. PLAN 73 has the ranked list and 74 the heatmap's notes. The user's message had a line "Constraints that hold:" with nothing under it; the plan's ground rules and the standing notes were followed in its place.
+
+**The audit.** Six agents, one a group of surfaces, each told to count a bug only once a failing test showed it. 59 tests failing by design came back in six `sweep-*.test.ts` files (intake 11, cards 9, queue 7, shapes 9, shell 11, editor 12); they are kept as the fixes' tests. What could not be shown in jsdom was listed apart and checked in the window where it mattered.
+
+**What changed that is seen** (the full list with a done-when each is PLAN 73):
+- Keys reach the page: the tree no longer takes every bare key after a click in the sidebar; a held key no longer grades card after card; ⌘0 in a note no longer also resets the text size; ⌘W works from a field.
+- Nothing typed or made is lost quietly: a card in a note is selected, not deleted, by the first Backspace or Delete beside it, and typing over a selected card leaves it; one card deleted in a deck has undo, as two had; a press outside a new card keeps it, and Escape keeps what was typed for the next `m`; a slow link no longer overwrites what was pasted after it; `d`, `p`, `postpone the rest`, the inspector's `reset` and an extract made can be undone.
+- Places are kept: the session goes on where it was when its tab is left; a book comes back to its place and opens at its read point; the deck keeps its search, cursor and scroll; closing a pane leaves the one beside it; the tabs open survive a restart.
+- The app says what happened: a failed rename, delete, move, grade or card write is a notice with the reason, and so is any promise nobody caught; the intake shows its error with text in the field; a book's search says `searching`; an unreadable PDF says `could not open this pdf`; the welcome says why a collection did not open; `nothing due` says what is next; a book says `p. 37 / 212`.
+- The editor's autosave no longer reads back half-typed text as a rule or a code block over the rest of the note; a closing fence closes; Tab is taken; a bare address is a link; pasted list items join the list.
+- The queue looks again on focus and when the next card comes due; its j k keep the row in view; narrowed to an exam, `enter` walks what is shown.
+- New keys: ⌃Tab and ⌘⇧[ ] between tabs, ⌘⇧T the last closed tab, ⌘⏎ places from the intake, `s` suspends the card in front (session and card view), Tab between a card's faces, ⌫ leaves a palette sub-list.
+- The tweaks panel scrolls inside the window; under 1000 px the top strip keeps the sync word and the way to conflicts; dark's done task shows its tick; focus is the accent on five fields that faded.
+- The palette puts the name typed first and no longer lists scattered-letter matches (`unit` returned 16 rows without the word).
+
+**A year of days (74).** In the numbers lens, for a deck, a folder, a notebook, and the whole collection (`numbers` in the palette): a heatmap of fifty-three Monday-first weeks shaded by reviews done, the half year ahead in the same cells by what comes due, a day told on hover and focus, walked by the arrows, pressed to list its reviews (or what comes due); beside them as type the days studied, the average, the best day, the runs, retention, the answers, and this week, month and year. E-ink draws a count as the size of a square. PLAN 74 has what was added, what was left out and why.
+
+**Decisions made for the user** (each can be overruled):
+- A click on a row in the tree hands the focus to the page, as Obsidian does, so j k m and the grades work at once; the cost is that F2 and the arrows no longer act on the row just clicked until the tree is focused (Tab, or a chevron). Double-click and the menu's rename are as they were.
+- A book opened from the tree lands at its read point (before: page 1), unless it was open earlier in the run, when it comes back to where it was left.
+- One order of forms everywhere, q&a, bidir, cloze: the composer's ⌘1 was cloze and is q&a now; its default form is unchanged.
+- The session's count is told from the start (`1 / 4` for two new cards learnt first) and never grows; the end says `2 elements`.
+- A reading passed, put later or dismissed is not acted on a second time in its session; the notice's undo is the way back.
+- `s` suspends the whole card (the deck's suspend does), not the one blank or direction asked.
+- Only the queue's own `enter` narrows to the exam shown; the palette's and the phone bar's walk everything.
+- `# ` typed before a paragraph that has an `^id` types no space (a heading cannot carry the id); an unfinished ``` line is not written until it is entered.
+- The heatmap replaces the four-week table of reviews a day; the four-week table of reviews due stays. Retention by the time of day is four parts of the day in the retention table, not a 24-cell strip. "Matured" is an interval past 21 days.
+- The palette's fuzzy match is tighter: a typo still finds its row (`quntum`, `vocb`), initials across a name no longer do (`lnalg`).
+
+**Checks.** On `4e0cda0`: typecheck clean; npm test 1782 passed, 1 skipped, 124 files (1586 before today; the 59 audit tests, 6 for the numbers' model, 5 for suspend, and the agents' own); cargo test 69 passed. Window checks from clean run trees over fresh copies of `samples/double-major`, each ending `done` with no `failed`, captures by window id and looked at:
+- `sweep` (new) 50 ok, 9 captures, on the final tree: the tree's focus hand-off, one delete undone byte for byte, the deck's search kept, space held not grading, the session's place kept, `s` suspending without a log line and undone, `o` beside the session, a book's page said and its place kept with the page's print measured, ⌘W / ⌘⇧T / ⌃Tab, the palette's order, an empty pane, the tweaks inside the window.
+- `numbers` 76 ok, 18 captures (the year, a pressed day, the days ahead, dark, e-ink, the collection, a phone's width): the cells' counts equal the log's under each lens, the lines equal the cells, e-ink tells steps by size.
+- On the commit with every fix in (`suspend…`, the app's code as it is now): `learn` 14, `cardview` 31, `below` 24, `editing` done, `tour` 24 with 45 captures. On the commit before suspend went in: `tree` done, `search` 30, `book` 155, `books` 81.
+- Five smokes failed on first run for reasons older than today, shown by the same failure on yesterday's commit (`448a82c`) or by the step itself: `numbers` (a pinned count of held reverses), `books` (a trailing space in a regex), `editing` and `below` (mended, see PLAN 73); `rest` and `insert` are still stale and were not mended.
+
+**Not verified.**
+- A real iPad or iPhone: nothing today ran on a simulator or a device. The phone's width was checked for the numbers only, in the Mac's window at 343 px.
+- The numbers in the window at 115,000 cards (`ILMI_SMOKE=size` not run); in node the model takes 445 ms over 115,000 lines and 780,000 reviews.
+- In real WebKit, by hand or by a smoke: the editor's new key paths beyond what `editing` walks (Backspace beside a card, a closing fence, list paste, a bare address, IME over a selected card), the intake's late-link and title cases, a collection that fails to open from the palette, `connect` enabling as its field is typed, the tabs after a real quit and relaunch, the welcome's keys behind the tweaks, the queue refreshing at the day's turn. Each has a jsdom test; none has a window assertion.
+- `rest` and `insert` did not pass (stale before today), so tables' `⇧⏎`, folding in a source and the picked image were not rechecked in the window.
+
+**Found and not fixed**, with the reason:
+- A card graded `again` does not come back before the session ends: the session's model fixes the walk's length; it wants the model rewritten. The queue shows it when it comes due.
+- Undo history is lost when the editor is rebuilt from the file (after a card or an extract is made): a change to how the page takes its own writes, too large for tonight.
+- No zoom on a book's pages; a book's search lands on the hit's page, not the hit, and counts pages; the first jump to an equation reads the whole book unannounced.
+- A multi-deck Anki package imports every deck with no choice.
+- A collection cannot be renamed or deleted from the welcome (destructive; the user's call).
+- Context menus have no arrow keys, and several controls are divs with no role; narrow panes get no narrow layout (the rules key off the window); the deck list is not windowed.
+- No reading layer in the numbers: the log holds card grades only.
+- The whole-book PDF in the sample (`library/lindqvist-statistical-physics.pdf`) has no text on its first twelve pages (PDFKit reads none), so the book opens on blank leaves; the chapters are fine. Not touched: it is the sample's typeset file.
+
+**Handoff.** Nothing is left that a session can do alone except the items above; 65 (iCloud) and 66 (a real device) wait for the user, as do real Dropbox and Drive keys.
+
+```
+Read PLAN.md (73 and 74's notes, then "Notes for the next session"), BUILD-LOG.md's top entry, and docs/development.md. Pick up "Found and not fixed" from the top entry in the order the user gives, or the first of: the session re-asking a card graded again (rewrite the session's model first), undo history kept across the editor's rebuilds. Verify as that entry did: typecheck, npm test, cargo test, and the window smokes of every surface touched from a clean run tree over samples/double-major.
+```
+
+---
+
 ## 2026-11-09 — milestone 72: the card view, the tree's card rows, and the table menus
 
 Asked by the user, from SuperMemo's element window: "I like how in supermemo you can edit cards in this window as well, maybe we should have a drop down for each deck or even note where you can go in and edit the cards like this"; then "can you also make a table editor, something like a right click option to insert table and then within the table all the usual ctx menu options". The coordinator settled the shape; this session built it on main (`f572409` … the commit of this entry; PLAN 72 has the notes).

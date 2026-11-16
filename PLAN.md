@@ -8814,7 +8814,7 @@ lines open as a table (`faceFieldBlocks`/`faceFieldText`): untouched they
 write back byte for byte, changed as the normalized pipe table; a cloze's
 face holds none. No FORMAT change. Smoke: `ILMI_SMOKE=cardview`.
 
-### [ ] 73. The sweep — an audit of every surface, and its fixes
+### [x] 73. The sweep — an audit of every surface, and its fixes
 Asked by the user, 2026-11-15: "get ilmi into a really good state by
 tonight": an audit, the fixes, then stats and a heatmap (74). Six read-only
 audits ran, one a group of surfaces (the shell; the editor; intake, books
@@ -8919,7 +8919,34 @@ bury from the session and the card view; a collection renamed or deleted
 from the welcome; arrow keys in context menus and buttons for the div
 controls; narrow panes by container queries; a windowed deck list.
 
-### [ ] 74. A year of days — the heatmap, the forecast, and the lines beside them
+Done 2026-11-15 (`b53f4c9` … `4e0cda0`).
+Notes: every item of the list is done but 22 (a card graded `again` coming
+back before the session ends: the session's statechart fixes its walk's
+length, and appending re-asked cards means rewriting the model, not
+extending it; the queue now shows such a card the moment it comes due,
+which closes most of the gap). The audits' failing tests are kept as the
+fixes' tests (`sweep-intake`, `sweep-cards`, `sweep-queue`, `sweep-shapes`,
+`sweep-shell` under `src/app/__tests__`, `sweep-editor` under
+`src/reader/__tests__`), and `ILMI_SMOKE=sweep` walks what only a window
+shows. Decisions made for the user, each said in BUILD-LOG: a click on a
+row in the tree hands the focus to the page (so the tree's own keys want
+the focus put there first); a book opens at its read point; the form order
+is q&a, bidir, cloze everywhere, so the composer's ⌘1 is q&a now; the
+session's count is told from the start (`1 / 4` for two cards learnt
+first); a reading acted on is not acted on twice in its session; `# ` on
+a paragraph with an id types no space; an unfinished fence line is not
+written until it is entered; Tab goes between a card's faces. Added
+beyond the list: `s` suspends the card in front (session, card view) and
+the inspector has `suspend` beside `reset`; a shared `failed(what)`
+notice (`land.ts`) and a handler for a promise nobody caught (`main.tsx`).
+Smokes found stale and mended: `numbers` (how many new reverses are held),
+`books` and `sections` (the legend's trailing space), `editing` (its
+frozen source, `section e`), `below` (a card already tested). Still
+stale, as before today: `rest` (wants the Lindqvist chapter as text; it
+has been its PDF's pages since 49), `insert` (its picked image is written
+through the store and read from disk), `deck`, `open`.
+
+### [x] 74. A year of days — the heatmap, the forecast, and the lines beside them
 Asked by the user, 2026-11-15: "I now want this, so it replaces the plan's
 earlier ban on that kind of view. Still no badges, confetti or stat-card
 dashboards." Built into the numbers lens, scoped to the lens as the rest,
@@ -8934,6 +8961,39 @@ what else earns its place; light, dark and e-ink (no shade alone in
 e-ink), a phone's width, and fast at 115,000 cards (the log counted by day
 once); pure functions in `numbers.ts` with tests, and `ILMI_SMOKE=numbers`
 extended, with captures by window id.
+
+Done 2026-11-15 (`55d8783`, `9e2e029`, `63f6ab2`).
+Notes: `numbers.ts` counts the lens's log by day once (`daysOf`: a day's
+reviews, time, answers, what was due and passed, started, matured, and
+where its lines lie in the log) and everything else reads that:
+`heatOf` (weeks of Mondays, a cell a day, levels 1–4 against the ninth
+decile of the days with anything, so one outlier does not wash the rest
+out), `summaryOf` (the year's lines, the runs over the whole log, this
+week, month and year, retention by the time of day), `reviewsOn` and
+`linesDue` (a pressed day's rows). The day is `dayOf`, the scheduler's.
+`NumbersLens.tsx`: `HeatGrid` is drawn once (memo) and each cell is a
+button with its words as `title` and `aria-label`; one Tab stop, the
+arrows walk (↑ ↓ a day, ← → a week), ⏎ or a press opens the day under
+the grid (a row a card, the grades it got in order, each opening its
+card; a day ahead lists what comes due), esc closes it. E-ink draws a
+day as a square that grows with its count inside a hairline box. A
+phone's width shows twenty-six weeks. The whole collection: `numbers`
+in the palette (`openCollectionNumbers`, the root as a lens). Chosen
+beyond the brief, each as type: the answers given, started and matured
+by period, retention by the time of day (morning, afternoon, evening,
+night), what is coming (today and how much of it overdue, tomorrow, the
+next 7 and 30 days, the heaviest day). Left out: an hour-by-hour strip
+(the four parts of the day say what it would), added-per-day (a card has
+no creation date; `started` is its first grade). The old four-week
+table of reviews a day is gone (the year and a pressed day say more); the
+four-week table of reviews due stays under the forecast for its exact
+numbers. Reading is not in the log (a pass on a section writes its `read`
+line and nothing else), so there is no reading layer: it wants a log of
+its own, a FORMAT and engine change, not built. Measured in node at the
+large collection's size (115,000 lines, 780,000 reviews): `linesOf` 33
+ms, `reviewsUnder` 41 ms, `numbersOf` 445 ms; not measured in the window
+at that size (`ILMI_SMOKE=size` was not run). `ILMI_SMOKE=numbers`: 76
+ok, 18 captures.
 
 ## Notes for the next session
 

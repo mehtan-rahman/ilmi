@@ -203,6 +203,16 @@ line of the file changes, the id and the `sr` line kept), moves on with
 `e` and grades it, then right-clicks a cell of the verb forms note's table,
 adds a row below, and reads the new row in the file. `ILMI_SMOKE=decks`
 (over the corpus vault) edits two cards through the card view since then.
+`ILMI_SMOKE=sweep` (milestone 73) over a copy of the sample walks the
+fixes only a window shows: a click on a deck's row in the tree and j in the
+deck, one card deleted and undone, the deck's search kept across a tab
+switch, space held in a session, the session's place kept, `s` suspending
+and undone, a chapter's page said and its place kept (the print on the page
+in view measured), ⌘W, ⌘⇧T and ⌃Tab, the palette's order, an empty pane,
+the tweaks inside the window. `ILMI_SMOKE=numbers` since milestone 74 reads
+the year of days: the cells against the log under each lens, a day by the
+keyboard and pressed, the days ahead, dark and e-ink, the whole collection,
+and a phone's width (the lens narrowed to 343 px with the phone's shape set).
 `ILMI_SMOKE=readme` over a copy of the sample walks the screens the README
 shows and marks each with a `shot:` line; the README's images were captured
 that way, by window id, and scaled to 1600 px wide. Each smoke mode logs `ok:` and `failed:` lines and `shot: <name>` marks

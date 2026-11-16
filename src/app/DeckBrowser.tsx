@@ -817,6 +817,8 @@ export function DeckBrowser({ home, active }: BrowserProps) {
     open: editIn,
     menu: (r, e) => {
       e.preventDefault();
+      // the row's menu alone: under a folder's lens the press would open the folder's menu too
+      e.stopPropagation();
       if (!selSet.has(r.key)) setSel({ keys: [r.key], anchor: r.key });
       point(r);
       setMenu({ x: Math.min(e.clientX, window.innerWidth - MENU_W), y: e.clientY, key: r.key, sub: false });

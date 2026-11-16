@@ -13553,8 +13553,10 @@ export async function smokeSweep(vault: Vault): Promise<void> {
       const { setLensView } = await import('./Lenses.js');
       setLensView('', 'cards');
       openNode('');
-      const pane = await poll(() => activeTab(useApp.getState().panes)?.id === '' && q('.deck-view .deck-row') && q<HTMLElement>('.deck-view')!.closest<HTMLElement>('.pane-body'), 'every card of the collection as one list', 15000);
+      await poll(() => activeTab(useApp.getState().panes)?.id === '' && q('.deck-view .deck-row'), 'every card of the collection as one list', 15000);
       await sleep(800);
+      // the pane as it is now: it is made again when its tab changes
+      const pane = q<HTMLElement>('.deck-view')!.closest<HTMLElement>('.pane-body')!;
       const rows = () => qa<HTMLElement>('.deck-view .deck-row');
       const total = Number(/(\d+)/.exec(q('.db-count')?.textContent ?? '')?.[1] ?? 0);
       must(total > 700 && rows().length < 150, `${total} cards, ${rows().length} rows drawn`);
@@ -13567,6 +13569,7 @@ export async function smokeSweep(vault: Vault): Promise<void> {
       const first = rows()[0]?.dataset.key;
       const pr = pane.getBoundingClientRect();
       const mid = document.elementFromPoint(pr.left + pr.width / 2, pr.top + pr.height / 2);
+      { const rr = rows().map((r) => r.getBoundingClientRect()); const bx = q<HTMLElement>('.deck-rows')!; log(`middle: scrollTop ${Math.round(pane.scrollTop)} of ${pane.scrollHeight}, pane ${Math.round(pr.top)}–${Math.round(pr.bottom)}, rows ${Math.round(rr[0]?.top ?? 0)}–${Math.round(rr.at(-1)?.bottom ?? 0)}, padding ${bx.style.paddingTop} / ${bx.style.paddingBottom}, at centre ${(mid as HTMLElement | null)?.className}, visible ${document.visibilityState}`); }
       must(rows().length < 150 && mid?.closest('.deck-row'), `scrolled to the middle: rows are there, no blank (${rows().length} drawn, first ${first})`);
       // the row under the top of the view moves by exactly the scroll while rows above it are measured
       {
@@ -13591,7 +13594,7 @@ export async function smokeSweep(vault: Vault): Promise<void> {
       await sleep(400);
       useApp.setState({ selectedCard: null });
       (document.activeElement as HTMLElement | null)?.blur?.();
-      for (let i = 0; i < 160; i++) { key('j'); if (i % 20 === 19) await sleep(60); }
+      for (let i = 0; i < 160; i++) { key('j'); await sleep(16); }
       await sleep(500);
       const cur = q<HTMLElement>('.deck-row.cursor, .deck-row.selected');
       const cr = cur?.getBoundingClientRect();
@@ -13624,6 +13627,7 @@ export async function smokeSweep(vault: Vault): Promise<void> {
       const [mx, my] = [tr2.left + 80, tr2.top + tr2.height / 2];
       target.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: mx, clientY: my }));
       const menu = await poll(() => q<HTMLElement>('.ctx-menu'), 'a right-click on a row opens its menu');
+      must(qa('.ctx-menu').length === 1, 'one menu: the row\'s, not the folder\'s under it too');
       const mr = menu.getBoundingClientRect();
       must(Math.abs(mr.left - mx) < 12 && Math.abs(mr.top - my) < 12 || (mr.left <= mx && mr.right >= mx - 12 && mr.bottom > 0 && mr.top < window.innerHeight && Math.abs(mr.top - my) < mr.height + 12), `the menu is at the pointer (${Math.round(mr.left)},${Math.round(mr.top)} for ${Math.round(mx)},${Math.round(my)})`);
       // the menu by the keyboard, and nothing reaching the list behind it
@@ -13636,6 +13640,8 @@ export async function smokeSweep(vault: Vault): Promise<void> {
       await sleep(400);
       must(Number(/(\d+)/.exec(q('.db-count')?.textContent ?? '')?.[1] ?? 0) === count0 && q('.ctx-menu'), '⌫ with a menu open deletes no card behind it');
       fire('Escape');
+      await sleep(300);
+      log(`after esc: menus ${qa('.ctx-menu').length}, text ${q('.ctx-menu')?.textContent?.slice(0, 80)}, focus ${(document.activeElement as HTMLElement | null)?.className} ${(document.activeElement as HTMLElement | null)?.tagName}, menuOpen ${useApp.getState().menuOpen}`);
       await poll(() => !q('.ctx-menu'), 'esc closes the menu');
       setLensView('', 'items');
     }

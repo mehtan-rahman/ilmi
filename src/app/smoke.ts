@@ -5101,8 +5101,9 @@ export async function smokeListCards(vault: Vault): Promise<void> {
     // ── reviewed in a session: the heading path above it, the sr line under the item ──
     openSession(item);
     const trail = await poll(() => q<HTMLElement>('.recall-wrap .card-trail'), 'the session shows the card', 8000);
-    const want = `${TITLE} › ${SECTION}`;
-    const got = qa<HTMLElement>('.ct-doc, .ct-h', trail).map((s) => s.textContent).join(' › ');
+    // a heading's formula is drawn in the trail (since 46), so its text is the formula's letters, not its `$…$`
+    const want = `${TITLE} › ${SECTION.replace(/\$/g, '')}`;
+    const got = qa<HTMLElement>('.ct-doc, .ct-h', trail).map((s) => (s.querySelector('.katex-html')?.textContent !== undefined ? s.textContent!.replace(s.querySelector('.katex-mathml')?.textContent ?? '', '') : s.textContent)).join(' › ');
     must(got === want, `the line above the card is "${got}"`);
     must(q('.recall-wrap .card .qa-q')?.textContent === FRONT, 'its front');
     await shot('listcards-session');
@@ -6375,6 +6376,46 @@ export async function smokeNumbers(vault: Vault): Promise<void> {
     useApp.getState().setTheme('dark');
     await shot('numbers-leech-dark');
     useApp.getState().setTheme('light');
+    // ── reading, its own layer over the same year ──
+    {
+      const { openCollectionNumbers } = await import('./NumbersLens.js');
+      const layer = (w: string) => qa<HTMLButtonElement>('.nb-layer button').find((b) => b.textContent === w);
+      openCollectionNumbers();
+      await poll(() => activeTab(useApp.getState().panes)?.id === '' && layer('reading'), 'the collection\'s numbers offer cards · reading', 10000);
+      must(layer('cards')?.dataset.on === '1' || layer('cards')?.getAttribute('aria-pressed') === 'true', 'cards to start');
+      const cardsSum = q('[data-sec="past"] .nb-sum')?.textContent;
+      click(layer('reading')!);
+      await poll(() => /no reading logged yet/.test(q('.numbers')?.textContent ?? ''), 'nothing read yet: it says so');
+      await shot('numbers-reading-empty');
+      // a pass on something to read, in a session
+      const toRead = useApp.getState().queue.find((i) => i.kind !== 'card');
+      must(toRead, `something to read in the queue: ${toRead?.kind} ${toRead?.path}`);
+      useApp.setState({ session: null });
+      openSession(toRead!);
+      await poll(() => activeTab(useApp.getState().panes)?.id === ':session' && q('.session-bar'), 'it is in front in a session', 10000);
+      await sleep(800);
+      (document.activeElement as HTMLElement | null)?.blur?.();
+      const before = useApp.getState().readings.length;
+      key('Enter');
+      await poll(() => useApp.getState().readings.length === before + 1, '⏎ on it logs a reading', 8000);
+      const line = useApp.getState().readings.at(-1)!;
+      log(`the reading: ${JSON.stringify(line)}`);
+      must(line.read === 'pass' && line.doc === toRead!.path, 'a pass, of that document');
+      await poll(async () => (await bounded(vault.fs.readText(vault.abs(reviewFile(new Date().toISOString()))), 'reading the month\'s log')).includes('"read":"pass"'), 'the line is in this month\'s file, beside the reviews');
+      must(reviewLog().every((r) => 'g' in r), 'and is no review: the card log holds grades only');
+      useApp.setState({ session: null });
+      openCollectionNumbers();
+      await poll(() => layer('reading'), 'back at the numbers');
+      click(layer('reading')!);
+      const cell = await poll(() => qa<HTMLElement>('[data-sec="reading"] button.nb-cell, .nb-heat[data-of="reading"] button.nb-cell').find((c) => c.dataset.day === today && Number(c.dataset.n) >= 1), 'today\'s cell holds the reading', 8000);
+      log(`today's reading cell: ${cell.title}`);
+      click(cell);
+      const rrow = await poll(() => q<HTMLElement>('.nb-day [data-read="pass"]'), 'pressed, the day lists what was read');
+      log(`the row: ${rrow.textContent?.slice(0, 80)}`);
+      await shot('numbers-reading');
+      click(layer('cards')!);
+      await poll(() => q('[data-sec="past"] .nb-sum')?.textContent === cardsSum, 'the cards\' lines are as they were: reading is not counted among reviews');
+    }
     log(`done; vault ${vault.root}`);
   } catch (e) {
     log(`failed: ${e instanceof Error ? e.message : String(e)}`);
@@ -13616,6 +13657,54 @@ export async function smokeSweep(vault: Vault): Promise<void> {
       return sc && Math.abs(sc.scrollTop - left) < 200 ? sc : null;
     }, `come back to, the book is where it was left (${Math.round(left)})`, 45000);
     must((q('.meta .right')?.textContent ?? '').startsWith(said), `and says the same page (${said})`);
+
+    // ── the pages zoom: ⌘= over a book is the pages', not the text size; the place is kept ──
+    {
+      (document.activeElement as HTMLElement | null)?.blur?.();
+      const view = () => q<HTMLElement>('.pdf-view')!;
+      const sc = q<HTMLElement>('.book-pages') ?? (() => { let e: HTMLElement | null = q<HTMLElement>('.pdf-page'); while (e && !(e.scrollHeight > e.clientHeight + 50 && /auto|scroll/.test(getComputedStyle(e).overflowY))) e = e.parentElement; return e!; })();
+      const pageW = () => qa<HTMLElement>('.pdf-page')[0]!.getBoundingClientRect().width;
+      /** Which page lies 60 px under the top of the view, and how far down it. */
+      const placeNow = () => {
+        const y = sc.getBoundingClientRect().top + 60;
+        const pg = qa<HTMLElement>('.pdf-page').find((p) => { const r = p.getBoundingClientRect(); return r.top <= y && r.bottom > y; });
+        const r = pg?.getBoundingClientRect();
+        return pg && r ? { page: pg.dataset.page, at: (y - r.top) / r.height } : null;
+      };
+      const text0 = useApp.getState().zoom;
+      const w0 = pageW();
+      const p0 = placeNow();
+      must(p0, `a place to keep: page ${p0?.page} at ${p0?.at.toFixed(3)}`);
+      const zoomKey = (k: string) => { const ev = new KeyboardEvent('keydown', { key: k, metaKey: true, bubbles: true, cancelable: true }); window.dispatchEvent(ev); return ev.defaultPrevented; };
+      must(zoomKey('='), '⌘= over a book is taken by its pages');
+      await poll(() => view().dataset.zoom === '1.25' && Math.abs(pageW() / w0 - 1.25) < 0.02, `the pages are at 125% (${(pageW() / w0).toFixed(3)} of fit)`, 8000);
+      must(useApp.getState().zoom === text0, 'the text size is as it was');
+      must(/· 125%/.test(q('.meta .right')?.textContent ?? ''), `the page token says so: ${q('.meta .right')?.textContent}`);
+      zoomKey('='); zoomKey('=');
+      await poll(() => view().dataset.zoom === '2' && Math.abs(pageW() / w0 - 2) < 0.03, 'twice more: 200%', 8000);
+      await sleep(600);
+      const p2 = placeNow();
+      must(p2 && p2.page === p0!.page && Math.abs(p2.at - p0!.at) < 0.03, `the same text is under the top of the view (page ${p2?.page} at ${p2?.at.toFixed(3)}, was ${p0!.at.toFixed(3)})`);
+      must(sc.scrollWidth > sc.clientWidth + 20, `wider than the pane, the pages scroll sideways (${sc.scrollWidth} in ${sc.clientWidth})`);
+      {
+        const col = q<HTMLElement>('.pdf-pages')!.getBoundingClientRect();
+        const v = sc.getBoundingClientRect();
+        const mid = (v.left + v.width / 2 - col.left) / col.width;
+        must(Math.abs(mid - 0.5) < 0.06, `the middle of the page is the middle of the view (${mid.toFixed(3)})`);
+        const meta = q<HTMLElement>('.meta .right')!.getBoundingClientRect();
+        must(meta.right <= v.right + 2 && meta.left >= v.left, 'the page token stays in the pane');
+      }
+      // the section boxes lie on their pages still
+      const box = q<HTMLElement>('.pbox');
+      if (box) { const b = box.getBoundingClientRect(); const pg = qa<HTMLElement>('.pdf-page').find((p) => { const r = p.getBoundingClientRect(); return b.top >= r.top - 2 && b.bottom <= r.bottom + 2 && b.left >= r.left - 2 && b.right <= r.right + 2; }); must(pg, 'a passage\'s box lies inside its page at 200%'); }
+      await shot('sweep-book-zoom');
+      must(zoomKey('0'), '⌘0 over the book');
+      await poll(() => (view().dataset.zoom ?? '1') === '1' && Math.abs(pageW() / w0 - 1) < 0.02, 'back to fit', 8000);
+      await sleep(500);
+      const p3 = placeNow();
+      must(p3 && p3.page === p0!.page && Math.abs(p3.at - p0!.at) < 0.03, `and the place is the one it began at (${p3?.at.toFixed(3)})`);
+      must(useApp.getState().zoom === text0 && !/%/.test(q('.meta .right')?.textContent ?? ''), 'the text size untouched throughout, no percent at fit');
+    }
 
     // ── the book's search goes to the hit, counts hits, and steps hit by hit ──
     {

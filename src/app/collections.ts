@@ -9,8 +9,9 @@ import { invoke } from '@tauri-apps/api/core';
 import { open as pickDirectory, save as pickSave } from '@tauri-apps/plugin-dialog';
 import { baseOf, exportFolder, fileName, importFolder, storeFs, type Fs, type StoreFs, type Vault } from '../vault/index.js';
 import { tauriFs } from '../vault/tauri-fs.js';
-import { createCollection, deleteCollection, listCollections, tauriStore } from '../vault/tauri-store.js';
+import { collectionHeld, createCollection, deleteCollection, listCollections, renameCollection, tauriStore } from '../vault/tauri-store.js';
 import { engineFor } from './crdt.js';
+import { vaultKey } from './platform.js';
 import { forgetStorage } from './storage.js';
 import { vaultName } from './recents.js';
 
@@ -131,4 +132,70 @@ export async function exportCollection(vault: Vault, kind: 'folder' | 'zip'): Pr
   for (let n = 2; await tauriFs.stat(dest); n++) dest = `${into}/${name} ${n}`;
   await exportToFolder(vault.fs, vault.root, dest);
   return dest;
+}
+
+// ── rename and delete, from the welcome ──────────────────────────
+
+/** What is refused while a window has the collection open. */
+export const CLOSE_FIRST = 'close it first';
+
+/**
+ * Why `name` cannot be a collection's (`not a name`: empty, hidden, or with
+ * a separator, as `clean_name` in `store.rs` has it; `already there`: one
+ * of `taken`, whatever its case, since the Mac's disk folds case), or null.
+ */
+export function nameProblem(name: string, taken: readonly string[]): string | null {
+  const s = name.trim();
+  if (!s || s.startsWith('.') || /[/\\:\u0000-\u001f\u007f]/.test(s)) return 'not a name';
+  if (taken.some((t) => t.toLowerCase() === s.toLowerCase())) return 'already there';
+  return null;
+}
+
+/**
+ * What is kept of a collection outside it, in the webview's storage, each a
+ * map by `vaultKey` (the collection's name): its storage (`storage.ts`),
+ * its remote and token (`sync.ts`), its mirror's folder (`keep.ts`).
+ * Everything else a sync needs is in the collection's folder and moves with
+ * it: the engine's device and its record in the database, the repository in
+ * `repo/`.
+ */
+const KEPT_OUTSIDE = ['ilmi.storage', 'ilmi.sync', 'ilmi.mirror'] as const;
+
+/** The settings kept for `from` are `to`'s now (with no `to`, forgotten); whatever a collection once called `to` left behind goes. */
+function moveSettings(from: string, to: string | null): void {
+  const a = vaultKey(from);
+  const b = to === null ? null : vaultKey(to);
+  if (a === b) return;
+  for (const key of KEPT_OUTSIDE) {
+    try {
+      const raw = globalThis.localStorage?.getItem(key);
+      const all: unknown = raw ? JSON.parse(raw) : null;
+      if (!all || typeof all !== 'object') continue;
+      const map = all as Record<string, unknown>;
+      if (!(a in map) && (b === null || !(b in map))) continue;
+      if (b !== null) { if (a in map) map[b] = map[a]; else delete map[b]; }
+      delete map[a];
+      globalThis.localStorage?.setItem(key, JSON.stringify(map));
+    } catch { /* nothing kept, nothing to move */ }
+  }
+}
+
+/**
+ * The collection at `root` called `name` from now on: its folder moved, and
+ * what is kept outside it (its storage, its remote, its mirror) moved to
+ * the new name, so a collection that syncs goes on as the same device with
+ * the same storage. Resolves to the new root. Rejects with `not a name`,
+ * `already there`, or `close it first` while a window has it open.
+ */
+export async function renameCollectionTo(root: string, name: string): Promise<string> {
+  const to = await renameCollection(root, name.trim());
+  moveSettings(root, to);
+  return to;
+}
+
+/** The collection at `root` deleted from this device with what is kept outside it; `close it first` while a window has it open. What a storage or a remote holds of it stays there. */
+export async function removeCollection(root: string): Promise<void> {
+  if (await collectionHeld(root)) throw new Error(CLOSE_FIRST);
+  await deleteCollection(root);
+  moveSettings(root, null);
 }

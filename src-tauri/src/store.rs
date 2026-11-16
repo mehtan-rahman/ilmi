@@ -1257,6 +1257,13 @@ fn insert_review(tx: &Connection, r: &ReviewRow) -> Result<(), String> {
 
 // ── the collections, and the open ones ──────────────────────────
 
+/// What a collection holds, for the welcome's `delete…`.
+#[derive(Debug, PartialEq, serde::Serialize)]
+pub struct Counts {
+    pub cards: i64,
+    pub documents: i64,
+}
+
 /// The stores open in this process, by their folder. A window opens its
 /// collection once and every command after names it by that folder.
 #[derive(Default)]
@@ -1286,6 +1293,36 @@ impl Stores {
             std::fs::remove_dir_all(dir).map_err(err)?;
         }
         Ok(())
+    }
+
+    /// The collection in `dir` closed and its folder moved to `to`, everything
+    /// in it going along (the database, `blobs/`, `exports/`, `repo/`). `already
+    /// there` when `to` is taken; a change of case alone is a move like any other.
+    pub fn rename(&self, dir: &Path, to: &Path) -> Result<(), String> {
+        let mut map = self.0.lock().map_err(err)?;
+        if !dir.join(DB_FILE).is_file() {
+            return Err(format!("{}: no collection", dir.display()));
+        }
+        if dir == to {
+            return Ok(());
+        }
+        let lower = |p: &Path| p.file_name().map(|n| n.to_string_lossy().to_lowercase());
+        // on a file system that folds case, `Notes` is there when `notes` is asked for: that is this collection, not another
+        if to.exists() && !(dir.parent() == to.parent() && lower(dir) == lower(to)) {
+            return Err("already there".to_string());
+        }
+        // the connection goes first: its write-ahead log is folded in, and nothing holds the old path
+        map.remove(dir);
+        map.remove(to);
+        std::fs::rename(dir, to).map_err(err)
+    }
+
+    /// How many cards and how many documents the collection in `dir` holds: what a delete says goes.
+    pub fn counts(&self, dir: &Path) -> Result<Counts, String> {
+        self.with(dir, |s| {
+            let one = |sql: &str| s.conn.query_row(sql, [], |r| r.get::<_, i64>(0)).map_err(err);
+            Ok(Counts { cards: one("SELECT COUNT(*) FROM schedules WHERE kind = 'card'")?, documents: one("SELECT COUNT(*) FROM documents WHERE kind = 'doc'")? })
+        })
     }
 
     pub fn rows(&self, dir: &Path) -> Result<Vec<Row>, String> {
@@ -1596,6 +1633,52 @@ mod tests {
         stores.delete(&dir).unwrap();
         assert!(!dir.exists());
         assert!(list(&home).unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_collection_renamed_is_its_folder_moved_with_everything_in_it() {
+        let home = scratch("rename");
+        let dir = home.join("arabic");
+        let stores = Stores::default();
+        stores.create(&dir).unwrap();
+        stores.put(&dir, &place("a", None, "a", "doc"), Some(&text("", "kept\n")), None).unwrap();
+        let blob = stores.blob_put(&dir, b"a pdf's bytes").unwrap();
+        stores.put(&dir, &place("p", None, "book.pdf", "file"), Some(&Content { blob: Some(blob.hash.clone()), ..Default::default() }), None).unwrap();
+        stores.batch(&dir, &[Op::Meta { key: "device".to_string(), value: Some("0123456789abcdef".to_string()) }]).unwrap();
+        std::fs::create_dir_all(dir.join("repo")).unwrap();
+        std::fs::write(dir.join("repo/a.md"), "kept\n").unwrap();
+        assert_eq!(stores.counts(&dir).unwrap(), Counts { cards: 0, documents: 1 });
+
+        // a name taken is refused, and nothing moves
+        let other = home.join("fiqh");
+        stores.create(&other).unwrap();
+        assert_eq!(stores.rename(&dir, &other).unwrap_err(), "already there");
+        assert_eq!(stores.text(&dir, "a").unwrap(), "kept\n");
+        // a folder that is no collection is in the way all the same
+        std::fs::create_dir_all(home.join("stray")).unwrap();
+        assert_eq!(stores.rename(&dir, &home.join("stray")).unwrap_err(), "already there");
+        assert!(stores.rename(&home.join("nothing"), &home.join("new")).is_err());
+
+        let to = home.join("arabic 2");
+        stores.rename(&dir, &to).unwrap();
+        assert!(!dir.exists());
+        assert_eq!(list(&home).unwrap(), vec!["arabic 2".to_string(), "fiqh".to_string()]);
+        // the text, the file, the engine's device and the repository beside the database: all under the new name
+        assert_eq!(stores.text(&to, "a").unwrap(), "kept\n");
+        assert_eq!(stores.blob_get(&to, &blob.hash).unwrap(), b"a pdf's bytes");
+        assert_eq!(stores.meta(&to).unwrap(), vec![("device".to_string(), "0123456789abcdef".to_string())]);
+        assert_eq!(std::fs::read_to_string(to.join("repo/a.md")).unwrap(), "kept\n");
+        // the old path opens nothing, and makes nothing
+        assert!(stores.rows(&dir).is_err());
+        assert!(!dir.exists());
+        // a change of case alone
+        let cased = home.join("Arabic 2");
+        stores.rename(&to, &cased).unwrap();
+        assert_eq!(list(&home).unwrap(), vec!["Arabic 2".to_string(), "fiqh".to_string()]);
+        assert_eq!(stores.text(&cased, "a").unwrap(), "kept\n");
+        // the old name is free again
+        stores.create(&dir).unwrap();
+        assert_eq!(stores.counts(&dir).unwrap(), Counts { cards: 0, documents: 0 });
     }
 
     fn sched(kind: &str, item: &str, key: &str, attrs: &str) -> Sched {

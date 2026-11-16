@@ -369,6 +369,50 @@ fn store_delete(app: tauri::AppHandle, stores: tauri::State<'_, store::Stores>, 
     stores.delete(&collection_dir(&app, &root)?)
 }
 
+/// Whether a window has the collection in `dir` open. A window's title is
+/// `<name> · ilmi` while it has one (`setWindowTitle` in `src/app/vault.ts`),
+/// and that is what is read: no window reports what it holds. On iOS there
+/// is one window, and it is on the welcome when it asks.
+fn held_by_a_window(app: &tauri::AppHandle, dir: &std::path::Path) -> bool {
+    #[cfg(desktop)]
+    {
+        let Some(name) = dir.file_name().and_then(|n| n.to_str()) else { return false };
+        let title = format!("{name} · ilmi");
+        app.webview_windows().values().any(|w| w.title().map(|t| t == title).unwrap_or(false))
+    }
+    #[cfg(mobile)]
+    {
+        let _ = (app, dir);
+        false
+    }
+}
+
+/// Whether the collection is open in a window: the welcome's `rename…` and `delete…` are refused while it is.
+#[tauri::command(async)]
+fn store_held(app: tauri::AppHandle, root: String) -> Result<bool, String> {
+    Ok(held_by_a_window(&app, &collection_dir(&app, &root)?))
+}
+
+/// The collection renamed: its folder moved under `name`; the new folder.
+/// `not a name`, `already there`, or `close it first` while a window has it open.
+#[tauri::command(async)]
+fn store_rename(app: tauri::AppHandle, stores: tauri::State<'_, store::Stores>, root: String, name: String) -> Result<String, String> {
+    let dir = collection_dir(&app, &root)?;
+    let clean = store::clean_name(&name).ok_or_else(|| "not a name".to_string())?;
+    if held_by_a_window(&app, &dir) {
+        return Err("close it first".to_string());
+    }
+    let to = collections_dir(&app)?.join(clean);
+    stores.rename(&dir, &to)?;
+    Ok(to.to_string_lossy().into_owned())
+}
+
+/// How many cards and documents the collection holds, read from its tables.
+#[tauri::command(async)]
+fn store_counts(app: tauri::AppHandle, stores: tauri::State<'_, store::Stores>, root: String) -> Result<store::Counts, String> {
+    stores.counts(&collection_dir(&app, &root)?)
+}
+
 #[tauri::command(async)]
 fn store_rows(app: tauri::AppHandle, stores: tauri::State<'_, store::Stores>, root: String) -> Result<Vec<store::Row>, String> {
     stores.rows(&collection_dir(&app, &root)?)
@@ -1039,7 +1083,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_ink::init())
         .manage(store::Stores::default())
-        .invoke_handler(tauri::generate_handler![allow_vault, allow_hidden, read_dropped, read_dropped_bytes, read_anki_package, read_epub, read_plugin_zip, platform, dev_env, dev_web_memory, dev_web_processes, dev_nudge_serve, dev_nudge_drop, dev_nudge_listeners, set_recent_vaults, store_list, store_create, store_delete, store_rows, store_text, store_put, store_remove, store_version, store_set_version, store_doc, store_places, store_digests, store_search, store_search_state, store_search_walk, store_review_files, store_reviews, store_reviews_put, store_same, store_same_put, store_originals, store_original_put, store_blob_put, store_blob_get, store_batch, store_meta, store_regs, store_regs_under, store_crdt, store_outbox, store_outbox_count, store_blob_has, store_regs_page, store_blobs_away, store_blob_take, store_blob_range, store_ink, store_ink_file, store_ink_pages, store_ink_page, dev_ink_sample, ink_split, ink_bounds, ink_scene, ink_fill, ink_take, ink_rest, app_hold, dev_ink_pen, dev_ink_wipe, dev_ink_state, storage_list, storage_read, storage_write, storage_remove, storage_blob_up, storage_blob_down, dev_storage_serve, icloud_folder, icloud_down, oauth_sign_in, oauth_sign_out, oauth_back, oauth_signed_in, dev_cloud_stats, dev_cloud_revoke, zip_folder, sync_status, sync_init, sync_init_bare, sync_set_remote, sync_clone, sync_changes, sync_commit, sync_fetch, sync_merge, sync_resolve, sync_push])
+        .invoke_handler(tauri::generate_handler![allow_vault, allow_hidden, read_dropped, read_dropped_bytes, read_anki_package, read_epub, read_plugin_zip, platform, dev_env, dev_web_memory, dev_web_processes, dev_nudge_serve, dev_nudge_drop, dev_nudge_listeners, set_recent_vaults, store_list, store_create, store_delete, store_held, store_rename, store_counts, store_rows, store_text, store_put, store_remove, store_version, store_set_version, store_doc, store_places, store_digests, store_search, store_search_state, store_search_walk, store_review_files, store_reviews, store_reviews_put, store_same, store_same_put, store_originals, store_original_put, store_blob_put, store_blob_get, store_batch, store_meta, store_regs, store_regs_under, store_crdt, store_outbox, store_outbox_count, store_blob_has, store_regs_page, store_blobs_away, store_blob_take, store_blob_range, store_ink, store_ink_file, store_ink_pages, store_ink_page, dev_ink_sample, ink_split, ink_bounds, ink_scene, ink_fill, ink_take, ink_rest, app_hold, dev_ink_pen, dev_ink_wipe, dev_ink_state, storage_list, storage_read, storage_write, storage_remove, storage_blob_up, storage_blob_down, dev_storage_serve, icloud_folder, icloud_down, oauth_sign_in, oauth_sign_out, oauth_back, oauth_signed_in, dev_cloud_stats, dev_cloud_revoke, zip_folder, sync_status, sync_init, sync_init_bare, sync_set_remote, sync_clone, sync_changes, sync_commit, sync_fetch, sync_merge, sync_resolve, sync_push])
         .setup(|app| {
             // the sign-ins to Dropbox and Google Drive are kept in the app's own folder, not a collection's
             if let Ok(dir) = app.path().app_data_dir() {

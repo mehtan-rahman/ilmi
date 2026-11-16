@@ -28,6 +28,11 @@ export function forgetRecent(list: Recent[], path: string): Recent[] {
   return list.filter((r) => r.path !== path);
 }
 
+/** The vault at `from` is at `to` now: its row keeps its place and its time, so the one reopened on start is still the one. */
+export function renameRecent(list: Recent[], from: string, to: string): Recent[] {
+  return list.filter((r) => r.path !== to || from === to).map((r) => (r.path === from ? { path: to, name: vaultName(to), opened: r.opened } : r));
+}
+
 /** What storage held, as a list: only well-formed rows, newest first, one per path, capped. */
 export function cleanRecents(raw: unknown): Recent[] {
   if (!Array.isArray(raw)) return [];

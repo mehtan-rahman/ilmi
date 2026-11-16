@@ -60,3 +60,12 @@ export const createCollection = (name: string): Promise<string> => invoke<string
 
 /** A collection closed and deleted with everything in it. */
 export const deleteCollection = (root: string): Promise<void> => invoke<void>('store_delete', { root });
+
+/** A collection's folder moved under `name`; resolves to the new root. Rejects with `not a name`, `already there`, or `close it first` while a window has it open. */
+export const renameCollection = (root: string, name: string): Promise<string> => invoke<string>('store_rename', { root, name });
+
+/** Whether a window has the collection open. */
+export const collectionHeld = (root: string): Promise<boolean> => invoke<boolean>('store_held', { root });
+
+/** How many cards and documents a collection holds, read from its tables without opening it in a window. */
+export const collectionCounts = (root: string): Promise<{ cards: number; documents: number }> => invoke('store_counts', { root });

@@ -6282,7 +6282,8 @@ export async function smokeNumbers(vault: Vault): Promise<void> {
       const grid = q('.nb-heat[data-of="past"] .nb-grid')!;
       const pc = qa<HTMLElement>('button.nb-cell', grid);
       const box = host.getBoundingClientRect();
-      const wide = qa<HTMLElement>('.numbers *').filter((e) => e.getBoundingClientRect().right > box.right + 1).map((e) => e.className || e.tagName);
+      // the blocks themselves: what a row clips inside itself (a long formula cut short) is not past the edge
+      const wide = qa<HTMLElement>('.numbers > *, .numbers .nb-sec > *, .numbers .nb-beside > *, .numbers .nb-sum > *, .numbers li, .numbers tr').filter((e) => e.getBoundingClientRect().right > box.right + 1).map((e) => e.className || e.tagName);
       log(`phone: ${qa('.nb-grid > *', grid.parentElement!).length} places, cell ${pc[0]!.getBoundingClientRect().width.toFixed(1)} px, past the edge: ${[...new Set(wide)].join(' ') || 'nothing'}`);
       must(qa(':scope > *', grid).length === 26 * 7 && pc[0]!.getBoundingClientRect().width >= 9, 'at a phone\'s width: twenty-six weeks, cells of nine pixels or more');
       must(wide.length === 0, 'nothing of the numbers runs past a phone\'s width');
@@ -13419,6 +13420,195 @@ export async function smokeCardView(vault: Vault): Promise<void> {
     must(at >= 0 && /^\|(\s*\|)+$/.test(nl[at + 1]!) && nl[at + 2]!.startsWith('| III |'), `the file has the new empty row under II: "${nl[at + 1]}"`);
     await shot('cardview-table-row');
     log('done');
+  } catch (e) {
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+// `ILMI_SMOKE=sweep` (`smokeSweep`) over a copy of `samples/double-major`:
+// milestone 73's fixes that only a window shows. A click on a deck's row in
+// the tree hands the focus to the page, so j moves in the deck; ⌫ on a row
+// has the notice's undo, the file as it was after it, and the cursor stays;
+// the deck's search is there when its tab is come back to; in a session a
+// held space does not grade, the place is kept when the tab is left, and o
+// opens the source beside it; a book says its page and comes back to where
+// it was left; ⌘W closes a tab and ⌘⇧T brings it back, ⌃Tab walks; the
+// palette puts the name typed first; an empty pane says what to do; the
+// tweaks panel lies inside the window. Every step asserts.
+export async function smokeSweep(vault: Vault): Promise<void> {
+  const log = (s: string) => void info(`smoke sweep: ${s}`);
+  const shot = async (name: string, ms = 1500) => { await sleep(500); log(`shot: ${name}`); await sleep(ms); };
+  const q = <T extends Element>(sel: string, root: ParentNode = document) => root.querySelector<T>(sel);
+  const qa = <T extends Element>(sel: string, root: ParentNode = document) => Array.from(root.querySelectorAll<T>(sel));
+  const must = (ok: unknown, what: string) => { if (!ok) throw new Error(what); log(`ok: ${what}`); };
+  const poll = async <T,>(probe: () => T | null | undefined | false | Promise<T | null | undefined | false>, what: string, ms = 6000): Promise<T> => {
+    const t0 = Date.now();
+    for (;;) {
+      const v = await probe();
+      if (v) { log(`ok: ${what}`); return v; }
+      if (Date.now() - t0 > ms) throw new Error(`${what} (waited ${ms} ms)`);
+      await sleep(100);
+    }
+  };
+  const key = (k: string, more: KeyboardEventInit = {}) => window.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true, ...more }));
+  const text = async (p: string) => (await vault.read(p)).text;
+  const tab = () => activeTab(useApp.getState().panes)?.id;
+  const tabs = () => useApp.getState().panes.panes.flatMap((p) => p.tabs.map((t) => t.id));
+  const VOCAB = 'arabic/vocabulary.md';
+  const NOTE = 'arabic/roots.md';
+  try {
+    useApp.getState().setTheme('light');
+    setSidebar({ hidden: false });
+
+    // ── the tree hands the focus to the page ──
+    useApp.setState((s) => ({ open: { ...s.open, arabic: true } }));
+    const row = await poll(() => q<HTMLElement>(`.tree .trow[data-path="${VOCAB}"]:not(.card-row):not(.cards-row)`), 'the vocabulary deck\'s row in the tree');
+    row.focus();
+    row.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+    row.click();
+    await poll(() => tab() === VOCAB && q('.deck-view .card-span.deck-row'), 'a click on the row opens the deck', 10000);
+    await sleep(300);
+    must(!q('.tree')?.contains(document.activeElement), `the focus is not left in the tree (${document.activeElement?.className || document.activeElement?.tagName})`);
+    useApp.setState({ selectedCard: null });
+    (document.activeElement as HTMLElement | null)?.dispatchEvent(new KeyboardEvent('keydown', { key: 'j', bubbles: true, cancelable: true }));
+    await poll(() => useApp.getState().selectedCard?.path === VOCAB, 'j after the click moves in the deck, not the tree');
+
+    // ── one card deleted, and undone ──
+    key('j'); key('j');
+    await sleep(200);
+    const at = useApp.getState().selectedCard!;
+    const before = await text(VOCAB);
+    const rows0 = Number(/(\d+)/.exec(q('.db-count')?.textContent ?? '')?.[1] ?? 0);
+    key('Backspace');
+    const notice = await poll(() => (q('.notice .nl')?.textContent ?? '').startsWith('deleted') && q<HTMLElement>('.notice'), 'the delete raises a notice');
+    await poll(async () => (await text(VOCAB)) !== before, 'the card is out of the file');
+    const cur = await poll(() => useApp.getState().selectedCard, 'the cursor stays in the deck');
+    must(cur.path === VOCAB && cur.index >= at.index - 2, `on the row that took its place (block ${at.index} then ${cur.index})`);
+    await shot('sweep-deleted');
+    const undo = qa<HTMLButtonElement>('button.na', notice).find((b) => b.textContent === 'undo');
+    must(undo, 'the notice offers undo for one card');
+    undo!.click();
+    await poll(async () => (await text(VOCAB)) === before, 'undo puts the file back as it was, byte for byte');
+    await poll(() => Number(/(\d+)/.exec(q('.db-count')?.textContent ?? '')?.[1] ?? 0) === rows0, `the deck lists its ${rows0} cards again`);
+
+    // ── the deck remembers its search ──
+    const search = q<HTMLInputElement>('.db-search')!;
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(search, 'house');
+    search.dispatchEvent(new Event('input', { bubbles: true }));
+    await poll(() => /^\d+ of/.test(q('.db-count')?.textContent ?? ''), `the search narrows the list (${q('.db-count')?.textContent})`);
+    const narrowed = q('.db-count')!.textContent;
+    openNode(NOTE);
+    await poll(() => tab() === NOTE && q('.draft-doc'), 'another page in its place');
+    openNode(VOCAB);
+    await poll(() => q<HTMLInputElement>('.db-search')?.value === 'house' && q('.db-count')?.textContent === narrowed, 'come back to, the deck still has its search');
+    await shot('sweep-deck-back');
+
+    // ── the session ──
+    const due = useApp.getState().queue.filter((i): i is CardItem => i.kind === 'card' && i.form === 'qa' && i.sched?.state === 'review' && i.groups === 1 && !i.dir);
+    must(due.length >= 3, `cards in review in the queue (${due.length})`);
+    const three = [due[0]!, due[1]!, due[2]!];
+    const file0 = await text(three[0]!.path);
+    useApp.setState({ session: null });
+    openSession(three[0]!);
+    useApp.setState((s) => (s.session ? { session: { ...s.session, items: three } } : {}));
+    await poll(() => q('.sess-count')?.textContent === '1 / 3', 'a session of three');
+    (document.activeElement as HTMLElement | null)?.blur?.();
+    key(' ');
+    await poll(() => q('.recall-wrap .card[data-revealed="1"], .recall-wrap .card .face.back'), 'space shows the answer');
+    for (let i = 0; i < 6; i++) key(' ', { repeat: true });
+    await sleep(600);
+    must(q('.sess-count')?.textContent === '1 / 3' && (await text(three[0]!.path)) === file0, 'space held on does not grade: still the first card, its file untouched');
+    key('3');
+    await poll(() => q('.sess-count')?.textContent === '2 / 3', 'a grade moves on');
+    await poll(async () => (await text(three[0]!.path)) !== file0, 'and is written');
+    const file1 = await text(three[0]!.path);
+    openNode(NOTE);
+    await poll(() => tab() === NOTE, 'the session\'s tab left');
+    openNode(':session');
+    await poll(() => q('.sess-count')?.textContent === '2 / 3', 'come back to, the session is where it was');
+    must((await text(three[0]!.path)) === file1, 'the first card is not asked or graded again');
+    key('o');
+    await poll(() => tab() === three[1]!.path, 'o opens the card\'s document');
+    must(tabs().includes(':session'), 'in a tab beside the session, which stays');
+    await shot('sweep-session-source');
+    useApp.setState({ session: null });
+
+    // ── a book ──
+    const book = Object.keys(useApp.getState().docs).find((p) => useApp.getState().docs[p]?.pdf !== undefined && /lindqvist/i.test(p));
+    must(book, `a book in the sample: ${book}`);
+    openNode(book!);
+    const page = await poll(() => q<HTMLElement>('.pdf-page canvas, .pdf-page img') && q<HTMLElement>('.pdf-page'), 'its pages are drawn', 45000);
+    let scroller: HTMLElement | null = page;
+    while (scroller && !(scroller.scrollHeight > scroller.clientHeight + 50 && /auto|scroll/.test(getComputedStyle(scroller).overflowY))) scroller = scroller.parentElement;
+    must(scroller, 'the pages scroll');
+    await sleep(800);
+    const start = scroller!.scrollTop;
+    scroller!.scrollTop = start + 2600;
+    scroller!.dispatchEvent(new Event('scroll'));
+    const said = await poll(() => { const m = /p\. (\d+) \/ (\d+)/.exec(q('.reader .meta .right, .pdf-bar .right, .meta .right')?.textContent ?? ''); return m && Number(m[1]) > 1 ? m[0] : null; }, 'the book says which page is in view', 8000);
+    await sleep(600);
+    const left = scroller!.scrollTop;
+    log(`the book at ${said}, scrolled to ${Math.round(left)}`);
+    await shot('sweep-book-page');
+    openNode(NOTE);
+    await poll(() => tab() === NOTE && !q('.pdf-page'), 'the book\'s tab left');
+    openNode(book!);
+    await poll(() => {
+      const p2 = q<HTMLElement>('.pdf-page');
+      let sc: HTMLElement | null = p2;
+      while (sc && !(sc.scrollHeight > sc.clientHeight + 50 && /auto|scroll/.test(getComputedStyle(sc).overflowY))) sc = sc.parentElement;
+      return sc && Math.abs(sc.scrollTop - left) < 200 ? sc : null;
+    }, `come back to, the book is where it was left (${Math.round(left)})`, 45000);
+    must(/p\. (\d+) \/ (\d+)/.exec(q('.meta .right')?.textContent ?? '')?.[0] === said, `and says the same page (${said})`);
+
+    // ── tabs ──
+    const open0 = tabs();
+    key('w', { metaKey: true });
+    await poll(() => !tabs().includes(book!), '⌘W closes the tab in front');
+    key('t', { metaKey: true, shiftKey: true });
+    await poll(() => tabs().includes(book!) && tab() === book, '⌘⇧T brings it back');
+    must(tabs().length === open0.length, 'the tabs as they were');
+    const was = tab();
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', code: 'Tab', ctrlKey: true, bubbles: true, cancelable: true }));
+    await poll(() => tab() !== was, `⌃Tab goes to the next tab (${tab()})`);
+
+    // ── the palette ──
+    useApp.setState({ paletteOpen: true });
+    const field = await poll(() => q<HTMLInputElement>('.palette-input input'), 'the palette');
+    const type = async (v: string) => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(field, v);
+      field.dispatchEvent(new Event('input', { bubbles: true }));
+      await sleep(500);
+    };
+    await type('physics');
+    const first = qa('.palette-row')[0]?.textContent ?? '';
+    log(`palette physics: ${qa('.palette-row').slice(0, 4).map((r) => r.textContent?.slice(0, 40)).join(' | ')}`);
+    must(/^\W*physics/.test(first.replace(/^(folder|note|deck|source)/, '')) || first.includes('physics') && !/lindqvist/i.test(first), `the folder named physics comes first (${first.slice(0, 40)})`);
+    await shot('sweep-palette');
+    await type('numbers');
+    must(qa('.palette-row').some((r) => (r.textContent ?? '').includes('numbers · the whole collection')), 'numbers is a command');
+    field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true }));
+    must(document.activeElement === field, 'Tab stays in the palette');
+    useApp.setState({ paletteOpen: false });
+
+    // ── an empty pane, and the tweaks inside the window ──
+    key('\\', { metaKey: true });
+    const empty = await poll(() => q<HTMLElement>('.pane-empty'), 'a second pane, empty, says what to do');
+    log(`empty pane: ${empty.textContent}`);
+    await shot('sweep-empty-pane');
+    key('\\', { metaKey: true });
+    useApp.setState({ tweaksOpen: true });
+    const tw = await poll(() => q<HTMLElement>('.tweaks'), 'the tweaks');
+    await sleep(300);
+    const r = tw.getBoundingClientRect();
+    must(r.top >= 0 && r.bottom <= window.innerHeight, `the panel lies inside the window (${Math.round(r.top)} to ${Math.round(r.bottom)} of ${window.innerHeight})`);
+    must(tw.scrollHeight <= tw.clientHeight + 1 || getComputedStyle(tw).overflowY === 'auto', `and scrolls when taller (${tw.scrollHeight} in ${tw.clientHeight})`);
+    await shot('sweep-tweaks');
+    useApp.getState().setTheme('dark');
+    await shot('sweep-tweaks-dark');
+    useApp.getState().setTheme('light');
+    useApp.setState({ tweaksOpen: false });
+    log(`done; vault ${vault.root}`);
   } catch (e) {
     log(`failed: ${e instanceof Error ? e.message : String(e)}`);
   }

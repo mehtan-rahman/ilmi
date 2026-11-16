@@ -4512,7 +4512,9 @@ a link back to the passage) "i'd wanna see a demo first", so it waits for
 a demo. Wikilinks and backlinks are skipped. Every milestone here is
 judged on `samples/double-major` and checked in the window from a clean
 checkout. The brief's bans hold: no stat cards, sparkline dashboards,
-streaks or badges; numbers are set as type, in tables and lines.
+streaks or badges; numbers are set as type, in tables and lines. (Since
+2026-11-15 the user wants a heatmap of days and the runs beside it:
+milestone 74. Still no badges, confetti or stat-card dashboards.)
 
 Order: 44 → 42 → 43 → 45 on main (42 before 43: 44 adds 110 new reverses to the vocab deck, and 42's new-cards-per-day meters them); 46 on a branch beside them (done and merged 2026-10-30, its window check run).
 
@@ -8811,6 +8813,127 @@ images and formulas keep theirs, a frozen page the system's. A face's pipe
 lines open as a table (`faceFieldBlocks`/`faceFieldText`): untouched they
 write back byte for byte, changed as the normalized pipe table; a cloze's
 face holds none. No FORMAT change. Smoke: `ILMI_SMOKE=cardview`.
+
+### [ ] 73. The sweep — an audit of every surface, and its fixes
+Asked by the user, 2026-11-15: "get ilmi into a really good state by
+tonight": an audit, the fixes, then stats and a heatmap (74). Six read-only
+audits ran, one a group of surfaces (the shell; the editor; intake, books
+and sections; cards; the queue, the session and the inspector; shapes,
+themes and errors), each on `samples/double-major`. A bug is on this list
+only once a failing test showed it (`sweep-*.test.ts`, kept as the fixes'
+tests) or it was seen in the window; what was read from code alone says so.
+Ranked by how much a daily user feels it against how long it takes: bugs
+first, then quality of life. The state of each is in the notes under the
+list.
+
+**Bugs**
+1. *The tree swallows the page's keys.* After any click in the sidebar the
+   tree keeps the focus and takes every bare key as typeahead, so a
+   session's 1–4, a deck's j k m, the reader's r never arrive.
+   Done when: a key the tree has no row for reaches the page in front, a
+   session's keys always do, and a click that opens a node hands the focus
+   back.
+2. *A held key grades card after card.* Space held on a question reveals,
+   grades good, reveals the next. Done when: a repeat of a session's action
+   key does nothing.
+3. *A card in a note is deleted by Backspace after it, Delete before it, or
+   a character typed while it is selected.* Done when: the first press
+   selects the card, visibly, and typing over a selected card does not
+   replace it.
+4. *Leaving the session's tab restarts it at 1 / N,* and a card graded is
+   graded a second time. Done when: the session goes on from where it was.
+5. *Deleting one card cannot be undone* (two can), the rows still selected
+   then name other cards, the cursor is lost so `j` starts from the top,
+   and ⌫ takes the cursor's row rather than the one row shown selected.
+   Done when: one delete has the notice's undo, the selection and the
+   cursor stay on their cards, and ⌫ deletes what is shown selected.
+6. *A press outside the new-card sheet with only a front typed discards
+   it.* Done when: only an empty sheet closes on a press outside.
+7. *The queue never looks again while it stays open:* a card back in ten
+   minutes, or the next morning, shows only after a tab switch. Done when:
+   it refreshes on focus and when the next thing comes due.
+8. *The queue's j k move the cursor out of sight.* Done when: the row moved
+   to is in view.
+9. *The intake:* an error is invisible whenever the field has text; a slow
+   link overwrites what was pasted after it; a title sticks from the thing
+   before; the title cannot be emptied. Done when: each of the four has its
+   test green.
+10. *A book:* forgets its place when its tab is left; its search says
+    `none` before it has looked and drops what is typed while it looks; a
+    PDF that will not open is called gone from the collection. Done when:
+    the place comes back, the search says what it is doing, and an
+    unreadable file says so.
+11. *The editor's autosave reads back what was half typed:* ⌘B on an empty
+    line becomes a rule, an unfinished ``` takes the rest of the note into
+    a code block, a closing ``` does not close its block; Tab in a
+    paragraph is not taken; `# ` before a paragraph with an `^id` drops the
+    id; Delete before a list deletes the list; `$` inside code becomes a
+    formula. Done when: each has its test green and `src/format` is
+    untouched.
+12. *Shapes and themes:* the tweaks panel runs off the top of the window;
+    under 1000 px the top strip loses the sync word and the only way to
+    conflicts; a failed rename, delete, move or grade says nothing, and a
+    release build has no handler for a promise nobody caught; dark's done
+    task shows no tick; five fields mark focus fainter than rest. Done
+    when: the panel scrolls, the sync word stays, a failure is a notice,
+    the tick shows, focus is the accent.
+13. *The shell:* the palette ranks scattered letters over the name typed;
+    ⌘0 in a note also resets the text size; `connect` stays disabled while
+    its field is typed in; a collection that fails to open stops the open
+    one's sync; closing a pane remounts the one beside it; the welcome's
+    keys fire behind the tweaks. Done when: each has its test green.
+14. *The session:* ⏎ on a reading gone back to counts a second pass; `o`
+    replaces the session's tab; narrowed to an exam, `enter` walks
+    everything; the end counts a learnt card twice. Done when: each has its
+    test green.
+15. *⌘A under `similar`* selects rows not on show. Done when: it selects
+    nothing there.
+
+**Quality of life**
+16. A page number while reading a book (`p. 37 / 212`).
+17. The deck remembers its search, cursor and scroll when a card is opened
+    and come back to.
+18. One order of forms everywhere (q&a, bidir, cloze), so ⌘1 ⌘2 ⌘3 mean
+    the same in the composer and the sheet.
+19. A card saved from the sheet is brought into view.
+20. ⌘W works while the caret is in a field; an empty pane says what to do.
+21. Undo on the session's `d` and `p`, on `postpone the rest`, and on the
+    inspector's `reset`.
+22. A card graded `again` comes back before the session ends.
+23. `nothing due` says what is next.
+24. Keys between tabs (⌃Tab, ⌘⇧[ ]), and the last closed tab reopened (⌘⇧T).
+25. The tabs open survive a restart, not only the one in front.
+26. Bare addresses are links; list items pasted into a list join it.
+27. ⌘⏎ places from the intake; a PDF waiting there can be dismissed; an
+    extract made says so, with undo, as a section does.
+28. The palette's sub-lists go back on ⌫; a stale hit is not opened; the
+    welcome says why a collection did not open.
+29. A bulk action keeps its selection (suspend, priority, reset); ⌘A on a
+    large deck is not quadratic; a failed card write says so.
+30. `docs/keys.md` lists the deck's, the card view's and the new keys.
+
+**Found and left** (each said in BUILD-LOG with its reason): undo history
+across the editor's rebuilds; zoom on a book's pages; search landing on the
+hit rather than its page; choosing decks of an Anki package; suspend and
+bury from the session and the card view; a collection renamed or deleted
+from the welcome; arrow keys in context menus and buttons for the div
+controls; narrow panes by container queries; a windowed deck list.
+
+### [ ] 74. A year of days — the heatmap, the forecast, and the lines beside them
+Asked by the user, 2026-11-15: "I now want this, so it replaces the plan's
+earlier ban on that kind of view. Still no badges, confetti or stat-card
+dashboards." Built into the numbers lens, scoped to the lens as the rest,
+and reachable for the whole collection.
+Done when: a year of days in Monday-first weeks, a cell a day shaded by the
+reviews done, on the scheduler's day; a cell says its date and counts to
+the pointer and the keyboard and, pressed, lists that day's reviews; the
+days ahead in the same cells by what comes due; beside them as type: days
+studied of days in range, the daily average, the best day, the current and
+longest run, reviews and time this week, month and year, true retention;
+what else earns its place; light, dark and e-ink (no shade alone in
+e-ink), a phone's width, and fast at 115,000 cards (the log counted by day
+once); pure functions in `numbers.ts` with tests, and `ILMI_SMOKE=numbers`
+extended, with captures by window id.
 
 ## Notes for the next session
 

@@ -68,6 +68,17 @@ export function equationsIn(itemsOf: (page: number) => readonly PageItem[] | und
   return out;
 }
 
+/** The nearest numbered heading at or above a place (`y` down `page`), read back as far as `first`: what a passage and a bookmark are named from. Null when the pages name none. */
+export function headingAbove(itemsOf: (page: number) => readonly PageItem[] | undefined, first: number, page: number, y: number): string | null {
+  let head: string | null = null;
+  for (let n = page; n >= first && head === null; n--) {
+    const items = itemsOf(n);
+    if (!items) continue;
+    head = headingOn(items, n === page ? y : Infinity);
+  }
+  return head;
+}
+
 /**
  * The passage's name, and whether the book named it (a numbered heading was
  * found); `first` is the document's first page, below which nothing is read.
@@ -75,12 +86,7 @@ export function equationsIn(itemsOf: (page: number) => readonly PageItem[] | und
 export function sectionName(itemsOf: (page: number) => readonly PageItem[] | undefined, first: number, boxes: readonly Box[]): { name: string; named: boolean } {
   const b0 = boxes[0];
   if (!b0) return { name: '', named: false };
-  let head: string | null = null;
-  for (let n = b0.page; n >= first && head === null; n--) {
-    const items = itemsOf(n);
-    if (!items) continue;
-    head = headingOn(items, n === b0.page ? b0.y + b0.h * INTO : Infinity);
-  }
+  const head = headingAbove(itemsOf, first, b0.page, b0.y + b0.h * INTO);
   const eqs = equationsIn(itemsOf, boxes);
   const nos = eqs.length ? ` (${eqs.length > 1 ? `${eqs[0]}–${eqs[eqs.length - 1]}` : eqs[0]})` : '';
   return { name: `${head ?? `p. ${b0.page}`}${nos}`, named: head !== null };

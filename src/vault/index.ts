@@ -13,3 +13,4 @@ export { Vault, VaultConflict, SAME_FILE, READING_FILE, NEW_NAMES, pdfFront, pdf
 export { storeFs, splitFront, newId, hiddenId, isInk, inkPicture, INK_EXT, pageKey, isBookPage, bookPageOf, type InkStroke, type Store, type StoreFs, type Row, type RowKind, type Place, type Content, type Reg, type StoreOp, type Recorder, type Door, type ViewWrite, type Lift, type TextHit, type Sched, type ReviewRow, type DocContent } from './store.js';
 export { searchRows, searchQuery, hayOf, plainText, type SearchRow } from './search.js';
 export { importFolder, exportFolder, mirrorFolder, takeFiles, skipped, mirrorPass, mirrorDirIn, MIRROR_LIST } from './transfer.js';
+export { MARKS_DIR, INKS, marksPath, marksHashOf, markOf, marksMap, marksText, marksDiff, marksMerged, entryText, parseMarks, serializeMarks, type Mark, type Marks, type Bookmark, type LetterMark, type Highlight, type Portal, type Quad } from './marks.js';

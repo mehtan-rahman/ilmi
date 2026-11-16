@@ -1,0 +1,62 @@
+{
+  "b-41c07e9a52d3": {
+    "at": 1794787200000,
+    "kind": "bookmark",
+    "name": "3.3 · average values",
+    "page": 2,
+    "y": 0.3142
+  },
+  "h-0d9b6f3e1a77": {
+    "at": 1794787260000,
+    "ink": 2,
+    "kind": "highlight",
+    "page": 1,
+    "quads": [
+      [
+        1,
+        0.1176,
+        0.2203,
+        0.7647,
+        0.0152
+      ],
+      [
+        1,
+        0.1176,
+        0.2386,
+        0.4118,
+        0.0152
+      ]
+    ],
+    "text": "the entropy of an isolated system never decreases",
+    "y": 0.2203
+  },
+  "m-A": {
+    "at": 1794787320000,
+    "kind": "mark",
+    "letter": "A",
+    "page": 2,
+    "y": 0.5
+  },
+  "m-a": {
+    "at": 1794787300000,
+    "kind": "mark",
+    "letter": "a",
+    "page": 1,
+    "y": 0.0417
+  },
+  "p-7e2c15b8a904": {
+    "at": 1794787380000,
+    "kind": "portal",
+    "page": 1,
+    "to": {
+      "page": 2,
+      "y": 0.25
+    },
+    "y": 0.6
+  },
+  "x-from-a-later-version": {
+    "kind": "underline",
+    "page": 1,
+    "wave": true
+  }
+}

@@ -93,7 +93,33 @@ in a book        a document with pages: its pages beside its notes (the
                  search scholar (in the browser);
                  ⌘= ⌘− zoom the pages in and out (fit, 125%, 150%, 200%,
                  250%, 300%), ⌘0 back to fit, a pinch on a trackpad steps
-                 once; with the caret in the notes they are the text size
+                 once; with the caret in the notes they are the text size;
+                 b a bookmark at the place in view: name it in the bar,
+                 ⏎ keeps it, esc does not (a small mark in the left gutter;
+                 right-click it to remove);
+                 ⇧M then a letter marks the place in view, ' then the
+                 letter goes to it; a lowercase letter is the book's, a
+                 capital the collection's (it opens its book); any other
+                 key lets the wait go;
+                 h highlights the selection; h with the selection, or the
+                 last press, inside a highlight clears it; 1 2 3 4 right
+                 after choose its ink (a band, a rule, a dashed rule, a
+                 dotted rule); right-click on a highlight: section, card,
+                 clear, the four inks;
+                 ⇧P at a place, then ⇧P where it should show, ties the
+                 first to the second (a portal: a small mark in the page's
+                 right margin, a press on it peeks at where it shows, ⏎
+                 goes; right-click it to remove); esc lets a half-made
+                 one go;
+                 v holds the line a third of the way down the view under a
+                 rule (so does a press in a page's left margin, beside a
+                 line); ↓ ↑ or j k move it a line, the page following;
+                 r sets the read point to it; v or esc lets it go
+in the palette   over a book: contents ·, bookmarks ·, highlights · (its
+                 own), portals beside · (the book again in the pane
+                 beside, following the portals of the page being read;
+                 run again, or close that pane, to stop); anywhere:
+                 bookmarks (every book's), marks (by letter)
 in the intake    ⌘⏎ place & open, ⌘⇧⏎ place & leave it
 in a deck        j k (or ↑ ↓) move, ⏎ or a double-click opens the card in the
                  card view, / search, m make a card; click selects, ⇧-click

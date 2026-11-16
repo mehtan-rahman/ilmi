@@ -191,6 +191,63 @@ A right-click on a selection offers `section` and `card` as the two buttons
 under it do, and `search the web` and `search scholar`, which open your
 browser on the selected words; ilmi itself fetches nothing.
 
+What you leave on the pages is kept with the book, not in it: nothing is
+written into the PDF. It is kept by the file's contents, so a renamed book
+keeps its marks, a chapter and the book it was cut from show the same
+ones, and they sync between your devices one by one (a bookmark made on
+each of two devices is on both afterwards). If you delete a PDF from the
+collection its marks are kept, and are there again when the same file
+comes back; the palette's `bookmarks` lists them under `no longer in the
+collection` until then.
+
+- **Bookmarks.** `b` names the place in view. A field opens where the
+  search does, filled in with the nearest numbered heading above the place
+  (or the page); change it or not, ⏎ keeps it, esc does not. A bookmark is
+  a small mark in the left gutter with its name as its tooltip; a
+  right-click on it removes it. `bookmarks · <book>` in the palette lists
+  the book's, with their pages; ⏎ goes there, and ⌫ comes back. `bookmarks`
+  lists every book's and opens the book at the one you pick. The inspector
+  lists the book's too, each with a quiet × that removes it (the notice
+  undoes).
+- **Marks.** ⇧M and then a letter marks the place in view under that
+  letter; `'` and the letter goes back to it. Setting a letter again moves
+  it. A lowercase letter belongs to the book. A capital belongs to the
+  collection: there is one `A` across all your books, and `'` `A` from any
+  book opens the one that has it, at the place. `marks` in the palette
+  lists them. While ilmi waits for the letter the bar says `mark…` or `go
+  to mark…`; any other key lets it go.
+- **Highlights.** Select some words and press `h`. Right after, 1 to 4
+  choose its ink: a band, a rule under the line, a dashed rule, a dotted
+  rule. Each has its own tint, and they are told apart without colour, so
+  they read on an e-ink screen; the next highlight is made in the ink you
+  chose last. `h` with the selection (or your last click) inside a
+  highlight clears it, and the notice undoes that. A right-click on a
+  highlight (a long press under a finger) offers `section` and `card`, as
+  a selection does, `clear`, and the four inks. `highlights · <book>` in
+  the palette lists them by their words; type to search them, ⏎ goes. The
+  inspector shows how many there are and the first few.
+- **Portals.** A portal ties a place to another: the paragraph that
+  discusses a figure to the figure, the use of a theorem to its statement.
+  Press ⇧P at the first place (the bar says `portal: go to where it should
+  show, ⇧P again`), go to the second by any means, in this book or
+  another, and press ⇧P again; esc in between lets it go. The first place
+  gets a small `↗` in the page's right margin: a press on it peeks at the
+  destination, and ⏎ goes there (one that leads into another book opens
+  that book). A right-click removes it. Run `portals beside · <book>` from
+  the palette and the same book opens in the pane beside, marked
+  `following portals`: as you read past a portal's source in the first
+  pane, the pane beside moves to its destination, and stays on the nearest
+  one above your place. Close that pane, or run the command again, to
+  stop. A portal into another book is not followed there. An iPad and a
+  phone have the mark and its peek only.
+- **The ruler.** `v` holds the line a third of the way down the view under
+  a rule: a soft band over the line and a hairline under it. A click in a
+  page's left margin, beside a line, does the same for that line. ↓ and ↑
+  (or `j` and `k`) move it a line at a time, onto the next page at a
+  page's end, and the page scrolls so the rule stays where your eyes are.
+  `r` sets the read point to the rule's line in a book you are reading.
+  `v` or esc lets it go. The ruler is not kept: it is where you are now.
+
 ### A book in EPUB
 
 A book in EPUB dropped on the intake is read on the Rust side too

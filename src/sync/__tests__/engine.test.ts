@@ -27,7 +27,7 @@ import { join as joinPath } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { formatReview, meta, parse, serialize, setField, type Card, type Doc, type Review } from '../../format/index.js';
-import { Vault, importFolder, join, searchRows, storeFs, type StoreFs } from '../../vault/index.js';
+import { MARKS_DIR, Vault, exportFolder, importFolder, join, marksMap, marksPath, marksText, searchRows, storeFs, type StoreFs } from '../../vault/index.js';
 import { memPagePicture, memPicture, memSplit, memStore, type MemStore } from '../../vault/mem-store.js';
 import { nodeFs } from '../../vault/node-fs.js';
 import { rising, type InkStroke } from '../../vault/store.js';
@@ -602,6 +602,109 @@ describe('53\'s merge cases, for rows and text', () => {
       await a.write(PLUGINS, 'not json\n');
       await settle(storage, [a, b]);
       expect(await b.read(PLUGINS)).toBe('not json\n');
+    });
+  });
+
+  describe('what is left on a book\'s pages (milestone 77)', () => {
+    const HASH = 'e62fd1f4eb0a178c36c48f6bd48151a80de36f4a29eb880195aa9e58a61e61d1';
+    const MARKS = marksPath(HASH);
+    const bookmark = (name: string, page: number, at: number) => ({ kind: 'bookmark', name, page, y: 0.25, at });
+    const highlight = (text: string, page: number, at: number) => ({ kind: 'highlight', text, page, y: 0.4, quads: [[page, 0.1, 0.4, 0.5, 0.015]], ink: 1, at });
+    const marks = async (c: Copy) => marksMap(await c.read(MARKS))!;
+    /** The file with an entry set or (null) taken away, written as the app writes it. */
+    const put = async (c: Copy, id: string, entry: unknown) => {
+      const was = await c.fs.stat(join(ROOT, MARKS)) ? await marks(c) : {};
+      const { [id]: _gone, ...rest } = was;
+      await c.fs.mkdir(join(ROOT, MARKS_DIR));
+      await c.write(MARKS, marksText(entry === null ? rest : { ...rest, [id]: entry }));
+    };
+
+    it('each device adds a bookmark and a highlight apart: both hold all four, in the same bytes', async () => {
+      const { a, b, storage } = await pair(CORPUS);
+      const first = Object.keys(await marks(a));
+      expect(await b.read(MARKS)).toBe(await a.read(MARKS));
+      a.at.ms += 1000;
+      await put(a, 'b-aaaaaaaaaaaa', bookmark('from a', 1, 1));
+      await put(a, 'h-aaaaaaaaaaaa', highlight('lit on a', 1, 2));
+      b.at.ms += 2000;
+      await put(b, 'b-bbbbbbbbbbbb', bookmark('from b', 2, 3));
+      await put(b, 'h-bbbbbbbbbbbb', highlight('lit on b', 2, 4));
+      await settle(storage, [a, b]);
+      expect(Object.keys(await marks(a)).sort()).toEqual([...first, 'b-aaaaaaaaaaaa', 'b-bbbbbbbbbbbb', 'h-aaaaaaaaaaaa', 'h-bbbbbbbbbbbb'].sort());
+      expect(await a.read(MARKS)).toBe(await b.read(MARKS));
+      // the file is as the format writes it: keys sorted, the same bytes written again
+      expect(marksText(await marks(a))).toBe(await a.read(MARKS));
+      expect(differences(await a.files(), await b.files())).toEqual([]);
+    });
+
+    it('one taken away here while another is made there: gone on both, the new one on both; of two changes to one entry the later', async () => {
+      const { a, b, storage } = await pair(CORPUS);
+      a.at.ms += 1000;
+      await put(a, 'b-41c07e9a52d3', null);
+      b.at.ms += 2000;
+      await put(b, 'b-bbbbbbbbbbbb', bookmark('from b', 2, 3));
+      await settle(storage, [a, b]);
+      for (const c of [a, b]) {
+        expect(Object.keys(await marks(c))).not.toContain('b-41c07e9a52d3');
+        expect((await marks(c))['b-bbbbbbbbbbbb']).toEqual(bookmark('from b', 2, 3));
+      }
+      // a mark by a letter set on both: one key, the later write's place
+      a.at.ms += 1000;
+      await put(a, 'm-a', { kind: 'mark', letter: 'a', page: 1, y: 0.1, at: 5 });
+      b.at.ms += 2000;
+      await put(b, 'm-a', { kind: 'mark', letter: 'a', page: 2, y: 0.9, at: 6 });
+      await settle(storage, [a, b]);
+      expect((await marks(a))['m-a']).toEqual({ kind: 'mark', letter: 'a', page: 2, y: 0.9, at: 6 });
+      expect(await a.read(MARKS)).toBe(await b.read(MARKS));
+      // taken away on one and changed later on the other: the change stands
+      a.at.ms += 1000;
+      await put(a, 'm-a', null);
+      b.at.ms += 2000;
+      await put(b, 'm-a', { kind: 'mark', letter: 'a', page: 1, y: 0.5, at: 7 });
+      await settle(storage, [a, b]);
+      expect((await marks(a))['m-a']).toEqual({ kind: 'mark', letter: 'a', page: 1, y: 0.5, at: 7 });
+      expect(await a.read(MARKS)).toBe(await b.read(MARKS));
+    });
+
+    it('a book first marked on two devices apart is one file with both; an entry the app does not know is carried', async () => {
+      const { a, b, storage } = await pair(SAMPLE);
+      a.at.ms += 1000;
+      await put(a, 'b-aaaaaaaaaaaa', bookmark('from a', 1, 1));
+      b.at.ms += 2000;
+      await put(b, 'x-later', { kind: 'squiggle', page: 3 });
+      await settle(storage, [a, b]);
+      expect(Object.keys(await marks(a))).toEqual(['b-aaaaaaaaaaaa', 'x-later']);
+      expect(await a.read(MARKS)).toBe(await b.read(MARKS));
+      // a third copy, joining later, has them
+      const c = await copy('c');
+      expect(await c.eng.connect(storage)).toBe('joined');
+      await settle(storage, [a, b, c]);
+      expect(await c.read(MARKS)).toBe(await a.read(MARKS));
+    });
+
+    it('an export and an import keep them byte for byte, and the copy made from the export merges on', async () => {
+      const { a, b, storage } = await pair(CORPUS);
+      a.at.ms += 1000;
+      await put(a, 'b-aaaaaaaaaaaa', bookmark('from a', 1, 1));
+      await settle(storage, [a, b]);
+      const dir = await fsp.mkdtemp(joinPath(tmpdir(), 'ilmi-marks-out-'));
+      await exportFolder(b.fs, ROOT, nodeFs, dir);
+      const out = await fsp.readFile(joinPath(dir, MARKS), 'utf8');
+      expect(out).toBe(await a.read(MARKS));
+      const again = await copy('again', dir);
+      expect(await again.read(MARKS)).toBe(out);
+      await fsp.rm(dir, { recursive: true });
+      // the corpus's own file came in and went out untouched but for the bookmark added
+      const corpus = marksMap(await fsp.readFile(joinPath(CORPUS, MARKS), 'utf8'))!;
+      expect(marksMap(out)).toEqual({ ...corpus, 'b-aaaaaaaaaaaa': bookmark('from a', 1, 1) });
+    });
+
+    it('a file that is not one is left to the later write', async () => {
+      const { a, b, storage } = await pair(CORPUS);
+      a.at.ms += 1000;
+      await a.write(MARKS, 'not json\n');
+      await settle(storage, [a, b]);
+      expect(await b.read(MARKS)).toBe('not json\n');
     });
   });
 

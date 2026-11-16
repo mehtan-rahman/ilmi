@@ -31,7 +31,8 @@ import { goToHeading } from './headings.js';
 import { headingOf, moveAction, sectionActions, statusOf, writeDoc } from './sections.js';
 import { appNow } from './clock.js';
 import { chipWhen } from './bookNotes.js';
-import { openNotes } from './book.js';
+import { goToMark, openNotes, pdfHashOf, setMark, useMarks } from './book.js';
+import { bookmarksOf, highlightsOf } from '../pdf/index.js';
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 const words = (blocks: Block[]) => blocks.reduce((n, b) => (b.kind === 'card' ? n : n + b.text.split(/\s+/).filter(Boolean).length), 0);
@@ -566,6 +567,7 @@ function DocInspector({ id, info, doc, now }: { id: string; info: DocInfo; doc: 
         </Block>
       )}
       {info.pdf && (pdfAlone ? (info.note !== undefined && <WithDoc id={info.note} render={(nd) => <PassagesBlock id={id} note={info.note!} doc={nd} now={now} />} />) : <PassagesBlock id={id} note={id} doc={doc} now={now} />)}
+      {info.pdf && <BookMarksBlock id={id} />}
       <ExamBlock path={id} />
       {(cards > 0 || hasCardsUnder(id)) && <OptionsBlock path={id} />}
       {!info.pdf && <Outline id={id} doc={doc} />}
@@ -621,6 +623,55 @@ function PassagesBlock({ id, note, doc, now }: { id: string; note: string; doc: 
         </ul>
       )}
     </Block>
+  );
+}
+
+// ── what is left on a book's pages ──────────────────────────────
+
+/** How many of a book's highlights the inspector lists; the palette has them all. */
+const HIGHLIGHTS_SHOWN = 5;
+
+/**
+ * A book's bookmarks and its highlights (milestone 77), kept by the PDF's
+ * hash: a press goes to one, as a jump with the way back; a bookmark's ×
+ * removes it, with the notice's undo. Nothing is drawn for a book with
+ * neither.
+ */
+function BookMarksBlock({ id }: { id: string }) {
+  const hash = pdfHashOf(id);
+  const marks = useMarks(hash);
+  if (hash === null) return null;
+  const bookmarks = bookmarksOf(marks);
+  const highlights = highlightsOf(marks);
+  return (
+    <>
+      {bookmarks.length > 0 && (
+        <Block title="bookmarks">
+          <ul className="insp-cards insp-marks" data-marks="bookmarks">
+            {bookmarks.map(([key, m]) => (
+              <li key={key} data-mark={key} onClick={() => goToMark(hash, m, id)}>
+                <span className="cl-t" dir="auto">{m.name}</span>
+                <span className="cl-due">p. {m.page}</span>
+                <button type="button" className="cl-x" aria-label={`remove the bookmark ${m.name}`} title="remove" onClick={(e) => { e.stopPropagation(); void setMark(hash, key, null).catch(failed('remove')); notify(`bookmark removed · ${m.name}`, null, () => setMark(hash, key, m)); }}>×</button>
+              </li>
+            ))}
+          </ul>
+        </Block>
+      )}
+      {highlights.length > 0 && (
+        <Block title={`highlights · ${highlights.length}`}>
+          <ul className="insp-cards insp-marks" data-marks="highlights">
+            {highlights.slice(0, HIGHLIGHTS_SHOWN).map(([key, m]) => (
+              <li key={key} data-mark={key} data-ink={m.ink} onClick={() => goToMark(hash, m, id)}>
+                <span className="cl-t" dir="auto">{m.text || `p. ${m.page}`}</span>
+                <span className="cl-due">p. {m.page}</span>
+              </li>
+            ))}
+          </ul>
+          {highlights.length > HIGHLIGHTS_SHOWN && <p className="insp-line">and {highlights.length - HIGHLIGHTS_SHOWN} more: highlights in ⌘K</p>}
+        </Block>
+      )}
+    </>
   );
 }
 

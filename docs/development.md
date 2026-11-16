@@ -12,6 +12,17 @@ over an `Fs`: `src/vault/store.ts` gives it the database as one (a path is
 made from rows' names and parents), and the vault's own tests run over both
 a directory and a store in memory.
 
+What is left on a book's pages (bookmarks, marks, highlights, portals) is a
+JSON file a PDF under `.ilmi/marks/`, named by the PDF's SHA-256
+(`src/vault/marks.ts` reads and writes it; `FORMAT.md` §1 has its shape). It
+is an ordinary hidden file of the collection: no table and no Rust of its
+own. The app reads a PDF's file once and holds it (`src/app/book.ts`), and
+every change writes the file whole; the engine (`src/sync/engine.ts`) turns
+that write into one register an entry that changed (`~m|<sha256>|<id>`), and
+after a merge writes the file as the later write left it with every entry as
+its register says, the way `.ilmi/plugins.json` merges. The pure side of the
+features is `src/pdf/marks.ts`.
+
 The search index (`search` and `search_grams`, FTS5's trigram tokenizer, in
 the same database) is folded in TypeScript and only there: `src/format/fold.ts`
 is the one rule, for the deck search, find in the page, and the index, and

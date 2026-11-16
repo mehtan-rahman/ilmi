@@ -360,3 +360,46 @@ html[data-mobile="1"] .pgut { padding: 8px 8px; margin: -6px -5px; }
 .palette-row[data-t="place"] .psub { display: none; }
 [data-theme="eink"] .palette-row[data-t="place"] .pg { color: var(--fg-1); }
 .palette-empty.palette-note { padding: 8px 10px 6px; font-size: 13px; }
+
+/* ── what you leave on the page (milestone 77) ── */
+/* a bookmark being named, a letter waited for, a portal half made: in the bar the search is in */
+.pdf-bar input.pb-name { flex: 1 1 14em; min-width: 8em; }
+.pdf-bar .pb-wait { color: var(--fg-2); }
+.reader .meta .frozen-tag.following { cursor: default; color: var(--fg-2); }
+/* highlights: a box a line, under the boxes and the links, nothing a pointer meets (a press is read by where it
+   falls). Four inks told apart with no colour: a band, a rule, a dashed rule, a dotted rule; each has a tint as well */
+/* the layer is blended, not each box: its z-index makes it a group of its own, and a box inside would blend with nothing */
+.pdf-hls { position: absolute; inset: 0; pointer-events: none; z-index: 1; mix-blend-mode: multiply; }
+[data-theme="dark"] .pdf-hls { mix-blend-mode: screen; }
+.hl { position: absolute; box-sizing: border-box; --hl: oklch(0.86 0.13 95); background: color-mix(in oklab, var(--hl) 55%, transparent); border-radius: 1px; }
+.hl[data-ink="2"] { --hl: oklch(0.8 0.1 250); background: color-mix(in oklab, var(--hl) 22%, transparent); border-bottom: 2px solid oklch(0.5 0.14 250); }
+.hl[data-ink="3"] { --hl: oklch(0.82 0.12 150); background: color-mix(in oklab, var(--hl) 22%, transparent); border-bottom: 2px dashed oklch(0.5 0.13 150); }
+.hl[data-ink="4"] { --hl: oklch(0.8 0.12 25); background: color-mix(in oklab, var(--hl) 22%, transparent); border-bottom: 2px dotted oklch(0.52 0.17 25); }
+/* on dark paper the page is drawn dark: the tints lighten what is under them */
+[data-theme="dark"] .hl { --hl: oklch(0.5 0.1 95); background: color-mix(in oklab, var(--hl) 60%, transparent); }
+[data-theme="dark"] .hl[data-ink="2"] { --hl: oklch(0.45 0.1 250); background: color-mix(in oklab, var(--hl) 30%, transparent); border-bottom-color: oklch(0.75 0.12 250); }
+[data-theme="dark"] .hl[data-ink="3"] { --hl: oklch(0.45 0.1 150); background: color-mix(in oklab, var(--hl) 30%, transparent); border-bottom-color: oklch(0.75 0.12 150); }
+[data-theme="dark"] .hl[data-ink="4"] { --hl: oklch(0.45 0.1 25); background: color-mix(in oklab, var(--hl) 30%, transparent); border-bottom-color: oklch(0.75 0.14 25); }
+/* e-ink: no colour at all; the band is grey, the rules black */
+[data-theme="eink"] .hl { background: color-mix(in oklab, var(--fg) 16%, transparent); }
+[data-theme="eink"] .hl:is([data-ink="2"], [data-ink="3"], [data-ink="4"]) { background: none; border-bottom-color: var(--fg-1); }
+/* the ruler: a soft band over the line held and a hairline under it */
+.pdf-rule { position: absolute; box-sizing: content-box; pointer-events: none; background: color-mix(in oklab, var(--accent) 12%, transparent); border-bottom: 1px solid var(--accent); }
+[data-theme="dark"] .pdf-rule { background: color-mix(in oklab, var(--accent) 22%, transparent); }
+[data-theme="eink"] .pdf-rule { background: color-mix(in oklab, var(--fg) 9%, transparent); border-bottom: 1.5px solid var(--fg-1); }
+/* a bookmark: a small flag in the left gutter, between the read bar and the page */
+.bmark { position: absolute; pointer-events: auto; width: 8px; height: 10px; background: var(--fg-3); clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 68%, 0 100%); cursor: default; }
+.bmark:hover { background: var(--accent); }
+[data-theme="eink"] .bmark { background: var(--fg-1); }
+/* a portal's source: a small mark in the page's right margin; a press peeks at where it shows */
+.pmark { position: absolute; pointer-events: auto; width: 14px; height: 14px; padding: 0; border: 0; background: none; font: inherit; font-family: var(--sans); font-size: 11px; line-height: 14px; text-align: center; color: var(--accent); cursor: pointer; border-radius: 2px; }
+.pmark:hover { background: color-mix(in oklab, var(--accent) 14%, transparent); }
+[data-theme="dark"] .pmark { color: color-mix(in oklab, var(--accent) 80%, white); }
+[data-theme="eink"] .pmark { color: var(--fg-1); font-weight: 700; }
+html[data-mobile="1"] .pmark { padding: 9px; margin: -9px; box-sizing: content-box; }
+/* the inspector's lists of a book's bookmarks and highlights: a press goes there; a bookmark's × is quiet until the row is under the pointer */
+.insp .insp-marks li { cursor: pointer; grid-template-columns: minmax(0, 1fr) auto auto; gap: var(--s-2); }
+.insp .insp-marks .cl-x { border: 0; background: none; padding: 0 2px; margin-left: 6px; font: inherit; color: var(--fg-4); cursor: pointer; opacity: 0; }
+.insp .insp-marks li:hover .cl-x, .insp .insp-marks .cl-x:focus-visible { opacity: 1; }
+.insp .insp-marks .cl-x:hover { color: var(--fg-1); }
+html[data-mobile="1"] .insp .insp-marks .cl-x { opacity: 1; padding: 6px 8px; margin: -6px -4px -6px 2px; }

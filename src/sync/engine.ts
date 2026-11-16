@@ -43,6 +43,14 @@
 //   name the PDF, and they go to a new device with everything else (a
 //   collection's first changes carry them, and a snapshot does as it
 //   carries every register).
+// - What is left on a book's pages (milestone 77: bookmarks, marks,
+//   highlights, portals) is a file a PDF, `.ilmi/marks/<sha256>.json`
+//   (`src/vault/marks.ts`), and a register an entry beside the file's own
+//   (`~m|<sha256>|<id>`: the entry, or nothing once it is taken away), as
+//   which plugins are on are. The file is the later write; every entry
+//   is then as its own register says. So a bookmark made here and a
+//   highlight made there are both in the file on both, one taken away
+//   is gone on both, and one changed on two devices is the later.
 // - The tree (milestone 62) is what the registers make, by rules that
 //   read nothing but the registers, so every device makes the same one:
 //   a row's parent is the later move. Of moves that together would put a
@@ -103,6 +111,7 @@
 import { parse, serialize } from '../format/index.js';
 import { compose, type StateRow } from '../vault/lift.js';
 import { BOOK_PAGE, hiddenId, isBookPage, isInk, lineRow, newId, type InkStroke, type Content, type DocContent, type Lift, type Place, type Recorder, type Reg, type ReviewRow, type Row, type RowKind, type StoreFs, type StoreOp, type ViewWrite } from '../vault/store.js';
+import { marksDiff, marksHashOf, marksMap, marksMerged, marksPath, marksText } from '../vault/marks.js';
 import { clock, msOf, msPart, type Clock } from './clock.js';
 import { blocks, diff3, type Kept } from './merge.js';
 import type { Storage } from './storage.js';
@@ -197,6 +206,14 @@ const PLUGINS_FILE = '.ilmi/plugins.json';
 const PLUGIN = '~p|';
 const pluginList = (text: string | null): string[] | null => {
   try { const v: unknown = JSON.parse(text ?? ''); return Array.isArray(v) && v.every((x) => typeof x === 'string') ? v as string[] : null; } catch { return null; }
+};
+
+/** What is left on a book's pages (milestone 77): a register an entry of a PDF's marks file (`~m|<sha256>|<id>`, the entry as JSON or nothing). */
+const MARK = '~m|';
+/** The PDF whose marks the row `id`, named `name`, holds; null for any other row. */
+const marksOfRow = (id: string, name: string): string | null => {
+  const hash = marksHashOf(name);
+  return hash !== null && id === hiddenId(marksPath(hash)) ? hash : null;
 };
 
 /** About how much of the outbox goes into one file of the storage. */
@@ -561,6 +578,8 @@ export function engine(fs: StoreFs, opts: EngineOptions): Engine {
       if (was !== text) {
         reg('t', text);
         if (id === hiddenId(PLUGINS_FILE)) recordPlugins(p, pluginList(was) ?? [], pluginList(text));
+        const marked = marksOfRow(id, at.name);
+        if (marked !== null) recordMarks(p, marked, marksMap(was) ?? {}, marksMap(text));
       }
       return;
     }
@@ -643,6 +662,18 @@ export function engine(fs: StoreFs, opts: EngineOptions): Engine {
     for (const [id, v] of [...now.filter((x) => !was.includes(x)).map((x): [string, string | null] => [x, '1']), ...was.filter((x) => !ids.has(x)).map((x): [string, string | null] => [x, null])]) {
       p.regs.push({ key: `${PLUGIN}${id}`, stamp: c, value: v });
       p.ops.push({ t: 'g', k: `${PLUGIN}${id}`, v, c });
+    }
+  };
+
+  /** Each entry of a PDF's marks set or taken away, a register of its own: a bookmark made here and a highlight made there both stand. */
+  const recordMarks = (p: Pending, hash: string, was: Record<string, unknown>, now: Record<string, unknown> | null): void => {
+    if (!now) return;
+    const changes = marksDiff(was, now);
+    if (!changes.length) return;
+    const c = clk.tick();
+    for (const [entry, v] of changes) {
+      p.regs.push({ key: `${MARK}${hash}|${entry}`, stamp: c, value: v });
+      p.ops.push({ t: 'g', k: `${MARK}${hash}|${entry}`, v, c });
     }
   };
 
@@ -1283,6 +1314,26 @@ export function engine(fs: StoreFs, opts: EngineOptions): Engine {
           else view.puts.push({ at: row!, content: { front: null, text: merged } });
         }
       }
+    }
+    // what is left on books' pages: each PDF's file as the later write left it, then each entry as its own register says
+    const marked = new Set<string>();
+    for (const k of dirty.keys()) if (k.startsWith(MARK)) marked.add(k.slice(MARK.length, k.indexOf('|', MARK.length)));
+    for (const put of view.puts) { const h = marksOfRow(put.at.id, put.at.name); if (h !== null) marked.add(h); }
+    for (const hash of marked) {
+      const id = hiddenId(marksPath(hash));
+      const put = view.puts.find((x) => x.at.id === id);
+      const row = door.row(id);
+      if (!put && !row) continue;
+      const text = put?.content ? put.content.text ?? null : row ? await store.text(id) : null;
+      const base = marksMap(text);
+      if (!base) continue;
+      const under = `${MARK}${hash}|`;
+      const regs = new Map((await store.regsUnder([under])).map((r) => [r.key.slice(under.length), r.value]));
+      for (const r of dirty.values()) if (r.key.startsWith(under)) regs.set(r.key.slice(under.length), r.value);
+      const merged = marksText(marksMerged(base, regs));
+      if (merged === text) continue;
+      if (put) put.content = { front: null, text: merged };
+      else view.puts.push({ at: row!, content: { front: null, text: merged } });
     }
 
     if (!file && !view.puts.length && !view.removes.length && !view.ink?.length && !shifted) return;

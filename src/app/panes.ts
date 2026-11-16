@@ -158,6 +158,29 @@ export function openBeside(s: Panes, id: string): Panes {
   return next;
 }
 
+/**
+ * A second look at `id`, which the active pane shows, in the pane beside it
+ * (milestone 77: a book's portals shown beside the page being read): a tab
+ * of its own there, a pane made when there is one pane, the active pane
+ * kept. Where `id` is open beside already, that tab is shown.
+ */
+export function openTwin(s: Panes, id: string): Panes {
+  const next = clone(s);
+  const from = next.active;
+  const at = besideAt(next, id);
+  if (at) {
+    next.panes[at.pane]!.active = at.index;
+    return next;
+  }
+  if (next.panes.length === 1) next.panes.push({ tabs: [], active: 0 });
+  const target = from + 1 < next.panes.length ? from + 1 : from - 1;
+  const pane = next.panes[target]!;
+  pane.tabs.push(tab(id));
+  pane.active = pane.tabs.length - 1;
+  next.active = from;
+  return next;
+}
+
 /** Close `id` where it is open beside the active pane; a pane left empty closes with it (`closeTab`). The active pane is kept. */
 export function closeBeside(s: Panes, id: string): Panes {
   const at = besideAt(s, id);

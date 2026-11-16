@@ -64,6 +64,7 @@ notes/
     order.json               the order chosen for a directory's children
     reading.json             the reading state of the PDFs on their own
     ink/<sha256>/<page>.pkdrawing   what is written on a PDF's pages
+    marks/<sha256>.json      what is left on a PDF's pages: bookmarks, marks, highlights, portals
     reviews/                 the review log, one file a month
       2026-10.jsonl
     same.json                pairs of cards said not to be the same fact
@@ -119,6 +120,81 @@ notes/
   strokes in different bytes. A page with nothing written has no file. Without
   these files a book is unwritten; an older export has none and imports as it
   did. Added by milestone 71.
+- **What is left on a book's pages** (bookmarks, marks by a letter,
+  highlights, portals; milestone 77) is in `.ilmi/marks/<sha256>.json`: one
+  file a PDF, named by the SHA-256 of the PDF's bytes (lower case), as its
+  ink's folder is. So the marks follow the file's bytes, not its name: a
+  renamed book keeps them, a chapter cut from a book (§3 `pages`) and the
+  book share them, and the marks of a book deleted stay until the same bytes
+  come back. Nothing is written into the PDF. The file is one JSON object,
+  an entry a key:
+
+  ```
+  {
+    "b-41c07e9a52d3": {
+      "at": 1794787200000,
+      "kind": "bookmark",
+      "name": "3.3 · average values",
+      "page": 2,
+      "y": 0.3142
+    },
+    "h-0d9b6f3e1a77": {
+      "at": 1794787260000,
+      "ink": 2,
+      "kind": "highlight",
+      "page": 1,
+      "quads": [[1, 0.1176, 0.2203, 0.7647, 0.0152], [1, 0.1176, 0.2386, 0.4118, 0.0152]],
+      "text": "the entropy of an isolated system never decreases",
+      "y": 0.2203
+    },
+    "m-a": { "at": 1794787300000, "kind": "mark", "letter": "a", "page": 1, "y": 0.0417 },
+    "p-7e2c15b8a904": {
+      "at": 1794787380000,
+      "kind": "portal",
+      "page": 1,
+      "to": { "page": 2, "y": 0.25 },
+      "y": 0.6
+    }
+  }
+  ```
+
+  (shown here with some entries on one line; the file is written with every
+  key and every array element on a line of its own.) Every entry has `kind`,
+  its place (`page`, the page's number in the PDF from 1, and `y`, how far
+  down that page, 0 the top and 1 the bottom: never pixels, so it holds at
+  any size the page is drawn), and `at`, when it was made, in milliseconds
+  since 1970. By kind:
+
+  | kind        | key             | and                                                                 |
+  |-------------|-----------------|---------------------------------------------------------------------|
+  | `bookmark`  | `b-` + 12 hex   | `name`, a string                                                    |
+  | `mark`      | `m-` + letter   | `letter`, one of `a`–`z` (the book's) or `A`–`Z` (the collection's)  |
+  | `highlight` | `h-` + 12 hex   | `quads`, `text` (the words, whitespace collapsed), `ink` 1–4        |
+  | `portal`    | `p-` + 12 hex   | `to`: `{ "page", "y" }`, and `"pdf"` when it is in another PDF       |
+
+  A highlight's `quads` are its lines, each `[page, x, y, w, h]`: the
+  page's number, then a rectangle as fractions of that page from its top
+  left, as a section's boxes are (§6.5); its own `page` and `y` are its
+  first quad's. Its `ink` is how it is drawn: 1 a band, 2 a rule under the
+  line, 3 a dashed rule, 4 a dotted one; absent or out of range reads as 1.
+  A mark's key is its letter, so setting a letter again moves the mark. A
+  capital is the collection's: when two PDFs' files each hold `m-A`, the one
+  with the later `at` is the collection's `A`. A portal's `to.pdf` is the
+  other PDF's SHA-256; without it the destination is in the same PDF.
+
+  The file is written with its keys sorted (by code unit) at every level,
+  two spaces of indent, fractions to four decimals, and a newline at the
+  end: the same marks are the same bytes. An entry that does not read (an
+  unknown `kind`, a field missing or of the wrong type) is in no list, and
+  is written back as it was, so a file from a later version loses nothing.
+  A file that is not a JSON object of objects holds no marks and is left
+  alone. Without the file a PDF has no marks; an emptied one is `{}`.
+
+  An export, the mirror and a dated export write these files as any other
+  under `.ilmi/`; an import reads them in. Between devices each entry
+  merges on its own (two devices that each add a bookmark end with both; an
+  entry removed on one is gone on both; an entry changed on two is the later
+  change), so what a sync leaves is the union, in the bytes above.
 - Any other file in a document's children directory is ignored by the walk.
   A clipped page's images land there (`name/img-01.png` …, §3 `url`) and the
   document refers to them relatively, `![alt](name/img-01.png)`. A page of

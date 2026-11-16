@@ -5,14 +5,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { pluginCommands, runPluginCommand, usePlugins } from '../plugins/index.js';
 import { overflow } from '../schedule/index.js';
-import { ENTRY_GLYPH, buildIndex, contentsRows, rankHits, search, searchContents, textEntry, withText, type Command, type Entry } from './chrome.js';
+import { ENTRY_GLYPH, buildIndex, contentsRows, placeRows, rankHits, search, searchContents, textEntry, withText, type Command, type Entry } from './chrome.js';
 import { activeTab, closePane, splitPane } from './panes.js';
 import { useApp } from './store.js';
 import { MENU_ID, runMenu } from './menu.js';
 import { hasCards, studyDeck } from './deckOps.js';
 import { SESSION, folderPaths, slugName, titleOf } from './names.js';
 import { nameOf, type TextHit } from '../vault/index.js';
-import { attachCancelled, attachNewNote, attachNote, bookInFront, lensOf, openNotes, takeContents, type BookContents } from './book.js';
+import { MARK_LIST_EMPTY, attachCancelled, attachNewNote, attachNote, bookInFront, followed, lensOf, markList, openNotes, pdfHashOf, takeContents, togglePortalsBeside, type BookContents, type MarkList, type PlaceRow } from './book.js';
 import { canMove, moveAction, moveSection, sectionActions, statusOf } from './sections.js';
 import { plainMath } from './chromeText.js';
 import type { CaretHeading } from './store.js';
@@ -78,6 +78,26 @@ function contentsCommand(): Command[] {
   return [{ id: 'contents', title: `contents · ${titleOf(book, s.docs, s.vault)}` }];
 }
 
+/** The lists of what is left in books (milestone 77): the book in front's bookmarks and highlights, and its portals shown beside; every book's bookmarks; the marks by a letter. */
+const MARK_LISTS: Record<string, MarkList> = { 'bookmarks-here': 'bookmarks', 'highlights-here': 'highlights', 'bookmarks-all': 'all-bookmarks', marks: 'marks' };
+const MARK_LIST_NAME: Record<MarkList, string> = { bookmarks: 'bookmarks', highlights: 'highlights', 'all-bookmarks': 'bookmarks', marks: 'marks' };
+function marksCommands(): Command[] {
+  const s = useApp.getState();
+  if (!s.vault) return [];
+  const book = bookInFront();
+  const here = book !== null && pdfHashOf(book) !== null ? titleOf(book, s.docs, s.vault) : null;
+  return [
+    ...(here !== null ? [
+      { id: 'bookmarks-here', title: `bookmarks · ${here}` },
+      { id: 'highlights-here', title: `highlights · ${here}` },
+      // a second pane: not on an iPad or a phone, where a portal's mark peeks
+      ...(s.mobile ? [] : [{ id: 'portals-beside', title: followed(book!) ? `portals beside · close · ${here}` : `portals beside · ${here}` }]),
+    ] : []),
+    { id: 'bookmarks-all', title: 'bookmarks' },
+    { id: 'marks', title: 'marks' },
+  ];
+}
+
 function runCommand(id: string): void {
   const s = useApp.getState();
   const tab = activeTab(s.panes)?.id;
@@ -99,6 +119,7 @@ function runCommand(id: string): void {
     case 'theme': s.cycleTheme(); break;
     case 'tweaks': useApp.setState({ tweaksOpen: true }); break;
     case 'numbers': openCollectionNumbers(); break;
+    case 'portals-beside': { const book = bookInFront(); if (book !== null) togglePortalsBeside(book); break; }
     case 'export-folder':
     case 'export-zip': {
       const vault = currentVault();
@@ -155,6 +176,17 @@ export function Palette() {
     return () => { live = false; };
   }, [contents]);
   const contentsIndex = useMemo(() => (toc ? contentsRows(toc.entries, toc.here) : []), [toc]);
+  // what is left in books (milestone 77): a book's bookmarks or highlights, every book's bookmarks, the marks by a letter
+  const [listing, setListing] = useState<{ kind: MarkList; book: string | null } | null>(null);
+  const [places, setPlaces] = useState<PlaceRow[] | null>(null);
+  useEffect(() => {
+    setPlaces(null);
+    if (!listing) return;
+    let live = true;
+    void markList(listing.kind, listing.book).then((rows) => { if (live) setPlaces(rows); }, () => { if (live) setPlaces([]); });
+    return () => { live = false; };
+  }, [listing]);
+  const placeIndex = useMemo(() => placeRows(places ?? []), [places]);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const close = () => useApp.setState({ paletteOpen: false, sectionMove: null, noteAttach: null });
@@ -168,7 +200,7 @@ export function Palette() {
   // an iPad has one pane and no folder to pick: its commands leave those out (`platform.ts`)
   const mobile = useApp((s) => s.mobile);
   const phone = useApp((s) => s.phone);
-  const commands = useMemo(() => [...sectionCommand(), ...contentsCommand(), ...COMMANDS.filter((c) => (c.id !== 'postpone' || overflow(queue, appNow()).length > 0) && !(mobile && DESKTOP_ONLY.has(c.id)) && !(phone && NOT_ON_A_PHONE.has(c.id))), ...pluginCommands()], [queue, plugins?.version, caret, mobile, phone]);
+  const commands = useMemo(() => [...sectionCommand(), ...contentsCommand(), ...marksCommands(), ...COMMANDS.filter((c) => (c.id !== 'postpone' || overflow(queue, appNow()).length > 0) && !(mobile && DESKTOP_ONLY.has(c.id)) && !(phone && NOT_ON_A_PHONE.has(c.id))), ...pluginCommands()], [queue, plugins?.version, caret, mobile, phone]);
   // the other vaults opened before, under `vaults`, so switching is two keys
   // (one that is not where it was is the welcome's to show, with its `forget`)
   const vaults = useMemo(() => recents.filter((r) => r.path !== vault && !gone.includes(r.path)).map((r) => ({ path: r.path, name: r.name })), [recents, gone, vault]);
@@ -202,7 +234,7 @@ export function Palette() {
   /** The new note's name: as typed, else after the PDF. */
   const newName = attaching ? (attaching.step === 'place' ? attaching.name ?? '' : q.trim() || `${titleOf(attaching.pdf, docs, vault)} notes`) : '';
   // words in the documents and the cards, for the palette's own list; the last answer stays until the next, so the rows do not blink
-  const asking = !attaching && !moving && !studying && contents === null ? q.trim() : '';
+  const asking = !attaching && !moving && !studying && contents === null && !listing ? q.trim() : '';
   const [found, setFound] = useState<{ q: string; hits: TextHit[] } | null>(null);
   useEffect(() => {
     if (!asking) { setFound(null); return; }
@@ -213,10 +245,11 @@ export function Palette() {
   const texts = useMemo(() => (found ? rankHits(found.hits, found.q).map((h) => textEntry(h, found.q, docs)) : []), [found, docs]);
   const results = useMemo(() => {
     if (attaching?.step === 'pick') return [{ key: 'at:new', title: 'new note', sub: newName, tag: 'note' as const, target: { command: 'attach-new' } }, ...search(attachIndex, q)];
+    if (!attaching && !moving && listing) return searchContents(placeIndex, q);
     if (!attaching && !moving && contents !== null) return searchContents(contentsIndex, q);
     const names = search(attaching ? attachIndex : moving ? moveIndex : studying ? studyIndex : index, q);
     return asking ? withText(names, texts, q) : names;
-  }, [attaching, attachIndex, newName, moving, moveIndex, studying, studyIndex, contents, contentsIndex, index, q, asking, texts]);
+  }, [attaching, attachIndex, newName, moving, moveIndex, studying, studyIndex, contents, contentsIndex, listing, placeIndex, index, q, asking, texts]);
   // `nothing` is said once the index has answered, and until it has been through every document it may yet
   const reading = useApp((s) => s.searchShare);
 
@@ -227,7 +260,7 @@ export function Palette() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [attaching]);
-  useEffect(() => { setSel(0); }, [q, studying, moving, attaching, contents]);
+  useEffect(() => { setSel(0); }, [q, studying, moving, attaching, contents, listing]);
   useEffect(() => {
     const list = listRef.current;
     const el = list?.querySelector<HTMLElement>('[data-sel="1"]');
@@ -242,6 +275,13 @@ export function Palette() {
     if ('command' in t && t.command === 'study') { setStudying(true); setQ(''); inputRef.current?.focus(); return; }
     if ('command' in t && t.command.startsWith('study:')) { close(); studyDeck(t.command.slice(6)); return; }
     if ('command' in t && t.command === 'contents') { setContents(bookInFront()); setQ(''); inputRef.current?.focus(); return; }
+    if ('command' in t && MARK_LISTS[t.command]) { setListing({ kind: MARK_LISTS[t.command]!, book: bookInFront() }); setQ(''); inputRef.current?.focus(); return; }
+    if ('command' in t && t.command.startsWith('mk:') && listing) {
+      const row = places?.[Number(t.command.slice(3))];
+      close();
+      row?.go();
+      return;
+    }
     if ('command' in t && t.command.startsWith('toc:')) {
       const entry = toc?.entries[Number(t.command.slice(4))];
       close();
@@ -269,7 +309,9 @@ export function Palette() {
   };
 
   /** The list is a book's contents. */
-  const inContents = !attaching && !moving && contents !== null;
+  const inContents = !attaching && !moving && contents !== null && !listing;
+  /** The list is places left in books. */
+  const inPlaces = !attaching && !moving && listing !== null;
 
   const onKey = (e: React.KeyboardEvent) => {
     if (e.key === 'ArrowDown' || (e.ctrlKey && e.key === 'n')) { e.preventDefault(); setSel((s) => Math.min(results.length - 1, s + 1)); }
@@ -282,9 +324,10 @@ export function Palette() {
       run(it);
     }
     // ⌫ in an empty field of a list within the list (`study…`, `move to…`, the folder for a new note): back a step
-    else if (e.key === 'Backspace' && q === '' && (studying || moving || attaching?.step === 'place' || contents !== null)) {
+    else if (e.key === 'Backspace' && q === '' && (studying || moving || attaching?.step === 'place' || contents !== null || listing)) {
       e.preventDefault();
-      if (!attaching && !moving && contents !== null) setContents(null);
+      if (!attaching && !moving && listing) setListing(null);
+      else if (!attaching && !moving && contents !== null) setContents(null);
       else if (attaching?.step === 'place') useApp.setState({ noteAttach: { pdf: attaching.pdf, step: 'pick' } });
       else if (moving) useApp.setState({ sectionMove: null });
       else setStudying(false);
@@ -298,12 +341,13 @@ export function Palette() {
       <div className="palette-panel" onMouseDown={(e) => e.stopPropagation()}>
         <div className="palette-input">
           <span className="g"><Glyph g="⌕" /></span>
-          <input dir="auto" ref={inputRef} value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={onKey} placeholder={attaching?.step === 'place' ? `${newName} in…` : attaching ? `notes on ${titleOf(attaching.pdf, docs, vault).slice(0, 40)}` : moving ? `move § ${plainMath(moving.text).slice(0, 40)} to…` : contents !== null ? `contents · ${titleOf(contents, docs, vault).slice(0, 40)}` : studying ? 'study…' : 'open or run'} spellCheck={false} />
+          <input dir="auto" ref={inputRef} value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={onKey} placeholder={attaching?.step === 'place' ? `${newName} in…` : attaching ? `notes on ${titleOf(attaching.pdf, docs, vault).slice(0, 40)}` : moving ? `move § ${plainMath(moving.text).slice(0, 40)} to…` : listing ? `${MARK_LIST_NAME[listing.kind]}${listing.book !== null && listing.kind !== 'all-bookmarks' && listing.kind !== 'marks' ? ` · ${titleOf(listing.book, docs, vault).slice(0, 40)}` : ''}` : contents !== null ? `contents · ${titleOf(contents, docs, vault).slice(0, 40)}` : studying ? 'study…' : 'open or run'} spellCheck={false} />
           <kbd>esc</kbd>
         </div>
-        <div className="palette-list" ref={listRef} data-found={found?.q}>
+        <div className="palette-list" ref={listRef} data-found={found?.q} data-places={inPlaces && places !== null ? listing.kind : undefined}>
           {inContents && toc && toc.from !== 'outline' && <div className="palette-empty palette-note" data-contents={toc.from}>this pdf has no contents{toc.from === 'sections' ? ' · its sections' : ''}</div>}
-          {results.length === 0 && !(inContents && (!toc || (toc.from === 'none' && !q.trim()))) && (!asking || found?.q === asking) && <div className="palette-empty">{asking && reading < 1 ? 'nothing yet' : 'nothing'}</div>}
+          {inPlaces && places !== null && places.length === 0 && <div className="palette-empty palette-note" data-places={listing.kind}>{MARK_LIST_EMPTY[listing.kind]}</div>}
+          {results.length === 0 && !(inContents && (!toc || (toc.from === 'none' && !q.trim()))) && !(inPlaces && (places === null || places.length === 0)) && (!asking || found?.q === asking) && <div className="palette-empty">{asking && reading < 1 ? 'nothing yet' : 'nothing'}</div>}
           {results.map((it, i) => (
             <div key={it.key} className="palette-row" data-sel={i === sel ? '1' : '0'} data-t={it.tag} data-here={it.here ? '1' : undefined} data-depth={it.depth} style={it.depth ? { '--depth': it.depth } as React.CSSProperties : undefined} onMouseEnter={() => setSel(i)} onClick={() => run(it)}>
               {/* a place in a book: no mark of a kind, only the one that holds the place in view is marked */}

@@ -19,12 +19,13 @@
 import { useSyncExternalStore } from 'react';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { setField } from '../format/index.js';
-import { emptyTrail, type ContentsEntry, type Trail } from '../pdf/index.js';
-import { dirOf, relFrom } from '../vault/index.js';
-import { noteOf, notesTabOf, pagesOf, SESSION } from './names.js';
-import { activeTab, besideAt, closeBeside, openBeside, openTab } from './panes.js';
+import { bookmarksOf, collectionMark, collectionMarks, emptyTrail, highlightsOf, isCollectionMark, letterId, lettersOf, type ContentsEntry, type Trail } from '../pdf/index.js';
+import { MARKS_DIR, dirOf, join, marksHashOf, marksMap, marksPath, parseMarks, relFrom, serializeMarks, type Mark, type Marks, type StoreFs } from '../vault/index.js';
+import { noteOf, notesTabOf, pagesOf, SESSION, titleOf } from './names.js';
+import { activeTab, besideAt, closeBeside, openBeside, openTab, openTwin } from './panes.js';
 import { useApp } from './store.js';
-import { currentVault } from './vault.js';
+import { notify } from './land.js';
+import { currentVault, onHiddenChange, openNode } from './vault.js';
 
 /** The note's tab beside the pages at `pagesId` is open. */
 export function notesOpen(pagesId: string): boolean {
@@ -162,8 +163,10 @@ export interface BookLens {
   /** In the pane in front. */
   active(): boolean;
   contents(): Promise<BookContents>;
-  /** Go to an entry's place: a jump, with the way back. */
-  go(entry: ContentsEntry): void;
+  /** Go to a place (an entry of the contents, a bookmark, a highlight): a jump, with the way back; one outside the pages shown is said. */
+  go(place: { page: number; y: number }): void;
+  /** Shown beside the page being read: moved to a portal's destination, no jump (milestone 77). */
+  show?(place: { page: number; y: number }, portal: string): void;
 }
 
 const lenses = new Map<string, BookLens[]>();
@@ -175,6 +178,8 @@ export function addLens(id: string, lens: BookLens): () => void {
   return () => {
     const rest = (lenses.get(id) ?? []).filter((l) => l !== lens);
     if (rest.length) lenses.set(id, rest); else lenses.delete(id);
+    // the pane beside closed, or the one it followed: nothing follows any more
+    if (rest.length < 2) { following.delete(id); sentTo.delete(id); }
     tell();
   };
 }
@@ -218,4 +223,265 @@ export function takeContents(): string | null {
 export function openWeb(url: string): void {
   if (!/^(?:https?:|mailto:)/i.test(url)) return;
   openUrl(url).catch(() => { window.open(url, '_blank', 'noopener'); });
+}
+
+// ── what is left on the pages (milestone 77) ──
+// A PDF's marks (bookmarks, marks by a letter, highlights, portals), by its
+// SHA-256: read once from `.ilmi/marks/<sha256>.json` (`src/vault/marks.ts`)
+// and kept here for as long as the collection is open; a change is the file
+// written again, which the engine records as one register (the entry that
+// changed). A file that changed under us (a sync) is read again.
+
+interface Held { marks: Marks; rest: Record<string, unknown> }
+const NO_MARKS: Marks = Object.freeze({}) as Marks;
+let heldFor: unknown = null;
+const held = new Map<string, Held>();
+const loading = new Map<string, Promise<Marks>>();
+/** Writes of a PDF's file not yet landed: none is read over. */
+const writing = new Map<string, { n: number; chain: Promise<void> }>();
+let allRead: Promise<void> | null = null;
+
+/** The marks are one collection's: another one open, and nothing held is its. */
+function fresh(): void {
+  const vault = currentVault();
+  if (vault === heldFor) return;
+  heldFor = vault;
+  held.clear();
+  loading.clear();
+  writing.clear();
+  allRead = null;
+}
+
+async function readMarks(hash: string): Promise<Held> {
+  const vault = currentVault();
+  if (!vault) return { marks: {}, rest: {} };
+  const abs = vault.abs(marksPath(hash));
+  const text = (await vault.fs.stat(abs)) ? await vault.fs.readText(abs).catch(() => null) : null;
+  const all = marksMap(text) ?? {};
+  const marks = parseMarks(text);
+  return { marks, rest: Object.fromEntries(Object.entries(all).filter(([k]) => !(k in marks))) };
+}
+
+/** A PDF's marks, read once. */
+export function loadMarks(hash: string): Promise<Marks> {
+  fresh();
+  const have = held.get(hash);
+  if (have) return Promise.resolve(have.marks);
+  let p = loading.get(hash);
+  if (!p) {
+    const vault = heldFor;
+    p = readMarks(hash).then((h) => {
+      loading.delete(hash);
+      if (vault !== currentVault()) return h.marks;
+      // a mark made while the file was being read stands
+      if (!held.has(hash)) { held.set(hash, h); tell(); }
+      return held.get(hash)!.marks;
+    });
+    loading.set(hash, p);
+  }
+  return p;
+}
+
+/** A PDF's marks as they are held: none until they are read (asked for here). */
+export function marksOf(hash: string | null): Marks {
+  if (hash === null) return NO_MARKS;
+  fresh();
+  const have = held.get(hash);
+  if (have) return have.marks;
+  void loadMarks(hash).catch(console.error);
+  return NO_MARKS;
+}
+/** A PDF's marks, as they change. */
+export const useMarks = (hash: string | null): Marks => useSyncExternalStore(subscribe, () => marksOf(hash));
+
+/** One entry set, or (null) taken away: held at once, the file written behind it. */
+export async function setMark(hash: string, id: string, mark: Mark | null): Promise<void> {
+  await loadMarks(hash);
+  const vault = currentVault();
+  const was = held.get(hash) ?? { marks: {}, rest: {} };
+  const { [id]: _gone, ...others } = was.marks;
+  const next: Held = { marks: mark ? { ...others, [id]: mark } : others, rest: was.rest };
+  held.set(hash, next);
+  tell();
+  if (!vault) return;
+  const w = writing.get(hash) ?? { n: 0, chain: Promise.resolve() };
+  writing.set(hash, w);
+  w.n += 1;
+  const text = serializeMarks(next.marks, next.rest);
+  w.chain = w.chain.then(async () => {
+    await vault.fs.mkdir(vault.abs(MARKS_DIR));
+    await vault.fs.writeText(vault.abs(marksPath(hash)), text);
+  }).catch(console.error).finally(() => { w.n -= 1; });
+  await w.chain;
+}
+
+onHiddenChange((paths) => {
+  fresh();
+  for (const path of paths) {
+    const hash = marksHashOf(path);
+    if (hash === null) continue;
+    allRead = null;
+    // our own write, or one behind it: what is held is the later
+    if (!held.has(hash) || (writing.get(hash)?.n ?? 0) > 0) continue;
+    const vault = heldFor;
+    void readMarks(hash).then((h) => {
+      if (vault !== currentVault() || (writing.get(hash)?.n ?? 0) > 0) return;
+      if (serializeMarks(h.marks, h.rest) === serializeMarks(held.get(hash)?.marks ?? {}, held.get(hash)?.rest)) return;
+      held.set(hash, h);
+      tell();
+    }).catch(console.error);
+  }
+});
+
+/** Every PDF's marks, by its hash: each file under `.ilmi/marks/` read once (the palette's `bookmarks` and `marks`, a capital mark gone to). */
+export async function allMarks(): Promise<Map<string, Marks>> {
+  fresh();
+  const vault = currentVault();
+  if (vault) {
+    allRead ??= (async () => {
+      const dir = vault.abs(MARKS_DIR);
+      const names = (await vault.fs.stat(dir)) ? (await vault.fs.readDir(dir)).map((e) => e.name) : [];
+      await Promise.all(names.map((n) => marksHashOf(n)).filter((h): h is string => h !== null).map((h) => loadMarks(h)));
+    })().catch(console.error);
+    await allRead;
+  }
+  return new Map([...held].map(([h, v]) => [h, v.marks]));
+}
+
+/** The SHA-256 of the PDF whose pages the document at `id` is; null when it has none, or the collection is no store. */
+export function pdfHashOf(id: string): string | null {
+  const vault = currentVault();
+  const rel = useApp.getState().docs[id]?.pdf;
+  if (!vault || rel === undefined || !('blobAt' in vault.fs)) return null;
+  return (vault.fs as StoreFs).blobAt(join(vault.root, rel));
+}
+
+/** The document to open for a place in the PDF `hash`: the whole book before a chapter of it, a chapter that holds the page before one that does not; null when no document of the collection has those pages any more. */
+export function bookFor(hash: string, page: number): string | null {
+  const docs = useApp.getState().docs;
+  let best: { id: string; rank: number } | null = null;
+  for (const [id, info] of Object.entries(docs)) {
+    if (info.pdf === undefined || pdfHashOf(id) !== hash) continue;
+    const r = info.pages;
+    const rank = !r ? 0 : page >= r.first && page <= r.last ? 1 : 2;
+    if (!best || rank < best.rank || (rank === best.rank && id < best.id)) best = { id, rank };
+  }
+  return best?.id ?? null;
+}
+
+const wantedPlace = new Map<string, { page: number; y: number }>();
+/** Open the book at `id` at a place: its lens goes there as a jump once its pages are there. */
+export function openBookAt(id: string, place: { page: number; y: number }): void {
+  wantedPlace.set(id, { page: place.page, y: place.y });
+  openNode(id);
+  tell();
+}
+/** Whether a place waits for the book at `id` (a count that moves, for the lens to see). */
+export const usePlaceWanted = (id: string): { page: number; y: number } | null => useSyncExternalStore(subscribe, () => wantedPlace.get(id) ?? null);
+export function takePlace(id: string): { page: number; y: number } | null {
+  const p = wantedPlace.get(id) ?? null;
+  wantedPlace.delete(id);
+  return p;
+}
+
+/** Go to a place in the PDF `hash` from anywhere: in the book in front when it has those pages, else the document that has them opened there. */
+export function goToMark(hash: string, place: { page: number; y: number }, from?: string): void {
+  const front = from ?? bookInFront();
+  if (front !== null && pdfHashOf(front) === hash) { lensOf(front)?.go(place); return; }
+  const id = bookFor(hash, place.page);
+  if (id === null) { notify('that pdf is no longer in the collection · its marks are kept'); return; }
+  openBookAt(id, place);
+}
+
+/** A capital mark set in the PDF `hash`: the collection has one of a letter, so every other book's goes. */
+export async function setCollectionMark(hash: string, letter: string, mark: Mark): Promise<void> {
+  const id = letterId(letter);
+  for (const [h, marks] of await allMarks()) if (h !== hash && marks[id]) await setMark(h, id, null);
+  await setMark(hash, id, mark);
+}
+/** Where the collection's mark `letter` is: the PDF and the place; null when no book has it. */
+export async function findCollectionMark(letter: string): Promise<{ hash: string; page: number; y: number } | null> {
+  const m = collectionMark(await allMarks(), letter);
+  return m && { hash: m.hash, page: m.mark.page, y: m.mark.y };
+}
+
+// a portal being made (⇧P … ⇧P): its source waits here, since the destination may be in another book
+let portalFrom: { hash: string; page: number; y: number } | null = null;
+export const portalPending = (): typeof portalFrom => portalFrom;
+export const usePortalPending = (): typeof portalFrom => useSyncExternalStore(subscribe, portalPending);
+export function setPortalPending(from: typeof portalFrom): void {
+  portalFrom = from;
+  tell();
+}
+
+// the pane beside that follows the portals of the page being read: of two lenses over one book, the one made last
+const following = new Set<string>();
+/** Whether `lens` is the one that follows: shown beside the book at `id`, moved to each portal's destination as its source is read past. */
+export const isFollower = (id: string, lens: BookLens): boolean => {
+  const list = lenses.get(id) ?? [];
+  return following.has(id) && list.length > 1 && list[list.length - 1] === lens;
+};
+export const useFollower = (id: string, lens: BookLens): boolean => useSyncExternalStore(subscribe, () => isFollower(id, lens));
+/** Whether a pane beside follows the book at `id`. */
+export const followed = (id: string): boolean => following.has(id) && (lenses.get(id)?.length ?? 0) > 1;
+export const useFollowed = (id: string): boolean => useSyncExternalStore(subscribe, () => followed(id));
+/** What the pane that follows was last sent to: it goes there once its pages are there. */
+const sentTo = new Map<string, { portal: string; to: { page: number; y: number } }>();
+export const followingAt = (id: string): { portal: string; to: { page: number; y: number } } | null => (following.has(id) ? sentTo.get(id) ?? null : null);
+/** `portals beside`: the book in the pane beside too, following; asked again, that pane's tab closes. A phone has no pane beside. */
+export function togglePortalsBeside(id: string): void {
+  const s = useApp.getState();
+  if (s.phone) return;
+  if (followed(id)) {
+    following.delete(id);
+    sentTo.delete(id);
+    useApp.setState({ panes: closeBeside(s.panes, id) });
+    tell();
+    return;
+  }
+  following.add(id);
+  sentTo.delete(id);
+  useApp.setState({ panes: openTwin(s.panes, id) });
+  tell();
+}
+/** The page being read passed a portal's source: the pane that follows shows its destination. */
+export function followTo(id: string, from: BookLens, portal: string, to: { page: number; y: number }): void {
+  if (!following.has(id)) return;
+  sentTo.set(id, { portal, to: { page: to.page, y: to.y } });
+  for (const l of lenses.get(id) ?? []) if (l !== from && isFollower(id, l)) l.show?.(to, portal);
+}
+
+/** The palette's lists of what is left in books: a book's bookmarks or highlights, every book's bookmarks, the marks by a letter. */
+export type MarkList = 'bookmarks' | 'highlights' | 'all-bookmarks' | 'marks';
+/** A row of such a list: its name, where it is, its page, and going there. */
+export interface PlaceRow { title: string; sub: string; page: number; go(): void }
+/** What a list says when it is empty: how one is made. */
+export const MARK_LIST_EMPTY: Record<MarkList, string> = {
+  bookmarks: 'no bookmarks in this pdf · b names the place in view',
+  highlights: 'no highlights in this pdf · h on a selection makes one',
+  'all-bookmarks': 'no bookmarks yet · b in a book names the place in view',
+  marks: 'no marks yet · ⇧M and a letter in a book sets one',
+};
+
+/** The rows of a list: `book` the book in front, for the lists that are one book's. */
+export async function markList(kind: MarkList, book: string | null): Promise<PlaceRow[]> {
+  const s = useApp.getState();
+  const hash = book !== null ? pdfHashOf(book) : null;
+  const nameOf = (h: string, page: number): string => { const id = bookFor(h, page); return id === null ? 'no longer in the collection' : titleOf(id, s.docs, s.vault); };
+  if (kind === 'bookmarks' || kind === 'highlights') {
+    if (hash === null) return [];
+    const marks = await loadMarks(hash);
+    const go = (m: { page: number; y: number }) => () => goToMark(hash, m, book ?? undefined);
+    if (kind === 'bookmarks') return bookmarksOf(marks).map(([, m]) => ({ title: m.name, sub: '', page: m.page, go: go(m) }));
+    return highlightsOf(marks).map(([, m]) => ({ title: m.text || `p. ${m.page}`, sub: '', page: m.page, go: go(m) }));
+  }
+  const all = await allMarks();
+  if (kind === 'all-bookmarks') {
+    const rows: PlaceRow[] = [];
+    for (const [h, marks] of all) for (const [, m] of bookmarksOf(marks)) rows.push({ title: m.name, sub: nameOf(h, m.page), page: m.page, go: () => goToMark(h, m) });
+    return rows.sort((a, b) => (a.sub < b.sub ? -1 : a.sub > b.sub ? 1 : a.page - b.page));
+  }
+  // the marks by a letter: the book in front's own, then the collection's
+  const own = hash !== null ? lettersOf(all.get(hash) ?? {}).filter(([, m]) => !isCollectionMark(m.letter)).map(([, m]): PlaceRow => ({ title: m.letter, sub: '', page: m.page, go: () => goToMark(hash, m, book ?? undefined) })) : [];
+  return [...own, ...collectionMarks(all).map(({ hash: h, mark: m }): PlaceRow => ({ title: m.letter, sub: nameOf(h, m.page), page: m.page, go: () => goToMark(h, m) }))];
 }

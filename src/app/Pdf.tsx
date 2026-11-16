@@ -58,22 +58,42 @@
 // points in the peek a selection's ⏎ shows. `f` letters every link and
 // reference in view; the letters typed follow one, with ⇧ they peek. `n` and
 // `N` step a search's hits. A selection's right-click looks it up on the web.
+//
+// What you leave on the page (milestone 77, after sioyek's again). Kept by
+// the PDF's hash, as what is written on it is (`book.ts`, `vault/marks.ts`),
+// so a chapter cut from a book and the book show the same. `b` names the
+// place in view: a bookmark, a small mark in the left gutter. ⇧M and a
+// letter marks the place, `'` and the letter goes to it (a capital is the
+// collection's: it opens its book). `h` highlights a selection, or clears
+// the highlight the selection or the last press lies in; 1–4 while its
+// notice shows choose its ink (a band, a rule, a dashed rule, a dotted one:
+// told apart with no colour). ⇧P at a place, then ⇧P at another, ties the
+// first to the second: a portal, a small mark in the page's right margin
+// that peeks at where it shows; with the book in the pane beside as well
+// (`portals beside` in the palette) that pane goes to each portal's
+// destination as its source is read past. `v`, or a press in a page's left
+// margin, holds a line under a rule: ↓ ↑ (j k) move it a line, the page
+// following; `r` sets the read point to it.
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { boxesEnd, formatClip, meta, sectionDismissed, setField, type Box, type Doc } from '../format/index.js';
 import {
-  actionPage, boxAround, contentsHere, contentsWithin, countIn, downPage, findAll, findText, flatOutline, flipRect, hintLabels, hintStep, linesOf, linkAt, lookupUrl, pageLinks,
-  pushPlace, refOf, referenceTokens, resolveDest, sectionName, seekTarget, stepBack, stepForward, textBoxes, tokenAt,
-  type ContentsEntry, type ContentsPdf, type Found, type PageItem, type PageLink, type Place, type RefToken,
+  actionPage, bandNear, bookmarksOf, boxAround, contentsHere, contentsWithin, countIn, downPage, findAll, findText, flatOutline, flipRect, headingAbove, highlightAt, highlightHolding, highlightOf,
+  highlightsOf, hintLabels, hintStep, isCollectionMark, letterId, lineBands, lineQuads, linesOf, linkAt, lookupUrl, newMarkId, pageLinks, placeOf, portalAbove, portalsOf,
+  pushPlace, quadBoxes, refOf, referenceTokens, resolveDest, sectionName, seekTarget, stepBack, stepForward, stepLine, textBoxes, tokenAt,
+  type ContentsEntry, type ContentsPdf, type Found, type LineBand, type PageItem, type PageLink, type Place, type RefToken,
 } from '../pdf/index.js';
 import { pickPos, type Band } from '../reader/index.js';
 import { addPassage, passagesOf, pointOn, sectionState, type Passage } from '../schedule/index.js';
-import { addToPage, childDirOf, isPdfPath, type InkStroke, type StoreFs } from '../vault/index.js';
+import { INKS, addToPage, childDirOf, isPdfPath, type InkStroke, type Mark, type Portal, type Quad, type StoreFs } from '../vault/index.js';
 import { CueActions } from '../plugins/CueActions.js';
 import { onPluginAction, publishSelection, toPluginSelection, type PluginSelection } from '../plugins/index.js';
 import { noteOf, notesTabOf, titleOf } from './names.js';
 import { besideAt } from './panes.js';
-import { addLens, ensureNote, lensChanged, openContents, openNotes, openWeb, setTrail, toggleNotes, trailOf, useTrail, type BookContents } from './book.js';
+import {
+  addLens, ensureNote, findCollectionMark, followTo, followed, goToMark, lensChanged, openContents, openNotes, openWeb, portalPending, setCollectionMark, setMark, setPortalPending, setTrail,
+  takePlace, toggleNotes, trailOf, useFollowed, useFollower, followingAt, useMarks, usePlaceWanted, usePortalPending, useTrail, type BookContents, type BookLens,
+} from './book.js';
 import { popMenu, popMenuOpen, type PopItem } from './popMenu.js';
 import { TextLayer, pageBits, type PDFDocumentProxy } from './pdfjs.js';
 import { acquirePdf, itemsOf } from './bookPdf.js';
@@ -121,6 +141,15 @@ const JUMP_ROOM = 16;
 /** How far a mouse's press may move and still be a press, px (a finger's is `SLOP`). */
 const PRESS_SLOP = 3;
 
+/** How much of a page's width, from its left edge, is the margin a press holds a line by. */
+const RULER_MARGIN = 0.06;
+/** How far under the place in view a heading may lie and still name a bookmark made there, as a fraction of the page. */
+const NAME_UNDER = 0.03;
+/** What each ink of a highlight is, as its menu says it. */
+const INK_NAMES = ['band', 'rule', 'dashed rule', 'dotted rule'];
+/** The ink a new highlight is made in: the one last chosen. */
+let lastInk = 1;
+
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 const inField = (t: EventTarget | null) => {
@@ -136,6 +165,8 @@ interface Sel {
   rect: DOMRect;
   line: string;
   boxes: Box[];
+  /** Its lines, a quad each: what a highlight keeps. */
+  quads: Quad[];
 }
 
 interface Size { w: number; h: number }
@@ -372,6 +403,21 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
   const outline = useRef<Promise<ContentsEntry[]> | null>(null);
   /** `f`: the letters on what can be followed in view, and those typed so far. */
   const [hints, setHints] = useState<Hints | null>(null);
+  /** `b`: the bookmark being named, at the place it was asked for. */
+  const [naming, setNaming] = useState<{ page: number; y: number; name: string } | null>(null);
+  /** ⇧M or `'` pressed: the letter that follows sets a mark or goes to one. */
+  const [chord, setChord] = useState<'set' | 'go' | null>(null);
+  /** The line held under the rule. */
+  const [ruler, setRuler] = useState<{ page: number; line: number; band: LineBand } | null>(null);
+  /** The highlight just made, and the notice that says so: 1–4 choose its ink while that notice shows. */
+  const [lastHl, setLastHl] = useState<{ id: string; seq: number } | null>(null);
+  /** A portal begun (⇧P), here or in another book. */
+  const portalFrom = usePortalPending();
+  /** The portal whose destination this pane was last moved to, when it follows. */
+  const [showing, setShowing] = useState<string | null>(null);
+  /** Where the last press that did not move fell: `h` there clears the highlight under it. */
+  const lastPoint = useRef<{ page: number; x: number; y: number } | null>(null);
+  const nameRef = useRef<HTMLInputElement>(null);
   /** The places this book's jumps left. */
   const trail = useTrail(id);
   /** Where the press now down began: a press that does not move follows a link. */
@@ -399,8 +445,8 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
   const rendering = useRef(new Set<number>());
   const texts = useRef(new Map<number, string>());
   const dragRef = useRef(false);
-  const st = useRef({ sel, pending, recent, find, goto, peek, looking, hints });
-  st.current = { sel, pending, recent, find, goto, peek, looking, hints };
+  const st = useRef({ sel, pending, recent, find, goto, peek, looking, hints, naming, chord, ruler, lastHl });
+  st.current = { sel, pending, recent, find, goto, peek, looking, hints, naming, chord, ruler, lastHl };
   const canEnrol = info?.type === 'source' || info?.type === 'extract' || info?.type === 'note';
   const reading = !!info?.read && info.type !== 'note';
   const rel = info?.pdf;
@@ -411,6 +457,13 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     const vault = currentVault();
     return rel && vault && status !== 'gone' && status !== 'unreadable' ? inkStore()?.blobAt(vault.abs(rel)) ?? null : null;
   }, [rel, status]);
+  /** What is left on the pages: the PDF's marks, read once and held (`book.ts`). */
+  const marks = useMarks(hash);
+  const marksRef = useRef(marks);
+  marksRef.current = marks;
+  const bookmarks = useMemo(() => bookmarksOf(marks), [marks]);
+  const highlights = useMemo(() => highlightsOf(marks), [marks]);
+  const portals = useMemo(() => portalsOf(marks), [marks]);
   /** The pages written on, each with a count that moves when its strokes do. */
   const [inked, setInked] = useState<Record<number, number>>({});
   useEffect(() => {
@@ -660,6 +713,8 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
   renderRef.current = renderPage;
 
   const scroller = () => wrapRef.current?.closest<HTMLElement>('.book-pages, .pane-body') ?? null;
+  /** After a scroll: the pane beside is told the portal read past (set below, once the marks are known). */
+  const afterScroll = useRef<() => void>(() => {});
   const place = useRef<{ page: number; y: number } | null>(null);
   /** What of the pages' width is at the middle of the view, 0 to 1 across them: kept across a change of scale. */
   const placeX = useRef<number | null>(null);
@@ -724,6 +779,9 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
       if (v && at) { v.dataset.atPage = String(at.page); v.dataset.atY = at.y.toFixed(3); }
       // the place under the top of the view, as the trail keeps it
       if (v && place.current) { v.dataset.topPage = String(place.current.page); v.dataset.topY = place.current.y.toFixed(4); }
+      // above the first page (the title over it): the place is that page's top
+      else if (v) { v.dataset.topPage = String(base + 1); v.dataset.topY = '0.0000'; }
+      afterScroll.current();
     };
     onScroll();
     sc.addEventListener('scroll', onScroll, { passive: true });
@@ -992,7 +1050,8 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
               }
             }
             const boxes = [...byPage].sort((a, b) => a[0] - b[0]).map(([n, rs]) => boxAround(n, rs)).filter((b): b is Box => b !== null);
-            next = { text, page: Number(pageEl.dataset.page), rect: range.getBoundingClientRect(), line: range.startContainer.parentElement?.textContent ?? '', boxes };
+            const quads = [...byPage].sort((a, b) => a[0] - b[0]).flatMap(([n, rs]) => lineQuads(n, rs));
+            next = { text, page: Number(pageEl.dataset.page), rect: range.getBoundingClientRect(), line: range.startContainer.parentElement?.textContent ?? '', boxes, quads };
           }
         }
       }
@@ -1034,8 +1093,8 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
    * the note opens beside the pages with the section in it. `write`: the
    * caret goes in it.
    */
-  const makeSection = async (write: boolean, known?: { name: string }) => {
-    const boxes = boxesNow();
+  const makeSection = async (write: boolean, known?: { name: string }, from?: Box[]) => {
+    const boxes = from ?? boxesNow();
     if (!boxes.length) return;
     const to = await ensureNote(id);
     if (to === null) return;
@@ -1075,11 +1134,11 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
   };
 
   /** `m`: on a page that names its sections, the section with the caret in it; otherwise each box clipped under its page in the note, the caret below. */
-  const cardOrClip = async () => {
-    const boxes = boxesNow();
+  const cardOrClip = async (from?: Box[]) => {
+    const boxes = from ?? boxesNow();
     if (!boxes.length) return;
     const named = await nameOf(boxes);
-    if (named.named) { await makeSection(true, named); return; }
+    if (named.named) { await makeSection(true, named, from); return; }
     const to = await ensureNote(id);
     if (to === null) return;
     clearBoxes();
@@ -1368,12 +1427,15 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     }
     const hit = pagePoint(e.clientX, e.clientY, e.target);
     if (!hit) return;
+    lastPoint.current = hit;
     const link = linkAt(links.current.get(hit.page) ?? [], hit.x, hit.y);
     if (link) {
       e.preventDefault();
       void (e.altKey ? peekLink(link, hit.page) : followLink(link, hit.page)).catch(console.error);
       return;
     }
+    // a press in the page's left margin holds the line beside it under the rule (a keyboard's: not under a finger)
+    if (!e.altKey && hit.x < RULER_MARGIN && !mobile && !st.current.sel) { void startRuler(hit).catch(console.error); return; }
     if (!e.altKey) return;
     void tokensOf(hit.page).then((list) => {
       const tok = tokenAt(list, hit.x, hit.y);
@@ -1410,8 +1472,20 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
       { label: 'search the web', act: 'web', run: () => openWeb(lookupUrl('web', picked)) },
       { label: 'search scholar', act: 'scholar', run: () => openWeb(lookupUrl('scholar', picked)) },
     ] : [];
+    // a highlight under the pointer offers what a selection offers, its inks, and its end
+    const hlId = highlightAt(marksRef.current, hit.page, hit.x, hit.y);
+    const hl = hlId !== null ? marksRef.current[hlId] : undefined;
+    const hlRows: PopItem[] = hlId !== null && hl?.kind === 'highlight' ? [
+      { label: 'section', act: 'hl-section', run: () => void makeSection(false, undefined, quadBoxes(hl.quads)).catch(console.error) },
+      { label: 'card', act: 'hl-card', run: () => void cardOrClip(quadBoxes(hl.quads)).catch(console.error) },
+      { label: 'clear', act: 'hl-clear', run: () => clearHighlight(hlId) },
+      { label: '-' },
+      ...INK_NAMES.map((name, i): PopItem => ({ label: `${i + 1} · ${name}${hl.ink === i + 1 ? ' ✓' : ''}`, act: `ink-${i + 1}`, run: () => inkHighlight(hlId, i + 1) })),
+    ] : [];
     const show = (first: PopItem[]) => {
-      const rows = [...first, ...(first.length && selRows.length ? [{ label: '-' }] : []), ...selRows];
+      // over a highlight its own section and card stand for the selection's
+      const rest = hlRows.length ? selRows.filter((r) => r.act === 'web' || r.act === 'scholar') : selRows;
+      const rows = [...first, ...(first.length && hlRows.length ? [{ label: '-' }] : []), ...hlRows, ...((first.length || hlRows.length) && rest.length ? [{ label: '-' }] : []), ...rest];
       if (rows.length) popMenu(at, rows, 'book-menu');
     };
     if (link) {
@@ -1462,7 +1536,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
   useEffect(() => { if (!active) setHints(null); }, [active]);
 
   // ── the contents: the palette asks this lens for them, and sends a place back (`book.ts`) ──
-  const lensNow = useRef<{ contents(): Promise<BookContents>; go(e: ContentsEntry): void }>({ contents: async () => ({ entries: [], here: -1, from: 'none' }), go: () => {} });
+  const lensNow = useRef<{ contents(): Promise<BookContents>; go(p: { page: number; y: number }): void; show(p: { page: number; y: number }, portal: string): void }>({ contents: async () => ({ entries: [], here: -1, from: 'none' }), go: () => {}, show: () => {} });
   lensNow.current = {
     async contents() {
       const at = here();
@@ -1477,10 +1551,242 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
       return { entries, here: contentsHere(entries, at.page, at.y), from: entries.length ? 'sections' : 'none' };
     },
     go: (e) => goTo(e),
+    // beside the page being read: moved to a portal's destination, no jump made of it
+    show: (p, portal) => {
+      // pages not there yet: shown once they are (below)
+      if (status !== 'ok' || p.page < first || p.page > last || !pageEls.current.has(p.page)) return;
+      goPlace(p, JUMP_ROOM);
+      setShowing(portal);
+    },
   };
   const activeRef = useRef(active);
   activeRef.current = active;
-  useEffect(() => addLens(id, { active: () => activeRef.current, contents: () => lensNow.current.contents(), go: (e) => lensNow.current.go(e) }), [id]);
+  const lens = useMemo((): BookLens => ({ active: () => activeRef.current, contents: () => lensNow.current.contents(), go: (p) => lensNow.current.go(p), show: (p, portal) => lensNow.current.show(p, portal) }), []);
+  useEffect(() => addLens(id, lens), [id, lens]);
+  /** This pane is the one beside that follows the portals of the page being read. */
+  const follower = useFollower(id, lens);
+  useEffect(() => { if (!follower) setShowing(null); }, [follower]);
+  // this pane began to follow, or its pages have come: what the page being read last passed is shown
+  useEffect(() => {
+    const f = follower && status === 'ok' && sizes.length ? followingAt(id) : null;
+    if (f) lensNow.current.show(f.to, f.portal);
+  }, [follower, status, sizes.length, id]);
+  /** A pane beside follows this book's portals. */
+  const led = useFollowed(id);
+  // a place this book was opened at (a bookmark of another book's list, a capital mark): gone to once the pages are there
+  const wanted = usePlaceWanted(id);
+  useEffect(() => {
+    if (!wanted || !active || status !== 'ok' || !sizes.length) return;
+    const p = takePlace(id);
+    if (p) goTo(p);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wanted, active, status, sizes.length, id]);
+
+  // ── what you leave on the page (milestone 77) ──
+  const stamp = () => appNow().getTime();
+  /** The marks are kept by the PDF's hash: a PDF with none (a collection that is no store) keeps none. */
+  const marked = (): string | null => {
+    if (hash === null) notify('marks are kept by the pdf\'s hash, which this collection does not have');
+    return hash;
+  };
+  /** An entry taken away, said, with the notice's undo. */
+  const dropMark = (key: string, said: string) => {
+    const was = marksRef.current[key];
+    if (!hash || !was) return;
+    void setMark(hash, key, null).catch(console.error);
+    notify(said, null, () => setMark(hash, key, was));
+  };
+
+  // bookmarks: `b` names the place in view
+  /** The nearest numbered heading above a place, read back a page at a time; else its page. */
+  const placeName = async (at: { page: number; y: number }): Promise<string> => {
+    if (pdf && rel) {
+      for (let n = at.page; n >= Math.max(first, at.page - NAME_BACK); n--) {
+        const items = await itemsOf(rel, pdf, n);
+        const head = headingAbove(() => items, n, n, n === at.page ? at.y + NAME_UNDER : Infinity);
+        if (head !== null) return head;
+      }
+    }
+    return `p. ${at.page}`;
+  };
+  const startBookmark = async () => {
+    if (marked() === null) return;
+    const at = here();
+    const name = await placeName(at);
+    setNaming({ page: at.page, y: at.y, name });
+  };
+  const keepBookmark = () => {
+    const n = st.current.naming;
+    setNaming(null);
+    if (!n || !hash) return;
+    const key = newMarkId('b');
+    const name = n.name.replace(/\s+/g, ' ').trim() || `p. ${n.page}`;
+    void setMark(hash, key, { kind: 'bookmark', ...placeOf(n.page, n.y), name, at: stamp() }).catch(console.error);
+    notify(`bookmark · ${name} · p. ${n.page}`, null, () => setMark(hash, key, null));
+  };
+  useEffect(() => { if (naming) { nameRef.current?.focus(); nameRef.current?.select(); } }, [naming !== null]);
+
+  // marks: ⇧M and a letter sets one at the place in view, `'` and the letter goes to it
+  const setLetter = async (letter: string) => {
+    if (marked() === null || !hash) return;
+    const at = here();
+    const mark: Mark = { kind: 'mark', letter, ...placeOf(at.page, at.y), at: stamp() };
+    if (isCollectionMark(letter)) await setCollectionMark(hash, letter, mark);
+    else await setMark(hash, letterId(letter), mark);
+    notify(`mark ${letter} · p. ${at.page}${isCollectionMark(letter) ? ' · the collection\'s' : ''}`);
+  };
+  const goLetter = async (letter: string) => {
+    if (isCollectionMark(letter)) {
+      const m = await findCollectionMark(letter);
+      if (!m) { notify(`no mark ${letter} in the collection`); return; }
+      goToMark(m.hash, m, id);
+      return;
+    }
+    const m = marksRef.current[letterId(letter)];
+    if (!m) { notify(`no mark ${letter} in this pdf`); return; }
+    goTo(m);
+  };
+
+  // highlights: `h` on a selection; `h` in one clears it; 1–4 choose its ink
+  const clearHighlight = (key: string) => {
+    const was = marksRef.current[key];
+    dropMark(key, `highlight cleared${was?.kind === 'highlight' && was.text ? ` · ${was.text.slice(0, 40)}` : ''}`);
+    setLastHl(null);
+  };
+  const inkHighlight = (key: string, ink: number) => {
+    const was = marksRef.current[key];
+    if (!hash || was?.kind !== 'highlight' || ink < 1 || ink > INKS) return;
+    lastInk = ink;
+    if (was.ink !== ink) void setMark(hash, key, { ...was, ink }).catch(console.error);
+  };
+  const doHighlight = () => {
+    if (marked() === null || !hash) return;
+    const s = st.current.sel;
+    if (!s?.quads.length) {
+      const p = lastPoint.current;
+      const under = p ? highlightAt(marksRef.current, p.page, p.x, p.y) : null;
+      if (under !== null) clearHighlight(under);
+      else notify('select the words to highlight, then h');
+      return;
+    }
+    const inside = highlightHolding(marksRef.current, s.quads);
+    if (inside !== null) { clearHighlight(inside); clearBoxes(); return; }
+    const made = highlightOf(s.quads, s.text, lastInk, stamp());
+    if (!made) return;
+    const key = newMarkId('h');
+    void setMark(hash, key, made).catch(console.error);
+    clearBoxes();
+    notify(`highlighted · 1–${INKS} choose its ink`, null, () => setMark(hash, key, null));
+    setLastHl({ id: key, seq: useApp.getState().notice?.seq ?? 0 });
+  };
+
+  // portals: ⇧P at a place, then ⇧P where it should show
+  const portalKey = async () => {
+    if (marked() === null || !hash) return;
+    const at = here();
+    const from = portalPending();
+    if (!from) { setPortalPending({ hash, ...placeOf(at.page, at.y) }); return; }
+    setPortalPending(null);
+    const key = newMarkId('p');
+    const mark: Portal = { kind: 'portal', page: from.page, y: from.y, to: { ...placeOf(at.page, at.y), ...(from.hash !== hash ? { pdf: hash } : {}) }, at: stamp() };
+    await setMark(from.hash, key, mark);
+    notify(`portal · p. ${from.page} shows p. ${at.page}`, null, () => setMark(from.hash, key, null));
+  };
+  /** A press on a portal's mark: where it shows, in the peek (⏎ goes there); one into another book opens that book there. */
+  const openPortal = async (p: Portal, el: HTMLElement) => {
+    if (p.to.pdf !== undefined) { goToMark(p.to.pdf, p.to, id); return; }
+    if (!pdf || p.to.page > pdf.numPages) { notify(`p. ${p.to.page} is not in this pdf`); return; }
+    const r = el.getBoundingClientRect();
+    const height = await heightOf(p.to.page);
+    setPeek({ page: p.to.page, y: (1 - p.to.y) * height - 10, height: 10, text: '', rect: { left: r.left - PEEK_W, bottom: r.bottom }, at: p.to });
+  };
+  const portalMenu = (e: React.MouseEvent, key: string, p: Portal) => {
+    e.preventDefault();
+    e.stopPropagation();
+    popMenu({ left: e.clientX, top: e.clientY, bottom: e.clientY }, [
+      { label: 'go there', act: 'portal-go', run: () => (p.to.pdf !== undefined ? goToMark(p.to.pdf, p.to, id) : goTo(p.to)) },
+      { label: 'remove', act: 'portal-remove', run: () => dropMark(key, `portal removed · p. ${p.page}`) },
+    ], 'book-menu');
+  };
+  // the pane beside follows: as the page being read passes a portal's source, that pane shows its destination
+  const sent = useRef<string | null>(null);
+  afterScroll.current = () => {
+    lastPoint.current = null;
+    if (follower || !portals.length || !followed(id)) { sent.current = null; return; }
+    const sc = scroller();
+    if (!sc) return;
+    // the place being read: a third of the way down the view, where the rule holds its line
+    const sr = sc.getBoundingClientRect();
+    const line = sr.top + sr.height / 3;
+    let at: { page: number; y: number } | null = null;
+    for (const [k, el] of pageEls.current) {
+      const pr = el.getBoundingClientRect();
+      if (pr.height > 0 && pr.top <= line && (!at || k > at.page)) at = { page: k, y: Math.min(1, (line - pr.top) / pr.height) };
+    }
+    const p = at ? portalAbove(portals.filter(([, m]) => m.to.pdf === undefined), at) : null;
+    if (!p || sent.current === p[0]) return;
+    sent.current = p[0];
+    followTo(id, lens, p[0], p[1].to);
+  };
+  // a portal made, or the pane beside opened: what it shows is said again
+  useEffect(() => { sent.current = null; afterScroll.current(); }, [portals, follower, active, led]);
+
+  // the ruler: a line of the page held under a rule
+  const bandsOf = async (n: number): Promise<LineBand[]> => lineBands(await pageLines(n), await heightOf(n));
+  /** The rule under the line nearest a place; with none given, the place a third of the way down the view. */
+  const startRuler = async (near?: { page: number; y: number }) => {
+    let at = near ?? null;
+    const sc = scroller();
+    if (!at && sc) {
+      const sr = sc.getBoundingClientRect();
+      const line = sr.top + sr.height / 3;
+      for (const [k, el] of [...pageEls.current].sort((a, b) => a[0] - b[0])) {
+        const pr = el.getBoundingClientRect();
+        // the page the line crosses, else the first below it
+        if (pr.height > 0 && pr.bottom > line) { at = { page: k, y: Math.max(0, (line - pr.top) / pr.height) }; break; }
+      }
+    }
+    if (!at) return;
+    const bands = await bandsOf(at.page);
+    let to: { page: number; line: number } | null = bands.length ? { page: at.page, line: bandNear(bands, at.y) } : await stepLine({ page: at.page, line: -1 }, 1, async (n) => (await bandsOf(n)).length, first, last);
+    if (to && to.line < 0) to = null;
+    const band = to ? (await bandsOf(to.page))[to.line] : undefined;
+    if (!to || !band) { notify('no lines of text to hold here'); return; }
+    setRuler({ ...to, band });
+  };
+  const ruling = useRef<Promise<void>>(Promise.resolve());
+  /** The rule a line down (1) or up (-1), onto the next page past a page's end; the page scrolls so it stays a third of the way down the view. */
+  const moveRuler = (dir: 1 | -1) => {
+    ruling.current = ruling.current.then(async () => {
+      const r = st.current.ruler;
+      if (!r) return;
+      const to = await stepLine(r, dir, async (n) => (await bandsOf(n)).length, first, last);
+      const band = to ? (await bandsOf(to.page))[to.line] : undefined;
+      if (!to || !band) return;
+      const next = { ...to, band };
+      st.current.ruler = next;
+      setRuler(next);
+      const sc = scroller();
+      const pr = pageEls.current.get(to.page)?.getBoundingClientRect();
+      if (!sc || !pr) return;
+      const sr = sc.getBoundingClientRect();
+      landed.current = true;
+      sc.scrollTop += pr.top + band.top * pr.height - (sr.top + sr.height / 3);
+    }).catch(console.error);
+  };
+  /** `r` while the rule shows, in a book being read: the read point is the rule's line. */
+  const readToRuler = () => {
+    const r = st.current.ruler;
+    if (!r) return;
+    const y = Math.round(r.band.bottom * 1000) / 1000;
+    void writeDoc(id, (d) => {
+      const read = meta(d).read;
+      if (read) setField(d, 'read', { ...read, pos: r.page, y });
+    }).catch(console.error);
+    notify(`read to p. ${r.page}`);
+  };
+  // the rule, the letters' wait and the name's field go with the pane
+  useEffect(() => { if (!active) { setChord(null); setRuler(null); } }, [active]);
   useEffect(() => { lensChanged(); }, [active]);
   useEffect(() => {
     const canvas = peekCanvas.current;
@@ -1528,8 +1834,11 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     const have = s.pending.length > 0 || (s.sel?.boxes.length ?? 0) > 0;
     const take = () => { e.preventDefault(); e.stopPropagation(); };
     if (e.key === 'Escape') {
-      if (s.pending.length || s.find || s.goto || s.peek || s.recent || s.looking || s.hints) {
+      const tying = active && portalPending() !== null;
+      if (s.pending.length || s.find || s.goto || s.peek || s.recent || s.looking || s.hints || s.naming || s.chord || s.ruler || tying) {
         setPending([]); setFind(null); setGoto(false); setPeek(null); setRecent(null); setHints(null);
+        setNaming(null); setChord(null); setRuler(null);
+        if (tying) setPortalPending(null);
         jumpSeq.current++; setLooking(false);
         take();
       }
@@ -1545,6 +1854,14 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
       const step = /^[a-z]$/.test(ch) ? hintStep(s.hints.targets.map((t) => t.label), typed) : null;
       if (step && 'left' in step) setHints({ ...s.hints, typed });
       else if (step) followHint(s.hints.targets[step.hit]!, e.shiftKey);
+      return;
+    }
+    // ⇧M or `'` waits for its letter: the letter sets the mark or goes to it; any other key lets it go, and does nothing else
+    if (s.chord && e.key !== 'Shift') {
+      setChord(null);
+      if (inField(e.target)) return;
+      take();
+      if (/^[A-Za-z]$/.test(e.key)) void (s.chord === 'set' ? setLetter(e.key) : goLetter(e.key)).catch(console.error);
       return;
     }
     if (inField(e.target)) return;
@@ -1571,6 +1888,20 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     if (free && !e.shiftKey && e.key === 'f' && status === 'ok') { take(); void showHints().catch(console.error); return; }
     // `n` and `N` step the search's hits, as ⏎ and ⇧⏎ do in its field
     if (free && (e.key === 'n' || e.key === 'N') && s.find?.q && s.find.pages.length) { take(); void runFind(s.find.q, e.key === 'n' ? 1 : -1).catch(console.error); return; }
+    // what is left on the page (milestone 77)
+    if (free && status === 'ok') {
+      // the highlight just made: 1–4 choose its ink while its notice shows
+      if (s.lastHl && /^[1-4]$/.test(e.key) && useApp.getState().notice?.seq === s.lastHl.seq) { take(); inkHighlight(s.lastHl.id, Number(e.key)); return; }
+      // the rule: a line down or up, the read point set to it, let go
+      if (s.ruler && (e.key === 'ArrowDown' || e.key === 'j' || e.key === 'ArrowUp' || e.key === 'k')) { take(); moveRuler(e.key === 'ArrowDown' || e.key === 'j' ? 1 : -1); return; }
+      if (s.ruler && e.key === 'r' && reading) { take(); readToRuler(); return; }
+      if (e.key === 'v') { take(); if (s.ruler) setRuler(null); else void startRuler().catch(console.error); return; }
+      if (e.key === 'b') { take(); void startBookmark().catch(console.error); return; }
+      if (e.key === 'h') { take(); doHighlight(); return; }
+      if (e.key === 'M') { take(); if (marked() !== null) setChord('set'); return; }
+      if (e.key === "'") { take(); setChord('go'); return; }
+      if (e.key === 'P') { take(); void portalKey().catch(console.error); return; }
+    }
     if (e.key === 'r' && canEnrol && !info?.read) { take(); startReading(); }
     else if (e.key === '/') { take(); setFind((f) => f ?? { q: '', pages: [], at: 0 }); findRef.current?.focus(); }
     else if (e.key === 'g') { take(); setGoto(true); }
@@ -1659,20 +1990,21 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
 
   return (
     <div className="reader-wrap" ref={outerRef} data-wide={wide ? '1' : undefined}>
-      <div ref={viewRef} className={`reader doc-view pdf-view${reading ? ' reading' : ''}`} data-page={current} data-roomy={roomy ? '1' : '0'} data-zoom={zoom} data-back={trail.back.length} data-fwd={trail.forward.length} style={colW > 0 ? { width: pageW, ...(wide ? { '--fit-w': `${colW}px`, '--fit-left': `${room.left}px` } as React.CSSProperties : null) } : undefined}>
+      <div ref={viewRef} className={`reader doc-view pdf-view${reading ? ' reading' : ''}`} data-page={current} data-roomy={roomy ? '1' : '0'} data-zoom={zoom} data-back={trail.back.length} data-fwd={trail.forward.length} data-hash={hash ?? undefined} data-bookmarks={bookmarks.length} data-highlights={highlights.length} data-portals={portals.length} data-ruler={ruler ? `${ruler.page}:${ruler.line}` : undefined} data-following={follower ? '1' : undefined} data-portal={showing ?? undefined} style={colW > 0 ? { width: pageW, ...(wide ? { '--fit-w': `${colW}px`, '--fit-left': `${room.left}px` } as React.CSSProperties : null) } : undefined}>
         <div className="meta">
           <Crumbs path={id} />
           {!(phone && session) && <button type="button" className="frozen-tag notes-toggle" data-on={notesOpen ? '1' : '0'} aria-pressed={notesOpen} title={'notes ⌘\\'} onClick={() => toggleNotes(id)}>notes</button>}
           {!isPdfPath(id) && <TabsToggle path={id} />}
           <StudyButton path={id} />
           <ExamTag path={id} />
+          {follower && <span className="frozen-tag following" title="this pane shows where the portals of the page being read lead; close it to stop">following portals</span>}
           {info && canEnrol && !info.read && (
             <button type="button" className="frozen-tag enrol" onClick={startReading}>start reading <span className="kbd">r</span></button>
           )}
           {shown && <span className="right" title={rightTip}>{shown}</span>}
         </div>
         <h1>{titleOf(id, docs, root)}</h1>
-        {(find || goto || looking) && (
+        {(find || goto || looking || naming || chord || (portalFrom && active)) && (
           <div className="pdf-bar">
             {find && (
               <>
@@ -1709,6 +2041,24 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
                 />
               </>
             )}
+            {naming && (
+              <>
+                <span className="pb-k">b</span>
+                <input
+                  ref={nameRef}
+                  className="pb-name"
+                  dir="auto"
+                  value={naming.name}
+                  spellCheck={false}
+                  placeholder="bookmark"
+                  onChange={(e) => setNaming((n) => (n ? { ...n, name: e.target.value } : n))}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); keepBookmark(); } }}
+                />
+                <span className="pb-n">p. {naming.page} · ⏎ keep</span>
+              </>
+            )}
+            {chord && <span className="pb-n pb-wait" role="status" data-chord={chord}>{chord === 'set' ? 'mark…' : 'go to mark…'}</span>}
+            {portalFrom && active && <span className="pb-n pb-wait" role="status" data-portal="pending">portal: go to where it should show, ⇧P again</span>}
             {looking && <span className="pb-n" role="status">looking</span>}
           </div>
         )}
@@ -1741,6 +2091,17 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
                 })}
               </div>
             )}
+            {/* the highlights, a box a line under the page's text: fractions of the page, so they hold at any zoom and through a page drawn again */}
+            <div className="pdf-hls">
+              {status === 'ok' && highlights.map(([key, h]) => h.quads.map((q, i) => {
+                const r = boxRect({ page: q[0], x: q[1], y: q[2], w: q[3], h: q[4] });
+                return r && <div key={`${key}:${i}`} className="hl" data-hl={key} data-ink={h.ink} data-page={q[0]} style={{ left: r.left, top: r.top, width: r.width, height: r.height }} />;
+              }))}
+              {ruler && (() => {
+                const r = pageRect(ruler.page);
+                return r && <div className="pdf-rule" data-page={ruler.page} data-line={ruler.line} style={{ left: r.left, top: r.top + ruler.band.top * r.height, width: r.width, height: (ruler.band.bottom - ruler.band.top) * r.height }} />;
+              })()}
+            </div>
             {/* the PDF's own links, where they lie: nothing a pointer meets (a press is read by where it falls), so a box or a selection begins on one as anywhere */}
             <div className="pdf-links">
               {status === 'ok' && [...rendered.current.keys()].map((n) => (links.current.get(n) ?? []).map((l, i) => {
@@ -1762,6 +2123,15 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
               </div>
             )}
             <div className="pdf-marks">
+              {/* a bookmark: a small mark in the left gutter, beside the read bar; a portal's source: one in the page's right margin */}
+              {status === 'ok' && bookmarks.map(([key, m]) => {
+                const r = pageRect(m.page);
+                return r && <div key={key} data-hit="1" className="bmark" data-mark={key} data-page={m.page} title={m.name} style={{ left: -12, top: r.top + m.y * r.height - 5 }} onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); popMenu({ left: e.clientX, top: e.clientY, bottom: e.clientY }, [{ label: 'remove', act: 'bookmark-remove', run: () => dropMark(key, `bookmark removed · ${m.name}`) }], 'book-menu'); }} />;
+              })}
+              {status === 'ok' && portals.map(([key, m]) => {
+                const r = pageRect(m.page);
+                return r && <button type="button" key={key} data-hit="1" className="pmark" data-mark={key} data-page={m.page} data-to={m.to.page} aria-label={`portal to p. ${m.to.page}`} title={`shows p. ${m.to.page}${m.to.pdf !== undefined ? ' of another book' : ''}`} style={{ left: r.width - 16, top: r.top + m.y * r.height - 7 }} onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }} onClick={(e) => { e.stopPropagation(); void openPortal(m, e.currentTarget).catch(console.error); }} onContextMenu={(e) => portalMenu(e, key, m)}>↗</button>;
+              })}
               {status === 'ok' && drawn.map(({ passage: p, cards: n, dismissed }) => {
                 const cur = lit === p.heading.text;
                 const flashing = flash?.text === p.heading.text;

@@ -222,6 +222,10 @@ export function contentsRows(entries: readonly { title: string; depth: number; p
 }
 
 /** The contents narrowed by what was typed, by the palette's own ranking; with nothing typed, every entry in the book's order (not the first forty). */
+/** Places left in books as the palette's rows (milestone 77: bookmarks, highlights, marks): each its name, where it is in small type, its page at the right. `⏎` on one is the command `mk:<its index>`. */
+export function placeRows(places: readonly { title: string; sub: string; page: number }[]): Entry[] {
+  return places.map((p, i) => ({ key: `mk:${i}`, title: p.title, sub: p.sub, tag: 'place' as const, page: p.page, target: { command: `mk:${i}` } }));
+}
 export function searchContents(rows: Entry[], q: string): Entry[] {
   return q.trim() ? search(rows, q) : rows;
 }

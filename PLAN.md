@@ -9012,6 +9012,76 @@ ms, `reviewsUnder` 41 ms, `numbersOf` 445 ms; not measured in the window
 at that size (`ILMI_SMOKE=size` was not run). `ILMI_SMOKE=numbers`: 76
 ok, 18 captures.
 
+### [ ] 75. What was left of the sweep — zoom, collections, menus, a long deck, a reading log
+Asked by the user, 2026-11-15: "please continue and go in a loop until
+done". The top BUILD-LOG entry's "Still not fixed", each built:
+1. A book's pages zoom (⌘+ ⌘− ⌘0 in a book, a pinch), per book, the place kept.
+2. A collection is renamed and deleted from the welcome's row; delete asks.
+3. Context menus by the keyboard (↑ ↓ ⏎ → ← esc, a letter), no key reaching
+   the page behind one; the div controls are buttons; ⇧F10 opens a row's menu.
+4. A narrow pane lays the queue and a deck out as a narrow window does.
+5. The deck list is windowed: 100,000 cards without 100,000 rows.
+6. Reading is logged (a pass, later, done, an extract or a section made), as
+   lines of their own in the review log's files, and the numbers have a
+   `cards · reading` layer over the same year of days.
+Done when: each has its tests, the window smokes of the surfaces touched
+pass from a clean run tree, and the stale smokes (`listcards`,
+`textsections`, `deck`, `open`) are mended or said why not.
+
+### [ ] 76. A book read as sioyek reads one — getting around
+Asked by the user, 2026-11-15: "If possible, i'd like a lot of the PDF
+features from here built for our app: https://github.com/ahrm/sioyek".
+Sioyek is a keyboard PDF reader for papers and textbooks; its features are
+taken here as ilmi's own (the book's lens, the palette, the peek, the split
+pane, the notice), not as a second viewer, and ilmi's keys keep their
+meanings (`m` is a card, `e` a section, `r` reading, `[ ]` sections).
+- *Back and forth.* Every jump in a book (a search hit, a page gone to, the
+  contents, a link, a reference, a mark) is remembered; ⌫ goes back to
+  where you were and ⇧⌫ forward again, the place exact.
+- *The PDF's own links.* A link in the page (a citation, an equation's
+  number, a contents line, a web address) is followed by a press, an
+  inside one as a jump with the way back, a web one in the browser.
+- *The contents.* `t` lists the PDF's outline, narrowed as you type, ⏎ goes
+  (the palette's list, in the book's place); a PDF with no outline says so.
+- *A reference without selecting.* A press with ⌥ (or a right-click's first
+  row) on `(3.12)`, `Fig. 4`, `Theorem 2`, `[17]` shows the peek ilmi
+  already draws for a selection and ⏎; a press in the peek goes there.
+- *Link hints.* `f` letters every link and reference in view; the letters
+  typed follow it, with ⇧ they peek instead.
+- *Search by `n` and `N`* beside ⏎ and ⇧⏎; the search keeps its hits while
+  the bar is closed until esc.
+- *Look it up.* A selection's menu gains `search the web` and `search
+  scholar` (the system's browser).
+Done when: each is walked by `ILMI_SMOKE=sioyek` on the sample's chapter
+with the file and the place asserted, in light and dark; tests for the pure
+parts (history, the outline's match, hints' letters, a reference under a
+point) in `src/pdf`.
+
+### [ ] 77. A book read as sioyek reads one — what you leave on the page
+- *Bookmarks.* `b` names the place in view (a field in the book's bar);
+  the palette lists a book's bookmarks, and every book's; the inspector
+  lists them; ⏎ goes, with the way back.
+- *Marks.* ⇧M then a letter marks the place; `'` then the letter goes to
+  it. A lowercase mark is the book's, a capital one the collection's.
+- *Highlights.* `h` on a selection highlights it (`h` again on one clears
+  it; 1–4 after `h` choose among four inks that read in e-ink by their
+  rule, not their colour); the palette searches a book's highlights; a
+  highlight can be made a section or a card as a selection can.
+- *Portals.* A place tied to another (a paragraph to its figure, a
+  theorem's use to its statement): ⇧P at the source, go to the
+  destination, ⇧P again. Reading past a portal's source with the pane
+  beside open on the book shows its destination there, following as you
+  read; without the pane, a quiet mark in the margin opens it as a peek.
+- *The ruler.* A line of the page held under a rule (a press in the
+  margin, or `v`), moved a line at a time by ↓ ↑ (j k), the page following;
+  esc lets it go. The read point may be set to it (`r`).
+- *Where they are kept.* By the PDF's hash, as a page's ink is, a register
+  an entry, so two devices' bookmarks and highlights merge; in an export
+  under `.ilmi/` beside the ink. FORMAT.md says how, with a corpus file.
+Done when: each is walked by `ILMI_SMOKE=sioyek`; two windows over a
+storage end with both devices' marks (`ILMI_SMOKE=crdt`'s way); an export
+and an import keep them; tests.
+
 ## Notes for the next session
 
 Studying (42–46) is complete, 2026-10-31: every milestone's window check

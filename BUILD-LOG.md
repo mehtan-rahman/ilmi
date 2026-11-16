@@ -6,6 +6,52 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-11-15, night — milestones 75, 76 and 77: what the sweep left, and a book read as sioyek reads one
+
+Asked by the user: "please continue and go in a loop until done", and then, mid-run, "If possible, i'd like a lot of the PDF features from here built for our app: https://github.com/ahrm/sioyek". One coordinating session on main (`df98de8` … the commit of this entry); seven agents on disjoint files, the coordinator on the smokes, the plan and what the window found. PLAN 75, 76 and 77 hold the notes.
+
+**75, what the sweep left.** All six of the last entry's "Still not fixed":
+- A book's pages zoom: ⌘+ ⌘− ⌘0 over a book and a pinch, in steps to 300%, the text under the top of the view and the middle of the page held. Over a book those keys no longer change the text size.
+- A collection is renamed and deleted from the welcome's row (a menu, F2, ⌘⌫). Delete asks on the row with what goes, the focus on `keep`. Neither while a window holds it.
+- Menus work by the keyboard (↓ ↑ ⏎ → ← esc, a letter; ⇧F10 on a row), and no key reaches the page behind one. The tab's close, the pane's controls and a row's `+` and `···` are buttons.
+- A narrow pane lays the queue and the card sheet out as a narrow window does.
+- The deck's list is windowed: a hundred thousand cards with a few dozen rows drawn.
+- Reading is logged (a pass, later, done, an extract or a section made), and the numbers have a `cards · reading` layer over the same year of days. History starts with the first line logged.
+
+**76 and 77, a book as sioyek reads one**, as ilmi's own (the lens, the palette, the peek, the pane beside), ilmi's keys kept:
+- Getting around: ⌫ back and ⇧⌫ forward after any jump; the PDF's own links followed by a press; `t` the contents in the palette; ⌥ or a right-click on `(3.12)`, `Fig. 4`, `Section 3.2`, `[17]` peeks at what it names with nothing selected, ⏎ goes; `f` letters the links and references in view; `n` `N` step a search; a selection's right-click searches the web and scholar.
+- Left on the page: `b` a bookmark (named from the heading above; listed in the palette and the inspector); ⇧M and a letter a mark, `'` and the letter back to it (a capital is the collection's); `h` a highlight in four inks told apart without colour; ⇧P twice a portal, shown in a pane beside that follows as you read (`portals beside`) or peeked at from its margin mark; `v` a ruler under a line, moved by ↓ ↑. Kept by the PDF's hash in `.ilmi/marks/`, a register an entry, so two devices' marks merge; no table, schema or Rust change.
+- Not taken from sioyek: its key-config files, synctex, keyboard text selection, its dark/custom page colours (ilmi's themes already invert a page). The sample's books have no outline and no links, so the smoke reads a small paper typeset for it (`design/books/around.tex`).
+
+**Decisions made for the user:** ⌘+ ⌘− ⌘0 are the pages' while a book is in front (the text size elsewhere); zoom is remembered for the session, not across a restart; a collection that syncs can be renamed (its device and storage go with it); a deleted collection gets no automatic backup; Escape in a menu's `move to…` leaves the list rather than closing the menu; lists of 200 cards or fewer are drawn whole as before; reading lines live in the review log's own files rather than a new table; `m` stays a card, so a mark is ⇧M; highlights are boxes, not selections; the following pane ends when its pane closes; `later` and `done` are listed on a reading day but do not shade it.
+
+**What the window found that the tests had not** (each fixed): a right-click on a card's row under a folder's lens opened two menus; under the palette a book's own commands (its contents, bookmarks, highlights, `portals beside`) were never offered; in a development build the following pane lost its role the moment it mounted; at the very top of a book the place was undefined; a figure's peek showed its caption without the picture and then ran past the window's foot; a bookmark took no name from a `1 Title` heading; a section or an extract was dated by the real day, not the app's. And two of the coordinator's own: a smoke left a tweak off in the dev profile (it uses the setter now and puts it back), and a `git stash` typed by mistake beside working agents was refused by the harness before it ran.
+
+**Checks** on `38669c4` (the last code commit; later commits are smokes and these notes): typecheck clean; npm test 2025 passed, 1 skipped, 138 files; cargo test 70 passed. Window checks from clean run trees over fresh copies of the sample, each `done`, captures by window id and looked at:
+- `sioyek` (new) 122 ok, 11 captures: the contents narrowed and gone to, ⌫ and ⇧⌫ to the exact place, a link pressed, the web link named, a reference peeked at and gone to, the letters of `f`, `n` and `N`, the selection's menu; then a bookmark made, listed and gone to, a mark set and returned to, a highlight on its word at fit and at 150%, its four inks in e-ink, cleared and undone, the ruler walked, a portal tied, peeked at, and followed in the pane beside, and all of it there when the paper is opened again.
+- `sweep` 111 ok, 13 captures: now also the pages' zoom with the place held, the collection's 758 cards as a window of rows (the scrollbar true, no jump as rows are measured, the cursor 160 rows down, a far card revealed, ⌘A all of them), the new-card sheet over the whole window, a row's menu at the pointer and by the keyboard with ⌫ deleting nothing behind it.
+- `numbers` 89 ok, 20 captures: now also the reading layer (nothing logged says so; a pass in a session is today's cell, its line in the month's file, the cards' lines unchanged).
+- `collections` (new) 26 ok: a scratch collection made, renamed (a taken name and a bad one refused), asked about and kept, deleted; the open one untouched.
+- `sweepedit` 28, `book` 155, `books` 81, `cardview` 31, `learn` 14, `tree` done, `store` 38 (the export equal to the sample), `search` 30, `listcards` 35.
+- On commits earlier in the night with the same code for their surfaces: `crdt` 76 over two windows (after the engine's change for reading lines), `textsections` 68, `rest` 74, `open` 83, `editing`, `insert`, `below`, and `deck` and `decks` over the corpus vault.
+- No smoke is known stale any more: `listcards`, `textsections`, `decks`, `rest`, `insert`, `editing`, `below`, `numbers`, `books` were mended over the two sessions; `deck` and `open` were not stale.
+
+**Not verified.**
+- A real iPad or iPhone, or a simulator: nothing ran on one. Touch paths added tonight (a long press on a highlight or a welcome row, a finger's press on a link, a flick through a long deck while rows are measured) are untried.
+- Two devices exchanging marks or reading lines in the window: the engine's tests cover both merges; `crdt` passed but does not make a mark or a pass. The re-read of an open book's marks after a sync has no test.
+- The numbers and the windowed deck in the window at 115,000 cards (`ILMI_SMOKE=size` not run); the deck's figures are jsdom's.
+- `container-type` on a pane was checked on this Mac's WebKit only; an older iPadOS could place menus and the sheet inside a pane.
+- A pinch (the smoke presses the keys), an IME anywhere, rotated PDF pages under reference tokens, a two-column page under highlights.
+- An Anki deck toggled off in the window (jsdom only).
+
+**Left.** Zoom is not remembered across a restart. Cross-book portals are not followed in the pane beside (they open the other book). The bottom strip does not name the new book keys (it is full; `docs/keys.md` has them). The palette's fuzzy match, the tree's focus hand-off and the session's three sightings of a new card are as the earlier entries decided them and worth the user's eye in daily use.
+
+```
+Read PLAN.md (75 to 77's notes), BUILD-LOG.md's top entry, and docs/development.md. Nothing is open that a session can do alone but "Not verified" (a simulator run of the phone and iPad shapes is the largest: the rig's simulator scripts are described under "The iPad" in docs/development.md and need rebuilding) and "Left". 65 and 66 wait for the user. Verify anything touched as the top entry did: typecheck, npm test, cargo test, and sweep, sweepedit, numbers, sioyek, collections and the surface's own smoke from a clean run tree.
+```
+
+---
+
 ## 2026-11-15, later — the sweep's leftovers: returns, undo, a book's search, Anki's decks
 
 Asked by the user after the entry below: "Please continue working". Four of that entry's "Found and not fixed" were built, by three agents on disjoint files and the coordinator on the smokes (`ec27f47` … the commit of this entry).

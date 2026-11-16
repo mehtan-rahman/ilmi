@@ -9012,7 +9012,7 @@ ms, `reviewsUnder` 41 ms, `numbersOf` 445 ms; not measured in the window
 at that size (`ILMI_SMOKE=size` was not run). `ILMI_SMOKE=numbers`: 76
 ok, 18 captures.
 
-### [ ] 75. What was left of the sweep — zoom, collections, menus, a long deck, a reading log
+### [x] 75. What was left of the sweep — zoom, collections, menus, a long deck, a reading log
 Asked by the user, 2026-11-15: "please continue and go in a loop until
 done". The top BUILD-LOG entry's "Still not fixed", each built:
 1. A book's pages zoom (⌘+ ⌘− ⌘0 in a book, a pinch), per book, the place kept.
@@ -9028,7 +9028,36 @@ Done when: each has its tests, the window smokes of the surfaces touched
 pass from a clean run tree, and the stale smokes (`listcards`,
 `textsections`, `deck`, `open`) are mended or said why not.
 
-### [ ] 76. A book read as sioyek reads one — getting around
+Done 2026-11-15 (`cfbbc49` … `9d26480`).
+Notes: **Zoom** is per book for the session (`ZOOMS` in `Pdf.tsx`; ⌘= ⌘−
+⌘0 are the pages' only while a book is in front, the text size's
+elsewhere; a pinch steps once a gesture; a page's canvas is capped at 16M
+pixels, so type softens past about 250% on a retina screen; the peek is
+always drawn at fit). **Collections**: `store_rename`, `store_held`,
+`store_counts` in Rust (additive; a window's title says what it holds);
+a rename moves the folder and with it the device id, the outbox and the
+git repository, and re-keys the three settings kept by name; a delete
+asks on the row and forgets those settings; neither while a window holds
+it. **Menus**: `menuKeys` in `popMenu.ts` gives every `.ctx-menu` its keys
+(one capture listener swallows the rest; `menuOpen` in the store covers
+the lens); the pane's controls and a row's `+` and `···` are buttons.
+**Narrow panes**: `.pane-body` is a size container and the queue's and the
+card sheet's narrow rules are `@container`. **The deck's list** is
+windowed above 200 rows (`windowed.ts`: heights measured, the row under
+the top of the view held; a hundred thousand rows mount in about 0.2 s in
+jsdom with a few dozen drawn). **Reading** is logged as lines of their own
+in the review log's month files (`{"at","doc","read":"pass|later|done|
+extract|section","sec"?}`, an `undo` line taking one back; FORMAT.md §1,
+a corpus month): no table, schema or Rust change; the store and the
+engine now keep any line; the numbers' `cards · reading` layer reads
+them. Found by the window on the way: a right-click on a card's row
+under a folder's lens opened two menus; making a section or an extract
+took the real day, not the app's. Every smoke that was stale is mended
+(`listcards`, `textsections`, `decks`, `rest`, `insert`; `deck` and
+`open` were not stale, they run over the corpus and pass). New smoke:
+`collections`.
+
+### [x] 76. A book read as sioyek reads one — getting around
 Asked by the user, 2026-11-15: "If possible, i'd like a lot of the PDF
 features from here built for our app: https://github.com/ahrm/sioyek".
 Sioyek is a keyboard PDF reader for papers and textbooks; its features are
@@ -9057,7 +9086,27 @@ with the file and the place asserted, in light and dark; tests for the pure
 parts (history, the outline's match, hints' letters, a reference under a
 point) in `src/pdf`.
 
-### [ ] 77. A book read as sioyek reads one — what you leave on the page
+Done 2026-11-15 (`3e95638`, `a6b9a65`, `38669c4`).
+Notes: the trail is per book for the session (`src/pdf/around.ts`,
+`trailOf` in `book.ts`; the lens says its place as `data-top-page`,
+`data-top-y`, `data-back`, `data-fwd`). Links are read with a page as it
+is drawn and hit-tested by geometry (`links.ts`), so a box or a selection
+can start on one; a web link goes to the system's browser. The contents
+is the palette's list (`t`, or `contents · <book>`), the entry holding
+the place selected. A reference under ⌥ or a right-click is found from
+the page's text (`refs.ts`: `(3.12)`, `Fig. 4`, `Section 3.2`, `[17]`;
+not a caption, a year, or `f(2)`), and peeks through the same
+`seekTarget` a selection does; a figure's peek is taller and shows the
+picture over its caption. `f` letters links and references in view, home
+row first. `n` `N` step the search. A selection's right-click offers
+`search the web` (DuckDuckGo) and `search scholar`. The sample's books
+have neither an outline nor a link, so the smoke reads
+`design/books/around.pdf`, a four-page paper typeset with hyperref.
+Found by the window: under the palette no lens is active, so a book's own
+commands were never offered (`bookInFront` now falls back to the tab in
+front); above the first page the place was undefined.
+
+### [x] 77. A book read as sioyek reads one — what you leave on the page
 - *Bookmarks.* `b` names the place in view (a field in the book's bar);
   the palette lists a book's bookmarks, and every book's; the inspector
   lists them; ⏎ goes, with the way back.
@@ -9081,6 +9130,26 @@ point) in `src/pdf`.
 Done when: each is walked by `ILMI_SMOKE=sioyek`; two windows over a
 storage end with both devices' marks (`ILMI_SMOKE=crdt`'s way); an export
 and an import keep them; tests.
+
+Done 2026-11-15 (`c1de8a5`, `38669c4`).
+Notes: a PDF's marks are one hidden file by its hash,
+`.ilmi/marks/<sha256>.json` (`src/vault/marks.ts`; FORMAT.md §1, a corpus
+file): an object of id → entry (`bookmark`, `mark`, `highlight` with its
+quads as page fractions, `portal`), keys sorted. It merges as
+`plugins.json` does: a write is diffed into a register an entry
+(`~m|<hash>|<id>`), so two devices' marks end as the union and a removal
+is the entry's register emptied. No table, schema or Rust change; export,
+import and a first sync carry it as any hidden file. A capital mark is
+one a letter across the collection. Highlights are boxes under the text
+(not the Highlight API), four inks told apart in e-ink by their rule
+(band, solid, dashed, dotted). The following pane is the same book opened
+as a twin in the pane beside (`openTwin`, `togglePortalsBeside`); it has
+no trail of its own. The ruler's band comes from the page's text lines.
+Found by the window: a development build mounts a lens twice, and the
+moment between ended the following; a bookmark took no name from a plain
+`1 Title` heading. Not seen: two windows over a storage exchanging marks
+(the engine's tests cover the merge; the `hidden` re-read is untested),
+a finger's long press on a highlight, an IME.
 
 ## Notes for the next session
 

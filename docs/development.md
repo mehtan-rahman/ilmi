@@ -231,6 +231,17 @@ empty ⌘B pair across the autosave, undo and redo across the page's own
 rebuild, a bare address. `ILMI_SMOKE=insert` wants a small PNG on the disk
 beside the sample's copy, `smoke-pick.png` (any picker or drop gives a path
 on the disk, and a collection's own files are rows).
+`ILMI_SMOKE=sioyek` (milestones 76 and 77, with `ILMI_BOOKS=<this
+repo>/design/books`) lands `around.pdf` (a four-page paper typeset with an
+outline and links: `pdflatex around.tex`, three times) as a PDF on its own
+and walks getting around it (the contents, ⌫ and ⇧⌫, a link, a reference's
+peek, the letters of `f`, `n` and `N`) and what is left on it (a bookmark,
+a mark, a highlight at fit, zoomed and in e-ink, the ruler, a portal and
+the pane beside following it), reading `.ilmi/marks/<hash>.json` after
+each. `ILMI_SMOKE=collections` makes a scratch collection from the welcome,
+renames it, and deletes it; it renames and deletes nothing it did not make.
+`deck` and `decks` run over the corpus vault
+(`src/format/__tests__/corpus/vault`), not the sample.
 `ILMI_SMOKE=readme` over a copy of the sample walks the screens the README
 shows and marks each with a `shot:` line; the README's images were captured
 that way, by window id, and scaled to 1600 px wide. Each smoke mode logs `ok:` and `failed:` lines and `shot: <name>` marks

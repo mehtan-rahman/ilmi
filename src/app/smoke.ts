@@ -5101,7 +5101,7 @@ export async function smokeListCards(vault: Vault): Promise<void> {
 
     // ── reviewed in a session: the heading path above it, the sr line under the item ──
     // tested at once, as before a card never tested was learnt first (the tweak, off for this walk)
-    useApp.setState({ learnNew: false });
+    useApp.getState().setLearnNew(false);
     openSession(item);
     const trail = await poll(() => q<HTMLElement>('.recall-wrap .card-trail'), 'the session shows the card', 8000);
     // a heading's formula is drawn in the trail (since 46), so its text is the formula's letters, not its `$…$`
@@ -5168,6 +5168,9 @@ export async function smokeListCards(vault: Vault): Promise<void> {
     log(`done; vault ${vault.root}`);
   } catch (e) {
     log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  } finally {
+    // the tweak as it ships: it is kept with the tweaks, and the next run would find it off
+    useApp.getState().setLearnNew(true);
   }
 }
 

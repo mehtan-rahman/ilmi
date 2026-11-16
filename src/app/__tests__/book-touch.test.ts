@@ -111,7 +111,7 @@ describe('a book\'s pages under a pointer', () => {
     // 60..360 of 600 across, 80..320 of 800 down, on p. 41
     const box = q<HTMLElement>('.pbox.pending')!;
     expect([box.style.left, box.style.top, box.style.width, box.style.height].map((v) => Math.round(parseFloat(v)))).toEqual([60, 80, 300, 240]);
-    expect(qa<HTMLElement>('.pend button').map((b) => b.dataset.k)).toEqual(['e', 'm', 'esc']);
+    expect(qa<HTMLElement>('.pend button').map((b) => b.dataset.k)).toEqual(['e', 'm', 'h', 'esc']);
     // a click elsewhere leaves it: the mouse has esc
     await fire(p41(), ptr('pointerdown', 'mouse', 500, 600));
     await fire(window, ptr('pointerup', 'mouse', 500, 600));
@@ -167,7 +167,7 @@ describe('a book\'s pages under a pointer', () => {
     expect(pending()).toBe(2);
     expect(qa('.pbox.pending .pb-no').map((n) => n.textContent)).toEqual(['1', '2']);
     // under a finger the bar offers section and card: a tap is the esc
-    expect(qa<HTMLElement>('.pend button').map((b) => b.dataset.k)).toEqual(['e', 'm']);
+    expect(qa<HTMLElement>('.pend button').map((b) => b.dataset.k)).toEqual(['e', 'm', 'h', 'web']);
     expect(q('.pend button[data-k="e"]')!.textContent).toContain('section');
     expect(q('.pend button[data-k="m"]')!.textContent).toContain('card');
     await fire(p41(), ptr('pointerdown', 'touch', 500, 700));

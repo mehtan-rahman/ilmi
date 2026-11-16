@@ -135,7 +135,13 @@ describe('a session', () => {
     await key(' ');               // b learnt
     await key(' '); await key('3'); // a tested
     await changed(a!.path, was);
+    const wasB = await fsp.readFile(join(dir, b!.path), 'utf8');
     await key(' '); await key('3'); // b tested
+    await changed(b!.path, wasB);
+    // each is in its steps, due ten minutes on: asked again before the end, and good there moves it out of today
+    expect(host.querySelector('.session-end')).toBeNull();
+    await key(' '); await key('3'); // a again
+    await key(' '); await key('3'); // b again
     await settle();
     expect(host.querySelector('.session-end')?.textContent).toContain('2 elements');
   });

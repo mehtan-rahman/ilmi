@@ -210,13 +210,22 @@ export interface Session {
   at?: number;
   /** What was done to each element so far (`Session.tsx`): kept with the session for the same reason. */
   marks?: SessionMarks;
+  /** Studied ahead of the schedule (a cram): a card graded into its steps is not asked again in it. */
+  cram?: boolean;
 }
 
-/** A session's record of itself, by `seq:index`: grades given, cards learnt, what was done to a topic. Held by reference, changed in place. */
+/**
+ * A session's record of itself, by `seq:index`: grades given, cards learnt, what was done to a topic. Held by reference, changed in place.
+ * `returns`: a card graded into its learning steps (due later today) is asked again, appended to the walk: by the asking
+ * graded, the index of the element that asks it again. `dropped`: the indexes of those not to be asked after all (the grade
+ * that brought one back was given again, and moved its card out of today); the walk steps over them and does not count them.
+ */
 export interface SessionMarks {
   given: Map<string, unknown>;
   learnt: Map<string, string>;
   acted: Map<string, { action: string; word: string }>;
+  returns: Map<string, number>;
+  dropped: Set<number>;
 }
 
 export const SIDE_MIN = 160;

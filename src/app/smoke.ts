@@ -8494,7 +8494,7 @@ export async function smokeLearn(vault: Vault): Promise<void> {
     key(' ');
     await poll(() => q('.recall-wrap .card[data-revealed="1"]'), 'revealed');
     key('3');
-    await poll(() => q('.sess-count')?.textContent === '4 / 4', 'graded: on to the second\'s test');
+    await poll(() => q('.sess-count')?.textContent === '4 / 5', 'graded: on to the second\'s test, and the first comes back once more (good on a new card is a step of minutes)');
     let after = before;
     for (let i = 0; i < 40 && after === before; i++) { await sleep(100); after = await text(a.path); }
     must(after !== before && /<!-- sr [^>]*r=1/.test(after), 'the grade is written: one review');
@@ -13545,6 +13545,25 @@ export async function smokeSweep(vault: Vault): Promise<void> {
     await poll(() => tab() === three[2]!.path, 'o opens the card\'s document');
     must(tabs().includes(':session'), 'in a tab beside the session, which stays');
     await shot('sweep-session-source');
+    // a card graded again comes back before the session ends, asked though its minutes have not passed
+    openNode(':session');
+    await poll(() => q('.sess-count')?.textContent === '3 / 3' && q('.recall-wrap .card'), 'back at the session, its last card');
+    (document.activeElement as HTMLElement | null)?.blur?.();
+    const third0 = await text(three[2]!.path);
+    key(' ');
+    await poll(() => q('.recall-wrap .card[data-revealed="1"], .recall-wrap .card .face.back'), 'its answer');
+    key('1');
+    await poll(() => q('.sess-count')?.textContent === '4 / 4', 'again: the session grows by one and goes on to it');
+    await poll(async () => (await text(three[2]!.path)) !== third0, 'the again is written');
+    await poll(() => q('.recall-wrap .card[data-revealed="0"], .recall-wrap .card:not([data-revealed="1"])') && !q('.recall-wrap .card .face.back'), 'the same card, its question alone');
+    const logN = (await import('./vault.js')).reviewLog().length;
+    await shot('sweep-return');
+    key(' ');
+    await poll(() => q('.recall-wrap .card[data-revealed="1"], .recall-wrap .card .face.back'), 'its answer again');
+    key('3');
+    await poll(() => /all done/.test(q('.pane-body')?.textContent ?? '') || activeTab(useApp.getState().panes)?.id !== ':session', 'good on its return ends the session', 8000);
+    await poll(async () => (await import('./vault.js')).reviewLog().length === logN + 1, 'the return is a review of its own in the log');
+    log(`the session's end: ${(q('.pane-body .empty, .pane-body .sess-end')?.textContent ?? q('.pane-body')?.textContent ?? '').slice(0, 80)}`);
     useApp.setState({ session: null });
 
     // ── a book ──

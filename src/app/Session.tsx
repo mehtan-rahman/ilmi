@@ -9,12 +9,19 @@
 // more; a draft opens whole. Above the actions, one line says what the
 // element is and where it stands. Every result is written to the file the
 // element came from, through its open page when it has one.
+//
+// The walk grows: a card graded into its learning or relearning steps (due
+// at an instant, minutes on) is asked again in this session, appended after
+// what is left, however often it takes, and before its instant when nothing
+// else is left; each asking is a review of its own. So the end comes with no
+// card minutes from due. `returns` and `dropped` (the session's marks) keep
+// which asking brought which element, and which are not asked after all.
 
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { emitDocAction, emitGrade, runBlockHooks, usePlugins } from '../plugins/index.js';
 import { PRI_DEFAULT, READ_AF, WRITE_AF, blanks, cardFields, cardForm, type Block, type Card } from '../format/index.js';
-import type { Doc } from '../format/index.js';
-import { GRADES, advanceRead, advanceSection, cadence, dayOf, grownAt, lineKey, advanceWrite, dirPri, nextGap, pacedInterval, perPassOf, postponed, readTarget, regradeFrom, scheduleOf, type CardItem, type Grade, type QueueItem, type ReadItem, type SectionItem, type WriteItem } from '../schedule/index.js';
+import type { CardSchedule, Doc } from '../format/index.js';
+import { GRADES, advanceRead, advanceSection, cadence, dayOf, grownAt, lineKey, advanceWrite, dirPri, nextGap, pacedInterval, perPassOf, postponed, readTarget, regradeFrom, scheduleOf, whenToDate, type CardItem, type Grade, type QueueItem, type ReadItem, type SectionItem, type WriteItem } from '../schedule/index.js';
 import { EL_WORD, FORM_LABEL, doneLine, dueLabel, gapLabels, glyphOf, markOf, ownBlank, paceWords, sourceLabel, standing, trailParts, dueTone } from './items.js';
 import { writeDoc } from './sections.js';
 import { queueId } from './names.js';
@@ -29,7 +36,7 @@ import { studyHeader } from './study.js';
 import { activeExamAt, currentVault, note, openNode, optionsAt } from './vault.js';
 import { openNotes } from './book.js';
 import { sessionEnded } from './sync.js';
-import { gradeCard, type Graded } from './grading.js';
+import { gradeAhead, gradeCard, inSteps, type Graded } from './grading.js';
 import { CardFaces } from './CardFaces.js';
 import { bulkCards, saveCardEdit } from './deckOps.js';
 import { cardRef as refOfCard, cardSuspended, restore, type CardRef } from './deck.js';
@@ -156,6 +163,9 @@ interface Given {
   g: Grade;
   run: Promise<Graded | null>;
   written?: Graded | null;
+  /** The schedule it was given from and the one it leaves, as told at the grade (`gradeAhead`): what says whether the card comes back, before anything is written. */
+  from: CardSchedule | undefined;
+  next: CardSchedule;
 }
 
 interface CardProps {
@@ -163,7 +173,10 @@ interface CardProps {
   active: boolean;
   /** The grade this item was given in this session, when it was. */
   given?: Given | undefined;
-  onGrade(g: Grade): void;
+  /** `line`: the schedule of the line it asks, as the document here has it. */
+  onGrade(g: Grade, line: CardSchedule | undefined): void;
+  /** Graded here, and asked again since (its return graded): the grade given stands, shown, and space is on to the next. */
+  locked?: boolean;
   /** On past an item that is gone, and whether it is. */
   onSkip(): void;
   onGone(gone: boolean): void;
@@ -183,7 +196,7 @@ const learnKey = (c: CardItem) => `${c.path}#${c.id ?? c.block}#${c.group ? JSON
 /** A schedule never tested: a card new, with no review. */
 export const neverTested = (s: { state?: string; reps?: number } | undefined): boolean => (s?.state ?? 'new') === 'new' && !s?.reps;
 
-function CardElement({ item, active, given, onGrade, onSkip, onGone, onEdit, learnable, onLearnt, onSuspend }: CardProps) {
+function CardElement({ item, active, given, locked, onGrade, onSkip, onGone, onEdit, learnable, onLearnt, onSuspend }: CardProps) {
   const loaded = useDoc(item.path);
   const docPri = useApp((s) => s.docs[item.path]?.pri);
   // a card never tested comes up answered, to learn: its test is at the session's end (the `learnNew` tweak)
@@ -210,7 +223,7 @@ function CardElement({ item, active, given, onGrade, onSkip, onGone, onEdit, lea
   // a grade given again is given from before the one it replaces: so are its hints
   const from = given?.written ? regradeFrom(sched, given.written) : sched;
   const gaps = gapLabels(from, now, optionsAt(item.path).opts.retention, exam && { exam, key: lineKey(card?.id ?? item.id, text, item.group, item.dir) });
-  const grade = (g: Grade) => { if (revealed) onGrade(g); else setRevealed(true); };
+  const grade = (g: Grade) => { if (revealed) onGrade(g, sched); else setRevealed(true); };
   // the card, or the line it asks, no longer in the file: no grade reaches it, space moves on
   const gone = !!loaded && !card;
   useEffect(() => { onGone(gone); }, [gone]);
@@ -226,7 +239,7 @@ function CardElement({ item, active, given, onGrade, onSkip, onGone, onEdit, lea
     }
     if (editing) return false;
     if (key === 's' && card) { onSuspend(refOfCard(item.path, item.block, card), !suspended); return true; }
-    if (suspended) {
+    if (suspended || locked) {
       if (key === ' ' || key === 'Enter') { onSkip(); return true; }
       if (key >= '1' && key <= '4') return true;
     } else {
@@ -236,7 +249,7 @@ function CardElement({ item, active, given, onGrade, onSkip, onGone, onEdit, lea
     }
     if (key === 'e' && card) { setRevealed(true); setPressAt(undefined); setEditing(true); return true; }
     return false;
-  }, [revealed, item, editing, card, gone, learning, suspended]);
+  }, [revealed, item, editing, card, gone, learning, suspended, locked, sched]);
 
   // an edit written: the card's text in the file, and this session's other items of it, follow
   const saveEdit = (text: string, was: string) => {
@@ -343,6 +356,13 @@ function CardElement({ item, active, given, onGrade, onSkip, onGone, onEdit, lea
           <button type="button" data-act="pass" onClick={onSkip}>
             <span className="label">next<kbd>space</kbd></span>
             <span className="gap">suspended</span>
+          </button>
+        </div>
+      ) : locked ? (
+        <div className="grades" data-revealed="1" data-gone="1" data-locked="1">
+          <button type="button" data-act="pass" onClick={onSkip}>
+            <span className="label">next<kbd>space</kbd></span>
+            <span className="gap">asked again since</span>
           </button>
         </div>
       ) : learning ? (
@@ -553,19 +573,33 @@ export function Session({ active, onOpen }: Props) {
   const docs = useApp((s) => s.docs);
   const phone = useApp((s) => s.phone);
   const seq = session?.seq;
-  // where it is, kept with the session (not here: the pane draws its active tab only, so this lens is drawn anew
-  // each time its tab is come back to); a new session starts from its first element
-  const idx = session?.at ?? 0;
-  const setIdx = (to: (i: number) => number) => useApp.setState((s) => (s.session && s.session.seq === seq ? { session: { ...s.session, at: to(s.session.at ?? 0) } } : {}));
   const items = session?.items ?? [];
   const total = items.length;
-  const el = items[idx];
-  // what was done to each element, kept with the session for the same reason
+  // what was done to each element, kept with the session (not here: the pane draws its active tab only, so this lens
+  // is drawn anew each time its tab is come back to)
   const spare = useRef<{ seq: number | undefined; marks: SessionMarks; kept: boolean } | null>(null);
   if (!spare.current || spare.current.seq !== seq || (spare.current.kept && session && !session.marks)) {
-    spare.current = { seq, marks: { given: new Map(), learnt: new Map(), acted: new Map() }, kept: false };
+    spare.current = { seq, marks: { given: new Map(), learnt: new Map(), acted: new Map(), returns: new Map(), dropped: new Set() }, kept: false };
   }
   const marks = session?.marks ?? spare.current.marks;
+  // cards asked again (the file's head): by the asking graded, the element that asks it again; and those not asked after all
+  const returns = marks.returns;
+  const dropped = marks.dropped;
+  /** The first element at or after `i` that is asked, of `n`; none, the end. And the last at or before it; none, -1. */
+  const onFrom = (i: number, n: number) => { while (i < n && dropped.has(i)) i++; return Math.min(i, n); };
+  const backFrom = (i: number) => { while (i >= 0 && dropped.has(i)) i--; return i; };
+  // where it is, kept with the session for the same reason; a new session starts from its first element
+  const idx = onFrom(session?.at ?? 0, total);
+  const setIdx = (to: (i: number, n: number) => number) => useApp.setState((s) => {
+    if (!s.session || s.session.seq !== seq) return {};
+    const n = s.session.items.length;
+    return { session: { ...s.session, at: to(onFrom(s.session.at ?? 0, n), n) } };
+  });
+  const el = items[idx];
+  // what the counter says: the elements asked, and how many are before this one
+  const asked = total - dropped.size;
+  let place = 0;
+  for (let i = 0; i < idx; i++) if (!dropped.has(i)) place++;
   useEffect(() => {
     if (!session || session.marks) return;
     spare.current!.kept = true;
@@ -597,9 +631,9 @@ export function Session({ active, onOpen }: Props) {
   const key = `${session?.seq}:${idx}`;
   const past = goneAt === key;
 
-  const goPrev = () => setIdx((i) => Math.max(0, i - 1));
-  const goNext = () => setIdx((i) => Math.min(past ? total : total - 1, i + 1));
-  const advance = () => setIdx((i) => i + 1);
+  const goPrev = () => setIdx((i) => { const p = backFrom(i - 1); return p < 0 ? i : p; });
+  const goNext = () => setIdx((i, n) => { const x = onFrom(i + 1, n); return x < n ? x : past ? n : i; });
+  const advance = () => setIdx((i, n) => onFrom(i + 1, n));
 
   // go to source: the card's document, scrolled to the card and the card marked (the reader's `reveal`),
   // in a tab of its own: the session's stays, and goes on from here when it is come back to
@@ -637,22 +671,68 @@ export function Session({ active, onOpen }: Props) {
     advance();
   };
 
-  const onGrade = (shown: CardItem, g: Grade) => {
+  /**
+   * Whether the card graded at `ask` comes back (`on`): `item` appended to the walk, to be asked once everything
+   * else has had its turn, the total one more; or, its grade given again, the element it brought taken out of the
+   * walk or put back in. One already graded stays as it is. `late`: said once the grade is written and differs from
+   * what was told at the grade; nothing is added to a session already at its end.
+   */
+  const comeBack = (ask: string, item: CardItem, on: boolean, late = false) => useApp.setState((s) => {
+    if (!s.session || s.session.seq !== seq) return {};
+    const slot = returns.get(ask);
+    if (slot === undefined) {
+      if (!on || (late && onFrom(s.session.at ?? 0, s.session.items.length) >= s.session.items.length)) return {};
+      returns.set(ask, s.session.items.length);
+      return { session: { ...s.session, items: [...s.session.items, item] } };
+    }
+    if (given.has(`${seq}:${slot}`) || on !== dropped.has(slot)) return {};
+    if (on) dropped.delete(slot); else dropped.add(slot);
+    return { session: { ...s.session, items: s.session.items.map((i, k) => (on && k === slot ? item : i)) } };
+  });
+  /** The elements that ask what the one at `k` asks, after it: its return, that one's, and on. */
+  const asksAfter = (k: number): Set<number> => {
+    const out = new Set<number>();
+    for (let at: number | undefined = k; at !== undefined && !out.has(at); at = returns.get(`${seq}:${at}`)) out.add(at);
+    return out;
+  };
+
+  const onGrade = (shown: CardItem, g: Grade, line: CardSchedule | undefined) => {
     const vault = currentVault();
     if (!vault) return;
     const now = appNow();
     const ms = now.getTime() - shownAt.current;
     const place = idx;
     const was = given.get(key);
+    // asked again: the asking that brought it here, graded
+    const back = [...returns].find(([, at]) => at === place)?.[0];
+    const prior = back === undefined ? undefined : given.get(back);
+    // what the grade will leave, told now: from the line as the document has it (given again, from before the grade it
+    // replaces, as it will be written); a grade before it still being written (the one this replaces, the asking that
+    // brought the card back) is not in the document yet, and is counted from what it was told
+    const base = was
+      ? (was.written === undefined ? was.from : was.written ? regradeFrom(line, was.written) : line)
+      : prior && prior.written === undefined ? prior.next : line;
+    const next = gradeAhead(shown.path, base, g, now);
+    // in its steps, due minutes on: asked again before the session ends (not one studied ahead, which asks each card once)
+    const again = !session?.cram && inSteps(next);
+    const returning = (sched: CardSchedule): CardItem => {
+      const s = useApp.getState().session;
+      const live = s?.seq === seq ? s?.items[place] : undefined;
+      const { due: _d, pulled: _p, buried: _b, held: _h, ...rest } = live?.kind === 'card' ? live : shown;
+      return { ...rest, sched, ...(sched.due ? { due: sched.due, dueAt: whenToDate(sched.due) } : { dueAt: now }) };
+    };
+    comeBack(key, returning(next), again);
     let told = null as Graded | null;
     // once an edit of the card is written, the item as it is then: a card with no id is found by its new text
     const run = edits.current.then(async () => {
       // given again: once the grade it replaces is written (a card it gave an id has it), from before it, its log line in that one's place
       const over = was ? await was.run : null;
+      // asked again: once its last asking's grade is written, its line after that one's
+      const before = prior ? await prior.run : null;
       const s = useApp.getState().session;
       const live = s?.seq === seq ? s?.items[place] : undefined;
       const item = live?.kind === 'card' && live.path === shown.path && live.block === shown.block ? live : shown;
-      const loaded = await gradeCard(item, g, now, ms, over, (w) => { told = w; });
+      const loaded = await gradeCard(item, g, now, ms, over, (w) => { told = w; }, before?.line.at);
       return { item, loaded };
     }).then(({ item, loaded }) => {
       if (!loaded) return;
@@ -660,11 +740,12 @@ export function Session({ active, onOpen }: Props) {
       // later items of the same card in this session follow
       const at = loaded.doc.blocks[item.block];
       emitGrade(item, g, at?.kind === 'card' ? at : null);
-      // the blank this item numbered is its group now, so a grade given again finds its line
+      // the blank this item numbered is its group now, so a grade given again finds its line; so is its return's
       const n = told?.line.key?.startsWith('c') ? Number(told.line.key.slice(1)) : null;
       if (n !== null && item.group && 'blank' in item.group && at?.kind === 'card') {
+        const mine = asksAfter(place);
         useApp.setState((s) => (s.session && s.session.seq === seq ? {
-          session: { ...s.session, items: s.session.items.map((i, k) => (k === place && i.kind === 'card' ? { ...i, group: { n }, text: at.text } as CardItem : i)) },
+          session: { ...s.session, items: s.session.items.map((i, k) => (mine.has(k) && i.kind === 'card' ? { ...i, group: { n }, text: at.text } as CardItem : i)) },
         } : {}));
       }
       if (at?.kind !== 'card' || item.id !== undefined) return;
@@ -677,8 +758,14 @@ export function Session({ active, onOpen }: Props) {
     });
     run.catch(fail);
     // what a grade after this one replaces: this one once written, else (it did not land) the one before it
-    const mine: Given = { g, run: run.then(() => told, () => told ?? was?.run ?? null) };
-    void mine.run.then((w) => { mine.written = w; });
+    const mine: Given = { g, run: run.then(() => told, () => told ?? was?.run ?? null), from: base, next };
+    void mine.run.then((w) => {
+      mine.written = w;
+      // drawn again: the hints of a grade given again are from before this one, now that it is known
+      useApp.setState((s) => (s.session && s.session.seq === seq ? { session: { ...s.session } } : {}));
+      // written, and not as told (the line changed under it): the card comes back, or does not, as the file says
+      if (w && given.get(key) === mine && inSteps(w.next) !== again && !session?.cram) comeBack(key, returning(w.next), !again, true);
+    });
     given.set(key, mine);
     advance();
   };
@@ -723,7 +810,8 @@ export function Session({ active, onOpen }: Props) {
   const distinct = new Set(items.map((i) => (i.kind === 'card' ? learnKey(i) : `${i.kind}#${i.path}#${i.kind === 'section' ? `${i.block}#${i.heading}` : ''}`))).size;
   // the tests still to come of cards that will be learnt first: counted from the start, so the total does not grow underfoot
   const ahead = learnNew ? items.filter((c, i) => c.kind === 'card' && neverTested(c.sched) && !learnt.has(learnKey(c)) && !given.has(`${seq}:${i}`)).length : 0;
-  const shownTotal = total + ahead;
+  // a card that comes back is one more when its grade brings it: that cannot be told from the start
+  const shownTotal = asked + ahead;
 
   if (!el) {
     return (
@@ -735,7 +823,7 @@ export function Session({ active, onOpen }: Props) {
 
   const onOut = phone ? () => openNode(deck?.id ?? queueId('today')) : undefined;
   if (el.kind !== 'card') {
-    return <DocSession key={key} item={el} active={active} idx={idx} total={total} of={shownTotal} onPrev={goPrev} onNext={goNext} onOut={onOut} onAct={(a, pos, y) => onDoc(el, a, pos, y)} done={acted.get(key)} onPass={advance} />;
+    return <DocSession key={key} item={el} active={active} idx={place} total={asked} of={shownTotal} onPrev={goPrev} onNext={goNext} onOut={onOut} onAct={(a, pos, y) => onDoc(el, a, pos, y)} done={acted.get(key)} onPass={advance} />;
   }
 
   const openSource = (e: MouseEvent) => goToSource({ cmdClick: e.metaKey || e.ctrlKey, shiftClick: e.shiftKey });
@@ -744,17 +832,17 @@ export function Session({ active, onOpen }: Props) {
   return (
     <div className="recall-wrap">
       <div className="recall-meta">
-        <Nav idx={idx} total={total} onPrev={goPrev} onNext={goNext} onOut={onOut} past={past} />
+        <Nav idx={place} total={asked} onPrev={goPrev} onNext={goNext} onOut={onOut} past={past} />
         {deck
-          ? <span className="sess-count sess-deck">{studyHeader(deck.title, shownTotal - idx)}</span>
-          : <span className="sess-count">{idx + 1} / {shownTotal}</span>}
+          ? <span className="sess-count sess-deck">{studyHeader(deck.title, shownTotal - place)}</span>
+          : <span className="sess-count">{place + 1} / {shownTotal}</span>}
         <span className="el-tag" data-el="card" data-form={el.form}>{FORM_LABEL[el.form]}</span>
         <button type="button" className="meta-srclink card-trail" onClick={openSource} title={`${plainMath(trail.join(' › '))}  o`}>
           {trail.map((t, i) => <bdi key={i} className={i ? 'ct-h' : 'ct-doc'}><MathText text={t} title={false} /></bdi>)}
           <span className="ms-arrow">↗</span>
         </button>
       </div>
-      <CardElement key={key} item={el} active={active} given={given.get(key)} onGrade={(g) => onGrade(el, g)} onSkip={advance} onGone={(g) => setGoneAt((was) => (g ? key : was === key ? null : was))} onEdit={onEdit} learnable={learnNew && (learnt.get(learnKey(el)) ?? key) === key} onLearnt={() => onLearnt(el)} onSuspend={onSuspend} />
+      <CardElement key={key} item={el} active={active} given={given.get(key)} locked={given.has(`${seq}:${returns.get(key)}`)} onGrade={(g, line) => onGrade(el, g, line)} onSkip={advance} onGone={(g) => setGoneAt((was) => (g ? key : was === key ? null : was))} onEdit={onEdit} learnable={learnNew && (learnt.get(learnKey(el)) ?? key) === key} onLearnt={() => onLearnt(el)} onSuspend={onSuspend} />
     </div>
   );
 }

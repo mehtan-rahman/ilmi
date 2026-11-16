@@ -72,7 +72,7 @@ export function studyDeck(id: string, opts: StudyOptions = {}, openOpts: OpenOpt
     notify(`${opts.cram ? 'no cards' : 'nothing due'} · ${title}`);
     return 0;
   }
-  useApp.setState({ session: { seq: (s.session?.seq ?? 0) + 1, items, deck: { id, title } } });
+  useApp.setState({ session: { seq: (s.session?.seq ?? 0) + 1, items, deck: { id, title }, ...(opts.cram ? { cram: true } : {}) } });
   openNode(SESSION, openOpts);
   return items.length;
 }

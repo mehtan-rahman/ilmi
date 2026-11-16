@@ -320,7 +320,11 @@ ending (`غَائِبَات{{c1::ٍ}}`) shows its blank on the letter it sits on
 The *queue* (`today` in the sidebar) holds everything due: cards, sources with
 reading left, sections, notes revisited, drafts. ⏎ enters a *session* that
 walks it; each element offers the same choices, ⏎ next, `p` later, `d`
-dismiss.
+dismiss. A card graded into its learning steps (`again`, or a new card
+graded `good`: due in minutes, not days) comes back before the session ends,
+once everything else has had its turn, and again until a grade moves it out
+of today; the count grows by one each time. A deck studied ahead (`cram`)
+asks each card once.
 
 ### Priority, growth, and the budget
 

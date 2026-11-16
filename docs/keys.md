@@ -84,7 +84,12 @@ in the queue     j k move (the row is brought into view), ⏎ enter (narrowed
                  to an exam: what is shown), o open one; a row names its file by its
                  path (`queue shows titles` in the tweaks brings the title back)
 in a session     [ ] prev / next; space reveal, 1-4 grade (a card graded,
-                 come back to: graded again in its grade's place); a card no
+                 come back to: graded again in its grade's place); a card
+                 graded into its steps (again; a new card good: due in
+                 minutes) comes back before the session ends, after what
+                 is left, as often as it takes, each time a review of its
+                 own (an asking whose return was graded keeps its grade:
+                 space is next); a card no
                  longer there: space or ] skip; s suspend the card (not
                  graded, on to the next, undone from its notice; come back
                  to, it says suspended, space is next and s brings it back);

@@ -4,7 +4,7 @@
 // app's, never required: a write that fails there leaves the card graded.
 
 import { overAt, type CardSchedule, type Review } from '../format/index.js';
-import { cardsById, copyToPartner, daysBetween, gradeItem, instantOf, linkedWith, whenToDate, wasLeeched, type CardItem, type Grade } from '../schedule/index.js';
+import { cardsById, copyToPartner, daysBetween, grade, gradeItem, instantOf, isDay, linkedWith, whenToDate, wasLeeched, type CardItem, type Grade } from '../schedule/index.js';
 import type { Loaded, StoreFs } from '../vault/index.js';
 import { activeExamAt, allDocs, anyLinks, currentVault, dropReview, note, optionsAt, recordReview, stageReview } from './vault.js';
 
@@ -27,6 +27,21 @@ export function reviewOf(path: string, id: string, key: string | undefined, g: G
   return r;
 }
 
+/** A schedule in its learning or relearning steps: due at an instant, minutes on, not on a day. Its card comes back before the session ends. */
+export const inSteps = (s: CardSchedule | undefined): boolean => !!s?.due && !isDay(s.due) && !s.suspended;
+
+/**
+ * The schedule `gradeCard` will write for `g` given from `from`, told before it is written: whether the card stays
+ * in its steps (`inSteps`), so the session knows at the grade whether it comes back. An exam's cut moves days only,
+ * so it is left out; a leech set to suspend is suspended, and does not come back.
+ */
+export function gradeAhead(path: string, from: CardSchedule | undefined, g: Grade, now: Date): CardSchedule {
+  const { opts } = optionsAt(path);
+  const next = grade(from, g, now, opts.retention !== undefined ? { request_retention: opts.retention } : undefined);
+  if (opts.leechAction === 'suspend' && wasLeeched(from, next, opts.leech)) next.suspended = true;
+  return next;
+}
+
 /** A grade as it was written: what a grade given again in the session replaces (`gradeCard`'s `over`). */
 export interface Graded {
   /** Its line in the log; a regrade's `over` names its `at`. */
@@ -46,9 +61,12 @@ export interface Graded {
  * graded card's. `over`: the grade this one gives again (‹ back to a card
  * graded in the session): the line goes back to before it and is graded
  * from there, and the log's line replaces its line (FORMAT.md §1), so
- * the card counts once. `told` hears the grade as written.
+ * the card counts once. `told` hears the grade as written. `after`: the
+ * instant of the line the card's grade before this one in the session was
+ * logged at (a card asked again): this one's is after it, so two grades of
+ * one card in one second stay two lines (`reviewKey`).
  */
-export async function gradeCard(item: CardItem, g: Grade, now: Date, ms?: number, over?: Graded | null, told?: (graded: Graded) => void): Promise<Loaded | null> {
+export async function gradeCard(item: CardItem, g: Grade, now: Date, ms?: number, over?: Graded | null, told?: (graded: Graded) => void, after?: string | null): Promise<Loaded | null> {
   const vault = currentVault();
   if (!vault) return null;
   const { opts } = optionsAt(item.path);
@@ -61,6 +79,8 @@ export async function gradeCard(item: CardItem, g: Grade, now: Date, ms?: number
   const unstage = () => { if (line) dropReview(line); line = null; };
   const logLine = (r: { id: string; key?: string; prev?: CardSchedule; next: CardSchedule }): Review => {
     const l = reviewOf(item.path, r.id, r.key, g, r.prev, r.next, now, ms);
+    // asked again: its line is after the one its last asking wrote
+    if (after) l.at = overAt(l.at, after);
     // given again: the line replaces the one before it, logged after it
     if (over) Object.assign(l, { at: overAt(l.at, over.line.at), over: over.line.at });
     return l;

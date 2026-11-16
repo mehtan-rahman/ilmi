@@ -96,8 +96,10 @@ describe('a card never tested', () => {
     await press('3');
     const after = await changed(a.path, before);
     expect(after).not.toBe(before);
-    expect(count()).toBe('4 / 4');
+    // good on a new card leaves it in its steps, due ten minutes on: it comes back before the end, one more to the total
+    expect(count()).toBe('4 / 5');
     expect(after).toMatch(/<!-- sr [^>]*st=learning[^>]*r=1/);
+    expect(useApp.getState().session!.items).toHaveLength(5);
   });
 
   it('‹ back to where it was learnt shows it to learn again, its test still once at the end', async () => {

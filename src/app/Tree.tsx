@@ -12,7 +12,8 @@
 //                     a letter jumps to the next name starting with it (`treeModel.ts`); a
 //                     letter no name starts with is left to the page (unless it follows a
 //                     jump at once: the name going on), and so is every letter while a
-//                     session is in front (its 1–4, its p and d)
+//                     session is in front (its 1–4, its p and d); ⇧F10 or the Menu key
+//                     opens the selected row's menu at the row
 //  · the page's keys  a click that opens a row gives the focus back to the page: its
 //                     bare keys (a deck's j k, a reader's r) are the page's again;
 //                     the row stays selected, and a press on the tree's own keys
@@ -37,11 +38,11 @@ import { geometry } from './dnd.js';
 import { rowDrag, rowMark, useDrag, type Surface } from './drag.js';
 import { GLYPH, SESSION, descendants, findNode, kindOf, rowCounts, titleOf, type NodeKind } from './names.js';
 import { MathText } from './MathText.js';
-import { NodeMenu, menuAt, type MenuAt } from './NodeMenu.js';
+import { NodeMenu, menuAt, menuAtRow, type MenuAt } from './NodeMenu.js';
 import type { OpenOpts } from './panes.js';
 import { failed } from './land.js';
 import { useApp } from './store.js';
-import { TREE_INDENT, TREE_PAD, afterDelete, followMove, isNodeRow, keyPlace, revealRows, treeKey, treeRows, typeahead, type TreeCards, type TreeRow } from './treeModel.js';
+import { TREE_INDENT, TREE_PAD, afterDelete, followMove, isMenuKey, isNodeRow, keyPlace, revealRows, treeKey, treeRows, typeahead, type TreeCards, type TreeRow } from './treeModel.js';
 import { cardSet, frontLine } from './cardSet.js';
 import { deleteNode } from './remove.js';
 import { docsOf, placeNode, renameNode, toggleOpen } from './vault.js';
@@ -203,6 +204,15 @@ export function Tree({ activeId, onOpen }: Props) {
     if (editing || inField(e.target)) return;
     const cur = selRef.current;
     const focus = cur !== null && rows.some((r) => r.path === cur) ? cur : activeId && rows.some((r) => r.path === activeId) ? activeId : null;
+    // ⇧F10 or the Menu key: the row's menu, at the row (a card's row has none)
+    if (isMenuKey(e)) {
+      e.preventDefault();
+      e.stopPropagation();
+      const at = focus === null ? undefined : rows.find((r) => r.path === focus);
+      const el = at && isNodeRow(at) ? boxRef.current?.querySelector(sel(at.path)) : null;
+      if (at && el) { setSelected(at.path); setAsking(null); setMenu(menuAtRow(el, at.path)); }
+      return;
+    }
     const act = treeKey(rows, focus, e);
     if (asking !== null && act?.kind !== 'delete') setAsking(null);
     if (!act) {
@@ -444,8 +454,9 @@ export function Tree({ activeId, onOpen }: Props) {
         )}
         {!isRoot && !editingThis && (
           <span className="row-acts" onMouseDown={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}>
-            <span className="ra add" title="new inside" onClick={(e) => { setSelected(id); menuFrom(e, id, true); }}><Glyph g="+" /></span>
-            <span className="ra more" title="more" onClick={(e) => { setSelected(id); menuFrom(e, id, false); }}><Icon name="more" /><span className="gch">···</span></span>
+            {/* the tree is the one Tab stop: from the keys the row's menu is ⇧F10 */}
+            <button type="button" className="ra add" title="new inside" aria-label={`add under ${title(id)}`} tabIndex={-1} onClick={(e) => { setSelected(id); menuFrom(e, id, true); }}><Glyph g="+" /></button>
+            <button type="button" className="ra more" title="more" aria-label="more" aria-haspopup="menu" tabIndex={-1} onClick={(e) => { setSelected(id); menuFrom(e, id, false); }}><Icon name="more" /><span className="gch">···</span></button>
           </span>
         )}
       </div>

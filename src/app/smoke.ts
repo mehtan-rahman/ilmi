@@ -13548,6 +13548,98 @@ export async function smokeSweep(vault: Vault): Promise<void> {
     await poll(() => q<HTMLInputElement>('.db-search')?.value === 'house' && q('.db-count')?.textContent === narrowed, 'come back to, the deck still has its search');
     await shot('sweep-deck-back');
 
+    // ── a long list of cards: the collection's, drawn a window at a time ──
+    {
+      const { setLensView } = await import('./Lenses.js');
+      setLensView('', 'cards');
+      openNode('');
+      const pane = await poll(() => activeTab(useApp.getState().panes)?.id === '' && q('.deck-view .deck-row') && q<HTMLElement>('.deck-view')!.closest<HTMLElement>('.pane-body'), 'every card of the collection as one list', 15000);
+      await sleep(800);
+      const rows = () => qa<HTMLElement>('.deck-view .deck-row');
+      const total = Number(/(\d+)/.exec(q('.db-count')?.textContent ?? '')?.[1] ?? 0);
+      must(total > 700 && rows().length < 150, `${total} cards, ${rows().length} rows drawn`);
+      const mean = rows().reduce((k, r) => k + r.getBoundingClientRect().height, 0) / rows().length;
+      const boxH = q<HTMLElement>('.deck-rows')!.getBoundingClientRect().height;
+      must(Math.abs(boxH - total * mean) / (total * mean) < 0.35, `the list is as tall as all of its cards (${Math.round(boxH)} px for ${total} of about ${Math.round(mean)} px)`);
+      pane.scrollTop = pane.scrollHeight / 2;
+      pane.dispatchEvent(new Event('scroll'));
+      await sleep(600);
+      const first = rows()[0]?.dataset.key;
+      const pr = pane.getBoundingClientRect();
+      const mid = document.elementFromPoint(pr.left + pr.width / 2, pr.top + pr.height / 2);
+      must(rows().length < 150 && mid?.closest('.deck-row'), `scrolled to the middle: rows are there, no blank (${rows().length} drawn, first ${first})`);
+      // the row under the top of the view moves by exactly the scroll while rows above it are measured
+      {
+        const topRow = () => rows().find((r) => r.getBoundingClientRect().bottom > pr.top + 60)!;
+        let worst = 0;
+        for (let i = 0; i < 6; i++) {
+          const r = topRow();
+          const key0 = r.dataset.key;
+          const y0 = r.getBoundingClientRect().top;
+          pane.scrollTop -= 50;
+          pane.dispatchEvent(new Event('scroll'));
+          await sleep(200);
+          const again = rows().find((x) => x.dataset.key === key0);
+          if (again) worst = Math.max(worst, Math.abs(again.getBoundingClientRect().top - y0 - 50));
+        }
+        must(worst < 2, `scrolling up through rows not yet measured, the list does not jump (off by ${worst.toFixed(1)} px at most)`);
+      }
+      await shot('sweep-deck-window');
+      // the cursor walks past the rows drawn
+      pane.scrollTop = 0;
+      pane.dispatchEvent(new Event('scroll'));
+      await sleep(400);
+      useApp.setState({ selectedCard: null });
+      (document.activeElement as HTMLElement | null)?.blur?.();
+      for (let i = 0; i < 160; i++) { key('j'); if (i % 20 === 19) await sleep(60); }
+      await sleep(500);
+      const cur = q<HTMLElement>('.deck-row.cursor, .deck-row.selected');
+      const cr = cur?.getBoundingClientRect();
+      must(cur && cr && cr.top >= pr.top - 2 && cr.bottom <= pr.bottom + 2 && pane.scrollTop > 1000, `j a hundred and sixty times: the cursor's row is drawn and in view (scrolled ${Math.round(pane.scrollTop)})`);
+      // a far card revealed
+      const lastDoc = useApp.getState().files.filter((f) => (useApp.getState().docs[f]?.cards ?? 0) > 0).pop()!;
+      const { openCard } = await import('./vault.js');
+      const body = (await vault.read(lastDoc)).doc.blocks;
+      const idx = body.map((b, i) => (b.kind === 'card' ? i : -1)).filter((i) => i >= 0).pop()!;
+      setLensView('', 'cards');
+      useApp.setState({ reveal: { path: lastDoc, index: idx } });
+      const far = await poll(() => q<HTMLElement>(`.deck-row[data-key="${CSS.escape(`${lastDoc}#${idx}`)}"]`), `a card far down (${lastDoc}#${idx}) is brought into the window`, 8000);
+      await sleep(400);
+      const fr = far.getBoundingClientRect();
+      must(fr.top >= pr.top && fr.bottom <= pr.bottom && rows().length < 150, 'it lies in view, the rows still a window');
+      // ⌘A is every card, not the rows drawn
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', metaKey: true, bubbles: true, cancelable: true }));
+      await poll(() => (q('.db-sel')?.textContent ?? '').startsWith(`${total} `), `⌘A selects all ${total}`);
+      key('Escape');
+      // the sheet for a new card lies over the whole window, not inside its pane
+      key('m');
+      const sheet = await poll(() => q<HTMLElement>('.card-sheet'), 'm opens the new card\'s sheet');
+      const sr = sheet.getBoundingClientRect();
+      must(sr.left <= 1 && sr.top <= 1 && sr.right >= window.innerWidth - 1 && sr.bottom >= window.innerHeight - 1, `the sheet covers the window (${Math.round(sr.left)},${Math.round(sr.top)} to ${Math.round(sr.right)},${Math.round(sr.bottom)} of ${window.innerWidth}×${window.innerHeight})`);
+      document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+      await poll(() => !q('.card-sheet'), 'esc lets it go');
+      // a row's menu opens at the pointer in a scrolled list
+      const target = rows()[Math.floor(rows().length / 2)]!;
+      const tr2 = target.getBoundingClientRect();
+      const [mx, my] = [tr2.left + 80, tr2.top + tr2.height / 2];
+      target.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: mx, clientY: my }));
+      const menu = await poll(() => q<HTMLElement>('.ctx-menu'), 'a right-click on a row opens its menu');
+      const mr = menu.getBoundingClientRect();
+      must(Math.abs(mr.left - mx) < 12 && Math.abs(mr.top - my) < 12 || (mr.left <= mx && mr.right >= mx - 12 && mr.bottom > 0 && mr.top < window.innerHeight && Math.abs(mr.top - my) < mr.height + 12), `the menu is at the pointer (${Math.round(mr.left)},${Math.round(mr.top)} for ${Math.round(mx)},${Math.round(my)})`);
+      // the menu by the keyboard, and nothing reaching the list behind it
+      const count0 = Number(/(\d+)/.exec(q('.db-count')?.textContent ?? '')?.[1] ?? 0);
+      const fire = (k: string) => (document.activeElement ?? document.body).dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));
+      fire('ArrowDown'); fire('ArrowDown');
+      await sleep(150);
+      must(menu.contains(document.activeElement) || menu === document.activeElement, `the menu has the focus and ↓ walks it (${(document.activeElement as HTMLElement | null)?.textContent?.slice(0, 20)})`);
+      fire('Backspace');
+      await sleep(400);
+      must(Number(/(\d+)/.exec(q('.db-count')?.textContent ?? '')?.[1] ?? 0) === count0 && q('.ctx-menu'), '⌫ with a menu open deletes no card behind it');
+      fire('Escape');
+      await poll(() => !q('.ctx-menu'), 'esc closes the menu');
+      setLensView('', 'items');
+    }
+
     // ── the session ──
     const due = useApp.getState().queue.filter((i): i is CardItem => i.kind === 'card' && i.form === 'qa' && i.sched?.state === 'review' && i.groups === 1 && !i.dir);
     must(due.length >= 3, `cards in review in the queue (${due.length})`);

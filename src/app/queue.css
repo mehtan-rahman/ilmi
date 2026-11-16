@@ -128,7 +128,9 @@
   cursor: default;
   position: relative;
 }
-@media (max-width: 720px) {
+/* narrow: by the pane the queue is in (`.pane-body` is the container, app.css), so a split pane gets it as a small
+   window does; a phone's one pane is as wide as its window */
+@container (max-width: 720px) {
   .qlist li {
     grid-template-columns: 14px 1fr;
     grid-template-areas: "mark body" ". pri";

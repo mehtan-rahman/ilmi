@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { childrenAt, ordered, type TreeNode } from '../vault/index.js';
 import { geometry, type FlatRow } from './dnd.js';
 import { rowDrag, rowMark, useDrag, type Surface } from './drag.js';
-import { nestOf } from './treeModel.js';
+import { isMenuKey, nestOf } from './treeModel.js';
 import { DeckBrowser } from './DeckBrowser.js';
 import { NumbersView } from './NumbersLens.js';
 import { Intake } from './Intake.js';
@@ -20,7 +20,7 @@ import { Session } from './Session.js';
 import { CardPane } from './CardPane.js';
 import { failed } from './land.js';
 import { useApp, type DocInfo, type LensView } from './store.js';
-import { NodeMenu, menuAt, type MenuAt } from './NodeMenu.js';
+import { NodeMenu, menuAt, menuAtRow, type MenuAt } from './NodeMenu.js';
 import { createNode, openIntake, renameNode } from './vault.js';
 import { notebookOf } from './tabs.js';
 import { Glyph, Plus } from './icons.js';
@@ -164,6 +164,13 @@ function FolderLens({ id, active, onOpen }: LensProps) {
                   {...rowDrag(geoms[i]!, LENS, { draggable: !editingThis })}
                   onClick={(e) => { if (!editingThis) onOpen(n.path, { cmdClick: e.metaKey || e.ctrlKey, shiftClick: e.shiftKey }); }}
                   onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setMenu(menuAt(e, n.path)); }}
+                  // a row is reached by Tab: ⏎ opens it, ⇧F10 or the Menu key its menu (the tree's keys, `treeModel.ts`)
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.target !== e.currentTarget) return;
+                    if (isMenuKey(e)) { e.preventDefault(); e.stopPropagation(); setMenu(menuAtRow(e.currentTarget, n.path)); }
+                    else if (e.key === 'Enter' && !e.metaKey && !e.ctrlKey && !e.altKey) { e.preventDefault(); onOpen(n.path, {}); }
+                  }}
                 >
                   <span className="fv-g" data-t={kind}><Glyph g={GLYPH[kind]} /></span>
                   {editingThis ? (

@@ -17,7 +17,7 @@
 //                    selected row shows them too
 //  · keys            the rail takes focus (a click on a row gives it): ↑↓ Home
 //                    End → ← ⏎ F2 ⌘⌫ ⌥⌘↑↓ ⌥⌘← → and a letter, as the tree's
-//                    (`treeModel.ts`); from the page ⌘⌥↑ / ⌘⌥↓ step to the
+//                    (`treeModel.ts`), ⇧F10 or the Menu key the row's menu; from the page ⌘⌥↑ / ⌘⌥↓ step to the
 //                    page before / after (subtabs counted, extracts not)
 //  · ⌃⌘T or «        folds the rail to a strip, » opens it; per notebook. Not
 //                    ⌘⇧[, which is macOS's previous tab; ⌃⌘T is nothing in
@@ -37,7 +37,8 @@ import { geometry } from './dnd.js';
 import { rowDrag, rowMark, useDrag, type Surface } from './drag.js';
 import { importFiles, failed } from './land.js';
 import { GLYPH, descendants, findNode, kindOf, titleOf, type NodeKind } from './names.js';
-import { NodeMenu, menuAt, placeMenu, type MenuAt } from './NodeMenu.js';
+import { NodeMenu, menuAt, menuAtRow, placeMenu, type MenuAt } from './NodeMenu.js';
+import { menuKeys } from './popMenu.js';
 import type { OpenOpts } from './panes.js';
 import { deleteNode } from './remove.js';
 import { useApp } from './store.js';
@@ -45,7 +46,7 @@ import { goToHeading } from './headings.js';
 import { plainMath } from './chromeText.js';
 import { MathText } from './MathText.js';
 import { RAIL_INDENT, RAIL_PAD, TAB_DEPTH, foldedHeadings, notebookPages, outline, railKeyPlace, railPad, railRows, stepPage, tabAncestors, type RailRow } from './tabs.js';
-import { treeKey, typeahead } from './treeModel.js';
+import { isMenuKey, treeKey, typeahead } from './treeModel.js';
 import { useDoc } from './useDoc.js';
 import { createTab, noteAfter, placeNode, renameNode, setRailFolded, setRailWidth } from './vault.js';
 import { Glyph, Icon, Plus } from './icons.js';
@@ -139,19 +140,18 @@ export function Notebook({ nb, page, active, onOpen, children }: Props) {
     return () => window.removeEventListener('keydown', onKey);
   }, [active, tree, nb, order, docs, page, onOpen]);
 
-  // the `+` menu closes on any outside press or escape, and stays inside the window
+  // the `+` menu closes on any outside press or escape, and stays inside the window; its keys are every menu's (`popMenu.ts`)
   useEffect(() => {
     if (!plus) return;
     const close = () => setPlus(null);
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setPlus(null); };
     window.addEventListener('mousedown', close);
-    window.addEventListener('keydown', onKey);
-    return () => {
-      window.removeEventListener('mousedown', close);
-      window.removeEventListener('keydown', onKey);
-    };
+    return () => window.removeEventListener('mousedown', close);
   }, [plus]);
-  useLayoutEffect(() => { placeMenu(plusRef.current); }, [plus]);
+  useLayoutEffect(() => {
+    if (!plus) return;
+    placeMenu(plusRef.current);
+    return menuKeys(plusRef.current, { close: () => setPlus(null) }).dispose;
+  }, [plus]);
 
   const beginRename = (path: string) => {
     if (path === nb) return;
@@ -213,6 +213,14 @@ export function Notebook({ nb, page, active, onOpen, children }: Props) {
     if (editing || inField(e.target)) return;
     const cur = selRef.current;
     const focus = cur !== null && rows.some((r) => r.path === cur && !r.placeholder) ? cur : rows.some((r) => r.path === page && !r.placeholder) ? page : null;
+    // ⇧F10 or the Menu key: the row's menu, as a right-click on it opens
+    if (isMenuKey(e)) {
+      e.preventDefault();
+      e.stopPropagation();
+      const el = focus === null ? null : boxRef.current?.querySelector(`.rail-row[data-path="${CSS.escape(focus)}"]:not(.extracts):not(.heading)`);
+      if (focus !== null && el) { setSelected(focus); setAsking(null); setMenu(menuAtRow(el, focus)); }
+      return;
+    }
     const act = treeKey(rows, focus, e);
     if (asking !== null && act?.kind !== 'delete') setAsking(null);
     if (!act) return;
@@ -354,8 +362,9 @@ export function Notebook({ nb, page, active, onOpen, children }: Props) {
         {asked > 0 && <span className="asking">delete with {asked} inside? ⌘⌫</span>}
         {!r.overview && !editingThis && !asked && (
           <span className="row-acts" onMouseDown={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
-            <span className="ra add" title="a note after this one" onClick={(e) => { e.stopPropagation(); after(r.path); }}><Glyph g="+" /></span>
-            <span className="ra more" title="more" onClick={(e) => rowMenu(e, r.path, true)}><Icon name="more" /><span className="gch">···</span></span>
+            {/* the rail is the one Tab stop: from the keys the row's menu is ⇧F10 */}
+            <button type="button" className="ra add" title="a note after this one" aria-label={`add after ${title(r.path)}`} tabIndex={-1} onClick={(e) => { e.stopPropagation(); after(r.path); }}><Glyph g="+" /></button>
+            <button type="button" className="ra more" title="more" aria-label="more" aria-haspopup="menu" tabIndex={-1} onClick={(e) => rowMenu(e, r.path, true)}><Icon name="more" /><span className="gch">···</span></button>
           </span>
         )}
       </div>

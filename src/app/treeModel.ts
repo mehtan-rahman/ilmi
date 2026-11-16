@@ -172,6 +172,10 @@ export interface KeyLike {
   shiftKey?: boolean;
 }
 
+/** The key that opens a row's menu at the row: ⇧F10, or the Menu key on a keyboard that has one. */
+export const isMenuKey = (e: KeyLike): boolean =>
+  e.key === 'ContextMenu' || (e.key === 'F10' && !!e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey);
+
 const MOVES: Record<string, 'up' | 'down' | 'out' | 'in'> = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'out', ArrowRight: 'in' };
 
 /** What key `e` does with `focus` the selected row (null: no row yet); null when the key is not the tree's. */

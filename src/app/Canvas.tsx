@@ -4,7 +4,7 @@
 
 import { Lens } from './Lenses.js';
 import { EL_GLYPH } from './items.js';
-import { GLYPH, tabKindOf } from './names.js';
+import { GLYPH, INTAKE, tabKindOf } from './names.js';
 import { activatePane, closePane, closeTab, selectTab, splitPane, type OpenOpts, type Pane } from './panes.js';
 import { useApp } from './store.js';
 import { notebookOf, tabLabel } from './tabs.js';
@@ -64,13 +64,14 @@ function TabBar({ pane, index, canClosePane }: TabBarProps) {
           >
             <span className="glyph" data-t={kind} data-el={session?.kind}><Glyph g={glyph} /></span>
             <TabTitle title={plainMath(title)} />
-            <span className="close" onClick={(e) => { e.stopPropagation(); closeTabs((s) => closeTab(s, index, ti)); }}><Glyph g="×" /></span>
+            {/* ⌘W closes the tab from the keys: the button is no Tab stop */}
+            <button type="button" className="close" aria-label="close tab" tabIndex={-1} onClick={(e) => { e.stopPropagation(); closeTabs((s) => closeTab(s, index, ti)); }}><Glyph g="×" /></button>
           </div>
         );
       })}
       <div className="spacer" />
-      {!mobile && <div className="ctl" onClick={() => { setPanes((s) => splitPane(s, index)); after(); }} title="split pane"><Glyph g="⊟" /></div>}
-      {canClosePane && <div className="ctl" onClick={() => closeTabs((s) => closePane(s, index))} title="close pane"><Glyph g="×" /></div>}
+      {!mobile && <button type="button" className="ctl" onClick={() => { setPanes((s) => splitPane(s, index)); after(); }} title="split pane" aria-label="split pane"><Glyph g="⊟" /></button>}
+      {canClosePane && <button type="button" className="ctl" onClick={() => closeTabs((s) => closePane(s, index))} title="close pane" aria-label="close pane"><Glyph g="×" /></button>}
     </div>
   );
 }
@@ -79,6 +80,8 @@ export function Canvas() {
   const panes = useApp((s) => s.panes);
   const setPanes = useApp((s) => s.setPanes);
   const covered = useApp((s) => s.paletteOpen || s.tweaksOpen || s.quickCard !== null);
+  // an open context menu covers the page too: its keys are the menu's (`popMenu.ts`), not a session's grades or a deck's ⌫
+  const menuOpen = useApp((s) => s.menuOpen);
   // a phone draws one page: no tabs (milestone 56)
   const phone = useApp((s) => s.phone);
   const mobile = useApp((s) => s.mobile);
@@ -97,9 +100,10 @@ export function Canvas() {
             onMouseDown={() => { if (pi !== panes.active) { setPanes((s) => activatePane(s, pi)); rememberTab(); } }}
           >
             {!phone && <TabBar pane={pane} index={pi} canClosePane={panes.panes.length > 1} />}
+            {/* the intake is not covered by a menu: uncovered again it takes the focus for its text, from the row a menu's rename has just begun; the menu has every key meanwhile */}
             <div className="pane-body">
               {tab
-                ? <Lens key={tab.key} id={tab.id} active={pi === panes.active && !covered} onOpen={onOpen} />
+                ? <Lens key={tab.key} id={tab.id} active={pi === panes.active && !covered && !(menuOpen && tab.id !== INTAKE)} onOpen={onOpen} />
                 : <div className="empty center pane-empty"><span>{mobile ? 'nothing open · press a row in the sidebar' : <><kbd>⌘k</kbd> to open · or press a row in the sidebar</>}</span></div>}
             </div>
           </div>

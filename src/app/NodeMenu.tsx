@@ -13,7 +13,10 @@
 // (`remove.ts`). The `+` in the sidebar's root row opens the same menu
 // without the node's half.
 // Escape and a press outside close it; it stays inside the window at the
-// right (`MENU_W`) and the bottom (`placeMenu`).
+// right (`MENU_W`) and the bottom (`placeMenu`). Its keys are every menu's
+// (`menuKeys` in `popMenu.ts`): it takes the focus, ↓ ↑ Home End move, ⏎ or
+// space runs, → opens `move to…` and ← or Escape leaves it; ⇧F10 or the Menu
+// key on a row opens it there (`menuAtRow`).
 
 import { useEffect, useLayoutEffect, useRef, useState, type Dispatch, type MouseEvent, type SetStateAction } from 'react';
 import type { NodeType } from '../format/index.js';
@@ -25,6 +28,7 @@ import { useApp } from './store.js';
 import { deleteNode } from './remove.js';
 import { createNode, duplicateNode, enrolReading, moveNode, openIntake, setTabs, sortByName } from './vault.js';
 import { Glyph } from './icons.js';
+import { menuKeys } from './popMenu.js';
 
 export const MENU_W = 190;
 
@@ -49,6 +53,12 @@ export interface MenuAt {
 /** A menu for `id` at the pointer, kept off the right edge. */
 export const menuAt = (e: { clientX: number; clientY: number }, id: string, plus = false): MenuAt =>
   ({ id, x: Math.min(e.clientX, window.innerWidth - MENU_W), y: e.clientY, sub: false, ...(plus ? { plus } : {}) });
+
+/** A menu for `id` under its row `el`, as the keyboard opens it (⇧F10, the Menu key): just inside the row's start, at its foot. */
+export const menuAtRow = (el: Element, id: string): MenuAt => {
+  const r = el.getBoundingClientRect();
+  return menuAt({ clientX: r.left + 24, clientY: r.bottom - 2 }, id);
+};
 
 /** One order for every menu (right-click and the sidebar's `+`): a note first, the other documents, the folder last. */
 const NEW_KINDS: [NodeKind, string][] = [
@@ -151,15 +161,26 @@ export function NodeMenu({ at, set, onCreated, onRename, onSubtab, onMoved }: Pr
   const ref = useRef<HTMLDivElement>(null);
   const fail = failed('that');
 
-  // the menu closes on any outside press or escape
+  // an item was run (not Escape, not a press outside)
+  const ran = useRef(false);
+
+  // the menu closes on any outside press
   useEffect(() => {
     const close = () => set(null);
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') set(null); };
     window.addEventListener('mousedown', close);
-    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('mousedown', close);
+  }, [set]);
+
+  // its keys (`menuKeys`): the focus is the menu's while it is open, Escape closes it, and the focus goes back as it
+  // closes. An item run from a menu the pointer opened gives the keys to the page instead: the press that opened the
+  // menu left the focus on the tree, whose jump-to-a-name would take the page's bare keys (a session's grades after
+  // `study`); a rename's field takes it after. One the keyboard opened leaves the focus on the tree, where it was.
+  useLayoutEffect(() => {
+    const keys = menuKeys(ref.current, { close: () => set(null) });
     return () => {
-      window.removeEventListener('mousedown', close);
-      window.removeEventListener('keydown', onKey);
+      keys.dispose();
+      const on = document.activeElement;
+      if (ran.current && !keys.byKey && on instanceof HTMLElement && on.matches('.tree')) on.blur();
     };
   }, [set]);
 
@@ -174,10 +195,7 @@ export function NodeMenu({ at, set, onCreated, onRename, onSubtab, onMoved }: Pr
   const pdfAlone = isPdfPath(at.id);
   // new items, imports, and the intake land in the folder, or inside the document (its children directory)
   const dir = childDirOf(at.id);
-  // an item run gives the keys back to the page: the press that opened the menu left the focus on the tree, whose
-  // jump-to-a-name would take the page's bare keys (a session's grades after `study`); a rename's field takes it after
-  const toPage = () => { const on = document.activeElement; if (on instanceof HTMLElement && on.matches('.tree')) on.blur(); };
-  const act = (fn: () => void) => (e: MouseEvent) => { e.stopPropagation(); fn(); set(null); toPage(); };
+  const act = (fn: () => void) => (e: MouseEvent) => { e.stopPropagation(); ran.current = true; fn(); set(null); };
   const create = (k: NodeKind) => { createNode(dir, k as NodeType | 'folder').then(onCreated).catch(fail); };
   const sub = (on: boolean) => (e: MouseEvent) => { e.stopPropagation(); set((m) => (m ? { ...m, sub: on } : m)); };
   const targets = moveTargets(tree, at.id, order);
@@ -188,8 +206,8 @@ export function NodeMenu({ at, set, onCreated, onRename, onSubtab, onMoved }: Pr
     e.stopPropagation();
     if (under > 0 && !asking) { setAsking(true); return; }
     deleteNode(at.id).catch(failed('delete'));
+    ran.current = true;
     set(null);
-    toPage();
   };
 
   return (
@@ -304,7 +322,7 @@ export function NodeMenu({ at, set, onCreated, onRename, onSubtab, onMoved }: Pr
           )}
         </>
       ) : (
-        <MoveList targets={targets} back={sub(false)} move={(dir) => { const from = at.id; moveNode(from, dir).then((to) => onMoved?.(from, to)).catch(failed('move')); set(null); }} />
+        <MoveList targets={targets} back={sub(false)} move={(dir) => { const from = at.id; ran.current = true; moveNode(from, dir).then((to) => onMoved?.(from, to)).catch(failed('move')); set(null); }} />
       )}
     </div>
   );

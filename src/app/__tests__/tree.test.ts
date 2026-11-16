@@ -117,6 +117,10 @@ describe('the sidebar menu', () => {
     mouse(row('notes.md'), 'contextmenu', { clientX: 60, clientY: 120 });
     mouse(side.querySelector('.ctx-menu .ci.has-sub')!, 'click');
     expect(side.querySelector('.ctx-menu .sub-scroll')).not.toBeNull();
+    // Escape in the list leaves it for the menu; again, and the menu closes
+    key('Escape');
+    expect(side.querySelector('.ctx-menu .sub-scroll')).toBeNull();
+    expect(menu()).not.toBeNull();
     key('Escape');
     expect(menu()).toBeNull();
   });

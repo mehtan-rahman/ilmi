@@ -73,13 +73,15 @@ interface M {
   edit: { id: string; typed: boolean } | null;
   ask: string | null;
   menu: string | null;
+  /** The open menu has an item lit by its keys (↓): ⏎ would run it, which is `menus-keys.test.ts`'s and `node-menu.test.ts`'s to say, not the chart's. */
+  lit: boolean;
   /** Deleted, and taken away by the vault (given back by it). */
   deleted: string[];
   away: boolean;
 }
 interface Out { calls: string[] }
 
-const init = (): M => ({ sel: null, edit: null, ask: null, menu: null, deleted: [], away: false });
+const init = (): M => ({ sel: null, edit: null, ask: null, menu: null, lit: false, deleted: [], away: false });
 const goneOf = (m: M) => new Set([...m.deleted, ...(m.away ? ['p'] : [])]);
 const rowsOf = (m: M): TreeRow[] => {
   const g = goneOf(m);
@@ -94,6 +96,11 @@ const under = (m: M, id: string) => (id === 'p' && has(m, 'p/x.md') ? 1 : 0);
 const field = (m: M) => m.edit !== null && isNode(m, m.edit.id);
 /** The row the keys act on: the selection while it is drawn (no tab is open here). */
 const focus = (m: M) => (m.sel !== null && drawn(m, m.sel) ? m.sel : null);
+
+/** A menu is drawn: while no field has the focus every key is its own (`popMenu.ts`), and none is the tree's. */
+const menuUp = (m: M) => m.menu !== null && has(m, m.menu);
+/** The keys are the tree's: no field drawn, no menu open. */
+const treeKeys: [string, (m: M) => boolean] = ['no field, no menu', (m) => !field(m) && !menuUp(m)];
 
 /** A key the tree takes (the field does not have the focus): any but ⌘⌫ ends an ask. */
 const treeKeyEnds = (m: M) => { m.ask = null; };
@@ -121,14 +128,17 @@ export const CHART: Tr[] = [
   { region: 'rename', name: 'blur, type with no field', ev: is('type', 'blur'), guard: ['no field', (m) => !field(m)], act: () => {} },
 
   // the tree's keys, while the field is not drawn (a rename whose row went away holds none)
-  { region: 'keys', name: 'enter | esc on the tree', ev: is('enter', 'esc'), guard: ['no field', (m) => !field(m)], act: (m, e) => { treeKeyEnds(m); if (e === 'esc') m.menu = null; } },
-  { region: 'keys', name: '↓', ev: is('down'), guard: ['no field', (m) => !field(m)], act: (m) => {
+  { region: 'keys', name: 'enter | esc on the tree', ev: is('enter', 'esc'), guard: treeKeys, act: (m, e) => { treeKeyEnds(m); if (e === 'esc') m.menu = null; } },
+  // a menu open, no field: its keys are its own (opened by the pointer, no item is lit: ⏎ runs none), Escape closes it
+  { region: 'menu', name: 'a key with the menu open', ev: is('enter', 'down', 'delete', 'f2', 'move down'), guard: ['menu open, no field', (m) => !field(m) && menuUp(m)], act: (m, e) => { if (e === 'down') m.lit = true; } },
+  { region: 'menu', name: 'esc closes the menu', ev: is('esc'), guard: ['menu open, no field', (m) => !field(m) && menuUp(m)], act: (m) => { m.menu = null; } },
+  { region: 'keys', name: '↓', ev: is('down'), guard: treeKeys, act: (m) => {
     const rs = real(m);
     const i = rs.findIndex((r) => r.path === focus(m));
     m.sel = rs[Math.min(rs.length - 1, i + 1)]!.path;
     treeKeyEnds(m);
   } },
-  { region: 'asking', name: '⌘⌫', ev: is('delete'), guard: ['no field', (m) => !field(m)], act: (m, _e, out) => {
+  { region: 'asking', name: '⌘⌫', ev: is('delete'), guard: treeKeys, act: (m, _e, out) => {
     const id = focus(m);
     if (id === null || id === '' || !isNode(m, id)) { m.ask = null; return; }
     if (under(m, id) > 0 && m.ask !== id) { m.ask = id; return; }
@@ -142,12 +152,12 @@ export const CHART: Tr[] = [
     if (m.menu !== null && !has(m, m.menu)) m.menu = null;
     if (m.edit !== null && !has(m, m.edit.id)) m.edit = null;
   } },
-  { region: 'rename', name: 'F2', ev: is('f2'), guard: ['no field', (m) => !field(m)], act: (m) => {
+  { region: 'rename', name: 'F2', ev: is('f2'), guard: treeKeys, act: (m) => {
     const id = focus(m);
     if (id !== null && id !== '' && isNode(m, id)) m.edit = { id, typed: false };
     treeKeyEnds(m);
   } },
-  { region: 'keys', name: '⌥⌘↓', ev: is('move down'), guard: ['no field', (m) => !field(m)], act: (m, _e, out) => {
+  { region: 'keys', name: '⌥⌘↓', ev: is('move down'), guard: treeKeys, act: (m, _e, out) => {
     const id = focus(m);
     if (id !== null && id !== '' && isNode(m, id)) {
       const to = keyPlace(rowsOf(m), id, 'down');
@@ -174,6 +184,8 @@ const enabled = (m: M, e: Ev): boolean => {
   if (e === 'menu p' || e === 'dblclick p') return drawn(m, 'p');
   if (e === 'vault takes p') return !m.away && !m.deleted.includes('p');
   if (e === 'vault gives p') return m.away;
+  // ⏎ on a lit item runs it: outside the chart
+  if (e === 'enter' && m.lit && menuUp(m) && !field(m)) return false;
   return true;
 };
 
@@ -183,6 +195,7 @@ function step(m0: M, e: Ev): { m: M; out: Out } {
   const hits = CHART.filter((t) => t.ev(e) && (!t.guard || t.guard[1](m)));
   if (hits.length !== 1) throw new Error(`the chart has ${hits.length} transitions for --${e}--> in ${JSON.stringify(m)}`);
   hits[0]!.act(m, e, out);
+  if (!menuUp(m)) m.lit = false;
   return { m, out };
 }
 

@@ -145,6 +145,71 @@
 .welcome-row:hover .welcome-forget,
 .welcome-row[data-sel="1"] .welcome-forget { visibility: visible; }
 .welcome-row .welcome-forget:hover { color: var(--fg-1); }
+/* a row's `···`, as a tree row's: quiet until the row is under the pointer or selected */
+.welcome-row .welcome-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--fg-3);
+  border-radius: var(--radius);
+  --ic: 14px;
+  cursor: default;
+  visibility: hidden;
+  flex-shrink: 0;
+}
+.welcome-row:hover .welcome-more,
+.welcome-row[data-sel="1"] .welcome-more,
+.welcome-row .welcome-more:focus-visible { visibility: visible; }
+.welcome-row .welcome-more:hover { color: var(--fg-1); background: var(--line-2); }
+/* the name as a field, where the name was */
+.welcome-row .welcome-rename {
+  flex: 0 1 40%;
+  min-width: 0;
+  font-family: var(--serif);
+  font-size: 15px;
+  color: var(--fg-1);
+  background: var(--bg);
+  border: 1px solid var(--accent-soft);
+  border-radius: var(--radius);
+  padding: 0 4px;
+  margin: -2px 0 -2px -5px;
+  outline: none;
+}
+/* a row that asks before its collection is deleted: the words wrap, the two answers after them */
+.welcome-row[data-ask="1"] { align-items: center; }
+.welcome-row .welcome-ask {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--sans);
+  font-size: var(--t-sm);
+  line-height: 1.4;
+  color: var(--fg-2);
+}
+.welcome-row .welcome-del,
+.welcome-row .welcome-keep {
+  font: inherit;
+  font-family: var(--sans);
+  font-size: var(--t-xs);
+  color: var(--fg-2);
+  background: transparent;
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius);
+  padding: 2px 8px;
+  cursor: default;
+  flex-shrink: 0;
+  outline: none;
+}
+.welcome-row .welcome-del { color: var(--danger); }
+.welcome-row .welcome-del:hover,
+.welcome-row .welcome-keep:hover { border-color: var(--fg-4); }
+.welcome-row .welcome-del:focus,
+.welcome-row .welcome-keep:focus { border-color: var(--accent); }
 
 /* ── sidebar ──────────────────────────────────────────────────── */
 .side {
@@ -251,6 +316,16 @@
   .tree .row:hover .due { display: none; }
 }
 .tree .row .ra, .tab-rail .rail-row .ra {
+  /* a button, drawn as the bare glyph it was */
+  appearance: none;
+  -webkit-appearance: none;
+  border: 0;
+  background: none;
+  font: inherit;
+  padding: 0;
+  margin: 0;
+  text-align: inherit;
+  cursor: inherit;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -413,7 +488,9 @@
   text-overflow: ellipsis;
 }
 .ctx-menu .ci:has(.ck) { padding-right: 44px; }
-.ctx-menu .ci:hover { background: var(--line-2); color: var(--fg-1); }
+.ctx-menu .ci:hover, .ctx-menu .ci:focus { background: var(--line-2); color: var(--fg-1); }
+/* the menu has the focus while it is open (`popMenu.ts`): the row the keys are on is lit as the one under the pointer is */
+.ctx-menu:focus, .ctx-menu .ci:focus { outline: none; }
 .ctx-menu .ci .cg {
   position: absolute;
   left: 10px;
@@ -428,7 +505,7 @@
   line-height: 14px;
   --ic: 14px;
 }
-.ctx-menu .ci:hover .cg { color: var(--fg-1); }
+.ctx-menu .ci:hover .cg, .ctx-menu .ci:focus .cg { color: var(--fg-1); }
 .ctx-menu .ci .ck {
   position: absolute;
   right: 10px;
@@ -443,7 +520,7 @@
 }
 .ctx-menu .ci.danger { color: var(--danger); }
 .ctx-menu .ci.danger .cg { color: var(--danger); }
-.ctx-menu .ci.danger:hover { background: color-mix(in oklab, var(--danger) 12%, transparent); color: var(--danger); }
+.ctx-menu .ci.danger:hover, .ctx-menu .ci.danger:focus { background: color-mix(in oklab, var(--danger) 12%, transparent); color: var(--danger); }
 .ctx-menu .ci.back { color: var(--fg-3); font-size: var(--t-xs); font-weight: 600; }
 .ctx-menu .cd { height: 1px; background: var(--line-2); margin: 4px 6px; }
 /* a node view's small menu (a table cell's, a code block's language): the context menu's rows, the current one ticked */
@@ -453,7 +530,8 @@
 .ctx-menu .ci.on { font-weight: 500; }
 .ctx-menu .sub-scroll { max-height: 240px; overflow: auto; }
 [data-theme="eink"] .ctx-menu .ci.danger,
-[data-theme="eink"] .ctx-menu .ci.danger:hover { color: var(--fg-1); background: var(--line-2); }
+[data-theme="eink"] .ctx-menu .ci.danger:hover,
+[data-theme="eink"] .ctx-menu .ci.danger:focus { color: var(--fg-1); background: var(--line-2); }
 
 /* ── canvas, panes, tabs ──────────────────────────────────────── */
 .canvas {
@@ -522,6 +600,16 @@ html[data-shape="portrait"] .pane + .pane { border-left: 0; border-top: 1px soli
   background: var(--paper);
 }
 .tabbar .tab .close {
+  /* a button, drawn as the bare glyph it was */
+  appearance: none;
+  -webkit-appearance: none;
+  border: 0;
+  background: none;
+  font: inherit;
+  padding: 0;
+  margin: 0;
+  text-align: inherit;
+  cursor: inherit;
   width: 18px;
   height: 18px;
   border-radius: var(--radius);
@@ -538,6 +626,15 @@ html[data-shape="portrait"] .pane + .pane { border-left: 0; border-top: 1px soli
 .tabbar .tab .close:hover { background: var(--line-2); color: var(--fg-1); }
 .tabbar .spacer { flex: 1; border-right: 1px solid var(--line-2); }
 .tabbar .ctl {
+  /* a button, drawn as the bare glyph it was (its one border is set below) */
+  appearance: none;
+  -webkit-appearance: none;
+  border: 0;
+  background: none;
+  font: inherit;
+  padding: 0;
+  margin: 0;
+  text-align: inherit;
   width: 32px;
   display: flex;
   align-items: center;
@@ -549,6 +646,8 @@ html[data-shape="portrait"] .pane + .pane { border-left: 0; border-top: 1px soli
 }
 .tabbar .ctl:last-child { border-right: 0; }
 .tabbar .ctl:hover { background: var(--line-3); color: var(--fg-1); }
+/* reached by Tab: the ring inside the bar, which clips what is outside it */
+.tabbar .ctl:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 
 .pane-body {
   flex: 1 1 0;
@@ -556,6 +655,9 @@ html[data-shape="portrait"] .pane + .pane { border-left: 0; border-top: 1px soli
   min-height: 0;
   position: relative;
   background: var(--paper);
+  /* a lens lays itself out by its pane's width, not the window's (`@container` in queue.css): a pane's width is its
+     flex share, never its content's, so nothing is lost to the containment */
+  container-type: inline-size;
 }
 
 /* ── lenses ───────────────────────────────────────────────────── */

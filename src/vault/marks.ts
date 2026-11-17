@@ -21,12 +21,12 @@ import { normalizeBoxes, parseBoxes } from '../format/boxes.js';
 
 export const MARKS_DIR = '.ilmi/marks';
 
-/** Where a PDF's marks are kept, by its SHA-256. */
+/** Where a PDF's marks are kept, by its SHA-256; a written notebook's by its id (32 hex, FORMAT.md §3). */
 export const marksPath = (hash: string): string => `${MARKS_DIR}/${hash}.json`;
 
-/** The PDF a marks file is of, by the file's path or its name; null for any other file. */
+/** The PDF (or the written notebook) a marks file is of, by the file's path or its name; null for any other file. */
 export function marksHashOf(pathOrName: string): string | null {
-  const m = /(?:^|\/)([0-9a-f]{64})\.json$/.exec(pathOrName);
+  const m = /(?:^|\/)([0-9a-f]{64}|[0-9a-f]{32})\.json$/.exec(pathOrName);
   return m && (pathOrName === m[0] || pathOrName === marksPath(m[1]!)) ? m[1]! : null;
 }
 

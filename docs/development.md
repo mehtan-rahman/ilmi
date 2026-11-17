@@ -328,6 +328,27 @@ iPhone 18 Pro (milestone 78); they skip what is the desk's on a touch shape
 (a selection on a book's page, a second pane, the inspector on a phone, the
 bottom strip) and log that they did.
 
+`ILMI_SMOKE=written` (milestone 82) is written notes. On the Mac, over a
+copy of the sample: a notebook made from the sidebar's `+`, its pages and
+papers, pages added and deleted, strokes put on its sheets through what a
+canvas keeps through (a made-up drawing), a passage and a clip from a
+sheet, a notebook made for a PDF, the export. On a simulated iPad it is the
+row of tools (`InkBar.tsx`) under real touches: a copy of the sample in the
+app's Documents, `{"mode": "written", "vault": "double-major"}`,
+`TEST_RUNNER_MODE=written`. The rig's finger stands in for the Pencil; each
+tool, size and colour is tapped and `dev_ink_state` read for what the
+canvases hold; the eraser, undo and redo, the lasso (the rig's `do: loop x1
+y1 x2 y2 …`, one finger through every point, which XCUITest's public calls
+cannot draw: it builds the runner's own pointer path) and a drag of what it
+holds, `draw with finger` on and off, `add page` and the page a low stroke
+adds, the colour wheel (opened by a tap, a colour chosen through
+`dev_ink_wheel`, closed by a tap beside it), the paper, a box kept as a
+passage and one clipped into a typed note, upright and on its side, then a
+PDF's page under the same row. A second run with `"again": "1"` and no new
+copy of the sample opens the collection as it was left: what was chosen is
+on the row and told to the canvases. On a simulated iPhone the same mode
+needs no rig: a notebook read as its pages, with no tools.
+
 `ILMI_SMOKE=touch` (milestone 57) is three runs over one storage folder.
 On the Mac, `ILMI_VAULT=<a copy of the sample> ILMI_STORAGE=<an empty
 folder>`: the collection makes the storage. On the simulator, `{"mode":
@@ -371,8 +392,9 @@ selection is kept off).
 Ink lies over the web view (milestone 69; `src-tauri/ink`: `ios/` is the
 Swift package Tauri builds into the app, `native/ink.m` what reads a drawing
 as strokes and draws them, on the Mac too). Nothing opens: a layer above the
-web view takes no touch and holds a PencilKit canvas per sheet (an ink area
-or a book's page near the screen), each canvas's drawing recogniser moved
+web view takes no touch and holds a PencilKit canvas per sheet (a PDF's page
+or a written notebook's near the screen, or an ink area a typed note
+already holds), each canvas's drawing recogniser moved
 onto the web view and taking the Pencil only. The layer's `hitTest` hears of
 every touch first and enables the one canvas under it, and takes the Pencil
 from the web view's own recognisers there. `src/app/ink.ts` says where
@@ -383,7 +405,15 @@ bridge. `src/app/noteInk.ts` is a note's side, `Pdf.tsx` a book's;
 `src/reader/inkArea.ts` draws an area in the flow. A simulator has no Pencil,
 and `dev_ink_pen` makes a finger one until told otherwise: the same
 canvases and recognisers, with `.direct` among the Pencil's touch types
-(`dev_ink_state` says how everything stands).
+(`dev_ink_state` says how everything stands). The tools are the page's
+(milestone 82; `InkBar.tsx`, `inkTools.ts`): there is no `PKToolPicker`.
+`ink_tool` gives every canvas the pen or the highlighter (PencilKit's
+inks); the eraser and the lasso are the plugin's own, worked from the
+touches its watcher sees, since PencilKit's do nothing through a recogniser
+moved onto the web view. One undo manager is every canvas's (`ink_undo`,
+`ink_redo`, and a `history` event when what can be undone changes);
+`ink_finger` is `draw with finger`; `ink_color` puts up the system's colour
+wheel as a popover from the swatch.
 
 An iPhone is the same build on another simulator (`npm run tauri ios dev
 "iPhone 18 Pro"`), and everything of a phone is the renderer's: `shapeOf`
@@ -411,13 +441,19 @@ a rerun. A dev build keeps its whole log in one file (`max_file_size` in
 `lib.rs`): the rig counts the asks in it, and the plugin's own 40 kB limit
 dropped the file in the middle of a long run.
 
-`ILMI_SMOKE=ink` is three runs over one storage folder in the same way. The
-Mac first (`ILMI_VAULT`, `ILMI_STORAGE`), then the simulator with
-`{"mode": "ink", "storage": "<that folder>"}` and `TEST_RUNNER_MODE=ink`: a
-stroke between two paragraphs of a long note, the area opening and growing,
-kept when quiet; a finger scrolling it; a tap, the tools gone; a stroke in
-the area and one in the text elsewhere. Its `touch:` and `touches:` lines say
-what a touch cost, `page:` what the page weighs, and `ink:` the two
+`ILMI_SMOKE=ink` is three runs over one storage folder in the same way,
+over the ink a typed note holds (a note takes no new handwriting since
+milestone 82). The Mac first (`ILMI_VAULT`, `ILMI_STORAGE`): it puts two
+pages of ink in a long note as a note from before would hold them, a made-up
+drawing's strokes each (`dev_ink_sample`) and its line between two
+paragraphs. Then the simulator with `{"mode": "ink", "storage": "<that
+folder>"}` and `TEST_RUNNER_MODE=ink`: each page an area in the note with
+the row of tools at the pane's top; the stand-in put down on a paragraph
+opens nothing; a stroke in the area, the area growing, kept when quiet; the
+eraser tapped in the row and drawn across a stroke, undo and redo by their
+buttons; a finger scrolling it; the second area's canvas emptied
+(`dev_ink_wipe`), its line and page gone. Its `touch:` and `touches:` lines
+say what a touch cost, `page:` what the page weighs, and `ink:` the two
 paragraphs and the count. Then the Mac again with `ILMI_VAULT=<the
 collection's own folder> ILMI_EXPECT=<the paragraphs> ILMI_STROKES=<the
 count>`: the page is between them as a picture the Mac made from the
@@ -433,14 +469,16 @@ the strokes are a made-up drawing of PencilKit's, `dev_ink_sample`, kept
 through `keepPage` in `src/app/ink.ts`). The simulator, `{"mode": "pageink",
 "storage": "<that folder>"}` with `TEST_RUNNER_MODE=pageink`: a collection
 made from the storage, strokes on p. 23 from the first touch, the writing on
-the page where the finger went, the pages scrolled with it; then a note of
-two pages of ink, each opened where the stand-in landed; its `pageink:` line
-says the count, where the strokes lie in the page's points, and the note.
-The Mac again with `ILMI_VAULT=<the collection's own folder> ILMI_EXPECT=<the
-count> ILMI_BOX=<where> ILMI_NOTE=<the note>`: both writings on the page,
-shown as a picture. The simulator again with `"again": "1", "expect": "<the
-count>"` added: the collection it made, opened as it was left, holds both
-too. A stroke written on a book's page is a row of `ink` under `p.<the PDF's
+the page where the finger went, the pages scrolled with it; then a written
+notebook of two sheets, each written on; its `pageink:` line says the
+count, where the strokes lie in the page's points, the device, and the
+notebook. The Mac again with `ILMI_VAULT=<the collection's own folder>
+ILMI_EXPECT=<the count> ILMI_BOX=<where> ILMI_NOTE=<the notebook>
+ILMI_MINE=<its own strokes' names, from its first run's `pageink: mine`
+line>`: both writings on the page, shown as a picture, and the notebook's
+two sheets with theirs. The simulator again with `"again": "1", "expect":
+"<the count>", "mine": "<those names>", "device": "<the device>"` added: the
+collection it made, opened as it was left, holds both too. A stroke written on a book's page is a row of `ink` under `p.<the PDF's
 SHA-256>.<page>` (`pageKey`, `src/vault/store.ts`), no row of the tree.
 
 ## Building the installer

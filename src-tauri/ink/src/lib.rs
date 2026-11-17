@@ -1,8 +1,9 @@
-//! ilmi's ink (milestones 58, 69).
+//! ilmi's ink (milestones 58, 69, 82).
 //!
 //! Two things, both PencilKit's. On iOS the canvases over the web view that the Pencil writes on where it
 //! lands, which is the plugin proper: a Swift package (`ios/`) Tauri builds and links, reached through
-//! [`Ink`]. And, on the Mac as on iOS, what reads a
+//! [`Ink`]: where the sheets lie and what they hold, and since 82 the tool held (the page's own bar, not
+//! PencilKit's picker), undo and redo, writing with a finger, and the system's colour wheel. And, on the Mac as on iOS, what reads a
 //! drawing (`native/ink.m`): [`split`] takes one apart into its strokes, each with a name that outlives a
 //! save, [`join`] puts strokes together as the drawing PencilKit writes, [`picture`] draws them as a PNG, and
 //! [`page_picture`] (milestone 67) draws them as they lie on a page of a size: the writing on a book's page.
@@ -231,6 +232,32 @@ impl<R: Runtime> Ink<R> {
         #[derive(Serialize)]
         struct Pen { on: bool }
         self.call::<_, serde_json::Value>("pen", Pen { on }).await.map(|_| ())
+    }
+    /// The tool held (milestone 82): `{ kind, color, width }`, a pen, a highlighter, the eraser or the lasso. Every canvas takes it.
+    pub async fn tool(&self, tool: serde_json::Value) -> Result<(), String> {
+        self.call::<_, serde_json::Value>("tool", serde_json::json!({ "tool": tool })).await.map(|_| ())
+    }
+    /// The last thing done on any sheet taken back. What can be undone and redone after: `{ undo, redo }`.
+    pub async fn undo(&self) -> Result<serde_json::Value, String> {
+        self.call("undo", serde_json::json!({})).await
+    }
+    /// And put back.
+    pub async fn redo(&self) -> Result<serde_json::Value, String> {
+        self.call("redo", serde_json::json!({})).await
+    }
+    /// A finger writes as the Pencil does and two scroll (`on`), or the Pencil writes and a finger scrolls.
+    pub async fn finger(&self, on: bool) -> Result<(), String> {
+        #[derive(Serialize)]
+        struct Finger { on: bool }
+        self.call::<_, serde_json::Value>("finger", Finger { on }).await.map(|_| ())
+    }
+    /// The system's colour wheel, showing `color`, from `at` on the page (`{ x, y, w, h }`). Answers when it closes: `{ color }`, null when none was chosen.
+    pub async fn color(&self, color: &str, at: serde_json::Value) -> Result<serde_json::Value, String> {
+        self.call("color", serde_json::json!({ "color": color, "at": at })).await
+    }
+    /// A dev run's: with the wheel up, as if `color` were chosen and the wheel closed.
+    pub async fn wheel(&self, color: &str) -> Result<(), String> {
+        self.call::<_, serde_json::Value>("wheel", serde_json::json!({ "color": color })).await.map(|_| ())
     }
     /// A dev run's: a sheet's canvas emptied as an eraser would.
     pub async fn wipe(&self, sheet: &str) -> Result<(), String> {

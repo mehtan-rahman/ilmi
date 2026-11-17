@@ -275,7 +275,8 @@ describe('a row\'s menu from the keys', () => {
     expect(selected()).toEqual(['notes.md']);
     expect(calls).toEqual([]);
     expect(host.querySelector('input.rename')).toBeNull();
-    expect(lit()).toBe('new deck');
+    // two down from `new note`: past `new written notes` (milestone 82)
+    expect(lit()).toBe('new source');
     key('Escape');
     expect(menu()).toBeNull();
     expect(document.activeElement).toBe(box());

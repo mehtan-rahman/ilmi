@@ -2,7 +2,8 @@
 // Milestone 81, several notes on one PDF: every note that names a PDF in its
 // `pdf` field is one of its notes (`notesOf`), in path order; `open notes`
 // opens them all as tabs of the pane beside the pages, the one used last in
-// front, and `hide notes` closes them; `+` beside the word picks or makes
+// front, and `hide notes` closes them; `+` beside the word has `new note`
+// (and, since milestone 82, `new written notes`), which picks or makes
 // one more, which opens as a further tab in front; `m` clips into the note
 // in front beside the pages, else the one used last; a chapter of a book is
 // its own notes first, as before, with the notes attached to its PDF as
@@ -74,6 +75,8 @@ const fire = async (target: EventTarget, e: Event) => { await act(async () => { 
 const click = (el: Element) => fire(el, new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 }));
 const word = () => q<HTMLButtonElement>('.meta .notes-toggle')!;
 const plus = () => q<HTMLButtonElement>('.meta .notes-add');
+/** A row of the menu `+` opens. */
+const plusRow = (act: string) => document.querySelector<HTMLElement>(`.pop-menu .ci[data-act="${act}"]`);
 /** The panes: the ids of each pane's tabs, which tab of each is in front, and which pane is active. */
 const panesNow = () => ({ active: useApp.getState().panes.active, tabs: useApp.getState().panes.panes.map((p) => p.tabs.map((t) => t.id)), front: useApp.getState().panes.panes.map((p) => p.tabs[p.active]?.id) });
 const box = async (n: number) => {
@@ -221,10 +224,15 @@ describe('several notes beside the pages', () => {
   });
 
   it('`+` beside the word asks for one more note as the first was asked for; picked, it is a further tab, in front', async () => {
-    expect(plus()?.title).toBe('new note');
+    expect(plus()?.title).toBe('new notes');
     expect(plus()?.querySelector('kbd, .kbd')).toBeNull();
+    // a small menu: a typed note, or written notes (milestone 82)
     await click(plus()!);
+    expect(Array.from(document.querySelectorAll('.pop-menu .ci')).map((r) => r.textContent)).toEqual(['new note', 'new written notes']);
+    expect(useApp.getState().paletteOpen).toBeFalsy();
+    await click(plusRow('new-note')!);
     await wait(20);
+    expect(document.querySelector('.pop-menu')).toBeNull();
     expect(useApp.getState().paletteOpen).toBe(true);
     expect(useApp.getState().noteAttach).toEqual({ pdf: PDF, step: 'pick' });
     expect(panesNow().tabs).toEqual([[PDF]]);
@@ -250,10 +258,13 @@ describe('several notes beside the pages', () => {
     await vault.read(C, true);
   });
 
-  it('a PDF with no note yet has no `+`: `create notes` is the way to the first', async () => {
+  it('a PDF with no note yet says `create notes`, and has its `+` too: its first notes may be written ones', async () => {
     await act(async () => { useApp.setState((s) => { const { [A]: _a, [B]: _b, ...rest } = s.docs; return { docs: attach(rest) }; }); });
     expect(word().textContent).toBe('create notes');
-    expect(plus()).toBeNull();
+    await click(plus()!);
+    expect(plusRow('new-written')?.textContent).toBe('new written notes');
+    await fire(window, new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    expect(document.querySelector('.pop-menu')).toBeNull();
   });
 
   it('`m` clips into the note in front beside the pages; with the notes closed, into the one used last', async () => {
@@ -306,6 +317,7 @@ describe('a chapter of a book', () => {
     await wait(20);
     expect(panesNow().tabs).toEqual([[CH3]]);
     await click(plus()!);
+    await click(plusRow('new-note')!);
     await wait(20);
     expect(useApp.getState().noteAttach).toEqual({ pdf: BOOKPDF, step: 'pick' });
     await act(async () => { attachCancelled(); useApp.setState({ paletteOpen: false, noteAttach: null }); });

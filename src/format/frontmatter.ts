@@ -6,8 +6,8 @@ import {
   specWhen, specInt, specIntMin, specIntRange, specNumMin, specBool, type AttrSpec, type Warn,
 } from './attrs.js';
 import {
-  FIELD_KEYS, isField, type CardForm, type Diagnostic, type Doc, type Field, type FieldKey, type FmEntry,
-  type Exam, type Frontmatter, type LeechAction, type NodeType, type PageRange, type ReadSchedule, type SectionSchedule, type WriteSchedule,
+  FIELD_KEYS, PAPERS, isField, type CardForm, type Diagnostic, type Doc, type Field, type FieldKey, type FmEntry,
+  type Exam, type Frontmatter, type LeechAction, type NodeType, type PageRange, type PaperKind, type ReadSchedule, type SectionSchedule, type WriteSchedule,
 } from './model.js';
 import { frac3, normalizeBoxes } from './boxes.js';
 
@@ -184,8 +184,43 @@ function parseValue(key: FieldKey, raw: string, warn: Warn): Field | null {
       const v = t === null ? null : parseDay(t.trim());
       return v === null ? null : { key, value: v };
     }
+    case 'written': {
+      const v = stripComment(raw);
+      return isWrittenId(v) ? { key, value: v } : null;
+    }
+    case 'paper': {
+      const v = stripComment(raw) as PaperKind;
+      return PAPERS.includes(v) ? { key, value: v } : null;
+    }
+    case 'sheets': {
+      const v = parseSheets(stripComment(raw));
+      return v === null ? null : { key, value: v };
+    }
   }
 }
+
+const WRITTEN_ID = /^[0-9a-f]{32}$/;
+
+/** `written`: a notebook's id, 32 lowercase hex. */
+export const isWrittenId = (v: string): boolean => WRITTEN_ID.test(v);
+
+const SHEET = /^[1-9]\d{0,5}$/;
+
+/** `sheets`: whole numbers from 1 with spaces between (`1 2 5`), none twice; anything else is unread (null). */
+export function parseSheets(v: string): number[] | null {
+  const parts = v.trim().split(/[ \t]+/);
+  const out: number[] = [];
+  for (const p of parts) {
+    if (!SHEET.test(p)) return null;
+    const n = Number.parseInt(p, 10);
+    if (out.includes(n)) return null;
+    out.push(n);
+  }
+  return out.length ? out : null;
+}
+
+/** A notebook's sheets as the file writes them: one space between. */
+export const formatSheets = (sheets: readonly number[]): string => sheets.join(' ');
 
 const EXAM = /^(\d{4}-\d{2}-\d{2})(?:[ \t]+(\S.*))?$/;
 
@@ -315,6 +350,8 @@ export function formatField(f: Field): string {
     case 'pages': return `pages: ${formatPages(f.value)}`;
     case 'exam': return `exam: ${formatExams(f.value)}`;
     case 'finish': return `finish: ${f.value}`;
+    case 'written': case 'paper': return `${f.key}: ${f.value}`;
+    case 'sheets': return `sheets: ${formatSheets(f.value)}`;
   }
 }
 
@@ -360,6 +397,8 @@ export interface Meta {
   exams?: Exam[];
   /** The `finish` field: the day a source's reading is paced to finish by, as written; `finishOf` in `schedule/read.ts` says when it counts. */
   finish?: string;
+  /** A written notebook (§3, *Written notes*): its id, its paper (`blank` when the file names none) and its sheets in order (`1` when it names none). Absent without a `written` field, whatever `paper` and `sheets` say. */
+  written?: { id: string; paper: PaperKind; sheets: number[] };
 }
 
 /**
@@ -370,6 +409,9 @@ export interface Meta {
 export function meta(doc: Doc): Meta {
   const out: Meta = { type: 'note', frozen: false };
   let typed = false;
+  let id: string | undefined;
+  let paper: PaperKind | undefined;
+  let sheets: number[] | undefined;
   for (const e of doc.frontmatter?.entries ?? []) {
     if (!isField(e)) continue;
     switch (e.key) {
@@ -395,8 +437,12 @@ export function meta(doc: Doc): Meta {
       case 'pages': out.pages = e.value; break;
       case 'exam': out.exams = e.value; break;
       case 'finish': out.finish = e.value; break;
+      case 'written': id = e.value; break;
+      case 'paper': paper = e.value; break;
+      case 'sheets': sheets = e.value; break;
     }
   }
+  if (id !== undefined) out.written = { id, paper: paper ?? 'blank', sheets: sheets ?? [1] };
   if (!typed && out.imported !== undefined) out.type = 'source';
   return out;
 }

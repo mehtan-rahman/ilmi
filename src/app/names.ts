@@ -40,14 +40,21 @@ export const cardsId = (path: string): string => CARDS + path;
 /** The document a `:cards/` tab shows, or null for any other id. */
 export const cardsPath = (id: string): string | null => (id.startsWith(CARDS) ? id.slice(CARDS.length) : null);
 
+/** A written notebook (milestone 82): a note whose pages are paper. */
+export const isWritten = (path: string, docs: Record<string, DocInfo>): boolean => docs[path]?.written !== undefined;
+
+/** Pages of their own, with notes attached by `pdf`: a PDF, or a written notebook. */
+export const isPagesPath = (path: string, docs: Record<string, DocInfo>): boolean => isPdfPath(path) || isWritten(path, docs);
+
 export const notesId = (path: string): string => NOTES + path;
 /** The document a `:notes/` tab shows, or null for any other id. */
 export const notesPath = (id: string): string | null => (id.startsWith(NOTES) ? id.slice(NOTES.length) : null);
 
 /**
- * The pages a node is read by: a document with pages, or a PDF on its own,
- * is its own; a note attached to a PDF on its own (`of`) is read by that
- * PDF; anything else by none.
+ * The pages a node is read by: a document with pages, a PDF on its own or a
+ * written notebook is its own (a notebook attached to a PDF too: its sheets
+ * are what it is read by); a note attached to a PDF on its own or to a
+ * notebook (`of`) is read by that; anything else by none.
  */
 export function pagesOf(path: string, docs: Record<string, DocInfo>): string | null {
   const info = docs[path];
@@ -57,18 +64,19 @@ export function pagesOf(path: string, docs: Record<string, DocInfo>): string | n
 
 /**
  * The note on a node's pages: a document with pages is its own notes; a PDF
- * on its own shows the first note that names it (`note`), or none yet.
+ * on its own, and a written notebook, shows the first note that names it
+ * (`note`), or none yet.
  */
 export function noteOf(path: string, docs: Record<string, DocInfo>): string | null {
   const info = docs[path];
   if (!info) return null;
-  if (isPdfPath(path)) return info.note ?? null;
+  if (isPagesPath(path, docs)) return info.note ?? null;
   if (info.pdf !== undefined) return path;
   return info.of !== undefined ? path : null;
 }
 
-/** The tab that shows a note on pages: a note of its own as itself, a document with pages as its `:notes/` tab. */
-export const noteTabOf = (note: string, docs: Record<string, DocInfo>): string => (docs[note]?.pdf !== undefined ? notesId(note) : note);
+/** The tab that shows a note on pages: a note of its own as itself (a written notebook that is a PDF's note too: its sheets), a document with pages as its `:notes/` tab. */
+export const noteTabOf = (note: string, docs: Record<string, DocInfo>): string => (docs[note]?.pdf !== undefined && !docs[note]?.written ? notesId(note) : note);
 
 /** The tab that shows the note on the pages at `path` (the first, when a PDF has several): a note of its own as itself, a document with pages as its `:notes/` tab; null with no note. */
 export function notesTabOf(path: string, docs: Record<string, DocInfo>): string | null {
@@ -77,15 +85,16 @@ export function notesTabOf(path: string, docs: Record<string, DocInfo>): string 
 }
 
 /**
- * Every note on a node's pages (milestone 81): a PDF on its own has each
- * note that names it, in path order; a document with pages is its own notes
+ * Every note on a node's pages (milestone 81): a PDF on its own, and a
+ * written notebook, has each note that names it, in path order (a PDF's
+ * written notebooks among them); a document with pages is its own notes
  * first, then the notes attached to its PDF, when that is a document of its
  * own (a chapter and its book share them); an attached note is itself.
  */
 export function notesOf(path: string, docs: Record<string, DocInfo>): string[] {
   const info = docs[path];
   if (!info) return [];
-  if (isPdfPath(path)) return info.notes ?? (info.note !== undefined ? [info.note] : []);
+  if (isPagesPath(path, docs)) return info.notes ?? (info.note !== undefined ? [info.note] : []);
   if (info.pdf !== undefined) return [path, ...(info.pdf !== path ? docs[info.pdf]?.notes ?? [] : [])];
   return info.of !== undefined ? [path] : [];
 }
@@ -95,11 +104,12 @@ export const notesTabsOf = (path: string, docs: Record<string, DocInfo>): string
 
 /**
  * The PDF a further note on the pages at `path` would name: the PDF itself,
- * or a document's PDF when that is a document of its own; null otherwise.
+ * or a document's PDF when that is a document of its own; for a written
+ * notebook's sheets, the notebook; null otherwise.
  */
 export function pdfForNotes(path: string, docs: Record<string, DocInfo>): string | null {
   const pdf = isPdfPath(path) ? path : docs[path]?.pdf;
-  return pdf !== undefined && isPdfPath(pdf) && docs[pdf] ? pdf : null;
+  return pdf !== undefined && docs[pdf] && isPagesPath(pdf, docs) ? pdf : null;
 }
 
 /**
@@ -152,8 +162,14 @@ export const GLYPH: Record<TabKind, string> = {
   cards: '◆',
 };
 
+/** A written notebook's mark (milestone 82). By kind it is a note; the mark says its pages are paper. */
+export const WRITTEN_GLYPH = '✒';
+
+/** The mark a node or a tab is drawn with: a written notebook's own, else its kind's. */
+export const glyphOf = (id: string, docs: Record<string, DocInfo>): string => (docs[id]?.written ? WRITTEN_GLYPH : GLYPH[tabKindOf(id, docs)]);
+
 export function kindOf(path: string, docs: Record<string, DocInfo>): NodeKind {
-  // a PDF on its own is a source: someone else's pages (milestone 70)
+  // a PDF on its own is a source: someone else's pages (milestone 70); a written notebook is a note, as its file says
   if (isPdfPath(path)) return docs[path]?.type ?? 'source';
   return isDoc(path) ? docs[path]?.type ?? 'note' : 'folder';
 }

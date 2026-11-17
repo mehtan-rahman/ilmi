@@ -25,6 +25,7 @@ export function BottomStrip() {
     el: kind === 'session' ? sessionEl?.kind ?? 'card' : null,
     scope: id === undefined ? null : queueScope(id),
     canEnrol: kind !== 'session' && !!info && (info.type === 'note' || info.type === 'source' || info.type === 'extract') && !info.read,
+    paper: !!info?.written,
     // a section of a note attached to a PDF on its own is read on that PDF's pages (milestone 70); the notes' own tab is the editor's
     pages: (!!info?.pdf && (id === undefined || notesPath(id) === null)) || (kind === 'session' && sessionEl?.kind === 'section' && info?.of !== undefined),
     frozen: !!info?.frozen,

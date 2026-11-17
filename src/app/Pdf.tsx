@@ -76,6 +76,26 @@
 // destination as its source is read past. `v`, or a press in a page's left
 // margin, holds a line under a rule: ↓ ↑ (j k) move it a line, the page
 // following; `r` sets the read point to it.
+//
+// Written notes (milestone 82). A note whose pages are paper (`written.ts`)
+// opens here too, in the same column: there is no file and nothing for
+// pdf.js, its pages are its sheets, each drawn as its paper (`paper.ts`),
+// and its id stands where a PDF's hash does, for what is written on it and
+// for the passages kept from it. In the column a page is known by its place,
+// 1 to N, so the page in view, `g`, the place kept and the zoom are as they
+// are for a PDF; a sheet has a number of its own that it keeps when a page
+// before it is deleted, and that number is used only where something leaves
+// the column or comes into it: the key its strokes are under, a box kept as
+// a passage or clipped into a note, a passage's boxes read back (`sheetAt`,
+// `placeOfSheet` below; for a PDF both are the page itself). What a PDF's
+// text gives (the contents, search, links and references, the ruler,
+// highlights, bookmarks, marks, portals, the read bar) is not there for
+// paper, and its keys do nothing. `add page` under the last page adds one,
+// and on an iPad a stroke begun low on the last page adds one by itself;
+// `more` has the paper and `delete this page`. The tools to write with are a
+// row of the bar (`InkBar.tsx`) wherever there is a canvas, over a PDF's
+// pages as well; with none (the Mac) a notebook says `written on an ipad`
+// there.
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { boxesAt, boxesEnd, formatClip, meta, pagesLabel, parseBoxes, sectionDismissed, setField, type Box, type Doc, type SectionSchedule } from '../format/index.js';
@@ -88,6 +108,9 @@ import {
 import { pickPos, type Band } from '../reader/index.js';
 import { passagesOf, pointOn, sectionState, type Passage } from '../schedule/index.js';
 import { INKS, passageId, childDirOf, isPdfPath, type InkStroke, type Mark, type Portal, type Quad, type StoreFs } from '../vault/index.js';
+import { PAPERS, SHEET_H, SHEET_W, addSheet, addWritten, placeOfSheet as placeAmong, removeSheet, setPaper, sheetAt as sheetAmong, type PaperKind } from './written.js';
+import { PAPER_DOT, PAPER_RULE, PAPER_WHITE, paperPaths } from './paper.js';
+import { InkBar } from './InkBar.js';
 import { CueActions } from '../plugins/CueActions.js';
 import { onPluginAction, publishSelection, toPluginSelection, type PluginSelection } from '../plugins/index.js';
 import { notesOf, notesTabsOf, pdfForNotes, titleOf } from './names.js';
@@ -141,6 +164,8 @@ const PINCH_OUT = 1.25;
 const PINCH_GAP = 260;
 /** How far back from a passage the lens reads pages for a heading to name it. */
 const NAME_BACK = 30;
+/** How far down a notebook's last page a stroke begins for a page to be added after it: its lower third. */
+const ADD_FROM = 2 / 3;
 
 /** Room left over what a jump goes to, px: a heading gone to lies a line under the words over the pages. */
 const JUMP_ROOM = 16;
@@ -334,7 +359,7 @@ const inkStore = (): StoreFs | null => {
 };
 
 /** What is written on a page, laid over it: a picture of the whole page made from its strokes, on nothing. `rev` moves when the strokes change. */
-function PageInk({ hash, page, w, h, rev, rect, live, onShown }: { hash: string; page: number; w: number; h: number; rev: number; rect: Rect; live: boolean; onShown(page: number): void }) {
+function PageInk({ hash, page, at, w, h, rev, rect, live, onShown }: { hash: string; /** The page as the store knows it: a PDF's page, a notebook's sheet. */ page: number; /** Its place in the column. */ at: number; w: number; h: number; rev: number; rect: Rect; live: boolean; onShown(page: number): void }) {
   const [url, setUrl] = useState<string | null>(null);
   useEffect(() => {
     const fs = inkStore();
@@ -348,8 +373,23 @@ function PageInk({ hash, page, w, h, rev, rect, live, onShown }: { hash: string;
     }, console.error);
     return () => { live = false; if (made) URL.revokeObjectURL(made); };
   }, [hash, page, w, h, rev]);
-  return url ? <img className="page-ink" data-page={page} data-rev={rev} data-live={live ? '1' : undefined} src={url} alt="" draggable={false} onLoad={() => onShown(page)} style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }} /> : null;
+  return url ? <img className="page-ink" data-page={at} data-sheet={page} data-rev={rev} data-live={live ? '1' : undefined} src={url} alt="" draggable={false} onLoad={() => onShown(page)} style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }} /> : null;
 }
+
+/** A written notebook's sheet as its paper: the sheet in points, whatever size it is drawn at (`paper.ts`). */
+function Paper({ kind }: { kind: PaperKind }) {
+  const p = useMemo(() => paperPaths(kind), [kind]);
+  return (
+    <svg className="paper" data-paper={kind} viewBox={`0 0 ${SHEET_W} ${SHEET_H}`} preserveAspectRatio="none" aria-hidden="true">
+      <rect className="paper-sheet" width={SHEET_W} height={SHEET_H} fill={PAPER_WHITE} />
+      {p.rules && <path className="paper-rule" d={p.rules} stroke={PAPER_RULE} vectorEffect="non-scaling-stroke" />}
+      {p.dots && <path className="paper-dot" d={p.dots} stroke={PAPER_DOT} strokeWidth={p.width} strokeDasharray={`0 ${p.pitch}`} />}
+    </svg>
+  );
+}
+
+/** A notebook's pages, as many as it has sheets. */
+const sheetSizes = (n: number): Size[] => Array.from({ length: n }, () => ({ w: SHEET_W, h: SHEET_H }));
 
 /**
  * A passage's boxes on the pages, what it is called, its state. `key` is
@@ -387,9 +427,11 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
   const notesKey = notesOf(id, docs).join('\n');
   const notes = useMemo(() => (notesKey === '' ? [] : notesKey.split('\n')), [notesKey]);
   const loadedNotes = useDocs(notes);
-  const [status, setStatus] = useState<'loading' | 'ok' | 'gone' | 'unreadable'>('loading');
+  /** A written notebook (milestone 82): its pages are its sheets, there from the start. */
+  const written = info?.written;
+  const [status, setStatus] = useState<'loading' | 'ok' | 'gone' | 'unreadable'>(written ? 'ok' : 'loading');
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
-  const [sizes, setSizes] = useState<Size[]>([]);
+  const [sizes, setSizes] = useState<Size[]>(() => (written ? sheetSizes(written.sheets.length) : []));
   const [textless, setTextless] = useState(false);
   /** The room the pages have: the pane's width inside its padding, and that padding (`left` the padding before them). */
   const [room, setRoom] = useState({ w: 0, pad: 0, left: 0 });
@@ -464,16 +506,31 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
   const dragRef = useRef(false);
   const st = useRef({ sel, pending, find, goto, peek, looking, hints, naming, chord, ruler, lastHl });
   st.current = { sel, pending, find, goto, peek, looking, hints, naming, chord, ruler, lastHl };
-  const canEnrol = info?.type === 'source' || info?.type === 'extract' || info?.type === 'note';
-  const reading = !!info?.read && info.type !== 'note';
-  const rel = info?.pdf;
+  const canEnrol = !written && (info?.type === 'source' || info?.type === 'extract' || info?.type === 'note');
+  const reading = !written && !!info?.read && info.type !== 'note';
+  /** The PDF's file; a notebook has none. */
+  const rel = written ? undefined : info?.pdf;
+  // a notebook's sheets, in order: the page at place `n` of the column is sheet `sheets[n - 1]`
+  const sheetsKey = written ? written.sheets.join(' ') : null;
+  const sheets = useMemo(() => (sheetsKey === null ? null : sheetsKey.split(' ').filter(Boolean).map(Number)), [sheetsKey]);
+  const sheetsRef = useRef(sheets);
+  sheetsRef.current = sheets;
+  /** The page at place `n` as it is known outside the column (its strokes' key, a box kept): a notebook's sheet number, a PDF's page itself. */
+  const sheetAt = useCallback((n: number): number | null => (sheetsRef.current ? sheetAmong(sheetsRef.current, n) : n), []);
+  /** The place in the column of what is known outside it as `sheet`; null for a sheet that is gone. */
+  const placeOfSheet = useCallback((sheet: number): number | null => (sheetsRef.current ? placeAmong(sheetsRef.current, sheet) : sheet), []);
+  /** Boxes as they leave the column: each names its sheet. */
+  const boxesOut = (boxes: readonly Box[]): Box[] => boxes.flatMap((b) => { const s = sheetAt(b.page); return s === null ? [] : [{ ...b, page: s }]; });
 
   // ── what is written on the pages: found by the file's hash and the page ──
   /** The PDF's SHA-256, once its row is known. */
+  const writtenId = written?.id;
   const hash = useMemo(() => {
+    // a notebook's id stands where the hash does
+    if (writtenId !== undefined) return writtenId;
     const vault = currentVault();
     return rel && vault && status !== 'gone' && status !== 'unreadable' ? inkStore()?.blobAt(vault.abs(rel)) ?? null : null;
-  }, [rel, status]);
+  }, [rel, status, writtenId]);
   /** What is left on the pages: the PDF's marks, read once and held (`book.ts`). */
   const marks = useMarks(hash);
   const marksRef = useRef(marks);
@@ -481,7 +538,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
   const bookmarks = useMemo(() => bookmarksOf(marks), [marks]);
   const highlights = useMemo(() => highlightsOf(marks), [marks]);
   const portals = useMemo(() => portalsOf(marks), [marks]);
-  /** The pages written on, each with a count that moves when its strokes do. */
+  /** The pages written on (as the store knows them: a notebook's by their sheets' numbers), each with a count that moves when its strokes do. */
   const [inked, setInked] = useState<Record<number, number>>({});
   useEffect(() => {
     const fs = inkStore();
@@ -496,6 +553,9 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     const off = fs.onPageInk((h, n) => { if (h === hash) void look(n); });
     return () => { live = false; off(); };
   }, [hash]);
+  /** A notebook's pages near the view, by place: only these are drawn as paper with their writing's picture (a PDF's page is drawn as it comes near, `renderPage`). */
+  const [near, setNear] = useState<{ lo: number; hi: number } | null>(null);
+  const isNear = (n: number): boolean => near !== null && n >= near.lo && n <= near.hi;
   /** The pages a canvas lies over just now: their pictures stand aside. */
   const [liveInk, setLiveInk] = useState<ReadonlySet<number>>(new Set());
   const inkedRef = useRef(inked);
@@ -504,6 +564,8 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
   const shownWaits = useRef(new Map<number, () => void>());
   const pictureShown = useCallback((n: number) => { shownWaits.current.get(n)?.(); shownWaits.current.delete(n); }, []);
 
+  /** The notebook's last sheet a page was added after by itself: once for each. */
+  const addedAfter = useRef<number | null>(null);
   // ── written on where the Pencil lands: the pages near the screen are sheets, each lying where its page lies ──
   useEffect(() => {
     const fs = inkStore();
@@ -526,7 +588,10 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
         const { view, port, top, height } = portOf(sc, viewRef.current?.querySelector('.meta'));
         if (port.w <= 0 || port.h <= 0 || covered(sc, port)) return { id: hostId, view, port: { ...port, h: 0 }, top, height, open: null, sheets: [] };
         const sheets: SheetSpec[] = [];
-        for (const [n, el] of pageEls.current) {
+        for (const [place, el] of pageEls.current) {
+          // a notebook's page is written on under its sheet's own number
+          const n = sheetAt(place);
+          if (n === null) continue;
           const r = inContent(sc, el);
           if (r.y + r.h < top - AHEAD || r.y > top + view.h + AHEAD) continue;
           sheets.push({ id: sheetOf(n), frame: r, hit: r, zoom: scaleRef.current });
@@ -550,6 +615,15 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
         // the Pencil writes: whatever a finger was about here is let go, and the keys are the pages'
         (document.activeElement as HTMLElement | null)?.blur?.();
         setLiveInk((s) => new Set(s).add(n));
+        // a notebook never runs out of paper: a stroke begun low on its last page adds the next, once for that page
+        const list = sheetsRef.current;
+        if (!list || list[list.length - 1] !== n || addedAfter.current === n || e.y === undefined) return;
+        const el = pageEls.current.get(list.length);
+        if (!el) return;
+        const r = inContent(sc, el);
+        if (e.y < r.y + r.h * ADD_FROM) return;
+        addedAfter.current = n;
+        void addSheet(id).catch((err: unknown) => { addedAfter.current = null; console.error(err); });
       },
       async kept(sheet: string, strokes: InkStroke[]) {
         const n = pageOfSheet(sheet);
@@ -567,7 +641,21 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     const onScroll = () => sceneSoon();
     sc.addEventListener('scroll', onScroll, { passive: true });
     return () => { sc.removeEventListener('scroll', onScroll); off(); };
-  }, [hash, status, id]);
+  }, [hash, status, id, sheetAt]);
+  // ── a notebook's pages: its sheets, with nothing to load ──
+  useEffect(() => {
+    if (writtenId === undefined) return;
+    return () => { setSizes([]); setStatus('loading'); };
+  }, [id, writtenId]);
+  useEffect(() => {
+    if (!sheets) return;
+    setBase(0);
+    setPdf(null);
+    setTextless(false);
+    setSizes((was) => (was.length === sheets.length && was.every((s) => s.w === SHEET_W && s.h === SHEET_H) ? was : sheetSizes(sheets.length)));
+    setStatus('ok');
+    lastRef.current?.(sheets.length);
+  }, [sheets, id, writtenId]);
   // ── the file, shared with the notes' crops ──
   const range = info?.pages;
   useEffect(() => {
@@ -667,7 +755,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
   }, [pageRect]);
 
   // a new scale, or strokes come by a merge: the canvases are told
-  useEffect(() => { sceneSoon(); }, [scale, sizes, inked, room]);
+  useEffect(() => { sceneSoon(); }, [scale, sizes, inked, room, sheets]);
 
   // ── rendering, as pages come near ──
   const scaleRef = useRef(scale);
@@ -730,6 +818,10 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
   renderRef.current = renderPage;
 
   const scroller = () => wrapRef.current?.closest<HTMLElement>('.book-pages, .pane-body') ?? null;
+  /** How much taller the bar is for the tools' row under its words (an iPad's, `InkBar.tsx`); 0 with none. */
+  const barExtra = (): number => viewRef.current?.querySelector('.meta > .inkbar')?.getBoundingClientRect().height ?? 0;
+  /** How far down the view the place kept is: under the whole bar. */
+  const placeAt = (): number => PLACE_AT + barExtra();
   /** After a scroll: the pane beside is told the portal read past (set below, once the marks are known). */
   const afterScroll = useRef<() => void>(() => {});
   const place = useRef<{ page: number; y: number } | null>(null);
@@ -761,7 +853,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     if (!sc || !pagesRef.current) return;
     const onScroll = () => {
       const r = sc.getBoundingClientRect();
-      const top = r.top + 70;
+      const top = r.top + 70 + barExtra();
       const bottom = r.bottom - 8;
       let n = base + 1;
       let at: { page: number; y: number } | null = null;
@@ -773,7 +865,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
       }
       setCurrent(n);
       // the place at the top of the view, for when the pages are drawn at another scale
-      const from = r.top + PLACE_AT;
+      const from = r.top + placeAt();
       place.current = null;
       for (const [k, el] of pageEls.current) {
         const pr = el.getBoundingClientRect();
@@ -782,6 +874,16 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
       const cr = pagesRef.current?.getBoundingClientRect();
       placeX.current = cr && cr.width > 0 ? (r.left + r.width / 2 - cr.left) / cr.width : null;
       if (landed.current) places.set(id, { top: sc.scrollTop, at: place.current, x: placeX.current });
+      // a notebook's pages near the view are the ones drawn as paper
+      if (sheetsRef.current) {
+        let lo = Infinity;
+        let hi = -Infinity;
+        for (const [k, el] of pageEls.current) {
+          const pr = el.getBoundingClientRect();
+          if (pr.height > 0 && pr.bottom >= r.top - AHEAD && pr.top <= r.bottom + AHEAD) { lo = Math.min(lo, k); hi = Math.max(hi, k); }
+        }
+        setNear((was) => (lo > hi ? was : was && was.lo === lo && was.hi === hi ? was : { lo, hi }));
+      }
       // the pages near the view drawn here too: a covered window may hold the observer's callbacks back
       for (const [k, el] of pageEls.current) {
         const pr = el.getBoundingClientRect();
@@ -814,7 +916,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     const el = at ? pageEls.current.get(at.page) : undefined;
     if (at && el) {
       const pr = el.getBoundingClientRect();
-      sc.scrollTop += pr.top + at.y * pr.height - (sc.getBoundingClientRect().top + PLACE_AT);
+      sc.scrollTop += pr.top + at.y * pr.height - (sc.getBoundingClientRect().top + placeAt());
     }
     if (placeX.current !== null) centreOn(sc, placeX.current);
   }, [scale]);
@@ -869,7 +971,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     const sc = scroller();
     if (!at && sc) {
       // no page under the top of the view (the title over the first page, the room between two): the place is the next page's, a little above it
-      const from = sc.getBoundingClientRect().top + PLACE_AT;
+      const from = sc.getBoundingClientRect().top + placeAt();
       for (const [k, el] of [...pageEls.current].sort((a, b) => a[0] - b[0])) {
         const pr = el.getBoundingClientRect();
         if (pr.height > 0 && pr.bottom > from) { at = { page: k, y: (from - pr.top) / pr.height }; break; }
@@ -885,7 +987,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     if (!sc || !el) return;
     const pr = el.getBoundingClientRect();
     landed.current = true;
-    sc.scrollTop += pr.top + p.y * pr.height - (sc.getBoundingClientRect().top + PLACE_AT + room);
+    sc.scrollTop += pr.top + p.y * pr.height - (sc.getBoundingClientRect().top + placeAt() + room);
     if (p.x !== null && p.x !== undefined) centreOn(sc, p.x);
     // where the view is now, before its scroll says so: a ⌫ straight after goes from here
     place.current = { page: n, y: pr.height > 0 ? p.y - room / pr.height : p.y };
@@ -920,6 +1022,17 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
   };
 
   // ── what the notes say about the pages: the passages, in book order ──
+  /** Boxes as they come into the column: each at the place its sheet lies; null when a sheet of theirs is gone. */
+  const boxesIn = (boxes: Box[] | null): Box[] | null => {
+    if (!boxes) return null;
+    const out: Box[] = [];
+    for (const b of boxes) {
+      const n = placeOfSheet(b.page);
+      if (n === null) return null;
+      out.push(n === b.page ? b : { ...b, page: n });
+    }
+    return out;
+  };
   const drawn = useMemo((): Drawn[] => {
     // the boxed sections of the notes written before milestone 81, and the passages kept with the PDF; all in book order
     const old = notes.flatMap((note): Drawn[] => {
@@ -927,11 +1040,13 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
       return doc ? passagesOf(doc.blocks).map((p): Drawn => ({ key: p.heading.text, name: p.heading.text, boxes: p.boxes, cards: sectionState(doc.blocks, p.index).cards, dismissed: sectionDismissed(p.heading.read!), section: p, sectionIn: note })) : [];
     });
     const kept = passageMarksOf(marks).flatMap(([, m]): Drawn[] => {
-      const boxes = parseBoxes(m.boxes);
+      // a notebook's passage names its sheets: drawn where they lie now, and not at all once one of them is gone
+      const boxes = boxesIn(parseBoxes(m.boxes));
       return boxes ? [{ key: m.boxes, name: pagesLabel(boxes), boxes, cards: 0, dismissed: m.due === undefined, sched: schedOf(m) }] : [];
     });
     return [...old, ...kept].map((d, i) => ({ d, i })).sort((a, b) => boxesAt(a.d.boxes) - boxesAt(b.d.boxes) || a.i - b.i).map((x) => x.d);
-  }, [notes, loadedNotes, marks]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [notes, loadedNotes, marks, sheets]);
   const drawnRef = useRef(drawn);
   drawnRef.current = drawn;
 
@@ -946,8 +1061,9 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     const pr = el.getBoundingClientRect();
     const top = pr.top + b.y * pr.height;
     landed.current = true;
-    if (!always && top >= sr.top + 30 && top <= sr.bottom - 120) return;
-    sc.scrollTo({ top: Math.max(0, sc.scrollTop + top - sr.top - 60) });
+    const over = barExtra();
+    if (!always && top >= sr.top + 30 + over && top <= sr.bottom - 120) return;
+    sc.scrollTo({ top: Math.max(0, sc.scrollTop + top - sr.top - 60 - over) });
   }, []);
 
   // the caret's section in the note lights its boxes, and the pages scroll to them; only a caret someone put there:
@@ -990,7 +1106,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     if (was) {
       const pr = was.at ? pageEls.current.get(was.at.page)?.getBoundingClientRect() : undefined;
       // a page laid out: the same text under the words over the pages, whatever the scale is now; else the scroll as it was
-      if (was.at && pr && pr.height > 0) sc.scrollTop += pr.top + was.at.y * pr.height - (sc.getBoundingClientRect().top + PLACE_AT);
+      if (was.at && pr && pr.height > 0) sc.scrollTop += pr.top + was.at.y * pr.height - (sc.getBoundingClientRect().top + placeAt());
       else sc.scrollTop = was.top;
       // the place is this one from here on: a scale that changes before the next scroll (the scroller's bar taking its
       // width as the pages fill the pane) keeps it, not the top the pages opened at
@@ -1197,13 +1313,13 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     const boxes = from ?? boxesNow();
     if (!boxes.length) return;
     const { name } = await nameOf(boxes);
-    const made = await keepPassage(id, boxes);
+    const made = await keepPassage(id, boxesOut(boxes));
     if (!made) { notify('marks are kept by the pdf\'s hash, which this collection does not have'); return; }
     clearBoxes();
     const end = boxesEnd(boxes);
     let before: Doc | null = null;
-    // the read point moves past the last box
-    await writeDoc(id, (d) => {
+    // the read point moves past the last box (a notebook has none)
+    if (!written) await writeDoc(id, (d) => {
       const r = meta(d).read;
       if (r && end && meta(d).type !== 'note') {
         before = structuredClone(d);
@@ -1226,11 +1342,14 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
   const cardOrClip = async (from?: Box[]) => {
     const boxes = from ?? boxesNow();
     if (!boxes.length) return;
-    const to = await ensureNote(id);
+    // a clip is a line of a typed note: written notes among a PDF's notes take none
+    const to = await ensureNote(id, true);
     if (to === null) return;
+    // a notebook's clip names the sheet, as its strokes do
+    const clips = boxesOut(boxes).map(formatClip);
+    if (!clips.length) return;
     clearBoxes();
     let at = -1;
-    const clips = boxes.map(formatClip);
     await writeDoc(to, (d) => {
       let next = Math.max(0, Math.min(placeAtCaret(to) ?? d.blocks.length, d.blocks.length));
       for (const text of clips) { d.blocks.splice(next, 0, { kind: 'raw', text }); at = next++; }
@@ -1556,8 +1675,8 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
       return;
     }
     // a press in the page's left margin holds the line beside it under the rule (a keyboard's: not under a finger)
-    if (!e.altKey && hit.x < RULER_MARGIN && !mobile && !st.current.sel) { void startRuler(hit).catch(console.error); return; }
-    if (!e.altKey) return;
+    if (!e.altKey && hit.x < RULER_MARGIN && !mobile && !written && !st.current.sel) { void startRuler(hit).catch(console.error); return; }
+    if (!e.altKey || written) return;
     void tokensOf(hit.page).then((list) => {
       const tok = tokenAt(list, hit.x, hit.y);
       if (tok) return peekRef(tok.text, hit.page, onScreen(hit.page, tok), true);
@@ -1580,6 +1699,8 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     if (!hit) return;
     // the page's own menu, or none: the web view's has nothing for a page
     e.preventDefault();
+    // paper has nothing to peek at or look up
+    if (written) return;
     const at = { left: e.clientX, top: e.clientY, bottom: e.clientY };
     const link = linkAt(links.current.get(hit.page) ?? [], hit.x, hit.y);
     const live = window.getSelection();
@@ -1635,7 +1756,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
       const pr = el.getBoundingClientRect();
       if (pr.height <= 0 || pr.bottom < sr.top || pr.top > sr.bottom) continue;
       // in view: its middle between the words over the pages and the view's bottom
-      const seen = (b: { y: number; h: number }) => { const mid = pr.top + (b.y + b.h / 2) * pr.height; return mid >= sr.top + PLACE_AT - 20 && mid <= sr.bottom; };
+      const seen = (b: { y: number; h: number }) => { const mid = pr.top + (b.y + b.h / 2) * pr.height; return mid >= sr.top + placeAt() - 20 && mid <= sr.bottom; };
       const on = (links.current.get(n) ?? []).filter(seen);
       // a reference the PDF made a link of is the link's
       const refs = (await tokensOf(n)).filter((t) => seen(t) && linkAt(on, t.x + t.w / 2, t.y + t.h / 2) === null);
@@ -1831,9 +1952,58 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     await setMark(from.hash, key, mark);
     notify(`portal · p. ${from.page} shows p. ${at.page}`, null, () => setMark(from.hash, key, null));
   };
+  // ── a notebook's pages (milestone 82): one more, one fewer, their paper ──
+  /** What a sheet holds: whether it is written on, and how many passages have a box on it. */
+  const heldOn = (sheet: number): { inkOn: boolean; kept: number } => ({
+    inkOn: inkedRef.current[sheet] !== undefined,
+    kept: passageMarksOf(marksRef.current).filter(([, m]) => parseBoxes(m.boxes)?.some((b) => b.page === sheet)).length,
+  });
+  const morePage = () => void addSheet(id).catch(failed('add page'));
+  /**
+   * `delete this page`: the page in view goes, with what is written on it
+   * and the passages kept from it. A page that holds either asks first, as
+   * the tree's delete does (the row says what goes with it, a second press
+   * does it); the notice has `undo`, which puts all of it back. A notebook
+   * keeps a page: its only one deleted leaves a blank one (`written.ts`),
+   * so a bare only page has nothing to delete.
+   */
+  const deletePage = (n: number, at: { left: number; top: number; bottom: number }, sure = false) => {
+    const sheet = sheetAt(n);
+    if (!written || sheet === null) return;
+    const { inkOn, kept } = heldOn(sheet);
+    if (written.sheets.length < 2 && !inkOn && !kept) return;
+    if ((inkOn || kept > 0) && !sure) {
+      const holds = [inkOn ? 'its writing' : '', kept ? plural(kept, 'passage') : ''].filter(Boolean).join(' and ');
+      const menu = popMenu(at, [{ label: `delete page ${n} with ${holds}?`, act: 'page-delete-sure', danger: true, run: () => deletePage(n, at, true) }], 'book-menu');
+      menu.querySelector('.ci')?.classList.add('asking');
+      return;
+    }
+    void removeSheet(id, sheet).then((undo) => notify(`page ${n} deleted`, null, undo)).catch(failed('delete page'));
+  };
+  /** A notebook's `more`: its paper, the one it has marked, and `delete this page` (not for an only page with nothing on it). */
+  const paperMenu = (at: { left: number; top: number; bottom: number }) => {
+    if (!written) return;
+    const sheet = sheetAt(current);
+    const held = sheet === null ? null : heldOn(sheet);
+    const items: PopItem[] = [
+      ...PAPERS.map((k): PopItem => ({ label: `${k} paper`, act: `paper-${k}`, on: written.paper === k, run: () => { if (written.paper !== k) void setPaper(id, k).catch(failed('paper')); } })),
+      ...(held && (written.sheets.length > 1 || held.inkOn || held.kept > 0) ? [{ label: '-' }, { label: 'delete this page', act: 'page-delete', danger: true, run: () => deletePage(current, at) }] : []),
+    ];
+    popMenu(at, items, 'book-menu');
+  };
+  /** `+` beside the notes' word: one more note on these pages, typed or written. A notebook's own notes are typed. */
+  const addMenu = (el: HTMLElement) => {
+    if (written) { void addNote(id).catch(console.error); return; }
+    const r = el.getBoundingClientRect();
+    popMenu({ left: r.left, top: r.bottom + 4, bottom: r.bottom + 4 }, [
+      { label: 'new note', act: 'new-note', run: () => void addNote(id).catch(console.error) },
+      { label: 'new written notes', act: 'new-written', run: () => void addWritten(id).catch(failed('new written notes')) },
+    ], 'book-menu');
+  };
   /** The bar's `more`: what the keys do for a place, by name, so a finger has them too (a portal above all: ⇧P has no touch). */
   const moreMenu = (el: HTMLElement) => {
     const r = el.getBoundingClientRect();
+    if (written) { paperMenu({ left: r.left, top: r.bottom + 4, bottom: r.bottom + 4 }); return; }
     const from = portalPending();
     const items: PopItem[] = [
       { label: 'bookmark this place', act: 'more-bookmark', run: () => void startBookmark().catch(console.error) },
@@ -2033,12 +2203,13 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     // a menu or the palette over the pages has the keys
     const free = !useApp.getState().paletteOpen && popMenuOpen() === null && document.querySelector('.ctx-menu') === null;
     if (free && e.key === 'Backspace') { if (e.shiftKey ? goForward() : goBack()) take(); return; }
-    if (free && !e.shiftKey && e.key === 't' && status === 'ok') { take(); openContents(id); return; }
-    if (free && !e.shiftKey && e.key === 'f' && status === 'ok') { take(); void showHints().catch(console.error); return; }
+    // paper has no text: the contents, the hints, the search and what is left on a PDF's page have nothing to work on
+    if (free && !written && !e.shiftKey && e.key === 't' && status === 'ok') { take(); openContents(id); return; }
+    if (free && !written && !e.shiftKey && e.key === 'f' && status === 'ok') { take(); void showHints().catch(console.error); return; }
     // `n` and `N` step the search's hits, as ⏎ and ⇧⏎ do in its field
     if (free && (e.key === 'n' || e.key === 'N') && s.find?.q && s.find.pages.length) { take(); void runFind(s.find.q, e.key === 'n' ? 1 : -1).catch(console.error); return; }
     // what is left on the page (milestone 77)
-    if (free && status === 'ok') {
+    if (free && status === 'ok' && !written) {
       // the highlight just made: 1–4 choose its ink while its notice shows
       if (s.lastHl && /^[1-4]$/.test(e.key) && useApp.getState().notice?.seq === s.lastHl.seq) { take(); inkHighlight(s.lastHl.id, Number(e.key)); return; }
       // the rule: a line down or up, the read point set to it, let go
@@ -2052,7 +2223,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
       if (e.key === 'P') { take(); void portalKey().catch(console.error); return; }
     }
     if (e.key === 'r' && canEnrol && !info?.read) { take(); startReading(); }
-    else if (e.key === '/') { take(); setFind((f) => f ?? { q: '', pages: [], at: 0 }); findRef.current?.focus(); }
+    else if (e.key === '/') { if (written) return; take(); setFind((f) => f ?? { q: '', pages: [], at: 0 }); findRef.current?.focus(); }
     else if (e.key === 'g') { take(); setGoto(true); }
     else if (!session && (e.key === ']' || e.key === '[')) {
       // step between the passages, in book order; with none, between pages
@@ -2137,19 +2308,27 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
   const where = status === 'ok' && sizes.length ? `p. ${current} / ${last}` : '';
   // (a phone's bar has room for the page alone: what is due is on the day)
   const shown = [where, due && !phone ? `${due} due` : ''].filter(Boolean).join(' · ') || readTo || (cards ? plural(cards, 'card') : '') || (textless && status === 'ok' ? 'no text' : '');
+  /** The pages can be written on: there is a canvas (an iPad's) and a key their strokes are kept under. */
+  const canWrite = mobile && hasCanvas() && hash !== null;
+  /** The tools' row: an iPad's (a phone's bar is one line). */
+  const inkRow = canWrite && !phone && status === 'ok';
   const shownPending = [...pending, ...(sel?.boxes ?? [])];
   const lastPending = pending.length ? boxRect(pending[pending.length - 1]!) : null;
 
   return (
     <div className="reader-wrap" ref={outerRef} data-wide={wide ? '1' : undefined}>
-      <div ref={viewRef} className={`reader doc-view pdf-view${reading ? ' reading' : ''}`} data-page={current} data-roomy={roomy ? '1' : '0'} data-zoom={zoom} data-back={trail.back.length} data-fwd={trail.forward.length} data-hash={hash ?? undefined} data-bookmarks={bookmarks.length} data-highlights={highlights.length} data-portals={portals.length} data-ruler={ruler ? `${ruler.page}:${ruler.line}` : undefined} data-following={follower ? '1' : undefined} data-portal={showing ?? undefined} style={colW > 0 ? { width: pageW, ...(wide ? { '--fit-w': `${colW}px`, '--fit-left': `${room.left}px` } as React.CSSProperties : null) } : undefined}>
+      <div ref={viewRef} className={`reader doc-view pdf-view${reading ? ' reading' : ''}`} data-page={current} data-roomy={roomy ? '1' : '0'} data-zoom={zoom} data-back={trail.back.length} data-fwd={trail.forward.length} data-hash={hash ?? undefined} data-bookmarks={bookmarks.length} data-highlights={highlights.length} data-portals={portals.length} data-ruler={ruler ? `${ruler.page}:${ruler.line}` : undefined} data-following={follower ? '1' : undefined} data-portal={showing ?? undefined} data-written={written ? '1' : undefined} data-tools={inkRow ? '1' : undefined} style={colW > 0 ? { width: pageW, ...(wide ? { '--fit-w': `${colW}px`, '--fit-left': `${room.left}px` } as React.CSSProperties : null) } : undefined}>
         {/* the bar over the pages, as wide as the pane whatever the page's width: what the book is, its notes, the zoom, the page, search */}
-        <div className="meta pdf-tools" style={colW > 0 ? { width: room.w + room.left + room.pad, marginLeft: wide ? -room.left : -((colW - pageW) / 2 + room.left) } : undefined}>
-          {status === 'ok' && <button type="button" className="pt-btn" data-tool="contents" title="contents t" aria-label="contents" onClick={() => openContents(id)}><Icon name="menu" /></button>}
+        <div className="meta pdf-tools" data-ink={inkRow ? '1' : undefined} style={colW > 0 ? { width: room.w + room.left + room.pad, marginLeft: wide ? -room.left : -((colW - pageW) / 2 + room.left) } : undefined}>
+          {/* the bar's first row: the row itself only where the tools make a second under it (an iPad); anywhere else its words are the bar's own */}
+          <div className="pt-row">
+          {status === 'ok' && !written && <button type="button" className="pt-btn" data-tool="contents" title="contents t" aria-label="contents" onClick={() => openContents(id)}><Icon name="menu" /></button>}
           <h1 className="pt-title" title={id}>{titleOf(id, docs, root)}</h1>
           {!(phone && session) && <button type="button" className="frozen-tag notes-toggle" data-on={notesOpen ? '1' : '0'} data-has={hasNotes ? '1' : '0'} aria-pressed={notesOpen} title={'notes ⌘\\'} onClick={() => toggleNotes(id)}>{notesOpen ? 'hide notes' : hasNotes ? 'open notes' : 'create notes'}</button>}
-          {!phone && hasNotes && canAddNote && <button type="button" className="pt-btn notes-add" data-tool="new-note" title="new note" aria-label="new note" onClick={() => void addNote(id).catch(console.error)}>+</button>}
-          {!isPdfPath(id) && <TabsToggle path={id} />}
+          {!phone && canAddNote && (hasNotes || !written) && <button type="button" className="pt-btn notes-add" data-tool="new-note" title={written ? 'new note' : 'new notes'} aria-label={written ? 'new note' : 'new notes'} aria-haspopup={written ? undefined : 'menu'} onClick={(e) => addMenu(e.currentTarget)}>+</button>}
+          {!isPdfPath(id) && !written && <TabsToggle path={id} />}
+          {/* paper is written on where there is a canvas; anywhere else it is shown, and says where it is written */}
+          {written && !canWrite && !phone && <span className="pt-readonly" role="note">written on an ipad</span>}
           <StudyButton path={id} />
           <ExamTag path={id} />
           {follower && <span className="frozen-tag following" title="this pane shows where the portals of the page being read lead; close it to stop">following portals</span>}
@@ -2165,13 +2344,16 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
             </span>
           )}
           {shown && <button type="button" className="right pt-page" data-tool="page" title={[rightTip, 'g goes to a page'].filter(Boolean).join(' · ')} onClick={() => setGoto(true)}>{shown}</button>}
-          {status === 'ok' && <button type="button" className="pt-btn" data-tool="more" title="bookmark, portal, ruler" aria-label="more" aria-haspopup="menu" onClick={(e) => moreMenu(e.currentTarget)}><Icon name="more" /></button>}
-          {status === 'ok' && <button type="button" className="pt-btn" data-tool="search" title="search /" aria-label="search" aria-pressed={!!find} onClick={() => {
+          {status === 'ok' && <button type="button" className="pt-btn" data-tool="more" title={written ? 'paper, delete this page' : 'bookmark, portal, ruler'} aria-label="more" aria-haspopup="menu" onClick={(e) => moreMenu(e.currentTarget)}><Icon name="more" /></button>}
+          {status === 'ok' && !written && <button type="button" className="pt-btn" data-tool="search" title="search /" aria-label="search" aria-pressed={!!find} onClick={() => {
             // pressed with the search open, it closes it and its hits go (a finger has no esc)
             if (find) { setFind(null); return; }
             setFind({ q: '', pages: [], at: 0 });
             setTimeout(() => findRef.current?.focus(), 0);
           }}><Icon name="search" /></button>}
+          </div>
+          {/* the tools to write with, a second row of the bar: wherever the pages can be written on (the row decides itself that it is an iPad) */}
+          {inkRow && <InkBar id={id} />}
         </div>
         {(find || goto || looking || naming || chord || (portalFrom && active)) && (
           <div className="pdf-bar">
@@ -2203,6 +2385,8 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
                     if (e.key !== 'Enter') return;
                     e.preventDefault();
                     const n = Number(e.currentTarget.value);
+                    // the field lets the focus go first: the web view brings a focused field back into view, and would undo the scroll
+                    e.currentTarget.blur();
                     if (n >= 1) { leave(); scrollTo(n); }
                     setGoto(false);
                   }}
@@ -2242,21 +2426,28 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
           <div className="pdf-pages" ref={pagesRef} style={{ height: tops.total || undefined, width: pageW }} onPointerDown={onPointerDown} onMouseDown={onMouseDown} onClick={onPress} onPointerMove={onHover} onContextMenu={onMenu}>
             {status === 'loading' && <div className="empty">opening</div>}
             {sizes.map((s, i) => (
+              // a notebook's page is its sheet: known by the sheet's number, so a page deleted before it leaves it as it is
               <div
-                key={base + i + 1}
+                key={sheets ? `sheet:${sheets[i]}` : base + i + 1}
                 className="pdf-page"
                 data-page={base + i + 1}
+                data-sheet={sheets ? sheets[i] : undefined}
+                data-paper={written?.paper}
                 ref={(el) => { if (el) pageEls.current.set(base + i + 1, el); else pageEls.current.delete(base + i + 1); }}
                 style={{ width: s.w * scale, height: s.h * scale, top: tops.at[i + 1] }}
-              />
+              >
+                {written && isNear(base + i + 1) ? <Paper kind={written.paper} /> : null}
+              </div>
             ))}
             {hash && Object.keys(inked).length > 0 && (
               <div className="pdf-ink">
                 {sizes.map((s, i) => {
                   const n = base + i + 1;
+                  // what is written on it is kept under the page's own number: a notebook's sheet
+                  const page = sheetAt(n);
                   // a page's writing is made when the page itself is drawn, as it comes near
-                  const r = inked[n] !== undefined && rendered.current.has(n) ? pageRect(n) : null;
-                  return r && <PageInk key={n} hash={hash} page={n} w={s.w} h={s.h} rev={inked[n]!} rect={r} live={liveInk.has(n)} onShown={pictureShown} />;
+                  const r = page !== null && inked[page] !== undefined && (sheets ? isNear(n) : rendered.current.has(n)) ? pageRect(n) : null;
+                  return r && page !== null && <PageInk key={page} hash={hash} page={page} at={n} w={s.w} h={s.h} rev={inked[page]!} rect={r} live={liveInk.has(page)} onShown={pictureShown} />;
                 })}
               </div>
             )}
@@ -2343,13 +2534,17 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
                 <div data-hit="1" className="pend" style={{ left: Math.max(0, Math.min(lastPending.left, (pagesRef.current?.clientWidth ?? 9999) - (mobile ? 340 : 280))), top: lastPending.top + lastPending.height + 6 }}>
                   <button type="button" data-k="e" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); void makeSection().catch(console.error); }}><kbd>e</kbd><span className="pe-l">passage{pending.length > 1 ? ` · ${pending.length} boxes` : ''}</span></button>
                   <button type="button" data-k="m" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); void cardOrClip().catch(console.error); }}><kbd>m</kbd><span className="pe-l">card</span></button>
-                  <button type="button" data-k="h" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); doHighlight(); }}><kbd>h</kbd><span className="pe-l">highlight</span></button>
-                  {mobile && <button type="button" data-k="web" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); lookUnder(); }}><span className="pe-l">look up</span></button>}
+                  {!written && <button type="button" data-k="h" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); doHighlight(); }}><kbd>h</kbd><span className="pe-l">highlight</span></button>}
+                  {mobile && !written && <button type="button" data-k="web" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); lookUnder(); }}><span className="pe-l">look up</span></button>}
                   {!mobile && <button type="button" data-k="esc" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); clearBoxes(); }}><kbd>esc</kbd></button>}
                 </div>
               )}
             </div>
           </div>
+          {/* under a notebook's last page: one more */}
+          {written && status === 'ok' && (
+            <button type="button" className="add-page" data-tool="add-page" style={{ width: pageW }} onClick={morePage}>add page</button>
+          )}
           {sel && (
             <div className="sel-cue" style={{ top: sel.rect.bottom + 8, left: sel.rect.left }}>
               <button type="button" className="cue-act" {...press(() => void makeSection().catch(console.error))}>

@@ -166,7 +166,17 @@ export type Field =
   /** The exams everything under the document is studied toward, in the order written. */
   | { key: 'exam'; value: Exam[] }
   /** The day a source's reading is paced to finish by (§3, *finish*): a source's own, not inherited. */
-  | { key: 'finish'; value: string };
+  | { key: 'finish'; value: string }
+  /** A written notebook (§3, *Written notes*): its own id, 32 lowercase hex, which stands where a PDF's SHA-256 does. */
+  | { key: 'written'; value: string }
+  /** A written notebook's paper. Means nothing without `written`. */
+  | { key: 'paper'; value: PaperKind }
+  /** A written notebook's pages in order, each named by a whole number from 1. Means nothing without `written`. */
+  | { key: 'sheets'; value: number[] };
+
+/** What a written notebook's pages are ruled with. */
+export type PaperKind = 'blank' | 'ruled' | 'grid' | 'dotted';
+export const PAPERS: readonly PaperKind[] = ['blank', 'ruled', 'grid', 'dotted'];
 
 /** One exam (§3, *exams*): its day, and what it is called (`midterm 2`), when it says. */
 export interface Exam {
@@ -210,6 +220,7 @@ export interface Diagnostic {
 export const FIELD_KEYS: readonly FieldKey[] = [
   'type', 'title', 'frozen', 'imported', 'started', 'read', 'write', 'default-card', 'pri', 'pdf', 'url', 'author', 'published', 'tabs',
   'new-per-day', 'reviews-per-day', 'retention', 'leech', 'leech-action', 'pages', 'exam', 'finish',
+  'written', 'paper', 'sheets',
 ];
 
 export function isField(e: FmEntry): e is Field {

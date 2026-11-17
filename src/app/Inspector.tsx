@@ -32,6 +32,7 @@ import { headingOf, moveAction, sectionActions, statusOf, writeDoc } from './sec
 import { appNow } from './clock.js';
 import { chipWhen } from './bookNotes.js';
 import { bringPassageBack, changePassage } from './passages.js';
+import { boxesLabel } from './written.js';
 import { passageId } from '../vault/index.js';
 import { goToMark, goToPassage, openNotes, passageWhen, pdfHashOf, setMark, useMarks } from './book.js';
 import { bookmarksOf, highlightsOf, passageMarksOf } from '../pdf/index.js';
@@ -530,15 +531,18 @@ function DocInspector({ id, info, doc, now }: { id: string; info: DocInfo; doc: 
   rows.push(['path', <span className="mono">{id}</span>]);
   // a PDF on its own (milestone 70): its pages are itself; the note attached to it, when one is
   const pdfAlone = isPdfPath(id);
-  if (info.pdf && !pdfAlone) rows.push(['pages', <span className="mono">{baseOf(info.pdf)}{info.pages ? (info.pages.first === info.pages.last ? `, p. ${info.pages.first}` : `, pp. ${info.pages.first}–${info.pages.last}`) : ''}</span>]);
-  if (pdfAlone && info.note) rows.push(['notes', (info.notes ?? [info.note]).map((n) => titleOf(n, docs, null)).join(', ')]);
+  // a written notebook (milestone 82): its pages are its own sheets; its paper, how many, and the notes attached to it as a PDF's are
+  const written = info.written;
+  if (written) rows.push(['paper', written.paper], ['pages', String(written.sheets.length)]);
+  else if (info.pdf && !pdfAlone) rows.push(['pages', <span className="mono">{baseOf(info.pdf)}{info.pages ? (info.pages.first === info.pages.last ? `, p. ${info.pages.first}` : `, pp. ${info.pages.first}–${info.pages.last}`) : ''}</span>]);
+  if ((pdfAlone || written) && info.note) rows.push(['notes', (info.notes ?? [info.note]).map((n) => titleOf(n, docs, null)).join(', ')]);
   // a note attached to a PDF on its own: the PDF it is the notes of
   if (info.of) rows.push(['notes on', titleOf(info.of, docs, null)]);
   if (m.imported) rows.push(['imported', m.imported]);
   if (m.url) rows.push(['url', <UrlLink key="url" url={m.url} />]);
   if (m.author) rows.push(['author', m.author]);
   if (m.published) rows.push(['published', m.published.slice(0, 10)]);
-  if (!pdfAlone) rows.push(['length', plural(words(doc.blocks), 'word')]);
+  if (!pdfAlone && !written) rows.push(['length', plural(words(doc.blocks), 'word')]);
   if (cards) rows.push(cardsRow);
   if (m.read && info.type === 'note') rows.push(['revisit', `${m.read.reps ? `pass ${m.read.reps + 1}` : 'first pass'}, ${dueLabel(m.read.due, now)}`]);
   else if (m.read && info.pdf) rows.push(['reading', `${m.read.pos ? `to p. ${m.read.pos}${m.read.y !== undefined && m.read.y < 1 ? `, ${Math.round(m.read.y * 100)}% down` : ''}` : 'not started'}, ${dueLabel(m.read.due, now)}`]);
@@ -551,7 +555,7 @@ function DocInspector({ id, info, doc, now }: { id: string; info: DocInfo; doc: 
   rows.push(...childrenRow(id, tree));
   return (
     <>
-      <Block title={info.type}>
+      <Block title={written ? 'written notes' : info.type}>
         <KV rows={rows} />
         {!info.pdf && (
           <div className="frozen-row">
@@ -645,6 +649,7 @@ const HIGHLIGHTS_SHOWN = 5;
 function BookMarksBlock({ id }: { id: string }) {
   const hash = pdfHashOf(id);
   const marks = useMarks(hash);
+  const info = useApp((s) => s.docs[id]);
   if (hash === null) return null;
   const bookmarks = bookmarksOf(marks);
   const highlights = highlightsOf(marks);
@@ -657,7 +662,7 @@ function BookMarksBlock({ id }: { id: string }) {
           <ul className="insp-cards insp-marks insp-passages" data-marks="passages">
             {passages.map(([key, m]) => {
               const when = passageWhen(m, now);
-              const label = pagesLabel(parseBoxes(m.boxes) ?? []);
+              const label = boxesLabel(info, parseBoxes(m.boxes) ?? []);
               return (
                 <li key={key} data-mark={key} data-due={when === 'due today' ? '1' : '0'} data-dismissed={when === 'dismissed' ? '1' : '0'} onClick={() => goToPassage(hash, m, id)}>
                   <span className="cl-t" dir="auto">{label}</span>
@@ -764,10 +769,11 @@ export function SectionBlock({ path, doc, at, now }: { path: string; doc: Doc; a
 function KeptPassageBlock({ path, hash, boxes, now }: { path: string; hash: string; boxes: string; now: Date }) {
   const marks = useMarks(hash);
   const pri = useApp((s) => s.docs[path]?.pri);
+  const info = useApp((s) => s.docs[path]);
   const m = marks[passageId(boxes)];
   if (m?.kind !== 'passage') return null;
   const on = m.due !== undefined;
-  const label = pagesLabel(parseBoxes(m.boxes) ?? []);
+  const label = boxesLabel(info, parseBoxes(m.boxes) ?? []);
   const change = (f: (x: SectionSchedule) => SectionSchedule) => void changePassage(hash, boxes, f).catch(failed('passage'));
   const rows: [string, ReactNode][] = [['passage', <span key="h" className="sec-h">{label}</span>]];
   if (m.made) rows.push(['boxed', shortDay(m.made)]);

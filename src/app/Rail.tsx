@@ -36,7 +36,7 @@ import { childDirOf, isDoc } from '../vault/index.js';
 import { geometry } from './dnd.js';
 import { rowDrag, rowMark, useDrag, type Surface } from './drag.js';
 import { importFiles, failed } from './land.js';
-import { GLYPH, descendants, findNode, kindOf, titleOf, type NodeKind } from './names.js';
+import { GLYPH, WRITTEN_GLYPH, descendants, findNode, kindOf, titleOf, type NodeKind } from './names.js';
 import { NodeMenu, menuAt, menuAtRow, placeMenu, type MenuAt } from './NodeMenu.js';
 import { menuKeys } from './popMenu.js';
 import type { OpenOpts } from './panes.js';
@@ -339,7 +339,7 @@ export function Notebook({ nb, page, active, onOpen, children }: Props) {
         >
           {r.has && !r.overview ? <Glyph g={r.open ? '▾' : '▸'} /> : ''}
         </span>
-        <span className="glyph" data-t={kind}><Glyph g={GLYPH[kind]} /></span>
+        <span className="glyph" data-t={kind}><Glyph g={docs[r.path]?.written ? WRITTEN_GLYPH : GLYPH[kind]} /></span>
         {editingThis ? (
           <input
             className="rename"

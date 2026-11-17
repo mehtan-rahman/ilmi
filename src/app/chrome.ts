@@ -25,6 +25,8 @@ export interface HintContext {
   canEnrol: boolean;
   /** A document with pages, open as its pages: the book's own keys apply. */
   pages?: boolean;
+  /** The pages are a written notebook's paper (milestone 82): what a PDF's text gives has no key there. */
+  paper?: boolean;
   /** The document's prose is locked: bare `e` and `m` act, since nothing is typed there. */
   frozen?: boolean;
   /** The document (or the session's element) is a note, or an extract: what comes back until dismissed, not a book. */
@@ -75,6 +77,7 @@ export function hintsFor(c: HintContext): Hint[] {
     case 'extract': {
       const enrol: Hint[] = c.canEnrol ? [['r', c.kind === 'note' ? 'revisit' : 'start reading']] : [];
       // the rest of a book's keys after the ones it had: a narrow window cuts them off, `docs/keys.md` has them all
+      if (c.pages && c.paper) return [...book(c), ['[ ]', 'passages'], ['g', 'page'], ...back(c), NOTES];
       if (c.pages) return [...book(c), ...enrol, ['[ ]', 'passages'], ['/', 'search'], ...back(c), NOTES, ...(c.touch ? [] : MARKS)];
       return [...selKeys(c.frozen, true, word), ...enrol, ['⌘F', 'find'], ['⌘\\', 'split pane']];
     }

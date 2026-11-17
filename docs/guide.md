@@ -145,10 +145,18 @@ ordinary tab it is, and closes it again; nothing slides over the pages. A
 PDF with a `.md` of its name beside it (a book's chapters, or anything
 from before) opens the same way, that document's body being its notes.
 
-A PDF can have several notes. Once it has one, a `+` sits beside the
-notes' word in the bar (`new note`): it asks what `create notes` asked, a
+On an iPad the pages can be written on: the Pencil writes where it lands,
+and the bar has a second row under its words with the tools to write with
+(see *On an iPad*). What you write is kept with the PDF, not in it, and
+every device shows it over the page. It lies on the page as ink does on
+paper: a highlighter's stroke over a line of text leaves the text dark.
+
+A PDF can have several notes. A `+` sits beside the notes' word in the
+bar and opens a small menu. `new note` asks what `create notes` asked, a
 note that is there or a new one and where, and that note names the PDF
-too. `open notes` then opens them all as tabs of the pane beside the
+too. `new written notes` makes a notebook of paper for the PDF instead,
+named and placed the same way (see *Written notes* below). `open notes`
+then opens them all as tabs of the pane beside the
 pages, the one you used last in front, and `hide notes` (⌘\) closes them
 together; they are ordinary tabs, so one can be closed by itself. Each is its own row in the tree, wherever you put it; a note
 deleted, or whose `pdf` field you take out, is no longer among them. A
@@ -301,6 +309,57 @@ collection` until then.
   page's end, and the page scrolls so the rule stays where your eyes are.
   `r` sets the read point to the rule's line in a book you are reading.
   `v` or esc lets it go. The ruler is not kept: it is where you are now.
+
+### Written notes
+
+Written notes are a notebook of paper: pages you write on by hand, with
+nothing typed in them. Make one from the sidebar's `+` (`new written
+notes`, under `note`) or from the palette's `new written notes`; it is a
+row in the tree with its own mark, renamed and moved as any note is. Over
+a PDF's pages, `+` beside the notes' word and `new written notes` makes
+one that belongs to that PDF: it opens in the pane beside the pages, a tab
+among the PDF's other notes, and is still a notebook of its own in the
+tree.
+
+A notebook opens as a PDF does: its pages on the grey desk, the bar over
+them with its name, its notes, the zoom, the page (a press, or `g`, goes
+to a page) and `more`. Every page is a Letter sheet. A new notebook is
+ruled; `more` has `blank paper`, `ruled paper`, `grid paper` and `dotted
+paper`, and the one you pick is the whole notebook's.
+
+On an iPad the Pencil writes where it lands, and the tools are the bar's
+second row (see *On an iPad*). `add page` under the last page adds one,
+and you do not have to reach for it: a stroke begun in the lower third of
+the last page adds the next page by itself. `more` has `delete this
+page`, which takes the page in view. A page with writing on it, or a
+passage kept from it, asks first; the notice undoes it, and the page comes
+back where it was with what was on it. The other pages are not touched by
+it: what you wrote on them and what you kept from them stay with them.
+
+On the Mac a notebook shows its pages and what is written on them, and
+cannot be written on; the bar says `written on an ipad`.
+
+Written and typed are kept apart. A typed note takes no handwriting, and a
+notebook no typing. To type up what you wrote, work from the written page
+as you would from a PDF's. Drag a box around part of a page (hold, then
+drag, under a finger). `passage` on the box's bar (or `e`) keeps it: it
+comes back in the day's queue until you dismiss it, its session the page
+at its box, exactly as a PDF's passage does; `]` and `[` step between a
+notebook's passages, and `passages · <name>` in the palette lists them.
+`card` (or `m`) clips the box into a typed note on the notebook, with the
+caret under it for what you type: the bar's `create notes` picks or makes
+that note the first time, `open notes` opens it beside the pages, and `+`
+adds another, as over a PDF. In the note the clip is drawn as that part of
+the page, its paper and your handwriting, and is drawn again when you
+write more there.
+
+What a PDF's text gives is not there for paper: no contents, search,
+links, highlights, bookmarks, marks, portals or ruler, and those keys do
+nothing over a notebook.
+
+On disk a notebook is a `.md` with a few fields and no body (FORMAT.md
+§3). What is written is kept in the collection stroke by stroke, syncs
+that way, and an export writes each page's drawing under `.ilmi/ink/`.
 
 ### A book in EPUB
 
@@ -769,29 +828,52 @@ a right-click, hold: a row, a heading and a deck's
 card open their menus when the finger lifts, and a row held and then moved
 is dragged.
 
-Writing with the Pencil: there is nothing to open. Put it to a note and it
-writes there: the text moves apart at the nearest place between two blocks
-and what you write lies in the space, which grows as the writing nears its
-foot. A finger scrolls the note and taps a caret into it as always; the
-Pencil in writing that is there adds to it, and in the text elsewhere it
-opens another. The system's tools come up while you write and go when the
-caret is back in the text or the Pencil has been away a while; erase
-everything in a piece of writing and it is gone from the note. It is kept
-as its strokes when you stop, so the Mac and every other device show the
-same picture without a file crossing, and an export writes it as
-`name/ink-01.png` with its drawing beside it, `name/ink-01.pkdrawing`. A
-note may hold as many pieces of writing as you like: a note of nothing else
-is a notebook.
+Writing with the Pencil: there is nothing to open. Put it to a PDF's page
+or to a page of a written notebook and the first touch is a stroke there,
+where the page stands among the others; the pages scroll under a finger
+with the writing on them, and a finger still boxes a passage after a hold.
 
-On a book's page it is the same: the Pencil's first touch is a stroke on
-that page, where it stands among the others, and the pages scroll under a
-finger with the writing on them. A finger still boxes a passage after a
-hold. The Mac and every other device show what you wrote as a picture over
-the page. Nothing is written into the PDF: the strokes are kept in the
+The tools are a row under the bar over the pages, on an iPad only:
+
+- `pen`, `highlighter`, `eraser`, `select`, the one in use underlined. The
+  pen writes; the highlighter is a marker the text shows through; the
+  eraser takes away what it is drawn across; with `select`, draw a loop
+  round some strokes and drag them elsewhere.
+- Three sizes of the tool in use, `thin`, `medium`, `thick`: a line for the
+  pen, a band for the highlighter, a round for the eraser. Each tool
+  remembers its own.
+- Its colours: black, blue, red and green for the pen; yellow, green, pink
+  and blue for the highlighter. The ring after them, `colours`, opens the
+  colour wheel beside it; the colour chosen there fills the ring and is
+  that tool's fifth colour from then on. A press on the ring uses that
+  colour again, and a press while it is in use opens the wheel to change
+  it. The eraser and `select` have no colours.
+- At the right, `undo` and `redo`, grey when there is nothing to take back
+  or put back, and `draw with finger`. With it off, the Pencil writes and a
+  finger scrolls; with it on, a finger writes too and two fingers scroll.
+
+What you choose is kept on that iPad, through a restart, and is the same
+over every book and notebook. In a pane too narrow for the row (a note
+beside the pages) it scrolls sideways.
+
+The Mac and every other device show what you wrote as a picture over the
+page. Nothing is written into the PDF: the strokes are kept in the
 collection with the book they are on, whichever chapter shows that page.
 An export, the mirror and the dated exports write them as
 `.ilmi/ink/<the PDF's fingerprint>/<page>.pkdrawing`, and an import takes them
 back.
+
+A typed note takes no handwriting: the Pencil on its text is a finger, to
+scroll and to put the caret. Writing has a note of its own kind, the
+written notebook, alone or beside a PDF, and what you want typed from it you
+type in a note. Writing that a note already holds, from before this, stays
+where it is and stays ink: it is drawn in the note, the Pencil in it adds
+to it and the eraser erases in it, it grows as the writing nears its foot,
+and when everything in it is erased it is gone from the note. Such a note
+has the same row of tools under its header. Its writing is kept as strokes,
+so every device shows the same picture without a file crossing, and an
+export writes it as `name/ink-01.png` with its drawing beside it,
+`name/ink-01.pkdrawing`.
 
 ### On a phone
 
@@ -820,8 +902,9 @@ as its pages, and with no pane to put it in `notes` shows the note in their
 place (of several, the one used last; the others are in the tree);
 `pages` over the note comes back. The bar over the pages keeps the
 contents, the notes, the page, `more` and search; the name and the zoom
-are left out (a pinch zooms). In a session the pages stay, at the
-section's boxes.
+are left out (a pinch zooms), and there is no row of writing tools: what
+was written on an iPad shows on the pages as a picture. In a session the
+pages stay, at the section's boxes.
 
 To clip a page, make the Shortcut the README describes; the link it opens is
 the one above, `ilmi://new?url=`. It starts the app first and waits a second,

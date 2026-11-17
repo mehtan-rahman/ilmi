@@ -48,6 +48,7 @@ notes/
   books/
     alone.pdf                a PDF on its own: a document of its pages, no `.md` of its name
     notes-on-alone.md        a note attached to it (§3 `pdf: alone.pdf`)
+    worked-problems.md       written notes (§3 `written`): a note whose pages are paper
   german.md                  a deck (type: deck in front-matter)
   fleeting/
     lecture-9.md             a note: no type, your own writing
@@ -64,7 +65,9 @@ notes/
     order.json               the order chosen for a directory's children
     reading.json             the reading state of the PDFs on their own
     ink/<sha256>/<page>.pkdrawing   what is written on a PDF's pages
+    ink/<id>/<sheet>.pkdrawing      what is written on a written notebook's sheets
     marks/<sha256>.json      what is left on a PDF's pages: bookmarks, marks, highlights, portals, passages
+    marks/<id>.json          the passages kept on a written notebook's sheets
     reviews/                 the review log, one file a month
       2026-10.jsonl
     same.json                pairs of cards said not to be the same fact
@@ -120,6 +123,23 @@ notes/
   strokes in different bytes. A page with nothing written has no file. Without
   these files a book is unwritten; an older export has none and imports as it
   did. Added by milestone 71.
+- **A written notebook** (§3, *Written notes*; milestone 82) is an `.md`
+  whose front-matter carries `written`, its own id: 32 lower-case hex
+  digits, where a PDF is known by the 64 of its SHA-256. The id stands
+  wherever a PDF's hash does. What is written on its sheets is in
+  `.ilmi/ink/<id>/<sheet>.pkdrawing`, a `PKDrawing` a sheet, named by the
+  sheet's own number (§3 `sheets`), in the sheet's points from its top left
+  (612 by 792); the passages kept on its sheets are entries of
+  `.ilmi/marks/<id>.json`, in the shape below, their `page` and the page of
+  each box the sheet's number. Both follow the id, not the file's name or
+  place: a notebook renamed or moved keeps them. A notebook deleted leaves
+  them, as a deleted PDF's are left, and they are its again if the file
+  comes back with that id. Two files that carry one id (a notebook copied by
+  hand outside the app) are two documents over one set of strokes and
+  passages: what is written in one shows in the other. The format does not
+  prevent it; the app's own `duplicate` gives the copy a new id and a copy of
+  the strokes. A sheet with nothing written has no file, and a notebook with
+  no passages has no marks file.
 - **What is left on a book's pages** (bookmarks, marks by a letter,
   highlights, portals; milestone 77; passages, milestone 81) is in
   `.ilmi/marks/<sha256>.json`: one
@@ -391,6 +411,9 @@ dropped, with a diagnostic.
 | `pages`        | `n` or `n-m`                |           | which pages of its PDF the document is, numbered as the PDF numbers them |
 | `exam`         | `day label`, `, ` between   |           | the exams everything under the document is studied toward (exams, below) |
 | `finish`       | day                         |           | the day a source's reading is paced to end by (finish, below)      |
+| `written`      | 32 lower-case hex digits    |           | the document is a written notebook, and this is its id (written notes, below) |
+| `paper`        | `blank` `ruled` `grid` `dotted` | `blank` | what a written notebook's sheets are ruled with                    |
+| `sheets`       | whole numbers from 1, a space between | `1` | a written notebook's sheets, in order, each by its own number  |
 
 **Type.** A `note` is the person's own writing: editable, cards anywhere in
 it, no schedule unless asked. A `source` is what someone else wrote, read
@@ -474,6 +497,53 @@ value (`pdf: book.pdf#12-40`) because a file name may hold `#`, and over a
 sidecar list of chapters in the book's own front-matter because each chapter
 is a document of its own, with its own reading schedule, cards and
 extracts, and should say what it is in its own file.
+
+**Written notes.** A document whose front-matter carries `written` is a
+written notebook (milestone 82): a note whose pages are paper, written on
+by hand, with no text of its own.
+
+```
+---
+written: 5b0c7e1a9d3f4e26b8a1c0d2e4f60718
+paper: ruled
+sheets: 1 2 3
+pdf: ../books/alone.pdf
+---
+```
+
+`written` is the notebook's id: 32 lower-case hex digits, made when the
+notebook is and never changed. It stands where a PDF's SHA-256 stands: the
+strokes on its sheets and the passages kept on them are found by it (§1),
+so they follow the notebook through a rename or a move. Anything else in
+the field is kept as a raw line with a diagnostic, and the document is an
+ordinary note. `paper` is what the sheets are ruled with, `blank`, `ruled`,
+`grid` or `dotted`; absent it is `blank`, and the app writes `ruled` on a
+new notebook. `sheets` is the notebook's pages in order, each a whole
+number from 1 that names the sheet for good, a space between, none twice;
+absent it is `1`. Strokes and boxes name a sheet by its number, not by
+where it lies, so taking a sheet out moves nothing: `sheets: 1 3` after the
+second is deleted. A new sheet takes one past the highest number there.
+Deleting a sheet takes its number out of `sheets`, its drawing and the
+passages with a box on it; a notebook keeps at least one sheet. A `paper`
+or `sheets` that is not in its grammar is kept as a raw line with a
+diagnostic, and the default stands in. Every sheet is portrait Letter, 612
+by 792 points. `paper` and `sheets` mean nothing without `written`.
+
+A notebook has no `type`: it is a note. It opens as its sheets, as a PDF on
+its own opens as its pages. Its body is kept as written and not shown; the
+app writes none. `pdf` on a notebook means what it means on any note
+(*Pages*, above): naming a PDF that stands on its own, the notebook is one
+of that PDF's notes, listed with the typed ones in path order and opened
+beside the PDF's pages, where it is still its own sheets. And a notebook
+may itself have notes: a typed note whose `pdf` names a notebook's `.md`
+(`pdf: worked-problems.md`) is attached to it exactly as to a PDF on its
+own, opens as the note it is, and takes the clips made from the notebook's
+sheets (§6.6). A notebook's `pdf` naming another notebook attaches nothing.
+A notebook has no reading state unless it carries a `read` line as any note
+may; `.ilmi/reading.json` never names it. An export writes the `.md` as it
+is, each written sheet as `.ilmi/ink/<id>/<sheet>.pkdrawing` and the
+passages as `.ilmi/marks/<id>.json`; an import of that folder has all three
+again.
 
 **Clippings.** A page that came in by its address carries `url`, and
 `author` and `published` when the page said. `url` and `author` are written
@@ -656,7 +726,10 @@ was made from beside the picture under the same name,
 `name/ink-01.pkdrawing` (PencilKit's `PKDrawing` data), so the page can be
 drawn on again; the PNG is what every other tool reads. There is no syntax
 for it: a `.png` with a `.pkdrawing` of its name beside it is a page of
-ink, and without the `.pkdrawing` it is a picture.
+ink, and without the `.pkdrawing` it is a picture. Since milestone 82 the
+app makes no new page of ink in a typed note: handwriting has a document of
+its own (§3, *Written notes*). The pages of ink a note already holds are
+read, drawn, written on and exported as before.
 
 Nothing inside a block is escaped by this format. Math (`$…$`, `$$…$$`),
 editorial marks (`[like this]`, `#TODO:`), and Markdown emphasis are literal
@@ -1050,7 +1123,10 @@ documents whose pages are that PDF, a chapter whose `pages` (§3) hold the
 passage's first page, else the document of the whole PDF, else any chapter;
 the first by path among equals. A passage whose PDF is in no document of
 the collection waits, kept and out of the queue. The read point (§3) moves
-past the last box when a passage is made.
+past the last box when a passage is made. A passage boxed on a written
+notebook's sheets (§3, *Written notes*) is kept the same way under the
+notebook's id, `.ilmi/marks/<id>.json`; the page of each box is the sheet's
+own number, and it is an item of the notebook.
 
 Written in that order, unknown keys after. Enrolling writes `made=<today>
 due=<today+c> ivl=c`, `c` the cadence of the section's priority (§3,
@@ -1137,6 +1213,9 @@ keeps one directly under each boxed section's heading, where the passage's
 words would have been, since the page's Arabic cannot be read back in
 order, and one before each card made from the commentary under its page's
 `## p. N`. A clip whose box is not in the grammar is an ordinary comment.
+In a note attached to a written notebook (§3, *Written notes*) a clip is
+the crop of the notebook's sheet, and the page of its box is the sheet's
+own number: `<!-- box <sheet>:x:y:w:h -->`.
 
 ## 7. Attributes
 
@@ -1215,11 +1294,13 @@ fixes the file. That is intended.
 - Prose block ids for the reading marker (would make `pos` edit-stable).
 - Attachments and images beyond a clipping's downloads and a page of ink
   (§1, §4): they are just Markdown; the app renders them.
-- Ink anywhere but a page of its own under a note: in a card's face, or
-  on a PDF's page. The app keeps what is written on a book's page in the
-  collection, by the PDF's hash and the page, and never in the PDF; no
-  file of a vault holds it, so an export does not write it and an import
-  does not bring it.
+- Ink anywhere but a written notebook's sheets, a PDF's pages (both under
+  `.ilmi/ink/`, §1) and the pages of ink a typed note already holds (§4):
+  in a card's face, or among a typed note's lines.
+- A written notebook's sheets in any size but portrait Letter, and text
+  recognised from what is written: to type up what is written, a typed note
+  is attached to the notebook (§3). `sheets` may be in any order; the app
+  only adds at the end and takes out.
 - Anything written into a PDF: highlights are the extracts' stored text,
   found again on the page; annotations stay in the Markdown.
 

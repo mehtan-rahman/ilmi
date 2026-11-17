@@ -69,8 +69,11 @@
 //   names it. So nothing is written into the PDF, two rows that name one
 //   PDF show one writing, and deleting a row takes no stroke: a book
 //   deleted and put back, or brought in again, has what was written on
-//   it (`pageInk`, `setPageInk`, `pageInkFile`, `inkedPages`). No path
-//   names them and an export does not write them.
+//   it (`pageInk`, `setPageInk`, `pageInkFile`, `inkedPages`). No row
+//   names them; an export writes them under `.ilmi/ink/` (milestone 71).
+// - Since milestone 82 a written notebook's sheets are kept the same way,
+//   under the notebook's own id (32 hex, its `written` field) where a PDF's
+//   SHA-256 stands, the sheet's number where the page's does.
 // - Since milestone 68 a document's text and its cards can be searched
 //   (`search.ts`, `search`). The rows go with the document's write, so a
 //   merge brings them as a local write does; they are found by the row's
@@ -462,14 +465,16 @@ function virtualOf(rel: string): Virtual | null {
 
 /**
  * What is written on books' pages, as an export holds it (milestone 71):
- * `.ilmi/ink/<the PDF's SHA-256>/<page>.pkdrawing`. It is a view of the `ink`
+ * `.ilmi/ink/<the PDF's SHA-256>/<page>.pkdrawing`, and a written notebook's
+ * sheets under its id the same way (milestone 82). It is a view of the `ink`
  * table: nothing here is a row, and a drawing written here is taken apart
  * into strokes.
  */
 const INK_FILES = '.ilmi/ink';
 const inkFileOf = (rel: string): { hash: string; page?: number } | 'all' | null => {
   if (rel === INK_FILES) return 'all';
-  const m = /^\.ilmi\/ink\/([0-9a-f]{64})(?:\/([1-9]\d*)\.pkdrawing)?$/.exec(rel);
+  // a PDF's SHA-256, or a written notebook's id (32 hex, FORMAT.md §3)
+  const m = /^\.ilmi\/ink\/([0-9a-f]{64}|[0-9a-f]{32})(?:\/([1-9]\d*)\.pkdrawing)?$/.exec(rel);
   if (!m) return null;
   return m[2] === undefined ? { hash: m[1]! } : { hash: m[1]!, page: Number(m[2]) };
 };

@@ -7,13 +7,14 @@
 // one away. A boxed section of a note written before 81 is still its
 // heading's line, in the note (`sections.ts`).
 
-import { PRI_DEFAULT, pagesLabel, parseBoxes, type Box, type SectionSchedule } from '../format/index.js';
+import { PRI_DEFAULT, parseBoxes, type Box, type SectionSchedule } from '../format/index.js';
 import { passageMarksOf } from '../pdf/index.js';
 import { advanceSchedule, broughtBack, newPassage, passageItem, type QueueItem, type ReadAction, type SectionItem } from '../schedule/index.js';
 import { marksHashOf, passageId, type PassageMark } from '../vault/index.js';
 import { allMarks, heldMarks, loadMarks, onMarks, pdfHashOf, setMark } from './book.js';
 import { appNow } from './clock.js';
 import { useApp } from './store.js';
+import { boxesLabel } from './written.js';
 import { onHiddenChange, refreshQueue, setExtraItems, setPostponePassage } from './vault.js';
 
 /** A passage's line as the schedule reads it. */
@@ -71,7 +72,7 @@ export async function keepPassage(id: string, boxes: readonly Box[]): Promise<{ 
   const mark = markOfSched(sched, now.getTime());
   if (!mark) return null;
   await setMark(hash, passageId(sched.boxes), mark);
-  return { hash, boxes: sched.boxes, ivl: sched.ivl, label: pagesLabel(boxes) };
+  return { hash, boxes: sched.boxes, ivl: sched.ivl, label: boxesLabel(useApp.getState().docs[id], boxes) };
 }
 
 /** The passage with these boxes in the PDF `hash`, as it is held. */
@@ -124,9 +125,13 @@ export function passageItems(now: Date): QueueItem[] {
       const path = passageDoc(hash, m.page);
       if (path === null) continue;
       const pri = docPriOf(path);
-      const key = `${hash}\n${JSON.stringify(m)}\n${path}\n${pri}\n${day}`;
-      const item = kept.get(key) ?? passageItem(path, hash, schedOf(m), now, pri);
+      // on a written notebook's sheets it is named by where its sheet lies, which a sheet taken out moves
+      const info = useApp.getState().docs[path];
+      const sheets = info?.written?.sheets;
+      const key = `${hash}\n${JSON.stringify(m)}\n${path}\n${pri}\n${day}${sheets ? `\n${sheets.join(' ')}` : ''}`;
+      let item = kept.get(key) ?? passageItem(path, hash, schedOf(m), now, pri);
       if (!item) continue;
+      if (sheets && !kept.has(key)) item = { ...item, heading: boxesLabel(info, parseBoxes(m.boxes) ?? []) };
       next.set(key, item);
       out.push(item);
     }
@@ -146,13 +151,31 @@ function follow(): void {
   if (now === seen) return;
   seen = now;
   if (useApp.getState().vault) refreshQueue();
+  placed = placedNow();
 }
 onMarks(follow);
+
+/** Which document each passage that comes back is an item of, as the documents known now have it. */
+function placedNow(): string {
+  const out: string[] = [];
+  for (const [hash, marks] of heldMarks()) for (const [, m] of passageMarksOf(marks)) if (m.due !== undefined) out.push(`${hash} ${m.page} ${passageDoc(hash, m.page) ?? ''}`);
+  return out.join('\n');
+}
+let placed = '';
+// a passage read before its document was known (a collection just opened: the marks may be read before the documents
+// are published), or whose document came or went since, is in the queue, or out of it, once the documents say so
+useApp.subscribe((s, prev) => {
+  if (s.docs === prev.docs || !s.vault) return;
+  const now = placedNow();
+  if (now === placed) return;
+  placed = now;
+  queueMicrotask(() => { if (useApp.getState().vault) refreshQueue(); });
+});
 
 /** Every PDF's marks read, so the queue has the passages: when a collection opens, and when a marks file comes in from elsewhere. */
 function readAll(): void {
   void allMarks().then(follow).catch(console.error);
 }
-useApp.subscribe((s, prev) => { if (s.vault !== prev.vault && s.vault) { seen = '[]'; kept = new Map(); readAll(); } });
+useApp.subscribe((s, prev) => { if (s.vault !== prev.vault && s.vault) { seen = '[]'; placed = ''; kept = new Map(); readAll(); } });
 onHiddenChange((paths) => { if (paths.some((p) => marksHashOf(p) !== null)) readAll(); });
 if (useApp.getState().vault) readAll();

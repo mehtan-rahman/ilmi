@@ -9,7 +9,7 @@ import { isMenuKey, nestOf } from './treeModel.js';
 import { DeckBrowser } from './DeckBrowser.js';
 import { NumbersView } from './NumbersLens.js';
 import { Intake } from './Intake.js';
-import { GLYPH, INTAKE, SESSION, cardsPath, findNode, kindOf, notesPath, queueScope, titleOf, type NodeKind } from './names.js';
+import { GLYPH, INTAKE, SESSION, WRITTEN_GLYPH, cardsPath, findNode, kindOf, notesPath, queueScope, titleOf, type NodeKind } from './names.js';
 import { countWords, countsUnder } from './chromeText.js';
 import type { OpenOpts } from './panes.js';
 import { Pdf } from './Pdf.js';
@@ -47,7 +47,8 @@ export function Lens({ id, active, onOpen }: LensProps) {
   if (cards !== null) return <CardPane key={id} path={cards} active={active} onOpen={onOpen} />;
   // the notes on a document's pages (milestone 70): its body in the reader, in the pane beside the pages
   const notes = notesPath(id);
-  if (notes !== null) return <Reader key={id} id={notes} active={active} notes />;
+  // (a written notebook has no body to show: wherever it is open it is its sheets, milestone 82)
+  if (notes !== null) return docs[notes]?.written ? <Pdf key={id} id={notes} active={active} /> : <Reader key={id} id={notes} active={active} notes />;
   // a notebook's page: its tab rail beside it (`Rail.tsx`)
   const nb = notebookOf(id, docs);
   if (nb && !phone) return <Notebook nb={nb} page={id} active={active} onOpen={onOpen}><PageLens id={id} active={active} onOpen={onOpen} /></Notebook>;
@@ -60,7 +61,8 @@ function PageLens({ id, active, onOpen }: LensProps) {
   const kind = kindOf(id, docs);
   if (kind === 'folder') return <FolderLens id={id} active={active} onOpen={onOpen} />;
   if (kind === 'deck') return <DeckLens id={id} active={active} />;
-  // a source whose pages exist opens as pages; a PDF on its own is its pages (milestone 70)
+  // a source whose pages exist opens as pages; a PDF on its own is its pages (milestone 70), and a written notebook
+  // its sheets (milestone 82: its `pdf` is its own path)
   if (docs[id]?.pdf) return <Pdf key={id} id={id} active={active} />;
   return <Reader key={id} id={id} active={active} />;
 }
@@ -172,7 +174,7 @@ function FolderLens({ id, active, onOpen }: LensProps) {
                     else if (e.key === 'Enter' && !e.metaKey && !e.ctrlKey && !e.altKey) { e.preventDefault(); onOpen(n.path, {}); }
                   }}
                 >
-                  <span className="fv-g" data-t={kind}><Glyph g={GLYPH[kind]} /></span>
+                  <span className="fv-g" data-t={kind}><Glyph g={docs[n.path]?.written ? WRITTEN_GLYPH : GLYPH[kind]} /></span>
                   {editingThis ? (
                     <input
                       className="rename fv-rename"

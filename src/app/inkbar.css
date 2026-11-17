@@ -1,0 +1,72 @@
+/* The writing tools (milestone 82, `InkBar.tsx`): one row, an iPad's. Sans
+   chrome, the one icon set, hairlines between its groups, the accent under
+   what is chosen and nothing else lit. Every target is a finger's: 44px
+   tall, 44 wide for a tool and 40 for a size or a colour. In a pane too
+   narrow for it the row scrolls sideways; nothing wraps and nothing shrinks. */
+
+.inkbar {
+  display: flex; align-items: center; flex: 0 0 100%;
+  box-sizing: border-box; width: 100%; min-width: 0; height: 48px; padding: 0 8px;
+  overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  background: var(--bg); border-bottom: 1px solid var(--line-2);
+  font-family: var(--sans); font-size: var(--t-sm); line-height: 1; color: var(--fg-2); white-space: nowrap;
+  -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+}
+.inkbar::-webkit-scrollbar { display: none; }
+
+.inkbar .ib-group { display: flex; align-items: center; flex: 0 0 auto; }
+/* a hairline between the tools, their sizes and their colours */
+.inkbar .ib-group + .ib-group { margin-left: 6px; padding-left: 6px; border-left: 1px solid var(--line-2); }
+.inkbar .ib-grow { flex: 1 0 12px; }
+.inkbar .ib-grow + .ib-group { margin-left: 0; padding-left: 0; border-left: 0; }
+
+.inkbar .ib-btn {
+  position: relative; display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto;
+  width: 44px; height: 44px; margin: 0; padding: 0;
+  border: 0; border-radius: var(--radius); background: none; color: var(--fg-3);
+  font: inherit; cursor: default; -webkit-appearance: none; appearance: none; -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation; --ic: 20px;
+}
+.inkbar .ib-btn .ic { width: var(--ic); height: var(--ic); }
+.inkbar .ib-btn:active:not(:disabled) { background: var(--line-3); }
+@media (hover: hover) { .inkbar .ib-btn:hover:not(:disabled) { background: var(--line-3); color: var(--fg-1); } }
+.inkbar .ib-btn:disabled { color: var(--fg-5); }
+.inkbar .ib-btn:focus-visible { outline: 1.5px solid var(--accent); outline-offset: -3px; }
+
+/* what is chosen: full ink, the accent under it */
+.inkbar .ib-btn[aria-pressed="true"] { color: var(--fg-1); }
+.inkbar .ib-btn[aria-pressed="true"]:not(.ib-sw)::after {
+  content: ""; position: absolute; left: 10px; right: 10px; bottom: 3px; height: 2px; background: var(--accent);
+}
+
+/* the three sizes: a line, a band, a round, growing */
+.inkbar .ib-size { width: 40px; }
+.inkbar .ib-size-mark { width: 22px; height: 22px; }
+
+/* a colour is a round of itself, whatever the theme; the one in use has the accent round it */
+.inkbar .ib-sw { width: 40px; }
+.inkbar .ib-dot {
+  display: block; box-sizing: border-box; width: 24px; height: 24px; border-radius: 50%;
+  border: 1px solid color-mix(in oklab, var(--fg) 22%, transparent);
+}
+.inkbar .ib-sw[aria-pressed="true"] .ib-dot { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* the colour wheel's: a ring of the spectrum, round its own colour once it has one */
+.inkbar .ib-ring {
+  display: flex; align-items: center; justify-content: center; border: 0;
+  background: conic-gradient(from 0deg, #e5484d, #f5a524, #f2d43d, #46a758, #3aa7d9, #4f5bd5, #a044c4, #e5484d);
+}
+.inkbar .ib-core { display: block; box-sizing: border-box; width: 14px; height: 14px; border-radius: 50%; background: var(--bg); }
+
+/* e-ink shows no hue: what is chosen is weight, and a colour's name is in its title */
+[data-theme="eink"] .inkbar .ib-btn[aria-pressed="true"]:not(.ib-sw)::after { height: 3px; }
+[data-theme="eink"] .inkbar .ib-dot { border-color: var(--fg-1); }
+
+/* over a typed note that holds ink (`Reader.tsx`): the row stays at the pane's top as the note scrolls, on the note's
+   paper. It starts where the text does and, being wider than the text's column, runs on past it as far as the pane
+   goes (the pane is a container: `app.css`) */
+.reader:not(.pdf-view) > .inkbar {
+  position: sticky; top: 0; z-index: 5; margin: calc(-1 * var(--s-3)) 0 var(--s-4); padding: 0; background: var(--paper);
+  width: max-content; min-width: 100%; max-width: calc((100cqw + 100%) / 2);
+}
+.reader:not(.pdf-view) > .inkbar .ib-grow { flex-basis: 0; }

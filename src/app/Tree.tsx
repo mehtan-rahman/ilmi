@@ -36,7 +36,7 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEve
 import { childDirOf } from '../vault/index.js';
 import { geometry } from './dnd.js';
 import { rowDrag, rowMark, useDrag, type Surface } from './drag.js';
-import { GLYPH, SESSION, descendants, findNode, kindOf, rowCounts, titleOf, type NodeKind } from './names.js';
+import { GLYPH, SESSION, WRITTEN_GLYPH, descendants, findNode, kindOf, rowCounts, titleOf, type NodeKind } from './names.js';
 import { MathText } from './MathText.js';
 import { NodeMenu, menuAt, menuAtRow, type MenuAt } from './NodeMenu.js';
 import type { OpenOpts } from './panes.js';
@@ -427,7 +427,7 @@ export function Tree({ activeId, onOpen }: Props) {
         >
           {r.has ? <Glyph g={r.open ? '▾' : '▸'} /> : ''}
         </span>
-        <span className={`glyph ${kind}${id === '' ? ' root' : ''}`}><Glyph g={GLYPH[kind]} /></span>
+        <span className={`glyph ${kind}${id === '' ? ' root' : ''}`}><Glyph g={docs[id]?.written ? WRITTEN_GLYPH : GLYPH[kind]} /></span>
         {editingThis ? (
           <input
             className="rename"

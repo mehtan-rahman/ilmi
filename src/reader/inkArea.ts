@@ -1,9 +1,9 @@
-// An ink area in the flow of a note (milestone 69). A paragraph that is
-// nothing but a page of ink's line is an area where there is a canvas: as
+// An ink area in the flow of a note (milestones 69, 82). A paragraph that
+// is nothing but a page of ink's line is an area where there is a canvas: as
 // tall as what is written and the room left under it, its picture laid
 // where its strokes lie rather than centred; `src/app/noteInk.ts` says how
-// each one stands. A new area has no line yet: it is a gap in the flow,
-// held open at a place between two blocks until its first stroke is kept.
+// each one stands. A note gets no new one (milestone 82): these are the
+// areas it already holds.
 
 import { Plugin, PluginKey, type EditorState, type Transaction } from 'prosemirror-state';
 import { Decoration, DecorationSet } from 'prosemirror-view';
@@ -18,13 +18,6 @@ export interface InkBox {
   width: number;
   /** A canvas lies over it just now: the picture beneath would be the same strokes twice. */
   live: boolean;
-}
-
-/** A new area: `height` px held open before the block at `pos`. */
-export interface InkGap {
-  id: string;
-  pos: number;
-  height: number;
 }
 
 export type InkBoxes = ReadonlyMap<string, InkBox>;
@@ -46,15 +39,14 @@ export function inkLines(doc: PMNode): { src: string; pos: number; size: number 
 }
 
 interface State {
-  gap: InkGap | null;
   decos: DecorationSet;
 }
 
-/** `tr.setMeta(inkKey, { gap })`: a gap opened, grown or let go; `'redraw'`: the boxes said anew. */
+/** `tr.setMeta(inkKey, 'redraw')`: the boxes said anew. */
 export const inkKey = new PluginKey<State>('inkAreas');
-export type InkMeta = { gap: InkGap | null } | 'redraw';
+export type InkMeta = 'redraw';
 
-function build(doc: PMNode, boxes: InkBoxes, gap: InkGap | null): DecorationSet {
+function build(doc: PMNode, boxes: InkBoxes): DecorationSet {
   const decos: Decoration[] = [];
   for (const { src, pos, size } of inkLines(doc)) {
     const b = boxes.get(src);
@@ -64,15 +56,6 @@ function build(doc: PMNode, boxes: InkBoxes, gap: InkGap | null): DecorationSet 
       style: `height:${b.height}px;--ink-l:${b.left}px;--ink-t:${b.top}px;--ink-w:${b.width}px`,
     }));
   }
-  if (gap) {
-    decos.push(Decoration.widget(gap.pos, () => {
-      const el = document.createElement('div');
-      el.className = 'ink-gap';
-      el.dataset.sheet = gap.id;
-      el.style.height = `${gap.height}px`;
-      return el;
-    }, { side: -1, key: `ink-gap|${gap.id}|${gap.height}` }));
-  }
   return DecorationSet.create(doc, decos);
 }
 
@@ -81,14 +64,10 @@ export const inkAreas = (boxes: () => InkBoxes): Plugin<State> =>
   new Plugin<State>({
     key: inkKey,
     state: {
-      init: (_c, s: EditorState) => ({ gap: null, decos: build(s.doc, boxes(), null) }),
+      init: (_c, s: EditorState) => ({ decos: build(s.doc, boxes()) }),
       apply(tr: Transaction, cur: State): State {
-        const meta = tr.getMeta(inkKey) as InkMeta | undefined;
-        let gap = cur.gap;
-        if (gap && tr.docChanged) gap = { ...gap, pos: tr.mapping.map(gap.pos, -1) };
-        if (meta !== undefined && meta !== 'redraw') gap = meta.gap;
-        if (meta === undefined && !tr.docChanged) return cur;
-        return { gap, decos: build(tr.doc, boxes(), gap) };
+        if (tr.getMeta(inkKey) === undefined && !tr.docChanged) return cur;
+        return { decos: build(tr.doc, boxes()) };
       },
     },
     props: { decorations: (s) => inkKey.getState(s)?.decos ?? null },

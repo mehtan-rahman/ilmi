@@ -1,4 +1,4 @@
-// Ink (milestones 58, 67, 69).
+// Ink (milestones 58, 67, 69, 82).
 //
 // A page of ink is its strokes, rows in the store by page
 // (`src/vault/store.ts`, `setInk`). The note names its picture as it names
@@ -9,10 +9,13 @@
 // page is the same under the PDF's hash and the page's number
 // (`setPageInk`): nothing is written into the PDF, and no note names it.
 //
-// Where the Pencil lands it writes (milestone 69). The canvases are
-// PencilKit's, lying over the web view on an iPad (the `tauri-plugin-ink`
+// Where the Pencil lands on a sheet it writes (milestone 69). The canvases
+// are PencilKit's, lying over the web view on an iPad (the `tauri-plugin-ink`
 // crate) with nothing to open: the Pencil's first touch is a stroke before
-// this page has heard of it. What the page does here is say where things
+// this page has heard of it. The sheets are a book's pages, a written
+// notebook's, and the ink areas a typed note already holds; a typed note's
+// text takes no new writing (milestone 82), and the tools are ours
+// (`inkTools.ts`, `InkBar.tsx`). What the page does here is say where things
 // are. Each open note and book is a surface; a surface says how its
 // scroller lies and where its sheets lie in that scroller's content, and
 // `sceneSoon` sends that whenever the layout changes (never for a scroll:
@@ -23,54 +26,21 @@
 // ones added, the ones gone taken away, the rest left as they are. Strokes
 // a merge brought in meanwhile are kept (`mergeStrokes`).
 //
-// The pure part (a page's name, the line a note gets, the place between
-// two blocks, a picture's place, a merge) is tested; the canvases are an
+// The pure part (the drawing a note's line names, a picture's place, a
+// merge) is tested; the canvases are an
 // iPad's and are checked there (`ILMI_SMOKE=ink`, `ILMI_SMOKE=pageink`).
 
 import { invoke } from '@tauri-apps/api/core';
 import { INK_EXT, type InkStroke, type StoreFs } from '../vault/index.js';
 import { imagePath, isRemote } from './images.js';
+import { canvasesReady, toolsHeard } from './inkTools.js';
 import { useApp } from './store.js';
 import { currentVault } from './vault.js';
-
-/** What a page of ink's picture is called in the note. */
-export const INK_ALT = 'working';
-
-const PAGE = /^ink-(\d+)\.(?:png|pkdrawing)$/;
-
-/** The next page's name among a document's files: `ink-01`, `ink-02`, …, one past the highest there is. */
-export function nextPage(names: readonly string[]): string {
-  let top = 0;
-  for (const n of names) {
-    const m = PAGE.exec(n);
-    if (m) top = Math.max(top, Number(m[1]));
-  }
-  return `ink-${String(top + 1).padStart(2, '0')}`;
-}
-
-/** Where the files of the document at `path` land: the directory of its name (FORMAT.md §1). */
-export const filesDir = (path: string): string => path.replace(/\.md$/, '');
-
-/** The image's source as the note at `path` writes it: relative, through the directory of the note's name. */
-export function inkSrc(path: string, page: string): string {
-  const stem = filesDir(path).split('/').pop() ?? '';
-  return `${encodeURIComponent(stem)}/${page}.png`;
-}
-
-/** The line a note gets for a page. */
-export const inkLine = (path: string, page: string): string => `![${INK_ALT}](${inkSrc(path, page)})`;
 
 /** The drawing beside the picture an image `src` in the document at `path` names, vault-relative; null when it names no PNG in the vault. */
 export function pageOf(path: string, src: string): string | null {
   const rel = isRemote(src) ? null : imagePath(path, src);
   return rel && /\.png$/i.test(rel) ? `${rel.slice(0, -4)}${INK_EXT}` : null;
-}
-
-/** Where a new area opens: the place between two blocks nearest `y`, of the `edges` there are (each block's top, and the last one's foot). */
-export function nearestEdge(edges: readonly number[], y: number): number {
-  let best = 0;
-  for (let i = 1; i < edges.length; i++) if (Math.abs(edges[i]! - y) < Math.abs(edges[best]! - y)) best = i;
-  return best;
 }
 
 /** What a page's picture is cut to, from what its strokes cover (`ilmi_ink_picture`: 12 points round them, in whole points). */
@@ -129,7 +99,7 @@ export interface HostSpec {
   top: number;
   /** How tall its content is. */
   height: number;
-  /** Where a Pencil off every sheet opens a new one, in its content. */
+  /** Where a Pencil off every sheet would open a new one, in its content: nowhere (milestone 82), always null. */
   open: Box | null;
   sheets: SheetSpec[];
 }
@@ -139,13 +109,14 @@ export interface PenEvent {
   kind: 'begin' | 'grow' | 'end' | 'quiet';
   sheet: string;
   host?: string;
-  /** A sheet that held nothing and that the page has not heard of: a new area. */
-  fresh?: boolean;
   x?: number;
   y?: number;
   /** Where its canvas's top lies, in the scroller's content. */
   top?: number;
 }
+
+/** What the native side says of the tools: what can be taken back, and the colour wheel's colour as it turns. */
+export type ToolEvent = { kind: 'history'; undo: boolean; redo: boolean } | { kind: 'color'; color: string };
 
 /** A sheet's strokes in the store. */
 export interface Paper {
@@ -261,6 +232,8 @@ async function sendScene(): Promise<void> {
       for (const s of surfaces) s.made?.(id);
     }
   }
+  // the canvases are there from the first scene on: they are told the tool
+  canvasesReady();
   for (const f of afters.splice(0)) f();
 }
 
@@ -273,7 +246,8 @@ export function sceneSoon(): void {
   timer = setTimeout(() => { timer = null; void sendScene().catch(console.error); }, 0);
 }
 
-function heard(e: PenEvent): void {
+function heard(e: PenEvent | ToolEvent): void {
+  if (e.kind === 'history' || e.kind === 'color') { toolsHeard(e); return; }
   if (e.kind === 'quiet') { void keep(e.sheet); return; }
   for (const s of surfaces) {
     if (e.kind === 'begin' && e.host !== s.host()?.id) continue;
@@ -285,7 +259,7 @@ function heard(e: PenEvent): void {
 /** From here on `s` is written on where the Pencil lands. Returns the undoing: what was written on it is kept first. */
 export function addSurface(s: Surface): () => void {
   if (!hasCanvas()) return () => {};
-  (window as unknown as { __ink?: (e: PenEvent) => void }).__ink = heard;
+  (window as unknown as { __ink?: (e: PenEvent | ToolEvent) => void }).__ink = heard;
   surfaces.add(s);
   sceneSoon();
   return () => { surfaces.delete(s); sceneSoon(); };
@@ -319,7 +293,7 @@ export function portOf(scroller: HTMLElement, under?: Element | null): { view: B
   return { view, port: { ...view, y: view.y + cut, h: view.h - cut }, top: scroller.scrollTop, height: scroller.scrollHeight };
 }
 
-/** The tools and the scroll are the native side's; a page's layout changing is the page's to say: everything said anew when the app changes around it. */
+/** The scroll is the native side's; a page's layout changing is the page's to say: everything said anew when the app changes around it. */
 export function watchLayout(): () => void {
   if (!hasCanvas()) return () => {};
   const off = useApp.subscribe(() => sceneSoon());

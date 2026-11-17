@@ -20,12 +20,13 @@
 
 import { useSyncExternalStore } from 'react';
 import { openUrl } from '@tauri-apps/plugin-opener';
-import { pagesLabel, parseBoxes, setField } from '../format/index.js';
+import { parseBoxes, setField } from '../format/index.js';
 import { dayOf, dayStart, whenToDate } from '../schedule/index.js';
 import { appNow } from './clock.js';
 import { bookmarksOf, collectionMark, collectionMarks, emptyTrail, highlightsOf, passageMarksOf, isCollectionMark, letterId, lettersOf, type ContentsEntry, type Trail } from '../pdf/index.js';
 import { MARKS_DIR, dirOf, join, marksHashOf, marksMap, marksPath, parseMarks, relFrom, serializeMarks, type Mark, type Marks, type PassageMark, type StoreFs } from '../vault/index.js';
 import { noteTabOf, notesPath, notesTabsOf, pagesOf, pdfForNotes, SESSION, titleOf } from './names.js';
+import { boxesLabel, createWritten, placeOfSheet } from './written.js';
 import { activeTab, besideAt, closeBeside, openBeside, openTab, openTwin, openWhereBeside } from './panes.js';
 import { useApp, type DocInfo } from './store.js';
 import { notify } from './land.js';
@@ -48,9 +49,10 @@ useApp.subscribe((s, prev) => {
  * front: the note asked for (`want`, a note's path), else the one in front
  * of a pane now, else the one used last, else the first. Null with no note.
  */
-function frontTab(pagesId: string, want?: string | null): string | null {
+function frontTab(pagesId: string, want?: string | null, typed = false): string | null {
   const s = useApp.getState();
-  const tabs = notesTabsOf(pagesId, s.docs);
+  // (`typed`: written notebooks among a PDF's notes are left out, for what only a typed note takes)
+  const tabs = notesTabsOf(pagesId, s.docs).filter((t) => !typed || !s.docs[notesPath(t) ?? t]?.written);
   if (!tabs.length) return null;
   if (want != null) {
     const t = noteTabOf(want, s.docs);
@@ -65,8 +67,8 @@ function frontTab(pagesId: string, want?: string | null): string | null {
 }
 
 /** The note that takes what is kept from the pages at `pagesId` (a clip, `m`): the one in front beside them, else the one used last, else the first; null with none. */
-export function noteFor(pagesId: string): string | null {
-  const tab = frontTab(pagesId);
+export function noteFor(pagesId: string, typed = false): string | null {
+  const tab = frontTab(pagesId, null, typed);
   return tab === null ? null : notesPath(tab) ?? tab;
 }
 
@@ -135,11 +137,13 @@ let asking: { pdf: string; resolve: (note: string | null) => void } | null = nul
 /**
  * The note on the pages at `pagesId` (of several, the one `noteFor` says),
  * or, for a PDF with none yet, the one the palette picks or makes: the picker opens and the promise waits for it.
- * Null when the picker is closed with nothing picked.
+ * Null when the picker is closed with nothing picked. `typed`: a typed note
+ * is wanted (a clip is a line of one), so a PDF whose only notes are written
+ * notebooks asks as one with none does.
  */
-export function ensureNote(pagesId: string): Promise<string | null> {
+export function ensureNote(pagesId: string, typed = false): Promise<string | null> {
   const s = useApp.getState();
-  const note = noteFor(pagesId);
+  const note = noteFor(pagesId, typed);
   if (note !== null) return Promise.resolve(note);
   if (!s.docs[pagesId] || s.docs[pagesId].pdf !== pagesId) return Promise.resolve(null);
   asking?.resolve(null);
@@ -158,14 +162,24 @@ export function ensureNote(pagesId: string): Promise<string | null> {
 export async function addNote(pagesId: string): Promise<string | null> {
   const pdf = pdfForNotes(pagesId, useApp.getState().docs);
   if (pdf === null) return null;
-  asking?.resolve(null);
-  const note = await new Promise<string | null>((resolve) => {
-    asking = { pdf, resolve };
-    useApp.setState({ paletteOpen: true, noteAttach: { pdf, step: 'pick' } });
-  });
+  const note = await askNote(pdf);
   if (note === null) return null;
   await openNotes(pagesId, note);
   return note;
+}
+
+/**
+ * The palette asked for a note for `pdf`: one picked or made, or, with
+ * `kind` `written`, a written notebook made (named as typed, in a folder
+ * picked next). Resolves to it once it is the PDF's, null when the palette
+ * is closed with nothing picked.
+ */
+export function askNote(pdf: string, kind?: 'written'): Promise<string | null> {
+  asking?.resolve(null);
+  return new Promise<string | null>((resolve) => {
+    asking = { pdf, resolve };
+    useApp.setState({ paletteOpen: true, noteAttach: { pdf, step: 'pick', ...(kind ? { kind } : {}) } });
+  });
 }
 
 /** The picker closed with nothing picked. */
@@ -186,10 +200,18 @@ export async function attachNote(pdf: string, note: string): Promise<void> {
   a?.resolve(note);
 }
 
-/** A new note for the PDF, named as typed, in `dir`: made, attached, and the pick. */
-export async function attachNewNote(pdf: string, name: string, dir: string): Promise<void> {
+/** A new note for the PDF, named as typed, in `dir`: made, attached, and the pick. With `kind` `written`, a written notebook, which names the PDF from the start. */
+export async function attachNewNote(pdf: string, name: string, dir: string, kind?: 'written'): Promise<void> {
   const vault = currentVault();
   if (!vault) return;
+  if (kind === 'written') {
+    const note = await createWritten(dir, name, pdf);
+    await settled(pdf, note);
+    const a = asking;
+    asking = null;
+    a?.resolve(note);
+    return;
+  }
   const note = await vault.createDoc(dir, 'note', name);
   await attachNote(pdf, note);
 }
@@ -437,10 +459,12 @@ export async function allMarks(): Promise<Map<string, Marks>> {
   return new Map([...held].map(([h, v]) => [h, v.marks]));
 }
 
-/** The SHA-256 of the PDF whose pages the document at `id` is; null when it has none, or the collection is no store. */
+/** The SHA-256 of the PDF whose pages the document at `id` is; a written notebook's own id, which stands where a PDF's hash does (milestone 82); null when it has none, or the collection is no store. */
 export function pdfHashOf(id: string): string | null {
   const vault = currentVault();
-  const rel = useApp.getState().docs[id]?.pdf;
+  const info = useApp.getState().docs[id];
+  if (info?.written) return info.written.id;
+  const rel = info?.pdf;
   if (!vault || rel === undefined || !('blobAt' in vault.fs)) return null;
   return (vault.fs as StoreFs).blobAt(join(vault.root, rel));
 }
@@ -476,10 +500,28 @@ export function takePlace(id: string): { page: number; y: number } | null {
 /** Go to a place in the PDF `hash` from anywhere: in the book in front when it has those pages, else the document that has them opened there. */
 export function goToMark(hash: string, place: { page: number; y: number }, from?: string): void {
   const front = from ?? bookInFront();
-  if (front !== null && pdfHashOf(front) === hash) { lensOf(front)?.go(place, true); return; }
+  if (front !== null && pdfHashOf(front) === hash) {
+    const at = lensPlace(front, place);
+    if (at) lensOf(front)?.go(at, true);
+    return;
+  }
   const id = bookFor(hash, place.page);
   if (id === null) { notify('that pdf is no longer in the collection · its marks are kept'); return; }
-  openBookAt(id, place);
+  const at = lensPlace(id, place);
+  if (at) openBookAt(id, at);
+}
+
+/**
+ * A place as a mark holds it, as the lens over the document at `id` counts
+ * pages: a PDF's the same; a written notebook's mark names the sheet's own
+ * number, and the lens counts its sheets 1..N as they lie (milestone 82).
+ * Null when the notebook has that sheet no longer.
+ */
+function lensPlace(id: string, place: { page: number; y: number }): { page: number; y: number } | null {
+  const w = useApp.getState().docs[id]?.written;
+  if (!w) return place;
+  const at = placeOfSheet(w.sheets, place.page);
+  return at === null ? null : { ...place, page: at };
 }
 
 /** A capital mark set in the PDF `hash`: the collection has one of a letter, so every other book's goes. */
@@ -599,7 +641,7 @@ export interface PlaceRow { title: string; sub: string; page: number; go(): void
 export const MARK_LIST_EMPTY: Record<MarkList, string> = {
   bookmarks: 'no bookmarks in this pdf · b names the place in view',
   highlights: 'no highlights in this pdf · h on a selection makes one',
-  passages: 'no passages in this pdf · drag a box on a page, then e',
+  passages: 'no passages here · drag a box on a page, then e',
   'all-bookmarks': 'no bookmarks yet · b in a book names the place in view',
   marks: 'no marks yet · ⇧M and a letter in a book sets one',
 };
@@ -614,7 +656,9 @@ export async function markList(kind: MarkList, book: string | null): Promise<Pla
     const marks = await loadMarks(hash);
     const go = (m: { page: number; y: number }) => () => goToMark(hash, m, book ?? undefined);
     // a passage by its pages and when it is next; gone to, its boxes are lit
-    if (kind === 'passages') return passageMarksOf(marks).map(([, m]) => ({ title: pagesLabel(parseBoxes(m.boxes) ?? []), sub: passageWhen(m, appNow()), page: m.page, go: () => goToPassage(hash, m, book ?? undefined) }));
+    // (a notebook's by where its sheet lies)
+    const sheets = book !== null ? s.docs[book]?.written?.sheets : undefined;
+    if (kind === 'passages') return passageMarksOf(marks).map(([, m]) => ({ title: boxesLabel(book !== null ? s.docs[book] : undefined, parseBoxes(m.boxes) ?? []), sub: passageWhen(m, appNow()), page: sheets ? placeOfSheet(sheets, m.page) ?? m.page : m.page, go: () => goToPassage(hash, m, book ?? undefined) }));
     if (kind === 'bookmarks') return bookmarksOf(marks).map(([, m]) => ({ title: m.name, sub: '', page: m.page, go: go(m) }));
     return highlightsOf(marks).map(([, m]) => ({ title: m.text || `p. ${m.page}`, sub: '', page: m.page, go: go(m) }));
   }

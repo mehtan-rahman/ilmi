@@ -10,8 +10,9 @@ import { activeTab, closePane, splitPane } from './panes.js';
 import { useApp } from './store.js';
 import { MENU_ID, runMenu } from './menu.js';
 import { hasCards, studyDeck } from './deckOps.js';
-import { SESSION, folderPaths, slugName, titleOf } from './names.js';
-import { nameOf, type TextHit } from '../vault/index.js';
+import { SESSION, WRITTEN_GLYPH, folderPaths, slugName, titleOf } from './names.js';
+import { createWritten, whenKnown } from './written.js';
+import { NEW_NAMES, nameOf, type TextHit } from '../vault/index.js';
 import { MARK_LIST_EMPTY, attachCancelled, attachNewNote, attachNote, bookInFront, followed, lensOf, markList, openNotes, pdfHashOf, takeContents, togglePortalsBeside, type BookContents, type MarkList, type PlaceRow } from './book.js';
 import { canMove, moveAction, moveSection, sectionActions, statusOf } from './sections.js';
 import { plainMath } from './chromeText.js';
@@ -19,7 +20,7 @@ import type { CaretHeading } from './store.js';
 import { MathText } from './MathText.js';
 import { exportCollection } from './collections.js';
 import { notify, failed } from './land.js';
-import { closeTabs, containerOf, currentVault, openBlock, openCard, openIntake, openNode, openVault, postponeRest, rememberTab, searchText, startSession, toggleInspector, toggleSidebar } from './vault.js';
+import { closeTabs, containerOf, createNode, currentVault, openBlock, openCard, openDir, openIntake, openNode, openVault, postponeRest, rememberTab, searchText, startSession, toggleInspector, toggleSidebar } from './vault.js';
 import { appNow } from './clock.js';
 import { openCollectionNumbers } from './NumbersLens.js';
 import { Glyph } from './icons.js';
@@ -31,6 +32,9 @@ const COMMANDS: Command[] = [
   // the whole collection's year of days and what is coming (`NumbersLens.tsx`)
   { id: 'numbers', title: 'numbers · the whole collection' },
   { id: 'intake', title: 'add from text or a link' },
+  // a note, or written notes (milestone 82), beside what is in front; it opens
+  { id: 'new-note', title: 'new note' },
+  { id: 'new-written', title: 'new written notes' },
   { id: 'split', title: 'split pane' },
   { id: 'close-pane', title: 'close pane' },
   { id: 'sidebar', title: 'sidebar' },
@@ -73,8 +77,9 @@ function sectionCommand(): Command[] {
 /** `contents · <book>`, while a book's pages are in the pane in front (milestone 76): its outline as a list, as `t` there opens it. */
 function contentsCommand(): Command[] {
   const book = bookInFront();
-  if (book === null) return [];
   const s = useApp.getState();
+  // a written notebook has no outline and no text to make one from
+  if (book === null || s.docs[book]?.written) return [];
   return [{ id: 'contents', title: `contents · ${titleOf(book, s.docs, s.vault)}` }];
 }
 
@@ -87,7 +92,8 @@ function marksCommands(): Command[] {
   const book = bookInFront();
   const here = book !== null && pdfHashOf(book) !== null ? titleOf(book, s.docs, s.vault) : null;
   return [
-    ...(here !== null ? [
+    // a written notebook's sheets hold passages, and nothing a PDF's text gives
+    ...(here !== null && s.docs[book!]?.written ? [{ id: 'passages-here', title: `passages · ${here}` }] : here !== null ? [
       { id: 'bookmarks-here', title: `bookmarks · ${here}` },
       { id: 'highlights-here', title: `highlights · ${here}` },
       { id: 'passages-here', title: `passages · ${here}` },
@@ -113,6 +119,12 @@ function runCommand(id: string): void {
     case 'enter': startSession({}, null, useApp.getState().queueFocus); break;
     case 'postpone': void postponeRest().catch(failed('that')); break;
     case 'intake': openIntake(tab === undefined || tab.startsWith(':') ? '' : containerOf(tab)); break;
+    case 'new-note':
+    case 'new-written': {
+      const dir = tab === undefined || tab.startsWith(':') ? '' : containerOf(tab);
+      void (id === 'new-note' ? createNode(dir, 'note') : createWritten(dir, NEW_NAMES.note).then(whenKnown)).then((path) => { openDir(dir); openNode(path); }).catch(failed('that'));
+      break;
+    }
     case 'split': s.setPanes((p) => splitPane(p, p.active)); rememberTab(); break;
     case 'close-pane': closeTabs((p) => closePane(p, p.active)); break;
     case 'sidebar': toggleSidebar(); break;
@@ -227,13 +239,15 @@ export function Palette() {
     if (attaching.step === 'place') {
       return folderPaths(tree).map((f) => ({ key: `in:${f}`, title: f === '' ? titleOf('', docs, vault) : f, sub: '', tag: 'folder' as const, target: { command: `attach-in:${f}` } }));
     }
-    // notes that are there and are no PDF's yet, nor a document with pages
+    // a written notebook is made, never picked: nothing that is there is offered
+    if (attaching.kind === 'written') return [];
+    // notes that are there and are no PDF's yet, nor a document with pages (a written notebook's pages are its own: it may be a PDF's note, not another notebook's)
     return Object.entries(docs)
-      .filter(([path, info]) => info.type === 'note' && info.of === undefined && info.pdf === undefined && path.endsWith('.md'))
+      .filter(([path, info]) => info.type === 'note' && info.of === undefined && (info.pdf === undefined || (info.written !== undefined && !docs[attaching.pdf]?.written)) && path.endsWith('.md'))
       .map(([path, info]) => ({ key: `at:${path}`, title: info.title ?? slugName(nameOf(path)), sub: path.replace(/\.md$/, ''), tag: 'note' as const, target: { command: `attach:${path}` } }));
   }, [attaching, tree, docs, vault]);
   /** The new note's name: as typed, else after the PDF. */
-  const newName = attaching ? (attaching.step === 'place' ? attaching.name ?? '' : q.trim() || `${titleOf(attaching.pdf, docs, vault)} notes`) : '';
+  const newName = attaching ? (attaching.step === 'place' ? attaching.name ?? '' : q.trim() || `${titleOf(attaching.pdf, docs, vault)} ${attaching.kind === 'written' ? 'written notes' : 'notes'}`) : '';
   // words in the documents and the cards, for the palette's own list; the last answer stays until the next, so the rows do not blink
   const asking = !attaching && !moving && !studying && contents === null && !listing ? q.trim() : '';
   const [found, setFound] = useState<{ q: string; hits: TextHit[] } | null>(null);
@@ -245,7 +259,7 @@ export function Palette() {
   }, [asking, vault]);
   const texts = useMemo(() => (found ? rankHits(found.hits, found.q).map((h) => textEntry(h, found.q, docs)) : []), [found, docs]);
   const results = useMemo(() => {
-    if (attaching?.step === 'pick') return [{ key: 'at:new', title: 'new note', sub: newName, tag: 'note' as const, target: { command: 'attach-new' } }, ...search(attachIndex, q)];
+    if (attaching?.step === 'pick') return [{ key: 'at:new', title: attaching.kind === 'written' ? 'new written notes' : 'new note', sub: newName, tag: 'note' as const, target: { command: 'attach-new' } }, ...search(attachIndex, q)];
     if (!attaching && !moving && listing) return searchContents(placeIndex, q);
     if (!attaching && !moving && contents !== null) return searchContents(contentsIndex, q);
     const names = search(attaching ? attachIndex : moving ? moveIndex : studying ? studyIndex : index, q);
@@ -292,9 +306,10 @@ export function Palette() {
     if ('command' in t && t.command.startsWith('move:') && moving) { close(); void moveSection(moving, t.command.slice(5)).catch(failed('that')); return; }
     if (attaching && 'command' in t) {
       const pdf = attaching.pdf;
-      if (t.command === 'attach-new') { useApp.setState({ noteAttach: { pdf, step: 'place', name: newName } }); setQ(''); inputRef.current?.focus(); return; }
+      const kind = attaching.kind;
+      if (t.command === 'attach-new') { useApp.setState({ noteAttach: { pdf, step: 'place', name: newName, ...(kind ? { kind } : {}) } }); setQ(''); inputRef.current?.focus(); return; }
       if (t.command.startsWith('attach:')) { close(); void attachNote(pdf, t.command.slice(7)).catch(failed('that')); return; }
-      if (t.command.startsWith('attach-in:')) { close(); void attachNewNote(pdf, newName, t.command.slice(10)).catch(failed('that')); return; }
+      if (t.command.startsWith('attach-in:')) { close(); void attachNewNote(pdf, newName, t.command.slice(10), kind).catch(failed('that')); return; }
     }
     close();
     if ('command' in t) runCommand(t.command);
@@ -329,7 +344,7 @@ export function Palette() {
       e.preventDefault();
       if (!attaching && !moving && listing) setListing(null);
       else if (!attaching && !moving && contents !== null) setContents(null);
-      else if (attaching?.step === 'place') useApp.setState({ noteAttach: { pdf: attaching.pdf, step: 'pick' } });
+      else if (attaching?.step === 'place') useApp.setState({ noteAttach: { pdf: attaching.pdf, step: 'pick', ...(attaching.kind ? { kind: attaching.kind } : {}) } });
       else if (moving) useApp.setState({ sectionMove: null });
       else setStudying(false);
     }
@@ -342,7 +357,7 @@ export function Palette() {
       <div className="palette-panel" onMouseDown={(e) => e.stopPropagation()}>
         <div className="palette-input">
           <span className="g"><Glyph g="⌕" /></span>
-          <input dir="auto" ref={inputRef} value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={onKey} placeholder={attaching?.step === 'place' ? `${newName} in…` : attaching ? `notes on ${titleOf(attaching.pdf, docs, vault).slice(0, 40)}` : moving ? `move § ${plainMath(moving.text).slice(0, 40)} to…` : listing ? `${MARK_LIST_NAME[listing.kind]}${listing.book !== null && listing.kind !== 'all-bookmarks' && listing.kind !== 'marks' ? ` · ${titleOf(listing.book, docs, vault).slice(0, 40)}` : ''}` : contents !== null ? `contents · ${titleOf(contents, docs, vault).slice(0, 40)}` : studying ? 'study…' : 'open or run'} spellCheck={false} />
+          <input dir="auto" ref={inputRef} value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={onKey} placeholder={attaching?.step === 'place' ? `${newName} in…` : attaching ? `${attaching.kind === 'written' ? 'written notes' : 'notes'} on ${titleOf(attaching.pdf, docs, vault).slice(0, 40)}` : moving ? `move § ${plainMath(moving.text).slice(0, 40)} to…` : listing ? `${MARK_LIST_NAME[listing.kind]}${listing.book !== null && listing.kind !== 'all-bookmarks' && listing.kind !== 'marks' ? ` · ${titleOf(listing.book, docs, vault).slice(0, 40)}` : ''}` : contents !== null ? `contents · ${titleOf(contents, docs, vault).slice(0, 40)}` : studying ? 'study…' : 'open or run'} spellCheck={false} />
           <kbd>esc</kbd>
         </div>
         <div className="palette-list" ref={listRef} data-found={found?.q} data-places={inPlaces && places !== null ? listing.kind : undefined}>
@@ -352,7 +367,7 @@ export function Palette() {
           {results.map((it, i) => (
             <div key={it.key} className="palette-row" data-sel={i === sel ? '1' : '0'} data-t={it.tag} data-here={it.here ? '1' : undefined} data-depth={it.depth} style={it.depth ? { '--depth': it.depth } as React.CSSProperties : undefined} onMouseEnter={() => setSel(i)} onClick={() => run(it)}>
               {/* a place in a book: no mark of a kind, only the one that holds the place in view is marked */}
-              <span className="pg" data-t={it.tag}>{it.tag === 'place' ? (it.here ? '▸' : '') : <Glyph g={ENTRY_GLYPH[it.tag]} />}</span>
+              <span className="pg" data-t={it.tag}>{it.tag === 'place' ? (it.here ? '▸' : '') : <Glyph g={('open' in it.target && docs[it.target.open]?.written) || (it.key === 'at:new' && attaching?.kind === 'written') || it.key === 'x:new-written' ? WRITTEN_GLYPH : ENTRY_GLYPH[it.tag]} />}</span>
               {it.mark ? <Marked title={it.title} mark={it.mark} /> : <MathText className="pt" dir="auto" text={it.math ?? it.title} />}
               <MathText className="psub" dir="auto" text={it.sub} />
               <span className="ptag">{it.page !== undefined ? `p. ${it.page}` : it.tag}</span>

@@ -36,6 +36,24 @@ vi.mock('../vault.js', async (orig) => {
   };
 });
 
+// written notes are made by `written.ts` (milestone 82): here the notebook is only put in the tree and named
+vi.mock('../written.js', async (orig) => {
+  const real = await orig<typeof import('../written.js')>();
+  return {
+    ...real,
+    createWritten: vi.fn(async (dir: string, name: string) => {
+      calls.push(`written ${dir}|${name}`);
+      const path = `${dir ? `${dir}/` : ''}${name}.md`;
+      const node: TreeNode = { kind: 'doc', name: `${name}.md`, path };
+      useApp.setState((s) => ({
+        tree: dir === '' ? [...s.tree, node] : s.tree.map((n) => (n.kind === 'folder' && n.path === dir ? { ...n, children: [...n.children, node] } : n)),
+        docs: { ...s.docs, [path]: { type: 'note', frozen: false, cards: 0, due: 0, pdf: path, written: { id: 'a'.repeat(32), paper: 'ruled', sheets: [1] } } },
+      }));
+      return path;
+    }),
+  };
+});
+
 vi.mock('../land.js', async (orig) => {
   const real = await orig<typeof import('../land.js')>();
   return { ...real, importFiles: vi.fn(async (dir: string) => { calls.push(`import ${dir}`); return []; }) };
@@ -70,8 +88,8 @@ const flush = async () => { await act(async () => { await new Promise((r) => set
 const entries = () => Array.from(document.querySelectorAll<HTMLElement>('.ctx-menu .ci')).map((e) => e.textContent?.replace(/^./, '').replace(/F2$|▸$/, '') ?? '');
 const fire = (el: Element, type: string, init: MouseEventInit = {}) => { act(() => { el.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, ...init })); }); };
 const click = (label: string) => fire(Array.from(document.querySelectorAll<HTMLElement>('.ctx-menu .ci')).find((e) => e.textContent?.includes(label))!, 'click');
-const ROW = ['new note', 'new source', 'new deck', 'new draft', 'new folder', 'import a file…', 'add from text or a link', 'show as tabs', 'rename', 'duplicate', 'move to…', 'delete source'];
-const FOLDER = ['new note', 'new source', 'new deck', 'new draft', 'new folder', 'import a file…', 'add from text or a link'];
+const ROW = ['new note', 'new written notes', 'new source', 'new deck', 'new draft', 'new folder', 'import a file…', 'add from text or a link', 'show as tabs', 'rename', 'duplicate', 'move to…', 'delete source'];
+const FOLDER = ['new note', 'new written notes', 'new source', 'new deck', 'new draft', 'new folder', 'import a file…', 'add from text or a link'];
 
 beforeEach(() => {
   calls.length = 0;
@@ -170,12 +188,31 @@ describe('one menu, in the tree and the folder lens', () => {
   });
 });
 
+describe('written notes', () => {
+  it('`new written notes` sits under `new note`, makes a notebook where a note would go, and its row is renamed and has its own icon', async () => {
+    mount(createElement(Tree, { activeId: undefined, onOpen: () => {} }));
+    fire(host.querySelector('.trow[data-path="papers"]')!, 'contextmenu', { clientX: 40, clientY: 60 });
+    expect(entries().slice(0, 2)).toEqual(['new note', 'new written notes']);
+    expect(document.querySelector('.ctx-menu .ci[data-act="new-written"] .ic-written')).not.toBeNull();
+    click('new written notes');
+    await flush();
+    expect(calls).toEqual(['written papers|untitled']);
+    expect(document.querySelector('.ctx-menu')).toBeNull();
+    const row = host.querySelector<HTMLElement>('.trow[data-path="papers/untitled.md"]')!;
+    expect(row.querySelector<HTMLInputElement>('input.rename')!.value).toBe('untitled');
+    expect(row.querySelector('.glyph .ic-written')).not.toBeNull();
+    // a typed note keeps its own
+    expect(host.querySelector('.trow[data-path="notes.md"] .glyph .ic')).not.toBeNull();
+    expect(host.querySelector('.trow[data-path="notes.md"] .glyph .ic-written')).toBeNull();
+  });
+});
+
 describe('the sidebar\'s +', () => {
   it('opens the add menu for the root, or for the selected folder', async () => {
     mount(createElement(Tree, { activeId: undefined, onOpen: () => {} }));
     const plus = () => host.querySelector<HTMLElement>('.trow[data-path=""] .side-add')!;
     fire(plus(), 'click');
-    expect(entries()).toEqual(['new note', 'new source', 'new deck', 'new draft', 'new folder', 'import a file…', 'add from text or a link']);
+    expect(entries()).toEqual(['new note', 'new written notes', 'new source', 'new deck', 'new draft', 'new folder', 'import a file…', 'add from text or a link']);
     click('import a file…');
     fire(host.querySelector('.trow[data-path="sources"]')!, 'mousedown');
     fire(plus(), 'click');
@@ -230,7 +267,7 @@ describe('inside a document', () => {
     expect(host.querySelector('.folder-view .crumb')?.textContent).toBe('under Wozniak 1990');
     expect(Array.from(host.querySelectorAll<HTMLElement>('.fv-row')).map((r) => r.dataset.path)).toEqual(['papers/wozniak-1990/woz-ex1.md', 'papers/wozniak-1990/figures']);
     fire(host.querySelector('.folder-view')!, 'contextmenu', { clientX: 300, clientY: 500 });
-    expect(entries()).toEqual(['new note', 'new source', 'new deck', 'new draft', 'new folder', 'import a file…', 'add from text or a link', 'show as tabs', 'rename', 'duplicate', 'move to…', 'delete source']);
+    expect(entries()).toEqual(['new note', 'new written notes', 'new source', 'new deck', 'new draft', 'new folder', 'import a file…', 'add from text or a link', 'show as tabs', 'rename', 'duplicate', 'move to…', 'delete source']);
     click('new draft');
     await flush();
     expect(calls).toEqual(['create papers/wozniak-1990|draft']);

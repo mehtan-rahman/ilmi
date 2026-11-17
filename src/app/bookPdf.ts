@@ -3,11 +3,18 @@
 // read one loaded PDF. Each holder takes it and lets it go; the last to let
 // go destroys it a little later, so a pane switching lenses does not load
 // it twice. Crops are drawn from a page rendered at the crop's own scale.
+//
+// A note may be on a written notebook's sheets instead (milestone 82): there
+// is no file to load, and a crop of a sheet is its paper (`paper.ts`) with
+// what is written on that part of it, drawn again when the sheet's strokes
+// change.
 
 import { parseBox, type Box } from '../format/index.js';
 import { pageItems, uprightItems, type PageItem } from '../pdf/index.js';
 import type { StoreFs } from '../vault/index.js';
 import { loadPdf, loadPdfPieces, type PDFDocumentProxy } from './pdfjs.js';
+import { PAPER_H, PAPER_W, drawPaper } from './paper.js';
+import { useApp, type DocInfo } from './store.js';
 import { currentVault } from './vault.js';
 
 interface Held {
@@ -32,6 +39,8 @@ export function acquirePdf(rel: string): { promise: Promise<PDFDocumentProxy>; r
     let task: ReturnType<typeof loadPdf> | null = null;
     const promise = (async () => {
       if (!vault) throw new Error('no collection open');
+      // a written notebook's pages are paper: there is no PDF to read
+      if (writtenAt(rel)) throw new Error(`${rel} is written notes, not a pdf`);
       // a file that is not on this device is fetched by either read
       const size = (await vault.fs.stat(vault.abs(rel)))?.size ?? 0;
       const pieces = size > WHOLE_MAX ? await (vault.fs as Partial<StoreFs>).pieces?.(vault.abs(rel)) : null;
@@ -82,8 +91,91 @@ const MAX_SCALE = 2.5;
 /** Room kept around a crop, in PDF units. */
 const PAD = 4;
 
-/** Draw `box` of the PDF at `rel` into `el`, `width` css px wide. */
+/** The written notebook at `rel`, when it is one. */
+const writtenAt = (rel: string): DocInfo['written'] => useApp.getState().docs[rel]?.written;
+
+/** A sheet's picture, read for drawing; null where the web view cannot (or it will not decode). */
+async function pictureOf(bytes: Uint8Array): Promise<ImageBitmap | HTMLImageElement | null> {
+  const blob = new Blob([bytes as BlobPart], { type: 'image/png' });
+  if (typeof createImageBitmap === 'function') return createImageBitmap(blob).catch(() => null);
+  if (typeof Image === 'undefined' || typeof URL.createObjectURL !== 'function') return null;
+  const url = URL.createObjectURL(blob);
+  const img = new Image();
+  img.src = url;
+  return img.decode().then(() => img, () => null).finally(() => URL.revokeObjectURL(url));
+}
+
+/** The crops of written sheets on the screen, each with what it was drawn from: drawn again when its sheet's strokes change. */
+const sheetCrops = new Map<HTMLElement, { rel: string; id: string; box: Box; width: number }>();
+/** The stores listened to for that. */
+const heard = new WeakSet<object>();
+/** Which drawing of a crop is the latest: one that finishes after a later one began is dropped. */
+const turn = new WeakMap<HTMLElement, number>();
+
+function watchSheets(fs: StoreFs): void {
+  if (heard.has(fs)) return;
+  heard.add(fs);
+  fs.onPageInk((id, sheet) => {
+    for (const [el, c] of sheetCrops) {
+      if (!el.isConnected) { sheetCrops.delete(el); continue; }
+      if (c.id === id && c.box.page === sheet) void drawCrop(el, c.rel, c.box, c.width);
+    }
+  });
+}
+
+/** Draw `box` of the written notebook `w` at `rel` into `el`: the paper under it, then what is written there. `box.page` is the sheet's own number. */
+async function drawSheetCrop(el: HTMLElement, rel: string, w: NonNullable<DocInfo['written']>, box: Box, width: number): Promise<void> {
+  const mine = (turn.get(el) ?? 0) + 1;
+  turn.set(el, mine);
+  try {
+    if (!w.sheets.includes(box.page)) { sheetCrops.delete(el); el.dataset.drawn = 'gone'; return; }
+    const vault = currentVault();
+    const fs = vault && 'pageInkFile' in vault.fs ? (vault.fs as StoreFs) : null;
+    const bw = box.w * PAPER_W + 2 * PAD;
+    const bh = box.h * PAPER_H + 2 * PAD;
+    const k = Math.min(MAX_SCALE, width / bw);
+    const dpr = window.devicePixelRatio || 1;
+    const part = { x: box.x * PAPER_W - PAD, y: box.y * PAPER_H - PAD, w: bw, h: bh };
+    // a sheet with nothing written on it is its paper alone
+    const inked = fs ? (await fs.pageInk(w.id, box.page)).length > 0 : false;
+    const bytes = fs && inked ? await fs.pageInkFile(w.id, box.page, 'picture', PAPER_W, PAPER_H) : new Uint8Array();
+    const picture = bytes.length ? await pictureOf(bytes) : null;
+    if (turn.get(el) !== mine) return;
+    const out = document.createElement('canvas');
+    out.width = Math.ceil(bw * k * dpr);
+    out.height = Math.ceil(bh * k * dpr);
+    out.style.width = `${bw * k}px`;
+    out.style.height = `${bh * k}px`;
+    const ctx = out.getContext('2d');
+    if (ctx) {
+      drawPaper(ctx, w.paper, part, k * dpr);
+      // the picture is of the whole sheet, at whatever size it was made: the box's part of it
+      if (picture) {
+        const px = picture.width / PAPER_W;
+        const py = picture.height / PAPER_H;
+        ctx.drawImage(picture, part.x * px, part.y * py, part.w * px, part.h * py, 0, 0, out.width, out.height);
+      }
+    }
+    el.replaceChildren(out);
+    el.dataset.drawn = '1';
+    el.dataset.sheet = String(box.page);
+    el.dataset.inked = picture ? '1' : '0';
+    // the note says the page as the notebook counts it now, not the sheet's own number
+    const place = w.sheets.indexOf(box.page) + 1;
+    el.title = `p. ${place}`;
+    const cap = el.parentElement?.querySelector('.clip-cap');
+    if (cap) cap.textContent = `p. ${place}`;
+    if (fs) { sheetCrops.set(el, { rel, id: w.id, box, width }); watchSheets(fs); }
+  } catch (e) {
+    console.error(rel, e);
+    if (turn.get(el) === mine) el.dataset.drawn = 'gone';
+  }
+}
+
+/** Draw `box` of the pages at `rel` (a PDF, or a written notebook) into `el`, `width` css px wide. */
 export async function drawCrop(el: HTMLElement, rel: string, box: Box, width: number): Promise<void> {
+  const w = writtenAt(rel);
+  if (w) return drawSheetCrop(el, rel, w, box, width);
   const h = acquirePdf(rel);
   try {
     const pdf = await h.promise;

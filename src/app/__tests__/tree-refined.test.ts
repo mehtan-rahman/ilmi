@@ -226,7 +226,7 @@ describe('what is shown', () => {
     mount();
     fire(trow('courses/qm.md').querySelector('.row-acts .add')!, 'click');
     const entries = () => Array.from(document.querySelectorAll<HTMLElement>('.ctx-menu .ci')).map((e) => e.textContent?.replace(/^./, '').replace(/F2$|▸$/, ''));
-    expect(entries()).toEqual(['new note', 'new source', 'new deck', 'new draft', 'new folder', 'import a file…', 'add from text or a link']);
+    expect(entries()).toEqual(['new note', 'new written notes', 'new source', 'new deck', 'new draft', 'new folder', 'import a file…', 'add from text or a link']);
     expect(trow('courses/qm.md').dataset.selected).toBe('1');
     fire(document.body, 'mousedown');
     fire(trow('courses/qm.md').querySelector('.row-acts .more')!, 'click');

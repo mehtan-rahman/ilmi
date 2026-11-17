@@ -142,14 +142,20 @@ function derivedOf(path: string, now: Date): Derived {
   return made;
 }
 
-function infoOf(doc: Doc, items: QueueItem[], now: Date, pdf: string | null): DocInfo {
+/**
+ * What is known of a document. `pdf` is where its pages are, as `pagesFor`
+ * found them. A written notebook (milestone 82) is its own pages: its `pdf`
+ * is `path`, and the PDF its field names is said in `of` (`attach` keeps it
+ * when that PDF is a document of its own, and drops it otherwise).
+ */
+function infoOf(path: string, doc: Doc, items: QueueItem[], now: Date, pdf: string | null): DocInfo {
   const m = meta(doc);
   const due = new Set<number>();
   for (const item of items) if (item.kind === 'card' && isDue(item, now)) due.add(item.block);
   const out: DocInfo = {
     type: m.type,
     // the body of a document with pages is its notes, never frozen: `frozen` keeps only a text source's text (FORMAT.md §3)
-    frozen: m.frozen && pdf === null,
+    frozen: m.frozen && pdf === null && !m.written,
     cards: doc.blocks.filter((b) => b.kind === 'card').length,
     due: due.size,
   };
@@ -157,7 +163,11 @@ function infoOf(doc: Doc, items: QueueItem[], now: Date, pdf: string | null): Do
   if (m.read) out.read = m.read;
   if (m.write) out.write = m.write;
   if (m.pri !== undefined) out.pri = m.pri;
-  if (pdf !== null) out.pdf = pdf;
+  if (m.written) {
+    out.written = { id: m.written.id, paper: m.written.paper, sheets: [...m.written.sheets] };
+    out.pdf = path;
+    if (pdf !== null && pdf !== path) out.of = pdf;
+  } else if (pdf !== null) out.pdf = pdf;
   if (m.tabs) out.tabs = true;
   if (m.pages) out.pages = { ...m.pages };
   const sections = items.filter((i) => i.kind === 'section' && isDue(i, now)).length;
@@ -294,15 +304,35 @@ function withDue(docs: Record<string, DocInfo>, queue: QueueItem[], now: Date): 
  * such note in path order (`notes`; the first is `note`). A source naming a PDF is that
  * PDF's pages, or a range of them (a chapter), and opens as pages whether
  * or not the PDF stands on its own, as 48 had it.
+ *
+ * A written notebook (milestone 82) has pages of its own, so it stands on
+ * both sides: one whose `pdf` field names a PDF on its own is among that
+ * PDF's notes (`of`), in path order with the typed ones, and still opens as
+ * its sheets (`pdf`, its own path); and a document whose `pdf` field names a
+ * notebook's `.md` is attached to the notebook as a note is to a PDF.
  */
 export function attach(docs: Record<string, DocInfo>): Record<string, DocInfo> {
   let out = docs;
   const notes = new Map<string, string[]>();
   for (const path of Object.keys(docs).sort()) {
     const info = docs[path]!;
-    if (isPdfPath(path) || info.type !== 'note') continue;
-    // attached already (`of`), or naming a PDF that is a document of its own
-    const target = info.of ?? (info.pdf !== undefined && isPdfPath(info.pdf) && docs[info.pdf] ? info.pdf : undefined);
+    if (isPdfPath(path)) continue;
+    if (info.written) {
+      // the PDF it names, when that is a document of its own; a notebook is no note of another notebook
+      if (info.of === undefined) continue;
+      if (isPdfPath(info.of) && docs[info.of]) notes.set(info.of, [...(notes.get(info.of) ?? []), path]);
+      else {
+        if (out === docs) out = { ...docs };
+        const { of: _of, ...rest } = info;
+        out[path] = rest;
+      }
+      continue;
+    }
+    // attached already (`of`), or naming a PDF that is a document of its own (a note), or a written notebook (its pages are no source's)
+    const named = info.pdf !== undefined ? docs[info.pdf] : undefined;
+    const target = info.type === 'note' && info.of !== undefined ? info.of
+      : named && (named.written ? true : info.type === 'note' && isPdfPath(info.pdf!)) ? info.pdf
+      : undefined;
     if (target === undefined) continue;
     if (info.pdf !== undefined) {
       if (out === docs) out = { ...docs };
@@ -311,9 +341,9 @@ export function attach(docs: Record<string, DocInfo>): Record<string, DocInfo> {
     }
     notes.set(target, [...(notes.get(target) ?? []), path]);
   }
-  // each PDF on its own shows the notes naming it (`notes`, and the first as `note`), or none; said again on every pass, since its own info may have been made anew
+  // each PDF on its own, and each written notebook, shows the notes naming it (`notes`, and the first as `note`), or none; said again on every pass, since its own info may have been made anew
   for (const path of Object.keys(docs)) {
-    if (!isPdfPath(path)) continue;
+    if (!isPdfPath(path) && !docs[path]!.written) continue;
     const info = out[path]!;
     const all = notes.get(path);
     if (info.note === all?.[0] && (info.notes ?? []).join('\n') === (all ?? []).join('\n')) continue;
@@ -542,12 +572,15 @@ async function publishDocs(vault: Vault): Promise<void> {
   const docs: Record<string, DocInfo> = {};
   for (const path of paths) {
     const doc = bodies.get(path);
-    if (doc) docs[path] = infoOf(doc, derivedOf(path, now).items, now, await pagesFor(vault, path, nodes.get(path)));
+    if (doc) docs[path] = infoOf(path, doc, derivedOf(path, now).items, now, await pagesFor(vault, path, nodes.get(path)));
   }
   if (current !== vault) return;
   useApp.setState(publishQueue(docs, now));
   dayStarted();
 }
+
+/** The pages a document was last found to name: its `pdf`, or `of` once attached; a written notebook's `pdf` is itself, so only its `of`. */
+const namedOf = (info: DocInfo | undefined): string | null => (info?.written ? info.of ?? null : info?.pdf ?? info?.of ?? null);
 
 /** A document as last written or reported: what is known of it replaced, its row's numbers and the queue with it. */
 function publishDoc(vault: Vault, path: string, doc: Doc): void {
@@ -555,12 +588,13 @@ function publishDoc(vault: Vault, path: string, doc: Doc): void {
   const now = appNow();
   setBody(path, doc);
   // the pages stay what they were until the vault has looked: a changed `pdf` field lands a moment later
-  useApp.setState(publishQueue({ ...s.docs, [path]: infoOf(doc, derivedOf(path, now).items, now, s.docs[path]?.pdf ?? s.docs[path]?.of ?? null) }, now));
+  useApp.setState(publishQueue({ ...s.docs, [path]: infoOf(path, doc, derivedOf(path, now).items, now, namedOf(s.docs[path])) }, now));
   void pagesFor(vault, path, nodesByPath(vault.tree).get(path)).then((pdf) => {
     const cur = useApp.getState().docs[path];
-    if (current !== vault || !cur || (cur.pdf ?? cur.of ?? null) === pdf) return;
+    if (current !== vault || !cur || namedOf(cur) === pdf) return;
     const { of: _of, pdf: _pdf, ...rest } = cur;
-    const next: DocInfo = pdf === null ? rest : { ...rest, pdf };
+    // a written notebook stays its own pages; the PDF it names is its `of`
+    const next: DocInfo = cur.written ? { ...rest, pdf: path, ...(pdf === null || pdf === path ? {} : { of: pdf }) } : pdf === null ? rest : { ...rest, pdf };
     useApp.setState((st) => ({ docs: attach({ ...st.docs, [path]: next }) }));
   });
 }
@@ -1059,6 +1093,12 @@ export function openInitialVault(): Promise<void> {
         await smokeAway();
         return;
       }
+      // written notes under the tools, on an iPad or a phone: its own collection of the sample, or the one a run before left
+      if (mode === 'written' && isMobile()) {
+        const { smokeWrittenPad } = await import('./smoke.js');
+        await smokeWrittenPad(path);
+        return;
+      }
       if (mode === 'touch' && isMobile()) {
         const { smokeTouch } = await import('./smoke.js');
         await smokeTouch();
@@ -1067,8 +1107,8 @@ export function openInitialVault(): Promise<void> {
       if (path) {
         const vault = await openVault(await devCollection(path));
         if (mode) {
-          const { smoke, smokeReader, smokeCards, smokeIntake, smokeQueue, smokeLoop, smokeShots, smokeDeck, smokePri, smokeGrowth, smokeOverload, smokeFaces, smokeCardsText, smokeAnki, smokeMath, smokeEpub, smokeClip, smokeClipping, smokePlugins, smokeDictionary, smokeRender, smokeLive, smokeBlocks, smokeUse, smokeLand, smokeNest, smokeTabs, smokeDecks, smokeTour, smokeNotes, smokeEditing, smokeTree, smokeInsert, smokeTabs2, smokeListCards, smokeArabic, smokeRest, smokeBothWays, smokeNumbers, smokeOpen, smokeExam, smokeSame, smokeSections, smokeBook, smokeBooks, smokeTextSections, smokeZoom, smokeBelow, smokeLearn, smokeCadence, smokeReadme, smokeSync, smokeNudge, smokeStore, smokeCrdt, smokeStorage, smokeSearch, smokeFinish, smokeTouchMac, smokePhoneMac, smokeInkMac, smokePageInkMac, smokeCardView, smokeSweep, smokeSweepEdit, smokeSioyek, smokeCollections, smokeBlanks } = await import('./smoke.js');
-          const run = { reader: smokeReader, cards: smokeCards, intake: smokeIntake, queue: smokeQueue, loop: smokeLoop, shots: smokeShots, deck: smokeDeck, pri: smokePri, growth: smokeGrowth, overload: smokeOverload, faces: smokeFaces, 'cards-text': smokeCardsText, anki: smokeAnki, math: smokeMath, epub: smokeEpub, clip: smokeClip, clipping: smokeClipping, plugins: smokePlugins, dictionary: smokeDictionary, render: smokeRender, live: smokeLive, blocks: smokeBlocks, use: smokeUse, land: smokeLand, nest: smokeNest, tabs: smokeTabs, decks: smokeDecks, tour: smokeTour, notes: smokeNotes, editing: smokeEditing, tree: smokeTree, insert: smokeInsert, tabs2: smokeTabs2, listcards: smokeListCards, arabic: smokeArabic, rest: smokeRest, bothways: smokeBothWays, numbers: smokeNumbers, open: smokeOpen, exam: smokeExam, same: smokeSame, sections: smokeSections, book: smokeBook, books: smokeBooks, textsections: smokeTextSections, zoom: smokeZoom, below: smokeBelow, learn: smokeLearn, cadence: smokeCadence, readme: smokeReadme, sync: smokeSync, nudge: smokeNudge, store: smokeStore, crdt: smokeCrdt, storage: smokeStorage, search: smokeSearch, finish: smokeFinish, touch: smokeTouchMac, phone: smokePhoneMac, ink: smokeInkMac, pageink: smokePageInkMac, cardview: smokeCardView, sweep: smokeSweep, sweepedit: smokeSweepEdit, sioyek: smokeSioyek, collections: smokeCollections, blanks: smokeBlanks }[mode] ?? smoke;
+          const { smoke, smokeReader, smokeCards, smokeIntake, smokeQueue, smokeLoop, smokeShots, smokeDeck, smokePri, smokeGrowth, smokeOverload, smokeFaces, smokeCardsText, smokeAnki, smokeMath, smokeEpub, smokeClip, smokeClipping, smokePlugins, smokeDictionary, smokeRender, smokeLive, smokeBlocks, smokeUse, smokeLand, smokeNest, smokeTabs, smokeDecks, smokeTour, smokeNotes, smokeEditing, smokeTree, smokeInsert, smokeTabs2, smokeListCards, smokeArabic, smokeRest, smokeBothWays, smokeNumbers, smokeOpen, smokeExam, smokeSame, smokeSections, smokeBook, smokeBooks, smokeTextSections, smokeZoom, smokeBelow, smokeLearn, smokeCadence, smokeReadme, smokeSync, smokeNudge, smokeStore, smokeCrdt, smokeStorage, smokeSearch, smokeFinish, smokeTouchMac, smokePhoneMac, smokeInkMac, smokePageInkMac, smokeCardView, smokeSweep, smokeSweepEdit, smokeSioyek, smokeCollections, smokeBlanks, smokeWritten } = await import('./smoke.js');
+          const run = { reader: smokeReader, cards: smokeCards, intake: smokeIntake, queue: smokeQueue, loop: smokeLoop, shots: smokeShots, deck: smokeDeck, pri: smokePri, growth: smokeGrowth, overload: smokeOverload, faces: smokeFaces, 'cards-text': smokeCardsText, anki: smokeAnki, math: smokeMath, epub: smokeEpub, clip: smokeClip, clipping: smokeClipping, plugins: smokePlugins, dictionary: smokeDictionary, render: smokeRender, live: smokeLive, blocks: smokeBlocks, use: smokeUse, land: smokeLand, nest: smokeNest, tabs: smokeTabs, decks: smokeDecks, tour: smokeTour, notes: smokeNotes, editing: smokeEditing, tree: smokeTree, insert: smokeInsert, tabs2: smokeTabs2, listcards: smokeListCards, arabic: smokeArabic, rest: smokeRest, bothways: smokeBothWays, numbers: smokeNumbers, open: smokeOpen, exam: smokeExam, same: smokeSame, sections: smokeSections, book: smokeBook, books: smokeBooks, textsections: smokeTextSections, zoom: smokeZoom, below: smokeBelow, learn: smokeLearn, cadence: smokeCadence, readme: smokeReadme, sync: smokeSync, nudge: smokeNudge, store: smokeStore, crdt: smokeCrdt, storage: smokeStorage, search: smokeSearch, finish: smokeFinish, touch: smokeTouchMac, phone: smokePhoneMac, ink: smokeInkMac, pageink: smokePageInkMac, cardview: smokeCardView, sweep: smokeSweep, sweepedit: smokeSweepEdit, sioyek: smokeSioyek, collections: smokeCollections, blanks: smokeBlanks, written: smokeWritten }[mode] ?? smoke;
           // the smokes before 40 expect the inspector wherever they open it: the room rule is the tour's to check
           if (mode !== 'tour') useApp.setState({ inspForced: true });
           await run(vault);

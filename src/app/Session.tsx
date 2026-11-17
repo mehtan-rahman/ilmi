@@ -522,7 +522,8 @@ function DocSession({ item, active, onAct, done, onPass, ...nav }: DocProps) {
   // a document with pages opens as its book, a section of it at its boxes (`Pdf.tsx`); a section of a note attached to a
   // PDF on its own opens that PDF's pages, the note beside them (milestone 70, `book.ts`)
   const pages = !!info?.pdf || (section && info?.of !== undefined);
-  const pagesId = info?.of ?? item.path;
+  // (a written notebook that is a PDF's note is its own sheets: what is kept on them is shown on them)
+  const pagesId = info?.pdf !== undefined ? item.path : info?.of ?? item.path;
   // a note's pass keeps no place (FORMAT.md §3)
   const note = item.kind === 'read' && !!item.note;
   const pri = section ? item.pri : info ? info.pri ?? (reading ? info.read?.pri : info.write?.pri) ?? PRI_DEFAULT : item.pri;

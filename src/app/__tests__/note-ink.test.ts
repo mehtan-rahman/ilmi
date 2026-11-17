@@ -1,15 +1,16 @@
 // @vitest-environment jsdom
-// Milestone 69 in a note, over a real editor and a store in memory: the
-// Pencil's first stroke opens a gap at the place between two blocks nearest
-// it; left alone, the page is a row and its line is in the note where the gap
-// was, in one step; a stroke erased before that leaves nothing; an area with
-// every stroke erased leaves no line; the areas are told to the canvases
-// where they lie. The canvases themselves are an iPad's (`ILMI_SMOKE=ink`).
+// Ink in a typed note (milestones 69, 82), over a real editor and a store in
+// memory. A typed note takes no new handwriting: its host opens nothing, and
+// a Pencil's touch on its text inserts no line and keeps no page. A note
+// that already holds an ink line still shows it as an area, a sheet told to
+// the canvases where it lies; strokes written into it are kept, it grows at
+// its foot, and with every stroke erased its line and its page go. The
+// canvases themselves are an iPad's (`ILMI_SMOKE=ink`).
 
 import { EditorView } from 'prosemirror-view';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fromDoc, makeState } from '../../reader/index.js';
-import { inkKey, inkLines } from '../../reader/inkArea.js';
+import { inkLines } from '../../reader/inkArea.js';
 import { Vault, storeFs, type InkStroke, type StoreFs } from '../../vault/index.js';
 import { memDrawing, memSplit, memStore } from '../../vault/mem-store.js';
 import { useApp } from '../store.js';
@@ -29,6 +30,7 @@ vi.mock('@tauri-apps/api/core', () => ({
     if (cmd === 'dev_env') return null;
     if (cmd === 'ink_scene') { scenes.push(args.scene as (typeof scenes)[number]); return { made: [] }; }
     if (cmd === 'ink_fill') return { took: true };
+    if (cmd === 'ink_tool' || cmd === 'ink_finger') return null;
     if (cmd === 'ink_rest') { rested.push(args.sheet as string); return null; }
     if (cmd === 'ink_bounds') return memSplit(Uint8Array.from(atob(args.drawing as string), (c) => c.charCodeAt(0))).length ? [40, 30, 200, 60] : null;
     if (cmd === 'ink_take') { const d = drawn; drawn = null; return { strokes: d?.length ?? 0, drawing: d ? b64(memDrawing(d)) : null }; }
@@ -66,24 +68,32 @@ const text = () => fromDoc(view.state.doc).map((b) => b.text);
 let view: EditorView;
 let ink: ReturnType<typeof noteInk>;
 let pane: HTMLDivElement;
+let held: boolean[] = [];
 
-beforeEach(async () => {
+const PAGE = `${ROOT}/fleeting/working/ink-01.pkdrawing`;
+const SHEET = 'fleeting/working/ink-01.pkdrawing';
+const LINE = '![working](working/ink-01.png)';
+
+/** The note open with `body`, an iPad's. */
+async function openNote(body: string, before?: () => Promise<void>): Promise<void> {
   fs = storeFs(memStore(), ROOT);
   await fs.mkdir(`${ROOT}/fleeting`);
-  await fs.writeText(`${ROOT}/${NOTE}`, 'one\n\ntwo\n\nthree\n');
+  await fs.writeText(`${ROOT}/${NOTE}`, body);
+  await before?.();
   vault = await Vault.open(fs, ROOT);
   useApp.setState({ mobile: true });
   scenes.length = 0;
   rested.length = 0;
   drawn = null;
+  held = [];
   pane = document.body.appendChild(document.createElement('div'));
   pane.className = 'pane-body';
-  ink = noteInk(NOTE, addSurface);
+  ink = noteInk(NOTE, addSurface, (has) => held.push(has));
   const loaded = await vault.read(NOTE);
   view = new EditorView(pane, { state: makeState(loaded.doc.blocks, { frozen: () => false, pos: null, ink: () => ink.boxes }), attributes: { class: 'draft-doc' } });
   ink.attach(view);
-  await wait(10);
-});
+  await wait(20);
+}
 afterEach(() => {
   ink.destroy();
   view.destroy();
@@ -91,75 +101,85 @@ afterEach(() => {
   useApp.setState({ mobile: false });
 });
 
-const hostId = () => scenes.at(-1)!.hosts[0]!.id;
-const begin = (y: number) => pencil({ kind: 'begin', sheet: 'new:1', host: hostId(), fresh: true, x: 100, y, top: y - 28 });
+const host = () => scenes.at(-1)!.hosts[0]!;
 
-describe('the Pencil on a note', () => {
-  it('the column is where a new area opens, with nothing asked', () => {
-    expect(scenes.at(-1)!.hosts[0]!.open).toMatchObject({ x: 50, w: 600 });
-    expect(scenes.at(-1)!.hosts[0]!.sheets).toEqual([]);
+describe('the Pencil on a typed note', () => {
+  beforeEach(() => openNote('one\n\ntwo\n\nthree\n'));
+
+  it('opens no writing: the host says nowhere, and there is no sheet', () => {
+    expect(host().open).toBeNull();
+    expect(host().sheets).toEqual([]);
+    expect(held).toEqual([]);
   });
 
-  it('a stroke between two blocks opens a gap there, and left alone it is a page and a line in the note', async () => {
-    begin(110);
-    const gap = inkKey.getState(view.state)!.gap!;
-    expect(gap.id).toBe('new:1');
-    // between `one` and `two`
-    expect(view.state.doc.resolve(gap.pos).nodeBefore?.textContent).toBe('one');
-    await wait(10);
-    expect(scenes.at(-1)!.hosts[0]!.sheets.map((s) => s.id)).toEqual(['new:1']);
-    // grows with the writing
-    const was = gap.height;
+  it('a touch on its text inserts no line, holds no gap open and keeps no page', async () => {
+    // what the canvases said of a new area before milestone 82
+    pencil({ kind: 'begin', sheet: 'new:1', host: host().id, fresh: true, x: 100, y: 110, top: 82 });
     pencil({ kind: 'grow', sheet: 'new:1', y: 200 });
-    expect(inkKey.getState(view.state)!.gap!.height).toBeGreaterThan(was);
-    // nothing is kept until it is quiet
-    expect(text()).toEqual(['one', 'two', 'three']);
+    await wait(10);
+    expect(view.dom.querySelector('.ink-gap')).toBeNull();
+    expect(host().open).toBeNull();
+    expect(host().sheets).toEqual([]);
     drawn = [stroke(1), stroke(2)];
     pencil({ kind: 'quiet', sheet: 'new:1' });
     await wait(40);
-    const line = '![working](working/ink-01.png)';
-    expect(text()).toEqual(['one', line, 'two', 'three']);
-    expect(inkKey.getState(view.state)!.gap).toBeNull();
-    expect((await fs.ink(`${ROOT}/fleeting/working/ink-01.pkdrawing`))?.map((s) => s.stroke)).toEqual(['s1', 's2']);
-    expect(inkLines(view.state.doc).map((l) => l.src)).toEqual(['working/ink-01.png']);
-    // the canvas is that area's from here on: more strokes are its strokes, and the line is not written again
-    drawn = [stroke(1), stroke(2), stroke(3)];
-    pencil({ kind: 'quiet', sheet: 'new:1' });
-    await wait(40);
-    expect((await fs.ink(`${ROOT}/fleeting/working/ink-01.pkdrawing`))?.length).toBe(3);
-    expect(text().filter((t) => t === line).length).toBe(1);
-  });
-
-  it('a stroke taken back before it is kept leaves nothing', async () => {
-    begin(110);
-    drawn = [];
-    pencil({ kind: 'quiet', sheet: 'new:1' });
-    await wait(30);
-    expect(inkKey.getState(view.state)!.gap).toBeNull();
     expect(text()).toEqual(['one', 'two', 'three']);
-    expect(rested).toEqual(['new:1']);
-    expect(await fs.stat(`${ROOT}/fleeting/working/ink-01.pkdrawing`)).toBeNull();
-  });
-
-  it('an area with every stroke erased leaves no line', async () => {
-    begin(110);
-    drawn = [stroke(1)];
-    pencil({ kind: 'quiet', sheet: 'new:1' });
-    await wait(40);
-    drawn = [];
-    pencil({ kind: 'quiet', sheet: 'new:1' });
-    await wait(40);
-    expect(text()).toEqual(['one', 'two', 'three']);
-    // and no page: the next one takes its name
-    expect(await fs.stat(`${ROOT}/fleeting/working/ink-01.pkdrawing`)).toBeNull();
-  });
-
-  it('left with the writing not kept, the line goes in through the vault where the gap was', async () => {
-    begin(110);
-    await wait(10);
-    drawn = [stroke(1)];
+    expect(inkLines(view.state.doc)).toEqual([]);
+    expect(await fs.stat(PAGE)).toBeNull();
+    // the drawing was never asked for
+    expect(drawn).not.toBeNull();
     ink.destroy();
-    await wait(60);
-    expect((await vault.read(NOTE)).doc.blocks.map((b) => b.text)).toEqual(['one', '![working](working/ink-01.png)', 'two', 'three']);
+    await wait(40);
+    expect((await vault.read(NOTE)).doc.blocks.map((b) => b.text)).toEqual(['one', 'two', 'three']);
+  });
+});
+
+describe('a note that already holds ink', () => {
+  beforeEach(() => openNote(`one\n\n${LINE}\n\ntwo\n`, async () => {
+    await fs.mkdir(`${ROOT}/fleeting/working`);
+    await fs.setInk(PAGE, [stroke(1), stroke(2)]);
+  }));
+
+  it('shows it as an area and a sheet where its line lies, and still opens nothing', () => {
+    expect(held).toEqual([true]);
+    expect(ink.boxes.get('working/ink-01.png')).toMatchObject({ live: false });
+    expect(view.dom.querySelector('p.ink-area')).not.toBeNull();
+    expect(host().open).toBeNull();
+    expect(host().sheets.map((s) => s.id)).toEqual([SHEET]);
+    // the second block: its line's paragraph
+    expect(host().sheets[0]!.hit.y).toBe(120);
+  });
+
+  it('keeps strokes written into it, grows at its foot, and its line is written once', async () => {
+    pencil({ kind: 'begin', sheet: SHEET, host: host().id, x: 100, y: 150 });
+    expect(view.dom.querySelector('p.ink-area.ink-live')).not.toBeNull();
+    const was = ink.boxes.get('working/ink-01.png')!.height;
+    pencil({ kind: 'grow', sheet: SHEET, y: 200 });
+    expect(ink.boxes.get('working/ink-01.png')!.height).toBeGreaterThan(was);
+    drawn = [stroke(1), stroke(2), stroke(3)];
+    pencil({ kind: 'quiet', sheet: SHEET });
+    await wait(40);
+    expect((await fs.ink(PAGE))?.map((s) => s.stroke)).toEqual(['s1', 's2', 's3']);
+    // one erased with the eraser, in place
+    drawn = [stroke(1), stroke(3)];
+    pencil({ kind: 'quiet', sheet: SHEET });
+    await wait(40);
+    expect((await fs.ink(PAGE))?.map((s) => s.stroke)).toEqual(['s1', 's3']);
+    expect(text()).toEqual(['one', LINE, 'two']);
+  });
+
+  it('loses its line and its page when every stroke is erased, and is a note with no ink from then on', async () => {
+    pencil({ kind: 'begin', sheet: SHEET, host: host().id, x: 100, y: 150 });
+    drawn = [];
+    pencil({ kind: 'quiet', sheet: SHEET });
+    await wait(40);
+    expect(text()).toEqual(['one', 'two']);
+    expect(await fs.stat(PAGE)).toBeNull();
+    expect(rested).toContain(SHEET);
+    ink.changed();
+    await wait(10);
+    expect(held).toEqual([true, false]);
+    expect(host().sheets).toEqual([]);
+    expect(host().open).toBeNull();
   });
 });

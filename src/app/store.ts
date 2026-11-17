@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { NodeType, ReadSchedule, Reading, Review, SectionSchedule, WriteSchedule } from '../format/index.js';
+import type { NodeType, PaperKind, ReadSchedule, Reading, Review, SectionSchedule, WriteSchedule } from '../format/index.js';
 import type { QueueItem } from '../schedule/index.js';
 import type { Focus } from './items.js';
 import type { Order, TreeNode } from '../vault/index.js';
@@ -141,6 +141,8 @@ export interface DocInfo {
   tabs?: true;
   /** The `pages` field: which pages of its PDF it is (a chapter of a book that landed as a notebook). */
   pages?: { first: number; last: number };
+  /** A written notebook (milestone 82): its id, paper and sheets. Its `pdf` is its own path: it opens as its pages. */
+  written?: { id: string; paper: PaperKind; sheets: number[] };
 }
 
 export interface Sidebar {
@@ -310,9 +312,12 @@ export interface AppState {
   /**
    * The palette is choosing the note for a PDF on its own (milestone 70): a
    * note that is there, or a new one, named as typed, in a folder picked
-   * next (`place`, the name chosen). `book.ts` holds who asked. Null otherwise.
+   * next (`place`, the name chosen). `book.ts` holds who asked. With `kind`
+   * `written` (milestone 82) what is made is a written notebook for the PDF:
+   * nothing that is there is offered, only the name and then the folder.
+   * Null otherwise.
    */
-  noteAttach: { pdf: string; step: 'pick' | 'place'; name?: string } | null;
+  noteAttach: { pdf: string; step: 'pick' | 'place'; name?: string; kind?: 'written' } | null;
   tweaksOpen: boolean;
   /** A context menu is open (`popMenu.ts` sets it): the keys are its own, and the canvas counts its panes as covered. Not saved. */
   menuOpen: boolean;

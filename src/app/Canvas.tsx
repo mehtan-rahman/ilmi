@@ -4,7 +4,7 @@
 
 import { Lens } from './Lenses.js';
 import { EL_GLYPH } from './items.js';
-import { GLYPH, INTAKE, tabKindOf } from './names.js';
+import { GLYPH, INTAKE, WRITTEN_GLYPH, tabKindOf } from './names.js';
 import { activatePane, closePane, closeTab, selectTab, splitPane, type OpenOpts, type Pane } from './panes.js';
 import { useApp } from './store.js';
 import { notebookOf, tabLabel } from './tabs.js';
@@ -50,7 +50,7 @@ function TabBar({ pane, index, canClosePane }: TabBarProps) {
         const nb = notebookOf(tab.id, docs);
         const kind = tabKindOf(nb ?? tab.id, docs);
         const session = kind === 'session' ? sessionEl : null;
-        const glyph = session ? EL_GLYPH[session.kind] : GLYPH[kind];
+        const glyph = session ? EL_GLYPH[session.kind] : docs[nb ?? tab.id]?.written ? WRITTEN_GLYPH : GLYPH[kind];
         const title = session ? session.label : tabLabel(tab.id, docs, root);
         return (
           <div

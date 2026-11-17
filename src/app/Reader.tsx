@@ -29,6 +29,7 @@ import { Composer } from './Composer.js';
 import { imageLoader } from './images.js';
 import { addSurface } from './ink.js';
 import { noteInk, type NoteInk } from './noteInk.js';
+import { InkBar } from './InkBar.js';
 import { inkLines } from '../reader/inkArea.js';
 import { imagePicker, pageDrops, readImagePath, type ImageFile } from './pageImages.js';
 import { dueLabel, dueTone } from './items.js';
@@ -1452,6 +1453,8 @@ export function Reader({ id, active = true, onPages, notes = false }: ReaderProp
   const [status, setStatus] = useState<'loading' | 'ok' | 'gone'>('loading');
   const [rule, setRule] = useState<Rule | null>(null);
   const [blocks, setBlocks] = useState<Block[]>([]);
+  /** The note holds ink areas (an iPad): the writing tools stand under its header. */
+  const [inked, setInked] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
   const mountRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -1622,8 +1625,8 @@ export function Reader({ id, active = true, onPages, notes = false }: ReaderProp
     let live = true;
     // the images the text names, from the vault as blob URLs, let go with the view
     const images = imageLoader(vault, id, () => useApp.getState().remoteImages);
-    // where there is a canvas the note is written on where the Pencil lands (milestone 69)
-    const ink = useApp.getState().mobile ? noteInk(id, addSurface) : null;
+    // where there is a canvas the ink a note already holds is written in and erased in place (milestones 69, 82)
+    const ink = useApp.getState().mobile ? noteInk(id, addSurface, setInked) : null;
     inkRef.current = ink;
 
     /**
@@ -1811,6 +1814,7 @@ export function Reader({ id, active = true, onPages, notes = false }: ReaderProp
       live = false;
       off();
       ink?.destroy();
+      if (ink) setInked(false);
       inkRef.current = null;
       writer.flush();
       writer.close();
@@ -2459,6 +2463,7 @@ export function Reader({ id, active = true, onPages, notes = false }: ReaderProp
           {right && <span className="right" title={rightTip}>{right}</span>}
         </div>
         )}
+        {inked && <InkBar id={id} />}
         {titled && !notes && <TitleField key={id} path={id} title={title} onDone={() => viewRef.current?.focus()} />}
         {w && (
           <div className="draft-sched" data-done={w.done ? '1' : '0'}>

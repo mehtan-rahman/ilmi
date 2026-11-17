@@ -12,7 +12,44 @@ import ObjectiveC
 //   tap x y · press x y seconds · drag x1 y1 x2 y2 hold · flick x1 y1 x2 y2 · turn portrait|landscape
 //   · type <text> (into what has the caret) · open <link> (as a Shortcut's "open URL" arrives)
 //   · away <seconds> (the app sent home, and brought back after that long)
+//   · loop x1 y1 x2 y2 x3 y3 … (one finger through every point in turn, slowly, and lifted: a lasso's loop,
+//     which no public call of XCUITest draws; `through` below)
 final class TouchRig: XCTestCase {
+  /// One finger down at the first point, through the rest, and up: XCUITest's own pointer path, which its
+  /// public calls build two points at a time. The classes are the runner's (`runner-methods.txt` lists what
+  /// this Xcode's have); false when they are not there.
+  private func through(_ pts: [CGPoint]) -> Bool {
+    guard pts.count >= 2, let pathClass = NSClassFromString("XCPointerEventPath") as? NSObject.Type, let recordClass = NSClassFromString("XCSynthesizedEventRecord") as? NSObject.Type else { return false }
+    let start = NSSelectorFromString("initForTouchAtPoint:offset:")
+    let move = NSSelectorFromString("moveToPoint:atOffset:")
+    let lift = NSSelectorFromString("liftUpAtOffset:")
+    let named = NSSelectorFromString("initWithName:interfaceOrientation:")
+    let add = NSSelectorFromString("addPointerEventPath:")
+    let run = NSSelectorFromString("synthesizeWithError:")
+    guard pathClass.instancesRespond(to: start), pathClass.instancesRespond(to: move), pathClass.instancesRespond(to: lift), recordClass.instancesRespond(to: named), recordClass.instancesRespond(to: add), recordClass.instancesRespond(to: run) else { return false }
+    typealias Start = @convention(c) (AnyObject, Selector, CGPoint, Double) -> Unmanaged<AnyObject>
+    typealias Move = @convention(c) (AnyObject, Selector, CGPoint, Double) -> Void
+    typealias Lift = @convention(c) (AnyObject, Selector, Double) -> Void
+    typealias Named = @convention(c) (AnyObject, Selector, NSString, Int) -> Unmanaged<AnyObject>
+    typealias Run = @convention(c) (AnyObject, Selector, AutoreleasingUnsafeMutablePointer<NSError?>?) -> Bool
+    let rawPath = pathClass.perform(NSSelectorFromString("alloc")).takeUnretainedValue() as! NSObject
+    let path = unsafeBitCast(rawPath.method(for: start), to: Start.self)(rawPath, start, pts[0], 0).takeUnretainedValue() as! NSObject
+    // a rest where it lands, then 0.12 s a point
+    var t = 0.25
+    for p in pts.dropFirst() {
+      unsafeBitCast(path.method(for: move), to: Move.self)(path, move, p, t)
+      t += 0.12
+    }
+    unsafeBitCast(path.method(for: lift), to: Lift.self)(path, lift, t + 0.1)
+    let rawRecord = recordClass.perform(NSSelectorFromString("alloc")).takeUnretainedValue() as! NSObject
+    let record = unsafeBitCast(rawRecord.method(for: named), to: Named.self)(rawRecord, named, "loop", UIInterfaceOrientation.portrait.rawValue).takeUnretainedValue() as! NSObject
+    _ = record.perform(add, with: path)
+    var failed: NSError?
+    let ok = unsafeBitCast(record.method(for: run), to: Run.self)(record, run, &failed)
+    if !ok { print("rig: the path was not made: \(String(describing: failed))") }
+    return ok
+  }
+
   func testDrive() throws {
     let env = ProcessInfo.processInfo.environment
     guard let log = env["LOG"], let mode = env["MODE"] else { XCTFail("LOG and MODE"); return }
@@ -71,6 +108,10 @@ final class TouchRig: XCTestCase {
         case "type": app.typeText(String(ask.dropFirst(9)))
         case "open": XCUIDevice.shared.system.open(URL(string: String(ask.dropFirst(9)))!)
         case "away" where n.count >= 1: XCUIDevice.shared.press(.home); Thread.sleep(forTimeInterval: n[0]); app.activate()
+        case "loop" where n.count >= 6 && n.count % 2 == 0:
+          let f = app.frame
+          let pts = stride(from: 0, to: n.count, by: 2).map { CGPoint(x: f.minX + n[$0] * f.width, y: f.minY + n[$0 + 1] * f.height) }
+          if !through(pts) { print("rig: no path through points in this Xcode: \(ask)") }
         case "turn": XCUIDevice.shared.orientation = parts.last == "landscape" ? .landscapeLeft : .portrait
         default: print("rig: not understood: \(ask)")
         }

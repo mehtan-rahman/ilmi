@@ -64,13 +64,16 @@ in a note        ⌘B bold, ⌘I italic, ⌘E code, ⌘⇧X strike, ⌘K link (o
                  note as img-NN
 in any page      ⌘F find (case, accents, and Arabic vowel marks folded), ⏎ ⇧⏎
                  or ⌘G ⌘⇧G the next and the one before; ⌥⌘F replace
-in a book        a document with pages: its pages beside its notes (the
-                 body, in the editor); drag on a page to box a passage
-                 (again for another, any page; a text selection boxes its
-                 lines), e makes it a section of the notes, m a section to
-                 card in (or, where the page names no sections, a clip
-                 under ## p. N), esc clears; ⏎ right after writes in it;
-                 [ ] step the sections; ⌘\ hides the notes; / search
+in a book        a document with pages: a PDF, a chapter of one, a written
+                 notebook; its notes are asked for (create notes, open
+                 notes) and open as tabs in the pane beside; drag on a page
+                 to box a passage (again for another, any page; a text
+                 selection boxes its lines), e keeps it as a passage with
+                 the PDF, in no note, back in the queue until dismissed;
+                 m clips the box into the note in front beside the pages
+                 (else the one used last), at the caret or the note's end,
+                 for a card under it; esc clears; [ ] step the passages;
+                 ⌘\ opens the notes and hides them; / search
                  (⏎ the next hit, ⇧⏎ the one before, counted n / m;
                  n and N the same once the caret has left the field; the
                  hits stay lit until esc), g go to a page; ⏎ on a selected
@@ -90,7 +93,7 @@ in a book        a document with pages: its pages beside its notes (the
                  ⌫ back to where the last jump was made from (a search's
                  first hit, g, the contents, a link, a reference, a section
                  more than a screen away), ⇧⌫ forward again;
-                 right-click on a selection: section, card, search the web,
+                 right-click on a selection: passage, card, search the web,
                  search scholar (in the browser);
                  ⌘= ⌘− zoom the pages in and out (fit, 125%, 150%, 200%,
                  250%, 300%), ⌘0 back to fit, a pinch on a trackpad or of
@@ -110,7 +113,7 @@ in a book        a document with pages: its pages beside its notes (the
                  the selection, a box, or the last press inside a highlight
                  clears it; 1 2 3 4 right
                  after choose its ink (a band, a rule, a dashed rule, a
-                 dotted rule); right-click on a highlight: section, card,
+                 dotted rule); right-click on a highlight: passage, card,
                  clear, the four inks;
                  ⇧P at a place, then ⇧P where it should show, ties the
                  first to the second (a portal: a small mark in the page's
@@ -121,8 +124,8 @@ in a book        a document with pages: its pages beside its notes (the
                  rule (so does a press in a page's left margin, beside a
                  line); ↓ ↑ or j k move it a line, the page following;
                  r sets the read point to it; v or esc lets it go
-in the palette   over a book: contents ·, bookmarks ·, highlights · (its
-                 own), portals beside · (the book again in the pane
+in the palette   over a book: contents ·, passages ·, bookmarks ·,
+                 highlights · (its own), portals beside · (the book again in the pane
                  beside, following the portals of the page being read, into
                  another book when a portal leads there; run again, or
                  close that pane, to stop); anywhere:

@@ -9336,7 +9336,8 @@ second pane whichever of the notes is in front (`notesPair`). The search
 button over the pages closes the search when pressed again (a finger has no
 esc), and the letter before the search and go-to fields is hidden with the
 key caps on a device.
-**Not done yet:** a notebook of written pages; a portal made by touch.
+**Not done yet:** a portal made by touch (the notebook of written pages
+is 82).
 **On the devices** (done, 2026-11-17): the bar on a phone stays one line
 (it wrapped: search fell onto the pages): the name and the zoom left out,
 the page without what is due, no `+`; menus' rows are a finger's height
@@ -9348,6 +9349,67 @@ front; `phone` checks the bar, its menus and fields, and walks a new
 card's `got it`; `ink` and `pageink` needed nothing. A dev build's log is
 no longer dropped at 40 kB (the touch rig reads its asks there and lost
 count once a run grew past it).
+
+### [ ] 82. Written notes: a notebook of paper, and tools of our own
+Asked by the user, 2026-11-17: "an option to create written notes / white
+board almost on the ipad. can be standalone or with a PDF. instead of
+trying to have both written and typed in one thing just separate the two
+(and if i want to type out what i write, then i can just do that over IR
+over the written thing)"; "written notes ui/ux similar to goodnotes but
+simpler"; "on the ipad, it should feel like i'm opening goodnotes on pdf
+notes themselves"; "our own front end layer to apples picker", "colour
+wheel is nice", "make sure that this includes annotating PDFs as well".
+This takes back 69's "the Pencil writes anywhere in a typed note".
+Notes: **A written notebook** (FORMAT.md §1, §3) is a `.md` of
+front-matter alone: `written` (its own id, 32 hex, made once), `paper`
+(`blank`, `ruled`, `grid`, `dotted`; a new one is ruled), `sheets` (its
+pages in order, each a number that names the sheet for good, so a page
+deleted moves nothing), and `pdf` when it belongs to a PDF. The id stands
+wherever a PDF's hash stands: strokes are rows of `ink` under
+`p.<id>.<sheet>`, passages are entries of `.ilmi/marks/<id>.json`, an
+export writes `.ilmi/ink/<id>/<sheet>.pkdrawing`; nothing in the store, the
+engine or the export changed for it. In the index its `pdf` is its own
+path, so it opens in the `Pdf` lens as its sheets (`written.ts`,
+`paper.ts`: Letter pages drawn as SVG, crisp at any zoom) with what a
+PDF's text gives left out. `add page`, a page added by a stroke begun in
+the lower third of the last, `delete this page` (asking first when
+something is on it, undone by the notice), the paper under `more`. Made
+from the sidebar's `+`, the palette, or `+` over a PDF's pages (`new
+written notes`: one of that PDF's notes, a tab beside its pages).
+**Typed from written:** a box on a sheet is a passage (`e`) or a clip in a
+typed note attached to the notebook as to a PDF (`m`), the clip drawn as
+the paper and the ink on it. **Typed notes take no new handwriting:** the
+catcher that opened an area under the Pencil is gone; the areas a note
+holds stay sheets, written in and erased. **The tools** (`InkBar.tsx`,
+`inkTools.ts`): one row under the bar over pages that can be written on,
+an iPad's alone: pen, highlighter, eraser, select; three sizes; four
+colours a tool and the wheel's own; undo, redo, draw with finger; kept per
+device. PencilKit's picker is gone. The plugin takes the tool
+(`ink_tool`), has one undo manager for every canvas (`ink_undo`,
+`ink_redo`, `history` events), `ink_finger`, and the system's colour wheel
+as a popover from the swatch (`ink_color`); the eraser and the lasso are
+its own, from the touches its watcher sees, since PencilKit's do nothing
+through a recogniser moved onto the web view (69's open risk). Page ink is
+blended onto the page (`multiply`; `screen` on dark), so a highlighter
+leaves print dark. On the Mac a notebook is shown with what is written and
+says `written on an ipad`; a phone has no row.
+**On the simulators** (2026-11-17): the plugin's new code ran as written:
+tool, sizes, colours, the eraser, undo and redo, the lasso and its drag,
+draw with finger, the wheel, all under rig-made touches (`written` on a
+simulated iPad, twice: what was chosen is remembered). The touch rig has a
+verb more, `loop`, one finger through several points (the lasso's loop).
+Mended: the row over a typed note that holds ink was held to the text's
+column and scrolled (it runs on past the column now); `ink` rewritten for
+areas a note already holds (the Mac puts them there), `pageink` makes a
+written notebook where it made a note of ink, `sioyek` brings a reference
+into the view under the taller bar, `book` looks for the notes' word in
+the bar's first row.
+**Not done:** a notebook's sheets in any size but Letter, or turned;
+pictures and typed text on a sheet; a sheet moved among the others;
+text recognised from handwriting; the lasso's copy, recolour or resize;
+an eraser that takes part of a stroke; two fingers scrolling under draw
+with finger and everything of a real Pencil (pressure, tilt, the double
+tap, palm rejection) are a device's to judge.
 
 ## Notes for the next session
 

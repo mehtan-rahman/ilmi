@@ -10,6 +10,7 @@ import { cadence } from '../schedule/growth.js';
 import { join, relative, sameStamp, type Fs, type Stamp } from './fs.js';
 import { ORDER_FILE, childrenAt, cleanOrder, entryOf, followMove, forget, ordered, placeEntry, pruneOrder, restoreOrder, type Order } from './order.js';
 import { baseOf, childDirOf, cleanName, dirOf, fileName, isDoc, joinRel, nameOf, normRel, pdfOf, rekey, relFrom, within } from './paths.js';
+import { newId, type InkStroke } from './store.js';
 import { documents, isDocPath, isHidden, isPdfPath, pdfs, walk, type DocNode, type TreeNode } from './walk.js';
 
 export interface Loaded {
@@ -670,10 +671,14 @@ export class Vault {
   /**
    * After a PDF on its own moved from `oldPdf` to `newPdf`: every note whose
    * `pdf` field named it names the new file (FORMAT.md §3). Every document
-   * is looked at, which is the cost of a PDF that any note may name.
+   * is looked at, which is the cost of a PDF that any note may name. A
+   * written notebook that moved is followed the same way by the notes
+   * attached to it (the notebook itself and what is under it have moved,
+   * and are not among them).
    */
   private async retargetNotes(oldPdf: string, newPdf: string): Promise<void> {
     for (const path of this.documents()) {
+      if (path === oldPdf || within(path, childDirOf(oldPdf))) continue;
       const named = meta((await this.read(path)).doc).pdf;
       if (named === undefined || normRel(joinRel(dirOf(path), named)) !== oldPdf) continue;
       await this.change(path, (doc) => setField(doc, 'pdf', relFrom(dirOf(path), newPdf)));
@@ -791,6 +796,29 @@ export class Vault {
         setField(doc, 'started', day);
         setField(doc, 'write', { due: day, ivl: 1, reps: 0 });
       }
+      await this.commit(path, serialize(doc));
+      await this.rewalk();
+      return path;
+    });
+  }
+
+  /**
+   * A new written notebook in `dir` (FORMAT.md §3, *Written notes*): a note
+   * with no body whose `written` is `id`, ruled, one sheet; with `pdf`
+   * (vault-relative) it names that file, relative to itself, and so is one
+   * of its notes. Resolves to the document's path.
+   */
+  createWritten(dir: string, name: string, id: string, pdf?: string): Promise<string> {
+    return this.serial(async () => {
+      const clean = cleanName(name);
+      if (!clean) throw new Error(`"${name}" is not a file name`);
+      await this.ensureDir(dir);
+      const path = `${joinRel(dir, await this.freeName(dir, clean))}.md`;
+      const doc: Doc = { blocks: [] };
+      setField(doc, 'written', id);
+      setField(doc, 'paper', 'ruled');
+      setField(doc, 'sheets', [1]);
+      if (pdf !== undefined) setField(doc, 'pdf', relFrom(dir, pdf));
       await this.commit(path, serialize(doc));
       await this.rewalk();
       return path;
@@ -1028,6 +1056,8 @@ export class Vault {
         await this.retargetNotes(path, to);
       }
       if (isDoc(path)) {
+        // a written notebook: the notes attached to it name the new file
+        if (meta((await this.read(to)).doc).written) await this.retargetNotes(path, to);
         await this.retargetBackrefs(dir, nameOf(path), clean);
         if (pagesMoved && meta((await this.read(to)).doc).pdf === `${nameOf(path)}.pdf`) {
           await this.change(to, (doc) => setField(doc, 'pdf', `${clean}.pdf`));
@@ -1056,19 +1086,24 @@ export class Vault {
       await this.ensureDir(dir);
       const to = joinRel(dir, baseOf(path));
       // a `pdf` field naming a sibling that is not the stem's pages: it goes along, so the name still resolves
-      const named = isDoc(path) ? meta((await this.read(path)).doc).pdf : undefined;
+      const was = isDoc(path) ? meta((await this.read(path)).doc) : undefined;
+      const named = was?.pdf;
       await this.relocate(path, to);
       if (isPdfPath(path)) {
         await this.rekeyReading(path, to);
         await this.retargetNotes(path, to);
       }
-      if (named !== undefined && !named.includes('/') && named !== baseOf(pdfOf(path))) {
+      // a written notebook: the notes attached to it name it where it is now
+      if (was?.written) await this.retargetNotes(path, to);
+      // (a sibling that is a document of its own, a PDF on its own or a written notebook, stays where it is, as any note may name it: the field follows instead, below)
+      const own = named !== undefined && !named.includes('/') && (isDocPath(named) || this.node(joinRel(dirOf(path), named))?.bare === true);
+      if (named !== undefined && !named.includes('/') && named !== baseOf(pdfOf(path)) && !own) {
         const from = joinRel(dirOf(path), named);
         const dest = joinRel(dir, named);
         if ((await this.fs.stat(this.abs(from)))?.isDir === false && !(await this.fs.stat(this.abs(dest)))) await this.fs.rename(this.abs(from), this.abs(dest));
       }
       // a chapter naming its book's pages by a path (`../book.pdf`): the field follows, so it still resolves from the new place
-      if (named !== undefined && named.includes('/')) {
+      if (named !== undefined && (named.includes('/') || own)) {
         const target = normRel(joinRel(dirOf(path), named));
         if (target && !within(target, childDirOf(path)) && (await this.fs.stat(this.abs(target)))?.isDir === false) {
           const next = relFrom(dir, target);
@@ -1317,8 +1352,21 @@ export class Vault {
       if (isDoc(path)) {
         await copy(childDirOf(path), childDirOf(to));
         await copy(pdfOf(path), pdfOf(to));
-        const t = meta((await this.read(to, true)).doc).title;
+        const m = meta((await this.read(to, true)).doc);
+        const t = m.title;
         if (t !== undefined) await this.change(to, (doc) => setField(doc, 'title', `${t} copy`));
+        // a written notebook's copy is a notebook of its own: a new id, and what is written on each sheet under it (its passages stay the first one's)
+        if (m.written) {
+          const id = newId();
+          const ink = this.fs as { pageInk?(hash: string, page: number): Promise<InkStroke[]>; setPageInk?(hash: string, page: number, strokes: readonly InkStroke[]): Promise<unknown> };
+          if (ink.pageInk && ink.setPageInk) {
+            for (const sheet of m.written.sheets) {
+              const strokes = await ink.pageInk(m.written.id, sheet);
+              if (strokes.length) await ink.setPageInk(id, sheet, strokes);
+            }
+          }
+          await this.change(to, (doc) => setField(doc, 'written', id));
+        }
       }
       await this.rewalk();
       const shown = ordered(childrenAt(this.tree, dir) ?? [], this.order[dir]).map((n) => entryOf(n.path));

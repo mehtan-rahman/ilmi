@@ -18,15 +18,16 @@
 // space runs, → opens `move to…` and ← or Escape leaves it; ⇧F10 or the Menu
 // key on a row opens it there (`menuAtRow`).
 
-import { useEffect, useLayoutEffect, useRef, useState, type Dispatch, type MouseEvent, type SetStateAction } from 'react';
+import { Fragment, useEffect, useLayoutEffect, useRef, useState, type Dispatch, type MouseEvent, type SetStateAction } from 'react';
 import type { NodeType } from '../format/index.js';
-import { childDirOf, dirOf, isDoc, isPdfPath } from '../vault/index.js';
+import { NEW_NAMES, childDirOf, dirOf, isDoc, isPdfPath } from '../vault/index.js';
 import { hasCards, studyDeck } from './deckOps.js';
 import { importFiles, failed } from './land.js';
-import { GLYPH, descendants, findNode, kindOf, moveTargets, titleOf, type MoveTarget, type NodeKind } from './names.js';
+import { GLYPH, WRITTEN_GLYPH, descendants, findNode, glyphOf, kindOf, moveTargets, titleOf, type MoveTarget, type NodeKind } from './names.js';
+import { createWritten } from './written.js';
 import { useApp } from './store.js';
 import { deleteNode } from './remove.js';
-import { createNode, duplicateNode, enrolReading, moveNode, openIntake, setTabs, sortByName } from './vault.js';
+import { createNode, duplicateNode, enrolReading, moveNode, openDir, openIntake, setTabs, sortByName } from './vault.js';
 import { Glyph } from './icons.js';
 import { menuKeys } from './popMenu.js';
 
@@ -130,7 +131,6 @@ function MoveList({ targets, back, move }: { targets: MoveTarget[]; back(e: Mous
       <div className="cd" />
       <div className="sub-scroll" ref={listRef}>
         {shown.map((t, i) => {
-          const kind: NodeKind = t.path === '' ? 'folder' : kindOf(t.path, docs);
           return (
             <div
               key={t.path}
@@ -140,7 +140,7 @@ function MoveList({ targets, back, move }: { targets: MoveTarget[]; back(e: Mous
               onMouseEnter={() => setPick(i)}
               onClick={(e) => { e.stopPropagation(); move(t.dir); }}
             >
-              <span className="cg"><Glyph g={GLYPH[kind]} /></span>
+              <span className="cg"><Glyph g={glyphOf(t.path, docs)} /></span>
               <span className="mv-name">{name(t.path)}</span>
               {want && where(t.path) && <span className="mv-where">{where(t.path)}</span>}
             </div>
@@ -197,6 +197,8 @@ export function NodeMenu({ at, set, onCreated, onRename, onSubtab, onMoved }: Pr
   const dir = childDirOf(at.id);
   const act = (fn: () => void) => (e: MouseEvent) => { e.stopPropagation(); ran.current = true; fn(); set(null); };
   const create = (k: NodeKind) => { createNode(dir, k as NodeType | 'folder').then(onCreated).catch(fail); };
+  // written notes (milestone 82): made where a note would be, named the same way
+  const createPaper = () => { createWritten(dir, NEW_NAMES.note).then((p) => { openDir(dir); onCreated(p); }).catch(fail); };
   const sub = (on: boolean) => (e: MouseEvent) => { e.stopPropagation(); set((m) => (m ? { ...m, sub: on } : m)); };
   const targets = moveTargets(tree, at.id, order);
   const node = at.id !== '' && !at.plus;
@@ -248,9 +250,16 @@ export function NodeMenu({ at, set, onCreated, onRename, onSubtab, onMoved }: Pr
         <>
           {/* a PDF on its own holds nothing (milestone 70): nothing is made under it */}
           {!pdfAlone && NEW_KINDS.map(([k, label]) => (
-            <div key={k} className="ci" onClick={act(() => create(k))}>
-              <span className="cg"><Glyph g={GLYPH[k]} /></span>{label}
-            </div>
+            <Fragment key={k}>
+              <div className="ci" onClick={act(() => create(k))}>
+                <span className="cg"><Glyph g={GLYPH[k]} /></span>{label}
+              </div>
+              {k === 'note' && (
+                <div className="ci" data-act="new-written" onClick={act(createPaper)}>
+                  <span className="cg"><Glyph g={WRITTEN_GLYPH} /></span>new written notes
+                </div>
+              )}
+            </Fragment>
           ))}
           {!pdfAlone && <div className="cd" />}
           {!pdfAlone && (

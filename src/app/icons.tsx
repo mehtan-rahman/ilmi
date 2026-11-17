@@ -12,9 +12,12 @@ import type { ReactNode } from 'react';
 export type IconName =
   | 'folder' | 'note' | 'book' | 'extract' | 'deck' | 'draft' | 'add' | 'query' | 'card' | 'search'
   | 'chevron' | 'split' | 'panel' | 'panel-left' | 'close' | 'more' | 'vault' | 'arrow' | 'back'
-  | 'tabs' | 'tree' | 'fold' | 'unfold' | 'menu' | 'trash' | 'copy' | 'download' | 'pages' | 'sort' | 'caret' | 'pause';
+  | 'tabs' | 'tree' | 'fold' | 'unfold' | 'menu' | 'trash' | 'copy' | 'download' | 'pages' | 'sort' | 'caret' | 'pause' | 'written';
 
-const P: Record<IconName, ReactNode> = {
+/** The writing tools' icons (`InkBar.tsx`, milestone 82). */
+export type InkIconName = 'pen' | 'highlighter' | 'eraser' | 'lasso' | 'undo' | 'redo' | 'finger';
+
+const P: Record<IconName | InkIconName, ReactNode> = {
   folder: <path d="M2 4.6c0-.6.4-1.1 1-1.1h3.1l1.6 1.6H13c.6 0 1 .4 1 1v6c0 .6-.4 1-1 1H3c-.6 0-1-.4-1-1z" />,
   note: <><path d="M4.2 2h5.3l3 3v8.4c0 .3-.3.6-.6.6H4.2c-.3 0-.7-.3-.7-.6V2.6c0-.3.4-.6.7-.6z" /><path d="M9.5 2v3h3M5.8 8.2h4.4M5.8 10.8h3" /></>,
   book: <path d="M8 4.3C6.8 3.4 5 3 2.5 3v9.6c2.5 0 4.3.4 5.5 1.3 1.2-.9 3-1.3 5.5-1.3V3C11 3 9.2 3.4 8 4.3zM8 4.3v9.5" />,
@@ -46,10 +49,21 @@ const P: Record<IconName, ReactNode> = {
   pages: <><rect x="3" y="2.5" width="10" height="11" rx="1" /><path d="M5.5 5.5h5M5.5 8h5M5.5 10.5h5" /></>,
   pause: <path d="M6 4v8M10 4v8" />,
   sort: <path d="M5 3v10M2.8 5.2L5 3l2.2 2.2M11 13V3M8.8 10.8L11 13l2.2-2.2" />,
+  // a written notebook (milestone 82): a sheet with a line of handwriting on it
+  written: <><rect x="3" y="2.5" width="10" height="11" rx="1" /><path d="M5.2 9.8c.8-2.9 1.7-2.9 2 0 .2 1.6.9 1.6 1.5 0 .4-1.1 1.1-1.4 2.1-1" /></>,
+
+  // ── the writing tools (milestone 82) ──
+  pen: <path d="M11 2.5l2.5 2.5-7.2 7.2-3.1.6.6-3.1zM8.8 13.5h4.7" />,
+  highlighter: <path d="M9.4 2.6l4 4-4.9 4.9-4-4zM4.5 7.5l-1 2.9 2.1 2.1 2.9-1M2.5 13.6h2.8" />,
+  eraser: <path d="M9.2 2.9l4.4 4.4-5.6 5.6H5.3L2.7 10.3c-.3-.3-.3-.8 0-1.1zM6 6.1l4.4 4.4M8 12.9h5.5" />,
+  lasso: <><ellipse cx="8" cy="6.8" rx="5.5" ry="3.8" strokeDasharray="2 2.2" /><path d="M5.2 10.2c-.7 1.3-.4 2.7.9 3.5" /></>,
+  undo: <path d="M3 6.5h6.3a3.5 3.5 0 010 7H6.5M5.8 3.7L3 6.5l2.8 2.8" />,
+  redo: <path d="M13 6.5H6.7a3.5 3.5 0 000 7h2.8M10.2 3.7L13 6.5l-2.8 2.8" />,
+  finger: <path d="M6.4 9.2V3.5a1.1 1.1 0 012.2 0v3.9M8.6 7a1.1 1.1 0 012.2 0v.7M10.8 7.5a1.05 1.05 0 012.1 0v3c0 2.1-1.4 3.5-3.5 3.5H8.7c-1.2 0-2-.5-2.7-1.5L3.7 10a1 1 0 011.5-1.3l1.2 1.3" />,
 };
 
 /** One icon, sized by `--ic` (14px unless the place sets it). */
-export function Icon({ name, className }: { name: IconName; className?: string }) {
+export function Icon({ name, className }: { name: IconName | InkIconName; className?: string }) {
   return (
     <svg className={className ? `ic ic-${name} ${className}` : `ic ic-${name}`} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
       {P[name]}
@@ -62,7 +76,7 @@ const OF: Record<string, IconName> = {
   '/': 'folder', '¶': 'note', '“': 'book', '§': 'extract', '=': 'deck', '~': 'draft', '＋': 'add', '+': 'add', '≡': 'query',
   '◆': 'card', '⌕': 'search', '›': 'chevron', '⌂': 'vault', '✎': 'draft', '→': 'arrow', '◂': 'back', '⊞': 'tabs', '⋮': 'tree',
   '⌫': 'trash', '⧉': 'copy', '↧': 'download', '▤': 'pages', '↕': 'sort', '‖': 'pause', '⊟': 'split', '×': 'close', '«': 'fold', '»': 'unfold',
-  '▸': 'chevron', '▾': 'caret',
+  '▸': 'chevron', '▾': 'caret', '✒': 'written',
 };
 
 /** A kind's mark drawn as its icon, the mark kept (hidden) in the text. */

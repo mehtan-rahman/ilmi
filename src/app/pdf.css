@@ -226,6 +226,20 @@ html[data-shape="phone"] .book .pdf-view > .meta { flex-wrap: nowrap; gap: 8px; 
 html[data-shape="phone"] .book .pdf-view > .meta .pt-page { flex-shrink: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 html[data-shape="phone"] .book .pdf-view > .meta .pt-grow { flex: 1 1 0; min-width: 0; }
 
+/* the bar's first row is the bar's own line (its words are the bar's flex items) until the tools make a second row
+   under it (milestone 82, `InkBar.tsx`: an iPad's, over pages that can be written on): then the bar is the two rows,
+   the words' line the height it was, the tools under it; what stands under the bar stands under both */
+.book .pdf-view > .meta > .pt-row { display: contents; }
+/* (each of them a child that keeps its words, as a child of any such line does: `app.css`) */
+.reader .meta > .pt-row > * { flex-shrink: 0; }
+html[data-mobile="1"] .book .pdf-view > .meta[data-ink="1"] { display: block; height: auto; padding: 0; border-bottom: 0; }
+html[data-mobile="1"] .book .pdf-view > .meta[data-ink="1"] > .pt-row { display: flex; align-items: center; gap: 10px; box-sizing: border-box; height: 46px; padding: 0 12px; border-bottom: 1px solid var(--line-3); }
+html[data-mobile="1"] .book .pdf-view > .meta[data-ink="1"] > .inkbar { flex: none; }
+html[data-mobile="1"] .book .pdf-view > .meta[data-ink="1"] ~ .pdf-bar { top: 94px; }
+html[data-mobile="1"] .book .pdf-view[data-tools="1"] .pdf-page { scroll-margin-top: 100px; }
+/* a notebook where there is no canvas to write on: said once, quietly, where the tools would be */
+.book .pdf-view > .meta .pt-readonly { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t-xs); color: var(--fg-4); }
+
 /* the pages lie on a desk of their own colour, each a sheet with its edge and a little shade under it */
 /* the scroller's bar has its room from the start: the pages are not fitted twice as they open */
 .book .book-pages { background: var(--desk); scrollbar-gutter: stable; }
@@ -267,8 +281,33 @@ html[data-mobile="1"] .pgut { padding: 8px 8px; margin: -6px -5px; }
 /* the read bar: from the first page to the read point */
 .book .pdf-body .read-bar { left: -20px; width: 3px; }
 
+/* a written notebook's sheet (milestone 82, `paper.ts`): white paper, its rules hairlines that stay a pixel at any zoom,
+   its dots growing with the page. Dark paper turns it as it turns a PDF's page, and e-ink greys it; a sheet far from
+   the view is not drawn, and is the colour its paper would be */
+.pdf-page > .paper { display: block; width: 100%; height: 100%; }
+.paper .paper-rule { fill: none; stroke-width: 1; shape-rendering: crispEdges; }
+.paper .paper-dot { fill: none; stroke-linecap: round; }
+[data-theme="dark"] .pdf-page > .paper { filter: invert(0.92) hue-rotate(180deg); }
+[data-theme="dark"] .pdf-page[data-paper] { background: #141414; }
+[data-theme="eink"] .pdf-page > .paper { filter: grayscale(1) contrast(1.1); }
+[data-theme="eink"] .paper .paper-rule, [data-theme="eink"] .paper .paper-dot { stroke: #8f8f8f; }
+/* under a notebook's last page: one more, a sheet's width of the desk with a dashed edge */
+.book .add-page {
+  display: block; box-sizing: border-box; min-height: 48px; margin: 18px 0 0; padding: 0;
+  border: 1px dashed color-mix(in oklab, var(--fg) 30%, transparent); border-radius: 2px; background: none;
+  font-family: var(--sans); font-size: var(--t-sm); color: var(--fg-3); cursor: default;
+  -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+}
+.book .add-page:hover, .book .add-page:active { color: var(--fg-1); border-color: color-mix(in oklab, var(--fg) 50%, transparent); background: color-mix(in oklab, var(--fg) 4%, transparent); }
+.book .add-page:focus-visible { outline: 1.5px solid var(--accent); outline-offset: 2px; }
+[data-theme="eink"] .book .add-page { border-color: var(--fg-1); color: var(--fg-1); }
+
 /* what is written on the pages (milestone 67): a picture of each page's strokes over it, under the boxes; on dark paper it is turned as the page is */
-.pdf-ink { position: absolute; inset: 0; pointer-events: none; z-index: 2; }
+/* it lies on the page as ink does on paper (milestone 82): a highlighter's stroke over text leaves the text dark. The
+   layer is blended, not each picture: its z-index makes it a group of its own, and a picture inside would blend with
+   nothing. On dark paper the page and the picture are both turned, so what darkened lightens */
+.pdf-ink { position: absolute; inset: 0; pointer-events: none; z-index: 2; mix-blend-mode: multiply; }
+[data-theme="dark"] .pdf-ink { mix-blend-mode: screen; }
 .page-ink { position: absolute; display: block; pointer-events: none; -webkit-user-select: none; user-select: none; }
 /* a canvas lies over this page: the same strokes */
 .page-ink[data-live] { visibility: hidden; }

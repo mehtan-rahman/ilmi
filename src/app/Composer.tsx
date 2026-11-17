@@ -124,16 +124,27 @@ export function Composer({ seed, form: initial, pri: docPri, onSave, onClose, qu
             : <button type="button" className="quick-blank" onMouseDown={(e) => e.preventDefault()} onClick={wrapBlank}>blank</button>}
         </>
       )}
-      {form === 'qa' && (
-        <div className="qa-fields">
-          <textarea dir="auto" ref={ref} value={front} onChange={(e) => setFront(e.target.value)} placeholder={quick === undefined ? 'question' : 'front'} />
-          <textarea dir="auto" value={back} onChange={(e) => setBack(e.target.value)} placeholder={quick === undefined ? 'answer' : 'back'} />
+      {form !== 'cloze' && quick === undefined && (
+        // each side is the reader's editor, as a note's text is: formatting, math, a table, the same menu
+        <div className="qa-fields" key={`${form}${gen}`}>
+          <div className="composer-face side" dir="auto" onMouseDown={pressIntoFace}>
+            <FaceField value={form === 'qa' ? front : left} placeholder={form === 'qa' ? 'question' : 'term a'} autoFocus onChange={form === 'qa' ? setFront : setLeft} />
+          </div>
+          <div className="composer-face side" dir="auto" onMouseDown={pressIntoFace}>
+            <FaceField value={form === 'qa' ? back : right} placeholder={form === 'qa' ? 'answer' : 'term b'} onChange={form === 'qa' ? setBack : setRight} />
+          </div>
         </div>
       )}
-      {form === 'bidir' && (
+      {form === 'qa' && quick !== undefined && (
         <div className="qa-fields">
-          <input dir="auto" ref={ref} value={left} onChange={(e) => setLeft(e.target.value)} placeholder={quick === undefined ? 'term a' : 'front'} />
-          <input dir="auto" value={right} onChange={(e) => setRight(e.target.value)} placeholder={quick === undefined ? 'term b' : 'back'} />
+          <textarea dir="auto" ref={ref} value={front} onChange={(e) => setFront(e.target.value)} placeholder="front" />
+          <textarea dir="auto" value={back} onChange={(e) => setBack(e.target.value)} placeholder="back" />
+        </div>
+      )}
+      {form === 'bidir' && quick !== undefined && (
+        <div className="qa-fields">
+          <input dir="auto" ref={ref} value={left} onChange={(e) => setLeft(e.target.value)} placeholder="front" />
+          <input dir="auto" value={right} onChange={(e) => setRight(e.target.value)} placeholder="back" />
         </div>
       )}
 

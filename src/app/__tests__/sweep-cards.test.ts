@@ -224,6 +224,19 @@ describe('the forms, one order everywhere', () => {
     expect(labels('#a')).toEqual(labels('#b'));
   });
 
+  it('a question and its answer are written in the reader\'s editor, not a plain text box, and save as the card', async () => {
+    const saved: string[] = [];
+    await mount(createElement(Composer, { seed: 'what is it', form: 'qa', pri: 50, onSave: (t: string) => { saved.push(t); }, onClose: () => {} }));
+    expect(host.querySelector('.composer textarea, .composer .qa-fields input')).toBeNull();
+    const fields = Array.from(host.querySelectorAll<HTMLElement>('.composer .qa-fields .face-field'));
+    expect(fields.map((f) => f.getAttribute('data-placeholder'))).toEqual(['question', 'answer']);
+    expect(fields[0]!.textContent).toBe('what is it');
+    const v = faceViews.get(fields[1]!.closest('.face-host')!)!;
+    await act(async () => { v.dispatch(v.state.tr.insertText('this')); });
+    await click(host.querySelector<HTMLElement>('.ft .act')!);
+    expect(saved).toEqual(['what is it :: this']);
+  });
+
   it('save and cancel are buttons, reached by Tab after the faces, and a click on one acts', async () => {
     const said: string[] = [];
     await mount(createElement('div', null,

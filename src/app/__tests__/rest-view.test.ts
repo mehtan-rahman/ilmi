@@ -188,6 +188,19 @@ describe('a table in the page', () => {
     view.destroy();
   });
 
+  it('with words selected the menu formats them too: bold wraps the selection as the toolbar does', () => {
+    const view = mount('Before the rest.');
+    const p = view.dom.querySelector('p')!;
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 1, 7)));
+    expect(rightClick(view, p)).toBe(true);
+    const menu = popMenuOpen()!;
+    expect(Array.from(menu.querySelectorAll('.ci')).map((r) => r.getAttribute('data-act'))).toEqual(['cut', 'copy', 'paste', 'fmt-strong', 'fmt-em', 'fmt-code', 'fmt-strike', 'insert-table']);
+    menu.querySelector<HTMLElement>('[data-act="fmt-strong"]')!.click();
+    expect(written(view)).toBe('**Before** the rest.');
+    closePopMenu();
+    view.destroy();
+  });
+
   it('a right-click in the text offers cut, copy, paste and insert table, which goes after the block pressed on; a heading keeps its own menu', () => {
     const view = mount('## a heading\n\nBefore.\n\nAfter.');
     const p = Array.from(view.dom.querySelectorAll('p')).find((x) => x.textContent === 'Before.')!;

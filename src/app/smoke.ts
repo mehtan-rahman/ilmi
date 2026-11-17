@@ -15107,6 +15107,43 @@ export async function smokeBlanks(vault: Vault): Promise<void> {
     must(qa('.cloze.ctx', part).some((e) => e.textContent?.includes(A)), 'the rest shown around it, the other parts as context');
     await shot('blanks-ask-part');
     useApp.setState({ session: null });
+
+    // ── a question and its answer: the same editor, the same menu ──
+    {
+      openNode(NOTE);
+      const again = await poll(() => (surface() ? qa<HTMLElement>('p.dd-p', surface()).find((p) => p.textContent === LINE) : null), 'back in the note, the line still there', 10000);
+      await sleep(400);
+      surface().focus();
+      select(again, LINE);
+      await poll(() => q('.sel-cue'), 'selected again');
+      surface().dispatchEvent(new KeyboardEvent('keydown', { key: 'M', code: 'KeyM', metaKey: true, shiftKey: true, bubbles: true, cancelable: true }));
+      await poll(() => q('.composer'), 'the new card opens');
+      q<HTMLElement>('.composer .type-toggle [data-form="qa"]')!.click();
+      const sides = await poll(() => { const f = qa<HTMLElement>('.composer .qa-fields .face-field'); return f.length === 2 && f[0]!.dataset.placeholder === 'question' ? f : null; }, 'q&a: a question and an answer, each the reader\'s editor');
+      must(!q('.composer textarea') && !q('.composer .qa-fields input'), 'no plain text box');
+      const qv = faceViews.get(sides[0]!.closest('.face-host')!)!;
+      const av = faceViews.get(sides[1]!.closest('.face-host')!)!;
+      must(faceFieldText(qv.state.doc) === LINE, 'the question holds the selection');
+      { const c = getComputedStyle(sides[1]!, '::before').content; must(sides[1]!.dataset.placeholder === 'answer' && c !== 'none' && c !== '', `the empty answer says what it is (${c})`); }
+      av.dispatch(av.state.tr.insertText('the small paradigm'));
+      const at = LINE.indexOf(B);
+      qv.dispatch(qv.state.tr.setSelection(TextSelection.create(qv.state.doc, 1 + at, 1 + at + B.length)));
+      qv.focus();
+      const r = qv.coordsAtPos(qv.state.selection.from + 1);
+      sides[0]!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, clientX: r.left + 2, clientY: (r.top + r.bottom) / 2 }));
+      const m2 = await poll(() => q<HTMLElement>('.ctx-menu'), 'a right-click on a selection in the question opens the menu');
+      const acts2 = qa<HTMLElement>('[data-act]', m2).map((e) => e.dataset.act);
+      log(`the menu: ${acts2.join(' ')}`);
+      must(['cut', 'copy', 'paste', 'fmt-strong', 'fmt-em', 'fmt-code', 'fmt-strike', 'insert-table'].every((a) => acts2.includes(a)) && !acts2.includes('blank'), 'cut, copy, paste, the four formats and insert table, as in a note; no blank outside a cloze');
+      await shot('blanks-qa-menu');
+      q<HTMLElement>('[data-act="fmt-strong"]', m2)!.click();
+      await poll(() => faceFieldText(qv.state.doc).includes(`**${B}**`), 'bold on the menu makes the word bold');
+      await shot('blanks-qa');
+      const QA = `${faceFieldText(qv.state.doc)} :: the small paradigm`;
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', metaKey: true, bubbles: true, cancelable: true }));
+      await poll(() => !q('.composer'), 'saved');
+      await poll(async () => (await vault.fs.readText(vault.abs(NOTE))).includes(QA), 'the file holds the question and its answer on one line', 8000);
+    }
     log(`done; vault ${vault.root}`);
   } catch (e) {
     log(`failed: ${e instanceof Error ? e.message : String(e)}`);

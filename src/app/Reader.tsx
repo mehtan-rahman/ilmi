@@ -969,6 +969,11 @@ export function editorMenu(view: EditorView, e: MouseEvent, opts: { table?: bool
       void navigator.clipboard?.readText?.().then((text) => { if (text) view.pasteText(text); }, () => document.execCommand('paste'));
     } },
   ];
+  if (some) {
+    // what is selected, formatted: the toolbar's letters, by name
+    const fmt = (kind: InlineToggle) => () => { toggleInline(kind)(view.state, view.dispatch.bind(view)); view.focus(); };
+    items.push({ label: '-' }, { label: 'bold', act: 'fmt-strong', run: fmt('strong') }, { label: 'italic', act: 'fmt-em', run: fmt('em') }, { label: 'code', act: 'fmt-code', run: fmt('code') }, { label: 'strikethrough', act: 'fmt-strike', run: fmt('strike') });
+  }
   if (opts.table !== false) {
     // the table goes after the block pressed on
     if (hit !== null && sel.empty) view.dispatch(view.state.tr.setSelection(Selection.near(view.state.doc.resolve(hit))));

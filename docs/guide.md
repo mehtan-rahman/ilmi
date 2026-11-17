@@ -796,10 +796,40 @@ The tokens are kept in `oauth.json` in the app's own data folder, readable
 by your user alone; they are in no collection, export or storage, and not
 in the web view. They are not encrypted there.
 
+### Pairing a device
+
+A second device does not need the fields typed. On a device whose
+collection already syncs (by a remote or through a storage), the settings
+have `pair a device` beside the sync: it shows a QR code that holds what a
+new device needs, the remote and its token or the storage's kind and
+fields, and the collection's name. On the iPhone or the iPad, the first
+screen has `scan a code` beside `connect` and `join`: point the camera at
+the code, and the collection is made there from the remote or the storage,
+opened, and synced, as if the fields had been typed. `cancel` leaves the
+camera. If the camera is not allowed, the app says so and `connect` and
+`join` are as they were.
+
+The code holds the token (or the storage's secret or password), so treat it
+as you would the token: do not share or photograph it. It is drawn only
+while `pair a device` is open (`hide code`, or closing the settings, takes
+it away), and it is not written to disk, logged, or sent anywhere. For
+Dropbox and Google Drive the code carries the app's key and the folder but
+no sign-in: the other device is taken to the storage's fields, already
+filled, to press `sign in` and then `join`. A code for a folder on a Mac's
+disk is no use to a phone, which says so.
+
+Between two Macs there is no camera: `copy as text` under the code puts it
+on the clipboard, and on the other Mac, in the settings of a collection
+that does not sync yet (a new one will do), `pairing code` takes the paste
+and fills the rows; `clone…` or `join…` then makes the collection, or
+`connect` joins the open one to it. An iPhone's or an iPad's settings have
+`scan a code` in that row, filling the rows the same way.
+
 ### On an iPad
 
 The same app runs on an iPad, beside the Mac rather than instead of it. Its
-welcome has one button, `connect`: give it the remote and the token and the
+welcome has `connect` (and `join`, for a storage, and `scan a code`, above):
+give `connect` the remote and the token and the
 remote is cloned as a collection in the app's own data, as on the Mac (the
 Files app no longer shows it; the remote is its copy). The collections there
 are the rows under it. From there sync is the

@@ -16,7 +16,10 @@
 // On an iPad (milestone 55) there is no folder to pick or drop: the one
 // button is `connect`, which takes a remote and a token and clones it as
 // a collection (53's clone, imported), and the rows are the collections
-// there. c is the button.
+// there. c is the button. Beside it and `join`, `scan a code` (milestone
+// 84): the camera reads a pairing code off a device that already syncs the
+// collection (`pair.ts`, `scan.ts`), and the collection is made here from
+// the remote or the storage the code names, as if its fields had been typed.
 
 import type { DragDropEvent } from '@tauri-apps/api/webview';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
@@ -30,6 +33,8 @@ import { settingsOf } from './sync.js';
 import { collectionCounts, collectionHeld, listCollections } from '../vault/tauri-store.js';
 import { joinCollection } from './crdt.js';
 import { NO_STORAGE, signIn, signOut, storageName, storageOf, storageReady, type StorageSettings } from './storage.js';
+import { decodePairing, joinFromPairing, needsSignIn, storageOfPairing } from './pair.js';
+import { scanCode } from './scan.js';
 import { StorageFields } from './StorageFields.js';
 import { connectClone, forgetVault, importVault, importVaultFrom, listVaults, nameNewVault, newVault, openVault } from './vault.js';
 import { Glyph, Icon } from './icons.js';
@@ -69,6 +74,8 @@ export function Welcome() {
   const [remote, setRemote] = useState('');
   const [token, setToken] = useState('');
   const [cloning, setCloning] = useState(false);
+  // `scan a code`: a collection on its way from what the code named
+  const [pairing, setPairing] = useState(false);
   // a folder on its way in
   const [importing, setImporting] = useState(false);
   // a row's menu, at a point; the row whose name is a field; the row that asks before it is deleted; what a row was refused, said on it
@@ -154,6 +161,33 @@ export function Welcome() {
     signIn(storage).then((account) => setJoinStorage((was) => ({ ...was, account }))).catch(fail).finally(() => setSigning(false));
   };
   const signOutHere = () => { signOut(storage).then(() => setJoinStorage((was) => ({ ...was, account: '' }))).catch(fail); };
+  // `scan a code`: the camera's code read, and the collection it names made here and opened; a storage that is
+  // signed in to has its fields filled, and the sign-in and `join` are left to press
+  const scan = () => {
+    if (busy.current || pairing) return;
+    setProblem(null);
+    void scanCode().then(async (text) => {
+      if (text === null) return;
+      const p = decodePairing(text);
+      if (needsSignIn(p)) {
+        setJoinStorage(storageOfPairing(p));
+        setConnecting(false);
+        setJoining(true);
+        setProblem('sign in to finish, then join');
+        return;
+      }
+      busy.current = true;
+      setConnecting(false);
+      setJoining(false);
+      setPairing(true);
+      try {
+        await openVault(await joinFromPairing(p, mobile));
+      } finally {
+        busy.current = false;
+        setPairing(false);
+      }
+    }).catch(fail);
+  };
   const cancelConnect = () => {
     if (cloning) return;
     setConnecting(false);
@@ -298,6 +332,7 @@ export function Welcome() {
           <div className="welcome-acts">
             <button type="button" onClick={() => { setJoining(false); setConnecting(true); }}>connect</button>
             <button type="button" onClick={() => { setConnecting(false); setJoining(true); setProblem(null); }}>join</button>
+            <button type="button" data-act="scan" disabled={pairing} onClick={scan}>scan a code</button>
           </div>
         ) : (
           <div className="welcome-acts">
@@ -305,6 +340,9 @@ export function Welcome() {
             <button type="button" disabled={importing} onClick={() => bring(importVault)}>import folder</button>
             {!naming && <span className="welcome-problem">{importing ? 'importing…' : problem ?? ''}</span>}
           </div>
+        )}
+        {mobile && !connecting && !joining && (pairing || problem) && (
+          <div className="welcome-said">{pairing ? 'connecting…' : problem}</div>
         )}
         {mobile && connecting && (
           <div className="welcome-connect">

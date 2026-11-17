@@ -234,6 +234,10 @@
 // the Mac, milestone 56): three runs over one storage folder, as `touch` is:
 // the day's cards reviewed by the buttons, a quick card, a page clipped by an
 // `ilmi://new?url=` link, all three on the Mac. See `smokePhone`.
+// `ILMI_SMOKE=pair` (`smokePair` on the Mac, `smokePairDevice` on a simulated
+// iPhone or iPad, milestone 84): a collection's pairing code drawn and read
+// back off the screen, pasted into a second collection's settings, and on a
+// device handed to the welcome's `scan a code` in the camera's place.
 // `ILMI_SMOKE=ink` (`smokeInk` on an iPad, `smokeInkMac` on the Mac,
 // milestones 58, 69, 82), over a storage folder as `touch` is: the Mac puts
 // two pages of ink in a note, as a note from before 82 holds them; on the
@@ -10567,7 +10571,7 @@ export async function smokeIpad(): Promise<void> {
     await sleep(400);
     const buttons = qa('.welcome-acts button').map((b) => b.textContent);
     log(`welcome: buttons ${buttons.join(', ')}; foot "${q('.welcome .palette-foot')?.textContent}"; rows ${qa('.welcome-row .pt').map((r) => r.textContent).join(', ') || '(none)'}`);
-    must(buttons.join(', ') === 'connect, join', 'the welcome offers connect and join');
+    must(buttons.join(', ') === 'connect, join, scan a code', 'the welcome offers connect, join and scan a code');
     await shot('ipad-welcome');
 
     const name = nameFromRemote(remote);
@@ -16763,6 +16767,320 @@ export async function smokeCollections(vault: Vault): Promise<void> {
     must((await names()).includes(mine) && rowOf(mine), 'the collection that was open is untouched');
     await shot('collections-after');
     log(`done; vault ${vault.root}`);
+  } catch (e) {
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+// `ILMI_SMOKE=pair` (milestone 84): pairing a device by a code. No token in
+// it is real.
+//
+// On the Mac (`smokePair`, over a copy of the sample): the collection is
+// connected to the debug build's loopback bucket; `pair a device` beside the
+// storage's `off` draws a QR code, which is read back from the squares on the
+// screen by a QR reader (jsQR, a dev dependency: not the library that drew
+// it) as a phone would read it, and says the bucket's fields and the
+// collection's name; the code is in no storage of the web view's and not in
+// the store; `hide code` takes it away. Then a second collection, new and
+// empty: `pairing code` in its settings refuses what is not a code in plain
+// words, takes the code read off the screen, fills the storage's rows, and
+// `join…` makes a third collection from the storage, which syncs. Last the
+// git side: the empty collection is connected to a bare repository beside
+// the sample's copy, its `pair a device` is beside `sync`, the code read
+// back holds the remote and the token, and a collection is cloned from it.
+//
+// On a simulated iPhone or iPad (`smokePairDevice`, from its welcome, with
+// `"remote"` in smoke.json a bare repository on the Mac's disk): `scan a
+// code` is the welcome's third button; a simulator has no camera, so what
+// the camera would hand over is given through `setDevScan`: a camera
+// refused (the plain words, and `connect` still gives its fields), something
+// that is not a code, a scan cancelled, and then a code for the remote, from
+// which the collection is cloned, opened, and synced. Its own `pair a
+// device` then draws a code that reads back as the same remote and token.
+
+/** The squares a pairing code is drawn as, read off the page, and what a QR reader makes of them. */
+async function readDrawnCode(svg: SVGElement): Promise<string | null> {
+  const { default: jsQR } = await import('jsqr');
+  const side = Number(svg.getAttribute('viewBox')!.split(' ')[2]);
+  const scale = 4;
+  const px = side * scale;
+  const data = new Uint8ClampedArray(px * px * 4).fill(255);
+  for (const m of (svg.querySelector('path')?.getAttribute('d') ?? '').matchAll(/M(\d+) (\d+)h(\d+)v1h-\d+z/g)) {
+    for (let k = 0; k < Number(m[3]); k++) {
+      for (let y = 0; y < scale; y++) for (let x = 0; x < scale; x++) {
+        const i = ((Number(m[2]) * scale + y) * px + (Number(m[1]) + k) * scale + x) * 4;
+        data[i] = data[i + 1] = data[i + 2] = 0;
+      }
+    }
+  }
+  return jsQR(data, px, px)?.data ?? null;
+}
+
+export async function smokePair(vault: Vault): Promise<void> {
+  const log = (s: string) => void info(`smoke pair: ${s}`);
+  const shot = async (name: string, ms = 1500) => { await sleep(500); log(`shot: ${name}`); await sleep(ms); };
+  const q = <T extends Element>(sel: string, root: ParentNode = document) => root.querySelector<T>(sel);
+  const qa = <T extends Element>(sel: string, root: ParentNode = document) => Array.from(root.querySelectorAll<T>(sel));
+  const must = (ok: unknown, what: string) => { if (!ok) throw new Error(what); log(`ok: ${what}`); };
+  const poll = async <T,>(probe: () => T | null | undefined | false | Promise<T | null | undefined | false>, what: string, ms = 8000): Promise<T> => {
+    const t0 = Date.now();
+    for (;;) {
+      const v = await probe();
+      if (v) { log(`ok: ${what}`); return v; }
+      if (Date.now() - t0 > ms) throw new Error(`${what} (waited ${ms} ms)`);
+      await sleep(100);
+    }
+  };
+  const { devStorages, storageOf } = await import('./storage.js');
+  const { setCrdtTimers, setStorage } = await import('./crdt.js');
+  const { decodePairing, joinFromPairing, NOT_A_CODE, PAIR_PREFIX } = await import('./pair.js');
+  const { connect, initBare, saveSettings, settingsOf, setPullTimer, syncWord } = await import('./sync.js');
+  const { closeVault } = await import('./vault.js');
+  const { listCollections } = await import('../vault/tauri-store.js');
+  const setValue = (el: HTMLInputElement, v: string) => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(el, v); el.dispatchEvent(new Event('input', { bubbles: true })); };
+  const rowOf = (label: string) => qa<HTMLElement>('.tweaks .tw-row').find((r) => r.querySelector('.tw-lbl')?.firstChild?.textContent?.trim() === label);
+  const button = (text: string) => qa<HTMLButtonElement>('.tweaks button').find((b) => b.textContent === text);
+  const held = (text: string) => JSON.stringify(localStorage).includes(text) || JSON.stringify(sessionStorage).includes(text) || JSON.stringify(useApp.getState(), (_k, v: unknown) => (typeof v === 'function' ? undefined : v)).includes(text);
+  const stamp = new Date().toISOString().slice(11, 19).replace(/:/g, '');
+  const A = vault.root.split('/').pop()!;
+  const B = `pair-b-${stamp}`;
+  const TOKEN = 'made-up-token-for-the-smoke';
+  try {
+    useApp.getState().setTheme('light');
+    setCrdtTimers(false);
+    await poll(() => useApp.getState().files.length === 66, 'the sample is in the collection', 15000);
+
+    // ── a collection that does not sync: nothing to pair from, and a field that takes a code ──
+    useApp.setState({ tweaksOpen: true });
+    await poll(() => rowOf('storage'), 'the settings are open');
+    must(!button('pair a device') && !q('.tweaks .pair-qr'), 'a collection that does not sync offers no code');
+    const field0 = rowOf('pairing code')?.querySelector<HTMLInputElement>('input');
+    must(field0 && field0.type === 'password' && !button('scan a code'), 'it has a pairing code field instead, not shown as typed, and no camera on a mac');
+
+    // ── connected to the loopback bucket ──
+    const s3 = (await devStorages()).s3;
+    setStorage({ kind: 's3', endpoint: s3.endpoint, bucket: s3.bucket, key: s3.key, secret: s3.secret });
+    await sleep(200);
+    (await poll(() => qa<HTMLButtonElement>('.tweaks button').find((x) => x.textContent === 'connect' && !x.disabled && x.closest('.tw-row')?.querySelector('.tw-lbl') === null), 'the storage\'s connect is ready')).click();
+    await poll(() => useApp.getState().storage.on && syncWord(useApp.getState().sync) === 'synced', 'the collection syncs through the bucket', 30000);
+    must(!rowOf('pairing code'), 'the pairing code field is gone: this collection is the one to pair from');
+
+    // ── pair a device: the code drawn, and read back as a phone would read it ──
+    const pairButton = await poll(() => button('pair a device'), 'pair a device is beside the storage\'s off');
+    must(pairButton.parentElement && qa('button', pairButton.parentElement).some((b) => b.textContent === 'off'), 'in the same row');
+    pairButton.click();
+    const svg = await poll(() => q<SVGElement>('.tweaks .pair-qr'), 'a code is drawn');
+    const text = await readDrawnCode(svg);
+    must(text !== null && text.startsWith(PAIR_PREFIX), 'a qr reader reads it off the squares on the screen');
+    const p = decodePairing(text!);
+    must(p.kind === 's3' && p.name === A && JSON.stringify(p.kind === 's3' && p.fields) === JSON.stringify({ endpoint: s3.endpoint, bucket: s3.bucket, key: s3.key, secret: s3.secret }), `it holds the bucket's four fields and the collection's name (${p.name})`);
+    const box = svg.getBoundingClientRect();
+    const pane = q('.tweaks')!.getBoundingClientRect();
+    must(Math.abs(box.width - box.height) < 1 && box.width >= 180 && box.left >= pane.left && box.right <= pane.right, `square, ${Math.round(box.width)} px a side, inside the settings`);
+    must(getComputedStyle(svg).backgroundColor === 'rgb(255, 255, 255)' && svg.querySelector('rect')?.getAttribute('fill') === '#fff' && svg.querySelector('path')?.getAttribute('fill') === '#000', 'black on white');
+    const line = q('.tweaks .pair-line')?.textContent ?? '';
+    log(`the line: ${line}`);
+    must(line === line.toLowerCase() && /scan this with ilmi on the other device/.test(line) && /holds the secret, so do not share or photograph it/.test(line), 'one line: scan it with ilmi on the other device; it holds the secret, not to be shared or photographed');
+    must(button('hide code') && button('copy as text'), 'the button now hides it, and a mac can copy it as text');
+    must(!q('.tweaks')!.innerHTML.includes(text!) && !held(text!), 'the code\'s text is nowhere on the page, in the store, or in the web view\'s storage');
+    svg.scrollIntoView({ block: 'center' });
+    await shot('pair-code');
+    useApp.getState().setTheme('dark');
+    await sleep(300);
+    must(getComputedStyle(svg).backgroundColor === 'rgb(255, 255, 255)' && (await readDrawnCode(q<SVGElement>('.tweaks .pair-qr')!)) === text, 'in dark it is still black on white, the same code');
+    await shot('pair-code-dark');
+    useApp.getState().setTheme('light');
+    button('hide code')!.click();
+    await poll(() => !q('.tweaks .pair-qr') && button('pair a device'), 'hide code: it is gone');
+    button('pair a device')!.click();
+    await poll(() => q('.tweaks .pair-qr'), 'shown again');
+    useApp.setState({ tweaksOpen: false });
+    await sleep(200);
+    useApp.setState({ tweaksOpen: true });
+    await poll(() => rowOf('storage') && !q('.tweaks .pair-qr'), 'the settings closed and opened: the code is not there until asked for');
+
+    // ── a second collection, new and empty: the code pasted into its settings ──
+    useApp.setState({ tweaksOpen: false });
+    closeVault();
+    await poll(() => q('.welcome'), 'the collection closed');
+    must(!qa('.welcome-acts button').some((b) => b.textContent === 'scan a code'), 'a mac\'s welcome has no scan a code');
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', bubbles: true, cancelable: true }));
+    const nameField = await poll(() => q<HTMLInputElement>('.welcome-name input'), 'a new collection is named');
+    setValue(nameField, B);
+    nameField.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    const rootB = await poll(() => ((useApp.getState().vault ?? '').endsWith(`/${B}`) && useApp.getState().files.length > 0 ? useApp.getState().vault : null), `${B} is made and opens`, 30000);
+    useApp.setState({ tweaksOpen: true });
+    const field = await poll(() => rowOf('pairing code')?.querySelector<HTMLInputElement>('input'), 'its settings have the pairing code field');
+    setValue(field, 'https://example.invalid/not-a-code');
+    field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    await poll(() => q('.notice')?.textContent?.includes(NOT_A_CODE), `what is not a code is refused in plain words (${NOT_A_CODE})`);
+    must(storageOf(rootB).endpoint === '' && field.value === '', 'nothing is filled, and the field is empty again');
+    setValue(field, text!);
+    await poll(() => storageOf(rootB).kind === 's3' && storageOf(rootB).secret === s3.secret && storageOf(rootB).endpoint === s3.endpoint && storageOf(rootB).bucket === s3.bucket && storageOf(rootB).key === s3.key, 'the code pasted: the storage\'s kind and fields are filled as if typed');
+    must(!storageOf(rootB).on && !useApp.getState().storage.on, 'nothing is connected yet');
+    must(rowOf('pairing code')?.querySelector<HTMLInputElement>('input')?.value === '', 'the field does not keep the code');
+    await poll(() => /code read · connect, or join… for a new collection/.test(q('.notice')?.textContent ?? ''), 'and the notice says which buttons are next');
+    must(rowOf('storage')?.querySelector('button[data-active="1"]')?.textContent === 's3' && rowOf('endpoint')?.querySelector<HTMLInputElement>('input')?.value === s3.endpoint && rowOf('secret')?.querySelector<HTMLInputElement>('input')?.type === 'password', 'the rows show them, the secret hidden');
+    must(!held(text!), 'the code itself is kept nowhere');
+    rowOf('endpoint')?.scrollIntoView({ block: 'center' });
+    await shot('pair-pasted');
+    const before = (await listCollections()).names;
+    button('join…')!.click();
+    const rootC = await poll(() => { const v = useApp.getState().vault; return v && v !== rootB && v !== vault.root && useApp.getState().files.length === 66 ? v : null; }, 'join…: a collection made from the storage opens, the sample in it', 60000);
+    const C = rootC.split('/').pop()!;
+    // as `join…` names one from typed fields: for the storage (the bucket), since the rows hold the code's fields and not its name
+    must(!before.includes(C) && C !== A && C !== B, `a collection of its own, named for the storage as join… names one (${C})`);
+    await poll(() => useApp.getState().storage.on && syncWord(useApp.getState().sync) === 'synced', 'and it syncs', 30000);
+    useApp.setState({ tweaksOpen: true });
+    await poll(() => button('pair a device'), 'it can pair a further device itself');
+    await shot('pair-joined');
+    useApp.setState({ tweaksOpen: false });
+
+    // ── by git: a remote and a token in the code ──
+    closeVault();
+    await poll(() => q('.welcome'), 'closed');
+    const vb = await openVault(rootB);
+    setPullTimer(false);
+    const bare = `${(await sourceDir()).replace(/\/+$/, '')}-pair.git`;
+    await initBare(bare);
+    // no nudge: a smoke reaches nothing outside the machine
+    saveSettings(rootB, { ...settingsOf(rootB), server: '' });
+    await connect(bare, TOKEN);
+    await poll(() => useApp.getState().sync.on && syncWord(useApp.getState().sync) === 'synced', 'the empty collection is connected to a bare repository', 30000);
+    useApp.setState({ tweaksOpen: true });
+    const syncRow = await poll(() => rowOf('sync'), 'the settings\' sync row');
+    const gitPair = await poll(() => qa<HTMLButtonElement>('button', syncRow).find((b) => b.textContent === 'pair a device'), 'pair a device is on the sync row');
+    gitPair.click();
+    const svg2 = await poll(() => q<SVGElement>('.tweaks .pair-qr'), 'its code is drawn');
+    const text2 = await readDrawnCode(svg2);
+    const g = decodePairing(text2 ?? '');
+    must(g.kind === 'git' && g.url === bare && g.token === TOKEN && g.nudge === '' && g.name === B, 'read back: the remote, the token, the nudge and the name');
+    must(/holds the access token, so do not share or photograph it/.test(q('.tweaks .pair-line')?.textContent ?? ''), 'its line names the access token');
+    svg2.scrollIntoView({ block: 'center' });
+    await shot('pair-code-git');
+    useApp.setState({ tweaksOpen: false });
+    closeVault();
+    await poll(() => q('.welcome'), 'closed');
+    const rootD = await joinFromPairing(g, false);
+    const vd = await openVault(rootD);
+    must(rootD !== rootB && rootD.split('/').pop()!.startsWith(B) && vd.documents().length === vb.documents().length, `a collection cloned from the code (${rootD.split('/').pop()}): what the remote holds`);
+    must(settingsOf(rootD).url === bare && settingsOf(rootD).token === TOKEN && settingsOf(rootD).server === '', 'its settings are the code\'s');
+    await poll(() => useApp.getState().sync.on, 'and it is a repository with its remote');
+    log(`made: ${[A, B, C, rootD.split('/').pop()].join(', ')}; bare ${bare}`);
+    log(`done; vault ${vault.root}`);
+  } catch (e) {
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+export async function smokePairDevice(): Promise<void> {
+  const log = (s: string) => void info(`smoke pair: ${s}`);
+  const shot = async (name: string, ms = 1500) => { await sleep(600); log(`shot: ${name}`); await sleep(ms); };
+  const q = <T extends Element>(sel: string, root: ParentNode = document) => root.querySelector<T>(sel);
+  const qa = <T extends Element>(sel: string, root: ParentNode = document) => Array.from(root.querySelectorAll<T>(sel));
+  const must = (ok: unknown, what: string) => { if (!ok) throw new Error(what); log(`ok: ${what}`); };
+  const poll = async <T,>(probe: () => T | null | undefined | false | Promise<T | null | undefined | false>, what: string, ms = 8000): Promise<T> => {
+    const t0 = Date.now();
+    for (;;) {
+      const v = await probe();
+      if (v) { log(`ok: ${what}`); return v; }
+      if (Date.now() - t0 > ms) throw new Error(`${what} (waited ${ms} ms)`);
+      await sleep(100);
+    }
+  };
+  try {
+    const { isMobile, collectionsHome } = await import('./platform.js');
+    const { BROKEN_CODE, NOT_A_CODE, decodePairing, encodePairing } = await import('./pair.js');
+    const { CAMERA_OFF, setDevScan } = await import('./scan.js');
+    const { settingsOf, setPullTimer } = await import('./sync.js');
+    const { deleteCollection, listCollections } = await import('../vault/tauri-store.js');
+    const remote = await invoke<string | null>('dev_env', { name: 'ILMI_REMOTE' });
+    if (!remote) throw new Error('ILMI_REMOTE (smoke.json: "remote") names a bare repository to pair with');
+    must(isMobile() && useApp.getState().mobile, 'the app knows it is on a device');
+    const NAME = 'paired';
+    const TOKEN = 'made-up-token-for-the-smoke';
+    // a run before this one may have left its collection
+    const { home, names } = await listCollections();
+    for (const n of names) if (n === NAME || n.startsWith(`${NAME} `)) await deleteCollection(`${home}/${n}`);
+    useApp.getState().setReopen(false);
+    useApp.getState().setTheme('light');
+    await startFromRecents();
+    await poll(() => q('.welcome'), 'the welcome');
+    await sleep(400);
+
+    // ── the welcome's third button ──
+    const acts = () => qa<HTMLButtonElement>('.welcome-acts button');
+    must(acts().map((b) => b.textContent).join(', ') === 'connect, join, scan a code', 'the welcome offers connect, join and scan a code');
+    const r = acts().map((b) => b.getBoundingClientRect());
+    must(r.every((x) => x.left >= 0 && x.right <= window.innerWidth && Math.abs(x.top - r[0]!.top) < 1), `the three on one line, inside the screen (${r.map((x) => `${Math.round(x.left)}–${Math.round(x.right)}`).join(' ')} of ${window.innerWidth})`);
+    must(!qa('.welcome kbd').some((k) => (k as HTMLElement).offsetParent !== null && useApp.getState().phone), 'no key is named on a phone');
+    await shot('pair-welcome');
+    const scan = () => acts().find((b) => b.textContent === 'scan a code')!;
+    const said = () => q('.welcome-said')?.textContent ?? '';
+
+    // ── the camera refused: plain words, and the fields are still there ──
+    setDevScan(async () => { throw new Error(CAMERA_OFF); });
+    scan().click();
+    await poll(() => said() === CAMERA_OFF, `a camera refused is said plainly (${CAMERA_OFF})`);
+    must(said() === said().toLowerCase(), 'in lowercase');
+    const box = q('.welcome-said')!.getBoundingClientRect();
+    must(box.left >= 0 && box.right <= window.innerWidth && q('.welcome-said')!.scrollWidth <= q('.welcome-said')!.clientWidth + 1, 'on a line of its own that fits the screen');
+    await shot('pair-denied');
+    acts()[0]!.click();
+    await poll(() => qa('.welcome-connect input').length === 2, 'connect still gives its two fields');
+    must(!q('.welcome-said'), 'and the line gives way to them');
+
+    // ── not a code; a code with a piece missing; a scan cancelled ──
+    setDevScan(async () => 'https://example.invalid/a-link-on-a-poster');
+    scan().click();
+    await poll(() => q('.welcome-problem')?.textContent === NOT_A_CODE || said() === NOT_A_CODE, `something else scanned is refused (${NOT_A_CODE})`);
+    setDevScan(async () => `ilmi-pair:${btoa(JSON.stringify({ v: 1, kind: 'git', name: 'x', token: TOKEN })).replace(/=+$/, '')}`);
+    scan().click();
+    await poll(() => q('.welcome-problem')?.textContent === BROKEN_CODE || said() === BROKEN_CODE, `a code with no remote is refused (${BROKEN_CODE})`);
+    must(!document.body.textContent!.includes(TOKEN), 'and what it held is not repeated');
+    setDevScan(async () => null);
+    scan().click();
+    await sleep(600);
+    must(useApp.getState().vault === null && q('.welcome'), 'a scan cancelled changes nothing');
+
+    // ── a code for the remote: the collection made, opened, synced ──
+    const code = encodePairing({ kind: 'git', name: NAME, url: remote, token: TOKEN, nudge: '' });
+    setDevScan(async () => code);
+    scan().click();
+    try {
+      await until(() => (useApp.getState().vault !== null ? true : null), 90000);
+    } catch { /* said below */ }
+    must(useApp.getState().vault !== null, `the code scanned: the collection opens${useApp.getState().vault === null ? ` (the welcome says "${said() || q('.welcome-problem')?.textContent || ''}")` : ''}`);
+    setDevScan(null);
+    setPullTimer(false);
+    const vault = currentVault()!;
+    must(vault.root === `${collectionsHome()}/${NAME}`, `named as the code says (${NAME})`);
+    await poll(() => vault.documents().length === 66 && useApp.getState().queue.length > 0, 'the sample is in it: 66 documents', 30000);
+    must(settingsOf(vault.root).url === remote && settingsOf(vault.root).token === TOKEN && settingsOf(vault.root).server === '', 'its remote, token and nudge are the code\'s, as if typed');
+    await poll(() => useApp.getState().sync.on, 'it is a repository with its remote, and syncs', 20000);
+    must(!JSON.stringify(localStorage).includes(code) && !JSON.stringify(sessionStorage).includes(code), 'the code itself is kept nowhere');
+    await sleep(800);
+    await shot('pair-opened');
+
+    // ── and it can pair a further device ──
+    useApp.setState({ tweaksOpen: true });
+    const rowOf = (label: string) => qa<HTMLElement>('.tweaks .tw-row').find((x) => x.querySelector('.tw-lbl')?.firstChild?.textContent?.trim() === label);
+    const syncRow = await poll(() => rowOf('sync'), 'the settings\' sync row');
+    must(!rowOf('pairing code'), 'a collection that syncs has no pairing code row');
+    const pairButton = await poll(() => qa<HTMLButtonElement>('button', syncRow).find((b) => b.textContent === 'pair a device'), 'pair a device is on it');
+    pairButton.click();
+    const svg = await poll(() => q<SVGElement>('.tweaks .pair-qr'), 'its code is drawn');
+    const back = decodePairing((await readDrawnCode(svg)) ?? '');
+    must(back.kind === 'git' && back.url === remote && back.token === TOKEN && back.name === NAME, 'read back off the squares: the same remote and token');
+    svg.scrollIntoView({ block: 'center' });
+    await sleep(400);
+    const sb = svg.getBoundingClientRect();
+    const pane = q('.tweaks')!.getBoundingClientRect();
+    must(Math.abs(sb.width - sb.height) < 1 && sb.left >= pane.left && sb.right <= pane.right && sb.right <= window.innerWidth, `square and inside the settings (${Math.round(sb.width)} px)`);
+    must(!qa('.tweaks button').some((b) => b.textContent === 'copy as text'), 'no copy as text on a device');
+    await shot('pair-code-device');
+    useApp.setState({ tweaksOpen: false });
+    log(`done; collection ${vault.root}`);
   } catch (e) {
     log(`failed: ${e instanceof Error ? e.message : String(e)}`);
   }

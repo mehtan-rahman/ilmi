@@ -75,6 +75,8 @@
 .welcome-acts button:hover { border-color: var(--fg-4); color: var(--fg-1); }
 /* a folder on its way in, or why it did not come: the name field's problem line, beside the buttons */
 .welcome-acts .welcome-problem { align-self: center; margin-left: 4px; color: var(--fg-4); font-family: var(--sans); font-size: var(--t-xs); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* on an iPad or a phone: what `scan a code` is doing, or why it did not, on a line of its own under the buttons */
+.welcome-said { padding: 8px 14px; border-bottom: 1px solid var(--line-2); color: var(--fg-3); font-family: var(--sans); font-size: var(--t-xs); line-height: 1.4; }
 .welcome-name {
   display: flex;
   align-items: center;
@@ -1342,3 +1344,13 @@ textarea[dir="auto"] { unicode-bidi: plaintext; }
 .reader h1.doc-title { outline: none; border-radius: var(--radius); cursor: text; }
 .reader h1.doc-title:hover { box-shadow: 0 0 0 4px var(--line-2); background: var(--line-2); }
 .reader h1.doc-title:focus { box-shadow: 0 0 0 4px color-mix(in oklab, var(--accent) 14%, transparent); background: color-mix(in oklab, var(--accent) 14%, transparent); }
+
+/* `scan a code` (`scan.ts`): the camera lies behind the page, so the page is see-through and the app hidden while it runs;
+   what is on the glass is a square to aim with, one line, and `cancel` */
+html[data-scanning], html[data-scanning] body { background: transparent !important; }
+html[data-scanning] #root { visibility: hidden; }
+.scan { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; font-family: var(--sans); }
+.scan-frame { width: min(64vw, 280px); aspect-ratio: 1; border: 2px solid #fff; border-radius: 12px; box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.45); }
+.scan-foot { position: absolute; left: 16px; right: 16px; bottom: calc(28px + env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; align-items: center; gap: 14px; }
+.scan-line { color: #fff; font-size: 14px; text-align: center; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6); }
+.scan-cancel { font: inherit; font-size: 15px; min-height: 44px; padding: 0 24px; color: #fff; background: rgba(0, 0, 0, 0.55); border: 1px solid rgba(255, 255, 255, 0.5); border-radius: var(--radius); }

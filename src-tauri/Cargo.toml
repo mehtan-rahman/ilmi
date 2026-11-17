@@ -54,6 +54,10 @@ git2 = { version = "0.20", default-features = false, features = ["https", "vendo
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 
+# `scan a code` (milestone 84): the camera of an iPhone or an iPad reading a pairing code; the plugin is mobile's alone
+[target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
+tauri-plugin-barcode-scanner = "2"
+
 # Paste and Match Style: the menu item sends the WKWebView `pasteAsPlainText:` (lib.rs)
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"

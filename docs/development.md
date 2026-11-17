@@ -441,6 +441,33 @@ a rerun. A dev build keeps its whole log in one file (`max_file_size` in
 `lib.rs`): the rig counts the asks in it, and the plugin's own 40 kB limit
 dropped the file in the middle of a long run.
 
+Pairing by a code (milestone 84) is `src/app/pair.ts` (the code's text,
+`ilmi-pair:` and a base64url JSON object with `v: 1`; what a collection's
+code holds; the squares, from `qrcode-generator`; `joinFromPairing` for a
+welcome and `fillFromPairing` for the settings), `PairRows.tsx` (the
+settings' `pair a device`, the code drawn as one SVG path, and `pairing
+code`), and `scan.ts` (the camera, the barcode-scanner plugin's, which is
+in the build for iOS alone: `capabilities/mobile.json`, the `cfg(mobile)`
+line in `lib.rs`, `NSCameraUsageDescription` in `Info.ios.plist`). The
+camera is shown behind the web view (`windowed`), so while a scan runs the
+page is see-through and the app hidden (`data-scanning`), leaving a frame,
+a line and `cancel`. Nothing there logs, and the code is held only in the
+component that draws it. `ILMI_SMOKE=pair` on the Mac, over a copy of the
+sample: the collection connected to the debug build's loopback bucket,
+`pair a device`, the code read back off the squares on the screen by jsQR
+(a dev dependency, not the library that drew it), the text nowhere in the
+store or the web view's storage, then a new collection whose `pairing code`
+refuses what is not a code, takes the code, and `join…`s; then the same by
+a remote, over a bare repository the smoke makes beside the sample's copy.
+It makes three collections more (`pair-b-<time>`, one named for the bucket,
+`pair-b-<time> 2`): delete them with the sample's. On a simulated iPhone or
+iPad, `{"mode": "pair", "remote": "<a bare repository on the Mac's disk>"}`
+starts at the welcome and needs no touch rig: a simulator has no camera, so
+`setDevScan` (a dev build's) hands over what the camera would have read: a
+camera refused, something that is not a code, a scan cancelled, then a code
+for the remote, from which the collection is cloned and opened; its own
+`pair a device` is then read back. No token in either is real.
+
 Haptics (milestone 83) are `src/app/haptics.ts`: named calls (`hapticReveal`,
 `hapticGrade`, `hapticFinished`, `hapticTick`) made from the session and the
 few places a tick belongs, each a name handed to `app_haptic`, which on iOS
@@ -534,7 +561,7 @@ src/plugins/       the plugin runtime (api.ts is the typed handle, runtime.ts th
 src/sync/          engine.ts merges a collection's changes by CRDT (registers by a clock, a document's text through Loro, the tree and each directory's order from the registers, change files and snapshots in a storage, the PDFs fetched when asked for; src/app/crdt.ts runs it, src/app/storage.ts makes the storages); merge.ts is git sync's merge of one file changed on both devices, src/app/sync.ts its policy over the Rust commands
 plugins/           the plugins the repo ships, built by `npm run plugins`; ilmi.d.ts is the API; see PLUGINS.md
 scripts/           command-line tools, run with tsx
-src-tauri/         the shell (Tauri v2, fs + dialog + http + deep-link + single-instance + opener + log plugins, and ink/, its own: the PencilKit canvases on iOS and a drawing read as strokes; store.rs is a collection's SQLite and blobs, storage.rs an S3 bucket or a WebDAV folder as a storage (and a blob sent or fetched as a stream), cloud.rs Dropbox and Google Drive as storages, oauth.rs the sign-in to them and its tokens, devstore.rs and devcloud.rs the debug build's loopback servers shaped like each, anki.rs reads a package, epub.rs a book, plugin.rs a plugin zip, sync.rs a folder as a git repository over libgit2); gen/apple is the iOS project
+src-tauri/         the shell (Tauri v2, fs + dialog + http + deep-link + single-instance + opener + log plugins, barcode-scanner on iOS, and ink/, its own: the PencilKit canvases on iOS and a drawing read as strokes; store.rs is a collection's SQLite and blobs, storage.rs an S3 bucket or a WebDAV folder as a storage (and a blob sent or fetched as a stream), cloud.rs Dropbox and Google Drive as storages, oauth.rs the sign-in to them and its tokens, devstore.rs and devcloud.rs the debug build's loopback servers shaped like each, anki.rs reads a package, epub.rs a book, plugin.rs a plugin zip, sync.rs a folder as a git repository over libgit2); gen/apple is the iOS project
 ```
 
 ## The documents

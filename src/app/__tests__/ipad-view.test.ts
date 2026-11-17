@@ -145,9 +145,9 @@ describe("joining a storage from the welcome (milestone 71)", () => {
 });
 
 describe("the iPad's welcome", () => {
-  it('offers connect and join, and lists the collections by name', async () => {
+  it('offers connect, join and scan a code, and lists the collections by name', async () => {
     await draw(createElement(Welcome));
-    expect(qa('.welcome-acts button').map((b) => b.textContent)).toEqual(['connect', 'join']);
+    expect(qa('.welcome-acts button').map((b) => b.textContent)).toEqual(['connect', 'join', 'scan a code']);
     expect(q('.palette-foot')?.textContent).toContain('connect');
     expect(q('.palette-foot')?.textContent).not.toContain('new collection');
     const rows = qa('.welcome-row');

@@ -9446,6 +9446,56 @@ setting off and on by taps.
 and the reveal, both light, want telling apart; nothing is felt for a
 stroke, a tool chosen, a tab, or a card saved.
 
+### [x] 84. Pairing a device by a code
+Asked by the user, 2026-11-17, of typing a remote and a token on the phone:
+"I wish there was a more seamless way to set this up", "QR code seems
+nice".
+Notes: **The code** (`src/app/pair.ts`) is a line of text, `ilmi-pair:` and
+a JSON object in base64url: `v: 1`, `kind`, `name` (the collection's, for
+the new one), and that kind's fields: `git` has `url`, `token` and `nudge`
+when it is not the usual server; a storage has its own (`endpoint`,
+`bucket`, `key`, `secret`; `address`, `user`, `password`; `appKey`,
+`place`; `clientId`, `clientSecret`, `place`; `folder`; `place`). No
+sign-in, nothing of what a device keeps. Anything else is refused: `not an
+ilmi pairing code`, `this code was made by a newer ilmi …`, `the pairing
+code is incomplete …`; no error repeats what it was given. **Shown**
+(`PairRows.tsx`): `pair a device` beside `sync` when the collection syncs
+by a remote, beside the storage's `off` when through a storage; the code is
+made when the panel opens, drawn as black squares on white in every theme
+(one SVG path, `qrcode-generator`, medium correction), with one line under
+it (what to do, and that it holds the token, secret or password and is not
+to be shared or photographed) and, on a Mac, `copy as text`. It is in the
+component's memo and nowhere else: not the store, not the web view's
+storage, no log; `hide code` or closing the settings ends it. **Read.** An
+iPhone's or an iPad's welcome has `scan a code` beside `connect` and
+`join` (`scan.ts`, `tauri-plugin-barcode-scanner`, QR alone, the camera
+behind a see-through page with a frame, a line and `cancel`): the
+collection is cloned or joined under the code's name and opened
+(`joinFromPairing`), which is what the typed fields do. A camera refused is
+said in a line under the buttons, which stay. Dropbox and Google Drive
+open `join` with the fields filled and say `sign in to finish, then join`.
+In the settings of a collection that does not sync, `pairing code` is
+`scan a code` on a device and a field to paste into on a Mac
+(`fillFromPairing`): the rows are filled and `connect`, `clone…` or `join…`
+is still pressed, since joining the open collection to a remote is not
+something a scan should do unasked. **Decided:** the settings fill and do
+not connect; a Mac's welcome is unchanged (a new Mac makes a collection and
+pastes in its settings); `copy as text` exists because two Macs have no
+camera between them, and is the one way the text leaves the panel, by the
+user's own press; a collection joined from the settings is named for the
+storage, as `join…` always named it, and from a welcome for the code's
+name; a folder's code is refused on a phone outside a dev run.
+**Checks:** `pair.test.ts` (there and back for every kind, the refusals,
+the squares read back by jsQR from the matrix and from the drawn path,
+what a collection's code holds, nothing logged or kept, the welcome's
+three outcomes); `ILMI_SMOKE=pair` on the Mac and on a simulated iPhone
+(docs/development.md).
+**Not done, and a device's to judge:** the camera itself: no simulator has
+one, so the scan, the permission prompt, the see-through page over the
+camera's picture, and whether a phone reads the code off a Mac's screen at
+the size it is drawn were never seen. Android is named in the capability
+and nothing more. A Mac's welcome takes no code.
+
 ## Notes for the next session
 
 Studying (42–46) is complete, 2026-10-31: every milestone's window check

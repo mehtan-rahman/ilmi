@@ -55,5 +55,7 @@
 			<string>$(PRODUCT_BUNDLE_IDENTIFIER).ilmi</string>
 		</dict>
 	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>ilmi uses the camera to scan a pairing code shown by ilmi on another device.</string>
 </dict>
 </plist>

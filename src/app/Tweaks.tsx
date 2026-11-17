@@ -9,6 +9,9 @@
 // folder are the open vault's, in its `.ilmi/state.json`. Under the sync
 // rows, the storage the collection syncs through (a folder, an S3 bucket, a
 // WebDAV folder) and what this device keeps of its files (milestone 63).
+// Beside a sync that is on, `pair a device` shows the code a new device
+// joins by, and where nothing syncs yet `pairing code` takes one (milestone
+// 84; `PairRows.tsx`).
 
 import { useEffect, useState } from 'react';
 import { PluginsSection } from '../plugins/PluginsSection.js';
@@ -24,6 +27,7 @@ import { keepOf, storageReady } from './storage.js';
 import { open as pickDirectory } from '@tauri-apps/plugin-dialog';
 import { currentVault, openVault, setBudget, setClipDir } from './vault.js';
 import { Glyph } from './icons.js';
+import { PairButton, PairCode, PairField } from './PairRows.js';
 
 const THEME_LABEL: Record<Theme, string> = { light: 'light', dark: 'dark', eink: 'e-ink' };
 
@@ -99,6 +103,9 @@ function SyncRows() {
   useEffect(() => { setTyped({}); }, [settings]);
   const url = typed.url ?? settings.url;
   const token = typed.token ?? settings.token;
+  // `pair a device`: the code is there only while this is open
+  const [pairing, setPairing] = useState(false);
+  const pairs = sync.on && !stored && settings.url.trim() !== '';
   const doConnect = () => {
     setBusy(true);
     connect(url, token).catch(fail('connect')).finally(() => setBusy(false));
@@ -125,7 +132,13 @@ function SyncRows() {
             {!mobile && <button type="button" disabled={busy || !url.trim()} onClick={() => void doClone()}>clone…</button>}
           </div>
         )}
+        {pairs && (
+          <div className="tw-seg">
+            <PairButton open={pairing} onToggle={() => setPairing((on) => !on)} />
+          </div>
+        )}
       </div>
+      {pairs && pairing && <PairCode />}
       <div className="tw-row">
         <span className="tw-lbl">remote</span>
         <TextField value={settings.url} onType={(v) => setTyped((t) => ({ ...t, url: v }))} onCommit={(v) => void setRemote(v, token).catch(fail('remote'))} />
@@ -164,6 +177,7 @@ function StorageRows() {
   useEffect(() => { setTyped({}); }, [st]);
   const ready = storageReady({ ...st, ...typed });
   const keepTyped = () => { if (Object.keys(typed).length) setStorage(typed); };
+  const [pairing, setPairing] = useState(false);
   const locked = st.on || busy;
   const doConnect = () => {
     setBusy(true);
@@ -199,7 +213,12 @@ function StorageRows() {
       <div className="tw-row">
         <div className="tw-seg">
           {st.on
-            ? <button type="button" disabled={busy} onClick={() => { setBusy(true); storageOff().catch(fail('storage')).finally(() => setBusy(false)); }}>off</button>
+            ? (
+              <>
+                <button type="button" disabled={busy} onClick={() => { setBusy(true); setPairing(false); storageOff().catch(fail('storage')).finally(() => setBusy(false)); }}>off</button>
+                <PairButton open={pairing} onToggle={() => setPairing((on) => !on)} />
+              </>
+            )
             : (
               <>
                 <button type="button" disabled={busy || !ready} onClick={doConnect}>connect</button>
@@ -208,6 +227,7 @@ function StorageRows() {
             )}
         </div>
       </div>
+      {st.on && pairing && <PairCode />}
       <div className="tw-row">
         <span className="tw-lbl">keep files</span>
         <div className="tw-seg">
@@ -262,6 +282,8 @@ export function Tweaks() {
   const budget = useApp((s) => s.budget);
   const clipDir = useApp((s) => s.clipDir);
   const mobile = useApp((s) => s.mobile);
+  // a collection that syncs, by git or through a storage, is one to pair from; one that does not takes a code
+  const syncs = useApp((s) => s.sync.on || s.storage.on);
   const close = () => useApp.setState({ tweaksOpen: false });
 
   useEffect(() => {
@@ -391,6 +413,7 @@ export function Tweaks() {
         </div>
       )}
       {vault !== null && !mobile && <MirrorRow />}
+      {vault !== null && !syncs && <PairField />}
       {vault !== null && <SyncRows />}
       {vault !== null && <StorageRows />}
       {vault !== null && <PluginsSection />}

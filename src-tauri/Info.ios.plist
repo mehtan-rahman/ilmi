@@ -7,5 +7,8 @@
 	<true/>
 	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<true/>
+	<!-- `scan a code` reads a pairing code off another device's screen (milestone 84) -->
+	<key>NSCameraUsageDescription</key>
+	<string>ilmi uses the camera to scan a pairing code shown by ilmi on another device.</string>
 </dict>
 </plist>

@@ -1125,6 +1125,9 @@ pub fn run() {
         }
         let _ = app.emit("menu", event.id().0.clone());
     });
+    // `scan a code` (milestone 84; `src/app/scan.ts`): the camera reading a pairing code, on a device alone.
+    #[cfg(mobile)]
+    let builder = builder.plugin(tauri_plugin_barcode_scanner::init());
     builder
         // `ilmi://`, the scheme in `tauri.conf.json`; the renderer listens
         // for `deep-link://new-url` and `clipper.ts` does what the link asks.

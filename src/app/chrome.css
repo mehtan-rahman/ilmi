@@ -517,7 +517,7 @@
   outline: none;
 }
 .tw-rows .tw-num:focus { border-color: var(--accent); }
-.tw-rows .tw-text {
+.tw-rows .tw-text, .tw-rows .tw-code {
   width: 100%;
   min-width: 0;
   box-sizing: border-box;
@@ -530,8 +530,14 @@
   padding: 3px 6px;
   outline: none;
 }
-.tw-rows .tw-text:focus { border-color: var(--accent); }
+.tw-rows .tw-text:focus, .tw-rows .tw-code:focus { border-color: var(--accent); }
 .tw-rows .tw-seg button:disabled { color: var(--fg-4); cursor: default; }
+/* `pair a device` (`PairRows.tsx`): the code, black on white in every theme, and the line beside it */
+.tw-rows .tw-pair { display: flex; flex-direction: column; gap: 8px; }
+.tw-rows .pair-qr { display: block; width: 100%; max-width: 320px; aspect-ratio: 1; align-self: center; border: 1px solid var(--line-1); border-radius: var(--radius); background: #fff; }
+.tw-rows .pair-words { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.tw-rows .pair-line { font-size: var(--t-xs); line-height: 1.45; color: var(--fg-3); }
+.tw-rows .pair-words .tw-seg { align-self: flex-start; }
 .tw-rows .tw-sel {
   max-width: 100%;
   font-family: var(--sans);

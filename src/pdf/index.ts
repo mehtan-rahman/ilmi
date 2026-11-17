@@ -10,4 +10,4 @@ export { sectionName, headingAbove, equationsIn, boxAround, pageItems, type Page
 export { emptyTrail, pushPlace, stepBack, stepForward, hintLabels, hintStep, lookupUrl, HINT_KEYS, TRAIL_MAX, type Place, type Trail } from './around.js';
 export { pageLinks, flipRect, linkAt, resolveDest, downPage, actionPage, flatOutline, contentsWithin, contentsHere, type PageLink, type Dest, type DestPdf, type ContentsEntry, type ContentsPdf } from './links.js';
 export { textBoxes, referenceTokens, referenceAt, tokenAt, type TextBox, type RefToken } from './refs.js';
-export { placeOf, newMarkId, letterId, isCollectionMark, bookmarksOf, highlightsOf, portalsOf, lettersOf, collectionMark, collectionMarks, lineQuads, highlightAt, highlightHolding, quadBoxes, highlightOf, portalAbove, lineBands, bandNear, stepLine, type LineBand } from './marks.js';
+export { placeOf, newMarkId, letterId, isCollectionMark, bookmarksOf, highlightsOf, portalsOf, passageMarksOf, lettersOf, collectionMark, collectionMarks, lineQuads, highlightAt, highlightHolding, quadBoxes, highlightOf, portalAbove, lineBands, bandNear, stepLine, type LineBand } from './marks.js';

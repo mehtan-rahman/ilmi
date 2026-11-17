@@ -18,15 +18,17 @@
 // runs from the first page to the read point (`pos` and `y` on the `read`
 // line). Boxes drawn on the pages (drag; drag again for another, on any
 // page; a text selection boxes its lines; under a finger the drag comes
-// after a short hold, since milestone 57) become a section of the notes
-// with `e`: a `##` heading named from the page, in book order, with its
-// `<!-- read … boxes=… -->` line, back on its cadence until dismissed
-// (FORMAT.md §6.5). `m` makes the section and puts the caret in it to card,
-// or on a page that names no sections (a passage book, Arabic) clips the
-// box into the notes under `## p. N` (§6.6). Every section's boxes are drawn
-// on its pages, tagged with its name (a § in the gutter when there is no
-// room), dashed once dismissed; the caret's section lights its boxes and
-// the pages scroll to them. Nothing is written into the PDF, ever; every
+// after a short hold, since milestone 57) become a passage with `e`: kept
+// with the PDF, among its marks, and in no note, back on its cadence until
+// dismissed (FORMAT.md §6.5; `passages.ts`). The note on a PDF is the
+// person's own: only `m` writes in it, a clip of each box (§6.6) where the
+// caret is in the note, or at its end, the caret under it for the card.
+// Every passage's boxes are drawn on its pages, tagged with its pages (a §
+// in the gutter when there is no room), dashed once dismissed; a press on
+// the tag has what can be done with it. A note written before milestone 81
+// holds its passages as boxed sections under headings: those are drawn the
+// same, tagged with the heading, the caret's section lit and the pages
+// scrolled to it. Nothing is written into the PDF, ever; every
 // change goes to the Markdown, through the open note's writer.
 //
 // A page may be written on (milestones 67, 69). On an iPad the Pencil writes
@@ -76,16 +78,16 @@
 // following; `r` sets the read point to it.
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { boxesEnd, formatClip, meta, sectionDismissed, setField, type Box, type Doc } from '../format/index.js';
+import { boxesAt, boxesEnd, formatClip, meta, pagesLabel, parseBoxes, sectionDismissed, setField, type Box, type Doc, type SectionSchedule } from '../format/index.js';
 import {
   actionPage, bandNear, bookmarksOf, boxAround, contentsHere, contentsWithin, countIn, downPage, findAll, findText, flatOutline, flipRect, headingAbove, highlightAt, highlightHolding, highlightOf,
   highlightsOf, hintLabels, hintStep, isCollectionMark, letterId, lineBands, lineQuads, linesOf, linkAt, lookupUrl, newMarkId, pageLinks, placeOf, portalAbove, portalsOf,
-  pushPlace, quadBoxes, refOf, referenceTokens, resolveDest, sectionName, seekTarget, stepBack, stepForward, stepLine, textBoxes, tokenAt, uprightItems,
+  passageMarksOf, pushPlace, quadBoxes, refOf, referenceTokens, resolveDest, sectionName, seekTarget, stepBack, stepForward, stepLine, textBoxes, tokenAt, uprightItems,
   type ContentsEntry, type ContentsPdf, type Found, type LineBand, type PageItem, type PageLink, type Place, type RefToken,
 } from '../pdf/index.js';
 import { pickPos, type Band } from '../reader/index.js';
-import { addPassage, passagesOf, pointOn, sectionState, type Passage } from '../schedule/index.js';
-import { INKS, addToPage, childDirOf, isPdfPath, type InkStroke, type Mark, type Portal, type Quad, type StoreFs } from '../vault/index.js';
+import { passagesOf, pointOn, sectionState, type Passage } from '../schedule/index.js';
+import { INKS, passageId, childDirOf, isPdfPath, type InkStroke, type Mark, type Portal, type Quad, type StoreFs } from '../vault/index.js';
 import { CueActions } from '../plugins/CueActions.js';
 import { onPluginAction, publishSelection, toPluginSelection, type PluginSelection } from '../plugins/index.js';
 import { noteOf, notesTabOf, titleOf } from './names.js';
@@ -105,7 +107,9 @@ import { TabsToggle } from './TabsToggle.js';
 import { useApp, type DocInfo } from './store.js';
 import { useDoc } from './useDoc.js';
 import { currentVault, enrolReading, logReading, setBookZoom, unlogReading } from './vault.js';
-import { writeDoc } from './sections.js';
+import { placeAtCaret, writeDoc } from './sections.js';
+import { bringPassageBack, changePassage, keepPassage, putPassage, schedOf } from './passages.js';
+import { chipWhen } from './bookNotes.js';
 import { failed, notify } from './land.js';
 import { appNow } from './clock.js';
 import { press } from './platform.js';
@@ -349,11 +353,21 @@ function PageInk({ hash, page, w, h, rev, rect, live, onShown }: { hash: string;
   return url ? <img className="page-ink" data-page={page} data-rev={rev} data-live={live ? '1' : undefined} src={url} alt="" draggable={false} onLoad={() => onShown(page)} style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }} /> : null;
 }
 
-/** A passage's boxes on the pages, its heading's name, its cards, its state. */
+/**
+ * A passage's boxes on the pages, what it is called, its state. `key` is
+ * what it is known by here: a passage kept with the PDF by its boxes, a
+ * boxed section of an older note (`section`) by its heading.
+ */
 interface Drawn {
-  passage: Passage;
+  key: string;
+  name: string;
+  boxes: Box[];
   cards: number;
   dismissed: boolean;
+  /** A boxed section of the note: where its heading is. */
+  section?: Passage;
+  /** A passage kept with the PDF: its line. */
+  sched?: SectionSchedule;
 }
 
 function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required<PdfProps>, 'onLast'> & { onLast: PdfProps['onLast']; notesOpen: boolean }) {
@@ -430,8 +444,6 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
   /** Boxes drawn and not yet made into anything, in the order drawn. */
   const [pending, setPending] = useState<Box[]>([]);
   const [ghost, setGhost] = useState<Rect | null>(null);
-  /** The section just made: ⏎ puts the caret in it. */
-  const [recent, setRecent] = useState<{ index: number; text: string } | null>(null);
   /** The section whose boxes are lit: the caret's in the notes, else the one last gone to here. */
   const [lit, setLit] = useState<string | null>(null);
   const [flash, setFlash] = useState<{ text: string; seq: number } | null>(null);
@@ -448,8 +460,8 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
   const rendering = useRef(new Set<number>());
   const texts = useRef(new Map<number, string>());
   const dragRef = useRef(false);
-  const st = useRef({ sel, pending, recent, find, goto, peek, looking, hints, naming, chord, ruler, lastHl });
-  st.current = { sel, pending, recent, find, goto, peek, looking, hints, naming, chord, ruler, lastHl };
+  const st = useRef({ sel, pending, find, goto, peek, looking, hints, naming, chord, ruler, lastHl });
+  st.current = { sel, pending, find, goto, peek, looking, hints, naming, chord, ruler, lastHl };
   const canEnrol = info?.type === 'source' || info?.type === 'extract' || info?.type === 'note';
   const reading = !!info?.read && info.type !== 'note';
   const rel = info?.pdf;
@@ -907,15 +919,23 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
 
   // ── what the notes say about the pages: the passages, in book order ──
   const doc: Doc | undefined = loaded?.doc;
-  const drawn = useMemo((): Drawn[] => (doc ? passagesOf(doc.blocks).map((p) => ({ passage: p, cards: sectionState(doc.blocks, p.index).cards, dismissed: sectionDismissed(p.heading.read!) })) : []), [doc]);
+  const drawn = useMemo((): Drawn[] => {
+    // the boxed sections of a note written before milestone 81, and the passages kept with the PDF; all in book order
+    const old = doc ? passagesOf(doc.blocks).map((p): Drawn => ({ key: p.heading.text, name: p.heading.text, boxes: p.boxes, cards: sectionState(doc.blocks, p.index).cards, dismissed: sectionDismissed(p.heading.read!), section: p })) : [];
+    const kept = passageMarksOf(marks).flatMap(([, m]): Drawn[] => {
+      const boxes = parseBoxes(m.boxes);
+      return boxes ? [{ key: m.boxes, name: pagesLabel(boxes), boxes, cards: 0, dismissed: m.due === undefined, sched: schedOf(m) }] : [];
+    });
+    return [...old, ...kept].map((d, i) => ({ d, i })).sort((a, b) => boxesAt(a.d.boxes) - boxesAt(b.d.boxes) || a.i - b.i).map((x) => x.d);
+  }, [doc, marks]);
   const drawnRef = useRef(drawn);
   drawnRef.current = drawn;
 
   /** Scroll the pages to a passage's first box, unless it is in view; `always` scrolls regardless. */
   const scrollToPassage = useCallback((text: string, always = false) => {
-    const d = drawnRef.current.find((x) => x.passage.heading.text === text);
+    const d = drawnRef.current.find((x) => x.key === text);
     const sc = scroller();
-    const b = d?.passage.boxes[0];
+    const b = d?.boxes[0];
     const el = b ? pageEls.current.get(b.page) : undefined;
     if (!sc || !b || !el) return;
     const sr = sc.getBoundingClientRect();
@@ -930,21 +950,24 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
   // a note just opened beside the pages has one at its top, and the reader's place is not to move for it (milestone 70)
   useEffect(() => {
     if (note === null || caret?.path !== note || !document.activeElement?.closest('.draft-doc')) return;
-    const text = drawnRef.current.some((d) => d.passage.heading.text === caret.text) ? caret.text : null;
+    const text = drawnRef.current.some((d) => d.section && d.key === caret.text) ? caret.text : null;
     setLit(text);
     if (text) scrollToPassage(text);
   }, [caret?.path, caret?.text, caret?.nth, note, status, sizes.length, scrollToPassage]);
   // what goes to a section of the note goes to its boxes too, once the pages are there: a session's come after the note has landed
   const going = useRef<string | null>(null);
+  const focusSeen = useRef(0);
   const reveal = useApp((s) => s.reveal);
   useEffect(() => {
     if (note !== null && reveal?.path === note && reveal.heading !== undefined) going.current = reveal.heading;
+    // a passage asked for before the pages were there (a session on it, a row of the palette's list)
+    if (focus && focus.path === id && focus.seq !== focusSeen.current) { focusSeen.current = focus.seq; going.current = focus.text; }
     const text = going.current;
-    if (text === null || status !== 'ok' || !sizes.length || !drawn.some((d) => d.passage.heading.text === text)) return;
+    if (text === null || status !== 'ok' || !sizes.length || !drawn.some((d) => d.key === text)) return;
     going.current = null;
     setLit(text);
     scrollToPassage(text);
-  }, [reveal, note, status, sizes.length, drawn, scrollToPassage]);
+  }, [reveal, focus, id, note, status, sizes.length, drawn, scrollToPassage]);
   // the pages land once where they open. Reading on in a session: at the read point, the bar's end a third of the
   // way down the view. A tab shown again (the pane draws only the tab in front): where it was left, the same text
   // at the top of the view. A book opened for the first time: at its read point, when it has one.
@@ -1160,68 +1183,89 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
   };
 
   /**
-   * `e`: the boxes become a section of the note, in book order (a PDF with
-   * no note yet asks for one first), the read point moves past them, and
-   * the note opens beside the pages with the section in it. `write`: the
-   * caret goes in it.
+   * `e`: the boxes become a passage, kept with the PDF and in no note: back
+   * on the cadence of the document's priority until dismissed. The read
+   * point moves past the boxes. Nothing opens and nothing is asked: the
+   * notice says when it is back, and undoes it. The page's own name for the
+   * passage is said in the notice and nowhere kept.
    */
-  const makeSection = async (write: boolean, known?: { name: string }, from?: Box[]) => {
+  const makeSection = async (from?: Box[]) => {
     const boxes = from ?? boxesNow();
     if (!boxes.length) return;
-    const to = await ensureNote(id);
-    if (to === null) return;
+    const { name } = await nameOf(boxes);
+    const made = await keepPassage(id, boxes);
+    if (!made) { notify('marks are kept by the pdf\'s hash, which this collection does not have'); return; }
     clearBoxes();
-    const { name } = known ?? await nameOf(boxes);
-    let made: { index: number; text: string; ivl: number } | null = null;
     const end = boxesEnd(boxes);
-    /** The read point moves past the last box; on a document with pages in the same write as its section. */
-    const point = (d: Doc) => {
+    let before: Doc | null = null;
+    // the read point moves past the last box
+    await writeDoc(id, (d) => {
       const r = meta(d).read;
       if (r && end && meta(d).type !== 'note') {
+        before = structuredClone(d);
         const { pos: _p, y: _y, ...rest } = r;
         setField(d, 'read', { ...rest, ...pointOn(r, end.page, end.y) });
       }
-    };
-    await writeDoc(to, (d) => {
-      made = addPassage(d, name, boxes, appNow());
-      if (to === id) point(d);
     });
-    if (to !== id) await writeDoc(id, point);
-    const m = made as { index: number; text: string; ivl: number } | null;
-    if (!m) return;
-    const text = m.text;
-    logReading(to, 'section', { sec: text });
-    setLit(text);
-    setRecent(write ? null : m);
-    notify(`§ ${plainMath(text)} · back in ${m.ivl}d, until dismissed${write ? '' : ' · ⏎ to write in it'}`, null, async () => {
-      unlogReading(to, text);
-      await writeDoc(to, (d) => {
-        const at = d.blocks.findIndex((b) => b.kind === 'heading' && b.text === text && b.read?.boxes !== undefined);
-        if (at >= 0) d.blocks.splice(at, 1);
-      });
+    logReading(id, 'section', { sec: made.label });
+    setLit(made.boxes);
+    notify(`§ ${plainMath(name || made.label)} · back in ${made.ivl}d, until dismissed`, null, async () => {
+      unlogReading(id, made.label);
+      await putPassage(made.hash, made.boxes, null);
+      const was = before as Doc | null;
+      const r = was ? meta(was).read : undefined;
+      if (r) await writeDoc(id, (d) => { setField(d, 'read', r); });
     });
-    // the note opens beside the pages with the section in it; `write` puts the caret in it
-    useApp.setState({ reveal: write ? { path: to, index: m.index, heading: text, write: true } : { path: to, index: m.index, heading: text } });
-    await openNotes(id);
   };
 
-  /** `m`: on a page that names its sections, the section with the caret in it; otherwise each box clipped under its page in the note, the caret below. */
+  /** `m`: each box clipped into the note (a PDF with none yet asks for one first), after the block the caret is in when the note is open and holds one, else at its end; the caret below, for the card. No heading is written. */
   const cardOrClip = async (from?: Box[]) => {
     const boxes = from ?? boxesNow();
     if (!boxes.length) return;
-    const named = await nameOf(boxes);
-    if (named.named) { await makeSection(true, named, from); return; }
     const to = await ensureNote(id);
     if (to === null) return;
     clearBoxes();
     let at = -1;
+    const clips = boxes.map(formatClip);
     await writeDoc(to, (d) => {
-      for (const b of boxes) at = addToPage(d, b.page, { kind: 'raw', text: formatClip(b) });
+      let next = Math.max(0, Math.min(placeAtCaret(to) ?? d.blocks.length, d.blocks.length));
+      for (const text of clips) { d.blocks.splice(next, 0, { kind: 'raw', text }); at = next++; }
     });
     if (at < 0) return;
-    notify(`clipped · ${boxes.length === 1 ? `p. ${boxes[0]!.page}` : `${boxes.length} boxes`} · the card goes below it: word ::: meaning`);
+    notify(`clipped · ${boxes.length === 1 ? `p. ${boxes[0]!.page}` : `${boxes.length} boxes`} · the card goes below it: word ::: meaning`, null, async () => {
+      await writeDoc(to, (d) => {
+        // the clips just written, each the last of its text
+        for (const text of clips) {
+          for (let k = d.blocks.length - 1; k >= 0; k--) {
+            const b = d.blocks[k]!;
+            if (b.kind === 'raw' && b.text === text) { d.blocks.splice(k, 1); break; }
+          }
+        }
+      });
+    });
     useApp.setState({ reveal: { path: to, index: at, write: true } });
     await openNotes(id);
+  };
+
+  /** A press on a passage's tag: when it is next, and what can be done with it. A boxed section of an older note goes to its heading in the notes. */
+  const passageMenu = (e: React.MouseEvent, d: Drawn) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (d.section) { goToSection(d.section); return; }
+    if (!hash || !d.sched) return;
+    const h = hash;
+    const sched = d.sched;
+    setLit(d.key);
+    const undoable = (said: string) => (undo: (() => Promise<void>) | null) => notify(said, null, undo ?? undefined);
+    // under the tag itself, wherever on it the press fell
+    const tr = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    popMenu({ left: tr.left, top: tr.bottom + 4, bottom: tr.bottom + 4 }, [
+      { label: chipWhen(sched, appNow()), act: 'passage-when' },
+      d.dismissed
+        ? { label: 'bring back', act: 'passage-back', run: () => void bringPassageBack(id, h, d.key).then(undoable(`§ ${d.name} · brought back`)).catch(console.error) }
+        : { label: 'dismiss', act: 'passage-dismiss', run: () => void changePassage(h, d.key, (x) => { const { due: _d, ivl: _i, reps: _r, af: _a, ...rest } = x; return rest; }).then((undo) => { logReading(id, 'done', { sec: d.name }); notify(`§ ${d.name} · dismissed`, null, async () => { unlogReading(id, d.name); await undo?.(); }); }).catch(console.error) },
+      { label: 'remove', act: 'passage-remove', run: () => { const was = marksRef.current[passageId(d.key)]; void putPassage(h, d.key, null).then(() => notify(`§ ${d.name} · removed`, null, was?.kind === 'passage' ? () => putPassage(h, d.key, was) : undefined)).catch(console.error); } },
+    ], 'book-menu');
   };
 
   const startReading = () => { if (canEnrol && !info?.read) enrolReading(id).catch(console.error); };
@@ -1236,7 +1280,6 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
   const settle = () => {
     (document.activeElement as HTMLElement | null)?.blur?.();
     window.getSelection()?.removeAllRanges();
-    setRecent(null);
   };
   const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     // where the press began, for the click after it: one that did not move follows a link (`onPress`)
@@ -1539,7 +1582,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     const picked = st.current.sel?.text ?? (live && !live.isCollapsed && pagesRef.current?.contains(live.anchorNode) ? live.toString().replace(/\s+/g, ' ').trim() : '');
     const selRows: PopItem[] = picked ? [
       ...(st.current.sel ? [
-        { label: 'section', act: 'section', run: () => void makeSection(false).catch(console.error) },
+        { label: 'passage', act: 'section', run: () => void makeSection().catch(console.error) },
         { label: 'card', act: 'card', run: () => void cardOrClip().catch(console.error) },
         { label: '-' },
       ] : []),
@@ -1550,7 +1593,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     const hlId = highlightAt(marksRef.current, hit.page, hit.x, hit.y);
     const hl = hlId !== null ? marksRef.current[hlId] : undefined;
     const hlRows: PopItem[] = hlId !== null && hl?.kind === 'highlight' ? [
-      { label: 'section', act: 'hl-section', run: () => void makeSection(false, undefined, quadBoxes(hl.quads)).catch(console.error) },
+      { label: 'passage', act: 'hl-section', run: () => void makeSection(quadBoxes(hl.quads)).catch(console.error) },
       { label: 'card', act: 'hl-card', run: () => void cardOrClip(quadBoxes(hl.quads)).catch(console.error) },
       { label: 'clear', act: 'hl-clear', run: () => clearHighlight(hlId) },
       { label: '-' },
@@ -1621,7 +1664,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
         if (entries.length) return { entries, here: contentsHere(entries, at.page, at.y), from: 'outline' };
       }
       // no outline: the sections boxed on the pages, in the book's order
-      const entries = drawnRef.current.flatMap((d): ContentsEntry[] => { const b = d.passage.boxes[0]; return b ? [{ title: plainMath(d.passage.heading.text), depth: 0, page: b.page, y: b.y }] : []; });
+      const entries = drawnRef.current.flatMap((d): ContentsEntry[] => { const b = d.boxes[0]; return b ? [{ title: plainMath(d.name), depth: 0, page: b.page, y: b.y }] : []; });
       return { entries, here: contentsHere(entries, at.page, at.y), from: entries.length ? 'sections' : 'none' };
     },
     go: (e, exact) => goTo(e, exact),
@@ -1945,8 +1988,8 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     const take = () => { e.preventDefault(); e.stopPropagation(); };
     if (e.key === 'Escape') {
       const tying = active && portalPending() !== null;
-      if (s.pending.length || s.find || s.goto || s.peek || s.recent || s.looking || s.hints || s.naming || s.chord || s.ruler || tying) {
-        setPending([]); setFind(null); setGoto(false); setPeek(null); setRecent(null); setHints(null);
+      if (s.pending.length || s.find || s.goto || s.peek || s.looking || s.hints || s.naming || s.chord || s.ruler || tying) {
+        setPending([]); setFind(null); setGoto(false); setPeek(null); setHints(null);
         setNaming(null); setChord(null); setRuler(null);
         if (tying) setPortalPending(null);
         jumpSeq.current++; setLooking(false);
@@ -1978,19 +2021,10 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     if (inField(e.target)) return;
     // the peek shows where a reference points: ⏎ goes there
     if (active && s.peek && e.key === 'Enter') { take(); followPeek(); return; }
-    if (have && e.key === 'e') { take(); void makeSection(false).catch(console.error); return; }
+    if (have && e.key === 'e') { take(); void makeSection().catch(console.error); return; }
     if (have && e.key === 'm') { take(); void cardOrClip().catch(console.error); return; }
     // a reference under the selection: its target in a peek
     if (s.sel && e.key === 'Enter' && refOf(s.sel.text)) { take(); void doJump().catch(console.error); return; }
-    if (s.recent && e.key === 'Enter' && !have && note !== null) {
-      take();
-      const r = s.recent;
-      setRecent(null);
-      useApp.setState({ reveal: { path: note, index: r.index, heading: r.text, write: true } });
-      void openNotes(id).catch(console.error);
-      return;
-    }
-    if (s.recent && e.key !== 'Shift') setRecent(null);
     if (!active) return;
     // a menu or the palette over the pages has the keys
     const free = !useApp.getState().paletteOpen && popMenuOpen() === null && document.querySelector('.ctx-menu') === null;
@@ -2017,10 +2051,10 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     else if (e.key === '/') { take(); setFind((f) => f ?? { q: '', pages: [], at: 0 }); findRef.current?.focus(); }
     else if (e.key === 'g') { take(); setGoto(true); }
     else if (!session && (e.key === ']' || e.key === '[')) {
-      // step between the sections, in book order; with none, between pages
-      const list = drawnRef.current.map((d) => d.passage);
+      // step between the passages, in book order; with none, between pages
+      const list = drawnRef.current;
       if (!list.length) { take(); scrollTo(current + (e.key === ']' ? 1 : -1)); return; }
-      const at = list.findIndex((p) => p.heading.text === lit);
+      const at = list.findIndex((p) => p.key === lit);
       const next = list[at < 0 ? (e.key === ']' ? 0 : list.length - 1) : at + (e.key === ']' ? 1 : -1)];
       take();
       if (next) {
@@ -2032,7 +2066,9 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
           const top = pr.top + b.y * pr.height;
           if (top < sr.top - sr.height || top > sr.bottom + sr.height) leave();
         }
-        goToSection(next);
+        // a boxed section of the note goes to its heading there; a passage is only on the pages
+        if (next.section) goToSection(next.section);
+        else { setLit(next.key); scrollToPassage(next.key); }
       }
     }
   };
@@ -2254,27 +2290,30 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
                 const r = pageRect(m.page);
                 return r && <button type="button" key={key} data-hit="1" className="pmark" data-mark={key} data-page={m.page} data-to={m.to.page} aria-label={`portal to p. ${m.to.page}`} title={`shows p. ${m.to.page}${m.to.pdf !== undefined ? ' of another book' : ''}`} style={{ left: r.width - 16, top: r.top + m.y * r.height - 7 }} onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }} onClick={(e) => { e.stopPropagation(); void openPortal(m, e.currentTarget).catch(console.error); }} onContextMenu={(e) => portalMenu(e, key, m)}>↗</button>;
               })}
-              {status === 'ok' && drawn.map(({ passage: p, cards: n, dismissed }) => {
-                const cur = lit === p.heading.text;
-                const flashing = flash?.text === p.heading.text;
+              {status === 'ok' && drawn.map((d) => {
+                const { cards: n, dismissed } = d;
+                const p = d;
+                const cur = lit === d.key;
+                const flashing = flash?.text === d.key;
                 return p.boxes.map((b, i) => {
                   const r = boxRect(b);
                   if (!r) return null;
-                  const label = i ? `↳ ${plainMath(p.heading.text)} (${i + 1}/${p.boxes.length})` : plainMath(p.heading.text);
+                  const label = i ? `↳ ${plainMath(p.name)} (${i + 1}/${p.boxes.length})` : plainMath(p.name);
                   return (
-                    <div key={`${p.index}:${i}`} className="pbox-group">
+                    <div key={`${d.section ? d.section.index : 's'}:${d.key}:${i}`} className="pbox-group">
                       <div
                         className={`pbox${cur ? ' cur' : ''}${dismissed ? ' dis' : ''}${flashing ? ' flash' : ''}`}
-                        data-section={p.heading.text}
+                        data-section={d.key}
+                        data-kept={d.section ? '0' : '1'}
                         data-page={b.page}
                         style={{ left: r.left, top: r.top, width: r.width, height: r.height }}
                       />
                       {roomy ? (
-                        <div data-hit="1" className={`ptag${i ? ' cont' : ''}${cur ? ' cur' : ''}${dismissed ? ' dis' : ''}`} style={{ left: pageW + 12, top: r.top }} title="go to this section in the notes" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); goToSection(p); }}>
+                        <div data-hit="1" className={`ptag${i ? ' cont' : ''}${cur ? ' cur' : ''}${dismissed ? ' dis' : ''}`} style={{ left: pageW + 12, top: r.top }} title={d.section ? 'go to this section in the notes' : 'passage'} onMouseDown={(e) => passageMenu(e, d)}>
                           {!i && <span className="pt-g">§</span>}{label}{!i && n > 0 && <span className="pt-c">◆{n}</span>}
                         </div>
                       ) : (
-                        <div data-hit="1" className={`pgut${cur ? ' cur' : ''}${dismissed ? ' dis' : ''}`} style={{ left: pageW + 3, top: r.top }} title={label} onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); goToSection(p); }}>{i ? '↳' : '§'}</div>
+                        <div data-hit="1" className={`pgut${cur ? ' cur' : ''}${dismissed ? ' dis' : ''}`} style={{ left: pageW + 3, top: r.top }} title={label} onMouseDown={(e) => passageMenu(e, d)}>{i ? '↳' : '§'}</div>
                       )}
                     </div>
                   );
@@ -2291,7 +2330,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
               {ghost && <div className="pbox pending ghost" style={ghost} />}
               {lastPending && !sel && (
                 <div data-hit="1" className="pend" style={{ left: Math.max(0, Math.min(lastPending.left, (pagesRef.current?.clientWidth ?? 9999) - (mobile ? 340 : 280))), top: lastPending.top + lastPending.height + 6 }}>
-                  <button type="button" data-k="e" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); void makeSection(false).catch(console.error); }}><kbd>e</kbd><span className="pe-l">section{pending.length > 1 ? ` · ${pending.length} boxes` : ''}</span></button>
+                  <button type="button" data-k="e" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); void makeSection().catch(console.error); }}><kbd>e</kbd><span className="pe-l">passage{pending.length > 1 ? ` · ${pending.length} boxes` : ''}</span></button>
                   <button type="button" data-k="m" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); void cardOrClip().catch(console.error); }}><kbd>m</kbd><span className="pe-l">card</span></button>
                   <button type="button" data-k="h" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); doHighlight(); }}><kbd>h</kbd><span className="pe-l">highlight</span></button>
                   {mobile && <button type="button" data-k="web" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); lookUnder(); }}><span className="pe-l">look up</span></button>}
@@ -2302,8 +2341,8 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
           </div>
           {sel && (
             <div className="sel-cue" style={{ top: sel.rect.bottom + 8, left: sel.rect.left }}>
-              <button type="button" className="cue-act" {...press(() => void makeSection(false).catch(console.error))}>
-                section <span className="kbd">e</span>
+              <button type="button" className="cue-act" {...press(() => void makeSection().catch(console.error))}>
+                passage <span className="kbd">e</span>
               </button>
               <button type="button" className="cue-act" {...press(() => void cardOrClip().catch(console.error))}>
                 card <span className="kbd">m</span>

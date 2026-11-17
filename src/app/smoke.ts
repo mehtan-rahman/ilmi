@@ -6795,7 +6795,16 @@ export async function smokeOpen(vault: Vault): Promise<void> {
     window.getSelection()!.addRange(r);
     await poll(() => q('.pdf-view .sel-cue'), 'the selection cue on the page');
     press('e');
-    await poll(async () => /\n<!-- read made=\S+ due=\S+ ivl=[123] boxes=4:[\d.:]+ -->\n/.test(await text(chap)), 'the selection boxes its lines: a section of the notes, its boxes on page 4 as the book numbers it', 8000);
+    // milestone 81: the passage is kept with the PDF (its marks, by the file's hash), not written into the chapter's notes
+    const chapWas = await text(chap);
+    const marksOfBook = async (pdf: string): Promise<{ kind?: string; boxes?: string; due?: string; ivl?: number }[]> => {
+      const h = (vault.fs as unknown as { blobAt(abs: string): string | null }).blobAt(vault.abs(pdf));
+      if (!h || !(await vault.fs.stat(vault.abs(`.ilmi/marks/${h}.json`)))) return [];
+      return Object.values(JSON.parse(await text(`.ilmi/marks/${h}.json`)) as Record<string, { kind?: string; boxes?: string; due?: string; ivl?: number }>);
+    };
+    await poll(async () => (await marksOfBook(book.replace(/\.md$/, '.pdf'))).some((m) => m.kind === 'passage' && /^4:[\d.:]+$/.test(m.boxes ?? '') && !!m.due && [1, 2, 3].includes(m.ivl ?? 0)), 'the selection boxes its lines: a passage kept with the PDF, its boxes on page 4 as the book numbers it', 8000);
+    must(!/<!-- read [^\n]*boxes=/.test(await text(chap)) && (await text(chap)).replace(/\nread: [^\n]*/, '') === chapWas.replace(/\nread: [^\n]*/, ''), 'nothing is written into the chapter\'s notes');
+    await poll(() => q('.pdf-view .pbox[data-kept="1"][data-page="4"]'), 'its box is drawn on page 4', 8000);
     // the book renamed: the chapters still find its file
     const { renameNode } = await import('./vault.js');
     const renamed = await renameNode(book, 'stat phys, briefly');
@@ -6804,6 +6813,7 @@ export async function smokeOpen(vault: Vault): Promise<void> {
     await poll(() => useApp.getState().docs[chap2]?.pdf === renamed.replace(/\.md$/, '.pdf'), 'and its pages are found there');
     await open(chap2, '.pane-body .pdf-view .pdf-page');
     await poll(() => qa('.pane-body .pdf-view .pdf-page').length === 3, 'the renamed book\'s chapter opens as its pages');
+    await poll(() => q('.pane-body .pdf-view .pbox[data-kept="1"][data-page="4"]'), 'and the passage is still on its page: kept by the file, not its name', 8000);
     useApp.getState().setTheme('dark');
     await poll(() => document.documentElement.dataset.theme === 'dark', 'dark');
     await shot('open-pdf-chapter-dark');
@@ -7495,15 +7505,19 @@ const dayOfStr = (due: string | undefined): string => (due ?? '').slice(0, 10);
 // (the classical prose reader's passage) into `books/` of the scratch copy,
 // with a chapter (`pages: 41-44`, two passages already boxed, one of them
 // dismissed) and a passage document, and the app's clock on 2026-11-02. It
-// opens the chapter as its pages beside its notes; draws a two-box passage
-// across pp. 41–42 and makes it a section with `e` (named `3.3 · average
-// values (3.12)`, placed in book order, its line's boxes in the grammar,
-// the read point moved past it); ⏎ puts the caret in it and the caret
-// lights its boxes; show boxes here draws both crops; a dismissed passage's
-// boxes are dashed; a tag beside the page goes to its section; ⌘\ hides the
-// notes and shows them; `m` on the Arabic page clips the box under `## p. 1`
-// with the caret below it; the queue opens a section at its boxes; done for
-// today records `pos` and `y`. Light, then dark.
+// opens the chapter as its pages; draws a two-box passage across pp. 41–42
+// and keeps it with `e` (milestone 81): among the PDF's marks, in no note,
+// nothing opened, its boxes in the grammar, the read point moved past it,
+// the notice's undo; its tag's menu (dismiss, remove), the inspector's and
+// the palette's list, its row in the queue, its session at its boxes, next,
+// dismiss and undo, the note untouched throughout. The chapter's note was
+// written before 81: its boxed sections keep their chips, crops and tags,
+// and ] [ step over both. ⌘\ hides the notes and shows them; `m` on the
+// Arabic page clips the box into the note with no page heading, the caret
+// below it, the next clip after the caret's block; the queue opens an older
+// section at its boxes; done for today records `pos` and `y`. A PDF on its
+// own keeps a passage with no note; `create notes` makes a blank note that
+// names it, a row in the tree. Light, then dark.
 export async function smokeBook(vault: Vault): Promise<void> {
   // what the app reports with console.error, for a failure's `why:` line
   const errors: string[] = [];
@@ -7545,6 +7559,20 @@ export async function smokeBook(vault: Vault): Promise<void> {
   const NAME = '3.3 · average values (3.12)';
   const text = (p: string) => bounded(vault.fs.readText(vault.abs(p)), `reading ${p}`);
   const headings = async (p: string) => parse(await text(p)).doc.blocks.flatMap((b) => (b.kind === 'heading' ? [b] : []));
+  /** A file's text without its `read:` line: what of a note is the person's, the read point aside. */
+  const bodyOf = async (p: string) => (await text(p)).replace(/\nread: [^\n]*/, '');
+  type PassageMark = import('../vault/index.js').PassageMark;
+  const { marksPath, parseMarks } = await import('../vault/index.js');
+  const { undoNotice } = await import('./land.js');
+  const { pageViews } = await import('./Reader.js');
+  const { NodeSelection } = await import('prosemirror-state');
+  /** The PDF's hash, and the passages kept with it (`.ilmi/marks/<hash>.json`), in the file's order. */
+  const hashOf = (pdf: string) => (vault.fs as unknown as { blobAt(abs: string): string | null }).blobAt(vault.abs(pdf));
+  const keptIn = async (pdf: string): Promise<PassageMark[]> => {
+    const h = hashOf(pdf);
+    if (!h || !(await vault.fs.stat(vault.abs(marksPath(h))))) return [];
+    return Object.values(parseMarks(await text(marksPath(h)))).filter((m): m is PassageMark => m.kind === 'passage');
+  };
   /** Draw a box on a page as a pointer would: down at its corner, a move, up at the other. */
   const drag = async (page: number, x: number, y: number, w: number, h: number) => {
     const el = await poll(() => q<HTMLElement>(`.pane[data-active="1"] .book .pdf-page[data-page="${page}"]`), `page ${page} is drawn`);
@@ -7638,7 +7666,7 @@ export async function smokeBook(vault: Vault): Promise<void> {
     must(!!q('.pane[data-active="1"] .book .read-bar'), 'the gold read bar runs down the margin');
     must(qa('.pane[data-active="1"] .book .pbox.dis').some((b) => (b as HTMLElement).dataset.section?.startsWith('3.3 · energy fluctuations')), 'a dismissed passage\'s boxes are dashed');
     const strip = qa('.bot span').map((s) => s.textContent).join(' | ');
-    must(strip.includes('drag box a passage') && strip.includes('e section') && strip.includes('⌘\\ notes'), `the bottom strip: ${strip}`);
+    must(strip.includes('drag box') && strip.includes('e passage') && strip.includes('⌘\\ notes'), `the bottom strip: ${strip}`);
     must(useApp.getState().inspector.open && !q('.insp'), 'the inspector is open in the saved state, and not shown over the book');
     await shot('book-open');
 
@@ -7659,7 +7687,7 @@ export async function smokeBook(vault: Vault): Promise<void> {
 
     // the inspector opens only by its toggle, for the book's fields and its passages; another kind of document has it as it had it
     (q<HTMLElement>('.top .insp-toggle:not(.side-toggle)') as HTMLElement).click();
-    await poll(() => qa('.insp h6').some((h) => h.textContent === 'passages, in book order') && qa('.insp .insp-passages li').length === 2, 'its toggle opens the inspector: the book\'s passages, in book order', 8000);
+    await poll(() => qa('.insp h6').some((h) => h.textContent === 'sections in the notes') && qa('.insp .insp-passages li').length === 2, 'its toggle opens the inspector: the boxed sections of its older note, in book order', 8000);
     await sleep(400);
     must(across(41).ok, `the pages still across what is left of the pane (${across(41).line})`);
     await shot('book-inspector');
@@ -7669,7 +7697,7 @@ export async function smokeBook(vault: Vault): Promise<void> {
     await poll(() => activeTab(useApp.getState().panes)?.id === 'fleeting/2026-10-30.md' && q('.pane[data-active="1"] .doc-view .draft-doc') && q('.insp'), 'a note opens with the inspector as it had it', 10000);
     await openBook(CH3, 41);
 
-    // ── a two-box passage across pp. 41–42 becomes a section, in book order ──
+    // ── a two-box passage across pp. 41–42 is kept with the PDF: nothing written into the note, nothing opened ──
     await drag(41, 0.12, 0.86, 0.77, 0.075);
     await drag(42, 0.1, 0.097, 0.77, 0.04);
     const pend = qa<HTMLElement>('.pane[data-active="1"] .book .pbox.pending:not(.ghost)');
@@ -7679,56 +7707,147 @@ export async function smokeBook(vault: Vault): Promise<void> {
       const sr = q<HTMLElement>('.pane[data-active="1"] .book-pages')!.getBoundingClientRect();
       must(q<HTMLElement>('.pane[data-active="1"] .book-pages')!.scrollTop > 200 && wr.top >= sr.top && wr.bottom <= sr.bottom, `notes stays at the pane's top as the pages scroll (${Math.round(wr.top - sr.top)} px down it)`);
     }
-    must(q('.pane[data-active="1"] .book .pend [data-k="e"]')?.textContent === 'esection · 2 boxes', `e offers a section of 2 boxes ("${q('.pend [data-k="e"]')?.textContent}")`);
+    must(q('.pane[data-active="1"] .book .pend [data-k="e"]')?.textContent === 'epassage · 2 boxes', `e offers a passage of 2 boxes ("${q('.pend [data-k="e"]')?.textContent}")`);
     await shot('book-pending');
+    const noteBefore = await bodyOf(CH3);
     key('e');
-    const made = await poll(async () => (await headings(CH3)).find((h) => h.text === NAME), `e makes "${NAME}"`, 10000);
-    const order = (await headings(CH3)).map((h) => h.text);
-    must(order.join(' | ') === `3.2 · the partition function (3.9) | ${NAME} | 3.3 · energy fluctuations (3.13–3.15)`, `in book order: ${order.join(' | ')}`);
-    const boxes = parseBoxes(made.read?.boxes ?? '');
-    must(made.read?.made === DAY && made.read.due === '2026-11-03' && made.read.ivl === 1, `made today, back tomorrow: the chapter's priority is 20 (${JSON.stringify(made.read)})`);
-    must(!!boxes && boxes.length === 2 && boxes[0]!.page === 41 && boxes[1]!.page === 42 && near(boxes[0]!.y, 0.86) && near(boxes[1]!.h, 0.04), `its boxes in the grammar: ${made.read?.boxes}`);
-    must(/boxes=41:\d\.\d{3}:\d\.\d{3}:\d\.\d{3}:\d\.\d{3},42:\d\.\d{3}:\d\.\d{3}:\d\.\d{3}:\d\.\d{3} -->/.test(await text(CH3)), 'written page:x:y:w:h, three decimals, "," between');
+    const made = await poll(async () => (await keptIn(`${SB}/lindqvist.pdf`))[0], 'e keeps the passage with the PDF, among its marks', 10000);
+    const KEY = made.boxes;
+    const boxes = parseBoxes(made.boxes);
+    must(made.made === DAY && made.due === '2026-11-03' && made.ivl === 1, `made today, back tomorrow: the chapter's priority is 20 (${JSON.stringify(made)})`);
+    must(!!boxes && boxes.length === 2 && boxes[0]!.page === 41 && boxes[1]!.page === 42 && near(boxes[0]!.y, 0.86) && near(boxes[1]!.h, 0.04), `its boxes in the grammar: ${made.boxes}`);
+    must(/^41:\d\.\d{3}:\d\.\d{3}:\d\.\d{3}:\d\.\d{3},42:\d\.\d{3}:\d\.\d{3}:\d\.\d{3}:\d\.\d{3}$/.test(made.boxes) && made.page === 41, 'written page:x:y:w:h, three decimals, "," between; its place its first box\'s');
+    must((await bodyOf(CH3)) === noteBefore && (await headings(CH3)).length === 2, 'the note is as it was: no heading, no line, nothing written into it');
     const read = meta(parse(await text(CH3)).doc).read;
     must(read?.pos === 42 && near(read.y ?? 0, 0.137), `the read point moved past the last box (pos=${read?.pos} y=${read?.y})`);
-    must(useApp.getState().notice?.line.startsWith(`§ ${NAME} · back in 1d, until dismissed`), `the notice: "${useApp.getState().notice?.line}"`);
-    // a box made a section opens the note beside the pages, with the section in it
-    await poll(() => notesIn(), 'the note opens beside the pages', 8000);
-    const newHead = await poll(() => qa<HTMLElement>('.dd-h', notesPane()!).find((h) => h.textContent?.startsWith(NAME)), 'with the new section in it', 8000);
-    log(`the new heading ${newHead.classList.contains('landed') ? 'marked as landed' : 'not marked'}; caret ${JSON.stringify(useApp.getState().caretHeading?.text)}; active ${document.activeElement?.className}`);
-    must(!notesPane()!.contains(document.activeElement) && activeTab(useApp.getState().panes)?.id === CH3, 'the caret is not in it yet: ⏎ is still the pages\'');
-    await shot('book-section');
+    must(useApp.getState().notice?.line === `§ ${NAME} · back in 1d, until dismissed` && useApp.getState().notice?.undo === true, `the notice names it from the page and can undo: "${useApp.getState().notice?.line}"`);
+    await sleep(600);
+    must(alone() && !q('.palette-overlay') && useApp.getState().reveal === null, 'nothing opened and nothing asked: the pages alone');
+    const keptBoxes = await poll(() => { const l = qa<HTMLElement>(`.pane[data-active="1"] .book .pbox[data-kept="1"]`); return l.length === 2 && l.every((b) => b.dataset.section === KEY) ? l : null; }, 'its two boxes are drawn on the pages', 8000);
+    must(keptBoxes.map((b) => b.dataset.page).join(',') === '41,42' && keptBoxes.every((b) => b.classList.contains('cur')), 'on pp. 41 and 42, lit');
+    const ptag = await poll(() => qa<HTMLElement>('.pane[data-active="1"] .book .ptag:not(.cont), .pane[data-active="1"] .book .pgut').find((t) => (t.textContent ?? '').includes('pp. 41–42') || t.title.startsWith('pp. 41–42')), 'tagged beside the page with its pages');
+    await shot('book-passage');
 
-    // ⏎ right after: the caret in it; the caret lights its boxes
+    // the notice's undo takes it away again, and the read point back; boxed again, it is there
+    await undoNotice();
+    await poll(async () => (await keptIn(`${SB}/lindqvist.pdf`)).length === 0 && qa('.pane[data-active="1"] .book .pbox[data-kept="1"]').length === 0, 'undo: the passage is gone from the marks and the pages', 8000);
+    must(meta(parse(await text(CH3)).doc).read?.pos === 41, 'and the read point is where it was');
+    await drag(41, 0.12, 0.86, 0.77, 0.075);
+    await drag(42, 0.1, 0.097, 0.77, 0.04);
+    key('e');
+    await poll(async () => (await keptIn(`${SB}/lindqvist.pdf`))[0]?.boxes === KEY, 'boxed again: kept again, the same passage by its boxes', 10000);
+    void ptag;
+
+    // a press on its tag: when it is next, dismiss, remove
+    const tagNow = () => qa<HTMLElement>('.pane[data-active="1"] .book .ptag:not(.cont), .pane[data-active="1"] .book .pgut').find((t) => (t.textContent ?? '').includes('pp. 41–42') || t.title.startsWith('pp. 41–42'));
+    down(await poll(tagNow, 'its tag'));
+    const acts = await poll(() => { const a = qa<HTMLElement>('.ctx-menu [data-act]'); return a.length === 3 ? a : null; }, 'a press on the tag opens its menu', 8000);
+    must(acts.map((a) => a.textContent).join(' / ') === 'back tomorrow / dismiss / remove', `when it is next, dismiss, remove (${acts.map((a) => a.textContent).join(' / ')})`);
+    await shot('book-passage-menu');
+    acts[1]!.click();
+    await poll(async () => { const m = (await keptIn(`${SB}/lindqvist.pdf`))[0]; return m && m.due === undefined && m.boxes === KEY && m.made === DAY; }, 'dismiss drops its due and keeps its boxes', 8000);
+    await poll(() => qa('.pane[data-active="1"] .book .pbox.dis[data-kept="1"]').length === 2, 'its boxes are dashed', 8000);
+    must(useApp.getState().notice?.line === '§ pp. 41–42 · dismissed' && useApp.getState().notice?.undo === true, `the notice: "${useApp.getState().notice?.line}"`);
+    await undoNotice();
+    await poll(async () => (await keptIn(`${SB}/lindqvist.pdf`))[0]?.due === '2026-11-03', 'undo brings it back as it was', 8000);
+
+    // the inspector lists the PDF's passages; the palette too
+    (q<HTMLElement>('.top .insp-toggle:not(.side-toggle)') as HTMLElement).click();
+    const row = await poll(() => q<HTMLElement>('.insp [data-marks="passages"] li'), 'the inspector lists the passage kept with the PDF', 8000);
+    must(q('.cl-t', row)?.textContent === 'pp. 41–42' && q('.cl-due', row)?.textContent === 'tomorrow', `by its pages and when it is next ("${row.textContent}")`);
+    await shot('book-passage-inspector');
+    (q<HTMLElement>('.top .insp-toggle:not(.side-toggle)') as HTMLElement).click();
+    await poll(() => !q('.insp'), 'closed', 8000);
+    {
+      const { markList } = await import('./book.js');
+      const rows = await markList('passages', CH3);
+      must(rows.length === 1 && rows[0]!.title === 'pp. 41–42' && rows[0]!.sub === 'back tomorrow', `passages · <book> in the palette lists it (${rows.map((r) => `${r.title} ${r.sub}`).join(', ')})`);
+    }
+
+    // ── the next day it is in the queue: its session is the pages at its boxes; next, then dismiss, then undo ──
+    setClockDay('2026-11-03');
+    refreshQueue();
+    const kept = await poll(() => useApp.getState().queue.find((i): i is SectionItem => i.kind === 'section' && i.passage?.boxes === KEY), 'the passage is in the queue', 8000);
+    must(kept.path === CH3 && kept.heading === 'pp. 41–42' && kept.due === '2026-11-03' && kept.pri === 20, `of the chapter whose pages it is on, called by its pages, at the chapter's priority (${kept.path}, ${kept.heading}, pri ${kept.pri})`);
+    {
+      const { inFocus } = await import('./items.js');
+      must(inFocus(kept, 'read') && !inFocus(kept, 'recall'), 'the focus read counts it');
+    }
+    openNode(queueId('today'));
+    const qrow = await poll(() => qa<HTMLElement>('.qlist li').find((li) => q('.kindtag', li)?.textContent === 'passage'), 'the day\'s queue shows its row', 10000);
+    log(`its row: "${qrow.textContent?.replace(/\s+/g, ' ').slice(0, 120)}"`);
+    must((qrow.textContent ?? '').includes('pp. 41–42') && (qrow.textContent ?? '').includes('boxed nov 2'), 'tagged passage, named by its pages, boxed nov 2');
+    await shot('book-passage-queue');
+    openSession(kept);
+    await poll(() => q('.pane[data-active="1"] .doc-session[data-book="1"] .book .pdf-page[data-page="41"] canvas'), 'its session opens the book', 15000);
+    const kbox = await poll(() => q<HTMLElement>(`.pane[data-active="1"] .doc-session .pbox.cur[data-kept="1"]`), 'its boxes lit', 10000);
+    {
+      const pr = q<HTMLElement>('.pane[data-active="1"] .doc-session .book-pages')!.getBoundingClientRect();
+      const br = kbox.getBoundingClientRect();
+      must(br.top >= pr.top && br.top < pr.bottom, `the pages landed at them (box at ${Math.round(br.top - pr.top)} px in a ${Math.round(pr.height)} px view)`);
+    }
+    must(alone() && useApp.getState().reveal === null, 'no note opened beside them: a passage is on the pages alone');
+    must(qa('.pane[data-active="1"] .session-bar .sb-actions .ra-l').map((b) => b.textContent).join(' / ').startsWith('next · back in'), 'next / later / dismiss under the book');
+    await shot('book-passage-session');
     key('Enter');
-    await poll(() => useApp.getState().caretHeading?.text === NAME, '⏎ puts the caret in the new section', 8000);
-    const lit = await poll(() => { const l = qa<HTMLElement>('.pane[data-active="1"] .book .pbox.cur'); return l.length === 2 && l.every((b) => b.dataset.section === NAME) ? l : null; }, 'the caret lights its two boxes', 8000);
-    must(lit.map((b) => b.dataset.page).join(',') === '41,42', 'on pp. 41 and 42');
-    await shot('book-lit');
+    const passed = await poll(async () => { const m = (await keptIn(`${SB}/lindqvist.pdf`))[0]; return m && m.reps === 1 ? m : null; }, 'next counts a pass on its line among the marks', 8000);
+    must(passed.due! > '2026-11-03' && passed.made === DAY && passed.boxes === KEY, `back later, the rest of its line kept (${JSON.stringify(passed)})`);
+    must(useApp.getState().readings.some((r) => r.doc === CH3 && r.read === 'pass' && r.sec === 'pp. 41–42') && useApp.getState().readings.some((r) => r.doc === CH3 && r.read === 'section' && r.sec === 'pp. 41–42'), 'the reading log has it made and passed, by its pages');
+    // dismissed from a session on it, and taken back from the notice
+    refreshQueue();
+    const again = await poll(() => useApp.getState().queue.find((i): i is SectionItem => i.kind === 'section' && i.passage?.boxes === KEY), 'still in the queue, for a later day', 8000);
+    openSession(again);
+    await poll(() => q('.pane[data-active="1"] .doc-session .pbox.cur[data-kept="1"]'), 'its session again', 15000);
+    key('d');
+    await poll(async () => (await keptIn(`${SB}/lindqvist.pdf`))[0]?.due === undefined, 'd dismisses it: no due, its boxes kept', 8000);
+    await poll(() => useApp.getState().notice?.undo === true && (useApp.getState().notice?.line ?? '').includes('dismissed'), 'the notice can take it back', 8000);
+    refreshQueue();
+    must(!useApp.getState().queue.some((i) => i.kind === 'section' && i.passage?.boxes === KEY), 'out of the queue');
+    await undoNotice();
+    await poll(async () => (await keptIn(`${SB}/lindqvist.pdf`))[0]?.due === passed.due, 'undo: back as it was, its pass kept', 8000);
+    await poll(() => useApp.getState().queue.some((i) => i.kind === 'section' && i.passage?.boxes === KEY), 'and in the queue again', 8000);
+    must((await bodyOf(CH3)) === noteBefore, 'through all of it the note is as it was');
+    setClockDay(DAY);
+    refreshQueue();
+    await openBook(CH3, 41);
 
-    // show boxes here draws both crops, a page break between
-    const hd = await poll(() => qa<HTMLElement>('.dd-h', notesPane()!).find((h) => h.textContent?.startsWith(NAME)), 'its heading in the note');
+    // ── a note written before milestone 81: its boxed sections still have their chips, crops and tags ──
+    pressWord();
+    await poll(() => notesIn(), 'the note beside the pages', 8000);
+    must(!qa('.dd-h', notesPane()!).some((h) => h.textContent?.includes('pp. 41')) && qa('.dd-h', notesPane()!).length === 2, 'the note has its own two headings and nothing of the passage');
+    const OLD = '3.2 · the partition function (3.9)';
+    const hd = await poll(() => qa<HTMLElement>('.dd-h', notesPane()!).find((h) => h.textContent?.startsWith(OLD)), 'an older boxed section\'s heading in the note');
     const chip = q<HTMLElement>('.book-chip', hd)!;
-    must(chip.textContent === 'show in bookshow boxes hereback tomorrow', `its chip: "${chip.textContent}"`);
+    must(chip.textContent === 'show in bookshow boxes heredue today', `its chip: "${chip.textContent}"`);
     down(q('[data-act="show-here"]', chip)!);
     let crops: HTMLCanvasElement[];
     try {
-      crops = await poll(() => { const cs = qa<HTMLCanvasElement>('.inline-boxes .crop canvas', notesPane()!); return cs.length === 2 ? cs : null; }, 'show boxes here draws both crops', 10000);
+      crops = await poll(() => { const cs = qa<HTMLCanvasElement>('.inline-boxes .crop canvas', notesPane()!); return cs.length === 1 ? cs : null; }, 'show boxes here draws its crop', 10000);
     } catch (e) {
       log(`why: inline ${qa('.inline-boxes').length}, crops ${qa('.inline-boxes .crop').map((c) => `${(c as HTMLElement).dataset.box}=${(c as HTMLElement).dataset.drawn}`).join(' ')}, shown ${JSON.stringify(useApp.getState().inlineBoxes)}, chip "${q('.book-chip', hd)?.textContent}", errors ${errors.join(' | ')}`);
       throw e;
     }
-    must(q('.inline-boxes .pbreak', notesPane()!)?.textContent === 'p. 42' && crops.every((c) => c.width > 50 && c.height > 5), 'a page break marked between them');
+    must(crops.every((c) => c.width > 50 && c.height > 5), 'drawn from the page');
     await shot('book-inline');
 
-    // show in book, from the note's side: the boxes flash on the pages beside
+    // show in book, from the note's side: the box flashes on the pages beside
     down(q('[data-act="show-in-book"]', chip)!);
-    await poll(() => notesIn() && qa<HTMLElement>('.pane[data-active="1"] .book .pbox.flash').length === 2, 'show in book flashes its boxes on the pages beside the note', 8000);
+    await poll(() => notesIn() && qa<HTMLElement>('.pane[data-active="1"] .book .pbox.flash').length === 1, 'show in book flashes its box on the pages beside the note', 8000);
 
-    // a tag beside the page (or the gutter's §) goes to its section in the note beside
+    // its tag beside the page (or the gutter's §) goes to its section in the note beside
     const tag = await poll(() => qa<HTMLElement>('.pane[data-active="1"] .book .ptag:not(.cont), .pane[data-active="1"] .book .pgut').find((t) => (t.textContent ?? '').includes('3.2 · the partition') || t.title.startsWith('3.2 · the partition')), 'the partition function is named beside its box');
     down(tag);
-    await poll(() => notesIn() && useApp.getState().caretHeading?.text === '3.2 · the partition function (3.9)', 'clicking it goes to its section in the note beside', 8000);
+    await poll(() => notesIn() && useApp.getState().caretHeading?.text === OLD, 'clicking it goes to its section in the note beside', 8000);
+
+    // ] and [ step between them all, in book order: the older section, the passage, the dismissed one
+    key('\\', { metaKey: true });
+    await poll(() => alone(), 'the note closed');
+    const litNow = () => [...new Set(qa<HTMLElement>('.pane[data-active="1"] .book .pbox.cur').map((b) => b.dataset.section))].join('|');
+    key(']');
+    await poll(() => litNow() === KEY, '] steps on to the passage, in book order', 8000);
+    must(alone(), 'and opens nothing: it is on the pages alone');
+    key('[');
+    await poll(() => litNow() === OLD && notesIn(), '[ steps back to the older section, whose heading is in the note', 8000);
 
     // ⌘\ closes the note, and opens it again
     key('\\', { metaKey: true });
@@ -7742,7 +7861,8 @@ export async function smokeBook(vault: Vault): Promise<void> {
     await openBook(P12, 1);
     await drag(1, 0.12, 0.368, 0.77, 0.088);
     key('m');
-    await poll(async () => /\n## p\. 1\n\n<!-- box 1:0\.1\d{2}:0\.3\d{2}:0\.7\d{2}:0\.0\d{2} -->\n/.test(await text(P12)), 'm clips the box under ## p. 1', 10000);
+    await poll(async () => /^---\n[\s\S]*?\n---\n\n<!-- box 1:0\.1\d{2}:0\.3\d{2}:0\.7\d{2}:0\.0\d{2} -->\n$/.test(await text(P12)), 'm clips the box into the note: the clip alone, at its end', 10000);
+    must(!/^## /m.test(await text(P12)), 'no page heading is written');
     await poll(() => notesIn() && qa<HTMLCanvasElement>('.raw.clip .crop canvas', notesPane()!).length === 1, 'the note opens beside, the clip drawn in it as the crop of its page', 10000);
     const caretP = await poll(() => {
       const s = window.getSelection();
@@ -7752,6 +7872,26 @@ export async function smokeBook(vault: Vault): Promise<void> {
     }, 'the caret below it, for word ::: meaning', 8000);
     log(`caret in ${caretP.className}`);
     await shot('book-clip');
+    // a second clip lands after the block the caret is in: under the first
+    await drag(1, 0.12, 0.5, 0.77, 0.06);
+    key('m');
+    await poll(async () => /<!-- box 1:0\.1\d{2}:0\.3\d{2}[^\n]*-->\n\n<!-- box 1:0\.1\d{2}:0\.5\d{2}[^\n]*-->\n$/.test(await text(P12)), 'a second clip goes under the first, where the caret was', 10000);
+    // the caret put on the first clip: the third lands right after it, between the two
+    {
+      const surface = await poll(() => q<HTMLElement>('.draft-doc', notesPane()!), 'the note\'s page');
+      const view = pageViews.get(surface)!;
+      view.focus();
+      view.dispatch(view.state.tr.setSelection(NodeSelection.create(view.state.doc, 0)));
+      await sleep(200);
+    }
+    await drag(1, 0.12, 0.7, 0.77, 0.06);
+    key('m');
+    const three = await poll(async () => { const t = await text(P12); return (t.match(/<!-- box /g) ?? []).length === 3 ? t : null; }, 'a third clip', 10000);
+    must(/<!-- box 1:0\.1\d{2}:0\.3\d{2}[^\n]*-->\n\n<!-- box 1:0\.1\d{2}:0\.7\d{2}[^\n]*-->\n\n<!-- box 1:0\.1\d{2}:0\.5\d{2}[^\n]*-->\n$/.test(three) && !/^## /m.test(three), 'after the block the caret is in, not at the end; still no heading');
+    must(useApp.getState().notice?.undo === true, 'the notice can undo it');
+    await undoNotice();
+    await poll(async () => ((await text(P12)).match(/<!-- box /g) ?? []).length === 2, 'undo takes the clip just written out again', 8000);
+    must((await keptIn(`${SB}/reader.pdf`)).length === 0, 'a clip is the note\'s: nothing kept with the PDF');
 
     // ── the queue opens a section at its boxes ──
     refreshQueue();
@@ -7807,11 +7947,13 @@ export async function smokeBook(vault: Vault): Promise<void> {
     must(q(`.trow[data-path="${CSS.escape(ALONE)}"] .glyph`)?.textContent === '“' && q(`.trow[data-path="${CSS.escape(ALONE)}"] .name`)?.textContent === 'alone', `a source's mark, named without its extension ("${q(`.trow[data-path="${CSS.escape(ALONE)}"]`)?.textContent}")`);
     await openBook(ALONE, 1);
     must(qa('.pane[data-active="1"] .book .pdf-page').length === 44 && q('.pane[data-active="1"] .book h1')?.textContent === 'alone', 'opened: all 44 of its pages, titled by its name');
-    must(!!q('.pane[data-active="1"] .book .read-bar') && qa('.pane[data-active="1"] .book .pbox').length === 0, 'the read bar, and no section on its pages');
+    must(!!q('.pane[data-active="1"] .book .read-bar') && qa('.pane[data-active="1"] .book .pbox:not([data-kept="1"])').length === 0, 'the read bar, and no section of a note on its pages');
+    // the same file as the chapter's book: what is kept with the PDF is kept by its contents, so the passage is on these pages too
+    must(hashOf(ALONE) === hashOf(`${SB}/lindqvist.pdf`) && qa(`.pane[data-active="1"] .book .pbox[data-kept="1"]`).length === 2, 'the passage boxed in the chapter is on the same pages of the same file');
     await shot('alone-open');
     // its inspector, by its toggle: a source, its path, its line; no note yet, no passages
     (q<HTMLElement>('.top .insp-toggle:not(.side-toggle)') as HTMLElement).click();
-    await poll(() => qa('.insp h6').some((h) => h.textContent === 'source') && !qa('.insp h6').some((h) => h.textContent === 'passages, in book order'), 'its inspector: a source; no note, so no passages', 8000);
+    await poll(() => qa('.insp h6').some((h) => h.textContent === 'source') && !qa('.insp h6').some((h) => h.textContent === 'sections in the notes'), 'its inspector: a source; no note, so no passages', 8000);
     {
       const rows = qa<HTMLElement>('.insp .kvr').map((r) => `${q('dt', r)?.textContent}: ${q('dd', r)?.textContent?.replace(/\s+/g, ' ').trim()}`);
       log(`the PDF's inspector: ${rows.join(' | ').slice(0, 300)}`);
@@ -7850,11 +7992,24 @@ export async function smokeBook(vault: Vault): Promise<void> {
     await sleep(300);
     must(alone() && !useApp.getState().docs[ALONE]?.note, 'nothing picked: the pages alone, no note');
 
-    // a passage boxed and kept asks for a note; a new one, named as typed, in a folder of the person's choosing, takes the section
-    await drag(42, 0.1, 0.097, 0.77, 0.04);
+    // a passage boxed here asks for no note: kept with the PDF, the PDF still with no note
+    await drag(43, 0.1, 0.2, 0.77, 0.05);
     key('e');
-    const pick2 = await poll(() => q<HTMLInputElement>('.palette-input input'), 'e on a box asks for a note first', 8000);
-    must(qa('.pane[data-active="1"] .book .pbox.pending:not(.ghost)').length === 1, 'the box is kept while it asks');
+    const made2 = await poll(async () => (await keptIn(ALONE)).find((m) => m.page === 43), 'e on a box keeps the passage with the PDF', 10000);
+    await sleep(500);
+    must(!q('.palette-overlay') && alone() && !useApp.getState().docs[ALONE]?.note && useApp.getState().noteAttach === null, 'no note asked for, none made, nothing opened');
+    must(qa('.pane[data-active="1"] .book .pbox.pending:not(.ghost)').length === 0 && qa(`.pane[data-active="1"] .book .pbox[data-kept="1"][data-section="${made2.boxes}"]`).length === 1, 'its box drawn on the page, the pending one gone');
+    {
+      const line3 = (JSON.parse(await text('.ilmi/reading.json')) as Record<string, { read: string }>)[ALONE]!.read;
+      must(/ reps=1 pos=43 y=0\.2[45]\d$/.test(line3) && line3 !== line2, `the read point moved past the box on the PDF's own line (${line3})`);
+    }
+    refreshQueue();
+    await poll(() => useApp.getState().queue.some((i) => i.kind === 'section' && i.passage?.boxes === made2.boxes && i.path === CH3), 'in the queue, of the chapter that holds its page (the same file)', 8000);
+
+    // `create notes` makes the note: named as typed, in a folder of the person's choosing, empty, a row in the tree, opened beside the pages
+    must(word().textContent === 'create notes', `the bar says create notes (${word().textContent})`);
+    pressWord();
+    const pick2 = await poll(() => q<HTMLInputElement>('.palette-input input'), 'create notes asks which note', 8000);
     typeInto(pick2, 'notes on the ruler');
     await sleep(150);
     must(paletteRows()[0] === '[note] new note · notes on the ruler', `the new note takes the name typed (${paletteRows()[0]})`);
@@ -7867,8 +8022,9 @@ export async function smokeBook(vault: Vault): Promise<void> {
     await sleep(150);
     q<HTMLInputElement>('.palette-input input')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
     const NEWNOTE = 'fleeting/notes on the ruler.md';
-    const newText = await poll(async () => { try { const t = await text(NEWNOTE); return /^---\npdf: \.\.\/books\/alone\.pdf\n---\n/.test(t) && /\n## .+\n<!-- read made=\S+ due=\S+ ivl=\d+ boxes=42:0\.1\d{2}:0\.0\d{2}:0\.7\d{2}:0\.0\d{2} -->/.test(t) ? t : null; } catch { return null; } }, 'the note is made in fleeting, names the PDF, and holds the section', 15000);
-    log(`the new note:\n${newText.slice(0, 300)}`);
+    const newText = await poll(async () => { try { const t = await text(NEWNOTE); return /pdf: \.\.\/books\/alone\.pdf\n/.test(t) ? t : null; } catch { return null; } }, 'the note is made in fleeting and names the PDF', 15000);
+    log(`the new note: ${JSON.stringify(newText)}`);
+    must(newText === '---\npdf: ../books/alone.pdf\n---\n', 'a blank note: its front matter names the PDF, and nothing else is in it');
     try {
       await poll(() => useApp.getState().docs[ALONE]?.note === NEWNOTE && useApp.getState().docs[NEWNOTE]?.of === ALONE && useApp.getState().docs[NEWNOTE]?.pdf === undefined, 'the PDF shows that note, and the note is its notes, not pages', 8000);
     } catch (e) {
@@ -7877,28 +8033,29 @@ export async function smokeBook(vault: Vault): Promise<void> {
     }
     await poll(() => notesIn() && activeTab(useApp.getState().panes)?.id === ALONE, 'the note opens beside the pages, the pages kept active', 10000);
     must(q('.pane[data-active="0"] .tab[data-active="1"] .title')?.textContent === 'notes on the ruler' && !q('.book-notes-doc', notesPane()!) && !!q('h1', notesPane()!), 'as the ordinary note it is: its own tab, its title on the page');
-    const secHead = await poll(() => qa<HTMLElement>('.dd-h', notesPane()!).find((h) => h.querySelector('.book-chip')), 'the section in it, with its chip', 8000);
-    log(`the section: "${secHead.textContent}"`);
-    must(qa('.pane[data-active="1"] .book .pbox:not(.pending)').length === 1 && qa('.pane[data-active="1"] .book .pbox.pending:not(.ghost)').length === 0, 'its box drawn on the page from the note, the pending one gone');
-    {
-      const line3 = (JSON.parse(await text('.ilmi/reading.json')) as Record<string, { read: string }>)[ALONE]!.read;
-      must(/ reps=1 pos=42 y=0\.13\d$/.test(line3) && line3 !== line2, `the read point moved past the box on the PDF's own line, not the note's (${line3})`);
-    }
+    must(!q('.dd-h', notesPane()!) && !q('.book-chip', notesPane()!) && !q('.crop', notesPane()!) && (q('.draft-doc', notesPane()!)?.textContent ?? '').trim() === '', 'nothing in it: no heading, no chip, no crop, no words');
+    must(word().textContent === 'hide notes', `the bar says hide notes while it is beside (${word().textContent})`);
+    // a row in the tree, in the folder chosen
+    useApp.setState((st) => ({ bookSide: true, open: { ...st.open, fleeting: true } }));
+    const trow = await poll(() => q<HTMLElement>(`.trow[data-path="${CSS.escape(NEWNOTE)}"]`), 'the note is a row in the tree', 8000);
+    must(q('.name', trow)?.textContent === 'notes on the ruler', `named as typed ("${trow.textContent}")`);
     await shot('alone-notes');
     pressWord();
-    await poll(() => alone() && word().dataset.on === '0', 'notes closes the note again', 8000);
+    await poll(() => alone() && word().dataset.on === '0' && word().textContent === 'open notes', 'the bar closes the note again, and says open notes', 8000);
     pressWord();
     await poll(() => notesIn(), 'and opens that note from now on, with nothing asked', 8000);
-    // the note opened from the tree is the note, not pages; show in book from it opens the pages beside
+    // another passage, with the note open beside: still nothing written into it
+    await drag(44, 0.1, 0.2, 0.77, 0.05);
+    key('e');
+    await poll(async () => (await keptIn(ALONE)).some((m) => m.page === 44), 'a passage boxed with the note open is kept with the PDF', 10000);
+    await sleep(500);
+    must((await text(NEWNOTE)) === '---\npdf: ../books/alone.pdf\n---\n', 'and the note is still blank');
+    // the note opened from the tree is the note, not pages
     key('\\', { metaKey: true });
     await poll(() => alone(), 'closed');
     openNode(NEWNOTE);
-    await poll(() => activeTab(useApp.getState().panes)?.id === NEWNOTE && q('.pane[data-active="1"] .reader-wrap[data-pdf] .draft-doc') && !q('.pane[data-active="1"] .book'), 'the note from the tree opens as a note', 8000);
-    down(await poll(() => q<HTMLElement>('.pane[data-active="1"] .book-chip [data-act="show-in-book"]'), 'its chip offers show in book'));
-    await poll(() => q(`.pane[data-active="0"] .book[data-path="${CSS.escape(ALONE)}"] .pbox.flash`), 'show in book opens the pages beside the note and flashes the box', 10000);
-    await shot('alone-show-in-book');
-    useApp.getState().setPanes((p) => closePane(p, p.panes.findIndex((x) => x.tabs.some((t) => t.id === ALONE))));
-    await poll(() => qa('.pane').length === 1, 'the pages\' pane closed');
+    await poll(() => activeTab(useApp.getState().panes)?.id === NEWNOTE && q('.pane[data-active="1"] .reader-wrap[data-pdf] .draft-doc') && !q('.pane[data-active="1"] .book'), 'the note from the tree opens as a note, linked to its pages', 8000);
+    await shot('alone-note-alone');
 
     // ── dark: the pages, then the note beside them ──
     await openBook(CH3, 41);
@@ -7928,14 +8085,15 @@ export async function smokeBook(vault: Vault): Promise<void> {
 // old extracts boxed sections of the notes. Three days by the app's clock.
 // 2026-11-02, the physics first pass: the day's queue is one line of books,
 // sections and cards saying where each stands; reading on in ch. 3 opens
-// the book at its read point; two derivations boxed on pp. 24 and 26 become
-// sections named from the page, in book order; done for today moves the
-// read point. 2026-11-05, a later day: the boxed derivation comes up
-// `boxed nov 2, nothing written yet · first time back`, opens at its boxes,
-// is written up with numbered steps and cloze steps, then next. 2026-11-10:
-// it returns `written, 3 cards · back for the 2nd time` and is dismissed,
-// its cards still due. The Arabic passage: read in rotation, a paragraph
-// clipped with `m`, `word ::: meaning` typed under it. Light, then dark.
+// the book at its read point; two derivations boxed on pp. 24 and 26 are
+// kept with the book (milestone 81: passages, in no note, the notice
+// naming each from the page); done for today moves the read point.
+// 2026-11-05, a later day: the boxed derivation comes up `boxed nov 2 ·
+// first time back`, opens at its boxes with no note beside, then next.
+// 2026-11-10: it returns `back for the 2nd time` and is dismissed. The
+// chapter's note, written before 81, is untouched throughout. The Arabic
+// passage: read in rotation, a paragraph clipped with `m` at the note's
+// end, no page heading, `word ::: meaning` typed under it. Light, then dark.
 export async function smokeBooks(vault: Vault): Promise<void> {
   type Heading = import('../format/index.js').Heading;
   type SectionItem = import('../schedule/index.js').SectionItem;
@@ -7988,6 +8146,17 @@ export async function smokeBooks(vault: Vault): Promise<void> {
   const items = () => useApp.getState().queue;
   const sectionOf = (p: string, start: string) => items().find((i): i is SectionItem => i.kind === 'section' && i.path === p && i.heading.startsWith(start));
   const readOf = (p: string) => items().find((i): i is ReadItem => i.kind === 'read' && i.path === p);
+  type PassageMark = import('../vault/index.js').PassageMark;
+  const { marksPath, parseMarks } = await import('../vault/index.js');
+  /** The passages kept with a PDF (`.ilmi/marks/<hash>.json`), in book order. */
+  const keptIn = async (pdf: string): Promise<PassageMark[]> => {
+    const h = (vault.fs as unknown as { blobAt(abs: string): string | null }).blobAt(vault.abs(pdf));
+    if (!h || !(await vault.fs.stat(vault.abs(marksPath(h))))) return [];
+    return Object.values(parseMarks(await text(marksPath(h)))).filter((m): m is PassageMark => m.kind === 'passage').sort((a, b) => a.page - b.page || a.y - b.y);
+  };
+  const BOOK = `${LQ}.pdf`;
+  /** The passage of the queue whose first box is on `page`. */
+  const keptOf = (page: number) => items().find((i): i is SectionItem => i.kind === 'section' && !!i.passage && i.passage.boxes.startsWith(`${page}:`));
   /** Draw a box on a page as a pointer would: down at its corner, a move, up at the other. */
   const drag = async (page: number, x: number, y: number, w: number, h: number) => {
     const el = await poll(() => q<HTMLElement>(`.pane[data-active="1"] .book .pdf-page[data-page="${page}"]`), `page ${page} is drawn`, 30000);
@@ -8074,22 +8243,23 @@ export async function smokeBooks(vault: Vault): Promise<void> {
     await shot('books-read-on-notes');
     await close();
 
-    // two derivations boxed on pp. 24 and 26 become sections, named from the page, in book order
+    // two derivations boxed on pp. 24 and 26 are kept with the book, the notice naming each from the page; the note is not touched
+    const noteWas = (await text(CH3)).replace(/\nread: [^\n]*/, '');
     await drag(24, 0.11, 0.67, 0.78, 0.075);
     key('e');
-    const avg = await poll(async () => (await headings(CH3)).find((h) => h.text === '3.3 · average values (3.8)'), 'e names the ⟨E⟩ derivation "3.3 · average values (3.8)"', 10000);
-    must(avg.read?.made === DAY1 && avg.read.due === addDays(DAY1, 2) && avg.read.ivl === 2 && !!parseBoxes(avg.read.boxes ?? ''), `boxed today, back in 2 days, the cadence at priority 50 (${avg.read?.boxes})`);
-    await poll(() => notesIn() && qa<HTMLElement>('.dd-h', notesPane()!).some((h) => h.textContent?.startsWith('3.3 · average values (3.8)')), 'the note opens beside the pages with the section in it', 8000);
+    const avg = await poll(async () => (await keptIn(BOOK)).find((m) => m.page === 24), 'e keeps the ⟨E⟩ derivation with the book', 10000);
+    must(avg.made === DAY1 && avg.due === addDays(DAY1, 2) && avg.ivl === 2 && !!parseBoxes(avg.boxes), `boxed today, back in 2 days, the cadence at priority 50 (${avg.boxes})`);
+    must(useApp.getState().notice?.line === '§ 3.3 · average values (3.8) · back in 2d, until dismissed', `the notice names it from the page: "${useApp.getState().notice?.line}"`);
+    await sleep(500);
+    must(alone(), 'no note opens beside the pages');
+    await poll(() => qa(`.pane[data-active="1"] .doc-session .pbox[data-kept="1"][data-page="24"]`).length === 1, 'its box is drawn on p. 24', 8000);
     await shot('books-boxed');
-    key('Escape');
-    await close();
     await drag(26, 0.11, 0.12, 0.78, 0.2);
     key('e');
-    const eq = await poll(async () => (await headings(CH3)).find((h) => h.text === '3.6 · the equipartition theorem (3.16)'), 'e names the equipartition derivation "3.6 · the equipartition theorem (3.16)"', 10000);
-    const order = (await headings(CH3)).map((h) => h.text.slice(0, 22));
-    must(order.join(' | ') === 'why the Boltzmann fact | expand S_R, not Ω_R | 3.3 · average values ( | 3.3 · average values ( | 3.4 · the Helmholtz fr | 3.6 · the equipartitio | equipartition fails wh | the Schottky anomaly | 3.8 · the Einstein sol', `the notes in book order: ${order.join(' | ')}`);
-    key('Escape');
-    await close();
+    const eq = await poll(async () => (await keptIn(BOOK)).find((m) => m.page === 26), 'e keeps the equipartition derivation', 10000);
+    must(useApp.getState().notice?.line === '§ 3.6 · the equipartition theorem (3.16) · back in 2d, until dismissed', `named from the page in the notice: "${useApp.getState().notice?.line}"`);
+    must((await keptIn(BOOK)).map((m) => m.page).join(',') === '24,26', 'two passages kept with the book, in book order');
+    must((await text(CH3)).replace(/\nread: [^\n]*/, '') === noteWas && (await headings(CH3)).length === 7, 'the note is as it was: its seven sections, nothing added');
     // done for today: the read point moves to the bottom of the view
     let before = await text(CH3);
     const sc = q<HTMLElement>('.pane[data-active="1"] .doc-session .book-pages')!;
@@ -8102,65 +8272,41 @@ export async function smokeBooks(vault: Vault): Promise<void> {
     must(r1?.pos !== undefined && r1.pos >= 26 && r1.reps === 5 && r1.y !== undefined, `the read point moved on (pos=${r1?.pos} y=${r1?.y} reps=${r1?.reps})`);
     must(useApp.getState().log[0] === doneLine('“', 'ch. 3: the canonical ensemble', useApp.getState().log[0]!.split(' · ').slice(-2).join(' · ')), `the done row: "${useApp.getState().log[0]}"`);
 
-    // ── a later day: the boxed derivation comes up with nothing written ──
+    // ── a later day: the boxed derivation comes up ──
     setClockDay(DAY2);
     refreshQueue();
-    const sec = await poll(() => { const s = sectionOf(CH3, '3.6 · the equipartition'); return s && isDue(s, appNow()) ? s : null; }, 'three days on, the boxed derivation is due', 8000);
-    must(!sec.written && sec.cards === 0, 'nothing written, no cards');
+    const sec = await poll(() => { const s = keptOf(26); return s && isDue(s, appNow()) ? s : null; }, 'three days on, the boxed derivation is due', 8000);
+    must(sec.path === CH3 && sec.heading === 'p. 26', `an item of the chapter that holds its page, called by its page (${sec.path}, ${sec.heading})`);
     await openQuery();
-    must(where(rowOf('3.6 · the equipartition')) === 'boxed nov 2, nothing written yet · first time back', `its row: "${where(rowOf('3.6 · the equipartition'))}"`);
-    rowOf('3.6 · the equipartition')?.scrollIntoView({ block: 'center' });
+    const prow = () => qa<HTMLElement>('.pane[data-active="1"] .qlist li:not(.fold)').find((r) => r.dataset.el === 'section' && q('.kindtag', r)?.textContent === 'passage' && (q('.sec-title', r)?.textContent ?? '') === 'p. 26');
+    must(where(prow()) === 'boxed nov 2 · first time back', `its row: "${where(prow())}"`);
+    prow()?.scrollIntoView({ block: 'center' });
     await shot('books-later-day');
     await sessionAt(sec, 26);
-    await poll(() => notesIn() && useApp.getState().caretHeading?.text === sec.heading, 'the session opens the note beside the pages, at its heading, the caret in it', 8000);
-    const lit = await poll(() => qa<HTMLElement>('.pane[data-active="1"] .doc-session .pbox.cur').filter((b) => b.dataset.section === sec.heading), 'its box lit on p. 26', 8000);
+    const lit = await poll(() => { const l = qa<HTMLElement>('.pane[data-active="1"] .doc-session .pbox.cur').filter((b) => b.dataset.section === eq.boxes); return l.length ? l : null; }, 'its box lit on p. 26', 8000);
     must(lit.length === 1 && lit[0]!.dataset.page === '26', 'one box, on p. 26');
-    must(q('.sb-where', bar())?.textContent === 'boxed nov 2, nothing written yet · first time back', `the bar: "${q('.sb-where', bar())?.textContent}"`);
+    must(alone(), 'the pages alone: no note beside them');
+    must(q('.sb-where', bar())?.textContent === 'boxed nov 2 · first time back', `the bar: "${q('.sb-where', bar())?.textContent}"`);
     must(actions() === 'next · back in 5d / later / dismiss', `the actions: ${actions()}`);
-    // written up: numbered steps, three of them cloze
-    const surface = q<HTMLElement>('.draft-doc', notesPane()!)!;
-    surface.focus();
-    keydown(surface, 'Enter');
-    await sleep(200);
-    type('1. $Z_q \\propto \\int e^{-\\beta c q^2}\\,dq$, a Gaussian integral: {{c1::$\\sqrt{\\pi/\\beta c}$}}');
-    keydown(surface, 'Enter');
-    await sleep(200);
-    type('2. so $\\ln Z_q = {{c1::-\\tfrac12 \\ln \\beta}} + \\text{const}$');
-    keydown(surface, 'Enter');
-    await sleep(200);
-    type('3. $\\langle E_q \\rangle = -\\partial_\\beta \\ln Z_q$ = {{c1::$1/2\\beta = \\tfrac12 kT$}}, whatever $c$ is');
-    await sleep(1500);
-    must((surface.textContent ?? '').includes('Gaussian integral') && (surface.textContent ?? '').includes('whatever'), 'the steps are on the page');
-    const ch = useApp.getState().caretHeading;
-    must(ch?.text === sec.heading, `the caret is still in the section after the write-up and its save (caretHeading: ${JSON.stringify(ch && { nth: ch.nth, text: ch.text.slice(0, 30) })})`);
-    await shot('books-write-up');
-    before = await text(CH3);
+    await shot('books-passage-session');
     key('Enter');
-    after = await changed(CH3, before, 'next wrote the file');
-    const eq2 = (await headings(CH3)).find((h) => h.text === eq.text)!;
-    must(eq2.read?.due === addDays(DAY2, 5) && eq2.read.ivl === 5 && eq2.read.reps === 1 && eq2.read.boxes === eq.read?.boxes, `the heading's line counted the pass (${JSON.stringify(eq2.read)})`);
-    const cards = await cardsUnder(CH3, '3.6 · the equipartition');
-    must(cards.length === 3 && cards.every((c) => c.kind === 'card' && c.text.includes('{{c1::')), `the write-up is three cloze cards in the section (${cards.length})`);
-    must(useApp.getState().log[0] === doneLine('§', eq.text, 'next · back in 5d'), `the done row: "${useApp.getState().log[0]}"`);
+    const eq2 = await poll(async () => { const m = (await keptIn(BOOK)).find((x) => x.page === 26); return m && m.reps === 1 ? m : null; }, 'next counted the pass on its line', 8000);
+    must(eq2.due === addDays(DAY2, 5) && eq2.ivl === 5 && eq2.boxes === eq.boxes && eq2.made === DAY1, `back in 5 days, its boxes and its day kept (${JSON.stringify(eq2)})`);
+    must(useApp.getState().log[0] === doneLine('§', 'p. 26', 'next · back in 5d'), `the done row: "${useApp.getState().log[0]}"`);
 
-    // ── it returns written, and is dismissed; its cards stay ──
+    // ── it returns, and is dismissed ──
     setClockDay(DAY3);
     refreshQueue();
-    const back = await poll(() => { const s = sectionOf(CH3, '3.6 · the equipartition'); return s && isDue(s, appNow()) ? s : null; }, 'five days on, it is due again', 8000);
-    must(back.cards === 3, 'back with its 3 cards (a section of cards alone is written by its cards)');
+    const back = await poll(() => { const s = keptOf(26); return s && isDue(s, appNow()) ? s : null; }, 'five days on, it is due again', 8000);
     await openQuery();
-    must(where(rowOf('3.6 · the equipartition')) === 'written, 3 cards · back for the 2nd time', `its row: "${where(rowOf('3.6 · the equipartition'))}"`);
-    const dueCards = () => items().filter((i) => i.kind === 'card' && i.path === CH3 && isDue(i, appNow())).length;
-    const cardsBefore = dueCards();
+    must(where(prow()) === 'boxed nov 2 · back for the 2nd time', `its row: "${where(prow())}"`);
     await shot('books-returns');
     await sessionAt(back, 26);
-    before = await text(CH3);
     key('d');
-    after = await changed(CH3, before, 'dismiss wrote the file');
-    const eq3 = (await headings(CH3)).find((h) => h.text === eq.text)!;
-    must(eq3.read?.due === undefined && eq3.read?.boxes === eq.read?.boxes && eq3.read?.made === DAY1, `dismissed: its line keeps made and boxes, no due (${JSON.stringify(eq3.read)})`);
-    await poll(() => { refreshQueue(); return !sectionOf(CH3, '3.6 · the equipartition') && dueCards() === cardsBefore ? true : null; }, `out of the queue, its cards still due (${cardsBefore})`, 8000);
-    must((await cardsUnder(CH3, '3.6 · the equipartition')).length === 3, 'the three cards stay in the section');
+    const eq3 = await poll(async () => { const m = (await keptIn(BOOK)).find((x) => x.page === 26); return m && m.due === undefined ? m : null; }, 'dismiss dropped its due', 8000);
+    must(eq3.boxes === eq.boxes && eq3.made === DAY1, `dismissed: its entry keeps made and boxes (${JSON.stringify(eq3)})`);
+    await poll(() => { refreshQueue(); return !keptOf(26) ? true : null; }, 'out of the queue', 8000);
+    must((await text(CH3)).replace(/\nread: [^\n]*/, '') === noteWas, 'and the note is still as it was');
 
     // ── the Arabic passage: read in rotation, a paragraph clipped, word ::: meaning ──
     const p12 = await poll(() => readOf(P12), 'passage 12 is due to read on');
@@ -8174,7 +8320,7 @@ export async function smokeBooks(vault: Vault): Promise<void> {
     await close();
     await drag(129, 0.12, 0.275, 0.78, 0.072);
     key('m');
-    await poll(async () => /\n## p\. 129\n\n<!-- box 129:0\.1\d{2}:0\.2[6-8]\d:0\.7\d{2}:0\.0[6-8]\d -->\n/.test(await text(P12)), 'm clips the first paragraph under ## p. 129', 10000);
+    await poll(async () => /\n\n<!-- box 129:0\.1\d{2}:0\.2[6-8]\d:0\.7\d{2}:0\.0[6-8]\d -->\n$/.test(await text(P12)), 'm clips the first paragraph at the end of the note', 10000);
     const caretP = await poll(() => {
       const s = window.getSelection();
       const n = s?.anchorNode;
@@ -8192,7 +8338,7 @@ export async function smokeBooks(vault: Vault): Promise<void> {
     must(/<!-- box 129:[\d.:]+ -->\n\nالبَادِيَة ::: the desert, home of the bedouin\n/.test(after), 'the card sits under the clip');
     const r12 = meta(parse(after).doc).read;
     must(r12?.reps === 4 && r12.pos !== undefined && r12.pos >= 129, `the passage's read point moved on (pos=${r12?.pos} y=${r12?.y} reps=${r12?.reps})`);
-    must(/^## p\. 129\n/m.test(after) && after.indexOf('## p. 129') < after.indexOf('## p. 131'), 'the page\'s heading in page order');
+    must(!/^## p\. 129\n/m.test(after) && /^## p\. 131\n/m.test(after), 'no heading made for its page; the older page headings as they were');
 
     // ── dark ──
     await openQuery();
@@ -10639,7 +10785,7 @@ export async function smokeTouch(): Promise<void> {
     await sleep(500);
     // the inspector, only by its toggle: the book's fields and its passages; then closed again
     ask('tap', ...mid(q('.top .insp-toggle:not(.side-toggle)')!));
-    await poll(() => qa('.insp h6').some((h) => h.textContent === 'passages, in book order'), 'its toggle opens the inspector, the book\'s passages in book order', 20000);
+    await poll(() => qa('.insp h6').some((h) => h.textContent === 'sections in the notes'), 'its toggle opens the inspector, the book\'s passages in book order', 20000);
     await sleep(600);
     await shot('touch-inspector');
     ask('tap', ...mid(q('.top .insp-toggle:not(.side-toggle)')!));

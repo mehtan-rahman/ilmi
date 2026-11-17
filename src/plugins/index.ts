@@ -57,7 +57,8 @@ export function usePlugins(): PluginHost | null {
 function toElement(item: QueueItem): A.QueueElement {
   // a section that comes back is reading to a plugin, its heading's block named
   const out: A.QueueElement = { kind: item.kind === 'section' ? 'read' : item.kind, path: item.path, due: item.dueAt.toISOString(), pri: item.pri };
-  if (item.kind === 'section') out.block = item.block;
+  // a passage is in no document's blocks
+  if (item.kind === 'section' && !item.passage) out.block = item.block;
   if (item.kind === 'card') {
     out.block = item.block;
     out.text = item.text;

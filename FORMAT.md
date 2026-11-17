@@ -64,7 +64,7 @@ notes/
     order.json               the order chosen for a directory's children
     reading.json             the reading state of the PDFs on their own
     ink/<sha256>/<page>.pkdrawing   what is written on a PDF's pages
-    marks/<sha256>.json      what is left on a PDF's pages: bookmarks, marks, highlights, portals
+    marks/<sha256>.json      what is left on a PDF's pages: bookmarks, marks, highlights, portals, passages
     reviews/                 the review log, one file a month
       2026-10.jsonl
     same.json                pairs of cards said not to be the same fact
@@ -121,7 +121,8 @@ notes/
   these files a book is unwritten; an older export has none and imports as it
   did. Added by milestone 71.
 - **What is left on a book's pages** (bookmarks, marks by a letter,
-  highlights, portals; milestone 77) is in `.ilmi/marks/<sha256>.json`: one
+  highlights, portals; milestone 77; passages, milestone 81) is in
+  `.ilmi/marks/<sha256>.json`: one
   file a PDF, named by the SHA-256 of the PDF's bytes (lower case), as its
   ink's folder is. So the marks follow the file's bytes, not its name: a
   renamed book keeps them, a chapter cut from a book (§3 `pages`) and the
@@ -171,6 +172,7 @@ notes/
   | `mark`      | `m-` + letter   | `letter`, one of `a`–`z` (the book's) or `A`–`Z` (the collection's)  |
   | `highlight` | `h-` + 12 hex   | `quads`, `text` (the words, whitespace collapsed), `ink` 1–4        |
   | `portal`    | `p-` + 12 hex   | `to`: `{ "page", "y" }`, and `"pdf"` when it is in another PDF       |
+  | `passage`   | `s-` + its boxes | `boxes`, and a section's line: `made` `due` `ivl` `reps` `af` `pri` (§6.5) |
 
   A highlight's `quads` are its lines, each `[page, x, y, w, h]`: the
   page's number, then a rectangle as fractions of that page from its top
@@ -181,6 +183,36 @@ notes/
   capital is the collection's: when two PDFs' files each hold `m-A`, the one
   with the later `at` is the collection's `A`. A portal's `to.pdf` is the
   other PDF's SHA-256; without it the destination is in the same PDF.
+
+  A **passage** is boxes on the pages that come back on the reading loop
+  until dismissed (§6.5, *A passage*). It is kept here and in no note:
+
+  ```
+  "s-41:0.120:0.860:0.770:0.075,42:0.100:0.097:0.770:0.040": {
+    "at": 1794787500000,
+    "boxes": "41:0.120:0.860:0.770:0.075,42:0.100:0.097:0.770:0.040",
+    "due": "2026-11-02",
+    "ivl": 3,
+    "kind": "passage",
+    "made": "2026-10-30",
+    "page": 41,
+    "y": 0.86
+  }
+  ```
+
+  `boxes` is one or more boxes in the grammar of §6.5, `,` between, and is
+  what the passage is: its key is `s-` and that string as written, so the
+  same boxes are one passage on every device, and boxing them again writes
+  the same entry anew. Its `page` and `y` are its first box's. `made` is a
+  day; `due` a day or an instant; `ivl` and `reps` integers ≥ 0; `af` a
+  number ≥ 1.1; `pri` an integer 0–100: each means what it means on a
+  section's line, and an absent one what its absence means there. An entry
+  with no `due` is a passage dismissed: kept, drawn dashed, out of the
+  queue. `boxes` written otherwise (`41:0.12:…`) is read canonically; an
+  entry whose `boxes` is missing or not in the grammar does not read (below).
+  A value of the others that does not read is left out and the rest stands.
+  A passage has no name: where one is shown it is its pages (`p. 41`,
+  `pp. 41–42`).
 
   The file is written with its keys sorted (by code unit) at every level,
   two spaces of indent, fractions to four decimals, and a newline at the
@@ -410,13 +442,17 @@ one the PDF shows. The note's own `read` line, if it has one, is a note's
 note naming a PDF that is not on its own (one with an `.md` of its name)
 is a document with pages as before: it opens as those pages, its body their
 notes. Older work kept what
-came out of the pages in the body under one heading per page, `## p. <n>`, which the app adds the
-first time something lands on that page: a card made from the page goes
-under it, and an extract carved from the page leaves the passage there as a
-paragraph carrying the `<!-- extract NAME -->` backref (§6.3), while the
-child carries `page=<n>` on its `read` line. The heading is ordinary
-Markdown; the format gives it no meaning beyond the convention, and a
-hand-written `## p. 3` is the same heading. A `pdf` that names a missing
+came out of the pages in the body under one heading per page, `## p. <n>`, which the app added the
+first time something landed on that page. Since milestone 81 the app adds
+no such heading and writes nothing into the notes on a PDF but a clip asked
+for (§6.6): a note made for a PDF is empty but for its `pdf` field, and a
+passage boxed on the pages is kept with the PDF (§6.5, *A passage*). An
+extract carved from a page leaves the passage in the notes as a
+paragraph carrying the `<!-- extract NAME -->` backref (§6.3), at their
+end, while the
+child carries `page=<n>` on its `read` line. A `## p. <n>` heading is ordinary
+Markdown; the format gives it no meaning beyond saying the page of what is
+under it (§6.6), and a hand-written `## p. 3` is the same heading. A `pdf` that names a missing
 file is kept and the document reads as text.
 
 **A page range.** `pages: 12-40` (or `pages: 12`, one page; an en dash is
@@ -991,13 +1027,29 @@ a value in the grammar written otherwise (`41:0.12:0.86:0.77:0.075`) is
 written back canonically. A value not in the grammar is kept as written,
 with a diagnostic, and draws nothing. The boxes are in the order they were
 drawn; a passage's place in book order is its first box's (page, then `y`).
-Boxing a passage on the pages writes a `##` heading named from the page
-(the nearest numbered heading at or above the first box, then the equation
-numbers inside the boxes, else `p. N`; a name already taken gets ` · 2`),
-placed before the first boxed section that starts later on the pages, else
-at the end, with `made=<today> due=<today+c> ivl=c boxes=…` (`c` the
-cadence of the document's priority). The read point (§3) moves past the
-last box.
+A section with `boxes` is a **boxed section**: its heading and what is
+under it come back, and its boxes are drawn on the pages, tagged with the
+heading. The app wrote them until milestone 81 (a `##` heading named from
+the page, in book order) and writes none now; a note that holds them reads,
+comes back, draws and is written back as it always did, and one may still
+be written by hand.
+
+**A passage.** Boxing a passage on the pages (`e`) writes nothing into any
+note. The boxes are kept with the PDF, as an entry of its marks (§1,
+`.ilmi/marks/<sha256>.json`, kind `passage`): its `boxes`, and the
+attributes of the table above as the entry's fields, `made=<today>
+due=<today+c> ivl=c` when it is made (`c` the cadence of the priority of
+the document whose pages were open). It comes back, is passed, postponed,
+dismissed and brought back by the rules below, as a section is, with two
+differences that follow from its having no heading and no file: it is
+known by its PDF and its boxes, not by a name; and dismissing always keeps
+the entry (it has `boxes`), which only `remove` takes away. Its priority is
+its own `pri`, else that of the document it is shown as an item of: of the
+documents whose pages are that PDF, a chapter whose `pages` (§3) hold the
+passage's first page, else the document of the whole PDF, else any chapter;
+the first by path among equals. A passage whose PDF is in no document of
+the collection waits, kept and out of the queue. The read point (§3) moves
+past the last box when a passage is made.
 
 Written in that order, unknown keys after. Enrolling writes `made=<today>
 due=<today+c> ivl=c`, `c` the cadence of the section's priority (§3,
@@ -1022,7 +1074,7 @@ the line.
 fallback and is never dropped.
 
 **The heading** is whatever the person names it. A passage boxed by the
-app is named from the page; a section written by hand, or an extract
+app before milestone 81 is named from the page; a section written by hand, or an extract
 document converted into one, keeps its own words (the sample's `why the
 Boltzmann factor — count the reservoir`, boxed over the page it came from,
 with the extract's schedule on its line and its cards under it). The
@@ -1070,9 +1122,16 @@ A comment line of its own, `box` then one box in the grammar of §6.5, is a
 of its page, drawn there as the page itself, for what is clipped rather
 than named (a passage in Arabic, whose text a PDF reader cannot give back
 in order). It is a raw block (§6.4) like any other comment, attached to
-nothing; the app writes it under the page's `## p. N` heading (made the
-first time something lands there, in page order), the card that follows
-it below. Written by hand it may sit anywhere; the sample's passage 12
+nothing. The app writes it (`m` on a box) as a block of its own, under no
+heading: after the block the caret is in when the note is open and the
+caret was put there, else at the note's end; the card that follows it goes
+below. It is the one thing the app writes into the note on a PDF, and
+only when asked for a card. Until milestone 81 it was written under a
+heading `## p. N`, made per page in page order; such headings are ordinary
+headings and stay as they are. The page a block of the notes belongs to is
+its own when it is a clip, else that of the nearest clip, boxed section
+(§6.5: its first box's) or `## p. N` heading above it, the search ending
+at any other heading of the first two levels. Written by hand a clip may sit anywhere; the sample's passage 12
 keeps one directly under each boxed section's heading, where the passage's
 words would have been, since the page's Arabic cannot be read back in
 order, and one before each card made from the commentary under its page's

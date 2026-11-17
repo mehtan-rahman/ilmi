@@ -9281,11 +9281,40 @@ goes to a page), search. The pages are sheets on a desk of their own
 colour, drawn to the pane's width (`PAGE_MAX` 1600); the zoom goes under
 fit now (50%, 75%), kept as the others are. The peek is drawn at a width
 of its own, not the pane's.
-**Not done yet:** the notes on a PDF still take a passage as a `##`
-section in book order and a clip under `## p. N` (the heading is what the
-queue schedules and what says a block's page: FORMAT.md §6.5, §6.6, and
-`vault/pages.ts`); several notes on one PDF; a notebook of written pages;
-a portal made by touch.
+**A blank note, and the passage by itself** (done; the user, 2026-11-16:
+"Remove headings entirely and schedule the boxed passage itself", then,
+of the note, "It should just be a blank note … Linked to the pdf though
+(should still show up in the file tree though)"): a passage boxed with `e`
+is kept with the PDF, an entry of its marks (`.ilmi/marks/<sha256>.json`,
+kind `passage`, keyed by its boxes: FORMAT.md §1, §6.5), and in no note;
+no note is asked for and none opens. The marks were chosen over
+`.ilmi/reading.json` because each entry is a register of its own in the
+engine (two devices that each box or pass one end with both; the reading
+file is one register), they are by the file's hash (a rename keeps them,
+a chapter and its book share them) and they are exported already. It is
+the queue's section item with `passage: { hash, boxes }` (`passages.ts`
+makes the items from the marks held and hands them to `buildQueue`; the
+document is the chapter that holds its page, else the whole book), so the
+focus, the session (the pages at its boxes), next/later/dismiss with the
+notice's undo, the backlog's postpone, the numbers and the reading log
+take it as they take a section. On the page its boxes carry its pages; a
+press there has when it is next, `dismiss` / `bring back`, `remove`; `[`
+`]` step over them; `passages · <book>` in the palette and a block in the
+inspector list them. The note on a PDF is made empty and nothing is
+written into it but a clip asked for with `m`, after the caret's block
+when the note is open with a caret put there, else at its end, under no
+`## p. N`; an extract from a page makes no page heading either. `m` no
+longer makes a section on a page that names its sections: it clips. A
+block's page is its own clip's, else the nearest clip, boxed section or
+`## p. N` above (`vault/pages.ts`). Notes from before keep their boxed
+sections and page headings, read and written as they were; the app makes
+no more (`addPassage`, `placeOf`, `freeName`, `addToPage` are gone).
+Tried first and taken out the same night: the passage as a line of the
+note drawn as a crop with a chip, which the user refused.
+**Not done yet:** several notes on one PDF; a notebook of written pages; a
+portal made by touch. The simulator smokes that box a section (`touch`,
+`phone`, `ink`, `pageink`) still expect a heading in the note and were not
+run or mended.
 
 ## Notes for the next session
 

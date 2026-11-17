@@ -7,7 +7,7 @@
 // Pure; the queue makes an item of each (`queue.ts`), the app writes
 // through `vault.update`.
 
-import { PRI_DEFAULT, READ_AF, boxesAt, formatBoxes, meta, parseBoxes, sectionDismissed, type Block, type Box, type Doc, type Heading, type SectionSchedule } from '../format/index.js';
+import { PRI_DEFAULT, READ_AF, boxesAt, formatBoxes, parseBoxes, sectionDismissed, type Block, type Box, type Doc, type Heading, type SectionSchedule } from '../format/index.js';
 import { addDays, dayOf } from './dates.js';
 import { cadence, grownAt } from './growth.js';
 import { postpone, readOn, type ReadAction } from './read.js';
@@ -115,7 +115,8 @@ export function advanceSection(doc: Doc, index: number, text: string, action: Re
   return next;
 }
 
-// ── passages: sections tied to boxes on the document's pages (milestone 48) ──
+// ── boxed sections: sections tied to boxes on the document's pages (milestone 48). Notes written before milestone 81
+// have them; the app makes none now (a passage is kept with the PDF, below) ──
 
 /** A section whose line has boxes in the grammar: where it is in the blocks, its heading, its boxes. */
 export interface Passage {
@@ -135,37 +136,15 @@ export function passagesOf(blocks: readonly Block[]): Passage[] {
   return out.sort((a, b) => boxesAt(a.boxes) - boxesAt(b.boxes) || a.index - b.index);
 }
 
-/**
- * Where a new passage's heading goes, in book order among the passages: just
- * before the first passage that starts later on the pages, else at the end.
- */
-export function placeOf(blocks: readonly Block[], boxes: readonly Box[]): number {
-  const at = boxesAt(boxes);
-  let best = blocks.length;
-  for (const p of passagesOf(blocks)) if (boxesAt(p.boxes) > at && p.index < best) best = p.index;
-  return best;
-}
-
-/** A heading's text not already taken in the document: `name`, else `name · 2`, `name · 3`… */
-export function freeName(blocks: readonly Block[], name: string): string {
-  const taken = new Set(blocks.filter((b): b is Heading => b.kind === 'heading').map((b) => b.text));
-  if (!taken.has(name)) return name;
-  for (let n = 2; ; n++) if (!taken.has(`${name} · ${n}`)) return `${name} · ${n}`;
-}
+// ── a passage kept with the PDF (milestone 81) ──
 
 /**
- * Boxes on the pages become a section (FORMAT.md §6.5): a `##` heading named
- * `name`, its line `made=<today> due=<today+cadence> ivl=<cadence> boxes=…`
- * (the cadence of the document's priority), placed in book order. In
- * place, meant for `vault.update`; returns the heading's index, its text
- * (made unique) and its interval.
+ * Boxes on a PDF's pages that come back by themselves (FORMAT.md §6.5, *a
+ * passage*): a section's line with no heading and no note, kept in the
+ * PDF's marks. Made today, back on the cadence of `pri` (its document's).
  */
-export function addPassage(doc: Doc, name: string, boxes: readonly Box[], now: Date): { index: number; text: string; ivl: number } {
-  const text = freeName(doc.blocks, name);
+export function newPassage(boxes: readonly Box[], now: Date, pri?: number): SectionSchedule & { boxes: string; ivl: number } {
   const day = dayOf(now);
-  const ivl = firstGap(meta(doc).pri);
-  const h: Heading = { kind: 'heading', level: 2, text, read: { made: day, due: addDays(day, ivl), ivl, boxes: formatBoxes(boxes) } };
-  const index = placeOf(doc.blocks, boxes);
-  doc.blocks.splice(index, 0, h);
-  return { index, text, ivl };
+  const ivl = firstGap(pri);
+  return { made: day, due: addDays(day, ivl), ivl, boxes: formatBoxes(boxes) };
 }

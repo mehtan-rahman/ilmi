@@ -27,6 +27,24 @@ export function writeDoc(path: string, mutate: (doc: Doc) => void): Promise<unkn
   return through(path, mutate) ?? currentVault()?.update(path, mutate) ?? Promise.resolve(null);
 }
 
+/** Where something kept from a book's pages goes in its note: the reader says, when the note is open and its caret was put somewhere. */
+type CaretPlace = (path: string) => number | null;
+let caretPlace: CaretPlace = () => null;
+
+export function setCaretPlace(fn: CaretPlace): void {
+  caretPlace = fn;
+}
+
+/**
+ * The block index at which to put a clip from the pages in the note at
+ * `path`: just after the block the caret is in, when the note is open and
+ * holds a caret someone put there (or a clip was last put); else
+ * undefined, which is the note's end.
+ */
+export function placeAtCaret(path: string): number | undefined {
+  return caretPlace(path) ?? undefined;
+}
+
 /** The heading at a caret's place in the page's blocks: the `nth` with text, when its text still matches; else the first with that text. */
 export function headingOf(doc: Doc, at: { nth: number; text: string }): { index: number; heading: Heading } | null {
   let n = 0;

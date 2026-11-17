@@ -2,7 +2,7 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { meta, parse, setField } from '../../format/index.js';
 import { openDisk, type Disk } from './disk.js';
-import { Vault, addToPage, documents, extractName, pageOf, pageOfBlock, pageSection, type TreeNode, type VaultEvent } from '../index.js';
+import { Vault, documents, extractName, ownPage, pageOf, pageOfBlock, type TreeNode, type VaultEvent } from '../index.js';
 import { childDirOf, cleanName, fileName, nameOf, rekey, within } from '../paths.js';
 
 const CORPUS = fileURLToPath(new URL('../../format/__tests__/corpus/vault/', import.meta.url));
@@ -502,22 +502,25 @@ describe('pages', () => {
     expect(await vault.createDoc('papers', 'source', 'stray')).toBe('papers/stray 2.md');
   });
 
-  it('carves an extract from a page: page on the child, the passage and its backref under the page heading in the parent', async () => {
+  it('carves an extract from a page: page on the child, the passage and its backref at the end of the parent (or where asked), no page heading made', async () => {
     const before = (await vault.read(PAIR)).text;
     const child = await vault.extract(PAIR, { text: 'Nothing is ever written into this file.', blocks: [], page: 2, today: '2026-05-27' });
     expect(child).toBe('papers/two-pages/nothing is ever written into.md');
     expect(await readDisk(child)).toBe('---\ntype: extract\nimported: 2026-05-27\npri: 50\nread: due=2026-05-27 ivl=2 reps=0 pos=0 page=2\n---\n\nNothing is ever written into this file.\n');
     const after = (await vault.read(PAIR)).text;
-    // the parent's `## p. 2` section grew by the paragraph and its backref; the marker stayed
+    // the parent grew by the paragraph and its backref, at its end; the marker stayed
     expect(after.split('\n').length).toBe(before.split('\n').length + 3);
     expect(after).toContain('with each pass ^ctp-spaced\n<!-- sr c1');
-    expect(after).toContain('g=4 -->\n\nNothing is ever written into this file.\n<!-- extract nothing is ever written into -->\n');
+    expect(after.endsWith('\n\nNothing is ever written into this file.\n<!-- extract nothing is ever written into -->\n')).toBe(true);
     expect(meta((await vault.read(PAIR)).doc).read?.pos).toBe(1);
-    // a page with no heading yet gets one, in page order
+    // no page heading is made for a page that had none; `at` says where among the blocks
+    const headingsWas = (await vault.read(PAIR)).doc.blocks.filter((b) => b.kind === 'heading').map((b) => b.text);
     await vault.extract(PAIR, { text: 'a passage from page four', blocks: [], page: 4, today: '2026-05-27' });
-    await vault.extract(PAIR, { text: 'a passage from page three', blocks: [], page: 3, today: '2026-05-27' });
-    const headings = (await vault.read(PAIR)).doc.blocks.filter((b) => b.kind === 'heading').map((b) => b.text);
-    expect(headings).toEqual(['p. 1', 'p. 2', 'p. 3', 'p. 4']);
+    await vault.extract(PAIR, { text: 'a passage from page three', blocks: [], page: 3, at: 1, today: '2026-05-27' });
+    const blocks = (await vault.read(PAIR)).doc.blocks;
+    expect(blocks.filter((b) => b.kind === 'heading').map((b) => b.text)).toEqual(headingsWas);
+    expect(blocks[1]).toMatchObject({ kind: 'paragraph', text: 'a passage from page three' });
+    expect(blocks[blocks.length - 1]).toMatchObject({ kind: 'paragraph', text: 'a passage from page four' });
     expect((await vault.read(PAIR)).diagnostics).toEqual([]);
   });
 
@@ -563,22 +566,34 @@ describe('pages', () => {
   });
 });
 
-describe('page sections', () => {
-  it('knows which page a block sits under, and where a block lands on a page', () => {
+describe('the page of a block', () => {
+  it('is the nearest page heading above it, as notes written before milestone 81 have them', () => {
     const { doc } = parse('intro\n\n## p. 2\n\ntwo\n\n### sub\n\ndeeper\n\n## notes\n\nloose\n\n## p. 5\n\nfive\n');
     expect(doc.blocks.map((_, i) => pageOfBlock(doc, i))).toEqual([null, 2, 2, 2, 2, null, null, 5, 5]);
     expect(pageOf(doc.blocks[1])).toBe(2);
     expect(pageOf(doc.blocks[5])).toBeNull();
     expect(pageOf({ kind: 'heading', level: 1, text: 'p. 2' })).toBeNull();
-    expect(pageSection(doc, 2)).toEqual([1, 5]);
-    expect(pageSection(doc, 5)).toEqual([7, 9]);
-    expect(pageSection(doc, 3)).toBeNull();
-    // onto an existing page: at the end of its section; onto a new one: a heading in page order, else at the end
-    expect(addToPage(doc, 2, { kind: 'paragraph', text: 'more two' })).toBe(5);
-    expect(addToPage(doc, 3, { kind: 'paragraph', text: 'three' })).toBe(9);
-    expect(addToPage(doc, 9, { kind: 'paragraph', text: 'nine' })).toBe(13);
-    expect(doc.blocks.map((b) => (b.kind === 'heading' ? `#${b.text}` : b.text))).toEqual([
-      'intro', '#p. 2', 'two', '#sub', 'deeper', 'more two', '#notes', 'loose', '#p. 3', 'three', '#p. 5', 'five', '#p. 9', 'nine',
-    ]);
+  });
+
+  it('is the nearest clip above it when no heading says, and a boxed section says its own', () => {
+    const { doc } = parse([
+      'my own words', '',
+      '<!-- box 129:0.120:0.368:0.770:0.088 -->', '',
+      'shops ::: دكاكين', '',
+      'a thought about it', '',
+      '<!-- box 131:0.100:0.100:0.500:0.100 -->', '',
+      'later ::: card', '',
+      '## 3.3 · average values',
+      '<!-- read made=2026-10-30 due=2026-11-02 ivl=3 boxes=41:0.120:0.860:0.770:0.075,42:0.100:0.097:0.770:0.040 -->', '',
+      'under the section', '',
+      '## my own heading', '',
+      'no page here', '',
+      '<!-- some other comment -->', '',
+    ].join('\n'));
+    expect(doc.blocks.map((_, i) => pageOfBlock(doc, i))).toEqual([null, 129, 129, 129, 131, 131, 41, 41, null, null, null]);
+    expect(ownPage(doc.blocks[1])).toBe(129);
+    expect(ownPage(doc.blocks[2])).toBeNull();
+    expect(ownPage(doc.blocks[6])).toBe(41);
+    expect(ownPage(doc.blocks[10])).toBeNull();
   });
 });

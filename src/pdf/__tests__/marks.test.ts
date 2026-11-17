@@ -8,10 +8,10 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { entryText, markOf, marksDiff, marksHashOf, marksMap, marksMerged, marksPath, marksText, parseMarks, serializeMarks, type Marks } from '../../vault/marks.js';
+import { entryText, markOf, marksDiff, marksHashOf, marksMap, marksMerged, marksPath, marksText, parseMarks, passageId, serializeMarks, type Marks } from '../../vault/marks.js';
 import {
   bandNear, bookmarksOf, collectionMark, collectionMarks, headingAbove, highlightAt, highlightHolding, highlightOf, highlightsOf, isCollectionMark, letterId, lettersOf, lineBands, lineQuads,
-  linesOf, newMarkId, placeOf, portalAbove, portalsOf, quadBoxes, stepLine, type PageItem,
+  linesOf, newMarkId, passageMarksOf, placeOf, portalAbove, portalsOf, quadBoxes, stepLine, type PageItem,
 } from '../index.js';
 
 const HASH = 'e62fd1f4eb0a178c36c48f6bd48151a80de36f4a29eb880195aa9e58a61e61d1';
@@ -81,6 +81,47 @@ const bm = (name: string, page: number, y: number, at = 0) => ({ kind: 'bookmark
 const hl = (page: number, y: number, at = 0, w = 0.5) => ({ kind: 'highlight' as const, text: `p${page}`, page, y, quads: [[page, 0.1, y, w, 0.02] as [number, number, number, number, number]], ink: 1, at });
 const portal = (page: number, y: number, to: number) => ({ kind: 'portal' as const, page, y, to: { page: to, y: 0.5 }, at: 0 });
 const letter = (l: string, page: number, at: number) => ({ kind: 'mark' as const, letter: l, page, y: 0.5, at });
+
+describe('a passage', () => {
+  const BOXES = '41:0.120:0.860:0.770:0.075,42:0.100:0.097:0.770:0.040';
+  const entry = { kind: 'passage', page: 41, y: 0.86, at: 1794787200000, boxes: BOXES, made: '2026-10-30', due: '2026-11-02', ivl: 3, reps: 1, pri: 30 };
+
+  it('is an entry keyed by its boxes, read and written back byte for byte', () => {
+    expect(passageId(BOXES)).toBe(`s-${BOXES}`);
+    const text = marksText({ [passageId(BOXES)]: entry });
+    expect(text).toBe(`{\n  "s-${BOXES}": {\n    "at": 1794787200000,\n    "boxes": "${BOXES}",\n    "due": "2026-11-02",\n    "ivl": 3,\n    "kind": "passage",\n    "made": "2026-10-30",\n    "page": 41,\n    "pri": 30,\n    "reps": 1,\n    "y": 0.86\n  }\n}\n`);
+    const marks = parseMarks(text);
+    expect(marks[passageId(BOXES)]).toEqual(entry);
+    expect(serializeMarks(marks)).toBe(text);
+    expect(passageMarksOf(marks).map(([k]) => k)).toEqual([passageId(BOXES)]);
+  });
+
+  it('with no due is one dismissed: its boxes and the day it was made kept', () => {
+    const m = markOf({ kind: 'passage', page: 41, y: 0.86, at: 1, boxes: BOXES, made: '2026-10-30' });
+    expect(m).toEqual({ kind: 'passage', page: 41, y: 0.86, at: 1, boxes: BOXES, made: '2026-10-30' });
+  });
+
+  it('boxes written otherwise are read canonically; boxes not in the grammar make it no passage, kept in the file all the same', () => {
+    expect(markOf({ kind: 'passage', page: 41, y: 0.86, at: 1, boxes: '41:0.12:0.86:0.77:0.075' })).toMatchObject({ boxes: '41:0.120:0.860:0.770:0.075' });
+    expect(markOf({ kind: 'passage', page: 41, y: 0.86, at: 1, boxes: 'somewhere' })).toBeNull();
+    expect(markOf({ kind: 'passage', page: 41, y: 0.86, at: 1 })).toBeNull();
+    // a value that does not read is left out, the rest of the line kept
+    expect(markOf({ kind: 'passage', page: 41, y: 0.86, at: 1, boxes: BOXES, due: 'soon', ivl: -2, af: 1, pri: 400 })).toEqual({ kind: 'passage', page: 41, y: 0.86, at: 1, boxes: BOXES });
+  });
+
+  it('is listed in the book\'s order beside the other kinds, and two devices\' passages merge entry by entry', () => {
+    const a = { ...entry, page: 43, y: 0.1, boxes: '43:0.100:0.100:0.500:0.100' };
+    const marks = parseMarks(marksText({ 'b-1': { kind: 'bookmark', name: 'x', page: 1, y: 0, at: 1 }, [passageId(a.boxes)]: a, [passageId(BOXES)]: entry }));
+    expect(passageMarksOf(marks).map(([, m]) => m.page)).toEqual([41, 43]);
+    expect(bookmarksOf(marks).length).toBe(1);
+    // one device passed the first, the other boxed a third: both stand
+    const passed = { ...entry, due: '2026-11-09', ivl: 7, reps: 2 };
+    const third = { ...entry, page: 44, y: 0.5, boxes: '44:0.100:0.500:0.500:0.100' };
+    const base = { [passageId(BOXES)]: entry };
+    const merged = marksMerged(base, [...marksDiff(base, { [passageId(BOXES)]: passed }), ...marksDiff(base, { ...base, [passageId(third.boxes)]: third })]);
+    expect(parseMarks(marksText(merged))).toEqual({ [passageId(BOXES)]: passed, [passageId(third.boxes)]: third });
+  });
+});
 
 describe('the lists', () => {
   const marks: Marks = { 'b-2': bm('later', 7, 0.2), 'b-1': bm('first', 2, 0.9), 'b-3': bm('same page, above', 7, 0.1), 'h-1': hl(4, 0.3), 'p-1': portal(3, 0.5, 9), 'm-b': letter('b', 5, 1), 'm-a': letter('a', 6, 2), 'm-A': letter('A', 1, 3) };

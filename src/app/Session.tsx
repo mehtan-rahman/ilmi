@@ -33,6 +33,8 @@ import { Reader, clozeHTML, faceDir, faceHTML } from './Reader.js';
 import { useApp, type El, type SessionMarks } from './store.js';
 import { useDoc } from './useDoc.js';
 import { studyHeader } from './study.js';
+import { actOnPassage } from './passages.js';
+import { focusInBook } from './bookNotes.js';
 import { activeExamAt, currentVault, logDocAction, note, openNode, optionsAt, unlogReading } from './vault.js';
 import { openNotes } from './book.js';
 import { sessionEnded } from './sync.js';
@@ -488,10 +490,17 @@ export function doneWord(item: ReadItem | WriteItem | SectionItem, action: DocAc
 
 /**
  * One of the three on a topic: written to its document, through its page when it is open, so what was just typed there is written first.
- * `seen` is given the document as it was just before, for an undo.
+ * `seen` is given the document as it was just before, for an undo; of a passage, which is in no document, `kept` is given the undo itself.
  */
-export function actOnDoc(item: ReadItem | WriteItem | SectionItem, action: DocAction, pos?: number, y?: number, seen?: (before: Doc) => void): Promise<unknown> {
+export function actOnDoc(item: ReadItem | WriteItem | SectionItem, action: DocAction, pos?: number, y?: number, seen?: (before: Doc) => void, kept?: (undo: () => Promise<void>) => void): Promise<unknown> {
   const now = appNow();
+  // a passage is in no document: its line is among its PDF's marks, and `kept` is given what puts it back
+  if (item.kind === 'section' && item.passage) {
+    const run = actOnPassage(item, action).then((undo) => { if (undo) kept?.(undo); });
+    if (action === 'on') emitDocAction(item);
+    void run.then(() => logDocAction(item, action, pos), () => {});
+    return run;
+  }
   const run = writeDoc(item.path, (doc) => {
     seen?.(structuredClone(doc));
     if (item.kind === 'read') advanceRead(doc, action, now, pos, activeExamAt(item.path, now), y);
@@ -532,6 +541,8 @@ function DocSession({ item, active, onAct, done, onPass, ...nav }: DocProps) {
   // a section opens at its heading, the caret in it and the heading marked; on pages, the note opens beside them
   useEffect(() => {
     if (item.kind !== 'section') return;
+    // a passage is on the pages alone: they open at its boxes, lit
+    if (item.passage) { focusInBook(pagesId, item.passage.boxes); return; }
     useApp.setState({ reveal: { path: item.path, index: item.block, heading: item.heading } });
     // a phone's one page stays the pages, at the section's boxes: there is no pane beside them
     if (pages && !useApp.getState().phone) void openNotes(pagesId).catch(failed('open the notes'));
@@ -548,7 +559,7 @@ function DocSession({ item, active, onAct, done, onPass, ...nav }: DocProps) {
     return false;
   }, [item, done, atEnd]);
 
-  const word = note ? 'note' : item.kind === 'read' && item.extract ? 'extract' : undefined;
+  const word = note ? 'note' : item.kind === 'read' && item.extract ? 'extract' : item.kind === 'section' && item.passage ? 'passage' : undefined;
   const what = plainMath(section ? `${docs[item.path]?.title ?? sourceLabel(item, docs)} › ${item.heading}` : sourceLabel(item, docs));
   return (
     <div className="doc-session" ref={barRef} data-el={item.kind} data-book={pages ? '1' : '0'}>
@@ -794,12 +805,14 @@ export function Session({ active, onOpen }: Props) {
     const line = docLine(item, action, now, pos);
     acted.set(at, { action, word: doneWord(item, action, now, pos) });
     let before = null as Doc | null;
-    const run = actOnDoc(item, action, pos, y, (doc) => { before = doc; });
+    let putBack = null as (() => Promise<void>) | null;
+    const run = actOnDoc(item, action, pos, y, (doc) => { before = doc; }, (undo) => { putBack = undo; });
     // later and dismiss can be taken back from the notice: the document as it was, and the element to act on again
     if (action === 'on') note(line);
     else {
-      void run.then(() => notify(line, null, before ? async () => {
-        await restore(vault, [{ path: item.path, doc: before! }]);
+      void run.then(() => notify(line, null, before || putBack ? async () => {
+        if (putBack) await putBack();
+        else await restore(vault, [{ path: item.path, doc: before! }]);
         unlogReading(item.path, item.kind === 'section' ? item.heading : undefined);
         unmark(at);
       } : undefined), () => {});
@@ -809,7 +822,7 @@ export function Session({ active, onOpen }: Props) {
   };
 
   // a card learnt and then tested is in the walk twice: one element
-  const distinct = new Set(items.map((i) => (i.kind === 'card' ? learnKey(i) : `${i.kind}#${i.path}#${i.kind === 'section' ? `${i.block}#${i.heading}` : ''}`))).size;
+  const distinct = new Set(items.map((i) => (i.kind === 'card' ? learnKey(i) : `${i.kind}#${i.path}#${i.kind === 'section' ? `${i.block}#${i.passage ? `${i.passage.hash}#${i.passage.boxes}` : i.heading}` : ''}`))).size;
   // the tests still to come of cards that will be learnt first: counted from the start, so the total does not grow underfoot
   const ahead = learnNew ? items.filter((c, i) => c.kind === 'card' && neverTested(c.sched) && !learnt.has(learnKey(c)) && !given.has(`${seq}:${i}`)).length : 0;
   // a card that comes back is one more when its grade brings it: that cannot be told from the start

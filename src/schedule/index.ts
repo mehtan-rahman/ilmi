@@ -9,11 +9,11 @@ export { advanceRead, pointOn, heldOver, readPri, readingLeft, finishes, finishO
 export { advanceWrite, type WriteAction } from './write.js';
 export {
   firstGap, sectionSpan, sectionState, headingAt, sectionInQueue, enrolSection, dismissed, broughtBack, advanceSchedule, nextGap, findHeading, advanceSection,
-  passagesOf, placeOf, freeName, addPassage, type Passage,
+  passagesOf, newPassage, type Passage,
 } from './section.js';
 export { grow, grownAt, elapsedBase, nextIntervals, postponed, POSTPONE_FACTOR, cadence, cadenceWords, KAPPA, hashSeed, mulberry32, gammaSample, betaSample, sampleKey } from './growth.js';
 export {
-  queue, queueItems, sortQueue, sameItem, docItems, counts, inScope, isDue, cardGroups, isSuspended, scheduleOf, cardDirs, dirPri, burySiblings, gradeItem, regradeFrom, wasLeeched, numberBlank, newId,
+  queue, queueItems, sortQueue, sameItem, docItems, passageItem, counts, inScope, isDue, cardGroups, isSuspended, scheduleOf, cardDirs, dirPri, burySiblings, gradeItem, regradeFrom, wasLeeched, numberBlank, newId,
   fold, overflow, postponeOverflow, isBacklog, itemSeed, itemKey,
   type QueueItem, type Fold, type CardItem, type ReadItem, type WriteItem, type SectionItem, type GroupKey, type Dir, type Scope, type Counts, type GradeOptions,
 } from './queue.js';

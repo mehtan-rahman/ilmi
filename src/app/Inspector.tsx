@@ -8,15 +8,15 @@
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
-  AF_MIN, PRI_DEFAULT, PRI_MAX, PRI_MIN, READ_AF, RETENTION_MAX, RETENTION_MIN, WRITE_AF, cardForm, docPri, meta, pagesLabel, parse, parseAf, parseCount, parsePri, parseRetention, setField,
-  type Block, type Card, type CardForm, type CardSchedule, type Doc, type ReadSchedule, type WriteSchedule,
+  AF_MIN, PRI_DEFAULT, PRI_MAX, PRI_MIN, READ_AF, RETENTION_MAX, RETENTION_MIN, WRITE_AF, cardForm, docPri, meta, pagesLabel, parse, parseAf, parseBoxes, parseCount, parsePri, parseRetention, setField,
+  type Block, type Card, type CardForm, type CardSchedule, type Doc, type ReadSchedule, type SectionSchedule, type WriteSchedule,
 } from '../format/index.js';
 import { activeExam, addDays, advanceWrite, cadence, cadenceWords, cardGroups, isSuspended, scheduleOf, dayOf, elapsedBase, examKey, examLeft, finishes, inScope, nextIntervals, passagesOf, readPri, readingLeft, sectionState, type CardItem, type OptionKey } from '../schedule/index.js';
 import { baseOf, childDirOf, childrenAt, dirOf, isDoc, isPdfPath, pageOfBlock, type TreeNode } from '../vault/index.js';
 import { cardName, formLabel } from './chrome.js';
 import { breakdown, countsUnder, dueItems, plainMath } from './chromeText.js';
 import { MathText } from './MathText.js';
-import { FORM_LABEL, dueLabel, dueWhen, examDay, examName, examWhen, fmtDays, leftLines, standsWords, dueTone } from './items.js';
+import { FORM_LABEL, dueLabel, dueWhen, examDay, examName, examWhen, fmtDays, leftLines, standsWords, dueTone, shortDay } from './items.js';
 import { INTAKE, QUEUE_TITLE, SESSION, cardsPath, findNode, noteOf, notesPath, queueScope, titleOf } from './names.js';
 import { activeTab } from './panes.js';
 import { useApp, type CaretHeading, type DocInfo } from './store.js';
@@ -31,8 +31,10 @@ import { goToHeading } from './headings.js';
 import { headingOf, moveAction, sectionActions, statusOf, writeDoc } from './sections.js';
 import { appNow } from './clock.js';
 import { chipWhen } from './bookNotes.js';
-import { goToMark, openNotes, pdfHashOf, setMark, useMarks } from './book.js';
-import { bookmarksOf, highlightsOf } from '../pdf/index.js';
+import { bringPassageBack, changePassage } from './passages.js';
+import { passageId } from '../vault/index.js';
+import { goToMark, goToPassage, openNotes, passageWhen, pdfHashOf, setMark, useMarks } from './book.js';
+import { bookmarksOf, highlightsOf, passageMarksOf } from '../pdf/index.js';
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 const words = (blocks: Block[]) => blocks.reduce((n, b) => (b.kind === 'card' ? n : n + b.text.split(/\s+/).filter(Boolean).length), 0);
@@ -595,16 +597,19 @@ function DocInspector({ id, info, doc, now }: { id: string; info: DocInfo; doc: 
 // ── a book's passages ───────────────────────────────────────────
 
 /**
- * A document with pages: its passages (sections of its note tied to boxes
- * on its pages), in book order, each with its pages and when it is next; a
+ * A document with pages whose note was written before milestone 81: its
+ * boxed sections (sections of its note tied to boxes on its pages), in
+ * book order, each with its pages and when it is next; a
  * click opens the note beside the pages, puts the caret at its heading, and
  * the pages follow. `note` is the note's path, `doc` its text.
  */
 function PassagesBlock({ id, note, doc, now }: { id: string; note: string; doc: Doc; now: Date }) {
   const caret = useApp((s) => s.caretHeading);
   const list = passagesOf(doc.blocks);
+  // only a note written before milestone 81 has any: a passage is kept with the PDF now (`BookMarksBlock`)
+  if (list.length === 0) return null;
   return (
-    <Block title="passages, in book order">
+    <Block title="sections in the notes">
       {list.length === 0 ? (
         <p className="insp-line">none yet: drag a box on a page, then e</p>
       ) : (
@@ -643,8 +648,27 @@ function BookMarksBlock({ id }: { id: string }) {
   if (hash === null) return null;
   const bookmarks = bookmarksOf(marks);
   const highlights = highlightsOf(marks);
+  const passages = passageMarksOf(marks);
+  const now = appNow();
   return (
     <>
+      {passages.length > 0 && (
+        <Block title={`passages · ${passages.length}`}>
+          <ul className="insp-cards insp-marks insp-passages" data-marks="passages">
+            {passages.map(([key, m]) => {
+              const when = passageWhen(m, now);
+              const label = pagesLabel(parseBoxes(m.boxes) ?? []);
+              return (
+                <li key={key} data-mark={key} data-due={when === 'due today' ? '1' : '0'} data-dismissed={when === 'dismissed' ? '1' : '0'} onClick={() => goToPassage(hash, m, id)}>
+                  <span className="cl-t" dir="auto">{label}</span>
+                  <span className="cl-due" data-st={dueTone(when)}>{when === 'due today' ? 'today' : when.replace(/^back /, '')}</span>
+                  <button type="button" className="cl-x" aria-label={`remove the passage on ${label}`} title="remove" onClick={(e) => { e.stopPropagation(); void setMark(hash, key, null).catch(failed('remove')); notify(`§ ${label} · removed`, null, () => setMark(hash, key, m)); }}>×</button>
+                </li>
+              );
+            })}
+          </ul>
+        </Block>
+      )}
       {bookmarks.length > 0 && (
         <Block title="bookmarks">
           <ul className="insp-cards insp-marks" data-marks="bookmarks">
@@ -726,6 +750,39 @@ export function SectionBlock({ path, doc, at, now }: { path: string; doc: Doc; a
           <span className="fr-state">{status === 'none' ? 'not coming back' : status === 'on' ? 'comes back until dismissed' : 'dismissed; its notes and cards stay'}</span>
           <button type="button" className="fr-toggle" data-act={act.act} onClick={() => act.run?.()}>{act.label}</button>
           {meta(doc).type === 'note' && <button type="button" className="fr-toggle" data-act={mv.act} onClick={() => mv.run?.()}>{mv.label}</button>}
+        </div>
+      </div>
+    </Block>
+  );
+}
+
+/**
+ * A passage kept with a PDF (FORMAT.md §6.5), on show in a session: its
+ * pages, when it is next, its interval and priority (its own, else the
+ * document's), and the one thing to do: dismiss, or bring back.
+ */
+function KeptPassageBlock({ path, hash, boxes, now }: { path: string; hash: string; boxes: string; now: Date }) {
+  const marks = useMarks(hash);
+  const pri = useApp((s) => s.docs[path]?.pri);
+  const m = marks[passageId(boxes)];
+  if (m?.kind !== 'passage') return null;
+  const on = m.due !== undefined;
+  const label = pagesLabel(parseBoxes(m.boxes) ?? []);
+  const change = (f: (x: SectionSchedule) => SectionSchedule) => void changePassage(hash, boxes, f).catch(failed('passage'));
+  const rows: [string, ReactNode][] = [['passage', <span key="h" className="sec-h">{label}</span>]];
+  if (m.made) rows.push(['boxed', shortDay(m.made)]);
+  rows.push(['next', <span key="nx" className="mono sec-next">{on ? dueWhen(m.due, now) : 'never: dismissed'}</span>]);
+  if (on) rows.push(['interval', ivlField(`${hash}:${boxes}:ivl`, m.ivl, (n) => change((x) => ({ ...x, ivl: n, due: addDays(dayOf(now), n) })))]);
+  rows.push(['priority', <PriField key={`${hash}:${boxes}`} value={m.pri} fallback={pri ?? PRI_DEFAULT} onCommit={(n) => change((x) => { const { pri: _p, ...rest } = x; return n === null ? rest : { ...rest, pri: n }; })} />]);
+  return (
+    <Block title="passage">
+      <div className="sec-block" data-status={on ? 'on' : 'dismissed'}>
+        <KV rows={rows} />
+        <div className="frozen-row">
+          <span className="fr-state">{on ? 'comes back until dismissed' : 'dismissed'}</span>
+          {on
+            ? <button type="button" className="fr-toggle" data-act="dismiss" onClick={() => change((x) => { const { due: _d, ivl: _i, reps: _r, af: _a, ...rest } = x; return rest; })}>dismiss</button>
+            : <button type="button" className="fr-toggle" data-act="bring-back" onClick={() => void bringPassageBack(path, hash, boxes).catch(failed('bring back'))}>bring back</button>}
         </div>
       </div>
     </Block>
@@ -880,8 +937,10 @@ export function Inspector() {
       body = <WithDoc id={cur.path} render={(doc) => { const i = cardIndex(doc, cur); return i < 0 ? <Gone kind="card" /> : <CardBlock path={cur.path} index={i} doc={doc} group={cur.group} {...(cur.dir ? { dir: cur.dir } : {})} now={now} />; }} />;
     } else {
       // a section's part: the heading the caret is under on its page, else the section on show
-      const at: CaretHeading | null = caret?.path === cur.path ? caret : cur.kind === 'section' ? { path: cur.path, nth: -1, text: cur.heading } : null;
-      body = <WithDoc id={cur.path} render={(doc, info) => <>{at && <SectionBlock path={cur.path} doc={doc} at={at} now={now} />}<DocInspector id={cur.path} info={info} doc={doc} now={now} /></>} />;
+      // a passage is in no document: its own part, from its PDF's marks
+      const kept = cur.kind === 'section' ? cur.passage : undefined;
+      const at: CaretHeading | null = kept ? null : caret?.path === cur.path ? caret : cur.kind === 'section' ? { path: cur.path, nth: -1, text: cur.heading } : null;
+      body = <WithDoc id={cur.path} render={(doc, info) => <>{kept && <KeptPassageBlock path={cur.path} hash={kept.hash} boxes={kept.boxes} now={now} />}{at && <SectionBlock path={cur.path} doc={doc} at={at} now={now} />}<DocInspector id={cur.path} info={info} doc={doc} now={now} /></>} />;
     }
   } else if (!isDoc(id) && !isPdfPath(id) && notesPath(id) === null && cardsPath(id) === null) body = <FolderInspector id={id} />;
   else {

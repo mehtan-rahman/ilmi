@@ -40,6 +40,11 @@ export function showInBook(path: string, text: string): void {
   if (pages !== null) useApp.setState({ bookFocus: { path: pages, text, seq: ++focusSeq } });
 }
 
+/** The pages at `pages` go to a passage's boxes and flash them, once they are there: a passage opened from the queue or a list (`text` its boxes). */
+export function focusInBook(pages: string, text: string): void {
+  useApp.setState({ bookFocus: { path: pages, text, seq: ++focusSeq } });
+}
+
 function button(label: string, act: string, run: () => void): HTMLButtonElement {
   const b = document.createElement('button');
   b.type = 'button';

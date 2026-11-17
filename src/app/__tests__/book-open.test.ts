@@ -3,12 +3,13 @@
 // PDF: its pages alone, the inspector not asked for, nothing beside them;
 // `notes` among the words over the pages opens the note in the pane beside
 // (the pane made) and, pressed again, closes it; ⌘\ does the same; what goes
-// to a place in the note opens it beside the pages (a box made a section, a
-// section's name beside its box); the inspector's toggle over a book leaves
-// the saved state alone. And a PDF on its own: with no note, `notes` and `e`
-// ask for one (the palette's picker), the boxes kept while it asks; a note
-// picked is attached and opens beside the pages; cancelled, nothing is
-// written.
+// to a place in the note opens it beside the pages (a boxed section's name
+// beside its box, in a note written before milestone 81); the inspector's
+// toggle over a book leaves the saved state alone. A box made a passage
+// (`e`) is kept with the PDF, among its marks: nothing is written into the
+// note, nothing opens and nothing is asked. And a PDF on its own: with no
+// note, `notes` asks for one (the palette's picker); a note picked is
+// attached and opens beside the pages; cancelled, nothing is written.
 
 import { promises as fsp } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -19,6 +20,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { meta } from '../../format/index.js';
 import { nodeFs } from '../../vault/node-fs.js';
 import { Vault } from '../../vault/index.js';
+import { marksPath, parseMarks, type Marks } from '../../vault/marks.js';
 import { useApp, type DocInfo } from '../store.js';
 import { activeTab, emptyPanes, openTab } from '../panes.js';
 import { notesId } from '../names.js';
@@ -50,6 +52,9 @@ const { Pdf } = await import('../Pdf.js');
 const { toggleInspector } = await import('../vault.js');
 const { inspectorShown } = await import('../layout.js');
 const { attachCancelled, attachNote, notesOpen, openNotes } = await import('../book.js');
+const { putPassage } = await import('../passages.js');
+const { undoNotice } = await import('../land.js');
+const { setCaretPlace } = await import('../sections.js');
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 globalThis.ResizeObserver ??= class { observe() {} unobserve() {} disconnect() {} } as unknown as typeof ResizeObserver;
 globalThis.IntersectionObserver ??= class { observe() {} unobserve() {} disconnect() {} } as unknown as typeof IntersectionObserver;
@@ -97,7 +102,12 @@ beforeAll(async () => {
   await fsp.writeFile(join(dir, 'library/lindqvist.pdf'), '%PDF-1.7\n');
   await fsp.writeFile(join(dir, PDF), '%PDF-1.7\n');
   vault = await Vault.open(nodeFs, dir);
+  // each PDF has a hash, as in a collection's store: its marks (a passage among them) are kept by it
+  Object.assign(vault.fs, { blobAt: (abs: string) => (abs.endsWith('alone.pdf') ? ALONE : BOOK), pageInk: async () => [], inkedPages: async () => [], onPageInk: () => () => {} });
 });
+const BOOK = 'ab'.repeat(32);
+const ALONE = 'cd'.repeat(32);
+const marksOf = async (hash: string): Promise<Marks> => parseMarks(await fsp.readFile(join(dir, marksPath(hash)), 'utf8').catch(() => null));
 afterAll(async () => {
   vault.close();
   await fsp.rm(dir, { recursive: true, force: true });
@@ -175,23 +185,61 @@ describe('a book as it opens', () => {
     expect(panesNow()).toEqual({ active: 0, tabs: [[CH3], [NOTE]] });
   });
 
-  it('a box made a section opens the note beside the pages with the section in it; ⏎ right after puts the caret there', async () => {
+  it('a box made a passage is kept with the PDF: nothing written into the note, nothing opened; the notice undoes it', async () => {
     await box(41);
     expect(qa('.pbox.pending:not(.ghost)').length).toBe(1);
     await fire(window, new KeyboardEvent('keydown', { key: 'e', bubbles: true, cancelable: true }));
     await wait(300);
-    const text = await fsp.readFile(join(dir, CH3), 'utf8');
-    expect(text).toMatch(/\n## p\. 41\n<!-- read made=\S+ due=\S+ ivl=\d+ boxes=41:0\.100:0\.100:0\.500:0\.300 -->/);
-    expect(panesNow()).toEqual({ active: 0, tabs: [[CH3], [notesId(CH3)]] });
-    expect(useApp.getState().reveal).toMatchObject({ path: CH3, heading: 'p. 41' });
-    expect(useApp.getState().reveal).not.toHaveProperty('write');
-    await fire(window, new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
-    expect(useApp.getState().reveal).toMatchObject({ path: CH3, heading: 'p. 41', write: true });
-    // the read point moved past the box, in the same document
-    expect(meta((await vault.read(CH3, true)).doc).read).toBeUndefined();
-    await cmdBackslash();
-    await wait(20);
+    // the note is as it was: no heading, no line, nothing
+    expect(await fsp.readFile(join(dir, CH3), 'utf8')).toBe(NOTES);
+    const kept = await marksOf(BOOK);
+    expect(Object.keys(kept)).toEqual(['s-41:0.100:0.100:0.500:0.300']);
+    expect(kept['s-41:0.100:0.100:0.500:0.300']).toMatchObject({ kind: 'passage', page: 41, y: 0.1, boxes: '41:0.100:0.100:0.500:0.300', ivl: 2 });
+    expect(kept['s-41:0.100:0.100:0.500:0.300']).toHaveProperty('due');
+    expect(kept['s-41:0.100:0.100:0.500:0.300']).toHaveProperty('made');
+    // nothing opened beside the pages, nothing asked, nothing to go to in a note
     expect(panesNow()).toEqual({ active: 0, tabs: [[CH3]] });
+    expect(useApp.getState().reveal).toBeNull();
+    expect(useApp.getState().paletteOpen).toBe(false);
+    expect(qa('.pbox.pending:not(.ghost)').length).toBe(0);
+    // drawn on its page, called by its page
+    const drawn = qa<HTMLElement>('.pbox:not(.pending)');
+    expect(drawn.map((b) => [b.dataset.section, b.dataset.kept])).toEqual([['41:0.100:0.100:0.500:0.300', '1']]);
+    expect(q<HTMLElement>('.ptag, .pgut')!.textContent).toContain('§');
+    expect(useApp.getState().notice).toMatchObject({ line: '§ p. 41 · back in 2d, until dismissed', undo: true });
+    await act(async () => { await undoNotice(); });
+    await wait(50);
+    expect(Object.keys(await marksOf(BOOK))).toEqual([]);
+    expect(qa('.pbox:not(.pending)').length).toBe(0);
+    expect(await fsp.readFile(join(dir, CH3), 'utf8')).toBe(NOTES);
+  });
+
+  it('`m` on a box clips it into the note at its end, no page heading; the caret goes under it; with a caret held in the note, after its block', async () => {
+    await box(41);
+    await fire(window, new KeyboardEvent('keydown', { key: 'm', bubbles: true, cancelable: true }));
+    await wait(300);
+    expect(await fsp.readFile(join(dir, CH3), 'utf8')).toBe(`${NOTES}\n<!-- box 41:0.100:0.100:0.500:0.300 -->\n`);
+    expect(useApp.getState().reveal).toMatchObject({ path: CH3, index: 1, write: true });
+    expect(panesNow()).toEqual({ active: 0, tabs: [[CH3], [notesId(CH3)]] });
+    expect(useApp.getState().notice).toMatchObject({ undo: true });
+    expect(useApp.getState().notice?.line).toContain('clipped · p. 41');
+    // nothing kept with the PDF: a clip is the note's
+    expect(Object.keys(await marksOf(BOOK))).toEqual([]);
+    // the caret held in the first block: the next clip lands after it, before the first clip
+    setCaretPlace((path) => (path === CH3 ? 1 : null));
+    try {
+      await box(42);
+      await fire(window, new KeyboardEvent('keydown', { key: 'm', bubbles: true, cancelable: true }));
+      await wait(300);
+      expect(await fsp.readFile(join(dir, CH3), 'utf8')).toBe(`${NOTES}\n<!-- box 42:0.100:0.100:0.500:0.300 -->\n\n<!-- box 41:0.100:0.100:0.500:0.300 -->\n`);
+      expect(useApp.getState().reveal).toMatchObject({ path: CH3, index: 1, write: true });
+      // the notice's undo takes the clip just written out again
+      await act(async () => { await undoNotice(); });
+      await wait(100);
+      expect(await fsp.readFile(join(dir, CH3), 'utf8')).toBe(`${NOTES}\n<!-- box 41:0.100:0.100:0.500:0.300 -->\n`);
+    } finally { setCaretPlace(() => null); }
+    await vault.update(CH3, (d) => { d.blocks.splice(1); });
+    expect(await fsp.readFile(join(dir, CH3), 'utf8')).toBe(NOTES);
   });
 
   it('the inspector opens only by its toggle, for this book, the saved state left alone', async () => {
@@ -236,15 +284,27 @@ describe('a PDF on its own', () => {
     expect(panesNow()).toEqual({ active: 0, tabs: [[PDF]] });
   });
 
-  it('`e` on a box asks for a note first, the box kept while it asks; the note picked takes the section, and opens beside', async () => {
+  it('`e` on a box asks for no note: the passage is kept with the PDF, and the PDF still has no note', async () => {
     await box(2);
     expect(qa('.pbox.pending:not(.ghost)').length).toBe(1);
     await fire(window, new KeyboardEvent('keydown', { key: 'e', bubbles: true, cancelable: true }));
-    await wait(50);
+    await wait(200);
+    expect(useApp.getState().noteAttach).toBeNull();
+    expect(useApp.getState().paletteOpen).toBe(false);
+    expect(qa('.pbox.pending:not(.ghost)').length).toBe(0);
+    expect(Object.keys(await marksOf(ALONE))).toEqual(['s-2:0.100:0.100:0.500:0.300']);
+    expect(await fsp.readFile(join(dir, NOTE), 'utf8')).toBe(['---', 'type: note', '---', '', 'A note.', ''].join('\n'));
+    expect(panesNow()).toEqual({ active: 0, tabs: [[PDF]] });
+    expect(useApp.getState().docs[PDF]?.note).toBeUndefined();
+    expect(qa<HTMLElement>('.pbox:not(.pending)').map((b) => b.dataset.section)).toEqual(['2:0.100:0.100:0.500:0.300']);
+    await act(async () => { await putPassage(ALONE, '2:0.100:0.100:0.500:0.300', null); });
+  });
+
+  it('a note picked for the PDF is attached, opens beside the pages, and nothing is written into it', async () => {
+    const before = (await fsp.readFile(join(dir, NOTE), 'utf8'));
+    await click(word());
+    await wait(20);
     expect(useApp.getState().noteAttach).toEqual({ pdf: PDF, step: 'pick' });
-    expect(qa('.pbox.pending:not(.ghost)').length).toBe(1);
-    expect(await fsp.readFile(join(dir, NOTE), 'utf8')).not.toContain('## p. 2');
-    // the pick: the note that is there names the PDF, and is its notes from now on
     const done = attachNote(PDF, NOTE);
     await wait(50);
     expect(meta((await vault.read(NOTE, true)).doc).pdf).toBe('alone.pdf');
@@ -254,13 +314,9 @@ describe('a PDF on its own', () => {
     await wait(300);
     expect(useApp.getState().docs[PDF]?.note).toBe(NOTE);
     expect(useApp.getState().docs[NOTE]).toMatchObject({ of: PDF });
-    expect(useApp.getState().docs[NOTE]).not.toHaveProperty('pdf');
-    const text = await fsp.readFile(join(dir, NOTE), 'utf8');
-    expect(text).toMatch(/\n## p\. 2\n<!-- read made=\S+ due=\S+ ivl=\d+ boxes=2:0\.100:0\.100:0\.500:0\.300 -->/);
-    // the note, a document of its own, is the tab beside the pages; the PDF's own line is untouched (no `read` to move)
+    // the note gained its `pdf` field and nothing else
+    expect(await fsp.readFile(join(dir, NOTE), 'utf8')).toBe(before.replace('type: note\n', 'type: note\npdf: alone.pdf\n'));
     expect(panesNow()).toEqual({ active: 0, tabs: [[PDF], [NOTE]] });
-    expect(useApp.getState().reveal).toMatchObject({ path: NOTE, heading: 'p. 2' });
-    expect(qa('.pbox.pending:not(.ghost)').length).toBe(0);
     expect(q('.book')?.getAttribute('data-notes')).toBe('1');
     expect(word().dataset.on).toBe('1');
     // and from now on `notes` opens and closes that note
@@ -272,7 +328,8 @@ describe('a PDF on its own', () => {
     expect(panesNow()).toEqual({ active: 0, tabs: [[PDF], [NOTE]] });
   });
 
-  it('the section is drawn on the PDF\'s pages from the attached note, and its name beside the page goes to the note', async () => {
+  it('a boxed section of a note written before milestone 81 is drawn on the PDF\'s pages from the attached note, and its name beside the page goes to the note', async () => {
+    await vault.update(NOTE, (d) => { d.blocks.push({ kind: 'heading', level: 2, text: 'p. 2', read: { made: '2026-10-30', due: '2026-11-02', ivl: 3, boxes: '2:0.100:0.100:0.500:0.300' } }); });
     useApp.setState((s) => ({ docs: attach({ ...s.docs, [NOTE]: { ...s.docs[NOTE]!, pdf: PDF } }) }));
     await wait(100);
     const boxes = qa<HTMLElement>('.pbox:not(.pending)');

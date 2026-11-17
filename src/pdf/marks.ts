@@ -7,7 +7,7 @@
 // the lens is `src/app/Pdf.tsx`.
 
 import type { Box } from '../format/index.js';
-import type { Bookmark, Highlight, LetterMark, Mark, Marks, Portal, Quad } from '../vault/marks.js';
+import type { Bookmark, Highlight, LetterMark, Mark, Marks, PassageMark, Portal, Quad } from '../vault/marks.js';
 import { boxAround } from './name.js';
 
 const r4 = (n: number): number => Math.round(n * 10000) / 10000;
@@ -33,6 +33,8 @@ const ofKind = <T extends Mark>(marks: Marks, kind: T['kind']): [string, T][] =>
 /** A book's bookmarks, in the book's order. */
 export const bookmarksOf = (marks: Marks): [string, Bookmark][] => ofKind<Bookmark>(marks, 'bookmark');
 export const highlightsOf = (marks: Marks): [string, Highlight][] => ofKind<Highlight>(marks, 'highlight');
+/** A book's passages (boxes that come back, FORMAT.md §6.5), in the book's order. */
+export const passageMarksOf = (marks: Marks): [string, PassageMark][] => ofKind<PassageMark>(marks, 'passage');
 export const portalsOf = (marks: Marks): [string, Portal][] => ofKind<Portal>(marks, 'portal');
 /** A book's marks by letter, in the letters' order (capitals first). */
 export const lettersOf = (marks: Marks): [string, LetterMark][] => ofKind<LetterMark>(marks, 'mark').sort((a, b) => (a[1].letter < b[1].letter ? -1 : a[1].letter > b[1].letter ? 1 : 0));

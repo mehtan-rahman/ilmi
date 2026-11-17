@@ -214,6 +214,12 @@ export const activeExamAt = (path: string, now: Date): ExamAt | undefined => act
  * items are kept between builds (`derivedOf`), so a change re-derives one
  * document; what is done over all of them is the day's order.
  */
+/** What is due that is in no document: a PDF's passages, kept with its marks (`passages.ts` says them). */
+let extraItems: (now: Date) => QueueItem[] = () => [];
+export function setExtraItems(fn: (now: Date) => QueueItem[]): void {
+  extraItems = fn;
+}
+
 function buildQueue(now: Date): QueueItem[] {
   const day = dayOf(now);
   const t = now.getTime();
@@ -240,6 +246,12 @@ function buildQueue(now: Date): QueueItem[] {
       from.set(item, base);
       out.push(item);
     }
+  }
+  // a copy each, as an exam ahead may mark it
+  for (const base of extraItems(now)) {
+    const item = { ...base };
+    from.set(item, base);
+    out.push(item);
   }
   const keys = dayKeys.keys;
   const keyOf = (item: QueueItem, on: string): number => {
@@ -1173,9 +1185,15 @@ export function setFocus(focus: Focus): void {
  */
 export async function postponeRest(quiet = false): Promise<number> {
   const s = useApp.getState();
-  const done = await postponeOverflow(need(), s.queue, appNow());
+  const done = await postponeOverflow(need(), s.queue, appNow(), postponePassage);
   if (done.length && !quiet) note(`postponed · ${done.length} item${done.length === 1 ? '' : 's'}`);
   return done.length;
+}
+
+/** How a passage in the backlog is postponed: `passages.ts` says, since it keeps them. */
+let postponePassage: (item: QueueItem) => Promise<unknown> = () => Promise.resolve();
+export function setPostponePassage(fn: (item: QueueItem) => Promise<unknown>): void {
+  postponePassage = fn;
 }
 
 /** One line for the queue's recent log, newest first, six kept. */

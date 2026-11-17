@@ -18,9 +18,11 @@
 
 import { useSyncExternalStore } from 'react';
 import { openUrl } from '@tauri-apps/plugin-opener';
-import { setField } from '../format/index.js';
-import { bookmarksOf, collectionMark, collectionMarks, emptyTrail, highlightsOf, isCollectionMark, letterId, lettersOf, type ContentsEntry, type Trail } from '../pdf/index.js';
-import { MARKS_DIR, dirOf, join, marksHashOf, marksMap, marksPath, parseMarks, relFrom, serializeMarks, type Mark, type Marks, type StoreFs } from '../vault/index.js';
+import { pagesLabel, parseBoxes, setField } from '../format/index.js';
+import { dayOf, dayStart, whenToDate } from '../schedule/index.js';
+import { appNow } from './clock.js';
+import { bookmarksOf, collectionMark, collectionMarks, emptyTrail, highlightsOf, passageMarksOf, isCollectionMark, letterId, lettersOf, type ContentsEntry, type Trail } from '../pdf/index.js';
+import { MARKS_DIR, dirOf, join, marksHashOf, marksMap, marksPath, parseMarks, relFrom, serializeMarks, type Mark, type Marks, type PassageMark, type StoreFs } from '../vault/index.js';
 import { noteOf, notesTabOf, pagesOf, SESSION, titleOf } from './names.js';
 import { activeTab, besideAt, closeBeside, openBeside, openTab, openTwin, openWhereBeside } from './panes.js';
 import { useApp } from './store.js';
@@ -338,6 +340,15 @@ onHiddenChange((paths) => {
   }
 });
 
+/** Told when any PDF's marks change (the queue reads the passages among them). */
+export const onMarks = subscribe;
+
+/** Every PDF's marks as they are held now, by its hash: what has been read, nothing asked for. */
+export function heldMarks(): Map<string, Marks> {
+  fresh();
+  return new Map([...held].map(([h, v]) => [h, v.marks]));
+}
+
 /** Every PDF's marks, by its hash: each file under `.ilmi/marks/` read once (the palette's `bookmarks` and `marks`, a capital mark gone to). */
 export async function allMarks(): Promise<Map<string, Marks>> {
   fresh();
@@ -492,14 +503,30 @@ export function followTo(id: string, from: BookLens, portal: string, to: { page:
   for (const l of lenses.get(id) ?? []) if (l !== from && isFollower(id, l)) l.show?.(to, portal);
 }
 
-/** The palette's lists of what is left in books: a book's bookmarks or highlights, every book's bookmarks, the marks by a letter. */
-export type MarkList = 'bookmarks' | 'highlights' | 'all-bookmarks' | 'marks';
+/** When a passage is next, in a list's words: `due today`, `back in 4d`, `dismissed`. */
+export function passageWhen(m: PassageMark, now: Date): string {
+  if (m.due === undefined) return 'dismissed';
+  const d = Math.round((dayStart(dayOf(whenToDate(m.due))).getTime() - dayStart(dayOf(now)).getTime()) / 86400000);
+  return d <= 0 ? 'due today' : d === 1 ? 'back tomorrow' : `back in ${d}d`;
+}
+
+let passageSeq = 1_000_000;
+/** Go to a passage on its pages: there as a jump, its boxes lit and flashed. */
+export function goToPassage(hash: string, m: PassageMark, from?: string): void {
+  goToMark(hash, m, from);
+  const id = from ?? bookInFront() ?? bookFor(hash, m.page);
+  if (id !== null) useApp.setState({ bookFocus: { path: id, text: m.boxes, seq: ++passageSeq } });
+}
+
+/** The palette's lists of what is left in books: a book's bookmarks, highlights or passages, every book's bookmarks, the marks by a letter. */
+export type MarkList = 'bookmarks' | 'highlights' | 'passages' | 'all-bookmarks' | 'marks';
 /** A row of such a list: its name, where it is, its page, and going there. */
 export interface PlaceRow { title: string; sub: string; page: number; go(): void }
 /** What a list says when it is empty: how one is made. */
 export const MARK_LIST_EMPTY: Record<MarkList, string> = {
   bookmarks: 'no bookmarks in this pdf · b names the place in view',
   highlights: 'no highlights in this pdf · h on a selection makes one',
+  passages: 'no passages in this pdf · drag a box on a page, then e',
   'all-bookmarks': 'no bookmarks yet · b in a book names the place in view',
   marks: 'no marks yet · ⇧M and a letter in a book sets one',
 };
@@ -509,10 +536,12 @@ export async function markList(kind: MarkList, book: string | null): Promise<Pla
   const s = useApp.getState();
   const hash = book !== null ? pdfHashOf(book) : null;
   const nameOf = (h: string, page: number): string => { const id = bookFor(h, page); return id === null ? 'no longer in the collection' : titleOf(id, s.docs, s.vault); };
-  if (kind === 'bookmarks' || kind === 'highlights') {
+  if (kind === 'bookmarks' || kind === 'highlights' || kind === 'passages') {
     if (hash === null) return [];
     const marks = await loadMarks(hash);
     const go = (m: { page: number; y: number }) => () => goToMark(hash, m, book ?? undefined);
+    // a passage by its pages and when it is next; gone to, its boxes are lit
+    if (kind === 'passages') return passageMarksOf(marks).map(([, m]) => ({ title: pagesLabel(parseBoxes(m.boxes) ?? []), sub: passageWhen(m, appNow()), page: m.page, go: () => goToPassage(hash, m, book ?? undefined) }));
     if (kind === 'bookmarks') return bookmarksOf(marks).map(([, m]) => ({ title: m.name, sub: '', page: m.page, go: go(m) }));
     return highlightsOf(marks).map(([, m]) => ({ title: m.text || `p. ${m.page}`, sub: '', page: m.page, go: go(m) }));
   }

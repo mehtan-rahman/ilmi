@@ -38,8 +38,8 @@ export interface HintContext {
 }
 
 const PALETTE: Hint = ['⌘k', 'palette'];
-/** A book's pages: drag a box (again for another), then `e` a section of the notes or `m` a card or a clip. On an iPad a finger's plain drag is the scroll: it boxes after a hold (`touch.ts`). */
-const book = (c: HintContext): Hint[] => [[c.touch ? 'hold, drag' : 'drag', 'box a passage'], ['e', 'section'], ['m', 'card']];
+/** A book's pages: drag a box (again for another), then `e` a passage of the notes or `m` a card or a clip. On an iPad a finger's plain drag is the scroll: it boxes after a hold (`touch.ts`). */
+const book = (c: HintContext): Hint[] => [[c.touch ? 'hold, drag' : 'drag', 'box'], ['e', 'passage'], ['m', 'card']];
 /** A book's notes come in over its pages and fold away again: the word over the pages, and this key. */
 const NOTES: Hint = ['⌘\\', 'notes'];
 /** Getting around a book and what is left on its pages (milestones 76, 77). */
@@ -75,7 +75,7 @@ export function hintsFor(c: HintContext): Hint[] {
     case 'extract': {
       const enrol: Hint[] = c.canEnrol ? [['r', c.kind === 'note' ? 'revisit' : 'start reading']] : [];
       // the rest of a book's keys after the ones it had: a narrow window cuts them off, `docs/keys.md` has them all
-      if (c.pages) return [...book(c), ...enrol, ['[ ]', 'sections'], ['/', 'search'], ...back(c), NOTES, ...(c.touch ? [] : MARKS)];
+      if (c.pages) return [...book(c), ...enrol, ['[ ]', 'passages'], ['/', 'search'], ...back(c), NOTES, ...(c.touch ? [] : MARKS)];
       return [...selKeys(c.frozen, true, word), ...enrol, ['⌘F', 'find'], ['⌘\\', 'split pane']];
     }
     case 'draft':

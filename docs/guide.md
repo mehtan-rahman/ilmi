@@ -134,20 +134,46 @@ notes, the zoom between `−` and `+` (a press on the number fits the pages
 to the window again), the page (a press goes to a page) and search. Your
 notes on it are a note attached to it, made when you ask: the bar says
 `create notes` until there is one and `open notes` after. The first time
-you keep something from the pages, or press that, you pick a note that is
+you press that (or ask for a card from the pages) you pick a note that is
 there or make a
 new one, named as you like, in a folder of your choosing; the note names the
-file in its `pdf` field, and from then on everything kept from that PDF goes
-into it. `open notes` (⌘\) opens that note in the pane beside the pages, the
+file in its `pdf` field and is otherwise blank. It is an ordinary note: a
+row in the tree where you put it, yours to write and lay out as you like.
+ilmi writes nothing into it for you: no headings, no page markers. `open
+notes` (⌘\) opens that note in the pane beside the pages, the
 ordinary tab it is, and closes it again; nothing slides over the pages. A
 PDF with a `.md` of its name beside it (a book's chapters, or anything
-from before) opens the same way, that document's body being its notes. A
-passage boxed on the pages becomes a section of the note, named from the
-page (`3.3 · average values (3.12)`), placed in book order, and comes back
-in the day's queue until you dismiss it; its boxes are drawn on the page
-with its name, lit while the caret is in it, dashed once dismissed. Under
-its heading a chip shows it in the book (the pages opened beside the note
-if they are not), draws its boxes inline, and says when it is next. The
+from before) opens the same way, that document's body being its notes.
+
+Drag a box around a passage (again for another box, on any page) and
+press `e`, or `passage` on the box's bar: the passage is kept and comes back
+in the day's queue until you dismiss it, first on the cadence of the
+book's priority, then further out each time you pass it. It is kept with
+the PDF, not in a note: no note is asked for and none opens. The notice
+says when it is back and undoes it. Its boxes stay drawn on the page with
+its pages beside them (`p. 41`, `pp. 41–42`), dashed once dismissed; a
+press there says when it is next and offers `dismiss` (or `bring back`)
+and `remove`. `]` and `[` step between a book's passages in book order.
+`passages · <book>` in the palette lists them with when each is next, and
+the inspector lists them too, each with a quiet × that removes it. In the
+queue a passage is a row tagged `passage`, named by its book and its
+pages; its session opens the pages at its boxes, with `next`, `later` and
+`dismiss` under them, and the focus `read` counts it. Passages sync
+between your devices one by one, as bookmarks do.
+
+`m` on a box (or `card` on its bar) is for a card about what you boxed: the
+box is clipped into the note as the crop of its page, where your caret is
+in the note (at its end when the note is closed or you have not put the
+caret anywhere), and the caret lands under it for the card. That is the
+only thing ilmi puts in the note, and only when you ask for a card; the
+notice undoes it.
+
+A note from before this (the sample's chapters) holds its passages as
+sections under headings named from the page, and what came from a page
+under `## p. N`. Those still work as they did: the section comes back, its
+boxes are drawn on the page with its heading, lit while the caret is in
+it, and a chip under the heading shows it in the book, draws its boxes
+inline and says when it is next. Nothing is rewritten. The
 gold bar in the margin runs to the read point (`pos` and `y` on the `read`
 line, or in `.ilmi/reading.json` for a PDF on its own); done for today
 records the bottom of the view. An older extract's passage is still drawn
@@ -169,7 +195,7 @@ caret has left it; the hits stay lit until esc), `g` goes to a page, and
 `t` lists the PDF's own contents in the palette: its outline, indented as
 it is nested, each entry's page at the right, the one you are in marked;
 type to narrow it, ⏎ goes. A PDF with no outline says so and lists the
-sections you have boxed instead; a chapter cut from a book lists what lies
+passages you have boxed instead; a chapter cut from a book lists what lies
 in its own pages. The palette offers the same list as `contents · <book>`.
 
 The PDF's own links work: a press on a citation, an equation's number or a
@@ -195,7 +221,7 @@ Scrolling by hand after going back keeps the way forward until the next
 jump. The strip at the bottom says `⌫ back` while there is somewhere to go
 back to. The trail is the book's own and is kept while the app is open.
 
-A right-click on a selection offers `section` and `card` as the two buttons
+A right-click on a selection offers `passage` and `card` as the two buttons
 under it do, and `search the web` and `search scholar`, which open your
 browser on the selected words; ilmi itself fetches nothing.
 
@@ -231,11 +257,11 @@ collection` until then.
   chose last. `h` with the selection (or your last click) inside a
   highlight clears it, and the notice undoes that. With nothing selected,
   `h` highlights the words under the boxes you have drawn, and the box's
-  bar has `highlight` beside `section` and `card`. That is how a finger
+  bar has `highlight` beside `passage` and `card`. That is how a finger
   highlights, since a page's text is not selected under one: hold, drag a
   box around the words, and press `highlight` (or `look up`, which
   searches the web for them). A right-click on a
-  highlight (a long press under a finger) offers `section` and `card`, as
+  highlight (a long press under a finger) offers `passage` and `card`, as
   a selection does, `clear`, and the four inks. `highlights · <book>` in
   the palette lists them by their words; type to search them, ⏎ goes. The
   inspector shows how many there are and the first few.
@@ -720,7 +746,7 @@ again when the keyboard on the glass comes up).
 Reading a book there: a finger scrolls the pages. To box a passage, rest the
 finger on the page a moment and then drag (the Pencil writes on the page,
 below). Drag again for a second box, tap the page to clear them, and the bar under
-the last box makes them a `section` or a `card`. `notes` among the words
+the last box makes them a `passage` or a `card`. `notes` among the words
 over the pages opens the note beside them and closes it again, as on the
 Mac; upright, the two panes lie one above the other, the pages above and
 the note below, since half the width cannot hold a page. Where the Mac has

@@ -569,7 +569,7 @@ describe('look it up', () => {
       const select = () => act(async () => { const s = window.getSelection()!; s.removeAllRanges(); s.addRange(r); document.dispatchEvent(new Event('selectionchange')); });
       await select();
       // the two-button cue is as it was
-      expect([...host.querySelectorAll('.sel-cue .cue-act')].map((b) => b.textContent)).toEqual(['section e', 'card m']);
+      expect([...host.querySelectorAll('.sel-cue .cue-act')].map((b) => b.textContent)).toEqual(['passage e', 'card m']);
       await act(async () => { page(2).dispatchEvent(at('contextmenu', 2, 0.5, 0.5, { button: 2 })); });
       await settle();
       const acts = () => [...document.querySelectorAll<HTMLElement>('.ctx-menu [data-act]')];

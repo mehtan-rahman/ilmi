@@ -79,8 +79,8 @@ function contentsCommand(): Command[] {
 }
 
 /** The lists of what is left in books (milestone 77): the book in front's bookmarks and highlights, and its portals shown beside; every book's bookmarks; the marks by a letter. */
-const MARK_LISTS: Record<string, MarkList> = { 'bookmarks-here': 'bookmarks', 'highlights-here': 'highlights', 'bookmarks-all': 'all-bookmarks', marks: 'marks' };
-const MARK_LIST_NAME: Record<MarkList, string> = { bookmarks: 'bookmarks', highlights: 'highlights', 'all-bookmarks': 'bookmarks', marks: 'marks' };
+const MARK_LISTS: Record<string, MarkList> = { 'bookmarks-here': 'bookmarks', 'highlights-here': 'highlights', 'passages-here': 'passages', 'bookmarks-all': 'all-bookmarks', marks: 'marks' };
+const MARK_LIST_NAME: Record<MarkList, string> = { bookmarks: 'bookmarks', highlights: 'highlights', passages: 'passages', 'all-bookmarks': 'bookmarks', marks: 'marks' };
 function marksCommands(): Command[] {
   const s = useApp.getState();
   if (!s.vault) return [];
@@ -90,6 +90,7 @@ function marksCommands(): Command[] {
     ...(here !== null ? [
       { id: 'bookmarks-here', title: `bookmarks · ${here}` },
       { id: 'highlights-here', title: `highlights · ${here}` },
+      { id: 'passages-here', title: `passages · ${here}` },
       // a second pane: not on an iPad or a phone, where a portal's mark peeks
       ...(s.mobile ? [] : [{ id: 'portals-beside', title: followed(book!) ? `portals beside · close · ${here}` : `portals beside · ${here}` }]),
     ] : []),

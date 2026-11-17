@@ -81,11 +81,15 @@ const { Palette } = await import('../Palette.js');
 const { useApp } = await import('../store.js');
 const { trailOf, takePlace, togglePortalsBeside, followed, portalPending, setPortalPending, marksOf, loadMarks, markList, setMark } = await import('../book.js');
 const { closePopMenu } = await import('../popMenu.js');
+const { actOnPassage, passageItems } = await import('../passages.js');
+const { allMarks } = await import('../book.js');
+const { undoNotice } = await import('../land.js');
 const { titleOf } = await import('../names.js');
 const { placeRows } = await import('../chrome.js');
 globalThis.ResizeObserver ??= class { observe() {} unobserve() {} disconnect() {} } as unknown as typeof ResizeObserver;
 globalThis.IntersectionObserver ??= class { observe() {} unobserve() {} disconnect() {} } as unknown as typeof IntersectionObserver;
 Element.prototype.scrollIntoView ??= function () {};
+Element.prototype.scrollTo ??= function (this: Element, o?: ScrollToOptions) { if (o && typeof o === 'object' && o.top !== undefined) this.scrollTop = o.top; } as never;
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, get(this: HTMLElement) { return this.classList.contains('reader-wrap') ? 800 : 0; } });
 
@@ -480,13 +484,13 @@ describe('highlights', () => {
     expect(notice()).toBe('select the words to highlight, then h');
   });
 
-  it('a right-click on one offers section, card, clear and the four inks', async () => {
+  it('a right-click on one offers passage, card, clear and the four inks', async () => {
     seed({ 'h-1': { kind: 'highlight', page: 2, y: 0.2, quads: [[2, 0.3, 0.2, 0.5, 0.02]], text: 'k ln W', ink: 1, at: 1 } });
     await mountBook();
     expect(hls().length).toBe(1);
     const acts = await menu(2, 0.5, 0.21);
     expect(acts.map((a) => a.dataset.act)).toEqual(['hl-section', 'hl-card', 'hl-clear', 'ink-1', 'ink-2', 'ink-3', 'ink-4']);
-    expect(acts.map((a) => a.textContent)).toEqual(['section', 'card', 'clear', '1 · band ✓', '2 · rule', '3 · dashed rule', '4 · dotted rule']);
+    expect(acts.map((a) => a.textContent)).toEqual(['passage', 'card', 'clear', '1 · band ✓', '2 · rule', '3 · dashed rule', '4 · dotted rule']);
     await act(async () => { acts[5]!.click(); });
     await settle();
     expect(hls()[0]!.dataset.ink).toBe('3');
@@ -748,6 +752,119 @@ describe('the ruler', () => {
     expect(notice()).toBe('read to p. 2');
     // the rule stays where it is
     expect(view().dataset.ruler).toBe('2:1');
+  });
+});
+
+describe('passages', () => {
+  const BOXES = '2:0.100:0.200:0.500:0.100';
+  const ID = `s-${BOXES}`;
+  const day = (n: number) => { const d = new Date(Date.now() + n * 86400000); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+  const passage = (more: object = {}): Marks[string] => ({ kind: 'passage', page: 2, y: 0.2, at: 1, boxes: BOXES, made: day(-3), due: day(-1), ivl: 2, ...more });
+  const pboxes = () => [...host.querySelectorAll<HTMLElement>('.pbox:not(.pending)')];
+  const tag = () => host.querySelector<HTMLElement>('.ptag, .pgut')!;
+  const press = async (el: HTMLElement) => { await act(async () => { el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0, clientX: 10, clientY: 10 })); }); await settle(); return [...document.querySelectorAll<HTMLElement>('.ctx-menu [data-act]')]; };
+
+  it('one kept with the PDF is drawn on its page, called by its page; dismissed, dashed', async () => {
+    seed({ [ID]: passage(), 's-4:0.100:0.100:0.300:0.100': passage({ page: 4, y: 0.1, boxes: '4:0.100:0.100:0.300:0.100', due: undefined, ivl: undefined }) });
+    await mountBook();
+    expect(pboxes().map((b) => [b.dataset.section, b.dataset.page, b.dataset.kept, b.classList.contains('dis')])).toEqual([[BOXES, '2', '1', false], ['4:0.100:0.100:0.300:0.100', '4', '1', true]]);
+  });
+
+  it('a press on its tag says when it is next and offers dismiss and remove; dismissed, bring back; each undone from the notice', async () => {
+    seed({ [ID]: passage() });
+    await mountBook();
+    const acts = await press(tag());
+    expect(acts.map((a) => a.dataset.act)).toEqual(['passage-when', 'passage-dismiss', 'passage-remove']);
+    expect(acts.map((a) => a.textContent)).toEqual(['due today', 'dismiss', 'remove']);
+    await act(async () => { acts[1]!.click(); });
+    await settle();
+    expect(stored()[ID]).toEqual({ kind: 'passage', page: 2, y: 0.2, at: 1, boxes: BOXES, made: day(-3) });
+    expect(pboxes()[0]!.classList.contains('dis')).toBe(true);
+    expect(useApp.getState().notice).toMatchObject({ line: '§ p. 2 · dismissed', undo: true });
+    await act(async () => { await undoNotice(); });
+    await settle();
+    expect(stored()[ID]).toMatchObject({ due: day(-1), ivl: 2 });
+    // dismissed: bring back, on the cadence
+    await act(async () => { await setMark(HASH, ID, passage({ due: undefined, ivl: undefined })); });
+    await settle();
+    const again = await press(tag());
+    expect(again.map((a) => a.textContent)).toEqual(['dismissed', 'bring back', 'remove']);
+    await act(async () => { again[1]!.click(); });
+    await settle();
+    expect(stored()[ID]).toMatchObject({ due: day(2), ivl: 2, made: day(-3) });
+    // remove: gone from the file and the page, back with the undo
+    const third = await press(tag());
+    await act(async () => { third[2]!.click(); });
+    await settle();
+    expect(stored()[ID]).toBeUndefined();
+    expect(pboxes().length).toBe(0);
+    expect(useApp.getState().notice).toMatchObject({ line: '§ p. 2 · removed', undo: true });
+    await act(async () => { await undoNotice(); });
+    await settle();
+    expect(stored()[ID]).toMatchObject({ kind: 'passage', boxes: BOXES });
+    expect(pboxes().length).toBe(1);
+  });
+
+  it('] and [ step between them in book order, lighting each', async () => {
+    seed({ [ID]: passage(), 's-4:0.100:0.100:0.300:0.100': passage({ page: 4, y: 0.1, boxes: '4:0.100:0.100:0.300:0.100' }) });
+    await mountBook();
+    const lit = () => pboxes().filter((b) => b.classList.contains('cur')).map((b) => b.dataset.section);
+    expect(lit()).toEqual([]);
+    await key(']');
+    expect(lit()).toEqual([BOXES]);
+    await key(']');
+    expect(lit()).toEqual(['4:0.100:0.100:0.300:0.100']);
+    await key('[');
+    expect(lit()).toEqual([BOXES]);
+    // nothing opened: a passage is on the pages alone
+    expect(opened).toEqual([]);
+    expect(useApp.getState().reveal ?? null).toBeNull();
+  });
+
+  it('the queue has an item for each that is due, of the document whose pages it is on; the session\'s three write its line among the marks', async () => {
+    seed({ [ID]: passage(), 's-4:0.100:0.100:0.300:0.100': passage({ page: 4, y: 0.1, boxes: '4:0.100:0.100:0.300:0.100', due: undefined, ivl: undefined }) });
+    await mountBook();
+    await allMarks();
+    const items = passageItems(new Date());
+    expect(items.length).toBe(1);
+    const item = items[0]!;
+    expect(item).toMatchObject({ kind: 'section', path: BOOK, heading: 'p. 2', passage: { hash: HASH, boxes: BOXES }, block: -1 });
+    // the same item object while nothing of it changed: the day's draw is by it
+    expect(passageItems(new Date())[0]).toBe(item);
+    if (item.kind !== 'section') throw new Error('not a section');
+    const undo = await actOnPassage(item, 'on');
+    expect(stored()[ID]).toMatchObject({ reps: 1, made: day(-3) });
+    expect((stored()[ID] as { due: string }).due > day(0)).toBe(true);
+    expect(passageItems(new Date())[0]).not.toBe(item);
+    await undo!();
+    expect(stored()[ID]).toEqual(passage());
+    await actOnPassage(item, 'done');
+    expect(stored()[ID]).toEqual({ kind: 'passage', page: 2, y: 0.2, at: 1, boxes: BOXES, made: day(-3) });
+    expect(passageItems(new Date())).toEqual([]);
+    // no document was written for any of it
+    expect(updates).toEqual([]);
+  });
+
+  it('a passage whose pdf is no longer in the collection waits out of the queue, its line kept', async () => {
+    seed({ [ID]: passage() }, OTHER);
+    await mountBook();
+    await allMarks();
+    expect(passageItems(new Date())).toEqual([]);
+    expect(stored(OTHER)[ID]).toEqual(passage());
+  });
+
+  it('the palette lists a book\'s by their pages and when they are next; ⏎ goes there and lights it', async () => {
+    seed({ [ID]: passage(), 's-4:0.100:0.100:0.300:0.100': passage({ page: 4, y: 0.1, boxes: '4:0.100:0.100:0.300:0.100', due: day(4) }) });
+    await mountBook();
+    expect((await markList('passages', BOOK)).map((r) => [r.title, r.sub, r.page])).toEqual([['p. 2', 'due today', 2], ['p. 4', 'back in 4d', 4]]);
+    await drawPalette();
+    await runCommand('passages · ');
+    expect(document.querySelector('.palette-list')!.getAttribute('data-places')).toBe('passages');
+    const list = rows();
+    expect(list.map((r) => r.querySelector('.pt')!.textContent)).toEqual(['p. 2', 'p. 4']);
+    await act(async () => { list[1]!.click(); });
+    await settle();
+    expect(pboxes().filter((b) => b.classList.contains('cur')).map((b) => b.dataset.section)).toEqual(['4:0.100:0.100:0.300:0.100']);
   });
 });
 

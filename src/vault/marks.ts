@@ -1,5 +1,7 @@
 // What is left on a book's pages (milestone 77): bookmarks, marks by a
-// letter, highlights, portals. One file a PDF, `.ilmi/marks/<sha256>.json`
+// letter, highlights, portals, and (milestone 81) passages: boxes on the
+// pages that come back in the day's queue by themselves, kept here and in
+// no note. One file a PDF, `.ilmi/marks/<sha256>.json`
 // (FORMAT.md §1), named by the PDF's SHA-256 as its ink is: it follows the
 // file through a rename, a chapter cut from a book and the book share it,
 // and it stays when the last document that names the PDF is deleted.
@@ -14,6 +16,8 @@
 // Merging is the engine's (`src/sync/engine.ts`): each entry is a register
 // (`~m|<sha256>|<id>`), so two devices that each add one end with both.
 // This file is the pure side: reading, writing, and what changed between two.
+
+import { normalizeBoxes, parseBoxes } from '../format/boxes.js';
 
 export const MARKS_DIR = '.ilmi/marks';
 
@@ -42,12 +46,27 @@ export type Quad = [page: number, x: number, y: number, w: number, h: number];
 export interface Highlight extends Base { kind: 'highlight'; quads: Quad[]; text: string; ink: number }
 /** A place tied to another: `to` in this PDF, or in the one `pdf` names by its SHA-256. */
 export interface Portal extends Base { kind: 'portal'; to: { page: number; y: number; pdf?: string } }
-export type Mark = Bookmark | LetterMark | Highlight | Portal;
+/**
+ * A passage (FORMAT.md §6.5): boxes on the pages that come back on the
+ * reading loop until dismissed. `boxes` is what it is (`page:x:y:w:h`, `,`
+ * between, as a section's); its key is `s-<boxes>`, so the same boxes are
+ * one passage on every device. `page` and `y` are its first box's. The
+ * rest is a section's line: no `due` is a passage dismissed.
+ */
+export interface PassageMark extends Base { kind: 'passage'; boxes: string; made?: string; due?: string; ivl?: number; reps?: number; af?: number; pri?: number }
+export type Mark = Bookmark | LetterMark | Highlight | Portal | PassageMark;
 /** A PDF's marks, by their keys. */
 export type Marks = Record<string, Mark>;
 
 /** How many inks a highlight has. */
 export const INKS = 4;
+
+/** A passage's key: its boxes, as written. */
+export const passageId = (boxes: string): string => `s-${boxes}`;
+
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
+const WHEN = /^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?Z)?$/;
+const count = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 0;
 
 const r4 = (n: number): number => Math.round(n * 10000) / 10000;
 const unit = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v >= -0.5 && v <= 1.5;
@@ -76,6 +95,17 @@ export function markOf(v: unknown): Mark | null {
       if (!obj(to) || !pageNo(to.page) || !unit(to.y)) return null;
       const pdf = typeof to.pdf === 'string' && /^[0-9a-f]{64}$/.test(to.pdf) ? to.pdf : undefined;
       return { ...base, kind: 'portal', to: { page: to.page, y: r4(to.y), ...(pdf ? { pdf } : {}) } };
+    }
+    case 'passage': {
+      if (typeof v.boxes !== 'string' || !parseBoxes(v.boxes)) return null;
+      const out: PassageMark = { ...base, kind: 'passage', boxes: normalizeBoxes(v.boxes) };
+      if (typeof v.made === 'string' && DAY.test(v.made)) out.made = v.made;
+      if (typeof v.due === 'string' && WHEN.test(v.due)) out.due = v.due;
+      if (count(v.ivl)) out.ivl = v.ivl;
+      if (count(v.reps)) out.reps = v.reps;
+      if (typeof v.af === 'number' && Number.isFinite(v.af) && v.af >= 1.1) out.af = v.af;
+      if (count(v.pri) && v.pri <= 100) out.pri = v.pri;
+      return out;
     }
     default: return null;
   }

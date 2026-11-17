@@ -166,9 +166,9 @@ describe('a book\'s pages under a pointer', () => {
     await drag('touch', [60, 400], [360, 600], HOLD_MS + 60);
     expect(pending()).toBe(2);
     expect(qa('.pbox.pending .pb-no').map((n) => n.textContent)).toEqual(['1', '2']);
-    // under a finger the bar offers section and card: a tap is the esc
+    // under a finger the bar offers passage and card: a tap is the esc
     expect(qa<HTMLElement>('.pend button').map((b) => b.dataset.k)).toEqual(['e', 'm', 'h', 'web']);
-    expect(q('.pend button[data-k="e"]')!.textContent).toContain('section');
+    expect(q('.pend button[data-k="e"]')!.textContent).toContain('passage');
     expect(q('.pend button[data-k="m"]')!.textContent).toContain('card');
     await fire(p41(), ptr('pointerdown', 'touch', 500, 700));
     await fire(window, ptr('pointerup', 'touch', 501, 701));

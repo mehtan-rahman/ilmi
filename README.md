@@ -14,9 +14,9 @@ over the documents, each written back as one readable line in the document
 it belongs to:
 
 - **Reading.** A PDF, a book in EPUB, a clipped web page, or a pasted text is
-  a *source*. You read it in passes; a passage you box or select becomes a
-  *section* of your notes that comes back on its own schedule, until you
-  dismiss it. A source with reading left returns every day, every other day,
+  a *source*. You read it in passes; a passage you box on a PDF's pages
+  comes back on its own schedule, until you dismiss it, and one you select
+  in a text becomes a *section* of your notes that does the same. A source with reading left returns every day, every other day,
   or every third day by its priority, so a textbook gets finished.
 - **Cards.** Any line can be a card: `front :: back`, a cloze
   `{{c1::answer}}`, a question with a derivation under it, a blank inside a
@@ -67,8 +67,8 @@ pushed; `docs/development.md` has the details and the signing secrets.
    package as decks; a web address pasted (⌘V) is clipped as Markdown with
    its images.
 3. **Read.** `r` starts reading a source. Drag on a page or select in the
-   text, then `e` makes the passage a section of your notes, `m` makes a
-   card from it. ⏎ is *done for today*; the source comes back on its
+   text, then `e` keeps the passage to come back (on a PDF it is kept with
+   the PDF; your note on it stays yours), `m` makes a card from it. ⏎ is *done for today*; the source comes back on its
    cadence.
 4. **Write.** A note is a Markdown editor that draws Markdown as Markdown:
    `- dof :: 3N − k` in your class notes is a card beside its bullet, a

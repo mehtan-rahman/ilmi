@@ -1,9 +1,11 @@
-// Milestone 48: boxes on the pages become a section, placed in book order
-// among the passages; the read point (`pos`, `y`) moves forward only.
+// Milestone 48: a note's boxed sections in book order, as notes written
+// before milestone 81 have them; the read point (`pos`, `y`) moves forward
+// only. Milestone 81: a passage kept with the PDF, in no note: its line,
+// its item in the queue, what the session's three do to it.
 
 import { describe, expect, it } from 'vitest';
 import { meta, parse, serialize, type Heading } from '../../format/index.js';
-import { addPassage, advanceRead, freeName, passagesOf, placeOf, pointOn } from '../index.js';
+import { advanceRead, advanceSchedule, docItems, inScope, isDue, itemSeed, newPassage, passageItem, passagesOf, pointOn, postponeOverflow, sameItem } from '../index.js';
 
 const NOW = new Date('2026-11-02T10:00:00');
 const NOTES = [
@@ -24,24 +26,65 @@ describe('passages in book order', () => {
     ]);
   });
 
-  it('a new passage goes before the first that starts later, else at the end', () => {
-    const { doc } = parse(NOTES);
-    expect(placeOf(doc.blocks, [{ page: 41, x: 0.12, y: 0.86, w: 0.77, h: 0.075 }, { page: 42, x: 0.1, y: 0.097, w: 0.77, h: 0.04 }])).toBe(2);
-    expect(placeOf(doc.blocks, [{ page: 41, x: 0, y: 0.01, w: 1, h: 0.05 }])).toBe(0);
-    expect(placeOf(doc.blocks, [{ page: 43, x: 0, y: 0.2, w: 1, h: 0.1 }])).toBe(doc.blocks.length);
+});
+
+describe('a passage kept with the PDF', () => {
+  const BOXES = [{ page: 41, x: 0.12, y: 0.86, w: 0.77, h: 0.075 }, { page: 42, x: 0.1, y: 0.097, w: 0.77, h: 0.04 }];
+  const HASH = 'ab'.repeat(32);
+
+  it('is made today, back on the cadence of its priority, its boxes canonical', () => {
+    expect(newPassage(BOXES, NOW)).toEqual({ made: '2026-11-02', due: '2026-11-04', ivl: 2, boxes: '41:0.120:0.860:0.770:0.075,42:0.100:0.097:0.770:0.040' });
+    expect(newPassage(BOXES, NOW, 10).ivl).toBe(1);
+    expect(newPassage(BOXES, NOW, 90).ivl).toBe(3);
   });
 
-  it('writes its heading and line, made today, back on its cadence (every other day at the default priority), its boxes canonical', () => {
-    const { doc } = parse(NOTES);
-    const made = addPassage(doc, '3.3 · average values (3.12)', [{ page: 41, x: 0.12, y: 0.86, w: 0.77, h: 0.075 }, { page: 42, x: 0.1, y: 0.097, w: 0.77, h: 0.04 }], NOW);
-    expect(made).toEqual({ index: 2, text: '3.3 · average values (3.12)', ivl: 2 });
-    expect(serialize(doc)).toContain('The sum is over states.\n\n## 3.3 · average values (3.12)\n<!-- read made=2026-11-02 due=2026-11-04 ivl=2 boxes=41:0.120:0.860:0.770:0.075,42:0.100:0.097:0.770:0.040 -->\n\n## 3.3 · energy fluctuations');
+  it('is a section item of the document whose pages it is on, called by its pages and known by its boxes', () => {
+    const sched = { ...newPassage(BOXES, NOW), due: '2026-11-02' };
+    const item = passageItem('library/lindqvist/ch-3.md', HASH, sched, NOW, 30)!;
+    expect(item).toMatchObject({ kind: 'section', path: 'library/lindqvist/ch-3.md', block: -1, heading: 'pp. 41–42', passage: { hash: HASH, boxes: sched.boxes }, pri: 30, written: false, cards: 0, due: '2026-11-02' });
+    expect(inScope(item, 'reading', NOW)).toBe(true);
+    expect(isDue(item, NOW)).toBe(true);
+    // its own priority over the document's
+    expect(passageItem('a.md', HASH, { ...sched, pri: 80 }, NOW, 30)!.pri).toBe(80);
+    // dismissed (no due, its boxes kept): out of the queue
+    expect(passageItem('a.md', HASH, { made: '2026-11-02', boxes: sched.boxes }, NOW)).toBeNull();
   });
 
-  it('a name already taken gets a number', () => {
-    const { doc } = parse(NOTES);
-    expect(freeName(doc.blocks, 'my own heading')).toBe('my own heading · 2');
-    expect(freeName(doc.blocks, 'p. 43')).toBe('p. 43');
+  it('is the same item by its PDF and its boxes, whatever document shows it; another on the same page is another', () => {
+    const sched = newPassage(BOXES, NOW);
+    const a = passageItem('a.md', HASH, sched, NOW)!;
+    const b = passageItem('a.md', HASH, { ...sched, due: '2026-11-09' }, NOW)!;
+    const other = passageItem('a.md', HASH, newPassage([{ page: 41, x: 0.1, y: 0.2, w: 0.5, h: 0.1 }], NOW), NOW)!;
+    expect(sameItem(a, b)).toBe(true);
+    expect(sameItem(a, other)).toBe(false);
+    expect(a.heading).toBe('pp. 41–42');
+    expect(other.heading).toBe('p. 41');
+    expect(itemSeed(a)).toBe(itemSeed(b));
+    expect(itemSeed(a)).not.toBe(itemSeed(other));
+    // a heading's section of the same words is not it
+    const { doc } = parse('## pp. 41–42\n<!-- read due=2026-11-02 ivl=2 -->\n');
+    const sec = docItems('a.md', doc, NOW).find((i) => i.kind === 'section')!;
+    expect(sameItem(a, sec)).toBe(false);
+  });
+
+  it('next grows it and counts a pass, later does not count, dismiss leaves its boxes and what it was made', () => {
+    const sched = { ...newPassage(BOXES, NOW), due: '2026-11-02' };
+    const on = advanceSchedule(sched, 'on', NOW)!;
+    expect(on).toMatchObject({ reps: 1, made: '2026-11-02', boxes: sched.boxes });
+    expect(on.ivl!).toBeGreaterThan(2);
+    const later = advanceSchedule(sched, 'postpone', NOW)!;
+    expect(later.reps).toBeUndefined();
+    expect(later.due! > '2026-11-02').toBe(true);
+    expect(advanceSchedule(on, 'done', NOW)).toEqual({ made: '2026-11-02', boxes: sched.boxes });
+  });
+
+  it('in the backlog, is postponed by whoever keeps it, not through a file', async () => {
+    const late = passageItem('a.md', HASH, { made: '2026-10-20', due: '2026-10-30', ivl: 2, boxes: '41:0.120:0.860:0.770:0.075' }, NOW)!;
+    const asked: string[] = [];
+    const vault = { update: async () => { throw new Error('a passage is in no file'); } };
+    const done = await postponeOverflow(vault as never, [late], NOW, async (i) => { asked.push(i.passage!.boxes); });
+    expect(done).toEqual([late]);
+    expect(asked).toEqual(['41:0.120:0.860:0.770:0.075']);
   });
 });
 

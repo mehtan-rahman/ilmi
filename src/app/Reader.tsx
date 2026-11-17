@@ -38,7 +38,7 @@ import { useApp, type DocInfo } from './store.js';
 import { currentVault, enrolReading, extractNode, openCards, openNode, removeNode, renameNode, sectionNode, setFolds, unlogReading } from './vault.js';
 import { popMenu, type PopItem } from './popMenu.js';
 import { registerHeadings } from './headings.js';
-import { sectionMenu, setWriteThrough, writeDoc } from './sections.js';
+import { sectionMenu, setCaretPlace, setWriteThrough, writeDoc } from './sections.js';
 import { failed, notify } from './land.js';
 import { bookOptions } from './bookNotes.js';
 import { fillCrops } from './bookPdf.js';
@@ -65,6 +65,24 @@ setWriteThrough((path, mutate) => {
   // what was typed goes first; the change follows it in the same chain, read back as the page's own
   w.flush();
   return w.update(mutate);
+});
+
+/** Each open page's editor, and whether its caret was ever put there (a press, a key, a clip landed in it): where a clip from a book's pages goes. */
+const openViews = new Map<string, () => EditorView | null>();
+const caretHeld = new Set<string>();
+
+/** How many of the file's blocks lie at or before the caret's own block: the place just after it. */
+export function blocksToCaret(state: EditorState): number {
+  const { doc, selection } = state;
+  const top = doc.resolve(selection instanceof NodeSelection ? selection.from : selection.to).index(0);
+  let end = 0;
+  for (let i = 0; i <= top && i < doc.childCount; i++) end += doc.child(i).nodeSize;
+  return fromDoc(doc.cut(0, end)).length;
+}
+
+setCaretPlace((path) => {
+  const view = openViews.get(path)?.();
+  return view && caretHeld.has(path) ? blocksToCaret(view.state) : null;
 });
 
 // ── rendering pieces shared by node views ────────────────────────
@@ -1598,6 +1616,9 @@ export function Reader({ id, active = true, onPages, notes = false }: ReaderProp
     const writer = new Writer(vault, id, (line) => notify(line));
     writerRef.current = writer;
     openWriters.set(id, writer);
+    openViews.set(id, () => viewRef.current);
+    const held = () => { caretHeld.add(id); };
+    mount.addEventListener('focusin', held);
     let live = true;
     // the images the text names, from the vault as blob URLs, let go with the view
     const images = imageLoader(vault, id, () => useApp.getState().remoteImages);
@@ -1798,6 +1819,9 @@ export function Reader({ id, active = true, onPages, notes = false }: ReaderProp
       viewRef.current = null;
       writerRef.current = null;
       if (openWriters.get(id) === writer) openWriters.delete(id);
+      openViews.delete(id);
+      caretHeld.delete(id);
+      mount.removeEventListener('focusin', held);
       images.release();
       if (useApp.getState().selectedCard?.path === id) useApp.setState({ selectedCard: null });
     };

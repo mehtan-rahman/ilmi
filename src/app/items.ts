@@ -176,10 +176,11 @@ export function isFresh(item: QueueItem): boolean {
   return item.kind === 'card' ? !item.sched || !item.sched.reps : !item.sched.reps;
 }
 
-/** The tag before the label in a row: `note` (a note revisited), `extract`, `section`, `read`, `write`, or the card's form. */
+/** The tag before the label in a row: `note` (a note revisited), `extract`, `section`, `passage`, `read`, `write`, or the card's form. */
 export function kindTag(item: QueueItem): string {
   if (item.kind === 'read' && item.note) return 'note';
   if (item.kind === 'read' && item.extract) return 'extract';
+  if (item.kind === 'section' && item.passage) return 'passage';
   return item.kind === 'card' ? FORM_LABEL[item.form] : item.kind;
 }
 
@@ -228,6 +229,8 @@ export function standsWords(s: { written: boolean; cards: number; made?: string;
 export function standing(item: QueueItem, now: Date, firstPage?: number): string {
   switch (item.kind) {
     case 'section':
+      // a passage has nothing written under it: when it was boxed, and which time back this is
+      if (item.passage) return `${item.sched.made ? `boxed ${shortDay(item.sched.made)}` : 'boxed'} · ${item.sched.reps ? `back for the ${nth(item.sched.reps + 1)} time` : item.sched.made === dayOf(now) ? 'new' : 'first time back'}`;
       return standsWords({ written: item.written, cards: item.cards, reps: item.sched.reps ?? 0, ...(item.sched.made ? { made: item.sched.made } : {}), ...(item.sched.boxes !== undefined ? { boxes: item.sched.boxes } : {}) }, now);
     case 'read':
       if (item.note || item.extract) return standsWords({ written: !!item.written, cards: item.cards ?? 0, reps: item.sched.reps ?? 0 }, now);

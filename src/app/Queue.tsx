@@ -25,6 +25,7 @@ import { currentVault, openCard, openNode, openSession, postponeRest, refreshQue
 import { actOnDoc, actionWords, atEndOf, docLine, twoLines, type DocAction } from './Session.js';
 import { failed, notify } from './land.js';
 import { restore } from './deck.js';
+import { passageOf, putPassage } from './passages.js';
 import type { ReadItem, SectionItem, WriteItem } from '../schedule/index.js';
 import './queue.css';
 import { appNow } from './clock.js';
@@ -101,6 +102,14 @@ function TopicActs({ item, now }: { item: ReadItem | WriteItem | SectionItem; no
     const vault = currentVault();
     if (!vault) return;
     const line = docLine(item, action, now);
+    // a passage is in no document: what puts its line back is handed over
+    if (item.kind === 'section' && item.passage) {
+      let putBack = null as (() => Promise<void>) | null;
+      void actOnDoc(item, action, undefined, undefined, undefined, (undo) => { putBack = undo; })
+        .then(() => notify(line, null, putBack ? async () => { await putBack!(); unlogReading(item.path, item.heading); } : undefined))
+        .catch(failed(action === 'on' ? 'next' : action === 'postpone' ? 'later' : 'dismiss'));
+      return;
+    }
     void vault.read(item.path).then(({ doc }) => {
       const before = structuredClone(doc);
       return actOnDoc(item, action).then(() => notify(line, null, () => restore(vault, [{ path: item.path, doc: before }]).then(() => unlogReading(item.path, item.kind === 'section' ? item.heading : undefined))));
@@ -191,9 +200,11 @@ export function Queue({ scope, active }: Props) {
   const postpone = () => {
     const vault = currentVault();
     if (!vault) return;
-    const paths = [...new Set(rest.map((i) => i.path))];
+    const paths = [...new Set(rest.filter((i) => !(i.kind === 'section' && i.passage)).map((i) => i.path))];
+    // the passages among them are in no file: each as it was, for the same undo
+    const kept = rest.flatMap((i) => (i.kind === 'section' && i.passage ? [{ ...i.passage, was: passageOf(i.passage.hash, i.passage.boxes) }] : []));
     void Promise.all(paths.map((path) => vault.read(path).then(({ doc }) => ({ path, doc: structuredClone(doc) }))))
-      .then((before) => postponeRest(true).then((n) => { if (n) notify(`postponed · ${plural(n, 'item')}`, null, () => restore(vault, before)); }))
+      .then((before) => postponeRest(true).then((n) => { if (n) notify(`postponed · ${plural(n, 'item')}`, null, async () => { await restore(vault, before); for (const k of kept) if (k.was) await putPassage(k.hash, k.boxes, k.was); }); }))
       .catch(failed('postpone'));
   };
 
@@ -271,7 +282,7 @@ export function Queue({ scope, active }: Props) {
             const ivl = item.kind === 'card' ? intervalLabel(item) : '';
             const row = (
               <li
-                key={`${item.kind}:${item.path}:${item.kind === 'card' ? `${item.block}:${JSON.stringify(item.group ?? null)}:${item.dir ?? ''}` : item.kind === 'section' ? `${item.block}:${item.heading}` : ''}`}
+                key={`${item.kind}:${item.path}:${item.kind === 'card' ? `${item.block}:${JSON.stringify(item.group ?? null)}:${item.dir ?? ''}` : item.kind === 'section' ? `${item.block}:${item.passage ? `${item.passage.hash}:${item.passage.boxes}` : item.heading}` : ''}`}
                 data-active={i === cursor ? '1' : '0'}
                 data-el={item.kind}
                 data-fresh={isFresh(item) ? '1' : '0'}

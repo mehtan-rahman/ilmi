@@ -9,7 +9,6 @@ import { PRI_DEFAULT, REVIEWS_DIR, formatLogLine, isReading, mergeReadings, merg
 import { cadence } from '../schedule/growth.js';
 import { join, relative, sameStamp, type Fs, type Stamp } from './fs.js';
 import { ORDER_FILE, childrenAt, cleanOrder, entryOf, followMove, forget, ordered, placeEntry, pruneOrder, restoreOrder, type Order } from './order.js';
-import { addToPage } from './pages.js';
 import { baseOf, childDirOf, cleanName, dirOf, fileName, isDoc, joinRel, nameOf, normRel, pdfOf, rekey, relFrom, within } from './paths.js';
 import { documents, isDocPath, isHidden, isPdfPath, pdfs, walk, type DocNode, type TreeNode } from './walk.js';
 
@@ -99,10 +98,13 @@ export interface ExtractSpec {
   name?: string;
   /**
    * The page of the parent's PDF the passage came from. The child carries it
-   * on its `read` line, and the passage lands under `## p. <n>` in the parent
-   * as the paragraph the backref hangs on; `blocks` is not used.
+   * on its `read` line, and the passage lands in the parent as the paragraph
+   * the backref hangs on, at `at` among its blocks (its end when not said),
+   * under no heading; `blocks` is not used.
    */
   page?: number;
+  /** With `page`: the block index the paragraph lands at. */
+  at?: number;
   today?: string;
 }
 
@@ -1331,8 +1333,8 @@ export class Vault {
    * reading schedule due today, a backref on each touched paragraph, and the
    * parent's marker moved past the last touched block. From a page
    * (`spec.page`), the child's line carries `page=<n>`, the passage lands as
-   * a paragraph under `## p. <n>` in the parent with the backref on it, and
-   * the marker stays where it is. Resolves to the child's path.
+   * a paragraph in the parent with the backref on it (at `spec.at`, else its
+   * end; no page heading is made), and the marker stays where it is. Resolves to the child's path.
    */
   extract(parent: string, spec: ExtractSpec): Promise<string> {
     return this.serial(async () => {
@@ -1360,7 +1362,7 @@ export class Vault {
       await this.commit(path, serialize(doc));
       await this.change(parent, (d) => {
         if (spec.page !== undefined) {
-          addToPage(d, spec.page, { kind: 'paragraph', text: text.replace(/\n[ \t]*\n+/g, '\n'), extracts: [name] });
+          d.blocks.splice(Math.max(0, Math.min(spec.at ?? d.blocks.length, d.blocks.length)), 0, { kind: 'paragraph', text: text.replace(/\n[ \t]*\n+/g, '\n'), extracts: [name] });
           return;
         }
         let last = -1;

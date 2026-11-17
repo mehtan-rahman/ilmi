@@ -1,14 +1,15 @@
-// A document with pages keeps what came out of them under one heading per
-// page, `## p. <n>` (FORMAT.md §3, "Pages"). Pure over a Doc: where a page's
-// section is, which page a block sits under, and how a block lands on a page.
+// Which page of a document's PDF a block of its notes belongs to (FORMAT.md
+// §6.6). A clip carries its page in its box, and what is written under one
+// is about it. Notes written before milestone 81 kept what came out of a
+// page under a heading `## p. <n>`, and a boxed passage as a section under
+// its own heading (§6.5): both still say the page of what is under them.
+// Pure over a Doc.
 
-import type { Block, Doc, Heading } from '../format/index.js';
+import { parseBoxes, parseClip, type Block, type Doc } from '../format/index.js';
 
 const PAGE = /^p\.\s*(\d+)$/;
 
-export const pageHeading = (n: number): Heading => ({ kind: 'heading', level: 2, text: `p. ${n}` });
-
-/** The page a heading names, or null for any other heading. */
+/** The page a heading names (`## p. <n>`), or null for any other heading. */
 export function pageOf(b: Block | undefined): number | null {
   if (b?.kind !== 'heading' || b.level !== 2) return null;
   const m = PAGE.exec(b.text.trim());
@@ -16,44 +17,26 @@ export function pageOf(b: Block | undefined): number | null {
   return n >= 1 ? n : null;
 }
 
-/** The page the block at `index` sits under: the nearest `## p. <n>` above it, else null. */
-export function pageOfBlock(doc: Doc, index: number): number | null {
-  for (let i = Math.min(index, doc.blocks.length - 1); i >= 0; i--) {
-    const b = doc.blocks[i];
-    if (b?.kind !== 'heading') continue;
-    const n = pageOf(b);
-    if (n !== null) return n;
-    // any other heading above the block ends the page's section
-    if (b.level <= 2) return null;
-  }
-  return null;
-}
-
-/** `[start, end)` of page `n`'s section, the heading included; null when the page has no heading yet. */
-export function pageSection(doc: Doc, n: number): [number, number] | null {
-  const start = doc.blocks.findIndex((b) => pageOf(b) === n);
-  if (start < 0) return null;
-  let end = start + 1;
-  while (end < doc.blocks.length && !(doc.blocks[end]!.kind === 'heading' && (doc.blocks[end] as Heading).level <= 2)) end++;
-  return [start, end];
+/** The page a block is itself from: a clip's box, a boxed section's first box, a `## p. <n>` heading's number. Null for anything else. */
+export function ownPage(b: Block | undefined): number | null {
+  if (!b) return null;
+  if (b.kind === 'raw') return parseClip(b.text)?.page ?? null;
+  if (b.kind !== 'heading') return null;
+  return pageOf(b) ?? (b.read?.boxes !== undefined ? parseBoxes(b.read.boxes)?.[0]?.page ?? null : null);
 }
 
 /**
- * Put `block` at the end of page `n`'s section, adding the heading when the
- * page has none yet: before the first page heading with a higher number, else
- * at the end of the document. Resolves to the index the block landed at.
+ * The page the block at `index` belongs to: its own, else that of the
+ * nearest clip, boxed section or `## p. <n>` heading above it.
+ * Any other heading of the first two levels above the block ends the
+ * search: what is under it is the person's own section, of no page.
  */
-export function addToPage(doc: Doc, n: number, block: Block): number {
-  const section = pageSection(doc, n);
-  if (section) {
-    doc.blocks.splice(section[1], 0, block);
-    return section[1];
+export function pageOfBlock(doc: Doc, index: number): number | null {
+  for (let i = Math.min(index, doc.blocks.length - 1); i >= 0; i--) {
+    const b = doc.blocks[i];
+    const n = ownPage(b);
+    if (n !== null) return n;
+    if (b?.kind === 'heading' && b.level <= 2) return null;
   }
-  let at = doc.blocks.length;
-  for (let i = 0; i < doc.blocks.length; i++) {
-    const p = pageOf(doc.blocks[i]);
-    if (p !== null && p > n) { at = i; break; }
-  }
-  doc.blocks.splice(at, 0, pageHeading(n), block);
-  return at + 1;
+  return null;
 }

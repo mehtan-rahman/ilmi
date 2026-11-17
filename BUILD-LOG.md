@@ -6,6 +6,28 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-11-16, late night — milestone 81 (goes on): a PDF's note is a blank note; a passage is kept with the PDF
+
+Asked by the user: "Remove headings entirely and schedule the boxed passage itself, which means a change to the file format", and then, on reading that the passage would be a line of the note drawn as a crop with a chip: "It should just be a blank note … Linked to the pdf though (should still show up in the file tree though)".
+
+**Done.** A passage boxed with `e` is kept with the PDF, an entry of its marks file (`.ilmi/marks/<sha256>.json`, kind `passage`, key `s-` and its boxes, with `made due ivl reps af pri`; no `due` is dismissed), and in no note: no note is asked for, none opens, the notice says when it is back and undoes it. It is the queue's section item with `passage: { hash, boxes }`, of the chapter that holds its page (else the whole book), called `p. N` / `pp. N–M`; the focus `read`, the session (the pages at its boxes), next / later / dismiss with undo, the backlog's postpone, the reading log and the numbers take it as a section. On the page its boxes carry its pages; a press on the tag has when it is next, `dismiss` / `bring back`, `remove`; `[` `]` step over them; `passages · <book>` in the palette and a block in the inspector list them. The note on a PDF is made empty and stays the person's: only `m` writes in it, a clip under no `## p. N`, after the caret's block when the note is open with a caret put there, else at its end, with the notice's undo. `m` always clips now (it made a section on a page that names its sections). An extract from a page makes no page heading. A block's page is its clip's, else the nearest clip, boxed section or `## p. N` above. Notes from before keep their boxed sections and page headings and are not rewritten. FORMAT.md §1, §3, §6.5, §6.6; the guide; the README's two lines.
+
+**Why the marks.** Each entry is a register of its own in the engine, so two devices that each box or pass a passage end with both (`.ilmi/reading.json` is one register a file); the file is by the PDF's hash, so a rename keeps the passages and a chapter and its book share them; exports and the mirror write it already. No schema, engine or Rust change.
+
+**Checks.** typecheck clean; npm test 2079 passed, 1 skipped, 144 files. On the Mac from clean run trees: `book` 219 (the whole of the above, old sections and new passages side by side, the blank note, its row in the tree, the bar's create / hide / open notes), `books` 78, `open` 86 (a passage survives the book's rename), `sections` 56, `sweep` 130, `sioyek` 171, `textsections` 68, `numbers` 95, `cardview` 31, `below` 24, `tour` 20, `zoom` 14, `learn` 14, `blanks` 43. Captures looked at: the passage's session, its tag's menu, the inspector's two lists, the blank note beside the pages with its row in the tree, the clip.
+
+**Found.** The first build of this (a `passage` block in the note, a node view with crops and a chip, state rows keyed by the boxes) was whole and typechecked when the user refused it; it was taken out, not left beside. With a chapter and the whole book both documents of one file, `bookFor` gives the whole book: a passage boxed in a chapter would have been an item at the book's priority, so a passage's document is the chapter that holds its page first (`passageDoc`). A test of mine that pressed `]` threw on jsdom's missing `scrollTo`; the smoke's synthetic press opened the tag's menu at the window's corner, so the menu hangs from the tag now, not from the pointer.
+
+**Not verified.** Two devices: a passage boxed on one and passed on the other was merged in a unit test over the marks' registers, not in two windows (`crdt` was not run). Any simulator: the tag's menu under a finger, `e` on an iPad or a phone. The simulator smokes that box a section (`touch`, `phone`, `ink`, `pageink`) still expect a heading in the note; they were neither run nor mended. cargo test was not rerun (no Rust changed). A real collection with years of boxed sections (only the sample's).
+
+**Left (81 goes on).** A passage has no place to write about it but the note, by hand; whether a passage should say which note lines are about it is the user's to say. An older note's boxed sections are not offered a move into the PDF's marks. Several notes on one PDF. A notebook of written pages. A portal made by touch.
+
+```
+Read PLAN.md (81's notes) and this entry. Passages are src/app/passages.ts (the queue's items, the three actions), src/vault/marks.ts (the entry), Pdf.tsx (`makeSection`, `cardOrClip`, `passageMenu`, `drawn`), sections.ts (`placeAtCaret`), vault/pages.ts. Mend or retire the simulator smokes' section steps (touch, phone, ink, pageink) before running them. Next in 81: written notebooks.
+```
+
+---
+
 ## 2026-11-16, night — milestone 81 (begun): the reader's editor for every card; a PDF that reads as a PDF reader; 0.2.1
 
 Asked by the user: a release; the card's text editor the same as a note's ("no table or text formatting options when i right click"), on the phone too; and of the PDF, "it just doesn't feel like an actual PDF reader … the PDF should fill up the whole window (with zoom in/out ofc) as a starting place", with notes made when asked for and written notes apart from typed ones.

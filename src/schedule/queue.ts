@@ -9,7 +9,7 @@
 // mutation, and it rewrites one schedule line.
 
 import {
-  PRI_DEFAULT, blanks, cardForm, clozeParts, meta, nextGroup,
+  PRI_DEFAULT, blanks, cardForm, clozeParts, meta, nextGroup, pagesLabel, parseBoxes,
   type Card, type CardForm, type CardSchedule, type Doc, type ReadSchedule, type SectionSchedule, type WriteSchedule,
 } from '../format/index.js';
 import type { Vault } from '../vault/index.js';
@@ -123,9 +123,16 @@ export interface WriteItem extends ItemBase {
  */
 export interface SectionItem extends ItemBase {
   kind: 'section';
-  /** Index of its heading in `doc.blocks` when the queue was built. */
+  /** Index of its heading in `doc.blocks` when the queue was built; -1 on a passage, which is in no document. */
   block: number;
+  /** The heading's text; of a passage, its pages as words (`p. 41`), which is what it is called. */
   heading: string;
+  /**
+   * A passage (FORMAT.md §6.5): boxes on a PDF's pages kept with the PDF,
+   * known by the PDF's SHA-256 and its boxes. `path` is then the document
+   * whose pages they are. Absent on a heading's section.
+   */
+  passage?: { hash: string; boxes: string };
   level: number;
   /** The headings over it, outermost first, its own last. */
   trail: string[];
@@ -303,9 +310,22 @@ export function docItems(path: string, doc: Doc, now: Date): QueueItem[] {
   return out;
 }
 
+/**
+ * A passage as the queue's item: a section with no heading and no blocks,
+ * of the document at `path` (the one whose pages its boxes are on), at its
+ * own priority, else `docPri`. Null when it is dismissed.
+ */
+export function passageItem(path: string, hash: string, sched: SectionSchedule, now: Date, docPri: number = PRI_DEFAULT): SectionItem | null {
+  if (!sectionInQueue(sched) || sched.boxes === undefined) return null;
+  return {
+    kind: 'section', path, block: -1, heading: pagesLabel(parseBoxes(sched.boxes) ?? []), passage: { hash, boxes: sched.boxes }, level: 0, trail: [], sched,
+    written: false, cards: 0, ...withDue(sched, now), pri: sched.pri ?? docPri,
+  };
+}
+
 /** What seeds an item's draw beside the day: its path and its heading, card id (else its block, group and direction), or kind. */
 export function itemSeed(item: QueueItem): string {
-  if (item.kind === 'section') return `${item.path}\n${item.heading}`;
+  if (item.kind === 'section') return item.passage ? `${item.passage.hash}\n${item.passage.boxes}` : `${item.path}\n${item.heading}`;
   if (item.kind === 'card') return `${item.path}\n${item.id ?? `#${item.block}`}${item.group ? `/${'n' in item.group ? `c${item.group.n}` : `b${item.group.blank}`}` : ''}${item.dir === 'r' ? '/r' : ''}`;
   return `${item.path}\n${item.kind}`;
 }
@@ -348,6 +368,7 @@ export function queueItems(docs: Iterable<[string, Doc]>, now: Date): QueueItem[
 /** The same element: one card group, or one document's reading or writing. */
 export function sameItem(a: QueueItem, b: QueueItem): boolean {
   if (a.kind !== b.kind || a.path !== b.path) return false;
+  if (a.kind === 'section' && b.kind === 'section' && (a.passage || b.passage)) return a.passage?.hash === b.passage?.hash && a.passage?.boxes === b.passage?.boxes;
   if (a.kind === 'section' && b.kind === 'section') return a.heading === b.heading && (a.block === b.block || a.trail.join('\n') === b.trail.join('\n'));
   if (a.kind !== 'card' || b.kind !== 'card') return true;
   const same = a.id !== undefined && b.id !== undefined ? a.id === b.id : a.block === b.block && a.text === b.text;
@@ -404,11 +425,13 @@ export function overflow(items: QueueItem[], now: Date): (ReadItem | WriteItem |
 /**
  * Postpone the backlog `overflow` names, one file at a time, each through
  * `vault.update`, so each rewrites its own `read` or `write` line (or a
- * section's heading line) and nothing else. Resolves to what was postponed.
+ * section's heading line) and nothing else; a passage through `passage`. Resolves to what was postponed.
  */
-export async function postponeOverflow(vault: Vault, items: QueueItem[], now: Date): Promise<(ReadItem | WriteItem | SectionItem)[]> {
+export async function postponeOverflow(vault: Vault, items: QueueItem[], now: Date, passage?: (item: SectionItem) => Promise<unknown>): Promise<(ReadItem | WriteItem | SectionItem)[]> {
   const rest = overflow(items, now);
   for (const item of rest) {
+    // a passage is in no file: whoever keeps the PDF's marks postpones it
+    if (item.kind === 'section' && item.passage) { await passage?.(item); continue; }
     await vault.update(item.path, (doc) => {
       if (item.kind === 'read') advanceRead(doc, 'backlog', now);
       else if (item.kind === 'section') advanceSection(doc, item.block, item.heading, 'postpone', now);

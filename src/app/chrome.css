@@ -579,6 +579,11 @@ html[data-mobile="1"] .bot {
   padding-bottom: env(safe-area-inset-bottom, 0px);
   padding-left: max(14px, env(safe-area-inset-left, 0px));
 }
+/* a device with no keyboard attached names no keys: the strip at the foot is gone and the caps beside the buttons
+   with it; a key pressed on a keyboard brings them back (`data-hardkeys`, `App.tsx`) */
+html[data-mobile="1"]:not([data-hardkeys]) :is(kbd, .kbd):not(.phint) { display: none !important; }
+html[data-mobile="1"]:not([data-hardkeys]) .bot { display: none; }
+html[data-mobile="1"]:not([data-hardkeys]):not([data-shape="phone"]) .shell { grid-template-rows: calc(30px + env(safe-area-inset-top, 0px)) 1fr env(safe-area-inset-bottom, 0px); }
 html[data-mobile="1"] .welcome { padding-top: max(12vh, calc(env(safe-area-inset-top, 0px) + 24px)); }
 /* the strip says where sync stands at any width there */
 html[data-mobile="1"] .top .right { display: flex; }

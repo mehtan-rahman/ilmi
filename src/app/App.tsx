@@ -110,13 +110,24 @@ export function App() {
     const fit = () => {
       document.documentElement.style.setProperty('--shell-h', `${Math.round(vv.height)}px`);
       // the keyboard up: what sits at the foot of a phone gives it the room
-      document.documentElement.toggleAttribute('data-keyboard', window.innerHeight - vv.height > KEYBOARD);
+      const up = window.innerHeight - vv.height > KEYBOARD;
+      document.documentElement.toggleAttribute('data-keyboard', up);
+      // the keyboard on the glass came up: no keyboard is attached, so no keys are named (below)
+      if (up) document.documentElement.removeAttribute('data-hardkeys');
       if (window.scrollY !== 0) window.scrollTo(0, 0);
+    };
+    // a key pressed while the glass shows no keyboard is a key of a keyboard attached: from then the keys are named
+    // (the strip at the foot, the caps beside the buttons), as on the desk; until then a device names none
+    const hard = (e: KeyboardEvent) => {
+      if (e.isTrusted && e.key !== 'Unidentified' && !document.documentElement.hasAttribute('data-keyboard')) document.documentElement.setAttribute('data-hardkeys', '');
     };
     fit();
     vv.addEventListener('resize', fit);
     vv.addEventListener('scroll', fit);
+    window.addEventListener('keydown', hard, true);
     return () => {
+      window.removeEventListener('keydown', hard, true);
+      document.documentElement.removeAttribute('data-hardkeys');
       vv.removeEventListener('resize', fit);
       vv.removeEventListener('scroll', fit);
       document.documentElement.style.removeProperty('--shell-h');

@@ -711,8 +711,11 @@ the inspector hidden until the toggles at the two ends of the top strip are
 tapped. Upright, the sidebar comes over the page from the left edge (its
 toggle, or a swipe in from the edge) and goes once something is opened. A
 tap opens; the queue, the session, and its grades are buttons; a passage
-selected brings `card` and `extract` under it. With a keyboard attached the
-keys are the Mac's.
+selected brings `card` and `extract` under it. No keys are named there: the
+strip of keys at the foot and the key caps beside the buttons are hidden on
+an iPad and a phone. With a keyboard attached the keys are the Mac's, and
+the first key pressed on it brings the strip and the caps back (they go
+again when the keyboard on the glass comes up).
 
 Reading a book there: a finger scrolls the pages. To box a passage, rest the
 finger on the page a moment and then drag (the Pencil writes on the page,

@@ -9608,6 +9608,74 @@ across a page gone far from the view. A real Pencil: pressure, tilt, the
 double tap and squeeze themselves, palm rejection, how resting to make a
 shape feels, two fingers under draw with finger.
 
+### [ ] 86. Ink as sharp as the screen; a zoom and a scroll that are the glass's own
+Asked by the user, 2026-11-17, from a real iPad Air after 85: "It still
+seems just a little bit blurry, especially compared to goodnotes and
+whatnot. the zoom in/out doesn't work that well either"; "on the ipad, it
+should feel like i'm opening goodnotes".
+Notes: **Sharpness, each cause measured** on a simulated iPad Air 11 (two
+pixels to the px; the width over which a stroke's edge goes from 10% to
+90% of its ink, in the screen's pixels; a perfect edge measures 0.8 to 1.6
+that way). *PencilKit's own drawing* was the most of it: 1.6 to 1.8 px at
+every zoom, in the canvas on the glass and in `PKDrawing.image` at the
+screen's scale alike, whatever the ink. A canvas is now made larger than
+it is shown and shown smaller (`Sheet.over`, up to twice each way, within
+a count of pixels by the device's memory: 24 million with 8 GB): 1.3 to
+1.5 px at fit, 1.5 to 1.6 at 150%, as before at 300%. *A page between two
+pixels*: the pages' width is the fitted width times the zoom, which after
+a pinch is any number, and under fit the centred page began at half a
+pixel (265.19 at 73%): the upright edge 1.83 px there against 1.64. The
+pages' width, each page's height and top are whole pixels now, with as
+many either side of a centred page (`pagesWidth`, `pageTops`), and a
+canvas is laid on whole pixels whatever it is told. *The paper's rules*: a
+1 px rule that did not scale, drawn with crisp edges at a place between
+pixels, covered three pixels of the screen; each rule is moved by under
+half a pixel to cover whole ones and is half a point wide, never under a
+pixel (`ruleWidth`): one pixel at fit on an 11-inch. *A PDF's page*: its
+canvas was the floor of its size in pixels, stretched to the size itself;
+it is the page's box in whole pixels. *Ruled out by measuring*: tiles kept
+from an earlier zoom (what PencilKit draws into has a pixel for each of
+the screen's at every zoom, `drawn`), a transform left by a pinch
+(`stretch` 1 at rest), the multiply filter (the edge is the same in
+PencilKit's picture, which has none). *The ink*: the soft pen and the even
+line have the same edge; the pen thins and pales where the Pencil is
+light, which reads as soft. **Decided:** the pen starts as the even line
+(`monoline`, `fine` in the settings) at the same widths; what a device
+kept with the soft pen it never chose follows once.
+**The zoom.** What was wrong: every move of the fingers went to the page,
+which stretched its pages and told the canvases to stretch, two things
+drawn by two processes in whatever frames each reached; the scroller
+scrolled under the same fingers; the ends stopped dead; letting go laid
+the pages out with the room between them unchanged, so every page but the
+one held jumped. **Decided, of the two structures weighed:** the canvases
+stay beside the web view, following the scroller's `contentOffset` in the
+same turn of the main thread (in a recording the ink is a twentieth of a
+pixel from its place through a flick); they are not put inside the web
+view's scroll view, whose subviews the web view replaces when the page
+changes, and the pages are not made a native surface, which would have
+drawn the paper, the boxes, the highlights and a PDF's page a second way.
+What changed is who stretches: the plugin finds the web view's own layer
+for the column of pages (kept a layer by `will-change`; it lies beside the
+scroller in the web view's layers, not under it) and under two fingers
+sets that layer's transform and the canvases' in one transaction, with
+nothing sent to the page but the zoom for the bar's word. The scroller's
+pan waits while they are down; the place between the fingers moves the
+pages as well. Past the least and the most the zoom gives (the excess to
+the power 0.35). Let go, the page says where the pages will lie laid out
+at the zoom they stopped at, inside what the scroller can show and centred
+under fit (`plan` in `Pdf.tsx`); the plugin eases there if that is
+somewhere else (220 ms); the page gives its column the same transform, so
+it is the page's, then lays out and scrolls in one go, and the canvases
+are told once (`holdScenes`). The room between pages grows with the zoom,
+so the layout is the stretch to a pixel (`data-zoom-off`). A finger's two
+taps on the pages fit them, and go back to the zoom before (twice the fit
+where there was none); not where a finger draws on a sheet. Where the
+layer is not found the older way (85's) still runs.
+**Not done:** a canvas the size of the view rather than of the page, which
+would keep twice the pixels at every zoom (past 150% the count of pixels
+brings it back to the screen's); momentum after a pinch; the zoom's last
+value before fit is kept for the session, not the device.
+
 ## Notes for the next session
 
 Studying (42–46) is complete, 2026-10-31: every milestone's window check

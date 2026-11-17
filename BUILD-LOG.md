@@ -6,6 +6,43 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-11-17, later still — milestone 86 (begun): ink as sharp as the screen; a zoom the glass does itself
+
+Asked by the user from a real iPad Air after 85: "It still seems just a little bit blurry, especially compared to goodnotes and whatnot. the zoom in/out doesn't work that well either"; "on the ipad, it should feel like i'm opening goodnotes". Then, for the same milestone: colours for the paper and its lines in page setup (not begun).
+
+**Measured first** (a simulated iPad Air 11, two pixels to the px; smoke `sharp`, new). A stroke's edge is the width over which it goes from 10% to 90% of its ink across the stroke, in the screen's pixels, the median of 48 places along a level, an upright and a slanted stroke; an edge drawn perfectly measures 0.8 to 1.6 px this way, by where it falls on the pixels, so the numbers are for holding one build against another, not against that floor. Each capture is held against PencilKit's own picture of the same drawing at the screen's pixels (`dev_ink_picture`), and the old placing of the canvases is kept behind a dev switch (`dev_ink_plain`), so before and after are one run.
+
+| what | before | after |
+| --- | --- | --- |
+| stroke's edge at fit (level, upright, slanted; pen and even line) | 1.71 to 1.89 px | 1.31 to 1.46 px |
+| at 150% | 1.65 to 1.79 | 1.49 to 1.61 (the count of pixels then was 16 million a canvas; 24 since, not measured again) |
+| at 300% | 1.80 to 2.04 | the same: no more pixels than the screen's there |
+| at 137% (where a pinch stops) | 1.64 to 1.75 | 1.42 to 1.60 |
+| at 73%, the page centred: its left edge | at pixel 265.19 | at 265 |
+| the upright stroke there | 1.83 | 1.57 |
+| PencilKit's own picture, any zoom, any ink | 1.6 to 1.7 | (the same: it is PencilKit's) |
+| the page's size at 137% | 2082.38 by 2694.84 px | 2082 by 2694 |
+| a rule of the paper at fit | three pixels of the screen, of two asked for | one pixel, on a pixel |
+| a canvas's pixels to a pixel of the screen (`drawn`) | 1 at every zoom | 2 at fit and under, 1.54 at 150%, 1 at 300% |
+
+So the causes, in order of what they cost: PencilKit softens every edge over about 1.7 of the pixels it draws with, and it drew with the screen's; a page after a pinch, or under fit, lay between pixels and was drawn across them; the paper's rules covered a pixel more than their width. Not causes, each looked for: tiles kept from an earlier zoom, a transform left on a canvas, the multiply filter, the canvas's own frame (it was where the page was). PLAN 86 has what was done about each and why the pen now starts as the even line.
+
+**The zoom.** Read and recorded (the simulator's screen, frames at 60 a second): the old pinch sent every move to the page and back. Now the plugin stretches the web view's own layer for the pages and the canvases together under the fingers, and the page lays out once at the end exactly where they are shown. In the recording of two fingers spread from fit to 204%, the long stroke written midway between two rules stays within 0.8 px of midway in every frame while they move (the rules are a picture being stretched then, and measure softly), and when the layout takes over it and the rules move by under half a pixel: no jump, no bare frame. From the fingers lifting to everything drawn sharp again is about a third of a second. Closed past fit: within half a pixel in all 157 frames. A finger's two taps to 400% and the flick: within 0.4 px and 0.05 px in the frames where the measure found both rules (71 of 145 and 26 of 181; in the rest the script did not find a rule, at 400% and in motion, which is the script's). The spread past the most (300% to 400%) is not measured: the script took other lines for the rules there.
+
+**What the simulator found**, each fixed: the web view keeps the layer of something inside a scroller beside the scroller in its layers, not under it, so the pages' layer was not where it was first looked for; a scroller whose content stopped scrolling (zoomed under fit) keeps its scroll view standing where it stood, and the canvases followed that (bound again when its content is not the page's any more); a scroller's scroll view is made a moment after the page says where it is, and nothing looked again until a touch (looked for again, eight times a quarter second apart); the smoke's two ink changes sent one after another arrived in either order.
+
+**Checks, and what was not run.** typecheck clean; npm test 2299 passed, 1 skipped, 152 files (43 expectations in five files followed the pixels, the gap that grows with the zoom and the pen's new start; ten tests new, for the pages' width and tops, the rules on pixels, and what is kept of the pen; written by an agent given the rules as its brief). Simulated iPad Air 11-inch (M4): `sharp` whole before the zoom half was written (45), its zoom half 67 under 9 touches; `written`'s second half 192 under 56 touches, as in 85 (its first run stopped at the pageless ruling, which the smoke held to a hundredth of a point where a rule now lies on a pixel: held to a pixel). cargo test 71 passed in `src-tauri`, 9 passed and 1 ignored in `src-tauri/ink`. **Not run, for want of power: the Mac was on battery and near empty by the end of this session.** Every other smoke on every target: iPad Pro 13 anything; `touch`, `ink`, `pageink`, `sioyek`, `sweep` on an iPad; the iPhone's `written` and `phone`; the Mac's `written`, `book`, `sioyek`. The Mac's and the phone's pages are laid on whole pixels by the same code and their smokes may hold places to less than a pixel, as five test files did. Nothing of this was on a device.
+
+**Left.** The paper's and the lines' colours in page setup (asked for this milestone; not begun). A canvas the size of the view, to keep twice the pixels past 150%. The `layers` list in a host's dev state is a dev run's aid and can go once a device has shown the layer is found there.
+
+**Only a real iPad and Pencil can say:** whether the web view's layer for the pages is found there as on the simulator (if not, the older pinch runs: `zoomer` false in `dev_ink_state`); whether canvases of up to 24 million pixels each are carried without the app being put out for memory, three at once, and whether the Pencil's line keeps up at twice the pixels; how the even line feels against the soft pen; whether the edge now reads as GoodNotes' does; the pinch under real fingers, with a Pencil resting on the glass.
+
+```
+Read PLAN.md 86 and this entry. Run what was not: cargo test in src-tauri and src-tauri/ink; the smokes of BUILD-LOG 85's list on each target (docs/development.md), mending expectations that held a place to less than a pixel or the gap between pages to 18 px; `sharp` whole on both iPads. Then the paper's colours (the coordinator's brief: `paper-color`, `paper-line` in FORMAT §3, swatches and the wheel in page setup, every place paper is drawn). On a real iPad first: `dev_ink_state`'s `zoomer`, then write, zoom, look.
+```
+
+---
+
 ## 2026-11-17, late night — milestone 85: the written-notes editor finished; ink that stays sharp; page setup
 
 Asked by the user after writing in a notebook on their iPad: "the writing editor feels very MVP, should continue building until it feels like a proper product"; then, of the same hour's use: "for some reason, the ink is blurry after i write for a little bit", after a scroll or a zoom; and: "It'd be nice if there was an option to edit page setup. Like making it pageless vs paged, editing linespacing width, margins, grid space if lined/dotted, etc".

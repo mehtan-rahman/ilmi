@@ -17105,7 +17105,8 @@ async function writtenMore(log: (s: string) => void, root: string): Promise<void
       const rows = (i: number) => (qa('.pdf-page svg.paper .paper-rule:not(.paper-margin)', b)[i]?.getAttribute('d') ?? '').split('M').slice(1).map((x) => Number(x.split(' ')[1]!.split('H')[0]));
       const [a, c] = [rows(0), rows(1)];
       const h = paperOf(w(), 0).h;
-      must(Math.abs(h - a[a.length - 1]! + c[0]! - 20.25) < 0.01, `the ruling carries on from one to the next (${a[a.length - 1]} of ${h}, then ${c[0]})`);
+      // (each rule lies on whole pixels of the screen since 86: moved by under half a pixel, so two are within one of their spacing)
+      must(Math.abs(h - a[a.length - 1]! + c[0]! - 20.25) < 612 / p1.width / (window.devicePixelRatio || 1) + 0.01, `the ruling carries on from one to the next, to a pixel (${a[a.length - 1]} of ${h}, then ${c[0]})`);
       must(!q('button.add-page', b) && !q('.meta [data-tool="pages"]', b) && !/^p\. /.test(q('.meta .pt-page', b)?.textContent ?? '') && !ps('size-a4') && !ps('turn-landscape'), 'no add page, no overview, no page count, no size to choose');
       must(/^pageless: true$/m.test(await vaultText(NB)) && (await inkOf()) === ink0, 'the file says pageless: true, and its sheets hold what they held');
     }

@@ -372,6 +372,31 @@ file read after each, pageless and a stroke across the seam, A4 on its
 side, `use for new notebooks`; and the row whole at every width it is
 given.
 
+`ILMI_SMOKE=sharp` (milestone 86), a simulated iPad under the touch rig,
+over a copy of the sample (`vault` in `smoke.json`): how sharp ink and
+paper are on the glass, and how the pages zoom. A notebook of blank paper,
+a level, an upright and a slanted stroke in each ink (`dev_ink_stroke`),
+then the pages at fit, 150%, 300%, 137% and 73%, each twice: with the
+canvases laid as they were before 86 (`dev_ink_plain`), to measure against,
+and as they are, where the page and its canvas must lie on the same whole
+pixels of the screen, unstretched, drawn a pixel for a pixel or finer
+(`dev_ink_state`: each sheet's `device`, `stretch`, `drawn`). A `geo:` line
+says where every stroke lies in the capture and `dev_ink_picture` writes
+PencilKit's own picture of the drawing at the screen's pixels into the
+app's Documents, so a script can measure each edge in the capture and in
+the picture (the width over which it goes from 10% to 90% of its ink; a
+perfectly drawn edge measures 0.8 to 1.6 px that way, by where it falls on
+the pixels). Then ruled paper (`rules:`), and the zoom (alone with `"part":
+"zoom"`): the web view's layer for the pages found (`zoomer` in a host's
+state; `layers` lists what lies over them when it is not), two fingers
+spread about a place and closed past fit, past the least and the most, a
+finger's two taps (the rig's `do: tap2 x y`) to fit and back, a flick;
+after each nothing is left stretched, the page and canvas are on the same
+pixels, and the layout is within a pixel of where the pages were eased to
+(`data-zoom-off` on the view). Record the screen the while (`xcrun simctl
+io booted recordVideo`) and look at the frames: the long stroke drawn
+between two rules must stay between them in every one.
+
 `ILMI_SMOKE=touch` (milestone 57) is three runs over one storage folder.
 On the Mac, `ILMI_VAULT=<a copy of the sample> ILMI_STORAGE=<an empty
 folder>`: the collection makes the storage. On the simulator, `{"mode":

@@ -205,7 +205,13 @@ fit), ⌘0 fitted again; a pinch on a trackpad steps once. Two fingers on an
 iPad or a phone zoom the pages as they spread and close, about the place
 between them, and leave the pages at whatever size they stop at, from half
 the fit to four times it; the bar's zoom says it, and its `+` and `−` step
-on from there. The same text stays under the top of the view, pages
+on from there. On an iPad the pages follow the fingers exactly, moved with
+them as well as spread, with what is written on them; pulled past either
+end they give a little and come back. A finger tapped twice on the pages
+fits them, and tapped twice again goes back to the zoom they had (twice
+their fitted size, if they had none). Under the fit the pages stand in the
+middle of the pane, and the room between two pages grows and shrinks with
+them. The same text stays under the top of the view, pages
 wider than the pane scroll sideways, and the boxes, what is written on the
 pages, and the read bar grow with them. The zoom is said in the bar, is
 the book's own, and is kept for the device: it
@@ -957,6 +963,11 @@ over every book and notebook.
 What you write stays as sharp as when you wrote it, at any zoom: on an
 iPad a page's writing is always drawn from its strokes, never from a
 picture of them.
+A page, its paper's lines and its writing lie on the screen's own pixels at
+every zoom, and the writing is drawn finer than the screen and shown at its
+size, so a stroke's edge is as crisp as the screen can make it. The pen
+starts as `fine`, a line of one even width; `pen`, softer and thinner where
+the Pencil is light, `fountain` and `pencil` are in its settings.
 
 The Mac and a phone show what you wrote as a picture over the page, made
 as fine as their screen at the size the page is drawn. Nothing is written into the PDF: the strokes are kept in the

@@ -10887,7 +10887,8 @@ export async function smokeTouch(): Promise<void> {
     const page = (n: number) => q<HTMLElement>(`.pdf-page[data-page="${n}"]`, book)!;
     /** A box on page `n`, as fractions of the page, in window fractions: its two corners. */
     const corners = async (n: number, x: number, y: number, w: number, h: number): Promise<[number, number, number, number]> => {
-      const el = await poll(() => q<HTMLElement>(`.pdf-page[data-page="${n}"] canvas`, book)?.parentElement, `page ${n} is drawn`, 30000);
+      // a page far from the view is not drawn: brought near first (a flick's own motion may have carried the pages on)
+      const el = await poll(() => q<HTMLElement>(`.pdf-page[data-page="${n}"] canvas`, book)?.parentElement ?? (q(`.pdf-page[data-page="${n}"]`, book)?.scrollIntoView({ block: 'center' }), null), `page ${n} is drawn`, 30000);
       const sr = sc.getBoundingClientRect();
       // the passage a third of the way down the view, once a flick's own motion has ended and the page stays where it is put
       const off = () => { const r0 = el.getBoundingClientRect(); return r0.top + (y + h / 2) * r0.height - (sr.top + sr.height / 3); };
@@ -10909,7 +10910,11 @@ export async function smokeTouch(): Promise<void> {
     must(Math.abs(sc.scrollTop - still) < 4, 'and the page holds still under it');
     const bar = () => qa<HTMLElement>('.pend button', book).map((b) => b.textContent ?? '');
     must(bar().length === 4 && /passage/.test(bar()[0]!) && /card/.test(bar()[1]!) && /highlight/.test(bar()[2]!) && /look up/.test(bar()[3]!), `the bar under the box offers passage, card, highlight and look up (${bar().join(' | ')})`);
-    must(qa<HTMLElement>('.pend kbd', book).every((k) => getComputedStyle(k).display === 'none') && !q('.bot') && qa<HTMLElement>('.meta kbd, .meta .kbd', book).every((k) => getComputedStyle(k).display === 'none'), 'with no keyboard attached no key is named: none on the bar, none over the pages, no strip at the foot');
+    {
+      const hid = (k: Element) => getComputedStyle(k).display === 'none';
+      log(`keys: hardkeys ${document.documentElement.hasAttribute('data-hardkeys')}; the box's bar ${qa('.pend kbd', book).filter((k) => !hid(k)).length} shown; over the pages ${qa('.meta kbd, .meta .kbd', book).filter((k) => !hid(k)).length} shown; the strip ${q('.bot') ? (hid(q('.bot')!) ? 'hidden' : 'shown') : 'absent'}`);
+      must(qa('.pend kbd', book).every(hid) && (!q('.bot') || hid(q('.bot')!)) && qa('.meta kbd, .meta .kbd', book).every(hid), 'with no keyboard attached no key is named: none on the bar, none over the pages, no strip at the foot');
+    }
     const pr = q<HTMLElement>('.pend button', book)!.getBoundingClientRect();
     must(pr.height >= 32, `at a finger's size (${Math.round(pr.height)} px tall)`);
     await shot('touch-boxed');
@@ -11017,13 +11022,19 @@ export async function smokeTouch(): Promise<void> {
     const notes = notesPane()!;
     const nr = notes.getBoundingClientRect();
     const br = book.getBoundingClientRect();
-    const head = await poll(() => qa<HTMLElement>('.dd-h', notes)[0], 'a section written before is in it', 10000);
+    const head = await poll(() => qa<HTMLElement>('.dd-h', notes)[2], 'the sections written before are in it', 10000);
     head.scrollIntoView({ block: 'center' });
     await shot('touch-notes');
     // a heading's menu, by a long press on its words
     await sleep(400);
     const words = document.createRange();
-    words.selectNodeContents(head.firstChild ?? head);
+    {
+      // the heading's own words: its first text that has any (a chip or a mark may come before it)
+      const tw = document.createTreeWalker(head, NodeFilter.SHOW_TEXT);
+      let t: Node | null = tw.nextNode();
+      while (t && !(t.textContent ?? '').trim()) t = tw.nextNode();
+      words.selectNodeContents(t ?? head);
+    }
     const wr = words.getBoundingClientRect();
     ask('press', fx(wr.left + Math.min(60, wr.width / 2)), fy(wr.top + wr.height / 2), 0.9);
     const hm = await poll(() => q<HTMLElement>('.ctx-menu.section-menu'), 'a long press on a heading opens its menu', 20000);
@@ -11133,7 +11144,7 @@ export async function smokeTouch(): Promise<void> {
       await poll(async () => (await noteNow(ANOTE2)) === BLANK, 'a second blank note that names the PDF', 20000);
       const besideTabs = () => { const ps = useApp.getState().panes; const p = ps.panes.find((_, i) => i !== ps.active); return p ? { ids: p.tabs.map((t) => t.id), front: p.tabs[p.active]?.id } : null; };
       await poll(() => (useApp.getState().docs[ALONE]?.notes ?? []).join('|') === `${ANOTE2}|${ANOTE}`, 'the PDF has both notes, in path order', 10000);
-      await poll(() => anotesIn() && activeTab(useApp.getState().panes)?.id === ALONE && besideTabs()?.ids.join('|') === `${ANOTE2}|${ANOTE}` && besideTabs()?.front === ANOTE2, 'both are tabs of the pane below, the new one in front, the pages kept active', 15000);
+      await poll(() => anotesIn() && activeTab(useApp.getState().panes)?.id === ALONE && [...(besideTabs()?.ids ?? [])].sort().join('|') === `${ANOTE2}|${ANOTE}` && besideTabs()?.front === ANOTE2, 'both are tabs of the pane below (the one open already where it was), the new one in front, the pages kept active', 15000);
       await sleep(600);
       must(qa('.pane').length === 2 && qa('.tab', notesPane()!).length === 2, 'two panes still: the notes share one, by its ordinary tabs');
       await shot('touch-alone-two-notes');
@@ -11156,7 +11167,7 @@ export async function smokeTouch(): Promise<void> {
         await shot('touch-alone-clip');
       }
       // the other note's tab tapped: in front; the word closes both, and brings both back with the one used last in front
-      const otherTab = qa<HTMLElement>('.tab', notesPane()!)[1]!;
+      const otherTab = qa<HTMLElement>('.tab', notesPane()!).find((t) => t.dataset.active !== '1')!;
       ask('tap', ...mid(q<HTMLElement>('.title', otherTab) ?? otherTab));
       await poll(() => useApp.getState().panes.panes.some((p) => p.tabs[p.active]?.id === ANOTE), 'a tap on the other note\'s tab brings it to the front', 20000);
       await sleep(500);
@@ -11502,12 +11513,16 @@ export async function smokeTouchMac(vault: Vault): Promise<void> {
 //     a Shortcut's "open URL" arrives. The day is the face; a topic's row
 //     puts its later, and the notice takes it back; the bar enters the queue;
 //     the session is the whole screen and every element of it is walked by
-//     its buttons, the four grades each used; `+` opens the composer on the
+//     its buttons, the four grades each used and a new card's `got it`
+//     (it is tested at the session's end); `+` opens the composer on the
 //     last deck, a deck is chosen, a card saved there, the next starts on it,
 //     and a deck in front is the one `+` starts on; the link lands the page
 //     and opens it; the one button has the tree and the palette; a document
-//     is a single page; `notes` on a chapter puts the note in the pages'
-//     place and `pages` comes back; dark, and on its side. What it wrote is
+//     is a single page; a chapter's bar over its pages fits the screen on
+//     one line (contents, the notes, the page, more, search; milestone 81),
+//     its `more` menu, the page's field and the search open and act under
+//     taps; `notes` puts the note in the pages' place and `pages` comes
+//     back; dark, and on its side. What it wrote is
 //     named on a `reached:` line and synced.
 //  3. The Mac again (`ILMI_VAULT` its collection's own folder, `ILMI_EXPECT`
 //     that line): after a sync every document named is the same to the byte.
@@ -11553,7 +11568,8 @@ export async function smokePhone(): Promise<void> {
     for (let again = false; ;) {
       const v = await then();
       if (v) { log(`ok: ${what}`); return v; }
-      if (!again && Date.now() - t0 > 6000) { again = true; ask('tap', ...at); }
+      // asked once more only after a long while: the rig can take several seconds to make a touch, and two that land together undo each other on a button that opens and closes
+      if (!again && Date.now() - t0 > 13000) { again = true; ask('tap', ...at); }
       if (Date.now() - t0 > ms) throw new Error(`${what} (waited ${ms} ms)`);
       await sleep(80);
     }
@@ -11618,16 +11634,29 @@ export async function smokePhone(): Promise<void> {
       const key = row.querySelector('.qpath')?.getAttribute('title') ?? '';
       return items.find((i) => i.kind !== 'card' && key.includes(useApp.getState().docs[i.path]?.title ?? '\u0000'))?.path ?? null;
     })();
-    const before = qa('.qlist li[data-el]').length;
-    await tap(q('[data-act="postpone"]', row)!, () => qa('.qlist li[data-el]').length === before - 1, 'later, tapped on the row: the topic leaves the day, nothing opened');
+    // the topic by its row's own words: the list draws its rows a few hundred at a time, so their count says nothing
+    const rowKey = (li: Element) => `${li.getAttribute('data-el')}|${li.querySelector('.qpath')?.getAttribute('title') ?? ''}|${li.querySelector('.qtext, .qt, .q-title')?.textContent ?? ''}`;
+    const theKey = rowKey(row);
+    const before = qa('.qlist li[data-el]').filter((li) => rowKey(li) === theKey).length;
+    const there = () => qa('.qlist li[data-el]').filter((li) => rowKey(li) === theKey).length;
+    log(`the topic: ${theKey} (${before} such row${before === 1 ? '' : 's'})`);
+    await tap(q('[data-act="postpone"]', row)!, () => there() === before - 1, 'later, tapped on the row: the topic leaves the day, nothing opened');
     must(at() === TODAY, 'and the day is still in front');
     const undo = await poll(() => qa<HTMLElement>('.notice .na').find((b) => b.textContent === 'undo'), 'the notice can take it back', 8000);
-    await shot('phone-topic-later');
-    await tap(undo, () => qa('.qlist li[data-el]').length === before, 'undo: the topic is back', 8000);
-    const row2 = await poll(() => q<HTMLElement>('.qlist li[data-el="read"] .topic-acts, .qlist li[data-el="section"] .topic-acts')?.closest('li'), 'the row is there again');
+    // (a short capture: the notice goes on its own after twelve seconds, and a touch asked of the rig can take several to land)
+    await shot('phone-topic-later', 300);
+    try {
+      await tap(undo, () => there() === before, 'undo: the topic is back', 8000);
+    } catch (e) {
+      const ur = undo.getBoundingClientRect();
+      const hit = document.elementFromPoint(ur.left + ur.width / 2, ur.top + ur.height / 2);
+      log(`why: in front ${at()}; rows ${qa('.qlist li[data-el]').length}, the topic's ${there()} of ${before}; notice ${q('.notice') ? `"${q('.notice')!.textContent}"` : 'gone'}; undo ${undo.isConnected ? 'there' : 'gone'} at ${Math.round(ur.left)},${Math.round(ur.top)} ${Math.round(ur.width)}×${Math.round(ur.height)}; under its middle: ${hit ? `${hit.tagName}.${hit.className}` : 'nothing'}; queue ${useApp.getState().queue.length}`);
+      throw e;
+    }
+    const row2 = await poll(() => qa<HTMLElement>('.qlist li[data-el]').find((li) => rowKey(li) === theKey), 'the row is there again');
     row2.scrollIntoView({ block: 'center' });
     await sleep(400);
-    await tap(q('[data-act="postpone"]', row2)!, () => qa('.qlist li[data-el]').length === before - 1, 'later again, for good');
+    await tap(q('[data-act="postpone"]', row2)!, () => there() === before - 1, 'later again, for good');
     scroller.scrollTo({ top: 0 });
     await sleep(400);
 
@@ -11638,8 +11667,11 @@ export async function smokePhone(): Promise<void> {
     const topics: string[] = [];
     const counter = () => (q('.sess-count') ?? q('.sb-count'))?.textContent ?? '';
     let shots = 0;
+    let learnt = 0;
     let n = 0;
     for (; n < 400; n++) {
+      // the last element's buttons are gone and the next one's drawn before any is read
+      await sleep(350);
       await poll(() => q('.session-end') || q('.reveal-all') || q('.grades') || q('.doc-session .sb-actions'), 'the next element is up', 30000);
       if (q('.session-end')) break;
       const was = counter();
@@ -11654,6 +11686,16 @@ export async function smokePhone(): Promise<void> {
       }
       if (q('.grades')) {
         const buttons = qa<HTMLElement>('.grades button');
+        // a new card being learnt (milestone `learn`): one button, `got it`; it is tested, with the four, at the session's end
+        if (q('.grades.learn')) {
+          if (!learnt++) {
+            must(buttons.length === 1 && tall('.grades.learn button', 64) && qa<HTMLElement>('.grades.learn kbd, .grades.learn .keys-only').every((k) => getComputedStyle(k).display === 'none'), 'a new card has one button, got it, a finger\'s size, and names no key');
+            await shot('phone-card-learn');
+          }
+          await tap(buttons[0]!, () => q('.session-end') || counter() !== was || !q('.grades.learn'), `got it: ${el!.path}`);
+          continue;
+        }
+        if (buttons.length !== 4) { await sleep(150); continue; }
         if (!shots++) {
           must(buttons.length === 4 && tall('.grades button', 64), 'the four grades as buttons');
           const r = buttons.map((b) => b.getBoundingClientRect());
@@ -11665,7 +11707,9 @@ export async function smokePhone(): Promise<void> {
         graded.push({ path: el!.path, block: (el as CardItem).block, grade: g + 1 });
         await tap(buttons[g]!, () => q('.session-end') || counter() !== was, `graded ${g + 1}: ${el!.path}`);
       } else {
-        const bar2 = q<HTMLElement>('.doc-session .sb-actions')!;
+        // between two elements (the last card's grades just gone, the next not drawn yet): looked at again
+        const bar2 = q<HTMLElement>('.doc-session .sb-actions');
+        if (!bar2 || !q('[data-act="postpone"]', bar2)) { await sleep(150); continue; }
         topics.push(el!.path);
         await tap(q('[data-act="postpone"]', bar2)!, () => q('.session-end') || counter() !== was, `later: ${el!.path}`);
       }

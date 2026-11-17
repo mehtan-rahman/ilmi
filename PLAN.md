@@ -9337,8 +9337,17 @@ button over the pages closes the search when pressed again (a finger has no
 esc), and the letter before the search and go-to fields is hidden with the
 key caps on a device.
 **Not done yet:** a notebook of written pages; a portal made by touch.
-The simulator smokes (`touch`, `phone`, `ink`, `pageink`): `touch` and
-`phone` have their steps rewritten for the above and are not yet run.
+**On the devices** (done, 2026-11-17): the bar on a phone stays one line
+(it wrapped: search fell onto the pages): the name and the zoom left out,
+the page without what is due, no `+`; menus' rows are a finger's height
+under touch (40 px; they were 28); a new card's `1–4 grade it now` goes
+with the key caps. The device smokes are mended and run: `touch` keeps a
+passage with the PDF by the box's bar, works its tag's menu and the bar's
+`more` menu by taps, makes a second note with `+` and clips into the one in
+front; `phone` checks the bar, its menus and fields, and walks a new
+card's `got it`; `ink` and `pageink` needed nothing. A dev build's log is
+no longer dropped at 40 kB (the touch rig reads its asks there and lost
+count once a run grew past it).
 
 ## Notes for the next session
 

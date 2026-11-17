@@ -405,6 +405,11 @@ the caret and `do: open <link>`, which is `XCUIDevice.shared.system.open`, the
 way a Shortcut's "open URL" arrives. Its `reached:` line is the Mac's third
 run's `ILMI_EXPECT`, with `ILMI_VAULT=<the collection's own folder>`: every
 document it names has the same digest there, and the reviews are in the log.
+Each simulator run writes into the storage as it goes, a failed one too: keep
+a copy of the folder as the Mac's first run left it and put it back before
+a rerun. A dev build keeps its whole log in one file (`max_file_size` in
+`lib.rs`): the rig counts the asks in it, and the plugin's own 40 kB limit
+dropped the file in the middle of a long run.
 
 `ILMI_SMOKE=ink` is three runs over one storage folder in the same way. The
 Mac first (`ILMI_VAULT`, `ILMI_STORAGE`), then the simulator with

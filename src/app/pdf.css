@@ -198,13 +198,47 @@
 .book .pdf-body.reading { padding-left: 0; }
 .book .pdf-pages { position: relative; }
 /* the words over the pages stay at the pane's top as the pages scroll: `notes` is the iPad's one way to the note and back */
-.book .pdf-view > .meta { position: sticky; top: 0; z-index: 6; background: var(--paper); margin-top: -22px; padding-top: 22px; padding-bottom: 8px; }
+.book .pdf-view > .meta {
+  position: sticky; top: 0; left: 0; z-index: 6;
+  display: flex; align-items: center; gap: 10px;
+  box-sizing: border-box; height: 38px; max-width: none;
+  margin-top: -22px; margin-bottom: 18px; padding: 0 12px;
+  background: var(--bg); border-bottom: 1px solid var(--line-2);
+  font-family: var(--sans); font-size: var(--t-sm); color: var(--fg-3);
+}
+/* the book's name in the bar: small, cut where the bar runs out */
+.book .pdf-view > .meta .pt-title { margin: 0; min-width: 0; flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--sans); font-size: var(--t-sm); font-weight: 500; line-height: 1; color: var(--fg-1); letter-spacing: 0; }
+.book .pdf-view > .meta .pt-grow { flex: 1 1 0; }
+.book .pdf-view > .meta .pt-btn { display: inline-flex; align-items: center; justify-content: center; min-width: 26px; height: 26px; padding: 0 6px; border: 0; border-radius: var(--radius); background: none; color: var(--fg-2); font: inherit; cursor: default; --ic: 15px; }
+.book .pdf-view > .meta .pt-btn:hover:not(:disabled) { background: var(--line-3); color: var(--fg-1); }
+.book .pdf-view > .meta .pt-btn:disabled { color: var(--fg-5); }
+.book .pdf-view > .meta .pt-zoom { display: inline-flex; align-items: center; gap: 1px; flex-shrink: 0; }
+.book .pdf-view > .meta .pt-pct { min-width: 46px; font-variant-numeric: tabular-nums; }
+.book .pdf-view > .meta .pt-page { flex-shrink: 0; margin: 0; padding: 0 6px; height: 26px; border: 0; border-radius: var(--radius); background: none; color: var(--fg-2); font: inherit; font-variant-numeric: tabular-nums; cursor: default; }
+.book .pdf-view > .meta .pt-page:hover { background: var(--line-3); color: var(--fg-1); }
+.book .pdf-view > .meta .frozen-tag { flex-shrink: 0; }
+html[data-mobile="1"] .book .pdf-view > .meta { height: 46px; }
+html[data-mobile="1"] .book .pdf-view > .meta .pt-btn, html[data-mobile="1"] .book .pdf-view > .meta .pt-page { min-width: 38px; height: 38px; }
+/* a phone's bar keeps the page and the notes: the zoom is a pinch there */
+html[data-shape="phone"] .book .pdf-view > .meta .pt-zoom, html[data-shape="phone"] .book .pdf-view > .meta .pt-title { display: none; }
+
+/* the pages lie on a desk of their own colour, each a sheet with its edge and a little shade under it */
+/* the scroller's bar has its room from the start: the pages are not fitted twice as they open */
+.book .book-pages { background: var(--desk); scrollbar-gutter: stable; }
+.book { --desk: color-mix(in oklab, var(--fg) 9%, var(--bg)); }
+[data-theme="dark"] .book { --desk: color-mix(in oklab, #000 35%, var(--bg)); }
+[data-theme="eink"] .book { --desk: var(--bg); }
+.book .pdf-page { outline: 0; box-shadow: 0 0 0 1px color-mix(in oklab, var(--fg) 14%, transparent), 0 1px 4px color-mix(in oklab, var(--fg) 12%, transparent); }
+[data-theme="eink"] .book .pdf-page { box-shadow: 0 0 0 1px var(--fg-1); }
+/* search and go to page sit under the bar */
+.book .pdf-view > .pdf-bar { top: 38px; margin-top: -18px; background: var(--desk); }
+html[data-mobile="1"] .book .pdf-view > .pdf-bar { top: 46px; }
 .book .pdf-page { scroll-margin-top: 52px; }
 /* zoomed past the pane (`Pdf.tsx`): the pages start at the pane's left and scroll sideways in the scroller that scrolls
    them down (centred, their left would be out of reach); the words over them, the title and the search stay in the
    pane, as wide as it is */
 .book .book-pages .reader-wrap[data-wide="1"] { align-items: flex-start; }
-.book .reader-wrap[data-wide="1"] .pdf-view > :is(.meta, h1, .pdf-bar) { position: sticky; left: var(--fit-left, 0px); width: var(--fit-w, auto); max-width: none; box-sizing: border-box; }
+.book .reader-wrap[data-wide="1"] .pdf-view > .pdf-bar { position: sticky; left: var(--fit-left, 0px); width: var(--fit-w, auto); max-width: none; box-sizing: border-box; }
 /* `notes` among the words over the pages: lit while the note is open beside them */
 .reader .meta .notes-toggle[data-on="1"] { color: var(--fg-1); text-decoration: underline; text-decoration-color: var(--accent); text-decoration-thickness: 1.5px; text-underline-offset: 4px; }
 html[data-mobile="1"] .reader .meta .notes-toggle { padding: 12px 8px; margin: -12px -8px; }

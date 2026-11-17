@@ -227,7 +227,7 @@ describe("the Mac's welcome", () => {
 });
 
 describe("the iPad's shell", () => {
-  it('has a toggle for the sidebar in the top strip, the Mac none', async () => {
+  it('has a toggle for the sidebar in the top strip, as the Mac has (a book there opens without the tree)', async () => {
     useApp.setState({ vault: `${DOCS}/double-major`, sidebar: { width: 240, hidden: true } });
     await draw(createElement(TopStrip));
     const toggle = q<HTMLElement>('.top .side-toggle');
@@ -237,8 +237,8 @@ describe("the iPad's shell", () => {
     await act(async () => { root.unmount(); });
     useApp.setState({ mobile: false });
     await draw(createElement(TopStrip));
-    expect(q('.top .side-toggle')).toBeNull();
-    expect(qa('.top .insp-toggle')).toHaveLength(1);
+    expect(q('.top .side-toggle')).not.toBeNull();
+    expect(qa('.top .insp-toggle')).toHaveLength(2);
   });
 
   it('is one pane: no split in the tab bar, and a split asked for folds back', async () => {

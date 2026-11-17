@@ -525,6 +525,25 @@ describe('highlights', () => {
 });
 
 describe('portals', () => {
+  it('the bar\'s more makes one without the keys: portal from this place, then, at the second, the row that names the first', async () => {
+    await mountBook();
+    await scrolled(scrollFor(1, 0.5));
+    const more = () => act(async () => { host.querySelector<HTMLElement>('.pdf-view .meta [data-tool="more"]')!.click(); });
+    const row = (a: string) => document.querySelector<HTMLElement>(`.ctx-menu [data-act="${a}"]`);
+    await more();
+    expect(row('more-portal-from')).not.toBeNull();
+    expect(row('more-portal-to')).toBeNull();
+    await act(async () => { row('more-portal-from')!.click(); });
+    expect(portalPending()).toMatchObject({ hash: HASH, page: 1, y: 0.5 });
+    await scrolled(scrollFor(4, 0.25));
+    await more();
+    expect(row('more-portal-to')!.textContent).toContain('p. 1 shows this place');
+    expect(row('more-portal-cancel')).not.toBeNull();
+    await act(async () => { row('more-portal-to')!.click(); await new Promise((r) => setTimeout(r, 20)); });
+    expect(portalPending()).toBeNull();
+    expect(Object.values(stored())[0]).toMatchObject({ kind: 'portal', page: 1, y: 0.5, to: { page: 4, y: 0.25 } });
+  });
+
   it('⇧P at a place, then ⇧P where it should show, ties the first to the second; esc before the second lets it go', async () => {
     await mountBook();
     await scrolled(scrollFor(1, 0.5));

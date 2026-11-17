@@ -125,13 +125,20 @@ into the active tab's folder and opened.
 
 A PDF dropped on the intake lands on its own: the file, in the tree by its
 name, read in place through pdf.js and never written, in the reading queue
-from that day. It opens as its pages across the pane, nothing beside them
-(the inspector comes only by its toggle). Your notes on it are a note
-attached to it: the first time you keep something from the pages, or press
-`notes` among the words over them, you pick a note that is there or make a
+from that day. It opens as a PDF reader would show it: its pages across
+the window, sheets on a grey desk, the sidebar and the inspector folded
+away (each comes back by its toggle at the two ends of the top strip, the
+sidebar's also ⌃⌘S, and both are as you left them once you are on a note
+again). A bar over the pages has the contents, the book's name, its
+notes, the zoom between `−` and `+` (a press on the number fits the pages
+to the window again), the page (a press goes to a page) and search. Your
+notes on it are a note attached to it, made when you ask: the bar says
+`create notes` until there is one and `open notes` after. The first time
+you keep something from the pages, or press that, you pick a note that is
+there or make a
 new one, named as you like, in a folder of your choosing; the note names the
 file in its `pdf` field, and from then on everything kept from that PDF goes
-into it. `notes` (⌘\) opens that note in the pane beside the pages, the
+into it. `open notes` (⌘\) opens that note in the pane beside the pages, the
 ordinary tab it is, and closes it again; nothing slides over the pages. A
 PDF with a `.md` of its name beside it (a book's chapters, or anything
 from before) opens the same way, that document's body being its notes. A
@@ -146,12 +153,13 @@ line, or in `.ilmi/reading.json` for a PDF on its own); done for today
 records the bottom of the view. An older extract's passage is still drawn
 on the page as a highlight when it is found there again.
 
-The pages are fitted to the pane. ⌘= draws them larger, a step at a time
-(125%, 150%, 200%, 250%, 300%), ⌘− smaller, ⌘0 fitted again; a pinch on a
+The pages are fitted to the pane's width. ⌘= draws them larger, a step at
+a time (125%, 150%, 200%, 250%, 300%), ⌘− smaller (75%, 50% under the
+fit), ⌘0 fitted again; a pinch on a
 trackpad, or of two fingers on an iPad or a phone, steps once. The same text stays under the top of the view, pages
 wider than the pane scroll sideways, and the boxes, what is written on the
-pages, and the read bar grow with them. The zoom is said beside the page
-(`p. 37 / 212 · 150%`), is the book's own, and is kept for the device: it
+pages, and the read bar grow with them. The zoom is said in the bar, is
+the book's own, and is kept for the device: it
 is there when the app is opened again. With the caret in the notes, and everywhere else, those keys are the
 text size.
 

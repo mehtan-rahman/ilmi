@@ -18,7 +18,7 @@ import { activeTab, closeTab, cycleTab, splitPane } from './panes.js';
 import { SESSION } from './names.js';
 import { ACCENTS, INSP_MAX, INSP_MIN, SIDE_MAX, SIDE_MIN, useApp, ZOOM_STEP } from './store.js';
 import { closeTabs, openInitialVault, openNode, rememberTab, reopenClosed, setInspector, setSidebar, toggleInspector, toggleSidebar } from './vault.js';
-import { bookShown, inspectorShown } from './layout.js';
+import { bookShown, inspectorShown, sidebarShown } from './layout.js';
 import { shapeOf } from './platform.js';
 import { installLongPress } from './touch.js';
 import { watchInk, watchLayout } from './ink.js';
@@ -76,6 +76,7 @@ export function App() {
   const setPanes = useApp((s) => s.setPanes);
   const inspForced = useApp((s) => s.inspForced);
   const bookInsp = useApp((s) => s.bookInsp);
+  const bookSide = useApp((s) => s.bookSide);
   const sessionEl = useApp((s) => s.sessionEl);
   const docs = useApp((s) => s.docs);
   const railFolded = useApp((s) => s.railFolded);
@@ -277,7 +278,7 @@ export function App() {
   }
 
   // the sidebar is a column beside the page, or in portrait a sheet over it that takes no room
-  const sideOn = sheet ? sideSheet : !sidebar.hidden;
+  const sideOn = sheet ? sideSheet : sidebarShown({ sidebar, bookSide, sessionEl, panes, docs });
   const sideW = sideOn && !sheet ? sidebar.width : 0;
   const inspOn = !phone && inspectorShown({ sidebar: sheet ? { ...sidebar, hidden: true } : sidebar, inspector, inspForced, bookInsp, sessionEl, panes, docs, railFolded, railWidth }, win);
   const inspW = inspOn ? inspector.width : 0;
@@ -297,7 +298,7 @@ export function App() {
             {phone && <button type="button" className="side-find" onClick={() => useApp.setState({ paletteOpen: true, sideSheet: false })}><span className="g"><Glyph g="⌕" /></span><span className="lbl">open or run</span></button>}
           </div>
         )}
-        {!mobile && <div className="side-resize" data-hidden={sidebar.hidden ? '1' : '0'} onMouseDown={startSideResize} />}
+        {!mobile && <div className="side-resize" data-hidden={sideOn ? '0' : '1'} onMouseDown={startSideResize} />}
         <Canvas />
         {inspOn && <Inspector />}
         {inspOn && !mobile && <div className="insp-resize" onMouseDown={startInspResize} />}

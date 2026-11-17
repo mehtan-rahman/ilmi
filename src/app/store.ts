@@ -297,6 +297,8 @@ export interface AppState {
   inspForced: boolean;
   /** The inspector asked for over a book, which opens without it (milestone 70); closed again when a book next opens. Not saved. */
   bookInsp: boolean;
+  /** The sidebar asked for over a book (a book opens as its pages across the window). */
+  bookSide: boolean;
   panes: Panes;
   /** The tabs closed in this run of the open collection, the last closed last: ⌘⇧T opens them again. Not saved. */
   closedTabs: string[];
@@ -438,6 +440,7 @@ export const useApp = create<AppState>((set, get) => ({
   inspector: { width: INSP_DEFAULT, open: true },
   inspForced: false,
   bookInsp: false,
+  bookSide: false,
   panes: emptyPanes(),
   closedTabs: [],
   paletteOpen: false,

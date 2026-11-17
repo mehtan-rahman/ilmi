@@ -73,16 +73,20 @@ async function cmd(key: string, target: EventTarget = document.body, more: Keybo
 const px = (el: Element | null, prop: 'width' | 'height' | 'top' | 'left') => parseFloat((el as HTMLElement).style[prop]);
 const page = (n: number) => host.querySelector<HTMLElement>(`.pdf-page[data-page="${n}"]`)!;
 const token = () => host.querySelector('.pdf-view .meta .right')!.textContent;
+/** The zoom as the bar says it, between its − and +. */
+const pct = () => host.querySelector('.pdf-view .meta [data-tool="zoom-fit"]')!.textContent;
 const view = () => host.querySelector<HTMLElement>('.pdf-view')!;
 
 describe('the steps', () => {
-  it('go from fit to 300% and stop at both ends', () => {
-    expect(ZOOMS).toEqual([1, 1.25, 1.5, 2, 2.5, 3]);
+  it('go from 50% through fit to 300% and stop at both ends', () => {
+    expect(ZOOMS).toEqual([0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3]);
     let z = 1;
     const seen: number[] = [];
     for (let i = 0; i < 7; i++) { z = zoomStep(z, 1); seen.push(z); }
     expect(seen).toEqual([1.25, 1.5, 2, 2.5, 3, 3, 3]);
-    expect(zoomStep(1, -1)).toBe(1);
+    expect(zoomStep(1, -1)).toBe(0.75);
+    expect(zoomStep(0.75, -1)).toBe(0.5);
+    expect(zoomStep(0.5, -1)).toBe(0.5);
     expect(zoomStep(2, -1)).toBe(1.5);
     expect(zoomStep(2.5, 0)).toBe(1);
   });
@@ -104,9 +108,12 @@ describe("a book's pages zoomed", () => {
     await cmd('+', document.body, { shiftKey: true });
     await cmd('0');
     expect(px(page(1), 'width')).toBeCloseTo(800);
-    // fit is the floor
+    // under fit the pages are smaller than the pane, down to half
     await cmd('-');
-    expect(px(page(1), 'width')).toBeCloseTo(800);
+    expect(px(page(1), 'width')).toBeCloseTo(600);
+    await cmd('-');
+    await cmd('-');
+    expect(px(page(1), 'width')).toBeCloseTo(400);
   });
 
   it('the keys are the pages\' and the text size is left alone', async () => {
@@ -138,14 +145,18 @@ describe("a book's pages zoomed", () => {
     expect(px(page(1), 'width')).toBeCloseTo(1000);
   });
 
-  it('the page token says the zoom, and only when zoomed', async () => {
+  it('the bar says the page and, between − and +, the zoom; a press on the zoom fits the pages again', async () => {
     await mountBook();
-    expect(token()).toBe('p. 1 / 3');
+    expect([token(), pct()]).toEqual(['p. 1 / 3', '100%']);
     await cmd('=');
     await cmd('=');
-    expect(token()).toBe('p. 1 / 3 · 150%');
+    expect([token(), pct()]).toEqual(['p. 1 / 3', '150%']);
+    await act(async () => { host.querySelector<HTMLElement>('.pdf-view .meta [data-tool="zoom-fit"]')!.click(); });
+    expect(pct()).toBe('100%');
+    await act(async () => { host.querySelector<HTMLElement>('.pdf-view .meta [data-tool="zoom-out"]')!.click(); });
+    expect(pct()).toBe('75%');
     await cmd('0');
-    expect(token()).toBe('p. 1 / 3');
+    expect(pct()).toBe('100%');
   });
 
   it('the pages below move down with the ones above, and the column is as wide as a page', async () => {
@@ -168,14 +179,15 @@ describe("a book's pages zoomed", () => {
     expect(view().style.getPropertyValue('--fit-w')).toBe('800px');
   });
 
-  it('in a wide pane a page zoomed and still narrower than the pane stays centred', async () => {
+  it('in a wide pane the pages fill it, and zoomed out they are narrower than the pane and stay centred', async () => {
     pane = 1400;
     await mountBook();
-    // fitted: the width a page is still read at
-    expect(px(page(1), 'width')).toBeCloseTo(960);
-    await cmd('=');
-    expect(px(page(1), 'width')).toBeCloseTo(1200);
+    // fitted: the pane's width, the pages across the window
+    expect(px(page(1), 'width')).toBeCloseTo(1400);
+    await cmd('-');
+    expect(px(page(1), 'width')).toBeCloseTo(1050);
     expect(host.querySelector<HTMLElement>('.reader-wrap')!.dataset.wide).toBeUndefined();
+    await cmd('0');
     await cmd('=');
     expect(host.querySelector<HTMLElement>('.reader-wrap')!.dataset.wide).toBe('1');
   });
@@ -186,7 +198,7 @@ describe("a book's pages zoomed", () => {
     await cmd('=');
     await cmd('=');
     expect(px(page(1), 'width')).toBeCloseTo(750);
-    expect(token()).toContain('150%');
+    expect(pct()).toBe('150%');
   });
 
   it('a box drawn at a zoom has the page coordinates it has at fit, and is drawn where it was drawn', async () => {
@@ -275,7 +287,7 @@ describe("a book's pages zoomed", () => {
     unmount();
     await mountBook('library/zoom-kept.pdf');
     expect(px(page(1), 'width')).toBeCloseTo(1200);
-    expect(token()).toBe('p. 1 / 3 · 150%');
+    expect([token(), pct()]).toEqual(['p. 1 / 3', '150%']);
     expect(BOOK).toBe('library/zoom-kept.pdf');
   });
 

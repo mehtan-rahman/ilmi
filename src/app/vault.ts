@@ -1145,7 +1145,7 @@ export function startSession(opts: OpenOpts = {}, only: string | null = null, fo
 export function cleanZooms(raw: unknown): Record<string, number> {
   const out: Record<string, number> = {};
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
-  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) if (typeof v === 'number' && v > 1 && v <= 8) out[k] = v;
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) if (typeof v === 'number' && v >= 0.25 && v <= 8 && v !== 1) out[k] = v;
   return out;
 }
 
@@ -1154,7 +1154,7 @@ export function setBookZoom(id: string, zoom: number): void {
   const cur = useApp.getState().bookZooms;
   if ((cur[id] ?? 1) === zoom) return;
   const zooms = { ...cur };
-  if (zoom > 1) zooms[id] = zoom; else delete zooms[id];
+  if (zoom !== 1) zooms[id] = zoom; else delete zooms[id];
   useApp.setState({ bookZooms: zooms });
   queueSave({ zooms });
 }
@@ -1251,6 +1251,8 @@ export function setSidebar(patch: Partial<Sidebar>): void {
 export function toggleSidebar(): void {
   const s = useApp.getState();
   if (s.phone || (s.mobile && window.innerWidth <= window.innerHeight)) useApp.setState({ sideSheet: !s.sideSheet });
+  // over a book the tree is shown and hidden for the book only: the saved state is the other documents'
+  else if (bookShown(s)) useApp.setState({ bookSide: !s.bookSide });
   else setSidebar({ hidden: !s.sidebar.hidden });
 }
 

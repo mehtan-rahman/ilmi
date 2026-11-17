@@ -10,7 +10,9 @@
 // A book is the exception (milestone 70): a document with pages opens as
 // its pages across the pane, so the inspector is not drawn over one unless
 // its toggle asked for it there (`bookInsp`), whatever the saved state says;
-// the saved state is the other documents', and is as they left it.
+// the saved state is the other documents', and is as they left it. The
+// sidebar is the same there (`bookSide`): a book has the window until its
+// toggle brings the tree back over it.
 
 import { SESSION } from './names.js';
 import { activeTab, type Panes } from './panes.js';
@@ -63,11 +65,16 @@ export function bookShown(s: Pick<LayoutState, 'panes' | 'docs' | 'sessionEl'>):
   return id !== undefined && !!s.docs[id]?.pdf;
 }
 
+/** Whether the sidebar's column is drawn: as it was left; over a book, only when asked for there (the pages have the window). */
+export function sidebarShown(s: Pick<LayoutState, 'panes' | 'docs' | 'sessionEl' | 'sidebar'> & { bookSide?: boolean }): boolean {
+  return bookShown(s) ? !!s.bookSide : !s.sidebar.hidden;
+}
+
 /** Whether the inspector is drawn: open, and it fits or was asked for; over a book, only when asked for there. */
 export function inspectorShown(s: LayoutState, win: number): boolean {
   if (bookShown(s)) return !!s.bookInsp;
   if (!s.inspector.open) return false;
   if (s.inspForced) return true;
-  const side = s.sidebar.hidden ? 0 : s.sidebar.width;
+  const side = sidebarShown(s) ? s.sidebar.width : 0;
   return inspectorFits(win, side, s.inspector.width, railsOf(s.panes, s.docs, s.railFolded, s.railWidth));
 }

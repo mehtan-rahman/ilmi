@@ -9256,6 +9256,37 @@ whole card's text now (`faceText`), and all of it selected is one blank.
 **Left as it was:** the inspector's box for a
 selected card shows the file's text, braces and all.
 
+### [ ] 81. A PDF that reads as a PDF reader; a card written in the reader's editor everywhere
+Asked by the user, 2026-11-16: "I'd like the card text editor to be the
+same that is in the regular notes"; then, of the PDF, "it just doesn't
+feel like an actual PDF reader, more so just something that supports
+reading PDFs … purely just in terms of the look/feel of it … the PDF
+should fill up the whole window (with zoom in/out ofc) as a starting
+place", notes asked for rather than always there (`create notes` then
+`open notes`), and written notes apart from typed ones (a notebook of ink,
+on its own or with a PDF).
+Notes: **The editor** (done): a new card's question and answer, both terms
+of a card both ways, and a phone's front and back are `FaceField`s (they
+were plain text boxes); a right-click on selected words offers bold,
+italic, code and strikethrough in a note and a card alike. A face's
+placeholder follows `data-empty`, set from the editor's state.
+**The reader's look** (done): a book opens with the window to itself: the
+sidebar is folded over a book as the inspector is (`bookSide`,
+`sidebarShown` in `layout.ts`; the top strip has the sidebar's toggle on
+the desk too, ⌃⌘S). The words over the pages are a bar as wide as the pane
+(`.pdf-tools`): contents, the book's name, the notes' word (`create
+notes` until the pages have a note, `open notes`, `hide notes` while it is
+beside), then − the zoom + (a press on the zoom fits), the page (a press
+goes to a page), search. The pages are sheets on a desk of their own
+colour, drawn to the pane's width (`PAGE_MAX` 1600); the zoom goes under
+fit now (50%, 75%), kept as the others are. The peek is drawn at a width
+of its own, not the pane's.
+**Not done yet:** the notes on a PDF still take a passage as a `##`
+section in book order and a clip under `## p. N` (the heading is what the
+queue schedules and what says a block's page: FORMAT.md §6.5, §6.6, and
+`vault/pages.ts`); several notes on one PDF; a notebook of written pages;
+a portal made by touch.
+
 ## Notes for the next session
 
 Studying (42–46) is complete, 2026-10-31: every milestone's window check

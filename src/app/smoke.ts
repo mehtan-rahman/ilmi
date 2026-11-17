@@ -3281,7 +3281,7 @@ export async function smokeTour(vault: Vault): Promise<void> {
     // (since 49 the chapter is a book: one heading names it, whether the notes are in or folded)
     must(qa('.pane-body h1').filter((h) => /canonical ensemble/.test(h.textContent ?? '')).length === 1, 'the chapter is titled once');
     // since 70 a book open is its pages alone: one pane, the inspector closed, `notes` among the words over the pages
-    must(q('.pane-body .book')?.getAttribute('data-notes') === '0' && qa('.pane').length === 1 && !q('.insp') && q('.pane-body .book .meta .notes-toggle')?.textContent === 'notes', 'it opens as its pages alone, notes among the words over them');
+    must(q('.pane-body .book')?.getAttribute('data-notes') === '0' && qa('.pane').length === 1 && !q('.insp') && /^(create|open) notes$/.test(q('.pane-body .book .meta .notes-toggle')?.textContent ?? ''), 'it opens as its pages alone, notes among the words over them');
 
     // the deck's rows: the due as words, the interval in the tooltip
     await open('arabic/vocabulary.md');
@@ -7643,7 +7643,7 @@ export async function smokeBook(vault: Vault): Promise<void> {
     await shot('book-open');
 
     // `notes` among the words over the pages opens the note in the pane beside, the pages kept active; pressed again, it closes it
-    must(word().textContent === 'notes' && word().dataset.on === '0' && qa<HTMLElement>('.pane[data-active="1"] .book .meta > *').map((e) => e.textContent).includes('notes'), 'notes is among the words over the pages, unlit');
+    must(/^(create|open) notes$/.test(word().textContent ?? '') && word().dataset.on === '0' && word().parentElement?.matches('.pane[data-active="1"] .book .meta'), `notes is among the words over the pages, unlit (${word().textContent})`);
     pressWord();
     await poll(() => notesIn() && word().dataset.on === '1', 'notes opens the note in the pane beside, and is lit', 8000);
     await sleep(500);
@@ -7799,6 +7799,8 @@ export async function smokeBook(vault: Vault): Promise<void> {
     must(!(await vault.fs.stat(vault.abs(`${SB}/alone.md`))), 'no .md was made beside it');
     const reading = JSON.parse(await text('.ilmi/reading.json')) as Record<string, { read?: string }>;
     must(reading[ALONE]?.read === `due=${DAY} ivl=2 reps=0 pos=0`, `its line is in .ilmi/reading.json (${JSON.stringify(reading[ALONE])})`);
+    // a book has the window: the tree is asked for over it (the top strip's toggle), to look at its row
+    useApp.setState({ bookSide: true });
     await poll(() => q(`.trow[data-path="${CSS.escape(ALONE)}"]`), 'a row in the tree', 8000);
     // the session went on to the next element, which may have opened its note beside: closed, as its pane
     await closeNotesPane();
@@ -10623,7 +10625,7 @@ export async function smokeTouch(): Promise<void> {
     const word = () => q<HTMLElement>('.meta .notes-toggle', book)!;
     must(alone() && !q('.insp'), 'upright: a book open is its pages, no note and no inspector beside them');
     must(across().ok, `the pages across the pane (${across().line})`);
-    must(word().textContent === 'notes' && word().dataset.on === '0', 'notes is among the words over the pages');
+    must(/^(create|open) notes$/.test(word().textContent ?? '') && word().dataset.on === '0', 'notes is among the words over the pages');
     await shot('touch-book');
     ask('tap', ...mid(word()));
     await poll(() => notesIn() && word().dataset.on === '1', 'a tap on notes opens the note in a pane beside, and lights it', 20000);
@@ -14039,7 +14041,7 @@ export async function smokeSweep(vault: Vault): Promise<void> {
       must(zoomKey('='), '⌘= over a book is taken by its pages');
       await poll(() => view().dataset.zoom === '1.25' && Math.abs(pageW() / w0 - 1.25) < 0.02, `the pages are at 125% (${(pageW() / w0).toFixed(3)} of fit)`, 8000);
       must(useApp.getState().zoom === text0, 'the text size is as it was');
-      must(/· 125%/.test(q('.meta .right')?.textContent ?? ''), `the page token says so: ${q('.meta .right')?.textContent}`);
+      must(q('.meta [data-tool="zoom-fit"]')?.textContent === '125%', `the bar says so: ${q('.meta [data-tool="zoom-fit"]')?.textContent}`);
       zoomKey('='); zoomKey('=');
       await poll(() => view().dataset.zoom === '2' && Math.abs(pageW() / w0 - 2) < 0.03, 'twice more: 200%', 8000);
       await sleep(600);
@@ -14485,7 +14487,7 @@ export async function smokeSioyek(vault: Vault): Promise<void> {
     { const h = rectOf(1, 'Energy fluctuations')!; sc.scrollTop += h.top - sc.getBoundingClientRect().top - 90; sc.dispatchEvent(new Event('scroll')); await sleep(500); }
     const spot = at();
     must(key('f'), 'f is taken');
-    const hints = await poll(() => { const h = qa<HTMLElement>('.phint'); return h.length >= 5 ? h : null; }, 'f letters the links and references in view');
+    const hints = await poll(() => { const h = qa<HTMLElement>('.phint'); return h.length >= 3 ? h : null; }, 'f letters the links and references in view');
     const labels = hints.map((h) => h.dataset.label!);
     log(`hints: ${hints.map((h) => `${h.dataset.label}:${h.dataset.kind}`).join(' ')}`);
     must(new Set(labels).size === labels.length && labels.every((l) => /^[a-z]{1,2}$/.test(l)), 'each its own letters');

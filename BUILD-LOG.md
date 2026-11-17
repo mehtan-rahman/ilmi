@@ -6,6 +6,26 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-11-16, night — milestone 81 (begun): the reader's editor for every card; a PDF that reads as a PDF reader; 0.2.1
+
+Asked by the user: a release; the card's text editor the same as a note's ("no table or text formatting options when i right click"), on the phone too; and of the PDF, "it just doesn't feel like an actual PDF reader … the PDF should fill up the whole window (with zoom in/out ofc) as a starting place", with notes made when asked for and written notes apart from typed ones.
+
+**Done.** `v0.2.1` (blanks) tagged, built and published. A new card's question and answer, both terms of a card both ways and a phone's front and back are the reader's editor; a right-click on selected words offers bold, italic, code, strikethrough. A book opens with the window to itself: the sidebar folds over a book as the inspector does (the top strip has the sidebar's toggle on the desk now), the pages are sheets on a grey desk drawn to the pane's width, and a bar over them holds contents, the name, `create notes` / `open notes` / `hide notes`, − zoom +, the page, a `more` menu (bookmark, portal, ruler, portals beside) and search. The zoom goes under fit (75%, 50%). A portal can be made without keys from `more`.
+
+**Checks.** typecheck clean; npm test 2059 passed, 1 skipped, 143 files. On the Mac from a clean run tree: sweep 130, sioyek 171, book 155, books 81, open 83, sections 56, textsections 68, numbers 95, cardview 31, below 24, tour 20, zoom 14, learn 14, blanks 43 (with the new question-and-answer step). iPad simulator: sioyek 135. iPhone simulator: the quick card's two fields, by a throwaway check (text put in by the script).
+
+**Found.** With the pages as wide as the pane, the scroller's bar taking its width refitted them just after a book was come back to, and the place kept was the top the pages opened at: a book left and shown again opened at its first page. The place restored is the place kept now, and the bar has its room from the start (`scrollbar-gutter`). The peek was drawn at the pane's fit and shrank as the pages grew: it has a width of its own. A face's placeholder rule (`:has` on the page's children) stayed on over typed text on the phone: it follows the editor's state.
+
+**Not verified.** The new bar on a phone (it hides the name and the zoom there; not run). The `more` menu under a finger (a unit test presses it; nobody touched it). Typing in the phone's quick card with the on-screen keyboard. `touch`, `ink`, `pageink` were not run (they need the shared storage folder set up).
+
+**Left (81 goes on).** The notes on a PDF still take a passage as a `##` section in book order and a clip under `## p. N`: the heading is what the queue schedules and what says a block's page, so plain notes need the format's say first. Several notes on one PDF. A notebook of written pages, on its own or with a PDF. The phone's bar.
+
+```
+Read PLAN.md (81's notes) and this entry. The reader's look is Pdf.tsx (`.pdf-tools`, `moreMenu`, PAGE_MAX, ZOOMS), pdf.css (`--desk`), layout.ts (`sidebarShown`, `bookSide`). Next in 81: plain notes on a PDF (FORMAT.md §6.5, §6.6, vault/pages.ts, schedule/section.ts), then written notebooks.
+```
+
+---
+
 ## 2026-11-16, later — milestone 80: blanks made, not typed; nested blanks; 0.2.0
 
 Asked by the user: a setting for the budget under a focus, plainer words ("tweaks is very ai language"), a GitHub release, and then, over a conjugation paradigm to recite, blanks without the braces and blanks inside blanks.

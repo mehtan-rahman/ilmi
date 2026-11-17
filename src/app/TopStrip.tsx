@@ -14,7 +14,7 @@ import { dayLabel, dueToday } from './items.js';
 import { useApp } from './store.js';
 import { toggleInspector, toggleSidebar } from './vault.js';
 import { shapeOf } from './platform.js';
-import { inspectorShown } from './layout.js';
+import { inspectorShown, sidebarShown } from './layout.js';
 import { appNow } from './clock.js';
 import { openConflicts, syncAge, syncWord } from './sync.js';
 import { Glyph, Icon } from './icons.js';
@@ -47,11 +47,11 @@ export function TopStrip() {
   // a phone's strip names the collection and where sync stands; what the rest does is at its foot (`PhoneBar.tsx`)
   const phone = useApp((s) => s.phone);
   // lit while the sidebar is drawn: the column, or in portrait the sheet (App draws this strip again on a turn)
-  const sideOn = useApp((s) => (shapeOf(s.mobile, window.innerWidth, window.innerHeight) === 'portrait' ? s.sideSheet : !s.sidebar.hidden));
+  const sideOn = useApp((s) => (shapeOf(s.mobile, window.innerWidth, window.innerHeight) === 'portrait' ? s.sideSheet : sidebarShown(s)));
   return (
     <div className="top">
-      {mobile && !phone && (
-        <button type="button" className="insp-toggle side-toggle" data-on={sideOn ? '1' : '0'} aria-pressed={sideOn} aria-label="sidebar" onClick={toggleSidebar}>
+      {!phone && (
+        <button type="button" className="insp-toggle side-toggle" data-on={sideOn ? '1' : '0'} aria-pressed={sideOn} aria-label="sidebar" title={mobile ? undefined : 'sidebar ⌃⌘S'} onClick={toggleSidebar}>
           <Icon name="panel-left" />
         </button>
       )}

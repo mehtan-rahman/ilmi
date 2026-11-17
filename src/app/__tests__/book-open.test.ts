@@ -131,7 +131,8 @@ describe('a book as it opens', () => {
   });
 
   it('`notes` is among the words over the pages: it opens the note in the pane beside, the pages kept active, and closes it again', async () => {
-    expect(word().textContent).toBe('notes');
+    // a document with pages has its notes already: the word opens them
+    expect(word().textContent).toBe('open notes');
     expect(word().closest('.meta')).not.toBeNull();
     expect(word().dataset.on).toBe('0');
     await click(word());
@@ -142,6 +143,7 @@ describe('a book as it opens', () => {
     expect(notesOpen(CH3)).toBe(true);
     expect(q('.book')?.getAttribute('data-notes')).toBe('1');
     expect(word().dataset.on).toBe('1');
+    expect(word().textContent).toBe('hide notes');
     expect(word().getAttribute('aria-pressed')).toBe('true');
     await click(word());
     await wait(20);

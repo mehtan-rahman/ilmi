@@ -91,14 +91,14 @@ import { onPluginAction, publishSelection, toPluginSelection, type PluginSelecti
 import { noteOf, notesTabOf, titleOf } from './names.js';
 import { besideAt } from './panes.js';
 import {
-  addLens, ensureNote, findCollectionMark, followTo, followed, goToMark, lensChanged, openContents, openNotes, openWeb, portalPending, setCollectionMark, setMark, setPortalPending, setTrail,
+  addLens, ensureNote, findCollectionMark, followTo, followed, goToMark, lensChanged, openContents, openNotes, togglePortalsBeside, openWeb, portalPending, setCollectionMark, setMark, setPortalPending, setTrail,
   takeBesidePlace, takePlace, toggleNotes, trailOf, useFollowed, useFollower, followingAt, useBesidePlace, useMarks, usePlaceWanted, usePortalPending, useTrail, type BookContents, type BookLens,
 } from './book.js';
 import { popMenu, popMenuOpen, type PopItem } from './popMenu.js';
 import { TextLayer, pageBits, type PDFDocumentProxy } from './pdfjs.js';
 import { acquirePdf, itemsOf } from './bookPdf.js';
 import { addSurface, afterScene, covered, fillSheet, hasCanvas, inContent, pagePaper, portOf, restSheet, sceneSoon, type PenEvent, type SheetSpec, type Surface } from './ink.js';
-import { Crumbs } from './Crumbs.js';
+import { Icon } from './icons.js';
 import { StudyButton } from './StudyButton.js';
 import { ExamTag } from './ExamTag.js';
 import { TabsToggle } from './TabsToggle.js';
@@ -122,11 +122,11 @@ const PROBE = 3;
 /** Room beside a page for the sections' names; less than this and they are a § in the gutter. */
 const TAG_ROOM = 210;
 /** The widest a page is drawn, the width a page is still read at: past it the page is centred in the pane. */
-const PAGE_MAX = 960;
+const PAGE_MAX = 1600;
 /** How far down the view the place kept across a change of scale is, px: under the words over the pages. */
 const PLACE_AT = 60;
-/** The zooms a book's pages step through: 1 is the pages fitted to the pane, the least there is. */
-export const ZOOMS = [1, 1.25, 1.5, 2, 2.5, 3];
+/** The zooms a book's pages step through: 1 is the pages fitted to the pane's width; under it they are centred, over it they scroll sideways. */
+export const ZOOMS = [0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3];
 /** The most pixels a page's canvas is drawn with: past it the page is drawn coarser, not larger (a canvas over WebKit's limit draws nothing). */
 const CANVAS_MAX = 16_000_000;
 /** Zoomed, a page this far outside the view gives its canvas back, px. */
@@ -206,6 +206,8 @@ const PEEK_H = 150;
 /** A figure's peek: room for the picture over its caption. */
 const PEEK_FIG_H = 330;
 const PEEK_W = 480;
+/** The width a page is drawn at for its peek, px: the peek shows about half of it across. */
+const PEEK_PAGE = 880;
 
 interface Find {
   q: string;
@@ -303,7 +305,8 @@ const notesBeside = (id: string) => (s: { docs: Record<string, DocInfo>; panes: 
 export function Pdf({ id, active = true, session = false, readOn = false, onLast }: PdfProps) {
   const open = useApp(notesBeside(id));
   // a book open is its pages (milestone 70): the inspector closed until its toggle asks for it over this book
-  useLayoutEffect(() => { useApp.setState({ bookInsp: false }); }, [id]);
+  // and the sidebar the same: the pages have the window (the top strip's toggle, or ⌃⌘S, brings the tree back over this book)
+  useLayoutEffect(() => { useApp.setState({ bookInsp: false, bookSide: false }); }, [id]);
   // ⌘\ opens the note beside the pages and closes it, ahead of the app's split (it checks `defaultPrevented`)
   useEffect(() => {
     if (!active) return;
@@ -354,6 +357,8 @@ interface Drawn {
 }
 
 function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required<PdfProps>, 'onLast'> & { onLast: PdfProps['onLast']; notesOpen: boolean }) {
+  /** Whether the pages have a note yet: the bar's word is `create notes` until they do. */
+  const hasNotes = useApp((st) => notesTabOf(id, st.docs) !== null);
   const lastRef = useRef(onLast);
   lastRef.current = onLast;
   const docs = useApp((s) => s.docs);
@@ -960,6 +965,9 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
       // a page laid out: the same text under the words over the pages, whatever the scale is now; else the scroll as it was
       if (was.at && pr && pr.height > 0) sc.scrollTop += pr.top + was.at.y * pr.height - (sc.getBoundingClientRect().top + PLACE_AT);
       else sc.scrollTop = was.top;
+      // the place is this one from here on: a scale that changes before the next scroll (the scroller's bar taking its
+      // width as the pages fill the pane) keeps it, not the top the pages opened at
+      if (was.at) place.current = was.at;
       // zoomed past the pane: across the pages where it was left too
       if (was.x !== null) centreOn(sc, was.x);
       return;
@@ -968,6 +976,8 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     const r = rp && rp.pos >= first && rp.pos <= last ? pageRect(rp.pos) : null;
     if (!rp || !r) return;
     sc.scrollTop = Math.max(0, r.top + rp.y * r.height - sc.clientHeight / 3);
+    // the place is read again at once, so a scale that settles before the next scroll keeps the read point in view
+    sc.dispatchEvent(new Event('scroll'));
   }, [readOn, status, sizes.length, id, first, last, info?.read?.pos, info?.read?.y, pageRect]);
   // show in book: scrolled to and flashed
   useEffect(() => {
@@ -1774,6 +1784,21 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     await setMark(from.hash, key, mark);
     notify(`portal · p. ${from.page} shows p. ${at.page}`, null, () => setMark(from.hash, key, null));
   };
+  /** The bar's `more`: what the keys do for a place, by name, so a finger has them too (a portal above all: ⇧P has no touch). */
+  const moreMenu = (el: HTMLElement) => {
+    const r = el.getBoundingClientRect();
+    const from = portalPending();
+    const items: PopItem[] = [
+      { label: 'bookmark this place', act: 'more-bookmark', run: () => void startBookmark().catch(console.error) },
+      from
+        ? { label: `portal: p. ${from.page} shows this place`, act: 'more-portal-to', run: () => void portalKey().catch(console.error) }
+        : { label: 'portal from this place…', act: 'more-portal-from', run: () => void portalKey().catch(console.error) },
+      ...(from ? [{ label: 'cancel the portal', act: 'more-portal-cancel', run: () => setPortalPending(null) }] : []),
+      { label: ruler ? 'hide the ruler' : 'ruler', act: 'more-ruler', run: () => { if (ruler) setRuler(null); else void startRuler().catch(console.error); } },
+      ...(!mobile ? [{ label: followed(id) ? 'stop following portals beside' : 'portals beside', act: 'more-beside', run: () => togglePortalsBeside(id) }] : []),
+    ];
+    popMenu({ left: r.left, top: r.bottom + 4, bottom: r.bottom + 4 }, items, 'book-menu');
+  };
   /** A press on a portal's mark: where it shows, in the peek (⏎ goes there); one into another book opens that book there. */
   const openPortal = async (p: Portal, el: HTMLElement) => {
     if (p.to.pdf !== undefined) { goToMark(p.to.pdf, p.to, id); return; }
@@ -1876,8 +1901,8 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     let live = true;
     (async () => {
       const page = await pdf.getPage(peek.page);
-      // the peek is drawn as the pages are at fit, whatever their zoom: it is a look at a line, the size it always is
-      const scale = fit;
+      // the peek is a look at a line, the size it always is: the page drawn `PEEK_PAGE` wide, whatever the pane's width or the zoom
+      const scale = PEEK_PAGE / page.getViewport({ scale: 1 }).width;
       const vp = page.getViewport({ scale });
       const dpr = window.devicePixelRatio || 1;
       const full = document.createElement('canvas');
@@ -1898,7 +1923,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
       canvas.getContext('2d')?.drawImage(full, 0, top * dpr, vp.width * dpr, H * dpr, 0, 0, w * dpr, h * dpr);
     })().catch(console.error);
     return () => { live = false; };
-  }, [peek, pdf, fit]);
+  }, [peek, pdf]);
 
   useEffect(() => { if (find) findRef.current?.focus(); }, [find !== null]);
   useEffect(() => { if (goto) gotoRef.current?.focus(); }, [goto]);
@@ -2069,7 +2094,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
   const readTo = info?.read?.pos ? `read to p. ${info.read.pos}` : '';
   const rightTip = [status === 'ok' ? span : '', readTo, textless ? 'no text' : '', counts].filter(Boolean).join(', ');
   // the page in view of the last, and what is due beside it; the rest in the tooltip
-  const where = status === 'ok' && sizes.length ? `p. ${current} / ${last}${zoom !== 1 ? ` · ${Math.round(zoom * 100)}%` : ''}` : '';
+  const where = status === 'ok' && sizes.length ? `p. ${current} / ${last}` : '';
   const shown = [where, due ? `${due} due` : ''].filter(Boolean).join(' · ') || readTo || (cards ? plural(cards, 'card') : '') || (textless && status === 'ok' ? 'no text' : '');
   const shownPending = [...pending, ...(sel?.boxes ?? [])];
   const lastPending = pending.length ? boxRect(pending[pending.length - 1]!) : null;
@@ -2077,9 +2102,11 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
   return (
     <div className="reader-wrap" ref={outerRef} data-wide={wide ? '1' : undefined}>
       <div ref={viewRef} className={`reader doc-view pdf-view${reading ? ' reading' : ''}`} data-page={current} data-roomy={roomy ? '1' : '0'} data-zoom={zoom} data-back={trail.back.length} data-fwd={trail.forward.length} data-hash={hash ?? undefined} data-bookmarks={bookmarks.length} data-highlights={highlights.length} data-portals={portals.length} data-ruler={ruler ? `${ruler.page}:${ruler.line}` : undefined} data-following={follower ? '1' : undefined} data-portal={showing ?? undefined} style={colW > 0 ? { width: pageW, ...(wide ? { '--fit-w': `${colW}px`, '--fit-left': `${room.left}px` } as React.CSSProperties : null) } : undefined}>
-        <div className="meta">
-          <Crumbs path={id} />
-          {!(phone && session) && <button type="button" className="frozen-tag notes-toggle" data-on={notesOpen ? '1' : '0'} aria-pressed={notesOpen} title={'notes ⌘\\'} onClick={() => toggleNotes(id)}>notes</button>}
+        {/* the bar over the pages, as wide as the pane whatever the page's width: what the book is, its notes, the zoom, the page, search */}
+        <div className="meta pdf-tools" style={colW > 0 ? { width: room.w + room.left + room.pad, marginLeft: wide ? -room.left : -((colW - pageW) / 2 + room.left) } : undefined}>
+          {status === 'ok' && <button type="button" className="pt-btn" data-tool="contents" title="contents t" aria-label="contents" onClick={() => openContents(id)}><Icon name="menu" /></button>}
+          <h1 className="pt-title" title={id}>{titleOf(id, docs, root)}</h1>
+          {!(phone && session) && <button type="button" className="frozen-tag notes-toggle" data-on={notesOpen ? '1' : '0'} data-has={hasNotes ? '1' : '0'} aria-pressed={notesOpen} title={'notes ⌘\\'} onClick={() => toggleNotes(id)}>{notesOpen ? 'hide notes' : hasNotes ? 'open notes' : 'create notes'}</button>}
           {!isPdfPath(id) && <TabsToggle path={id} />}
           <StudyButton path={id} />
           <ExamTag path={id} />
@@ -2087,9 +2114,18 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
           {info && canEnrol && !info.read && (
             <button type="button" className="frozen-tag enrol" onClick={startReading}>start reading <span className="kbd">r</span></button>
           )}
-          {shown && <span className="right" title={rightTip}>{shown}</span>}
+          <span className="pt-grow" />
+          {status === 'ok' && sizes.length > 0 && (
+            <span className="pt-zoom">
+              <button type="button" className="pt-btn" data-tool="zoom-out" title="smaller ⌘−" aria-label="smaller" disabled={zoom <= ZOOMS[0]!} onClick={() => zoomBy(-1)}>−</button>
+              <button type="button" className="pt-btn pt-pct" data-tool="zoom-fit" title="fit the window ⌘0" onClick={() => zoomBy(0)}>{Math.round(zoom * 100)}%</button>
+              <button type="button" className="pt-btn" data-tool="zoom-in" title="larger ⌘=" aria-label="larger" disabled={zoom >= ZOOMS[ZOOMS.length - 1]!} onClick={() => zoomBy(1)}>+</button>
+            </span>
+          )}
+          {shown && <button type="button" className="right pt-page" data-tool="page" title={[rightTip, 'g goes to a page'].filter(Boolean).join(' · ')} onClick={() => setGoto(true)}>{shown}</button>}
+          {status === 'ok' && <button type="button" className="pt-btn" data-tool="more" title="bookmark, portal, ruler" aria-label="more" aria-haspopup="menu" onClick={(e) => moreMenu(e.currentTarget)}><Icon name="more" /></button>}
+          {status === 'ok' && <button type="button" className="pt-btn" data-tool="search" title="search /" aria-label="search" onClick={() => { setFind((f) => f ?? { q: '', pages: [], at: 0 }); setTimeout(() => findRef.current?.focus(), 0); }}><Icon name="search" /></button>}
         </div>
-        <h1>{titleOf(id, docs, root)}</h1>
         {(find || goto || looking || naming || chord || (portalFrom && active)) && (
           <div className="pdf-bar">
             {find && (
@@ -2144,7 +2180,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
               </>
             )}
             {chord && <span className="pb-n pb-wait" role="status" data-chord={chord}>{chord === 'set' ? 'mark…' : 'go to mark…'}</span>}
-            {portalFrom && active && <span className="pb-n pb-wait" role="status" data-portal="pending">portal: go to where it should show, ⇧P again</span>}
+            {portalFrom && active && <span className="pb-n pb-wait" role="status" data-portal="pending">{mobile ? 'portal: go to where it should show, then ⋯ · portal' : 'portal: go to where it should show, ⇧P again'}</span>}
             {looking && <span className="pb-n" role="status">looking</span>}
           </div>
         )}

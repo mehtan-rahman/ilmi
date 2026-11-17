@@ -129,7 +129,7 @@ notes/
   wherever a PDF's hash does. What is written on its sheets is in
   `.ilmi/ink/<id>/<sheet>.pkdrawing`, a `PKDrawing` a sheet, named by the
   sheet's own number (§3 `sheets`), in the sheet's points from its top left
-  (612 by 792); the passages kept on its sheets are entries of
+  (612 by 792, unless the notebook's page setup says another size, §3); the passages kept on its sheets are entries of
   `.ilmi/marks/<id>.json`, in the shape below, their `page` and the page of
   each box the sheet's number. Both follow the id, not the file's name or
   place: a notebook renamed or moved keeps them. A notebook deleted leaves
@@ -414,6 +414,12 @@ dropped, with a diagnostic.
 | `written`      | 32 lower-case hex digits    |           | the document is a written notebook, and this is its id (written notes, below) |
 | `paper`        | `blank` `ruled` `grid` `dotted` | `blank` | what a written notebook's sheets are ruled with                    |
 | `sheets`       | whole numbers from 1, a space between | `1` | a written notebook's sheets, in order, each by its own number  |
+| `paper-rule`   | points, 8 to 72             | 24 ruled, 20 grid and dotted | how far apart a notebook's rules, grid lines or dots are |
+| `paper-margin` | points, 18 to 300           |           | where a ruled notebook's margin rule stands from the left edge; none without it |
+| `paper-top`    | points, 0 to 300            | 72        | how far down a ruled sheet the first rule is                       |
+| `paper-size`   | `a4`                        | Letter    | the size of a notebook's sheets                                    |
+| `paper-turn`   | `landscape`                 | upright   | a notebook's sheets lie on their side                              |
+| `pageless`     | `true`                      |           | a notebook's sheets run on as one, with nothing between them       |
 
 **Type.** A `note` is the person's own writing: editable, cards anywhere in
 it, no schedule unless asked. A `source` is what someone else wrote, read
@@ -522,12 +528,66 @@ new notebook. `sheets` is the notebook's pages in order, each a whole
 number from 1 that names the sheet for good, a space between, none twice;
 absent it is `1`. Strokes and boxes name a sheet by its number, not by
 where it lies, so taking a sheet out moves nothing: `sheets: 1 3` after the
-second is deleted. A new sheet takes one past the highest number there.
+second is deleted. A new sheet takes one past the highest number there,
+wherever among the others it is put: at the end, after another, or as a
+copy after the sheet it copies (its strokes copied under the new number),
+so the numbers need not rise along the list (`sheets: 1 4 2 3`). A sheet
+moved among the others changes its place in the list and nothing else.
 Deleting a sheet takes its number out of `sheets`, its drawing and the
 passages with a box on it; a notebook keeps at least one sheet. A `paper`
 or `sheets` that is not in its grammar is kept as a raw line with a
-diagnostic, and the default stands in. Every sheet is portrait Letter, 612
-by 792 points. `paper` and `sheets` mean nothing without `written`.
+diagnostic, and the default stands in. `paper` and `sheets` mean nothing
+without `written`.
+
+A notebook's page setup (milestone 85) is six more fields, each optional,
+each meaning nothing without `written`, and a notebook with none of them is
+what it was before there were any: portrait Letter sheets, 612 by 792
+points, a rule every 24 points from 72 down on ruled paper, a grid or dots
+every 20.
+
+```
+---
+written: 5b0c7e1a9d3f4e26b8a1c0d2e4f60718
+paper: ruled
+sheets: 1 2 3
+paper-rule: 20.25
+paper-margin: 90
+paper-top: 56.69
+paper-size: a4
+paper-turn: landscape
+pageless: true
+---
+```
+
+`paper-rule`, `paper-margin` and `paper-top` are lengths in points (a 72nd
+of an inch), written with at most two decimals and no unit. `paper-rule` is
+how far apart the rules of ruled paper, the lines of a grid or the dots of
+dotted paper are, 8 to 72; a grid and dots are centred on the sheet, half
+of what is left over at each edge. `paper-margin` is how far from the left
+edge a ruled sheet's margin rule stands, 18 to 300; absent, there is no
+margin rule. `paper-top` is how far down a ruled sheet its first rule is, 0
+to 300; the last rule leaves a rule's room at the foot. `paper-size: a4`
+makes every sheet 595 by 842 points; `paper-turn: landscape` lays the
+sheets on their side (792 by 612, 842 by 595). The only values are `a4`,
+`landscape` and `true`: Letter, upright and paged are said by leaving the
+field out. A value outside its grammar or its range is kept as a raw line
+with a diagnostic, and the default stands in.
+
+`pageless: true` changes how the sheets are shown and nothing about what
+they are. They are still the sheets `sheets` lists, each the notebook's
+size, each with its own strokes and boxes; they are drawn one under
+another with nothing between, as one long sheet, and the ruling of each
+carries on from the one before (the long sheet's rules, lines or dots,
+counted from its top). A stroke belongs to the sheet it began on, in that
+sheet's points, and may run past that sheet's foot onto the next: a reader
+draws a pageless sheet's strokes down to half a sheet below it. The long
+sheet grows by a sheet as it is written near its end. Taking `pageless`
+away, or putting it on a notebook already written in, moves no stroke.
+
+What is written is kept in a sheet's points from its top left (§1), so no
+field of the page setup moves it: another spacing or margin moves the
+paper under the ink, and on a sheet made smaller or turned, strokes past
+the new edge are kept and not shown.
 
 A notebook has no `type`: it is a note. It opens as its sheets, as a PDF on
 its own opens as its pages. Its body is kept as written and not shown; the
@@ -1297,10 +1357,9 @@ fixes the file. That is intended.
 - Ink anywhere but a written notebook's sheets, a PDF's pages (both under
   `.ilmi/ink/`, §1) and the pages of ink a typed note already holds (§4):
   in a card's face, or among a typed note's lines.
-- A written notebook's sheets in any size but portrait Letter, and text
-  recognised from what is written: to type up what is written, a typed note
-  is attached to the notebook (§3). `sheets` may be in any order; the app
-  only adds at the end and takes out.
+- A written notebook's sheets in any size but Letter and A4, sheets of two
+  sizes in one notebook, and text recognised from what is written: to type
+  up what is written, a typed note is attached to the notebook (§3).
 - Anything written into a PDF: highlights are the extracts' stored text,
   found again on the page; annotations stay in the Markdown.
 

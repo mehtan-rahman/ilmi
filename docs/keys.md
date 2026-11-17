@@ -96,8 +96,10 @@ in a book        a document with pages: a PDF, a chapter of one, a written
                  right-click on a selection: passage, card, search the web,
                  search scholar (in the browser);
                  ⌘= ⌘− zoom the pages in and out (fit, 125%, 150%, 200%,
-                 250%, 300%), ⌘0 back to fit, a pinch on a trackpad or of
-                 two fingers on the glass steps once; a book's zoom is kept
+                 250%, 300%, 400%), ⌘0 back to fit, a pinch on a trackpad
+                 steps once; two fingers on the glass zoom to wherever they
+                 stop; where pages are written on, two fingers tapped are
+                 undo and three redo; a book's zoom is kept
                  for the device; with the caret in the notes they are the
                  text size;
                  b a bookmark at the place in view: name it in the bar,

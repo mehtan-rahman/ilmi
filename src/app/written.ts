@@ -2,9 +2,11 @@
 // `written` field (FORMAT.md §3, *Written notes*) opens as its sheets in the
 // `Pdf` lens, and its id stands wherever a PDF's SHA-256 does: its strokes
 // are the store's page ink under `p.<id>.<sheet>`, its passages entries of
-// `.ilmi/marks/<id>.json`. Here: making one, its sheets and its paper.
+// `.ilmi/marks/<id>.json`. Here: making one, its sheets (added at the end
+// or after another, taken out, made again, moved: milestone 85) and its paper.
 
-import { PAPERS, meta, pagesLabel, parseBoxes, setField, type Box, type PaperKind } from '../format/index.js';
+import { PAPERS, PAPER_MARGIN_RANGE, PAPER_RULE_RANGE, PAPER_TOP_RANGE, meta, pagesLabel, parseBoxes, setField, type Box, type PaperKind, type WrittenMeta } from '../format/index.js';
+import { RULE_TOP, ruleOf } from './paper.js';
 import { passageMarksOf } from '../pdf/index.js';
 import { isPdfPath, newId, passageId, type InkStroke, type PassageMark, type StoreFs } from '../vault/index.js';
 import { askNote, loadMarks, openNotes, setMark } from './book.js';
@@ -56,8 +58,12 @@ function inkOf(): Pick<StoreFs, 'pageInk' | 'setPageInk'> | null {
 const wrote = (): void => { void import('./crdt.js').then((m) => m.crdtWrote(), () => {}); };
 
 /** A new notebook named `name` in `dir`, one sheet, ruled; attached to `pdf` (vault-relative) when given. Its path. */
-export function createWritten(dir: string, name: string, pdf?: string): Promise<string> {
-  return need().createWritten(dir, name, newId(), pdf);
+export async function createWritten(dir: string, name: string, pdf?: string): Promise<string> {
+  const path = await need().createWritten(dir, name, newId(), pdf);
+  // with the page setup this device keeps for new notebooks, when it keeps one
+  const mine = defaultSetup();
+  if (mine) await setSetup(path, mine).catch(console.error);
+  return path;
 }
 
 /** Until the app's docs show the notebook at `path` (the tree walked, the index told), so what opens next opens as its sheets. Resolves to `path`. */
@@ -80,6 +86,66 @@ export async function addSheet(path: string): Promise<number> {
     setField(doc, 'sheets', [...w.sheets, made]);
   });
   return made;
+}
+
+/** One more sheet after `after` (one of the notebook's sheets); at the end when that is not there. Its number. */
+export async function addSheetAfter(path: string, after: number): Promise<number> {
+  let made = 0;
+  await need().update(path, (doc) => {
+    const w = meta(doc).written;
+    if (!w) throw new Error(`${path}: not written notes`);
+    made = nextSheet(w.sheets);
+    setField(doc, 'sheets', sheetsWith(w.sheets, made, after));
+  });
+  return made;
+}
+
+/** `sheets` with `made` put in after `after`; at the end when `after` is not among them. */
+export function sheetsWith(sheets: readonly number[], made: number, after: number): number[] {
+  const at = sheets.indexOf(after);
+  const out = [...sheets];
+  out.splice(at < 0 ? out.length : at + 1, 0, made);
+  return out;
+}
+
+/** `sheets` with `sheet` moved to lie at `place` (from 1) among them; as they are when it is not one of them. */
+export function sheetsMoved(sheets: readonly number[], sheet: number, place: number): number[] {
+  if (!sheets.includes(sheet)) return [...sheets];
+  const rest = sheets.filter((n) => n !== sheet);
+  rest.splice(Math.max(0, Math.min(rest.length, place - 1)), 0, sheet);
+  return rest;
+}
+
+/**
+ * A sheet again, right after itself: a new sheet with a number of its own
+ * and a copy of the strokes (the passages kept from the first stay the
+ * first's). Its number.
+ */
+export async function duplicateSheet(path: string, sheet: number): Promise<number> {
+  const ink = inkOf();
+  let id = '';
+  let made = 0;
+  await need().update(path, (doc) => {
+    const w = meta(doc).written;
+    if (!w) throw new Error(`${path}: not written notes`);
+    if (!w.sheets.includes(sheet)) throw new Error(`${path}: no sheet ${sheet}`);
+    id = w.id;
+    made = nextSheet(w.sheets);
+    setField(doc, 'sheets', sheetsWith(w.sheets, made, sheet));
+  });
+  const strokes: InkStroke[] = ink ? await ink.pageInk(id, sheet) : [];
+  if (ink && strokes.length) { await ink.setPageInk(id, made, strokes); wrote(); }
+  return made;
+}
+
+/** A sheet moved to lie at `place` (from 1) among the notebook's sheets: nothing of it changes but where it lies. */
+export async function moveSheet(path: string, sheet: number, place: number): Promise<void> {
+  await need().update(path, (doc) => {
+    const w = meta(doc).written;
+    if (!w) throw new Error(`${path}: not written notes`);
+    const next = sheetsMoved(w.sheets, sheet, place);
+    if (next.join(' ') !== w.sheets.join(' ')) setField(doc, 'sheets', next);
+  });
 }
 
 /**
@@ -128,6 +194,73 @@ export async function removeSheet(path: string, sheet: number): Promise<() => Pr
     }
     for (const m of gone) await setMark(id, passageId(m.boxes), m);
   };
+}
+
+/** A notebook's page setup, as it is chosen: each as the front-matter has it, null for what it does not say. */
+export interface Setup {
+  paper: PaperKind;
+  rule: number | null;
+  margin: number | null;
+  top: number | null;
+  size: 'a4' | null;
+  turn: 'landscape' | null;
+  pageless: boolean;
+}
+
+/** A notebook's page setup. */
+export const setupOf = (w: WrittenMeta): Setup => ({ paper: w.paper, rule: w.rule ?? null, margin: w.margin ?? null, top: w.top ?? null, size: w.size ?? null, turn: w.turn ?? null, pageless: !!w.pageless });
+
+/**
+ * Some of a notebook's page setup changed (milestone 85). Only the paper
+ * moves: what is written is kept in the sheet's points from its top left
+ * and stays where it is, under a new ruling, on a sheet of another size, or
+ * on sheets that run on as one. A measure that is what the paper has anyway
+ * is not written: the file says only what was chosen.
+ */
+export async function setSetup(path: string, change: Partial<Setup>): Promise<void> {
+  await need().update(path, (doc) => {
+    const w = meta(doc).written;
+    if (!w) throw new Error(`${path}: not written notes`);
+    const next = { ...setupOf(w), ...change };
+    const points = (v: number | null, range: readonly [number, number]): number | null => (v === null || !Number.isFinite(v) ? null : Math.round(Math.min(range[1], Math.max(range[0], v)) * 100) / 100);
+    setField(doc, 'paper', next.paper);
+    const rule = points(next.rule, PAPER_RULE_RANGE);
+    setField(doc, 'paper-rule', next.paper === 'blank' || rule === null || rule === ruleOf(next.paper) ? null : rule);
+    setField(doc, 'paper-margin', next.paper === 'ruled' ? points(next.margin, PAPER_MARGIN_RANGE) : null);
+    const top = points(next.top, PAPER_TOP_RANGE);
+    setField(doc, 'paper-top', next.paper !== 'ruled' || top === null || top === RULE_TOP ? null : top);
+    setField(doc, 'paper-size', next.size);
+    setField(doc, 'paper-turn', next.turn);
+    setField(doc, 'pageless', next.pageless ? true : null);
+  });
+}
+
+/** Where this device keeps the page setup its new notebooks start with. */
+export const SETUP_KEY = 'ilmi.paper';
+
+/** A page setup read back from what was kept: anything it says wrongly is as a new notebook has it. */
+export function parseSetup(raw: string | null | undefined): Setup | null {
+  if (!raw) return null;
+  try {
+    const t = JSON.parse(raw) as Partial<Setup> | null;
+    if (!t || typeof t !== 'object') return null;
+    const n = (v: unknown, range: readonly [number, number]): number | null => (typeof v === 'number' && Number.isFinite(v) && v >= range[0] && v <= range[1] ? v : null);
+    return {
+      paper: PAPERS.includes(t.paper as PaperKind) ? (t.paper as PaperKind) : 'ruled',
+      rule: n(t.rule, PAPER_RULE_RANGE), margin: n(t.margin, PAPER_MARGIN_RANGE), top: n(t.top, PAPER_TOP_RANGE),
+      size: t.size === 'a4' ? 'a4' : null, turn: t.turn === 'landscape' ? 'landscape' : null, pageless: t.pageless === true,
+    };
+  } catch { return null; }
+}
+
+/** The page setup this device's new notebooks start with; null when none was kept (a ruled Letter sheet). */
+export function defaultSetup(): Setup | null {
+  try { return parseSetup(globalThis.localStorage?.getItem(SETUP_KEY)); } catch { return null; }
+}
+
+/** `use for new notebooks`: this page setup is what notebooks made on this device from now on start with. */
+export function keepSetup(s: Setup): void {
+  try { globalThis.localStorage?.setItem(SETUP_KEY, JSON.stringify(s)); } catch { /* no storage: nothing is kept */ }
 }
 
 /** The notebook's paper. */

@@ -584,10 +584,10 @@ fn store_ink_pages(app: tauri::AppHandle, stores: tauri::State<'_, store::Stores
     stores.ink_pages(&collection_dir(&app, &root)?, &prefix)
 }
 
-/// The writing on a book's page, made from its strokes: `drawing` (what the canvas opens) or `picture` (a PNG of the whole page, `w` by `h` points, on nothing).
+/// The writing on a book's page, made from its strokes: `drawing` (what the canvas opens) or `picture` (a PNG of the whole page, `w` by `h` points, on nothing, `scale` pixels to the point: 2 when not said, never more than 6).
 #[tauri::command(async)]
-fn store_ink_page(app: tauri::AppHandle, stores: tauri::State<'_, store::Stores>, root: String, page: String, what: String, w: f64, h: f64) -> Result<tauri::ipc::Response, String> {
-    stores.ink_page(&collection_dir(&app, &root)?, &page, &what, w, h).map(tauri::ipc::Response::new)
+fn store_ink_page(app: tauri::AppHandle, stores: tauri::State<'_, store::Stores>, root: String, page: String, what: String, w: f64, h: f64, scale: Option<f64>) -> Result<tauri::ipc::Response, String> {
+    stores.ink_page(&collection_dir(&app, &root)?, &page, &what, w, h, scale.unwrap_or(2.0)).map(tauri::ipc::Response::new)
 }
 
 /// Dev only: a made-up drawing (base64), `lines` lines of `per` strokes from `seed`, as PencilKit writes one. A Mac has no canvas, and a check there writes on a page with this.
@@ -625,8 +625,8 @@ async fn ink_scene(ink: tauri::State<'_, tauri_plugin_ink::Ink<tauri::Wry>>, sce
 
 /// What a sheet holds, from the store.
 #[tauri::command]
-async fn ink_fill(ink: tauri::State<'_, tauri_plugin_ink::Ink<tauri::Wry>>, sheet: String, drawing: Option<String>) -> Result<serde_json::Value, String> {
-    ink.fill(&sheet, drawing.as_deref()).await
+async fn ink_fill(ink: tauri::State<'_, tauri_plugin_ink::Ink<tauri::Wry>>, sheet: String, drawing: Option<String>, show: Option<bool>) -> Result<serde_json::Value, String> {
+    ink.fill(&sheet, drawing.as_deref(), show.unwrap_or(false)).await
 }
 
 /// A sheet's drawing, when it has changed.
@@ -722,6 +722,120 @@ async fn dev_ink_wipe(ink: tauri::State<'_, tauri_plugin_ink::Ink<tauri::Wry>>, 
         return Err("a dev run's".to_string());
     }
     ink.wipe(&sheet).await
+}
+
+/// What this device's PencilKit can do (milestone 85): `{ inks: { name: [least, most] }, squeeze }`.
+#[tauri::command]
+async fn ink_caps(ink: tauri::State<'_, tauri_plugin_ink::Ink<tauri::Wry>>) -> Result<serde_json::Value, String> {
+    ink.caps().await
+}
+
+/// Two fingers pinch the pages of `host`: `{ host, k, dx, dy }`, its sheets shown at `k * p + (dx, dy)` until the page lays them out anew; no `k` puts them back.
+#[tauri::command]
+async fn ink_pinch(ink: tauri::State<'_, tauri_plugin_ink::Ink<tauri::Wry>>, pinch: serde_json::Value) -> Result<(), String> {
+    ink.pinch(pinch).await
+}
+
+/// What the lasso holds: `cut`, `copy`, `duplicate`, `delete`, or `color` with a colour. `{ selected, clip }` after.
+#[tauri::command]
+async fn ink_selection(ink: tauri::State<'_, tauri_plugin_ink::Ink<tauri::Wry>>, op: String, color: Option<String>) -> Result<serde_json::Value, String> {
+    ink.selection(&op, color.as_deref()).await
+}
+
+/// What was cut or copied, put down on a sheet with its middle at `x`, `y` of its host's content.
+#[tauri::command]
+async fn ink_paste(ink: tauri::State<'_, tauri_plugin_ink::Ink<tauri::Wry>>, sheet: String, x: f64, y: f64) -> Result<serde_json::Value, String> {
+    ink.paste(&sheet, x, y).await
+}
+
+/// One page of what `pages_pdf` writes: its size in points, the paper a notebook's sheet is (`blank`, `ruled`,
+/// `grid`, `dotted`), or the page of a PDF it is (`source`, counted from 1), and the page of ink on it.
+#[derive(serde::Deserialize)]
+struct PdfPage {
+    w: f64,
+    h: f64,
+    paper: Option<String>,
+    source: Option<u32>,
+    ink: Option<String>,
+    /// A notebook's page setup, in points, where it says them; `at` where a pageless notebook's piece begins on its
+    /// long sheet; `above` the page of ink on the sheet before it, which may run on over this one.
+    rule: Option<f64>,
+    margin: Option<f64>,
+    top: Option<f64>,
+    at: Option<f64>,
+    above: Option<String>,
+}
+
+/// A notebook's sheets, or a PDF's pages with what is written on them, as one PDF (milestone 85): written beside
+/// the app's other passing files (or at `out`, a place chosen for it) and its path said. The paper and a PDF's own page are drawn as they are (lines,
+/// text), the ink over them as a picture of each page at four times its points. `pdf` is the hash of the PDF the pages are of.
+#[tauri::command(async)]
+fn pages_pdf(app: tauri::AppHandle, stores: tauri::State<'_, store::Stores>, root: String, name: String, pdf: Option<String>, pages: Vec<PdfPage>, out: Option<String>) -> Result<String, String> {
+    use tauri::Manager as _;
+    let dir = collection_dir(&app, &root)?;
+    let mut made = Vec::with_capacity(pages.len());
+    for p in &pages {
+        let strokes = match &p.ink { Some(key) => stores.ink_strokes(&dir, key)?, None => Vec::new() };
+        let above = match &p.above { Some(key) => stores.ink_strokes(&dir, key)?, None => Vec::new() };
+        made.push(tauri_plugin_ink::PdfPage { w: p.w, h: p.h, paper: p.paper.clone(), source: p.source, strokes, rule: p.rule, margin: p.margin, top: p.top, at: p.at, above });
+    }
+    let folder = app.path().temp_dir().map_err(|e| e.to_string())?.join("ilmi-share");
+    std::fs::create_dir_all(&folder).map_err(|e| e.to_string())?;
+    let safe: String = name.chars().map(|c| if c == '/' || c == ':' || c == '\\' { '-' } else { c }).collect();
+    let path = folder.join(format!("{}.pdf", if safe.trim().is_empty() { "pages" } else { safe.trim() }));
+    // a place chosen for it (the Mac's save dialog) is where it goes
+    let path = out.map(std::path::PathBuf::from).unwrap_or(path);
+    // the PDF the pages are of is a blob of the collection, named by its hash
+    let source = match &pdf {
+        Some(hash) if hash.len() >= 2 && hash.chars().all(|c| c.is_ascii_hexdigit()) => Some(dir.join("blobs").join(&hash[..2]).join(hash)),
+        Some(_) => return Err("not a pdf of this collection".to_string()),
+        None => None,
+    };
+    tauri_plugin_ink::pages_pdf(&made, source.as_ref().map(|p| p.to_string_lossy()).as_deref(), &path.to_string_lossy())?;
+    Ok(path.to_string_lossy().into_owned())
+}
+
+/// The system's share sheet for a file `pages_pdf` wrote, from `at` on the page (an iPad's, a phone's): `{ done }` when it closes.
+#[tauri::command]
+async fn ink_share(ink: tauri::State<'_, tauri_plugin_ink::Ink<tauri::Wry>>, path: String, at: serde_json::Value) -> Result<serde_json::Value, String> {
+    ink.share(&path, at).await
+}
+
+/// A dev run's: the share sheet closed with nothing chosen.
+#[tauri::command]
+async fn dev_ink_unshare(ink: tauri::State<'_, tauri_plugin_ink::Ink<tauri::Wry>>) -> Result<(), String> {
+    if !cfg!(debug_assertions) {
+        return Err("a dev run's".to_string());
+    }
+    ink.unshare().await
+}
+
+/// A dev run's: the Pencil tapped twice (`tap`) or squeezed, which no simulator has.
+#[tauri::command]
+async fn dev_ink_pencil(ink: tauri::State<'_, tauri_plugin_ink::Ink<tauri::Wry>>, what: String) -> Result<(), String> {
+    if !cfg!(debug_assertions) {
+        return Err("a dev run's".to_string());
+    }
+    ink.pencil(&what).await
+}
+
+/// A dev run's: a stroke through `points` of a sheet's drawing in the ink held, ended with the Pencil resting or not.
+#[tauri::command]
+async fn dev_ink_stroke(ink: tauri::State<'_, tauri_plugin_ink::Ink<tauri::Wry>>, sheet: String, points: serde_json::Value, rest: bool) -> Result<(), String> {
+    if !cfg!(debug_assertions) {
+        return Err("a dev run's".to_string());
+    }
+    ink.stroke(&sheet, points, rest).await
+}
+
+/// A dev run's: how many pages a PDF file has, and its first page's size in points; what `pages_pdf` wrote is read back with it.
+#[tauri::command(async)]
+fn dev_pdf_info(path: String) -> Result<(u32, f64, f64, u64), String> {
+    if !cfg!(debug_assertions) {
+        return Err("a dev run's".to_string());
+    }
+    let (n, w, h) = tauri_plugin_ink::pdf_info(&path)?;
+    Ok((n, w, h, std::fs::metadata(&path).map_err(|e| e.to_string())?.len()))
 }
 
 /// How the canvases stand, for the checks.
@@ -1138,7 +1252,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_ink::init())
         .manage(store::Stores::default())
-        .invoke_handler(tauri::generate_handler![allow_vault, allow_hidden, read_dropped, read_dropped_bytes, read_anki_package, read_epub, read_plugin_zip, platform, dev_env, dev_web_memory, dev_web_processes, dev_nudge_serve, dev_nudge_drop, dev_nudge_listeners, set_recent_vaults, store_list, store_create, store_delete, store_held, store_rename, store_counts, store_rows, store_text, store_put, store_remove, store_version, store_set_version, store_doc, store_places, store_digests, store_search, store_search_state, store_search_walk, store_review_files, store_reviews, store_reviews_put, store_same, store_same_put, store_originals, store_original_put, store_blob_put, store_blob_get, store_batch, store_meta, store_regs, store_regs_under, store_crdt, store_outbox, store_outbox_count, store_blob_has, store_regs_page, store_blobs_away, store_blob_take, store_blob_range, store_ink, store_ink_file, store_ink_pages, store_ink_page, dev_ink_sample, ink_split, ink_bounds, ink_scene, ink_fill, ink_take, ink_rest, ink_tool, ink_undo, ink_redo, ink_finger, ink_color, app_hold, app_haptic, dev_ink_pen, dev_ink_wipe, dev_ink_wheel, dev_ink_state, storage_list, storage_read, storage_write, storage_remove, storage_blob_up, storage_blob_down, dev_storage_serve, icloud_folder, icloud_down, oauth_sign_in, oauth_sign_out, oauth_back, oauth_signed_in, dev_cloud_stats, dev_cloud_revoke, zip_folder, sync_status, sync_init, sync_init_bare, sync_set_remote, sync_clone, sync_changes, sync_commit, sync_fetch, sync_merge, sync_resolve, sync_push])
+        .invoke_handler(tauri::generate_handler![allow_vault, allow_hidden, read_dropped, read_dropped_bytes, read_anki_package, read_epub, read_plugin_zip, platform, dev_env, dev_web_memory, dev_web_processes, dev_nudge_serve, dev_nudge_drop, dev_nudge_listeners, set_recent_vaults, store_list, store_create, store_delete, store_held, store_rename, store_counts, store_rows, store_text, store_put, store_remove, store_version, store_set_version, store_doc, store_places, store_digests, store_search, store_search_state, store_search_walk, store_review_files, store_reviews, store_reviews_put, store_same, store_same_put, store_originals, store_original_put, store_blob_put, store_blob_get, store_batch, store_meta, store_regs, store_regs_under, store_crdt, store_outbox, store_outbox_count, store_blob_has, store_regs_page, store_blobs_away, store_blob_take, store_blob_range, store_ink, store_ink_file, store_ink_pages, store_ink_page, dev_ink_sample, ink_split, ink_bounds, ink_scene, ink_fill, ink_take, ink_rest, ink_tool, ink_undo, ink_redo, ink_finger, ink_color, ink_caps, ink_pinch, ink_selection, ink_paste, ink_share, pages_pdf, dev_ink_unshare, dev_ink_pencil, dev_ink_stroke, dev_pdf_info, app_hold, app_haptic, dev_ink_pen, dev_ink_wipe, dev_ink_wheel, dev_ink_state, storage_list, storage_read, storage_write, storage_remove, storage_blob_up, storage_blob_down, dev_storage_serve, icloud_folder, icloud_down, oauth_sign_in, oauth_sign_out, oauth_back, oauth_signed_in, dev_cloud_stats, dev_cloud_revoke, zip_folder, sync_status, sync_init, sync_init_bare, sync_set_remote, sync_clone, sync_changes, sync_commit, sync_fetch, sync_merge, sync_resolve, sync_push])
         .setup(|app| {
             // the sign-ins to Dropbox and Google Drive are kept in the app's own folder, not a collection's
             if let Ok(dir) = app.path().app_data_dir() {

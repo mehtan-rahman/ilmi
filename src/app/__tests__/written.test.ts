@@ -154,6 +154,30 @@ describe('the index, by hand', () => {
     expect(written.PAPERS).toEqual(['blank', 'ruled', 'grid', 'dotted']);
     expect([written.SHEET_W, written.SHEET_H]).toEqual([612, 792]);
   });
+
+  it('a sheet put in after another, and one moved to another place', () => {
+    expect(written.sheetsWith([1, 3, 7], 8, 3)).toEqual([1, 3, 8, 7]);
+    expect(written.sheetsWith([1, 3, 7], 8, 7)).toEqual([1, 3, 7, 8]);
+    expect(written.sheetsWith([1, 3, 7], 8, 1)).toEqual([1, 8, 3, 7]);
+    // after one that is not there: at the end
+    expect(written.sheetsWith([1, 3, 7], 8, 2)).toEqual([1, 3, 7, 8]);
+    expect(written.sheetsWith([], 1, 1)).toEqual([1]);
+    // moved: the place is counted from 1, among them all
+    expect(written.sheetsMoved([1, 3, 7, 8], 8, 1)).toEqual([8, 1, 3, 7]);
+    expect(written.sheetsMoved([1, 3, 7, 8], 1, 3)).toEqual([3, 7, 1, 8]);
+    expect(written.sheetsMoved([1, 3, 7, 8], 1, 4)).toEqual([3, 7, 8, 1]);
+    expect(written.sheetsMoved([1, 3, 7, 8], 3, 2)).toEqual([1, 3, 7, 8]);
+    // past either end it is the end
+    expect(written.sheetsMoved([1, 3, 7], 3, 0)).toEqual([3, 1, 7]);
+    expect(written.sheetsMoved([1, 3, 7], 3, 99)).toEqual([1, 7, 3]);
+    // one that is not there moves nothing; what is given is never changed
+    const given = [1, 3, 7];
+    expect(written.sheetsMoved(given, 2, 1)).toEqual([1, 3, 7]);
+    expect(written.sheetsMoved(given, 2, 1)).not.toBe(given);
+    written.sheetsWith(given, 8, 1);
+    written.sheetsMoved(given, 7, 1);
+    expect(given).toEqual([1, 3, 7]);
+  });
 });
 
 describe('a notebook in a collection', () => {
@@ -400,5 +424,189 @@ describe('a notebook and a PDF', () => {
     expect(docs()[PDF]!.notes).toEqual(['books/typed.md']);
     expect(docs()[nb]!.pdf).toBe(nb);
     expect(docs()[nb]!.notes).toEqual(['plain.md']);
+  });
+});
+
+describe('a notebook\'s pages put in order', () => {
+  let nb: string;
+  let id: string;
+  const sheets = async () => (await front(nb)).written!.sheets;
+
+  it('a page added after another takes the next number and lies after it; after one that is not there, at the end', async () => {
+    nb = await written.createWritten('', 'ordered');
+    await written.whenKnown(nb);
+    id = (await front(nb)).written!.id;
+    expect(await written.addSheet(nb)).toBe(2);
+    expect(await written.addSheet(nb)).toBe(3);
+    expect(await written.addSheetAfter(nb, 1)).toBe(4);
+    expect(await sheets()).toEqual([1, 4, 2, 3]);
+    expect(await written.addSheetAfter(nb, 3)).toBe(5);
+    expect(await sheets()).toEqual([1, 4, 2, 3, 5]);
+    expect(await written.addSheetAfter(nb, 9)).toBe(6);
+    expect(await sheets()).toEqual([1, 4, 2, 3, 5, 6]);
+    expect(await text(nb)).toBe(`---\nwritten: ${id}\npaper: ruled\nsheets: 1 4 2 3 5 6\n---\n`);
+    await until(() => docs()[nb]?.written?.sheets.join() === '1,4,2,3,5,6', 'the index has them in that order');
+    const plain = await text('plain.md');
+    await expect(written.addSheetAfter('plain.md', 1)).rejects.toThrow('not written notes');
+    expect(await text('plain.md')).toBe(plain);
+  });
+
+  it('a page made again lies right after itself under a number of its own, with a copy of the strokes', async () => {
+    await mem.setPageInk(id, 4, [stroke(1), stroke(2)]);
+    told = 0;
+    expect(await written.duplicateSheet(nb, 4)).toBe(7);
+    expect(await sheets()).toEqual([1, 4, 7, 2, 3, 5, 6]);
+    expect(await mem.pageInk(id, 7)).toEqual(await mem.pageInk(id, 4));
+    expect((await mem.pageInk(id, 7)).map((s) => s.stroke).sort()).toEqual(['s1', 's2']);
+    await until(() => told === 1, 'the sync is told of the strokes');
+    // each is its own from then on
+    await mem.setPageInk(id, 7, [stroke(1)]);
+    expect(await mem.pageInk(id, 4)).toHaveLength(2);
+    // a bare page made again is one more bare page, and the sync hears of no strokes
+    told = 0;
+    expect(await written.duplicateSheet(nb, 6)).toBe(8);
+    expect(await sheets()).toEqual([1, 4, 7, 2, 3, 5, 6, 8]);
+    expect(await mem.pageInk(id, 8)).toEqual([]);
+    expect(await mem.inkedPages(id)).toEqual([4, 7]);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(told).toBe(0);
+    // one that is not there, and a note that is no notebook: nothing
+    await expect(written.duplicateSheet(nb, 99)).rejects.toThrow('no sheet 99');
+    await expect(written.duplicateSheet('plain.md', 1)).rejects.toThrow('not written notes');
+    expect(await sheets()).toEqual([1, 4, 7, 2, 3, 5, 6, 8]);
+  });
+
+  it('a passage kept on a page stays the first one\'s when the page is made again', async () => {
+    const kept = await passages.keepPassage(nb, [{ page: 4, x: 0.1, y: 0.2, w: 0.5, h: 0.1 }]);
+    const made = await written.duplicateSheet(nb, 4);
+    expect(made).toBe(9);
+    expect(Object.keys(parseMarks(await text(marksPath(id))))).toEqual([`s-${kept!.boxes}`]);
+    expect((await mem.pageInk(id, 9)).map((s) => s.stroke).sort()).toEqual(['s1', 's2']);
+    await passages.putPassage(id, kept!.boxes, null);
+    await written.removeSheet(nb, 9);
+    expect(await sheets()).toEqual([1, 4, 7, 2, 3, 5, 6, 8]);
+  });
+
+  it('a page moved changes nothing but where it lies', async () => {
+    const was = await mem.pageInk(id, 4);
+    await written.moveSheet(nb, 8, 1);
+    expect(await sheets()).toEqual([8, 1, 4, 7, 2, 3, 5, 6]);
+    await written.moveSheet(nb, 4, 8);
+    expect(await sheets()).toEqual([8, 1, 7, 2, 3, 5, 6, 4]);
+    await written.moveSheet(nb, 4, 3);
+    expect(await sheets()).toEqual([8, 1, 4, 7, 2, 3, 5, 6]);
+    expect(await mem.pageInk(id, 4)).toEqual(was);
+    expect(await mem.inkedPages(id)).toEqual([4, 7]);
+    await until(() => docs()[nb]?.written?.sheets.join() === '8,1,4,7,2,3,5,6', 'the index has the order');
+    // to where it lies already, and a sheet that is not there: the file is not written
+    const before = await text(nb);
+    await written.moveSheet(nb, 4, 3);
+    await written.moveSheet(nb, 99, 1);
+    expect(await text(nb)).toBe(before);
+    await expect(written.moveSheet('plain.md', 1, 2)).rejects.toThrow('not written notes');
+  });
+});
+
+describe('a notebook\'s page setup', () => {
+  let nb: string;
+  let id: string;
+  const NEW = { paper: 'ruled', rule: null, margin: null, top: null, size: null, turn: null, pageless: false } as const;
+  const head = (lines: string[]) => ['---', `written: ${id}`, ...lines, '---', ''].join('\n');
+
+  it('is what its file says, and nothing where the file says nothing', async () => {
+    nb = await written.createWritten('', 'set up');
+    await written.whenKnown(nb);
+    id = (await front(nb)).written!.id;
+    expect(written.setupOf((await front(nb)).written!)).toEqual(NEW);
+    expect(written.setupOf({ id, paper: 'grid', sheets: [1], rule: 30, margin: 90, top: 100, size: 'a4', turn: 'landscape', pageless: true })).toEqual({ paper: 'grid', rule: 30, margin: 90, top: 100, size: 'a4', turn: 'landscape', pageless: true });
+  });
+
+  it('changed, the file says only what was chosen: a measure the paper has anyway is not written', async () => {
+    await written.setSetup(nb, { rule: 18 });
+    expect(await text(nb)).toBe(head(['paper: ruled', 'sheets: 1', 'paper-rule: 18']));
+    // the rest of it is as it was
+    await written.setSetup(nb, { margin: 90, top: 100 });
+    expect((await front(nb)).written).toEqual({ id, paper: 'ruled', sheets: [1], rule: 18, margin: 90, top: 100 });
+    await until(() => docs()[nb]?.written?.margin === 90, 'the index has the setup');
+    // wide again, an inch down: what a ruled sheet has anyway
+    await written.setSetup(nb, { rule: 24, top: 72 });
+    expect((await front(nb)).written).toEqual({ id, paper: 'ruled', sheets: [1], margin: 90 });
+    await written.setSetup(nb, { size: 'a4', turn: 'landscape', pageless: true });
+    expect((await front(nb)).written).toEqual({ id, paper: 'ruled', sheets: [1], margin: 90, size: 'a4', turn: 'landscape', pageless: true });
+    await written.setSetup(nb, { size: null, turn: null, pageless: false, margin: null });
+    expect(await text(nb)).toBe(head(['paper: ruled', 'sheets: 1']));
+  });
+
+  it('a margin and the room at the top are a ruled sheet\'s alone; a grid\'s spacing is its own; blank paper has none', async () => {
+    await written.setSetup(nb, { rule: 30, margin: 90, top: 100 });
+    await written.setSetup(nb, { paper: 'grid' });
+    expect((await front(nb)).written).toEqual({ id, paper: 'grid', sheets: [1], rule: 30 });
+    // a grid's own pitch is not written
+    await written.setSetup(nb, { rule: 20 });
+    expect(await text(nb)).toBe(head(['paper: grid', 'sheets: 1']));
+    await written.setSetup(nb, { paper: 'dotted', rule: 28.35, margin: 90 });
+    expect((await front(nb)).written).toEqual({ id, paper: 'dotted', sheets: [1], rule: 28.35 });
+    await written.setSetup(nb, { paper: 'blank' });
+    expect(await text(nb)).toBe(head(['paper: blank', 'sheets: 1']));
+    await written.setSetup(nb, { paper: 'ruled' });
+    expect(await text(nb)).toBe(head(['paper: ruled', 'sheets: 1']));
+  });
+
+  it('a measure is held to what it may be, to a hundredth of a point', async () => {
+    await written.setSetup(nb, { rule: 3, margin: 5, top: 999 });
+    expect((await front(nb)).written).toMatchObject({ rule: 8, margin: 18, top: 300 });
+    await written.setSetup(nb, { rule: 500, margin: 500, top: -4 });
+    expect((await front(nb)).written).toMatchObject({ rule: 72, margin: 300, top: 0 });
+    await written.setSetup(nb, { rule: 19.8444, margin: 77.777, top: Number.NaN });
+    expect(await text(nb)).toBe(head(['paper: ruled', 'sheets: 1', 'paper-rule: 19.84', 'paper-margin: 77.78']));
+    await written.setSetup(nb, NEW);
+    expect(await text(nb)).toBe(head(['paper: ruled', 'sheets: 1']));
+  });
+
+  it('what is written stays where it is, and the sheets as they were; a note that is no notebook is not touched', async () => {
+    await written.addSheet(nb);
+    await mem.setPageInk(id, 2, [stroke(1)]);
+    await written.setSetup(nb, { paper: 'grid', size: 'a4', pageless: true });
+    expect((await front(nb)).written!.sheets).toEqual([1, 2]);
+    expect((await mem.pageInk(id, 2)).map((s) => s.stroke)).toEqual(['s1']);
+    await written.setSetup(nb, NEW);
+    const plain = await text('plain.md');
+    await expect(written.setSetup('plain.md', { paper: 'grid' })).rejects.toThrow('not written notes');
+    expect(await text('plain.md')).toBe(plain);
+  });
+
+  it('the setup kept for this device\'s new notebooks is read back, and what it says wrongly is as a new notebook has it', () => {
+    expect(written.parseSetup(null)).toBeNull();
+    expect(written.parseSetup('')).toBeNull();
+    expect(written.parseSetup('not json')).toBeNull();
+    expect(written.parseSetup('null')).toBeNull();
+    expect(written.parseSetup('3')).toBeNull();
+    const kept = { paper: 'dotted', rule: 28.35, margin: 90, top: 100, size: 'a4', turn: 'landscape', pageless: true };
+    expect(written.parseSetup(JSON.stringify(kept))).toEqual(kept);
+    expect(written.parseSetup('{}')).toEqual(NEW);
+    expect(written.parseSetup(JSON.stringify({ paper: 'lined', rule: 2, margin: 'wide', top: 999, size: 'letter', turn: 'portrait', pageless: 'yes' }))).toEqual(NEW);
+  });
+
+  it('`use for new notebooks`: a notebook made on this device from then on starts with it; with none kept, ruled Letter', async () => {
+    expect(written.SETUP_KEY).toBe('ilmi.paper');
+    localStorage.removeItem(written.SETUP_KEY);
+    expect(written.defaultSetup()).toBeNull();
+    try {
+      written.keepSetup({ ...NEW, paper: 'grid', rule: 28.35, size: 'a4' });
+      expect(JSON.parse(localStorage.getItem(written.SETUP_KEY)!)).toEqual({ ...NEW, paper: 'grid', rule: 28.35, size: 'a4' });
+      expect(written.defaultSetup()).toEqual({ ...NEW, paper: 'grid', rule: 28.35, size: 'a4' });
+      const made = await written.createWritten('', 'started so');
+      const m = (await front(made)).written!;
+      expect(m).toEqual({ id: m.id, paper: 'grid', sheets: [1], rule: 28.35, size: 'a4' });
+      // the notebook it was kept from is not changed by it, nor is one there already
+      expect((await front(nb)).written).toEqual({ id, paper: 'ruled', sheets: [1, 2] });
+      await removeNode(made);
+    } finally {
+      localStorage.removeItem(written.SETUP_KEY);
+    }
+    const plainly = await written.createWritten('', 'started plainly');
+    const m = (await front(plainly)).written!;
+    expect(m).toEqual({ id: m.id, paper: 'ruled', sheets: [1] });
+    await removeNode(plainly);
   });
 });

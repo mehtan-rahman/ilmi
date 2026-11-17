@@ -15,7 +15,7 @@ export type IconName =
   | 'tabs' | 'tree' | 'fold' | 'unfold' | 'menu' | 'trash' | 'copy' | 'download' | 'pages' | 'sort' | 'caret' | 'pause' | 'written';
 
 /** The writing tools' icons (`InkBar.tsx`, milestone 82). */
-export type InkIconName = 'pen' | 'highlighter' | 'eraser' | 'lasso' | 'undo' | 'redo' | 'finger';
+export type InkIconName = 'pen' | 'highlighter' | 'eraser' | 'lasso' | 'undo' | 'redo' | 'finger' | 'tuck' | 'grid' | 'share' | 'shapes';
 
 const P: Record<IconName | InkIconName, ReactNode> = {
   folder: <path d="M2 4.6c0-.6.4-1.1 1-1.1h3.1l1.6 1.6H13c.6 0 1 .4 1 1v6c0 .6-.4 1-1 1H3c-.6 0-1-.4-1-1z" />,
@@ -60,6 +60,11 @@ const P: Record<IconName | InkIconName, ReactNode> = {
   undo: <path d="M3 6.5h6.3a3.5 3.5 0 010 7H6.5M5.8 3.7L3 6.5l2.8 2.8" />,
   redo: <path d="M13 6.5H6.7a3.5 3.5 0 000 7h2.8M10.2 3.7L13 6.5l-2.8 2.8" />,
   finger: <path d="M6.4 9.2V3.5a1.1 1.1 0 012.2 0v3.9M8.6 7a1.1 1.1 0 012.2 0v.7M10.8 7.5a1.05 1.05 0 012.1 0v3c0 2.1-1.4 3.5-3.5 3.5H8.7c-1.2 0-2-.5-2.7-1.5L3.7 10a1 1 0 011.5-1.3l1.2 1.3" />,
+  // ── and what 85 added: the row tucked away, the pages' overview, a file passed on, a stroke made a shape ──
+  tuck: <path d="M4 9.8l4-4 4 4M3.5 3h9" />,
+  grid: <><rect x="2.5" y="2.5" width="4.4" height="4.4" rx=".6" /><rect x="9.1" y="2.5" width="4.4" height="4.4" rx=".6" /><rect x="2.5" y="9.1" width="4.4" height="4.4" rx=".6" /><rect x="9.1" y="9.1" width="4.4" height="4.4" rx=".6" /></>,
+  share: <path d="M8 10V2.5M5.2 5.2L8 2.5l2.8 2.7M4.5 7.5h-1v6h9v-6h-1" />,
+  shapes: <><rect x="2.5" y="6.5" width="7" height="7" rx=".6" /><circle cx="10.2" cy="5.8" r="3.3" /></>,
 };
 
 /** One icon, sized by `--ic` (14px unless the place sets it). */

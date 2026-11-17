@@ -2465,7 +2465,7 @@ export function Reader({ id, active = true, onPages, notes = false }: ReaderProp
           {right && <span className="right" title={rightTip}>{right}</span>}
         </div>
         )}
-        {inked && <InkBar id={id} />}
+        {inked && <InkBar id={id} fixed />}
         {titled && !notes && <TitleField key={id} path={id} title={title} onDone={() => viewRef.current?.focus()} />}
         {w && (
           <div className="draft-sched" data-done={w.done ? '1' : '0'}>

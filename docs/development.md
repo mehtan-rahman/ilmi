@@ -348,6 +348,29 @@ PDF's page under the same row. A second run with `"again": "1"` and no new
 copy of the sample opens the collection as it was left: what was chosen is
 on the row and told to the canvases. On a simulated iPhone the same mode
 needs no rig: a notebook read as its pages, with no tools.
+The same run goes on into what milestone 85 added, in a notebook of its own
+(`writtenMore` in `smoke.ts`; alone with `"part": "more"` in `smoke.json`):
+the row tucked away and back; each tool's settings from a second tap, the
+pen's inks, the width by its slider, the highlighter's opacity, the
+eraser's two ways; a stroke kept and at rest still drawn by its canvas
+(`dev_ink_state` says each sheet's `pixels`, the canvas's zoom times the
+screen's scale, and its `blend`), which is the check that the writing does
+not go soft when it is kept, scrolled or zoomed; two fingers tapped (the
+rig's `do: taps n x y`) and spread and closed (`do: pinch ax ay bx by ax2
+ay2 bx2 by2`, two pointer paths in one record), the zoom where they
+stopped and the place between them still there; a stroke ended resting
+(`do: rest x1 y1 … seconds`) made a line, and a rectangle, an ellipse, an
+arrow and four pieces of handwriting put through the same code by
+`dev_ink_stroke`; the eraser cutting a stroke in two; the lasso's menu,
+its handle, cut, and `paste` where a finger rests; the Pencil's double tap
+and squeeze (`dev_ink_pencil`; `three` there says the three-finger tap,
+which this simulator does not take from the rig); the pages' overview, a
+page duplicated, added after and dragged to another place; the notebook
+and then a PDF's pages shared as a PDF (`dev_pdf_info` reads the file
+back, `dev_ink_unshare` closes the sheet); page setup, every control, the
+file read after each, pageless and a stroke across the seam, A4 on its
+side, `use for new notebooks`; and the row whole at every width it is
+given.
 
 `ILMI_SMOKE=touch` (milestone 57) is three runs over one storage folder.
 On the Mac, `ILMI_VAULT=<a copy of the sample> ILMI_STORAGE=<an empty
@@ -414,6 +437,46 @@ moved onto the web view. One undo manager is every canvas's (`ink_undo`,
 `ink_redo`, and a `history` event when what can be undone changes);
 `ink_finger` is `draw with finger`; `ink_color` puts up the system's colour
 wheel as a popover from the swatch.
+
+Since milestone 85 a page's canvas stays on the screen at rest (`ink_fill`
+with `show`): what is written on a page is drawn by PencilKit from the
+strokes at the canvas's zoom, whatever size the page is, and the picture of
+it (`store_ink_page`, now with a `scale`) is what a Mac and a phone show
+and what an iPad shows until a page's canvas has been filled. Before, a
+kept page was shown as a PNG at two pixels to the point of the page,
+stretched to the page's size: softer than the live stroke at fit on every
+iPad, and more so zoomed. The canvas is laid on the page as the picture
+was (`blend`: a compositing filter on its layer, multiply or, on dark
+paper, screen), and since it lies over the web view it stands aside for
+what the page lays over the pages: the scene carries `holes`, the
+rectangles of menus, a tool's settings, the overview, a notice (`OVER` in
+`ink.ts`), which are cut out of the layer's mask and where no touch arms a
+sheet. The typed notes' ink areas still rest as pictures.
+
+The rest of 85 on the native side (`InkPlugin.swift`, `Shapes.swift`): the
+tool carries a pen's ink by name, a highlighter's opacity, the eraser's
+way and whether a rested stroke is a shape; `ink_caps` says the inks this
+PencilKit has and their widths. The eraser's `part` cuts a stroke where it
+is crossed (`Shapes.cut`: the path sampled, the run under the eraser taken
+out, each run left a stroke of the same ink). A pen's stroke ended with
+the Pencil resting (`PenWatch` knows when it last moved) is looked at once
+PencilKit hands it over (`Shapes.find`: a line, an arrow, a rectangle, an
+ellipse, each only when plainly that) and replaced, one more undo step.
+The lasso's selection is told to the page (`picked`, `unpicked`, `rest`
+events), which draws its menu in the scroller's content (`InkMenu`,
+`PageTools.tsx`); `ink_selection` and `ink_paste` act on it, each a step;
+a stroke changed in a way its name does not cover (its colour) is made a
+moment later, so the store takes it for a new one. A pinch and two- and
+three-finger taps are recognisers of the plugin's on the web view
+(`pinch`, `fingers` events, `onFingers` in `ink.ts`), because where a
+finger draws the web view is not given a finger's touch on a sheet; the
+page stretches its pages with a transform while the fingers are down and
+tells the canvases the same (`ink_pinch`), then lays them out at the new
+zoom. `UIPencilInteraction` gives the double tap and the squeeze
+(`pencil` events). `pages_pdf` writes pages as a PDF (`native/ink.m`,
+CoreGraphics, on the Mac as on iOS: a notebook's paper as lines, a PDF's
+page as the PDF's own, the ink as a picture at four pixels to the point,
+multiplied), and `ink_share` puts up the share sheet for it.
 
 An iPhone is the same build on another simulator (`npm run tauri ios dev
 "iPhone 18 Pro"`), and everything of a phone is the renderer's: `shapeOf`

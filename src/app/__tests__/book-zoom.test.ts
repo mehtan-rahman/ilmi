@@ -33,7 +33,7 @@ vi.mock('../bookPdf.js', () => ({
 }));
 vi.mock('../vault.js', async (orig) => ({ ...(await orig<typeof import('../vault.js')>()), currentVault: () => null }));
 
-const { Pdf, ZOOMS, zoomStep } = await import('../Pdf.js');
+const { Pdf, ZOOMS, ZOOM_MAX, ZOOM_MIN, inkScale, zoomHeld, zoomStep } = await import('../Pdf.js');
 const { useApp } = await import('../store.js');
 globalThis.ResizeObserver ??= class { observe() {} unobserve() {} disconnect() {} } as unknown as typeof ResizeObserver;
 globalThis.IntersectionObserver ??= class { observe() {} unobserve() {} disconnect() {} } as unknown as typeof IntersectionObserver;
@@ -78,17 +78,58 @@ const pct = () => host.querySelector('.pdf-view .meta [data-tool="zoom-fit"]')!.
 const view = () => host.querySelector<HTMLElement>('.pdf-view')!;
 
 describe('the steps', () => {
-  it('go from 50% through fit to 300% and stop at both ends', () => {
-    expect(ZOOMS).toEqual([0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3]);
+  it('go from 50% through fit to 400% and stop at both ends', () => {
+    expect(ZOOMS).toEqual([0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3, 4]);
+    expect([ZOOM_MIN, ZOOM_MAX]).toEqual([0.5, 4]);
     let z = 1;
     const seen: number[] = [];
-    for (let i = 0; i < 7; i++) { z = zoomStep(z, 1); seen.push(z); }
-    expect(seen).toEqual([1.25, 1.5, 2, 2.5, 3, 3, 3]);
+    for (let i = 0; i < 8; i++) { z = zoomStep(z, 1); seen.push(z); }
+    expect(seen).toEqual([1.25, 1.5, 2, 2.5, 3, 4, 4, 4]);
     expect(zoomStep(1, -1)).toBe(0.75);
     expect(zoomStep(0.75, -1)).toBe(0.5);
     expect(zoomStep(0.5, -1)).toBe(0.5);
     expect(zoomStep(2, -1)).toBe(1.5);
     expect(zoomStep(2.5, 0)).toBe(1);
+  });
+
+  it('from wherever a pinch left the pages, a step is the next one past it that way', () => {
+    expect(zoomStep(1.37, 1)).toBe(1.5);
+    expect(zoomStep(1.37, -1)).toBe(1.25);
+    expect(zoomStep(0.62, 1)).toBe(0.75);
+    expect(zoomStep(0.62, -1)).toBe(0.5);
+    expect(zoomStep(3.4, 1)).toBe(4);
+    expect(zoomStep(3.4, -1)).toBe(3);
+    // a hair off a step is that step: the next is a whole one on
+    expect(zoomStep(1.498, 1)).toBe(2);
+    expect(zoomStep(1.502, -1)).toBe(1.25);
+    expect(zoomStep(1.37, 0)).toBe(1);
+  });
+
+  it('a pinch leaves any zoom between the least and the most, to a hundredth, and all but fit is fit', () => {
+    expect(zoomHeld(1.3724)).toBe(1.37);
+    expect(zoomHeld(2.999)).toBe(3);
+    expect(zoomHeld(0.2)).toBe(0.5);
+    expect(zoomHeld(9)).toBe(4);
+    expect(zoomHeld(1.02)).toBe(1);
+    expect(zoomHeld(0.98)).toBe(1);
+    expect(zoomHeld(1.04)).toBe(1.04);
+    expect(zoomHeld(0.96)).toBe(0.96);
+  });
+
+  it('what is written is drawn as fine as the screen shows it, a step at a time, and never past what a picture can hold', () => {
+    // a Letter sheet: a point a pixel, then as the pages are zoomed into and the screen is denser
+    expect(inkScale(612, 792, 1, 1)).toBe(1);
+    expect(inkScale(612, 792, 1, 2)).toBe(2);
+    expect(inkScale(612, 792, 1.2, 1)).toBe(1.5);
+    expect(inkScale(612, 792, 1.3, 2)).toBe(3);
+    expect(inkScale(612, 792, 2, 2)).toBe(4);
+    expect(inkScale(612, 792, 2.5, 2)).toBe(6);
+    expect(inkScale(612, 792, 4, 2)).toBe(6);
+    // smaller than a point a pixel it is still one
+    expect(inkScale(612, 792, 0.4, 1)).toBe(1);
+    // a sheet so large that the finer picture would be too many pixels stays coarser
+    expect(inkScale(2000, 3000, 4, 2)).toBe(1.5);
+    expect(inkScale(5000, 5000, 4, 2)).toBe(1);
   });
 });
 

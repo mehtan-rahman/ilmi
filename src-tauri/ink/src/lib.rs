@@ -32,6 +32,8 @@ mod native {
         pub fn ilmi_ink_page(recs: *const u8, len: usize, w: f64, h: f64, scale: f64, out: *mut *mut u8, out_len: *mut usize) -> i32;
         pub fn ilmi_ink_bounds(data: *const u8, len: usize, out: *mut *mut u8, out_len: *mut usize) -> i32;
         pub fn ilmi_ink_sample(lines: u32, per: u32, seed: u32, out: *mut *mut u8, out_len: *mut usize) -> i32;
+        pub fn ilmi_ink_pdf(spec: *const u8, len: usize, src: *const u8, src_len: usize, out_path: *const u8, out_len: usize) -> i32;
+        pub fn ilmi_pdf_info(path: *const u8, len: usize, out: *mut *mut u8, out_len: *mut usize) -> i32;
         pub fn ilmi_ink_free(p: *mut u8);
         pub fn ilmi_icloud_folder(out: *mut *mut u8, out_len: *mut usize) -> i32;
         pub fn ilmi_icloud_down(path: *const u8, len: usize, seconds: u32) -> i32;
@@ -152,6 +154,78 @@ pub fn sample(_lines: u32, _per: u32, _seed: u32) -> Result<Vec<u8>, String> {
     Err("no PencilKit on this system".to_string())
 }
 
+/// One page of a PDF made of pages and what is written on them (milestone 85).
+#[derive(Debug, Clone, Default)]
+pub struct PdfPage {
+    /// Its size, in points.
+    pub w: f64,
+    pub h: f64,
+    /// A notebook's sheet: `blank`, `ruled`, `grid` or `dotted`.
+    pub paper: Option<String>,
+    /// A PDF's page: which of the source's, from 1.
+    pub source: Option<u32>,
+    /// What is written on it: a `PKDrawing` a stroke.
+    pub strokes: Vec<Vec<u8>>,
+    /// The paper's measures, in points, where its page setup says them: how far apart its rules, lines or dots are,
+    /// where its margin rule stands, how far down its first rule is.
+    pub rule: Option<f64>,
+    pub margin: Option<f64>,
+    pub top: Option<f64>,
+    /// A piece of a pageless notebook's long sheet: how far down it this piece begins.
+    pub at: Option<f64>,
+    /// What is written on the sheet before, which may run past its foot onto this one.
+    pub above: Vec<Vec<u8>>,
+}
+
+/// `pages` written as one PDF at `out`: each its paper or its page of the PDF at `source`, drawn as they are, and
+/// its strokes over it as a picture at four pixels to the point.
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+pub fn pages_pdf(pages: &[PdfPage], source: Option<&str>, out: &str) -> Result<(), String> {
+    let mut spec = Vec::new();
+    for p in pages {
+        let refs: Vec<&[u8]> = p.strokes.iter().map(Vec::as_slice).collect();
+        let recs = records(&refs);
+        let over: Vec<&[u8]> = p.above.iter().map(Vec::as_slice).collect();
+        let above = records(&over);
+        let paper: u32 = match p.paper.as_deref() { None => 0, Some("ruled") => 2, Some("grid") => 3, Some("dotted") => 4, Some(_) => 1 };
+        for v in [p.w, p.h, p.rule.unwrap_or(0.0), p.margin.unwrap_or(-1.0), p.top.unwrap_or(72.0), p.at.unwrap_or(-1.0)] {
+            spec.extend_from_slice(&v.to_le_bytes());
+        }
+        for v in [paper, p.source.unwrap_or(0), recs.len() as u32, above.len() as u32] {
+            spec.extend_from_slice(&v.to_le_bytes());
+        }
+        spec.extend_from_slice(&recs);
+        spec.extend_from_slice(&above);
+    }
+    let src = source.unwrap_or("");
+    // SAFETY: the pointers are to bytes that live through the call
+    match unsafe { native::ilmi_ink_pdf(spec.as_ptr(), spec.len(), src.as_ptr(), src.len(), out.as_ptr(), out.len()) } {
+        0 => Ok(()),
+        1 => Err("no PencilKit on this system".to_string()),
+        3 => Err("the pdf could not be read".to_string()),
+        _ => Err("the pages could not be written".to_string()),
+    }
+}
+#[cfg(not(any(target_os = "macos", target_os = "ios")))]
+pub fn pages_pdf(_pages: &[PdfPage], _source: Option<&str>, _out: &str) -> Result<(), String> {
+    Err("no PencilKit on this system".to_string())
+}
+
+/// How many pages the PDF at `path` has, and its first page's width and height in points.
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+pub fn pdf_info(path: &str) -> Result<(u32, f64, f64), String> {
+    // SAFETY: as in `split`
+    let b = native::call(|out, len| unsafe { native::ilmi_pdf_info(path.as_ptr(), path.len(), out, len) }).map_err(|_| "not a pdf".to_string())?;
+    if b.len() < 20 {
+        return Err("not a pdf".to_string());
+    }
+    Ok((u32::from_le_bytes(b[0..4].try_into().unwrap()), f64::from_le_bytes(b[4..12].try_into().unwrap()), f64::from_le_bytes(b[12..20].try_into().unwrap())))
+}
+#[cfg(not(any(target_os = "macos", target_os = "ios")))]
+pub fn pdf_info(_path: &str) -> Result<(u32, f64, f64), String> {
+    Err("no PencilKit on this system".to_string())
+}
+
 /// A sheet's drawing, to or from its canvas.
 #[derive(Deserialize, Serialize, Debug, Clone, Default)]
 pub struct Taken {
@@ -209,8 +283,9 @@ impl<R: Runtime> Ink<R> {
         self.call("scene", scene).await
     }
     /// What a sheet holds, from the store. Answers whether it took it: a sheet being written on keeps what it has.
-    pub async fn fill(&self, sheet: &str, drawing: Option<&str>) -> Result<serde_json::Value, String> {
-        self.call("fill", Sheet { sheet, drawing }).await
+    /// With `show` the canvas stays on the screen with it: the page shows no picture of that sheet (85).
+    pub async fn fill(&self, sheet: &str, drawing: Option<&str>, show: bool) -> Result<serde_json::Value, String> {
+        self.call("fill", serde_json::json!({ "sheet": sheet, "drawing": drawing, "show": show })).await
     }
     /// A sheet's drawing, when it has changed.
     pub async fn take(&self, sheet: &str) -> Result<Taken, String> {
@@ -263,6 +338,38 @@ impl<R: Runtime> Ink<R> {
     /// A dev run's: with the wheel up, as if `color` were chosen and the wheel closed.
     pub async fn wheel(&self, color: &str) -> Result<(), String> {
         self.call::<_, serde_json::Value>("wheel", serde_json::json!({ "color": color })).await.map(|_| ())
+    }
+    /// The inks this device's PencilKit has, each with the widths it takes, and whether a Pencil's squeeze is heard (85): `{ inks, squeeze }`.
+    pub async fn caps(&self) -> Result<serde_json::Value, String> {
+        self.call("caps", serde_json::json!({})).await
+    }
+    /// Two fingers pinch a host's pages: its sheets shown at `k * p + (dx, dy)`; with no `k`, as they lie.
+    pub async fn pinch(&self, pinch: serde_json::Value) -> Result<(), String> {
+        self.call::<_, serde_json::Value>("pinch", pinch).await.map(|_| ())
+    }
+    /// What the lasso holds cut, copied, duplicated, deleted (`op`), or given `color`: `{ selected, clip }` after.
+    pub async fn selection(&self, op: &str, color: Option<&str>) -> Result<serde_json::Value, String> {
+        self.call("selection", serde_json::json!({ "op": op, "color": color })).await
+    }
+    /// What was cut or copied put down on `sheet`, its middle at `x`, `y` of the host's content: `{ selected, clip }`.
+    pub async fn paste(&self, sheet: &str, x: f64, y: f64) -> Result<serde_json::Value, String> {
+        self.call("paste", serde_json::json!({ "sheet": sheet, "x": x, "y": y })).await
+    }
+    /// The system's share sheet for the file at `path`, from `at` on the page. Answers when it closes: `{ done }`.
+    pub async fn share(&self, path: &str, at: serde_json::Value) -> Result<serde_json::Value, String> {
+        self.call("share", serde_json::json!({ "path": path, "at": at })).await
+    }
+    /// A dev run's: the share sheet closed with nothing chosen.
+    pub async fn unshare(&self) -> Result<(), String> {
+        self.call::<_, serde_json::Value>("unshare", serde_json::json!({})).await.map(|_| ())
+    }
+    /// A dev run's: the Pencil tapped twice (`tap`) or squeezed (`squeeze`).
+    pub async fn pencil(&self, what: &str) -> Result<(), String> {
+        self.call::<_, serde_json::Value>("pencilDev", serde_json::json!({ "what": what })).await.map(|_| ())
+    }
+    /// A dev run's: a stroke of the ink held through `points` of a sheet's drawing, ended resting (`rest`) or not.
+    pub async fn stroke(&self, sheet: &str, points: serde_json::Value, rest: bool) -> Result<(), String> {
+        self.call::<_, serde_json::Value>("stroke", serde_json::json!({ "sheet": sheet, "points": points, "rest": rest })).await.map(|_| ())
     }
     /// A dev run's: a sheet's canvas emptied as an eraser would.
     pub async fn wipe(&self, sheet: &str) -> Result<(), String> {
@@ -370,6 +477,38 @@ mod tests {
         assert!(w > 400 && h > 200 && w < 2000 && h < 1000, "{w}x{h}");
         assert!(picture(&[], 2.0).unwrap().is_empty(), "nothing drawn is no picture");
         assert!(split(b"not a drawing").is_err());
+    }
+
+    #[test]
+    fn pages_and_their_writing_are_a_pdf() {
+        let strokes: Vec<Vec<u8>> = split(&sample(4, 12, 3).unwrap()).unwrap().into_iter().map(|s| s.data).collect();
+        let dir = std::env::temp_dir().join(format!("ilmi-ink-pdf-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let out = dir.join("notebook.pdf");
+        let pages = vec![
+            PdfPage { w: 612.0, h: 792.0, paper: Some("ruled".into()), strokes: strokes.clone(), margin: Some(90.0), ..Default::default() },
+            PdfPage { w: 612.0, h: 792.0, paper: Some("grid".into()), rule: Some(14.17), at: Some(792.0), above: strokes.clone(), ..Default::default() },
+            PdfPage { w: 595.0, h: 842.0, paper: Some("dotted".into()), ..Default::default() },
+        ];
+        pages_pdf(&pages, None, out.to_str().unwrap()).unwrap();
+        assert_eq!(pdf_info(out.to_str().unwrap()).unwrap(), (3, 612.0, 792.0));
+        let bytes = std::fs::read(&out).unwrap();
+        assert_eq!(&bytes[..5], b"%PDF-");
+        // the same pages with nothing written are a smaller file: the ink is in the one
+        let bare = dir.join("bare.pdf");
+        pages_pdf(&pages.iter().map(|p| PdfPage { strokes: vec![], above: vec![], ..p.clone() }).collect::<Vec<_>>(), None, bare.to_str().unwrap()).unwrap();
+        assert!(std::fs::metadata(&bare).unwrap().len() < bytes.len() as u64);
+        // a PDF's own pages under the ink: two of the three, in another order, each the size it is given
+        let over = dir.join("annotated.pdf");
+        let of = vec![
+            PdfPage { w: 612.0, h: 792.0, source: Some(3), strokes: strokes.clone(), ..Default::default() },
+            PdfPage { w: 612.0, h: 792.0, source: Some(1), ..Default::default() },
+        ];
+        pages_pdf(&of, Some(out.to_str().unwrap()), over.to_str().unwrap()).unwrap();
+        assert_eq!(pdf_info(over.to_str().unwrap()).unwrap(), (2, 612.0, 792.0));
+        assert!(pages_pdf(&of, Some(dir.join("none.pdf").to_str().unwrap()), over.to_str().unwrap()).is_err());
+        assert!(pdf_info(dir.join("none.pdf").to_str().unwrap()).is_err());
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     const CORPUS_PAGE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../src/format/__tests__/corpus/vault/fleeting/worked-example/ink-01");

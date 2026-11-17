@@ -13,7 +13,7 @@ import { parseBox, type Box } from '../format/index.js';
 import { pageItems, uprightItems, type PageItem } from '../pdf/index.js';
 import type { StoreFs } from '../vault/index.js';
 import { loadPdf, loadPdfPieces, type PDFDocumentProxy } from './pdfjs.js';
-import { PAPER_H, PAPER_W, drawPaper } from './paper.js';
+import { drawPaper, paperOf } from './paper.js';
 import { useApp, type DocInfo } from './store.js';
 import { currentVault } from './vault.js';
 
@@ -131,6 +131,10 @@ async function drawSheetCrop(el: HTMLElement, rel: string, w: NonNullable<DocInf
     if (!w.sheets.includes(box.page)) { sheetCrops.delete(el); el.dataset.drawn = 'gone'; return; }
     const vault = currentVault();
     const fs = vault && 'pageInkFile' in vault.fs ? (vault.fs as StoreFs) : null;
+    // the sheet as the notebook's page setup has it: its size, and its paper where it lies among the sheets
+    const spec = paperOf(w, Math.max(0, w.sheets.indexOf(box.page)));
+    const PAPER_W = spec.w;
+    const PAPER_H = spec.h;
     const bw = box.w * PAPER_W + 2 * PAD;
     const bh = box.h * PAPER_H + 2 * PAD;
     const k = Math.min(MAX_SCALE, width / bw);
@@ -138,7 +142,8 @@ async function drawSheetCrop(el: HTMLElement, rel: string, w: NonNullable<DocInf
     const part = { x: box.x * PAPER_W - PAD, y: box.y * PAPER_H - PAD, w: bw, h: bh };
     // a sheet with nothing written on it is its paper alone
     const inked = fs ? (await fs.pageInk(w.id, box.page)).length > 0 : false;
-    const bytes = fs && inked ? await fs.pageInkFile(w.id, box.page, 'picture', PAPER_W, PAPER_H) : new Uint8Array();
+    // what is written, as fine as the clip is drawn: sharp at the clip's own size
+    const bytes = fs && inked ? await fs.pageInkFile(w.id, box.page, 'picture', PAPER_W, PAPER_H, Math.min(6, Math.max(2, Math.ceil(k * dpr)))) : new Uint8Array();
     const picture = bytes.length ? await pictureOf(bytes) : null;
     if (turn.get(el) !== mine) return;
     const out = document.createElement('canvas');
@@ -148,7 +153,7 @@ async function drawSheetCrop(el: HTMLElement, rel: string, w: NonNullable<DocInf
     out.style.height = `${bh * k}px`;
     const ctx = out.getContext('2d');
     if (ctx) {
-      drawPaper(ctx, w.paper, part, k * dpr);
+      drawPaper(ctx, spec, part, k * dpr);
       // the picture is of the whole sheet, at whatever size it was made: the box's part of it
       if (picture) {
         const px = picture.width / PAPER_W;

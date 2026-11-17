@@ -6,7 +6,7 @@ import {
   specWhen, specInt, specIntMin, specIntRange, specNumMin, specBool, type AttrSpec, type Warn,
 } from './attrs.js';
 import {
-  FIELD_KEYS, PAPERS, isField, type CardForm, type Diagnostic, type Doc, type Field, type FieldKey, type FmEntry,
+  FIELD_KEYS, PAPERS, PAPER_MARGIN_RANGE, PAPER_RULE_RANGE, PAPER_TOP_RANGE, isField, type CardForm, type Diagnostic, type Doc, type Field, type FieldKey, type FmEntry,
   type Exam, type Frontmatter, type LeechAction, type NodeType, type PageRange, type PaperKind, type ReadSchedule, type SectionSchedule, type WriteSchedule,
 } from './model.js';
 import { frac3, normalizeBoxes } from './boxes.js';
@@ -196,8 +196,27 @@ function parseValue(key: FieldKey, raw: string, warn: Warn): Field | null {
       const v = parseSheets(stripComment(raw));
       return v === null ? null : { key, value: v };
     }
+    case 'paper-rule': case 'paper-margin': case 'paper-top': {
+      const v = parsePoints(stripComment(raw), key === 'paper-rule' ? PAPER_RULE_RANGE : key === 'paper-margin' ? PAPER_MARGIN_RANGE : PAPER_TOP_RANGE);
+      return v === null ? null : { key, value: v };
+    }
+    case 'paper-size': return stripComment(raw) === 'a4' ? { key, value: 'a4' } : null;
+    case 'paper-turn': return stripComment(raw) === 'landscape' ? { key, value: 'landscape' } : null;
+    case 'pageless': return stripComment(raw) === 'true' ? { key, value: true } : null;
   }
 }
+
+const POINTS = /^\d{1,3}(\.\d{1,2})?$/;
+
+/** A length of a notebook's page setup: points, to a hundredth at the finest, within `range`; anything else is unread (null). */
+export function parsePoints(v: string, range: readonly [number, number]): number | null {
+  if (!POINTS.test(v)) return null;
+  const n = Number.parseFloat(v);
+  return n >= range[0] && n <= range[1] ? n : null;
+}
+
+/** A length as the file writes it: to a hundredth of a point, with no zeros it does not need. */
+export const formatPoints = (n: number): string => String(Math.round(n * 100) / 100);
 
 const WRITTEN_ID = /^[0-9a-f]{32}$/;
 
@@ -352,6 +371,9 @@ export function formatField(f: Field): string {
     case 'finish': return `finish: ${f.value}`;
     case 'written': case 'paper': return `${f.key}: ${f.value}`;
     case 'sheets': return `sheets: ${formatSheets(f.value)}`;
+    case 'paper-rule': case 'paper-margin': case 'paper-top': return `${f.key}: ${formatPoints(f.value)}`;
+    case 'paper-size': case 'paper-turn': return `${f.key}: ${f.value}`;
+    case 'pageless': return 'pageless: true';
   }
 }
 
@@ -398,7 +420,27 @@ export interface Meta {
   /** The `finish` field: the day a source's reading is paced to finish by, as written; `finishOf` in `schedule/read.ts` says when it counts. */
   finish?: string;
   /** A written notebook (§3, *Written notes*): its id, its paper (`blank` when the file names none) and its sheets in order (`1` when it names none). Absent without a `written` field, whatever `paper` and `sheets` say. */
-  written?: { id: string; paper: PaperKind; sheets: number[] };
+  written?: WrittenMeta;
+}
+
+/**
+ * A written notebook as its front-matter says it. Its page setup (milestone
+ * 85) is there only where the file says it: `rule` how far apart the rules,
+ * lines or dots are, `margin` where a margin rule stands (none without it),
+ * `top` how far down the first rule is, `size` and `turn` its sheets' size
+ * and whether they lie on their side (Letter, upright, without them), and
+ * `pageless` that its sheets run on as one.
+ */
+export interface WrittenMeta {
+  id: string;
+  paper: PaperKind;
+  sheets: number[];
+  rule?: number;
+  margin?: number;
+  top?: number;
+  size?: 'a4';
+  turn?: 'landscape';
+  pageless?: true;
 }
 
 /**
@@ -412,6 +454,7 @@ export function meta(doc: Doc): Meta {
   let id: string | undefined;
   let paper: PaperKind | undefined;
   let sheets: number[] | undefined;
+  const setup: Omit<WrittenMeta, 'id' | 'paper' | 'sheets'> = {};
   for (const e of doc.frontmatter?.entries ?? []) {
     if (!isField(e)) continue;
     switch (e.key) {
@@ -440,9 +483,15 @@ export function meta(doc: Doc): Meta {
       case 'written': id = e.value; break;
       case 'paper': paper = e.value; break;
       case 'sheets': sheets = e.value; break;
+      case 'paper-rule': setup.rule = e.value; break;
+      case 'paper-margin': setup.margin = e.value; break;
+      case 'paper-top': setup.top = e.value; break;
+      case 'paper-size': setup.size = e.value; break;
+      case 'paper-turn': setup.turn = e.value; break;
+      case 'pageless': setup.pageless = e.value; break;
     }
   }
-  if (id !== undefined) out.written = { id, paper: paper ?? 'blank', sheets: sheets ?? [1] };
+  if (id !== undefined) out.written = { id, paper: paper ?? 'blank', sheets: sheets ?? [1], ...setup };
   if (!typed && out.imported !== undefined) out.type = 'source';
   return out;
 }

@@ -28,6 +28,15 @@
 // strokes out or pick them and move them. One undo manager is every canvas's, PencilKit's strokes and these
 // steps alike (`undo`, `redo`). With `finger` on a finger writes as the Pencil does and two scroll. The colour
 // wheel is the system's, put up from where the page says (`color`).
+//
+// What a handwriting app has besides (85). A pen is one of PencilKit's inks by name (`ink`), a highlighter has an
+// opacity, the eraser takes a whole stroke or the part it crosses (`Shapes.cut`) and shows its reach as a ring
+// under the Pencil. A stroke ended with the Pencil resting is a shape (`Shapes.swift`). What the lasso holds can
+// be dragged, resized by the handle at its corner, cut, copied, duplicated, deleted and given another colour
+// (`selection`), and what was cut or copied is put down where the Pencil rests under the lasso (`paste`); the
+// page draws the menu, told where the selection lies (`picked`). The Pencil's own double tap and squeeze are told
+// to the page (`pencil`), which changes the tool. While two fingers pinch, the page says how its pages are
+// stretched (`pinch`) and the sheets are stretched with them, until the page lays them out at the new size.
 
 import CoreHaptics
 import PencilKit
@@ -56,6 +65,8 @@ struct SheetSpec: Decodable {
   var hit: Box
   /// Points of the drawing to points of the screen: a book's page is drawn in its own.
   var zoom: Double?
+  /// How its ink lies on what is under it: `multiply` (a highlighter leaves print dark), `screen` on a dark page. None is laid over.
+  var blend: String?
 }
 
 struct HostSpec: Decodable {
@@ -65,6 +76,8 @@ struct HostSpec: Decodable {
   /// What of it ink shows in and the Pencil writes in, on the page.
   var port: Box
   var top: Double
+  /// How far it is scrolled sideways, when the page says (85).
+  var left: Double?
   /// How tall its content is: another scroller may stand in the same place, a tab behind this one.
   var height: Double
   /// Where a Pencil off every sheet opened a new one, before 82: read so an older page's scene still decodes, and not used.
@@ -75,11 +88,15 @@ struct HostSpec: Decodable {
 struct SceneArgs: Decodable {
   var hosts: [HostSpec]
   var dark: Bool?
+  /// What the page lays over the sheets (a tool's settings, a menu), on the page: the Pencil does not write through it.
+  var holes: [Box]?
 }
 
 struct SheetArgs: Decodable {
   var sheet: String
   var drawing: String?
+  /// The canvas stays on the screen with what it is given: the page shows no picture of it (85).
+  var show: Bool?
 }
 
 struct HoldArgs: Decodable {
@@ -112,6 +129,70 @@ struct ToolSpec: Codable {
   var kind: String
   var color: String
   var width: Double
+  /// A pen's ink, by name: `pen`, `monoline`, `fountain`, `pencil` (85). None is `pen`; a highlighter's is the marker.
+  var ink: String?
+  /// How much of the ink's own colour shows, 0 to 1: a highlighter's. None is all of it.
+  var opacity: Double?
+  /// The eraser's way: `stroke` takes each stroke it comes upon whole, `part` what of it lies under it. None is `stroke`.
+  var mode: String?
+  /// A stroke ended with the Pencil resting becomes the shape it most nearly is. None is no.
+  var snap: Bool?
+}
+
+/// How the page's pages are stretched while two fingers pinch: a point `p` of the host's content is shown at
+/// `k * p + (dx, dy)`. No `k` is as they lie.
+struct PinchArgs: Decodable {
+  var host: String
+  var k: Double?
+  var dx: Double?
+  var dy: Double?
+}
+
+/// What is done with what the lasso holds: `cut`, `copy`, `duplicate`, `delete`, or `color` with a colour.
+struct SelectionArgs: Decodable {
+  var op: String
+  var color: String?
+}
+
+/// Where what was cut or copied is put down: a sheet, and a place in its host's content.
+struct PasteArgs: Decodable {
+  var sheet: String
+  var x: Double
+  var y: Double
+}
+
+struct ShareArgs: Decodable {
+  /// A file on the device.
+  var path: String
+  var at: Box?
+}
+
+/// A dev run's: the Pencil's double tap (`tap`) or squeeze, which no simulator has; or `three`, three fingers tapped on the pages.
+struct PencilArgs: Decodable {
+  var what: String
+}
+
+/// A dev run's: a stroke of the pen held, through these points of the sheet's drawing, ended resting or not.
+struct StrokeArgs: Decodable {
+  var sheet: String
+  var points: [[Double]]
+  var rest: Bool
+}
+
+/// What the lasso holds and what was cut or copied, after something was done with them.
+struct Selected: Encodable {
+  let selected: Int
+  let clip: Int
+}
+
+/// The inks this system's PencilKit has, each with the widths it takes, and whether a Pencil can be squeezed here.
+struct Caps: Encodable {
+  let inks: [String: [Double]]
+  let squeeze: Bool
+}
+
+struct Shared: Encodable {
+  let done: Bool
 }
 
 struct ToolArgs: Decodable {
@@ -186,6 +267,11 @@ struct SheetState: Encodable {
   let dirty: Bool
   /// The canvas on the screen, in the web view's points.
   let at: Box
+  /// The pixels its strokes are drawn with to a point of the drawing: the canvas's zoom times its screen's scale
+  /// (PencilKit draws a canvas's strokes anew at its zoom). Ink at rest that is this canvas is as sharp as ink being
+  /// written (85); a check measures the edges in a capture as well.
+  let pixels: Double
+  let blend: String?
 }
 
 struct HostState: Encodable {
@@ -227,6 +313,15 @@ struct State: Encodable {
   let wheel: Bool
   /// How many strokes the lasso holds.
   let selected: Int
+  /// Where they lie, in the web view's points; and how many strokes were cut or copied.
+  let held: Box?
+  let clip: Int
+  /// The shape the last stroke ended resting became; none when it stayed as written.
+  let shape: String?
+  /// How far the sheets are stretched by a pinch: 1 when not.
+  let pinch: Double
+  /// A share sheet is up.
+  let sharing: Bool
   let down: Bool
   let scribble: Int
   let touched: Touched?
@@ -330,6 +425,10 @@ final class Sheet: NSObject, PKCanvasViewDelegate {
 final class PenWatch: UIGestureRecognizer, UIGestureRecognizerDelegate {
   weak var plugin: InkPlugin?
   private var touch: UITouch?
+  /// Where the touch last was when it moved more than a tremor, and when: a Pencil resting has not moved since.
+  private var stillAt = CGPoint.zero
+  private var stillSince: TimeInterval = 0
+  private let tremor: CGFloat = 3.5
 
   override init(target: Any?, action: Selector?) {
     super.init(target: target, action: action)
@@ -348,18 +447,26 @@ final class PenWatch: UIGestureRecognizer, UIGestureRecognizerDelegate {
       return
     }
     touch = t
+    stillAt = t.location(in: view)
+    stillSince = t.timestamp
     plugin?.penDown(t)
   }
 
   override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) {
-    if let t = touch, touches.contains(t) { plugin?.penMoved(t) }
+    guard let t = touch, touches.contains(t) else { return }
+    let p = t.location(in: view)
+    if hypot(p.x - stillAt.x, p.y - stillAt.y) > tremor {
+      stillAt = p
+      stillSince = t.timestamp
+    }
+    plugin?.penMoved(t)
   }
 
   private func finish(_ touches: Set<UITouch>) {
     guard let t = touch, touches.contains(t) else { return }
     touch = nil
     state = .failed
-    plugin?.penUp()
+    plugin?.penUp(rested: t.timestamp - stillSince)
   }
 
   override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) { finish(touches) }
@@ -427,6 +534,42 @@ private enum Own {
   case loop(points: [CGPoint], shown: [CGPoint])
   /// Moving what the lasso holds: the drawing and its strokes as they were, which of them, where the Pencil came down.
   case drag(before: PKDrawing, base: [PKStroke], at: [Int], from: CGPoint, moved: Bool)
+  /// Resizing it by the handle at its lower right: about its upper left `origin`, from where the Pencil came down.
+  case resize(before: PKDrawing, base: [PKStroke], at: [Int], origin: CGPoint, from: CGPoint, moved: Bool)
+}
+
+/// Lets a recogniser of the plugin's go on beside the web view's own.
+final class Beside: NSObject, UIGestureRecognizerDelegate {
+  func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { true }
+}
+
+/// The Pencil's own double tap and squeeze, heard for the page.
+final class PencilTaps: NSObject, UIPencilInteractionDelegate {
+  weak var plugin: InkPlugin?
+
+  private func prefer(_ a: UIPencilPreferredAction) -> String {
+    switch a {
+    case .ignore: return "ignore"
+    case .switchPrevious: return "previous"
+    case .showColorPalette: return "palette"
+    case .showInkAttributes: return "attributes"
+    default: return "eraser"
+    }
+  }
+
+  func pencilInteractionDidTap(_ interaction: UIPencilInteraction) {
+    plugin?.pencil("tap", prefer: prefer(UIPencilInteraction.preferredTapAction))
+  }
+
+  @available(iOS 17.5, *)
+  func pencilInteraction(_ interaction: UIPencilInteraction, didReceiveTap tap: UIPencilInteraction.Tap) {
+    plugin?.pencil("tap", prefer: prefer(UIPencilInteraction.preferredTapAction))
+  }
+
+  @available(iOS 17.5, *)
+  func pencilInteraction(_ interaction: UIPencilInteraction, didReceiveSqueeze squeeze: UIPencilInteraction.Squeeze) {
+    if squeeze.phase == .ended { plugin?.pencil("squeeze", prefer: prefer(UIPencilInteraction.preferredSqueezeAction)) }
+  }
 }
 
 /// The strokes the lasso holds: which of the sheet's drawing, as long as the drawing is this one.
@@ -469,6 +612,26 @@ class InkPlugin: Plugin {
   private var picked: Picked?
   private let loop = CAShapeLayer()
   private let outline = CAShapeLayer()
+  /// The handle at the lower right of what the lasso holds, and the eraser's reach under the Pencil.
+  private let grip = CAShapeLayer()
+  private let reach = CAShapeLayer()
+  /// What was cut or copied, and what it covered where it lay.
+  private var clip: [PKStroke] = []
+  private var clipBox = CGRect.zero
+  /// The Pencil resting under the lasso: where, until it moves or lifts.
+  private var resting: DispatchWorkItem?
+  /// A stroke just ended with the Pencil resting on this sheet, which held this many strokes before it.
+  private var snap: (sheet: Sheet, count: Int, until: TimeInterval)?
+  private var lastShape: String?
+  private var pinched: [String: CGFloat] = [:]
+  private var holes: [CGRect] = []
+  private let taps = PencilTaps()
+  /// Two and three fingers on the glass: a pinch, and taps. Heard here and told to the page, since where a finger
+  /// draws the web view's own recognisers are not given a finger's touch on a sheet.
+  private let beside = Beside()
+  private var fingers: [UIGestureRecognizer] = []
+  private var sharing = false
+  private weak var shareSheet: UIActivityViewController?
   private var wheel: Wheel?
   private var dark = false
   private var made: [String] = []
@@ -487,6 +650,11 @@ class InkPlugin: Plugin {
   private let quietAfter = 2.5
   /// How near the lower edge the Pencil is when an area grows.
   private let edge: CGFloat = 72
+  /// How long the Pencil rests at a stroke's end for the stroke to be a shape, and under the lasso for `paste`.
+  private let restFor = 0.42
+  private let pasteAfter = 0.55
+  /// How near the handle the Pencil comes down to take it, in the screen's points.
+  private let gripReach: CGFloat = 22
 
   override func load(webview: WKWebView) {
     web = webview
@@ -502,6 +670,23 @@ class InkPlugin: Plugin {
       l.lineDashPattern = [6, 4]
       l.zPosition = 10
     }
+    grip.fillColor = UIColor.white.cgColor
+    grip.strokeColor = UIColor(white: 0.42, alpha: 1).cgColor
+    grip.lineWidth = 1.5
+    grip.zPosition = 11
+    reach.fillColor = UIColor(white: 0.5, alpha: 0.12).cgColor
+    reach.strokeColor = UIColor(white: 0.45, alpha: 0.9).cgColor
+    reach.lineWidth = 1
+    reach.zPosition = 12
+    taps.plugin = self
+    let pencil = UIPencilInteraction()
+    pencil.delegate = taps
+    webview.addInteraction(pencil)
+  }
+
+  /// The Pencil was tapped twice or squeezed: the page changes the tool, by what the system's settings say it does.
+  fileprivate func pencil(_ what: String, prefer: String) {
+    emit(["kind": "pencil", "what": what, "prefer": prefer])
   }
 
   // ── Going to the background (not ink's: the plugin is the app's one piece of native iOS code) ──
@@ -598,9 +783,46 @@ class InkPlugin: Plugin {
     w.plugin = self
     web.addGestureRecognizer(w)
     watch = w
+    let direct = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
+    let pinch = UIPinchGestureRecognizer(target: self, action: #selector(pinched(_:)))
+    let two = UITapGestureRecognizer(target: self, action: #selector(tapped(_:)))
+    two.numberOfTouchesRequired = 2
+    let three = UITapGestureRecognizer(target: self, action: #selector(tapped(_:)))
+    three.numberOfTouchesRequired = 3
+    // fingers that pinched are not fingers that tapped, though they come up together: a tap waits to hear there was no pinch
+    two.require(toFail: pinch)
+    three.require(toFail: pinch)
+    for g in [pinch, two, three] as [UIGestureRecognizer] {
+      g.allowedTouchTypes = direct
+      g.cancelsTouchesInView = false
+      g.delaysTouchesBegan = false
+      g.delaysTouchesEnded = false
+      g.delegate = beside
+      web.addGestureRecognizer(g)
+      fingers.append(g)
+    }
     setTouchTypes()
     rootWatch = web.scrollView.observe(\.contentOffset, options: []) { [weak self] _, _ in self?.layOut() }
     silenceScribble()
+  }
+
+  @objc private func pinched(_ g: UIPinchGestureRecognizer) {
+    guard let web = web else { return }
+    let phase: String
+    switch g.state {
+    case .began: phase = "begin"
+    case .changed: phase = "change"
+    case .ended: phase = "end"
+    default: phase = "cancel"
+    }
+    let p = g.location(in: web.scrollView)
+    emit(["kind": "pinch", "phase": phase, "k": g.scale.isFinite ? g.scale : 1, "x": p.x, "y": p.y])
+  }
+
+  @objc private func tapped(_ g: UITapGestureRecognizer) {
+    guard let web = web, g.state == .ended else { return }
+    let p = g.location(in: web.scrollView)
+    emit(["kind": "fingers", "n": g.numberOfTouchesRequired, "x": p.x, "y": p.y])
   }
 
   /// Scribble turns a Pencil on editable text into typing, before any recogniser of ours: the Pencil writes ink here.
@@ -648,7 +870,7 @@ class InkPlugin: Plugin {
     let pencil = UITouch.TouchType.pencil.rawValue
     let mine = Set(allCanvasRecognisers().map { ObjectIdentifier($0) })
     walk(web) { v in
-      for g in v.gestureRecognizers ?? [] where !mine.contains(ObjectIdentifier(g)) && g !== self.watch {
+      for g in v.gestureRecognizers ?? [] where !mine.contains(ObjectIdentifier(g)) && g !== self.watch && !self.fingers.contains(where: { $0 === g }) {
         let was = g.allowedTouchTypes
         self.kept[ObjectIdentifier(g)] = (g, was)
         if self.finger, let scroller = v as? UIScrollView, g === scroller.panGestureRecognizer {
@@ -674,7 +896,9 @@ class InkPlugin: Plugin {
     guard let layer = layer else { return }
     var target: Sheet? = nil
     var host: Host? = nil
-    for h in hosts.values where h.clip.frame.contains(p) {
+    // under something the page has laid over the sheets, the touch is the page's
+    let over = holes.contains { $0.contains(p) }
+    for h in hosts.values where !over && h.clip.frame.contains(p) {
       // a scroller the web view had not yet made a scroll view of, when the page last spoke
       if h.scroll == nil {
         bind(h)
@@ -690,7 +914,7 @@ class InkPlugin: Plugin {
       break
     }
     // a touch off the sheet the lasso picked on lets go of what it holds
-    if let k = picked, k.sheet !== target { unpick() }
+    if !over, let k = picked, k.sheet !== target { unpick() }
     // said for every canvas at every touch: PencilKit turns its recogniser back on when it likes (a canvas
     // new to the window, a tool it is given), and two of them would each begin the stroke. Under the eraser
     // and the lasso none is on: the watcher's touches are the tool
@@ -731,17 +955,33 @@ class InkPlugin: Plugin {
     let q = t.location(in: h.content)
     s.grownAt = 0
     let p = point(t, in: s)
+    snap = nil
     if tool.kind == "eraser" {
       unpick()
       own = .erase(before: s.canvas.drawing, last: p)
       erase(s, from: p, to: p)
+      ringEraser(at: q, in: h)
     } else if tool.kind == "select" {
-      if let k = picked, k.sheet === s, let box = held(k), box.insetBy(dx: -8 / max(s.canvas.zoomScale, 0.01), dy: -8 / max(s.canvas.zoomScale, 0.01)).contains(p) {
+      let z = max(s.canvas.zoomScale, 0.01)
+      if let k = picked, k.sheet === s, let box = held(k), hypot(p.x - box.maxX, p.y - box.maxY) <= gripReach / z {
+        own = .resize(before: s.canvas.drawing, base: s.canvas.drawing.strokes, at: k.at, origin: box.origin, from: p, moved: false)
+        emit(["kind": "unpicked", "moving": true])
+      } else if let k = picked, k.sheet === s, let box = held(k), box.insetBy(dx: -8 / z, dy: -8 / z).contains(p) {
         own = .drag(before: s.canvas.drawing, base: s.canvas.drawing.strokes, at: k.at, from: p, moved: false)
+        emit(["kind": "unpicked", "moving": true])
       } else {
         unpick()
         own = .loop(points: [p], shown: [q])
         show(loop, in: h, path: nil)
+        // the Pencil resting where it landed asks for what was cut or copied
+        let item = DispatchWorkItem { [weak self, weak s, weak h] in
+          guard let self = self, let s = s, let h = h, self.down, self.active === s, !self.spent, case .loop = self.own else { return }
+          self.spent = true
+          self.hide(self.loop)
+          self.emit(["kind": "rest", "sheet": s.id, "host": h.id, "x": q.x, "y": q.y, "clip": self.clip.count])
+        }
+        resting = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + pasteAfter, execute: item)
       }
     } else {
       unpick()
@@ -770,7 +1010,22 @@ class InkPlugin: Plugin {
       case let .erase(before, last):
         erase(s, from: last, to: p)
         own = .erase(before: before, last: p)
+        ringEraser(at: q, in: h)
+      case let .resize(before, base, at, origin, from, _):
+        // the corner follows the Pencil, the shape kept: by how far it is from the upper left, against where it began
+        let was = hypot(from.x - origin.x, from.y - origin.y)
+        let f = min(max(hypot(max(p.x - origin.x, 1), max(p.y - origin.y, 1)) / max(was, 1), 0.1), 12)
+        let by = CGAffineTransform(translationX: -origin.x, y: -origin.y).concatenating(CGAffineTransform(scaleX: f, y: f)).concatenating(CGAffineTransform(translationX: origin.x, y: origin.y))
+        var strokes = base
+        for i in at where i < strokes.count { strokes[i].transform = base[i].transform.concatenating(by) }
+        let d = PKDrawing(strokes: strokes)
+        picked?.drawing = d
+        put(s, d)
+        picked?.drawing = s.canvas.drawing
+        own = .resize(before: before, base: base, at: at, origin: origin, from: from, moved: true)
+        ring()
       case let .loop(points, shown):
+        if let first = shown.first, hypot(q.x - first.x, q.y - first.y) > 8 { resting?.cancel(); resting = nil }
         own = .loop(points: points + [p], shown: shown + [q])
         let path = UIBezierPath()
         path.move(to: shown[0])
@@ -796,10 +1051,17 @@ class InkPlugin: Plugin {
     }
   }
 
-  fileprivate func penUp() {
+  fileprivate func penUp(rested: TimeInterval = 0) {
     guard down, let s = active else { return }
     down = false
     active = nil
+    resting?.cancel()
+    resting = nil
+    // a pen's or a highlighter's stroke ended resting: looked at when PencilKit hands the stroke over
+    if own == nil, !ours { lastShape = nil }
+    if own == nil, !ours, tool.snap == true, rested >= restFor {
+      snap = (s, s.canvas.drawing.strokes.count, ProcessInfo.processInfo.systemUptime + 1.5)
+    }
     finishOwn(s)
     if let spec = s.waiting, let h = s.host {
       s.waiting = nil
@@ -814,10 +1076,17 @@ class InkPlugin: Plugin {
     guard let o = own else { return }
     own = nil
     hide(loop)
+    hide(reach)
     switch o {
     case let .erase(before, _):
       let after = s.canvas.drawing
       if after != before { step(s, from: before, to: after) }
+    case let .resize(before, _, _, _, _, moved):
+      let after = s.canvas.drawing
+      if moved, after != before { step(s, from: before, to: after) }
+      picked?.drawing = after
+      ring()
+      tellPicked()
     case let .loop(points, _):
       if !spent { pick(s, within: points) }
     case let .drag(before, _, _, _, moved):
@@ -825,6 +1094,7 @@ class InkPlugin: Plugin {
       if moved, after != before { step(s, from: before, to: after) }
       picked?.drawing = after
       ring()
+      tellPicked()
     }
   }
 
@@ -867,17 +1137,28 @@ class InkPlugin: Plugin {
     let reach = CGRect(x: min(a.x, b.x), y: min(a.y, b.y), width: abs(a.x - b.x), height: abs(a.y - b.y)).insetBy(dx: -r, dy: -r)
     var left: [PKStroke] = []
     var gone = false
+    let part = tool.mode == "part"
     for k in s.canvas.drawing.strokes {
+      if !k.renderBounds.intersects(reach) { left.append(k); continue }
+      if part {
+        // what of it lies under the eraser goes, the rest stays as strokes of its own
+        if let rest = Shapes.cut(k, from: a, to: b, within: r) { gone = true; left.append(contentsOf: rest) } else { left.append(k) }
+        continue
+      }
       var hit = false
-      if k.renderBounds.intersects(reach) {
-        along(k, by: max(1, r)) { p, half in
-          if self.far(p, from: a, to: b) <= r + half { hit = true }
-          return !hit
-        }
+      along(k, by: max(1, r)) { p, half in
+        if self.far(p, from: a, to: b) <= r + half { hit = true }
+        return !hit
       }
       if hit { gone = true } else { left.append(k) }
     }
     if gone { put(s, PKDrawing(strokes: left)) }
+  }
+
+  /// The eraser's reach, a ring under the Pencil while it erases.
+  private func ringEraser(at q: CGPoint, in h: Host) {
+    let r = CGFloat(max(tool.width, 1))
+    show(reach, in: h, path: UIBezierPath(ovalIn: CGRect(x: q.x - r, y: q.y - r, width: r * 2, height: r * 2)).cgPath)
   }
 
   /// The strokes with most of themselves inside the loop are what the lasso holds.
@@ -904,6 +1185,100 @@ class InkPlugin: Plugin {
     if at.isEmpty { return }
     picked = Picked(sheet: s, at: at, drawing: d)
     ring()
+    tellPicked()
+  }
+
+  /// The page is told where what the lasso holds lies, in its host's content: its menu goes there.
+  private func tellPicked() {
+    guard let k = picked, let h = k.sheet.host, let box = held(k) else { return }
+    let z = k.sheet.canvas.zoomScale
+    let o = k.sheet.canvas.frame.origin
+    emit(["kind": "picked", "sheet": k.sheet.id, "host": h.id, "count": k.at.count, "clip": clip.count, "x": o.x + box.minX * z, "y": o.y + box.minY * z, "w": box.width * z, "h": box.height * z])
+  }
+
+  /// What the lasso holds is these strokes of its sheet now.
+  private func repick(_ s: Sheet, _ at: [Int]) {
+    picked = Picked(sheet: s, at: at, drawing: s.canvas.drawing)
+    ring()
+    tellPicked()
+  }
+
+  /// Something done with what the lasso holds, one step to undo. False when it holds nothing.
+  private func selection(_ op: String, color c: UIColor?) -> Bool {
+    guard !down, let k = picked else { return false }
+    let s = k.sheet
+    let before = s.canvas.drawing
+    var strokes = before.strokes
+    let at = k.at.filter { $0 < strokes.count }
+    if at.isEmpty { return false }
+    let mine = Set(at)
+    switch op {
+    case "copy", "cut":
+      clip = at.map { strokes[$0] }
+      clipBox = held(k) ?? .zero
+      UIPasteboard.general.setData(PKDrawing(strokes: clip).dataRepresentation(), forPasteboardType: PKAppleDrawingTypeIdentifier as String)
+      if op == "copy" { tellPicked(); return true }
+      fallthrough
+    case "delete":
+      strokes = strokes.enumerated().filter { !mine.contains($0.offset) }.map { $0.element }
+      unpick()
+      put(s, PKDrawing(strokes: strokes))
+      step(s, from: before, to: s.canvas.drawing)
+    case "duplicate":
+      let by = CGAffineTransform(translationX: 16, y: 16)
+      let n = strokes.count
+      for i in at { strokes.append(renamed(strokes[i], transform: strokes[i].transform.concatenating(by))) }
+      unpick()
+      put(s, PKDrawing(strokes: strokes))
+      step(s, from: before, to: s.canvas.drawing)
+      repick(s, Array(n..<strokes.count))
+    case "color":
+      guard let c = c else { return false }
+      for i in at {
+        var k2 = renamed(strokes[i], transform: strokes[i].transform)
+        // a highlighter's stroke keeps how much of its colour shows
+        k2.ink = PKInk(strokes[i].ink.inkType, color: c.withAlphaComponent(strokes[i].ink.color.cgColor.alpha))
+        strokes[i] = k2
+      }
+      unpick()
+      put(s, PKDrawing(strokes: strokes))
+      step(s, from: before, to: s.canvas.drawing)
+      repick(s, at)
+    default:
+      return false
+    }
+    return true
+  }
+
+  /// A stroke as another of the same look: made a moment later, so the store knows it for a new one (a stroke's
+  /// name is made of when it was drawn, where its points are and how it lies, `native/ink.m`).
+  private func renamed(_ k: PKStroke, transform: CGAffineTransform) -> PKStroke {
+    let path = PKStrokePath(controlPoints: Array(k.path), creationDate: k.path.creationDate.addingTimeInterval(0.002))
+    return PKStroke(ink: k.ink, path: path, transform: transform, mask: k.mask)
+  }
+
+  /// What was cut or copied put down on `s` with its middle at `q` (the host's content), and held by the lasso.
+  private func paste(on s: Sheet, at q: CGPoint) -> Bool {
+    guard !down, !clip.isEmpty else { return false }
+    let z = max(s.canvas.zoomScale, 0.01)
+    let o = s.canvas.frame.origin
+    var p = CGPoint(x: (q.x - o.x) / z, y: (q.y - o.y) / z)
+    // kept on the sheet, as far as it fits
+    let size = CGSize(width: s.canvas.frame.width / z, height: s.canvas.frame.height / z)
+    p.x = min(max(p.x, min(clipBox.width / 2, size.width / 2)), max(size.width - clipBox.width / 2, size.width / 2))
+    p.y = min(max(p.y, min(clipBox.height / 2, size.height / 2)), max(size.height - clipBox.height / 2, size.height / 2))
+    let by = CGAffineTransform(translationX: p.x - clipBox.midX, y: p.y - clipBox.midY)
+    let before = s.canvas.drawing
+    var strokes = before.strokes
+    let n = strokes.count
+    for k in clip { strokes.append(renamed(k, transform: k.transform.concatenating(by))) }
+    unpick()
+    put(s, PKDrawing(strokes: strokes))
+    step(s, from: before, to: s.canvas.drawing)
+    s.canvas.isHidden = false
+    repick(s, Array(n..<strokes.count))
+    wait(s)
+    return true
   }
 
   /// What the lasso holds covers this, in the drawing's points.
@@ -918,12 +1293,14 @@ class InkPlugin: Plugin {
   private func ring() {
     guard let k = picked, let h = k.sheet.host, let box = held(k) else {
       hide(outline)
+      hide(grip)
       return
     }
     let z = k.sheet.canvas.zoomScale
     let o = k.sheet.canvas.frame.origin
     let r = CGRect(x: o.x + box.minX * z, y: o.y + box.minY * z, width: box.width * z, height: box.height * z).insetBy(dx: -4, dy: -4)
     show(outline, in: h, path: UIBezierPath(rect: r).cgPath)
+    show(grip, in: h, path: UIBezierPath(ovalIn: CGRect(x: r.maxX - 7, y: r.maxY - 7, width: 14, height: 14)).cgPath)
   }
 
   private func show(_ l: CAShapeLayer, in h: Host, path: CGPath?) {
@@ -947,6 +1324,8 @@ class InkPlugin: Plugin {
     if picked == nil { return }
     picked = nil
     hide(outline)
+    hide(grip)
+    emit(["kind": "unpicked"])
   }
 
   // ── undo and redo ──
@@ -1023,8 +1402,28 @@ class InkPlugin: Plugin {
     touched = t
   }
 
+  /// The stroke PencilKit just handed over, drawn again as the shape it most nearly is; as written when it is none.
+  /// One more step to undo: taken back, the stroke is as it was drawn.
+  private func shape(_ s: Sheet) {
+    let before = s.canvas.drawing
+    guard let k = before.strokes.last else { return }
+    let marker = k.ink.inkType == .marker
+    guard let found = Shapes.find(Shapes.points(of: k), closed: !marker) else { return }
+    lastShape = found.name
+    var strokes = Array(before.strokes.dropLast())
+    strokes.append(contentsOf: Shapes.strokes(found, from: k))
+    put(s, PKDrawing(strokes: strokes))
+    step(s, from: before, to: s.canvas.drawing)
+    emit(["kind": "shape", "sheet": s.id, "shape": found.name])
+  }
+
   fileprivate func changed(_ s: Sheet) {
     if let k = picked, k.sheet === s, s.canvas.drawing != k.drawing { unpick() }
+    if let w = snap, w.sheet === s {
+      snap = nil
+      lastShape = nil
+      if ProcessInfo.processInfo.systemUptime < w.until, s.canvas.drawing.strokes.count == w.count + 1 { shape(s) }
+    }
     historySoon()
     // an undo's change is kept at once
     if !(down && active === s), ProcessInfo.processInfo.systemUptime < hurry {
@@ -1094,7 +1493,9 @@ class InkPlugin: Plugin {
       return
     }
     s.place(spec.frame.rect, zoom: CGFloat(spec.zoom ?? 1))
-    if picked?.sheet === s { ring() }
+    let filter: String? = spec.blend == "multiply" ? "multiplyBlendMode" : spec.blend == "screen" ? "screenBlendMode" : nil
+    if (s.canvas.layer.compositingFilter as? String) != filter { s.canvas.layer.compositingFilter = filter }
+    if picked?.sheet === s { ring(); tellPicked() }
   }
 
   private func scrollView(for box: CGRect, height: CGFloat) -> UIScrollView? {
@@ -1123,7 +1524,9 @@ class InkPlugin: Plugin {
     if h.clip.frame != port { h.clip.frame = port }
     let view = onLayer(h.spec.view)
     let y = h.scroll.map { $0.contentOffset.y } ?? CGFloat(h.spec.top)
-    let origin = CGPoint(x: view.minX - port.minX, y: view.minY - port.minY - y)
+    // (and across: pages zoomed past their pane scroll sideways, and what is written on them goes with them)
+    let x = h.scroll.map { $0.contentOffset.x } ?? CGFloat(h.spec.left ?? 0)
+    let origin = CGPoint(x: view.minX - port.minX - x, y: view.minY - port.minY - y)
     if h.content.frame.origin != origin { h.content.frame = CGRect(origin: origin, size: CGSize(width: view.width, height: 1)) }
   }
 
@@ -1153,6 +1556,18 @@ class InkPlugin: Plugin {
         for s in self.sheets.values { s.canvas.overrideUserInterfaceStyle = d ? .dark : .light }
       }
       self.made = []
+      self.holes = (args.holes ?? []).map { self.onLayer($0) }
+      // the ink stands aside for what the page lays over it: a menu, a tool's settings, a notice
+      if self.holes.isEmpty {
+        layer.layer.mask = nil
+      } else {
+        let path = UIBezierPath(rect: layer.bounds.insetBy(dx: -4000, dy: -4000))
+        for h in self.holes { path.append(UIBezierPath(rect: h)) }
+        let mask = CAShapeLayer()
+        mask.fillRule = .evenOdd
+        mask.path = path.cgPath
+        layer.layer.mask = mask
+      }
       var listed = Set<String>()
       var named = Set<String>()
       for spec in args.hosts {
@@ -1164,6 +1579,11 @@ class InkPlugin: Plugin {
           return n
         }()
         h.spec = spec
+        // laid out anew: whatever a pinch stretched is as the page has it now
+        if self.pinched[h.id] != nil {
+          self.pinched[h.id] = nil
+          h.content.layer.sublayerTransform = CATransform3DIdentity
+        }
         self.bind(h)
         self.follow(h)
         for s in spec.sheets {
@@ -1215,6 +1635,9 @@ class InkPlugin: Plugin {
       s.given = d
       s.canvas.drawing = d
       s.dirty = false
+      // a page's writing is its canvas, at rest as while it is written: drawn from the strokes at whatever size the
+      // page is, never a picture stretched
+      if args.show == true, !d.strokes.isEmpty { s.canvas.isHidden = false }
       invoke.resolve(Took(took: true))
     }
   }
@@ -1279,9 +1702,11 @@ class InkPlugin: Plugin {
       var made: PKInkingTool? = nil
       switch t.kind {
       case "pen", "highlighter":
-        let type: PKInkingTool.InkType = t.kind == "pen" ? .pen : .marker
+        let type: PKInkingTool.InkType = t.kind == "pen" ? (self.inkTypes[t.ink ?? "pen"] ?? .pen) : .marker
         let range = type.validWidthRange
-        made = PKInkingTool(type, color: colour(t.color) ?? .black, width: min(max(CGFloat(t.width), range.lowerBound), range.upperBound))
+        var c = colour(t.color) ?? .black
+        if let a = t.opacity, a < 1 { c = c.withAlphaComponent(CGFloat(min(max(a, 0.05), 1))) }
+        made = PKInkingTool(type, color: c, width: min(max(CGFloat(t.width), range.lowerBound), range.upperBound))
       case "eraser", "select":
         break
       default:
@@ -1374,22 +1799,184 @@ class InkPlugin: Plugin {
     }
   }
 
+  /// The inks a pen can be, by the names the page uses, where this system's PencilKit has them.
+  private lazy var inkTypes: [String: PKInkingTool.InkType] = {
+    var all: [String: PKInkingTool.InkType] = ["pen": .pen, "pencil": .pencil, "marker": .marker]
+    if #available(iOS 17.0, *) {
+      all["monoline"] = .monoline
+      all["fountain"] = .fountainPen
+    }
+    return all
+  }()
+
+  /// What this device's PencilKit can do: the inks and the widths each takes, and whether a Pencil's squeeze is heard.
+  @objc public func caps(_ invoke: Invoke) throws {
+    var inks: [String: [Double]] = [:]
+    for (name, type) in inkTypes {
+      let r = type.validWidthRange
+      inks[name] = [Double(r.lowerBound), Double(r.upperBound)]
+    }
+    var squeeze = false
+    if #available(iOS 17.5, *) { squeeze = true }
+    invoke.resolve(Caps(inks: inks, squeeze: squeeze))
+  }
+
+  /// Two fingers pinch the pages: the sheets are stretched as the page stretches them, until it lays them out anew.
+  @objc public func pinch(_ invoke: Invoke) throws {
+    let args = try invoke.parseArgs(PinchArgs.self)
+    DispatchQueue.main.async {
+      if let h = self.hosts[args.host] {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        if let k = args.k {
+          // a sublayer's transform is about the layer's own middle
+          let b = h.content.layer.bounds
+          let a = h.content.layer.anchorPoint
+          let c = CGPoint(x: b.minX + b.width * a.x, y: b.minY + b.height * a.y)
+          let kk = CGFloat(k)
+          let t = CGAffineTransform(a: kk, b: 0, c: 0, d: kk, tx: CGFloat(args.dx ?? 0) + (kk - 1) * c.x, ty: CGFloat(args.dy ?? 0) + (kk - 1) * c.y)
+          h.content.layer.sublayerTransform = CATransform3DMakeAffineTransform(t)
+          self.pinched[h.id] = kk
+        } else {
+          h.content.layer.sublayerTransform = CATransform3DIdentity
+          self.pinched[h.id] = nil
+        }
+        CATransaction.commit()
+      }
+      invoke.resolve()
+    }
+  }
+
+  /// What the lasso holds cut, copied, duplicated, deleted, or given a colour.
+  @objc public func selection(_ invoke: Invoke) throws {
+    let args = try invoke.parseArgs(SelectionArgs.self)
+    DispatchQueue.main.async {
+      if !self.selection(args.op, color: args.color.flatMap { colour($0) }) {
+        invoke.reject(self.picked == nil ? "nothing is selected" : "not something done with a selection")
+        return
+      }
+      self.hurry = ProcessInfo.processInfo.systemUptime + 1
+      self.keepSoon()
+      invoke.resolve(Selected(selected: self.picked?.at.count ?? 0, clip: self.clip.count))
+    }
+  }
+
+  /// What was cut or copied put down on a sheet, its middle at a place in the host's content.
+  @objc public func paste(_ invoke: Invoke) throws {
+    let args = try invoke.parseArgs(PasteArgs.self)
+    DispatchQueue.main.async {
+      guard let s = self.sheets[args.sheet], self.paste(on: s, at: CGPoint(x: args.x, y: args.y)) else {
+        invoke.reject(self.clip.isEmpty ? "nothing was cut or copied" : "no such sheet")
+        return
+      }
+      invoke.resolve(Selected(selected: self.picked?.at.count ?? 0, clip: self.clip.count))
+    }
+  }
+
+  /// The system's share sheet for a file, from `at` on the page: answered when it closes, with whether it was sent anywhere.
+  @objc public func share(_ invoke: Invoke) throws {
+    let args = try invoke.parseArgs(ShareArgs.self)
+    DispatchQueue.main.async {
+      guard let web = self.web, var top = web.window?.rootViewController else {
+        invoke.reject("no web view yet")
+        return
+      }
+      let url = URL(fileURLWithPath: args.path)
+      guard FileManager.default.fileExists(atPath: url.path) else {
+        invoke.reject("no such file")
+        return
+      }
+      while let over = top.presentedViewController, !over.isBeingDismissed { top = over }
+      let sheet = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+      sheet.completionWithItemsHandler = { [weak self] _, done, _, _ in
+        self?.sharing = false
+        invoke.resolve(Shared(done: done))
+      }
+      if let pop = sheet.popoverPresentationController {
+        pop.sourceView = web
+        pop.sourceRect = args.at.map { web.scrollView.convert($0.rect, to: web) } ?? CGRect(x: web.bounds.midX, y: web.bounds.midY, width: 1, height: 1)
+      }
+      self.sharing = true
+      self.shareSheet = sheet
+      top.present(sheet, animated: true)
+    }
+  }
+
+  /// A dev run's: the share sheet closed, as if nothing were chosen.
+  @objc public func unshare(_ invoke: Invoke) throws {
+    DispatchQueue.main.async {
+      if let sheet = self.shareSheet {
+        let done = sheet.completionWithItemsHandler
+        sheet.completionWithItemsHandler = nil
+        sheet.dismiss(animated: false) { done?(nil, false, nil, nil) }
+        if sheet.presentingViewController == nil { done?(nil, false, nil, nil) }
+      }
+      invoke.resolve()
+    }
+  }
+
+  /// A dev run's: the Pencil tapped twice (`tap`) or squeezed, as the system would say it.
+  @objc public func pencilDev(_ invoke: Invoke) throws {
+    let args = try invoke.parseArgs(PencilArgs.self)
+    DispatchQueue.main.async {
+      if args.what == "three", let h = self.hosts.values.first(where: { $0.clip.frame.height > 0 }), let web = self.web, let layer = self.layer {
+        // three fingers tapped at the middle of the pages: what the recogniser says when it sees them (no rig's three fingers are taken for a tap)
+        let p = layer.convert(CGPoint(x: h.clip.frame.midX, y: h.clip.frame.midY), to: web.scrollView)
+        self.emit(["kind": "fingers", "n": 3, "x": p.x, "y": p.y])
+      } else {
+        self.pencil(args.what == "squeeze" ? "squeeze" : "tap", prefer: args.what == "squeeze" ? "palette" : "eraser")
+      }
+      invoke.resolve()
+    }
+  }
+
+  /// A dev run's: a stroke of the ink held through these points of a sheet's drawing, as if written and, with `rest`,
+  /// ended with the Pencil resting: what the shapes make of it is what they make of a written one.
+  @objc public func stroke(_ invoke: Invoke) throws {
+    let args = try invoke.parseArgs(StrokeArgs.self)
+    DispatchQueue.main.async {
+      guard let s = self.sheets[args.sheet], args.points.count >= 2 else {
+        invoke.reject("no such sheet")
+        return
+      }
+      let w = self.ink.width
+      let pts = args.points.enumerated().map { i, p in
+        PKStrokePoint(location: CGPoint(x: p[0], y: p[1]), timeOffset: Double(i) * 0.01, size: CGSize(width: w * 1.3, height: w * 1.3), opacity: 1, force: 1, azimuth: 0, altitude: .pi / 2)
+      }
+      let before = s.canvas.drawing
+      let k = PKStroke(ink: self.ink.ink, path: PKStrokePath(controlPoints: pts, creationDate: Date()), transform: .identity, mask: nil)
+      self.lastShape = nil
+      self.put(s, PKDrawing(strokes: before.strokes + [k]))
+      self.step(s, from: before, to: s.canvas.drawing)
+      if args.rest, self.tool.snap == true { self.shape(s) }
+      s.canvas.isHidden = false
+      self.wait(s)
+      invoke.resolve()
+    }
+  }
+
   /// How it all stands, for the checks.
   @objc public func state(_ invoke: Invoke) throws {
     DispatchQueue.main.async {
       guard let layer = self.layer, let web = self.web else {
-        invoke.resolve(State(sheets: [], hosts: [], tools: false, tool: self.tool, finger: self.finger, undo: self.history.canUndo, redo: self.history.canRedo, wheel: self.wheel != nil, selected: 0, down: false, scribble: self.scribble, touched: nil, lastTouched: []))
+        invoke.resolve(State(sheets: [], hosts: [], tools: false, tool: self.tool, finger: self.finger, undo: self.history.canUndo, redo: self.history.canRedo, wheel: self.wheel != nil, selected: 0, held: nil, clip: self.clip.count, shape: self.lastShape, pinch: 1, sharing: self.sharing, down: false, scribble: self.scribble, touched: nil, lastTouched: []))
         return
       }
       let sheets = self.sheets.values.sorted { $0.id < $1.id }.map { s -> SheetState in
         let at = s.canvas.convert(s.canvas.bounds, to: layer)
         let onWeb = layer.convert(at, to: web.scrollView)
-        return SheetState(id: s.id, strokes: s.canvas.drawing.strokes.count, shown: !s.canvas.isHidden, dirty: s.dirty, at: Box(CGRect(origin: onWeb.origin, size: s.canvas.frame.size)))
+        return SheetState(id: s.id, strokes: s.canvas.drawing.strokes.count, shown: !s.canvas.isHidden, dirty: s.dirty, at: Box(CGRect(origin: onWeb.origin, size: s.canvas.frame.size)), pixels: Double(s.canvas.zoomScale * (s.canvas.window?.screen.scale ?? UIScreen.main.scale)), blend: s.canvas.layer.compositingFilter as? String)
+      }
+      var heldAt: Box? = nil
+      if let k = self.picked, let box = self.held(k) {
+        let z = k.sheet.canvas.zoomScale
+        let on = k.sheet.canvas.convert(CGRect(x: box.minX * z, y: box.minY * z, width: box.width * z, height: box.height * z), to: layer)
+        heldAt = Box(layer.convert(on, to: web.scrollView))
       }
       let hosts = self.hosts.values.sorted { $0.id < $1.id }.map { h in
         HostState(id: h.id, follows: h.scroll != nil, offset: Double(h.scroll?.contentOffset.y ?? -1), port: Box(h.clip.frame))
       }
-      invoke.resolve(State(sheets: sheets, hosts: hosts, tools: false, tool: self.tool, finger: self.finger, undo: self.history.canUndo, redo: self.history.canRedo, wheel: self.wheel != nil, selected: self.picked?.at.count ?? 0, down: self.down, scribble: self.scribble, touched: self.touched, lastTouched: self.lastTouched))
+      invoke.resolve(State(sheets: sheets, hosts: hosts, tools: false, tool: self.tool, finger: self.finger, undo: self.history.canUndo, redo: self.history.canRedo, wheel: self.wheel != nil, selected: self.picked?.at.count ?? 0, held: heldAt, clip: self.clip.count, shape: self.lastShape, pinch: Double(self.pinched.values.first ?? 1), sharing: self.sharing, down: self.down, scribble: self.scribble, touched: self.touched, lastTouched: self.lastTouched))
     }
   }
 

@@ -33,7 +33,8 @@
 import { invoke } from '@tauri-apps/api/core';
 import { INK_EXT, type InkStroke, type StoreFs } from '../vault/index.js';
 import { imagePath, isRemote } from './images.js';
-import { canvasesReady, toolsHeard } from './inkTools.js';
+import { canvasesReady, setOpen, toolsHeard } from './inkTools.js';
+import { create } from 'zustand';
 import { useApp } from './store.js';
 import { currentVault } from './vault.js';
 
@@ -87,6 +88,8 @@ export interface SheetSpec {
   hit: Box;
   /** Points of the screen to a point of the drawing. */
   zoom: number;
+  /** How its ink lies on what is under it, where the canvas stays shown at rest (a page's): as the page's picture of it is blended. */
+  blend?: 'multiply' | 'screen';
 }
 
 /** A scroller on the page and what lies in it. */
@@ -97,6 +100,8 @@ export interface HostSpec {
   /** What of it ink shows in and the Pencil writes in. */
   port: Box;
   top: number;
+  /** How far it is scrolled sideways (pages zoomed past their pane). */
+  left?: number;
   /** How tall its content is. */
   height: number;
   /** Where a Pencil off every sheet would open a new one, in its content: nowhere (milestone 82), always null. */
@@ -115,8 +120,66 @@ export interface PenEvent {
   top?: number;
 }
 
-/** What the native side says of the tools: what can be taken back, and the colour wheel's colour as it turns. */
-export type ToolEvent = { kind: 'history'; undo: boolean; redo: boolean } | { kind: 'color'; color: string };
+/** What the native side says of the tools: what can be taken back, the colour wheel's colour as it turns, the Pencil tapped twice or squeezed. */
+export type ToolEvent = { kind: 'history'; undo: boolean; redo: boolean } | { kind: 'color'; color: string } | { kind: 'pencil'; what: string; prefer: string };
+
+/**
+ * What the native side says of the lasso (milestone 85): what it holds and
+ * where that lies in its host's content (`picked`), that it holds nothing or
+ * is being moved (`unpicked`), that the Pencil rested under it where nothing
+ * is held (`rest`: what was cut or copied can be put down there), and that a
+ * stroke ended resting became a shape.
+ */
+export type LassoEvent =
+  | { kind: 'picked'; sheet: string; host: string; count: number; clip: number; x: number; y: number; w: number; h: number }
+  | { kind: 'unpicked'; moving?: boolean }
+  | { kind: 'rest'; sheet: string; host: string; x: number; y: number; clip: number }
+  | { kind: 'shape'; sheet: string; shape: string };
+
+/** What the native side says two or three fingers did on the glass: tapped at once, or pinched (how far spread against how they began, and the place between them, on the page). */
+export type FingerEvent =
+  | { kind: 'fingers'; n: number; x: number; y: number }
+  | { kind: 'pinch'; phase: 'begin' | 'change' | 'end' | 'cancel'; k: number; x: number; y: number };
+
+const fingerEars = new Set<(e: FingerEvent) => void>();
+/** `f` hears what two and three fingers do, wherever on the page: each lens takes what falls on it. Returns the undoing. */
+export function onFingers(f: (e: FingerEvent) => void): () => void {
+  if (!hasCanvas()) return () => {};
+  (window as unknown as { __ink?: (e: PenEvent | ToolEvent | LassoEvent | FingerEvent) => void }).__ink = heard;
+  fingerEars.add(f);
+  return () => { fingerEars.delete(f); };
+}
+
+/** What the lasso holds, for the menu beside it; and where the Pencil rested with something to put down. */
+export interface Lasso {
+  picked: { sheet: string; host: string; count: number; clip: number; box: Box } | null;
+  rest: { sheet: string; host: string; x: number; y: number } | null;
+}
+export const useLasso = create<Lasso>(() => ({ picked: null, rest: null }));
+
+/** Something done with what the lasso holds: `cut`, `copy`, `duplicate`, `delete`, or `color` with a colour. */
+export const lassoDo = (op: 'cut' | 'copy' | 'duplicate' | 'delete' | 'color', color?: string): Promise<void> =>
+  invoke<{ selected: number; clip: number }>('ink_selection', { op, color: color ?? null }).then((got) => {
+    const was = useLasso.getState().picked;
+    if (was && got.selected > 0) useLasso.setState({ picked: { ...was, clip: got.clip } });
+  }, console.error);
+
+/** What was cut or copied put down where the Pencil rested. */
+export function lassoPaste(): Promise<void> {
+  const at = useLasso.getState().rest;
+  useLasso.setState({ rest: null });
+  return at ? invoke('ink_paste', { sheet: at.sheet, x: at.x, y: at.y }).then(() => {}, console.error) : Promise.resolve();
+}
+
+/**
+ * Two fingers pinch a surface's pages (`Pdf.tsx`): its sheets are shown at
+ * `k * p + (dx, dy)`, `p` in its scroller's content, until the next scene
+ * lays them out; null puts them back as they lie.
+ */
+export function pinchSheets(host: string, at: { k: number; dx: number; dy: number } | null): void {
+  if (!hasCanvas()) return;
+  void invoke('ink_pinch', { pinch: at ? { host, ...at } : { host } }).catch(() => {});
+}
 
 /** A sheet's strokes in the store. */
 export interface Paper {
@@ -176,13 +239,21 @@ export async function keepPage(hash: string, page: number, drawing: string): Pro
   return { strokes: strokes.length, added, removed };
 }
 
-/** A sheet's canvas holds what `paper` does, unless it does already. The native side keeps what it has while it is being written on. */
-export async function fillSheet(sheet: string, paper: Paper, drawing: () => Promise<Uint8Array>): Promise<void> {
+/**
+ * A sheet's canvas holds what `paper` does, unless it does already. The
+ * native side keeps what it has while it is being written on. With `show`
+ * the canvas stays on the screen with it (a page's, milestone 85: what is
+ * written is drawn from its strokes at rest as it is while written, sharp at
+ * any size; a picture of it is what a device with no canvas shows). Resolves
+ * to whether the canvas holds it now.
+ */
+export async function fillSheet(sheet: string, paper: Paper, drawing: () => Promise<Uint8Array>, show = false): Promise<boolean> {
   const strokes = await paper.read();
   const was = bases.get(sheet);
-  if (was && was.size === strokes.length && strokes.every((s) => was.has(s.stroke))) return;
-  const took = await invoke<{ took: boolean }>('ink_fill', { sheet, drawing: strokes.length ? b64(await drawing()) : null });
+  if (was && was.size === strokes.length && strokes.every((s) => was.has(s.stroke))) return true;
+  const took = await invoke<{ took: boolean }>('ink_fill', { sheet, drawing: strokes.length ? b64(await drawing()) : null, show });
   if (took.took) bases.set(sheet, new Set(strokes.map((s) => s.stroke)));
+  return took.took;
 }
 
 /** The canvas goes until the Pencil's next touch: the page is showing its picture. */
@@ -219,13 +290,18 @@ let said = '';
 /** What waits for the canvases to be where the last scene put them. */
 let afters: (() => void)[] = [];
 
+/** What the page lays over the sheets: the canvases lie over the web view, and stand aside for these. */
+const OVER = '[data-ink-over], .pop-menu, .ctx-menu, .sel-cue, .pdf-peek, .pdf-bar, .palette-panel, .notice';
+
 async function sendScene(): Promise<void> {
   const hosts = [...surfaces].map((s) => s.host()).filter((h): h is HostSpec => h !== null);
   const dark = document.documentElement.dataset.theme === 'dark';
-  const text = JSON.stringify({ hosts, dark });
+  // what the page lays over the sheets (a tool's settings, a menu, the lasso's): no place to write
+  const holes: Box[] = Array.from(document.querySelectorAll(OVER)).map((el) => boxOf(el.getBoundingClientRect())).filter((b) => b.w > 0 && b.h > 0);
+  const text = JSON.stringify({ hosts, dark, holes });
   if (text !== said) {
     said = text;
-    const got = await invoke<{ made: string[] } | null>('ink_scene', { scene: { hosts, dark } });
+    const got = await invoke<{ made: string[] } | null>('ink_scene', { scene: { hosts, dark, holes } });
     // a canvas made anew (come back into the near screens) holds nothing yet
     for (const id of got?.made ?? []) {
       bases.delete(id);
@@ -246,8 +322,17 @@ export function sceneSoon(): void {
   timer = setTimeout(() => { timer = null; void sendScene().catch(console.error); }, 0);
 }
 
-function heard(e: PenEvent | ToolEvent): void {
-  if (e.kind === 'history' || e.kind === 'color') { toolsHeard(e); return; }
+function heard(e: PenEvent | ToolEvent | LassoEvent | FingerEvent): void {
+  if (e.kind === 'fingers' || e.kind === 'pinch') { for (const f of fingerEars) f(e); return; }
+  if (e.kind === 'history' || e.kind === 'color' || e.kind === 'pencil') { toolsHeard(e); return; }
+  if (e.kind === 'picked') { useLasso.setState({ picked: { sheet: e.sheet, host: e.host, count: e.count, clip: e.clip, box: { x: e.x, y: e.y, w: e.w, h: e.h } }, rest: null }); sceneSoon(); return; }
+  if (e.kind === 'unpicked') { if (useLasso.getState().picked) useLasso.setState({ picked: null }); return; }
+  if (e.kind === 'rest') { useLasso.setState({ rest: e.clip > 0 ? { sheet: e.sheet, host: e.host, x: e.x ?? 0, y: e.y ?? 0 } : null }); return; }
+  if (e.kind === 'shape') return;
+  // the Pencil is down again: a place to put something down is no longer asked for
+  if (e.kind === 'begin' && useLasso.getState().rest) useLasso.setState({ rest: null });
+  // and a tool's settings left open close: the Pencil is writing
+  if (e.kind === 'begin') setOpen(null);
   if (e.kind === 'quiet') { void keep(e.sheet); return; }
   for (const s of surfaces) {
     if (e.kind === 'begin' && e.host !== s.host()?.id) continue;
@@ -259,7 +344,7 @@ function heard(e: PenEvent | ToolEvent): void {
 /** From here on `s` is written on where the Pencil lands. Returns the undoing: what was written on it is kept first. */
 export function addSurface(s: Surface): () => void {
   if (!hasCanvas()) return () => {};
-  (window as unknown as { __ink?: (e: PenEvent | ToolEvent) => void }).__ink = heard;
+  (window as unknown as { __ink?: (e: PenEvent | ToolEvent | LassoEvent | FingerEvent) => void }).__ink = heard;
   surfaces.add(s);
   sceneSoon();
   return () => { surfaces.delete(s); sceneSoon(); };
@@ -272,7 +357,8 @@ export function covered(scroller: HTMLElement, box: Box): boolean {
   const dy = Math.min(24, box.h / 4);
   for (const [x, y] of [[box.x + dx, box.y + dy], [box.x + box.w - dx, box.y + dy], [box.x + box.w / 2, box.y + box.h / 2], [box.x + dx, box.y + box.h - dy], [box.x + box.w - dx, box.y + box.h - dy]] as const) {
     const at = document.elementFromPoint(x, y);
-    if (at && !scroller.contains(at)) return true;
+    // (what the canvases stand aside for piece by piece, `OVER`, covers only itself)
+    if (at && !scroller.contains(at) && !at.closest(OVER)) return true;
   }
   return false;
 }
@@ -287,10 +373,10 @@ export function inContent(scroller: HTMLElement, el: Element): Box {
 const boxOf = (r: DOMRect): Box => ({ x: r.left, y: r.top, w: r.width, h: r.height });
 
 /** A scroller's own place, and its port under what stands at its top. */
-export function portOf(scroller: HTMLElement, under?: Element | null): { view: Box; port: Box; top: number; height: number } {
+export function portOf(scroller: HTMLElement, under?: Element | null): { view: Box; port: Box; top: number; left: number; height: number } {
   const view = boxOf(scroller.getBoundingClientRect());
   const cut = under ? Math.max(0, under.getBoundingClientRect().bottom - view.y) : 0;
-  return { view, port: { ...view, y: view.y + cut, h: view.h - cut }, top: scroller.scrollTop, height: scroller.scrollHeight };
+  return { view, port: { ...view, y: view.y + cut, h: view.h - cut }, top: scroller.scrollTop, left: scroller.scrollLeft, height: scroller.scrollHeight };
 }
 
 /** The scroll is the native side's; a page's layout changing is the page's to say: everything said anew when the app changes around it. */

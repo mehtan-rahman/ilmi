@@ -695,15 +695,15 @@ impl Store {
         rows.collect::<rusqlite::Result<Vec<_>>>().map_err(err)
     }
 
-    /// The writing on a book's page, made from its strokes: `drawing` is the `PKDrawing` the canvas opens, `picture` a PNG at 2× of the whole page, `w` by `h` points, on nothing. Nothing is kept: no file is ever compared with it.
-    pub fn ink_page(&self, page: &str, what: &str, w: f64, h: f64) -> Result<Vec<u8>, String> {
+    /// The writing on a book's page, made from its strokes: `drawing` is the `PKDrawing` the canvas opens, `picture` a PNG of the whole page, `w` by `h` points, on nothing, `scale` pixels to the point (held between 1 and 6: a page zoomed into is drawn finer, 85). Nothing is kept: no file is ever compared with it.
+    pub fn ink_page(&self, page: &str, what: &str, w: f64, h: f64, scale: f64) -> Result<Vec<u8>, String> {
         if !matches!(what, "drawing" | "picture") {
             return Err(format!("{what}: not something a page's writing is read as"));
         }
         let mut st = self.conn.prepare("SELECT data FROM ink WHERE page = ?1 ORDER BY at, stroke").map_err(err)?;
         let strokes: Vec<Vec<u8>> = st.query_map([page], |r| r.get(0)).map_err(err)?.collect::<rusqlite::Result<_>>().map_err(err)?;
         let refs: Vec<&[u8]> = strokes.iter().map(Vec::as_slice).collect();
-        if what == "drawing" { tauri_plugin_ink::join(&refs) } else { tauri_plugin_ink::page_picture(&refs, w, h, 2.0) }
+        if what == "drawing" { tauri_plugin_ink::join(&refs) } else { tauri_plugin_ink::page_picture(&refs, w, h, if scale.is_finite() { scale.clamp(1.0, 6.0) } else { 2.0 }) }
     }
 
     /// A page of ink as a file, made from its strokes: `drawing` is the `PKDrawing` PencilKit opens, `picture` a PNG at 2× of what they cover (empty when there are none).
@@ -1427,8 +1427,16 @@ impl Stores {
     pub fn ink_pages(&self, dir: &Path, prefix: &str) -> Result<Vec<String>, String> {
         self.with(dir, |s| s.ink_pages(prefix))
     }
-    pub fn ink_page(&self, dir: &Path, page: &str, what: &str, w: f64, h: f64) -> Result<Vec<u8>, String> {
-        self.with(dir, |s| s.ink_page(page, what, w, h))
+    pub fn ink_page(&self, dir: &Path, page: &str, what: &str, w: f64, h: f64, scale: f64) -> Result<Vec<u8>, String> {
+        self.with(dir, |s| s.ink_page(page, what, w, h, scale))
+    }
+    /// A page's strokes as PencilKit wrote them, a drawing each, in the order they were drawn: what a PDF of the pages is made from (85).
+    pub fn ink_strokes(&self, dir: &Path, page: &str) -> Result<Vec<Vec<u8>>, String> {
+        self.with(dir, |s| {
+            let mut st = s.conn.prepare("SELECT data FROM ink WHERE page = ?1 ORDER BY at, stroke").map_err(err)?;
+            let rows = st.query_map([page], |r| r.get::<_, Vec<u8>>(0)).map_err(err)?;
+            rows.collect::<rusqlite::Result<Vec<_>>>().map_err(err)
+        })
     }
     pub fn blob_file(&self, dir: &Path, hash: &str) -> Result<Option<PathBuf>, String> {
         self.with(dir, |s| s.blob_file(hash))
@@ -2011,15 +2019,15 @@ mod tests {
         assert!(s.ink_pages("p.0000.").unwrap().is_empty());
         // read: a drawing for the canvas holding those strokes, and a picture of the whole page whatever they cover
         let names = |d: &[u8]| tauri_plugin_ink::split(d).unwrap().into_iter().map(|x| x.key).collect::<Vec<_>>();
-        assert_eq!(names(&s.ink_page(&p3, "drawing", 0.0, 0.0).unwrap()), strokes[..5].iter().map(|x| x.stroke.clone()).collect::<Vec<_>>());
-        let picture = s.ink_page(&p3, "picture", 612.0, 792.0).unwrap();
+        assert_eq!(names(&s.ink_page(&p3, "drawing", 0.0, 0.0, 2.0).unwrap()), strokes[..5].iter().map(|x| x.stroke.clone()).collect::<Vec<_>>());
+        let picture = s.ink_page(&p3, "picture", 612.0, 792.0, 2.0).unwrap();
         assert_eq!(&picture[..4], b"\x89PNG");
         assert_eq!((u32::from_be_bytes(picture[16..20].try_into().unwrap()), u32::from_be_bytes(picture[20..24].try_into().unwrap())), (1224, 1584));
         assert!(!dir.join(INK_DIR).exists(), "nothing made from them is kept");
         // one more and one taken away
         s.batch(&[Op::Ink { page: p3.clone(), add: strokes[7..8].to_vec(), remove: vec![strokes[0].stroke.clone()] }]).unwrap();
         assert_eq!(s.ink(&p3).unwrap().len(), 5);
-        assert_ne!(s.ink_page(&p3, "picture", 612.0, 792.0).unwrap(), picture);
+        assert_ne!(s.ink_page(&p3, "picture", 612.0, 792.0, 2.0).unwrap(), picture);
         // the PDF is as it was: nothing is written into it
         assert_eq!(s.blob_get(&pdf.hash).unwrap(), b"%PDF-1.7 a book");
         // the book's row deleted: the strokes are the file's, by what it is, and stay

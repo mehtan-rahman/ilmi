@@ -38,7 +38,7 @@ export function tauriStore(root: string): Store {
     inkFile: async (page, what) => new Uint8Array(await invoke<ArrayBuffer>('store_ink_file', { root, page, what })),
     inkSplit: (drawing) => invoke<InkStroke[]>('ink_split', { drawing: btoa(Array.from(drawing, (b) => String.fromCharCode(b)).join('')) }),
     inkPages: (prefix) => invoke<string[]>('store_ink_pages', { root, prefix }),
-    inkPage: async (page, what, w, h) => new Uint8Array(await invoke<ArrayBuffer>('store_ink_page', { root, page, what, w, h })),
+    inkPage: async (page, what, w, h, scale) => new Uint8Array(await invoke<ArrayBuffer>('store_ink_page', { root, page, what, w, h, scale: scale ?? null })),
     blobTake: (path) => invoke<{ hash: string; size: number }>('store_blob_take', { root, path }),
     blobRange: async (hash, begin, end) => new Uint8Array(await invoke<ArrayBuffer>('store_blob_range', { root, hash, begin, end })),
     batch: (ops) => invoke<Row[]>('store_batch', { root, ops }),

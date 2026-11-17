@@ -9496,6 +9496,118 @@ camera's picture, and whether a phone reads the code off a Mac's screen at
 the size it is drawn were never seen. Android is named in the capability
 and nothing more. A Mac's welcome takes no code.
 
+### [ ] 85. The written-notes editor, finished: gestures, each tool's settings, the lasso whole, shapes, pages, page setup
+Asked by the user, 2026-11-17, after writing in a notebook on a real iPad:
+"the writing editor feels very MVP, should continue building until it
+feels like a proper product"; and of what they saw there: "for some
+reason, the ink is blurry after i write for a little bit", after a scroll
+or a zoom; and: "It'd be nice if there was an option to edit page setup.
+Like making it pageless vs paged, editing linespacing width, margins, grid
+space if lined/dotted, etc".
+Notes: **The blur** was the picture. A page's writing, once kept, was shown
+as a PNG of the page at two pixels to the point of the page
+(`store_ink_page`), stretched to the size the page is drawn: 1224 pixels
+across a Letter sheet drawn 1540 to 2000 device pixels wide at fit, so
+softer than the live stroke by a quarter to three fifths on every iPad
+(measured on a 13-inch at fit: a stroke's edge 1.7 px live, 2.6 to 3.0 px
+once kept), and by the zoom again when zoomed. Now a page's canvas stays on
+the screen at rest (`ink_fill` with `show`; nothing rests it), so the
+writing is drawn by PencilKit from its strokes at the canvas's zoom, kept,
+scrolled back to or zoomed (1.6 px at 266%). The canvas is laid on the page
+as the picture was (`blend`: multiply, screen on dark paper, a compositing
+filter on its layer) and stands aside for what the page lays over the
+pages (`holes` in the scene: cut from the layer's mask, and no touch arms
+a sheet there). The picture is what a Mac and a phone show, now made as
+fine as their screen at the size the page is drawn (`inkScale`, a `scale`
+to `store_ink_page`, never over twenty million pixels), and what an iPad
+shows of a page until its canvas is filled; a clip in a typed note asks
+for it at the clip's own size. Also found: a canvas did not follow its
+scroller sideways (pages zoomed past the pane), so writing zoomed in lay
+off its page by as far as the pages were scrolled across.
+**Gestures.** Two fingers zoom the pages about the place between them and
+leave them at whatever zoom they stop at, 50% to 400% (`zoomHeld`; the
+bar's steps go on from anywhere, and to 400%); while the fingers are down
+the pages are stretched by a transform and the canvases told the same
+(`ink_pinch`), then laid out once at the new size, a page keeping its old
+picture stretched until the new one is drawn. Two fingers tapped are undo,
+three redo. Both are recognisers of the plugin's on the web view, said to
+the page (`pinch`, `fingers`; `onFingers`): where a finger draws, the web
+view is given no finger's touch on a sheet, and a page that answers
+WebKit's gesture events holds every recogniser on the web view back. A
+pinch's fingers lifting were once taken for a tap of two, which undid the
+last stroke; the taps wait for the pinch to fail. The Pencil's double
+tap goes to the eraser and back (or to the tool before, or nowhere, by the
+iPad's Pencil setting), its squeeze opens the held tool's settings
+(`UIPencilInteraction`).
+**The tools.** The tool in use pressed again opens its settings under it,
+ours: the pen's ink (`pen`, `fine` the monoline, `fountain`, `pencil`,
+those `ink_caps` says this PencilKit has), the size in use by a slider
+with a stroke drawn as it is set, a highlighter's opacity, the eraser's
+`whole stroke` or `part of a stroke` (`Shapes.cut`) with a ring under the
+Pencil, the three sizes, the colours (one pressed while in use, or held,
+is replaced from the wheel), the last eight colours taken from the wheel,
+and `hold to make a shape`. All kept per device (`ilmi.ink`; what 82 kept
+reads into it).
+**Shapes** (`Shapes.swift`): a pen's stroke ended with the Pencil resting
+0.42 s is drawn again as a line, an arrow, a rectangle or an ellipse when
+it is plainly one (longer than 36 points; a line within 3.5% of its chord;
+closed shapes upright in their box, once round, every point near the
+outline); a highlighter's as a line. One more undo step; off by its
+switch.
+**The lasso.** What it holds has a handle (resize about its upper left)
+and a menu the page draws in the scroller's content (`InkMenu`): cut,
+copy, duplicate, delete, colour; the Pencil resting on bare paper under
+the lasso offers paste, on any sheet of any notebook. Each is one undo
+step. A stroke recoloured is made a moment later, since a stroke's name
+does not cover its colour.
+**Pages.** `all pages` (the bar, `more`): every page small with its ink; a
+press goes there; a notebook's has add page after, duplicate, delete, a
+page dragged to another place (held first under a finger), the paper.
+`add page after this one` and `duplicate this page` in `more`. FORMAT: a
+new sheet takes one past the highest number wherever it is put, a moved
+sheet changes only its place in `sheets`.
+**Page setup** (`more`, replacing the four paper rows): one panel, the
+pages changing behind it. Paper; spacing by a slider in millimetres and by
+name; a ruled sheet's margin line and top space; `pages` or `pageless`;
+Letter or A4, upright or on its side; `use for new notebooks` (this
+device's, `ilmi.paper`). FORMAT §3: `paper-rule`, `paper-margin`,
+`paper-top` in points, `paper-size: a4`, `paper-turn: landscape`,
+`pageless: true`; each optional, a file with none reads as before.
+**Decided:** a pageless notebook is the same sheets drawn with nothing
+between them, the ruling carried on down them, each sheet's strokes still
+its own; a stroke belongs to the sheet it began on and may run past its
+foot, so a pageless sheet's canvas and picture reach half a sheet below
+it. So nothing is converted going pageless or back, a sync merges it as it
+merges pages, and no canvas is taller than a sheet and a half. It grows by
+a sheet as it is written near its end (82's rule), has no page count, add,
+delete or overview, and `share as pdf` cuts it into its sheets, with what
+ran over from the sheet before drawn at each one's head. Only the paper
+moves under any of it: strokes are in a sheet's points from its top left.
+**The row.** Never scrolls: under 748 px the sizes leave it, under 626
+the colours but the one in use (which opens the settings, where both
+are); `hide tools` tucks it away and a pen in the bar's first row brings
+it back; tucked, a finger does not draw. Chosen things stand on a plate, a
+pen and a highlighter carry their colour.
+**Share.** `share as pdf` in `more` (a Mac: `export as pdf`, a save
+dialog): `pages_pdf` (`native/ink.m`, CoreGraphics on both) writes a
+notebook's paper as lines, a PDF's page as the PDF's own page, the ink a
+picture at four pixels to the point, multiplied; `ink_share` is the
+system's share sheet.
+**Smaller.** Every sheet's paper is drawn, near or far (a page scrolled to
+fast was bare until it came near); a new page fades in; the bar's zoom is
+written into React's own text node (a node put in its place was never
+written again).
+**Not done:** the three-finger tap could not be made by the rig on this
+simulator (said through `dev_ink_pencil`); the lasso's menu over a typed
+note's ink area; rotate in the lasso; shapes while the Pencil is still
+down (they are made as it lifts); a triangle, a shape drawn at an angle;
+the eraser's ring while it only hovers; text or pictures on a sheet;
+sheets of two sizes in one notebook; a Mac's or a phone's ink past twenty
+million pixels a page (soft past about 300% on a large window); undo
+across a page gone far from the view. A real Pencil: pressure, tilt, the
+double tap and squeeze themselves, palm rejection, how resting to make a
+shape feels, two fingers under draw with finger.
+
 ## Notes for the next session
 
 Studying (42–46) is complete, 2026-10-31: every milestone's window check

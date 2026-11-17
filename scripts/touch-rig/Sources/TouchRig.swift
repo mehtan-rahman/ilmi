@@ -14,6 +14,11 @@ import ObjectiveC
 //   · away <seconds> (the app sent home, and brought back after that long)
 //   · loop x1 y1 x2 y2 x3 y3 … (one finger through every point in turn, slowly, and lifted: a lasso's loop,
 //     which no public call of XCUITest draws; `through` below)
+//   · pinch ax ay bx by ax2 ay2 bx2 by2 (two fingers down at a and b, moved together to a2 and b2, and lifted:
+//     a pinch about wherever they are, which XCUITest's own `pinch` makes only about an element's middle)
+//   · taps n x y (n fingers down at once round x y and up again: two are undo, three redo; `fingers` below)
+//   · rest x1 y1 x2 y2 … seconds (as `loop`, but quicker along the way and resting `seconds` on the last point
+//     before lifting: a stroke held still at its end)
 final class TouchRig: XCTestCase {
   /// One finger down at the first point, through the rest, and up: XCUITest's own pointer path, which its
   /// public calls build two points at a time. The classes are the runner's (`runner-methods.txt` lists what
@@ -47,6 +52,36 @@ final class TouchRig: XCTestCase {
     var failed: NSError?
     let ok = unsafeBitCast(record.method(for: run), to: Run.self)(record, run, &failed)
     if !ok { print("rig: the path was not made: \(String(describing: failed))") }
+    return ok
+  }
+
+  /// Several fingers at once, each through its own points with its own times, by the same pointer paths `through` uses.
+  private func fingers(_ paths: [[(CGPoint, Double)]]) -> Bool {
+    guard let pathClass = NSClassFromString("XCPointerEventPath") as? NSObject.Type, let recordClass = NSClassFromString("XCSynthesizedEventRecord") as? NSObject.Type else { return false }
+    let start = NSSelectorFromString("initForTouchAtPoint:offset:")
+    let move = NSSelectorFromString("moveToPoint:atOffset:")
+    let lift = NSSelectorFromString("liftUpAtOffset:")
+    let named = NSSelectorFromString("initWithName:interfaceOrientation:")
+    let add = NSSelectorFromString("addPointerEventPath:")
+    let run = NSSelectorFromString("synthesizeWithError:")
+    guard pathClass.instancesRespond(to: start), pathClass.instancesRespond(to: move), pathClass.instancesRespond(to: lift), recordClass.instancesRespond(to: named), recordClass.instancesRespond(to: add), recordClass.instancesRespond(to: run) else { return false }
+    typealias Start = @convention(c) (AnyObject, Selector, CGPoint, Double) -> Unmanaged<AnyObject>
+    typealias Move = @convention(c) (AnyObject, Selector, CGPoint, Double) -> Void
+    typealias Lift = @convention(c) (AnyObject, Selector, Double) -> Void
+    typealias Named = @convention(c) (AnyObject, Selector, NSString, Int) -> Unmanaged<AnyObject>
+    typealias Run = @convention(c) (AnyObject, Selector, AutoreleasingUnsafeMutablePointer<NSError?>?) -> Bool
+    let rawRecord = recordClass.perform(NSSelectorFromString("alloc")).takeUnretainedValue() as! NSObject
+    let record = unsafeBitCast(rawRecord.method(for: named), to: Named.self)(rawRecord, named, "fingers", UIInterfaceOrientation.portrait.rawValue).takeUnretainedValue() as! NSObject
+    for pts in paths where !pts.isEmpty {
+      let rawPath = pathClass.perform(NSSelectorFromString("alloc")).takeUnretainedValue() as! NSObject
+      let path = unsafeBitCast(rawPath.method(for: start), to: Start.self)(rawPath, start, pts[0].0, pts[0].1).takeUnretainedValue() as! NSObject
+      for p in pts.dropFirst() { unsafeBitCast(path.method(for: move), to: Move.self)(path, move, p.0, p.1) }
+      unsafeBitCast(path.method(for: lift), to: Lift.self)(path, lift, (pts.last?.1 ?? 0) + 0.05)
+      _ = record.perform(add, with: path)
+    }
+    var failed: NSError?
+    let ok = unsafeBitCast(record.method(for: run), to: Run.self)(record, run, &failed)
+    if !ok { print("rig: the fingers were not made: \(String(describing: failed))") }
     return ok
   }
 
@@ -112,6 +147,39 @@ final class TouchRig: XCTestCase {
           let f = app.frame
           let pts = stride(from: 0, to: n.count, by: 2).map { CGPoint(x: f.minX + n[$0] * f.width, y: f.minY + n[$0 + 1] * f.height) }
           if !through(pts) { print("rig: no path through points in this Xcode: \(ask)") }
+        case "pinch" where n.count >= 8:
+          let f = app.frame
+          let at = { (i: Int) in CGPoint(x: f.minX + n[i] * f.width, y: f.minY + n[i + 1] * f.height) }
+          // down, a rest, then twenty steps to where they end, and a rest there before they lift
+          let way = { (from: CGPoint, to: CGPoint) -> [(CGPoint, Double)] in
+            var out: [(CGPoint, Double)] = [(from, 0)]
+            for i in 1...20 { let t = Double(i) / 20; out.append((CGPoint(x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t), 0.2 + t * 0.7)) }
+            out.append((to, 1.15))
+            return out
+          }
+          if !fingers([way(at(0), at(4)), way(at(2), at(6))]) { print("rig: no pinch in this Xcode: \(ask)") }
+        case "taps" where n.count >= 3:
+          let f = app.frame
+          let c = CGPoint(x: f.minX + n[1] * f.width, y: f.minY + n[2] * f.height)
+          let count = max(1, Int(n[0]))
+          let paths = (0..<count).map { i -> [(CGPoint, Double)] in
+            let p = CGPoint(x: c.x + CGFloat(i - count / 2) * 70 + (count % 2 == 0 ? 35 : 0), y: c.y)
+            return [(p, 0), (p, 0.08)]
+          }
+          // (`taps n x y 1`: by XCUITest's own call, which taps the middle of the app whatever x and y say)
+          if n.count >= 4 && n[3] == 1 { app.tap(withNumberOfTaps: 1, numberOfTouches: count) }
+          else if !fingers(paths) { print("rig: no taps in this Xcode: \(ask)") }
+        case "rest" where n.count >= 5 && n.count % 2 == 1:
+          let f = app.frame
+          let secs = n[n.count - 1]
+          var t = 0.1
+          var pts: [(CGPoint, Double)] = []
+          for i in stride(from: 0, to: n.count - 1, by: 2) {
+            pts.append((CGPoint(x: f.minX + n[i] * f.width, y: f.minY + n[i + 1] * f.height), i == 0 ? 0 : t))
+            t += 0.045
+          }
+          if let last = pts.last { pts.append((last.0, last.1 + secs)) }
+          if !fingers([pts]) { print("rig: no rest in this Xcode: \(ask)") }
         case "turn": XCUIDevice.shared.orientation = parts.last == "landscape" ? .landscapeLeft : .portrait
         default: print("rig: not understood: \(ask)")
         }

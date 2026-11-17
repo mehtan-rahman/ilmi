@@ -4,7 +4,8 @@
 // to it as sheets, each lying where its page lies; a press that says `pen`
 // and reaches the page boxes nothing; what a canvas gives when the writing
 // goes quiet is that page's strokes, found by the PDF's hash and the page's
-// number, the page's picture standing aside while the canvas is over it. A
+// number, the canvas staying over the page with what it holds (milestone
+// 85: nothing is swapped for it) and the page's picture standing aside. A
 // finger and a mouse still box. Every device lays a picture of the strokes
 // over the page, the Mac too, made again when they change by a write here or
 // a merge. The canvases themselves are an iPad's (`ILMI_SMOKE=pageink`).
@@ -31,8 +32,8 @@ let fs: StoreFs;
 let hash: string;
 
 /** What the canvases were told, and what a sheet gives when asked. */
-const scenes: { hosts: { id: string; port: { h: number }; open: unknown; sheets: { id: string; frame: { y: number; h: number }; hit: { y: number }; zoom: number }[] }[] }[] = [];
-const filled: { sheet: string; drawing: string | null }[] = [];
+const scenes: { hosts: { id: string; port: { h: number }; open: unknown; sheets: { id: string; frame: { y: number; h: number }; hit: { y: number }; zoom: number; blend?: string }[] }[] }[] = [];
+const filled: { sheet: string; drawing: string | null; show?: boolean }[] = [];
 const rested: string[] = [];
 let drawn: InkStroke[] | null = null;
 /** A canvas being written on keeps what it has. */
@@ -139,6 +140,8 @@ describe('a book\'s page under the Pencil', () => {
     expect(host.sheets[1]!.frame.y).toBe(H + 18);
     expect(host.sheets[1]!.hit.y).toBe(H + 18);
     expect(host.sheets[1]!.frame.h).toBe(H);
+    // the ink lies on a light page as ink does on paper
+    expect(host.sheets.map((s) => s.blend)).toEqual(['multiply', 'multiply']);
   });
 
   it('a press that says pen and reaches the page boxes nothing', async () => {
@@ -151,7 +154,7 @@ describe('a book\'s page under the Pencil', () => {
     expect(await fs.inkedPages(hash)).toEqual([]);
   });
 
-  it('what the Pencil wrote is the page\'s strokes, kept when it goes quiet, and the picture takes over from the canvas', async () => {
+  it('what the Pencil wrote is the page\'s strokes, kept when it goes quiet; the canvas stays over the page, and the picture made of it stands aside', async () => {
     expect(hash).toMatch(/^[0-9a-f]{64}$/);
     await wait(20);
     await pencil({ kind: 'begin', sheet: sheet(42), host: `pages:${CH3}`, fresh: false, x: 60, y: 100 });
@@ -165,15 +168,15 @@ describe('a book\'s page under the Pencil', () => {
     // nothing went into the PDF, and the notes say nothing of it
     expect(fs.blobAt(`${ROOT}/${PDF}`)).toBe(hash);
     expect(await fs.readText(`${ROOT}/${CH3}`)).toBe(NOTES);
-    // the picture is made, under the canvas, and stands aside until it is shown; then the canvas goes
+    // the picture is made, under the canvas, and stands aside; shown, it stands aside still: the canvas is not let go
     await wait(40);
     const img = inkOn(42)!;
     expect(img).not.toBeNull();
     expect(img.dataset.live).toBe('1');
     expect(rested).toEqual([]);
     await loaded(42);
-    expect(inkOn(42)!.dataset.live).toBeUndefined();
-    expect(rested).toEqual([sheet(42)]);
+    expect(inkOn(42)!.dataset.live).toBe('1');
+    expect(rested).toEqual([]);
     expect(inkOn(41)).toBeNull();
     expect(pictures.get(inkOn(42)!.src)).toBe(new TextDecoder().decode(memPagePicture([stroke(1), stroke(2)], W, H)));
     const at = pageEl(42).style;
@@ -188,6 +191,11 @@ describe('a book\'s page under the Pencil', () => {
     await pencil({ kind: 'quiet', sheet: sheet(42) });
     await wait(30);
     expect((await fs.pageInk(hash, 42)).length).toBe(3);
+    // while the canvas shows the writing no new picture of it is made, and the canvas is told nothing it gave
+    expect(inkOn(42)!.src).toBe(img.src);
+    expect(inkOn(42)!.dataset.live).toBe('1');
+    expect(filled).toEqual([]);
+    expect(rested).toEqual([]);
   });
 
   it('a page written on is given to its canvas, and strokes a merge brought in meanwhile stay', async () => {
@@ -195,6 +203,10 @@ describe('a book\'s page under the Pencil', () => {
     await told(41);
     const fill = filled.find((f) => f.sheet === sheet(41) && f.drawing)!;
     expect(memSplit(Uint8Array.from(atob(fill.drawing!), (c) => c.charCodeAt(0))).map((x) => x.stroke)).toEqual(['s1']);
+    // to be shown by it: once it holds them the page's picture stands aside
+    expect(fill.show).toBe(true);
+    await wait(40);
+    expect(inkOn(41)!.dataset.live).toBe('1');
     // a merge writes s9 while the canvas, which knows s1, writes s2
     writing = true;
     await act(async () => { await fs.door.run(() => fs.door.apply({ puts: [], removes: [], reviews: [], pairs: null, ink: [{ page: `p.${hash}.41`, add: [stroke(9)], remove: [] }] }, [])); });
@@ -204,7 +216,7 @@ describe('a book\'s page under the Pencil', () => {
     expect((await fs.pageInk(hash, 41)).map((x) => x.stroke).sort()).toEqual(['s1', 's2', 's9']);
   });
 
-  it('every stroke erased, the page is the page again and the canvas goes', async () => {
+  it('every stroke erased, the page is the page again, with no picture over it', async () => {
     await fs.setPageInk(hash, 41, [stroke(1)]);
     await told(41);
     drawn = [];
@@ -212,7 +224,8 @@ describe('a book\'s page under the Pencil', () => {
     await wait(120);
     expect(await fs.inkedPages(hash)).toEqual([]);
     expect(inkOn(41)).toBeNull();
-    expect(rested).toContain(sheet(41));
+    // the canvas stays where it is, empty, for the next stroke
+    expect(rested).toEqual([]);
   });
 
   it('a finger still boxes after its hold and a mouse at once', async () => {

@@ -172,11 +172,28 @@ export type Field =
   /** A written notebook's paper. Means nothing without `written`. */
   | { key: 'paper'; value: PaperKind }
   /** A written notebook's pages in order, each named by a whole number from 1. Means nothing without `written`. */
-  | { key: 'sheets'; value: number[] };
+  | { key: 'sheets'; value: number[] }
+  /** A notebook's page setup (§3, *Written notes*, milestone 85): how far apart its rules, lines or dots are, in points. */
+  | { key: 'paper-rule'; value: number }
+  /** How far from the left edge its margin rule stands, in points; with none there is no margin rule. */
+  | { key: 'paper-margin'; value: number }
+  /** How far down a ruled sheet its first rule is, in points. */
+  | { key: 'paper-top'; value: number }
+  /** Its sheets' size, when not Letter. */
+  | { key: 'paper-size'; value: 'a4' }
+  /** Its sheets on their side. */
+  | { key: 'paper-turn'; value: 'landscape' }
+  /** Its sheets run on as one, with no gaps between them. */
+  | { key: 'pageless'; value: true };
 
 /** What a written notebook's pages are ruled with. */
 export type PaperKind = 'blank' | 'ruled' | 'grid' | 'dotted';
 export const PAPERS: readonly PaperKind[] = ['blank', 'ruled', 'grid', 'dotted'];
+
+/** What a notebook's page setup may say, in points: each from its least to its most. */
+export const PAPER_RULE_RANGE: readonly [number, number] = [8, 72];
+export const PAPER_MARGIN_RANGE: readonly [number, number] = [18, 300];
+export const PAPER_TOP_RANGE: readonly [number, number] = [0, 300];
 
 /** One exam (§3, *exams*): its day, and what it is called (`midterm 2`), when it says. */
 export interface Exam {
@@ -220,7 +237,7 @@ export interface Diagnostic {
 export const FIELD_KEYS: readonly FieldKey[] = [
   'type', 'title', 'frozen', 'imported', 'started', 'read', 'write', 'default-card', 'pri', 'pdf', 'url', 'author', 'published', 'tabs',
   'new-per-day', 'reviews-per-day', 'retention', 'leech', 'leech-action', 'pages', 'exam', 'finish',
-  'written', 'paper', 'sheets',
+  'written', 'paper', 'sheets', 'paper-rule', 'paper-margin', 'paper-top', 'paper-size', 'paper-turn', 'pageless',
 ];
 
 export function isField(e: FmEntry): e is Field {

@@ -293,7 +293,7 @@ export interface Store {
   /** The pages that hold strokes and whose name starts with `prefix`, in order. */
   inkPages(prefix: string): Promise<string[]>;
   /** The writing on a book's page, made from its strokes: the drawing the canvas opens, or a PNG of the whole page, `w` by `h` points, on nothing. */
-  inkPage(page: string, what: 'drawing' | 'picture', w: number, h: number): Promise<Uint8Array>;
+  inkPage(page: string, what: 'drawing' | 'picture', w: number, h: number, scale?: number): Promise<Uint8Array>;
   /** A file on disk taken in as a blob without its bytes passing through here. The app's only. */
   blobTake?(path: string): Promise<{ hash: string; size: number }>;
   /** The bytes of a blob from `begin` up to `end`. The app's only. */
@@ -543,7 +543,7 @@ export interface StoreFs extends Fs {
   /** That page holds these strokes from now on: as `setInk`, the difference written in one transaction. Nothing is written into the PDF and no row is made. */
   setPageInk(hash: string, page: number, strokes: readonly InkStroke[]): Promise<{ added: number; removed: number }>;
   /** That page's writing, made from its strokes: the drawing the canvas opens, or a PNG of the whole page on nothing, the page `w` by `h` points. */
-  pageInkFile(hash: string, page: number, what: 'drawing' | 'picture', w?: number, h?: number): Promise<Uint8Array>;
+  pageInkFile(hash: string, page: number, what: 'drawing' | 'picture', w?: number, h?: number, scale?: number): Promise<Uint8Array>;
   /** The pages of that PDF that are written on, in order. */
   inkedPages(hash: string): Promise<number[]>;
   /** Whether a drawing is what the file at `path` under `.ilmi/ink/` holds, stroke for stroke: PencilKit's bytes differ on every save, so bytes cannot say. */
@@ -1362,9 +1362,9 @@ export function storeFs(store: Store, root: string): StoreFs {
 
     setPageInk: (hash, page, strokes) => serial(() => pageInkWrite(hash, page, strokes)),
 
-    async pageInkFile(hash, page, what, w = 0, h = 0) {
+    async pageInkFile(hash, page, what, w = 0, h = 0, scale) {
       await ready;
-      return store.inkPage(pageKey(hash, page), what, w, h);
+      return store.inkPage(pageKey(hash, page), what, w, h, scale);
     },
 
     async sameInk(path, drawing) {

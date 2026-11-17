@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { NodeType, PaperKind, ReadSchedule, Reading, Review, SectionSchedule, WriteSchedule } from '../format/index.js';
+import type { NodeType, PaperKind, WrittenMeta, ReadSchedule, Reading, Review, SectionSchedule, WriteSchedule } from '../format/index.js';
 import type { QueueItem } from '../schedule/index.js';
 import type { Focus } from './items.js';
 import type { Order, TreeNode } from '../vault/index.js';
@@ -145,7 +145,7 @@ export interface DocInfo {
   /** The `pages` field: which pages of its PDF it is (a chapter of a book that landed as a notebook). */
   pages?: { first: number; last: number };
   /** A written notebook (milestone 82): its id, paper and sheets. Its `pdf` is its own path: it opens as its pages. */
-  written?: { id: string; paper: PaperKind; sheets: number[] };
+  written?: WrittenMeta;
 }
 
 export interface Sidebar {

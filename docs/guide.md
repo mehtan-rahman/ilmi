@@ -200,9 +200,12 @@ records the bottom of the view. An older extract's passage is still drawn
 on the page as a highlight when it is found there again.
 
 The pages are fitted to the pane's width. ⌘= draws them larger, a step at
-a time (125%, 150%, 200%, 250%, 300%), ⌘− smaller (75%, 50% under the
-fit), ⌘0 fitted again; a pinch on a
-trackpad, or of two fingers on an iPad or a phone, steps once. The same text stays under the top of the view, pages
+a time (125%, 150%, 200%, 250%, 300%, 400%), ⌘− smaller (75%, 50% under the
+fit), ⌘0 fitted again; a pinch on a trackpad steps once. Two fingers on an
+iPad or a phone zoom the pages as they spread and close, about the place
+between them, and leave the pages at whatever size they stop at, from half
+the fit to four times it; the bar's zoom says it, and its `+` and `−` step
+on from there. The same text stays under the top of the view, pages
 wider than the pane scroll sideways, and the boxes, what is written on the
 pages, and the read bar grow with them. The zoom is said in the bar, is
 the book's own, and is kept for the device: it
@@ -323,18 +326,46 @@ tree.
 
 A notebook opens as a PDF does: its pages on the grey desk, the bar over
 them with its name, its notes, the zoom, the page (a press, or `g`, goes
-to a page) and `more`. Every page is a Letter sheet. A new notebook is
-ruled; `more` has `blank paper`, `ruled paper`, `grid paper` and `dotted
-paper`, and the one you pick is the whole notebook's.
+to a page) and `more`. A new notebook is ruled Letter sheets.
+
+`page setup`, in `more`, is one panel over the pages, which change behind
+it as you use it. The paper: blank, ruled, grid or dotted. The spacing of
+its rules, lines or dots, by a slider that says it in millimetres or by
+name (`narrow`, `college`, `wide` for ruled paper; 5, 7 and 10 mm for a
+grid and dots). For ruled paper a `margin line` and how far from the edge
+it stands, and the `top space` over the first rule. The layout: `pages`,
+or `pageless`, where the sheets run on as one long sheet with nothing
+between them and the ruling carries on down it; a pageless notebook has no
+page count, nothing to add or delete, and grows as you write near its
+end. For pages, the size (`letter`, `a4`) and which way they lie
+(`portrait`, `landscape`). `use for new notebooks` keeps all of it as what
+notebooks made on this device start with. None of it moves what you
+wrote: the paper changes under the ink. Going pageless and back loses
+nothing, since the sheets are the same sheets either way.
 
 On an iPad the Pencil writes where it lands, and the tools are the bar's
 second row (see *On an iPad*). `add page` under the last page adds one,
 and you do not have to reach for it: a stroke begun in the lower third of
-the last page adds the next page by itself. `more` has `delete this
-page`, which takes the page in view. A page with writing on it, or a
-passage kept from it, asks first; the notice undoes it, and the page comes
-back where it was with what was on it. The other pages are not touched by
-it: what you wrote on them and what you kept from them stay with them.
+the last page adds the next page by itself. `more` has `add page after
+this one`, `duplicate this page` (a copy of the page and what is written
+on it, right after it) and `delete this page`, which takes the page in
+view. A page with writing on it, or a passage kept from it, asks first;
+the notice undoes it, and the page comes back where it was with what was
+on it. The other pages are not touched by it: what you wrote on them and
+what you kept from them stay with them.
+
+`all pages` (the squares in the bar, or `more`) lays every page out small,
+with what is written on it. Press one to go to it. Each has its own `…`:
+`add page after`, `duplicate`, `delete`; the last tile is `add page`; the
+four small sheets at the top are the paper. To move a page, drag it to
+where it should go (under a finger, hold it first). A PDF has the same
+overview of its own pages, to go to one.
+
+`share as pdf` in `more` (on a Mac, `export as pdf`) makes one PDF of the
+notebook, its paper and what is written on it, and hands it to the
+system's share sheet (on a Mac, saves it where you say). Over a PDF it
+makes a PDF of that PDF's pages with what you wrote on them; the PDF's own
+text stays text. A pageless notebook is cut into its sheets.
 
 On the Mac a notebook shows its pages and what is written on them, and
 cannot be written on; the bar says `written on an ipad`.
@@ -866,29 +897,69 @@ with the writing on them, and a finger still boxes a passage after a hold.
 
 The tools are a row under the bar over the pages, on an iPad only:
 
-- `pen`, `highlighter`, `eraser`, `select`, the one in use underlined. The
-  pen writes; the highlighter is a marker the text shows through; the
-  eraser takes away what it is drawn across; with `select`, draw a loop
-  round some strokes and drag them elsewhere.
+- `pen`, `highlighter`, `eraser`, `select`, the one in use on a plate, a
+  pen and a highlighter with the colour they write in under them. The pen
+  writes; the highlighter is a marker the text shows through; the eraser
+  takes away what it is drawn across, with a ring under the Pencil that
+  shows how far it reaches; with `select`, draw a loop round some strokes.
 - Three sizes of the tool in use, `thin`, `medium`, `thick`: a line for the
   pen, a band for the highlighter, a round for the eraser. Each tool
   remembers its own.
 - Its colours: black, blue, red and green for the pen; yellow, green, pink
-  and blue for the highlighter. The ring after them, `colours`, opens the
-  colour wheel beside it; the colour chosen there fills the ring and is
-  that tool's fifth colour from then on. A press on the ring uses that
-  colour again, and a press while it is in use opens the wheel to change
-  it. The eraser and `select` have no colours.
+  and blue for the highlighter. A press on the colour in use, or a hold on
+  any of them, opens the colour wheel to replace it. The ring after them,
+  `colours`, opens the wheel for a fifth colour of that tool's own; a
+  press on the ring uses that colour again, and a press while it is in
+  use opens the wheel to change it. The eraser and `select` have none.
 - At the right, `undo` and `redo`, grey when there is nothing to take back
-  or put back, and `draw with finger`. With it off, the Pencil writes and a
-  finger scrolls; with it on, a finger writes too and two fingers scroll.
+  or put back; `draw with finger` (off, the Pencil writes and a finger
+  scrolls; on, a finger writes too and two fingers scroll); and `hide
+  tools`, which tucks the row away for reading. A pen in the bar's first
+  row brings it back. Tucked away, the Pencil still writes with the tool
+  it had, and a finger never draws.
+
+Press the tool in use again and its settings open under it. The pen's: its
+ink (`pen`, `fine`, `fountain`, `pencil`, as many as the iPad has), the
+size in use made thinner or thicker by a slider, with a stroke drawn as it
+is set, the three sizes, the colours, the last few colours taken from the
+wheel, and `hold to make a shape`. The highlighter's: its size, its
+opacity, its colours, and `hold for a straight line`. The eraser's:
+`whole stroke` or `part of a stroke`, and its size. Each press acts at
+once; a press anywhere else, or the Pencil writing, closes them. In a pane
+too narrow for the whole row (a note beside the pages, an 11-inch iPad on
+its side) the sizes leave the row first, then the colours but for the one
+in use, which opens the settings; nothing scrolls sideways, and
+everything that left the row is in the settings.
+
+With `hold to make a shape` on, a stroke you end by resting the Pencil
+where it stops is drawn again as what it nearly was: a straight line, an
+arrow, a rectangle or an ellipse. Only a stroke that is plainly one of
+those, and only when the Pencil rests: handwriting is never touched.
+`undo` gives the stroke back as you drew it.
+
+What `select` holds has a dashed box round it with a handle at its lower
+right, and a small menu: `cut`, `copy`, `duplicate`, `delete`, `colour`.
+Drag it by its middle to move it and by the handle to make it larger or
+smaller. Rest the Pencil on bare paper with `select` held and `paste` puts
+what was cut or copied down there, on that page or another, in that
+notebook or another. Each is one step for `undo`.
+
+Fingers: two spread or closed zoom the pages about the place between
+them; two tapped at once are `undo`, three `redo`. The Pencil's own double
+tap goes to the eraser and back to the tool you had (or to the tool
+before, if that is what the iPad's Pencil settings say; set to do nothing,
+it does nothing); a squeeze, on a Pencil that has one, opens the settings
+of the tool in use.
 
 What you choose is kept on that iPad, through a restart, and is the same
-over every book and notebook. In a pane too narrow for the row (a note
-beside the pages) it scrolls sideways.
+over every book and notebook.
 
-The Mac and every other device show what you wrote as a picture over the
-page. Nothing is written into the PDF: the strokes are kept in the
+What you write stays as sharp as when you wrote it, at any zoom: on an
+iPad a page's writing is always drawn from its strokes, never from a
+picture of them.
+
+The Mac and a phone show what you wrote as a picture over the page, made
+as fine as their screen at the size the page is drawn. Nothing is written into the PDF: the strokes are kept in the
 collection with the book they are on, whichever chapter shows that page.
 An export, the mirror and the dated exports write them as
 `.ilmi/ink/<the PDF's fingerprint>/<page>.pkdrawing`, and an import takes them

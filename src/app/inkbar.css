@@ -1,66 +1,144 @@
-/* The writing tools (milestone 82, `InkBar.tsx`): one row, an iPad's. Sans
-   chrome, the one icon set, hairlines between its groups, the accent under
-   what is chosen and nothing else lit. Every target is a finger's: 44px
-   tall, 44 wide for a tool and 40 for a size or a colour. In a pane too
-   narrow for it the row scrolls sideways; nothing wraps and nothing shrinks. */
+/* The writing tools (milestones 82, 85; `InkBar.tsx`): one row, an iPad's.
+   Sans chrome, the one icon set, hairlines between its groups. What is
+   chosen stands on a plate of the paper with the accent under it; a pen and
+   a highlighter carry the colour they write in. Every target is a finger's:
+   44px tall, 44 wide for a tool and 40 for a size or a colour. The row never
+   scrolls: in a pane too narrow for it the sizes, then the colours, go into
+   the tool's settings (`data-fit`). */
 
 .inkbar {
   display: flex; align-items: center; flex: 0 0 100%;
-  box-sizing: border-box; width: 100%; min-width: 0; height: 48px; padding: 0 8px;
-  overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch;
-  scrollbar-width: none;
+  box-sizing: border-box; width: 100%; min-width: 0; height: 52px; padding: 0 10px;
+  overflow: hidden;
   background: var(--bg); border-bottom: 1px solid var(--line-2);
   font-family: var(--sans); font-size: var(--t-sm); line-height: 1; color: var(--fg-2); white-space: nowrap;
   -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
 }
-.inkbar::-webkit-scrollbar { display: none; }
 
-.inkbar .ib-group { display: flex; align-items: center; flex: 0 0 auto; }
+.inkbar .ib-group { display: flex; align-items: center; flex: 0 0 auto; gap: 2px; }
 /* a hairline between the tools, their sizes and their colours */
-.inkbar .ib-group + .ib-group { margin-left: 6px; padding-left: 6px; border-left: 1px solid var(--line-2); }
-.inkbar .ib-grow { flex: 1 0 12px; }
+.inkbar > .ib-group + .ib-group { margin-left: 8px; padding-left: 8px; border-left: 1px solid var(--line-2); }
+.inkbar .ib-grow { flex: 1 1 8px; min-width: 4px; }
 .inkbar .ib-grow + .ib-group { margin-left: 0; padding-left: 0; border-left: 0; }
+.inkbar[data-fit="compact"] > .ib-group + .ib-group { margin-left: 4px; padding-left: 4px; }
 
-.inkbar .ib-btn {
+.inkbar .ib-btn, .ink-pop .ib-btn {
   position: relative; display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto;
   width: 44px; height: 44px; margin: 0; padding: 0;
-  border: 0; border-radius: var(--radius); background: none; color: var(--fg-3);
+  border: 0; border-radius: 6px; background: none; color: var(--fg-3);
   font: inherit; cursor: default; -webkit-appearance: none; appearance: none; -webkit-tap-highlight-color: transparent;
-  touch-action: manipulation; --ic: 20px;
+  touch-action: manipulation; --ic: 22px;
+  transition: background-color 120ms ease, color 120ms ease;
 }
-.inkbar .ib-btn .ic { width: var(--ic); height: var(--ic); }
-.inkbar .ib-btn:active:not(:disabled) { background: var(--line-3); }
+.inkbar .ib-btn .ic, .ink-pop .ib-btn .ic { width: var(--ic); height: var(--ic); stroke-width: 1.25; }
+.inkbar .ib-btn:active:not(:disabled), .ink-pop .ib-btn:active { background: var(--line-2); }
+.inkbar .ib-btn:active:not(:disabled) .ic, .inkbar .ib-btn:active:not(:disabled) .ib-dot, .inkbar .ib-btn:active:not(:disabled) .ib-size-mark { opacity: 0.7; }
 @media (hover: hover) { .inkbar .ib-btn:hover:not(:disabled) { background: var(--line-3); color: var(--fg-1); } }
 .inkbar .ib-btn:disabled { color: var(--fg-5); }
-.inkbar .ib-btn:focus-visible { outline: 1.5px solid var(--accent); outline-offset: -3px; }
+.inkbar .ib-btn:focus-visible, .ink-pop .ib-btn:focus-visible { outline: 1.5px solid var(--accent); outline-offset: -3px; }
 
-/* what is chosen: full ink, the accent under it */
-.inkbar .ib-btn[aria-pressed="true"] { color: var(--fg-1); }
-.inkbar .ib-btn[aria-pressed="true"]:not(.ib-sw)::after {
-  content: ""; position: absolute; left: 10px; right: 10px; bottom: 3px; height: 2px; background: var(--accent);
+/* what is chosen: full ink on a plate of the paper */
+.inkbar .ib-btn[aria-pressed="true"], .ink-pop .ib-btn[aria-pressed="true"] { color: var(--fg-1); }
+.inkbar .ib-btn[aria-pressed="true"]:not(.ib-sw), .ink-pop .ib-btn[aria-pressed="true"]:not(.ib-sw) {
+  background: var(--paper); box-shadow: inset 0 0 0 1px var(--line-1, var(--line-2)), 0 1px 2px rgb(0 0 0 / 0.06);
 }
+/* a pen and a highlighter carry their colour: a short bar under the icon, full where the tool is the one held */
+.inkbar .ib-tool .ic { transform: translateY(-2px); }
+.inkbar .ib-tool .ib-ink {
+  position: absolute; left: 13px; right: 13px; bottom: 5px; height: 3px; border-radius: 2px; opacity: 0.38;
+  box-shadow: 0 0 0 0.5px color-mix(in oklab, var(--fg) 18%, transparent);
+}
+.inkbar .ib-tool[aria-pressed="true"] .ib-ink { opacity: 1; left: 10px; right: 10px; }
+/* the eraser and the lasso have no colour: the accent stands where it would */
+.inkbar .ib-tool[aria-pressed="true"]:not(:has(.ib-ink))::after {
+  content: ""; position: absolute; left: 10px; right: 10px; bottom: 5px; height: 3px; border-radius: 2px; background: var(--accent);
+}
+.inkbar [data-ink-do="finger"][aria-pressed="true"] { color: var(--accent); }
 
 /* the three sizes: a line, a band, a round, growing */
-.inkbar .ib-size { width: 40px; }
-.inkbar .ib-size-mark { width: 22px; height: 22px; }
+.inkbar .ib-size, .ink-pop .ib-size { width: 40px; }
+.inkbar .ib-size-mark, .ink-pop .ib-size-mark { width: 24px; height: 24px; }
 
-/* a colour is a round of itself, whatever the theme; the one in use has the accent round it */
-.inkbar .ib-sw { width: 40px; }
-.inkbar .ib-dot {
-  display: block; box-sizing: border-box; width: 24px; height: 24px; border-radius: 50%;
+/* a colour is a round of itself, whatever the theme; the one in use has a ring of the ink round it */
+.inkbar .ib-sw, .ink-pop .ib-sw { width: 40px; }
+.inkbar .ib-dot, .ink-pop .ib-dot {
+  display: block; box-sizing: border-box; width: 26px; height: 26px; border-radius: 50%;
   border: 1px solid color-mix(in oklab, var(--fg) 22%, transparent);
+  transition: transform 120ms ease;
 }
-.inkbar .ib-sw[aria-pressed="true"] .ib-dot { outline: 2px solid var(--accent); outline-offset: 2px; }
+.inkbar .ib-sw[aria-pressed="true"] .ib-dot, .ink-pop .ib-sw[aria-pressed="true"] .ib-dot { box-shadow: 0 0 0 2px var(--bg), 0 0 0 3.5px var(--fg-1); transform: scale(0.88); }
+.ink-pop .ib-sw[aria-pressed="true"] .ib-dot { box-shadow: 0 0 0 2px var(--paper), 0 0 0 3.5px var(--fg-1); }
 /* the colour wheel's: a ring of the spectrum, round its own colour once it has one */
-.inkbar .ib-ring {
+.inkbar .ib-ring, .ink-pop .ib-ring {
   display: flex; align-items: center; justify-content: center; border: 0;
   background: conic-gradient(from 0deg, #e5484d, #f5a524, #f2d43d, #46a758, #3aa7d9, #4f5bd5, #a044c4, #e5484d);
 }
-.inkbar .ib-core { display: block; box-sizing: border-box; width: 14px; height: 14px; border-radius: 50%; background: var(--bg); }
+.inkbar .ib-core, .ink-pop .ib-core { display: block; box-sizing: border-box; width: 15px; height: 15px; border-radius: 50%; background: var(--bg); }
+.ink-pop .ib-core { background: var(--paper); }
 
 /* e-ink shows no hue: what is chosen is weight, and a colour's name is in its title */
-[data-theme="eink"] .inkbar .ib-btn[aria-pressed="true"]:not(.ib-sw)::after { height: 3px; }
+[data-theme="eink"] .inkbar .ib-btn[aria-pressed="true"]:not(.ib-sw) { box-shadow: inset 0 0 0 1.5px var(--fg-1); }
 [data-theme="eink"] .inkbar .ib-dot { border-color: var(--fg-1); }
+
+/* ── a tool's settings, under the row from the tool ── */
+.ink-pop {
+  position: fixed; z-index: 60; box-sizing: border-box; width: 296px; max-width: calc(100vw - 16px); padding: 12px 12px 10px;
+  background: var(--paper); border: 1px solid var(--line-2); border-radius: 10px; box-shadow: var(--shadow-float);
+  font-family: var(--sans); font-size: var(--t-sm); line-height: 1.2; color: var(--fg-2);
+  -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+  animation: ink-pop-in 120ms ease-out;
+}
+@keyframes ink-pop-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .ink-pop { animation: none; } .inkbar .ib-btn { transition: none; } }
+.ink-pop .ib-group { display: flex; align-items: center; gap: 2px; }
+
+/* one of a few: the pen's inks, the eraser's ways */
+.ink-pop .ip-seg { display: flex; gap: 2px; padding: 2px; border-radius: 8px; background: var(--line-3); }
+.ink-pop .ip-opt {
+  flex: 1 1 0; min-width: 0; height: 52px; margin: 0; padding: 4px 2px 5px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  border: 0; border-radius: 6px; background: none; color: var(--fg-3); font: inherit; font-size: var(--t-xs); cursor: default;
+  -webkit-appearance: none; appearance: none; -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+}
+.ink-pop .ip-opt svg { width: 26px; height: 22px; }
+.ink-pop .ip-opt.ip-wide { height: 44px; font-size: var(--t-sm); }
+.ink-pop .ip-opt[aria-pressed="true"] { background: var(--paper); color: var(--fg-1); box-shadow: 0 0 0 1px var(--line-2), 0 1px 2px rgb(0 0 0 / 0.08); }
+
+/* the stroke as it is set, on a slip of paper */
+.ink-pop .ip-preview { display: block; width: 100%; height: 60px; margin: 10px 0 4px; border-radius: 6px; background: #fff; box-shadow: inset 0 0 0 1px var(--line-2); }
+.ink-pop .ip-preview .ip-words { stroke: #8a8f98; stroke-width: 2.4; stroke-linecap: round; }
+.ink-pop .ip-preview .ip-line { stroke: #1c1c1e; stroke-width: 2.6; stroke-linecap: round; }
+.ink-pop .ip-preview .ip-reach { fill: rgb(120 120 120 / 0.14); stroke: #6b6b70; stroke-width: 1; }
+
+.ink-pop .ip-row { display: flex; align-items: center; gap: 10px; height: 44px; }
+.ink-pop .ip-l { flex: 0 0 52px; color: var(--fg-3); }
+.ink-pop .ip-v { flex: 0 0 38px; text-align: right; color: var(--fg-2); font-variant-numeric: tabular-nums; }
+.ink-pop input[type="range"] {
+  flex: 1 1 auto; min-width: 0; height: 44px; margin: 0; background: none; -webkit-appearance: none; appearance: none; touch-action: pan-y;
+}
+.ink-pop input[type="range"]::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: var(--line-2); }
+.ink-pop input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none; width: 24px; height: 24px; margin-top: -10px; border-radius: 50%;
+  background: var(--paper); border: 1px solid color-mix(in oklab, var(--fg) 30%, transparent); box-shadow: 0 1px 3px rgb(0 0 0 / 0.22);
+}
+.ink-pop .ip-line { display: flex; align-items: center; height: 46px; border-top: 1px solid var(--line-3); }
+.ink-pop .ip-line .ip-l { flex-basis: 52px; }
+
+.ink-pop .ip-recent { display: flex; align-items: center; gap: 4px; min-height: 40px; border-top: 1px solid var(--line-3); }
+.ink-pop .ip-rc { width: 26px; height: 40px; margin: 0; padding: 0; border: 0; background: none; display: inline-flex; align-items: center; justify-content: center; -webkit-appearance: none; appearance: none; -webkit-tap-highlight-color: transparent; }
+.ink-pop .ip-rc span { display: block; width: 18px; height: 18px; border-radius: 50%; border: 1px solid color-mix(in oklab, var(--fg) 22%, transparent); box-sizing: border-box; }
+.ink-pop .ip-rc[aria-pressed="true"] span { box-shadow: 0 0 0 1.5px var(--paper), 0 0 0 3px var(--fg-1); }
+
+/* on or off: a stroke ended resting becomes a shape */
+.ink-pop .ip-check {
+  display: flex; align-items: center; gap: 10px; width: 100%; height: 44px; margin: 0; padding: 0 2px; border: 0; border-top: 1px solid var(--line-3);
+  background: none; color: var(--fg-2); font: inherit; text-align: left; cursor: default; -webkit-appearance: none; appearance: none; -webkit-tap-highlight-color: transparent; --ic: 18px;
+}
+.ink-pop .ip-check .ic { width: 18px; height: 18px; color: var(--fg-3); }
+.ink-pop .ip-ct { flex: 1 1 auto; }
+.ink-pop .ip-sw { position: relative; flex: 0 0 38px; height: 22px; border-radius: 11px; background: var(--fg-5); transition: background-color 140ms ease; }
+.ink-pop .ip-sw::after { content: ""; position: absolute; left: 2px; top: 2px; width: 18px; height: 18px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgb(0 0 0 / 0.3); transition: transform 140ms ease; }
+.ink-pop .ip-check[aria-checked="true"] .ip-sw { background: var(--accent); }
+.ink-pop .ip-check[aria-checked="true"] .ip-sw::after { transform: translateX(16px); }
 
 /* over a typed note that holds ink (`Reader.tsx`): the row stays at the pane's top as the note scrolls, on the note's
    paper. It starts where the text does and, being wider than the text's column, runs on past it as far as the pane

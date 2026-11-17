@@ -108,9 +108,11 @@ import {
 import { pickPos, type Band } from '../reader/index.js';
 import { passagesOf, pointOn, sectionState, type Passage } from '../schedule/index.js';
 import { INKS, passageId, childDirOf, isPdfPath, type InkStroke, type Mark, type Portal, type Quad, type StoreFs } from '../vault/index.js';
-import { PAPERS, SHEET_H, SHEET_W, addSheet, addWritten, placeOfSheet as placeAmong, removeSheet, setPaper, sheetAt as sheetAmong, type PaperKind } from './written.js';
-import { PAPER_DOT, PAPER_RULE, PAPER_WHITE, paperPaths } from './paper.js';
-import { InkBar } from './InkBar.js';
+import { PAPERS, SHEET_H, SHEET_W, addSheet, addSheetAfter, addWritten, duplicateSheet, placeOfSheet as placeAmong, removeSheet, setPaper, sheetAt as sheetAmong, type PaperKind } from './written.js';
+import { InkMenu, PageGrid, PageSetup, PaperSheet, sharePages } from './PageTools.js';
+import { paperOf, sheetSize, type PaperSpec } from './paper.js';
+import { InkBar, InkToggle } from './InkBar.js';
+import { redo as inkRedo, undo as inkUndo, useInkTools } from './inkTools.js';
 import { CueActions } from '../plugins/CueActions.js';
 import { onPluginAction, publishSelection, toPluginSelection, type PluginSelection } from '../plugins/index.js';
 import { notesOf, notesTabsOf, pdfForNotes, titleOf } from './names.js';
@@ -122,7 +124,7 @@ import {
 import { popMenu, popMenuOpen, type PopItem } from './popMenu.js';
 import { TextLayer, pageBits, type PDFDocumentProxy } from './pdfjs.js';
 import { acquirePdf, itemsOf } from './bookPdf.js';
-import { addSurface, afterScene, covered, fillSheet, hasCanvas, inContent, pagePaper, portOf, restSheet, sceneSoon, type PenEvent, type SheetSpec, type Surface } from './ink.js';
+import { addSurface, afterScene, covered, fillSheet, hasCanvas, inContent, onFingers, pagePaper, pinchSheets, portOf, sceneSoon, type PenEvent, type SheetSpec, type Surface } from './ink.js';
 import { Icon } from './icons.js';
 import { StudyButton } from './StudyButton.js';
 import { ExamTag } from './ExamTag.js';
@@ -154,17 +156,24 @@ const PAGE_MAX = 1600;
 /** How far down the view the place kept across a change of scale is, px: under the words over the pages. */
 const PLACE_AT = 60;
 /** The zooms a book's pages step through: 1 is the pages fitted to the pane's width; under it they are centred, over it they scroll sideways. */
-export const ZOOMS = [0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3];
+export const ZOOMS = [0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3, 4];
+/** The least and the most a pinch leaves the pages at; between them a pinch stops anywhere. */
+export const ZOOM_MIN = ZOOMS[0]!;
+export const ZOOM_MAX = ZOOMS[ZOOMS.length - 1]!;
 /** The most pixels a page's canvas is drawn with: past it the page is drawn coarser, not larger (a canvas over WebKit's limit draws nothing). */
 const CANVAS_MAX = 16_000_000;
 /** Zoomed, a page this far outside the view gives its canvas back, px. */
 const FAR = AHEAD * 3;
-/** How far two fingers spread (or, inverted, close) before the zoom steps. */
-const PINCH_OUT = 1.25;
+/** The pixels to a point a page's writing is drawn with: the least of these that the screen has, for the size the page is drawn at. */
+const INK_SCALES = [1, 1.5, 2, 3, 4, 6];
+/** The most pixels a page's writing is drawn with. */
+const INK_MAX = 20_000_000;
 /** A pinch's wheel events closer together than this are one gesture, ms. */
 const PINCH_GAP = 260;
 /** How far back from a passage the lens reads pages for a heading to name it. */
 const NAME_BACK = 30;
+/** How far past its foot a pageless notebook's sheet is written on and drawn, of its height: a stroke begun on one sheet runs on over the next. */
+export const RUN_OVER = 0.5;
 /** How far down a notebook's last page a stroke begins for a page to be added after it: its lower third. */
 const ADD_FROM = 2 / 3;
 
@@ -268,8 +277,24 @@ const places = new Map<string, { top: number; at: { page: number; y: number } | 
 /** The zoom one step in (`dir` 1) or out (-1) from `z`; 0 is fit. */
 export function zoomStep(z: number, dir: number): number {
   if (dir === 0) return 1;
-  const at = ZOOMS.reduce((best, v, i) => (Math.abs(v - z) < Math.abs(ZOOMS[best]! - z) ? i : best), 0);
-  return ZOOMS[Math.max(0, Math.min(ZOOMS.length - 1, at + Math.sign(dir)))]!;
+  // from anywhere a pinch left it: the next step past it, that way
+  if (dir > 0) return ZOOMS.find((v) => v > z + 0.005) ?? ZOOM_MAX;
+  return [...ZOOMS].reverse().find((v) => v < z - 0.005) ?? ZOOM_MIN;
+}
+
+/** A zoom as a pinch leaves it: held between the least and the most, to a hundredth; all but fit is fit. */
+export function zoomHeld(z: number): number {
+  const v = Math.round(Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z)) * 100) / 100;
+  return Math.abs(v - 1) < 0.03 ? 1 : v;
+}
+
+/** The pixels to a point a page `w` by `h` points has its writing drawn with, shown `px` px to the point on this screen. */
+export function inkScale(w: number, h: number, px: number, dpr: number): number {
+  const want = Math.max(1, px * dpr);
+  const most = Math.sqrt(INK_MAX / Math.max(1, w * h));
+  let got = INK_SCALES[0]!;
+  for (const v of INK_SCALES) { if (v > most) break; got = v; if (v >= want - 0.01) break; }
+  return got;
 }
 
 interface Rect { left: number; top: number; width: number; height: number }
@@ -360,37 +385,34 @@ const inkStore = (): StoreFs | null => {
 };
 
 /** What is written on a page, laid over it: a picture of the whole page made from its strokes, on nothing. `rev` moves when the strokes change. */
-function PageInk({ hash, page, at, w, h, rev, rect, live, onShown }: { hash: string; /** The page as the store knows it: a PDF's page, a notebook's sheet. */ page: number; /** Its place in the column. */ at: number; w: number; h: number; rev: number; rect: Rect; live: boolean; onShown(page: number): void }) {
+function PageInk({ hash, page, at, w, h, rev, rect, live: canvasOn, onShown }: { hash: string; /** The page as the store knows it: a PDF's page, a notebook's sheet. */ page: number; /** Its place in the column. */ at: number; w: number; h: number; rev: number; rect: Rect; live: boolean; onShown(page: number): void }) {
   const [url, setUrl] = useState<string | null>(null);
+  // as fine as the screen shows it at the size the page is drawn (85): zoomed into, the writing stays sharp
+  const fine = inkScale(w, h, rect.width / w, typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1);
+  /** The picture shown, kept until the next one is made: a page drawn anew is never bare of its writing meanwhile. */
+  const shown = useRef<string | null>(null);
   useEffect(() => {
     const fs = inkStore();
-    if (!fs) return;
+    // while a canvas shows the writing no picture of it is made: one is, again, when the canvas goes
+    if (!fs || (canvasOn && shown.current)) return;
     let live = true;
-    let made: string | null = null;
-    fs.pageInkFile(hash, page, 'picture', w, h).then((bytes) => {
+    fs.pageInkFile(hash, page, 'picture', w, h, fine).then((bytes) => {
       if (!live || !bytes.length) return;
-      made = URL.createObjectURL(new Blob([bytes as BlobPart], { type: 'image/png' }));
+      const made = URL.createObjectURL(new Blob([bytes as BlobPart], { type: 'image/png' }));
+      const was = shown.current;
+      shown.current = made;
       setUrl(made);
+      // the one before goes once this one has had time to be on the screen
+      if (was) setTimeout(() => URL.revokeObjectURL(was), 1500);
     }, console.error);
-    return () => { live = false; if (made) URL.revokeObjectURL(made); };
-  }, [hash, page, w, h, rev]);
-  return url ? <img className="page-ink" data-page={at} data-sheet={page} data-rev={rev} data-live={live ? '1' : undefined} src={url} alt="" draggable={false} onLoad={() => onShown(page)} style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }} /> : null;
-}
-
-/** A written notebook's sheet as its paper: the sheet in points, whatever size it is drawn at (`paper.ts`). */
-function Paper({ kind }: { kind: PaperKind }) {
-  const p = useMemo(() => paperPaths(kind), [kind]);
-  return (
-    <svg className="paper" data-paper={kind} viewBox={`0 0 ${SHEET_W} ${SHEET_H}`} preserveAspectRatio="none" aria-hidden="true">
-      <rect className="paper-sheet" width={SHEET_W} height={SHEET_H} fill={PAPER_WHITE} />
-      {p.rules && <path className="paper-rule" d={p.rules} stroke={PAPER_RULE} vectorEffect="non-scaling-stroke" />}
-      {p.dots && <path className="paper-dot" d={p.dots} stroke={PAPER_DOT} strokeWidth={p.width} strokeDasharray={`0 ${p.pitch}`} />}
-    </svg>
-  );
+    return () => { live = false; };
+  }, [hash, page, w, h, rev, fine, canvasOn]);
+  useEffect(() => () => { if (shown.current) URL.revokeObjectURL(shown.current); }, []);
+  return url ? <img className="page-ink" data-page={at} data-sheet={page} data-rev={rev} data-fine={fine} data-live={canvasOn ? '1' : undefined} src={url} alt="" draggable={false} onLoad={() => onShown(page)} style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }} /> : null;
 }
 
 /** A notebook's pages, as many as it has sheets. */
-const sheetSizes = (n: number): Size[] => Array.from({ length: n }, () => ({ w: SHEET_W, h: SHEET_H }));
+const sheetSizes = (n: number, size: Size = { w: SHEET_W, h: SHEET_H }): Size[] => Array.from({ length: n }, () => ({ w: size.w, h: size.h }));
 
 /**
  * A passage's boxes on the pages, what it is called, its state. `key` is
@@ -430,9 +452,15 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
   const loadedNotes = useDocs(notes);
   /** A written notebook (milestone 82): its pages are its sheets, there from the start. */
   const written = info?.written;
+  /** Its sheets run on as one (85): no gaps, no page count, nothing to add or delete by hand; it grows as it is written on. */
+  const pageless = !!written?.pageless;
+  /** The page setup's panel is up. */
+  const [setup, setSetup] = useState(false);
+  /** Its sheets' size, as its page setup has it (85). */
+  const { w: sheetW, h: sheetH } = sheetSize(written);
   const [status, setStatus] = useState<'loading' | 'ok' | 'gone' | 'unreadable'>(written ? 'ok' : 'loading');
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
-  const [sizes, setSizes] = useState<Size[]>(() => (written ? sheetSizes(written.sheets.length) : []));
+  const [sizes, setSizes] = useState<Size[]>(() => (written ? sheetSizes(written.sheets.length, sheetSize(written)) : []));
   const [textless, setTextless] = useState(false);
   /** The room the pages have: the pane's width inside its padding, and that padding (`left` the padding before them). */
   const [room, setRoom] = useState({ w: 0, pad: 0, left: 0 });
@@ -445,6 +473,10 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     setBookZoom(id, zoomStep(useApp.getState().bookZooms[id] ?? 1, dir));
   }, [id]);
   const [tick, setTick] = useState(0);
+  /** The pages' overview is up (85). */
+  const [grid, setGrid] = useState(false);
+  /** The row of tools is shown, not tucked away (`inkTools.ts`). */
+  const toolsShown = useInkTools((s) => s.kept.shown);
   const [sel, setSel] = useState<Sel | null>(null);
   const [current, setCurrent] = useState(1);
   /** The pages before the document's own (FORMAT.md §3 `pages`): a chapter of a book is its pages of the book's PDF, numbered as the book numbers them. */
@@ -565,6 +597,8 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
   const shownWaits = useRef(new Map<number, () => void>());
   const pictureShown = useCallback((n: number) => { shownWaits.current.get(n)?.(); shownWaits.current.delete(n); }, []);
 
+  const runRef = useRef(pageless);
+  runRef.current = pageless;
   /** The notebook's last sheet a page was added after by itself: once for each. */
   const addedAfter = useRef<number | null>(null);
   // ── written on where the Pencil lands: the pages near the screen are sheets, each lying where its page lies ──
@@ -581,28 +615,40 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
       const rev = inkedRef.current[n];
       if (rev === undefined || filled.get(n) === rev) return;
       filled.set(n, rev);
-      afterScene(() => void fillSheet(sheetOf(n), pagePaper(fs, hash, n), () => fs.pageInkFile(hash, n, 'drawing')).catch((e: unknown) => { filled.delete(n); console.error(e); }));
+      // the canvas stays on the screen with what the page holds (85): the writing is drawn from its strokes at rest as it
+      // is while written, at whatever size the page is; the picture of it stands aside once the canvas has it
+      afterScene(() => void fillSheet(sheetOf(n), pagePaper(fs, hash, n), () => fs.pageInkFile(hash, n, 'drawing'), true)
+        .then((took) => { if (took) setLiveInk((s) => (s.has(n) ? s : new Set(s).add(n))); })
+        .catch((e: unknown) => { filled.delete(n); console.error(e); }));
     };
     const surface: Surface = {
       host() {
         if (!sc.isConnected || !sc.getClientRects().length) return null;
-        const { view, port, top, height } = portOf(sc, viewRef.current?.querySelector('.meta'));
-        if (port.w <= 0 || port.h <= 0 || covered(sc, port)) return { id: hostId, view, port: { ...port, h: 0 }, top, height, open: null, sheets: [] };
+        const { view, port, top, left, height } = portOf(sc, viewRef.current?.querySelector('.meta'));
+        if (port.w <= 0 || port.h <= 0 || covered(sc, port)) return { id: hostId, view, port: { ...port, h: 0 }, top, left, height, open: null, sheets: [] };
         const sheets: SheetSpec[] = [];
+        const there = new Set<number>();
+        const dark = document.documentElement.dataset.theme === 'dark';
         for (const [place, el] of pageEls.current) {
           // a notebook's page is written on under its sheet's own number
           const n = sheetAt(place);
           if (n === null) continue;
           const r = inContent(sc, el);
           if (r.y + r.h < top - AHEAD || r.y > top + view.h + AHEAD) continue;
-          sheets.push({ id: sheetOf(n), frame: r, hit: r, zoom: scaleRef.current });
+          // a pageless notebook's sheet is written on past its foot: a stroke begun on it runs on over the next, whole
+          sheets.push({ id: sheetOf(n), frame: sheetsRef.current && runRef.current ? { ...r, h: r.h * (1 + RUN_OVER) } : r, hit: r, zoom: scaleRef.current, blend: dark ? 'screen' : 'multiply' });
+          there.add(n);
           fill(n);
         }
-        return { id: hostId, view, port, top, height, open: null, sheets };
+        // a page gone far has no canvas: its picture is what there is of its writing until it comes near again
+        setLiveInk((s) => ([...s].every((n) => there.has(n)) ? s : new Set([...s].filter((n) => there.has(n)))));
+        return { id: hostId, view, port, top, left, height, open: null, sheets };
       },
       made(sheet) {
         const n = pageOfSheet(sheet);
         if (n === null) return;
+        // a canvas made anew holds nothing yet: the picture shows until it does
+        setLiveInk((s) => { if (!s.has(n)) return s; const next = new Set(s); next.delete(n); return next; });
         filled.delete(n);
         fill(n);
       },
@@ -626,16 +672,10 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
         addedAfter.current = n;
         void addSheet(id).catch((err: unknown) => { addedAfter.current = null; console.error(err); });
       },
-      async kept(sheet: string, strokes: InkStroke[]) {
+      async kept(sheet: string) {
+        // kept: the canvas stays as it is, on the screen. Nothing is swapped for it, so nothing blinks or goes soft
         const n = pageOfSheet(sheet);
-        if (n === null) return;
-        // not waited for: the next keep does not stand behind a picture
-        void (async () => {
-          if (strokes.length) await new Promise<void>((done) => { shownWaits.current.set(n, done); setTimeout(done, 3000); });
-          setLiveInk((s) => { const next = new Set(s); next.delete(n); return next; });
-          await new Promise((r) => setTimeout(r, 34));
-          await restSheet(sheet);
-        })();
+        if (n !== null) setLiveInk((s) => (s.has(n) ? s : new Set(s).add(n)));
       },
     };
     const off = addSurface(surface);
@@ -653,10 +693,10 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     setBase(0);
     setPdf(null);
     setTextless(false);
-    setSizes((was) => (was.length === sheets.length && was.every((s) => s.w === SHEET_W && s.h === SHEET_H) ? was : sheetSizes(sheets.length)));
+    setSizes((was) => (was.length === sheets.length && was.every((s) => s.w === sheetW && s.h === sheetH) ? was : sheetSizes(sheets.length, { w: sheetW, h: sheetH })));
     setStatus('ok');
     lastRef.current?.(sheets.length);
-  }, [sheets, id, writtenId]);
+  }, [sheets, id, writtenId, sheetW, sheetH]);
   // ── the file, shared with the notes' crops ──
   const range = info?.pages;
   useEffect(() => {
@@ -738,9 +778,10 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
   const tops = useMemo(() => {
     const out: number[] = [0];
     let y = 0;
-    sizes.forEach((s, i) => { out[i + 1] = y; y += s.h * scale + (i < sizes.length - 1 ? GAP : 0); });
+    // a pageless notebook's sheets run on as one: nothing between them
+    sizes.forEach((s, i) => { out[i + 1] = y; y += s.h * scale + (i < sizes.length - 1 && !pageless ? GAP : 0); });
     return { at: out, total: y };
-  }, [sizes, scale]);
+  }, [sizes, scale, pageless]);
 
   const first = base + 1;
   const last = base + sizes.length;
@@ -755,6 +796,8 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     return p && { left: p.left + b.x * p.width, top: p.top + b.y * p.height, width: b.w * p.width, height: b.h * p.height };
   }, [pageRect]);
 
+  // whatever is drawn over the pages (a cue, a peek, the search) is told to the canvases, which stand aside for it
+  useEffect(() => { sceneSoon(); });
   // a new scale, or strokes come by a merge: the canvases are told
   useEffect(() => { sceneSoon(); }, [scale, sizes, inked, room, sheets]);
 
@@ -834,13 +877,38 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     const sr = sc.getBoundingClientRect();
     if (pr && pr.width > 0) sc.scrollLeft += pr.left + x * pr.width - (sr.left + sr.width / 2);
   };
+  /** Where a pinch let go: the page between the fingers, where in it (0 to 1 each way), and where on the screen. */
+  const pinchEnd = useRef<{ page: number; x: number; y: number; cx: number; cy: number } | null>(null);
+  /** Whether the pages can be written on: two fingers tapped are undo only then. */
+  const canWriteRef = useRef(false);
   /** The pages have landed where they open (the place left, the read point, a section gone to): from here a scroll is the reader's, and remembered. */
   const landed = useRef(false);
 
   useEffect(() => {
     if (!pdf || !sizes.length) return;
-    // a new scale: every page draws again as it comes near
-    for (const [n, s] of rendered.current) if (s !== scale) { rendered.current.delete(n); pageEls.current.get(n)?.replaceChildren(); }
+    // a new scale: every page draws again as it comes near. One on the screen keeps the picture it has, stretched to
+    // its new size, until the new one is drawn over it (85): a zoom never shows a bare page
+    {
+      const sc = scroller();
+      const view = sc?.getBoundingClientRect();
+      for (const [n, s] of rendered.current) {
+        if (s === scale) continue;
+        const el = pageEls.current.get(n);
+        const canvas = el?.querySelector('canvas');
+        const r = el?.getBoundingClientRect();
+        if (el && canvas && view && r && r.bottom >= view.top - AHEAD && r.top <= view.bottom + AHEAD) {
+          canvas.style.width = '100%';
+          canvas.style.height = '100%';
+          el.replaceChildren(canvas);
+          // (marked as drawn at no scale there is: back at the scale it was drawn at before it is drawn again, it is
+          // still a page without its text, and is drawn again)
+          rendered.current.set(n, -Math.abs(s));
+        } else {
+          rendered.current.delete(n);
+          el?.replaceChildren();
+        }
+      }
+    }
     const io = new IntersectionObserver((entries) => {
       for (const e of entries) if (e.isIntersecting) void renderPage(Number((e.target as HTMLElement).dataset.page));
     }, { root: scroller(), rootMargin: `${AHEAD}px 0px` });
@@ -913,6 +981,17 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
   useLayoutEffect(() => {
     const sc = scroller();
     if (!sc) return;
+    // a pinch let go: the pages are laid out at their new size, and what was between the fingers is still there
+    const held = pinchEnd.current;
+    pinchEnd.current = null;
+    if (pagesRef.current) { pagesRef.current.style.transform = ''; pagesRef.current.style.willChange = ''; }
+    const under = held ? pageEls.current.get(held.page) : undefined;
+    if (held && under) {
+      const pr = under.getBoundingClientRect();
+      sc.scrollLeft += pr.left + held.x * pr.width - held.cx;
+      sc.scrollTop += pr.top + held.y * pr.height - held.cy;
+      return;
+    }
     const at = place.current;
     const el = at ? pageEls.current.get(at.page) : undefined;
     if (at && el) {
@@ -938,23 +1017,119 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
       if (fresh && e.deltaY !== 0 && e.timeStamp - steppedAt > PINCH_GAP) { steppedAt = e.timeStamp; zoomBy(e.deltaY < 0 ? 1 : -1); }
     };
     sc.addEventListener('wheel', onWheel, { passive: false });
-    // two fingers on the glass (an iPad, a phone): WebKit's own gesture events say how far they have spread; a pinch
-    // steps the zoom once, as the trackpad's does, and the page is not the system's to magnify
-    let stepped = false;
-    const scaleOf = (e: Event): number => (e as Event & { scale?: number }).scale ?? 1;
-    const onGesture = (e: Event) => {
-      e.preventDefault();
-      if (e.type === 'gesturestart') { stepped = false; return; }
-      if (stepped) return;
-      const k = scaleOf(e);
-      if (k > PINCH_OUT || k < 1 / PINCH_OUT) { stepped = true; if (e.timeStamp - steppedAt > PINCH_GAP) { steppedAt = e.timeStamp; zoomBy(k > 1 ? 1 : -1); } }
-    };
-    for (const name of ['gesturestart', 'gesturechange', 'gestureend']) sc.addEventListener(name, onGesture, { passive: false });
-    return () => {
-      sc.removeEventListener('wheel', onWheel);
-      for (const name of ['gesturestart', 'gesturechange', 'gestureend']) sc.removeEventListener(name, onGesture);
-    };
+    // (two fingers on the glass are heard by the canvases' side, below. Nothing here answers WebKit's own gesture
+    // events: a page that says no to them has every recogniser on the web view held back, that one among them, and
+    // the page is not the system's to magnify anyway: the viewport says so)
+    return () => { sc.removeEventListener('wheel', onWheel); };
   }, [status, zoomBy]);
+
+  // the row of tools tucked away or brought back: what is on the screen stays where it is under the eye
+  const barWas = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    const sc = scroller();
+    const now = barExtra();
+    // (at the very top there is nothing to keep still: the pages simply have the room, or give it back)
+    if (sc && barWas.current !== null && now !== barWas.current && landed.current && sc.scrollTop > 0) sc.scrollTop += now - barWas.current;
+    barWas.current = now;
+  }, [toolsShown]);
+
+  // ── two fingers on the glass (85) ──
+  // Spread or closed, the pages grow and shrink under them, about the place between them; let go, the pages are laid
+  // out at that size (anywhere between the least and the most) with the same place still between the fingers, and
+  // drawn sharp at it. While the fingers are down the pages are only stretched (a transform, nothing laid out), and
+  // the canvases over them are stretched alike (`pinchSheets`); the scroller still scrolls under the two fingers as
+  // it does, and the stretch follows it. Two fingers down and up at once are undo, three redo, where the pages can
+  // be written on. The fingers are heard by the canvases' side (`onFingers`, `ink.ts`): where a finger draws the
+  // page itself is not told of touches on a sheet.
+  useEffect(() => {
+    const sc = scroller();
+    const pages = pagesRef.current;
+    if (!sc || !pages || status !== 'ok') return;
+    const hostId = `pages:${id}`;
+    interface Pinch {
+      /** The zoom the pages had. */
+      z0: number;
+      /** The place between the fingers as it began, in the pages' own px. */
+      ax: number; ay: number;
+      /** Where the pages' corner was on the screen and in the scroller's content, and how far the scroller was scrolled. */
+      left: number; top: number; ox: number; oy: number; sl: number; st: number;
+      k: number; cx: number; cy: number;
+    }
+    let g: Pinch | null = null;
+    // (the word's own text node is written to, the one React holds: a node put in its place would be one React no longer writes to)
+    const say = (z: number) => { const t = viewRef.current?.querySelector('.pt-pct')?.firstChild; if (t && t.nodeType === 3) t.nodeValue = `${Math.round(z * 100)}%`; };
+    /** How far the pages are moved for the place they were taken by to lie between the fingers, stretched by `k`. */
+    const shift = (p: Pinch) => ({ x: p.cx - (p.left - (sc.scrollLeft - p.sl)) - p.k * p.ax, y: p.cy - (p.top - (sc.scrollTop - p.st)) - p.k * p.ay });
+    const draw = () => {
+      if (!g) return;
+      const t = shift(g);
+      pages.style.transformOrigin = '0 0';
+      pages.style.willChange = 'transform';
+      pages.style.transform = `translate(${t.x}px, ${t.y}px) scale(${g.k})`;
+      pinchSheets(hostId, { k: g.k, dx: g.ox + t.x - g.k * g.ox, dy: g.oy + t.y - g.k * g.oy });
+      say(zoomHeld(g.z0 * g.k));
+    };
+    const undraw = () => { pages.style.transform = ''; pages.style.willChange = ''; pinchSheets(hostId, null); say(zoomRef.current); };
+    /** Whether a place on the screen is on these pages: in their scroller, under the bar, with nothing of the page's over it. */
+    const here = (x: number, y: number): boolean => {
+      if (!sc.isConnected || !sc.getClientRects().length) return false;
+      const r = sc.getBoundingClientRect();
+      const bar = viewRef.current?.querySelector('.meta')?.getBoundingClientRect().bottom ?? r.top;
+      if (x < r.left || x > r.right || y < Math.max(r.top, bar) || y > r.bottom) return false;
+      const at = document.elementFromPoint(x, y);
+      return !!at && sc.contains(at) && !at.closest('.page-grid, .ink-menu');
+    };
+    const onScroll = () => { if (g) draw(); };
+    sc.addEventListener('scroll', onScroll, { passive: true });
+    const off = onFingers((e) => {
+      if (e.kind === 'fingers') {
+        // down and up, hardly moved: two fingers take the last stroke back, three put it back
+        if (!g && canWriteRef.current && here(e.x, e.y)) { if (e.n >= 3) void inkRedo(); else void inkUndo(); }
+        return;
+      }
+      if (e.phase === 'begin') {
+        if (g || !here(e.x, e.y)) return;
+        const r = pages.getBoundingClientRect();
+        const o = inContent(sc, pages);
+        g = { z0: zoomRef.current, ax: e.x - r.left, ay: e.y - r.top, left: r.left, top: r.top, ox: o.x, oy: o.y, sl: sc.scrollLeft, st: sc.scrollTop, k: 1, cx: e.x, cy: e.y };
+        viewRef.current?.setAttribute('data-pinch', '1');
+        return;
+      }
+      if (!g) return;
+      if (e.phase === 'change') {
+        // a little past either end gives, and comes back when let go
+        g.k = Math.min(ZOOM_MAX * 1.2, Math.max(ZOOM_MIN * 0.8, g.z0 * e.k)) / g.z0;
+        g.cx = e.x; g.cy = e.y;
+        draw();
+        return;
+      }
+      const was = g;
+      g = null;
+      viewRef.current?.removeAttribute('data-pinch');
+      const z = zoomHeld(was.z0 * was.k);
+      if (e.phase === 'cancel' || z === zoomRef.current) {
+        // no other size: the pages are where the scroller left them
+        const t = shift({ ...was, k: z / was.z0 });
+        undraw();
+        if (e.phase !== 'cancel') { sc.scrollLeft -= t.x; sc.scrollTop -= t.y; }
+        return;
+      }
+      // the page between the fingers, and where in it: there again once the pages are laid out at the new size
+      let under: { page: number; x: number; y: number } | null = null;
+      let near = Infinity;
+      for (const [n, el] of pageEls.current) {
+        const x = el.offsetLeft, y = el.offsetTop, w = el.offsetWidth, h = el.offsetHeight;
+        if (!(w > 0 && h > 0)) continue;
+        const far = was.ay < y ? y - was.ay : was.ay > y + h ? was.ay - (y + h) : 0;
+        if (far < near) { near = far; under = { page: n, x: (was.ax - x) / w, y: (was.ay - y) / h }; }
+      }
+      pinchEnd.current = under ? { ...under, cx: was.cx, cy: was.cy } : null;
+      setBookZoom(id, z);
+      // (the pages laid out anew take the stretch off; where nothing is laid out, it is taken off here)
+      setTimeout(() => { if (pages.style.transform) { pinchEnd.current = null; undraw(); } }, 120);
+    });
+    return () => { off(); sc.removeEventListener('scroll', onScroll); if (g) undraw(); };
+  }, [status, id]);
 
   const scrollTo = (n: number) => {
     const el = pageEls.current.get(Math.max(first, Math.min(last, n)));
@@ -1988,10 +2163,26 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     const sheet = sheetAt(current);
     const held = sheet === null ? null : heldOn(sheet);
     const items: PopItem[] = [
-      ...PAPERS.map((k): PopItem => ({ label: `${k} paper`, act: `paper-${k}`, on: written.paper === k, run: () => { if (written.paper !== k) void setPaper(id, k).catch(failed('paper')); } })),
-      ...(held && (written.sheets.length > 1 || held.inkOn || held.kept > 0) ? [{ label: '-' }, { label: 'delete this page', act: 'page-delete', danger: true, run: () => deletePage(current, at) }] : []),
+      ...(pageless ? [] : [{ label: 'all pages', act: 'more-pages', run: () => setGrid(true) }]),
+      { label: 'page setup', act: 'more-setup', run: () => setSetup(true) },
+      { label: mobile ? 'share as pdf' : 'export as pdf', act: 'more-share', run: () => sharePdf(at) },
+      ...(pageless || sheet === null ? [] : [
+        { label: '-' },
+        { label: 'add page after this one', act: 'page-add-after', run: () => void addSheetAfter(id, sheet).catch(failed('add page')) },
+        { label: 'duplicate this page', act: 'page-duplicate', run: () => void duplicateSheet(id, sheet).catch(failed('duplicate page')) },
+        ...(held && (written.sheets.length > 1 || held.inkOn || held.kept > 0) ? [{ label: 'delete this page', act: 'page-delete', danger: true, run: () => deletePage(current, at) }] : []),
+      ]),
     ];
     popMenu(at, items, 'book-menu');
+  };
+  /** `share as pdf` (a Mac's `export as pdf`): these pages with what is written on them, as one PDF (`PageTools.tsx`). */
+  const sharePdf = (at: { left: number; top: number }) => {
+    if (!hash) return;
+    const name = titleOf(id, docs, root);
+    const of = written
+      ? { name, hash, written, inked: new Set(Object.keys(inkedRef.current).map(Number)) }
+      : { name, hash, pages: sizes.map((s, i) => ({ page: base + i + 1, w: s.w, h: s.h })), inked: new Set(Object.keys(inkedRef.current).map(Number)) };
+    void sharePages(of, { x: at.left, y: Math.max(0, at.top - 30), w: 30, h: 30 }).catch(failed(mobile ? 'share as pdf' : 'export as pdf'));
   };
   /** `+` beside the notes' word: one more note on these pages, typed or written. A notebook's own notes are typed. */
   const addMenu = (el: HTMLElement) => {
@@ -2008,6 +2199,9 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     if (written) { paperMenu({ left: r.left, top: r.bottom + 4, bottom: r.bottom + 4 }); return; }
     const from = portalPending();
     const items: PopItem[] = [
+      { label: 'all pages', act: 'more-pages', run: () => setGrid(true) },
+      ...(hash ? [{ label: mobile ? 'share as pdf' : 'export as pdf', act: 'more-share', run: () => sharePdf({ left: r.left, top: r.bottom + 4 }) }] : []),
+      { label: '-' },
       { label: 'bookmark this place', act: 'more-bookmark', run: () => void startBookmark().catch(console.error) },
       from
         ? { label: `portal: p. ${from.page} shows this place`, act: 'more-portal-to', run: () => void portalKey().catch(console.error) }
@@ -2307,19 +2501,23 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
   const readTo = info?.read?.pos ? `read to p. ${info.read.pos}` : '';
   const rightTip = [status === 'ok' ? span : '', readTo, textless ? 'no text' : '', counts].filter(Boolean).join(', ');
   // the page in view of the last, and what is due beside it; the rest in the tooltip
-  const where = status === 'ok' && sizes.length ? `p. ${current} / ${last}` : '';
+  const where = status === 'ok' && sizes.length && !pageless ? `p. ${current} / ${last}` : '';
   // (a phone's bar has room for the page alone: what is due is on the day)
   const shown = [where, due && !phone ? `${due} due` : ''].filter(Boolean).join(' · ') || readTo || (cards ? plural(cards, 'card') : '') || (textless && status === 'ok' ? 'no text' : '');
   /** The pages can be written on: there is a canvas (an iPad's) and a key their strokes are kept under. */
   const canWrite = mobile && hasCanvas() && hash !== null;
+  canWriteRef.current = canWrite && !phone;
   /** The tools' row: an iPad's (a phone's bar is one line). */
-  const inkRow = canWrite && !phone && status === 'ok';
+  const inkRow = canWrite && !phone && status === 'ok' && toolsShown;
+  /** The scroller the pages lie in, and the book over them: where the lasso's menu and the overview are drawn. */
+  const scrollerEl = wrapRef.current?.closest<HTMLElement>('.book-pages, .pane-body') ?? null;
+  const bookEl = wrapRef.current?.closest<HTMLElement>('.book') ?? null;
   const shownPending = [...pending, ...(sel?.boxes ?? [])];
   const lastPending = pending.length ? boxRect(pending[pending.length - 1]!) : null;
 
   return (
     <div className="reader-wrap" ref={outerRef} data-wide={wide ? '1' : undefined}>
-      <div ref={viewRef} className={`reader doc-view pdf-view${reading ? ' reading' : ''}`} data-page={current} data-roomy={roomy ? '1' : '0'} data-zoom={zoom} data-back={trail.back.length} data-fwd={trail.forward.length} data-hash={hash ?? undefined} data-bookmarks={bookmarks.length} data-highlights={highlights.length} data-portals={portals.length} data-ruler={ruler ? `${ruler.page}:${ruler.line}` : undefined} data-following={follower ? '1' : undefined} data-portal={showing ?? undefined} data-written={written ? '1' : undefined} data-tools={inkRow ? '1' : undefined} style={colW > 0 ? { width: pageW, ...(wide ? { '--fit-w': `${colW}px`, '--fit-left': `${room.left}px` } as React.CSSProperties : null) } : undefined}>
+      <div ref={viewRef} className={`reader doc-view pdf-view${reading ? ' reading' : ''}`} data-page={current} data-roomy={roomy ? '1' : '0'} data-zoom={zoom} data-back={trail.back.length} data-fwd={trail.forward.length} data-hash={hash ?? undefined} data-bookmarks={bookmarks.length} data-highlights={highlights.length} data-portals={portals.length} data-ruler={ruler ? `${ruler.page}:${ruler.line}` : undefined} data-following={follower ? '1' : undefined} data-portal={showing ?? undefined} data-written={written ? '1' : undefined} data-layout={pageless ? 'pageless' : undefined} data-tools={inkRow ? '1' : undefined} style={colW > 0 ? { width: pageW, ...(wide ? { '--fit-w': `${colW}px`, '--fit-left': `${room.left}px` } as React.CSSProperties : null) } : undefined}>
         {/* the bar over the pages, as wide as the pane whatever the page's width: what the book is, its notes, the zoom, the page, search */}
         <div className="meta pdf-tools" data-ink={inkRow ? '1' : undefined} style={colW > 0 ? { width: room.w + room.left + room.pad, marginLeft: wide ? -room.left : -((colW - pageW) / 2 + room.left) } : undefined}>
           {/* the bar's first row: the row itself only where the tools make a second under it (an iPad); anywhere else its words are the bar's own */}
@@ -2341,12 +2539,14 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
           {status === 'ok' && sizes.length > 0 && (
             <span className="pt-zoom">
               <button type="button" className="pt-btn" data-tool="zoom-out" title="smaller ⌘−" aria-label="smaller" disabled={zoom <= ZOOMS[0]!} onClick={() => zoomBy(-1)}>−</button>
-              <button type="button" className="pt-btn pt-pct" data-tool="zoom-fit" title="fit the window ⌘0" onClick={() => zoomBy(0)}>{Math.round(zoom * 100)}%</button>
+              <button type="button" className="pt-btn pt-pct" data-tool="zoom-fit" title="fit the window ⌘0" onClick={() => zoomBy(0)}>{`${Math.round(zoom * 100)}%`}</button>
               <button type="button" className="pt-btn" data-tool="zoom-in" title="larger ⌘=" aria-label="larger" disabled={zoom >= ZOOMS[ZOOMS.length - 1]!} onClick={() => zoomBy(1)}>+</button>
             </span>
           )}
+          {canWrite && !phone && status === 'ok' && <InkToggle />}
+          {status === 'ok' && sizes.length > 1 && !phone && !pageless && <button type="button" className="pt-btn" data-tool="pages" title="all pages" aria-label="all pages" aria-pressed={grid} onClick={() => setGrid((g) => !g)}><Icon name="grid" /></button>}
           {shown && <button type="button" className="right pt-page" data-tool="page" title={[rightTip, 'g goes to a page'].filter(Boolean).join(' · ')} onClick={() => setGoto(true)}>{shown}</button>}
-          {status === 'ok' && <button type="button" className="pt-btn" data-tool="more" title={written ? 'paper, delete this page' : 'bookmark, portal, ruler'} aria-label="more" aria-haspopup="menu" onClick={(e) => moreMenu(e.currentTarget)}><Icon name="more" /></button>}
+          {status === 'ok' && <button type="button" className="pt-btn" data-tool="more" title={written ? 'pages, page setup, share' : 'pages, share, bookmark, portal, ruler'} aria-label="more" aria-haspopup="menu" onClick={(e) => moreMenu(e.currentTarget)}><Icon name="more" /></button>}
           {status === 'ok' && !written && <button type="button" className="pt-btn" data-tool="search" title="search /" aria-label="search" aria-pressed={!!find} onClick={() => {
             // pressed with the search open, it closes it and its hits go (a finger has no esc)
             if (find) { setFind(null); return; }
@@ -2438,7 +2638,8 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
                 ref={(el) => { if (el) pageEls.current.set(base + i + 1, el); else pageEls.current.delete(base + i + 1); }}
                 style={{ width: s.w * scale, height: s.h * scale, top: tops.at[i + 1] }}
               >
-                {written && isNear(base + i + 1) ? <Paper kind={written.paper} /> : null}
+                {/* the paper of every sheet, near or far: lines are cheap, and a page scrolled to fast is never bare (85) */}
+                {written ? <PaperSheet spec={paperOf(written, i)} /> : null}
               </div>
             ))}
             {hash && Object.keys(inked).length > 0 && (
@@ -2449,7 +2650,9 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
                   const page = sheetAt(n);
                   // a page's writing is made when the page itself is drawn, as it comes near
                   const r = page !== null && inked[page] !== undefined && (sheets ? isNear(n) : rendered.current.has(n)) ? pageRect(n) : null;
-                  return r && page !== null && <PageInk key={page} hash={hash} page={page} at={n} w={s.w} h={s.h} rev={inked[page]!} rect={r} live={liveInk.has(page)} onShown={pictureShown} />;
+                  // (a pageless sheet's picture reaches past its foot, as its canvas does)
+                  const over = pageless ? 1 + RUN_OVER : 1;
+                  return r && page !== null && <PageInk key={page} hash={hash} page={page} at={n} w={s.w} h={s.h * over} rev={inked[page]!} rect={over === 1 ? r : { ...r, height: r.height * over }} live={liveInk.has(page)} onShown={pictureShown} />;
                 })}
               </div>
             )}
@@ -2544,8 +2747,14 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
             </div>
           </div>
           {/* under a notebook's last page: one more */}
-          {written && status === 'ok' && (
+          {written && status === 'ok' && !pageless && (
             <button type="button" className="add-page" data-tool="add-page" style={{ width: pageW }} onClick={morePage}>add page</button>
+          )}
+          {canWrite && <InkMenu host={`pages:${id}`} scroller={scrollerEl} />}
+          {setup && written && bookEl && <PageSetup id={id} into={bookEl} written={written} onClose={() => setSetup(false)} />}
+          {grid && bookEl && status === 'ok' && (
+            <PageGrid id={id} into={bookEl} written={written} hash={hash} base={base} sizes={sizes} current={current} inked={inked} pdf={pdf}
+              onGo={(n) => { setGrid(false); setTimeout(() => scrollTo(n), 0); }} onDelete={(n, at) => deletePage(n, at)} onClose={() => setGrid(false)} />
           )}
           {sel && (
             <div className="sel-cue" style={{ top: sel.rect.bottom + 8, left: sel.rect.left }}>

@@ -165,7 +165,7 @@ function infoOf(path: string, doc: Doc, items: QueueItem[], now: Date, pdf: stri
   if (m.write) out.write = m.write;
   if (m.pri !== undefined) out.pri = m.pri;
   if (m.written) {
-    out.written = { id: m.written.id, paper: m.written.paper, sheets: [...m.written.sheets] };
+    out.written = { ...m.written, sheets: [...m.written.sheets] };
     out.pdf = path;
     if (pdf !== null && pdf !== path) out.of = pdf;
   } else if (pdf !== null) out.pdf = pdf;

@@ -2135,7 +2135,8 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
   const rightTip = [status === 'ok' ? span : '', readTo, textless ? 'no text' : '', counts].filter(Boolean).join(', ');
   // the page in view of the last, and what is due beside it; the rest in the tooltip
   const where = status === 'ok' && sizes.length ? `p. ${current} / ${last}` : '';
-  const shown = [where, due ? `${due} due` : ''].filter(Boolean).join(' · ') || readTo || (cards ? plural(cards, 'card') : '') || (textless && status === 'ok' ? 'no text' : '');
+  // (a phone's bar has room for the page alone: what is due is on the day)
+  const shown = [where, due && !phone ? `${due} due` : ''].filter(Boolean).join(' · ') || readTo || (cards ? plural(cards, 'card') : '') || (textless && status === 'ok' ? 'no text' : '');
   const shownPending = [...pending, ...(sel?.boxes ?? [])];
   const lastPending = pending.length ? boxRect(pending[pending.length - 1]!) : null;
 

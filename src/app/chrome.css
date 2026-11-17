@@ -585,6 +585,8 @@ html[data-mobile="1"]:not([data-hardkeys]) :is(kbd, .kbd):not(.phint) { display:
 html[data-mobile="1"]:not([data-hardkeys]) .bot { display: none; }
 /* nor the letter before a book's search and go-to fields, which is their key */
 html[data-mobile="1"]:not([data-hardkeys]) .pdf-bar .pb-k { display: none; }
+/* nor words that are only about keys (a new card's `1–4 grade it now`) */
+html[data-mobile="1"]:not([data-hardkeys]) .keys-only { display: none; }
 html[data-mobile="1"]:not([data-hardkeys]):not([data-shape="phone"]) .shell { grid-template-rows: calc(30px + env(safe-area-inset-top, 0px)) 1fr env(safe-area-inset-bottom, 0px); }
 html[data-mobile="1"] .welcome { padding-top: max(12vh, calc(env(safe-area-inset-top, 0px) + 24px)); }
 /* the strip says where sync stands at any width there */

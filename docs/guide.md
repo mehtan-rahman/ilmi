@@ -201,7 +201,9 @@ the book's own, and is kept for the device: it
 is there when the app is opened again. With the caret in the notes, and everywhere else, those keys are the
 text size.
 
-Getting around a book is by the keyboard as much as by the scroll. `/`
+Getting around a book is by the keyboard as much as by the scroll (the
+bar's buttons do the same under a finger: search opens the field and,
+pressed again, closes it). `/`
 searches it (⏎ and ⇧⏎ step the hits from the field, `n` and `N` once the
 caret has left it; the hits stay lit until esc), `g` goes to a page, and
 `t` lists the PDF's own contents in the palette: its outline, indented as

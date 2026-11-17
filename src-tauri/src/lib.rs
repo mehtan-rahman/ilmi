@@ -1101,6 +1101,9 @@ pub fn run() {
                 app.handle().plugin(
                     tauri_plugin_log::Builder::default()
                         .level(log::LevelFilter::Info)
+                        // a smoke's whole run in one file: at the plugin's 40 kB the file is
+                        // dropped mid-run, and the touch rig, which reads its asks there, loses count
+                        .max_file_size(8_000_000)
                         .build(),
                 )?;
                 // Dev only: `ILMI_VAULT2=/path` opens a second window over

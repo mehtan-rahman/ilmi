@@ -371,7 +371,7 @@ function CardElement({ item, active, given, locked, onGrade, onSkip, onGone, onE
         <div className="grades learn" data-revealed="1" data-learn="1">
           <button type="button" data-act="learnt" onClick={() => onLearnt?.()}>
             <span className="label">got it<kbd>space</kbd></span>
-            <span className="gap">tested at the end · 1–4 grade it now</span>
+            <span className="gap">tested at the end<span className="keys-only"> · 1–4 grade it now</span></span>
           </button>
         </div>
       ) : phone && !revealed

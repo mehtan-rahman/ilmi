@@ -39,6 +39,7 @@ import { activeExamAt, currentVault, logDocAction, note, openNode, optionsAt, un
 import { openNotes } from './book.js';
 import { sessionEnded } from './sync.js';
 import { gradeAhead, gradeCard, inSteps, type Graded } from './grading.js';
+import { hapticFinished, hapticGrade, hapticReveal, hapticTick } from './haptics.js';
 import { CardFaces } from './CardFaces.js';
 import { bulkCards, saveCardEdit } from './deckOps.js';
 import { cardRef as refOfCard, cardSuspended, restore, type CardRef } from './deck.js';
@@ -192,6 +193,9 @@ interface CardProps {
   onSuspend(ref: CardRef, on: boolean): void;
 }
 
+/** The session whose end was felt (`hapticFinished`). */
+let endFelt: number | undefined;
+
 /** One card's line, however often it is in the walk (learnt, then tested). */
 const learnKey = (c: CardItem) => `${c.path}#${c.id ?? c.block}#${c.group ? JSON.stringify(c.group) : ''}#${c.dir ?? ''}`;
 
@@ -225,7 +229,9 @@ function CardElement({ item, active, given, locked, onGrade, onSkip, onGone, onE
   // a grade given again is given from before the one it replaces: so are its hints
   const from = given?.written ? regradeFrom(sched, given.written) : sched;
   const gaps = gapLabels(from, now, optionsAt(item.path).opts.retention, exam && { exam, key: lineKey(card?.id ?? item.id, text, item.group, item.dir) });
-  const grade = (g: Grade) => { if (revealed) onGrade(g, sched); else setRevealed(true); };
+  // the answer shown, felt under the finger where the device can (`haptics.ts`)
+  const reveal = () => { if (!revealed) hapticReveal(); setRevealed(true); };
+  const grade = (g: Grade) => { if (revealed) onGrade(g, sched); else reveal(); };
   // the card, or the line it asks, no longer in the file: no grade reaches it, space moves on
   const gone = !!loaded && !card;
   useEffect(() => { onGone(gone); }, [gone]);
@@ -299,7 +305,7 @@ function CardElement({ item, active, given, locked, onGrade, onSkip, onGone, onE
     );
     // a click on one of this card's blanks, in text or in a formula, reveals
     const onFront = (e: MouseEvent<HTMLElement>) => {
-      if ((e.target as HTMLElement).closest('.cloze:not(.ctx), .math.blanks:not([data-blanks="0"])')) setRevealed(true);
+      if ((e.target as HTMLElement).closest('.cloze:not(.ctx), .math.blanks:not([data-blanks="0"])')) reveal();
     };
     front = <div className="cloze-text" dir={faceDir(text)} onClick={onFront} dangerouslySetInnerHTML={{ __html: html }} />;
   } else if (f.form === 'qa') {
@@ -345,7 +351,7 @@ function CardElement({ item, active, given, locked, onGrade, onSkip, onGone, onE
         <div className="face front" onClick={editOnPress('front')}>{front}</div>
         {back && revealed && <div className="face back" onClick={editOnPress('back')}><div className="face-body">{back}</div></div>}
         {!revealed && (
-          <button type="button" className="face-hint" onClick={() => setRevealed(true)}><kbd className="kbd">space</kbd> <span className="lbl">reveal</span></button>
+          <button type="button" className="face-hint" onClick={reveal}><kbd className="kbd">space</kbd> <span className="lbl">reveal</span></button>
         )}
       </div>
       <div className="card-meta">
@@ -376,7 +382,7 @@ function CardElement({ item, active, given, locked, onGrade, onSkip, onGone, onE
         </div>
       ) : phone && !revealed
         // under the thumb, where the grades will be
-        ? <button type="button" className="reveal-all" onClick={() => setRevealed(true)}>reveal</button>
+        ? <button type="button" className="reveal-all" onClick={reveal}>reveal</button>
         : (
           <div className="grades" data-revealed={revealed ? '1' : '0'}>
             {GRADES.map((g) => (
@@ -494,6 +500,7 @@ export function doneWord(item: ReadItem | WriteItem | SectionItem, action: DocAc
  */
 export function actOnDoc(item: ReadItem | WriteItem | SectionItem, action: DocAction, pos?: number, y?: number, seen?: (before: Doc) => void, kept?: (undo: () => Promise<void>) => void): Promise<unknown> {
   const now = appNow();
+  hapticTick();
   // a passage is in no document: its line is among its PDF's marks, and `kept` is given what puts it back
   if (item.kind === 'section' && item.passage) {
     const run = actOnPassage(item, action).then((undo) => { if (undo) kept?.(undo); });
@@ -633,6 +640,8 @@ export function Session({ active, onOpen }: Props) {
   const deck = session?.deck;
   useEffect(() => {
     if (total > 0 && idx >= total) sessionEnded();
+    // the end is felt once a session, however often its lens is drawn again there
+    if (total > 0 && idx >= total && seq !== undefined && endFelt !== seq) { endFelt = seq; hapticFinished(); }
     if (deck && total > 0 && idx >= total) openNode(deck.id);
     if (deck || total === 0 || idx < total) return;
     const t = setTimeout(() => openNode(queueId('today')), 1500);
@@ -676,6 +685,7 @@ export function Session({ active, onOpen }: Props) {
   const learnt = marks.learnt;
   const onLearnt = (shown: CardItem) => {
     const k = learnKey(shown);
+    hapticTick();
     if (!learnt.has(k)) {
       // where it was learnt: ‹ back there shows it to learn again, its test still the one at the end
       learnt.set(k, key);
@@ -712,6 +722,7 @@ export function Session({ active, onOpen }: Props) {
   const onGrade = (shown: CardItem, g: Grade, line: CardSchedule | undefined) => {
     const vault = currentVault();
     if (!vault) return;
+    hapticGrade(g);
     const now = appNow();
     const ms = now.getTime() - shownAt.current;
     const place = idx;

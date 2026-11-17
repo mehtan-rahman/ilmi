@@ -2,7 +2,8 @@
 // vault reopens on start, whether a clipped page's images are downloaded,
 // whether images from the web are shown, whether the queue names documents
 // by title, whether the backlog is postponed when the day starts, whether
-// a card never tested is first shown to learn, the
+// a card never tested is first shown to learn, haptics where the device has
+// them (an iPhone), the
 // day's budget, and where clippings land. ⌘, opens it. The first ten live
 // in the webview's storage, not in any vault; the budget and the clippings
 // folder are the open vault's, in its `.ilmi/state.json`. Under the sync
@@ -14,6 +15,7 @@ import { PluginsSection } from '../plugins/PluginsSection.js';
 import { folderPaths, titleOf } from './names.js';
 import { ACCENTS, DENSITY_MAX, DENSITY_MIN, THEMES, useApp, type Accent, type Theme, ZOOM_MAX, ZOOM_MIN, ZOOM_STEP } from './store.js';
 import { notify } from './land.js';
+import { hapticTick } from './haptics.js';
 import { cloneCollection, connect, setNudgeServer, setRemote, syncWord } from './sync.js';
 import { chooseMirror, mirrorOff } from './keep.js';
 import { connectStorage, joinStorage, setStorage, signInStorage, signOutStorage, storageOff } from './crdt.js';
@@ -254,6 +256,8 @@ export function Tweaks() {
   const focusBudget = useApp((s) => s.focusBudget);
   const backlog = useApp((s) => s.backlog);
   const learnNew = useApp((s) => s.learnNew);
+  const haptics = useApp((s) => s.haptics);
+  const canHaptics = useApp((s) => s.canHaptics);
   const vault = useApp((s) => s.vault);
   const budget = useApp((s) => s.budget);
   const clipDir = useApp((s) => s.clipDir);
@@ -365,6 +369,15 @@ export function Tweaks() {
           <button type="button" data-active={learnNew ? '0' : '1'} onClick={() => useApp.getState().setLearnNew(false)}>test</button>
         </div>
       </div>
+      {canHaptics && (
+        <div className="tw-row" data-tw="haptics">
+          <span className="tw-lbl">haptics</span>
+          <div className="tw-seg">
+            <button type="button" data-active={haptics ? '1' : '0'} onClick={() => { useApp.getState().setHaptics(true); hapticTick(); }}>on</button>
+            <button type="button" data-active={haptics ? '0' : '1'} onClick={() => useApp.getState().setHaptics(false)}>off</button>
+          </div>
+        </div>
+      )}
       {vault !== null && (
         <div className="tw-row">
           <span className="tw-lbl">budget <span className="tw-val">a day</span></span>

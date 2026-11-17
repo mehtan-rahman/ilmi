@@ -11535,7 +11535,9 @@ export async function smokeTouchMac(vault: Vault): Promise<void> {
 //     puts its later, and the notice takes it back; the bar enters the queue;
 //     the session is the whole screen and every element of it is walked by
 //     its buttons, the four grades each used and a new card's `got it`
-//     (it is tested at the session's end); `+` opens the composer on the
+//     (it is tested at the session's end), the haptic each asks for read
+//     as it goes (milestone 83: the reveal's, each grade's, the end's, a
+//     topic's tick; `haptics` in the settings turned off and on); `+` opens the composer on the
 //     last deck, a deck is chosen, a card saved there, the next starts on it,
 //     and a deck in front is the one `+` starts on; the link lands the page
 //     and opens it; the one button has the tree and the palette; a document
@@ -11604,6 +11606,7 @@ export async function smokePhone(): Promise<void> {
     const { syncWord } = await import('./sync.js');
     const { parse } = await import('../format/index.js');
     const { reviewLog, setBudget } = await import('./vault.js');
+    const { GRADE_HAPTIC, hapticsAsked, hapticsAskedClear } = await import('./haptics.js');
     must(isMobile() && document.documentElement.dataset.mobile === '1', 'the app knows it is on a phone');
     const shape = () => shapeOf(true, window.innerWidth, window.innerHeight);
     const storage = await devStorage();
@@ -11661,7 +11664,11 @@ export async function smokePhone(): Promise<void> {
     const before = qa('.qlist li[data-el]').filter((li) => rowKey(li) === theKey).length;
     const there = () => qa('.qlist li[data-el]').filter((li) => rowKey(li) === theKey).length;
     log(`the topic: ${theKey} (${before} such row${before === 1 ? '' : 's'})`);
+    // haptics (milestone 83): a simulator does not shake, so what the page asked for is read (`hapticsAsked`, a dev build's)
+    await poll(() => useApp.getState().canHaptics && useApp.getState().haptics, 'the phone says it can tap back, and haptics are on');
+    hapticsAskedClear();
     await tap(q('[data-act="postpone"]', row)!, () => there() === before - 1, 'later, tapped on the row: the topic leaves the day, nothing opened');
+    must(hapticsAsked().join(' ') === 'tick', `and is felt as a tick (${hapticsAsked().join(' ')})`);
     must(at() === TODAY, 'and the day is still in front');
     const undo = await poll(() => qa<HTMLElement>('.notice .na').find((b) => b.textContent === 'undo'), 'the notice can take it back', 8000);
     // (a short capture: the notice goes on its own after twelve seconds, and a touch asked of the rig can take several to land)
@@ -11690,6 +11697,12 @@ export async function smokePhone(): Promise<void> {
     let shots = 0;
     let learnt = 0;
     let n = 0;
+    // what each asked of the haptics: said once for the reveal and once a grade, looked at every time
+    const felt = new Set<string>();
+    const feel = (what: string, want: string, got: string[]) => {
+      if (got[0] !== want) throw new Error(`${what} asked for ${got.join(' ') || 'no haptic'}, not ${want}`);
+      if (!felt.has(what)) { felt.add(what); log(`ok: ${what} is felt as ${want}`); }
+    };
     for (; n < 400; n++) {
       // the last element's buttons are gone and the next one's drawn before any is read
       await sleep(350);
@@ -11703,7 +11716,9 @@ export async function smokePhone(): Promise<void> {
           must(q('.reveal-all')!.getBoundingClientRect().bottom >= window.innerHeight - 1 && tall('.reveal-all', 64), 'at the very foot, across it');
           await shot('phone-card');
         }
+        hapticsAskedClear();
         await tap(q('.reveal-all')!, () => q('.grades'), 'reveal');
+        feel('reveal', 'light', hapticsAsked());
       }
       if (q('.grades')) {
         const buttons = qa<HTMLElement>('.grades button');
@@ -11726,7 +11741,9 @@ export async function smokePhone(): Promise<void> {
         }
         const g = graded.length % 4;
         graded.push({ path: el!.path, block: (el as CardItem).block, grade: g + 1 });
+        hapticsAskedClear();
         await tap(buttons[g]!, () => q('.session-end') || counter() !== was, `graded ${g + 1}: ${el!.path}`);
+        feel(`grade ${g + 1}`, GRADE_HAPTIC[(g + 1) as 1 | 2 | 3 | 4], hapticsAsked());
       } else {
         // between two elements (the last card's grades just gone, the next not drawn yet): looked at again
         const bar2 = q<HTMLElement>('.doc-session .sb-actions');
@@ -11737,9 +11754,28 @@ export async function smokePhone(): Promise<void> {
     }
     must(graded.length > 0, `the day's cards graded by the buttons: ${graded.length}, ${topics.length} topics put later`);
     must([1, 2, 3, 4].every((g) => graded.some((c) => c.grade === g)), 'each of the four grades was used');
+    must(felt.size === 5, `the reveal and each grade asked for its own haptic (${[...felt].join(', ')})`);
+    must(hapticsAsked().filter((k) => k === 'success').length === 1, `and the queue's end for the success, once (${hapticsAsked().join(' ')})`);
     await poll(() => at() === TODAY && q('.phone-bar'), 'the session ends on the day', 8000);
     await sleep(600);
     await shot('phone-day-after');
+
+    // ── haptics in the settings: a row on a phone, kept on the phone ──
+    useApp.setState({ tweaksOpen: true });
+    const hrow = await poll(() => q<HTMLElement>('.tweaks [data-tw="haptics"]'), 'the settings have a haptics row on a phone');
+    hrow.scrollIntoView({ block: 'center' });
+    await sleep(500);
+    const hbox = hrow.getBoundingClientRect();
+    must(q('.tw-lbl', hrow)?.textContent === 'haptics' && qa('button', hrow).map((b) => b.textContent).join(' ') === 'on off' && hbox.left >= 0 && hbox.right <= window.innerWidth, 'it says haptics, on and off, inside the screen');
+    must(qa('button', hrow)[0]!.getAttribute('data-active') === '1', 'and is on until it is turned off');
+    await shot('phone-settings-haptics');
+    const kept = () => (JSON.parse(localStorage.getItem('ilmi.tweaks') ?? '{}') as { haptics?: boolean }).haptics;
+    await tap(qa('button', hrow)[1]!, () => !useApp.getState().haptics && kept() === false, 'off, tapped: off, and kept with the phone\'s settings');
+    hapticsAskedClear();
+    await tap(qa('button', hrow)[0]!, () => useApp.getState().haptics && kept() === true, 'on again');
+    must(hapticsAsked().join(' ') === 'tick', `and that is felt (${hapticsAsked().join(' ')})`);
+    useApp.setState({ tweaksOpen: false });
+    await sleep(400);
 
     // ── a topic in a session: a row tapped opens it there, its page and its three; × is the way back ──
     const tRow = await poll(() => q<HTMLElement>('.qlist li[data-el="read"] .topic-acts, .qlist li[data-el="section"] .topic-acts')?.closest('li'), 'a topic on the day');

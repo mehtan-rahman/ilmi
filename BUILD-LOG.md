@@ -6,6 +6,24 @@ was verified, what was not, and the prompt to resume with.
 
 ---
 
+## 2026-11-17, evening — milestone 83: haptics on an iPhone
+
+Asked by the user: "is it possible for the iphone app to also have haptic feedback with the reveal / card grading and everything? just seems like a nice quality of life feature".
+
+**Done.** An iPhone taps back. A card's answer shown is a light impact; a grade is felt by which it was (`again` the system's warning, a double knock; `hard` a medium impact; `good` a light one; `easy` a soft one); the queue walked to its end is the system's success, once a session; a selection tick goes with a topic's `next`, `later` or `dismiss` (in the session and on a phone's row), a new card's `got it`, a blank made, a passage kept, a highlight, and a menu opened by a long press. `haptics` in the settings turns it off: on by default, drawn only where the device can, kept with the device's other settings (not synced). `src/app/haptics.ts` is the one module (the named calls, the table of grades, the switch); the native side is `haptic` in the ink plugin's Swift, UIKit's three generators, behind `app_haptic`, which answers null off iOS. No dependency added.
+
+**Decisions where the brief left room.** The native code went into the ink plugin, which already holds the app's other piece of non-ink iOS code (`hold`), rather than a plugin of its own or `tauri-plugin-haptics`. Whether a device can is asked of the hardware (CoreHaptics), not guessed from its kind, so an iPad shows no setting that would do nothing; a simulated iPhone is taken as able, since a simulator reports no hardware. `got it` on a new card and turning the setting on are ticks too. The end's success is felt once a session, however often its lens is drawn again there. A blank made by ⌘B is not felt (a key, not a finger); one made by `blank` in the composer or a menu is.
+
+**Checks.** typecheck clean; npm test 2170 passed, 1 skipped, 150 files (9 new in `haptics.test.ts`); cargo test 70 passed in `src-tauri`. The iOS build compiled for the simulator. Simulated iPhone 17: `phone` 347 under 178 rig-made touches (332 before): the phone says it can, a topic's `later` asks for a tick, the reveal for `light`, the four grades for `warning`, `medium`, `light`, `soft`, the end for `success` once, and `haptics` is turned off and on in the settings by taps; the Mac's halves 3 and 8. On the Mac from a run tree of the working state: `learn` 14, `sweep` 130, `blanks` 43, `book` 263, `sioyek` 172, as before. Capture looked at: the settings on the phone with the `haptics` row.
+
+**Not verified.** Anything felt: a simulator has no Taptic Engine, so the smoke reads which haptic was asked for, not that it happened. How each feels, whether `good` and the reveal (both light) want telling apart, and whether the tick on a long press arrives with the menu are a real iPhone's to judge. An iPad was not run: there the plugin should answer that it cannot and the row should be absent (the unit test covers the page's side).
+
+```
+Read PLAN.md (83's notes) and this entry. Haptics: src/app/haptics.ts (the calls and `GRADE_HAPTIC`), Session.tsx (reveal, grade, the end, `actOnDoc`), `haptic` in src-tauri/ink/ios/Sources/InkPlugin.swift, `app_haptic` in src-tauri/src/lib.rs. First on a real iPhone: grade a few cards with the sound off and say which taps feel wrong.
+```
+
+---
+
 ## 2026-11-17, later — milestone 82: written notes, and the tools to write with; run on the simulators
 
 Asked by the user: "an option to create written notes / white board almost on the ipad. can be standalone or with a PDF. instead of trying to have both written and typed in one thing just separate the two"; "written notes ui/ux similar to goodnotes but simpler"; "our own front end layer to apples picker", "colour wheel is nice", "make sure that this includes annotating PDFs as well".

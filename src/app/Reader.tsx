@@ -41,6 +41,7 @@ import { popMenu, type PopItem } from './popMenu.js';
 import { registerHeadings } from './headings.js';
 import { sectionMenu, setCaretPlace, setWriteThrough, writeDoc } from './sections.js';
 import { failed, notify } from './land.js';
+import { hapticTick } from './haptics.js';
 import { bookOptions } from './bookNotes.js';
 import { fillCrops } from './bookPdf.js';
 import 'katex/dist/katex.min.css';
@@ -1007,8 +1008,9 @@ export function editorMenu(view: EditorView, e: MouseEvent, opts: { table?: bool
     const can = makeBlank()(view.state);
     items.push({ label: '-' });
     if (can) {
-      items.push({ label: 'blank', act: 'blank', run: run(makeBlank()) });
-      for (const g of groups.slice(0, 9)) items.push({ label: `blank · with ${g}`, act: `blank-${g}`, run: run(makeBlank(g)) });
+      const made = (cmd: Command) => () => { hapticTick(); run(cmd)(); };
+      items.push({ label: 'blank', act: 'blank', run: made(makeBlank()) });
+      for (const g of groups.slice(0, 9)) items.push({ label: `blank · with ${g}`, act: `blank-${g}`, run: made(makeBlank(g)) });
     }
     if (inside) {
       for (const g of groups.filter((g) => g !== inside.n).slice(0, 9)) items.push({ label: `move to group ${g}`, act: `regroup-${g}`, run: run(regroupBlank(g)) });

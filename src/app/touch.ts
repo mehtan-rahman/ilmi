@@ -19,6 +19,8 @@
 // Mac's does (`drag.ts`), so a row held and then moved is dragged, and one
 // held and let go where it was gets its menu.
 
+import { hapticTick } from './haptics.js';
+
 /** How long a finger rests on a page before its drag draws a box. */
 export const HOLD_MS = 320;
 /** How long a touch rests before it is a long press. */
@@ -105,7 +107,8 @@ export function installLongPress(doc: Document = document): () => void {
     if (!p.held || !p.target.isConnected || Math.hypot(e.clientX - p.x, e.clientY - p.y) > SLOP) return;
     const menu = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, clientX: p.x, clientY: p.y });
     if (p.target.dispatchEvent(menu)) return;
-    // a menu opened: the press is spent
+    // a menu opened: the press is spent, and felt where the device can
+    hapticTick();
     quiet = Date.now() + 700;
     pressed = p.target;
     doc.defaultView?.getSelection()?.removeAllRanges();

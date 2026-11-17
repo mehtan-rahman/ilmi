@@ -11,6 +11,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { PRI_MAX, PRI_MIN, clozeParts, mathSpanEnd, nextGroup, parsePri, type CardForm } from '../format/index.js';
 import { cardText, type CardSpec } from '../reader/index.js';
 import { CARD_FORMS } from './deck.js';
+import { hapticTick } from './haptics.js';
 
 interface Props {
   seed: string;
@@ -78,7 +79,7 @@ export function Composer({ seed, form: initial, pri: docPri, onSave, onClose, qu
     const host = faceRef.current?.querySelector('.face-host');
     const v = host ? faceViews.get(host) : undefined;
     if (!v) return;
-    makeBlank()(v.state, v.dispatch.bind(v));
+    if (makeBlank()(v.state, v.dispatch.bind(v))) hapticTick();
     v.focus();
   };
 

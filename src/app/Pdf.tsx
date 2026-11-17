@@ -134,6 +134,7 @@ import { placeAtCaret, writeDoc } from './sections.js';
 import { bringPassageBack, changePassage, keepPassage, putPassage, schedOf } from './passages.js';
 import { chipWhen } from './bookNotes.js';
 import { failed, notify } from './land.js';
+import { hapticTick } from './haptics.js';
 import { appNow } from './clock.js';
 import { press } from './platform.js';
 import { HOLD_MS, SLOP, onGlass, pagePress } from './touch.js';
@@ -1935,6 +1936,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     if (!made) return;
     const key = newMarkId('h');
     void setMark(hash, key, made).catch(console.error);
+    hapticTick();
     clearBoxes();
     notify(mobile ? 'highlighted · hold it for its inks' : `highlighted · 1–${INKS} choose its ink`, null, () => setMark(hash, key, null));
     setLastHl({ id: key, seq: useApp.getState().notice?.seq ?? 0 });

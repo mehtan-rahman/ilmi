@@ -29,6 +29,7 @@
 // steps alike (`undo`, `redo`). With `finger` on a finger writes as the Pencil does and two scroll. The colour
 // wheel is the system's, put up from where the page says (`color`).
 
+import CoreHaptics
 import PencilKit
 import SwiftRs
 import Tauri
@@ -89,6 +90,16 @@ struct Held: Encodable {
   /// Whether the app is held awake now, and the seconds the system says are left to it in the background (-1 in front).
   var held: Bool
   var left: Double
+}
+
+/// A tap asked for by name: `light`, `medium`, `soft`, `warning`, `success`, `tick`; anything else makes none.
+struct HapticArgs: Decodable {
+  var kind: String
+}
+
+struct Haptics: Encodable {
+  /// Whether this device has the hardware: an iPhone has, no iPad has.
+  var can: Bool
 }
 
 struct PenArgs: Decodable {
@@ -532,6 +543,46 @@ class InkPlugin: Plugin {
       }
       let left = UIApplication.shared.applicationState == .background ? UIApplication.shared.backgroundTimeRemaining : -1
       invoke.resolve(Held(held: self.holding != .invalid, left: left.isFinite ? left : -1))
+    }
+  }
+
+  // ── Haptics (not ink's either; milestone 83) ──
+  //
+  // The page asks for a tap by name (`src/app/haptics.ts`): an impact for an answer shown and a grade by which it
+  // was, a notification for `again` and for the queue's end, the selection's tick for small things done. UIKit's
+  // generators do nothing where there is no Taptic Engine, and every answer says whether there is one, so the
+  // page shows its setting only where it means something. A simulator has none and is taken at its word as a phone.
+  private lazy var canHaptic: Bool = {
+    #if targetEnvironment(simulator)
+    return UIDevice.current.userInterfaceIdiom == .phone
+    #else
+    return CHHapticEngine.capabilitiesForHardware().supportsHaptics
+    #endif
+  }()
+  private lazy var impacts: [String: UIImpactFeedbackGenerator] = [
+    "light": UIImpactFeedbackGenerator(style: .light),
+    "medium": UIImpactFeedbackGenerator(style: .medium),
+    "soft": UIImpactFeedbackGenerator(style: .soft),
+  ]
+  private lazy var notes = UINotificationFeedbackGenerator()
+  private lazy var ticks = UISelectionFeedbackGenerator()
+
+  @objc public func haptic(_ invoke: Invoke) throws {
+    let args = try invoke.parseArgs(HapticArgs.self)
+    DispatchQueue.main.async {
+      if self.canHaptic {
+        if let impact = self.impacts[args.kind] {
+          impact.impactOccurred()
+          impact.prepare()
+        } else if args.kind == "warning" || args.kind == "success" {
+          self.notes.notificationOccurred(args.kind == "warning" ? .warning : .success)
+          self.notes.prepare()
+        } else if args.kind == "tick" {
+          self.ticks.selectionChanged()
+          self.ticks.prepare()
+        }
+      }
+      invoke.resolve(Haptics(can: self.canHaptic))
     }
   }
 

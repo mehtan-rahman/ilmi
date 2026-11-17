@@ -227,6 +227,11 @@ impl<R: Runtime> Ink<R> {
         struct Hold { on: bool }
         self.call("hold", Hold { on }).await
     }
+    /// A tap under the finger (milestone 83), by name: `light`, `medium`, `soft`, `warning`, `success`, `tick`; any
+    /// other name makes none. What it says: `{ can }`, whether the device has the hardware for one.
+    pub async fn haptic(&self, kind: &str) -> Result<serde_json::Value, String> {
+        self.call("haptic", serde_json::json!({ "kind": kind })).await
+    }
     /// A dev run's: a finger stands in for the Pencil.
     pub async fn pen(&self, on: bool) -> Result<(), String> {
         #[derive(Serialize)]

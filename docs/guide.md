@@ -892,6 +892,15 @@ the whole screen: a card shows `reveal` across the foot and then, in the same
 place, the four grades; a topic shows its page with the three at the foot. `×`
 at the top goes back to the day.
 
+An iPhone taps back as you go: lightly when a card's answer is shown; by the
+grade when you give one (`again` a double knock, `hard` a firm tap, `good` a
+light one, `easy` the softest); the system's success when the queue is walked
+to its end; and a tick for a topic's `next`, `later` or `dismiss`, a new
+card's `got it`, a blank made, a passage kept, a highlight, and a menu opened
+by a long press. `haptics` in the settings turns it off. The row is there
+only on a device that can do it (no iPad can), and what you choose is kept on
+that phone.
+
 `+` opens the composer with front and back and names the deck at its foot,
 over the buttons: the deck in front, else the one you chose last on this
 phone. A tap on the name lists the others. `save, another` keeps it open; on a

@@ -9411,6 +9411,41 @@ an eraser that takes part of a stroke; two fingers scrolling under draw
 with finger and everything of a real Pencil (pressure, tilt, the double
 tap, palm rejection) are a device's to judge.
 
+### [x] 83. Haptics on an iPhone
+Asked by the user, 2026-11-17: "is it possible for the iphone app to also
+have haptic feedback with the reveal / card grading and everything? just
+seems like a nice quality of life feature".
+Notes: **What is felt.** A card's answer shown: a light impact. A grade, by
+which it was: `again` the system's warning (a double knock), `hard` a
+medium impact, `good` a light one, `easy` a soft one. The queue walked to
+its end: the system's success, once a session. A selection tick for a
+topic's `next`, `later` or `dismiss` (in the session and on a phone's row),
+a new card's `got it`, a blank made, a passage kept, a highlight made, and
+a menu opened by a long press. **Where.** `src/app/haptics.ts` has the
+named calls and the one table (`GRADE_HAPTIC`); they are made from
+`Session.tsx` (the reveal, the grade, the end, `actOnDoc`), `passages.ts`
+(`keepPassage`), `Pdf.tsx` (a highlight), `touch.ts` (the long press), and
+where a blank is made by a button or a menu (`Composer.tsx`, `Reader.tsx`).
+The native side is a few lines in the ink plugin's Swift (`haptic`: UIKit's
+impact, notification and selection generators, each prepared again after it
+fires), behind `app_haptic`, which answers null off iOS; no dependency was
+added. **Which devices.** The plugin says whether the hardware is there
+(CoreHaptics' `supportsHaptics`: an iPhone has it, no iPad has), the page
+asks once at launch, and nothing is asked for after a no. **The setting.**
+`haptics`, on and off, in the settings, drawn only where the device can;
+on by default; kept with the device's other settings in the web view's
+storage, so it does not sync. Turning it on is felt. **Checks.**
+`haptics.test.ts` (the table, the switch, a device that cannot, a native
+side that fails, a session's reveal, grades and end, the settings' row). A
+simulator does not shake and reports no hardware, so a simulated iPhone is
+taken as having it and a dev build keeps the names asked for
+(`hapticsAsked`): the `phone` smoke reads them after the reveal, each of
+the four grades, a topic's `later` and the queue's end, and turns the
+setting off and on by taps.
+**Not done, and a device's to judge:** how each feels, and whether `good`
+and the reveal, both light, want telling apart; nothing is felt for a
+stroke, a tool chosen, a tab, or a card saved.
+
 ## Notes for the next session
 
 Studying (42–46) is complete, 2026-10-31: every milestone's window check

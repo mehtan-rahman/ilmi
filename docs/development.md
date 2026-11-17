@@ -441,6 +441,19 @@ a rerun. A dev build keeps its whole log in one file (`max_file_size` in
 `lib.rs`): the rig counts the asks in it, and the plugin's own 40 kB limit
 dropped the file in the middle of a long run.
 
+Haptics (milestone 83) are `src/app/haptics.ts`: named calls (`hapticReveal`,
+`hapticGrade`, `hapticFinished`, `hapticTick`) made from the session and the
+few places a tick belongs, each a name handed to `app_haptic`, which on iOS
+is the ink plugin's `haptic` (UIKit's feedback generators) and anywhere else
+answers null. The plugin says whether the device has the hardware
+(CoreHaptics; a simulated iPhone is taken as having it, since a simulator
+reports none), asked once at launch (`loadHaptics`, `canHaptics` in the
+store), and the settings' `haptics` row is drawn only then. A simulator does
+not shake: a dev build keeps the names asked for (`hapticsAsked`,
+`hapticsAskedClear`; empty in a release), and the `phone` smoke reads them
+after the reveal, each grade, a topic's `later` and the queue's end, then
+turns the setting off and on by taps.
+
 `ILMI_SMOKE=ink` is three runs over one storage folder in the same way,
 over the ink a typed note holds (a note takes no new handwriting since
 milestone 82). The Mac first (`ILMI_VAULT`, `ILMI_STORAGE`): it puts two

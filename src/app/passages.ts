@@ -13,6 +13,7 @@ import { advanceSchedule, broughtBack, newPassage, passageItem, type QueueItem, 
 import { marksHashOf, passageId, type PassageMark } from '../vault/index.js';
 import { allMarks, heldMarks, loadMarks, onMarks, pdfHashOf, setMark } from './book.js';
 import { appNow } from './clock.js';
+import { hapticTick } from './haptics.js';
 import { useApp } from './store.js';
 import { boxesLabel } from './written.js';
 import { onHiddenChange, refreshQueue, setExtraItems, setPostponePassage } from './vault.js';
@@ -72,6 +73,7 @@ export async function keepPassage(id: string, boxes: readonly Box[]): Promise<{ 
   const mark = markOfSched(sched, now.getTime());
   if (!mark) return null;
   await setMark(hash, passageId(sched.boxes), mark);
+  hapticTick();
   return { hash, boxes: sched.boxes, ivl: sched.ivl, label: boxesLabel(useApp.getState().docs[id], boxes) };
 }
 

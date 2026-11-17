@@ -21,6 +21,7 @@ import { cleanBudget, cleanFocus, sessionItems, walkOf, type Focus } from './ite
 import { INTAKE, SESSION, cardsId, cardsPath, notesPath, queueId, queueScope } from './names.js';
 import { bookShown, inspectorShown } from './layout.js';
 import { activeTab, closedBy, dropTabs, emptyPanes, openTab, restorePanes, retarget, savedPanes, tabNode, type OpenOpts, type Panes } from './panes.js';
+import { loadHaptics } from './haptics.js';
 import { NEVER, collectionRows, collectionsHome, isMobile, isPhone, loadPlatform, setCollectionsHome } from './platform.js';
 import { addRecent, decideStart, forgetRecent, vaultName } from './recents.js';
 import { STARTER_TEXT, STARTER_TITLE } from './starter.js';
@@ -1030,6 +1031,8 @@ export function openInitialVault(): Promise<void> {
   initial ??= (async () => {
     // where the app runs, before anything is drawn by it (`platform.ts`)
     useApp.setState({ mobile: (await loadPlatform()).mobile });
+    // whether the device can tap back (`haptics.ts`): nothing waits for the answer
+    void loadHaptics();
     if (import.meta.env.DEV) {
       const path = await invoke<string | null>('dev_env', { name: 'ILMI_VAULT' });
       const mode = await invoke<string | null>('dev_env', { name: 'ILMI_SMOKE' });

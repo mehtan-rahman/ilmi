@@ -27,7 +27,20 @@ const TEXT_EXT: [&str; 12] = ["md", "json", "jsonl", "txt", "js", "css", "html",
 type R<T> = Result<T, String>;
 
 fn err<E: std::fmt::Display>(e: E) -> String {
-    e.to_string()
+    plain(&e.to_string())
+}
+
+/// What the remote's refusal means, in plain words, before what git said: a token it does not know (git tries
+/// it again until it gives up: "too many redirects or authentication replays"), and one it knows that may not
+/// read or write this repository (`403`).
+fn plain(said: &str) -> String {
+    if said.contains("authentication replays") || said.contains("status code: 401") {
+        format!("the remote does not accept this token: it may be mistyped, expired or replaced by a new one ({said})")
+    } else if said.contains("status code: 403") {
+        format!("this token may not read or write this repository: on github, give it contents read and write on it ({said})")
+    } else {
+        said.to_string()
+    }
 }
 
 #[derive(Serialize, Debug, PartialEq, Default)]
@@ -119,7 +132,8 @@ fn callbacks(token: Option<String>) -> RemoteCallbacks<'static> {
     let mut cb = RemoteCallbacks::new();
     cb.credentials(move |_url, username, allowed| {
         if allowed.contains(CredentialType::USER_PASS_PLAINTEXT) {
-            if let Some(t) = token.as_deref().filter(|t| !t.is_empty()) {
+            // a token pasted with a space or a line end around it is the token
+            if let Some(t) = token.as_deref().map(str::trim).filter(|t| !t.is_empty()) {
                 // a GitHub token goes as the password; the user name is not checked
                 return Cred::userpass_plaintext(username.unwrap_or("git"), t);
             }
@@ -484,6 +498,13 @@ pub fn push(root: &str, token: Option<String>) -> R<Status> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_refusal_is_said_plainly() {
+        assert!(super::plain("too many redirects or authentication replays; class=Http (34)").starts_with("the remote does not accept this token"));
+        assert!(super::plain("unexpected http status code: 403; class=Http (34)").starts_with("this token may not read or write"));
+        assert_eq!(super::plain("no such remote"), "no such remote");
+    }
+
     use super::*;
 
     struct Temp(PathBuf);

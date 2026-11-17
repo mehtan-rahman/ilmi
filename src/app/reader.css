@@ -989,7 +989,7 @@ mark.find-hit { color: inherit; padding: 0; }
 .composer .composer-face { min-height: 96px; padding: 4px 0; font-family: var(--serif); font-size: 16px; line-height: 1.6; color: var(--fg-1); cursor: text; }
 .composer .composer-face .face-field { outline: none; white-space: pre-wrap; min-height: 1.5em; }
 .composer .composer-face .face-field p { margin: 0; }
-.composer .composer-face .face-field:has(> p:only-child > br:only-child)::before { content: attr(data-placeholder); color: var(--fg-5); font-style: italic; pointer-events: none; float: left; height: 0; }
+.composer .composer-face .face-field[data-empty="1"]::before { content: attr(data-placeholder); color: var(--fg-5); font-style: italic; pointer-events: none; float: left; height: 0; }
 /* a question and its answer, a term and its other: two of the same editor, a line under each */
 .composer .composer-face.side { min-height: 38px; border-bottom: 1px solid var(--line-2); }
 .composer .composer-face.side:focus-within { border-bottom-color: var(--accent); }

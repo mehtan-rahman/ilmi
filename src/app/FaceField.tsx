@@ -95,7 +95,8 @@ export function FaceField({ value, placeholder, autoFocus, blanks, onChange }: F
       state: makeState(faceFieldBlocks(value, !blanks), { frozen: () => false, pos: null, blanks: !!blanks }),
       nodeViews,
       handleClickOn,
-      attributes: { class: 'draft-doc face-field', 'data-placeholder': placeholder },
+      // `data-empty` says when the placeholder shows (a rule that looked at the page's own children went stale on a phone)
+      attributes: (state) => ({ class: 'draft-doc face-field', 'data-placeholder': placeholder, 'data-empty': state.doc.childCount <= 1 && state.doc.textContent === '' && !state.doc.firstChild?.childCount ? '1' : '0' }),
       // Tab in a face's plain text goes to the card's other face (⇧Tab back), as a form's fields do; in a cell or a list it is the editor's
       handleKeyDown(ev, e) {
         if (e.key !== 'Tab' || e.metaKey || e.ctrlKey || e.altKey) return false;

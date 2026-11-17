@@ -409,7 +409,7 @@ the markers into the extract or card made from it.
 A right-click in the text offers cut, copy, paste and `insert table`, and
 with words selected `bold`, `italic`, `code` and `strikethrough`. A card's
 text is written in this same editor wherever it is written: a deck's row,
-the card view, and the new card's question and answer (and both terms of
+the card view, the new card's question and answer and a phone's front and back (and both terms of
 a card that goes both ways), so the menu, the formatting keys, formulas
 and tables are the same there. A cloze's menu has `blank` where a note's
 has the table.

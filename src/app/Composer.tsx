@@ -52,12 +52,10 @@ export function Composer({ seed, form: initial, pri: docPri, onSave, onClose, qu
   const [back, setBack] = useState('');
   const [left, setLeft] = useState(seed);
   const [right, setRight] = useState('');
-  const ref = useRef<HTMLTextAreaElement & HTMLInputElement>(null);
   /** The passage's editor, and a count that starts it afresh (save, another). */
   const faceRef = useRef<HTMLDivElement>(null);
   const [gen, setGen] = useState(0);
 
-  useEffect(() => { ref.current?.focus(); }, [form]);
 
   const spec: CardSpec = form === 'cloze' ? { form, text } : form === 'qa' ? { form, front, back } : { form, left, right };
   const out = cardText(spec);
@@ -70,7 +68,6 @@ export function Composer({ seed, form: initial, pri: docPri, onSave, onClose, qu
     if (again) {
       setText(''); setFront(''); setBack(''); setLeft(''); setRight('');
       setGen((g) => g + 1);
-      ref.current?.focus();
     }
   };
 
@@ -124,27 +121,15 @@ export function Composer({ seed, form: initial, pri: docPri, onSave, onClose, qu
             : <button type="button" className="quick-blank" onMouseDown={(e) => e.preventDefault()} onClick={wrapBlank}>blank</button>}
         </>
       )}
-      {form !== 'cloze' && quick === undefined && (
-        // each side is the reader's editor, as a note's text is: formatting, math, a table, the same menu
+      {form !== 'cloze' && (
+        // each side is the reader's editor, as a note's text is: formatting, math, a table, the same menu (a phone's too)
         <div className="qa-fields" key={`${form}${gen}`}>
           <div className="composer-face side" dir="auto" onMouseDown={pressIntoFace}>
-            <FaceField value={form === 'qa' ? front : left} placeholder={form === 'qa' ? 'question' : 'term a'} autoFocus onChange={form === 'qa' ? setFront : setLeft} />
+            <FaceField value={form === 'qa' ? front : left} placeholder={quick !== undefined ? 'front' : form === 'qa' ? 'question' : 'term a'} autoFocus onChange={form === 'qa' ? setFront : setLeft} />
           </div>
           <div className="composer-face side" dir="auto" onMouseDown={pressIntoFace}>
-            <FaceField value={form === 'qa' ? back : right} placeholder={form === 'qa' ? 'answer' : 'term b'} onChange={form === 'qa' ? setBack : setRight} />
+            <FaceField value={form === 'qa' ? back : right} placeholder={quick !== undefined ? 'back' : form === 'qa' ? 'answer' : 'term b'} onChange={form === 'qa' ? setBack : setRight} />
           </div>
-        </div>
-      )}
-      {form === 'qa' && quick !== undefined && (
-        <div className="qa-fields">
-          <textarea dir="auto" ref={ref} value={front} onChange={(e) => setFront(e.target.value)} placeholder="front" />
-          <textarea dir="auto" value={back} onChange={(e) => setBack(e.target.value)} placeholder="back" />
-        </div>
-      )}
-      {form === 'bidir' && quick !== undefined && (
-        <div className="qa-fields">
-          <input dir="auto" ref={ref} value={left} onChange={(e) => setLeft(e.target.value)} placeholder="front" />
-          <input dir="auto" value={right} onChange={(e) => setRight(e.target.value)} placeholder="back" />
         </div>
       )}
 

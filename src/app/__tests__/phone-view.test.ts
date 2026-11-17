@@ -15,6 +15,7 @@ import { SESSION, notesId, queueId } from '../names.js';
 import { activeTab, emptyPanes, openTab } from '../panes.js';
 import { deckFor, deckPaths } from '../quick.js';
 import { useApp } from '../store.js';
+import { faceViews } from '../FaceField.js';
 
 const calls: string[] = [];
 const DECK = 'arabic/vocabulary.md';
@@ -69,11 +70,10 @@ const draw = async (el: ReturnType<typeof createElement>) => {
 const q = <T extends Element>(sel: string) => document.querySelector<T>(sel);
 const qa = <T extends Element>(sel: string) => Array.from(document.querySelectorAll<T>(sel));
 const click = async (el: Element | null) => { await act(async () => { (el as HTMLElement).click(); }); };
-const fill = async (el: HTMLTextAreaElement, text: string) => {
-  await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(el, text);
-    el.dispatchEvent(new Event('input', { bubbles: true }));
-  });
+/** Text put in one of the composer's sides (the reader's editor) in place of what it holds. */
+const fill = async (el: HTMLElement, text: string) => {
+  const v = faceViews.get(el.closest('.face-host')!)!;
+  await act(async () => { v.dispatch(v.state.tr.insertText(text, 1, v.state.doc.content.size - 1)); });
 };
 
 const NOW = new Date('2026-10-30T12:00:00');
@@ -238,8 +238,9 @@ describe('a quick card', () => {
     expect(q('.quick')).toBeNull();
     await act(async () => { openQuickCard(); });
     expect(q('.qd-t')?.textContent).toBe('roots');
-    const [front, back] = qa<HTMLTextAreaElement>('.quick textarea');
-    expect([front!.placeholder, back!.placeholder]).toEqual(['front', 'back']);
+    const [front, back] = qa<HTMLElement>('.quick .face-field');
+    expect(q('.quick textarea')).toBeNull();
+    expect([front!.dataset.placeholder, back!.dataset.placeholder]).toEqual(['front', 'back']);
     expect(q('.quick .pri-pick')).toBeNull();
     expect(q('.quick kbd')).toBeNull();
     expect(q<HTMLButtonElement>('[data-act="save"]')!.disabled).toBe(true);
@@ -262,13 +263,13 @@ describe('a quick card', () => {
     rememberDeck(DECK);
     await draw(createElement(QuickCard));
     await act(async () => { openQuickCard(); });
-    let [front, back] = qa<HTMLTextAreaElement>('.quick textarea');
+    let [front, back] = qa<HTMLElement>('.quick .face-field');
     await fill(front!, 'one');
     await fill(back!, 'two');
     await click(q('[data-act="again"]'));
     expect(calls).toHaveLength(1);
-    [front, back] = qa<HTMLTextAreaElement>('.quick textarea');
-    expect(front!.value).toBe('');
+    [front, back] = qa<HTMLElement>('.quick .face-field');
+    expect(front!.textContent).toBe('');
     await fill(front!, 'three');
     await click(q('[data-act="cancel"]'));
     expect(q('.quick')).toBeNull();

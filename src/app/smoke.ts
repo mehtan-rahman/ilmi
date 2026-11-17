@@ -11321,7 +11321,8 @@ export async function smokePhone(): Promise<void> {
       if (value() !== text) await shot('phone-typed-otherwise');
       must(value() === text, `typed: ${text} (the field holds "${value()}")`);
     };
-    const fields = () => qa<HTMLTextAreaElement>('.quick textarea, .quick input');
+    // each side is the reader's editor: what it holds is its text
+    const fields = () => qa<HTMLElement>('.quick .qa-fields .face-field').map((el) => Object.assign(el, { get value() { return el.textContent ?? ''; }, placeholder: el.dataset.placeholder ?? '' }));
     await tap(q('.pb-add')!, () => q('.quick'), '+ on the day opens the composer');
     await poll(() => fields().length === 2 && fields()[0]!.placeholder === 'front' && fields()[1]!.placeholder === 'back', 'front and back');
     must(document.activeElement === fields()[0], 'the caret in the front');

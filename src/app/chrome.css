@@ -61,6 +61,8 @@
 .top .right [data-due="1"] { color: var(--fg-1); font-weight: 500; }
 .top .right .sync { color: var(--fg-4); background: none; border: 0; padding: 0; font: inherit; }
 .top .right .sync { display: inline-block; }
+.top .right button.sync { cursor: pointer; }
+html[data-mobile="1"] .top .right button.sync { padding: 12px 6px; margin: -12px -6px; }
 .top .right .sync[data-sync="pending"], .top .right .sync[data-sync="offline"] { color: var(--fg-3); }
 .top .right .ago { color: var(--fg-4); margin-left: calc(-1 * var(--s-2)); }
 .top .right .ago::before { content: '· '; }

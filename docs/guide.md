@@ -700,9 +700,10 @@ the two level, `clone…` makes a new collection from the remote, named for
 it, and opens it. The repository is a folder the app keeps beside the
 collection's database, written out from it before each commit and read back
 into it after each pull. From then on the app commits what it writes after each batch
-(a session, a save, an import; at most once a minute, the message naming
-what changed), pulls on open, on focus, and every two minutes, and pushes
-after a session, on close, and a minute after a commit. The top strip says
+(a session, a save, an import; at most once in fifteen seconds, the message naming
+what changed), pulls on open, on focus, and every half minute, and pushes
+after a session, on close, and a few seconds after a commit. Press the
+strip's sync word to sync now; what went wrong, if anything did, is said. The top strip says
 where things stand: `synced · 2 s ago`, `3 to push`, `pulling…`, `offline`,
 or `2 conflicts`. Offline is quiet; commits wait.
 

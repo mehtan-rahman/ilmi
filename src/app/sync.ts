@@ -7,9 +7,10 @@
 // in (`takeFiles`). Git goes when the CRDT engine has passed the same
 // checks on a device (milestone 66). A commit
 // after each batch of writes (a quiet five seconds after the last, at most
-// one a minute), its message naming what changed; a pull on open, on
-// focus, every two minutes; a push after a session, on close, and a minute
-// after any commit. Two versions of one file meet in `src/sync/merge.ts`,
+// one in fifteen seconds), its message naming what changed; a pull on open,
+// on focus, every half minute, and when the strip's word is pressed (`sync
+// now`); a push after a session, on close, and three seconds after any
+// commit. Two versions of one file meet in `src/sync/merge.ts`,
 // by the format's rules. The remote and its token live with the tweaks,
 // outside the vault, per vault path; offline is quiet. After every push
 // the nudge (`nudge.ts`, milestone 54) tells the other devices, and a
@@ -65,9 +66,9 @@ export const SYNC_OFF: SyncState = { on: false, repo: false, busy: null, offline
 
 // the cadence, in ms
 export const QUIET_MS = 5_000;
-export const COMMIT_GAP_MS = 60_000;
-export const PULL_EVERY_MS = 120_000;
-export const PUSH_AFTER_MS = 60_000;
+export const COMMIT_GAP_MS = 15_000;
+export const PULL_EVERY_MS = 30_000;
+export const PUSH_AFTER_MS = 3_000;
 /** A pull on focus not within this of the last. */
 export const FOCUS_GAP_MS = 15_000;
 
@@ -235,7 +236,7 @@ async function commitNow(at: string): Promise<string | null> {
   return id;
 }
 
-/** Something was written: a commit comes after a quiet spell, at most one a minute. */
+/** Something was written: a commit comes after a quiet spell, at most one in fifteen seconds. */
 function touched(): void {
   lastWrite = Date.now();
   scheduleStatus();

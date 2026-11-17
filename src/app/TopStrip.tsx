@@ -16,7 +16,9 @@ import { toggleInspector, toggleSidebar } from './vault.js';
 import { shapeOf } from './platform.js';
 import { inspectorShown, sidebarShown } from './layout.js';
 import { appNow } from './clock.js';
-import { openConflicts, syncAge, syncWord } from './sync.js';
+import { openConflicts, syncAge, syncNow, syncWord } from './sync.js';
+import { crdtNow } from './crdt.js';
+import { notify } from './land.js';
 import { Glyph, Icon } from './icons.js';
 
 /** A re-render each second while the age is in seconds, each half minute after. */
@@ -30,6 +32,11 @@ function useTick(at: number | null): number {
     return () => clearInterval(t);
   }, [at, now - (at ?? 0) < 60_000]);
   return now;
+}
+
+/** The strip's word pressed: a sync now, whichever way the collection syncs; what went wrong is said, not kept to the log. */
+export function syncAsked(): void {
+  void Promise.all([syncNow(), crdtNow()]).catch((e: unknown) => notify(`sync: ${e instanceof Error ? e.message : String(e)}`));
 }
 
 export function TopStrip() {
@@ -68,7 +75,7 @@ export function TopStrip() {
         <span>{dayLabel(appNow())}</span>
         {word !== null && (sync.conflicts.length
           ? <button type="button" className="sync" data-sync="conflicts" onClick={openConflicts}>{word}</button>
-          : <span className="sync" data-sync={sync.busy ?? (sync.offline ? 'offline' : sync.toPush ? 'pending' : 'synced')}>{word}</span>)}
+          : <button type="button" className="sync" data-sync={sync.busy ?? (sync.offline ? 'offline' : sync.toPush ? 'pending' : 'synced')} title="sync now" onClick={syncAsked}>{word}</button>)}
         {age !== null && <span className="ago">{age}</span>}
       </div>
       {!phone && (

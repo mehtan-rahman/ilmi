@@ -135,6 +135,8 @@ export interface DocInfo {
   of?: string;
   /** A PDF on its own: the note that is its notes (the first in path order naming it), when one does. */
   note?: string;
+  /** A PDF on its own: every note that names it, in path order (milestone 81); absent for none. */
+  notes?: string[];
   /** `tabs: true`: its children are tabs in a rail beside its page (`tabs.ts`). */
   tabs?: true;
   /** The `pages` field: which pages of its PDF it is (a chapter of a book that landed as a notebook). */

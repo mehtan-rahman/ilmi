@@ -7517,7 +7517,9 @@ const dayOfStr = (due: string | undefined): string => (due ?? '').slice(0, 10);
 // below it, the next clip after the caret's block; the queue opens an older
 // section at its boxes; done for today records `pos` and `y`. A PDF on its
 // own keeps a passage with no note; `create notes` makes a blank note that
-// names it, a row in the tree. Light, then dark.
+// names it, a row in the tree; `+` beside the word makes a second, both tabs
+// of the pane beside the pages, the one used last in front, `m` into the
+// one in front. Light, then dark.
 export async function smokeBook(vault: Vault): Promise<void> {
   // what the app reports with console.error, for a failure's `why:` line
   const errors: string[] = [];
@@ -8056,6 +8058,78 @@ export async function smokeBook(vault: Vault): Promise<void> {
     openNode(NEWNOTE);
     await poll(() => activeTab(useApp.getState().panes)?.id === NEWNOTE && q('.pane[data-active="1"] .reader-wrap[data-pdf] .draft-doc') && !q('.pane[data-active="1"] .book'), 'the note from the tree opens as a note, linked to its pages', 8000);
     await shot('alone-note-alone');
+
+    // ── several notes on the one PDF (milestone 81): each a tab of the pane beside the pages ──
+    await openBook(ALONE, 1);
+    const plus = () => q<HTMLButtonElement>('.pane[data-active="1"] .book .meta .notes-add');
+    /** The tabs of the pane beside the pages (their ids), and the one in front there. */
+    const besideTabs = () => { const ps = useApp.getState().panes; const p = ps.panes.find((_, i) => i !== ps.active); return p ? { ids: p.tabs.map((t) => t.id), front: p.tabs[p.active]?.id } : null; };
+    const pagesFront = async () => { useApp.getState().setPanes((p) => ({ ...p, active: p.panes.findIndex((x) => x.tabs[x.active]?.id === ALONE) })); await poll(() => activeTab(useApp.getState().panes)?.id === ALONE && !!word(), 'the pages in front again'); };
+    must(word().textContent === 'open notes' && plus()?.title === 'new note' && plus()!.textContent === '+' && !q('kbd, .kbd', plus()!), `a + beside the notes' word, with no key on it (${plus()?.title})`);
+    {
+      const wr = word().getBoundingClientRect();
+      const pr = plus()!.getBoundingClientRect();
+      must(pr.left >= wr.right - 10 && pr.left - wr.right < 16 && Math.abs((pr.top + pr.bottom) / 2 - (wr.top + wr.bottom) / 2) < 3, `it sits just after the word, on its line (${Math.round(pr.left - wr.right)} px after)`);
+    }
+    plus()!.click();
+    const pick3 = await poll(() => q<HTMLInputElement>('.palette-input input'), '+ asks which note, as create notes did', 8000);
+    must(pick3.placeholder === 'notes on alone' && paletteRows()[0] === '[note] new note · alone notes' && !paletteRows().some((r) => r.includes('notes on the ruler')), `the same picker, the note that is the PDF's already left out (${paletteRows().slice(0, 3).join(' / ')})`);
+    key('Escape');
+    await poll(() => !q('.palette-overlay'), 'esc closes it');
+    await sleep(300);
+    must(alone() && useApp.getState().docs[ALONE]?.notes?.length === 1, 'nothing picked: still the one note, nothing opened');
+    plus()!.click();
+    const pick4 = await poll(() => q<HTMLInputElement>('.palette-input input'), '+ again', 8000);
+    typeInto(pick4, 'ruler questions');
+    await sleep(150);
+    pick4.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    await poll(() => useApp.getState().noteAttach?.step === 'place', 'then where', 8000);
+    typeInto(q<HTMLInputElement>('.palette-input input')!, 'fleeting');
+    await sleep(150);
+    q<HTMLInputElement>('.palette-input input')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    const SECOND = 'fleeting/ruler questions.md';
+    await poll(async () => { try { return (await text(SECOND)) === '---\npdf: ../books/alone.pdf\n---\n'; } catch { return false; } }, 'a second blank note that names the PDF', 15000);
+    await poll(() => (useApp.getState().docs[ALONE]?.notes ?? []).join('|') === `${NEWNOTE}|${SECOND}` && useApp.getState().docs[SECOND]?.of === ALONE, 'the PDF has both notes, in path order', 8000);
+    await poll(() => notesIn() && activeTab(useApp.getState().panes)?.id === ALONE && besideTabs()?.ids.join('|') === `${NEWNOTE}|${SECOND}` && besideTabs()?.front === SECOND, 'both are tabs of the pane beside the pages, the new one in front, the pages kept active', 10000);
+    must(qa('.pane').length === 2 && qa('.tab', notesPane()!).map((t) => q('.title', t)?.textContent).join('|') === 'notes on the ruler|ruler questions', `the pane's ordinary tab strip names them (${qa('.tab', notesPane()!).map((t) => q('.title', t)?.textContent).join('|')})`);
+    must(word().textContent === 'hide notes' && !!plus(), 'the bar says hide notes, the + still there');
+    useApp.setState((st) => ({ bookSide: true, open: { ...st.open, fleeting: true } }));
+    await poll(() => q(`.trow[data-path="${CSS.escape(SECOND)}"]`) && q(`.trow[data-path="${CSS.escape(NEWNOTE)}"]`), 'both are rows in the tree', 8000);
+    await shot('alone-two-notes');
+    useApp.setState({ bookSide: false });
+    // `m` clips into the note in front beside the pages
+    await drag(2, 0.1, 0.3, 0.6, 0.06);
+    key('m');
+    const clip2 = await poll(async () => { const t = await text(SECOND); return /<!-- box 2:/.test(t) ? t : null; }, 'm clips into the note in front beside the pages', 10000);
+    must(/^---\npdf: \.\.\/books\/alone\.pdf\n---\n\n<!-- box 2:[\d.:]+ -->\n$/.test(clip2) && (await text(NEWNOTE)) === '---\npdf: ../books/alone.pdf\n---\n', 'the clip alone in the second note, the first still blank');
+    await poll(() => besideTabs()?.front === SECOND && !!q('.crop, .clip, img', notesPane()!), 'the clip drawn in that note, still in front', 8000);
+    await shot('alone-two-notes-clip');
+    // the first note's tab pressed: it is in front, and the one used last
+    qa<HTMLElement>('.tab', notesPane()!)[0]!.click();
+    await poll(() => useApp.getState().panes.panes.some((p) => p.tabs[p.active]?.id === NEWNOTE), 'the first note brought to the front by its tab', 8000);
+    await pagesFront();
+    must(word().textContent === 'hide notes' && notesIn(), 'the notes still count as open with the other note in front');
+    pressWord();
+    await poll(() => alone() && word().textContent === 'open notes', 'hide notes closes both tabs and their pane', 8000);
+    pressWord();
+    await poll(() => notesIn() && besideTabs()?.ids.join('|') === `${NEWNOTE}|${SECOND}` && besideTabs()?.front === NEWNOTE, 'open notes brings both back, the one used last in front', 8000);
+    key('\\', { metaKey: true });
+    await poll(() => alone(), '⌘\\ closes them');
+    // closed, a clip goes into the note used last, which opens in front
+    await drag(2, 0.1, 0.5, 0.6, 0.06);
+    key('m');
+    await poll(async () => /<!-- box 2:/.test(await text(NEWNOTE)), 'with the notes closed, m clips into the note used last', 10000);
+    await poll(() => notesIn() && besideTabs()?.front === NEWNOTE && besideTabs()?.ids.length === 2, 'and the notes open with it in front', 8000);
+    must((await text(SECOND)) === clip2, 'the other note as it was');
+    key('\\', { metaKey: true });
+    await poll(() => alone(), 'closed');
+    // a chapter is its own notes; its PDF's attached notes would be further tabs, and it has none: one tab, as before
+    await openBook(CH3, 41);
+    log(`the chapter's pdf as a document: ${JSON.stringify(useApp.getState().docs[`${SB}/lindqvist.pdf`] ?? null)}`);
+    pressWord();
+    await poll(() => notesIn() && besideTabs()?.ids.length === 1 && besideTabs()?.front === `:notes/${CH3}`, 'a chapter with no further note opens its own notes alone, as before', 8000);
+    key('\\', { metaKey: true });
+    await poll(() => alone(), 'closed');
 
     // ── dark: the pages, then the note beside them ──
     await openBook(CH3, 41);
@@ -10652,19 +10726,25 @@ export async function smokeIpad(): Promise<void> {
 //     the same press under a pointer that says `pen` (events made here:
 //     the rig cannot make a Pencil) boxes nothing, since milestone 67, the
 //     Pencil's being the canvas's (`ink`, `pageink`); the bar under the box
-//     offers section and card, and `section` tapped makes the section; the
+//     offers passage, card, highlight and look up, with no key named, and
+//     `passage` tapped keeps the passage with the PDF (milestone 81): in no
+//     note, nothing opened; its tag's menu (dismiss, bring back) and the
+//     bar's `more` menu (ruler, portal) open and act under taps; the
 //     note opens in the pane below the pages (upright: the panes lie one
-//     above the other, milestone 70) and closes at a tap on `notes`; a
-//     heading, a tree row and a deck's card each give their menu to a long
-//     press, with nothing selected under it; a PDF on its own (put in the
-//     storage by the Mac's run) opens as its pages, asks for a note when
-//     one is kept from it, and the note made in a folder picked opens
-//     below (`alone note: …` names it for the Mac's run); a tree row held
-//     and dragged moves; turned, the note sits beside the pages. The
-//     section's name and boxes are logged (`section: …`) and synced.
+//     above the other, milestone 70) and closes at a tap on the notes'
+//     word; a heading, a tree row and a deck's card each give their menu to
+//     a long press, with nothing selected under it; a PDF on its own (put in
+//     the storage by the Mac's run) opens as its pages, keeps a passage with
+//     no note, and `create notes` makes a blank note in a folder picked,
+//     open below (`alone note: …` names it for the Mac's run); `+` beside
+//     the word makes a second, both tabs of the pane below, `card` on a box
+//     clips into the one in front, and the word brings both back with the
+//     one used last in front; a tree row held and dragged moves; turned,
+//     the note sits beside the pages. The passage's boxes are logged
+//     (`passage: …`) and synced.
 //  3. The Mac again (`ILMI_VAULT` its collection's own folder,
-//     `ILMI_EXPECT` the section's name): after a sync the section is in its
-//     chapter, boxed on the page.
+//     `ILMI_EXPECT` the passage's boxes): after a sync the passage is with
+//     the PDF, boxed on the page, and the PDF on its own has both notes.
 export async function smokeTouch(): Promise<void> {
   let last = { at: Date.now(), what: 'start' };
   let finished = false;
@@ -10828,7 +10908,8 @@ export async function smokeTouch(): Promise<void> {
     await poll(() => pending() === 1, 'a finger held and then dragged draws a box', 25000);
     must(Math.abs(sc.scrollTop - still) < 4, 'and the page holds still under it');
     const bar = () => qa<HTMLElement>('.pend button', book).map((b) => b.textContent ?? '');
-    must(bar().length === 2 && /section/.test(bar()[0]!) && /card/.test(bar()[1]!), `the bar under the box offers section and card (${bar().join(' | ')})`);
+    must(bar().length === 4 && /passage/.test(bar()[0]!) && /card/.test(bar()[1]!) && /highlight/.test(bar()[2]!) && /look up/.test(bar()[3]!), `the bar under the box offers passage, card, highlight and look up (${bar().join(' | ')})`);
+    must(qa<HTMLElement>('.pend kbd', book).every((k) => getComputedStyle(k).display === 'none') && !q('.bot') && qa<HTMLElement>('.meta kbd, .meta .kbd', book).every((k) => getComputedStyle(k).display === 'none'), 'with no keyboard attached no key is named: none on the bar, none over the pages, no strip at the foot');
     const pr = q<HTMLElement>('.pend button', book)!.getBoundingClientRect();
     must(pr.height >= 32, `at a finger's size (${Math.round(pr.height)} px tall)`);
     await shot('touch-boxed');
@@ -10854,27 +10935,89 @@ export async function smokeTouch(): Promise<void> {
     await sleep(300);
     must(pending() === 0 && !q('img.page-ink', book), 'and with nothing written the page is as it was');
 
-    // ── the passage boxed by a finger becomes a section, by the bar's button ──
+    // ── the passage boxed by a finger is kept with the PDF, by the bar's button (milestone 81): in no note, nothing opened ──
+    type PassageMark = import('../vault/index.js').PassageMark;
+    const { marksPath, parseMarks } = await import('../vault/index.js');
+    const blobAt = (pdf: string) => (vault.fs as import('../vault/index.js').StoreFs).blobAt(vault.abs(pdf));
+    const keptIn = async (pdf: string): Promise<PassageMark[]> => {
+      const h = blobAt(pdf);
+      if (!h || !(await vault.fs.stat(vault.abs(marksPath(h))))) return [];
+      return Object.values(parseMarks(await vault.fs.readText(vault.abs(marksPath(h))))).filter((m): m is PassageMark => m.kind === 'passage');
+    };
     c = await corners(...PASSAGE);
     ask('drag', c[0], c[1], c[2], c[3], 0.8);
     await poll(() => pending() === 1, 'the passage is boxed again', 25000);
     const btn = q<HTMLElement>('.pend button[data-k="e"]', book)!;
     ask('tap', ...mid(btn));
-    const made = await poll(async () => (await headings()).find((h) => !before.includes(h.text) && h.read?.boxes !== undefined), 'section tapped: the passage is a section of the notes', 25000);
-    const boxes = parseBoxes(made.read?.boxes ?? '') ?? [];
-    must(boxes.length === 1 && boxes[0]!.page === 24, `named from the page, with its box: "${made.text}"`);
+    const made = await poll(async () => (await keptIn(pdfOf())).find((m) => m.page === 24), 'passage tapped: the passage is kept with the PDF', 25000);
+    const boxes = parseBoxes(made.boxes) ?? [];
+    must(boxes.length === 1 && boxes[0]!.page === 24 && made.due !== undefined, `with its box and when it is back (${made.boxes}, due ${made.due})`);
     const b0 = boxes[0]!;
     must(Math.abs(b0.x - PASSAGE[1]) < 0.03 && Math.abs(b0.y - PASSAGE[2]) < 0.03 && Math.abs(b0.w - PASSAGE[3]) < 0.04 && Math.abs(b0.h - PASSAGE[4]) < 0.04, `the box is where the finger went (${b0.x},${b0.y},${b0.w},${b0.h})`);
-    await poll(() => q(`.pbox[data-section="${CSS.escape(made.text)}"]`, book), 'and is drawn on the page');
-    // a box made a section opens the note below the pages, with the section in it (milestone 70)
-    await poll(() => notesIn() && qa<HTMLElement>('.dd-h', notesPane()!).some((h) => h.textContent?.includes(made.text.slice(0, 12))), 'the note opens beside the pages with the new section in it', 10000);
+    await poll(() => q(`.pbox[data-kept="1"][data-section="${CSS.escape(made.boxes)}"]`, book) && pending() === 0, 'and is drawn on the page, the pending box gone');
+    await sleep(800);
+    must(alone() && !q('.palette-overlay') && useApp.getState().noteAttach === null && (await headings()).map((h) => h.text).join('|') === before.join('|'), 'nothing written into the note, no note asked for, nothing opened');
+    await shot('touch-passage');
+    // its tag beside the page, under a finger: when it is next, dismiss, bring back
+    const tagOf = () => q<HTMLElement>(`[data-for="${CSS.escape(made.boxes)}"]`, book);
+    const inWindow = (el: Element) => { const r = el.getBoundingClientRect(); return r.left >= 0 && r.top >= 0 && r.right <= window.innerWidth + 1 && r.bottom <= window.innerHeight + 1; };
+    const tag = await poll(tagOf, 'its tag is beside the page');
+    log(`tag: ${tag.className}, ${Math.round(tag.getBoundingClientRect().width)}×${Math.round(tag.getBoundingClientRect().height)} px, "${tag.textContent}"`);
+    ask('tap', ...mid(tag));
+    const pm = await poll(() => q<HTMLElement>('.ctx-menu.book-menu'), 'a tap on the tag opens its menu', 20000);
+    await sleep(500);
+    log(`passage menu: ${qa('.ci', pm).map((i) => i.textContent).join(' | ')}`);
+    must(qa('.ci', pm).length === 3 && !!q('.ci[data-act="passage-dismiss"]', pm) && !!q('.ci[data-act="passage-remove"]', pm) && inWindow(pm), 'when it is next, dismiss and remove, all inside the window');
+    must(qa<HTMLElement>('.ci', pm).every((i) => i.getBoundingClientRect().height >= 32), `its rows a finger's size (${Math.round(q<HTMLElement>('.ci', pm)!.getBoundingClientRect().height)} px)`);
+    await shot('touch-passage-menu');
+    ask('tap', ...mid(q<HTMLElement>('.ci[data-act="passage-dismiss"]', pm)!));
+    await poll(async () => !q('.ctx-menu') && (await keptIn(pdfOf())).find((m) => m.boxes === made.boxes)?.due === undefined, 'dismiss tapped: the passage is dismissed, the menu gone', 20000);
+    await poll(() => tagOf()?.classList.contains('dis'), 'and its tag says so');
+    await sleep(600);
+    ask('tap', ...mid(tagOf()!));
+    const pm2 = await poll(() => q<HTMLElement>('.ctx-menu.book-menu'), 'the tag again', 20000);
+    await sleep(500);
+    ask('tap', ...mid(q<HTMLElement>('.ci[data-act="passage-back"]', pm2)!));
+    await poll(async () => !q('.ctx-menu') && (await keptIn(pdfOf())).find((m) => m.boxes === made.boxes)?.due !== undefined, 'bring back tapped: it is due again', 20000);
+    await sleep(600);
+    // `more` in the bar, under a finger: its menu opens, and what is tapped there is done
+    const more = () => q<HTMLElement>('.meta [data-tool="more"]', book)!;
+    const view = () => q<HTMLElement>('.pdf-view', book)!;
+    ask('tap', ...mid(more()));
+    const mm = await poll(() => q<HTMLElement>('.ctx-menu.book-menu'), 'a tap on more opens its menu', 20000);
+    await sleep(500);
+    log(`more menu: ${qa('.ci', mm).map((i) => i.textContent).join(' | ')}`);
+    must(!!q('.ci[data-act="more-bookmark"]', mm) && !!q('.ci[data-act="more-portal-from"]', mm) && !!q('.ci[data-act="more-ruler"]', mm) && !q('.ci[data-act="more-beside"]', mm) && inWindow(mm), 'bookmark, portal and ruler, inside the window; no pane beside to follow portals in');
+    await shot('touch-more-menu');
+    ask('tap', ...mid(q<HTMLElement>('.ci[data-act="more-ruler"]', mm)!));
+    await poll(() => !q('.ctx-menu') && view().dataset.ruler !== undefined, 'ruler tapped: the ruler is on the page', 20000);
+    await sleep(500);
+    await shot('touch-more-ruler');
+    ask('tap', ...mid(more()));
+    const mm2 = await poll(() => q<HTMLElement>('.ctx-menu.book-menu'), 'more again', 20000);
+    await sleep(500);
+    must(q('.ci[data-act="more-ruler"]', mm2)?.textContent?.includes('hide the ruler'), 'the menu says the ruler can go');
+    ask('tap', ...mid(q<HTMLElement>('.ci[data-act="more-ruler"]', mm2)!));
+    await poll(() => !q('.ctx-menu') && view().dataset.ruler === undefined, 'tapped: the ruler is gone', 20000);
+    await sleep(500);
+    ask('tap', ...mid(more()));
+    const mm3 = await poll(() => q<HTMLElement>('.ctx-menu.book-menu'), 'more once more', 20000);
+    await sleep(500);
+    ask('tap', ...mid(q<HTMLElement>('.ci[data-act="more-portal-from"]', mm3)!));
+    const { portalPending, setPortalPending } = await import('./book.js');
+    await poll(() => !q('.ctx-menu') && portalPending() !== null, 'portal tapped: a portal waits for its other end', 20000);
+    setPortalPending(null);
+    await sleep(500);
+    // the note is there when asked for: below the pages, upright
+    ask('tap', ...mid(word()));
+    await poll(() => notesIn() && word().dataset.on === '1', 'a tap on notes opens the note below the pages', 20000);
     await sleep(600);
     must(stacked().ok, `below the pages, upright (${stacked().line})`);
     await shot('touch-section');
     const notes = notesPane()!;
     const nr = notes.getBoundingClientRect();
     const br = book.getBoundingClientRect();
-    const head = await poll(() => qa<HTMLElement>('.dd-h', notes).find((h) => h.textContent?.includes(made.text.slice(0, 12))), 'the new section is in it', 10000);
+    const head = await poll(() => qa<HTMLElement>('.dd-h', notes)[0], 'a section written before is in it', 10000);
     head.scrollIntoView({ block: 'center' });
     await shot('touch-notes');
     // a heading's menu, by a long press on its words
@@ -10923,7 +11066,7 @@ export async function smokeTouch(): Promise<void> {
     await poll(() => !q('.palette-overlay'), 'closed with nothing picked', 8000);
     await sleep(400);
     must(aalone(), 'and the pages are alone still');
-    // a passage boxed with a finger and kept: the picker, then a new note named here and placed in fleeting
+    // a passage boxed with a finger and kept: with the PDF, no note asked for; then `create notes`: a new note named here and placed in fleeting; `+`: a second
     {
       const pr = q<HTMLElement>('.pdf-page[data-page="129"]', abook)!;
       pr.scrollIntoView({ block: 'start' });
@@ -10934,8 +11077,15 @@ export async function smokeTouch(): Promise<void> {
       await poll(() => qa('.pbox.pending:not(.ghost)', abook).length === 1, 'a finger held and dragged boxes a passage on p. 129', 20000);
       await sleep(500);
       ask('tap', ...mid(q<HTMLElement>('.pend [data-k="e"]', abook)!));
-      const pick2 = await poll(() => q<HTMLInputElement>('.palette-input input'), 'section tapped asks for a note first', 20000);
-      must(qa('.pbox.pending:not(.ghost)', abook).length === 1, 'the box is kept while it asks');
+      const akept = await poll(async () => (await keptIn(ALONE)).find((m) => m.page === 129), 'passage tapped keeps it with the PDF', 20000);
+      await sleep(600);
+      must(!q('.palette-overlay') && aalone() && !useApp.getState().docs[ALONE]?.note && useApp.getState().noteAttach === null, 'no note asked for, none made, nothing opened');
+      await poll(() => qa('.pbox.pending:not(.ghost)', abook).length === 0 && q(`.pbox[data-kept="1"][data-section="${CSS.escape(akept.boxes)}"]`, abook), 'its box drawn on the page, the pending one gone');
+      log(`alone passage: ${akept.boxes}`);
+      // `create notes`: the picker, a new note named here, placed in fleeting, blank
+      must(aword().textContent === 'create notes' && !q('.meta .notes-add', abook), `the bar says create notes, with no + yet (${aword().textContent})`);
+      ask('tap', ...mid(aword()));
+      const pick2 = await poll(() => q<HTMLInputElement>('.palette-input input'), 'create notes asks which note', 20000);
       const iset = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
       iset.call(pick2, 'notes on alone, from the iPad');
       pick2.dispatchEvent(new Event('input', { bubbles: true }));
@@ -10946,18 +11096,77 @@ export async function smokeTouch(): Promise<void> {
       await shot('touch-alone-place');
       ask('tap', ...mid(row));
       const ANOTE = 'fleeting/notes on alone, from the iPad.md';
-      await poll(async () => { try { return /^---\npdf: \.\.\/library\/alone\.pdf\n---\n/.test(await vault.fs.readText(vault.abs(ANOTE))); } catch { return false; } }, 'the note is made in fleeting and names the PDF', 20000);
+      const BLANK = '---\npdf: ../library/alone.pdf\n---\n';
+      const noteNow = async (p: string) => { try { return await vault.fs.readText(vault.abs(p)); } catch { return null; } };
+      await poll(async () => (await noteNow(ANOTE)) === BLANK, 'the note is made in fleeting, names the PDF, and is blank', 20000);
       await poll(() => useApp.getState().docs[ALONE]?.note === ANOTE && useApp.getState().docs[ANOTE]?.of === ALONE, 'the PDF shows it as its notes', 10000);
       await poll(() => anotesIn() && activeTab(useApp.getState().panes)?.id === ALONE, 'the note opens below the pages, the pages kept active', 15000);
-      await poll(() => qa<HTMLElement>('.dd-h', notesPane()!).some((h) => !!h.querySelector('.book-chip')) && qa('.pbox:not(.pending)', abook).length === 1 && qa('.pbox.pending:not(.ghost)', abook).length === 0, 'the section in it with its chip, its box drawn on the page from the note', 10000);
+      must(!q('.dd-h', notesPane()!) && !q('.book-chip', notesPane()!) && (q('.draft-doc', notesPane()!)?.textContent ?? '').trim() === '', 'nothing in it: no heading, no chip, no words');
+      must(aword().textContent === 'hide notes', `the bar says hide notes (${aword().textContent})`);
       await sleep(600);
       log(`alone note: ${ANOTE}`);
       await shot('touch-alone-notes');
       ask('tap', ...mid(aword()));
-      await poll(() => aalone(), 'a tap on notes closes it', 20000);
+      await poll(() => aalone() && aword().textContent === 'open notes', 'a tap on the word closes it, and it says open notes', 20000);
       await sleep(400);
       ask('tap', ...mid(aword()));
       await poll(() => anotesIn(), 'and opens that note from now on, with nothing asked', 20000);
+      await sleep(400);
+      // `+` beside the word (milestone 81): a second note, a further tab of the pane below, in front
+      const aplus = await poll(() => q<HTMLElement>('.meta .notes-add', abook), 'a + beside the word now that there is a note');
+      {
+        const pr2 = aplus.getBoundingClientRect();
+        const wr2 = aword().getBoundingClientRect();
+        must(pr2.height >= 32 && pr2.width >= 32 && pr2.left >= wr2.right - 10 && !q('kbd, .kbd', aplus), `at a finger's size, just after the word, no key on it (${Math.round(pr2.width)}×${Math.round(pr2.height)} px, ${Math.round(pr2.left - wr2.right)} px after)`);
+        const meta = q<HTMLElement>('.meta', abook)!;
+        must(meta.scrollWidth <= meta.clientWidth + 1 && qa<HTMLElement>(':scope > *', meta).every((el) => el.getBoundingClientRect().right <= window.innerWidth + 1), `the bar still fits the window (${meta.scrollWidth} of ${meta.clientWidth} px)`);
+      }
+      ask('tap', ...mid(aplus));
+      const pick3 = await poll(() => q<HTMLInputElement>('.palette-input input'), '+ tapped asks which note, as create notes did', 20000);
+      must(!qa<HTMLElement>('.palette-row').some((r) => r.textContent?.includes('from the iPad')), 'the note that is the PDF\'s already is not offered');
+      await sleep(300);
+      pick3.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+      await poll(() => useApp.getState().noteAttach?.step === 'place', 'a new note named after the PDF: then where', 8000);
+      const row2 = await poll(() => qa<HTMLElement>('.palette-row').find((r) => r.querySelector('.pt')?.textContent === 'fleeting'), 'fleeting again', 8000);
+      ask('tap', ...mid(row2));
+      const ANOTE2 = 'fleeting/alone notes.md';
+      await poll(async () => (await noteNow(ANOTE2)) === BLANK, 'a second blank note that names the PDF', 20000);
+      const besideTabs = () => { const ps = useApp.getState().panes; const p = ps.panes.find((_, i) => i !== ps.active); return p ? { ids: p.tabs.map((t) => t.id), front: p.tabs[p.active]?.id } : null; };
+      await poll(() => (useApp.getState().docs[ALONE]?.notes ?? []).join('|') === `${ANOTE2}|${ANOTE}`, 'the PDF has both notes, in path order', 10000);
+      await poll(() => anotesIn() && activeTab(useApp.getState().panes)?.id === ALONE && besideTabs()?.ids.join('|') === `${ANOTE2}|${ANOTE}` && besideTabs()?.front === ANOTE2, 'both are tabs of the pane below, the new one in front, the pages kept active', 15000);
+      await sleep(600);
+      must(qa('.pane').length === 2 && qa('.tab', notesPane()!).length === 2, 'two panes still: the notes share one, by its ordinary tabs');
+      await shot('touch-alone-two-notes');
+      // `card` on a box clips into the note in front below the pages
+      {
+        const pr3 = q<HTMLElement>('.pdf-page[data-page="129"]', abook)!;
+        const asr = asc.getBoundingClientRect();
+        asc.scrollTop += pr3.getBoundingClientRect().top + 0.45 * pr3.getBoundingClientRect().height - (asr.top + asr.height / 3);
+        await sleep(700);
+        const r3 = pr3.getBoundingClientRect();
+        ask('drag', fx(r3.left + 0.12 * r3.width), fy(r3.top + 0.42 * r3.height), fx(r3.left + 0.9 * r3.width), fy(r3.top + 0.49 * r3.height), 0.9);
+        await poll(() => qa('.pbox.pending:not(.ghost)', abook).length === 1, 'another passage boxed, the notes open below', 20000);
+        await sleep(500);
+        ask('tap', ...mid(q<HTMLElement>('.pend [data-k="m"]', abook)!));
+        await poll(async () => /<!-- box 129:/.test((await noteNow(ANOTE2)) ?? ''), 'card tapped: the box is clipped into the note in front', 20000);
+        must((await noteNow(ANOTE)) === BLANK, 'the other note still blank');
+        await sleep(800);
+        (document.activeElement as HTMLElement | null)?.blur?.();
+        await sleep(600);
+        await shot('touch-alone-clip');
+      }
+      // the other note's tab tapped: in front; the word closes both, and brings both back with the one used last in front
+      const otherTab = qa<HTMLElement>('.tab', notesPane()!)[1]!;
+      ask('tap', ...mid(q<HTMLElement>('.title', otherTab) ?? otherTab));
+      await poll(() => useApp.getState().panes.panes.some((p) => p.tabs[p.active]?.id === ANOTE), 'a tap on the other note\'s tab brings it to the front', 20000);
+      await sleep(500);
+      (document.activeElement as HTMLElement | null)?.blur?.();
+      await sleep(400);
+      ask('tap', ...mid(aword()));
+      await poll(() => aalone(), 'a tap on the word closes both', 20000);
+      await sleep(400);
+      ask('tap', ...mid(aword()));
+      await poll(() => anotesIn() && besideTabs()?.ids.length === 2 && besideTabs()?.front === ANOTE, 'and brings both back, the one used last in front', 20000);
       await sleep(400);
       ask('tap', ...mid(aword()));
       await poll(() => aalone(), 'closed again', 20000);
@@ -11032,10 +11241,10 @@ export async function smokeTouch(): Promise<void> {
     ask('tap', fx(dv.left + dv.width / 2), fy(dv.bottom - 40));
     await poll(() => !q('.ctx-menu'), 'closed by a tap', 20000);
 
-    // ── synced: the section is in the storage ──
+    // ── synced: the passage is in the storage ──
     await crdtNow();
     await poll(() => { const s = useApp.getState().sync; return syncWord(s) === 'synced' && s.toPush === 0; }, 'synced: nothing left to push', 30000);
-    log(`section: ${made.text} :: ${made.read!.boxes}`);
+    log(`passage: ${made.boxes}`);
 
     // ── on its side: the same book, the note beside the pages (milestone 70) ──
     openNode(BOOK);
@@ -11142,7 +11351,11 @@ export async function smokeTouch(): Promise<void> {
       await poll(() => qa('.pbox.pending:not(.ghost)', sbook).length === 1, 'a finger held and dragged boxes a passage', 20000);
       await sleep(500);
       ask('tap', ...mid(q<HTMLElement>('.pend [data-k="e"]', sbook)!));
-      const pick3 = await poll(() => q<HTMLInputElement>('.palette-input input'), 'section tapped asks for a note', 20000);
+      await poll(async () => (await keptIn(SIDE)).some((m) => m.page === 129), 'passage tapped keeps it with the PDF, on its side', 20000);
+      await sleep(500);
+      must(!q('.palette-overlay') && sbook.dataset.notes === '0' && qa('.pane').length === 1, 'no note asked for, nothing opened');
+      ask('tap', ...mid(q<HTMLElement>('.meta .notes-toggle', sbook)!));
+      const pick3 = await poll(() => q<HTMLInputElement>('.palette-input input'), 'create notes asks for a note', 20000);
       await sleep(300);
       pick3.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
       await poll(() => useApp.getState().noteAttach?.step === 'place', 'new note, named after the PDF: then where', 8000);
@@ -11151,7 +11364,7 @@ export async function smokeTouch(): Promise<void> {
       ask('tap', ...mid(row));
       const SNOTE = 'fleeting/sideways notes.md';
       await poll(() => useApp.getState().docs[SIDE]?.note === SNOTE && useApp.getState().docs[SNOTE]?.of === SIDE, 'the note is made in fleeting and is the PDF\'s notes', 20000);
-      await poll(() => sbook.dataset.notes === '1' && !!notesPane() && qa<HTMLElement>('.dd-h', notesPane()!).some((h) => !!h.querySelector('.book-chip')), 'it opens beside the pages with the section in it', 15000);
+      await poll(() => sbook.dataset.notes === '1' && !!notesPane() && !!q('.draft-doc', notesPane()!) && !q('.dd-h', notesPane()!), 'it opens beside the pages, blank', 15000);
       await sleep(800);
       const a = sbook.closest('.pane')!.getBoundingClientRect();
       const b = notesPane()!.getBoundingClientRect();
@@ -11221,35 +11434,57 @@ export async function smokeTouchMac(vault: Vault): Promise<void> {
       log(`done; collection ${vault.root}, storage ${dir}`);
       return;
     }
-    // after the iPad: its section comes with a sync
+    // after the iPad: its passage comes with a sync, among the PDF's marks (milestone 81)
+    type PassageMark = import('../vault/index.js').PassageMark;
+    const { marksPath, parseMarks } = await import('../vault/index.js');
+    const sfs = vault.fs as import('../vault/index.js').StoreFs;
+    const keptIn = async (pdf: string): Promise<PassageMark[]> => {
+      const h = sfs.blobAt(vault.abs(pdf));
+      if (!h || !(await vault.fs.stat(vault.abs(marksPath(h))))) return [];
+      return Object.values(parseMarks(await vault.fs.readText(vault.abs(marksPath(h))))).filter((m): m is PassageMark => m.kind === 'passage');
+    };
+    const PDF = useApp.getState().docs[BOOK]?.pdf ?? '';
     await crdtNow();
-    const made = await poll(async () => { await crdtNow(); return (await headings()).find((h) => h.text === expect); }, `the section made on the iPad is in the chapter here: "${expect}"`, 30000);
-    const boxes = parseBoxes(made.read?.boxes ?? '') ?? [];
-    must(boxes.length === 1 && boxes[0]!.page === 24, `with its box (${made.read?.boxes})`);
-    must(made.read?.due !== undefined, `and its schedule (due ${made.read?.due})`);
+    const made = await poll(async () => { await crdtNow(); return (await keptIn(PDF)).find((m) => m.boxes === expect); }, `the passage kept on the iPad is with the PDF here: ${expect}`, 30000);
+    const boxes = parseBoxes(made.boxes) ?? [];
+    must(boxes.length === 1 && boxes[0]!.page === 24, `with its box (${made.boxes})`);
+    must(made.due !== undefined, `and its schedule, brought back after its dismissal there (due ${made.due})`);
+    must(!(await headings()).some((h) => (parseBoxes(h.read?.boxes ?? '') ?? []).some((b) => b.page === 24 && Math.abs(b.y - 0.67) < 0.05)), 'and no section of the note was made for it');
     openNode(BOOK);
     const book = await poll(() => q<HTMLElement>('.pane[data-active="1"] .book'), 'the chapter opens', 15000);
     await poll(() => q('.pdf-page[data-page="24"] canvas', book) ?? (q('.pdf-page[data-page="24"]', book)?.scrollIntoView({ block: 'center' }), null), 'p. 24 is drawn', 30000);
-    const box = await poll(() => q<HTMLElement>(`.pbox[data-section="${CSS.escape(expect)}"]`, book), 'the section\'s box is drawn on the page');
+    const box = await poll(() => q<HTMLElement>(`.pbox[data-kept="1"][data-section="${CSS.escape(expect)}"]`, book), 'the passage\'s box is drawn on the page');
     box.scrollIntoView({ block: 'center' });
-    // its mark beside the page goes to the section: the note opens beside the pages with it (milestone 70)
-    const mark = Array.from(book.querySelectorAll<HTMLElement>('.ptag:not(.cont), .pgut')).find((t) => (t.textContent ?? '').includes(expect.slice(0, 12)) || t.title.startsWith(expect.slice(0, 12)))!;
+    await sleep(500);
+    // its tag beside the page has what can be done with it; nothing opens beside
+    const mark = await poll(() => q<HTMLElement>(`[data-for="${CSS.escape(expect)}"]`, book), 'its tag is beside the page');
     mark.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0 }));
-    const head = await poll(() => (book.dataset.notes === '1' ? Array.from(document.querySelectorAll<HTMLElement>('.pane[data-active="0"] .reader-wrap[data-pdf] .dd-h')).find((h) => h.textContent?.includes(expect.slice(0, 12))) : null), 'and its mark beside the page opens the note beside, its heading in it');
-    head.scrollIntoView({ block: 'center' });
-    // the note the iPad made for the PDF on its own, with the section it kept there
+    await poll(() => q('.ctx-menu.book-menu .ci[data-act="passage-dismiss"]') && q('.ctx-menu.book-menu .ci[data-act="passage-remove"]'), 'and a press on it offers dismiss and remove');
+    await shot('touch-mac-passage');
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    await poll(() => !q('.ctx-menu'), 'esc closes it');
+    must(book.dataset.notes === '0', 'no note opened beside');
+    // the notes the iPad made for the PDF on its own: blank but for the clip asked for, and the passage kept there with the PDF
     const aloneNote = await invoke<string | null>('dev_env', { name: 'ILMI_ALONE_NOTE' });
     if (aloneNote) {
       const noteText = await poll(async () => { await crdtNow(); try { return await vault.fs.readText(vault.abs(aloneNote)); } catch { return null; } }, `the note made on the iPad for the PDF on its own is here: ${aloneNote}`, 30000);
-      must(/^---\npdf: \.\.\/library\/alone\.pdf\n---\n/.test(noteText) && /\n## .+\n<!-- read [^\n]*boxes=129:/.test(noteText), 'it names the PDF and holds the section boxed on p. 129');
-      must(useApp.getState().docs['library/alone.pdf']?.note === aloneNote && useApp.getState().docs[aloneNote]?.of === 'library/alone.pdf', 'the PDF shows it as its notes here too');
+      must(noteText === '---\npdf: ../library/alone.pdf\n---\n', 'it names the PDF and is otherwise blank');
+      const second = 'fleeting/alone notes.md';
+      await poll(async () => { await crdtNow(); try { return /<!-- box 129:/.test(await vault.fs.readText(vault.abs(second))); } catch { return false; } }, 'the second note made there is here too, with the clip asked for in it', 30000);
+      await poll(() => (useApp.getState().docs['library/alone.pdf']?.notes ?? []).join('|') === `${second}|${aloneNote}` && useApp.getState().docs[aloneNote]?.of === 'library/alone.pdf', 'the PDF shows both as its notes here too', 10000);
+      must((await keptIn('library/alone.pdf')).some((m) => m.page === 129), 'the passage boxed on p. 129 is with the PDF');
+      // `open notes` here: both as tabs of the pane beside
+      openNode('library/alone.pdf');
+      const abook = await poll(() => q<HTMLElement>('.pane[data-active="1"] .book[data-path="library/alone.pdf"]'), 'the PDF on its own opens', 15000);
+      await poll(() => q('.pdf-page canvas', abook), 'its pages drawn', 30000);
+      q<HTMLElement>('.meta .notes-toggle', abook)!.click();
+      await poll(() => { const ps = useApp.getState().panes; const p = ps.panes.find((_, i) => i !== ps.active); return abook.dataset.notes === '1' && p?.tabs.map((t) => t.id).join('|') === `${second}|${aloneNote}`; }, 'open notes: both notes are tabs of the pane beside the pages', 10000);
+      await shot('touch-mac-notes');
       const reading = JSON.parse(await vault.fs.readText(vault.abs('.ilmi/reading.json'))) as Record<string, { read?: string }>;
       must(/pos=1\d\d y=0\.\d{3}/.test(reading['library/alone.pdf']?.read ?? ''), `the PDF's own reading line came through reading.json (${reading['library/alone.pdf']?.read})`);
-      const sfs = vault.fs as import('../vault/index.js').StoreFs;
       const ahash = sfs.blobAt(vault.abs('library/alone.pdf'))!;
       await poll(async () => { await crdtNow(); return (await sfs.pageInk(ahash, 129)).length === 1; }, 'what the Pencil wrote on a bare PDF\'s page on the iPad is on that page here', 20000);
     }
-    await shot('touch-mac-section');
     log(`done; collection ${vault.root}, storage ${dir}`);
   } catch (e) {
     log(`failed: ${e instanceof Error ? e.message : String(e)}`);
@@ -11567,6 +11802,59 @@ export async function smokePhone(): Promise<void> {
     const pageRect = q<HTMLElement>('.pdf-page[data-page="23"]', book)!.getBoundingClientRect();
     must(pageRect.left >= 0 && pageRect.right <= window.innerWidth + 1, `the page fits the screen (${Math.round(pageRect.width)} of ${window.innerWidth})`);
     await shot('phone-book');
+    // ── the bar over the pages on a phone (milestone 81): contents, the notes, the page, more, search; no name, no zoom, no + ──
+    {
+      const meta = q<HTMLElement>('.meta.pdf-tools', book)!;
+      const seen = (el: Element | null) => !!el && getComputedStyle(el).display !== 'none' && el.getBoundingClientRect().width > 0;
+      const tools = ['[data-tool="contents"]', '.notes-toggle', '[data-tool="page"]', '[data-tool="more"]', '[data-tool="search"]'].map((sel) => q<HTMLElement>(sel, meta));
+      log(`bar: ${qa<HTMLElement>(':scope > *', meta).filter(seen).map((el) => `${el.dataset.tool ?? el.className.split(' ')[0]} ${Math.round(el.getBoundingClientRect().left)}–${Math.round(el.getBoundingClientRect().right)}`).join(', ')} of ${window.innerWidth}`);
+      must(tools.every(seen), 'contents, the notes\' word, the page, more and search are in the bar');
+      must(!seen(q('.pt-title', meta)) && !seen(q('.pt-zoom', meta)) && !q('.notes-add', meta), 'the name and the zoom are left out, and there is no +');
+      must(meta.scrollWidth <= meta.clientWidth + 1 && qa<HTMLElement>(':scope > *', meta).filter(seen).every((el) => el.getBoundingClientRect().left >= -1 && el.getBoundingClientRect().right <= window.innerWidth + 1), `it fits the screen (${meta.scrollWidth} of ${meta.clientWidth} px)`);
+      {
+        const rs = qa<HTMLElement>(':scope > *', meta).filter((el) => seen(el) && !el.classList.contains('pt-grow')).map((el) => el.getBoundingClientRect()).sort((x, y) => x.left - y.left);
+        must(rs.every((r, i) => i === 0 || r.left >= rs[i - 1]!.right - 9), 'and nothing in it lies over its neighbour');
+      }
+      must(tools.every((el) => el!.getBoundingClientRect().height >= 36) && qa<HTMLElement>('kbd, .kbd', meta).every((k) => !seen(k)), `each a finger's size, no key named (${tools.map((el) => Math.round(el!.getBoundingClientRect().height)).join(', ')} px tall)`);
+      const view = () => q<HTMLElement>('.pdf-view', book)!;
+      const inWindow = (el: Element) => { const r = el.getBoundingClientRect(); return r.left >= 0 && r.top >= 0 && r.right <= window.innerWidth + 1 && r.bottom <= window.innerHeight + 1; };
+      // more: its menu inside the screen, and what is tapped there is done
+      const mm = await tap(tools[3]!, () => q<HTMLElement>('.ctx-menu.book-menu'), 'a tap on more opens its menu');
+      await sleep(500);
+      log(`more menu: ${qa('.ci', mm).map((i) => i.textContent).join(' | ')}`);
+      must(!!q('.ci[data-act="more-bookmark"]', mm) && !!q('.ci[data-act="more-ruler"]', mm) && !q('.ci[data-act="more-beside"]', mm) && inWindow(mm), 'bookmark, portal and ruler, inside the screen');
+      await shot('phone-book-more');
+      await tap(q<HTMLElement>('.ci[data-act="more-ruler"]', mm)!, () => !q('.ctx-menu') && view().dataset.ruler !== undefined, 'ruler tapped: the ruler is on the page');
+      const mm2 = await tap(tools[3]!, () => q<HTMLElement>('.ctx-menu.book-menu'), 'more again');
+      await sleep(500);
+      await tap(q<HTMLElement>('.ci[data-act="more-ruler"]', mm2)!, () => !q('.ctx-menu') && view().dataset.ruler === undefined, 'and tapped again it is gone');
+      // the page: a field to go to one
+      const go = await tap(tools[2]!, () => q<HTMLInputElement>('.pdf-bar input[type="number"]', book), 'a tap on the page asks which page to go to');
+      must(!seen(q('.pdf-bar .pb-k', book)) && go.getBoundingClientRect().right <= window.innerWidth, 'its field under the bar, no key named before it');
+      await shot('phone-book-goto');
+      go.blur();
+      await poll(() => !q('.pdf-bar', book), 'left, it closes');
+      await poll(() => !document.documentElement.hasAttribute('data-keyboard'), 'the keyboard goes', 15000);
+      await sleep(600);
+      // search: the field, and the button closes it again (a finger has no esc)
+      const find = await tap(tools[4]!, () => q<HTMLInputElement>('.pdf-bar input[placeholder="search"]', book), 'a tap on search opens its field');
+      must(find.getBoundingClientRect().right <= window.innerWidth && !seen(q('.pdf-bar .pb-k', book)), 'inside the screen, no key named before it');
+      await shot('phone-book-search');
+      find.blur();
+      await poll(() => !document.documentElement.hasAttribute('data-keyboard'), 'the keyboard goes', 15000);
+      await sleep(600);
+      await tap(tools[4]!, () => !q('.pdf-bar', book), 'search tapped again closes it');
+      // contents: the palette on this book's contents
+      await tap(tools[0]!, () => q('.palette-panel'), 'a tap on contents lists them in the palette');
+      await sleep(600);
+      await shot('phone-book-contents');
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+      q<HTMLInputElement>('.palette-input input')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+      await poll(() => !q('.palette-panel'), 'closed');
+      (document.activeElement as HTMLElement | null)?.blur?.();
+      await poll(() => !document.documentElement.hasAttribute('data-keyboard'), 'the keyboard goes', 15000);
+      await sleep(600);
+    }
     const word = await poll(() => q<HTMLElement>('.meta .notes-toggle'), 'notes is among the words over the pages');
     await tap(word, () => notesPath(at() ?? '') === CH && q('.draft-doc'), 'notes: the note is the page, in the pages\' place');
     must(qa('.pane').length === 1 && !q('.book'), 'one pane, no pages');

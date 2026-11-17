@@ -145,6 +145,16 @@ ordinary tab it is, and closes it again; nothing slides over the pages. A
 PDF with a `.md` of its name beside it (a book's chapters, or anything
 from before) opens the same way, that document's body being its notes.
 
+A PDF can have several notes. Once it has one, a `+` sits beside the
+notes' word in the bar (`new note`): it asks what `create notes` asked, a
+note that is there or a new one and where, and that note names the PDF
+too. `open notes` then opens them all as tabs of the pane beside the
+pages, the one you used last in front, and `hide notes` (⌘\) closes them
+together; they are ordinary tabs, so one can be closed by itself. Each is its own row in the tree, wherever you put it; a note
+deleted, or whose `pdf` field you take out, is no longer among them. A
+chapter of a book has its own body as its notes, first among the tabs,
+and the notes attached to the book's PDF after it.
+
 Drag a box around a passage (again for another box, on any page) and
 press `e`, or `passage` on the box's bar: the passage is kept and comes back
 in the day's queue until you dismiss it, first on the cadence of the
@@ -164,7 +174,9 @@ between your devices one by one, as bookmarks do.
 `m` on a box (or `card` on its bar) is for a card about what you boxed: the
 box is clipped into the note as the crop of its page, where your caret is
 in the note (at its end when the note is closed or you have not put the
-caret anywhere), and the caret lands under it for the card. That is the
+caret anywhere), and the caret lands under it for the card. Of several
+notes it goes into the one in front beside the pages, or, with the notes
+closed, the one you used last. That is the
 only thing ilmi puts in the note, and only when you ask for a card; the
 notice undoes it.
 
@@ -748,7 +760,8 @@ finger on the page a moment and then drag (the Pencil writes on the page,
 below). Drag again for a second box, tap the page to clear them, and the bar under
 the last box makes them a `passage` or a `card`. `notes` among the words
 over the pages opens the note beside them and closes it again, as on the
-Mac; upright, the two panes lie one above the other, the pages above and
+Mac (several notes are that pane's tabs, and `+` beside the word adds
+one); upright, the two panes lie one above the other, the pages above and
 the note below, since half the width cannot hold a page. Where the Mac has
 a right-click, hold: a row, a heading and a deck's
 card open their menus when the finger lifts, and a row held and then moved
@@ -802,7 +815,10 @@ cloze, `blank` makes a blank of the selection.
 
 A document opens as a single page, a notebook's page with no rail. A book opens
 as its pages, and with no pane to put it in `notes` shows the note in their
-place; `pages` over the note comes back. In a session the pages stay, at the
+place (of several, the one used last; the others are in the tree);
+`pages` over the note comes back. The bar over the pages keeps the
+contents, the notes, the page, `more` and search; the name and the zoom
+are left out (a pinch zooms). In a session the pages stay, at the
 section's boxes.
 
 To clip a page, make the Shortcut the README describes; the link it opens is

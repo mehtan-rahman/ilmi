@@ -67,15 +67,43 @@ export function noteOf(path: string, docs: Record<string, DocInfo>): string | nu
   return info.of !== undefined ? path : null;
 }
 
-/** The tab that shows the note on the pages at `path`: a note of its own as itself, a document with pages as its `:notes/` tab; null with no note. */
+/** The tab that shows a note on pages: a note of its own as itself, a document with pages as its `:notes/` tab. */
+export const noteTabOf = (note: string, docs: Record<string, DocInfo>): string => (docs[note]?.pdf !== undefined ? notesId(note) : note);
+
+/** The tab that shows the note on the pages at `path` (the first, when a PDF has several): a note of its own as itself, a document with pages as its `:notes/` tab; null with no note. */
 export function notesTabOf(path: string, docs: Record<string, DocInfo>): string | null {
   const note = noteOf(path, docs);
-  if (note === null) return null;
-  return docs[note]?.pdf !== undefined ? notesId(note) : note;
+  return note === null ? null : noteTabOf(note, docs);
 }
 
 /**
- * Whether two panes are a PDF's pages and the note on them, either way
+ * Every note on a node's pages (milestone 81): a PDF on its own has each
+ * note that names it, in path order; a document with pages is its own notes
+ * first, then the notes attached to its PDF, when that is a document of its
+ * own (a chapter and its book share them); an attached note is itself.
+ */
+export function notesOf(path: string, docs: Record<string, DocInfo>): string[] {
+  const info = docs[path];
+  if (!info) return [];
+  if (isPdfPath(path)) return info.notes ?? (info.note !== undefined ? [info.note] : []);
+  if (info.pdf !== undefined) return [path, ...(info.pdf !== path ? docs[info.pdf]?.notes ?? [] : [])];
+  return info.of !== undefined ? [path] : [];
+}
+
+/** The tabs that show the notes on the pages at `path`, in `notesOf`'s order. */
+export const notesTabsOf = (path: string, docs: Record<string, DocInfo>): string[] => notesOf(path, docs).map((n) => noteTabOf(n, docs));
+
+/**
+ * The PDF a further note on the pages at `path` would name: the PDF itself,
+ * or a document's PDF when that is a document of its own; null otherwise.
+ */
+export function pdfForNotes(path: string, docs: Record<string, DocInfo>): string | null {
+  const pdf = isPdfPath(path) ? path : docs[path]?.pdf;
+  return pdf !== undefined && isPdfPath(pdf) && docs[pdf] ? pdf : null;
+}
+
+/**
+ * Whether two panes are a PDF's pages and a note on them, either way
  * round (a session's pages counted by what it is on, `sessionPath`): the one
  * second pane an iPad keeps (milestone 70).
  */
@@ -85,7 +113,7 @@ export function notesPair(panes: Panes, docs: Record<string, DocInfo>, sessionPa
   const pairs = (x: string | undefined, y: string | undefined): boolean => {
     const at = x === SESSION ? sessionPath : x;
     const pages = at === undefined ? null : pagesOf(at, docs);
-    return pages !== null && y !== undefined && notesTabOf(pages, docs) === y;
+    return pages !== null && y !== undefined && notesTabsOf(pages, docs).includes(y);
   };
   return pairs(a, b) || pairs(b, a);
 }

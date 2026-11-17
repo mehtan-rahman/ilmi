@@ -9,8 +9,10 @@
 //
 // Attaching happens the first time something is kept from a PDF that has no
 // note, or from `notes` there: the palette picks a note that is there, or
-// makes a new one, named as typed, in a folder picked next. From then on
-// everything kept from that PDF goes into it.
+// makes a new one, named as typed, in a folder picked next. A PDF may have
+// several (milestone 81): `+` beside the notes' word picks or makes one
+// more, each is a tab of the pane beside, the one used last in front, and a
+// clip goes into the one in front there, else the one used last.
 //
 // A phone has no second pane (milestone 56): the note is the page, in place of
 // the pages, and `pages` over it comes back. Over a session it goes on top, so
@@ -23,38 +25,90 @@ import { dayOf, dayStart, whenToDate } from '../schedule/index.js';
 import { appNow } from './clock.js';
 import { bookmarksOf, collectionMark, collectionMarks, emptyTrail, highlightsOf, passageMarksOf, isCollectionMark, letterId, lettersOf, type ContentsEntry, type Trail } from '../pdf/index.js';
 import { MARKS_DIR, dirOf, join, marksHashOf, marksMap, marksPath, parseMarks, relFrom, serializeMarks, type Mark, type Marks, type PassageMark, type StoreFs } from '../vault/index.js';
-import { noteOf, notesTabOf, pagesOf, SESSION, titleOf } from './names.js';
+import { noteTabOf, notesPath, notesTabsOf, pagesOf, pdfForNotes, SESSION, titleOf } from './names.js';
 import { activeTab, besideAt, closeBeside, openBeside, openTab, openTwin, openWhereBeside } from './panes.js';
-import { useApp } from './store.js';
+import { useApp, type DocInfo } from './store.js';
 import { notify } from './land.js';
 import { currentVault, onHiddenChange, openNode } from './vault.js';
 
-/** The note's tab beside the pages at `pagesId` is open. */
-export function notesOpen(pagesId: string): boolean {
+// the note used last: every tab stamped as it comes to the front of a pane, so of a PDF's notes the one with the latest stamp is the one last looked at (for as long as the app runs)
+let usedSeq = 0;
+const usedAt = new Map<string, number>();
+useApp.subscribe((s, prev) => {
+  if (s.panes === prev.panes) return;
+  const were = new Set(prev.panes.panes.map((p) => p.tabs[p.active]?.id));
+  s.panes.panes.forEach((p, pi) => {
+    const id = p.tabs[p.active]?.id;
+    if (id !== undefined && (!were.has(id) || (pi === s.panes.active && pi !== prev.panes.active))) usedAt.set(id, ++usedSeq);
+  });
+});
+
+/**
+ * Of the tabs of the notes on the pages at `pagesId`, the one to have in
+ * front: the note asked for (`want`, a note's path), else the one in front
+ * of a pane now, else the one used last, else the first. Null with no note.
+ */
+function frontTab(pagesId: string, want?: string | null): string | null {
   const s = useApp.getState();
-  const tab = notesTabOf(pagesId, s.docs);
-  return tab !== null && besideAt(s.panes, tab) !== null;
+  const tabs = notesTabsOf(pagesId, s.docs);
+  if (!tabs.length) return null;
+  if (want != null) {
+    const t = noteTabOf(want, s.docs);
+    if (tabs.includes(t)) return t;
+  }
+  const shown = s.panes.panes.map((p, pi) => ({ id: p.tabs[p.active]?.id, pi })).filter((x): x is { id: string; pi: number } => x.id !== undefined && tabs.includes(x.id));
+  const beside = shown.find((x) => x.pi !== s.panes.active) ?? shown[0];
+  if (beside) return beside.id;
+  let best = tabs[0]!;
+  for (const t of tabs) if ((usedAt.get(t) ?? 0) > (usedAt.get(best) ?? 0)) best = t;
+  return best;
 }
 
-/** Open the note on the pages at `pagesId` beside them (the pane made when there is one); with no note yet, the picker first. Resolves to the note's tab, or null when nothing was picked. */
-export async function openNotes(pagesId: string): Promise<string | null> {
+/** The note that takes what is kept from the pages at `pagesId` (a clip, `m`): the one in front beside them, else the one used last, else the first; null with none. */
+export function noteFor(pagesId: string): string | null {
+  const tab = frontTab(pagesId);
+  return tab === null ? null : notesPath(tab) ?? tab;
+}
+
+/** A note's tab beside the pages at `pagesId` is open. */
+export function notesOpen(pagesId: string): boolean {
+  const s = useApp.getState();
+  return notesTabsOf(pagesId, s.docs).some((tab) => besideAt(s.panes, tab) !== null);
+}
+
+/**
+ * Open the notes on the pages at `pagesId` beside them (the pane made when
+ * there is one): every note of theirs a tab of that pane, `want` (a note's
+ * path) in front, else the one used last; with no note yet, the picker
+ * first. Resolves to the tab in front, or null when nothing was picked. A
+ * phone has one page: the one note, in place of the pages.
+ */
+export async function openNotes(pagesId: string, want?: string | null): Promise<string | null> {
   const note = await ensureNote(pagesId);
   if (note === null) return null;
   const s = useApp.getState();
-  const tab = notesTabOf(pagesId, s.docs);
-  if (tab === null) return null;
-  useApp.setState({ panes: s.phone ? openTab(s.panes, tab, { newTab: activeTab(s.panes)?.id === SESSION }) : openBeside(s.panes, tab) });
-  return tab;
+  const front = frontTab(pagesId, want);
+  if (front === null) return null;
+  if (s.phone) {
+    useApp.setState({ panes: openTab(s.panes, front, { newTab: activeTab(s.panes)?.id === SESSION }) });
+    return front;
+  }
+  let panes = s.panes;
+  // each a tab there in the notes' order, where it is not open beside already; then the one asked for in front
+  for (const tab of notesTabsOf(pagesId, s.docs)) if (besideAt(panes, tab) === null) panes = openBeside(panes, tab);
+  useApp.setState({ panes: openBeside(panes, front) });
+  return front;
 }
 
-/** Close the note's tab beside the pages, when it is open there. */
+/** Close the notes' tabs beside the pages, where they are open there. */
 export function closeNotes(pagesId: string): void {
   const s = useApp.getState();
-  const tab = notesTabOf(pagesId, s.docs);
-  if (tab !== null) useApp.setState({ panes: closeBeside(s.panes, tab) });
+  let panes = s.panes;
+  for (const tab of notesTabsOf(pagesId, s.docs)) panes = closeBeside(panes, tab);
+  if (panes !== s.panes) useApp.setState({ panes });
 }
 
-/** `notes` over the pages, or ⌘\ there: the note beside the pages, or closed again. */
+/** `notes` over the pages, or ⌘\ there: the notes beside the pages, or closed again. */
 export function toggleNotes(pagesId: string): void {
   if (notesOpen(pagesId)) closeNotes(pagesId);
   else void openNotes(pagesId).catch(console.error);
@@ -79,13 +133,13 @@ export function openPagesBeside(note: string): string | null {
 let asking: { pdf: string; resolve: (note: string | null) => void } | null = null;
 
 /**
- * The note on the pages at `pagesId`, or, for a PDF with none yet, the one
- * the palette picks or makes: the picker opens and the promise waits for it.
+ * The note on the pages at `pagesId` (of several, the one `noteFor` says),
+ * or, for a PDF with none yet, the one the palette picks or makes: the picker opens and the promise waits for it.
  * Null when the picker is closed with nothing picked.
  */
 export function ensureNote(pagesId: string): Promise<string | null> {
   const s = useApp.getState();
-  const note = noteOf(pagesId, s.docs);
+  const note = noteFor(pagesId);
   if (note !== null) return Promise.resolve(note);
   if (!s.docs[pagesId] || s.docs[pagesId].pdf !== pagesId) return Promise.resolve(null);
   asking?.resolve(null);
@@ -95,6 +149,25 @@ export function ensureNote(pagesId: string): Promise<string | null> {
   });
 }
 
+/**
+ * `+` beside the notes' word (milestone 81): a further note for the PDF of
+ * the pages at `pagesId`, picked or made as the first was, then open beside
+ * the pages as one more tab, in front. Null when the picker is closed with
+ * nothing picked, or the pages' PDF is not a document of its own.
+ */
+export async function addNote(pagesId: string): Promise<string | null> {
+  const pdf = pdfForNotes(pagesId, useApp.getState().docs);
+  if (pdf === null) return null;
+  asking?.resolve(null);
+  const note = await new Promise<string | null>((resolve) => {
+    asking = { pdf, resolve };
+    useApp.setState({ paletteOpen: true, noteAttach: { pdf, step: 'pick' } });
+  });
+  if (note === null) return null;
+  await openNotes(pagesId, note);
+  return note;
+}
+
 /** The picker closed with nothing picked. */
 export function attachCancelled(): void {
   const a = asking;
@@ -102,7 +175,7 @@ export function attachCancelled(): void {
   a?.resolve(null);
 }
 
-/** A note that is there, picked: it names the PDF from now on (`pdf`, relative to the note), and is its notes. */
+/** A note that is there, picked: it names the PDF from now on (`pdf`, relative to the note), and is one of its notes. */
 export async function attachNote(pdf: string, note: string): Promise<void> {
   const vault = currentVault();
   if (!vault) return;
@@ -126,9 +199,9 @@ function settled(pdf: string, note: string): Promise<void> {
   return new Promise((resolve) => {
     const done = () => { off(); clearTimeout(t); resolve(); };
     const t = setTimeout(done, 3000);
-    const off = useApp.subscribe((s) => { if (s.docs[pdf]?.note === note && s.docs[note]?.of === pdf) done(); });
-    const s = useApp.getState();
-    if (s.docs[pdf]?.note === note && s.docs[note]?.of === pdf) done();
+    const there = (s: { docs: Record<string, DocInfo> }) => !!s.docs[pdf]?.notes?.includes(note) && s.docs[note]?.of === pdf;
+    const off = useApp.subscribe((s) => { if (there(s)) done(); });
+    if (there(useApp.getState())) done();
   });
 }
 

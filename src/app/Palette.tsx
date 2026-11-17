@@ -305,7 +305,7 @@ export function Palette() {
       if ('block' in t) openBlock(t.open, t.block);
       else openCard(t.open, t.index, t.id);
       // a document with pages opens on its pages: what was found is in its text, beside them
-      if (useApp.getState().docs[t.open]?.pdf !== undefined) void openNotes(t.open).catch(failed('that'));
+      if (useApp.getState().docs[t.open]?.pdf !== undefined) void openNotes(t.open, t.open).catch(failed('that'));
     } else openNode(t.open);
   };
 

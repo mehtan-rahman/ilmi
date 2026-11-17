@@ -545,7 +545,7 @@ function DocSession({ item, active, onAct, done, onPass, ...nav }: DocProps) {
     if (item.passage) { focusInBook(pagesId, item.passage.boxes); return; }
     useApp.setState({ reveal: { path: item.path, index: item.block, heading: item.heading } });
     // a phone's one page stays the pages, at the section's boxes: there is no pane beside them
-    if (pages && !useApp.getState().phone) void openNotes(pagesId).catch(failed('open the notes'));
+    if (pages && !useApp.getState().phone) void openNotes(pagesId, item.path).catch(failed('open the notes'));
   }, [item]);
 
   useKeys(active, (key, e) => {

@@ -329,7 +329,7 @@ describe('a PDF on its own and its note (milestone 70)', () => {
     const docs = attach(base);
     expect(docs[N]).toEqual({ type: 'note', frozen: false, cards: 0, due: 0, of: P });
     expect(docs[N2]).toMatchObject({ of: P });
-    expect(docs[P]).toEqual({ type: 'source', frozen: false, cards: 0, due: 0, pdf: P, note: N });
+    expect(docs[P]).toEqual({ type: 'source', frozen: false, cards: 0, due: 0, pdf: P, note: N, notes: [N, N2] });
     expect(docs[CH]).toEqual(base[CH]);
     expect(docs['library/book.md']).toEqual(base['library/book.md']);
     expect(docs['library/alone-ch-2.md']).toEqual(base['library/alone-ch-2.md']);
@@ -344,6 +344,7 @@ describe('a PDF on its own and its note (milestone 70)', () => {
     // the note gone: the PDF shows none
     const { [N]: _n, [N2]: _n2, ...without } = docs;
     expect(attach(without)[P]).not.toHaveProperty('note');
+    expect(attach(without)[P]).not.toHaveProperty('notes');
   });
 
   it('pagesOf, noteOf, notesTabOf: what each node is read by and where its notes are', () => {

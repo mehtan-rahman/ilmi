@@ -9311,10 +9311,34 @@ sections and page headings, read and written as they were; the app makes
 no more (`addPassage`, `placeOf`, `freeName`, `addToPage` are gone).
 Tried first and taken out the same night: the passage as a line of the
 note drawn as a crop with a chip, which the user refused.
-**Not done yet:** several notes on one PDF; a notebook of written pages; a
-portal made by touch. The simulator smokes that box a section (`touch`,
-`phone`, `ink`, `pageink`) still expect a heading in the note and were not
-run or mended.
+**Several notes on one PDF** (done; the user, 2026-11-16: "the PDF notes
+should be using tabs or something … user has option to make tabs in the
+notes", and agreed to "A PDF can have several notes, shown as tabs beside
+the pages"): any number of notes may name one PDF in `pdf`; `attach` gives
+the PDF's info them all in path order (`notes`; `note` is still the first),
+and `notesOf` / `notesTabsOf` (`names.ts`) say them for any pages: a PDF's
+own, and for a chapter its own body first (its `:notes/` tab) and then the
+notes attached to its PDF, when that PDF is a document of its own. `open
+notes` (`openNotes`, `book.ts`) opens every one as a tab of the pane beside,
+in that order, with the one used last in front; `hide notes` / ⌘\ closes
+them all. "Used last" is a stamp each tab gets as it comes to the front of a
+pane, kept for as long as the app runs (the panes themselves are restored
+between runs, so the tab left in front is in front again). `+` beside the
+notes' word (`new note`, `addNote`) runs the pick-or-make flow `create
+notes` runs and opens the new note as one more tab, in front; it is there
+once the pages have a note and their PDF is a document of its own, and not
+on a phone, whose one page shows the note used last. `m` clips into the
+note in front in the pane beside, else the one used last, else the first
+(`noteFor`); with none it asks, as before. The inspector's `notes` row
+names them all; a boxed section from before 81 is drawn on the pages from
+whichever note holds it (`useDocs`) and goes to that note; an iPad keeps the
+second pane whichever of the notes is in front (`notesPair`). The search
+button over the pages closes the search when pressed again (a finger has no
+esc), and the letter before the search and go-to fields is hidden with the
+key caps on a device.
+**Not done yet:** a notebook of written pages; a portal made by touch.
+The simulator smokes (`touch`, `phone`, `ink`, `pageink`): `touch` and
+`phone` have their steps rewritten for the above and are not yet run.
 
 ## Notes for the next session
 

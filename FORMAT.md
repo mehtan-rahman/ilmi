@@ -105,8 +105,8 @@ notes/
   PDF that gains an `.md` of its name becomes that document's pages (the
   document's own `read` line is its state from then; the entry is left and
   means nothing). A note is attached to a PDF on its own by naming it in its
-  `pdf` field (§3, *Pages*): that note is the PDF's notes, and need not be
-  named after it. Before milestone 70 such a file was ignored like any
+  `pdf` field (§3, *Pages*): that note is one of the PDF's notes (any
+  number may name it), and need not be named after it. Before milestone 70 such a file was ignored like any
   other; a vault from then opens with its unpaired PDFs as documents.
 - **What is written on a book's pages** is in `.ilmi/ink/<sha256>/<page>.pkdrawing`:
   a folder named by the SHA-256 of the PDF's bytes (lower case), and in it a
@@ -436,8 +436,9 @@ stands on its own (§1) is attached to it: the note is that PDF's notes, and
 opens as the note it is; the PDF opens as its pages, with that note beside
 them when asked, and what is kept from the pages (a boxed section, a clip)
 goes into the note. A note need not be named after the file, and may sit in
-any folder; of several notes naming one PDF the first in path order is the
-one the PDF shows. The note's own `read` line, if it has one, is a note's
+any folder. Several notes may name one PDF: each is one of its notes, the
+app shows them in path order (as tabs beside the pages), and a clip goes
+into whichever the person has in front. The note's own `read` line, if it has one, is a note's
 (revisited); the PDF's reading state is its own (§1, `reading.json`). A
 note naming a PDF that is not on its own (one with an `.md` of its name)
 is a document with pages as before: it opens as those pages, its body their

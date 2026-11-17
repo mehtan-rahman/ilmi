@@ -17,7 +17,7 @@ import { cardName, formLabel } from './chrome.js';
 import { breakdown, countsUnder, dueItems, plainMath } from './chromeText.js';
 import { MathText } from './MathText.js';
 import { FORM_LABEL, dueLabel, dueWhen, examDay, examName, examWhen, fmtDays, leftLines, standsWords, dueTone, shortDay } from './items.js';
-import { INTAKE, QUEUE_TITLE, SESSION, cardsPath, findNode, noteOf, notesPath, queueScope, titleOf } from './names.js';
+import { INTAKE, QUEUE_TITLE, SESSION, cardsPath, findNode, noteOf, notesOf, notesPath, queueScope, titleOf } from './names.js';
 import { activeTab } from './panes.js';
 import { useApp, type CaretHeading, type DocInfo } from './store.js';
 import { useDoc } from './useDoc.js';
@@ -531,7 +531,7 @@ function DocInspector({ id, info, doc, now }: { id: string; info: DocInfo; doc: 
   // a PDF on its own (milestone 70): its pages are itself; the note attached to it, when one is
   const pdfAlone = isPdfPath(id);
   if (info.pdf && !pdfAlone) rows.push(['pages', <span className="mono">{baseOf(info.pdf)}{info.pages ? (info.pages.first === info.pages.last ? `, p. ${info.pages.first}` : `, pp. ${info.pages.first}–${info.pages.last}`) : ''}</span>]);
-  if (pdfAlone && info.note) rows.push(['notes', titleOf(info.note, docs, null)]);
+  if (pdfAlone && info.note) rows.push(['notes', (info.notes ?? [info.note]).map((n) => titleOf(n, docs, null)).join(', ')]);
   // a note attached to a PDF on its own: the PDF it is the notes of
   if (info.of) rows.push(['notes on', titleOf(info.of, docs, null)]);
   if (m.imported) rows.push(['imported', m.imported]);
@@ -568,7 +568,7 @@ function DocInspector({ id, info, doc, now }: { id: string; info: DocInfo; doc: 
           </div>
         </Block>
       )}
-      {info.pdf && (pdfAlone ? (info.note !== undefined && <WithDoc id={info.note} render={(nd) => <PassagesBlock id={id} note={info.note!} doc={nd} now={now} />} />) : <PassagesBlock id={id} note={id} doc={doc} now={now} />)}
+      {info.pdf && notesOf(id, docs).map((n) => (n === id ? <PassagesBlock key={n} id={id} note={id} doc={doc} now={now} /> : <WithDoc key={n} id={n} render={(nd) => <PassagesBlock id={id} note={n} doc={nd} now={now} />} />))}
       {info.pdf && <BookMarksBlock id={id} />}
       <ExamBlock path={id} />
       {(cards > 0 || hasCardsUnder(id)) && <OptionsBlock path={id} />}
@@ -619,7 +619,7 @@ function PassagesBlock({ id, note, doc, now }: { id: string; note: string; doc: 
             const when = chipWhen(read, now);
             const cur = caret?.path === note && caret.text === p.heading.text;
             return (
-              <li key={`${p.index}:${p.heading.text}`} data-due={when === 'due today' ? '1' : '0'} data-cur={cur ? '1' : '0'} data-dismissed={when === 'dismissed' ? '1' : '0'} onClick={() => { useApp.setState({ reveal: { path: note, index: p.index, heading: p.heading.text } }); void openNotes(id).catch(failed('open the notes')); }}>
+              <li key={`${p.index}:${p.heading.text}`} data-due={when === 'due today' ? '1' : '0'} data-cur={cur ? '1' : '0'} data-dismissed={when === 'dismissed' ? '1' : '0'} onClick={() => { useApp.setState({ reveal: { path: note, index: p.index, heading: p.heading.text } }); void openNotes(id, note).catch(failed('open the notes')); }}>
                 <MathText className="cl-t" dir="auto" text={p.heading.text} />
                 <span className="cl-due" data-st={dueTone(when)} title={pagesLabel(p.boxes)}>{when === 'due today' ? 'today' : when.replace(/^back /, '')}</span>
               </li>

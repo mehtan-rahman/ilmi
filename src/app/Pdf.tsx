@@ -90,10 +90,10 @@ import { passagesOf, pointOn, sectionState, type Passage } from '../schedule/ind
 import { INKS, passageId, childDirOf, isPdfPath, type InkStroke, type Mark, type Portal, type Quad, type StoreFs } from '../vault/index.js';
 import { CueActions } from '../plugins/CueActions.js';
 import { onPluginAction, publishSelection, toPluginSelection, type PluginSelection } from '../plugins/index.js';
-import { noteOf, notesTabOf, titleOf } from './names.js';
+import { notesOf, notesTabsOf, pdfForNotes, titleOf } from './names.js';
 import { besideAt } from './panes.js';
 import {
-  addLens, ensureNote, findCollectionMark, followTo, followed, goToMark, lensChanged, openContents, openNotes, togglePortalsBeside, openWeb, portalPending, setCollectionMark, setMark, setPortalPending, setTrail,
+  addLens, addNote, ensureNote, findCollectionMark, followTo, followed, goToMark, lensChanged, openContents, openNotes, togglePortalsBeside, openWeb, portalPending, setCollectionMark, setMark, setPortalPending, setTrail,
   takeBesidePlace, takePlace, toggleNotes, trailOf, useFollowed, useFollower, followingAt, useBesidePlace, useMarks, usePlaceWanted, usePortalPending, useTrail, type BookContents, type BookLens,
 } from './book.js';
 import { popMenu, popMenuOpen, type PopItem } from './popMenu.js';
@@ -105,7 +105,7 @@ import { StudyButton } from './StudyButton.js';
 import { ExamTag } from './ExamTag.js';
 import { TabsToggle } from './TabsToggle.js';
 import { useApp, type DocInfo } from './store.js';
-import { useDoc } from './useDoc.js';
+import { useDocs } from './useDoc.js';
 import { currentVault, enrolReading, logReading, setBookZoom, unlogReading } from './vault.js';
 import { placeAtCaret, writeDoc } from './sections.js';
 import { bringPassageBack, changePassage, keepPassage, putPassage, schedOf } from './passages.js';
@@ -300,11 +300,9 @@ interface PdfProps {
   onLast?: ((page: number) => void) | undefined;
 }
 
-/** Whether the note on the pages at `id` is open in the pane beside (a selector over the store). */
-const notesBeside = (id: string) => (s: { docs: Record<string, DocInfo>; panes: Parameters<typeof besideAt>[0] }): boolean => {
-  const tab = notesTabOf(id, s.docs);
-  return tab !== null && besideAt(s.panes, tab) !== null;
-};
+/** Whether a note on the pages at `id` is open in the pane beside (a selector over the store). */
+const notesBeside = (id: string) => (s: { docs: Record<string, DocInfo>; panes: Parameters<typeof besideAt>[0] }): boolean =>
+  notesTabsOf(id, s.docs).some((tab) => besideAt(s.panes, tab) !== null);
 
 export function Pdf({ id, active = true, session = false, readOn = false, onLast }: PdfProps) {
   const open = useApp(notesBeside(id));
@@ -364,15 +362,18 @@ interface Drawn {
   boxes: Box[];
   cards: number;
   dismissed: boolean;
-  /** A boxed section of the note: where its heading is. */
+  /** A boxed section of a note: where its heading is, and the note it is in. */
   section?: Passage;
+  sectionIn?: string;
   /** A passage kept with the PDF: its line. */
   sched?: SectionSchedule;
 }
 
 function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required<PdfProps>, 'onLast'> & { onLast: PdfProps['onLast']; notesOpen: boolean }) {
   /** Whether the pages have a note yet: the bar's word is `create notes` until they do. */
-  const hasNotes = useApp((st) => notesTabOf(id, st.docs) !== null);
+  const hasNotes = useApp((st) => notesTabsOf(id, st.docs).length > 0);
+  /** Whether one more note can be attached: the pages' PDF is a document of its own (`+` beside the notes' word). */
+  const canAddNote = useApp((st) => pdfForNotes(id, st.docs) !== null);
   const lastRef = useRef(onLast);
   lastRef.current = onLast;
   const docs = useApp((s) => s.docs);
@@ -382,9 +383,10 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
   const mobile = useApp((s) => s.mobile);
   const phone = useApp((s) => s.phone);
   const info: DocInfo | undefined = docs[id];
-  /** The note on these pages: the document itself when it has pages, the note attached to a PDF on its own, or none yet (`book.ts`). */
-  const note = noteOf(id, docs);
-  const loaded = useDoc(note);
+  /** The notes on these pages: the document itself when it has pages, and every note attached to its PDF (`book.ts`); none yet for a PDF on its own with no note. */
+  const notesKey = notesOf(id, docs).join('\n');
+  const notes = useMemo(() => (notesKey === '' ? [] : notesKey.split('\n')), [notesKey]);
+  const loadedNotes = useDocs(notes);
   const [status, setStatus] = useState<'loading' | 'ok' | 'gone' | 'unreadable'>('loading');
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
   const [sizes, setSizes] = useState<Size[]>([]);
@@ -918,16 +920,18 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
   };
 
   // ── what the notes say about the pages: the passages, in book order ──
-  const doc: Doc | undefined = loaded?.doc;
   const drawn = useMemo((): Drawn[] => {
-    // the boxed sections of a note written before milestone 81, and the passages kept with the PDF; all in book order
-    const old = doc ? passagesOf(doc.blocks).map((p): Drawn => ({ key: p.heading.text, name: p.heading.text, boxes: p.boxes, cards: sectionState(doc.blocks, p.index).cards, dismissed: sectionDismissed(p.heading.read!), section: p })) : [];
+    // the boxed sections of the notes written before milestone 81, and the passages kept with the PDF; all in book order
+    const old = notes.flatMap((note): Drawn[] => {
+      const doc: Doc | undefined = loadedNotes.get(note)?.doc;
+      return doc ? passagesOf(doc.blocks).map((p): Drawn => ({ key: p.heading.text, name: p.heading.text, boxes: p.boxes, cards: sectionState(doc.blocks, p.index).cards, dismissed: sectionDismissed(p.heading.read!), section: p, sectionIn: note })) : [];
+    });
     const kept = passageMarksOf(marks).flatMap(([, m]): Drawn[] => {
       const boxes = parseBoxes(m.boxes);
       return boxes ? [{ key: m.boxes, name: pagesLabel(boxes), boxes, cards: 0, dismissed: m.due === undefined, sched: schedOf(m) }] : [];
     });
     return [...old, ...kept].map((d, i) => ({ d, i })).sort((a, b) => boxesAt(a.d.boxes) - boxesAt(b.d.boxes) || a.i - b.i).map((x) => x.d);
-  }, [doc, marks]);
+  }, [notes, loadedNotes, marks]);
   const drawnRef = useRef(drawn);
   drawnRef.current = drawn;
 
@@ -949,17 +953,17 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
   // the caret's section in the note lights its boxes, and the pages scroll to them; only a caret someone put there:
   // a note just opened beside the pages has one at its top, and the reader's place is not to move for it (milestone 70)
   useEffect(() => {
-    if (note === null || caret?.path !== note || !document.activeElement?.closest('.draft-doc')) return;
-    const text = drawnRef.current.some((d) => d.section && d.key === caret.text) ? caret.text : null;
+    if (!caret || !notes.includes(caret.path) || !document.activeElement?.closest('.draft-doc')) return;
+    const text = drawnRef.current.some((d) => d.section && d.sectionIn === caret.path && d.key === caret.text) ? caret.text : null;
     setLit(text);
     if (text) scrollToPassage(text);
-  }, [caret?.path, caret?.text, caret?.nth, note, status, sizes.length, scrollToPassage]);
+  }, [caret?.path, caret?.text, caret?.nth, notes, status, sizes.length, scrollToPassage]);
   // what goes to a section of the note goes to its boxes too, once the pages are there: a session's come after the note has landed
   const going = useRef<string | null>(null);
   const focusSeen = useRef(0);
   const reveal = useApp((s) => s.reveal);
   useEffect(() => {
-    if (note !== null && reveal?.path === note && reveal.heading !== undefined) going.current = reveal.heading;
+    if (reveal && notes.includes(reveal.path) && reveal.heading !== undefined) going.current = reveal.heading;
     // a passage asked for before the pages were there (a session on it, a row of the palette's list)
     if (focus && focus.path === id && focus.seq !== focusSeen.current) { focusSeen.current = focus.seq; going.current = focus.text; }
     const text = going.current;
@@ -967,7 +971,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     going.current = null;
     setLit(text);
     scrollToPassage(text);
-  }, [reveal, focus, id, note, status, sizes.length, drawn, scrollToPassage]);
+  }, [reveal, focus, id, notes, status, sizes.length, drawn, scrollToPassage]);
   // the pages land once where they open. Reading on in a session: at the read point, the bar's end a third of the
   // way down the view. A tab shown again (the pane draws only the tab in front): where it was left, the same text
   // at the top of the view. A book opened for the first time: at its read point, when it has one.
@@ -1012,11 +1016,11 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     return () => clearTimeout(t);
   }, [focus, id, scrollToPassage]);
   /** Go to a passage's section in the note (opened beside the pages, if it is not): the caret at its heading. */
-  const goToSection = (p: Passage) => {
-    if (note === null) return;
+  const goToSection = (p: Passage, note: string | undefined) => {
+    if (note === undefined) return;
     setLit(p.heading.text);
     useApp.setState({ reveal: { path: note, index: p.index, heading: p.heading.text } });
-    void openNotes(id).catch(console.error);
+    void openNotes(id, note).catch(console.error);
   };
 
   // older work: extracts carved from a page (milestone 15) keep their highlights
@@ -1218,7 +1222,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     });
   };
 
-  /** `m`: each box clipped into the note (a PDF with none yet asks for one first), after the block the caret is in when the note is open and holds one, else at its end; the caret below, for the card. No heading is written. */
+  /** `m`: each box clipped into the note (of several, the one in front beside the pages, else the one used last; a PDF with none yet asks for one first), after the block the caret is in when the note is open and holds one, else at its end; the caret below, for the card. No heading is written. */
   const cardOrClip = async (from?: Box[]) => {
     const boxes = from ?? boxesNow();
     if (!boxes.length) return;
@@ -1244,14 +1248,14 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
       });
     });
     useApp.setState({ reveal: { path: to, index: at, write: true } });
-    await openNotes(id);
+    await openNotes(id, to);
   };
 
   /** A press on a passage's tag: when it is next, and what can be done with it. A boxed section of an older note goes to its heading in the notes. */
   const passageMenu = (e: React.MouseEvent, d: Drawn) => {
     e.preventDefault();
     e.stopPropagation();
-    if (d.section) { goToSection(d.section); return; }
+    if (d.section) { goToSection(d.section, d.sectionIn); return; }
     if (!hash || !d.sched) return;
     const h = hash;
     const sched = d.sched;
@@ -2067,7 +2071,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
           if (top < sr.top - sr.height || top > sr.bottom + sr.height) leave();
         }
         // a boxed section of the note goes to its heading there; a passage is only on the pages
-        if (next.section) goToSection(next.section);
+        if (next.section) goToSection(next.section, next.sectionIn);
         else { setLit(next.key); scrollToPassage(next.key); }
       }
     }
@@ -2143,6 +2147,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
           {status === 'ok' && <button type="button" className="pt-btn" data-tool="contents" title="contents t" aria-label="contents" onClick={() => openContents(id)}><Icon name="menu" /></button>}
           <h1 className="pt-title" title={id}>{titleOf(id, docs, root)}</h1>
           {!(phone && session) && <button type="button" className="frozen-tag notes-toggle" data-on={notesOpen ? '1' : '0'} data-has={hasNotes ? '1' : '0'} aria-pressed={notesOpen} title={'notes ⌘\\'} onClick={() => toggleNotes(id)}>{notesOpen ? 'hide notes' : hasNotes ? 'open notes' : 'create notes'}</button>}
+          {!phone && hasNotes && canAddNote && <button type="button" className="pt-btn notes-add" data-tool="new-note" title="new note" aria-label="new note" onClick={() => void addNote(id).catch(console.error)}>+</button>}
           {!isPdfPath(id) && <TabsToggle path={id} />}
           <StudyButton path={id} />
           <ExamTag path={id} />
@@ -2160,7 +2165,12 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
           )}
           {shown && <button type="button" className="right pt-page" data-tool="page" title={[rightTip, 'g goes to a page'].filter(Boolean).join(' · ')} onClick={() => setGoto(true)}>{shown}</button>}
           {status === 'ok' && <button type="button" className="pt-btn" data-tool="more" title="bookmark, portal, ruler" aria-label="more" aria-haspopup="menu" onClick={(e) => moreMenu(e.currentTarget)}><Icon name="more" /></button>}
-          {status === 'ok' && <button type="button" className="pt-btn" data-tool="search" title="search /" aria-label="search" onClick={() => { setFind((f) => f ?? { q: '', pages: [], at: 0 }); setTimeout(() => findRef.current?.focus(), 0); }}><Icon name="search" /></button>}
+          {status === 'ok' && <button type="button" className="pt-btn" data-tool="search" title="search /" aria-label="search" aria-pressed={!!find} onClick={() => {
+            // pressed with the search open, it closes it and its hits go (a finger has no esc)
+            if (find) { setFind(null); return; }
+            setFind({ q: '', pages: [], at: 0 });
+            setTimeout(() => findRef.current?.focus(), 0);
+          }}><Icon name="search" /></button>}
         </div>
         {(find || goto || looking || naming || chord || (portalFrom && active)) && (
           <div className="pdf-bar">
@@ -2309,11 +2319,11 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
                         style={{ left: r.left, top: r.top, width: r.width, height: r.height }}
                       />
                       {roomy ? (
-                        <div data-hit="1" className={`ptag${i ? ' cont' : ''}${cur ? ' cur' : ''}${dismissed ? ' dis' : ''}`} style={{ left: pageW + 12, top: r.top }} title={d.section ? 'go to this section in the notes' : 'passage'} onMouseDown={(e) => passageMenu(e, d)}>
+                        <div data-hit="1" data-for={d.key} className={`ptag${i ? ' cont' : ''}${cur ? ' cur' : ''}${dismissed ? ' dis' : ''}`} style={{ left: pageW + 12, top: r.top }} title={d.section ? 'go to this section in the notes' : 'passage'} onMouseDown={(e) => passageMenu(e, d)}>
                           {!i && <span className="pt-g">§</span>}{label}{!i && n > 0 && <span className="pt-c">◆{n}</span>}
                         </div>
                       ) : (
-                        <div data-hit="1" className={`pgut${cur ? ' cur' : ''}${dismissed ? ' dis' : ''}`} style={{ left: pageW + 3, top: r.top }} title={label} onMouseDown={(e) => passageMenu(e, d)}>{i ? '↳' : '§'}</div>
+                        <div data-hit="1" data-for={d.key} className={`pgut${cur ? ' cur' : ''}${dismissed ? ' dis' : ''}`} style={{ left: pageW + 3, top: r.top }} title={label} onMouseDown={(e) => passageMenu(e, d)}>{i ? '↳' : '§'}</div>
                       )}
                     </div>
                   );

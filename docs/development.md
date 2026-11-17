@@ -333,13 +333,16 @@ On the Mac, `ILMI_VAULT=<a copy of the sample> ILMI_STORAGE=<an empty
 folder>`: the collection makes the storage. On the simulator, `{"mode":
 "touch", "storage": "<that folder>"}`: a collection is made from the
 storage (a simulator reads the Mac's disk), the chapter is opened and read,
-a passage boxed and made a section, and the section synced; its `section:`
-line names it. Since milestone 70 the Mac's first run also puts a PDF on
-its own in the storage (`library/alone.pdf`), which the iPad opens, boxes,
-and makes a note for in `fleeting` (its `alone note:` line names it). On
+a passage boxed and kept with the PDF (milestone 81: among its marks, in no
+note), its tag's menu and the bar's `more` menu worked by taps, and the
+passage synced; its `passage:` line is its boxes. Since milestone 70 the
+Mac's first run also puts a PDF on its own in the storage
+(`library/alone.pdf`), which the iPad opens and boxes; `create notes` there
+makes a blank note for it in `fleeting` (its `alone note:` line names it),
+`+` a second, and `card` on a box clips into the one in front. On
 the Mac again, `ILMI_VAULT=<the collection's own folder under
-collections/> ILMI_STORAGE=<the folder> ILMI_EXPECT=<the section's name>
-ILMI_ALONE_NOTE=<that note's path>`: the section and the note are there
+collections/> ILMI_STORAGE=<the folder> ILMI_EXPECT=<the passage's boxes>
+ILMI_ALONE_NOTE=<that note's path>`: the passage and both notes are there
 after a sync. The simulator's run is under
 real touches, which neither `simctl` nor the page can make: the smoke logs
 `do: tap x y`, `do: press x y seconds`, `do: drag x1 y1 x2 y2 hold`, `do:

@@ -242,6 +242,8 @@ html[data-mobile="1"] .book .pdf-view > .pdf-bar { top: 46px; }
 /* `notes` among the words over the pages: lit while the note is open beside them */
 .reader .meta .notes-toggle[data-on="1"] { color: var(--fg-1); text-decoration: underline; text-decoration-color: var(--accent); text-decoration-thickness: 1.5px; text-underline-offset: 4px; }
 html[data-mobile="1"] .reader .meta .notes-toggle { padding: 12px 8px; margin: -12px -8px; }
+/* `+` beside it: one more note for these pages, close enough to read as the word's own */
+.book .pdf-view > .meta .notes-add { margin-left: -6px; font-size: 15px; line-height: 1; }
 
 /* under a finger: the page's text is not the system's to select (a hold
    there starts a box), and the boxes' bar is a finger's size */

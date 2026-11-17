@@ -290,8 +290,8 @@ function withDue(docs: Record<string, DocInfo>, queue: QueueItem[], now: Date): 
 /**
  * A note attached to a PDF on its own (milestone 70): a note (a document
  * with no `type`) whose `pdf` field names a PDF that is a document of its
- * own opens as the note it is, not as pages (`of`), and the PDF shows the
- * first such note in path order (`note`). A source naming a PDF is that
+ * own opens as the note it is, not as pages (`of`), and the PDF shows every
+ * such note in path order (`notes`; the first is `note`). A source naming a PDF is that
  * PDF's pages, or a range of them (a chapter), and opens as pages whether
  * or not the PDF stands on its own, as 48 had it.
  */
@@ -311,15 +311,15 @@ export function attach(docs: Record<string, DocInfo>): Record<string, DocInfo> {
     }
     notes.set(target, [...(notes.get(target) ?? []), path]);
   }
-  // each PDF on its own shows the first note naming it, or none; said again on every pass, since its own info may have been made anew
+  // each PDF on its own shows the notes naming it (`notes`, and the first as `note`), or none; said again on every pass, since its own info may have been made anew
   for (const path of Object.keys(docs)) {
     if (!isPdfPath(path)) continue;
     const info = out[path]!;
-    const first = notes.get(path)?.[0];
-    if (info.note === first) continue;
+    const all = notes.get(path);
+    if (info.note === all?.[0] && (info.notes ?? []).join('\n') === (all ?? []).join('\n')) continue;
     if (out === docs) out = { ...docs };
-    const { note: _n, ...rest } = info;
-    out[path] = first === undefined ? rest : { ...rest, note: first };
+    const { note: _n, notes: _all, ...rest } = info;
+    out[path] = all === undefined ? rest : { ...rest, note: all[0]!, notes: all };
   }
   return out;
 }

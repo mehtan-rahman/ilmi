@@ -118,18 +118,25 @@ export function paperLines(p: PaperKind | PaperSpec): { rows: number[]; cols: nu
 
 /**
  * A paper as the paths of an SVG whose view box is the sheet in points:
- * `rules` every line (drawn with a stroke that does not scale), `margin` the
+ * `rules` every line (drawn with a stroke that does not scale; with `on`, each
+ * on whole pixels of the screen), `margin` the
  * margin rule, `dots` a row of zero-length dashes `pitch` apart for each row
  * of dots (drawn `width` wide with round caps). Empty where the paper has
  * none.
  */
-export function paperPaths(p: PaperKind | PaperSpec): { rules: string; margin: string; dots: string; pitch: number; width: number; w: number; h: number } {
+export function paperPaths(p: PaperKind | PaperSpec, on?: { px: number; w: number }): { rules: string; margin: string; dots: string; pitch: number; width: number; w: number; h: number } {
   const spec = specOf(p);
   const { rows, cols, margin, dots } = paperLines(spec);
-  const rules = [...rows.map((y) => `M0 ${y}H${spec.w}`), ...cols.map((x) => `M${x} 0V${spec.h}`)].join('');
+  // drawn `on.px` pixels of the screen to the point with a stroke `on.w` of them wide, a line covers whole pixels: its
+  // middle is moved (by under half a pixel) to where its edges fall between two (86)
+  const at = (v: number): number => (on && on.px > 0 ? Math.round(((Math.round(v * on.px - on.w / 2) + on.w / 2) / on.px) * 10000) / 10000 : v);
+  const rules = [...rows.map((y) => `M0 ${at(y)}H${spec.w}`), ...cols.map((x) => `M${at(x)} 0V${spec.h}`)].join('');
   const row = dots && dots.xs.length ? dots.ys.map((y) => `M${dots.xs[0]} ${y}H${dots.xs[dots.xs.length - 1]! + 0.01}`).join('') : '';
-  return { rules, margin: margin === null ? '' : `M${margin} 0V${spec.h}`, dots: row, pitch: Math.max(2, spec.rule), width: DOT, w: spec.w, h: spec.h };
+  return { rules, margin: margin === null ? '' : `M${at(margin)} 0V${spec.h}`, dots: row, pitch: Math.max(2, spec.rule), width: DOT, w: spec.w, h: spec.h };
 }
+
+/** How many pixels of the screen wide a rule is drawn, the paper `px` of them to the point: half a point, never under one. */
+export const ruleWidth = (px: number): number => Math.max(1, Math.round(px * 0.5));
 
 /**
  * The paper drawn onto a canvas: the part of the sheet at `x`, `y`, `w` by

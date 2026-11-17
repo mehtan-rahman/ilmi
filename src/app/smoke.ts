@@ -12114,8 +12114,8 @@ const INK_NOTE = 'courses/fall-2026/phys-415-stat-mech/canonical-ensemble.md';
 
 /** How the canvases stand (`dev_ink_state`). */
 interface InkState {
-  sheets: { id: string; strokes: number; shown: boolean; dirty: boolean; at: { x: number; y: number; w: number; h: number }; pixels?: number; blend?: string | null }[];
-  hosts: { id: string; follows: boolean; offset: number; port: { x: number; y: number; w: number; h: number } }[];
+  sheets: { id: string; strokes: number; shown: boolean; dirty: boolean; at: { x: number; y: number; w: number; h: number }; pixels?: number; blend?: string | null; device?: { x: number; y: number; w: number; h: number }; stretch?: number; drawn?: number[] }[];
+  hosts: { id: string; follows: boolean; offset: number; port: { x: number; y: number; w: number; h: number }; zoomer?: boolean; phase?: string | null }[];
   /** PencilKit's picker, gone since 82: always false. */
   tools: boolean;
   /** What the page's row holds, as the canvases were told (milestone 82). */
@@ -17834,6 +17834,260 @@ export async function smokePairDevice(): Promise<void> {
     useApp.setState({ tweaksOpen: false });
     log(`done; collection ${vault.root}`);
   } catch (e) {
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// ILMI_SMOKE=sharp (milestone 86), an iPad's, over a copy of the sample
+// (smoke.json: `vault`), under the touch rig: how sharp a notebook's ink and
+// paper are on the glass, and how its pages zoom. A notebook of blank paper;
+// a level, an upright and a slanted stroke in each of the pen's inks
+// (`dev_ink_stroke`), then the pages at fit, 150% and 300%. At each the
+// canvases must lie on whole pixels of the screen, unstretched, their
+// strokes drawn a pixel for a pixel (`dev_ink_state`: `device`, `stretch`,
+// `drawn`), and the page under them likewise; a line `geo:` says where
+// every stroke lies in the capture, and PencilKit's own picture of the same
+// drawing at the screen's pixels is written beside the app's documents
+// (`dev_ink_picture`), so a script can measure each stroke's edge in the
+// capture and hold it against the picture. Then ruled paper: where each rule
+// lies, to be measured the same way. `"part": "zoom"` goes on to the zoom.
+// ─────────────────────────────────────────────────────────────────────────
+export async function smokeSharp(path: string | null): Promise<void> {
+  let last = { at: Date.now(), what: 'start' };
+  let finished = false;
+  const log = (s: string) => { last = { at: Date.now(), what: s }; void info(`smoke sharp: ${s}`); };
+  const dog = setInterval(() => {
+    if (finished) { clearInterval(dog); return; }
+    if (Date.now() - last.at > 90_000) { finished = true; clearInterval(dog); void info(`smoke sharp: failed: no progress for 90 s after "${last.what}"`); }
+  }, 2000);
+  const q = <T extends Element>(sel: string, root: ParentNode = document) => root.querySelector<T>(sel);
+  const qa = <T extends Element>(sel: string, root: ParentNode = document) => Array.from(root.querySelectorAll<T>(sel));
+  const shot = async (name: string, ms = 2500) => { await sleep(900); log(`shot: ${name}`); await sleep(ms); };
+  const must = (ok: unknown, what: string) => { if (!ok) throw new Error(what); log(`ok: ${what}`); };
+  const poll = async <T,>(probe: () => T | null | undefined | false | Promise<T | null | undefined | false>, what: string, ms = 8000): Promise<T> => {
+    const t0 = Date.now();
+    for (;;) {
+      const v = await probe();
+      if (v) { log(`ok: ${what}`); return v; }
+      if (Date.now() - t0 > ms) throw new Error(`${what} (waited ${ms} ms)`);
+      await sleep(100);
+    }
+  };
+  const NAME = 'sharp';
+  const NB = `fleeting/${NAME}.md`;
+  try {
+    const { devCollection, setBookZoom } = await import('./vault.js');
+    const { createWritten, setSetup } = await import('./written.js');
+    const { paperLines, paperOf } = await import('./paper.js');
+    const tools = await import('./inkTools.js');
+    if (!path) throw new Error('ILMI_VAULT (smoke.json: "vault") names the sample\'s copy');
+    const part = (await invoke<string | null>('dev_env', { name: 'ILMI_PART' })) ?? '';
+    const dpr = window.devicePixelRatio || 1;
+    log(`window ${window.innerWidth}×${window.innerHeight}; pixel ratio ${dpr}`);
+    if (window.innerWidth > window.innerHeight) { log('do: turn portrait'); await poll(() => window.innerWidth < window.innerHeight, 'upright', 25000); await sleep(1500); }
+    useApp.getState().setReopen(false);
+    useApp.getState().setTheme('light');
+    await openVault(await devCollection(path));
+    try { localStorage.removeItem(tools.INK_KEY); } catch { /* none */ }
+    tools.useInkTools.setState({ kept: { ...tools.DEFAULTS, snap: false } });
+    const state = () => invoke<InkState>('dev_ink_state');
+    await createWritten('fleeting', NAME);
+    const ID = await poll(() => useApp.getState().docs[NB]?.written?.id, 'a written notebook is made', 10000);
+    await setSetup(NB, { paper: 'blank' });
+    openNode(NB);
+    const b = await poll(() => { const x = qa<HTMLElement>('.book').find((k) => k.dataset.path === NB); return x && q('.pdf-page', x) ? x : null; }, 'it opens as a page', 15000);
+    const view = q<HTMLElement>('.pdf-view', b)!;
+    const sc = q<HTMLElement>('.book-pages', b)!;
+    const page1 = () => q<HTMLElement>('.pdf-page', b)!.getBoundingClientRect();
+    const sheet1 = `p.${ID}.1`;
+    const on1 = async () => (await state()).sheets.find((x) => x.id === sheet1) ?? null;
+    await poll(on1, 'its canvas is there', 20000);
+    await poll(async () => (await state()).tool?.kind === 'pen', 'the pen is held', 20000);
+    // ── the strokes: a level one, an upright one, a slanted one, in each ink ──
+    interface Drawn { ink: string; way: 'level' | 'upright' | 'slanted'; a: [number, number]; b: [number, number]; width: number }
+    const strokes: Drawn[] = [];
+    const line = (a: [number, number], c: [number, number]): [number, number][] => Array.from({ length: 13 }, (_, i) => [a[0] + ((c[0] - a[0]) * i) / 12, a[1] + ((c[1] - a[1]) * i) / 12] as [number, number]);
+    const inks = tools.inksHere(tools.useInkTools.getState().caps).map((i) => i.ink).filter((i) => i !== 'pencil');
+    let row = 0;
+    for (const inkName of inks) {
+      // (told anew whatever the run before left held)
+      tools.setInk(inkName === 'pen' ? 'monoline' : 'pen');
+      await sleep(400);
+      tools.setInk(inkName);
+      const t = await poll(async () => { const s = (await state()).tool; return s && (s.ink ?? 'pen') === inkName ? s : null; }, `the ink is ${inkName}`, 20000);
+      const y = 50.3 + row * 58;
+      for (const [way, a, c] of [['level', [20.4, y], [80.4, y]], ['upright', [100.3, y - 22], [100.3, y + 22]], ['slanted', [120, y - 22], [164, y + 22]]] as const) {
+        await invoke('dev_ink_stroke', { sheet: sheet1, points: line([...a], [...c]), rest: false });
+        strokes.push({ ink: inkName, way, a: [...a], b: [...c], width: t.width });
+      }
+      row += 1;
+    }
+    await poll(async () => (await on1())?.strokes === strokes.length, `${strokes.length} strokes are on the sheet`, 20000);
+    await poll(async () => { const c = await on1(); return c && !c.dirty; }, 'and kept', 20000);
+    /** Whether `v` is a whole number of the screen's pixels, to a hundredth. */
+    const whole = (v: number) => Math.abs(v - Math.round(v)) < 0.011;
+    /** The pages at a zoom, at rest: what lies where, in the screen's pixels; the canvases and the page held to the pixels. */
+    const at = async (z: number, name: string, strict: boolean) => {
+      setBookZoom(NB, z);
+      await poll(() => view.dataset.zoom === String(z), `zoom ${z}`, 8000);
+      sc.scrollTop = 0; sc.scrollLeft = 0;
+      // (the canvases laid again, as they were before 86 or as they are)
+      await invoke('dev_ink_plain', { on: !strict });
+      window.dispatchEvent(new Event('resize'));
+      await sleep(1800);
+      const p = page1();
+      const c = (await on1())!;
+      const k = p.width / 612;
+      const geo = { name, z, dpr, page: [p.left * dpr, p.top * dpr, p.width * dpr, p.height * dpr], scale: k * dpr, canvas: c.device, stretch: c.stretch, drawn: c.drawn, pixels: c.pixels, strokes };
+      log(`geo: ${JSON.stringify(geo)}`);
+      const got = await invoke<{ w: number; h: number }>('dev_ink_picture', { sheet: sheet1, name: `sharp-ref-${name}` }).catch((e: unknown) => { log(`no picture: ${String(e)}`); return null; });
+      if (got) log(`its picture ${got.w}×${got.h}`);
+      const pageWhole = [p.left * dpr, p.top * dpr, p.width * dpr, p.height * dpr].every(whole);
+      const d = c.device;
+      const canvasWhole = !!d && [d.x, d.y, d.w, d.h].every(whole);
+      log(`${name}: the page at ${[p.left * dpr, p.top * dpr, p.width * dpr, p.height * dpr].map((v) => v.toFixed(2)).join(' ')} px of the screen; its canvas at ${d ? [d.x, d.y, d.w, d.h].map((v) => v.toFixed(2)).join(' ') : '?'}; stretched ${c.stretch}; drawn ${JSON.stringify(c.drawn)}; ${c.pixels?.toFixed(3)} px to the point where the page has ${(k * dpr).toFixed(3)}`);
+      if (strict) {
+        must(pageWhole, `${name}: the page lies on whole pixels of the screen`);
+        must(canvasWhole && Math.abs(d!.x - p.left * dpr) < 0.011 && Math.abs(d!.y - p.top * dpr) < 0.011 && Math.abs(d!.w - p.width * dpr) < 0.011, 'its canvas on the same pixels');
+        must(c.shown && Math.abs((c.stretch ?? 0) - 1) < 0.0005, 'unstretched');
+        must((c.pixels ?? 0) >= k * dpr - 0.0005, 'its strokes drawn with the page\'s own pixels to the point, or more');
+        must((c.drawn ?? []).length > 0 && (c.drawn ?? []).every((v) => v >= 0.99), `and what PencilKit draws into has a pixel for each of the screen's, or more (${JSON.stringify(c.drawn)})`);
+      }
+      await shot(`sharp-${name}`);
+    };
+    // (where two fingers stop is no round number: the pages are as wide as they come, and under fit they are centred)
+    for (const [z, name] of part === 'zoom' ? [] : [[1, 'z100'], [1.5, 'z150'], [3, 'z300'], [1.37, 'z137'], [0.73, 'z073']] as const) {
+      // as the canvases were laid before 86, to measure against; then as they are, held to the pixels
+      await at(z, `${name}-plain`, false);
+      await at(z, name, true);
+    }
+    // ── ruled paper: where each rule lies ──
+    await setSetup(NB, { paper: 'ruled' });
+    setBookZoom(NB, 1);
+    await poll(() => view.dataset.zoom === '1' && q('.pdf-page svg.paper', b)?.getAttribute('data-paper') === 'ruled', 'ruled paper, at fit', 8000);
+    sc.scrollTop = 0;
+    await sleep(1500);
+    {
+      const p = page1();
+      const k = p.width / 612;
+      const w = useApp.getState().docs[NB]!.written!;
+      const lines = paperLines(paperOf(w, 0));
+      const rows = lines.rows.map((y) => (p.top + y * k) * dpr);
+      log(`rules: ${JSON.stringify({ name: 'ruled', dpr, page: [p.left * dpr, p.top * dpr, p.width * dpr, p.height * dpr], rows, margin: lines.margin === null ? null : (p.left + lines.margin * k) * dpr })}`);
+      await shot('sharp-ruled');
+    }
+    // ── the zoom: two fingers, and a finger's two taps ──
+    {
+      const ask = (verb: string, ...n: number[]) => log(`do: ${verb} ${n.map((v) => v.toFixed(4)).join(' ')}`);
+      const fx = (x: number) => x / window.innerWidth;
+      const fy = (y: number) => y / window.innerHeight;
+      const zoomNow = () => Number(view.dataset.zoom);
+      const hostNow = async () => (await state()).hosts.find((h) => h.id === `pages:${NB}`) ?? null;
+      /** At rest after a zoom: nothing stretched, the page and its canvas on the same whole pixels. */
+      const rested = async (what: string) => {
+        const st = await poll(async () => { const s = await state(); const h = s.hosts.find((x) => x.id === `pages:${NB}`); const c = s.sheets.find((x) => x.id === sheet1); return h && !h.phase && c && Math.abs((c.stretch ?? 0) - 1) < 0.0005 && !view.dataset.pinch ? s : null; }, `${what}: nothing is left stretched`, 15000);
+        await sleep(400);
+        const p = page1();
+        const c = (await on1())!;
+        const d = c.device!;
+        log(`${what}: zoom ${zoomNow()}; the page at ${[p.left * dpr, p.top * dpr, p.width * dpr].map((v) => v.toFixed(2)).join(' ')}; its canvas at ${[d.x, d.y, d.w].map((v) => v.toFixed(2)).join(' ')}; drawn ${JSON.stringify(c.drawn)}; the layout ${view.dataset.zoomOff ?? '-'} px from where the pages were eased to; the scroller at ${sc.scrollLeft}, ${sc.scrollTop}`);
+        must([p.left * dpr, p.top * dpr, p.width * dpr].every(whole), `${what}: the page on whole pixels`);
+        must(Math.abs(d.x - p.left * dpr) < 0.011 && Math.abs(d.y - p.top * dpr) < 0.011 && Math.abs(d.w - p.width * dpr) < 0.011, 'its canvas on the same');
+        must(view.dataset.zoomOff === undefined || Number(view.dataset.zoomOff) <= 1, 'laid out where they were eased to, to a pixel');
+        must(q('.pt-pct', b)?.textContent === `${Math.round(zoomNow() * 100)}%`, `the bar says the zoom (${q('.pt-pct', b)?.textContent})`);
+        void st;
+      };
+      await invoke('dev_ink_pen', { on: false });
+      // a long level stroke between two rules: where it lies between them says, in any frame, whether ink and paper are one
+      tools.setInk('pen'); await sleep(300); tools.setInk('monoline');
+      await poll(async () => (await state()).tool?.ink === 'monoline', 'the even line', 20000);
+      await invoke('dev_ink_stroke', { sheet: sheet1, points: line([30, 252], [560, 252]), rest: false });
+      await poll(async () => { const c = await on1(); return c && c.strokes === strokes.length + 1 && !c.dirty; }, 'a long stroke between two rules, kept', 20000);
+      log(`the pages' host: ${JSON.stringify(await hostNow())}`);
+      { const col = q<HTMLElement>('.pdf-pages', b)!; const cs = getComputedStyle(col); log(`the column: will-change ${cs.willChange}; origin ${cs.transformOrigin}; mobile ${document.documentElement.dataset.mobile}`); }
+      must((await hostNow())?.zoomer, 'the pages\' own layer in the web view is found: two fingers stretch it on the glass');
+      const bar0 = q<HTMLElement>('.meta', b)!.getBoundingClientRect();
+      // spread about a place 40% across the page, 30% down it
+      {
+        const r0 = page1();
+        const [cx, cy] = [r0.left + 0.4 * r0.width, r0.top + 0.3 * r0.height];
+        log('mark: pinch-out');
+        ask('pinch', fx(cx - 50), fy(cy), fx(cx + 50), fy(cy), fx(cx - 110), fy(cy), fx(cx + 110), fy(cy));
+        const z = await poll(() => { const v = zoomNow(); return v > 1.5 && !view.dataset.pinch ? v : 0; }, 'two fingers spread: larger', 30000);
+        await rested('spread');
+        const r1 = page1();
+        const under = [(cx - r1.left) / r1.width, (cy - r1.top) / r1.height];
+        log(`zoom ${z}: under the fingers ${under.map((v) => v.toFixed(4)).join(', ')} of the page`);
+        must(Math.abs(under[0]! - 0.4) < 0.01 && Math.abs(under[1]! - 0.3) < 0.01, 'what was between the fingers still is');
+        must(Math.abs(r1.width / r0.width - z) < 0.01, 'the page as large as the zoom says');
+        const bar1 = q<HTMLElement>('.meta', b)!.getBoundingClientRect();
+        must(Math.abs(bar1.left - bar0.left) < 0.6 && Math.abs(bar1.width - bar0.width) < 0.6 && Math.abs(bar1.top - bar0.top) < 0.6, 'the bar over the pages has not moved');
+        await shot('zoom-spread');
+      }
+      // closed past fit: smaller than the pane, and in its middle
+      {
+        const [cx, cy] = [window.innerWidth / 2, window.innerHeight * 0.55];
+        log('mark: pinch-in');
+        ask('pinch', fx(cx - 220), fy(cy), fx(cx + 220), fy(cy), fx(cx - 60), fy(cy), fx(cx + 60), fy(cy));
+        const z = await poll(() => { const v = zoomNow(); return v < 0.95 && !view.dataset.pinch ? v : 0; }, 'two fingers closed: smaller than fit', 30000);
+        await rested('closed');
+        const p = page1();
+        const s2 = sc.getBoundingClientRect();
+        log(`zoom ${z}: ${(p.left - s2.left).toFixed(2)} px to its left, ${(s2.left + sc.clientWidth - p.right).toFixed(2)} to its right`);
+        must(Math.abs((p.left - s2.left) - (s2.left + sc.clientWidth - p.right)) < 0.6 && sc.scrollLeft === 0, 'under fit the page is in the middle of the pane');
+        await shot('zoom-closed');
+      }
+      // past either end: the pages give a little under the fingers and come back to the end
+      {
+        const [cx, cy] = [window.innerWidth / 2, window.innerHeight * 0.55];
+        log('mark: pinch-min');
+        ask('pinch', fx(cx - 300), fy(cy), fx(cx + 300), fy(cy), fx(cx - 40), fy(cy), fx(cx + 40), fy(cy));
+        await poll(() => zoomNow() === 0.5 && !view.dataset.pinch, 'closed far past the least: left at the least', 30000);
+        await rested('least');
+        setBookZoom(NB, 3);
+        await poll(() => zoomNow() === 3, 'at 300%', 8000);
+        await sleep(1200);
+        log('mark: pinch-max');
+        ask('pinch', fx(cx - 60), fy(cy), fx(cx + 60), fy(cy), fx(cx - 300), fy(cy), fx(cx + 300), fy(cy));
+        await poll(() => zoomNow() === 4 && !view.dataset.pinch, 'spread far past the most: left at the most', 30000);
+        await rested('most');
+      }
+      // a finger tapped twice: fit, and back
+      {
+        const [cx, cy] = [window.innerWidth / 2, window.innerHeight * 0.6];
+        log('mark: tap-fit');
+        ask('tap2', fx(cx), fy(cy));
+        await poll(() => zoomNow() === 1 && !view.dataset.pinch, 'a finger tapped twice: the pages fitted', 30000);
+        await rested('fitted');
+        await shot('zoom-fitted');
+        log('mark: tap-back');
+        ask('tap2', fx(cx), fy(cy));
+        await poll(() => zoomNow() === 4 && !view.dataset.pinch, 'twice again: back at the zoom they had', 30000);
+        await rested('back');
+        ask('tap2', fx(cx), fy(cy));
+        await poll(() => zoomNow() === 1 && !view.dataset.pinch, 'and fitted again', 30000);
+        await rested('fitted again');
+        must(useApp.getState().bookZooms[NB] === undefined || useApp.getState().bookZooms[NB] === 1, 'the zoom is the notebook\'s own, kept with it');
+      }
+      // a flick: the ink goes with the paper
+      {
+        const { addSheet } = await import('./written.js');
+        await addSheet(NB); await addSheet(NB);
+        await sleep(800);
+        log('mark: flick');
+        ask('flick', 0.5, 0.75, 0.5, 0.3);
+        await poll(() => sc.scrollTop > 200, 'a finger flicks the pages', 30000);
+        await sleep(2500);
+        await rested('scrolled');
+        ask('flick', 0.5, 0.3, 0.5, 0.85);
+        await sleep(3500);
+      }
+    }
+    finished = true;
+    log('done');
+  } catch (e) {
+    finished = true;
     log(`failed: ${e instanceof Error ? e.message : String(e)}`);
   }
 }

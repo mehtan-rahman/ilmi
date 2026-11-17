@@ -39,8 +39,8 @@ vi.mock('@tauri-apps/api/core', () => ({
   },
 }));
 
-/** The pen as it starts, as the canvases are told it. */
-const PEN = { kind: 'pen', color: '#1c1c1e', width: 2.2, ink: 'pen', snap: true };
+/** The pen as it starts, as the canvases are told it: the even line (86; the soft pen before). */
+const PEN = { kind: 'pen', color: '#1c1c1e', width: 2.2, ink: 'monoline', snap: true };
 
 // jsdom lays nothing out: the row's width is given, a tool's settings lie where they are said to, and what watches the row's size is told by hand
 let barW = 0;
@@ -80,11 +80,11 @@ beforeEach(() => {
 });
 
 describe('what is chosen', () => {
-  it('starts at a medium black pen, a finger not drawing, the row shown', () => {
+  it('starts at a medium black pen of an even line, a finger not drawing, the row shown', () => {
     expect(toolOf(DEFAULTS)).toEqual(PEN);
     expect(DEFAULTS.finger).toBe(false);
     expect(DEFAULTS.custom).toEqual({ pen: null, highlighter: null });
-    expect(DEFAULTS).toMatchObject({ last: 'pen', ink: 'pen', opacity: 1, eraser: 'stroke', snap: true, shown: true, recent: { pen: [], highlighter: [] } });
+    expect(DEFAULTS).toMatchObject({ last: 'pen', ink: 'monoline', opacity: 1, eraser: 'stroke', snap: true, shown: true, recent: { pen: [], highlighter: [] } });
     expect(DEFAULTS.widths).toEqual(SIZES);
     expect(DEFAULTS.colors).toEqual({ pen: SWATCHES.pen.map((s) => s.color), highlighter: SWATCHES.highlighter.map((s) => s.color) });
   });
@@ -130,8 +130,8 @@ describe('what is chosen', () => {
     expect(rangeOf(DEFAULTS, 'pen')).toEqual([0.5, 8]);
     expect(rangeOf(DEFAULTS, 'pen', null)).toEqual([0.5, 8]);
     // inside both, in tenths
-    expect(rangeOf(DEFAULTS, 'pen', caps)).toEqual([0.9, 8]);
-    expect(rangeOf(withInk(DEFAULTS, 'monoline'), 'pen', caps)).toEqual([0.5, 2.8]);
+    expect(rangeOf(withInk(DEFAULTS, 'pen'), 'pen', caps)).toEqual([0.9, 8]);
+    expect(rangeOf(DEFAULTS, 'pen', caps)).toEqual([0.5, 2.8]);
     expect(rangeOf(withInk(DEFAULTS, 'pencil'), 'pen', caps)).toEqual([2.4, 8]);
     // an ink the device said nothing of, and the eraser, which is ours: as wide as the tool can be
     expect(rangeOf(withInk(DEFAULTS, 'fountain'), 'pen', caps)).toEqual([0.5, 8]);
@@ -139,7 +139,7 @@ describe('what is chosen', () => {
     // the highlighter's is the marker's
     expect(rangeOf(DEFAULTS, 'highlighter', caps)).toEqual([9.7, 40]);
     // a range that leaves nothing is not believed
-    expect(rangeOf(DEFAULTS, 'pen', { pen: [9, 12] })).toEqual([0.5, 8]);
+    expect(rangeOf(withInk(DEFAULTS, 'pen'), 'pen', { pen: [9, 12] })).toEqual([0.5, 8]);
     const k = withInk(withSize(DEFAULTS, 'pen', 2), 'monoline');
     expect(widthOf(k, 'pen')).toBe(3.6);
     expect(widthOf(k, 'pen', caps)).toBe(2.8);
@@ -225,8 +225,8 @@ describe('what is chosen', () => {
   });
 
   it('the pen has its inks, the highlighter its opacity, the eraser its two ways, and a rested stroke becomes a shape or does not', () => {
-    for (const ink of ['monoline', 'fountain', 'pencil'] as const) expect(toolOf(withInk(DEFAULTS, ink))).toEqual({ ...PEN, ink });
-    expect(withInk(DEFAULTS, 'pen')).toBe(DEFAULTS);
+    for (const ink of ['pen', 'fountain', 'pencil'] as const) expect(toolOf(withInk(DEFAULTS, ink))).toEqual({ ...PEN, ink });
+    expect(withInk(DEFAULTS, 'monoline')).toBe(DEFAULTS);
     expect(withInk(DEFAULTS, 'brush' as never)).toBe(DEFAULTS);
     // the opacity: to a hundredth, never less than can be seen
     expect(OPACITY_MIN).toBe(0.2);
@@ -313,8 +313,27 @@ describe('what is chosen', () => {
     const k = parse(JSON.stringify(old));
     expect(k).toEqual({ ...DEFAULTS, ...old, last: 'highlighter' });
     expect(toolOf(k)).toEqual({ kind: 'highlighter', color: '#86e08a', width: 24, opacity: 1, snap: true });
-    expect(toolOf(withTool(k, 'pen'))).toEqual({ kind: 'pen', color: '#123456', width: 1.2, ink: 'pen', snap: true });
+    expect(toolOf(withTool(k, 'pen'))).toEqual({ kind: 'pen', color: '#123456', width: 1.2, ink: 'monoline', snap: true });
     expect(k.shown).toBe(true);
+  });
+
+  it('a soft pen kept before the pen started as the even line was never chosen, and is the even line; one kept since is the pen', () => {
+    // before 86 what was kept said nothing of its shape, and `pen` was only how it started
+    expect(parse(JSON.stringify({ ...DEFAULTS, ink: 'pen' })).ink).toBe('monoline');
+    expect(parse(JSON.stringify({ ink: 'pen' }))).toEqual(DEFAULTS);
+    expect(parse(JSON.stringify({ ink: 'pen', v: 1 })).ink).toBe('monoline');
+    expect(parse(JSON.stringify({ ink: 'pen', v: '2' })).ink).toBe('monoline');
+    // any other ink was chosen, and is kept whatever the shape
+    for (const ink of ['monoline', 'fountain', 'pencil'] as const) {
+      expect(parse(JSON.stringify({ ink })).ink).toBe(ink);
+      expect(parse(JSON.stringify({ ink, v: 2 })).ink).toBe(ink);
+    }
+    // since 86 the pen is one chosen
+    expect(parse(JSON.stringify({ ink: 'pen', v: 2 })).ink).toBe('pen');
+    expect(parse(JSON.stringify({ ink: 'brush', v: 2 })).ink).toBe('monoline');
+    // the shape is the store's, none of what is chosen
+    expect('v' in parse(JSON.stringify({ ...DEFAULTS, v: 2 }))).toBe(false);
+    expect(parse(JSON.stringify({ ...DEFAULTS, v: 2 }))).toEqual(DEFAULTS);
   });
 
   it('read back, each thing is held to what it can be: a width, an opacity, a colour among good ones, the last few colours', () => {
@@ -354,7 +373,7 @@ describe('kept per device', () => {
     answers.ink_color = () => ({ color: '#0a7f6b' });
     await a.tools.pickColor('highlighter', { x: 0, y: 0, w: 40, h: 44 });
     const was = a.tools.useInkTools.getState().kept;
-    expect(JSON.parse(localStorage.getItem('ilmi.ink')!)).toEqual(was);
+    expect(JSON.parse(localStorage.getItem('ilmi.ink')!)).toEqual({ ...was, v: 2 });
 
     const b = await launch();
     expect(b.tools.useInkTools).not.toBe(a.tools.useInkTools);
@@ -380,12 +399,37 @@ describe('kept per device', () => {
     expect(was).toMatchObject({ tool: 'eraser', last: 'pen', ink: 'pencil', opacity: 0.45, eraser: 'part', snap: false, shown: false, recent: { pen: ['#884422'] } });
     expect(was.widths.pen).toEqual([1.2, 4.4, 3.6]);
     expect(was.colors.pen).toEqual(['#1c1c1e', '#1d4fb8', '#c5281c', '#884422']);
-    expect(JSON.parse(localStorage.getItem('ilmi.ink')!)).toEqual(was);
+    expect(JSON.parse(localStorage.getItem('ilmi.ink')!)).toEqual({ ...was, v: 2 });
 
     const b = await launch();
     expect(b.tools.useInkTools.getState().kept).toEqual(was);
     expect(b.tools.useInkTools.getState().open).toBeNull();
     expect(b.tools.toolOf(b.tools.withTool(b.tools.useInkTools.getState().kept, 'pen'))).toEqual({ kind: 'pen', color: '#884422', width: 4.4, ink: 'pencil', snap: false });
+  });
+  it('what is kept says its shape, so the soft pen chosen stays the pen; kept before that, it is the even line, and says so once anything is chosen', async () => {
+    const a = await launch();
+    expect(a.tools.useInkTools.getState().kept.ink).toBe('monoline');
+    // nothing is kept until something is chosen
+    expect(localStorage.getItem('ilmi.ink')).toBeNull();
+    a.tools.setInk('pen');
+    expect(JSON.parse(localStorage.getItem('ilmi.ink')!)).toMatchObject({ ink: 'pen', v: 2 });
+    const b = await launch();
+    expect(b.tools.useInkTools.getState().kept.ink).toBe('pen');
+    expect(b.tools.toolOf(b.tools.useInkTools.getState().kept)).toEqual({ ...PEN, ink: 'pen' });
+
+    // a device's from before: the rest of it as it was, the pen the even line
+    const { v: _v, ...old } = JSON.parse(localStorage.getItem('ilmi.ink')!) as Record<string, unknown>;
+    localStorage.setItem('ilmi.ink', JSON.stringify({ ...old, tool: 'highlighter', finger: true }));
+    const c = await launch();
+    expect(c.tools.useInkTools.getState().kept).toMatchObject({ tool: 'highlighter', finger: true, ink: 'monoline' });
+    // read alone it is not written back; the next thing chosen is
+    expect('v' in JSON.parse(localStorage.getItem('ilmi.ink')!)).toBe(false);
+    c.tools.setTool('pen');
+    expect(JSON.parse(localStorage.getItem('ilmi.ink')!)).toMatchObject({ tool: 'pen', ink: 'monoline', v: 2 });
+    // and from then on the soft pen can be chosen and stays
+    c.tools.setInk('pen');
+    const d = await launch();
+    expect(d.tools.useInkTools.getState().kept.ink).toBe('pen');
   });
 });
 
@@ -530,7 +574,8 @@ describe('what the canvases are told', () => {
     const b = await launch();
     await b.scene();
     expect(calls.map((c) => c.cmd)).toEqual(['ink_scene', 'ink_tool', 'ink_finger', 'ink_caps', 'ink_tool']);
-    expect(said('ink_tool').map((t) => (t.tool as { width: number }).width)).toEqual([8, 5]);
+    // (the even line the pen starts as takes 0.5 to 2.85 here)
+    expect(said('ink_tool').map((t) => (t.tool as { width: number }).width)).toEqual([8, 2.8]);
     // what it said that is no range is left out
     expect(b.tools.useInkTools.getState().caps).toEqual({ inks: { pen: [0.88, 5.04], monoline: [0.5, 2.85], pencil: [2.4, 16], marker: [9.64, 60] }, squeeze: true });
     expect(b.tools.inksHere(b.tools.useInkTools.getState().caps).map((i) => i.ink)).toEqual(['pen', 'monoline', 'pencil']);
@@ -765,7 +810,7 @@ describe('what the canvases are told', () => {
     await done;
     expect(a.tools.useInkTools.getState().kept).toEqual(was);
     expect(a.tools.useInkTools.getState().picking).toBeNull();
-    expect(JSON.parse(localStorage.getItem('ilmi.ink')!)).toEqual(was);
+    expect(JSON.parse(localStorage.getItem('ilmi.ink')!)).toEqual({ ...was, v: 2 });
     // and the canvases have the colour that was in use again
     expect(said('ink_tool').at(-1)).toEqual({ tool: { ...PEN, color: '#1e7a46' } });
     // one chosen before stays that tool's own when a later wheel is closed with none
@@ -1177,7 +1222,7 @@ describe('the row of tools', () => {
     await show(a);
     await press('[aria-label="pen"]');
     const kept = () => a.tools.useInkTools.getState().kept;
-    expect(inPop('[data-ink-ink]').map((b) => [b.dataset.inkInk, b.textContent, b.getAttribute('aria-pressed')])).toEqual([['pen', 'pen', 'true'], ['monoline', 'fine', 'false'], ['fountain', 'fountain', 'false'], ['pencil', 'pencil', 'false']]);
+    expect(inPop('[data-ink-ink]').map((b) => [b.dataset.inkInk, b.textContent, b.getAttribute('aria-pressed')])).toEqual([['pen', 'pen', 'false'], ['monoline', 'fine', 'true'], ['fountain', 'fountain', 'false'], ['pencil', 'pencil', 'false']]);
     expect(inPop('[data-ink-eraser], [data-ink-range="opacity"]')).toEqual([]);
     calls.length = 0;
     await pressPop('[data-ink-ink="fountain"]');

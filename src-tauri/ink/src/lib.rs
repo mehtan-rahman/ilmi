@@ -313,6 +313,12 @@ impl<R: Runtime> Ink<R> {
         struct Pen { on: bool }
         self.call::<_, serde_json::Value>("pen", Pen { on }).await.map(|_| ())
     }
+    /// A dev run's: the canvases laid as they were before milestone 86, to measure against.
+    pub async fn plain(&self, on: bool) -> Result<(), String> {
+        #[derive(Serialize)]
+        struct Pen { on: bool }
+        self.call::<_, serde_json::Value>("plain", Pen { on }).await.map(|_| ())
+    }
     /// The tool held (milestone 82): `{ kind, color, width }`, a pen, a highlighter, the eraser or the lasso. Every canvas takes it.
     pub async fn tool(&self, tool: serde_json::Value) -> Result<(), String> {
         self.call::<_, serde_json::Value>("tool", serde_json::json!({ "tool": tool })).await.map(|_| ())
@@ -374,6 +380,10 @@ impl<R: Runtime> Ink<R> {
     /// A dev run's: a sheet's canvas emptied as an eraser would.
     pub async fn wipe(&self, sheet: &str) -> Result<(), String> {
         self.call::<_, serde_json::Value>("wipe", Sheet { sheet, drawing: None }).await.map(|_| ())
+    }
+    /// A dev run's: a sheet's drawing as PencilKit draws a picture of it at the screen's own pixels, where its canvas lies now, written as `<name>.png` in the app's Documents.
+    pub async fn picture(&self, sheet: &str, name: &str) -> Result<serde_json::Value, String> {
+        self.call("picture", serde_json::json!({ "sheet": sheet, "name": name })).await
     }
     /// How the canvases stand, for the checks.
     pub async fn state(&self) -> Result<serde_json::Value, String> {

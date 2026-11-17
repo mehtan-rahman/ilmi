@@ -35,8 +35,13 @@
 // be dragged, resized by the handle at its corner, cut, copied, duplicated, deleted and given another colour
 // (`selection`), and what was cut or copied is put down where the Pencil rests under the lasso (`paste`); the
 // page draws the menu, told where the selection lies (`picked`). The Pencil's own double tap and squeeze are told
-// to the page (`pencil`), which changes the tool. While two fingers pinch, the page says how its pages are
-// stretched (`pinch`) and the sheets are stretched with them, until the page lays them out at the new size.
+// to the page (`pencil`), which changes the tool.
+//
+// As sharp as the screen, and a zoom that is the glass's own (86). A canvas lies on whole pixels of the screen and
+// draws with more of them than it is shown with (`Sheet.over`), since PencilKit softens an edge over nearly two of
+// the pixels it draws. Two fingers stretch the pages here, the web view's own layer for them and the sheets over it
+// in the same turn (`Zoom`), with nothing sent to the page and back while they move; let go, the page says where the
+// pages will lie, they are eased there, and the page lays them out exactly as they are shown.
 
 import CoreHaptics
 import PencilKit
@@ -83,6 +88,41 @@ struct HostSpec: Decodable {
   /// Where a Pencil off every sheet opened a new one, before 82: read so an older page's scene still decodes, and not used.
   var open: Box?
   var sheets: [SheetSpec]
+  /// The column of pages that two fingers zoom, in the scroller's content, and the zoom it has now and may have (86).
+  var pages: Box?
+  var zoom: ZoomSpec?
+}
+
+struct ZoomSpec: Decodable {
+  var z: Double
+  var min: Double
+  var max: Double
+}
+
+/// Where the page wants its pages shown, to be gone to smoothly: a point `l` of the column (from its corner as it
+/// lies now) at `corner + (tx, ty) + k * l`; and where its scroller will then stand.
+struct ZoomTo: Decodable {
+  var k: Double
+  var tx: Double
+  var ty: Double
+}
+
+/// A zoom going on over a host's pages (86). Two fingers stretch the pages' own layer in the web view and the sheets
+/// over it in one turn of the main thread, with no word to the page and back; let go, the page says where the pages
+/// will lie at the zoom they stopped at (`ZoomTo`), they are eased there, and the page lays them out as they are shown.
+struct Zoom {
+  enum Phase: String { case fingers, waiting, settling, held }
+  var z0: CGFloat
+  var lo: CGFloat
+  var hi: CGFloat
+  /// The column's corner in the scroller's content, and the place between the fingers as it began, from that corner.
+  var corner: CGPoint
+  var from: CGPoint
+  /// Where the scroller stood when `t` was said.
+  var ref: CGPoint
+  var k: CGFloat = 1
+  var t = CGPoint.zero
+  var phase = Phase.fingers
 }
 
 struct SceneArgs: Decodable {
@@ -146,6 +186,9 @@ struct PinchArgs: Decodable {
   var k: Double?
   var dx: Double?
   var dy: Double?
+  /// Where the pages are eased to before the page lays them out (86), and over how many milliseconds.
+  var to: ZoomTo?
+  var ms: Double?
 }
 
 /// What is done with what the lasso holds: `cut`, `copy`, `duplicate`, `delete`, or `color` with a colour.
@@ -177,6 +220,12 @@ struct StrokeArgs: Decodable {
   var sheet: String
   var points: [[Double]]
   var rest: Bool
+}
+
+/// A dev run's: a sheet, and the name its picture is written under in the app's Documents.
+struct PictureArgs: Decodable {
+  var sheet: String
+  var name: String
 }
 
 /// What the lasso holds and what was cut or copied, after something was done with them.
@@ -268,10 +317,17 @@ struct SheetState: Encodable {
   /// The canvas on the screen, in the web view's points.
   let at: Box
   /// The pixels its strokes are drawn with to a point of the drawing: the canvas's zoom times its screen's scale
-  /// (PencilKit draws a canvas's strokes anew at its zoom). Ink at rest that is this canvas is as sharp as ink being
-  /// written (85); a check measures the edges in a capture as well.
+  /// (PencilKit draws a canvas's strokes anew at its zoom), which since 86 is more than the screen shows them with
+  /// (`Sheet.over`). Ink at rest that is this canvas is as sharp as ink being written (85); a check measures the edges
+  /// in a capture as well.
   let pixels: Double
   let blend: String?
+  /// Where the canvas lies on the glass, in the screen's own pixels: whole numbers, or everything on it is drawn between pixels (86).
+  let device: Box
+  /// What stretches it besides its zoom, canvas to window: 1 at rest.
+  let stretch: Double
+  /// The pixels each thing PencilKit draws into has to a pixel of the screen where it lies: 1 is a pixel for a pixel.
+  let drawn: [Double]
 }
 
 struct HostState: Encodable {
@@ -280,6 +336,12 @@ struct HostState: Encodable {
   let follows: Bool
   let offset: Double
   let port: Box
+  /// Whether the pages' own layer in the web view is found: two fingers stretch it here, with no word to the page (86).
+  let zoomer: Bool
+  /// The web view's layers that lie over the column, outermost first, for a dev run's notes: how deep, and where in the scroller's content.
+  let layers: [String]
+  /// A zoom going on: `fingers`, `waiting` for the page's word, `settling` there, `held` until the page has laid out.
+  let phase: String?
 }
 
 /// What the Pencil's last touch cost, in milliseconds from the touch's own instant.
@@ -345,6 +407,9 @@ final class Host {
   var spec: HostSpec
   weak var scroll: UIScrollView?
   var watching: NSKeyValueObservation?
+  /// The web view's own layer for the column of pages, and the zoom going on over it.
+  weak var pagesLayer: CALayer?
+  var live: Zoom?
   init(_ spec: HostSpec) {
     self.id = spec.id
     self.spec = spec
@@ -395,19 +460,49 @@ final class Sheet: NSObject, PKCanvasViewDelegate {
   /// What the page last gave it or took from it: PencilKit says a drawing changed when it is given one, whenever it likes.
   var given = PKDrawing()
 
-  func place(_ frame: CGRect, zoom z: CGFloat) {
-    if canvas.frame != frame { canvas.frame = frame }
-    if abs(z - zoom) > 0.0001 || canvas.zoomScale != z {
-      zoom = z
-      canvas.maximumZoomScale = max(canvas.maximumZoomScale, z)
-      canvas.minimumZoomScale = min(canvas.minimumZoomScale, z)
-      canvas.zoomScale = z
-      canvas.minimumZoomScale = z
-      canvas.maximumZoomScale = z
+  /// How many of its own pixels the canvas draws to each of the screen's, each way (86): PencilKit softens a stroke's
+  /// edge over nearly two of the pixels it draws with, so the canvas is made larger than it is shown and shown
+  /// smaller, and an edge is about one pixel of the screen. 1 where that would be more pixels than a canvas should hold.
+  var over: CGFloat = 1
+  /// Where it lies in its host's content, on whole pixels of the screen.
+  var box = CGRect.zero
+
+  func place(_ asked: CGRect, zoom z: CGFloat) {
+    let screen = canvas.window?.screen.scale ?? UIScreen.main.scale
+    // on whole pixels: a canvas between two is drawn across both, and all its ink with it
+    let x0 = (asked.minX * screen).rounded() / screen, y0 = (asked.minY * screen).rounded() / screen
+    let frame = Sheet.plain ? asked : CGRect(x: x0, y: y0, width: max(1, ((asked.maxX * screen).rounded() / screen) - x0), height: max(1, ((asked.maxY * screen).rounded() / screen) - y0))
+    let px = frame.width * frame.height * screen * screen
+    let k = Sheet.plain ? 1 : max(1, min(2, (Sheet.most / max(px, 1)).squareRoot()))
+    // (a whole number of the canvas's own pixels each way, so nothing of it is between two)
+    let size = Sheet.plain ? frame.size : CGSize(width: (frame.width * k * screen).rounded() / screen, height: (frame.height * k * screen).rounded() / screen)
+    if box == frame, over == k, abs(z - zoom) <= 0.0001, canvas.zoomScale == z * k { return }
+    box = frame
+    over = k
+    zoom = z
+    canvas.transform = .identity
+    canvas.bounds = CGRect(origin: .zero, size: size)
+    canvas.center = CGPoint(x: frame.midX, y: frame.midY)
+    canvas.transform = CGAffineTransform(scaleX: frame.width / size.width, y: frame.height / size.height)
+    let zz = z * k
+    if canvas.zoomScale != zz {
+      canvas.maximumZoomScale = max(canvas.maximumZoomScale, zz)
+      canvas.minimumZoomScale = min(canvas.minimumZoomScale, zz)
+      canvas.zoomScale = zz
+      canvas.minimumZoomScale = zz
+      canvas.maximumZoomScale = zz
     }
-    if canvas.contentSize != frame.size { canvas.contentSize = frame.size }
+    if canvas.contentSize != size { canvas.contentSize = size }
     if canvas.contentOffset != .zero { canvas.contentOffset = .zero }
   }
+
+  /// A dev run's: the canvases as they were before 86, wherever the page puts them and a pixel for a pixel, to measure against.
+  static var plain = false
+  /// The most pixels a canvas draws with: a page at fit on a 13-inch iPad twice over each way and to spare, less where memory is short.
+  static let most: CGFloat = {
+    let memory = ProcessInfo.processInfo.physicalMemory
+    return memory >= 7_000_000_000 ? 24_000_000 : memory >= 5_500_000_000 ? 16_000_000 : 8_000_000
+  }()
 
   func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
     if canvasView.drawing == given { return }
@@ -624,6 +719,9 @@ class InkPlugin: Plugin {
   private var snap: (sheet: Sheet, count: Int, until: TimeInterval)?
   private var lastShape: String?
   private var pinched: [String: CGFloat] = [:]
+  /// The host two fingers are zooming, and its scroller's pan, which waits while they do.
+  private weak var zooming: Host?
+  private weak var paused: UIPanGestureRecognizer?
   private var holes: [CGRect] = []
   private let taps = PencilTaps()
   /// Two and three fingers on the glass: a pinch, and taps. Heard here and told to the page, since where a finger
@@ -792,7 +890,10 @@ class InkPlugin: Plugin {
     // fingers that pinched are not fingers that tapped, though they come up together: a tap waits to hear there was no pinch
     two.require(toFail: pinch)
     three.require(toFail: pinch)
-    for g in [pinch, two, three] as [UIGestureRecognizer] {
+    // a finger tapped twice on the pages: fit, or the zoom they were last at
+    let twice = UITapGestureRecognizer(target: self, action: #selector(tappedTwice(_:)))
+    twice.numberOfTapsRequired = 2
+    for g in [pinch, two, three, twice] as [UIGestureRecognizer] {
       g.allowedTouchTypes = direct
       g.cancelsTouchesInView = false
       g.delaysTouchesBegan = false
@@ -807,16 +908,191 @@ class InkPlugin: Plugin {
   }
 
   @objc private func pinched(_ g: UIPinchGestureRecognizer) {
-    guard let web = web else { return }
-    let phase: String
+    guard let web = web, let layer = layer else { return }
+    let p = g.location(in: web.scrollView)
+    let scale = g.scale.isFinite ? g.scale : 1
     switch g.state {
-    case .began: phase = "begin"
-    case .changed: phase = "change"
-    case .ended: phase = "end"
-    default: phase = "cancel"
+    case .began:
+      zooming = nil
+      let q = g.location(in: layer)
+      if !holes.contains(where: { $0.contains(q) }), let h = hosts.values.first(where: { $0.clip.frame.contains(q) && $0.spec.pages != nil && $0.spec.zoom != nil }), h.live == nil {
+        bind(h)
+        follow(h)
+        if let l = pagesLayer(of: h), let scroll = h.scroll, let zs = h.spec.zoom, let pages = h.spec.pages {
+          // the pages stand still under the fingers: a scroll still running stops, and the scroller's own pan waits
+          scroll.setContentOffset(scroll.contentOffset, animated: false)
+          let pan = scroll.panGestureRecognizer
+          if pan.isEnabled { pan.isEnabled = false; paused = pan }
+          h.pagesLayer = l
+          let c = g.location(in: h.content)
+          let corner = CGPoint(x: pages.x, y: pages.y)
+          h.live = Zoom(z0: CGFloat(zs.z), lo: CGFloat(zs.min), hi: CGFloat(zs.max), corner: corner, from: CGPoint(x: c.x - corner.x, y: c.y - corner.y), ref: scroll.contentOffset)
+          zooming = h
+          emit(["kind": "pinch", "phase": "begin", "native": true, "host": h.id, "k": 1, "x": p.x, "y": p.y])
+          return
+        }
+      }
+      emit(["kind": "pinch", "phase": "begin", "k": scale, "x": p.x, "y": p.y])
+    case .changed:
+      guard let h = zooming, var z = h.live else {
+        emit(["kind": "pinch", "phase": "change", "k": scale, "x": p.x, "y": p.y])
+        return
+      }
+      z.k = rubber(z.z0 * scale, z.lo, z.hi) / z.z0
+      // (one finger lifted before the other: the place between them is no longer between two)
+      if g.numberOfTouches >= 2 {
+        let c = g.location(in: h.content)
+        z.t = CGPoint(x: c.x - z.corner.x - z.k * z.from.x, y: c.y - z.corner.y - z.k * z.from.y)
+      } else {
+        // about the place it was last held by
+        let was = h.live!
+        let at = CGPoint(x: was.t.x + was.k * was.from.x, y: was.t.y + was.k * was.from.y)
+        z.t = CGPoint(x: at.x - z.k * z.from.x, y: at.y - z.k * z.from.y)
+      }
+      h.live = z
+      stretch(h)
+      emit(["kind": "pinch", "phase": "change", "native": true, "host": h.id, "k": z.k, "x": p.x, "y": p.y])
+    default:
+      guard let h = zooming, var z = h.live else {
+        emit(["kind": "pinch", "phase": g.state == .ended ? "end" : "cancel", "k": scale, "x": p.x, "y": p.y])
+        return
+      }
+      zooming = nil
+      paused?.isEnabled = true
+      paused = nil
+      z.phase = .waiting
+      h.live = z
+      // where the place the pages were taken by is now, on the page: the page says where the pages come to rest
+      let at = h.content.convert(CGPoint(x: z.corner.x + z.t.x + z.k * z.from.x, y: z.corner.y + z.t.y + z.k * z.from.y), to: web.scrollView)
+      emit(["kind": "pinch", "phase": "end", "native": true, "host": h.id, "k": z.k, "x": at.x, "y": at.y, "lx": z.from.x, "ly": z.from.y])
+      // (a page that never answers leaves nothing stretched)
+      DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self, weak h] in
+        if let self = self, let h = h, h.live?.phase == .waiting { self.unstretch(h) }
+      }
+    }
+  }
+
+  /// A zoom past either end gives a little, and comes back when let go.
+  private func rubber(_ z: CGFloat, _ lo: CGFloat, _ hi: CGFloat) -> CGFloat {
+    if z > hi { return hi * pow(z / hi, 0.35) }
+    if z < lo { return lo * pow(z / lo, 0.35) }
+    return z
+  }
+
+  /// The web view's own layer for a host's column of pages: the outermost under its scroller that covers the column
+  /// and not much more (its pages' shadows, what hangs beside and under them). The page keeps the column a layer of
+  /// its own (`will-change`).
+  private func pagesLayer(of h: Host) -> CALayer? {
+    guard let scroll = h.scroll, let want = h.spec.pages?.rect, want.width > 0, want.height > 0 else { return nil }
+    var found: CALayer?
+    func look(_ l: CALayer, _ depth: Int) {
+      for k in l.sublayers ?? [] where found == nil {
+        let f = k.convert(k.bounds, to: scroll.layer)
+        // (not the scroller's whole content, which begins above the column with what stands over it)
+        if f.insetBy(dx: -1.5, dy: -1.5).contains(want), f.minY >= want.minY - 64, f.maxY <= want.maxY + 600, f.width <= want.width + 600 {
+          found = k
+          return
+        }
+        // (a layer that draws nothing of its own may be no size at all, and hold the column all the same)
+        if depth < 16 { look(k, depth + 1) }
+      }
+    }
+    // (anywhere in the web view: the web view keeps a layer inside a scroller that is no stacking context of its own
+    // beside the scroller, not under it, and moves it as the scroller scrolls)
+    look(web?.scrollView.layer ?? scroll.layer, 0)
+    return found
+  }
+
+  private func layersOver(_ h: Host) -> [String] {
+    guard let scroll = h.scroll, let want = h.spec.pages?.rect else {
+      // no scroller found for it: every scroll view the web view has, against where the page says the scroller is
+      var all: [String] = ["view \(Int(onLayer(h.spec.view).minX)),\(Int(onLayer(h.spec.view).minY)) \(Int(h.spec.view.w))x\(Int(h.spec.view.h)) tall \(Int(h.spec.height)) pages \(h.spec.pages != nil)"]
+      if let web = web, let layer = layer {
+        walk(web.scrollView) { v in
+          guard let s = v as? UIScrollView, s !== web.scrollView else { return }
+          let f = s.convert(s.bounds, to: layer)
+          all.append("\(Int(f.minX)),\(Int(f.minY)) \(Int(f.width))x\(Int(f.height)) holds \(Int(s.contentSize.width))x\(Int(s.contentSize.height)) \(s.window != nil) \(s.isHidden)")
+        }
+      }
+      return all
+    }
+    var out: [String] = ["want \(Int(want.minX)),\(Int(want.minY)) \(Int(want.width))x\(Int(want.height))"]
+    func look(_ l: CALayer, _ depth: Int) {
+      for k in l.sublayers ?? [] where out.count < 40 {
+        let f = k.convert(k.bounds, to: scroll.layer)
+        if f.intersects(want), f.height >= 40 { out.append("\(depth) \(Int(f.minX)),\(Int(f.minY)) \(Int(f.width))x\(Int(f.height))") }
+        if depth < 16 { look(k, depth + 1) }
+      }
+    }
+    look(web?.scrollView.layer ?? scroll.layer, 0)
+    return out
+  }
+
+  /// The pages and the sheets over them shown as the zoom going on has them: at once, or eased there over `ms`.
+  private func stretch(_ h: Host, over ms: Double = 0, then: (() -> Void)? = nil) {
+    guard let z = h.live else { then?(); return }
+    let off = h.scroll?.contentOffset ?? z.ref
+    // the sheets: a point `c` of the content at `k * c + d`, wherever the scroller has gone since
+    let d = CGPoint(x: off.x - z.ref.x + z.corner.x + z.t.x - z.k * z.corner.x, y: off.y - z.ref.y + z.corner.y + z.t.y - z.k * z.corner.y)
+    let b = h.content.layer.bounds
+    let a = h.content.layer.anchorPoint
+    let c = CGPoint(x: b.minX + b.width * a.x, y: b.minY + b.height * a.y)
+    let ink = CATransform3DMakeAffineTransform(CGAffineTransform(a: z.k, b: 0, c: 0, d: z.k, tx: d.x + (z.k - 1) * c.x, ty: d.y + (z.k - 1) * c.y))
+    // the pages' own layer, until the page has taken it over (`held`): about where it is pinned in the layer it lies in
+    var web: (CALayer, CATransform3D)? = nil
+    if z.phase != .held, let l = h.pagesLayer, let over = l.superlayer, let scroll = h.scroll {
+      let corner = over.convert(z.corner, from: scroll.layer)
+      let pin = l.position
+      web = (l, CATransform3DMakeAffineTransform(CGAffineTransform(a: z.k, b: 0, c: 0, d: z.k, tx: z.t.x + (1 - z.k) * (corner.x - pin.x), ty: z.t.y + (1 - z.k) * (corner.y - pin.y))))
+    }
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    if let then = then { CATransaction.setCompletionBlock(then) }
+    func set(_ l: CALayer, _ key: String, _ to: CATransform3D) {
+      if ms > 0 {
+        let move = CABasicAnimation(keyPath: key)
+        move.fromValue = (l.presentation() ?? l).value(forKeyPath: key)
+        move.toValue = NSValue(caTransform3D: to)
+        move.duration = ms / 1000
+        move.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        l.add(move, forKey: "ilmi.zoom.\(key)")
+      }
+      l.setValue(NSValue(caTransform3D: to), forKeyPath: key)
+    }
+    set(h.content.layer, "sublayerTransform", ink)
+    if let (l, t) = web { set(l, "transform", t) }
+    CATransaction.commit()
+  }
+
+  /// No zoom is going on over a host: the sheets as they lie, and the pages' layer too unless the page has it.
+  private func unstretch(_ h: Host) {
+    let was = h.live
+    h.live = nil
+    if zooming === h { zooming = nil; paused?.isEnabled = true; paused = nil }
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    h.content.layer.removeAllAnimations()
+    h.content.layer.sublayerTransform = CATransform3DIdentity
+    if let z = was, z.phase != .held, let l = h.pagesLayer {
+      l.removeAnimation(forKey: "ilmi.zoom.transform")
+      l.transform = CATransform3DIdentity
+    }
+    CATransaction.commit()
+    pinched[h.id] = nil
+  }
+
+  @objc private func tappedTwice(_ g: UITapGestureRecognizer) {
+    guard let web = web, let layer = layer, g.state == .ended else { return }
+    let q = g.location(in: layer)
+    if holes.contains(where: { $0.contains(q) }) { return }
+    guard let h = hosts.values.first(where: { $0.clip.frame.contains(q) && $0.spec.zoom != nil }), h.live == nil else { return }
+    // where a finger writes, two taps are two dots
+    if fingerWrites {
+      let c = layer.convert(q, to: h.content)
+      if h.spec.sheets.contains(where: { sheets[$0.id]?.hit.contains(c) == true }) { return }
     }
     let p = g.location(in: web.scrollView)
-    emit(["kind": "pinch", "phase": phase, "k": g.scale.isFinite ? g.scale : 1, "x": p.x, "y": p.y])
+    emit(["kind": "double", "host": h.id, "x": p.x, "y": p.y])
   }
 
   @objc private func tapped(_ g: UITapGestureRecognizer) {
@@ -962,7 +1238,7 @@ class InkPlugin: Plugin {
       erase(s, from: p, to: p)
       ringEraser(at: q, in: h)
     } else if tool.kind == "select" {
-      let z = max(s.canvas.zoomScale, 0.01)
+      let z = max(s.zoom, 0.01)
       if let k = picked, k.sheet === s, let box = held(k), hypot(p.x - box.maxX, p.y - box.maxY) <= gripReach / z {
         own = .resize(before: s.canvas.drawing, base: s.canvas.drawing.strokes, at: k.at, origin: box.origin, from: p, moved: false)
         emit(["kind": "unpicked", "moving": true])
@@ -1133,7 +1409,7 @@ class InkPlugin: Plugin {
 
   /// Every stroke the eraser came upon between `a` and `b` goes, whole.
   private func erase(_ s: Sheet, from a: CGPoint, to b: CGPoint) {
-    let r = CGFloat(max(tool.width, 1)) / max(s.canvas.zoomScale, 0.01)
+    let r = CGFloat(max(tool.width, 1)) / max(s.zoom, 0.01)
     let reach = CGRect(x: min(a.x, b.x), y: min(a.y, b.y), width: abs(a.x - b.x), height: abs(a.y - b.y)).insetBy(dx: -r, dy: -r)
     var left: [PKStroke] = []
     var gone = false
@@ -1169,7 +1445,7 @@ class InkPlugin: Plugin {
     for p in points.dropFirst() { path.addLine(to: p) }
     path.close()
     let box = path.bounds
-    let z = max(s.canvas.zoomScale, 0.01)
+    let z = max(s.zoom, 0.01)
     if box.width + box.height < 8 / z { return }
     let d = s.canvas.drawing
     var at: [Int] = []
@@ -1191,7 +1467,7 @@ class InkPlugin: Plugin {
   /// The page is told where what the lasso holds lies, in its host's content: its menu goes there.
   private func tellPicked() {
     guard let k = picked, let h = k.sheet.host, let box = held(k) else { return }
-    let z = k.sheet.canvas.zoomScale
+    let z = k.sheet.zoom
     let o = k.sheet.canvas.frame.origin
     emit(["kind": "picked", "sheet": k.sheet.id, "host": h.id, "count": k.at.count, "clip": clip.count, "x": o.x + box.minX * z, "y": o.y + box.minY * z, "w": box.width * z, "h": box.height * z])
   }
@@ -1260,7 +1536,7 @@ class InkPlugin: Plugin {
   /// What was cut or copied put down on `s` with its middle at `q` (the host's content), and held by the lasso.
   private func paste(on s: Sheet, at q: CGPoint) -> Bool {
     guard !down, !clip.isEmpty else { return false }
-    let z = max(s.canvas.zoomScale, 0.01)
+    let z = max(s.zoom, 0.01)
     let o = s.canvas.frame.origin
     var p = CGPoint(x: (q.x - o.x) / z, y: (q.y - o.y) / z)
     // kept on the sheet, as far as it fits
@@ -1296,7 +1572,7 @@ class InkPlugin: Plugin {
       hide(grip)
       return
     }
-    let z = k.sheet.canvas.zoomScale
+    let z = k.sheet.zoom
     let o = k.sheet.canvas.frame.origin
     let r = CGRect(x: o.x + box.minX * z, y: o.y + box.minY * z, width: box.width * z, height: box.height * z).insetBy(dx: -4, dy: -4)
     show(outline, in: h, path: UIBezierPath(rect: r).cgPath)
@@ -1433,7 +1709,7 @@ class InkPlugin: Plugin {
     // the stroke is the canvas's now: where it starts against where the Pencil came down
     if !ours, own == nil, var t = touched, t.lost == nil, let first = s.canvas.drawing.strokes.last?.path.first?.location {
       let z = s.canvas.zoomScale
-      t.lost = Double(hypot(first.x * z - touchedAtPoint.x, first.y * z - touchedAtPoint.y))
+      t.lost = Double(hypot(first.x * z - touchedAtPoint.x, first.y * z - touchedAtPoint.y) / max(s.over, 1))
       touched = t
       lastTouched.append(t)
       if lastTouched.count > 40 { lastTouched.removeFirst() }
@@ -1528,18 +1804,30 @@ class InkPlugin: Plugin {
     let x = h.scroll.map { $0.contentOffset.x } ?? CGFloat(h.spec.left ?? 0)
     let origin = CGPoint(x: view.minX - port.minX - x, y: view.minY - port.minY - y)
     if h.content.frame.origin != origin { h.content.frame = CGRect(origin: origin, size: CGSize(width: view.width, height: 1)) }
+    // the pages eased to where they will lie, and the page moving its scroller there: the sheets stay where they are shown
+    if h.live?.phase == .held { stretch(h) }
   }
 
   private func bind(_ h: Host) {
     let box = onLayer(h.spec.view)
     if let s = h.scroll, s.window != nil {
       let f = s.convert(s.bounds, to: layer)
-      if abs(f.minX - box.minX) < 3 && abs(f.minY - box.minY) < 3 && abs(f.width - box.width) < 3 && abs(f.height - box.height) < 3 { return }
+      // (still the scroller's: one the web view has let go of, its content no longer scrolling, stands where it stood)
+      if abs(f.minX - box.minX) < 3 && abs(f.minY - box.minY) < 3 && abs(f.width - box.width) < 3 && abs(f.height - box.height) < 3 && abs(s.contentSize.height - CGFloat(h.spec.height)) < 4 { return }
     }
     h.watching = nil
     h.scroll = scrollView(for: box, height: CGFloat(h.spec.height))
     h.watching = h.scroll?.observe(\.contentOffset, options: []) { [weak self, weak h] _, _ in
       if let self = self, let h = h { self.follow(h) }
+    }
+  }
+
+  private func bindSoon(_ h: Host, tries: Int) {
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self, weak h] in
+      guard let self = self, let h = h, self.hosts[h.id] === h, h.scroll == nil else { return }
+      self.bind(h)
+      self.follow(h)
+      if h.scroll == nil, tries > 1 { self.bindSoon(h, tries: tries - 1) }
     }
   }
 
@@ -1580,12 +1868,13 @@ class InkPlugin: Plugin {
         }()
         h.spec = spec
         // laid out anew: whatever a pinch stretched is as the page has it now
-        if self.pinched[h.id] != nil {
-          self.pinched[h.id] = nil
-          h.content.layer.sublayerTransform = CATransform3DIdentity
+        if self.pinched[h.id] != nil || h.live?.phase == .held {
+          self.unstretch(h)
         }
         self.bind(h)
         self.follow(h)
+        // (the web view makes a scroller's scroll view a moment after the page has laid it out: looked for again)
+        if h.scroll == nil { self.bindSoon(h, tries: 8) }
         for s in spec.sheets {
           listed.insert(s.id)
           self.apply(s, in: h)
@@ -1676,6 +1965,16 @@ class InkPlugin: Plugin {
     let args = try invoke.parseArgs(SheetArgs.self)
     DispatchQueue.main.async {
       self.sheets[args.sheet]?.canvas.drawing = PKDrawing()
+      invoke.resolve()
+    }
+  }
+
+  /// A dev run's: the canvases laid as they were before 86 (`on`), or as they are; each is laid again by the next scene.
+  @objc public func plain(_ invoke: Invoke) throws {
+    let args = try invoke.parseArgs(PenArgs.self)
+    DispatchQueue.main.async {
+      Sheet.plain = args.on
+      for s in self.sheets.values { s.box = .zero }
       invoke.resolve()
     }
   }
@@ -1825,24 +2124,66 @@ class InkPlugin: Plugin {
   @objc public func pinch(_ invoke: Invoke) throws {
     let args = try invoke.parseArgs(PinchArgs.self)
     DispatchQueue.main.async {
-      if let h = self.hosts[args.host] {
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        if let k = args.k {
-          // a sublayer's transform is about the layer's own middle
-          let b = h.content.layer.bounds
-          let a = h.content.layer.anchorPoint
-          let c = CGPoint(x: b.minX + b.width * a.x, y: b.minY + b.height * a.y)
-          let kk = CGFloat(k)
-          let t = CGAffineTransform(a: kk, b: 0, c: 0, d: kk, tx: CGFloat(args.dx ?? 0) + (kk - 1) * c.x, ty: CGFloat(args.dy ?? 0) + (kk - 1) * c.y)
-          h.content.layer.sublayerTransform = CATransform3DMakeAffineTransform(t)
-          self.pinched[h.id] = kk
-        } else {
-          h.content.layer.sublayerTransform = CATransform3DIdentity
-          self.pinched[h.id] = nil
-        }
-        CATransaction.commit()
+      guard let h = self.hosts[args.host] else {
+        invoke.resolve()
+        return
       }
+      if let to = args.to {
+        // the pages eased to where the page will lay them out; from rest when no fingers began it (a finger's two taps)
+        if h.live == nil {
+          self.bind(h)
+          self.follow(h)
+          if let l = self.pagesLayer(of: h), let scroll = h.scroll, let zs = h.spec.zoom, let pages = h.spec.pages {
+            h.pagesLayer = l
+            h.live = Zoom(z0: CGFloat(zs.z), lo: CGFloat(zs.min), hi: CGFloat(zs.max), corner: CGPoint(x: pages.x, y: pages.y), from: .zero, ref: scroll.contentOffset)
+          }
+        }
+        guard var z = h.live, z.phase != .held, z.phase != .settling else {
+          // nothing of the web view's to stretch: the page lays out at once
+          self.emit(["kind": "pinch", "phase": "settled", "native": false, "host": h.id, "k": 1, "x": 0, "y": 0])
+          invoke.resolve()
+          return
+        }
+        // (already there, to a pixel: nothing to ease)
+        let far = abs(z.k - CGFloat(to.k)) * max(h.spec.pages?.w ?? 1000, 1) > 1 || hypot(z.t.x - CGFloat(to.tx), z.t.y - CGFloat(to.ty)) > 1
+        z.k = CGFloat(to.k)
+        z.t = CGPoint(x: to.tx, y: to.ty)
+        z.phase = .settling
+        h.live = z
+        self.stretch(h, over: far ? max(0, args.ms ?? 0) : 0) { [weak self, weak h] in
+          guard let self = self, let h = h, h.live?.phase == .settling else { return }
+          h.live?.phase = .held
+          self.emit(["kind": "pinch", "phase": "settled", "native": true, "host": h.id, "k": to.k, "x": 0, "y": 0])
+          // (and a page that never lays out leaves nothing stretched)
+          DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self, weak h] in
+            if let self = self, let h = h, h.live?.phase == .held { self.unstretch(h) }
+          }
+        }
+        invoke.resolve()
+        return
+      }
+      if h.live != nil {
+        // (the page takes the zoom back: as they lie)
+        if args.k == nil { self.unstretch(h) }
+        invoke.resolve()
+        return
+      }
+      CATransaction.begin()
+      CATransaction.setDisableActions(true)
+      if let k = args.k {
+        // a sublayer's transform is about the layer's own middle
+        let b = h.content.layer.bounds
+        let a = h.content.layer.anchorPoint
+        let c = CGPoint(x: b.minX + b.width * a.x, y: b.minY + b.height * a.y)
+        let kk = CGFloat(k)
+        let t = CGAffineTransform(a: kk, b: 0, c: 0, d: kk, tx: CGFloat(args.dx ?? 0) + (kk - 1) * c.x, ty: CGFloat(args.dy ?? 0) + (kk - 1) * c.y)
+        h.content.layer.sublayerTransform = CATransform3DMakeAffineTransform(t)
+        self.pinched[h.id] = kk
+      } else {
+        h.content.layer.sublayerTransform = CATransform3DIdentity
+        self.pinched[h.id] = nil
+      }
+      CATransaction.commit()
       invoke.resolve()
     }
   }
@@ -1955,6 +2296,63 @@ class InkPlugin: Plugin {
     }
   }
 
+  /// The pixels to a pixel of the screen of every layer under a canvas that holds a picture or is drawn into by Metal.
+  private func drawn(_ canvas: UIView, screen: CGFloat) -> [Double] {
+    guard let top = canvas.window?.layer else { return [] }
+    var out = Set<Double>()
+    func look(_ l: CALayer) {
+      if l.bounds.width > 0, !l.isHidden {
+        let shown = l.convert(l.bounds, to: top).width * screen
+        var has: CGFloat = 0
+        if let m = l as? CAMetalLayer { has = m.drawableSize.width } else if l.contents != nil { has = l.bounds.width * l.contentsScale }
+        if has > 0, shown > 0 { out.insert((Double(has / shown) * 100).rounded() / 100) }
+      }
+      for k in l.sublayers ?? [] { look(k) }
+    }
+    look(canvas.layer)
+    return out.sorted()
+  }
+
+  /// A dev run's: a sheet's drawing as PencilKit draws a picture of it, a pixel of the picture to a pixel of the screen
+  /// where the canvas lies now, on white: what the canvas on the glass is held against (86).
+  @objc public func picture(_ invoke: Invoke) throws {
+    let args = try invoke.parseArgs(PictureArgs.self)
+    DispatchQueue.main.async {
+      guard let s = self.sheets[args.sheet] else {
+        invoke.reject("no such sheet")
+        return
+      }
+      let z = max(s.zoom, 0.01)
+      let screen = s.canvas.window?.screen.scale ?? UIScreen.main.scale
+      let size = s.box.size
+      var made: UIImage? = nil
+      UITraitCollection(userInterfaceStyle: .light).performAsCurrent {
+        made = s.canvas.drawing.image(from: CGRect(x: 0, y: 0, width: size.width / z, height: size.height / z), scale: z * screen)
+      }
+      guard let image = made, let cg = image.cgImage else {
+        invoke.reject("no picture")
+        return
+      }
+      let format = UIGraphicsImageRendererFormat()
+      format.scale = 1
+      format.opaque = true
+      let px = CGSize(width: cg.width, height: cg.height)
+      let png = UIGraphicsImageRenderer(size: px, format: format).pngData { c in
+        UIColor.white.setFill()
+        c.fill(CGRect(origin: .zero, size: px))
+        UIImage(cgImage: cg, scale: 1, orientation: .up).draw(in: CGRect(origin: .zero, size: px))
+      }
+      let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+      let name = args.name.replacingOccurrences(of: "/", with: "-")
+      do {
+        try png.write(to: docs.appendingPathComponent("\(name).png"))
+        invoke.resolve(["w": cg.width, "h": cg.height])
+      } catch {
+        invoke.reject("not written")
+      }
+    }
+  }
+
   /// How it all stands, for the checks.
   @objc public func state(_ invoke: Invoke) throws {
     DispatchQueue.main.async {
@@ -1965,7 +2363,10 @@ class InkPlugin: Plugin {
       let sheets = self.sheets.values.sorted { $0.id < $1.id }.map { s -> SheetState in
         let at = s.canvas.convert(s.canvas.bounds, to: layer)
         let onWeb = layer.convert(at, to: web.scrollView)
-        return SheetState(id: s.id, strokes: s.canvas.drawing.strokes.count, shown: !s.canvas.isHidden, dirty: s.dirty, at: Box(CGRect(origin: onWeb.origin, size: s.canvas.frame.size)), pixels: Double(s.canvas.zoomScale * (s.canvas.window?.screen.scale ?? UIScreen.main.scale)), blend: s.canvas.layer.compositingFilter as? String)
+        let screen = s.canvas.window?.screen.scale ?? UIScreen.main.scale
+        let inWindow = s.canvas.convert(s.canvas.bounds, to: nil)
+        let device = CGRect(x: inWindow.minX * screen, y: inWindow.minY * screen, width: inWindow.width * screen, height: inWindow.height * screen)
+        return SheetState(id: s.id, strokes: s.canvas.drawing.strokes.count, shown: !s.canvas.isHidden, dirty: s.dirty, at: Box(CGRect(origin: onWeb.origin, size: s.canvas.frame.size)), pixels: Double(s.canvas.zoomScale * screen), blend: s.canvas.layer.compositingFilter as? String, device: Box(device), stretch: Double(s.box.width > 0 ? inWindow.width / s.box.width : 1), drawn: self.drawn(s.canvas, screen: screen))
       }
       var heldAt: Box? = nil
       if let k = self.picked, let box = self.held(k) {
@@ -1974,9 +2375,9 @@ class InkPlugin: Plugin {
         heldAt = Box(layer.convert(on, to: web.scrollView))
       }
       let hosts = self.hosts.values.sorted { $0.id < $1.id }.map { h in
-        HostState(id: h.id, follows: h.scroll != nil, offset: Double(h.scroll?.contentOffset.y ?? -1), port: Box(h.clip.frame))
+        HostState(id: h.id, follows: h.scroll != nil, offset: Double(h.scroll?.contentOffset.y ?? -1), port: Box(h.clip.frame), zoomer: self.pagesLayer(of: h) != nil, layers: self.layersOver(h), phase: h.live?.phase.rawValue)
       }
-      invoke.resolve(State(sheets: sheets, hosts: hosts, tools: false, tool: self.tool, finger: self.finger, undo: self.history.canUndo, redo: self.history.canRedo, wheel: self.wheel != nil, selected: self.picked?.at.count ?? 0, held: heldAt, clip: self.clip.count, shape: self.lastShape, pinch: Double(self.pinched.values.first ?? 1), sharing: self.sharing, down: self.down, scribble: self.scribble, touched: self.touched, lastTouched: self.lastTouched))
+      invoke.resolve(State(sheets: sheets, hosts: hosts, tools: false, tool: self.tool, finger: self.finger, undo: self.history.canUndo, redo: self.history.canRedo, wheel: self.wheel != nil, selected: self.picked?.at.count ?? 0, held: heldAt, clip: self.clip.count, shape: self.lastShape, pinch: Double(self.hosts.values.compactMap { $0.live?.k }.first ?? self.pinched.values.first ?? 1), sharing: self.sharing, down: self.down, scribble: self.scribble, touched: self.touched, lastTouched: self.lastTouched))
     }
   }
 

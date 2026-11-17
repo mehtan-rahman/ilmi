@@ -107,6 +107,9 @@ export interface HostSpec {
   /** Where a Pencil off every sheet would open a new one, in its content: nowhere (milestone 82), always null. */
   open: Box | null;
   sheets: SheetSpec[];
+  /** The column of pages two fingers zoom, in the scroller's content, and the zoom it has and may have (milestone 86): the native side stretches it under the fingers itself. */
+  pages?: Box;
+  zoom?: { z: number; min: number; max: number };
 }
 
 /** What the native side says the Pencil did. */
@@ -136,10 +139,20 @@ export type LassoEvent =
   | { kind: 'rest'; sheet: string; host: string; x: number; y: number; clip: number }
   | { kind: 'shape'; sheet: string; shape: string };
 
-/** What the native side says two or three fingers did on the glass: tapped at once, or pinched (how far spread against how they began, and the place between them, on the page). */
+/**
+ * What the native side says fingers did on the glass: two or three tapped at
+ * once, one tapped twice on a host's pages (`double`), or two pinched (how
+ * far spread against how they began, and the place between them, on the
+ * page). A pinch it stretches itself is `native` (milestone 86): the pages
+ * of `host` follow the fingers with no word from the page; `end` says where
+ * the place they were taken by is (`x`, `y`) and what place of the column
+ * that was (`lx`, `ly`, from its corner), and `settled` that the pages are
+ * shown where the page asked (`settleSheets`).
+ */
 export type FingerEvent =
   | { kind: 'fingers'; n: number; x: number; y: number }
-  | { kind: 'pinch'; phase: 'begin' | 'change' | 'end' | 'cancel'; k: number; x: number; y: number };
+  | { kind: 'double'; host: string; x: number; y: number }
+  | { kind: 'pinch'; phase: 'begin' | 'change' | 'end' | 'cancel' | 'settled'; k: number; x: number; y: number; native?: boolean; host?: string; lx?: number; ly?: number };
 
 const fingerEars = new Set<(e: FingerEvent) => void>();
 /** `f` hears what two and three fingers do, wherever on the page: each lens takes what falls on it. Returns the undoing. */
@@ -179,6 +192,28 @@ export function lassoPaste(): Promise<void> {
 export function pinchSheets(host: string, at: { k: number; dx: number; dy: number } | null): void {
   if (!hasCanvas()) return;
   void invoke('ink_pinch', { pinch: at ? { host, ...at } : { host } }).catch(() => {});
+}
+
+/**
+ * The pages of `host` eased to where they will lie once laid out at another
+ * zoom (milestone 86): a point `l` of their column, from its corner as it
+ * lies, shown at `corner + (tx, ty) + k * l`. The native side says `settled`
+ * when they are there (at once when they already are).
+ */
+export function settleSheets(host: string, to: { k: number; tx: number; ty: number }, ms: number): void {
+  if (!hasCanvas()) return;
+  void invoke('ink_pinch', { pinch: { host, to: { k: to.k, tx: to.tx, ty: to.ty }, ms } }).catch(() => {});
+}
+
+let frozen = false;
+let thaw: ReturnType<typeof setTimeout> | null = null;
+/** While a zoom is being handed from the fingers to the layout no scene is sent: the canvases stay as they are shown until the pages are laid out, then are told once. */
+export function holdScenes(on: boolean): void {
+  frozen = on;
+  if (thaw !== null) { clearTimeout(thaw); thaw = null; }
+  // (never held for good)
+  if (on) thaw = setTimeout(() => { thaw = null; frozen = false; sceneSoon(); }, 4000);
+  else sceneSoon();
 }
 
 /** A sheet's strokes in the store. */
@@ -294,6 +329,7 @@ let afters: (() => void)[] = [];
 const OVER = '[data-ink-over], .pop-menu, .ctx-menu, .sel-cue, .pdf-peek, .pdf-bar, .palette-panel, .notice';
 
 async function sendScene(): Promise<void> {
+  if (frozen) return;
   const hosts = [...surfaces].map((s) => s.host()).filter((h): h is HostSpec => h !== null);
   const dark = document.documentElement.dataset.theme === 'dark';
   // what the page lays over the sheets (a tool's settings, a menu, the lasso's): no place to write
@@ -323,7 +359,7 @@ export function sceneSoon(): void {
 }
 
 function heard(e: PenEvent | ToolEvent | LassoEvent | FingerEvent): void {
-  if (e.kind === 'fingers' || e.kind === 'pinch') { for (const f of fingerEars) f(e); return; }
+  if (e.kind === 'fingers' || e.kind === 'pinch' || e.kind === 'double') { for (const f of fingerEars) f(e); return; }
   if (e.kind === 'history' || e.kind === 'color' || e.kind === 'pencil') { toolsHeard(e); return; }
   if (e.kind === 'picked') { useLasso.setState({ picked: { sheet: e.sheet, host: e.host, count: e.count, clip: e.clip, box: { x: e.x, y: e.y, w: e.w, h: e.h } }, rest: null }); sceneSoon(); return; }
   if (e.kind === 'unpicked') { if (useLasso.getState().picked) useLasso.setState({ picked: null }); return; }

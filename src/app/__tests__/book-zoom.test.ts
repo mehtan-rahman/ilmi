@@ -33,7 +33,7 @@ vi.mock('../bookPdf.js', () => ({
 }));
 vi.mock('../vault.js', async (orig) => ({ ...(await orig<typeof import('../vault.js')>()), currentVault: () => null }));
 
-const { Pdf, ZOOMS, ZOOM_MAX, ZOOM_MIN, inkScale, zoomHeld, zoomStep } = await import('../Pdf.js');
+const { Pdf, ZOOMS, ZOOM_MAX, ZOOM_MIN, inkScale, onPixel, pageGap, pageTops, pagesWidth, zoomHeld, zoomStep } = await import('../Pdf.js');
 const { useApp } = await import('../store.js');
 globalThis.ResizeObserver ??= class { observe() {} unobserve() {} disconnect() {} } as unknown as typeof ResizeObserver;
 globalThis.IntersectionObserver ??= class { observe() {} unobserve() {} disconnect() {} } as unknown as typeof IntersectionObserver;
@@ -133,6 +133,87 @@ describe('the steps', () => {
   });
 });
 
+describe('the pages on the screen\'s pixels', () => {
+  /** `v` px is a whole number of a screen's pixels, `dpr` to the px. */
+  const whole = (v: number, dpr: number) => Math.abs(v * dpr - Math.round(v * dpr)) < 1e-6;
+
+  it('a length is brought to the nearest whole pixel of the screen, a px, a half or a third of one', () => {
+    expect(onPixel(1333.3333, 1)).toBe(1333);
+    expect(onPixel(1333.3333, 2)).toBe(1333.5);
+    expect(onPixel(1333.3333, 3)).toBeCloseTo(1333 + 1 / 3, 9);
+    expect(onPixel(10.2, 2)).toBe(10);
+    expect(onPixel(10.3, 2)).toBe(10.5);
+    expect(onPixel(10.75, 2)).toBe(11);
+    // what is on one already is as it was
+    for (const v of [0, 18, 612, 800.5]) expect(onPixel(v, 2)).toBe(v);
+    expect(onPixel(800.5, 1)).toBe(801);
+  });
+
+  it('wider than the pane, or as wide, the pages are the fit times the zoom on whole pixels', () => {
+    expect(pagesWidth(800, 800, 1, 2)).toBe(800);
+    expect(pagesWidth(800, 800, 1.25, 1)).toBe(1000);
+    expect(pagesWidth(833, 833, 1.37, 1)).toBe(1141);
+    expect(pagesWidth(833, 833, 1.37, 2)).toBe(1141);
+    expect(pagesWidth(833, 833, 1.37, 3)).toBeCloseTo(1141 + 1 / 3, 9);
+    expect(pagesWidth(1032.5, 1032.5, 1.33, 2)).toBe(1373);
+    for (const dpr of [1, 2, 3]) for (const z of [1, 1.04, 1.37, 2.5, 4]) expect(whole(pagesWidth(1032.5, 1032.5, z, dpr), dpr)).toBe(true);
+  });
+
+  it('narrower than the pane and centred in it, they leave as many whole pixels either side', () => {
+    // a pane 1024 across, pages at 73%: 747.52 wide would begin 138.24 in, between two pixels
+    for (const dpr of [2, 3]) {
+      for (const [colW, z] of [[1024, 0.73], [1032, 0.5], [1366, 0.96], [834, 0.61], [1023.5, 0.77]] as const) {
+        const w = pagesWidth(colW, colW, z, dpr);
+        const side = (colW - w) / 2;
+        expect(whole(side, dpr)).toBe(true);
+        expect(w).toBeLessThan(colW);
+        // by under a pixel either side
+        expect(Math.abs(w - colW * z)).toBeLessThanOrEqual(1 / dpr + 1e-9);
+      }
+    }
+    expect(pagesWidth(1024, 1024, 0.73, 2)).toBe(747.52 + 2 * (138.24 - 138));
+    expect(pagesWidth(1024, 1024, 0.73, 3)).toBeCloseTo(1024 - 2 * (138 + 1 / 3), 9);
+    expect(pagesWidth(800, 800, 0.75, 1)).toBe(600);
+    // a pane wider than a page is ever fitted to: the fit is narrower than it at 100%
+    expect(pagesWidth(1400, 1500.5, 1, 2)).toBe(1500.5 - 2 * 50.5);
+  });
+
+  it('with no pane measured yet they are the fit times the zoom, as it comes', () => {
+    expect(pagesWidth(120, 0, 1, 2)).toBe(120);
+    expect(pagesWidth(120, 0, 1.37, 2)).toBe(120 * 1.37);
+    expect(pagesWidth(120, 0, 1.37, 3)).toBe(120 * 1.37);
+  });
+
+  it('the room between two pages grows with the zoom, on whole pixels, and is never none', () => {
+    expect(ZOOMS.map((z) => pageGap(z, 1))).toEqual([9, 14, 18, 23, 27, 36, 45, 54, 72]);
+    expect(ZOOMS.map((z) => pageGap(z, 2))).toEqual([9, 13.5, 18, 22.5, 27, 36, 45, 54, 72]);
+    expect(pageGap(1.37, 1)).toBe(25);
+    expect(pageGap(1.37, 2)).toBe(24.5);
+    expect(pageGap(1.37, 3)).toBeCloseTo(24 + 2 / 3, 9);
+    expect(pageGap(0.01, 1)).toBe(1);
+    expect(pageGap(0.01, 2)).toBe(0.5);
+    expect(pageGap(0, 3)).toBeCloseTo(1 / 3, 9);
+  });
+
+  it('each page is as tall as whole pixels, the next one that and the room between further down; nothing under the last', () => {
+    const sizes = [{ w: 600, h: 800 }, { w: 600, h: 400 }, { w: 600, h: 800 }];
+    // 1000 across: 1333⅓ and 666⅔ tall, drawn 1333 and 667
+    expect(pageTops(sizes, 1000 / 600, 23, 1)).toEqual({ at: [0, 0, 1333 + 23, 1333 + 23 + 667 + 23], total: 1333 + 23 + 667 + 23 + 1333 });
+    expect(pageTops(sizes, 1000 / 600, 22.5, 2)).toEqual({ at: [0, 0, 1333.5 + 22.5, 1333.5 + 22.5 + 666.5 + 22.5], total: 1333.5 + 22.5 + 666.5 + 22.5 + 1333.5 });
+    for (const dpr of [1, 2, 3]) {
+      const scale = 1141 / 612;
+      const t = pageTops([{ w: 612, h: 792 }, { w: 612, h: 792 }, { w: 595, h: 842 }, { w: 612, h: 792 }], scale, pageGap(1.37, dpr), dpr);
+      for (const y of [...t.at, t.total]) expect(whole(y, dpr)).toBe(true);
+      expect(t.at[2]! - t.at[1]!).toBeCloseTo(onPixel(792 * scale, dpr) + pageGap(1.37, dpr), 9);
+      expect(t.total - t.at[4]!).toBeCloseTo(onPixel(792 * scale, dpr), 9);
+    }
+    // sheets that run on as one: nothing between them
+    expect(pageTops([{ w: 612, h: 792 }, { w: 612, h: 792 }], 1, 0, 2)).toEqual({ at: [0, 0, 792], total: 1584 });
+    expect(pageTops([{ w: 612, h: 792 }], 1, 18, 1)).toEqual({ at: [0, 0], total: 792 });
+    expect(pageTops([], 1, 18, 1)).toEqual({ at: [0], total: 0 });
+  });
+});
+
 describe("a book's pages zoomed", () => {
   it('fit is the pane; ⌘= draws the pages larger a step at a time, ⌘− smaller, ⌘0 fitted again', async () => {
     await mountBook();
@@ -140,7 +221,9 @@ describe("a book's pages zoomed", () => {
     expect(view().dataset.zoom).toBe('1');
     await cmd('=');
     expect(px(page(1), 'width')).toBeCloseTo(1000);
-    expect(px(page(1), 'height')).toBeCloseTo(1000 * 800 / 600);
+    // (a page is as tall as whole pixels of the screen, one to the px here: 1333, not 1333⅓)
+    expect(px(page(1), 'height')).toBe(onPixel(1000 * 800 / 600, 1));
+    expect(px(page(1), 'height')).toBe(1333);
     await cmd('=');
     expect(px(page(1), 'width')).toBeCloseTo(1200);
     expect(view().dataset.zoom).toBe('1.5');
@@ -203,11 +286,15 @@ describe("a book's pages zoomed", () => {
   it('the pages below move down with the ones above, and the column is as wide as a page', async () => {
     await mountBook();
     const gap = px(page(2), 'top') - px(page(1), 'height');
+    expect(gap).toBe(pageGap(1, 1));
     await cmd('=');
     await cmd('=');
     await cmd('=');
-    expect(px(page(1), 'height')).toBeCloseTo(2 * 800 * 800 / 600);
-    expect(px(page(2), 'top') - px(page(1), 'height')).toBeCloseTo(gap);
+    expect(px(page(1), 'height')).toBe(onPixel(2 * 800 * 800 / 600, 1));
+    // the room between two pages grows with them (86): a zoom is the same picture larger
+    expect(px(page(2), 'top') - px(page(1), 'height')).toBe(2 * gap);
+    expect(px(page(3), 'top')).toBe(2 * (px(page(1), 'height') + 2 * gap));
+    expect([1, 2, 3].map((n) => px(page(n), 'top'))).toEqual(pageTops([1, 2, 3].map(() => ({ w: 600, h: 800 })), 1600 / 600, pageGap(2, 1), 1).at.slice(1));
     expect(px(host.querySelector('.pdf-pages'), 'width')).toBeCloseTo(1600);
   });
 
@@ -271,7 +358,8 @@ describe("a book's pages zoomed", () => {
     const grown = host.querySelector<HTMLElement>('.pbox.pending:not(.ghost)')!;
     expect(px(grown, 'left')).toBeCloseTo(0.25 * 1600);
     expect(px(grown, 'width')).toBeCloseTo(0.5 * 1600);
-    expect(px(grown, 'top')).toBeCloseTo(0.25 * 1600 * 800 / 600);
+    // (of the page as it is drawn, on whole pixels: 2133 tall)
+    expect(px(grown, 'top')).toBeCloseTo(0.25 * onPixel(1600 * 800 / 600, 1));
     unmount();
     // drawn at 200% on another book: the same fractions of the page
     await mountBook();
@@ -293,7 +381,11 @@ describe("a book's pages zoomed", () => {
     await act(async () => { host.querySelector('.book-pages')!.dispatchEvent(new Event('scroll')); });
     await settle();
     expect(page(1).style.getPropertyValue('--total-scale-factor')).toBe(String(1200 / 600));
-    expect(page(1).querySelector<HTMLElement>('canvas')!.style.width).toBe('1200px');
+    // the canvas fills the page's box, which is the zoomed page on whole pixels, a pixel of it to each of the screen's (86)
+    const canvas = page(1).querySelector<HTMLCanvasElement>('canvas')!;
+    expect([canvas.style.width, canvas.style.height]).toEqual(['100%', '100%']);
+    expect([page(1).style.width, page(1).style.height]).toEqual(['1200px', '1600px']);
+    expect([canvas.width, canvas.height]).toEqual([1200, 1600]);
   });
 
   it('a pinch steps once a gesture, however many events it sends', async () => {

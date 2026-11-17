@@ -58,7 +58,7 @@ vi.mock('../bookPdf.js', () => ({
 }));
 vi.mock('../vault.js', async (orig) => ({ ...(await orig<typeof import('../vault.js')>()), currentVault: () => null }));
 
-const { Pdf } = await import('../Pdf.js');
+const { Pdf, onPixel } = await import('../Pdf.js');
 const { Palette } = await import('../Palette.js');
 const { useApp } = await import('../store.js');
 const { lensOf, trailOf, takeContents, bookInFront } = await import('../book.js');
@@ -143,7 +143,8 @@ const typeIn = async (el: HTMLInputElement, text: string) => {
 };
 const back = () => Number(view().dataset.back);
 const fwd = () => Number(view().dataset.fwd);
-const H = 800 * 800 / 600;
+/** A page's height in the pane: 600 × 800 fitted to 800 across, on whole pixels of the screen (one to the px here: 1067, not 1066⅔; 86). */
+const H = onPixel(800 * 800 / 600, 1);
 /** The scroll that puts `y` of page `n` under the top of the view, `room` px left over it. */
 const scrollFor = (n: number, y: number, room = 0) => 100 + px(page(n), 'top') + y * H - 60 - room;
 // on page 1: the inside link, the web link, and the word `(3.12)`

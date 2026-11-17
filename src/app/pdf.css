@@ -494,6 +494,8 @@ html[data-mobile="1"] .insp .insp-marks .cl-x { opacity: 1; padding: 6px 8px; ma
 /* a page kept stretched while it is drawn again at a new size, and the pages under two fingers */
 .book .pdf-page > canvas { display: block; }
 .book .pdf-view[data-pinch="1"] .pdf-pages { backface-visibility: hidden; }
+/* on a device the column of pages is a layer of its own, pinned by its corner: two fingers stretch that layer under them (86) */
+html[data-mobile="1"] .book .pdf-pages { will-change: transform; transform-origin: 0 0; }
 
 /* the lasso's menu: a strip of words beside what the lasso holds, in the scroller's own content */
 .ink-menu {

@@ -76,7 +76,7 @@ const fakeVault = {
 let vaultNow: unknown = fakeVault;
 vi.mock('../vault.js', async (orig) => ({ ...(await orig<typeof import('../vault.js')>()), currentVault: () => vaultNow, openNode: (id: string) => { opened.push(id); } }));
 
-const { Pdf } = await import('../Pdf.js');
+const { Pdf, onPixel } = await import('../Pdf.js');
 const { Palette } = await import('../Palette.js');
 const { useApp } = await import('../store.js');
 const { trailOf, takePlace, togglePortalsBeside, followed, portalPending, setPortalPending, marksOf, loadMarks, markList, setMark } = await import('../book.js');
@@ -104,7 +104,8 @@ const page = (n: number, h = host) => h.querySelector<HTMLElement>(`.pdf-page[da
 const view = (h = host) => h.querySelector<HTMLElement>('.pdf-view')!;
 const sc = (h = host) => h.querySelector<HTMLElement>('.book-pages')!;
 const scrolled = async (top?: number, h = host) => { await act(async () => { if (top !== undefined) sc(h).scrollTop = top; sc(h).dispatchEvent(new Event('scroll')); }); await settle(); };
-const H = 800 * 800 / 600;
+/** A page's height in the pane: 600 × 800 fitted to 800 across, on whole pixels of the screen (one to the px here: 1067, not 1066⅔; 86). */
+const H = onPixel(800 * 800 / 600, 1);
 /** The scroll that puts `y` of page `n` under the top of the view, `room` px left over it. */
 const scrollFor = (n: number, y: number, room = 0, h = host) => 100 + px(page(n, h), 'top') + y * H - 60 - room;
 

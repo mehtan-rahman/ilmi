@@ -26,7 +26,7 @@ import { CUSTOM, useInkTools } from './inkTools.js';
 import { Icon } from './icons.js';
 import { failed, notify } from './land.js';
 import { hapticTick } from './haptics.js';
-import { MARGIN_AT, MM, PAPER_DOT, PAPER_MARGIN, PAPER_RULE, PAPER_WHITE, RULE_TOP, paperOf, paperPaths, ruleOf, sheetSize, type PaperSpec } from './paper.js';
+import { MARGIN_AT, MM, PAPER_DOT, PAPER_MARGIN, PAPER_RULE, PAPER_WHITE, RULE_TOP, paperOf, paperPaths, ruleOf, sheetSize, type PaperSpec, ruleWidth } from './paper.js';
 import { popMenu, type PopItem } from './popMenu.js';
 import type { PDFDocumentProxy } from './pdfjs.js';
 import { useApp } from './store.js';
@@ -34,16 +34,19 @@ import { currentVault } from './vault.js';
 import { PAPERS, addSheet, addSheetAfter, duplicateSheet, keepSetup, moveSheet, setPaper, setSetup, setupOf, type Setup } from './written.js';
 
 /** A sheet's paper, small or large: the sheet in points, whatever size it is drawn at. */
-export function PaperSheet({ kind, spec }: { kind?: PaperKind; /** The paper with its page setup; a kind alone is a Letter sheet as a new notebook has it. */ spec?: PaperSpec }) {
+export function PaperSheet({ kind, spec, px }: { kind?: PaperKind; /** The paper with its page setup; a kind alone is a Letter sheet as a new notebook has it. */ spec?: PaperSpec; /** The pixels of the screen it is drawn with to the point, where its rules are to lie on them (a page; 86). */ px?: number }) {
   const of = spec ?? kind ?? 'blank';
   const key = typeof of === 'string' ? of : `${of.kind} ${of.w} ${of.h} ${of.rule} ${of.margin} ${of.top} ${of.run} ${of.at}`;
+  const wide = px && px > 0 ? ruleWidth(px) : 0;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const p = useMemo(() => paperPaths(of), [key]);
+  const p = useMemo(() => paperPaths(of, wide ? { px: px!, w: wide } : undefined), [key, px]);
+  // a rule a whole number of the screen's pixels wide, on whole pixels: drawn as it is, nothing to round
+  const line = wide ? { strokeWidth: wide / (typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1), shapeRendering: 'auto' as const } : undefined;
   return (
     <svg className="paper" data-paper={typeof of === 'string' ? of : of.kind} data-rule={typeof of === 'string' ? undefined : of.rule} viewBox={`0 0 ${p.w} ${p.h}`} preserveAspectRatio="none" aria-hidden="true">
       <rect className="paper-sheet" width={p.w} height={p.h} fill={PAPER_WHITE} />
-      {p.rules && <path className="paper-rule" d={p.rules} stroke={PAPER_RULE} vectorEffect="non-scaling-stroke" />}
-      {p.margin && <path className="paper-rule paper-margin" d={p.margin} stroke={PAPER_MARGIN} vectorEffect="non-scaling-stroke" />}
+      {p.rules && <path className="paper-rule" d={p.rules} stroke={PAPER_RULE} vectorEffect="non-scaling-stroke" style={line} />}
+      {p.margin && <path className="paper-rule paper-margin" d={p.margin} stroke={PAPER_MARGIN} vectorEffect="non-scaling-stroke" style={line} />}
       {p.dots && <path className="paper-dot" d={p.dots} stroke={PAPER_DOT} strokeWidth={p.width} strokeDasharray={`0 ${p.pitch}`} />}
     </svg>
   );

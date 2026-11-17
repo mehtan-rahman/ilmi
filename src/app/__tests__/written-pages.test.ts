@@ -29,7 +29,7 @@ import { Vault, storeFs, type InkStroke, type StoreFs } from '../../vault/index.
 import { memDrawing, memPagePicture, memSplit, memStore } from '../../vault/mem-store.js';
 import { passageMarksOf } from '../../pdf/index.js';
 import { emptyPanes, openTab } from '../panes.js';
-import { PAPER_DOT, PAPER_MARGIN, PAPER_RULE, PAPER_WHITE, drawPaper, paperLines, paperOf, paperPaths, sheetSize } from '../paper.js';
+import { PAPER_DOT, PAPER_MARGIN, PAPER_RULE, PAPER_WHITE, drawPaper, paperLines, paperOf, paperPaths, ruleWidth, sheetSize } from '../paper.js';
 import { useApp, type DocInfo } from '../store.js';
 
 const ROOT = '/collections/paper';
@@ -160,6 +160,8 @@ const click = (el: Element) => fire(el, new MouseEvent('click', { bubbles: true,
 const key = (k: string) => fire(window, new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));
 const ptr = (type: string, x: number, y: number) => new PointerEvent(type, { bubbles: true, cancelable: true, pointerId: 3, pointerType: 'mouse', isPrimary: true, button: 0, clientX: x, clientY: y });
 const pageEl = (n: number) => q<HTMLElement>(`.pdf-page[data-page="${n}"]`)!;
+/** How a page's paper is drawn here: a pixel to the point (the pane is 0 wide, the screen's ratio 1), its rules a pixel wide, so each is moved half a pixel to cover a whole one (86). */
+const ON = { px: 1, w: ruleWidth(1) };
 const top = (n: number) => (n - 1) * (H + GAP);
 /** A box dragged by the mouse on the page at place `n`. */
 const box = async (n: number) => {
@@ -241,6 +243,51 @@ describe('the paper', () => {
     expect(paperPaths('dotted')).toMatchObject({ rules: '', pitch: 20 });
     expect(paperPaths('dotted').dots.startsWith('M26 26H586')).toBe(true);
     expect(paperPaths('blank')).toMatchObject({ rules: '', dots: '' });
+  });
+
+  it('a rule is half a point wide in the screen\'s pixels, a whole number of them and never under one', () => {
+    expect([0.5, 1, 2, 2.4836, 2.9].map(ruleWidth)).toEqual([1, 1, 1, 1, 1]);
+    expect([3, 4, 4.9672, 5, 6, 7.4508].map(ruleWidth)).toEqual([2, 2, 2, 3, 3, 4]);
+  });
+
+  it('on a page its rules lie on the screen\'s pixels: each moved by under half of one to where its edges fall between two; told nothing of the screen it is as the sheet has it', () => {
+    /** Every number of a path's `M`s: a rule's `y`, a grid line's `x`. */
+    const ys = (d: string) => [...d.matchAll(/M0 ([\d.]+)H/g)].map((m) => Number(m[1]));
+    const xs = (d: string) => [...d.matchAll(/M([\d.]+) 0V/g)].map((m) => Number(m[1]));
+    const whole = (v: number) => Math.abs(v - Math.round(v)) < 1e-3;
+    // an iPad Pro 13 at fit: 2.4836 pixels to the point, a rule one of them wide
+    const px = 2.4836;
+    for (const [paper, w] of [['ruled', 1], ['grid', 1], [paperOf({ paper: 'ruled', rule: 25, margin: 90, pageless: true }, 1), 1], ['grid', 2], ['ruled', 3]] as const) {
+      const was = paperPaths(paper);
+      const on = paperPaths(paper, { px, w });
+      const [a, b] = [[...ys(was.rules), ...xs(was.rules), ...xs(was.margin)], [...ys(on.rules), ...xs(on.rules), ...xs(on.margin)]];
+      expect(b.length).toBe(a.length);
+      expect(b.length).toBeGreaterThan(20);
+      for (const [i, v] of b.entries()) {
+        // both its edges on whole pixels
+        expect(whole(v * px - w / 2)).toBe(true);
+        expect(whole(v * px + w / 2)).toBe(true);
+        expect(Math.abs(v - a[i]!) * px).toBeLessThanOrEqual(0.5 + 1e-3);
+      }
+      // the sheet and the lines' far ends are as they were
+      expect([on.w, on.h, on.pitch, on.width]).toEqual([was.w, was.h, was.pitch, was.width]);
+      expect(on.rules.replace(/[\d.]+/g, '#')).toBe(was.rules.replace(/[\d.]+/g, '#'));
+    }
+    expect(paperPaths('ruled', { px, w: 1 }).rules.startsWith('M0 71.8715H612M0 96.03H612')).toBe(true);
+    // a pixel to the point: half a pixel on; two to the point, a rule one wide: a quarter of a point
+    expect(paperPaths('ruled', { px: 1, w: 1 }).rules.startsWith('M0 72.5H612M0 96.5H612')).toBe(true);
+    expect(paperPaths('ruled', { px: 2, w: 1 }).rules.startsWith('M0 72.25H612M0 96.25H612')).toBe(true);
+    // a rule two pixels wide stands on a whole one
+    expect(paperPaths('ruled', { px: 4, w: 2 }).rules.startsWith('M0 72H612M0 96H612')).toBe(true);
+    expect(paperPaths(paperOf({ paper: 'ruled', margin: 90 }), { px: 1, w: 1 }).margin).toBe('M90.5 0V792');
+    // dots are not rules: where they were
+    expect(paperPaths('dotted', { px, w: 1 })).toEqual(paperPaths('dotted'));
+    // with nothing said of the screen, or nothing that is one: the sheet's own
+    for (const kind of ['blank', 'ruled', 'grid', 'dotted'] as const) {
+      expect(paperPaths(kind, undefined)).toEqual(paperPaths(kind));
+      expect(paperPaths(kind, { px: 0, w: 1 })).toEqual(paperPaths(kind));
+    }
+    expect(paperPaths('ruled').rules.startsWith('M0 72H612M0 96H612')).toBe(true);
   });
 
   it('is drawn onto a canvas for a clip: white, then the part of its rules the clip holds, a pixel each', () => {
@@ -403,7 +450,9 @@ describe('a written notebook in the lens', () => {
     expect(q('img.page-ink[data-page="1"]')).not.toBeNull();
     expect(q('img.page-ink[data-page="5"]')).toBeNull();
     expect(pageEl(5).dataset.paper).toBe('grid');
-    expect(q('svg.paper .paper-rule')!.getAttribute('d')).toContain('M6 0V792');
+    // (a page's rules lie on the screen's pixels: half a pixel on from where the sheet has them)
+    expect(q('svg.paper .paper-rule')!.getAttribute('d')).toBe(paperPaths('grid', ON).rules);
+    expect(q('svg.paper .paper-rule')!.getAttribute('d')).toContain('M6.5 0V792');
     for (const kind of ['dotted', 'blank', 'ruled'] as const) {
       await act(async () => { useApp.setState((s) => ({ docs: { ...s.docs, [NB]: { ...s.docs[NB]!, written: { ...s.docs[NB]!.written!, paper: kind } } } })); });
       expect(q('svg.paper')!.getAttribute('data-paper')).toBe(kind);
@@ -483,8 +532,9 @@ describe('a written notebook in the lens', () => {
     await wait(150);
     expect(written()).toMatchObject({ paper: 'ruled', rule: 18, margin: 90 });
     expect(qa('.pdf-page > svg.paper').map((s) => s.getAttribute('data-rule'))).toEqual(['18', '18', '18']);
-    expect(q('.pdf-page > svg.paper .paper-rule')!.getAttribute('d')!.startsWith('M0 72H612M0 90H612')).toBe(true);
-    expect(qa('.pdf-page > svg.paper .paper-margin').map((m) => m.getAttribute('d'))).toEqual(['M90 0V792', 'M90 0V792', 'M90 0V792']);
+    expect(q('.pdf-page > svg.paper .paper-rule')!.getAttribute('d')!.startsWith('M0 72.5H612M0 90.5H612')).toBe(true);
+    expect(q('.pdf-page > svg.paper .paper-rule')!.getAttribute('d')).toBe(paperPaths(paperOf(written()), ON).rules);
+    expect(qa('.pdf-page > svg.paper .paper-margin').map((m) => m.getAttribute('d'))).toEqual(['M90.5 0V792', 'M90.5 0V792', 'M90.5 0V792']);
     // still up: the panel is not a step
     expect(q('.page-setup')).not.toBeNull();
     await click(q('[data-ps="close"]')!);
@@ -513,7 +563,8 @@ describe('a written notebook in the lens', () => {
     expect(qa<HTMLElement>('.pdf-page').map((p) => p.style.top)).toEqual(['0px', `${H}px`, `${2 * H}px`]);
     expect(q<HTMLElement>('.pdf-view')!.dataset.layout).toBe('pageless');
     // the second sheet's first rule is where the first's would have come next
-    expect(qa('.pdf-page > svg.paper .paper-rule').map((r) => r.getAttribute('d')!.split('H')[0])).toEqual(['M0 72', 'M0 5', 'M0 13']);
+    expect(qa('.pdf-page > svg.paper .paper-rule').map((r) => r.getAttribute('d')!.split('H')[0])).toEqual(['M0 72.5', 'M0 5.5', 'M0 13.5']);
+    expect(qa('.pdf-page > svg.paper .paper-rule').map((r) => r.getAttribute('d'))).toEqual([0, 1, 2].map((i) => paperPaths(paperOf(written(), i), ON).rules));
     expect(q('.add-page')).toBeNull();
     expect(q('.meta [data-tool="pages"]')).toBeNull();
     expect(q('.meta .pt-page')).toBeNull();
@@ -524,7 +575,7 @@ describe('a written notebook in the lens', () => {
     await act(async () => { useApp.setState((s) => ({ docs: { ...s.docs, [NB]: { ...s.docs[NB]!, written: { id: ID, paper: 'ruled', sheets: [1, 2, 3], rule: 25 } } } })); });
     await wait(30);
     expect(qa<HTMLElement>('.pdf-page').map((p) => p.style.top)).toEqual(['0px', `${H + GAP}px`, `${2 * (H + GAP)}px`]);
-    expect(qa('.pdf-page > svg.paper .paper-rule').map((r) => r.getAttribute('d')!.split('H')[0])).toEqual(['M0 72', 'M0 72', 'M0 72']);
+    expect(qa('.pdf-page > svg.paper .paper-rule').map((r) => r.getAttribute('d')!.split('H')[0])).toEqual(['M0 72.5', 'M0 72.5', 'M0 72.5']);
     expect(q('.add-page')).not.toBeNull();
     expect(q('.meta .pt-page')!.textContent).toBe('p. 1 / 3');
     expect(q<HTMLElement>('.pdf-view')!.dataset.layout).not.toBe('pageless');

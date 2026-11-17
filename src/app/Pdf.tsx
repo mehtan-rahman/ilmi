@@ -124,7 +124,7 @@ import {
 import { popMenu, popMenuOpen, type PopItem } from './popMenu.js';
 import { TextLayer, pageBits, type PDFDocumentProxy } from './pdfjs.js';
 import { acquirePdf, itemsOf } from './bookPdf.js';
-import { addSurface, afterScene, covered, fillSheet, hasCanvas, inContent, onFingers, pagePaper, pinchSheets, portOf, sceneSoon, type PenEvent, type SheetSpec, type Surface } from './ink.js';
+import { addSurface, afterScene, covered, fillSheet, hasCanvas, holdScenes, inContent, onFingers, pagePaper, pinchSheets, portOf, sceneSoon, settleSheets, type PenEvent, type SheetSpec, type Surface } from './ink.js';
 import { Icon } from './icons.js';
 import { StudyButton } from './StudyButton.js';
 import { ExamTag } from './ExamTag.js';
@@ -274,6 +274,12 @@ function hitAt(pages: Find['pages'], at: number): { page: number; k: number } | 
 }
 
 const places = new Map<string, { top: number; at: { page: number; y: number } | null; x: number | null }>();
+/** The zoom each book's pages had before a finger's two taps fitted them: two more go back to it. */
+const lastZooms = new Map<string, number>();
+/** The zoom two taps go to from fit, where there is none to go back to. */
+const TAP_ZOOM = 2;
+/** How long the pages take to come to rest where they will be laid out, ms. */
+const SETTLE_MS = 220;
 /** The zoom one step in (`dir` 1) or out (-1) from `z`; 0 is fit. */
 export function zoomStep(z: number, dir: number): number {
   if (dir === 0) return 1;
@@ -295,6 +301,33 @@ export function inkScale(w: number, h: number, px: number, dpr: number): number 
   let got = INK_SCALES[0]!;
   for (const v of INK_SCALES) { if (v > most) break; got = v; if (v >= want - 0.01) break; }
   return got;
+}
+
+/** `v` px on a whole pixel of a screen with `dpr` pixels to the px. */
+export const onPixel = (v: number, dpr: number): number => Math.round(v * dpr) / dpr;
+
+/**
+ * How wide the pages are drawn (milestone 86): the fitted width times the
+ * zoom, on whole pixels of the screen, and, where they are narrower than the
+ * pane and centred in it, leaving as many pixels either side: a page that
+ * begins between two pixels is drawn across both, its print, its paper's
+ * rules and what is written on it alike.
+ */
+export function pagesWidth(fitW: number, colW: number, zoom: number, dpr: number): number {
+  const raw = fitW * zoom;
+  if (!(colW > 0)) return raw;
+  return raw < colW ? colW - 2 * onPixel((colW - raw) / 2, dpr) : onPixel(raw, dpr);
+}
+
+/** The room between two pages at a zoom, px: it grows with the pages, so a zoom is the same picture larger. */
+export const pageGap = (zoom: number, dpr: number): number => Math.max(1 / dpr, onPixel(GAP * zoom, dpr));
+
+/** Each page's top in the column (from index 1; `at[0]` is 0) and the column's height, every page as tall as whole pixels of the screen. */
+export function pageTops(sizes: readonly { w: number; h: number }[], scale: number, gap: number, dpr: number): { at: number[]; total: number } {
+  const at: number[] = [0];
+  let y = 0;
+  sizes.forEach((s, i) => { at[i + 1] = y; y += onPixel(s.h * scale, dpr) + (i < sizes.length - 1 ? gap : 0); });
+  return { at, total: y };
 }
 
 interface Rect { left: number; top: number; width: number; height: number }
@@ -626,6 +659,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
         if (!sc.isConnected || !sc.getClientRects().length) return null;
         const { view, port, top, left, height } = portOf(sc, viewRef.current?.querySelector('.meta'));
         if (port.w <= 0 || port.h <= 0 || covered(sc, port)) return { id: hostId, view, port: { ...port, h: 0 }, top, left, height, open: null, sheets: [] };
+        const column = pagesRef.current;
         const sheets: SheetSpec[] = [];
         const there = new Set<number>();
         const dark = document.documentElement.dataset.theme === 'dark';
@@ -642,7 +676,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
         }
         // a page gone far has no canvas: its picture is what there is of its writing until it comes near again
         setLiveInk((s) => ([...s].every((n) => there.has(n)) ? s : new Set([...s].filter((n) => there.has(n)))));
-        return { id: hostId, view, port, top, left, height, open: null, sheets };
+        return { id: hostId, view, port, top, left, height, open: null, sheets, ...(column && !column.style.transform ? { pages: inContent(sc, column), zoom: { z: zoomRef.current, min: ZOOM_MIN, max: ZOOM_MAX } } : {}) };
       },
       made(sheet) {
         const n = pageOfSheet(sheet);
@@ -768,20 +802,16 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
   const maxW = sizes.reduce((m, s) => Math.max(m, s.w), 0) || 612;
   /** The width a page is fitted to; the zoom is of this, so it is of the pane as it is (a note beside narrows it). */
   const fitW = Math.max(120, Math.min(PAGE_MAX, colW));
-  const pageW = fitW * zoom;
+  const dpr = typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1;
+  const pageW = pagesWidth(fitW, colW, zoom, dpr);
   /** Zoomed past the pane: the pages scroll sideways, the words over them stay. */
   const wide = colW > 0 && pageW > colW;
   /** The sections' names sit beside the page only where a centred page leaves them the room. */
   const roomy = (colW - pageW) / 2 + room.pad >= TAG_ROOM;
   const scale = colW > 0 ? pageW / maxW : 1;
   /** Each page's top, px from the top of the column, and the column's height. */
-  const tops = useMemo(() => {
-    const out: number[] = [0];
-    let y = 0;
-    // a pageless notebook's sheets run on as one: nothing between them
-    sizes.forEach((s, i) => { out[i + 1] = y; y += s.h * scale + (i < sizes.length - 1 && !pageless ? GAP : 0); });
-    return { at: out, total: y };
-  }, [sizes, scale, pageless]);
+  // (a pageless notebook's sheets run on as one: nothing between them)
+  const tops = useMemo(() => pageTops(sizes, scale, pageless ? 0 : pageGap(zoom, dpr), dpr), [sizes, scale, pageless, zoom, dpr]);
 
   const first = base + 1;
   const last = base + sizes.length;
@@ -789,8 +819,8 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
   const pageRect = useCallback((n: number): Rect | null => {
     const s = sizes[n - base - 1];
     if (!s) return null;
-    return { left: 0, top: tops.at[n - base] ?? 0, width: s.w * scale, height: s.h * scale };
-  }, [sizes, base, tops, scale]);
+    return { left: 0, top: tops.at[n - base] ?? 0, width: onPixel(s.w * scale, dpr), height: onPixel(s.h * scale, dpr) };
+  }, [sizes, base, tops, scale, dpr]);
   const boxRect = useCallback((b: Box): Rect | null => {
     const p = pageRect(b.page);
     return p && { left: p.left + b.x * p.width, top: p.top + b.y * p.height, width: b.w * p.width, height: b.h * p.height };
@@ -817,12 +847,16 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
       // zoomed far in, a page is drawn with fewer pixels to the point than the screen has, never with more than a canvas holds
       const dpr = Math.min(window.devicePixelRatio || 1, Math.max(0.5, Math.sqrt(CANVAS_MAX / Math.max(1, viewport.width * viewport.height))));
       const canvas = document.createElement('canvas');
-      canvas.width = Math.floor(viewport.width * dpr);
-      canvas.height = Math.floor(viewport.height * dpr);
-      canvas.style.width = `${viewport.width}px`;
-      canvas.style.height = `${viewport.height}px`;
+      // the canvas fills the page's box, which lies on whole pixels of the screen: where the screen's own pixels are
+      // drawn (`dpr` is the screen's), each pixel of the canvas is one of the screen's, none between two (86)
+      const full = window.devicePixelRatio || 1;
+      const box = { w: onPixel(viewport.width, full), h: onPixel(viewport.height, full) };
+      canvas.width = Math.max(1, Math.round(box.w * dpr));
+      canvas.height = Math.max(1, Math.round(box.h * dpr));
+      canvas.style.width = '100%';
+      canvas.style.height = '100%';
       // the print intent draws without animation frames, which WebKit holds back in a covered window
-      await page.render(dpr === 1 ? { canvas, viewport, intent: 'print' } : { canvas, viewport, intent: 'print', transform: [dpr, 0, 0, dpr, 0, 0] }).promise;
+      await page.render({ canvas, viewport, intent: 'print', transform: [canvas.width / viewport.width, 0, 0, canvas.height / viewport.height, 0, 0] }).promise;
       const layer = document.createElement('div');
       layer.className = 'textLayer';
       el.style.setProperty('--total-scale-factor', String(scale));
@@ -878,7 +912,10 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     if (pr && pr.width > 0) sc.scrollLeft += pr.left + x * pr.width - (sr.left + sr.width / 2);
   };
   /** Where a pinch let go: the page between the fingers, where in it (0 to 1 each way), and where on the screen. */
-  const pinchEnd = useRef<{ page: number; x: number; y: number; cx: number; cy: number } | null>(null);
+  const pinchEnd = useRef<{ page: number; x: number; y: number; cx: number; cy: number } | { left: number; top: number; x: number; y: number } | null>(null);
+  /** What the pages are laid out by, for saying where they would lie at another zoom. */
+  const layRef = useRef({ fitW: 0, colW: 0, pageW: 0, maxW: 612, scale: 1, left: 0, pad: 0, sizes: [] as Size[], pageless: false, total: 0, at: [0] as number[] });
+  layRef.current = { fitW, colW, pageW, maxW, scale, left: room.left, pad: room.pad, sizes, pageless, total: tops.total, at: tops.at };
   /** Whether the pages can be written on: two fingers tapped are undo only then. */
   const canWriteRef = useRef(false);
   /** The pages have landed where they open (the place left, the read point, a section gone to): from here a scroll is the reader's, and remembered. */
@@ -985,6 +1022,16 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     const held = pinchEnd.current;
     pinchEnd.current = null;
     if (pagesRef.current) { pagesRef.current.style.transform = ''; pagesRef.current.style.willChange = ''; }
+    if (held && 'left' in held) {
+      // (86) the pages were eased to where this layout puts them: the scroller stands where that was reckoned, and the
+      // canvases, held as they were shown, are told once
+      sc.scrollLeft = held.left;
+      sc.scrollTop = held.top;
+      const pr = pagesRef.current?.getBoundingClientRect();
+      if (pr && viewRef.current) viewRef.current.dataset.zoomOff = Math.max(Math.abs(pr.left - held.x), Math.abs(pr.top - held.y)).toFixed(2);
+      holdScenes(false);
+      return;
+    }
     const under = held ? pageEls.current.get(held.page) : undefined;
     if (held && under) {
       const pr = under.getBoundingClientRect();
@@ -1081,12 +1128,120 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     };
     const onScroll = () => { if (g) draw(); };
     sc.addEventListener('scroll', onScroll, { passive: true });
+    // ── (86) the zoom the glass does itself ──
+    // The canvases' side stretches the pages under the fingers, this column's own layer and the canvases over it at
+    // once, and says nothing here but how far (for the bar's word). Let go, it says where the place the pages were
+    // taken by is; here it is reckoned where the pages will lie laid out at the zoom they stopped at (the same picture
+    // larger: the room between pages grows with them), kept inside what the scroller can show; the pages are eased
+    // there, the column is given the same stretch as its own, and then laid out in one go with the scroller put where
+    // it was reckoned: nothing moves when the layout takes over, and the canvases are told once.
+    interface Plan { z: number; k: number; tx: number; ty: number; left: number; top: number; x: number; y: number }
+    /** A zoom of the glass's going on: the zoom it began from, and where the pages are going. */
+    let n: { z0: number; plan: Plan | null } | null = null;
+    const plan = (z1: number, lx: number, ly: number, cx: number, cy: number): Plan => {
+      const L = layRef.current;
+      const px = window.devicePixelRatio || 1;
+      const W1 = pagesWidth(L.fitW, L.colW, z1, px);
+      const k = L.pageW > 0 ? W1 / L.pageW : 1;
+      const scale1 = W1 / L.maxW;
+      const tops1 = pageTops(L.sizes, scale1, L.pageless ? 0 : pageGap(z1, px), px);
+      // the place in the column as it will be laid out: on the page it is on, as far down it
+      let y1 = ly * k;
+      for (let i = 0; i < L.sizes.length; i++) {
+        const a = L.at[i + 1] ?? 0;
+        const h = onPixel(L.sizes[i]!.h * L.scale, px);
+        if (ly >= a && ly <= a + h) { y1 = (tops1.at[i + 1] ?? 0) + ((ly - a) / h) * onPixel(L.sizes[i]!.h * scale1, px); break; }
+      }
+      const sr = sc.getBoundingClientRect();
+      const pr = pages.getBoundingClientRect();
+      const ox = pr.left - sr.left + sc.scrollLeft;
+      const oy = pr.top - sr.top + sc.scrollTop;
+      // the column's left in the content: centred under the pane's width, at the pane's padding past it
+      const edge = ox - (L.pageW < L.colW ? (L.colW - L.pageW) / 2 : 0);
+      const wide1 = W1 > L.colW;
+      const ox1 = edge + (wide1 ? 0 : (L.colW - W1) / 2);
+      const maxL = wide1 ? Math.max(0, edge + W1 + L.pad - sc.clientWidth) : 0;
+      const maxT = Math.max(0, sc.scrollHeight - L.total + tops1.total - sc.clientHeight);
+      const left = Math.min(maxL, Math.max(0, onPixel(ox1 + lx * k - (cx - sr.left), px)));
+      const top = Math.min(maxT, Math.max(0, onPixel(oy + y1 - (cy - sr.top), px)));
+      const x = sr.left + ox1 - left;
+      const y = sr.top + oy - top;
+      return { z: z1, k, tx: x - pr.left, ty: y - pr.top + (y1 - ly * k), left, top, x, y };
+    };
+    /** `f` once what was just set has been drawn: two frames on, or soon where frames are held back. */
+    const drawn = (f: () => void) => {
+      let done = false;
+      const run = () => { if (!done) { done = true; f(); } };
+      requestAnimationFrame(() => requestAnimationFrame(run));
+      setTimeout(run, 150);
+    };
+    const start = () => { holdScenes(true); viewRef.current?.setAttribute('data-pinch', '1'); };
+    /** The pages are shown where `p` put them: the column takes that stretch as its own, and is then laid out as it is shown. */
+    const handOver = (p: Plan, stretched: boolean) => {
+      const go = () => {
+        n = null;
+        viewRef.current?.removeAttribute('data-pinch');
+        if (p.z === zoomRef.current) {
+          // no other size: only the scroller moves
+          pages.style.transform = '';
+          sc.scrollLeft = p.left;
+          sc.scrollTop = p.top;
+          say(zoomRef.current);
+          holdScenes(false);
+          pinchSheets(hostId, null);
+          return;
+        }
+        pinchEnd.current = { left: p.left, top: p.top, x: p.x, y: p.y };
+        setBookZoom(id, p.z);
+        // (where nothing is laid out, the stretch is taken off here)
+        setTimeout(() => { if (pinchEnd.current) { pinchEnd.current = null; pages.style.transform = ''; holdScenes(false); pinchSheets(hostId, null); } }, 400);
+      };
+      if (!stretched) { go(); return; }
+      pages.style.transform = `translate(${p.tx}px, ${p.ty}px) scale(${p.k})`;
+      drawn(go);
+    };
     const off = onFingers((e) => {
       if (e.kind === 'fingers') {
         // down and up, hardly moved: two fingers take the last stroke back, three put it back
-        if (!g && canWriteRef.current && here(e.x, e.y)) { if (e.n >= 3) void inkRedo(); else void inkUndo(); }
+        if (!g && !n && canWriteRef.current && here(e.x, e.y)) { if (e.n >= 3) void inkRedo(); else void inkUndo(); }
         return;
       }
+      if (e.kind === 'double') {
+        // a finger tapped twice: the pages fitted, or back at the zoom they had before they were
+        if (e.host !== hostId || n || g || !here(e.x, e.y)) return;
+        const z0 = zoomRef.current;
+        const fitted = Math.abs(z0 - 1) < 0.005;
+        if (!fitted) lastZooms.set(id, z0);
+        const pr = pages.getBoundingClientRect();
+        const p = plan(fitted ? lastZooms.get(id) ?? TAP_ZOOM : 1, e.x - pr.left, e.y - pr.top, e.x, e.y);
+        n = { z0, plan: p };
+        start();
+        say(p.z);
+        settleSheets(hostId, p, SETTLE_MS);
+        return;
+      }
+      if (e.native) {
+        if (e.host !== hostId) return;
+        if (e.phase === 'begin') {
+          if (n || g) return;
+          n = { z0: zoomRef.current, plan: null };
+          start();
+          return;
+        }
+        if (!n) return;
+        if (e.phase === 'change') { say(zoomHeld(n.z0 * e.k)); return; }
+        if (e.phase === 'end' || e.phase === 'cancel') {
+          const p = plan(zoomHeld(n.z0 * e.k), e.lx ?? 0, e.ly ?? 0, e.x, e.y);
+          n.plan = p;
+          say(p.z);
+          settleSheets(hostId, p, SETTLE_MS);
+          return;
+        }
+        if (e.phase === 'settled' && n.plan) handOver(n.plan, true);
+        return;
+      }
+      // (a zoom asked for with no layer of the web view's found to stretch: laid out at once)
+      if (e.phase === 'settled') { if (n?.plan) handOver(n.plan, false); return; }
       if (e.phase === 'begin') {
         if (g || !here(e.x, e.y)) return;
         const r = pages.getBoundingClientRect();
@@ -1128,7 +1283,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
       // (the pages laid out anew take the stretch off; where nothing is laid out, it is taken off here)
       setTimeout(() => { if (pages.style.transform) { pinchEnd.current = null; undraw(); } }, 120);
     });
-    return () => { off(); sc.removeEventListener('scroll', onScroll); if (g) undraw(); };
+    return () => { off(); sc.removeEventListener('scroll', onScroll); if (g) undraw(); if (n) { n = null; holdScenes(false); pinchSheets(hostId, null); viewRef.current?.removeAttribute('data-pinch'); } };
   }, [status, id]);
 
   const scrollTo = (n: number) => {
@@ -2636,10 +2791,10 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
                 data-sheet={sheets ? sheets[i] : undefined}
                 data-paper={written?.paper}
                 ref={(el) => { if (el) pageEls.current.set(base + i + 1, el); else pageEls.current.delete(base + i + 1); }}
-                style={{ width: s.w * scale, height: s.h * scale, top: tops.at[i + 1] }}
+                style={{ width: onPixel(s.w * scale, dpr), height: onPixel(s.h * scale, dpr), top: tops.at[i + 1] }}
               >
                 {/* the paper of every sheet, near or far: lines are cheap, and a page scrolled to fast is never bare (85) */}
-                {written ? <PaperSheet spec={paperOf(written, i)} /> : null}
+                {written ? <PaperSheet spec={paperOf(written, i)} px={(onPixel(s.w * scale, dpr) / s.w) * dpr} /> : null}
               </div>
             ))}
             {hash && Object.keys(inked).length > 0 && (

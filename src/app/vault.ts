@@ -1108,6 +1108,12 @@ export function openInitialVault(): Promise<void> {
         await smokeWrittenPad(path);
         return;
       }
+      // how sharp ink and paper are on the glass, and how the pages zoom (milestone 86)
+      if (mode === 'sharp' && isMobile()) {
+        const { smokeSharp } = await import('./smoke.js');
+        await smokeSharp(path);
+        return;
+      }
       if (mode === 'touch' && isMobile()) {
         const { smokeTouch } = await import('./smoke.js');
         await smokeTouch();

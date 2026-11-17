@@ -131,7 +131,7 @@ export const DEFAULTS: Kept = {
   colors: { pen: SWATCHES.pen.map((s) => s.color), highlighter: SWATCHES.highlighter.map((s) => s.color) },
   custom: { pen: null, highlighter: null },
   recent: { pen: [], highlighter: [] },
-  ink: 'pen',
+  ink: 'monoline',
   opacity: 1,
   eraser: 'stroke',
   snap: true,
@@ -289,7 +289,8 @@ export function parse(raw: string | null | undefined): Kept {
       colors: { pen: colors('pen'), highlighter: colors('highlighter') },
       custom: { pen: custom('pen'), highlighter: custom('highlighter') },
       recent: { pen: recent('pen'), highlighter: recent('highlighter') },
-      ink: isInk(t.ink) ? t.ink : DEFAULTS.ink,
+      // (what was kept before 86 had the soft pen as it started, never chosen: it starts as the even line now)
+      ink: isInk(t.ink) && ((t as { v?: number }).v === KEPT_V || t.ink !== 'pen') ? t.ink : DEFAULTS.ink,
       opacity: typeof t.opacity === 'number' && Number.isFinite(t.opacity) ? Math.round(clamp(t.opacity, OPACITY_MIN, 1) * 100) / 100 : DEFAULTS.opacity,
       eraser: t.eraser === 'part' || t.eraser === 'stroke' ? t.eraser : DEFAULTS.eraser,
       snap: typeof t.snap === 'boolean' ? t.snap : DEFAULTS.snap,
@@ -304,12 +305,14 @@ export function parse(raw: string | null | undefined): Kept {
 // ── kept per device, and the canvases told ──
 
 export const INK_KEY = 'ilmi.ink';
+/** What is kept says which shape of it this is: 2 since the pen starts as the even line (86). */
+const KEPT_V = 2;
 
 function load(): Kept {
   try { return parse(globalThis.localStorage?.getItem(INK_KEY)); } catch { return DEFAULTS; }
 }
 function save(k: Kept): void {
-  try { globalThis.localStorage?.setItem(INK_KEY, JSON.stringify(k)); } catch { /* no storage: the session keeps them */ }
+  try { globalThis.localStorage?.setItem(INK_KEY, JSON.stringify({ ...k, v: KEPT_V })); } catch { /* no storage: the session keeps them */ }
 }
 
 /** The wheel is up for one of a tool's swatches (`slot` a preset's place), or for its own (`CUSTOM`). */

@@ -15921,7 +15921,8 @@ export async function smokeWritten(vault: Vault): Promise<void> {
     await goPage(2);
     (await more('page-delete')).click();
     await poll(() => sheetsOf(NB) === '1 3' && sheetsShown() === '1 3', 'delete this page takes the bare page in view at once', 8000);
-    must(useApp.getState().notice?.line === 'page 2 deleted' && useApp.getState().notice?.undo === true, `the notice says so and can undo (${useApp.getState().notice?.line})`);
+    // (the notice comes once the page's strokes and passages have been looked for: a moment after the sheet is gone)
+    await poll(() => useApp.getState().notice?.line === 'page 2 deleted' && useApp.getState().notice?.undo === true, 'the notice says so and can undo', 5000);
     await undoNotice();
     await poll(() => sheetsOf(NB) === '1 2 3' && sheetsShown() === '1 2 3', 'undo: the page is back where it was', 8000);
     await goPage(2);

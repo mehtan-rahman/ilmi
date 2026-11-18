@@ -236,7 +236,9 @@ final class Leaf: UIView {
   required init?(coder: NSCoder) { fatalError("no coder") }
 
   /// A sheet has its edge, a hair's width, as a page of the reader's has.
-  func edge(dark: Bool) {
+  func edge(dark: Bool, run: Bool) {
+    // (sheets that run on as one have no edge between them)
+    hair.isHidden = run
     hair.borderWidth = 1 / UIScreen.main.scale
     hair.borderColor = (dark ? UIColor(white: 1, alpha: 0.16) : UIColor(white: 0, alpha: 0.16)).cgColor
     if hair.superlayer == nil { hair.zPosition = 4; hair.actions = ["bounds": NSNull(), "position": NSNull()]; layer.addSublayer(hair) }
@@ -477,6 +479,7 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
       if p.w != paper.w || p.h != paper.h || p.run != paper.run { relay = true }
       paper = p
       repaint = true
+      for leaf in leaves.values { leaf.edge(dark: look.dark, run: p.run) }
     }
     if let l = a.look, l != look {
       let turned = l.dark != look.dark
@@ -488,7 +491,7 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
       canvas.layer.compositingFilter = l.dark ? "screenBlendMode" : "multiplyBlendMode"
       for leaf in leaves.values {
         leaf.backgroundColor = colour(l.paper) ?? .white
-        leaf.edge(dark: l.dark)
+        leaf.edge(dark: l.dark, run: paper.run)
         // ink is another colour on dark paper: every stroke is made ready again
         if turned { leaf.cache = [:]; regeom(leaf) }
       }
@@ -506,7 +509,7 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
         let l = leaves[n] ?? {
           let fresh = Leaf(sheet: n, id: "p.\(key).\(n)")
           fresh.backgroundColor = colour(look.paper) ?? .white
-          fresh.edge(dark: look.dark)
+          fresh.edge(dark: look.dark, run: paper.run)
           content.insertSubview(fresh, belowSubview: marks)
           return fresh
         }()

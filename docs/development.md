@@ -373,6 +373,37 @@ back, `dev_ink_unshare` closes the sheet); page setup, every control, the
 file read after each, pageless and a stroke across the seam, A4 on its
 side, `use for new notebooks`; and the row whole at every width it is
 given.
+Then what milestone 88 added, in a third notebook (`writtenLong`; alone
+with `"part": "long"`): page setup's `left margin` and `right margin`,
+each by its switch and its slider, on ruled, grid, dotted and blank paper,
+the file read after each, and a ruled page's `bottom space`; then
+pageless, where `dev_ink_state` says how long the one sheet is drawn
+(`length`, in points) and how many of its sheets that shows (`shown`). Six
+strokes by the rig's finger toward the sheet's foot: after each the length
+is the lowest ink and 192 points more to a whole rule, it grew by a rule
+or two and never a sheet, the first sheet lies on the same pixels and the
+pages are scrolled as they were, and the next sheet is in the file before
+the foot comes to it, with no notice. A stroke across where two sheets
+meet, one begun below it and run up, the eraser put down below it on a
+stroke kept above, a lasso round a stroke on each side and what it holds
+carried down past it; a sheet in the file past what is written not drawn;
+the lower strokes taken away (no shorter), another document and back
+(shorter); pages and pageless again with every stroke on its sheet; the
+PDF cut to the pages the ink reaches; dark, and on its side. Before a
+capture a `geo:` line says where the sheet, its margin rules, the place
+two sheets meet and the sheet's foot lie in it, in the screen's pixels: a
+script reads the captures against them (each margin rule within a pixel
+of its distance; down a column clear of ink the rules one pitch apart and
+one thickness with nothing else where the sheets meet; paper above the
+foot and the desk under it). `"part": "grow"` is the six strokes alone,
+to record (`xcrun simctl io booted recordVideo`): in every frame the
+level stroke written first and the rules over the first foot must be
+where they were, the paper's foot may only move down by whole rules, and
+no frame may show paper not yet ruled. On the Mac the same mode ends with
+its own part (`writtenLongMac`; alone with `ILMI_PART=long`): the margin
+rules in the page's own paper to a pixel, a pageless notebook's column cut
+to the length of a made-up drawing's ink, longer when more is kept on the
+second sheet, shorter only when it is opened again.
 
 `ILMI_SMOKE=sharp` (milestones 86, 87), a simulated iPad under the touch
 rig, over a copy of the sample (`vault` in `smoke.json`): how sharp ink and

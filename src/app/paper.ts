@@ -2,11 +2,13 @@
 // a grid, dots. A sheet is Letter or A4, upright or on its side, and its
 // paper is said in the sheet's points, so it is the same at any zoom. A
 // notebook's page setup (`paperOf`: its front-matter's `paper-rule`,
-// `paper-margin`, `paper-top`, `paper-size`, `paper-turn`, `pageless`) says
-// how far apart the rules, lines or dots are, where a margin rule stands,
-// how far down the first rule is, and whether the sheets run on as one: then
-// the ruling of each carries on from the one before, as if they were one
-// long sheet. On the pages the paper is an inline SVG (`Pdf.tsx`): the rules
+// `paper-margin`, `paper-margin-right`, `paper-top`, `paper-bottom`,
+// `paper-size`, `paper-turn`, `pageless`) says how far apart the rules, lines
+// or dots are, where a margin rule stands at the left and at the right, how
+// far down the first rule is and how much room the last leaves, and whether
+// the sheets run on as one: then the ruling of each carries on from the one
+// before, and they are one long sheet, as long as what is written on it and
+// a little more (`runLength`, milestone 88). On the pages the paper is an inline SVG (`Pdf.tsx`): the rules
 // one path of hairlines that stay a pixel wide however far the page is
 // zoomed, the dots a path of round dashes that grow with it as the dots of a
 // real page would. In a note, where a clip of a sheet is drawn
@@ -33,7 +35,7 @@ export const PAPER_WHITE = '#ffffff';
 export const PAPER_RULE = '#c3cfdd';
 /** The dots are small, so a little heavier than a rule to read as lightly. */
 export const PAPER_DOT = '#a9b7c8';
-/** The margin rule of a ruled sheet. */
+/** A sheet's margin rules. */
 export const PAPER_MARGIN = '#e7b9b9';
 
 /**
@@ -118,8 +120,10 @@ export const RULE_STEP = 24;
 export const RULE_TOP = 72;
 /** A grid's squares and a dotted page's pitch, unless the page setup says otherwise. */
 export const GRID_STEP = 20;
-/** Where a margin rule stands when it is first turned on: an inch and a quarter in. */
+/** Where a margin rule stands when it is first turned on: an inch and a quarter in from its edge. */
 export const MARGIN_AT = 90;
+/** How much bare paper a pageless notebook keeps under the lowest thing written on it, in points: eight rules of a new notebook's. */
+export const RUN_ALLOW = 192;
 /** A dot's width, in points. */
 const DOT = 1.5;
 /** A millimetre, in points. */
@@ -133,10 +137,14 @@ export interface PaperSpec {
   h: number;
   /** How far apart the rules, the grid's lines or the dots are. */
   rule: number;
-  /** Where the margin rule stands from the left edge; null for none. A ruled sheet's alone. */
+  /** Where the left margin rule stands from the left edge; null for none. */
   margin: number | null;
+  /** Where the right margin rule stands from the right edge; null for none. */
+  marginRight: number | null;
   /** How far down the first rule is. A ruled sheet's alone. */
   top: number;
+  /** How much room is left under the last rule; null for a rule's. A ruled sheet's alone, and a page's (a pageless notebook's rules run on). */
+  bottom: number | null;
   /** The sheets run on as one: this one begins `at` points down it, and its ruling carries on from the one before. */
   run: boolean;
   at: number;
@@ -156,13 +164,15 @@ export function sheetSize(w: Pick<WrittenMeta, 'size' | 'turn'> | undefined): { 
 export const ruleOf = (kind: PaperKind): number => (kind === 'ruled' ? RULE_STEP : GRID_STEP);
 
 /** The paper of a notebook's sheet, the `index`th of its sheets (from 0): the page setup its front-matter gives, and what stands in where it gives none. */
-export function paperOf(w: Pick<WrittenMeta, 'paper' | 'rule' | 'margin' | 'top' | 'size' | 'turn' | 'pageless' | 'color' | 'line'>, index = 0): PaperSpec {
+export function paperOf(w: Pick<WrittenMeta, 'paper' | 'rule' | 'margin' | 'marginRight' | 'top' | 'bottom' | 'size' | 'turn' | 'pageless' | 'color' | 'line'>, index = 0): PaperSpec {
   const size = sheetSize(w);
   return {
     kind: w.paper, ...size,
     rule: w.rule ?? ruleOf(w.paper),
-    margin: w.paper === 'ruled' ? w.margin ?? null : null,
+    margin: w.margin ?? null,
+    marginRight: w.marginRight ?? null,
     top: w.top ?? RULE_TOP,
+    bottom: w.paper === 'ruled' ? w.bottom ?? null : null,
     run: !!w.pageless,
     at: w.pageless ? index * size.h : 0,
     color: paperHex(w.color),
@@ -171,18 +181,45 @@ export function paperOf(w: Pick<WrittenMeta, 'paper' | 'rule' | 'margin' | 'top'
 }
 
 /** A paper by its kind alone: a Letter sheet with the measures a new notebook has. */
-const plain = (kind: PaperKind): PaperSpec => ({ kind, w: PAPER_W, h: PAPER_H, rule: ruleOf(kind), margin: null, top: RULE_TOP, run: false, at: 0, color: null, line: null });
+const plain = (kind: PaperKind): PaperSpec => ({ kind, w: PAPER_W, h: PAPER_H, rule: ruleOf(kind), margin: null, marginRight: null, top: RULE_TOP, bottom: null, run: false, at: 0, color: null, line: null });
 const specOf = (p: PaperKind | PaperSpec): PaperSpec => (typeof p === 'string' ? plain(p) : p);
 
 /**
- * The lines of a paper, in the sheet's points: horizontal ones by their `y`,
- * vertical ones by their `x`, the margin rule's `x`, and where the dots are.
- * A grid and a dotted page are centred on the sheet; a ruled sheet's last
- * rule leaves a line's room at its foot. Where the sheets run on as one, the
- * ruling is the long sheet's: each line where it falls on this piece of it.
+ * How long a pageless notebook's one sheet is drawn, in points from its top
+ * (milestone 88): down to `foot`, the lowest thing written on it, and
+ * `RUN_ALLOW` of bare paper more, never under one sheet, and ending a whole
+ * number of rules, grid squares or dot pitches down its ruling (blank paper
+ * counts in a new notebook's rules), so it grows a line at a time and its
+ * foot never cuts a line's room in two. The same on every device, from what
+ * is written alone: nothing of it is kept.
  */
-export function paperLines(p: PaperKind | PaperSpec): { rows: number[]; cols: number[]; margin: number | null; dots: { xs: number[]; ys: number[] } | null } {
-  const { kind, w, h, rule, margin, top, run, at } = specOf(p);
+export function runLength(p: PaperSpec, foot: number): number {
+  const need = (Number.isFinite(foot) ? Math.max(0, foot) : 0) + RUN_ALLOW;
+  // (what fits on one sheet is one sheet, whole)
+  if (need <= p.h) return p.h;
+  const step = p.kind === 'blank' ? RULE_STEP : Math.max(2, p.rule);
+  // where the ruling begins, and what a centred grid keeps clear at an edge
+  const edge = p.kind === 'grid' || p.kind === 'dotted' ? (p.h % step) / 2 : 0;
+  const first = p.kind === 'ruled' ? p.top % step : edge;
+  return Math.round((first + Math.ceil((need - first - edge) / step - 1e-9) * step + edge) * 1000) / 1000;
+}
+
+/**
+ * The lines of a paper, in the sheet's points: horizontal ones by their `y`,
+ * vertical ones by their `x`, the margin rules' `x` (`margin` the left one's,
+ * `marginRight` the right one's, each from the sheet's left edge), and where
+ * the dots are. A grid and a dotted page are centred on the sheet; a ruled
+ * sheet's last rule leaves a line's room at its foot, or what its page setup
+ * says. The rules, the grid and the dots run the sheet's whole width, under
+ * the margin rules, as on paper. Where the sheets run on as one, the ruling
+ * is the long sheet's: each line where it falls on this piece of it.
+ */
+export function paperLines(p: PaperKind | PaperSpec): { rows: number[]; cols: number[]; margin: number | null; marginRight: number | null; dots: { xs: number[]; ys: number[] } | null } {
+  const { kind, w, h, rule, top, run, at, bottom } = specOf(p);
+  const spec = specOf(p);
+  const margin = spec.margin !== null && spec.margin > 0 && spec.margin < w ? spec.margin : null;
+  const right = spec.marginRight !== null && spec.marginRight > 0 && spec.marginRight < w ? Math.round((w - spec.marginRight) * 1000) / 1000 : null;
+  const marginRight = right !== null && (margin === null || right > margin) ? right : null;
   const step = Math.max(2, rule);
   const steps = (from: number, to: number): number[] => {
     const out: number[] = [];
@@ -198,10 +235,10 @@ export function paperLines(p: PaperKind | PaperSpec): { rows: number[]; cols: nu
   };
   const offX = (w % step) / 2;
   const offY = (h % step) / 2;
-  if (kind === 'ruled') return { rows: run ? running(top) : steps(top, h - step), cols: [], margin: margin !== null && margin > 0 && margin < w ? margin : null, dots: null };
-  if (kind === 'grid') return { rows: run ? running(offY) : steps(offY, h - offY), cols: steps(offX, w - offX), margin: null, dots: null };
-  if (kind === 'dotted') return { rows: [], cols: [], margin: null, dots: { xs: steps(offX + step, w - offX - step), ys: run ? running(offY + step) : steps(offY + step, h - offY - step) } };
-  return { rows: [], cols: [], margin: null, dots: null };
+  if (kind === 'ruled') return { rows: run ? running(top) : steps(top, h - (bottom ?? step)), cols: [], margin, marginRight, dots: null };
+  if (kind === 'grid') return { rows: run ? running(offY) : steps(offY, h - offY), cols: steps(offX, w - offX), margin, marginRight, dots: null };
+  if (kind === 'dotted') return { rows: [], cols: [], margin, marginRight, dots: { xs: steps(offX + step, w - offX - step), ys: run ? running(offY + step) : steps(offY + step, h - offY - step) } };
+  return { rows: [], cols: [], margin, marginRight, dots: null };
 }
 
 /**
@@ -214,13 +251,13 @@ export function paperLines(p: PaperKind | PaperSpec): { rows: number[]; cols: nu
  */
 export function paperPaths(p: PaperKind | PaperSpec, on?: { px: number; w: number }): { rules: string; margin: string; dots: string; pitch: number; width: number; w: number; h: number } {
   const spec = specOf(p);
-  const { rows, cols, margin, dots } = paperLines(spec);
+  const { rows, cols, margin, marginRight, dots } = paperLines(spec);
   // drawn `on.px` pixels of the screen to the point with a stroke `on.w` of them wide, a line covers whole pixels: its
   // middle is moved (by under half a pixel) to where its edges fall between two (86)
   const at = (v: number): number => (on && on.px > 0 ? Math.round(((Math.round(v * on.px - on.w / 2) + on.w / 2) / on.px) * 10000) / 10000 : v);
   const rules = [...rows.map((y) => `M0 ${at(y)}H${spec.w}`), ...cols.map((x) => `M${at(x)} 0V${spec.h}`)].join('');
   const row = dots && dots.xs.length ? dots.ys.map((y) => `M${dots.xs[0]} ${y}H${dots.xs[dots.xs.length - 1]! + 0.01}`).join('') : '';
-  return { rules, margin: margin === null ? '' : `M${at(margin)} 0V${spec.h}`, dots: row, pitch: Math.max(2, spec.rule), width: DOT, w: spec.w, h: spec.h };
+  return { rules, margin: [margin, marginRight].filter((x): x is number => x !== null).map((x) => `M${at(x)} 0V${spec.h}`).join(''), dots: row, pitch: Math.max(2, spec.rule), width: DOT, w: spec.w, h: spec.h };
 }
 
 /** How many pixels of the screen wide a rule is drawn, the paper `px` of them to the point: half a point, never under one. */
@@ -245,7 +282,7 @@ export function drawPaper(ctx: CanvasRenderingContext2D, p: PaperKind | PaperSpe
   if (right <= left || bottom <= top) return;
   ctx.fillStyle = paper;
   ctx.fillRect(left, top, right - left, bottom - top);
-  const { rows, cols, margin, dots } = paperLines(spec);
+  const { rows, cols, margin, marginRight, dots } = paperLines(spec);
   ctx.fillStyle = ruleColor;
   for (const y of rows) {
     const at = Math.round((y - part.y) * k);
@@ -255,23 +292,27 @@ export function drawPaper(ctx: CanvasRenderingContext2D, p: PaperKind | PaperSpe
     const at = Math.round((x - part.x) * k);
     if (at >= left && at < right) ctx.fillRect(at, top, 1, bottom - top);
   }
-  if (margin !== null) {
-    const at = Math.round((margin - part.x) * k);
-    ctx.fillStyle = marginColor;
-    if (at >= left && at < right) ctx.fillRect(at, top, 1, bottom - top);
-  }
-  if (!dots) return;
-  ctx.fillStyle = dotColor;
-  const r = Math.max(0.6, (DOT / 2) * k);
-  for (const y of dots.ys) {
-    const cy = (y - part.y) * k;
-    if (cy < top - r || cy > bottom + r) continue;
-    for (const x of dots.xs) {
-      const cx = (x - part.x) * k;
-      if (cx < left - r || cx > right + r) continue;
-      ctx.beginPath();
-      ctx.arc(cx, cy, r, 0, Math.PI * 2);
-      ctx.fill();
+  const dotted = () => {
+    if (!dots) return;
+    ctx.fillStyle = dotColor;
+    const r = Math.max(0.6, (DOT / 2) * k);
+    for (const y of dots.ys) {
+      const cy = (y - part.y) * k;
+      if (cy < top - r || cy > bottom + r) continue;
+      for (const x of dots.xs) {
+        const cx = (x - part.x) * k;
+        if (cx < left - r || cx > right + r) continue;
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
+  };
+  dotted();
+  ctx.fillStyle = marginColor;
+  for (const x of [margin, marginRight]) {
+    if (x === null) continue;
+    const at = Math.round((x - part.x) * k);
+    if (at >= left && at < right) ctx.fillRect(at, top, 1, bottom - top);
   }
 }

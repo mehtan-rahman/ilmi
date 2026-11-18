@@ -167,10 +167,13 @@ pub struct PdfPage {
     /// What is written on it: a `PKDrawing` a stroke.
     pub strokes: Vec<Vec<u8>>,
     /// The paper's measures, in points, where its page setup says them: how far apart its rules, lines or dots are,
-    /// where its margin rule stands, how far down its first rule is.
+    /// where its left margin rule stands and its right one (from the right edge), how far down its first rule is
+    /// and how much room its last leaves (a rule's, unsaid).
     pub rule: Option<f64>,
     pub margin: Option<f64>,
+    pub margin_right: Option<f64>,
     pub top: Option<f64>,
+    pub bottom: Option<f64>,
     /// A piece of a pageless notebook's long sheet: how far down it this piece begins.
     pub at: Option<f64>,
     /// What is written on the sheet before, which may run past its foot onto this one.
@@ -193,7 +196,7 @@ pub fn pages_pdf(pages: &[PdfPage], source: Option<&str>, out: &str) -> Result<(
         let over: Vec<&[u8]> = p.above.iter().map(Vec::as_slice).collect();
         let above = records(&over);
         let paper: u32 = match p.paper.as_deref() { None => 0, Some("ruled") => 2, Some("grid") => 3, Some("dotted") => 4, Some(_) => 1 };
-        for v in [p.w, p.h, p.rule.unwrap_or(0.0), p.margin.unwrap_or(-1.0), p.top.unwrap_or(72.0), p.at.unwrap_or(-1.0)] {
+        for v in [p.w, p.h, p.rule.unwrap_or(0.0), p.margin.unwrap_or(-1.0), p.top.unwrap_or(72.0), p.at.unwrap_or(-1.0), p.margin_right.unwrap_or(-1.0), p.bottom.unwrap_or(-1.0)] {
             spec.extend_from_slice(&v.to_le_bytes());
         }
         // (colours: the top byte says one was chosen)
@@ -512,7 +515,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let out = dir.join("notebook.pdf");
         let pages = vec![
-            PdfPage { w: 612.0, h: 792.0, paper: Some("ruled".into()), strokes: strokes.clone(), margin: Some(90.0), ..Default::default() },
+            PdfPage { w: 612.0, h: 792.0, paper: Some("ruled".into()), strokes: strokes.clone(), margin: Some(90.0), margin_right: Some(72.0), bottom: Some(48.0), ..Default::default() },
             PdfPage { w: 612.0, h: 792.0, paper: Some("grid".into()), rule: Some(14.17), at: Some(792.0), above: strokes.clone(), ..Default::default() },
             PdfPage { w: 595.0, h: 842.0, paper: Some("dotted".into()), ..Default::default() },
         ];

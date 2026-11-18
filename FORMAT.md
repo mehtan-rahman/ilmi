@@ -415,11 +415,13 @@ dropped, with a diagnostic.
 | `paper`        | `blank` `ruled` `grid` `dotted` | `blank` | what a written notebook's sheets are ruled with                    |
 | `sheets`       | whole numbers from 1, a space between | `1` | a written notebook's sheets, in order, each by its own number  |
 | `paper-rule`   | points, 8 to 72             | 24 ruled, 20 grid and dotted | how far apart a notebook's rules, grid lines or dots are |
-| `paper-margin` | points, 18 to 300           |           | where a ruled notebook's margin rule stands from the left edge; none without it |
+| `paper-margin` | points, 18 to 300           |           | where a notebook's left margin rule stands from the left edge; none without it |
+| `paper-margin-right` | points, 18 to 300     |           | where its right margin rule stands from the right edge; none without it |
 | `paper-top`    | points, 0 to 300            | 72        | how far down a ruled sheet the first rule is                       |
+| `paper-bottom` | points, 0 to 300            | a rule's spacing | how much room a ruled page leaves under its last rule       |
 | `paper-size`   | `a4`                        | Letter    | the size of a notebook's sheets                                    |
 | `paper-turn`   | `landscape`                 | upright   | a notebook's sheets lie on their side                              |
-| `pageless`     | `true`                      |           | a notebook's sheets run on as one, with nothing between them       |
+| `pageless`     | `true`                      |           | a notebook is one long sheet, as long as what is written on it     |
 | `paper-color`  | `#rrggbb`                   | the theme's | the colour of a notebook's paper                                 |
 | `paper-line`   | `#rrggbb`                   | the theme's | the colour of a notebook's rules, grid lines and dots            |
 
@@ -541,7 +543,7 @@ or `sheets` that is not in its grammar is kept as a raw line with a
 diagnostic, and the default stands in. `paper` and `sheets` mean nothing
 without `written`.
 
-A notebook's page setup (milestones 85, 87) is eight more fields, each optional,
+A notebook's page setup (milestones 85, 87, 88) is ten more fields, each optional,
 each meaning nothing without `written`, and a notebook with none of them is
 what it was before there were any: portrait Letter sheets, 612 by 792
 points, a rule every 24 points from 72 down on ruled paper, a grid or dots
@@ -554,7 +556,9 @@ paper: ruled
 sheets: 1 2 3
 paper-rule: 20.25
 paper-margin: 90
+paper-margin-right: 72
 paper-top: 56.69
+paper-bottom: 48
 paper-size: a4
 paper-turn: landscape
 pageless: true
@@ -563,14 +567,24 @@ paper-line: #c9cdd2
 ---
 ```
 
-`paper-rule`, `paper-margin` and `paper-top` are lengths in points (a 72nd
-of an inch), written with at most two decimals and no unit. `paper-rule` is
-how far apart the rules of ruled paper, the lines of a grid or the dots of
-dotted paper are, 8 to 72; a grid and dots are centred on the sheet, half
-of what is left over at each edge. `paper-margin` is how far from the left
-edge a ruled sheet's margin rule stands, 18 to 300; absent, there is no
-margin rule. `paper-top` is how far down a ruled sheet its first rule is, 0
-to 300; the last rule leaves a rule's room at the foot. `paper-size: a4`
+`paper-rule`, `paper-margin`, `paper-margin-right`, `paper-top` and
+`paper-bottom` are lengths in points (a 72nd of an inch), written with at
+most two decimals and no unit. `paper-rule` is how far apart the rules of
+ruled paper, the lines of a grid or the dots of dotted paper are, 8 to 72;
+a grid and dots are centred on the sheet, half of what is left over at
+each edge. `paper-margin` is how far from the left edge the sheet's left
+margin rule stands, and `paper-margin-right` how far from the right edge
+its right one stands (milestone 88), each 18 to 300; absent, there is no
+margin rule at that edge. A margin rule is drawn on any paper, blank too
+(before 88 a reader drew `paper-margin` on ruled paper alone, and the app
+wrote it there alone); it runs the sheet's whole height, the rules, the
+grid and the dots run the sheet's whole width under it, and a right rule
+that would not stand right of the left one is not drawn. `paper-top` is
+how far down a ruled sheet its first rule is, 0 to 300. `paper-bottom` is
+how much room a ruled page keeps under its last rule, 0 to 300: no rule is
+drawn nearer the foot than that; absent, it is one rule's spacing, as
+before there was the field. It means nothing on a grid, on dots, or on a
+pageless notebook, whose rules run on. `paper-size: a4`
 makes every sheet 595 by 842 points; `paper-turn: landscape` lays the
 sheets on their side (792 by 612, 842 by 595). The only values are `a4`,
 `landscape` and `true`: Letter, upright and paged are said by leaving the
@@ -579,14 +593,43 @@ with a diagnostic, and the default stands in.
 
 `pageless: true` changes how the sheets are shown and nothing about what
 they are. They are still the sheets `sheets` lists, each the notebook's
-size, each with its own strokes and boxes; they are drawn one under
-another with nothing between, as one long sheet, and the ruling of each
-carries on from the one before (the long sheet's rules, lines or dots,
-counted from its top). A stroke belongs to the sheet it began on, in that
-sheet's points, and may run past that sheet's foot onto the next: a reader
-draws a pageless sheet's strokes down to half a sheet below it. The long
-sheet grows by a sheet as it is written near its end. Taking `pageless`
-away, or putting it on a notebook already written in, moves no stroke.
+size, each with its own strokes and boxes: the unit of what is kept and
+synced. They are drawn one under another with nothing between, as one long
+sheet with no mark where one ends, and the ruling of each carries on from
+the one before (the long sheet's rules, lines or dots, counted from its
+top; the margin rules run down all of it). A stroke is kept on the sheet
+its topmost point lies on (milestone 88; before it, the sheet it began
+on), in that sheet's points, and may run past that sheet's foot onto the
+next: a reader draws a pageless sheet's strokes down to a whole sheet
+below it. What is moved or put down together is kept together, on the
+sheet the top of all of it lies on.
+
+The long sheet is drawn as long as what is written on it, and a little
+more (milestone 88). Its length is not kept anywhere: it follows from the
+strokes, the same on every device. With `foot` the lowest point any stroke
+covers, in points from the long sheet's top (sheet *i* of the list, from
+0, begins *i* sheet-heights down), the sheet is drawn `foot` + 192 points
+long, rounded up to the next whole step along its ruling: for ruled paper
+a rule's place (`paper-top` and whole spacings), for a grid or dots a
+whole number of spacings and the room a centred grid keeps at each edge,
+for blank paper a multiple of 24. Where `foot` + 192 is no more than one
+sheet's height, it is exactly one sheet. The sheets of the list that
+begin past that length are not drawn, and the one it ends in is drawn
+only down to it; they are kept in the file, with whatever is on them. A
+writer adds the next sheet to `sheets` (one past the highest number, at
+the end) before the length comes to the end of the last, so two devices
+writing at once add the same number and their strokes merge under it;
+where a merge leaves a sheet that holds strokes out of the list, a writer
+that finds strokes under a number past the highest listed puts that number
+back on the end. A
+notebook made pageless before 88 grew by whole sheets and may list sheets
+past what is written: they read as above. A reader may draw the sheet
+longer than this while it is being written on (the app never shortens it
+under the hand, only when the notebook is next opened), never shorter.
+Shared as a PDF, a pageless notebook is cut into pages of its sheets'
+size, as many as `foot` reaches. Taking `pageless` away, or putting it on
+a notebook already written in, moves no stroke: every sheet of the list
+is a whole page again.
 
 `paper-color` and `paper-line` are colours, each `#` and six hex digits
 (red, green, blue in sRGB), written in lowercase; a reader takes capitals

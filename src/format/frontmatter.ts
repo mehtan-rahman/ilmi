@@ -196,8 +196,8 @@ function parseValue(key: FieldKey, raw: string, warn: Warn): Field | null {
       const v = parseSheets(stripComment(raw));
       return v === null ? null : { key, value: v };
     }
-    case 'paper-rule': case 'paper-margin': case 'paper-top': {
-      const v = parsePoints(stripComment(raw), key === 'paper-rule' ? PAPER_RULE_RANGE : key === 'paper-margin' ? PAPER_MARGIN_RANGE : PAPER_TOP_RANGE);
+    case 'paper-rule': case 'paper-margin': case 'paper-margin-right': case 'paper-top': case 'paper-bottom': {
+      const v = parsePoints(stripComment(raw), key === 'paper-rule' ? PAPER_RULE_RANGE : key === 'paper-margin' || key === 'paper-margin-right' ? PAPER_MARGIN_RANGE : PAPER_TOP_RANGE);
       return v === null ? null : { key, value: v };
     }
     case 'paper-size': return stripComment(raw) === 'a4' ? { key, value: 'a4' } : null;
@@ -376,7 +376,7 @@ export function formatField(f: Field): string {
     case 'finish': return `finish: ${f.value}`;
     case 'written': case 'paper': return `${f.key}: ${f.value}`;
     case 'sheets': return `sheets: ${formatSheets(f.value)}`;
-    case 'paper-rule': case 'paper-margin': case 'paper-top': return `${f.key}: ${formatPoints(f.value)}`;
+    case 'paper-rule': case 'paper-margin': case 'paper-margin-right': case 'paper-top': case 'paper-bottom': return `${f.key}: ${formatPoints(f.value)}`;
     case 'paper-size': case 'paper-turn': return `${f.key}: ${f.value}`;
     case 'pageless': return 'pageless: true';
     case 'paper-color': case 'paper-line': return `${f.key}: ${f.value.toLowerCase()}`;
@@ -445,7 +445,11 @@ export interface WrittenMeta {
   sheets: number[];
   rule?: number;
   margin?: number;
+  /** The right margin rule, from the right edge (milestone 88). */
+  marginRight?: number;
   top?: number;
+  /** The room under a ruled sheet's last rule (milestone 88). */
+  bottom?: number;
   size?: 'a4';
   turn?: 'landscape';
   pageless?: true;
@@ -495,7 +499,9 @@ export function meta(doc: Doc): Meta {
       case 'sheets': sheets = e.value; break;
       case 'paper-rule': setup.rule = e.value; break;
       case 'paper-margin': setup.margin = e.value; break;
+      case 'paper-margin-right': setup.marginRight = e.value; break;
       case 'paper-top': setup.top = e.value; break;
+      case 'paper-bottom': setup.bottom = e.value; break;
       case 'paper-size': setup.size = e.value; break;
       case 'paper-turn': setup.turn = e.value; break;
       case 'pageless': setup.pageless = e.value; break;

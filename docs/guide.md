@@ -338,25 +338,36 @@ to a page) and `more`. A new notebook is ruled Letter sheets.
 it as you use it. The paper: blank, ruled, grid or dotted. The spacing of
 its rules, lines or dots, by a slider that says it in millimetres or by
 name (`narrow`, `college`, `wide` for ruled paper; 5, 7 and 10 mm for a
-grid and dots). For ruled paper a `margin line` and how far from the edge
-it stands, and the `top space` over the first rule. The `paper colour`
+grid and dots). A `left margin` and a `right margin`, on any paper, blank
+too: each a switch, and when it is on how far from its own edge its rule
+stands; the rules, the grid and the dots run on under them to the sheet's
+edges, as on paper. For ruled paper the `top space` over the first rule
+and, for pages, the `bottom space` under the last. The `paper colour`
 and, for paper with anything ruled on it, the `line colour`: a row of
 rounds each, the first of which is none chosen, then the ones with names
 (white, cream, yellow, grey and dark for paper; blue-grey, grey, blue, red
 and green for lines), then one from the colour wheel. With none chosen the
 paper follows the theme, white in the light one and dark in the dark one;
 a colour you choose is the paper in every theme. The line colour is the
-rules', the grid's and the dots'; the margin line stays red. Ink is always
+rules', the grid's and the dots'; the margin rules stay red. Ink is always
 drawn to be read on its paper: on dark paper black ink shows white, and on
 light paper it is as you wrote it, whatever the theme. The layout: `pages`,
-or `pageless`, where the sheets run on as one long sheet with nothing
-between them and the ruling carries on down it; a pageless notebook has no
-page count, nothing to add or delete, and grows as you write near its
-end. For pages, the size (`letter`, `a4`) and which way they lie
+or `pageless`, where the notebook is one sheet: no pages, no gaps, the
+ruling and the margins running down all of it, and nothing to show where
+a page would have ended, so you write, erase and lasso across any part of
+it. It is as long as what you have written and a little more (192
+points of bare paper under the lowest ink), never shorter than one sheet.
+As you write toward its foot it grows a line or two at a time, under the
+Pencil, without anything on the screen moving. It is never made shorter
+while you are in it: erase what was at its foot and the paper stays;
+the next time you open the notebook it ends that little under what is
+left. A pageless notebook has no page count, nothing to add or delete, no
+overview, and `g` goes nowhere. For pages, the size (`letter`, `a4`) and which way they lie
 (`portrait`, `landscape`). `use for new notebooks` keeps all of it as what
 notebooks made on this device start with. None of it moves what you
 wrote: the paper changes under the ink. Going pageless and back loses
-nothing, since the sheets are the same sheets either way.
+and moves nothing: what you wrote is kept by the sheet, a page's height of
+the long sheet each, either way.
 
 On an iPad the Pencil writes where it lands, and the tools are the bar's
 second row (see *On an iPad*). `add page` under the last page adds one,
@@ -382,7 +393,8 @@ system's share sheet (on a Mac, saves it where you say). Over a PDF it
 makes a PDF of that PDF's pages with what you wrote on them; the PDF's own
 text stays text, and what you wrote is drawn in it as shapes, sharp at
 any size (a fountain pen's and a pencil's strokes as pictures). A pageless
-notebook is cut into its sheets.
+notebook is cut into pages of its size, as many as what you wrote
+reaches.
 
 On the Mac a notebook shows its pages and what is written on them, and
 cannot be written on; the bar says `written on an ipad`.
@@ -1027,9 +1039,9 @@ the whole screen: a card shows `reveal` across the foot and then, in the same
 place, the four grades; a topic shows its page with the three at the foot. `×`
 at the top goes back to the day.
 
-An iPhone taps back as you go: lightly when a card's answer is shown; by the
-grade when you give one (`again` a double knock, `hard` a firm tap, `good` a
-light one, `easy` the softest); the system's success when the queue is walked
+An iPhone taps back as you go: a firm tap when a card's answer is shown; by the
+grade when you give one (`again` the system's error, three knocks, `hard` a
+heavy tap, `good` a sharp one, `easy` a light one); the system's success when the queue is walked
 to its end; and a tick for a topic's `next`, `later` or `dismiss`, a new
 card's `got it`, a blank made, a passage kept, a highlight, and a menu opened
 by a long press. `haptics` in the settings turns it off. The row is there

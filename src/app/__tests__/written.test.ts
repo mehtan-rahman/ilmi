@@ -26,6 +26,13 @@ vi.mock('@tauri-apps/plugin-log', async (orig) => ({ ...(await orig<typeof impor
 vi.mock('../../plugins/index.js', async (orig) => ({ ...(await orig<typeof import('../../plugins/index.js')>()), startPlugins: async () => ({}), stopPlugins: () => {} }));
 /** How often the sync was told of strokes. */
 let told = 0;
+/** What the native side says a drawing covers (`ink_bounds`: x, y, w, h in the sheet's points), and the drawings it was asked of. */
+let bounds: (drawing: string) => [number, number, number, number] | null = () => null;
+const bounded: string[] = [];
+vi.mock('@tauri-apps/api/core', async (orig) => {
+  const real = await orig<typeof import('@tauri-apps/api/core')>();
+  return { ...real, invoke: (cmd: string, args?: Record<string, unknown>) => (cmd === 'ink_bounds' ? (async () => { const d = atob(args!.drawing as string); bounded.push(d); return bounds(d); })() : real.invoke(cmd, args)) };
+});
 
 const { attach, duplicateNode, moveNode, openVault, removeNode, renameNode } = await import('../vault.js');
 const { memStore } = await import('../../vault/mem-store.js');
@@ -510,7 +517,7 @@ describe('a notebook\'s pages put in order', () => {
 describe('a notebook\'s page setup', () => {
   let nb: string;
   let id: string;
-  const NEW = { paper: 'ruled', rule: null, margin: null, top: null, size: null, turn: null, pageless: false, color: null, line: null } as const;
+  const NEW = { paper: 'ruled', rule: null, margin: null, marginRight: null, top: null, bottom: null, size: null, turn: null, pageless: false, color: null, line: null } as const;
   const head = (lines: string[]) => ['---', `written: ${id}`, ...lines, '---', ''].join('\n');
 
   it('is what its file says, and nothing where the file says nothing', async () => {
@@ -518,7 +525,10 @@ describe('a notebook\'s page setup', () => {
     await written.whenKnown(nb);
     id = (await front(nb)).written!.id;
     expect(written.setupOf((await front(nb)).written!)).toEqual(NEW);
-    expect(written.setupOf({ id, paper: 'grid', sheets: [1], rule: 30, margin: 90, top: 100, size: 'a4', turn: 'landscape', pageless: true })).toEqual({ paper: 'grid', rule: 30, margin: 90, top: 100, size: 'a4', turn: 'landscape', pageless: true, color: null, line: null });
+    expect(written.setupOf({ id, paper: 'grid', sheets: [1], rule: 30, margin: 90, top: 100, size: 'a4', turn: 'landscape', pageless: true })).toEqual({ paper: 'grid', rule: 30, margin: 90, marginRight: null, top: 100, bottom: null, size: 'a4', turn: 'landscape', pageless: true, color: null, line: null });
+    // a margin at the right and the room at the foot, each as the file has it
+    expect(written.setupOf({ id, paper: 'ruled', sheets: [1], marginRight: 72, bottom: 40 })).toEqual({ ...NEW, marginRight: 72, bottom: 40 });
+    expect(written.setupOf({ id, paper: 'ruled', sheets: [1], margin: 90, marginRight: 72, top: 100, bottom: 0 })).toEqual({ ...NEW, margin: 90, marginRight: 72, top: 100, bottom: 0 });
     expect(written.setupOf({ id, paper: 'ruled', sheets: [1], color: '#fbf6e9', line: '#c9cdd2' })).toEqual({ ...NEW, color: '#fbf6e9', line: '#c9cdd2' });
   });
 
@@ -557,28 +567,80 @@ describe('a notebook\'s page setup', () => {
     expect(await text(nb)).toBe(head(['paper: ruled', 'sheets: 1']));
   });
 
-  it('a margin and the room at the top are a ruled sheet\'s alone; a grid\'s spacing is its own; blank paper has none', async () => {
+  it('the room at the top is a ruled sheet\'s alone, a margin any paper\'s; a grid\'s spacing is its own; blank paper has none', async () => {
     await written.setSetup(nb, { rule: 30, margin: 90, top: 100 });
     await written.setSetup(nb, { paper: 'grid' });
-    expect((await front(nb)).written).toEqual({ id, paper: 'grid', sheets: [1], rule: 30 });
+    expect((await front(nb)).written).toEqual({ id, paper: 'grid', sheets: [1], rule: 30, margin: 90 });
     // a grid's own pitch is not written
     await written.setSetup(nb, { rule: 20 });
-    expect(await text(nb)).toBe(head(['paper: grid', 'sheets: 1']));
-    await written.setSetup(nb, { paper: 'dotted', rule: 28.35, margin: 90 });
-    expect((await front(nb)).written).toEqual({ id, paper: 'dotted', sheets: [1], rule: 28.35 });
+    expect(await text(nb)).toBe(head(['paper: grid', 'sheets: 1', 'paper-margin: 90']));
+    await written.setSetup(nb, { paper: 'dotted', rule: 28.35, margin: 100 });
+    expect((await front(nb)).written).toEqual({ id, paper: 'dotted', sheets: [1], rule: 28.35, margin: 100 });
+    // blank paper keeps its margin rule, and nothing of a spacing
     await written.setSetup(nb, { paper: 'blank' });
-    expect(await text(nb)).toBe(head(['paper: blank', 'sheets: 1']));
+    expect(await text(nb)).toBe(head(['paper: blank', 'sheets: 1', 'paper-margin: 100']));
     await written.setSetup(nb, { paper: 'ruled' });
+    expect(await text(nb)).toBe(head(['paper: ruled', 'sheets: 1', 'paper-margin: 100']));
+    await written.setSetup(nb, { margin: null });
+    expect(await text(nb)).toBe(head(['paper: ruled', 'sheets: 1']));
+  });
+
+  it('a margin rule at the right is written beside the left one\'s, on any paper, and each is taken away alone', async () => {
+    await written.setSetup(nb, { marginRight: 72 });
+    expect(await text(nb)).toBe(head(['paper: ruled', 'sheets: 1', 'paper-margin-right: 72']));
+    expect((await front(nb)).written).toEqual({ id, paper: 'ruled', sheets: [1], marginRight: 72 });
+    await until(() => docs()[nb]?.written?.marginRight === 72, 'the index has the right margin');
+    await written.setSetup(nb, { margin: 90 });
+    expect((await front(nb)).written).toEqual({ id, paper: 'ruled', sheets: [1], margin: 90, marginRight: 72 });
+    expect(written.setupOf((await front(nb)).written!)).toEqual({ ...NEW, margin: 90, marginRight: 72 });
+    for (const paper of ['grid', 'dotted', 'blank'] as const) {
+      await written.setSetup(nb, { paper });
+      expect((await front(nb)).written, paper).toEqual({ id, paper, sheets: [1], margin: 90, marginRight: 72 });
+    }
+    // the left one gone, the right one stands; and the other way round
+    await written.setSetup(nb, { margin: null });
+    expect((await front(nb)).written).toEqual({ id, paper: 'blank', sheets: [1], marginRight: 72 });
+    await written.setSetup(nb, { margin: 60, marginRight: null });
+    expect((await front(nb)).written).toEqual({ id, paper: 'blank', sheets: [1], margin: 60 });
+    await written.setSetup(nb, NEW);
+    expect(await text(nb)).toBe(head(['paper: ruled', 'sheets: 1']));
+  });
+
+  it('the room at a sheet\'s foot is a ruled sheet\'s alone, and not written when it is a rule\'s, which a sheet has anyway', async () => {
+    await written.setSetup(nb, { bottom: 60 });
+    expect(await text(nb)).toBe(head(['paper: ruled', 'sheets: 1', 'paper-bottom: 60']));
+    expect((await front(nb)).written).toEqual({ id, paper: 'ruled', sheets: [1], bottom: 60 });
+    expect(written.setupOf((await front(nb)).written!)).toEqual({ ...NEW, bottom: 60 });
+    // none at all is said
+    await written.setSetup(nb, { bottom: 0 });
+    expect((await front(nb)).written).toEqual({ id, paper: 'ruled', sheets: [1], bottom: 0 });
+    // a rule's room: a new notebook's 24 points
+    await written.setSetup(nb, { bottom: 24 });
+    expect(await text(nb)).toBe(head(['paper: ruled', 'sheets: 1']));
+    // with another spacing it is that spacing that is not written
+    await written.setSetup(nb, { rule: 30, bottom: 24 });
+    expect((await front(nb)).written).toEqual({ id, paper: 'ruled', sheets: [1], rule: 30, bottom: 24 });
+    await written.setSetup(nb, { bottom: 30 });
+    expect((await front(nb)).written).toEqual({ id, paper: 'ruled', sheets: [1], rule: 30 });
+    // on a grid, dots or blank paper there is none
+    await written.setSetup(nb, { rule: null, bottom: 60, top: 100 });
+    for (const paper of ['grid', 'dotted', 'blank'] as const) {
+      await written.setSetup(nb, { paper, bottom: 60 });
+      expect((await front(nb)).written, paper).toEqual({ id, paper, sheets: [1] });
+    }
+    await written.setSetup(nb, NEW);
     expect(await text(nb)).toBe(head(['paper: ruled', 'sheets: 1']));
   });
 
   it('a measure is held to what it may be, to a hundredth of a point', async () => {
-    await written.setSetup(nb, { rule: 3, margin: 5, top: 999 });
-    expect((await front(nb)).written).toMatchObject({ rule: 8, margin: 18, top: 300 });
-    await written.setSetup(nb, { rule: 500, margin: 500, top: -4 });
-    expect((await front(nb)).written).toMatchObject({ rule: 72, margin: 300, top: 0 });
-    await written.setSetup(nb, { rule: 19.8444, margin: 77.777, top: Number.NaN });
-    expect(await text(nb)).toBe(head(['paper: ruled', 'sheets: 1', 'paper-rule: 19.84', 'paper-margin: 77.78']));
+    await written.setSetup(nb, { rule: 3, margin: 5, marginRight: 5, top: 999, bottom: 999 });
+    expect((await front(nb)).written).toMatchObject({ rule: 8, margin: 18, marginRight: 18, top: 300, bottom: 300 });
+    await written.setSetup(nb, { rule: 500, margin: 500, marginRight: 500, top: -4, bottom: -4 });
+    expect((await front(nb)).written).toMatchObject({ rule: 72, margin: 300, marginRight: 300, top: 0, bottom: 0 });
+    await written.setSetup(nb, { rule: 19.8444, margin: 77.777, marginRight: 55.554, top: Number.NaN, bottom: Number.NaN });
+    expect((await front(nb)).written).toEqual({ id, paper: 'ruled', sheets: [1], rule: 19.84, margin: 77.78, marginRight: 55.55 });
+    await written.setSetup(nb, { marginRight: Number.POSITIVE_INFINITY, bottom: 33.336 });
+    expect((await front(nb)).written).toEqual({ id, paper: 'ruled', sheets: [1], rule: 19.84, margin: 77.78, bottom: 33.34 });
     await written.setSetup(nb, NEW);
     expect(await text(nb)).toBe(head(['paper: ruled', 'sheets: 1']));
   });
@@ -601,10 +663,15 @@ describe('a notebook\'s page setup', () => {
     expect(written.parseSetup('not json')).toBeNull();
     expect(written.parseSetup('null')).toBeNull();
     expect(written.parseSetup('3')).toBeNull();
-    const kept = { paper: 'dotted', rule: 28.35, margin: 90, top: 100, size: 'a4', turn: 'landscape', pageless: true, color: '#fbf6e9', line: '#c9cdd2' };
+    const kept = { paper: 'dotted', rule: 28.35, margin: 90, marginRight: 72, top: 100, bottom: 40, size: 'a4', turn: 'landscape', pageless: true, color: '#fbf6e9', line: '#c9cdd2' };
     expect(written.parseSetup(JSON.stringify(kept))).toEqual(kept);
     expect(written.parseSetup('{}')).toEqual(NEW);
-    expect(written.parseSetup(JSON.stringify({ paper: 'lined', rule: 2, margin: 'wide', top: 999, size: 'letter', turn: 'portrait', pageless: 'yes', color: 'cream', line: 7 }))).toEqual(NEW);
+    expect(written.parseSetup(JSON.stringify({ paper: 'lined', rule: 2, margin: 'wide', marginRight: 'wide', top: 999, bottom: 999, size: 'letter', turn: 'portrait', pageless: 'yes', color: 'cream', line: 7 }))).toEqual(NEW);
+    // one kept before there was a right margin or a foot's room has neither
+    expect(written.parseSetup(JSON.stringify({ paper: 'ruled', rule: 18, margin: 90, top: 100 }))).toEqual({ ...NEW, rule: 18, margin: 90, top: 100 });
+    // each held to what it may be: a right margin from 18 points to 300, the room at the foot from none to 300
+    const one = (t: Record<string, unknown>) => { const got = written.parseSetup(JSON.stringify(t))!; return [got.marginRight, got.bottom]; };
+    expect([one({ marginRight: 18, bottom: 0 }), one({ marginRight: 300, bottom: 300 }), one({ marginRight: 17.9, bottom: -1 }), one({ marginRight: 300.1, bottom: 301 }), one({ marginRight: null, bottom: '24' })]).toEqual([[18, 0], [300, 300], [null, null], [null, null], [null, null]]);
     // a colour kept in capitals is the colour
     expect(written.parseSetup(JSON.stringify({ color: '#FBF6E9', line: '#C9CDD2' }))).toEqual({ ...NEW, color: '#fbf6e9', line: '#c9cdd2' });
   });
@@ -636,9 +703,116 @@ describe('a notebook\'s page setup', () => {
     } finally {
       localStorage.removeItem(written.SETUP_KEY);
     }
+    // and its margins, the room at its foot
+    try {
+      written.keepSetup({ ...NEW, margin: 90, marginRight: 72, bottom: 40 });
+      expect(written.defaultSetup()).toEqual({ ...NEW, margin: 90, marginRight: 72, bottom: 40 });
+      const edged = await written.createWritten('', 'started with margins');
+      const e = (await front(edged)).written!;
+      expect(e).toEqual({ id: e.id, paper: 'ruled', sheets: [1], margin: 90, marginRight: 72, bottom: 40 });
+      await removeNode(edged);
+    } finally {
+      localStorage.removeItem(written.SETUP_KEY);
+    }
     const plainly = await written.createWritten('', 'started plainly');
     const m = (await front(plainly)).written!;
     expect(m).toEqual({ id: m.id, paper: 'ruled', sheets: [1] });
     await removeNode(plainly);
+  });
+});
+
+describe('how far down a pageless notebook\'s long sheet its writing reaches', () => {
+  const FOOT = 'f'.repeat(32);
+  const H = 792;
+  /** What each stroke covers on its own sheet: the drawing's bounds are those of its strokes together. */
+  let boxes: Record<string, [number, number, number, number]> = {};
+  const over = (drawing: string): [number, number, number, number] | null => {
+    const got = drawing.split('\n').slice(1).map((l) => boxes[l.split(' ')[0]!]).filter((b) => b !== undefined);
+    if (!got.length) return null;
+    const [x0, y0, x1, y1] = [Math.min(...got.map((b) => b[0])), Math.min(...got.map((b) => b[1])), Math.max(...got.map((b) => b[0] + b[2])), Math.max(...got.map((b) => b[1] + b[3]))];
+    return [x0, y0, x1 - x0, y1 - y0];
+  };
+  const clear = async () => { for (const n of [1, 2, 3, 5, 9]) await mem.setPageInk(FOOT, n, []); bounded.length = 0; boxes = {}; bounds = over; };
+
+  it('is nothing with nothing written, and the drawing is not asked about', async () => {
+    await clear();
+    expect(await written.inkFoot(FOOT, [1, 2, 3], H)).toBe(0);
+    expect(await written.inkFoot(FOOT, [], H)).toBe(0);
+    expect(bounded).toEqual([]);
+  });
+
+  it('is the foot of what is written on a sheet, as far down the long sheet as that sheet begins: by its place among the sheets, not its number', async () => {
+    await clear();
+    await mem.setPageInk(FOOT, 1, [stroke(1), stroke(2)]);
+    boxes = { s1: [40, 100, 200, 30], s2: [60, 300, 100, 150] };
+    expect(await written.inkFoot(FOOT, [1], H)).toBe(450);
+    expect(await written.inkFoot(FOOT, [1, 2, 3], H)).toBe(450);
+    // the same sheet third of five: two sheets down
+    expect(await written.inkFoot(FOOT, [5, 9, 1, 2, 3], H)).toBe(2 * H + 450);
+    // an A4 sheet is longer
+    expect(await written.inkFoot(FOOT, [5, 1], 842)).toBe(842 + 450);
+    // what is asked about is the sheet's drawing, whole
+    expect(bounded.every((d) => d.startsWith('drawing\ns1 ') && d.includes('\ns2 '))).toBe(true);
+    // a sheet that is none of the notebook's is not looked at
+    bounded.length = 0;
+    expect(await written.inkFoot(FOOT, [2, 3], H)).toBe(0);
+    expect(bounded).toEqual([]);
+  });
+
+  it('a stroke kept on one sheet may run on over the next: the last two sheets written on are looked at, and no more', async () => {
+    await clear();
+    await mem.setPageInk(FOOT, 1, [stroke(1)]);
+    await mem.setPageInk(FOOT, 2, [stroke(2)]);
+    await mem.setPageInk(FOOT, 3, [stroke(3)]);
+    // sheet 2's stroke begins low on it and ends 300 points down sheet 3; sheet 3's own is near its head
+    boxes = { s1: [0, 0, 10, 5000], s2: [40, 700, 100, 392], s3: [40, 20, 100, 60] };
+    expect(await written.inkFoot(FOOT, [1, 2, 3], H)).toBe(H + 1092);
+    expect(bounded.map((d) => d.split('\n')[1]!.split(' ')[0])).toEqual(['s3', 's2']);
+    // bare sheets after them are passed over
+    bounded.length = 0;
+    expect(await written.inkFoot(FOOT, [1, 2, 3, 5, 9], H)).toBe(H + 1092);
+    expect(bounded.length).toBe(2);
+    // the lower of the two, whichever it is
+    boxes = { ...boxes, s3: [40, 20, 100, 500] };
+    expect(await written.inkFoot(FOOT, [1, 2, 3], H)).toBe(2 * H + 520);
+    // in the order of the sheets as they lie
+    expect(await written.inkFoot(FOOT, [3, 2, 1], H)).toBe(2 * H + 5000);
+  });
+
+  it('a drawing that covers nothing, or cannot be asked about, counts for nothing', async () => {
+    await clear();
+    await mem.setPageInk(FOOT, 1, [stroke(1)]);
+    await mem.setPageInk(FOOT, 2, [stroke(2)]);
+    boxes = { s1: [0, 100, 10, 100] };
+    // sheet 2's drawing has no bounds: sheet 1's stand
+    expect(await written.inkFoot(FOOT, [1, 2], H)).toBe(200);
+    bounds = (d) => { if (d.includes('\ns2 ')) throw new Error('no canvas'); return over(d); };
+    expect(await written.inkFoot(FOOT, [1, 2], H)).toBe(200);
+    bounds = () => null;
+    expect(await written.inkFoot(FOOT, [1, 2], H)).toBe(0);
+    await clear();
+    bounds = () => null;
+  });
+});
+
+describe('a sheet lost from a pageless notebook\'s list in a merge', () => {
+  it('is listed again when strokes are kept under a number past the highest listed, lowest first; pages are left alone', async () => {
+    const path = await written.createWritten('', 'healed');
+    const m = (await front(path)).written!;
+    // nothing past the list: as it is
+    expect(await written.healSheets(path, m.id, m.sheets)).toEqual([1]);
+    await mem.setPageInk(m.id, 3, [stroke(31)]);
+    await mem.setPageInk(m.id, 2, [stroke(21)]);
+    // a notebook of pages keeps its list: only a pageless one grows by sheets of its own accord
+    expect(await written.healSheets(path, m.id, m.sheets)).toEqual([1]);
+    expect((await front(path)).written!.sheets).toEqual([1]);
+    await written.setSetup(path, { pageless: true });
+    expect(await written.healSheets(path, m.id, [1])).toEqual([1, 2, 3]);
+    expect((await front(path)).written!.sheets).toEqual([1, 2, 3]);
+    // and once they are listed there is nothing to do
+    expect(await written.healSheets(path, m.id, [1, 2, 3])).toEqual([1, 2, 3]);
+    await mem.setPageInk(m.id, 2, []);
+    await mem.setPageInk(m.id, 3, []);
+    await removeNode(path);
   });
 });

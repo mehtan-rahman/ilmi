@@ -32,7 +32,7 @@ const tick = () => new Promise((r) => setTimeout(r, 0));
 const LOOK = { paper: '#ffffff', rule: '#c3cfdd', margin: '#e3b3b3', dot: '#a9b6c6', dark: false, desk: '#e9e9e9', accent: '#b58a2a', fg: '#333333', line: '#cccccc', tag: '#ffffff' } as unknown as Spec['look'];
 const specOf = (id: string, more: Partial<Spec> = {}): Spec => ({
   id, at: { x: 0, y: 60, w: 700, h: 840 }, key: 'k', sheets: [1, 2, 3],
-  paper: { kind: 'ruled', w: 612, h: 792, rule: 24, margin: null, top: 72, run: false },
+  paper: { kind: 'ruled', w: 612, h: 792, rule: 24, margin: null, marginRight: null, top: 72, bottom: null, run: false },
   look: LOOK, pad: { top: 18, side: 30, bottom: 80 }, zoom: 1, open: null, marks: [], holes: [], add: true, tagRoom: 210, ...more,
 });
 const sent = () => calls.filter((c) => c.cmd === 'ink_surface').map((c) => c.args.surface);
@@ -133,11 +133,11 @@ describe('a surface asked to go somewhere', () => {
 });
 
 describe('the paper a surface is told', () => {
-  it('is the sheet\'s kind, size and ruling, and whether the sheets run on; not where this sheet begins, nor its colours', () => {
-    const p: PaperSpec = { kind: 'ruled', w: 595, h: 842, rule: 18, margin: 90, top: 60, run: true, at: 1684, color: '#fbf6e9', line: '#bcdcc0' };
-    expect(paperArgs(p)).toEqual({ kind: 'ruled', w: 595, h: 842, rule: 18, margin: 90, top: 60, run: true });
-    expect(Object.keys(paperArgs(p))).toEqual(['kind', 'w', 'h', 'rule', 'margin', 'top', 'run']);
-    expect(paperArgs({ ...p, kind: 'dotted', margin: null, run: false })).toEqual({ kind: 'dotted', w: 595, h: 842, rule: 18, margin: null, top: 60, run: false });
+  it('is the sheet\'s kind, size and ruling, its margins and the room at its foot, and whether the sheets run on; not where this sheet begins, nor its colours', () => {
+    const p: PaperSpec = { kind: 'ruled', w: 595, h: 842, rule: 18, margin: 90, marginRight: 72, top: 60, bottom: null, run: true, at: 1684, color: '#fbf6e9', line: '#bcdcc0' };
+    expect(paperArgs(p)).toEqual({ kind: 'ruled', w: 595, h: 842, rule: 18, margin: 90, marginRight: 72, top: 60, bottom: null, run: true });
+    expect(Object.keys(paperArgs(p))).toEqual(['kind', 'w', 'h', 'rule', 'margin', 'marginRight', 'top', 'bottom', 'run']);
+    expect(paperArgs({ ...p, kind: 'dotted', margin: null, marginRight: null, bottom: 30, run: false })).toEqual({ kind: 'dotted', w: 595, h: 842, rule: 18, margin: null, marginRight: null, top: 60, bottom: 30, run: false });
   });
 });
 

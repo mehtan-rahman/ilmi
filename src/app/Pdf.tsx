@@ -108,9 +108,9 @@ import {
 import { pickPos, type Band } from '../reader/index.js';
 import { passagesOf, pointOn, sectionState, type Passage } from '../schedule/index.js';
 import { INKS, passageId, childDirOf, isPdfPath, type InkStroke, type Mark, type Portal, type Quad, type StoreFs } from '../vault/index.js';
-import { PAPERS, SHEET_H, SHEET_W, addSheet, addSheetAfter, addWritten, duplicateSheet, placeOfSheet as placeAmong, removeSheet, setPaper, sheetAt as sheetAmong, type PaperKind } from './written.js';
+import { PAPERS, SHEET_H, SHEET_W, addSheet, addSheetAfter, addWritten, duplicateSheet, healSheets, inkFoot, placeOfSheet as placeAmong, removeSheet, setPaper, sheetAt as sheetAmong, type PaperKind } from './written.js';
 import { InkMenu, PageGrid, PageSetup, PaperSheet, sharePages } from './PageTools.js';
-import { paperLook, paperOf, sheetSize, type PaperSpec } from './paper.js';
+import { paperLook, paperOf, runLength, sheetSize, type PaperSpec } from './paper.js';
 import { InkBar, InkToggle } from './InkBar.js';
 import { redo as inkRedo, undo as inkUndo, useInkTools } from './inkTools.js';
 import { CueActions } from '../plugins/CueActions.js';
@@ -173,8 +173,8 @@ const INK_MAX = 20_000_000;
 const PINCH_GAP = 260;
 /** How far back from a passage the lens reads pages for a heading to name it. */
 const NAME_BACK = 30;
-/** How far past its foot a pageless notebook's sheet is written on and drawn, of its height: a stroke begun on one sheet runs on over the next. */
-export const RUN_OVER = 0.5;
+/** How far past its foot a pageless notebook's sheet is drawn, of its height: a stroke kept on one sheet runs on over the next (88: a sheet's height, where it was half). */
+export const RUN_OVER = 1;
 /** How far down a notebook's last page a stroke begins for a page to be added after it: its lower third. */
 const ADD_FROM = 2 / 3;
 
@@ -640,6 +640,33 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     const off = fs.onPageInk((h, n) => { if (h === hash) void look(n); });
     return () => { live = false; off(); };
   }, [hash]);
+  /**
+   * A pageless notebook is one sheet (88), drawn as long as what is written on it and a little more (`runLength`):
+   * `foot` is how far down it the lowest thing written reaches as the store has it, `len` how long it is drawn, in
+   * points. It grows as it is written on and is never shorter while it is open; null until the store has said, and
+   * for pages. On an iPad the surface keeps the length itself once it is told the foot.
+   */
+  const [runLen, setRunLen] = useState<{ foot: number; len: number } | null>(null);
+  /** Moves when the notebook is opened again in a lens that was kept (its tab shown again): the sheet is then as long as what is written, whatever it was. */
+  const [runOpened, setRunOpened] = useState(0);
+  const writtenRef = useRef(written);
+  writtenRef.current = written;
+  useEffect(() => () => setRunLen(null), [id]);
+  // (an iPad's surface is told once: what is written there afterwards it has itself)
+  const runSeen = native ? 0 : inked;
+  const runSheets = native ? '' : sheetsKey;
+  useEffect(() => {
+    if (!pageless || writtenId === undefined) { setRunLen(null); return; }
+    let live = true;
+    // (first, a sheet that holds strokes and was lost from the list in a merge is listed again)
+    void healSheets(id, writtenId, sheetsRef.current ?? []).then((list) => inkFoot(writtenId, list, sheetH)).then((foot) => {
+      const w = writtenRef.current;
+      if (!live || !w) return;
+      const len = runLength(paperOf(w, 0), foot);
+      setRunLen((was) => (was && was.len >= len && was.foot >= foot ? was : { foot: Math.max(foot, was?.foot ?? 0), len: Math.max(len, was?.len ?? 0) }));
+    }, console.error);
+    return () => { live = false; };
+  }, [id, pageless, writtenId, sheetH, runSeen, runSheets, runOpened, written?.paper, written?.rule, written?.top]);
   /** A notebook's pages near the view, by place: only these are drawn as paper with their writing's picture (a PDF's page is drawn as it comes near, `renderPage`). */
   const [near, setNear] = useState<{ lo: number; hi: number } | null>(null);
   const isNear = (n: number): boolean => near !== null && n >= near.lo && n <= near.hi;
@@ -882,6 +909,13 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
   // (a pageless notebook's sheets run on as one: nothing between them)
   const tops = useMemo(() => pageTops(sizes, scale, pageless ? 0 : pageGap(zoom, dpr), dpr), [sizes, scale, pageless, zoom, dpr]);
 
+  /** How high the pages' column is drawn, px: a pageless notebook's ends where its one long sheet does (88), the sheets past that not shown. */
+  const colH = useMemo(() => {
+    if (!pageless || !runLen || !sizes.length) return tops.total;
+    const k = Math.min(sizes.length - 1, Math.max(0, Math.floor(runLen.len / sheetH - 1e-9)));
+    return Math.min(tops.total, (tops.at[k + 1] ?? 0) + onPixel(Math.min(sheetH, runLen.len - k * sheetH) * scale, dpr));
+  }, [pageless, runLen, sizes, tops, sheetH, scale, dpr]);
+
   const first = base + 1;
   const last = base + sizes.length;
   /** A page's place in the column, px; null for a page not shown. */
@@ -984,7 +1018,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
   const pinchEnd = useRef<{ page: number; x: number; y: number; cx: number; cy: number } | { left: number; top: number; x: number; y: number } | null>(null);
   /** What the pages are laid out by, for saying where they would lie at another zoom. */
   const layRef = useRef({ fitW: 0, colW: 0, pageW: 0, maxW: 612, scale: 1, left: 0, pad: 0, sizes: [] as Size[], pageless: false, total: 0, at: [0] as number[] });
-  layRef.current = { fitW, colW, pageW, maxW, scale, left: room.left, pad: room.pad, sizes, pageless, total: tops.total, at: tops.at };
+  layRef.current = { fitW, colW, pageW, maxW, scale, left: room.left, pad: room.pad, sizes, pageless, total: colH, at: tops.at };
   /** Whether the pages can be written on: two fingers tapped are undo only then. */
   const canWriteRef = useRef(false);
   /** The pages have landed where they open (the place left, the read point, a section gone to): from here a scroll is the reader's, and remembered. */
@@ -2661,7 +2695,8 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     }
     if (e.key === 'r' && canEnrol && !info?.read) { take(); startReading(); }
     else if (e.key === '/') { if (written) return; take(); setFind((f) => f ?? { q: '', pages: [], at: 0 }); findRef.current?.focus(); }
-    else if (e.key === 'g') { take(); setGoto(true); }
+    // (a pageless notebook has no pages to go to)
+    else if (e.key === 'g') { if (pageless) return; take(); setGoto(true); }
     else if (!session && (e.key === ']' || e.key === '[')) {
       // step between the passages, in book order; with none, between pages
       const list = drawnRef.current;
@@ -2763,7 +2798,8 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
       return;
     }
     if (e.what === 'grow') {
-      // a notebook never runs out of paper: a stroke begun low on its last page adds the next, once for that page
+      // a notebook never runs out of paper: a stroke begun low on its last page adds the next, once for that page (a
+      // pageless notebook's long sheet asks for its next sheet before its foot comes to the end of the last: 88)
       const list = sheetsRef.current;
       if (!list || e.sheet !== list[list.length - 1] || addedAfter.current === e.sheet) return;
       addedAfter.current = e.sheet ?? null;
@@ -2801,13 +2837,24 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
   }, [native, drawn, pending, lit, flash]);
   const surfaceOpen = useRef<{ page: number; y: number; x: number | null } | null | undefined>(undefined);
   const surfaceVeil = useRef<{ state: 'off' | 'asking' | 'on' }>({ state: 'off' });
+  /** The surface is on the glass (its tab shown). */
+  const surfaceLive = useRef(false);
   const sendRef = useRef<() => void>(() => {});
   sendRef.current = () => {
     const el = surfaceEl;
     if (!native || !written || !hash || !el || !sheets) return;
+    // a pageless notebook's surface is told how far its writing reaches: not before the store has said
+    if (pageless && !runLen) return;
     const r = el.getBoundingClientRect();
     // a tab not shown has no surface
-    if (!el.isConnected || r.width < 8 || r.height < 8) { dropSurface(surfaceId); surfaceOpen.current = undefined; return; }
+    if (!el.isConnected || r.width < 8 || r.height < 8) {
+      dropSurface(surfaceId);
+      surfaceOpen.current = undefined;
+      // (a pageless notebook shown again is opened again: its sheet as long as what is written on it then, and a little more)
+      if (surfaceLive.current && pageless && runLen) { setRunLen(null); setRunOpened((n) => n + 1); }
+      surfaceLive.current = false;
+      return;
+    }
     const book = el.closest<HTMLElement>('.book');
     const css = getComputedStyle(el);
     const look = paperLook(written, theme);
@@ -2833,12 +2880,14 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
       // (the surface is shown again first, then the picture under it goes)
       setTimeout(() => { if (surfaceVeil.current.state === 'off') el.style.backgroundImage = ''; }, 250);
     }
+    surfaceLive.current = true;
     sendSurface({
       id: surfaceId,
       at: { x: r.left, y: r.top, w: r.width, h: r.height },
       key: hash,
       sheets,
       paper: paperArgs(spec),
+      ...(pageless && runLen ? { foot: runLen.foot } : {}),
       look: { ...look, desk: hexOf(css.backgroundColor, '#e9e9e9'), accent: hexOf(css.getPropertyValue('--surface-accent') || css.outlineColor, '#b58a2a'), fg: hexOf(css.color, '#333333'), line: hexOf(css.borderTopColor, '#cccccc'), tag: hexOf(book ? getComputedStyle(book).getPropertyValue('--surface-tag') || css.columnRuleColor : css.columnRuleColor, '#ffffff') },
       pad: SURFACE_PAD,
       zoom: zoomRef.current,
@@ -3043,7 +3092,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
               )}
             </div>
           )}
-          {!native && <div className="pdf-pages" ref={pagesRef} style={{ height: tops.total || undefined, width: pageW }} onPointerDown={onPointerDown} onMouseDown={onMouseDown} onClick={onPress} onPointerMove={onHover} onContextMenu={onMenu}>
+          {!native && <div className="pdf-pages" ref={pagesRef} data-run={pageless && colH < tops.total ? '1' : undefined} style={{ height: colH || undefined, width: pageW }} onPointerDown={onPointerDown} onMouseDown={onMouseDown} onClick={onPress} onPointerMove={onHover} onContextMenu={onMenu}>
             {status === 'loading' && <div className="empty">opening</div>}
             {sizes.map((s, i) => (
               // a notebook's page is its sheet: known by the sheet's number, so a page deleted before it leaves it as it is

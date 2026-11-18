@@ -31,12 +31,12 @@ import { popMenu, type PopItem } from './popMenu.js';
 import type { PDFDocumentProxy } from './pdfjs.js';
 import { useApp } from './store.js';
 import { currentVault } from './vault.js';
-import { PAPERS, addSheet, addSheetAfter, duplicateSheet, keepSetup, moveSheet, setPaper, setSetup, setupOf, type Setup } from './written.js';
+import { PAPERS, addSheet, addSheetAfter, duplicateSheet, inkFoot, keepSetup, moveSheet, setPaper, setSetup, setupOf, type Setup } from './written.js';
 
 /** A sheet's paper, small or large: the sheet in points, whatever size it is drawn at. */
 export function PaperSheet({ kind, spec, px }: { kind?: PaperKind; /** The paper with its page setup; a kind alone is a Letter sheet as a new notebook has it. */ spec?: PaperSpec; /** The pixels of the screen it is drawn with to the point, where its rules are to lie on them (a page; 86). */ px?: number }) {
   const of = spec ?? kind ?? 'blank';
-  const key = typeof of === 'string' ? of : `${of.kind} ${of.w} ${of.h} ${of.rule} ${of.margin} ${of.top} ${of.run} ${of.at}`;
+  const key = typeof of === 'string' ? of : `${of.kind} ${of.w} ${of.h} ${of.rule} ${of.margin} ${of.marginRight} ${of.top} ${of.bottom} ${of.run} ${of.at}`;
   const wide = px && px > 0 ? ruleWidth(px) : 0;
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const p = useMemo(() => paperPaths(of, wide ? { px: px!, w: wide } : undefined), [key, px]);
@@ -126,14 +126,16 @@ export async function sharePages(of: PagesOf, at: { x: number; y: number; w: num
   const vault = currentVault();
   if (!vault) return null;
   const mobile = useApp.getState().mobile;
+  // a pageless notebook is cut into pages of its size, as many as what is written on it reaches (88): never the bare sheets under it
+  const reach = of.written?.pageless ? Math.max(1, Math.ceil((await inkFoot(of.hash, of.written.sheets, sheetSize(of.written).h)) / sheetSize(of.written).h - 1e-9)) : Infinity;
   const pages = of.written
-    ? of.written.sheets.map((s, i, all) => {
+    ? of.written.sheets.slice(0, reach).map((s, i, all) => {
       // each sheet as its page setup has it; a pageless notebook is cut into its sheets, and what was written past
       // the foot of the one before is drawn at the head of this one
       const spec = paperOf(of.written!, i);
       const before = of.written!.pageless && i > 0 && of.inked.has(all[i - 1]!) ? pageKey(of.hash, all[i - 1]!) : null;
       // its colours as a light theme shows them: the paper's chosen one (none: white), the ruling's, and whether ink on it is drawn the dark way (87)
-      return { w: spec.w, h: spec.h, paper: spec.kind, rule: spec.rule, margin: spec.margin, top: spec.top, at: spec.run ? spec.at : null, ink: of.inked.has(s) ? pageKey(of.hash, s) : null, above: before, color: spec.color, line: spec.line, dark: paperLook(spec, 'light').dark };
+      return { w: spec.w, h: spec.h, paper: spec.kind, rule: spec.rule, margin: spec.margin, marginRight: spec.marginRight, top: spec.top, bottom: spec.bottom, at: spec.run ? spec.at : null, ink: of.inked.has(s) ? pageKey(of.hash, s) : null, above: before, color: spec.color, line: spec.line, dark: paperLook(spec, 'light').dark };
     })
     : (of.pages ?? []).map((p) => ({ w: p.w, h: p.h, source: p.page, ink: of.inked.has(p.page) ? pageKey(of.hash, p.page) : null }));
   if (!pages.length) return null;
@@ -350,7 +352,7 @@ export function PageGrid({ id, into, written, hash, base, sizes, current, inked,
           <span className="pg-papers" role="group" aria-label="paper">
             {PAPERS.map((k) => (
               <button key={k} type="button" className="pg-paper" data-pg-paper={k} aria-label={`${k} paper`} title={`${k} paper`} aria-pressed={written.paper === k} onClick={() => { if (written.paper !== k) void setPaper(id, k).catch(failed('paper')); }}>
-                <PaperSheet spec={{ kind: k, w: 96, h: 124, rule: k === 'ruled' ? 14 : 12, margin: null, top: 22, run: false, at: 0, color: written.color ?? null, line: written.line ?? null }} />
+                <PaperSheet spec={{ kind: k, w: 96, h: 124, rule: k === 'ruled' ? 14 : 12, margin: null, marginRight: null, top: 22, bottom: null, run: false, at: 0, color: written.color ?? null, line: written.line ?? null }} />
               </button>
             ))}
           </span>
@@ -522,7 +524,7 @@ export function PageSetup({ id, into, written, onClose }: { id: string; into: HT
       <div className="ps-papers" role="group" aria-label="paper">
         {PAPERS.map((k) => (
           <button key={k} type="button" className="ps-paper" data-ps={`paper-${k}`} aria-pressed={kind === k} onClick={() => change({ paper: k })}>
-            <PaperSheet spec={{ kind: k, w: 96, h: 124, rule: k === 'ruled' ? 14 : 12, margin: null, top: 22, run: false, at: 0, color: draft.color, line: draft.line }} />
+            <PaperSheet spec={{ kind: k, w: 96, h: 124, rule: k === 'ruled' ? 14 : 12, margin: null, marginRight: null, top: 22, bottom: null, run: false, at: 0, color: draft.color, line: draft.line }} />
             <span>{k}</span>
           </button>
         ))}
@@ -539,26 +541,41 @@ export function PageSetup({ id, into, written, onClose }: { id: string; into: HT
           </div>
         </div>
       )}
-      {kind === 'ruled' && (
-        <div className="ps-block">
-          <button type="button" className="ps-check" role="switch" data-ps="margin" aria-checked={draft.margin !== null} onClick={() => change({ margin: draft.margin === null ? MARGIN_AT : null })}>
-            <span className="ps-ct">margin line</span>
-            <span className="ps-sw" aria-hidden="true" />
-          </button>
-          {draft.margin !== null && (
-            <label className="ps-row">
-              <span className="ps-l">from the edge</span>
-              <input type="range" data-ps="margin-at" min={10 * MM} max={60 * MM} step={0.01} value={draft.margin} aria-label="margin from the edge" onChange={(e) => change({ margin: round2(Number(e.currentTarget.value)) })} />
-              <span className="ps-v">{mm(draft.margin)}</span>
-            </label>
-          )}
+      <div className="ps-block">
+        {/* a margin rule at either edge, on any paper (88): each from its own edge */}
+        {([['margin', 'left margin', draft.margin], ['marginRight', 'right margin', draft.marginRight]] as const).map(([field, word, at]) => {
+          const name = field === 'margin' ? 'margin' : 'margin-right';
+          return (
+            <div key={field} className="ps-pair">
+              <button type="button" className="ps-check" role="switch" data-ps={name} aria-checked={at !== null} onClick={() => change({ [field]: at === null ? MARGIN_AT : null })}>
+                <span className="ps-ct">{word}</span>
+                <span className="ps-sw" aria-hidden="true" />
+              </button>
+              {at !== null && (
+                <label className="ps-row">
+                  <span className="ps-l">from the edge</span>
+                  <input type="range" data-ps={`${name}-at`} min={10 * MM} max={60 * MM} step={0.01} value={at} aria-label={`${word} from the edge`} onChange={(e) => change({ [field]: round2(Number(e.currentTarget.value)) })} />
+                  <span className="ps-v">{mm(at)}</span>
+                </label>
+              )}
+            </div>
+          );
+        })}
+        {kind === 'ruled' && (
           <label className="ps-row">
             <span className="ps-l">top space</span>
             <input type="range" data-ps="top" min={0} max={60 * MM} step={0.01} value={top} aria-label="top space" onChange={(e) => change({ top: round2(Number(e.currentTarget.value)) })} />
             <span className="ps-v">{mm(top)}</span>
           </label>
-        </div>
-      )}
+        )}
+        {kind === 'ruled' && !draft.pageless && (
+          <label className="ps-row">
+            <span className="ps-l">bottom space</span>
+            <input type="range" data-ps="bottom" min={0} max={60 * MM} step={0.01} value={draft.bottom ?? rule} aria-label="bottom space" onChange={(e) => change({ bottom: round2(Number(e.currentTarget.value)) })} />
+            <span className="ps-v">{mm(draft.bottom ?? rule)}</span>
+          </label>
+        )}
+      </div>
       <div className="ps-block">
         <Colours name="color" label="paper colour" none="follows the theme" presets={PAPER_COLORS} value={draft.color} shown={look.paper} pick={(color) => change({ color })} />
         {kind !== 'blank' && <Colours name="line" label="line colour" none="default" presets={LINE_COLORS} value={draft.line} shown={look.rule} pick={(line) => change({ line })} />}

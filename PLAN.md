@@ -9777,6 +9777,79 @@ the build log for what it would take); the lasso's rotate; text or pictures
 on a sheet; a fountain pen and a pencil drawn by us; the Pencil's hover; a
 highlighter denser where it runs along its own nib, as PencilKit lays it.
 
+### [ ] 88. A margin at either edge; a pageless notebook that is one sheet
+Asked by the user, 2026-11-18, from a real iPad after 87: "i think adding
+an option for left and right margin for the page setup is also nice.
+additionally i don't realyl like how pageless works. it should just add a
+few lines not a whole extra page and tie the space together".
+Notes: **Margins.** Page setup's `margin line` (ruled paper's alone) is
+`left margin` and `right margin`: each a switch, and when on a slider for
+how far from its own edge it stands, on ruled, grid, dotted and blank
+paper. FORMAT §3: `paper-margin` is the left one, as it was, so an old
+file reads the same; `paper-margin-right` is the right one, in points from
+the right edge. `paper-bottom` came with them, since a ruled page's last
+rule already left "a rule's room": how much room it leaves, a ruled page's
+alone (a pageless notebook's rules run on). `use for new notebooks` takes
+all three. Drawn by the surface (`Paint.swift`), the page's own paper
+(`paper.ts`: the Mac's and the phone's pages, the overview's small sheets,
+a clip in a typed note) and `share as pdf` (`native/ink.m`). **Decided:**
+the rules, the grid and the dots run the sheet's whole width under the
+margin rules. Both were drawn and looked at (`m88/captures/compare-rules-*`):
+stopped at the margins a sheet reads as a form with a box to write in, a
+left margin alone leaves rules that begin at it and run off the right
+edge, and what is written in a margin floats on bare paper; run through,
+it is the paper people know. A right rule that would not stand right of
+the left one is not drawn.
+**Pageless is one sheet.** 85 and 87 drew a pageless notebook as its
+Letter sheets with nothing between, and writing near the end added a whole
+sheet. Now the long sheet is drawn as long as what is written on it and
+192 points more (eight of a new notebook's rules), up to the next whole
+step of its ruling, never under one sheet (`runLength`, `paper.ts` and
+`Paint.swift` alike). **Decided, storage:** the sheets stay what is kept
+and synced, a sheet's height of the long one each, strokes under
+`p.<id>.<sheet>` as before; the length is kept nowhere, it follows from
+the ink on every device. So an old pageless notebook reads the same (less
+the bare sheets under its writing), pages to pageless and back converts
+nothing, and two devices writing at once merge as they always did: the
+alternative, one sheet with a height in the file, would have made the
+height a field two devices overwrite, every stroke's place depend on a
+conversion, and the paged form of the same notebook another document.
+The next sheet is added to `sheets` without a word before the foot comes
+to the end of the last (when the length and 192 more pass it), so it and
+its picture are there when the paper reaches them; both devices add the
+same number, and a sheet that holds strokes but lost its place in the list
+to a merge is listed again when the notebook is opened (`healSheets`).
+**Growth.** On the surface, when the Pencil goes down and when a stroke, a
+shape, a paste or what the lasso drops lands, the sheet reaches 192 points
+under it (`reach`): only the content's height and the last sheet's frame
+change, in the same turn, so nothing on the glass moves, and the strip
+that comes into view is drawn before it shows. A Mac's and a phone's page
+cuts its column to the same length, longer as another device's strokes
+arrive. **Decided, shrinking:** never while the notebook is open, whatever
+is erased, so paper never moves under the hand; the next time it is opened
+(or its tab shown again) it is as long as what is left. **One sheet to
+every tool.** A stroke is kept on the sheet its top lies on (it was the
+sheet it began on), and runs on over the next; the rule that falls exactly
+where two sheets meet was the lower sheet's first and drawn half off it,
+so a line was missing there: found by the capture's column scan, mended.
+The eraser takes what runs on from the sheet above; a lasso's loop holds
+what lies in it on the sheet before, its own and the one after, and all of
+it is then kept together on the sheet its top lies on (`commit`), so it is
+carried, coloured, cut and pasted as one thing and is not cut where a
+sheet ends while it is carried; one edge, a hair's width, round the whole.
+No page count, no overview, `g` goes nowhere; the content ends at the
+foot, so there is no far bottom to bounce against. `share as pdf` cuts it
+into pages of its size, as many as the ink reaches.
+**Not done:** a stroke more than a sheet's height long below its own top
+(drawn to one sheet under it); the lasso over three sheets at once; a
+loop that holds strokes of two sheets is itself a step to undo, which
+shows nothing (they change the sheet they are kept on); the
+long sheet shorter the moment something is erased (decided against);
+the sheets past the writing taken out of `sheets` (they are left: a page
+again when the notebook is paged); `bottom space` for a grid; a top or a
+bottom margin rule. A real Pencil's feel of the growth is the device's to
+judge.
+
 ## Notes for the next session
 
 Studying (42–46) is complete, 2026-10-31: every milestone's window check

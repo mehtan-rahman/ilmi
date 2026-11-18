@@ -7701,12 +7701,12 @@ export async function smokeBook(vault: Vault): Promise<void> {
     await shot('book-folded');
 
     // the inspector opens only by its toggle, for the book's fields and its passages; another kind of document has it as it had it
-    (q<HTMLElement>('.top .insp-toggle:not(.side-toggle)') as HTMLElement).click();
+    (q<HTMLElement>('.top .insp-toggle:not(.side-toggle):not(.set-toggle)') as HTMLElement).click();
     await poll(() => qa('.insp h6').some((h) => h.textContent === 'sections in the notes') && qa('.insp .insp-passages li').length === 2, 'its toggle opens the inspector: the boxed sections of its older note, in book order', 8000);
     await sleep(400);
     must(across(41).ok, `the pages still across what is left of the pane (${across(41).line})`);
     await shot('book-inspector');
-    (q<HTMLElement>('.top .insp-toggle:not(.side-toggle)') as HTMLElement).click();
+    (q<HTMLElement>('.top .insp-toggle:not(.side-toggle):not(.set-toggle)') as HTMLElement).click();
     await poll(() => !q('.insp') && useApp.getState().inspector.open, 'and closes it, the saved state untouched', 8000);
     openNode('fleeting/2026-10-30.md');
     await poll(() => activeTab(useApp.getState().panes)?.id === 'fleeting/2026-10-30.md' && q('.pane[data-active="1"] .doc-view .draft-doc') && q('.insp'), 'a note opens with the inspector as it had it', 10000);
@@ -7767,11 +7767,11 @@ export async function smokeBook(vault: Vault): Promise<void> {
     await poll(async () => (await keptIn(`${SB}/lindqvist.pdf`))[0]?.due === '2026-11-03', 'undo brings it back as it was', 8000);
 
     // the inspector lists the PDF's passages; the palette too
-    (q<HTMLElement>('.top .insp-toggle:not(.side-toggle)') as HTMLElement).click();
+    (q<HTMLElement>('.top .insp-toggle:not(.side-toggle):not(.set-toggle)') as HTMLElement).click();
     const row = await poll(() => q<HTMLElement>('.insp [data-marks="passages"] li'), 'the inspector lists the passage kept with the PDF', 8000);
     must(q('.cl-t', row)?.textContent === 'pp. 41–42' && q('.cl-due', row)?.textContent === 'tomorrow', `by its pages and when it is next ("${row.textContent}")`);
     await shot('book-passage-inspector');
-    (q<HTMLElement>('.top .insp-toggle:not(.side-toggle)') as HTMLElement).click();
+    (q<HTMLElement>('.top .insp-toggle:not(.side-toggle):not(.set-toggle)') as HTMLElement).click();
     await poll(() => !q('.insp'), 'closed', 8000);
     {
       const { markList } = await import('./book.js');
@@ -7967,7 +7967,7 @@ export async function smokeBook(vault: Vault): Promise<void> {
     must(hashOf(ALONE) === hashOf(`${SB}/lindqvist.pdf`) && qa(`.pane[data-active="1"] .book .pbox[data-kept="1"]`).length === 2, 'the passage boxed in the chapter is on the same pages of the same file');
     await shot('alone-open');
     // its inspector, by its toggle: a source, its path, its line; no note yet, no passages
-    (q<HTMLElement>('.top .insp-toggle:not(.side-toggle)') as HTMLElement).click();
+    (q<HTMLElement>('.top .insp-toggle:not(.side-toggle):not(.set-toggle)') as HTMLElement).click();
     await poll(() => qa('.insp h6').some((h) => h.textContent === 'source') && !qa('.insp h6').some((h) => h.textContent === 'sections in the notes'), 'its inspector: a source; no note, so no passages', 8000);
     {
       const rows = qa<HTMLElement>('.insp .kvr').map((r) => `${q('dt', r)?.textContent}: ${q('dd', r)?.textContent?.replace(/\s+/g, ' ').trim()}`);
@@ -7975,7 +7975,7 @@ export async function smokeBook(vault: Vault): Promise<void> {
       must(rows.includes(`path: ${ALONE}`) && rows.some((r) => /^reading: not started, today$/.test(r)) && !rows.some((r) => r.startsWith('notes')) && !rows.some((r) => r.startsWith('pages') || r.startsWith('length')), 'its path, its reading not started and due today, no notes or pages row');
     }
     await shot('alone-inspector');
-    (q<HTMLElement>('.top .insp-toggle:not(.side-toggle)') as HTMLElement).click();
+    (q<HTMLElement>('.top .insp-toggle:not(.side-toggle):not(.set-toggle)') as HTMLElement).click();
     await poll(() => !q('.insp'), 'closed again', 8000);
     // in the reading queue by its own line; its session is the pages; done for today writes the point to reading.json
     refreshQueue();
@@ -10607,7 +10607,7 @@ export async function smokeIpad(): Promise<void> {
     must(qa('.pane').length === 1 && !q('.tabbar .ctl'), 'one pane, and no split to ask for');
     must(!q('.side') && !q('.insp'), 'the sidebar and the inspector start hidden');
     must(!q('.side-resize') && !q('.insp-resize'), 'no drag handles');
-    must(q('.top .side-toggle') !== null && q('.top .insp-toggle:not(.side-toggle)') !== null, 'the strip has a toggle for each');
+    must(q('.top .side-toggle') !== null && q('.top .insp-toggle:not(.side-toggle):not(.set-toggle)') !== null, 'the strip has a toggle for each');
     must(getComputedStyle(q<HTMLElement>('.top .right')!).display !== 'none', 'the strip shows where sync stands');
     await shot(`ipad-open-${shape()}`);
 
@@ -10634,10 +10634,10 @@ export async function smokeIpad(): Promise<void> {
       tap(q('.top .side-toggle'));
       await poll(() => !q('.side'), 'the toggle hides the column again');
     }
-    tap(q('.top .insp-toggle:not(.side-toggle)'));
+    tap(q('.top .insp-toggle:not(.side-toggle):not(.set-toggle)'));
     await poll(() => q('.insp') !== null, 'the inspector comes when asked for');
     await shot(`ipad-inspector-${shape()}`);
-    tap(q('.top .insp-toggle:not(.side-toggle)'));
+    tap(q('.top .insp-toggle:not(.side-toggle):not(.set-toggle)'));
     await poll(() => !q('.insp'), 'and goes');
 
     // ── the queue, by its buttons ──
@@ -10884,11 +10884,11 @@ export async function smokeTouch(): Promise<void> {
     await poll(() => alone() && word().dataset.on === '0', 'tapped again, notes closes it, and the pane with it', 20000);
     await sleep(500);
     // the inspector, only by its toggle: the book's fields and its passages; then closed again
-    ask('tap', ...mid(q('.top .insp-toggle:not(.side-toggle)')!));
+    ask('tap', ...mid(q('.top .insp-toggle:not(.side-toggle):not(.set-toggle)')!));
     await poll(() => qa('.insp h6').some((h) => h.textContent === 'sections in the notes'), 'its toggle opens the inspector, the book\'s passages in book order', 20000);
     await sleep(600);
     await shot('touch-inspector');
-    ask('tap', ...mid(q('.top .insp-toggle:not(.side-toggle)')!));
+    ask('tap', ...mid(q('.top .insp-toggle:not(.side-toggle):not(.set-toggle)')!));
     await poll(() => !q('.insp'), 'and closes it', 20000);
     await sleep(500);
 
@@ -11637,7 +11637,7 @@ export async function smokePhone(): Promise<void> {
     const TODAY = queueId('today');
     await poll(() => at() === TODAY && q('.queue li[data-el]'), 'the day is what opens, its rows drawn', 20000);
     must(useApp.getState().phone && document.documentElement.dataset.shape === 'phone', 'the page knows it');
-    must(!q('.tabbar') && !q('.insp') && !q('.bot') && !q('.top .palette') && !q('.top .insp-toggle'), 'no tabs, no inspector, no key hints, nothing at the top but the name and sync');
+    must(!q('.tabbar') && !q('.insp') && !q('.bot') && !q('.top .palette') && !q('.top .insp-toggle:not(.set-toggle)') && !!q('.top .set-toggle'), 'no tabs, no inspector, no key hints, nothing at the top but the name, sync and the settings');
     const bar = q<HTMLElement>('.phone-bar')!;
     must(bar && bar.getBoundingClientRect().bottom >= window.innerHeight - 1, 'the bar is at the foot');
     must(tall('.phone-bar button') && qa('.phone-bar button').length === 3, 'three buttons on it, each a finger\'s size');
@@ -11722,7 +11722,7 @@ export async function smokePhone(): Promise<void> {
         }
         hapticsAskedClear();
         await tap(q('.reveal-all')!, () => q('.grades'), 'reveal');
-        feel('reveal', 'light', hapticsAsked());
+        feel('reveal', 'medium', hapticsAsked());
       }
       if (q('.grades')) {
         const buttons = qa<HTMLElement>('.grades button');
@@ -12152,7 +12152,9 @@ interface SurfaceNow {
   add: { x: number; y: number; w: number; h: number } | null;
   pending: { x: number; y: number; w: number; h: number } | null;
   making: number; sharpAfter: number | null; blend: string | null;
-  paper: { kind: string; w: number; h: number; rule: number; margin?: number | null; top: number; run: boolean };
+  paper: { kind: string; w: number; h: number; rule: number; margin?: number | null; marginRight?: number | null; top: number; bottom?: number | null; run: boolean };
+  /** A pageless notebook's long sheet (88): how long it is drawn, in points (null for pages), and how many of its sheets are shown. */
+  length: number | null; shown: number;
   dark: boolean; colours: string[];
 }
 /** The name of the surface a book's pages are, when they are one (an iPad's notebook); null for pages of this page's own. */
@@ -12164,7 +12166,7 @@ async function surfaceNow(b: Element | null | undefined): Promise<SurfaceNow | n
   const s = await invoke<InkState & { surfaces?: SurfaceNow[] }>('dev_ink_state');
   const f = s.surfaces?.find((x) => x.id === id);
   // (what is none is left out of what the surface says: said here as null)
-  return f ? { ...f, add: f.add ?? null, pending: f.pending ?? null, sharpAfter: f.sharpAfter ?? null, blend: f.blend ?? null, sheets: f.sheets.map((l) => ({ ...l, rest: l.rest ?? null, fine: l.fine ?? null, drawn: l.drawn ?? null })) } : null;
+  return f ? { ...f, length: f.length ?? null, add: f.add ?? null, pending: f.pending ?? null, sharpAfter: f.sharpAfter ?? null, blend: f.blend ?? null, sheets: f.sheets.map((l) => ({ ...l, rest: l.rest ?? null, fine: l.fine ?? null, drawn: l.drawn ?? null })) } : null;
 }
 /** How far a book's pages are scrolled down, px: its surface's own offset, or its scroller's. */
 async function scrolledDown(b: HTMLElement): Promise<number> {
@@ -15239,11 +15241,11 @@ export async function smokeSioyek(vault: Vault): Promise<void> {
     await poll(async () => Object.values(await marksFile()).some((m) => m.kind === 'bookmark' && m.name === 'where z begins' && m.page === 1), 'it is written under the paper\'s hash in .ilmi/marks/');
     // a book's inspector opens only by its toggle; a phone has none
     if (!phone) {
-      if (!q('.insp')) q<HTMLElement>('.top .insp-toggle:not(.side-toggle)')!.click();
+      if (!q('.insp')) q<HTMLElement>('.top .insp-toggle:not(.side-toggle):not(.set-toggle)')!.click();
       await poll(() => qa('[data-marks="bookmarks"] li').some((l) => /where z begins/.test(l.textContent ?? '')), 'the inspector lists it');
     }
     await shot('sioyek-bookmark');
-    if (q('.insp')) q<HTMLElement>('.top .insp-toggle:not(.side-toggle)')!.click();
+    if (q('.insp')) q<HTMLElement>('.top .insp-toggle:not(.side-toggle):not(.set-toggle)')!.click();
     await sleep(400);
     // gone to from the palette, from elsewhere in the paper
     await scrollTo(3, 'Schottky');
@@ -15704,6 +15706,15 @@ export async function smokeWritten(vault: Vault): Promise<void> {
     must('pageInk' in fs && 'blobAt' in fs, 'the collection is a store: strokes have rows to be');
     must(!ink.hasCanvas(), 'the Mac has no canvas');
     must(!Object.values(docsNow()).some((d) => d.written), 'the sample holds no written notes yet');
+    // `ILMI_PART=long`: what 88 added alone, for a quick look
+    if ((await invoke<string | null>('dev_env', { name: 'ILMI_PART' })) === 'long') {
+      await writtenLongMac(log, vault);
+      setClockDay(null);
+      finished = true;
+      console.error = consoleError;
+      log(`done; collection ${vault.root}`);
+      return;
+    }
 
     /** The lens in front: a book's pages. */
     const book = () => q<HTMLElement>('.pane[data-active="1"] .book');
@@ -16099,6 +16110,8 @@ export async function smokeWritten(vault: Vault): Promise<void> {
       must(file.includes(`written: ${ID}\n`) && /\nsheets: 1 3\n/.test(file), 'and the notebook\'s file names its id and its sheets');
       must((await tauriFs.readText(`${out}/${TYPED}`)).includes('<!-- box 3:'), 'the typed note beside it, with its clip');
     }
+    // ── what 88 added: two margins, and a pageless notebook that is one sheet ──
+    await writtenLongMac(log, vault);
     setClockDay(null);
     finished = true;
     console.error = consoleError;
@@ -16320,8 +16333,10 @@ export async function smokeWrittenPad(path: string | null): Promise<void> {
     tools.setTool('pen');
     must(!Object.values(docsNow()).some((d) => d.written), 'the sample holds no written notes yet');
     // `"part": "more"`: what 85 added alone, for a quick look
-    if ((await invoke<string | null>('dev_env', { name: 'ILMI_PART' })) === 'more') {
-      await writtenMore(log, vault.root);
+    const part = (await invoke<string | null>('dev_env', { name: 'ILMI_PART' })) ?? '';
+    if (part === 'more' || part === 'long' || part === 'grow') {
+      if (part === 'more') await writtenMore(log, vault.root);
+      else await writtenLong(log, part);
       await ink.settled();
       finished = true;
       log(`done; collection ${vault.root}`);
@@ -16614,6 +16629,9 @@ export async function smokeWrittenPad(path: string | null): Promise<void> {
 
     // ── what 85 added: gestures, each tool's settings, the lasso whole, shapes, the overview, a PDF passed on ──
     await writtenMore(log, vault.root);
+
+    // ── what 88 added: two margins, and a pageless notebook that is one sheet ──
+    await writtenLong(log, '');
 
     // ── left for the run after: the highlighter, thick, pink; the pen's own colour the wheel's again ──
     tools.setRecent('pen', WHEEL);
@@ -17177,11 +17195,11 @@ async function writtenMore(log: (s: string) => void, root: string): Promise<void
       const br = b.getBoundingClientRect();
       must(r.right <= br.right && r.left >= br.left && r.top >= br.top && r.bottom <= window.innerHeight && !/[A-Z]/.test(panel.textContent ?? ''), `in the window, its words lowercase (${Math.round(r.width)}×${Math.round(r.height)})`);
       must(qa<HTMLElement>('button, input', panel).every((x) => x.getBoundingClientRect().height >= 40 || x.classList.contains('ps-stop')), 'its controls a finger\'s height');
-      must(on('paper-dotted') && on('layout-pages') && on('size-letter') && on('turn-portrait') && !!ps('rule') && !ps('margin'), 'as the notebook is: dotted, pages, letter, upright; a spacing, and no margin for dots');
+      must(on('paper-dotted') && on('layout-pages') && on('size-letter') && on('turn-portrait') && !!ps('rule') && !!ps('margin') && !!ps('margin-right') && !ps('top') && !ps('bottom'), 'as the notebook is: dotted, pages, letter, upright; a spacing and its two margins, and no top or bottom space for dots');
     }
     tap(ps('paper-ruled')!);
     await poll(async () => w().paper === 'ruled' && q(PAPER, b)?.getAttribute('data-paper') === 'ruled' && (!native || (await surfaceNow(b))?.paper.kind === 'ruled'), 'ruled: the pages behind it are ruled at once', 25000);
-    await poll(() => ps('margin') && ps('top') && ps('stop-college'), 'and it has a margin line, a top space, and narrow, college, wide', 5000);
+    await poll(() => ps('margin') && ps('top') && ps('bottom') && ps('stop-college'), 'and it has a top space and a bottom space, and narrow, college, wide', 5000);
     must(on('stop-wide') && panel.textContent!.includes('8.5 mm'), 'wide as a new notebook is: 8.5 mm');
     await shot('more-setup');
     tap(ps('stop-narrow')!);
@@ -17198,7 +17216,7 @@ async function writtenMore(log: (s: string) => void, root: string): Promise<void
     tap(ps('stop-college')!);
     await poll(() => w().rule === 20.25, 'college', 25000);
     tap(ps('margin')!);
-    await poll(async () => w().margin === 90 && (native ? (await surfaceNow(b))?.paper.margin === 90 : !!q('.pdf-page svg.paper .paper-margin', b)) && !!ps('margin-at'), 'margin line: a margin rule 90 points in, and how far from the edge it stands', 25000);
+    await poll(async () => w().margin === 90 && (native ? (await surfaceNow(b))?.paper.margin === 90 : !!q('.pdf-page svg.paper .paper-margin', b)) && !!ps('margin-at'), 'left margin: a margin rule 90 points in, and how far from the edge it stands', 25000);
     slide(q<HTMLInputElement>('[data-ps="top"]', panel)!, 40 * MM);
     await poll(() => Math.abs((w().top ?? 0) - 113.39) < 0.01, 'top space 40 mm', 8000);
     {
@@ -17278,7 +17296,10 @@ async function writtenMore(log: (s: string) => void, root: string): Promise<void
       share.click();
       await poll(async () => (await state()).sharing, 'shared as a PDF', 30000);
       const [n, pw, ph] = await invoke<[number, number, number, number]>('dev_pdf_info', { path: pageTools.lastShared! });
-      must(n === sheetsNow().length && pw === 612 && ph === 792, `cut into its ${n} Letter pages`);
+      // (88: as many pages as what is written reaches, not every sheet it has)
+      const { inkFoot } = await import('./written.js');
+      const reach = Math.max(1, Math.ceil((await inkFoot(ID, sheetsNow(), 792)) / 792));
+      must(n === reach && n <= sheetsNow().length && pw === 612 && ph === 792, `cut into ${n} Letter pages, as far as what is written reaches (of its ${sheetsNow().length} sheets)`);
       await invoke('dev_ink_unshare');
       await poll(async () => !(await state()).sharing, 'closed', 10000);
     }
@@ -17366,6 +17387,518 @@ async function writtenMore(log: (s: string) => void, root: string): Promise<void
     useApp.getState().setTheme('light');
   }
   void root;
+}
+
+/**
+ * What milestone 88 added to written notes, on an iPad under the touch rig
+ * (a part of `ILMI_SMOKE=written`; alone with `"part": "long"`, and with
+ * `"part": "grow"` only the writing that grows the sheet, for a recording).
+ * A notebook of its own, `long sheet`. Page setup's left and right margin,
+ * each from its own edge, on ruled, grid, dotted and blank paper, the file
+ * read after each; the bottom space of ruled pages; `use for new notebooks`.
+ * Then pageless: one sheet as long as what is written on it and a little
+ * more. Strokes written toward its foot by the rig's finger grow it a few
+ * lines at a time (`dev_ink_state`'s `length`), with nothing on the glass
+ * moved, the next sheet made without a word; a stroke across where two
+ * sheets meet, the eraser and the lasso reaching across it; shorter again
+ * only when it is opened again; pages and back with every stroke where it
+ * was; shared as a PDF cut to what is written. A `geo:` line before a
+ * capture says where the margin rules, the place two sheets meet and the
+ * sheet's foot lie in it, in the screen's pixels, for a script to read.
+ */
+async function writtenLong(log: (s: string) => void, part: string): Promise<void> {
+  type StoreFs = import('../vault/index.js').StoreFs;
+  const q = <T extends Element>(sel: string, at: ParentNode = document) => at.querySelector<T>(sel);
+  const qa = <T extends Element>(sel: string, at: ParentNode = document) => Array.from(at.querySelectorAll<T>(sel));
+  const shot = async (name: string, ms = 2500) => { await sleep(900); log(`shot: ${name}`); await sleep(ms); };
+  const must = (ok: unknown, what: string) => { if (!ok) throw new Error(what); log(`ok: ${what}`); };
+  const poll = async <T,>(probe: () => T | null | undefined | false | Promise<T | null | undefined | false>, what: string, ms = 8000): Promise<T> => {
+    const t0 = Date.now();
+    for (;;) {
+      const v = await probe();
+      if (v) { log(`ok: ${what}`); return v; }
+      if (Date.now() - t0 > ms) throw new Error(`${what} (waited ${ms} ms)`);
+      await sleep(100);
+    }
+  };
+  const ask = (verb: string, ...n: number[]) => log(`do: ${verb} ${n.map((v) => v.toFixed(4)).join(' ')}`);
+  const fx = (x: number) => x / window.innerWidth;
+  const fy = (y: number) => y / window.innerHeight;
+  const mid = (el: Element): [number, number] => { const r = el.getBoundingClientRect(); return [fx(r.left + r.width / 2), fy(r.top + r.height / 2)]; };
+  const tap = (el: Element) => { el.scrollIntoView({ block: 'nearest' }); ask('tap', ...mid(el)); };
+  const iset = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
+  const slide = (input: HTMLInputElement, v: number) => { iset.call(input, String(v)); input.dispatchEvent(new Event('input', { bubbles: true })); input.dispatchEvent(new Event('change', { bubbles: true })); };
+  const { createWritten, setSetup, inkFoot, SETUP_KEY } = await import('./written.js');
+  const { paperOf, runLength, RUN_ALLOW, MM } = await import('./paper.js');
+  const tools = await import('./inkTools.js');
+  const ink = await import('./ink.js');
+  const pageTools = await import('./PageTools.js');
+  const fs = currentVault()!.fs as StoreFs;
+  const state = () => invoke<InkState>('dev_ink_state');
+  const pen = (on: boolean) => invoke('dev_ink_pen', { on });
+  const undoNow = async () => {
+    for (let i = 0; i < 80 && (await state()).down; i++) await sleep(100);
+    await sleep(250);
+    await tools.undo();
+  };
+  const docsNow = () => useApp.getState().docs;
+  const NAME = 'long sheet';
+  const NB = `fleeting/${NAME}.md`;
+  const bookOf = (p: string) => qa<HTMLElement>('.book').find((b) => b.dataset.path === p) ?? null;
+  const pagesOf = (b: HTMLElement) => qa<HTMLElement>('.pdf-page', b);
+  const shape = () => (window.innerWidth > window.innerHeight ? 'landscape' : 'portrait');
+  if (shape() !== 'portrait') { log('do: turn portrait'); await poll(() => shape() === 'portrait', 'upright for what 88 added', 25000); await sleep(1500); }
+  useApp.getState().setTheme('light');
+  tools.setTool('pen');
+  await pen(false);
+  try { localStorage.removeItem(SETUP_KEY); } catch { /* none */ }
+  const vaultText = async (rel: string): Promise<string> => { const v = currentVault()!; return v.fs.readText(v.abs(rel)); };
+  const dpr = window.devicePixelRatio || 1;
+
+  await createWritten('fleeting', NAME);
+  const ID = await poll(() => docsNow()[NB]?.written?.id, 'a notebook is made, for what 88 added', 10000);
+  openNode(NB);
+  let b = await poll(() => { const x = bookOf(NB); return x && x.getClientRects().length && q(PAPER, x) ? x : null; }, 'it opens as a page of paper', 15000);
+  let view = q<HTMLElement>('.pdf-view', b)!;
+  const again = async (what: string) => {
+    openNode(NB);
+    b = await poll(() => { const x = bookOf(NB); return x && x.getClientRects().length && q(PAPER, x) ? x : null; }, what, 15000);
+    view = q<HTMLElement>('.pdf-view', b)!;
+    await sleep(600);
+  };
+  must(surfaceIn(b) !== null, 'its pages are a surface');
+  const f = async () => (await surfaceNow(b))!;
+  const w = () => docsNow()[NB]!.written!;
+  const spec = () => paperOf(w(), 0);
+  const sid = (n: number) => `p.${ID}.${n}`;
+  const on = async (n: number) => (await state()).sheets.find((x) => x.id === sid(n))?.strokes ?? 0;
+  const inkOf = async () => (await Promise.all(w().sheets.map(async (n) => `${n}:${(await fs.pageInk(ID, n)).map((x) => x.stroke).join(',')}`))).join(' | ');
+  const keptAll = async () => { let n = 0; for (const s of w().sheets) n += (await fs.pageInk(ID, s)).length; return n; };
+  const page1 = () => pagesOf(b)[0]!.getBoundingClientRect();
+  /** A place on the long sheet, in its points from its top left, as the rig takes places (a sheet's height of it is the first sheet's place). */
+  const at = (x: number, y: number): [number, number] => { const r = page1(); return [fx(r.left + (x / spec().w) * r.width), fy(r.top + (y / spec().h) * r.height)]; };
+  const inView = (y: number) => { const r = page1(); const cy = r.top + (y / spec().h) * r.height; return cy > 190 && cy < window.innerHeight - 60; };
+  /** Where things lie in the capture that follows, in the screen's pixels. */
+  const geo = async (name: string, more: Record<string, unknown> = {}) => {
+    await surfaceSettled(b);
+    const s = await f();
+    const d = s.sheets[0]!.device;
+    const k = d.w / spec().w;
+    const p = spec();
+    log(`geo: ${JSON.stringify({ shot: name, dpr, sheet: [d.x, d.y, d.w, d.h], k, margins: [p.margin === null ? null : d.x + p.margin * k, p.marginRight === null ? null : d.x + (p.w - p.marginRight) * k], seam: s.sheets[1] ? s.sheets[1].device.y : null, foot: s.length ? d.y + s.length * k : null, pitch: p.rule * k, kind: p.kind, view: [s.device.x, s.device.y, s.device.w, s.device.h], ...more })}`);
+  };
+  await poll(async () => { const s = await state(); return s.tool?.kind === 'pen' && s.sheets.some((x) => x.id === sid(1)) ? s : null; }, 'the canvases hold the pen and the first sheet', 15000);
+
+  const openSetup = async () => {
+    q<HTMLElement>('.meta [data-tool="more"]', b)!.click();
+    (await poll(() => q<HTMLElement>('.pop-menu .ci[data-act="more-setup"]'), 'more has page setup', 5000)).click();
+    const panel = await poll(() => q<HTMLElement>('.page-setup', b), 'page setup', 5000);
+    await sleep(400);
+    return panel;
+  };
+  const closeSetup = async () => { q<HTMLElement>('.page-setup [data-ps="close"]', b)?.click(); await poll(() => !q('.page-setup', b), 'closed', 5000); await sleep(300); };
+
+  if (part !== 'grow') {
+    // ── the margins: left and right, each from its own edge, on any paper ──
+    let panel = await openSetup();
+    const ps = (name: string) => q<HTMLElement>(`[data-ps="${name}"]`, panel);
+    const isOn = (name: string) => ps(name)?.getAttribute('aria-pressed') === 'true' || ps(name)?.getAttribute('aria-checked') === 'true';
+    must(ps('margin')?.textContent === 'left margin' && ps('margin-right')?.textContent === 'right margin' && !isOn('margin') && !isOn('margin-right') && !ps('margin-at') && !ps('margin-right-at') && !/[A-Z]/.test(panel.textContent ?? ''), 'left margin and right margin, neither on; its words lowercase');
+    must(!!ps('top') && !!ps('bottom'), 'a ruled page has its top space and its bottom space');
+    tap(ps('margin')!);
+    await poll(async () => w().margin === 90 && (await f()).paper.margin === 90 && !!ps('margin-at'), 'left margin: a rule 90 points in from the left, and how far from the edge', 25000);
+    tap(ps('margin-right')!);
+    await poll(async () => w().marginRight === 90 && (await f()).paper.marginRight === 90 && !!ps('margin-right-at'), 'right margin: a rule 90 points in from the right', 25000);
+    slide(q<HTMLInputElement>('[data-ps="margin-at"]', panel)!, 60);
+    slide(q<HTMLInputElement>('[data-ps="margin-right-at"]', panel)!, 72);
+    await poll(async () => w().margin === 60 && w().marginRight === 72 && (await f()).paper.margin === 60 && (await f()).paper.marginRight === 72, 'each by its own slider: 60 points from the left, 72 from the right', 10000);
+    {
+      const text = await vaultText(NB);
+      must(/^paper-margin: 60$/m.test(text) && /^paper-margin-right: 72$/m.test(text), 'the file says paper-margin and paper-margin-right');
+    }
+    await shot('long-setup-margins');
+    slide(q<HTMLInputElement>('[data-ps="bottom"]', panel)!, 40 * MM);
+    await poll(async () => Math.abs((w().bottom ?? 0) - 113.39) < 0.01 && Math.abs(((await f()).paper.bottom ?? 0) - 113.39) < 0.01 && /^paper-bottom: 113\.39$/m.test(await vaultText(NB)), 'bottom space 40 mm: the file says paper-bottom, and the last rule leaves that room', 10000);
+    // `use for new notebooks` takes the margins with it
+    tap(ps('keep')!);
+    await poll(() => !!localStorage.getItem(SETUP_KEY) && ps('keep')?.textContent === 'new notebooks start like this', 'use for new notebooks', 25000);
+    await createWritten('fleeting', 'after margins');
+    await poll(() => { const m = docsNow()['fleeting/after margins.md']?.written; return m && m.margin === 60 && m.marginRight === 72 && Math.abs((m.bottom ?? 0) - 113.39) < 0.01 ? m : null; }, 'a notebook made after starts with both margins and the bottom space', 10000);
+    localStorage.removeItem(SETUP_KEY);
+    await closeSetup();
+    await bringPage(b, 1, 40);
+    await geo('long-margins-ruled');
+    await shot('long-margins-ruled');
+    for (const kind of ['grid', 'dotted', 'blank'] as const) {
+      await setSetup(NB, { paper: kind });
+      await poll(async () => { const p = (await f()).paper; return w().paper === kind && p.kind === kind && p.margin === 60 && p.marginRight === 72; }, `${kind} paper keeps both margin rules`, 10000);
+      must(/^paper-margin: 60$/m.test(await vaultText(NB)) && /^paper-margin-right: 72$/m.test(await vaultText(NB)), 'and the file both lines');
+      await geo(`long-margins-${kind}`);
+      await shot(`long-margins-${kind}`);
+    }
+    panel = await openSetup();
+    must(isOn('margin') && isOn('margin-right') && !ps('rule') && !ps('top') && !ps('bottom'), 'blank paper: the two margins, and no spacing, top or bottom to set');
+    tap(ps('paper-ruled')!);
+    await poll(async () => w().paper === 'ruled' && (await f()).paper.kind === 'ruled' && !!ps('bottom'), 'ruled again', 25000);
+    // ── pageless ──
+    tap(ps('layout-pageless')!);
+    await poll(async () => w().pageless === true && view.dataset.layout === 'pageless' && (await f()).paper.run === true, 'pageless', 25000);
+    must(!ps('bottom') && !!ps('top') && !ps('size-a4'), 'a pageless notebook has no bottom space to set, nor a size');
+    await closeSetup();
+  } else {
+    await setSetup(NB, { pageless: true, margin: 60, marginRight: 72 });
+    await poll(async () => w().pageless === true && (await f()).paper.run === true, 'pageless', 25000);
+  }
+
+  // ── one sheet, as long as what is written on it and a little more ──
+  const H = spec().h;
+  const step = spec().rule;
+  {
+    const s = await poll(async () => { const x = await f(); return x.length === runLength(spec(), 0) ? x : null; }, 'nothing written: the sheet is one sheet long', 10000);
+    const d = s.sheets[0]!.device;
+    must(s.length === H && s.shown === 1 && w().sheets.length === 1 && Math.abs(d.h - Math.round(H * (d.w / spec().w))) <= 1, `a Letter sheet's length, ${s.length} points, drawn ${d.h} pixels high`);
+    must(!q('.meta [data-tool="pages"]', b) && !/^p\. /.test(q('.meta .pt-page', b)?.textContent ?? '') && !s.add, 'no page count, no overview, no add page');
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'g', bubbles: true, cancelable: true }));
+    await sleep(300);
+    must(!q('.pb-k', b), 'g goes nowhere: there are no pages to go to');
+  }
+  await pen(true);
+  // (as far down as the pages go, so the sheet's foot is on the screen, and left there)
+  await bringPage(b, 1, 0, 0.2);
+  // a long level stroke high on the sheet: what must not move while the sheet grows under it
+  await invoke('dev_ink_stroke', { sheet: sid(1), points: Array.from({ length: 40 }, (_, i) => [100 + i * 10, 420.5]), rest: false });
+  await poll(async () => (await on(1)) === 1, 'a level stroke high on the sheet', 10000);
+  must((await f()).length === runLength(spec(), 421.8) || Math.abs((await f()).length! - runLength(spec(), 421.8)) <= step, 'which the sheet is already long enough for');
+  await sleep(1200);
+  const grown: number[] = [];
+  let made = 1;
+  /** A stroke written by the rig's finger `y` points down the long sheet, from `x`: the sheet a little longer for it, and nothing moved. */
+  const writeLow = async (x: number, y: number, what: string) => {
+    must(inView(y) && inView(y + 14), `the place ${Math.round(y)} points down is on the screen`);
+    const before = await f();
+    const d0 = before.sheets[0]!.device;
+    ask('drag', ...at(x, y), ...at(x + 160, y + 12), 0.05);
+    made++;
+    await poll(async () => { const s = await state(); return w().sheets.reduce((n, k) => n + (s.sheets.find((z) => z.id === sid(k))?.strokes ?? 0), 0) === made; }, `${what}, ${Math.round(y)} points down`, 30000);
+    await poll(async () => (await keptAll()) === made, 'kept', 20000);
+    const foot = await inkFoot(ID, w().sheets, H);
+    const want = runLength(spec(), foot);
+    const grew = await poll(async () => { const s = await f(); return Math.abs(s.length! - want) <= step && s.length! >= foot + RUN_ALLOW - 0.01 ? s : null; }, `the sheet is ${want} points long: the lowest ink at ${foot.toFixed(1)}, ${RUN_ALLOW} bare under it, to a whole rule`, 10000);
+    if (grew.length! + RUN_ALLOW > w().sheets.length * H) await poll(() => w().sheets.length >= Math.ceil((grew.length! + RUN_ALLOW) / H - 1e-9), 'the long sheet has its next sheet before its foot comes to it', 10000);
+    await sleep(400);
+    const after = await f();
+    const by = after.length! - before.length!;
+    grown.push(by);
+    const d1 = after.sheets[0]!.device;
+    must(by >= 0 && by < H / 3 && Math.abs(by / step - Math.round(by / step)) < 1e-6, `grown by ${by} points, ${Math.round(by / step)} rules: a few lines, never a sheet`);
+    must(d1.x === d0.x && d1.y === d0.y && after.offset[0] === before.offset[0] && after.offset[1] === before.offset[1], `and nothing on the glass moved: the first sheet at ${d1.x}, ${d1.y}, the pages scrolled ${after.offset[1]}`);
+    must(Math.abs((after.content[1] - before.content[1]) - (by * (d1.w / spec().w)) / dpr) < 1.01, `the content is ${(after.content[1] - before.content[1]).toFixed(1)} points higher (${w().sheets.join(' ')})`);
+    must(!q('.notice'), 'without a word');
+  };
+  // each a little lower than the last, toward where the first sheet ends: the screen is left as it is between them
+  for (let i = 0; i < 6; i++) await writeLow(130 + i * 24, 600 + i * 24, `stroke ${i + 1}`);
+  must(grown.filter((x) => x > 0).length >= 5 && grown.every((x) => x <= 3 * step + 0.01), `six strokes grew it ${grown.join(', ')} points`);
+  await geo('long-grown');
+  await shot('long-grown');
+  if (part === 'grow') { await pen(false); await ink.settled(); return; }
+  {
+    // where the first sheet ends there is nothing to see: the ruling runs through, at one pitch
+    const s = await f();
+    must(s.shown === 2 && w().sheets.length === 2 && s.sheets[1]!.device.y === s.sheets[0]!.device.y + s.sheets[0]!.device.h && s.sheets[1]!.device.x === s.sheets[0]!.device.x, 'two sheets under it, the second where the first ends, nothing between');
+    must(s.sheets[1]!.device.h < s.sheets[0]!.device.h, `the second drawn only as far as the long sheet reaches (${s.sheets[1]!.device.h} of ${s.sheets[0]!.device.h} pixels)`);
+    await bringPage(b, 1, 0, 0.45);
+    await geo('long-seam');
+    await shot('long-seam');
+    // and on down the second sheet
+    await bringPage(b, 1, 0, (850 - 420) / H);
+    await writeLow(140, 850, 'a stroke on the second sheet');
+    await writeLow(180, 905, 'and another under it');
+    must(w().sheets.length === 2, 'still two sheets');
+  }
+  // a stroke across where the sheets meet, begun above; and one begun below and run up over it: both kept on the sheet their top lies on
+  {
+    const [a1, a2] = [await on(1), await on(2)];
+    ask('drag', ...at(120, H - 14), ...at(200, H + 22), 0.05);
+    await poll(async () => (await on(1)) === a1 + 1 && (await on(2)) === a2, 'a stroke begun above where the sheets meet and run on below is one stroke, on the first', 30000);
+    ask('drag', ...at(260, H + 20), ...at(330, H - 16), 0.05);
+    await poll(async () => (await on(1)) === a1 + 2 && (await on(2)) === a2, 'one begun below and run up over it is kept on the first too: where its top lies', 30000);
+    await poll(async () => (await fs.pageInk(ID, w().sheets[0]!)).length === a1 + 2, 'kept', 20000);
+    made += 2;
+    // the eraser, put down below where the sheets meet, takes a stroke kept above
+    tools.setEraser('stroke');
+    tools.setTool('eraser');
+    await poll(async () => (await state()).tool?.kind === 'eraser', 'the eraser', 8000);
+    ask('drag', ...at(170, H + 18), ...at(200, H + 6), 0.05);
+    await poll(async () => (await on(1)) === a1 + 1, 'the eraser below the meeting takes the stroke that runs on from above', 30000);
+    await undoNow();
+    await poll(async () => (await on(1)) === a1 + 2, 'undo: back', 8000);
+    // the lasso round what lies on both: held as one thing, on one sheet
+    tools.setTool('pen');
+    await invoke('dev_ink_stroke', { sheet: sid(w().sheets[1]!), points: Array.from({ length: 12 }, (_, i) => [420 + i * 4, 12 + (i % 2) * 5]), rest: false });
+    await invoke('dev_ink_stroke', { sheet: sid(w().sheets[0]!), points: Array.from({ length: 12 }, (_, i) => [420 + i * 4, H - 18 + (i % 2) * 5]), rest: false });
+    await poll(async () => (await on(1)) === a1 + 3 && (await on(2)) === a2 + 1, 'a small stroke each side of the meeting', 10000);
+    made += 2;
+    tools.setTool('select');
+    await poll(async () => (await state()).tool?.kind === 'select', 'the lasso', 8000);
+    ask('loop', ...at(406, H - 30), ...at(480, H - 30), ...at(480, H + 28), ...at(406, H + 28), ...at(406, H - 30));
+    await poll(async () => (await state()).selected === 2 && (await on(1)) === a1 + 4 && (await on(2)) === a2, 'a loop round both holds both, kept together on the sheet their top lies on', 30000);
+    const held = await poll(async () => (await state()).held, 'held', 5000);
+    await shot('long-lasso-across');
+    // carried down past the meeting: on the second sheet now, still held
+    const r = page1();
+    const down = (60 / H) * r.height;
+    ask('drag', fx(held.x + held.w / 2), fy(held.y + held.h / 2), fx(held.x + held.w / 2), fy(held.y + held.h / 2 + down), 0.6);
+    await poll(async () => (await state()).selected === 2 && (await on(1)) === a1 + 2 && (await on(2)) === a2 + 2, 'carried down past it, the two are kept on the second sheet, and still held', 30000);
+    await undoNow();
+    await poll(async () => (await on(1)) === a1 + 4 && (await on(2)) === a2, 'undo: where they were', 8000);
+    tools.setTool('pen');
+    await poll(async () => (await keptAll()) === made, 'all of it kept', 20000);
+  }
+  await pen(false);
+  useApp.getState().setTheme('dark');
+  await geo('long-dark');
+  await shot('long-dark');
+  useApp.getState().setTheme('light');
+  // ── shorter again only when it is opened again ──
+  {
+    // (a notebook made pageless before 88 grew by whole sheets, and has sheets past what is written: none of that is drawn)
+    const { addSheet } = await import('./written.js');
+    await addSheet(NB);
+    await poll(async () => w().sheets.length === 3 && (await f()).pages === 3 && (await f()).shown === 2, 'a third sheet in the file, past what is written, is not drawn', 10000);
+    const before = await f();
+    const second = w().sheets[1]!;
+    const low = await on(2);
+    await invoke('dev_ink_wipe', { sheet: sid(second) });
+    await poll(async () => (await fs.pageInk(ID, second)).length === 0, `the ${low} strokes on the second sheet taken away`, 20000);
+    await sleep(800);
+    const after = await f();
+    must(after.length === before.length && after.sheets[0]!.device.y === before.sheets[0]!.device.y && after.offset[1] === before.offset[1], `the sheet is as long as it was, ${after.length} points, and where it was: nothing moves under the hand`);
+    openNode('fleeting/idea-for-honors-thesis.md');
+    await poll(() => !bookOf(NB)?.getClientRects().length, 'another document', 10000);
+    await sleep(600);
+    await again('the notebook, opened again');
+    const foot = await inkFoot(ID, w().sheets, H);
+    const want = runLength(spec(), foot);
+    const s = await poll(async () => { const x = await f(); return x && x.length !== null && Math.abs(x.length - want) <= step ? x : null; }, `opened again it is ${want} points long: as far as what is written (${foot.toFixed(1)}) and a little more`, 15000);
+    must(s.length! < before.length! && w().sheets.length === 3, `shorter by ${before.length! - s.length!} points; its sheets are what they were (${w().sheets.join(' ')})`);
+    await bringPage(b, 1, 0, 0.3);
+    await geo('long-opened-again');
+    await shot('long-opened-again');
+  }
+  // ── pages, and pageless again: no stroke lost or moved ──
+  {
+    const ink0 = await inkOf();
+    const len0 = (await f()).length!;
+    await setSetup(NB, { pageless: false });
+    await poll(async () => { const s = await f(); return !w().pageless && s.paper.run === false && s.length === null && s.shown === w().sheets.length && !!s.add; }, 'pages: every sheet whole, with room between, add page under the last', 10000);
+    must((await inkOf()) === ink0, 'every stroke on the sheet it was on');
+    await bringPage(b, 1, 40);
+    await surfaceSettled(b);
+    await shot('long-as-pages');
+    await setSetup(NB, { pageless: true });
+    await poll(async () => { const s = await f(); return w().pageless === true && s.paper.run === true && s.length !== null && Math.abs(s.length - len0) <= step; }, `pageless again: ${len0} points long, as it was`, 10000);
+    must((await inkOf()) === ink0, 'and every stroke where it was');
+  }
+  // ── passed on as a PDF: cut into pages of its size, as many as what is written reaches ──
+  {
+    const foot = await inkFoot(ID, w().sheets, H);
+    q<HTMLElement>('.meta [data-tool="more"]', b)!.click();
+    (await poll(() => q<HTMLElement>('.pop-menu .ci[data-act="more-share"]'), 'more has share as pdf', 5000)).click();
+    await poll(async () => (await state()).sharing, 'shared as a PDF', 30000);
+    const [n, pw, ph] = await invoke<[number, number, number, number]>('dev_pdf_info', { path: pageTools.lastShared! });
+    log(`pdf: ${pageTools.lastShared}`);
+    must(n === Math.max(1, Math.ceil(foot / H)) && n < w().sheets.length && pw === spec().w && ph === H, `cut to what is written: ${n} Letter pages for ink ${foot.toFixed(0)} points down, not its ${w().sheets.length} sheets`);
+    await invoke('dev_ink_unshare');
+    await poll(async () => !(await state()).sharing, 'closed', 10000);
+  }
+  // on its side
+  ask('turn landscape');
+  await poll(() => shape() === 'landscape', 'on its side', 20000);
+  await sleep(1500);
+  await bringPage(b, 1, 30);
+  await geo('long-landscape');
+  await shot('long-landscape');
+  ask('turn portrait');
+  await poll(() => shape() === 'portrait', 'upright again', 20000);
+  await sleep(1500);
+  await ink.settled();
+}
+
+/**
+ * What milestone 88 added, on a Mac, where a notebook is read (a part of
+ * `ILMI_SMOKE=written`; alone with `ILMI_PART=long`): page setup's two
+ * margins on every paper, each where the panel says to a pixel of the
+ * screen, and a ruled page's bottom space; a pageless notebook drawn as one
+ * sheet as long as what is written on it (a made-up drawing, kept as a
+ * canvas keeps one) and a little more, longer when more is written, shorter
+ * only when it is opened again, with its ruling run through where its sheets
+ * meet.
+ */
+async function writtenLongMac(log: (s: string) => void, vault: Vault): Promise<void> {
+  type StoreFs = import('../vault/index.js').StoreFs;
+  const q = <T extends Element>(sel: string, at: ParentNode = document) => at.querySelector<T>(sel);
+  const qa = <T extends Element>(sel: string, at: ParentNode = document) => Array.from(at.querySelectorAll<T>(sel));
+  const shot = async (name: string, ms = 2500) => { await sleep(800); log(`shot: ${name}`); await sleep(ms); };
+  const must = (ok: unknown, what: string) => { if (!ok) throw new Error(what); log(`ok: ${what}`); };
+  const poll = async <T,>(probe: () => T | null | undefined | false | Promise<T | null | undefined | false>, what: string, ms = 8000): Promise<T> => {
+    const t0 = Date.now();
+    for (;;) {
+      const v = await probe();
+      if (v) { log(`ok: ${what}`); return v; }
+      if (Date.now() - t0 > ms) throw new Error(`${what} (waited ${ms} ms)`);
+      await sleep(100);
+    }
+  };
+  const iset = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
+  const slide = (input: HTMLInputElement, v: number) => { iset.call(input, String(v)); input.dispatchEvent(new Event('input', { bubbles: true })); input.dispatchEvent(new Event('change', { bubbles: true })); };
+  const { createWritten, addSheet, setSetup, inkFoot } = await import('./written.js');
+  const { paperOf, paperLines, runLength, RUN_ALLOW, MM } = await import('./paper.js');
+  const ink = await import('./ink.js');
+  const fs = vault.fs as StoreFs;
+  const docsNow = () => useApp.getState().docs;
+  const NB = 'long sheet.md';
+  const text = () => vault.fs.readText(vault.abs(NB));
+  useApp.getState().setTheme('light');
+  await createWritten('', 'long sheet');
+  const ID = await poll(() => docsNow()[NB]?.written?.id, 'a notebook is made, for what 88 added', 10000);
+  const bookOf = () => qa<HTMLElement>('.book').find((x) => x.dataset.path === NB) ?? null;
+  openNode(NB);
+  let b = await poll(() => { const x = bookOf(); return x && x.getClientRects().length && q('.pdf-page svg.paper', x) ? x : null; }, 'it opens as a page of paper', 15000);
+  const w = () => docsNow()[NB]!.written!;
+  const spec = () => paperOf(w(), 0);
+  const dpr = window.devicePixelRatio || 1;
+  const page = (i = 0) => qa<HTMLElement>('.pdf-page', b)[i]!;
+  /** The margin rules of the first page, as they are drawn: each `x` in the sheet's points, and in the screen's pixels from the page's left edge. */
+  const margins = () => {
+    const d = q('.pdf-page svg.paper .paper-margin', b)?.getAttribute('d') ?? '';
+    const r = page().getBoundingClientRect();
+    return d.split('M').slice(1).map((s) => Number(s.split(' ')[0])).map((x) => ({ x, px: (x * r.width * dpr) / spec().w }));
+  };
+  /** A made-up drawing kept as a sheet's strokes, through what a canvas keeps through: `lines` lines, 42 points apart from 60 down. */
+  const write = async (sheet: number, lines: number, seed: number) => {
+    const drawing = await invoke<string>('dev_ink_sample', { lines, per: 3, seed });
+    const got = await ink.keepPage(ID, sheet, drawing);
+    must(got.strokes === lines * 3, `${lines} lines of made-up strokes are kept on sheet ${sheet}`);
+  };
+
+  // ── the margins ──
+  q<HTMLElement>('.meta [data-tool="more"]', b)!.click();
+  (await poll(() => q<HTMLElement>('.pop-menu .ci[data-act="more-setup"]'), 'more has page setup', 5000)).click();
+  let panel = await poll(() => q<HTMLElement>('.page-setup', b), 'page setup', 5000);
+  const ps = (name: string) => q<HTMLElement>(`[data-ps="${name}"]`, panel);
+  const isOn = (name: string) => ps(name)?.getAttribute('aria-pressed') === 'true' || ps(name)?.getAttribute('aria-checked') === 'true';
+  must(ps('margin')?.textContent === 'left margin' && ps('margin-right')?.textContent === 'right margin' && !isOn('margin') && !isOn('margin-right') && !!ps('top') && !!ps('bottom') && !/[A-Z]/.test(panel.textContent ?? ''), 'left margin and right margin, neither on; top space and bottom space; its words lowercase');
+  ps('margin')!.click();
+  await poll(() => w().margin === 90 && margins().length === 1 && !!ps('margin-at'), 'left margin: one margin rule, 90 points in', 8000);
+  ps('margin-right')!.click();
+  await poll(() => w().marginRight === 90 && margins().length === 2 && !!ps('margin-right-at'), 'right margin: a second, 90 points in from the right', 8000);
+  slide(q<HTMLInputElement>('[data-ps="margin-at"]', panel)!, 60);
+  slide(q<HTMLInputElement>('[data-ps="margin-right-at"]', panel)!, 72);
+  await poll(() => w().margin === 60 && w().marginRight === 72 && margins().length === 2 && Math.abs(margins()[0]!.x - 60) < 0.5 && Math.abs(margins()[1]!.x - (spec().w - 72)) < 0.5, 'each by its slider: 60 points from the left edge, 72 from the right', 8000);
+  {
+    const m = margins();
+    const r = page().getBoundingClientRect();
+    const k = (r.width * dpr) / spec().w;
+    // (each rule lies on whole pixels of the screen: within half a pixel of where its distance says)
+    must(Math.abs(m[0]!.px - 60 * k) <= 0.51 && Math.abs(r.width * dpr - m[1]!.px - 72 * k) <= 0.51, `in the screen's pixels: the left ${m[0]!.px.toFixed(1)} from the left edge (${(60 * k).toFixed(1)}), the right ${(r.width * dpr - m[1]!.px).toFixed(1)} from the right (${(72 * k).toFixed(1)})`);
+    const t = await text();
+    must(/^paper-margin: 60$/m.test(t) && /^paper-margin-right: 72$/m.test(t), 'the file says paper-margin and paper-margin-right');
+    const rows = paperLines(spec()).rows;
+    must((q('.pdf-page svg.paper .paper-rule:not(.paper-margin)', b)?.getAttribute('d') ?? '').startsWith('M0 ') && rows.length === 30, 'the rules run the whole width of the sheet, under the margin rules');
+  }
+  await shot('long-mac-setup');
+  slide(q<HTMLInputElement>('[data-ps="bottom"]', panel)!, 40 * MM);
+  await poll(async () => Math.abs((w().bottom ?? 0) - 113.39) < 0.01 && /^paper-bottom: 113\.39$/m.test(await text()), 'bottom space 40 mm: the file says paper-bottom', 8000);
+  {
+    const rows = paperLines(spec()).rows;
+    must(rows[rows.length - 1]! <= spec().h - 113.39 + 0.01 && rows[rows.length - 1]! > spec().h - 113.39 - 24, `the last rule ${(spec().h - rows[rows.length - 1]!).toFixed(1)} points from the foot`);
+  }
+  q<HTMLElement>('[data-ps="close"]', panel)!.click();
+  await poll(() => !q('.page-setup', b), 'closed', 5000);
+  await shot('long-mac-margins-ruled');
+  for (const kind of ['grid', 'dotted', 'blank'] as const) {
+    await setSetup(NB, { paper: kind });
+    await poll(() => w().paper === kind && q('.pdf-page svg.paper', b)?.getAttribute('data-paper') === kind && margins().length === 2, `${kind} paper keeps both margin rules`, 8000);
+    await shot(`long-mac-margins-${kind}`);
+  }
+  useApp.getState().setTheme('dark');
+  await setSetup(NB, { paper: 'grid' });
+  await poll(() => w().paper === 'grid', 'a grid, dark', 8000);
+  await shot('long-mac-margins-grid-dark');
+  useApp.getState().setTheme('light');
+  await setSetup(NB, { paper: 'ruled', bottom: null });
+  await poll(async () => w().paper === 'ruled' && w().bottom === undefined && !/^paper-bottom/m.test(await text()), 'ruled again, the bottom space a rule\'s', 8000);
+
+  // ── pageless: one sheet, as long as what is written ──
+  await addSheet(NB);
+  await addSheet(NB);
+  await poll(() => w().sheets.length === 3 && qa('.pdf-page', b).length === 3, 'three sheets', 8000);
+  await write(1, 12, 11);
+  await setSetup(NB, { pageless: true });
+  const view = q<HTMLElement>('.pdf-view', b)!;
+  await poll(() => w().pageless === true && view.dataset.layout === 'pageless', 'pageless', 8000);
+  const H = spec().h;
+  const step = spec().rule;
+  const col = () => q<HTMLElement>('.pdf-pages', b)!;
+  const k = () => page().getBoundingClientRect().width / spec().w;
+  /** How long the column is drawn, in the sheet's points. */
+  const drawn = () => col().getBoundingClientRect().height / k();
+  {
+    const foot = await inkFoot(ID, w().sheets, H);
+    const want = runLength(spec(), foot);
+    await poll(() => col().dataset.run === '1' && Math.abs(drawn() - want) < 1.5 / k(), `one sheet ${want} points long: the lowest ink at ${foot.toFixed(1)}, ${RUN_ALLOW} bare under it, to a whole rule; not its three sheets (${3 * H})`, 10000);
+    must(want === H && foot > 500 && foot < H - RUN_ALLOW, 'what is written is on the first sheet: the long sheet is one sheet long');
+    const sc = q<HTMLElement>('.book-pages', b)!;
+    must(sc.scrollHeight < col().getBoundingClientRect().height + 400, `and that is all there is to scroll (${sc.scrollHeight} px)`);
+    must(getComputedStyle(col()).overflowY === 'clip', 'what lies past its foot is cut away');
+    must(!q('.meta [data-tool="pages"]', b) && !/^p\. /.test(q('.meta .pt-page', b)?.textContent ?? '') && !q('button.add-page', b), 'no page count, no overview, no add page');
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'g', bubbles: true, cancelable: true }));
+    await sleep(300);
+    must(!q('.pb-k', b), 'g goes nowhere: there are no pages to go to');
+  }
+  await shot('long-mac-pageless');
+  // written on further down (as another device's strokes arrive): longer, by whole rules
+  await write(2, 3, 12);
+  {
+    const foot = await inkFoot(ID, w().sheets, H);
+    const want = runLength(spec(), foot);
+    await poll(() => Math.abs(drawn() - want) < 1.5 / k(), `more written on the second sheet: ${want} points long now, the lowest ink at ${foot.toFixed(1)}`, 10000);
+    must(want > H && want < 2 * H && Math.abs((want - 72) / step - Math.round((want - 72) / step)) < 1e-6 && want - foot >= RUN_ALLOW && want - foot < RUN_ALLOW + step, 'a whole number of rules, and under a rule more than the bare paper it keeps');
+    // where the first sheet ends: the second's first rule one spacing under the first's last
+    const rows = (i: number) => (qa('.pdf-page svg.paper .paper-rule:not(.paper-margin)', b)[i]?.getAttribute('d') ?? '').split('M').slice(1).map((x) => Number(x.split(' ')[1]!.split('H')[0]));
+    const [a, c] = [rows(0), rows(1)];
+    const [r1, r2] = [page(0).getBoundingClientRect(), page(1).getBoundingClientRect()];
+    must(Math.abs(r2.top - r1.bottom) < 0.01 && Math.abs(H - a[a.length - 1]! + c[0]! - step) < 1 / k() / dpr + 0.01, `nothing where the sheets meet: the ruling runs through (${a[a.length - 1]} of ${H}, then ${c[0]})`);
+    must(getComputedStyle(page(0)).boxShadow === 'none' && getComputedStyle(page(1)).boxShadow === 'none', 'and no sheet has an edge of its own');
+    const sc = q<HTMLElement>('.book-pages', b)!;
+    sc.scrollTop = Math.max(0, r1.height - 300);
+    await sleep(700);
+  }
+  await shot('long-mac-seam');
+  useApp.getState().setTheme('dark');
+  await shot('long-mac-seam-dark');
+  useApp.getState().setTheme('light');
+  // taken away again: no shorter while it is open; opened again, as long as what is left
+  {
+    const was = drawn();
+    await fs.setPageInk(ID, 2, []);
+    await sleep(1500);
+    must(Math.abs(drawn() - was) < 0.5, `the second sheet's strokes taken away: still ${Math.round(was)} points long while it is open`);
+    openNode('fleeting/idea-for-honors-thesis.md');
+    await poll(() => !bookOf()?.getClientRects().length, 'another document', 8000);
+    await sleep(500);
+    openNode(NB);
+    b = await poll(() => { const x = bookOf(); return x && x.getClientRects().length && q('.pdf-page svg.paper', x) ? x : null; }, 'the notebook, opened again', 15000);
+    await poll(() => q<HTMLElement>('.pdf-pages', b)?.dataset.run === '1' && Math.abs(drawn() - H) < 1.5 / k(), `one sheet long again (${H})`, 10000);
+  }
+  // pages again: its three sheets, whole, what is written where it was
+  {
+    const names = async () => (await fs.pageInk(ID, 1)).map((x) => x.stroke).join(',');
+    const ink0 = await names();
+    await setSetup(NB, { pageless: false });
+    await poll(() => !w().pageless && !q<HTMLElement>('.pdf-pages', b)?.dataset.run && qa('.pdf-page', b).length === 3 && !!q('button.add-page', b), 'pages again: three sheets, add page', 8000);
+    must((await names()) === ink0 && w().sheets.join(' ') === '1 2 3', 'its sheets and its strokes are what they were');
+  }
 }
 
 // `ILMI_SMOKE=blanks` (`smokeBlanks`) over a copy of `samples/double-major`

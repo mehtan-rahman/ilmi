@@ -6,6 +6,7 @@
 // or after another, taken out, made again, moved: milestone 85) and its paper.
 
 import { PAPERS, PAPER_MARGIN_RANGE, PAPER_RULE_RANGE, PAPER_TOP_RANGE, meta, pagesLabel, parseBoxes, setField, type Box, type PaperKind, type WrittenMeta } from '../format/index.js';
+import { invoke } from '@tauri-apps/api/core';
 import { RULE_TOP, paperHex, ruleOf } from './paper.js';
 import { passageMarksOf } from '../pdf/index.js';
 import { isPdfPath, newId, passageId, type InkStroke, type PassageMark, type StoreFs } from '../vault/index.js';
@@ -52,6 +53,58 @@ function need() {
 function inkOf(): Pick<StoreFs, 'pageInk' | 'setPageInk'> | null {
   const fs = currentVault()?.fs as Partial<StoreFs> | undefined;
   return fs?.pageInk && fs.setPageInk ? (fs as StoreFs) : null;
+}
+
+/**
+ * How far down a pageless notebook's one long sheet the lowest thing
+ * written on it reaches, in points from its top (milestone 88): 0 with
+ * nothing written. Each sheet is `h` of the long one, in the order of
+ * `sheets`; what its strokes cover is asked of the drawing itself
+ * (`ink_bounds`). The last two sheets written on are looked at: a stroke is
+ * kept on the sheet its top lies on and runs on over the next at most.
+ */
+export async function inkFoot(id: string, sheets: readonly number[], h: number): Promise<number> {
+  const fs = currentVault()?.fs as Partial<StoreFs> | undefined;
+  if (!fs?.inkedPages || !fs.pageInkFile) return 0;
+  const inked = new Set(await fs.inkedPages(id));
+  let foot = 0;
+  let seen = 0;
+  for (let i = sheets.length - 1; i >= 0 && seen < 2; i--) {
+    if (!inked.has(sheets[i]!)) continue;
+    seen++;
+    const bytes = await fs.pageInkFile(id, sheets[i]!, 'drawing');
+    if (!bytes.length) continue;
+    let text = '';
+    for (let k = 0; k < bytes.length; k += 0x8000) text += String.fromCharCode(...bytes.subarray(k, k + 0x8000));
+    const box = await invoke<[number, number, number, number] | null>('ink_bounds', { drawing: btoa(text) }).catch(() => null);
+    if (box) foot = Math.max(foot, i * h + box[1] + box[3]);
+  }
+  return foot;
+}
+
+/**
+ * A pageless notebook's sheets past the last one listed that hold strokes
+ * are put back on the end of `sheets`, lowest first (milestone 88). Two
+ * devices writing at once each add the long sheet's next sheet under the
+ * same number, and the list is one field: where the shorter list won the
+ * merge, the strokes written on the sheet it leaves out are still kept
+ * under its number, and are shown again once it is listed. Resolves to the
+ * sheets as they are after.
+ */
+export async function healSheets(path: string, id: string, sheets: readonly number[]): Promise<number[]> {
+  const fs = currentVault()?.fs as Partial<StoreFs> | undefined;
+  if (!fs?.inkedPages) return [...sheets];
+  const top = Math.max(0, ...sheets);
+  const stray = (await fs.inkedPages(id)).filter((n) => n > top).sort((a, b) => a - b);
+  if (!stray.length) return [...sheets];
+  let out = [...sheets];
+  await need().update(path, (doc) => {
+    const w = meta(doc).written;
+    if (!w || !w.pageless) return;
+    out = [...w.sheets, ...stray.filter((n) => !w.sheets.includes(n))];
+    if (out.length !== w.sheets.length) setField(doc, 'sheets', out);
+  });
+  return out;
 }
 
 /** Strokes are no document's write: the sync is told of them here, as `ink.ts` tells it of a canvas's. */
@@ -200,8 +253,13 @@ export async function removeSheet(path: string, sheet: number): Promise<() => Pr
 export interface Setup {
   paper: PaperKind;
   rule: number | null;
+  /** The left margin rule, from the left edge; null for none. */
   margin: number | null;
+  /** The right margin rule, from the right edge; null for none (milestone 88). */
+  marginRight: number | null;
   top: number | null;
+  /** The room under a ruled page's last rule; null for a rule's (milestone 88). */
+  bottom: number | null;
   size: 'a4' | null;
   turn: 'landscape' | null;
   pageless: boolean;
@@ -212,7 +270,7 @@ export interface Setup {
 }
 
 /** A notebook's page setup. */
-export const setupOf = (w: WrittenMeta): Setup => ({ paper: w.paper, rule: w.rule ?? null, margin: w.margin ?? null, top: w.top ?? null, size: w.size ?? null, turn: w.turn ?? null, pageless: !!w.pageless, color: w.color ?? null, line: w.line ?? null });
+export const setupOf = (w: WrittenMeta): Setup => ({ paper: w.paper, rule: w.rule ?? null, margin: w.margin ?? null, marginRight: w.marginRight ?? null, top: w.top ?? null, bottom: w.bottom ?? null, size: w.size ?? null, turn: w.turn ?? null, pageless: !!w.pageless, color: w.color ?? null, line: w.line ?? null });
 
 /**
  * Some of a notebook's page setup changed (milestone 85). Only the paper
@@ -230,9 +288,13 @@ export async function setSetup(path: string, change: Partial<Setup>): Promise<vo
     setField(doc, 'paper', next.paper);
     const rule = points(next.rule, PAPER_RULE_RANGE);
     setField(doc, 'paper-rule', next.paper === 'blank' || rule === null || rule === ruleOf(next.paper) ? null : rule);
-    setField(doc, 'paper-margin', next.paper === 'ruled' ? points(next.margin, PAPER_MARGIN_RANGE) : null);
+    // (a margin rule stands on any paper, blank too: milestone 88)
+    setField(doc, 'paper-margin', points(next.margin, PAPER_MARGIN_RANGE));
+    setField(doc, 'paper-margin-right', points(next.marginRight, PAPER_MARGIN_RANGE));
     const top = points(next.top, PAPER_TOP_RANGE);
     setField(doc, 'paper-top', next.paper !== 'ruled' || top === null || top === RULE_TOP ? null : top);
+    const bottom = points(next.bottom, PAPER_TOP_RANGE);
+    setField(doc, 'paper-bottom', next.paper !== 'ruled' || bottom === null || bottom === (rule ?? ruleOf(next.paper)) ? null : bottom);
     setField(doc, 'paper-size', next.size);
     setField(doc, 'paper-turn', next.turn);
     setField(doc, 'pageless', next.pageless ? true : null);
@@ -254,7 +316,7 @@ export function parseSetup(raw: string | null | undefined): Setup | null {
     const n = (v: unknown, range: readonly [number, number]): number | null => (typeof v === 'number' && Number.isFinite(v) && v >= range[0] && v <= range[1] ? v : null);
     return {
       paper: PAPERS.includes(t.paper as PaperKind) ? (t.paper as PaperKind) : 'ruled',
-      rule: n(t.rule, PAPER_RULE_RANGE), margin: n(t.margin, PAPER_MARGIN_RANGE), top: n(t.top, PAPER_TOP_RANGE),
+      rule: n(t.rule, PAPER_RULE_RANGE), margin: n(t.margin, PAPER_MARGIN_RANGE), marginRight: n(t.marginRight, PAPER_MARGIN_RANGE), top: n(t.top, PAPER_TOP_RANGE), bottom: n(t.bottom, PAPER_TOP_RANGE),
       size: t.size === 'a4' ? 'a4' : null, turn: t.turn === 'landscape' ? 'landscape' : null, pageless: t.pageless === true,
       color: paperHex(t.color), line: paperHex(t.line),
     };

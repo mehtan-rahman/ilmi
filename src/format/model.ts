@@ -175,10 +175,14 @@ export type Field =
   | { key: 'sheets'; value: number[] }
   /** A notebook's page setup (§3, *Written notes*, milestone 85): how far apart its rules, lines or dots are, in points. */
   | { key: 'paper-rule'; value: number }
-  /** How far from the left edge its margin rule stands, in points; with none there is no margin rule. */
+  /** How far from the left edge its left margin rule stands, in points; with none there is no margin rule there. */
   | { key: 'paper-margin'; value: number }
+  /** How far from the right edge its right margin rule stands, in points; with none there is none there (milestone 88). */
+  | { key: 'paper-margin-right'; value: number }
   /** How far down a ruled sheet its first rule is, in points. */
   | { key: 'paper-top'; value: number }
+  /** How much room a ruled sheet keeps under its last rule, in points (milestone 88). */
+  | { key: 'paper-bottom'; value: number }
   /** Its sheets' size, when not Letter. */
   | { key: 'paper-size'; value: 'a4' }
   /** Its sheets on their side. */
@@ -241,7 +245,7 @@ export interface Diagnostic {
 export const FIELD_KEYS: readonly FieldKey[] = [
   'type', 'title', 'frozen', 'imported', 'started', 'read', 'write', 'default-card', 'pri', 'pdf', 'url', 'author', 'published', 'tabs',
   'new-per-day', 'reviews-per-day', 'retention', 'leech', 'leech-action', 'pages', 'exam', 'finish',
-  'written', 'paper', 'sheets', 'paper-rule', 'paper-margin', 'paper-top', 'paper-size', 'paper-turn', 'pageless', 'paper-color', 'paper-line',
+  'written', 'paper', 'sheets', 'paper-rule', 'paper-margin', 'paper-margin-right', 'paper-top', 'paper-bottom', 'paper-size', 'paper-turn', 'pageless', 'paper-color', 'paper-line',
 ];
 
 export function isField(e: FmEntry): e is Field {

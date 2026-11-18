@@ -33,7 +33,9 @@ export interface SurfaceSpec {
   /** The notebook's id. */
   key: string;
   sheets: number[];
-  paper: { kind: string; w: number; h: number; rule: number; margin: number | null; top: number; run: boolean };
+  paper: { kind: string; w: number; h: number; rule: number; margin: number | null; marginRight: number | null; top: number; bottom: number | null; run: boolean };
+  /** A pageless notebook's: how far down its one long sheet the lowest thing written on it reaches, in points, as the store has it (the surface draws the sheet that long and a little more, and longer as it is written on: milestone 88). */
+  foot?: number;
   look: PaperLook & { desk: string; accent: string; fg: string; line: string; tag: string };
   pad: { top: number; side: number; bottom: number };
   zoom: number;
@@ -76,7 +78,7 @@ export const surfacePicture = (id: string): Promise<string | null> =>
 export const surfaceSettle = (id: string): Promise<void> => invoke<void>('ink_surface_do', { ask: { id, op: 'settle' } }).catch(() => {});
 
 /** The paper of a notebook as the surface is told it. */
-export const paperArgs = (p: PaperSpec): SurfaceSpec['paper'] => ({ kind: p.kind, w: p.w, h: p.h, rule: p.rule, margin: p.margin, top: p.top, run: p.run });
+export const paperArgs = (p: PaperSpec): SurfaceSpec['paper'] => ({ kind: p.kind, w: p.w, h: p.h, rule: p.rule, margin: p.margin, marginRight: p.marginRight, top: p.top, bottom: p.bottom, run: p.run });
 
 /** A colour of the page's styles as `#rrggbb`: whatever the style says, read through a canvas. */
 let probe: CanvasRenderingContext2D | null | undefined;

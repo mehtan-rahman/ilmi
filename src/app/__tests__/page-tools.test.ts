@@ -45,9 +45,17 @@ const NB = 'notes/lecture.md';
 const ID = '5b0c7e1a9d3f4e26b8a1c0d2e4f60718';
 /** What the overview asked the store for a picture of. */
 const pictured: unknown[][] = [];
+/** The sheets the store holds writing for (`inkedPages`), and the drawings it was asked for (a pageless notebook's, for how far its writing reaches: 88). */
+let inkedSheets: number[] = [];
+const drawings: unknown[][] = [];
 const store = {
   pageInk: async () => [],
-  pageInkFile: async (...a: unknown[]) => { pictured.push(a); return new TextEncoder().encode(`picture of ${String(a[1])}`); },
+  pageInkFile: async (...a: unknown[]) => {
+    if (a[2] === 'drawing') { drawings.push(a); return new TextEncoder().encode(`drawing of ${String(a[1])}`); }
+    pictured.push(a);
+    return new TextEncoder().encode(`picture of ${String(a[1])}`);
+  },
+  inkedPages: async () => inkedSheets,
 };
 let open = true;
 vi.mock('../vault.js', async (orig) => ({ ...(await orig<typeof import('../vault.js')>()), currentVault: () => (open ? { root: ROOT, fs: store } : null) }));
@@ -107,6 +115,8 @@ beforeEach(async () => {
   answers = {};
   asked.length = 0;
   pictured.length = 0;
+  drawings.length = 0;
+  inkedSheets = [];
   saves.length = 0;
   saveTo = null;
   open = true;
@@ -663,7 +673,7 @@ describe('the pages as a PDF', () => {
   const AT = { x: 700, y: 20, w: 30, h: 30 };
   const nb = { name: 'lecture', hash: ID, written: { id: ID, paper: 'grid' as const, sheets: [1, 3, 7] }, inked: new Set([3]) };
   /** A sheet as `pages_pdf` is told it, with nothing of a page setup said. */
-  const sheet = (more: Record<string, unknown> = {}) => ({ w: 612, h: 792, paper: 'grid', rule: 20, margin: null, top: 72, at: null, ink: null, above: null, color: null, line: null, dark: false, ...more });
+  const sheet = (more: Record<string, unknown> = {}) => ({ w: 612, h: 792, paper: 'grid', rule: 20, margin: null, marginRight: null, top: 72, bottom: null, at: null, ink: null, above: null, color: null, line: null, dark: false, ...more });
   const HASH = 'f'.repeat(64);
   const book = { name: 'lindqvist', hash: HASH, pages: [{ page: 41, w: 600, h: 800 }, { page: 42, w: 595, h: 842 }], inked: new Set([42]) };
 
@@ -681,13 +691,26 @@ describe('the pages as a PDF', () => {
     expect(useApp.getState().notice).toBeNull();
   });
 
-  it('each sheet is told as the notebook\'s page setup has it: its size, its ruling, its margin', async () => {
+  it('each sheet is told as the notebook\'s page setup has it: its size, its ruling, its margins, the room at its foot', async () => {
     answers.pages_pdf = () => '/var/share/lecture.pdf';
     await sharePages({ ...nb, written: { id: ID, paper: 'ruled', sheets: [1, 3], rule: 30, margin: 90, top: 100, size: 'a4', turn: 'landscape' } }, AT);
     expect((said('pages_pdf')[0]!.pages as unknown[])).toEqual([
-      { w: 842, h: 595, paper: 'ruled', rule: 30, margin: 90, top: 100, at: null, ink: null, above: null, color: null, line: null, dark: false },
-      { w: 842, h: 595, paper: 'ruled', rule: 30, margin: 90, top: 100, at: null, ink: `p.${ID}.3`, above: null, color: null, line: null, dark: false },
+      { w: 842, h: 595, paper: 'ruled', rule: 30, margin: 90, marginRight: null, top: 100, bottom: null, at: null, ink: null, above: null, color: null, line: null, dark: false },
+      { w: 842, h: 595, paper: 'ruled', rule: 30, margin: 90, marginRight: null, top: 100, bottom: null, at: null, ink: `p.${ID}.3`, above: null, color: null, line: null, dark: false },
     ]);
+    // a margin at the right as far from the right edge as the file says, and the room under the last rule
+    calls.length = 0;
+    await sharePages({ ...nb, written: { id: ID, paper: 'ruled', sheets: [1], margin: 90, marginRight: 72, bottom: 40 } }, AT);
+    expect((said('pages_pdf')[0]!.pages as unknown[])).toEqual([{ ...sheet(), paper: 'ruled', rule: 24, margin: 90, marginRight: 72, bottom: 40 }]);
+    // a grid, dots and blank paper have their margins and no such room
+    for (const paper of ['grid', 'dotted', 'blank'] as const) {
+      calls.length = 0;
+      await sharePages({ ...nb, written: { id: ID, paper, sheets: [1], margin: 90, marginRight: 72, bottom: 40 } }, AT);
+      expect((said('pages_pdf')[0]!.pages as unknown[]), paper).toEqual([{ ...sheet(), paper, margin: 90, marginRight: 72, bottom: null }]);
+    }
+    // nothing is asked of the store for a notebook of pages
+    expect(drawings).toEqual([]);
+    expect(said('ink_bounds')).toEqual([]);
   });
 
   it('each sheet is told its paper\'s colour and its ruling\'s where one is chosen, and whether its ink is drawn the dark way: by the paper, not the theme', async () => {
@@ -713,14 +736,79 @@ describe('the pages as a PDF', () => {
     expect(Object.keys((said('pages_pdf')[0]!.pages as object[])[0]!).sort()).toEqual(['h', 'ink', 'source', 'w']);
   });
 
+  /** What a sheet's drawing covers, by the sheet's number: `ink_bounds` answers it (x, y, w, h in the sheet's points). */
+  const covers = (by: Record<number, [number, number, number, number]>) => { answers.ink_bounds = (a) => by[Number(atob(a.drawing as string).split(' ').at(-1))] ?? null; };
+  const cut = () => (said('pages_pdf')[0]!.pages as { at: number; ink: string | null; above: string | null }[]).map((p) => [p.at, p.ink, p.above]);
+
   it('a notebook whose sheets run on as one is cut into its sheets: each says how far down the long sheet it begins, and what was written past the foot of the one before', async () => {
     answers.pages_pdf = () => '/var/share/lecture.pdf';
+    inkedSheets = [1, 7];
+    covers({ 1: [40, 80, 300, 500], 7: [40, 100, 300, 200] });
     await sharePages({ ...nb, written: { id: ID, paper: 'ruled', sheets: [1, 3, 7], pageless: true }, inked: new Set([1, 7]) }, AT);
-    expect((said('pages_pdf')[0]!.pages as { at: number; ink: string | null; above: string | null }[]).map((p) => [p.at, p.ink, p.above])).toEqual([
+    expect(cut()).toEqual([
       [0, `p.${ID}.1`, null],
       [792, null, `p.${ID}.1`],
       [1584, `p.${ID}.7`, null],
     ]);
+    // how far its writing reaches was asked of the drawings themselves, by the sheets' own numbers
+    expect(drawings.map((d) => d.slice(0, 3))).toEqual([[ID, 7, 'drawing'], [ID, 1, 'drawing']]);
+    expect(said('ink_bounds').length).toBe(2);
+  });
+
+  it('it is cut to as many pages as what is written on it reaches, never the bare sheets under that; with nothing written, one', async () => {
+    answers.pages_pdf = () => '/var/share/lecture.pdf';
+    const pageless = (inked: number[], sheets = [1, 3, 7]) => { calls.length = 0; inkedSheets = inked; return sharePages({ ...nb, written: { id: ID, paper: 'ruled', sheets, pageless: true }, inked: new Set(inked) }, AT); };
+    // written on the first sheet alone, to 580 points down it: one page of three
+    covers({ 1: [40, 80, 300, 500] });
+    await pageless([1]);
+    expect(cut()).toEqual([[0, `p.${ID}.1`, null]]);
+    // a stroke kept on the first sheet that runs on over the second: two pages, the second with what is over its head
+    covers({ 1: [40, 700, 300, 400] });
+    await pageless([1]);
+    expect(cut()).toEqual([[0, `p.${ID}.1`, null], [792, null, `p.${ID}.1`]]);
+    // to the very foot of the first sheet is one page still; a point past it, two
+    covers({ 1: [40, 700, 300, 92] });
+    await pageless([1]);
+    expect(cut().length).toBe(1);
+    covers({ 1: [40, 700, 300, 93] });
+    await pageless([1]);
+    expect(cut().length).toBe(2);
+    // written on the second sheet: the first, bare, is a page above it
+    covers({ 3: [40, 10, 300, 40] });
+    await pageless([3]);
+    expect(cut()).toEqual([[0, null, null], [792, `p.${ID}.3`, null]]);
+    // nothing written: one bare page
+    covers({});
+    await pageless([]);
+    expect(cut()).toEqual([[0, null, null]]);
+    expect(said('ink_bounds')).toEqual([]);
+    // never more pages than it has sheets
+    covers({ 7: [40, 700, 300, 900] });
+    await pageless([7]);
+    expect(cut().map((p) => p[0])).toEqual([0, 792, 1584]);
+    // an A4 notebook is cut by its own sheet's height
+    covers({ 1: [40, 700, 300, 130] });
+    calls.length = 0;
+    inkedSheets = [1];
+    await sharePages({ ...nb, written: { id: ID, paper: 'ruled', sheets: [1, 3, 7], pageless: true, size: 'a4' }, inked: new Set([1]) }, AT);
+    expect(cut()).toEqual([[0, `p.${ID}.1`, null]]);
+    // and what the Mac says it is making is the pages it is cut to
+    useApp.setState({ mobile: false });
+    saveTo = '/Users/me/Desktop/lecture.pdf';
+    let during: string | undefined;
+    answers.pages_pdf = (a) => { during = useApp.getState().notice?.line; return a.out; };
+    covers({ 1: [40, 700, 300, 400] });
+    await pageless([1]);
+    expect(during).toBe('making a pdf of 2 pages');
+  });
+
+  it('a notebook of pages is every one of its sheets, written on or bare', async () => {
+    answers.pages_pdf = () => '/var/share/lecture.pdf';
+    inkedSheets = [1];
+    covers({ 1: [40, 80, 300, 100] });
+    await sharePages({ ...nb, written: { id: ID, paper: 'ruled', sheets: [1, 3, 7] }, inked: new Set([1]) }, AT);
+    expect(cut()).toEqual([[null, `p.${ID}.1`, null], [null, null, null], [null, null, null]]);
+    expect(said('ink_bounds')).toEqual([]);
   });
 
   it('a PDF\'s own pages are drawn from the file, each its size and its number in it, the ink over them', async () => {
@@ -768,7 +856,7 @@ describe('the pages as a PDF', () => {
 describe('page setup', () => {
   let into: HTMLDivElement;
   let closed = 0;
-  const NEW = { paper: 'ruled', rule: null, margin: null, top: null, size: null, turn: null, pageless: false, color: null, line: null };
+  const NEW = { paper: 'ruled', rule: null, margin: null, marginRight: null, top: null, bottom: null, size: null, turn: null, pageless: false, color: null, line: null };
   const panel = (written: Record<string, unknown> = {}) => createElement(PageSetup, { id: NB, into, written: { id: ID, paper: 'ruled' as PaperKind, sheets: [1, 2], ...written }, onClose: () => { closed += 1; } });
   const q = <T extends HTMLElement>(sel: string) => into.querySelector<T>(sel);
   const qa = <T extends HTMLElement>(sel: string) => Array.from(into.querySelectorAll<T>(sel));
@@ -799,10 +887,13 @@ describe('page setup', () => {
     expect([Number(rule.min), Number(rule.max), rule.value, rule.getAttribute('aria-label')]).toEqual([4 * MM, 14 * MM, '24', 'spacing']);
     expect(STOPS.ruled).toEqual([{ name: 'narrow', rule: 18 }, { name: 'college', rule: 20.25 }, { name: 'wide', rule: 24 }]);
     expect(qa('.ps-stop').map((b) => [b.dataset.ps, b.textContent, b.getAttribute('aria-pressed')])).toEqual([['stop-narrow', 'narrow', 'false'], ['stop-college', 'college', 'false'], ['stop-wide', 'wide', 'true']]);
-    expect([ps('margin').getAttribute('role'), ps('margin').getAttribute('aria-checked'), ps('margin').textContent]).toEqual(['switch', 'false', 'margin line']);
-    expect(q('[data-ps="margin-at"]')).toBeNull();
+    expect([ps('margin').getAttribute('role'), ps('margin').getAttribute('aria-checked'), ps('margin').textContent]).toEqual(['switch', 'false', 'left margin']);
+    expect([ps('margin-right').getAttribute('role'), ps('margin-right').getAttribute('aria-checked'), ps('margin-right').textContent]).toEqual(['switch', 'false', 'right margin']);
+    expect(q('[data-ps="margin-at"], [data-ps="margin-right-at"]')).toBeNull();
     expect([ps<HTMLInputElement>('top').value, ps('top').getAttribute('aria-label')]).toEqual(['72', 'top space']);
-    expect(qa('.ps-v').map((v) => v.textContent)).toEqual(['8.5 mm', '25.4 mm']);
+    // the room at the foot is a rule's until it is said
+    expect([ps<HTMLInputElement>('bottom').value, ps('bottom').getAttribute('aria-label')]).toEqual(['24', 'bottom space']);
+    expect(qa('.ps-v').map((v) => v.textContent)).toEqual(['8.5 mm', '25.4 mm', '8.5 mm']);
     expect([pressed('layout'), pressed('size'), pressed('turn')]).toEqual([['layout-pages'], ['size-letter'], ['turn-portrait']]);
     expect(qa('.ps-seg button').map((b) => b.textContent)).toEqual(['pages', 'pageless', 'letter', 'a4', 'portrait', 'landscape']);
     expect([ps('keep').textContent, ps('keep').getAttribute('aria-pressed')]).toEqual(['use for new notebooks', 'false']);
@@ -816,8 +907,13 @@ describe('page setup', () => {
     expect(ps<HTMLInputElement>('rule').value).toBe('18');
     expect(pressed('stop')).toEqual(['stop-narrow']);
     expect(ps('margin').getAttribute('aria-checked')).toBe('true');
-    expect([ps<HTMLInputElement>('margin-at').value, ps('margin-at').getAttribute('aria-label')]).toEqual(['100', 'margin from the edge']);
+    expect([ps<HTMLInputElement>('margin-at').value, ps('margin-at').getAttribute('aria-label')]).toEqual(['100', 'left margin from the edge']);
+    // the right one is its own: the file says none
+    expect(ps('margin-right').getAttribute('aria-checked')).toBe('false');
+    expect(q('[data-ps="margin-right-at"]')).toBeNull();
     expect(ps<HTMLInputElement>('top').value).toBe('50');
+    // with no room said for the foot it is the spacing's
+    expect(ps<HTMLInputElement>('bottom').value).toBe('18');
     expect([pressed('layout'), pressed('size'), pressed('turn')]).toEqual([['layout-pages'], ['size-a4'], ['turn-landscape']]);
     // a spacing that is none of the names lights none
     await act(async () => { root!.render(panel({ rule: 22 })); await wait(); });
@@ -878,11 +974,12 @@ describe('page setup', () => {
     expect(setups()).toEqual([{ ...NEW, rule: 30 }]);
   });
 
-  it('a grid and dots have their spacing by size and no margin or top; blank paper has no spacing at all', async () => {
+  it('a grid and dots have their spacing by size and no room at the top or the foot; blank paper has no spacing at all; each has its margins', async () => {
     await mount(panel({ margin: 90 }));
     await click(ps('paper-grid'));
     expect(pressed('paper')).toEqual(['paper-grid']);
-    expect(q('[data-ps="margin"], [data-ps="margin-at"], [data-ps="top"]')).toBeNull();
+    expect(q('[data-ps="top"], [data-ps="bottom"]')).toBeNull();
+    expect([ps('margin').getAttribute('aria-checked'), ps<HTMLInputElement>('margin-at').value, ps('margin-right').getAttribute('aria-checked')]).toEqual(['true', '90', 'false']);
     expect(ps<HTMLInputElement>('rule').value).toBe('20');
     expect(qa('.ps-stop').map((b) => [b.dataset.ps, b.textContent, b.getAttribute('aria-pressed')])).toEqual([['stop-5mm', '5 mm', 'false'], ['stop-7mm', '7 mm', 'true'], ['stop-10mm', '10 mm', 'false']]);
     await click(ps('stop-10mm'));
@@ -892,11 +989,109 @@ describe('page setup', () => {
     await click(ps('paper-dotted'));
     expect(qa('.ps-stop').map((b) => b.textContent)).toEqual(['5 mm', '7 mm', '10 mm']);
     await click(ps('paper-blank'));
-    expect(q('[data-ps="rule"], .ps-stop, [data-ps="margin"], [data-ps="top"]')).toBeNull();
+    expect(q('[data-ps="rule"], .ps-stop, [data-ps="top"], [data-ps="bottom"]')).toBeNull();
+    expect([ps('margin').getAttribute('aria-checked'), ps<HTMLInputElement>('margin-at').value, ps('margin-right').getAttribute('aria-checked')]).toEqual(['true', '90', 'false']);
     await settle();
-    expect(setups().at(-1)).toMatchObject({ paper: 'blank' });
+    expect(setups().at(-1)).toMatchObject({ paper: 'blank', margin: 90 });
     // how its sheets lie is any paper's
     expect(pressed('layout')).toEqual(['layout-pages']);
+  });
+
+  it('a margin at the left and one at the right, each its own switch and its own distance from its own edge, on every paper', async () => {
+    await mount(panel());
+    for (const kind of ['ruled', 'grid', 'dotted', 'blank'] as const) {
+      if (kind !== 'ruled') await click(ps(`paper-${kind}`));
+      expect(qa('.ps-check[role="switch"]').map((b) => [b.dataset.ps, b.textContent, b.getAttribute('aria-checked')]), kind).toEqual([['margin', 'left margin', 'false'], ['margin-right', 'right margin', 'false']]);
+    }
+    await settle();
+    await click(ps('paper-ruled'));
+    await settle();
+    asked.length = 0;
+    // the right one alone: an inch and a quarter in from the right edge, to start with
+    await click(ps('margin-right'));
+    expect([ps('margin-right').getAttribute('aria-checked'), ps('margin').getAttribute('aria-checked')]).toEqual(['true', 'false']);
+    const at = ps<HTMLInputElement>('margin-right-at');
+    expect([at.value, at.getAttribute('aria-label'), Number(at.min), Number(at.max)]).toEqual(['90', 'right margin from the edge', 10 * MM, 60 * MM]);
+    expect(q('[data-ps="margin-at"]')).toBeNull();
+    expect(at.closest('.ps-row')!.querySelector('.ps-v')!.textContent).toBe('31.7 mm');
+    await settle();
+    expect(setups()).toEqual([{ ...NEW, marginRight: 90 }]);
+    await slide('margin-right-at', 72.004);
+    await settle();
+    expect(setups().at(-1)).toEqual({ ...NEW, marginRight: 72 });
+    // the left one beside it: each keeps its own
+    await click(ps('margin'));
+    await slide('margin-at', 120);
+    await settle();
+    expect(setups().at(-1)).toEqual({ ...NEW, margin: 120, marginRight: 72 });
+    expect([ps<HTMLInputElement>('margin-at').value, ps<HTMLInputElement>('margin-right-at').value]).toEqual(['120', '72']);
+    expect([ps('margin-at').getAttribute('aria-label'), ps('margin-right-at').getAttribute('aria-label')]).toEqual(['left margin from the edge', 'right margin from the edge']);
+    // on another paper they are as they were, and written with it
+    for (const kind of ['grid', 'dotted', 'blank'] as const) {
+      await click(ps(`paper-${kind}`));
+      expect([ps<HTMLInputElement>('margin-at').value, ps<HTMLInputElement>('margin-right-at').value], kind).toEqual(['120', '72']);
+      await settle();
+      expect(setups().at(-1), kind).toEqual({ ...NEW, paper: kind, margin: 120, marginRight: 72 });
+    }
+    // the left one off: the right one stands
+    await click(ps('margin'));
+    expect(q('[data-ps="margin-at"]')).toBeNull();
+    expect(ps<HTMLInputElement>('margin-right-at').value).toBe('72');
+    await settle();
+    expect(setups().at(-1)).toEqual({ ...NEW, paper: 'blank', marginRight: 72 });
+    await click(ps('margin-right'));
+    await settle();
+    expect(setups().at(-1)).toEqual({ ...NEW, paper: 'blank' });
+    // `use for new notebooks` takes them with the rest
+    await click(ps('margin-right'));
+    await click(ps('keep'));
+    expect(asked.filter((a) => a[0] === 'keepSetup')).toEqual([['keepSetup', { ...NEW, paper: 'blank', marginRight: 90 }]]);
+  });
+
+  it('says the right margin and the room at the foot the file says', async () => {
+    await mount(panel({ margin: 100, marginRight: 60, bottom: 50 }));
+    expect([ps('margin').getAttribute('aria-checked'), ps('margin-right').getAttribute('aria-checked')]).toEqual(['true', 'true']);
+    expect([ps<HTMLInputElement>('margin-at').value, ps<HTMLInputElement>('margin-right-at').value, ps<HTMLInputElement>('bottom').value]).toEqual(['100', '60', '50']);
+    expect(qa('.ps-v').map((v) => v.textContent)).toEqual(['8.5 mm', '35.3 mm', '21.2 mm', '25.4 mm', '17.6 mm']);
+    // changed by another hand: the right one gone, no room at the foot at all
+    await act(async () => { root!.render(panel({ margin: 100, bottom: 0 })); await wait(); });
+    expect([ps('margin-right').getAttribute('aria-checked'), q('[data-ps="margin-right-at"]'), ps<HTMLInputElement>('bottom').value]).toEqual(['false', null, '0']);
+    expect(asked).toEqual([]);
+  });
+
+  it('`bottom space` is the room under a ruled page\'s last rule: a rule\'s until it is dragged, then what it says', async () => {
+    await mount(panel({ rule: 30 }));
+    const bottom = ps<HTMLInputElement>('bottom');
+    expect([bottom.type, Number(bottom.min), Number(bottom.max), bottom.value, bottom.getAttribute('aria-label')]).toEqual(['range', 0, 60 * MM, '30', 'bottom space']);
+    expect(bottom.closest('.ps-row')!.querySelector('.ps-l')!.textContent).toBe('bottom space');
+    // it comes after the top's
+    expect(qa('.ps-row input[type="range"]').map((i) => i.dataset.ps)).toEqual(['rule', 'top', 'bottom']);
+    // while none is said it goes with the spacing
+    await click(ps('stop-narrow'));
+    expect(ps<HTMLInputElement>('bottom').value).toBe('18');
+    await settle();
+    expect(setups()).toEqual([{ ...NEW, rule: 18 }]);
+    for (const v of [40, 55.5, 60.006]) await slide('bottom', v);
+    expect(ps<HTMLInputElement>('bottom').value).toBe('60.01');
+    expect(ps('bottom').closest('.ps-row')!.querySelector('.ps-v')!.textContent).toBe('21.2 mm');
+    await settle();
+    expect(setups().slice(1)).toEqual([{ ...NEW, rule: 18, bottom: 60.01 }]);
+    // said, it stays as the spacing changes
+    await click(ps('stop-wide'));
+    expect(ps<HTMLInputElement>('bottom').value).toBe('60.01');
+    // none at all
+    await slide('bottom', 0);
+    await settle();
+    expect(setups().at(-1)).toEqual({ ...NEW, rule: 24, bottom: 0 });
+    // on a grid it is not shown, and is kept for when the paper is ruled again
+    await click(ps('paper-grid'));
+    expect(q('[data-ps="bottom"]')).toBeNull();
+    await click(ps('paper-ruled'));
+    expect(ps<HTMLInputElement>('bottom').value).toBe('0');
+    // nor where the sheets run on as one
+    await click(ps('layout-pageless'));
+    expect(q('[data-ps="bottom"]')).toBeNull();
+    expect(q('[data-ps="top"]')).not.toBeNull();
   });
 
   it('pageless: the sheets run on as one, and have no size or turn to choose', async () => {
@@ -904,10 +1099,14 @@ describe('page setup', () => {
     await click(ps('layout-pageless'));
     expect(pressed('layout')).toEqual(['layout-pageless']);
     expect(q('[data-ps^="size-"], [data-ps^="turn-"]')).toBeNull();
+    // its rules run on: there is no foot to leave room at, and the top's is the long sheet's
+    expect(q('[data-ps="bottom"]')).toBeNull();
+    expect(ps<HTMLInputElement>('top').value).toBe('72');
     await settle();
     expect(setups()).toEqual([{ ...NEW, pageless: true }]);
     await click(ps('layout-pages'));
     expect(qa('[data-ps^="size-"], [data-ps^="turn-"]').length).toBe(4);
+    expect(ps<HTMLInputElement>('bottom').value).toBe('24');
     await settle();
     expect(setups().at(-1)).toEqual(NEW);
   });

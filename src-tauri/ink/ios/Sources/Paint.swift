@@ -76,10 +76,28 @@ struct PaperArgs: Codable, Equatable {
   var w: Double
   var h: Double
   var rule: Double
+  /// The left margin rule, from the left edge, and the right one, from the right edge; none for none (88).
   var margin: Double?
+  var marginRight: Double?
   var top: Double
+  /// The room under a ruled page's last rule; none for a rule's.
+  var bottom: Double?
   /// The sheets run on as one.
   var run: Bool
+
+  /// How much bare paper a pageless notebook keeps under the lowest thing written on it, in points (`RUN_ALLOW`).
+  static let allow = 192.0
+
+  /// How long a pageless notebook's one sheet is drawn, the lowest thing written on it `foot` points down it: as `runLength` has it.
+  func runLength(foot: Double) -> Double {
+    let need = (foot.isFinite ? max(0, foot) : 0) + PaperArgs.allow
+    // (what fits on one sheet is one sheet, whole)
+    if need <= h { return h }
+    let step = kind == "blank" ? 24 : max(2, rule)
+    let edge = kind == "grid" || kind == "dotted" ? h.truncatingRemainder(dividingBy: step) / 2 : 0
+    let first = kind == "ruled" ? top.truncatingRemainder(dividingBy: step) : edge
+    return ((first + ((need - first - edge) / step - 1e-9).rounded(.up) * step + edge) * 1000).rounded() / 1000
+  }
 }
 
 struct LookArgs: Decodable, Equatable {
@@ -119,7 +137,7 @@ enum Paint {
   static func cg(_ hex: String, _ fallback: UIColor = .white) -> CGColor { (colour(hex) ?? fallback).cgColor }
 
   /// Where a paper's lines are, in the sheet's points: as `paperLines` has them.
-  static func lines(_ p: PaperArgs, index: Int) -> (rows: [Double], cols: [Double], margin: Double?, dots: (xs: [Double], ys: [Double])?) {
+  static func lines(_ p: PaperArgs, index: Int) -> (rows: [Double], cols: [Double], margins: [Double], dots: (xs: [Double], ys: [Double])?) {
     let step = max(2, p.rule)
     let at = p.run ? Double(index) * p.h : 0
     func steps(_ from: Double, _ to: Double) -> [Double] {
@@ -137,16 +155,20 @@ enum Paint {
     }
     let offX = p.w.truncatingRemainder(dividingBy: step) / 2
     let offY = p.h.truncatingRemainder(dividingBy: step) / 2
+    // a margin rule at either edge, on any paper: each from its own edge, the right one only right of the left
+    var m: [Double] = []
+    let l = p.margin.flatMap { $0 > 0 && $0 < p.w ? $0 : nil }
+    if let l = l { m.append(l) }
+    if let r = p.marginRight.flatMap({ $0 > 0 && $0 < p.w ? ((p.w - $0) * 1000).rounded() / 1000 : nil }), l == nil || r > l! { m.append(r) }
     switch p.kind {
     case "ruled":
-      let m = p.margin.flatMap { $0 > 0 && $0 < p.w ? $0 : nil }
-      return (p.run ? running(p.top) : steps(p.top, p.h - step), [], m, nil)
+      return (p.run ? running(p.top) : steps(p.top, p.h - (p.bottom ?? step)), [], m, nil)
     case "grid":
-      return (p.run ? running(offY) : steps(offY, p.h - offY), steps(offX, p.w - offX), nil, nil)
+      return (p.run ? running(offY) : steps(offY, p.h - offY), steps(offX, p.w - offX), m, nil)
     case "dotted":
-      return ([], [], nil, (steps(offX + step, p.w - offX - step), p.run ? running(offY + step) : steps(offY + step, p.h - offY - step)))
+      return ([], [], m, (steps(offX + step, p.w - offX - step), p.run ? running(offY + step) : steps(offY + step, p.h - offY - step)))
     default:
-      return ([], [], nil, nil)
+      return ([], [], m, nil)
     }
   }
 
@@ -163,18 +185,14 @@ enum Paint {
       // the paper's lines, in the picture's own pixels from its top left: each on whole pixels, half a point wide and never under one
       let l = lines(j.paper, index: j.index)
       let wide = max(1, (0.5 * sy).rounded())
-      func row(_ y: Double) -> CGFloat { ((CGFloat(y) - j.region.minY) * sy - wide / 2).rounded() }
+      // (a line at the very head of the sheet is drawn on its first pixels, not half off it: where a pageless notebook's sheets meet, the rule that falls there is the lower sheet's first, 88)
+      func row(_ y: Double) -> CGFloat { let r = ((CGFloat(y) - j.region.minY) * sy - wide / 2).rounded(); return y == 0 && j.region.minY == 0 && r < 0 ? 0 : r }
       func col(_ x: Double) -> CGFloat { ((CGFloat(x) - j.region.minX) * sx - wide / 2).rounded() }
       // (a picture is drawn from its foot up)
       func down(_ y: CGFloat, _ h: CGFloat) -> CGFloat { CGFloat(j.ph) - y - h }
       c.setFillColor(cg(j.look.rule, .lightGray))
       for y in l.rows { let at = row(y); if at > -wide, at < CGFloat(j.ph) { c.fill(CGRect(x: 0, y: down(at, wide), width: CGFloat(j.pw), height: wide)) } }
       for x in l.cols { let at = col(x); if at > -wide, at < CGFloat(j.pw) { c.fill(CGRect(x: at, y: 0, width: wide, height: CGFloat(j.ph))) } }
-      if let m = l.margin {
-        c.setFillColor(cg(j.look.margin, .lightGray))
-        let at = col(m)
-        if at > -wide, at < CGFloat(j.pw) { c.fill(CGRect(x: at, y: 0, width: wide, height: CGFloat(j.ph))) }
-      }
       if let d = l.dots {
         c.setFillColor(cg(j.look.dot, .lightGray))
         let r = max(0.6, 0.75 * sy)
@@ -187,6 +205,10 @@ enum Paint {
             c.fillEllipse(in: CGRect(x: cx - r, y: CGFloat(j.ph) - cy - r, width: r * 2, height: r * 2))
           }
         }
+      }
+      if !l.margins.isEmpty {
+        c.setFillColor(cg(j.look.margin, .lightGray))
+        for m in l.margins { let at = col(m); if at > -wide, at < CGFloat(j.pw) { c.fill(CGRect(x: at, y: 0, width: wide, height: CGFloat(j.ph))) } }
       }
     }
     // the ink, in the sheet's points from its top left: it lies on the paper as ink does, a highlighter leaving what is under it dark

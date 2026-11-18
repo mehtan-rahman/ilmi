@@ -353,7 +353,7 @@ function CardElement({ item, active, given, locked, onGrade, onSkip, onGone, onE
       {editing && card ? (
         <CardFaces card={card} autoFocus keep={`${item.path}#${card.id ?? item.block}`} onSave={saveEdit} onDone={() => { setEditing(false); setPressAt(undefined); }} at={pressAt}>{schedule}</CardFaces>
       ) : (<>
-      <div className="card" ref={cardRef} data-revealed={revealed ? '1' : '0'} data-faces={back ? '2' : '1'} data-plugins={plugins?.version ?? 0}>
+      <div className="card" key={`${item.path}#${card?.id ?? item.block}`} ref={cardRef} data-revealed={revealed ? '1' : '0'} data-faces={back ? '2' : '1'} data-plugins={plugins?.version ?? 0}>
         <div className="face front" onClick={editOnPress('front')}>{front}</div>
         {back && revealed && <div className="face back" onClick={editOnPress('back')}><div className="face-body">{back}</div></div>}
         {!revealed && (

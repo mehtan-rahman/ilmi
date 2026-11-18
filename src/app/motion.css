@@ -18,6 +18,25 @@
 /* the sidebar over the page (an iPad upright, a phone): from the left edge, its scrim with it */
 .side[data-sheet="1"] { animation: m-from-left 220ms cubic-bezier(0.2, 0.8, 0.2, 1); }
 .side-scrim { animation: m-fade 200ms ease-out; }
+.side[data-sheet="1"][data-leaving="1"] { animation: m-to-left 180ms cubic-bezier(0.4, 0, 1, 1) forwards; pointer-events: none; }
+@keyframes m-to-left { to { transform: translateX(-100%); } }
+
+/* a folder opened: its rows settle in under it (each row its own, nothing laid out again) */
+.tree .trow { animation: m-pop 130ms ease-out; }
+
+/* a session: the next card comes up, the answer comes in under its question */
+.recall-wrap .card { animation: m-rise 170ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+.recall-wrap .card .face.back { animation: m-fade 150ms ease-out; }
+.grades:not([data-gone="1"]) { animation: m-fade 150ms ease-out; }
+
+/* a phone shows one thing at a time: what is opened comes in (an opacity only: the page's fixed parts stay where they are) */
+html[data-shape="phone"] .pane-body > * { animation: m-fade 140ms ease-out; }
+
+/* what is pressed answers, and lets go softly */
+.phone-bar button, .insp-toggle, .inkbar button { transition: transform 110ms ease-out, opacity 110ms ease-out; }
+.phone-bar button:active, .insp-toggle:active, .inkbar button:active { transform: scale(0.92); opacity: 0.7; transition-duration: 40ms; }
+.grades button, .reveal-all, .qlist li, .tree .trow { transition: background-color 160ms ease-out; }
+.grades button:active, .reveal-all:active, .qlist li:active, .tree .trow:active { transition-duration: 0ms; }
 
 /* menus, the palette, the settings, a notice */
 .ctx-menu { animation: m-pop 110ms ease-out; }
@@ -39,7 +58,7 @@ html[data-shape="phone"] .tweaks.m-out { animation: m-out-foot 160ms ease-in for
 .side-scrim.m-out { animation: m-out-fade 160ms ease-in forwards; }
 
 html[data-still] *, html[data-still] *::before, html[data-still] *::after,
-[data-theme="eink"] *, [data-theme="eink"] *::before, [data-theme="eink"] *::after { animation-duration: 0.001s !important; animation-delay: 0s !important; }
+[data-theme="eink"] *, [data-theme="eink"] *::before, [data-theme="eink"] *::after { animation-duration: 0.001s !important; animation-delay: 0s !important; transition-duration: 0s !important; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.001s !important; animation-delay: 0s !important; }
 }

@@ -11,6 +11,8 @@
 // page stutter). Not under a smoke (`data-still`), on e-ink, or where the
 // system asks for less motion.
 
+import { useEffect, useState } from 'react';
+
 /** What leaves with a likeness, and the longest it may stay (ms; its animation's end removes it sooner). */
 const LEAVING: readonly [selector: string, ms: number][] = [
   ['.ctx-menu', 120],
@@ -26,6 +28,20 @@ const still = (): boolean => {
   const root = document.documentElement;
   return root.dataset.still === '1' || root.dataset.theme === 'eink' || (typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches);
 };
+
+/**
+ * True while `on` is, and for `ms` after: what closes stays in the page that long, to leave (the sidebar's sheet,
+ * which is too large for a likeness). At once under a smoke, on e-ink, in a test, or where less motion is asked.
+ */
+export function useLinger(on: boolean, ms: number): boolean {
+  const [held, setHeld] = useState(on);
+  useEffect(() => {
+    if (on) { setHeld(true); return; }
+    const t = setTimeout(() => setHeld(false), ms);
+    return () => clearTimeout(t);
+  }, [on, ms]);
+  return on || (held && import.meta.env.MODE !== 'test' && !still());
+}
 
 function likeness(of: Element): HTMLElement {
   const g = of.cloneNode(true) as HTMLElement;

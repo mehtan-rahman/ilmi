@@ -600,7 +600,8 @@ html[data-mobile="1"]:not([data-hardkeys]) .bot { display: none; }
 html[data-mobile="1"]:not([data-hardkeys]) .pdf-bar .pb-k { display: none; }
 /* nor words that are only about keys (a new card's `1–4 grade it now`) */
 html[data-mobile="1"]:not([data-hardkeys]) .keys-only { display: none; }
-html[data-mobile="1"]:not([data-hardkeys]):not([data-shape="phone"]) .shell { grid-template-rows: calc(30px + env(safe-area-inset-top, 0px)) 1fr env(safe-area-inset-bottom, 0px); }
+/* the page runs to the foot of the glass, under the home bar (a band kept clear for it read as the app stopping short) */
+html[data-mobile="1"]:not([data-hardkeys]):not([data-shape="phone"]) .shell { grid-template-rows: calc(30px + env(safe-area-inset-top, 0px)) 1fr 0px; }
 html[data-mobile="1"] .welcome { padding-top: max(12vh, calc(env(safe-area-inset-top, 0px) + 24px)); }
 /* the strip says where sync stands at any width there */
 html[data-mobile="1"] .top .right { display: flex; }

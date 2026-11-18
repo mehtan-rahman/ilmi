@@ -28,7 +28,7 @@ import './app.css';
 import './chrome.css';
 import './phone.css';
 import './motion.css';
-import { startMotion } from './motion.js';
+import { startMotion, useLinger } from './motion.js';
 import { Glyph } from './icons.js';
 
 /** Narrower than this and a drag on the handle hides the sidebar. */
@@ -88,6 +88,7 @@ export function App() {
   const railWidth = useApp((s) => s.railWidth);
   const mobile = useApp((s) => s.mobile);
   const sideSheet = useApp((s) => s.sideSheet);
+  const sideHeld = useLinger(sideSheet, 190);
   // the window's width, for the room rule (`layout.ts`): the inspector yields before the page's measure does
   const [win, setWin] = useState(() => window.innerWidth);
   const [winH, setWinH] = useState(() => window.innerHeight);
@@ -320,6 +321,8 @@ export function App() {
   const sideW = sideOn && !sheet ? sidebar.width : 0;
   const inspOn = !phone && inspectorShown({ sidebar: sheet ? { ...sidebar, hidden: true } : sidebar, inspector, inspForced, bookInsp, sessionEl, panes, docs, railFolded, railWidth }, win);
   const inspW = inspOn ? inspector.width : 0;
+  // the sheet slides away before it is gone (`motion.css`)
+  const sideLeaving = sheet && !sideOn && sideHeld;
   const active = activeId;
   // on a phone a tree row tapped goes to the page, the one in front too
   const onTreeOpen: typeof openNode = (path, opts) => { openNode(path, opts); if (phone) useApp.setState({ sideSheet: false }); };
@@ -328,8 +331,8 @@ export function App() {
       <div className="shell" data-session={phone && activeId === SESSION ? '1' : undefined} style={{ '--side-w': `${sideW}px`, '--insp-w': `${inspW}px` } as React.CSSProperties}>
         <TopStrip />
         {sheet && sideOn && <div className="side-scrim" onClick={() => useApp.setState({ sideSheet: false })} />}
-        {sideOn && (
-          <div className="side" data-sheet={sheet ? '1' : undefined} style={sheet ? ({ '--sheet-w': `${Math.min(sidebar.width, Math.round(win * 0.84))}px` } as React.CSSProperties) : undefined}>
+        {(sideOn || sideLeaving) && (
+          <div className="side" data-sheet={sheet ? '1' : undefined} data-leaving={sideLeaving ? '1' : undefined} style={sheet ? ({ '--sheet-w': `${Math.min(sidebar.width, Math.round(win * 0.84))}px` } as React.CSSProperties) : undefined}>
             <h6>workspace</h6>
             <Tree activeId={active} onOpen={onTreeOpen} />
             <SavedQueries activeId={active} />

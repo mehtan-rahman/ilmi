@@ -5,9 +5,9 @@
 // `.ilmi/marks/<id>.json`. Here: making one, its sheets (added at the end
 // or after another, taken out, made again, moved: milestone 85) and its paper.
 
-import { PAPERS, PAPER_MARGIN_RANGE, PAPER_RULE_RANGE, PAPER_TOP_RANGE, meta, pagesLabel, parseBoxes, setField, type Box, type PaperKind, type WrittenMeta } from '../format/index.js';
+import { MARGIN_LINES, PAPERS, PAPER_INSET_RANGE, PAPER_MARGIN_RANGE, PAPER_RULE_RANGE, PAPER_TOP_RANGE, meta, pagesLabel, parseBoxes, setField, type Box, type MarginLine, type PaperKind, type WrittenMeta } from '../format/index.js';
 import { invoke } from '@tauri-apps/api/core';
-import { RULE_TOP, paperHex, ruleOf } from './paper.js';
+import { MARGIN_AT, RULE_TOP, newInsets, paperHex, ruleOf } from './paper.js';
 import { passageMarksOf } from '../pdf/index.js';
 import { isPdfPath, newId, passageId, type InkStroke, type PassageMark, type StoreFs } from '../vault/index.js';
 import { askNote, loadMarks, openNotes, setMark } from './book.js';
@@ -113,9 +113,10 @@ const wrote = (): void => { void import('./crdt.js').then((m) => m.crdtWrote(), 
 /** A new notebook named `name` in `dir`, one sheet, ruled; attached to `pdf` (vault-relative) when given. Its path. */
 export async function createWritten(dir: string, name: string, pdf?: string): Promise<string> {
   const path = await need().createWritten(dir, name, newId(), pdf);
-  // with the page setup this device keeps for new notebooks, when it keeps one
+  // with the page setup this device keeps for new notebooks, when it keeps one; else a new notebook's margins (88:
+  // its rules begin and end a little in from the sides, where a file that says nothing has them edge to edge)
   const mine = defaultSetup();
-  if (mine) await setSetup(path, mine).catch(console.error);
+  await setSetup(path, mine ?? newInsets('ruled')).catch(console.error);
   return path;
 }
 
@@ -253,12 +254,17 @@ export async function removeSheet(path: string, sheet: number): Promise<() => Pr
 export interface Setup {
   paper: PaperKind;
   rule: number | null;
-  /** The left margin rule, from the left edge; null for none. */
+  /** 85's margin rule (a line that far from the left edge, the ruling run on under it) and its counterpart from the right: what an older file says, kept until its margins are set (`withMargins`). */
   margin: number | null;
-  /** The right margin rule, from the right edge; null for none (milestone 88). */
   marginRight: number | null;
+  /** The margins (milestone 88): how far in from the left and the right edge the ruling begins and ends; null for none. */
+  left: number | null;
+  right: number | null;
+  /** At which margins a line is drawn; null for none. Its colour, `#rrggbb`; null for the pale red it has. */
+  marginLine: MarginLine | null;
+  marginColor: string | null;
   top: number | null;
-  /** The room under a ruled page's last rule; null for a rule's (milestone 88). */
+  /** The room under a ruled page's last rule (null for a rule's), or at a grid's foot (null for none) (milestone 88). */
   bottom: number | null;
   size: 'a4' | null;
   turn: 'landscape' | null;
@@ -270,7 +276,7 @@ export interface Setup {
 }
 
 /** A notebook's page setup. */
-export const setupOf = (w: WrittenMeta): Setup => ({ paper: w.paper, rule: w.rule ?? null, margin: w.margin ?? null, marginRight: w.marginRight ?? null, top: w.top ?? null, bottom: w.bottom ?? null, size: w.size ?? null, turn: w.turn ?? null, pageless: !!w.pageless, color: w.color ?? null, line: w.line ?? null });
+export const setupOf = (w: WrittenMeta): Setup => ({ paper: w.paper, rule: w.rule ?? null, margin: w.margin ?? null, marginRight: w.marginRight ?? null, left: w.left ?? null, right: w.right ?? null, marginLine: w.marginLine ?? null, marginColor: w.marginColor ?? null, top: w.top ?? null, bottom: w.bottom ?? null, size: w.size ?? null, turn: w.turn ?? null, pageless: !!w.pageless, color: w.color ?? null, line: w.line ?? null });
 
 /**
  * Some of a notebook's page setup changed (milestone 85). Only the paper
@@ -279,22 +285,31 @@ export const setupOf = (w: WrittenMeta): Setup => ({ paper: w.paper, rule: w.rul
  * on sheets that run on as one. A measure that is what the paper has anyway
  * is not written: the file says only what was chosen.
  */
-export async function setSetup(path: string, change: Partial<Setup>): Promise<void> {
+export async function setSetup(path: string, change: Partial<Setup> | ((now: Setup) => Partial<Setup>)): Promise<void> {
   await need().update(path, (doc) => {
     const w = meta(doc).written;
     if (!w) throw new Error(`${path}: not written notes`);
-    const next = { ...setupOf(w), ...change };
+    const next = { ...setupOf(w), ...(typeof change === 'function' ? change(setupOf(w)) : change) };
     const points = (v: number | null, range: readonly [number, number]): number | null => (v === null || !Number.isFinite(v) ? null : Math.round(Math.min(range[1], Math.max(range[0], v)) * 100) / 100);
     setField(doc, 'paper', next.paper);
     const rule = points(next.rule, PAPER_RULE_RANGE);
     setField(doc, 'paper-rule', next.paper === 'blank' || rule === null || rule === ruleOf(next.paper) ? null : rule);
-    // (a margin rule stands on any paper, blank too: milestone 88)
+    // (85's margin rule is kept as the file has it until the margins are set, which takes its place: `withMargins`)
     setField(doc, 'paper-margin', points(next.margin, PAPER_MARGIN_RANGE));
     setField(doc, 'paper-margin-right', points(next.marginRight, PAPER_MARGIN_RANGE));
+    const inset = (v: number | null): number | null => { const n = points(v, PAPER_INSET_RANGE); return n === null || n === 0 ? null : n; };
+    setField(doc, 'paper-left', inset(next.left));
+    setField(doc, 'paper-right', inset(next.right));
+    setField(doc, 'paper-margin-line', next.marginLine);
+    // (kept with the line off: it is there again when the line is)
+    setField(doc, 'paper-margin-color', paperHex(next.marginColor));
+    // the head and the foot: a ruled sheet's first rule and the room under its last; a grid's and dots' room at each; blank paper has neither
     const top = points(next.top, PAPER_TOP_RANGE);
-    setField(doc, 'paper-top', next.paper !== 'ruled' || top === null || top === RULE_TOP ? null : top);
     const bottom = points(next.bottom, PAPER_TOP_RANGE);
-    setField(doc, 'paper-bottom', next.paper !== 'ruled' || bottom === null || bottom === (rule ?? ruleOf(next.paper)) ? null : bottom);
+    const ruled = next.paper === 'ruled';
+    const squared = next.paper === 'grid' || next.paper === 'dotted';
+    setField(doc, 'paper-top', top === null || (ruled ? top === RULE_TOP : squared ? top === 0 : true) ? null : top);
+    setField(doc, 'paper-bottom', bottom === null || (ruled ? bottom === (rule ?? ruleOf(next.paper)) : squared ? bottom === 0 : true) ? null : bottom);
     setField(doc, 'paper-size', next.size);
     setField(doc, 'paper-turn', next.turn);
     setField(doc, 'pageless', next.pageless ? true : null);
@@ -302,6 +317,46 @@ export async function setSetup(path: string, change: Partial<Setup>): Promise<vo
     // (kept on blank paper too: it is there again when the paper is ruled again)
     setField(doc, 'paper-line', paperHex(next.line));
   });
+}
+
+/**
+ * A page setup with its margins set (milestone 88). What an older file says
+ * (85's `paper-margin`, a line with the rules run on under it, and its
+ * counterpart from the right) becomes a margin that wide with a line at it:
+ * from the first time a margin is set, the ruling lies between the margins.
+ */
+export function withMargins(s: Setup, change: Partial<Pick<Setup, 'left' | 'right' | 'marginLine' | 'marginColor'>>): Setup {
+  let next = { ...s };
+  if (s.margin !== null || s.marginRight !== null) {
+    const line: MarginLine | null = s.marginLine ?? (s.margin !== null && s.marginRight !== null ? 'both' : s.margin !== null ? 'left' : 'right');
+    next = { ...next, left: s.left ?? s.margin, right: s.right ?? s.marginRight, marginLine: line, margin: null, marginRight: null };
+  }
+  next = { ...next, ...change };
+  // a margin set to none takes its line with it
+  const without = (line: MarginLine | null, side: 'left' | 'right'): MarginLine | null => (line === 'both' ? (side === 'left' ? 'right' : 'left') : line === side ? null : line);
+  if ('left' in change && !change.left && !('marginLine' in change)) next.marginLine = without(next.marginLine, 'left');
+  if ('right' in change && !change.right && !('marginLine' in change)) next.marginLine = without(next.marginLine, 'right');
+  // a line asked for at a margin the sheet has none of: the margin a new notebook has
+  if ((next.marginLine === 'left' || next.marginLine === 'both') && !next.left) next.left = MARGIN_AT;
+  if ((next.marginLine === 'right' || next.marginLine === 'both') && !next.right) next.right = MARGIN_AT;
+  return next;
+}
+
+/**
+ * A page setup on another paper: the margins that were the old paper's own
+ * for a new notebook become the new paper's (ruled paper's sides, a grid's
+ * and dots' room all round), and any that were set otherwise stay; the head
+ * and the foot, which mean another thing on each paper, start as the new
+ * paper's.
+ */
+export function onPaper(s: Setup, paper: PaperKind): Setup {
+  if (paper === s.paper) return s;
+  const [was, now] = [newInsets(s.paper), newInsets(paper)];
+  // (a margin set to none stays none)
+  const side = (v: number | null, old: number | null, fresh: number | null): number | null => (v !== null && v === old && paper !== 'blank' ? fresh : v);
+  // (85's margin rule, where the file still has one, is left as it is)
+  const legacy = s.margin !== null || s.marginRight !== null;
+  return { ...s, paper, left: legacy ? s.left : side(s.left, was.left, now.left), right: legacy ? s.right : side(s.right, was.right, now.right), top: now.top, bottom: now.bottom };
 }
 
 /** Where this device keeps the page setup its new notebooks start with. */
@@ -316,7 +371,8 @@ export function parseSetup(raw: string | null | undefined): Setup | null {
     const n = (v: unknown, range: readonly [number, number]): number | null => (typeof v === 'number' && Number.isFinite(v) && v >= range[0] && v <= range[1] ? v : null);
     return {
       paper: PAPERS.includes(t.paper as PaperKind) ? (t.paper as PaperKind) : 'ruled',
-      rule: n(t.rule, PAPER_RULE_RANGE), margin: n(t.margin, PAPER_MARGIN_RANGE), marginRight: n(t.marginRight, PAPER_MARGIN_RANGE), top: n(t.top, PAPER_TOP_RANGE), bottom: n(t.bottom, PAPER_TOP_RANGE),
+      rule: n(t.rule, PAPER_RULE_RANGE), margin: n(t.margin, PAPER_MARGIN_RANGE), marginRight: n(t.marginRight, PAPER_MARGIN_RANGE), left: n(t.left, PAPER_INSET_RANGE), right: n(t.right, PAPER_INSET_RANGE),
+      marginLine: MARGIN_LINES.includes(t.marginLine as MarginLine) ? (t.marginLine as MarginLine) : null, marginColor: paperHex(t.marginColor), top: n(t.top, PAPER_TOP_RANGE), bottom: n(t.bottom, PAPER_TOP_RANGE),
       size: t.size === 'a4' ? 'a4' : null, turn: t.turn === 'landscape' ? 'landscape' : null, pageless: t.pageless === true,
       color: paperHex(t.color), line: paperHex(t.line),
     };
@@ -333,12 +389,9 @@ export function keepSetup(s: Setup): void {
   try { globalThis.localStorage?.setItem(SETUP_KEY, JSON.stringify(s)); } catch { /* no storage: nothing is kept */ }
 }
 
-/** The notebook's paper. */
+/** The notebook's paper: its margins go with it where they were the old paper's own (`onPaper`). */
 export async function setPaper(path: string, paper: PaperKind): Promise<void> {
-  await need().update(path, (doc) => {
-    if (!meta(doc).written) throw new Error(`${path}: not written notes`);
-    setField(doc, 'paper', paper);
-  });
+  await setSetup(path, (now) => onPaper(now, paper));
 }
 
 /**

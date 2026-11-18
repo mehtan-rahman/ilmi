@@ -916,6 +916,9 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
     return Math.min(tops.total, (tops.at[k + 1] ?? 0) + onPixel(Math.min(sheetH, runLen.len - k * sheetH) * scale, dpr));
   }, [pageless, runLen, sizes, tops, sheetH, scale, dpr]);
 
+  /** How much of the page at `i` (from 0) is shown, px from its top: all of it, but for a pageless notebook's sheets at and past its foot. */
+  const cutAt = (i: number): number => { const full = onPixel((sizes[i]?.h ?? 0) * scale, dpr); return colH < tops.total ? Math.min(full, colH - (tops.at[i + 1] ?? 0)) : full; };
+
   const first = base + 1;
   const last = base + sizes.length;
   /** A page's place in the column, px; null for a page not shown. */
@@ -3092,7 +3095,7 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
               )}
             </div>
           )}
-          {!native && <div className="pdf-pages" ref={pagesRef} data-run={pageless && colH < tops.total ? '1' : undefined} style={{ height: colH || undefined, width: pageW }} onPointerDown={onPointerDown} onMouseDown={onMouseDown} onClick={onPress} onPointerMove={onHover} onContextMenu={onMenu}>
+          {!native && <div className="pdf-pages" ref={pagesRef} data-run={pageless && colH < tops.total ? '1' : undefined} data-run-len={pageless && runLen ? `${runLen.len} ${runLen.foot.toFixed(1)}` : undefined} style={{ height: colH || undefined, width: pageW }} onPointerDown={onPointerDown} onMouseDown={onMouseDown} onClick={onPress} onPointerMove={onHover} onContextMenu={onMenu}>
             {status === 'loading' && <div className="empty">opening</div>}
             {sizes.map((s, i) => (
               // a notebook's page is its sheet: known by the sheet's number, so a page deleted before it leaves it as it is
@@ -3104,7 +3107,9 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
                 data-paper={written?.paper}
                 data-ink-dark={inkDark ? '1' : undefined}
                 ref={(el) => { if (el) pageEls.current.set(base + i + 1, el); else pageEls.current.delete(base + i + 1); }}
-                style={{ width: onPixel(s.w * scale, dpr), height: onPixel(s.h * scale, dpr), top: tops.at[i + 1] }}
+                // (a pageless notebook's sheets past its long sheet's foot are not shown, and the one the foot falls on is cut there: 88)
+                data-cut={cutAt(i) < onPixel(s.h * scale, dpr) ? '1' : undefined}
+                style={{ width: onPixel(s.w * scale, dpr), height: Math.max(0, cutAt(i)), top: tops.at[i + 1], ...(cutAt(i) <= 0 ? { display: 'none' } : null), ...(cutAt(i) < onPixel(s.h * scale, dpr) ? { '--full-h': `${onPixel(s.h * scale, dpr)}px` } as React.CSSProperties : null) }}
               >
                 {/* the paper of every sheet, near or far: lines are cheap, and a page scrolled to fast is never bare (85) */}
                 {written ? <PaperSheet spec={paperOf(written, i)} px={(onPixel(s.w * scale, dpr) / s.w) * dpr} /> : null}

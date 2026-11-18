@@ -415,10 +415,14 @@ dropped, with a diagnostic.
 | `paper`        | `blank` `ruled` `grid` `dotted` | `blank` | what a written notebook's sheets are ruled with                    |
 | `sheets`       | whole numbers from 1, a space between | `1` | a written notebook's sheets, in order, each by its own number  |
 | `paper-rule`   | points, 8 to 72             | 24 ruled, 20 grid and dotted | how far apart a notebook's rules, grid lines or dots are |
-| `paper-margin` | points, 18 to 300           |           | where a notebook's left margin rule stands from the left edge; none without it |
-| `paper-margin-right` | points, 18 to 300     |           | where its right margin rule stands from the right edge; none without it |
-| `paper-top`    | points, 0 to 300            | 72        | how far down a ruled sheet the first rule is                       |
-| `paper-bottom` | points, 0 to 300            | a rule's spacing | how much room a ruled page leaves under its last rule       |
+| `paper-left`   | points, 0 to 300            | 0         | a notebook's left margin: how far in from the left edge its ruling begins |
+| `paper-right`  | points, 0 to 300            | 0         | its right margin: how far in from the right edge its ruling ends  |
+| `paper-top`    | points, 0 to 300            | 72 ruled, 0 grid and dotted | how far down a ruled sheet the first rule is; the room a grid or dots keep at the head |
+| `paper-bottom` | points, 0 to 300            | a rule's spacing ruled, 0 grid and dotted | the room a ruled page leaves under its last rule, a grid or dots at the foot |
+| `paper-margin-line` | `left` `right` `both`  |           | at which margins a line is drawn down the sheet; none without it |
+| `paper-margin-color` | `#rrggbb`             | a pale red | the colour of that line                                          |
+| `paper-margin` | points, 18 to 300           |           | before 88: a line down the sheet that far from the left edge, the ruling run on under it; read, no longer written |
+| `paper-margin-right` | points, 18 to 300     |           | the same from the right edge; read, no longer written             |
 | `paper-size`   | `a4`                        | Letter    | the size of a notebook's sheets                                    |
 | `paper-turn`   | `landscape`                 | upright   | a notebook's sheets lie on their side                              |
 | `pageless`     | `true`                      |           | a notebook is one long sheet, as long as what is written on it     |
@@ -543,7 +547,7 @@ or `sheets` that is not in its grammar is kept as a raw line with a
 diagnostic, and the default stands in. `paper` and `sheets` mean nothing
 without `written`.
 
-A notebook's page setup (milestones 85, 87, 88) is ten more fields, each optional,
+A notebook's page setup (milestones 85, 87, 88) is fourteen more fields, each optional,
 each meaning nothing without `written`, and a notebook with none of them is
 what it was before there were any: portrait Letter sheets, 612 by 792
 points, a rule every 24 points from 72 down on ruled paper, a grid or dots
@@ -555,10 +559,12 @@ written: 5b0c7e1a9d3f4e26b8a1c0d2e4f60718
 paper: ruled
 sheets: 1 2 3
 paper-rule: 20.25
-paper-margin: 90
-paper-margin-right: 72
+paper-left: 34.02
+paper-right: 34.02
 paper-top: 56.69
 paper-bottom: 48
+paper-margin-line: left
+paper-margin-color: #b5d2f2
 paper-size: a4
 paper-turn: landscape
 pageless: true
@@ -567,24 +573,59 @@ paper-line: #c9cdd2
 ---
 ```
 
-`paper-rule`, `paper-margin`, `paper-margin-right`, `paper-top` and
-`paper-bottom` are lengths in points (a 72nd of an inch), written with at
-most two decimals and no unit. `paper-rule` is how far apart the rules of
-ruled paper, the lines of a grid or the dots of dotted paper are, 8 to 72;
-a grid and dots are centred on the sheet, half of what is left over at
-each edge. `paper-margin` is how far from the left edge the sheet's left
-margin rule stands, and `paper-margin-right` how far from the right edge
-its right one stands (milestone 88), each 18 to 300; absent, there is no
-margin rule at that edge. A margin rule is drawn on any paper, blank too
-(before 88 a reader drew `paper-margin` on ruled paper alone, and the app
-wrote it there alone); it runs the sheet's whole height, the rules, the
-grid and the dots run the sheet's whole width under it, and a right rule
-that would not stand right of the left one is not drawn. `paper-top` is
-how far down a ruled sheet its first rule is, 0 to 300. `paper-bottom` is
-how much room a ruled page keeps under its last rule, 0 to 300: no rule is
-drawn nearer the foot than that; absent, it is one rule's spacing, as
-before there was the field. It means nothing on a grid, on dots, or on a
-pageless notebook, whose rules run on. `paper-size: a4`
+`paper-rule`, `paper-left`, `paper-right`, `paper-top` and `paper-bottom`
+are lengths in points (a 72nd of an inch), written with at most two
+decimals and no unit. `paper-rule` is how far apart the rules of ruled
+paper, the lines of a grid or the dots of dotted paper are, 8 to 72.
+
+The margins (milestone 88) are where the ruling lies on the sheet.
+`paper-left` is how far in from the left edge it begins and `paper-right`
+how far in from the right edge it ends, each 0 to 300; absent, or 0, there
+is no margin at that edge and the ruling runs to it. Two that leave less
+than one spacing between them are read as none. On ruled paper every rule
+is drawn from the left margin to the right one; `paper-top` is how far
+down the sheet the first rule is, 0 to 300 (72 without it), and
+`paper-bottom` how much room a page keeps under its last rule, 0 to 300:
+no rule is drawn nearer the foot than that (one spacing without it, as
+before there was the field). On a grid and on dots `paper-top` and
+`paper-bottom` are the room kept at the head and the foot (none without
+them), and the ruling is centred in what the four leave: with *a* by *b*
+the rectangle inside the margins, lines (or columns and rows of dots)
+stand every spacing from half of what *a* leaves over, and from half of
+what *b* leaves over. Where a grid has a margin its lines end on its
+outermost line that way, so it is closed there; where it has none they
+run to the sheet's edge. Dots stand on every crossing, except that at an
+edge with no margin the outermost row or column, which a file from before
+88 never had, is left out. So a file with none of these fields reads as it
+always did: rules edge to edge from an inch down, a grid to the edges, dots
+a spacing short of them. On blank paper the margins rule nothing and only
+place a margin line. `paper-bottom` means nothing on a pageless notebook,
+whose ruling runs on, and there `paper-top` is where the long sheet's
+ruling begins. The app writes a new ruled notebook `paper-left: 34.02` and
+`paper-right: 34.02` (12 mm); when the paper is changed to a grid or dots
+it gives them 22.68 (8 mm) at the head and the foot, and at each side
+whose margin was still a new ruled notebook's (and back again); it writes
+no field whose value is what its absence means.
+
+`paper-margin-line` draws a line down the sheet, its whole height, at the
+left margin (`left`), the right (`right`) or both (`both`): at
+`paper-left` from the left edge, at `paper-right` from the right. It draws
+none at an edge whose margin is 0 or absent. `paper-margin-color` is that
+line's colour, `#` and six hex digits as `paper-color` below; without it
+the line is a pale red (`#e7b9b9`; `#653f3f` on dark paper), and it is
+drawn by the rule `paper-line` is: as chosen, and turned with the theme on
+paper that follows a dark theme. It is kept while there is no line.
+
+`paper-margin` and `paper-margin-right` are what a margin was before 88,
+and are still read: a line down the sheet that far from the left edge (the
+right edge), 18 to 300, in the margin line's colour, with the ruling not
+set in by it. A reader draws them beside whatever the fields above say. The
+app no longer writes them; the first time a margin is set in its page
+setup it writes `paper-left` (`paper-right`) with that value and
+`paper-margin-line` in their place, and from then the ruling begins at the
+line.
+
+`paper-size: a4`
 makes every sheet 595 by 842 points; `paper-turn: landscape` lays the
 sheets on their side (792 by 612, 842 by 595). The only values are `a4`,
 `landscape` and `true`: Letter, upright and paged are said by leaving the
@@ -611,8 +652,9 @@ covers, in points from the long sheet's top (sheet *i* of the list, from
 0, begins *i* sheet-heights down), the sheet is drawn `foot` + 192 points
 long, rounded up to the next whole step along its ruling: for ruled paper
 a rule's place (`paper-top` and whole spacings), for a grid or dots a
-whole number of spacings and the room a centred grid keeps at each edge,
-for blank paper a multiple of 24. Where `foot` + 192 is no more than one
+line's place (`paper-top` and whole spacings; with no `paper-top`, whole
+spacings from half of what a sheet's height leaves over, and that half
+again), for blank paper a multiple of 24. Where `foot` + 192 is no more than one
 sheet's height, it is exactly one sheet. The sheets of the list that
 begin past that length are not drawn, and the one it ends in is drawn
 only down to it; they are kept in the file, with whatever is on them. A
@@ -639,8 +681,8 @@ is light, dark where it is dark. With it the paper is that colour in every
 theme, as chosen. `paper-line` is the colour of the rules of ruled paper,
 the lines of a grid and the dots of dotted paper; without it they are a
 pale blue-grey on light paper and a dim one on dark, and on blank paper it
-means nothing. The margin rule keeps its own colour, a pale red, whatever
-`paper-line` says. A `paper-line` on paper that follows a dark theme is
+means nothing. A margin line has its own colour (`paper-margin-color`,
+above), whatever `paper-line` says. A `paper-line` on paper that follows a dark theme is
 turned as that theme turns the paper, so it still shows; on paper whose
 colour is chosen it is drawn as chosen.
 

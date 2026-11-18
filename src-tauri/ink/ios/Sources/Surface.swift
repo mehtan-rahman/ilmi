@@ -299,7 +299,7 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
   private var key = ""
   private var order: [Int] = []
   private var leaves: [Int: Leaf] = [:]
-  private var paper = PaperArgs(kind: "ruled", w: 612, h: 792, rule: 24, margin: nil, marginRight: nil, top: 72, bottom: nil, run: false)
+  private var paper = PaperArgs(kind: "ruled", w: 612, h: 792, rule: 24, left: 0, right: 0, top: 72, bottom: 24, lines: [], run: false)
   private var look = LookArgs(paper: "#ffffff", rule: "#c3cfdd", dot: "#a9b7c8", margin: "#e7b9b9", desk: "#e8e8e8", dark: false, accent: "#b8860b", fg: "#222222", line: "#cccccc", tag: "#ffffff")
   private var pad = PadArgs(top: 22, side: 30, bottom: 80)
   private var markSpecs: [MarkArgs] = []

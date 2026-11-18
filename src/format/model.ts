@@ -175,13 +175,20 @@ export type Field =
   | { key: 'sheets'; value: number[] }
   /** A notebook's page setup (§3, *Written notes*, milestone 85): how far apart its rules, lines or dots are, in points. */
   | { key: 'paper-rule'; value: number }
-  /** How far from the left edge its left margin rule stands, in points; with none there is no margin rule there. */
+  /** 85's margin rule: a line that far from the left edge, in points, the ruling running on under it. Read, and no longer written by the app (milestone 88). */
   | { key: 'paper-margin'; value: number }
-  /** How far from the right edge its right margin rule stands, in points; with none there is none there (milestone 88). */
+  /** Its counterpart from the right edge, read alike. */
   | { key: 'paper-margin-right'; value: number }
-  /** How far down a ruled sheet its first rule is, in points. */
+  /** Its margins (milestone 88): how far in from the left edge and from the right its ruling begins and ends, in points. */
+  | { key: 'paper-left'; value: number }
+  | { key: 'paper-right'; value: number }
+  /** At which of its margins a line is drawn down the sheet. */
+  | { key: 'paper-margin-line'; value: MarginLine }
+  /** That line's colour, `#rrggbb` in lowercase. */
+  | { key: 'paper-margin-color'; value: string }
+  /** How far down a ruled sheet its first rule is, in points; a grid's or dots' room at the head (milestone 88). */
   | { key: 'paper-top'; value: number }
-  /** How much room a ruled sheet keeps under its last rule, in points (milestone 88). */
+  /** How much room a ruled sheet keeps under its last rule, a grid or dots at the foot, in points (milestone 88). */
   | { key: 'paper-bottom'; value: number }
   /** Its sheets' size, when not Letter. */
   | { key: 'paper-size'; value: 'a4' }
@@ -199,6 +206,11 @@ export type PaperKind = 'blank' | 'ruled' | 'grid' | 'dotted';
 export const PAPERS: readonly PaperKind[] = ['blank', 'ruled', 'grid', 'dotted'];
 
 /** What a notebook's page setup may say, in points: each from its least to its most. */
+/** Where a notebook's margin line is drawn. */
+export type MarginLine = 'left' | 'right' | 'both';
+export const MARGIN_LINES: readonly MarginLine[] = ['left', 'right', 'both'];
+/** A margin's width, in points: none to 300. */
+export const PAPER_INSET_RANGE: readonly [number, number] = [0, 300];
 export const PAPER_RULE_RANGE: readonly [number, number] = [8, 72];
 export const PAPER_MARGIN_RANGE: readonly [number, number] = [18, 300];
 export const PAPER_TOP_RANGE: readonly [number, number] = [0, 300];
@@ -245,7 +257,7 @@ export interface Diagnostic {
 export const FIELD_KEYS: readonly FieldKey[] = [
   'type', 'title', 'frozen', 'imported', 'started', 'read', 'write', 'default-card', 'pri', 'pdf', 'url', 'author', 'published', 'tabs',
   'new-per-day', 'reviews-per-day', 'retention', 'leech', 'leech-action', 'pages', 'exam', 'finish',
-  'written', 'paper', 'sheets', 'paper-rule', 'paper-margin', 'paper-margin-right', 'paper-top', 'paper-bottom', 'paper-size', 'paper-turn', 'pageless', 'paper-color', 'paper-line',
+  'written', 'paper', 'sheets', 'paper-rule', 'paper-margin', 'paper-margin-right', 'paper-left', 'paper-right', 'paper-margin-line', 'paper-margin-color', 'paper-top', 'paper-bottom', 'paper-size', 'paper-turn', 'pageless', 'paper-color', 'paper-line',
 ];
 
 export function isField(e: FmEntry): e is Field {

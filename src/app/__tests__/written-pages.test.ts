@@ -36,7 +36,7 @@ import { Vault, storeFs, type InkStroke, type StoreFs } from '../../vault/index.
 import { memDrawing, memPagePicture, memSplit, memStore } from '../../vault/mem-store.js';
 import { passageMarksOf } from '../../pdf/index.js';
 import { emptyPanes, openTab } from '../panes.js';
-import { LINE_COLORS, PAPER_COLORS, PAPER_DOT, PAPER_MARGIN, PAPER_RULE, PAPER_WHITE, RUN_ALLOW, drawPaper, isDarkColor, paperLines, paperLook, paperOf, paperPaths, ruleWidth, runLength, sheetSize, turned } from '../paper.js';
+import { GRID_INSET, LINE_COLORS, MARGIN_AT, MARGIN_COLORS, PAPER_COLORS, PAPER_DOT, PAPER_MARGIN, PAPER_RULE, PAPER_WHITE, RULED_INSET, RUN_ALLOW, drawPaper, isDarkColor, newInsets, paperLines, paperLook, paperOf, paperPaths, ruleWidth, runLength, sheetSize, turned } from '../paper.js';
 import { useApp, type DocInfo } from '../store.js';
 import { paperArgs, type SurfaceSpec } from '../surface.js';
 
@@ -111,14 +111,19 @@ vi.mock('../written.js', async (orig) => {
       return async () => { await fs.setPageInk(was.id, sheet, ink); change(path, () => was); };
     },
     setPaper: async (path: string, paper: PaperKind) => { change(path, (w) => ({ ...w, paper })); },
-    setSetup: async (path: string, to: Partial<import('../written.js').Setup>) => {
-      asked.setup.push(to);
+    setSetup: async (path: string, change_: Partial<import('../written.js').Setup> | ((now: import('../written.js').Setup) => Partial<import('../written.js').Setup>)) => {
       change(path, (w) => {
+        const to = typeof change_ === 'function' ? change_(real.setupOf(w)) : change_;
+        asked.setup.push(to);
         const next = { ...real.setupOf(w), ...to };
         const out: Written = { id: w.id, sheets: w.sheets, paper: next.paper };
         if (next.rule !== null) out.rule = next.rule;
         if (next.margin !== null) out.margin = next.margin;
         if (next.marginRight !== null) out.marginRight = next.marginRight;
+        if (next.left) out.left = next.left;
+        if (next.right) out.right = next.right;
+        if (next.marginLine) out.marginLine = next.marginLine;
+        if (next.marginColor) out.marginColor = next.marginColor;
         if (next.top !== null) out.top = next.top;
         if (next.bottom !== null) out.bottom = next.bottom;
         if (next.size) out.size = next.size;
@@ -248,12 +253,16 @@ describe('the paper', () => {
     expect(ruled.rows[1]! - ruled.rows[0]!).toBe(24);
     expect(ruled.rows.at(-1)).toBe(768);
     expect(ruled.cols).toEqual([]);
+    // (each from edge to edge: a paper by its kind alone has no margins)
+    expect([ruled.rowSpan, ruled.margins, ruled.dots]).toEqual([[0, 612], [], null]);
     const grid = paperLines('grid');
     expect([grid.rows[0], grid.rows[1], grid.rows.at(-1), grid.rows.length]).toEqual([6, 26, 786, 40]);
     expect([grid.cols[0], grid.cols.at(-1), grid.cols.length]).toEqual([6, 606, 31]);
+    expect([grid.rowSpan, grid.colSpan]).toEqual([[0, 612], [0, 792]]);
     const dots = paperLines('dotted').dots!;
     expect([dots.xs[0], dots.xs.at(-1), dots.ys[0], dots.ys.at(-1)]).toEqual([26, 586, 26, 766]);
-    expect(paperLines('blank')).toEqual({ rows: [], cols: [], margin: null, marginRight: null, dots: null });
+    expect(paperLines('dotted')).toMatchObject({ rows: [], cols: [], margins: [] });
+    expect(paperLines('blank')).toEqual({ rows: [], rowSpan: [0, 612], cols: [], colSpan: [0, 792], margins: [], dots: null });
     // as paths of an SVG in points: the rules across the sheet, the dots a dashed row each
     expect(paperPaths('ruled').rules.startsWith('M0 72H612M0 96H612')).toBe(true);
     expect(paperPaths('ruled').dots).toBe('');
@@ -320,8 +329,8 @@ describe('the paper', () => {
     drawPaper(ctx as unknown as CanvasRenderingContext2D, 'dotted', { x: 0, y: 0, w: 60, h: 60 }, 1);
     expect(rects).toEqual([[PAPER_WHITE, 0, 0, 60, 60]]);
     expect(arcs).toBe(4);
-    // (the dots are the last thing drawn in the dots' colour: a margin rule's is set after them, drawn or not)
-    expect(ctx.fillStyle).toBe(PAPER_MARGIN);
+    // (the dots are the last thing drawn: with no margin line, nothing is asked for in its colour)
+    expect(ctx.fillStyle).toBe(PAPER_DOT);
     // off the sheet's edge nothing is painted
     rects.length = 0;
     drawPaper(ctx as unknown as CanvasRenderingContext2D, 'blank', { x: -4, y: -4, w: 104, h: 104 }, 1);
@@ -364,6 +373,41 @@ describe('the colours a sheet is drawn with', () => {
     expect(isDarkColor(turned('#f0c2c2'))).toBe(true);
     // the paper's own, chosen, is what the dark paper has anyway
     expect(paperLook({ line: PAPER_RULE }, 'dark').rule).toBe(DARK.rule);
+  });
+
+  it('a margin line is a pale red unless a colour is chosen for it: as chosen on chosen paper and where the theme is light, turned with paper that follows a dark theme', () => {
+    expect(paperLook({ marginColor: '#b5d2f2' }, 'light')).toEqual({ ...LIGHT, margin: '#b5d2f2' });
+    expect(paperLook({ marginColor: '#b5d2f2' }, 'eink')).toEqual({ ...EINK, margin: '#b5d2f2' });
+    expect(paperLook({ marginColor: '#b5d2f2' }, 'dark')).toEqual({ ...DARK, margin: turned('#b5d2f2') });
+    expect(isDarkColor(turned('#b5d2f2'))).toBe(true);
+    // the pale red itself, chosen, is what the dark paper has anyway
+    expect(paperLook({ marginColor: PAPER_MARGIN }, 'dark').margin).toBe(DARK.margin);
+    for (const theme of ['light', 'dark', 'eink'] as const) {
+      // on paper of a chosen colour, light or dark, it is as chosen in every theme
+      expect(paperLook({ color: '#fbf6e9', marginColor: '#b5d2f2' }, theme)).toEqual({ ...LIGHT, paper: '#fbf6e9', margin: '#b5d2f2' });
+      expect(paperLook({ color: '#1c1c1e', marginColor: '#b5d2f2' }, theme)).toEqual({ ...DARK, paper: '#1c1c1e', margin: '#b5d2f2' });
+      // with none chosen, chosen paper's is the pale red as it reads on it
+      expect(paperLook({ color: '#fbf6e9', marginColor: null }, theme).margin).toBe(PAPER_MARGIN);
+      expect(paperLook({ color: '#1c1c1e' }, theme).margin).toBe(DARK.margin);
+    }
+    // it is the margin line's alone, and the ruling's colour is not its
+    expect(paperLook({ line: '#f0c2c2', marginColor: '#bcdcc0' }, 'light')).toEqual({ ...LIGHT, rule: '#f0c2c2', dot: '#f0c2c2', margin: '#bcdcc0' });
+    expect(paperLook({ line: '#f0c2c2' }, 'light').margin).toBe(PAPER_MARGIN);
+    // in capitals it is the colour; what is no colour is none chosen
+    expect(paperLook({ marginColor: '#B5D2F2' }, 'light').margin).toBe('#b5d2f2');
+    for (const bad of ['red', '#fff', '', undefined]) expect(paperLook({ marginColor: bad }, 'light'), String(bad)).toEqual(LIGHT);
+    // as a notebook's page setup says it
+    expect(paperOf({ paper: 'ruled', marginColor: '#B5D2F2' }).marginColor).toBe('#b5d2f2');
+    expect(paperOf({ paper: 'ruled', marginColor: 'red' }).marginColor).toBeNull();
+    expect(paperLook(paperOf({ paper: 'ruled', left: 34.02, marginLine: 'left', marginColor: '#b5d2f2' }), 'dark')).toEqual({ ...DARK, margin: turned('#b5d2f2') });
+  });
+
+  it('the margin line\'s colours offered by name: four after the pale red it has, each one of the ruling\'s', () => {
+    expect(MARGIN_COLORS.map((c) => c.name)).toEqual(['blue-grey', 'grey', 'blue', 'green']);
+    expect(MARGIN_COLORS.map((c) => c.value)).toEqual([PAPER_RULE, '#c9cdd2', '#b5d2f2', '#bcdcc0']);
+    for (const c of MARGIN_COLORS) expect(LINE_COLORS, c.name).toContainEqual(c);
+    // (red is what it has with none chosen: not offered again)
+    expect(MARGIN_COLORS.some((c) => c.name === 'red' || c.value === PAPER_MARGIN)).toBe(false);
   });
 
   it('a colour is dark when its relative luminance is under 0.4: ink on it is drawn the dark way', () => {
@@ -415,17 +459,18 @@ describe('the paper as a notebook\'s page setup says it', () => {
   });
 
   it('with nothing said it is the paper a new notebook has; what is said stands in for that', () => {
-    expect(paperOf({ paper: 'ruled' })).toEqual({ kind: 'ruled', w: 612, h: 792, rule: 24, margin: null, marginRight: null, top: 72, bottom: null, run: false, at: 0, color: null, line: null });
-    expect(paperOf({ paper: 'grid' })).toMatchObject({ kind: 'grid', rule: 20, margin: null });
+    expect(paperOf({ paper: 'ruled' })).toEqual({ kind: 'ruled', w: 612, h: 792, rule: 24, left: 0, right: 0, top: 72, bottom: 24, lines: [], run: false, at: 0, color: null, line: null, marginColor: null });
+    expect(paperOf({ paper: 'grid' })).toMatchObject({ kind: 'grid', rule: 20, left: 0, right: 0, top: 0, bottom: 0, lines: [] });
     expect(paperOf({ paper: 'dotted' }).rule).toBe(20);
     for (const kind of ['blank', 'ruled', 'grid', 'dotted'] as const) {
       expect(paperLines(paperOf({ paper: kind }))).toEqual(paperLines(kind));
       expect(paperPaths(paperOf({ paper: kind }))).toEqual(paperPaths(kind));
     }
-    expect(paperOf({ paper: 'ruled', rule: 30, margin: 90, top: 100, size: 'a4', turn: 'landscape' })).toEqual({ kind: 'ruled', w: 842, h: 595, rule: 30, margin: 90, marginRight: null, top: 100, bottom: null, run: false, at: 0, color: null, line: null });
-    expect(paperOf({ paper: 'ruled', margin: 90, marginRight: 72, bottom: 40 })).toMatchObject({ margin: 90, marginRight: 72, bottom: 40 });
-    // a margin rule, at the left or the right, is any paper's (88); the room at the foot a ruled sheet's alone
-    for (const paper of ['blank', 'grid', 'dotted'] as const) expect(paperOf({ paper, margin: 90, marginRight: 72, bottom: 40 }), paper).toMatchObject({ kind: paper, margin: 90, marginRight: 72, bottom: null });
+    expect(paperOf({ paper: 'ruled', rule: 30, margin: 90, top: 100, size: 'a4', turn: 'landscape' })).toEqual({ kind: 'ruled', w: 842, h: 595, rule: 30, left: 0, right: 0, top: 100, bottom: 30, lines: [90], run: false, at: 0, color: null, line: null, marginColor: null });
+    // 85's margin rule, at the left or the right, is a line where it says and no margin
+    expect(paperOf({ paper: 'ruled', margin: 90, marginRight: 72, bottom: 40 })).toMatchObject({ lines: [90, 540], left: 0, right: 0, bottom: 40 });
+    // on any paper; the room at the foot is a ruled sheet's, a grid's and dots', not blank paper's
+    for (const paper of ['blank', 'grid', 'dotted'] as const) expect(paperOf({ paper, margin: 90, marginRight: 72, bottom: 40 }), paper).toMatchObject({ kind: paper, lines: [90, 540], left: 0, right: 0, top: 0, bottom: paper === 'blank' ? 0 : 40 });
     expect(paperOf({ paper: 'ruled', bottom: 0 }).bottom).toBe(0);
     // sheets that run on as one: each begins where the one before ended
     expect([0, 1, 2].map((i) => paperOf({ paper: 'ruled', pageless: true }, i))).toMatchObject([{ run: true, at: 0 }, { run: true, at: 792 }, { run: true, at: 1584 }]);
@@ -436,15 +481,15 @@ describe('the paper as a notebook\'s page setup says it', () => {
   it('the rules are as far apart as it says, from as far down as it says, with a margin rule where it says', () => {
     const lines = paperLines(paperOf({ paper: 'ruled', rule: 30, top: 100, margin: 90 }));
     expect([lines.rows[0], lines.rows[1], lines.rows.at(-1), lines.rows.length]).toEqual([100, 130, 760, 23]);
-    expect(lines.margin).toBe(90);
+    expect(lines.margins).toEqual([90]);
     expect(lines.cols).toEqual([]);
     const paths = paperPaths(paperOf({ paper: 'ruled', rule: 30, top: 100, margin: 90 }));
     expect(paths.rules.startsWith('M0 100H612M0 130H612')).toBe(true);
     expect(paths).toMatchObject({ margin: 'M90 0V792', dots: '', w: 612, h: 792 });
     expect(paperPaths('ruled').margin).toBe('');
     // a margin off the sheet is none
-    expect(paperLines(paperOf({ paper: 'ruled', margin: 700 })).margin).toBeNull();
-    expect(paperLines(paperOf({ paper: 'ruled', margin: 700, turn: 'landscape' })).margin).toBe(700);
+    expect(paperLines(paperOf({ paper: 'ruled', margin: 700 })).margins).toEqual([]);
+    expect(paperLines(paperOf({ paper: 'ruled', margin: 700, turn: 'landscape' })).margins).toEqual([700]);
   });
 
   it('a grid and dots are centred on the sheet whatever its size and their pitch', () => {
@@ -515,16 +560,17 @@ describe('the paper as a notebook\'s page setup says it', () => {
     expect(rects.some((r) => r[0] === PAPER_MARGIN)).toBe(false);
   });
 
-  it('a margin rule at the right stands as far from the right edge as it says: told as its place from the left, on a sheet of any size', () => {
-    expect(paperLines(paperOf({ paper: 'ruled', marginRight: 72 }))).toMatchObject({ margin: null, marginRight: 540 });
-    expect(paperLines(paperOf({ paper: 'ruled', margin: 90, marginRight: 72 }))).toMatchObject({ margin: 90, marginRight: 540 });
-    expect(paperLines(paperOf({ paper: 'ruled', marginRight: 72, size: 'a4' })).marginRight).toBe(523);
-    expect(paperLines(paperOf({ paper: 'ruled', marginRight: 72, size: 'a4', turn: 'landscape' })).marginRight).toBe(770);
-    expect(paperLines(paperOf({ paper: 'ruled', marginRight: 85.04 })).marginRight).toBe(526.96);
+  it('85\'s margin rule at the right is a line as far from the right edge as it says: told as its place from the left, on a sheet of any size', () => {
+    expect(paperLines(paperOf({ paper: 'ruled', marginRight: 72 })).margins).toEqual([540]);
+    expect(paperLines(paperOf({ paper: 'ruled', margin: 90, marginRight: 72 })).margins).toEqual([90, 540]);
+    expect(paperLines(paperOf({ paper: 'ruled', marginRight: 72, size: 'a4' })).margins).toEqual([523]);
+    expect(paperLines(paperOf({ paper: 'ruled', marginRight: 72, size: 'a4', turn: 'landscape' })).margins).toEqual([770]);
+    expect(paperLines(paperOf({ paper: 'ruled', marginRight: 85.04 })).margins).toEqual([526.96]);
     // with none said there is none, on any paper
-    for (const kind of ['blank', 'ruled', 'grid', 'dotted'] as const) expect(paperLines(kind).marginRight).toBeNull();
+    for (const kind of ['blank', 'ruled', 'grid', 'dotted'] as const) expect(paperLines(kind).margins).toEqual([]);
     // it changes nothing of the ruling under it: the rules run the sheet's whole width
     expect(paperLines(paperOf({ paper: 'ruled', margin: 90, marginRight: 72 })).rows).toEqual(paperLines('ruled').rows);
+    expect(paperLines(paperOf({ paper: 'ruled', margin: 90, marginRight: 72 })).rowSpan).toEqual([0, 612]);
     expect(paperPaths(paperOf({ paper: 'ruled', margin: 90, marginRight: 72 })).rules).toBe(paperPaths('ruled').rules);
     // both are one path, the left one first; one alone is that one
     expect(paperPaths(paperOf({ paper: 'ruled', margin: 90, marginRight: 72 })).margin).toBe('M90 0V792M540 0V792');
@@ -534,31 +580,31 @@ describe('the paper as a notebook\'s page setup says it', () => {
     expect(paperPaths(paperOf({ paper: 'ruled', margin: 90, marginRight: 72 }), { px: 1, w: 1 }).margin).toBe('M90.5 0V792M540.5 0V792');
   });
 
-  it('a right margin off the sheet, or not to the right of the left one, is none; the left one stands', () => {
-    expect(paperLines(paperOf({ paper: 'ruled', marginRight: 700 })).marginRight).toBeNull();
-    expect(paperLines(paperOf({ paper: 'ruled', marginRight: 612 })).marginRight).toBeNull();
-    expect(paperLines(paperOf({ paper: 'ruled', marginRight: 700, turn: 'landscape' })).marginRight).toBe(92);
-    // 300 from each edge of a Letter sheet: the right one would stand 12 points to the left of the left one
-    expect(paperLines(paperOf({ paper: 'ruled', margin: 300, marginRight: 300 }))).toMatchObject({ margin: 300, marginRight: 312 });
-    expect(paperLines(paperOf({ paper: 'ruled', margin: 300, marginRight: 300, size: 'a4' }))).toMatchObject({ margin: 300, marginRight: null });
+  it('85\'s right margin rule off the sheet, or not to the right of the left one, is none; the left one stands', () => {
+    expect(paperLines(paperOf({ paper: 'ruled', marginRight: 700 })).margins).toEqual([]);
+    expect(paperLines(paperOf({ paper: 'ruled', marginRight: 612 })).margins).toEqual([]);
+    expect(paperLines(paperOf({ paper: 'ruled', marginRight: 700, turn: 'landscape' })).margins).toEqual([92]);
+    // 300 from each edge of a Letter sheet: the right one stands 12 points to the right of the left one; of an A4 sheet, 5 to its left
+    expect(paperLines(paperOf({ paper: 'ruled', margin: 300, marginRight: 300 })).margins).toEqual([300, 312]);
+    expect(paperLines(paperOf({ paper: 'ruled', margin: 300, marginRight: 300, size: 'a4' })).margins).toEqual([300]);
     // on the same line as the left one
-    expect(paperLines(paperOf({ paper: 'ruled', margin: 297.5, marginRight: 297.5, size: 'a4' }))).toMatchObject({ margin: 297.5, marginRight: null });
+    expect(paperLines(paperOf({ paper: 'ruled', margin: 297.5, marginRight: 297.5, size: 'a4' })).margins).toEqual([297.5]);
     expect(paperPaths(paperOf({ paper: 'ruled', margin: 300, marginRight: 300, size: 'a4' })).margin).toBe('M300 0V842');
     // a left one off the sheet is none, and the right one stands alone
-    expect(paperLines(paperOf({ paper: 'ruled', margin: 700, marginRight: 72 }))).toMatchObject({ margin: null, marginRight: 540 });
+    expect(paperLines(paperOf({ paper: 'ruled', margin: 700, marginRight: 72 })).margins).toEqual([540]);
   });
 
-  it('a grid, dots and blank paper have their margin rules too, over a ruling that is as it was without them', () => {
+  it('a grid, dots and blank paper have 85\'s margin rules too, over a ruling that is as it was without them', () => {
     for (const kind of ['blank', 'grid', 'dotted'] as const) {
       const with_ = paperLines(paperOf({ paper: kind, margin: 90, marginRight: 72 }));
-      expect(with_, kind).toEqual({ ...paperLines(kind), margin: 90, marginRight: 540 });
+      expect(with_, kind).toEqual({ ...paperLines(kind), margins: [90, 540] });
       const paths = paperPaths(paperOf({ paper: kind, margin: 90, marginRight: 72 }));
       expect(paths, kind).toEqual({ ...paperPaths(kind), margin: 'M90 0V792M540 0V792' });
       expect(paperPaths(kind).margin, kind).toBe('');
       expect(paperPaths(paperOf({ paper: kind, margin: 90 })).margin, kind).toBe('M90 0V792');
     }
     // on sheets that run on as one, every sheet has them
-    for (const i of [0, 1, 2]) expect(paperLines(paperOf({ paper: 'dotted', margin: 90, marginRight: 72, pageless: true }, i))).toMatchObject({ margin: 90, marginRight: 540 });
+    for (const i of [0, 1, 2]) expect(paperLines(paperOf({ paper: 'dotted', margin: 90, marginRight: 72, pageless: true }, i)).margins).toEqual([90, 540]);
   });
 
   it('a ruled page\'s last rule leaves a rule\'s room at its foot, or as much as it says', () => {
@@ -583,8 +629,8 @@ describe('the paper as a notebook\'s page setup says it', () => {
     // more room than the sheet has under its first rule: no rule at all
     expect(paperLines(paperOf({ paper: 'ruled', top: 300, bottom: 300, turn: 'landscape' })).rows).toEqual([300]);
     expect(paperLines(paperOf({ paper: 'ruled', top: 300, bottom: 300, size: 'a4', turn: 'landscape' })).rows).toEqual([]);
-    // a grid and dots have no such room, whatever is said
-    for (const kind of ['grid', 'dotted', 'blank'] as const) expect(paperLines(paperOf({ paper: kind, bottom: 100 })), kind).toEqual(paperLines(kind));
+    // blank paper has no such room, whatever is said (a grid's and dots' is theirs to keep: below)
+    expect(paperLines(paperOf({ paper: 'blank', top: 100, bottom: 100 }))).toEqual(paperLines('blank'));
     // sheets that run on as one are ruled to their foot and on: the room is a page's
     for (const i of [0, 1, 2]) expect(paperLines(paperOf({ paper: 'ruled', rule: 25, bottom: 100, pageless: true }, i)).rows).toEqual(paperLines(paperOf({ paper: 'ruled', rule: 25, pageless: true }, i)).rows);
   });
@@ -616,6 +662,310 @@ describe('the paper as a notebook\'s page setup says it', () => {
     // a ruled clip with room said at its foot has no rule in that room
     draw({ paper: 'ruled', bottom: 100 }, { x: 0, y: 650, w: 612, h: 142 });
     expect(rects.filter((r) => r[0] === PAPER_RULE).map((r) => r[2])).toEqual([22]);
+  });
+});
+
+describe('the margins of a sheet', () => {
+  /** A grid or dots with a margin of its own at each edge, on a Letter sheet: 20s between 40 and 582 across, 50 and 772 down, a point clear at each end. */
+  const EDGED = { left: 40, right: 30, top: 50, bottom: 20 } as const;
+  const every = (from: number, to: number, step: number) => Array.from({ length: Math.round((to - from) / step) + 1 }, (_, i) => from + i * step);
+
+  it('a new notebook\'s: ruled paper\'s rules 12 mm in from each side, a grid and dots 8 mm clear all round, blank paper none; a line turned on stands at ruled paper\'s', () => {
+    expect([RULED_INSET, GRID_INSET, MARGIN_AT]).toEqual([34.02, 22.68, 34.02]);
+    expect(newInsets('ruled')).toEqual({ left: 34.02, right: 34.02, top: null, bottom: null });
+    expect(newInsets('grid')).toEqual({ left: 22.68, right: 22.68, top: 22.68, bottom: 22.68 });
+    expect(newInsets('dotted')).toEqual(newInsets('grid'));
+    expect(newInsets('blank')).toEqual({ left: null, right: null, top: null, bottom: null });
+  });
+
+  it('are what the page setup says, each from its own edge; the head and the foot a ruled sheet\'s first rule and the room under its last, a grid\'s and dots\' room, blank paper\'s nothing', () => {
+    expect(paperOf({ paper: 'ruled', left: 34.02, right: 34.02 })).toEqual({ kind: 'ruled', w: 612, h: 792, rule: 24, left: 34.02, right: 34.02, top: 72, bottom: 24, lines: [], run: false, at: 0, color: null, line: null, marginColor: null });
+    expect(paperOf({ paper: 'ruled', left: 50 })).toMatchObject({ left: 50, right: 0 });
+    expect(paperOf({ paper: 'ruled', right: 50 })).toMatchObject({ left: 0, right: 50 });
+    expect(paperOf({ paper: 'ruled', rule: 30, left: 50, top: 100, bottom: 60 })).toMatchObject({ left: 50, right: 0, top: 100, bottom: 60 });
+    // with no foot said a ruled sheet keeps a rule's room, whatever its spacing
+    expect(paperOf({ paper: 'ruled', rule: 30 }).bottom).toBe(30);
+    for (const paper of ['grid', 'dotted'] as const) {
+      expect(paperOf({ paper, left: 22.68, right: 22.68, top: 22.68, bottom: 22.68 }), paper).toMatchObject({ kind: paper, left: 22.68, right: 22.68, top: 22.68, bottom: 22.68, lines: [] });
+      expect(paperOf({ paper, top: 30 }), paper).toMatchObject({ left: 0, right: 0, top: 30, bottom: 0 });
+      expect(paperOf({ paper, bottom: 30 }), paper).toMatchObject({ top: 0, bottom: 30 });
+    }
+    expect(paperOf({ paper: 'blank', left: 40, right: 20, top: 50, bottom: 50 })).toMatchObject({ left: 40, right: 20, top: 0, bottom: 0 });
+    // a margin under none is none
+    expect(paperOf({ paper: 'ruled', left: -5, right: -0.01 })).toMatchObject({ left: 0, right: 0 });
+    // on every sheet of a pageless notebook alike
+    for (const i of [0, 1, 2]) expect(paperOf({ paper: 'grid', ...EDGED, pageless: true }, i)).toMatchObject({ ...EDGED, run: true, at: i * 792 });
+  });
+
+  it('margins that leave no room for a rule\'s spacing between them are none, and no line is drawn at them', () => {
+    // 300 at each side of a Letter sheet leaves 12 points: under a rule's 24
+    expect(paperOf({ paper: 'ruled', left: 300, right: 300, marginLine: 'both' })).toMatchObject({ left: 0, right: 0, lines: [] });
+    // on its side there is room
+    expect(paperOf({ paper: 'ruled', left: 300, right: 300, marginLine: 'both', turn: 'landscape' })).toMatchObject({ left: 300, right: 300, lines: [300, 492] });
+    // exactly a rule's spacing left is room; a hundredth under it is not
+    expect(paperOf({ paper: 'ruled', left: 294, right: 294 })).toMatchObject({ left: 294, right: 294 });
+    expect(paperOf({ paper: 'ruled', left: 294, right: 294.01 })).toMatchObject({ left: 0, right: 0 });
+    // the spacing it says is the room it needs
+    expect(paperOf({ paper: 'ruled', rule: 30, left: 294, right: 294 })).toMatchObject({ left: 0, right: 0 });
+    expect(paperOf({ paper: 'grid', left: 296, right: 296 })).toMatchObject({ left: 296, right: 296 });
+    expect(paperOf({ paper: 'grid', left: 296, right: 296.5 })).toMatchObject({ left: 0, right: 0 });
+    // 85's margin rule beside them stands, with the rules run on under it as before
+    expect(paperOf({ paper: 'ruled', left: 300, right: 300, margin: 90 })).toMatchObject({ left: 0, right: 0, lines: [90] });
+    expect(paperLines(paperOf({ paper: 'ruled', left: 300, right: 300 }))).toEqual(paperLines('ruled'));
+  });
+
+  it('a line is drawn down a margin where the page setup asks for one and the sheet has that margin: told as its place from the left', () => {
+    const lines = (w: Parameters<typeof paperOf>[0]) => paperOf(w).lines;
+    expect(lines({ paper: 'ruled', left: 34.02, right: 34.02 })).toEqual([]);
+    expect(lines({ paper: 'ruled', left: 34.02, right: 34.02, marginLine: 'left' })).toEqual([34.02]);
+    expect(lines({ paper: 'ruled', left: 34.02, right: 34.02, marginLine: 'right' })).toEqual([577.98]);
+    expect(lines({ paper: 'ruled', left: 34.02, right: 34.02, marginLine: 'both' })).toEqual([34.02, 577.98]);
+    expect(lines({ paper: 'ruled', left: 34.02, right: 34.02, marginLine: 'both', size: 'a4' })).toEqual([34.02, 560.98]);
+    expect(lines({ paper: 'ruled', left: 34.02, right: 34.02, marginLine: 'both', size: 'a4', turn: 'landscape' })).toEqual([34.02, 807.98]);
+    // at a margin the sheet has none of, there is none
+    expect(lines({ paper: 'ruled', marginLine: 'both' })).toEqual([]);
+    expect(lines({ paper: 'ruled', left: 0, right: 0, marginLine: 'both' })).toEqual([]);
+    expect(lines({ paper: 'ruled', left: 40, marginLine: 'both' })).toEqual([40]);
+    expect(lines({ paper: 'ruled', right: 40, marginLine: 'both' })).toEqual([572]);
+    expect(lines({ paper: 'ruled', right: 40, marginLine: 'left' })).toEqual([]);
+    // on any paper, blank too
+    for (const paper of ['blank', 'grid', 'dotted'] as const) expect(lines({ paper, left: 40, right: 30, marginLine: 'both' }), paper).toEqual([40, 582]);
+    // beside 85's margin rule each stands, the leftmost first; where both would fall on one line it is one
+    expect(lines({ paper: 'ruled', margin: 90, left: 34.02, marginLine: 'left' })).toEqual([34.02, 90]);
+    expect(lines({ paper: 'ruled', margin: 34.3, left: 34.02, marginLine: 'left' })).toEqual([34.3]);
+    // the paths of a page, and on the screen's pixels
+    expect(paperPaths(paperOf({ paper: 'ruled', left: 34.02, right: 34.02, marginLine: 'both' })).margin).toBe('M34.02 0V792M577.98 0V792');
+    expect(paperPaths(paperOf({ paper: 'ruled', left: 34.02, right: 34.02, marginLine: 'both' }), { px: 1, w: 1 }).margin).toBe('M34.5 0V792M577.5 0V792');
+    expect(paperPaths(paperOf({ paper: 'ruled', left: 34.02, right: 34.02 })).margin).toBe('');
+    expect(paperLines(paperOf({ paper: 'blank', left: 40, right: 30, marginLine: 'both' }))).toEqual({ rows: [], rowSpan: [40, 582], cols: [], colSpan: [0, 792], margins: [40, 582], dots: null });
+  });
+
+  it('a ruled sheet\'s rules begin at the left margin and end at the right one: the same rules, shorter', () => {
+    const made = paperLines(paperOf({ paper: 'ruled', left: 34.02, right: 34.02 }));
+    expect(made).toEqual({ ...paperLines('ruled'), rowSpan: [34.02, 577.98] });
+    expect([made.rows[0], made.rows.at(-1), made.rows.length]).toEqual([72, 768, 30]);
+    expect(paperLines(paperOf({ paper: 'ruled', left: 50 })).rowSpan).toEqual([50, 612]);
+    expect(paperLines(paperOf({ paper: 'ruled', right: 50 })).rowSpan).toEqual([0, 562]);
+    expect(paperLines(paperOf({ paper: 'ruled', left: 34.02, right: 34.02, size: 'a4' })).rowSpan).toEqual([34.02, 560.98]);
+    // from as far down as it says to no nearer the foot than it says
+    const set = paperLines(paperOf({ paper: 'ruled', rule: 30, left: 50, top: 100, bottom: 60 }));
+    expect([set.rows[0], set.rows.at(-1), set.rows.length, set.rowSpan]).toEqual([100, 730, 22, [50, 612]]);
+    // a line down the margin changes nothing of the rules
+    expect(paperLines(paperOf({ paper: 'ruled', left: 34.02, right: 34.02, marginLine: 'both' }))).toEqual({ ...made, margins: [34.02, 577.98] });
+    // as paths: each rule from the one margin to the other
+    const paths = paperPaths(paperOf({ paper: 'ruled', left: 34.02, right: 34.02 }));
+    expect(paths.rules.startsWith('M34.02 72H577.98M34.02 96H577.98')).toBe(true);
+    expect(paths.rules.endsWith('M34.02 768H577.98')).toBe(true);
+    expect(paths.rules).toBe(paperPaths('ruled').rules.replaceAll('M0 ', 'M34.02 ').replaceAll('H612', 'H577.98'));
+    expect(paths).toMatchObject({ margin: '', dots: '', w: 612, h: 792 });
+    // on the screen's pixels a rule's height is moved, and not where it begins and ends
+    expect(paperPaths(paperOf({ paper: 'ruled', left: 34.02, right: 34.02 }), { px: 1, w: 1 }).rules.startsWith('M34.02 72.5H577.98M34.02 96.5H577.98')).toBe(true);
+  });
+
+  it('a grid is centred in what its four margins leave and closed there: its lines end on its outermost lines', () => {
+    const grid = paperLines(paperOf({ paper: 'grid', ...EDGED }));
+    expect(grid).toEqual({ rows: every(51, 771, 20), rowSpan: [41, 581], cols: every(41, 581, 20), colSpan: [51, 771], margins: [], dots: null });
+    expect([grid.rows.length, grid.cols.length]).toEqual([37, 28]);
+    // (as much clear inside the left margin as inside the right one, and so at the head and the foot)
+    expect([grid.cols[0]! - 40, 582 - grid.cols.at(-1)!, grid.rows[0]! - 50, 772 - grid.rows.at(-1)!]).toEqual([1, 1, 1, 1]);
+    // a new notebook's: 8 mm all round
+    const made = paperLines(paperOf({ paper: 'grid', left: 22.68, right: 22.68, top: 22.68, bottom: 22.68 }));
+    expect(made).toEqual({ rows: every(26, 766, 20), rowSpan: [26, 586], cols: every(26, 586, 20), colSpan: [26, 766], margins: [], dots: null });
+    // another pitch, another sheet
+    const a4 = paperLines(paperOf({ paper: 'grid', rule: 25, left: 30, right: 30, top: 30, bottom: 30, size: 'a4' }));
+    expect([a4.cols[0], a4.cols.at(-1), a4.cols.length, a4.rowSpan]).toEqual([35, 560, 22, [35, 560]]);
+    expect([a4.rows[0], a4.rows.at(-1), a4.rows.length, a4.colSpan]).toEqual([33.5, 808.5, 32, [33.5, 808.5]]);
+    // as paths: every line of it between the outermost two the other way
+    const paths = paperPaths(paperOf({ paper: 'grid', ...EDGED }));
+    expect(paths.rules.startsWith('M41 51H581M41 71H581')).toBe(true);
+    expect(paths.rules).toContain('M41 771H581M41 51V771M61 51V771');
+    expect(paths.rules.endsWith('M581 51V771')).toBe(true);
+    expect(paths.rules.match(/M/g)!.length).toBe(37 + 28);
+    // on the screen's pixels a line is moved across itself, and its ends stay where they are
+    const on = paperPaths(paperOf({ paper: 'grid', ...EDGED }), { px: 1, w: 1 }).rules;
+    expect(on.startsWith('M41 51.5H581M41 71.5H581')).toBe(true);
+    expect(on.endsWith('M581.5 51V771')).toBe(true);
+    // lines down its margins are the sheet's whole height, where the margins are
+    expect(paperPaths(paperOf({ paper: 'grid', ...EDGED, marginLine: 'both' })).margin).toBe('M40 0V792M582 0V792');
+  });
+
+  it('dots between margins are on every crossing of that grid', () => {
+    const dotted = paperLines(paperOf({ paper: 'dotted', ...EDGED }));
+    expect(dotted).toEqual({ rows: [], rowSpan: [41, 581], cols: [], colSpan: [51, 771], margins: [], dots: { xs: every(41, 581, 20), ys: every(51, 771, 20) } });
+    const grid = paperLines(paperOf({ paper: 'grid', ...EDGED }));
+    expect(dotted.dots).toEqual({ xs: grid.cols, ys: grid.rows });
+    const made = paperLines(paperOf({ paper: 'dotted', left: 22.68, right: 22.68, top: 22.68, bottom: 22.68 }));
+    expect(made.dots).toEqual({ xs: every(26, 586, 20), ys: every(26, 766, 20) });
+    // as paths: a dashed row for each row of dots, from the first dot to the last
+    const paths = paperPaths(paperOf({ paper: 'dotted', ...EDGED }));
+    expect(paths).toMatchObject({ rules: '', margin: '', pitch: 20 });
+    expect(paths.dots.startsWith('M41 51H581.01M41 71H581.01')).toBe(true);
+    expect(paths.dots.match(/M/g)!.length).toBe(37);
+  });
+
+  it('with margins at the sides alone, or at the head and the foot alone, the other way is as it was: a grid\'s lines to the sheet\'s edge, dots a pitch short of it', () => {
+    const plain = paperLines('grid');
+    const sides = paperLines(paperOf({ paper: 'grid', left: 40, right: 30 }));
+    expect(sides).toEqual({ rows: plain.rows, rowSpan: [41, 581], cols: every(41, 581, 20), colSpan: [0, 792], margins: [], dots: null });
+    const ends = paperLines(paperOf({ paper: 'grid', top: 50, bottom: 20 }));
+    expect(ends).toEqual({ rows: every(51, 771, 20), rowSpan: [0, 612], cols: plain.cols, colSpan: [51, 771], margins: [], dots: null });
+    const dots = paperLines('dotted').dots!;
+    expect(paperLines(paperOf({ paper: 'dotted', left: 40, right: 30 })).dots).toEqual({ xs: every(41, 581, 20), ys: dots.ys });
+    expect(paperLines(paperOf({ paper: 'dotted', top: 50, bottom: 20 })).dots).toEqual({ xs: dots.xs, ys: every(51, 771, 20) });
+  });
+
+  it('a margin at one edge alone closes a grid at that edge alone: at the others its lines run to the sheet\'s edge', () => {
+    const plain = paperLines('grid');
+    // the left one: centred in what it leaves, 6 points clear of it and of the right edge
+    expect(paperLines(paperOf({ paper: 'grid', left: 40 }))).toEqual({ rows: plain.rows, rowSpan: [46, 612], cols: every(46, 606, 20), colSpan: [0, 792], margins: [], dots: null });
+    // the right one
+    expect(paperLines(paperOf({ paper: 'grid', right: 30 }))).toEqual({ rows: plain.rows, rowSpan: [0, 581], cols: every(1, 581, 20), colSpan: [0, 792], margins: [], dots: null });
+    // the foot's
+    expect(paperLines(paperOf({ paper: 'grid', bottom: 100 }))).toEqual({ rows: every(6, 686, 20), rowSpan: [0, 612], cols: plain.cols, colSpan: [0, 686], margins: [], dots: null });
+    // the head's
+    expect(paperLines(paperOf({ paper: 'grid', top: 50 }))).toEqual({ rows: every(51, 791, 20), rowSpan: [0, 612], cols: plain.cols, colSpan: [51, 792], margins: [], dots: null });
+    // two that meet at a corner: closed at that corner, open at the other
+    expect(paperLines(paperOf({ paper: 'grid', left: 40, bottom: 100 }))).toMatchObject({ rowSpan: [46, 612], colSpan: [0, 686] });
+    // as paths
+    const left = paperPaths(paperOf({ paper: 'grid', left: 40 })).rules;
+    expect(left.startsWith('M46 6H612M46 26H612')).toBe(true);
+    expect(left.endsWith('M606 0V792')).toBe(true);
+    const foot = paperPaths(paperOf({ paper: 'grid', bottom: 100 })).rules;
+    expect(foot.startsWith('M0 6H612')).toBe(true);
+    expect(foot).toContain('M0 686H612M6 0V686');
+    expect(foot.endsWith('M606 0V686')).toBe(true);
+    // on a clip: the lines down it end on the last line across
+    const rects: [string, number, number, number, number][] = [];
+    const ctx = { fillStyle: '', fillRect(x: number, y: number, w: number, h: number) { rects.push([this.fillStyle, x, y, w, h]); }, beginPath() {}, arc() {}, fill() {} };
+    drawPaper(ctx as unknown as CanvasRenderingContext2D, paperOf({ paper: 'grid', bottom: 100 }), { x: 0, y: 0, w: 612, h: 792 }, 1);
+    expect(rects.slice(1)).toEqual([...every(6, 686, 20).map((y) => [PAPER_RULE, 0, y, 612, 1]), ...every(6, 606, 20).map((x) => [PAPER_RULE, x, 0, 1, 686])]);
+    // a long sheet's foot is no edge of it: its room is a page's, and closes nothing
+    expect(paperLines(paperOf({ paper: 'grid', left: 40, bottom: 100, pageless: true }, 0))).toMatchObject({ rowSpan: [46, 612], colSpan: [0, 792] });
+  });
+
+  it('dots with a margin at one edge alone are on every crossing at that edge, and a pitch short of the others', () => {
+    const plain = paperLines('dotted').dots!;
+    // the left one: a dot on the grid's first line there, none on its last
+    expect(paperLines(paperOf({ paper: 'dotted', left: 40 }))).toEqual({ rows: [], rowSpan: [46, 612], cols: [], colSpan: [0, 792], margins: [], dots: { xs: every(46, 586, 20), ys: plain.ys } });
+    expect(paperLines(paperOf({ paper: 'dotted', right: 30 })).dots).toEqual({ xs: every(21, 581, 20), ys: plain.ys });
+    // the foot's: down to the grid's last line, from a pitch under its first
+    expect(paperLines(paperOf({ paper: 'dotted', bottom: 100 }))).toEqual({ rows: [], rowSpan: [0, 612], cols: [], colSpan: [0, 686], margins: [], dots: { xs: plain.xs, ys: every(26, 686, 20) } });
+    expect(paperLines(paperOf({ paper: 'dotted', top: 50 })).dots).toEqual({ xs: plain.xs, ys: every(51, 771, 20) });
+    expect(paperLines(paperOf({ paper: 'dotted', left: 40, bottom: 100 })).dots).toEqual({ xs: every(46, 586, 20), ys: every(26, 686, 20) });
+    // they are the crossings of that grid, less the outermost at an edge with no margin
+    for (const w of [{ left: 40 }, { right: 30 }, { top: 50 }, { bottom: 100 }, { left: 40, bottom: 100 }]) {
+      const grid = paperLines(paperOf({ paper: 'grid', ...w }));
+      const dots = paperLines(paperOf({ paper: 'dotted', ...w })).dots!;
+      const [l, r, t, b] = ['left', 'right', 'top', 'bottom'].map((k) => k in w);
+      expect(dots, JSON.stringify(w)).toEqual({ xs: grid.cols.slice(l ? 0 : 1, r ? undefined : -1), ys: grid.rows.slice(t ? 0 : 1, b ? undefined : -1) });
+    }
+    // as paths: each row from its first dot to its last
+    expect(paperPaths(paperOf({ paper: 'dotted', left: 40 })).dots.startsWith('M46 26H586.01M46 46H586.01')).toBe(true);
+    expect(paperPaths(paperOf({ paper: 'dotted', bottom: 100 })).dots.endsWith('M26 686H586.01')).toBe(true);
+  });
+
+  it('with no margins a grid and dots are exactly as they were before there were any', () => {
+    expect(paperLines(paperOf({ paper: 'grid' }))).toEqual({ rows: every(6, 786, 20), rowSpan: [0, 612], cols: every(6, 606, 20), colSpan: [0, 792], margins: [], dots: null });
+    expect(paperLines(paperOf({ paper: 'dotted' }))).toEqual({ rows: [], rowSpan: [0, 612], cols: [], colSpan: [0, 792], margins: [], dots: { xs: every(26, 586, 20), ys: every(26, 766, 20) } });
+    expect(paperLines(paperOf({ paper: 'grid', left: 0, right: 0, top: 0, bottom: 0 }))).toEqual(paperLines('grid'));
+    expect(paperLines(paperOf({ paper: 'dotted', left: 0, right: 0, top: 0, bottom: 0 }))).toEqual(paperLines('dotted'));
+    expect(paperPaths(paperOf({ paper: 'grid' })).rules.startsWith('M0 6H612M0 26H612')).toBe(true);
+    expect(paperPaths(paperOf({ paper: 'grid' })).rules.endsWith('M606 0V792')).toBe(true);
+    expect(paperPaths(paperOf({ paper: 'dotted' })).dots.startsWith('M26 26H586.01M26 46H586.01')).toBe(true);
+  });
+
+  it('on sheets that run on as one the rules lie between the side margins on every sheet, the first as far down the long sheet as it says, with no foot', () => {
+    const sheet = (i: number) => paperLines(paperOf({ paper: 'ruled', left: 34.02, right: 34.02, bottom: 100, pageless: true }, i));
+    expect([sheet(0).rows[0], sheet(0).rows.at(-1), sheet(0).rowSpan]).toEqual([72, 768, [34.02, 577.98]]);
+    expect([sheet(1).rows[0], sheet(1).rows.at(-1), sheet(1).rowSpan]).toEqual([0, 768, [34.02, 577.98]]);
+    for (const i of [0, 1, 2]) expect(sheet(i).rows, String(i)).toEqual(paperLines(paperOf({ paper: 'ruled', pageless: true }, i)).rows);
+    // a line down the margin is on every sheet
+    for (const i of [0, 1, 2]) expect(paperLines(paperOf({ paper: 'ruled', left: 34.02, right: 34.02, marginLine: 'both', pageless: true }, i)).margins).toEqual([34.02, 577.98]);
+  });
+
+  it('a long sheet\'s grid begins at its head\'s room and is closed there; below, its lines run through from sheet to sheet, and its foot\'s room is a page\'s', () => {
+    const sheet = (i: number, paper: 'grid' | 'dotted' = 'grid') => paperLines(paperOf({ paper, left: 40, right: 30, top: 30, bottom: 20, pageless: true }, i));
+    // the first sheet: its first line 30 points down, the lines down it from there to its foot
+    expect(sheet(0)).toEqual({ rows: every(30, 790, 20), rowSpan: [41, 581], cols: every(41, 581, 20), colSpan: [30, 792], margins: [], dots: null });
+    // the next: 790 and 20 are 810, 18 points down it; its lines down the whole of it
+    expect(sheet(1)).toEqual({ rows: every(18, 778, 20), rowSpan: [41, 581], cols: every(41, 581, 20), colSpan: [0, 792], margins: [], dots: null });
+    expect([sheet(2).rows[0], sheet(2).colSpan]).toEqual([6, [0, 792]]);
+    // dots on every crossing of it, from the head's room on
+    expect(sheet(0, 'dotted')).toEqual({ rows: [], rowSpan: [41, 581], cols: [], colSpan: [30, 792], margins: [], dots: { xs: every(41, 581, 20), ys: every(30, 790, 20) } });
+    expect(sheet(1, 'dotted').dots).toEqual({ xs: every(41, 581, 20), ys: every(18, 778, 20) });
+    // a new notebook's grid, pageless: from 8 mm down, between 8 mm at each side
+    const made = (i: number) => paperLines(paperOf({ paper: 'grid', left: 22.68, right: 22.68, top: 22.68, bottom: 22.68, pageless: true }, i));
+    expect([made(0).rows[0], made(0).rows.at(-1), made(0).rows.length, made(0).colSpan, made(0).rowSpan]).toEqual([22.68, 782.68, 39, [22.68, 792], [26, 586]]);
+    expect([made(1).rows[0], made(1).colSpan]).toEqual([10.68, [0, 792]]);
+    // as paths: the first sheet's lines down it begin at the head's room
+    expect(paperPaths(paperOf({ paper: 'grid', left: 40, right: 30, top: 30, pageless: true }, 0)).rules).toContain('M41 30V792');
+    expect(paperPaths(paperOf({ paper: 'grid', left: 40, right: 30, top: 30, pageless: true }, 1)).rules).toContain('M41 0V792');
+    // with no room at its head it is as it was: centred as a page's, its lines from the sheet's top, dots a pitch short of the head
+    const bare = paperLines(paperOf({ paper: 'grid', left: 40, right: 30, pageless: true }, 0));
+    expect([bare.rows[0], bare.colSpan, bare.rowSpan]).toEqual([6, [0, 792], [41, 581]]);
+    expect(paperLines(paperOf({ paper: 'dotted', left: 40, right: 30, pageless: true }, 0)).dots!.ys[0]).toBe(26);
+    for (const i of [0, 1, 2]) for (const paper of ['grid', 'dotted'] as const) expect(paperLines(paperOf({ paper, bottom: 20, pageless: true }, i)), `${paper} ${i}`).toEqual(paperLines(paperOf({ paper, pageless: true }, i)));
+  });
+
+  it('across the sheets of a pageless notebook with margins the lines are one ruling still, from the last of a sheet to the first of the next', () => {
+    for (const rule of [18, 20, 25, 28.35]) {
+      for (const paper of ['ruled', 'grid', 'dotted'] as const) {
+        const ys = (i: number) => { const l = paperLines(paperOf({ paper, rule, left: 34.02, right: 22.68, top: 22.68, bottom: 22.68, pageless: true }, i)); return paper === 'dotted' ? l.dots!.ys : l.rows; };
+        expect(ys(0)[0], `${paper} ${rule}`).toBe(22.68);
+        for (const i of [0, 1, 2, 3]) {
+          const here = ys(i);
+          expect(here.every((y) => y >= 0 && y < 792), `${paper} ${rule} ${i}`).toBe(true);
+          for (let j = 1; j < here.length; j++) expect(here[j]! - here[j - 1]!).toBeCloseTo(rule, 2);
+          expect(ys(i + 1)[0]! + 792 - here.at(-1)!, `${paper} ${rule} ${i}`).toBeCloseTo(rule, 2);
+        }
+      }
+    }
+  });
+
+  it('a clip has each rule only as far as it runs on the sheet: from the left margin, to the right one, and none in a margin', () => {
+    const rects: [string, number, number, number, number][] = [];
+    const ctx = { fillStyle: '', fillRect(x: number, y: number, w: number, h: number) { rects.push([this.fillStyle, x, y, w, h]); }, beginPath() {}, arc() {}, fill() {} };
+    const draw = (w: Parameters<typeof paperOf>[0], part: { x: number; y: number; w: number; h: number }, k = 1) => { rects.length = 0; drawPaper(ctx as unknown as CanvasRenderingContext2D, paperOf(w), part, k); return rects.slice(1); };
+    const made = { paper: 'ruled', left: 34.02, right: 34.02 } as const;
+    // the whole sheet, a pixel to the point: every rule from 34 to 578
+    expect(draw(made, { x: 0, y: 0, w: 612, h: 792 })).toEqual(every(72, 768, 24).map((y) => [PAPER_RULE, 34, y, 544, 1]));
+    expect(rects[0]).toEqual([PAPER_WHITE, 0, 0, 612, 792]);
+    // a clip between the margins has its rules from side to side, as before
+    expect(draw(made, { x: 50, y: 60, w: 200, h: 100 }, 2)).toEqual([24, 72, 120, 168].map((y) => [PAPER_RULE, 0, y, 400, 1]));
+    // one that holds the left margin: its rules begin where the margin ends, two pixels to the point
+    expect(draw(made, { x: 0, y: 60, w: 100, h: 50 }, 2)).toEqual([[PAPER_RULE, 68, 24, 132, 1], [PAPER_RULE, 68, 72, 132, 1]]);
+    // one that holds the right margin: they end there
+    expect(draw(made, { x: 500, y: 60, w: 112, h: 50 })).toEqual([[PAPER_RULE, 0, 12, 78, 1], [PAPER_RULE, 0, 36, 78, 1]]);
+    // one wholly in a margin: bare paper
+    expect(draw(made, { x: 0, y: 60, w: 30, h: 50 })).toEqual([]);
+    expect(rects).toEqual([[PAPER_WHITE, 0, 0, 30, 50]]);
+    // a line down the margin is drawn after the rules, in the margin's colour: the pale red, or the one chosen
+    expect(draw({ ...made, marginLine: 'both' }, { x: 0, y: 60, w: 612, h: 50 }).slice(-2)).toEqual([[PAPER_MARGIN, 34, 0, 1, 50], [PAPER_MARGIN, 578, 0, 1, 50]]);
+    expect(draw({ ...made, marginLine: 'left', marginColor: '#b5d2f2' }, { x: 0, y: 60, w: 612, h: 50 }).slice(-1)).toEqual([['#b5d2f2', 34, 0, 1, 50]]);
+    expect(draw({ ...made, marginLine: 'left' }, { x: 0, y: 60, w: 30, h: 50 })).toEqual([]);
+  });
+
+  it('a clip of a grid between margins has its lines from the one outermost line to the other; of dots, every one, drawn before a margin\'s line', () => {
+    const rects: [string, number, number, number, number][] = [];
+    const order: string[] = [];
+    const ctx = { fillStyle: '', fillRect(x: number, y: number, w: number, h: number) { rects.push([this.fillStyle, x, y, w, h]); order.push('rect'); }, beginPath() {}, arc() {}, fill() { order.push('dot'); } };
+    const draw = (w: Parameters<typeof paperOf>[0], part: { x: number; y: number; w: number; h: number }, k = 1) => { rects.length = 0; order.length = 0; drawPaper(ctx as unknown as CanvasRenderingContext2D, paperOf(w), part, k); return rects.slice(1); };
+    const whole = { x: 0, y: 0, w: 612, h: 792 };
+    expect(draw({ paper: 'grid', ...EDGED }, whole)).toEqual([...every(51, 771, 20).map((y) => [PAPER_RULE, 41, y, 540, 1]), ...every(41, 581, 20).map((x) => [PAPER_RULE, x, 51, 1, 720])]);
+    // a clip of its top left corner, two pixels to the point: the lines begin at the corner
+    expect(draw({ paper: 'grid', ...EDGED }, { x: 30, y: 40, w: 40, h: 40 }, 2)).toEqual([[PAPER_RULE, 22, 22, 58, 1], [PAPER_RULE, 22, 62, 58, 1], [PAPER_RULE, 22, 22, 1, 58], [PAPER_RULE, 62, 22, 1, 58]]);
+    // with a line down both margins: the grid, then the two, the sheet's height
+    expect(draw({ paper: 'grid', ...EDGED, marginLine: 'both' }, whole).slice(-2)).toEqual([[PAPER_MARGIN, 40, 0, 1, 792], [PAPER_MARGIN, 582, 0, 1, 792]]);
+    expect(rects.filter((r) => r[0] === PAPER_RULE).length).toBe(37 + 28);
+    // dots: the first row of them, each one, then the margin's lines
+    expect(draw({ paper: 'dotted', ...EDGED, marginLine: 'both' }, { x: 0, y: 0, w: 612, h: 60 })).toEqual([[PAPER_MARGIN, 40, 0, 1, 60], [PAPER_MARGIN, 582, 0, 1, 60]]);
+    expect(order.filter((o) => o === 'dot').length).toBe(28);
+    expect(order.slice(-2)).toEqual(['rect', 'rect']);
+    expect(order.lastIndexOf('dot')).toBe(order.length - 3);
+    // with no line there is nothing after the dots
+    draw({ paper: 'dotted', ...EDGED }, whole);
+    expect(order.filter((o) => o === 'dot').length).toBe(28 * 37);
+    expect(order.at(-1)).toBe('dot');
   });
 });
 
@@ -709,6 +1059,39 @@ describe('how long a pageless notebook\'s one sheet is drawn', () => {
     for (const foot of [0, 601, 1000, 2000]) expect(runLength(run({ paper: 'dotted' }), foot)).toBe(runLength(run({ paper: 'grid' }), foot));
     // blank paper counts from its head in a new notebook's rules: 24 points
     expect([0, 601, 625, 1000, 2000].map((f) => runLength(run({ paper: 'blank' }), f))).toEqual([792, 816, 840, 1200, 2208]);
+  });
+
+  it('a grid or dots with room at the head are counted from there: the sheet ends on a line of the grid, with no edge room past it', () => {
+    // 8 mm down, in 20s: lines at 22.68, 42.68 and on; 793 points are asked, and the next line is at 802.68
+    const made = run({ paper: 'grid', left: 22.68, right: 22.68, top: 22.68, bottom: 22.68 });
+    expect([0, 600, 601, 610, 611, 1000, 2000].map((f) => runLength(made, f))).toEqual([792, 792, 802.68, 802.68, 822.68, 1202.68, 2202.68]);
+    // with none at the head: centred, 6 points past a line
+    expect([601, 1000, 2000].map((f) => runLength(run({ paper: 'grid' }), f))).toEqual([812, 1192, 2192]);
+    // dots as a grid of their pitch
+    for (const foot of [0, 601, 1000, 2000]) expect(runLength(run({ paper: 'dotted', top: 22.68 }), foot)).toBe(runLength(made, foot));
+    // room at the head of more than a square: the lines are where they fall from it
+    expect([601, 1000].map((f) => runLength(run({ paper: 'grid', top: 30 }), f))).toEqual([810, 1210]);
+    expect([601, 1000].map((f) => runLength(run({ paper: 'grid', rule: 25, top: 60 }), f))).toEqual([810, 1210]);
+    for (const p of [made, run({ paper: 'grid', top: 30 }), run({ paper: 'dotted', rule: 25, top: 60, size: 'a4' }), run({ paper: 'grid', rule: 14.17, top: 22.68 })]) {
+      let was = runLength(p, 0);
+      for (let foot = 1; foot <= 2400; foot += 3) {
+        const len = runLength(p, foot);
+        // never shorter than what is written and the bare paper under it, never a whole square longer
+        expect(len, `${name(p)} ${foot}`).toBeGreaterThanOrEqual(Math.max(p.h, foot + RUN_ALLOW) - 1e-3);
+        expect(len - Math.max(p.h, foot + RUN_ALLOW), `${name(p)} ${foot}`).toBeLessThan(p.rule + 1e-3);
+        // past one sheet it ends a whole number of squares below the head's room
+        if (len > p.h) { const steps = (len - p.top) / p.rule; expect(Math.abs(steps - Math.round(steps)), `${name(p)} ${foot}`).toBeLessThan(1e-3); }
+        expect(len).toBeGreaterThanOrEqual(was);
+        was = len;
+      }
+    }
+    // the foot's room is a page's: a long sheet is as long with it as without
+    expect(runLength(run({ paper: 'grid', top: 22.68, bottom: 100 }), 1000)).toBe(runLength(run({ paper: 'grid', top: 22.68 }), 1000));
+    // the margins at the sides, a line down them and its colour change nothing of it
+    for (const foot of [0, 700, 1900]) {
+      expect(runLength(run({ paper: 'ruled', left: 34.02, right: 34.02, marginLine: 'both', marginColor: '#b5d2f2' }), foot)).toBe(runLength(run({ paper: 'ruled' }), foot));
+      expect(runLength(run({ paper: 'grid', left: 40, right: 30 }), foot)).toBe(runLength(run({ paper: 'grid' }), foot));
+    }
   });
 
   it('is the paper\'s and the foot\'s alone: the same for any sheet of the notebook, with or without margins or colours', () => {
@@ -856,16 +1239,18 @@ describe('a written notebook in the lens', () => {
     expect(written().paper).toBe('dotted');
     expect(q('.pdf-page > svg.paper')!.getAttribute('data-paper')).toBe('dotted');
     expect(pageEl(3).dataset.paper).toBe('dotted');
-    // ruled again, narrower, with a margin: every sheet is ruled so
+    // (dots keep a new notebook's room at the head and the foot; the file had no margins at its sides, and has none)
+    expect(written()).toEqual({ id: ID, sheets: [1, 2, 3], paper: 'dotted', top: 22.68, bottom: 22.68 });
+    // ruled again, narrower, with a line down its left margin, which brings the margin: every sheet is ruled so, from that margin on
     await click(q('[data-ps="paper-ruled"]')!);
     await click(q('[data-ps="stop-narrow"]')!);
-    await click(q('[data-ps="margin"]')!);
+    await click(q('[data-ps="mline-left"]')!);
     await wait(150);
-    expect(written()).toMatchObject({ paper: 'ruled', rule: 18, margin: 90 });
+    expect(written()).toEqual({ id: ID, sheets: [1, 2, 3], paper: 'ruled', rule: 18, left: 34.02, marginLine: 'left' });
     expect(qa('.pdf-page > svg.paper').map((s) => s.getAttribute('data-rule'))).toEqual(['18', '18', '18']);
-    expect(q('.pdf-page > svg.paper .paper-rule')!.getAttribute('d')!.startsWith('M0 72.5H612M0 90.5H612')).toBe(true);
+    expect(q('.pdf-page > svg.paper .paper-rule')!.getAttribute('d')!.startsWith('M34.02 72.5H612M34.02 90.5H612')).toBe(true);
     expect(q('.pdf-page > svg.paper .paper-rule')!.getAttribute('d')).toBe(paperPaths(paperOf(written()), ON).rules);
-    expect(qa('.pdf-page > svg.paper .paper-margin').map((m) => m.getAttribute('d'))).toEqual(['M90.5 0V792', 'M90.5 0V792', 'M90.5 0V792']);
+    expect(qa('.pdf-page > svg.paper .paper-margin').map((m) => m.getAttribute('d'))).toEqual(['M34.5 0V792', 'M34.5 0V792', 'M34.5 0V792']);
     // still up: the panel is not a step
     expect(q('.page-setup')).not.toBeNull();
     await click(q('[data-ps="close"]')!);
@@ -1179,7 +1564,7 @@ describe('a written notebook under the Pencil', () => {
     expect(q<HTMLElement>('.pdf-view')!.dataset.surface).toBe(spec().id);
     expect(spec()).toMatchObject({ at: { x: 0, y: 60, w: 700, h: 840 }, key: ID, sheets: [1, 3], zoom: 1, marks: [], holes: [], add: true });
     expect(spec().paper).toEqual(paperArgs(paperOf(written(), 0)));
-    expect(spec().paper).toEqual({ kind: 'ruled', w: W, h: H, rule: 24, margin: null, marginRight: null, top: 72, bottom: null, run: false });
+    expect(spec().paper).toEqual({ kind: 'ruled', w: W, h: H, rule: 24, left: 0, right: 0, top: 72, bottom: 24, lines: [], run: false });
     // the place it lies over, and nothing of the pages themselves: no column, no paper, no picture of the writing, no `add page`
     expect(q('.doc-wrap > .note-surface')).not.toBeNull();
     expect(q('.pdf-pages, svg.paper, img.page-ink, button.add-page, .pdf-page')).toBeNull();

@@ -76,12 +76,15 @@ struct PaperArgs: Codable, Equatable {
   var w: Double
   var h: Double
   var rule: Double
-  /// The left margin rule, from the left edge, and the right one, from the right edge; none for none (88).
-  var margin: Double?
-  var marginRight: Double?
+  /// The margins (88): how far in from the left edge and from the right the ruling begins and ends; 0 for none.
+  var left: Double
+  var right: Double
+  /// How far down a ruled sheet its first rule is; the room a grid or dots keep at the head.
   var top: Double
-  /// The room under a ruled page's last rule; none for a rule's.
-  var bottom: Double?
+  /// The room under a ruled page's last rule; what a grid or dots keep at the foot.
+  var bottom: Double
+  /// Where a line is drawn down the sheet, each from the left edge.
+  var lines: [Double]
   /// The sheets run on as one.
   var run: Bool
 
@@ -94,8 +97,14 @@ struct PaperArgs: Codable, Equatable {
     // (what fits on one sheet is one sheet, whole)
     if need <= h { return h }
     let step = kind == "blank" ? 24 : max(2, rule)
-    let edge = kind == "grid" || kind == "dotted" ? h.truncatingRemainder(dividingBy: step) / 2 : 0
-    let first = kind == "ruled" ? top.truncatingRemainder(dividingBy: step) : edge
+    // where the ruling begins down the long sheet, and what a grid that runs to the sheet's edges keeps clear at each
+    var first = 0.0, edge = 0.0
+    if kind == "ruled" {
+      first = top.truncatingRemainder(dividingBy: step)
+    } else if kind == "grid" || kind == "dotted" {
+      edge = top > 0 ? 0 : h.truncatingRemainder(dividingBy: step) / 2
+      first = top > 0 ? top.truncatingRemainder(dividingBy: step) : edge
+    }
     return ((first + ((need - first - edge) / step - 1e-9).rounded(.up) * step + edge) * 1000).rounded() / 1000
   }
 }
@@ -136,39 +145,50 @@ struct PaintJob {
 enum Paint {
   static func cg(_ hex: String, _ fallback: UIColor = .white) -> CGColor { (colour(hex) ?? fallback).cgColor }
 
-  /// Where a paper's lines are, in the sheet's points: as `paperLines` has them.
-  static func lines(_ p: PaperArgs, index: Int) -> (rows: [Double], cols: [Double], margins: [Double], dots: (xs: [Double], ys: [Double])?) {
+  /// Where a paper's lines are, in the sheet's points: as `paperLines` has them. The ruling lies between the margins;
+  /// `rowSpan` is how far across the sheet each row is drawn, `colSpan` how far down it each column.
+  static func lines(_ p: PaperArgs, index: Int) -> (rows: [Double], rowSpan: (Double, Double), cols: [Double], colSpan: (Double, Double), margins: [Double], dots: (xs: [Double], ys: [Double])?) {
     let step = max(2, p.rule)
     let at = p.run ? Double(index) * p.h : 0
+    func r3(_ v: Double) -> Double { (v * 1000).rounded() / 1000 }
     func steps(_ from: Double, _ to: Double) -> [Double] {
       var out: [Double] = []
       var v = from
-      while v <= to + 1e-6 { out.append(v); v += step }
+      while v <= to + 1e-6 { out.append(r3(v)); v += step }
       return out
     }
     func running(_ first: Double) -> [Double] {
       let k = max(0, ((at - first) / step - 1e-9).rounded(.up))
       var out: [Double] = []
       var v = first + k * step - at
-      while v < p.h - 1e-6 { out.append(v); v += step }
+      while v < p.h - 1e-6 { out.append(r3(v)); v += step }
       return out
     }
-    let offX = p.w.truncatingRemainder(dividingBy: step) / 2
-    let offY = p.h.truncatingRemainder(dividingBy: step) / 2
-    // a margin rule at either edge, on any paper: each from its own edge, the right one only right of the left
-    var m: [Double] = []
-    let l = p.margin.flatMap { $0 > 0 && $0 < p.w ? $0 : nil }
-    if let l = l { m.append(l) }
-    if let r = p.marginRight.flatMap({ $0 > 0 && $0 < p.w ? ((p.w - $0) * 1000).rounded() / 1000 : nil }), l == nil || r > l! { m.append(r) }
+    let x0 = p.left, x1 = p.w - p.right
     switch p.kind {
     case "ruled":
-      return (p.run ? running(p.top) : steps(p.top, p.h - (p.bottom ?? step)), [], m, nil)
-    case "grid":
-      return (p.run ? running(offY) : steps(offY, p.h - offY), steps(offX, p.w - offX), m, nil)
-    case "dotted":
-      return ([], [], m, (steps(offX + step, p.w - offX - step), p.run ? running(offY + step) : steps(offY + step, p.h - offY - step)))
+      return (p.run ? running(p.top) : steps(p.top, p.h - p.bottom), (x0, x1), [], (0, p.h), p.lines, nil)
+    case "grid", "dotted":
+      let head = p.top > 0, foot = !p.run && p.bottom > 0
+      let offX = (x1 - x0).truncatingRemainder(dividingBy: step) / 2
+      let xs = steps(x0 + offX, x1 - offX)
+      var ys: [Double]
+      if p.run {
+        ys = running(head ? p.top : p.h.truncatingRemainder(dividingBy: step) / 2)
+      } else {
+        let y0 = p.top, y1 = p.h - p.bottom
+        let offY = (y1 - y0).truncatingRemainder(dividingBy: step) / 2
+        ys = steps(y0 + offY, y1 - offY)
+      }
+      // (each line ends on the grid's outermost line at an edge that has a margin, and runs to the sheet's edge at one that has none)
+      let colSpan: (Double, Double) = p.run ? (head && at < p.top ? r3(p.top - at) : 0, p.h) : (head && !ys.isEmpty ? ys[0] : 0, foot && !ys.isEmpty ? ys[ys.count - 1] : p.h)
+      let rowSpan: (Double, Double) = (p.left > 0 && !xs.isEmpty ? xs[0] : 0, p.right > 0 && !xs.isEmpty ? xs[xs.count - 1] : p.w)
+      if p.kind == "grid" { return (ys, rowSpan, xs, colSpan, p.lines, nil) }
+      let dx = Array(xs.dropFirst(p.left > 0 ? 0 : 1).dropLast(p.right > 0 ? 0 : 1))
+      let dy = p.run ? (head ? ys : running(p.h.truncatingRemainder(dividingBy: step) / 2 + step)) : Array(ys.dropFirst(head ? 0 : 1).dropLast(foot ? 0 : 1))
+      return ([], rowSpan, [], colSpan, p.lines, (dx, dy))
     default:
-      return ([], [], m, nil)
+      return ([], (x0, x1), [], (0, p.h), p.lines, nil)
     }
   }
 
@@ -191,8 +211,12 @@ enum Paint {
       // (a picture is drawn from its foot up)
       func down(_ y: CGFloat, _ h: CGFloat) -> CGFloat { CGFloat(j.ph) - y - h }
       c.setFillColor(cg(j.look.rule, .lightGray))
-      for y in l.rows { let at = row(y); if at > -wide, at < CGFloat(j.ph) { c.fill(CGRect(x: 0, y: down(at, wide), width: CGFloat(j.pw), height: wide)) } }
-      for x in l.cols { let at = col(x); if at > -wide, at < CGFloat(j.pw) { c.fill(CGRect(x: at, y: 0, width: wide, height: CGFloat(j.ph))) } }
+      // (each line only as far as it runs on the sheet: from margin to margin, on whole pixels)
+      // (where a span ends at a line of the ruling, on that line's own pixels, so a grid's corners close)
+      let rx0 = max(0, l.rowSpan.0 > 0 ? col(l.rowSpan.0) : 0), rx1 = min(CGFloat(j.pw), l.rowSpan.1 < j.paper.w ? col(l.rowSpan.1) + wide : ((CGFloat(j.paper.w) - j.region.minX) * sx).rounded(.up))
+      let cy0 = max(0, l.colSpan.0 > 0 ? row(l.colSpan.0) : 0), cy1 = min(CGFloat(j.ph), l.colSpan.1 < j.paper.h ? row(l.colSpan.1) + wide : ((CGFloat(j.paper.h) - j.region.minY) * sy).rounded(.up))
+      if rx1 > rx0 { for y in l.rows { let at = row(y); if at > -wide, at < CGFloat(j.ph) { c.fill(CGRect(x: rx0, y: down(at, wide), width: rx1 - rx0, height: wide)) } } }
+      if cy1 > cy0 { for x in l.cols { let at = col(x); if at > -wide, at < CGFloat(j.pw) { c.fill(CGRect(x: at, y: down(cy0, cy1 - cy0), width: wide, height: cy1 - cy0)) } } }
       if let d = l.dots {
         c.setFillColor(cg(j.look.dot, .lightGray))
         let r = max(0.6, 0.75 * sy)

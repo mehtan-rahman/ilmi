@@ -11701,6 +11701,17 @@ export async function smokePhone(): Promise<void> {
     let shots = 0;
     let learnt = 0;
     let n = 0;
+    /** A capture in the light theme and again in the dark one. */
+    const both = async (name: string) => {
+      await shot(name);
+      useApp.getState().setTheme('dark');
+      await shot(`${name}-dark`);
+      useApp.getState().setTheme('light');
+      await sleep(300);
+    };
+    /** Where the one key under the thumb lay before the answer: the row of grades takes its place, to the pixel. */
+    let revealAt: DOMRect | null = null;
+    const seen = new Set<string>();
     // what each asked of the haptics: said once for the reveal and once a grade, looked at every time
     const felt = new Set<string>();
     const feel = (what: string, want: string, got: string[]) => {
@@ -11717,8 +11728,10 @@ export async function smokePhone(): Promise<void> {
       if (q('.reveal-all')) {
         if (!shots) {
           must(!q('.grades') && !q('.face-hint:not([hidden])')?.getBoundingClientRect().height, 'before the answer: one button, where the grades will be');
-          must(q('.reveal-all')!.getBoundingClientRect().bottom >= window.innerHeight - 1 && tall('.reveal-all', 64), 'at the very foot, across it');
-          await shot('phone-card');
+          // (a key of its own since the grades are: inside the screen's sides, over the home indicator)
+          revealAt = q('.reveal-all')!.getBoundingClientRect();
+          must(revealAt.left >= 10 && Math.abs(revealAt.left - (window.innerWidth - revealAt.right)) < 1 && revealAt.bottom <= window.innerHeight - 10 && revealAt.bottom >= window.innerHeight - 60 && tall('.reveal-all', 64), `one key at the foot, as far from each side (${revealAt.left.toFixed(1)}), over the home indicator (${(window.innerHeight - revealAt.bottom).toFixed(1)} from the foot)`);
+          await both('phone-card');
         }
         hapticsAskedClear();
         await tap(q('.reveal-all')!, () => q('.grades'), 'reveal');
@@ -11730,18 +11743,38 @@ export async function smokePhone(): Promise<void> {
         if (q('.grades.learn')) {
           if (!learnt++) {
             must(buttons.length === 1 && tall('.grades.learn button', 64) && qa<HTMLElement>('.grades.learn kbd, .grades.learn .keys-only').every((k) => getComputedStyle(k).display === 'none'), 'a new card has one button, got it, a finger\'s size, and names no key');
-            await shot('phone-card-learn');
+            {
+              const r = buttons[0]!.getBoundingClientRect();
+              must(r.left >= 0 && r.right <= window.innerWidth + 0.5 && r.bottom <= window.innerHeight + 0.5 && buttons[0]!.scrollWidth <= buttons[0]!.clientWidth + 1, 'whole on the screen, its words not cut');
+            }
+            await both('phone-card-learn');
           }
           await tap(buttons[0]!, () => q('.session-end') || counter() !== was || !q('.grades.learn'), `got it: ${el!.path}`);
           continue;
         }
+        // a card that is gone from the queue (suspended, or asked again since): what stands in the grades' place, looked at once
+        if (q('.grades[data-gone="1"]') && !seen.has('gone')) { seen.add('gone'); await both('phone-card-gone'); }
         if (buttons.length !== 4) { await sleep(150); continue; }
         if (!shots++) {
           must(buttons.length === 4 && tall('.grades button', 64), 'the four grades as buttons');
           const r = buttons.map((b) => b.getBoundingClientRect());
-          must(Math.abs(r[0]!.left) < 2 && Math.abs(r[3]!.right - window.innerWidth) < 2 && r.every((x) => Math.abs(x.bottom - window.innerHeight) < 2 && Math.abs(x.top - r[0]!.top) < 1), 'across the bottom, edge to edge');
+          const gaps = [1, 2, 3].map((i) => r[i]!.left - r[i - 1]!.right);
+          must(r.every((x) => Math.abs(x.width - r[0]!.width) < 1 && Math.abs(x.top - r[0]!.top) < 1 && Math.abs(x.bottom - r[0]!.bottom) < 1) && gaps.every((g) => g >= 6 && Math.abs(g - gaps[0]!) < 1), `four keys of one size in a row, ${gaps[0]!.toFixed(1)} px between them (${r[0]!.width.toFixed(1)}×${r[0]!.height.toFixed(1)})`);
+          must(!!revealAt && Math.abs(r[0]!.left - revealAt.left) < 1 && Math.abs(r[3]!.right - revealAt.right) < 1 && Math.abs(r[0]!.top - revealAt.top) < 1 && Math.abs(r[0]!.bottom - revealAt.bottom) < 1, `where the one key was, to the pixel: nothing jumps at the answer (${r[0]!.left.toFixed(1)}, ${r[0]!.top.toFixed(1)} to ${r[3]!.right.toFixed(1)}, ${r[0]!.bottom.toFixed(1)}; the key ${revealAt?.left.toFixed(1)}, ${revealAt?.top.toFixed(1)} to ${revealAt?.right.toFixed(1)}, ${revealAt?.bottom.toFixed(1)})`);
+          must(buttons.every((b) => { const l = b.querySelector<HTMLElement>('.label')!, gp = b.querySelector<HTMLElement>('.gap')!; const br = b.getBoundingClientRect(); return [l, gp].every((x) => { const xr = x.getBoundingClientRect(); return xr.left >= br.left - 0.5 && xr.right <= br.right + 0.5 && xr.top >= br.top && xr.bottom <= br.bottom; }) && parseFloat(getComputedStyle(l).fontSize) >= 16; }), 'each key\'s word, 16 px, and its interval whole inside it');
           must(buttons.every((b) => !!b.querySelector('.gap')?.textContent), `each says when it comes back (${buttons.map((b) => b.querySelector('.gap')?.textContent).join(' ')})`);
-          await shot('phone-card-answer');
+          await both('phone-card-answer');
+        }
+        // a card come back to (the one before, still over this one): the grade it was given is marked on its key
+        if (!seen.has('given')) {
+          const mark = q<HTMLElement>('.grades button[data-given="1"]');
+          if (mark) {
+            seen.add('given');
+            mark.scrollIntoView({ block: 'end' });
+            await both('phone-card-given');
+            buttons[0]!.scrollIntoView({ block: 'end' });
+            await sleep(300);
+          }
         }
         const g = graded.length % 4;
         graded.push({ path: el!.path, block: (el as CardItem).block, grade: g + 1 });
@@ -12152,7 +12185,7 @@ interface SurfaceNow {
   add: { x: number; y: number; w: number; h: number } | null;
   pending: { x: number; y: number; w: number; h: number } | null;
   making: number; sharpAfter: number | null; blend: string | null;
-  paper: { kind: string; w: number; h: number; rule: number; margin?: number | null; marginRight?: number | null; top: number; bottom?: number | null; run: boolean };
+  paper: { kind: string; w: number; h: number; rule: number; left: number; right: number; top: number; bottom: number; lines: number[]; run: boolean };
   /** A pageless notebook's long sheet (88): how long it is drawn, in points (null for pages), and how many of its sheets are shown. */
   length: number | null; shown: number;
   dark: boolean; colours: string[];
@@ -15834,7 +15867,8 @@ export async function smokeWritten(vault: Vault): Promise<void> {
       must(paper.getAttribute('data-paper') === 'ruled' && Math.abs(pr.width - r.width) < 1 && Math.abs(pr.height - r.height) < 1, 'its paper fills it: ruled');
       const rule = q<SVGPathElement>('.paper-rule', paper)!;
       // (86) each rule lies on whole pixels of the screen, so it is within half a pixel of its place, and is a whole number of them wide
-      const ys = [...(rule.getAttribute('d') ?? '').matchAll(/M0 ([\d.]+)H612/g)].map((m) => Number(m[1]));
+      // (88: a new notebook's rules begin and end 12 mm in from the sides)
+      const ys = [...(rule.getAttribute('d') ?? '').matchAll(/M34\.02 ([\d.]+)H577\.98/g)].map((m) => Number(m[1]));
       const px = (r.width / 612) * (window.devicePixelRatio || 1);
       const wide = parseFloat(getComputedStyle(rule).strokeWidth) * (window.devicePixelRatio || 1);
       must(rule.getAttribute('vector-effect') === 'non-scaling-stroke' && ys.length >= 2 && Math.abs(ys[0]! - 72) <= 0.6 / px && Math.abs(ys[1]! - 96) <= 0.6 / px && wide >= 1 && Math.abs(wide - Math.round(wide)) < 0.01, `the rules a line every 24 points from an inch down, hairlines that do not scale (${ys.slice(0, 2).join(', ')}; ${wide} px wide)`);
@@ -17195,11 +17229,11 @@ async function writtenMore(log: (s: string) => void, root: string): Promise<void
       const br = b.getBoundingClientRect();
       must(r.right <= br.right && r.left >= br.left && r.top >= br.top && r.bottom <= window.innerHeight && !/[A-Z]/.test(panel.textContent ?? ''), `in the window, its words lowercase (${Math.round(r.width)}×${Math.round(r.height)})`);
       must(qa<HTMLElement>('button, input', panel).every((x) => x.getBoundingClientRect().height >= 40 || x.classList.contains('ps-stop')), 'its controls a finger\'s height');
-      must(on('paper-dotted') && on('layout-pages') && on('size-letter') && on('turn-portrait') && !!ps('rule') && !!ps('margin') && !!ps('margin-right') && !ps('top') && !ps('bottom'), 'as the notebook is: dotted, pages, letter, upright; a spacing and its two margins, and no top or bottom space for dots');
+      must(on('paper-dotted') && on('layout-pages') && on('size-letter') && on('turn-portrait') && !!ps('rule') && !!ps('left') && !!ps('right') && !!ps('top') && !!ps('bottom') && on('mline-off'), 'as the notebook is: dotted, pages, letter, upright; a spacing, its margins and the room at its head and foot, no margin line');
     }
     tap(ps('paper-ruled')!);
     await poll(async () => w().paper === 'ruled' && q(PAPER, b)?.getAttribute('data-paper') === 'ruled' && (!native || (await surfaceNow(b))?.paper.kind === 'ruled'), 'ruled: the pages behind it are ruled at once', 25000);
-    await poll(() => ps('margin') && ps('top') && ps('bottom') && ps('stop-college'), 'and it has a top space and a bottom space, and narrow, college, wide', 5000);
+    await poll(() => ps('left') && ps('top') && ps('bottom') && ps('stop-college'), 'and it has a top space and a bottom space, and narrow, college, wide', 5000);
     must(on('stop-wide') && panel.textContent!.includes('8.5 mm'), 'wide as a new notebook is: 8.5 mm');
     await shot('more-setup');
     tap(ps('stop-narrow')!);
@@ -17215,13 +17249,13 @@ async function writtenMore(log: (s: string) => void, root: string): Promise<void
     await poll(() => w().rule === 30, 'the slider: 30 points between rules, written when it rests', 8000);
     tap(ps('stop-college')!);
     await poll(() => w().rule === 20.25, 'college', 25000);
-    tap(ps('margin')!);
-    await poll(async () => w().margin === 90 && (native ? (await surfaceNow(b))?.paper.margin === 90 : !!q('.pdf-page svg.paper .paper-margin', b)) && !!ps('margin-at'), 'left margin: a margin rule 90 points in, and how far from the edge it stands', 25000);
+    tap(ps('mline-left')!);
+    await poll(async () => w().marginLine === 'left' && (w().left ?? 0) > 0 && (native ? (await surfaceNow(b))?.paper.lines.length === 1 : !!q('.pdf-page svg.paper .paper-margin', b)) && !!ps('mcolor-none'), 'margin line, left: a line down the left margin, and its colour to choose', 25000);
     slide(q<HTMLInputElement>('[data-ps="top"]', panel)!, 40 * MM);
     await poll(() => Math.abs((w().top ?? 0) - 113.39) < 0.01, 'top space 40 mm', 8000);
     {
       const text = await vaultText(NB);
-      must(/^paper-rule: 20\.25$/m.test(text) && /^paper-margin: 90$/m.test(text) && /^paper-top: 113\.39$/m.test(text) && !/^paper-size|^paper-turn|^pageless/m.test(text), 'the file says paper-rule, paper-margin and paper-top, and nothing it was not asked');
+      must(/^paper-rule: 20\.25$/m.test(text) && /^paper-margin-line: left$/m.test(text) && /^paper-top: 113\.39$/m.test(text) && !/^paper-size|^paper-turn|^pageless/m.test(text), 'the file says paper-rule, paper-margin-line and paper-top, and nothing it was not asked');
       must((await inkOf()) === ink0, 'and nothing written has moved or gone: only the paper');
     }
     await shot('more-setup-ruled');
@@ -17325,11 +17359,11 @@ async function writtenMore(log: (s: string) => void, root: string): Promise<void
     q<HTMLElement>('[data-ps="close"]', again)!.click();
     await createWritten('fleeting', 'after setup');
     const made = await poll(() => docsNow()['fleeting/after setup.md']?.written, 'a notebook made after', 10000);
-    await poll(() => { const m = docsNow()['fleeting/after setup.md']?.written; return m && m.size === 'a4' && m.turn === 'landscape' && m.rule === 20.25 && m.margin === 90 && m.paper === 'ruled' ? m : null; }, 'starts with the same page setup', 8000);
+    await poll(() => { const m = docsNow()['fleeting/after setup.md']?.written; return m && m.size === 'a4' && m.turn === 'landscape' && m.rule === 20.25 && m.marginLine === 'left' && m.paper === 'ruled' ? m : null; }, 'starts with the same page setup', 8000);
     void made;
     localStorage.removeItem(SETUP_KEY);
-    await setSetup(NB, { size: null, turn: null, rule: null, margin: null, top: null });
-    await poll(() => { const m = w(); return !m.size && !m.turn && m.rule === undefined && m.margin === undefined && m.top === undefined; }, 'and the notebook put back as a new one is: nothing of it left in the file', 8000);
+    await setSetup(NB, { size: null, turn: null, rule: null, marginLine: null, top: null });
+    await poll(() => { const m = w(); return !m.size && !m.turn && m.rule === undefined && m.marginLine === undefined && m.top === undefined; }, 'and the notebook put back as a new one is: its margins, and nothing else of it left in the file', 8000);
     must(!/^paper-(rule|margin|top|size|turn)|^pageless/m.test(await vaultText(NB)), 'not a line');
   }
 
@@ -17428,8 +17462,8 @@ async function writtenLong(log: (s: string) => void, part: string): Promise<void
   const tap = (el: Element) => { el.scrollIntoView({ block: 'nearest' }); ask('tap', ...mid(el)); };
   const iset = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
   const slide = (input: HTMLInputElement, v: number) => { iset.call(input, String(v)); input.dispatchEvent(new Event('input', { bubbles: true })); input.dispatchEvent(new Event('change', { bubbles: true })); };
-  const { createWritten, setSetup, inkFoot, SETUP_KEY } = await import('./written.js');
-  const { paperOf, runLength, RUN_ALLOW, MM } = await import('./paper.js');
+  const { createWritten, setSetup, setPaper, inkFoot, SETUP_KEY } = await import('./written.js');
+  const { paperOf, paperLines, runLength, RUN_ALLOW, RULED_INSET, GRID_INSET, MM } = await import('./paper.js');
   const tools = await import('./inkTools.js');
   const ink = await import('./ink.js');
   const pageTools = await import('./PageTools.js');
@@ -17485,7 +17519,8 @@ async function writtenLong(log: (s: string) => void, part: string): Promise<void
     const d = s.sheets[0]!.device;
     const k = d.w / spec().w;
     const p = spec();
-    log(`geo: ${JSON.stringify({ shot: name, dpr, sheet: [d.x, d.y, d.w, d.h], k, margins: [p.margin === null ? null : d.x + p.margin * k, p.marginRight === null ? null : d.x + (p.w - p.marginRight) * k], seam: s.sheets[1] ? s.sheets[1].device.y : null, foot: s.length ? d.y + s.length * k : null, pitch: p.rule * k, kind: p.kind, view: [s.device.x, s.device.y, s.device.w, s.device.h], ...more })}`);
+    const span = paperLines(p).rowSpan;
+    log(`geo: ${JSON.stringify({ shot: name, dpr, sheet: [d.x, d.y, d.w, d.h], k, lines: p.lines.map((x) => d.x + x * k), rules: [d.x + span[0] * k, d.x + span[1] * k], seam: s.sheets[1] ? s.sheets[1].device.y : null, foot: s.length ? d.y + s.length * k : null, pitch: p.rule * k, kind: p.kind, view: [s.device.x, s.device.y, s.device.w, s.device.h], ...more })}`);
   };
   await poll(async () => { const s = await state(); return s.tool?.kind === 'pen' && s.sheets.some((x) => x.id === sid(1)) ? s : null; }, 'the canvases hold the pen and the first sheet', 15000);
 
@@ -17499,22 +17534,36 @@ async function writtenLong(log: (s: string) => void, part: string): Promise<void
   const closeSetup = async () => { q<HTMLElement>('.page-setup [data-ps="close"]', b)?.click(); await poll(() => !q('.page-setup', b), 'closed', 5000); await sleep(300); };
 
   if (part !== 'grow') {
-    // ── the margins: left and right, each from its own edge, on any paper ──
+    // ── the margins: how far in from each side the ruling begins and ends; a line down a margin, and its colour ──
+    const near = (a: number | undefined | null, b: number) => Math.abs((a ?? -999) - b) < 0.011;
+    {
+      // a new notebook: its rules begin and end 12 mm in from the sides, with no line
+      const text = await vaultText(NB);
+      const p = (await f()).paper;
+      must(near(w().left, RULED_INSET) && near(w().right, RULED_INSET) && w().marginLine === undefined && /^paper-left: 34\.02$/m.test(text) && /^paper-right: 34\.02$/m.test(text) && !/^paper-margin/m.test(text), 'a new notebook\'s file says its margins, 12 mm each side, and no margin line');
+      must(near(p.left, RULED_INSET) && near(p.right, RULED_INSET) && p.lines.length === 0, 'the surface is told them: the rules lie between');
+      await bringPage(b, 1, 40);
+      await geo('long-margins-new');
+      await shot('long-margins-new');
+    }
     let panel = await openSetup();
     const ps = (name: string) => q<HTMLElement>(`[data-ps="${name}"]`, panel);
     const isOn = (name: string) => ps(name)?.getAttribute('aria-pressed') === 'true' || ps(name)?.getAttribute('aria-checked') === 'true';
-    must(ps('margin')?.textContent === 'left margin' && ps('margin-right')?.textContent === 'right margin' && !isOn('margin') && !isOn('margin-right') && !ps('margin-at') && !ps('margin-right-at') && !/[A-Z]/.test(panel.textContent ?? ''), 'left margin and right margin, neither on; its words lowercase');
+    must(!!ps('left') && !!ps('right') && near(Number((ps('left') as HTMLInputElement).value), RULED_INSET) && panel.textContent!.includes('12.0 mm') && isOn('mline-off') && !ps('mcolor-none') && !/[A-Z]/.test(panel.textContent ?? ''), 'left margin and right margin by their sliders, 12.0 mm; margin line off, and no colour for it; its words lowercase');
     must(!!ps('top') && !!ps('bottom'), 'a ruled page has its top space and its bottom space');
-    tap(ps('margin')!);
-    await poll(async () => w().margin === 90 && (await f()).paper.margin === 90 && !!ps('margin-at'), 'left margin: a rule 90 points in from the left, and how far from the edge', 25000);
-    tap(ps('margin-right')!);
-    await poll(async () => w().marginRight === 90 && (await f()).paper.marginRight === 90 && !!ps('margin-right-at'), 'right margin: a rule 90 points in from the right', 25000);
-    slide(q<HTMLInputElement>('[data-ps="margin-at"]', panel)!, 60);
-    slide(q<HTMLInputElement>('[data-ps="margin-right-at"]', panel)!, 72);
-    await poll(async () => w().margin === 60 && w().marginRight === 72 && (await f()).paper.margin === 60 && (await f()).paper.marginRight === 72, 'each by its own slider: 60 points from the left, 72 from the right', 10000);
+    slide(q<HTMLInputElement>('[data-ps="left"]', panel)!, 60);
+    slide(q<HTMLInputElement>('[data-ps="right"]', panel)!, 72);
+    await poll(async () => w().left === 60 && w().right === 72 && (await f()).paper.left === 60 && (await f()).paper.right === 72, 'each by its own slider: the rules begin 60 points from the left and end 72 from the right', 10000);
+    tap(ps('mline-left')!);
+    await poll(async () => w().marginLine === 'left' && (await f()).paper.lines.join(' ') === '60' && !!ps('mcolor-none'), 'margin line, left: a line down the left margin, and its colour to choose', 25000);
+    tap(ps('mline-both')!);
+    await poll(async () => w().marginLine === 'both' && (await f()).paper.lines.join(' ') === '60 540', 'both: one down the right margin too', 25000);
+    must(isOn('mcolor-none') && ps('mcolor-said')?.textContent === 'red' && (await f()).colours[3] === '#e7b9b9', 'the line is the pale red it has when no colour is chosen');
+    tap(ps('mcolor-blue')!);
+    await poll(async () => w().marginColor === '#b5d2f2' && (await f()).colours[3] === '#b5d2f2', 'margin colour, blue: the lines are blue', 25000);
     {
       const text = await vaultText(NB);
-      must(/^paper-margin: 60$/m.test(text) && /^paper-margin-right: 72$/m.test(text), 'the file says paper-margin and paper-margin-right');
+      must(/^paper-left: 60$/m.test(text) && /^paper-right: 72$/m.test(text) && /^paper-margin-line: both$/m.test(text) && /^paper-margin-color: #b5d2f2$/m.test(text) && !/^paper-margin(-right)?: /m.test(text), 'the file says paper-left, paper-right, paper-margin-line and paper-margin-color');
     }
     await shot('long-setup-margins');
     slide(q<HTMLInputElement>('[data-ps="bottom"]', panel)!, 40 * MM);
@@ -17523,21 +17572,65 @@ async function writtenLong(log: (s: string) => void, part: string): Promise<void
     tap(ps('keep')!);
     await poll(() => !!localStorage.getItem(SETUP_KEY) && ps('keep')?.textContent === 'new notebooks start like this', 'use for new notebooks', 25000);
     await createWritten('fleeting', 'after margins');
-    await poll(() => { const m = docsNow()['fleeting/after margins.md']?.written; return m && m.margin === 60 && m.marginRight === 72 && Math.abs((m.bottom ?? 0) - 113.39) < 0.01 ? m : null; }, 'a notebook made after starts with both margins and the bottom space', 10000);
+    await poll(() => { const m = docsNow()['fleeting/after margins.md']?.written; return m && m.left === 60 && m.right === 72 && m.marginLine === 'both' && m.marginColor === '#b5d2f2' && Math.abs((m.bottom ?? 0) - 113.39) < 0.01 ? m : null; }, 'a notebook made after starts with the margins, the lines, their colour and the bottom space', 10000);
     localStorage.removeItem(SETUP_KEY);
+    await setSetup(NB, { bottom: null });
     await closeSetup();
     await bringPage(b, 1, 40);
     await geo('long-margins-ruled');
     await shot('long-margins-ruled');
     for (const kind of ['grid', 'dotted', 'blank'] as const) {
-      await setSetup(NB, { paper: kind });
-      await poll(async () => { const p = (await f()).paper; return w().paper === kind && p.kind === kind && p.margin === 60 && p.marginRight === 72; }, `${kind} paper keeps both margin rules`, 10000);
-      must(/^paper-margin: 60$/m.test(await vaultText(NB)) && /^paper-margin-right: 72$/m.test(await vaultText(NB)), 'and the file both lines');
+      // another paper: the margins set stay, the room at the head and the foot is that paper's own (a grid's and dots', 8 mm)
+      await setPaper(NB, kind);
+      await poll(async () => { const p = (await f()).paper; return w().paper === kind && p.kind === kind && p.left === 60 && p.right === 72 && p.lines.join(' ') === '60 540' && (kind === 'blank' || (near(p.top, GRID_INSET) && near(p.bottom, GRID_INSET))); }, `${kind} paper: the same margins and lines${kind === 'blank' ? '' : ', 8 mm clear at its head and foot'}`, 10000);
       await geo(`long-margins-${kind}`);
       await shot(`long-margins-${kind}`);
+      if (kind !== 'blank') {
+        await setSetup(NB, { marginLine: null });
+        await poll(async () => (await f()).paper.lines.length === 0, 'with no line', 10000);
+        await geo(`long-margins-${kind}-plain`);
+        await shot(`long-margins-${kind}-plain`);
+        if (kind === 'grid') { useApp.getState().setTheme('dark'); await geo('long-margins-grid-plain-dark'); await shot('long-margins-grid-plain-dark'); useApp.getState().setTheme('light'); }
+        await setSetup(NB, { marginLine: 'both' });
+        await poll(async () => (await f()).paper.lines.length === 2, 'and with it again', 10000);
+      }
     }
     panel = await openSetup();
-    must(isOn('margin') && isOn('margin-right') && !ps('rule') && !ps('top') && !ps('bottom'), 'blank paper: the two margins, and no spacing, top or bottom to set');
+    must(!!ps('left') && !!ps('right') && isOn('mline-both') && !ps('rule') && !ps('top') && !ps('bottom'), 'blank paper: its margins and their lines, and no spacing, top or bottom to set');
+    await closeSetup();
+    {
+      // a file from before 88: `paper-margin` alone is a line with the rules run on under it, edge to edge, as it was; set a margin and it is one
+      await createWritten('fleeting', 'old margin');
+      const OLD = 'fleeting/old margin.md';
+      await poll(() => docsNow()[OLD]?.written?.id, 'a notebook as 85 left one', 10000);
+      await setSetup(OLD, { left: null, right: null, margin: 90 });
+      await poll(async () => { const t = await vaultText(OLD); return /^paper-margin: 90$/m.test(t) && !/^paper-(left|right|margin-line)/m.test(t); }, 'its file says paper-margin: 90 and nothing of 88\'s', 8000);
+      const mine = b;
+      openNode(OLD);
+      b = await poll(() => { const x = bookOf(OLD); return x && x.getClientRects().length && q(PAPER, x) ? x : null; }, 'opened', 15000);
+      await poll(async () => { const p = (await f())?.paper; return p && p.left === 0 && p.right === 0 && p.lines.join(' ') === '90' ? p : null; }, 'it reads as it did: no margins, a line 90 points in', 15000);
+      {
+        // (its own notebook's measures, for the capture's line)
+        await surfaceSettled(b);
+        const s = await f();
+        const d = s.sheets[0]!.device;
+        const k = d.w / 612;
+        log(`geo: ${JSON.stringify({ shot: 'long-margins-old', dpr, sheet: [d.x, d.y, d.w, d.h], k, lines: [d.x + 90 * k], rules: [d.x, d.x + d.w], seam: null, foot: null, pitch: 24 * k, kind: 'ruled', view: [s.device.x, s.device.y, s.device.w, s.device.h] })}`);
+        await shot('long-margins-old');
+      }
+      q<HTMLElement>('.meta [data-tool="more"]', b)!.click();
+      (await poll(() => q<HTMLElement>('.pop-menu .ci[data-act="more-setup"]'), 'its page setup', 5000)).click();
+      const old = await poll(() => q<HTMLElement>('.page-setup', b), 'the panel', 5000);
+      await sleep(400);
+      must(Number(q<HTMLInputElement>('[data-ps="left"]', old)!.value) === 90 && q('[data-ps="mline-left"]', old)?.getAttribute('aria-pressed') === 'true', 'the panel shows it as a left margin of 90 points with its line');
+      slide(q<HTMLInputElement>('[data-ps="left"]', old)!, 80);
+      await poll(async () => { const t = await vaultText(OLD); const p = (await f()).paper; return /^paper-left: 80$/m.test(t) && /^paper-margin-line: left$/m.test(t) && !/^paper-margin: /m.test(t) && p.left === 80 && p.lines.join(' ') === '80'; }, 'the margin set: the file says paper-left and paper-margin-line in its place, and the rules begin at the line', 10000);
+      q<HTMLElement>('[data-ps="close"]', old)!.click();
+      await poll(() => !q('.page-setup', b), 'closed', 5000);
+      b = mine;
+      await again('the notebook again');
+    }
+    panel = await openSetup();
     tap(ps('paper-ruled')!);
     await poll(async () => w().paper === 'ruled' && (await f()).paper.kind === 'ruled' && !!ps('bottom'), 'ruled again', 25000);
     // ── pageless ──
@@ -17546,7 +17639,7 @@ async function writtenLong(log: (s: string) => void, part: string): Promise<void
     must(!ps('bottom') && !!ps('top') && !ps('size-a4'), 'a pageless notebook has no bottom space to set, nor a size');
     await closeSetup();
   } else {
-    await setSetup(NB, { pageless: true, margin: 60, marginRight: 72 });
+    await setSetup(NB, { pageless: true, left: 60, right: 72, marginLine: 'both' });
     await poll(async () => w().pageless === true && (await f()).paper.run === true, 'pageless', 25000);
   }
 
@@ -17751,8 +17844,8 @@ async function writtenLongMac(log: (s: string) => void, vault: Vault): Promise<v
   };
   const iset = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
   const slide = (input: HTMLInputElement, v: number) => { iset.call(input, String(v)); input.dispatchEvent(new Event('input', { bubbles: true })); input.dispatchEvent(new Event('change', { bubbles: true })); };
-  const { createWritten, addSheet, setSetup, inkFoot } = await import('./written.js');
-  const { paperOf, paperLines, runLength, RUN_ALLOW, MM } = await import('./paper.js');
+  const { createWritten, addSheet, setSetup, setPaper, inkFoot } = await import('./written.js');
+  const { paperOf, paperLines, runLength, RUN_ALLOW, RULED_INSET, GRID_INSET, MM } = await import('./paper.js');
   const ink = await import('./ink.js');
   const fs = vault.fs as StoreFs;
   const docsNow = () => useApp.getState().docs;
@@ -17768,11 +17861,17 @@ async function writtenLongMac(log: (s: string) => void, vault: Vault): Promise<v
   const spec = () => paperOf(w(), 0);
   const dpr = window.devicePixelRatio || 1;
   const page = (i = 0) => qa<HTMLElement>('.pdf-page', b)[i]!;
-  /** The margin rules of the first page, as they are drawn: each `x` in the sheet's points, and in the screen's pixels from the page's left edge. */
+  /** The margin lines of the first page, as they are drawn: each `x` in the sheet's points, and in the screen's pixels from the page's left edge. */
   const margins = () => {
     const d = q('.pdf-page svg.paper .paper-margin', b)?.getAttribute('d') ?? '';
     const r = page().getBoundingClientRect();
     return d.split('M').slice(1).map((s) => Number(s.split(' ')[0])).map((x) => ({ x, px: (x * r.width * dpr) / spec().w }));
+  };
+  /** Where the first page's rules (a grid's rows) begin and end across it, as they are drawn: in the sheet's points. */
+  const ruleSpan = (): [number, number] | null => {
+    const d = q('.pdf-page svg.paper .paper-rule:not(.paper-margin)', b)?.getAttribute('d') ?? '';
+    const m = /^M([\d.]+) [\d.]+H([\d.]+)/.exec(d);
+    return m ? [Number(m[1]), Number(m[2])] : null;
   };
   /** A made-up drawing kept as a sheet's strokes, through what a canvas keeps through: `lines` lines, 42 points apart from 60 down. */
   const write = async (sheet: number, lines: number, seed: number) => {
@@ -17782,29 +17881,46 @@ async function writtenLongMac(log: (s: string) => void, vault: Vault): Promise<v
   };
 
   // ── the margins ──
+  const near = (a: number | undefined | null, to: number) => Math.abs((a ?? -999) - to) < 0.011;
+  {
+    const t = await text();
+    const span = ruleSpan();
+    must(near(w().left, RULED_INSET) && near(w().right, RULED_INSET) && /^paper-left: 34\.02$/m.test(t) && /^paper-right: 34\.02$/m.test(t) && !/^paper-margin/m.test(t), 'a new notebook\'s file says its margins, 12 mm each side, and no margin line');
+    must(!!span && near(span[0], RULED_INSET) && near(span[1], spec().w - RULED_INSET) && margins().length === 0, `its rules begin and end 12 mm in from the sides, with no line down either (${span?.join(' to ')})`);
+    await shot('long-mac-margins-new');
+  }
   q<HTMLElement>('.meta [data-tool="more"]', b)!.click();
   (await poll(() => q<HTMLElement>('.pop-menu .ci[data-act="more-setup"]'), 'more has page setup', 5000)).click();
-  let panel = await poll(() => q<HTMLElement>('.page-setup', b), 'page setup', 5000);
+  const panel = await poll(() => q<HTMLElement>('.page-setup', b), 'page setup', 5000);
   const ps = (name: string) => q<HTMLElement>(`[data-ps="${name}"]`, panel);
   const isOn = (name: string) => ps(name)?.getAttribute('aria-pressed') === 'true' || ps(name)?.getAttribute('aria-checked') === 'true';
-  must(ps('margin')?.textContent === 'left margin' && ps('margin-right')?.textContent === 'right margin' && !isOn('margin') && !isOn('margin-right') && !!ps('top') && !!ps('bottom') && !/[A-Z]/.test(panel.textContent ?? ''), 'left margin and right margin, neither on; top space and bottom space; its words lowercase');
-  ps('margin')!.click();
-  await poll(() => w().margin === 90 && margins().length === 1 && !!ps('margin-at'), 'left margin: one margin rule, 90 points in', 8000);
-  ps('margin-right')!.click();
-  await poll(() => w().marginRight === 90 && margins().length === 2 && !!ps('margin-right-at'), 'right margin: a second, 90 points in from the right', 8000);
-  slide(q<HTMLInputElement>('[data-ps="margin-at"]', panel)!, 60);
-  slide(q<HTMLInputElement>('[data-ps="margin-right-at"]', panel)!, 72);
-  await poll(() => w().margin === 60 && w().marginRight === 72 && margins().length === 2 && Math.abs(margins()[0]!.x - 60) < 0.5 && Math.abs(margins()[1]!.x - (spec().w - 72)) < 0.5, 'each by its slider: 60 points from the left edge, 72 from the right', 8000);
+  must(!!ps('left') && !!ps('right') && panel.textContent!.includes('12.0 mm') && isOn('mline-off') && !ps('mcolor-none') && !!ps('top') && !!ps('bottom') && !/[A-Z]/.test(panel.textContent ?? ''), 'left margin and right margin by their sliders, 12.0 mm; margin line off; top space and bottom space; its words lowercase');
+  slide(q<HTMLInputElement>('[data-ps="left"]', panel)!, 60);
+  slide(q<HTMLInputElement>('[data-ps="right"]', panel)!, 72);
+  await poll(() => { const span = ruleSpan(); return w().left === 60 && w().right === 72 && span && span[0] === 60 && span[1] === spec().w - 72; }, 'each by its slider: the rules begin 60 points from the left edge and end 72 from the right', 8000);
+  {
+    const r = page().getBoundingClientRect();
+    const k = (r.width * dpr) / spec().w;
+    const line = q<SVGPathElement>('.pdf-page svg.paper .paper-rule:not(.paper-margin)', b)!.getBoundingClientRect();
+    must(Math.abs((line.left - r.left) * dpr - 60 * k) <= 1 && Math.abs((r.right - line.right) * dpr - 72 * k) <= 1, `in the screen's pixels: the rules begin ${((line.left - r.left) * dpr).toFixed(1)} from the left edge (${(60 * k).toFixed(1)}) and end ${((r.right - line.right) * dpr).toFixed(1)} from the right (${(72 * k).toFixed(1)})`);
+  }
+  ps('mline-left')!.click();
+  await poll(() => w().marginLine === 'left' && margins().length === 1 && margins()[0]!.x > 59.5 && margins()[0]!.x < 60.5 && !!ps('mcolor-none'), 'margin line, left: a line down the left margin, and its colour to choose', 8000);
+  ps('mline-both')!.click();
+  await poll(() => w().marginLine === 'both' && margins().length === 2 && Math.abs(margins()[1]!.x - (spec().w - 72)) < 0.5, 'both: one down the right margin too', 8000);
   {
     const m = margins();
     const r = page().getBoundingClientRect();
     const k = (r.width * dpr) / spec().w;
-    // (each rule lies on whole pixels of the screen: within half a pixel of where its distance says)
+    // (each line lies on whole pixels of the screen: within half a pixel of where its distance says)
     must(Math.abs(m[0]!.px - 60 * k) <= 0.51 && Math.abs(r.width * dpr - m[1]!.px - 72 * k) <= 0.51, `in the screen's pixels: the left ${m[0]!.px.toFixed(1)} from the left edge (${(60 * k).toFixed(1)}), the right ${(r.width * dpr - m[1]!.px).toFixed(1)} from the right (${(72 * k).toFixed(1)})`);
+    const stroke = () => q('.pdf-page svg.paper .paper-margin', b)?.getAttribute('stroke');
+    must(isOn('mcolor-none') && ps('mcolor-said')?.textContent === 'red' && stroke() === '#e7b9b9', 'the lines the pale red they have when no colour is chosen');
+    ps('mcolor-blue')!.click();
+    await poll(() => w().marginColor === '#b5d2f2' && stroke() === '#b5d2f2', 'margin colour, blue: the lines are blue', 8000);
     const t = await text();
-    must(/^paper-margin: 60$/m.test(t) && /^paper-margin-right: 72$/m.test(t), 'the file says paper-margin and paper-margin-right');
-    const rows = paperLines(spec()).rows;
-    must((q('.pdf-page svg.paper .paper-rule:not(.paper-margin)', b)?.getAttribute('d') ?? '').startsWith('M0 ') && rows.length === 30, 'the rules run the whole width of the sheet, under the margin rules');
+    must(/^paper-left: 60$/m.test(t) && /^paper-right: 72$/m.test(t) && /^paper-margin-line: both$/m.test(t) && /^paper-margin-color: #b5d2f2$/m.test(t), 'the file says paper-left, paper-right, paper-margin-line and paper-margin-color');
+    must(paperLines(spec()).rows.length === 30, 'and its thirty rules are where they were down the sheet');
   }
   await shot('long-mac-setup');
   slide(q<HTMLInputElement>('[data-ps="bottom"]', panel)!, 40 * MM);
@@ -17813,21 +17929,38 @@ async function writtenLongMac(log: (s: string) => void, vault: Vault): Promise<v
     const rows = paperLines(spec()).rows;
     must(rows[rows.length - 1]! <= spec().h - 113.39 + 0.01 && rows[rows.length - 1]! > spec().h - 113.39 - 24, `the last rule ${(spec().h - rows[rows.length - 1]!).toFixed(1)} points from the foot`);
   }
+  await setSetup(NB, { bottom: null });
   q<HTMLElement>('[data-ps="close"]', panel)!.click();
   await poll(() => !q('.page-setup', b), 'closed', 5000);
   await shot('long-mac-margins-ruled');
   for (const kind of ['grid', 'dotted', 'blank'] as const) {
-    await setSetup(NB, { paper: kind });
-    await poll(() => w().paper === kind && q('.pdf-page svg.paper', b)?.getAttribute('data-paper') === kind && margins().length === 2, `${kind} paper keeps both margin rules`, 8000);
+    await setPaper(NB, kind);
+    await poll(() => w().paper === kind && q('.pdf-page svg.paper', b)?.getAttribute('data-paper') === kind && margins().length === 2 && w().left === 60 && (kind === 'blank' || near(w().top, GRID_INSET)), `${kind} paper: the same margins and lines${kind === 'blank' ? '' : ', 8 mm clear at its head and foot'}`, 8000);
+    if (kind === 'grid') {
+      const l = paperLines(spec());
+      const span = ruleSpan();
+      must(l.cols[0]! >= 60 && l.cols[l.cols.length - 1]! <= spec().w - 72 && l.rows[0]! >= GRID_INSET - 0.01 && l.rows[l.rows.length - 1]! <= spec().h - GRID_INSET + 0.01 && !!span && span[0] === l.cols[0] && span[1] === l.cols[l.cols.length - 1], `the grid lies inside its margins, closed at its outermost lines (${l.cols[0]} to ${l.cols[l.cols.length - 1]} across, ${l.rows[0]} to ${l.rows[l.rows.length - 1]} down)`);
+    }
     await shot(`long-mac-margins-${kind}`);
+    if (kind !== 'blank') {
+      await setSetup(NB, { marginLine: null });
+      await poll(() => margins().length === 0, 'with no line', 8000);
+      await shot(`long-mac-margins-${kind}-plain`);
+      if (kind === 'grid') { useApp.getState().setTheme('dark'); await shot('long-mac-margins-grid-plain-dark'); useApp.getState().setTheme('light'); }
+      await setSetup(NB, { marginLine: 'both' });
+      await poll(() => margins().length === 2, 'and with it again', 8000);
+    }
   }
-  useApp.getState().setTheme('dark');
-  await setSetup(NB, { paper: 'grid' });
-  await poll(() => w().paper === 'grid', 'a grid, dark', 8000);
-  await shot('long-mac-margins-grid-dark');
-  useApp.getState().setTheme('light');
-  await setSetup(NB, { paper: 'ruled', bottom: null });
-  await poll(async () => w().paper === 'ruled' && w().bottom === undefined && !/^paper-bottom/m.test(await text()), 'ruled again, the bottom space a rule\'s', 8000);
+  await setPaper(NB, 'ruled');
+  await poll(async () => w().paper === 'ruled' && w().bottom === undefined && !/^paper-(top|bottom)/m.test(await text()), 'ruled again, its first rule an inch down and a rule\'s room at its foot', 8000);
+  {
+    // a file from before 88: `paper-margin` alone is a line with the rules run on under it, edge to edge
+    await setSetup(NB, { left: null, right: null, marginLine: null, marginColor: null, margin: 90 });
+    await poll(() => { const span = ruleSpan(); return w().margin === 90 && span && span[0] === 0 && span[1] === spec().w && margins().length === 1 && Math.abs(margins()[0]!.x - 90) < 0.5; }, 'as 85 left a file (paper-margin: 90): the rules edge to edge, a line 90 points in', 8000);
+    await shot('long-mac-margins-old');
+    await setSetup(NB, { margin: null, left: 60, right: 72, marginLine: 'both' });
+    await poll(() => w().left === 60 && margins().length === 2, 'and its margins again', 8000);
+  }
 
   // ── pageless: one sheet, as long as what is written ──
   await addSheet(NB);
@@ -17850,7 +17983,7 @@ async function writtenLongMac(log: (s: string) => void, vault: Vault): Promise<v
     must(want === H && foot > 500 && foot < H - RUN_ALLOW, 'what is written is on the first sheet: the long sheet is one sheet long');
     const sc = q<HTMLElement>('.book-pages', b)!;
     must(sc.scrollHeight < col().getBoundingClientRect().height + 400, `and that is all there is to scroll (${sc.scrollHeight} px)`);
-    must(getComputedStyle(col()).overflowY === 'clip', 'what lies past its foot is cut away');
+    must(qa<HTMLElement>('.pdf-page', b).slice(1).every((x) => getComputedStyle(x).display === 'none') && getComputedStyle(q<HTMLElement>('.pdf-ink', b)!).overflow === 'hidden', 'the sheets past its foot are not shown, and what is written past it is cut away');
     must(!q('.meta [data-tool="pages"]', b) && !/^p\. /.test(q('.meta .pt-page', b)?.textContent ?? '') && !q('button.add-page', b), 'no page count, no overview, no add page');
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'g', bubbles: true, cancelable: true }));
     await sleep(300);
@@ -17862,7 +17995,7 @@ async function writtenLongMac(log: (s: string) => void, vault: Vault): Promise<v
   {
     const foot = await inkFoot(ID, w().sheets, H);
     const want = runLength(spec(), foot);
-    await poll(() => Math.abs(drawn() - want) < 1.5 / k(), `more written on the second sheet: ${want} points long now, the lowest ink at ${foot.toFixed(1)}`, 10000);
+    await poll(() => Math.abs(drawn() - want) < 1.5 / k(), `more written on the second sheet: ${want} points long now, the lowest ink at ${foot.toFixed(1)}`, 10000).catch(async (e: unknown) => { throw new Error(`${e instanceof Error ? e.message : String(e)}; drawn ${drawn().toFixed(1)}, sheets ${w().sheets.join(' ')}, run ${col().dataset.run} ${col().dataset.runLen}, inked ${(await fs.inkedPages(ID)).join(' ')}, foot ${await inkFoot(ID, w().sheets, H)}, style ${col().style.height}, rect ${col().getBoundingClientRect().height}, pages ${qa<HTMLElement>('.pdf-page', b).map((x) => `${x.style.top}/${x.style.height}`).join(' ')}, k ${k()}`); });
     must(want > H && want < 2 * H && Math.abs((want - 72) / step - Math.round((want - 72) / step)) < 1e-6 && want - foot >= RUN_ALLOW && want - foot < RUN_ALLOW + step, 'a whole number of rules, and under a rule more than the bare paper it keeps');
     // where the first sheet ends: the second's first rule one spacing under the first's last
     const rows = (i: number) => (qa('.pdf-page svg.paper .paper-rule:not(.paper-margin)', b)[i]?.getAttribute('d') ?? '').split('M').slice(1).map((x) => Number(x.split(' ')[1]!.split('H')[0]));
@@ -18682,7 +18815,7 @@ export async function smokeSharp(path: string | null): Promise<void> {
           const k = d.w / 612;
           const w = useApp.getState().docs[NB]!.written!;
           const lines = paperLines(paperOf(w, 0));
-          log(`rules: ${JSON.stringify({ name: 'ruled', dpr, page: [d.x, d.y, d.w, d.h], rows: lines.rows.map((y) => d.y + y * k), margin: lines.margin === null ? null : d.x + lines.margin * k })}`);
+          log(`rules: ${JSON.stringify({ name: 'ruled', dpr, page: [d.x, d.y, d.w, d.h], rows: lines.rows.map((y) => d.y + y * k), span: lines.rowSpan.map((x) => d.x + x * k), margin: lines.margins.length ? d.x + lines.margins[0]! * k : null })}`);
           await shot('sharp-ruled');
         }
       } else {

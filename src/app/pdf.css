@@ -651,7 +651,9 @@ html[data-mobile="1"] .book .pdf-view[data-tools="1"] ~ .page-setup, html[data-m
 .book .pdf-view[data-layout="pageless"] .pdf-page { box-shadow: none; animation: none; }
 .book .pdf-view[data-layout="pageless"] .pdf-pages { box-shadow: 0 0 0 1px color-mix(in oklab, var(--fg) 14%, transparent), 0 1px 4px color-mix(in oklab, var(--fg) 12%, transparent); }
 /* (its one long sheet ends where what is written on it does, and a little more: the sheets past that are not shown; 88) */
-.book .pdf-view[data-layout="pageless"] .pdf-pages[data-run] { overflow-y: clip; }
+.book .pdf-view[data-layout="pageless"] .pdf-page[data-cut] { overflow: hidden; }
+.book .pdf-view[data-layout="pageless"] .pdf-page[data-cut] > .paper { height: var(--full-h, 100%); }
+.book .pdf-view[data-layout="pageless"] .pdf-pages[data-run] > .pdf-ink { overflow: hidden; }
 .paper .paper-margin { stroke-width: 1; }
 
 /* a page drawn small: its ruling fainter, so the page reads as paper and what is written on it shows */

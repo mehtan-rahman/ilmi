@@ -8,7 +8,7 @@
 // The surface itself is an iPad's, and is checked there.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { PaperSpec } from '../paper.js';
+import { paperOf, type PaperSpec } from '../paper.js';
 
 /** What was asked of the native side. */
 const calls: { cmd: string; args: Record<string, unknown> }[] = [];
@@ -32,7 +32,7 @@ const tick = () => new Promise((r) => setTimeout(r, 0));
 const LOOK = { paper: '#ffffff', rule: '#c3cfdd', margin: '#e3b3b3', dot: '#a9b6c6', dark: false, desk: '#e9e9e9', accent: '#b58a2a', fg: '#333333', line: '#cccccc', tag: '#ffffff' } as unknown as Spec['look'];
 const specOf = (id: string, more: Partial<Spec> = {}): Spec => ({
   id, at: { x: 0, y: 60, w: 700, h: 840 }, key: 'k', sheets: [1, 2, 3],
-  paper: { kind: 'ruled', w: 612, h: 792, rule: 24, margin: null, marginRight: null, top: 72, bottom: null, run: false },
+  paper: { kind: 'ruled', w: 612, h: 792, rule: 24, left: 0, right: 0, top: 72, bottom: 24, lines: [], run: false },
   look: LOOK, pad: { top: 18, side: 30, bottom: 80 }, zoom: 1, open: null, marks: [], holes: [], add: true, tagRoom: 210, ...more,
 });
 const sent = () => calls.filter((c) => c.cmd === 'ink_surface').map((c) => c.args.surface);
@@ -133,11 +133,19 @@ describe('a surface asked to go somewhere', () => {
 });
 
 describe('the paper a surface is told', () => {
-  it('is the sheet\'s kind, size and ruling, its margins and the room at its foot, and whether the sheets run on; not where this sheet begins, nor its colours', () => {
-    const p: PaperSpec = { kind: 'ruled', w: 595, h: 842, rule: 18, margin: 90, marginRight: 72, top: 60, bottom: null, run: true, at: 1684, color: '#fbf6e9', line: '#bcdcc0' };
-    expect(paperArgs(p)).toEqual({ kind: 'ruled', w: 595, h: 842, rule: 18, margin: 90, marginRight: 72, top: 60, bottom: null, run: true });
-    expect(Object.keys(paperArgs(p))).toEqual(['kind', 'w', 'h', 'rule', 'margin', 'marginRight', 'top', 'bottom', 'run']);
-    expect(paperArgs({ ...p, kind: 'dotted', margin: null, marginRight: null, bottom: 30, run: false })).toEqual({ kind: 'dotted', w: 595, h: 842, rule: 18, margin: null, marginRight: null, top: 60, bottom: 30, run: false });
+  it('is the sheet\'s kind, size and ruling, its four margins, where a line is drawn down it, and whether the sheets run on; not where this sheet begins, nor its colours', () => {
+    const p: PaperSpec = { kind: 'ruled', w: 595, h: 842, rule: 18, left: 34.02, right: 56.69, top: 60, bottom: 18, lines: [34.02, 538.31], run: true, at: 1684, color: '#fbf6e9', line: '#bcdcc0', marginColor: '#b5d2f2' };
+    expect(paperArgs(p)).toEqual({ kind: 'ruled', w: 595, h: 842, rule: 18, left: 34.02, right: 56.69, top: 60, bottom: 18, lines: [34.02, 538.31], run: true });
+    expect(Object.keys(paperArgs(p))).toEqual(['kind', 'w', 'h', 'rule', 'left', 'right', 'top', 'bottom', 'lines', 'run']);
+    expect(paperArgs({ ...p, kind: 'dotted', left: 0, right: 0, bottom: 30, lines: [], run: false })).toEqual({ kind: 'dotted', w: 595, h: 842, rule: 18, left: 0, right: 0, top: 60, bottom: 30, lines: [], run: false });
+  });
+
+  it('is told as the notebook\'s page setup resolves: a new notebook\'s margins with no line, a line where one is asked for, 85\'s margin rule a line with no margin', () => {
+    const W = { id: 'a'.repeat(32), sheets: [1] };
+    expect(paperArgs(paperOf({ ...W, paper: 'ruled', left: 34.02, right: 34.02 }))).toEqual({ kind: 'ruled', w: 612, h: 792, rule: 24, left: 34.02, right: 34.02, top: 72, bottom: 24, lines: [], run: false });
+    expect(paperArgs(paperOf({ ...W, paper: 'grid', left: 22.68, right: 22.68, top: 22.68, bottom: 22.68, marginLine: 'both', marginColor: '#b5d2f2', pageless: true }, 2))).toEqual({ kind: 'grid', w: 612, h: 792, rule: 20, left: 22.68, right: 22.68, top: 22.68, bottom: 22.68, lines: [22.68, 589.32], run: true });
+    expect(paperArgs(paperOf({ ...W, paper: 'ruled', margin: 90, marginRight: 72 }))).toEqual({ kind: 'ruled', w: 612, h: 792, rule: 24, left: 0, right: 0, top: 72, bottom: 24, lines: [90, 540], run: false });
+    expect(paperArgs(paperOf({ ...W, paper: 'blank' }))).toEqual({ kind: 'blank', w: 612, h: 792, rule: 20, left: 0, right: 0, top: 0, bottom: 0, lines: [], run: false });
   });
 });
 

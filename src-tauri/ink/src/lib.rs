@@ -167,13 +167,15 @@ pub struct PdfPage {
     /// What is written on it: a `PKDrawing` a stroke.
     pub strokes: Vec<Vec<u8>>,
     /// The paper's measures, in points, where its page setup says them: how far apart its rules, lines or dots are,
-    /// where its left margin rule stands and its right one (from the right edge), how far down its first rule is
-    /// and how much room its last leaves (a rule's, unsaid).
+    /// its margins (how far in from the left and the right edge the ruling begins and ends), how far down its first
+    /// rule is and how much room its last leaves (a grid's and dots' room at the head and the foot), and where a line
+    /// is drawn down it, each from the left edge (88).
     pub rule: Option<f64>,
-    pub margin: Option<f64>,
-    pub margin_right: Option<f64>,
+    pub left: Option<f64>,
+    pub right: Option<f64>,
     pub top: Option<f64>,
     pub bottom: Option<f64>,
+    pub lines: Vec<f64>,
     /// A piece of a pageless notebook's long sheet: how far down it this piece begins.
     pub at: Option<f64>,
     /// What is written on the sheet before, which may run past its foot onto this one.
@@ -183,6 +185,8 @@ pub struct PdfPage {
     pub color: Option<u32>,
     pub line: Option<u32>,
     pub dark: bool,
+    /// The margin line's colour, where one was chosen.
+    pub margin: Option<u32>,
 }
 
 /// `pages` written as one PDF at `out`: each its paper or its page of the PDF at `source`, drawn as they are, and
@@ -196,12 +200,15 @@ pub fn pages_pdf(pages: &[PdfPage], source: Option<&str>, out: &str) -> Result<(
         let over: Vec<&[u8]> = p.above.iter().map(Vec::as_slice).collect();
         let above = records(&over);
         let paper: u32 = match p.paper.as_deref() { None => 0, Some("ruled") => 2, Some("grid") => 3, Some("dotted") => 4, Some(_) => 1 };
-        for v in [p.w, p.h, p.rule.unwrap_or(0.0), p.margin.unwrap_or(-1.0), p.top.unwrap_or(72.0), p.at.unwrap_or(-1.0), p.margin_right.unwrap_or(-1.0), p.bottom.unwrap_or(-1.0)] {
+        let ruled = paper == 2;
+        let rule = p.rule.unwrap_or(if ruled { 24.0 } else { 20.0 });
+        let line = |i: usize| p.lines.get(i).copied().unwrap_or(-1.0);
+        for v in [p.w, p.h, rule, p.top.unwrap_or(if ruled { 72.0 } else { 0.0 }), p.at.unwrap_or(-1.0), p.left.unwrap_or(0.0), p.right.unwrap_or(0.0), p.bottom.unwrap_or(if ruled { rule } else { 0.0 }), line(0), line(1)] {
             spec.extend_from_slice(&v.to_le_bytes());
         }
         // (colours: the top byte says one was chosen)
         let colour = |c: Option<u32>| c.map(|v| 0xff00_0000 | (v & 0x00ff_ffff)).unwrap_or(0);
-        for v in [paper, p.source.unwrap_or(0), recs.len() as u32, above.len() as u32, colour(p.color), colour(p.line), u32::from(p.dark), 0] {
+        for v in [paper, p.source.unwrap_or(0), recs.len() as u32, above.len() as u32, colour(p.color), colour(p.line), u32::from(p.dark), colour(p.margin)] {
             spec.extend_from_slice(&v.to_le_bytes());
         }
         spec.extend_from_slice(&recs);
@@ -515,9 +522,9 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let out = dir.join("notebook.pdf");
         let pages = vec![
-            PdfPage { w: 612.0, h: 792.0, paper: Some("ruled".into()), strokes: strokes.clone(), margin: Some(90.0), margin_right: Some(72.0), bottom: Some(48.0), ..Default::default() },
-            PdfPage { w: 612.0, h: 792.0, paper: Some("grid".into()), rule: Some(14.17), at: Some(792.0), above: strokes.clone(), ..Default::default() },
-            PdfPage { w: 595.0, h: 842.0, paper: Some("dotted".into()), ..Default::default() },
+            PdfPage { w: 612.0, h: 792.0, paper: Some("ruled".into()), strokes: strokes.clone(), left: Some(34.02), right: Some(34.02), bottom: Some(48.0), lines: vec![34.02, 577.98], margin: Some(0x00b5_d2f2), ..Default::default() },
+            PdfPage { w: 612.0, h: 792.0, paper: Some("grid".into()), rule: Some(14.17), at: Some(792.0), left: Some(22.68), right: Some(22.68), top: Some(22.68), above: strokes.clone(), ..Default::default() },
+            PdfPage { w: 595.0, h: 842.0, paper: Some("dotted".into()), left: Some(22.68), right: Some(22.68), top: Some(22.68), bottom: Some(22.68), ..Default::default() },
         ];
         pages_pdf(&pages, None, out.to_str().unwrap()).unwrap();
         assert_eq!(pdf_info(out.to_str().unwrap()).unwrap(), (3, 612.0, 792.0));

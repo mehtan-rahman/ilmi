@@ -19,24 +19,27 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type JSX } from 
 import { createPortal } from 'react-dom';
 import { invoke } from '@tauri-apps/api/core';
 import { save as pickSave } from '@tauri-apps/plugin-dialog';
-import type { PaperKind, WrittenMeta } from '../format/index.js';
+import type { MarginLine, PaperKind, WrittenMeta } from '../format/index.js';
 import { pageKey, type StoreFs } from '../vault/index.js';
 import { lassoDo, lassoPaste, sceneSoon, useLasso } from './ink.js';
 import { CUSTOM, useInkTools } from './inkTools.js';
 import { Icon } from './icons.js';
 import { failed, notify } from './land.js';
 import { hapticTick } from './haptics.js';
-import { LINE_COLORS, MARGIN_AT, MM, PAPER_COLORS, RULE_TOP, paperHex, paperLook, paperOf, paperPaths, ruleOf, sheetSize, type PaperSpec, ruleWidth } from './paper.js';
+import { LINE_COLORS, MARGIN_COLORS, MM, PAPER_COLORS, RULE_TOP, paperHex, paperLook, paperOf, paperPaths, ruleOf, sheetSize, type PaperSpec, ruleWidth } from './paper.js';
 import { popMenu, type PopItem } from './popMenu.js';
 import type { PDFDocumentProxy } from './pdfjs.js';
 import { useApp } from './store.js';
 import { currentVault } from './vault.js';
-import { PAPERS, addSheet, addSheetAfter, duplicateSheet, inkFoot, keepSetup, moveSheet, setPaper, setSetup, setupOf, type Setup } from './written.js';
+import { PAPERS, addSheet, addSheetAfter, duplicateSheet, inkFoot, keepSetup, moveSheet, onPaper, setPaper, setSetup, setupOf, withMargins, type Setup } from './written.js';
+
+/** A paper as a small sheet to choose it by. */
+const tile = (kind: PaperKind, color: string | null, line: string | null): PaperSpec => ({ kind, w: 96, h: 124, rule: kind === 'ruled' ? 14 : 12, left: 0, right: 0, top: kind === 'ruled' ? 22 : 0, bottom: kind === 'ruled' ? 14 : 0, lines: [], run: false, at: 0, color, line, marginColor: null });
 
 /** A sheet's paper, small or large: the sheet in points, whatever size it is drawn at. */
 export function PaperSheet({ kind, spec, px }: { kind?: PaperKind; /** The paper with its page setup; a kind alone is a Letter sheet as a new notebook has it. */ spec?: PaperSpec; /** The pixels of the screen it is drawn with to the point, where its rules are to lie on them (a page; 86). */ px?: number }) {
   const of = spec ?? kind ?? 'blank';
-  const key = typeof of === 'string' ? of : `${of.kind} ${of.w} ${of.h} ${of.rule} ${of.margin} ${of.marginRight} ${of.top} ${of.bottom} ${of.run} ${of.at}`;
+  const key = typeof of === 'string' ? of : `${of.kind} ${of.w} ${of.h} ${of.rule} ${of.left} ${of.right} ${of.top} ${of.bottom} ${of.lines.join(',')} ${of.run} ${of.at}`;
   const wide = px && px > 0 ? ruleWidth(px) : 0;
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const p = useMemo(() => paperPaths(of, wide ? { px: px!, w: wide } : undefined), [key, px]);
@@ -135,7 +138,7 @@ export async function sharePages(of: PagesOf, at: { x: number; y: number; w: num
       const spec = paperOf(of.written!, i);
       const before = of.written!.pageless && i > 0 && of.inked.has(all[i - 1]!) ? pageKey(of.hash, all[i - 1]!) : null;
       // its colours as a light theme shows them: the paper's chosen one (none: white), the ruling's, and whether ink on it is drawn the dark way (87)
-      return { w: spec.w, h: spec.h, paper: spec.kind, rule: spec.rule, margin: spec.margin, marginRight: spec.marginRight, top: spec.top, bottom: spec.bottom, at: spec.run ? spec.at : null, ink: of.inked.has(s) ? pageKey(of.hash, s) : null, above: before, color: spec.color, line: spec.line, dark: paperLook(spec, 'light').dark };
+      return { w: spec.w, h: spec.h, paper: spec.kind, rule: spec.rule, left: spec.left, right: spec.right, top: spec.top, bottom: spec.bottom, lines: spec.lines, margin: spec.marginColor, at: spec.run ? spec.at : null, ink: of.inked.has(s) ? pageKey(of.hash, s) : null, above: before, color: spec.color, line: spec.line, dark: paperLook(spec, 'light').dark };
     })
     : (of.pages ?? []).map((p) => ({ w: p.w, h: p.h, source: p.page, ink: of.inked.has(p.page) ? pageKey(of.hash, p.page) : null }));
   if (!pages.length) return null;
@@ -352,7 +355,7 @@ export function PageGrid({ id, into, written, hash, base, sizes, current, inked,
           <span className="pg-papers" role="group" aria-label="paper">
             {PAPERS.map((k) => (
               <button key={k} type="button" className="pg-paper" data-pg-paper={k} aria-label={`${k} paper`} title={`${k} paper`} aria-pressed={written.paper === k} onClick={() => { if (written.paper !== k) void setPaper(id, k).catch(failed('paper')); }}>
-                <PaperSheet spec={{ kind: k, w: 96, h: 124, rule: k === 'ruled' ? 14 : 12, margin: null, marginRight: null, top: 22, bottom: null, run: false, at: 0, color: written.color ?? null, line: written.line ?? null }} />
+                <PaperSheet spec={tile(k, written.color ?? null, written.line ?? null)} />
               </button>
             ))}
           </span>
@@ -412,7 +415,7 @@ const round2 = (v: number): number => Math.round(v * 100) / 100;
  * browser's on a Mac. The one chosen has a ring round it and is named at the
  * row's end; a named one pressed again is none chosen.
  */
-function Colours({ name, label, none, presets, value, shown, pick }: { name: 'color' | 'line'; label: string; /** What the row says with none chosen. */ none: string; presets: readonly { name: string; value: string }[]; value: string | null; /** The colour drawn with none chosen: where the wheel starts. */ shown: string; pick(color: string | null): void }) {
+function Colours({ name, label, none, noneDot, presets, value, shown, pick }: { /** The colour the first round shows, where none chosen is a colour of its own. */ noneDot?: string; name: 'color' | 'line' | 'mcolor'; label: string; /** What the row says with none chosen. */ none: string; presets: readonly { name: string; value: string }[]; value: string | null; /** The colour drawn with none chosen: where the wheel starts. */ shown: string; pick(color: string | null): void }) {
   const mobile = useApp((s) => s.mobile);
   const named = presets.find((c) => c.value === value);
   /** The colour last taken from the wheel: its swatch keeps it while another is chosen. */
@@ -448,7 +451,7 @@ function Colours({ name, label, none, presets, value, shown, pick }: { name: 'co
       </div>
       <div className="ps-cols" role="group" aria-label={label}>
         <button type="button" className="ps-col" data-ps={`${name}-none`} aria-label={none} title={none} aria-pressed={value === null} onClick={() => pick(null)}>
-          <span className="ps-dot ps-none" />
+          <span className={noneDot ? 'ps-dot' : 'ps-dot ps-none'} style={noneDot ? { background: noneDot } : undefined} />
         </button>
         {presets.map((c) => (
           <button key={c.name} type="button" className="ps-col" data-ps={`${name}-${c.name}`} data-color={c.value} aria-label={value === c.value ? `${c.name}, press again for ${none}` : c.name} title={c.name} aria-pressed={value === c.value} onClick={() => pick(value === c.value ? null : c.value)}>
@@ -506,7 +509,12 @@ export function PageSetup({ id, into, written, onClose }: { id: string; into: HT
   const theme = useApp((s) => s.theme);
   const look = paperLook(draft, theme);
   const rule = draft.rule ?? ruleOf(kind);
-  const top = draft.top ?? RULE_TOP;
+  const top = draft.top ?? (kind === 'ruled' ? RULE_TOP : 0);
+  const bottom = draft.bottom ?? (kind === 'ruled' ? rule : 0);
+  // (what an older file says, 85's margin rule, is shown as the margin with a line at it that it becomes when a margin is set)
+  const leftAt = draft.left ?? draft.margin ?? 0;
+  const rightAt = draft.right ?? draft.marginRight ?? 0;
+  const lineAt: MarginLine | null = draft.marginLine ?? (draft.margin !== null && draft.marginRight !== null ? 'both' : draft.margin !== null ? 'left' : draft.marginRight !== null ? 'right' : null);
   const seg = <T extends string>(name: string, label: string, value: T, options: readonly { v: T; word: string }[], pick: (v: T) => void) => (
     <div className="ps-row">
       <span className="ps-l">{label}</span>
@@ -523,8 +531,8 @@ export function PageSetup({ id, into, written, onClose }: { id: string; into: HT
       </div>
       <div className="ps-papers" role="group" aria-label="paper">
         {PAPERS.map((k) => (
-          <button key={k} type="button" className="ps-paper" data-ps={`paper-${k}`} aria-pressed={kind === k} onClick={() => change({ paper: k })}>
-            <PaperSheet spec={{ kind: k, w: 96, h: 124, rule: k === 'ruled' ? 14 : 12, margin: null, marginRight: null, top: 22, bottom: null, run: false, at: 0, color: draft.color, line: draft.line }} />
+          <button key={k} type="button" className="ps-paper" data-ps={`paper-${k}`} aria-pressed={kind === k} onClick={() => change(onPaper(latest.current, k))}>
+            <PaperSheet spec={tile(k, draft.color, draft.line)} />
             <span>{k}</span>
           </button>
         ))}
@@ -542,39 +550,31 @@ export function PageSetup({ id, into, written, onClose }: { id: string; into: HT
         </div>
       )}
       <div className="ps-block">
-        {/* a margin rule at either edge, on any paper (88): each from its own edge */}
-        {([['margin', 'left margin', draft.margin], ['marginRight', 'right margin', draft.marginRight]] as const).map(([field, word, at]) => {
-          const name = field === 'margin' ? 'margin' : 'margin-right';
-          return (
-            <div key={field} className="ps-pair">
-              <button type="button" className="ps-check" role="switch" data-ps={name} aria-checked={at !== null} onClick={() => change({ [field]: at === null ? MARGIN_AT : null })}>
-                <span className="ps-ct">{word}</span>
-                <span className="ps-sw" aria-hidden="true" />
-              </button>
-              {at !== null && (
-                <label className="ps-row">
-                  <span className="ps-l">from the edge</span>
-                  <input type="range" data-ps={`${name}-at`} min={10 * MM} max={60 * MM} step={0.01} value={at} aria-label={`${word} from the edge`} onChange={(e) => change({ [field]: round2(Number(e.currentTarget.value)) })} />
-                  <span className="ps-v">{mm(at)}</span>
-                </label>
-              )}
-            </div>
-          );
-        })}
-        {kind === 'ruled' && (
+        {/* the margins (88): how far in from each side the ruling begins and ends; none at 0 */}
+        {([['left', 'left margin', leftAt], ['right', 'right margin', rightAt]] as const).map(([field, word, at]) => (
+          <label key={field} className="ps-row">
+            <span className="ps-l">{word}</span>
+            <input type="range" data-ps={field} min={0} max={60 * MM} step={0.01} value={at} aria-label={word} onChange={(e) => { const v = round2(Number(e.currentTarget.value)); change(withMargins(latest.current, { [field]: v > 0 ? v : null })); }} />
+            <span className="ps-v">{at > 0 ? mm(at) : 'none'}</span>
+          </label>
+        ))}
+        {kind !== 'blank' && (
           <label className="ps-row">
             <span className="ps-l">top space</span>
             <input type="range" data-ps="top" min={0} max={60 * MM} step={0.01} value={top} aria-label="top space" onChange={(e) => change({ top: round2(Number(e.currentTarget.value)) })} />
             <span className="ps-v">{mm(top)}</span>
           </label>
         )}
-        {kind === 'ruled' && !draft.pageless && (
+        {kind !== 'blank' && !draft.pageless && (
           <label className="ps-row">
             <span className="ps-l">bottom space</span>
-            <input type="range" data-ps="bottom" min={0} max={60 * MM} step={0.01} value={draft.bottom ?? rule} aria-label="bottom space" onChange={(e) => change({ bottom: round2(Number(e.currentTarget.value)) })} />
-            <span className="ps-v">{mm(draft.bottom ?? rule)}</span>
+            <input type="range" data-ps="bottom" min={0} max={60 * MM} step={0.01} value={bottom} aria-label="bottom space" onChange={(e) => change({ bottom: round2(Number(e.currentTarget.value)) })} />
+            <span className="ps-v">{mm(bottom)}</span>
           </label>
         )}
+        {/* a line down a margin: none, the left one, the right one, or both */}
+        {seg('mline', 'margin line', lineAt === 'left' ? 'left' : lineAt === 'both' ? 'both' : lineAt === 'right' ? 'right' : 'off', [{ v: 'off', word: 'off' }, { v: 'left', word: 'left' }, { v: 'right', word: 'right' }, { v: 'both', word: 'both' }] as const, (v) => change(withMargins(latest.current, { marginLine: v === 'off' ? null : v })))}
+        {lineAt !== null && <Colours name="mcolor" label="margin colour" none="red" noneDot={paperLook({ color: draft.color }, theme).margin} presets={MARGIN_COLORS} value={draft.marginColor} shown={look.margin} pick={(marginColor) => change({ marginColor })} />}
       </div>
       <div className="ps-block">
         <Colours name="color" label="paper colour" none="follows the theme" presets={PAPER_COLORS} value={draft.color} shown={look.paper} pick={(color) => change({ color })} />

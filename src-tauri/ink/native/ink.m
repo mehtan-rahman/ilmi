@@ -281,32 +281,35 @@ int ilmi_ink_sample(uint32_t lines, uint32_t per, uint32_t seed, uint8_t **out, 
 // fountain pen's and a pencil's as PencilKit's picture of them), blended as the reader blends it (a highlighter
 // leaves print dark).
 //
-// `spec` is a record a page: eight little-endian doubles (width, height, in points; the paper's rule, its left
-// margin rule's place or a number under 0, its top, where the piece begins on a pageless notebook's long sheet or a
-// number under 0, its right margin rule's place from the right edge or a number under 0, and the room under a ruled
-// page's last rule or a number under 0 for a rule's), a u32 paper (0 none, 1 blank, 2 ruled, 3 grid, 4 dotted), a u32 page of the PDF at `src` (from 1;
-// 0 none), two u32 lengths, the paper's colour and its lines' (0xffrrggbb where one was chosen, else 0), a u32 that
-// is 1 where the paper is dark, a u32 of nothing, and that many bytes each of stroke records as `ilmi_ink_join`
-// takes them: the page's own, and those of the sheet before it, drawn a page's height up.
+// `spec` is a record a page: ten little-endian doubles (width, height, in points; the paper's rule; its top; where
+// the piece begins on a pageless notebook's long sheet or a number under 0; its left margin and its right, 0 for
+// none; its bottom; and up to two places a line is drawn down the sheet, each from the left edge, or a number under
+// 0), a u32 paper (0 none, 1 blank, 2 ruled, 3 grid, 4 dotted), a u32 page of the PDF at `src` (from 1; 0 none), two
+// u32 lengths, the paper's colour and its lines' (0xffrrggbb where one was chosen, else 0), a u32 that is 1 where
+// the paper is dark, the margin line's colour (as the others), and that many bytes each of stroke records as
+// `ilmi_ink_join` takes them: the page's own, and those of the sheet before it, drawn a page's height up.
 
-/// A sheet's paper: `rule` between its rules, lines or dots; `margin` where its left margin rule stands and
-/// `right` where its right one does, from the right edge (under 0 for none); `top` how far down a ruled sheet's
-/// first rule is and `bottom` the room under its last (under 0 for a rule's); `at` how far down the long sheet of a
-/// pageless notebook this piece begins (under 0 for a page on its own). As `paperLines` has them.
+/// A sheet's paper: `rule` between its rules, lines or dots; `left` and `right` its margins, between which the
+/// ruling lies; `top` how far down a ruled sheet's first rule is and `bottom` the room under its last (a grid's and
+/// dots' room at the head and the foot); `at` how far down the long sheet of a pageless notebook this piece begins
+/// (under 0 for a page on its own); `l1`, `l2` where a line is drawn down it (under 0 for none). As `paperLines`
+/// has them (milestone 88).
 static void rgb(uint32_t v, uint32_t otherwise, double *k) {
   uint32_t u = (v >> 24) ? v : otherwise;
   k[0] = ((u >> 16) & 0xff) / 255.0; k[1] = ((u >> 8) & 0xff) / 255.0; k[2] = (u & 0xff) / 255.0;
 }
 
-static void paper(CGContextRef c, uint32_t kind, double w, double h, double rule, double margin, double top, double at, double right, double bottom, uint32_t color, uint32_t line, int dark) {
+static void paper(CGContextRef c, uint32_t kind, double w, double h, double rule, double top, double at, double left, double right, double bottom, double l1, double l2, uint32_t color, uint32_t line, uint32_t edge, int dark) {
   // the colours a page setup chose, else white paper and its pale rules; on dark paper the rules are their dark selves
   double pc[3], lc[3], dc[3], mc[3];
-  rgb(color, 0xffffff, pc); rgb(line, dark ? 0x353f4b : 0xc3cfdd, lc); rgb(line, dark ? 0x485462 : 0xa9b7c8, dc); rgb(0, dark ? 0x653f3f : 0xe7b9b9, mc);
+  rgb(color, 0xffffff, pc); rgb(line, dark ? 0x353f4b : 0xc3cfdd, lc); rgb(line, dark ? 0x485462 : 0xa9b7c8, dc); rgb(edge, dark ? 0x653f3f : 0xe7b9b9, mc);
   CGContextSetRGBFillColor(c, pc[0], pc[1], pc[2], 1);
   CGContextFillRect(c, CGRectMake(0, 0, w, h));
   if (!(rule >= 2)) rule = kind == 2 ? 24 : 20;
+  if (!(left > 0)) left = 0;
+  if (!(right > 0)) right = 0;
   bool run = at >= 0;
-  double offX = fmod(w, rule) / 2, offY = fmod(h, rule) / 2;
+  double x0 = left, x1 = w - right;
   // where the long sheet's lines from `first` on fall on this piece of it; a page on its own begins at `first`
   double (^from)(double) = ^(double first) {
     if (!run) return first;
@@ -314,32 +317,43 @@ static void paper(CGContextRef c, uint32_t kind, double w, double h, double rule
     if (k < 0) k = 0;
     return first + k * rule - at;
   };
-  if (kind == 2 || kind == 3) {
+  CGContextSetLineWidth(c, 0.5);
+  if (kind == 2) {
     CGContextSetRGBStrokeColor(c, lc[0], lc[1], lc[2], 1);
-    CGContextSetLineWidth(c, 0.5);
-    if (kind == 2) {
-      double end = run ? h - 1e-6 : h - (bottom >= 0 ? bottom : rule) + 1e-6;
-      for (double y = from(top); y <= end; y += rule) { CGContextMoveToPoint(c, 0, y); CGContextAddLineToPoint(c, w, y); }
-    } else {
-      double end = run ? h - 1e-6 : h - offY + 1e-6;
-      for (double y = from(offY); y <= end; y += rule) { CGContextMoveToPoint(c, 0, y); CGContextAddLineToPoint(c, w, y); }
-      for (double x = offX; x <= w - offX + 1e-6; x += rule) { CGContextMoveToPoint(c, x, 0); CGContextAddLineToPoint(c, x, h); }
-    }
+    double end = run ? h - 1e-6 : h - bottom + 1e-6;
+    for (double y = from(top); y <= end; y += rule) { CGContextMoveToPoint(c, x0, y); CGContextAddLineToPoint(c, x1, y); }
     CGContextStrokePath(c);
-  } else if (kind == 4) {
-    CGContextSetRGBFillColor(c, dc[0], dc[1], dc[2], 1);
-    double end = run ? h - 1e-6 : h - offY - rule + 1e-6;
-    for (double y = from(offY + rule); y <= end; y += rule)
-      for (double x = offX + rule; x <= w - offX - rule + 1e-6; x += rule) CGContextFillEllipseInRect(c, CGRectMake(x - 0.75, y - 0.75, 1.5, 1.5));
+  } else if (kind == 3 || kind == 4) {
+    // a grid, and dots on its crossings: centred in what the margins leave; with no margin at an edge, as before there were any
+    bool head = top > 0, foot = !run && bottom > 0;
+    double offX = fmod(x1 - x0, rule) / 2;
+    double fx = x0 + offX, lx = fx + floor((x1 - offX - fx) / rule + 1e-6) * rule;
+    double fy, ly;
+    if (run) { fy = from(head ? top : fmod(h, rule) / 2); ly = fy + floor((h - 1e-6 - fy) / rule) * rule; }
+    else { double y0 = top, y1 = h - bottom, offY = fmod(y1 - y0, rule) / 2; fy = y0 + offY; ly = fy + floor((y1 - offY - fy) / rule + 1e-6) * rule; }
+    if (kind == 3) {
+      // each line ends on the grid's outermost line at an edge that has a margin, and runs to the sheet's edge at one that has none
+      double cy0 = run ? (head && at < top ? top - at : 0) : (head ? fy : 0), cy1 = foot ? ly : h;
+      double rx0 = left > 0 ? fx : 0, rx1 = right > 0 ? lx : w;
+      CGContextSetRGBStrokeColor(c, lc[0], lc[1], lc[2], 1);
+      for (double y = fy; y <= ly + 1e-6; y += rule) { CGContextMoveToPoint(c, rx0, y); CGContextAddLineToPoint(c, rx1, y); }
+      for (double x = fx; x <= lx + 1e-6; x += rule) { CGContextMoveToPoint(c, x, cy0); CGContextAddLineToPoint(c, x, cy1); }
+      CGContextStrokePath(c);
+    } else {
+      CGContextSetRGBFillColor(c, dc[0], dc[1], dc[2], 1);
+      double dx0 = left > 0 ? fx : fx + rule, dx1 = right > 0 ? lx : lx - rule;
+      double dy0, dy1;
+      if (run) { dy0 = head ? fy : from(fmod(h, rule) / 2 + rule); dy1 = h - 1e-6; }
+      else { dy0 = head ? fy : fy + rule; dy1 = foot ? ly : ly - rule; }
+      for (double y = dy0; y <= dy1 + 1e-6; y += rule)
+        for (double x = dx0; x <= dx1 + 1e-6; x += rule) CGContextFillEllipseInRect(c, CGRectMake(x - 0.75, y - 0.75, 1.5, 1.5));
+    }
   }
-  // a margin rule at either edge, on any paper: the right one only right of the left
-  bool left = margin > 0 && margin < w;
-  double rx = right > 0 && right < w ? w - right : -1;
-  if (left || rx > 0) {
+  // a line down a margin, the sheet's whole height
+  if ((l1 > 0 && l1 < w) || (l2 > 0 && l2 < w)) {
     CGContextSetRGBStrokeColor(c, mc[0], mc[1], mc[2], 1);
-    CGContextSetLineWidth(c, 0.5);
-    if (left) { CGContextMoveToPoint(c, margin, 0); CGContextAddLineToPoint(c, margin, h); }
-    if (rx > 0 && (!left || rx > margin)) { CGContextMoveToPoint(c, rx, 0); CGContextAddLineToPoint(c, rx, h); }
+    if (l1 > 0 && l1 < w) { CGContextMoveToPoint(c, l1, 0); CGContextAddLineToPoint(c, l1, h); }
+    if (l2 > 0 && l2 < w) { CGContextMoveToPoint(c, l2, 0); CGContextAddLineToPoint(c, l2, h); }
     CGContextStrokePath(c);
   }
 }
@@ -375,15 +389,16 @@ int ilmi_ink_pdf(const uint8_t *spec, size_t len, const uint8_t *src, size_t src
       if (!c) { if (from) CGPDFDocumentRelease(from); return 2; }
       int bad = 0;
       size_t at = 0;
-      while (at + 96 <= len) {
-        double w, h, rule, margin, top, run, right, bottom;
-        uint32_t kind, page, n, m, color, line, dark;
+      while (at + 112 <= len) {
+        double w, h, rule, top, run, left, right, bottom, l1, l2;
+        uint32_t kind, page, n, m, color, line, dark, edge;
         memcpy(&w, spec + at, 8); memcpy(&h, spec + at + 8, 8);
-        memcpy(&rule, spec + at + 16, 8); memcpy(&margin, spec + at + 24, 8); memcpy(&top, spec + at + 32, 8); memcpy(&run, spec + at + 40, 8);
-        memcpy(&right, spec + at + 48, 8); memcpy(&bottom, spec + at + 56, 8);
-        memcpy(&kind, spec + at + 64, 4); memcpy(&page, spec + at + 68, 4); memcpy(&n, spec + at + 72, 4); memcpy(&m, spec + at + 76, 4);
-        memcpy(&color, spec + at + 80, 4); memcpy(&line, spec + at + 84, 4); memcpy(&dark, spec + at + 88, 4);
-        at += 96;
+        memcpy(&rule, spec + at + 16, 8); memcpy(&top, spec + at + 24, 8); memcpy(&run, spec + at + 32, 8);
+        memcpy(&left, spec + at + 40, 8); memcpy(&right, spec + at + 48, 8); memcpy(&bottom, spec + at + 56, 8);
+        memcpy(&l1, spec + at + 64, 8); memcpy(&l2, spec + at + 72, 8);
+        memcpy(&kind, spec + at + 80, 4); memcpy(&page, spec + at + 84, 4); memcpy(&n, spec + at + 88, 4); memcpy(&m, spec + at + 92, 4);
+        memcpy(&color, spec + at + 96, 4); memcpy(&line, spec + at + 100, 4); memcpy(&dark, spec + at + 104, 4); memcpy(&edge, spec + at + 108, 4);
+        at += 112;
         if (at + n + m > len || !(w > 0) || !(h > 0)) { bad = 2; break; }
         PKDrawing *d = n ? joined(spec + at, n) : nil;
         at += n;
@@ -407,7 +422,7 @@ int ilmi_ink_pdf(const uint8_t *spec, size_t len, const uint8_t *src, size_t src
         CGContextSaveGState(c);
         CGContextTranslateCTM(c, 0, h);
         CGContextScaleCTM(c, 1, -1);
-        if (kind) paper(c, kind, w, h, rule, margin, top, run, right, bottom, color, line, dark != 0);
+        if (kind) paper(c, kind, w, h, rule, top, run, left, right, bottom, l1, l2, color, line, edge, dark != 0);
         inked(c, above, box, -h, kind && dark);
         inked(c, d, box, 0, kind && dark);
         CGContextRestoreGState(c);

@@ -374,9 +374,13 @@ file read after each, pageless and a stroke across the seam, A4 on its
 side, `use for new notebooks`; and the row whole at every width it is
 given.
 Then what milestone 88 added, in a third notebook (`writtenLong`; alone
-with `"part": "long"`): page setup's `left margin` and `right margin`,
-each by its switch and its slider, on ruled, grid, dotted and blank paper,
-the file read after each, and a ruled page's `bottom space`; then
+with `"part": "long"`): a new notebook's margins (its rules 12 mm short of
+each side, no line), page setup's `left margin` and `right margin` by
+their sliders, `margin line` left and both, `margin colour`, a ruled
+page's `bottom space`, `use for new notebooks`, each paper with its lines
+and without, the file read after each; a notebook given 85's
+`paper-margin` alone, read as it was (rules edge to edge, a line), shown
+in the panel as a margin with its line and made one by a slide; then
 pageless, where `dev_ink_state` says how long the one sheet is drawn
 (`length`, in points) and how many of its sheets that shows (`shown`). Six
 strokes by the rig's finger toward the sheet's foot: after each the length
@@ -390,18 +394,22 @@ carried down past it; a sheet in the file past what is written not drawn;
 the lower strokes taken away (no shorter), another document and back
 (shorter); pages and pageless again with every stroke on its sheet; the
 PDF cut to the pages the ink reaches; dark, and on its side. Before a
-capture a `geo:` line says where the sheet, its margin rules, the place
-two sheets meet and the sheet's foot lie in it, in the screen's pixels: a
-script reads the captures against them (each margin rule within a pixel
-of its distance; down a column clear of ink the rules one pitch apart and
+capture a `geo:` line says where the sheet, its margin lines, the two
+ends of its rules, the place two sheets meet and the sheet's foot lie in
+it, in the screen's pixels: a script reads the captures against them
+(each margin line within a pixel of its distance; on rows of the ruling
+the first and the last pixel that is not paper within a pixel and a half
+of the margins; down a column clear of ink the rules one pitch apart and
 one thickness with nothing else where the sheets meet; paper above the
 foot and the desk under it). `"part": "grow"` is the six strokes alone,
 to record (`xcrun simctl io booted recordVideo`): in every frame the
 level stroke written first and the rules over the first foot must be
 where they were, the paper's foot may only move down by whole rules, and
 no frame may show paper not yet ruled. On the Mac the same mode ends with
-its own part (`writtenLongMac`; alone with `ILMI_PART=long`): the margin
-rules in the page's own paper to a pixel, a pageless notebook's column cut
+its own part (`writtenLongMac`; alone with `ILMI_PART=long`): the margins,
+the margin lines and their colour in the page's own paper to a pixel, a
+grid closed inside its margins, 85's field read as it was, a pageless
+notebook's column cut
 to the length of a made-up drawing's ink, longer when more is kept on the
 second sheet, shorter only when it is opened again.
 

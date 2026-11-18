@@ -6,12 +6,15 @@
 // `paper-margin`, `paper-top` in points, `paper-size`, `paper-turn`,
 // `pageless`), there only where the file says it. Milestone 88: a margin
 // rule at the right too (`paper-margin-right`, from the right edge) and the
-// room under a ruled sheet's last rule (`paper-bottom`).
+// room under a ruled sheet's last rule (`paper-bottom`); then the margins
+// themselves (`paper-left`, `paper-right`: how far in the ruling begins and
+// ends), the line down them (`paper-margin-line`) and its colour
+// (`paper-margin-color`).
 
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { FIELD_KEYS, PAPERS, formatPoints, formatSheets, isWrittenId, meta, parse, parsePoints, parseSheets, serialize, setField } from '../index.js';
+import { FIELD_KEYS, MARGIN_LINES, PAPERS, PAPER_INSET_RANGE, formatPoints, formatSheets, isWrittenId, meta, parse, parsePoints, parseSheets, serialize, setField } from '../index.js';
 
 const CORPUS = join(import.meta.dirname, 'corpus');
 const ID = '5b0c7e1a9d3f4e26b8a1c0d2e4f60718';
@@ -260,9 +263,88 @@ describe('written notes', () => {
     expect(serialize(doc)).toBe(`---\nwritten: ${ID}\npaper: ruled\nsheets: 1\n---\n`);
   });
 
-  it('the page setup\'s fields are the format\'s own, the right margin after the left one and the foot\'s room after the top\'s', () => {
+  it('a margin at the left and at the right, the line down them and its colour are read where the file says them, each alone, and are byte-stable', () => {
+    const text = `---\nwritten: ${ID}\npaper: ruled\nsheets: 1 2\npaper-rule: 30\npaper-left: 34.02\npaper-right: 56.5\npaper-margin-line: both\npaper-margin-color: #b5d2f2\npaper-top: 100.5\npaper-bottom: 40\n---\n`;
+    const { doc, diagnostics } = parse(text);
+    expect(diagnostics).toEqual([]);
+    expect(meta(doc).written).toEqual({ id: ID, paper: 'ruled', sheets: [1, 2], rule: 30, left: 34.02, right: 56.5, marginLine: 'both', marginColor: '#b5d2f2', top: 100.5, bottom: 40 });
+    expect(serialize(doc)).toBe(text);
+    // each alone: a margin is not the other's, nor 85's margin rule; a line is not a margin
+    expect(meta(parse(`---\nwritten: ${ID}\npaper-left: 40\n---\n`).doc).written).toEqual({ id: ID, paper: 'blank', sheets: [1], left: 40 });
+    expect(meta(parse(`---\nwritten: ${ID}\npaper-right: 40\n---\n`).doc).written).toEqual({ id: ID, paper: 'blank', sheets: [1], right: 40 });
+    expect(meta(parse(`---\nwritten: ${ID}\npaper-margin-color: #c9cdd2\n---\n`).doc).written).toEqual({ id: ID, paper: 'blank', sheets: [1], marginColor: '#c9cdd2' });
+    for (const line of MARGIN_LINES) expect(meta(parse(`---\nwritten: ${ID}\npaper-margin-line: ${line}\n---\n`).doc).written, line).toEqual({ id: ID, paper: 'blank', sheets: [1], marginLine: line });
+    expect(MARGIN_LINES).toEqual(['left', 'right', 'both']);
+    // beside 85's margin rule, which is still read: neither is the other
+    expect(meta(parse(`---\nwritten: ${ID}\npaper-margin: 90\npaper-margin-right: 72\npaper-left: 30\npaper-right: 20\n---\n`).doc).written).toEqual({ id: ID, paper: 'blank', sheets: [1], margin: 90, marginRight: 72, left: 30, right: 20 });
+    // written without zeros they do not need, the colour in lowercase
+    expect(serialize(parse(`---\nwritten: ${ID}\npaper-left: 34.0\npaper-right: 0\npaper-margin-color: #B5D2F2\n---\n`).doc)).toBe(`---\nwritten: ${ID}\npaper-left: 34\npaper-right: 0\npaper-margin-color: #b5d2f2\n---\n`);
+    expect(meta(parse(`---\nwritten: ${ID}\npaper-margin-color: #B5D2F2\n---\n`).doc).written?.marginColor).toBe('#b5d2f2');
+    // without written they mean nothing, and are kept
+    const note = '---\npaper-left: 34.02\npaper-right: 34.02\npaper-margin-line: left\npaper-margin-color: #b5d2f2\n---\n\nA note.\n';
+    expect(parse(note).diagnostics).toEqual([]);
+    expect(meta(parse(note).doc).written).toBeUndefined();
+    expect(serialize(parse(note).doc)).toBe(note);
+  });
+
+  it('a margin is 0 to 300 points, its line `left`, `right` or `both`, its colour six hex digits: anything else is kept raw with a diagnostic, and is as if it were not there', () => {
+    const read = (line: string) => { const { doc, diagnostics } = parse(`---\nwritten: ${ID}\npaper: ruled\n${line}\n---\n`); return { w: meta(doc).written!, said: diagnostics.map((d) => d.message), out: serialize(doc) }; };
+    expect(PAPER_INSET_RANGE).toEqual([0, 300]);
+    for (const key of ['paper-left', 'paper-right'] as const) {
+      const field = key === 'paper-left' ? 'left' : 'right';
+      // (a margin may be narrower than 85's margin rule could stand: from none at all)
+      for (const [v, n] of [['0', 0], ['5', 5], ['17.99', 17.99], ['34.02', 34.02], ['300', 300]] as const) expect(read(`${key}: ${v}`).w[field], `${key} ${v}`).toBe(n);
+      for (const bad of ['300.01', '400', '-1', '34pt', 'wide', '34.555']) {
+        const got = read(`${key}: ${bad}`);
+        expect(got.said, bad).toEqual([`bad value for "${key}"`]);
+        expect(got.w, bad).toEqual({ id: ID, paper: 'ruled', sheets: [1] });
+        expect(got.out, bad).toBe(`---\nwritten: ${ID}\npaper: ruled\n${key}: ${bad}\n---\n`);
+      }
+      expect(read(`${key}:`).said).toEqual([`"${key}" needs a value`]);
+      // said twice, the later one that reads stands
+      expect(read(`${key}: 900\n${key}: 40`).w[field]).toBe(40);
+    }
+    for (const bad of ['none', 'off', 'Left', 'top', 'left right', 'true']) {
+      const got = read(`paper-margin-line: ${bad}`);
+      expect(got.said, bad).toEqual(['bad value for "paper-margin-line"']);
+      expect(got.w, bad).toEqual({ id: ID, paper: 'ruled', sheets: [1] });
+      expect(got.out, bad).toBe(`---\nwritten: ${ID}\npaper: ruled\npaper-margin-line: ${bad}\n---\n`);
+    }
+    for (const bad of ['red', '#fff', 'b5d2f2', '#b5d2f2ff', '#gggggg']) {
+      const got = read(`paper-margin-color: ${bad}`);
+      expect(got.said, bad).toEqual(['bad value for "paper-margin-color"']);
+      expect(got.w, bad).toEqual({ id: ID, paper: 'ruled', sheets: [1] });
+    }
+    expect(read('paper-margin-line:').said).toEqual(['"paper-margin-line" needs a value']);
+    expect(read('paper-margin-color:').said).toEqual(['"paper-margin-color" needs a value']);
+  });
+
+  it('the margins, their line and its colour are set, changed and cleared in place, and read back as they were written', () => {
+    const { doc } = parse(`---\nwritten: ${ID}\npaper: ruled\nsheets: 1\n---\n`);
+    setField(doc, 'paper-left', 34.02);
+    setField(doc, 'paper-right', 56.693);
+    setField(doc, 'paper-margin-line', 'left');
+    setField(doc, 'paper-margin-color', '#B5D2F2');
+    const text = `---\nwritten: ${ID}\npaper: ruled\nsheets: 1\npaper-left: 34.02\npaper-right: 56.69\npaper-margin-line: left\npaper-margin-color: #b5d2f2\n---\n`;
+    expect(serialize(doc)).toBe(text);
+    // what is written reads back as it was written
+    expect(meta(parse(text).doc).written).toEqual({ id: ID, paper: 'ruled', sheets: [1], left: 34.02, right: 56.69, marginLine: 'left', marginColor: '#b5d2f2' });
+    expect(serialize(parse(text).doc)).toBe(text);
+    setField(doc, 'paper-left', 0);
+    setField(doc, 'paper-margin-line', 'both');
+    expect(serialize(doc)).toContain('paper-left: 0\n');
+    expect(serialize(doc)).toContain('paper-margin-line: both\n');
+    // one taken away leaves the others
+    setField(doc, 'paper-right', null);
+    setField(doc, 'paper-margin-color', null);
+    expect(meta(parse(serialize(doc)).doc).written).toEqual({ id: ID, paper: 'ruled', sheets: [1], left: 0, marginLine: 'both' });
+    for (const key of ['paper-left', 'paper-margin-line'] as const) setField(doc, key, null);
+    expect(serialize(doc)).toBe(`---\nwritten: ${ID}\npaper: ruled\nsheets: 1\n---\n`);
+  });
+
+  it('the page setup\'s fields are the format\'s own: the margins, their line and its colour after 85\'s margin rules, the foot\'s room after the top\'s', () => {
     const at = (k: string) => (FIELD_KEYS as readonly string[]).indexOf(k);
-    const keys = ['paper-rule', 'paper-margin', 'paper-margin-right', 'paper-top', 'paper-bottom', 'paper-size', 'paper-turn', 'pageless', 'paper-color', 'paper-line'];
+    const keys = ['paper-rule', 'paper-margin', 'paper-margin-right', 'paper-left', 'paper-right', 'paper-margin-line', 'paper-margin-color', 'paper-top', 'paper-bottom', 'paper-size', 'paper-turn', 'pageless', 'paper-color', 'paper-line'];
     expect(keys.map(at)).toEqual(keys.map((_, i) => at('paper-rule') + i));
     expect(at('paper-rule')).toBeGreaterThan(0);
   });

@@ -9782,24 +9782,41 @@ Asked by the user, 2026-11-18, from a real iPad after 87: "i think adding
 an option for left and right margin for the page setup is also nice.
 additionally i don't realyl like how pageless works. it should just add a
 few lines not a whole extra page and tie the space together".
-Notes: **Margins.** Page setup's `margin line` (ruled paper's alone) is
-`left margin` and `right margin`: each a switch, and when on a slider for
-how far from its own edge it stands, on ruled, grid, dotted and blank
-paper. FORMAT §3: `paper-margin` is the left one, as it was, so an old
-file reads the same; `paper-margin-right` is the right one, in points from
-the right edge. `paper-bottom` came with them, since a ruled page's last
-rule already left "a rule's room": how much room it leaves, a ruled page's
-alone (a pageless notebook's rules run on). `use for new notebooks` takes
-all three. Drawn by the surface (`Paint.swift`), the page's own paper
-(`paper.ts`: the Mac's and the phone's pages, the overview's small sheets,
-a clip in a typed note) and `share as pdf` (`native/ink.m`). **Decided:**
-the rules, the grid and the dots run the sheet's whole width under the
-margin rules. Both were drawn and looked at (`m88/captures/compare-rules-*`):
-stopped at the margins a sheet reads as a form with a box to write in, a
-left margin alone leaves rules that begin at it and run off the right
-edge, and what is written in a margin floats on bare paper; run through,
-it is the paper people know. A right rule that would not stand right of
-the left one is not drawn.
+Then, the same day, of the margins as first built (a line at each side
+with the rules run on under it): "margins should also be able to be
+colored, i think i just didn't like how the horizontal rule went end to
+end i usually like having a bit of margin spice but not necesaarily an
+actual vertical line vs line starting a little after the beginning of the
+page and ending before it".
+Notes: **Margins are where the ruling lies.** `left margin` and `right
+margin` (page setup, a slider each, `none` at nothing) are how far in from
+each side the rules, the grid or the dots begin and end; `top space` and
+`bottom space` bound a grid and dots the same way (a ruled sheet's are its
+first rule and the room under its last, as they were). A grid is centred
+in what the four leave and closed at the margins it has; dots stand on
+every crossing, and where an edge has no margin both are as they were
+before there were any. `margin line`: `off`, `left`, `right` or `both`, a
+line down the sheet at the margin; `margin colour` its colour, a pale red with none
+chosen, then blue-grey, grey, blue, green and the wheel, drawn by
+`paper-line`'s rule on dark paper. **Decided:** a new notebook's rules
+stop 12 mm short of both sides with no line, and a grid and dots keep
+8 mm all round; the defaults are written into a new notebook's file
+(`paper-left`, `paper-right`), because a file that says nothing must read
+as it always has, edge to edge. Another paper chosen keeps the margins
+that were set and changes those that were still the old paper's own
+(`onPaper`); a line asked for where there is no margin makes one.
+**Decided, old files:** 85's `paper-margin` means what it meant, a line
+that far in with the rules run on under it, and is drawn so (with its
+counterpart `paper-margin-right`, which the first build of 88 wrote for a
+morning); the app no longer writes either. In the panel such a notebook
+shows as a left margin that wide with its line, and the first time a
+margin is set there the file says `paper-left` and `paper-margin-line` in
+its place (`withMargins`), the rules beginning at the line from then. FORMAT
+§3: `paper-left`, `paper-right`, `paper-margin-line`, `paper-margin-color`,
+`paper-top` and `paper-bottom` for a grid and dots. `use for new notebooks`
+takes all of it. Drawn alike by the surface (`Paint.swift`), the page's
+own paper (`paper.ts`: the Mac's and the phone's pages, the overview's
+small sheets, a clip in a typed note) and `share as pdf` (`native/ink.m`).
 **Pageless is one sheet.** 85 and 87 drew a pageless notebook as its
 Letter sheets with nothing between, and writing near the end added a whole
 sheet. Now the long sheet is drawn as long as what is written on it and
@@ -9846,8 +9863,8 @@ loop that holds strokes of two sheets is itself a step to undo, which
 shows nothing (they change the sheet they are kept on); the
 long sheet shorter the moment something is erased (decided against);
 the sheets past the writing taken out of `sheets` (they are left: a page
-again when the notebook is paged); `bottom space` for a grid; a top or a
-bottom margin rule. A real Pencil's feel of the growth is the device's to
+again when the notebook is paged); a line across the head or the foot;
+a margin's own paper colour. A real Pencil's feel of the growth is the device's to
 judge.
 
 ## Notes for the next session

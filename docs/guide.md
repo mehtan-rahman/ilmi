@@ -338,22 +338,30 @@ to a page) and `more`. A new notebook is ruled Letter sheets.
 it as you use it. The paper: blank, ruled, grid or dotted. The spacing of
 its rules, lines or dots, by a slider that says it in millimetres or by
 name (`narrow`, `college`, `wide` for ruled paper; 5, 7 and 10 mm for a
-grid and dots). A `left margin` and a `right margin`, on any paper, blank
-too: each a switch, and when it is on how far from its own edge its rule
-stands; the rules, the grid and the dots run on under them to the sheet's
-edges, as on paper. For ruled paper the `top space` over the first rule
-and, for pages, the `bottom space` under the last. The `paper colour`
+grid and dots). The margins: `left margin` and `right margin` are how far
+in from each side the rules, the grid or the dots begin and end, each by
+a slider (at nothing it says `none`, and the ruling runs to that edge); a
+new notebook's rules stop 12 mm short of both sides, and a grid and dots
+keep 8 mm clear all round. `top space` is where a ruled sheet's first rule
+is, and the room over a grid or dots; `bottom space`, for pages, the room
+under them. `margin line` draws a line down a margin: `off`, as a new
+notebook has it, `left`, `right` or `both` (a margin slid back to nothing
+takes its line with it); with one on, `margin colour` is its
+colour, a pale red unless you choose another (blue-grey, grey, blue,
+green, or one from the wheel). A notebook from before there were margins
+keeps its red line with the rules running under it until you set a
+margin in it, when the rules begin at the line. The `paper colour`
 and, for paper with anything ruled on it, the `line colour`: a row of
 rounds each, the first of which is none chosen, then the ones with names
 (white, cream, yellow, grey and dark for paper; blue-grey, grey, blue, red
 and green for lines), then one from the colour wheel. With none chosen the
 paper follows the theme, white in the light one and dark in the dark one;
 a colour you choose is the paper in every theme. The line colour is the
-rules', the grid's and the dots'; the margin rules stay red. Ink is always
+rules', the grid's and the dots'; a margin line has its own. Ink is always
 drawn to be read on its paper: on dark paper black ink shows white, and on
 light paper it is as you wrote it, whatever the theme. The layout: `pages`,
 or `pageless`, where the notebook is one sheet: no pages, no gaps, the
-ruling and the margins running down all of it, and nothing to show where
+ruling, the margins and their lines running down all of it, and nothing to show where
 a page would have ended, so you write, erase and lasso across any part of
 it. It is as long as what you have written and a little more (192
 points of bare paper under the lowest ink), never shorter than one sheet.

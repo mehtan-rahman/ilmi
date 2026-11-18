@@ -772,11 +772,13 @@ struct PdfPage {
     /// A notebook's page setup, in points, where it says them; `at` where a pageless notebook's piece begins on its
     /// long sheet; `above` the page of ink on the sheet before it, which may run on over this one.
     rule: Option<f64>,
-    margin: Option<f64>,
-    #[serde(rename = "marginRight")]
-    margin_right: Option<f64>,
+    left: Option<f64>,
+    right: Option<f64>,
     top: Option<f64>,
     bottom: Option<f64>,
+    /// Where a line is drawn down the sheet, each from the left edge, and its colour where one was chosen (88).
+    lines: Option<Vec<f64>>,
+    margin: Option<String>,
     at: Option<f64>,
     above: Option<String>,
     /// The paper's colour and its lines' (`#rrggbb`) where the notebook's page setup chose them, and whether the paper is dark (87).
@@ -803,7 +805,7 @@ fn pages_pdf(app: tauri::AppHandle, stores: tauri::State<'_, store::Stores>, roo
     for p in &pages {
         let strokes = match &p.ink { Some(key) => stores.ink_strokes(&dir, key)?, None => Vec::new() };
         let above = match &p.above { Some(key) => stores.ink_strokes(&dir, key)?, None => Vec::new() };
-        made.push(tauri_plugin_ink::PdfPage { w: p.w, h: p.h, paper: p.paper.clone(), source: p.source, strokes, rule: p.rule, margin: p.margin, margin_right: p.margin_right, top: p.top, bottom: p.bottom, at: p.at, above, color: hex_colour(&p.color), line: hex_colour(&p.line), dark: p.dark.unwrap_or(false) });
+        made.push(tauri_plugin_ink::PdfPage { w: p.w, h: p.h, paper: p.paper.clone(), source: p.source, strokes, rule: p.rule, left: p.left, right: p.right, top: p.top, bottom: p.bottom, lines: p.lines.clone().unwrap_or_default(), margin: hex_colour(&p.margin), at: p.at, above, color: hex_colour(&p.color), line: hex_colour(&p.line), dark: p.dark.unwrap_or(false) });
     }
     let folder = app.path().temp_dir().map_err(|e| e.to_string())?.join("ilmi-share");
     std::fs::create_dir_all(&folder).map_err(|e| e.to_string())?;

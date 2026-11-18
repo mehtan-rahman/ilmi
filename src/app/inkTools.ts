@@ -343,7 +343,9 @@ export const inksHere = (caps: InkTools['caps']): readonly { ink: PenInk; name: 
 /** A finger draws only while the row is shown: tucked away for reading, a finger scrolls. */
 const fingerOn = (k: Kept): boolean => k.finger && k.shown;
 
-const tellTool = (k: Kept): void => { if (canvas()) void invoke<void>('ink_tool', { tool: toolOf(k, ranges()) }).catch(console.error); };
+/** Each telling is numbered: two changes made in one turn are two calls that may arrive either way round, and the canvases keep the later-numbered (found by a check on a simulated iPad, 87). */
+let tellings = 0;
+const tellTool = (k: Kept): void => { if (canvas()) void invoke<void>('ink_tool', { tool: toolOf(k, ranges()), seq: ++tellings }).catch(console.error); };
 const tellFinger = (k: Kept): void => { if (canvas()) void invoke<void>('ink_finger', { on: fingerOn(k) }).catch(console.error); };
 
 const sameTool = (a: Tool, b: Tool): boolean =>

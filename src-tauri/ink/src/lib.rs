@@ -327,8 +327,8 @@ impl<R: Runtime> Ink<R> {
         self.call::<_, serde_json::Value>("plain", Pen { on }).await.map(|_| ())
     }
     /// The tool held (milestone 82): `{ kind, color, width }`, a pen, a highlighter, the eraser or the lasso. Every canvas takes it.
-    pub async fn tool(&self, tool: serde_json::Value) -> Result<(), String> {
-        self.call::<_, serde_json::Value>("tool", serde_json::json!({ "tool": tool })).await.map(|_| ())
+    pub async fn tool(&self, tool: serde_json::Value, seq: Option<u64>) -> Result<(), String> {
+        self.call::<_, serde_json::Value>("tool", serde_json::json!({ "tool": tool, "seq": seq })).await.map(|_| ())
     }
     /// The last thing done on any sheet taken back. What can be undone and redone after: `{ undo, redo }`.
     pub async fn undo(&self) -> Result<serde_json::Value, String> {

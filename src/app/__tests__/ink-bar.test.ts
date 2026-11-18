@@ -24,13 +24,17 @@ import { ROW_FULL, ROW_MID, rowFit } from '../InkBar.js';
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const calls: { cmd: string; args: Record<string, unknown> }[] = [];
+/** The number each telling of the tool carried, in the order they were sent. */
+const seqs: number[] = [];
 /** What the canvases answer, by command. */
 let answers: Record<string, (args: Record<string, unknown>) => unknown> = {};
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: async (cmd: string, args: Record<string, unknown>) => {
     // (a module's own question at launch, none of the canvases')
     if (cmd === 'dev_env') return null;
-    calls.push({ cmd, args });
+    // (a telling of the tool is numbered, so that one arrived late is let go: the number is kept apart from what was said)
+    if (cmd === 'ink_tool' && args && typeof args.seq === 'number') { const { seq, ...rest } = args; seqs.push(seq as number); calls.push({ cmd, args: rest }); }
+    else calls.push({ cmd, args });
     if (cmd in answers) return answers[cmd]!(args);
     if (cmd === 'ink_scene') return { made: [] };
     if (cmd === 'ink_undo' || cmd === 'ink_redo') return { undo: false, redo: false };
@@ -459,6 +463,19 @@ describe('what the canvases are told', () => {
     await b.scene();
     expect(said('ink_tool')).toEqual([{ tool: { kind: 'eraser', color: '#000000', width: 8, mode: 'stroke' } }]);
     expect(said('ink_finger')).toEqual([{ on: true }]);
+  });
+
+  it('each telling of the tool is numbered after the one before, so that one arrived late can be told from the last', async () => {
+    const a = await launch();
+    await a.scene();
+    const from = seqs.length;
+    a.tools.setTool('highlighter');
+    a.tools.setSize('highlighter', 0);
+    a.tools.setTool('pen');
+    await wait();
+    const mine = seqs.slice(from);
+    expect(mine.length).toBeGreaterThanOrEqual(3);
+    expect(mine.every((n, i) => i === 0 || n === mine[i - 1]! + 1)).toBe(true);
   });
 
   it('the tool on each change of it, its size or its colour, and only then', async () => {

@@ -641,10 +641,10 @@ async fn ink_rest(ink: tauri::State<'_, tauri_plugin_ink::Ink<tauri::Wry>>, shee
     ink.rest(&sheet).await
 }
 
-/// The tool the page's bar holds (milestone 82): `{ kind: pen | highlighter | eraser | select, color: #rrggbb, width }`. Every canvas takes it.
+/// The tool the page's bar holds (milestone 82): `{ kind: pen | highlighter | eraser | select, color: #rrggbb, width }`. Every canvas takes it; `seq` numbers the tellings, and one numbered under the last taken is let go (two sent in one turn may arrive either way round).
 #[tauri::command]
-async fn ink_tool(ink: tauri::State<'_, tauri_plugin_ink::Ink<tauri::Wry>>, tool: serde_json::Value) -> Result<(), String> {
-    ink.tool(tool).await
+async fn ink_tool(ink: tauri::State<'_, tauri_plugin_ink::Ink<tauri::Wry>>, tool: serde_json::Value, seq: Option<u64>) -> Result<(), String> {
+    ink.tool(tool, seq).await
 }
 
 /// The last thing done on any sheet taken back: `{ undo, redo }`, what is possible after.

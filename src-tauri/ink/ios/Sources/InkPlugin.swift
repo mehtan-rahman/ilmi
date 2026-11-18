@@ -246,6 +246,8 @@ struct Shared: Encodable {
 
 struct ToolArgs: Decodable {
   var tool: ToolSpec
+  /// Which telling this is: one numbered under the last taken is an older one arrived late, and is let go.
+  var seq: Int?
 }
 
 struct ColorArgs: Decodable {
@@ -704,6 +706,7 @@ class InkPlugin: Plugin, PenEars {
   private var finger = false
   var fingerWrites: Bool { standIn || finger }
   /// The tool held, and the ink every canvas has: the last pen or highlighter.
+  private var toolSeq = 0
   private(set) var tool = ToolSpec(kind: "pen", color: "#000000", width: 2.2)
   private(set) var ink = PKInkingTool(.pen, color: .black, width: 2.2)
   var ours: Bool { tool.kind == "eraser" || tool.kind == "select" }
@@ -2037,6 +2040,11 @@ class InkPlugin: Plugin, PenEars {
   @objc public func tool(_ invoke: Invoke) throws {
     let args = try invoke.parseArgs(ToolArgs.self)
     DispatchQueue.main.async {
+      if let n = args.seq {
+        // (a page loaded anew counts from one again)
+        if n < self.toolSeq, n > 1 { invoke.resolve(); return }
+        self.toolSeq = n
+      }
       let t = args.tool
       var made: PKInkingTool? = nil
       switch t.kind {

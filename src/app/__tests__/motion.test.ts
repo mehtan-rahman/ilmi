@@ -43,40 +43,20 @@ describe('what closes leaves', () => {
     expect(host.querySelector('[data-ghost]')).toBeNull();
   });
 
-  it("a folder's rows fold shut in their order, under the row that stays, with no path left on them", async () => {
+  it("a folder's rows and the sidebar's sheet close at once: no likeness of them", async () => {
     const tree = document.createElement('div');
     tree.className = 'tree';
-    const rows = ['a', 'a/1', 'a/2', 'a/3', 'b'].map(row);
+    const rows = ['a', 'a/1', 'b'].map(row);
     tree.append(...rows);
-    host.append(tree);
+    const side = document.createElement('div');
+    side.className = 'side';
+    side.dataset.sheet = '1';
+    host.append(tree, side);
     await tick();
-    rows[1]!.remove(); rows[2]!.remove(); rows[3]!.remove();
+    rows[1]!.remove();
+    side.remove();
     await tick();
-    const all = Array.from(tree.children) as HTMLElement[];
-    expect(all.map((r) => r.textContent)).toEqual(['a', 'a/1', 'a/2', 'a/3', 'b']);
-    expect(all.map((r) => r.dataset.ghost ?? '')).toEqual(['', '1', '1', '1', '']);
-    expect(all.slice(1, 4).every((r) => r.classList.contains('m-row-out') && r.dataset.path === undefined)).toBe(true);
-    expect(tree.querySelectorAll('[data-path]').length).toBe(2);
-  });
-
-  it('a row drawn again in another place has not gone, and a great many gone at once are not a folder closed', async () => {
-    const tree = document.createElement('div');
-    tree.className = 'tree';
-    const a = row('a');
-    const b = row('b');
-    tree.append(a, b);
-    host.append(tree);
-    await tick();
-    a.remove();
-    tree.append(row('a'));
-    await tick();
-    expect(tree.querySelector('[data-ghost]')).toBeNull();
-    const many = Array.from({ length: 120 }, (_, i) => row(`m/${i}`));
-    tree.append(...many);
-    await tick();
-    for (const m of many) m.remove();
-    await tick();
-    expect(tree.querySelector('[data-ghost]')).toBeNull();
+    expect(host.querySelector('[data-ghost]')).toBeNull();
   });
 
   it('nothing lingers under a smoke, or on e-ink', async () => {
@@ -100,7 +80,7 @@ describe('what closes leaves', () => {
     n.remove();
     await tick();
     expect(host.querySelector('.tweaks[data-ghost]')).not.toBeNull();
-    await new Promise((r) => setTimeout(r, 340));
+    await new Promise((r) => setTimeout(r, 300));
     expect(host.querySelector('.tweaks')).toBeNull();
   });
 });

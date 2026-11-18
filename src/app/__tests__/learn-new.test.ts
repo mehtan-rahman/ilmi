@@ -100,7 +100,12 @@ describe('a card never tested', () => {
     await press(' ');
     expect(card().dataset.revealed).toBe('1');
     await press('3');
-    const after = await changed(a.path, await fsp.readFile(join(dir, a.path), 'utf8'));
+    // (the second card's line, in the same file, may land first: wait for this one's review)
+    let after = '';
+    for (let k = 0; k < 200 && !/<!-- sr [^>]*r=1/.test(after.slice(after.indexOf(a.text)).split('\n\n')[0]!); k++) {
+      after = await fsp.readFile(join(dir, a.path), 'utf8');
+      await act(async () => { await new Promise((r) => setTimeout(r, 5)); });
+    }
     expect(after).not.toBe(before);
     // good on a new card leaves it in its steps, due ten minutes on: it comes back before the end, one more to the total
     expect(count()).toBe('4 / 5');

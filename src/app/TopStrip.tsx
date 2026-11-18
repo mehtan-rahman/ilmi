@@ -39,6 +39,37 @@ export function syncAsked(): void {
   void Promise.all([syncNow(), crdtNow()]).catch((e: unknown) => notify(`sync: ${e instanceof Error ? e.message : String(e)}`));
 }
 
+/**
+ * Where sync stands, pressed for a sync now (or, with conflicts, for them), and beside `synced` how long ago: the
+ * strip's, and on a phone the sheet's foot. Nothing where the collection does not sync. It alone is drawn again as
+ * the age ticks.
+ */
+export function SyncWord() {
+  const sync = useApp((s) => s.sync);
+  const word = syncWord(sync);
+  const now = useTick(sync.at);
+  const age = syncAge(sync, now);
+  return (
+    <>
+      {word !== null && (sync.conflicts.length
+        ? <button type="button" className="sync" data-sync="conflicts" onClick={openConflicts}>{word}</button>
+        : <button type="button" className="sync" data-sync={sync.busy ?? (sync.offline ? 'offline' : sync.toPush ? 'pending' : 'synced')} title="sync now" onClick={syncAsked}>{word}</button>)}
+      {age !== null && <span className="ago">{age}</span>}
+    </>
+  );
+}
+
+/** The settings, a press away on every device: a phone and an iPad have no ⌘, */
+export function SettingsButton({ onPress }: { onPress?: () => void }) {
+  const mobile = useApp((s) => s.mobile);
+  const tweaksOpen = useApp((s) => s.tweaksOpen);
+  return (
+    <button type="button" className="insp-toggle set-toggle" data-on={tweaksOpen ? '1' : '0'} aria-pressed={tweaksOpen} aria-label="settings" title={mobile ? undefined : 'settings ⌘,'} onClick={() => { onPress?.(); useApp.setState((s) => ({ tweaksOpen: !s.tweaksOpen })); }}>
+      <Icon name="settings" />
+    </button>
+  );
+}
+
 export function TopStrip() {
   const root = useApp((s) => s.vault);
   const queue = useApp((s) => s.queue);
@@ -46,14 +77,9 @@ export function TopStrip() {
   const shown = useApp((s) => inspectorShown(s, window.innerWidth));
   const budget = useApp((s) => s.budget);
   const due = dueToday(queue, appNow(), budget).length;
-  const sync = useApp((s) => s.sync);
-  const word = syncWord(sync);
-  const now = useTick(sync.at);
-  const age = syncAge(sync, now);
   const mobile = useApp((s) => s.mobile);
   // a phone's strip names the collection and where sync stands; what the rest does is at its foot (`PhoneBar.tsx`)
   const phone = useApp((s) => s.phone);
-  const tweaksOpen = useApp((s) => s.tweaksOpen);
   // lit while the sidebar is drawn: the column, or in portrait the sheet (App draws this strip again on a turn)
   const sideOn = useApp((s) => (shapeOf(s.mobile, window.innerWidth, window.innerHeight) === 'portrait' ? s.sideSheet : sidebarShown(s)));
   return (
@@ -74,15 +100,9 @@ export function TopStrip() {
       <div className="right">
         <span data-due={due ? '1' : '0'}>{due} due</span>
         <span>{dayLabel(appNow())}</span>
-        {word !== null && (sync.conflicts.length
-          ? <button type="button" className="sync" data-sync="conflicts" onClick={openConflicts}>{word}</button>
-          : <button type="button" className="sync" data-sync={sync.busy ?? (sync.offline ? 'offline' : sync.toPush ? 'pending' : 'synced')} title="sync now" onClick={syncAsked}>{word}</button>)}
-        {age !== null && <span className="ago">{age}</span>}
+        <SyncWord />
       </div>
-      {/* the settings, a press away on every device: a phone and an iPad have no ⌘, */}
-      <button type="button" className="insp-toggle set-toggle" data-on={tweaksOpen ? '1' : '0'} aria-pressed={tweaksOpen} aria-label="settings" title={mobile ? undefined : 'settings ⌘,'} onClick={() => useApp.setState((s) => ({ tweaksOpen: !s.tweaksOpen }))}>
-        <Icon name="settings" />
-      </button>
+      <SettingsButton />
       {!phone && (
         <button type="button" className="insp-toggle" data-on={shown ? '1' : '0'} aria-pressed={shown} title="inspector ⌘⇧I" onClick={toggleInspector}>
           <Icon name="panel" />

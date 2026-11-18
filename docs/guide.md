@@ -1060,9 +1060,14 @@ export writes it as `name/ink-01.png` with its drawing beside it,
 ### On a phone
 
 Under 600 points wide, either way up, the app is a phone's: the day is its
-face, and reading is possible there, not the point. A bar sits at the foot,
-under the thumb. Its left button has the tree behind it, with the palette's
-field at the sheet's foot; its right, `+`, is a new card; the middle one enters
+face, and reading is possible there, not the point. There is no strip at the
+top: a page starts right under the clock, and the band the clock and the
+island sit in is the page's own colour. A bar sits at the foot, under the
+thumb. Its left button has the tree behind it: the collection's name at the
+sheet's head, and at its foot the palette's field, where sync stands (press
+it to sync now, or, with conflicts, to see them) and the settings. When sync
+wants looking at (a conflict, signed out) that button carries a mark. Its
+right, `+`, is a new card; the middle one enters
 the queue on the day, with the count beside it, and anywhere else comes back
 to the day. The day's row of words (`all · recall · read · write`) narrows it
 to one thing to do, and the middle button then enters that, with its count. There are no tabs, no inspector, no second pane, and no keys named.
@@ -1079,7 +1084,8 @@ the right; the day is under it as you left it. A finger drawn in from the
 left edge pulls the page off with it: let go past the middle, or with a
 flick, and you are back on the day; let go short and the page settles where
 it was. On the day itself, and on a page you opened from the tree, the same
-swipe brings the tree in, following the finger, and a swipe left on the tree
+swipe brings the tree in (a page zoomed in and moved along sideways is
+panned back first: the edge's swipe is for when it stands at its left end), following the finger, and a swipe left on the tree
 pushes it away (on an iPad held upright too). A topic's row swiped left shows
 `dismiss` and `later` at its right end; swiped most of the way across it is
 `later` at once, with a tick as you cross that point, and the notice can take

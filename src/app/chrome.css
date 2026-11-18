@@ -644,6 +644,13 @@ html[data-pressing] body, html[data-pressing] body * { -webkit-user-select: none
   background: color-mix(in oklab, var(--fg) 12%, transparent);
 }
 [data-theme="eink"] .side-scrim { background: transparent; }
+/* where things move the sheet stays in the page (`App.tsx`), shut off its left edge and not drawn; `edge.ts` says
+   when it is anywhere else (`data-on`: `moving`, placed by what it writes, or `open`) */
+.side[data-sheet="1"][data-kept] { transform: translate3d(-100%, 0, 0); visibility: hidden; }
+.side-scrim[data-kept] { opacity: 0; visibility: hidden; }
+.side[data-sheet="1"][data-kept][data-on], .side-scrim[data-kept][data-on] { visibility: visible; }
+.side[data-sheet="1"][data-kept][data-on="open"] { transform: none; }
+.side-scrim[data-kept][data-on="open"] { opacity: 1; }
 
 /* a key hint anywhere (the bottom strip, the palette's foot): the cap, then the action */
 .hint { display: inline-flex; align-items: center; gap: 6px; }

@@ -36,6 +36,22 @@ export function edgeMeans(phone: boolean, pushed: boolean, fromTree: boolean): '
   return phone && pushed && !fromTree ? 'back' : 'sheet';
 }
 
+/** What of an element says whether it is scrolled: itself and what holds it. */
+export interface Scrolled { scrollLeft: number; parentElement: Scrolled | null }
+
+/**
+ * Whether what is under a touch is scrolled sideways: `el` or anything that holds it, up to and with `within`, stands
+ * off its left end (a page of a book zoomed in and moved along, a wide table). A finger drawn rightward there is
+ * moving that back toward its start: it is a pan, not the edge's swipe.
+ */
+export function scrolledSideways(el: Scrolled | null, within: Scrolled | null): boolean {
+  for (let n = el; n; n = n.parentElement) {
+    if (n.scrollLeft > 0) return true;
+    if (n === within) break;
+  }
+  return false;
+}
+
 export interface Sample { t: number; at: number }
 
 /** The speed over the last `span` ms of samples, px/ms, signed. A finger that rested before lifting has none. */

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useState } from 'react';
 import { BottomStrip } from './BottomStrip.js';
 import { Canvas } from './Canvas.js';
 import { listenForClips } from './clipper.js';
@@ -10,7 +10,8 @@ import { Palette } from './Palette.js';
 import { PhoneBar } from './PhoneBar.js';
 import { QuickCard } from './QuickCard.js';
 import { SavedQueries } from './Queue.js';
-import { TopStrip } from './TopStrip.js';
+import { SettingsButton, SyncWord, TopStrip } from './TopStrip.js';
+import { baseOf } from '../vault/index.js';
 import { Tree } from './Tree.js';
 import { Tweaks } from './Tweaks.js';
 import { Welcome } from './Welcome.js';
@@ -28,9 +29,8 @@ import './app.css';
 import './chrome.css';
 import './phone.css';
 import './motion.css';
-import { quiet, startMotion, useLinger } from './motion.js';
-import { flushSync } from 'react-dom';
-import { backBusy, installEdge, onPeek, openedFromTree } from './edge.js';
+import { quiet, startMotion } from './motion.js';
+import { installEdge, openedFromTree, sheetTo } from './edge.js';
 import { installRowSwipe } from './rowSwipe.js';
 import { installPull } from './pull.js';
 import { Glyph } from './icons.js';
@@ -92,7 +92,6 @@ export function App() {
   const railWidth = useApp((s) => s.railWidth);
   const mobile = useApp((s) => s.mobile);
   const sideSheet = useApp((s) => s.sideSheet);
-  const sideHeld = useLinger(sideSheet, 190);
   // the window's width, for the room rule (`layout.ts`): the inspector yields before the page's measure does
   const [win, setWin] = useState(() => window.innerWidth);
   const [winH, setWinH] = useState(() => window.innerHeight);
@@ -125,19 +124,12 @@ export function App() {
   const phone = shape === 'phone';
   const sheet = shape === 'portrait' || phone;
   const activeId = activeTab(panes)?.id;
-  // a phone's session is the whole screen: no strip, no bar. They stay under it while it comes in over them, and are
-  // put back under it while a finger pulls it away (`edge.ts`); where nothing moves they go at once
-  const inSession = phone && activeId === SESSION;
-  const [settled, setSettled] = useState(false);
-  useEffect(() => {
-    if (!inSession) { setSettled(false); return; }
-    const t = setTimeout(() => { if (!backBusy()) setSettled(true); }, 460);
-    return () => clearTimeout(t);
-  }, [inSession]);
-  const inSessionNow = useRef(inSession);
-  inSessionNow.current = inSession;
-  useEffect(() => onPeek((on) => { if (inSessionNow.current) flushSync(() => setSettled(!on)); }), []);
-  const whole = inSession && (settled || quiet());
+  // a phone's session is the whole screen, over the bar (`Canvas.tsx`), which stays under it: nothing of the shell
+  // changes as it comes and goes. Where nothing moves the bar is gone under it, as it was
+  const whole = phone && activeId === SESSION && quiet();
+  // where things move the sheet stays in the page, shut off its edge, so opening it is only moving it (`edge.ts`)
+  const kept = sheet && vault !== null && !quiet();
+  useLayoutEffect(() => { if (kept) sheetTo(sideSheet); }, [kept, sideSheet, shape]);
   // the sheet is for one choice: it closes once something opens, and when the iPad turns
   useEffect(() => { useApp.setState({ sideSheet: false }); }, [activeId, shape]);
   useLayoutEffect(() => {
@@ -346,29 +338,38 @@ export function App() {
   const sideW = sideOn && !sheet ? sidebar.width : 0;
   const inspOn = !phone && inspectorShown({ sidebar: sheet ? { ...sidebar, hidden: true } : sidebar, inspector, inspForced, bookInsp, sessionEl, panes, docs, railFolded, railWidth }, win);
   const inspW = inspOn ? inspector.width : 0;
-  // the sheet slides away before it is gone (`motion.css`)
-  const sideLeaving = sheet && !sideOn && sideHeld;
   const active = activeId;
   // on a phone a tree row tapped goes to the page, the one in front too
   const onTreeOpen: typeof openNode = (path, opts) => { openNode(path, opts); if (phone) { openedFromTree(); useApp.setState({ sideSheet: false }); } };
   return (
     <>
       <div className="shell" data-session={whole ? '1' : undefined} style={{ '--side-w': `${sideW}px`, '--insp-w': `${inspW}px` } as React.CSSProperties}>
-        <TopStrip />
-        {sheet && sideOn && <div className="side-scrim" onClick={() => useApp.setState({ sideSheet: false })} />}
-        {(sideOn || sideLeaving) && (
-          <div className="side" data-sheet={sheet ? '1' : undefined} data-leaving={sideLeaving ? '1' : undefined} style={sheet ? ({ '--sheet-w': `${Math.min(sidebar.width, Math.round(win * 0.84))}px` } as React.CSSProperties) : undefined}>
+        {/* a phone has no strip: its page starts under the clock, and what the strip held is in the sheet */}
+        {!phone && <TopStrip />}
+        {sheet && (sideOn || kept) && <div className="side-scrim" data-kept={kept ? '1' : undefined} onClick={() => useApp.setState({ sideSheet: false })} />}
+        {(sideOn || kept) && (
+          <div className="side" data-sheet={sheet ? '1' : undefined} data-kept={kept ? '1' : undefined} style={sheet ? ({ '--sheet-w': `${Math.min(sidebar.width, Math.round(win * 0.84))}px` } as React.CSSProperties) : undefined}>
+            {phone && <div className="side-head"><b className="ws">{baseOf(vault ?? '') || 'collection'}</b></div>}
             <h6>workspace</h6>
             <Tree activeId={active} onOpen={onTreeOpen} />
             <SavedQueries activeId={active} />
-            {phone && <button type="button" className="side-find" onClick={() => useApp.setState({ paletteOpen: true, sideSheet: false })}><span className="g"><Glyph g="⌕" /></span><span className="lbl">open or run</span></button>}
+            {phone && (
+              <div className="side-foot">
+                <button type="button" className="side-find" onClick={() => useApp.setState({ paletteOpen: true, sideSheet: false })}><span className="g"><Glyph g="⌕" /></span><span className="lbl">open or run</span></button>
+                <div className="side-state">
+                  <SyncWord />
+                  <span className="sp" />
+                  <SettingsButton onPress={() => useApp.setState({ sideSheet: false })} />
+                </div>
+              </div>
+            )}
           </div>
         )}
         {!mobile && <div className="side-resize" data-hidden={sideOn ? '0' : '1'} onMouseDown={startSideResize} />}
         <Canvas />
         {inspOn && <Inspector />}
         {inspOn && !mobile && <div className="insp-resize" onMouseDown={startInspResize} />}
-        {phone ? !whole && <PhoneBar /> : <BottomStrip />}
+        {phone ? !whole && <PhoneBar under={activeId === SESSION} /> : <BottomStrip />}
         <Notice />
       </div>
       {paletteOpen && <Palette />}

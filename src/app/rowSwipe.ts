@@ -51,7 +51,7 @@ function go(li: HTMLElement, from: number, to: number, v: number, then?: () => v
 function shut(li: HTMLElement, v = 0): void {
   if (rested === li) rested = null;
   delete li.dataset.armed;
-  go(li, xOf(li), 0, v, () => { if (xOf(li) === 0 && drag?.li !== li) delete li.dataset.swiping; });
+  go(li, xOf(li), 0, v, () => { if (xOf(li) === 0 && drag?.li !== li) { delete li.dataset.swiping; li.style.willChange = ''; } });
 }
 
 function start(e: TouchEvent): void {
@@ -77,6 +77,7 @@ function move(e: TouchEvent): void {
     // down the list, or rightward on a row at rest: not a swipe
     if (axis === 'y' || (dx > 0 && c.base === 0)) return;
     c.li.style.transition = '';
+    c.li.style.willChange = 'transform';
     c.li.dataset.swiping = '1';
     // from where the finger is now: the row does not jump the slop it took to tell
     drag = { li: c.li, base: c.base, from: t.clientX, w: c.li.offsetWidth, x: c.base, armed: false, samples: [] };

@@ -2,20 +2,26 @@
 // sidebar's sheet, pulled in from the left edge and pushed back out, and on
 // a phone the page in front, pulled off to the right to go back to the day
 // under it. Each is moved by its transform alone, written here as the
-// finger moves (never through React), settles open or shut by where it was
-// let go and how fast, and can be caught again on its way.
+// finger moves (never through React, and nothing of the app's state changes
+// until it has landed), settles open or shut by where it was let go and how
+// fast, and can be caught again on its way. The sheet opened or shut by
+// anything else (its button, a row, its scrim: `sheetTo`) moves the same
+// way, from rest.
 //
 // A phone's left edge is one gesture with two ends: on a page opened from
-// the day (a row of the queue, a session) it goes back to the day; on a
-// page opened from the tree, and on the day itself, it brings the tree in,
-// which is where that page came from. An iPad upright has only the sheet.
+// the day (a row of the queue, a session) or from anywhere but the tree it
+// goes back to the day; on a page opened from the tree, and on the day
+// itself, it brings the tree in, which is where that page came from. An
+// iPad upright has only the sheet. Over something moved along sideways (a
+// book's page zoomed in) the finger pans that, and under the Pencil nothing
+// here moves at all.
 //
 // Nothing here runs under a smoke, in a test, on e-ink, or where the system
-// asks for less motion (`quiet`): there the old swipe in `App.tsx` opens and
-// closes the sheet at once.
+// asks for less motion (`quiet`): there the sheet is in the page only while
+// it is open, and the old swipe in `App.tsx` opens and closes it at once.
 
 import { flushSync } from 'react-dom';
-import { EDGE, UNDER, axisOf, edgeMeans, settleEase, settleMs, settlesOpen, velocityOf, type Sample } from './gesture.js';
+import { EDGE, UNDER, axisOf, edgeMeans, scrolledSideways, settleEase, settleMs, settlesOpen, velocityOf, type Sample } from './gesture.js';
 import { quiet } from './motion.js';
 import { queueId } from './names.js';
 import { activeTab } from './panes.js';
@@ -45,31 +51,30 @@ const xOf = (el: Element): number => {
   return (m[1] ? n[12] : n[4]) ?? 0;
 };
 
-const sheetEl = (): HTMLElement | null => document.querySelector<HTMLElement>('.shell > .side[data-sheet="1"]');
-const scrimEl = (): HTMLElement | null => document.querySelector<HTMLElement>('.shell > .side-scrim:not([data-ghost])');
-
-// the sheet's state set from here: the store's watcher below leaves it alone
-let ours = false;
-const setSheet = (on: boolean): void => {
-  ours = true;
-  try { flushSync(() => useApp.setState({ sideSheet: on })); } finally { ours = false; }
-};
+// the sheet kept in the page, shut off its edge (`App.tsx` keeps it there where things move): `data-on` says it is
+// anywhere but shut (`moving`, placed by what is written here, or `open`, at rest)
+const sheetEl = (): HTMLElement | null => document.querySelector<HTMLElement>('.shell > .side[data-sheet="1"][data-kept]');
+const scrimEl = (): HTMLElement | null => document.querySelector<HTMLElement>('.shell > .side-scrim[data-kept]');
 
 function sheetSlide(): Slide | null {
   const el = sheetEl();
   if (!el) return null;
   const w = el.offsetWidth;
   if (w <= 0) return null;
-  const hold = () => { el.dataset.held = '1'; const s = scrimEl(); if (s) s.dataset.held = '1'; };
   return {
     kind: 'sheet',
     w,
-    read: () => Math.min(w, Math.max(0, w + xOf(el))),
+    read: () => (el.dataset.on === 'open' ? w : el.dataset.on ? Math.min(w, Math.max(0, w + xOf(el))) : 0),
     paint(x) {
-      hold();
-      el.style.transform = `translate3d(${(x - w).toFixed(1)}px,0,0)`;
       const s = scrimEl();
-      if (s) s.style.opacity = (x / w).toFixed(3);
+      el.dataset.on = 'moving';
+      el.style.willChange = 'transform';
+      el.style.transform = `translate3d(${(x - w).toFixed(1)}px,0,0)`;
+      if (s) {
+        s.dataset.on = 'moving';
+        s.style.willChange = 'opacity';
+        s.style.opacity = (x / w).toFixed(3);
+      }
     },
     ease(ms, curve = 'ease-out') {
       const t = ms > 0 ? `${ms}ms ${curve}` : '';
@@ -78,17 +83,15 @@ function sheetSlide(): Slide | null {
       if (s) s.style.transition = t ? `opacity ${t}` : 'none';
     },
     land(open) {
-      const s = scrimEl();
-      el.style.transition = '';
-      if (s) s.style.transition = '';
-      if (open) {
-        el.style.transform = '';
-        if (s) s.style.opacity = '';
-        if (!useApp.getState().sideSheet) setSheet(true);
-      } else if (useApp.getState().sideSheet) {
-        // shut where it stands (off the edge): what React keeps of it for a moment has nothing left to show
-        setSheet(false);
+      for (const n of [el, scrimEl()]) {
+        if (!n) continue;
+        n.style.transition = '';
+        n.style.willChange = '';
+        n.style.transform = '';
+        n.style.opacity = '';
+        if (open) n.dataset.on = 'open'; else delete n.dataset.on;
       }
+      if (useApp.getState().sideSheet !== open) useApp.setState({ sideSheet: open });
     },
   };
 }
@@ -96,21 +99,6 @@ function sheetSlide(): Slide | null {
 // a page pulled off by the finger is gone when it lands: the canvas does not slide it out again (`Canvas.tsx`)
 let popping = false;
 export const isPopping = (): boolean => popping;
-
-// a finger at a phone's left edge that may pull the page back: the day under the page is wanted (it is kept there not
-// drawn, `Canvas.tsx`), and under a session the strip and the bar (`App.tsx`). Told again, off, when nothing came of it
-const peeks = new Set<(on: boolean) => void>();
-let peeking = false;
-/** What hears that the day under a phone's page is about to be seen (`on`), or is not after all. */
-export function onPeek(fn: (on: boolean) => void): () => void {
-  peeks.add(fn);
-  return () => { peeks.delete(fn); };
-}
-function peek(on: boolean): void {
-  if (peeking === on) return;
-  peeking = on;
-  for (const fn of peeks) fn(on);
-}
 
 const topEl = (): HTMLElement | null => document.querySelector<HTMLElement>('.canvas > .pane-top[data-active="1"]');
 const dayEl = (): HTMLElement | null => document.querySelector<HTMLElement>('.canvas > .pane-day');
@@ -121,15 +109,13 @@ function backSlide(): Slide | null {
   if (!top || !day) return null;
   const w = top.offsetWidth;
   if (w <= 0) return null;
-  peek(true);
   return {
     kind: 'back',
     w,
     read: () => Math.min(w, Math.max(0, xOf(top))),
     paint(x) {
-      top.dataset.held = '1';
-      day.dataset.held = '1';
-      delete day.dataset.covered;
+      top.style.willChange = 'transform';
+      day.style.willChange = 'transform';
       top.style.transform = `translate3d(${x.toFixed(1)}px,0,0)`;
       day.style.transform = `translate3d(${(-UNDER * (w - x)).toFixed(1)}px,0,0)`;
     },
@@ -144,24 +130,25 @@ function backSlide(): Slide | null {
       if (open) {
         popping = true;
         try { flushSync(() => openNode(TODAY)); } finally { popping = false; }
-        peeking = false;
       } else {
         top.style.transform = '';
-        day.dataset.covered = '1';
+        top.style.willChange = '';
       }
       day.style.transform = '';
-      delete day.dataset.held;
-      if (!open) peek(false);
+      day.style.willChange = '';
     },
   };
 }
 
-// where a phone's page was opened from: the tree's (the edge brings the tree back), or the day's (the edge goes back to it)
-let fromTree = false;
-/** A phone's page opened from the tree (`App.tsx`). */
+// where a phone's page was opened from: the tree's (the edge brings the tree back), or anywhere else (the edge goes
+// back to the day). The tab the tree opened is remembered, not that the tree opened something: what is opened next
+// from the palette, a link or a row is another tab, and not the tree's
+let treeTab: number | null = null;
+/** A phone's page opened from the tree (`App.tsx`), once it is the page in front. */
 export function openedFromTree(): void {
-  fromTree = true;
+  treeTab = activeTab(useApp.getState().panes)?.key ?? null;
 }
+const fromTree = (): boolean => treeTab !== null && activeTab(useApp.getState().panes)?.key === treeTab;
 
 interface Drag {
   slide: Slide;
@@ -174,12 +161,20 @@ interface Drag {
   toward: boolean | null;
 }
 
+interface Flight {
+  slide: Slide;
+  open: boolean;
+  timer: ReturnType<typeof setTimeout> | undefined;
+  /** Waiting to start (what was just drawn is on the glass first), a frame's id. */
+  wait: number;
+}
+
 let cand: { x: number; y: number; edge: boolean } | null = null;
 let drag: Drag | null = null;
-let flight: { slide: Slide; open: boolean; timer: ReturnType<typeof setTimeout> } | null = null;
+let flight: Flight | null = null;
 let raf = 0;
 
-/** A page is being pulled back, or is on its way: the canvas leaves the day under it in view. */
+/** A page is being pulled back, or is on its way: the canvas leaves it and the day under it alone. */
 export const backBusy = (): boolean => drag?.slide.kind === 'back' || flight?.slide.kind === 'back';
 
 const paintSoon = (): void => {
@@ -190,24 +185,60 @@ const paintSoon = (): void => {
   });
 };
 
+function drop(): void {
+  if (!flight) return;
+  clearTimeout(flight.timer);
+  if (flight.wait) cancelAnimationFrame(flight.wait);
+  flight = null;
+}
+
 function land(): void {
   if (!flight) return;
   const f = flight;
-  clearTimeout(f.timer);
-  flight = null;
+  drop();
   f.slide.land(f.open);
 }
 
-function fly(slide: Slide, from: number, open: boolean, v: number): void {
+/**
+ * `slide` from `from` to open or shut, let go at `v`. With `wait` it starts two frames on: what the same change
+ * of state drew (a page opened by the row that shut the sheet) is on the glass before anything moves, so the
+ * movement is not what pays for drawing it.
+ */
+function fly(slide: Slide, from: number, open: boolean, v: number, wait = false): void {
+  drop();
   const to = open ? slide.w : 0;
   const ms = settleMs(to - from, v);
+  slide.ease(0);
   slide.paint(from);
-  if (ms === 0) { slide.ease(0); slide.paint(to); slide.land(open); return; }
-  // what is drawn now is where it leaves from
-  void slide.read();
-  slide.ease(ms, settleEase(to - from, v, ms));
-  slide.paint(to);
-  flight = { slide, open, timer: setTimeout(land, ms + 30) };
+  if (ms === 0) { slide.paint(to); slide.land(open); return; }
+  const f: Flight = { slide, open, timer: undefined, wait: 0 };
+  flight = f;
+  const go = (): void => {
+    f.wait = 0;
+    // what is drawn now is where it leaves from
+    void slide.read();
+    slide.ease(ms, settleEase(to - from, v, ms));
+    slide.paint(to);
+    f.timer = setTimeout(land, ms + 30);
+  };
+  if (wait) f.wait = requestAnimationFrame(() => { f.wait = requestAnimationFrame(go); });
+  else go();
+}
+
+/**
+ * The sheet opened or shut by something other than the finger (`App.tsx`, as its state says): it goes there from
+ * where it is, by the movement a finger's settle has. Nothing where it is there already, or where the finger has it.
+ */
+export function sheetTo(open: boolean): void {
+  const slide = sheetSlide();
+  if (!slide || drag?.slide.kind === 'sheet') return;
+  if (flight?.slide.kind === 'sheet') {
+    if (flight.open === open) return;
+    drop();
+  }
+  const at = slide.read();
+  if (Math.abs(at - (open ? slide.w : 0)) < 1) { slide.land(open); return; }
+  fly(slide, at, open, 0, true);
 }
 
 const stylus = (t: Touch): boolean => (t as Touch & { touchType?: string }).touchType === 'stylus';
@@ -219,43 +250,44 @@ function start(e: TouchEvent): void {
   cand = null;
   if (quiet() || !sheetShape() || useApp.getState().vault === null) return;
   // on its way: caught where it is, if the finger lands on it
-  const moving = flight?.slide ?? sheetSlide();
-  if (moving) {
+  if (flight) {
+    const moving = flight.slide;
     const x = moving.read();
     const on = moving.kind === 'sheet' ? t.clientX <= x : t.clientX >= x;
     if (x > 1 && x < moving.w - 1 && on) {
-      const toward = flight ? flight.open : useApp.getState().sideSheet;
-      if (flight) { clearTimeout(flight.timer); flight = null; }
-      // (one that was leaving is the open sheet again first, so its scrim is there to be held with it)
-      if (moving.kind === 'sheet' && !useApp.getState().sideSheet) { sheetEl()!.dataset.held = '1'; sheetEl()!.style.transform = `translate3d(${(x - moving.w).toFixed(1)}px,0,0)`; setSheet(true); }
+      const toward = flight.open;
+      drop();
       moving.ease(0);
       moving.paint(x);
       drag = { slide: moving, grab: t.clientX - x, x, samples: [{ t: e.timeStamp, at: x }], moved: false, toward };
       return;
     }
-    if (flight) return;
+    // not caught: one that has all but arrived lands now, and this touch is a touch like any other; one still on
+    // its way is left to arrive, and this touch moves nothing
+    if (Math.abs(x - (flight.open ? moving.w : 0)) >= 2) return;
+    land();
   }
-  cand = { x: t.clientX, y: t.clientY, edge: t.clientX <= EDGE };
-  // a touch at the edge of a page that goes back: the day is woken now, before the finger has moved far enough to tell
-  const s = useApp.getState();
-  const tab = activeTab(s.panes)?.id;
-  if (cand.edge && !s.sideSheet && edgeMeans(s.phone, tab !== undefined && tab !== TODAY, fromTree) === 'back' && topEl()) peek(true);
+  // at the edge, over something moved along sideways (a page zoomed in, a wide table): the finger pans it back, and
+  // the edge's swipe is for when it stands at its left end
+  const on = e.target instanceof Element ? e.target : null;
+  const edge = t.clientX <= EDGE && !scrolledSideways(on, on?.closest('.pane, .side') ?? null);
+  cand = { x: t.clientX, y: t.clientY, edge };
 }
 
 function begin(e: TouchEvent, t: Touch, dx: number): void {
   const s = useApp.getState();
   let slide: Slide | null = null;
   let x = 0;
-  if (s.sideSheet) {
+  if (sheetEl()?.dataset.on === 'open') {
     if (dx < 0) { slide = sheetSlide(); x = slide?.w ?? 0; }
-  } else if (cand?.edge && dx > 0 && !s.paletteOpen && !s.tweaksOpen && s.quickCard === null) {
+  } else if (cand?.edge && dx > 0 && !s.sideSheet && !s.paletteOpen && !s.tweaksOpen && s.quickCard === null) {
     const tab = activeTab(s.panes)?.id;
-    if (edgeMeans(s.phone, tab !== undefined && tab !== TODAY, fromTree) === 'back') slide = backSlide();
-    else {
-      setSheet(true);
-      slide = sheetSlide();
-      if (!slide) setSheet(false);
-    }
+    if (edgeMeans(s.phone, tab !== undefined && tab !== TODAY, fromTree()) === 'back') {
+      slide = backSlide();
+      // a page still on its way in is taken from where it is, not from where it was going
+      x = slide?.read() ?? 0;
+      if (slide && x >= slide.w - 1) slide = null;
+    } else slide = sheetSlide();
   }
   cand = null;
   if (!slide) return;
@@ -272,9 +304,9 @@ function move(e: TouchEvent): void {
     const dx = t.clientX - cand.x;
     const axis = axisOf(dx, t.clientY - cand.y);
     if (axis === null) return;
-    if (axis === 'y') { cand = null; peek(false); return; }
+    if (axis === 'y') { cand = null; return; }
     begin(e, t, dx);
-    if (!drag) { peek(false); return; }
+    if (!drag) return;
   }
   if (e.cancelable) e.preventDefault();
   const d = drag as Drag;
@@ -287,7 +319,7 @@ function move(e: TouchEvent): void {
 
 function end(e?: TouchEvent): void {
   cand = null;
-  if (!drag) { if (!flight) peek(false); return; }
+  if (!drag) return;
   const d = drag;
   drag = null;
   const v = d.moved ? velocityOf(d.samples, e?.timeStamp ?? d.samples[d.samples.length - 1]!.t) : 0;
@@ -295,33 +327,16 @@ function end(e?: TouchEvent): void {
   fly(d.slide, d.x, open, v);
 }
 
-/**
- * The sheet and a phone's page follow the finger from now on. Resolves to a
- * stop. The sheet opened or closed by anything else (its button, a row, the
- * scrim) is let go of here, so its own motion (`motion.css`) plays.
- */
+/** The sheet and a phone's page follow the finger from now on. Resolves to a stop. */
 export function installEdge(): () => void {
   const onEnd = (e: TouchEvent) => { if (e.touches.length === 0) end(e); };
   window.addEventListener('touchstart', start, { passive: true });
   window.addEventListener('touchmove', move, { passive: false });
   window.addEventListener('touchend', onEnd, { passive: true });
   window.addEventListener('touchcancel', onEnd, { passive: true });
-  const unsub = useApp.subscribe((s, was) => {
+  const unsub = useApp.subscribe((s) => {
     // the day in front again: the next page starts from it
-    if (activeTab(s.panes)?.id === TODAY) fromTree = false;
-    if (s.sideSheet === was.sideSheet || ours) return;
-    if (drag?.slide.kind === 'sheet') drag = null;
-    if (flight?.slide.kind === 'sheet') { clearTimeout(flight.timer); flight = null; }
-    const el = sheetEl();
-    const scrim = scrimEl();
-    for (const n of [el, scrim]) {
-      if (!n) continue;
-      n.style.transition = '';
-      n.style.transform = '';
-      n.style.opacity = '';
-      // opened again while what was dragged shut is still leaving: it comes in as any sheet does
-      if (s.sideSheet) delete n.dataset.held;
-    }
+    if (treeTab !== null && activeTab(s.panes)?.id === TODAY) treeTab = null;
   });
   return () => {
     window.removeEventListener('touchstart', start);
@@ -331,6 +346,6 @@ export function installEdge(): () => void {
     unsub();
     cand = null;
     drag = null;
-    if (flight) { clearTimeout(flight.timer); flight = null; }
+    drop();
   };
 }

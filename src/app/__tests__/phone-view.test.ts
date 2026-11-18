@@ -53,7 +53,7 @@ const { Queue } = await import('../Queue.js');
 const { Session } = await import('../Session.js');
 const { Canvas } = await import('../Canvas.js');
 const { Palette } = await import('../Palette.js');
-const { TopStrip } = await import('../TopStrip.js');
+const { SettingsButton, SyncWord } = await import('../TopStrip.js');
 const { openQuickCard } = await import('../quick.js');
 const { openNotes, openPagesBeside, toggleNotes } = await import('../book.js');
 const { rememberDeck } = await import('../vault.js');
@@ -148,14 +148,19 @@ describe('the bar', () => {
 });
 
 describe('the strips', () => {
-  it('leaves the top strip the name and sync, and the canvas one page with no tabs', async () => {
-    await draw(createElement('div', null, createElement(TopStrip), createElement(Canvas)));
-    expect(q('.top .ws')).not.toBeNull();
-    expect(q('.top .palette')).toBeNull();
-    expect(q('.top .insp-toggle:not(.set-toggle)')).toBeNull();
-    // the settings are a press away on a phone too
-    expect(q('.top .set-toggle')).not.toBeNull();
+  it('has no strip at the top: the canvas is one page with no tabs, and the sheet has where sync stands and the settings', async () => {
+    await draw(createElement(Canvas));
+    expect(q('.top')).toBeNull();
     expect(q('.tabbar')).toBeNull();
+    await act(async () => { root.unmount(); });
+    host.remove();
+    // what the strip held, as the sheet's foot draws it (`App.tsx`): the settings a press away, and the sync word where the collection syncs
+    await draw(createElement('div', { className: 'side-state' }, createElement(SyncWord), createElement(SettingsButton)));
+    expect(q('.side-state .set-toggle')).not.toBeNull();
+    expect(q('.side-state .sync')).toBeNull();
+    await act(async () => { useApp.setState({ sync: { ...useApp.getState().sync, on: true, conflicts: [], offline: true } }); });
+    expect(q('.side-state .sync')?.textContent).toBe('offline');
+    expect(q('.side-state .sync')?.getAttribute('title')).toBe('sync now');
   });
 
   it('leaves the palette no command for what a phone has not got', async () => {

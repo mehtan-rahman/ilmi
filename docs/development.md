@@ -127,6 +127,8 @@ hand the launch to it), give the dev build its own identifier:
 starts an ntfy-shaped server on the loopback (`src-tauri/src/nudge.rs`, dev
 builds only), both windows take it as their `nudge` and turn their pull
 timers off, and a grade pushed in one is timed until it lands in the other.
+`ILMI_THEME=dark` (or `light`, `eink`; `"theme"` in an iPad's or a phone's
+`smoke.json`) starts a dev run in that theme, for looking at it.
 `ILMI_STORAGE=<a folder>` (milestone 61) makes a dev run sync its
 collection through that folder by the engine (`src/sync/engine.ts`; there
 is no setting for it yet): an empty folder takes the collection that opens

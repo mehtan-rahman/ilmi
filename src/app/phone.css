@@ -1,7 +1,9 @@
 /* A phone (milestone 56). `data-shape="phone"` is set by App under 600 px
    either way up, on top of the iPad's rules in `chrome.css`. The day is the
-   face: a thin strip over it for the collection and sync, one page at a
-   time, and at the foot, where a thumb is, the bar. A session is the whole
+   face: one page at a time, from under the clock to the bar at the foot,
+   where a thumb is. There is no strip at the top: the band the clock and the
+   island sit in is the page's own colour, and the collection's name, where
+   sync stands and the settings are in the sheet. A session is the whole
    screen with its buttons across the foot. Everything here is a finger's
    size; nothing here reaches the Mac or an iPad. Fields are 16 px or more:
    anything less and the system zooms the page in to type. */
@@ -18,28 +20,23 @@ html[data-shape="phone"] {
 /* ── the shell ────────────────────────────────────────────────── */
 html[data-shape="phone"] .shell {
   grid-template-columns: 0 minmax(0, 1fr) 0;
-  grid-template-rows: calc(24px + var(--safe-t)) 1fr calc(var(--pb-h) + var(--safe-b));
+  grid-template-rows: 0 1fr calc(var(--pb-h) + var(--safe-b));
 }
 html[data-shape="phone"] .shell[data-session="1"] { grid-template-rows: 0 1fr 0; }
-html[data-shape="phone"] .shell[data-session="1"] .top { display: none; }
-/* nothing scrolls under the clock */
-html[data-shape="phone"] .shell[data-session="1"] .canvas { padding-top: var(--safe-t); }
-html[data-shape="phone"][data-keyboard] .shell { grid-template-rows: calc(24px + var(--safe-t)) 1fr 0; }
+html[data-shape="phone"][data-keyboard] .shell { grid-template-rows: 0 1fr 0; }
 html[data-shape="phone"][data-keyboard] .phone-bar { display: none; }
-html[data-shape="phone"] .top { border-bottom: 0; justify-content: space-between; gap: 12px; }
-html[data-shape="phone"] .top .right > :not(.sync):not(.ago) { display: none; }
 html[data-shape="phone"] .pane-body { -webkit-overflow-scrolling: touch; }
-/* the strip is thin, its buttons a finger's size all the same: each takes presses from a finger's height about it */
-html[data-shape="phone"] .top :is(button) { position: relative; }
-html[data-shape="phone"] .top :is(button)::after { content: ""; position: absolute; left: -6px; right: -6px; top: 50%; height: var(--finger); transform: translateY(-50%); }
+/* a page starts under the clock: the band it and the island sit in is the page's, in the page's colour, and nothing
+   scrolls up into it. A book's pages lie on the ground the app's own chrome has, and so does their band */
+html[data-shape="phone"] .pane { padding-top: var(--safe-t); background: var(--paper); box-sizing: border-box; }
+html[data-shape="phone"] .pane:has(.book) { background: var(--bg); }
 /* the day is always there; what is opened lies over it (`Canvas.tsx`), a hairline down its left side as it moves */
 html[data-shape="phone"] .canvas { position: relative; }
 html[data-shape="phone"] .pane + .pane { border-left: 0; }
-html[data-shape="phone"] .pane-top { position: absolute; inset: 0; z-index: 1; background: var(--bg); box-shadow: -1px 0 0 var(--line-1); }
-html[data-shape="phone"] .pane-day[data-covered="1"] { visibility: hidden; }
-/* a session is the whole screen, over the strip and the bar: they are under it as it comes in and as it is pulled
-   away, and gone once it has settled (`App.tsx`) */
-html[data-shape="phone"] .pane-top[data-full="1"] { position: fixed; inset: 0 0 auto 0; height: var(--shell-h, 100dvh); z-index: 54; padding-top: var(--safe-t); box-sizing: border-box; }
+html[data-shape="phone"] .pane-top { position: absolute; inset: 0; z-index: 1; box-shadow: -1px 0 0 var(--line-1); }
+html[data-shape="phone"] .pane-top[data-pop="1"] { pointer-events: none; }
+/* a session is the whole screen, over the bar, which is there under it as it comes in and as it is pulled away */
+html[data-shape="phone"] .pane-top[data-full="1"] { position: fixed; inset: 0 0 auto 0; height: var(--shell-h, 100dvh); z-index: 54; }
 
 /* the bar: the one button, the day, a new card */
 .phone-bar {
@@ -67,6 +64,10 @@ html[data-shape="phone"] .pane-top[data-full="1"] { position: fixed; inset: 0 0 
 .phone-bar .pb-w { display: inline-block; }
 .quick-deck .qd-w { display: inline-block; }
 .phone-bar .pb-more[data-on="1"] { color: var(--fg-1); }
+/* sync wants looking at (a conflict, signed out): a mark on the button the sheet is behind, where it is said */
+.phone-bar .pb-more[data-alert="1"] { position: relative; }
+.phone-bar .pb-more[data-alert="1"]::after { content: ""; position: absolute; left: calc(50% + 9px); top: calc(50% - 13px); width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+[data-theme="eink"] .phone-bar .pb-more[data-alert="1"]::after { background: var(--fg); }
 .phone-bar .pb-day { font-size: 15px; display: flex; align-items: center; justify-content: center; gap: 9px; }
 .phone-bar .pb-day[data-go="1"] { color: var(--fg-1); font-weight: 500; }
 .phone-bar .pb-n { font-family: var(--sans); font-size: var(--t-sm); color: var(--accent); font-variant-numeric: tabular-nums; font-weight: 500; }
@@ -196,7 +197,10 @@ html[data-shape="phone"] .reveal-all { margin: 12px 0 0; padding: 0 0 calc(10px 
 html[data-shape="phone"] .grades:not([data-gone="1"]):not(.learn) button {
   --g: var(--fg-3);
   position: relative;
-  min-height: 64px;
+  /* as tall as the one key that stood here before the answer, to the pixel: nothing jumps when it is shown */
+  min-height: 0;
+  height: 66px;
+  box-sizing: border-box;
   padding: 11px 0 9px;
   border: solid var(--line-1);
   border-width: 0 0 1px;
@@ -235,7 +239,7 @@ html[data-shape="phone"] .reveal-all {
   width: 100%;
   box-sizing: border-box;
   min-height: 0;
-  height: 64px;
+  height: 66px;
   margin-bottom: calc(10px + var(--safe-b));
   padding: 0;
   border: 1px solid var(--line-1);
@@ -276,6 +280,9 @@ html[data-shape="phone"] .session-bar .sb-actions button { min-height: 52px; pad
 html[data-shape="phone"] .session-bar .sb-actions .ra-l { font-size: 14px; line-height: 1.2; text-align: center; }
 html[data-shape="phone"] .session-bar .sb-actions kbd { display: none; }
 html[data-shape="phone"] .doc-session .reader-wrap { padding-top: 6px; padding-bottom: 190px; }
+/* the bar is at the foot of the glass however short the page over it is, and while the page is still coming */
+html[data-shape="phone"] .doc-session[data-book="0"] { display: flex; flex-direction: column; }
+html[data-shape="phone"] .doc-session[data-book="0"] > .reader-wrap { flex: 1 0 auto; }
 /* a book's pages stand above the bar, not under it */
 html[data-shape="phone"] .doc-session[data-book="1"] .reader-wrap { padding-bottom: 24px; }
 html[data-shape="phone"] .doc-session[data-book="1"] > .session-bar { padding: 0; margin: 0; max-width: none; }
@@ -284,10 +291,24 @@ html[data-shape="phone"] .doc-session[data-book="1"] > .session-bar { padding: 0
 html[data-shape="phone"] .side[data-sheet="1"] {
   width: 100%;
   border-right: 0;
-  padding: 10px max(10px, var(--safe-r)) 0 max(10px, var(--safe-l));
+  padding: 0 max(10px, var(--safe-r)) 0 max(10px, var(--safe-l));
   display: flex;
   flex-direction: column;
 }
+/* the sheet's head: the collection's name, under the clock, staying there as the tree scrolls */
+.side-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  flex-shrink: 0;
+  margin: 0 -10px 6px;
+  padding: calc(var(--safe-t) + 4px) 16px 10px;
+  background: var(--bg);
+  font-family: var(--sans);
+  font-size: 15px;
+  color: var(--fg-1);
+}
+.side-head .ws { font-weight: 600; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 html[data-shape="phone"] .side h6 { font-size: var(--t-sm); }
 html[data-shape="phone"] .tree { font-size: 16px; }
 html[data-shape="phone"] .tree .row { min-height: var(--finger); padding-top: 6px; padding-bottom: 6px; }
@@ -295,26 +316,48 @@ html[data-shape="phone"] .tree .row .chev { width: 30px; height: var(--finger); 
 html[data-shape="phone"] .tree .row .glyph { --ic: 17px; width: 18px; }
 html[data-shape="phone"] .tree .row .due { font-size: var(--t-sm); }
 html[data-shape="phone"] .tree .row .away { font-size: var(--t-xs); }
-/* the palette's field at the sheet's foot, under the thumb that opened it */
-.side-find {
-  appearance: none;
+/* the sheet's foot, under the thumb that opened it: the palette's field, and under it where sync stands (pressed, a
+   sync now) and the settings */
+.side-foot {
   position: sticky;
   bottom: 0;
+  z-index: 2;
   flex-shrink: 0;
   margin: auto -10px 0;
+  border-top: 1px solid var(--line-1);
+  background: var(--bg);
+}
+.side-find {
+  appearance: none;
+  width: 100%;
   padding: 0 16px;
   min-height: 52px;
   display: flex;
   align-items: center;
   gap: 10px;
   border: 0;
-  border-top: 1px solid var(--line-1);
-  background: var(--bg);
+  background: transparent;
   color: var(--fg-3);
   font-family: var(--sans);
   font-size: 14px;
   text-align: start;
 }
+.side-state {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--finger);
+  padding: 0 6px 0 16px;
+  border-top: 1px solid var(--line-2);
+  font-family: var(--sans);
+  font-size: var(--t-sm);
+  color: var(--fg-3);
+}
+.side-state .sp { flex: 1; }
+.side-state .sync { appearance: none; min-height: var(--finger); margin: 0; padding: 0; border: 0; background: transparent; color: var(--fg-2); font: inherit; }
+.side-state .sync[data-sync="conflicts"], .side-state .sync[data-sync="offline"] { color: var(--fg-1); }
+.side-state .ago { color: var(--fg-4); }
+.side-state .set-toggle { width: var(--finger); height: var(--finger); margin: 0; padding: 0; display: inline-flex; align-items: center; justify-content: center; --ic: 18px; }
 .side-find .g { color: var(--fg-3); display: flex; --ic: 17px; }
 
 html[data-shape="phone"] .palette-overlay { padding: calc(var(--safe-t) + 8px) 8px 8px; height: var(--shell-h, 100dvh); bottom: auto; background: var(--bg); }
@@ -474,5 +517,3 @@ html[data-keyboard] .quick-decks { bottom: 96px; }
 .quick-decks .qd-row[data-on="1"] { background: var(--line-3); }
 .quick-decks .qd-at { color: var(--fg-4); font-family: var(--sans); font-size: var(--t-xs); flex-shrink: 0; }
 
-/* a phone on its side: the same, the sides clear of the notch */
-html[data-shape="phone"] .top { padding-left: max(14px, var(--safe-l)); padding-right: max(14px, var(--safe-r)); }

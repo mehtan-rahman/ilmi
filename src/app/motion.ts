@@ -1,5 +1,5 @@
 // What closes leaves, as what opens arrives (`motion.css`). A menu, the
-// palette, the settings, a notice and the sheet's scrim are taken out of
+// palette, the settings and a notice are taken out of
 // the page by React the moment their state says so; this watches the page
 // and, for those few small things, puts a likeness back where the thing was
 // for the tenth of a second it takes to fade. The likeness is not the
@@ -19,7 +19,6 @@ const LEAVING: readonly [selector: string, ms: number][] = [
   ['.palette-overlay', 120],
   ['.tweaks', 180],
   ['.notice', 140],
-  ['.side-scrim', 180],
   ['.ink-pop', 120],
   ['.page-setup', 120],
 ];

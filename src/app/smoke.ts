@@ -11638,7 +11638,11 @@ export async function smokePhone(): Promise<void> {
     const TODAY = queueId('today');
     await poll(() => at() === TODAY && q('.queue li[data-el]'), 'the day is what opens, its rows drawn', 20000);
     must(useApp.getState().phone && document.documentElement.dataset.shape === 'phone', 'the page knows it');
-    must(!q('.tabbar') && !q('.insp') && !q('.bot') && !q('.top .palette') && !q('.top .insp-toggle:not(.set-toggle)') && !!q('.top .set-toggle'), 'no tabs, no inspector, no key hints, nothing at the top but the name, sync and the settings');
+    must(!q('.tabbar') && !q('.insp') && !q('.bot') && !q('.top'), 'no tabs, no inspector, no key hints, and no strip at the top');
+    // the page starts under the clock: the band the clock sits in is the page's own, in its colour
+    const dayPane = q<HTMLElement>('.pane[data-active="1"]')!;
+    const dayBody = q<HTMLElement>('.pane-body', dayPane)!;
+    must(dayPane.getBoundingClientRect().top <= 1 && getComputedStyle(dayPane).backgroundColor === getComputedStyle(dayBody).backgroundColor, 'the page runs from the top of the glass, the band under the clock in its colour');
     const bar = q<HTMLElement>('.phone-bar')!;
     must(bar && bar.getBoundingClientRect().bottom >= window.innerHeight - 1, 'the bar is at the foot');
     must(tall('.phone-bar button') && qa('.phone-bar button').length === 3, 'three buttons on it, each a finger\'s size');
@@ -11653,7 +11657,7 @@ export async function smokePhone(): Promise<void> {
 
     // ── a topic's row: its three as buttons, acting from the row ──
     const row = await poll(() => q<HTMLElement>('.qlist li[data-el="read"] .topic-acts, .qlist li[data-el="section"] .topic-acts')?.closest('li'), 'a topic\'s row in the day');
-    must(tall('.topic-acts button') && qa('button', row).length === 3, 'it has its three as buttons');
+    must(tall('.topic-acts button') && qa('.topic-acts button', row).length === 3, 'it has its three as buttons');
     must(!q('.qlist li[data-el="card"] .topic-acts'), 'a card\'s row has none: a card is graded');
     row.scrollIntoView({ block: 'center' });
     await sleep(500);
@@ -11695,7 +11699,7 @@ export async function smokePhone(): Promise<void> {
 
     // ── the session: the whole screen, walked by its buttons ──
     await tap(q('.pb-day')!, () => at() === SESSION && (q('.recall-wrap') || q('.doc-session')), 'the middle button enters the queue');
-    must(!q('.phone-bar') && !q('.tabbar') && getComputedStyle(q('.top')!).display === 'none', 'a session is the whole screen: no strip, no bar');
+    must(!q('.phone-bar') && !q('.tabbar') && !q('.top'), 'a session is the whole screen: no strip, no bar');
     const graded: { path: string; block: number; grade: number }[] = [];
     const topics: string[] = [];
     const counter = () => (q('.sess-count') ?? q('.sb-count'))?.textContent ?? '';
@@ -11760,8 +11764,9 @@ export async function smokePhone(): Promise<void> {
           must(buttons.length === 4 && tall('.grades button', 44), 'the four grades as buttons');
           const r = buttons.map((b) => b.getBoundingClientRect());
           const gaps = [1, 2, 3].map((i) => r[i]!.left - r[i - 1]!.right);
-          must(r.every((x) => Math.abs(x.width - r[0]!.width) < 1 && Math.abs(x.top - r[0]!.top) < 1 && Math.abs(x.bottom - r[0]!.bottom) < 1) && gaps.every((g) => g >= -1.5 && Math.abs(g - gaps[0]!) < 1.5), `four keys of one size in a row, ${gaps[0]!.toFixed(1)} px between them (${r[0]!.width.toFixed(1)}×${r[0]!.height.toFixed(1)})`);
-          must(!!revealAt && Math.abs(r[0]!.left - revealAt.left) < 2 && Math.abs(r[3]!.right - revealAt.right) < 2 && Math.abs(r[0]!.bottom - revealAt.bottom) < 2, `where the one key was: nothing jumps at the answer (${r[0]!.left.toFixed(1)}, ${r[0]!.top.toFixed(1)} to ${r[3]!.right.toFixed(1)}, ${r[0]!.bottom.toFixed(1)}; the key ${revealAt?.left.toFixed(1)}, ${revealAt?.top.toFixed(1)} to ${revealAt?.right.toFixed(1)}, ${revealAt?.bottom.toFixed(1)})`);
+          // (the row's hairline is the first key's left edge and the last one's right: those two are a pixel wider than the two between)
+          must(r.every((x) => Math.abs(x.width - r[0]!.width) <= 1.5 && Math.abs(x.top - r[0]!.top) < 1 && Math.abs(x.bottom - r[0]!.bottom) < 1) && gaps.every((g) => Math.abs(g) < 1), `four keys of one size in one row, edge to edge (${gaps.map((g) => g.toFixed(1)).join(' ')} px between them; ${r.map((x) => `${x.width.toFixed(1)}×${x.height.toFixed(1)}`).join(' ')})`);
+          must(!!revealAt && Math.abs(r[0]!.left - revealAt.left) < 1 && Math.abs(r[3]!.right - revealAt.right) < 1 && Math.abs(r[0]!.top - revealAt.top) < 1 && Math.abs(r[0]!.bottom - revealAt.bottom) < 1, `where the one key was, to the pixel: nothing jumps at the answer (${r[0]!.left.toFixed(1)}, ${r[0]!.top.toFixed(1)} to ${r[3]!.right.toFixed(1)}, ${r[0]!.bottom.toFixed(1)}; the key ${revealAt?.left.toFixed(1)}, ${revealAt?.top.toFixed(1)} to ${revealAt?.right.toFixed(1)}, ${revealAt?.bottom.toFixed(1)})`);
           must(buttons.every((b) => { const l = b.querySelector<HTMLElement>('.label')!, gp = b.querySelector<HTMLElement>('.gap')!; const br = b.getBoundingClientRect(); return [l, gp].every((x) => { const xr = x.getBoundingClientRect(); return xr.left >= br.left - 0.5 && xr.right <= br.right + 0.5 && xr.top >= br.top && xr.bottom <= br.bottom; }) && parseFloat(getComputedStyle(l).fontSize) >= 16; }), 'each key\'s word, 16 px, and its interval whole inside it');
           must(buttons.every((b) => !!b.querySelector('.gap')?.textContent), `each says when it comes back (${buttons.map((b) => b.querySelector('.gap')?.textContent).join(' ')})`);
           await both('phone-card-answer');
@@ -11821,7 +11826,7 @@ export async function smokePhone(): Promise<void> {
     await sleep(500);
     await tap(q('.body', tRow)!, () => at() === SESSION && q('.doc-session .sb-actions'), 'a tap on its row opens it in the session');
     must(tall('.doc-session .sb-actions button', 50) && !qa('.sb-actions kbd').some((k) => (k as HTMLElement).offsetParent !== null), 'its page, and its three as buttons, no keys named');
-    must(!q('.phone-bar') && q('.session-bar')!.getBoundingClientRect().bottom >= window.innerHeight - 1, 'across the foot of the whole screen');
+    must(!q('.phone-bar') && q('.session-bar')!.getBoundingClientRect().bottom >= window.innerHeight - 1, `across the foot of the whole screen (the bar ${q('.phone-bar') ? 'still there' : 'gone'}; the session's ends at ${q('.session-bar')!.getBoundingClientRect().bottom.toFixed(1)} of ${window.innerHeight}, its pane at ${q('.session-bar')!.closest('.pane')!.getBoundingClientRect().bottom.toFixed(1)})`);
     await sleep(1500);
     await shot('phone-session-topic');
     await tap(q('.sn-out')!, () => at() === TODAY && q('.phone-bar'), '× goes back to the day');
@@ -11885,6 +11890,9 @@ export async function smokePhone(): Promise<void> {
     const sheet = () => tap(q('.pb-more')!, () => q<HTMLElement>('.side[data-sheet="1"]'), 'the one button brings the tree');
     await sheet();
     must(q('.side-find')?.textContent?.includes('open or run') && tall('.side-find', 50), 'and the palette\'s field at its foot');
+    // what the strip held is here: the collection's name at the head, where sync stands and the settings at the foot
+    must(!!q('.side-head .ws')?.textContent && !!q('.side-foot .set-toggle') && tall('.side-foot .set-toggle'), 'the collection\'s name at its head, the settings at its foot');
+    must((q('.side-foot .sync')?.textContent ?? null) === syncWord(useApp.getState().sync) && (!q('.side-foot .sync') || tall('.side-foot .sync')), `and where sync stands, a finger's size: "${q('.side-foot .sync')?.textContent}"`);
     must(tall('.side .tree .row'), 'rows a finger can take');
     await sleep(500);
     await shot('phone-tree');
@@ -12028,6 +12036,9 @@ export async function smokePhone(): Promise<void> {
     await tap(q('.pb-more')!, () => !q('.side'), 'the one button closes it too');
     await tap(q('.pb-add')!, () => q('.quick'), 'the composer, dark');
     await shot('phone-composer-dark');
+    // (its buttons are where a finger finds them only once the keyboard has come up under them)
+    await poll(() => document.documentElement.hasAttribute('data-keyboard'), 'the keyboard is up', 15000);
+    await sleep(600);
     await tap(q('.qf-acts [data-act="cancel"]')!, () => !q('.quick'), 'cancelled');
     useApp.getState().setTheme('light');
     log('do: turn landscape');

@@ -144,7 +144,14 @@ function useSame<T>(v: T): T {
 }
 
 export function Queue({ scope, active }: Props) {
-  const all = useSame(useApp((s) => s.queue));
+  const live = useApp((s) => s.queue);
+  // a phone's queue that is not the page in front (the day under what was opened from it, `Canvas.tsx`) keeps the
+  // list it had: built anew for the page coming in over it, it would be drawn again under that page as it moves.
+  // In front again, it is the queue as it is now. (A queue in a pane beside another, on the Mac, follows as ever.)
+  const held = useRef(live);
+  const under = useApp((s) => s.phone) && !active;
+  if (!under) held.current = live;
+  const all = useSame(under ? held.current : live);
   const docs = useApp((s) => s.docs);
   const log = useApp((s) => s.log);
   const budget = useApp((s) => s.budget);

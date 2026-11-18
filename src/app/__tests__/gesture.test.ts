@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { EDGE, FLING, PULL, ROW_COMMIT, SETTLE_MAX, SETTLE_MIN, SLOP, axisOf, edgeMeans, pullArmed, rowAt, rowCommits, rowEnds, rubber, settleEase, settleMs, settlesOpen, velocityOf } from '../gesture.js';
+import { EDGE, FLING, PULL, ROW_COMMIT, SETTLE_MAX, SETTLE_MIN, SLOP, axisOf, edgeMeans, pullArmed, rowAt, rowCommits, rowEnds, rubber, scrolledSideways, settleEase, settleMs, settlesOpen, velocityOf } from '../gesture.js';
 
 describe('a touch becomes a drag', () => {
   it('rests inside its slop', () => {
@@ -136,5 +136,26 @@ describe('the left edge', () => {
     expect(edgeMeans(true, true, true)).toBe('sheet');
     expect(edgeMeans(false, true, false)).toBe('sheet');
     expect(edgeMeans(false, false, false)).toBe('sheet');
+  });
+});
+
+describe('what is under a touch at the edge', () => {
+  const node = (scrollLeft: number, parentElement: { scrollLeft: number; parentElement: unknown } | null = null) => ({ scrollLeft, parentElement }) as { scrollLeft: number; parentElement: never };
+  it('is at its left end: the edge is the edge\'s', () => {
+    const pane = node(0);
+    expect(scrolledSideways(node(0, node(0, pane)), pane)).toBe(false);
+    expect(scrolledSideways(null, pane)).toBe(false);
+    expect(scrolledSideways(pane, pane)).toBe(false);
+  });
+  it('is moved along sideways, itself or what holds it: a pan', () => {
+    const pane = node(0);
+    expect(scrolledSideways(node(40, pane), pane)).toBe(true);
+    expect(scrolledSideways(node(0, node(0, node(12, pane))), pane)).toBe(true);
+    expect(scrolledSideways(node(0, node(3)), null)).toBe(true);
+  });
+  it('looks no further than the pane', () => {
+    const outside = node(500);
+    const pane = node(0, outside);
+    expect(scrolledSideways(node(0, pane), pane)).toBe(false);
   });
 });

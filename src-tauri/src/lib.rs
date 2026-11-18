@@ -625,14 +625,36 @@ async fn ink_scene(ink: tauri::State<'_, tauri_plugin_ink::Ink<tauri::Wry>>, sce
 
 /// What a sheet holds, from the store.
 #[tauri::command]
-async fn ink_fill(ink: tauri::State<'_, tauri_plugin_ink::Ink<tauri::Wry>>, sheet: String, drawing: Option<String>, show: Option<bool>) -> Result<serde_json::Value, String> {
-    ink.fill(&sheet, drawing.as_deref(), show.unwrap_or(false)).await
+async fn ink_fill(ink: tauri::State<'_, tauri_plugin_ink::Ink<tauri::Wry>>, sheet: String, drawing: Option<String>, show: Option<bool>, names: Option<Vec<String>>) -> Result<serde_json::Value, String> {
+    ink.fill(&sheet, drawing.as_deref(), show.unwrap_or(false), names).await
 }
 
 /// A sheet's drawing, when it has changed.
 #[tauri::command]
 async fn ink_take(ink: tauri::State<'_, tauri_plugin_ink::Ink<tauri::Wry>>, sheet: String) -> Result<tauri_plugin_ink::Taken, String> {
     ink.take(&sheet).await
+}
+
+/// Strokes (each as the store keeps it, base64) as the page draws them itself (milestone 89): a JSON list, a stroke
+/// each, its name and its outline as an SVG path.
+#[tauri::command(async)]
+fn ink_shapes(strokes: Vec<String>) -> Result<String, String> {
+    use base64::Engine as _;
+    let b64 = base64::engine::general_purpose::STANDARD;
+    let bytes = strokes.iter().map(|s| b64.decode(s).map_err(|e| e.to_string())).collect::<Result<Vec<_>, _>>()?;
+    tauri_plugin_ink::shapes(&bytes.iter().map(|b| b.as_slice()).collect::<Vec<_>>())
+}
+
+/// The page has drawn what a sheet said it holds, up to its telling `seq` (89).
+#[tauri::command]
+async fn ink_shown(ink: tauri::State<'_, tauri_plugin_ink::Ink<tauri::Wry>>, sheet: String, seq: u64) -> Result<(), String> {
+    ink.shown(&sheet, seq).await
+}
+
+/// The outlines of those of a sheet's strokes the page names: one it was told of and has not (89).
+#[tauri::command]
+async fn ink_outlines(ink: tauri::State<'_, tauri_plugin_ink::Ink<tauri::Wry>>, sheet: String, names: Vec<String>) -> Result<serde_json::Value, String> {
+    ink.outlines(&sheet, names).await
 }
 
 /// A sheet's canvas hidden: the page is showing its picture.
@@ -1298,7 +1320,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_ink::init())
         .manage(store::Stores::default())
-        .invoke_handler(tauri::generate_handler![allow_vault, allow_hidden, read_dropped, read_dropped_bytes, read_anki_package, read_epub, read_plugin_zip, platform, dev_env, dev_web_memory, dev_web_processes, dev_nudge_serve, dev_nudge_drop, dev_nudge_listeners, set_recent_vaults, store_list, store_create, store_delete, store_held, store_rename, store_counts, store_rows, store_text, store_put, store_remove, store_version, store_set_version, store_doc, store_places, store_digests, store_search, store_search_state, store_search_walk, store_review_files, store_reviews, store_reviews_put, store_same, store_same_put, store_originals, store_original_put, store_blob_put, store_blob_get, store_batch, store_meta, store_regs, store_regs_under, store_crdt, store_outbox, store_outbox_count, store_blob_has, store_regs_page, store_blobs_away, store_blob_take, store_blob_range, store_ink, store_ink_file, store_ink_pages, store_ink_page, dev_ink_sample, ink_split, ink_bounds, ink_scene, ink_fill, ink_take, ink_rest, ink_tool, ink_undo, ink_redo, ink_finger, ink_color, ink_caps, ink_pinch, ink_surface, ink_surface_do, ink_selection, ink_paste, ink_share, pages_pdf, dev_ink_unshare, dev_ink_pencil, dev_ink_stroke, dev_pdf_info, app_hold, app_haptic, dev_ink_pen, dev_ink_wipe, dev_ink_wheel, dev_ink_state, dev_ink_picture, dev_ink_plain, storage_list, storage_read, storage_write, storage_remove, storage_blob_up, storage_blob_down, dev_storage_serve, icloud_folder, icloud_down, oauth_sign_in, oauth_sign_out, oauth_back, oauth_signed_in, dev_cloud_stats, dev_cloud_revoke, zip_folder, sync_status, sync_init, sync_init_bare, sync_set_remote, sync_clone, sync_changes, sync_commit, sync_fetch, sync_merge, sync_resolve, sync_push])
+        .invoke_handler(tauri::generate_handler![allow_vault, allow_hidden, read_dropped, read_dropped_bytes, read_anki_package, read_epub, read_plugin_zip, platform, dev_env, dev_web_memory, dev_web_processes, dev_nudge_serve, dev_nudge_drop, dev_nudge_listeners, set_recent_vaults, store_list, store_create, store_delete, store_held, store_rename, store_counts, store_rows, store_text, store_put, store_remove, store_version, store_set_version, store_doc, store_places, store_digests, store_search, store_search_state, store_search_walk, store_review_files, store_reviews, store_reviews_put, store_same, store_same_put, store_originals, store_original_put, store_blob_put, store_blob_get, store_batch, store_meta, store_regs, store_regs_under, store_crdt, store_outbox, store_outbox_count, store_blob_has, store_regs_page, store_blobs_away, store_blob_take, store_blob_range, store_ink, store_ink_file, store_ink_pages, store_ink_page, dev_ink_sample, ink_split, ink_bounds, ink_scene, ink_fill, ink_take, ink_rest, ink_shapes, ink_shown, ink_outlines, ink_tool, ink_undo, ink_redo, ink_finger, ink_color, ink_caps, ink_pinch, ink_surface, ink_surface_do, ink_selection, ink_paste, ink_share, pages_pdf, dev_ink_unshare, dev_ink_pencil, dev_ink_stroke, dev_pdf_info, app_hold, app_haptic, dev_ink_pen, dev_ink_wipe, dev_ink_wheel, dev_ink_state, dev_ink_picture, dev_ink_plain, storage_list, storage_read, storage_write, storage_remove, storage_blob_up, storage_blob_down, dev_storage_serve, icloud_folder, icloud_down, oauth_sign_in, oauth_sign_out, oauth_back, oauth_signed_in, dev_cloud_stats, dev_cloud_revoke, zip_folder, sync_status, sync_init, sync_init_bare, sync_set_remote, sync_clone, sync_changes, sync_commit, sync_fetch, sync_merge, sync_resolve, sync_push])
         .setup(|app| {
             // the sign-ins to Dropbox and Google Drive are kept in the app's own folder, not a collection's
             if let Ok(dir) = app.path().app_data_dir() {

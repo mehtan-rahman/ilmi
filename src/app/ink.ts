@@ -34,6 +34,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { INK_EXT, type InkStroke, type StoreFs } from '../vault/index.js';
 import { imagePath, isRemote } from './images.js';
 import { canvasesReady, setOpen, toolsHeard } from './inkTools.js';
+import { forgetLive, inkHeard, inkKept, type InkEvent } from './pageInk.js';
 import { create } from 'zustand';
 import { useApp } from './store.js';
 import { currentVault } from './vault.js';
@@ -90,6 +91,8 @@ export interface SheetSpec {
   zoom: number;
   /** How its ink lies on what is under it, where the canvas stays shown at rest (a page's): as the page's picture of it is blended. */
   blend?: 'multiply' | 'screen';
+  /** The page draws what the sheet holds, itself (milestone 89, `pageInk.ts`: a PDF's page): the canvas shows only the stroke under the Pencil. */
+  vector?: boolean;
 }
 
 /** A scroller on the page and what lies in it. */
@@ -181,7 +184,7 @@ export function onSurface(id: string, f: (e: SurfaceEvent) => void): () => void 
   return () => { if (surfaceEars.get(id) === f) surfaceEars.delete(id); };
 }
 
-type Heard = PenEvent | ToolEvent | LassoEvent | FingerEvent | SurfaceEvent;
+type Heard = PenEvent | ToolEvent | LassoEvent | FingerEvent | SurfaceEvent | InkEvent;
 
 const fingerEars = new Set<(e: FingerEvent) => void>();
 /** `f` hears what two and three fingers do, wherever on the page: each lens takes what falls on it. Returns the undoing. */
@@ -315,8 +318,11 @@ export async function fillSheet(sheet: string, paper: Paper, drawing: () => Prom
   const strokes = await paper.read();
   const was = bases.get(sheet);
   if (was && was.size === strokes.length && strokes.every((s) => was.has(s.stroke))) return true;
-  const took = await invoke<{ took: boolean }>('ink_fill', { sheet, drawing: strokes.length ? b64(await drawing()) : null, show });
+  // (with the strokes' names, in the drawing's order: a sheet the page draws is told of them by these names, 89)
+  const took = await invoke<{ took: boolean }>('ink_fill', { sheet, drawing: strokes.length ? b64(await drawing()) : null, show, names: strokes.map((s) => s.stroke) });
   if (took.took) bases.set(sheet, new Set(strokes.map((s) => s.stroke)));
+  // (the canvas holds what the store does: whatever it said it held before is no longer its word)
+  if (took.took) forgetLive(sheet);
   return took.took;
 }
 
@@ -330,9 +336,11 @@ async function keepSheet(sheet: string): Promise<void> {
   for (const s of surfaces) {
     const paper = s.paper(sheet);
     if (!paper) continue;
-    const got = await invoke<{ strokes: number; drawing: string | null }>('ink_take', { sheet });
+    const got = await invoke<{ strokes: number; drawing: string | null; seq?: number }>('ink_take', { sheet });
     if (!got.drawing) return;
     const { strokes } = await keepOn(paper, got.drawing, sheet);
+    // (a sheet the page draws: what it was told up to there is the store's now)
+    inkKept(sheet, got.seq ?? 0);
     await s.kept(sheet, strokes, got.drawing);
     return;
   }
@@ -378,6 +386,7 @@ async function sendScene(): Promise<void> {
     // a canvas made anew (come back into the near screens) holds nothing yet
     for (const id of got?.made ?? []) {
       bases.delete(id);
+      forgetLive(id);
       for (const s of surfaces) s.made?.(id);
     }
   }
@@ -400,6 +409,7 @@ export function sceneSoon(): void {
 
 function heard(e: Heard): void {
   if (e.kind === 'surface') { surfaceEars.get(e.id)?.(e); return; }
+  if (e.kind === 'ink') { inkHeard(e); return; }
   if (e.kind === 'fingers' || e.kind === 'pinch' || e.kind === 'double') { for (const f of fingerEars) f(e); return; }
   if (e.kind === 'history' || e.kind === 'color' || e.kind === 'pencil') { toolsHeard(e); return; }
   if (e.kind === 'picked') { useLasso.setState({ picked: { sheet: e.sheet, host: e.host, count: e.count, clip: e.clip, box: { x: e.x, y: e.y, w: e.w, h: e.h } }, rest: null }); sceneSoon(); return; }

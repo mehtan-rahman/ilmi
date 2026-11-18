@@ -11366,7 +11366,7 @@ export async function smokeTouch(): Promise<void> {
       await poll(async () => (await inkNow())?.strokes === 1, 'the Pencil\'s first touch is a stroke on a bare PDF\'s page, on its side', 25000);
       must(Math.abs((await inkNow())!.at.w - pr.width) < 1.5 && Math.abs((await inkNow())!.at.y - pg.getBoundingClientRect().top) < 1.5, `the canvas lies on the page at this width (${Math.round(pr.width)} px)`);
       await poll(async () => (await sfs.pageInk(hash, 129)).length === 1, 'left alone it is kept, by the file\'s hash', 20000);
-      await poll(async () => { const c = await inkNow(); return c?.shown && !c.dirty; }, 'and the page shows it, by its canvas, at rest', 15000);
+      await poll(async () => inkAtRest(await inkNow()) && !!inkOn(pg.parentElement!, 129), 'and the page shows it, at rest', 15000);
       await invoke('dev_ink_pen', { on: false });
       await shot('touch-side-ink');
     }
@@ -12148,7 +12148,7 @@ const INK_NOTE = 'courses/fall-2026/phys-415-stat-mech/canonical-ensemble.md';
 
 /** How the canvases stand (`dev_ink_state`). */
 interface InkState {
-  sheets: { id: string; strokes: number; shown: boolean; dirty: boolean; at: { x: number; y: number; w: number; h: number }; pixels?: number; blend?: string | null; device?: { x: number; y: number; w: number; h: number }; stretch?: number; drawn?: number[] }[];
+  sheets: { id: string; strokes: number; shown: boolean; dirty: boolean; at: { x: number; y: number; w: number; h: number }; pixels?: number; blend?: string | null; device?: { x: number; y: number; w: number; h: number }; stretch?: number; drawn?: number[]; /** (89) the page draws what the sheet holds; then how many strokes PencilKit's canvas still shows, the last telling and the last the page said it drew. */ vector?: boolean; live?: number; said?: number; seen?: number }[];
   hosts: { id: string; follows: boolean; offset: number; port: { x: number; y: number; w: number; h: number }; zoomer?: boolean; phase?: string | null }[];
   /** PencilKit's picker, gone since 82: always false. */
   tools: boolean;
@@ -12171,6 +12171,15 @@ interface InkState {
   touched: { armed?: number; seen?: number; moved?: number; ink?: number; page?: number; lost?: number; fresh: boolean } | null;
   lastTouched: { armed?: number; seen?: number; moved?: number; ink?: number; page?: number; lost?: number; fresh: boolean }[];
 }
+/** A sheet at rest shows what it holds: where the page draws it (89, `vector`: a PDF's page) PencilKit's canvas is off the glass and empty; elsewhere the canvas is on it. */
+const inkAtRest = (c: InkState['sheets'][number] | undefined | null): boolean => !!c && !c.dirty && (c.vector ? !c.shown && (c.live ?? 0) === 0 : c.shown);
+/** What the page shows of the writing on the page at `place`: its picture, loaded, or (89) its paths, a stroke each. */
+const inkOn = (root: ParentNode, place: number): HTMLElement | SVGSVGElement | null => {
+  const el = root.querySelector<HTMLElement | SVGSVGElement>(`.page-ink[data-page="${place}"]`);
+  if (!el) return null;
+  if (el instanceof HTMLImageElement) return el.complete && el.naturalWidth > 0 ? el : null;
+  return el.querySelector('[data-n]') ? el : null;
+};
 /** A notebook's pages as a surface of the system's own (milestone 87), as `dev_ink_state` says it. */
 interface SurfaceNow {
   id: string;
@@ -12762,12 +12771,13 @@ export async function smokePageInk(): Promise<void> {
       await sleep(700);
       const s = await poll(async () => (await state()).sheets.find((x) => x.id === sheet), `p. ${P} has its canvas, ready and with nothing to open`, 15000);
       // (85) a page that holds writing is drawn by its canvas at rest; one that holds none has nothing to show
-      await poll(async () => { const c = (await state()).sheets.find((x) => x.id === sheet); return c && c.shown === c.strokes > 0 && !c.dirty; }, 'at rest: on the screen with what the page holds, or away with nothing', 15000);
+      // (89) and a PDF's page draws what it holds itself: the canvas is away either way, and the page has a path a stroke
+      await poll(async () => { const c = (await state()).sheets.find((x) => x.id === sheet); return c && !c.dirty && (c.vector ? !c.shown && c.live === 0 && qa(`svg.page-ink[data-page="${P}"] [data-n]`, book).length === c.strokes : c.shown === c.strokes > 0); }, 'at rest: the page draws what it holds, and PencilKit\'s canvas is away', 15000);
       return { el, r: el.getBoundingClientRect(), s };
     };
     /** The picture over p. 23 in the pages, once it shows `n` strokes' worth (its `rev` moved to a new picture). */
-    const shown = (book: HTMLElement) => { const i = q<HTMLImageElement>(`img.page-ink[data-page="${P}"]`, book); return i && i.complete && i.naturalWidth > 0 ? i : null; };
-    const over = (book: HTMLElement, img: HTMLImageElement) => {
+    const shown = (book: HTMLElement) => inkOn(book, P);
+    const over = (book: HTMLElement, img: Element) => {
       const a = img.getBoundingClientRect();
       const b = q<HTMLElement>(`.pdf-page[data-page="${P}"]`, book)!.getBoundingClientRect();
       return Math.abs(a.left - b.left) < 1.5 && Math.abs(a.top - b.top) < 1.5 && Math.abs(a.width - b.width) < 1.5 && Math.abs(a.height - b.height) < 1.5;
@@ -12805,7 +12815,7 @@ export async function smokePageInk(): Promise<void> {
       await sleep(600);
       await shot('pageink-canvas-both');
       await poll(async () => (await fs.pageInk(hash, P)).length === all.length + 1, 'left alone, it is kept', 20000);
-      await poll(async () => { const c = (await state()).sheets.find((x) => x.id === sheet); return c?.shown && !c.dirty && c.blend === 'screenBlendMode'; }, 'and the canvas stays over the dark paper, screened on it', 8000);
+      await poll(async () => inkAtRest((await state()).sheets.find((x) => x.id === sheet)) && qa(`svg.page-ink[data-page="${P}"] [data-n]`, book).length === all.length + 1 && getComputedStyle(q<HTMLElement>('.pdf-ink', book)!).mixBlendMode === 'screen', 'and the page draws it over the dark paper, screened on it', 8000);
       await shot('pageink-dark');
       useApp.getState().setTheme('light');
       await pen(false);
@@ -12860,14 +12870,15 @@ export async function smokePageInk(): Promise<void> {
         log(`touch: ${costOf(t.touched)}`);
         must(t.touched!.lost! < 3, `the first touch is a stroke, nothing of it lost (${t.touched!.lost!.toFixed(2)} pt from the touch)`);
         must(!t.tools && t.tool?.kind === 'pen' && !!q('.meta > .inkbar', book) && !q('.pbox.pending', book), 'no picker of PencilKit\'s: the pen of the row over the pages wrote it, and nothing is boxed');
-        must((await sheetNow())!.shown && Math.abs((await sheetNow())!.at.y - pageEl.getBoundingClientRect().top) < 1.5, 'and the canvas is on the page where it stands among the others');
+        must(Math.abs((await sheetNow())!.at.y - pageEl.getBoundingClientRect().top) < 1.5, 'and the canvas is on the page where it stands among the others');
+        await poll(() => qa(`svg.page-ink[data-page="${P}"] [data-n]`, book).length === 1, 'the stroke is the page\'s own at once: a path in the page, before it is kept', 4000);
       }
     }
     await shot('pageink-written');
     const kept = await poll(async () => { const got = await fs.pageInk(hash, P); return got.length === DRAGS.length ? got : null; }, `left alone, the page is kept: ${DRAGS.length} strokes in the store, found by the book's hash and the page`, 20000);
     const names = kept.map((k) => k.stroke);
     must(new Set(names).size === names.length && names.every((k) => /^[0-9a-f]{16}$/.test(k)), 'each stroke has a name of its own');
-    await poll(async () => { const c = await sheetNow(); return c?.shown && !c.dirty; }, 'and the canvas stays, at rest: the page\'s writing is drawn by it', 8000);
+    await poll(async () => inkAtRest(await sheetNow()) && qa(`svg.page-ink[data-page="${P}"] [data-n]`, book).length === DRAGS.length, 'at rest the page draws its writing, a path a stroke, and PencilKit\'s canvas is off the glass', 8000);
     await pen(false);
     void z;
 
@@ -12895,7 +12906,7 @@ export async function smokePageInk(): Promise<void> {
     ask('flick', 0.5, 0.72, 0.5, 0.3);
     await poll(() => sc.scrollTop > top0 + 150, 'a finger\'s drag scrolls the pages from on the writing', 20000);
     await sleep(1500);
-    must(over(book, q<HTMLImageElement>(`img.page-ink[data-page="${P}"]`, book)!), 'the writing goes with its page');
+    must(over(book, q(`.page-ink[data-page="${P}"]`, book)!), 'the writing goes with its page');
     const moved = (await sheetNow())!;
     must(moved.strokes === DRAGS.length && Math.abs(moved.at.y - pageEl.getBoundingClientRect().top) < 1.5 && !q('.pbox.pending', book), `its canvas with it, to a point (${moved.at.y.toFixed(1)} and ${pageEl.getBoundingClientRect().top.toFixed(1)}), nothing written and nothing boxed`);
     await shot('pageink-scrolled');
@@ -16660,8 +16671,9 @@ export async function smokeWrittenPad(path: string | null): Promise<void> {
     await poll(async () => (await state()).sheets.find((x) => x.id === psheet)?.strokes === 2, 'and a pen\'s under it', 25000);
     await shot('written-pdf-live');
     await poll(async () => (await fs.pageInk(hash, PAGEINK_PAGE)).length === 2, 'kept under the PDF\'s hash and the page', 20000);
-    await poll(async () => { const c = (await state()).sheets.find((x) => x.id === psheet); return c?.shown && !c.dirty && c.blend === 'multiplyBlendMode'; }, 'the canvas stays over the print, multiplied on it: the highlighter leaves the print dark', 10000);
-    const pimg = await poll(() => { const i = q<HTMLImageElement>(`img.page-ink[data-page="${PAGEINK_PAGE}"]`, pb); return i && i.complete && i.naturalWidth > 0 ? i : null; }, 'the page shows the writing over its print', 20000);
+    await poll(async () => inkAtRest((await state()).sheets.find((x) => x.id === psheet)), 'at rest the page draws it (89), and PencilKit\'s canvas is off the glass', 10000);
+    const pimg = await poll(() => inkOn(pb, PAGEINK_PAGE), 'the page shows the writing over its print', 20000);
+    must(pimg.querySelector('[data-layer="under"] [data-k="m"]') && pimg.querySelector('[data-layer="over"] [data-k="p"]'), 'a path a stroke: the highlighter\'s under the pen\'s');
     must(getComputedStyle(pimg.closest<HTMLElement>('.pdf-ink')!).mixBlendMode === 'multiply', 'multiplied: the print shows through the highlighter');
     await pen(false);
     await shot('written-pdf');
@@ -19375,6 +19387,376 @@ export async function smokeSharp(path: string | null): Promise<void> {
   } catch (e) {
     finished = true;
     log('shot: sharp-failed');
+    await sleep(1500);
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// ILMI_SMOKE=pdfink (milestone 89), an iPad's, over a copy of the sample
+// (smoke.json: `vault`), under the touch rig with the screen recorded: does
+// what is written on a PDF's page keep to the page while the page moves?
+//
+// On the sample's chapter, p. 23: a red cross written through known points
+// of the page, and two small squares put into the page's own element at the
+// corners of what the cross covers (green at its upper left, blue at its
+// lower right). The squares are the page: whatever the page does, they do.
+// A recording's frames are then measured by a script: where the red lies
+// against where the squares say it should (`scripts/ink-scan.swift`).
+// A square at the window's lower left says by its grey which part is going
+// on (`phase:` in the log says the same), so a recording is cut by what it
+// shows. The parts: two fingers spread slowly and closed slowly, a quick
+// pinch each way, a finger's two taps, a finger dragging the pages and
+// flicking them with the page after p. 23 written on too, and (with a finger
+// for the Pencil) a stroke written and the pages pinched at once, then more
+// written one after another. Last (`tools`) the eraser, undo and redo, the
+// lasso carrying a stroke, a shape and the pen's pressure, each looked for
+// in the page's own paths. `"part"` runs some alone (`slow`, `quick`, `tap`,
+// `scroll`, `write`, `tools`, by commas).
+// ─────────────────────────────────────────────────────────────────────────
+export async function smokePdfInk(path: string | null): Promise<void> {
+  let last = { at: Date.now(), what: 'start' };
+  let finished = false;
+  const log = (s: string) => { last = { at: Date.now(), what: s }; void info(`smoke pdfink: ${s}`); };
+  const dog = setInterval(() => {
+    if (finished) { clearInterval(dog); return; }
+    if (Date.now() - last.at > 90_000) { finished = true; clearInterval(dog); void info(`smoke pdfink: failed: no progress for 90 s after "${last.what}"`); }
+  }, 2000);
+  const q = <T extends Element>(sel: string, root: ParentNode = document) => root.querySelector<T>(sel);
+  const qa = <T extends Element>(sel: string, root: ParentNode = document) => Array.from(root.querySelectorAll<T>(sel));
+  const shot = async (name: string, ms = 2500) => { await sleep(900); log(`shot: ${name}`); await sleep(ms); };
+  const must = (ok: unknown, what: string) => { if (!ok) throw new Error(what); log(`ok: ${what}`); };
+  const poll = async <T,>(probe: () => T | null | undefined | false | Promise<T | null | undefined | false>, what: string, ms = 8000): Promise<T> => {
+    const t0 = Date.now();
+    for (;;) {
+      const v = await probe();
+      if (v) { log(`ok: ${what}`); return v; }
+      if (Date.now() - t0 > ms) throw new Error(`${what} (waited ${ms} ms)`);
+      await sleep(100);
+    }
+  };
+  const ask = (verb: string, ...n: number[]) => log(`do: ${verb} ${n.map((v) => v.toFixed(4)).join(' ')}`);
+  const fx = (x: number) => x / window.innerWidth;
+  const fy = (y: number) => y / window.innerHeight;
+  const line = (a: [number, number], c: [number, number], n = 12): [number, number][] => Array.from({ length: n + 1 }, (_, i) => [a[0] + ((c[0] - a[0]) * i) / n, a[1] + ((c[1] - a[1]) * i) / n] as [number, number]);
+  // the cross, in the page's points: what it covers runs from A to B
+  const A: [number, number] = [120, 180];
+  const B: [number, number] = [330, 400];
+  try {
+    const { devCollection, setBookZoom } = await import('./vault.js');
+    const tools = await import('./inkTools.js');
+    if (!path) throw new Error('ILMI_VAULT (smoke.json: "vault") names the sample\'s copy');
+    const part = (await invoke<string | null>('dev_env', { name: 'ILMI_PART' })) ?? '';
+    const want = (name: string) => part === '' || part.split(',').includes(name);
+    const dpr = window.devicePixelRatio || 1;
+    log(`window ${window.innerWidth}×${window.innerHeight}; pixel ratio ${dpr}`);
+    if (window.innerWidth > window.innerHeight) { log('do: turn portrait'); await poll(() => window.innerWidth < window.innerHeight, 'upright', 25000); await sleep(1500); }
+    useApp.getState().setReopen(false);
+    useApp.getState().setTheme('light');
+    await openVault(await devCollection(path));
+    try { localStorage.removeItem(tools.INK_KEY); } catch { /* none */ }
+    tools.useInkTools.setState({ kept: { ...tools.DEFAULTS, snap: false } });
+    const state = () => invoke<InkState>('dev_ink_state');
+    await invoke('dev_ink_pen', { on: false });
+    tools.setTool('pen');
+    tools.setSize('pen', 2);
+    tools.setRecent('pen', '#ff0000');
+    openNode(PAGEINK_BOOK);
+    const pb = await poll(() => { const x = qa<HTMLElement>('.book').find((k) => k.dataset.path === PAGEINK_BOOK); return x && x.getClientRects().length && q(`.pdf-page[data-page="${PAGEINK_PAGE}"] canvas`, x) ? x : null; }, 'the sample\'s chapter opens as its book\'s pages', 60000);
+    const view = q<HTMLElement>('.pdf-view', pb)!;
+    const sc = q<HTMLElement>('.book-pages', pb)!;
+    const hash = await poll(() => view.dataset.hash, 'its hash known', 10000);
+    const pageEl = q<HTMLElement>(`.pdf-page[data-page="${PAGEINK_PAGE}"]`, pb)!;
+    const page = () => pageEl.getBoundingClientRect();
+    const sheet = `p.${hash}.${PAGEINK_PAGE}`;
+    const toPage = async () => { pageEl.scrollIntoView({ block: 'start' }); sc.scrollTop -= 24; await sleep(900); };
+    await toPage();
+    const zoomNow = () => Number(view.dataset.zoom);
+    // the page's size in points: the scale it is drawn at is the page's own word
+    const scale0 = Number(pageEl.style.getPropertyValue('--total-scale-factor')) || page().width / 612;
+    const W = page().width / scale0;
+    const H = page().height / scale0;
+    log(`p. ${PAGEINK_PAGE}: ${W.toFixed(1)} × ${H.toFixed(1)} points, ${scale0.toFixed(4)} px to the point`);
+    // the squares, the page's own: put back whenever the page is drawn anew (a page drawn again is given new children)
+    const squares = (el: HTMLElement) => {
+      const put = () => {
+        if (el.querySelector('.smoke-sq')) return;
+        for (const [p, c] of [[A, '#00ff00'], [B, '#0000ff']] as const) {
+          const d = document.createElement('div');
+          d.className = 'smoke-sq';
+          d.style.cssText = `position:absolute;left:calc(${(p[0] / W) * 100}% - 6px);top:calc(${(p[1] / H) * 100}% - 6px);width:12px;height:12px;background:${c};z-index:1;pointer-events:none`;
+          el.append(d);
+        }
+      };
+      put();
+      new MutationObserver(put).observe(el, { childList: true });
+    };
+    squares(pageEl);
+    // which part is going on, for whoever measures a recording
+    const lamp = document.createElement('div');
+    lamp.style.cssText = 'position:fixed;left:40px;bottom:40px;width:28px;height:28px;z-index:99999;pointer-events:none;background:rgb(255,255,255)';
+    document.body.append(lamp);
+    let phases = 0;
+    const phase = (name: string) => { phases += 1; const v = 250 - phases * 12; lamp.style.background = `rgb(${v},${v},${v})`; log(`phase: ${phases} ${v} ${name}`); };
+    const there = async () => (await state()).sheets.find((x) => x.id === sheet) ?? null;
+    await poll(there, `p. ${PAGEINK_PAGE} can be written on`, 20000);
+    const write = async (on: string, pts: [number, number][]) => { await invoke('dev_ink_stroke', { sheet: on, points: pts, rest: false }); };
+    await write(sheet, line([A[0], (A[1] + B[1]) / 2], [B[0], (A[1] + B[1]) / 2]));
+    await write(sheet, line([(A[0] + B[0]) / 2, A[1]], [(A[0] + B[0]) / 2, B[1]]));
+    await poll(async () => { const c = await there(); return c && c.strokes >= 2 && !c.dirty; }, 'a cross on the page, kept', 25000);
+    await sleep(1200);
+    const rested = async (what: string) => {
+      await poll(async () => { const s = await state(); const h = s.hosts.find((x) => x.id === `pages:${PAGEINK_BOOK}`); return (!h || !h.phase) && !view.dataset.pinch ? s : null; }, `${what}: at rest`, 20000);
+      await sleep(900);
+      const p = page();
+      log(`${what}: zoom ${zoomNow()}; the page at ${[p.left * dpr, p.top * dpr, p.width * dpr].map((v) => v.toFixed(2)).join(' ')}; the scroller at ${sc.scrollLeft}, ${sc.scrollTop}`);
+    };
+    const pinch = (cx: number, cy: number, from: number, to: number, secs: number) => ask('pinch', fx(cx - from / 2), fy(cy), fx(cx + from / 2), fy(cy), fx(cx - to / 2), fy(cy), fx(cx + to / 2), fy(cy), secs);
+    const centre = (): [number, number] => { const r = page(); return [r.left + ((A[0] + B[0]) / 2 / W) * r.width, r.top + ((A[1] + B[1]) / 2 / H) * r.height]; };
+    phase('rest');
+    await shot('pdfink-rest');
+    if (want('slow')) {
+      const [cx, cy] = centre();
+      phase('spread slowly');
+      pinch(cx, cy, 160, 270, 3);
+      await poll(() => { const v = zoomNow(); return v > 1.3 && !view.dataset.pinch ? v : 0; }, 'two fingers spread slowly: larger', 40000);
+      await rested('spread slowly');
+      phase('rest, larger');
+      await shot('pdfink-larger');
+      const [dx, dy] = centre();
+      phase('closed slowly');
+      pinch(dx, dy, 300, 180, 3);
+      await poll(() => { const v = zoomNow(); return v < 1.25 && !view.dataset.pinch ? v : 0; }, 'two fingers closed slowly: smaller', 40000);
+      await rested('closed slowly');
+    }
+    if (want('quick')) {
+      setBookZoom(PAGEINK_BOOK, 1);
+      await sleep(1500);
+      await toPage();
+      const [cx, cy] = centre();
+      phase('spread quickly');
+      pinch(cx, cy, 160, 280, 0.25);
+      await poll(() => { const v = zoomNow(); return v > 1.3 && !view.dataset.pinch ? v : 0; }, 'spread quickly: larger', 40000);
+      await rested('spread quickly');
+      const [dx, dy] = centre();
+      phase('closed quickly');
+      pinch(dx, dy, 300, 170, 0.25);
+      await poll(() => { const v = zoomNow(); return v < 1.25 && !view.dataset.pinch ? v : 0; }, 'closed quickly: smaller', 40000);
+      await rested('closed quickly');
+    }
+    if (want('tap')) {
+      setBookZoom(PAGEINK_BOOK, 1);
+      await sleep(1500);
+      await toPage();
+      const [cx, cy] = centre();
+      phase('tapped twice');
+      ask('tap2', fx(cx), fy(cy));
+      await poll(() => zoomNow() > 1.5 && !view.dataset.pinch, 'a finger tapped twice: larger', 40000);
+      await rested('tapped twice');
+      phase('tapped twice again');
+      ask('tap2', fx(window.innerWidth / 2), fy(window.innerHeight / 2));
+      await poll(() => zoomNow() === 1 && !view.dataset.pinch, 'twice again: fitted', 40000);
+      await rested('fitted');
+    }
+    if (want('scroll')) {
+      setBookZoom(PAGEINK_BOOK, 1);
+      await sleep(1500);
+      await toPage();
+      // the page after it written on too, so two written pages are on the screen as they move
+      const nextEl = q<HTMLElement>(`.pdf-page[data-page="${PAGEINK_PAGE + 1}"]`, pb);
+      const next = `p.${hash}.${PAGEINK_PAGE + 1}`;
+      if (nextEl && (await state()).sheets.some((x) => x.id === next)) {
+        await write(next, line([A[0], 80], [B[0], 80]));
+        await write(next, line([A[0], 60], [A[0], 100]));
+        await poll(async () => { const c = (await state()).sheets.find((x) => x.id === next); return c && c.strokes >= 2 && !c.dirty; }, 'the page after it written on, kept', 25000);
+      }
+      await sleep(1200);
+      phase('dragged');
+      const top0 = sc.scrollTop;
+      ask('drag', 0.5, 0.8, 0.5, 0.45, 0.1);
+      await poll(() => sc.scrollTop > top0 + 100, 'a finger drags the pages', 30000);
+      await sleep(1500);
+      await shot('pdfink-two-pages');
+      phase('dragged back');
+      ask('drag', 0.5, 0.45, 0.5, 0.8, 0.1);
+      await sleep(3500);
+      await toPage();
+      phase('flicked');
+      const top1 = sc.scrollTop;
+      ask('flick', 0.5, 0.7, 0.5, 0.45);
+      await poll(() => sc.scrollTop > top1 + 100, 'a finger flicks the pages', 30000);
+      await sleep(3000);
+      phase('flicked back');
+      ask('flick', 0.5, 0.35, 0.5, 0.75);
+      await sleep(3500);
+    }
+    if (want('write')) {
+      setBookZoom(PAGEINK_BOOK, 1);
+      await sleep(1500);
+      await toPage();
+      // a finger for the Pencil: a stroke written, and the pages pinched as soon as the rig can
+      await invoke('dev_ink_pen', { on: true });
+      tools.setRecent('pen', '#ff8040');
+      await sleep(600);
+      const r = page();
+      const at = (x: number, y: number): [number, number] => [fx(r.left + (x / W) * r.width), fy(r.top + (y / H) * r.height)];
+      const before = (await there())?.strokes ?? 0;
+      phase('written, then pinched');
+      ask('loop', ...at(120, 110), ...at(200, 130), ...at(280, 110), ...at(360, 130));
+      await poll(async () => ((await there())?.strokes ?? 0) > before, 'the stroke is on the page', 30000);
+      await invoke('dev_ink_pen', { on: false });
+      const [cx, cy] = centre();
+      pinch(cx, cy, 160, 250, 0.5);
+      await poll(() => { const v = zoomNow(); return v > 1.2 && !view.dataset.pinch ? v : 0; }, 'written and pinched at once: larger', 60000);
+      await rested('written then pinched');
+      const after = (await there())?.strokes ?? 0;
+      log(`written: ${before} strokes before, ${after} after`);
+      const drawnNames = () => qa<SVGElement>(`svg.page-ink[data-page="${PAGEINK_PAGE}"] [data-n]`, pb).map((x) => x.dataset.n).sort().join(' ');
+      log(`drawn before it is kept: ${drawnNames()}`);
+      await poll(async () => { const c = await there(); return c && !c.dirty; }, 'what was written is kept', 25000);
+      await sleep(1500);
+      log(`drawn once kept: ${drawnNames()}`);
+      const fsNow = currentVault()!.fs as import('../vault/index.js').StoreFs;
+      log(`the store holds: ${(await fsNow.pageInk(hash, PAGEINK_PAGE)).map((k) => k.stroke).sort().join(' ')}`);
+      phase('rest, written');
+      await shot('pdfink-written');
+      // more, one after another, some while the last are being kept: what is on the page only ever grows
+      await invoke('dev_ink_pen', { on: true });
+      await sleep(400);
+      phase('more written');
+      const r2 = page();
+      const at2 = (x: number, y: number): [number, number] => [fx(r2.left + (x / W) * r2.width), fy(r2.top + (y / H) * r2.height)];
+      const had = (await there())?.strokes ?? 0;
+      // how the hand-over goes, as it goes: what the page holds unseen, and what PencilKit's canvas still shows
+      let was = '';
+      let watching = true;
+      void (async () => {
+        while (watching) {
+          const c = await there();
+          const paths = qa<SVGElement>(`svg.page-ink[data-page="${PAGEINK_PAGE}"] [data-n]`, pb);
+          const now = `${paths.length} paths, ${paths.filter((x) => x.getAttribute('visibility') === 'hidden').length} unseen; the canvas ${c?.shown ? 'shown' : 'away'} with ${c?.live}; told ${c?.said}, drawn ${c?.seen}`;
+          if (now !== was) { was = now; log(`hand: ${Math.round(performance.now())} ${now}`); }
+          await sleep(15);
+        }
+      })();
+      for (let i = 0; i < 5; i++) {
+        ask('drag', ...at2(150 + i * 12, 140 + i * 7), ...at2(300 + i * 4, 140 + i * 7), 0.05);
+        await poll(async () => ((await there())?.strokes ?? 0) === had + i + 1, `stroke ${i + 1} more is on the page`, 30000);
+        await sleep(i % 2 ? 1700 : 300);
+      }
+      await poll(async () => { const c = await there(); return c && !c.dirty && c.live === 0 && !c.shown; }, 'kept, and PencilKit\'s canvas is off the glass', 25000);
+      await sleep(1500);
+      must(qa(`svg.page-ink[data-page="${PAGEINK_PAGE}"] [data-n]`, pb).length === had + 5, `the page draws them all: ${had + 5} paths`);
+      watching = false;
+      await invoke('dev_ink_pen', { on: false });
+    }
+    if (want('tools')) {
+      // ── the tools on a page the page draws: each thing done is in the page's own paths at once ──
+      phase('the tools');
+      setBookZoom(PAGEINK_BOOK, 1);
+      await sleep(1500);
+      await toPage();
+      const { useLasso, lassoDo } = await import('./ink.js');
+      const paths = () => qa<SVGElement>(`svg.page-ink[data-page="${PAGEINK_PAGE}"] [data-n]`, pb);
+      const names = () => paths().map((x) => x.dataset.n!).join(' ');
+      const count = async () => (await there())?.strokes ?? 0;
+      /** The finger is off the glass: nothing is undone under it. */
+      const lifted = async () => { await poll(async () => !(await state()).down, 'the finger is up', 15000); await sleep(150); };
+      const atRest = async (what: string) => { await poll(async () => { const c = await there(); return c && !c.dirty && c.live === 0 && !c.shown && paths().length === c.strokes; }, `${what}: kept, the page draws what the sheet holds, PencilKit's canvas off the glass`, 25000); };
+      const r = page();
+      const P2 = (x: number, y: number): [number, number] => [fx(r.left + (x / W) * r.width), fy(r.top + (y / H) * r.height)];
+      // three strokes of the pen low on the page, clear of the cross: a level one, one under it, a short one
+      tools.setRecent('pen', '#2060c0');
+      tools.setSize('pen', 1);
+      await sleep(400);
+      const n0 = await count();
+      await write(sheet, line([120, 420], [300, 420]));
+      await write(sheet, line([120, 445], [300, 445]));
+      await write(sheet, line([340, 420], [380, 445]));
+      await poll(() => paths().length === n0 + 3, 'three strokes written: three paths more in the page, before anything is kept', 4000);
+      await atRest('written');
+      const kept0 = names();
+      await invoke('dev_ink_pen', { on: true });
+      // the eraser across the first: its path goes at once, and comes back with undo
+      tools.setEraser('stroke');
+      tools.setTool('eraser');
+      await poll(async () => (await state()).tool?.kind === 'eraser', 'the eraser', 8000);
+      ask('drag', ...P2(200, 408), ...P2(200, 432), 0.05);
+      await poll(async () => (await count()) === n0 + 2 && paths().length === n0 + 2, 'the eraser takes a stroke: a path fewer in the page', 30000);
+      await lifted();
+      await tools.undo();
+      await poll(async () => (await count()) === n0 + 3 && names() === kept0, 'undo: the same paths again', 8000).catch(async (e: unknown) => { log(`names: kept ${kept0}; after the undo ${names()}; ${await count()} strokes of ${n0 + 3}`); throw e; });
+      await tools.redo();
+      await poll(async () => (await count()) === n0 + 2 && paths().length === n0 + 2, 'redo: gone again', 8000);
+      await tools.undo();
+      await poll(async () => names() === kept0, 'and back', 8000);
+      tools.setEraser('part');
+      await sleep(300);
+      ask('drag', ...P2(210, 434), ...P2(210, 457), 0.05);
+      await poll(async () => (await count()) === n0 + 4 && paths().length === n0 + 4, 'the eraser taking part: the second stroke is two, two paths where one was', 30000);
+      await lifted();
+      await tools.undo();
+      await poll(async () => names() === kept0, 'undo: whole again', 8000);
+      await atRest('erased and undone');
+      // the lasso round the short one: carried, it moves in the page as it is carried, and is a stroke anew where it is put down
+      tools.setTool('select');
+      await poll(async () => (await state()).tool?.kind === 'select', 'the lasso', 8000);
+      ask('loop', ...P2(325, 406), ...P2(395, 406), ...P2(395, 460), ...P2(325, 460), ...P2(325, 406));
+      await poll(() => (useLasso.getState().picked?.count === 1 ? true : null), 'a loop round the short stroke holds it', 30000);
+      await poll(() => q('.ink-menu'), 'its menu is beside it', 8000);
+      const short = paths()[paths().length - 1]!;
+      const was = short.getBoundingClientRect();
+      const shortName = short.dataset.n!;
+      let carried = false;
+      const seeCarry = setInterval(() => { if (paths().some((x) => x.dataset.n === shortName && x.hasAttribute('transform'))) carried = true; }, 10);
+      ask('drag', ...P2(360, 432), ...P2(360, 472), 0.3);
+      await poll(async () => { const now = paths(); const k = now[now.length - 1]; return k && k.dataset.n !== shortName && !k.hasAttribute('transform') && Math.abs(k.getBoundingClientRect().top - was.top - (40 / H) * r.height) < 6 ? k : null; }, 'carried down the page: a stroke anew where it was put down, as far down as the finger took it', 30000);
+      clearInterval(seeCarry);
+      must(carried, 'and while it was carried its path was moved in the page, not drawn anew');
+      await lifted();
+      must(paths().length === n0 + 3 && (await count()) === n0 + 3, 'still three');
+      await poll(() => (useLasso.getState().picked?.count === 1 ? true : null), 'still held', 8000);
+      await lassoDo('delete');
+      await poll(async () => (await count()) === n0 + 2 && paths().length === n0 + 2, 'delete: its path is gone', 8000);
+      await tools.undo();
+      await poll(async () => (await count()) === n0 + 3 && paths().length === n0 + 3, 'undo: back', 8000);
+      // a stroke ended resting is the shape it is, in the page too
+      tools.setTool('pen');
+      tools.setSnap(true);
+      await poll(async () => { const t = (await state()).tool; return t?.kind === 'pen' && t.snap === true; }, 'the pen, with shapes', 8000);
+      ask('rest', ...P2(120, 485), ...P2(170, 487), ...P2(220, 483), ...P2(270, 486), ...P2(320, 485), 0.8);
+      await poll(async () => { const st = await state(); return st.shape === 'line' && (await count()) === n0 + 4 && paths().length === n0 + 4; }, 'a line held at its end is made straight: one path for it in the page', 30000);
+      await lifted();
+      tools.setSnap(false);
+      // the pen's pressure: an even line where it follows the hand not at all
+      tools.setSense(0);
+      await poll(async () => (await state()).tool?.kind === 'pen', 'the pen', 8000);
+      await sleep(400);
+      ask('drag', ...P2(120, 502), ...P2(320, 502), 0.05);
+      await poll(async () => (await count()) === n0 + 5 && paths().length === n0 + 5, 'a stroke with the pen following the hand not at all', 30000);
+      {
+        // every disc of its outline the same size: the widths of the arcs in its path
+        const d = paths()[paths().length - 1]!.getAttribute('d') ?? '';
+        const radii = Array.from(d.matchAll(/a([0-9.]+) [0-9.]+ 0 1 0/g)).map((m) => Number(m[1]));
+        const lo = Math.min(...radii), hi = Math.max(...radii);
+        log(`pressure 0: ${radii.length / 2} places, the nib ${lo} to ${hi} points`);
+        must(radii.length >= 4 && hi - lo < 0.02, 'its line is even from end to end');
+      }
+      tools.setSense(1);
+      await invoke('dev_ink_pen', { on: false });
+      await atRest('all of it');
+      await shot('pdfink-tools');
+      // and the store holds what the page draws
+      const fsNow = currentVault()!.fs as import('../vault/index.js').StoreFs;
+      const held = (await fsNow.pageInk(hash, PAGEINK_PAGE)).map((k) => k.stroke).sort().join(' ');
+      must(held === paths().map((x) => x.dataset.n!).sort().join(' '), 'the store holds the strokes the page draws, by their names');
+    }
+    phase('done');
+    finished = true;
+    log('done');
+  } catch (e) {
+    finished = true;
+    log('shot: pdfink-failed');
     await sleep(1500);
     log(`failed: ${e instanceof Error ? e.message : String(e)}`);
   }

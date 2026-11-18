@@ -452,3 +452,73 @@ int ilmi_pdf_info(const uint8_t *path, size_t len, uint8_t **out, size_t *out_le
     return give(d, out, out_len);
   }
 }
+
+// ── a stroke as the page draws it (milestone 89) ──
+//
+// What is written on a PDF's page is drawn by the page itself, in the page's own element: each stroke an outline
+// (`stroke.m`) filled there, so whatever moves or stretches the page carries its ink, and it is drawn anew at any
+// size as the page's letters are. A stroke is said as JSON: its name (`n`, as `split` gives it) and what
+// `ilmi_stroke_shape` says of it.
+
+API_AVAILABLE(macos(11.0), ios(14.0))
+static NSDictionary *described(PKStroke *s) {
+  void *g = ilmi_stroke_make((__bridge void *)s, 0);
+  NSMutableDictionary *m = [(ilmi_stroke_shape(g) ?: @{@"k": @"p", @"d": @"", @"c": @"#000000"}) mutableCopy];
+  ilmi_stroke_free(g);
+  m[@"n"] = nameOf(s);
+  return m;
+}
+
+/// Strokes (records as `join` takes them) as a JSON list, in their order.
+int ilmi_ink_shapes(const uint8_t *recs, size_t len, uint8_t **out, size_t *out_len) {
+  @autoreleasepool {
+    named();
+    if (INK_AVAILABLE) {
+      PKDrawing *d = joined(recs, len);
+      if (!d) return 2;
+      NSMutableArray *all = [NSMutableArray array];
+      for (PKStroke *s in d.strokes) [all addObject:described(s)];
+      NSData *json = [NSJSONSerialization dataWithJSONObject:all options:0 error:nil];
+      if (!json) return 2;
+      return give(json, out, out_len);
+    }
+    return 1;
+  }
+}
+
+/// Every stroke's name of a drawing (`PKDrawing *`), in order, as a JSON list. Asked of the drawing, as `split` asks:
+/// a stroke taken out of a drawing one at a time on the Swift side is not always the stroke the drawing writes
+/// (its name came out another, on a drawing read back from the store), and the names here are the store's.
+int ilmi_drawing_names(void *drawing, uint8_t **out, size_t *out_len) {
+  @autoreleasepool {
+    named();
+    if (INK_AVAILABLE) {
+      PKDrawing *d = (__bridge PKDrawing *)drawing;
+      if (!d) return 2;
+      NSMutableArray *all = [NSMutableArray array];
+      for (PKStroke *s in d.strokes) [all addObject:nameOf(s)];
+      NSData *json = [NSJSONSerialization dataWithJSONObject:all options:0 error:nil];
+      if (!json) return 2;
+      return give(json, out, out_len);
+    }
+    return 1;
+  }
+}
+
+/// The strokes of a drawing (`PKDrawing *`) at `indices` (`n` of them), as the page draws them: a JSON list.
+int ilmi_drawing_describe(void *drawing, const uint32_t *indices, size_t n, uint8_t **out, size_t *out_len) {
+  @autoreleasepool {
+    named();
+    if (INK_AVAILABLE) {
+      PKDrawing *d = (__bridge PKDrawing *)drawing;
+      if (!d) return 2;
+      NSArray<PKStroke *> *strokes = d.strokes;
+      NSMutableArray *all = [NSMutableArray array];
+      for (size_t i = 0; i < n; i++) if (indices[i] < strokes.count) [all addObject:described(strokes[indices[i]])];
+      NSData *json = [NSJSONSerialization dataWithJSONObject:all options:0 error:nil];
+      if (!json) return 2;
+      return give(json, out, out_len);
+    }
+    return 1;
+  }
+}

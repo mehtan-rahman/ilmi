@@ -26,6 +26,7 @@
 
 #import "stroke.h"
 #import <PencilKit/PencilKit.h>
+#import <ImageIO/ImageIO.h>
 #import <TargetConditionals.h>
 #if TARGET_OS_OSX
 #import <AppKit/AppKit.h>
@@ -45,6 +46,8 @@ typedef struct { CGFloat x, y, r; } Place;
 API_AVAILABLE(macos(11.0), ios(14.0))
 @interface IlmiStroke : NSObject
 @property (nonatomic) CGPathRef path;
+/// The same outline as an SVG path's `d` (89), for a pen and the even line: the page draws it itself.
+@property (nonatomic, strong) NSString *d;
 @property (nonatomic) CGColorRef color;
 @property (nonatomic) CGRect bounds;
 @property (nonatomic) CGPathRef mask;
@@ -101,6 +104,55 @@ static CGPathRef nibOutline(const Place *at, size_t n, int *corners) {
   }
   *corners = count;
   return p;
+}
+
+/// A number as an SVG path takes it: two places, no trailing noughts.
+static void num(NSMutableString *s, CGFloat v) {
+  long n = lround(v * 100);
+  if (n < 0) { [s appendString:@"-"]; n = -n; } else if (s.length && isdigit([s characterAtIndex:s.length - 1])) [s appendString:@" "];
+  long whole = n / 100, frac = n % 100;
+  if (frac == 0) [s appendFormat:@"%ld", whole];
+  else if (frac % 10 == 0) [s appendFormat:@"%ld.%ld", whole, frac / 10];
+  else [s appendFormat:@"%ld.%02ld", whole, frac];
+}
+
+/// What `nibOutline` makes, as an SVG path's `d` (89): the same discs and bands, wound the same way, a hundredth of a point fine.
+static NSString *nibSvg(const Place *at, size_t n) {
+  NSMutableString *s = [NSMutableString stringWithCapacity:n * 96];
+  for (size_t i = 0; i < n; i++) {
+    CGFloat r = MAX(at[i].r, 0.05);
+    [s appendString:@"M"]; num(s, at[i].x + r); num(s, at[i].y);
+    [s appendString:@"a"]; num(s, r); num(s, r); [s appendString:@" 0 1 0"]; num(s, -2 * r); [s appendString:@" 0"];
+    [s appendString:@"a"]; num(s, r); num(s, r); [s appendString:@" 0 1 0"]; num(s, 2 * r); [s appendString:@" 0z"];
+    if (i + 1 == n) break;
+    CGFloat dx = at[i + 1].x - at[i].x, dy = at[i + 1].y - at[i].y, len = hypot(dx, dy);
+    if (len < 1e-6) continue;
+    CGFloat nx = -dy / len, ny = dx / len, a = r, b = MAX(at[i + 1].r, 0.05);
+    [s appendString:@"M"]; num(s, at[i].x + nx * a); num(s, at[i].y + ny * a);
+    [s appendString:@"L"]; num(s, at[i + 1].x + nx * b); num(s, at[i + 1].y + ny * b);
+    [s appendString:@"L"]; num(s, at[i + 1].x - nx * b); num(s, at[i + 1].y - ny * b);
+    [s appendString:@"L"]; num(s, at[i].x - nx * a); num(s, at[i].y - ny * a);
+    [s appendString:@"z"];
+  }
+  return s;
+}
+
+static void svgStep(void *info, const CGPathElement *e) {
+  NSMutableString *s = (__bridge NSMutableString *)info;
+  switch (e->type) {
+    case kCGPathElementMoveToPoint: [s appendString:@"M"]; num(s, e->points[0].x); num(s, e->points[0].y); break;
+    case kCGPathElementAddLineToPoint: [s appendString:@"L"]; num(s, e->points[0].x); num(s, e->points[0].y); break;
+    case kCGPathElementAddQuadCurveToPoint: [s appendString:@"Q"]; for (int i = 0; i < 2; i++) { num(s, e->points[i].x); num(s, e->points[i].y); } break;
+    case kCGPathElementAddCurveToPoint: [s appendString:@"C"]; for (int i = 0; i < 3; i++) { num(s, e->points[i].x); num(s, e->points[i].y); } break;
+    case kCGPathElementCloseSubpath: [s appendString:@"z"]; break;
+  }
+}
+
+/// Any path as an SVG path's `d`.
+static NSString *pathSvg(CGPathRef p) {
+  NSMutableString *s = [NSMutableString string];
+  if (p) CGPathApply(p, (__bridge void *)s, svgStep);
+  return s;
 }
 
 /// The places left once those the outline does not need are gone: a run that is straight, its radius changing evenly, is its two ends.
@@ -235,6 +287,7 @@ void *ilmi_stroke_make(void *stroke, int dark) {
     n = thinned(at, n);
     int corners = 0;
     g.path = nibOutline(at, n, &corners);
+    g.d = nibSvg(at, n);
     g.corners = corners;
     free(at);
     g.color = colorOf(s, g.dark, faint);
@@ -365,6 +418,55 @@ void ilmi_stroke_draw(void *made, CGContextRef c) {
     CGContextRestoreGState(c);
     CGImageRelease(img);
   }
+}
+
+/// A colour as `#rrggbb`, and how much of it shows.
+static NSString *hexOf(CGColorRef c, CGFloat *alpha) {
+  const CGFloat *v = c ? CGColorGetComponents(c) : NULL;
+  if (!v || CGColorGetNumberOfComponents(c) < 4) { *alpha = 1; return @"#000000"; }
+  *alpha = v[3];
+  return [NSString stringWithFormat:@"#%02x%02x%02x", (int)lround(MIN(MAX(v[0], 0), 1) * 255), (int)lround(MIN(MAX(v[1], 0), 1) * 255), (int)lround(MIN(MAX(v[2], 0), 1) * 255)];
+}
+
+NSDictionary *ilmi_stroke_shape(void *made) {
+  if (STROKE_AVAILABLE) {
+    if (!made) return nil;
+    IlmiStroke *g = (__bridge IlmiStroke *)made;
+    NSMutableDictionary *m = [NSMutableDictionary dictionary];
+    if (g.theirs) {
+      // PencilKit's own picture of it, six pixels to the point (fewer for one that covers much): an image in the page
+      CGRect b = CGRectIntegral(CGRectInset(g.theirs.renderBounds, -2, -2));
+      CGFloat scale = MIN(6, MIN(sqrt(4e6 / MAX(1, b.size.width * b.size.height)), 4000 / MAX(1, MAX(b.size.width, b.size.height))));
+      CGImageRef img = pictured(g.theirs, b, MAX(scale, 0.5), g.dark);
+      if (!img) return nil;
+      NSMutableData *png = [NSMutableData data];
+      CGImageDestinationRef to = CGImageDestinationCreateWithData((__bridge CFMutableDataRef)png, CFSTR("public.png"), 1, NULL);
+      BOOL ok = NO;
+      if (to) { CGImageDestinationAddImage(to, img, NULL); ok = CGImageDestinationFinalize(to); CFRelease(to); }
+      CGImageRelease(img);
+      if (!ok) return nil;
+      m[@"k"] = @"i";
+      m[@"box"] = @[@(b.origin.x), @(b.origin.y), @(b.size.width), @(b.size.height)];
+      m[@"src"] = [@"data:image/png;base64," stringByAppendingString:[png base64EncodedStringWithOptions:0]];
+      return m;
+    }
+    if (!g.path) return nil;
+    CGFloat alpha = 1;
+    m[@"c"] = hexOf(g.color, &alpha);
+    if (g.round > 0) {
+      m[@"k"] = @"m";
+      m[@"d"] = pathSvg(g.path);
+      m[@"r"] = @(round(g.round * 200) / 100);
+      m[@"o"] = @(round(g.alpha * alpha * 1000) / 1000);
+    } else {
+      m[@"k"] = @"p";
+      m[@"d"] = g.d ?: pathSvg(g.path);
+      if (alpha < 0.999) m[@"o"] = @(round(alpha * 1000) / 1000);
+    }
+    if (g.mask) m[@"clip"] = pathSvg(g.mask);
+    return m;
+  }
+  return nil;
 }
 
 void ilmi_drawing_draw(void *drawing, CGContextRef c, int dark) {

@@ -519,7 +519,8 @@ moved onto the web view. One undo manager is every canvas's (`ink_undo`,
 wheel as a popover from the swatch.
 
 Since milestone 85 a page's canvas stays on the screen at rest (`ink_fill`
-with `show`): what is written on a page is drawn by PencilKit from the
+with `show`; since 89 only a phone's notebook's, see below: a PDF's page
+draws its own ink): what is written on a page is drawn by PencilKit from the
 strokes at the canvas's zoom, whatever size the page is, and the picture of
 it (`store_ink_page`, now with a `scale`) is what a Mac and a phone show
 and what an iPad shows until a page's canvas has been filled. Before, a
@@ -621,9 +622,76 @@ shows the stroke while it is written; when PencilKit hands it over
 the sheet's `PKStroke`s (what is stored and synced is as it was), drawn by
 us, and the canvas emptied in the same turn. The eraser, the lasso (what it
 holds lifted into a picture of its own while it is carried), shapes, undo
-and redo work on the sheet's strokes. A PDF's pages on an iPad, the typed
-notes' ink areas, the Mac and the phone are as they were: the canvases over
-the web view above, and 86's pinch for a PDF.
+and redo work on the sheet's strokes. The typed notes' ink areas, the Mac
+and a phone's notebooks are as they were: the canvases over the web view
+above. A PDF's pages are next.
+
+Since milestone 89 what is written on a PDF's page is drawn by the page
+itself, wherever there are canvases (`pageInk.ts`, `PageInkSvg.tsx`). Until
+then a page's ink at rest was its `PKCanvasView`, a native view over the web
+view, kept on the page by words across the bridge: the page's layout is
+WebKit's, in another process; the stretch under two fingers is a transform
+this side puts on WebKit's layer and on the canvases; and PencilKit draws a
+canvas again at a new zoom when it likes. Three things had to change in one
+frame at the end of every zoom, and could not: a recording of the simulator
+showed the ink a frame at the size it had before the zoom (off by up to a
+thousand pixels of the screen across a cross drawn on the page), and after a
+quick pinch 38 pixels from its place for 1.7 s; while the fingers moved, and
+in a scroll, it kept to the page within a pixel or two. Now ink on a PDF's
+page is an annotation of the page and is drawn like one: an `svg.page-ink`
+in the pages' own column (`.pdf-ink`, where the Mac's picture of it lies),
+placed as a highlight is, a path a stroke. Whatever moves the page moves it:
+there is nothing to keep in step, and nothing to make again when a zoom
+settles, since a path is drawn anew at any size as the page's letters are.
+
+A stroke's outline is `native/stroke.m`'s, the one the pictures are filled
+from, said as an SVG path (`ilmi_stroke_shape`: a pen's and the even line's
+discs and bands, filled by the nonzero rule; a highlighter's swept bar,
+filled and stroked round, laid on once at three quarters; a fountain pen's
+and a pencil's as PencilKit's picture of that stroke, an `<image>`). It
+reaches the page two ways, by the stroke's name. From the store, for the
+strokes a page holds (`ink_shapes`, asked once a stroke). And from the
+canvases' side the moment something is done: a sheet whose scene says
+`vector` keeps its strokes beside its canvas (`Sheet.model`), and every
+change to them (a stroke handed over by PencilKit, the eraser, a shape, the
+lasso's doings, an undo) is told through `window.__ink` as `{ kind: 'ink',
+sheet, seq, names, add }`: the names it holds now, in order, and the outline
+of each the page has not been told. (The names are asked of the drawing
+whole, `ilmi_drawing_names`, as the store's are when it is kept: a stroke
+taken out of a drawing by itself on the Swift side came out under another
+name once the drawing had been read back from the store. A page told of a
+stroke whose outline it has not asks for it, `ink_outlines`.) The page shows what was last told until
+that has been kept and the store read again (`inkKept`, `storeRead`: what
+was told is shown until the store's strokes and their outlines are in hand,
+and the two change places in one step). What the lasso carries is moved by
+a transform on its paths (`carry`) and is strokes anew where it is put down.
+
+PencilKit's canvas is there for what is being written only. It is hidden
+and empty at rest. A stroke handed over joins the model (the pen's
+`pressure` applied, as on a notebook's surface) and is told at once, with
+its name among `hide`: the page holds its path unseen while the canvas
+still shows the stroke, so it is on the glass once, not laid on twice (ink
+is multiplied onto the page: twice is darker). When the Pencil has been off
+the sheet a quarter of a second and PencilKit has handed over what it ended
+(`Sheet.awaiting`: a canvas emptied under the Pencil, or before a stroke
+just ended is handed over, loses it), a telling without `hide` has the page
+show the paths; the page says when they are on the glass, two frames on
+(`ink_shown`); and only then is the canvas emptied and hidden
+(`InkPlugin.settle`). For those two frames or so the strokes are there
+twice; there is never a frame with neither. The Pencil down again before the
+canvas could be emptied has the page hide them again. Anything else that
+changes what a sheet holds (the eraser, the lasso, a shape, an undo) shows
+the page's own at once. Pages pinched within that quarter of a second of
+writing carry the canvas with them as before 89 (`Zoom`, the scroller
+followed), for the strokes just written only. 86's pinch is as it was (the
+web view's layer stretched under the fingers): the ink is inside that layer
+now. `dev_ink_state` says of each sheet `vector`, `live` (the strokes still
+on PencilKit's canvas), `said` and `seen`. `ILMI_SMOKE=pdfink` (an iPad's, with `vault`,
+under the touch rig, the screen recorded) writes a cross on a page between
+two squares that are the page's own element and pinches, taps, drags and
+flicks; `scripts/ink-scan.swift` reads the recording's frames and
+`scripts/ink-measure.py` says how far the cross lies from where the squares
+put it in each part.
 
 `dev_ink_state` says each surface (`surfaces`: where it lies in the
 screen's pixels, the zoom laid out and the stretch over it, the offset,

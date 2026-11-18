@@ -33,7 +33,11 @@ let hash: string;
 
 /** What the canvases were told, and what a sheet gives when asked. */
 const scenes: { hosts: { id: string; port: { h: number }; open: unknown; sheets: { id: string; frame: { y: number; h: number }; hit: { y: number }; zoom: number; blend?: string }[] }[] }[] = [];
-const filled: { sheet: string; drawing: string | null; show?: boolean }[] = [];
+const filled: { sheet: string; drawing: string | null; show?: boolean; names?: string[] }[] = [];
+/** What the page said it had drawn of what it was told (89). */
+const shown: { sheet: string; seq: number }[] = [];
+/** A stroke as the page draws it: made here from what the made-up stroke says it is. */
+const shapeOf = (n: string) => ({ n, k: 'p', d: `M0 0L${n.slice(1)} 1z`, c: '#000000' });
 const rested: string[] = [];
 let drawn: InkStroke[] | null = null;
 /** A canvas being written on keeps what it has. */
@@ -46,6 +50,10 @@ vi.mock('@tauri-apps/api/core', () => ({
     if (cmd === 'ink_rest') { rested.push(args.sheet as string); return null; }
     if (cmd === 'ink_take') { const d = drawn; drawn = null; return { strokes: d?.length ?? 0, drawing: d ? b64(memDrawing(d)) : null }; }
     if (cmd === 'ink_split') return memSplit(Uint8Array.from(atob(args.drawing as string), (c) => c.charCodeAt(0)));
+    // (89) a stroke's outline, by what the stroke is: `stroke 3` is `s3`
+    if (cmd === 'ink_shapes') return JSON.stringify((args.strokes as string[]).map((d) => shapeOf(`s${atob(d).split(' ')[1]}`)));
+    if (cmd === 'ink_shown') { shown.push(args as (typeof shown)[number]); return null; }
+    if (cmd === 'ink_outlines') return { shapes: [] };
     throw new Error(`no ${cmd} here`);
   },
 }));
@@ -62,6 +70,7 @@ vi.mock('../bookPdf.js', () => ({
 }));
 vi.mock('../pdfjs.js', () => ({ TextLayer: class { render() { return Promise.resolve(); } }, pageBits: async () => [{ str: 'text' }] }));
 const { Pdf } = await import('../Pdf.js');
+const { resetInk } = await import('../pageInk.js');
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 globalThis.ResizeObserver ??= class { observe() {} unobserve() {} disconnect() {} } as unknown as typeof ResizeObserver;
 globalThis.IntersectionObserver ??= class { observe() {} unobserve() {} disconnect() {} } as unknown as typeof IntersectionObserver;
@@ -90,6 +99,9 @@ const ptr = (type: string, pointerType: string, x: number, y: number) =>
 const fire = async (target: EventTarget, e: Event) => { await act(async () => { target.dispatchEvent(e); }); return e; };
 const pageEl = (n: number) => q<HTMLElement>(`.pdf-page[data-page="${n}"]`)!;
 const inkOn = (n: number) => q<HTMLImageElement>(`img.page-ink[data-page="${n}"]`);
+/** (89) the writing on a PDF's page where there are canvases: the page's own paths, a stroke each. */
+const pathsOn = (n: number) => q<SVGSVGElement>(`svg.page-ink[data-page="${n}"]`);
+const drawnOn = (n: number) => Array.from(pathsOn(n)?.querySelectorAll<SVGElement>('[data-n]') ?? []).map((x) => x.dataset.n);
 
 beforeAll(async () => {
   fs = storeFs(memStore(), ROOT);
@@ -105,6 +117,8 @@ beforeEach(async () => {
   scenes.length = 0;
   filled.length = 0;
   rested.length = 0;
+  shown.length = 0;
+  resetInk();
   drawn = null;
   writing = false;
   await fs.setPageInk(hash, 41, []);
@@ -154,7 +168,7 @@ describe('a book\'s page under the Pencil', () => {
     expect(await fs.inkedPages(hash)).toEqual([]);
   });
 
-  it('what the Pencil wrote is the page\'s strokes, kept when it goes quiet; the canvas stays over the page, and the picture made of it stands aside', async () => {
+  it('what the Pencil wrote is the page\'s strokes, kept when it goes quiet; the page draws them itself, a path a stroke, where the page lies (89)', async () => {
     expect(hash).toMatch(/^[0-9a-f]{64}$/);
     await wait(20);
     await pencil({ kind: 'begin', sheet: sheet(42), host: `pages:${CH3}`, fresh: false, x: 60, y: 100 });
@@ -168,19 +182,20 @@ describe('a book\'s page under the Pencil', () => {
     // nothing went into the PDF, and the notes say nothing of it
     expect(fs.blobAt(`${ROOT}/${PDF}`)).toBe(hash);
     expect(await fs.readText(`${ROOT}/${CH3}`)).toBe(NOTES);
-    // the picture is made, under the canvas, and stands aside; shown, it stands aside still: the canvas is not let go
-    await wait(40);
-    const img = inkOn(42)!;
-    expect(img).not.toBeNull();
-    expect(img.dataset.live).toBe('1');
+    // no picture is made of it and no canvas shows it: the page draws its strokes, in the pages' own column
+    await wait(60);
+    expect(inkOn(42)).toBeNull();
+    const svg = pathsOn(42)!;
+    expect(svg).not.toBeNull();
+    expect(drawnOn(42)).toEqual(['s1', 's2']);
+    expect(svg.closest('.pdf-pages')).not.toBeNull();
+    expect(svg.getAttribute('viewBox')).toBe(`0 0 ${W} ${H}`);
     expect(rested).toEqual([]);
-    await loaded(42);
-    expect(inkOn(42)!.dataset.live).toBe('1');
-    expect(rested).toEqual([]);
-    expect(inkOn(41)).toBeNull();
-    expect(pictures.get(inkOn(42)!.src)).toBe(new TextDecoder().decode(memPagePicture([stroke(1), stroke(2)], W, H)));
+    expect(pathsOn(41)).toBeNull();
     const at = pageEl(42).style;
-    expect([inkOn(42)!.style.top, inkOn(42)!.style.width, inkOn(42)!.style.height]).toEqual([at.top, at.width, at.height]);
+    expect([svg.style.top, svg.style.width, svg.style.height]).toEqual([at.top, at.width, at.height]);
+    // the canvases are told the sheet is one the page draws
+    expect(lastHost().sheets.every((s) => (s as { vector?: boolean }).vector === true)).toBe(true);
     // its own strokes are not handed back to the canvas that wrote them
     expect(filled).toEqual([]);
     // one stroke more is one row more; nothing asked for, nothing written
@@ -191,9 +206,9 @@ describe('a book\'s page under the Pencil', () => {
     await pencil({ kind: 'quiet', sheet: sheet(42) });
     await wait(30);
     expect((await fs.pageInk(hash, 42)).length).toBe(3);
-    // while the canvas shows the writing no new picture of it is made, and the canvas is told nothing it gave
-    expect(inkOn(42)!.src).toBe(img.src);
-    expect(inkOn(42)!.dataset.live).toBe('1');
+    // one path more, the two before the same elements; the canvas is told nothing it gave
+    expect(drawnOn(42)).toEqual(['s1', 's2', 's3']);
+    expect(pathsOn(42)).toBe(svg);
     expect(filled).toEqual([]);
     expect(rested).toEqual([]);
   });
@@ -203,10 +218,10 @@ describe('a book\'s page under the Pencil', () => {
     await told(41);
     const fill = filled.find((f) => f.sheet === sheet(41) && f.drawing)!;
     expect(memSplit(Uint8Array.from(atob(fill.drawing!), (c) => c.charCodeAt(0))).map((x) => x.stroke)).toEqual(['s1']);
-    // to be shown by it: once it holds them the page's picture stands aside
-    expect(fill.show).toBe(true);
+    // with the names the store has them under: the page is told of them by these
+    expect(fill.names).toEqual(['s1']);
     await wait(40);
-    expect(inkOn(41)!.dataset.live).toBe('1');
+    expect(drawnOn(41)).toEqual(['s1']);
     // a merge writes s9 while the canvas, which knows s1, writes s2
     writing = true;
     await act(async () => { await fs.door.run(() => fs.door.apply({ puts: [], removes: [], reviews: [], pairs: null, ink: [{ page: `p.${hash}.41`, add: [stroke(9)], remove: [] }] }, [])); });
@@ -214,6 +229,8 @@ describe('a book\'s page under the Pencil', () => {
     await pencil({ kind: 'quiet', sheet: sheet(41) });
     await wait(40);
     expect((await fs.pageInk(hash, 41)).map((x) => x.stroke).sort()).toEqual(['s1', 's2', 's9']);
+    await wait(60);
+    expect([...drawnOn(41)].sort()).toEqual(['s1', 's2', 's9']);
   });
 
   it('every stroke erased, the page is the page again, with no picture over it', async () => {
@@ -224,6 +241,7 @@ describe('a book\'s page under the Pencil', () => {
     await wait(120);
     expect(await fs.inkedPages(hash)).toEqual([]);
     expect(inkOn(41)).toBeNull();
+    expect(drawnOn(41)).toEqual([]);
     // the canvas stays where it is, empty, for the next stroke
     expect(rested).toEqual([]);
   });
@@ -261,5 +279,32 @@ describe('a book\'s page under the Pencil', () => {
     await act(async () => { await fs.door.run(() => fs.door.apply({ puts: [], removes: [], reviews: [], pairs: null, ink: [{ page: `p.${hash}.41`, add: [], remove: ['s5', 's6'] }] }, [])); });
     await wait(40);
     expect(inkOn(41)).toBeNull();
+  });
+  it('what the canvases\' side says a sheet holds is on the page at once, before it is kept: written, unseen while PencilKit shows it, erased (89)', async () => {
+    await fs.setPageInk(hash, 41, [stroke(1)]);
+    await told(41);
+    await wait(40);
+    expect(drawnOn(41)).toEqual(['s1']);
+    // a stroke handed over: in the page, unseen while PencilKit's canvas shows it
+    await pencil({ kind: 'ink', sheet: sheet(41), seq: 1, names: ['s1', 'n2'], add: [shapeOf('n2')], hide: ['n2'] });
+    expect(drawnOn(41)).toEqual(['s1', 'n2']);
+    expect(pathsOn(41)!.querySelector('[data-n="n2"]')!.getAttribute('visibility')).toBe('hidden');
+    expect(await fs.pageInk(hash, 41)).toEqual([stroke(1)]);
+    // the writing paused: shown, and the canvases' side is told when it is on the glass
+    await pencil({ kind: 'ink', sheet: sheet(41), seq: 2, names: ['s1', 'n2'], add: [], hide: [] });
+    expect(pathsOn(41)!.querySelector('[data-n="n2"]')!.hasAttribute('visibility')).toBe(false);
+    await wait(80);
+    expect(shown.at(-1)).toEqual({ sheet: sheet(41), seq: 2 });
+    // the eraser takes the first: its path goes at once
+    await pencil({ kind: 'ink', sheet: sheet(41), seq: 3, names: ['n2'], add: [], hide: [] });
+    expect(drawnOn(41)).toEqual(['n2']);
+    // what the lasso carries is moved where it is
+    await pencil({ kind: 'ink', sheet: sheet(41), carry: { names: ['n2'], m: [1, 0, 0, 1, 5, 7] } });
+    expect(pathsOn(41)!.querySelector('[data-n="n2"]')!.getAttribute('transform')).toBe('matrix(1 0 0 1 5 7)');
+    // a page not in the store yet has a place for what is written on it
+    await pencil({ kind: 'ink', sheet: sheet(42), seq: 1, names: ['m1'], add: [shapeOf('m1')], hide: [] });
+    await wait(30);
+    expect(drawnOn(42)).toEqual(['m1']);
+    expect(await fs.pageInk(hash, 42)).toEqual([]);
   });
 });

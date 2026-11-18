@@ -31,6 +31,7 @@ mod native {
         pub fn ilmi_ink_picture(recs: *const u8, len: usize, scale: f64, out: *mut *mut u8, out_len: *mut usize) -> i32;
         pub fn ilmi_ink_page(recs: *const u8, len: usize, w: f64, h: f64, scale: f64, out: *mut *mut u8, out_len: *mut usize) -> i32;
         pub fn ilmi_ink_bounds(data: *const u8, len: usize, out: *mut *mut u8, out_len: *mut usize) -> i32;
+        pub fn ilmi_ink_shapes(recs: *const u8, len: usize, out: *mut *mut u8, out_len: *mut usize) -> i32;
         pub fn ilmi_ink_sample(lines: u32, per: u32, seed: u32, out: *mut *mut u8, out_len: *mut usize) -> i32;
         pub fn ilmi_ink_pdf(spec: *const u8, len: usize, src: *const u8, src_len: usize, out_path: *const u8, out_len: usize) -> i32;
         pub fn ilmi_pdf_info(path: *const u8, len: usize, out: *mut *mut u8, out_len: *mut usize) -> i32;
@@ -121,6 +122,16 @@ pub fn bounds(drawing: &[u8]) -> Result<Option<[f64; 4]>, String> {
     Ok(Some([at(0), at(1), at(2), at(3)]))
 }
 
+/// The strokes as the page draws them itself (milestone 89): a JSON list, a stroke each, its name and its outline
+/// as an SVG path (`native/stroke.m`, `ilmi_stroke_shape`).
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+pub fn shapes(strokes: &[&[u8]]) -> Result<String, String> {
+    let recs = records(strokes);
+    // SAFETY: as in `split`
+    let json = native::call(|out, len| unsafe { native::ilmi_ink_shapes(recs.as_ptr(), recs.len(), out, len) })?;
+    String::from_utf8(json).map_err(|e| e.to_string())
+}
+
 /// A made-up drawing: `lines` lines of `per` strokes each.
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 pub fn sample(lines: u32, per: u32, seed: u32) -> Result<Vec<u8>, String> {
@@ -145,6 +156,11 @@ pub fn picture(_strokes: &[&[u8]], _scale: f64) -> Result<Vec<u8>, String> {
 pub fn page_picture(_strokes: &[&[u8]], _w: f64, _h: f64, _scale: f64) -> Result<Vec<u8>, String> {
     Err("no PencilKit on this system".to_string())
 }
+#[cfg(not(any(target_os = "macos", target_os = "ios")))]
+pub fn shapes(_strokes: &[&[u8]]) -> Result<String, String> {
+    Err("no PencilKit on this system".to_string())
+}
+
 #[cfg(not(any(target_os = "macos", target_os = "ios")))]
 pub fn bounds(_drawing: &[u8]) -> Result<Option<[f64; 4]>, String> {
     Err("no PencilKit on this system".to_string())
@@ -250,6 +266,9 @@ pub struct Taken {
     pub strokes: u32,
     /// The drawing in base64, when it has changed since the last one given.
     pub drawing: Option<String>,
+    /// The last telling of what the sheet holds, where the page draws it (89): what was taken is what that telling said.
+    #[serde(default)]
+    pub seq: u64,
 }
 
 /// The app's iCloud folder (milestone 65): none unless the app is signed with an iCloud container, so none anywhere yet.
@@ -301,12 +320,22 @@ impl<R: Runtime> Ink<R> {
     }
     /// What a sheet holds, from the store. Answers whether it took it: a sheet being written on keeps what it has.
     /// With `show` the canvas stays on the screen with it: the page shows no picture of that sheet (85).
-    pub async fn fill(&self, sheet: &str, drawing: Option<&str>, show: bool) -> Result<serde_json::Value, String> {
-        self.call("fill", serde_json::json!({ "sheet": sheet, "drawing": drawing, "show": show })).await
+    /// `names` are the store's names of the drawing's strokes, in its order (89): what the page knows them by.
+    pub async fn fill(&self, sheet: &str, drawing: Option<&str>, show: bool, names: Option<Vec<String>>) -> Result<serde_json::Value, String> {
+        self.call("fill", serde_json::json!({ "sheet": sheet, "drawing": drawing, "show": show, "names": names })).await
     }
     /// A sheet's drawing, when it has changed.
     pub async fn take(&self, sheet: &str) -> Result<Taken, String> {
         self.call("take", Sheet { sheet, drawing: None }).await
+    }
+    /// The page has drawn what a sheet said it holds, up to its telling `seq` (89): PencilKit's own copy of what was
+    /// written can go from the glass.
+    pub async fn shown(&self, sheet: &str, seq: u64) -> Result<(), String> {
+        self.call::<_, serde_json::Value>("shown", serde_json::json!({ "sheet": sheet, "seq": seq })).await.map(|_| ())
+    }
+    /// The outlines of those of a sheet's strokes named, where the page draws the sheet (89): `{ shapes }`.
+    pub async fn outlines(&self, sheet: &str, names: Vec<String>) -> Result<serde_json::Value, String> {
+        self.call("outlines", serde_json::json!({ "sheet": sheet, "names": names })).await
     }
     /// A sheet's canvas hidden: the page is showing its picture.
     pub async fn rest(&self, sheet: &str) -> Result<(), String> {
@@ -462,6 +491,34 @@ mod tests {
         let keys = |s: &[Stroke]| s.iter().map(|x| (x.key.clone(), x.at)).collect::<Vec<_>>();
         assert_eq!(keys(&first), keys(&second));
         assert_eq!(keys(&first), keys(&third));
+    }
+
+    #[test]
+    fn a_stroke_is_said_as_the_page_draws_it() {
+        // (89) every stroke by the name `split` gives it, in order, each an outline the page fills: a path that
+        // begins with a move, closes every piece, and holds nothing but what a path may
+        let strokes = split(&sample(3, 4, 5).unwrap()).unwrap();
+        let said: serde_json::Value = serde_json::from_str(&shapes(&refs(&strokes)).unwrap()).unwrap();
+        let list = said.as_array().unwrap();
+        assert_eq!(list.len(), strokes.len());
+        for (shape, stroke) in list.iter().zip(&strokes) {
+            assert_eq!(shape["n"].as_str().unwrap(), stroke.key);
+            let kind = shape["k"].as_str().unwrap();
+            assert!(kind == "p" || kind == "m" || kind == "i", "{kind}");
+            if kind == "i" {
+                assert!(shape["src"].as_str().unwrap().starts_with("data:image/png;base64,"));
+                assert_eq!(shape["box"].as_array().unwrap().len(), 4);
+                continue;
+            }
+            let d = shape["d"].as_str().unwrap();
+            assert!(d.starts_with('M') && d.ends_with('z') && d.len() > 20, "{d}");
+            assert!(d.chars().all(|c| c.is_ascii_digit() || "MLaCQz .-".contains(c)), "{d}");
+            let c = shape["c"].as_str().unwrap();
+            assert!(c.len() == 7 && c.starts_with('#'));
+        }
+        // the same strokes say the same thing twice
+        assert_eq!(shapes(&refs(&strokes)).unwrap(), shapes(&refs(&strokes)).unwrap());
+        assert_eq!(shapes(&[]).unwrap(), "[]");
     }
 
     #[test]

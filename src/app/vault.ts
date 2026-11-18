@@ -1120,6 +1120,12 @@ export function openInitialVault(): Promise<void> {
         await smokeSharp(path);
         return;
       }
+      // whether what is written on a PDF's page keeps to the page while it moves (milestone 89)
+      if (mode === 'pdfink' && isMobile()) {
+        const { smokePdfInk } = await import('./smoke.js');
+        await smokePdfInk(path);
+        return;
+      }
       if (mode === 'touch' && isMobile()) {
         const { smokeTouch } = await import('./smoke.js');
         await smokeTouch();

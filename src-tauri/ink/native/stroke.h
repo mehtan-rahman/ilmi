@@ -24,3 +24,8 @@ int ilmi_stroke_marker(void *made);
 int ilmi_stroke_weight(void *made);
 /// Every stroke of a drawing (`PKDrawing *`), as `ilmi_stroke_draw` draws one: a highlighter's first, the rest over them in order.
 void ilmi_drawing_draw(void *drawing, CGContextRef c, int dark);
+/// What the page draws it as, itself (89): `k` is `p` (a pen's or the even line's outline: `d` an SVG path filled by
+/// the nonzero rule in `c`, `o` how much of it shows when not all), `m` (a highlighter's: `d` filled and stroked `r`
+/// wide with round joins, the whole laid on at `o`) or `i` (a picture PencilKit made of it: `src` over `box`, the
+/// drawing's points); `clip` an SVG path it is cut to, where the eraser of PencilKit's cut it. Nil when it is nothing.
+NSDictionary *ilmi_stroke_shape(void *made);

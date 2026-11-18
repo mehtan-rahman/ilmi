@@ -1591,7 +1591,7 @@ describe('a written notebook under the Pencil', () => {
     await says('want', { sheets: [sheetId(1), sheetId(3)] });
     await wait(40);
     // shown as it is given; a sheet that holds nothing is told so
-    expect(fills()).toEqual([{ sheet: sheetId(1), drawing: b64(memDrawing([stroke(1)])), show: true }, { sheet: sheetId(3), drawing: null, show: true }]);
+    expect(fills()).toEqual([{ sheet: sheetId(1), drawing: b64(memDrawing([stroke(1)])), show: true, names: ['s1'] }, { sheet: sheetId(3), drawing: null, show: true, names: [] }]);
     // what is written at place 2 is sheet 3's, and what the surface gave is not given back to it
     asks.length = 0;
     drawn = [stroke(2), stroke(3)];
@@ -1604,7 +1604,7 @@ describe('a written notebook under the Pencil', () => {
     // strokes that come from elsewhere (a merge): the sheet is given them
     await fs.setPageInk(ID, 3, [stroke(2), stroke(3), stroke(4)]);
     await wait(60);
-    expect(fills()).toEqual([{ sheet: sheetId(3), drawing: b64(memDrawing([stroke(2), stroke(3), stroke(4)])), show: true }]);
+    expect(fills()).toEqual([{ sheet: sheetId(3), drawing: b64(memDrawing([stroke(2), stroke(3), stroke(4)])), show: true, names: ['s2', 's3', 's4'] }]);
     // a sheet far from the view, never asked for
     asks.length = 0;
     await fs.setPageInk(ID, 4, [stroke(5)]);

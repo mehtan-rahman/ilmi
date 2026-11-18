@@ -51,6 +51,10 @@ import UIKit
 import UIKit.UIGestureRecognizerSubclass
 import WebKit
 
+@_silgen_name("ilmi_drawing_names") private func c_drawing_names(_ drawing: UnsafeRawPointer, _ out: UnsafeMutablePointer<UnsafeMutablePointer<UInt8>?>, _ len: UnsafeMutablePointer<Int>) -> Int32
+@_silgen_name("ilmi_drawing_describe") private func c_drawing_describe(_ drawing: UnsafeRawPointer, _ indices: UnsafePointer<UInt32>, _ n: Int, _ out: UnsafeMutablePointer<UnsafeMutablePointer<UInt8>?>, _ len: UnsafeMutablePointer<Int>) -> Int32
+@_silgen_name("ilmi_ink_free") private func c_ink_free(_ p: UnsafeMutablePointer<UInt8>?)
+
 struct Box: Codable {
   var x: Double
   var y: Double
@@ -72,6 +76,9 @@ struct SheetSpec: Decodable {
   var zoom: Double?
   /// How its ink lies on what is under it: `multiply` (a highlighter leaves print dark), `screen` on a dark page. None is laid over.
   var blend: String?
+  /// The page draws what the sheet holds, itself, in the page's own element (89: a PDF's page). The canvas then shows
+  /// only what PencilKit has not yet handed over; what the sheet holds is kept beside it and told to the page.
+  var vector: Bool?
 }
 
 struct HostSpec: Decodable {
@@ -137,6 +144,8 @@ struct SheetArgs: Decodable {
   var drawing: String?
   /// The canvas stays on the screen with what it is given: the page shows no picture of it (85).
   var show: Bool?
+  /// The names the store has the drawing's strokes under, in the drawing's order (89): what the page knows them by.
+  var names: [String]?
 }
 
 struct HoldArgs: Decodable {
@@ -311,6 +320,20 @@ struct Took: Encodable {
 struct Taken: Encodable {
   let strokes: Int
   let drawing: String?
+  /// The last telling of what the sheet holds (89, `tell`): what was taken is what that telling said.
+  var seq: Int = 0
+}
+
+/// The strokes of a sheet the page asks the outlines of, by name (89).
+struct OutlineArgs: Decodable {
+  var sheet: String
+  var names: [String]
+}
+
+/// The page has drawn what a sheet said it holds, up to the telling `seq` (89).
+struct ShownArgs: Decodable {
+  var sheet: String
+  var seq: Int
 }
 
 struct SheetState: Encodable {
@@ -332,6 +355,12 @@ struct SheetState: Encodable {
   let stretch: Double
   /// The pixels each thing PencilKit draws into has to a pixel of the screen where it lies: 1 is a pixel for a pixel.
   let drawn: [Double]
+  /// The page draws what it holds (89); and then how many strokes PencilKit's canvas still shows (written, handed
+  /// over, and not yet known to be drawn by the page), the last telling and the last the page said it had drawn.
+  var vector: Bool = false
+  var live: Int = 0
+  var said: Int = 0
+  var seen: Int = 0
 }
 
 struct HostState: Encodable {
@@ -466,6 +495,41 @@ final class Sheet: NSObject, PKCanvasViewDelegate {
   /// What the page last gave it or took from it: PencilKit says a drawing changed when it is given one, whenever it likes.
   var given = PKDrawing()
 
+  // ── a sheet the page draws itself (89) ──
+  //
+  // What is written on a PDF's page is drawn by the page, in the page's own element, from each stroke's outline: so
+  // whatever scrolls, stretches or lays out the page carries its ink, by construction, and nothing here has to keep
+  // step with it. The sheet then holds its strokes beside the canvas (`model`), and the canvas is PencilKit's place
+  // for what is being written only. When PencilKit hands a stroke over it joins the model and the page is told of
+  // it (`InkPlugin.tell`), to hold it unseen while the canvas still shows it (`glass`, `hidden`): a stroke is on the
+  // glass once. When the writing pauses the page is told to show what it holds, says when it has (`shown`), and
+  // only then is the canvas emptied (`InkPlugin.settle`): two frames with both, never one with neither.
+  var vector = false
+  var model = PKDrawing()
+  /// What the sheet holds: its own strokes where the page draws them, the canvas's otherwise.
+  var drawing: PKDrawing {
+    get { vector ? model : canvas.drawing }
+    set { if vector { model = newValue } else { canvas.drawing = newValue } }
+  }
+  /// How many of the canvas's strokes have joined the model, and that the canvas is being emptied (PencilKit says so as a change).
+  var taken = 0
+  var clearing = false
+  /// The tellings: the last made, and the last the page said it had drawn.
+  var said = 0
+  var seen = 0
+  /// The strokes of the model PencilKit's canvas still shows, by name; whether the page was told to hold them
+  /// unseen; and the telling that had it show them (0 while they are unseen).
+  var glass: [String] = []
+  var hidden = false
+  var revealed = 0
+  /// When the Pencil last lifted here, and until when a stroke it ended may yet be handed over by PencilKit.
+  var liftedAt: TimeInterval = 0
+  var awaiting: TimeInterval = 0
+  /// The strokes the page knows the outline of, by name.
+  var told = Set<String>()
+  /// PencilKit's own undo of what is on the canvas: not ours (a stroke handed over is a step of the plugin's).
+  let scratch = UndoManager()
+
   /// How many of its own pixels the canvas draws to each of the screen's, each way (86): PencilKit softens a stroke's
   /// edge over nearly two of the pixels it draws with, so the canvas is made larger than it is shown and shown
   /// smaller, and an edge is about one pixel of the screen. 1 where that would be more pixels than a canvas should hold.
@@ -511,6 +575,17 @@ final class Sheet: NSObject, PKCanvasViewDelegate {
   }()
 
   func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
+    if vector {
+      if clearing { return }
+      let all = canvasView.drawing.strokes
+      // (PencilKit hands a stroke over a moment after it ends, and by then the next may be under the Pencil: only what
+      // it has not handed over before is new)
+      if all.count <= taken { taken = all.count; return }
+      let fresh = Array(all[taken...])
+      taken = all.count
+      plugin?.wrote(self, fresh)
+      return
+    }
     if canvasView.drawing == given { return }
     dirty = true
     stepped = true
@@ -739,6 +814,9 @@ class InkPlugin: Plugin, PenEars {
   private var snap: (sheet: Sheet, count: Int, until: TimeInterval)?
   var lastShape: String?
   private var pinched: [String: CGFloat] = [:]
+  /// How what the lasso holds is carried under the Pencil, on a sheet the page draws (89); and strokes' names, kept.
+  private var carried: CGAffineTransform?
+  private var named: [StrokeMark: String] = [:]
   /// The host two fingers are zooming, and its scroller's pan, which waits while they do.
   private weak var zooming: Host?
   private weak var paused: UIPanGestureRecognizer?
@@ -1261,7 +1339,20 @@ class InkPlugin: Plugin, PenEars {
     spent = false
     own = nil
     s.quiet?.cancel()
-    s.canvas.isHidden = false
+    // (a sheet the page draws: its canvas is there for a stroke, not for the eraser or the lasso)
+    if !s.vector || !ours { s.canvas.isHidden = false }
+    if s.vector {
+      if ours {
+        // the eraser and the lasso work on what the page draws: what PencilKit still shows is the page's to show now
+        settle(s)
+      } else if !s.glass.isEmpty, !s.hidden {
+        // written on again before the canvas could be emptied: the page holds what PencilKit shows unseen again
+        s.hidden = true
+        s.revealed = 0
+        tell(s)
+      }
+    }
+    carried = nil
     touched = Touched(armed: (armedAt - t.timestamp) * 1000, seen: (now - t.timestamp) * 1000, ink: inkedAt >= t.timestamp ? (inkedAt - t.timestamp) * 1000 : nil)
     touchedAt = t.timestamp
     touchedAtPoint = t.location(in: s.canvas)
@@ -1272,16 +1363,16 @@ class InkPlugin: Plugin, PenEars {
     snap = nil
     if tool.kind == "eraser" {
       unpick()
-      own = .erase(before: s.canvas.drawing, last: p)
+      own = .erase(before: s.drawing, last: p)
       erase(s, from: p, to: p)
       ringEraser(at: q, in: h)
     } else if tool.kind == "select" {
       let z = max(s.zoom, 0.01)
       if let k = picked, k.sheet === s, let box = held(k), hypot(p.x - box.maxX, p.y - box.maxY) <= gripReach / z {
-        own = .resize(before: s.canvas.drawing, base: s.canvas.drawing.strokes, at: k.at, origin: box.origin, from: p, moved: false)
+        own = .resize(before: s.drawing, base: s.drawing.strokes, at: k.at, origin: box.origin, from: p, moved: false)
         emit(["kind": "unpicked", "moving": true])
       } else if let k = picked, k.sheet === s, let box = held(k), box.insetBy(dx: -8 / z, dy: -8 / z).contains(p) {
-        own = .drag(before: s.canvas.drawing, base: s.canvas.drawing.strokes, at: k.at, from: p, moved: false)
+        own = .drag(before: s.drawing, base: s.drawing.strokes, at: k.at, from: p, moved: false)
         emit(["kind": "unpicked", "moving": true])
       } else {
         unpick()
@@ -1330,12 +1421,16 @@ class InkPlugin: Plugin, PenEars {
         let was = hypot(from.x - origin.x, from.y - origin.y)
         let f = min(max(hypot(max(p.x - origin.x, 1), max(p.y - origin.y, 1)) / max(was, 1), 0.1), 12)
         let by = CGAffineTransform(translationX: -origin.x, y: -origin.y).concatenating(CGAffineTransform(scaleX: f, y: f)).concatenating(CGAffineTransform(translationX: origin.x, y: origin.y))
-        var strokes = base
-        for i in at where i < strokes.count { strokes[i].transform = base[i].transform.concatenating(by) }
-        let d = PKDrawing(strokes: strokes)
-        picked?.drawing = d
-        put(s, d)
-        picked?.drawing = s.canvas.drawing
+        if s.vector {
+          carry(s, base, at, by)
+        } else {
+          var strokes = base
+          for i in at where i < strokes.count { strokes[i].transform = base[i].transform.concatenating(by) }
+          let d = PKDrawing(strokes: strokes)
+          picked?.drawing = d
+          put(s, d)
+          picked?.drawing = s.drawing
+        }
         own = .resize(before: before, base: base, at: at, origin: origin, from: from, moved: true)
         ring()
       case let .loop(points, shown):
@@ -1348,12 +1443,16 @@ class InkPlugin: Plugin, PenEars {
         show(loop, in: h, path: path.cgPath)
       case let .drag(before, base, at, from, _):
         let by = CGAffineTransform(translationX: p.x - from.x, y: p.y - from.y)
-        var strokes = base
-        for i in at where i < strokes.count { strokes[i].transform = base[i].transform.concatenating(by) }
-        let d = PKDrawing(strokes: strokes)
-        picked?.drawing = d
-        put(s, d)
-        picked?.drawing = s.canvas.drawing
+        if s.vector {
+          carry(s, base, at, by)
+        } else {
+          var strokes = base
+          for i in at where i < strokes.count { strokes[i].transform = base[i].transform.concatenating(by) }
+          let d = PKDrawing(strokes: strokes)
+          picked?.drawing = d
+          put(s, d)
+          picked?.drawing = s.drawing
+        }
         own = .drag(before: before, base: base, at: at, from: from, moved: true)
         ring()
       }
@@ -1371,10 +1470,12 @@ class InkPlugin: Plugin, PenEars {
     active = nil
     resting?.cancel()
     resting = nil
+    s.liftedAt = ProcessInfo.processInfo.systemUptime
+    if own == nil, !ours { s.awaiting = s.liftedAt + 0.5 }
     // a pen's or a highlighter's stroke ended resting: looked at when PencilKit hands the stroke over
     if own == nil, !ours { lastShape = nil }
     if own == nil, !ours, tool.snap == true, rested >= restFor {
-      snap = (s, s.canvas.drawing.strokes.count, ProcessInfo.processInfo.systemUptime + 1.5)
+      snap = (s, s.drawing.strokes.count, ProcessInfo.processInfo.systemUptime + 1.5)
     }
     finishOwn(s)
     if let spec = s.waiting, let h = s.host {
@@ -1383,6 +1484,7 @@ class InkPlugin: Plugin, PenEars {
     }
     emit(["kind": "end", "sheet": s.id])
     wait(s)
+    settleSoon(s)
   }
 
   /// The Pencil lifted, or the tool changed under it: what the eraser took or the lasso moved is one step to undo, and a loop picks.
@@ -1393,18 +1495,20 @@ class InkPlugin: Plugin, PenEars {
     hide(reach)
     switch o {
     case let .erase(before, _):
-      let after = s.canvas.drawing
+      let after = s.drawing
       if after != before { step(s, from: before, to: after) }
-    case let .resize(before, _, _, _, _, moved):
-      let after = s.canvas.drawing
+    case let .resize(before, base, at, _, _, moved):
+      land(s, base, at, moved)
+      let after = s.drawing
       if moved, after != before { step(s, from: before, to: after) }
       picked?.drawing = after
       ring()
       tellPicked()
     case let .loop(points, _):
       if !spent { pick(s, within: points) }
-    case let .drag(before, _, _, _, moved):
-      let after = s.canvas.drawing
+    case let .drag(before, base, at, _, moved):
+      land(s, base, at, moved)
+      let after = s.drawing
       if moved, after != before { step(s, from: before, to: after) }
       picked?.drawing = after
       ring()
@@ -1416,8 +1520,16 @@ class InkPlugin: Plugin, PenEars {
 
   /// A sheet's drawing set from here, and told as PencilKit's own change is.
   private func put(_ s: Sheet, _ d: PKDrawing) {
-    s.canvas.drawing = d
-    if s.canvas.drawing != s.given {
+    s.drawing = d
+    if s.vector {
+      // (what the sheet holds changed otherwise than by a stroke written: the page shows it as it is, and what
+      // PencilKit still shows of it goes once the page has)
+      s.hidden = false
+      tell(s)
+      s.revealed = s.said
+      settleSoon(s)
+    }
+    if s.drawing != s.given {
       s.dirty = true
       changed(s)
     }
@@ -1452,7 +1564,7 @@ class InkPlugin: Plugin, PenEars {
     var left: [PKStroke] = []
     var gone = false
     let part = tool.mode == "part"
-    for k in s.canvas.drawing.strokes {
+    for k in s.drawing.strokes {
       if !k.renderBounds.intersects(reach) { left.append(k); continue }
       if part {
         // what of it lies under the eraser goes, the rest stays as strokes of its own
@@ -1485,7 +1597,7 @@ class InkPlugin: Plugin, PenEars {
     let box = path.bounds
     let z = max(s.zoom, 0.01)
     if box.width + box.height < 8 / z { return }
-    let d = s.canvas.drawing
+    let d = s.drawing
     var at: [Int] = []
     for (i, k) in d.strokes.enumerated() where k.renderBounds.intersects(box) {
       var all = 0, inside = 0
@@ -1512,7 +1624,7 @@ class InkPlugin: Plugin, PenEars {
 
   /// What the lasso holds is these strokes of its sheet now.
   private func repick(_ s: Sheet, _ at: [Int]) {
-    picked = Picked(sheet: s, at: at, drawing: s.canvas.drawing)
+    picked = Picked(sheet: s, at: at, drawing: s.drawing)
     ring()
     tellPicked()
   }
@@ -1521,7 +1633,7 @@ class InkPlugin: Plugin, PenEars {
   private func selection(_ op: String, color c: UIColor?) -> Bool {
     guard !down, let k = picked else { return false }
     let s = k.sheet
-    let before = s.canvas.drawing
+    let before = s.drawing
     var strokes = before.strokes
     let at = k.at.filter { $0 < strokes.count }
     if at.isEmpty { return false }
@@ -1537,14 +1649,14 @@ class InkPlugin: Plugin, PenEars {
       strokes = strokes.enumerated().filter { !mine.contains($0.offset) }.map { $0.element }
       unpick()
       put(s, PKDrawing(strokes: strokes))
-      step(s, from: before, to: s.canvas.drawing)
+      step(s, from: before, to: s.drawing)
     case "duplicate":
       let by = CGAffineTransform(translationX: 16, y: 16)
       let n = strokes.count
       for i in at { strokes.append(renamed(strokes[i], transform: strokes[i].transform.concatenating(by))) }
       unpick()
       put(s, PKDrawing(strokes: strokes))
-      step(s, from: before, to: s.canvas.drawing)
+      step(s, from: before, to: s.drawing)
       repick(s, Array(n..<strokes.count))
     case "color":
       guard let c = c else { return false }
@@ -1556,7 +1668,7 @@ class InkPlugin: Plugin, PenEars {
       }
       unpick()
       put(s, PKDrawing(strokes: strokes))
-      step(s, from: before, to: s.canvas.drawing)
+      step(s, from: before, to: s.drawing)
       repick(s, at)
     default:
       return false
@@ -1582,14 +1694,14 @@ class InkPlugin: Plugin, PenEars {
     p.x = min(max(p.x, min(clipBox.width / 2, size.width / 2)), max(size.width - clipBox.width / 2, size.width / 2))
     p.y = min(max(p.y, min(clipBox.height / 2, size.height / 2)), max(size.height - clipBox.height / 2, size.height / 2))
     let by = CGAffineTransform(translationX: p.x - clipBox.midX, y: p.y - clipBox.midY)
-    let before = s.canvas.drawing
+    let before = s.drawing
     var strokes = before.strokes
     let n = strokes.count
     for k in clip { strokes.append(renamed(k, transform: k.transform.concatenating(by))) }
     unpick()
     put(s, PKDrawing(strokes: strokes))
-    step(s, from: before, to: s.canvas.drawing)
-    s.canvas.isHidden = false
+    step(s, from: before, to: s.drawing)
+    if !s.vector { s.canvas.isHidden = false }
     repick(s, Array(n..<strokes.count))
     wait(s)
     return true
@@ -1597,10 +1709,191 @@ class InkPlugin: Plugin, PenEars {
 
   /// What the lasso holds covers this, in the drawing's points.
   private func held(_ k: Picked) -> CGRect? {
-    let strokes = k.sheet.canvas.drawing.strokes
+    let strokes = k.sheet.drawing.strokes
     var box: CGRect? = nil
     for i in k.at where i < strokes.count { box = box.map { $0.union(strokes[i].renderBounds) } ?? strokes[i].renderBounds }
+    // (carried by the lasso on a sheet the page draws: where the page shows it meanwhile)
+    if let by = carried, k.sheet.vector { box = box?.applying(by) }
     return box
+  }
+
+  // ── a sheet the page draws itself (89) ──
+
+  /// What a call into `native/ink.m` gave, read as JSON.
+  private func json(_ call: (UnsafeMutablePointer<UnsafeMutablePointer<UInt8>?>, UnsafeMutablePointer<Int>) -> Int32) -> Any? {
+    var bytes: UnsafeMutablePointer<UInt8>? = nil
+    var len = 0
+    guard call(&bytes, &len) == 0, let b = bytes else { return nil }
+    defer { c_ink_free(b) }
+    return try? JSONSerialization.jsonObject(with: Data(bytes: b, count: len))
+  }
+
+  /// Every stroke's name of a drawing, in order: the name the page knows it by. A stroke given from the store has
+  /// the store's name (`fill` says them: named here again, a stroke read back from the store came out under another
+  /// name than the store's, on a simulated iPad). One written here is named as the store will name it when it is
+  /// kept (`native/ink.m`, `nameOf`, asked of the drawing whole as `split` asks). Either way a stroke keeps the name
+  /// it first had here, as long as it is the same stroke (`StrokeMark`).
+  private func names(of d: PKDrawing) -> [String] {
+    let strokes = d.strokes
+    let marks = strokes.map { StrokeMark($0) }
+    let known = marks.compactMap { named[$0] }
+    if known.count == marks.count { return known }
+    let ref = d as PKDrawingReference
+    let got = withExtendedLifetime(ref) { json { c_drawing_names(UnsafeRawPointer(Unmanaged.passUnretained(ref).toOpaque()), $0, $1) } } as? [String] ?? []
+    guard got.count == marks.count else { return marks.map { named[$0] ?? "" } }
+    if named.count > 60_000 { named.removeAll() }
+    for (m, n) in zip(marks, got) where named[m] == nil { named[m] = n }
+    return marks.map { named[$0] ?? "" }
+  }
+
+  /// The strokes of a drawing at `at`, as the page draws them: each its name and its outline (`ilmi_stroke_shape`).
+  private func outlines(of d: PKDrawing, at: [Int]) -> [Any] {
+    if at.isEmpty { return [] }
+    let ref = d as PKDrawingReference
+    let indices = at.map { UInt32($0) }
+    return withExtendedLifetime(ref) { json { c_drawing_describe(UnsafeRawPointer(Unmanaged.passUnretained(ref).toOpaque()), indices, indices.count, $0, $1) } } as? [Any] ?? []
+  }
+
+  /// The page is told what a sheet holds now: every stroke's name, in order, and the outline of each it has not been told of.
+  private func tell(_ s: Sheet) {
+    guard s.vector else { return }
+    s.said += 1
+    let all = names(of: s.model)
+    var fresh: [Int] = []
+    for (i, n) in all.enumerated() where !s.told.contains(n) {
+      s.told.insert(n)
+      fresh.append(i)
+    }
+    emit(["kind": "ink", "sheet": s.id, "seq": s.said, "names": all, "add": outlines(of: s.model, at: fresh), "hide": s.hidden ? s.glass : []])
+  }
+
+  /// The outlines of those of a sheet's strokes the page asks for by name: one it was not told, or no longer has.
+  @objc public func outlines(_ invoke: Invoke) throws {
+    let args = try invoke.parseArgs(OutlineArgs.self)
+    DispatchQueue.main.async {
+      guard let s = self.sheets[args.sheet], s.vector else {
+        invoke.resolve(["shapes": [Any]()])
+        return
+      }
+      let want = Set(args.names)
+      let at = self.names(of: s.model).enumerated().filter { want.contains($0.element) }.map { $0.offset }
+      invoke.resolve(["shapes": self.outlines(of: s.model, at: at)])
+    }
+  }
+
+  /// PencilKit handed strokes over on a sheet the page draws: they join what it holds, a step to undo, and the page
+  /// is told of them, to hold them unseen while the canvas shows them.
+  fileprivate func wrote(_ s: Sheet, _ fresh: [PKStroke]) {
+    let before = s.model
+    let made = fresh.map { sensed($0) }
+    s.model = PKDrawing(strokes: before.strokes + made)
+    s.glass += names(of: s.model).suffix(made.count)
+    s.hidden = true
+    s.revealed = 0
+    s.awaiting = 0
+    tell(s)
+    step(s, from: before, to: s.model)
+    s.dirty = true
+    changed(s)
+    settleSoon(s)
+  }
+
+  /// A stroke as the pen's `pressure` has it (`sense`): each point's size moved toward the stroke's mean (less than
+  /// 1) or away from it (more). As a notebook's surface does (`NoteSurface.sensed`).
+  private func sensed(_ k: PKStroke) -> PKStroke {
+    guard tool.kind == "pen", let f = tool.sense, abs(f - 1) > 0.01 else { return k }
+    var follows = k.ink.inkType == .pen
+    if #available(iOS 17.0, *), k.ink.inkType == .fountainPen { follows = true }
+    let points = Array(k.path)
+    guard follows, points.count > 1 else { return k }
+    let n = CGFloat(points.count)
+    let mw = points.reduce(0) { $0 + $1.size.width } / n
+    let mh = points.reduce(0) { $0 + $1.size.height } / n
+    let g = CGFloat(min(max(f, 0), 2))
+    let made = points.map { p -> PKStrokePoint in
+      let w = max(mw * 0.35, mw + (p.size.width - mw) * g)
+      let h = max(mh * 0.35, mh + (p.size.height - mh) * g)
+      return PKStrokePoint(location: p.location, timeOffset: p.timeOffset, size: CGSize(width: w, height: h), opacity: p.opacity, force: p.force, azimuth: p.azimuth, altitude: p.altitude)
+    }
+    return PKStroke(ink: k.ink, path: PKStrokePath(controlPoints: made, creationDate: k.path.creationDate), transform: k.transform, mask: k.mask)
+  }
+
+  /// How long the Pencil has been off a sheet before what it wrote is the page's to show.
+  private let pause = 0.25
+
+  /// What PencilKit's canvas still shows of a sheet the page draws is handed to the page, when it can be. While the
+  /// Pencil writes, and until a stroke it just ended has been handed over, nothing (a canvas emptied under the Pencil
+  /// loses the stroke being written). Once the writing has paused the page is told to show what it holds; when it
+  /// says it has (`shown`), the canvas is emptied and hidden. Never a frame with neither.
+  private func settle(_ s: Sheet) {
+    guard s.vector, !s.clearing else { return }
+    let now = ProcessInfo.processInfo.systemUptime
+    let writing = down && active === s && own == nil && !ours
+    let on = s.canvas.drawing.strokes.count
+    if on == 0, s.glass.isEmpty {
+      if !writing, !s.canvas.isHidden, now - s.liftedAt >= pause { s.canvas.isHidden = true }
+      if !writing { s.taken = 0 }
+      return
+    }
+    if writing || now < s.awaiting || s.taken < on { return }
+    if s.hidden {
+      // (under the eraser or the lasso at once: they work on what the page draws)
+      guard now - s.liftedAt >= pause || (down && active === s) else { return }
+      s.hidden = false
+      tell(s)
+      s.revealed = s.said
+      return
+    }
+    guard s.seen >= s.revealed else { return }
+    s.clearing = true
+    s.canvas.drawing = PKDrawing()
+    s.clearing = false
+    s.taken = 0
+    s.glass = []
+    s.canvas.isHidden = true
+    s.scratch.removeAllActions()
+  }
+
+  private func settleSoon(_ s: Sheet) {
+    guard s.vector else { return }
+    settle(s)
+    for after in [pause + 0.02, 0.56] {
+      DispatchQueue.main.asyncAfter(deadline: .now() + after) { [weak self, weak s] in
+        if let self = self, let s = s, self.sheets[s.id] === s { self.settle(s) }
+      }
+    }
+  }
+
+  /// What the lasso holds on a sheet the page draws, carried or resized under the Pencil: the page moves what it
+  /// has drawn of them (a word, not their outlines again), and they are strokes anew where they are put down (`land`).
+  private func carry(_ s: Sheet, _ base: [PKStroke], _ at: [Int], _ by: CGAffineTransform) {
+    carried = by
+    let moved: [String: Any] = ["names": at.filter { $0 < base.count }.compactMap { named[StrokeMark(base[$0])] }, "m": [Double(by.a), Double(by.b), Double(by.c), Double(by.d), Double(by.tx), Double(by.ty)]]
+    emit(["kind": "ink", "sheet": s.id, "carry": moved])
+  }
+
+  private func land(_ s: Sheet, _ base: [PKStroke], _ at: [Int], _ moved: Bool) {
+    defer { carried = nil }
+    guard s.vector, moved, let by = carried else { return }
+    var strokes = base
+    for i in at where i < strokes.count { strokes[i].transform = base[i].transform.concatenating(by) }
+    let d = PKDrawing(strokes: strokes)
+    carried = nil
+    picked?.drawing = d
+    put(s, d)
+    picked?.drawing = s.drawing
+  }
+
+  /// The page has drawn what a sheet said it holds, up to a telling.
+  @objc public func shown(_ invoke: Invoke) throws {
+    let args = try invoke.parseArgs(ShownArgs.self)
+    DispatchQueue.main.async {
+      if let s = self.sheets[args.sheet] {
+        s.seen = max(s.seen, args.seq)
+        self.settle(s)
+      }
+      invoke.resolve()
+    }
   }
 
   /// The dashed rectangle round what the lasso holds, in its host's content: it scrolls with the sheet.
@@ -1726,7 +2019,7 @@ class InkPlugin: Plugin, PenEars {
   /// The stroke PencilKit just handed over, drawn again as the shape it most nearly is; as written when it is none.
   /// One more step to undo: taken back, the stroke is as it was drawn.
   private func shape(_ s: Sheet) {
-    let before = s.canvas.drawing
+    let before = s.drawing
     guard let k = before.strokes.last else { return }
     let marker = k.ink.inkType == .marker
     guard let found = Shapes.find(Shapes.points(of: k), closed: !marker) else { return }
@@ -1734,16 +2027,16 @@ class InkPlugin: Plugin, PenEars {
     var strokes = Array(before.strokes.dropLast())
     strokes.append(contentsOf: Shapes.strokes(found, from: k))
     put(s, PKDrawing(strokes: strokes))
-    step(s, from: before, to: s.canvas.drawing)
+    step(s, from: before, to: s.drawing)
     emit(["kind": "shape", "sheet": s.id, "shape": found.name])
   }
 
   fileprivate func changed(_ s: Sheet) {
-    if let k = picked, k.sheet === s, s.canvas.drawing != k.drawing { unpick() }
+    if let k = picked, k.sheet === s, s.drawing != k.drawing { unpick() }
     if let w = snap, w.sheet === s {
       snap = nil
       lastShape = nil
-      if ProcessInfo.processInfo.systemUptime < w.until, s.canvas.drawing.strokes.count == w.count + 1 { shape(s) }
+      if ProcessInfo.processInfo.systemUptime < w.until, s.drawing.strokes.count == w.count + 1 { shape(s) }
     }
     historySoon()
     // an undo's change is kept at once
@@ -1752,7 +2045,7 @@ class InkPlugin: Plugin, PenEars {
       return
     }
     // the stroke is the canvas's now: where it starts against where the Pencil came down
-    if !ours, own == nil, var t = touched, t.lost == nil, let first = s.canvas.drawing.strokes.last?.path.first?.location {
+    if !ours, own == nil, var t = touched, t.lost == nil, let first = s.drawing.strokes.last?.path.first?.location {
       let z = s.canvas.zoomScale
       t.lost = Double(hypot(first.x * z - touchedAtPoint.x, first.y * z - touchedAtPoint.y) / max(s.over, 1))
       touched = t
@@ -1812,6 +2105,12 @@ class InkPlugin: Plugin, PenEars {
     if down && active === s {
       s.waiting = spec
       return
+    }
+    let v = spec.vector == true
+    if s.vector != v {
+      s.vector = v
+      s.canvas.history = v ? s.scratch : history
+      if v { s.canvas.isHidden = true }
     }
     s.place(spec.frame.rect, zoom: CGFloat(spec.zoom ?? 1))
     let filter: String? = spec.blend == "multiply" ? "multiplyBlendMode" : spec.blend == "screen" ? "screenBlendMode" : nil
@@ -1977,14 +2276,19 @@ class InkPlugin: Plugin, PenEars {
         d = read
       }
       // what the store holds is not what was written here: a step back would undo the store's, so there is none
-      if s.stepped, s.canvas.drawing != d { self.forget() }
+      if s.stepped, s.drawing != d { self.forget() }
       if self.picked?.sheet === s { self.unpick() }
       s.given = d
-      s.canvas.drawing = d
+      s.drawing = d
       s.dirty = false
+      // (a sheet the page draws: the page has these from the store, with their outlines)
+      if s.vector, let known = args.names, known.count == d.strokes.count {
+        for (k, n) in zip(d.strokes, known) { self.named[StrokeMark(k)] = n }
+        s.told.formUnion(known)
+      }
       // a page's writing is its canvas, at rest as while it is written: drawn from the strokes at whatever size the
       // page is, never a picture stretched
-      if args.show == true, !d.strokes.isEmpty { s.canvas.isHidden = false }
+      if args.show == true, !d.strokes.isEmpty, !s.vector { s.canvas.isHidden = false }
       invoke.resolve(Took(took: true))
     }
   }
@@ -2002,7 +2306,7 @@ class InkPlugin: Plugin, PenEars {
         invoke.resolve(Taken(strokes: 0, drawing: nil))
         return
       }
-      let d = s.canvas.drawing
+      let d = s.drawing
       var data: String? = nil
       if s.dirty && !(self.down && self.active === s) {
         s.dirty = false
@@ -2010,7 +2314,7 @@ class InkPlugin: Plugin, PenEars {
         s.given = d
         data = d.dataRepresentation().base64EncodedString()
       }
-      invoke.resolve(Taken(strokes: d.strokes.count, drawing: data))
+      invoke.resolve(Taken(strokes: d.strokes.count, drawing: data, seq: s.said))
     }
   }
 
@@ -2018,7 +2322,7 @@ class InkPlugin: Plugin, PenEars {
   @objc public func rest(_ invoke: Invoke) throws {
     let args = try invoke.parseArgs(SheetArgs.self)
     DispatchQueue.main.async {
-      if let s = self.sheets[args.sheet], !s.dirty, !(self.down && self.active === s) { s.canvas.isHidden = true }
+      if let s = self.sheets[args.sheet], !s.vector, !s.dirty, !(self.down && self.active === s) { s.canvas.isHidden = true }
       invoke.resolve()
     }
   }
@@ -2027,7 +2331,9 @@ class InkPlugin: Plugin, PenEars {
   @objc public func wipe(_ invoke: Invoke) throws {
     let args = try invoke.parseArgs(SheetArgs.self)
     DispatchQueue.main.async {
-      self.sheets[args.sheet]?.canvas.drawing = PKDrawing()
+      if let s = self.sheets[args.sheet] {
+        if s.vector { self.put(s, PKDrawing()) } else { s.canvas.drawing = PKDrawing() }
+      }
       if let (f, l) = self.leaf(args.sheet) { f.wipe(l) }
       invoke.resolve()
     }
@@ -2391,13 +2697,13 @@ class InkPlugin: Plugin, PenEars {
       let pts = args.points.enumerated().map { i, p in
         PKStrokePoint(location: CGPoint(x: p[0], y: p[1]), timeOffset: Double(i) * 0.01, size: CGSize(width: w * 1.3, height: w * 1.3), opacity: 1, force: 1, azimuth: 0, altitude: .pi / 2)
       }
-      let before = s.canvas.drawing
+      let before = s.drawing
       let k = PKStroke(ink: self.ink.ink, path: PKStrokePath(controlPoints: pts, creationDate: Date()), transform: .identity, mask: nil)
       self.lastShape = nil
       self.put(s, PKDrawing(strokes: before.strokes + [k]))
-      self.step(s, from: before, to: s.canvas.drawing)
+      self.step(s, from: before, to: s.drawing)
       if args.rest, self.tool.snap == true { self.shape(s) }
-      s.canvas.isHidden = false
+      if !s.vector { s.canvas.isHidden = false }
       self.wait(s)
       invoke.resolve()
     }
@@ -2438,7 +2744,7 @@ class InkPlugin: Plugin, PenEars {
       let size = s.box.size
       var made: UIImage? = nil
       UITraitCollection(userInterfaceStyle: .light).performAsCurrent {
-        made = s.canvas.drawing.image(from: CGRect(x: 0, y: 0, width: size.width / z, height: size.height / z), scale: z * screen)
+        made = s.drawing.image(from: CGRect(x: 0, y: 0, width: size.width / z, height: size.height / z), scale: z * screen)
       }
       guard let image = made, let cg = image.cgImage else {
         invoke.reject("no picture")
@@ -2477,7 +2783,12 @@ class InkPlugin: Plugin, PenEars {
         let screen = s.canvas.window?.screen.scale ?? UIScreen.main.scale
         let inWindow = s.canvas.convert(s.canvas.bounds, to: nil)
         let device = CGRect(x: inWindow.minX * screen, y: inWindow.minY * screen, width: inWindow.width * screen, height: inWindow.height * screen)
-        return SheetState(id: s.id, strokes: s.canvas.drawing.strokes.count, shown: !s.canvas.isHidden, dirty: s.dirty, at: Box(CGRect(origin: onWeb.origin, size: s.canvas.frame.size)), pixels: Double(s.canvas.zoomScale * screen), blend: s.canvas.layer.compositingFilter as? String, device: Box(device), stretch: Double(s.box.width > 0 ? inWindow.width / s.box.width : 1), drawn: self.drawn(s.canvas, screen: screen))
+        var st = SheetState(id: s.id, strokes: s.drawing.strokes.count, shown: !s.canvas.isHidden, dirty: s.dirty, at: Box(CGRect(origin: onWeb.origin, size: s.canvas.frame.size)), pixels: Double(s.canvas.zoomScale * screen), blend: s.canvas.layer.compositingFilter as? String, device: Box(device), stretch: Double(s.box.width > 0 ? inWindow.width / s.box.width : 1), drawn: self.drawn(s.canvas, screen: screen))
+        st.vector = s.vector
+        st.live = s.vector ? s.canvas.drawing.strokes.count : 0
+        st.said = s.said
+        st.seen = s.seen
+        return st
       }
       var heldAt: Box? = nil
       if let k = self.picked, let box = self.held(k) {

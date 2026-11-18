@@ -125,6 +125,8 @@ import { popMenu, popMenuOpen, type PopItem } from './popMenu.js';
 import { TextLayer, pageBits, type PDFDocumentProxy } from './pdfjs.js';
 import { acquirePdf, itemsOf } from './bookPdf.js';
 import { addSurface, afterScene, covered, fillSheet, forgetSheet, hasCanvas, holdScenes, inContent, onFingers, onLayout, onSurface, pagePaper, pinchSheets, portOf, sceneSoon, settleSheets, type Box as InkBox, type PenEvent, type SheetSpec, type Surface } from './ink.js';
+import { PageInkSvg } from './PageInkSvg.js';
+import { onLiveSheet } from './pageInk.js';
 import { dropSurface, hexOf, holesOver, paperArgs, sendSurface, surfaceGo, surfacePicture, surfaceZoom, type SurfaceMark } from './surface.js';
 import { Icon } from './icons.js';
 import { StudyButton } from './StudyButton.js';
@@ -718,7 +720,8 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
           const r = inContent(sc, el);
           if (r.y + r.h < top - AHEAD || r.y > top + view.h + AHEAD) continue;
           // a pageless notebook's sheet is written on past its foot: a stroke begun on it runs on over the next, whole
-          sheets.push({ id: sheetOf(n), frame: sheetsRef.current && runRef.current ? { ...r, h: r.h * (1 + RUN_OVER) } : r, hit: r, zoom: scaleRef.current, blend: dark ? 'screen' : 'multiply' });
+          // (a PDF's page draws what is written on it itself, 89: its canvas is for the stroke under the Pencil)
+          sheets.push({ id: sheetOf(n), frame: sheetsRef.current && runRef.current ? { ...r, h: r.h * (1 + RUN_OVER) } : r, hit: r, zoom: scaleRef.current, blend: dark ? 'screen' : 'multiply', ...(sheetsRef.current ? {} : { vector: true }) });
           there.add(n);
           fill(n);
         }
@@ -761,9 +764,11 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
       },
     };
     const off = addSurface(surface);
+    // (89) a page the canvases' side says is written on has a place to be drawn in, before the store has heard of it
+    const offLive = onLiveSheet((sheet) => { const n = pageOfSheet(sheet); if (n !== null) setLiveInk((s) => (s.has(n) ? s : new Set(s).add(n))); });
     const onScroll = () => sceneSoon();
     sc.addEventListener('scroll', onScroll, { passive: true });
-    return () => { sc.removeEventListener('scroll', onScroll); off(); };
+    return () => { sc.removeEventListener('scroll', onScroll); offLive(); off(); };
   }, [hash, status, id, sheetAt, native]);
   // ── a notebook's surface (87): what it says, and what it is given of the store ──
   const surfaceHears = useRef<(e: import('./ink.js').SurfaceEvent) => void>(() => {});
@@ -2965,6 +2970,8 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
   canWriteRef.current = canWrite && !phone;
   /** The tools' row: an iPad's (a phone's bar is one line). */
   const inkRow = canWrite && !phone && status === 'ok' && toolsShown;
+  /** A PDF's pages where there are canvases (an iPad's): what is written on them is drawn by the page, as paths (89, `pageInk.ts`). */
+  const vectorInk = !written && hasCanvas();
   /** The scroller the pages lie in, and the book over them: where the lasso's menu and the overview are drawn. */
   const scrollerEl = wrapRef.current?.closest<HTMLElement>('.book-pages, .pane-body') ?? null;
   const bookEl = wrapRef.current?.closest<HTMLElement>('.book') ?? null;
@@ -3119,14 +3126,16 @@ function Pages({ id, active, session, readOn, onLast, notesOpen }: Omit<Required
                 {written ? <PaperSheet spec={paperOf(written, i)} px={(onPixel(s.w * scale, dpr) / s.w) * dpr} /> : null}
               </div>
             ))}
-            {hash && Object.keys(inked).length > 0 && (
+            {hash && (Object.keys(inked).length > 0 || (vectorInk && liveInk.size > 0)) && (
               <div className="pdf-ink" data-paper={written?.paper} data-ink-dark={inkDark ? '1' : undefined}>
                 {sizes.map((s, i) => {
                   const n = base + i + 1;
                   // what is written on it is kept under the page's own number: a notebook's sheet
                   const page = sheetAt(n);
                   // a page's writing is made when the page itself is drawn, as it comes near
-                  const r = page !== null && inked[page] !== undefined && (sheets ? isNear(n) : rendered.current.has(n)) ? pageRect(n) : null;
+                  const r = page !== null && (inked[page] !== undefined || (vectorInk && liveInk.has(page))) && (sheets ? isNear(n) : rendered.current.has(n)) ? pageRect(n) : null;
+                  // (89) where there are canvases a PDF's page draws its writing itself, a path a stroke: it goes wherever the page goes
+                  if (vectorInk) return r && page !== null && <PageInkSvg key={page} hash={hash} page={page} at={n} w={s.w} h={s.h} rev={inked[page] ?? 0} rect={r} sheet={`p.${hash}.${page}`} onShown={pictureShown} />;
                   // (a pageless sheet's picture reaches past its foot, as its canvas does)
                   const over = pageless ? 1 + RUN_OVER : 1;
                   return r && page !== null && <PageInk key={page} hash={hash} page={page} at={n} w={s.w} h={s.h * over} rev={inked[page]!} rect={over === 1 ? r : { ...r, height: r.height * over }} live={liveInk.has(page)} paper={written?.paper} dark={inkDark} onShown={pictureShown} />;

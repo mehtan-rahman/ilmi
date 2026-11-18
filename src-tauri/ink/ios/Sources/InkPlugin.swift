@@ -171,6 +171,8 @@ struct ToolSpec: Codable {
   var width: Double
   /// A pen's ink, by name: `pen`, `monoline`, `fountain`, `pencil` (85). None is `pen`; a highlighter's is the marker.
   var ink: String?
+  /// How much a pen's line follows pressure: 0 an even line, 1 the ink's own (none is 1), up to 2.
+  var sense: Double?
   /// How much of the ink's own colour shows, 0 to 1: a highlighter's. None is all of it.
   var opacity: Double?
   /// The eraser's way: `stroke` takes each stroke it comes upon whole, `part` what of it lies under it. None is `stroke`.

@@ -1553,7 +1553,7 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
     let at = CGPoint(x: first.x * s + o.x, y: first.y * s + o.y)
     guard let l = active ?? lastActive ?? leaf(at: at) else { return }
     let by = CGAffineTransform(translationX: -(l.frame.minX - o.x) / s, y: -(l.frame.minY - o.y) / s)
-    let moved = strokes.map { k -> PKStroke in var m = k; m.transform = k.transform.concatenating(by); return m }
+    let moved = strokes.map { k -> PKStroke in var m = sensed(k); m.transform = k.transform.concatenating(by); return m }
     let before = l.model
     let on = commit(l, from: before, to: before + moved, moved: Array(before.count..<before.count + moved.count), dirty: box(of: moved)).leaf
     if let w = snap, w.leaf === l {
@@ -1568,6 +1568,25 @@ final class NoteSurface: NSObject, UIScrollViewDelegate, PKCanvasViewDelegate, U
         }
       }
     }
+  }
+
+  /// A stroke as the pen's `pressure` has it: each point's size moved toward the stroke's mean (less than 1) or away from it (more).
+  private func sensed(_ k: PKStroke) -> PKStroke {
+    guard plugin.tool.kind == "pen", let f = plugin.tool.sense, abs(f - 1) > 0.01 else { return k }
+    var follows = k.ink.inkType == .pen
+    if #available(iOS 17.0, *), k.ink.inkType == .fountainPen { follows = true }
+    let points = Array(k.path)
+    guard follows, points.count > 1 else { return k }
+    let n = CGFloat(points.count)
+    let mw = points.reduce(0) { $0 + $1.size.width } / n
+    let mh = points.reduce(0) { $0 + $1.size.height } / n
+    let g = CGFloat(min(max(f, 0), 2))
+    let made = points.map { p -> PKStrokePoint in
+      let w = max(mw * 0.35, mw + (p.size.width - mw) * g)
+      let h = max(mh * 0.35, mh + (p.size.height - mh) * g)
+      return PKStrokePoint(location: p.location, timeOffset: p.timeOffset, size: CGSize(width: w, height: h), opacity: p.opacity, force: p.force, azimuth: p.azimuth, altitude: p.altitude)
+    }
+    return PKStroke(ink: k.ink, path: PKStrokePath(controlPoints: made, creationDate: k.path.creationDate), transform: k.transform, mask: k.mask)
   }
 
   /// PencilKit's own copy of what is ours already taken off the glass (ours is there first: never a frame with neither).

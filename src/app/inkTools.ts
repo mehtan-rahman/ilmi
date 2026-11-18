@@ -35,7 +35,7 @@ export type EraserMode = 'stroke' | 'part';
  * of a highlighter's colour shows; `mode` the eraser's way; `snap` whether a
  * stroke ended resting becomes a shape.
  */
-export interface Tool { kind: ToolKind; color: string; width: number; ink?: PenInk; opacity?: number; mode?: EraserMode; snap?: boolean }
+export interface Tool { kind: ToolKind; color: string; width: number; ink?: PenInk; sense?: number; opacity?: number; mode?: EraserMode; snap?: boolean }
 
 export const TOOLS: readonly ToolKind[] = ['pen', 'highlighter', 'eraser', 'select'];
 /** A tool with sizes; and one with colours. */
@@ -90,6 +90,10 @@ export const CUSTOM = 4;
 export const RECENT = 8;
 /** The least of a highlighter's colour that shows. */
 export const OPACITY_MIN = 0.2;
+/** The most a pen's line may follow pressure: twice what the ink does by itself. */
+export const SENSE_MAX = 2;
+/** The inks whose line changes with pressure: the ones `sensitivity` is offered for. */
+export const SENSES: readonly PenInk[] = ['pen', 'fountain'];
 
 /** What is kept. */
 export interface Kept {
@@ -110,6 +114,8 @@ export interface Kept {
   recent: Record<Inked, readonly string[]>;
   /** The pen's ink. */
   ink: PenInk;
+  /** How much a pen's line follows the hand's pressure, 0 (not at all: an even line) to `SENSE_MAX`; 1 is the ink's own. For the inks that follow it (`SENSES`). */
+  sense: number;
   /** How much of a highlighter's colour shows, `OPACITY_MIN` to 1. */
   opacity: number;
   /** The eraser takes a whole stroke, or the part of it under it. */
@@ -132,6 +138,7 @@ export const DEFAULTS: Kept = {
   custom: { pen: null, highlighter: null },
   recent: { pen: [], highlighter: [] },
   ink: 'monoline',
+  sense: 1,
   opacity: 1,
   eraser: 'stroke',
   snap: true,
@@ -195,6 +202,11 @@ export const withRecent = (k: Kept, tool: Inked, color: string): Kept => {
 };
 
 export const withInk = (k: Kept, ink: PenInk): Kept => (k.ink === ink || !isInk(ink) ? k : { ...k, ink });
+export const withSense = (k: Kept, sense: number): Kept => {
+  if (!Number.isFinite(sense)) return k;
+  const v = Math.round(clamp(sense, 0, SENSE_MAX) * 20) / 20;
+  return v === k.sense ? k : { ...k, sense: v };
+};
 export const withOpacity = (k: Kept, opacity: number): Kept => {
   if (!Number.isFinite(opacity)) return k;
   const o = Math.round(clamp(opacity, OPACITY_MIN, 1) * 100) / 100;
@@ -247,7 +259,7 @@ export function widthOf(k: Kept, tool: Sized, ranges?: Ranges | null): number {
 export function toolOf(k: Kept, ranges?: Ranges | null): Tool {
   const kind = k.tool;
   const t: Tool = { kind, color: isInked(kind) ? colorOf(k, kind) : '#000000', width: isSized(kind) ? widthOf(k, kind, ranges) : 0 };
-  if (kind === 'pen') { t.ink = k.ink; t.snap = k.snap; }
+  if (kind === 'pen') { t.ink = k.ink; t.snap = k.snap; if (SENSES.includes(k.ink) && k.sense !== 1) t.sense = k.sense; }
   if (kind === 'highlighter') { t.opacity = k.opacity; t.snap = k.snap; }
   if (kind === 'eraser') t.mode = k.eraser;
   return t;
@@ -291,6 +303,7 @@ export function parse(raw: string | null | undefined): Kept {
       recent: { pen: recent('pen'), highlighter: recent('highlighter') },
       // (what was kept before 86 had the soft pen as it started, never chosen: it starts as the even line now)
       ink: isInk(t.ink) && ((t as { v?: number }).v === KEPT_V || t.ink !== 'pen') ? t.ink : DEFAULTS.ink,
+      sense: typeof t.sense === 'number' && Number.isFinite(t.sense) ? Math.round(clamp(t.sense, 0, SENSE_MAX) * 20) / 20 : DEFAULTS.sense,
       opacity: typeof t.opacity === 'number' && Number.isFinite(t.opacity) ? Math.round(clamp(t.opacity, OPACITY_MIN, 1) * 100) / 100 : DEFAULTS.opacity,
       eraser: t.eraser === 'part' || t.eraser === 'stroke' ? t.eraser : DEFAULTS.eraser,
       snap: typeof t.snap === 'boolean' ? t.snap : DEFAULTS.snap,
@@ -349,7 +362,7 @@ const tellTool = (k: Kept): void => { if (canvas()) void invoke<void>('ink_tool'
 const tellFinger = (k: Kept): void => { if (canvas()) void invoke<void>('ink_finger', { on: fingerOn(k) }).catch(console.error); };
 
 const sameTool = (a: Tool, b: Tool): boolean =>
-  a.kind === b.kind && a.color === b.color && a.width === b.width && a.ink === b.ink && a.opacity === b.opacity && a.mode === b.mode && a.snap === b.snap;
+  a.kind === b.kind && a.color === b.color && a.width === b.width && a.ink === b.ink && a.sense === b.sense && a.opacity === b.opacity && a.mode === b.mode && a.snap === b.snap;
 
 /** `next` is what is chosen: kept, and the canvases told what of it changed for them. */
 function put(next: Kept): void {
@@ -370,6 +383,7 @@ export const setSwatch = (tool: Inked, swatch: number): void => put(withSwatch(k
 /** One of the colours lately used, in use again: the tool's own swatch. */
 export const setRecent = (tool: Inked, color: string): void => put(withCustom(kept(), tool, color));
 export const setInk = (ink: PenInk): void => put(withInk(kept(), ink));
+export const setSense = (sense: number): void => put(withSense(kept(), sense));
 export const setOpacity = (opacity: number): void => put(withOpacity(kept(), opacity));
 export const setEraser = (mode: EraserMode): void => put(withEraser(kept(), mode));
 export const setSnap = (on: boolean): void => put(withSnap(kept(), on));

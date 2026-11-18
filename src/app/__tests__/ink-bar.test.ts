@@ -17,7 +17,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   CUSTOM, DEFAULTS, INKS, OPACITY_MIN, RECENT, SIZES, SWATCHES, WIDTHS, colorOf, hex, inksHere, parse, rangeOf, swatchName, toolOf, widthOf, withColor, withCustom,
-  withEraser, withFinger, withInk, withOpacity, withPencilTap, withRecent, withShown, withSize, withSnap, withSwatch, withTool, withWidth, type Kept,
+  withEraser, withFinger, withInk, withOpacity, withPencilTap, withSense, withRecent, withShown, withSize, withSnap, withSwatch, withTool, withWidth, type Kept,
 } from '../inkTools.js';
 import { ROW_FULL, ROW_MID, rowFit } from '../InkBar.js';
 
@@ -295,9 +295,15 @@ describe('what is chosen', () => {
       tool: 'highlighter', last: 'eraser', size: { pen: 0, highlighter: 2, eraser: 1 }, widths: { pen: [0.8, 2.2, 6.5], highlighter: [10, 16, 30], eraser: [8, 16, 28] },
       swatch: { pen: CUSTOM, highlighter: 1 }, colors: { pen: ['#1c1c1e', '#aa3377', '#c5281c', '#1e7a46'], highlighter: SWATCHES.highlighter.map((s) => s.color) },
       custom: { pen: '#123456', highlighter: null }, recent: { pen: ['#123456', '#aa3377'], highlighter: [] },
-      ink: 'fountain', opacity: 0.6, eraser: 'part', snap: false, finger: true, shown: false,
+      ink: 'fountain', sense: 1.5, opacity: 0.6, eraser: 'part', snap: false, finger: true, shown: false,
     };
     expect(parse(JSON.stringify(k))).toEqual(k);
+    // a pen's pressure: told to the canvases for the inks that follow it, and only when it is not the ink's own
+    expect(toolOf({ ...k, tool: 'pen' }).sense).toBe(1.5);
+    expect(toolOf({ ...k, tool: 'pen', sense: 1 }).sense).toBeUndefined();
+    expect(toolOf({ ...k, tool: 'pen', ink: 'monoline' }).sense).toBeUndefined();
+    expect(withSense(k, 9).sense).toBe(2);
+    expect(withSense(k, -1).sense).toBe(0);
     expect(parse(null)).toBe(DEFAULTS);
     expect(parse('')).toBe(DEFAULTS);
     expect(parse('not json')).toBe(DEFAULTS);

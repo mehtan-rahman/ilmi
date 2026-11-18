@@ -20,7 +20,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type JSX } from 'react';
 import { createPortal } from 'react-dom';
 import { hasCanvas, sceneSoon } from './ink.js';
 import {
-  CUSTOM, OPACITY_MIN, SIZE_NAMES, SWATCHES, TOOLS, colorOf, inksHere, isInked, isSized, pickColor, rangeOf, redo, setEraser, setFinger, setInk, setOpacity,
+  CUSTOM, OPACITY_MIN, SIZE_NAMES, SWATCHES, TOOLS, colorOf, inksHere, isInked, isSized, pickColor, rangeOf, redo, setEraser, setFinger, setInk, setOpacity, setSense, SENSES, SENSE_MAX,
   setOpen, setRecent, setShown, setSize, setSnap, setSwatch, setTool, setWidth, swatchName, undo, useInkTools, widthOf,
   type Inked, type Kept, type PenInk, type Sized, type ToolKind,
 } from './inkTools.js';
@@ -207,6 +207,13 @@ function Settings({ tool, kept, anchor, onClose }: { tool: Sized; kept: Kept; an
         <input type="range" data-ink-range="width" min={lo} max={hi} step={0.1} value={width} aria-label="size" onChange={(e) => setWidth(tool, Number(e.currentTarget.value))} />
         <span className="ip-v">{width.toFixed(1)}</span>
       </label>
+      {tool === 'pen' && SENSES.includes(kept.ink) && (
+        <label className="ip-row">
+          <span className="ip-l">pressure</span>
+          <input type="range" data-ink-range="sense" min={0} max={SENSE_MAX} step={0.05} value={kept.sense} aria-label="pressure sensitivity" onChange={(e) => setSense(Number(e.currentTarget.value))} />
+          <span className="ip-v">{Math.round(kept.sense * 100)}%</span>
+        </label>
+      )}
       {tool === 'highlighter' && (
         <label className="ip-row">
           <span className="ip-l">opacity</span>
